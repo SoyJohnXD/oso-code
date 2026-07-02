@@ -44,6 +44,8 @@ Then restart Claude Code. Daily use:
 
 Update later with `claude plugin update oso-code@oso-code` — new versions ship only on version bumps.
 
+**Surfaces**: oso-code works on the local runtimes — terminal CLI, desktop app, and IDE extensions (they all load `~/.claude` plugins and run the hooks). Web sessions at claude.ai/code use repo-only config and never load local plugins, hooks, engram, or fallow — no harness there.
+
 ## Design principles
 
 1. The orchestrator guides; the human decides. Options with tradeoffs, never silent assumptions.
