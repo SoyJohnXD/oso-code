@@ -17,6 +17,33 @@ Team harness for Claude Code. A guided orchestrator that keeps the human in char
 | `docs/` | Design documents. Start with [docs/blueprint.md](docs/blueprint.md). |
 | `tests/` | Hook regression suite (`tests/hooks-test.sh`). Run it plus `claude plugin validate --strict plugin` before any release. |
 
+## Install (team)
+
+Prerequisites per OS — the bootstrap checks and guides you, but know what you need:
+
+| OS | Required | Notes |
+|---|---|---|
+| Linux | git, [Claude Code](https://code.claude.com), Node.js | jq auto-installs via your package manager |
+| macOS | git, Claude Code, Node.js | jq auto-installs via Homebrew |
+| Windows | **Git for Windows** (its Git Bash runs the hooks and the installer), Claude Code, Node.js | run everything below inside Git Bash; jq installs via winget |
+
+Optional on every OS: Rust (`cargo`) for the fallow analyzer — without it the debt-sweep runs rubric-only on TS/JS projects.
+
+```bash
+git clone https://github.com/SoyJohnXD/oso-code
+cd oso-code
+bash bootstrap/install.sh     # prerequisites, MCPs, plugin, legacy cleanup (asks before anything destructive)
+bash bootstrap/verify.sh      # measurable post-install E2E — expect all checks ok
+```
+
+Then restart Claude Code. Daily use:
+
+- `/oso-code:plan <what you want to build>` — substantial changes.
+- `/oso-code:quick <small change>` — fast iteration.
+- `/output-style Oso` — the team persona (optional).
+
+Update later with `claude plugin update oso-code@oso-code` — new versions ship only on version bumps.
+
 ## Design principles
 
 1. The orchestrator guides; the human decides. Options with tradeoffs, never silent assumptions.

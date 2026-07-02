@@ -111,8 +111,13 @@ wire_mcps() {
   fi
 }
 
+MARKETPLACE_SOURCE="SoyJohnXD/oso-code"
+
 install_plugin() {
-  claude plugin marketplace add "$REPO_ROOT" >/dev/null 2>&1 \
+  # GitHub is the distribution source so `claude plugin update` pulls new
+  # versions without re-cloning. Falls back to this local clone when offline.
+  claude plugin marketplace add "$MARKETPLACE_SOURCE" >/dev/null 2>&1 \
+    || claude plugin marketplace add "$REPO_ROOT" >/dev/null 2>&1 \
     || run_or_fail "marketplace refresh" claude plugin marketplace update oso-code
   run_or_fail "oso-code plugin install" claude plugin install oso-code@oso-code
 }
