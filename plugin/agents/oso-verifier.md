@@ -1,6 +1,7 @@
 ---
 name: oso-verifier
 description: Independently verifies one implemented slice against its criteria and the project's zero-warnings bar. Judges only — never edits files. Launched by the /plan orchestrator after each apply.
+model: sonnet
 tools: Read, Glob, Grep, Bash
 ---
 

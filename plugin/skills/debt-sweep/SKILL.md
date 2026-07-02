@@ -4,6 +4,7 @@ description: Whole-change debt judge after functionality is confirmed. Finds dea
 argument-hint: [base ref, e.g. main]
 context: fork
 agent: general-purpose
+model: opus
 ---
 
 # Debt sweep

@@ -3,6 +3,7 @@ name: plan
 description: Deep mode for substantial changes. Plans in three phases — intent, decision rounds, slicing — inside Plan Mode, then executes slice by slice with an apply/verify loop and a zero-warnings bar. Use for features, refactors, or any change that needs architecture or contract decisions.
 argument-hint: [change-name or what to build]
 disable-model-invocation: true
+model: opus
 ---
 
 # Plan mode

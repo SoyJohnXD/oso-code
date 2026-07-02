@@ -1,6 +1,7 @@
 ---
 name: oso-applier
 description: Implements exactly one oso-code plan slice from the frozen decision ledger. Launched by the /plan orchestrator during execution — not for direct use.
+model: sonnet
 tools: Read, Edit, Write, NotebookEdit, Glob, Grep, Bash
 ---
 

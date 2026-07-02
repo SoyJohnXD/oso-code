@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0
+
+- Model assignments per role: `/plan` orchestrator and the debt-sweep judge pin `opus`; `oso-applier` and `oso-verifier` pin `sonnet`. `/quick` and `quality-pass` keep inheriting the session model. Note: a pinned model is exact, not a minimum — sessions on a higher-tier model will still run pinned components on the pinned tier.
+
 ## 0.4.0
 
 Pilot #1 findings (expense-splitter run: 10 slices, 0 false gate blocks, but three quality gaps):
