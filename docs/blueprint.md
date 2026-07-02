@@ -4,6 +4,8 @@ Frozen design for the oso-code harness. Amendments require a new decision, not a
 
 ## Amendments
 
+- 2026-07-02, execution model (user decision): `/plan` execution is delegated, gentle-style — an `oso-applier` subagent per slice (fed the frozen ledger; blocked-and-return instead of assuming; orchestrator resolves questions with the human and relaunches fresh) and an `oso-verifier` subagent per slice (no edit tools; independent rerun of every check; verdict with evidence gates `verify_green`). The orchestrator never writes code during execution. `/quick` remains inline.
+
 - 2026-07-02, after adversarial review: hooks are pure bash (no runtime jq dependency) and log every gate event to `~/.local/state/oso-code/events.jsonl`; the commit matcher is tokenized (flag-tolerant, quote-safe); `oso-state` writes are lock-protected and atomic; `/plan` re-arms runtime state on resume; on PR creation the frozen ledger and slice summary are copied into the PR body (engram remains the store of record); the rubric regains a hard-blockers floor (secrets, swallowed errors, callerless abstractions). Platform facts verified against docs and this machine: the model can enter Plan Mode itself (`EnterPlanMode` tool, not available to subagents), and the session env var is `CLAUDE_CODE_SESSION_ID`.
 
 ## Foundational decisions

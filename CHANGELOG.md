@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0
+
+- `/plan` execution is now fully delegated: each slice runs through an `oso-applier` subagent (implements exactly one slice from the frozen ledger; returns a structured `blocked` report instead of ever assuming) and an `oso-verifier` subagent (fresh-context judge with no edit tools — reruns every check itself and returns a verdict with evidence). The orchestrator resolves blocked questions with the human, updates the ledger, and relaunches; it never writes code during execution. `/quick` stays inline. Closes the self-attestation gap flagged by the adversarial review (C9, partially).
+
 ## 0.2.0
 
 - `Oso` output style shipped with the plugin: Colombian mentor persona — teaches and corrects with warmth, blocks sloppy work, never agrees without verifying. Persona governs conversation tone only; enforcement stays structural (rubric, hooks, global rules). Activate with `/output-style Oso`.

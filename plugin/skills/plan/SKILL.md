@@ -80,19 +80,20 @@ Order slices by dependency. Present the plan; when the user approves, exit Plan 
 Then initialize the runtime state:
 `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set mode=plan verify_green=false`
 
-## 4. Execution — one slice at a time
+## 4. Execution — one slice at a time, delegated
 
-Before the first slice, read `${CLAUDE_SKILL_DIR}/../_shared/rubric.md` and write to that bar from the start — the debt-sweep should find nothing because nothing sloppy was written.
+You (the orchestrator) never write code during execution. Each slice runs through fresh-context subagents; you manage the state, the ledger, and the human.
 
 For the active slice:
 
-1. **Activate** — `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set active_slice=<n> verify_green=false`. This is what allows file edits.
-2. **Apply** — implement following the ledger. If an undecided question surfaces, STOP, present options, record the answer in the ledger, then continue.
-3. **Verify** — run the project's zero-warnings bar from the ledger plus the slice's own verify criteria.
-4. Loop apply → verify until green. Zero warnings, no exceptions. On green: `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set verify_green=true`.
-5. Mark the slice `[x]` (`mem_update` on the plan topic key — merge, never overwrite), report the result, move to the next slice.
+1. **Activate** — `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set active_slice=<n> verify_green=false`.
+2. **Apply (subagent)** — launch the `oso-applier` agent with: the slice (goal, files, verify criteria), every ledger decision relevant to it, the project conventions, and the rubric path (`${CLAUDE_SKILL_DIR}/../_shared/rubric.md`).
+   - If it returns `blocked`: resolve each question with the user (options with tradeoffs, recommendation first), record the answers in the ledger (`mem_update`), then launch a FRESH applier to complete the slice with the updated ledger. Never answer on the user's behalf. Never finish the slice inline.
+3. **Verify (subagent)** — launch the `oso-verifier` agent with the slice criteria and the zero-warnings commands from the ledger. It reruns everything itself and returns a verdict with evidence (commands, exit codes, criteria observations).
+   - On `fail`: relaunch the applier with the verifier's findings. Loop apply → verify until it passes.
+4. Only on the verifier's `pass`: `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set verify_green=true`, mark the slice `[x]` (`mem_update` on the plan topic key — merge, never overwrite), report the result to the user, and move to the next slice.
 
-Never run two slices at once. Never start slice N+1 while slice N is red.
+Never run two slices at once. Never start slice N+1 while slice N is red. Small fixes are never applied inline "to save time" — they go through a subagent like everything else.
 
 ## 5. Close — when the user says they are happy
 
