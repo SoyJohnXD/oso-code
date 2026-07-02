@@ -1,0 +1,14 @@
+{
+  "name": "oso-code",
+  "description": "Osoria Tech's team harness for Claude Code: /plan and /quick modes with state-gate hooks and a debt-sweep quality phase.",
+  "owner": {
+    "name": "Osoria Tech"
+  },
+  "plugins": [
+    {
+      "name": "oso-code",
+      "source": "./plugin",
+      "description": "Team harness for Claude Code: guided orchestrator with /plan and /quick modes, apply/verify loops, state-gate hooks, and a final debt-sweep phase."
+    }
+  ]
+}

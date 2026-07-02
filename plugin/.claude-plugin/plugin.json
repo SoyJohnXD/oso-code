@@ -1,0 +1,8 @@
+{
+  "name": "oso-code",
+  "description": "Team harness for Claude Code: guided orchestrator with two modes (/plan for substantial changes, /quick for fast iteration), apply/verify loops, and a final debt-sweep phase.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Osoria Tech"
+  }
+}

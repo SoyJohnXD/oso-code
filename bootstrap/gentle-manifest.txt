@@ -1,0 +1,64 @@
+# Legacy gentle-ai artifacts removed by the bootstrap, relative to ~/.claude.
+# Everything listed here is backed up before removal.
+
+# Slash commands (SDD suite)
+commands/sdd-apply.md
+commands/sdd-archive.md
+commands/sdd-continue.md
+commands/sdd-explore.md
+commands/sdd-ff.md
+commands/sdd-init.md
+commands/sdd-new.md
+commands/sdd-onboard.md
+commands/sdd-status.md
+commands/sdd-verify.md
+
+# Skills (gentle suite, including symlinks into ~/.codex/skills)
+skills/_shared
+skills/branch-pr
+skills/chained-pr
+skills/clean-code-standards
+skills/cognitive-doc-design
+skills/comment-writer
+skills/go-testing
+skills/intent-overlay
+skills/issue-creation
+skills/judgment-day
+skills/sdd-apply
+skills/sdd-archive
+skills/sdd-design
+skills/sdd-explore
+skills/sdd-init
+skills/sdd-onboard
+skills/sdd-propose
+skills/sdd-spec
+skills/sdd-tasks
+skills/sdd-verify
+skills/skill-creator
+skills/skill-improver
+skills/skill-registry
+skills/work-unit-commits
+
+# Agents (SDD phases, judgment-day judges, 4R reviewers)
+agents/jd-fix-agent.md
+agents/jd-judge-a.md
+agents/jd-judge-b.md
+agents/review-readability.md
+agents/review-reliability.md
+agents/review-resilience.md
+agents/review-risk.md
+agents/sdd-apply.md
+agents/sdd-archive.md
+agents/sdd-design.md
+agents/sdd-explore.md
+agents/sdd-init.md
+agents/sdd-onboard.md
+agents/sdd-propose.md
+agents/sdd-spec.md
+agents/sdd-tasks.md
+agents/sdd-verify.md
+
+# Hook scripts
+hooks/check-plan-contract.sh
+hooks/clean-code-gate.sh
+hooks/skill-registry-refresh.sh

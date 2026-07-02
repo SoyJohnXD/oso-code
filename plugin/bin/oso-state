@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# Session state for oso-code hooks. Flat key=value lines, one file per session,
+# stored outside any project so repos stay clean.
+#
+# Writes take a portable mkdir-lock and publish with a single atomic mv, so
+# concurrent writers can never corrupt or partially overwrite the state.
+#
+# Usage:
+#   oso-state --session <id> set key=value [key=value ...]
+#   oso-state --session <id> get key
+#   oso-state --session <id> show
+#   oso-state --session <id> clear
+set -euo pipefail
+
+usage() {
+  echo "usage: oso-state --session <id> {set key=value... | get key | show | clear}" >&2
+  exit 1
+}
+
+[ "${1:-}" = "--session" ] || usage
+session_id="$(printf '%s' "${2:-}" | tr -cd 'a-zA-Z0-9-')"
+[ -n "$session_id" ] || usage
+shift 2
+action="${1:-}"
+shift || true
+
+state_dir="${HOME}/.local/state/oso-code"
+state_file="${state_dir}/${session_id}.state"
+lock_dir="${state_file}.lock"
+
+acquire_lock() {
+  local tries=0
+  until mkdir "$lock_dir" 2>/dev/null; do
+    tries=$((tries + 1))
+    if [ "$tries" -gt 200 ]; then
+      echo "oso-state: could not acquire lock for session ${session_id}" >&2
+      exit 1
+    fi
+    sleep 0.05
+  done
+  trap 'rmdir "$lock_dir" 2>/dev/null || true' EXIT
+}
+
+log_event() {
+  printf '{"ts":"%s","event":"%s","session":"%s"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$session_id" >> "${state_dir}/events.jsonl"
+}
+
+case "$action" in
+  set)
+    [ $# -ge 1 ] || usage
+    mkdir -p "$state_dir"
+    acquire_lock
+    tmp="$(mktemp "${state_dir}/.tmp.XXXXXX")"
+    [ -f "$state_file" ] && cat "$state_file" > "$tmp"
+    for pair in "$@"; do
+      key="${pair%%=*}"
+      next="$(mktemp "${state_dir}/.tmp.XXXXXX")"
+      grep -v "^${key}=" "$tmp" > "$next" || true
+      printf '%s\n' "$pair" >> "$next"
+      mv "$next" "$tmp"
+    done
+    mv "$tmp" "$state_file"
+    log_event "set:$*"
+    ;;
+  get)
+    [ $# -eq 1 ] || usage
+    grep "^${1}=" "$state_file" 2>/dev/null | cut -d= -f2- || true
+    ;;
+  show)
+    [ -f "$state_file" ] && cat "$state_file" || echo "no state for session ${session_id}"
+    ;;
+  clear)
+    mkdir -p "$state_dir"
+    acquire_lock
+    rm -f "$state_file"
+    log_event clear
+    ;;
+  *)
+    usage
+    ;;
+esac

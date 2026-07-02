@@ -1,0 +1,102 @@
+---
+name: plan
+description: Deep mode for substantial changes. Plans in three phases — intent, decision rounds, slicing — inside Plan Mode, then executes slice by slice with an apply/verify loop and a zero-warnings bar. Use for features, refactors, or any change that needs architecture or contract decisions.
+argument-hint: [change-name or what to build]
+disable-model-invocation: true
+---
+
+# Plan mode
+
+Guided flow for substantial changes. The human decides; you guide, present options with tradeoffs, and never assume.
+
+## Ground rules for the whole flow
+
+- Phases 1–3 run inside Plan Mode (read-only). Enter it before phase 1 and stay in it until the slice plan is approved.
+- Question rounds: 3–5 questions maximum per round, each with 2–4 concrete options and their tradeoffs. Put your recommendation first and say why it wins.
+- If phase 1 reveals the change is actually small, say so and offer `oso-code:quick`. The user decides.
+- Engram gotcha: `mem_search` returns 300-char previews — always call `mem_get_observation(id)` for full content.
+- Runtime gates: plugin hooks deny `git commit` while `verify_green` is false and deny file edits while no slice is active. Keep the session state honest with the `oso-state` commands below — they are what unlocks those gates.
+
+## 0. Resume check
+
+Search engram for existing work on this change: `mem_search(query: "oso/{change}/plan")`.
+If found, retrieve it, report the recorded position (phase or slice), and continue from there. Never re-ask what the ledger already answers.
+
+Runtime state is per session and does not survive a restart. When resuming into execution, re-arm it before touching code:
+`oso-state --session "${CLAUDE_CODE_SESSION_ID}" set mode=plan active_slice=<current> verify_green=false`
+
+## 1. Intent
+
+Understand WHAT the user wants, one abstraction level above code. No stack talk, no file names, no how.
+
+Produce and show:
+
+- **Intent** — two or three sentences.
+- **In-scope / Out-of-scope** — explicit lists.
+- **Visible outcome** — what exists when this is done that does not exist today.
+
+Iterate until the user approves the intent. Do not advance without approval.
+
+## 2. Decision rounds
+
+Goal: after this phase, execution requires zero assumptions.
+
+Run rounds until every category below is decided or explicitly marked not applicable:
+
+| Category | Covers |
+|---|---|
+| Contracts | APIs, signatures, events, exchange schemas |
+| Architecture | Where logic lives, dependency direction, patterns to follow or establish |
+| Data | Model, persistence, migrations, source of truth |
+| Errors | Expected failures, empty/invalid states, what the user sees when things break |
+| UX behavior | Flows, loading/error states — when the change has a user surface |
+| Security | Authn/authz, data exposure — when applicable |
+| Verification | What proves each part works, and this project's zero-warnings bar: the exact lint, type, test, and build commands |
+| Reuse | Existing code and primitives the change must use instead of recreating |
+
+Rules:
+
+- Enumerable choices get options with tradeoffs, never open-ended questions.
+- Record every decision in the ledger: the decision, the rationale, the alternatives rejected.
+- The user may delegate a decision ("you pick") — record it as delegated, with your rationale.
+- Exit only when the user declares the ledger frozen.
+
+On freeze, save the ledger once:
+`mem_save(title: "oso/{change}/ledger", topic_key: "oso/{change}/ledger", type: "architecture", capture_prompt: false, content: intent + scope + every ledger entry)`
+
+## 3. Slicing
+
+Split the change into vertical slices. Each slice delivers observable progress and fits one focused apply/verify batch — never a one-line task, never half the project.
+
+Each slice states:
+
+- **Goal** — the observable progress it delivers.
+- **Files** — expected touch points.
+- **Verify** — which project checks plus what observable behavior proves it.
+
+Order slices by dependency. Present the plan; when the user approves, exit Plan Mode and save the plan state:
+`mem_save(title: "oso/{change}/plan", topic_key: "oso/{change}/plan", type: "architecture", capture_prompt: false, content: slices with [ ] marks + current position)`
+
+Then initialize the runtime state:
+`oso-state --session "${CLAUDE_CODE_SESSION_ID}" set mode=plan verify_green=false`
+
+## 4. Execution — one slice at a time
+
+Before the first slice, read `${CLAUDE_SKILL_DIR}/../_shared/rubric.md` and write to that bar from the start — the debt-sweep should find nothing because nothing sloppy was written.
+
+For the active slice:
+
+1. **Activate** — `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set active_slice=<n> verify_green=false`. This is what allows file edits.
+2. **Apply** — implement following the ledger. If an undecided question surfaces, STOP, present options, record the answer in the ledger, then continue.
+3. **Verify** — run the project's zero-warnings bar from the ledger plus the slice's own verify criteria.
+4. Loop apply → verify until green. Zero warnings, no exceptions. On green: `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set verify_green=true`.
+5. Mark the slice `[x]` (`mem_update` on the plan topic key — merge, never overwrite), report the result, move to the next slice.
+
+Never run two slices at once. Never start slice N+1 while slice N is red.
+
+## 5. Close — when the user says they are happy
+
+1. Activate the sweep as a slice: `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set active_slice=debt-sweep verify_green=false`.
+2. Run the `oso-code:debt-sweep` skill: whole-change review for debt, duplication, dead code, and rubric alignment, with readability-only fixes. When it reports passed: `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set verify_green=true`.
+3. Save a session summary to engram. Do not save phase artifacts, explorations, or verbose progress.
+4. Commit, push, or open a PR only if the user asks. When opening a PR, include the frozen decision ledger and the slice summary in the PR body — engram is per-machine, and the PR is the only surface where a reviewer can check the code against the decisions it implements.
