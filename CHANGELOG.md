@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.0
+
+- `Oso` output style shipped with the plugin: Colombian mentor persona — teaches and corrects with warmth, blocks sloppy work, never agrees without verifying. Persona governs conversation tone only; enforcement stays structural (rubric, hooks, global rules). Activate with `/output-style Oso`.
+
 ## 0.1.0
 
 Initial release.
