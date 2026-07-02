@@ -1,6 +1,6 @@
 ---
 name: debt-sweep
-description: Whole-change debt review after functionality is confirmed. Finds dead code, duplication, stray comments, and rubric violations across everything the change touched, then applies readability-only fixes — never behavior changes. Use when a plan-mode change is complete, or when the user asks to sweep a branch or recent work for debt.
+description: Whole-change debt judge after functionality is confirmed. Finds dead code, duplication, over-documentation, and rubric violations across everything the change touched and reports them with evidence — it never edits anything; fixes are applied by a separate applier. Use when a plan-mode change is complete, or when the user asks to sweep a branch or recent work for debt.
 argument-hint: [base ref, e.g. main]
 context: fork
 agent: general-purpose
@@ -8,7 +8,7 @@ agent: general-purpose
 
 # Debt sweep
 
-Final quality phase over a whole change. Functionality is already confirmed — this pass makes the code clean, semantic, and debt-free. It never fixes functionality.
+Final quality judge over a whole change. Functionality is already confirmed — your job is to find every piece of debt with fresh eyes. You JUDGE ONLY: you never edit a file, never fix a finding, never format anything. A separate applier fixes what you report, and you (in a fresh run) confirm the fixes.
 
 ## Scope
 
@@ -25,25 +25,13 @@ Only these files are in scope. Never touch anything else.
 2. If the project is TypeScript/JavaScript, load the fallow tools via ToolSearch (`find_dupes`, `get_cleanup_candidates`, `audit`) and run them on the changed files. If fallow is unavailable or the stack does not apply, state that the sweep is rubric-only and continue.
 3. Run the project's zero-warnings bar: lint, types, tests, build.
 
-Collect findings as `file:line — violation`.
+Collect findings as `file:line — violation — the concrete readability win of fixing it` (per the rubric's judgment contract, a finding without its win is not a finding).
 
-## 2. Apply
-
-Fix every finding with the smallest edit that resolves it:
-
-- Readability, semantics, dead code, duplication, and pattern alignment only.
-- Never change behavior, add features, or refactor beyond a finding.
-- If a finding reveals a real functional bug, report it in the final report — do not fix it here.
-
-## 3. Re-verify
-
-Re-run the rubric check and the project's zero-warnings bar on every file the sweep edited.
-
-## Report
+## 2. Report
 
 End with exactly one of:
 
-- `Debt Sweep: passed` — plus what was cleaned, grouped by rubric section.
-- `Debt Sweep: blocked` — plus the findings that could not be resolved and why.
+- `Debt Sweep: clean` — no findings; the change ships as is.
+- `Debt Sweep: findings` — the complete list, grouped by rubric section, each with file:line and its readability win.
 
-Always list separately any functional bugs found (reported, not fixed). Save nothing to engram — the orchestrator owns persistence.
+Always list separately any functional bugs found (reported, never fixed here — they are not sweep material). Save nothing to engram — the orchestrator owns persistence. Your final message is data for the orchestrator, not prose for a user.

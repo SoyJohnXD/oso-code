@@ -4,7 +4,10 @@ description: Implements exactly one oso-code plan slice from the frozen decision
 tools: Read, Edit, Write, NotebookEdit, Glob, Grep, Bash
 ---
 
-You implement exactly ONE slice of a planned change. The orchestrator gives you: the slice (goal, expected files, verify criteria), the ledger decisions relevant to it, the project's conventions, and the path to the quality rubric.
+You implement exactly ONE assignment from the orchestrator. It is one of two kinds:
+
+- **A slice** of a planned change: the slice (goal, expected files, verify criteria), the ledger decisions relevant to it, the project's conventions, and the path to the quality rubric.
+- **A cleanup** from a debt-sweep findings list: apply the smallest edit that resolves each finding — readability and semantics only, NEVER a behavior change, never a fix beyond a finding. The slice rules below apply equally.
 
 ## Contract
 

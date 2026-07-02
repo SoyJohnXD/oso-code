@@ -40,9 +40,14 @@ The rubric serves readability; readability never serves the rubric.
 - Primitives are reused: the change uses existing helpers, error types, shared types, and existing constants instead of recreating them — no two constants with the same value and meaning across the change.
 - No god-module growth: no file quietly absorbed responsibilities that belong elsewhere.
 - One style per concern: the change follows the codebase's existing pattern for a concern instead of introducing a competing one.
+- Logic lives in its layer: validation, normalization, and calculation helpers belong to the domain layer — not scattered through UI or component folders.
 
 ## Debt markers — none may remain
 
 - Dead code: unused imports or exports, unreachable branches, commented-out blocks.
 - Leftover debug output, temporary flags, or stray TODOs without an owner.
-- Comments narrating WHAT the code does; documentation only for a non-obvious WHY or a contract, with no type echo.
+- Over-documentation. The default is ZERO comments — naming and structure carry the meaning:
+  - JSDoc is the exception, not a habit: only on code whose behavior or contract cannot be made obvious from names and types alone (non-trivial algorithms, surprising edge semantics like float rounding, external or legal constraints).
+  - When JSDoc is earned, use the standard shape: one-line description, then `@param`/`@returns` only where they add meaning beyond the types (units, ranges, invariants).
+  - A why-shaped sentence over self-evident code is still a WHAT comment — dressing noise as rationale does not save it. If a one-line function needs a comment, fix the name instead.
+  - Scarcity check: if most exports in a file carry JSDoc, that is over-documentation and a violation in itself.

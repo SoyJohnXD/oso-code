@@ -98,6 +98,8 @@ Never run two slices at once. Never start slice N+1 while slice N is red. Small 
 ## 5. Close — when the user says they are happy
 
 1. Activate the sweep as a slice: `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set active_slice=debt-sweep verify_green=false`.
-2. Run the `oso-code:debt-sweep` skill: whole-change review for debt, duplication, dead code, and rubric alignment, with readability-only fixes. When it reports passed: `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set verify_green=true`.
-3. Save a session summary to engram. Do not save phase artifacts, explorations, or verbose progress.
-4. Commit, push, or open a PR only if the user asks. When opening a PR, include the frozen decision ledger and the slice summary in the PR body — engram is per-machine, and the PR is the only surface where a reviewer can check the code against the decisions it implements.
+2. **Judge (subagent)** — INVOKE the `oso-code:debt-sweep` skill through the Skill tool; it runs in its own forked subagent. Never perform the sweep yourself in this conversation — an orchestrator sweeping its own change has no fresh eyes. It returns `clean` or a findings list.
+3. **Fix (subagent)** — on findings, launch the `oso-applier` agent with the findings list as a cleanup assignment: smallest edit per finding, readability and semantics only, never behavior. Then re-invoke `oso-code:debt-sweep` to confirm. Loop judge → fix until `clean`.
+4. Only on `clean`: `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set verify_green=true`.
+5. Save a session summary to engram. Do not save phase artifacts, explorations, or verbose progress.
+6. Commit, push, or open a PR only if the user asks. When opening a PR, include the frozen decision ledger and the slice summary in the PR body — engram is per-machine, and the PR is the only surface where a reviewer can check the code against the decisions it implements.
