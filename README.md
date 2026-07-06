@@ -4,7 +4,7 @@ Team harness for Claude Code. A guided orchestrator that keeps the human in char
 
 ## What it is
 
-- **`/plan`** — deep mode for substantial changes: intent → decision rounds → slices, then a sequential apply/verify loop per slice with a zero-warnings bar.
+- **`/plan`** — deep mode for substantial changes: intent → surface mapping → decision rounds → slices, then a sequential apply/verify loop per slice with a zero-warnings bar.
 - **`/quick`** — fast mode for small, visually verifiable changes: micro-intent, rapid inline iteration, then a quality pass.
 - **Debt-sweep** — final phase on every change: detects dead code, duplication, stray comments, and rubric violations (powered by fallow), then applies readability-only fixes. Never functional changes.
 

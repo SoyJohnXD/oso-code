@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Deep mode for substantial changes. Plans in three phases — intent, decision rounds, slicing — inside Plan Mode, then executes slice by slice with an apply/verify loop and a zero-warnings bar. Use for features, refactors, or any change that needs architecture or contract decisions.
+description: Deep mode for substantial changes. Plans in four phases — intent, surface mapping, decision rounds, slicing — inside Plan Mode, then executes slice by slice with an apply/verify loop and a zero-warnings bar. Use for features, refactors, or any change that needs architecture or contract decisions.
 argument-hint: [change-name or what to build]
 disable-model-invocation: true
 model: opus
@@ -12,7 +12,7 @@ Guided flow for substantial changes. The human decides; you guide, present optio
 
 ## Ground rules for the whole flow
 
-- Phases 1–3 run inside Plan Mode (read-only). Enter it before phase 1 and stay in it until the slice plan is approved.
+- Phases 1–4 run inside Plan Mode (read-only). Enter it before phase 1 and stay in it until the slice plan is approved.
 - Question rounds: 3–5 questions maximum per round, each with 2–4 concrete options and their tradeoffs. Put your recommendation first and say why it wins.
 - If phase 1 reveals the change is actually small, say so and offer `oso-code:quick`. The user decides.
 - Engram gotcha: `mem_search` returns 300-char previews — always call `mem_get_observation(id)` for full content.
@@ -20,7 +20,8 @@ Guided flow for substantial changes. The human decides; you guide, present optio
 
 ## 0. Resume check
 
-Search engram for existing work on this change: `mem_search(query: "oso/{change}/plan")`.
+Search engram for existing work on this change: `mem_search(query: "oso/index")`, then `mem_get_observation(id)` for the full table, and locate the row for `{change}`. Fetch its ledger and plan by topic key (`oso/{change}/ledger`, `oso/{change}/plan`).
+Fallback when the index doesn't exist yet (first-ever use): `mem_search(query: "oso/{change}/plan")` directly.
 If found, retrieve it, report the recorded position (phase or slice), and continue from there. Never re-ask what the ledger already answers.
 
 Runtime state is per session and does not survive a restart. When resuming into execution, re-arm it before touching code:
@@ -38,9 +39,25 @@ Produce and show:
 
 Iterate until the user approves the intent. Do not advance without approval.
 
-## 2. Decision rounds
+## 2. Surface mapping
+
+Goal: turn the approved intent into a map of what the change actually touches, built from evidence, not from a checklist.
+
+1. Launch up to 3 parallel `Explore` subagents. Give each a focus derived from the intent and have it discover what the change touches: modules, contracts and their consumers, shared state, jobs, data flows.
+2. Generate the surface list from what they return. A surface is generated from evidence — never recited from a fixed list.
+3. Audit the map against the category table in Decision rounds: each category is either covered by a surface, marked N/A with a reason, or reveals a surface the exploration missed — add it.
+4. Generate the question battery from the map. Every question must cite the code evidence that motivates it and the consequence of not deciding it. "Do we need auth?" fails the bar; "this endpoint doesn't validate tenant and the new field exposes billing data — scope by role or by tenant?" passes.
+5. Prioritize the battery blocking-decisions-first. It feeds Decision rounds at the existing 3–5 questions per round.
+
+Fallback: if exploration surfaces nothing clear, fall back to the category table as the question generator — a template question beats silence.
+
+Exit: every surface has questions in the battery, or an explicit N/A.
+
+## 3. Decision rounds
 
 Goal: after this phase, execution requires zero assumptions.
+
+The question battery from Surface mapping is the source of questions here; the category table below is an audit floor, not a generator — it confirms nothing was missed, it does not originate rounds. Open the first round with the surface map and its audited N/As shown as a header; there is no separate approval gate for the map itself.
 
 Run rounds until every category below is decided or explicitly marked not applicable:
 
@@ -63,9 +80,9 @@ Rules:
 - Exit only when the user declares the ledger frozen.
 
 On freeze, save the ledger once:
-`mem_save(title: "oso/{change}/ledger", topic_key: "oso/{change}/ledger", type: "architecture", capture_prompt: false, content: intent + scope + every ledger entry)`
+`mem_save(title: "oso/{change}/ledger — {human description}", topic_key: "oso/{change}/ledger", type: "architecture", capture_prompt: false, content: intent + surface map + scope + every ledger entry)`
 
-## 3. Slicing
+## 4. Slicing
 
 Split the change into vertical slices. Each slice delivers observable progress and fits one focused apply/verify batch — never a one-line task, never half the project.
 
@@ -76,12 +93,14 @@ Each slice states:
 - **Verify** — which project checks plus what observable behavior proves it.
 
 Order slices by dependency. Present the plan; when the user approves, exit Plan Mode and save the plan state:
-`mem_save(title: "oso/{change}/plan", topic_key: "oso/{change}/plan", type: "architecture", capture_prompt: false, content: slices with [ ] marks + current position)`
+`mem_save(title: "oso/{change}/plan — {human description}", topic_key: "oso/{change}/plan", type: "architecture", capture_prompt: false, content: slices with [ ] marks + current position)`
+
+Update the index so this change surfaces on first search: create `oso/index` if it doesn't exist yet (`mem_save`, topic_key `oso/index`) or update it (`mem_update`, merge the table — never overwrite other rows), adding/updating the row `{change} — {human description} — status: executing`.
 
 Then initialize the runtime state:
 `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set mode=plan verify_green=false`
 
-## 4. Execution — one slice at a time, delegated
+## 5. Execution — one slice at a time, delegated
 
 You (the orchestrator) never write code during execution. Each slice runs through fresh-context subagents; you manage the state, the ledger, and the human.
 
@@ -96,11 +115,12 @@ For the active slice:
 
 Never run two slices at once. Never start slice N+1 while slice N is red. Small fixes are never applied inline "to save time" — they go through a subagent like everything else.
 
-## 5. Close — when the user says they are happy
+## 6. Close — when the user says they are happy
 
 1. Activate the sweep as a slice: `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set active_slice=debt-sweep verify_green=false`.
 2. **Judge (subagent)** — INVOKE the `oso-code:debt-sweep` skill through the Skill tool; it runs in its own forked subagent. Never perform the sweep yourself in this conversation — an orchestrator sweeping its own change has no fresh eyes. It returns `clean` or a findings list.
 3. **Fix (subagent)** — on findings, launch the `oso-applier` agent with the findings list as a cleanup assignment: smallest edit per finding, readability and semantics only, never behavior. Then re-invoke `oso-code:debt-sweep` to confirm. Loop judge → fix until `clean`.
 4. Only on `clean`: `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set verify_green=true`.
-5. Save a session summary to engram. Do not save phase artifacts, explorations, or verbose progress.
-6. Commit, push, or open a PR only if the user asks. When opening a PR, include the frozen decision ledger and the slice summary in the PR body — engram is per-machine, and the PR is the only surface where a reviewer can check the code against the decisions it implements.
+5. Update the change's `oso/index` row to `status: done` (`mem_update`, merge — never overwrite other rows).
+6. Save a session summary to engram with a rich title (`"oso/{change}/summary — {human description}"` pattern) so it surfaces on first search. Do not save phase artifacts, explorations, or verbose progress.
+7. Commit, push, or open a PR only if the user asks. When opening a PR, include the frozen decision ledger and the slice summary in the PR body — engram is per-machine, and the PR is the only surface where a reviewer can check the code against the decisions it implements.

@@ -43,6 +43,6 @@ Before the first edit, initialize the runtime state — the commit gate stays lo
 2. Zero warnings: lint, types, and affected tests must be clean before declaring done.
 3. When the quality pass reports passed, unlock the commit gate:
    `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set verify_green=true`
-4. Save to engram only: a session summary, plus any non-obvious discovery or convention learned. Do not save iterations or progress.
+4. Save to engram only: a session summary with a rich title (descriptive, with domain keywords, so it surfaces on first search), plus any non-obvious discovery or convention learned. Do not save iterations or progress.
 
 Never commit, push, or open a PR unless the user asks.
