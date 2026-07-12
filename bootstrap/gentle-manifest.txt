@@ -62,3 +62,6 @@ agents/sdd-verify.md
 hooks/check-plan-contract.sh
 hooks/clean-code-gate.sh
 hooks/skill-registry-refresh.sh
+
+# Output styles (the settings.json outputStyle pointer is reset by install.sh)
+output-styles/gentleman.md

@@ -148,11 +148,13 @@ remove_legacy_artifacts() {
   fi
 }
 
-remove_legacy_hooks_from_settings() {
+remove_legacy_settings_entries() {
   local settings="$CLAUDE_DIR/settings.json"
   [ -f "$settings" ] || return 0
   mkdir -p "$BACKUP_DIR"
   cp -a "$settings" "$BACKUP_DIR/settings.json"
+  # Drop gentle-ai hook entries, and repoint the output style: the manifest
+  # removes output-styles/gentleman.md, so a "Gentleman" pointer would dangle.
   jq '(.hooks // {}) |= with_entries(
         .value |= map(select(
           [.hooks[]?.command // ""]
@@ -160,10 +162,11 @@ remove_legacy_hooks_from_settings() {
           | not
         ))
       )
-      | .hooks |= with_entries(select(.value | length > 0))' \
+      | .hooks |= with_entries(select(.value | length > 0))
+      | if .outputStyle == "Gentleman" then .outputStyle = "Oso" else . end' \
     "$settings" > "${settings}.tmp"
   mv "${settings}.tmp" "$settings"
-  info "cleaned legacy hook entries from settings.json"
+  info "cleaned legacy hook entries and output style from settings.json"
 }
 
 merge_global_claude_md() {
@@ -211,7 +214,7 @@ info "3/5 oso-code plugin"
 install_plugin
 info "4/5 legacy cleanup"
 remove_legacy_artifacts
-remove_legacy_hooks_from_settings
+remove_legacy_settings_entries
 info "5/5 global CLAUDE.md"
 merge_global_claude_md
 info "done — restart your Claude Code sessions to pick everything up"
