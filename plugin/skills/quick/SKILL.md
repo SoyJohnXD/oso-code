@@ -11,12 +11,14 @@ Fast, guided iteration for small changes. The human steers; you keep the bar hig
 
 ## 1. Micro-intent (one exchange, not a plan)
 
+Read operator preferences silently — quick never asks. If an `oso/preferences` observation exists (`mem_search(query: "oso/preferences")` → `mem_get_observation(id)`, the 300-char preview gotcha applies), apply its explanation depth (concise / standard / didactic) and adaptive teaching (auto-detect / always / off) values; if none exists, proceed with defaults — standard depth, auto-detect teaching. The walkthrough preference does not apply here — quick has no ledger or slices to walk through. The preference ask belongs to `/plan` only.
+
 Restate in one or two sentences:
 
 - **Goal** — what changes.
 - **Visible success** — how the user will see it worked: a screen state, a command output, a passing test.
 
-If either is unclear, ask exactly one question. Otherwise state both as assumptions and start.
+If either is unclear, ask exactly one question. Otherwise state both as assumptions and start. Distinguish two kinds of unclear: vague (you can't tell *what* to change — the one question resolves it) from knowledge-poor (the request contradicts current standard practice, or the operator can't say what their ask involves). On knowledge-poor evidence — honoring the teaching preference — briefly explain the terrain and recommend the standard path with the why before starting; this replaces blind execution, it adds no mandatory exchange. Guard: never fire when the operator demonstrates knowledge — this is teaching, not gatekeeping.
 
 ## 2. Substantiality check
 

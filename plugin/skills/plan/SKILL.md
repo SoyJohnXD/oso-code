@@ -27,6 +27,16 @@ If found, retrieve it, report the recorded position (phase or slice), and contin
 Runtime state is per session and does not survive a restart. When resuming into execution, re-arm it before touching code:
 `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set mode=plan active_slice=<current> verify_green=false`
 
+Read operator preferences alongside the index: `mem_search(query: "oso/preferences")` → `mem_get_observation(id)` for full content (the 300-char preview gotcha applies). On resume (preferences exist), apply them silently — never re-ask.
+First run — no `oso/preferences` observation yet (mirror "create oso/index if it doesn't exist yet"): before phase 1, ask ONE round of three preference questions:
+
+- **E2E walkthrough before execution** — always / never / offer each time.
+- **Explanation depth** — concise / standard / didactic.
+- **Adaptive teaching** — auto-detect / always / off.
+
+Then save once: `mem_save(title: "oso/preferences — operator behavior preferences", topic_key: "oso/preferences", type: "preference", capture_prompt: false, scope: personal, content: the three values + date)`. One observation, upserted — later changes go through `mem_update` (merge, never overwrite), same discipline as oso/index. Scope is honest: per-machine ($HOME), not per-person.
+Natural-language updates: whenever the operator asks to change a preference ("cambia mi preferencia de walkthrough a siempre"), update oso/preferences via `mem_update` and confirm — no ceremony.
+
 ## 1. Intent
 
 Understand WHAT the user wants, one abstraction level above code. No stack talk, no file names, no how.
@@ -36,6 +46,8 @@ Produce and show:
 - **Intent** — two or three sentences.
 - **In-scope / Out-of-scope** — explicit lists.
 - **Visible outcome** — what exists when this is done that does not exist today.
+
+Present at the operator's explanation-depth preference (concise / standard / didactic). When the request shows a knowledge gap — it contradicts current standard practice, or the operator can't say what their ask involves, or can't answer a decision question — briefly explain the terrain and recommend the standard path with the why before iterating, honoring the teaching preference (auto-detect / always / off). Guard: never fire when the operator demonstrates knowledge — this is teaching, not gatekeeping.
 
 Iterate until the user approves the intent. Do not advance without approval.
 
@@ -102,7 +114,17 @@ Update the index so this change surfaces on first search: create `oso/index` if 
 Then initialize the runtime state:
 `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set mode=plan verify_green=false`
 
-## 5. Execution — one slice at a time, delegated
+## 5. Walkthrough — end-to-end, before execution
+
+Honor the walkthrough preference: **always** → deliver it; **offer each time** → say so and offer it, the user decides; **never** → skip silently. When delivered, cover, at the operator's chosen depth:
+
+1. **The end-to-end narrative** — how the built thing works when done: the journey of a request / data / user through the resulting system.
+2. **The slice map** — which slice builds which part of that journey.
+3. **Risks and the frozen ledger decisions** that shape the design.
+
+Then answer questions until the operator says ready — execution does not start before that. The walkthrough explains; it never reopens decisions. A decision the operator wants to reopen goes through the ledger like any blocked question would.
+
+## 6. Execution — one slice at a time, delegated
 
 You (the orchestrator) never write code during execution. Each slice runs through fresh-context subagents; you manage the state, the ledger, and the human.
 
@@ -118,7 +140,7 @@ For the active slice:
 
 Never run two slices at once. Never start slice N+1 while slice N is red. Small fixes are never applied inline "to save time" — they go through a subagent like everything else.
 
-## 6. Close — when the user says they are happy
+## 7. Close — when the user says they are happy
 
 1. Activate the sweep as a slice: `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set active_slice=debt-sweep verify_green=false`.
 2. **Judge (subagent)** — INVOKE the `oso-code:debt-sweep` skill through the Skill tool; it runs in its own forked subagent. Never perform the sweep yourself in this conversation — an orchestrator sweeping its own change has no fresh eyes. It returns `clean` or a findings list.

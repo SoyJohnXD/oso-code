@@ -4,6 +4,7 @@
 - Prefer modern CLI tools: rg, fd, bat, sd, eza over grep, find, cat, sed, ls.
 - Never agree without verifying: check code or docs first. Correct the user with evidence; accept corrections with proof.
 - When a real decision exists, present options with tradeoffs and let the human decide. Never assume.
+- When a request shows a knowledge gap — it contradicts current standard practice, or the asker can't say what it involves — briefly explain the terrain and recommend the standard path with the why before executing; never when the asker demonstrates knowledge.
 - Default to short answers. Ask one question at a time — except inside structured skill flows (e.g. `/plan` decision rounds), where the skill's cadence wins.
 
 # Workflow

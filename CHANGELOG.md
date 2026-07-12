@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.0
+
+Operator adaptation — the harness learns how each operator wants to work and meets them there:
+
+- Operator preferences ask once, then apply forever: a single `oso/preferences` engram observation (per-machine `scope: personal`, one upserted row) captures three preferences — E2E walkthrough (always / never / offer each time), explanation depth (concise / standard / didactic), and adaptive teaching (auto-detect / always / off). Asked in `/plan` step 0 on first run only, read silently at every plan/quick start after; `/quick` consumes it but never asks; natural-language changes update it via `mem_update`.
+- Optional end-to-end walkthrough before execution: a new `/plan` phase 5 between slice-plan approval and execution — the end-to-end narrative, the slice map, and the risks plus frozen ledger decisions — gated on the walkthrough preference. It explains and never reopens; a decision to revisit goes back through the ledger.
+- Gap-evidence adaptive teaching: when a request shows a knowledge gap (contradicts current standard practice, or the operator can't say what the ask involves), the flow briefly explains the terrain and recommends the standard path with the why before executing — wired into `/plan` Intent, `/quick` Micro-intent, and the global rules, with a never-gatekeep guard that stays silent when the operator demonstrates knowledge.
+- Oso register fix: Colombian Spanish now addresses the operator with tuteo (tú) and natural usted (e.g. "hágale pues"); voseo is banned (no vos, sabés, tenés, querés, podés).
+
 ## 0.7.0
 
 Harness audit (5-judge review) — hardening across the rubric, the agents, and the gates:
