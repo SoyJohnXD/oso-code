@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.7.0
+
+Harness audit (5-judge review) — hardening across the rubric, the agents, and the gates:
+
+- Rubric gains operational anchors: soft-trigger thresholds (parameter count, function length, nesting → written justification, never mechanical gates), a countable hard blocker (an abstraction with fewer than two real callers unless a frozen ledger decision names it), file-level single-responsibility, and a stack-translation clause (idioms named in TS/JS, applied in the host language's equivalent).
+- Agents rewired: `oso-applier` and `oso-verifier` carry the full rubric; context7 is wired into executable prompts (applier never-guess-a-signature contract, plan/quick decisions verified against current docs); the verifier returns a three-state verdict.
+- `/plan` decision rounds close through pre-freeze gates: a battery→ledger reconciliation checklist, an assumption register, and YAGNI citations before the human freezes the ledger.
+- `/quick` quality pass now covers the full rubric bar, not a reduced subset.
+- Debt-sweep findings are severity-tiered.
+- Hooks: wrapper-bypass fix, stale-lock recovery, `log_event` deduplication, and fd-free verify (no `fd` dependency in the verify path).
+- Bootstrap: unified CLAUDE.md budget across the install block.
+- Cadence precedence: one-question-at-a-time yields to a structured skill's own cadence (e.g. `/plan` decision rounds).
+
 ## 0.6.0
 
 - `/plan` gains a Surface mapping phase between Intent and Decision rounds: up to 3 parallel `Explore` subagents build an evidence-based map of what the change touches, and the question battery is generated from that map — every question must cite the code evidence and the consequence of leaving it undecided. The decision-rounds category table is demoted from question generator to blind-spot audit floor, with a fallback to it only when exploration surfaces nothing.

@@ -9,23 +9,31 @@ The rubric serves readability; readability never serves the rubric.
 - Every finding must state the concrete readability win of its fix. A finding justified only by "the rule says so" is not a finding — drop it.
 - If applying a rule makes the code harder to read, do not apply it, and record why in the report.
 - Verify before flagging: read the surrounding code and confirm the "violation" is not already the clearest available shape.
+- Soft triggers, never gates: more than 3–4 positional parameters, a function past roughly 40 lines, or nesting past 3 levels demands a written justification in the report — the justification may win, but it must be written. These are review triggers, never mechanical fails.
+- The idioms below are named in TS/JS terms as examples; apply the host language's equivalent (sum types, enums-with-data, the language's standard doc-comment form) and never flag code for lacking a construct the language does not have. Where public-API doc comments are the language convention (Python docstrings, Rust doc comments), the over-documentation rule targets redundant inline comments, not conventional API docs.
 
 ## Hard blockers — any one fails the gate; the judgment contract cannot override these
 
 - A hardcoded secret, credential, token, or private key.
 - An error swallowed silently or replaced by a generic catch-all that loses the cause.
-- A new abstraction (wrapper, factory, registry, config object) with no current caller.
+- A new abstraction (wrapper, factory, registry, config object) with fewer than two real callers or implementations, unless a frozen ledger decision explicitly names that abstraction. A writer wiring up its own single caller does not clear this.
 
 ## File level — check every touched file
 
 - Names carry domain intent and read without opening the body; no vague generics (`data`, `item`, `handler`, `utils`) and no type-echo noise words.
 - Files read top-down (step-down): high-level function first as a table of contents, steps below in call order, one abstraction level per function.
+- Single responsibility: a function does one thing at one abstraction level; a module has one reason to change — if its purpose can't be named without "and", it is two things.
 - Guard clauses over nested decisions; control flow stays flat — never a pyramid.
 - No magic values: behavior-changing literals are named once, at the narrowest scope that covers all their uses. Over-extraction is a violation too:
   - Only behavior-changing literals earn a name — never one-use or self-evident values.
   - A constant lives next to its use; a pile of constants hoisted to the top of the file "for order" is the violation, not the fix.
   - Compose constants from existing ones (`` `${API_BASE}/users` ``) instead of repeating a value fragment across several.
   - Before creating a constant, search for an existing one with the same value and meaning — reuse it or compose from it.
+  - Contrastive example (over-extraction):
+    - Before: `const ZERO = 0; const ONE = 1; return items.slice(ZERO, ONE)` — self-evident values given ceremonial names.
+    - After: `return items.slice(0, 1)` — the literals read plainly; no name earns its keep.
+    - Before (earns a name): `if (retries > 3) abort()` repeated in five call sites.
+    - After: `const MAX_RETRIES = 3` next to its first use — behavior-changing, repeated, so the name pays off.
 - Prefer the language's modern idioms when they read better: optional chaining, nullish coalescing, spread/rest, destructuring, and array methods over manual loops and if-ladders. Guard clauses flatten control flow — they are not a mandate to expand a clear expression into a chain of ifs.
 - No long positional parameter lists; use a parameter object, and model data clumps as named types.
 - Illegal states are unrepresentable: mutually exclusive variants are discriminated unions, not boolean flags or optional fields.
@@ -50,4 +58,9 @@ The rubric serves readability; readability never serves the rubric.
   - JSDoc is the exception, not a habit: only on code whose behavior or contract cannot be made obvious from names and types alone (non-trivial algorithms, surprising edge semantics like float rounding, external or legal constraints).
   - When JSDoc is earned, use the standard shape: one-line description, then `@param`/`@returns` only where they add meaning beyond the types (units, ranges, invariants).
   - A why-shaped sentence over self-evident code is still a WHAT comment — dressing noise as rationale does not save it. If a one-line function needs a comment, fix the name instead.
+  - Contrastive example (WHAT dressed as WHY):
+    - Before: `// increment the counter by one` above `counter += 1` — restates the code.
+    - Also before: `// we increment here so the total stays in sync` — why-shaped, but the sync is already obvious from context; still noise.
+    - After: no comment; the statement speaks for itself.
+    - Earned WHY: `// vendor API rejects batches over 500, so we page` — an external constraint the code cannot show.
   - Scarcity check: if most exports in a file carry JSDoc, that is over-documentation and a violation in itself.

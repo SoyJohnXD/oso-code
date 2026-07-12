@@ -22,17 +22,17 @@ Only these files are in scope. Never touch anything else.
 
 ## 1. Verify
 
-1. Read the full rubric at `${CLAUDE_SKILL_DIR}/../_shared/rubric.md` — all three sections apply here: file level per changed file, system level and debt markers across the whole change.
+1. Read the full rubric at `${CLAUDE_SKILL_DIR}/../_shared/rubric.md` — all five sections apply here: the **Judgment contract** governs every finding, **Hard blockers** and **File level** per changed file, **System level** and **Debt markers** across the whole change.
 2. If the project is TypeScript/JavaScript, load the fallow tools via ToolSearch (`find_dupes`, `get_cleanup_candidates`, `audit`) and run them on the changed files. If fallow is unavailable or the stack does not apply, state that the sweep is rubric-only and continue.
-3. Run the project's zero-warnings bar: lint, types, tests, build.
+3. Run the project's zero-warnings bar: the checks recorded in the ledger, or discovered from the project otherwise — lint, types, tests, build, or whatever the project defines.
 
-Collect findings as `file:line — violation — the concrete readability win of fixing it` (per the rubric's judgment contract, a finding without its win is not a finding).
+Collect findings as `file:line — [severity: blocker|structural|nit] — violation — the concrete readability win of fixing it` (per the rubric's judgment contract, a finding without its win is not a finding). Blocker for Hard-blocker-class debt, structural for file- and system-level shape, nit for cosmetic wins.
 
 ## 2. Report
 
 End with exactly one of:
 
 - `Debt Sweep: clean` — no findings; the change ships as is.
-- `Debt Sweep: findings` — the complete list, grouped by rubric section, each with file:line and its readability win.
+- `Debt Sweep: findings` — the complete list ordered by severity (blocker first, then structural, then nit), each with file:line, its severity tier, and its readability win.
 
 Always list separately any functional bugs found (reported, never fixed here — they are not sweep material). Save nothing to engram — the orchestrator owns persistence. Your final message is data for the orchestrator, not prose for a user.

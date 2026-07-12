@@ -15,6 +15,11 @@ BACKUP_DIR="${HOME}/.local/state/oso-code/backup-$(date +%Y%m%d-%H%M%S)"
 MARKER_START="<!-- oso-code:start -->"
 MARKER_END="<!-- oso-code:end -->"
 
+# Context budget for the global CLAUDE.md: 8000 bytes ≈ 2k tokens.
+# Keep this identical to CLAUDE_MD_BUDGET_BYTES in bootstrap/verify.sh — the
+# two scripts run standalone via curl and cannot source a shared file.
+CLAUDE_MD_BUDGET_BYTES=8000
+
 ASSUME_YES=false
 REPLACE_CLAUDE_MD=false
 for arg in "$@"; do
@@ -192,7 +197,7 @@ merge_global_claude_md() {
 
   local size
   size="$(wc -c < "$target")"
-  if [ "$size" -gt 12000 ]; then
+  if [ "$size" -gt "$CLAUDE_MD_BUDGET_BYTES" ]; then
     info "WARNING: CLAUDE.md is still ${size} bytes — review the non-oso content; every session pays for it"
   fi
 }

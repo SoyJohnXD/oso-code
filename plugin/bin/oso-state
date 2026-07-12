@@ -12,6 +12,9 @@
 #   oso-state --session <id> clear
 set -euo pipefail
 
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$BIN_DIR/../hooks/lib.sh"
+
 usage() {
   echo "usage: oso-state --session <id> {set key=value... | get key | show | clear}" >&2
   exit 1
@@ -27,10 +30,26 @@ shift || true
 state_dir="${HOME}/.local/state/oso-code"
 state_file="${state_dir}/${session_id}.state"
 lock_dir="${state_file}.lock"
+# A writer killed mid-write leaves its lock forever; reclaim it after this long.
+lock_stale_seconds=30
+
+lock_is_stale() {
+  local mtime now
+  mtime="$(stat -c %Y "$lock_dir" 2>/dev/null || stat -f %m "$lock_dir" 2>/dev/null)" || true
+  [ -n "$mtime" ] || return 1
+  now="$(date +%s)"
+  [ "$((now - mtime))" -ge "$lock_stale_seconds" ]
+}
 
 acquire_lock() {
-  local tries=0
+  local tries=0 reclaimed=false
   until mkdir "$lock_dir" 2>/dev/null; do
+    if [ "$reclaimed" = false ] && lock_is_stale; then
+      # A SIGKILL'd writer never runs its EXIT trap — reclaim the stale lock once.
+      rmdir "$lock_dir" 2>/dev/null || true
+      reclaimed=true
+      continue
+    fi
     tries=$((tries + 1))
     if [ "$tries" -gt 200 ]; then
       echo "oso-state: could not acquire lock for session ${session_id}" >&2
@@ -39,11 +58,6 @@ acquire_lock() {
     sleep 0.05
   done
   trap 'rmdir "$lock_dir" 2>/dev/null || true' EXIT
-}
-
-log_event() {
-  printf '{"ts":"%s","event":"%s","session":"%s"}\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$session_id" >> "${state_dir}/events.jsonl"
 }
 
 case "$action" in
@@ -61,7 +75,7 @@ case "$action" in
       mv "$next" "$tmp"
     done
     mv "$tmp" "$state_file"
-    log_event "set:$*"
+    log_event "set:$*" "$session_id"
     ;;
   get)
     [ $# -eq 1 ] || usage
@@ -74,7 +88,7 @@ case "$action" in
     mkdir -p "$state_dir"
     acquire_lock
     rm -f "$state_file"
-    log_event clear
+    log_event clear "$session_id"
     ;;
   *)
     usage

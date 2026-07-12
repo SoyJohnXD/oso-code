@@ -13,7 +13,7 @@ Guided flow for substantial changes. The human decides; you guide, present optio
 ## Ground rules for the whole flow
 
 - Phases 1–4 run inside Plan Mode (read-only). Enter it before phase 1 and stay in it until the slice plan is approved.
-- Question rounds: 3–5 questions maximum per round, each with 2–4 concrete options and their tradeoffs. Put your recommendation first and say why it wins.
+- Question rounds: 3–5 questions maximum per round, each with 2–4 concrete options and their tradeoffs. Put your recommendation first, say why it wins, and state whether it is current standard practice; when the choice involves an external library, framework API, or well-trodden pattern, verify against current docs (context7) before recommending.
 - If phase 1 reveals the change is actually small, say so and offer `oso-code:quick`. The user decides.
 - Engram gotcha: `mem_search` returns 300-char previews — always call `mem_get_observation(id)` for full content.
 - Runtime gates: plugin hooks deny `git commit` while `verify_green` is false and deny file edits while no slice is active. Keep the session state honest with the `oso-state` commands below — they are what unlocks those gates.
@@ -49,7 +49,7 @@ Goal: turn the approved intent into a map of what the change actually touches, b
 4. Generate the question battery from the map. Every question must cite the code evidence that motivates it and the consequence of not deciding it. "Do we need auth?" fails the bar; "this endpoint doesn't validate tenant and the new field exposes billing data — scope by role or by tenant?" passes.
 5. Prioritize the battery blocking-decisions-first. It feeds Decision rounds at the existing 3–5 questions per round.
 
-Fallback: if exploration surfaces nothing clear, fall back to the category table as the question generator — a template question beats silence.
+Fallback: if exploration surfaces nothing clear, fall back to the category table as the question generator — a template question beats silence. Even a fallback question must state the consequence of leaving it undecided; only the evidence citation is waived, never the consequence.
 
 Exit: every surface has questions in the battery, or an explicit N/A.
 
@@ -59,7 +59,7 @@ Goal: after this phase, execution requires zero assumptions.
 
 The question battery from Surface mapping is the source of questions here; the category table below is an audit floor, not a generator — it confirms nothing was missed, it does not originate rounds. Open the first round with the surface map and its audited N/As shown as a header; there is no separate approval gate for the map itself.
 
-Run rounds until every category below is decided or explicitly marked not applicable:
+Run rounds until every category below is decided or explicitly marked not applicable with a recorded reason in the ledger:
 
 | Category | Covers |
 |---|---|
@@ -69,7 +69,7 @@ Run rounds until every category below is decided or explicitly marked not applic
 | Errors | Expected failures, empty/invalid states, what the user sees when things break |
 | UX behavior | Flows, loading/error states — when the change has a user surface |
 | Security | Authn/authz, data exposure — when applicable |
-| Verification | What proves each part works, and this project's zero-warnings bar: the exact lint, type, test, and build commands |
+| Verification | What proves each part works, and this project's zero-warnings bar: which of lint, type, test, build, and run checks EXIST in this project — record the exact commands and mark the rest N/A |
 | Reuse | Existing code and primitives the change must use instead of recreating |
 
 Rules:
@@ -77,7 +77,9 @@ Rules:
 - Enumerable choices get options with tradeoffs, never open-ended questions.
 - Record every decision in the ledger: the decision, the rationale, the alternatives rejected.
 - The user may delegate a decision ("you pick") — record it as delegated, with your rationale.
-- Exit only when the user declares the ledger frozen.
+- Before freeze, every ledger entry cites the in-scope item or Visible-outcome element it serves; entries that serve only a future need are listed as YAGNI candidates for the user to cut or explicitly keep.
+- Freeze is a reconciliation gate, not a bare exit. Before accepting "frozen", render the question battery as a reconciliation checklist: every battery question maps to a ledger decision, a delegated mark, or an N/A with a reason. Refuse the freeze while any row is unmapped ("N questions unresolved; answer, delegate, or dismiss with a reason before freezing").
+- At the freeze attempt, state anything still open as an explicit assumption: "If you freeze now, I will have to assume: X → I'd pick Y because Z." The user either answers it or freezes over the named assumption — recorded in the ledger as delegated.
 
 On freeze, save the ledger once:
 `mem_save(title: "oso/{change}/ledger — {human description}", topic_key: "oso/{change}/ledger", type: "architecture", capture_prompt: false, content: intent + surface map + scope + every ledger entry)`
@@ -108,9 +110,10 @@ For the active slice:
 
 1. **Activate** — `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set active_slice=<n> verify_green=false`.
 2. **Apply (subagent)** — launch the `oso-applier` agent with: the slice (goal, files, verify criteria), every ledger decision relevant to it, the project conventions, and the rubric path (`${CLAUDE_SKILL_DIR}/../_shared/rubric.md`).
-   - If it returns `blocked`: resolve each question with the user (options with tradeoffs, recommendation first), record the answers in the ledger (`mem_update`), then launch a FRESH applier to complete the slice with the updated ledger. Never answer on the user's behalf. Never finish the slice inline.
-3. **Verify (subagent)** — launch the `oso-verifier` agent with the slice criteria and the zero-warnings commands from the ledger. It reruns everything itself and returns a verdict with evidence (commands, exit codes, criteria observations).
+   - If it returns `blocked`: resolve each question with the user (options with tradeoffs, recommendation first), record the answers in the ledger (`mem_update`); then check whether any answer reveals a new surface or category — if it does, append it and its questions to the ledger before relaunching. Launch a FRESH applier to complete the slice with the updated ledger. Never answer on the user's behalf. Never finish the slice inline.
+3. **Verify (subagent)** — launch the `oso-verifier` agent with the slice criteria, the zero-warnings commands from the ledger, the rubric path (`${CLAUDE_SKILL_DIR}/../_shared/rubric.md`), and the ledger decisions relevant to the slice (so it can check for unledgered abstractions). It reruns everything itself and returns a verdict with evidence (commands, exit codes, criteria observations).
    - On `fail`: relaunch the applier with the verifier's findings. Loop apply → verify until it passes.
+   - On `blocked` (cannot verify: broken environment, missing commands): resolve the blocker with the user, then relaunch the verifier — do NOT relaunch the applier for a verifier-side blocker.
 4. Only on the verifier's `pass`: `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set verify_green=true`, mark the slice `[x]` (`mem_update` on the plan topic key — merge, never overwrite), report the result to the user, and move to the next slice.
 
 Never run two slices at once. Never start slice N+1 while slice N is red. Small fixes are never applied inline "to save time" — they go through a subagent like everything else.
@@ -119,7 +122,7 @@ Never run two slices at once. Never start slice N+1 while slice N is red. Small 
 
 1. Activate the sweep as a slice: `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set active_slice=debt-sweep verify_green=false`.
 2. **Judge (subagent)** — INVOKE the `oso-code:debt-sweep` skill through the Skill tool; it runs in its own forked subagent. Never perform the sweep yourself in this conversation — an orchestrator sweeping its own change has no fresh eyes. It returns `clean` or a findings list.
-3. **Fix (subagent)** — on findings, launch the `oso-applier` agent with the findings list as a cleanup assignment: smallest edit per finding, readability and semantics only, never behavior. Then re-invoke `oso-code:debt-sweep` to confirm. Loop judge → fix until `clean`.
+3. **Fix (subagent)** — on findings, launch the `oso-applier` agent with the findings list as a cleanup assignment: the smallest edit that FULLY resolves each finding — behavior-preserving; structural findings may span files. Then re-invoke `oso-code:debt-sweep` to confirm. Loop judge → fix until `clean`.
 4. Only on `clean`: `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set verify_green=true`.
 5. Update the change's `oso/index` row to `status: done` (`mem_update`, merge — never overwrite other rows).
 6. Save a session summary to engram with a rich title (`"oso/{change}/summary — {human description}"` pattern) so it surfaces on first search. Do not save phase artifacts, explorations, or verbose progress.

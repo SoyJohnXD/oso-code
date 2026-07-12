@@ -14,9 +14,9 @@ Align finished, working code with the team's quality bar. Scope: code touched in
 
 ## 1. Verify
 
-Read the shared rubric at `${CLAUDE_SKILL_DIR}/../_shared/rubric.md` and check every touched file against its **File level** and **Debt markers** sections.
+Read the shared rubric at `${CLAUDE_SKILL_DIR}/../_shared/rubric.md` and check every touched file against its **Hard blockers**, **File level**, **System level**, and **Debt markers** sections. System level applies whenever the session touched more than one file or the change interacts with existing helpers or patterns. The **Judgment contract** governs how all of them are applied.
 
-Then run the project's own bar: lint, types, affected tests, and the build when it is fast. Zero warnings.
+Then run the project's own bar: the checks recorded in the ledger when in plan mode, or discovered from the project otherwise — lint, types, affected tests, build, or whatever the project defines. Zero warnings.
 
 ## 2. Apply
 

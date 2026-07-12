@@ -34,13 +34,13 @@ Before the first edit, initialize the runtime state — the commit gate stays lo
 `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set mode=quick verify_green=false`
 
 - Work in small increments that each produce a visible result (run the app, run the affected test, show output).
-- When a decision surfaces that the user has not made — a library, a contract, a UX behavior — present options with tradeoffs and let them choose. Never assume.
+- When a decision surfaces that the user has not made — a library, a contract, a UX behavior — present options with tradeoffs and let them choose. Never assume. When a decision hinges on an external library's current API, version, or migration path, check context7 before presenting options; state whether each recommendation is current standard practice.
 - Stay inside the stated goal. New wants from the user are welcome; silent scope growth is not.
 
 ## 4. Close — when the user says it's done
 
 1. Invoke the `oso-code:quality-pass` skill on the touched code.
-2. Zero warnings: lint, types, and affected tests must be clean before declaring done.
+2. Zero warnings: the project's own checks — discovered from the project — must be clean before declaring done.
 3. When the quality pass reports passed, unlock the commit gate:
    `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set verify_green=true`
 4. Save to engram only: a session summary with a rich title (descriptive, with domain keywords, so it surfaces on first search), plus any non-obvious discovery or convention learned. Do not save iterations or progress.

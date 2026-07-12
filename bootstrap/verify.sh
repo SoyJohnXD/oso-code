@@ -7,6 +7,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 CLAUDE_DIR="${HOME}/.claude"
 
+# Context budget for the global CLAUDE.md: 8000 bytes ≈ 2k tokens.
+# Keep this identical to CLAUDE_MD_BUDGET_BYTES in bootstrap/install.sh — the
+# two scripts run standalone via curl and cannot source a shared file.
+CLAUDE_MD_BUDGET_BYTES=8000
+
 pass=0
 fail=0
 
@@ -43,19 +48,19 @@ check "legacy artifacts removed" "0" "$legacy_left"
 gentle_hooks="$(grep -cE 'check-plan-contract|clean-code-gate|skill-registry-refresh|gentle-ai' "$CLAUDE_DIR/settings.json" 2>/dev/null || true)"
 check "settings.json free of gentle hooks" "0" "$gentle_hooks"
 
-# 5. Global CLAUDE.md within the context budget (< 2000 bytes ≈ well under 2k tokens)
+# 5. Global CLAUDE.md within the context budget (< 8000 bytes ≈ 2k tokens)
 md_size="$(wc -c < "$CLAUDE_DIR/CLAUDE.md")"
-check "CLAUDE.md under budget" "1" "$([ "$md_size" -lt 2000 ] && echo 1 || echo 0)"
+check "CLAUDE.md under budget" "1" "$([ "$md_size" -lt "$CLAUDE_MD_BUDGET_BYTES" ] && echo 1 || echo 0)"
 echo "      CLAUDE.md size: ${md_size} bytes"
 
 # 6. Installed hook binaries are executable and functional from the INSTALL path
 #    (not the repo) — exercises the exact files new sessions will run.
 install_root="$(claude plugin list 2>/dev/null | grep -A5 'oso-code' | grep -oE '/[^ ]*oso-code[^ ]*' | head -1 || true)"
 if [ -z "$install_root" ]; then
-  install_root="$(fd -t d -d 4 'oso-code' "$CLAUDE_DIR/plugins/cache" 2>/dev/null | head -1 || true)"
+  install_root="$(find "$CLAUDE_DIR/plugins/cache" -maxdepth 4 -type d -name '*oso-code*' 2>/dev/null | head -1 || true)"
 fi
 if [ -n "$install_root" ]; then
-  hook="$(fd 'block-commit-until-green.sh' "$install_root" 2>/dev/null | head -1 || true)"
+  hook="$(find "$install_root" -name 'block-commit-until-green.sh' 2>/dev/null | head -1 || true)"
   if [ -n "$hook" ] && [ -x "$hook" ]; then
     tmp_home="$(mktemp -d)"
     mkdir -p "$tmp_home/.local/state/oso-code"

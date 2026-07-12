@@ -8,6 +8,8 @@ Frozen design for the oso-code harness. Amendments require a new decision, not a
 
 - 2026-07-02, after adversarial review: hooks are pure bash (no runtime jq dependency) and log every gate event to `~/.local/state/oso-code/events.jsonl`; the commit matcher is tokenized (flag-tolerant, quote-safe); `oso-state` writes are lock-protected and atomic; `/plan` re-arms runtime state on resume; on PR creation the frozen ledger and slice summary are copied into the PR body (engram remains the store of record); the rubric regains a hard-blockers floor (secrets, swallowed errors, callerless abstractions). Platform facts verified against docs and this machine: the model can enter Plan Mode itself (`EnterPlanMode` tool, not available to subagents), and the session env var is `CLAUDE_CODE_SESSION_ID`.
 
+- 2026-07-11, harness audit (5-judge review): four frozen-section corrections. (a) Runtime state — the *Hooks* section's `session.json` claim is stale: state lives in per-session flat files `~/.local/state/oso-code/<sanitized-session>.state` (key=value lines, one file per session), not a single JSON blob. (b) context7 policy — the *Tool policy* table's "Never: By default" fence is replaced by concrete trigger points: context7 is now wired into executable prompts — the `oso-applier` (frontmatter tools plus a never-guess-a-signature contract) and the `/plan` decision rounds / `/quick` iterate steps (library-dependent decisions verified against current docs before recommending). (c) Rubric thresholds — the rubric now carries soft-trigger thresholds (parameter count, function length, nesting → written justification, never mechanical gates), one countable hard blocker (an abstraction with fewer than two real callers unless a frozen ledger decision names it), file-level single-responsibility, and a stack-translation clause (idioms named in TS/JS, applied in the host language's equivalent). (d) Pre-freeze gates — decision rounds now close through a battery→ledger reconciliation checklist, an assumption register, and YAGNI citations before the human freezes the ledger.
+
 - 2026-07-06, plan flow: `/plan` gains a Surface mapping phase between Intent and Decision rounds — up to 3 parallel `Explore` subagents build an evidence-based map of what the change touches from the approved intent, and generate the question battery from that map; the Decision-rounds category table is demoted from question generator to blind-spot audit floor, and falls back to generating questions only when exploration surfaces nothing. Every question in the battery must cite the code evidence that motivates it and the consequence of leaving it undecided. Engram recall gains a convention: a single `oso/index` observation (one upserted row per change: description + `status: executing` at Slicing, `status: done` at Close) so resuming a change means searching the index first instead of guessing topic keys, with a direct topic-key search as fallback when the index doesn't exist yet. Every `mem_save` on a ledger, plan, or summary now carries a rich title (`{topic key} — {human description}`). `/quick` summaries follow the same rich-title rule but are never added to the index — quick changes don't need cross-session discovery.
 
 ## Foundational decisions
@@ -45,14 +47,14 @@ Planning runs entirely in native Plan Mode (read-only, harness-enforced), entere
 
 - Block `git commit` while the slice/session verify is not green.
 - Block Edit/Write in mode 1 when no slice is active.
-- Runtime flags live in `~/.local/state/oso-code/session.json` (ephemeral, outside projects, deleted on close). Hooks read booleans from it; they never inspect model output.
+- Runtime flags live in per-session flat files `~/.local/state/oso-code/<sanitized-session>.state` (key=value lines, one file per session; ephemeral, outside projects, deleted on close). Hooks read booleans from them; they never inspect model output.
 
 ## Tool policy
 
 | Tool | When | Never |
 |---|---|---|
 | fallow | Debt-sweep only, loaded by the debt-sweep subagent | Planning, slice verify, main context |
-| context7 | A slice touches an external library and the API is in doubt | By default |
+| context7 | Wired into executable prompts: the `oso-applier` (never-guess-a-signature contract) and the `/plan` decision rounds / `/quick` iterate steps verify library-dependent decisions against current docs before recommending | Restating docs the code already makes obvious |
 | engram | Frozen decision ledger (one save), plan state (one upserted topic key), `oso/index` recall row (one upserted key per change, `status: executing` → `status: done`), session summary and discovered conventions/gotchas — all under rich titles (`{topic key} — {human description}`) | Explorations, intermediate phase artifacts, verbose progress |
 
 ## Bootstrap responsibilities

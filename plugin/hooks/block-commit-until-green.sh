@@ -14,7 +14,30 @@ session_id="$(sanitize_session "$(json_field "$input" session_id)")"
 # newline), tolerating flags with or without values (-C /repo, -c k=v, --opt=x).
 # Quoted mentions like `echo "git commit"` or `rg "git commit"` do not match.
 commit_pattern='(^|[;&|(]|\\n)[[:space:]]*(command[[:space:]]+)?git([[:space:]]+-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?)*[[:space:]]+commit([[:space:]&;|)\\]|$)'
-[[ "$command" =~ $commit_pattern ]] || exit 0
+
+# Execution wrappers run their argument as a fresh command line, so a commit
+# hidden in the payload still executes: bash -c '…git commit…', sh -c, eval, xargs.
+wrapper_pattern='(^|[;&|(]|\\n)[[:space:]]*(bash[[:space:]]+-c|sh[[:space:]]+-c|eval|xargs)[[:space:]]'
+
+is_commit() { [[ "$1" =~ $commit_pattern ]]; }
+
+# Drop everything up to the last wrapper token, then the surrounding quotes,
+# leaving the payload the wrapper would run so the same matcher can vet it.
+# json_field returns the value un-unescaped, so a double-quoted wrapper argument
+# reaches us as \"…\" (backslash-quote). Strip the escaped quotes before the bare
+# ones — otherwise the residual backslash shields git from the boundary anchor.
+unwrap_payload() {
+  local payload
+  payload="$(printf '%s' "$1" | sed -E 's/.*(bash[[:space:]]+-c|sh[[:space:]]+-c|eval|xargs)[[:space:]]+//')"
+  payload="${payload//\\\"/}"
+  payload="${payload//\'/}"
+  printf '%s' "${payload//\"/}"
+}
+
+if ! is_commit "$command"; then
+  [[ "$command" =~ $wrapper_pattern ]] || exit 0
+  is_commit "$(unwrap_payload "$command")" || exit 0
+fi
 
 state_file="${HOME}/.local/state/oso-code/${session_id}.state"
 # No state file means no oso-code mode is active in this session.

@@ -52,6 +52,21 @@ assert_allows "no false positive: quoted rg"    block-commit-until-green.sh "$(b
 assert_allows "no false positive: git checkout" block-commit-until-green.sh "$(bash_input 'git checkout -b commit')"
 assert_allows "non-commit bash is ignored"      block-commit-until-green.sh "$(bash_input 'npm test')"
 
+# --- Commit gate: execution-wrapper bypasses (state still red) ---
+assert_denies "bypass: bash -c wraps commit" block-commit-until-green.sh "$(bash_input 'bash -c '\''git commit -m x'\''')"
+assert_denies "bypass: sh -c wraps commit"   block-commit-until-green.sh "$(bash_input 'sh -c '\''git commit -m x'\''')"
+assert_denies "bypass: eval wraps commit"    block-commit-until-green.sh "$(bash_input 'eval '\''git commit -m x'\''')"
+assert_denies "bypass: piped into xargs git commit" block-commit-until-green.sh "$(bash_input 'git diff --name-only | xargs git commit -m x')"
+assert_allows "no false positive: bash -c git status" block-commit-until-green.sh "$(bash_input 'bash -c '\''git status'\''')"
+assert_allows "no false positive: quoted echo"        block-commit-until-green.sh "$(bash_input 'echo \\"git commit\\"')"
+
+# Double-quoted wrappers reach the hook JSON-escaped (\"…\") the way the harness
+# sends them; the payload matcher must see through the escaped quotes too.
+assert_denies "bypass: bash -c wraps commit (double-quoted)" block-commit-until-green.sh "$(bash_input 'bash -c \"git commit -m x\"')"
+assert_denies "bypass: sh -c wraps commit (double-quoted)"   block-commit-until-green.sh "$(bash_input 'sh -c \"git commit -m x\"')"
+assert_denies "bypass: eval wraps commit (double-quoted)"    block-commit-until-green.sh "$(bash_input 'eval \"git commit -m x\"')"
+assert_allows "no false positive: bash -c git status (double-quoted)" block-commit-until-green.sh "$(bash_input 'bash -c \"git status\"')"
+
 # --- Slice gate ---
 oso-state --session "$SESSION" clear
 assert_allows "edit with no state file" block-edits-without-slice.sh "$edit_input"
@@ -81,6 +96,18 @@ else
 fi
 oso-state --session "$SESSION" clear
 
+# --- Stale lock: a crashed writer's lock is reclaimed, not fatal ---
+stale_lock="$HOME/.local/state/oso-code/$SESSION.state.lock"
+mkdir -p "$stale_lock"
+touch -t 200001010000 "$stale_lock"
+oso-state --session "$SESSION" set stale_ok=yes >/dev/null 2>&1 || true
+if [ "$(oso-state --session "$SESSION" get stale_ok)" = "yes" ]; then
+  echo "ok: stale lock is reclaimed"; pass=$((pass + 1))
+else
+  echo "FAIL: stale lock blocked a write"; fail=$((fail + 1))
+fi
+oso-state --session "$SESSION" clear
+
 # --- Telemetry: denies are recorded ---
 if [ -s "$HOME/.local/state/oso-code/events.jsonl" ]; then
   echo "ok: gate events are logged"; pass=$((pass + 1))
@@ -90,11 +117,17 @@ fi
 
 # --- Session-end cleanup + path traversal safety ---
 oso-state --session "$SESSION" set mode=plan verify_green=true
+mkdir -p "$HOME/.local/state/oso-code/$SESSION.state.lock"
 printf '{"session_id":"%s"}' "$SESSION" | "$PLUGIN/hooks/cleanup-state.sh"
 if [ ! -f "$HOME/.local/state/oso-code/$SESSION.state" ]; then
   echo "ok: session end removes state"; pass=$((pass + 1))
 else
   echo "FAIL: state file survived cleanup"; fail=$((fail + 1))
+fi
+if [ ! -d "$HOME/.local/state/oso-code/$SESSION.state.lock" ]; then
+  echo "ok: session end removes leftover lock"; pass=$((pass + 1))
+else
+  echo "FAIL: lock dir survived cleanup"; fail=$((fail + 1))
 fi
 touch "$HOME/canary"
 printf '{"session_id":"../../canary"}' | "$PLUGIN/hooks/cleanup-state.sh"
