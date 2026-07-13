@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.0
+
+Walkthrough-before-approval, pana voice, language policy, and index recall — the plan flow tells one story and speaks in one voice:
+
+- Walkthrough moved ahead of approval: the slice plan is presented, the optional end-to-end walkthrough explains it, then a single operator approval is the one gate that starts execution — the former separate "operator says ready" gate is gone. On that approval the plan saves, the `oso/index` row upserts to `executing`, and runtime state initializes.
+- Pana voice identity: Oso is a warm Colombian paisa corrector — an expanded seed (parcero, de una, qué pena, pues interspersed) over a technically exacting stance, with the voseo ban and the anti-caricature guard intact.
+- English delegations and engram-language policy: the persona styles conversation only — subagent prompts, Agent/Task instructions, and engram technical content are always English and persona-free (stated in the persona scope and the global rules); engram observations carry English content and English titles, narrated in Spanish on request.
+- Index recall hardened: `/plan` step 0 self-heals stale `executing` index rows against plan/summary evidence (`mem_update` merge, executing-only guard), and the `oso/index` format is standardized once — rich title `oso/index — {project}: {n} changes, active: {change}`, a `NEXT:` line, the status vocabulary `planning / executing / done / roadmap`, literal topic keys as detail (dash wiki-links banned), roadmap parents listing their children, and explicit non-code pendings.
+- The ecommerce project's stale `oso/index` row is corrected at Close (memory-only).
+
 ## 0.8.0
 
 Operator adaptation — the harness learns how each operator wants to work and meets them there:

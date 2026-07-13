@@ -12,15 +12,16 @@ Guided flow for substantial changes. The human decides; you guide, present optio
 
 ## Ground rules for the whole flow
 
-- Phases 1–4 run inside Plan Mode (read-only). Enter it before phase 1 and stay in it until the slice plan is approved.
+- Phases 1–5 up to approval run inside Plan Mode (read-only). Enter it before phase 1 and stay in it until the slice plan is approved at the end of the walkthrough (§5).
 - Question rounds: 3–5 questions maximum per round, each with 2–4 concrete options and their tradeoffs. Put your recommendation first, say why it wins, and state whether it is current standard practice; when the choice involves an external library, framework API, or well-trodden pattern, verify against current docs (context7) before recommending.
 - If phase 1 reveals the change is actually small, say so and offer `oso-code:quick`. The user decides.
 - Engram gotcha: `mem_search` returns 300-char previews — always call `mem_get_observation(id)` for full content.
+- Engram content AND titles (`{human description}`) are written in English; Oso narrates them in Spanish when the operator asks. Applies to every save below — ledger, plan, summary.
 - Runtime gates: plugin hooks deny `git commit` while `verify_green` is false and deny file edits while no slice is active. Keep the session state honest with the `oso-state` commands below — they are what unlocks those gates.
 
 ## 0. Resume check
 
-Search engram for existing work on this change: `mem_search(query: "oso/index")`, then `mem_get_observation(id)` for the full table, and locate the row for `{change}`. Fetch its ledger and plan by topic key (`oso/{change}/ledger`, `oso/{change}/plan`).
+Search engram for existing work on this change: `mem_search(query: "oso/index")`, then `mem_get_observation(id)` for the full table. Self-heal before trusting it: for EVERY row with status `executing`, cross-check against its `oso/{change}/plan` or `oso/{change}/summary` observation; if the evidence says the change completed, fix that row via `mem_update` (merge — never overwrite other rows) before proceeding. Scope guard: cross-check only `executing` rows — never scan the whole index (startup cost). Then locate the row for `{change}` and fetch its ledger and plan by topic key (`oso/{change}/ledger`, `oso/{change}/plan`).
 Fallback when the index doesn't exist yet (first-ever use): `mem_search(query: "oso/{change}/plan")` directly.
 If found, retrieve it, report the recorded position (phase or slice), and continue from there. Never re-ask what the ledger already answers.
 
@@ -30,7 +31,7 @@ Runtime state is per session and does not survive a restart. When resuming into 
 Read operator preferences alongside the index: `mem_search(query: "oso/preferences")` → `mem_get_observation(id)` for full content (the 300-char preview gotcha applies). On resume (preferences exist), apply them silently — never re-ask.
 First run — no `oso/preferences` observation yet (mirror "create oso/index if it doesn't exist yet"): before phase 1, ask ONE round of three preference questions:
 
-- **E2E walkthrough before execution** — always / never / offer each time.
+- **E2E walkthrough before approval** — always / never / offer each time.
 - **Explanation depth** — concise / standard / didactic.
 - **Adaptive teaching** — auto-detect / always / off.
 
@@ -106,15 +107,9 @@ Each slice states:
 - **Files** — expected touch points.
 - **Verify** — which project checks plus what observable behavior proves it.
 
-Order slices by dependency. Present the plan; when the user approves, exit Plan Mode and save the plan state:
-`mem_save(title: "oso/{change}/plan — {human description}", topic_key: "oso/{change}/plan", type: "architecture", capture_prompt: false, content: slices with [ ] marks + current position)`
+Order slices by dependency and present them. Approval comes after the walkthrough (§5), not here.
 
-Update the index so this change surfaces on first search: create `oso/index` if it doesn't exist yet (`mem_save`, topic_key `oso/index`) or update it (`mem_update`, merge the table — never overwrite other rows), adding/updating the row `{change} — {human description} — status: executing`.
-
-Then initialize the runtime state:
-`oso-state --session "${CLAUDE_CODE_SESSION_ID}" set mode=plan verify_green=false`
-
-## 5. Walkthrough — end-to-end, before execution
+## 5. Walkthrough — end-to-end, before approval
 
 Honor the walkthrough preference: **always** → deliver it; **offer each time** → say so and offer it, the user decides; **never** → skip silently. When delivered, cover, at the operator's chosen depth:
 
@@ -122,7 +117,22 @@ Honor the walkthrough preference: **always** → deliver it; **offer each time**
 2. **The slice map** — which slice builds which part of that journey.
 3. **Risks and the frozen ledger decisions** that shape the design.
 
-Then answer questions until the operator says ready — execution does not start before that. The walkthrough explains; it never reopens decisions. A decision the operator wants to reopen goes through the ledger like any blocked question would.
+Q&A happens inside the walkthrough. The walkthrough explains; it never reopens decisions. A decision the operator wants to reopen goes through the ledger like any blocked question would.
+
+Then the operator approves the plan — that approval is the single gate that starts execution. When the preference is **never** and no walkthrough is delivered, the approval and the steps below still happen. On approval, exit Plan Mode and save the plan state:
+`mem_save(title: "oso/{change}/plan — {human description}", topic_key: "oso/{change}/plan", type: "architecture", capture_prompt: false, content: slices with [ ] marks + current position)`
+
+Update the index so this change surfaces on first search: create `oso/index` if it doesn't exist yet (`mem_save`, topic_key `oso/index`) or update it (`mem_update`, merge the table — never overwrite other rows), adding/updating the row `{change} — {human description} — status: executing`. Follow the index format standard:
+
+- **Rich title** — `oso/index — {project}: {n} changes, active: {change}`, kept current on every upsert.
+- **`NEXT:` line** at the top of the content — active change + slice position + what follows (e.g. `NEXT: plan2-purga slice 3/6 → then roadmap Plan 3`).
+- **Status vocabulary** — exactly `planning / executing / done / roadmap`, nothing else.
+- **Detail column per row** — cite LITERAL topic keys (`oso/{change}/plan`, `oso/{change}/summary`); never dash wiki-links like `[[oso-x-plan]]` (they don't match real topic keys and cost an extra search hop).
+- **Roadmap parents** — a `roadmap` row lists its child changes by topic key.
+- **Explicit pendings** — name non-code pendings in the row (`PENDING: visual QA in staging`); ambiguous statuses like `done (código)` are banned.
+
+Then initialize the runtime state:
+`oso-state --session "${CLAUDE_CODE_SESSION_ID}" set mode=plan verify_green=false`
 
 ## 6. Execution — one slice at a time, delegated
 
@@ -146,6 +156,6 @@ Never run two slices at once. Never start slice N+1 while slice N is red. Small 
 2. **Judge (subagent)** — INVOKE the `oso-code:debt-sweep` skill through the Skill tool; it runs in its own forked subagent. Never perform the sweep yourself in this conversation — an orchestrator sweeping its own change has no fresh eyes. It returns `clean` or a findings list.
 3. **Fix (subagent)** — on findings, launch the `oso-applier` agent with the findings list as a cleanup assignment: the smallest edit that FULLY resolves each finding — behavior-preserving; structural findings may span files. Then re-invoke `oso-code:debt-sweep` to confirm. Loop judge → fix until `clean`.
 4. Only on `clean`: `oso-state --session "${CLAUDE_CODE_SESSION_ID}" set verify_green=true`.
-5. Update the change's `oso/index` row to `status: done` (`mem_update`, merge — never overwrite other rows).
+5. Update the change's `oso/index` row to `status: done` (`mem_update`, merge — never overwrite other rows), keeping the rich title and `NEXT:` line current per the index format standard in §5.
 6. Save a session summary to engram with a rich title (`"oso/{change}/summary — {human description}"` pattern) so it surfaces on first search. Do not save phase artifacts, explorations, or verbose progress.
 7. Commit, push, or open a PR only if the user asks. When opening a PR, include the frozen decision ledger and the slice summary in the PR body — engram is per-machine, and the PR is the only surface where a reviewer can check the code against the decisions it implements.
