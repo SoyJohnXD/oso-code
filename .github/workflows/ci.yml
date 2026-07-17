@@ -18,3 +18,21 @@ jobs:
         run: claude plugin validate --strict plugin
       - name: Validate marketplace manifest
         run: claude plugin validate --strict .
+
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Hook regression suite
+        shell: bash
+        run: bash tests/hooks-test.sh
+      - name: Shell script syntax
+        shell: bash
+        run: |
+          bash -n bootstrap/install.sh bootstrap/verify.sh
+          bash -n plugin/hooks/*.sh
+          bash -n plugin/bin/oso-state
+          bash -n tests/hooks-test.sh
+      - name: Bootstrapper (CI-safe mode)
+        shell: powershell
+        run: .\bootstrap\install.ps1 -CiMode

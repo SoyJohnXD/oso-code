@@ -25,7 +25,7 @@ Prerequisites per OS — the bootstrap checks and guides you, but know what you 
 |---|---|---|
 | Linux | git, [Claude Code](https://code.claude.com), Node.js | jq auto-installs via your package manager |
 | macOS | git, Claude Code, Node.js | jq auto-installs via Homebrew |
-| Windows | **Git for Windows** (its Git Bash runs the hooks and the installer), Claude Code, Node.js | run everything below inside Git Bash; jq installs via winget |
+| Windows | nothing pre-installed — just double-click `bootstrap\install.bat` | it provisions Git for Windows, Node.js, jq, and Claude Code via winget, then runs the installer under Git Bash |
 
 Optional on every OS: Rust (`cargo`) for the fallow analyzer — without it the debt-sweep runs rubric-only on TS/JS projects.
 
@@ -35,6 +35,8 @@ cd oso-code
 bash bootstrap/install.sh     # prerequisites, MCPs, plugin, legacy cleanup (asks before anything destructive)
 bash bootstrap/verify.sh      # measurable post-install E2E — expect all checks ok
 ```
+
+**Windows**: no terminal needed — clone the repo, then double-click `bootstrap\install.bat`. It provisions Git for Windows, Node.js, jq, and Claude Code (via winget and Claude Code's official installer), then delegates to the same `install.sh` under Git Bash. Prefer a terminal? Run `powershell -ExecutionPolicy Bypass -File bootstrap\install.ps1`. Fallback, if you already have Git Bash and the prerequisites: run `bash bootstrap/install.sh` directly inside Git Bash.
 
 Then restart Claude Code. Daily use:
 

@@ -137,6 +137,27 @@ else
   echo "FAIL: path traversal deleted a file outside the state dir"; fail=$((fail + 1))
 fi
 
+# --- SessionStart: OSO_STATE_BIN reaches the real oso-state binary ---
+# The skills invoke "${OSO_STATE_BIN:-oso-state}"; this hook is what makes that
+# env var land in the session, so assert it resolves to a runnable binary.
+env_file="$(mktemp)"
+CLAUDE_ENV_FILE="$env_file" "$PLUGIN/hooks/persist-state-bin.sh" </dev/null
+persisted="$(. "$env_file"; printf '%s' "${OSO_STATE_BIN:-}")"
+if [ -n "$persisted" ] && [ -x "$persisted" ]; then
+  echo "ok: SessionStart persists OSO_STATE_BIN to an executable"; pass=$((pass + 1))
+else
+  echo "FAIL: OSO_STATE_BIN not persisted or not executable — got: ${persisted:-<empty>}"; fail=$((fail + 1))
+fi
+rm -f "$env_file"
+
+# No CLAUDE_ENV_FILE must degrade to a silent no-op (Windows-safe old behavior).
+noop_out="$(env -u CLAUDE_ENV_FILE "$PLUGIN/hooks/persist-state-bin.sh" </dev/null)"
+if [ -z "$noop_out" ]; then
+  echo "ok: SessionStart no-ops when CLAUDE_ENV_FILE is unset"; pass=$((pass + 1))
+else
+  echo "FAIL: persist hook emitted output with no env file — got: $noop_out"; fail=$((fail + 1))
+fi
+
 echo "----"
 echo "passed: $pass, failed: $fail"
 [ "$fail" -eq 0 ]

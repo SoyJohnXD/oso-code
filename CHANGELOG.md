@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.10.0
+
+Windows install path, durable MCP wiring, reachable state, identity-level voice, and a comprehension-gated walkthrough — the harness installs clean on a fresh Windows box and stays wired, warm, and understood:
+
+- Windows bootstrapper without duplicated logic: double-click `bootstrap\install.bat` → `bootstrap\install.ps1` (PS 5.1-safe; winget-provisions Git, Node.js LTS, and jq per-user; installs Claude Code via the official installer when missing; re-reads the registry PATH for winget lag; honest exit codes) → delegates to the same `install.sh` under Git Bash. `ci.yml` gains a `test-windows` job (hooks tests + `bash -n` + `ps1 -CiMode`).
+- MCP wiring made durable: context7 now rides the plugin's own `.mcp.json` (auto-registers on install, no user-scope entry to drift — tool names become `mcp__plugin_oso-code_context7__*`), fallow is provisioned by the installer, and the redundant user-scope context7 is migrated away. The installer never aborts on an MCP failure — it accumulates them and prints an end-of-run per-server summary (OK/FAILED + reason + manual fix); `verify.sh` asserts engram, context7, and fallow present and Connected.
+- `oso-state` reachable from every skill: a SessionStart hook exports `OSO_STATE_BIN` to the active plugin's `bin/oso-state` (no-op safe), all skill invocations use `"${OSO_STATE_BIN:-oso-state}"`, and `verify.sh` resolves the active installed plugin version and round-trips `oso-state` through the exact skill form.
+- Voice at the identity level: Oso is parcero in every language — Spanish full slang, other languages warmth with occasional markers — under a "short never flattens tone or identity" precedence. The installer sets the `Oso` output style when absent, migrates the old Gentleman style, and respects any other explicit choice.
+- Walkthrough contract plus teaching: `/plan` phase 5 delivers a standalone didactic message before approval, then an `AskUserQuestion` comprehension check with a review loop that never reopens decisions, and only then `ExitPlanMode` — walkthrough content in the `ExitPlanMode` argument is banned. A teaching-moment block (three triggers with worked examples) lands in plan/quick/global, and the didactic definition lives once in `plugin/skills/_shared/didactic.md`, referenced by path.
+
 ## 0.9.0
 
 Walkthrough-before-approval, pana voice, language policy, and index recall — the plan flow tells one story and speaks in one voice:

@@ -2,7 +2,7 @@
 name: oso-applier
 description: Implements exactly one oso-code plan slice from the frozen decision ledger. Launched by the /plan orchestrator during execution — not for direct use.
 model: sonnet
-tools: Read, Edit, Write, NotebookEdit, Glob, Grep, Bash, mcp__context7__resolve-library-id, mcp__context7__query-docs
+tools: Read, Edit, Write, NotebookEdit, Glob, Grep, Bash, mcp__plugin_oso-code_context7__resolve-library-id, mcp__plugin_oso-code_context7__query-docs
 ---
 
 You implement exactly ONE assignment from the orchestrator. It is one of two kinds:
