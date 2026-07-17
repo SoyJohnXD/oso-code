@@ -1,6 +1,6 @@
 @echo off
 REM oso-code Windows entry point. Double-click me, or run me from a terminal.
-REM All logic lives in install.ps1 and, ultimately, install.sh — this only hands
+REM All logic lives in install.ps1 and, ultimately, install.sh - this only hands
 REM off with an execution policy that lets the unsigned local script run.
 setlocal
 

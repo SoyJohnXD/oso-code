@@ -12,7 +12,7 @@ because install.sh requires it on PATH before it will run.
 CI-safe mode (-CiMode) boundary: a GitHub windows-latest runner has no
 authenticated Claude Code and must not mutate ~/.claude. So -CiMode probes and
 provisions prerequisites, locates Git Bash, and runs `bash -n` on install.sh as a
-delegation smoke test — then stops. It never installs Claude Code and never runs
+delegation smoke test - then stops. It never installs Claude Code and never runs
 the real install.sh (which needs an authenticated `claude` and rewrites the home
 dir). It exercises every PowerShell-specific path without the authenticated tail.
 
@@ -82,7 +82,7 @@ function Test-WingetAvailable {
     if (Test-CommandExists 'winget') {
         return $true
     }
-    Write-Warn "winget not found — install App Installer from $WingetSetupUrl, or install Git for Windows, Node.js LTS, and jq manually, then re-run."
+    Write-Warn "winget not found - install App Installer from $WingetSetupUrl, or install Git for Windows, Node.js LTS, and jq manually, then re-run."
     return $false
 }
 
@@ -104,7 +104,7 @@ function Install-Prerequisite {
         return
     }
     if (-not $HasWinget) {
-        Write-Warn "$Command missing and winget unavailable — install $WingetId manually, then re-run"
+        Write-Warn "$Command missing and winget unavailable - install $WingetId manually, then re-run"
         return
     }
 
@@ -115,7 +115,7 @@ function Install-Prerequisite {
         Write-Info "$Command installed"
     }
     else {
-        Write-Warn "$Command installed but not on PATH yet — reopen the terminal and re-run"
+        Write-Warn "$Command installed but not on PATH yet - reopen the terminal and re-run"
     }
 }
 
@@ -151,7 +151,7 @@ function Install-ClaudeCode {
 
     Update-EnvPath
     if (-not (Test-CommandExists 'claude')) {
-        Write-Warn 'claude not on PATH yet — reopen the terminal and re-run (install.sh requires it)'
+        Write-Warn 'claude not on PATH yet - reopen the terminal and re-run (install.sh requires it)'
     }
 }
 
@@ -183,7 +183,7 @@ function Invoke-DelegationSmokeTest {
     if ($LASTEXITCODE -ne 0) {
         Stop-WithError "install.sh failed bash -n syntax check (exit $LASTEXITCODE)"
     }
-    Write-Info 'CI mode: prerequisites probed and delegation verified — skipping the authenticated install'
+    Write-Info 'CI mode: prerequisites probed and delegation verified - skipping the authenticated install'
     exit 0
 }
 
