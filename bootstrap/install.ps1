@@ -143,9 +143,10 @@ function Install-ClaudeCode {
         return
     }
     Write-Info 'installing Claude Code (official Windows installer)'
-    $childCommand = "[Net.ServicePointManager]::SecurityProtocol = " +
-        "[Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12; " +
+    $childCommand = @(
+        '[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12'
         "Invoke-RestMethod -Uri '$ClaudeInstallerUrl' | Invoke-Expression"
+    ) -join '; '
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $childCommand
 
     Update-EnvPath
