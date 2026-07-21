@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.0
+
+Repaso de cambios, derived decision categories, and an anti-swallow delivery contract — the harness fixes a TUI bug that was silently hiding its own explanations and redesigns the model that had been built on top of the gap:
+
+- Repaso de cambios (change recap) replaces the didactic walkthrough: a fixed three-section brief (Qué se va a realizar / Decisiones del ledger que lo moldean / Cómo va a funcionar), ~20-line soft cap, written in the operator's language at their depth preference — never a forced didactic register — that heads the plan argument the native `ExitPlanMode` gate renders, immediately followed by the full plan detail. No confirmation loop; `ExitPlanMode` is the single approval gate.
+- Decision-rounds category model redesigned: an invariant core of five categories (Contracts, Architecture, Errors, Verification, Reuse) plus categories derived per change straight from surface evidence, each citing the surface that motivates it — the core is the fallback question generator only when exploration surfaces nothing, superseding the fixed category table's audit-floor role. Question rounds cap at 4 (the `AskUserQuestion` platform ceiling), down from 3–5.
+- Anti-swallow delivery contract: the Claude Code TUI drops assistant text that precedes a tool call in the same turn, so operator-facing content now always ends its turn as plain text before any later-turn tool call, and round context travels inside `AskUserQuestion` fields instead of preceding prose. Global anchors land in `plugin/output-styles/oso.md` and `bootstrap/claude-global.md`, and `plugin/skills/_shared/didactic.md` is reconciled to drop its walkthrough references.
+- First-run preference round shrinks from three questions to two — explanation depth and adaptive teaching only, the old always/never/offer gating field retired — with a self-healing migration that strips the retired field from any stored `oso/preferences` observation via `mem_update` (merge, never overwrite).
+
 ## 0.10.0
 
 Windows install path, durable MCP wiring, reachable state, identity-level voice, and a comprehension-gated walkthrough — the harness installs clean on a fresh Windows box and stays wired, warm, and understood:
