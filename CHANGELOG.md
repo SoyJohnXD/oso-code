@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.0
+
+Anti-rationalization trap tables, an adversarial doubt pass, and a slice regression gate — a gap analysis of addyosmani/agent-skills against the harness, importing only the mechanisms the evidence supported at the gates the inventory found weak:
+
+- Anti-rationalization trap tables (`| Trap | Reality |`, each excuse quoted verbatim beside its reality) land at the four under-protected gates: `/quick` §2 substantiality and §4 zero-warnings, `quality-pass` §3 re-verify, and `debt-sweep` §1 fallow skip. The plan skill, agents, and rubric stay untouched — already defended, and a context budget to keep.
+- New forked `doubt-pass` skill (context: fork, agent: general-purpose, model: opus): a pre-freeze adversarial review of the bare decisions — intent, surface map, and decisions only, never the rationale or rejected alternatives (structural anti-anchoring). `/plan` §3 offers and recommends it only when a derived category came from a migrations, security, or rollback surface; the orchestrator reconciles its findings against the stored rationale (noise vs actionable, actionable resolved like §6 blocked questions) over a single pass with operator re-run, a hard cap of 3 cycles, and a doubt-theater signal.
+- Slice regression gate: `/plan` §4's Verify bullet now requires at least one automated check that fails without the slice — new or extended by the slice, exercising its behavior — or a declared `Verify-exception: <reason>` visible in the approval document. `oso-verifier` judges it by reading the diff, under an explicit no-time-travel prohibition.
+
 ## 0.11.0
 
 Repaso de cambios, derived decision categories, and an anti-swallow delivery contract — the harness fixes a TUI bug that was silently hiding its own explanations and redesigns the model that had been built on top of the gap:

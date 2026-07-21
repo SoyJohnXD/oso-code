@@ -100,6 +100,10 @@ Rules:
 - Before freeze, every ledger entry cites the in-scope item or Visible-outcome element it serves; entries that serve only a future need are listed as YAGNI candidates for the user to cut or explicitly keep.
 - Freeze is a reconciliation gate, not a bare exit. Before accepting "frozen", render the question battery as a reconciliation checklist: every battery question maps to a ledger decision, a delegated mark, or an N/A with a reason. Refuse the freeze while any row is unmapped ("N questions unresolved; answer, delegate, or dismiss with a reason before freezing").
 - At the freeze attempt, state anything still open as an explicit assumption: "If you freeze now, I will have to assume: X → I'd pick Y because Z." The user either answers it or freezes over the named assumption — recorded in the ledger as delegated.
+- Optional doubt pass — before saving, check the trigger: did any derived category come from a migrations, security, or rollback surface (§2 step 3)? If so, offer AND recommend the pass, citing the motivating surface; the operator decides, and on decline the freeze proceeds. At every other freeze: silence, zero ceremony.
+  - On acceptance, invoke the `oso-code:doubt-pass` skill through the Skill tool with ONLY the intent, surface map, and bare decisions — never the rationale or rejected alternatives, because a reviewer who reads the author's reasoning anchors on it.
+  - Reconcile the findings YOURSELF against the recorded rationale: a finding the rationale already answers is noise (report the count); the rest are actionable and go to the operator like §6 blocked questions — options with tradeoffs, answers recorded in the ledger.
+  - Single pass by default; re-run only when the operator asks after major ledger changes; hard cap 3 cycles. 2+ cycles with zero actionable findings is doubt theater — name it and stop.
 
 On freeze, save the ledger once:
 `mem_save(title: "oso/{change}/ledger — {human description}", topic_key: "oso/{change}/ledger", type: "architecture", capture_prompt: false, content: intent + surface map + scope + every ledger entry)`
@@ -112,7 +116,7 @@ Each slice states:
 
 - **Goal** — the observable progress it delivers.
 - **Files** — expected touch points.
-- **Verify** — which project checks plus what observable behavior proves it.
+- **Verify** — which project checks plus what observable behavior proves it, and at least one automated check that fails without the slice — new or extended by the slice itself, exercising its behavior. When no such check is sensible (docs, config), state `Verify-exception: <reason>` on this line instead — visible in the approval document.
 
 Order slices by dependency and present them. Approval happens through the Repaso-headed plan document (§5), not here.
 

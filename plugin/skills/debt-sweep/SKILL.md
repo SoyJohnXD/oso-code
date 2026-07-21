@@ -24,6 +24,13 @@ Only these files are in scope. Never touch anything else.
 
 1. Read the full rubric at `${CLAUDE_SKILL_DIR}/../_shared/rubric.md` — all five sections apply here: the **Judgment contract** governs every finding, **Hard blockers** and **File level** per changed file, **System level** and **Debt markers** across the whole change.
 2. If the project is TypeScript/JavaScript, load the fallow tools via ToolSearch (`find_dupes`, `get_cleanup_candidates`, `audit`) and run them on the changed files. If fallow is unavailable or the stack does not apply, state that the sweep is rubric-only and continue.
+   A skip is only a skip with evidence behind it:
+
+   | Trap | Reality |
+   | --- | --- |
+   | 'fallow probably doesn't apply here' | 'Unavailable' means you tried the call or checked the stack and can name what you saw — otherwise it's a dodge. |
+   | 'rubric-only is faster and usually enough' | Faster is not the bar — fallow catches dupes and dead code the eye misses. |
+   | 'the stack is TS but this change is trivial' | Trivial diffs still hide clones and dead exports — fallow runs on the changed files regardless. |
 3. Run the project's zero-warnings bar: the checks recorded in the ledger, or discovered from the project otherwise — lint, types, tests, build, or whatever the project defines.
 
 Collect findings as `file:line — [severity: blocker|structural|nit] — violation — the concrete readability win of fixing it` (per the rubric's judgment contract, a finding without its win is not a finding). Blocker for Hard-blocker-class debt, structural for file- and system-level shape, nit for cosmetic wins.

@@ -38,6 +38,14 @@ Before touching code, recommend `/oso-code:plan` instead when any of these hold:
 
 Say why in one sentence and let the user decide. If they choose to continue here, continue without further pushback.
 
+These fire before the user decides — they are your rationalizations, not their call:
+
+| Trap | Reality |
+| --- | --- |
+| 'it's small enough if I squint' | If the size is arguable, the /plan trigger already fired. |
+| 'the user chose to continue once, so the check is settled for everything that follows' | Scope that grows mid-flow re-triggers the check — a past yes never covers new files. |
+| 'success is sort of visually verifiable' | 'Sort of' is not verifiable — name the concrete screen state, command output, or passing test. |
+
 ## 3. Iterate
 
 Before the first edit, initialize the runtime state — the commit gate stays locked until the quality pass:
@@ -51,6 +59,13 @@ Before the first edit, initialize the runtime state — the commit gate stays lo
 
 1. Invoke the `oso-code:quality-pass` skill on the touched code.
 2. Zero warnings: the project's own checks — discovered from the project — must be clean before declaring done.
+   Refuse the dodges that fake a clean close:
+
+   | Trap | Reality |
+   | --- | --- |
+   | 'this project has no checks' | Name what you searched — package.json scripts, Makefile, CI config — before concluding none exist. |
+   | 'the warnings were already there before my change' | 'Already there' is not clean — the close bar is zero warnings, not a smaller count than before. |
+   | 'it's only a warning, not an error' | The gate is zero warnings — a warning left standing is a fail. |
 3. When the quality pass reports passed, unlock the commit gate:
    `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" set verify_green=true`
 4. Save to engram only: a session summary with a rich title (descriptive, with domain keywords, so it surfaces on first search), plus any non-obvious discovery or convention learned. Cite any related topic keys literally (`oso/{change}/plan`) — never dash wiki-links like `[[oso-x-plan]]`. Do not save iterations or progress. Engram content and titles are written in English; Oso narrates them in Spanish when the operator asks.

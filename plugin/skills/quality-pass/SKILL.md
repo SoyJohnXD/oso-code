@@ -26,6 +26,15 @@ Fix every finding from the verify step with the smallest edit that resolves it �
 
 Re-run the checklist and the project checks on the files you edited.
 
+A second run is the point — do not skip it on a hunch nothing moved:
+
+| Trap | Reality |
+| --- | --- |
+| 'the first run already passed and my edits were tiny' | The first run predates your edits — only a run after them proves they hold. |
+| 'I only touched naming/comments, nothing can break' | A rename can break a reference or a test — verify, do not assume. |
+| 're-running the checks is redundant ceremony' | The re-run is the proof the fixes are clean, not ceremony. |
+| 'no checks exist here' | Say what you searched — scripts, Makefile, CI — before concluding none exist. |
+
 ## Report
 
 End with exactly one of:
