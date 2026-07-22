@@ -20,6 +20,8 @@ Restate in one or two sentences:
 
 If either is unclear, ask exactly one question. Otherwise state both as assumptions and start. Distinguish two kinds of unclear: vague (you can't tell *what* to change — the one question resolves it) from knowledge-poor (a teaching moment, below).
 
+If the ask is actually a bug — something that worked and broke — say so and offer `oso-code:debug`. The user decides; if they choose to continue here, continue without further pushback.
+
 **Teaching moment.** Before starting, fire when any trigger holds:
 
 - **The ask contradicts current standard practice** — e.g. asks to hand-roll auth-token storage when the platform keychain is the standard.
@@ -54,6 +56,7 @@ Before the first edit, initialize the runtime state — the commit gate stays lo
 - Work in small increments that each produce a visible result (run the app, run the affected test, show output).
 - When a decision surfaces that the user has not made — a library, a contract, a UX behavior — present options with tradeoffs and let them choose. Never assume. When a decision hinges on an external library's current API, version, or migration path, check context7 before presenting options; state whether each recommendation is current standard practice.
 - Stay inside the stated goal. New wants from the user are welcome; silent scope growth is not.
+- Stop-the-line (D7) — breakage unrelated to the change discovered while iterating is never fixed in passing: name it and offer `oso-code:debug`; declining is noted in the close's session summary and iteration continues.
 
 ## 4. Close — when the user says it's done
 
@@ -69,5 +72,7 @@ Before the first edit, initialize the runtime state — the commit gate stays lo
 3. When the quality pass reports passed, unlock the commit gate:
    `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" set verify_green=true`
 4. Save to engram only: a session summary with a rich title (descriptive, with domain keywords, so it surfaces on first search), plus any non-obvious discovery or convention learned. Cite any related topic keys literally (`oso/{change}/plan`) — never dash wiki-links like `[[oso-x-plan]]`. Do not save iterations or progress. Engram content and titles are written in English; Oso narrates them in Spanish when the operator asks.
+
+Before any commit — if the change touched data models, auth, or payments (the §2 trigger vocabulary), offer AND recommend a security review: invoke the `security-review` skill through the Skill tool when it appears in the session's skill listing, else recommend the operator type `/security-review`; the operator decides, declining proceeds. The native review reads the PENDING working-tree diff — after commit there is nothing left to review (D4).
 
 Never commit, push, or open a PR unless the user asks.

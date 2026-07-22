@@ -40,6 +40,8 @@ oso-state --session "$SESSION" set mode=plan active_slice=1 verify_green=false
 assert_denies "commit while verify is red" block-commit-until-green.sh "$(bash_input 'git commit -m x')"
 oso-state --session "$SESSION" set verify_green=true
 assert_allows "commit when verify is green" block-commit-until-green.sh "$(bash_input 'git commit -m x')"
+oso-state --session "$SESSION" set mode=debug verify_green=false
+assert_denies "debug-mode commit while verify is red" block-commit-until-green.sh "$(bash_input 'git commit -m x')"
 
 # --- Commit gate: matcher hardening (state red for all of these) ---
 oso-state --session "$SESSION" set verify_green=false
@@ -77,6 +79,9 @@ assert_allows "plan-mode edit with active slice" block-edits-without-slice.sh "$
 oso-state --session "$SESSION" clear
 oso-state --session "$SESSION" set mode=quick verify_green=false
 assert_allows "quick-mode edit is unrestricted" block-edits-without-slice.sh "$edit_input"
+oso-state --session "$SESSION" clear
+oso-state --session "$SESSION" set mode=debug verify_green=false
+assert_allows "debug-mode edit is unrestricted" block-edits-without-slice.sh "$edit_input"
 oso-state --session "$SESSION" clear
 
 # --- Integration: the env var the skills instruct is the one hooks look up ---

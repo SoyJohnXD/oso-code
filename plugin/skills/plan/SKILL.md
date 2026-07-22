@@ -16,6 +16,7 @@ Guided flow for substantial changes. The human decides; you guide, present optio
 - Question rounds: 4 questions maximum per round (`AskUserQuestion` platform cap), each with 2–4 concrete options and their tradeoffs. Put your recommendation first, say why it wins, and state whether it is current standard practice; when the choice involves an external library, framework API, or well-trodden pattern, verify against current docs (context7) before recommending.
 - Anti-swallow delivery rule: the Claude Code TUI drops assistant text that precedes a tool call in the same turn. Operator-facing content — the intent presentation, the surface-map presentation, any narrative the operator must read — must END the turn as plain text, with the tool call (`AskUserQuestion`, `ExitPlanMode`) in a LATER turn; context a question round needs travels INSIDE the `AskUserQuestion` fields (question text, option descriptions), never as prose before the call.
 - If phase 1 reveals the change is actually small, say so and offer `oso-code:quick`. The user decides.
+- If phase 1 reveals the ask is actually a bug — something that worked and broke, a failing check, an error to chase — say so and offer `oso-code:debug`. The user decides.
 - Engram gotcha: `mem_search` returns 300-char previews — always call `mem_get_observation(id)` for full content.
 - Engram content AND titles (`{human description}`) are written in English; Oso narrates them in Spanish when the operator asks. Applies to every save below — ledger, plan, summary.
 - Runtime gates: plugin hooks deny `git commit` while `verify_green` is false and deny file edits while no slice is active. Keep the session state honest with the `oso-state` commands below — they are what unlocks those gates.
@@ -161,6 +162,8 @@ For the active slice:
 
 Never run two slices at once. Never start slice N+1 while slice N is red. Small fixes are never applied inline "to save time" — they go through a subagent like everything else.
 
+Stop-the-line (D7) — breakage UNRELATED to the active slice discovered mid-execution (a pre-existing failure, a check that was green turning red for reasons outside the slice) is never fixed in passing: name it, stop feature work, and offer `oso-code:debug`; declining is recorded in the ledger and the slice continues. This complements — never replaces — the verifier `fail`/`blocked` paths above; the slice's own red loop stays in §6 as-is.
+
 ## 7. Close — when the user says they are happy
 
 1. Activate the sweep as a slice: `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" set active_slice=debt-sweep verify_green=false`.
@@ -170,3 +173,4 @@ Never run two slices at once. Never start slice N+1 while slice N is red. Small 
 5. Update the change's `oso/index` row to `status: done` (`mem_update`, merge — never overwrite other rows), keeping the rich title and `NEXT:` line current per the index format standard in §5.
 6. Save a session summary to engram with a rich title (`"oso/{change}/summary — {human description}"` pattern) so it surfaces on first search. Do not save phase artifacts, explorations, or verbose progress.
 7. Commit, push, or open a PR only if the user asks. When opening a PR, include the frozen decision ledger and the slice summary in the PR body — engram is per-machine, and the PR is the only surface where a reviewer can check the code against the decisions it implements.
+   - Before acting on any commit/push/PR request — if the ledger recorded a security derived category (§2 step 3: auth/payments surfaces), offer AND recommend a security review, citing the motivating surface; on acceptance invoke the `security-review` skill through the Skill tool when it appears in the session's skill listing, else recommend the operator type `/security-review`; the operator decides, declining proceeds. The native review analyzes the PENDING working-tree diff — after the commit there is nothing left to review (ledger D4).

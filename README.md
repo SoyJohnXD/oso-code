@@ -6,6 +6,7 @@ Team harness for Claude Code. A guided orchestrator that keeps the human in char
 
 - **`/plan`** — deep mode for substantial changes: intent → surface mapping → decision rounds → slices, then a sequential apply/verify loop per slice with a zero-warnings bar.
 - **`/quick`** — fast mode for small, visually verifiable changes: micro-intent, rapid inline iteration, then a quality pass.
+- **`/debug`** — recovery mode when something broke: reproduce-first triage (reproduce → localize → reduce), then a delegated fix plus a regression test through the same apply/verify loop.
 - **Debt-sweep** — final phase on every change: detects dead code, duplication, stray comments, and rubric violations (powered by fallow), then applies readability-only fixes. Never functional changes.
 
 ## Repository layout
@@ -42,6 +43,7 @@ Then restart Claude Code. Daily use:
 
 - `/oso-code:plan <what you want to build>` — substantial changes.
 - `/oso-code:quick <small change>` — fast iteration.
+- `/oso-code:debug <what broke>` — diagnose and fix a bug.
 - `/output-style Oso` — the team persona (optional).
 
 Update later with `claude plugin update oso-code@oso-code` — new versions ship only on version bumps.

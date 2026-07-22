@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.13.0
+
+A third mode for when something broke, plus additive safety offers on the two existing flows — the harness now debugs reproduce-first and reaches for a security review before the diff is gone:
+
+- New `/debug` mode: a reproduce-first triage (reproduce → localize → reduce → root-cause fix → regression guard) that stops when there is no reproduction — reporting ranked hypotheses, with an operator "fix on hypothesis" override recorded in the diagnosis — then freezes the diagnosis to `oso/{bug}/diagnosis` (no `oso/index` row) and delegates the fix through the apply/verify loop. The `oso-verifier` judges the named regression test through the failing-check contract: it must fail without the fix and pass with it. Edits run under `mode=debug` (unrestricted — the edit hook fires only on `mode=plan`) while the commit gate stays mode-agnostic, pinned by two new `tests/hooks-test.sh` assertions with the hooks untouched.
+- Additive offers on `/plan` and `/quick` (zero existing flow lines changed): a bug detour at intent that hands a misfiled break to `/debug`, a stop-the-line that names unrelated breakage mid-flow instead of fixing it in passing, and a pre-commit security-review offer that invokes the native `security-review` skill through the Skill tool when it is listed (else suggests typing `/security-review`) — pre-commit because the native review reads the pending working-tree diff, which dies at commit.
+- Docs and manifests name the third mode: the blueprint gains a dated amendment and a Mode 3 section, and the README, plugin manifest, and marketplace descriptions all list `/debug` alongside `/plan` and `/quick`.
+
 ## 0.12.0
 
 Anti-rationalization trap tables, an adversarial doubt pass, and a slice regression gate — a gap analysis of addyosmani/agent-skills against the harness, importing only the mechanisms the evidence supported at the gates the inventory found weak:
