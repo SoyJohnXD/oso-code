@@ -8,14 +8,13 @@ HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HOOK_DIR/lib.sh"
 
 session_id="$(sanitize_session "$(json_field "$(cat)" session_id)")"
-state_dir="${HOME}/.local/state/oso-code"
-[ -d "$state_dir" ] || exit 0
+[ -d "$OSO_STATE_DIR" ] || exit 0
 
 stale=""
-for f in "$state_dir"/*.state; do
-  [ -e "$f" ] || continue
-  case "$f" in "$state_dir/${session_id}.state") continue ;; esac
-  stale="$stale $(basename "$f")"
+for state_file in "$OSO_STATE_DIR"/*.state; do
+  [ -e "$state_file" ] || continue
+  case "$state_file" in "$OSO_STATE_DIR/${session_id}.state") continue ;; esac
+  stale="$stale $(basename "$state_file")"
 done
 [ -n "$stale" ] || exit 0
 

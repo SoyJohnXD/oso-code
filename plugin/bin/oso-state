@@ -21,24 +21,21 @@ usage() {
 }
 
 [ "${1:-}" = "--session" ] || usage
-session_id="$(printf '%s' "${2:-}" | tr -cd 'a-zA-Z0-9-')"
+session_id="$(sanitize_session "${2:-}")"
 [ -n "$session_id" ] || usage
 shift 2
 action="${1:-}"
 shift || true
 
-state_dir="${HOME}/.local/state/oso-code"
-state_file="${state_dir}/${session_id}.state"
+state_file="${OSO_STATE_DIR}/${session_id}.state"
 lock_dir="${state_file}.lock"
 # A writer killed mid-write leaves its lock forever; reclaim it after this long.
 lock_stale_seconds=30
 
 lock_is_stale() {
-  local mtime now
-  mtime="$(stat -c %Y "$lock_dir" 2>/dev/null || stat -f %m "$lock_dir" 2>/dev/null)" || true
-  [ -n "$mtime" ] || return 1
-  now="$(date +%s)"
-  [ "$((now - mtime))" -ge "$lock_stale_seconds" ]
+  local held_for
+  held_for="$(seconds_since_modified "$lock_dir")" || return 1
+  [ "$held_for" -ge "$lock_stale_seconds" ]
 }
 
 acquire_lock() {
@@ -63,13 +60,13 @@ acquire_lock() {
 case "$action" in
   set)
     [ $# -ge 1 ] || usage
-    mkdir -p "$state_dir"
+    mkdir -p "$OSO_STATE_DIR"
     acquire_lock
-    tmp="$(mktemp "${state_dir}/.tmp.XXXXXX")"
+    tmp="$(mktemp "${OSO_STATE_DIR}/.tmp.XXXXXX")"
     [ -f "$state_file" ] && cat "$state_file" > "$tmp"
     for pair in "$@"; do
       key="${pair%%=*}"
-      next="$(mktemp "${state_dir}/.tmp.XXXXXX")"
+      next="$(mktemp "${OSO_STATE_DIR}/.tmp.XXXXXX")"
       grep -v "^${key}=" "$tmp" > "$next" || true
       printf '%s\n' "$pair" >> "$next"
       mv "$next" "$tmp"
@@ -85,7 +82,7 @@ case "$action" in
     [ -f "$state_file" ] && cat "$state_file" || echo "no state for session ${session_id}"
     ;;
   clear)
-    mkdir -p "$state_dir"
+    mkdir -p "$OSO_STATE_DIR"
     acquire_lock
     rm -f "$state_file"
     log_event clear "$session_id"

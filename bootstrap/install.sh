@@ -2,10 +2,13 @@
 # oso-code bootstrap: prerequisites, MCP wiring, plugin install, legacy cleanup.
 # Runs on Linux, macOS, and Windows (Git Bash — required anyway for the hooks).
 #
-# Usage: install.sh [--yes] [--replace-claude-md]
+# Usage: install.sh [--yes] [--replace-claude-md] [--no-impeccable] [--no-git-hook]
 #   --yes                skip the confirmation prompt (CI / scripted installs)
 #   --replace-claude-md  replace ~/.claude/CLAUDE.md entirely instead of
 #                        merging the oso-code block between markers
+#   --no-impeccable      skip installing the impeccable plugin/CLI (on by default)
+#   --no-git-hook        skip wiring this repo's core.hooksPath to the shipped
+#                        pre-commit gate (on by default)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,10 +25,14 @@ CLAUDE_MD_BUDGET_BYTES=8000
 
 ASSUME_YES=false
 REPLACE_CLAUDE_MD=false
+INSTALL_IMPECCABLE=true
+INSTALL_GIT_HOOK=true
 for arg in "$@"; do
   case "$arg" in
     --yes) ASSUME_YES=true ;;
     --replace-claude-md) REPLACE_CLAUDE_MD=true ;;
+    --no-impeccable) INSTALL_IMPECCABLE=false ;;
+    --no-git-hook) INSTALL_GIT_HOOK=false ;;
     *) echo "unknown flag: $arg" >&2; exit 1 ;;
   esac
 done
@@ -45,14 +52,15 @@ run_or_fail() {
   fi
 }
 
-# MCP wiring is best-effort: a single server failure never aborts the install.
-# Outcomes accumulate here and print as a summary at the end (print_mcp_summary).
-# Each entry: "OK|<server>|<note>" or "FAILED|<server>|<reason> — fix: <command>".
-MCP_SUMMARY=()
-mcp_ok()   { MCP_SUMMARY+=("OK|$1|$2"); }
-mcp_fail() { MCP_SUMMARY+=("FAILED|$1|$2"); }
+# Wiring is best-effort: a single MCP or plugin failure never aborts the install.
+# Outcomes accumulate here and print as a summary at the end (print_wiring_summary),
+# because later steps scroll an inline warning off screen.
+# Each entry: "OK|<component>|<note>" or "FAILED|<component>|<reason> — fix: <command>".
+WIRING_SUMMARY=()
+wiring_ok()   { WIRING_SUMMARY+=("OK|$1|$2"); }
+wiring_fail() { WIRING_SUMMARY+=("FAILED|$1|$2"); }
 
-run_mcp() {
+run_wiring() {
   # Run a wiring command without aborting; on failure echo its output so the
   # caller can record the reason. "already exists" counts as success (idempotent).
   local output
@@ -76,6 +84,16 @@ confirm_plan() {
 
   info "this will:"
   info "  - install/verify MCPs (engram, context7, fallow) and the oso-code plugin"
+  if [ "$INSTALL_IMPECCABLE" = true ]; then
+    info "  - install the impeccable plugin + CLI (opt out with --no-impeccable)"
+  else
+    info "  - skip impeccable (--no-impeccable)"
+  fi
+  if [ "$INSTALL_GIT_HOOK" = true ]; then
+    info "  - point this repo's core.hooksPath at the shipped pre-commit gate, unless another tool already owns its hooks (opt out with --no-git-hook)"
+  else
+    info "  - skip the git pre-commit gate (--no-git-hook)"
+  fi
   info "  - remove $artifact_count legacy gentle-ai artifacts from ~/.claude (backed up first)"
   info "  - clean legacy hook entries from settings.json (backed up first)"
   if [ "$REPLACE_CLAUDE_MD" = true ]; then
@@ -115,7 +133,7 @@ ensure_prerequisites() {
 ensure_node() {
   # context7 ships in the oso-code plugin and starts via npx. Ensure Node the
   # same way we ensure jq, but never abort: without Node, context7 simply will
-  # not connect until the operator installs it (surfaced in the MCP summary).
+  # not connect until the operator installs it (surfaced in the wiring summary).
   command -v npx >/dev/null && return 0
   info "installing Node.js (needed by the context7 MCP, which runs via npx)"
   if   command -v brew    >/dev/null; then brew install node || true
@@ -140,35 +158,46 @@ wire_engram() {
   # engram: persistent memory (plugin that ships its own MCP server)
   claude plugin marketplace add Gentleman-Programming/engram >/dev/null 2>&1 || true
   local err
-  if err="$(run_mcp claude plugin install engram@engram)"; then
-    mcp_ok engram "plugin installed"
+  if err="$(run_wiring claude plugin install engram@engram)"; then
+    wiring_ok engram "plugin installed"
   else
-    mcp_fail engram "plugin install failed: $err — fix: claude plugin install engram@engram"
+    wiring_fail engram "plugin install failed: $err — fix: claude plugin install engram@engram"
   fi
 }
 
 wire_fallow() {
   # fallow: TS/JS codebase analysis, used by the debt-sweep phase
   if claude mcp list 2>/dev/null | grep -q 'fallow'; then
-    mcp_ok fallow "already wired"
+    wiring_ok fallow "already wired"
     return 0
   fi
   local err fix="cargo install fallow-mcp, then claude mcp add --scope user fallow -- fallow-mcp"
   if ! command -v fallow-mcp >/dev/null; then
     if ! command -v cargo >/dev/null; then
-      mcp_fail fallow "no fallow-mcp binary and no cargo to build it — fix: install Rust, then $fix"
+      wiring_fail fallow "no fallow-mcp binary and no cargo to build it — fix: install Rust, then $fix"
       return 0
     fi
     info "installing fallow-mcp via cargo (this can take a few minutes)"
-    if ! err="$(run_mcp cargo install fallow-mcp)"; then
-      mcp_fail fallow "cargo install fallow-mcp failed: $err — fix: $fix"
+    if ! err="$(run_wiring cargo install fallow-mcp)"; then
+      wiring_fail fallow "cargo install fallow-mcp failed: $err — fix: $fix"
       return 0
     fi
   fi
-  if err="$(run_mcp claude mcp add --scope user fallow -- fallow-mcp)"; then
-    mcp_ok fallow "wired (user scope)"
+  if err="$(run_wiring claude mcp add --scope user fallow -- fallow-mcp)"; then
+    wiring_ok fallow "wired (user scope)"
   else
-    mcp_fail fallow "mcp add failed: $err — fix: claude mcp add --scope user fallow -- fallow-mcp"
+    wiring_fail fallow "mcp add failed: $err — fix: claude mcp add --scope user fallow -- fallow-mcp"
+  fi
+}
+
+wire_impeccable() {
+  # Third-party plugin backing the front-surface design bar (its CLI runs via npx).
+  claude plugin marketplace add pbakaus/impeccable >/dev/null 2>&1 || true
+  local err
+  if err="$(run_wiring claude plugin install impeccable@impeccable)"; then
+    wiring_ok "impeccable (plugin)" "installed"
+  else
+    wiring_fail "impeccable (plugin)" "install failed: $err — fix: claude plugin install impeccable@impeccable"
   fi
 }
 
@@ -197,18 +226,64 @@ migrate_context7() {
   # exactly one source of truth. Tolerate its absence.
   claude mcp remove --scope user context7 >/dev/null 2>&1 || true
   if command -v npx >/dev/null; then
-    mcp_ok context7 "ships with the oso-code plugin"
+    wiring_ok context7 "ships with the oso-code plugin"
   else
-    mcp_fail context7 "plugin wired but npx (Node.js) is missing, so it cannot start — fix: install Node.js, then restart Claude Code"
+    wiring_fail context7 "plugin wired but npx (Node.js) is missing, so it cannot start — fix: install Node.js, then restart Claude Code"
   fi
 }
 
-print_mcp_summary() {
-  info "MCP wiring summary (engram, context7, fallow):"
-  local entry status server note
-  for entry in "${MCP_SUMMARY[@]}"; do
-    IFS='|' read -r status server note <<< "$entry"
-    info "  $server: $status — $note"
+# The shipped git hook, next to the lib it reads session state with. core.hooksPath
+# names its directory, so both copies work: this clone, and the plugin cache a
+# marketplace install unpacks.
+GIT_HOOKS_DIR="$REPO_ROOT/plugin/git-hooks"
+
+# The commit gate's primary layer, at the commit's own boundary: a git hook parses
+# no command line, so it sees the wrappers, aliases, remote shells and absolute git
+# paths a PreToolUse matcher structurally cannot. Wired per repo because
+# core.hooksPath is a repo setting — and never over another tool's hooks, because
+# setting it makes git ignore .git/hooks entirely and would silently disable
+# whatever that team relies on.
+wire_git_commit_hook() {
+  local owner err
+  owner="$(git_hooks_owner)"
+  if [ -n "$owner" ]; then
+    wiring_fail "git commit hook" "not wired in $REPO_ROOT — $owner already owns this repo's hooks and core.hooksPath would take it out of git's reach; the PreToolUse commit gate still applies here — fix: to run both, call $GIT_HOOKS_DIR/pre-commit from your own pre-commit"
+    return 0
+  fi
+  if err="$(git -C "$REPO_ROOT" config core.hooksPath "$GIT_HOOKS_DIR" 2>&1)"; then
+    wiring_ok "git commit hook" "core.hooksPath wired in $REPO_ROOT — for another repo: git -C <repo> config core.hooksPath $GIT_HOOKS_DIR"
+  else
+    wiring_fail "git commit hook" "git config failed: $err — fix: git -C $REPO_ROOT config core.hooksPath $GIT_HOOKS_DIR"
+  fi
+}
+
+# What already owns this repo's hooks, named so the summary can say which: a foreign
+# core.hooksPath (Husky, lefthook, pre-commit), or any hook under .git/hooks, which
+# core.hooksPath would stop git from ever reading again. The .sample files git ships
+# are nobody's hooks, and an unmatched glob is a path no file test accepts.
+git_hooks_owner() {
+  local configured git_dir hook
+  configured="$(git -C "$REPO_ROOT" config --get core.hooksPath 2>/dev/null || true)"
+  if [ -n "$configured" ] && [ "$configured" != "$GIT_HOOKS_DIR" ]; then
+    printf 'core.hooksPath=%s' "$configured"
+    return 0
+  fi
+  git_dir="$(git -C "$REPO_ROOT" rev-parse --absolute-git-dir 2>/dev/null || true)"
+  for hook in "$git_dir"/hooks/*; do
+    case "$hook" in *.sample) continue ;; esac
+    if [ -f "$hook" ]; then
+      printf '%s' "$hook"
+      return 0
+    fi
+  done
+}
+
+print_wiring_summary() {
+  info "wiring summary:"
+  local entry status component note
+  for entry in "${WIRING_SUMMARY[@]}"; do
+    IFS='|' read -r status component note <<< "$entry"
+    info "  $component: $status — $note"
   done
 }
 
@@ -317,18 +392,30 @@ merge_global_claude_md() {
 }
 
 confirm_plan
-info "1/5 prerequisites"
+info "1/7 prerequisites"
 ensure_prerequisites
 ensure_node
-info "2/5 MCP wiring"
+info "2/7 MCP wiring"
 wire_mcps
-info "3/5 oso-code plugin"
+info "3/7 oso-code plugin"
 install_plugin
-info "4/5 legacy cleanup"
+info "4/7 git commit hook"
+if [ "$INSTALL_GIT_HOOK" = true ]; then
+  wire_git_commit_hook
+else
+  info "skipping the git commit hook (--no-git-hook)"
+fi
+info "5/7 impeccable"
+if [ "$INSTALL_IMPECCABLE" = true ]; then
+  wire_impeccable
+else
+  info "skipping impeccable (--no-impeccable)"
+fi
+info "6/7 legacy cleanup"
 remove_legacy_artifacts
 remove_legacy_settings_entries
 ensure_output_style
-info "5/5 global CLAUDE.md"
+info "7/7 global CLAUDE.md"
 merge_global_claude_md
-print_mcp_summary
+print_wiring_summary
 info "done — restart your Claude Code sessions to pick everything up"

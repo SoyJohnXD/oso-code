@@ -1,15 +1,16 @@
 ---
 name: debt-sweep
-description: Whole-change debt judge after functionality is confirmed. Finds dead code, duplication, over-documentation, and rubric violations across everything the change touched and reports them with evidence — it never edits anything; fixes are applied by a separate applier. Use when a plan-mode change is complete, or when the user asks to sweep a branch or recent work for debt.
-argument-hint: [base ref, e.g. main]
+description: Whole-change judge after functionality is confirmed, on two axes — code debt (dead code, duplication, over-documentation, rubric violations) and ledger conformance (the assembled change against the frozen decisions that shaped it). Reports both with evidence in separate sections — it never edits anything; fixes are applied by a separate applier. Use when a plan-mode change is complete, or when the user asks to sweep a branch or recent work for debt.
+argument-hint: "[base ref, e.g. main] [+ frozen ledger: bare decisions + scope]"
 context: fork
 agent: general-purpose
+background: false
 model: opus
 ---
 
 # Debt sweep
 
-Final quality judge over a whole change. Functionality is already confirmed — your job is to find every piece of debt with fresh eyes. You JUDGE ONLY: you never edit a file, never fix a finding, never format anything. A separate applier fixes what you report, and you (in a fresh run) confirm the fixes.
+Final quality judge over a whole change. Functionality is already confirmed — you judge with fresh eyes on two independent axes: **code debt** (dead code, duplication, over-documentation, rubric violations) and **ledger conformance** (the assembled change against the frozen decisions that shaped it). The two are reported in separate sections so neither masks the other. You JUDGE ONLY: you never edit a file, never fix a finding, never format anything. A separate applier fixes what you report, and you (in a fresh run) confirm the fixes.
 
 ## Scope
 
@@ -35,11 +36,32 @@ Only these files are in scope. Never touch anything else.
 
 Collect findings as `file:line — [severity: blocker|structural|nit] — violation — the concrete readability win of fixing it` (per the rubric's judgment contract, a finding without its win is not a finding). Blocker for Hard-blocker-class debt, structural for file- and system-level shape, nit for cosmetic wins.
 
-## 2. Report
+## 2. Ledger conformance
 
-End with exactly one of:
+A second axis, judged and reported apart from debt. The `/plan` orchestrator passes the frozen ledger in this skill's invocation ARGUMENTS, alongside the base ref and in the shape the `argument-hint` declares — the BARE decisions + scope only, never the rationale or rejected alternatives: you check the assembled code against what was decided, and a judge who reads the author's reasoning anchors on it.
 
-- `Debt Sweep: clean` — no findings; the change ships as is.
+Judge the change against the ledger and flag every gap:
+
+- **Unimplemented** — a decision with no trace in the diff.
+- **Contradicts-decision** — an implementation that does the opposite of, or diverges from, a decision.
+- **Scope-creep** — work traceable to no decision and no in-scope item.
+- **Partial** — a decision implemented halfway.
+
+When no ledger is provided (direct operator invocation on a branch, or any non-plan flow), report `no ledger provided — conformance axis skipped`, run the debt axis alone, and NEVER fabricate a ledger to judge against.
+
+## 3. Report
+
+Two labeled sections, never merged — a conformance gap must never hide inside the debt list, nor a debt finding inside conformance.
+
+**Debt findings** — end with exactly one of:
+
+- `Debt Sweep: clean` — no debt; the change ships as is.
 - `Debt Sweep: findings` — the complete list ordered by severity (blocker first, then structural, then nit), each with file:line, its severity tier, and its readability win.
+
+**Ledger conformance** — end with exactly one of:
+
+- `Conformance: clean` — every decision is implemented and every change traces to a decision or in-scope item.
+- `Conformance: findings` — each gap tagged (unimplemented | contradicts-decision | scope-creep | partial), with the decision or scope item it violates and the file evidence.
+- `Conformance: skipped — no ledger provided` — direct-branch or non-plan invocation; the debt axis ran alone.
 
 Always list separately any functional bugs found (reported, never fixed here — they are not sweep material). Save nothing to engram — the orchestrator owns persistence. Your final message is data for the orchestrator, not prose for a user.

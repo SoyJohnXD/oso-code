@@ -11,7 +11,7 @@
         ]
       },
       {
-        "matcher": "Edit|Write|NotebookEdit",
+        "matcher": "Edit|MultiEdit|Write|NotebookEdit|mcp__fallow__fix_apply",
         "hooks": [
           {
             "type": "command",

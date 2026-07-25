@@ -12,6 +12,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Hook regression suite
         run: tests/hooks-test.sh
+      # The suite's most delicate constraint is bash 3.2 (macOS ships it), and this
+      # container is how the whole harness has been verifying it. It carries neither
+      # git nor jq, so 297 of the 313 cases run here and four skip lines stand for the
+      # 16 that do not: one line for the whole git-layer block (13 cases behind that
+      # single line), two for the reader-parity cases that need a second reader, and one
+      # for the case whose only judge is a strict parser.
+      - name: Hook regression suite on bash 3.2
+        run: docker run --rm -v "$PWD":/repo -w /repo bash:3.2 bash tests/hooks-test.sh
       - name: Install Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code
       - name: Validate plugin manifest
@@ -23,16 +31,34 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      # windows-latest already ships jq: the last green run's `-CiMode` step logged
+      # `jq already present` and installed nothing, so the suite exercises the jq
+      # reader — the one the hooks use in production — on this platform as it stands.
+      # This step is the guard for the day an image drops it, hence the `command -v`
+      # check that makes it a no-op today. install.ps1 provisions jq too, but it is
+      # the last step here and a winget PATH entry would not reach these earlier
+      # `shell: bash` steps anyway: install.sh documents that winget installs join
+      # PATH only in a new shell, and the ps1's registry refresh applies to its own
+      # process.
+      - name: Provision jq for the suite
+        shell: bash
+        run: |
+          command -v jq >/dev/null 2>&1 || choco install jq --no-progress -y
+          export PATH="/c/ProgramData/chocolatey/bin:$PATH"
+          echo 'C:\ProgramData\chocolatey\bin' >> "$GITHUB_PATH"
+          jq --version
       - name: Hook regression suite
         shell: bash
-        run: bash tests/hooks-test.sh
+        run: |
+          jq --version
+          bash tests/hooks-test.sh
       - name: Shell script syntax
         shell: bash
         run: |
           bash -n bootstrap/install.sh bootstrap/verify.sh
           bash -n plugin/hooks/*.sh
-          bash -n plugin/bin/oso-state
-          bash -n tests/hooks-test.sh
+          bash -n plugin/bin/oso-state plugin/git-hooks/pre-commit
+          bash -n tests/hooks-test.sh tests/plugin-lint.sh tests/fixtures/crashing-hook.sh
       - name: Bootstrapper (CI-safe mode)
         shell: powershell
         run: .\bootstrap\install.ps1 -CiMode

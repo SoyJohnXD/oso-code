@@ -3,7 +3,6 @@ name: debug
 description: Debugging and error-recovery mode for something that broke. Triages reproduce-first — reproduce, localize, reduce — then delegates the fix and a regression test through the apply/verify loop with a zero-warnings bar. Use when a bug, crash, or failing behavior needs diagnosis; also the landing point when a /plan or /quick ask turns out to be a bug.
 argument-hint: [what broke]
 disable-model-invocation: true
-model: opus
 ---
 
 # Debug mode
@@ -36,33 +35,37 @@ State all of these — this is the contract §4 hands the applier:
 - **Repro evidence** — the verbatim repro from §1.
 - **Fix decision** — what changes and where.
 - **Named regression test** — the test that FAILS without the fix and passes with it.
-- **Zero-warnings commands** — discover them (package.json scripts, Makefile, CI config), record the exact lint/type/test/build/run commands, mark the rest N/A.
+- **Zero-warnings commands** — discover them (package.json scripts, Makefile, CI config), record the exact lint/type/test/build/run commands, mark the rest N/A. When the fix touches front surface (the shared trigger at `${CLAUDE_SKILL_DIR}/../_shared/front-surface.md`), the pinned design detector joins them: resolve the pin by that file's recipe and record both numerals here; a pin that cannot be resolved at all is named here instead, never left as a placeholder.
 - **Override** — the §1 hypothesis override, if any.
 
-Save ONCE per D5: `mem_save(title: "oso/{bug}/diagnosis — {human description}", topic_key: "oso/{bug}/diagnosis", type: "architecture", capture_prompt: false, content: root cause + repro evidence + fix decision + named regression test + override if any)`. `{bug}` is a short kebab slug; content and title in English. No oso/index row — the index tracks changes, not bugs.
+Save ONCE per D5: `mem_save(title: "oso/{bug}/diagnosis — {human description}", topic_key: "oso/{bug}/diagnosis", type: "architecture", capture_prompt: false, content: root cause + repro evidence + fix decision + named regression test + the two Impeccable numerals on a front-surface fix + override if any)`. `{bug}` is a short kebab slug; content and title in English. No oso/index row — the index tracks changes, not bugs.
 
 **Reverse detour (D6).** If triage reveals the "bug" is a design flaw needing architecture or contract decisions, say why in one sentence and offer `oso-code:plan`; the operator decides. If they continue here, continue without further pushback; on acceptance the diagnosis travels as intent input to /plan.
 
 ## 4. Delegated fix — you never write it inline
 
-Arm the state:
+Arm the state — the whole triple goes in every write because `oso-state` can set a key but never delete one: a stale green or a slice left armed by an abandoned flow is overwritten here, never inherited.
 `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" set mode=debug active_slice=fix verify_green=false`
+Read it back with `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" show` and confirm the three keys came back as written — a write that silently failed leaves the commit gate open with no other signal, so stop and tell the operator instead of delegating.
+State survives until the session ends: if the operator walks away from this bug mid-flow, run `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" clear`, or the stale green rides over whatever unrelated work follows in the session.
 
-Then run the apply/verify loop (mechanics mirror plan §6):
+Then run the apply/verify loop (mechanics mirror plan §6). Both launches run in the FOREGROUND: launch one subagent, wait, and read its report in the same turn before moving on. Since client v2.1.198 a subagent runs in the background unless the launch passes `run_in_background: false`, and a background result arrives in a LATER turn — so a backgrounded applier sends step 2 to verify a fix nobody wrote yet, and a backgrounded verifier lets the close's green (§5 step 4) land over a verdict nobody read.
 
 1. **Apply (subagent)** — launch `oso-applier` with the diagnosis packaged as a ledger: root cause, repro evidence, fix decision, the named regression test, the project conventions, the zero-warnings commands, and the rubric path `${CLAUDE_SKILL_DIR}/../_shared/rubric.md`.
-2. **Verify (subagent)** — launch `oso-verifier` with the fix criteria; its failing-check contract judges that the named regression test is new or extended by the fix diff and exercises its behavior.
-   - Verifier `fail` → relaunch the applier with the findings. Loop apply → verify.
-   - Applier `blocked` → resolve with the operator, update the diagnosis, launch a FRESH applier.
+   - When the FIX touches front surface (per the shared trigger at `${CLAUDE_SKILL_DIR}/../_shared/front-surface.md`), the packaged ledger additionally carries the project's `DESIGN.md`/`PRODUCT.md` as conventions and the filesystem paths to the installed Impeccable skill's `SKILL.md` and its `reference/` playbook directory, which the applier READS as design reference. **Absence policy (D3 · 2026-07-24):** if Impeccable is not installed, follow the absence policy in `${CLAUDE_SKILL_DIR}/../_shared/front-surface.md`; debug records the gap in the diagnosis notes.
+2. **Verify (subagent)** — launch `oso-verifier` with the fix criteria; its failing-check contract judges that the named regression test is new or extended by the fix diff and exercises its behavior. When the fix touched front surface, the fix criteria also include the pinned design detector on the touched surfaces, run at the numeral the diagnosis resolved and recorded (§3) — the design gate, under the detect-gate contract in `${CLAUDE_SKILL_DIR}/../_shared/front-surface.md`; a detector blocked by the environment, or a pin the diagnosis could not resolve, is named as skipped. The named regression test stays the exit criterion and there is no Impeccable `audit` loop — detect is the design gate.
+   - Verifier `fail` → relaunch the applier on the same diagnosis packaged as a ledger, carrying the verifier's findings. Loop apply → verify.
+   - Applier `blocked` → resolve with the operator, update the diagnosis, launch a FRESH applier on the updated diagnosis packaged as a ledger.
    - Verifier `blocked` → resolve the blocker, relaunch the verifier only.
-3. Only on the verifier's `pass`: `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" set verify_green=true`.
+3. The verifier's `pass` closes the fix, not the flow: the state stays red until the close's green (§5 step 4), because the quality pass and any accepted security fixes still edit code.
 
 ## 5. Close
 
-1. Close via the `oso-code:quality-pass` skill on the touched code; offer `oso-code:debt-sweep` instead ONLY when the fix sprawled across many files.
-2. **Security offer (D4).** If the fix touched data models, auth, or payments, offer AND recommend a security review BEFORE any commit — the native review reads the PENDING working-tree diff, and after commit there is nothing left to review. On acceptance, invoke the `security-review` skill through the Skill tool when it appears in the session's skill listing; when absent, recommend the operator type `/security-review`. Never invoke without acceptance; declining proceeds.
+1. Close via the `oso-code:quality-pass` skill on the touched code; offer `oso-code:debt-sweep` instead ONLY when the fix sprawled across many files — debug passes it no ledger, so it answers `Debt Sweep: clean` or `Debt Sweep: findings` over the debt axis alone and `Conformance: skipped — no ledger provided` on the axis that had nothing to judge against, which is this flow's expected shape and not a gap to close. When the fix touched front surface, debug never runs Impeccable's `init` or `document` — a bug fix does not bootstrap a design system; if the project has no `DESIGN.md`/`PRODUCT.md`, the pinned detect (§4) still ran as the design gate and the missing-design-docs gap is named here in one clause.
+2. **Security offer (D4).** If the fix touched data models, auth, or payments, offer AND recommend a security review BEFORE any commit — the review reads the PENDING working-tree diff, and after commit there is nothing left to review. On acceptance, invoke the `oso-code:security-pass` skill through the Skill tool — it runs the review in its own forked subagent — with NO base ref in its ARGUMENTS, since debug tracks no branch model, and relay the returned markdown report to the operator verbatim; fixes the operator accepts go through the `oso-applier` agent as judge findings, never inline, then RE-RUN `oso-code:security-pass` until it returns `Security Pass: clean` or the operator explicitly accepts the residual findings. Never invoke without acceptance; declining proceeds.
 3. Save a session summary to engram with a rich title (English).
-4. Never commit, push, or open a PR unless the user asks.
+4. **Green, last** — once the quality pass has returned `Quality Pass: passed` and any accepted security fixes have landed with the zero-warnings commands re-run: `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" set mode=debug active_slice=none verify_green=true`. Nothing may edit code after this write: a path that has to — an accepted security fix in step 2, a late correction — re-reds the flag (`"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" set mode=debug active_slice=fix verify_green=false`), re-runs those commands, and only then repeats this step. Green is never left standing over an edit the bar has not seen.
+5. Never commit, push, or open a PR unless the user asks.
 
 ## Traps
 

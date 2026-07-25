@@ -125,6 +125,45 @@ else
   check "hook regression suite" "pass" "fail"
 fi
 
+# 9. impeccable, on both surfaces the design bar uses: the plugin (skill + design
+#    docs) and the CLI reachable through npx. The CLI check runs the very command
+#    the design bar resolves its pin with (the recipe in
+#    plugin/skills/_shared/front-surface.md), so it answers whether npx can fetch
+#    and run impeccable at all — not whether a pin recorded in an earlier session
+#    still resolves. Only the plugin check goes red under --no-impeccable: npx
+#    resolves impeccable from the public registry, so the CLI check stays green
+#    whether or not the plugin was ever installed.
+impeccable_listed="$(claude plugin list 2>/dev/null | grep -c 'impeccable' || true)"
+check "impeccable plugin installed" "1" "$([ "$impeccable_listed" -ge 1 ] && echo 1 || echo 0)"
+check "impeccable CLI runnable via npx" "1" \
+  "$(npx impeccable --version </dev/null >/dev/null 2>&1 && echo 1 || echo 0)"
+
+# 10. The commit gate's primary layer, where this repo has it: the git hook only
+#     exists while core.hooksPath still points at it, and it only runs while it is
+#     executable. A repo whose hooks belong to another tool never had this layer
+#     wired (see wire_git_commit_hook in install.sh), so that is a note, not a fail.
+git_hook="$REPO_ROOT/plugin/git-hooks/pre-commit"
+wired_hooks_path="$(git -C "$REPO_ROOT" config --get core.hooksPath 2>/dev/null || true)"
+if [ "$wired_hooks_path" = "$(dirname "$git_hook")" ]; then
+  check "git commit hook executable at the wired core.hooksPath" "1" \
+    "$([ -x "$git_hook" ] && echo 1 || echo 0)"
+else
+  echo "note: core.hooksPath is ${wired_hooks_path:-unset} in $REPO_ROOT — the git commit layer is not wired here, so only the PreToolUse gate applies"
+fi
+
+# 11. CR bytes in a shipped executable: this checks the copy that actually runs,
+#     which .gitattributes can only promise. A lone CR makes bash read `then\r` as a
+#     command and takes a hook down mid-verdict. Bytes only — the repo's prose is
+#     full of em-dashes, and non-ASCII is no hazard.
+#     The Windows entrypoints are in scope because that is where this class has
+#     actually shipped from here, twice (bb4356f, 88f0c1e) — both times in
+#     install.ps1 or install.bat, which nothing was scanning.
+#     grep exits 1 on a clean tree, so guard the substitution like the rest of this
+#     block; keep grep's stderr in the value so a scan path that vanished fails loudly
+#     instead of reporting green on nothing scanned.
+cr_shipped="$(cd "$REPO_ROOT" && LC_ALL=C grep -rlF -e $'\r' plugin/hooks plugin/bin plugin/git-hooks bootstrap/*.sh bootstrap/install.ps1 bootstrap/install.bat 2>&1 | tr '\n' ' ' || true)"
+check "shipped executables carry no CR bytes" "none" "${cr_shipped:-none}"
+
 echo "----"
 echo "passed: $pass, failed: $fail"
 [ "$fail" -eq 0 ]

@@ -4,6 +4,7 @@ description: Fresh-context adversarial reviewer of a decision-ledger candidate. 
 argument-hint: [intent + surface map + bare decisions]
 context: fork
 agent: general-purpose
+background: false
 model: opus
 ---
 

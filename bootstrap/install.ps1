@@ -16,14 +16,16 @@ delegation smoke test - then stops. It never installs Claude Code and never runs
 the real install.sh (which needs an authenticated `claude` and rewrites the home
 dir). It exercises every PowerShell-specific path without the authenticated tail.
 
-Usage: install.ps1 [-Yes] [-ReplaceClaudeMd] [-CiMode]
+Usage: install.ps1 [-Yes] [-ReplaceClaudeMd] [-NoImpeccable] [-CiMode]
   -Yes              forward --yes to install.sh (skip its confirmation prompt)
   -ReplaceClaudeMd  forward --replace-claude-md (replace ~/.claude/CLAUDE.md)
+  -NoImpeccable     forward --no-impeccable (skip installing the impeccable CLI)
   -CiMode           provision + delegation smoke test only (see boundary above)
 #>
 param(
     [switch]$Yes,
     [switch]$ReplaceClaudeMd,
+    [switch]$NoImpeccable,
     [switch]$CiMode
 )
 
@@ -193,6 +195,7 @@ function Invoke-Installer {
     $forwarded = @()
     if ($Yes) { $forwarded += '--yes' }
     if ($ReplaceClaudeMd) { $forwarded += '--replace-claude-md' }
+    if ($NoImpeccable) { $forwarded += '--no-impeccable' }
 
     Write-Info "delegating to install.sh under Git Bash ($BashExe)"
     & $BashExe $installSh @forwarded
