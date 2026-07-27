@@ -1,6 +1,22 @@
 # Changelog
 
+## 0.16.0
+
+**Reinstall required** — `bootstrap/` changed, and no plugin update carries it: pull the repo and re-run `bash bootstrap/install.sh`.
+
+The third mode made whole, and the release rails under it — `/debug` shipped in 0.13.0 unreachable from the always-loaded file that routes a session into a mode, with a close whose green one of its own branches traded away; the installer read a hard `cargo` failure as success and could repoint the marketplace at a working tree nobody chose; the verifier died mid-report on any input it could not read; and the design record was a 13-entry prose log where a decision could only be found by reading all of it. The hook suite that judges the hooks grows from 313 to 338 cases, the linter that judges the prose from six rules to eleven, and the log becomes 75 numbered decisions held from both ends:
+
+- `/debug` is reachable and its contract closes end to end: `bootstrap/claude-global.md` routes "something broke" to `/oso-code:debug`, which is the only thing that can send a session there — the model never invokes the mode on its own — and a linter rule now holds that routing for every operator-only mode. §3's named regression test gains a bounded escape (`Verify-exception: <reason>`, only where the fix touches no code the suite can execute — a Dockerfile, a CI workflow, an editor config — and never for the §1 hypothesis override, whose test is precisely what tells whether the hypothesis was true), and §4 step 2 hands `oso-verifier` all four things it reads: the fix criteria, the zero-warnings commands the diagnosis froze, the rubric path, and the frozen diagnosis itself as fix-decision context — under that name and never "as ledger", since this flow freezes none, which the agent's own contract now states where it used to assume a ledger and fail a new abstraction for the absence of one nobody handed it. `quality-pass` names its real callers, quick and debug rather than quick and plan, and reads the diagnosis's frozen commands in debug mode. And the close's debt-sweep offer is ADDITIVE to the quality pass instead of replacing it — the old wording traded away the `Quality Pass: passed` that step 4's green reads, so that branch could never go green at all — with a fix route (findings → `oso-applier` as a debt cleanup, re-judged until `Debt Sweep: clean`), a re-run of the pass over whatever cleanup landed, and `Conformance: skipped — no ledger provided` named as this flow's expected answer rather than the re-invocation trigger the same token is in `/plan`.
+- The hook suite grows from 313 to 338 cases while its hand-rolled assertion blocks collapse from 37 to 8 behind five shared helpers — a consolidation that closed a hole rather than a style pass: a case that ran a hook bare and then read what it left behind reported `ok` even when the hook crashed after doing the work, because nothing judged the run itself. 322 of the cases run in the `bash:3.2` container, where four skip lines stand for the 16 that need git or jq, and 335 run with jq hidden from PATH.
+- `bootstrap/verify.sh` always reaches its summary: seven abort sites now read their inputs in a form that cannot die under `set -euo pipefail`, keep the failing command's own stderr inside the value they report, and fold it to one line so a reason never orphans below the verdict it belongs to — a vanished input goes red with its reason instead of green on nothing scanned, and an operator can tell a broken install from a broken verifier. The optional fallow MCP becomes a `note:` that moves neither tally, since it needs Rust that no prerequisite row requires and `install.ps1` provisions none, so a hard check made the documented one-step Windows path red by construction. The `--no-impeccable` opt-out is recorded as a marker file the installer writes on that path and CLEARS on every install that wires the plugin, which is what makes `failed: 0` reachable for an operator who declined the design bar without letting a stale marker report a genuinely failed install as their choice. The npx probe gets a portable in-shell 20-second bound — `timeout(1)` is GNU coreutils and macOS ships none — whose kill reaches the node children npx spawns instead of orphaning them, and `OSO_VERIFY_SKIP_SLOW=1` drops the two checks that re-run the suite or fetch from npm. That flag is what lets CI run the script at all: a new step is the first thing anywhere that has ever executed `verify.sh`, and it gates on the `passed:` line rather than the exit code, because against a fixture HOME the install checks fail by design while only a dead substitution removes the summary.
+- The installer stops scoring failures as successes and stops repointing the marketplace behind the operator. The `*already*` substring arm is gone from both `run_or_fail` and `run_wiring`: measured against the clients, `claude plugin install` and `cargo install` both exit 0 on an already-installed package, while `cargo install` exits 101 when an untracked binary already occupies the destination and says "already" in the message it fails with — so the arm only ever turned a hard failure green, and the one command that really does report an existing entry as a failure, `claude mcp add`, gets an explicit `claude mcp get` re-check instead. Marketplace registration moves into `ensure_marketplace_source`: a source already registered as a local `directory` is named to the operator with what it costs (`marketplace update` refreshes nothing there, and `plugin update` installs whatever that tree currently holds) and is repointed at GitHub only when the remote is reachable AND the operator consents — this plugin is developed from a clone like that, where an unasked repoint swaps unreleased edits for the published release. A failed `marketplace add` is classified off the client's own message (`seed-managed`, `policy-blocked`, `invalid-source`, `invalid-manifest`, `unreachable`, anything else `unknown`), only `unreachable` earns the local fallback, and that fallback refuses a `$REPO_ROOT` carrying no `.claude-plugin/marketplace.json` — piped through `curl | bash` there is no `$BASH_SOURCE`, so the path lands on `/` under bash 3.2 or on the parent of the operator's cwd, and the manifest is the one thing that tells a real clone from either. The run moves into `main()` behind a `BASH_SOURCE`/`$0` guard so the suite can source the file and exercise those decisions directly, and the wiring summary survives an empty array under the bash 3.2 `set -u` macOS ships.
+- `install.ps1`'s `Update-EnvPath` unions instead of replacing: the registry `Machine`+`User` scopes come first, because appending them behind a stale process PATH re-shadows the very tool the refresh exists to expose, and every entry that lives only in this process survives — an nvm/fnm/volta shim, a caller's prepend, a CI-injected path, a portable Git is in no registry scope at all, and dropping it took `Find-GitBash`'s own `git` with it.
+- README states the two tiers an update travels, because the harness reaches a machine by two routes: `claude plugin update oso-code@oso-code` carries everything under `./plugin`, which is the marketplace entry's whole source and works with no working copy of the repo at all, while a release marked **Reinstall required** means `bootstrap/` changed and only re-running `install.sh` carries it — that marker is now on every past release whose `bootstrap/` moved, back to 0.1.0. It also says how to read `verify.sh`'s report: `ok:`/`FAIL:` lines, a closing `passed: N, failed: M` that is also the exit status, and `note:` lines that are not checks and move neither number. Both manifests are completed — `plugin.json` gains `homepage`, `repository`, `license` and `keywords`, and `.claude-plugin/marketplace.json` gains its `$schema` and the entry's `author`, `category` and `keywords` — so `claude plugin validate --strict .` has as much to judge as `--strict plugin`.
+- The blueprint's 13-entry amendment log becomes 75 numbered decisions under `docs/decisions/`, one per decision, ids fixed at creation because the skills cite them, with the blueprint keeping an index sorted by DATE — a 2026-07-06 entry sat ten days out of order in the log, a filing error the ids preserve and the index corrects — and every file carrying a `Reconciled:` line that says where the decision landed in exactly one of four words (`applied`, `superseded`, `elsewhere`, `nowhere`) plus the text naming the location, since a marker naming no location answers nothing. Two properties of the old log are carried forward as facts rather than corrected: a contradiction between two entries over `tests/plugin-lint.sh`'s rule count, and the provenance of three entries edited in place, which `git log -S` recovers where `git blame` reports only the annotating commit. `tests/plugin-lint.sh` grows from six rules to eleven to hold the record: the always-loaded routing file names every operator-only mode; every line that launches `oso-verifier` names the payload it hands it; every decision says where it landed; every decision a skill cites resolves to one of those files AND is named back by it in `Implemented-in:`, so a citation retargeted to the wrong decision breaks the second half even when the first still resolves (the twelve references in plugin prose are held from both ends); and the prose that counts these rules — the linter's own header and README's linter row — names the number the functions declare, so a count that decorates instead of describing fails; while the call-site rule that was already there keeps its at-least-one-token floor and gains a second half over it — for every axis its emitter can report as `skipped`, a site that names any of that axis's OTHER verdicts must carry the skipped one verbatim too, since a gate that reads an axis and never carries the answer `it did not run` reads that answer as neither verdict and opens its green write over an axis that never ran.
+
 ## 0.15.0
+
+**Reinstall required** — `bootstrap/` changed, and no plugin update carries it: pull the repo and re-run `bash bootstrap/install.sh`.
 
 Runtime enforcement that actually enforces, and the mechanisms 0.14.0 introduced made to match their own docs — a four-lens audit found both hooks failing open on a telemetry write, ~24 matcher bypasses beside 9 false denials, and a one-shot edit gate; the commit rail is now two layers over a lexer, armed sessions fail closed, every abnormal branch leaves a trace, and six contracts that described behavior the code did not have are now true:
 
@@ -43,6 +59,8 @@ Anti-rationalization trap tables, an adversarial doubt pass, and a slice regress
 
 ## 0.11.0
 
+**Reinstall required** — `bootstrap/` changed, and no plugin update carries it: pull the repo and re-run `bash bootstrap/install.sh`.
+
 Repaso de cambios, derived decision categories, and an anti-swallow delivery contract — the harness fixes a TUI bug that was silently hiding its own explanations and redesigns the model that had been built on top of the gap:
 
 - Repaso de cambios (change recap) replaces the didactic walkthrough: a fixed three-section brief (Qué se va a realizar / Decisiones del ledger que lo moldean / Cómo va a funcionar), ~20-line soft cap, written in the operator's language at their depth preference — never a forced didactic register — that heads the plan argument the native `ExitPlanMode` gate renders, immediately followed by the full plan detail. No confirmation loop; `ExitPlanMode` is the single approval gate.
@@ -51,6 +69,8 @@ Repaso de cambios, derived decision categories, and an anti-swallow delivery con
 - First-run preference round shrinks from three questions to two — explanation depth and adaptive teaching only, the old always/never/offer gating field retired — with a self-healing migration that strips the retired field from any stored `oso/preferences` observation via `mem_update` (merge, never overwrite).
 
 ## 0.10.0
+
+**Reinstall required** — `bootstrap/` changed, and no plugin update carries it: pull the repo and re-run `bash bootstrap/install.sh`.
 
 Windows install path, durable MCP wiring, reachable state, identity-level voice, and a comprehension-gated walkthrough — the harness installs clean on a fresh Windows box and stays wired, warm, and understood:
 
@@ -62,6 +82,8 @@ Windows install path, durable MCP wiring, reachable state, identity-level voice,
 
 ## 0.9.0
 
+**Reinstall required** — `bootstrap/` changed, and no plugin update carries it: pull the repo and re-run `bash bootstrap/install.sh`.
+
 Walkthrough-before-approval, pana voice, language policy, and index recall — the plan flow tells one story and speaks in one voice:
 
 - Walkthrough moved ahead of approval: the slice plan is presented, the optional end-to-end walkthrough explains it, then a single operator approval is the one gate that starts execution — the former separate "operator says ready" gate is gone. On that approval the plan saves, the `oso/index` row upserts to `executing`, and runtime state initializes.
@@ -72,6 +94,8 @@ Walkthrough-before-approval, pana voice, language policy, and index recall — t
 
 ## 0.8.0
 
+**Reinstall required** — `bootstrap/` changed, and no plugin update carries it: pull the repo and re-run `bash bootstrap/install.sh`.
+
 Operator adaptation — the harness learns how each operator wants to work and meets them there:
 
 - Operator preferences ask once, then apply forever: a single `oso/preferences` engram observation (per-machine `scope: personal`, one upserted row) captures three preferences — E2E walkthrough (always / never / offer each time), explanation depth (concise / standard / didactic), and adaptive teaching (auto-detect / always / off). Asked in `/plan` step 0 on first run only, read silently at every plan/quick start after; `/quick` consumes it but never asks; natural-language changes update it via `mem_update`.
@@ -80,6 +104,8 @@ Operator adaptation — the harness learns how each operator wants to work and m
 - Oso register fix: Colombian Spanish now addresses the operator with tuteo (tú) and natural usted (e.g. "hágale pues"); voseo is banned (no vos, sabés, tenés, querés, podés).
 
 ## 0.7.0
+
+**Reinstall required** — `bootstrap/` changed, and no plugin update carries it: pull the repo and re-run `bash bootstrap/install.sh`.
 
 Harness audit (5-judge review) — hardening across the rubric, the agents, and the gates:
 
@@ -99,6 +125,8 @@ Harness audit (5-judge review) — hardening across the rubric, the agents, and 
 
 ## 0.5.0
 
+**Reinstall required** — `bootstrap/` changed, and no plugin update carries it: pull the repo and re-run `bash bootstrap/install.sh`.
+
 - Model assignments per role: `/plan` orchestrator and the debt-sweep judge pin `opus`; `oso-applier` and `oso-verifier` pin `sonnet`. `/quick` and `quality-pass` keep inheriting the session model. Note: a pinned model is exact, not a minimum — sessions on a higher-tier model will still run pinned components on the pinned tier.
 
 ## 0.4.0
@@ -115,9 +143,13 @@ Pilot #1 findings (expense-splitter run: 10 slices, 0 false gate blocks, but thr
 
 ## 0.2.0
 
+**Reinstall required** — `bootstrap/` changed, and no plugin update carries it: pull the repo and re-run `bash bootstrap/install.sh`.
+
 - `Oso` output style shipped with the plugin: Colombian mentor persona — teaches and corrects with warmth, blocks sloppy work, never agrees without verifying. Persona governs conversation tone only; enforcement stays structural (rubric, hooks, global rules). Activate with `/output-style Oso`.
 
 ## 0.1.0
+
+**Reinstall required** — `bootstrap/` changed, and no plugin update carries it: pull the repo and re-run `bash bootstrap/install.sh`.
 
 Initial release.
 

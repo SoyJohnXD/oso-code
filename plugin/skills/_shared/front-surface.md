@@ -28,10 +28,29 @@ Three of those rows rest on text that IS shared: the pin recipe, the audit exit 
 
 Impeccable ships on TWO independent release lines that share no numbering — the Claude Code marketplace plugin and the npm CLI — so the pin is NEVER read off the installed plugin's version; it is resolved from the npm channel by this recipe, the single source for it:
 
-- **Resolve the pin** — run `npx impeccable --version`. The numeral that command returns IS the pin, and the detector then runs as `npx impeccable@<that numeral> detect`.
+- **Resolve the pin, under a 20-second bound** — run `npx impeccable --version`. The numeral that command returns IS the pin, and the detector then runs as `npx impeccable@<that numeral> detect`. npx fetches from the registry before it can run anything, so an unreachable one hangs with no bound at all, and `timeout(1)` is GNU coreutils that macOS does not ship — so the bound is in-shell, exactly as `bootstrap/verify.sh` bounds its own npx probe and for the same reason. Job control is what puts the job in its own process group, so the kill reaches the node children npx spawns instead of orphaning them, and the subshell is what keeps that setting out of the rest of the session:
+
+  ```bash
+  ( set -m
+    npx impeccable --version & pin_probe=$!
+    bound_seconds=20
+    waited=0
+    while kill -0 "$pin_probe" 2>/dev/null; do
+      if [ "$waited" -ge "$bound_seconds" ]; then
+        kill -TERM "-$pin_probe" 2>/dev/null || kill -TERM "$pin_probe" 2>/dev/null
+        echo "pin slow: npm did not answer within ${bound_seconds}s — retryable, never an unresolvable pin"
+        break
+      fi
+      sleep 1
+      waited=$((waited + 1))
+    done
+    wait "$pin_probe" 2>/dev/null )
+  ```
+
+- **A bound that fires is SLOW, never unresolvable** — this step RESOLVES the pin rather than checking anything, so collapsing the two failures would turn a slow registry into a silently skipped design gate in every mode that reaches here. npm not answering inside the bound is RETRYABLE: run the recipe once more, and if the bound fires again, tell the OPERATOR the registry is not answering and that re-running the mode is what resolves the pin — never take the exception for it. Only npx failing on its own — no Node, no such package, a registry error it reports — is the unresolvable pin the bullets below name.
 - **Record both numerals** — the CLI's, from `npx impeccable --version`, and the plugin's, from `claude plugin list`, where the invoking mode records things (`/plan` → the ledger's Verification row, `/quick` → the close's session summary, `/debug` → the diagnosis freeze). Both, because the arm that JUDGES design — the `audit` skill and its `reference/` playbooks — ships with the plugin, which bootstrap installs unversioned, so pinning the CLI alone leaves the judging half unpinned.
 - **When it is resolved** — `/plan` resolves at its first front-touching slice (§6), never during planning: `npx impeccable --version` fetches and executes a package, and plan's phases 1–5 run inside read-only Plan Mode, so §3 records the recipe and the commitment while §6 produces the numerals. `/quick` and `/debug` are not in Plan Mode: `/quick` resolves when the front work starts (§4 step 2), `/debug` at the §3 diagnosis freeze.
-- **Never silent** — a detector false positive is silenced through Impeccable's own config or an inline disable, no new machinery either way. A detector the environment blocks — and equally a pin that cannot be resolved at all (no Node, offline, registry error) — is NAMED in the mode's own record, in the form that mode has for it: never left as an unresolved placeholder, never dropped.
+- **Never silent** — a detector false positive is silenced through Impeccable's own config or an inline disable, no new machinery either way. A detector the environment blocks — and equally a pin that cannot be resolved at all (no Node, no such package, a registry error npx reports) — is NAMED in the mode's own record, in the form that mode has for it: never left as an unresolved placeholder, never dropped.
 
 ### Audit loop at close — the exit bar
 

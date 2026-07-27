@@ -19,7 +19,7 @@ dir). It exercises every PowerShell-specific path without the authenticated tail
 Usage: install.ps1 [-Yes] [-ReplaceClaudeMd] [-NoImpeccable] [-CiMode]
   -Yes              forward --yes to install.sh (skip its confirmation prompt)
   -ReplaceClaudeMd  forward --replace-claude-md (replace ~/.claude/CLAUDE.md)
-  -NoImpeccable     forward --no-impeccable (skip installing the impeccable CLI)
+  -NoImpeccable     forward --no-impeccable (skip installing the impeccable plugin)
   -CiMode           provision + delegation smoke test only (see boundary above)
 #>
 param(
@@ -53,10 +53,19 @@ function Test-CommandExists {
 # Winget writes new tools into the registry PATH, but the current process keeps
 # its stale copy until a new shell starts. Re-read Machine+User PATH so a freshly
 # installed tool becomes visible without asking the operator to reopen anything.
+# The refresh is a UNION, never a replacement: an entry that lives only in this
+# process - an nvm/fnm/volta shim, a caller's prepend, a CI-injected path, a
+# portable Git - is in no registry scope, and dropping it takes Find-GitBash's own
+# `git` with it. Ordering is the behavior: the registry scopes come FIRST, because
+# appending them behind a stale process PATH would re-shadow the very tool this
+# refresh exists to expose.
 function Update-EnvPath {
-    $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
-    $user = [Environment]::GetEnvironmentVariable('Path', 'User')
-    $env:Path = @($machine, $user | Where-Object { $_ }) -join ';'
+    $registry = @('Machine', 'User') |
+        ForEach-Object { [Environment]::GetEnvironmentVariable('Path', $_) } |
+        Where-Object { $_ } |
+        ForEach-Object { $_ -split ';' }
+    $processOnly = @($env:Path -split ';' | Where-Object { $registry -notcontains $_ })
+    $env:Path = (@($registry) + $processOnly | Where-Object { $_ } | Select-Object -Unique) -join ';'
 }
 
 function Invoke-Bootstrap {

@@ -1,9 +1,20 @@
 {
   "name": "oso-code",
   "description": "Team harness for Claude Code: guided orchestrator with three modes (/plan for substantial changes, /quick for fast iteration, /debug for reproduce-first bug fixing), apply/verify loops, a forked pre-commit security review, an Impeccable design bar on front surfaces, and a final debt-sweep phase.",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "outputStyles": "./output-styles/",
   "author": {
     "name": "Osoria Tech"
-  }
+  },
+  "homepage": "https://github.com/SoyJohnXD/oso-code",
+  "repository": "https://github.com/SoyJohnXD/oso-code",
+  "license": "Apache-2.0",
+  "keywords": [
+    "workflow",
+    "orchestration",
+    "planning",
+    "debugging",
+    "code-quality",
+    "hooks"
+  ]
 }

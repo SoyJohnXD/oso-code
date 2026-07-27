@@ -14,12 +14,28 @@ jobs:
         run: tests/hooks-test.sh
       # The suite's most delicate constraint is bash 3.2 (macOS ships it), and this
       # container is how the whole harness has been verifying it. It carries neither
-      # git nor jq, so 297 of the 313 cases run here and four skip lines stand for the
+      # git nor jq, so 322 of the 338 cases run here and four skip lines stand for the
       # 16 that do not: one line for the whole git-layer block (13 cases behind that
       # single line), two for the reader-parity cases that need a second reader, and one
       # for the case whose only judge is a strict parser.
       - name: Hook regression suite on bash 3.2
         run: docker run --rm -v "$PWD":/repo -w /repo bash:3.2 bash tests/hooks-test.sh
+      # The only thing that runs verify.sh anywhere. It measures ONE property: the
+      # report reaches its summary. Against a fixture HOME the install checks fail
+      # legitimately — no authenticated CLI (this step runs before the CLI is even
+      # installed), no MCPs, no ~/.claude — so the script exits 1 by design and the
+      # `passed:` line, not the exit code, is the verdict. A substitution that dies
+      # under `set -euo pipefail` emits no such line, which is exactly the class this
+      # guards. OSO_VERIFY_SKIP_SLOW drops the two checks that would re-run the suite
+      # this job already ran above and fetch impeccable from npm on every CI run.
+      - name: Verify report reaches its summary
+        env:
+          OSO_VERIFY_SKIP_SLOW: 1
+        run: |
+          report="$(mktemp)"
+          HOME="$(mktemp -d)" bash bootstrap/verify.sh > "$report" 2>&1 || true
+          cat "$report"
+          grep -q '^passed:' "$report"
       - name: Install Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code
       - name: Validate plugin manifest

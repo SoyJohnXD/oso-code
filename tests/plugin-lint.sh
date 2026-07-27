@@ -1,30 +1,39 @@
 #!/usr/bin/env bash
 # Lints the rules `claude plugin validate --strict` has no opinion on: it does
 # open hooks.json, skill frontmatter and the agents, and fails on a broken one
-# (probed against client 2.1.220), but it never asks what they SAY. Six rules
+# (probed against client 2.1.220), but it never asks what they SAY. Eleven rules
 # hold that ground: a `context: fork` skill declares `background`; the same
 # skill declares an `end with exactly one of:` verdict block; every
 # `oso-code:<name>` the plugin's own prose points at resolves; every call site
 # of a skill that declares such a block carries AT LEAST ONE of that skill's
-# tokens verbatim; security-pass never acquires its diff from a remote-qualified
-# ref; and the Impeccable detect gate never carries a placeholder where its pin
-# belongs. Each rule states its own reason above it; `background` is the one
-# whose cost is least visible: as of client v2.1.218 a fork returns immediately
-# and its verdict arrives in a LATER turn, while every call site in
-# plan/quick/debug reads that verdict in-turn.
-# Only decidable rules live here. Pure sed and grep, no jq: the Windows CI job
-# runs the suite before jq exists. A rule that scans a TREE keeps grep's stderr
-# inside the value it scans (`2>&1`), the way bootstrap/verify.sh's CR-byte
-# check does: `|| true` alone reads an unreadable or missing scan path exactly
-# like "no matches", and a rule that scanned nothing must never report clean. A
-# scan path that vanished therefore surfaces as grep's own error text among that
-# rule's violations — misnamed, but loud and nonzero, which is the point.
+# tokens verbatim AND names the skipped verdict of any axis whose other
+# verdicts it reads; security-pass never acquires its diff from a remote-qualified
+# ref; the Impeccable detect gate never carries a placeholder where its pin
+# belongs; the always-loaded routing file names every mode the model cannot
+# invoke on its own; every line that launches oso-verifier names the payload it
+# hands it; every decision under docs/decisions/ says where it landed; every
+# decision a skill cites resolves to one of those files AND is named back by it;
+# and the prose that says how many rules hold this ground says a number the
+# functions below make true. Each rule states its own reason above it;
+# `background` is the one whose cost is least visible: as of client v2.1.218 a
+# fork returns immediately and its verdict arrives in a LATER turn, while every
+# call site in plan/quick/debug reads that verdict in-turn.
+# Only decidable rules live here. Pure sed and grep, no jq: tests/hooks-test.sh
+# runs this linter as one of its own cases, and CI runs that suite in the
+# bash:3.2 container, which carries neither git nor jq. A rule that scans a TREE
+# keeps grep's stderr inside the value it scans (`2>&1`), the way
+# bootstrap/verify.sh's CR-byte check does: `|| true` alone reads an unreadable
+# or missing scan path exactly like "no matches", and a rule that scanned nothing
+# must never report clean. A scan path that vanished therefore surfaces as grep's
+# own error text among that rule's violations — misnamed, but loud and nonzero,
+# which is the point.
 set -euo pipefail
 
 PLUGIN_ROOT="${1:-$(cd "$(dirname "$0")/../plugin" && pwd)}"
-# The pin rule below is the one rule that reaches outside the plugin tree, so it
-# resolves the repo the same way the default PLUGIN_ROOT does — from this file's
-# own location, never from the argument.
+# Five rules below reach outside the plugin tree — the pin scan, the routing
+# file, the decision files, the citations that bind the plugin to them, and the
+# rule count's own prose surfaces — so the repo resolves the same way the default
+# PLUGIN_ROOT does: from this file's own location, never from the argument.
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 violations=0
@@ -126,23 +135,44 @@ check_impeccable_pin_is_never_a_placeholder() {
 # says is equally broken either way. A caller that loops until a bare `clean`
 # never terminates on `Conformance: skipped — no ledger provided` — it reads a
 # verdict outside its vocabulary as a pass, and the gate the loop guards opens
-# over an axis that never ran. The contract is AT LEAST ONE token verbatim,
-# never the full set: carrying one is how a site proves it speaks the emitter's
-# vocabulary, while demanding all of them would push verdicts a site never acts
-# on into its prose. Decidable: the emitter declares its tokens, and a call site
-# either carries one verbatim or does not.
-check_call_sites_name_a_verdict_token() {
-  local skill emitter tokens caller
+# over an axis that never ran. The FLOOR is at least one token verbatim, never
+# the full set: demanding all of them would fail /debug forever, which passes no
+# ledger and has no reason to name the two conformance verdicts it can never
+# reach, while carrying one is how a site proves it speaks the emitter's
+# vocabulary. One token is not optional above that floor — the skipped verdict of
+# an axis whose OTHER verdicts the site already names. Naming `Conformance:
+# clean` is what turns the skip into a hole: a site that acts on an axis and
+# never carries the answer "it did not run" reads that answer as neither verdict
+# and opens its green write over an axis that never ran, which is exactly what
+# deleting the skip from /plan would leave clean under the floor alone. A site
+# that names only the skip — /debug, whose sweep has no ledger to judge against —
+# reads no verdict of that axis and is asked for nothing. `skipped` is the whole
+# did-not-run vocabulary the emitters have; a second spelling would be a second
+# vocabulary. Decidable both ways: the emitter declares its tokens, and a call
+# site either carries one verbatim or does not.
+check_call_sites_speak_their_emitters_verdict_vocabulary() {
+  local skill emitter tokens skipped_verdicts caller skip axis verdicts_that_ran
   for skill in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
     [ -f "$skill" ] || continue
     emitter="$(basename "$(dirname "$skill")")"
     tokens="$(verdict_tokens "$skill")"
     [ -n "$tokens" ] || continue
+    skipped_verdicts="$(printf '%s\n' "$tokens" | { grep -F ': skipped' || true; })"
     # Bounded on the right so an emitter named `plan` would not collect `oso-code:plan2`.
     for caller in $({ grep -lE "oso-code:$emitter([^A-Za-z0-9_-]|\$)" \
         "$PLUGIN_ROOT"/skills/*/SKILL.md || true; }); do
       printf '%s\n' "$tokens" | grep -qFf - "$caller" \
         || flag "${caller#"$PLUGIN_ROOT"/} invokes oso-code:$emitter but carries none of its verdict tokens"
+      [ -n "$skipped_verdicts" ] || continue
+      while IFS= read -r skip; do
+        axis="${skip%%:*}"
+        verdicts_that_ran="$(printf '%s\n' "$tokens" \
+          | { grep -F "$axis:" || true; } | { grep -vxF "$skip" || true; })"
+        [ -n "$verdicts_that_ran" ] || continue
+        printf '%s\n' "$verdicts_that_ran" | grep -qFf - "$caller" || continue
+        grep -qF "$skip" "$caller" \
+          || flag "${caller#"$PLUGIN_ROOT"/} reads $axis verdicts of oso-code:$emitter but never names \`$skip\`"
+      done <<< "$skipped_verdicts"
     done
   done
 }
@@ -163,6 +193,138 @@ verdict_tokens() {
   done
 }
 
+# `disable-model-invocation: true` is what makes a mode a mode: the model can
+# never reach one on its own, so an operator who was never told the command has
+# no way in. bootstrap/claude-global.md is the one file every session loads,
+# which leaves its Workflow block the only place that can tell them — and 0.13.0
+# shipped `/debug` while that block still listed two modes, so every bug on every
+# installed machine has since been routed to `/plan` or `/quick`. The set is read
+# from the frontmatter rather than listed here, so a fourth mode is either routed
+# or flagged.
+check_global_routing_names_every_operator_only_mode() {
+  local routing_file="$REPO_ROOT/bootstrap/claude-global.md"
+  local workflow_block skill frontmatter_text mode
+  workflow_block="$({ sed -n '/^# Workflow$/,/^# /p' "$routing_file" 2>&1 || true; })"
+  for skill in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
+    [ -f "$skill" ] || continue
+    frontmatter_text="$(frontmatter "$skill")"
+    printf '%s\n' "$frontmatter_text" \
+      | grep -qE '^disable-model-invocation:[[:space:]]*true[[:space:]]*$' || continue
+    mode="$(basename "$(dirname "$skill")")"
+    printf '%s\n' "$workflow_block" | grep -qE "oso-code:$mode([^A-Za-z0-9_-]|\$)" \
+      || flag "${routing_file#"$REPO_ROOT"/} omits oso-code:$mode from its Workflow routing"
+  done
+}
+
+# The verifier reruns the bar itself, so a launch that never names the
+# zero-warnings commands answers `blocked` instead of a verdict; one that never
+# names the rubric path cannot reach the Hard blockers it fails a slice on; one
+# that never names the decisions it judges against fails a new abstraction for
+# the absence of a decision nobody handed it. That last marker is a disjunction
+# because the payload is mode-specific — plan passes ledger decisions, debug a
+# frozen diagnosis, and neither is the other. LINE-scoped, never file-scoped:
+# skills/debug/SKILL.md names the rubric path at its APPLIER launch, so a
+# file-scoped rule reads clean on the very file whose verifier launch is
+# starved. A launch spread over several lines therefore fails too — the payload
+# is what the launched agent reads in one place, and both launches are single
+# lines today.
+check_verifier_launches_name_their_payload() {
+  local skill line launch marker
+  for skill in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
+    [ -f "$skill" ] || continue
+    for line in $({ grep -n 'oso-verifier' "$skill" || true; } \
+        | { grep -i 'launch' || true; } | cut -d: -f1); do
+      launch="$(sed -n "${line}p" "$skill")"
+      for marker in 'criteria' 'zero-warnings' 'rubric.md'; do
+        printf '%s\n' "$launch" | grep -qF "$marker" \
+          || flag "${skill#"$PLUGIN_ROOT"/}:$line launches oso-verifier without naming $marker in its payload"
+      done
+      printf '%s\n' "$launch" | grep -qE 'ledger|diagnosis' \
+        || flag "${skill#"$PLUGIN_ROOT"/}:$line launches oso-verifier without naming the ledger or diagnosis it judges against"
+    done
+  done
+}
+
+# docs/blueprint.md forbids editing its frozen body silently, so every correction
+# lands as a decision file instead — and a decision whose correction never reached
+# that body leaves the design entry point README points at reading as current
+# while it is not. Where each one landed is written down exactly once, in its own
+# `Reconciled:` line, so a decision filed without one costs the next reader a
+# re-derivation against the whole body. Four words, because the honest answers are
+# four: the body reads as the decision decided, a later decision retired it and the
+# body deliberately reads otherwise, it landed outside the body, or it changed no
+# file at all. The word alone will not do — a marker naming no location answers
+# nothing — so the line must carry text after it.
+check_every_decision_records_where_it_landed() {
+  local decision found=0
+  for decision in "$REPO_ROOT"/docs/decisions/*.md; do
+    [ -f "$decision" ] || continue
+    found=$((found + 1))
+    grep -qE '^Reconciled: (applied|superseded|elsewhere|nowhere) .' "$decision" \
+      || flag "${decision#"$REPO_ROOT"/} carries no Reconciled: applied/superseded/elsewhere/nowhere line saying where the decision landed"
+  done
+  [ "$found" -gt 0 ] || flag "docs/decisions/ holds no decision files to check"
+}
+
+# Checking only that a cited id EXISTS cannot catch a citation retargeted to the
+# wrong decision, and five of the twelve citations were disambiguated by reading
+# what the citing prose describes — a judgment nothing else in the repo records.
+# So the relation is written from both ends and read from both: the skill names a
+# decision id, that decision names the skill back in `Implemented-in:`, and a
+# retarget breaks the second half even when the first still resolves. Scoped to
+# the plugin tree, because that is where citations live and the blueprint's index
+# names every id while implementing none.
+check_decision_citations_resolve_and_name_their_citer() {
+  local citation file id decision found
+  for citation in $(decision_citations); do
+    file="${citation%%:*}"
+    id="${citation##*:}"
+    found=""
+    for decision in "$REPO_ROOT/docs/decisions/${id#ADR-}"-*.md; do
+      [ -f "$decision" ] || continue
+      found="$decision"
+    done
+    if [ -z "$found" ]; then
+      flag "${file#"$REPO_ROOT"/} cites $id, which resolves to no file under docs/decisions/"
+      continue
+    fi
+    { grep -F 'Implemented-in:' "$found" || true; } | grep -qF "${file#"$REPO_ROOT"/}" \
+      || flag "${found#"$REPO_ROOT"/} is cited by ${file#"$REPO_ROOT"/} but does not name it in Implemented-in:"
+  done
+}
+
+# grep prints the filename itself under -r, so `path:ADR-0046` needs no line
+# number to name both ends of the pair — and dropping the line number is what
+# collapses a decision cited twice in one file to the one pair that has to hold.
+decision_citations() {
+  { grep -rEo 'ADR-[0-9][0-9][0-9][0-9]' "$REPO_ROOT/plugin" 2>&1 || true; } | LC_ALL=C sort -u
+}
+
+# How many rules hold this ground is prose in two places — this file's header and
+# README's linter row — and true in exactly one: the functions above. Nothing tied
+# the three together, so a rule could land while both surfaces went on naming the
+# old number, and a reader who checked would learn the count is decoration. Only
+# PRESENT-tense surfaces are read: the changelog and the blueprint say what a
+# release shipped, and a rule that read those would demand history be rewritten.
+# Both surfaces spell the number out, so the table below turns the count into the
+# word they use and a count past its end flags instead of guessing. The count
+# includes this rule, which is the only way it can ever be right.
+check_present_tense_prose_names_the_rule_count() {
+  local declared spelled surface named
+  declared="$({ grep -c '^check_[a-z_]*() {$' "$REPO_ROOT/tests/plugin-lint.sh" 2>&1 || true; })"
+  case "$declared" in
+    5) spelled=five ;; 6) spelled=six ;; 7) spelled=seven ;; 8) spelled=eight ;;
+    9) spelled=nine ;; 10) spelled=ten ;; 11) spelled=eleven ;; 12) spelled=twelve ;;
+    *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
+  esac
+  for surface in tests/plugin-lint.sh README.md; do
+    named="$({ grep -ci "$spelled rules" "$REPO_ROOT/$surface" 2>&1 || true; })"
+    case "$named" in
+      ''|0|*[!0-9]*) flag "$surface does not name the $spelled rules this linter declares (grep answered ${named:-empty})" ;;
+    esac
+  done
+}
+
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }
 
 check_forked_skills_declare_background
@@ -170,7 +332,12 @@ check_own_references_resolve
 check_forked_skills_declare_a_verdict_token
 check_security_pass_acquires_without_a_remote
 check_impeccable_pin_is_never_a_placeholder
-check_call_sites_name_a_verdict_token
+check_call_sites_speak_their_emitters_verdict_vocabulary
+check_global_routing_names_every_operator_only_mode
+check_verifier_launches_name_their_payload
+check_every_decision_records_where_it_landed
+check_decision_citations_resolve_and_name_their_citer
+check_present_tense_prose_names_the_rule_count
 
 if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"

@@ -6,7 +6,7 @@
 #   --yes                skip the confirmation prompt (CI / scripted installs)
 #   --replace-claude-md  replace ~/.claude/CLAUDE.md entirely instead of
 #                        merging the oso-code block between markers
-#   --no-impeccable      skip installing the impeccable plugin/CLI (on by default)
+#   --no-impeccable      skip installing the impeccable plugin (on by default)
 #   --no-git-hook        skip wiring this repo's core.hooksPath to the shipped
 #                        pre-commit gate (on by default)
 set -euo pipefail
@@ -45,10 +45,7 @@ run_or_fail() {
   local label="$1"; shift
   local output
   if ! output="$("$@" 2>&1)"; then
-    case "$output" in
-      *already*) info "$label: already done" ;;
-      *) fail "$label failed: $output" ;;
-    esac
+    fail "$label failed: $output"
   fi
 }
 
@@ -62,15 +59,17 @@ wiring_fail() { WIRING_SUMMARY+=("FAILED|$1|$2"); }
 
 run_wiring() {
   # Run a wiring command without aborting; on failure echo its output so the
-  # caller can record the reason. "already exists" counts as success (idempotent).
+  # caller can record the reason. Idempotence is the command's own exit code and
+  # never its prose: `claude plugin install` and `cargo install` both exit 0 on an
+  # already-installed package, while `cargo install` exits 101 when a binary it
+  # does not track already sits in the destination — a hard failure whose message
+  # also says "already".
   local output
   if output="$("$@" 2>&1)"; then
     return 0
   fi
-  case "$output" in
-    *already*) return 0 ;;
-    *) printf '%s' "$output"; return 1 ;;
-  esac
+  printf '%s' "$output"
+  return 1
 }
 
 confirm_plan() {
@@ -85,7 +84,7 @@ confirm_plan() {
   info "this will:"
   info "  - install/verify MCPs (engram, context7, fallow) and the oso-code plugin"
   if [ "$INSTALL_IMPECCABLE" = true ]; then
-    info "  - install the impeccable plugin + CLI (opt out with --no-impeccable)"
+    info "  - install the impeccable plugin (opt out with --no-impeccable)"
   else
     info "  - skip impeccable (--no-impeccable)"
   fi
@@ -167,7 +166,7 @@ wire_engram() {
 
 wire_fallow() {
   # fallow: TS/JS codebase analysis, used by the debt-sweep phase
-  if claude mcp list 2>/dev/null | grep -q 'fallow'; then
+  if fallow_is_wired; then
     wiring_ok fallow "already wired"
     return 0
   fi
@@ -183,15 +182,33 @@ wire_fallow() {
       return 0
     fi
   fi
+  # `claude mcp add` is the one wiring step that reports an existing entry as a
+  # failure (exit 1, "already exists in user config"), which the health check at
+  # the top of this function only misses when it could not run at all.
   if err="$(run_wiring claude mcp add --scope user fallow -- fallow-mcp)"; then
     wiring_ok fallow "wired (user scope)"
+  elif fallow_is_wired; then
+    wiring_ok fallow "already wired"
   else
     wiring_fail fallow "mcp add failed: $err — fix: claude mcp add --scope user fallow -- fallow-mcp"
   fi
 }
 
+fallow_is_wired() { claude mcp get fallow >/dev/null 2>&1; }
+
+# Whether the operator opted out is DATA verify.sh reads, never a flag it can see:
+# while its impeccable check is hard, an install that skipped the plugin on purpose
+# has no green path and no way to tell that choice from a broken install. Keep this
+# path identical to IMPECCABLE_OPT_OUT_MARKER in bootstrap/verify.sh — the two
+# scripts run standalone via curl and cannot source a shared file.
+IMPECCABLE_OPT_OUT_MARKER="${HOME}/.local/state/oso-code/impeccable-opt-out"
+
 wire_impeccable() {
   # Third-party plugin backing the front-surface design bar (its CLI runs via npx).
+  # Clearing the marker is the other half of the contract: left behind by an earlier
+  # opt-out, it would report a genuinely failed install as the operator's choice
+  # forever — a blind spot worse than the one the marker closes.
+  rm -f "$IMPECCABLE_OPT_OUT_MARKER"
   claude plugin marketplace add pbakaus/impeccable >/dev/null 2>&1 || true
   local err
   if err="$(run_wiring claude plugin install impeccable@impeccable)"; then
@@ -201,14 +218,16 @@ wire_impeccable() {
   fi
 }
 
+skip_impeccable() {
+  info "skipping impeccable (--no-impeccable)"
+  mkdir -p "$(dirname "$IMPECCABLE_OPT_OUT_MARKER")"
+  printf 'skipped by --no-impeccable on %s\n' "$(date +%Y-%m-%d)" > "$IMPECCABLE_OPT_OUT_MARKER"
+}
+
 MARKETPLACE_SOURCE="SoyJohnXD/oso-code"
 
 install_plugin() {
-  # GitHub is the distribution source so `claude plugin update` pulls new
-  # versions without re-cloning. Falls back to this local clone when offline.
-  claude plugin marketplace add "$MARKETPLACE_SOURCE" >/dev/null 2>&1 \
-    || claude plugin marketplace add "$REPO_ROOT" >/dev/null 2>&1 \
-    || run_or_fail "marketplace refresh" claude plugin marketplace update oso-code
+  ensure_marketplace_source
   run_or_fail "oso-code plugin install" claude plugin install oso-code@oso-code
   # `claude plugin install` tolerates an already-installed plugin without
   # refreshing it, so without these a re-run after a release stays on the old
@@ -218,6 +237,101 @@ install_plugin() {
   claude plugin update oso-code@oso-code \
     || warn "could not update the oso-code plugin — fix: claude plugin update oso-code@oso-code"
   migrate_context7
+}
+
+# GitHub is the distribution source so `claude plugin update` pulls new versions
+# without re-cloning. A local clone is only ever the offline fallback, and one
+# already registered is never repointed behind the operator's back: this plugin is
+# developed from a clone like that, where an unasked repoint would swap unreleased
+# edits for the published release.
+ensure_marketplace_source() {
+  local clone_path
+  clone_path="$(local_marketplace_path)"
+  if [ -n "$clone_path" ]; then
+    warn "the oso-code marketplace is registered as the local directory $clone_path — \`claude plugin marketplace update\` refreshes nothing there, and \`claude plugin update\` installs whatever that working tree currently holds"
+    github_marketplace_is_reachable || return 0
+    repoint_approved "$clone_path" || return 0
+  fi
+  register_github_marketplace
+}
+
+# The working tree the oso-code marketplace is registered from, or nothing when it
+# comes from a remote or is not registered at all. `directory` is the source kind
+# whose refresh never git-pulls, which is what makes it a dead end. A client that
+# cannot answer says so and reads as "no local clone": refusing to install against
+# one too old to answer would be the worse failure of the two.
+local_marketplace_path() {
+  local registry
+  registry="$(claude plugin marketplace list --json 2>&1)" || {
+    warn "could not read which source each marketplace is registered from ($registry)"
+    return 0
+  }
+  jq -r '.[] | select(.name == "oso-code" and .source == "directory") | .path' <<< "$registry" || true
+}
+
+github_marketplace_is_reachable() {
+  GIT_TERMINAL_PROMPT=0 git ls-remote --exit-code "https://github.com/$MARKETPLACE_SOURCE.git" HEAD >/dev/null 2>&1
+}
+
+# confirm_plan's consent idiom, except "no" is a supported answer rather than an
+# abort: staying on a local clone is a legitimate choice to make.
+repoint_approved() {
+  local answer
+  if [ "$ASSUME_YES" = true ]; then
+    return 0
+  fi
+  printf '[oso-code] repoint it at %s? uncommitted work in %s stops loading. [y/N] ' \
+    "$MARKETPLACE_SOURCE" "$1"
+  read -r answer
+  case "$answer" in y|Y|yes|YES) return 0 ;; esac
+  info "keeping the local source — repoint anytime: claude plugin marketplace add $MARKETPLACE_SOURCE"
+  return 1
+}
+
+register_github_marketplace() {
+  local output failure
+  if output="$(claude plugin marketplace add "$MARKETPLACE_SOURCE" 2>&1)"; then
+    return 0
+  fi
+  failure="$(classify_marketplace_add_failure "$output")"
+  if [ "$failure" = unreachable ] && register_clone_marketplace "$REPO_ROOT"; then
+    return 0
+  fi
+  warn "could not add the oso-code marketplace from $MARKETPLACE_SOURCE ($failure): $output"
+  run_or_fail "marketplace refresh" claude plugin marketplace update oso-code
+}
+
+# Why a `claude plugin marketplace add` failed, read off the client's own report.
+# Only an unreachable remote earns the local fallback: under a policy block, a
+# malformed manifest or a seed-managed name, repointing at a working tree would
+# bury the real problem under a source the operator never chose. Prose is the only
+# signal the client gives, so anything unrecognised classifies as `unknown` and
+# takes no fallback — a reworded message in some future release costs a fallback,
+# never a silent repoint.
+classify_marketplace_add_failure() {
+  case "$1" in
+    *"is seed-managed"*) printf 'seed-managed' ;;
+    *"blocked by enterprise policy"* | *"not in the allowed marketplace list"*) printf 'policy-blocked' ;;
+    *"Invalid marketplace source format"*) printf 'invalid-source' ;;
+    *"Failed to parse marketplace file"* | *"Marketplace file not found"*) printf 'invalid-manifest' ;;
+    *"Failed to clone marketplace repository"*) printf 'unreachable' ;;
+    *) printf 'unknown' ;;
+  esac
+}
+
+# Registering a working tree as a plugin source is only safe when it is one. Piped
+# through `curl | bash` there is no $BASH_SOURCE, so $REPO_ROOT lands on `/` under
+# bash 3.2 or on the parent of the operator's cwd elsewhere, and a marketplace
+# manifest is the one thing that tells a real clone from either.
+register_clone_marketplace() {
+  local clone="$1" output
+  [ -f "$clone/.claude-plugin/marketplace.json" ] || return 1
+  if ! output="$(claude plugin marketplace add "$clone" 2>&1)"; then
+    warn "the offline fallback could not register $clone either ($(classify_marketplace_add_failure "$output")): $output"
+    return 1
+  fi
+  warn "$MARKETPLACE_SOURCE is unreachable, so the oso-code marketplace now points at $clone — the plugin loads from that working tree, edits and all, and \`claude plugin marketplace update\` cannot refresh a local source. Revert once you are online: claude plugin marketplace add $MARKETPLACE_SOURCE"
+  return 0
 }
 
 migrate_context7() {
@@ -281,7 +395,11 @@ git_hooks_owner() {
 print_wiring_summary() {
   info "wiring summary:"
   local entry status component note
-  for entry in "${WIRING_SUMMARY[@]}"; do
+  # An array with no elements expands to "unbound variable" under `set -u` on bash
+  # < 4.4, which is what macOS ships; the `+` form expands to nothing there instead.
+  # wire_engram appends before this runs today, so the abort waits for the first
+  # wiring path that records nothing at all.
+  for entry in ${WIRING_SUMMARY[@]+"${WIRING_SUMMARY[@]}"}; do
     IFS='|' read -r status component note <<< "$entry"
     info "  $component: $status — $note"
   done
@@ -391,31 +509,41 @@ merge_global_claude_md() {
   fi
 }
 
-confirm_plan
-info "1/7 prerequisites"
-ensure_prerequisites
-ensure_node
-info "2/7 MCP wiring"
-wire_mcps
-info "3/7 oso-code plugin"
-install_plugin
-info "4/7 git commit hook"
-if [ "$INSTALL_GIT_HOOK" = true ]; then
-  wire_git_commit_hook
-else
-  info "skipping the git commit hook (--no-git-hook)"
+main() {
+  confirm_plan
+  info "1/7 prerequisites"
+  ensure_prerequisites
+  ensure_node
+  info "2/7 MCP wiring"
+  wire_mcps
+  info "3/7 oso-code plugin"
+  install_plugin
+  info "4/7 git commit hook"
+  if [ "$INSTALL_GIT_HOOK" = true ]; then
+    wire_git_commit_hook
+  else
+    info "skipping the git commit hook (--no-git-hook)"
+  fi
+  info "5/7 impeccable"
+  if [ "$INSTALL_IMPECCABLE" = true ]; then
+    wire_impeccable
+  else
+    skip_impeccable
+  fi
+  info "6/7 legacy cleanup"
+  remove_legacy_artifacts
+  remove_legacy_settings_entries
+  ensure_output_style
+  info "7/7 global CLAUDE.md"
+  merge_global_claude_md
+  print_wiring_summary
+  info "done — restart your Claude Code sessions to pick everything up"
+}
+
+# Installing is what running this file does and sourcing it is not: the suite reads
+# the two decisions that can repoint the marketplace by sourcing this and calling
+# them directly. Piped through `curl | bash` there is no $BASH_SOURCE at all, and
+# that shape has to keep installing.
+if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
+  main
 fi
-info "5/7 impeccable"
-if [ "$INSTALL_IMPECCABLE" = true ]; then
-  wire_impeccable
-else
-  info "skipping impeccable (--no-impeccable)"
-fi
-info "6/7 legacy cleanup"
-remove_legacy_artifacts
-remove_legacy_settings_entries
-ensure_output_style
-info "7/7 global CLAUDE.md"
-merge_global_claude_md
-print_wiring_summary
-info "done — restart your Claude Code sessions to pick everything up"

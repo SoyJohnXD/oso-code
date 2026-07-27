@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Post-install E2E verification. Every check is measurable pass/fail;
 # exits non-zero if any check fails. Run after bootstrap/install.sh.
+# OSO_VERIFY_SKIP_SLOW=1 drops the two checks that re-run the repo suite or fetch
+# from npm — CI sets it, because it runs the suite as its own step and no CI run
+# should depend on the network.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,6 +26,18 @@ check() {
     echo "FAIL: $name — expected $expected, got $actual"; fail=$((fail + 1))
   fi
 }
+
+# The report must always reach its summary: under `set -euo pipefail` a command
+# that dies takes the tally AND every verdict already printed with it, leaving an
+# operator unable to tell a broken install from a broken verifier. So every check
+# reads its inputs in a form that cannot abort — `|| true`, or the `if value="$(…)"`
+# rc-capture where the failure needs its own branch — and keeps the failing
+# command's own stderr inside the value it reports, so a vanished input goes red
+# with its reason instead of green on nothing scanned. A value that can arrive with
+# a newline in it is folded first, because `check` prints it inline and a reason
+# orphaned on the next line reads as a verdict contradicting itself. Numeric checks
+# are the one exception: text in the value is a shell error, so they branch on the
+# read.
 
 # The ACTIVE installed version dir (cache copy, not the repo) — a new session runs
 # the installPath recorded in installed_plugins.json, so resolve THAT, never
@@ -56,37 +71,70 @@ mcp_connected() {
 }
 check "engram MCP connected"   "1" "$(mcp_connected 'engram')"
 check "context7 MCP connected" "1" "$(mcp_connected 'context7')"
-check "fallow MCP connected"   "1" "$(mcp_connected 'fallow')"
+# fallow is the one OPTIONAL MCP, so it is reported and never counted: it needs
+# Rust to build, README requires Rust on no OS, install.ps1 provisions none, and
+# install.sh's own wiring records its absence without failing. A hard check here
+# would make the documented one-step Windows path red by construction.
+if [ "$(mcp_connected 'fallow')" = 1 ]; then
+  echo "note: fallow MCP connected (optional — the debt-sweep uses it on TS/JS projects)"
+else
+  echo "note: fallow MCP not connected (optional — the debt-sweep then runs rubric-only on TS/JS) — fix: cargo install fallow-mcp, then claude mcp add --scope user fallow -- fallow-mcp"
+fi
 
-# 3. Legacy gentle-ai artifacts fully removed
-legacy_left=0
-while IFS= read -r rel; do
-  case "$rel" in ''|'#'*) continue ;; esac
-  if [ -e "$CLAUDE_DIR/$rel" ] || [ -L "$CLAUDE_DIR/$rel" ]; then
-    legacy_left=$((legacy_left + 1))
-    echo "      still present: $rel"
-  fi
-done < "$SCRIPT_DIR/gentle-manifest.txt"
-check "legacy artifacts removed" "0" "$legacy_left"
+# 3. Legacy gentle-ai artifacts fully removed. Read whole, so a manifest the loop
+#    cannot open reports its own reason instead of "0 still present".
+if legacy_manifest="$(cat "$SCRIPT_DIR/gentle-manifest.txt" 2>&1)"; then
+  legacy_left=0
+  while IFS= read -r rel; do
+    case "$rel" in ''|'#'*) continue ;; esac
+    if [ -e "$CLAUDE_DIR/$rel" ] || [ -L "$CLAUDE_DIR/$rel" ]; then
+      legacy_left=$((legacy_left + 1))
+      echo "      still present: $rel"
+    fi
+  done <<< "$legacy_manifest"
+  check "legacy artifacts removed" "0" "$legacy_left"
+else
+  legacy_manifest="${legacy_manifest//$'\n'/ }"
+  check "legacy artifacts removed" "0" "${legacy_manifest:-empty}"
+fi
 
-# 4. No gentle hook references left in settings.json
-gentle_hooks="$(grep -cE 'check-plan-contract|clean-code-gate|skill-registry-refresh|gentle-ai' "$CLAUDE_DIR/settings.json" 2>/dev/null || true)"
-check "settings.json free of gentle hooks" "0" "$gentle_hooks"
+# 4. No gentle hook references left in settings.json. grep -c answers "0" and exits
+#    1 on a clean file but exits 2 with an EMPTY stdout on a missing one, so its
+#    stderr is the only thing that can tell those apart in the value.
+gentle_hooks="$(grep -cE 'check-plan-contract|clean-code-gate|skill-registry-refresh|gentle-ai' "$CLAUDE_DIR/settings.json" 2>&1 || true)"
+gentle_hooks="${gentle_hooks//$'\n'/ }"
+check "settings.json free of gentle hooks" "0" "${gentle_hooks:-empty}"
 
-# 5. Global CLAUDE.md within the context budget (< 8000 bytes ≈ 2k tokens)
-md_size="$(wc -c < "$CLAUDE_DIR/CLAUDE.md")"
-check "CLAUDE.md under budget" "1" "$([ "$md_size" -lt "$CLAUDE_MD_BUDGET_BYTES" ] && echo 1 || echo 0)"
-echo "      CLAUDE.md size: ${md_size} bytes"
+# 5. Global CLAUDE.md within the context budget (< 8000 bytes ≈ 2k tokens).
+#    A size cannot take the guard above: `|| true` leaves the value empty and folded
+#    stderr puts a sentence where `-lt` expects an integer — `integer expression
+#    expected` instead of an abort. Branching on the read keeps the compare numeric,
+#    names the file when it is unreadable, and leaves bash's own reason on stderr.
+claude_md="$CLAUDE_DIR/CLAUDE.md"
+if md_size="$(wc -c < "$claude_md")"; then
+  check "CLAUDE.md under budget" "1" "$([ "$md_size" -lt "$CLAUDE_MD_BUDGET_BYTES" ] && echo 1 || echo 0)"
+  echo "      CLAUDE.md size: ${md_size} bytes"
+else
+  check "CLAUDE.md under budget" "1" "unreadable $claude_md"
+fi
 
 # 6. Installed hook binaries are executable and functional from the INSTALL path
 #    (not the repo) — exercises the exact files new sessions will run.
 if [ -n "$install_root" ]; then
   hook="$(find "$install_root" -name 'block-commit-until-green.sh' 2>/dev/null | head -1 || true)"
   if [ -n "$hook" ] && [ -x "$hook" ]; then
-    tmp_home="$(mktemp -d)"
-    mkdir -p "$tmp_home/.local/state/oso-code"
-    printf 'mode=plan\nverify_green=false\n' > "$tmp_home/.local/state/oso-code/e2e.state"
-    out="$(printf '{"session_id":"e2e","tool_input":{"command":"git commit -m x"}}' | HOME="$tmp_home" "$hook")"
+    # Fixture and run in one guarded chain: whichever step breaks, its reason is
+    # what the check reports. The hook is also free not to drain stdin — the
+    # SIGPIPE that costs the pipeline 141 under pipefail lands on `|| true` here.
+    out="$(
+      {
+        hook_home="$(mktemp -d)" \
+          && mkdir -p "$hook_home/.local/state/oso-code" \
+          && printf 'mode=plan\nverify_green=false\n' > "$hook_home/.local/state/oso-code/e2e.state" \
+          && printf '{"session_id":"e2e","tool_input":{"command":"git commit -m x"}}' | HOME="$hook_home" "$hook"
+      } 2>&1 || true
+    )"
+    out="${out//$'\n'/ }"
     case "$out" in
       *'"permissionDecision":"deny"'*) check "installed hook denies red commit (e2e)" "1" "1" ;;
       *) check "installed hook denies red commit (e2e)" "deny" "${out:-empty}" ;;
@@ -104,13 +152,25 @@ fi
 if [ -n "$install_root" ]; then
   state_bin="$(find "$install_root" -path '*/bin/oso-state' 2>/dev/null | head -1 || true)"
   if [ -n "$state_bin" ] && [ -x "$state_bin" ]; then
+    # One chain, so the round-trip's own failure IS the value, and three ways to
+    # lose that failure go with it: `export` masks the status of a substitution in
+    # its value (`export X="$(false)"` succeeds), so the temp HOME is made on its
+    # own line; a command substitution does not inherit errexit, so a `set` sent to
+    # `>/dev/null 2>&1` failed invisibly and left the check red with an empty value;
+    # and the subshell's status was `clear`'s, so a failing clear aborted the report.
+    # Hence stdout only is dropped from the calls with nothing to say — their stderr
+    # is the reason a red check needs.
     probe="$(
-      export HOME="$(mktemp -d)" OSO_STATE_BIN="$state_bin"
-      "${OSO_STATE_BIN:-oso-state}" --session verify-probe set mode=probe >/dev/null 2>&1
-      "${OSO_STATE_BIN:-oso-state}" --session verify-probe get mode
-      "${OSO_STATE_BIN:-oso-state}" --session verify-probe clear >/dev/null 2>&1
+      {
+        probe_home="$(mktemp -d)" \
+          && export HOME="$probe_home" OSO_STATE_BIN="$state_bin" \
+          && "${OSO_STATE_BIN:-oso-state}" --session verify-probe set mode=probe >/dev/null \
+          && "${OSO_STATE_BIN:-oso-state}" --session verify-probe get mode \
+          && "${OSO_STATE_BIN:-oso-state}" --session verify-probe clear >/dev/null
+      } 2>&1 || true
     )"
-    check "OSO_STATE_BIN round-trips oso-state (e2e)" "probe" "$probe"
+    probe="${probe//$'\n'/ }"
+    check "OSO_STATE_BIN round-trips oso-state (e2e)" "probe" "${probe:-empty}"
   else
     check "installed oso-state executable" "1" "0"
   fi
@@ -119,7 +179,9 @@ else
 fi
 
 # 8. Repo test suite still green
-if "$REPO_ROOT/tests/hooks-test.sh" >/dev/null 2>&1; then
+if [ "${OSO_VERIFY_SKIP_SLOW:-}" = 1 ]; then
+  echo "skip: hook regression suite — OSO_VERIFY_SKIP_SLOW (CI runs the suite as its own step)"
+elif "$REPO_ROOT/tests/hooks-test.sh" >/dev/null 2>&1; then
   check "hook regression suite" "pass" "pass"
 else
   check "hook regression suite" "pass" "fail"
@@ -130,13 +192,56 @@ fi
 #    the design bar resolves its pin with (the recipe in
 #    plugin/skills/_shared/front-surface.md), so it answers whether npx can fetch
 #    and run impeccable at all — not whether a pin recorded in an earlier session
-#    still resolves. Only the plugin check goes red under --no-impeccable: npx
-#    resolves impeccable from the public registry, so the CLI check stays green
-#    whether or not the plugin was ever installed.
-impeccable_listed="$(claude plugin list 2>/dev/null | grep -c 'impeccable' || true)"
-check "impeccable plugin installed" "1" "$([ "$impeccable_listed" -ge 1 ] && echo 1 || echo 0)"
-check "impeccable CLI runnable via npx" "1" \
-  "$(npx impeccable --version </dev/null >/dev/null 2>&1 && echo 1 || echo 0)"
+#    still resolves. Only the plugin half is skippable: npx resolves impeccable
+#    from the public registry, so the CLI check stays green whether or not the
+#    plugin was ever installed.
+#    An operator who ran --no-impeccable on purpose has no green path while this
+#    check is hard, and no way to tell that choice from a broken install, so
+#    install.sh records the opt-out as data and this reads it. Keep the path
+#    identical to IMPECCABLE_OPT_OUT_MARKER in bootstrap/install.sh — the two
+#    scripts run standalone via curl and cannot source a shared file.
+IMPECCABLE_OPT_OUT_MARKER="${HOME}/.local/state/oso-code/impeccable-opt-out"
+if [ -f "$IMPECCABLE_OPT_OUT_MARKER" ]; then
+  echo "note: impeccable plugin skipped — install.sh ran with --no-impeccable, so the design bar has no plugin half here; re-run install.sh without the flag to wire it"
+else
+  impeccable_listed="$(claude plugin list 2>/dev/null | grep -c 'impeccable' || true)"
+  check "impeccable plugin installed" "1" "$([ "$impeccable_listed" -ge 1 ] && echo 1 || echo 0)"
+fi
+
+# npx fetches from the registry before it can run anything, so a slow or
+# unreachable one hangs this probe forever and every check below it never runs.
+# `timeout` is GNU coreutils and macOS ships none, so the bound is in-shell:
+# background the probe, poll it, and kill it once the bound expires. Job control
+# gives the job its own process group, which is what lets the kill reach the node
+# children npx spawns instead of orphaning them. The value is the same 20 seconds
+# the pin recipe in plugin/skills/_shared/front-surface.md bounds its own resolve
+# with, and a bound that fires says so in the value, because "npm never answered"
+# and "npx cannot run impeccable" are different problems with different fixes.
+NPX_PROBE_BOUND_SECONDS=20
+
+impeccable_cli_runnable() {
+  set -m
+  npx impeccable --version </dev/null >/dev/null 2>&1 &
+  local probe=$! waited=0
+  set +m
+  while kill -0 "$probe" 2>/dev/null; do
+    if [ "$waited" -ge "$NPX_PROBE_BOUND_SECONDS" ]; then
+      kill -TERM "-$probe" 2>/dev/null || kill -TERM "$probe" 2>/dev/null || true
+      wait "$probe" 2>/dev/null || true
+      echo "no answer within ${NPX_PROBE_BOUND_SECONDS}s"
+      return 0
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  if wait "$probe"; then echo 1; else echo 0; fi
+}
+
+if [ "${OSO_VERIFY_SKIP_SLOW:-}" = 1 ]; then
+  echo "skip: impeccable CLI runnable via npx — OSO_VERIFY_SKIP_SLOW (the probe would fetch the package from npm)"
+else
+  check "impeccable CLI runnable via npx" "1" "$(impeccable_cli_runnable)"
+fi
 
 # 10. The commit gate's primary layer, where this repo has it: the git hook only
 #     exists while core.hooksPath still points at it, and it only runs while it is

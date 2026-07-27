@@ -47,6 +47,21 @@ run_hook() {
   fi
 }
 
+# The same judgment for a case that runs the hook bare and then reads what it
+# left behind: without the guard a hook that crashes after doing the work still
+# reports ok. The predicate is a command, so a case spells it `[ … ]`.
+assert_after_hook() {
+  local name="$1"
+  shift
+  if [ -n "$hook_problem" ]; then
+    echo "FAIL: $name — $hook_problem"; fail=$((fail + 1))
+  elif "$@"; then
+    echo "ok: $name"; pass=$((pass + 1))
+  else
+    echo "FAIL: $name — $* is false"; fail=$((fail + 1))
+  fi
+}
+
 assert_allows() {
   local name="$1" hook="$2" input="$3"
   run_hook "$hook" "$input" "${4:-0}" "${5:-}"
@@ -69,6 +84,15 @@ assert_denies() {
       *'"permissionDecision":"deny"'*) echo "ok: $name"; pass=$((pass + 1)) ;;
       *) echo "FAIL: $name — expected deny, got: ${hook_stdout:-<empty>}"; fail=$((fail + 1)) ;;
     esac
+  fi
+}
+
+assert_equals() {
+  local name="$1" expected="$2" actual="$3"
+  if [ "$expected" = "$actual" ]; then
+    echo "ok: $name"; pass=$((pass + 1))
+  else
+    echo "FAIL: $name — expected '$expected', got '$actual'"; fail=$((fail + 1))
   fi
 }
 
@@ -106,13 +130,9 @@ assert_allows "a declared hook crash is not a case failure" "$CRASH_HOOK" "$(bas
 # by a wildcard — see block-edits-without-slice.sh for why the wildcard is
 # refused and what the named list costs.
 hooks_manifest="$PLUGIN/hooks/hooks.json"
-gated_tools="$(sed -n 's/.*"matcher"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$hooks_manifest" | tr '|' '\n' | LC_ALL=C sort)"
-expected_tools="$(printf '%s\n' Bash Edit MultiEdit NotebookEdit Write mcp__fallow__fix_apply | LC_ALL=C sort)"
-if [ "$gated_tools" = "$expected_tools" ]; then
-  echo "ok: PreToolUse matchers cover exactly the gated tools"; pass=$((pass + 1))
-else
-  echo "FAIL: matcher set drifted — got: $(printf '%s' "$gated_tools" | tr '\n' ' ')"; fail=$((fail + 1))
-fi
+gated_tools="$(sed -n 's/.*"matcher"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$hooks_manifest" | tr '|' '\n' | LC_ALL=C sort | tr '\n' ' ')"
+expected_tools="$(printf '%s\n' Bash Edit MultiEdit NotebookEdit Write mcp__fallow__fix_apply | LC_ALL=C sort | tr '\n' ' ')"
+assert_equals "PreToolUse matchers cover exactly the gated tools" "$expected_tools" "$gated_tools"
 
 unrunnable=""
 manifest_commands="$(sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' "$hooks_manifest")"
@@ -121,11 +141,7 @@ while IFS= read -r manifest_command; do
   hook_script="${hook_script//\$\{CLAUDE_PLUGIN_ROOT\}/$PLUGIN}"
   [ -x "$hook_script" ] || unrunnable="$unrunnable $hook_script"
 done <<< "$manifest_commands"
-if [ -z "$unrunnable" ]; then
-  echo "ok: every hooks.json command is an executable script"; pass=$((pass + 1))
-else
-  echo "FAIL: hooks.json commands are not executable —$unrunnable"; fail=$((fail + 1))
-fi
+assert_equals "every hooks.json command is an executable script" "" "$unrunnable"
 
 # --- Declarations: what `claude plugin validate --strict` has no opinion on ---
 # The validator does open skill frontmatter, but never for `background` on a fork
@@ -287,11 +303,8 @@ oso-state --session "$SESSION" clear
 ( for i in $(seq 1 25); do oso-state --session "$SESSION" set "a=$i" >/dev/null; done ) &
 ( for i in $(seq 1 25); do oso-state --session "$SESSION" set "b=$i" >/dev/null; done ) &
 wait
-if [ "$(oso-state --session "$SESSION" get a)" = "25" ] && [ "$(oso-state --session "$SESSION" get b)" = "25" ]; then
-  echo "ok: concurrent writers preserve all keys"; pass=$((pass + 1))
-else
-  echo "FAIL: concurrent writers lost keys — state: $(oso-state --session "$SESSION" show)"; fail=$((fail + 1))
-fi
+assert_equals "concurrent writers preserve all keys" "a=25 b=25" \
+  "a=$(oso-state --session "$SESSION" get a) b=$(oso-state --session "$SESSION" get b)"
 oso-state --session "$SESSION" clear
 
 # --- Stale lock: a crashed writer's lock is reclaimed, not fatal ---
@@ -299,44 +312,57 @@ stale_lock="$SESSION_STATE.lock"
 mkdir -p "$stale_lock"
 touch -t 200001010000 "$stale_lock"
 oso-state --session "$SESSION" set stale_ok=yes >/dev/null 2>&1 || true
-if [ "$(oso-state --session "$SESSION" get stale_ok)" = "yes" ]; then
-  echo "ok: stale lock is reclaimed"; pass=$((pass + 1))
-else
-  echo "FAIL: stale lock blocked a write"; fail=$((fail + 1))
-fi
+assert_equals "stale lock is reclaimed" yes "$(oso-state --session "$SESSION" get stale_ok)"
 oso-state --session "$SESSION" clear
 
 # --- Telemetry: denies are recorded ---
 # Every oso-state set logs an event, so a non-empty log proves nothing; the
 # audit is only worth having if a gate that fired left its own line behind.
 events_log="$STATE_DIR/events.jsonl"
-if grep -q '"event":"commit-denied"' "$events_log" && grep -q '"event":"edit-denied"' "$events_log"; then
-  echo "ok: both gates log their denies"; pass=$((pass + 1))
-else
-  echo "FAIL: deny events missing from telemetry — log: $(tr '\n' ' ' < "$events_log" 2>/dev/null)"; fail=$((fail + 1))
-fi
+
+# A marker is a pattern unless the case passes -F, which the markers whose text
+# carries backslashes need: read as a pattern, an escape matches the byte it
+# escapes and the case passes on a log line nobody escaped.
+assert_logged() {
+  local name="$1" match=-e marker unlogged=""
+  shift
+  case "$1" in -F) match=-F; shift ;; esac
+  for marker in "$@"; do
+    grep -q "$match" "$marker" "$events_log" 2>/dev/null || unlogged="$unlogged $marker"
+  done
+  if [ -z "$unlogged" ]; then
+    echo "ok: $name"; pass=$((pass + 1))
+  else
+    echo "FAIL: $name — never logged:$unlogged — log: $(tr '\n' ' ' < "$events_log" 2>/dev/null)"; fail=$((fail + 1))
+  fi
+}
+
+# The other half of the audit, where the absence of a line is the case. A home
+# passed here is one the run may not have written a thing under.
+assert_not_logged() {
+  local name="$1" untouched_home="${2:-}" trace=""
+  [ ! -e "$events_log" ] || trace="$trace log: $(tr '\n' ' ' < "$events_log" 2>/dev/null)"
+  if [ -n "$untouched_home" ] && [ -e "$untouched_home/.local" ]; then
+    trace="$trace wrote: $(find "$untouched_home" 2>/dev/null | tr '\n' ' ')"
+  fi
+  if [ -z "$trace" ]; then
+    echo "ok: $name"; pass=$((pass + 1))
+  else
+    echo "FAIL: $name —$trace"; fail=$((fail + 1))
+  fi
+}
+
+assert_logged "both gates log their denies" '"event":"commit-denied"' '"event":"edit-denied"'
 
 # --- Session-end cleanup + path traversal safety ---
 oso-state --session "$SESSION" set mode=plan verify_green=true
 mkdir -p "$SESSION_STATE.lock"
 run_hook cleanup-state.sh "$(printf '{"session_id":"%s"}' "$SESSION")"
-if [ -z "$hook_problem" ] && [ ! -f "$SESSION_STATE" ]; then
-  echo "ok: session end removes state"; pass=$((pass + 1))
-else
-  echo "FAIL: state file survived cleanup${hook_problem:+ — $hook_problem}"; fail=$((fail + 1))
-fi
-if [ ! -d "$SESSION_STATE.lock" ]; then
-  echo "ok: session end removes leftover lock"; pass=$((pass + 1))
-else
-  echo "FAIL: lock dir survived cleanup"; fail=$((fail + 1))
-fi
+assert_after_hook "session end removes state"         [ ! -f "$SESSION_STATE" ]
+assert_after_hook "session end removes leftover lock" [ ! -d "$SESSION_STATE.lock" ]
 touch "$HOME/canary"
 run_hook cleanup-state.sh '{"session_id":"../../canary"}'
-if [ -z "$hook_problem" ] && [ -f "$HOME/canary" ]; then
-  echo "ok: traversal session id cannot delete outside state dir"; pass=$((pass + 1))
-else
-  echo "FAIL: path traversal deleted a file outside the state dir${hook_problem:+ — $hook_problem}"; fail=$((fail + 1))
-fi
+assert_after_hook "traversal session id cannot delete outside state dir" [ -f "$HOME/canary" ]
 
 # --- SessionStart: OSO_STATE_BIN reaches the real oso-state binary ---
 # The skills invoke "${OSO_STATE_BIN:-oso-state}"; this hook is what makes that
@@ -345,21 +371,13 @@ env_file="$(mktemp)"
 export CLAUDE_ENV_FILE="$env_file"
 run_hook persist-state-bin.sh ''
 persisted="$(. "$env_file"; printf '%s' "${OSO_STATE_BIN:-}")"
-if [ -z "$hook_problem" ] && [ -n "$persisted" ] && [ -x "$persisted" ]; then
-  echo "ok: SessionStart persists OSO_STATE_BIN to an executable"; pass=$((pass + 1))
-else
-  echo "FAIL: OSO_STATE_BIN not persisted or not executable — got: ${persisted:-<empty>}${hook_problem:+ — $hook_problem}"; fail=$((fail + 1))
-fi
+assert_after_hook "SessionStart persists OSO_STATE_BIN to an executable" [ -x "$persisted" ]
 rm -f "$env_file"
 
 # No CLAUDE_ENV_FILE must degrade to a silent no-op (Windows-safe old behavior).
 unset CLAUDE_ENV_FILE
 run_hook persist-state-bin.sh ''
-if [ -z "$hook_problem" ] && [ -z "$hook_stdout" ]; then
-  echo "ok: SessionStart no-ops when CLAUDE_ENV_FILE is unset"; pass=$((pass + 1))
-else
-  echo "FAIL: persist hook emitted output with no env file — got: ${hook_stdout:-<empty>}${hook_problem:+ — $hook_problem}"; fail=$((fail + 1))
-fi
+assert_after_hook "SessionStart no-ops when CLAUDE_ENV_FILE is unset" [ -z "$hook_stdout" ]
 
 # --- Fail closed: a broken environment must not cost the operator a verdict ---
 # The client only reads a hook's JSON on exit 0, so a hook that dies while
@@ -384,11 +402,7 @@ assert_denies "edit gate denies a state path that is not a readable file"   bloc
 assert_denies "commit gate denies an unreadable state even for a line that looks clear" \
   block-commit-until-green.sh "$(bash_input 'npm test')"
 rmdir "$SESSION_STATE"
-if grep -q '"event":"state-unreadable"' "$events_log"; then
-  echo "ok: an unreadable state file is recorded"; pass=$((pass + 1))
-else
-  echo "FAIL: state-unreadable missing from telemetry"; fail=$((fail + 1))
-fi
+assert_logged "an unreadable state file is recorded" '"event":"state-unreadable"'
 
 # --- The state directory is no edit exemption ---
 # The old exemption matched an unnormalized prefix, so a path spelled through
@@ -402,11 +416,7 @@ assert_denies "edit through a state-dir traversal path is denied" block-edits-wi
 # State keys carry user-supplied text; an unescaped quote or backslash breaks
 # this line and every line a reader parses after it.
 oso-state --session "$SESSION" set 'weird=a"b\c' >/dev/null
-if grep -qF '"event":"set:weird=a\"b\\c"' "$events_log"; then
-  echo "ok: quotes and backslashes are escaped in the event log"; pass=$((pass + 1))
-else
-  echo "FAIL: unescaped value in the event log — last line: $(tail -n 1 "$events_log")"; fail=$((fail + 1))
-fi
+assert_logged "quotes and backslashes are escaped in the event log" -F '"event":"set:weird=a\"b\\c"'
 # The gate's own decoder is the other way in: json_unescape turns \t, \r, \b and
 # \f back into the raw bytes JSON forbids in a string, and the residue event logs
 # that text — so a tab-indented heredoc breaks the line without a hostile author.
@@ -422,19 +432,11 @@ elif [ "$(tail -n 1 "$events_log" | jq -r '.event')" = "set:$control_byte_pair" 
 else
   echo "FAIL: a control byte broke the event log — $(tail -n 1 "$events_log" | jq . 2>&1 | head -n 1)"; fail=$((fail + 1))
 fi
-if grep -q '"client":"' "$events_log"; then
-  echo "ok: events carry the client build"; pass=$((pass + 1))
-else
-  echo "FAIL: events lack the client field — last line: $(tail -n 1 "$events_log")"; fail=$((fail + 1))
-fi
+assert_logged "events carry the client build" '"client":"'
 
 # --- Drift: a payload the gate cannot parse passes, but never silently ---
 assert_allows "an unparseable payload does not gate the call" block-commit-until-green.sh '{"tool_name":"Bash"}'
-if grep -q '"event":"payload-unparseable"' "$events_log"; then
-  echo "ok: an unparseable payload is recorded"; pass=$((pass + 1))
-else
-  echo "FAIL: payload-unparseable missing from telemetry"; fail=$((fail + 1))
-fi
+assert_logged "an unparseable payload is recorded" '"event":"payload-unparseable"'
 oso-state --session "$SESSION" clear
 
 # --- Retention: abandoned state ages out, everything doubtful survives ---
@@ -772,11 +774,8 @@ assert_allows "residue: a python payload that mentions git passes" \
   block-commit-until-green.sh "$(bash_input 'python3 -c \"import os; os.system('\''git commit'\'')\"')"
 assert_allows "residue: a command word only the shell resolves passes" \
   block-commit-until-green.sh "$(bash_input 'g=git; $g commit')"
-if grep -q '"event":"residue-allowed","command":"python3' "$events_log"; then
-  echo "ok: a residue allow carries the command it let through"; pass=$((pass + 1))
-else
-  echo "FAIL: residue-allowed missing from telemetry — log: $(tr '\n' ' ' < "$events_log" 2>/dev/null)"; fail=$((fail + 1))
-fi
+assert_logged "a residue allow carries the command it let through" \
+  '"event":"residue-allowed","command":"python3'
 
 # A wrapper chain deeper than the lexer reads is the same undecidable: the payload
 # nobody read is residue, so a chain with no git in it is never refused for a red
@@ -787,12 +786,9 @@ assert_allows "residue: a wrapper chain past the recursion bound passes" \
   block-commit-until-green.sh "$(bash_input 'bash -c '\''bash -c \"bash -c \\\"bash -c ok\\\"\"'\''')"
 assert_allows "residue: a chain past the bound hides a commit — allowed on purpose" \
   block-commit-until-green.sh "$(bash_input 'bash -c '\''bash -c \"bash -c \\\"bash -c git commit\\\"\"'\''')"
-if grep -q '"event":"residue-allowed","command":"bash -c .*bash -c ok' "$events_log" &&
-   grep -q '"event":"residue-allowed","command":"bash -c .*bash -c git commit' "$events_log"; then
-  echo "ok: both chains past the bound are logged with the chain they let through"; pass=$((pass + 1))
-else
-  echo "FAIL: residue-allowed missing for a chain past the bound — log: $(tr '\n' ' ' < "$events_log" 2>/dev/null)"; fail=$((fail + 1))
-fi
+assert_logged "both chains past the bound are logged with the chain they let through" \
+  '"event":"residue-allowed","command":"bash -c .*bash -c ok' \
+  '"event":"residue-allowed","command":"bash -c .*bash -c git commit'
 assert_denies "a chain past the bound never downgrades a commit the gate did read" \
   block-commit-until-green.sh "$(bash_input 'git commit -m x && bash -c '\''bash -c \"bash -c \\\"bash -c ok\\\"\"'\''')"
 
@@ -807,13 +803,10 @@ assert_allows "residue: a command word a substitution produces passes" \
   block-commit-until-green.sh "$(bash_input '$(echo git) commit')"
 assert_allows "residue: a git option shape no table answers passes" \
   block-commit-until-green.sh "$(bash_input 'git --super-prefix p/ commit -m x')"
-if grep -q '"event":"residue-allowed","command":"python3 - <<' "$events_log" &&
-   grep -qF '"event":"residue-allowed","command":"$(echo git) commit"' "$events_log" &&
-   grep -q '"event":"residue-allowed","command":"git --super-prefix' "$events_log"; then
-  echo "ok: stdin scripts, produced command words and unknown git options are all counted"; pass=$((pass + 1))
-else
-  echo "FAIL: a residue class is not counted — log: $(tr '\n' ' ' < "$events_log" 2>/dev/null)"; fail=$((fail + 1))
-fi
+assert_logged "stdin scripts, produced command words and unknown git options are all counted" -F \
+  '"event":"residue-allowed","command":"python3 - <<' \
+  '"event":"residue-allowed","command":"$(echo git) commit"' \
+  '"event":"residue-allowed","command":"git --super-prefix'
 
 # An unresolved option shape is undecidable in front of the command word too: `x`
 # is the user sudo runs as or the program it runs, and answering that needs an
@@ -825,12 +818,9 @@ assert_allows "residue: a wrapper option whose value could be the command word p
   block-commit-until-green.sh "$(bash_input 'sudo -u x bash <<EOF\ngit commit\nEOF')"
 assert_allows "residue: a wrapper option in front of git passes" \
   block-commit-until-green.sh "$(bash_input 'sudo -u x git commit')"
-if grep -q '"event":"residue-allowed","command":"sudo -u x bash <<EOF' "$events_log" &&
-   grep -qF '"event":"residue-allowed","command":"sudo -u x git commit"' "$events_log"; then
-  echo "ok: an unresolved command prefix is counted, not read as clean"; pass=$((pass + 1))
-else
-  echo "FAIL: an unresolved command prefix is not counted — log: $(tr '\n' ' ' < "$events_log" 2>/dev/null)"; fail=$((fail + 1))
-fi
+assert_logged "an unresolved command prefix is counted, not read as clean" -F \
+  '"event":"residue-allowed","command":"sudo -u x bash <<EOF' \
+  '"event":"residue-allowed","command":"sudo -u x git commit"'
 
 # The same arity question one word into an interpreter's arguments: on bash 5.3
 # `bash -c -O extglob \"…\"` and `bash -c -o pipefail \"…\"` run the payload behind
@@ -845,12 +835,9 @@ assert_allows "residue: an interpreter payload standing in a value position pass
   block-commit-until-green.sh "$(bash_input 'bash -c -O extglob \"git commit -m x\"')"
 assert_allows "residue: the same shape with a set -o option passes" \
   block-commit-until-green.sh "$(bash_input 'bash -c -o pipefail \"git commit -m x\"')"
-if grep -q '"event":"residue-allowed","command":"bash -c -O extglob' "$events_log" &&
-   grep -q '"event":"residue-allowed","command":"bash -c -o pipefail' "$events_log"; then
-  echo "ok: a payload an option shape hides is counted, not read as clean"; pass=$((pass + 1))
-else
-  echo "FAIL: a payload in a value position is not counted — log: $(tr '\n' ' ' < "$events_log" 2>/dev/null)"; fail=$((fail + 1))
-fi
+assert_logged "a payload an option shape hides is counted, not read as clean" \
+  '"event":"residue-allowed","command":"bash -c -O extglob' \
+  '"event":"residue-allowed","command":"bash -c -o pipefail'
 assert_denies "a payload in a value position is still read as commands" \
   block-commit-until-green.sh "$(bash_input 'bash -c -x \"git commit -m x\"')"
 assert_denies "options in front of -c leave the payload where the flag put it" \
@@ -977,11 +964,7 @@ assert_allows "a git mention with no shell to read it stays clear" \
   block-commit-until-green.sh "$(bash_input 'echo git commit')"
 assert_allows "a pipe into a program that is no shell stays clear" \
   block-commit-until-green.sh "$(bash_input 'cat notes.md | grep commit')"
-if [ ! -e "$events_log" ]; then
-  echo "ok: neither clear line is counted as residue"; pass=$((pass + 1))
-else
-  echo "FAIL: a clear line was counted — log: $(tr '\n' ' ' < "$events_log" 2>/dev/null)"; fail=$((fail + 1))
-fi
+assert_not_logged "neither clear line is counted as residue"
 
 # D19: past the input bound the lexer does not lex, because a line's cost grows
 # faster than its length and a hook runs before every call. So a long line is
@@ -998,11 +981,8 @@ assert_allows "residue: a line past the input bound is not lexed, so it passes c
   block-commit-until-green.sh "$(bash_input "$(commit_line_of_length 3100 'aaaaaaaaaaaaaaaa')")"
 assert_denies "a line just under the input bound is still read" \
   block-commit-until-green.sh "$(bash_input "$(commit_line_of_length 3000 'aaaaaaaaaaaaaaaa')")"
-if grep -q '"event":"residue-allowed","command":"git commit -m x && echo aaa' "$events_log"; then
-  echo "ok: a line past the input bound is logged with the head of the line"; pass=$((pass + 1))
-else
-  echo "FAIL: a line past the input bound is not counted — log: $(tr '\n' ' ' < "$events_log" 2>/dev/null)"; fail=$((fail + 1))
-fi
+assert_logged "a line past the input bound is logged with the head of the line" \
+  '"event":"residue-allowed","command":"git commit -m x && echo aaa'
 
 # D20: decoding a payload costs what lexing it costs — the same escapes×bytes
 # shape — and it runs before the lexer's bound can apply, so 4000 escapes cost
@@ -1014,11 +994,8 @@ assert_allows "residue: a payload whose escapes run past the bound is not decode
   block-commit-until-green.sh "$(bash_input "$(commit_line_of_length 3100 '\"aaaa')")"
 assert_denies "a payload whose escapes fit the bound is decoded and read" \
   block-commit-until-green.sh "$(bash_input "$(commit_line_of_length 3000 '\"aaaa')")"
-if grep -qF '"event":"residue-allowed","command":"git commit -m x && echo \\\"aaaa' "$events_log"; then
-  echo "ok: a payload past the decoder bound is logged with the head the client sent"; pass=$((pass + 1))
-else
-  echo "FAIL: a payload past the decoder bound is not counted — log: $(tr '\n' ' ' < "$events_log" 2>/dev/null)"; fail=$((fail + 1))
-fi
+assert_logged "a payload past the decoder bound is logged with the head the client sent" -F \
+  '"event":"residue-allowed","command":"git commit -m x && echo \\\"aaaa'
 
 # --- Event log privacy: it carries command text, so it carries secrets ---------
 # 300 is a budget, not a round number: one command head, which lib.sh caps at
@@ -1051,51 +1028,46 @@ esac
 read_by() {
   ( . "$PLUGIN/hooks/lib.sh"; JSON_READER="$1"; json_command_line "$2" )
 }
+
+# A case only the second reader can judge is skipped where that reader is absent,
+# and the skip line stands for it in the tally. The value is what the reader
+# returns, so it is a command this runs rather than a string the call site
+# expands: expanded there, the missing reader would run anyway.
+assert_equals_or_skip() {
+  local name="$1" tool="$2" skip_reason="$3" expected="$4"
+  shift 4
+  if command -v "$tool" >/dev/null 2>&1; then
+    assert_equals "$name" "$expected" "$("$@")"
+  else
+    echo "skip: $skip_reason"; skipped=$((skipped + 1))
+  fi
+}
+
 parity_input="$(bash_input 'git commit -m \"a\nb\" a\\b')"
 parity_expected=$'git commit -m "a\nb" a\\b'
-if [ "$(read_by pattern "$parity_input")" = "$parity_expected" ]; then
-  echo "ok: the pattern reader decodes escapes the way the client wrote them"; pass=$((pass + 1))
-else
-  echo "FAIL: pattern reader decoded '$(read_by pattern "$parity_input")'"; fail=$((fail + 1))
-fi
-if ! command -v jq >/dev/null 2>&1; then
-  echo "skip: jq is absent here, so there is no second reader to compare against"
-  skipped=$((skipped + 1))
-elif [ "$(read_by jq "$parity_input")" = "$parity_expected" ]; then
-  echo "ok: jq and the pattern reader decode a payload identically"; pass=$((pass + 1))
-else
-  echo "FAIL: jq decoded '$(read_by jq "$parity_input")'"; fail=$((fail + 1))
-fi
+assert_equals "the pattern reader decodes escapes the way the client wrote them" \
+  "$parity_expected" "$(read_by pattern "$parity_input")"
+assert_equals_or_skip "jq and the pattern reader decode a payload identically" \
+  jq "jq is absent here, so there is no second reader to compare against" \
+  "$parity_expected" read_by jq "$parity_input"
 
 # The bound is a property of the gate, not of the machine's jq: a decoder bound
 # only the fallback applied would deny on one install what it allows on the next.
 # Over it either reader hands back the payload the client sent, escapes and all.
 over_bound_line="$(commit_line_of_length 3100 '\"aaaa')"
 over_bound_input="$(bash_input "$over_bound_line")"
-if [ "$(read_by pattern "$over_bound_input")" = "$over_bound_line" ]; then
-  echo "ok: the pattern reader leaves an over-bound payload undecoded"; pass=$((pass + 1))
-else
-  echo "FAIL: the pattern reader decoded an over-bound payload"; fail=$((fail + 1))
-fi
-if ! command -v jq >/dev/null 2>&1; then
-  echo "skip: jq is absent here, so the bound has only one reader to hold for"
-  skipped=$((skipped + 1))
-elif [ "$(read_by jq "$over_bound_input")" = "$over_bound_line" ]; then
-  echo "ok: jq leaves the same over-bound payload unread as the fallback"; pass=$((pass + 1))
-else
-  echo "FAIL: jq decoded an over-bound payload the fallback left alone"; fail=$((fail + 1))
-fi
+assert_equals "the pattern reader leaves an over-bound payload undecoded" \
+  "$over_bound_line" "$(read_by pattern "$over_bound_input")"
+assert_equals_or_skip "jq leaves the same over-bound payload unread as the fallback" \
+  jq "jq is absent here, so the bound has only one reader to hold for" \
+  "$over_bound_line" read_by jq "$over_bound_input"
 
 # A gate reading its envelope by pattern is a degraded gate; the log is the only
 # place that difference can show up, and an armed session is the only place it may
 # be written — see the invisibility cases above.
 rm -f "$events_log"
 ( . "$PLUGIN/hooks/lib.sh"; JSON_READER=pattern; record_reader_fallback "$SESSION" )
-if grep -q '"event":"jq-absent"' "$events_log"; then
-  echo "ok: a gate that fell back to the pattern reader records it"; pass=$((pass + 1))
-else
-  echo "FAIL: jq-absent missing from telemetry — log: $(tr '\n' ' ' < "$events_log" 2>/dev/null)"; fail=$((fail + 1))
-fi
+assert_logged "a gate that fell back to the pattern reader records it" '"event":"jq-absent"'
 oso-state --session "$SESSION" clear
 
 # --- The commit's own boundary: the shipped git pre-commit hook ---------------
@@ -1174,21 +1146,13 @@ else
   assert_commit_lands "a session with no state file commits untouched" 'git commit -m x'
   assert_commit_lands "a terminal with no session variable commits untouched" \
     "env -u CLAUDE_CODE_SESSION_ID HOME=$HUMAN_HOME git commit -m x"
-  if [ ! -e "$events_log" ] && [ ! -e "$HUMAN_HOME/.local" ]; then
-    echo "ok: neither allowed commit left a trace"; pass=$((pass + 1))
-  else
-    echo "FAIL: an allowed commit was recorded — log: $(tr '\n' ' ' < "$events_log" 2>/dev/null), wrote: $(find "$HUMAN_HOME" 2>/dev/null | tr '\n' ' ')"; fail=$((fail + 1))
-  fi
+  assert_not_logged "neither allowed commit left a trace" "$HUMAN_HOME"
 
   oso-state --session "$SESSION" set mode=plan verify_green=false
   assert_commit_aborted "the git layer denies a commit while verify is red" 'git commit -m x'
   oso-state --session "$SESSION" set verify_green=true
   assert_commit_lands "the git layer lets a commit through once verify is green" 'git commit -m x'
-  if grep -q '"event":"commit-denied"' "$events_log"; then
-    echo "ok: the git layer records its deny as the matcher's event"; pass=$((pass + 1))
-  else
-    echo "FAIL: the git layer denied without telemetry — log: $(tr '\n' ' ' < "$events_log" 2>/dev/null)"; fail=$((fail + 1))
-  fi
+  assert_logged "the git layer records its deny as the matcher's event" '"event":"commit-denied"'
 
   # Both layers on one shape, which is the whole reason this one exists: the matcher
   # reads flock's lock-file argument as the program flock runs, and an alias hides
@@ -1224,6 +1188,224 @@ else
     'git commit -m x' 'cannot be read'
   rmdir "$SESSION_STATE"
   oso-state --session "$SESSION" clear
+fi
+
+# --- The installer's trust boundary: what may become a plugin source ----------
+# Nothing runs bootstrap/install.sh — CI only parses it — so the two decisions
+# that can permanently repoint the plugin marketplace are read here instead. A
+# `directory` source is a dead end the update path never repairs: `marketplace
+# update` git-pulls a github or git source and nothing else.
+INSTALL_SH="$REPO_ROOT/bootstrap/install.sh"
+CLAUDE_SHIM_DIR="$TEST_HOME/installer-shim"
+CLIENT_CALLS="$TEST_HOME/client-calls"
+CLIENT_REFUSAL="$TEST_HOME/client-refusal"
+INSTALLER_STDERR="$TEST_HOME/installer-stderr"
+mkdir -p "$CLAUDE_SHIM_DIR"
+# The client the installer sees: it records every call it is handed, and a case
+# that needs the client to say no arms one by writing the message the real client
+# would print. Armed, the call is still recorded — a refusal the installer reports
+# without ever reaching the client would prove nothing about either.
+printf '#!/bin/sh\necho "$*" >> "%s"\n[ -f "%s" ] || exit 0\ncat "%s" >&2\nexit 1\n' \
+  "$CLIENT_CALLS" "$CLIENT_REFUSAL" "$CLIENT_REFUSAL" > "$CLAUDE_SHIM_DIR/claude"
+chmod +x "$CLAUDE_SHIM_DIR/claude"
+
+# The installer's own functions, run in a subshell the way read_by runs the hook
+# library's: sourcing install.sh brings its `set -e` and its globals along, and
+# neither may reach the rest of the suite. The call is saved before the subshell
+# clears $@, which a sourced file inherits from its caller and reads as flags.
+in_installer() {
+  local call=("$@")
+  ( set --; PATH="$CLAUDE_SHIM_DIR:$PATH"; . "$INSTALL_SH"; "${call[@]}" )
+}
+
+# Every fixture below is a verbatim failure of `claude plugin marketplace add`,
+# measured against client 2.1.220 — prose is the only signal the client gives.
+assert_classified() {
+  local name="$1" expected="$2" output="$3"
+  assert_equals "$name" "$expected" "$(in_installer classify_marketplace_add_failure "$output")"
+}
+
+assert_classified "an unreachable host is what the local fallback exists for" unreachable \
+  "Adding marketplace…✘ Failed to add marketplace: Failed to clone marketplace repository: Cloning into '/home/o/.claude/plugins/marketplaces/temp_1785021233855'...
+fatal: unable to access 'https://127.0.0.1:1/nope.git/': Failed to connect to 127.0.0.1 port 1 after 0 ms: Could not connect to server"
+assert_classified "a clone that cannot authenticate is the same fallback case" unreachable \
+  "Adding marketplace…✘ Failed to add marketplace: Failed to clone marketplace repository: SSH authentication failed. Please ensure your SSH keys are configured for GitHub, or use an HTTPS URL instead.
+
+Original error: Cloning into '/home/o/.claude/plugins/marketplaces/SoyJohnXD-oso-code'...
+git@github.com: Permission denied (publickey)."
+assert_classified "an enterprise policy block never repoints at a working tree" policy-blocked \
+  "Adding marketplace…✘ Failed to add marketplace: Marketplace source 'SoyJohnXD/oso-code' is blocked by enterprise policy."
+assert_classified "a marketplace outside the allowed list is the same refusal" policy-blocked \
+  "Adding marketplace…✘ Failed to add marketplace: Marketplace 'oso-code' is not in the allowed marketplace list"
+assert_classified "a seed-managed name is the admin's to change, not this script's" seed-managed \
+  "Adding marketplace…✘ Failed to add marketplace: Marketplace 'oso-code' is seed-managed (/opt/claude/seed). To use a different source, ask your admin to update the seed, or use a different marketplace name."
+assert_classified "a malformed source is a typo, not an outage" invalid-source \
+  "✘ Invalid marketplace source format. Try: owner/repo, https://..., or ./path"
+assert_classified "an unparseable manifest is the marketplace's own fault" invalid-manifest \
+  "Adding marketplace…✘ Failed to add marketplace: Failed to parse marketplace file at /r/.claude-plugin/marketplace.json: Invalid JSON in /r/.claude-plugin/marketplace.json: JSON Parse error: Expected '}'"
+assert_classified "a manifest that parses but does not fit the schema is the same" invalid-manifest \
+  "Adding marketplace…✘ Failed to add marketplace: Failed to parse marketplace file at /r/.claude-plugin/marketplace.json: Invalid schema: name: Invalid input: expected string, received undefined"
+assert_classified "a missing manifest is the same again" invalid-manifest \
+  "Adding marketplace…✘ Failed to add marketplace: Marketplace file not found at /r/.claude-plugin/marketplace.json"
+# The fail-safe half: the client can reword any of the messages above in any
+# release, and the cost of that has to be a lost fallback, never a silent repoint.
+assert_classified "a message this script has never seen takes no fallback" unknown \
+  "Adding marketplace…✘ Failed to add marketplace: something the client learned to say after this was written"
+
+# Registering a working tree as a plugin source: install.sh derives $REPO_ROOT
+# from $BASH_SOURCE, which `curl | bash` leaves unset — on bash 3.2 that lands
+# $REPO_ROOT on `/`, elsewhere on the parent of the operator's cwd. A refusal that
+# still calls the client refuses nothing, so what the client was asked to register
+# is half of every case here.
+clone_registration_of() {
+  local verdict=registered
+  : > "$CLIENT_CALLS"
+  in_installer register_clone_marketplace "$1" 2>"$INSTALLER_STDERR" || verdict=refused
+  printf '%s:%s' "$verdict" "$(cat "$CLIENT_CALLS")"
+}
+
+assert_equals "a path carrying no marketplace manifest never reaches the client" \
+  "refused:" "$(clone_registration_of "$TEST_HOME/parent-of-a-random-cwd")"
+assert_equals "the root of a real clone is what the offline fallback may register" \
+  "registered:plugin marketplace add $REPO_ROOT" "$(clone_registration_of "$REPO_ROOT")"
+
+# Repointing at a working tree is a permanent change to where the plugin loads
+# from, and the operator only learns of it here. Spelled out rather than read from
+# install.sh on purpose, the way the state path above is.
+names_tree=no names_revert=no
+case "$(cat "$INSTALLER_STDERR")" in *"$REPO_ROOT"*) names_tree=yes ;; esac
+case "$(cat "$INSTALLER_STDERR")" in *"claude plugin marketplace add SoyJohnXD/oso-code"*) names_revert=yes ;; esac
+assert_equals "the fallback names the tree it repointed to and how to revert" \
+  "tree=yes revert=yes" "tree=$names_tree revert=$names_revert"
+
+# The other end of that path: the fallback runs where the remote is already gone,
+# so a refusal it swallows leaves the operator with no source and no reason. The
+# first add classifies its failure; this one has to say as much.
+printf 'Adding marketplace…✘ Failed to add marketplace: Marketplace file not found at %s/.claude-plugin/marketplace.json\n' \
+  "$REPO_ROOT" > "$CLIENT_REFUSAL"
+refused_fallback="$(clone_registration_of "$REPO_ROOT")"
+refusal_reason=unnamed
+case "$(cat "$INSTALLER_STDERR")" in *invalid-manifest*) refusal_reason=invalid-manifest ;; esac
+assert_equals "a fallback the client refuses too names the reason, never a silent return" \
+  "refused:plugin marketplace add $REPO_ROOT / invalid-manifest" \
+  "$refused_fallback / $refusal_reason"
+rm -f "$CLIENT_REFUSAL"
+
+# The wiring summary is built in an array, and an array with no elements is an
+# "unbound variable" abort under `set -u` on bash < 4.4 — macOS's bash. Every
+# wiring path appends something today, so nothing else can reach the shape that
+# aborts: this case is the only thing standing between it and an installer that
+# dies on its last line, after everything it did.
+empty_summary="$(in_installer print_wiring_summary 2>&1)" || empty_summary="aborted: $empty_summary"
+assert_equals "a wiring summary with nothing in it prints instead of aborting under set -u" \
+  "[oso-code] wiring summary:" "$empty_summary"
+
+# --- The opt-out marker: the only thing verify.sh can read the choice from -----
+# The two bootstrap scripts run standalone via curl and share no file, so the
+# opt-out is DATA at a path each spells for itself — spelled a third time here,
+# which is what catches a wrong constant in either. Both halves are cases because
+# the CLEAR is the one that is easy to forget: a marker left behind by an earlier
+# opt-out would report a genuinely failed impeccable install as the operator's own
+# choice forever.
+IMPECCABLE_MARKER="$STATE_DIR/impeccable-opt-out"
+marker_state() { [ -f "$IMPECCABLE_MARKER" ] && echo recorded || echo cleared; }
+
+rm -f "$IMPECCABLE_MARKER"
+in_installer skip_impeccable >/dev/null
+assert_equals "--no-impeccable records the opt-out where verify.sh reads it" \
+  "recorded" "$(marker_state)"
+in_installer wire_impeccable >/dev/null
+assert_equals "an install without the flag clears the marker an earlier one left" \
+  "cleared" "$(marker_state)"
+
+# --- The verifier's report: an opt-out and an optional MCP are notes ----------
+# Read against this suite's isolated HOME with the client shimmed, so the install
+# checks fail legitimately and instantly and what the cases read is the SHAPE of
+# the report — which line an operator is handed, and whether the tally counts it.
+# OSO_VERIFY_SKIP_SLOW keeps verify.sh from re-running this very suite and from
+# fetching impeccable from npm.
+verify_report() {
+  ( PATH="$CLAUDE_SHIM_DIR:$PATH"; OSO_VERIFY_SKIP_SLOW=1 bash "$REPO_ROOT/bootstrap/verify.sh" 2>&1 || true )
+}
+
+# What the report SAYS about one check, which is the whole difference between a
+# gap an operator has to fix and one they chose.
+report_line_kind() {
+  local report="$1" name="$2"
+  case "$report" in
+    *"FAIL: $name"*) printf 'fail' ;;
+    *"ok:   $name"*) printf 'ok' ;;
+    *"note: $name"*) printf 'note' ;;
+    *) printf 'absent' ;;
+  esac
+}
+
+report_without_marker="$(verify_report)"
+in_installer skip_impeccable >/dev/null
+report_with_marker="$(verify_report)"
+rm -f "$IMPECCABLE_MARKER"
+
+assert_equals "an opt-out turns the impeccable plugin check into a note" \
+  "note" "$(report_line_kind "$report_with_marker" 'impeccable plugin')"
+assert_equals "a cleared marker puts the hard impeccable check back — red in this fixture HOME" \
+  "fail" "$(report_line_kind "$report_without_marker" 'impeccable plugin')"
+assert_equals "an absent fallow is reported as a note the tally never counts" \
+  "note" "$(report_line_kind "$report_without_marker" 'fallow MCP')"
+assert_equals "the report still reaches its summary" "reached" \
+  "$(printf '%s\n' "$report_without_marker" | grep -q '^passed:' && echo reached || echo missing)"
+
+# --- The npx probe's bound: a hang may not take the whole report with it -------
+# verify.sh runs standalone via curl and defines its own helpers, so the bound is
+# READ OUT of the shipped file rather than reimplemented here — a rename or a move
+# leaves this block with nothing to run and says so. The bound value is the one
+# thing the cases override: 20 seconds is what an operator waits, not a suite.
+bounded_probe="$(sed -n '/^impeccable_cli_runnable()/,/^}/p' "$REPO_ROOT/bootstrap/verify.sh")"
+NPX_SHIM_DIR="$TEST_HOME/npx-shim"
+NPX_ORPHAN_MARKER="$TEST_HOME/npx-orphan"
+mkdir -p "$NPX_SHIM_DIR"
+
+# One call, two facts: what the check would report, and whether the operator waited
+# out the bound for it. A bound that never fires and an answer that waits for one
+# are the same hang.
+probe_with_npx() {
+  local bound="$1" shim="$2" started verdict
+  printf '%s\n' "$shim" > "$NPX_SHIM_DIR/npx"
+  chmod +x "$NPX_SHIM_DIR/npx"
+  started="$(date +%s)"
+  verdict="$(
+    eval "$bounded_probe"
+    PATH="$NPX_SHIM_DIR:$PATH"
+    NPX_PROBE_BOUND_SECONDS="$bound"
+    impeccable_cli_runnable
+  )"
+  if [ "$(( $(date +%s) - started ))" -ge "$bound" ]; then
+    printf '%s (waited out the bound)' "$verdict"
+  else
+    printf '%s (prompt)' "$verdict"
+  fi
+}
+
+if [ -z "$bounded_probe" ]; then
+  echo "FAIL: bootstrap/verify.sh defines no impeccable_cli_runnable, so its bound has nothing to test"
+  fail=$((fail + 1))
+else
+  assert_equals "an npx that answers leaves the check green without waiting out the bound" \
+    "1 (prompt)" "$(probe_with_npx 5 '#!/bin/sh
+exit 0')"
+  assert_equals "an npx that fails on its own is a red check, not a timeout" \
+    "0 (prompt)" "$(probe_with_npx 5 '#!/bin/sh
+echo "npm ERR! 404 Not Found" >&2
+exit 1')"
+  # npx runs the package in node children of its own, so a bound that kills only
+  # its direct child leaves the fetch running after the report has moved on.
+  rm -f "$NPX_ORPHAN_MARKER"
+  assert_equals "an npx that hangs is killed at the bound, with the reason in the value" \
+    "no answer within 1s (waited out the bound)" "$(probe_with_npx 1 "#!/bin/sh
+( sleep 2; touch $NPX_ORPHAN_MARKER ) &
+sleep 60")"
+  sleep 3
+  assert_equals "the kill at the bound takes the probe's own children with it" \
+    "no orphan" "$([ -f "$NPX_ORPHAN_MARKER" ] && echo "orphan survived" || echo "no orphan")"
 fi
 
 echo "----"

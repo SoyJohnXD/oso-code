@@ -17,8 +17,8 @@ Team harness for Claude Code. A guided orchestrator that keeps the human in char
 |---|---|
 | `plugin/` | The Claude Code plugin the team installs: skills (slash commands), hooks, and the `oso-state` helper. |
 | `bootstrap/` | Cross-OS installer (Linux/macOS/Windows): prerequisites, MCP wiring, legacy cleanup. |
-| `docs/` | Design documents. Start with [docs/blueprint.md](docs/blueprint.md). |
-| `tests/` | Hook regression suite (`tests/hooks-test.sh`) and the plugin linter (`tests/plugin-lint.sh` — every forked skill declares `background`, every forked skill declares an `end with exactly one of:` verdict block, every `oso-code:<name>` reference resolves to a real skill or agent, every call site of a skill that declares such a block carries at least one of its verdict tokens, `security-pass` never acquires its diff from a remote-qualified ref, and the Impeccable detect gate never carries a placeholder where its pin belongs — six rules `claude plugin validate` has no opinion on, though it does read the manifest, `hooks.json`, skill frontmatter and the agents). Run both plus `claude plugin validate --strict plugin` before any release. |
+| `docs/` | Design documents. Start with [docs/blueprint.md](docs/blueprint.md) for the current design, then [docs/decisions/](docs/decisions/) for the numbered decisions behind it — the blueprint's own index lists them by date. |
+| `tests/` | Hook regression suite (`tests/hooks-test.sh`) and the plugin linter (`tests/plugin-lint.sh` — every forked skill declares `background`, every forked skill declares an `end with exactly one of:` verdict block, every `oso-code:<name>` reference resolves to a real skill or agent, every call site of a skill that declares such a block carries at least one of its verdict tokens and names the skipped verdict of any axis whose other verdicts it reads, `security-pass` never acquires its diff from a remote-qualified ref, the Impeccable detect gate never carries a placeholder where its pin belongs, the always-loaded `bootstrap/claude-global.md` routes to every mode the model cannot invoke on its own, every line that launches `oso-verifier` names the payload it hands it, every decision under [docs/decisions/](docs/decisions/) says where it landed, every decision a skill cites resolves to one of those files and is named back by it, and the prose that counts these rules names the number the linter declares — eleven rules `claude plugin validate` has no opinion on, though it does read the manifest, `hooks.json`, skill frontmatter and the agents). Run both plus `claude plugin validate --strict plugin` and `claude plugin validate --strict .` — the plugin manifest and the marketplace one — before any release; the suite runs the linter as one of its own cases, so every CI run gates these rules wherever it runs the suite — ubuntu, the `bash:3.2` container, Windows — and validates both manifests besides. |
 
 ## Install (team)
 
@@ -28,20 +28,22 @@ Prerequisites per OS — the bootstrap checks and guides you, but know what you 
 |---|---|---|
 | Linux | git, [Claude Code](https://code.claude.com), Node.js | jq auto-installs via your package manager |
 | macOS | git, Claude Code, Node.js | jq auto-installs via Homebrew |
-| Windows | nothing pre-installed — just double-click `bootstrap\install.bat` | it provisions Git for Windows, Node.js, jq, and Claude Code via winget, then runs the installer under Git Bash |
+| Windows | nothing pre-installed — just double-click `bootstrap\install.bat` | it provisions Git for Windows, Node.js, and jq via winget — Claude Code through its own official installer — then runs the installer under Git Bash |
 
-Optional on every OS: Rust (`cargo`) for the fallow analyzer — without it the debt-sweep runs rubric-only on TS/JS projects.
+Optional on every OS: Rust (`cargo`) for the fallow analyzer — without it the debt-sweep runs rubric-only on TS/JS projects. Optional at both ends: the installer records a missing fallow in its wiring summary and carries on, and `verify.sh` reports it as a `note:` line that never counts against the run.
 
 ```bash
 git clone https://github.com/SoyJohnXD/oso-code
 cd oso-code
 bash bootstrap/install.sh     # prerequisites, MCPs, plugins, legacy cleanup (asks before anything destructive)
-bash bootstrap/verify.sh      # measurable post-install E2E — expect all checks ok
+bash bootstrap/verify.sh      # measurable post-install E2E — every check ok:, ending on failed: 0
 ```
 
-The installer also installs the Impeccable plugin (the design bar) by default — pass `--no-impeccable` (`-NoImpeccable` on `install.ps1`) to skip it, and `verify.sh` then reports the plugin check red. Its second impeccable check stays green either way: `npx` fetches the CLI from the public registry rather than from the plugin install. That check runs the unpinned name, so it answers whether `npx` can fetch and run impeccable at all — not whether the version the `detect` gate pins resolves.
+`verify.sh` prints one line per check, `ok:` or `FAIL:`, and closes with `passed: N, failed: M` — the run is green when `failed: 0`, which is also its exit status. A `note:` line is not a check and moves neither number: notes are where the optional pieces and your own choices get reported (the optional fallow MCP, connected or not; an `--no-impeccable` opt-out; no jq to read the install record; a repo whose `core.hooksPath` belongs to another tool). So a green run is every `ok:` plus whatever notes describe your machine.
 
-**Windows**: no terminal needed — clone the repo, then double-click `bootstrap\install.bat`. It provisions Git for Windows, Node.js, jq, and Claude Code (via winget and Claude Code's official installer), then delegates to the same `install.sh` under Git Bash. Prefer a terminal? Run `powershell -ExecutionPolicy Bypass -File bootstrap\install.ps1`. Fallback, if you already have Git Bash and the prerequisites: run `bash bootstrap/install.sh` directly inside Git Bash.
+The installer also installs the Impeccable plugin (the design bar) by default — pass `--no-impeccable` (`-NoImpeccable` on `install.ps1`) to skip it. That choice is recorded as a marker file the installer writes and clears, and `verify.sh` reads it: the plugin check becomes a `note:` naming the opt-out instead of running, so the verification still ends at `failed: 0`. Its second impeccable check stays green either way: `npx` fetches the CLI from the public registry rather than from the plugin install. That check runs the unpinned name, so it answers whether `npx` can fetch and run impeccable at all — not whether the version the `detect` gate pins resolves.
+
+**Windows**: no terminal needed — clone the repo, then double-click `bootstrap\install.bat`. It provisions Git for Windows, Node.js, and jq via winget, installs Claude Code through its own official installer, then delegates to the same `install.sh` under Git Bash. Prefer a terminal? Run `powershell -ExecutionPolicy Bypass -File bootstrap\install.ps1`. Fallback, if you already have Git Bash and the prerequisites: run `bash bootstrap/install.sh` directly inside Git Bash.
 
 Then restart Claude Code. Daily use:
 
@@ -50,7 +52,10 @@ Then restart Claude Code. Daily use:
 - `/oso-code:debug <what broke>` — diagnose and fix a bug.
 - `/output-style Oso` — the team persona (optional).
 
-Update later with `claude plugin update oso-code@oso-code` — new versions ship only on version bumps.
+Updating later takes two tiers, because the harness reaches your machine by two routes:
+
+- `claude plugin update oso-code@oso-code` updates the plugin. The marketplace entry's source is `./plugin`, so that subtree is the whole payload — skills, agents, hooks, git-hooks, `oso-state`, the output style, and the `.mcp.json` that carries context7 — and it works from a marketplace install, with no working copy of this repo at all.
+- When a release's entry in [CHANGELOG.md](CHANGELOG.md) is marked **Reinstall required**, `bootstrap/` changed and no plugin update carries it: pull the repo and re-run `bash bootstrap/install.sh`. Everything the installer puts outside the plugin lives there — the `~/.claude/CLAUDE.md` block, the MCP wiring, the `core.hooksPath` gate, the Impeccable install, the legacy cleanup.
 
 **Surfaces**: oso-code works on the local runtimes — terminal CLI, desktop app, and IDE extensions (they all load `~/.claude` plugins and run the hooks). Web sessions at claude.ai/code use repo-only config and never load local plugins, hooks, engram, or fallow — no harness there.
 
@@ -59,8 +64,11 @@ Update later with `claude plugin update oso-code@oso-code` — new versions ship
 The hooks DENY tool calls — that is the enforcement, not a warning:
 
 - A `git commit` is denied while the session's verify is not green. Two layers read the same flag: the git `pre-commit` hook the installer wires through `core.hooksPath` is the primary one — it sits at the commit's own boundary, so aliases, wrappers, and an absolute `/usr/bin/git` all reach it — and the `PreToolUse` Bash matcher covers what a git hook never sees. `core.hooksPath` is a per-repo setting: the installer wires the repo you install from and prints the one-line `git config` for any other repo, and the matcher applies everywhere regardless. `git commit --no-verify` skips the git layer by git's own design; the matcher is what catches that shape.
+- The gated verbs are `commit`, `commit-tree`, `update-ref`, `filter-branch`, `replace`, and `fast-import`. Every other history-writing verb passes on purpose: `revert`, `merge`, `rebase`, `cherry-pick`, and `am` spell their `--abort`/`--continue` recovery with the same token as the verb itself, and denying the recovery would deadlock a session that cannot run verify mid-conflict.
+- The matcher reads at most 3072 bytes of a Bash call's `command` field. Past that nothing is decoded and nothing is lexed: the line becomes residue, which the gate allows — and an armed session that is not yet green records it as `residue-allowed` in `~/.local/state/oso-code/events.jsonl`, so what slips past the rail is measured instead of invisible. The coverage cost is stated plainly: the commit rail stops applying to a command line longer than that.
 - An `Edit`, `Write`, `MultiEdit`, or `NotebookEdit` — and `mcp__fallow__fix_apply`, gated the same way — is denied in plan mode while no slice is active. `/quick` and `/debug` edits are never gated this way.
-- Nothing is gated until a mode arms the session: with no state file the hooks allow silently and log nothing, which is every session that never ran `/plan`, `/quick`, or `/debug`.
+- Nothing is gated until a mode arms the session: with no state file the hooks allow silently and log nothing, which is every session that never ran `/plan`, `/quick`, or `/debug`. Once a session is armed the polarity flips — a state file that exists but cannot be read (a directory, wrong permissions, a read error) denies the call and logs `state-unreadable`, and the denial names the repair: `oso-state --session <id> clear`.
+- A missing jq degrades the hooks instead of denying anything: they read their JSON payload with jq where it exists and with a pure-bash reader where it does not, because a marketplace install never runs `install.sh` and a GUI-launched macOS client has no Homebrew on its PATH. A gate that judges a call on the fallback reader records a `jq-absent` event, which is what makes the degradation measurable; an unarmed session still records nothing.
 
 State is per-session, in `~/.local/state/oso-code/<sanitized-session>.state`, and a restart starts unarmed: the flags are keyed by session id and SessionEnd deletes the file (a leftover from a crashed session is reported at the next start and ages out on its own). Resuming a `/plan` change means re-running `/oso-code:plan <change>`, which re-arms it. Within a session, `oso-state --session <id> clear` disarms a flow you walk away from mid-change, so a stale green does not ride over later unrelated work.
 
