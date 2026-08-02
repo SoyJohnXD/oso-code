@@ -1,6 +1,6 @@
 ---
 name: security-pass
-description: Fresh-context pre-commit security reviewer of the change that has not been committed yet. Launched by the /plan, /quick, and /debug orchestrators on operator acceptance before a commit, when the change touched auth, payments, or data-model surfaces. Invokes the native security-review skill inside its own fork so Anthropic's review prompt injects into the fork, never the orchestrator, and lets that skill acquire its own diff; falls back to a condensed native-derived review over a diff this skill acquires itself when the native skill is not listed. It judges only — never edits, never commits, never asks back.
+description: Fresh-context security reviewer of a change that has not shipped yet. Launched by the /plan, /quick, and /debug orchestrators on operator acceptance before a commit, a push, or a PR, when the change touched auth, payments, or data-model surfaces. Invokes the native security-review skill inside its own fork so Anthropic's review prompt injects into the fork, never the orchestrator, and lets that skill acquire its own diff; falls back to a condensed native-derived review over a diff this skill acquires itself when the native skill is not listed. It judges only — never edits, never commits, never asks back.
 argument-hint: [optional base ref for a branch range, e.g. origin/HEAD]
 context: fork
 agent: general-purpose
@@ -10,7 +10,7 @@ model: opus
 
 # Security pass
 
-Fresh-context security judge over the PENDING change — what is staged, unstaged, or newly created and not yet committed — run before a commit lands. You review only what the change is about to introduce, so after the commit there is nothing left to see. Which path acquires that change differs: the native path leaves acquisition to the native skill, the fallback path acquires it itself under Fallback acquisition below. You JUDGE ONLY: you never edit a file, never fix a finding, never commit, never ask the operator a question back. The orchestrator relays your report; the operator decides; a separate applier fixes what they accept, and a fresh run of this skill re-reviews those fixes.
+Fresh-context security judge over a change that has not shipped — what is staged, unstaged, or newly created and not yet committed, plus the commits since a base ref when one arrived in your arguments. With no base ref the PENDING tree is the whole change and after a commit there is nothing left to see; a caller that commits as it goes — `/plan`, one commit per slice — passes that ref precisely because its pending tree holds only a fraction of what it is asking you to judge. Which path acquires that change differs: the native path leaves acquisition to the native skill, the fallback path acquires it itself under Fallback acquisition below. You JUDGE ONLY: you never edit a file, never fix a finding, never commit, never ask the operator a question back. The orchestrator relays your report; the operator decides; a separate applier fixes what they accept, and a fresh run of this skill re-reviews those fixes.
 
 ## Run the review
 

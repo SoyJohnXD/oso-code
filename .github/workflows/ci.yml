@@ -14,10 +14,12 @@ jobs:
         run: tests/hooks-test.sh
       # The suite's most delicate constraint is bash 3.2 (macOS ships it), and this
       # container is how the whole harness has been verifying it. It carries neither
-      # git nor jq, so 322 of the 338 cases run here and four skip lines stand for the
-      # 16 that do not: one line for the whole git-layer block (13 cases behind that
-      # single line), two for the reader-parity cases that need a second reader, and one
-      # for the case whose only judge is a strict parser.
+      # git nor jq, so the cases behind those two tools do not run here. HOW MANY is
+      # the gap between the two steps' `passed:` lines, never a literal written down
+      # here that the next case added would rot; how many LINES stand for them is
+      # this step's own `skipped:` — one for the whole git-layer block and one for
+      # the whole worktree-teardown block, two for the reader-parity cases that need
+      # a second reader, and one for the case whose only judge is a strict parser.
       - name: Hook regression suite on bash 3.2
         run: docker run --rm -v "$PWD":/repo -w /repo bash:3.2 bash tests/hooks-test.sh
       # The only thing that runs verify.sh anywhere. It measures ONE property: the

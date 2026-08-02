@@ -10,13 +10,14 @@
 #   oso-state --session <id> get key
 #   oso-state --session <id> show
 #   oso-state --session <id> clear
+#   oso-state --session <id> event <type> [detail]
 set -euo pipefail
 
 BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$BIN_DIR/../hooks/lib.sh"
 
 usage() {
-  echo "usage: oso-state --session <id> {set key=value... | get key | show | clear}" >&2
+  echo "usage: oso-state --session <id> {set key=value... | get key | show | clear | event <type> [detail]}" >&2
   exit 1
 }
 
@@ -86,6 +87,13 @@ case "$action" in
     acquire_lock
     rm -f "$state_file"
     log_event clear "$session_id"
+    ;;
+  event)
+    [ $# -ge 1 ] && [ $# -le 2 ] || usage
+    # No lock, unlike set and clear: the lock serializes publication of THIS
+    # session's state file, while this appends one line to the event log every
+    # hook already appends to unlocked and no state file is touched at all.
+    log_event "$1" "$session_id" "${2:-}"
     ;;
   *)
     usage

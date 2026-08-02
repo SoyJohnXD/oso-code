@@ -293,6 +293,199 @@ else
   echo "FAIL: a mode skill instructs a partial state write —$partial_state_writes"; fail=$((fail + 1))
 fi
 
+# --- Integration: what /plan has to SAY for a wave to be runnable at all ------
+# The slicing phase is prose, so a rule the shipped file does not carry is one
+# the orchestrator improvises per run: a threshold nobody spelled, a field
+# nobody declared, a base ref nobody ruled out. Each table line below is one
+# phrase its section has to carry, and the section is cut out of the file first
+# — a rule that drifted into a neighbouring phase fails here instead of passing
+# on a file-wide scan.
+PLAN_SKILL="$PLUGIN/skills/plan/SKILL.md"
+plan_section() {
+  sed -n "/^## $1\. /,/^## [0-9]/p" "$PLAN_SKILL"
+}
+
+# The anti-vacuity half, from both sides: a table that read empty proved nothing,
+# and a section heading that moved would hand every line an empty haystack — the
+# first is its own FAIL, the second surfaces as every phrase going unsaid.
+assert_says_every() {
+  local name="$1" section="$2" phrase unsaid="" phrases_read=0
+  while IFS= read -r phrase; do
+    [ -n "$phrase" ] || continue
+    phrases_read=$((phrases_read + 1))
+    case "$section" in *"$phrase"*) ;; *) unsaid="$unsaid \"$phrase\"" ;; esac
+  done
+  if [ "$phrases_read" -eq 0 ]; then
+    echo "FAIL: $name — the table read empty, so the scan proved nothing"; fail=$((fail + 1))
+  elif [ -z "$unsaid" ]; then
+    echo "ok: $name"; pass=$((pass + 1))
+  else
+    echo "FAIL: $name — never said:$unsaid"; fail=$((fail + 1))
+  fi
+}
+
+assert_says_every "the slicing phase ships its graph, its waves and its mode choice" \
+  "$(plan_section 4)" <<'SLICING_TABLE'
+**Depends-on**
+never by the target execution mode
+a CONTRACT and its consumers
+SHARED STATE
+a DATA FLOW
+VERIFICATION-BAR COUPLING
+Wave 0 is the design-foundation slice, alone
+Recommend parallel when the widest wave is 3 or more
+concurrency cap defaults to 4
+SLICING_TABLE
+
+assert_says_every "the Verification row rules parallel out of a change with no base ref" \
+  "$(plan_section 3)" <<'VERIFICATION_ROW_TABLE'
+makes PARALLEL execution unavailable
+answers it at the first wave
+VERIFICATION_ROW_TABLE
+
+# The same row is the only place a project can turn the per-slice commit off,
+# and no store, no file and no hook records that choice — so the row's own prose
+# is the whole mechanism. Both halves are load-bearing in opposite directions: a
+# default nobody wrote down is a question asked once per slice, and an opt-out
+# nobody wrote down is a project with no way to decline commits it cannot take.
+assert_says_every "the Verification row settles per-slice commits, on by default" \
+  "$(plan_section 3)" <<'PER_SLICE_COMMIT_PREFERENCE_TABLE'
+per-slice commits are ON
+turns them off HERE, the only place it is settled
+PER_SLICE_COMMIT_PREFERENCE_TABLE
+
+# The sequential path lands its commit in one specific window — the green step 4
+# writes, which the next slice's step 1 takes back — and nothing outside this
+# prose says so: the hooks read one flag and would let that commit go anywhere
+# inside it, so a step that names no command lands no commit at all and a step
+# that names the wrong boundary lands one the rail denies. The second line is the
+# other half of the change's whole point: what step 4 does is a commit, and the
+# push is not its business.
+assert_says_every "the sequential path commits each slice it takes green" \
+  "$(plan_section 6)" <<'SEQUENTIAL_COMMIT_TABLE'
+git -C <main checkout> commit
+a COMMIT and never a push
+SEQUENTIAL_COMMIT_TABLE
+
+# The wave loop is prose too, and the steps nobody wrote down are the ones an
+# orchestrator improvises: a state write missing the key a teardown reads, a
+# commit with no window to pass the rail, a merge nobody launched, an
+# integration gate nobody ran. Split from the routing table below because the
+# two answer different questions — how a wave RUNS, and what happens when it
+# does not.
+assert_says_every "the execution phase runs a wave from activation to integration" \
+  "$(plan_section 6)" <<'WAVE_LOOP_TABLE'
+active_slice=wave-<n> verify_green=false repo_path=
+git -C <main checkout> worktree add -b oso/<change>/<slice>
+event worktree-created
+in ONE message
+that the slice runs in PARALLEL
+the GREEN WINDOW
+active_slice=wave-<n> verify_green=true
+which re-arms the wave
+the rail is open SESSION-WIDE
+accidental-bypass window the harness accepts deliberately
+A wave integrates only when EVERY slice in it is green
+launch the `oso-integrator` agent
+INTEGRATION verdict shape
+does the wave close
+WAVE_LOOP_TABLE
+
+# The other half: every way a wave fails has one route and only one, and the
+# two that reach outside a single wave — the concurrency question §3 could only
+# record, and the offer that walks the change back to sequential.
+assert_says_every "the execution phase routes every way a wave fails" \
+  "$(plan_section 6)" <<'WAVE_FAILURE_TABLE'
+**A red slice**
+THE ORCHESTRATOR NEVER RESOLVES IT
+event merge-conflict
+the whole wave returns AS A UNIT
+sending that slice back is sending the victim
+event integration-red
+as a NEW SLICE through the normal apply → verify loop
+Write the answer into the ledger's §3 Verification row
+the VERIFICATIONS serialize
+finish the remaining slices SEQUENTIALLY
+unrelated to the entire WAVE
+WAVE_FAILURE_TABLE
+
+# Which of those routes a red wave takes turns on attribution, and the linter
+# cannot reach that: rule 6 only sees a call site once one exists, so a wave loop
+# that never invokes the triage judge reads clean there and goes back to deciding
+# blame by eye. Each line below is one thing lint cannot check — that the judge is
+# invoked at all, and that each of its three verdicts leaves by a different door:
+# the wave's own failure routing, the operator's stop-the-line offer, and the
+# answer that is neither, which may never be quietly filed as one of them.
+assert_says_every "the execution phase triages a red wave before routing it" \
+  "$(plan_section 6)" <<'WAVE_TRIAGE_TABLE'
+INVOKE the `oso-code:triage` skill through the Skill tool
+it takes the failure routing above unchanged
+the stop-the-line paragraph above runs with triage's evidence in hand
+never read as either answer
+WAVE_TRIAGE_TABLE
+
+# A worktree the close leaves standing is a registration the next run's
+# `git worktree add` dies on, and the branch behind it is that same failure under
+# a second name. The integrator disposes of both only on a wave that merged
+# clean, so the waves this paragraph exists for — conflict-stopped, exited back
+# to sequential, never integrated — reach the close with both halves standing,
+# and no hook covers either: the teardown removes trees and prunes
+# registrations, and a change that closes while the session goes on never
+# reaches it. Branch deletion is therefore the close's own, and it is gated from
+# both sides: an unmerged branch holds the only copy of a slice's committed work,
+# so neither deleting it nor leaving it may happen behind the operator.
+assert_says_every "the close clears the trees and branches parallel execution left behind" \
+  "$(plan_section 7)" <<'CLOSE_CLEANUP_TABLE'
+still standing is removed through git
+worktree prune
+git worktree add
+branch -d oso/<change>/<slice>
+after the trees and never before
+never `-D`
+the only copy of that slice's committed work
+left standing without the operator hearing
+CLOSE_CLEANUP_TABLE
+
+# Where the boundary sits is prose in the close and nowhere else: the commit rail
+# gates a commit on the green, never on an ask, so the only thing that can say
+# which operations wait for the operator is this step. Both lines are needed and
+# neither implies the other — a close that says only the first commits and then
+# pushes unasked, one that says only the second is the boundary this change
+# retired, asking for a commit the flow already landed once per slice.
+assert_says_every "the close asks for a push and a PR, never for a commit" \
+  "$(plan_section 7)" <<'COMMIT_BOUNDARY_TABLE'
+A COMMIT is part of the flow and is never asked for
+PUSH and PR are the two that still require the operator to ask
+COMMIT_BOUNDARY_TABLE
+
+# The same trees from the other end: the close clears the ones the operator
+# reached, and the resume is where they hear about the ones nobody did. No hook
+# covers that either — warn-stale-state.sh reports state FILES and is right not
+# to grow a second remit — and the session that could have looked them up in its
+# own state is the one that ended, so the entry point reads git's registry or
+# nothing does. A resume that stays silent hands the operator a change whose
+# next `worktree add -b` dies on a branch name nobody mentioned.
+assert_says_every "the resume check reports the worktrees a previous session left standing" \
+  "$(plan_section 0)" <<'RESUME_WORKTREES_TABLE'
+git -C <main checkout> worktree list
+report every worktree of this change still standing
+oso/<change>/<slice>
+RESUME_WORKTREES_TABLE
+
+# The integrator's own teardown answers to git, not to taste: git refuses to
+# delete a branch a standing worktree still has checked out, and no force
+# overrides that refusal, so an agent told to delete branches first stops at its
+# first step on every wave it merged clean. Its prose is the whole specification
+# — no hook and no schema sees the order — so the order and the reason it is
+# that way are pinned here. Scanned whole-file rather than by section:
+# `plan_section` cuts on `plan/SKILL.md`'s numbered phase headings, and this
+# file's headings are named.
+assert_says_every "the integrator removes worktrees before deleting the branches they hold" \
+  "$(cat "$PLUGIN/agents/oso-integrator.md")" <<'TEARDOWN_ORDER_TABLE'
+remove the wave's worktrees first, then delete its branches
+git refuses to delete a branch a standing worktree still has checked out
+TEARDOWN_ORDER_TABLE
+
 # --- Integration: the env var the skills instruct is the one hooks look up ---
 export CLAUDE_CODE_SESSION_ID="$SESSION"
 bash -c 'oso-state --session "${CLAUDE_CODE_SESSION_ID}" set mode=plan verify_green=false'
@@ -313,6 +506,25 @@ mkdir -p "$stale_lock"
 touch -t 200001010000 "$stale_lock"
 oso-state --session "$SESSION" set stale_ok=yes >/dev/null 2>&1 || true
 assert_equals "stale lock is reclaimed" yes "$(oso-state --session "$SESSION" get stale_ok)"
+oso-state --session "$SESSION" clear
+
+# --- A fourth key beside the triple: the repo the session works in ------------
+# `set` takes whatever key it is handed, so nothing had to be written for the
+# session to carry the repo path a worktree teardown runs `git worktree prune`
+# in. That is exactly why it is a case: the gates read the triple by name, and a
+# key appended after it may not cost any of the three.
+oso-state --session "$SESSION" set mode=plan active_slice=1 verify_green=false repo_path="$REPO_ROOT"
+assert_equals "a key beside the triple is stored and read back" \
+  "$REPO_ROOT" "$(oso-state --session "$SESSION" get repo_path)"
+state_shown="$(oso-state --session "$SESSION" show)"
+keys_lost_to_the_fourth=""
+for triple_key in mode active_slice verify_green; do
+  case "$state_shown" in
+    *"$triple_key="*) ;;
+    *) keys_lost_to_the_fourth="$keys_lost_to_the_fourth $triple_key" ;;
+  esac
+done
+assert_equals "the whole triple survives a fourth key beside it" "" "$keys_lost_to_the_fourth"
 oso-state --session "$SESSION" clear
 
 # --- Telemetry: denies are recorded ---
@@ -353,6 +565,22 @@ assert_not_logged() {
 }
 
 assert_logged "both gates log their denies" '"event":"commit-denied"' '"event":"edit-denied"'
+
+# --- Telemetry: the branches no gate and no state write can record ------------
+# A worktree created, a merge conflict, a red integration — none of them is a
+# tool call or a state write, so without a verb of its own each is an event the
+# audit never gets. The verb writes through the same log_event the gates do, and
+# the line shape is what says so: one line, the type where a gate's event stands
+# and the detail where its command text stands.
+rm -f "$events_log"
+oso-state --session "$SESSION" event worktree-created "git worktree add ../oso-wt-3"
+assert_logged "the event verb records its type and its detail" \
+  '"event":"worktree-created","command":"git worktree add ../oso-wt-3","session":"'
+assert_equals "one event is one line, appended and nothing else" \
+  1 "$(grep -c '' "$events_log")"
+oso-state --session "$SESSION" event integration-red
+assert_logged "an event with no detail is a well-formed line too" \
+  '"event":"integration-red","command":"","session":"'
 
 # --- Session-end cleanup + path traversal safety ---
 oso-state --session "$SESSION" set mode=plan verify_green=true
@@ -506,6 +734,206 @@ else
   echo "FAIL: a current event log was rotated${hook_problem:+ — $hook_problem}"; fail=$((fail + 1))
 fi
 oso-state --session "$SESSION" clear
+
+# --- Worktree teardown: the survivor of a parallel wave, at SessionEnd --------
+# Removing the directory is only half a teardown, so every case here reads git's
+# own registry too: a worktree deleted behind git's back stays in .git/worktrees,
+# and the next `git worktree add` for that slice fails on a name nothing on disk
+# shows. The directory being gone is exactly the half a plain `rm -rf` gets right.
+WORKTREES_DIR="$STATE_DIR/worktrees"
+WORKTREE_REPO="$TEST_HOME/worktree-repo"
+VANISHED_REPO="$TEST_HOME/vanished-repo"
+
+# A session that never armed a wave carries no repo_path, so nothing says where
+# to prune — and removing the directory anyway is that corruption rather than a
+# cleanup. Needs no git, which is the one thing this whole section can assume.
+mkdir -p "$WORKTREES_DIR/wt-no-repo/1"
+printf 'mode=plan\n' > "$STATE_DIR/wt-no-repo.state"
+run_hook cleanup-state.sh '{"session_id":"wt-no-repo"}'
+assert_pruned "a state file naming no repo is still removed"            "$STATE_DIR/wt-no-repo.state"
+assert_kept   "a worktree with no repo to prune in is left where it is" "$WORKTREES_DIR/wt-no-repo/1"
+rm -rf "$WORKTREES_DIR/wt-no-repo"
+
+# The contrast to the case above: the repo path is read through the sibling
+# binary, so a tree whose bin/ never arrived cannot tell a session that names no
+# repo from one nobody could ask — and leaving the worktree standing is the right
+# answer to only one of them. Nothing asks git before that branch, so this needs
+# none either: the copy is hooks-only, which is what a partial install leaves.
+UNINSTALLED_PLUGIN="$TEST_HOME/plugin-without-bin"
+mkdir -p "$UNINSTALLED_PLUGIN"
+cp -R "$PLUGIN/hooks" "$UNINSTALLED_PLUGIN/hooks"
+mkdir -p "$WORKTREES_DIR/wt-no-bin/1"
+printf 'mode=plan\nrepo_path=%s\n' "$WORKTREE_REPO" > "$STATE_DIR/wt-no-bin.state"
+run_hook "$UNINSTALLED_PLUGIN/hooks/cleanup-state.sh" '{"session_id":"wt-no-bin"}'
+assert_pruned "a session whose state reader is missing still ends"   "$STATE_DIR/wt-no-bin.state"
+assert_kept   "the worktree nobody could ask about is left standing" "$WORKTREES_DIR/wt-no-bin/1"
+assert_logged "a state reader that could not run is recorded rather than swallowed" \
+  '"event":"oso-state-unreachable"'
+rm -rf "$WORKTREES_DIR/wt-no-bin" "$UNINSTALLED_PLUGIN"
+
+# What git still believes about one session's worktrees — the half no `[ -d ]`
+# can answer, since a removed-by-hand worktree stays listed until the prune runs.
+worktrees_registered_for() {
+  git -C "$WORKTREE_REPO" worktree list --porcelain 2>/dev/null | grep -c "/worktrees/$1/" || true
+}
+
+arm_repo_at() {
+  local repo="$1"
+  mkdir -p "$repo"
+  git -C "$repo" init -q
+  git -C "$repo" config user.email tests@oso-code.invalid
+  git -C "$repo" config user.name "oso-code tests"
+  git -C "$repo" config commit.gpgsign false
+  printf 'base\n' > "$repo/base.txt"
+  git -C "$repo" add base.txt
+  git -C "$repo" commit -qm base
+}
+
+# One armed wave: a linked worktree where the orchestrator puts it, and the state
+# key that says which repo the teardown has to prune in.
+arm_wave_for() {
+  local session_id="$1" repo="$2"
+  mkdir -p "$WORKTREES_DIR/$session_id"
+  git -C "$repo" worktree add -q -b "oso/parallel/$session_id" "$WORKTREES_DIR/$session_id/1"
+  printf 'mode=plan\nrepo_path=%s\n' "$repo" > "$STATE_DIR/$session_id.state"
+}
+
+if ! command -v git >/dev/null 2>&1; then
+  echo "skip: git is absent here, so a worktree teardown has no registry to read"
+  skipped=$((skipped + 1))
+else
+  arm_repo_at "$WORKTREE_REPO"
+  rm -f "$events_log"
+
+  # The survivor of a wave that never integrated is the ending session's own.
+  arm_wave_for "$SESSION" "$WORKTREE_REPO"
+  registered_before="$(worktrees_registered_for "$SESSION")"
+  run_hook cleanup-state.sh "$(printf '{"session_id":"%s"}' "$SESSION")"
+  assert_pruned "session end removes the session's worktree tree" "$WORKTREES_DIR/$SESSION"
+  assert_equals "session end leaves nothing of it registered in the repo" "1 -> 0" \
+    "$registered_before -> $(worktrees_registered_for "$SESSION")"
+  assert_logged "a teardown leaves an audit line no gate could have written" \
+    '"event":"worktree-removed"'
+
+  # The 7-day sweep owes the same teardown to a session that never reached
+  # SessionEnd, read from that session's own state file.
+  arm_wave_for wt-abandoned "$WORKTREE_REPO"
+  touch -t 200001010000 "$STATE_DIR/wt-abandoned.state"
+  abandoned_before="$(worktrees_registered_for wt-abandoned)"
+  run_hook cleanup-state.sh "$(printf '{"session_id":"%s"}' "$SESSION")"
+  assert_pruned "the 7-day sweep removes an abandoned session's worktree tree" \
+    "$WORKTREES_DIR/wt-abandoned"
+  assert_equals "the 7-day sweep leaves nothing of it registered either" "1 -> 0" \
+    "$abandoned_before -> $(worktrees_registered_for wt-abandoned)"
+
+  # The sweep's live-lock guard covers the worktree too: a held lock is exactly
+  # what a wave still running looks like, whatever the state file's age says.
+  arm_wave_for wt-locked "$WORKTREE_REPO"
+  touch -t 200001010000 "$STATE_DIR/wt-locked.state"
+  mkdir -p "$STATE_DIR/wt-locked.state.lock"
+  run_hook cleanup-state.sh "$(printf '{"session_id":"%s"}' "$SESSION")"
+  assert_kept "a worktree whose session holds a live lock survives the sweep" \
+    "$WORKTREES_DIR/wt-locked/1"
+  rm -rf "$STATE_DIR/wt-locked.state.lock" "$STATE_DIR/wt-locked.state"
+  git -C "$WORKTREE_REPO" worktree remove --force "$WORKTREES_DIR/wt-locked/1"
+  rmdir "$WORKTREES_DIR/wt-locked"
+
+  # A run killed mid-wave leaves the directory gone and the registration behind,
+  # and only the prune clears it — the case a delete-without-prune cannot pass.
+  arm_wave_for wt-crashed "$WORKTREE_REPO"
+  rm -rf "$WORKTREES_DIR/wt-crashed/1"
+  crashed_before="$(worktrees_registered_for wt-crashed)"
+  run_hook cleanup-state.sh '{"session_id":"wt-crashed"}'
+  assert_pruned "the emptied tree of a killed run is removed" "$WORKTREES_DIR/wt-crashed"
+  assert_equals "a worktree the run already deleted is deregistered by the prune" "1 -> 0" \
+    "$crashed_before -> $(worktrees_registered_for wt-crashed)"
+
+  # Fail-open: the repo can be gone by the time the session ends, and a teardown
+  # that cannot run may not take the state cleanup down with it.
+  arm_repo_at "$VANISHED_REPO"
+  arm_wave_for wt-lost-repo "$VANISHED_REPO"
+  rm -rf "$VANISHED_REPO"
+  run_hook cleanup-state.sh '{"session_id":"wt-lost-repo"}'
+  assert_pruned "a session whose repo is gone still loses its state file" \
+    "$STATE_DIR/wt-lost-repo.state"
+  assert_kept "the worktree git can no longer be asked about stays put" \
+    "$WORKTREES_DIR/wt-lost-repo/1"
+  assert_logged "a teardown git could not run is recorded rather than swallowed" \
+    '"event":"worktree-teardown-failed"'
+  rm -rf "$WORKTREES_DIR/wt-lost-repo"
+
+  # The same unreachable repo one step further along: a killed run already took
+  # the worktree directory, so no removal runs and the prune that would clear the
+  # registration cannot run either. The rmdir then takes the last trace on disk,
+  # which leaves the line as the only thing saying a prune is still owed. The log
+  # starts empty because the case above logged the same event on its way past.
+  arm_repo_at "$VANISHED_REPO"
+  arm_wave_for wt-no-prune "$VANISHED_REPO"
+  rm -rf "$VANISHED_REPO" "$WORKTREES_DIR/wt-no-prune/1"
+  rm -f "$events_log"
+  run_hook cleanup-state.sh '{"session_id":"wt-no-prune"}'
+  assert_pruned "a session whose prune could not run still loses its state file" \
+    "$STATE_DIR/wt-no-prune.state"
+  assert_logged "a prune that could not run is recorded rather than swallowed" \
+    '"event":"worktree-prune-failed"'
+
+  # The one removal git is right to refuse: a survivor still holding uncommitted
+  # work. SessionEnd is the last thing that runs, so forcing it is the operator's
+  # only copy of that work gone with nobody left to tell — the close states the
+  # same policy for the same operation, and this is where an added `--force`
+  # would diverge from it silently. What the refusal costs is a tree that stands
+  # until someone deals with it: the prune leaves it registered, because its
+  # directory is still there, so `git worktree list` goes on naming it.
+  arm_wave_for wt-dirty "$WORKTREE_REPO"
+  printf 'uncommitted\n' > "$WORKTREES_DIR/wt-dirty/1/base.txt"
+  dirty_before="$(worktrees_registered_for wt-dirty)"
+  rm -f "$events_log"
+  run_hook cleanup-state.sh '{"session_id":"wt-dirty"}'
+  assert_kept "a worktree holding uncommitted work survives session end" \
+    "$WORKTREES_DIR/wt-dirty/1"
+  assert_equals "the uncommitted work is left where the operator can still recover it" \
+    uncommitted "$(cat "$WORKTREES_DIR/wt-dirty/1/base.txt" 2>/dev/null)"
+  assert_equals "the worktree git refused to remove stays registered" "1 -> 1" \
+    "$dirty_before -> $(worktrees_registered_for wt-dirty)"
+  assert_logged "a removal refused over uncommitted work is recorded rather than forced" \
+    '"event":"worktree-teardown-failed"'
+  assert_pruned "the session whose worktree outlived it still loses its state file" \
+    "$STATE_DIR/wt-dirty.state"
+fi
+
+# --- SessionStart: the state another session left is what the model must hear --
+# The hook that tells a resumed session its gates are off decides that from the
+# state dir alone, so what it names is the whole behaviour: another session's
+# state file, never its own, and never an entry in the dir that is no state file
+# at all — the worktrees a parallel wave puts there among them.
+
+printf 'mode=plan\n' > "$STATE_DIR/other-session.state"
+printf 'mode=plan\n' > "$SESSION_STATE"
+mkdir -p "$WORKTREES_DIR/wt-parallel/1"
+run_hook warn-stale-state.sh "$(printf '{"session_id":"%s"}' "$SESSION")"
+# Which of the dir's entries reached the SessionStart context. The report is
+# prose the model reads, so the case asks which names it carries rather than how
+# the sentence around them is worded.
+named_as_stale=""
+for dir_entry in "$SESSION.state" other-session.state worktrees; do
+  case "$hook_stdout" in *"$dir_entry"*) named_as_stale="$named_as_stale $dir_entry" ;; esac
+done
+named_as_stale="${named_as_stale# }"
+assert_after_hook "SessionStart names another session's state, never its own and never a worktree" \
+  [ "$named_as_stale" = other-session.state ]
+
+rm -f "$STATE_DIR/other-session.state"
+assert_allows "SessionStart says nothing when the only state is this session's" \
+  warn-stale-state.sh "$(printf '{"session_id":"%s"}' "$SESSION")"
+
+# Fail-open on a machine that has never armed a session: no state dir at all.
+# HOME is what the state path hangs off, so the case moves it rather than
+# deleting the directory every later case reads.
+HOME="$TEST_HOME/never-armed"
+assert_allows "SessionStart says nothing where there is no state dir" \
+  warn-stale-state.sh "$(printf '{"session_id":"%s"}' "$SESSION")"
+HOME="$TEST_HOME"
+rm -rf "$WORKTREES_DIR/wt-parallel" "$SESSION_STATE"
 
 # --- Commit gate: one table per question the matcher has to answer -----------
 # A table line is a whole case, and the command is its name: the point of these

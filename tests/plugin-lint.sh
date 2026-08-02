@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Lints the rules `claude plugin validate --strict` has no opinion on: it does
 # open hooks.json, skill frontmatter and the agents, and fails on a broken one
-# (probed against client 2.1.220), but it never asks what they SAY. Eleven rules
+# (probed against client 2.1.220), but it never asks what they SAY. Twelve rules
 # hold that ground: a `context: fork` skill declares `background`; the same
 # skill declares an `end with exactly one of:` verdict block; every
 # `oso-code:<name>` the plugin's own prose points at resolves; every call site
@@ -11,12 +11,13 @@
 # ref; the Impeccable detect gate never carries a placeholder where its pin
 # belongs; the always-loaded routing file names every mode the model cannot
 # invoke on its own; every line that launches oso-verifier names the payload it
-# hands it; every decision under docs/decisions/ says where it landed; every
-# decision a skill cites resolves to one of those files AND is named back by it;
-# and the prose that says how many rules hold this ground says a number the
-# functions below make true. Each rule states its own reason above it;
-# `background` is the one whose cost is least visible: as of client v2.1.218 a
-# fork returns immediately and its verdict arrives in a LATER turn, while every
+# hands it; every line that launches oso-integrator names the wave's worktrees,
+# base ref and branch list; every decision under docs/decisions/ says where it
+# landed; every decision a skill cites resolves to one of those files AND is
+# named back by it; and the prose that says how many rules hold this ground says
+# a number the functions below make true. Each rule states its own reason above
+# it; `background` is the one whose cost is least visible: as of client v2.1.218
+# a fork returns immediately and its verdict arrives in a LATER turn, while every
 # call site in plan/quick/debug reads that verdict in-turn.
 # Only decidable rules live here. Pure sed and grep, no jq: tests/hooks-test.sh
 # runs this linter as one of its own cases, and CI runs that suite in the
@@ -245,6 +246,46 @@ check_verifier_launches_name_their_payload() {
   done
 }
 
+# The integrator merges a wave it cannot re-derive: WHICH branches belong to the
+# wave, the WORKTREES they ran in, and the BASE REF they land on are decided by
+# the orchestrator and written down nowhere else, so a launch that leaves any of
+# the three implicit sends an agent to produce the one artifact nobody may
+# reproduce out of inputs it guessed. Those three and not a fourth: the rubric is
+# deliberately absent, because the integrator writes no code and judges nothing —
+# the bar belongs to the integration gate that follows, a separate oso-verifier
+# launch the rule above already holds to naming `rubric.md`. Demanding it here
+# would buy nothing and cost the reading: a launch line that hands the merger a
+# rubric reads as though the merger judged the merged tree, which is the exact
+# confusion a merge-only agent exists to prevent. LINE-scoped for the reason the
+# rule above is: the payload is what the launched agent reads in one place. This
+# rule SEES a line only when it carries BOTH `oso-integrator` and `launch` (the
+# second matched case-insensitively) — a launch worded around only the first
+# (`hand oso-integrator the wave...`) is invisible here and this linter goes on
+# reporting clean over it, so the launch site carries both tokens. The wave
+# loop's merge line in `skills/plan/SKILL.md` is the one launch site today, and
+# it arrived carrying all three because this rule stood before it did, rather
+# than being retrofitted after a wave merged onto a base ref nobody recorded.
+# A launch site that does not exist is not a violation; a scan path that does not
+# exist is, so the tree scan keeps grep's stderr (`2>&1`, per the header) and
+# turns an unreadable path into a flag instead of a quiet zero. The integrator's
+# own contract is the one file dropped: it is what a launch is read against,
+# never a launch itself.
+check_integrator_launches_name_their_payload() {
+  local file line launch marker
+  for file in $({ grep -rl 'oso-integrator' "$PLUGIN_ROOT" 2>&1 || true; }); do
+    [ "$file" != "$PLUGIN_ROOT/agents/oso-integrator.md" ] || continue
+    [ -f "$file" ] || { flag "the oso-integrator launch scan reached an unreadable path: $file"; continue; }
+    for line in $({ grep -n 'oso-integrator' "$file" || true; } \
+        | { grep -i 'launch' || true; } | cut -d: -f1); do
+      launch="$(sed -n "${line}p" "$file")"
+      for marker in 'worktree' 'base ref' 'branch'; do
+        printf '%s\n' "$launch" | grep -qF "$marker" \
+          || flag "${file#"$PLUGIN_ROOT"/}:$line launches oso-integrator without naming $marker in its payload"
+      done
+    done
+  done
+}
+
 # docs/blueprint.md forbids editing its frozen body silently, so every correction
 # lands as a decision file instead — and a decision whose correction never reached
 # that body leaves the design entry point README points at reading as current
@@ -335,6 +376,7 @@ check_impeccable_pin_is_never_a_placeholder
 check_call_sites_speak_their_emitters_verdict_vocabulary
 check_global_routing_names_every_operator_only_mode
 check_verifier_launches_name_their_payload
+check_integrator_launches_name_their_payload
 check_every_decision_records_where_it_landed
 check_decision_citations_resolve_and_name_their_citer
 check_present_tense_prose_names_the_rule_count

@@ -83,4 +83,4 @@ State survives until the session ends: if the operator walks away from this chan
 
 Before any commit — if the change touched data models, auth, or payments (the §2 trigger vocabulary), offer AND recommend a security review: on acceptance invoke the `oso-code:security-pass` skill through the Skill tool — it runs the review in its own forked subagent — with NO base ref in its ARGUMENTS, since quick tracks no branch model, and relay the returned markdown report to the operator verbatim; fixes the operator accepts go through the `oso-applier` agent as judge findings, never inline, then RE-RUN `oso-code:security-pass` until it returns `Security Pass: clean` or the operator explicitly accepts the residual findings. The operator decides, declining proceeds. The review reads the PENDING working-tree diff — after commit there is nothing left to review (ADR-0045).
 
-Never commit, push, or open a PR unless the user asks.
+This flow lands no commit of its own — a commit per slice is `/plan`'s, and quick has no slices (ADR-0093). Never push or open a PR unless the user asks.
