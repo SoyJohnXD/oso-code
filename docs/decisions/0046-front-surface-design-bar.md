@@ -3,7 +3,7 @@
 Date: 2026-07-24
 Status: accepted
 Superseded-by: ADR-0059 (retires the pin instruction — the pin is resolved from the npm channel, not the plugin's version), ADR-0064 (narrows front-surface.md's single-source claim to what it holds), ADR-0067 (retires "only the plugin check goes red on opt-out"), ADR-0073 (bounds the `npx impeccable --version` check)
-Implemented-in: plugin/skills/plan/SKILL.md, plugin/skills/quick/SKILL.md, plugin/skills/debug/SKILL.md
+Implemented-in: plugin/skills/_shared/bodies/plan.md, plugin/skills/_shared/bodies/quick.md, plugin/skills/_shared/bodies/debug.md
 Reconciled: applied — Mode 1 §2/§4/§6/§7, Mode 2, Mode 3 §4 and the Tool policy impeccable row carry it.
 Source: docs/blueprint.md amendment of 2026-07-24 (secfork-impeccable-pocock), joint marker (D2/D3/D8), deciding commit 7d52356
 

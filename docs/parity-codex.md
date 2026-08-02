@@ -1,0 +1,34 @@
+# Codex parity
+
+What the two hosts do NOT share, and why. Every row here is a block the shared bodies deliberately do not carry: the neutral body under `plugin/skills/_shared/bodies/` states the rule, and the file under `plugin/skills/_shared/platform/<host>/` states how that host spells it. A rule written in one place and true on both hosts never appears here.
+
+## How to read this file
+
+- **Settled** — both hosts have an answer and both platform files carry it.
+- **PLACEHOLDER** — the Codex platform file names the gap and the slice that fills it, and says what to do in the meantime. Nothing here is a silent omission and nothing is invented behavior.
+- **No counterpart** — the block cannot exist on Codex at all. These are the rows that motivate this file (ledger D17).
+
+## The divergences
+
+| Block | Claude Code | Codex | Status |
+|---|---|---|---|
+| Shared-file paths | `${CLAUDE_SKILL_DIR}/../_shared/<file>.md` | `../_shared/<file>.md`, resolved against the directory holding the `SKILL.md` — the rule Codex states for every relative path a skill writes | Settled |
+| Question rounds | `AskUserQuestion`, 4 per round (its platform cap) | `request_user_input`, Plan-Mode only; the per-round cap is unprobed and the Codex file holds to 4 in the meantime | PLACEHOLDER |
+| The approval gate | `ExitPlanMode`, whose native UI renders the plan document | Native Plan Mode for phases 1–5 plus an explicit literal approval token the operator types back; the token's wording is slice S7's | PLACEHOLDER (S7) |
+| Making a launch wait | `run_in_background: false` on the launch (client v2.1.198+) | No foreground flag exists; the replacement is slice S6's file handshake | PLACEHOLDER (S6) |
+| The delivery rule | The TUI drops assistant text preceding a same-turn tool call, so operator-facing content ends the turn | No swallow is known and this port has not probed for one; the discipline is kept rather than relaxed | Settled, conservatively |
+| Invoking a skill | The Skill tool, under the `oso-code:<name>` plugin namespace | Bare skill names under a flat skills root; there is no skill tool — the agent opens and reads the `SKILL.md` itself, and never delegates that reading | Settled |
+| A forked judge | `context: fork` in the skill's own frontmatter | Reading a `SKILL.md` inline gives no fresh context; the judges run as Codex subagents (ledger D3) and the role files are a later slice | PLACEHOLDER |
+| The explorer | The built-in `Explore` agent | No built-in explorer; same subagent slice as the row above | PLACEHOLDER |
+| The state command | `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" <verb>` | `OSO_STATE_BIN` arrives through `shell_environment_policy.set` (ADR-0094); no session-id variable exists, so what keys the state is the runtime-gating slice's | PLACEHOLDER |
+| The runtime gates | This plugin's own hooks — a `PreToolUse` matcher and a git `pre-commit` hook | **A Codex plugin cannot bundle hooks (ledger D9).** The hooks this host has are user-level and belong to the installer, not to this package | No counterpart at the package level |
+| The worktree root | `~/.local/state/oso-code/worktrees/<sanitized session>/<slice>` | Keyed by a session id this host does not have; until the runtime-gating slice settles it, PARALLEL execution is unavailable on Codex | PLACEHOLDER |
+| The session teardown | The `SessionEnd` hook, which reads `repo_path` | Same hooks constraint as the gates row | No counterpart at the package level |
+| The native security reviewer | Anthropic's `security-review` skill, invoked through the Skill tool inside the fork | No security-review skill is listed, so the fallback path is the only one that runs. `codex review` exists as a separate CLI run, not as something a fork can invoke, and whether it becomes the native path is not settled | Settled for now, open question named |
+| The Impeccable design bar | `impeccable:impeccable`, a Claude Code plugin | Not installed here, and the absence policy `_shared/front-surface.md` defines is itself Claude-spelled — its remedy is a two-step `/plugin` install this host has no command for. Slice S8 writes the Codex spelling, and its scope is every Claude Code fact in that file — eight lines, each spelling a slash command, CLI invocation, tool, agent or namespaced skill a Codex session would try to run and fail at: `:17` and `:52` (the modes spelled `/plan`, `/quick`, `/debug`), `:29` (the marketplace plugin as one of the two release lines), `:51` (the record step's `claude plugin list`), `:57` (`impeccable:impeccable` reached through the Skill tool), `:61` (the record mapping), `:62` (findings routed to the `oso-applier` agent in fresh context) and `:66` (the two-step install and its record mapping). `:51` is the sharp one — the pin recipe's record step runs `claude plugin list`, a Claude CLI invocation with no counterpart here, on the pin-resolution path `:29` says must never be read off the installed plugin's version. A ninth candidate line was examined and EXCLUDED rather than left absent: `:15` attributes the design bar to the Impeccable plugin instead of spelling anything a session would run, and the host question that attribution raises is the one `:29` already settles | PLACEHOLDER (S8) |
+| Reaching deferred tools | `ToolSearch` loads the fallow tools into the fork | Every configured MCP tool is already listed under its server-prefixed name; absence from the listing IS the unavailability evidence | Settled |
+| Linting what a host file SAYS | The four rules that read a skill's bound text — 3, 4, 6 and 8 in `tests/plugin-lint.sh` — collect `platform/claude/` through `skill_sources`, so a violation written there is flagged | `platform/codex/` sits inside `PLUGIN_ROOT` and is invisible to those four: `skill_sources` collects the Claude body only, so a `git` diff against a remote-qualified ref, or an `oso-verifier` launch missing its payload, passes lint when it is written there. Rules 2, 5, 9 and 11 do reach the tree through their `-r` scans, and no violation exists in it today; slice S4, which owns the linter rules for the Codex artifacts, is what closes the gap | PLACEHOLDER (S4) — recorded here, not in a platform file |
+
+## Where the shared tree has to land
+
+The Codex wrappers under `codex/skills/<skill>/SKILL.md` reference `../_shared/…`, which resolves inside the SKILLS ROOT they are installed into — not inside this repository, where the shared tree lives at `plugin/skills/_shared/`. The installer slice of this port is what reconciles the two: it must place `plugin/skills/_shared/` at `<skills root>/_shared/` alongside the wrappers. A Codex install that copies the wrappers alone ships eight files that reference instructions nobody placed.

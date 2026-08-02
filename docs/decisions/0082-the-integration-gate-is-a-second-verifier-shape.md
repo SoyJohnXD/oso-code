@@ -2,7 +2,7 @@
 
 Date: 2026-08-02
 Status: accepted
-Implemented-in: plugin/agents/oso-verifier.md, plugin/skills/plan/SKILL.md
+Implemented-in: plugin/agents/oso-verifier.md, plugin/skills/_shared/bodies/plan.md
 Reconciled: applied — Mode 1 phase 6 names the integration gate over the merged tree and the shape it answers in.
 Source: this change (parallel wave execution); recorded with the change that made it
 

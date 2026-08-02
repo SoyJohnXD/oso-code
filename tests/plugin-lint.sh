@@ -50,6 +50,28 @@ frontmatter() {
   sed -n '2,/^---$/p' "$file"
 }
 
+# A skill's instructions are no longer one file: SKILL.md binds a platform-neutral
+# body under skills/_shared/bodies/ and, when the skill has host facts, one under
+# skills/_shared/platform/claude/. Four of the rules below read what a skill SAYS
+# rather than what its frontmatter declares, and each of them reads every file the
+# skill binds — scoped to SKILL.md alone they would report clean over a verdict
+# block, an acquisition command or a launch payload that simply moved one file
+# down the reference. The CLAUDE platform body is the only one collected: this
+# linter lints the Claude plugin tree, and codex/ ships its own wrappers outside
+# it. A reference that resolves to no file is dropped rather than scanned, which
+# would leave a rule reading nothing — tests/hooks-test.sh is where the wrapper to
+# body relation is asserted, so a body that went missing fails there, loudly,
+# before any rule here can go quiet over it.
+skill_sources() {
+  local skill="$1" reference source
+  printf '%s\n' "$skill"
+  for reference in $({ grep -ohE '_shared/(bodies|platform/claude)/[a-z-]+\.md' "$skill" || true; } \
+      | LC_ALL=C sort -u); do
+    source="$PLUGIN_ROOT/skills/$reference"
+    if [ -f "$source" ]; then printf '%s\n' "$source"; fi
+  done
+}
+
 # A fork whose execution mode is left to the client is a verdict the orchestrator
 # may never see; `background` is the only lever, since the Skill tool takes no
 # per-call override.
@@ -91,7 +113,7 @@ check_forked_skills_declare_a_verdict_token() {
     [ -f "$skill" ] || continue
     frontmatter_text="$(frontmatter "$skill")"
     printf '%s\n' "$frontmatter_text" | grep -qE '^context:[[:space:]]*fork[[:space:]]*$' || continue
-    grep -qi 'end with exactly one of:' "$skill" \
+    grep -qi 'end with exactly one of:' $(skill_sources "$skill") \
       || flag "${skill#"$PLUGIN_ROOT"/} declares context: fork without an 'end with exactly one of:' verdict block"
   done
 }
@@ -105,10 +127,12 @@ check_forked_skills_declare_a_verdict_token() {
 # prose tells the fork to run.
 check_security_pass_acquires_without_a_remote() {
   local skill="$PLUGIN_ROOT/skills/security-pass/SKILL.md"
-  local line
+  local source line
   [ -f "$skill" ] || return 0
-  for line in $({ grep -n 'git ' "$skill" || true; } | { grep 'origin/' || true; } | cut -d: -f1); do
-    flag "skills/security-pass/SKILL.md:$line runs git against a remote-qualified ref"
+  for source in $(skill_sources "$skill"); do
+    for line in $({ grep -n 'git ' "$source" || true; } | { grep 'origin/' || true; } | cut -d: -f1); do
+      flag "${source#"$PLUGIN_ROOT"/}:$line runs git against a remote-qualified ref"
+    done
   done
 }
 
@@ -152,17 +176,19 @@ check_impeccable_pin_is_never_a_placeholder() {
 # vocabulary. Decidable both ways: the emitter declares its tokens, and a call
 # site either carries one verbatim or does not.
 check_call_sites_speak_their_emitters_verdict_vocabulary() {
-  local skill emitter tokens skipped_verdicts caller skip axis verdicts_that_ran
+  local skill emitter tokens skipped_verdicts caller caller_sources skip axis verdicts_that_ran
   for skill in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
     [ -f "$skill" ] || continue
     emitter="$(basename "$(dirname "$skill")")"
-    tokens="$(verdict_tokens "$skill")"
+    tokens="$(emitter_verdict_tokens "$skill")"
     [ -n "$tokens" ] || continue
     skipped_verdicts="$(printf '%s\n' "$tokens" | { grep -F ': skipped' || true; })"
-    # Bounded on the right so an emitter named `plan` would not collect `oso-code:plan2`.
-    for caller in $({ grep -lE "oso-code:$emitter([^A-Za-z0-9_-]|\$)" \
-        "$PLUGIN_ROOT"/skills/*/SKILL.md || true; }); do
-      printf '%s\n' "$tokens" | grep -qFf - "$caller" \
+    for caller in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
+      [ -f "$caller" ] || continue
+      caller_sources="$(skill_sources "$caller" | tr '\n' ' ')"
+      # Bounded on the right so an emitter named `plan` would not collect `oso-code:plan2`.
+      grep -qE "oso-code:$emitter([^A-Za-z0-9_-]|\$)" $caller_sources || continue
+      printf '%s\n' "$tokens" | grep -qFf - $caller_sources \
         || flag "${caller#"$PLUGIN_ROOT"/} invokes oso-code:$emitter but carries none of its verdict tokens"
       [ -n "$skipped_verdicts" ] || continue
       while IFS= read -r skip; do
@@ -170,11 +196,21 @@ check_call_sites_speak_their_emitters_verdict_vocabulary() {
         verdicts_that_ran="$(printf '%s\n' "$tokens" \
           | { grep -F "$axis:" || true; } | { grep -vxF "$skip" || true; })"
         [ -n "$verdicts_that_ran" ] || continue
-        printf '%s\n' "$verdicts_that_ran" | grep -qFf - "$caller" || continue
-        grep -qF "$skip" "$caller" \
+        printf '%s\n' "$verdicts_that_ran" | grep -qFf - $caller_sources || continue
+        grep -qF "$skip" $caller_sources \
           || flag "${caller#"$PLUGIN_ROOT"/} reads $axis verdicts of oso-code:$emitter but never names \`$skip\`"
       done <<< "$skipped_verdicts"
     done
+  done
+}
+
+# Every token the skill declares, gathered across the files it binds — the verdict
+# block sits in the neutral body, since the vocabulary is what BOTH hosts answer
+# in and duplicating it per wrapper is the one thing the split exists to prevent.
+emitter_verdict_tokens() {
+  local skill="$1" source
+  for source in $(skill_sources "$skill"); do
+    verdict_tokens "$source"
   done
 }
 
@@ -230,18 +266,20 @@ check_global_routing_names_every_operator_only_mode() {
 # is what the launched agent reads in one place, and both launches are single
 # lines today.
 check_verifier_launches_name_their_payload() {
-  local skill line launch marker
+  local skill source line launch marker
   for skill in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
     [ -f "$skill" ] || continue
-    for line in $({ grep -n 'oso-verifier' "$skill" || true; } \
-        | { grep -i 'launch' || true; } | cut -d: -f1); do
-      launch="$(sed -n "${line}p" "$skill")"
-      for marker in 'criteria' 'zero-warnings' 'rubric.md'; do
-        printf '%s\n' "$launch" | grep -qF "$marker" \
-          || flag "${skill#"$PLUGIN_ROOT"/}:$line launches oso-verifier without naming $marker in its payload"
+    for source in $(skill_sources "$skill"); do
+      for line in $({ grep -n 'oso-verifier' "$source" || true; } \
+          | { grep -i 'launch' || true; } | cut -d: -f1); do
+        launch="$(sed -n "${line}p" "$source")"
+        for marker in 'criteria' 'zero-warnings' 'rubric.md'; do
+          printf '%s\n' "$launch" | grep -qF "$marker" \
+            || flag "${source#"$PLUGIN_ROOT"/}:$line launches oso-verifier without naming $marker in its payload"
+        done
+        printf '%s\n' "$launch" | grep -qE 'ledger|diagnosis' \
+          || flag "${source#"$PLUGIN_ROOT"/}:$line launches oso-verifier without naming the ledger or diagnosis it judges against"
       done
-      printf '%s\n' "$launch" | grep -qE 'ledger|diagnosis' \
-        || flag "${skill#"$PLUGIN_ROOT"/}:$line launches oso-verifier without naming the ledger or diagnosis it judges against"
     done
   done
 }

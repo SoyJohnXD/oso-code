@@ -289,20 +289,24 @@ assert_leaves_no_trace "an unarmed session leaves the slice gate silent without 
 # the previous slice armed and a phase boundary left both gates open. Backticks
 # delimit every command these documents instruct, so each span that invokes the
 # state binary with `set` has to spell mode, active_slice and verify_green.
+# Read out of the NEUTRAL bodies, which is where the keys are written: the binary
+# and the flag that names the session are host spellings and live in each mode's
+# platform file, so the span a mode instructs reads `oso-state set …` and the
+# triple is the whole of what is left to check here.
 partial_state_writes=""
 skills_with_no_write=""
 for state_writer in plan quick debug; do
   writes_read=0
   while IFS= read -r instructed_command; do
     case "$instructed_command" in
-      *OSO_STATE_BIN*" set "*) writes_read=$((writes_read + 1)) ;;
+      *oso-state" set "*) writes_read=$((writes_read + 1)) ;;
       *) continue ;;
     esac
     case "$instructed_command" in
       *"set mode="*" active_slice="*" verify_green="*) ;;
       *) partial_state_writes="$partial_state_writes ${state_writer}:'${instructed_command}'" ;;
     esac
-  done <<< "$(tr '`' '\n' < "$PLUGIN/skills/$state_writer/SKILL.md")"
+  done <<< "$(tr '`' '\n' < "$PLUGIN/skills/_shared/bodies/$state_writer.md")"
   # A skill whose writes this scan cannot find would pass the check by reading
   # nothing at all.
   [ "$writes_read" -gt 0 ] || skills_with_no_write="$skills_with_no_write $state_writer"
@@ -315,16 +319,85 @@ else
   echo "FAIL: a mode skill instructs a partial state write —$partial_state_writes"; fail=$((fail + 1))
 fi
 
+# --- Integration: the wrappers and the shared bodies they bind ---------------
+# Each skill ships as a platform-neutral body plus a thin wrapper per host, and
+# nothing else in this repo reads that relation: `claude plugin validate` reads
+# frontmatter, and tests/plugin-lint.sh follows a reference without ever asking
+# whether it points anywhere. Two ways that goes wrong and both are silent — a
+# body nobody binds is a rule that ships and never loads, and two wrappers bound
+# to DIFFERENT bodies are the duplication the split exists to end, one host's
+# flow drifting from the other's while every file still validates.
+CODEX_SKILLS="$REPO_ROOT/codex/skills"
+
+sorted_words() {
+  printf '%s\n' $1 | { grep -v '^$' || true; } | LC_ALL=C sort | tr '\n' ' '
+}
+
+# The reference is the only place the relation is written down, so it is what
+# gets read — never the filename, which would make the check agree with itself.
+bodies_bound_by() {
+  sed -n 's|.*_shared/bodies/\([a-z][a-z-]*\)\.md.*|\1|p' "$@" | LC_ALL=C sort -u | tr '\n' ' '
+}
+
+harness_skills=""
+paired_skills=""
+divergent_pairs=""
+wrapper_files=""
+for wrapper in "$PLUGIN"/skills/*/SKILL.md "$CODEX_SKILLS"/*/SKILL.md; do
+  [ -f "$wrapper" ] || continue
+  wrapper_files="$wrapper_files $wrapper"
+done
+all_bound=" $(bodies_bound_by /dev/null $wrapper_files)"
+
+for wrapper in "$PLUGIN"/skills/*/SKILL.md; do
+  [ -f "$wrapper" ] || continue
+  wrapped_skill="$(basename "$(dirname "$wrapper")")"
+  harness_skills="$harness_skills $wrapped_skill"
+  codex_wrapper="$CODEX_SKILLS/$wrapped_skill/SKILL.md"
+  [ -f "$codex_wrapper" ] || continue
+  paired_skills="$paired_skills $wrapped_skill"
+  claude_binds="$(bodies_bound_by "$wrapper")"
+  codex_binds="$(bodies_bound_by "$codex_wrapper")"
+  [ "$claude_binds" = "$codex_binds" ] \
+    || divergent_pairs="$divergent_pairs ${wrapped_skill}(claude:${claude_binds:-none}codex:${codex_binds:-none})"
+done
+
+# Every body on disk, tagged with whether a wrapper binds it, plus every body a
+# wrapper binds that is not on disk — so an orphan, a dangling reference and a
+# body named after no skill each read as their own word against the skill list.
+body_ledger=""
+for shared_body in "$PLUGIN"/skills/_shared/bodies/*.md; do
+  [ -f "$shared_body" ] || continue
+  body_name="$(basename "$shared_body" .md)"
+  case "$all_bound" in
+    *" $body_name "*) body_ledger="$body_ledger $body_name" ;;
+    *) body_ledger="$body_ledger $body_name(unbound)" ;;
+  esac
+done
+for body_name in $all_bound; do
+  [ -f "$PLUGIN/skills/_shared/bodies/$body_name.md" ] \
+    || body_ledger="$body_ledger $body_name(missing)"
+done
+
+assert_equals "every skill's neutral body exists and a wrapper binds it" \
+  "$(sorted_words "$harness_skills")" "$(sorted_words "$body_ledger")"
+assert_equals "the two wrappers of a skill bind the same neutral body" \
+  "" "$divergent_pairs"
+assert_equals "every skill ships a wrapper on both hosts" \
+  "$(sorted_words "$harness_skills")" "$(sorted_words "$paired_skills")"
+
 # --- Integration: what /plan has to SAY for a wave to be runnable at all ------
 # The slicing phase is prose, so a rule the shipped file does not carry is one
 # the orchestrator improvises per run: a threshold nobody spelled, a field
 # nobody declared, a base ref nobody ruled out. Each table line below is one
 # phrase its section has to carry, and the section is cut out of the file first
 # — a rule that drifted into a neighbouring phase fails here instead of passing
-# on a file-wide scan.
-PLAN_SKILL="$PLUGIN/skills/plan/SKILL.md"
+# on a file-wide scan. The file is the NEUTRAL body: plan/SKILL.md is a wrapper
+# that binds it, and every phase these tables read lives on the far side of that
+# reference.
+PLAN_BODY="$PLUGIN/skills/_shared/bodies/plan.md"
 plan_section() {
-  sed -n "/^## $1\. /,/^## [0-9]/p" "$PLAN_SKILL"
+  sed -n "/^## $1\. /,/^## [0-9]/p" "$PLAN_BODY"
 }
 
 # The anti-vacuity half, from both sides: a table that read empty proved nothing,
@@ -440,7 +513,7 @@ WAVE_FAILURE_TABLE
 # answer that is neither, which may never be quietly filed as one of them.
 assert_says_every "the execution phase triages a red wave before routing it" \
   "$(plan_section 6)" <<'WAVE_TRIAGE_TABLE'
-INVOKE the `oso-code:triage` skill through the Skill tool
+INVOKE the triage judge
 it takes the failure routing above unchanged
 the stop-the-line paragraph above runs with triage's evidence in hand
 never read as either answer
@@ -500,13 +573,57 @@ RESUME_WORKTREES_TABLE
 # first step on every wave it merged clean. Its prose is the whole specification
 # — no hook and no schema sees the order — so the order and the reason it is
 # that way are pinned here. Scanned whole-file rather than by section:
-# `plan_section` cuts on `plan/SKILL.md`'s numbered phase headings, and this
+# `plan_section` cuts on the plan body's numbered phase headings, and this
 # file's headings are named.
 assert_says_every "the integrator removes worktrees before deleting the branches they hold" \
   "$(cat "$PLUGIN/agents/oso-integrator.md")" <<'TEARDOWN_ORDER_TABLE'
 remove the wave's worktrees first, then delete its branches
 git refuses to delete a branch a standing worktree still has checked out
 TEARDOWN_ORDER_TABLE
+
+# The Codex bodies are read the same way, for what they must NOT say — and here
+# the linter is not merely quiet but structurally blind: the four rules that read
+# a skill's bound text (3, 4, 6 and 8 in tests/plugin-lint.sh) collect
+# `platform/claude/` alone through `skill_sources`, so a sentence they flag in
+# the neutral or the Claude body ships green written under `platform/codex/`
+# (docs/parity-codex.md records that gap; slice S4 closes it). What it would let
+# through is the one claim those bodies exist to refuse: the absence policy in
+# `_shared/front-surface.md` is Claude-spelled end to end — its remedy is a
+# `/plugin marketplace add` and a `/plugin install` this host has no command for
+# — so a Codex body saying the policy is taken here, or reading that two-step
+# install back to the operator, ships a route nobody on this host can follow.
+# Each probe below is a SHAPE and not a sentence, so a reworded return fails it
+# too, and the scan reads the whole tree rather than the three files carrying the
+# disclaimer today.
+CODEX_PLATFORM="$PLUGIN/skills/_shared/platform/codex"
+report_when_unclaimed() {
+  local verdict="$1" claim_shape="$2"
+  grep -Eiq "$claim_shape" "$CODEX_PLATFORM"/*.md || printf '%s\n' "$verdict"
+}
+
+# Same anti-vacuity as the tables above, from the tree's side: a platform
+# directory that moved would answer every probe clean, so it answers none.
+codex_absence_policy_report() {
+  local body bodies_read=0
+  local verbs='take[ns]?|taking|follow(s|ed)?|appl(y|ies|ied)|keeps?|kept|inherit(s|ed)?|unchanged|as[- ]is'
+  for body in "$CODEX_PLATFORM"/*.md; do
+    if [ -f "$body" ]; then bodies_read=$((bodies_read + 1)); fi
+  done
+  if [ "$bodies_read" -eq 0 ]; then
+    printf 'the Codex platform tree read empty\n'
+    return
+  fi
+  report_when_unclaimed "no Codex body takes the absence policy as its own" \
+    "(${verbs})[^.]{0,40}absence policy|absence policy[^.]{0,60}(${verbs}|the same)"
+  report_when_unclaimed "no Codex body reads the two-step Claude install back" \
+    'plugin marketplace add|pbakaus/impeccable|impeccable@impeccable|plugin install impeccable'
+}
+
+assert_says_every "no Codex body claims the Claude-spelled absence policy is taken" \
+  "$(codex_absence_policy_report)" <<'ABSENCE_POLICY_TABLE'
+no Codex body takes the absence policy as its own
+no Codex body reads the two-step Claude install back
+ABSENCE_POLICY_TABLE
 
 # --- Integration: the env var the skills instruct is the one hooks look up ---
 export CLAUDE_CODE_SESSION_ID="$SESSION"

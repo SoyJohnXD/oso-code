@@ -3,7 +3,7 @@
 Date: 2026-08-02
 Status: accepted
 Supersedes: ADR-0085 (its "always, with no operator question about it" clause — per-slice commits are ON by default and off where the ledger's §3 Verification row says so)
-Implemented-in: plugin/skills/plan/SKILL.md, plugin/skills/quick/SKILL.md, plugin/skills/debug/SKILL.md, bootstrap/claude-global.md
+Implemented-in: plugin/skills/_shared/bodies/plan.md, plugin/skills/_shared/bodies/quick.md, plugin/skills/_shared/bodies/debug.md, bootstrap/claude-global.md
 Reconciled: applied — Mode 1 phase 7 and Mode 3 phase 5 read push and PR as the only two the operator is asked for.
 Source: this change (parallel wave execution); recorded with the change that made it
 

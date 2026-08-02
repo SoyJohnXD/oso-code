@@ -3,7 +3,7 @@
 Date: 2026-07-25
 Status: accepted
 Supersedes: ADR-0045 (its description of the fallback review, which named no acquisition and no verdict line)
-Implemented-in: plugin/skills/plan/SKILL.md
+Implemented-in: plugin/skills/_shared/bodies/plan.md
 Reconciled: applied — Mode 1 §7 reads the pending working-tree surface.
 Source: docs/blueprint.md amendment of 2026-07-25 (c-mechanisms), decision (c), deciding commit 7d52356
 

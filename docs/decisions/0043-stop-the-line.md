@@ -2,7 +2,7 @@
 
 Date: 2026-07-22
 Status: accepted
-Implemented-in: plugin/skills/plan/SKILL.md, plugin/skills/quick/SKILL.md
+Implemented-in: plugin/skills/_shared/bodies/plan.md, plugin/skills/_shared/bodies/quick.md
 Reconciled: applied — Mode 1 §6 and Mode 2 carry it.
 Source: docs/blueprint.md amendment of 2026-07-22 (debug-security-flows), decision (D7), deciding commit e556769
 

@@ -2,7 +2,7 @@
 
 Date: 2026-08-02
 Status: accepted
-Implemented-in: plugin/skills/plan/SKILL.md
+Implemented-in: plugin/skills/_shared/bodies/plan.md
 Reconciled: applied — Mode 1 phase 6 routes the three classes and reads stop-the-line against the whole wave.
 Source: this change (parallel wave execution); recorded with the change that made it
 

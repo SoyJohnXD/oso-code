@@ -2,7 +2,7 @@
 
 Date: 2026-08-02
 Status: accepted
-Implemented-in: plugin/skills/plan/SKILL.md
+Implemented-in: plugin/skills/_shared/bodies/plan.md
 Reconciled: applied — Mode 1 phase 6 reads the per-slice commit inside a window the orchestrator opens and closes; the Hooks section's first bullet still reads the two layers, unchanged.
 Source: this change (parallel wave execution); recorded with the change that made it
 

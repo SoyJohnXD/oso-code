@@ -2,7 +2,7 @@
 
 Date: 2026-08-02
 Status: accepted
-Implemented-in: plugin/skills/plan/SKILL.md, plugin/agents/oso-integrator.md
+Implemented-in: plugin/skills/_shared/bodies/plan.md, plugin/agents/oso-integrator.md
 Reconciled: applied — Mode 1 phase 6 names the worktree location and the per-slice branch.
 Source: this change (parallel wave execution); recorded with the change that made it
 

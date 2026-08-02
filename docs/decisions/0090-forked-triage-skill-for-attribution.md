@@ -2,7 +2,7 @@
 
 Date: 2026-08-02
 Status: accepted
-Implemented-in: plugin/skills/triage/SKILL.md, plugin/skills/plan/SKILL.md
+Implemented-in: plugin/skills/_shared/bodies/triage.md, plugin/skills/_shared/bodies/plan.md
 Reconciled: applied — Mode 1 phase 6 names the forked skill as what establishes attribution before a red check is routed.
 Source: this change (parallel wave execution); recorded with the change that made it
 
