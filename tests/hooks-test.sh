@@ -154,6 +154,28 @@ else
   echo "FAIL: plugin lint — $(printf '%s' "$lint_report" | tr '\n' ' ')"; fail=$((fail + 1))
 fi
 
+# --- Declarations: the Codex floor the installer's pin has to read ------------
+# The Codex port was designed against a CLI six versions behind what npm
+# published, so every flag and schema it rests on was re-read and the version
+# they were read from is DECLARED. Nothing else in the repo carries that number:
+# the installer pins it, and a pin with no floor written down is `@latest` under
+# another name. The decision file is therefore the surface, and lint rule 10 only
+# asks whether it says where it landed — the number itself has no gate but this
+# one, so the case reads it back and reports which half is missing.
+codex_floor_declaration() {
+  local decision baseline="" floor
+  for decision in "$REPO_ROOT"/docs/decisions/0094-*.md; do
+    [ -f "$decision" ] || continue
+    baseline="$decision"
+  done
+  [ -n "$baseline" ] || { printf 'no decision file'; return; }
+  floor="$(sed -n 's/^Minimum supported Codex: \([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$/\1/p' "$baseline" | head -n 1)"
+  [ -n "$floor" ] || { printf 'no semver marker'; return; }
+  printf 'declared'
+}
+assert_equals "the Codex baseline decision declares its minimum version as a bare semver" \
+  declared "$(codex_floor_declaration)"
+
 # --- Commit gate: state transitions (starts from no state at all) ---
 oso-state --session "$SESSION" clear
 assert_allows "commit with no state file"  block-commit-until-green.sh "$(bash_input 'git commit -m x')"
