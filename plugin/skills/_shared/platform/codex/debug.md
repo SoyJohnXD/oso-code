@@ -22,13 +22,13 @@ What the state is keyed by is settled and is host-neutral: the state file is the
 
 ## Naming and invoking the harness's own skills
 
-The neutral body names each one by role. Here they are bare skill names under a flat skills root — no plugin prefix — and there is no skill tool to call: you reach a skill by opening and reading its `SKILL.md` yourself, and you never delegate that reading to a subagent.
+The neutral body names each one by role. Non-forked skills are bare names under a flat skills root — no plugin prefix — and there is no skill tool to call: open and read their `SKILL.md` in this context.
 
 | The body says | Here it is | Reached by |
 | --- | --- | --- |
 | the PLAN mode | `plan` | the operator invokes it — a mode is never model-invoked |
 | the quality-pass judge | `quality-pass` | read `skills/quality-pass/SKILL.md` and run it inline, the way it runs on every host |
 
-**PLACEHOLDER — the forked judges and the agents have no skill-level route here.** The debt-sweep judge, the security-pass judge and the `oso-applier` / `oso-verifier` agents all run in a fresh, isolated context on the Claude side, and reading a `SKILL.md` inline does not give you one. Codex runs them as subagents, and the slice of this port that writes the Codex agent role files is what wires them — until it lands, tell the operator the delegated fix, the verification and the two optional judges are unported and let them decide how to proceed, rather than running any of them in this context. §4's whole point is that you never write the fix inline, and a verifier that grades its own author's work is the failure every one of those files exists to prevent.
+Forked judges and operational agents are the exception to inline reading. READ `subagents.md` beside this file NOW and use its role map and payload rules as binding. The S6 wait placeholder above still controls whether a launch may proceed; the existence of a role never makes an unread result safe to consume.
 
 **PLACEHOLDER — the absence policy the neutral body points at is spelled for Claude Code.** The Impeccable skill is a Claude Code plugin with no counterpart installed here, and the policy in `_shared/front-surface.md` answers that absence with a two-step `/plugin` install this host has no command for. Slice S8 writes the Codex spelling of that policy — until it lands, tell the operator a front surface runs without the design bar and that no Codex install route is written yet, and let them decide how to proceed, rather than reading the Claude-spelled remedy back to them.

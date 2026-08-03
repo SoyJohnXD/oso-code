@@ -13,4 +13,4 @@ This judge's instructions live in two files. READ BOTH NOW, in this order, and f
 
 Where the neutral body defers to "your host", the platform file is the answer, and it is the only answer — never improvise a spelling the platform file does not give.
 
-This judge must run with FRESH EYES, in a context that never wrote the code it grades. The subagent that gives it one on this host is a later slice of the Codex port; until that slice lands, the mode that invokes it says so to the operator rather than running the sweep in its own context.
+This judge runs with FRESH EYES as the `oso-debt-sweep` custom role, in a context that never wrote the code it grades. The caller passes this wrapper's absolute path as `SKILL PATH` and the base ref plus frozen ledger as `ARGUMENTS`; the reviewer reads this file and both bindings above for itself.

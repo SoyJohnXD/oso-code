@@ -14,7 +14,7 @@ What the state is keyed by is settled and is host-neutral: the state file is the
 
 ## Naming and invoking the harness's own skills
 
-The neutral body names each one by role. Here they are bare skill names under a flat skills root — no plugin prefix — and there is no skill tool to call: you reach a skill by opening and reading its `SKILL.md` yourself, and you never delegate that reading to a subagent.
+The neutral body names each one by role. Non-forked skills are bare names under a flat skills root — no plugin prefix — and there is no skill tool to call: open and read their `SKILL.md` in this context.
 
 | The body says | Here it is | Reached by |
 | --- | --- | --- |
@@ -22,6 +22,6 @@ The neutral body names each one by role. Here they are bare skill names under a 
 | the DEBUG mode | `debug` | the operator invokes it — a mode is never model-invoked |
 | the quality-pass judge | `quality-pass` | read `skills/quality-pass/SKILL.md` and run it inline, the way it runs on every host |
 
-**PLACEHOLDER — the forked judges and the agents have no skill-level route here.** The security-pass judge and the `oso-applier` agent both run in a fresh, isolated context on the Claude side, and reading a `SKILL.md` inline does not give you one. Codex runs them as subagents, and the slice of this port that writes the Codex agent role files is what wires them — until it lands, tell the operator the security review and the delegated fix are unported and let them decide whether to proceed without them, rather than running either one in this context. A judge that reviews its own author's work is the one thing every one of those files exists to prevent.
+Forked judges and operational agents are the exception to inline reading. READ `subagents.md` beside this file NOW and use its role map and payload rules as binding. Quick has no separate wait section, so the common file's S6 precondition applies directly: do not launch a role whose result the flow must consume until that handshake lands.
 
 **PLACEHOLDER — the absence policy the neutral body points at is spelled for Claude Code.** The Impeccable skill is a Claude Code plugin with no counterpart installed here, and the policy in `_shared/front-surface.md` answers that absence with a two-step `/plugin` install this host has no command for. Slice S8 writes the Codex spelling of that policy — until it lands, tell the operator a front surface runs without the design bar and that no Codex install route is written yet, and let them decide how to proceed, rather than reading the Claude-spelled remedy back to them.

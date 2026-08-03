@@ -22,7 +22,7 @@ Phases 1–5 run inside this host's native Plan Mode, which has no callable exit
 
 ## The explorer
 
-**PLACEHOLDER — the Codex subagents are a later slice.** There is no built-in explorer to name here; §2 step 1's parallel exploration is a subagent shape, and the slice of this port that writes the Codex agent role files is what supplies it. Until it lands, do the exploration yourself in this context and say so: a surface map built from one reader's evidence is worse than three, and it is still a map built from evidence, which is what §2's bar actually asks for.
+Use Codex's built-in `explorer` role for §2 step 1. It inherits the parent Plan Mode's read-only permission, so it can map the surface without becoming an eighth oso-code role. Launch up to three with disjoint evidence targets from the intent, exactly as the neutral body requires.
 
 ## Shared-file paths
 
@@ -46,13 +46,13 @@ What the state is keyed by is settled and is host-neutral: the state file is the
 
 ## Naming and invoking the harness's own skills
 
-The neutral body names each one by role. Here they are bare skill names under a flat skills root — no plugin prefix — and there is no skill tool to call: you reach a skill by opening and reading its `SKILL.md` yourself, and you never delegate that reading to a subagent.
+The neutral body names each one by role. Non-forked skills are bare names under a flat skills root — no plugin prefix — and there is no skill tool to call: open and read their `SKILL.md` in this context.
 
 | The body says | Here it is | Reached by |
 | --- | --- | --- |
 | the QUICK mode | `quick` | the operator invokes it — a mode is never model-invoked |
 | the DEBUG mode | `debug` | the operator invokes it — a mode is never model-invoked |
 
-**PLACEHOLDER — the forked judges and the agents have no skill-level route here.** The doubt-pass, debt-sweep, triage and security-pass judges and the `oso-applier`, `oso-verifier` and `oso-integrator` agents all run in a fresh, isolated context on the Claude side, and reading a `SKILL.md` inline does not give you one. Codex runs them as subagents, and the slice of this port that writes the Codex agent role files is what wires them — until it lands, tell the operator which of them the flow is about to need and let them decide how to proceed, rather than running any of them in this context. §6's whole premise is that the orchestrator never writes the code it plans, and a judge that grades its own author's work is the failure every one of those files exists to prevent.
+Forked judges and operational agents are the exception to inline reading. READ `subagents.md` beside this file NOW and use its seven-role map and payload rules as binding. Its final paragraph does not relax the S6 wait placeholder above: until that handshake lands, the roles exist but a launch the flow must wait on cannot safely proceed.
 
 **PLACEHOLDER — the absence policy the neutral body points at is spelled for Claude Code.** The Impeccable skill is a Claude Code plugin with no counterpart installed here, and the policy in `_shared/front-surface.md` answers that absence with a two-step `/plugin` install this host has no command for. Slice S8 writes the Codex spelling of that policy — until it lands, tell the operator a front surface runs without the design bar and that no Codex install route is written yet, and let them decide how to proceed, rather than reading the Claude-spelled remedy back to them. The design-foundation slice of §4 does not apply either way.

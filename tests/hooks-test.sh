@@ -690,6 +690,206 @@ assert_equals "the two wrappers of a skill bind the same neutral body" \
 assert_equals "every skill ships a wrapper on both hosts" \
   "$(sorted_words "$harness_skills")" "$(sorted_words "$paired_skills")"
 
+# --- Integration: Claude's seven delegated contracts have seven Codex roles --
+# Codex has two source shapes to port: the three Claude agent contracts, and the
+# four skills whose frontmatter asks Claude for a fresh fork.  Keep the mapping
+# in one closed table, then derive BOTH source inventories from disk.  Comparing
+# only the table with codex/agents would let a deleted Claude agent and its
+# deleted table row agree on the same wrong answer.
+S5_ROLE_MAP='writer|oso-applier|oso-applier
+writer|oso-integrator|oso-integrator
+writer|oso-verifier|oso-verifier
+judge|debt-sweep|oso-debt-sweep
+judge|doubt-pass|oso-doubt-pass
+judge|security-pass|oso-security-reviewer
+judge|triage|oso-triage'
+
+mapped_writers=""
+mapped_judges=""
+mapped_roles=""
+mapping_rows=0
+while IFS='|' read -r role_kind source_name codex_role; do
+  [ -n "$role_kind" ] || continue
+  mapping_rows=$((mapping_rows + 1))
+  mapped_roles="$mapped_roles $codex_role"
+  case "$role_kind" in
+    writer) mapped_writers="$mapped_writers $source_name" ;;
+    judge) mapped_judges="$mapped_judges $source_name" ;;
+    *) mapped_roles="$mapped_roles invalid-kind:$role_kind" ;;
+  esac
+done <<< "$S5_ROLE_MAP"
+
+source_writers=""
+for source_agent in "$PLUGIN"/agents/*.md; do
+  [ -f "$source_agent" ] || continue
+  source_writers="$source_writers $(basename "$source_agent" .md)"
+done
+
+source_judges=""
+for source_skill in "$PLUGIN"/skills/*/SKILL.md; do
+  [ -f "$source_skill" ] || continue
+  if sed -n '2,/^---$/p' "$source_skill" |
+     grep -Eq '^context:[[:space:]]*fork[[:space:]]*$'; then
+    source_judges="$source_judges $(basename "$(dirname "$source_skill")")"
+  fi
+done
+
+CODEX_AGENTS="$REPO_ROOT/codex/agents"
+codex_roles=""
+for role_file in "$CODEX_AGENTS"/*.toml; do
+  [ -f "$role_file" ] || continue
+  codex_roles="$codex_roles $(basename "$role_file" .toml)"
+done
+
+assert_equals "the S5 role ledger has exactly seven rows" 7 "$mapping_rows"
+assert_equals "the source tree has exactly three delegated agent contracts" \
+  3 "$(printf '%s\n' $source_writers | awk 'NF { n++ } END { print n + 0 }')"
+assert_equals "the source tree has exactly four context-fork judges" \
+  4 "$(printf '%s\n' $source_judges | awk 'NF { n++ } END { print n + 0 }')"
+assert_equals "every Claude agent contract has one mapped Codex role" \
+  "$(sorted_words "$source_writers")" "$(sorted_words "$mapped_writers")"
+assert_equals "every context-fork skill has one mapped Codex judge" \
+  "$(sorted_words "$source_judges")" "$(sorted_words "$mapped_judges")"
+assert_equals "codex/agents contains exactly the seven mapped custom roles" \
+  "$(sorted_words "$mapped_roles")" "$(sorted_words "$codex_roles")"
+
+# Parse scalar TOML fields without jq: these role files deliberately use the
+# baseline's simple top-level strings.  A missing or duplicate key returns a
+# value other than the one expected, so neither can disappear as a false green.
+toml_scalar() {
+  local role_file="$1" key="$2"
+  sed -n "s/^${key}[[:space:]]*=[[:space:]]*\"\([^\"]*\)\"[[:space:]]*$/\1/p" "$role_file"
+}
+
+# `developer_instructions = ""` is accepted TOML and a syntactically valid role
+# that does nothing.  Count the delimiters and a real content line separately;
+# this also rejects a truncated multiline value instead of mistaking its prefix
+# for instructions.
+developer_instructions_status() {
+  awk '
+    /^developer_instructions[[:space:]]*=[[:space:]]*"""[[:space:]]*$/ {
+      starts++; inside = 1; next
+    }
+    inside && /^"""[[:space:]]*$/ { closes++; inside = 0; next }
+    inside && /[^[:space:]]/ { content = 1 }
+    END {
+      if (starts == 1 && closes == 1 && !inside && content) print "nonempty"
+      else printf "starts=%d closes=%d content=%d", starts, closes, content
+    }
+  ' "$1"
+}
+
+role_contract_status() {
+  local role="$1" source_name="$2" role_file="$3"
+  case "$role" in
+    oso-applier)
+      grep -qF 'implement exactly ONE assignment' "$role_file" &&
+        grep -qF 'status: blocked' "$role_file" &&
+        grep -qF 'status: done' "$role_file" && printf 'present'
+      ;;
+    oso-integrator)
+      grep -qF 'Integrate exactly ONE wave' "$role_file" &&
+        grep -qF 'NEVER resolve a conflict' "$role_file" &&
+        grep -qF 'status: conflict' "$role_file" && printf 'present'
+      ;;
+    oso-verifier)
+      grep -qF 'Judge only; never edit' "$role_file" &&
+        grep -qF 'verdict: pass | fail | blocked' "$role_file" && printf 'present'
+      ;;
+    *)
+      grep -qF "\`$source_name/SKILL.md\`" "$role_file" &&
+        grep -Eqi 'never edit' "$role_file" && printf 'present'
+      ;;
+  esac
+}
+
+while IFS='|' read -r role_kind source_name codex_role; do
+  [ -n "$role_kind" ] || continue
+  role_file="$CODEX_AGENTS/$codex_role.toml"
+  if [ ! -f "$role_file" ]; then
+    # The inventory equality above names the missing file.  Avoid a cascade of
+    # parser errors here while keeping every other extant role independently
+    # observable.
+    continue
+  fi
+  assert_equals "$codex_role names itself in TOML" \
+    "$codex_role" "$(toml_scalar "$role_file" name)"
+  assert_equals "$codex_role has a nonempty description" \
+    "nonempty" "$([ -n "$(toml_scalar "$role_file" description)" ] && printf nonempty || printf empty)"
+  assert_equals "$codex_role pins the Codex baseline model" \
+    "gpt-5.5" "$(toml_scalar "$role_file" model)"
+  assert_equals "$codex_role pins the required reasoning effort" \
+    "xhigh" "$(toml_scalar "$role_file" model_reasoning_effort)"
+  assert_equals "$codex_role has observable nonempty developer instructions" \
+    "nonempty" "$(developer_instructions_status "$role_file")"
+  if [ "$role_kind" = judge ]; then
+    assert_equals "$codex_role is read-only" \
+      "read-only" "$(toml_scalar "$role_file" sandbox_mode)"
+  else
+    writer_sandbox="$(toml_scalar "$role_file" sandbox_mode)"
+    case "$writer_sandbox" in
+      "") writer_sandbox_status=missing ;;
+      read-only) writer_sandbox_status=read-only ;;
+      *) writer_sandbox_status=writable ;;
+    esac
+    assert_equals "$codex_role is not trapped in a read-only sandbox" \
+      "writable" "$writer_sandbox_status"
+    if [ "$codex_role" = oso-integrator ]; then
+      # A normal writable role still cannot update the main checkout's .git or
+      # remove sibling worktrees.  This one narrow agent needs the baseline's
+      # unrestricted sandbox to perform the git-only contract it is handed.
+      assert_equals "oso-integrator can reach git metadata and external worktrees" \
+        "danger-full-access" "$writer_sandbox"
+    fi
+  fi
+  assert_equals "$codex_role preserves its load-bearing role contract" \
+    "present" "$(role_contract_status "$codex_role" "$source_name" "$role_file")"
+done <<< "$S5_ROLE_MAP"
+
+# S5 also closes the three orchestration placeholders.  Other placeholders in
+# these files intentionally belong to later slices, so reject only claims that
+# delegated agents or forked judges themselves are still unavailable.  All three
+# call sites route through one shared Codex protocol: repeating the seven-name
+# map in each mode would create three new places for the same contract to drift.
+unported_role_claims=""
+subagent_routes_missing=""
+for platform_mode in plan debug quick; do
+  platform_file="$PLUGIN/skills/_shared/platform/codex/$platform_mode.md"
+  if [ ! -f "$platform_file" ]; then
+    unported_role_claims="$unported_role_claims $platform_mode(missing)"
+  elif grep -Eqi \
+    '(forked judges|agents)[^.]{0,240}(no skill-level route|unported)|(no skill-level route|unported)[^.]{0,240}(forked judges|agents)' \
+    "$platform_file"; then
+    unported_role_claims="$unported_role_claims $platform_mode(still-unported)"
+  fi
+  grep -qF 'subagents.md' "$platform_file" 2>/dev/null \
+    || subagent_routes_missing="$subagent_routes_missing $platform_mode"
+done
+assert_equals "plan, debug and quick no longer claim delegated roles are unported" \
+  "" "$unported_role_claims"
+assert_equals "plan, debug and quick route through one shared subagent protocol" \
+  "" "$subagent_routes_missing"
+
+# Through that shared route, plan can launch all seven custom roles and uses
+# Codex's native explorer for discovery.  Explorer is deliberately NOT an eighth
+# custom role file; spelling that distinction here prevents either half of the
+# routing decision drifting.
+codex_subagent_protocol="$PLUGIN/skills/_shared/platform/codex/subagents.md"
+protocol_roles_missing=""
+for codex_role in $mapped_roles; do
+  grep -qF "$codex_role" "$codex_subagent_protocol" 2>/dev/null \
+    || protocol_roles_missing="$protocol_roles_missing $codex_role"
+done
+assert_equals "the shared Codex protocol maps all seven custom roles" \
+  "" "$protocol_roles_missing"
+native_explorer_status="$([ -f "$codex_subagent_protocol" ] &&
+  grep -Eqi '(native|built-in)[^.]{0,80}explorer|explorer[^.]{0,80}(native|built-in)' "$codex_subagent_protocol" &&
+  printf present || printf missing)"
+assert_equals "the shared Codex protocol routes discovery to the native explorer" \
+  "present" "$native_explorer_status"
+assert_equals "the native explorer is not duplicated as an eighth custom TOML" \
+  "absent" "$([ ! -e "$CODEX_AGENTS/explorer.toml" ] && printf absent || printf present)"
+
 # --- Integration: what /plan has to SAY for a wave to be runnable at all ------
 # The slicing phase is prose, so a rule the shipped file does not carry is one
 # the orchestrator improvises per run: a threshold nobody spelled, a field
