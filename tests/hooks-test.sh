@@ -192,6 +192,31 @@ else
   echo "FAIL: plugin lint — $(printf '%s' "$lint_report" | tr '\n' ' ')"; fail=$((fail + 1))
 fi
 
+# A release has two version authorities because it ships two plugin manifests.
+# The marketplace catalogs point at those payloads and intentionally carry no
+# duplicate version of their own. Pin all three edges: a partial bump otherwise
+# lets one host install the previous contract under the current release notes.
+claude_release_version="$(sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' \
+  "$REPO_ROOT/plugin/.claude-plugin/plugin.json")"
+codex_release_version="$(sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' \
+  "$REPO_ROOT/codex/.codex-plugin/plugin.json")"
+changelog_release_version="$(awk '
+  /^## [0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$/ {
+    sub(/^## /, "")
+    print
+    exit
+  }
+' "$REPO_ROOT/CHANGELOG.md")"
+assert_equals "Claude and Codex plugin manifests publish one release version" \
+  "$claude_release_version" "$codex_release_version"
+assert_equals "the changelog opens on the plugin manifests' release version" \
+  "$claude_release_version" "$changelog_release_version"
+marketplace_version_fields="$({ grep -hEc '^[[:space:]]*"version"[[:space:]]*:' \
+  "$REPO_ROOT/.claude-plugin/marketplace.json" \
+  "$REPO_ROOT/.agents/plugins/marketplace.json" || true; } | awk '{ total += $1 } END { print total + 0 }')"
+assert_equals "marketplace catalogs do not duplicate the plugin release version" \
+  "0" "$marketplace_version_fields"
+
 # The clean-tree call above proves only that today's Codex bodies happen to be
 # clean. Before S4, skill_sources followed the Claude wrapper alone, so the same
 # forbidden acquisition command went red under platform/claude and silently green
@@ -368,6 +393,70 @@ else
         echo "FAIL: the absent Codex mode tree failed lint without rule 7's diagnostic — $(printf '%s' "$missing_codex_tree_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
+fi
+
+# S14 closes on linter rules 10–12 rather than a clean-tree run alone. Each
+# mutation removes exactly the relation that rule owns and requires that rule's
+# own diagnostic, so another incidental red cannot masquerade as coverage.
+LINT_RECONCILIATION_FIXTURE="$TEST_HOME/lint-decision-reconciliation"
+copy_lint_fixture "$LINT_RECONCILIATION_FIXTURE"
+reconciliation_decision="$LINT_RECONCILIATION_FIXTURE/docs/decisions/0094-codex-baseline-and-minimum-version.md"
+if [ ! -f "$reconciliation_decision" ]; then
+  echo "FAIL: rule 10 mutation has no ADR-0094 fixture"; fail=$((fail + 1))
+else
+  sed '/^Reconciled:/d' "$reconciliation_decision" > "$reconciliation_decision.tmp"
+  mv "$reconciliation_decision.tmp" "$reconciliation_decision"
+  if reconciliation_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_RECONCILIATION_FIXTURE/plugin" "$LINT_RECONCILIATION_FIXTURE" 2>&1)"; then
+    echo "FAIL: rule 10 accepted a decision with no reconciliation record"; fail=$((fail + 1))
+  else
+    case "$reconciliation_lint_report" in
+      *"docs/decisions/0094-codex-baseline-and-minimum-version.md"*"carries no Reconciled:"*)
+        echo "ok: rule 10 rejects a decision with no reconciliation record"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: rule 10 mutation failed for the wrong reason — $(printf '%s' "$reconciliation_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_CITATION_FIXTURE="$TEST_HOME/lint-decision-citation"
+copy_lint_fixture "$LINT_CITATION_FIXTURE"
+citation_decision="$LINT_CITATION_FIXTURE/docs/decisions/0095-runtime-state-keyed-by-repository.md"
+if [ ! -f "$citation_decision" ]; then
+  echo "FAIL: rule 11 mutation has no ADR-0095 fixture"; fail=$((fail + 1))
+else
+  sed 's/plugin\/hooks\/lib\.sh, //' "$citation_decision" > "$citation_decision.tmp"
+  mv "$citation_decision.tmp" "$citation_decision"
+  if grep -F 'Implemented-in:' "$citation_decision" | grep -qF 'plugin/hooks/lib.sh'; then
+    echo "FAIL: rule 11 mutation did not remove its cited implementation"; fail=$((fail + 1))
+  elif citation_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_CITATION_FIXTURE/plugin" "$LINT_CITATION_FIXTURE" 2>&1)"; then
+    echo "FAIL: rule 11 accepted a decision that does not name its citer"; fail=$((fail + 1))
+  else
+    case "$citation_lint_report" in
+      *"docs/decisions/0095-runtime-state-keyed-by-repository.md"*"cited by plugin/hooks/lib.sh"*"does not name it in Implemented-in:"*)
+        echo "ok: rule 11 rejects a decision that does not name its citer"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: rule 11 mutation failed for the wrong reason — $(printf '%s' "$citation_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_RULE_COUNT_FIXTURE="$TEST_HOME/lint-rule-count"
+copy_lint_fixture "$LINT_RULE_COUNT_FIXTURE"
+sed 's/thirteen rules/twelve rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
+  > "$LINT_RULE_COUNT_FIXTURE/README.md.tmp"
+mv "$LINT_RULE_COUNT_FIXTURE/README.md.tmp" "$LINT_RULE_COUNT_FIXTURE/README.md"
+if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+    "$LINT_RULE_COUNT_FIXTURE/plugin" "$LINT_RULE_COUNT_FIXTURE" 2>&1)"; then
+  echo "FAIL: rule 12 accepted stale present-tense rule-count prose"; fail=$((fail + 1))
+else
+  case "$rule_count_lint_report" in
+    *"README.md does not name the thirteen rules this linter declares"*)
+      echo "ok: rule 12 rejects stale present-tense rule-count prose"; pass=$((pass + 1)) ;;
+    *)
+      echo "FAIL: rule 12 mutation failed for the wrong reason — $(printf '%s' "$rule_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+  esac
 fi
 
 # --- Declarations: generated hooks and published trust hashes -----------------
@@ -1802,6 +1891,63 @@ assert_says_every() {
   fi
 }
 
+# The host schema, not Claude's cadence, fixes Codex's question cap. Read the
+# dedicated platform section and the single parity row independently: a stale
+# PLACEHOLDER/4 in either surface would otherwise survive beside a correct claim
+# in the other and fail only when a real decision round reaches question four.
+codex_question_section="$(sed -n \
+  '/^## Question rounds$/,/^## /p' "$PLUGIN/skills/_shared/platform/codex/plan.md" 2>/dev/null)"
+codex_question_parity_row="$(parity_row 'Question rounds' 2>/dev/null || true)"
+assert_says_every "the Codex platform binds request_user_input to its three-question cap" \
+  "$codex_question_section" <<'CODEX_QUESTION_CAP_TABLE'
+`request_user_input`
+maximum of 3 questions
+3 per round
+A fourth question starts the next round
+CODEX_QUESTION_CAP_TABLE
+assert_says_every "the parity ledger records Codex's three-question cap" \
+  "$codex_question_parity_row" <<'CODEX_PARITY_QUESTION_CAP_TABLE'
+`request_user_input`
+maximum of 3 questions
+3 per round
+carries a fourth question into the next round
+CODEX_PARITY_QUESTION_CAP_TABLE
+case "$codex_question_section$codex_question_parity_row" in
+  *PLACEHOLDER*|*'hold to 4 questions per round'*|*'holds to 4 questions per round'*)
+    echo "FAIL: the settled Codex question cap still carries its PLACEHOLDER/4 contract"; fail=$((fail + 1)) ;;
+  *)
+    echo "ok: the settled Codex question cap carries no PLACEHOLDER/4 contract"; pass=$((pass + 1)) ;;
+esac
+
+# ADR-0097 makes these five losses release input, not explanatory prose. Require
+# exactly five table rows and the load-bearing boundary in each one; this is the
+# parity mutation gate S14 needs in addition to linter rules 10–12.
+codex_loss_ledger="$(sed -n \
+  '/^## Frozen loss and degradation ledger$/,/^## /p' \
+  "$REPO_ROOT/docs/parity-codex.md" 2>/dev/null)"
+codex_loss_rows="$(printf '%s\n' "$codex_loss_ledger" | awk '
+  /^\| Loss or degradation \|/ { next }
+  /^\|---/ { next }
+  /^\|/ { rows++ }
+  END { print rows + 0 }
+')"
+assert_equals "the frozen Codex ledger carries exactly its five release losses" \
+  "5" "$codex_loss_rows"
+assert_says_every "the frozen Codex ledger names every loss and remaining boundary" \
+  "$codex_loss_ledger" <<'CODEX_FROZEN_LOSS_TABLE'
+Plan approval is not Codex's native approval UI
+Hosted tools
+specialized paths
+`write_stdin`
+Oso voice is global instruction prose instead of an applied output style
+Context compaction may weaken it
+Security review uses a different native reviewer
+`codex review`
+Two agent sessions in one repository share one state file
+The authenticated integrator smoke runs outside CI
+operator-run local release check
+CODEX_FROZEN_LOSS_TABLE
+
 # S7's Codex approval prose has a runtime gate behind it, but the hook cannot
 # repair an orchestrator that never presents the plan or tells the operator how
 # to cross Plan Mode's read-only boundary. Read only the platform section that
@@ -1890,7 +2036,7 @@ assert_says_every "the approval row records the enforced gate and its hosted-too
 pending
 hosted
 do not cross that hook
-Settled
+Degraded
 APPROVAL_PARITY_TABLE
 case "$approval_parity_row" in
   *'advisory'*|*'no hook can observe'*|*'no hook can enforce'*)

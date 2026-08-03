@@ -1,6 +1,6 @@
 {
   "name": "oso-code",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "description": "Team harness for Codex with plan, quick, and debug modes, delegated apply/verify loops, runtime gates, and quality review passes.",
   "author": {
     "name": "Osoria Tech",

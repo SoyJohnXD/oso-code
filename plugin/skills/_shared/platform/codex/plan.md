@@ -2,13 +2,11 @@
 
 ## The delivery contract
 
-No swallow is known on this host, and this port has not probed for one. So the discipline stands unchanged rather than relaxed: operator-facing content ENDS the turn as plain text, with any tool call in a LATER turn. An extra turn is the cheap side of that bet; content the operator never sees is the expensive one.
+The adapter makes no claim about whether Codex preserves operator-facing text before a same-turn tool call, and the harness depends on no such behavior. It applies the conservative host-independent policy: operator-facing content ENDS the turn as plain text, with any tool call in a LATER turn. An extra turn is the cheap side of that boundary; content the operator never sees is the expensive one.
 
 ## Question rounds
 
-The tool is `request_user_input`, and it exists ONLY inside Plan Mode on this host — which is where phases 1–5 already run, and is why they may not leave it early.
-
-**PLACEHOLDER — the per-round cap is not settled by this slice.** The Claude side's 4 is a platform cap, not a harness rule, so it does not transfer by default. Until the slice that probes this host's cap lands, hold to 4 questions per round: it is the number every downstream rule in the neutral body was written against, and a round that turns out to exceed this host's real limit fails loudly at the call rather than quietly under-asking.
+The tool is `request_user_input`, and it exists ONLY inside Plan Mode on this host — which is where phases 1–5 already run, and is why they may not leave it early. Its schema accepts a maximum of 3 questions in one call, so a Codex decision round holds 3 per round (ADR-0097). A fourth question starts the next round; it never rides an invalid call and never gets dropped.
 
 ## The approval gate
 
