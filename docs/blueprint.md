@@ -174,6 +174,7 @@ Three properties of the amendment log these files replace are facts to carry for
 - [0097](decisions/0097-codex-parity-is-a-release-ledger.md) — Codex parity is a release ledger
 - [0098](decisions/0098-codex-config-ownership-is-per-leaf.md) — Codex configuration ownership is per leaf inside shared tables
 - [0099](decisions/0099-the-checkout-hook-owner-migrates-only-when-exact.md) — the checkout hook owner migrates only when exact
+- [0100](decisions/0100-the-integrator-smoke-must-preserve-live-authority.md) — the integrator smoke must preserve live authority
 
 ## Foundational decisions
 

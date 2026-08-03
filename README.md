@@ -66,7 +66,7 @@ codex login                       # first install only; skip when already authen
 bash bootstrap/verify-codex.sh
 ```
 
-Until the `/hooks` review is complete the files are installed but their runtime rail is not enforcing. `verify-codex.sh` checks the complete local install and finishes with `passed: N, failed: M`. Its authenticated `codex exec` integrator/delegation smoke is intentionally local: CI uses fixtures and never logs in or executes a real Codex session.
+Until the `/hooks` review is complete the files are installed but their runtime rail is not enforcing. `verify-codex.sh` checks the complete local install and finishes with `passed: N, failed: M`. Its authenticated `codex exec` integrator/delegation smoke is intentionally local: CI uses fixtures and never logs in or executes a real Codex session. The smoke grants its disposable parent the integrator's `danger-full-access` because Codex propagates live parent sandbox overrides to children, then requires the delegated merge and teardown as observable Git effects inside a temporary repository.
 
 If you are migrating a pre-release Gentle/Oso Codex setup, the optional one-time full reset is deliberately separate from installation. Read [the purge and restore procedure](docs/codex-purge-and-restore.md) before running it; it backs up complete `~/.codex` and `~/.agents` trees with verified hashes and can restore them without overwriting existing roots. A machine already reset, reinstalled, and logged in should skip both purge and login: run the oso installer, trust its hooks, then run the verifier.
 

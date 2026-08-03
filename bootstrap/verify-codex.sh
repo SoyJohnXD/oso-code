@@ -335,26 +335,29 @@ commit_hook_red_status() {
   printf '%s' "$result"
 }
 
-integrator_spawn_observed() {
+integrator_delegation_observed() {
   command -v python3 >/dev/null 2>&1 || return 1
   printf '%s\n' "$SMOKE_OUTPUT" | python3 -c '
-import json, re, sys
+import json, sys
 
-def normalized(value):
-    return re.sub(r"[^a-z0-9]", "", value.lower())
+main, worktree = sys.argv[1:3]
+needles = (main, worktree, "oso-smoke-slice")
 
 for line in sys.stdin:
     try:
         event = json.loads(line)
     except json.JSONDecodeError:
         continue
-    event_text = normalized(json.dumps(event, separators=(",", ":")))
-    if ("collabagenttoolcall" in event_text and
-            "spawnagent" in event_text and
-            "osointegrator" in event_text):
+    item = event.get("item", {})
+    prompt = item.get("prompt") or ""
+    receivers = item.get("receiver_thread_ids") or []
+    if (item.get("type") == "collab_tool_call" and
+            item.get("tool") == "spawn_agent" and
+            item.get("status") == "completed" and
+            receivers and all(needle in prompt for needle in needles)):
         raise SystemExit(0)
 raise SystemExit(1)
-' >/dev/null 2>&1
+' "$SMOKE_MAIN" "$SMOKE_WORKTREE" >/dev/null 2>&1
 }
 
 create_integrator_fixture() {
@@ -400,10 +403,13 @@ cleanup_smoke_on_exit() {
 }
 
 run_integrator_fixture() {
-  SMOKE_OUTPUT="$(codex exec --ephemeral --json --sandbox workspace-write --color never \
+  # ADR-0100: a live parent --sandbox overrides the custom agent's default.
+  # Match the integrator's declared authority so the smoke exercises it rather
+  # than forcing the delegated role back behind workspace-write's .git guard.
+  SMOKE_OUTPUT="$(codex exec --ephemeral --json --sandbox danger-full-access --color never \
     -C "$SMOKE_MAIN" --add-dir "$SMOKE_ROOT" \
     "Delegate exactly one wave to the custom oso-integrator agent; never merge inline. Main checkout: $SMOKE_MAIN. BASE REF: $SMOKE_BASE_COMMIT. The complete wave has one slice, in this order: BRANCH oso-smoke-slice, WORKTREE PATH $SMOKE_WORKTREE. Return only the agent's completion status." 2>&1)" || return 1
-  integrator_spawn_observed &&
+  integrator_delegation_observed &&
     printf '%s' "$SMOKE_OUTPUT" | grep -F 'status: done' >/dev/null 2>&1 &&
     printf '%s' "$SMOKE_OUTPUT" | grep -F 'torn_down:' >/dev/null 2>&1 &&
     [ -f "$SMOKE_MAIN/integrated.txt" ] &&

@@ -1537,6 +1537,16 @@ while IFS='|' read -r role_kind source_name codex_role; do
     "present" "$(role_contract_status "$codex_role" "$source_name" "$role_file")"
 done <<< "$S5_ROLE_MAP"
 
+integrator_smoke_function="$(sed -n \
+  '/^run_integrator_fixture() {$/,/^}$/p' \
+  "$REPO_ROOT/bootstrap/verify-codex.sh")"
+assert_equals "the authenticated smoke preserves the integrator's live sandbox authority" \
+  "1" "$(printf '%s\n' "$integrator_smoke_function" | \
+    grep -Fc 'codex exec --ephemeral --json --sandbox danger-full-access --color never' || true)"
+assert_equals "the authenticated smoke does not override the integrator back to workspace-write" \
+  "0" "$(printf '%s\n' "$integrator_smoke_function" | \
+    grep -Fc 'codex exec --ephemeral --json --sandbox workspace-write --color never' || true)"
+
 # The exact scalar is the sandbox contract, so mutate only that TOML field and
 # prove the checker sees the prohibited value rather than another occurrence of
 # "read-only" in prose.
