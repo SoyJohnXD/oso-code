@@ -5388,6 +5388,353 @@ assert_equals "a duplicate global start marker is rejected as malformed" \
 assert_equals "a malformed global file is untouched by the refused install" \
   "$bad_global_before" "$(file_sha256 "$bad_global")"
 
+# --- Codex purge: total, reversible and confined to a fixture HOME -----------
+# The operator's real migration is already complete. Every invocation below
+# redirects HOME and CODEX_HOME into a disposable tree, while client shims make
+# an accidental install, uninstall or login call a visible test failure.
+PURGE_CODEX_SH="$REPO_ROOT/bootstrap/purge-codex.sh"
+CODEX_PURGE_OUTPUT="$TEST_HOME/codex-purge-output"
+CODEX_PURGE_CLIENT_CALLS="$TEST_HOME/codex-purge-client-calls"
+CODEX_PURGE_SHIMS="$TEST_HOME/codex-purge-shims"
+mkdir -p "$CODEX_PURGE_SHIMS"
+for purge_client in codex npm; do
+  printf '%s\n' \
+    '#!/bin/sh' \
+    'printf '\''%s:%s\n'\'' "$(basename "$0")" "$*" >> "$OSO_PURGE_CLIENT_CALLS"' \
+    'exit 97' > "$CODEX_PURGE_SHIMS/$purge_client"
+  chmod +x "$CODEX_PURGE_SHIMS/$purge_client"
+done
+
+write_codex_purge_fixture() {
+  local fixture_home="$1"
+  mkdir -p \
+    "$fixture_home/.codex/plugins/gentle-ai" \
+    "$fixture_home/.codex/agents" \
+    "$fixture_home/.codex/personal/empty" \
+    "$fixture_home/.agents/skills/gentle" \
+    "$fixture_home/.agents/skills/oso-local" \
+    "$fixture_home/.agents/personal/empty" \
+    "$fixture_home/.claude" \
+    "$fixture_home/.local/share/oso-code/runtime" \
+    "$fixture_home/.local/state/oso-code/worktrees/keep"
+  printf 'personal codex config\n' > "$fixture_home/.codex/config.toml"
+  printf 'legacy gentle plugin\n' > "$fixture_home/.codex/plugins/gentle-ai/plugin.json"
+  printf 'oso role\n' > "$fixture_home/.codex/agents/oso-applier.toml"
+  printf '\001\002personal bytes\000\377' > "$fixture_home/.codex/personal/blob.bin"
+  printf 'gentle skill\n' > "$fixture_home/.agents/skills/gentle/SKILL.md"
+  printf 'personal oso skill\n' > "$fixture_home/.agents/skills/oso-local/SKILL.md"
+  ln -s gentle "$fixture_home/.agents/skills/current"
+  chmod 640 "$fixture_home/.codex/personal/blob.bin"
+  chmod 750 "$fixture_home/.codex/personal" "$fixture_home/.agents/personal"
+  printf 'claude survives\n' > "$fixture_home/.claude/sentinel"
+  printf 'runtime survives\n' > "$fixture_home/.local/share/oso-code/runtime/sentinel"
+  printf 'state survives\n' > "$fixture_home/.local/state/oso-code/worktrees/keep/sentinel"
+}
+
+purge_tree_snapshot() {
+  local fixture_home="$1" path rel permissions digest
+  for path in "$fixture_home/.codex" "$fixture_home/.agents"; do
+    [ -e "$path" ] || [ -L "$path" ] || continue
+    find "$path" -print
+  done | LC_ALL=C sort | while IFS= read -r path; do
+    rel="${path#$fixture_home/}"
+    permissions="$(LC_ALL=C ls -ld "$path" | awk '{ print $1 }')"
+    if [ -L "$path" ]; then
+      printf 'link %s %s -> %s\n' "$permissions" "$rel" "$(readlink "$path")"
+    elif [ -d "$path" ]; then
+      printf 'dir  %s %s\n' "$permissions" "$rel"
+    elif [ -f "$path" ]; then
+      digest="$(file_sha256 "$path")"
+      printf 'file %s %s %s\n' "$permissions" "$rel" "$digest"
+    else
+      printf 'other %s %s\n' "$permissions" "$rel"
+    fi
+  done
+}
+
+purge_backup_count() {
+  local fixture_home="$1" backup_parent
+  backup_parent="$fixture_home/.local/state/oso-code/purge-backups"
+  [ -d "$backup_parent" ] || { printf '0'; return; }
+  find "$backup_parent" -mindepth 1 -maxdepth 1 -type d -print | wc -l | tr -d ' '
+}
+
+run_codex_purge() {
+  local fixture_home="$1"
+  shift
+  : > "$CODEX_PURGE_CLIENT_CALLS"
+  if HOME="$fixture_home" \
+    CODEX_HOME="$fixture_home/.codex" \
+    PATH="$CODEX_PURGE_SHIMS:$PATH" \
+    OSO_PURGE_CLIENT_CALLS="$CODEX_PURGE_CLIENT_CALLS" \
+    OSO_PURGE_FAIL_AFTER="${OSO_PURGE_FAIL_AFTER:-}" \
+    bash "$PURGE_CODEX_SH" "$@" > "$CODEX_PURGE_OUTPUT" 2>&1; then
+    CODEX_PURGE_RC=0
+  else
+    CODEX_PURGE_RC=$?
+  fi
+  CODEX_PURGE_LOG="$(cat "$CODEX_PURGE_OUTPUT")"
+}
+
+verify_purge_manifest() {
+  local backup="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    (cd "$backup" && sha256sum -c manifest.sha256 >/dev/null 2>&1)
+  else
+    (cd "$backup" && shasum -a 256 -c manifest.sha256 >/dev/null 2>&1)
+  fi
+}
+
+purge_backup_snapshot() {
+  local backup="$1" path
+  find "$backup" -type f -print | LC_ALL=C sort | while IFS= read -r path; do
+    printf '%s %s\n' "${path#$backup/}" "$(file_sha256 "$path")"
+  done
+}
+
+purge_backup_location() {
+  local backup="$1" fixture_home="$2"
+  case "$backup" in
+    "$fixture_home"/.local/state/oso-code/purge-backups/*) printf 'inside' ;;
+    *) printf 'outside' ;;
+  esac
+}
+
+CODEX_PURGE_DECLINE_HOME="$TEST_HOME/codex-purge-decline-home"
+write_codex_purge_fixture "$CODEX_PURGE_DECLINE_HOME"
+codex_purge_decline_before="$(purge_tree_snapshot "$CODEX_PURGE_DECLINE_HOME")"
+printf '\n' > "$TEST_HOME/codex-purge-decline-input"
+: > "$CODEX_PURGE_CLIENT_CALLS"
+if HOME="$CODEX_PURGE_DECLINE_HOME" \
+  CODEX_HOME="$CODEX_PURGE_DECLINE_HOME/.codex" \
+  PATH="$CODEX_PURGE_SHIMS:$PATH" \
+  OSO_PURGE_CLIENT_CALLS="$CODEX_PURGE_CLIENT_CALLS" \
+  bash "$PURGE_CODEX_SH" < "$TEST_HOME/codex-purge-decline-input" \
+    > "$CODEX_PURGE_OUTPUT" 2>&1; then
+  codex_purge_decline_rc=0
+else
+  codex_purge_decline_rc=$?
+fi
+assert_equals "the Codex purge defaults to no without explicit confirmation" \
+  "nonzero" "$([ "$codex_purge_decline_rc" -ne 0 ] && echo nonzero || echo zero)"
+assert_equals "declining the Codex purge preserves both source trees exactly" \
+  "$codex_purge_decline_before" "$(purge_tree_snapshot "$CODEX_PURGE_DECLINE_HOME")"
+assert_equals "declining the Codex purge creates no backup" \
+  "0" "$(purge_backup_count "$CODEX_PURGE_DECLINE_HOME")"
+
+run_codex_purge "$CODEX_PURGE_DECLINE_HOME" --unknown
+assert_equals "an unknown Codex purge flag is a usage error" \
+  "2" "$CODEX_PURGE_RC"
+assert_equals "a usage error preserves both Codex source trees exactly" \
+  "$codex_purge_decline_before" "$(purge_tree_snapshot "$CODEX_PURGE_DECLINE_HOME")"
+
+: > "$CODEX_PURGE_CLIENT_CALLS"
+if HOME="$CODEX_PURGE_DECLINE_HOME" \
+  CODEX_HOME="$TEST_HOME/outside-codex-home" \
+  PATH="$CODEX_PURGE_SHIMS:$PATH" \
+  OSO_PURGE_CLIENT_CALLS="$CODEX_PURGE_CLIENT_CALLS" \
+  bash "$PURGE_CODEX_SH" --yes > "$CODEX_PURGE_OUTPUT" 2>&1; then
+  codex_purge_override_rc=0
+else
+  codex_purge_override_rc=$?
+fi
+assert_equals "the purge rejects a CODEX_HOME outside HOME/.codex" \
+  "nonzero" "$([ "$codex_purge_override_rc" -ne 0 ] && echo nonzero || echo zero)"
+assert_equals "a CODEX_HOME refusal preserves both source trees exactly" \
+  "$codex_purge_decline_before" "$(purge_tree_snapshot "$CODEX_PURGE_DECLINE_HOME")"
+
+CODEX_PURGE_OVERLAP_HOME="$TEST_HOME/codex-purge-overlap-home"
+write_codex_purge_fixture "$CODEX_PURGE_OVERLAP_HOME"
+mkdir -p "$CODEX_PURGE_OVERLAP_HOME/.codex/backups"
+ln -s ../../../.codex/backups \
+  "$CODEX_PURGE_OVERLAP_HOME/.local/state/oso-code/purge-backups"
+codex_purge_overlap_before="$(purge_tree_snapshot "$CODEX_PURGE_OVERLAP_HOME")"
+run_codex_purge "$CODEX_PURGE_OVERLAP_HOME" --yes
+assert_equals "a physical backup path inside a purge target is rejected" \
+  "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
+assert_equals "backup overlap refusal preserves both purge targets exactly" \
+  "$codex_purge_overlap_before" "$(purge_tree_snapshot "$CODEX_PURGE_OVERLAP_HOME")"
+assert_equals "backup overlap refusal preserves the indirection that exposed it" \
+  "../../../.codex/backups" "$(readlink "$CODEX_PURGE_OVERLAP_HOME/.local/state/oso-code/purge-backups")"
+
+CODEX_PURGE_ANCESTOR_HOME="$TEST_HOME/codex-purge-ancestor-home"
+mkdir -p "$CODEX_PURGE_ANCESTOR_HOME/.codex/local" \
+  "$CODEX_PURGE_ANCESTOR_HOME/.agents"
+printf 'must remain byte-identical\n' > "$CODEX_PURGE_ANCESTOR_HOME/.codex/config.toml"
+ln -s .codex/local "$CODEX_PURGE_ANCESTOR_HOME/.local"
+codex_purge_ancestor_before="$(purge_tree_snapshot "$CODEX_PURGE_ANCESTOR_HOME")"
+run_codex_purge "$CODEX_PURGE_ANCESTOR_HOME" --yes
+assert_equals "backup ancestor overlap is rejected before mkdir can mutate a target" \
+  "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
+assert_equals "preflight overlap refusal leaves both purge targets byte-identical" \
+  "$codex_purge_ancestor_before" "$(purge_tree_snapshot "$CODEX_PURGE_ANCESTOR_HOME")"
+assert_equals "preflight overlap refusal creates no downstream backup directories" \
+  "absent" "$([ ! -e "$CODEX_PURGE_ANCESTOR_HOME/.codex/local/state" ] && echo absent || echo present)"
+
+CODEX_PURGE_EXTERNAL_HOME="$TEST_HOME/codex-purge-external-home"
+CODEX_PURGE_EXTERNAL_PARENT="$TEST_HOME/codex-purge-external-parent"
+mkdir -p "$CODEX_PURGE_EXTERNAL_HOME/.codex" \
+  "$CODEX_PURGE_EXTERNAL_HOME/.agents" \
+  "$CODEX_PURGE_EXTERNAL_PARENT"
+printf 'external preflight source\n' > "$CODEX_PURGE_EXTERNAL_HOME/.codex/config.toml"
+ln -s "$CODEX_PURGE_EXTERNAL_PARENT" "$CODEX_PURGE_EXTERNAL_HOME/.local"
+codex_purge_external_before="$(purge_tree_snapshot "$CODEX_PURGE_EXTERNAL_HOME")"
+run_codex_purge "$CODEX_PURGE_EXTERNAL_HOME" --yes
+assert_equals "an external backup ancestor is rejected before mkdir" \
+  "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
+assert_equals "external ancestor refusal leaves both purge targets byte-identical" \
+  "$codex_purge_external_before" "$(purge_tree_snapshot "$CODEX_PURGE_EXTERNAL_HOME")"
+assert_equals "external ancestor refusal creates nothing outside fixture HOME" \
+  "absent" "$([ ! -e "$CODEX_PURGE_EXTERNAL_PARENT/state" ] && echo absent || echo present)"
+
+CODEX_PURGE_FAILURE_HOME="$TEST_HOME/codex-purge-failure-home"
+write_codex_purge_fixture "$CODEX_PURGE_FAILURE_HOME"
+codex_purge_failure_before="$(purge_tree_snapshot "$CODEX_PURGE_FAILURE_HOME")"
+OSO_PURGE_FAIL_AFTER=after-backup run_codex_purge "$CODEX_PURGE_FAILURE_HOME" --yes
+assert_equals "a deterministic failure after backup exits before deletion" \
+  "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
+assert_equals "a verified-backup failure leaves both source trees exactly intact" \
+  "$codex_purge_failure_before" "$(purge_tree_snapshot "$CODEX_PURGE_FAILURE_HOME")"
+assert_equals "the pre-delete failure retains exactly one diagnostic backup" \
+  "1" "$(purge_backup_count "$CODEX_PURGE_FAILURE_HOME")"
+CODEX_PURGE_FAILURE_BACKUP="$(find "$CODEX_PURGE_FAILURE_HOME/.local/state/oso-code/purge-backups" -mindepth 1 -maxdepth 1 -type d -print | head -n 1)"
+assert_equals "the retained pre-delete backup still passes its manifest" \
+  "valid" "$(verify_purge_manifest "$CODEX_PURGE_FAILURE_BACKUP" && echo valid || echo invalid)"
+
+CODEX_PURGE_HOME="$TEST_HOME/codex-purge-home"
+write_codex_purge_fixture "$CODEX_PURGE_HOME"
+codex_purge_before="$(purge_tree_snapshot "$CODEX_PURGE_HOME")"
+run_codex_purge "$CODEX_PURGE_HOME" --yes
+codex_purge_outcome="$CODEX_PURGE_RC"
+if [ "$CODEX_PURGE_RC" -ne 0 ]; then
+  codex_purge_outcome="$CODEX_PURGE_RC ($CODEX_PURGE_LOG)"
+fi
+assert_equals "the fixture-only Codex purge completes" "0" "$codex_purge_outcome"
+CODEX_PURGE_BACKUP="$(printf '%s\n' "$CODEX_PURGE_LOG" | sed -n 's/^\[oso-code\] backup: //p' | tail -n 1)"
+assert_equals "the purge reports one absolute backup inside the fixture HOME" \
+  "inside" "$(purge_backup_location "$CODEX_PURGE_BACKUP" "$CODEX_PURGE_HOME")"
+assert_equals "the purge backup root has mode 0700" \
+  "0700" "$([ -d "$CODEX_PURGE_BACKUP" ] && find "$CODEX_PURGE_BACKUP" -maxdepth 0 -type d -perm 0700 -print | grep -q . && echo 0700 || echo wrong)"
+
+missing_purge_backup_file=""
+for purge_backup_file in \
+  format \
+  codex-home.target codex-home.state codex-home.tar \
+  agents-home.target agents-home.state agents-home.tar \
+  manifest.sha256; do
+  [ -f "$CODEX_PURGE_BACKUP/$purge_backup_file" ] \
+    || missing_purge_backup_file="$missing_purge_backup_file $purge_backup_file"
+done
+assert_equals "the purge publishes its complete restorable backup contract" \
+  "" "$missing_purge_backup_file"
+missing_purge_manifest_row=""
+for purge_manifest_path in \
+  format \
+  codex-home.target codex-home.state codex-home.tar \
+  agents-home.target agents-home.state agents-home.tar; do
+  awk -v path="$purge_manifest_path" '$2 == path { found++ } END { exit found == 1 ? 0 : 1 }' \
+    "$CODEX_PURGE_BACKUP/manifest.sha256" \
+    || missing_purge_manifest_row="$missing_purge_manifest_row $purge_manifest_path"
+done
+assert_equals "the purge manifest signs every decision-bearing backup file once" \
+  "" "$missing_purge_manifest_row"
+assert_equals "the purge records the exact Codex destination" \
+  "$CODEX_PURGE_HOME/.codex" "$(cat "$CODEX_PURGE_BACKUP/codex-home.target")"
+assert_equals "the purge records the exact shared agents destination" \
+  "$CODEX_PURGE_HOME/.agents" "$(cat "$CODEX_PURGE_BACKUP/agents-home.target")"
+assert_equals "the published purge manifest verifies every recorded payload" \
+  "valid" "$(verify_purge_manifest "$CODEX_PURGE_BACKUP" && echo valid || echo invalid)"
+assert_equals "the complete Codex tree is absent after its verified backup" \
+  "absent" "$([ ! -e "$CODEX_PURGE_HOME/.codex" ] && [ ! -L "$CODEX_PURGE_HOME/.codex" ] && echo absent || echo present)"
+assert_equals "the complete shared agents tree is absent after its verified backup" \
+  "absent" "$([ ! -e "$CODEX_PURGE_HOME/.agents" ] && [ ! -L "$CODEX_PURGE_HOME/.agents" ] && echo absent || echo present)"
+assert_equals "the purge preserves Claude state outside its two-target boundary" \
+  "claude survives" "$(cat "$CODEX_PURGE_HOME/.claude/sentinel")"
+assert_equals "the purge preserves the installed oso runtime outside its boundary" \
+  "runtime survives" "$(cat "$CODEX_PURGE_HOME/.local/share/oso-code/runtime/sentinel")"
+assert_equals "the purge preserves oso worktree state outside its boundary" \
+  "state survives" "$(cat "$CODEX_PURGE_HOME/.local/state/oso-code/worktrees/keep/sentinel")"
+assert_equals "the purge never invokes Codex, npm or login" \
+  "0" "$(wc -l < "$CODEX_PURGE_CLIENT_CALLS" | tr -d ' ')"
+
+codex_purge_backup_count="$(purge_backup_count "$CODEX_PURGE_HOME")"
+run_codex_purge "$CODEX_PURGE_HOME" --yes
+assert_equals "purging an already empty Codex home is idempotent" "0" "$CODEX_PURGE_RC"
+assert_equals "an empty idempotent purge creates no redundant backup" \
+  "$codex_purge_backup_count" "$(purge_backup_count "$CODEX_PURGE_HOME")"
+
+CODEX_TAMPERED_PURGE_BACKUP="$TEST_HOME/codex-tampered-purge-backup"
+cp -R "$CODEX_PURGE_BACKUP" "$CODEX_TAMPERED_PURGE_BACKUP"
+printf 'tamper\n' >> "$CODEX_TAMPERED_PURGE_BACKUP/codex-home.tar"
+run_codex_purge "$CODEX_PURGE_HOME" --restore "$CODEX_TAMPERED_PURGE_BACKUP"
+assert_equals "a modified purge archive is rejected by its published digest" \
+  "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
+assert_equals "a corrupt restore writes neither Codex destination" \
+  "absent" "$([ ! -e "$CODEX_PURGE_HOME/.codex" ] && [ ! -e "$CODEX_PURGE_HOME/.agents" ] && echo absent || echo present)"
+
+CODEX_TAMPERED_PURGE_METADATA="$TEST_HOME/codex-tampered-purge-metadata"
+cp -R "$CODEX_PURGE_BACKUP" "$CODEX_TAMPERED_PURGE_METADATA"
+printf 'absent\n' > "$CODEX_TAMPERED_PURGE_METADATA/codex-home.state"
+run_codex_purge "$CODEX_PURGE_HOME" --restore "$CODEX_TAMPERED_PURGE_METADATA"
+assert_equals "modified purge metadata is rejected by its published digest" \
+  "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
+assert_equals "corrupt absence metadata cannot silently omit a Codex restore" \
+  "absent" "$([ ! -e "$CODEX_PURGE_HOME/.codex" ] && [ ! -e "$CODEX_PURGE_HOME/.agents" ] && echo absent || echo present)"
+
+OSO_PURGE_FAIL_AFTER=after-codex-restore run_codex_purge \
+  "$CODEX_PURGE_HOME" --restore "$CODEX_PURGE_BACKUP"
+assert_equals "a failure after publishing the first restore target exits nonzero" \
+  "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
+assert_equals "a partial restore failure rolls both destinations back to absent" \
+  "absent" "$([ ! -e "$CODEX_PURGE_HOME/.codex" ] && [ ! -L "$CODEX_PURGE_HOME/.codex" ] && [ ! -e "$CODEX_PURGE_HOME/.agents" ] && [ ! -L "$CODEX_PURGE_HOME/.agents" ] && echo absent || echo present)"
+
+purge_backup_before_restore="$(purge_backup_snapshot "$CODEX_PURGE_BACKUP")"
+run_codex_purge "$CODEX_PURGE_HOME" --restore "$CODEX_PURGE_BACKUP"
+codex_restore_outcome="$CODEX_PURGE_RC"
+if [ "$CODEX_PURGE_RC" -ne 0 ]; then
+  codex_restore_outcome="$CODEX_PURGE_RC ($CODEX_PURGE_LOG)"
+fi
+assert_equals "the verified Codex purge backup restores successfully" "0" "$codex_restore_outcome"
+assert_equals "restore reproduces bytes, links, empty directories and modes" \
+  "$codex_purge_before" "$(purge_tree_snapshot "$CODEX_PURGE_HOME")"
+purge_backup_after_restore="$(purge_backup_snapshot "$CODEX_PURGE_BACKUP")"
+assert_equals "a successful restore retains the verified backup unchanged" \
+  "$purge_backup_before_restore" "$purge_backup_after_restore"
+
+codex_restored_before_conflict="$(purge_tree_snapshot "$CODEX_PURGE_HOME")"
+run_codex_purge "$CODEX_PURGE_HOME" --restore "$CODEX_PURGE_BACKUP"
+assert_equals "restore refuses to merge over existing Codex destinations" \
+  "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
+assert_equals "a restore conflict leaves both existing trees exactly intact" \
+  "$codex_restored_before_conflict" "$(purge_tree_snapshot "$CODEX_PURGE_HOME")"
+assert_equals "a restore conflict leaves the backup manifest valid" \
+  "valid" "$(verify_purge_manifest "$CODEX_PURGE_BACKUP" && echo valid || echo invalid)"
+
+CODEX_PURGE_SYMLINK_HOME="$TEST_HOME/codex-purge-symlink-home"
+mkdir -p "$CODEX_PURGE_SYMLINK_HOME/external-codex"
+printf 'external target survives\n' > "$CODEX_PURGE_SYMLINK_HOME/external-codex/sentinel"
+ln -s external-codex "$CODEX_PURGE_SYMLINK_HOME/.codex"
+ln -s missing-agents-target "$CODEX_PURGE_SYMLINK_HOME/.agents"
+run_codex_purge "$CODEX_PURGE_SYMLINK_HOME" --yes
+CODEX_PURGE_SYMLINK_BACKUP="$(printf '%s\n' "$CODEX_PURGE_LOG" | sed -n 's/^\[oso-code\] backup: //p' | tail -n 1)"
+assert_equals "the total purge removes a symlinked Codex root without following it" \
+  "absent" "$([ ! -e "$CODEX_PURGE_SYMLINK_HOME/.codex" ] && [ ! -L "$CODEX_PURGE_SYMLINK_HOME/.codex" ] && echo absent || echo present)"
+assert_equals "the total purge removes a dangling agents root link" \
+  "absent" "$([ ! -e "$CODEX_PURGE_SYMLINK_HOME/.agents" ] && [ ! -L "$CODEX_PURGE_SYMLINK_HOME/.agents" ] && echo absent || echo present)"
+assert_equals "purging a root link preserves its external destination" \
+  "external target survives" "$(cat "$CODEX_PURGE_SYMLINK_HOME/external-codex/sentinel")"
+assert_equals "the backup records a symlinked Codex root without dereferencing it" \
+  "symlink" "$(cat "$CODEX_PURGE_SYMLINK_BACKUP/codex-home.state")"
+assert_equals "the backup records a dangling agents root link" \
+  "symlink" "$(cat "$CODEX_PURGE_SYMLINK_BACKUP/agents-home.state")"
+run_codex_purge "$CODEX_PURGE_SYMLINK_HOME" --restore "$CODEX_PURGE_SYMLINK_BACKUP"
+assert_equals "restore recreates the exact Codex root link" \
+  "external-codex" "$(readlink "$CODEX_PURGE_SYMLINK_HOME/.codex")"
+assert_equals "restore recreates the exact dangling agents root link" \
+  "missing-agents-target" "$(readlink "$CODEX_PURGE_SYMLINK_HOME/.agents")"
+assert_equals "root-link restore still leaves the external destination unchanged" \
+  "external target survives" "$(cat "$CODEX_PURGE_SYMLINK_HOME/external-codex/sentinel")"
+
 echo "----"
 echo "passed: $pass, failed: $fail, skipped: $skipped"
 [ "$fail" -eq 0 ]
