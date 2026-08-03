@@ -9,7 +9,7 @@
 # tokens verbatim AND names the skipped verdict of any axis whose other
 # verdicts it reads; security-pass never acquires its diff from a remote-qualified
 # ref; the Impeccable detect gate never carries a placeholder where its pin
-# belongs; the always-loaded routing file names every mode the model cannot
+# belongs; each host's always-loaded routing file names every mode the model cannot
 # invoke on its own; every line that launches oso-verifier names the payload it
 # hands it; every line that launches oso-integrator names the wave's worktrees,
 # base ref and branch list; every decision under docs/decisions/ says where it
@@ -34,7 +34,7 @@ set -euo pipefail
 
 PLUGIN_ROOT="${1:-$(cd "$(dirname "$0")/../plugin" && pwd)}"
 # Five rules below reach outside the plugin tree — the pin scan, the routing
-# file, the decision files, the citations that bind the plugin to them, and the
+# files, the decision files, the citations that bind the plugin to them, and the
 # rule count's own prose surfaces — so the repo resolves the same way the default
 # PLUGIN_ROOT does. A second argument exists only so tests/hooks-test.sh can run
 # the whole linter against an isolated mutated copy; normal calls omit it and
@@ -258,24 +258,62 @@ verdict_tokens() {
 
 # `disable-model-invocation: true` is what makes a mode a mode: the model can
 # never reach one on its own, so an operator who was never told the command has
-# no way in. bootstrap/claude-global.md is the one file every session loads,
-# which leaves its Workflow block the only place that can tell them — and 0.13.0
-# shipped `/debug` while that block still listed two modes, so every bug on every
-# installed machine has since been routed to `/plan` or `/quick`. The set is read
-# from the frontmatter rather than listed here, so a fourth mode is either routed
-# or flagged.
+# no way in. Each host's global file is the source installed into the one
+# always-loaded instruction block for that host, which leaves its Workflow block
+# the only place that can tell them — and 0.13.0 shipped `/debug` while the Claude
+# block still listed two modes, so every bug on every installed machine has since
+# been routed to `/plan` or `/quick`. The set is read independently from each
+# host's frontmatter rather than listed here, so a fourth mode is either routed in
+# that host's exact public spelling or flagged. The public spelling is one whole
+# backticked code span, which closes both token boundaries instead of accepting a
+# prefixed command such as `x$plan`. Exactly one Workflow heading is required: no
+# heading must fail loudly, and two partial blocks may not combine into one
+# apparently complete route.
 check_global_routing_names_every_operator_only_mode() {
-  local routing_file="$REPO_ROOT/bootstrap/claude-global.md"
-  local workflow_block skill frontmatter_text mode
-  workflow_block="$({ sed -n '/^# Workflow$/,/^# /p' "$routing_file" 2>&1 || true; })"
-  for skill in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
-    [ -f "$skill" ] || continue
-    frontmatter_text="$(frontmatter "$skill")"
-    printf '%s\n' "$frontmatter_text" \
-      | grep -qE '^disable-model-invocation:[[:space:]]*true[[:space:]]*$' || continue
-    mode="$(basename "$(dirname "$skill")")"
-    printf '%s\n' "$workflow_block" | grep -qE "oso-code:$mode([^A-Za-z0-9_-]|\$)" \
-      || flag "${routing_file#"$REPO_ROOT"/} omits oso-code:$mode from its Workflow routing"
+  local host routing_file skills_root workflow_count workflow_block
+  local skill frontmatter_text mode invocation
+  for host in claude codex; do
+    case "$host" in
+      claude)
+        routing_file="$REPO_ROOT/bootstrap/claude-global.md"
+        skills_root="$PLUGIN_ROOT/skills"
+        ;;
+      codex)
+        routing_file="$REPO_ROOT/bootstrap/codex-global.md"
+        skills_root="$REPO_ROOT/codex/skills"
+        ;;
+    esac
+
+    if [ ! -d "$skills_root" ]; then
+      flag "${skills_root#"$REPO_ROOT"/} is missing; cannot derive $host operator-only modes"
+      continue
+    fi
+
+    workflow_count="$({ grep -c '^# Workflow$' "$routing_file" 2>&1 || true; })"
+    case "$workflow_count" in
+      1) ;;
+      ''|*[!0-9]*) flag "${routing_file#"$REPO_ROOT"/} has no readable Workflow routing (${workflow_count:-empty})" ;;
+      *) flag "${routing_file#"$REPO_ROOT"/} must carry exactly one Workflow routing (found $workflow_count)" ;;
+    esac
+    workflow_block="$({ sed -n '/^# Workflow$/,/^# /p' "$routing_file" 2>&1 || true; })"
+
+    for skill in "$skills_root"/*/SKILL.md; do
+      [ -f "$skill" ] || continue
+      frontmatter_text="$(frontmatter "$skill")"
+      printf '%s\n' "$frontmatter_text" \
+        | grep -qE '^disable-model-invocation:[[:space:]]*true[[:space:]]*$' || continue
+      mode="$(basename "$(dirname "$skill")")"
+      case "$host" in
+        claude)
+          invocation="/oso-code:$mode"
+          ;;
+        codex)
+          invocation="\$$mode"
+          ;;
+      esac
+      printf '%s\n' "$workflow_block" | grep -qF "\`$invocation\`" \
+        || flag "${routing_file#"$REPO_ROOT"/} omits $invocation from its Workflow routing"
+    done
   done
 }
 

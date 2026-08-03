@@ -250,6 +250,126 @@ else
   fi
 fi
 
+# Rule 7 is host-specific: Claude's always-loaded source routes the three
+# operator-only modes through `/oso-code:<mode>`, while Codex's routes the same
+# independently-declared wrappers through `$<mode>`.  A clean-tree lint cannot
+# prove either scan is real — all six names also occur elsewhere in the fixture.
+# Remove each real Workflow route in turn, leave a longer lookalike INSIDE that
+# block, and leave the exact spelling OUTSIDE it.  Only a section-bounded,
+# token-bounded scan of the right host source can reject this mutation for the
+# named omission; a repository-wide grep or substring match reads it as green.
+mutate_global_workflow_route() {
+  local routing_file="$1" invocation="$2" temporary="$1.tmp"
+  awk -v invocation="$invocation" '
+    $0 == "# Workflow" {
+      print
+      print "- Deliberate routing lookalike: `" invocation "-extra`."
+      print "- Deliberate prefixed lookalike: `x" invocation "`."
+      in_workflow = 1
+      next
+    }
+    in_workflow && /^# / { in_workflow = 0 }
+    in_workflow && index($0, invocation) { next }
+    { print }
+    END {
+      print ""
+      print "# Deliberate non-routing appendix"
+      print "The exact spelling `" invocation "` is present here, outside Workflow."
+    }
+  ' "$routing_file" > "$temporary"
+  mv "$temporary" "$routing_file"
+}
+
+for routing_host in claude codex; do
+  case "$routing_host" in
+    claude) routing_source=bootstrap/claude-global.md; routing_prefix=/oso-code: ;;
+    codex) routing_source=bootstrap/codex-global.md; routing_prefix='$' ;;
+  esac
+  for routing_mode in plan quick debug; do
+    LINT_ROUTING_FIXTURE="$TEST_HOME/lint-routing-$routing_host-$routing_mode"
+    copy_lint_fixture "$LINT_ROUTING_FIXTURE"
+    routing_fixture="$LINT_ROUTING_FIXTURE/$routing_source"
+    routing_invocation="$routing_prefix$routing_mode"
+    if [ ! -f "$routing_fixture" ]; then
+      echo "FAIL: the $routing_host routing mutation has no $routing_source source"; fail=$((fail + 1))
+      continue
+    fi
+    mutate_global_workflow_route "$routing_fixture" "$routing_invocation"
+    if mutated_routing_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+        "$LINT_ROUTING_FIXTURE/plugin" "$LINT_ROUTING_FIXTURE" 2>&1)"; then
+      echo "FAIL: $routing_source passed lint without its $routing_invocation Workflow route"; fail=$((fail + 1))
+    else
+      case "$mutated_routing_report" in
+        *"$routing_source"*"omits"*"$routing_invocation"*"Workflow routing"*)
+          echo "ok: rule 7 rejects $routing_host's missing $routing_invocation route despite bounded decoys"; pass=$((pass + 1)) ;;
+        *)
+          echo "FAIL: the $routing_host $routing_invocation mutation failed for the wrong reason — $(printf '%s' "$mutated_routing_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+      esac
+    fi
+  done
+done
+
+# The three mutations above could still pass against a linter that hardcodes
+# today's three names.  Add a fourth operator-only mode to each host tree without
+# adding a route: the diagnostic must be derived from that wrapper's frontmatter.
+for routing_host in claude codex; do
+  LINT_DISCOVERY_FIXTURE="$TEST_HOME/lint-routing-discovery-$routing_host"
+  copy_lint_fixture "$LINT_DISCOVERY_FIXTURE"
+  case "$routing_host" in
+    claude)
+      discovery_skills_root="$LINT_DISCOVERY_FIXTURE/plugin/skills"
+      discovery_invocation=/oso-code:incident
+      ;;
+    codex)
+      discovery_skills_root="$LINT_DISCOVERY_FIXTURE/codex/skills"
+      discovery_invocation='$incident'
+      ;;
+  esac
+  mkdir -p "$discovery_skills_root/incident"
+  printf '%s\n' \
+    '---' \
+    'name: incident' \
+    'description: Mutation-only operator mode.' \
+    'disable-model-invocation: true' \
+    '---' \
+    > "$discovery_skills_root/incident/SKILL.md"
+  if discovery_routing_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_DISCOVERY_FIXTURE/plugin" "$LINT_DISCOVERY_FIXTURE" 2>&1)"; then
+    echo "FAIL: rule 7 ignored a new $routing_host operator-only mode"; fail=$((fail + 1))
+  else
+    case "$discovery_routing_report" in
+      *"bootstrap/$routing_host-global.md"*"omits"*"$discovery_invocation"*"Workflow routing"*)
+        echo "ok: rule 7 discovers a new $routing_host operator-only mode from frontmatter"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the new $routing_host mode failed lint for the wrong reason — $(printf '%s' "$discovery_routing_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+done
+
+# A glob over an absent Codex tree iterates once over its own literal text and
+# can make a dynamic rule vacuously green.  Move the whole tree out of the path
+# the linter owns and require rule 7's explicit anti-vacuity diagnostic; a
+# nonzero caused only by the other host-aware rules does not clear this case.
+LINT_CODEX_TREE_FIXTURE="$TEST_HOME/lint-routing-missing-codex-tree"
+copy_lint_fixture "$LINT_CODEX_TREE_FIXTURE"
+if [ ! -d "$LINT_CODEX_TREE_FIXTURE/codex/skills" ]; then
+  echo "FAIL: the Codex tree mutation has no codex/skills directory to move"; fail=$((fail + 1))
+else
+  mv "$LINT_CODEX_TREE_FIXTURE/codex/skills" \
+    "$LINT_CODEX_TREE_FIXTURE/codex/skills.deliberately-absent"
+  if missing_codex_tree_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_CODEX_TREE_FIXTURE/plugin" "$LINT_CODEX_TREE_FIXTURE" 2>&1)"; then
+    echo "FAIL: rule 7 passed with no codex/skills tree to derive modes from"; fail=$((fail + 1))
+  else
+    case "$missing_codex_tree_report" in
+      *"lint: codex/skills is missing; cannot derive codex operator-only modes"*)
+        echo "ok: rule 7 fails loudly when the Codex mode source tree is absent"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the absent Codex mode tree failed lint without rule 7's diagnostic — $(printf '%s' "$missing_codex_tree_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
 # --- Declarations: generated hooks and published trust hashes -----------------
 # Rule 13 keeps the committed tree green; these mutations prove each half can go
 # red for the reason it claims. The default-deny prefix and the load-bearing
