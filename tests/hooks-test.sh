@@ -1694,6 +1694,622 @@ no Codex body takes the absence policy as its own
 no Codex body reads the two-step Claude install back
 ABSENCE_POLICY_TABLE
 
+# --- Impeccable on Codex: mounted instructions, never a cache pointer --------
+# Codex has no Skill tool invocation for Impeccable.  Its adapter therefore has
+# to name the mounted SKILL.md for every argument the neutral contract reaches;
+# seeing all four words somewhere in the tree is not enough (a path in an install
+# note plus three arguments in the Claude comparison would still ship no runnable
+# Codex route).  Each argument must occur in a paragraph that also carries the
+# canonical mounted path.
+CODEX_FRONT_SURFACE="$PLUGIN/skills/_shared/platform/codex/front-surface.md"
+codex_front_surface_routes_missing=""
+for codex_front_mode in plan quick debug; do
+  grep -qF 'front-surface.md' "$CODEX_PLATFORM/$codex_front_mode.md" 2>/dev/null \
+    || codex_front_surface_routes_missing="$codex_front_surface_routes_missing $codex_front_mode"
+done
+assert_equals "all three Codex modes route front work through one platform adapter" \
+  "" "$codex_front_surface_routes_missing"
+
+# Resolve the prose's actual relative token from the file that carries it.  A
+# grep-only assertion accepted `../front-surface.md` during review even though,
+# from platform/codex/, that names the missing platform/front-surface.md rather
+# than the neutral `_shared/front-surface.md` two levels above.
+resolve_markdown_reference() {
+  local origin="$1" reference="$2" origin_dir reference_dir reference_leaf
+  origin_dir="$(dirname "$origin")"
+  reference_dir="$(dirname "$reference")"
+  reference_leaf="$(basename "$reference")"
+  [ -d "$origin_dir/$reference_dir" ] || return 0
+  resolved_reference_dir="$(cd "$origin_dir/$reference_dir" && pwd -P)"
+  [ -f "$resolved_reference_dir/$reference_leaf" ] || return 0
+  printf '%s/%s' "$resolved_reference_dir" "$reference_leaf"
+}
+
+for codex_front_mode in plan quick debug; do
+  codex_mode_file="$CODEX_PLATFORM/$codex_front_mode.md"
+  codex_mode_front_ref="$({ grep -oE '(\.\./)*front-surface\.md' "$codex_mode_file" || true; } | sort -u)"
+  assert_equals "$codex_front_mode carries its neutral trigger and direct Codex adapter references" \
+    "../../front-surface.md
+front-surface.md" "$codex_mode_front_ref"
+  assert_equals "$codex_front_mode's neutral trigger reference resolves to the shared contract" \
+    "$PLUGIN/skills/_shared/front-surface.md" \
+    "$(resolve_markdown_reference "$codex_mode_file" '../../front-surface.md')"
+  assert_equals "$codex_front_mode's platform reference resolves to the Codex adapter" \
+    "$CODEX_FRONT_SURFACE" \
+    "$(resolve_markdown_reference "$codex_mode_file" 'front-surface.md')"
+done
+
+codex_adapter_neutral_ref="$({ grep -oE '(\.\./)+front-surface\.md' "$CODEX_FRONT_SURFACE" 2>/dev/null || true; } | sort -u)"
+assert_equals "the Codex front adapter carries one relative reference to the neutral contract" \
+  "../../front-surface.md" "$codex_adapter_neutral_ref"
+assert_equals "the Codex adapter's neutral front-surface reference resolves to a real file" \
+  "$PLUGIN/skills/_shared/front-surface.md" \
+  "$(resolve_markdown_reference "$CODEX_FRONT_SURFACE" "$codex_adapter_neutral_ref")"
+
+# The adapter split changed Claude's path graph too. Keep that production tree
+# as executable documentation: every mode must reach both the unchanged neutral
+# contract and the new Claude binding, and the binding must still carry every
+# host spelling removed from the neutral file during the split.
+CLAUDE_PLATFORM="$PLUGIN/skills/_shared/platform/claude"
+CLAUDE_FRONT_SURFACE="$CLAUDE_PLATFORM/front-surface.md"
+for claude_front_mode in plan quick debug; do
+  claude_mode_file="$CLAUDE_PLATFORM/$claude_front_mode.md"
+  claude_mode_front_ref="$({ grep -oE '(\.\./)*front-surface\.md' "$claude_mode_file" || true; } | sort -u)"
+  assert_equals "$claude_front_mode carries its neutral trigger and direct Claude adapter references" \
+    "../../front-surface.md
+front-surface.md" "$claude_mode_front_ref"
+  assert_equals "$claude_front_mode's neutral trigger reference resolves to the shared contract" \
+    "$PLUGIN/skills/_shared/front-surface.md" \
+    "$(resolve_markdown_reference "$claude_mode_file" '../../front-surface.md')"
+  assert_equals "$claude_front_mode's platform reference resolves to the Claude adapter" \
+    "$CLAUDE_FRONT_SURFACE" \
+    "$(resolve_markdown_reference "$claude_mode_file" 'front-surface.md')"
+done
+
+claude_adapter_neutral_ref="$({ grep -oE '(\.\./)+front-surface\.md' "$CLAUDE_FRONT_SURFACE" 2>/dev/null || true; } | sort -u)"
+assert_equals "the Claude front adapter carries one relative reference to the neutral contract" \
+  "../../front-surface.md" "$claude_adapter_neutral_ref"
+assert_equals "the Claude adapter's neutral front-surface reference resolves to a real file" \
+  "$PLUGIN/skills/_shared/front-surface.md" \
+  "$(resolve_markdown_reference "$CLAUDE_FRONT_SURFACE" "$claude_adapter_neutral_ref")"
+
+claude_front_surface_contract="$(cat "$CLAUDE_FRONT_SURFACE" 2>/dev/null || true)"
+assert_says_every "the Claude front adapter preserves every load-bearing host spelling" \
+  "$claude_front_surface_contract" <<'CLAUDE_IMPECCABLE_SPELLINGS'
+`impeccable:impeccable`
+Skill tool
+`claude plugin list`
+`/plugin marketplace add pbakaus/impeccable`
+`/plugin install impeccable@impeccable`
+CLAUDE_IMPECCABLE_SPELLINGS
+
+codex_front_surface_contract="$(cat "$CODEX_FRONT_SURFACE" 2>/dev/null || true)"
+assert_says_every "the Codex front adapter publishes both mounted-path spellings" \
+  "$codex_front_surface_contract" <<'CODEX_IMPECCABLE_PATHS'
+`~/.agents/skills/impeccable/SKILL.md`
+`$HOME/.agents/skills/impeccable/SKILL.md`
+absolute
+`reference/`
+CODEX_IMPECCABLE_PATHS
+case "$codex_front_surface_contract" in
+  *'PLACEHOLDER'*)
+    echo "FAIL: the Codex front adapter still calls its S8 contract a placeholder"; fail=$((fail + 1)) ;;
+  *)
+    echo "ok: the Codex front adapter is no longer an S8 placeholder"; pass=$((pass + 1)) ;;
+esac
+
+codex_argument_block_status() {
+  local argument="$1" exact_route
+  case "$argument" in
+    init|document) exact_route="\`\$impeccable $argument\`" ;;
+    audit) exact_route='`$impeccable audit <touched surfaces>`' ;;
+    *) printf 'unknown'; return 0 ;;
+  esac
+  awk -v route="$exact_route" '
+    BEGIN { RS = "" }
+    index($0, "~/.agents/skills/impeccable/SKILL.md") &&
+      index($0, route) &&
+      $0 ~ /(^|[^A-Za-z])ARGUMENT([^A-Za-z]|$)/ {
+        matched++
+      }
+    END { if (matched == 1) print "exact"; else print matched + 0 }
+  ' "$CODEX_FRONT_SURFACE" 2>/dev/null
+}
+
+for impeccable_argument in init document audit; do
+  assert_equals "Codex binds exact $impeccable_argument ARGUMENT and mounted SKILL route in one block" \
+    "exact" "$(codex_argument_block_status "$impeccable_argument")"
+done
+
+# The mount helper receives an already-resolved versioned source and owns only
+# the stable Codex destination. A copied destination must consist only of real data; the
+# separate adversarial fixture below permits either safe dereferencing or loud
+# rejection of source links, but never a surviving pointer.
+MOUNT_IMPECCABLE="$REPO_ROOT/bootstrap/lib/mount-impeccable.sh"
+IMPECCABLE_CACHE="$TEST_HOME/codex-plugin-cache/impeccable/1.2.3/skills/impeccable"
+IMPECCABLE_MOUNT="$HOME/.agents/skills/impeccable"
+
+write_codex_impeccable_fixture() {
+  local destination="$1" name_line="$2" version_line="$3"
+  mkdir -p "$destination/reference"
+  printf '%s\n' '---' > "$destination/SKILL.md"
+  [ -z "$name_line" ] || printf '%s\n' "$name_line" >> "$destination/SKILL.md"
+  [ -z "$version_line" ] || printf '%s\n' "$version_line" >> "$destination/SKILL.md"
+  printf '%s\n' \
+    '---' \
+    'installed-root: .agents/skills/impeccable' \
+    'usage: $impeccable init | $impeccable document | $impeccable audit <target>' \
+    'references: reference/init.md reference/document.md reference/audit.md' \
+    >> "$destination/SKILL.md"
+  printf '%s\n' 'Codex init reference' > "$destination/reference/init.md"
+  printf '%s\n' 'Codex document reference' > "$destination/reference/document.md"
+  printf '%s\n' 'Codex audit reference' > "$destination/reference/audit.md"
+}
+
+write_codex_impeccable_fixture "$IMPECCABLE_CACHE" \
+  'name: impeccable' 'version: 1.2.3'
+mkdir -p "$IMPECCABLE_CACHE/reference/linked-assets" "$IMPECCABLE_CACHE/assets"
+printf '%s\n' 'stable playbook' > "$IMPECCABLE_CACHE/reference/playbook.md"
+printf '%s\n' 'stable asset' > "$IMPECCABLE_CACHE/assets/palette.txt"
+printf '%s\n' 'stable playbook' > "$IMPECCABLE_CACHE/reference/linked-playbook.md"
+printf '%s\n' 'stable asset' > "$IMPECCABLE_CACHE/reference/linked-assets/palette.txt"
+
+if [ ! -x "$MOUNT_IMPECCABLE" ]; then
+  echo "FAIL: the Codex Impeccable mount helper is absent or not executable"
+  fail=$((fail + 1))
+elif mount_report="$("$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" 2>&1)"; then
+  echo "ok: the Codex Impeccable mount accepts one resolved skill directory"
+  pass=$((pass + 1))
+
+  assert_equals "the Impeccable mount is a directory, not a cache symlink" \
+    "directory" "$([ -d "$IMPECCABLE_MOUNT" ] && [ ! -L "$IMPECCABLE_MOUNT" ] && printf directory || printf pointer)"
+  assert_equals "the mounted SKILL.md is copied data" \
+    "regular" "$([ -f "$IMPECCABLE_MOUNT/SKILL.md" ] && [ ! -L "$IMPECCABLE_MOUNT/SKILL.md" ] && printf regular || printf pointer)"
+  assert_equals "the mounted skill identity is exactly impeccable" \
+    "name: impeccable" "$(sed -n '/^name:[[:space:]]*/p' "$IMPECCABLE_MOUNT/SKILL.md")"
+  mounted_impeccable_version="$(sed -n 's/^version:[[:space:]]*//p' "$IMPECCABLE_MOUNT/SKILL.md")"
+  assert_equals "the mounted skill carries one nonempty semantic version" \
+    "valid" "$(printf '%s\n' "$mounted_impeccable_version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$' && printf valid || printf invalid)"
+  assert_equals "a mounted reference file is real copied data" \
+    "stable playbook" "$([ ! -L "$IMPECCABLE_MOUNT/reference/linked-playbook.md" ] && cat "$IMPECCABLE_MOUNT/reference/linked-playbook.md" || printf pointer)"
+  assert_equals "a mounted reference directory is real copied data" \
+    "stable asset" "$([ ! -L "$IMPECCABLE_MOUNT/reference/linked-assets" ] && cat "$IMPECCABLE_MOUNT/reference/linked-assets/palette.txt" || printf pointer)"
+  mounted_impeccable_refs_missing=""
+  for mounted_impeccable_ref in init document audit; do
+    [ -f "$IMPECCABLE_MOUNT/reference/$mounted_impeccable_ref.md" ] \
+      && [ ! -L "$IMPECCABLE_MOUNT/reference/$mounted_impeccable_ref.md" ] \
+      || mounted_impeccable_refs_missing="$mounted_impeccable_refs_missing $mounted_impeccable_ref"
+  done
+  assert_equals "the mounted Codex skill carries all three required argument references" \
+    "" "$mounted_impeccable_refs_missing"
+
+  # A mounted copy must remain usable after the cache entry changes.  This is
+  # the behavioural distinction D8 makes; checking only `test ! -L` at the root
+  # would miss a bind made of symlinked descendants.
+  printf '%s\n' 'cache changed later' > "$IMPECCABLE_CACHE/reference/playbook.md"
+  assert_equals "the mounted reference is independent of later cache mutation" \
+    "stable playbook" "$(cat "$IMPECCABLE_MOUNT/reference/playbook.md")"
+
+  # Re-running replaces the complete snapshot.  A stale file in the old mount
+  # may not survive, and the newly resolved cache contents must arrive without
+  # changing the stable destination path.
+  printf '%s\n' 'stale local file' > "$IMPECCABLE_MOUNT/stale.md"
+  if remount_report="$("$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" 2>&1)"; then
+    assert_equals "a second mount replaces stale destination contents" \
+      "gone" "$([ ! -e "$IMPECCABLE_MOUNT/stale.md" ] && printf gone || printf present)"
+    assert_equals "a second mount refreshes the independent snapshot" \
+      "cache changed later" "$(cat "$IMPECCABLE_MOUNT/reference/playbook.md")"
+
+    # Model cache collection without deleting fixture data: after the versioned
+    # source moves away, the stable global mount must still be complete.
+    mv "$IMPECCABLE_CACHE" "$IMPECCABLE_CACHE.collected"
+    assert_equals "the mounted skill survives collection of its cache version" \
+      "cache changed later" "$(cat "$IMPECCABLE_MOUNT/reference/playbook.md")"
+    mv "$IMPECCABLE_CACHE.collected" "$IMPECCABLE_CACHE"
+  else
+    echo "FAIL: a second Impeccable mount was not idempotent — ${remount_report:-<empty>}"
+    fail=$((fail + 1))
+  fi
+
+  # The registry directory is stable; ownership is one unique symlink per
+  # acquirer, published atomically. A process removes only its own link. Dead
+  # links are logical stale records (ignored but retained), while a live link
+  # blocks and any entry outside the exact symlink grammar fails closed.
+  IMPECCABLE_MOUNT_LOCK="$HOME/.agents/skills/.impeccable.mount.lock"
+  mkdir -p "$IMPECCABLE_MOUNT_LOCK"
+  ln -s "pid=$$;token=live-fixture-token" \
+    "$IMPECCABLE_MOUNT_LOCK/owner.live-fixture-token"
+  printf '%s\n' 'must survive a live lock' > "$IMPECCABLE_MOUNT/live-lock-sentinel"
+  if "$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" >/dev/null 2>&1; then
+    echo "FAIL: a live Impeccable mount lock was stolen"
+    fail=$((fail + 1))
+  else
+    echo "ok: a live Impeccable mount lock rejects a concurrent replacement"
+    pass=$((pass + 1))
+  fi
+  assert_equals "live-lock rejection preserves the mounted snapshot" \
+    "must survive a live lock" "$(cat "$IMPECCABLE_MOUNT/live-lock-sentinel")"
+  assert_equals "live-lock rejection preserves the owner's exact target" \
+    "pid=$$;token=live-fixture-token" \
+    "$(readlink "$IMPECCABLE_MOUNT_LOCK/owner.live-fixture-token")"
+
+  rm -f "$IMPECCABLE_MOUNT_LOCK/owner.live-fixture-token"
+  ln -s 'pid=2147483647;token=dead-fixture-token' \
+    "$IMPECCABLE_MOUNT_LOCK/owner.dead-fixture-token"
+  if "$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" >/dev/null 2>&1; then
+    echo "ok: a dead Impeccable mount owner is ignored so mounting can continue"
+    pass=$((pass + 1))
+  else
+    echo "FAIL: a dead Impeccable mount owner blocked logical recovery"
+    fail=$((fail + 1))
+  fi
+  assert_equals "dead-lock recovery completes the replacement" \
+    "gone" "$([ ! -e "$IMPECCABLE_MOUNT/live-lock-sentinel" ] && printf gone || printf present)"
+  assert_equals "dead-lock recovery never deletes a foreign owner record" \
+    "pid=2147483647;token=dead-fixture-token" \
+    "$(readlink "$IMPECCABLE_MOUNT_LOCK/owner.dead-fixture-token")"
+
+  rm -f "$IMPECCABLE_MOUNT_LOCK/owner.dead-fixture-token"
+  printf '%s\n' 'must survive only until empty-lock recovery' \
+    > "$IMPECCABLE_MOUNT/empty-lock-sentinel"
+  if "$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" >/dev/null 2>&1; then
+    echo "ok: an empty owner registry permits a fresh atomic acquisition"
+    pass=$((pass + 1))
+  else
+    echo "FAIL: an empty owner registry blocked a fresh mount"
+    fail=$((fail + 1))
+  fi
+  assert_equals "empty-registry acquisition completes the replacement" \
+    "gone" "$([ ! -e "$IMPECCABLE_MOUNT/empty-lock-sentinel" ] && printf gone || printf present)"
+  assert_equals "a completed mount withdraws its owner from the stable registry" \
+    "empty" "$([ -d "$IMPECCABLE_MOUNT_LOCK" ] \
+      && [ -z "$(find "$IMPECCABLE_MOUNT_LOCK" -mindepth 1 -print -quit)" ] \
+      && printf empty || printf occupied)"
+
+  printf '%s\n' 'unknown primary payload' > "$IMPECCABLE_MOUNT_LOCK/owner.unexpected"
+  printf '%s\n' 'must survive corrupt primary' > "$IMPECCABLE_MOUNT/corrupt-lock-sentinel"
+  if "$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" >/dev/null 2>&1; then
+    echo "FAIL: unexpected primary-lock contents were discarded"
+    fail=$((fail + 1))
+  else
+    echo "ok: unexpected primary-lock contents fail closed"
+    pass=$((pass + 1))
+  fi
+  assert_equals "corrupt-primary rejection preserves the mounted snapshot" \
+    "must survive corrupt primary" "$(cat "$IMPECCABLE_MOUNT/corrupt-lock-sentinel")"
+  assert_equals "corrupt-primary rejection preserves unexpected evidence" \
+    "unknown primary payload" "$(cat "$IMPECCABLE_MOUNT_LOCK/owner.unexpected")"
+  rm -f "$IMPECCABLE_MOUNT_LOCK/owner.unexpected"
+  rm -f "$IMPECCABLE_MOUNT/corrupt-lock-sentinel"
+
+  # An entry outside owner.* is not irrelevant: `owner` is the exact live-owner
+  # filename shipped by the immediately previous lock protocol. Ignoring it
+  # would let a new installer overlap an old-version critical section. Unknown
+  # children therefore fail closed and remain as evidence; they are never
+  # silently skipped merely because the new contender glob cannot parse them.
+  printf 'pid=%s\ntoken=%s\n' "$$" 'legacy-live-token' \
+    > "$IMPECCABLE_MOUNT_LOCK/owner"
+  printf '%s\n' 'must survive a legacy registry owner' \
+    > "$IMPECCABLE_MOUNT/legacy-owner-sentinel"
+  if "$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" >/dev/null 2>&1; then
+    echo "FAIL: a legacy owner outside the atomic registry grammar was ignored"
+    fail=$((fail + 1))
+  else
+    echo "ok: a legacy owner outside the atomic registry grammar fails closed"
+    pass=$((pass + 1))
+  fi
+  assert_equals "legacy-owner rejection preserves the mounted snapshot" \
+    "must survive a legacy registry owner" \
+    "$([ -f "$IMPECCABLE_MOUNT/legacy-owner-sentinel" ] \
+      && cat "$IMPECCABLE_MOUNT/legacy-owner-sentinel" || printf missing)"
+  assert_equals "legacy-owner rejection preserves old-protocol evidence" \
+    "pid=$$
+token=legacy-live-token" "$(cat "$IMPECCABLE_MOUNT_LOCK/owner")"
+  rm -f "$IMPECCABLE_MOUNT_LOCK/owner"
+  rm -f "$IMPECCABLE_MOUNT/legacy-owner-sentinel"
+
+  # Deterministic ABA regression. A pauses immediately before publishing its
+  # ownership primitive (the former implementation used mv; the atomic one uses
+  # ln). B publishes and reaches the protected copy while A is still paused.
+  # Resuming A must make A withdraw/fail without touching B's unique owner.
+  ABA_HOME="$TEST_HOME/impeccable-aba-home"
+  ABA_CONTROL="$TEST_HOME/impeccable-aba-control"
+  ABA_SHIMS="$TEST_HOME/impeccable-aba-shims"
+  ABA_SOURCE_A="$TEST_HOME/impeccable-aba-source-a"
+  ABA_SOURCE_B="$TEST_HOME/impeccable-aba-source-b"
+  mkdir -p "$ABA_HOME" "$ABA_CONTROL" "$ABA_SHIMS"
+  write_codex_impeccable_fixture "$ABA_SOURCE_A" \
+    'name: impeccable' 'version: 1.2.3'
+  write_codex_impeccable_fixture "$ABA_SOURCE_B" \
+    'name: impeccable' 'version: 1.2.3'
+  printf '%s\n' 'complete source A' > "$ABA_SOURCE_A/reference/race-winner.md"
+  printf '%s\n' 'complete source B' > "$ABA_SOURCE_B/reference/race-winner.md"
+
+  ABA_REAL_LN="$(command -v ln)"
+  ABA_REAL_MV="$(command -v mv)"
+  ABA_REAL_CP="$(command -v cp)"
+  printf '%s\n' \
+    '#!/bin/sh' \
+    'last=' \
+    'for argument in "$@"; do last=$argument; done' \
+    'case "${ABA_PAUSE_OWNER_PUBLICATION:-}:$last" in' \
+    '  1:*/.impeccable.mount.lock/owner.*)' \
+    '    : > "$ABA_CONTROL/a-publication-paused"' \
+    '    while [ ! -f "$ABA_CONTROL/release-a" ]; do sleep 1; done' \
+    '    ;;' \
+    'esac' \
+    'exec "$ABA_REAL_LN" "$@"' \
+    > "$ABA_SHIMS/ln"
+  printf '%s\n' \
+    '#!/bin/sh' \
+    'last=' \
+    'for argument in "$@"; do last=$argument; done' \
+    'case "${ABA_PAUSE_OWNER_PUBLICATION:-}:$last" in' \
+    '  1:*/.impeccable.mount.lock/owner)' \
+    '    : > "$ABA_CONTROL/a-publication-paused"' \
+    '    while [ ! -f "$ABA_CONTROL/release-a" ]; do sleep 1; done' \
+    '    ;;' \
+    'esac' \
+    'exec "$ABA_REAL_MV" "$@"' \
+    > "$ABA_SHIMS/mv"
+  printf '%s\n' \
+    '#!/bin/sh' \
+    'if [ "${ABA_PAUSE_PROTECTED_COPY:-}" = 1 ]; then' \
+    '  : > "$ABA_CONTROL/b-entered-critical-section"' \
+    '  while [ ! -f "$ABA_CONTROL/release-b" ]; do sleep 1; done' \
+    'fi' \
+    'exec "$ABA_REAL_CP" "$@"' \
+    > "$ABA_SHIMS/cp"
+  chmod +x "$ABA_SHIMS/ln" "$ABA_SHIMS/mv" "$ABA_SHIMS/cp"
+
+  wait_for_aba_marker() {
+    local marker="$1" process_id="$2" waited=0
+    while [ ! -f "$marker" ] && [ "$waited" -lt 10 ]; do
+      kill -0 "$process_id" 2>/dev/null || return 1
+      sleep 1
+      waited=$((waited + 1))
+    done
+    [ -f "$marker" ]
+  }
+
+  (
+    if HOME="$ABA_HOME" PATH="$ABA_SHIMS:$PATH" \
+      ABA_CONTROL="$ABA_CONTROL" ABA_REAL_LN="$ABA_REAL_LN" \
+      ABA_REAL_MV="$ABA_REAL_MV" ABA_REAL_CP="$ABA_REAL_CP" \
+      ABA_PAUSE_OWNER_PUBLICATION=1 \
+      "$MOUNT_IMPECCABLE" "$ABA_SOURCE_A" \
+      > "$ABA_CONTROL/a.stdout" 2> "$ABA_CONTROL/a.stderr"; then
+      aba_child_rc=0
+    else
+      aba_child_rc=$?
+    fi
+    printf '%s\n' "$aba_child_rc" > "$ABA_CONTROL/a.rc"
+  ) &
+  aba_a_pid=$!
+  aba_ready=true
+  if ! wait_for_aba_marker "$ABA_CONTROL/a-publication-paused" "$aba_a_pid"; then
+    echo "FAIL: ABA process A never reached the atomic owner-publication seam"
+    fail=$((fail + 1))
+    aba_ready=false
+    : > "$ABA_CONTROL/release-a"
+    wait "$aba_a_pid" 2>/dev/null || true
+  fi
+
+  if [ "$aba_ready" = true ]; then
+    (
+      if HOME="$ABA_HOME" PATH="$ABA_SHIMS:$PATH" \
+        ABA_CONTROL="$ABA_CONTROL" ABA_REAL_LN="$ABA_REAL_LN" \
+        ABA_REAL_MV="$ABA_REAL_MV" ABA_REAL_CP="$ABA_REAL_CP" \
+        ABA_PAUSE_PROTECTED_COPY=1 \
+        "$MOUNT_IMPECCABLE" "$ABA_SOURCE_B" \
+        > "$ABA_CONTROL/b.stdout" 2> "$ABA_CONTROL/b.stderr"; then
+        aba_child_rc=0
+      else
+        aba_child_rc=$?
+      fi
+      printf '%s\n' "$aba_child_rc" > "$ABA_CONTROL/b.rc"
+    ) &
+    aba_b_pid=$!
+    if ! wait_for_aba_marker "$ABA_CONTROL/b-entered-critical-section" "$aba_b_pid"; then
+      echo "FAIL: ABA process B never published ownership and entered the protected copy"
+      fail=$((fail + 1))
+      aba_ready=false
+      : > "$ABA_CONTROL/release-a"
+      : > "$ABA_CONTROL/release-b"
+      wait "$aba_a_pid" 2>/dev/null || true
+      wait "$aba_b_pid" 2>/dev/null || true
+    fi
+  fi
+
+  if [ "$aba_ready" = true ]; then
+    : > "$ABA_CONTROL/release-a"
+    wait "$aba_a_pid" 2>/dev/null || true
+
+    aba_registry="$ABA_HOME/.agents/skills/.impeccable.mount.lock"
+    aba_owner_entries="$(find "$aba_registry" -mindepth 1 -maxdepth 1 -type l -name 'owner.*' 2>/dev/null)"
+    aba_owner_count="$(printf '%s\n' "$aba_owner_entries" | awk 'NF { count++ } END { print count + 0 }')"
+    assert_equals "losing process A never cleans up process B's published owner" \
+      "1" "$aba_owner_count"
+
+    : > "$ABA_CONTROL/release-b"
+    wait "$aba_b_pid" 2>/dev/null || true
+
+    aba_successes=0
+    aba_failures=0
+    for aba_rc_file in "$ABA_CONTROL/a.rc" "$ABA_CONTROL/b.rc"; do
+      if [ "$(cat "$aba_rc_file")" = 0 ]; then
+        aba_successes=$((aba_successes + 1))
+      else
+        aba_failures=$((aba_failures + 1))
+      fi
+    done
+    aba_mounted_lines="$({ grep -h '^mounted impeccable at ' \
+      "$ABA_CONTROL/a.stdout" "$ABA_CONTROL/b.stdout" || true; } \
+      | awk 'NF { count++ } END { print count + 0 }')"
+    assert_equals "the ABA race has exactly one successful mount" \
+      "1" "$aba_successes"
+    assert_equals "the ABA race has exactly one losing helper" \
+      "1" "$aba_failures"
+    assert_equals "only the successful ABA helper prints mounted" \
+      "1" "$aba_mounted_lines"
+
+    ABA_FINAL_MOUNT="$ABA_HOME/.agents/skills/impeccable"
+    aba_final_refs_missing=""
+    for aba_required_ref in init document audit race-winner; do
+      [ -f "$ABA_FINAL_MOUNT/reference/$aba_required_ref.md" ] \
+        || aba_final_refs_missing="$aba_final_refs_missing $aba_required_ref"
+    done
+    assert_equals "the ABA winner leaves one complete mounted skill" \
+      "" "$aba_final_refs_missing"
+    assert_equals "process B's complete snapshot is the ABA winner" \
+      "complete source B" "$(cat "$ABA_FINAL_MOUNT/reference/race-winner.md")"
+    assert_equals "the ABA winner withdraws its own owner without foreign residue" \
+      "empty" "$([ -d "$aba_registry" ] \
+        && [ -z "$(find "$aba_registry" -mindepth 1 -print -quit)" ] \
+        && printf empty || printf occupied)"
+  fi
+
+  # Validation happens before replacement.  A malformed cache result must fail
+  # loudly while leaving the last known-good mounted snapshot intact.
+  INVALID_IMPECCABLE="$TEST_HOME/impeccable-cache/invalid"
+  mkdir -p "$INVALID_IMPECCABLE/reference"
+  if "$MOUNT_IMPECCABLE" "$INVALID_IMPECCABLE" >/dev/null 2>&1; then
+    echo "FAIL: an Impeccable source without a regular SKILL.md was accepted"
+    fail=$((fail + 1))
+  else
+    echo "ok: an Impeccable source without a regular SKILL.md is rejected"
+    pass=$((pass + 1))
+  fi
+  assert_equals "an invalid source preserves the last known-good mount" \
+    "cache changed later" "$(cat "$IMPECCABLE_MOUNT/reference/playbook.md")"
+
+  assert_bad_identity_preserves_mount() {
+    local case_name="$1" bad_source="$2" name_line="$3" version_line="$4"
+    local preserved_playbook
+    write_codex_impeccable_fixture "$bad_source" "$name_line" "$version_line"
+    if "$MOUNT_IMPECCABLE" "$bad_source" >/dev/null 2>&1; then
+      echo "FAIL: $case_name was accepted as a Codex Impeccable source"
+      fail=$((fail + 1))
+      preserved_playbook="$([ -f "$IMPECCABLE_MOUNT/reference/playbook.md" ] \
+        && cat "$IMPECCABLE_MOUNT/reference/playbook.md" || printf missing)"
+      "$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" >/dev/null 2>&1 || true
+    else
+      echo "ok: $case_name is rejected before replacement"
+      pass=$((pass + 1))
+      preserved_playbook="$([ -f "$IMPECCABLE_MOUNT/reference/playbook.md" ] \
+        && cat "$IMPECCABLE_MOUNT/reference/playbook.md" || printf missing)"
+    fi
+    assert_equals "$case_name preserves the last known-good mount" \
+      "cache changed later" "$preserved_playbook"
+  }
+
+  assert_bad_identity_preserves_mount \
+    "a Codex skill with no name" \
+    "$TEST_HOME/codex-plugin-cache/impeccable/no-name/skills/impeccable" \
+    "" "version: 1.2.3"
+  assert_bad_identity_preserves_mount \
+    "a Codex skill with the wrong name" \
+    "$TEST_HOME/codex-plugin-cache/impeccable/wrong-name/skills/impeccable" \
+    "name: impeccable-helper" "version: 1.2.3"
+  assert_bad_identity_preserves_mount \
+    "a Codex skill with no version" \
+    "$TEST_HOME/codex-plugin-cache/impeccable/no-version/skills/impeccable" \
+    "name: impeccable" ""
+  assert_bad_identity_preserves_mount \
+    "a Codex skill with a non-version label" \
+    "$TEST_HOME/codex-plugin-cache/impeccable/bad-version/skills/impeccable" \
+    "name: impeccable" "version: latest"
+
+  # A provider-wrong artifact is more dangerous than an incomplete one: it has
+  # the expected skill and all three references, so a structural-only check
+  # would publish commands and paths that are valid in Claude but dead in Codex.
+  CLAUDE_IMPECCABLE="$TEST_HOME/claude-plugin-cache/impeccable/1.2.3/skills/impeccable"
+  mkdir -p "$CLAUDE_IMPECCABLE/reference"
+  printf '%s\n' \
+    '---' \
+    'name: impeccable' \
+    'version: 1.2.3' \
+    '---' \
+    'installed-root: .claude/skills/impeccable' \
+    'usage: /impeccable init | /impeccable document | /impeccable audit <target>' \
+    'references: reference/init.md reference/document.md reference/audit.md' \
+    > "$CLAUDE_IMPECCABLE/SKILL.md"
+  printf '%s\n' 'Claude init reference' > "$CLAUDE_IMPECCABLE/reference/init.md"
+  printf '%s\n' 'Claude document reference' > "$CLAUDE_IMPECCABLE/reference/document.md"
+  printf '%s\n' 'Claude audit reference' > "$CLAUDE_IMPECCABLE/reference/audit.md"
+  if "$MOUNT_IMPECCABLE" "$CLAUDE_IMPECCABLE" >/dev/null 2>&1; then
+    echo "FAIL: a structurally complete Claude-compiled Impeccable skill was mounted into Codex"
+    fail=$((fail + 1))
+  else
+    echo "ok: a structurally complete Claude-compiled Impeccable skill is rejected"
+    pass=$((pass + 1))
+  fi
+  assert_equals "provider rejection preserves the last known-good Codex mount" \
+    "cache changed later" "$(cat "$IMPECCABLE_MOUNT/reference/playbook.md")"
+
+  INCOMPLETE_CODEX_IMPECCABLE="$TEST_HOME/codex-plugin-cache/impeccable/incomplete/skills/impeccable"
+  write_codex_impeccable_fixture "$INCOMPLETE_CODEX_IMPECCABLE" \
+    'name: impeccable' 'version: 1.2.3'
+  mv "$INCOMPLETE_CODEX_IMPECCABLE/reference/audit.md" \
+    "$INCOMPLETE_CODEX_IMPECCABLE/audit-reference-omitted"
+  if "$MOUNT_IMPECCABLE" "$INCOMPLETE_CODEX_IMPECCABLE" >/dev/null 2>&1; then
+    echo "FAIL: a Codex Impeccable source missing its audit reference was accepted"
+    fail=$((fail + 1))
+  else
+    echo "ok: a Codex Impeccable source missing a required argument reference is rejected"
+    pass=$((pass + 1))
+  fi
+  assert_equals "incomplete-reference rejection preserves the last known-good Codex mount" \
+    "cache changed later" "$(cat "$IMPECCABLE_MOUNT/reference/playbook.md")"
+
+  LINKED_CODEX_IMPECCABLE="$TEST_HOME/codex-plugin-cache/impeccable/linked/skills/impeccable"
+  write_codex_impeccable_fixture "$LINKED_CODEX_IMPECCABLE" \
+    'name: impeccable' 'version: 1.2.3'
+  ln -s "$LINKED_CODEX_IMPECCABLE/reference/audit.md" \
+    "$LINKED_CODEX_IMPECCABLE/reference/cache-pointer.md"
+  if "$MOUNT_IMPECCABLE" "$LINKED_CODEX_IMPECCABLE" >/dev/null 2>&1; then
+    linked_mount_result="$([ ! -L "$IMPECCABLE_MOUNT/reference/cache-pointer.md" ] && printf dereferenced || printf pointer)"
+    assert_equals "a source link can mount only when it becomes independent copied data" \
+      "dereferenced" "$linked_mount_result"
+    if ! "$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" >/dev/null 2>&1; then
+      echo "FAIL: the known-good Codex mount could not be restored after the link case"
+      fail=$((fail + 1))
+    fi
+  else
+    echo "ok: a Codex source carrying a cache pointer is rejected before replacement"
+    pass=$((pass + 1))
+  fi
+  assert_equals "a source link never replaces the last known-good Codex mount with a pointer" \
+    "absent" "$([ ! -e "$IMPECCABLE_MOUNT/reference/cache-pointer.md" ] && printf absent || printf present)"
+
+  if "$MOUNT_IMPECCABLE" "$IMPECCABLE_MOUNT" >/dev/null 2>&1; then
+    echo "FAIL: the mount accepted its own destination as the cache source"
+    fail=$((fail + 1))
+  else
+    echo "ok: the mount rejects its own destination as the cache source"
+    pass=$((pass + 1))
+  fi
+  assert_equals "rejecting a self-source does not consume the mounted copy" \
+    "cache changed later" "$(cat "$IMPECCABLE_MOUNT/reference/playbook.md")"
+else
+  echo "FAIL: the Codex Impeccable mount rejected a valid source — ${mount_report:-<empty>}"
+  fail=$((fail + 1))
+fi
+
+if [ ! -x "$MOUNT_IMPECCABLE" ]; then
+  # The primary existence case above already reports the missing helper.  Do
+  # not misreport that absence as successful arity validation too.
+  echo "FAIL: mount arity could not be checked because the helper is not executable"
+  fail=$((fail + 1))
+elif "$MOUNT_IMPECCABLE" >/dev/null 2>&1 \
+  || "$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" unexpected >/dev/null 2>&1; then
+  echo "FAIL: the Codex Impeccable mount accepted an argument count other than one"
+  fail=$((fail + 1))
+else
+  echo "ok: the Codex Impeccable mount requires exactly one source argument"
+  pass=$((pass + 1))
+fi
+
 # --- Integration: the env var the skills instruct is the one hooks look up ---
 export CLAUDE_CODE_SESSION_ID="$SESSION"
 bash -c 'oso-state --session "${CLAUDE_CODE_SESSION_ID}" set mode=plan verify_green=false'

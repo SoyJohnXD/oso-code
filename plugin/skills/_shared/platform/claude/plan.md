@@ -59,6 +59,9 @@ The neutral body names each one by role; here they carry the plugin prefix, and 
 | the debt-sweep judge | `oso-code:debt-sweep` | the Skill tool; its frontmatter is what forks it |
 | the triage judge | `oso-code:triage` | the Skill tool; its frontmatter is what forks it |
 | the security-pass judge | `oso-code:security-pass` | the Skill tool; its frontmatter is what forks it |
-| the Impeccable skill | `impeccable:impeccable` | the Skill tool |
 
 The three delegates the body names — `oso-applier`, `oso-verifier`, `oso-integrator` — are agents, not skills: reach them with the Agent tool, under the wait rule above. An applier has no Skill tool of its own, which is why §6 step 2 hands it Impeccable's files as PATHS to read rather than a skill to invoke.
+
+## Front-surface binding
+
+When `../../front-surface.md`'s trigger fires, READ `front-surface.md` beside this file NOW. It is the single Claude Code binding for Impeccable's invocation, package-version record, agent route and absence remedy; this mode supplies only the PLAN wiring indexed by the neutral matrix.

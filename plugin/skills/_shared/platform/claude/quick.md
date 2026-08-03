@@ -22,6 +22,9 @@ The neutral body names each one by role; here they carry the plugin prefix, and 
 | the DEBUG mode | `oso-code:debug` | the operator invokes it — a mode is never model-invoked |
 | the quality-pass judge | `oso-code:quality-pass` | the Skill tool |
 | the security-pass judge | `oso-code:security-pass` | the Skill tool; its frontmatter is what forks it |
-| the Impeccable skill | `impeccable:impeccable` | the Skill tool |
 
 The delegate the close names — `oso-applier` — is an agent, not a skill: reach it with the Agent tool.
+
+## Front-surface binding
+
+When `../../front-surface.md`'s trigger fires, READ `front-surface.md` beside this file NOW. It is the single Claude Code binding for Impeccable's invocation, package-version record, agent route and absence remedy; this mode supplies only the QUICK wiring indexed by the neutral matrix.
