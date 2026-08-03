@@ -168,17 +168,18 @@ Three properties of the amendment log these files replace are facts to carry for
 - [0094](decisions/0094-codex-baseline-and-minimum-version.md) — The verified Codex baseline, and the minimum version the harness supports
 - [0095](decisions/0095-runtime-state-keyed-by-repository.md) — Runtime state is keyed by the repository, and a gate arms on an agent marker
 
-**2026-08-03 — Codex host adapter and parity contract (this change) · released 0.18.0**
+**2026-08-03 — Codex host adapter, parity contract, and config ownership · released 0.18.0**
 
 - [0096](decisions/0096-claude-and-codex-are-first-class-host-adapters.md) — Claude Code and Codex are first-class host adapters
 - [0097](decisions/0097-codex-parity-is-a-release-ledger.md) — Codex parity is a release ledger
+- [0098](decisions/0098-codex-config-ownership-is-per-leaf.md) — Codex configuration ownership is per leaf inside shared tables
 
 ## Foundational decisions
 
 | Decision | Choice | Rationale |
 |---|---|---|
 | Platform | Claude Code and Codex as first-class adapters over neutral behavioral bodies (ADR-0096) | One harness contract; host tools, lifecycle and paths stay in their own bindings |
-| Distribution | One release: a native Claude plugin plus a Codex skills plugin and installer-owned roles, hooks, config and MCP wiring (ADR-0096) | Codex's plugin schema cannot carry or pre-trust every runtime surface; the installer verifies and manages those surfaces explicitly |
+| Distribution | One release: a native Claude plugin plus a Codex skills plugin and installer-owned roles, hooks, bounded config leaves and MCP wiring (ADR-0096, ADR-0098) | Codex's plugin schema cannot carry or pre-trust every runtime surface; the installer verifies its own leaves without annexing shared host tables |
 | Plan state | Engram only — no files inside project repos | User preference: clean projects; accepts per-machine tradeoff |
 | Enforcement | Native Plan Mode plus host approval adapter, state gates and prompt guidance (ADR-0096) | Runtime gates read state; Codex approval reads only a versioned marker and exact tokens to drive bounded state transitions |
 | Repos | This monorepo; legacy repos harvested then archived | Atomic versioning of rubric + gate + skill |

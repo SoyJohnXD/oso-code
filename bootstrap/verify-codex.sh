@@ -5,6 +5,8 @@ set -o pipefail
 
 CONFIG_MARKER_START="# oso-code:start"
 CONFIG_MARKER_END="# oso-code:end"
+FEATURE_MARKER_START="# oso-code:features:start"
+FEATURE_MARKER_END="# oso-code:features:end"
 GLOBAL_MARKER_START="<!-- oso-code:start -->"
 GLOBAL_MARKER_END="<!-- oso-code:end -->"
 
@@ -168,7 +170,7 @@ marketplace_payload_status() {
 }
 
 config_region_status() {
-  local installed expected
+  local installed expected feature_status=0
   [ -f "$CONFIG_FILE" ] || { printf missing; return; }
   if ! installed="$(awk -v action=extract -v require_region=1 \
       -v start_marker="$CONFIG_MARKER_START" \
@@ -178,7 +180,17 @@ config_region_status() {
     return
   fi
   expected="$(render_codex_managed_config "$HOME" "$RUNTIME_ROOT")"
-  if [ "$installed" = "$expected" ]; then printf valid; else printf divergent; fi
+  [ "$installed" = "$expected" ] || { printf divergent; return; }
+  codex_managed_features_region_status "$CONFIG_FILE" \
+    "$SCRIPT_DIR/lib/toml-regions.awk" \
+    "$FEATURE_MARKER_START" "$FEATURE_MARKER_END" || feature_status=$?
+  case "$feature_status" in
+    0) printf valid ;;
+    1) printf missing-features ;;
+    2) printf malformed-features ;;
+    3) printf divergent-features ;;
+    *) printf feature-check-error-%s "$feature_status" ;;
+  esac
 }
 
 global_guidance_status() {

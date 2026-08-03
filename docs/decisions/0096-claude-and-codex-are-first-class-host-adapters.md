@@ -14,7 +14,7 @@ Claude Code and Codex are two first-class host adapters over one harness contrac
 The release remains one version, but distribution has two shapes:
 
 - Claude Code receives the existing plugin, including its native agents and hooks.
-- Codex receives a plugin containing the eight skills through a private local marketplace. `install-codex.sh` installs the surfaces its plugin schema cannot carry safely: seven role TOMLs, release-hashed user hooks and runtime commands, the managed `config.toml` region, the bounded global `AGENTS.md` block, MCP wiring and the provider-correct Impeccable copy.
+- Codex receives a plugin containing the eight skills through a private local marketplace. `install-codex.sh` installs the surfaces its plugin schema cannot carry safely: seven role TOMLs, release-hashed user hooks and runtime commands, bounded `config.toml` ownership blocks (narrowed to leaf ownership inside shared tables by ADR-0098), the bounded global `AGENTS.md` block, MCP wiring and the provider-correct Impeccable copy.
 
 That split is a platform boundary, not a reduced contract. Codex's package cannot bundle agents or hooks and cannot pre-authorize user hooks, so claiming that the plugin alone installs the rail would describe a gate that does not run. The installer verifies published bytes and the operator reviews hook trust in Codex. The exact package-level difference and every behavioral degradation live in the parity ledger required by ADR-0097.
 

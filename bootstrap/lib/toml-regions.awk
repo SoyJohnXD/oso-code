@@ -5,6 +5,11 @@
 #   action=extract: start_marker, end_marker; require_region=1 rejects zero regions
 #   action=split: root_file, sections_file
 #   action=root-symbols: no extra variables; prints root keys and table headers
+#   action=features-strip: feature_start_marker, feature_end_marker; validates
+#     that a single mergeable [features] table owns the optional region, removes
+#     the region, and rejects oso-owned keys outside it
+#   action=features-merge: feature_file; inserts that file immediately after an
+#     existing [features] header, or creates the table at EOF
 #
 # It tracks multiline strings plus array/inline-table depth. A marker-looking
 # line inside operator text is data, not installer ownership; a table-looking
@@ -55,15 +60,101 @@ function scan_root(text, length_, i, c, triple) {
   }
 }
 
+function compact_header(text, value) {
+  value = text
+  sub(/[[:space:]]*#.*/, "", value)
+  gsub(/[[:space:]]/, "", value)
+  return value
+}
+
+function is_features_header(text) {
+  return compact_header(text) == "[features]"
+}
+
+function is_features_shape(text, value) {
+  value = compact_header(text)
+  return value ~ /^\[\[?features(\]|[.]|$)/ ||
+         value ~ /^\[\[?"features"(\]|[.]|$)/ ||
+         value ~ /^\[\[?\047features\047(\]|[.]|$)/
+}
+
+function is_owned_feature_key(text, value) {
+  value = text
+  sub(/[[:space:]]*#.*/, "", value)
+  return value ~ /^[[:space:]]*(hooks|multi_agent)[[:space:]]*([.=])/ ||
+         value ~ /^[[:space:]]*"(hooks|multi_agent)"[[:space:]]*([.=])/ ||
+         value ~ /^[[:space:]]*\047(hooks|multi_agent)\047[[:space:]]*([.=])/
+}
+
+function is_root_features_key(text, value) {
+  value = text
+  sub(/[[:space:]]*#.*/, "", value)
+  return value ~ /^[[:space:]]*features[[:space:]]*([.=])/ ||
+         value ~ /^[[:space:]]*"features"[[:space:]]*([.=])/ ||
+         value ~ /^[[:space:]]*\047features\047[[:space:]]*([.=])/
+}
+
+function emit_feature_file(line) {
+  while ((getline line < feature_file) > 0) print line
+  close(feature_file)
+}
+
 BEGIN {
   dq = "\""
   sq = sprintf("%c", 39)
   bs = "\\"
-  if (action != "strip" && action != "extract" && action != "split" && action != "root-symbols") exit 64
+  if (action != "strip" && action != "extract" && action != "split" &&
+      action != "root-symbols" && action != "features-strip" &&
+      action != "features-merge") exit 64
 }
 
 {
   at_root = string_mode == "" && array_depth == 0 && brace_depth == 0
+
+  if (action == "features-strip" || action == "features-merge") {
+    if (action == "features-strip" && at_root && $0 == feature_start_marker) {
+      if (feature_section != "features" || feature_inside)
+        feature_malformed = 1
+      feature_inside = 1
+      feature_seen_start++
+      next
+    }
+    if (action == "features-strip" && at_root && $0 == feature_end_marker) {
+      if (feature_section != "features" || !feature_inside)
+        feature_malformed = 1
+      feature_inside = 0
+      feature_seen_end++
+      next
+    }
+    if (action == "features-strip" && at_root &&
+        $0 ~ /^[[:space:]]*#[[:space:]]*oso-code:features:(start|end)/) {
+      feature_malformed = 1
+      next
+    }
+    if (at_root && $0 ~ /^[[:space:]]*\[/) {
+      if (is_features_header($0)) {
+        feature_tables++
+        feature_section = "features"
+        if (action == "features-merge") {
+          print
+          emit_feature_file()
+          feature_inserted = 1
+          next
+        }
+      } else {
+        if (is_features_shape($0)) feature_malformed = 1
+        feature_section = "other"
+      }
+    } else if (at_root && feature_section == "" && is_root_features_key($0)) {
+      feature_malformed = 1
+    } else if (at_root && feature_section == "features" && !feature_inside &&
+               is_owned_feature_key($0)) {
+      feature_malformed = 1
+    }
+    if (!feature_inside) print
+    scan_root($0)
+    next
+  }
 
   if (action == "strip" || action == "extract") {
     if (at_root && $0 == start_marker) {
@@ -107,4 +198,16 @@ END {
   if ((action == "strip" || action == "extract") &&
       (malformed || inside || seen_start != seen_end || seen_start > 1 ||
        (require_region && seen_start != 1))) exit 5
+  if (action == "features-strip" &&
+      (feature_malformed || feature_inside ||
+       feature_seen_start != feature_seen_end || feature_seen_start > 1 ||
+       feature_tables > 1 || (feature_seen_start && feature_tables != 1))) exit 6
+  if (action == "features-merge") {
+    if (feature_malformed || feature_tables > 1 || feature_inserted > 1) exit 6
+    if (!feature_inserted) {
+      if (NR) print ""
+      print "[features]"
+      emit_feature_file()
+    }
+  }
 }

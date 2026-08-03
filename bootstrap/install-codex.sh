@@ -8,6 +8,8 @@ set -euo pipefail
 SUPPORTED_CODEX_VERSION=0.146.0
 CONFIG_MARKER_START="# oso-code:start"
 CONFIG_MARKER_END="# oso-code:end"
+FEATURE_MARKER_START="# oso-code:features:start"
+FEATURE_MARKER_END="# oso-code:features:end"
 GLOBAL_MARKER_START="<!-- oso-code:start -->"
 GLOBAL_MARKER_END="<!-- oso-code:end -->"
 
@@ -154,6 +156,26 @@ strip_toml_managed_region() {
     -f "$SCRIPT_DIR/lib/toml-regions.awk" "$1"
 }
 
+strip_toml_managed_features() {
+  awk -v action=features-strip \
+    -v feature_start_marker="$FEATURE_MARKER_START" \
+    -v feature_end_marker="$FEATURE_MARKER_END" \
+    -f "$SCRIPT_DIR/lib/toml-regions.awk" "$1"
+}
+
+validate_toml_managed_features() {
+  local status=0
+  codex_managed_features_region_status "$1" \
+    "$SCRIPT_DIR/lib/toml-regions.awk" \
+    "$FEATURE_MARKER_START" "$FEATURE_MARKER_END" || status=$?
+  case "$status" in
+    0|1) return 0 ;;
+    2) return 2 ;;
+    3) return 3 ;;
+    *) return "$status" ;;
+  esac
+}
+
 toml_root_symbols() {
   awk -v action=root-symbols -f "$SCRIPT_DIR/lib/toml-regions.awk" "$1"
 }
@@ -162,30 +184,43 @@ preflight_config() {
   [ -e "$CONFIG_FILE" ] && [ ! -f "$CONFIG_FILE" ] &&
     fail "Codex config is not a regular file: $CONFIG_FILE"
   [ -f "$CONFIG_FILE" ] || return 0
-  local clean symbols
+  local clean feature_clean symbols
   clean="$(mktemp "${TMPDIR:-/tmp}/oso-codex-config.XXXXXX")"
+  feature_clean="$(mktemp "${TMPDIR:-/tmp}/oso-codex-features.XXXXXX")"
   symbols="$(mktemp "${TMPDIR:-/tmp}/oso-codex-symbols.XXXXXX")"
   if ! strip_toml_managed_region "$CONFIG_FILE" "$CONFIG_MARKER_START" "$CONFIG_MARKER_END" > "$clean"; then
-    rm -f "$clean" "$symbols"
+    rm -f "$clean" "$feature_clean" "$symbols"
     fail "Codex config has malformed oso-code markers"
   fi
-  if ! toml_root_symbols "$clean" > "$symbols"; then
-    rm -f "$clean" "$symbols"
+  local feature_status=0
+  validate_toml_managed_features "$clean" || feature_status=$?
+  if [ "$feature_status" -ne 0 ]; then
+    rm -f "$clean" "$feature_clean" "$symbols"
+    if [ "$feature_status" -eq 3 ]; then
+      fail "Codex config has a divergent oso-code features region; it must contain only the published hooks and multi_agent values"
+    fi
+    fail "Codex config has conflicting features ownership or malformed oso-code feature markers"
+  fi
+  if ! strip_toml_managed_features "$clean" > "$feature_clean"; then
+    rm -f "$clean" "$feature_clean" "$symbols"
+    fail "could not inspect the existing Codex features table safely"
+  fi
+  if ! toml_root_symbols "$feature_clean" > "$symbols"; then
+    rm -f "$clean" "$feature_clean" "$symbols"
     fail "could not inspect the existing TOML config safely"
   fi
   if awk '
     /^[[:space:]]*default_permissions[[:space:]]*=/ { found = 1 }
-    /^\[features\][[:space:]]*$/ ||
     /^\[agents\][[:space:]]*$/ ||
     /^\[shell_environment_policy\.set\][[:space:]]*$/ ||
     /^\[mcp_servers\.(context7|fallow)\][[:space:]]*$/ ||
     /^\[permissions\.oso(\.|\])[^\r\n]*$/ { found = 1 }
     END { exit found ? 0 : 1 }
   ' "$symbols"; then
-    rm -f "$clean" "$symbols"
+    rm -f "$clean" "$feature_clean" "$symbols"
     fail "Codex config already defines an oso-code-owned table outside the managed region"
   fi
-  rm -f "$clean" "$symbols"
+  rm -f "$clean" "$feature_clean" "$symbols"
 }
 
 preflight_global_agents() {
@@ -488,20 +523,46 @@ split_toml_root_sections() {
 }
 
 write_config_region() {
-  local clean root_values sections temp validation_home
+  local clean feature_clean root_values sections merged_sections feature_block temp validation_home
   mkdir -p "$CODEX_HOME"
   clean="$(mktemp "$CODEX_HOME/.config.clean.XXXXXX")"
+  feature_clean="$(mktemp "$CODEX_HOME/.config.features-clean.XXXXXX")"
   root_values="$(mktemp "$CODEX_HOME/.config.root.XXXXXX")"
   sections="$(mktemp "$CODEX_HOME/.config.sections.XXXXXX")"
+  merged_sections="$(mktemp "$CODEX_HOME/.config.sections-merged.XXXXXX")"
+  feature_block="$(mktemp "$CODEX_HOME/.config.feature-block.XXXXXX")"
   temp="$(mktemp "$CODEX_HOME/.config.new.XXXXXX")"
   if [ -f "$CONFIG_FILE" ]; then
     strip_toml_managed_region "$CONFIG_FILE" "$CONFIG_MARKER_START" "$CONFIG_MARKER_END" > "$clean"
   else
     : > "$clean"
   fi
-  if ! split_toml_root_sections "$clean" "$root_values" "$sections"; then
-    rm -f "$clean" "$root_values" "$sections" "$temp"
+  local feature_status=0
+  validate_toml_managed_features "$clean" || feature_status=$?
+  if [ "$feature_status" -ne 0 ]; then
+    rm -f "$clean" "$feature_clean" "$root_values" "$sections" "$merged_sections" "$feature_block" "$temp"
+    if [ "$feature_status" -eq 3 ]; then
+      fail "Codex config changed to a divergent oso-code features region during installation"
+    fi
+    fail "Codex config changed to malformed features ownership during installation"
+  fi
+  if ! strip_toml_managed_features "$clean" > "$feature_clean"; then
+    rm -f "$clean" "$feature_clean" "$root_values" "$sections" "$merged_sections" "$feature_block" "$temp"
+    fail "could not merge the existing Codex features table safely"
+  fi
+  if ! split_toml_root_sections "$feature_clean" "$root_values" "$sections"; then
+    rm -f "$clean" "$feature_clean" "$root_values" "$sections" "$merged_sections" "$feature_block" "$temp"
     fail "could not split the existing TOML config safely"
+  fi
+  {
+    printf '%s\n' "$FEATURE_MARKER_START"
+    render_codex_managed_features
+    printf '%s\n' "$FEATURE_MARKER_END"
+  } > "$feature_block"
+  if ! awk -v action=features-merge -v feature_file="$feature_block" \
+      -f "$SCRIPT_DIR/lib/toml-regions.awk" "$sections" > "$merged_sections"; then
+    rm -f "$clean" "$feature_clean" "$root_values" "$sections" "$merged_sections" "$feature_block" "$temp"
+    fail "could not write the merged Codex features table safely"
   fi
   {
     awk 'NF { last = NR } { lines[NR] = $0 } END { for (i = 1; i <= last; i++) print lines[i] }' "$root_values"
@@ -509,20 +570,20 @@ write_config_region() {
     printf '%s\n' "$CONFIG_MARKER_START"
     render_codex_managed_config "$HOME" "$RUNTIME_ROOT"
     printf '%s\n' "$CONFIG_MARKER_END"
-    [ -s "$sections" ] && printf '\n'
-    cat "$sections"
+    [ -s "$merged_sections" ] && printf '\n'
+    cat "$merged_sections"
   } > "$temp"
   validation_home="$(mktemp -d "$CODEX_HOME/.validate.XXXXXX")"
   cp "$temp" "$validation_home/config.toml"
   if ! CODEX_HOME="$validation_home" codex sandbox -P oso -- /bin/true >/dev/null; then
     rm -rf "$validation_home"
-    rm -f "$clean" "$root_values" "$sections" "$temp"
+    rm -f "$clean" "$feature_clean" "$root_values" "$sections" "$merged_sections" "$feature_block" "$temp"
     fail "Codex rejected the merged config; the original config is unchanged"
   fi
   rm -rf "$validation_home"
   chmod 600 "$temp"
   mv "$temp" "$CONFIG_FILE"
-  rm -f "$clean" "$root_values" "$sections"
+  rm -f "$clean" "$feature_clean" "$root_values" "$sections" "$merged_sections" "$feature_block"
   if ! command -v fallow-mcp >/dev/null 2>&1; then
     warn "fallow-mcp is not installed; debt-sweep will use its rubric-only fallback"
   fi

@@ -4976,6 +4976,24 @@ write_codex_install_personal_state() {
     '}' > "$fixture_home/.agents/plugins/marketplace.json"
 }
 
+# Codex writes this unrelated feature on a normal authenticated installation.
+# oso-code owns two keys in the same TOML table, not the whole table: the merge
+# must retain the operator key while still producing one valid [features]
+# declaration. Keep this fixture free of marker-looking prose so exact textual
+# counts below are also exact TOML counts.
+write_codex_install_existing_features_state() {
+  local fixture_home="$1"
+  mkdir -p "$fixture_home/.codex"
+  printf '%s\n' \
+    'model = "operator-model"' \
+    '' \
+    '[features]' \
+    'prevent_idle_sleep = true' \
+    '' \
+    '[projects."/workspace/personal"]' \
+    'trust_level = "trusted"' > "$fixture_home/.codex/config.toml"
+}
+
 # Results land in CODEX_INSTALL_RC and CODEX_INSTALL_LOG. Keeping the call out of
 # a command substitution matters: the installer may replace whole directories,
 # and every assertion must observe the same fixture tree it ran against.
@@ -5291,6 +5309,131 @@ assert_equals "Codex parity no longer calls the S11 state identity a placeholder
   "0" "$(grep -c 'PLACEHOLDER (the session id, not the identity)' "$REPO_ROOT/docs/parity-codex.md" || true)"
 assert_equals "Codex parity no longer says the S11 runtime installer is deferred" \
   "0" "$(grep -Ec 'later installer slice|installer slice is what sets' "$REPO_ROOT/docs/parity-codex.md" || true)"
+
+# A login-only Codex home already carries [features].prevent_idle_sleep. That
+# unrelated key must not make oso-code reject the whole table, and the two keys
+# oso-code does own must be incorporated without emitting a second TOML table.
+CODEX_EXISTING_FEATURES_HOME="$TEST_HOME/codex-existing-features-home"
+write_codex_install_existing_features_state "$CODEX_EXISTING_FEATURES_HOME"
+printf '0.146.0\n' > "$CODEX_INSTALL_VERSION"
+run_codex_install "$CODEX_EXISTING_FEATURES_HOME"
+codex_existing_features_outcome="$CODEX_INSTALL_RC"
+if [ "$CODEX_INSTALL_RC" -ne 0 ]; then
+  codex_existing_features_outcome="$CODEX_INSTALL_RC ($CODEX_INSTALL_LOG)"
+fi
+assert_equals "an existing unrelated Codex feature does not block installation" \
+  "0" "$codex_existing_features_outcome"
+CODEX_EXISTING_FEATURES_CONFIG="$CODEX_EXISTING_FEATURES_HOME/.codex/config.toml"
+assert_equals "the existing features table is emitted exactly once" \
+  "1" "$(grep -Fxc '[features]' "$CODEX_EXISTING_FEATURES_CONFIG" || true)"
+assert_equals "the installer preserves prevent_idle_sleep exactly once" \
+  "1" "$(grep -Fxc 'prevent_idle_sleep = true' "$CODEX_EXISTING_FEATURES_CONFIG" || true)"
+assert_equals "the installer manages hooks exactly once beside the existing feature" \
+  "1" "$(grep -Fxc 'hooks = true' "$CODEX_EXISTING_FEATURES_CONFIG" || true)"
+assert_equals "the installer manages multi_agent exactly once beside the existing feature" \
+  "1" "$(grep -Fxc 'multi_agent = true' "$CODEX_EXISTING_FEATURES_CONFIG" || true)"
+feature_marker_placement="$(awk '
+  $0 == "[features]" { feature_tables++; in_features = 1; next }
+  in_features && /^\[/ { in_features = 0 }
+  $0 == "# oso-code:features:start" {
+    feature_starts++
+    if (in_features) start_inside++
+    in_leaf = 1
+  }
+  $0 == "# oso-code:features:end" {
+    feature_ends++
+    if (in_features && in_leaf) end_inside++
+    in_leaf = 0
+  }
+  $0 == "prevent_idle_sleep = true" && in_leaf { adopted_operator_key++ }
+  END {
+    if (feature_tables == 1 && feature_starts == 1 && feature_ends == 1 &&
+        start_inside == 1 && end_inside == 1 && adopted_operator_key == 0) {
+      print "bounded-inside-features"
+    } else {
+      print "misplaced-or-duplicated"
+    }
+  }
+' "$CODEX_EXISTING_FEATURES_CONFIG")"
+assert_equals "the leaf ownership block is bounded once inside [features] without annexing the operator key" \
+  "bounded-inside-features" "$feature_marker_placement"
+
+codex_existing_features_first="$(install_file_snapshot "$CODEX_EXISTING_FEATURES_HOME")"
+run_codex_install "$CODEX_EXISTING_FEATURES_HOME"
+codex_existing_features_second="$(install_file_snapshot "$CODEX_EXISTING_FEATURES_HOME")"
+assert_equals "the second install with an existing unrelated feature also completes" \
+  "0" "$CODEX_INSTALL_RC"
+assert_equals "a second install with an existing unrelated feature is byte-idempotent" \
+  "$codex_existing_features_first" "$codex_existing_features_second"
+
+# The merge participates in the same transaction as every other destination.
+# A failure after the last materialization boundary must restore the original
+# operator-owned [features] table, not leave a half-adopted table behind.
+CODEX_EXISTING_FEATURES_ROLLBACK_HOME="$TEST_HOME/codex-existing-features-rollback-home"
+write_codex_install_existing_features_state "$CODEX_EXISTING_FEATURES_ROLLBACK_HOME"
+codex_existing_features_rollback_before="$(install_file_snapshot "$CODEX_EXISTING_FEATURES_ROLLBACK_HOME")"
+run_codex_install "$CODEX_EXISTING_FEATURES_ROLLBACK_HOME" after-impeccable
+codex_existing_features_rollback_after="$(install_file_snapshot "$CODEX_EXISTING_FEATURES_ROLLBACK_HOME")"
+assert_equals "a late failure after merging an existing features table exits nonzero" \
+  "nonzero" "$([ "$CODEX_INSTALL_RC" -ne 0 ] && echo nonzero || echo zero)"
+assert_equals "the existing-features rollback reaches the injected late boundary" \
+  "after-impeccable" "$(codex_install_log_class after-impeccable after-impeccable)"
+assert_equals "a late failure restores the original existing features table byte-for-byte" \
+  "$codex_existing_features_rollback_before" "$codex_existing_features_rollback_after"
+
+# Table ownership is deliberately narrower than key ownership. An unrelated
+# key is preserved above, but either oso-owned key outside the managed region is
+# still an ambiguity and must fail before any external integration is touched.
+for codex_owned_feature in hooks multi_agent; do
+  CODEX_FEATURE_CONFLICT_HOME="$TEST_HOME/codex-${codex_owned_feature}-conflict-home"
+  write_codex_install_existing_features_state "$CODEX_FEATURE_CONFLICT_HOME"
+  awk -v owned_feature="$codex_owned_feature = false" '
+    { print }
+    $0 == "prevent_idle_sleep = true" { print owned_feature }
+  ' "$CODEX_FEATURE_CONFLICT_HOME/.codex/config.toml" \
+    > "$CODEX_FEATURE_CONFLICT_HOME/.codex/config.toml.tmp"
+  mv "$CODEX_FEATURE_CONFLICT_HOME/.codex/config.toml.tmp" \
+    "$CODEX_FEATURE_CONFLICT_HOME/.codex/config.toml"
+  codex_feature_conflict_before="$(install_file_snapshot "$CODEX_FEATURE_CONFLICT_HOME")"
+  run_codex_install "$CODEX_FEATURE_CONFLICT_HOME"
+  codex_feature_conflict_after="$(install_file_snapshot "$CODEX_FEATURE_CONFLICT_HOME")"
+  assert_equals "an external $codex_owned_feature feature conflicts with oso ownership" \
+    "nonzero" "$([ "$CODEX_INSTALL_RC" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "an external $codex_owned_feature conflict reaches no plugin or Engram client" \
+    "0" "$(grep -Ec '^codex:plugin|^engram:' "$CODEX_INSTALL_CALLS" || true)"
+  assert_equals "an external $codex_owned_feature conflict leaves every destination byte-identical" \
+    "$codex_feature_conflict_before" "$codex_feature_conflict_after"
+done
+
+# The leaf markers declare ownership of exactly the renderer's two assignments,
+# not arbitrary bytes placed between them. Silently stripping a future Codex key
+# from a stale or hand-edited block would turn the ownership boundary into data
+# loss on reinstall, so a divergent block is a preflight conflict too.
+CODEX_FEATURE_FOREIGN_IN_BLOCK_HOME="$TEST_HOME/codex-feature-foreign-in-block-home"
+write_codex_install_existing_features_state "$CODEX_FEATURE_FOREIGN_IN_BLOCK_HOME"
+awk '
+  $0 == "prevent_idle_sleep = true" {
+    print "# oso-code:features:start"
+    print "hooks = true"
+    print "prevent_idle_sleep = true"
+    print "multi_agent = true"
+    print "# oso-code:features:end"
+    next
+  }
+  { print }
+' "$CODEX_FEATURE_FOREIGN_IN_BLOCK_HOME/.codex/config.toml" \
+  > "$CODEX_FEATURE_FOREIGN_IN_BLOCK_HOME/.codex/config.toml.tmp"
+mv "$CODEX_FEATURE_FOREIGN_IN_BLOCK_HOME/.codex/config.toml.tmp" \
+  "$CODEX_FEATURE_FOREIGN_IN_BLOCK_HOME/.codex/config.toml"
+codex_feature_foreign_in_block_before="$(install_file_snapshot "$CODEX_FEATURE_FOREIGN_IN_BLOCK_HOME")"
+run_codex_install "$CODEX_FEATURE_FOREIGN_IN_BLOCK_HOME"
+codex_feature_foreign_in_block_after="$(install_file_snapshot "$CODEX_FEATURE_FOREIGN_IN_BLOCK_HOME")"
+assert_equals "a foreign feature inside oso's leaf block is rejected" \
+  "nonzero" "$([ "$CODEX_INSTALL_RC" -ne 0 ] && echo nonzero || echo zero)"
+assert_equals "a divergent feature block reaches no plugin or Engram client" \
+  "0" "$(grep -Ec '^codex:plugin|^engram:' "$CODEX_INSTALL_CALLS" || true)"
+assert_equals "a divergent feature block preserves every destination byte-for-byte" \
+  "$codex_feature_foreign_in_block_before" "$codex_feature_foreign_in_block_after"
 
 # A second run must converge byte-for-byte. Calls may repeat; no managed file,
 # personal file or copied payload may accumulate another block or change bytes.

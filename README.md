@@ -57,7 +57,7 @@ Then restart Claude Code.
 
 ### Codex
 
-The Codex path requires git and Node.js/npm. The installer pins the verified floor exactly — Codex `0.146.0`, never `@latest` — and transactionally installs the plugin, rendered user hooks, seven agent roles, managed `config.toml` region, MCP wiring, git gate, and mounted Impeccable skill. It preserves personal `[projects.*]` configuration and backs up every artifact it replaces.
+The Codex path requires git and Node.js/npm. The installer pins the verified floor exactly — Codex `0.146.0`, never `@latest` — and transactionally installs the plugin, rendered user hooks, seven agent roles, bounded `config.toml` ownership blocks, MCP wiring, git gate, and mounted Impeccable skill. It preserves personal `[projects.*]` configuration and unrelated keys in shared tables such as `[features]`, and backs up every artifact it replaces.
 
 ```bash
 bash bootstrap/install-codex.sh
@@ -78,7 +78,7 @@ Daily use:
 Updating later follows the route for the host and artifact tier that changed:
 
 - `claude plugin update oso-code@oso-code` updates the plugin. The marketplace entry's source is `./plugin`, so that subtree is the whole payload — skills, agents, hooks, git-hooks, `oso-state`, the output style, and the `.mcp.json` that carries context7 — and it works from a marketplace install, with no working copy of this repo at all.
-- Codex releases are re-applied with `bash bootstrap/install-codex.sh`: its plugin carries skills only, while the installer owns the user hooks, agents, config region, MCPs, runtime and git gate around it.
+- Codex releases are re-applied with `bash bootstrap/install-codex.sh`: its plugin carries skills only, while the installer owns the user hooks, agents, bounded config blocks, MCPs, runtime and git gate around it.
 - When a release's entry in [CHANGELOG.md](CHANGELOG.md) is marked **Reinstall required**, `bootstrap/` changed and a plugin-only update cannot carry the complete release: pull the repo and re-run the installer for your host.
 
 **Surfaces**: oso-code is installed and verified against the local Claude Code and Codex runtimes. The Codex approval guarantee is specifically its local `Stop` → `UserPromptSubmit` → `PreToolUse` path; hosted or specialized execution surfaces, and `write_stdin` calls against an already-running process, do not cross that complete rail.
