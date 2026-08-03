@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Lints the rules `claude plugin validate --strict` has no opinion on: it does
 # open hooks.json, skill frontmatter and the agents, and fails on a broken one
-# (probed against client 2.1.220), but it never asks what they SAY. Twelve rules
+# (probed against client 2.1.220), but it never asks what they SAY. Thirteen rules
 # hold that ground: a `context: fork` skill declares `background`; the same
 # skill declares an `end with exactly one of:` verdict block; every
 # `oso-code:<name>` the plugin's own prose points at resolves; every call site
@@ -14,8 +14,10 @@
 # hands it; every line that launches oso-integrator names the wave's worktrees,
 # base ref and branch list; every decision under docs/decisions/ says where it
 # landed; every decision a skill cites resolves to one of those files AND is
-# named back by it; and the prose that says how many rules hold this ground says
-# a number the functions below make true. Each rule states its own reason above
+# named back by it; the prose that says how many rules hold this ground says a
+# number the functions below make true; and both hook manifests plus every
+# release-published hook hash exactly match their single source. Each rule states
+# its own reason above
 # it; `background` is the one whose cost is least visible: as of client v2.1.218
 # a fork returns immediately and its verdict arrives in a LATER turn, while every
 # call site in plan/quick/debug reads that verdict in-turn.
@@ -34,8 +36,10 @@ PLUGIN_ROOT="${1:-$(cd "$(dirname "$0")/../plugin" && pwd)}"
 # Five rules below reach outside the plugin tree — the pin scan, the routing
 # file, the decision files, the citations that bind the plugin to them, and the
 # rule count's own prose surfaces — so the repo resolves the same way the default
-# PLUGIN_ROOT does: from this file's own location, never from the argument.
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# PLUGIN_ROOT does. A second argument exists only so tests/hooks-test.sh can run
+# the whole linter against an isolated mutated copy; normal calls omit it and
+# resolve from this file's own location.
+REPO_ROOT="${2:-$(cd "$(dirname "$0")/.." && pwd)}"
 
 violations=0
 
@@ -50,22 +54,34 @@ frontmatter() {
   sed -n '2,/^---$/p' "$file"
 }
 
-# A skill's instructions are no longer one file: SKILL.md binds a platform-neutral
-# body under skills/_shared/bodies/ and, when the skill has host facts, one under
-# skills/_shared/platform/claude/. Four of the rules below read what a skill SAYS
-# rather than what its frontmatter declares, and each of them reads every file the
-# skill binds — scoped to SKILL.md alone they would report clean over a verdict
-# block, an acquisition command or a launch payload that simply moved one file
-# down the reference. The CLAUDE platform body is the only one collected: this
-# linter lints the Claude plugin tree, and codex/ ships its own wrappers outside
-# it. A reference that resolves to no file is dropped rather than scanned, which
-# would leave a rule reading nothing — tests/hooks-test.sh is where the wrapper to
-# body relation is asserted, so a body that went missing fails there, loudly,
-# before any rule here can go quiet over it.
+# A skill's instructions are no longer one file: each host's SKILL.md binds a
+# platform-neutral body under skills/_shared/bodies/ and, when the skill has host
+# facts, one under skills/_shared/platform/<host>/. Four of the rules below read
+# what a skill SAYS rather than what its frontmatter declares, and each of them
+# reads both wrappers plus every body either wrapper binds — scoped to the Claude
+# wrapper alone they would report clean over a forbidden acquisition command or a
+# starved launch payload written into the Codex body. The shared files physically
+# live under the plugin tree until the installer copies them beside the Codex
+# wrappers, so references from either wrapper resolve there for lint. A reference
+# that resolves to no file is dropped rather than scanned, which would leave a
+# rule reading nothing — tests/hooks-test.sh is where the wrapper-to-body relation
+# is asserted, so a body that went missing fails there, loudly, before any rule
+# here can go quiet over it.
 skill_sources() {
-  local skill="$1" reference source
-  printf '%s\n' "$skill"
-  for reference in $({ grep -ohE '_shared/(bodies|platform/claude)/[a-z-]+\.md' "$skill" || true; } \
+  local skill="$1" host="${2:-all}" name wrapper reference source
+  if [ "$host" = all ]; then
+    { skill_sources "$skill" claude; skill_sources "$skill" codex; } | LC_ALL=C sort -u
+    return 0
+  fi
+  name="$(basename "$(dirname "$skill")")"
+  case "$host" in
+    claude) wrapper="$skill" ;;
+    codex) wrapper="$REPO_ROOT/codex/skills/$name/SKILL.md" ;;
+    *) flag "skill_sources was asked for unknown host $host"; return 0 ;;
+  esac
+  [ -f "$wrapper" ] || return 0
+  printf '%s\n' "$wrapper"
+  for reference in $({ grep -ohE '_shared/(bodies|platform/(claude|codex))/[a-z-]+\.md' "$wrapper" || true; } \
       | LC_ALL=C sort -u); do
     source="$PLUGIN_ROOT/skills/$reference"
     if [ -f "$source" ]; then printf '%s\n' "$source"; fi
@@ -108,13 +124,16 @@ own_references() {
 # because debt-sweep writes the phrase inline and lowercase while doubt-pass
 # capitalizes it — both are compliant.
 check_forked_skills_declare_a_verdict_token() {
-  local skill frontmatter_text
+  local skill frontmatter_text host sources
   for skill in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
     [ -f "$skill" ] || continue
     frontmatter_text="$(frontmatter "$skill")"
     printf '%s\n' "$frontmatter_text" | grep -qE '^context:[[:space:]]*fork[[:space:]]*$' || continue
-    grep -qi 'end with exactly one of:' $(skill_sources "$skill") \
-      || flag "${skill#"$PLUGIN_ROOT"/} declares context: fork without an 'end with exactly one of:' verdict block"
+    for host in claude codex; do
+      sources="$(skill_sources "$skill" "$host" | tr '\n' ' ')"
+      [ -n "$sources" ] && grep -qi 'end with exactly one of:' $sources \
+        || flag "${skill#"$PLUGIN_ROOT"/} declares context: fork without an 'end with exactly one of:' verdict block on $host"
+    done
   done
 }
 
@@ -176,30 +195,37 @@ check_impeccable_pin_is_never_a_placeholder() {
 # vocabulary. Decidable both ways: the emitter declares its tokens, and a call
 # site either carries one verbatim or does not.
 check_call_sites_speak_their_emitters_verdict_vocabulary() {
-  local skill emitter tokens skipped_verdicts caller caller_sources skip axis verdicts_that_ran
+  local skill emitter host tokens skipped_verdicts caller caller_sources skip axis verdicts_that_ran
   for skill in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
     [ -f "$skill" ] || continue
     emitter="$(basename "$(dirname "$skill")")"
-    tokens="$(emitter_verdict_tokens "$skill")"
-    [ -n "$tokens" ] || continue
-    skipped_verdicts="$(printf '%s\n' "$tokens" | { grep -F ': skipped' || true; })"
-    for caller in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
-      [ -f "$caller" ] || continue
-      caller_sources="$(skill_sources "$caller" | tr '\n' ' ')"
-      # Bounded on the right so an emitter named `plan` would not collect `oso-code:plan2`.
-      grep -qE "oso-code:$emitter([^A-Za-z0-9_-]|\$)" $caller_sources || continue
-      printf '%s\n' "$tokens" | grep -qFf - $caller_sources \
-        || flag "${caller#"$PLUGIN_ROOT"/} invokes oso-code:$emitter but carries none of its verdict tokens"
-      [ -n "$skipped_verdicts" ] || continue
-      while IFS= read -r skip; do
-        axis="${skip%%:*}"
-        verdicts_that_ran="$(printf '%s\n' "$tokens" \
-          | { grep -F "$axis:" || true; } | { grep -vxF "$skip" || true; })"
-        [ -n "$verdicts_that_ran" ] || continue
-        printf '%s\n' "$verdicts_that_ran" | grep -qFf - $caller_sources || continue
-        grep -qF "$skip" $caller_sources \
-          || flag "${caller#"$PLUGIN_ROOT"/} reads $axis verdicts of oso-code:$emitter but never names \`$skip\`"
-      done <<< "$skipped_verdicts"
+    for host in claude codex; do
+      tokens="$(emitter_verdict_tokens "$skill" "$host")"
+      [ -n "$tokens" ] || continue
+      skipped_verdicts="$(printf '%s\n' "$tokens" | { grep -F ': skipped' || true; })"
+      for caller in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
+        [ -f "$caller" ] || continue
+        caller_sources="$(skill_sources "$caller" "$host" | tr '\n' ' ')"
+        case "$host" in
+          # Bounded on the right so an emitter named `plan` does not collect
+          # `oso-code:plan2`; Codex's flat skill name is a backticked table cell,
+          # which distinguishes it from the path references in every wrapper.
+          claude) grep -qE "oso-code:$emitter([^A-Za-z0-9_-]|\$)" $caller_sources || continue ;;
+          codex) grep -qF "\`$emitter\`" $caller_sources || continue ;;
+        esac
+        printf '%s\n' "$tokens" | grep -qFf - $caller_sources \
+          || flag "${caller#"$PLUGIN_ROOT"/} invokes $emitter on $host but carries none of its verdict tokens"
+        [ -n "$skipped_verdicts" ] || continue
+        while IFS= read -r skip; do
+          axis="${skip%%:*}"
+          verdicts_that_ran="$(printf '%s\n' "$tokens" \
+            | { grep -F "$axis:" || true; } | { grep -vxF "$skip" || true; })"
+          [ -n "$verdicts_that_ran" ] || continue
+          printf '%s\n' "$verdicts_that_ran" | grep -qFf - $caller_sources || continue
+          grep -qF "$skip" $caller_sources \
+            || flag "${caller#"$PLUGIN_ROOT"/} reads $axis verdicts of $emitter on $host but never names \`$skip\`"
+        done <<< "$skipped_verdicts"
+      done
     done
   done
 }
@@ -208,8 +234,8 @@ check_call_sites_speak_their_emitters_verdict_vocabulary() {
 # block sits in the neutral body, since the vocabulary is what BOTH hosts answer
 # in and duplicating it per wrapper is the one thing the split exists to prevent.
 emitter_verdict_tokens() {
-  local skill="$1" source
-  for source in $(skill_sources "$skill"); do
+  local skill="$1" host="${2:-all}" source
+  for source in $(skill_sources "$skill" "$host"); do
     verdict_tokens "$source"
   done
 }
@@ -394,6 +420,7 @@ check_present_tense_prose_names_the_rule_count() {
   case "$declared" in
     5) spelled=five ;; 6) spelled=six ;; 7) spelled=seven ;; 8) spelled=eight ;;
     9) spelled=nine ;; 10) spelled=ten ;; 11) spelled=eleven ;; 12) spelled=twelve ;;
+    13) spelled=thirteen ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -402,6 +429,28 @@ check_present_tense_prose_names_the_rule_count() {
       ''|0|*[!0-9]*) flag "$surface does not name the $spelled rules this linter declares (grep answered ${named:-empty})" ;;
     esac
   done
+}
+
+# A generated artifact that is merely valid can still be the wrong artifact:
+# Claude and Codex hooks.json may each parse while one matcher or command drifted
+# from the table, and a digest calculated during installation would bless whatever
+# bytes happened to arrive. The renderer owns both deterministic comparisons: its
+# manifest check renders both hosts and compares their committed bytes, while its
+# hash check requires exact, ordered coverage and compares current bytes only to
+# the release-published ledger. Keeping this as one linter rule gives every suite
+# invocation the same release boundary without teaching the linter either format.
+check_hook_renders_and_published_hashes_match() {
+  local renderer="$REPO_ROOT/tools/render-hooks-json.sh" report
+  if [ ! -x "$renderer" ]; then
+    flag "tools/render-hooks-json.sh is missing or not executable"
+    return 0
+  fi
+  if ! report="$("$renderer" --repo-root "$REPO_ROOT" --check 2>&1)"; then
+    flag "hook manifests diverge from their table: $(printf '%s' "$report" | tr '\n' ' ')"
+  fi
+  if ! report="$("$renderer" --repo-root "$REPO_ROOT" --check-hashes 2>&1)"; then
+    flag "published hook hashes do not match their exact source set: $(printf '%s' "$report" | tr '\n' ' ')"
+  fi
 }
 
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }
@@ -418,6 +467,7 @@ check_integrator_launches_name_their_payload
 check_every_decision_records_where_it_landed
 check_decision_citations_resolve_and_name_their_citer
 check_present_tense_prose_names_the_rule_count
+check_hook_renders_and_published_hashes_match
 
 if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"

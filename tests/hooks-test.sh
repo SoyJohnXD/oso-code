@@ -41,7 +41,8 @@ run_hook() {
   local hook="$1" input="$2" expected_rc="${3:-0}" expected_stderr="${4:-}"
   local stderr_file="$TEST_HOME/hook-stderr"
   case "$hook" in */*) ;; *) hook="$PLUGIN/hooks/$hook" ;; esac
-  if hook_stdout="$(printf '%s' "$input" | "$hook" 2>"$stderr_file")"; then
+  if [ "$#" -gt 4 ]; then shift 4; else set --; fi
+  if hook_stdout="$(printf '%s' "$input" | "$hook" "$@" 2>"$stderr_file")"; then
     hook_rc=0
   else
     hook_rc=$?
@@ -166,6 +167,268 @@ if lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" 2>&1)"; then
 else
   echo "FAIL: plugin lint — $(printf '%s' "$lint_report" | tr '\n' ' ')"; fail=$((fail + 1))
 fi
+
+# The clean-tree call above proves only that today's Codex bodies happen to be
+# clean. Before S4, skill_sources followed the Claude wrapper alone, so the same
+# forbidden acquisition command went red under platform/claude and silently green
+# under platform/codex. Run the WHOLE linter over an isolated copy with exactly
+# that mutation: a failure for any other reason does not clear the case, because
+# the report must name the mutated Codex file and the remote-qualified ref rule.
+copy_lint_fixture() {
+  local destination="$1" lint_path
+  mkdir -p "$destination"
+  for lint_path in plugin codex docs bootstrap tests tools; do
+    cp -R "$REPO_ROOT/$lint_path" "$destination/$lint_path"
+  done
+  cp "$REPO_ROOT/README.md" "$REPO_ROOT/CHANGELOG.md" "$destination/"
+}
+
+LINT_FIXTURE="$TEST_HOME/lint-fixture"
+copy_lint_fixture "$LINT_FIXTURE"
+codex_security_fixture="$LINT_FIXTURE/plugin/skills/_shared/platform/codex/security-pass.md"
+if [ ! -f "$codex_security_fixture" ]; then
+  echo "FAIL: the Codex lint mutation has no security-pass body to change"; fail=$((fail + 1))
+else
+  printf '\nRun `git diff origin/main...HEAD` for the review.\n' >> "$codex_security_fixture"
+  if mutated_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" "$LINT_FIXTURE/plugin" "$LINT_FIXTURE" 2>&1)"; then
+    echo "FAIL: a remote-qualified ref in the Codex body passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$mutated_lint_report" in
+      *"skills/_shared/platform/codex/security-pass.md"*"remote-qualified ref"*)
+        echo "ok: a forbidden acquisition in a Codex body fails the host-aware lint"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the Codex lint mutation failed for the wrong reason — $(printf '%s' "$mutated_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+# Codex invokes a skill by its bare, backticked name, not Claude's
+# `oso-code:<name>`. Add a new Codex-only debt-sweep call to a mode whose source
+# carries none of that emitter's terminal tokens. If call-site discovery still
+# keys only on the Claude prefix, the mutation is invisible and the linter lies
+# clean; the exact diagnostic proves the bare invocation was what made it red.
+LINT_CALL_FIXTURE="$TEST_HOME/lint-call-fixture"
+copy_lint_fixture "$LINT_CALL_FIXTURE"
+codex_quick_fixture="$LINT_CALL_FIXTURE/plugin/skills/_shared/platform/codex/quick.md"
+if [ ! -f "$codex_quick_fixture" ]; then
+  echo "FAIL: the Codex call-site mutation has no quick body to change"; fail=$((fail + 1))
+else
+  printf '\nInvoke `debt-sweep` now.\n' >> "$codex_quick_fixture"
+  if mutated_call_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" "$LINT_CALL_FIXTURE/plugin" "$LINT_CALL_FIXTURE" 2>&1)"; then
+    echo "FAIL: a bare Codex skill call with no verdict vocabulary passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$mutated_call_lint_report" in
+      *"skills/quick/SKILL.md invokes debt-sweep on codex"*"none of its verdict tokens"*)
+        echo "ok: a bare Codex call missing its emitter vocabulary fails lint"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the Codex call-site mutation failed for the wrong reason — $(printf '%s' "$mutated_call_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+# --- Declarations: generated hooks and published trust hashes -----------------
+# Rule 13 keeps the committed tree green; these mutations prove each half can go
+# red for the reason it claims. The default-deny prefix and the load-bearing
+# fragment are both required, so a missing executable or an unrelated parser
+# crash cannot masquerade as enforcement.
+HOOK_RENDERER="$REPO_ROOT/tools/render-hooks-json.sh"
+assert_renderer_rejects() {
+  local name="$1" expected="$2"
+  shift 2
+  local report
+  if report="$("$HOOK_RENDERER" "$@" 2>&1)"; then
+    echo "FAIL: $name — renderer accepted the mutation"; fail=$((fail + 1))
+  else
+    case "$report" in
+      *"deny:"*"$expected"*) echo "ok: $name"; pass=$((pass + 1)) ;;
+      *) echo "FAIL: $name — rejected for the wrong reason: ${report:-<empty>}"; fail=$((fail + 1)) ;;
+    esac
+  fi
+}
+
+if [ ! -x "$HOOK_RENDERER" ]; then
+  echo "FAIL: hook-render mutations have no executable renderer"; fail=$((fail + 1))
+else
+  RENDER_FIXTURE="$TEST_HOME/render-fixture"
+  copy_lint_fixture "$RENDER_FIXTURE"
+  if [ ! -f "$RENDER_FIXTURE/plugin/hooks/hooks.json" ]; then
+    echo "FAIL: manifest-divergence mutation has no Claude manifest"; fail=$((fail + 1))
+  else
+    printf '\n' >> "$RENDER_FIXTURE/plugin/hooks/hooks.json"
+    assert_renderer_rejects "a committed manifest diverging by one byte fails the render check" \
+      "rendered hooks diverge for claude at" \
+      --repo-root "$RENDER_FIXTURE" --table "$RENDER_FIXTURE/tools/hook-gates.txt" --check
+  fi
+
+  INCOMPLETE_TABLE="$TEST_HOME/incomplete-hook-gates.txt"
+  cp "$REPO_ROOT/tools/hook-gates.txt" "$INCOMPLETE_TABLE"
+  # One tool spelling and no answer for the second host: this was the quiet-allow
+  # shape D11 forbids. `none` would be an explicit answer; an absent cell is not.
+  printf '\ntool  edits  FutureWriter\n' >> "$INCOMPLETE_TABLE"
+  assert_renderer_rejects "an unknown writer with an incomplete host mapping is denied at render" \
+    "tool for gate \`edits\` has no mapping for codex" \
+    --repo-root "$REPO_ROOT" --table "$INCOMPLETE_TABLE" --check
+
+  assert_equals "a Codex tool absent from the table is default-denied" deny \
+    "$("$HOOK_RENDERER" --table "$REPO_ROOT/tools/hook-gates.txt" \
+      --classify codex edits mystery_writer)"
+  assert_equals "the none sentinel is never classified as a real Codex tool" deny \
+    "$("$HOOK_RENDERER" --table "$REPO_ROOT/tools/hook-gates.txt" \
+      --classify codex unknown none)"
+  for collaboration_tool in send_input resume_agent close_agent; do
+    assert_equals "$collaboration_tool is release-known to the Codex catch-all classifier" wired \
+      "$("$HOOK_RENDERER" --table "$REPO_ROOT/tools/hook-gates.txt" \
+        --classify codex unknown "$collaboration_tool")"
+  done
+
+  DISABLED_GATE_TABLE="$TEST_HOME/disabled-unknown-gate.txt"
+  sed 's/^gate  unknown\(.*\)none   wired$/gate  unknown\1none   none/' \
+    "$REPO_ROOT/tools/hook-gates.txt" > "$DISABLED_GATE_TABLE"
+  if cmp -s "$REPO_ROOT/tools/hook-gates.txt" "$DISABLED_GATE_TABLE"; then
+    echo "FAIL: disabled-gate mutation changed no table row"; fail=$((fail + 1))
+  else
+    assert_renderer_rejects "a disabled gate carrying tool mappings fails closed" \
+      "disabled gate \`unknown\` has tool mappings for codex" \
+      --repo-root "$REPO_ROOT" --table "$DISABLED_GATE_TABLE" --check
+  fi
+
+  NO_MATCHER_TABLE="$TEST_HOME/pretool-without-matcher.txt"
+  sed '/^tool  commit/d' "$REPO_ROOT/tools/hook-gates.txt" > "$NO_MATCHER_TABLE"
+  if cmp -s "$REPO_ROOT/tools/hook-gates.txt" "$NO_MATCHER_TABLE"; then
+    echo "FAIL: matcherless-PreToolUse mutation removed no tool row"; fail=$((fail + 1))
+  else
+    assert_renderer_rejects "a wired PreToolUse gate with no matcher fails closed" \
+      "wired PreToolUse gate \`commit\` has no matcher for claude" \
+      --repo-root "$REPO_ROOT" --table "$NO_MATCHER_TABLE" --check
+  fi
+
+  INCOMPLETE_CATCHALL_TABLE="$TEST_HOME/catchall-without-bash.txt"
+  sed '/^tool  unknown  none  Bash$/d' \
+    "$REPO_ROOT/tools/hook-gates.txt" > "$INCOMPLETE_CATCHALL_TABLE"
+  if cmp -s "$REPO_ROOT/tools/hook-gates.txt" "$INCOMPLETE_CATCHALL_TABLE"; then
+    echo "FAIL: incomplete-catchall mutation removed no Bash row"; fail=$((fail + 1))
+  else
+    assert_renderer_rejects "a specific gate cannot name a tool absent from the catch-all" \
+      "tool \`Bash\` wired by gate \`commit\` is absent from unknown allowlist for codex" \
+      --repo-root "$REPO_ROOT" --table "$INCOMPLETE_CATCHALL_TABLE" --check
+  fi
+
+  TRAVERSAL_TABLE="$TEST_HOME/traversal-hook-manifest.txt"
+  sed 's|^\(host[[:space:]]*codex[[:space:]]*\)[^[:space:]]*|\1../escape.json|' \
+    "$REPO_ROOT/tools/hook-gates.txt" > "$TRAVERSAL_TABLE"
+  if cmp -s "$REPO_ROOT/tools/hook-gates.txt" "$TRAVERSAL_TABLE"; then
+    echo "FAIL: manifest-traversal mutation changed no host row"; fail=$((fail + 1))
+  else
+    assert_renderer_rejects "a host manifest path cannot traverse out of the repo" \
+      "unsafe host manifest \`../escape.json\`" \
+      --repo-root "$RENDER_FIXTURE" --table "$TRAVERSAL_TABLE" --write
+  fi
+
+  UNKNOWN_EVENT_TABLE="$TEST_HOME/unknown-hook-event.txt"
+  sed 's/^gate  stale     SessionStart/gate  stale     FutureEvent/' \
+    "$REPO_ROOT/tools/hook-gates.txt" > "$UNKNOWN_EVENT_TABLE"
+  if cmp -s "$REPO_ROOT/tools/hook-gates.txt" "$UNKNOWN_EVENT_TABLE"; then
+    echo "FAIL: unknown-event mutation changed no gate row"; fail=$((fail + 1))
+  else
+    assert_renderer_rejects "a gate cannot name an unsupported hook event" \
+      "unknown event \`FutureEvent\` for gate \`stale\`" \
+      --repo-root "$REPO_ROOT" --table "$UNKNOWN_EVENT_TABLE" --check
+  fi
+
+  MUTATED_HASHES="$TEST_HOME/hook-hashes-mismatch.txt"
+  if [ ! -f "$REPO_ROOT/bootstrap/hook-hashes.txt" ]; then
+    echo "FAIL: published-hash mutation has no release ledger"; fail=$((fail + 1))
+  else
+    hash_row_changed=0
+    while IFS= read -r hash_line || [ -n "$hash_line" ]; do
+      case "$hash_line" in
+        ''|'#'*) printf '%s\n' "$hash_line" ;;
+        *)
+          if [ "$hash_row_changed" -eq 0 ]; then
+            printf '%064d  %s\n' 0 "${hash_line#*  }"
+            hash_row_changed=1
+          else
+            printf '%s\n' "$hash_line"
+          fi
+          ;;
+      esac
+    done < "$REPO_ROOT/bootstrap/hook-hashes.txt" > "$MUTATED_HASHES"
+    if [ "$hash_row_changed" -eq 0 ]; then
+      echo "FAIL: published-hash mutation read no hash row"; fail=$((fail + 1))
+    else
+      assert_renderer_rejects "a published hash changed by one digest fails closed" \
+        "published hook hash mismatch: codex/hooks/hooks.json" \
+        --repo-root "$REPO_ROOT" --table "$REPO_ROOT/tools/hook-gates.txt" \
+        --hash-file "$MUTATED_HASHES" --check-hashes
+    fi
+
+    ONE_SPACE_HASHES="$TEST_HOME/hook-hashes-one-space.txt"
+    hash_separator_changed=0
+    while IFS= read -r hash_line || [ -n "$hash_line" ]; do
+      case "$hash_line" in
+        ''|'#'*) printf '%s\n' "$hash_line" ;;
+        *)
+          if [ "$hash_separator_changed" -eq 0 ]; then
+            printf '%s %s\n' "${hash_line%%  *}" "${hash_line#*  }"
+            hash_separator_changed=1
+          else
+            printf '%s\n' "$hash_line"
+          fi
+          ;;
+      esac
+    done < "$REPO_ROOT/bootstrap/hook-hashes.txt" > "$ONE_SPACE_HASHES"
+    if [ "$hash_separator_changed" -eq 0 ]; then
+      echo "FAIL: hash-separator mutation read no hash row"; fail=$((fail + 1))
+    else
+      assert_renderer_rejects "a published hash row with one separator space fails closed" \
+        "published hash row must use exactly two spaces after the digest" \
+        --repo-root "$REPO_ROOT" --table "$REPO_ROOT/tools/hook-gates.txt" \
+        --hash-file "$ONE_SPACE_HASHES" --check-hashes
+    fi
+  fi
+fi
+
+# --- Runtime dispatch: Codex catch-all defaults unknown tools to deny ----------
+# The table's classifier is a build-time contract; this is the runtime half. Its
+# `.*` reaches every local tool call for which Codex emits PreToolUse; the hook
+# becomes active only where oso-code state exists. That preserves ordinary Codex
+# sessions while an armed harness run gets a closed allowlist rather than a future
+# observable tool silently bypassing every named matcher.
+UNKNOWN_TOOL_HOOK="$PLUGIN/hooks/block-unknown-tool.sh"
+UNKNOWN_TOOL_ALLOWLIST='Bash|apply_patch|send_input|resume_agent|close_agent'
+codex_tool_input() {
+  printf '{"session_id":"%s","cwd":"%s","hook_event_name":"PreToolUse","tool_name":"%s","tool_input":{}}' \
+    "$SESSION" "$REPO_ROOT" "$1"
+}
+
+hook_returned_deny() {
+  case "$hook_stdout" in *'"permissionDecision":"deny"'*) return 0 ;; *) return 1 ;; esac
+}
+
+oso-state --session "$SESSION" clear
+run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input FutureWriter)" 0 '' \
+  --allow "$UNKNOWN_TOOL_ALLOWLIST"
+assert_after_hook "an unknown Codex tool stays untouched outside an oso-code run" \
+  [ -z "$hook_stdout" ]
+
+oso-state --session "$SESSION" set mode=plan active_slice=1 verify_green=false
+run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input Bash)" 0 '' \
+  --allow "$UNKNOWN_TOOL_ALLOWLIST"
+assert_after_hook "a release-known Codex tool passes the armed catch-all" \
+  [ -z "$hook_stdout" ]
+
+for collaboration_tool in send_input resume_agent close_agent; do
+  run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input "$collaboration_tool")" 0 '' \
+    --allow "$UNKNOWN_TOOL_ALLOWLIST"
+  assert_after_hook "$collaboration_tool passes the armed runtime catch-all" \
+    [ -z "$hook_stdout" ]
+done
+
+run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input FutureWriter)" 0 '' \
+  --allow "$UNKNOWN_TOOL_ALLOWLIST"
+assert_after_hook "an unknown Codex tool is denied while oso-code state is armed" \
+  hook_returned_deny
+oso-state --session "$SESSION" clear
 
 # --- Declarations: the Codex floor the installer's pin has to read ------------
 # The Codex port was designed against a CLI six versions behind what npm
@@ -622,13 +885,10 @@ remove the wave's worktrees first, then delete its branches
 git refuses to delete a branch a standing worktree still has checked out
 TEARDOWN_ORDER_TABLE
 
-# The Codex bodies are read the same way, for what they must NOT say — and here
-# the linter is not merely quiet but structurally blind: the four rules that read
-# a skill's bound text (3, 4, 6 and 8 in tests/plugin-lint.sh) collect
-# `platform/claude/` alone through `skill_sources`, so a sentence they flag in
-# the neutral or the Claude body ships green written under `platform/codex/`
-# (docs/parity-codex.md records that gap; slice S4 closes it). What it would let
-# through is the one claim those bodies exist to refuse: the absence policy in
+# The Codex bodies are also read directly for one host claim outside the
+# linter's thirteen decidable rules. Rules 3, 4, 6 and 8 now follow both hosts,
+# but none asks whether a platform body falsely claims another host's installation
+# policy as its own. What that would let through is the absence policy in
 # `_shared/front-surface.md` is Claude-spelled end to end — its remedy is a
 # `/plugin marketplace add` and a `/plugin install` this host has no command for
 # — so a Codex body saying the policy is taken here, or reading that two-step

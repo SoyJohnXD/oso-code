@@ -1,0 +1,16 @@
+# SHA-256 hashes published with the release for the Codex hook trust boundary.
+# Format: <64 lowercase hex><two spaces><path relative to the repo root>
+#
+# Coverage and order are verified, not inferred from this file: the rendered
+# Codex manifest, every Codex-wired handler in hook-gates.txt (deduplicated in
+# table order), then the shared lib.sh and lexer.sh dependencies. The Claude-only
+# persist-state-bin.sh is excluded. An installer reads these expected hashes and
+# compares installed bytes; it must never replace them with hashes it calculated.
+69d9f0699f65aed8c142583def766a94b30962cd0cb592fc6f7b43ff31128b27  codex/hooks/hooks.json
+7deab4a20de1e1a11d251d02efa957896428c9b9d7217dc258abfe7dbce1e978  plugin/hooks/block-commit-until-green.sh
+369bb15223833e3d936333f2dca1503dd46353ee1ed6a8504bef090bd0fe98ae  plugin/hooks/block-edits-without-slice.sh
+f70bb408d43e3195ff005eed50ea0e6cbdc674f43c02ddf0f466bb531863057c  plugin/hooks/block-unknown-tool.sh
+167391b098bf69cca9f308cf2d8be9598ec4a80f7504abd824b7a036ac244c7b  plugin/hooks/warn-stale-state.sh
+533618e5d3a146ef9c34430067eddfb2f9884f628f9a202dc8889e5d72447452  plugin/hooks/cleanup-state.sh
+9adee4b0c9a7366702101bc4cb5726d8eb0b6f00b4f7985ca55407b976f603b0  plugin/hooks/lib.sh
+6cae7d3728c1bac6b42e956023f3b069378a9ab776608b814f8dcf78cd5be939  plugin/hooks/lexer.sh

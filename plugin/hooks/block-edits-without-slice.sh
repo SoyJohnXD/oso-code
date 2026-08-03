@@ -6,9 +6,10 @@
 # The MCP half of that matcher is a list of tool names because a matcher holding
 # a metacharacter takes the regex path: `mcp__.*` would route EVERY MCP call
 # into this gate and deny mem_search, context7 and read-only fallow through all
-# the /plan phases where no slice is armed yet. A named list ages — an MCP tool
-# that edits source files goes unjudged until someone adds it to hooks.json by
-# name — and that is the accepted cost of not gating the reads.
+# the /plan phases where no slice is armed yet. The Codex adapter's catch-all
+# denies a tool absent from its release allowlist; once a new writer is admitted,
+# it must also land in this named matcher before it can edit outside an active
+# slice. Claude keeps this gate's existing named-list behavior.
 set -euo pipefail
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
