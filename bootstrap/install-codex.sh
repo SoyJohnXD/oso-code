@@ -70,6 +70,7 @@ verify_published_hooks() {
   local expected relative actual count=0 seen=$'\n' paths=""
   local required_paths
   required_paths='codex/hooks/hooks.json
+plugin/git-hooks/pre-commit
 plugin/hooks/block-commit-until-green.sh
 plugin/hooks/block-edits-without-slice.sh
 plugin/hooks/block-unknown-tool.sh
@@ -89,7 +90,7 @@ plugin/hooks/lexer.sh'
     esac
     [ "${#expected}" -eq 64 ] || fail "invalid published SHA-256 for $relative"
     case "$relative" in
-      codex/hooks/hooks.json|plugin/hooks/*.sh|plugin/bin/oso-state) ;;
+      codex/hooks/hooks.json|plugin/git-hooks/pre-commit|plugin/hooks/*.sh|plugin/bin/oso-state) ;;
       *) fail "published hook path is outside the Codex trust set: $relative" ;;
     esac
     case "$seen" in
@@ -105,7 +106,7 @@ plugin/hooks/lexer.sh'
       fail "published hook hash mismatch for $relative (expected $expected, got $actual)"
     count=$((count + 1))
   done < "$HASHES_FILE"
-  [ "$count" -eq 12 ] || fail "published hook manifest must cover exactly 12 Codex trust files (found $count)"
+  [ "$count" -eq 13 ] || fail "published hook manifest must cover exactly 13 Codex trust files (found $count)"
   [ "$paths" = "$required_paths" ] ||
     fail "published hook coverage or order differs from the frozen Codex trust set"
 }
@@ -467,16 +468,18 @@ install_runtime_hooks() {
     relative="${relative# }"
     case "$relative" in
       plugin/hooks/*.sh) cp "$REPO_ROOT/$relative" "$stage/hooks/$(basename "$relative")" ;;
+      plugin/git-hooks/pre-commit) cp "$REPO_ROOT/$relative" "$stage/git-hooks/pre-commit" ;;
       plugin/bin/oso-state) cp "$REPO_ROOT/$relative" "$stage/bin/oso-state" ;;
     esac
   done < "$HASHES_FILE"
-  cp "$REPO_ROOT/plugin/git-hooks/pre-commit" "$stage/git-hooks/pre-commit"
   chmod 700 "$stage/hooks"/*.sh "$stage/bin/oso-state" "$stage/git-hooks/pre-commit"
   while IFS='  ' read -r expected relative; do
     case "$expected" in ''|'#'*) continue ;; esac
     relative="${relative# }"
+    actual=""
     case "$relative" in
       plugin/hooks/*.sh) actual="$(sha256_file "$stage/hooks/$(basename "$relative")")" ;;
+      plugin/git-hooks/pre-commit) actual="$(sha256_file "$stage/git-hooks/pre-commit")" ;;
       plugin/bin/oso-state) actual="$(sha256_file "$stage/bin/oso-state")" ;;
       codex/hooks/hooks.json) actual="$(sha256_file "$stage/hooks.json")" ;;
     esac
@@ -674,12 +677,33 @@ print(data.get("installedRoot", ""), end="")
   rm -f "$IMPECCABLE_OPT_OUT_MARKER"
 }
 
+legacy_oso_git_hooks_path() {
+  local configured=$1 local_configured=$2 entry
+  [ "$configured" = "$REPO_ROOT/plugin/git-hooks" ] || return 1
+  [ "$local_configured" = "$configured" ] || return 1
+  [ -d "$configured" ] && [ ! -L "$configured" ] || return 1
+  [ -f "$configured/pre-commit" ] && [ ! -L "$configured/pre-commit" ] \
+    && [ -x "$configured/pre-commit" ] || return 1
+
+  # ADR-0099: this exact checkout path is an older oso-code wiring, but only
+  # while it contains the one hook oso-code publishes. A sibling belongs to an
+  # unknown owner and must not disappear when the runtime path replaces it.
+  for entry in "$configured"/* "$configured"/.[!.]* "$configured"/..?*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    [ "${entry##*/}" = pre-commit ] || return 1
+  done
+  return 0
+}
+
 git_hooks_owner() {
-  local configured git_dir hook
+  local configured local_configured git_dir hook
   configured="$(git -C "$REPO_ROOT" config --get core.hooksPath 2>/dev/null || true)"
+  local_configured="$(git -C "$REPO_ROOT" config --local --get-all core.hooksPath 2>/dev/null || true)"
   if [ -n "$configured" ] && [ "$configured" != "$RUNTIME_ROOT/git-hooks" ]; then
-    printf 'core.hooksPath=%s' "$configured"
-    return 0
+    if ! legacy_oso_git_hooks_path "$configured" "$local_configured"; then
+      printf 'core.hooksPath=%s' "$configured"
+      return 0
+    fi
   fi
   git_dir="$(git -C "$REPO_ROOT" rev-parse --absolute-git-dir 2>/dev/null || true)"
   for hook in "$git_dir"/hooks/*; do
@@ -689,8 +713,22 @@ git_hooks_owner() {
 }
 
 wire_git_hook() {
-  local owner
+  local configured local_configured owner
   command -v git >/dev/null 2>&1 || fail "git is required to wire the commit gate"
+  owner="$(git_hooks_owner)"
+  [ -z "$owner" ] || fail "refusing to replace existing git hook owner: $owner"
+  configured="$(git -C "$REPO_ROOT" config --get core.hooksPath 2>/dev/null || true)"
+  local_configured="$(git -C "$REPO_ROOT" config --local --get-all core.hooksPath 2>/dev/null || true)"
+  if legacy_oso_git_hooks_path "$configured" "$local_configured"; then
+    [ -f "$RUNTIME_ROOT/git-hooks/pre-commit" ] \
+      && [ ! -L "$RUNTIME_ROOT/git-hooks/pre-commit" ] \
+      && [ -x "$RUNTIME_ROOT/git-hooks/pre-commit" ] \
+      && cmp -s "$configured/pre-commit" "$RUNTIME_ROOT/git-hooks/pre-commit" ||
+      fail "the staged git hook differs from the published checkout hook"
+    info "migrating oso-code's checkout hook to the self-contained runtime"
+  elif [ -n "$configured" ] && [ "$configured" != "$RUNTIME_ROOT/git-hooks" ]; then
+    fail "refusing to replace existing git hook owner: core.hooksPath=$configured"
+  fi
   owner="$(git_hooks_owner)"
   [ -z "$owner" ] || fail "refusing to replace existing git hook owner: $owner"
   git -C "$REPO_ROOT" config core.hooksPath "$RUNTIME_ROOT/git-hooks"

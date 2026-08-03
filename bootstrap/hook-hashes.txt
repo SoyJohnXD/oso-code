@@ -2,12 +2,13 @@
 # Format: <64 lowercase hex><two spaces><path relative to the repo root>
 #
 # Coverage and order are verified, not inferred from this file: the rendered
-# Codex manifest, every Codex-wired handler in hook-gates.txt (deduplicated in
-# table order), the handoff handler's oso-state dependency, then the shared lib.sh
-# and lexer.sh dependencies. The Claude-only persist-state-bin.sh is excluded. An
-# installer reads these expected hashes and compares installed bytes; it must
-# never replace them with hashes it calculated.
+# Codex manifest, the git commit boundary, every Codex-wired handler in
+# hook-gates.txt (deduplicated in table order), the handoff handler's oso-state
+# dependency, then the shared lib.sh and lexer.sh dependencies. The Claude-only
+# persist-state-bin.sh is excluded. An installer reads these expected hashes and
+# compares installed bytes; it must never replace them with hashes it calculated.
 129d4ce0b6d6262f6e71b8a0134841e5408805d05e44a7bf8e393f1cfefdfef8  codex/hooks/hooks.json
+ff41240b7d2f93fec142b8a8a96e588e9c585376e07034a25d044ed688aec421  plugin/git-hooks/pre-commit
 4f1fc38f71fb86d10ff0f39c7e271ba316846dee20a85bfd40a12b8ee217ca81  plugin/hooks/block-commit-until-green.sh
 e66bbcd046e496b6b54412165c62baa08d9e1b69e173ffe80e467fbae277968a  plugin/hooks/block-edits-without-slice.sh
 87b852f99ca3d650765bc240fb56898e6acbde0e6d4f0fbfc720eb86376c4f29  plugin/hooks/block-unknown-tool.sh

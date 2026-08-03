@@ -5017,6 +5017,24 @@ run_codex_install() {
   CODEX_INSTALL_LOG="$(cat "$CODEX_INSTALL_OUTPUT")"
 }
 
+run_codex_install_with_git_hook() {
+  local fixture_home="$1" installer="$2" failure_step="${3:-}"
+  : > "$CODEX_INSTALL_CALLS"
+  if HOME="$fixture_home" \
+    CODEX_HOME="$fixture_home/.codex" \
+    PATH="$CODEX_INSTALL_SHIMS:$PATH" \
+    OSO_TEST_CALLS="$CODEX_INSTALL_CALLS" \
+    OSO_TEST_CODEX_VERSION="$CODEX_INSTALL_VERSION" \
+    OSO_IMPECCABLE_SOURCE="$CODEX_IMPECCABLE_SOURCE" \
+    OSO_INSTALL_FAIL_AFTER="$failure_step" \
+    bash "$installer" --yes --no-impeccable > "$CODEX_INSTALL_OUTPUT" 2>&1; then
+    CODEX_INSTALL_RC=0
+  else
+    CODEX_INSTALL_RC=$?
+  fi
+  CODEX_INSTALL_LOG="$(cat "$CODEX_INSTALL_OUTPUT")"
+}
+
 codex_install_log_class() {
   local label="$1" pattern="$2"
   if printf '%s\n' "$CODEX_INSTALL_LOG" | grep -Eq "$pattern"; then
@@ -5232,6 +5250,7 @@ while IFS='  ' read -r published_digest published_path; do
       continue
       ;;
     plugin/hooks/*) installed_hook_path="$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/hooks/${published_path#plugin/hooks/}" ;;
+    plugin/git-hooks/*) installed_hook_path="$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/git-hooks/${published_path#plugin/git-hooks/}" ;;
     plugin/bin/*) installed_hook_path="$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/bin/${published_path#plugin/bin/}" ;;
     *) installed_hook_path="" ;;
   esac
@@ -5480,6 +5499,23 @@ assert_equals "a hash mismatch happens before any external installer call" \
 assert_equals "a hash mismatch happens before any destination mutation" \
   "absent" "$([ -e "$CODEX_HASH_HOME/.codex" ] || [ -e "$CODEX_HASH_HOME/.agents" ] || [ -e "$CODEX_HASH_HOME/.local/share/oso-code" ] && echo mutated || echo absent)"
 
+CODEX_TAMPERED_GIT_RELEASE="$TEST_HOME/codex-tampered-git-release"
+mkdir -p "$CODEX_TAMPERED_GIT_RELEASE"
+cp -R "$REPO_ROOT/bootstrap" "$REPO_ROOT/codex" "$REPO_ROOT/plugin" \
+  "$CODEX_TAMPERED_GIT_RELEASE/"
+printf '\n# foreign post-publication hook bytes\n' >> \
+  "$CODEX_TAMPERED_GIT_RELEASE/plugin/git-hooks/pre-commit"
+CODEX_GIT_HASH_HOME="$TEST_HOME/codex-git-hash-home"
+mkdir -p "$CODEX_GIT_HASH_HOME"
+run_codex_install "$CODEX_GIT_HASH_HOME" "" \
+  "$CODEX_TAMPERED_GIT_RELEASE/bootstrap/install-codex.sh"
+assert_equals "tampered git-hook bytes are outside the published owner" \
+  "git hash mismatch" "$(codex_install_log_class 'git hash mismatch' 'hash mismatch.*plugin/git-hooks/pre-commit')"
+assert_equals "a git-hook hash refusal happens before any external installer call" \
+  "0" "$(wc -l < "$CODEX_INSTALL_CALLS" | tr -d ' ')"
+assert_equals "a git-hook hash refusal happens before any destination mutation" \
+  "absent" "$([ -e "$CODEX_GIT_HASH_HOME/.codex" ] || [ -e "$CODEX_GIT_HASH_HOME/.agents" ] || [ -e "$CODEX_GIT_HASH_HOME/.local/share/oso-code" ] && echo mutated || echo absent)"
+
 CODEX_OVERRIDE_HASHES="$TEST_HOME/codex-override-hook-hashes.txt"
 cp "$REPO_ROOT/bootstrap/hook-hashes.txt" "$CODEX_OVERRIDE_HASHES"
 tampered_lib_digest="$(file_sha256 "$CODEX_TAMPERED_RELEASE/plugin/hooks/lib.sh")"
@@ -5509,7 +5545,7 @@ awk '
 mv "$CODEX_DUPLICATE_HASH_RELEASE/bootstrap/hook-hashes.txt.tmp" \
   "$CODEX_DUPLICATE_HASH_RELEASE/bootstrap/hook-hashes.txt"
 run_codex_install "$CODEX_HASH_HOME" "" "$CODEX_DUPLICATE_HASH_RELEASE/bootstrap/install-codex.sh"
-assert_equals "a duplicate published hash path is rejected even with twelve rows" \
+assert_equals "a duplicate published hash path is rejected even with thirteen rows" \
   "duplicate path" "$(codex_install_log_class 'duplicate path' 'duplicate published hook path')"
 assert_equals "duplicate hash coverage is rejected before any destination mutation" \
   "absent" "$([ -e "$CODEX_HASH_HOME/.codex" ] || [ -e "$CODEX_HASH_HOME/.agents" ] || [ -e "$CODEX_HASH_HOME/.local/share/oso-code" ] && echo mutated || echo absent)"
@@ -5551,6 +5587,161 @@ assert_equals "profile validation rejection rolls every destination back byte-fo
   "$codex_config_reject_before" "$codex_config_reject_after"
 
 if command -v git >/dev/null 2>&1; then
+  # ADR-0099: a previous oso-code install may have pointed this checkout at the
+  # published source directory. That exact, single-hook owner is safe to migrate
+  # to the self-contained runtime; a lookalike path or any sibling is not.
+  CODEX_GIT_MIGRATE_RELEASE="$TEST_HOME/codex-git-migrate-release"
+  mkdir -p "$CODEX_GIT_MIGRATE_RELEASE"
+  cp -R "$REPO_ROOT/.agents" "$REPO_ROOT/bootstrap" "$REPO_ROOT/codex" \
+    "$REPO_ROOT/plugin" "$CODEX_GIT_MIGRATE_RELEASE/"
+  git init -q "$CODEX_GIT_MIGRATE_RELEASE"
+  git -C "$CODEX_GIT_MIGRATE_RELEASE" config core.hooksPath \
+    "$CODEX_GIT_MIGRATE_RELEASE/plugin/git-hooks"
+  CODEX_GIT_MIGRATE_HOME="$TEST_HOME/codex-git-migrate-home"
+  write_codex_install_personal_state "$CODEX_GIT_MIGRATE_HOME"
+  printf '0.146.0\n' > "$CODEX_INSTALL_VERSION"
+  run_codex_install_with_git_hook "$CODEX_GIT_MIGRATE_HOME" \
+    "$CODEX_GIT_MIGRATE_RELEASE/bootstrap/install-codex.sh"
+  assert_equals "the exact single-hook oso checkout owner migrates successfully" \
+    "zero" "$([ "$CODEX_INSTALL_RC" -eq 0 ] && echo zero || echo nonzero)"
+  assert_equals "the checkout hook migration is reported explicitly" \
+    "migration" "$(codex_install_log_class migration 'migrating oso-code.*checkout hook')"
+  assert_equals "the migrated git gate points at the self-contained runtime" \
+    "$CODEX_GIT_MIGRATE_HOME/.local/share/oso-code/runtime/git-hooks" \
+    "$(git -C "$CODEX_GIT_MIGRATE_RELEASE" config --local --get core.hooksPath)"
+  assert_equals "the migrated runtime git gate keeps the published bytes" \
+    "identical" "$(cmp -s "$CODEX_GIT_MIGRATE_RELEASE/plugin/git-hooks/pre-commit" \
+      "$CODEX_GIT_MIGRATE_HOME/.local/share/oso-code/runtime/git-hooks/pre-commit" \
+      && echo identical || echo divergent)"
+  assert_equals "the migrated runtime git gate is executable" \
+    "executable" "$([ -x "$CODEX_GIT_MIGRATE_HOME/.local/share/oso-code/runtime/git-hooks/pre-commit" ] && echo executable || echo inert)"
+  run_codex_install_with_git_hook "$CODEX_GIT_MIGRATE_HOME" \
+    "$CODEX_GIT_MIGRATE_RELEASE/bootstrap/install-codex.sh"
+  assert_equals "reinstall after checkout-hook migration is idempotent" \
+    "zero" "$([ "$CODEX_INSTALL_RC" -eq 0 ] && echo zero || echo nonzero)"
+
+  CODEX_GIT_LEGACY_ROLLBACK_RELEASE="$TEST_HOME/codex-git-legacy-rollback-release"
+  mkdir -p "$CODEX_GIT_LEGACY_ROLLBACK_RELEASE"
+  cp -R "$REPO_ROOT/.agents" "$REPO_ROOT/bootstrap" "$REPO_ROOT/codex" \
+    "$REPO_ROOT/plugin" "$CODEX_GIT_LEGACY_ROLLBACK_RELEASE/"
+  git init -q "$CODEX_GIT_LEGACY_ROLLBACK_RELEASE"
+  legacy_rollback_path="$CODEX_GIT_LEGACY_ROLLBACK_RELEASE/plugin/git-hooks"
+  git -C "$CODEX_GIT_LEGACY_ROLLBACK_RELEASE" config core.hooksPath \
+    "$legacy_rollback_path"
+  CODEX_GIT_LEGACY_ROLLBACK_HOME="$TEST_HOME/codex-git-legacy-rollback-home"
+  write_codex_install_personal_state "$CODEX_GIT_LEGACY_ROLLBACK_HOME"
+  legacy_rollback_before="$(install_file_snapshot "$CODEX_GIT_LEGACY_ROLLBACK_HOME")"
+  run_codex_install_with_git_hook "$CODEX_GIT_LEGACY_ROLLBACK_HOME" \
+    "$CODEX_GIT_LEGACY_ROLLBACK_RELEASE/bootstrap/install-codex.sh" after-git-hook
+  assert_equals "a failure after legacy hook migration exits nonzero" \
+    "nonzero" "$([ "$CODEX_INSTALL_RC" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "legacy hook rollback restores its exact checkout path" \
+    "$legacy_rollback_path" \
+    "$(git -C "$CODEX_GIT_LEGACY_ROLLBACK_RELEASE" config --local --get core.hooksPath)"
+  assert_equals "legacy hook rollback restores every installed destination" \
+    "$legacy_rollback_before" \
+    "$(install_file_snapshot "$CODEX_GIT_LEGACY_ROLLBACK_HOME")"
+
+  CODEX_GIT_LOOKALIKE_RELEASE="$TEST_HOME/codex-git-lookalike-release"
+  mkdir -p "$CODEX_GIT_LOOKALIKE_RELEASE/operator-hooks"
+  cp -R "$REPO_ROOT/.agents" "$REPO_ROOT/bootstrap" "$REPO_ROOT/codex" \
+    "$REPO_ROOT/plugin" "$CODEX_GIT_LOOKALIKE_RELEASE/"
+  cp "$REPO_ROOT/plugin/git-hooks/pre-commit" \
+    "$CODEX_GIT_LOOKALIKE_RELEASE/operator-hooks/pre-commit"
+  git init -q "$CODEX_GIT_LOOKALIKE_RELEASE"
+  git -C "$CODEX_GIT_LOOKALIKE_RELEASE" config core.hooksPath \
+    "$CODEX_GIT_LOOKALIKE_RELEASE/operator-hooks"
+  CODEX_GIT_LOOKALIKE_HOME="$TEST_HOME/codex-git-lookalike-home"
+  write_codex_install_personal_state "$CODEX_GIT_LOOKALIKE_HOME"
+  run_codex_install_with_git_hook "$CODEX_GIT_LOOKALIKE_HOME" \
+    "$CODEX_GIT_LOOKALIKE_RELEASE/bootstrap/install-codex.sh"
+  assert_equals "identical hook bytes at another path remain foreign" \
+    "foreign owner" "$(codex_install_log_class 'foreign owner' 'refusing to replace existing git hook owner')"
+  assert_equals "a refused lookalike hook keeps its configured owner" \
+    "$CODEX_GIT_LOOKALIKE_RELEASE/operator-hooks" \
+    "$(git -C "$CODEX_GIT_LOOKALIKE_RELEASE" config --local --get core.hooksPath)"
+
+  CODEX_GIT_SIBLING_RELEASE="$TEST_HOME/codex-git-sibling-release"
+  mkdir -p "$CODEX_GIT_SIBLING_RELEASE"
+  cp -R "$REPO_ROOT/.agents" "$REPO_ROOT/bootstrap" "$REPO_ROOT/codex" \
+    "$REPO_ROOT/plugin" "$CODEX_GIT_SIBLING_RELEASE/"
+  printf 'operator-owned hidden sibling\n' > \
+    "$CODEX_GIT_SIBLING_RELEASE/plugin/git-hooks/.operator-hook"
+  git init -q "$CODEX_GIT_SIBLING_RELEASE"
+  git -C "$CODEX_GIT_SIBLING_RELEASE" config core.hooksPath \
+    "$CODEX_GIT_SIBLING_RELEASE/plugin/git-hooks"
+  CODEX_GIT_SIBLING_HOME="$TEST_HOME/codex-git-sibling-home"
+  write_codex_install_personal_state "$CODEX_GIT_SIBLING_HOME"
+  run_codex_install_with_git_hook "$CODEX_GIT_SIBLING_HOME" \
+    "$CODEX_GIT_SIBLING_RELEASE/bootstrap/install-codex.sh"
+  assert_equals "an extra hook beside oso-code prevents migration" \
+    "foreign owner" "$(codex_install_log_class 'foreign owner' 'refusing to replace existing git hook owner')"
+  assert_equals "a refused mixed checkout keeps its configured owner" \
+    "$CODEX_GIT_SIBLING_RELEASE/plugin/git-hooks" \
+    "$(git -C "$CODEX_GIT_SIBLING_RELEASE" config --local --get core.hooksPath)"
+  assert_equals "a refused mixed checkout preserves its hidden sibling" \
+    "operator-owned hidden sibling" \
+    "$(cat "$CODEX_GIT_SIBLING_RELEASE/plugin/git-hooks/.operator-hook")"
+
+  CODEX_GIT_LINK_RELEASE="$TEST_HOME/codex-git-link-release"
+  mkdir -p "$CODEX_GIT_LINK_RELEASE"
+  cp -R "$REPO_ROOT/.agents" "$REPO_ROOT/bootstrap" "$REPO_ROOT/codex" \
+    "$REPO_ROOT/plugin" "$CODEX_GIT_LINK_RELEASE/"
+  mv "$CODEX_GIT_LINK_RELEASE/plugin/git-hooks" \
+    "$CODEX_GIT_LINK_RELEASE/plugin/git-hooks-source"
+  ln -s git-hooks-source "$CODEX_GIT_LINK_RELEASE/plugin/git-hooks"
+  git init -q "$CODEX_GIT_LINK_RELEASE"
+  git -C "$CODEX_GIT_LINK_RELEASE" config core.hooksPath \
+    "$CODEX_GIT_LINK_RELEASE/plugin/git-hooks"
+  CODEX_GIT_LINK_HOME="$TEST_HOME/codex-git-link-home"
+  write_codex_install_personal_state "$CODEX_GIT_LINK_HOME"
+  run_codex_install_with_git_hook "$CODEX_GIT_LINK_HOME" \
+    "$CODEX_GIT_LINK_RELEASE/bootstrap/install-codex.sh"
+  assert_equals "a symlinked checkout hook directory is never adopted" \
+    "foreign owner" "$(codex_install_log_class 'foreign owner' 'refusing to replace existing git hook owner')"
+  assert_equals "a refused checkout hook directory remains a symlink" \
+    "git-hooks-source" "$(readlink "$CODEX_GIT_LINK_RELEASE/plugin/git-hooks")"
+
+  CODEX_GIT_FILE_LINK_RELEASE="$TEST_HOME/codex-git-file-link-release"
+  mkdir -p "$CODEX_GIT_FILE_LINK_RELEASE"
+  cp -R "$REPO_ROOT/.agents" "$REPO_ROOT/bootstrap" "$REPO_ROOT/codex" \
+    "$REPO_ROOT/plugin" "$CODEX_GIT_FILE_LINK_RELEASE/"
+  mv "$CODEX_GIT_FILE_LINK_RELEASE/plugin/git-hooks/pre-commit" \
+    "$CODEX_GIT_FILE_LINK_RELEASE/plugin/git-hooks/published-pre-commit"
+  ln -s published-pre-commit \
+    "$CODEX_GIT_FILE_LINK_RELEASE/plugin/git-hooks/pre-commit"
+  git init -q "$CODEX_GIT_FILE_LINK_RELEASE"
+  git -C "$CODEX_GIT_FILE_LINK_RELEASE" config core.hooksPath \
+    "$CODEX_GIT_FILE_LINK_RELEASE/plugin/git-hooks"
+  CODEX_GIT_FILE_LINK_HOME="$TEST_HOME/codex-git-file-link-home"
+  write_codex_install_personal_state "$CODEX_GIT_FILE_LINK_HOME"
+  run_codex_install_with_git_hook "$CODEX_GIT_FILE_LINK_HOME" \
+    "$CODEX_GIT_FILE_LINK_RELEASE/bootstrap/install-codex.sh"
+  assert_equals "a symlinked pre-commit is never adopted" \
+    "foreign owner" "$(codex_install_log_class 'foreign owner' 'refusing to replace existing git hook owner')"
+  assert_equals "a refused pre-commit remains a symlink" \
+    "published-pre-commit" \
+    "$(readlink "$CODEX_GIT_FILE_LINK_RELEASE/plugin/git-hooks/pre-commit")"
+
+  CODEX_GIT_GLOBAL_RELEASE="$TEST_HOME/codex-git-global-release"
+  mkdir -p "$CODEX_GIT_GLOBAL_RELEASE"
+  cp -R "$REPO_ROOT/.agents" "$REPO_ROOT/bootstrap" "$REPO_ROOT/codex" \
+    "$REPO_ROOT/plugin" "$CODEX_GIT_GLOBAL_RELEASE/"
+  git init -q "$CODEX_GIT_GLOBAL_RELEASE"
+  CODEX_GIT_GLOBAL_HOME="$TEST_HOME/codex-git-global-home"
+  write_codex_install_personal_state "$CODEX_GIT_GLOBAL_HOME"
+  HOME="$CODEX_GIT_GLOBAL_HOME" git config --global core.hooksPath \
+    "$CODEX_GIT_GLOBAL_RELEASE/plugin/git-hooks"
+  run_codex_install_with_git_hook "$CODEX_GIT_GLOBAL_HOME" \
+    "$CODEX_GIT_GLOBAL_RELEASE/bootstrap/install-codex.sh"
+  assert_equals "an exact path inherited from global config is not a checkout owner" \
+    "foreign owner" "$(codex_install_log_class 'foreign owner' 'refusing to replace existing git hook owner')"
+  assert_equals "a refused global owner does not create a local replacement" \
+    "absent" "$(if git -C "$CODEX_GIT_GLOBAL_RELEASE" config --local --get core.hooksPath >/dev/null 2>&1; then echo present; else echo absent; fi)"
+  assert_equals "a refused global owner remains byte-identical" \
+    "$CODEX_GIT_GLOBAL_RELEASE/plugin/git-hooks" \
+    "$(HOME="$CODEX_GIT_GLOBAL_HOME" git config --global --get core.hooksPath)"
+
   CODEX_GIT_ROLLBACK_RELEASE="$TEST_HOME/codex-git-rollback-release"
   mkdir -p "$CODEX_GIT_ROLLBACK_RELEASE"
   cp -R "$REPO_ROOT/.agents" "$REPO_ROOT/bootstrap" "$REPO_ROOT/codex" \

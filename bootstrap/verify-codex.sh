@@ -112,6 +112,10 @@ installed_trust_status() {
         installed="$RUNTIME_ROOT/hooks/${relative#plugin/hooks/}"
         actual="$(sha256_file "$installed")"
         ;;
+      plugin/git-hooks/*)
+        installed="$RUNTIME_ROOT/git-hooks/${relative#plugin/git-hooks/}"
+        actual="$(sha256_file "$installed")"
+        ;;
       plugin/bin/*)
         installed="$RUNTIME_ROOT/bin/${relative#plugin/bin/}"
         actual="$(sha256_file "$installed")"

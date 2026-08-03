@@ -180,6 +180,7 @@ function render(name,    h, g, t, first_group, first_tool, matcher, command, see
 function coverage(name,    h, g, path, seen_path, state_needed) {
   h = host_index(name); if (!h) die("unknown host `" name "`")
   print manifests[h]
+  if (name == "codex") print "plugin/git-hooks/pre-commit"
   for (g = 1; g <= gate_count; g++) if (gate_cell[g, h] == "wired") {
     path = "plugin/hooks/" gate_script[g]
     if (!seen_path[path]++) print path

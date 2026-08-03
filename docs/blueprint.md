@@ -173,13 +173,14 @@ Three properties of the amendment log these files replace are facts to carry for
 - [0096](decisions/0096-claude-and-codex-are-first-class-host-adapters.md) — Claude Code and Codex are first-class host adapters
 - [0097](decisions/0097-codex-parity-is-a-release-ledger.md) — Codex parity is a release ledger
 - [0098](decisions/0098-codex-config-ownership-is-per-leaf.md) — Codex configuration ownership is per leaf inside shared tables
+- [0099](decisions/0099-the-checkout-hook-owner-migrates-only-when-exact.md) — the checkout hook owner migrates only when exact
 
 ## Foundational decisions
 
 | Decision | Choice | Rationale |
 |---|---|---|
 | Platform | Claude Code and Codex as first-class adapters over neutral behavioral bodies (ADR-0096) | One harness contract; host tools, lifecycle and paths stay in their own bindings |
-| Distribution | One release: a native Claude plugin plus a Codex skills plugin and installer-owned roles, hooks, bounded config leaves and MCP wiring (ADR-0096, ADR-0098) | Codex's plugin schema cannot carry or pre-trust every runtime surface; the installer verifies its own leaves without annexing shared host tables |
+| Distribution | One release: a native Claude plugin plus a Codex skills plugin and installer-owned roles, hooks, bounded config leaves and MCP wiring (ADR-0096, ADR-0098, ADR-0099) | Codex's plugin schema cannot carry or pre-trust every runtime surface; the installer verifies its own leaves and migrates only its exact earlier checkout hook without annexing shared host tables or foreign hook owners |
 | Plan state | Engram only — no files inside project repos | User preference: clean projects; accepts per-machine tradeoff |
 | Enforcement | Native Plan Mode plus host approval adapter, state gates and prompt guidance (ADR-0096) | Runtime gates read state; Codex approval reads only a versioned marker and exact tokens to drive bounded state transitions |
 | Repos | This monorepo; legacy repos harvested then archived | Atomic versioning of rubric + gate + skill |
