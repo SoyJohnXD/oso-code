@@ -2,8 +2,8 @@
 
 Date: 2026-08-02
 Status: accepted
-Implemented-in: tests/hooks-test.sh
-Reconciled: elsewhere — landed in tests/hooks-test.sh, which holds the declared floor; the frozen body never carried a Codex version, and the installer that pins this number is a later slice.
+Implemented-in: tests/hooks-test.sh, plugin/hooks/capture-plan-approval.sh, plugin/hooks/approve-plan-token.sh, plugin/hooks/block-unknown-tool.sh, plugin/bin/oso-state, tools/hook-gates.txt, tools/render-hooks-json.sh, codex/hooks/hooks.json, bootstrap/hook-hashes.txt
+Reconciled: applied — tests hold the floor; the S7 correction is wired through the two lifecycle handlers, atomic state transitions, the pending-tool deny, rendered manifest and published trust ledger. The installer that pins the minimum version is a later slice.
 Source: this change (Codex port), ledger decision D14; recorded with the change that made it
 
 ## Decision
@@ -11,6 +11,8 @@ Source: this change (Codex port), ledger decision D14; recorded with the change 
 Minimum supported Codex: 0.146.0
 
 The number is a floor, not a range. Every fact this port rests on was read out of a 0.146.0 CLI on 2026-08-02 by running the tool, and nothing below that version has been checked since the port was designed. Ledger D14 has the installer PIN this version rather than `@latest`, so the pin and this line move together: a Codex release that moves a load-bearing flag is a new decision here first and a new number second, never a silent `@latest` that changes the harness under the operator.
+
+**Correction, 2026-08-03.** The first probe treated `request_user_input` availability as the whole D10 surface and missed the lifecycle events that can enforce the answer. Codex 0.146.0 exposes `Stop` with `last_assistant_message` and `permission_mode`, plus `UserPromptSubmit` with the pending `prompt` and `permission_mode`; the latter can block before the prompt reaches the model. D10's claim that no hook can observe a literal approval token is therefore superseded. Slice S7 binds the presented plan through `Stop`, consumes the exact token through `UserPromptSubmit`, and keeps local tools behind `PreToolUse` while approval is pending.
 
 The two mechanisms ledger D2's state-identity fix rests on were PROVEN at this version rather than reasoned about, and only one of them holds in the form it was written:
 
@@ -29,7 +31,8 @@ Every row below was read from the tool, at both versions, and the 0.146.0 column
 | `hooks` | `stable` / true | `stable` / true | The user-level hooks mechanism the port targets is on by default. |
 | `multi_agent` | `stable` / true | `stable` / true | D3 stands: judges can run as Codex subagents. |
 | `multi_agent_v2` | `under development` / false | `stable` / **false** | Promoted to stable, still OFF by default. The port targets `multi_agent`; a v2 path now exists as an opt-in and is not adopted here. |
-| `default_mode_request_user_input` | `under development` / false | `under development` / false | D10 stands: `request_user_input` is reachable only in Plan Mode. |
+| `default_mode_request_user_input` | `under development` / false | `under development` / false | Question rounds still belong to Plan Mode. This flag says nothing about approval-token observability; the lifecycle-hook row below corrects that earlier inference. |
+| `Stop` + `UserPromptSubmit` hook schemas | not checked | `Stop` carries `last_assistant_message` + `permission_mode`; `UserPromptSubmit` carries `prompt` + `permission_mode` and can block | D10 is repaired: a host hook can bind the delivered plan, reject a token in Plan Mode and approve the exact prompt before the model turn. |
 | `collaboration_modes` | `removed` / true | `removed` / true | Retired as a flag and forced on — no toggle to carry. |
 | `non_prefixed_mcp_tool_names` | `under development` / false | `under development` / false | MCP tool names stay prefixed; every tool reference the port writes keeps its prefix. |
 | `skill_mcp_dependency_install` | `stable` / true | `stable` / true | A skill may still declare an MCP dependency and have it installed. |
@@ -46,6 +49,8 @@ Every row below was read from the tool, at both versions, and the 0.146.0 column
 | `git rev-parse --git-common-dir` across worktrees | assumed stable | stable only under `--path-format=absolute` | D2's spelling must change; see the Decision. |
 
 The agent role file is parsed with unknown fields REJECTED, which is what makes the two schema answers above decidable rather than inferred from what the shipped files happen to use: a key Codex does not know makes the whole role file fail to deserialize, and Codex reports it at startup as ``Ignoring malformed agent role definition: … unknown field `x` ``. Probing one candidate key at a time against a scratch `CODEX_HOME` is therefore a direct read of the schema. The same probe is what showed the file also accepts config-shaped keys — `instructions`, `approval_policy`, `model_provider`, `web_search`, `shell_environment_policy` among them — so a role file can carry its own environment policy.
+
+The approval correction was checked three ways at the declared floor: the installed 0.146.0 binary contains the release's `user_prompt_submit` event implementation; the official `rust-v0.146.0` source serializes both `prompt` and `permission_mode` and honors `decision: block`; and a scratch-home `codex exec --dangerously-bypass-hook-trust` probe ran a `UserPromptSubmit` command hook and stopped the prompt before authentication. The live payload carried the documented fields. This is stronger evidence than the missing feature-flag inference it replaces.
 
 `shell_environment_policy.set` was proven by running a command through Codex's own environment pipeline with the variable already exported in the parent: `codex sandbox -c shell_environment_policy.inherit=all -- sh -c 'echo $OSO_PROBE'` answered the inherited value, and the same command with `-c shell_environment_policy.set.OSO_PROBE=policy-wins` answered `policy-wins`. Upstream agrees on the ordering — `populate_env` inherits, filters, then inserts the `set` entries, then applies `include_only`.
 

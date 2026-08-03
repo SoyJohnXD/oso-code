@@ -39,6 +39,8 @@ gate  commit    PreToolUse    block-commit-until-green.sh   wired  wired
 gate  edits     PreToolUse    block-edits-without-slice.sh  wired  wired
 gate  unknown   PreToolUse    block-unknown-tool.sh          none   wired
 gate  handoff   SubagentStop  publish-subagent-handoff.sh    none   wired
+gate  planstop  Stop          capture-plan-approval.sh       none   wired
+gate  planprompt UserPromptSubmit approve-plan-token.sh       none   wired
 gate  statebin  SessionStart  persist-state-bin.sh          wired  none
 gate  stale     SessionStart  warn-stale-state.sh           wired  wired
 gate  teardown  SessionEnd    cleanup-state.sh              wired  wired

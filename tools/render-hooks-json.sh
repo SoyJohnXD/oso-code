@@ -52,6 +52,8 @@ function expected_script(id) {
   if (id == "edits") return "block-edits-without-slice.sh"
   if (id == "unknown") return "block-unknown-tool.sh"
   if (id == "handoff") return "publish-subagent-handoff.sh"
+  if (id == "planstop") return "capture-plan-approval.sh"
+  if (id == "planprompt") return "approve-plan-token.sh"
   if (id == "statebin") return "persist-state-bin.sh"
   if (id == "stale") return "warn-stale-state.sh"
   if (id == "teardown") return "cleanup-state.sh"
@@ -60,6 +62,8 @@ function expected_script(id) {
 function expected_event(id) {
   if (id == "commit" || id == "edits" || id == "unknown") return "PreToolUse"
   if (id == "handoff") return "SubagentStop"
+  if (id == "planstop") return "Stop"
+  if (id == "planprompt") return "UserPromptSubmit"
   if (id == "statebin" || id == "stale") return "SessionStart"
   if (id == "teardown") return "SessionEnd"
   return ""
@@ -110,12 +114,13 @@ function parse(    line, fields, count, kind, i, id, expected) {
   if (host_count != 2 || hosts[1] != "claude" || hosts[2] != "codex") die("hosts must be exactly and in order: claude, codex")
   if (manifests[1] != "plugin/hooks/hooks.json" || roots[1] != "\"${CLAUDE_PLUGIN_ROOT}\"/hooks") die("claude host manifest or command root is not the supported value")
   if (manifests[2] != "codex/hooks/hooks.json" || roots[2] != "\"__OSO_HOOKS_DIR__\"") die("codex host manifest or command root is not the supported value")
-  if (gate_count != 7) die("table must declare exactly the seven known gates")
+  if (gate_count != 9) die("table must declare exactly the nine known gates")
   for (g = 1; g <= gate_count; g++) for (h = 1; h <= host_count; h++) {
     mappings = 0
     for (t = 1; t <= tool_count; t++) if (tool_gate[t] == gate_id[g] && tool_cell[t, h] != "none") mappings++
     if (gate_cell[g, h] == "none" && mappings) die("disabled gate `" gate_id[g] "` has tool mappings for " hosts[h])
     if (gate_cell[g, h] == "wired" && (gate_event[g] == "PreToolUse" || gate_event[g] == "SubagentStop") && !mappings) die("wired " gate_event[g] " gate `" gate_id[g] "` has no matcher for " hosts[h])
+    if ((gate_event[g] == "Stop" || gate_event[g] == "UserPromptSubmit") && mappings) die("matcherless " gate_event[g] " gate `" gate_id[g] "` has matcher mappings for " hosts[h])
   }
   # Every tool routed to a specific Codex gate must also pass the final catch-all.
   # Otherwise the specific gate can allow it and the catch-all immediately denies
@@ -168,14 +173,15 @@ function render(name,    h, g, t, first_group, first_tool, matcher, command, see
   }
   print ""; print "  }"; print "}"
 }
-function coverage(name,    h, g, path, seen_path) {
+function coverage(name,    h, g, path, seen_path, state_needed) {
   h = host_index(name); if (!h) die("unknown host `" name "`")
   print manifests[h]
   for (g = 1; g <= gate_count; g++) if (gate_cell[g, h] == "wired") {
     path = "plugin/hooks/" gate_script[g]
     if (!seen_path[path]++) print path
   }
-  for (g = 1; g <= gate_count; g++) if (gate_id[g] == "handoff" && gate_cell[g, h] == "wired") print "plugin/bin/oso-state"
+  for (g = 1; g <= gate_count; g++) if ((gate_id[g] == "handoff" || gate_id[g] == "planstop" || gate_id[g] == "planprompt") && gate_cell[g, h] == "wired") state_needed = 1
+  if (state_needed) print "plugin/bin/oso-state"
   print "plugin/hooks/lib.sh"
   print "plugin/hooks/lexer.sh"
 }

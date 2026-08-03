@@ -26,6 +26,17 @@ require_session "$session_id"
 state_file="$(state_file_for "$(json_field "$input" cwd)")"
 require_readable_state "$state_file" "$session_id"
 
+# The Stop hook arms this boundary before it asks the operator for the literal
+# approval token. While it is pending, even a normally allowlisted local tool is
+# an execution attempt: UserPromptSubmit is the only event allowed to open it.
+# The pending flag is sufficient by itself, so a torn or manually corrupted
+# state cannot open the gate merely by disagreeing about its mode.
+if state_says "$state_file" '^plan_approval=pending$' "$session_id"; then
+  deny \
+    'oso-code: plan approval is pending. Switch to an execution permission mode and send exactly APPROVE OSO PLAN, or send exactly CANCEL OSO PLAN to abandon it, before using local tools.' \
+    plan-approval-pending-denied "$session_id"
+fi
+
 # From here the repository is armed. A malformed payload, classifier failure or
 # empty tool name blocks instead of turning the catch-all into a silent allow.
 trap 'block_with_gate_error "the unknown-tool gate"' ERR

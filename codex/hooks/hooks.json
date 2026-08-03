@@ -40,6 +40,26 @@
         ]
       }
     ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"__OSO_HOOKS_DIR__\"/capture-plan-approval.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"__OSO_HOOKS_DIR__\"/approve-plan-token.sh"
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "hooks": [

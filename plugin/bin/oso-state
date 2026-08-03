@@ -14,6 +14,8 @@
 #   oso-state --session <id> show
 #   oso-state --session <id> clear
 #   oso-state --session <id> event <type> [detail]
+#   oso-state --session <id> approve-plan <sha256>
+#   oso-state --session <id> cancel-plan <sha256>
 #   oso-state handoff publish --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --hook-session <id>
 #   oso-state handoff wait --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --timeout <seconds>
 #   oso-state handoff consume --slice <id> --attempt <n> --agent-id <id> --agent-type <type>
@@ -29,6 +31,8 @@ usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> show
        oso-state --session <id> clear
        oso-state --session <id> event <type> [detail]
+       oso-state --session <id> approve-plan <sha256>
+       oso-state --session <id> cancel-plan <sha256>
        oso-state handoff publish --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --hook-session <id>
        oso-state handoff wait --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --timeout <seconds>
        oso-state handoff consume --slice <id> --attempt <n> --agent-id <id> --agent-type <type>
@@ -456,6 +460,69 @@ case "$action" in
     # session's state file, while this appends one line to the event log every
     # hook already appends to unlocked and no state file is touched at all.
     log_event "$1" "$session_id" "${2:-}"
+    ;;
+  approve-plan)
+    [ $# -eq 1 ] || usage
+    approval_digest="$1"
+    [[ "$approval_digest" =~ ^[0-9a-f]{64}$ ]] || {
+      echo "oso-state: approve-plan requires one lowercase SHA-256 digest" >&2
+      exit 1
+    }
+    mkdir -p "$OSO_STATE_DIR"
+    acquire_lock
+    [ -f "$state_file" ] && [ -r "$state_file" ] && [ ! -L "$state_file" ] || {
+      echo "oso-state: no readable pending plan approval for session ${session_id}" >&2
+      exit 1
+    }
+    [ "$(state_value "$state_file" session)" = "$session_id" ] || {
+      echo "oso-state: pending plan approval belongs to another session" >&2
+      exit 1
+    }
+    [ "$(state_value "$state_file" mode)" = plan ] || {
+      echo "oso-state: pending approval is not attached to plan mode state" >&2
+      exit 1
+    }
+    [ "$(state_value "$state_file" plan_approval)" = pending ] || {
+      echo "oso-state: plan approval is not pending" >&2
+      exit 1
+    }
+    [ "$(state_value "$state_file" plan_approval_digest)" = "$approval_digest" ] || {
+      echo "oso-state: pending plan digest changed before approval" >&2
+      exit 1
+    }
+    tmp="$(mktemp "${OSO_STATE_DIR}/.tmp.XXXXXX")"
+    grep -v '^plan_approval=' "$state_file" > "$tmp" || true
+    printf 'plan_approval=approved\n' >> "$tmp"
+    mv "$tmp" "$state_file"
+    log_event plan-approval-approved "$session_id"
+    ;;
+  cancel-plan)
+    [ $# -eq 1 ] || usage
+    cancellation_digest="$1"
+    [[ "$cancellation_digest" =~ ^[0-9a-f]{64}$ ]] || {
+      echo "oso-state: cancel-plan requires one lowercase SHA-256 digest" >&2
+      exit 1
+    }
+    mkdir -p "$OSO_STATE_DIR"
+    acquire_lock
+    [ -f "$state_file" ] && [ -r "$state_file" ] && [ ! -L "$state_file" ] || {
+      echo "oso-state: no readable pending plan approval for session ${session_id}" >&2
+      exit 1
+    }
+    [ "$(state_value "$state_file" session)" = "$session_id" ] || {
+      echo "oso-state: pending plan approval belongs to another session" >&2
+      exit 1
+    }
+    [ "$(state_value "$state_file" plan_approval)" = pending ] || {
+      echo "oso-state: plan approval is not pending" >&2
+      exit 1
+    }
+    [ "$(state_value "$state_file" plan_approval_digest)" = "$cancellation_digest" ] || {
+      echo "oso-state: pending plan digest changed before cancellation" >&2
+      exit 1
+    }
+    rm -f "$state_file"
+    log_event plan-approval-cancelled "$session_id"
     ;;
   handoff)
     subaction="${1:-}"

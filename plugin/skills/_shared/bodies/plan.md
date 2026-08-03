@@ -4,7 +4,7 @@ Guided flow for substantial changes. The human decides; you guide, present optio
 
 ## Ground rules for the whole flow
 
-- Phases 1–5 up to approval run inside Plan Mode (read-only). Enter it before phase 1 and stay in it until the slice plan is approved through the Repaso-headed plan document (§5).
+- Phases 1–5 through delivery of the approval document run inside Plan Mode (read-only). Enter it before phase 1 and stay through §5's complete Repaso-headed document; the platform file owns the approval transition after delivery, and execution never starts while the host remains in Plan Mode.
 - Question rounds: each question carries 2–4 concrete options and their tradeoffs. Put your recommendation first, say why it wins, and state whether it is current standard practice; when the choice involves an external library, framework API, or well-trodden pattern, verify against current docs (context7) before recommending. How many questions one round may hold, and which tool asks them, are your host's — the platform file states both, and the cap it names is a cap, never a target.
 - Operator-facing content — the intent presentation, the surface-map presentation, any narrative the operator must read — is delivered under your host's delivery contract, stated in the platform file. Context a question round needs travels INSIDE the question's own fields (question text, option descriptions), never as prose the round has to carry for it.
 - If phase 1 reveals the change is actually small, say so and offer the QUICK mode. The user decides.
@@ -145,7 +145,7 @@ Record the answer — the mode, and the cap when it is parallel — in the ledge
 
 ## 5. Repaso de cambios (change recap) — heads the approval document
 
-The repaso is ALWAYS delivered — no gate, no preference to honor (that old preference round shrank in §0). It HEADS the plan document that your host's native approval gate renders: the opening the operator reads first, an initial brief that makes the plan easy to approve, immediately followed by the FULL plan detail — context, the frozen ledger, every slice (goal, files, verify, depends-on) under the wave it runs in, and the verification bar — which the repaso complements and never replaces.
+The repaso is ALWAYS delivered — no gate, no preference to honor (that old preference round shrank in §0). It HEADS the plan document that your host's approval gate receives: the opening the operator reads first, an initial brief that makes the plan easy to approve, immediately followed by the FULL plan detail — context, the frozen ledger, every slice (goal, files, verify, depends-on) under the wave it runs in, and the verification bar — which the repaso complements and never replaces.
 
 Fixed shape, three sections, written in the operator's language and at their explanation-depth preference (depth governs; the forced didactic register is gone — didactic only if that preference says so), soft cap ~20 lines total:
 
@@ -153,7 +153,7 @@ Fixed shape, three sections, written in the operator's language and at their exp
 2. **Decisiones del ledger que lo moldean** — the frozen decisions that shaped this design, and why they matter.
 3. **Cómo va a funcionar** — how the pieces connect once the change is live.
 
-No confirmation loop and no question round here — the repaso is read, not interrogated. There is exactly ONE approval gate and the platform file says what it is on this host: hand it the plan built repaso-first, full-detail-after. That approval is what starts execution. On approval, leave Plan Mode and save the plan state:
+No confirmation loop and no question round here — the repaso is read, not interrogated. There is exactly ONE approval gate and the platform file says what it is on this host: hand it the plan built repaso-first, full-detail-after. Approval applies only to that exact document. A material change after presentation invalidates it: re-present the complete repaso-first plan and pass the platform gate again for fresh approval. That approval is what starts execution. On approval, cross the platform file's execution boundary and save the plan state:
 `mem_save(title: "oso/{change}/plan — {human description}", topic_key: "oso/{change}/plan", type: "architecture", capture_prompt: false, content: slices with [ ] marks, grouped into their waves, + current position)`
 
 Update the index so this change surfaces on first search: create `oso/index` if it doesn't exist yet (`mem_save`, topic_key `oso/index`) or update it (`mem_update`, merge the table — never overwrite other rows), adding/updating the row `{change} — {human description} — status: executing`. Follow the index format standard:
