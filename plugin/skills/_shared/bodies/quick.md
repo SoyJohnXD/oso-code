@@ -46,7 +46,7 @@ These fire before the user decides — they are your rationalizations, not their
 Before the first edit, initialize the runtime state — the commit gate stays locked until the quality pass. The whole triple goes in every write because `oso-state` can set a key but never delete one: a stale green or a slice left armed by an abandoned flow is overwritten here, never inherited.
 `oso-state set mode=quick active_slice=none verify_green=false`
 Read it back with `oso-state show` and confirm the three keys came back as written — a write that silently failed leaves the commit gate open with no other signal, so stop and tell the operator instead of iterating.
-State survives until the session ends: if the operator walks away from this change mid-flow, run `oso-state clear`, or the stale green rides over whatever unrelated work follows in the session.
+State belongs to the repository and outlives this session: if the operator walks away from this change mid-flow, run `oso-state clear`, or the stale green rides over whatever unrelated work follows in that repository.
 
 - Work in small increments that each produce a visible result (run the app, run the affected test, show output).
 - **Front surface** — when the change touches front surface (per the shared trigger at `_shared/front-surface.md`), increments follow the project's `DESIGN.md`/`PRODUCT.md` when they exist.

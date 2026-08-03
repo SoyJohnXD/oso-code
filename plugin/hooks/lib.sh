@@ -95,6 +95,45 @@ sanitize_session() {
   printf '%s' "$1" | tr -cd 'a-zA-Z0-9-'
 }
 
+# The state of the work done in a directory, under the name of the REPOSITORY
+# that work belongs to: the main checkout, a linked worktree and a subdirectory
+# of either all answer one name, which is what lets the gate firing in a wave's
+# worktree read the state the orchestrator armed in the main checkout.
+# `--git-common-dir` alone does not say that — it answers a relative `.git` in
+# the main checkout and an absolute path inside a linked worktree, one repository
+# under two names — so the identity is the absolute spelling (ADR-0095). Where
+# git places nothing there is no commit for the rail to gate, and the directory
+# the work happens in is identity enough.
+#
+# That path is DIGESTED, never sanitized into a name. A file name has a charset
+# and a length a path has not, and forcing a path into either opens the gate:
+# translating each byte outside `[a-zA-Z0-9-]` to a dash — a byte already inside
+# it — gives `my_app`, `my-app`, `my app` and `my.app` one name, so a red
+# repository reads its neighbour's `verify_green=true`, while a repository nested
+# past NAME_MAX gets no writable name at all, so a red repository reads no state
+# and the gate stays invisible. A digest is fixed-length hex, so it needs no
+# sanitizing against traversal either; GNU coreutils and macOS spell it the two
+# ways `seconds_since_modified` below spells one mtime, and a host that answers
+# neither blocks rather than filing every repository under one name.
+state_file_for() {
+  local directory="$1" identity digest
+  identity="$(git -C "$directory" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || identity=""
+  digest="$(printf '%s' "${identity:-$directory}" |
+    { sha256sum 2>/dev/null || shasum -a 256 2>/dev/null; })" || digest=""
+  digest="${digest%% *}"
+  [ -n "$digest" ] ||
+    block_with_gate_error "naming this repository's state (no sha256sum, no shasum)"
+  printf '%s/%s.state' "$OSO_STATE_DIR" "$digest"
+}
+
+# One key out of a state file. The key=value format is one thing to know, so
+# `oso-state get` and the teardown that has no directory to resolve a file from
+# read it in one place instead of each parsing the file its own way.
+state_value() {
+  local state_file="$1" key="$2"
+  grep "^${key}=" "$state_file" 2>/dev/null | cut -d= -f2- || true
+}
+
 # GNU and BSD stat spell mtime differently, and a file whose mtime neither can
 # read gets no age at all rather than a guessed one: each caller decides what its
 # own threshold makes of an unanswered age.

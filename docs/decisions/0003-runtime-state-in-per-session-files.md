@@ -2,7 +2,8 @@
 
 Date: 2026-07-11
 Status: accepted
-Reconciled: applied — the Hooks section reads the per-session flat files this corrected to.
+Superseded-by: ADR-0095 — retires only the per-session file NAME; the flat key=value format and the location outside every project still stand
+Reconciled: superseded — ADR-0095 keys the same flat files by repository, so the Hooks section's one-file-per-session reading is retired and the body deliberately reads otherwise.
 Source: docs/blueprint.md amendment of 2026-07-11 (harness audit, 5-judge review), correction (a), deciding commit 8b8456e
 
 ## Decision

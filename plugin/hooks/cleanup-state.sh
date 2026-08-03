@@ -8,12 +8,21 @@ HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HOOK_DIR/lib.sh"
 
 events_log="${OSO_STATE_DIR}/events.jsonl"
-# The state file's key=value format is oso-state's to know, so the repo a
-# teardown prunes in is read through it rather than re-parsed here. The client
-# injects <plugin>/bin into the Bash tool's PATH and never into a hook's own
-# environment (see persist-state-bin.sh), so the reader is reached where it
-# ships: beside the hooks.
-oso_state="$(dirname "$HOOK_DIR")/bin/oso-state"
+
+# The state file a session armed, wherever its repository put it. Nothing here
+# can compute that name — the file is the repository's and this hook runs in no
+# working directory to resolve one from — so the session it recorded is the way
+# back to it, found by the sweep the orphan prune below already walks.
+state_armed_by() {
+  local session_id="$1" state_file
+  [ -n "$session_id" ] || return 0
+  for state_file in "$OSO_STATE_DIR"/*.state; do
+    [ -f "$state_file" ] || continue
+    [ "$(state_value "$state_file" session)" = "$session_id" ] || continue
+    printf '%s' "$state_file"
+    return 0
+  done
+}
 
 # A worktree is normally destroyed when its wave integrates, so what reaches here
 # is a survivor. Removing the directory is only half a teardown: deleted behind
@@ -28,22 +37,16 @@ oso_state="$(dirname "$HOOK_DIR")/bin/oso-state"
 # that moved, a removal git refuses: none of them may cost the session the state
 # cleanup below.
 remove_worktrees_of() {
-  local session_id="$1" repo_path worktree teardown_event
+  local session_id="$1" state_file="$2" repo_path worktree teardown_event
   [ -n "$session_id" ] || return 0
   local session_worktrees="${OSO_STATE_DIR}/worktrees/${session_id}"
   [ -d "$session_worktrees" ] || return 0
   # The repo to prune in is in the state file, so this runs before it is dropped.
-  # `get` exits 0 for a session that named no repo and answers empty, so a
-  # non-zero exit is only ever the reader itself being unrunnable — a partial
-  # install rather than a session with nothing to prune. The two owe the operator
-  # different answers, and bash writes its own about the first to a stderr no
-  # audit reads.
-  if ! repo_path="$("$oso_state" --session "$session_id" get repo_path 2>/dev/null)"; then
-    log_event oso-state-unreachable "$session_id" "$oso_state" || true
-    return 0
-  fi
-  # A session that never armed a wave names no repo: with nowhere to prune, the
+  # A session that never armed a wave names no repo — and one whose state file
+  # the sweep above never found names nothing at all: with nowhere to prune, the
   # directory stays rather than becoming a registration nobody can clear.
+  [ -n "$state_file" ] || return 0
+  repo_path="$(state_value "$state_file" repo_path)"
   [ -n "$repo_path" ] || return 0
   for worktree in "$session_worktrees"/*; do
     [ -d "$worktree" ] || continue
@@ -63,10 +66,9 @@ remove_worktrees_of() {
   rmdir "$session_worktrees" 2>/dev/null || true
 }
 
-drop_session_state() {
-  local session_id="$1"
-  [ -n "$session_id" ] || return 0
-  local state_file="${OSO_STATE_DIR}/${session_id}.state"
+drop_state_file() {
+  local state_file="$1"
+  [ -n "$state_file" ] || return 0
   # Drop the state and any lock a crashed writer left behind.
   rm -f "$state_file"
   rm -rf "${state_file}.lock"
@@ -86,16 +88,16 @@ rotate_aged_events_log() {
 # gates for that session invisibly; keeping a dead one costs a line of startup
 # noise — so every doubt (unknown session, held lock, unreadable age) keeps.
 prune_abandoned_state() {
-  local session_id="$1" abandoned_days=7 state_file abandoned_id
+  local session_id="$1" own_state="$2" abandoned_days=7 state_file abandoned_id
   [ -n "$session_id" ] || return 0
   for state_file in "$OSO_STATE_DIR"/*.state; do
     [ -f "$state_file" ] || continue
-    case "$state_file" in "$OSO_STATE_DIR/${session_id}.state") continue ;; esac
+    [ "$state_file" != "$own_state" ] || continue
     # A lock means a writer is mid-write, whatever the mtime says.
     [ ! -e "${state_file}.lock" ] || continue
     older_than_days "$state_file" "$abandoned_days" || continue
-    abandoned_id="$(sanitize_session "$(basename "$state_file" .state)")"
-    remove_worktrees_of "$abandoned_id"
+    abandoned_id="$(sanitize_session "$(state_value "$state_file" session)")"
+    remove_worktrees_of "$abandoned_id" "$state_file"
     rm -f "$state_file"
   done
 }
@@ -109,8 +111,9 @@ older_than_days() {
 }
 
 session_id="$(sanitize_session "$(json_field "$(cat)" session_id)")"
-remove_worktrees_of "$session_id"
-drop_session_state "$session_id"
+own_state="$(state_armed_by "$session_id")"
+remove_worktrees_of "$session_id" "$own_state"
+drop_state_file "$own_state"
 rotate_aged_events_log
-prune_abandoned_state "$session_id"
+prune_abandoned_state "$session_id" "$own_state"
 exit 0

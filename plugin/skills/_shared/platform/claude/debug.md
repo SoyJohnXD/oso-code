@@ -18,7 +18,7 @@ Every `oso-state <verb> …` the neutral body instructs runs as:
 
 `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" <verb> …`
 
-so `oso-state set mode=debug active_slice=fix verify_green=false` is run as `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" set mode=debug active_slice=fix verify_green=false`, and `oso-state show` and `oso-state clear` take the same prefix. The gates that read what those writes leave behind are this plugin's own hooks, and they key their read on that session id — so a write spelled without it lands in nobody's state and the commit gate stays open with no other signal.
+so `oso-state set mode=debug active_slice=fix verify_green=false` is run as `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" set mode=debug active_slice=fix verify_green=false`, and `oso-state show` and `oso-state clear` take the same prefix. The gates that read what those writes leave behind are this plugin's own hooks, and they key their read on the REPOSITORY the write was made in — the session id is what the audit trail records each line under, and a write spelled without it does not run at all.
 
 ## Naming and invoking the harness's own skills
 

@@ -2,6 +2,7 @@
 
 Date: 2026-08-02
 Status: accepted
+Superseded-by: ADR-0095 — retires only the `oso-state-unreachable` event, whose failure the teardown no longer has; the verb and every other line it writes still stand
 Reconciled: elsewhere — landed in `plugin/bin/oso-state` and the SessionEnd hook; the frozen body names the state files but never the verbs that write them.
 Source: this change (parallel wave execution); recorded with the change that made it
 

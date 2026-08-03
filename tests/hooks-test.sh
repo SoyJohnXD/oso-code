@@ -10,10 +10,23 @@ trap 'rm -rf "$TEST_HOME"' EXIT
 export HOME="$TEST_HOME"
 export PATH="$PLUGIN/bin:$PATH"
 SESSION="test-session"
-# Spelled here rather than sourced from lib.sh on purpose: asserting the path
-# independently is what catches a wrong constant in the code under test.
+# `oso-state` names its file after the repository it is RUN in, so the suite's own
+# directory is what most of these cases write through — pinned here, or a run
+# started from somewhere else arms one repository and asserts against another.
+cd "$REPO_ROOT"
+# Spelled here rather than sourced from lib.sh on purpose: asserting the name
+# independently is what catches a wrong rule in the code under test. Where git
+# cannot answer — the bash:3.2 container CI runs this in carries none — the
+# directory is the identity, which is the fallback the code takes too.
+state_key_of() {
+  local directory="$1" identity digest
+  identity="$(git -C "$directory" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || identity=""
+  digest="$(printf '%s' "${identity:-$directory}" |
+    { sha256sum 2>/dev/null || shasum -a 256 2>/dev/null; })" || digest=""
+  printf '%s' "${digest%% *}"
+}
 STATE_DIR="$HOME/.local/state/oso-code"
-SESSION_STATE="$STATE_DIR/$SESSION.state"
+REPO_STATE="$STATE_DIR/$(state_key_of "$REPO_ROOT").state"
 
 pass=0
 fail=0
@@ -105,7 +118,7 @@ assert_equals() {
 TRANSCRIPT="$HOME/.claude/projects/oso-code/$SESSION.jsonl"
 bash_input() {
   printf '{"session_id":"%s","transcript_path":"%s","cwd":"%s","permission_mode":"default","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"%s","description":"regression case"}}' \
-    "$SESSION" "$TRANSCRIPT" "$REPO_ROOT" "$1"
+    "$SESSION" "$TRANSCRIPT" "${2:-$REPO_ROOT}" "$1"
 }
 edit_input="$(printf '{"session_id":"%s","transcript_path":"%s","cwd":"%s","permission_mode":"default","hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"/tmp/x.ts","old_string":"const slice = 1;","new_string":"const slice = 2;","replace_all":false}}' \
   "$SESSION" "$TRANSCRIPT" "$REPO_ROOT")"
@@ -246,6 +259,27 @@ oso-state --session "$SESSION" set mode=debug verify_green=false
 assert_allows "debug-mode edit is unrestricted" block-edits-without-slice.sh "$edit_input"
 oso-state --session "$SESSION" clear
 
+# --- Both PreToolUse gates arm on the session their payload names -------------
+# A PreToolUse hook has no agent environment to read — the client puts no
+# CLAUDE_CODE_* variable in one, which is why every gate-written line in the
+# event log carries an empty `client` field (ADR-0095) — so the session the
+# payload names is the marker, and a payload naming none is nobody's call. That
+# name used to pick the state file too; now the state file is the repository's
+# and exists whether or not an agent is running, which leaves the marker as the
+# only thing between either gate and a call it has no business judging.
+unmarked_bash_input="$(printf '{"cwd":"%s","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git commit -m x"}}' "$REPO_ROOT")"
+unmarked_edit_input="$(printf '{"cwd":"%s","hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"/tmp/x.ts","old_string":"a","new_string":"b"}}' "$REPO_ROOT")"
+oso-state --session "$SESSION" set mode=plan active_slice=none verify_green=false
+assert_denies "the commit gate denies a marked call on the repo's red state" \
+  block-commit-until-green.sh "$(bash_input 'git commit -m x')"
+assert_allows "the commit gate stays off a call naming no session, armed repo or not" \
+  block-commit-until-green.sh "$unmarked_bash_input"
+assert_denies "the edit gate denies a marked call while no slice is active" \
+  block-edits-without-slice.sh "$edit_input"
+assert_allows "the edit gate stays off a call naming no session, armed repo or not" \
+  block-edits-without-slice.sh "$unmarked_edit_input"
+oso-state --session "$SESSION" clear
+
 # --- Invisibility: a session no mode ever armed must not know a gate ran -------
 # A marketplace install runs no bootstrap and a GUI-launched client has no
 # /opt/homebrew/bin, so the interesting machine is the one without jq: every
@@ -257,8 +291,15 @@ oso-state --session "$SESSION" clear
 # a link into a link to itself.
 NOJQ_PATH="$TEST_HOME/nojq"
 mkdir -p "$NOJQ_PATH"
-for hook_tool in env bash cat dirname tr grep date mkdir; do
-  ln -s "$(type -P "$hook_tool")" "$NOJQ_PATH/$hook_tool"
+# `sha256sum` and `shasum` are one tool spelled two ways, GNU and macOS, so this
+# machine gets whichever of the pair it carries and skips the other — hiding both
+# would hide the state file's name rather than jq. A required tool that went
+# missing is no silent skip either: the gate would write the stderr this case
+# reads as a trace.
+for hook_tool in env bash cat dirname tr grep date mkdir sha256sum shasum; do
+  hook_tool_path="$(type -P "$hook_tool")" || hook_tool_path=""
+  [ -n "$hook_tool_path" ] || continue
+  ln -s "$hook_tool_path" "$NOJQ_PATH/$hook_tool"
 done
 
 assert_leaves_no_trace() {
@@ -631,6 +672,110 @@ bash -c 'oso-state --session "${CLAUDE_CODE_SESSION_ID}" set mode=plan verify_gr
 assert_denies "skill-documented env var arms the gate" block-commit-until-green.sh "$(bash_input 'git commit -m x')"
 oso-state --session "$SESSION" clear
 
+# --- Identity: one repository, one state file --------------------------------
+# The whole point of keying by the repository: an applier commits inside a wave's
+# worktree and the gate firing there has to read the state the orchestrator armed
+# in the main checkout. `--git-common-dir` alone does not answer that — it is a
+# relative `.git` in the main checkout and an absolute path in a linked worktree
+# — so the case reads the name back from three trees of one repo and fails on any
+# spelling that splits them. Needs git twice over: for the identity and for a
+# worktree to ask it from.
+KEY_REPO="$TEST_HOME/identity-repo"
+KEY_WORKTREE="$TEST_HOME/identity-worktree"
+
+state_key_written_from() {
+  local directory="$1"
+  rm -f "$STATE_DIR"/*.state
+  ( cd "$directory" && oso-state --session "$SESSION" set mode=plan >/dev/null )
+  basename "$(ls "$STATE_DIR"/*.state)" .state
+}
+
+if ! command -v git >/dev/null 2>&1; then
+  echo "skip: git is absent here, so one repository has no second tree to answer from"
+  skipped=$((skipped + 1))
+else
+  mkdir -p "$KEY_REPO"
+  git -C "$KEY_REPO" init -q
+  git -C "$KEY_REPO" config user.email tests@oso-code.invalid
+  git -C "$KEY_REPO" config user.name "oso-code tests"
+  git -C "$KEY_REPO" config commit.gpgsign false
+  printf 'base\n' > "$KEY_REPO/base.txt"
+  git -C "$KEY_REPO" add base.txt
+  git -C "$KEY_REPO" commit -qm base
+  git -C "$KEY_REPO" worktree add -q -b oso/identity "$KEY_WORKTREE"
+  mkdir -p "$KEY_REPO/nested" "$KEY_WORKTREE/nested/deeper"
+
+  expected_key="$(state_key_of "$KEY_REPO")"
+  keys_written=""
+  for tree in "$KEY_REPO" "$KEY_REPO/nested" "$KEY_WORKTREE" "$KEY_WORKTREE/nested/deeper"; do
+    keys_written="$keys_written $(state_key_written_from "$tree")"
+  done
+  assert_equals "one repository names one state file from every tree of it" \
+    "$expected_key $expected_key $expected_key $expected_key" "${keys_written# }"
+
+  # And the other half: a DIFFERENT repository is a different file, or the key is
+  # a constant that happens to agree with itself everywhere.
+  assert_equals "a second repository names a second state file" "different" \
+    "$([ "$(state_key_written_from "$REPO_ROOT")" != "$expected_key" ] && echo different || echo collided)"
+
+  git -C "$KEY_REPO" worktree remove --force "$KEY_WORKTREE"
+  git -C "$KEY_REPO" worktree prune
+  rm -rf "$KEY_REPO"
+fi
+rm -f "$STATE_DIR"/*.state
+
+# A path is a far richer input than a session id, and the name it becomes is what
+# has to be checked, because no sanitizer keeps two repositories apart: dropping
+# every byte outside `[a-zA-Z0-9-]` maps `/home/a/b` onto `/homeab`, translating
+# each of them to a dash maps `my_app`, `my-app`, `my app` and `my.app` onto one
+# another — a dash is inside that charset too — and a name has a length besides.
+# One name for two repositories is the red one's commit gate reading the green
+# one's flag, so every way a name can collapse is probed, not one shape of one.
+state_file_of() { ( . "$PLUGIN/hooks/lib.sh"; state_file_for "$1" ); }
+traversal_state="$(state_file_of '/tmp/../../../etc/passwd')"
+# What is left of the name once the state dir is stripped off it — the whole of
+# it, if the name never was under that dir. bash 3.2 ends a `$( )` at the first
+# unbalanced `)`, and a case pattern's own is one, so the verdict is reached here
+# rather than inside the assert's argument.
+traversal_name="${traversal_state#"$STATE_DIR/"}"
+case "$traversal_name" in
+  */*|*..*|*[!a-zA-Z0-9.-]*) traversal_verdict=escaped ;;
+  *) traversal_verdict=inside ;;
+esac
+assert_equals "a traversal-shaped repo path names a file inside the state dir" \
+  "inside" "$traversal_verdict"
+sibling_keys=""
+for sibling in my_app my-app 'my app' my.app app.web app-web; do
+  sibling_keys="${sibling_keys}$(state_file_of "$TEST_HOME/siblings/$sibling")"$'\n'
+done
+distinct_sibling_keys="$(printf '%s' "$sibling_keys" | sort -u | wc -l)"
+assert_equals "sibling repositories differing only by a dashable byte keep six names" \
+  6 "$((distinct_sibling_keys))"
+assert_equals "a path and that path with its separators gone keep two names" "distinct" \
+  "$([ "$(state_file_of /home/a/b)" != "$(state_file_of /homeab)" ] && echo distinct || echo collided)"
+# The length half of the same class: `NAME_MAX` does not truncate, it refuses, so
+# a repository nested deep enough got no state file written and the gate then
+# read no state at all — an allow. A digest is fixed-length, so depth is not
+# something the name can run out of.
+DEEP_REPO="$TEST_HOME/deep"
+while [ "${#DEEP_REPO}" -lt 300 ]; do DEEP_REPO="$DEEP_REPO/nested-directory-name"; done
+mkdir -p "$DEEP_REPO"
+# A name too long to write is `oso-state` spinning on a lock it can never make,
+# so the arming is allowed to fail here and the gate below is what reports it —
+# an aborted run would take the rest of the suite with it.
+( cd "$DEEP_REPO" && oso-state --session "$SESSION" set mode=plan verify_green=false ) >/dev/null 2>&1 || true
+assert_denies "a repository nested past NAME_MAX still arms its commit gate" \
+  block-commit-until-green.sh "$(bash_input 'git commit -m x' "$DEEP_REPO")"
+( cd "$DEEP_REPO" && oso-state --session "$SESSION" clear ) >/dev/null 2>&1 || true
+rm -rf "$TEST_HOME/deep"
+# And where no digest can be computed at all, a name every repository would share
+# is the one answer that must not come back.
+no_digest_rc=0
+( . "$PLUGIN/hooks/lib.sh"; PATH="$TEST_HOME/no-tools"; state_file_for /repo ) >/dev/null 2>&1 ||
+  no_digest_rc=$?
+assert_equals "a host that can spell no digest blocks instead of naming every repo alike" \
+  2 "$no_digest_rc"
+
 # --- Concurrency: parallel writers must not lose keys ---
 ( for i in $(seq 1 25); do oso-state --session "$SESSION" set "a=$i" >/dev/null; done ) &
 ( for i in $(seq 1 25); do oso-state --session "$SESSION" set "b=$i" >/dev/null; done ) &
@@ -640,7 +785,7 @@ assert_equals "concurrent writers preserve all keys" "a=25 b=25" \
 oso-state --session "$SESSION" clear
 
 # --- Stale lock: a crashed writer's lock is reclaimed, not fatal ---
-stale_lock="$SESSION_STATE.lock"
+stale_lock="$REPO_STATE.lock"
 mkdir -p "$stale_lock"
 touch -t 200001010000 "$stale_lock"
 oso-state --session "$SESSION" set stale_ok=yes >/dev/null 2>&1 || true
@@ -664,6 +809,13 @@ for triple_key in mode active_slice verify_green; do
   esac
 done
 assert_equals "the whole triple survives a fourth key beside it" "" "$keys_lost_to_the_fourth"
+
+# The one key no caller writes: the file is the REPOSITORY's, and SessionEnd runs
+# in no directory that could name one, so which session armed the state is the
+# only way back to the file it left. Written by `set` from the flag it already
+# takes, beside whatever the caller asked for.
+assert_equals "a write records the session that armed the state" \
+  "$SESSION" "$(oso-state --session "$SESSION" get session)"
 oso-state --session "$SESSION" clear
 
 # --- Telemetry: denies are recorded ---
@@ -723,13 +875,29 @@ assert_logged "an event with no detail is a well-formed line too" \
 
 # --- Session-end cleanup + path traversal safety ---
 oso-state --session "$SESSION" set mode=plan verify_green=true
-mkdir -p "$SESSION_STATE.lock"
+mkdir -p "$REPO_STATE.lock"
 run_hook cleanup-state.sh "$(printf '{"session_id":"%s"}' "$SESSION")"
-assert_after_hook "session end removes state"         [ ! -f "$SESSION_STATE" ]
-assert_after_hook "session end removes leftover lock" [ ! -d "$SESSION_STATE.lock" ]
+assert_after_hook "session end removes state"         [ ! -f "$REPO_STATE" ]
+assert_after_hook "session end removes leftover lock" [ ! -d "$REPO_STATE.lock" ]
 touch "$HOME/canary"
 run_hook cleanup-state.sh '{"session_id":"../../canary"}'
 assert_after_hook "traversal session id cannot delete outside state dir" [ -f "$HOME/canary" ]
+
+# The hook runs in no working directory of its own, so it can no more compute the
+# name a repository gives its state file than it can guess the repo path it prunes
+# in: it sweeps for the session the file recorded. Armed from another directory
+# entirely, dropped by a run standing in this one.
+ELSEWHERE="$TEST_HOME/state-armed-elsewhere"
+mkdir -p "$ELSEWHERE"
+( cd "$ELSEWHERE" && oso-state --session sessionend-probe set mode=plan verify_green=true >/dev/null )
+elsewhere_state="$STATE_DIR/$(state_key_of "$ELSEWHERE").state"
+# The arming is asserted before the teardown, or a name nothing ever wrote would
+# read as a name the teardown swept.
+assert_equals "a write names its own directory, not the one the suite stands in" \
+  "written" "$([ -f "$elsewhere_state" ] && echo written || echo missing)"
+run_hook cleanup-state.sh '{"session_id":"sessionend-probe"}'
+assert_after_hook "session end drops the state of a directory it is not standing in" \
+  [ ! -f "$elsewhere_state" ]
 
 # --- SessionStart: OSO_STATE_BIN reaches the real oso-state binary ---
 # The skills invoke "${OSO_STATE_BIN:-oso-state}"; this hook is what makes that
@@ -760,7 +928,7 @@ rmdir "$events_log"
 
 # --- Polarity: an armed session the gate cannot read denies, never opens ---
 oso-state --session "$SESSION" clear
-mkdir -p "$SESSION_STATE"
+mkdir -p "$REPO_STATE"
 assert_denies "commit gate denies a state path that is not a readable file" block-commit-until-green.sh "$(bash_input 'git commit -m x')"
 assert_denies "edit gate denies a state path that is not a readable file"   block-edits-without-slice.sh "$edit_input"
 # A line the lexer calls clear is the one shape that could have left the gate open
@@ -768,7 +936,7 @@ assert_denies "edit gate denies a state path that is not a readable file"   bloc
 # trap, so an armed session the gate cannot read denies whatever the line says.
 assert_denies "commit gate denies an unreadable state even for a line that looks clear" \
   block-commit-until-green.sh "$(bash_input 'npm test')"
-rmdir "$SESSION_STATE"
+rmdir "$REPO_STATE"
 assert_logged "an unreadable state file is recorded" '"event":"state-unreadable"'
 
 # --- The state directory is no edit exemption ---
@@ -846,7 +1014,7 @@ run_hook cleanup-state.sh "$(printf '{"session_id":"%s"}' "$SESSION")"
 assert_pruned "state left by a session that ended weeks ago is swept" "$abandoned_state"
 assert_kept   "state written within the week survives the sweep"      "$recent_state"
 assert_kept   "state held by a live lock survives whatever its age"   "$locked_state"
-assert_pruned "the ending session's own state is still removed"       "$SESSION_STATE"
+assert_pruned "the ending session's own state is still removed"       "$REPO_STATE"
 rm -rf "${locked_state}.lock" "$locked_state" "$recent_state"
 
 # --- Retention: an aged event log rotates, a current one is left alone ---
@@ -886,29 +1054,26 @@ VANISHED_REPO="$TEST_HOME/vanished-repo"
 # A session that never armed a wave carries no repo_path, so nothing says where
 # to prune — and removing the directory anyway is that corruption rather than a
 # cleanup. Needs no git, which is the one thing this whole section can assume.
+# The state file's NAME is arbitrary from here down: the teardown finds a file by
+# the `session=` key inside it, and one file per session is what lets these cases
+# hold a lock and an mtime apart that a single repository's file could not.
 mkdir -p "$WORKTREES_DIR/wt-no-repo/1"
-printf 'mode=plan\n' > "$STATE_DIR/wt-no-repo.state"
+printf 'mode=plan\nsession=wt-no-repo\n' > "$STATE_DIR/wt-no-repo.state"
 run_hook cleanup-state.sh '{"session_id":"wt-no-repo"}'
 assert_pruned "a state file naming no repo is still removed"            "$STATE_DIR/wt-no-repo.state"
 assert_kept   "a worktree with no repo to prune in is left where it is" "$WORKTREES_DIR/wt-no-repo/1"
 rm -rf "$WORKTREES_DIR/wt-no-repo"
 
-# The contrast to the case above: the repo path is read through the sibling
-# binary, so a tree whose bin/ never arrived cannot tell a session that names no
-# repo from one nobody could ask — and leaving the worktree standing is the right
-# answer to only one of them. Nothing asks git before that branch, so this needs
-# none either: the copy is hooks-only, which is what a partial install leaves.
-UNINSTALLED_PLUGIN="$TEST_HOME/plugin-without-bin"
-mkdir -p "$UNINSTALLED_PLUGIN"
-cp -R "$PLUGIN/hooks" "$UNINSTALLED_PLUGIN/hooks"
-mkdir -p "$WORKTREES_DIR/wt-no-bin/1"
-printf 'mode=plan\nrepo_path=%s\n' "$WORKTREE_REPO" > "$STATE_DIR/wt-no-bin.state"
-run_hook "$UNINSTALLED_PLUGIN/hooks/cleanup-state.sh" '{"session_id":"wt-no-bin"}'
-assert_pruned "a session whose state reader is missing still ends"   "$STATE_DIR/wt-no-bin.state"
-assert_kept   "the worktree nobody could ask about is left standing" "$WORKTREES_DIR/wt-no-bin/1"
-assert_logged "a state reader that could not run is recorded rather than swallowed" \
-  '"event":"oso-state-unreachable"'
-rm -rf "$WORKTREES_DIR/wt-no-bin" "$UNINSTALLED_PLUGIN"
+# The contrast to the case above: a session whose state file the sweep never
+# found names nothing at all, and leaving the worktree standing is the right
+# answer to that too — a directory removed with nowhere to prune in is a
+# registration nobody can clear. Needs no git for the same reason: nothing asks
+# git before that branch.
+mkdir -p "$WORKTREES_DIR/wt-unfound/1"
+run_hook cleanup-state.sh '{"session_id":"wt-unfound"}'
+assert_kept "the worktree of a session with no state file at all is left standing" \
+  "$WORKTREES_DIR/wt-unfound/1"
+rm -rf "$WORKTREES_DIR/wt-unfound"
 
 # What git still believes about one session's worktrees — the half no `[ -d ]`
 # can answer, since a removed-by-hand worktree stays listed until the prune runs.
@@ -928,13 +1093,14 @@ arm_repo_at() {
   git -C "$repo" commit -qm base
 }
 
-# One armed wave: a linked worktree where the orchestrator puts it, and the state
-# key that says which repo the teardown has to prune in.
+# One armed wave: a linked worktree where the orchestrator puts it, the state key
+# that says which repo the teardown has to prune in, and the session that names
+# the file as its own.
 arm_wave_for() {
   local session_id="$1" repo="$2"
   mkdir -p "$WORKTREES_DIR/$session_id"
   git -C "$repo" worktree add -q -b "oso/parallel/$session_id" "$WORKTREES_DIR/$session_id/1"
-  printf 'mode=plan\nrepo_path=%s\n' "$repo" > "$STATE_DIR/$session_id.state"
+  printf 'mode=plan\nrepo_path=%s\nsession=%s\n' "$repo" "$session_id" > "$STATE_DIR/$session_id.state"
 }
 
 if ! command -v git >/dev/null 2>&1; then
@@ -1044,17 +1210,20 @@ fi
 # The hook that tells a resumed session its gates are off decides that from the
 # state dir alone, so what it names is the whole behaviour: another session's
 # state file, never its own, and never an entry in the dir that is no state file
-# at all — the worktrees a parallel wave puts there among them.
+# at all — the worktrees a parallel wave puts there among them. Its own is the
+# one recording its session id, since a resumed session keeps that id and the
+# file it left is the repository's, waiting for it under a name nothing here
+# reads.
 
-printf 'mode=plan\n' > "$STATE_DIR/other-session.state"
-printf 'mode=plan\n' > "$SESSION_STATE"
+printf 'mode=plan\nsession=other-session\n' > "$STATE_DIR/other-session.state"
+printf 'mode=plan\nsession=%s\n' "$SESSION" > "$REPO_STATE"
 mkdir -p "$WORKTREES_DIR/wt-parallel/1"
 run_hook warn-stale-state.sh "$(printf '{"session_id":"%s"}' "$SESSION")"
 # Which of the dir's entries reached the SessionStart context. The report is
 # prose the model reads, so the case asks which names it carries rather than how
 # the sentence around them is worded.
 named_as_stale=""
-for dir_entry in "$SESSION.state" other-session.state worktrees; do
+for dir_entry in "$(basename "$REPO_STATE")" other-session.state worktrees; do
   case "$hook_stdout" in *"$dir_entry"*) named_as_stale="$named_as_stale $dir_entry" ;; esac
 done
 named_as_stale="${named_as_stale# }"
@@ -1072,7 +1241,7 @@ HOME="$TEST_HOME/never-armed"
 assert_allows "SessionStart says nothing where there is no state dir" \
   warn-stale-state.sh "$(printf '{"session_id":"%s"}' "$SESSION")"
 HOME="$TEST_HOME"
-rm -rf "$WORKTREES_DIR/wt-parallel" "$SESSION_STATE"
+rm -rf "$WORKTREES_DIR/wt-parallel" "$REPO_STATE"
 
 # --- Commit gate: one table per question the matcher has to answer -----------
 # A table line is a whole case, and the command is its name: the point of these
@@ -1705,26 +1874,47 @@ if ! command -v git >/dev/null 2>&1; then
   skipped=$((skipped + 1))
 else
   arm_commit_repo
+  # The state this hook reads is the COMMIT REPO's, so it is armed from inside it:
+  # armed from the suite's own directory it would name this repository instead and
+  # the hook would judge against a file nobody wrote.
+  COMMIT_REPO_STATE="$STATE_DIR/$(state_key_of "$COMMIT_REPO").state"
+  commit_repo_state() { ( cd "$COMMIT_REPO" && oso-state --session "$SESSION" "$@" ); }
 
-  # Invisibility, on the two shapes that own the operator's commits: a session the
-  # plugin never armed, and a terminal with no session variable at all — a human's.
-  oso-state --session "$SESSION" clear
+  # Invisibility, on the two shapes that own the operator's commits: a repo the
+  # plugin never armed, and a terminal with no agent marker at all — a human's.
+  commit_repo_state clear
   rm -f "$events_log"
-  assert_commit_lands "a session with no state file commits untouched" 'git commit -m x'
+  assert_commit_lands "a repo with no state file commits untouched" 'git commit -m x'
   assert_commit_lands "a terminal with no session variable commits untouched" \
     "env -u CLAUDE_CODE_SESSION_ID HOME=$HUMAN_HOME git commit -m x"
   assert_not_logged "neither allowed commit left a trace" "$HUMAN_HOME"
 
-  oso-state --session "$SESSION" set mode=plan verify_green=false
+  # The same terminal against an ARMED repo, which is the whole of what keying by
+  # repository changed: the state file now exists for the repo the operator commits
+  # in, so the marker is all that stands between this gate and their own commit.
+  # Both spellings are stripped — a host that publishes no session id arms on
+  # OSO_AGENT — and the operator's own HOME is used, so the audit this leaves no
+  # trace in is the same log every case above reads.
+  commit_repo_state set mode=plan verify_green=false
+  rm -f "$events_log"
+  assert_commit_lands "an unmarked terminal commits untouched though the repo is armed and red" \
+    'env -u CLAUDE_CODE_SESSION_ID -u OSO_AGENT git commit -m x'
+  assert_not_logged "the operator's own commit left no trace in the audit"
+
   assert_commit_aborted "the git layer denies a commit while verify is red" 'git commit -m x'
-  oso-state --session "$SESSION" set verify_green=true
+  assert_commit_aborted "the marker a host with no session id sets arms the same gate" \
+    'env -u CLAUDE_CODE_SESSION_ID OSO_AGENT=codex-probe git commit -m x'
+  commit_repo_state set verify_green=true
   assert_commit_lands "the git layer lets a commit through once verify is green" 'git commit -m x'
   assert_logged "the git layer records its deny as the matcher's event" '"event":"commit-denied"'
 
   # Both layers on one shape, which is the whole reason this one exists: the matcher
   # reads flock's lock-file argument as the program flock runs, and an alias hides
   # the verb from every table it has. Both come out clear, both reach the commit.
-  oso-state --session "$SESSION" set verify_green=false
+  # Two repos are armed for these: the matcher judges the payload's cwd, which is
+  # this repository, and the commit happens in the other.
+  commit_repo_state set verify_green=false
+  oso-state --session "$SESSION" set mode=plan verify_green=false
   alias_shape='git ci -m x'
   assert_allows "the matcher cannot see the verb behind a git alias" \
     block-commit-until-green.sh "$(bash_input "$alias_shape")"
@@ -1747,13 +1937,16 @@ else
   assert_commit_lands "--no-verify skips the git layer, as git documents" \
     'git commit --no-verify -m x'
 
-  # Same polarity as the matcher: an armed session whose state cannot be read denies
-  # rather than guessing.
-  rm -f "$SESSION_STATE"
-  mkdir -p "$SESSION_STATE"
+  # Same polarity as the matcher: armed state the gate cannot read denies rather
+  # than guessing. The unreadable path is the COMMIT REPO's, because that is the
+  # file this hook resolves — made unreadable in the suite's own repository the
+  # hook would still read a perfectly legible red state and deny for the other
+  # reason, which is a case above and would prove nothing about this one.
+  rm -f "$COMMIT_REPO_STATE"
+  mkdir -p "$COMMIT_REPO_STATE"
   assert_commit_aborted "the git layer denies a state path it cannot read" \
     'git commit -m x' 'cannot be read'
-  rmdir "$SESSION_STATE"
+  rmdir "$COMMIT_REPO_STATE"
   oso-state --session "$SESSION" clear
 fi
 

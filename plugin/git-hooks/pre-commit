@@ -28,16 +28,21 @@ deny() {
   exit 1
 }
 
-# Claude runs git through the Bash tool, so the git process inherits the session
-# variable and this hook resolves the same state file the matcher reads (confirmed
-# against git 2.54.0). A human committing from their own terminal has no such
-# variable, and that is the design rather than a gap: no session, no verdict, no
-# trace. The gate is the agent's discipline rail, never a lock on the operator's
-# own repo.
-session_id="$(sanitize_session "${CLAUDE_CODE_SESSION_ID:-}")"
+# An agent runs git through its own tool, so the git process inherits whatever
+# marks that agent's environment — `CLAUDE_CODE_SESSION_ID` on Claude Code, which
+# also names the session, and `OSO_AGENT` on a host that publishes no session id
+# of its own. A human committing from their own terminal carries neither, and
+# that marker is now the whole of what keeps this hook off their commits: the
+# state file belongs to the repository and exists whether or not an agent is
+# running. No marker, no verdict, no trace — the gate is the agent's discipline
+# rail, never a lock on the operator's own repo.
+session_id="$(sanitize_session "${CLAUDE_CODE_SESSION_ID:-${OSO_AGENT:-}}")"
 [ -n "$session_id" ] || exit 0
 
-state_file="${OSO_STATE_DIR}/${session_id}.state"
+# git runs a pre-commit hook at the top of the working tree, so this resolves the
+# same state file the matcher reads — from a linked worktree too, where the
+# repository the wave was cut from is what both of them answer.
+state_file="$(state_file_for "$PWD")"
 require_readable_state "$state_file" "$session_id"
 
 # Armed from here, so a failure of this hook's own aborts the commit instead of

@@ -16,7 +16,9 @@ Wherever the neutral body names a file as `_shared/<file>.md`, it is spelled `..
 
 `OSO_STATE_BIN` reaches every tool subprocess on this host through the installer's `shell_environment_policy.set` entry, so `oso-state` is spelled `"${OSO_STATE_BIN:-oso-state}"` here.
 
-**PLACEHOLDER — what keys the state, and the gates that read it, are not settled by this slice.** This host exposes no session-id variable, so the `--session` flag the Claude side passes has no counterpart to fill, and a Codex plugin cannot bundle the hooks that read the result. The runtime-gating slice of this port settles both. Until it lands, do NOT improvise a flag and do NOT run the state command with the session argument dropped — a write that lands in nobody's state reads exactly like a gate that is open. Tell the operator the gate is unported and continue the flow without it.
+What the state is keyed by is settled and is host-neutral: the state file is the REPOSITORY's (ADR-0095), resolved from the directory the command runs in.
+
+**PLACEHOLDER — what fills `--session`, and the gates that read the state, are not.** That flag is what the audit trail records each line under, and this host exposes no session-id variable to fill it; the installer slice that wires `OSO_AGENT` through `shell_environment_policy.set` settles the value, and the gates wait on the same slice because a Codex plugin cannot bundle hooks. Until it lands, do NOT improvise a flag and do NOT run the state command with the session argument dropped — `oso-state` refuses a write with no session, and a write that never ran reads exactly like a gate that is open. Tell the operator the gate is unported and continue the flow without it.
 
 ## Naming and invoking the harness's own skills
 

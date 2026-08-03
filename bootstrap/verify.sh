@@ -126,12 +126,21 @@ if [ -n "$install_root" ]; then
     # Fixture and run in one guarded chain: whichever step breaks, its reason is
     # what the check reports. The hook is also free not to drain stdin — the
     # SIGPIPE that costs the pipeline 141 under pipefail lands on `|| true` here.
+    # The state file is named after the repository the call is made in, and the
+    # temp dir the payload names is in none — so the name is the digest of that
+    # directory, which is what the hook resolves it to and is spelled here rather
+    # than read out of the plugin, the way this script spells every other
+    # constant it checks.
     out="$(
       {
         hook_home="$(mktemp -d)" \
+          && state_key="$(printf '%s' "$hook_home" |
+            { sha256sum 2>/dev/null || shasum -a 256 2>/dev/null; })" \
+          && state_key="${state_key%% *}" \
           && mkdir -p "$hook_home/.local/state/oso-code" \
-          && printf 'mode=plan\nverify_green=false\n' > "$hook_home/.local/state/oso-code/e2e.state" \
-          && printf '{"session_id":"e2e","tool_input":{"command":"git commit -m x"}}' | HOME="$hook_home" "$hook"
+          && printf 'mode=plan\nverify_green=false\n' > "$hook_home/.local/state/oso-code/$state_key.state" \
+          && printf '{"session_id":"e2e","cwd":"%s","tool_input":{"command":"git commit -m x"}}' "$hook_home" \
+            | HOME="$hook_home" "$hook"
       } 2>&1 || true
     )"
     out="${out//$'\n'/ }"

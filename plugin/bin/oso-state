@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Session state for oso-code hooks. Flat key=value lines, one file per session,
-# stored outside any project so repos stay clean.
+# Runtime state for oso-code hooks. Flat key=value lines, one file per
+# REPOSITORY — resolved from the directory this runs in — stored outside any
+# project so repos stay clean. The session is still named: it is what the audit
+# trail records every line under, and what the teardown reads back to find the
+# state a session armed.
 #
 # Writes take a portable mkdir-lock and publish with a single atomic mv, so
 # concurrent writers can never corrupt or partially overwrite the state.
@@ -28,7 +31,7 @@ shift 2
 action="${1:-}"
 shift || true
 
-state_file="${OSO_STATE_DIR}/${session_id}.state"
+state_file="$(state_file_for "$PWD")"
 lock_dir="${state_file}.lock"
 # A writer killed mid-write leaves its lock forever; reclaim it after this long.
 lock_stale_seconds=30
@@ -65,7 +68,11 @@ case "$action" in
     acquire_lock
     tmp="$(mktemp "${OSO_STATE_DIR}/.tmp.XXXXXX")"
     [ -f "$state_file" ] && cat "$state_file" > "$tmp"
-    for pair in "$@"; do
+    # The session goes in beside the caller's keys, last so the flag wins: the
+    # file is named after the repository now, and the teardown runs in no
+    # directory that could name one — which session armed the state is the only
+    # way back to the file it left.
+    for pair in "$@" "session=$session_id"; do
       key="${pair%%=*}"
       next="$(mktemp "${OSO_STATE_DIR}/.tmp.XXXXXX")"
       grep -v "^${key}=" "$tmp" > "$next" || true
@@ -77,10 +84,10 @@ case "$action" in
     ;;
   get)
     [ $# -eq 1 ] || usage
-    grep "^${1}=" "$state_file" 2>/dev/null | cut -d= -f2- || true
+    state_value "$state_file" "$1"
     ;;
   show)
-    [ -f "$state_file" ] && cat "$state_file" || echo "no state for session ${session_id}"
+    [ -f "$state_file" ] && cat "$state_file" || echo "no state at ${state_file}"
     ;;
   clear)
     mkdir -p "$OSO_STATE_DIR"

@@ -30,15 +30,15 @@ Every `oso-state <verb> …` the neutral body instructs runs as:
 
 `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" <verb> …`
 
-so `oso-state set mode=plan active_slice=<n> verify_green=false` is run as `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" set mode=plan active_slice=<n> verify_green=false`, and `oso-state show`, `oso-state clear` and `oso-state event <verb> "<value>"` take the same prefix. A write spelled without that session id lands in nobody's state, and every gate below stays open with no other signal.
+so `oso-state set mode=plan active_slice=<n> verify_green=false` is run as `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" set mode=plan active_slice=<n> verify_green=false`, and `oso-state show`, `oso-state clear` and `oso-state event <verb> "<value>"` take the same prefix. The state itself is the repository's, not the session's — the session id is what the audit trail records each line under and what the teardown reads back — and a write spelled without it does not run at all.
 
 ## The runtime gates, and the two layers of the commit rail
 
-The gates are this plugin's own hooks: they deny `git commit` while `verify_green` is false and deny file edits while no slice is active.
+The gates are this plugin's own hooks: they deny `git commit` while `verify_green` is false and deny file edits while no slice is active. The `pre-commit` hook arms on `CLAUDE_CODE_SESSION_ID`, which the client puts in every process the Bash tool starts and no operator's own terminal carries — so an operator committing in this repo themselves never meets it.
 
 The commit rail has two layers and the wave loop's green window (§6) exists because neither can see which worktree a commit comes from:
 
-- the git `pre-commit` hook, because `core.hooksPath` is an absolute path every linked worktree inherits, which leaves it reading the session's state file rather than the tree it fired in;
+- the git `pre-commit` hook, because `core.hooksPath` is an absolute path every linked worktree inherits and the state it reads is the repository's, not the tree it fired in;
 - the `PreToolUse` matcher, because it reads the command line and nothing else.
 
 The teardown §6 arms `repo_path` for is the `SessionEnd` hook, which runs `git worktree remove` and `git worktree prune` in the repo named there.

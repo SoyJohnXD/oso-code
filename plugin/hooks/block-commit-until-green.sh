@@ -221,7 +221,10 @@ command="$(json_command_line "$input")"
 session_id="$(sanitize_session "$(json_field "$input" session_id)")"
 require_session "$session_id"
 
-state_file="${OSO_STATE_DIR}/${session_id}.state"
+# The state belongs to the repository the call is made in, and the payload is
+# what says where that is: a hook's own working directory is the client's to
+# choose, and this one is handed the session's.
+state_file="$(state_file_for "$(json_field "$input" cwd)")"
 require_readable_state "$state_file" "$session_id"
 
 # Every call in an armed session is this gate's to decide from here, so an
