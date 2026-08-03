@@ -95,6 +95,16 @@ sanitize_session() {
   printf '%s' "$1" | tr -cd 'a-zA-Z0-9-'
 }
 
+# Codex exposes its hook session id only in the event payload, not to the model
+# that runs oso-state. Its installer therefore publishes one fixed agent marker
+# to both tool subprocesses and user hooks. Claude has no OSO_AGENT marker and
+# keeps using its native payload session id.
+hook_session() {
+  local payload="$1" raw
+  raw="${OSO_AGENT:-$(json_field "$payload" session_id)}"
+  sanitize_session "$raw"
+}
+
 # The state of the work done in a directory, under the name of the REPOSITORY
 # that work belongs to: the main checkout, a linked worktree and a subdirectory
 # of either all answer one name, which is what lets the gate firing in a wave's

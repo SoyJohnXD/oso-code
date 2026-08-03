@@ -16,7 +16,7 @@ HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HOOK_DIR/lib.sh"
 
 input="$(cat)"
-session_id="$(sanitize_session "$(json_field "$input" session_id)")"
+session_id="$(hook_session "$input")"
 require_session "$session_id"
 
 # The state belongs to the repository the call is made in, and the payload is

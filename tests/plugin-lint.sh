@@ -208,10 +208,11 @@ check_call_sites_speak_their_emitters_verdict_vocabulary() {
         caller_sources="$(skill_sources "$caller" "$host" | tr '\n' ' ')"
         case "$host" in
           # Bounded on the right so an emitter named `plan` does not collect
-          # `oso-code:plan2`; Codex's flat skill name is a backticked table cell,
-          # which distinguishes it from the path references in every wrapper.
+          # `oso-code:plan2`; Codex exposes plugin skills under that same
+          # namespaced identity, written as a backticked table cell here, which
+          # distinguishes it from path references in every wrapper.
           claude) grep -qE "oso-code:$emitter([^A-Za-z0-9_-]|\$)" $caller_sources || continue ;;
-          codex) grep -qF "\`$emitter\`" $caller_sources || continue ;;
+          codex) grep -qF "\`oso-code:$emitter\`" $caller_sources || continue ;;
         esac
         printf '%s\n' "$tokens" | grep -qFf - $caller_sources \
           || flag "${caller#"$PLUGIN_ROOT"/} invokes $emitter on $host but carries none of its verdict tokens"
@@ -308,7 +309,7 @@ check_global_routing_names_every_operator_only_mode() {
           invocation="/oso-code:$mode"
           ;;
         codex)
-          invocation="\$$mode"
+          invocation="\$oso-code:$mode"
           ;;
       esac
       printf '%s\n' "$workflow_block" | grep -qF "\`$invocation\`" \

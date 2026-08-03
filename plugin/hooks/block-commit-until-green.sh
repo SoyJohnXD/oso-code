@@ -218,7 +218,7 @@ is_interpreter_handed_git() {
 
 input="$(cat)"
 command="$(json_command_line "$input")"
-session_id="$(sanitize_session "$(json_field "$input" session_id)")"
+session_id="$(hook_session "$input")"
 require_session "$session_id"
 
 # The state belongs to the repository the call is made in, and the payload is

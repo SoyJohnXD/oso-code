@@ -1,0 +1,20 @@
+{
+  "name": "oso-code",
+  "interface": {
+    "displayName": "oso-code"
+  },
+  "plugins": [
+    {
+      "name": "oso-code",
+      "source": {
+        "source": "local",
+        "path": "./codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

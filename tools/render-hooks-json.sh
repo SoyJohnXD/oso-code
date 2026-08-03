@@ -160,6 +160,10 @@ function render(name,    h, g, t, first_group, first_tool, matcher, command, see
       print "      {"
       if (matcher != "") print "        \"matcher\": \"" escape_json(matcher) "\","
       command = roots[h] "/" gate_script[gg]
+      # shell_environment_policy applies to model tool commands, not user-hook
+      # handlers in Codex 0.146. Publish the fixed state identity on the hook
+      # command itself so lifecycle and gating scripts see the same marker.
+      if (name == "codex") command = "OSO_AGENT=1 " command
       if (gate_id[gg] == "unknown") command = command " --allow \"" allowlist "\""
       print "        \"hooks\": ["
       print "          {"

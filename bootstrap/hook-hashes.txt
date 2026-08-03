@@ -7,15 +7,15 @@
 # and lexer.sh dependencies. The Claude-only persist-state-bin.sh is excluded. An
 # installer reads these expected hashes and compares installed bytes; it must
 # never replace them with hashes it calculated.
-e2b506086f9a557b735a44dbe002493dcfb91fd7035da6e8663693aff4d61214  codex/hooks/hooks.json
-7deab4a20de1e1a11d251d02efa957896428c9b9d7217dc258abfe7dbce1e978  plugin/hooks/block-commit-until-green.sh
-369bb15223833e3d936333f2dca1503dd46353ee1ed6a8504bef090bd0fe98ae  plugin/hooks/block-edits-without-slice.sh
+129d4ce0b6d6262f6e71b8a0134841e5408805d05e44a7bf8e393f1cfefdfef8  codex/hooks/hooks.json
+4f1fc38f71fb86d10ff0f39c7e271ba316846dee20a85bfd40a12b8ee217ca81  plugin/hooks/block-commit-until-green.sh
+e66bbcd046e496b6b54412165c62baa08d9e1b69e173ffe80e467fbae277968a  plugin/hooks/block-edits-without-slice.sh
 87b852f99ca3d650765bc240fb56898e6acbde0e6d4f0fbfc720eb86376c4f29  plugin/hooks/block-unknown-tool.sh
 5347efa3ccbe8a52d6321bc2d8991a2b95f4270f4d68b8b2177bd900e6b7b6e4  plugin/hooks/publish-subagent-handoff.sh
 3a4bc9f8ed89475dbbb30fc888726d8d2f7aaf090785299a472db0af8282349c  plugin/hooks/capture-plan-approval.sh
 1ee4c4d2690cf5fb5b3110e7f5e6ea7b4eae7b6d5ab82f054c61737cd03e1ffc  plugin/hooks/approve-plan-token.sh
-167391b098bf69cca9f308cf2d8be9598ec4a80f7504abd824b7a036ac244c7b  plugin/hooks/warn-stale-state.sh
-533618e5d3a146ef9c34430067eddfb2f9884f628f9a202dc8889e5d72447452  plugin/hooks/cleanup-state.sh
+2f45dd16ef399450fd23ab8cde14cea0061dc2f0105aa9f3eed90980e066c1dc  plugin/hooks/warn-stale-state.sh
+76243df935fe632518a397a0c46a210934650e37a565fc61b1404668e4138be9  plugin/hooks/cleanup-state.sh
 04ba12199ba16a3fb84ced29b6781af0a6721269b79f9a945aaab1adb3afd4a1  plugin/bin/oso-state
-9adee4b0c9a7366702101bc4cb5726d8eb0b6f00b4f7985ca55407b976f603b0  plugin/hooks/lib.sh
+07858d81a140783acff458cc2486b9f2a1a29ccd8168a49793a4122e9e551cc1  plugin/hooks/lib.sh
 6cae7d3728c1bac6b42e956023f3b069378a9ab776608b814f8dcf78cd5be939  plugin/hooks/lexer.sh

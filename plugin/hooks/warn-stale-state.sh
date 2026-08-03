@@ -7,7 +7,8 @@ set -euo pipefail
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HOOK_DIR/lib.sh"
 
-session_id="$(sanitize_session "$(json_field "$(cat)" session_id)")"
+payload="$(cat)"
+session_id="$(hook_session "$payload")"
 [ -d "$OSO_STATE_DIR" ] || exit 0
 
 # A state file is named after its repository, so the session that armed it is a
@@ -21,7 +22,12 @@ for state_file in "$OSO_STATE_DIR"/*.state; do
 done
 [ -n "$stale" ] || exit 0
 
-cat <<JSON
-{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"oso-code: found runtime state another session left behind (${stale# }). State is keyed by repository, so the flags in it arm this session's gates too — if the user is resuming an oso-code /plan change, run /oso-code:plan {change} so step 0 restores the position and re-arms the runtime state; if they are not, that state is stale and oso-state clear drops it."}}
-JSON
+if [ -n "${OSO_AGENT:-}" ]; then
+  plan_route='$oso-code:plan {change}'
+else
+  plan_route='/oso-code:plan {change}'
+fi
+clear_command="\"${OSO_STATE_BIN:-oso-state}\" --session \"$session_id\" clear"
+context="oso-code: found runtime state another session left behind (${stale# }). State is keyed by repository, so the flags in it arm this session's gates too — if the user is resuming an oso-code plan change, run $plan_route so step 0 restores the position and re-arms the runtime state; if they are not, that state is stale and $clear_command drops it."
+printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' "$(json_escape "$context")"
 exit 0

@@ -21,7 +21,9 @@
 # runs the command through. Claude Code interpolates ${CLAUDE_PLUGIN_ROOT} itself;
 # Codex has no such variable and its hooks are user-level rather than bundled
 # (ADR-0094), so the installer that places them substitutes __OSO_HOOKS_DIR__ for
-# the absolute directory it wrote them to.
+# the absolute directory it wrote them to. The renderer also prefixes every
+# Codex command with `OSO_AGENT=1`: Codex 0.146 does not pass its tool-command
+# shell_environment_policy into the separate user-hook command runner.
 
 host  claude  plugin/hooks/hooks.json  "${CLAUDE_PLUGIN_ROOT}"/hooks
 host  codex   codex/hooks/hooks.json   "__OSO_HOOKS_DIR__"

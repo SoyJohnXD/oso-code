@@ -46,24 +46,24 @@ Wherever the neutral body names a file as `_shared/<file>.md`, it is spelled `..
 
 What the state is keyed by is settled and is host-neutral: the state file is the REPOSITORY's (ADR-0095), resolved from the directory the command runs in, so nothing about the identity waits on this host.
 
-**PLACEHOLDER — what fills `--session` here does not.** That flag is what the audit trail records each line under and what a teardown reads back, and this host exposes no session-id variable to fill it; the installer slice that wires `OSO_AGENT` through `shell_environment_policy.set` is what settles the value. Until it lands, do NOT improvise one and do NOT run the state command with the session argument dropped — `oso-state` refuses a write with no session, and a write that never ran reads exactly like a gate that is open.
+This host publishes the fixed marker `OSO_AGENT=1` through `shell_environment_policy.set` for tool subprocesses and as an explicit environment prefix on every installed user-hook command. Spell every state call as `"${OSO_STATE_BIN:-oso-state}" --session "${OSO_AGENT}" <verb> …`. Codex does not expose its hook session id to the model, and runtime state is intentionally shared by repository, so this marker is audit metadata and the common ownership value used by model-issued state writes, the edit/commit readers, teardown and the git hook — never a claim that Codex supplied a hidden session id. Approval and handoff hooks keep the real payload session where same-session isolation is their contract.
 
 ## The runtime gates, and the two layers of the commit rail
 
-**PLACEHOLDER — the gates are unported and the installer slice settles them.** A Codex plugin cannot bundle hooks, so nothing this package installs can deny a commit or an edit here; the hooks this host does have are user-level and are the installer's business, not this file's. The read side is ready for them — the state is keyed by the repository, and the git `pre-commit` hook arms on `OSO_AGENT` where no `CLAUDE_CODE_SESSION_ID` exists — but nothing on this host sets that variable or wires that hook yet. Until that slice lands, the state writes the neutral body instructs are an AUDIT TRAIL and nothing more: they record where the flow stands, they gate nothing, and no green they write may be reported to the operator as a gate having passed. §6's green window has nothing to open — a rail that is not there is not a rail you widen — so run those three commands as the neutral body's own bookkeeping and tell the operator once, at §5, that the gates are unported on this host.
+The installer materializes the release-hashed handlers and rendered user manifest outside the plugin, then wires the repository's git `pre-commit` layer when no other hook owner exists. Codex requires the operator to review and trust user hooks through `/hooks`; until that review is complete, report the rail as installed but not trusted and do not describe it as enforcing. Once trusted, model-issued state, edit/commit readers and teardown use the fixed marker; approval and handoff retain their real payload identity.
 
 ## The worktree root
 
-**PLACEHOLDER — the runtime-gating slice settles this too.** `<worktree root>` on the Claude side is keyed by the session id, and this host has none; the same slice that settles the state identity settles where worktrees live and what the teardown looks for. Until it lands, PARALLEL execution is unavailable here: §4 offers only SEQUENTIAL, and a worktree cut under an improvised path is a worktree no teardown ever finds.
+`<worktree root>` is `$HOME/.local/state/oso-code/worktrees/${OSO_AGENT}`. The installer's `oso` permission profile adds the parent worktree directory as a workspace root; every slice still receives its exact absolute worktree path and base ref. Teardown uses the same marker, so it reaches the directory the orchestrator created.
 
 ## Naming and invoking the harness's own skills
 
-The neutral body names each one by role. Non-forked skills are bare names under a flat skills root — no plugin prefix — and there is no skill tool to call: open and read their `SKILL.md` in this context.
+Installed plugin skills carry Codex's `oso-code:` namespace. Operator-invoked modes use that full identity; an orchestrator reaches an auxiliary skill by opening and reading its namespaced plugin `SKILL.md` in this context.
 
 | The body says | Here it is | Reached by |
 | --- | --- | --- |
-| the QUICK mode | `quick` | the operator invokes it — a mode is never model-invoked |
-| the DEBUG mode | `debug` | the operator invokes it — a mode is never model-invoked |
+| the QUICK mode | `oso-code:quick` | the operator invokes `$oso-code:quick` — a mode is never model-invoked |
+| the DEBUG mode | `oso-code:debug` | the operator invokes `$oso-code:debug` — a mode is never model-invoked |
 
 Forked judges and operational agents are the exception to inline reading. READ `subagents.md` beside this file NOW and use its seven-role map, payload rules and completion handshake as binding.
 

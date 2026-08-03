@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"__OSO_HOOKS_DIR__\"/block-commit-until-green.sh"
+            "command": "OSO_AGENT=1 \"__OSO_HOOKS_DIR__\"/block-commit-until-green.sh"
           }
         ]
       },
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"__OSO_HOOKS_DIR__\"/block-edits-without-slice.sh"
+            "command": "OSO_AGENT=1 \"__OSO_HOOKS_DIR__\"/block-edits-without-slice.sh"
           }
         ]
       },
@@ -24,7 +24,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"__OSO_HOOKS_DIR__\"/block-unknown-tool.sh --allow \"Bash|apply_patch|update_plan|request_user_input|Agent|spawn_agent|send_input|resume_agent|close_agent|send_message|followup_task|wait_agent|interrupt_agent|list_agents|wait|create_goal|get_goal|update_goal|view_image|list_mcp_resources|list_mcp_resource_templates|read_mcp_resource|image_gen__imagegen|web__run|mcp__engram__mem_search|mcp__engram__mem_get_observation|mcp__engram__mem_save|mcp__engram__mem_update|mcp__context7__resolve-library-id|mcp__context7__query-docs|mcp__fallow__find_dupes|mcp__fallow__get_cleanup_candidates|mcp__fallow__audit|mcp__fallow__fix_apply\""
+            "command": "OSO_AGENT=1 \"__OSO_HOOKS_DIR__\"/block-unknown-tool.sh --allow \"Bash|apply_patch|update_plan|request_user_input|Agent|spawn_agent|send_input|resume_agent|close_agent|send_message|followup_task|wait_agent|interrupt_agent|list_agents|wait|create_goal|get_goal|update_goal|view_image|list_mcp_resources|list_mcp_resource_templates|read_mcp_resource|image_gen__imagegen|web__run|mcp__engram__mem_search|mcp__engram__mem_get_observation|mcp__engram__mem_save|mcp__engram__mem_update|mcp__context7__resolve-library-id|mcp__context7__query-docs|mcp__fallow__find_dupes|mcp__fallow__get_cleanup_candidates|mcp__fallow__audit|mcp__fallow__fix_apply\""
           }
         ]
       }
@@ -35,7 +35,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"__OSO_HOOKS_DIR__\"/publish-subagent-handoff.sh"
+            "command": "OSO_AGENT=1 \"__OSO_HOOKS_DIR__\"/publish-subagent-handoff.sh"
           }
         ]
       }
@@ -45,7 +45,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"__OSO_HOOKS_DIR__\"/capture-plan-approval.sh"
+            "command": "OSO_AGENT=1 \"__OSO_HOOKS_DIR__\"/capture-plan-approval.sh"
           }
         ]
       }
@@ -55,7 +55,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"__OSO_HOOKS_DIR__\"/approve-plan-token.sh"
+            "command": "OSO_AGENT=1 \"__OSO_HOOKS_DIR__\"/approve-plan-token.sh"
           }
         ]
       }
@@ -65,7 +65,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"__OSO_HOOKS_DIR__\"/warn-stale-state.sh"
+            "command": "OSO_AGENT=1 \"__OSO_HOOKS_DIR__\"/warn-stale-state.sh"
           }
         ]
       }
@@ -75,7 +75,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"__OSO_HOOKS_DIR__\"/cleanup-state.sh"
+            "command": "OSO_AGENT=1 \"__OSO_HOOKS_DIR__\"/cleanup-state.sh"
           }
         ]
       }

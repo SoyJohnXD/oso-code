@@ -237,7 +237,7 @@ codex_quick_fixture="$LINT_CALL_FIXTURE/plugin/skills/_shared/platform/codex/qui
 if [ ! -f "$codex_quick_fixture" ]; then
   echo "FAIL: the Codex call-site mutation has no quick body to change"; fail=$((fail + 1))
 else
-  printf '\nInvoke `debt-sweep` now.\n' >> "$codex_quick_fixture"
+  printf '\nInvoke `oso-code:debt-sweep` now.\n' >> "$codex_quick_fixture"
   if mutated_call_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" "$LINT_CALL_FIXTURE/plugin" "$LINT_CALL_FIXTURE" 2>&1)"; then
     echo "FAIL: a bare Codex skill call with no verdict vocabulary passed plugin lint"; fail=$((fail + 1))
   else
@@ -252,7 +252,7 @@ fi
 
 # Rule 7 is host-specific: Claude's always-loaded source routes the three
 # operator-only modes through `/oso-code:<mode>`, while Codex's routes the same
-# independently-declared wrappers through `$<mode>`.  A clean-tree lint cannot
+# independently-declared wrappers through `$oso-code:<mode>`. A clean-tree lint cannot
 # prove either scan is real — all six names also occur elsewhere in the fixture.
 # Remove each real Workflow route in turn, leave a longer lookalike INSIDE that
 # block, and leave the exact spelling OUTSIDE it.  Only a section-bounded,
@@ -283,7 +283,7 @@ mutate_global_workflow_route() {
 for routing_host in claude codex; do
   case "$routing_host" in
     claude) routing_source=bootstrap/claude-global.md; routing_prefix=/oso-code: ;;
-    codex) routing_source=bootstrap/codex-global.md; routing_prefix='$' ;;
+    codex) routing_source=bootstrap/codex-global.md; routing_prefix='$oso-code:' ;;
   esac
   for routing_mode in plan quick debug; do
     LINT_ROUTING_FIXTURE="$TEST_HOME/lint-routing-$routing_host-$routing_mode"
@@ -322,7 +322,7 @@ for routing_host in claude codex; do
       ;;
     codex)
       discovery_skills_root="$LINT_DISCOVERY_FIXTURE/codex/skills"
-      discovery_invocation='$incident'
+      discovery_invocation='$oso-code:incident'
       ;;
   esac
   mkdir -p "$discovery_skills_root/incident"
@@ -3409,6 +3409,13 @@ run_hook cleanup-state.sh '{"session_id":"sessionend-probe"}'
 assert_after_hook "session end drops the state of a directory it is not standing in" \
   [ ! -f "$elsewhere_state" ]
 
+( cd "$ELSEWHERE" && oso-state --session 1 set mode=plan verify_green=true >/dev/null )
+assert_equals "the fixed Codex identity arms state before lifecycle cleanup" \
+  "written" "$([ -f "$elsewhere_state" ] && echo written || echo missing)"
+OSO_AGENT=1 run_hook cleanup-state.sh '{"session_id":"codex-payload-session"}'
+assert_after_hook "Codex SessionEnd cleans fixed-marker state despite a different payload session" \
+  [ ! -f "$elsewhere_state" ]
+
 # --- SessionStart: OSO_STATE_BIN reaches the real oso-state binary ---
 # The skills invoke "${OSO_STATE_BIN:-oso-state}"; this hook is what makes that
 # env var land in the session, so assert it resolves to a runnable binary.
@@ -3739,6 +3746,16 @@ done
 named_as_stale="${named_as_stale# }"
 assert_after_hook "SessionStart names another session's state, never its own and never a worktree" \
   [ "$named_as_stale" = other-session.state ]
+assert_equals "Claude stale-state guidance uses its installed slash route" \
+  "present" "$(if printf '%s' "$hook_stdout" | grep -F '/oso-code:plan {change}' >/dev/null; then echo present; else echo missing; fi)"
+assert_equals "stale-state guidance prints a complete session-scoped clear command" \
+  "present" "$(if printf '%s' "$hook_stdout" | grep -F -- "--session \\\"$SESSION\\\" clear" >/dev/null; then echo present; else echo missing; fi)"
+
+OSO_AGENT=1 run_hook warn-stale-state.sh "$(printf '{"session_id":"%s"}' "$SESSION")"
+assert_equals "Codex stale-state guidance uses the discovered plugin route" \
+  "present" "$(if printf '%s' "$hook_stdout" | grep -F '$oso-code:plan {change}' >/dev/null; then echo present; else echo missing; fi)"
+assert_equals "Codex stale-state guidance clears the fixed runtime identity" \
+  "present" "$(if printf '%s' "$hook_stdout" | grep -F -- '--session \"1\" clear' >/dev/null; then echo present; else echo missing; fi)"
 
 rm -f "$STATE_DIR/other-session.state"
 assert_allows "SessionStart says nothing when the only state is this session's" \
@@ -4677,6 +4694,699 @@ sleep 60")"
   assert_equals "the kill at the bound takes the probe's own children with it" \
     "no orphan" "$([ -f "$NPX_ORPHAN_MARKER" ] && echo "orphan survived" || echo "no orphan")"
 fi
+
+# --- Codex installer: an isolated release install, not a real user mutation ---
+# S11 owns user-wide Codex state, which makes a source-only assertion too weak:
+# the test runs the shipped installer with HOME, CODEX_HOME and every external
+# client redirected into this fixture. The shims model only the public contracts
+# the installer is allowed to rely on. An unexpected client spelling is a hard
+# failure, so a test cannot stay green when the implementation quietly changes
+# the command it would run on an operator's machine.
+INSTALL_CODEX_SH="$REPO_ROOT/bootstrap/install-codex.sh"
+CODEX_INSTALL_SHIMS="$TEST_HOME/codex-install-shims"
+CODEX_INSTALL_CALLS="$TEST_HOME/codex-install-calls"
+CODEX_INSTALL_VERSION="$TEST_HOME/codex-install-version"
+CODEX_INSTALL_OUTPUT="$TEST_HOME/codex-install-output"
+CODEX_IMPECCABLE_SOURCE="$TEST_HOME/codex-install-impeccable"
+mkdir -p "$CODEX_INSTALL_SHIMS"
+
+printf '%s\n' \
+  '#!/bin/sh' \
+  'printf '\''codex:%s\n'\'' "$*" >> "$OSO_TEST_CALLS"' \
+  'case "$*" in' \
+  '  --version) printf '\''codex-cli %s\n'\'' "$(cat "$OSO_TEST_CODEX_VERSION")" ;;' \
+  '  "sandbox -P oso -- /bin/true") [ "${OSO_TEST_CONFIG_FAIL:-}" != 1 ] || exit 65 ;;' \
+  '  "plugin marketplace add "*) exit 0 ;;' \
+  '  "plugin add oso-code@oso-code --json") exit 0 ;;' \
+  '  *) printf '\''unexpected codex call: %s\n'\'' "$*" >&2; exit 64 ;;' \
+  'esac' > "$CODEX_INSTALL_SHIMS/codex"
+
+printf '%s\n' \
+  '#!/bin/sh' \
+  'printf '\''npm:%s\n'\'' "$*" >> "$OSO_TEST_CALLS"' \
+  'case "$*" in' \
+  '  "install --global @openai/codex@0.146.0") printf '\''0.146.0\n'\'' > "$OSO_TEST_CODEX_VERSION" ;;' \
+  '  *) printf '\''unexpected npm call: %s\n'\'' "$*" >&2; exit 64 ;;' \
+  'esac' > "$CODEX_INSTALL_SHIMS/npm"
+
+# The real `engram setup codex` owns these two files, its top-level pointers and
+# its MCP table. This shim deliberately writes all four instead of letting the
+# oso installer counterfeit Engram's payload. Its write is idempotent so the
+# second installer run measures oso-code, not fixture noise.
+printf '%s\n' \
+  '#!/bin/sh' \
+  'printf '\''engram:%s\n'\'' "$*" >> "$OSO_TEST_CALLS"' \
+  '[ "$*" = "setup codex" ] || { printf '\''unexpected engram call: %s\n'\'' "$*" >&2; exit 64; }' \
+  'codex_dir=${CODEX_HOME:-$HOME/.codex}' \
+  'config=$codex_dir/config.toml' \
+  'mkdir -p "$codex_dir"' \
+  'printf '\''# fixture Engram memory protocol\n### AFTER COMPACTION\n'\'' > "$codex_dir/engram-instructions.md"' \
+  'printf '\''Save durable memory before compaction.\n'\'' > "$codex_dir/engram-compact-prompt.md"' \
+  'touch "$config"' \
+  'if ! grep -F '\''model_instructions_file = '\'' "$config" >/dev/null 2>&1; then' \
+  '  tmp=$config.engram-tmp' \
+  '  awk -v instruction="$codex_dir/engram-instructions.md" -v compact="$codex_dir/engram-compact-prompt.md" '\''' \
+  '    !inserted && /^\[/ { print "model_instructions_file = \"" instruction "\""; print "experimental_compact_prompt_file = \"" compact "\""; print ""; inserted=1 }' \
+  '    { print }' \
+  '    END { if (!inserted) { print "model_instructions_file = \"" instruction "\""; print "experimental_compact_prompt_file = \"" compact "\"" } }' \
+  '  '\'' "$config" > "$tmp" && mv "$tmp" "$config"' \
+  'fi' \
+  'if ! grep -F '\''[mcp_servers.engram]'\'' "$config" >/dev/null 2>&1; then' \
+  '  printf '\''\n[mcp_servers.engram]\ncommand = "engram"\nargs = ["mcp", "--tools=agent"]\n'\'' >> "$config"' \
+  'fi' > "$CODEX_INSTALL_SHIMS/engram"
+printf '%s\n' '#!/bin/sh' 'exit 0' > "$CODEX_INSTALL_SHIMS/fallow-mcp"
+chmod +x "$CODEX_INSTALL_SHIMS/codex" "$CODEX_INSTALL_SHIMS/npm" \
+  "$CODEX_INSTALL_SHIMS/engram" "$CODEX_INSTALL_SHIMS/fallow-mcp"
+
+# The compatibility image intentionally contains Bash 3.2 and little else.
+# The native suite uses the real Python JSON parser; in that minimal image this
+# fixture-only shim preserves the installer's public dependency check so the
+# remainder of the shell flow can still be exercised by the old interpreter.
+if ! command -v python3 >/dev/null 2>&1; then
+  printf '%s\n' \
+    '#!/bin/sh' \
+    '[ "$1" = "-m" ] && [ "$2" = "json.tool" ] && [ -f "$3" ] || exit 64' \
+    'exit 0' > "$CODEX_INSTALL_SHIMS/python3"
+  chmod +x "$CODEX_INSTALL_SHIMS/python3"
+fi
+
+write_codex_impeccable_fixture "$CODEX_IMPECCABLE_SOURCE" \
+  'name: impeccable' 'version: 4.0.2'
+
+write_codex_install_personal_state() {
+  local fixture_home="$1"
+  mkdir -p "$fixture_home/.codex" "$fixture_home/.agents/plugins"
+  printf '%s\n' \
+    'model = "operator-model"' \
+    'personal_key = "leave-this-alone"' \
+    'developer_instructions = """' \
+    'Keep this operator prose byte-for-byte.' \
+    '[This is prose, not a TOML table]' \
+    '[features]' \
+    'default_permissions = "operator prose, not a root key"' \
+    '# oso-code:start' \
+    'operator marker-looking prose must survive' \
+    '# oso-code:end' \
+    '"""' \
+    '' \
+    '[projects."/workspace/personal"]' \
+    'trust_level = "trusted"' \
+    '' \
+    '[mcp_servers.personal]' \
+    'command = "personal-mcp"' > "$fixture_home/.codex/config.toml"
+  mkdir -p "$fixture_home/.codex/agents"
+  printf '%s\n' \
+    'name = "personal-agent"' \
+    'description = "operator-owned role"' > "$fixture_home/.codex/agents/personal.toml"
+  printf '%s\n' \
+    '# Personal Codex rules' \
+    '' \
+    'This paragraph belongs to the operator.' > "$fixture_home/.codex/AGENTS.md"
+  printf '%s\n' \
+    '{' \
+    '  "$schema": "https://example.test/personal-marketplace.schema.json",' \
+    '  "name": "personal",' \
+    '  "description": "operator-owned metadata",' \
+    '  "sentinel": "keep-me",' \
+    '  "plugins": [' \
+    '    {' \
+    '      "name": "unrelated",' \
+    '      "source": "./plugins/unrelated",' \
+    '      "description": "operator plugin"' \
+    '    }' \
+    '  ]' \
+    '}' > "$fixture_home/.agents/plugins/marketplace.json"
+}
+
+# Results land in CODEX_INSTALL_RC and CODEX_INSTALL_LOG. Keeping the call out of
+# a command substitution matters: the installer may replace whole directories,
+# and every assertion must observe the same fixture tree it ran against.
+run_codex_install() {
+  local fixture_home="$1" failure_step="${2:-}" installer="${3:-$INSTALL_CODEX_SH}"
+  : > "$CODEX_INSTALL_CALLS"
+  if HOME="$fixture_home" \
+    CODEX_HOME="$fixture_home/.codex" \
+    PATH="$CODEX_INSTALL_SHIMS:$PATH" \
+    OSO_TEST_CALLS="$CODEX_INSTALL_CALLS" \
+    OSO_TEST_CODEX_VERSION="$CODEX_INSTALL_VERSION" \
+    OSO_TEST_CONFIG_FAIL="${OSO_TEST_CONFIG_FAIL:-}" \
+    OSO_HOOK_HASHES_FILE="${OSO_HOOK_HASHES_FILE:-}" \
+    OSO_IMPECCABLE_SOURCE="$CODEX_IMPECCABLE_SOURCE" \
+    OSO_INSTALL_FAIL_AFTER="$failure_step" \
+    bash "$installer" --yes --no-git-hook > "$CODEX_INSTALL_OUTPUT" 2>&1; then
+    CODEX_INSTALL_RC=0
+  else
+    CODEX_INSTALL_RC=$?
+  fi
+  CODEX_INSTALL_LOG="$(cat "$CODEX_INSTALL_OUTPUT")"
+}
+
+codex_install_log_class() {
+  local label="$1" pattern="$2"
+  if printf '%s\n' "$CODEX_INSTALL_LOG" | grep -Eq "$pattern"; then
+    printf '%s' "$label"
+  else
+    printf 'wrong reason: %s' "$CODEX_INSTALL_LOG"
+  fi
+}
+
+file_sha256() {
+  local digest
+  digest="$({ sha256sum "$1" 2>/dev/null || shasum -a 256 "$1" 2>/dev/null; })"
+  printf '%s' "${digest%% *}"
+}
+
+install_file_snapshot() {
+  local fixture_home="$1" path rel digest
+  for path in \
+    "$fixture_home/.codex" \
+    "$fixture_home/.agents" \
+    "$fixture_home/.local/share/oso-code" \
+    "$fixture_home/.local/state/oso-code/impeccable-opt-out"; do
+    [ -e "$path" ] || continue
+    find "$path" \( -type f -o -type l \) -print
+  done | LC_ALL=C sort | while IFS= read -r path; do
+    rel="${path#$fixture_home/}"
+    if [ -L "$path" ]; then
+      printf 'link %s -> %s\n' "$rel" "$(readlink "$path")"
+    else
+      digest="$(file_sha256 "$path")"
+      printf 'file %s %s\n' "$rel" "$digest"
+    fi
+  done
+}
+
+# Sourcing is the slice's inspection/test surface. It exposes functions, parses
+# no inherited positional flags and performs no installation as a side effect.
+CODEX_SOURCE_HOME="$TEST_HOME/codex-source-home"
+mkdir -p "$CODEX_SOURCE_HOME"
+source_probe="$({
+  set -- inherited-flag
+  HOME="$CODEX_SOURCE_HOME"
+  CODEX_HOME="$CODEX_SOURCE_HOME/.codex"
+  PATH="$CODEX_INSTALL_SHIMS:$PATH"
+  . "$INSTALL_CODEX_SH"
+  declare -F main >/dev/null && printf 'main exposed'
+} 2>&1)" || source_probe="source failed: $source_probe"
+assert_equals "sourcing install-codex exposes main without running it" \
+  "main exposed" "$source_probe"
+assert_equals "sourcing install-codex leaves the isolated HOME untouched" \
+  "absent" "$([ -e "$CODEX_SOURCE_HOME/.codex" ] || [ -e "$CODEX_SOURCE_HOME/.agents" ] && echo mutated || echo absent)"
+
+CODEX_DECLINE_HOME="$TEST_HOME/codex-decline-home"
+write_codex_install_personal_state "$CODEX_DECLINE_HOME"
+printf '0.145.0\n' > "$CODEX_INSTALL_VERSION"
+: > "$CODEX_INSTALL_CALLS"
+printf 'n\n' > "$TEST_HOME/codex-decline-input"
+if HOME="$CODEX_DECLINE_HOME" \
+  CODEX_HOME="$CODEX_DECLINE_HOME/.codex" \
+  PATH="$CODEX_INSTALL_SHIMS:$PATH" \
+  OSO_TEST_CALLS="$CODEX_INSTALL_CALLS" \
+  OSO_TEST_CODEX_VERSION="$CODEX_INSTALL_VERSION" \
+  bash "$INSTALL_CODEX_SH" --no-impeccable --no-git-hook \
+    < "$TEST_HOME/codex-decline-input" > "$CODEX_INSTALL_OUTPUT" 2>&1; then
+  codex_decline_rc=0
+else
+  codex_decline_rc=$?
+fi
+assert_equals "declining the install exits before any global Codex update" \
+  "nonzero" "$([ "$codex_decline_rc" -ne 0 ] && echo nonzero || echo zero)"
+assert_equals "declining an old-version install makes no npm or Codex client call" \
+  "0" "$(wc -l < "$CODEX_INSTALL_CALLS" | tr -d ' ')"
+
+CODEX_HAPPY_HOME="$TEST_HOME/codex-install-home"
+write_codex_install_personal_state "$CODEX_HAPPY_HOME"
+printf '0.146.0\n' > "$CODEX_INSTALL_VERSION"
+run_codex_install "$CODEX_HAPPY_HOME"
+codex_install_outcome="$CODEX_INSTALL_RC"
+if [ "$CODEX_INSTALL_RC" -ne 0 ]; then
+  codex_install_outcome="$CODEX_INSTALL_RC ($CODEX_INSTALL_LOG)"
+fi
+assert_equals "the shimmed Codex installer completes without network or real-HOME access" \
+  "0" "$codex_install_outcome"
+
+CODEX_HAPPY_CONFIG="$CODEX_HAPPY_HOME/.codex/config.toml"
+CODEX_HAPPY_AGENTS="$CODEX_HAPPY_HOME/.codex/AGENTS.md"
+CODEX_HAPPY_MARKETPLACE="$CODEX_HAPPY_HOME/.agents/plugins/marketplace.json"
+CODEX_STAGED_MARKETPLACE="$CODEX_HAPPY_HOME/.local/share/oso-code/codex-marketplace"
+assert_equals "the installer registers the staged Codex marketplace root exactly" \
+  "1" "$(grep -Fxc "codex:plugin marketplace add $CODEX_STAGED_MARKETPLACE --json" "$CODEX_INSTALL_CALLS" || true)"
+assert_equals "the installer calls the oso-code marketplace entry exactly" \
+  "1" "$(grep -Fxc 'codex:plugin add oso-code@oso-code --json' "$CODEX_INSTALL_CALLS" || true)"
+assert_equals "a Codex already at the frozen floor is never replaced through npm" \
+  "0" "$(grep -c '^npm:' "$CODEX_INSTALL_CALLS" || true)"
+assert_equals "Engram restores its own Codex integration exactly once" \
+  "1" "$(grep -Fxc 'engram:setup codex' "$CODEX_INSTALL_CALLS" || true)"
+assert_equals "the installer asks Codex itself to validate the merged config" \
+  "1" "$(grep -Fxc 'codex:sandbox -P oso -- /bin/true' "$CODEX_INSTALL_CALLS" || true)"
+
+assert_equals "the bounded config edit preserves personal top-level content" \
+  "1" "$(grep -Fxc 'personal_key = "leave-this-alone"' "$CODEX_HAPPY_CONFIG" || true)"
+multiline_region_order="$(awk '
+  $0 == "\"\"\"" { multiline_end = NR }
+  $0 == "# oso-code:start" { managed_start = NR }
+  END { if (multiline_end && managed_start && multiline_end < managed_start) print "closed-before-managed"; else print "absorbed" }
+' "$CODEX_HAPPY_CONFIG")"
+assert_equals "a TOML multiline string closes before the managed region" \
+  "closed-before-managed" "$multiline_region_order"
+assert_equals "multiline operator prose that looks like a table is preserved" \
+  "1" "$(grep -Fxc '[This is prose, not a TOML table]' "$CODEX_HAPPY_CONFIG" || true)"
+assert_equals "owned-looking symbols inside multiline operator prose do not trigger preflight conflicts" \
+  "1" "$(grep -Fxc 'default_permissions = "operator prose, not a root key"' "$CODEX_HAPPY_CONFIG" || true)"
+assert_equals "marker-looking content inside operator TOML text is preserved" \
+  "1" "$(grep -Fxc 'operator marker-looking prose must survive' "$CODEX_HAPPY_CONFIG" || true)"
+assert_equals "the bounded config edit preserves projects tables" \
+  "1" "$(grep -Fxc '[projects."/workspace/personal"]' "$CODEX_HAPPY_CONFIG" || true)"
+assert_equals "the bounded config edit preserves unrelated MCP tables" \
+  "1" "$(grep -Fxc '[mcp_servers.personal]' "$CODEX_HAPPY_CONFIG" || true)"
+for codex_mcp in engram context7 fallow; do
+  assert_equals "the Codex config wires the settled $codex_mcp MCP" \
+    "1" "$(grep -Fxc "[mcp_servers.$codex_mcp]" "$CODEX_HAPPY_CONFIG" || true)"
+done
+assert_equals "context7 uses the settled remote MCP endpoint" \
+  "present" "$(grep -F 'url = "https://mcp.context7.com/mcp"' "$CODEX_HAPPY_CONFIG" >/dev/null && echo present || echo missing)"
+assert_equals "fallow uses its native server binary" \
+  "present" "$(grep -F 'fallow-mcp' "$CODEX_HAPPY_CONFIG" >/dev/null && echo present || echo missing)"
+assert_equals "the agent marker is installed once inside the managed config region" \
+  "1" "$(grep -c 'OSO_AGENT' "$CODEX_HAPPY_CONFIG" || true)"
+assert_equals "the fixed Codex state marker has the settled value" \
+  "present" "$(grep -E 'OSO_AGENT[[:space:]]*=[[:space:]]*"1"' "$CODEX_HAPPY_CONFIG" >/dev/null && echo present || echo missing)"
+assert_equals "the state binary is installed once inside the managed config region" \
+  "1" "$(grep -c 'OSO_STATE_BIN' "$CODEX_HAPPY_CONFIG" || true)"
+assert_equals "the config contains one textual and one managed start marker" \
+  "2" "$(grep -Fxc '# oso-code:start' "$CODEX_HAPPY_CONFIG" || true)"
+assert_equals "the config contains one textual and one managed end marker" \
+  "2" "$(grep -Fxc '# oso-code:end' "$CODEX_HAPPY_CONFIG" || true)"
+config_region_order="$(awk '
+  $0 == "# oso-code:end" { managed_end = NR }
+  $0 == "[projects.\"/workspace/personal\"]" { project = NR }
+  END { if (managed_end && project && managed_end < project) print "bounded-before-projects"; else print "invalid-order" }
+' "$CODEX_HAPPY_CONFIG")"
+assert_equals "the managed region closes before preserved projects tables" \
+  "bounded-before-projects" "$config_region_order"
+assert_equals "the state binary setting points into the self-contained plugin copy" \
+  "present" "$(grep -F "$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/bin/oso-state" "$CODEX_HAPPY_CONFIG" >/dev/null && echo present || echo missing)"
+for codex_config_contract in \
+  'default_permissions = "oso"' \
+  'multi_agent = true' \
+  'max_threads = 4' \
+  'max_depth = 2' \
+  'job_max_runtime_seconds = 1800' \
+  '[permissions.oso]' \
+  '[permissions.oso.network]' \
+  '[permissions.oso.workspace_roots]'; do
+  assert_equals "the managed config carries $codex_config_contract" \
+    "1" "$(grep -Fxc "$codex_config_contract" "$CODEX_HAPPY_CONFIG" || true)"
+done
+assert_equals "the managed permissions grant the settled worktree root" \
+  "present" "$(grep -F "$CODEX_HAPPY_HOME/.local/state/oso-code/worktrees" "$CODEX_HAPPY_CONFIG" >/dev/null && echo present || echo missing)"
+assert_equals "the managed permissions keep secret material denied" \
+  "present" "$(grep -F '"**/*.key" = "deny"' "$CODEX_HAPPY_CONFIG" >/dev/null && echo present || echo missing)"
+
+assert_equals "Engram's instruction file survives the oso config merge" \
+  "fixture Engram memory protocol" "$(sed -n 's/^# //p' "$CODEX_HAPPY_HOME/.codex/engram-instructions.md" | head -n 1)"
+assert_equals "Engram's compact prompt survives the oso config merge" \
+  "Save durable memory before compaction." "$(cat "$CODEX_HAPPY_HOME/.codex/engram-compact-prompt.md")"
+assert_equals "Engram's instruction pointer survives as a top-level key" \
+  "1" "$(grep -c '^model_instructions_file = ' "$CODEX_HAPPY_CONFIG" || true)"
+assert_equals "Engram's compact prompt pointer survives as a top-level key" \
+  "1" "$(grep -c '^experimental_compact_prompt_file = ' "$CODEX_HAPPY_CONFIG" || true)"
+
+missing_codex_agents=""
+for codex_agent_toml in "$REPO_ROOT"/codex/agents/*.toml; do
+  codex_agent_name="$(basename "$codex_agent_toml" .toml)"
+  [ -f "$CODEX_HAPPY_HOME/.codex/agents/$codex_agent_name.toml" ] \
+    && [ ! -L "$CODEX_HAPPY_HOME/.codex/agents/$codex_agent_name.toml" ] \
+    && cmp -s "$codex_agent_toml" "$CODEX_HAPPY_HOME/.codex/agents/$codex_agent_name.toml" \
+    || missing_codex_agents="$missing_codex_agents $codex_agent_name"
+done
+assert_equals "all seven auto-discovered Codex roles are copied exactly" \
+  "" "$missing_codex_agents"
+assert_equals "an unrelated auto-discovered role survives agent installation" \
+  "operator-owned role" "$(sed -n 's/^description = "\([^"]*\)"/\1/p' "$CODEX_HAPPY_HOME/.codex/agents/personal.toml")"
+assert_equals "the seven oso roles are additive beside the personal role" \
+  "8" "$(find "$CODEX_HAPPY_HOME/.codex/agents" -maxdepth 1 -type f -name '*.toml' -print | wc -l | tr -d ' ')"
+
+assert_equals "the rendered user hook manifest is installed" \
+  "present" "$([ -f "$CODEX_HAPPY_HOME/.codex/hooks.json" ] && [ ! -L "$CODEX_HAPPY_HOME/.codex/hooks.json" ] && echo present || echo missing)"
+assert_equals "installed hook commands contain no unresolved release token" \
+  "0" "$(grep -c '__OSO_HOOKS_DIR__' "$CODEX_HAPPY_HOME/.codex/hooks.json" || true)"
+assert_equals "installed hook commands resolve below the self-contained plugin copy" \
+  "present" "$(grep -F "$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/hooks" "$CODEX_HAPPY_HOME/.codex/hooks.json" >/dev/null && echo present || echo missing)"
+assert_equals "every installed Codex hook command receives the fixed state marker explicitly" \
+  "$(grep -c '"command":' "$CODEX_HAPPY_HOME/.codex/hooks.json" || true)" \
+  "$(grep -c '"command": "OSO_AGENT=1 ' "$CODEX_HAPPY_HOME/.codex/hooks.json" || true)"
+assert_equals "the installer does not invent Codex per-handler trust hashes" \
+  "0" "$({ cat "$CODEX_HAPPY_HOME/.codex/hooks.json" "$CODEX_HAPPY_CONFIG"; } | grep -Ec 'trusted_hash|\[hooks\.state\]' || true)"
+assert_equals "the install close tells the operator to review hook trust explicitly" \
+  "/hooks" "$(codex_install_log_class /hooks /hooks)"
+
+missing_installed_hook=""
+while IFS='  ' read -r published_digest published_path; do
+  case "$published_digest" in ''|'#'*) continue ;; esac
+  published_path="${published_path# }"
+  case "$published_path" in
+    codex/hooks/hooks.json)
+      installed_hook_path="$CODEX_HAPPY_HOME/.codex/hooks.json"
+      normalized_hook_digest="$(sed "s|$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/hooks|__OSO_HOOKS_DIR__|g" "$installed_hook_path" |
+        { sha256sum 2>/dev/null || shasum -a 256 2>/dev/null; })"
+      normalized_hook_digest="${normalized_hook_digest%% *}"
+      [ "$normalized_hook_digest" = "$published_digest" ] \
+        || missing_installed_hook="$missing_installed_hook $published_path"
+      continue
+      ;;
+    plugin/hooks/*) installed_hook_path="$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/hooks/${published_path#plugin/hooks/}" ;;
+    plugin/bin/*) installed_hook_path="$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/bin/${published_path#plugin/bin/}" ;;
+    *) installed_hook_path="" ;;
+  esac
+  [ -n "$installed_hook_path" ] \
+    && [ -f "$installed_hook_path" ] \
+    && [ "$(file_sha256 "$installed_hook_path")" = "$published_digest" ] \
+    || missing_installed_hook="$missing_installed_hook $published_path"
+done < "$REPO_ROOT/bootstrap/hook-hashes.txt"
+assert_equals "every published hook dependency is installed with its released bytes" \
+  "" "$missing_installed_hook"
+assert_equals "the git commit boundary is staged with the runtime even when wiring is opted out" \
+  "identical" "$(cmp -s "$REPO_ROOT/plugin/git-hooks/pre-commit" "$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/git-hooks/pre-commit" && echo identical || echo divergent)"
+
+assert_equals "the installed Codex plugin carries a real wrapper" \
+  "present" "$([ -f "$CODEX_STAGED_MARKETPLACE/codex/skills/plan/SKILL.md" ] && [ ! -L "$CODEX_STAGED_MARKETPLACE/codex/skills/plan/SKILL.md" ] && echo present || echo missing)"
+assert_equals "the installed Codex plugin carries the shared body beside its wrappers" \
+  "present" "$([ -f "$CODEX_STAGED_MARKETPLACE/codex/skills/_shared/bodies/plan.md" ] && [ ! -L "$CODEX_STAGED_MARKETPLACE/codex/skills/_shared/bodies/plan.md" ] && echo present || echo missing)"
+assert_equals "the staged plugin carries all eight Codex skill wrappers" \
+  "8" "$(find "$CODEX_STAGED_MARKETPLACE/codex/skills" -mindepth 2 -maxdepth 2 -type f -name SKILL.md -print | wc -l | tr -d ' ')"
+assert_equals "the installed Codex plugin is self-contained, not linked to the checkout" \
+  "0" "$(find "$CODEX_STAGED_MARKETPLACE" -type l -print | wc -l | tr -d ' ')"
+assert_equals "the plugin manifest remains skills-only rather than claiming user hooks" \
+  "0" "$(grep -Ec '"(hooks|agents)"[[:space:]]*:' "$CODEX_STAGED_MARKETPLACE/codex/.codex-plugin/plugin.json" || true)"
+assert_equals "the staged shared tree is byte-identical to its single source" \
+  "identical" "$(diff -qr "$REPO_ROOT/plugin/skills/_shared" "$CODEX_STAGED_MARKETPLACE/codex/skills/_shared" >/dev/null && echo identical || echo divergent)"
+
+assert_equals "the installer never edits the operator's personal marketplace" \
+  "keep-me" "$(sed -n 's/.*"sentinel": "\([^"]*\)".*/\1/p' "$CODEX_HAPPY_MARKETPLACE")"
+CODEX_STAGED_CATALOG="$CODEX_STAGED_MARKETPLACE/.agents/plugins/marketplace.json"
+assert_equals "the staged catalog names oso-code at both catalog and entry levels" \
+  "2" "$(grep -c '"name"[[:space:]]*:[[:space:]]*"oso-code"' "$CODEX_STAGED_CATALOG" || true)"
+assert_equals "the staged catalog points at its local Codex package" \
+  "1" "$(grep -c '"path"[[:space:]]*:[[:space:]]*"./codex"' "$CODEX_STAGED_CATALOG" || true)"
+assert_equals "the staged catalog declares the source as local" \
+  "1" "$(grep -c '"source"[[:space:]]*:[[:space:]]*"local"' "$CODEX_STAGED_CATALOG" || true)"
+assert_equals "the staged catalog keeps installation available to the operator" \
+  "1" "$(grep -c '"installation"[[:space:]]*:[[:space:]]*"AVAILABLE"' "$CODEX_STAGED_CATALOG" || true)"
+assert_equals "the staged catalog applies authentication when installed" \
+  "1" "$(grep -c '"authentication"[[:space:]]*:[[:space:]]*"ON_INSTALL"' "$CODEX_STAGED_CATALOG" || true)"
+assert_equals "the staged catalog is the tracked marketplace, unchanged" \
+  "identical" "$(cmp -s "$REPO_ROOT/.agents/plugins/marketplace.json" "$CODEX_STAGED_CATALOG" && echo identical || echo divergent)"
+
+assert_equals "the global Codex file preserves personal prose" \
+  "1" "$(grep -Fxc 'This paragraph belongs to the operator.' "$CODEX_HAPPY_AGENTS" || true)"
+assert_equals "the global Codex file has exactly one oso-code start marker" \
+  "1" "$(grep -Fxc '<!-- oso-code:start -->' "$CODEX_HAPPY_AGENTS" || true)"
+assert_equals "the global Codex file has exactly one oso-code end marker" \
+  "1" "$(grep -Fxc '<!-- oso-code:end -->' "$CODEX_HAPPY_AGENTS" || true)"
+for codex_mode in plan quick debug; do
+  namespaced_mode="\$oso-code:$codex_mode"
+  assert_equals "global Codex routing uses the discovered $codex_mode identity" \
+    "present" "$(grep -F "$namespaced_mode" "$CODEX_HAPPY_AGENTS" >/dev/null && echo present || echo missing)"
+  assert_equals "the installed $codex_mode wrapper stays explicit-only" \
+    "1" "$(grep -Fxc 'disable-model-invocation: true' "$CODEX_STAGED_MARKETPLACE/codex/skills/$codex_mode/SKILL.md" || true)"
+done
+assert_equals "the mounted Impeccable skill is the provider-correct independent copy" \
+  "4.0.2" "$(sed -n 's/^version:[[:space:]]*//p' "$CODEX_HAPPY_HOME/.agents/skills/impeccable/SKILL.md")"
+assert_equals "the mounted Impeccable skill does not point back to its source" \
+  "independent" "$([ ! -L "$CODEX_HAPPY_HOME/.agents/skills/impeccable" ] && echo independent || echo linked)"
+
+stale_codex_runtime_contract=""
+for codex_mode_file in \
+  "$REPO_ROOT/plugin/skills/_shared/platform/codex/plan.md" \
+  "$REPO_ROOT/plugin/skills/_shared/platform/codex/quick.md" \
+  "$REPO_ROOT/plugin/skills/_shared/platform/codex/debug.md"; do
+  grep -F -- '--session "${OSO_AGENT}"' "$codex_mode_file" >/dev/null \
+    || stale_codex_runtime_contract="$stale_codex_runtime_contract $(basename "$codex_mode_file"):no-session"
+  grep -E 'what fills `--session`|gate is unported|gates are unported' "$codex_mode_file" >/dev/null \
+    && stale_codex_runtime_contract="$stale_codex_runtime_contract $(basename "$codex_mode_file"):placeholder" \
+    || true
+done
+assert_equals "plan, quick and debug bind state to the installed OSO_AGENT marker" \
+  "" "$stale_codex_runtime_contract"
+assert_equals "Codex parity no longer calls the S11 state identity a placeholder" \
+  "0" "$(grep -c 'PLACEHOLDER (the session id, not the identity)' "$REPO_ROOT/docs/parity-codex.md" || true)"
+assert_equals "Codex parity no longer says the S11 runtime installer is deferred" \
+  "0" "$(grep -Ec 'later installer slice|installer slice is what sets' "$REPO_ROOT/docs/parity-codex.md" || true)"
+
+# A second run must converge byte-for-byte. Calls may repeat; no managed file,
+# personal file or copied payload may accumulate another block or change bytes.
+codex_first_snapshot="$(install_file_snapshot "$CODEX_HAPPY_HOME")"
+run_codex_install "$CODEX_HAPPY_HOME"
+codex_second_snapshot="$(install_file_snapshot "$CODEX_HAPPY_HOME")"
+assert_equals "a second Codex install is byte-idempotent across every managed tree" \
+  "$codex_first_snapshot" "$codex_second_snapshot"
+assert_equals "a second config merge keeps one textual and one managed start marker" \
+  "2" "$(grep -Fxc '# oso-code:start' "$CODEX_HAPPY_CONFIG" || true)"
+assert_equals "a second config merge keeps one textual and one managed end marker" \
+  "2" "$(grep -Fxc '# oso-code:end' "$CODEX_HAPPY_CONFIG" || true)"
+
+# D14 is a behavioral pin: the wrong CLI is repaired to the ADR's exact floor,
+# then rechecked. `@latest` would make this fixture fail for the precise command.
+CODEX_OLD_HOME="$TEST_HOME/codex-old-version-home"
+write_codex_install_personal_state "$CODEX_OLD_HOME"
+printf '0.145.0\n' > "$CODEX_INSTALL_VERSION"
+run_codex_install "$CODEX_OLD_HOME"
+assert_equals "an old Codex is updated through the frozen package pin" \
+  "1" "$(grep -Fxc 'npm:install --global @openai/codex@0.146.0' "$CODEX_INSTALL_CALLS" || true)"
+assert_equals "the installer rechecks the CLI after the pinned update" \
+  "2" "$(grep -Fxc 'codex:--version' "$CODEX_INSTALL_CALLS" || true)"
+assert_equals "the shipped Codex installer contains no @latest escape hatch" \
+  "0" "$(grep -c '@latest' "$INSTALL_CODEX_SH" || true)"
+
+# Published hashes are checked before the transaction starts. This fixture is a
+# release tree whose hook bytes were changed after publication; it must neither
+# call a client nor create one destination path.
+CODEX_TAMPERED_RELEASE="$TEST_HOME/codex-tampered-release"
+mkdir -p "$CODEX_TAMPERED_RELEASE"
+cp -R "$REPO_ROOT/bootstrap" "$REPO_ROOT/codex" "$REPO_ROOT/plugin" "$CODEX_TAMPERED_RELEASE/"
+printf '\n# post-publication tamper\n' >> "$CODEX_TAMPERED_RELEASE/plugin/hooks/lib.sh"
+CODEX_HASH_HOME="$TEST_HOME/codex-hash-home"
+mkdir -p "$CODEX_HASH_HOME"
+printf '0.146.0\n' > "$CODEX_INSTALL_VERSION"
+run_codex_install "$CODEX_HASH_HOME" "" "$CODEX_TAMPERED_RELEASE/bootstrap/install-codex.sh"
+assert_equals "a published hook hash mismatch aborts the Codex installer" \
+  "nonzero" "$([ "$CODEX_INSTALL_RC" -ne 0 ] && echo nonzero || echo zero)"
+assert_equals "the hash refusal names the exact trust-boundary reason" \
+  "hash mismatch" "$(codex_install_log_class 'hash mismatch' 'hash mismatch')"
+assert_equals "a hash mismatch happens before any external installer call" \
+  "0" "$(wc -l < "$CODEX_INSTALL_CALLS" | tr -d ' ')"
+assert_equals "a hash mismatch happens before any destination mutation" \
+  "absent" "$([ -e "$CODEX_HASH_HOME/.codex" ] || [ -e "$CODEX_HASH_HOME/.agents" ] || [ -e "$CODEX_HASH_HOME/.local/share/oso-code" ] && echo mutated || echo absent)"
+
+CODEX_OVERRIDE_HASHES="$TEST_HOME/codex-override-hook-hashes.txt"
+cp "$REPO_ROOT/bootstrap/hook-hashes.txt" "$CODEX_OVERRIDE_HASHES"
+tampered_lib_digest="$(file_sha256 "$CODEX_TAMPERED_RELEASE/plugin/hooks/lib.sh")"
+awk -v digest="$tampered_lib_digest" '
+  $2 == "plugin/hooks/lib.sh" { $1 = digest }
+  { if ($0 ~ /^#/ || NF == 0) print; else printf "%s  %s\n", $1, $2 }
+' "$CODEX_OVERRIDE_HASHES" > "$CODEX_OVERRIDE_HASHES.tmp"
+mv "$CODEX_OVERRIDE_HASHES.tmp" "$CODEX_OVERRIDE_HASHES"
+OSO_HOOK_HASHES_FILE="$CODEX_OVERRIDE_HASHES" \
+  run_codex_install "$CODEX_HASH_HOME" "" "$CODEX_TAMPERED_RELEASE/bootstrap/install-codex.sh"
+assert_equals "an external hash manifest cannot bless post-publication hook bytes" \
+  "hash mismatch" "$(codex_install_log_class 'hash mismatch' 'hash mismatch')"
+assert_equals "the ignored hash override reaches no installer client" \
+  "0" "$(wc -l < "$CODEX_INSTALL_CALLS" | tr -d ' ')"
+
+CODEX_DUPLICATE_HASH_RELEASE="$TEST_HOME/codex-duplicate-hash-release"
+mkdir -p "$CODEX_DUPLICATE_HASH_RELEASE"
+cp -R "$REPO_ROOT/bootstrap" "$REPO_ROOT/codex" "$REPO_ROOT/plugin" "$CODEX_DUPLICATE_HASH_RELEASE/"
+awk '
+  /^#/ || NF == 0 { print; next }
+  data++
+  data == 1 { first = $0; print; next }
+  data == 2 { print first; next }
+  { print }
+' "$CODEX_DUPLICATE_HASH_RELEASE/bootstrap/hook-hashes.txt" \
+  > "$CODEX_DUPLICATE_HASH_RELEASE/bootstrap/hook-hashes.txt.tmp"
+mv "$CODEX_DUPLICATE_HASH_RELEASE/bootstrap/hook-hashes.txt.tmp" \
+  "$CODEX_DUPLICATE_HASH_RELEASE/bootstrap/hook-hashes.txt"
+run_codex_install "$CODEX_HASH_HOME" "" "$CODEX_DUPLICATE_HASH_RELEASE/bootstrap/install-codex.sh"
+assert_equals "a duplicate published hash path is rejected even with twelve rows" \
+  "duplicate path" "$(codex_install_log_class 'duplicate path' 'duplicate published hook path')"
+assert_equals "duplicate hash coverage is rejected before any destination mutation" \
+  "absent" "$([ -e "$CODEX_HASH_HOME/.codex" ] || [ -e "$CODEX_HASH_HOME/.agents" ] || [ -e "$CODEX_HASH_HOME/.local/share/oso-code" ] && echo mutated || echo absent)"
+
+# Every file mutation participates in one transaction. A deterministic failure
+# after the last materialization point is the strongest rollback case because it
+# proves hooks, agents, config, global rules, plugin and Impeccable are restored
+# together rather than only protecting the file nearest the failure.
+CODEX_ROLLBACK_HOME="$TEST_HOME/codex-rollback-home"
+mkdir -p "$CODEX_ROLLBACK_HOME"
+cp -R "$CODEX_HAPPY_HOME/." "$CODEX_ROLLBACK_HOME/"
+# This fixture changes HOME, so the copied rendered hooks manifest correctly
+# points at the source fixture's runtime and is foreign in the destination.
+# Leave hooks absent here: the late-failure assertion still proves a newly
+# created manifest is removed by rollback without weakening ownership checks.
+rm -f "$CODEX_ROLLBACK_HOME/.codex/hooks.json"
+mkdir -p "$CODEX_ROLLBACK_HOME/.local/state/oso-code"
+printf 'operator pre-existing opt-out\n' > "$CODEX_ROLLBACK_HOME/.local/state/oso-code/impeccable-opt-out"
+codex_rollback_before="$(install_file_snapshot "$CODEX_ROLLBACK_HOME")"
+printf '0.146.0\n' > "$CODEX_INSTALL_VERSION"
+run_codex_install "$CODEX_ROLLBACK_HOME" after-impeccable
+codex_rollback_after="$(install_file_snapshot "$CODEX_ROLLBACK_HOME")"
+assert_equals "a deterministic late installer failure exits nonzero" \
+  "nonzero" "$([ "$CODEX_INSTALL_RC" -ne 0 ] && echo nonzero || echo zero)"
+assert_equals "a deterministic failure names the exact injected boundary" \
+  "after-impeccable" "$(codex_install_log_class after-impeccable after-impeccable)"
+assert_equals "a late failure rolls every user-owned destination back byte-for-byte" \
+  "$codex_rollback_before" "$codex_rollback_after"
+
+CODEX_CONFIG_REJECT_HOME="$TEST_HOME/codex-config-reject-home"
+write_codex_install_personal_state "$CODEX_CONFIG_REJECT_HOME"
+codex_config_reject_before="$(install_file_snapshot "$CODEX_CONFIG_REJECT_HOME")"
+printf '0.146.0\n' > "$CODEX_INSTALL_VERSION"
+OSO_TEST_CONFIG_FAIL=1 run_codex_install "$CODEX_CONFIG_REJECT_HOME"
+codex_config_reject_after="$(install_file_snapshot "$CODEX_CONFIG_REJECT_HOME")"
+assert_equals "a Codex sandbox-profile validation rejection aborts the install" \
+  "config rejection" "$(codex_install_log_class 'config rejection' 'Codex rejected the merged config')"
+assert_equals "profile validation rejection rolls every destination back byte-for-byte" \
+  "$codex_config_reject_before" "$codex_config_reject_after"
+
+if command -v git >/dev/null 2>&1; then
+  CODEX_GIT_ROLLBACK_RELEASE="$TEST_HOME/codex-git-rollback-release"
+  mkdir -p "$CODEX_GIT_ROLLBACK_RELEASE"
+  cp -R "$REPO_ROOT/.agents" "$REPO_ROOT/bootstrap" "$REPO_ROOT/codex" \
+    "$REPO_ROOT/plugin" "$CODEX_GIT_ROLLBACK_RELEASE/"
+  git init -q "$CODEX_GIT_ROLLBACK_RELEASE"
+  CODEX_GIT_ROLLBACK_HOME="$TEST_HOME/codex-git-rollback-home"
+  write_codex_install_personal_state "$CODEX_GIT_ROLLBACK_HOME"
+  : > "$CODEX_INSTALL_CALLS"
+  printf '0.146.0\n' > "$CODEX_INSTALL_VERSION"
+  if HOME="$CODEX_GIT_ROLLBACK_HOME" \
+    CODEX_HOME="$CODEX_GIT_ROLLBACK_HOME/.codex" \
+    PATH="$CODEX_INSTALL_SHIMS:$PATH" \
+    OSO_TEST_CALLS="$CODEX_INSTALL_CALLS" \
+    OSO_TEST_CODEX_VERSION="$CODEX_INSTALL_VERSION" \
+    OSO_IMPECCABLE_SOURCE="$CODEX_IMPECCABLE_SOURCE" \
+    OSO_INSTALL_FAIL_AFTER=after-git-hook \
+    bash "$CODEX_GIT_ROLLBACK_RELEASE/bootstrap/install-codex.sh" \
+      --yes --no-impeccable > "$CODEX_INSTALL_OUTPUT" 2>&1; then
+    codex_git_rollback_rc=0
+  else
+    codex_git_rollback_rc=$?
+  fi
+  assert_equals "a deterministic failure after git wiring exits nonzero" \
+    "nonzero" "$([ "$codex_git_rollback_rc" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "rollback removes core.hooksPath when it was previously absent" \
+    "absent" "$(if git -C "$CODEX_GIT_ROLLBACK_RELEASE" config --local --get core.hooksPath >/dev/null 2>&1; then echo present; else echo absent; fi)"
+else
+  echo "skip: git is absent, so core.hooksPath rollback cannot be exercised"
+  skipped=$((skipped + 1))
+fi
+
+# The region may not annex an operator-owned table of the same name. TOML does
+# not permit two definitions, so silently appending the oso block would create a
+# config Codex cannot parse; deleting the earlier table would be data loss.
+CODEX_CONFLICT_HOME="$TEST_HOME/codex-conflict-home"
+write_codex_install_personal_state "$CODEX_CONFLICT_HOME"
+printf '%s\n' \
+  '' \
+  '[mcp_servers.context7]' \
+  'url = "https://operator.example/context"' >> "$CODEX_CONFLICT_HOME/.codex/config.toml"
+codex_conflict_before="$(install_file_snapshot "$CODEX_CONFLICT_HOME")"
+printf '0.146.0\n' > "$CODEX_INSTALL_VERSION"
+run_codex_install "$CODEX_CONFLICT_HOME"
+codex_conflict_after="$(install_file_snapshot "$CODEX_CONFLICT_HOME")"
+assert_equals "an owned TOML table outside the oso region is rejected" \
+  "owned table conflict" "$(codex_install_log_class 'owned table conflict' 'oso-code-owned.*outside.*managed|outside.*oso-code|conflict.*context7')"
+assert_equals "a conflicting config aborts before plugin or Engram wiring" \
+  "0" "$(grep -Ec '^codex:plugin|^engram:' "$CODEX_INSTALL_CALLS" || true)"
+assert_equals "a conflicting config leaves every destination byte-identical" \
+  "$codex_conflict_before" "$codex_conflict_after"
+
+CODEX_FOREIGN_HOOKS_HOME="$TEST_HOME/codex-foreign-hooks-home"
+write_codex_install_personal_state "$CODEX_FOREIGN_HOOKS_HOME"
+printf '%s\n' '{"hooks":{"foreign":[]}}' > "$CODEX_FOREIGN_HOOKS_HOME/.codex/hooks.json"
+foreign_hooks_before="$(install_file_snapshot "$CODEX_FOREIGN_HOOKS_HOME")"
+printf '0.146.0\n' > "$CODEX_INSTALL_VERSION"
+run_codex_install "$CODEX_FOREIGN_HOOKS_HOME"
+foreign_hooks_after="$(install_file_snapshot "$CODEX_FOREIGN_HOOKS_HOME")"
+assert_equals "a foreign user hooks manifest is rejected loudly" \
+  "foreign hooks" "$(codex_install_log_class 'foreign hooks' 'foreign.*hooks|refus.*hooks')"
+assert_equals "a foreign hooks refusal happens before plugin or Engram wiring" \
+  "0" "$(grep -Ec '^codex:plugin|^engram:' "$CODEX_INSTALL_CALLS" || true)"
+assert_equals "a foreign hooks refusal leaves every destination byte-identical" \
+  "$foreign_hooks_before" "$foreign_hooks_after"
+
+CODEX_SUBSTRING_HOOKS_HOME="$TEST_HOME/codex-substring-hooks-home"
+write_codex_install_personal_state "$CODEX_SUBSTRING_HOOKS_HOME"
+substring_runtime="$CODEX_SUBSTRING_HOOKS_HOME/.local/share/oso-code/runtime/hooks"
+printf '%s\n' \
+  '{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"foreign-wrapper '"$substring_runtime"'/block-commit-until-green.sh"}]}]}}' \
+  > "$CODEX_SUBSTRING_HOOKS_HOME/.codex/hooks.json"
+substring_hooks_before="$(install_file_snapshot "$CODEX_SUBSTRING_HOOKS_HOME")"
+run_codex_install "$CODEX_SUBSTRING_HOOKS_HOME"
+assert_equals "mentioning the oso hooks path as an argument does not establish ownership" \
+  "foreign hooks" "$(codex_install_log_class 'foreign hooks' 'foreign.*hooks|refus.*hooks')"
+assert_equals "substring-only hook ownership leaves every destination byte-identical" \
+  "$substring_hooks_before" "$(install_file_snapshot "$CODEX_SUBSTRING_HOOKS_HOME")"
+
+CODEX_MIXED_HOOKS_HOME="$TEST_HOME/codex-mixed-hooks-home"
+write_codex_install_personal_state "$CODEX_MIXED_HOOKS_HOME"
+mixed_runtime="$CODEX_MIXED_HOOKS_HOME/.local/share/oso-code/runtime/hooks"
+printf '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"OSO_AGENT=1 \\"%s\\"/block-commit-until-green.sh"},{"type":"prompt","prompt":"operator-owned"}]}]}}\n' \
+  "$mixed_runtime" > "$CODEX_MIXED_HOOKS_HOME/.codex/hooks.json"
+mixed_hooks_before="$(install_file_snapshot "$CODEX_MIXED_HOOKS_HOME")"
+run_codex_install "$CODEX_MIXED_HOOKS_HOME"
+assert_equals "one valid oso command cannot annex a second operator-owned hook handler" \
+  "foreign hooks" "$(codex_install_log_class 'foreign hooks' 'foreign.*hooks|refus.*hooks')"
+assert_equals "mixed hook ownership refusal preserves the complete manifest" \
+  "$mixed_hooks_before" "$(install_file_snapshot "$CODEX_MIXED_HOOKS_HOME")"
+
+CODEX_LINKED_AGENTS_HOME="$TEST_HOME/codex-linked-agents-home"
+write_codex_install_personal_state "$CODEX_LINKED_AGENTS_HOME"
+CODEX_LINKED_AGENTS_TARGET="$TEST_HOME/codex-personal-agent-target"
+mkdir -p "$CODEX_LINKED_AGENTS_TARGET"
+printf 'operator-owned linked role\n' > "$CODEX_LINKED_AGENTS_TARGET/personal.toml"
+rm -rf "$CODEX_LINKED_AGENTS_HOME/.codex/agents"
+ln -s "$CODEX_LINKED_AGENTS_TARGET" "$CODEX_LINKED_AGENTS_HOME/.codex/agents"
+run_codex_install "$CODEX_LINKED_AGENTS_HOME"
+assert_equals "a symlink-managed agents directory is rejected instead of rewritten" \
+  "linked agents" "$(codex_install_log_class 'linked agents' 'symlinked Codex agents directory')"
+assert_equals "agent symlink refusal preserves the link itself" \
+  "$CODEX_LINKED_AGENTS_TARGET" "$(readlink "$CODEX_LINKED_AGENTS_HOME/.codex/agents")"
+assert_equals "agent symlink refusal preserves its external target" \
+  "operator-owned linked role" "$(cat "$CODEX_LINKED_AGENTS_TARGET/personal.toml")"
+
+# Marker damage is ambiguity, never permission to delete through the next end
+# marker or append a second region. Exercise each managed text file independently
+# and require that refusal itself leave the malformed bytes untouched.
+CODEX_BAD_CONFIG_HOME="$TEST_HOME/codex-bad-config-home"
+mkdir -p "$CODEX_BAD_CONFIG_HOME"
+cp -R "$CODEX_HAPPY_HOME/." "$CODEX_BAD_CONFIG_HOME/"
+bad_config="$CODEX_BAD_CONFIG_HOME/.codex/config.toml"
+bad_config_end='# oso-code:end'
+awk -v marker="$bad_config_end" '$0 != marker { print }' "$bad_config" > "$bad_config.tmp"
+mv "$bad_config.tmp" "$bad_config"
+bad_config_before="$(file_sha256 "$bad_config")"
+printf '0.146.0\n' > "$CODEX_INSTALL_VERSION"
+run_codex_install "$CODEX_BAD_CONFIG_HOME"
+assert_equals "an unmatched config marker is rejected as malformed" \
+  "malformed config markers" "$(codex_install_log_class 'malformed config markers' 'config.*malformed.*oso-code.*marker|malformed.*config.*marker')"
+assert_equals "a malformed config is untouched by the refused install" \
+  "$bad_config_before" "$(file_sha256 "$bad_config")"
+
+CODEX_BAD_GLOBAL_HOME="$TEST_HOME/codex-bad-global-home"
+mkdir -p "$CODEX_BAD_GLOBAL_HOME"
+cp -R "$CODEX_HAPPY_HOME/." "$CODEX_BAD_GLOBAL_HOME/"
+bad_global="$CODEX_BAD_GLOBAL_HOME/.codex/AGENTS.md"
+bad_global_start='<!-- oso-code:start -->'
+printf '%s\n%s\n' "$bad_global_start" "$(cat "$bad_global")" > "$bad_global.tmp"
+mv "$bad_global.tmp" "$bad_global"
+bad_global_before="$(file_sha256 "$bad_global")"
+printf '0.146.0\n' > "$CODEX_INSTALL_VERSION"
+run_codex_install "$CODEX_BAD_GLOBAL_HOME"
+assert_equals "a duplicate global start marker is rejected as malformed" \
+  "malformed global markers" "$(codex_install_log_class 'malformed global markers' 'AGENTS.*malformed.*oso-code.*marker|global.*malformed.*oso-code.*marker|malformed.*AGENTS.*marker')"
+assert_equals "a malformed global file is untouched by the refused install" \
+  "$bad_global_before" "$(file_sha256 "$bad_global")"
 
 echo "----"
 echo "passed: $pass, failed: $fail, skipped: $skipped"

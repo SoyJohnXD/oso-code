@@ -110,7 +110,8 @@ older_than_days() {
   [ "$age" -ge "$((days * 86400))" ]
 }
 
-session_id="$(sanitize_session "$(json_field "$(cat)" session_id)")"
+payload="$(cat)"
+session_id="$(hook_session "$payload")"
 own_state="$(state_armed_by "$session_id")"
 remove_worktrees_of "$session_id" "$own_state"
 drop_state_file "$own_state"

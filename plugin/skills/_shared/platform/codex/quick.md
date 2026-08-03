@@ -10,17 +10,17 @@ Wherever the neutral body names a file as `_shared/<file>.md`, it is spelled `..
 
 What the state is keyed by is settled and is host-neutral: the state file is the REPOSITORY's (ADR-0095), resolved from the directory the command runs in.
 
-**PLACEHOLDER — what fills `--session`, and the gates that read the state, are not.** That flag is what the audit trail records each line under, and this host exposes no session-id variable to fill it; the installer slice that wires `OSO_AGENT` through `shell_environment_policy.set` settles the value, and the gates wait on the same slice because a Codex plugin cannot bundle hooks. Until it lands, do NOT improvise a flag and do NOT run the state command with the session argument dropped — `oso-state` refuses a write with no session, and a write that never ran reads exactly like a gate that is open. Tell the operator the gate is unported and continue the flow without it.
+The installer publishes the fixed marker `OSO_AGENT=1` through `shell_environment_policy.set` for tool subprocesses and as an explicit prefix on user-hook commands. Spell every state call as `"${OSO_STATE_BIN:-oso-state}" --session "${OSO_AGENT}" <verb> …`. The installed user hooks and git hook read the same marker; until the operator has reviewed and trusted the user hooks through `/hooks`, report that the local-function layer is installed but not trusted.
 
 ## Naming and invoking the harness's own skills
 
-The neutral body names each one by role. Non-forked skills are bare names under a flat skills root — no plugin prefix — and there is no skill tool to call: open and read their `SKILL.md` in this context.
+Installed plugin skills carry Codex's `oso-code:` namespace. Operator-invoked modes use that full identity; an orchestrator opens and reads auxiliary `SKILL.md` files in the installed plugin.
 
 | The body says | Here it is | Reached by |
 | --- | --- | --- |
-| the PLAN mode | `plan` | the operator invokes it — a mode is never model-invoked |
-| the DEBUG mode | `debug` | the operator invokes it — a mode is never model-invoked |
-| the quality-pass judge | `quality-pass` | read `skills/quality-pass/SKILL.md` and run it inline, the way it runs on every host |
+| the PLAN mode | `oso-code:plan` | the operator invokes `$oso-code:plan` — a mode is never model-invoked |
+| the DEBUG mode | `oso-code:debug` | the operator invokes `$oso-code:debug` — a mode is never model-invoked |
+| the quality-pass judge | `oso-code:quality-pass` | read its installed `SKILL.md` and run it inline, the way it runs on every host |
 
 Forked judges and operational agents are the exception to inline reading. READ `subagents.md` beside this file NOW and use its role map, payload rules and completion handshake as binding. Quick has no separate wait section, so the common receipt protocol applies directly to every launch whose result the flow consumes.
 
