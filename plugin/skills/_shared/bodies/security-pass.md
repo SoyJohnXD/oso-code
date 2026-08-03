@@ -4,9 +4,9 @@ Fresh-context security judge over a change that has not shipped — what is stag
 
 ## Run the review
 
-Prefer the native review; fall back only when it is absent. Which reviewer is native, and how you reach it, is your host's — the platform file settles it. Whatever it says, the review ALWAYS runs inside this fork: never fall back to recommending inline or orchestrator execution.
+Prefer the native review; fall back only when it is absent. Which reviewer is native, how you reach it, and how its review surface is selected are your host's — the platform file settles them. Whatever it says, the review ALWAYS runs inside this fork: never fall back to recommending inline or orchestrator execution.
 
-- **Native path** — the native reviewer's own prompt drives the review, and acquisition is its own: it decides what diff it reads, you neither gather one for it nor pass one to it, and the Fallback acquisition section below does not apply. Return its markdown report verbatim under the `native` header (see Report).
+- **Native path** — the native reviewer's own prompt drives the review. Follow the platform file exactly for how its surface is selected; do not also perform Fallback acquisition. Return its markdown report verbatim under the exact native header the platform file declares (see Report).
 - **Hybrid fallback** — acquire the pending change yourself (Fallback acquisition) and review it against the fallback criteria.
 
 ### Fallback acquisition
@@ -33,7 +33,7 @@ Look for, by category:
 
 ## Report
 
-Open with the path that ran — `Security Pass: native` or `Security Pass: fallback`. That header names which code path executed and nothing else; the verdict is the separate token below, and the two axes never collapse into one line.
+Open with the path that ran. The fallback header is exactly `Security Pass: fallback`. The native header is the exact spelling your platform file declares; a host whose native route selects a bounded surface may include that surface in the header. The header names the path and, only where the platform requires it, the covered scope. The verdict is the separate token below, and the axes never collapse into one line.
 
 Under a native header the body is the native reviewer's report verbatim — never edited, never trimmed, never appended to. Under a fallback header the body is one markdown section per finding, each with:
 

@@ -1230,6 +1230,61 @@ assert_equals "the two wrappers of a skill bind the same neutral body" \
 assert_equals "every skill ships a wrapper on both hosts" \
   "$(sorted_words "$harness_skills")" "$(sorted_words "$paired_skills")"
 
+# --- Integration: security-pass stays provider-neutral at its public edge ----
+# The mechanism differs by host, so it belongs in the platform adapter, never in
+# either wrapper's public description.  Read only the frontmatter field: Claude's
+# platform file MUST still name `security-review`, and treating that legitimate
+# host fact as a description violation would make a file-wide grep falsely red.
+frontmatter_description() {
+  awk '
+    NR == 1 && $0 == "---" { inside = 1; next }
+    inside && $0 == "---" { inside = 0; exit }
+    inside && /^description:[[:space:]]*/ {
+      sub(/^description:[[:space:]]*/, "")
+      print
+      descriptions++
+    }
+    END { if (descriptions != 1) exit 1 }
+  ' "$1"
+}
+
+security_description_status() {
+  local description
+  if ! description="$(frontmatter_description "$1" 2>/dev/null)"; then
+    printf invalid
+  elif printf '%s\n' "$description" | grep -qF 'security-review'; then
+    printf names-security-review
+  else
+    printf neutral
+  fi
+}
+
+for security_wrapper in \
+  "$PLUGIN/skills/security-pass/SKILL.md" \
+  "$CODEX_SKILLS/security-pass/SKILL.md"; do
+  case "$security_wrapper" in
+    "$PLUGIN"/*) security_host=Claude ;;
+    *) security_host=Codex ;;
+  esac
+  assert_equals "the $security_host security-pass description is provider-neutral" \
+    neutral "$(security_description_status "$security_wrapper")"
+done
+
+# Prove the frontmatter boundary with a mutation: add the forbidden provider
+# name to DESCRIPTION and require that exact field to turn red.  A detector that
+# merely greps the repository would already be red on Claude's valid adapter and
+# could not satisfy the clean assertions above.
+SECURITY_DESCRIPTION_FIXTURE="$TEST_HOME/security-description-SKILL.md"
+awk '
+  /^description:[[:space:]]*/ {
+    print "description: security-review provider detail leaked into the public contract"
+    next
+  }
+  { print }
+' "$CODEX_SKILLS/security-pass/SKILL.md" > "$SECURITY_DESCRIPTION_FIXTURE"
+assert_equals "a provider-specific security-pass description is rejected" \
+  names-security-review "$(security_description_status "$SECURITY_DESCRIPTION_FIXTURE")"
+
 # --- Integration: Claude's seven delegated contracts have seven Codex roles --
 # Codex has two source shapes to port: the three Claude agent contracts, and the
 # four skills whose frontmatter asks Claude for a fresh fork.  Keep the mapping
@@ -1362,7 +1417,14 @@ while IFS='|' read -r role_kind source_name codex_role; do
     "xhigh" "$(toml_scalar "$role_file" model_reasoning_effort)"
   assert_equals "$codex_role has observable nonempty developer instructions" \
     "nonempty" "$(developer_instructions_status "$role_file")"
-  if [ "$role_kind" = judge ]; then
+  if [ "$codex_role" = oso-security-reviewer ]; then
+    # Unlike the three non-security judges, this role starts a nested `codex review`.
+    # A read-only role cannot start that path. The outer CLI needs authenticated
+    # runtime paths and network beyond the workspace; the nested review is the
+    # layer constrained back to workspace-write.
+    assert_equals "oso-security-reviewer can run the native Codex review" \
+      "danger-full-access" "$(toml_scalar "$role_file" sandbox_mode)"
+  elif [ "$role_kind" = judge ]; then
     assert_equals "$codex_role is read-only" \
       "read-only" "$(toml_scalar "$role_file" sandbox_mode)"
   else
@@ -1385,6 +1447,267 @@ while IFS='|' read -r role_kind source_name codex_role; do
   assert_equals "$codex_role preserves its load-bearing role contract" \
     "present" "$(role_contract_status "$codex_role" "$source_name" "$role_file")"
 done <<< "$S5_ROLE_MAP"
+
+# The exact scalar is the sandbox contract, so mutate only that TOML field and
+# prove the checker sees the prohibited value rather than another occurrence of
+# "read-only" in prose.
+SECURITY_ROLE_FIXTURE="$TEST_HOME/oso-security-reviewer-read-only.toml"
+awk '
+  /^sandbox_mode[[:space:]]*=/ {
+    print "sandbox_mode = \"read-only\""
+    next
+  }
+  { print }
+' "$CODEX_AGENTS/oso-security-reviewer.toml" > "$SECURITY_ROLE_FIXTURE"
+assert_equals "a read-only native security reviewer is observable at its TOML boundary" \
+  "read-only" "$(toml_scalar "$SECURITY_ROLE_FIXTURE" sandbox_mode)"
+
+# S9 turns Codex's separate CLI review into this judge's native path.  The
+# adapter is the routing contract and the role's multiline instructions are the
+# execution contract, so read those two bounded regions independently.  A
+# `codex review` mention in a wrapper, a TOML description or a neighbouring
+# markdown section is deliberately invisible here.
+markdown_h2_section() {
+  local file="$1" heading="$2"
+  awk -v heading="$heading" '
+    $0 == heading { found++; inside = 1; next }
+    inside && /^## / { inside = 0; exit }
+    inside { print }
+    END { if (found != 1) exit 1 }
+  ' "$file"
+}
+
+developer_instructions_text() {
+  awk '
+    /^developer_instructions[[:space:]]*=[[:space:]]*"""[[:space:]]*$/ {
+      starts++; inside = 1; next
+    }
+    inside && /^"""[[:space:]]*$/ { closes++; inside = 0; next }
+    inside { print }
+    END { if (starts != 1 || closes != 1 || inside) exit 1 }
+  ' "$1"
+}
+
+codex_security_route_status() {
+  local platform_file="$1" role_file="$2" platform_section role_instructions phrase
+  if ! platform_section="$(markdown_h2_section "$platform_file" \
+      '## Which reviewer is native, and how to reach it' 2>/dev/null)"; then
+    printf invalid-platform-section
+    return
+  fi
+  if ! role_instructions="$(developer_instructions_text "$role_file" 2>/dev/null)"; then
+    printf invalid-role-instructions
+    return
+  fi
+  for phrase in 'codex review' 'oso-security-reviewer' 'inside' 'orchestrator' \
+    'Fallback criteria' 'ARGUMENTS' 'security-only' 'native target selector' \
+    'developer_instructions' 'exactly one locally resolvable base ref' \
+    'invalid, unresolved, or multi-argument value is blocked' 'one quoted argument' \
+    'Never discover a remote or default branch' 'remote inference' \
+    'actual validated ref substituted verbatim' 'missing' 'cannot authenticate' \
+    'cannot reach its service' 'exits unsuccessfully' 'report the failure as blocked' \
+    'do not silently downgrade to the fallback'; do
+    case "$platform_section" in
+      *"$phrase"*) ;;
+      *) printf 'platform-misses:%s' "$phrase"; return ;;
+    esac
+  done
+  for phrase in 'codex review' 'inside this subagent' 'orchestrator' \
+    'native target selector' 'developer-instruction override' 'sandbox' 'network' \
+    'covered-scope header'; do
+    case "$role_instructions" in
+      *"$phrase"*) ;;
+      *) printf 'role-misses:%s' "$phrase"; return ;;
+    esac
+  done
+  printf complete
+}
+
+CODEX_SECURITY_PLATFORM="$PLUGIN/skills/_shared/platform/codex/security-pass.md"
+CLAUDE_SECURITY_PLATFORM="$PLUGIN/skills/_shared/platform/claude/security-pass.md"
+SECURITY_BODY="$PLUGIN/skills/_shared/bodies/security-pass.md"
+SECURITY_ROLE="$CODEX_AGENTS/oso-security-reviewer.toml"
+
+assert_equals "the Codex security route runs native review inside its own subagent" \
+  complete "$(codex_security_route_status "$CODEX_SECURITY_PLATFORM" "$SECURITY_ROLE")"
+
+# Remove the executable route only from its owning H2 block, then leave the same
+# words in a neighbouring decoy section.  The expected named gap proves the
+# assertion did not pass on the role's independent mention or a file-wide grep.
+SECURITY_ROUTE_FIXTURE="$TEST_HOME/security-pass-codex-route.md"
+awk '
+  $0 == "## Which reviewer is native, and how to reach it" { inside = 1 }
+  inside && $0 != "## Which reviewer is native, and how to reach it" && /^## / { inside = 0 }
+  inside { gsub(/codex review/, "codex inspect") }
+  { print }
+  END {
+    print ""
+    print "## Non-routing decoy"
+    print "The words codex review live outside the native route."
+  }
+' "$CODEX_SECURITY_PLATFORM" > "$SECURITY_ROUTE_FIXTURE"
+assert_equals "a codex-review mention outside the native route cannot satisfy it" \
+  "platform-misses:codex review" \
+  "$(codex_security_route_status "$SECURITY_ROUTE_FIXTURE" "$SECURITY_ROLE")"
+
+# `codex review` accepts either a selector or a custom PROMPT, never both. This
+# route uses the selector for acquisition and a config-level developer instruction
+# for the security policy. Inspect only backticked command spans in the native H2;
+# prose that names a forbidden flag is not itself an invocation.
+codex_review_command_status() {
+  local section commands command phrase
+  section="$(markdown_h2_section "$1" \
+    '## Which reviewer is native, and how to reach it' 2>/dev/null)" \
+    || { printf invalid-section; return; }
+  commands="$(printf '%s\n' "$section" | awk '
+    {
+      rest = $0
+      while (match(rest, /`[^`]+`/)) {
+        span = substr(rest, RSTART + 1, RLENGTH - 2)
+        if (span ~ /^codex review /) print span
+        rest = substr(rest, RSTART + RLENGTH)
+      }
+    }
+  ')"
+  [ "$(printf '%s\n' "$commands" | awk 'NF { n++ } END { print n + 0 }')" = 1 ] \
+    || { printf wrong-command-count; return; }
+  command="$commands"
+  if printf '%s\n' "$command" | grep -Eq -- '--(uncommitted|base|commit)([[:space:]]|$)' &&
+     printf '%s\n' "$command" | grep -qE -- ' -$'; then
+    printf selector-plus-prompt
+    return
+  fi
+  for phrase in 'sandbox_mode="workspace-write"' \
+    'sandbox_workspace_write.network_access=true' 'approval_policy="never"' \
+    'review_model="gpt-5.5"' 'model_reasoning_effort="xhigh"' \
+    'developer_instructions=<security instructions>'; do
+    case "$command" in *"$phrase"*) ;; *) printf 'command-misses:%s' "$phrase"; return ;; esac
+  done
+  for phrase in 'append `--uncommitted`' 'append `--base <base-ref>`' \
+    'custom PROMPT conflict' 'never add a positional PROMPT' 'stdin spelling `-`'; do
+    case "$section" in *"$phrase"*) ;; *) printf 'selector-contract:%s' "$phrase"; return ;; esac
+  done
+  case "$section" in
+    *'git ls-files --others --exclude-standard'*'read every returned file'*) ;;
+    *) printf base-untracked-contract; return ;;
+  esac
+  if printf '%s\n' "$command" | grep -Eq -- ' -$|<security prompt>'; then
+    printf positional-prompt
+  else
+    printf selector-only
+  fi
+}
+
+assert_equals "the native security command uses selectors without a conflicting prompt" \
+  selector-only "$(codex_review_command_status "$CODEX_SECURITY_PLATFORM")"
+
+SECURITY_SELECTOR_FIXTURE="$TEST_HOME/security-pass-selector-plus-prompt.md"
+awk '
+  $0 == "## Which reviewer is native, and how to reach it" { inside = 1 }
+  inside && $0 != "## Which reviewer is native, and how to reach it" && /^## / { inside = 0 }
+  inside && /`codex review / {
+    sub(/`\.$/, " --uncommitted -`.")
+  }
+  { print }
+  END {
+    print ""
+    print "## Command decoy"
+    print "`codex review -c developer_instructions=security-only --uncommitted`"
+  }
+' "$CODEX_SECURITY_PLATFORM" > "$SECURITY_SELECTOR_FIXTURE"
+assert_equals "a selector cannot coexist with a positional prompt" \
+  selector-plus-prompt "$(codex_review_command_status "$SECURITY_SELECTOR_FIXTURE")"
+
+# The shared report owns the fallback/default shape; each host adapter owns only
+# its native spelling.  Code-span matching makes the exact header the unit: a
+# longer or prose-only lookalike cannot stand in for the report line consumers
+# parse, and Claude's pre-existing native/fallback vocabulary remains explicit.
+security_header_status() {
+  local body_file="$1" claude_file="$2" codex_file="$3"
+  local report_section claude_section codex_section
+  report_section="$(markdown_h2_section "$body_file" '## Report' 2>/dev/null)" \
+    || { printf invalid-report-section; return; }
+  claude_section="$(markdown_h2_section "$claude_file" \
+    '## Which reviewer is native, and how to reach it' 2>/dev/null)" \
+    || { printf invalid-claude-section; return; }
+  codex_section="$(markdown_h2_section "$codex_file" \
+    '## Which reviewer is native, and how to reach it' 2>/dev/null)" \
+    || { printf invalid-codex-section; return; }
+  case "$report_section" in
+    *'`Security Pass: fallback`'*'platform file declares'*) ;;
+    *) printf shared-report; return ;;
+  esac
+  case "$claude_section" in
+    *'`security-review`'*'Skill tool'*'`Security Pass: native`'*) ;;
+    *) printf claude-native; return ;;
+  esac
+  case "$codex_section" in
+    *'`Security Pass: native — covered: staged, unstaged, and untracked changes`'*) ;;
+    *) printf codex-uncommitted; return ;;
+  esac
+  case "$codex_section" in
+    *'`Security Pass: native — covered: merge base of HEAD and <base-ref> through HEAD, plus staged, unstaged, and untracked changes`'*) ;;
+    *) printf codex-base; return ;;
+  esac
+  printf complete
+}
+
+assert_equals "security-pass headers name the exact native coverage on each host" \
+  complete "$(security_header_status "$SECURITY_BODY" \
+    "$CLAUDE_SECURITY_PLATFORM" "$CODEX_SECURITY_PLATFORM")"
+
+SECURITY_HEADER_FIXTURE="$TEST_HOME/security-pass-codex-header.md"
+awk '
+  $0 == "## Which reviewer is native, and how to reach it" { inside = 1 }
+  inside && $0 != "## Which reviewer is native, and how to reach it" && /^## / { inside = 0 }
+  inside {
+    gsub(/Security Pass: native — covered: merge base of HEAD and <base-ref> through HEAD, plus staged, unstaged, and untracked changes/,
+      "Security Pass: native — covered merge base and working tree")
+  }
+  { print }
+  END {
+    print ""
+    print "## Header decoy"
+    print "`Security Pass: native — covered: merge base of HEAD and <base-ref> through HEAD, plus staged, unstaged, and untracked changes`"
+  }
+' "$CODEX_SECURITY_PLATFORM" > "$SECURITY_HEADER_FIXTURE"
+assert_equals "a base-coverage header outside the native route cannot satisfy it" \
+  codex-base "$(security_header_status "$SECURITY_BODY" \
+    "$CLAUDE_SECURITY_PLATFORM" "$SECURITY_HEADER_FIXTURE")"
+
+# D17 makes parity part of the contract, not release-note decoration. Select
+# each row by its first cell and require exactly one: a stale original beside a
+# corrected duplicate must fail rather than letting the new row hide the old.
+parity_row() {
+  local label="$1"
+  awk -v prefix="| $label |" '
+    index($0, prefix) == 1 { print; rows++ }
+    END { if (rows != 1) exit 1 }
+  ' "$REPO_ROOT/docs/parity-codex.md"
+}
+
+security_parity_status() {
+  local forked_row native_row phrase
+  forked_row="$(parity_row 'A forked judge' 2>/dev/null)" \
+    || { printf forked-row-count; return; }
+  native_row="$(parity_row 'The native security reviewer' 2>/dev/null)" \
+    || { printf native-row-count; return; }
+  for phrase in 'Four dedicated custom roles' '`gpt-5.5`' '`xhigh`' \
+    'three non-security judges' 'read-only' '`oso-security-reviewer`' \
+    '`danger-full-access`' '`workspace-write`' 'Settled'; do
+    case "$forked_row" in *"$phrase"*) ;; *) printf 'forked-row:%s' "$phrase"; return ;; esac
+  done
+  for phrase in '`oso-security-reviewer`' '`codex review`' 'native target selector' \
+    'security-only developer instructions' '`danger-full-access`' '`workspace-write`' \
+    'network' 'interactive approval' 'pins the review model' \
+    'staged/unstaged/untracked' 'validated base range' 'Settled'; do
+    case "$native_row" in *"$phrase"*) ;; *) printf 'native-row:%s' "$phrase"; return ;; esac
+  done
+  printf complete
+}
+
+assert_equals "parity records all four judges and the native-security exception once" \
+  complete "$(security_parity_status)"
 
 # The transport marker is outside every role's semantic report.  Pin the same
 # first-line envelope in all seven TOMLs while preserving each role's existing

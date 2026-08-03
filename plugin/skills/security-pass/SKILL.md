@@ -1,6 +1,6 @@
 ---
 name: security-pass
-description: Fresh-context security reviewer of a change that has not shipped yet. Launched by the /plan, /quick, and /debug orchestrators on operator acceptance before a commit, a push, or a PR, when the change touched auth, payments, or data-model surfaces. Invokes the native security-review skill inside its own fork so Anthropic's review prompt injects into the fork, never the orchestrator, and lets that skill acquire its own diff; falls back to a condensed native-derived review over a diff this skill acquires itself when the native skill is not listed. It judges only — never edits, never commits, never asks back.
+description: Fresh-context security reviewer of a change that has not shipped yet. Launched by the /plan, /quick, and /debug orchestrators on operator acceptance before a commit, a push, or a PR, when the change touched auth, payments, or data-model surfaces. Runs the host's native review path inside its own isolated context and uses the shared hybrid fallback only when that host declares the native path absent. It judges only — never edits, never commits, never asks back.
 argument-hint: [optional base ref for a branch range, e.g. origin/HEAD]
 context: fork
 agent: general-purpose
