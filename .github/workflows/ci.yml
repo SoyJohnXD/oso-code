@@ -38,6 +38,23 @@ jobs:
           HOME="$(mktemp -d)" bash bootstrap/verify.sh > "$report" 2>&1 || true
           cat "$report"
           grep -q '^passed:' "$report"
+      - name: Codex verify report reaches its summary
+        env:
+          OSO_VERIFY_SKIP_SMOKE: 1
+        run: |
+          report="$(mktemp)"
+          fixture_home="$(mktemp -d)"
+          HOME="$fixture_home" CODEX_HOME="$fixture_home/.codex" \
+            bash bootstrap/verify-codex.sh > "$report" 2>&1 || true
+          cat "$report"
+          grep -q '^passed:' "$report"
+      - name: Shell script syntax
+        run: |
+          bash -n bootstrap/install.sh bootstrap/install-codex.sh bootstrap/purge-codex.sh bootstrap/verify.sh bootstrap/verify-codex.sh
+          bash -n bootstrap/lib/codex-managed-config.sh bootstrap/lib/mount-impeccable.sh
+          bash -n plugin/hooks/*.sh
+          bash -n plugin/bin/oso-state plugin/git-hooks/pre-commit
+          bash -n tests/hooks-test.sh tests/plugin-lint.sh tests/fixtures/crashing-hook.sh
       - name: Install Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code
       - name: Validate plugin manifest
@@ -73,7 +90,8 @@ jobs:
       - name: Shell script syntax
         shell: bash
         run: |
-          bash -n bootstrap/install.sh bootstrap/verify.sh
+          bash -n bootstrap/install.sh bootstrap/install-codex.sh bootstrap/purge-codex.sh bootstrap/verify.sh bootstrap/verify-codex.sh
+          bash -n bootstrap/lib/codex-managed-config.sh bootstrap/lib/mount-impeccable.sh
           bash -n plugin/hooks/*.sh
           bash -n plugin/bin/oso-state plugin/git-hooks/pre-commit
           bash -n tests/hooks-test.sh tests/plugin-lint.sh tests/fixtures/crashing-hook.sh

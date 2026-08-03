@@ -19,6 +19,9 @@ usage_error() { printf '[oso-code] ERROR: %s\n' "$1" >&2; exit 2; }
 initialize_paths() {
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+  [ -f "$SCRIPT_DIR/lib/codex-managed-config.sh" ] ||
+    fail "Codex managed-config renderer is missing"
+  . "$SCRIPT_DIR/lib/codex-managed-config.sh"
   CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
   CONFIG_FILE="$CODEX_HOME/config.toml"
   GLOBAL_FILE="$CODEX_HOME/AGENTS.md"
@@ -296,6 +299,8 @@ preflight_release_payload() {
     fail "Codex plugin manifest is missing"
   [ -f "$SCRIPT_DIR/lib/toml-regions.awk" ] ||
     fail "Codex TOML region parser is missing"
+  [ -f "$SCRIPT_DIR/lib/codex-managed-config.sh" ] ||
+    fail "Codex managed-config renderer is missing"
   python3 -m json.tool "$MARKETPLACE_TEMPLATE" >/dev/null ||
     fail "Codex marketplace template is invalid JSON"
   python3 -m json.tool "$REPO_ROOT/codex/.codex-plugin/plugin.json" >/dev/null ||
@@ -474,13 +479,6 @@ wire_engram() {
     fail "engram setup codex did not restore engram-compact-prompt.md"
 }
 
-toml_quote() {
-  local value=$1
-  value="${value//\\/\\\\}"
-  value="${value//\"/\\\"}"
-  printf '"%s"' "$value"
-}
-
 split_toml_root_sections() {
   local source=$1 root_values=$2 sections=$3
   : > "$root_values"
@@ -509,40 +507,7 @@ write_config_region() {
     awk 'NF { last = NR } { lines[NR] = $0 } END { for (i = 1; i <= last; i++) print lines[i] }' "$root_values"
     [ -s "$root_values" ] && printf '\n'
     printf '%s\n' "$CONFIG_MARKER_START"
-    printf 'default_permissions = "oso"\n\n'
-    printf '[features]\n'
-    printf 'hooks = true\n'
-    printf 'multi_agent = true\n\n'
-    printf '[agents]\n'
-    printf 'max_threads = 4\n'
-    printf 'max_depth = 2\n'
-    printf 'job_max_runtime_seconds = 1800\n\n'
-    printf '[shell_environment_policy.set]\n'
-    printf 'OSO_AGENT = "1"\n'
-    printf 'OSO_STATE_BIN = %s\n\n' "$(toml_quote "$RUNTIME_ROOT/bin/oso-state")"
-    printf '[permissions.oso]\n'
-    printf 'extends = ":workspace"\n\n'
-    printf 'description = "oso-code workspace profile"\n\n'
-    printf '[permissions.oso.workspace_roots]\n'
-    printf '%s = true\n\n' "$(toml_quote "$HOME/.local/state/oso-code/worktrees")"
-    printf '[permissions.oso.filesystem]\n'
-    printf 'glob_scan_max_depth = 4\n\n'
-    printf '[permissions.oso.filesystem.":workspace_roots"]\n'
-    printf '"**/secrets/*" = "deny"\n'
-    printf '"**/*.key" = "deny"\n'
-    printf '"**/*.pem" = "deny"\n'
-    printf '"**/.env.*.local" = "deny"\n'
-    printf '"**/.env.local" = "deny"\n'
-    printf '"**/.env" = "deny"\n'
-    printf '".git/**" = "write"\n\n'
-    printf '[permissions.oso.network]\n'
-    printf 'enabled = true\n\n'
-    printf '[permissions.oso.network.domains]\n'
-    printf '"*" = "allow"\n\n'
-    printf '[mcp_servers.context7]\n'
-    printf 'url = "https://mcp.context7.com/mcp"\n'
-    printf '\n[mcp_servers.fallow]\n'
-    printf 'command = "fallow-mcp"\n'
+    render_codex_managed_config "$HOME" "$RUNTIME_ROOT"
     printf '%s\n' "$CONFIG_MARKER_END"
     [ -s "$sections" ] && printf '\n'
     cat "$sections"

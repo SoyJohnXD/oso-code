@@ -4611,6 +4611,16 @@ assert_equals "an install without the flag clears the marker an earlier one left
 # the report — which line an operator is handed, and whether the tally counts it.
 # OSO_VERIFY_SKIP_SLOW keeps verify.sh from re-running this very suite and from
 # fetching impeccable from npm.
+VERIFY_INSTALLED_ROOT="$HOME/.claude/plugins/cache/oso-code/oso-code/verify-fixture"
+mkdir -p "$VERIFY_INSTALLED_ROOT/hooks"
+printf '%s\n' \
+  '#!/bin/sh' \
+  'cat >/dev/null' \
+  '[ "${OSO_AGENT:-}" = 1 ] || exit 0' \
+  'printf '\''{"hookSpecificOutput":{"permissionDecision":"deny"}}\n'\''' \
+  > "$VERIFY_INSTALLED_ROOT/hooks/block-commit-until-green.sh"
+chmod +x "$VERIFY_INSTALLED_ROOT/hooks/block-commit-until-green.sh"
+
 verify_report() {
   ( PATH="$CLAUDE_SHIM_DIR:$PATH"; OSO_VERIFY_SKIP_SLOW=1 bash "$REPO_ROOT/bootstrap/verify.sh" 2>&1 || true )
 }
@@ -4638,6 +4648,8 @@ assert_equals "a cleared marker puts the hard impeccable check back — red in t
   "fail" "$(report_line_kind "$report_without_marker" 'impeccable plugin')"
 assert_equals "an absent fallow is reported as a note the tally never counts" \
   "note" "$(report_line_kind "$report_without_marker" 'fallow MCP')"
+assert_equals "verify.sh exports the agent marker when probing the installed commit gate" \
+  "ok" "$(report_line_kind "$report_without_marker" 'installed hook denies red commit (e2e)')"
 assert_equals "the report still reaches its summary" "reached" \
   "$(printf '%s\n' "$report_without_marker" | grep -q '^passed:' && echo reached || echo missing)"
 
@@ -5734,6 +5746,64 @@ assert_equals "restore recreates the exact dangling agents root link" \
   "missing-agents-target" "$(readlink "$CODEX_PURGE_SYMLINK_HOME/.agents")"
 assert_equals "root-link restore still leaves the external destination unchanged" \
   "external target survives" "$(cat "$CODEX_PURGE_SYMLINK_HOME/external-codex/sentinel")"
+
+# --- Codex verifier: fixture failures still produce the complete report -------
+VERIFY_CODEX_SH="$REPO_ROOT/bootstrap/verify-codex.sh"
+CODEX_VERIFY_HOME="$TEST_HOME/codex-verify-home"
+CODEX_VERIFY_SHIMS="$TEST_HOME/codex-verify-shims"
+CODEX_VERIFY_CALLS="$TEST_HOME/codex-verify-calls"
+CODEX_VERIFY_OUTPUT="$TEST_HOME/codex-verify-output"
+mkdir -p "$CODEX_VERIFY_HOME" "$CODEX_VERIFY_SHIMS"
+mkdir -p "$CODEX_VERIFY_HOME/.codex"
+cat > "$CODEX_VERIFY_HOME/.codex/config.toml" <<EOF
+decoy = """
+default_permissions = "oso"
+hooks = true
+multi_agent = true
+max_threads = 4
+max_depth = 2
+job_max_runtime_seconds = 1800
+OSO_AGENT = "1"
+[permissions.oso]
+[permissions.oso.network]
+[mcp_servers.context7]
+[mcp_servers.fallow]
+$CODEX_VERIFY_HOME/.local/share/oso-code/runtime/bin/oso-state
+$CODEX_VERIFY_HOME/.local/state/oso-code/worktrees
+"""
+EOF
+: > "$CODEX_VERIFY_CALLS"
+printf '%s\n' \
+  '#!/bin/sh' \
+  'printf '\''%s\n'\'' "$*" >> "$OSO_VERIFY_CODEX_CALLS"' \
+  'case "$*" in' \
+  '  "--version") printf '\''codex-cli 0.145.0\n'\''; exit 0 ;;' \
+  '  *) exit 97 ;;' \
+  'esac' > "$CODEX_VERIFY_SHIMS/codex"
+chmod +x "$CODEX_VERIFY_SHIMS/codex"
+
+if HOME="$CODEX_VERIFY_HOME" \
+  CODEX_HOME="$CODEX_VERIFY_HOME/.codex" \
+  PATH="$CODEX_VERIFY_SHIMS:$PATH" \
+  OSO_VERIFY_CODEX_CALLS="$CODEX_VERIFY_CALLS" \
+  OSO_VERIFY_SKIP_SMOKE=1 \
+  bash "$VERIFY_CODEX_SH" > "$CODEX_VERIFY_OUTPUT" 2>&1; then
+  codex_verify_rc=0
+else
+  codex_verify_rc=$?
+fi
+codex_verify_report="$(cat "$CODEX_VERIFY_OUTPUT")"
+assert_equals "an incomplete Codex fixture makes verification fail" \
+  "nonzero" "$([ "$codex_verify_rc" -ne 0 ] && echo nonzero || echo zero)"
+assert_equals "the Codex verifier exercises multiple failures before its footer" \
+  "multiple" "$([ "$(grep -c '^FAIL:' "$CODEX_VERIFY_OUTPUT" || true)" -ge 2 ] && echo multiple || echo too-few)"
+assert_equals "config decoys outside an owned region cannot satisfy verification" \
+  "malformed" "$(sed -n 's/^FAIL: managed Codex config — expected valid, got //p' "$CODEX_VERIFY_OUTPUT")"
+assert_equals "the Codex verifier always reaches exactly one final summary" \
+  "1" "$(printf '%s\n' "$codex_verify_report" | grep -c '^passed:' || true)"
+codex_authenticated_calls="$(grep -Ec '^(login([[:space:]]|$)|exec([[:space:]]|$))' "$CODEX_VERIFY_CALLS" || true)"
+assert_equals "fixture verification never attempts Codex authentication or execution" \
+  "0" "$codex_authenticated_calls"
 
 echo "----"
 echo "passed: $pass, failed: $fail, skipped: $skipped"

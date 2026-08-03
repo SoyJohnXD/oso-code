@@ -2,6 +2,7 @@
 #
 # Required variables:
 #   action=strip: start_marker, end_marker
+#   action=extract: start_marker, end_marker; require_region=1 rejects zero regions
 #   action=split: root_file, sections_file
 #   action=root-symbols: no extra variables; prints root keys and table headers
 #
@@ -58,13 +59,13 @@ BEGIN {
   dq = "\""
   sq = sprintf("%c", 39)
   bs = "\\"
-  if (action != "strip" && action != "split" && action != "root-symbols") exit 64
+  if (action != "strip" && action != "extract" && action != "split" && action != "root-symbols") exit 64
 }
 
 {
   at_root = string_mode == "" && array_depth == 0 && brace_depth == 0
 
-  if (action == "strip") {
+  if (action == "strip" || action == "extract") {
     if (at_root && $0 == start_marker) {
       if (inside) malformed = 1
       inside = 1
@@ -77,10 +78,9 @@ BEGIN {
       seen_end++
       next
     }
-    if (!inside) {
-      print
-      scan_root($0)
-    }
+    if (action == "strip" && !inside) print
+    if (action == "extract" && inside) print
+    scan_root($0)
     next
   }
 
@@ -104,5 +104,7 @@ BEGIN {
 }
 
 END {
-  if (action == "strip" && (malformed || inside || seen_start != seen_end || seen_start > 1)) exit 5
+  if ((action == "strip" || action == "extract") &&
+      (malformed || inside || seen_start != seen_end || seen_start > 1 ||
+       (require_region && seen_start != 1))) exit 5
 }

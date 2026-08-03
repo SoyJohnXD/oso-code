@@ -140,7 +140,7 @@ if [ -n "$install_root" ]; then
           && mkdir -p "$hook_home/.local/state/oso-code" \
           && printf 'mode=plan\nverify_green=false\n' > "$hook_home/.local/state/oso-code/$state_key.state" \
           && printf '{"session_id":"e2e","cwd":"%s","tool_input":{"command":"git commit -m x"}}' "$hook_home" \
-            | HOME="$hook_home" "$hook"
+            | HOME="$hook_home" OSO_AGENT=1 "$hook"
       } 2>&1 || true
     )"
     out="${out//$'\n'/ }"
