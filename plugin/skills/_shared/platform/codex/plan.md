@@ -18,7 +18,7 @@ Phases 1–5 run inside this host's native Plan Mode, which has no callable exit
 
 ## Making a launch wait
 
-**PLACEHOLDER — slice S6 settles this.** This host exposes no foreground flag on a launch, so the `run_in_background: false` the Claude side passes has no counterpart to fill. S6's file handshake is what makes a launch wait here. Until it lands, do NOT launch a delegate and read on: an unwaited applier sends §6 step 3 to verify code nobody wrote yet, and an unwaited verifier lets step 4 write `verify_green=true` over a verdict nobody read.
+This host exposes no foreground flag on a launch. Use Codex's wait operation, then the receipt protocol in `subagents.md`: its `--timeout 10` is the common bound, and `handoff consume` is the one-shot precondition for reading that message's verdict. A timeout or identity mismatch blocks this launch; it never falls through to the next step.
 
 ## The explorer
 
@@ -53,6 +53,6 @@ The neutral body names each one by role. Non-forked skills are bare names under 
 | the QUICK mode | `quick` | the operator invokes it — a mode is never model-invoked |
 | the DEBUG mode | `debug` | the operator invokes it — a mode is never model-invoked |
 
-Forked judges and operational agents are the exception to inline reading. READ `subagents.md` beside this file NOW and use its seven-role map and payload rules as binding. Its final paragraph does not relax the S6 wait placeholder above: until that handshake lands, the roles exist but a launch the flow must wait on cannot safely proceed.
+Forked judges and operational agents are the exception to inline reading. READ `subagents.md` beside this file NOW and use its seven-role map, payload rules and completion handshake as binding.
 
 **PLACEHOLDER — the absence policy the neutral body points at is spelled for Claude Code.** The Impeccable skill is a Claude Code plugin with no counterpart installed here, and the policy in `_shared/front-surface.md` answers that absence with a two-step `/plugin` install this host has no command for. Slice S8 writes the Codex spelling of that policy — until it lands, tell the operator a front surface runs without the design bar and that no Codex install route is written yet, and let them decide how to proceed, rather than reading the Claude-spelled remedy back to them. The design-foundation slice of §4 does not apply either way.

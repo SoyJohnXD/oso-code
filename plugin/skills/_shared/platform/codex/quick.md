@@ -22,6 +22,6 @@ The neutral body names each one by role. Non-forked skills are bare names under 
 | the DEBUG mode | `debug` | the operator invokes it — a mode is never model-invoked |
 | the quality-pass judge | `quality-pass` | read `skills/quality-pass/SKILL.md` and run it inline, the way it runs on every host |
 
-Forked judges and operational agents are the exception to inline reading. READ `subagents.md` beside this file NOW and use its role map and payload rules as binding. Quick has no separate wait section, so the common file's S6 precondition applies directly: do not launch a role whose result the flow must consume until that handshake lands.
+Forked judges and operational agents are the exception to inline reading. READ `subagents.md` beside this file NOW and use its role map, payload rules and completion handshake as binding. Quick has no separate wait section, so the common receipt protocol applies directly to every launch whose result the flow consumes.
 
 **PLACEHOLDER — the absence policy the neutral body points at is spelled for Claude Code.** The Impeccable skill is a Claude Code plugin with no counterpart installed here, and the policy in `_shared/front-surface.md` answers that absence with a two-step `/plugin` install this host has no command for. Slice S8 writes the Codex spelling of that policy — until it lands, tell the operator a front surface runs without the design bar and that no Codex install route is written yet, and let them decide how to proceed, rather than reading the Claude-spelled remedy back to them.

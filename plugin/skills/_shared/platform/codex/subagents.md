@@ -18,4 +18,14 @@ The three operational roles carry their complete contract in their agent definit
 
 The four reviewer roles are thin fresh-context adapters over the installed skills. Before spawning one, resolve its Codex `SKILL.md` to an absolute path. Give the role that path as `SKILL PATH` and give the skill's normal invocation payload as `ARGUMENTS`. The reviewer reads the wrapper and every bound neutral and Codex-platform file itself; the orchestrator never reads a forked judgment inline and never substitutes a summary for those files.
 
-Role selection settles WHO runs the delegation. It does not settle WHEN the caller may consume the result: the host file's “Making a launch wait” section remains binding, and slice S6's handshake is still the precondition for every launch the neutral body says to wait on.
+## Completion handshake
+
+Every delegated payload carries two transport fields beside its semantic assignment: `HANDOFF SLICE`, a safe identifier made only of letters, digits, `_` and `-`, and `HANDOFF ATTEMPT`, a positive integer incremented on every relaunch of that slice. It also tells the subagent to begin its final message with exactly one line in this form:
+
+`oso-handoff: v=1 slice=<ID> attempt=<N>`
+
+Replace `<ID>` and `<N>` with the two payload fields; angle brackets never reach the message. That line is a transport envelope outside the report shapes the role or judge declares. The exact report follows it, so the report's required terminal verdict remains the message's final line. Codex's user-level `SubagentStop` hook reads `last_assistant_message` outside the child's sandbox and atomically publishes a receipt containing the hook session as metadata plus the slice, attempt, agent id and agent type. The receipt never carries `verdict`, `status`, findings, report text or a second copy of the message.
+
+After spawning, retain the unique agent id Codex returns, use Codex's wait operation and read the returned message. Then run `oso-state handoff wait` for the exact slice, attempt, agent id and agent type with `--timeout 10`, followed by `oso-state handoff consume` with the same four fields. Ten seconds is the host-wide bound because `SubagentStop` has already run before Codex returns the message. These handoff commands need no session id: the unique agent id keeps simultaneous sessions and repeat attempts apart, while the repository the command runs in supplies the outer key. Only a successful one-shot consume satisfies the FILE PRECONDITION for interpreting the report. A receipt from an earlier attempt, another slice or another agent is not evidence for this launch; a missing current receipt times out and blocks the flow instead of being guessed green.
+
+The MESSAGE is always the verdict. The receipt proves only that the matching `SubagentStop` observed a complete message and that this caller consumed it once. Never derive pass, fail, blocked, done, clean or findings from the file, and never continue from a receipt when the returned message says otherwise.

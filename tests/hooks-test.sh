@@ -302,6 +302,16 @@ else
       --repo-root "$REPO_ROOT" --table "$NO_MATCHER_TABLE" --check
   fi
 
+  NO_HANDOFF_MATCHERS_TABLE="$TEST_HOME/subagentstop-without-matchers.txt"
+  sed '/^tool  handoff/d' "$REPO_ROOT/tools/hook-gates.txt" > "$NO_HANDOFF_MATCHERS_TABLE"
+  if cmp -s "$REPO_ROOT/tools/hook-gates.txt" "$NO_HANDOFF_MATCHERS_TABLE"; then
+    echo "FAIL: matcherless-SubagentStop mutation removed no tool row"; fail=$((fail + 1))
+  else
+    assert_renderer_rejects "a wired SubagentStop publisher with no agent matchers fails closed" \
+      'wired SubagentStop gate `handoff` has no matcher for codex' \
+      --repo-root "$REPO_ROOT" --table "$NO_HANDOFF_MATCHERS_TABLE" --check
+  fi
+
   INCOMPLETE_CATCHALL_TABLE="$TEST_HOME/catchall-without-bash.txt"
   sed '/^tool  unknown  none  Bash$/d' \
     "$REPO_ROOT/tools/hook-gates.txt" > "$INCOMPLETE_CATCHALL_TABLE"
@@ -386,6 +396,15 @@ else
         --hash-file "$ONE_SPACE_HASHES" --check-hashes
     fi
   fi
+
+  state_binary_hash="$(
+    { sha256sum "$PLUGIN/bin/oso-state" 2>/dev/null || shasum -a 256 "$PLUGIN/bin/oso-state" 2>/dev/null; } |
+      awk '{ print $1 }'
+  )"
+  published_state_hash="$(sed -n 's/^\([0-9a-f][0-9a-f]*\)  plugin\/bin\/oso-state$/\1/p' \
+    "$REPO_ROOT/bootstrap/hook-hashes.txt")"
+  assert_equals "the SubagentStop publisher's state binary is inside the published trust boundary" \
+    "$state_binary_hash" "$published_state_hash"
 fi
 
 # --- Runtime dispatch: Codex catch-all defaults unknown tools to deny ----------
@@ -846,6 +865,22 @@ while IFS='|' read -r role_kind source_name codex_role; do
     "present" "$(role_contract_status "$codex_role" "$source_name" "$role_file")"
 done <<< "$S5_ROLE_MAP"
 
+# The transport marker is outside every role's semantic report.  Pin the same
+# first-line envelope in all seven TOMLs while preserving each role's existing
+# terminal status/verdict line as the authoritative last line.
+handoff_envelope_missing=""
+for codex_role in $mapped_roles; do
+  role_file="$CODEX_AGENTS/$codex_role.toml"
+  if [ ! -f "$role_file" ] ||
+     ! grep -qF '`oso-handoff: v=1 slice=<ID> attempt=<N>`' "$role_file" ||
+     ! grep -Eqi 'first line' "$role_file" ||
+     ! grep -Eqi 'terminal (line|verdict) stays last' "$role_file"; then
+    handoff_envelope_missing="$handoff_envelope_missing $codex_role"
+  fi
+done
+assert_equals "all seven roles preserve their report inside the explicit handoff envelope" \
+  "" "$handoff_envelope_missing"
+
 # S5 also closes the three orchestration placeholders.  Other placeholders in
 # these files intentionally belong to later slices, so reject only claims that
 # delegated agents or forked judges themselves are still unavailable.  All three
@@ -922,6 +957,35 @@ assert_says_every() {
     echo "FAIL: $name — never said:$unsaid"; fail=$((fail + 1))
   fi
 }
+
+# D6 is a prose rail as well as a file primitive.  A perfectly atomic receipt
+# still breaks the flow if the orchestrator treats its existence as `pass`, or
+# if the read-only child is told to write it.  The shared Codex protocol is the
+# single source for every mode, so pin each load-bearing statement there.
+assert_says_every "the Codex delegation protocol makes the file a precondition, never a verdict" \
+  "$(cat "$codex_subagent_protocol")" <<'HANDOFF_PROTOCOL_TABLE'
+`HANDOFF SLICE`
+`HANDOFF ATTEMPT`
+`oso-handoff: v=1 slice=<ID> attempt=<N>`
+`SubagentStop`
+`last_assistant_message`
+outside the child's sandbox
+`oso-state handoff wait`
+`--timeout 10`
+`oso-state handoff consume`
+FILE PRECONDITION
+The MESSAGE is always the verdict
+Never derive pass, fail, blocked, done, clean or findings from the file
+HANDOFF_PROTOCOL_TABLE
+
+s6_placeholders=""
+for s6_mode in plan debug; do
+  s6_platform="$PLUGIN/skills/_shared/platform/codex/$s6_mode.md"
+  grep -qF 'PLACEHOLDER — slice S6 settles this' "$s6_platform" 2>/dev/null \
+    && s6_placeholders="$s6_placeholders $s6_mode"
+done
+assert_equals "plan and debug no longer leave the Codex wait rail to S6" \
+  "" "$s6_placeholders"
 
 assert_says_every "the slicing phase ships its graph, its waves and its mode choice" \
   "$(plan_section 4)" <<'SLICING_TABLE'
@@ -1251,6 +1315,429 @@ touch -t 200001010000 "$stale_lock"
 oso-state --session "$SESSION" set stale_ok=yes >/dev/null 2>&1 || true
 assert_equals "stale lock is reclaimed" yes "$(oso-state --session "$SESSION" get stale_ok)"
 oso-state --session "$SESSION" clear
+
+# --- Delegation handoff: exact attempt, bounded wait, atomic one-shot receipt --
+# The report itself stays in the SubagentStop message.  The file rail stores only
+# an identity-bound receipt for that message.  Parent wait/consume calls therefore
+# need no child session id, and a verdict word can never leak into the file rail.
+HANDOFF_REPO="$TEST_HOME/handoff-repo"
+HANDOFF_STDERR="$TEST_HOME/handoff-stderr"
+mkdir -p "$HANDOFF_REPO"
+rm -rf "$STATE_DIR/.handoffs"
+
+digest_text() {
+  printf '%s' "$1" |
+    { sha256sum 2>/dev/null || shasum -a 256 2>/dev/null; } |
+    awk '{ print $1 }'
+}
+
+expected_receipt() {
+  local hook_session="$1" slice="$2" attempt="$3" agent_id="$4" agent_type="$5"
+  printf '%s\n' \
+    'version=1' \
+    "hook_session=$hook_session" \
+    "slice=$slice" \
+    "attempt=$attempt" \
+    "agent_id=$agent_id" \
+    "agent_type=$agent_type"
+}
+
+handoff_receipt_path() {
+  local agent_id="$1"
+  printf '%s/.handoffs/%s/%s.receipt' \
+    "$STATE_DIR" "$(state_key_of "$HANDOFF_REPO")" "$(digest_text "$agent_id")"
+}
+
+run_handoff() {
+  local input="$1"
+  shift
+  : > "$HANDOFF_STDERR"
+  if handoff_stdout="$(printf '%s' "$input" |
+       ( cd "$HANDOFF_REPO" && oso-state "$@" ) \
+       2>"$HANDOFF_STDERR")"; then
+    handoff_rc=0
+  else
+    handoff_rc=$?
+  fi
+  handoff_stderr="$(cat "$HANDOFF_STDERR")"
+}
+
+# The child sandbox never publishes.  SubagentStop receives the parent session
+# and the exact final message, and the host hook is the writer that bridges a
+# read-only judge to the receipt directory.
+HANDOFF_HOOK="$PLUGIN/hooks/publish-subagent-handoff.sh"
+hook_report='oso-handoff: v=1 slice=slice-hook attempt=1
+evidence: the named check is green
+verdict: pass'
+hook_payload="$(printf '{\"session_id\":\"%s\",\"cwd\":\"%s\",\"hook_event_name\":\"SubagentStop\",\"turn_id\":\"turn-hook\",\"agent_id\":\"agent-hook\",\"agent_type\":\"oso-verifier\",\"agent_transcript_path\":\"%s\",\"stop_hook_active\":false,\"last_assistant_message\":\"oso-handoff: v=1 slice=slice-hook attempt=1\\nevidence: the named check is green\\nverdict: pass\"}' \
+  "$SESSION" "$HANDOFF_REPO" "$TEST_HOME/agent-hook.jsonl")"
+run_hook "$HANDOFF_HOOK" "$hook_payload"
+assert_after_hook "SubagentStop publishes a receipt outside a read-only delegate" \
+  [ "$hook_stdout" = '{}' ]
+hook_receipt="$(expected_receipt "$SESSION" slice-hook 1 agent-hook oso-verifier)"
+run_handoff "" handoff wait \
+  --slice slice-hook --attempt 1 --agent-id agent-hook --agent-type oso-verifier --timeout 0
+assert_equals "the hook receipt binds host metadata while the message keeps the terminal verdict" \
+  "rc=0:$hook_receipt" "rc=$handoff_rc:$handoff_stdout"
+run_handoff "" handoff consume \
+  --slice slice-hook --attempt 1 --agent-id agent-hook --agent-type oso-verifier
+assert_equals "the host-published receipt is consumed through the same one-shot rail" 0 "$handoff_rc"
+
+# SubagentStop is a user-level global hook and therefore sees ordinary Codex
+# explorers outside oso-code too.  No marker means the call is not this harness's
+# and must stay invisible — no receipt, no event and no stderr.
+IGNORED_HANDOFF_REPO="$TEST_HOME/ignored-handoff-repo"
+mkdir -p "$IGNORED_HANDOFF_REPO"
+handoff_events_log="$STATE_DIR/events.jsonl"
+events_before_ignored="$(wc -l < "$handoff_events_log" 2>/dev/null || printf 0)"
+ignored_payload="$(printf '{\"session_id\":\"%s\",\"cwd\":\"%s\",\"hook_event_name\":\"SubagentStop\",\"turn_id\":\"turn-ignored\",\"agent_id\":\"agent-ignored\",\"agent_type\":\"explorer\",\"agent_transcript_path\":\"%s\",\"stop_hook_active\":false,\"last_assistant_message\":\"ordinary exploration report\"}' \
+  "$SESSION" "$IGNORED_HANDOFF_REPO" "$TEST_HOME/agent-ignored.jsonl")"
+run_hook "$HANDOFF_HOOK" "$ignored_payload"
+events_after_ignored="$(wc -l < "$handoff_events_log" 2>/dev/null || printf 0)"
+assert_equals "a non-harness SubagentStop stays globally invisible" \
+  "rc=0 stdout={} stderr= events=$events_before_ignored" \
+  "rc=$hook_rc stdout=$hook_stdout stderr=$hook_stderr events=$events_after_ignored"
+
+# A marker belongs on the exact first line and carries an explicit envelope
+# version.  Near misses are harness attempts, so the hook reports them, but it
+# must not publish a receipt that could satisfy the parent.
+old_marker_payload="$(printf '{\"session_id\":\"%s\",\"cwd\":\"%s\",\"hook_event_name\":\"SubagentStop\",\"turn_id\":\"turn-old-marker\",\"agent_id\":\"agent-old-marker\",\"agent_type\":\"oso-verifier\",\"last_assistant_message\":\"oso-handoff: slice=slice-old-marker attempt=1\\nverdict: pass\"}' \
+  "$SESSION" "$HANDOFF_REPO")"
+run_hook "$HANDOFF_HOOK" "$old_marker_payload" 0 \
+  'final message must begin with one exact oso-handoff marker'
+old_marker_hook_status="$hook_rc:$hook_stdout"
+run_handoff "" handoff wait \
+  --slice slice-old-marker --attempt 1 --agent-id agent-old-marker \
+  --agent-type oso-verifier --timeout 0
+assert_equals "a marker without v=1 never publishes a receipt" \
+  "hook=0:{} wait=1" "hook=$old_marker_hook_status wait=$handoff_rc"
+
+misplaced_marker_payload="$(printf '{\"session_id\":\"%s\",\"cwd\":\"%s\",\"hook_event_name\":\"SubagentStop\",\"turn_id\":\"turn-misplaced-marker\",\"agent_id\":\"agent-misplaced-marker\",\"agent_type\":\"oso-verifier\",\"last_assistant_message\":\"verdict: pass\\noso-handoff: v=1 slice=slice-misplaced attempt=1\"}' \
+  "$SESSION" "$HANDOFF_REPO")"
+run_hook "$HANDOFF_HOOK" "$misplaced_marker_payload" 0 \
+  'final message must begin with one exact oso-handoff marker'
+misplaced_hook_status="$hook_rc:$hook_stdout"
+run_handoff "" handoff wait \
+  --slice slice-misplaced --attempt 1 --agent-id agent-misplaced-marker \
+  --agent-type oso-verifier --timeout 0
+assert_equals "a marker below the semantic report never publishes a receipt" \
+  "hook=0:{} wait=1" "hook=$misplaced_hook_status wait=$handoff_rc"
+
+basic_slice=slice-basic
+basic_attempt=1
+basic_agent=agent-basic
+basic_type=oso-verifier
+basic_report='oso-handoff: v=1 slice=slice-basic attempt=1
+evidence: the named check is red
+verdict: fail'
+basic_receipt="$(expected_receipt hook-basic "$basic_slice" "$basic_attempt" "$basic_agent" "$basic_type")"
+
+run_handoff "$basic_report" handoff publish \
+  --slice "$basic_slice" --attempt "$basic_attempt" \
+  --agent-id "$basic_agent" --agent-type "$basic_type" --hook-session hook-basic
+assert_equals "publishing a handoff receipt succeeds silently" \
+  "rc=0 stdout= stderr=" "rc=$handoff_rc stdout=$handoff_stdout stderr=$handoff_stderr"
+
+published_receipt="$(cat "$(handoff_receipt_path "$basic_agent")" 2>/dev/null || true)"
+assert_equals "the published file is exactly six provenance lines, never the report verdict" \
+  "$basic_receipt" "$published_receipt"
+
+run_handoff "" handoff wait \
+  --slice "$basic_slice" --attempt "$basic_attempt" \
+  --agent-id "$basic_agent" --agent-type "$basic_type" --timeout 0
+assert_equals "wait returns the complete matching receipt without consuming it" \
+  "rc=0:$basic_receipt" "rc=$handoff_rc:$handoff_stdout"
+
+run_handoff "" handoff consume \
+  --slice "$basic_slice" --attempt "$basic_attempt" \
+  --agent-id "$basic_agent" --agent-type "$basic_type"
+assert_equals "consume returns that same complete receipt" \
+  "rc=0:$basic_receipt" "rc=$handoff_rc:$handoff_stdout"
+run_handoff "" handoff consume \
+  --slice "$basic_slice" --attempt "$basic_attempt" \
+  --agent-id "$basic_agent" --agent-type "$basic_type"
+assert_equals "a consumed receipt cannot be consumed a second time" 1 "$handoff_rc"
+
+# The watermark survives consumption.  Without it, an old background result can
+# arrive after the retry completed and satisfy a future read under the same slice.
+fresh_report='oso-handoff: v=1 slice=slice-stale attempt=2
+status: done'
+run_handoff "$fresh_report" handoff publish \
+  --slice slice-stale --attempt 2 --agent-id agent-stale --agent-type oso-applier \
+  --hook-session hook-new
+assert_equals "the newer attempt publishes before the stale-report probe" 0 "$handoff_rc"
+run_handoff "" handoff consume \
+  --slice slice-stale --attempt 2 --agent-id agent-stale --agent-type oso-applier
+assert_equals "the newer attempt is consumed before its delayed predecessor arrives" 0 "$handoff_rc"
+stale_report='oso-handoff: v=1 slice=slice-stale attempt=1
+status: done'
+run_handoff "$stale_report" handoff publish \
+  --slice slice-stale --attempt 1 --agent-id agent-stale --agent-type oso-applier \
+  --hook-session hook-old
+assert_equals "a delayed report from an older attempt is rejected after the newer one was consumed" \
+  1 "$handoff_rc"
+
+# Every coordinate is part of the match.  Wrong probes must leave the right
+# receipt available; otherwise a timeout on one typo destroys the report that
+# could have let the operator recover.
+identity_report='oso-handoff: v=1 slice=slice-identity attempt=3
+verdict: pass'
+identity_receipt="$(expected_receipt hook-identity slice-identity 3 agent-identity oso-verifier)"
+run_handoff "$identity_report" handoff publish \
+  --slice slice-identity --attempt 3 --agent-id agent-identity --agent-type oso-verifier \
+  --hook-session hook-identity
+assert_equals "the identity fixture publishes" 0 "$handoff_rc"
+for wrong_identity in \
+  'slice-other|3|agent-identity|oso-verifier' \
+  'slice-identity|2|agent-identity|oso-verifier' \
+  'slice-identity|3|agent-other|oso-verifier' \
+  'slice-identity|3|agent-identity|oso-applier'; do
+  IFS='|' read -r wrong_slice wrong_attempt wrong_agent wrong_type <<< "$wrong_identity"
+  run_handoff "" handoff wait \
+    --slice "$wrong_slice" --attempt "$wrong_attempt" \
+    --agent-id "$wrong_agent" --agent-type "$wrong_type" --timeout 0
+  assert_equals "a receipt rejects mismatched identity: $wrong_identity" 1 "$handoff_rc"
+done
+run_handoff "" handoff consume \
+  --slice slice-identity --attempt 3 --agent-id agent-identity --agent-type oso-verifier
+assert_equals "wrong identity probes never consume the exact receipt" \
+  "rc=0:$identity_receipt" "rc=$handoff_rc:$handoff_stdout"
+
+# Two host sessions can complete the same logical slice and attempt at once.
+# Agent identity is the storage lane, so neither publisher may overwrite or
+# block the other's receipt.
+shared_report_a='oso-handoff: v=1 slice=slice-shared attempt=1
+verdict: pass'
+shared_report_b='oso-handoff: v=1 slice=slice-shared attempt=1
+verdict: blocked'
+shared_a_out="$TEST_HOME/shared-a-out"
+shared_a_err="$TEST_HOME/shared-a-err"
+shared_a_rc="$TEST_HOME/shared-a-rc"
+shared_b_out="$TEST_HOME/shared-b-out"
+shared_b_err="$TEST_HOME/shared-b-err"
+shared_b_rc="$TEST_HOME/shared-b-rc"
+(
+  if printf '%s' "$shared_report_a" | ( cd "$HANDOFF_REPO" && oso-state handoff publish \
+       --slice slice-shared --attempt 1 --agent-id agent-shared-a \
+       --agent-type oso-verifier --hook-session parent-a ) \
+       >"$shared_a_out" 2>"$shared_a_err"; then
+    printf '0\n' > "$shared_a_rc"
+  else
+    printf '%s\n' "$?" > "$shared_a_rc"
+  fi
+) &
+shared_a_pid=$!
+(
+  if printf '%s' "$shared_report_b" | ( cd "$HANDOFF_REPO" && oso-state handoff publish \
+       --slice slice-shared --attempt 1 --agent-id agent-shared-b \
+       --agent-type oso-verifier --hook-session parent-b ) \
+       >"$shared_b_out" 2>"$shared_b_err"; then
+    printf '0\n' > "$shared_b_rc"
+  else
+    printf '%s\n' "$?" > "$shared_b_rc"
+  fi
+) &
+shared_b_pid=$!
+wait "$shared_a_pid"
+wait "$shared_b_pid"
+shared_publish_status="a=$(cat "$shared_a_rc"):$(cat "$shared_a_out"):$(cat "$shared_a_err") b=$(cat "$shared_b_rc"):$(cat "$shared_b_out"):$(cat "$shared_b_err")"
+run_handoff "" handoff consume \
+  --slice slice-shared --attempt 1 --agent-id agent-shared-a --agent-type oso-verifier
+shared_a_consumed="rc=$handoff_rc:$handoff_stdout"
+run_handoff "" handoff consume \
+  --slice slice-shared --attempt 1 --agent-id agent-shared-b --agent-type oso-verifier
+shared_b_consumed="rc=$handoff_rc:$handoff_stdout"
+assert_equals "simultaneous equal slice attempts with different agent ids never collide" \
+  "publish=a=0:: b=0:: a=rc=0:$(expected_receipt parent-a slice-shared 1 agent-shared-a oso-verifier) b=rc=0:$(expected_receipt parent-b slice-shared 1 agent-shared-b oso-verifier)" \
+  "publish=$shared_publish_status a=$shared_a_consumed b=$shared_b_consumed"
+
+# Missing means wait until the declared bound, then fail.  Seconds are measured
+# coarsely for Bash 3.2 portability; a 1-second contract may take either one or
+# two displayed ticks, never hang with the rest of the suite behind it.
+handoff_files_before_timeout="$(find "$STATE_DIR/.handoffs" -type f -print 2>/dev/null | LC_ALL=C sort || true)"
+missing_wait_started="$(date +%s)"
+run_handoff "" handoff wait \
+  --slice slice-absent --attempt 1 --agent-id agent-absent \
+  --agent-type oso-verifier --timeout 1
+missing_wait_elapsed=$(( $(date +%s) - missing_wait_started ))
+case "$handoff_rc:$missing_wait_elapsed" in
+  1:1|1:2) missing_wait_status=bounded ;;
+  *) missing_wait_status="rc=$handoff_rc elapsed=${missing_wait_elapsed}s" ;;
+esac
+assert_equals "an absent handoff stops at its declared timeout" bounded "$missing_wait_status"
+handoff_files_after_timeout="$(find "$STATE_DIR/.handoffs" -type f -print 2>/dev/null | LC_ALL=C sort || true)"
+assert_equals "a timed-out wait leaves no synthetic receipt or watermark" \
+  "$handoff_files_before_timeout" "$handoff_files_after_timeout"
+
+# Start the reader first, then publish.  The reader may return only the complete
+# six-line receipt; a partial parse, early failure, or mixed receipt fails.
+atomic_slice=slice-atomic
+atomic_attempt=7
+atomic_agent=agent-atomic
+atomic_type=oso-applier
+atomic_report='oso-handoff: v=1 slice=slice-atomic attempt=7
+status: done'
+atomic_receipt="$(expected_receipt hook-atomic "$atomic_slice" "$atomic_attempt" "$atomic_agent" "$atomic_type")"
+atomic_reader_started="$TEST_HOME/handoff-reader-started"
+atomic_reader_output="$TEST_HOME/handoff-reader-output"
+atomic_reader_error="$TEST_HOME/handoff-reader-error"
+atomic_reader_rc="$TEST_HOME/handoff-reader-rc"
+(
+  : > "$atomic_reader_started"
+  if ( cd "$HANDOFF_REPO" && oso-state handoff wait \
+       --slice "$atomic_slice" --attempt "$atomic_attempt" \
+       --agent-id "$atomic_agent" --agent-type "$atomic_type" --timeout 2 \
+       > "$atomic_reader_output" 2> "$atomic_reader_error" ); then
+    printf '0\n' > "$atomic_reader_rc"
+  else
+    printf '%s\n' "$?" > "$atomic_reader_rc"
+  fi
+) &
+atomic_reader_pid=$!
+while [ ! -f "$atomic_reader_started" ]; do :; done
+sleep 0.05
+run_handoff "$atomic_report" handoff publish \
+  --slice "$atomic_slice" --attempt "$atomic_attempt" \
+  --agent-id "$atomic_agent" --agent-type "$atomic_type" --hook-session hook-atomic
+atomic_publish_rc="$handoff_rc"
+wait "$atomic_reader_pid"
+atomic_read_result="$(cat "$atomic_reader_output" 2>/dev/null || true)"
+atomic_read_rc="$(cat "$atomic_reader_rc" 2>/dev/null || true)"
+atomic_read_stderr="$(cat "$atomic_reader_error" 2>/dev/null || true)"
+assert_equals "a reader concurrent with publication sees one complete atomic receipt" \
+  "publish=0 read=0 stderr= receipt=$atomic_receipt" \
+  "publish=$atomic_publish_rc read=$atomic_read_rc stderr=$atomic_read_stderr receipt=$atomic_read_result"
+run_handoff "" handoff consume \
+  --slice "$atomic_slice" --attempt "$atomic_attempt" \
+  --agent-id "$atomic_agent" --agent-type "$atomic_type"
+assert_equals "the concurrent wait left the receipt for one explicit consume" 0 "$handoff_rc"
+
+# Slice/type names use a closed safe alphabet, attempts are positive integers,
+# and opaque ids are length/control bounded before hashing.  Agent slashes are
+# deliberately safe because no raw id is ever interpolated into a path.
+invalid_handoffs=""
+run_handoff 'report' handoff publish \
+  --slice '../escape' --attempt 1 --agent-id agent --agent-type oso-applier --hook-session hook
+[ "$handoff_rc" = 1 ] || invalid_handoffs="$invalid_handoffs traversal-slice:$handoff_rc"
+run_handoff 'report' handoff publish \
+  --slice slice-safe --attempt 0 --agent-id agent --agent-type oso-applier --hook-session hook
+[ "$handoff_rc" = 1 ] || invalid_handoffs="$invalid_handoffs zero-attempt:$handoff_rc"
+run_handoff 'report' handoff publish \
+  --slice slice-safe --attempt 1x --agent-id agent --agent-type oso-applier --hook-session hook
+[ "$handoff_rc" = 1 ] || invalid_handoffs="$invalid_handoffs malformed-attempt:$handoff_rc"
+bad_agent_id="$(printf 'agent\nbad')"
+run_handoff 'report' handoff publish \
+  --slice slice-safe --attempt 1 --agent-id "$bad_agent_id" --agent-type oso-applier --hook-session hook
+[ "$handoff_rc" = 1 ] || invalid_handoffs="$invalid_handoffs control-agent:$handoff_rc"
+run_handoff 'report' handoff publish \
+  --slice slice-safe --attempt 1 --agent-id 'agent=bad' --agent-type oso-applier --hook-session hook
+[ "$handoff_rc" = 1 ] || invalid_handoffs="$invalid_handoffs equals-agent:$handoff_rc"
+long_agent_id=""
+while [ "${#long_agent_id}" -le 256 ]; do long_agent_id="${long_agent_id}abcdefgh"; done
+run_handoff 'report' handoff publish \
+  --slice slice-safe --attempt 1 --agent-id "$long_agent_id" --agent-type oso-applier --hook-session hook
+[ "$handoff_rc" = 1 ] || invalid_handoffs="$invalid_handoffs long-agent:$handoff_rc"
+run_handoff "" handoff wait \
+  --slice '../escape' --attempt 1 --agent-id agent --agent-type oso-applier --timeout 0
+[ "$handoff_rc" = 1 ] || invalid_handoffs="$invalid_handoffs traversal-wait:$handoff_rc"
+assert_equals "malformed, traversal-shaped, or overlong handoff coordinates fail closed" \
+  "" "$invalid_handoffs"
+
+corrupt_report='oso-handoff: v=1 slice=slice-corrupt attempt=1
+verdict: pass'
+run_handoff "$corrupt_report" handoff publish \
+  --slice slice-corrupt --attempt 1 --agent-id agent-corrupt --agent-type oso-verifier \
+  --hook-session hook-corrupt
+corrupt_receipt="$(handoff_receipt_path agent-corrupt)"
+if [ -n "$corrupt_receipt" ]; then
+  printf 'version=1\nslice=slice-corrupt\n' > "$corrupt_receipt"
+fi
+run_handoff "" handoff wait \
+  --slice slice-corrupt --attempt 1 --agent-id agent-corrupt \
+  --agent-type oso-verifier --timeout 0
+corrupt_wait_rc="$handoff_rc"
+run_handoff "" handoff consume \
+  --slice slice-corrupt --attempt 1 --agent-id agent-corrupt --agent-type oso-verifier
+assert_equals "a malformed on-disk receipt fails closed at both read edges" \
+  "path=present wait=1 consume=1" \
+  "path=$([ -f "$corrupt_receipt" ] && printf present || printf missing) wait=$corrupt_wait_rc consume=$handoff_rc"
+
+# TTL cleanup is observable under the agent lock: old receipts, watermarks and
+# interrupted atomic temp files disappear on the next operation for that lane.
+ttl_agent=agent-ttl
+ttl_key="$(digest_text "$ttl_agent")"
+ttl_dir="$STATE_DIR/.handoffs/$(state_key_of "$HANDOFF_REPO")"
+ttl_receipt="$ttl_dir/$ttl_key.receipt"
+ttl_watermark="$ttl_dir/$ttl_key.watermark"
+run_handoff 'oso-handoff: v=1 slice=slice-ttl attempt=1
+status: done' handoff publish \
+  --slice slice-ttl --attempt 1 --agent-id "$ttl_agent" --agent-type oso-applier \
+  --hook-session hook-ttl-one
+run_handoff "" handoff consume \
+  --slice slice-ttl --attempt 1 --agent-id "$ttl_agent" --agent-type oso-applier
+ttl_orphan_receipt="$ttl_dir/.$ttl_key.receipt.orphan"
+ttl_orphan_consuming="$ttl_dir/.$ttl_key.consuming.orphan"
+: > "$ttl_orphan_receipt"
+: > "$ttl_orphan_consuming"
+touch -t 200001010000 "$ttl_watermark" "$ttl_orphan_receipt" "$ttl_orphan_consuming"
+run_handoff 'oso-handoff: v=1 slice=slice-ttl attempt=2
+status: done' handoff publish \
+  --slice slice-ttl --attempt 2 --agent-id "$ttl_agent" --agent-type oso-applier \
+  --hook-session hook-ttl-two
+ttl_watermark_after_publish="$(cat "$ttl_watermark" 2>/dev/null || true)"
+ttl_publish_cleanup="$([ "$ttl_watermark_after_publish" = 'version=1
+attempt=2' ] && [ ! -e "$ttl_orphan_receipt" ] && [ ! -e "$ttl_orphan_consuming" ] && printf pruned-replaced || printf retained)"
+touch -t 200001010000 "$ttl_receipt"
+run_handoff "" handoff wait \
+  --slice slice-ttl --attempt 2 --agent-id "$ttl_agent" --agent-type oso-applier --timeout 0
+assert_equals "TTL cleanup prunes old receipts, watermarks and orphaned atomic temps" \
+  "publish=pruned-replaced aged-wait=1 receipt=absent" \
+  "publish=$ttl_publish_cleanup aged-wait=$handoff_rc receipt=$([ -e "$ttl_receipt" ] && printf present || printf absent)"
+
+# The repository-wide TTL sweep may opportunistically clean other agent lanes,
+# but it cannot touch one whose lock is held.  Once that foreign lock is gone,
+# the very next operation should remove its aged two-line watermark.
+foreign_agent=agent-foreign-ttl
+foreign_key="$(digest_text "$foreign_agent")"
+foreign_watermark="$ttl_dir/$foreign_key.watermark"
+foreign_lock="$ttl_dir/$foreign_key.lock"
+printf 'version=1\nattempt=9\n' > "$foreign_watermark"
+touch -t 200001010000 "$foreign_watermark"
+mkdir -p "$foreign_lock"
+run_handoff 'oso-handoff: v=1 slice=slice-sweeper attempt=1
+status: done' handoff publish \
+  --slice slice-sweeper --attempt 1 --agent-id agent-sweeper --agent-type oso-applier \
+  --hook-session hook-sweeper
+foreign_while_locked="$([ -f "$foreign_watermark" ] && [ -d "$foreign_lock" ] && printf preserved || printf touched)"
+rmdir "$foreign_lock"
+run_handoff "" handoff wait \
+  --slice slice-never --attempt 1 --agent-id agent-next-op --agent-type oso-verifier --timeout 0
+assert_equals "the TTL sweep preserves a locked foreign lane then prunes it on the next unlocked operation" \
+  "locked=preserved next=pruned" \
+  "locked=$foreign_while_locked next=$([ ! -e "$foreign_watermark" ] && printf pruned || printf retained)"
+
+# An ancient lock may still belong to a live paused process.  Acquisition is
+# bounded at two seconds and must never reclaim or remove somebody else's lock.
+lock_agent=agent-lock
+lock_key="$(digest_text "$lock_agent")"
+lock_dir="$ttl_dir/$lock_key.lock"
+mkdir -p "$lock_dir"
+touch -t 200001010000 "$lock_dir"
+lock_wait_started="$(date +%s)"
+run_handoff 'oso-handoff: v=1 slice=slice-lock attempt=1
+status: done' handoff publish \
+  --slice slice-lock --attempt 1 --agent-id "$lock_agent" --agent-type oso-applier \
+  --hook-session hook-lock
+lock_wait_elapsed=$(( $(date +%s) - lock_wait_started ))
+case "$handoff_rc:$lock_wait_elapsed:$([ -d "$lock_dir" ] && printf retained || printf removed)" in
+  1:1:retained|1:2:retained|1:3:retained) lock_wait_status=bounded-retained ;;
+  *) lock_wait_status="rc=$handoff_rc elapsed=${lock_wait_elapsed}s lock=$([ -d "$lock_dir" ] && printf retained || printf removed)" ;;
+esac
+assert_equals "handoff lock acquisition is bounded and never reclaims an old live lock" \
+  bounded-retained "$lock_wait_status"
+rmdir "$lock_dir"
+
+rm -rf "$STATE_DIR/.handoffs"
 
 # --- A fourth key beside the triple: the repo the session works in ------------
 # `set` takes whatever key it is handed, so nothing had to be written for the

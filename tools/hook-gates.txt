@@ -38,6 +38,7 @@ host  codex   codex/hooks/hooks.json   "__OSO_HOOKS_DIR__"
 gate  commit    PreToolUse    block-commit-until-green.sh   wired  wired
 gate  edits     PreToolUse    block-edits-without-slice.sh  wired  wired
 gate  unknown   PreToolUse    block-unknown-tool.sh          none   wired
+gate  handoff   SubagentStop  publish-subagent-handoff.sh    none   wired
 gate  statebin  SessionStart  persist-state-bin.sh          wired  none
 gate  stale     SessionStart  warn-stale-state.sh           wired  wired
 gate  teardown  SessionEnd    cleanup-state.sh              wired  wired
@@ -55,6 +56,18 @@ tool  edits   MultiEdit               none
 tool  edits   Write                   apply_patch
 tool  edits   NotebookEdit            none
 tool  edits   mcp__fallow__fix_apply  mcp__fallow__fix_apply
+
+# SubagentStop matches role names rather than tool names. The built-in explorer
+# is part of the plan's delegated surface map; the other seven are the exact S5
+# custom roles. Claude launches these synchronously and needs no receipt hook.
+tool  handoff  none  explorer
+tool  handoff  none  oso-applier
+tool  handoff  none  oso-verifier
+tool  handoff  none  oso-integrator
+tool  handoff  none  oso-doubt-pass
+tool  handoff  none  oso-debt-sweep
+tool  handoff  none  oso-triage
+tool  handoff  none  oso-security-reviewer
 
 # Exact runtime allowlist consumed by the `unknown` catch-all. Claude has no such
 # gate, so every Claude cell is explicitly `none`. A newly introduced Codex tool

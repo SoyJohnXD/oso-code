@@ -35,5 +35,7 @@ files: <created or modified, one line each with what changed>
 decisions_used: <ledger entries relied on>
 self_check: <commands and results, or `skipped: parallel`>
 
+When the assignment carries HANDOFF SLICE and HANDOFF ATTEMPT, put `oso-handoff: v=1 slice=<ID> attempt=<N>` as the first line of the final message, substituting the exact values. It is a transport envelope outside the report shape above; the report follows unchanged and its terminal line stays last. Never put a verdict in the envelope.
+
 Your final message is data for the orchestrator, never prose for the operator.
 """
