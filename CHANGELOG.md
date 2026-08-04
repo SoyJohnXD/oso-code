@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.18.2
+
+No reinstall is required for an existing 0.18.1 installation. This release clears Bash 3.2's inherited command hash before asserting that the isolated SubagentStop fixture cannot resolve a bare `oso-state`; the production sibling-binary fallback and its installed bytes are unchanged. Native Bash, Bash 3.2 and Windows now judge the same fresh-`PATH` condition instead of letting Bash 3.2's cached lookup produce a false failure.
+
 ## 0.18.1
 
 **Reinstall required** — `bootstrap/` changed. Pull the release and re-run `bash bootstrap/install-codex.sh --yes`; existing Engram memories remain in `~/.engram` and are not replaced.
