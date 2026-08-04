@@ -1671,6 +1671,77 @@ assert_equals "the authenticated smoke preserves the integrator's live sandbox a
 assert_equals "the authenticated smoke does not override the integrator back to workspace-write" \
   "0" "$(printf '%s\n' "$integrator_smoke_function" | \
     grep -Fc 'codex exec --ephemeral --json --sandbox workspace-write --color never' || true)"
+assert_equals "the authenticated smoke requires a fresh explicit integrator launch" \
+  "1" "$(printf '%s\n' "$integrator_smoke_function" | \
+    grep -Fc 'agent_type oso-integrator explicitly and launch it with fresh context by setting fork_context=false' || true)"
+assert_equals "the shared Codex protocol forbids full-history forks with explicit roles" \
+  "1" "$(grep -Fc 'Every launch that selects an explicit `agent_type` starts with fresh context: set `fork_context=false`.' \
+    "$REPO_ROOT/plugin/skills/_shared/platform/codex/subagents.md" || true)"
+smoke_cleanup_function="$(sed -n \
+  '/^cleanup_smoke_project_config() {$/,/^}$/p' \
+  "$REPO_ROOT/bootstrap/verify-codex.sh")"
+assert_equals "the smoke cleanup removes only its exact project table from the latest config" \
+  "complete" "$(
+    printf '%s\n' "$smoke_cleanup_function" | grep -F 'target_header="[projects.\"$SMOKE_MAIN\"]"' >/dev/null &&
+    printf '%s\n' "$smoke_cleanup_function" | grep -F 'action=remove-table' >/dev/null &&
+    printf '%s\n' "$smoke_cleanup_function" | grep -F 'cmp -s "$source" "$CONFIG_FILE"' >/dev/null &&
+    printf complete || printf incomplete
+  )"
+
+TOML_REMOVE_TABLE_INPUT="$TEST_HOME/toml-remove-table-input.toml"
+TOML_REMOVE_TABLE_ACTUAL="$TEST_HOME/toml-remove-table-actual.toml"
+TOML_REMOVE_TABLE_EXPECTED="$TEST_HOME/toml-remove-table-expected.toml"
+cat > "$TOML_REMOVE_TABLE_INPUT" <<'EOF'
+note = """
+[projects."/tmp/oso-codex-smoke.fixture/main"]
+This header-looking prose is operator data.
+"""
+
+[projects."/workspace/keep-before"]
+trust_level = "trusted"
+
+[projects."/tmp/oso-codex-smoke.fixture/main"]
+trust_level = "trusted"
+details = """
+[projects."/workspace/not-a-table"]
+"""
+
+[projects."/workspace/keep-after"]
+trust_level = "trusted"
+EOF
+cat > "$TOML_REMOVE_TABLE_EXPECTED" <<'EOF'
+note = """
+[projects."/tmp/oso-codex-smoke.fixture/main"]
+This header-looking prose is operator data.
+"""
+
+[projects."/workspace/keep-before"]
+trust_level = "trusted"
+
+[projects."/workspace/keep-after"]
+trust_level = "trusted"
+EOF
+awk -v action=remove-table \
+  -v target_header='[projects."/tmp/oso-codex-smoke.fixture/main"]' \
+  -f "$REPO_ROOT/bootstrap/lib/toml-regions.awk" \
+  "$TOML_REMOVE_TABLE_INPUT" > "$TOML_REMOVE_TABLE_ACTUAL"
+assert_equals "exact smoke-table cleanup preserves multiline decoys and unrelated projects" \
+  "identical" "$(cmp -s "$TOML_REMOVE_TABLE_EXPECTED" "$TOML_REMOVE_TABLE_ACTUAL" && echo identical || echo divergent)"
+printf '%s\n' \
+  '[projects."/tmp/oso-codex-smoke.fixture/main"]' 'one = true' \
+  '[projects."/workspace/keep"]' 'keep = true' \
+  '[projects."/tmp/oso-codex-smoke.fixture/main"]' 'two = true' \
+  > "$TEST_HOME/toml-remove-table-duplicate.toml"
+if awk -v action=remove-table \
+    -v target_header='[projects."/tmp/oso-codex-smoke.fixture/main"]' \
+    -f "$REPO_ROOT/bootstrap/lib/toml-regions.awk" \
+    "$TEST_HOME/toml-remove-table-duplicate.toml" >/dev/null 2>&1; then
+  duplicate_smoke_table_status=accepted
+else
+  duplicate_smoke_table_status=refused
+fi
+assert_equals "smoke cleanup refuses duplicate exact project ownership" \
+  "refused" "$duplicate_smoke_table_status"
 
 # The exact scalar is the sandbox contract, so mutate only that TOML field and
 # prove the checker sees the prohibited value rather than another occurrence of
@@ -5360,6 +5431,10 @@ printf '%s\n' \
   'case "$*" in' \
   '  --version) printf '\''codex-cli %s\n'\'' "$(cat "$OSO_TEST_CODEX_VERSION")" ;;' \
   '  "sandbox -P oso -- /bin/true") [ "${OSO_TEST_CONFIG_FAIL:-}" != 1 ] || exit 65 ;;' \
+  '  "plugin marketplace list --json")' \
+  '    if [ "${OSO_TEST_ENGRAM_REGISTERED:-}" = 1 ]; then printf '\''{"marketplaces":[{"name":"engram"}]}\n'\''' \
+  '    else printf '\''{"marketplaces":[]}\n'\''; fi ;;' \
+  '  "plugin marketplace remove engram") rm -rf "${CODEX_HOME:-$HOME/.codex}/.tmp/marketplaces/engram" ;;' \
   '  "plugin marketplace add "*) exit 0 ;;' \
   '  "plugin add oso-code@oso-code --json") exit 0 ;;' \
   '  *) printf '\''unexpected codex call: %s\n'\'' "$*" >&2; exit 64 ;;' \
@@ -5375,8 +5450,10 @@ printf '%s\n' \
 
 # The real `engram setup codex` owns these two files, its top-level pointers and
 # its MCP table. This shim deliberately writes all four instead of letting the
-# oso installer counterfeit Engram's payload. Its write is idempotent so the
-# second installer run measures oso-code, not fixture noise.
+# oso installer counterfeit Engram's payload. Like Engram 1.20.0, every setup
+# removes both root pointers and reinserts them before the first TOML table. On
+# reinstall that table is inside oso-code's managed region, reproducing the
+# relocation that deleted both pointers in 0.18.3.
 printf '%s\n' \
   '#!/bin/sh' \
   'printf '\''engram:%s\n'\'' "$*" >> "$OSO_TEST_CALLS"' \
@@ -5387,14 +5464,14 @@ printf '%s\n' \
   'printf '\''# fixture Engram memory protocol\n### AFTER COMPACTION\n'\'' > "$codex_dir/engram-instructions.md"' \
   'printf '\''Save durable memory before compaction.\n'\'' > "$codex_dir/engram-compact-prompt.md"' \
   'touch "$config"' \
-  'if ! grep -F '\''model_instructions_file = '\'' "$config" >/dev/null 2>&1; then' \
-  '  tmp=$config.engram-tmp' \
-  '  awk -v instruction="$codex_dir/engram-instructions.md" -v compact="$codex_dir/engram-compact-prompt.md" '\''' \
-  '    !inserted && /^\[/ { print "model_instructions_file = \"" instruction "\""; print "experimental_compact_prompt_file = \"" compact "\""; print ""; inserted=1 }' \
-  '    { print }' \
-  '    END { if (!inserted) { print "model_instructions_file = \"" instruction "\""; print "experimental_compact_prompt_file = \"" compact "\"" } }' \
+  'tmp=$config.engram-tmp' \
+  'awk -v instruction="$codex_dir/engram-instructions.md" -v compact="$codex_dir/engram-compact-prompt.md" '\''' \
+  '  function emit() { print "model_instructions_file = \"" instruction "\""; print "experimental_compact_prompt_file = \"" compact "\""; print ""; inserted=1 }' \
+  '  /^model_instructions_file[[:space:]]*=/ || /^experimental_compact_prompt_file[[:space:]]*=/ { next }' \
+  '  !inserted && !multiline && /^\[/ { emit() }' \
+  '  { print; copy=$0; triples=gsub(/"""/, "", copy); if (triples % 2 == 1) multiline=!multiline }' \
+  '  END { if (!inserted) emit() }' \
   '  '\'' "$config" > "$tmp" && mv "$tmp" "$config"' \
-  'fi' \
   'if ! grep -F '\''[mcp_servers.engram]'\'' "$config" >/dev/null 2>&1; then' \
   '  printf '\''\n[mcp_servers.engram]\ncommand = "engram"\nargs = ["mcp", "--tools=agent"]\n'\'' >> "$config"' \
   'fi' > "$CODEX_INSTALL_SHIMS/engram"
@@ -5409,8 +5486,10 @@ chmod +x "$CODEX_INSTALL_SHIMS/codex" "$CODEX_INSTALL_SHIMS/npm" \
 if ! command -v python3 >/dev/null 2>&1; then
   printf '%s\n' \
     '#!/bin/sh' \
-    '[ "$1" = "-m" ] && [ "$2" = "json.tool" ] && [ -f "$3" ] || exit 64' \
-    'exit 0' > "$CODEX_INSTALL_SHIMS/python3"
+    'if [ "$1" = "-m" ] && [ "$2" = "json.tool" ] && [ -f "$3" ]; then exit 0; fi' \
+    '# The only baseline -c call asks whether Engram is registered; this fixture inventory is empty.' \
+    'if [ "$1" = "-c" ]; then cat >/dev/null; exit 1; fi' \
+    'exit 64' > "$CODEX_INSTALL_SHIMS/python3"
   chmod +x "$CODEX_INSTALL_SHIMS/python3"
 fi
 
@@ -5480,6 +5559,34 @@ write_codex_install_existing_features_state() {
     'trust_level = "trusted"' > "$fixture_home/.codex/config.toml"
 }
 
+write_official_engram_marketplace_cache() {
+  local fixture_home="$1" remote="${2:-https://github.com/Gentleman-Programming/engram.git}"
+  local cache="$fixture_home/.codex/.tmp/marketplaces/engram"
+  mkdir -p "$cache/.agents/plugins" "$cache/plugin/codex/.codex-plugin"
+  cat > "$cache/.agents/plugins/marketplace.json" <<'JSON'
+{
+  "name": "engram",
+  "interface": { "displayName": "Engram Persistent Memory" },
+  "plugins": [
+    {
+      "name": "engram",
+      "source": { "source": "local", "path": "./plugin/codex" },
+      "policy": { "installation": "INSTALLED_BY_DEFAULT" }
+    }
+  ]
+}
+JSON
+  printf '%s\n' '{"name":"engram","version":"0.1.1"}' \
+    > "$cache/plugin/codex/.codex-plugin/plugin.json"
+  git -C "$cache" init -q
+  git -C "$cache" remote add origin "$remote"
+  git -C "$cache" add .
+  git -C "$cache" -c user.name=Fixture -c user.email=fixture@example.test \
+    commit -qm fixture
+  git -C "$cache" update-ref refs/remotes/origin/main HEAD
+  git -C "$cache" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+}
+
 # Results land in CODEX_INSTALL_RC and CODEX_INSTALL_LOG. Keeping the call out of
 # a command substitution matters: the installer may replace whole directories,
 # and every assertion must observe the same fixture tree it ran against.
@@ -5492,6 +5599,7 @@ run_codex_install() {
     OSO_TEST_CALLS="$CODEX_INSTALL_CALLS" \
     OSO_TEST_CODEX_VERSION="$CODEX_INSTALL_VERSION" \
     OSO_TEST_CONFIG_FAIL="${OSO_TEST_CONFIG_FAIL:-}" \
+    OSO_TEST_ENGRAM_REGISTERED="${OSO_TEST_ENGRAM_REGISTERED:-}" \
     OSO_HOOK_HASHES_FILE="${OSO_HOOK_HASHES_FILE:-}" \
     OSO_IMPECCABLE_SOURCE="$CODEX_IMPECCABLE_SOURCE" \
     OSO_INSTALL_FAIL_AFTER="$failure_step" \
@@ -5511,6 +5619,7 @@ run_codex_install_with_git_hook() {
     PATH="$CODEX_INSTALL_SHIMS:$PATH" \
     OSO_TEST_CALLS="$CODEX_INSTALL_CALLS" \
     OSO_TEST_CODEX_VERSION="$CODEX_INSTALL_VERSION" \
+    OSO_TEST_ENGRAM_REGISTERED="${OSO_TEST_ENGRAM_REGISTERED:-}" \
     OSO_IMPECCABLE_SOURCE="$CODEX_IMPECCABLE_SOURCE" \
     OSO_INSTALL_FAIL_AFTER="$failure_step" \
     bash "$installer" --yes --no-impeccable > "$CODEX_INSTALL_OUTPUT" 2>&1; then
@@ -5833,6 +5942,65 @@ assert_equals "Codex parity no longer calls the S11 state identity a placeholder
 assert_equals "Codex parity no longer says the S11 runtime installer is deferred" \
   "0" "$(grep -Ec 'later installer slice|installer slice is what sets' "$REPO_ROOT/docs/parity-codex.md" || true)"
 
+# Codex can retain an official Engram checkout under its internal marketplace
+# cache even after losing the corresponding registry entry. Engram's next setup
+# cannot add the official remote until that orphan is removed. The installer may
+# repair only the exact clean official checkout, under its transaction.
+if command -v git >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  CODEX_STALE_ENGRAM_HOME="$TEST_HOME/codex-stale-engram-home"
+  write_codex_install_personal_state "$CODEX_STALE_ENGRAM_HOME"
+  write_official_engram_marketplace_cache "$CODEX_STALE_ENGRAM_HOME"
+  run_codex_install "$CODEX_STALE_ENGRAM_HOME"
+  assert_equals "a clean unregistered official Engram cache is repaired" \
+    "zero" "$([ "$CODEX_INSTALL_RC" -eq 0 ] && echo zero || echo nonzero)"
+  assert_equals "the bounded Engram repair asks Codex to remove exactly its orphan" \
+    "1" "$(grep -Fxc 'codex:plugin marketplace remove engram' "$CODEX_INSTALL_CALLS" || true)"
+  assert_equals "the stale Engram cache is absent before setup can register it again" \
+    "absent" "$([ -e "$CODEX_STALE_ENGRAM_HOME/.codex/.tmp/marketplaces/engram" ] && echo present || echo absent)"
+
+  CODEX_MODIFIED_ENGRAM_HOME="$TEST_HOME/codex-modified-engram-home"
+  write_codex_install_personal_state "$CODEX_MODIFIED_ENGRAM_HOME"
+  write_official_engram_marketplace_cache "$CODEX_MODIFIED_ENGRAM_HOME"
+  printf 'operator evidence\n' > "$CODEX_MODIFIED_ENGRAM_HOME/.codex/.tmp/marketplaces/engram/operator.txt"
+  git -C "$CODEX_MODIFIED_ENGRAM_HOME/.codex/.tmp/marketplaces/engram" add operator.txt
+  git -C "$CODEX_MODIFIED_ENGRAM_HOME/.codex/.tmp/marketplaces/engram" \
+    -c user.name=Operator -c user.email=operator@example.test commit -qm 'operator: keep evidence'
+  modified_engram_before="$(install_file_snapshot "$CODEX_MODIFIED_ENGRAM_HOME")"
+  run_codex_install "$CODEX_MODIFIED_ENGRAM_HOME"
+  modified_engram_after="$(install_file_snapshot "$CODEX_MODIFIED_ENGRAM_HOME")"
+  assert_equals "a locally committed unregistered Engram cache is refused" \
+    "nonzero" "$([ "$CODEX_INSTALL_RC" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "an unsafe Engram cache is neither removed nor passed to setup" \
+    "0" "$(grep -Ec '^codex:plugin marketplace remove engram$|^engram:' "$CODEX_INSTALL_CALLS" || true)"
+  assert_equals "unsafe Engram cache refusal preserves every destination byte-for-byte" \
+    "$modified_engram_before" "$modified_engram_after"
+
+  CODEX_ENGRAM_ROLLBACK_HOME="$TEST_HOME/codex-engram-rollback-home"
+  write_codex_install_personal_state "$CODEX_ENGRAM_ROLLBACK_HOME"
+  write_official_engram_marketplace_cache "$CODEX_ENGRAM_ROLLBACK_HOME"
+  engram_rollback_before="$(install_file_snapshot "$CODEX_ENGRAM_ROLLBACK_HOME")"
+  run_codex_install "$CODEX_ENGRAM_ROLLBACK_HOME" after-engram-marketplace-repair
+  engram_rollback_after="$(install_file_snapshot "$CODEX_ENGRAM_ROLLBACK_HOME")"
+  assert_equals "a failure immediately after Engram orphan repair exits nonzero" \
+    "nonzero" "$([ "$CODEX_INSTALL_RC" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "rollback restores the exact official Engram checkout removed by Codex" \
+    "$engram_rollback_before" "$engram_rollback_after"
+
+  CODEX_REGISTERED_ENGRAM_HOME="$TEST_HOME/codex-registered-engram-home"
+  write_codex_install_personal_state "$CODEX_REGISTERED_ENGRAM_HOME"
+  write_official_engram_marketplace_cache "$CODEX_REGISTERED_ENGRAM_HOME"
+  OSO_TEST_ENGRAM_REGISTERED=1 run_codex_install "$CODEX_REGISTERED_ENGRAM_HOME"
+  assert_equals "a registered Engram marketplace remains outside orphan repair" \
+    "zero" "$([ "$CODEX_INSTALL_RC" -eq 0 ] && echo zero || echo nonzero)"
+  assert_equals "registered Engram ownership is never removed" \
+    "0" "$(grep -Fxc 'codex:plugin marketplace remove engram' "$CODEX_INSTALL_CALLS" || true)"
+  assert_equals "the registered Engram checkout remains present" \
+    "present" "$([ -d "$CODEX_REGISTERED_ENGRAM_HOME/.codex/.tmp/marketplaces/engram" ] && echo present || echo absent)"
+else
+  echo "skip: git or python3 is absent, so bounded Engram orphan repair cannot be exercised"
+  skipped=$((skipped + 1))
+fi
+
 # A login-only Codex home already carries [features].prevent_idle_sleep. That
 # unrelated key must not make oso-code reject the whole table, and the two keys
 # oso-code does own must be incorporated without emitting a second TOML table.
@@ -5969,6 +6137,17 @@ assert_equals "a second config merge keeps one textual and one managed start mar
   "2" "$(grep -Fxc '# oso-code:start' "$CODEX_HAPPY_CONFIG" || true)"
 assert_equals "a second config merge keeps one textual and one managed end marker" \
   "2" "$(grep -Fxc '# oso-code:end' "$CODEX_HAPPY_CONFIG" || true)"
+assert_equals "a second Engram setup leaves both root pointers before oso-code ownership" \
+  "before-once" "$(awk '
+    $0 == "# oso-code:start" { managed_start = NR }
+    /^model_instructions_file[[:space:]]*=/ { model_rows++; model_line = NR }
+    /^experimental_compact_prompt_file[[:space:]]*=/ { compact_rows++; compact_line = NR }
+    END {
+      if (model_rows == 1 && compact_rows == 1 &&
+          model_line < managed_start && compact_line < managed_start) print "before-once"
+      else printf "model=%d compact=%d start=%d", model_rows, compact_rows, managed_start
+    }
+  ' "$CODEX_HAPPY_CONFIG")"
 
 # D14 is a behavioral pin: the wrong CLI is repaired to the ADR's exact floor,
 # then rechecked. `@latest` would make this fixture fail for the precise command.

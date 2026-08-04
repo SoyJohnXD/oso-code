@@ -20,6 +20,11 @@ COMPACT_PROMPT_KEY=experimental_compact_prompt_file
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+[ -f "$SCRIPT_DIR/lib/engram-codex-pointers.sh" ] || {
+  printf '[oso-code] ERROR: Engram Codex pointer normalizer is missing\n' >&2
+  exit 1
+}
+. "$SCRIPT_DIR/lib/engram-codex-pointers.sh"
 TMP_ROOT=""
 BACKUP_DIR=""
 STAGED_INSTALL=""
@@ -316,65 +321,12 @@ ensure_tmp_root() {
 
 write_normalized_codex_config() {
   local destination=$1
-  awk \
-    -v start_marker="$CONFIG_MARKER_START" \
-    -v end_marker="$CONFIG_MARKER_END" \
-    -v model_key="$MODEL_INSTRUCTIONS_KEY" \
-    -v compact_key="$COMPACT_PROMPT_KEY" \
-    -v model_value="$ENGRAM_INSTRUCTIONS_FILE" \
-    -v compact_value="$ENGRAM_COMPACT_FILE" '
-    function is_pointer(line, key) {
-      return line ~ "^" key "[[:space:]]*="
-    }
-    function pointer_value(line, value) {
-      value = line
-      sub(/^[^=]*=[[:space:]]*"/, "", value)
-      sub(/"[[:space:]]*$/, "", value)
-      return value
-    }
-    function is_string_pointer(line, key) {
-      return line ~ "^" key "[[:space:]]*=[[:space:]]*\"[^\"]*\"[[:space:]]*$"
-    }
-    {
-      original[NR] = $0
-      if ($0 == start_marker) {
-        starts++
-        start_line = NR
-      }
-      if ($0 == end_marker) {
-        ends++
-        end_line = NR
-      }
-      if (is_pointer($0, model_key)) {
-        model_rows++
-        model_line = NR
-        if (!is_string_pointer($0, model_key) || pointer_value($0) != model_value) invalid_model = 1
-        next
-      }
-      if (is_pointer($0, compact_key)) {
-        compact_rows++
-        compact_line = NR
-        if (!is_string_pointer($0, compact_key) || pointer_value($0) != compact_value) invalid_compact = 1
-        next
-      }
-      kept[++kept_rows] = $0
-    }
-    END {
-      if (starts != 1 || ends != 1 || start_line >= end_line) exit 10
-      if (model_rows != 1 || compact_rows != 1 || invalid_model || invalid_compact) exit 11
-      if (model_line < start_line && compact_line < start_line) {
-        for (line = 1; line <= NR; line++) print original[line]
-        exit
-      }
-      for (line = 1; line <= kept_rows; line++) {
-        if (kept[line] == start_marker) {
-          print model_key " = \"" model_value "\""
-          print compact_key " = \"" compact_value "\""
-        }
-        print kept[line]
-      }
-    }
-  ' "$CONFIG_FILE" > "$destination"
+  normalize_engram_codex_pointers \
+    "$CONFIG_FILE" "$destination" \
+    "$CONFIG_MARKER_START" "$CONFIG_MARKER_END" \
+    "$MODEL_INSTRUCTIONS_KEY" "$COMPACT_PROMPT_KEY" \
+    "$ENGRAM_INSTRUCTIONS_FILE" "$ENGRAM_COMPACT_FILE" \
+    "$SCRIPT_DIR/lib/toml-regions.awk" 1
 }
 
 validate_normalized_codex_config() {

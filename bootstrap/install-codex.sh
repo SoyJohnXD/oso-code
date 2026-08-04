@@ -12,6 +12,9 @@ FEATURE_MARKER_START="# oso-code:features:start"
 FEATURE_MARKER_END="# oso-code:features:end"
 GLOBAL_MARKER_START="<!-- oso-code:start -->"
 GLOBAL_MARKER_END="<!-- oso-code:end -->"
+MODEL_INSTRUCTIONS_KEY=model_instructions_file
+COMPACT_PROMPT_KEY=experimental_compact_prompt_file
+ENGRAM_MARKETPLACE_REMOTE=https://github.com/Gentleman-Programming/engram.git
 
 info() { printf '[oso-code] %s\n' "$1"; }
 warn() { printf '[oso-code] WARNING: %s\n' "$1" >&2; }
@@ -24,6 +27,9 @@ initialize_paths() {
   [ -f "$SCRIPT_DIR/lib/codex-managed-config.sh" ] ||
     fail "Codex managed-config renderer is missing"
   . "$SCRIPT_DIR/lib/codex-managed-config.sh"
+  [ -f "$SCRIPT_DIR/lib/engram-codex-pointers.sh" ] ||
+    fail "Engram Codex pointer normalizer is missing"
+  . "$SCRIPT_DIR/lib/engram-codex-pointers.sh"
   CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
   CONFIG_FILE="$CODEX_HOME/config.toml"
   GLOBAL_FILE="$CODEX_HOME/AGENTS.md"
@@ -32,6 +38,9 @@ initialize_paths() {
   AGENTS_TARGET="$CODEX_HOME/agents"
   MARKETPLACE_ROOT="$HOME/.local/share/oso-code/codex-marketplace"
   MARKETPLACE_TEMPLATE="$REPO_ROOT/.agents/plugins/marketplace.json"
+  ENGRAM_MARKETPLACE_CACHE="$CODEX_HOME/.tmp/marketplaces/engram"
+  ENGRAM_INSTRUCTIONS_FILE="$CODEX_HOME/engram-instructions.md"
+  ENGRAM_COMPACT_FILE="$CODEX_HOME/engram-compact-prompt.md"
   HASHES_FILE="$SCRIPT_DIR/hook-hashes.txt"
   IMPECCABLE_MOUNT="$HOME/.agents/skills/impeccable"
   IMPECCABLE_OPT_OUT_MARKER="$HOME/.local/state/oso-code/impeccable-opt-out"
@@ -337,6 +346,8 @@ preflight_release_payload() {
     fail "Codex TOML region parser is missing"
   [ -f "$SCRIPT_DIR/lib/codex-managed-config.sh" ] ||
     fail "Codex managed-config renderer is missing"
+  [ -f "$SCRIPT_DIR/lib/engram-codex-pointers.sh" ] ||
+    fail "Engram Codex pointer normalizer is missing"
   python3 -m json.tool "$MARKETPLACE_TEMPLATE" >/dev/null ||
     fail "Codex marketplace template is invalid JSON"
   python3 -m json.tool "$REPO_ROOT/codex/.codex-plugin/plugin.json" >/dev/null ||
@@ -356,8 +367,9 @@ begin_transaction() {
   backup_target config "$CONFIG_FILE"
   backup_target global "$GLOBAL_FILE"
   backup_target plugins "$CODEX_HOME/plugins"
-  backup_target engram-instructions "$CODEX_HOME/engram-instructions.md"
-  backup_target engram-compact "$CODEX_HOME/engram-compact-prompt.md"
+  backup_target engram-marketplace-cache "$ENGRAM_MARKETPLACE_CACHE"
+  backup_target engram-instructions "$ENGRAM_INSTRUCTIONS_FILE"
+  backup_target engram-compact "$ENGRAM_COMPACT_FILE"
   backup_target impeccable "$IMPECCABLE_MOUNT"
   backup_target impeccable-opt-out "$IMPECCABLE_OPT_OUT_MARKER"
   capture_git_hook_config
@@ -507,14 +519,164 @@ install_agents() {
   replace_tree "$stage" "$AGENTS_TARGET"
 }
 
+engram_marketplace_registered() {
+  local listing status=0
+  if ! listing="$(codex plugin marketplace list --json)"; then
+    fail "could not inspect registered Codex marketplaces before Engram setup"
+  fi
+  printf '%s' "$listing" | python3 -c '
+import json
+import sys
+
+try:
+    data = json.load(sys.stdin)
+except (json.JSONDecodeError, OSError):
+    raise SystemExit(2)
+marketplaces = data.get("marketplaces")
+if not isinstance(marketplaces, list):
+    raise SystemExit(2)
+for marketplace in marketplaces:
+    if isinstance(marketplace, dict) and marketplace.get("name") == "engram":
+        raise SystemExit(0)
+raise SystemExit(1)
+' || status=$?
+  case "$status" in
+    0) return 0 ;;
+    1) return 1 ;;
+    *) fail "Codex returned malformed marketplace inventory JSON" ;;
+  esac
+}
+
+validate_stale_engram_marketplace() {
+  # ADR-0102 permits cleanup only for the exact clean checkout Codex orphaned.
+  [ ! -L "$ENGRAM_MARKETPLACE_CACHE" ] ||
+    fail "refusing to remove symlinked unregistered Engram marketplace cache: $ENGRAM_MARKETPLACE_CACHE"
+  [ -d "$ENGRAM_MARKETPLACE_CACHE" ] ||
+    fail "unregistered Engram marketplace cache is not a directory: $ENGRAM_MARKETPLACE_CACHE"
+  command -v git >/dev/null 2>&1 ||
+    fail "git is required to validate the unregistered Engram marketplace cache"
+
+  local checkout_root remotes remote status manifest plugin_manifest
+  local head_commit remote_head_ref remote_head_commit
+  checkout_root="$(git -C "$ENGRAM_MARKETPLACE_CACHE" rev-parse --show-toplevel 2>/dev/null || true)"
+  [ "$checkout_root" = "$ENGRAM_MARKETPLACE_CACHE" ] ||
+    fail "refusing to remove an unregistered Engram marketplace cache that is not an exact Git checkout"
+  remotes="$(git -C "$ENGRAM_MARKETPLACE_CACHE" remote 2>/dev/null || true)"
+  [ "$remotes" = origin ] ||
+    fail "refusing to remove an unregistered Engram marketplace cache with unexpected Git remotes"
+  remote="$(git -C "$ENGRAM_MARKETPLACE_CACHE" remote get-url --all origin 2>/dev/null || true)"
+  [ "$remote" = "$ENGRAM_MARKETPLACE_REMOTE" ] ||
+    fail "refusing to remove an unregistered Engram marketplace cache from an unknown origin"
+  head_commit="$(git -C "$ENGRAM_MARKETPLACE_CACHE" rev-parse HEAD 2>/dev/null || true)"
+  remote_head_ref="$(git -C "$ENGRAM_MARKETPLACE_CACHE" symbolic-ref -q refs/remotes/origin/HEAD 2>/dev/null || true)"
+  case "$remote_head_ref" in refs/remotes/origin/*) ;; *) remote_head_ref="" ;; esac
+  remote_head_commit="$(git -C "$ENGRAM_MARKETPLACE_CACHE" rev-parse "$remote_head_ref" 2>/dev/null || true)"
+  [ -n "$head_commit" ] && [ "$head_commit" = "$remote_head_commit" ] ||
+    fail "refusing to remove an unregistered Engram marketplace cache with local or unverified commits"
+  if ! status="$(git -C "$ENGRAM_MARKETPLACE_CACHE" status --porcelain --untracked-files=all 2>/dev/null)"; then
+    fail "could not inspect the unregistered Engram marketplace cache"
+  fi
+  [ -z "$status" ] ||
+    fail "refusing to remove a modified unregistered Engram marketplace cache"
+
+  manifest="$ENGRAM_MARKETPLACE_CACHE/.agents/plugins/marketplace.json"
+  plugin_manifest="$ENGRAM_MARKETPLACE_CACHE/plugin/codex/.codex-plugin/plugin.json"
+  [ -f "$manifest" ] && [ ! -L "$manifest" ] ||
+    fail "unregistered Engram marketplace cache has no trusted marketplace manifest"
+  [ -f "$plugin_manifest" ] && [ ! -L "$plugin_manifest" ] ||
+    fail "unregistered Engram marketplace cache has no trusted plugin manifest"
+  python3 - "$manifest" "$plugin_manifest" <<'PY' ||
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    data = json.load(handle)
+plugins = data.get("plugins")
+if data.get("name") != "engram" or not isinstance(plugins, list) or len(plugins) != 1:
+    raise SystemExit(1)
+plugin = plugins[0]
+if not isinstance(plugin, dict) or plugin.get("name") != "engram":
+    raise SystemExit(1)
+source = plugin.get("source")
+if source != {"source": "local", "path": "./plugin/codex"}:
+    raise SystemExit(1)
+with open(sys.argv[2], encoding="utf-8") as handle:
+    plugin_data = json.load(handle)
+if plugin_data.get("name") != "engram":
+    raise SystemExit(1)
+PY
+    fail "unregistered Engram marketplace cache has unexpected Engram manifests"
+}
+
+repair_stale_engram_marketplace() {
+  if engram_marketplace_registered; then
+    return 0
+  fi
+  if [ ! -e "$ENGRAM_MARKETPLACE_CACHE" ] && [ ! -L "$ENGRAM_MARKETPLACE_CACHE" ]; then
+    return 0
+  fi
+  validate_stale_engram_marketplace
+  info "repairing the clean unregistered official Engram marketplace cache"
+  codex plugin marketplace remove engram >/dev/null
+  if [ -e "$ENGRAM_MARKETPLACE_CACHE" ] || [ -L "$ENGRAM_MARKETPLACE_CACHE" ]; then
+    fail "Codex did not remove the unregistered Engram marketplace cache"
+  fi
+}
+
+normalize_installed_engram_pointers() {
+  # ADR-0102 composes Engram's root keys before Oso replaces its own region.
+  [ -f "$CONFIG_FILE" ] ||
+    fail "engram setup codex did not create Codex config.toml"
+  local candidate validation_home status=0
+  candidate="$(mktemp "$CODEX_HOME/.config.engram.XXXXXX")"
+  normalize_engram_codex_pointers \
+    "$CONFIG_FILE" "$candidate" \
+    "$CONFIG_MARKER_START" "$CONFIG_MARKER_END" \
+    "$MODEL_INSTRUCTIONS_KEY" "$COMPACT_PROMPT_KEY" \
+    "$ENGRAM_INSTRUCTIONS_FILE" "$ENGRAM_COMPACT_FILE" \
+    "$SCRIPT_DIR/lib/toml-regions.awk" 0 || status=$?
+  case "$status" in
+    0) ;;
+    10)
+      rm -f "$candidate"
+      fail "Codex config markers changed during Engram setup"
+      ;;
+    11)
+      rm -f "$candidate"
+      fail "Engram Codex instruction pointers are missing, duplicated, or unexpected"
+      ;;
+    *)
+      rm -f "$candidate"
+      fail "could not normalize Engram Codex instruction pointers"
+      ;;
+  esac
+  if cmp -s "$candidate" "$CONFIG_FILE"; then
+    rm -f "$candidate"
+    return 0
+  fi
+
+  validation_home="$(mktemp -d "$CODEX_HOME/.validate-engram.XXXXXX")"
+  cp "$candidate" "$validation_home/config.toml"
+  if ! CODEX_HOME="$validation_home" codex sandbox -P oso -- /bin/true >/dev/null; then
+    rm -rf "$validation_home"
+    rm -f "$candidate"
+    fail "Codex rejected normalized Engram instruction pointers; the transaction will be restored"
+  fi
+  rm -rf "$validation_home"
+  chmod 600 "$candidate"
+  mv "$candidate" "$CONFIG_FILE"
+  info "normalized Engram instruction pointers outside oso-code's managed config region"
+}
+
 wire_engram() {
   command -v engram >/dev/null 2>&1 ||
     fail "Engram is required; install its binary, then re-run this installer"
   engram setup codex
-  [ -f "$CODEX_HOME/engram-instructions.md" ] ||
+  [ -f "$ENGRAM_INSTRUCTIONS_FILE" ] ||
     fail "engram setup codex did not restore engram-instructions.md"
-  [ -f "$CODEX_HOME/engram-compact-prompt.md" ] ||
+  [ -f "$ENGRAM_COMPACT_FILE" ] ||
     fail "engram setup codex did not restore engram-compact-prompt.md"
+  normalize_installed_engram_pointers
 }
 
 split_toml_root_sections() {
@@ -749,6 +911,8 @@ main() {
   trap on_exit EXIT
   begin_transaction
   checkpoint after-backup
+  repair_stale_engram_marketplace
+  checkpoint after-engram-marketplace-repair
   assemble_marketplace
   checkpoint after-plugin
   install_runtime_hooks

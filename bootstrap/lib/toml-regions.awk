@@ -10,6 +10,11 @@
 #     the region, and rejects oso-owned keys outside it
 #   action=features-merge: feature_file; inserts that file immediately after an
 #     existing [features] header, or creates the table at EOF
+#   action=engram-pointers: start_marker, end_marker, model_key, compact_key,
+#     model_value, compact_value; moves Engram's exact pointers immediately
+#     before the managed region. require_region=1 rejects an absent region.
+#   action=remove-table: target_header; removes zero or one exact table and its
+#     body while preserving every other byte. Duplicate target tables fail.
 #
 # It tracks multiline strings plus array/inline-table depth. A marker-looking
 # line inside operator text is data, not installer ownership; a table-looking
@@ -94,6 +99,21 @@ function is_root_features_key(text, value) {
          value ~ /^[[:space:]]*\047features\047[[:space:]]*([.=])/
 }
 
+function is_pointer(text, key) {
+  return text ~ "^" key "[[:space:]]*="
+}
+
+function pointer_value(text, value) {
+  value = text
+  sub(/^[^=]*=[[:space:]]*"/, "", value)
+  sub(/"[[:space:]]*$/, "", value)
+  return value
+}
+
+function is_string_pointer(text, key) {
+  return text ~ "^" key "[[:space:]]*=[[:space:]]*\"[^\"]*\"[[:space:]]*$"
+}
+
 function emit_feature_file(line) {
   while ((getline line < feature_file) > 0) print line
   close(feature_file)
@@ -105,11 +125,54 @@ BEGIN {
   bs = "\\"
   if (action != "strip" && action != "extract" && action != "split" &&
       action != "root-symbols" && action != "features-strip" &&
-      action != "features-merge") exit 64
+      action != "features-merge" && action != "engram-pointers" &&
+      action != "remove-table") exit 64
 }
 
 {
   at_root = string_mode == "" && array_depth == 0 && brace_depth == 0
+
+  if (action == "engram-pointers") {
+    original[NR] = $0
+    if (at_root && $0 == start_marker) {
+      pointer_starts++
+      pointer_start_line = NR
+    }
+    if (at_root && $0 == end_marker) {
+      pointer_ends++
+      pointer_end_line = NR
+    }
+    if (at_root && is_pointer($0, model_key)) {
+      model_rows++
+      model_line = NR
+      pointer_row[NR] = 1
+      if (!is_string_pointer($0, model_key) || pointer_value($0) != model_value)
+        invalid_model = 1
+    }
+    if (at_root && is_pointer($0, compact_key)) {
+      compact_rows++
+      compact_line = NR
+      pointer_row[NR] = 1
+      if (!is_string_pointer($0, compact_key) || pointer_value($0) != compact_value)
+        invalid_compact = 1
+    }
+    scan_root($0)
+    next
+  }
+
+  if (action == "remove-table") {
+    if (remove_inside && at_root && $0 ~ /^[[:space:]]*\[/)
+      remove_inside = 0
+    if (!remove_inside && at_root && $0 == target_header) {
+      remove_seen++
+      remove_inside = 1
+      scan_root($0)
+      next
+    }
+    if (!remove_inside) print
+    scan_root($0)
+    next
+  }
 
   if (action == "features-strip" || action == "features-merge") {
     if (action == "features-strip" && at_root && $0 == feature_start_marker) {
@@ -195,6 +258,36 @@ BEGIN {
 }
 
 END {
+  if (action == "engram-pointers") {
+    if (model_rows != 1 || compact_rows != 1 || invalid_model || invalid_compact) exit 11
+    if (pointer_starts == 0 && pointer_ends == 0 && !require_region) {
+      for (pointer_line = 1; pointer_line <= NR; pointer_line++) print original[pointer_line]
+      exit
+    }
+    if (pointer_starts != 1 || pointer_ends != 1 ||
+        pointer_start_line >= pointer_end_line) exit 10
+    if (model_line < pointer_start_line && compact_line < pointer_start_line) {
+      for (pointer_line = 1; pointer_line <= NR; pointer_line++) print original[pointer_line]
+      exit
+    }
+    # Engram removes the old root pointers but leaves their following separator
+    # behind before reinserting them inside the managed region. Consume exactly
+    # that one empty separator so repeated setup runs cannot accumulate blanks;
+    # any additional operator spacing remains untouched.
+    pointer_separator_line = pointer_start_line - 1
+    if (pointer_separator_line > 0 && original[pointer_separator_line] == "")
+      skip_pointer_separator = pointer_separator_line
+    for (pointer_line = 1; pointer_line <= NR; pointer_line++) {
+      if (pointer_row[pointer_line] || pointer_line == skip_pointer_separator) continue
+      if (pointer_line == pointer_start_line) {
+        print model_key " = \"" model_value "\""
+        print compact_key " = \"" compact_value "\""
+      }
+      print original[pointer_line]
+    }
+    exit
+  }
+  if (action == "remove-table" && remove_seen > 1) exit 12
   if ((action == "strip" || action == "extract") &&
       (malformed || inside || seen_start != seen_end || seen_start > 1 ||
        (require_region && seen_start != 1))) exit 5

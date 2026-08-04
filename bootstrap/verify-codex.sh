@@ -13,6 +13,7 @@ GLOBAL_MARKER_END="<!-- oso-code:end -->"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 . "$SCRIPT_DIR/lib/codex-managed-config.sh"
+. "$SCRIPT_DIR/lib/engram-codex-pointers.sh"
 SUPPORTED_CODEX_VERSION="$(sed -n 's/^SUPPORTED_CODEX_VERSION=//p' "$SCRIPT_DIR/install-codex.sh")"
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 RUNTIME_ROOT="$HOME/.local/share/oso-code/runtime"
@@ -214,15 +215,29 @@ global_guidance_status() {
 }
 
 engram_status() {
-  if [ -f "$CODEX_HOME/engram-instructions.md" ] &&
-     [ -f "$CODEX_HOME/engram-compact-prompt.md" ] &&
-     grep -F 'model_instructions_file = ' "$CONFIG_FILE" >/dev/null 2>&1 &&
-     grep -F 'experimental_compact_prompt_file = ' "$CONFIG_FILE" >/dev/null 2>&1 &&
-     grep -Fqx '[mcp_servers.engram]' "$CONFIG_FILE" >/dev/null 2>&1; then
+  local instructions="$CODEX_HOME/engram-instructions.md"
+  local compact="$CODEX_HOME/engram-compact-prompt.md" normalized status=0
+  [ -f "$instructions" ] && [ -f "$compact" ] && [ -f "$CONFIG_FILE" ] &&
+    grep -Fqx '[mcp_servers.engram]' "$CONFIG_FILE" >/dev/null 2>&1 || {
+      printf incomplete
+      return
+    }
+  normalized="$(mktemp "${TMPDIR:-/tmp}/oso-engram-config.XXXXXX")" || {
+    printf temporary-file-unavailable
+    return
+  }
+  normalize_engram_codex_pointers \
+    "$CONFIG_FILE" "$normalized" \
+    "$CONFIG_MARKER_START" "$CONFIG_MARKER_END" \
+    model_instructions_file experimental_compact_prompt_file \
+    "$instructions" "$compact" \
+    "$SCRIPT_DIR/lib/toml-regions.awk" 1 || status=$?
+  if [ "$status" -eq 0 ] && cmp -s "$CONFIG_FILE" "$normalized"; then
     printf wired
   else
     printf incomplete
   fi
+  rm -f "$normalized"
 }
 
 impeccable_status() {
@@ -442,8 +457,49 @@ create_integrator_fixture() {
 }
 
 cleanup_smoke_on_exit() {
-  [ -z "${SMOKE_ROOT:-}" ] ||
-    remove_temporary_fixture "$SMOKE_ROOT" "$SMOKE_PARENT"
+  local cleanup_status=0
+  if [ -n "${SMOKE_MAIN:-}" ]; then
+    cleanup_smoke_project_config || cleanup_status=1
+  fi
+  if [ -n "${SMOKE_ROOT:-}" ]; then
+    remove_temporary_fixture "$SMOKE_ROOT" "$SMOKE_PARENT" || cleanup_status=1
+  fi
+  return "$cleanup_status"
+}
+
+cleanup_smoke_project_config() {
+  # ADR-0102 removes this run's exact table from the latest config, never by
+  # restoring a whole pre-smoke snapshot over unrelated concurrent changes.
+  [ -f "$CONFIG_FILE" ] && [ ! -L "$CONFIG_FILE" ] || return 1
+  local target_header source candidate attempt
+  target_header="[projects.\"$SMOKE_MAIN\"]"
+  attempt=1
+  while [ "$attempt" -le 3 ]; do
+    source="$(mktemp "$CODEX_HOME/.smoke-config-source.XXXXXX")" || return 1
+    candidate="$(mktemp "$CODEX_HOME/.smoke-config-clean.XXXXXX")" || {
+      rm -f "$source"
+      return 1
+    }
+    if ! cp -p "$CONFIG_FILE" "$source" ||
+       ! cp -p "$source" "$candidate" ||
+       ! awk -v action=remove-table -v target_header="$target_header" \
+         -f "$SCRIPT_DIR/lib/toml-regions.awk" "$source" > "$candidate"; then
+      rm -f "$source" "$candidate"
+      return 1
+    fi
+    if cmp -s "$source" "$candidate"; then
+      rm -f "$source" "$candidate"
+      return 0
+    fi
+    if cmp -s "$source" "$CONFIG_FILE"; then
+      mv "$candidate" "$CONFIG_FILE"
+      rm -f "$source"
+      return 0
+    fi
+    rm -f "$source" "$candidate"
+    attempt=$((attempt + 1))
+  done
+  return 1
 }
 
 run_integrator_fixture() {
@@ -452,7 +508,7 @@ run_integrator_fixture() {
   # than forcing the delegated role back behind workspace-write's .git guard.
   SMOKE_OUTPUT="$(codex exec --ephemeral --json --sandbox danger-full-access --color never \
     -C "$SMOKE_MAIN" --add-dir "$SMOKE_ROOT" \
-    "Delegate exactly one wave to the custom oso-integrator agent; never merge inline. Main checkout: $SMOKE_MAIN. BASE REF: $SMOKE_BASE_COMMIT. The complete wave has one slice, in this order: BRANCH oso-smoke-slice, WORKTREE PATH $SMOKE_WORKTREE. Return only the agent's completion status." 2>&1)" || return 1
+    "Delegate exactly one wave to the custom oso-integrator agent; never merge inline. Select agent_type oso-integrator explicitly and launch it with fresh context by setting fork_context=false; never use a full-history fork. Main checkout: $SMOKE_MAIN. BASE REF: $SMOKE_BASE_COMMIT. The complete wave has one slice, in this order: BRANCH oso-smoke-slice, WORKTREE PATH $SMOKE_WORKTREE. Return only the agent's completion status." 2>&1)" || return 1
   integrator_delegation_observed &&
     printf '%s' "$SMOKE_OUTPUT" | grep -F 'status: done' >/dev/null 2>&1 &&
     printf '%s' "$SMOKE_OUTPUT" | grep -F 'torn_down:' >/dev/null 2>&1 &&

@@ -2,6 +2,8 @@
 
 Codex gives every delegated harness step a custom role. The role is selected when the subagent is spawned; the role name, not a summary of its job, is the contract boundary.
 
+Every launch that selects an explicit `agent_type` starts with fresh context: set `fork_context=false`. ADR-0102 forbids combining a full-history fork with an explicit custom or built-in role; Codex rejects that shape because a full-history fork inherits the parent's agent type. The payload must therefore carry every path, ref, assignment, skill route, handoff field and decision the selected role needs.
+
 | The neutral body delegates | Custom role |
 | --- | --- |
 | apply one assignment | `oso-applier` |
@@ -16,7 +18,7 @@ Surface exploration is separate from those seven files: use Codex's built-in `ex
 
 The three operational roles carry their complete contract in their agent definition. Give them the payload the neutral body names. Because a Codex role cannot set its working directory, every applier and verifier payload includes the absolute WORKTREE PATH and BASE REF, and every integrator payload also includes the absolute main-checkout path beside the wave's branches and worktrees.
 
-The four reviewer roles are thin fresh-context adapters over the installed skills. Before spawning one, resolve its Codex `SKILL.md` to an absolute path. Give the role that path as `SKILL PATH` and give the skill's normal invocation payload as `ARGUMENTS`. The reviewer reads the wrapper and every bound neutral and Codex-platform file itself; the orchestrator never reads a forked judgment inline and never substitutes a summary for those files.
+The four reviewer roles are thin fresh-context adapters over the installed skills. Before spawning one, resolve its Codex `SKILL.md` to an absolute path. Give the role that path as `SKILL PATH` and give the skill's normal invocation payload as `ARGUMENTS`. The reviewer reads the wrapper and every bound neutral and Codex-platform file itself; the orchestrator never reads a delegated judgment inline and never substitutes a summary for those files.
 
 ## Completion handshake
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.18.4
+
+**Reinstall required** — Codex bootstrap composition and the installed shared delegation protocol changed. Pull the release and re-run `bash bootstrap/install-codex.sh --yes`; the transaction preserves Engram memories, personal Codex configuration and Oso plan artifacts.
+
+This patch closes the two failures and one side effect exposed by the first real 0.18.3 post-install verification:
+
+- Reinstall now normalizes Engram's two root instruction pointers after `engram setup codex` and before replacing Oso's managed TOML region. Engram 1.20.0 may move those keys inside that region when it inserts them before the first table; Oso now composes the two owners instead of deleting Engram's pointers.
+- An unregistered stale Engram marketplace cache is repaired only when it is a clean, non-symlinked Git checkout with the exact official remote and Engram manifests. The cache joins the installer transaction, registered ownership is untouched, and modified or unknown state fails closed instead of being removed.
+- Every explicit Codex `agent_type` launch now uses fresh context with `fork_context=false` and a complete payload. The authenticated integrator smoke demands that shape, avoiding Codex's rejection of a full-history fork combined with an explicit role.
+- The authenticated smoke removes only the exact temporary `[projects.*]` table Codex adds for its disposable repository. Cleanup reads the latest config, retries if it changed, preserves unrelated project tables and multiline decoys, and never restores a whole stale snapshot.
+
 ## 0.18.3
 
 **Reinstall required** — Codex user hooks and the installed `oso-state` runtime changed. Pull the release and re-run `bash bootstrap/install-codex.sh --yes`; existing Engram memories and approved plan snapshots under `~/.local/state/oso-code/plans/` remain outside the replacement transaction.

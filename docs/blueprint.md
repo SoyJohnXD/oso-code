@@ -180,14 +180,18 @@ Three properties of the amendment log these files replace are facts to carry for
 
 - [0101](decisions/0101-codex-native-approval-and-operational-plan-artifacts.md) — Codex native approval drives immutable and operational plan artifacts
 
+**2026-08-04 — codex-post-install-repair**
+
+- [0102](decisions/0102-codex-post-install-repair-is-bounded-and-profile-launches-are-fresh.md) — Codex post-install repair is bounded and explicit profile launches are fresh
+
 ## Foundational decisions
 
 | Decision | Choice | Rationale |
 |---|---|---|
 | Platform | Claude Code and Codex as first-class adapters over neutral behavioral bodies (ADR-0096) | One harness contract; host tools, lifecycle and paths stay in their own bindings |
-| Distribution | One release: a native Claude plugin plus a Codex skills plugin and installer-owned roles, hooks, bounded config leaves and MCP wiring (ADR-0096, ADR-0098, ADR-0099) | Codex's plugin schema cannot carry or pre-trust every runtime surface; the installer verifies its own leaves and migrates only its exact earlier checkout hook without annexing shared host tables or foreign hook owners |
+| Distribution | One release: a native Claude plugin plus a Codex skills plugin and installer-owned roles, hooks, bounded config leaves and MCP wiring (ADR-0096, ADR-0098, ADR-0099, ADR-0102) | Codex's plugin schema cannot carry or pre-trust every runtime surface; the installer verifies its own leaves, composes Engram's root pointers, and repairs only exact Oso/Engram state without annexing shared host tables or foreign owners |
 | Plan state | Engram for semantic recall; Codex additionally keeps immutable approval snapshots and mutable operational plans below `~/.local/state/oso-code/plans/` (ADR-0101) — no files inside project repos | Clean projects, durable per-machine execution evidence, and bounded hot amendments without rewriting what was approved |
-| Enforcement | Native Plan Mode plus host approval adapter, state gates and prompt guidance (ADR-0096, ADR-0101) | Runtime gates read state; Codex requires native Plan Mode before skill entry and binds the native approval prompt through a versioned marker and exact pending digest |
+| Enforcement | Native Plan Mode plus host approval adapter, state gates and prompt guidance (ADR-0096, ADR-0101, ADR-0102) | Runtime gates read state; Codex requires native Plan Mode before skill entry, binds the native approval prompt through an exact pending digest, and launches explicit delegated profiles with fresh complete context |
 | Repos | This monorepo; legacy repos harvested then archived | Atomic versioning of rubric + gate + skill |
 | Context budget | Each host's always-loaded global guidance ≤ 2k tokens | Behavior moves to on-demand skills; adding a second adapter does not duplicate the harness into startup context |
 | Reference | gentle-ai kept as prompting reference only | The system works; oso-code is tailored, not a fork |

@@ -57,7 +57,7 @@ Then restart Claude Code.
 
 ### Codex
 
-The Codex path requires git and Node.js/npm. The installer pins the verified floor exactly — Codex `0.146.0`, never `@latest` — and transactionally installs the plugin, rendered user hooks, seven agent roles, bounded `config.toml` ownership blocks, MCP wiring, git gate, and mounted Impeccable skill. It preserves personal `[projects.*]` configuration and unrelated keys in shared tables such as `[features]`, and backs up every artifact it replaces.
+The Codex path requires git and Node.js/npm. The installer pins the verified floor exactly — Codex `0.146.0`, never `@latest` — and transactionally installs the plugin, rendered user hooks, seven agent roles, bounded `config.toml` ownership blocks, MCP wiring, git gate, and mounted Impeccable skill. It preserves personal `[projects.*]` configuration and unrelated keys in shared tables such as `[features]`, and backs up every artifact it replaces. Reinstall also composes Engram's root instruction pointers with Oso's region and repairs only an exact clean official Engram marketplace cache that Codex left unregistered; modified, symlinked or unknown cache state is preserved and refused (ADR-0102).
 
 ```bash
 bash bootstrap/install-codex.sh
@@ -66,7 +66,7 @@ codex login                       # first install only; skip when already authen
 bash bootstrap/verify-codex.sh
 ```
 
-Until the `/hooks` review is complete the files are installed but their runtime rail is not enforcing. `verify-codex.sh` checks the complete local install and finishes with `passed: N, failed: M`. Its authenticated `codex exec` integrator/delegation smoke is intentionally local: CI uses fixtures and never logs in or executes a real Codex session. The smoke grants its disposable parent the integrator's `danger-full-access` because Codex propagates live parent sandbox overrides to children, then requires the delegated merge and teardown as observable Git effects inside a temporary repository.
+Until the `/hooks` review is complete the files are installed but their runtime rail is not enforcing. `verify-codex.sh` checks the complete local install and finishes with `passed: N, failed: M`. Its authenticated `codex exec` integrator/delegation smoke is intentionally local: CI uses fixtures and never logs in or executes a real Codex session. The smoke grants its disposable parent the integrator's `danger-full-access` because Codex propagates live parent sandbox overrides to children, launches the explicit role with fresh context, then requires the delegated merge and teardown as observable Git effects inside a temporary repository. Codex may register that disposable repository despite `--ephemeral`; the verifier removes only that run's exact project table from the latest config and preserves every unrelated entry (ADR-0102).
 
 If you are migrating a pre-release Gentle/Oso Codex setup, the optional one-time full reset is deliberately separate from installation. Read [the purge and restore procedure](docs/codex-purge-and-restore.md) before running it; it backs up complete `~/.codex` and `~/.agents` trees with verified hashes and can restore them without overwriting existing roots. A machine already reset, reinstalled, and logged in should skip both purge and login: run the oso installer, trust its hooks, then run the verifier.
 
