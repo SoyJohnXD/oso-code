@@ -3140,7 +3140,11 @@ cp "$PLUGIN/hooks/publish-subagent-handoff.sh" "$PLUGIN/hooks/lib.sh" "$PLUGIN/h
 cp "$PLUGIN/bin/oso-state" "$HANDOFF_RUNTIME/bin/"
 chmod +x "$HANDOFF_RUNTIME/hooks/publish-subagent-handoff.sh" "$HANDOFF_RUNTIME/bin/oso-state"
 assert_equals "the runtime fallback regression PATH cannot resolve bare oso-state" \
-  "missing" "$(PATH="$HANDOFF_NO_STATE_PATH" command -v oso-state >/dev/null 2>&1 && echo present || echo missing)"
+  "missing" "$(
+    PATH="$HANDOFF_NO_STATE_PATH"
+    hash -r
+    command -v oso-state >/dev/null 2>&1 && echo present || echo missing
+  )"
 fixed_marker_payload="$(printf '{\"session_id\":\"%s\",\"cwd\":\"%s\",\"hook_event_name\":\"SubagentStop\",\"turn_id\":\"turn-fixed-marker\",\"agent_id\":\"agent-fixed-marker\",\"agent_type\":\"oso-verifier\",\"agent_transcript_path\":\"%s\",\"stop_hook_active\":false,\"last_assistant_message\":\"oso-handoff: v=1 slice=slice-fixed-marker attempt=2\\nevidence: the named check is green\\nverdict: pass\"}' \
   "payload-native-uuid-7d1a-4d1e-bf19" "$HANDOFF_REPO" "$TEST_HOME/agent-fixed-marker.jsonl")"
 unset OSO_STATE_BIN
