@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.18.1
+
+**Reinstall required** — `bootstrap/` changed. Pull the release and re-run `bash bootstrap/install-codex.sh --yes`; existing Engram memories remain in `~/.engram` and are not replaced.
+
+This patch closes the runtime defects found during the first clean Codex installation of 0.18.0. Fallow, repository state, delegated handoffs and Engram now survive the real user-hook environment rather than only the isolated installer fixtures:
+
+- Codex resolves `fallow-mcp` from `PATH` or the user's Cargo bin directory and writes the reachable absolute command into its managed config. The same profile grants the oso-code state root and worktree root while retaining the secret-file denials.
+- The runtime allowlist recognizes Codex's normalized `collaboration*` tool names without dropping the compatibility aliases, so armed apply/verify flows can launch, message, wait on and inspect their agents while unknown tools still fail closed.
+- `SubagentStop` publishes receipts under the fixed `OSO_AGENT` marker and resolves `oso-state` from the installed runtime when the hook process receives neither the binary override nor a useful `PATH`.
+- `bootstrap/repair-engram-codex.sh` backs up SQLite and a portable JSON export, verifies and installs Engram 1.20.0, rewires Codex, normalizes Engram's root pointers outside oso-code's managed TOML region, validates the candidate config through Codex, and finishes on the authenticated 16-check verifier. Its fixture rail rejects malformed ownership and physical symlink escapes before any operator path can be changed.
+- Regression coverage grows to 976 passing cases, including real installed-layout handoffs, Cargo-home fallow discovery, normalized collaboration operations, Engram setup ordering, idempotent repair and fail-closed filesystem containment.
+
 ## 0.18.0
 
 **Reinstall required** — `bootstrap/` changed, and neither host's plugin payload carries all of its installed runtime: pull the repo and re-run `bash bootstrap/install.sh` for Claude Code or `bash bootstrap/install-codex.sh` for Codex.
