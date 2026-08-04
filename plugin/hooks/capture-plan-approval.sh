@@ -7,7 +7,7 @@ set -euo pipefail
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HOOK_DIR/lib.sh"
 
-PLAN_MARKER='oso-plan-approval: v=1 token=APPROVE_OSO_PLAN'
+PLAN_MARKER='<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->'
 
 finish_hook() {
   printf '{}\n'
@@ -47,7 +47,7 @@ last_line="${message##*$'\n'}"
 # on the final decoded line identifies a harness presentation; prose that merely
 # mentions the protocol earlier is still an ordinary response.
 case "$last_line" in
-  'oso-plan-approval:'*) ;;
+  '<!-- oso-plan-approval:'*) ;;
   *) finish_hook ;;
 esac
 
@@ -78,7 +78,7 @@ permission_mode="$(json_field "$payload" permission_mode)"
   stop_block 'oso-code: the approval document must be presented while Codex is still in Plan Mode.' \
     plan-approval-capture-blocked "$session_id"
 
-marker_lines="$(printf '%s\n' "$message" | grep -c '^oso-plan-approval:' || true)"
+marker_lines="$(printf '%s\n' "$message" | grep -c '^<!-- oso-plan-approval:' || true)"
 exact_lines="$(printf '%s\n' "$message" | grep -cxF "$PLAN_MARKER" || true)"
 raw_marker_is_final=false
 case "$raw_message" in *"$PLAN_MARKER") raw_marker_is_final=true ;; esac
@@ -93,10 +93,10 @@ digest="$(sha256_text "$raw_message")" ||
   stop_block 'oso-code: no SHA-256 implementation is available to bind this approval document.' \
     plan-approval-capture-blocked "$session_id"
 state_bin="${OSO_STATE_BIN:-oso-state}"
-if ! (cd "$cwd" && "$state_bin" --session "$session_id" set \
-  mode=plan active_slice=none verify_green=false \
-  plan_approval=pending "plan_approval_digest=${digest}" >/dev/null 2>&1); then
-  stop_block 'oso-code: the approval document could not be recorded; execution remains blocked.' \
+plan_document="${message%$'\n'$PLAN_MARKER}"
+if ! printf '%s' "$plan_document" | (cd "$cwd" && "$state_bin" --session "$session_id" \
+  capture-plan "$digest" >/dev/null 2>&1); then
+  stop_block 'oso-code: the approval document or its plan artifacts could not be recorded; execution remains blocked.' \
     plan-approval-capture-blocked "$session_id"
 fi
 

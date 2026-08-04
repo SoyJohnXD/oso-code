@@ -11,7 +11,7 @@
 
 # Workflow
 
-- Substantial changes (features, refactors, anything needing architecture or contract decisions): the operator starts `$oso-code:plan`.
+- Substantial changes (features, refactors, anything needing architecture or contract decisions): the operator enters native `/plan` (or Shift+Tab), then starts `$oso-code:plan`.
 - Small, quickly verifiable changes: the operator starts `$oso-code:quick`.
 - Something broke (a bug, a crash, a failing behavior): the operator starts `$oso-code:debug`.
 - Every change closes at zero warnings. `$oso-code:plan` commits each slice as it lands; never push or open a PR unless asked.

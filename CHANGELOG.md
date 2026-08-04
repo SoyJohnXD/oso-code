@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.18.3
+
+**Reinstall required** — Codex user hooks and the installed `oso-state` runtime changed. Pull the release and re-run `bash bootstrap/install-codex.sh --yes`; existing Engram memories and approved plan snapshots under `~/.local/state/oso-code/plans/` remain outside the replacement transaction.
+
+This patch repairs the first live Codex plan lifecycle instead of requiring the broken rail to approve itself:
+
+- `$oso-code:plan` now fails immediately outside Codex native Plan Mode, through both the `UserPromptSubmit` hook and the skill wrapper fallback. Enter `/plan` or use Shift+Tab first; Oso never pretends it can switch the client mode itself.
+- Codex's native approval prompt, `Implement the plan.`, replaces the duplicate `APPROVE OSO PLAN` interaction. The common native phrase is consumed only for a same-repository, same-session pending digest and remains ordinary conversation everywhere else.
+- A Plan-Mode `Stop` persists the human document outside the repository. Native approval promotes `presented-<digest>.md` to immutable `approved-<digest>.md`; `current.md` is the operational plan and carries a revision counter.
+- Explicit operator-requested hot slices may amend `current.md` and the Engram plan without another Plan-Mode cycle when they preserve frozen intent, scope and ledger decisions. Material changes are deferred to roadmap work by default or return for fresh native approval when required by the active outcome.
+- Claude Code keeps its existing `ExitPlanMode` adapter and receives no Oso-owned plan artifact or approval-hook change.
+
 ## 0.18.2
 
 No reinstall is required for an existing 0.18.1 installation. This release clears Bash 3.2's inherited command hash before asserting that the isolated SubagentStop fixture cannot resolve a bare `oso-state`; the production sibling-binary fallback and its installed bytes are unchanged. Native Bash, Bash 3.2 and Windows now judge the same fresh-`PATH` condition instead of letting Bash 3.2's cached lookup produce a false failure.

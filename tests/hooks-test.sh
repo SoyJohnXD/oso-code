@@ -27,7 +27,9 @@ state_key_of() {
   printf '%s' "${digest%% *}"
 }
 STATE_DIR="$HOME/.local/state/oso-code"
-REPO_STATE="$STATE_DIR/$(state_key_of "$REPO_ROOT").state"
+REPO_KEY="$(state_key_of "$REPO_ROOT")"
+REPO_STATE="$STATE_DIR/${REPO_KEY}.state"
+REPO_PLAN_DIR="$STATE_DIR/plans/$REPO_KEY"
 
 pass=0
 fail=0
@@ -758,11 +760,10 @@ oso-state --session "$SESSION" clear
 
 # --- Runtime: Codex's plan approval is a three-hook hard gate ---------------
 # Stop observes exactly the repaso-first document Codex is about to finish with,
-# UserPromptSubmit authenticates the operator's next whole message, and the
-# PreToolUse catch-all keeps even release-known local tools closed in between.
-# The public state is deliberately small: pending/approved, the digest of the
-# exact raw JSON string value Stop observed on the wire (escapes and marker
-# included), and the sanitized hook session.
+# UserPromptSubmit composes Codex's native approval prompt with the pending
+# digest, and the PreToolUse catch-all keeps even release-known local tools
+# closed in between. The state also names an immutable snapshot plus one mutable
+# operational plan outside the repository.
 PLAN_STOP_HOOK="$PLUGIN/hooks/capture-plan-approval.sh"
 PLAN_PROMPT_HOOK="$PLUGIN/hooks/approve-plan-token.sh"
 
@@ -824,17 +825,17 @@ assert_equals "a markerless Stop records no harness event" \
 # cannot silently publish a different plan. An exact marker earlier in ordinary
 # prose is not a rail attempt and stays invisible.
 run_hook "$PLAN_STOP_HOOK" \
-  "$(codex_stop_input plan "$SESSION" 'Repaso\noso-plan-approval: v=1 token=APPROVE_OSO_PLAN\ntrailing text')"
+  "$(codex_stop_input plan "$SESSION" 'Repaso\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\ntrailing text')"
 assert_after_hook "an exact marker outside the final line stays globally invisible" \
   [ "$hook_stdout" = '{}' ]
 assert_equals "a non-final marker writes no approval state" \
   absent "$([ ! -e "$REPO_STATE" ] && printf absent || printf present)"
 
 for malformed_stop_case in \
-  'Repaso\noso-plan-approval: v=1 token=WRONG_TOKEN' \
-  'Repaso\noso-plan-approval: v=1 token=APPROVE_OSO_PLAN\n' \
-  'oso-plan-approval: v=1 token=APPROVE_OSO_PLAN' \
-  'Repaso\noso-plan-approval: v=1 token=APPROVE_OSO_PLAN\noso-plan-approval: v=1 token=APPROVE_OSO_PLAN'; do
+  'Repaso\n<!-- oso-plan-approval: v=2 action=WRONG_ACTION -->' \
+  'Repaso\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\n' \
+  '<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->' \
+  'Repaso\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->'; do
   run_hook "$PLAN_STOP_HOOK" "$(codex_stop_input plan "$SESSION" "$malformed_stop_case")"
   assert_after_hook "a malformed, terminal-LF, marker-only or duplicate rail blocks Stop" \
     hook_returned_block
@@ -843,30 +844,30 @@ for malformed_stop_case in \
 done
 
 run_hook "$PLAN_STOP_HOOK" \
-  "$(codex_stop_input default "$SESSION" 'Repaso\noso-plan-approval: v=1 token=APPROVE_OSO_PLAN')"
+  "$(codex_stop_input default "$SESSION" 'Repaso\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->')"
 assert_after_hook "a valid plan marker outside Plan Mode blocks Stop" \
   hook_returned_block
 assert_equals "a wrong-mode Stop writes no approval state" \
   absent "$([ ! -e "$REPO_STATE" ] && printf absent || printf present)"
 
 run_hook "$PLAN_STOP_HOOK" \
-  "$(codex_stop_input default "$SESSION" 'Repaso\noso-plan-approval: v=1 token=APPROVE_OSO_PLAN' true)"
+  "$(codex_stop_input default "$SESSION" 'Repaso\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->' true)"
 assert_after_hook "a repeated active Stop rail ends instead of continuing forever" \
   hook_returned_continue_false
 assert_equals "an active Stop retry writes no approval state" \
   absent "$([ ! -e "$REPO_STATE" ] && printf absent || printf present)"
 
 run_hook "$PLAN_STOP_HOOK" \
-  "$(codex_stop_input plan "$SESSION" 'Repaso corrected\noso-plan-approval: v=1 token=APPROVE_OSO_PLAN' true)"
+  "$(codex_stop_input plan "$SESSION" 'Repaso corrected\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->' true)"
 assert_after_hook "an active Stop retry can capture a corrected valid plan" \
   [ "$hook_stdout" = '{}' ]
 assert_equals "a corrected active Stop retry publishes pending state" pending \
   "$(oso-state --session "$SESSION" get plan_approval)"
 oso-state --session "$SESSION" clear
 
-# The approval literal alone is harness-shaped even before a plan exists; fail
-# closed rather than manufacturing approval. Ordinary prompts are globally
-# invisible when no harness run is pending.
+# Skill entry requires native Plan Mode before phase 0. The native approval
+# phrase is common Codex vocabulary, so it remains globally invisible when no
+# Oso document is pending.
 run_hook "$PLAN_PROMPT_HOOK" \
   "$(codex_prompt_input default "$SESSION" 'ordinary question outside oso-code')"
 assert_after_hook "an ordinary prompt outside the harness stays invisible" \
@@ -875,20 +876,32 @@ assert_equals "an ordinary prompt outside the harness writes no state" \
   absent "$([ ! -e "$REPO_STATE" ] && printf absent || printf present)"
 
 run_hook "$PLAN_PROMPT_HOOK" \
-  "$(codex_prompt_input default "$SESSION" 'APPROVE OSO PLAN')"
-assert_after_hook "the exact approval token with no pending plan is blocked" \
+  "$(codex_prompt_input default "$SESSION" '$oso-code:plan repair approval')"
+assert_after_hook "a Codex plan skill invocation outside native Plan Mode is rejected early" \
   hook_returned_block
-assert_equals "a no-pending approval attempt writes no state" \
+assert_equals "a rejected Default-mode plan invocation writes no state" \
   absent "$([ ! -e "$REPO_STATE" ] && printf absent || printf present)"
 
 run_hook "$PLAN_PROMPT_HOOK" \
-  "$(codex_prompt_input plan "$SESSION" 'APPROVE OSO PLAN')"
-assert_after_hook "the exact approval token while still in Plan Mode is blocked" \
-  hook_returned_block
-assert_equals "a Plan Mode approval attempt writes no state" \
+  "$(codex_prompt_input plan "$SESSION" '$oso-code:plan repair approval')"
+assert_after_hook "the same plan skill invocation is allowed in native Plan Mode" \
+  [ "$hook_stdout" = '{}' ]
+
+run_hook "$PLAN_PROMPT_HOOK" \
+  "$(codex_prompt_input default "$SESSION" 'Implement the plan.')"
+assert_after_hook "the native approval phrase with no pending Oso plan stays invisible" \
+  [ "$hook_stdout" = '{}' ]
+assert_equals "a no-pending native approval writes no state" \
   absent "$([ ! -e "$REPO_STATE" ] && printf absent || printf present)"
 
-first_plan='Repaso de cambios\nFull slice plan: alpha\noso-plan-approval: v=1 token=APPROVE_OSO_PLAN'
+run_hook "$PLAN_PROMPT_HOOK" \
+  "$(codex_prompt_input plan "$SESSION" 'Implement the plan.')"
+assert_after_hook "the native phrase with no pending plan is also invisible in Plan Mode" \
+  [ "$hook_stdout" = '{}' ]
+assert_equals "a no-pending Plan Mode phrase writes no state" \
+  absent "$([ ! -e "$REPO_STATE" ] && printf absent || printf present)"
+
+first_plan='Repaso de cambios\nFull slice plan: alpha\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->'
 first_plan_digest="$(sha256_text "$first_plan")"
 run_hook "$PLAN_STOP_HOOK" "$(codex_stop_input plan "$SESSION" "$first_plan")"
 assert_after_hook "one exact final marker captures the Plan Mode document" \
@@ -905,6 +918,36 @@ esac
 assert_equals "the captured plan digest is exactly 64 lowercase hex" valid "$digest_shape"
 assert_equals "Stop records the sanitized session that presented the plan" \
   "$SESSION" "$(oso-state --session "$SESSION" get session)"
+first_presented_file="$REPO_PLAN_DIR/presented-${first_plan_digest}.md"
+first_approved_file="$REPO_PLAN_DIR/approved-${first_plan_digest}.md"
+first_current_file="$REPO_PLAN_DIR/current.md"
+first_plan_document="$(printf 'Repaso de cambios\nFull slice plan: alpha')"
+assert_equals "Stop names the pending immutable snapshot in state" \
+  "$first_presented_file" "$(oso-state --session "$SESSION" get plan_snapshot_file)"
+assert_equals "Stop names the operational plan in state" \
+  "$first_current_file" "$(oso-state --session "$SESSION" get plan_current_file)"
+assert_equals "a newly captured operational plan starts at revision zero" \
+  0 "$(oso-state --session "$SESSION" get plan_revision)"
+assert_equals "the pending snapshot contains the human plan without the internal marker" \
+  "$first_plan_document" "$(cat "$first_presented_file" 2>/dev/null || true)"
+assert_equals "the operational plan starts from the same human document" \
+  "$first_plan_document" "$(cat "$first_current_file" 2>/dev/null || true)"
+assert_equals "the repository plan directory is owner-only" 0700 \
+  "$([ -d "$REPO_PLAN_DIR" ] && find "$REPO_PLAN_DIR" -maxdepth 0 -type d -perm 0700 -print | grep -q . && printf 0700 || printf wrong)"
+assert_equals "pending plan artifacts are owner-only" 0600 \
+  "$([ -f "$first_presented_file" ] && [ -f "$first_current_file" ] && \
+      find "$first_presented_file" "$first_current_file" -maxdepth 0 -type f -perm 0600 -print | \
+        wc -l | tr -d ' ' | grep -qx 2 && printf 0600 || printf wrong)"
+assert_equals "the hidden marker is absent from both persisted plan artifacts" \
+  0 "$(grep -l 'oso-plan-approval:' "$first_presented_file" "$first_current_file" 2>/dev/null | wc -l | tr -d ' ')"
+pending_current_before_amendment="$(cat "$first_current_file")"
+if printf '%s' '### Premature slice' | oso-state --session "$SESSION" amend-plan premature >/dev/null 2>&1; then
+  echo "FAIL: amend-plan accepted a slice before native approval"; fail=$((fail + 1))
+else
+  echo "ok: amend-plan rejects a slice before native approval"; pass=$((pass + 1))
+fi
+assert_equals "a rejected premature amendment leaves current.md unchanged" \
+  "$pending_current_before_amendment" "$(cat "$first_current_file")"
 
 # A normal non-plan reply does not silently approve or cancel. A Plan Mode reply
 # from the same pending session means the operator requested replanning, so the
@@ -922,12 +965,16 @@ assert_after_hook "same-session Plan Mode feedback invalidates the pending docum
   hook_returned_prompt_context
 assert_equals "Plan Mode feedback removes the stale approval state" \
   absent "$([ ! -e "$REPO_STATE" ] && printf absent || printf present)"
+assert_equals "feedback invalidation removes the unapproved presented snapshot" \
+  absent "$([ ! -e "$first_presented_file" ] && printf absent || printf present)"
+assert_equals "feedback invalidation removes the abandoned operational copy" \
+  absent "$([ ! -e "$first_current_file" ] && printf absent || printf present)"
 run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input Bash)" 0 '' \
   --allow "$UNKNOWN_TOOL_ALLOWLIST"
 assert_after_hook "replanning feedback reopens local read-only review calls" \
   [ -z "$hook_stdout" ]
 
-# Explicit cancellation is an abandonment rail, not a second approval token.
+# Explicit cancellation is an abandonment rail, not a second approval prompt.
 # It works before or after the UI mode toggle, but only for the pending session.
 run_hook "$PLAN_STOP_HOOK" "$(codex_stop_input plan "$SESSION" "$first_plan")"
 assert_after_hook "the plan can be re-presented after feedback invalidation" \
@@ -995,7 +1042,7 @@ run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input Bash)" 0 '' \
 assert_after_hook "an inconsistent pending mode still denies allowlisted tools" \
   hook_returned_deny
 run_hook "$PLAN_PROMPT_HOOK" \
-  "$(codex_prompt_input default "$SESSION" 'APPROVE OSO PLAN')"
+  "$(codex_prompt_input default "$SESSION" 'Implement the plan.')"
 assert_after_hook "an inconsistent pending mode cannot be approved" \
   hook_returned_block
 assert_equals "a rejected inconsistent approval does not mutate state" \
@@ -1006,33 +1053,34 @@ assert_after_hook "re-presenting repairs an inconsistent pending state" \
   [ "$hook_stdout" = '{}' ]
 pending_snapshot="$(approval_state_snapshot)"
 run_hook "$PLAN_PROMPT_HOOK" \
-  "$(codex_prompt_input futureMode "$SESSION" 'APPROVE OSO PLAN')"
+  "$(codex_prompt_input futureMode "$SESSION" 'Implement the plan.')"
 assert_after_hook "an unknown permission mode cannot approve" \
   hook_returned_block
 assert_equals "an unknown permission mode does not mutate pending state" \
   "$pending_snapshot" "$(approval_state_snapshot)"
 
 run_hook "$PLAN_PROMPT_HOOK" \
-  "$(codex_prompt_input plan "$SESSION" 'APPROVE OSO PLAN')"
-assert_after_hook "a pending plan still rejects its token in Plan Mode" \
+  "$(codex_prompt_input plan "$SESSION" 'Implement the plan.')"
+assert_after_hook "a pending plan still rejects the native phrase in Plan Mode" \
   hook_returned_block
-assert_equals "a blocked Plan Mode token does not mutate pending state" \
+assert_equals "a blocked Plan Mode phrase does not mutate pending state" \
   "$pending_snapshot" "$(approval_state_snapshot)"
 
 run_hook "$PLAN_PROMPT_HOOK" \
-  "$(codex_prompt_input default other-session 'APPROVE OSO PLAN')"
+  "$(codex_prompt_input default other-session 'Implement the plan.')"
 assert_after_hook "a different session cannot approve the pending document" \
   hook_returned_block
-assert_equals "a wrong-session token does not mutate pending state" \
+assert_equals "a wrong-session approval prompt does not mutate pending state" \
   "$pending_snapshot" "$(approval_state_snapshot)"
 
-for inexact_token in \
-  'APPROVE OSO PLAN!' \
-  ' APPROVE OSO PLAN' \
-  'APPROVE OSO PLAN ' \
-  'APPROVE OSO PLAN\n'; do
+for inexact_prompt in \
+  'Implement the plan' \
+  'Implement the plan.!' \
+  ' Implement the plan.' \
+  'Implement the plan. ' \
+  'Implement the plan.\n'; do
   run_hook "$PLAN_PROMPT_HOOK" \
-    "$(codex_prompt_input default "$SESSION" "$inexact_token")"
+    "$(codex_prompt_input default "$SESSION" "$inexact_prompt")"
   assert_equals "punctuation, whitespace or an escaped LF does not approve" pending \
     "$(oso-state --session "$SESSION" get plan_approval)"
 done
@@ -1042,14 +1090,67 @@ run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input Bash)" 0 '' \
 assert_after_hook "pending approval denies even an allowlisted local tool" \
   hook_returned_deny
 
+chmod 0644 "$first_presented_file"
+unsafe_artifact_snapshot="$(approval_state_snapshot)"
 run_hook "$PLAN_PROMPT_HOOK" \
-  "$(codex_prompt_input default "$SESSION" 'APPROVE OSO PLAN')"
-assert_after_hook "the exact Default-mode token approves its same-session plan" \
+  "$(codex_prompt_input default "$SESSION" 'Implement the plan.')"
+assert_after_hook "native approval rejects a non-private pending snapshot" \
+  hook_returned_block
+assert_equals "an unsafe artifact cannot mutate pending state" \
+  "$unsafe_artifact_snapshot" "$(approval_state_snapshot)"
+chmod 0600 "$first_presented_file"
+
+run_hook "$PLAN_PROMPT_HOOK" \
+  "$(codex_prompt_input default "$SESSION" 'Implement the plan.')"
+assert_after_hook "the exact Default-mode native phrase approves its same-session plan" \
   hook_returned_prompt_context
-assert_equals "the accepted token changes only the approval status" approved \
+assert_equals "the accepted native phrase changes only the approval status" approved \
   "$(oso-state --session "$SESSION" get plan_approval)"
 assert_equals "approval retains the digest of the presented document" \
   "$first_plan_digest" "$(oso-state --session "$SESSION" get plan_approval_digest)"
+assert_equals "native approval renames the immutable snapshot from presented to approved" \
+  "$first_approved_file" "$(oso-state --session "$SESSION" get plan_snapshot_file)"
+assert_equals "native approval removes the pending snapshot spelling" \
+  absent "$([ ! -e "$first_presented_file" ] && printf absent || printf present)"
+assert_equals "native approval preserves the immutable approved document" \
+  "$first_plan_document" "$(cat "$first_approved_file" 2>/dev/null || true)"
+
+approved_snapshot_before_amendment="$(cat "$first_approved_file")"
+hot_slice='### Slice 3 — approval regression\n\n- Goal: cover native approval.\n- Files: tests/hooks-test.sh\n- Verify: bash tests/hooks-test.sh\n- Depends-on: Slice 2'
+if printf '%b' "$hot_slice" | oso-state --session "$SESSION" amend-plan slice-3 >/dev/null 2>&1; then
+  echo "ok: an approved plan accepts one explicit in-scope hot slice"; pass=$((pass + 1))
+else
+  echo "FAIL: an approved plan rejected a valid hot slice"; fail=$((fail + 1))
+fi
+assert_equals "a hot slice increments the operational plan revision" \
+  1 "$(oso-state --session "$SESSION" get plan_revision)"
+assert_equals "a hot slice reopens the overall verification flag" \
+  false "$(oso-state --session "$SESSION" get verify_green)"
+case "$(cat "$first_current_file")" in
+  *'## Execution amendment — slice-3'*'Requested-by: operator'*'### Slice 3 — approval regression'*)
+    echo "ok: the operational plan records the dated in-scope amendment"; pass=$((pass + 1)) ;;
+  *)
+    echo "FAIL: the operational plan does not contain the hot slice amendment"; fail=$((fail + 1)) ;;
+esac
+assert_equals "a hot slice never mutates the immutable approved snapshot" \
+  "$approved_snapshot_before_amendment" "$(cat "$first_approved_file")"
+if printf '%s' 'invalid slice' | oso-state --session "$SESSION" amend-plan '../escape' >/dev/null 2>&1; then
+  echo "FAIL: amend-plan accepted an unsafe slice id"; fail=$((fail + 1))
+else
+  echo "ok: amend-plan rejects an unsafe slice id"; pass=$((pass + 1))
+fi
+if printf '%s' '### Wrong session' | oso-state --session other-session amend-plan slice-4 >/dev/null 2>&1; then
+  echo "FAIL: amend-plan accepted a different session"; fail=$((fail + 1))
+else
+  echo "ok: amend-plan rejects a different session"; pass=$((pass + 1))
+fi
+approved_state_after_amendment="$(approval_state_snapshot)"
+run_hook "$PLAN_PROMPT_HOOK" \
+  "$(codex_prompt_input default "$SESSION" 'Implement the plan.')"
+assert_after_hook "the native phrase becomes ordinary again after approval" \
+  [ "$hook_stdout" = '{}' ]
+assert_equals "a repeated native phrase cannot mutate approved state" \
+  "$approved_state_after_amendment" "$(approval_state_snapshot)"
 
 run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input Bash)" 0 '' \
   --allow "$UNKNOWN_TOOL_ALLOWLIST"
@@ -1062,7 +1163,7 @@ assert_after_hook "approval does not open a tool absent from the release allowli
 
 # Any changed byte before the marker is a new document. Stop must replace the
 # approved state with a fresh pending digest, which immediately closes tools.
-second_plan='Repaso de cambios\nFull slice plan: beta\noso-plan-approval: v=1 token=APPROVE_OSO_PLAN'
+second_plan='Repaso de cambios\nFull slice plan: beta\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->'
 second_plan_digest="$(sha256_text "$second_plan")"
 run_hook "$PLAN_STOP_HOOK" "$(codex_stop_input plan "$SESSION" "$second_plan")"
 assert_after_hook "a materially changed plan is captured again" \
@@ -1969,7 +2070,7 @@ assert_equals "the frozen Codex ledger carries exactly its five release losses" 
   "5" "$codex_loss_rows"
 assert_says_every "the frozen Codex ledger names every loss and remaining boundary" \
   "$codex_loss_ledger" <<'CODEX_FROZEN_LOSS_TABLE'
-Plan approval is not Codex's native approval UI
+Plan approval composes native UI with a narrower local rail
 Hosted tools
 specialized paths
 `write_stdin`
@@ -1985,10 +2086,9 @@ CODEX_FROZEN_LOSS_TABLE
 # S7's Codex approval prose has a runtime gate behind it, but the hook cannot
 # repair an orchestrator that never presents the plan or tells the operator how
 # to cross Plan Mode's read-only boundary. Read only the platform section that
-# defines that handoff so a token in a placeholder, wrapper or unrelated warning
-# cannot make the contract look complete. Extract distinct approval-shaped
-# literals independently: repeating one exact token is fine; alternatives are
-# not.
+# defines that handoff so a phrase in a placeholder, wrapper or unrelated warning
+# cannot make the contract look complete. Extract the one native approval phrase
+# independently; repeating it is fine, alternatives are not.
 CODEX_PLAN_PLATFORM="$PLUGIN/skills/_shared/platform/codex/plan.md"
 codex_approval_section="$(sed -n \
   '/^## The approval gate$/,/^## /p' "$CODEX_PLAN_PLATFORM" 2>/dev/null)"
@@ -1998,30 +2098,33 @@ approval_literal_candidates() {
       rest = $0
       while (match(rest, /`[^`]+`/)) {
         literal = substr(rest, RSTART + 1, RLENGTH - 2)
-        if (literal ~ /^APPROVE [A-Z][A-Z ]* PLAN$/) print literal
+        if (literal == "Implement the plan.") print literal
         rest = substr(rest, RSTART + RLENGTH)
       }
     }
   ' | sort -u
 }
 
-assert_equals "the Codex approval section names one literal token, not examples or alternatives" \
-  "APPROVE OSO PLAN" "$(approval_literal_candidates "$codex_approval_section")"
-assert_says_every "the Codex approval gate presents one turn-ending, exact-token handoff" \
+assert_equals "the Codex approval section names one native phrase, not alternatives" \
+  "Implement the plan." "$(approval_literal_candidates "$codex_approval_section")"
+assert_says_every "the Codex approval gate composes native approval with durable artifacts" \
   "$codex_approval_section" <<'CODEX_APPROVAL_GATE_TABLE'
-`APPROVE OSO PLAN`
+`Implement the plan.`
 turn-ending
 repaso first
 full detail
 Plan Mode
-toggle Plan Mode off
+`$oso-code:plan`
+`/plan`
+`permission_mode`
+native plan approval control
 whole user prompt
 case-sensitive
 Punctuation
 code fence
 surrounding text
 not approval
-`oso-plan-approval: v=1 token=APPROVE_OSO_PLAN`
+`<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->`
 internal
 `Stop`
 `UserPromptSubmit`
@@ -2030,6 +2133,13 @@ abandon
 not a second approval gate
 feedback
 invalidates
+`presented-<approval digest>.md`
+`approved-<approval digest>.md`
+`current.md`
+amend-plan <slice-id>
+`mem_update`
+frozen intent and scope
+roadmap
 CODEX_APPROVAL_GATE_TABLE
 case "$codex_approval_section" in
   *'PLACEHOLDER'*)
@@ -2063,7 +2173,7 @@ assert_equals "the parity ledger has exactly one approval-gate row" \
   "1" "$(printf '%s\n' "$approval_parity_row" | awk 'NF { rows++ } END { print rows + 0 }')"
 assert_says_every "the approval row records the enforced gate and its hosted-tool limit" \
   "$approval_parity_row" <<'APPROVAL_PARITY_TABLE'
-`APPROVE OSO PLAN`
+`Implement the plan.`
 `Stop`
 `UserPromptSubmit`
 `PreToolUse`
@@ -6673,6 +6783,8 @@ assert_equals "the Codex verifier exercises multiple failures before its footer"
   "multiple" "$([ "$(grep -c '^FAIL:' "$CODEX_VERIFY_OUTPUT" || true)" -ge 2 ] && echo multiple || echo too-few)"
 assert_equals "config decoys outside an owned region cannot satisfy verification" \
   "malformed" "$(sed -n 's/^FAIL: managed Codex config — expected valid, got //p' "$CODEX_VERIFY_OUTPUT")"
+assert_equals "the Codex verifier exercises the installed plan artifact contract" \
+  "1" "$(grep -c '^FAIL: installed Codex plan artifact round-trip' "$CODEX_VERIFY_OUTPUT" || true)"
 assert_equals "the Codex verifier always reaches exactly one final summary" \
   "1" "$(printf '%s\n' "$codex_verify_report" | grep -c '^passed:' || true)"
 codex_authenticated_calls="$(grep -Ec '^(login([[:space:]]|$)|exec([[:space:]]|$))' "$CODEX_VERIFY_CALLS" || true)"

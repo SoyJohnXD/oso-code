@@ -26,14 +26,14 @@ require_session "$session_id"
 state_file="$(state_file_for "$(json_field "$input" cwd)")"
 require_readable_state "$state_file" "$session_id"
 
-# The Stop hook arms this boundary before it asks the operator for the literal
-# approval token. While it is pending, even a normally allowlisted local tool is
-# an execution attempt: UserPromptSubmit is the only event allowed to open it.
+# The Stop hook arms this boundary before Codex offers its native plan approval.
+# While it is pending, even a normally allowlisted local tool is an execution
+# attempt: UserPromptSubmit is the only event allowed to open it.
 # The pending flag is sufficient by itself, so a torn or manually corrupted
 # state cannot open the gate merely by disagreeing about its mode.
 if state_says "$state_file" '^plan_approval=pending$' "$session_id"; then
   deny \
-    'oso-code: plan approval is pending. Switch to an execution permission mode and send exactly APPROVE OSO PLAN, or send exactly CANCEL OSO PLAN to abandon it, before using local tools.' \
+    'oso-code: plan approval is pending. Use Codex native "Implement the plan." approval, or send exactly CANCEL OSO PLAN to abandon it, before using local tools.' \
     plan-approval-pending-denied "$session_id"
 fi
 

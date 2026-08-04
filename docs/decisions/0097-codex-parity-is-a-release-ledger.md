@@ -12,13 +12,13 @@ Source: this change (Codex port), ledger decision D17; recorded with the release
 
 The ledger must keep these five degradations visible until evidence removes them:
 
-1. Codex plan approval is a local hook rail, not its native approval UI. Hosted tools, specialized paths and `write_stdin` on an existing process do not cross the pending `PreToolUse` boundary.
+1. Codex plan approval composes its native UI signal with a local digest, artifact and `PreToolUse` rail (ADR-0101). Hosted tools, specialized paths and `write_stdin` on an existing process do not cross that pending boundary.
 2. Claude applies Oso's voice as an output style. Codex receives it as global `AGENTS.md` guidance, which context compaction may weaken.
 3. Codex security review uses `codex review` under the dedicated security subagent, not Anthropic's native `security-review` skill.
 4. Runtime state is keyed by repository, so two agent sessions in one repository share it.
 5. The authenticated Codex smoke cannot run in ordinary CI; `bootstrap/verify-codex.sh` runs it locally when authentication is available.
 
-An implementation workaround does not erase a loss. Closing live processes makes the approval rail safer but does not make it the native UI; installing user hooks restores the runtime behavior but does not make hooks part of the plugin package. The ledger states the boundary after mitigation.
+An implementation workaround does not erase a loss. Reusing Codex's native approval interaction removes the duplicate UX but does not give hosted or specialized tools the local hook rail; installing user hooks restores the runtime behavior but does not make hooks part of the plugin package. The ledger states the boundary after mitigation.
 
 ## Release rule
 

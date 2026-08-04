@@ -251,7 +251,7 @@ remove_temporary_fixture() {
   [ -n "$fixture_root" ] && [ "$fixture_root" != / ] || return 1
   [ "$(dirname "$fixture_root")" = "$fixture_parent" ] || return 1
   case "$(basename "$fixture_root")" in
-    oso-codex-smoke.*|oso-state-probe.*|oso-git-hook-probe.*) rm -rf "$fixture_root" ;;
+    oso-codex-smoke.*|oso-state-probe.*|oso-plan-probe.*|oso-git-hook-probe.*) rm -rf "$fixture_root" ;;
     *) return 1 ;;
   esac
 }
@@ -289,6 +289,50 @@ state_round_trip_status() {
         HOME="$probe_root" "$RUNTIME_ROOT/bin/oso-state" --session 1 clear >/dev/null 2>&1
     )" ||
       probe_value="round-trip-failed:${probe_value:-empty}"
+  fi
+  remove_temporary_fixture "$probe_root" "$probe_parent" ||
+    probe_value="${probe_value:-empty}:cleanup-failed"
+  printf '%s' "$probe_value"
+}
+
+plan_artifact_round_trip_status() {
+  local probe_parent probe_root probe_repo probe_value="" digest
+  local state_output snapshot current
+  probe_parent="$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)"
+  [ -n "$probe_parent" ] || { printf temporary-parent-unavailable; return; }
+  if ! probe_root="$(mktemp -d "$probe_parent/oso-plan-probe.XXXXXX" 2>&1)"; then
+    printf '%s' "$(printf '%s' "$probe_root" | fold_lines)"
+    return
+  fi
+  probe_repo="$probe_root/repo"
+  mkdir -p "$probe_repo"
+  digest="$(printf '%064d' 1)"
+  git -C "$probe_repo" init -q >/dev/null 2>&1 || probe_value=git-init-failed
+  if [ -z "$probe_value" ]; then
+    state_output="$({
+      cd "$probe_repo" || exit 1
+      printf '# Verified plan' | HOME="$probe_root" "$RUNTIME_ROOT/bin/oso-state" \
+        --session 1 capture-plan "$digest" >/dev/null 2>&1 &&
+        HOME="$probe_root" "$RUNTIME_ROOT/bin/oso-state" --session 1 \
+          approve-plan "$digest" >/dev/null 2>&1 &&
+        printf '### Slice probe' | HOME="$probe_root" "$RUNTIME_ROOT/bin/oso-state" \
+          --session 1 amend-plan probe-slice >/dev/null 2>&1 &&
+        HOME="$probe_root" "$RUNTIME_ROOT/bin/oso-state" --session 1 show
+    } 2>&1)" || probe_value="artifact-round-trip-failed:${state_output:-empty}"
+  fi
+  if [ -z "$probe_value" ]; then
+    snapshot="$(printf '%s\n' "$state_output" | sed -n 's/^plan_snapshot_file=//p')"
+    current="$(printf '%s\n' "$state_output" | sed -n 's/^plan_current_file=//p')"
+    if [ "$(printf '%s\n' "$state_output" | sed -n 's/^plan_approval=//p')" = approved ] &&
+       [ "$(printf '%s\n' "$state_output" | sed -n 's/^plan_revision=//p')" = 1 ] &&
+       [ -f "$snapshot" ] && [ ! -L "$snapshot" ] &&
+       [ "$(cat "$snapshot")" = '# Verified plan' ] &&
+       [ -f "$current" ] && [ ! -L "$current" ] &&
+       grep -qF '## Execution amendment — probe-slice' "$current"; then
+      probe_value=artifacts
+    else
+      probe_value=artifact-contract-mismatch
+    fi
   fi
   remove_temporary_fixture "$probe_root" "$probe_parent" ||
     probe_value="${probe_value:-empty}:cleanup-failed"
@@ -433,6 +477,7 @@ run_local_checks() {
   check "global Codex guidance" exact "$(global_guidance_status)"
   check "Engram Codex integration" wired "$(engram_status)"
   check "installed oso-state round-trip" probe "$(state_round_trip_status)"
+  check "installed Codex plan artifact round-trip" artifacts "$(plan_artifact_round_trip_status)"
   check "installed git hook denies a red agent commit" denied "$(commit_hook_red_status)"
   case "$(impeccable_status)" in
     mounted) check "Impeccable Codex mount" mounted mounted ;;
