@@ -81,6 +81,12 @@ tool  unknown  none  apply_patch
 tool  unknown  none  update_plan
 tool  unknown  none  request_user_input
 tool  unknown  none  Agent
+tool  unknown  none  collaborationspawn_agent
+tool  unknown  none  collaborationsend_message
+tool  unknown  none  collaborationfollowup_task
+tool  unknown  none  collaborationwait_agent
+tool  unknown  none  collaborationinterrupt_agent
+tool  unknown  none  collaborationlist_agents
 tool  unknown  none  spawn_agent
 tool  unknown  none  send_input
 tool  unknown  none  resume_agent

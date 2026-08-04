@@ -9,6 +9,7 @@ TEST_HOME="$(mktemp -d)"
 trap 'rm -rf "$TEST_HOME"' EXIT
 export HOME="$TEST_HOME"
 export PATH="$PLUGIN/bin:$PATH"
+unset GIT_CONFIG_GLOBAL OSO_AGENT OSO_STATE_BIN XDG_CONFIG_HOME
 SESSION="test-session"
 # `oso-state` names its file after the repository it is RUN in, so the suite's own
 # directory is what most of these cases write through — pinned here, or a run
@@ -513,6 +514,17 @@ else
       "$("$HOOK_RENDERER" --table "$REPO_ROOT/tools/hook-gates.txt" \
         --classify codex unknown "$collaboration_tool")"
   done
+  for collaboration_tool in \
+    collaborationspawn_agent \
+    collaborationsend_message \
+    collaborationfollowup_task \
+    collaborationwait_agent \
+    collaborationinterrupt_agent \
+    collaborationlist_agents; do
+    assert_equals "$collaboration_tool is release-known to the Codex catch-all classifier" wired \
+      "$("$HOOK_RENDERER" --table "$REPO_ROOT/tools/hook-gates.txt" \
+        --classify codex unknown "$collaboration_tool")"
+  done
 
   DISABLED_GATE_TABLE="$TEST_HOME/disabled-unknown-gate.txt"
   sed 's/^gate  unknown\(.*\)none   wired$/gate  unknown\1none   none/' \
@@ -697,7 +709,7 @@ fi
 # sessions while an armed harness run gets a closed allowlist rather than a future
 # observable tool silently bypassing every named matcher.
 UNKNOWN_TOOL_HOOK="$PLUGIN/hooks/block-unknown-tool.sh"
-UNKNOWN_TOOL_ALLOWLIST='Bash|apply_patch|send_input|resume_agent|close_agent'
+UNKNOWN_TOOL_ALLOWLIST='Bash|apply_patch|send_input|resume_agent|close_agent|collaborationspawn_agent|collaborationsend_message|collaborationfollowup_task|collaborationwait_agent|collaborationinterrupt_agent|collaborationlist_agents'
 codex_tool_input() {
   printf '{"session_id":"%s","cwd":"%s","hook_event_name":"PreToolUse","tool_name":"%s","tool_input":{}}' \
     "$SESSION" "$REPO_ROOT" "$1"
@@ -720,6 +732,18 @@ assert_after_hook "a release-known Codex tool passes the armed catch-all" \
   [ -z "$hook_stdout" ]
 
 for collaboration_tool in send_input resume_agent close_agent; do
+  run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input "$collaboration_tool")" 0 '' \
+    --allow "$UNKNOWN_TOOL_ALLOWLIST"
+  assert_after_hook "$collaboration_tool passes the armed runtime catch-all" \
+    [ -z "$hook_stdout" ]
+done
+for collaboration_tool in \
+  collaborationspawn_agent \
+  collaborationsend_message \
+  collaborationfollowup_task \
+  collaborationwait_agent \
+  collaborationinterrupt_agent \
+  collaborationlist_agents; do
   run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input "$collaboration_tool")" 0 '' \
     --allow "$UNKNOWN_TOOL_ALLOWLIST"
   assert_after_hook "$collaboration_tool passes the armed runtime catch-all" \
@@ -3102,6 +3126,40 @@ run_handoff "" handoff consume \
   --slice slice-hook --attempt 1 --agent-id agent-hook --agent-type oso-verifier
 assert_equals "the host-published receipt is consumed through the same one-shot rail" 0 "$handoff_rc"
 
+( cd "$HANDOFF_REPO" && oso-state --session 1 set mode=plan active_slice=fixed-marker verify_green=false >/dev/null )
+HANDOFF_RUNTIME="$TEST_HOME/handoff-runtime"
+HANDOFF_NO_STATE_PATH="$TEST_HOME/handoff-no-state-path"
+mkdir -p "$HANDOFF_RUNTIME/hooks" "$HANDOFF_RUNTIME/bin" "$HANDOFF_NO_STATE_PATH"
+for handoff_runtime_tool in bash cat chmod date dirname grep mkdir mktemp mv rm rmdir sha256sum shasum sleep stat tr wc; do
+  handoff_runtime_tool_path="$(PATH=/usr/bin:/bin command -v "$handoff_runtime_tool" 2>/dev/null || true)"
+  [ -n "$handoff_runtime_tool_path" ] || continue
+  ln -s "$handoff_runtime_tool_path" "$HANDOFF_NO_STATE_PATH/$handoff_runtime_tool"
+done
+cp "$PLUGIN/hooks/publish-subagent-handoff.sh" "$PLUGIN/hooks/lib.sh" "$PLUGIN/hooks/lexer.sh" \
+  "$HANDOFF_RUNTIME/hooks/"
+cp "$PLUGIN/bin/oso-state" "$HANDOFF_RUNTIME/bin/"
+chmod +x "$HANDOFF_RUNTIME/hooks/publish-subagent-handoff.sh" "$HANDOFF_RUNTIME/bin/oso-state"
+assert_equals "the runtime fallback regression PATH cannot resolve bare oso-state" \
+  "missing" "$(PATH="$HANDOFF_NO_STATE_PATH" command -v oso-state >/dev/null 2>&1 && echo present || echo missing)"
+fixed_marker_payload="$(printf '{\"session_id\":\"%s\",\"cwd\":\"%s\",\"hook_event_name\":\"SubagentStop\",\"turn_id\":\"turn-fixed-marker\",\"agent_id\":\"agent-fixed-marker\",\"agent_type\":\"oso-verifier\",\"agent_transcript_path\":\"%s\",\"stop_hook_active\":false,\"last_assistant_message\":\"oso-handoff: v=1 slice=slice-fixed-marker attempt=2\\nevidence: the named check is green\\nverdict: pass\"}' \
+  "payload-native-uuid-7d1a-4d1e-bf19" "$HANDOFF_REPO" "$TEST_HOME/agent-fixed-marker.jsonl")"
+unset OSO_STATE_BIN
+OSO_AGENT=1 PATH="$HANDOFF_NO_STATE_PATH" run_hook "$HANDOFF_RUNTIME/hooks/publish-subagent-handoff.sh" "$fixed_marker_payload"
+assert_after_hook "Codex SubagentStop resolves oso-state from its installed runtime when OSO_STATE_BIN is unset" \
+  [ "$hook_stdout" = '{}' ]
+fixed_marker_receipt="$(expected_receipt 1 slice-fixed-marker 2 agent-fixed-marker oso-verifier)"
+run_handoff "" handoff wait \
+  --slice slice-fixed-marker --attempt 2 --agent-id agent-fixed-marker \
+  --agent-type oso-verifier --timeout 0
+assert_equals "the runtime-fallback hook receipt waits through the fixed OSO_AGENT rail" \
+  "rc=0:$fixed_marker_receipt" "rc=$handoff_rc:$handoff_stdout"
+run_handoff "" handoff consume \
+  --slice slice-fixed-marker --attempt 2 --agent-id agent-fixed-marker \
+  --agent-type oso-verifier
+assert_equals "the runtime-fallback hook receipt is consumed through the fixed OSO_AGENT rail" \
+  "rc=0:$fixed_marker_receipt" "rc=$handoff_rc:$handoff_stdout"
+( cd "$HANDOFF_REPO" && oso-state --session 1 clear >/dev/null )
+
 # SubagentStop is a user-level global hook and therefore sees ordinary Codex
 # explorers outside oso-code too.  No marker means the call is not this harness's
 # and must stay invisible — no receipt, no event and no stderr.
@@ -4863,6 +4921,310 @@ sleep 60")"
     "no orphan" "$([ -f "$NPX_ORPHAN_MARKER" ] && echo "orphan survived" || echo "no orphan")"
 fi
 
+# --- Engram repair helper: static safety rails, no real HOME writes -----------
+REPAIR_ENGRAM_CODEX_SH="$REPO_ROOT/bootstrap/repair-engram-codex.sh"
+REPAIR_CONFIG_MARKER_START="# oso-code:start"
+REPAIR_CONFIG_MARKER_END="# oso-code:end"
+repair_engram_codex_surface_status() {
+  local script="$1" missing="" phrase syntax_output
+  [ -f "$script" ] || { printf missing-helper; return; }
+  [ -x "$script" ] || { printf not-executable; return; }
+  if ! syntax_output="$(bash -n "$script" 2>&1)"; then
+    printf 'syntax-error:%s' "$(printf '%s' "$syntax_output" | tr '\n' ' ')"
+    return
+  fi
+  while IFS= read -r phrase; do
+    [ -n "$phrase" ] || continue
+    grep -Fq -- "$phrase" "$script" \
+      || missing="$missing [$phrase]"
+  done <<'REPAIR_ENGRAM_SURFACE_TABLE'
+set -Eeuo pipefail
+ENGRAM_RELEASE_VERSION=1.20.0
+ENGRAM_DATA_DIR="${ENGRAM_DATA_DIR:-$HOME/.engram}"
+ENGRAM_BIN="${ENGRAM_BIN:-$HOME/.local/bin/engram}"
+ENGRAM_DB="$ENGRAM_DATA_DIR/engram.db"
+backup parent must be outside this repository
+pgrep -x codex
+pkill -TERM -x engram
+.backup
+"$ENGRAM_BIN" export
+checksums.txt
+selected-checksums.txt
+sha256sum -c
+engram_${ENGRAM_RELEASE_VERSION}_linux_${ENGRAM_RELEASE_ARCH}.tar.gz
+mv -f "$STAGED_INSTALL" "$ENGRAM_BIN"
+doctor --json
+setup codex
+config.before-engram-pointer-normalize.toml
+codex sandbox -P oso -- /bin/true
+verify-codex.sh
+restart Codex now
+REPAIR_ENGRAM_SURFACE_TABLE
+  if grep -Eq 'rm -rf --? "\$ENGRAM_(DATA_DIR|DB)"|rm -rf --? \$ENGRAM_(DATA_DIR|DB)' "$script"; then
+    printf destructive-live-engram-data
+  elif [ -n "$missing" ]; then
+    printf 'missing:%s' "$missing"
+  else
+    printf complete
+  fi
+}
+
+write_repair_codex_config() {
+  local fixture_home="$1" shape="$2"
+  CODEX_HOME="$fixture_home/.codex" "$REPAIR_CONFIG_WRITER" "$shape"
+}
+
+run_repair_sequence_fixture() {
+  local fixture_home="$1" calls="$2" output="$3" sequence_root
+  sequence_root="${REPAIR_SEQUENCE_TEST_ROOT:-$TEST_HOME}"
+  if (
+    HOME="$fixture_home"
+    CODEX_HOME="$fixture_home/.codex"
+    ENGRAM_DATA_DIR="$fixture_home/.engram"
+    ENGRAM_BIN="$REPAIR_CODEX_SHIMS/engram"
+    PATH="$REPAIR_CODEX_SHIMS:$PATH"
+    OSO_REPAIR_CALLS="$calls"
+    OSO_REPAIR_CONFIG_WRITER="$REPAIR_CONFIG_WRITER"
+    OSO_REPAIR_ENGRAM_CODEX_TEST_RUN_REPAIRED=1
+    OSO_REPAIR_ENGRAM_CODEX_TEST_ROOT="$sequence_root"
+    OSO_REPAIR_ENGRAM_CODEX_TEST_BACKUP_DIR="$fixture_home/backup"
+    export HOME CODEX_HOME ENGRAM_DATA_DIR ENGRAM_BIN PATH
+    export OSO_REPAIR_CALLS OSO_REPAIR_CONFIG_SHAPE OSO_REPAIR_CONFIG_WRITER
+    export OSO_REPAIR_ENGRAM_CODEX_TEST_RUN_REPAIRED
+    export OSO_REPAIR_ENGRAM_CODEX_TEST_ROOT OSO_REPAIR_ENGRAM_CODEX_TEST_BACKUP_DIR
+    mkdir -p "$ENGRAM_DATA_DIR"
+    "$REPAIR_ENGRAM_CODEX_SH"
+  ) > "$output" 2>&1; then
+    REPAIR_NORMALIZE_RC=0
+  else
+    REPAIR_NORMALIZE_RC=$?
+  fi
+  REPAIR_NORMALIZE_LOG="$(cat "$output")"
+}
+
+repair_setup_validation_order() {
+  awk '
+    $0 == "engram:setup codex" { setup_line = NR }
+    $0 == "codex:sandbox -P oso -- /bin/true" { validation_line = NR }
+    END {
+      if (setup_line > 0 && validation_line > setup_line) print "setup-before-validation"
+      else printf "setup=%d validation=%d", setup_line, validation_line
+    }
+  ' "$1"
+}
+
+repair_pointer_status() {
+  local fixture_home="$1" config_dir="$1/.codex"
+  awk \
+    -v start_marker="$REPAIR_CONFIG_MARKER_START" \
+    -v model_line="model_instructions_file = \"$config_dir/engram-instructions.md\"" \
+    -v compact_line="experimental_compact_prompt_file = \"$config_dir/engram-compact-prompt.md\"" '
+    $0 == start_marker { start = NR }
+    $0 == model_line { model_rows++; model_line_number = NR }
+    $0 == compact_line { compact_rows++; compact_line_number = NR }
+    END {
+      if (model_rows == 1 && compact_rows == 1 &&
+          model_line_number < start && compact_line_number < start) print "before-once"
+      else printf "model=%d:%d compact=%d:%d start=%d",
+        model_rows, model_line_number, compact_rows, compact_line_number, start
+    }
+  ' "$config_dir/config.toml"
+}
+
+repair_managed_region_body() {
+  awk -v start_marker="$REPAIR_CONFIG_MARKER_START" -v end_marker="$REPAIR_CONFIG_MARKER_END" '
+    $0 == start_marker { inside = 1; next }
+    $0 == end_marker { inside = 0; exit }
+    inside { print }
+  ' "$1/.codex/config.toml"
+}
+
+repair_engram_codex_behavior_status() {
+  local calls output fixture_home before after expected_region backup_file safe_root external_config_dir
+  REPAIR_CODEX_SHIMS="$TEST_HOME/repair-codex-shims"
+  REPAIR_CONFIG_WRITER="$REPAIR_CODEX_SHIMS/write-config"
+  calls="$TEST_HOME/repair-codex-calls"
+  output="$TEST_HOME/repair-codex-output"
+  rm -rf "$REPAIR_CODEX_SHIMS" "$TEST_HOME/repair-normalize-home" \
+    "$TEST_HOME/repair-duplicate-home" "$TEST_HOME/repair-malformed-home" \
+    "$TEST_HOME/repair-contained-root" "$TEST_HOME/repair-external-target" \
+    "$TEST_HOME/repair-contained-file-root" "$TEST_HOME/repair-external-config-target"
+  mkdir -p "$REPAIR_CODEX_SHIMS"
+  cat > "$REPAIR_CONFIG_WRITER" <<'REPAIR_CONFIG_WRITER_SCRIPT'
+#!/bin/sh
+set -eu
+shape=$1
+config_dir="${CODEX_HOME:?}"
+config="$config_dir/config.toml"
+mkdir -p "$config_dir"
+case "$shape" in
+  divergent)
+    printf '%s\n' \
+      'model = "operator-model"' \
+      '# oso-code:start' \
+      "model_instructions_file = \"$config_dir/engram-instructions.md\"" \
+      "experimental_compact_prompt_file = \"$config_dir/engram-compact-prompt.md\"" \
+      '[agents]' \
+      'answer = "managed"' \
+      '# oso-code:end' \
+      '' \
+      '[mcp_servers.engram]' \
+      'command = "engram"' > "$config"
+    ;;
+  duplicate)
+    printf '%s\n' \
+      "model_instructions_file = \"$config_dir/engram-instructions.md\"" \
+      '# oso-code:start' \
+      "model_instructions_file = \"$config_dir/engram-instructions.md\"" \
+      "experimental_compact_prompt_file = \"$config_dir/engram-compact-prompt.md\"" \
+      '[agents]' \
+      'answer = "managed"' \
+      '# oso-code:end' > "$config"
+    ;;
+  malformed)
+    printf '%s\n' \
+      '# oso-code:start' \
+      "model_instructions_file = \"$config_dir/engram-instructions.md\"" \
+      "experimental_compact_prompt_file = \"$config_dir/engram-compact-prompt.md\"" \
+      '# oso-code:start' \
+      '[agents]' \
+      '# oso-code:end' > "$config"
+    ;;
+  *)
+    exit 63
+    ;;
+esac
+REPAIR_CONFIG_WRITER_SCRIPT
+  chmod +x "$REPAIR_CONFIG_WRITER"
+  cat > "$REPAIR_CODEX_SHIMS/engram" <<'REPAIR_ENGRAM_SHIM'
+#!/bin/sh
+set -eu
+printf 'engram:%s\n' "$*" >> "$OSO_REPAIR_CALLS"
+case "$*" in
+  version)
+    printf 'engram 1.20.0\n'
+    ;;
+  "doctor --json")
+    printf '{}\n'
+    ;;
+  stats)
+    printf 'observations: 0\n'
+    ;;
+  "setup codex")
+    "${OSO_REPAIR_CONFIG_WRITER:?}" "${OSO_REPAIR_CONFIG_SHAPE:?}"
+    ;;
+  *)
+    exit 64
+    ;;
+esac
+REPAIR_ENGRAM_SHIM
+  chmod +x "$REPAIR_CODEX_SHIMS/engram"
+  printf '%s\n' \
+    '#!/bin/sh' \
+    'printf '\''codex:%s\n'\'' "$*" >> "$OSO_REPAIR_CALLS"' \
+    '[ "$*" = "sandbox -P oso -- /bin/true" ] || exit 64' \
+    'grep -Fqx "engram:setup codex" "$OSO_REPAIR_CALLS" || exit 68' \
+    '[ -f "${CODEX_HOME:?}/config.toml" ] || exit 65' \
+    'grep -Fq "model_instructions_file = " "$CODEX_HOME/config.toml" || exit 66' \
+    'grep -Fq "experimental_compact_prompt_file = " "$CODEX_HOME/config.toml" || exit 67' \
+    > "$REPAIR_CODEX_SHIMS/codex"
+  chmod +x "$REPAIR_CODEX_SHIMS/codex"
+
+  fixture_home="$TEST_HOME/repair-normalize-home"
+  : > "$calls"
+  OSO_REPAIR_CONFIG_SHAPE=divergent run_repair_sequence_fixture "$fixture_home" "$calls" "$output"
+  [ "$REPAIR_NORMALIZE_RC" -eq 0 ] || { printf 'first-run:%s' "$REPAIR_NORMALIZE_LOG"; return; }
+  [ "$(repair_setup_validation_order "$calls")" = setup-before-validation ] ||
+    { printf 'call-order:%s' "$(repair_setup_validation_order "$calls")"; return; }
+  [ "$(repair_pointer_status "$fixture_home")" = before-once ] ||
+    { printf 'pointer-status:%s' "$(repair_pointer_status "$fixture_home")"; return; }
+  expected_region="$(printf '%s\n' '[agents]' 'answer = "managed"')"
+  [ "$(repair_managed_region_body "$fixture_home")" = "$expected_region" ] ||
+    { printf 'managed-region:%s' "$(repair_managed_region_body "$fixture_home")"; return; }
+  backup_file="$fixture_home/backup/codex/config.before-engram-pointer-normalize.toml"
+  [ -f "$backup_file" ] || { printf missing-pre-normalize-backup; return; }
+  grep -Fq "model_instructions_file = \"$fixture_home/.codex/engram-instructions.md\"" "$backup_file" ||
+    { printf backup-did-not-retain-divergent-config; return; }
+  before="$(cat "$fixture_home/.codex/config.toml")"
+  : > "$calls"
+  OSO_REPAIR_CONFIG_SHAPE=divergent run_repair_sequence_fixture "$fixture_home" "$calls" "$output"
+  [ "$REPAIR_NORMALIZE_RC" -eq 0 ] || { printf 'second-run:%s' "$REPAIR_NORMALIZE_LOG"; return; }
+  [ "$(repair_setup_validation_order "$calls")" = setup-before-validation ] ||
+    { printf 'second-call-order:%s' "$(repair_setup_validation_order "$calls")"; return; }
+  after="$(cat "$fixture_home/.codex/config.toml")"
+  [ "$before" = "$after" ] || { printf second-run-changed-config; return; }
+
+  fixture_home="$TEST_HOME/repair-duplicate-home"
+  write_repair_codex_config "$fixture_home" duplicate
+  before="$(cat "$fixture_home/.codex/config.toml")"
+  : > "$calls"
+  OSO_REPAIR_CONFIG_SHAPE=duplicate run_repair_sequence_fixture "$fixture_home" "$calls" "$output"
+  [ "$REPAIR_NORMALIZE_RC" -ne 0 ] || { printf duplicate-ownership-accepted; return; }
+  grep -Fqx 'engram:setup codex' "$calls" ||
+    { printf duplicate-setup-not-run; return; }
+  ! grep -Fqx 'codex:sandbox -P oso -- /bin/true' "$calls" ||
+    { printf duplicate-config-validated; return; }
+  [ "$before" = "$(cat "$fixture_home/.codex/config.toml")" ] ||
+    { printf duplicate-ownership-replaced-config; return; }
+
+  fixture_home="$TEST_HOME/repair-malformed-home"
+  write_repair_codex_config "$fixture_home" malformed
+  before="$(cat "$fixture_home/.codex/config.toml")"
+  : > "$calls"
+  OSO_REPAIR_CONFIG_SHAPE=malformed run_repair_sequence_fixture "$fixture_home" "$calls" "$output"
+  [ "$REPAIR_NORMALIZE_RC" -ne 0 ] || { printf malformed-markers-accepted; return; }
+  grep -Fqx 'engram:setup codex' "$calls" ||
+    { printf malformed-setup-not-run; return; }
+  ! grep -Fqx 'codex:sandbox -P oso -- /bin/true' "$calls" ||
+    { printf malformed-config-validated; return; }
+  [ "$before" = "$(cat "$fixture_home/.codex/config.toml")" ] ||
+    { printf malformed-markers-replaced-config; return; }
+
+  safe_root="$TEST_HOME/repair-contained-root"
+  fixture_home="$safe_root/repair-symlink-home"
+  external_config_dir="$TEST_HOME/repair-external-target"
+  mkdir -p "$fixture_home" "$external_config_dir"
+  printf 'external sentinel\n' > "$external_config_dir/config.toml"
+  ln -s "$external_config_dir" "$fixture_home/.codex"
+  : > "$calls"
+  REPAIR_SEQUENCE_TEST_ROOT="$safe_root" \
+    OSO_REPAIR_CONFIG_SHAPE=divergent \
+    run_repair_sequence_fixture "$fixture_home" "$calls" "$output"
+  [ "$REPAIR_NORMALIZE_RC" -ne 0 ] || { printf symlink-escape-accepted; return; }
+  [ ! -s "$calls" ] || { printf symlink-escape-reached-production; return; }
+  [ "$(cat "$external_config_dir/config.toml")" = "external sentinel" ] ||
+    { printf symlink-escape-modified-sentinel; return; }
+
+  safe_root="$TEST_HOME/repair-contained-file-root"
+  fixture_home="$safe_root/repair-config-symlink-home"
+  external_config_dir="$TEST_HOME/repair-external-config-target"
+  mkdir -p "$fixture_home/.codex" "$external_config_dir"
+  printf 'external config sentinel\n' > "$external_config_dir/config.toml"
+  ln -s "$external_config_dir/config.toml" "$fixture_home/.codex/config.toml"
+  : > "$calls"
+  REPAIR_SEQUENCE_TEST_ROOT="$safe_root" \
+    OSO_REPAIR_CONFIG_SHAPE=divergent \
+    run_repair_sequence_fixture "$fixture_home" "$calls" "$output"
+  [ "$REPAIR_NORMALIZE_RC" -ne 0 ] || { printf config-symlink-escape-accepted; return; }
+  [ ! -s "$calls" ] || { printf config-symlink-escape-reached-production; return; }
+  [ "$(cat "$external_config_dir/config.toml")" = "external config sentinel" ] ||
+    { printf config-symlink-escape-modified-sentinel; return; }
+
+  printf complete
+}
+
+repair_engram_codex_contract_status() {
+  local surface_status behavior_status
+  surface_status="$(repair_engram_codex_surface_status "$REPAIR_ENGRAM_CODEX_SH")"
+  [ "$surface_status" = complete ] || { printf 'surface:%s' "$surface_status"; return; }
+  behavior_status="$(repair_engram_codex_behavior_status)"
+  [ "$behavior_status" = complete ] || { printf 'behavior:%s' "$behavior_status"; return; }
+  printf complete
+}
+
+assert_equals "repair-engram-codex shell surface is syntax-valid and contains fail-safe backup/checksum/setup/verification rails" \
+  complete "$(repair_engram_codex_contract_status)"
+
 # --- Codex installer: an isolated release install, not a real user mutation ---
 # S11 owns user-wide Codex state, which makes a source-only assertion too weak:
 # the test runs the shipped installer with HOME, CODEX_HOME and every external
@@ -5097,6 +5459,22 @@ assert_equals "sourcing install-codex exposes main without running it" \
 assert_equals "sourcing install-codex leaves the isolated HOME untouched" \
   "absent" "$([ -e "$CODEX_SOURCE_HOME/.codex" ] || [ -e "$CODEX_SOURCE_HOME/.agents" ] && echo mutated || echo absent)"
 
+. "$REPO_ROOT/bootstrap/lib/codex-managed-config.sh"
+CODEX_CARGO_FALLOW_HOME="$TEST_HOME/codex-cargo-fallow-home"
+CODEX_NO_FALLOW_PATH="$TEST_HOME/no-fallow-path"
+mkdir -p "$CODEX_CARGO_FALLOW_HOME/.cargo/bin" "$CODEX_NO_FALLOW_PATH"
+ln -s "$(command -v cat)" "$CODEX_NO_FALLOW_PATH/cat"
+printf '%s\n' '#!/bin/sh' 'exit 0' > "$CODEX_CARGO_FALLOW_HOME/.cargo/bin/fallow-mcp"
+chmod +x "$CODEX_CARGO_FALLOW_HOME/.cargo/bin/fallow-mcp"
+cargo_fallow_config="$(
+  PATH="$CODEX_NO_FALLOW_PATH" render_codex_managed_config \
+    "$CODEX_CARGO_FALLOW_HOME" \
+    "$CODEX_CARGO_FALLOW_HOME/.local/share/oso-code/runtime"
+)"
+assert_equals "Codex config resolves a Cargo-home fallow binary outside PATH" \
+  "1" "$(printf '%s\n' "$cargo_fallow_config" |
+    grep -Fxc "command = \"$CODEX_CARGO_FALLOW_HOME/.cargo/bin/fallow-mcp\"" || true)"
+
 CODEX_DECLINE_HOME="$TEST_HOME/codex-decline-home"
 write_codex_install_personal_state "$CODEX_DECLINE_HOME"
 printf '0.145.0\n' > "$CODEX_INSTALL_VERSION"
@@ -5202,8 +5580,10 @@ for codex_config_contract in \
   assert_equals "the managed config carries $codex_config_contract" \
     "1" "$(grep -Fxc "$codex_config_contract" "$CODEX_HAPPY_CONFIG" || true)"
 done
+assert_equals "the managed permissions grant the settled state root" \
+  "1" "$(grep -Fxc "\"$CODEX_HAPPY_HOME/.local/state/oso-code\" = true" "$CODEX_HAPPY_CONFIG" || true)"
 assert_equals "the managed permissions grant the settled worktree root" \
-  "present" "$(grep -F "$CODEX_HAPPY_HOME/.local/state/oso-code/worktrees" "$CODEX_HAPPY_CONFIG" >/dev/null && echo present || echo missing)"
+  "1" "$(grep -Fxc "\"$CODEX_HAPPY_HOME/.local/state/oso-code/worktrees\" = true" "$CODEX_HAPPY_CONFIG" || true)"
 assert_equals "the managed permissions keep secret material denied" \
   "present" "$(grep -F '"**/*.key" = "deny"' "$CODEX_HAPPY_CONFIG" >/dev/null && echo present || echo missing)"
 

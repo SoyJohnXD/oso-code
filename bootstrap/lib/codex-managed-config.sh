@@ -6,9 +6,14 @@ render_codex_managed_config() {
     printf 'render_codex_managed_config requires HOME and runtime root\n' >&2
     return 2
   }
-  local target_home=$1 runtime_root=$2 state_bin worktree_root
+  local target_home=$1 runtime_root=$2 state_bin state_root worktree_root fallow_command
   state_bin="$(toml_quote "$runtime_root/bin/oso-state")"
+  state_root="$(toml_quote "$target_home/.local/state/oso-code")"
   worktree_root="$(toml_quote "$target_home/.local/state/oso-code/worktrees")"
+  if ! fallow_command="$(resolve_fallow_mcp_command "$target_home")"; then
+    fallow_command=fallow-mcp
+  fi
+  fallow_command="$(toml_quote "$fallow_command")"
   cat <<EOF
 default_permissions = "oso"
 
@@ -27,6 +32,7 @@ extends = ":workspace"
 description = "oso-code workspace profile"
 
 [permissions.oso.workspace_roots]
+$state_root = true
 $worktree_root = true
 
 [permissions.oso.filesystem]
@@ -51,8 +57,29 @@ enabled = true
 url = "https://mcp.context7.com/mcp"
 
 [mcp_servers.fallow]
-command = "fallow-mcp"
+command = $fallow_command
 EOF
+}
+
+resolve_fallow_mcp_command() {
+  [ "$#" -eq 1 ] || {
+    printf 'resolve_fallow_mcp_command requires HOME\n' >&2
+    return 2
+  }
+  local target_home=$1 resolved
+  if resolved="$(command -v fallow-mcp 2>/dev/null)" && [ -n "$resolved" ]; then
+    printf '%s\n' "$resolved"
+    return 0
+  fi
+  if [ -x "$target_home/.cargo/bin/fallow-mcp" ]; then
+    printf '%s\n' "$target_home/.cargo/bin/fallow-mcp"
+    return 0
+  fi
+  if [ -x "$target_home/.cargo/bin/fallow-mcp.exe" ]; then
+    printf '%s\n' "$target_home/.cargo/bin/fallow-mcp.exe"
+    return 0
+  fi
+  return 1
 }
 
 render_codex_managed_features() {

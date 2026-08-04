@@ -29,7 +29,7 @@ marker_count="$(printf '%s\n' "$message" | grep -c '^oso-handoff:' || true)"
 # on a launch that really did belong to the harness.
 [ "$marker_count" -gt 0 ] || finish_hook
 
-session_id="$(sanitize_session "$(json_field "$payload" session_id)")"
+session_id="$(hook_session "$payload")"
 cwd="$(json_field "$payload" cwd)"
 agent_id="$(json_field "$payload" agent_id)"
 agent_type="$(json_field "$payload" agent_type)"
@@ -47,7 +47,7 @@ if [ "$marker_count" -ne 1 ] ||
 fi
 slice_id="${BASH_REMATCH[1]}"
 attempt="${BASH_REMATCH[2]}"
-state_bin="${OSO_STATE_BIN:-oso-state}"
+state_bin="${OSO_STATE_BIN:-$HOOK_DIR/../bin/oso-state}"
 
 if ! (cd "$cwd" && printf '%s' "$message" |
   "$state_bin" handoff publish \

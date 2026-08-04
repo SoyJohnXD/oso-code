@@ -587,7 +587,7 @@ write_config_region() {
   chmod 600 "$temp"
   mv "$temp" "$CONFIG_FILE"
   rm -f "$clean" "$feature_clean" "$root_values" "$sections" "$merged_sections" "$feature_block"
-  if ! command -v fallow-mcp >/dev/null 2>&1; then
+  if ! resolve_fallow_mcp_command "$HOME" >/dev/null; then
     warn "fallow-mcp is not installed; debt-sweep will use its rubric-only fallback"
   fi
 }
