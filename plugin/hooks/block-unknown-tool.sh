@@ -31,7 +31,17 @@ require_readable_state "$state_file" "$session_id"
 # attempt: UserPromptSubmit is the only event allowed to open it.
 # The pending flag is sufficient by itself, so a torn or manually corrupted
 # state cannot open the gate merely by disagreeing about its mode.
-if state_says "$state_file" '^plan_approval=pending$' "$session_id"; then
+#
+# Scoped to plan_approval_session, THIS payload's own session id read above —
+# never the repository-wide fact alone. Denying every local tool, Bash
+# included, for the session that actually has a plan pending is the intended
+# contract (platform/codex/plan.md): its native and CANCEL OSO PLAN escapes
+# both run through UserPromptSubmit, never PreToolUse, so that session loses
+# nothing it needs. What must never happen is a pending left by another
+# session — or one that is gone — reaching a session with nothing pending at
+# all; that was the scope bug, not the order, so the check still runs before
+# the allowlist below rather than after it.
+if state_says "$state_file" '^plan_approval=pending$' "$session_id" plan_approval_session; then
   deny \
     'oso-code: plan approval is pending. Use Codex native "Implement the plan." approval, or send exactly CANCEL OSO PLAN to abandon it, before using local tools.' \
     plan-approval-pending-denied "$session_id"

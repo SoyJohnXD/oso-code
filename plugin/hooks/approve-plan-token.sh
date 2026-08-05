@@ -65,7 +65,11 @@ if [ "$control_action" = ordinary ]; then
     finish_hook
   state_file="$(state_file_for "$cwd" 2>/dev/null)" || finish_hook
   [ -f "$state_file" ] && [ -r "$state_file" ] && [ ! -L "$state_file" ] || finish_hook
-  state_session="$(state_value "$state_file" session)"
+  # plan_approval_session, not session: an ordinary model-issued write between
+  # capture and this turn overwrites session with the shared Codex marker, and
+  # comparing against that would invalidate the presenting session's own
+  # pending document as though it belonged to someone else.
+  state_session="$(state_value "$state_file" plan_approval_session)"
   state_approval="$(state_value "$state_file" plan_approval)"
   state_digest="$(state_value "$state_file" plan_approval_digest)"
   [ "$state_session" = "$session_id" ] && [ "$state_approval" = pending ] &&
@@ -128,7 +132,9 @@ fi
   control_block \
     'oso-code: no pending plan approval exists for this repository; present the complete plan again.'
 
-state_session="$(state_value "$state_file" session)"
+# plan_approval_session, not session: see the ordinary-feedback path above for
+# why the ownership key cannot answer who may approve or cancel.
+state_session="$(state_value "$state_file" plan_approval_session)"
 state_approval="$(state_value "$state_file" plan_approval)"
 state_digest="$(state_value "$state_file" plan_approval_digest)"
 [ "$state_session" = "$session_id" ] ||

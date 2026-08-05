@@ -713,8 +713,9 @@ fi
 UNKNOWN_TOOL_HOOK="$PLUGIN/hooks/block-unknown-tool.sh"
 UNKNOWN_TOOL_ALLOWLIST='Bash|apply_patch|send_input|resume_agent|close_agent|collaborationspawn_agent|collaborationsend_message|collaborationfollowup_task|collaborationwait_agent|collaborationinterrupt_agent|collaborationlist_agents'
 codex_tool_input() {
+  local tool_name="$1" session_id="${2:-$SESSION}"
   printf '{"session_id":"%s","cwd":"%s","hook_event_name":"PreToolUse","tool_name":"%s","tool_input":{}}' \
-    "$SESSION" "$REPO_ROOT" "$1"
+    "$session_id" "$REPO_ROOT" "$tool_name"
 }
 
 hook_returned_deny() {
@@ -757,6 +758,39 @@ run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input FutureWriter)" 0 '' \
 assert_after_hook "an unknown Codex tool is denied while oso-code state is armed" \
   hook_returned_deny
 oso-state --session "$SESSION" clear
+
+# --- Runtime: the catch-all's pending check is scoped to plan_approval_session,
+# never the repository at large (ADR-0107) -------------------------------------
+# A stale or foreign pending must never deny a session with nothing pending —
+# Bash included, since that was the trap: denied before the allowlist, with no
+# local escape. The session that actually owns the pending plan still loses
+# every local tool until native approval or CANCEL OSO PLAN; that denial, not
+# its scope, is the documented contract.
+PENDING_OWNER_SESSION="pending-owner-session"
+PENDING_FOREIGN_SESSION="pending-foreign-session"
+oso-state --session "$PENDING_OWNER_SESSION" set mode=plan active_slice=none verify_green=false \
+  plan_approval=pending "plan_approval_session=$PENDING_OWNER_SESSION"
+
+run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input Bash "$PENDING_FOREIGN_SESSION")" 0 '' \
+  --allow "$UNKNOWN_TOOL_ALLOWLIST"
+assert_after_hook "a pending belonging to another session does not deny this session's Bash" \
+  [ -z "$hook_stdout" ]
+run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input FutureWriter "$PENDING_FOREIGN_SESSION")" 0 '' \
+  --allow "$UNKNOWN_TOOL_ALLOWLIST"
+assert_after_hook "a foreign pending still leaves the ordinary allowlist in force" \
+  hook_returned_deny
+
+run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input Bash "$PENDING_OWNER_SESSION")" 0 '' \
+  --allow "$UNKNOWN_TOOL_ALLOWLIST"
+assert_after_hook "the pending session's own Bash call is still denied while its plan is pending" \
+  hook_returned_deny
+case "$hook_stdout" in
+  *'plan approval is pending. Use Codex native'*'approval, or send exactly CANCEL OSO PLAN to abandon it, before using local tools.'*)
+    echo "ok: the scoped pending denial keeps the existing pending message"; pass=$((pass + 1)) ;;
+  *)
+    echo "FAIL: the scoped pending denial lost the pending message — got: $hook_stdout"; fail=$((fail + 1)) ;;
+esac
+oso-state --session "$PENDING_OWNER_SESSION" clear
 
 # --- Runtime: the catch-all's allowlist covers every spelling Codex has actually
 # denied in the field, not just the shape a maintainer guessed it would use -------
@@ -1423,6 +1457,79 @@ assert_after_hook "the runtime-fallback native phrase opens the execution gate" 
 assert_equals "the Codex plan rail records and approves through the installed runtime when OSO_STATE_BIN is unset" \
   approved "$(runtime_plan_state plan_approval)"
 ( cd "$PLAN_RUNTIME_REPO" && oso-state --session "$SESSION" clear >/dev/null )
+
+# --- Runtime: plan_approval_session survives a model-issued write under the
+# fixed Codex marker (ADR-0107) -------------------------------------------
+# Every model-issued oso-state call on Codex carries the same OSO_AGENT=1
+# marker, never the real session capture-plan recorded, so one shared key
+# could not tell the two identities apart. This proves the second key does:
+# a marker-scoped write overwrites ownership and leaves approval untouched.
+identity_split_digest="$(sha256_text 'identity split fixture plan')"
+printf 'Identity split fixture plan' |
+  oso-state --session "$SESSION" capture-plan "$identity_split_digest" >/dev/null
+assert_equals "capture-plan records the presenting session as the approval identity" \
+  "$SESSION" "$(oso-state --session "$SESSION" get plan_approval_session)"
+
+oso-state --session 1 set mode=plan active_slice=none verify_green=false >/dev/null
+assert_equals "a marker-scoped model write overwrites ownership, not approval" \
+  1 "$(oso-state --session "$SESSION" get session)"
+assert_equals "the approval identity survives the marker-scoped write" \
+  "$SESSION" "$(oso-state --session "$SESSION" get plan_approval_session)"
+
+if oso-state --session "$SESSION" approve-plan "$identity_split_digest" >/dev/null 2>&1; then
+  echo "ok: approve-plan still succeeds for the presenting session after the marker write"; pass=$((pass + 1))
+else
+  echo "FAIL: approve-plan rejected the presenting session after the marker write"; fail=$((fail + 1))
+fi
+assert_equals "the surviving approval identity lets the presenting session's approval land" \
+  approved "$(oso-state --session "$SESSION" get plan_approval)"
+oso-state --session "$SESSION" clear
+
+# --- Runtime: native approval survives an ordinary model-issued write under
+# the fixed Codex marker end to end, through approve-plan-token.sh itself
+# (ADR-0107) -------------------------------------------------------------
+# Between a plan going pending and the operator approving it, Codex's own flow
+# issues ordinary state writes under OSO_AGENT (mode=plan, active_slice,
+# verify_green — plan.md §6 step 1) that overwrite `session`, the ownership
+# key. The prompt hook's own pre-check must read plan_approval_session, or it
+# blocks the very session that presented the plan as soon as any such write
+# has landed — which is always.
+regression_marker_write_plan_ok='Repaso de cambios\nFull slice plan: marker-write regression, presenting session\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->'
+run_hook "$PLAN_STOP_HOOK" "$(codex_stop_input plan "$SESSION" "$regression_marker_write_plan_ok")"
+assert_after_hook "the marker-write regression plan is captured" \
+  [ "$hook_stdout" = '{}' ]
+assert_equals "capture-plan records the presenting session as plan_approval_session" \
+  "$SESSION" "$(oso-state --session "$SESSION" get plan_approval_session)"
+oso-state --session 1 set mode=plan active_slice=1 verify_green=false >/dev/null
+assert_equals "the ordinary model-issued write overwrites ownership, not approval" \
+  1 "$(oso-state --session "$SESSION" get session)"
+run_hook "$PLAN_PROMPT_HOOK" \
+  "$(codex_prompt_input default "$SESSION" 'Implement the plan.')"
+assert_after_hook "native approval from the presenting session opens the gate after a marker-scoped write" \
+  hook_returned_prompt_context
+assert_equals "the presenting session's native approval promotes state to approved" approved \
+  "$(oso-state --session "$SESSION" get plan_approval)"
+oso-state --session "$SESSION" clear
+
+# The negative: a different session must still be refused, byte-identical
+# message, after the same marker-scoped write — or the fix could degrade into
+# accepting any session.
+regression_marker_write_plan_wrong='Repaso de cambios\nFull slice plan: marker-write regression, wrong session\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->'
+run_hook "$PLAN_STOP_HOOK" "$(codex_stop_input plan "$SESSION" "$regression_marker_write_plan_wrong")"
+assert_after_hook "the wrong-session marker-write regression plan is captured" \
+  [ "$hook_stdout" = '{}' ]
+oso-state --session 1 set mode=plan active_slice=1 verify_green=false >/dev/null
+run_hook "$PLAN_PROMPT_HOOK" \
+  "$(codex_prompt_input default other-session 'Implement the plan.')"
+assert_after_hook "a different session is still refused after the same marker-scoped write" \
+  hook_returned_block
+case "$hook_stdout" in
+  *'"reason":"oso-code: this plan-control prompt does not belong to the session that presented the pending plan."'*)
+    echo "ok: the wrong-session refusal keeps the existing byte-identical message"; pass=$((pass + 1)) ;;
+  *)
+    echo "FAIL: the wrong-session refusal message changed — got: $hook_stdout"; fail=$((fail + 1)) ;;
+esac
+oso-state --session "$SESSION" clear
 
 # --- Declarations: the Codex floor the installer's pin has to read ------------
 # The Codex port was designed against a CLI six versions behind what npm
@@ -4298,6 +4405,22 @@ assert_equals "the fixed Codex identity arms state before lifecycle cleanup" \
 OSO_AGENT=1 run_hook cleanup-state.sh '{"session_id":"codex-payload-session"}'
 assert_after_hook "Codex SessionEnd cleans fixed-marker state despite a different payload session" \
   [ ! -f "$elsewhere_state" ]
+
+# --- Runtime: SessionEnd clears its own orphaned pending by plan_approval_session,
+# never a stranger's (ADR-0107) --------------------------------------------------
+# hook_session() is the fixed OSO_AGENT marker on Codex, so the ownership sweep
+# above can never match a pending still carrying the real session capture-plan
+# recorded under it — the orphan a second, narrower sweep on the real SessionEnd
+# payload session exists to reach.
+orphan_pending_state="$STATE_DIR/orphan-pending.state"
+printf 'mode=plan\nplan_approval=pending\nsession=orphan-real-session\nplan_approval_session=orphan-real-session\n' \
+  > "$orphan_pending_state"
+OSO_AGENT=1 run_hook cleanup-state.sh '{"session_id":"unrelated-session"}'
+assert_after_hook "SessionEnd for an unrelated session leaves another session's pending alone" \
+  [ -f "$orphan_pending_state" ]
+OSO_AGENT=1 run_hook cleanup-state.sh '{"session_id":"orphan-real-session"}'
+assert_after_hook "SessionEnd for the session whose plan_approval_session matches drops its own orphaned pending" \
+  [ ! -f "$orphan_pending_state" ]
 
 # --- SessionStart: OSO_STATE_BIN reaches the real oso-state binary ---
 # The skills invoke "${OSO_STATE_BIN:-oso-state}"; this hook is what makes that

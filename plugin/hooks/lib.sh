@@ -275,12 +275,20 @@ record_reader_fallback() {
 }
 
 # grep separates "no match" (1) from "could not read the file" (2); only the
-# first answers a question about the session, so the second denies.
+# first answers a question about the session, so the second denies. SESSION
+# names who to blame in that unreadable-state error by default; a caller that
+# passes OWNER_KEY makes it do double duty as the identity the pattern must
+# also belong to, by requiring that key's stored value to be this exact
+# session — a stale or foreign fact the pattern alone cannot tell apart from
+# this session's own.
 state_says() {
-  local state_file="$1" pattern="$2" session="$3"
+  local state_file="$1" pattern="$2" session="$3" owner_key="${4:-}"
   local rc=0
   grep -q "$pattern" "$state_file" 2>/dev/null || rc=$?
   [ "$rc" -le 1 ] || deny_unusable_state "$state_file" "$session"
+  if [ "$rc" -eq 0 ] && [ -n "$owner_key" ]; then
+    [ "$(state_value "$state_file" "$owner_key")" = "$session" ] || rc=1
+  fi
   return "$rc"
 }
 

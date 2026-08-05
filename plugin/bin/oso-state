@@ -554,9 +554,16 @@ case "$action" in
     chmod 600 "$current_tmp"
     mv "$current_tmp" "$plan_current_file"
     rm -f "$incoming_plan"
+    # Codex never exposes its hook session id to the model, so runtime state is
+    # shared by repository and `session` becomes whichever call last wrote it —
+    # ownership, not who is allowed to approve. plan_approval_session is that
+    # approval identity instead: only this action ever writes it, so a later
+    # OSO_AGENT-marked write cannot overwrite the presenting session out from
+    # under a still-pending approval.
     publish_state_pairs \
       mode=plan active_slice=none verify_green=false \
       plan_approval=pending "plan_approval_digest=${approval_digest}" \
+      "plan_approval_session=${session_id}" \
       "plan_snapshot_file=${plan_presented_file}" \
       "plan_current_file=${plan_current_file}" plan_revision=0
     log_event plan-artifact-captured "$session_id" "$approval_digest"
@@ -574,7 +581,7 @@ case "$action" in
       echo "oso-state: no readable pending plan approval for session ${session_id}" >&2
       exit 1
     }
-    [ "$(state_value "$state_file" session)" = "$session_id" ] || {
+    [ "$(state_value "$state_file" plan_approval_session)" = "$session_id" ] || {
       echo "oso-state: pending plan approval belongs to another session" >&2
       exit 1
     }
@@ -628,7 +635,7 @@ case "$action" in
       echo "oso-state: no readable pending plan approval for session ${session_id}" >&2
       exit 1
     }
-    [ "$(state_value "$state_file" session)" = "$session_id" ] || {
+    [ "$(state_value "$state_file" plan_approval_session)" = "$session_id" ] || {
       echo "oso-state: pending plan approval belongs to another session" >&2
       exit 1
     }
@@ -667,7 +674,7 @@ case "$action" in
       rm -f "$amendment_input"
       plan_fail "no readable approved plan for session ${session_id}"
     }
-    [ "$(state_value "$state_file" session)" = "$session_id" ] || {
+    [ "$(state_value "$state_file" plan_approval_session)" = "$session_id" ] || {
       rm -f "$amendment_input"
       plan_fail "approved plan belongs to another session"
     }

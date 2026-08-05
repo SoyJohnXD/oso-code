@@ -74,6 +74,25 @@ drop_state_file() {
   rm -rf "${state_file}.lock"
 }
 
+# The sweep above matches `session`, the ownership marker a model-issued write
+# under Codex's fixed OSO_AGENT identity can leave pointing at a session other
+# than the one that actually presented a still-pending plan — so a pending left
+# that way never matches and outlives the session it belongs to. This session's
+# REAL payload id is the one identity that write never touches, because only
+# capture-plan ever writes plan_approval_session, so a match on that key alone
+# says the orphan is this session's own. `oso-state` can set a key but never
+# delete one, so a pending is cleared the same way `cancel-plan` already clears
+# one: the whole file, not a single line inside it.
+clear_orphaned_pending_of() {
+  local real_session_id="$1" state_file
+  [ -n "$real_session_id" ] || return 0
+  for state_file in "$OSO_STATE_DIR"/*.state; do
+    [ -f "$state_file" ] || continue
+    [ "$(state_value "$state_file" plan_approval_session)" = "$real_session_id" ] || continue
+    drop_state_file "$state_file"
+  done
+}
+
 # Renaming is atomic, so an append racing this rotation lands whole in one file
 # or the other. Filtering the log in place would instead drop every line written
 # between the read and the swap, and a lost line is a deny nobody can audit.
@@ -115,6 +134,7 @@ session_id="$(hook_session "$payload")"
 own_state="$(state_armed_by "$session_id")"
 remove_worktrees_of "$session_id" "$own_state"
 drop_state_file "$own_state"
+clear_orphaned_pending_of "$(sanitize_session "$(json_field "$payload" session_id)")"
 rotate_aged_events_log
 prune_abandoned_state "$session_id" "$own_state"
 exit 0
