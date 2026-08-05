@@ -192,6 +192,10 @@ Three properties of the amendment log these files replace are facts to carry for
 
 - [0104](decisions/0104-codex-plan-marker-allows-one-host-terminal-lf.md) — Codex plan marker allows one host terminal LF without normalizing the approval digest
 
+**2026-08-05 — codex-fluidity**
+
+- [0105](decisions/0105-explicit-codex-role-launches-set-fork-turns-none.md) — An explicit Codex role launches fresh through MultiAgentV2's `fork_turns`
+
 ## Foundational decisions
 
 | Decision | Choice | Rationale |

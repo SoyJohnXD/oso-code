@@ -1872,7 +1872,7 @@ assert_equals "the authenticated smoke does not override the integrator back to 
     grep -Fc 'codex exec --ephemeral --json --sandbox workspace-write --color never' || true)"
 assert_equals "the authenticated smoke requires a fresh explicit integrator launch" \
   "1" "$(printf '%s\n' "$integrator_smoke_function" | \
-    grep -Fc 'agent_type oso-integrator explicitly and launch it with fresh context by setting fork_context=false' || true)"
+    grep -Fc 'agent_type oso-integrator explicitly and launch it with fresh context by setting fork_turns=\"none\"' || true)"
 integrator_smoke_observable_contract="$(
   if printf '%s\n' "$integrator_smoke_function" | grep -F 'status: done' >/dev/null 2>&1 ||
      printf '%s\n' "$integrator_smoke_function" | grep -F 'torn_down:' >/dev/null 2>&1; then
@@ -1990,7 +1990,7 @@ else
     missing "$(integrator_handoff_status "$smoke_report_only_jsonl")"
 fi
 assert_equals "the shared Codex protocol forbids full-history forks with explicit roles" \
-  "1" "$(grep -Fc 'Every launch that selects an explicit `agent_type` starts with fresh context: set `fork_context=false`.' \
+  "1" "$(grep -Fc 'Every launch that selects an explicit `agent_type` starts with fresh context: set `fork_turns="none"`.' \
     "$REPO_ROOT/plugin/skills/_shared/platform/codex/subagents.md" || true)"
 smoke_cleanup_function="$(sed -n \
   '/^cleanup_smoke_project_config() {$/,/^}$/p' \
