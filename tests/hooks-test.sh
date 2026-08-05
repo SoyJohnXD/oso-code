@@ -2003,6 +2003,128 @@ assert_equals "the smoke cleanup removes only its exact project table from the l
     printf complete || printf incomplete
   )"
 
+# --- Codex host contract: claims checked against the installed binary ---------
+# ADR-0106: every other check here asserts the harness against its own prose;
+# this one drives host_contract_status() itself, through a fake `codex` on
+# PATH whose bytes carry (or omit) the two literals ADR-0105 found six sites
+# instructing a spelling the host had already refused. verify-codex.sh calls
+# main unconditionally at its tail (install-codex.sh's sourcing guard has no
+# counterpart here), so the whole script runs as a subprocess with env
+# overrides — the mechanism the "incomplete Codex fixture" case below already
+# uses — rather than being sourced or having a guard added for this slice.
+HOST_CONTRACT_VERIFY_SH="$REPO_ROOT/bootstrap/verify-codex.sh"
+HOST_CONTRACT_SUPPORTED_VERSION="$(sed -n 's/^SUPPORTED_CODEX_VERSION=//p' \
+  "$REPO_ROOT/bootstrap/install-codex.sh")"
+HOST_CONTRACT_UNVERIFIED_VERSION="${HOST_CONTRACT_SUPPORTED_VERSION}-unverified-fixture"
+HOST_CONTRACT_FORK_CONTEXT_LITERAL='fork_context is not supported in MultiAgentV2; use fork_turns instead'
+HOST_CONTRACT_FORK_TURNS_LITERAL='fork_turns must be `none`, `all`, or a positive integer string'
+
+# The two literals live inside `#` comments so grep -a finds (or misses) them
+# in the shim's own bytes without them ever executing; --version echoes the
+# given string in the exact `codex-cli <version>` shape a real install prints.
+write_host_contract_codex_shim() {
+  local shim_dir="$1" with_fork_context="$2" with_fork_turns="$3" version="$4"
+  mkdir -p "$shim_dir"
+  printf '%s\n' '#!/bin/sh' > "$shim_dir/codex"
+  if [ "$with_fork_context" = yes ]; then
+    printf '# %s\n' "$HOST_CONTRACT_FORK_CONTEXT_LITERAL" >> "$shim_dir/codex"
+  fi
+  if [ "$with_fork_turns" = yes ]; then
+    printf '# %s\n' "$HOST_CONTRACT_FORK_TURNS_LITERAL" >> "$shim_dir/codex"
+  fi
+  printf '%s\n' \
+    'case "$*" in' \
+    "  --version) printf '%s\\n' 'codex-cli $version' ;;" \
+    '  *) exit 1 ;;' \
+    'esac' >> "$shim_dir/codex"
+  chmod +x "$shim_dir/codex"
+}
+
+# Drops only the PATH entries that resolve a real `codex`, so the skip lane
+# reproduces "codex is not on PATH" without hiding the coreutils the rest of
+# run_local_checks still calls (git, awk, sed, mktemp, ...).
+host_contract_path_without_codex() {
+  local dir result="" saved_ifs="$IFS"
+  IFS=':'
+  for dir in $PATH; do
+    if [ -n "$dir" ] && [ -x "$dir/codex" ]; then
+      continue
+    fi
+    result="${result:+$result:}$dir"
+  done
+  IFS="$saved_ifs"
+  printf '%s' "$result"
+}
+
+HOST_CONTRACT_CONFORMANT_SHIMS="$TEST_HOME/host-contract-conformant-shims"
+HOST_CONTRACT_CONFORMANT_HOME="$TEST_HOME/host-contract-conformant-home"
+mkdir -p "$HOST_CONTRACT_CONFORMANT_HOME/.codex"
+write_host_contract_codex_shim "$HOST_CONTRACT_CONFORMANT_SHIMS" yes yes \
+  "$HOST_CONTRACT_SUPPORTED_VERSION"
+HOST_CONTRACT_CONFORMANT_OUTPUT="$(
+  HOME="$HOST_CONTRACT_CONFORMANT_HOME" \
+    CODEX_HOME="$HOST_CONTRACT_CONFORMANT_HOME/.codex" \
+    PATH="$HOST_CONTRACT_CONFORMANT_SHIMS:$PATH" \
+    OSO_VERIFY_SKIP_SMOKE=1 \
+    bash "$HOST_CONTRACT_VERIFY_SH" 2>&1 || true
+)"
+assert_equals "a shim carrying both literals at the supported version reads as conformant" \
+  "1" "$(printf '%s\n' "$HOST_CONTRACT_CONFORMANT_OUTPUT" | \
+    grep -Fxc 'ok:   Codex binary matches the fork_turns host contract (conformant)' || true)"
+
+HOST_CONTRACT_NONCONFORMANT_SHIMS="$TEST_HOME/host-contract-nonconformant-shims"
+HOST_CONTRACT_NONCONFORMANT_HOME="$TEST_HOME/host-contract-nonconformant-home"
+mkdir -p "$HOST_CONTRACT_NONCONFORMANT_HOME/.codex"
+write_host_contract_codex_shim "$HOST_CONTRACT_NONCONFORMANT_SHIMS" no yes \
+  "$HOST_CONTRACT_SUPPORTED_VERSION"
+HOST_CONTRACT_NONCONFORMANT_OUTPUT="$(
+  HOME="$HOST_CONTRACT_NONCONFORMANT_HOME" \
+    CODEX_HOME="$HOST_CONTRACT_NONCONFORMANT_HOME/.codex" \
+    PATH="$HOST_CONTRACT_NONCONFORMANT_SHIMS:$PATH" \
+    OSO_VERIFY_SKIP_SMOKE=1 \
+    bash "$HOST_CONTRACT_VERIFY_SH" 2>&1 || true
+)"
+assert_equals "a shim missing one literal at the supported version fails through check() rather than passing" \
+  "1" "$(printf '%s\n' "$HOST_CONTRACT_NONCONFORMANT_OUTPUT" | \
+    grep -Fxc 'FAIL: Codex binary matches the fork_turns host contract — expected conformant, got nonconformant' || true)"
+
+HOST_CONTRACT_UNVERIFIED_SHIMS="$TEST_HOME/host-contract-unverified-shims"
+HOST_CONTRACT_UNVERIFIED_HOME="$TEST_HOME/host-contract-unverified-home"
+mkdir -p "$HOST_CONTRACT_UNVERIFIED_HOME/.codex"
+write_host_contract_codex_shim "$HOST_CONTRACT_UNVERIFIED_SHIMS" yes yes \
+  "$HOST_CONTRACT_UNVERIFIED_VERSION"
+HOST_CONTRACT_UNVERIFIED_OUTPUT="$(
+  HOME="$HOST_CONTRACT_UNVERIFIED_HOME" \
+    CODEX_HOME="$HOST_CONTRACT_UNVERIFIED_HOME/.codex" \
+    PATH="$HOST_CONTRACT_UNVERIFIED_SHIMS:$PATH" \
+    OSO_VERIFY_SKIP_SMOKE=1 \
+    bash "$HOST_CONTRACT_VERIFY_SH" 2>&1 || true
+)"
+assert_equals "a shim outside the supported version names both versions instead of asserting pass or fail" \
+  "1" "$(printf '%s\n' "$HOST_CONTRACT_UNVERIFIED_OUTPUT" | \
+    grep -Fxc "unverified: Codex host contract — claims were verified against Codex $HOST_CONTRACT_SUPPORTED_VERSION only; installed $HOST_CONTRACT_UNVERIFIED_VERSION falls outside that window, so pass/fail is not asserted here" || true)"
+
+HOST_CONTRACT_SKIP_HOME="$TEST_HOME/host-contract-skip-home"
+mkdir -p "$HOST_CONTRACT_SKIP_HOME/.codex"
+HOST_CONTRACT_SKIP_OUTPUT="$(
+  HOME="$HOST_CONTRACT_SKIP_HOME" \
+    CODEX_HOME="$HOST_CONTRACT_SKIP_HOME/.codex" \
+    PATH="$(host_contract_path_without_codex)" \
+    OSO_VERIFY_SKIP_SMOKE=1 \
+    bash "$HOST_CONTRACT_VERIFY_SH" 2>&1 || true
+)"
+assert_equals "no codex on PATH skips the host contract check rather than tallying a pass" \
+  "complete" "$(
+    if printf '%s\n' "$HOST_CONTRACT_SKIP_OUTPUT" | \
+        grep -Fxq 'skip: Codex host contract — codex is not on PATH, so the host contract could not be asserted' &&
+       ! printf '%s\n' "$HOST_CONTRACT_SKIP_OUTPUT" | \
+        grep -Fq 'Codex binary matches the fork_turns host contract'; then
+      printf complete
+    else
+      printf incomplete
+    fi
+  )"
+
 TOML_REMOVE_TABLE_INPUT="$TEST_HOME/toml-remove-table-input.toml"
 TOML_REMOVE_TABLE_ACTUAL="$TEST_HOME/toml-remove-table-actual.toml"
 TOML_REMOVE_TABLE_EXPECTED="$TEST_HOME/toml-remove-table-expected.toml"

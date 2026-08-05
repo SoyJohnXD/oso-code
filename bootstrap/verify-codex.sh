@@ -73,6 +73,41 @@ codex_version_status() {
   printf '%s' "$version"
 }
 
+codex_binary_path() {
+  local resolved
+  resolved="$(command -v codex 2>/dev/null)" || return 1
+  if command -v readlink >/dev/null 2>&1; then
+    resolved="$(readlink -f "$resolved" 2>/dev/null || printf '%s' "$resolved")"
+  fi
+  printf '%s' "$resolved"
+}
+
+# ADR-0106: every other check here asserts the harness against its own prose;
+# this one reads the installed binary's own rejection/acceptance text, because
+# ADR-0105 found six sites instructing a spelling the host had already refused
+# and nothing in the repo could have caught it without this.
+host_contract_status() {
+  local resolved installed_version
+  local fork_context_rejection='fork_context is not supported in MultiAgentV2; use fork_turns instead'
+  local fork_turns_contract='fork_turns must be `none`, `all`, or a positive integer string'
+  resolved="$(codex_binary_path)" || { printf 'codex-not-on-path'; return; }
+  installed_version="$(codex_version_status)"
+  if [ "$installed_version" != "$SUPPORTED_CODEX_VERSION" ]; then
+    # The two literals below were read out of codex-cli 0.146.0; a different
+    # version may have moved or reworded them, so a mismatch outside that
+    # window is unconfirmed, not broken, and grepping would misreport one as
+    # the other.
+    printf 'unverified:%s' "$installed_version"
+    return
+  fi
+  if grep -aq "$fork_context_rejection" "$resolved" 2>/dev/null &&
+     grep -aq "$fork_turns_contract" "$resolved" 2>/dev/null; then
+    printf conformant
+  else
+    printf nonconformant
+  fi
+}
+
 plugin_install_status() {
   local listing
   if ! command -v python3 >/dev/null 2>&1; then
@@ -611,8 +646,28 @@ run_integrator_fixture() {
 }
 
 run_local_checks() {
+  local host_contract_result
   printf 'local checks:\n'
   check "Codex CLI version" "$SUPPORTED_CODEX_VERSION" "$(codex_version_status)"
+  host_contract_result="$(host_contract_status)"
+  case "$host_contract_result" in
+    codex-not-on-path)
+      printf 'skip: Codex host contract — codex is not on PATH, so the host contract could not be asserted\n'
+      ;;
+    unverified:*)
+      printf 'unverified: Codex host contract — claims were verified against Codex %s only; installed %s falls outside that window, so pass/fail is not asserted here\n' \
+        "$SUPPORTED_CODEX_VERSION" "${host_contract_result#unverified:}"
+      ;;
+    conformant)
+      check "Codex binary matches the fork_turns host contract" conformant conformant
+      ;;
+    *)
+      # Fails the report so drift is visible, but never blocks bootstrap/install-codex.sh:
+      # an operator already past SUPPORTED_CODEX_VERSION must still be able to
+      # install — only this diagnostic misses, never the install path itself.
+      check "Codex binary matches the fork_turns host contract" conformant "$host_contract_result"
+      ;;
+  esac
   check "oso-code plugin installed" installed "$(plugin_install_status)"
   check "published runtime bytes" verified "$(installed_trust_status)"
   check "runtime entrypoints executable" executable "$(runtime_executable_status)"

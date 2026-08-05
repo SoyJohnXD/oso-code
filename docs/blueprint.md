@@ -195,6 +195,7 @@ Three properties of the amendment log these files replace are facts to carry for
 **2026-08-05 — codex-fluidity**
 
 - [0105](decisions/0105-explicit-codex-role-launches-set-fork-turns-none.md) — An explicit Codex role launches fresh through MultiAgentV2's `fork_turns`
+- [0106](decisions/0106-codex-host-contract-claims-are-checked-against-the-installed-binary.md) — Codex host-contract claims are checked against the installed binary
 
 ## Foundational decisions
 
