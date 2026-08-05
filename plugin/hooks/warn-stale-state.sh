@@ -27,7 +27,7 @@ if [ -n "${OSO_AGENT:-}" ]; then
 else
   plan_route='/oso-code:plan {change}'
 fi
-clear_command="\"${OSO_STATE_BIN:-oso-state}\" --session \"$session_id\" clear"
+clear_command="\"${OSO_STATE_BIN:-$HOOK_DIR/../bin/oso-state}\" --session \"$session_id\" clear"
 context="oso-code: found runtime state another session left behind (${stale# }). State is keyed by repository, so the flags in it arm this session's gates too — if the user is resuming an oso-code plan change, run $plan_route so step 0 restores the position and re-arms the runtime state; if they are not, that state is stale and $clear_command drops it."
 printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' "$(json_escape "$context")"
 exit 0

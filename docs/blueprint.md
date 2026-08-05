@@ -184,6 +184,14 @@ Three properties of the amendment log these files replace are facts to carry for
 
 - [0102](decisions/0102-codex-post-install-repair-is-bounded-and-profile-launches-are-fresh.md) — Codex post-install repair is bounded and explicit profile launches are fresh
 
+**2026-08-04 — codex-plan-mode-attestation**
+
+- [0103](decisions/0103-codex-plan-mode-is-attested-by-the-exact-turn.md) — Codex Plan Mode is attested by the exact hook turn
+
+**2026-08-04 — codex-plan-marker-transport**
+
+- [0104](decisions/0104-codex-plan-marker-allows-one-host-terminal-lf.md) — Codex plan marker allows one host terminal LF without normalizing the approval digest
+
 ## Foundational decisions
 
 | Decision | Choice | Rationale |
@@ -191,7 +199,7 @@ Three properties of the amendment log these files replace are facts to carry for
 | Platform | Claude Code and Codex as first-class adapters over neutral behavioral bodies (ADR-0096) | One harness contract; host tools, lifecycle and paths stay in their own bindings |
 | Distribution | One release: a native Claude plugin plus a Codex skills plugin and installer-owned roles, hooks, bounded config leaves and MCP wiring (ADR-0096, ADR-0098, ADR-0099, ADR-0102) | Codex's plugin schema cannot carry or pre-trust every runtime surface; the installer verifies its own leaves, composes Engram's root pointers, and repairs only exact Oso/Engram state without annexing shared host tables or foreign owners |
 | Plan state | Engram for semantic recall; Codex additionally keeps immutable approval snapshots and mutable operational plans below `~/.local/state/oso-code/plans/` (ADR-0101) — no files inside project repos | Clean projects, durable per-machine execution evidence, and bounded hot amendments without rewriting what was approved |
-| Enforcement | Native Plan Mode plus host approval adapter, state gates and prompt guidance (ADR-0096, ADR-0101, ADR-0102) | Runtime gates read state; Codex requires native Plan Mode before skill entry, binds the native approval prompt through an exact pending digest, and launches explicit delegated profiles with fresh complete context |
+| Enforcement | Native Plan Mode plus host approval adapter, state gates and prompt guidance (ADR-0096, ADR-0101, ADR-0102, ADR-0103, ADR-0104) | Runtime gates read state; Codex attests native mode from the exact turn, accepts its one host-owned terminal LF without normalizing the wire digest, binds the native approval prompt through that pending digest, and launches explicit delegated profiles with fresh complete context |
 | Repos | This monorepo; legacy repos harvested then archived | Atomic versioning of rubric + gate + skill |
 | Context budget | Each host's always-loaded global guidance ≤ 2k tokens | Behavior moves to on-demand skills; adding a second adapter does not duplicate the harness into startup context |
 | Reference | gentle-ai kept as prompting reference only | The system works; oso-code is tailored, not a fork |
@@ -231,7 +239,7 @@ Stop-the-line triage for a break — reproduce-first, minimal fix scope, no feat
 - Block `git commit` while the slice/session verify is not green — two layers over the same state file: the git `core.hooksPath` pre-commit hook (`plugin/git-hooks/pre-commit`) at the commit's own boundary, and the PreToolUse Bash matcher for what a git hook never sees (`--no-verify`, `commit-tree`, `update-ref`).
 - Block Edit/Write/MultiEdit/NotebookEdit and the named MCP writer tools (`mcp__fallow__fix_apply`) in mode 1 when no slice is active; `active_slice=none` is the disarmed sentinel. A parallel wave arms that one flag as `active_slice=wave-<n>` and every applier of the wave writes under it, because the gate cannot see which worktree an edit lands in.
 - Runtime flags live in flat `key=value` files under `~/.local/state/oso-code/`, outside projects, keyed by a SHA-256 digest of `git rev-parse --path-format=absolute --git-common-dir` (ADR-0095). The same repository therefore reaches one file from its main checkout and every linked worktree; two agent sessions in that repository also share it, and the last writer's `session` value owns teardown. Worktree paths and audit events remain session-scoped. An absent state file allows silently; once armed, a state file that cannot be read denies.
-- On Codex, `UserPromptSubmit` refuses `$oso-code:plan` outside native Plan Mode, `Stop` binds the hidden versioned marker and creates the presented/current artifacts, native `Implement the plan.` promotes the immutable snapshot only for the same pending session, and pending `PreToolUse` keeps new local execution closed. Approved snapshots persist; `current.md` alone accepts recorded in-scope amendments.
+- On Codex, `UserPromptSubmit` refuses `$oso-code:plan` outside native Plan Mode. Because Codex 0.146's hook field reports approval policy rather than collaboration mode, the rail attests the exact turn by binding `transcript_path` and `turn_id` to its host-generated `task_started` event, with the documented field as the compatibility fallback. That same resolver guards `Stop` capture, replanning feedback and the transition to native `Implement the plan.` approval. `Stop` creates the presented/current artifacts, approval promotes the immutable snapshot only for the same pending session, and pending `PreToolUse` keeps new local execution closed. Approved snapshots persist; `current.md` alone accepts recorded in-scope amendments.
 
 ## Tool policy
 

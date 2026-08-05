@@ -25,6 +25,9 @@ CONFIG_FILE="$CODEX_HOME/config.toml"
 GLOBAL_FILE="$CODEX_HOME/AGENTS.md"
 HOOKS_FILE="$CODEX_HOME/hooks.json"
 AGENTS_DIR="$CODEX_HOME/agents"
+SMOKE_HANDOFF_SLICE=codex-integrator-smoke
+SMOKE_HANDOFF_ATTEMPT=1
+SMOKE_INTEGRATOR_AGENT_TYPE=oso-integrator
 
 pass=0
 fail=0
@@ -394,29 +397,116 @@ commit_hook_red_status() {
   printf '%s' "$result"
 }
 
-integrator_delegation_observed() {
+integrator_handoff_consumed() {
   command -v python3 >/dev/null 2>&1 || return 1
   printf '%s\n' "$SMOKE_OUTPUT" | python3 -c '
 import json, sys
+import shlex
 
-main, worktree = sys.argv[1:3]
-needles = (main, worktree, "oso-smoke-slice")
+expected_slice, expected_attempt, expected_agent_type = sys.argv[1:4]
+receipt_keys = {"version", "hook_session", "slice", "attempt", "agent_id", "agent_type"}
+
+def completed_successfully(item):
+    if item.get("status") != "completed":
+        return False
+    exit_code = item.get("exit_code")
+    return exit_code in (None, 0)
+
+def candidate_command_tokens(command):
+    if not isinstance(command, str):
+        return
+    try:
+        outer_tokens = shlex.split(command)
+    except ValueError:
+        outer_tokens = []
+    groups = []
+    if outer_tokens:
+        groups.append(outer_tokens)
+    for index, token in enumerate(outer_tokens[:-1]):
+        if token in ("-c", "-lc"):
+            try:
+                groups.append(shlex.split(outer_tokens[index + 1]))
+            except ValueError:
+                pass
+    if not groups:
+        groups.append(command.split())
+    for tokens in groups:
+        for index, token in enumerate(tokens):
+            if token.split("/")[-1] == "oso-state":
+                yield tokens[index:]
+
+def consume_agent_id(command):
+    for tokens in candidate_command_tokens(command):
+        if len(tokens) < 3 or tokens[0].split("/")[-1] != "oso-state":
+            continue
+        if tokens[1:3] != ["handoff", "consume"]:
+            continue
+        parsed = {}
+        option_tokens = tokens[3:]
+        if len(option_tokens) % 2 != 0:
+            continue
+        for index in range(0, len(option_tokens), 2):
+            key = option_tokens[index]
+            value = option_tokens[index + 1]
+            if key not in {"--slice", "--attempt", "--agent-id", "--agent-type"}:
+                break
+            if key in parsed:
+                break
+            parsed[key] = value
+        else:
+            if parsed.get("--slice") == expected_slice and \
+                    parsed.get("--attempt") == expected_attempt and \
+                    parsed.get("--agent-type") == expected_agent_type and \
+                    parsed.get("--agent-id"):
+                return parsed["--agent-id"]
+    return None
+
+def command_stdout(item):
+    for key in ("stdout", "output", "aggregated_output"):
+        value = item.get(key)
+        if isinstance(value, str):
+            return value
+    return ""
+
+def receipt_from(output):
+    lines = output.splitlines()
+    if len(lines) != 6:
+        return None
+    receipt = {}
+    for line in lines:
+        if "=" not in line:
+            return None
+        key, value = line.split("=", 1)
+        if key not in receipt_keys or key in receipt or value == "":
+            return None
+        receipt[key] = value
+    if set(receipt) != receipt_keys or receipt["version"] != "1":
+        return None
+    return receipt
 
 for line in sys.stdin:
     try:
         event = json.loads(line)
     except json.JSONDecodeError:
         continue
+    if event.get("type") != "item.completed":
+        continue
     item = event.get("item", {})
-    prompt = item.get("prompt") or ""
-    receivers = item.get("receiver_thread_ids") or []
-    if (item.get("type") == "collab_tool_call" and
-            item.get("tool") == "spawn_agent" and
-            item.get("status") == "completed" and
-            receivers and all(needle in prompt for needle in needles)):
+    if not isinstance(item, dict):
+        continue
+    if item.get("type") != "command_execution" or not completed_successfully(item):
+        continue
+    agent_id = consume_agent_id(item.get("command"))
+    if not agent_id:
+        continue
+    receipt = receipt_from(command_stdout(item))
+    if receipt and receipt["slice"] == expected_slice and \
+            receipt["attempt"] == expected_attempt and \
+            receipt["agent_id"] == agent_id and \
+            receipt["agent_type"] == expected_agent_type:
         raise SystemExit(0)
 raise SystemExit(1)
-' "$SMOKE_MAIN" "$SMOKE_WORKTREE" >/dev/null 2>&1
+' "$SMOKE_HANDOFF_SLICE" "$SMOKE_HANDOFF_ATTEMPT" "$SMOKE_INTEGRATOR_AGENT_TYPE" >/dev/null 2>&1
 }
 
 create_integrator_fixture() {
@@ -503,21 +593,21 @@ cleanup_smoke_project_config() {
 }
 
 run_integrator_fixture() {
+  local smoke_worktrees
+
   # ADR-0100: a live parent --sandbox overrides the custom agent's default.
   # Match the integrator's declared authority so the smoke exercises it rather
   # than forcing the delegated role back behind workspace-write's .git guard.
   SMOKE_OUTPUT="$(codex exec --ephemeral --json --sandbox danger-full-access --color never \
     -C "$SMOKE_MAIN" --add-dir "$SMOKE_ROOT" \
-    "Delegate exactly one wave to the custom oso-integrator agent; never merge inline. Select agent_type oso-integrator explicitly and launch it with fresh context by setting fork_context=false; never use a full-history fork. Main checkout: $SMOKE_MAIN. BASE REF: $SMOKE_BASE_COMMIT. The complete wave has one slice, in this order: BRANCH oso-smoke-slice, WORKTREE PATH $SMOKE_WORKTREE. Return only the agent's completion status." 2>&1)" || return 1
-  integrator_delegation_observed &&
-    printf '%s' "$SMOKE_OUTPUT" | grep -F 'status: done' >/dev/null 2>&1 &&
-    printf '%s' "$SMOKE_OUTPUT" | grep -F 'torn_down:' >/dev/null 2>&1 &&
+    "Delegate exactly one wave to the custom oso-integrator agent; never merge inline. Select agent_type oso-integrator explicitly and launch it with fresh context by setting fork_context=false; never use a full-history fork. Main checkout: $SMOKE_MAIN. BASE REF: $SMOKE_BASE_COMMIT. HANDOFF SLICE: $SMOKE_HANDOFF_SLICE. HANDOFF ATTEMPT: $SMOKE_HANDOFF_ATTEMPT. The complete wave has one slice, in this order: BRANCH oso-smoke-slice, WORKTREE PATH $SMOKE_WORKTREE. Require the integrator to begin its final message with exactly: oso-handoff: v=1 slice=$SMOKE_HANDOFF_SLICE attempt=$SMOKE_HANDOFF_ATTEMPT. Retain the spawned agent id, wait for the report, then run exactly oso-state handoff wait --slice $SMOKE_HANDOFF_SLICE --attempt $SMOKE_HANDOFF_ATTEMPT --agent-id <agent-id> --agent-type $SMOKE_INTEGRATOR_AGENT_TYPE --timeout 10 and exactly once oso-state handoff consume --slice $SMOKE_HANDOFF_SLICE --attempt $SMOKE_HANDOFF_ATTEMPT --agent-id <agent-id> --agent-type $SMOKE_INTEGRATOR_AGENT_TYPE from the main checkout. Do not quote or summarize the child report in your final response." 2>&1)" || return 1
+  integrator_handoff_consumed &&
     [ -f "$SMOKE_MAIN/integrated.txt" ] &&
     grep -Fqx 'integrated by oso-integrator' "$SMOKE_MAIN/integrated.txt" &&
     git -C "$SMOKE_MAIN" merge-base --is-ancestor "$SMOKE_SLICE_COMMIT" HEAD >/dev/null 2>&1 &&
     ! git -C "$SMOKE_MAIN" show-ref --verify --quiet refs/heads/oso-smoke-slice &&
-    ! git -C "$SMOKE_MAIN" worktree list --porcelain |
-      grep -F "$SMOKE_WORKTREE" >/dev/null 2>&1
+    smoke_worktrees="$(git -C "$SMOKE_MAIN" worktree list --porcelain)" &&
+    ! printf '%s\n' "$smoke_worktrees" | grep -F "$SMOKE_WORKTREE" >/dev/null 2>&1
 }
 
 run_local_checks() {

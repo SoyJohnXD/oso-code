@@ -88,6 +88,93 @@ json_unescape() {
   printf '%s' "$decoded"
 }
 
+# Codex names this hook field `permission_mode`, but 0.146 derives it from the
+# approval policy rather than the native collaboration mode: an `on-request`
+# Plan turn therefore arrives as `default`. The same payload carries the exact
+# turn id and rollout path. Bind those two host values to the rollout's
+# host-generated task_started event before falling back to the documented field.
+#
+# The rollout format is not a stable public hook interface, so this compatibility
+# path is deliberately narrow: one regular non-symlinked transcript, its own
+# session header, one exact task_started event for this turn, and one of the two
+# collaboration modes Oso understands. User text cannot imitate the event line:
+# quotes inside response content are JSON-escaped, while the fixed-string probes
+# below require unescaped host object fields. When Codex starts reporting `plan`
+# truthfully, the documented payload remains the fallback if its rollout shape
+# changes or transcript persistence is disabled.
+resolve_codex_turn_mode() {
+  local payload="$1" permission_mode transcript_path turn_id raw_session_id
+  local meta meta_session candidate candidate_turn mode
+  local transcript_rejected=false
+
+  CODEX_TURN_MODE=unknown
+  CODEX_TURN_MODE_SOURCE=unavailable
+  permission_mode="$(json_field "$payload" permission_mode)"
+  transcript_path="$(json_field "$payload" transcript_path)"
+  turn_id="$(json_field "$payload" turn_id)"
+  raw_session_id="$(json_field "$payload" session_id)"
+
+  if [ -n "$transcript_path" ] &&
+     { [ ! -f "$transcript_path" ] || [ ! -r "$transcript_path" ] ||
+       [ -L "$transcript_path" ]; }; then
+    transcript_rejected=true
+  elif [ -n "$transcript_path" ] && [ -n "$turn_id" ] &&
+       [ -n "$raw_session_id" ]; then
+    meta="$(head -n 1 "$transcript_path" 2>/dev/null || true)"
+    meta_session="$(json_field "$meta" session_id)"
+    if [ "$meta_session" = "$raw_session_id" ]; then
+      case "$meta" in
+        *'"type":"session_meta"'*) ;;
+        *) meta_session="" ;;
+      esac
+    elif [ -n "$meta_session" ]; then
+      transcript_rejected=true
+    fi
+    if [ "$transcript_rejected" = false ] && [ -n "$meta_session" ]; then
+      candidate="$(
+        grep -F '"type":"event_msg"' "$transcript_path" 2>/dev/null |
+          grep -F '"type":"task_started"' |
+          grep -F "\"turn_id\":\"${turn_id}\"" |
+          grep -F '"collaboration_mode_kind":"' || true
+      )"
+      # More than one event for one turn is ambiguous, not "latest wins".
+      case "$candidate" in
+        '') ;;
+        *$'\n'*) transcript_rejected=true ;;
+        *)
+          candidate_turn="$(json_field "$candidate" turn_id)"
+          mode="$(json_field "$candidate" collaboration_mode_kind)"
+          if [ "$candidate_turn" = "$turn_id" ]; then
+            case "$mode" in
+              plan|default)
+                CODEX_TURN_MODE="$mode"
+                CODEX_TURN_MODE_SOURCE=transcript
+                return 0
+                ;;
+              *) transcript_rejected=true ;;
+            esac
+          else
+            transcript_rejected=true
+          fi
+          ;;
+      esac
+    fi
+  fi
+
+  [ "$transcript_rejected" = false ] || return 0
+
+  case "$permission_mode" in
+    plan)
+      CODEX_TURN_MODE=plan
+      CODEX_TURN_MODE_SOURCE=permission_mode
+      ;;
+    default|acceptEdits|dontAsk|bypassPermissions)
+      CODEX_TURN_MODE=default
+      CODEX_TURN_MODE_SOURCE=permission_mode
+      ;;
+  esac
+}
+
 OSO_STATE_DIR="${HOME}/.local/state/oso-code"
 
 # Session ids become file names — strip anything that could traverse paths.

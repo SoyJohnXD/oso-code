@@ -33,9 +33,9 @@ host  codex   codex/hooks/hooks.json   "__OSO_HOOKS_DIR__"
 # inserting or reordering a row shifts the later groups of that event.
 #
 # persist-state-bin.sh is Claude-only because its whole mechanism is CLAUDE_ENV_FILE,
-# which no other host writes; Codex reaches OSO_STATE_BIN through
-# shell_environment_policy.set instead (ADR-0094). Wiring it there would cost a
-# trusted position and do nothing.
+# which no other host writes; Codex user hooks get no shell_environment_policy at all,
+# so a Codex-wired handler resolves oso-state from the runtime sibling of its own
+# hooks directory instead. Wiring it there would cost a trusted position and do nothing.
 
 gate  commit    PreToolUse    block-commit-until-green.sh   wired  wired
 gate  edits     PreToolUse    block-edits-without-slice.sh  wired  wired

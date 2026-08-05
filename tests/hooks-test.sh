@@ -770,15 +770,99 @@ PLAN_PROMPT_HOOK="$PLUGIN/hooks/approve-plan-token.sh"
 codex_stop_input() {
   local permission_mode="$1" session_id="$2" escaped_message="$3"
   local stop_hook_active="${4:-false}"
-  printf '{"session_id":"%s","cwd":"%s","permission_mode":"%s","hook_event_name":"Stop","turn_id":"turn-plan-stop","stop_hook_active":%s,"last_assistant_message":"%s"}' \
-    "$session_id" "$REPO_ROOT" "$permission_mode" "$stop_hook_active" "$escaped_message"
+  local transcript_path="${5:-}" transcript_json=null
+  [ -z "$transcript_path" ] || transcript_json="\"${transcript_path}\""
+  printf '{"session_id":"%s","transcript_path":%s,"cwd":"%s","permission_mode":"%s","hook_event_name":"Stop","turn_id":"turn-plan-stop","stop_hook_active":%s,"last_assistant_message":"%s"}' \
+    "$session_id" "$transcript_json" "$REPO_ROOT" "$permission_mode" \
+    "$stop_hook_active" "$escaped_message"
 }
 
 codex_prompt_input() {
   local permission_mode="$1" session_id="$2" escaped_prompt="$3"
-  printf '{"session_id":"%s","cwd":"%s","permission_mode":"%s","hook_event_name":"UserPromptSubmit","turn_id":"turn-plan-prompt","prompt":"%s"}' \
-    "$session_id" "$REPO_ROOT" "$permission_mode" "$escaped_prompt"
+  local transcript_path="${4:-}" transcript_json=null
+  [ -z "$transcript_path" ] || transcript_json="\"${transcript_path}\""
+  printf '{"session_id":"%s","transcript_path":%s,"cwd":"%s","permission_mode":"%s","hook_event_name":"UserPromptSubmit","turn_id":"turn-plan-prompt","prompt":"%s"}' \
+    "$session_id" "$transcript_json" "$REPO_ROOT" "$permission_mode" "$escaped_prompt"
 }
+
+write_codex_transcript() {
+  local path="$1" session_id="$2" turn_id="$3" collaboration_mode="$4"
+  mkdir -p "$(dirname "$path")"
+  printf '%s\n' \
+    "{\"timestamp\":\"2026-08-04T16:36:12.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"${session_id}\"}}" \
+    "{\"timestamp\":\"2026-08-04T16:36:12.013Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"turn_id\":\"${turn_id}\",\"collaboration_mode_kind\":\"${collaboration_mode}\"}}" \
+    > "$path"
+}
+
+append_codex_plan_item() {
+  local path="$1" session_id="$2" turn_id="$3" escaped_text="$4"
+  printf '%s\n' \
+    "{\"timestamp\":\"2026-08-04T16:36:12.021Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"item_completed\",\"thread_id\":\"${session_id}\",\"turn_id\":\"${turn_id}\",\"item\":{\"type\":\"Plan\",\"id\":\"${turn_id}-plan\",\"text\":\"${escaped_text}\"}}}" \
+    >> "$path"
+}
+
+PLAN_MARKER='<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->'
+CODEX_TRANSCRIPT_DIR="$TEST_HOME/.codex/sessions/2026/08/04"
+CODEX_PROMPT_PLAN_TRANSCRIPT="$CODEX_TRANSCRIPT_DIR/prompt-plan.jsonl"
+CODEX_PROMPT_DEFAULT_TRANSCRIPT="$CODEX_TRANSCRIPT_DIR/prompt-default.jsonl"
+CODEX_PROMPT_FOREIGN_TRANSCRIPT="$CODEX_TRANSCRIPT_DIR/prompt-foreign.jsonl"
+CODEX_STOP_PLAN_TRANSCRIPT="$CODEX_TRANSCRIPT_DIR/stop-plan.jsonl"
+CODEX_STOP_DEFAULT_TRANSCRIPT="$CODEX_TRANSCRIPT_DIR/stop-default.jsonl"
+CODEX_STOP_MARKER_PLAN_TRANSCRIPT="$CODEX_TRANSCRIPT_DIR/stop-marker-plan.jsonl"
+CODEX_STOP_NO_PLAN_TRANSCRIPT="$CODEX_TRANSCRIPT_DIR/stop-no-plan.jsonl"
+CODEX_STOP_FOREIGN_PLAN_TRANSCRIPT="$CODEX_TRANSCRIPT_DIR/stop-foreign-plan.jsonl"
+CODEX_STOP_DUPLICATE_PLAN_TRANSCRIPT="$CODEX_TRANSCRIPT_DIR/stop-duplicate-plan.jsonl"
+CODEX_STOP_EMPTY_PLAN_TRANSCRIPT="$CODEX_TRANSCRIPT_DIR/stop-empty-plan.jsonl"
+write_codex_transcript \
+  "$CODEX_PROMPT_PLAN_TRANSCRIPT" "$SESSION" turn-plan-prompt plan
+write_codex_transcript \
+  "$CODEX_PROMPT_DEFAULT_TRANSCRIPT" "$SESSION" turn-plan-prompt default
+write_codex_transcript \
+  "$CODEX_PROMPT_FOREIGN_TRANSCRIPT" other-session turn-plan-prompt plan
+write_codex_transcript \
+  "$CODEX_STOP_PLAN_TRANSCRIPT" "$SESSION" turn-plan-stop plan
+write_codex_transcript \
+  "$CODEX_STOP_DEFAULT_TRANSCRIPT" "$SESSION" turn-plan-stop default
+write_codex_transcript \
+  "$CODEX_STOP_MARKER_PLAN_TRANSCRIPT" "$SESSION" turn-plan-stop plan
+write_codex_transcript \
+  "$CODEX_STOP_NO_PLAN_TRANSCRIPT" "$SESSION" turn-plan-stop plan
+write_codex_transcript \
+  "$CODEX_STOP_FOREIGN_PLAN_TRANSCRIPT" "$SESSION" turn-plan-stop plan
+write_codex_transcript \
+  "$CODEX_STOP_DUPLICATE_PLAN_TRANSCRIPT" "$SESSION" turn-plan-stop plan
+write_codex_transcript \
+  "$CODEX_STOP_EMPTY_PLAN_TRANSCRIPT" "$SESSION" turn-plan-stop plan
+append_codex_plan_item \
+  "$CODEX_STOP_MARKER_PLAN_TRANSCRIPT" "$SESSION" turn-plan-stop \
+  'Transcript plan heading\nTranscript plan body'
+append_codex_plan_item \
+  "$CODEX_STOP_FOREIGN_PLAN_TRANSCRIPT" "$SESSION" foreign-plan-turn \
+  'Foreign turn plan'
+append_codex_plan_item \
+  "$CODEX_STOP_DUPLICATE_PLAN_TRANSCRIPT" "$SESSION" turn-plan-stop \
+  'First duplicate plan'
+append_codex_plan_item \
+  "$CODEX_STOP_DUPLICATE_PLAN_TRANSCRIPT" "$SESSION" turn-plan-stop \
+  'Second duplicate plan'
+append_codex_plan_item \
+  "$CODEX_STOP_EMPTY_PLAN_TRANSCRIPT" "$SESSION" turn-plan-stop ''
+
+resolved_codex_mode_by() {
+  (
+    . "$PLUGIN/hooks/lib.sh"
+    JSON_READER="$1"
+    resolve_codex_turn_mode "$2"
+    printf '%s:%s' "$CODEX_TURN_MODE" "$CODEX_TURN_MODE_SOURCE"
+  )
+}
+
+real_codex_plan_prompt="$(
+  codex_prompt_input default "$SESSION" '$oso-code:plan repair approval' \
+    "$CODEX_PROMPT_PLAN_TRANSCRIPT"
+)"
+assert_equals "the pure-Bash reader attests Codex 0.146 Plan Mode from its turn" \
+  plan:transcript "$(resolved_codex_mode_by pattern "$real_codex_plan_prompt")"
 
 sha256_text() {
   local digest
@@ -833,18 +917,52 @@ assert_equals "a non-final marker writes no approval state" \
 
 for malformed_stop_case in \
   'Repaso\n<!-- oso-plan-approval: v=2 action=WRONG_ACTION -->' \
-  'Repaso\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\n' \
+  'Repaso\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\n\n' \
   '<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->' \
   'Repaso\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->'; do
   run_hook "$PLAN_STOP_HOOK" "$(codex_stop_input plan "$SESSION" "$malformed_stop_case")"
-  assert_after_hook "a malformed, terminal-LF, marker-only or duplicate rail blocks Stop" \
+  assert_after_hook "a malformed, double-LF, marker-only or duplicate rail blocks Stop" \
     hook_returned_block
   assert_equals "a rejected Stop marker writes no approval state" \
     absent "$([ ! -e "$REPO_STATE" ] && printf absent || printf present)"
 done
 
+marker_only_plan='Transcript plan heading\nTranscript plan body'
+marker_only_plan_document="$(printf 'Transcript plan heading\nTranscript plan body')"
+marker_only_digest="$(sha256_text "${marker_only_plan}\\n${PLAN_MARKER}")"
 run_hook "$PLAN_STOP_HOOK" \
-  "$(codex_stop_input default "$SESSION" 'Repaso\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->')"
+  "$(codex_stop_input default "$SESSION" "$PLAN_MARKER" false "$CODEX_STOP_MARKER_PLAN_TRANSCRIPT")"
+assert_after_hook "marker-only Stop reconstructs the exact-turn native Plan item and records pending approval" \
+  [ "$hook_stdout" = '{}' ]
+assert_equals "marker-only Stop records pending approval" pending \
+  "$(oso-state --session "$SESSION" get plan_approval)"
+assert_equals "marker-only Stop binds digest to the Plan item plus marker" \
+  "$marker_only_digest" "$(oso-state --session "$SESSION" get plan_approval_digest)"
+assert_equals "marker-only Stop records the presenting session" \
+  "$SESSION" "$(oso-state --session "$SESSION" get session)"
+marker_only_presented_file="$REPO_PLAN_DIR/presented-${marker_only_digest}.md"
+marker_only_current_file="$REPO_PLAN_DIR/current.md"
+assert_equals "marker-only Stop snapshots the exact native Plan item" \
+  "$marker_only_plan_document" "$(cat "$marker_only_presented_file" 2>/dev/null || true)"
+assert_equals "marker-only Stop publishes the Plan item as current.md" \
+  "$marker_only_plan_document" "$(cat "$marker_only_current_file" 2>/dev/null || true)"
+oso-state --session "$SESSION" clear
+
+for marker_only_bad_transcript in \
+  "$CODEX_STOP_NO_PLAN_TRANSCRIPT" \
+  "$CODEX_STOP_FOREIGN_PLAN_TRANSCRIPT" \
+  "$CODEX_STOP_DUPLICATE_PLAN_TRANSCRIPT" \
+  "$CODEX_STOP_EMPTY_PLAN_TRANSCRIPT"; do
+  run_hook "$PLAN_STOP_HOOK" \
+    "$(codex_stop_input default "$SESSION" "$PLAN_MARKER" false "$marker_only_bad_transcript")"
+  assert_after_hook "marker-only Stop rejects missing, foreign, duplicate or empty native Plan items" \
+    hook_returned_block
+  assert_equals "a rejected marker-only Plan item writes no approval state" \
+    absent "$([ ! -e "$REPO_STATE" ] && printf absent || printf present)"
+done
+
+run_hook "$PLAN_STOP_HOOK" \
+  "$(codex_stop_input default "$SESSION" 'Repaso\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->' false "$CODEX_STOP_DEFAULT_TRANSCRIPT")"
 assert_after_hook "a valid plan marker outside Plan Mode blocks Stop" \
   hook_returned_block
 assert_equals "a wrong-mode Stop writes no approval state" \
@@ -858,8 +976,8 @@ assert_equals "an active Stop retry writes no approval state" \
   absent "$([ ! -e "$REPO_STATE" ] && printf absent || printf present)"
 
 run_hook "$PLAN_STOP_HOOK" \
-  "$(codex_stop_input plan "$SESSION" 'Repaso corrected\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->' true)"
-assert_after_hook "an active Stop retry can capture a corrected valid plan" \
+  "$(codex_stop_input default "$SESSION" 'Repaso corrected\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->' true "$CODEX_STOP_PLAN_TRANSCRIPT")"
+assert_after_hook "a real Codex 0.146 Plan Stop can capture a corrected valid plan" \
   [ "$hook_stdout" = '{}' ]
 assert_equals "a corrected active Stop retry publishes pending state" pending \
   "$(oso-state --session "$SESSION" get plan_approval)"
@@ -876,16 +994,21 @@ assert_equals "an ordinary prompt outside the harness writes no state" \
   absent "$([ ! -e "$REPO_STATE" ] && printf absent || printf present)"
 
 run_hook "$PLAN_PROMPT_HOOK" \
-  "$(codex_prompt_input default "$SESSION" '$oso-code:plan repair approval')"
+  "$(codex_prompt_input default "$SESSION" '$oso-code:plan repair approval' "$CODEX_PROMPT_DEFAULT_TRANSCRIPT")"
 assert_after_hook "a Codex plan skill invocation outside native Plan Mode is rejected early" \
   hook_returned_block
 assert_equals "a rejected Default-mode plan invocation writes no state" \
   absent "$([ ! -e "$REPO_STATE" ] && printf absent || printf present)"
 
 run_hook "$PLAN_PROMPT_HOOK" \
-  "$(codex_prompt_input plan "$SESSION" '$oso-code:plan repair approval')"
-assert_after_hook "the same plan skill invocation is allowed in native Plan Mode" \
+  "$(codex_prompt_input default "$SESSION" '$oso-code:plan repair approval' "$CODEX_PROMPT_PLAN_TRANSCRIPT")"
+assert_after_hook "the real Codex 0.146 payload allows a native Plan Mode invocation" \
   [ "$hook_stdout" = '{}' ]
+
+run_hook "$PLAN_PROMPT_HOOK" \
+  "$(codex_prompt_input plan "$SESSION" '$oso-code:plan repair approval' "$CODEX_PROMPT_FOREIGN_TRANSCRIPT")"
+assert_after_hook "a foreign transcript cannot fall through to permission_mode=plan" \
+  hook_returned_block
 
 run_hook "$PLAN_PROMPT_HOOK" \
   "$(codex_prompt_input default "$SESSION" 'Implement the plan.')"
@@ -895,21 +1018,33 @@ assert_equals "a no-pending native approval writes no state" \
   absent "$([ ! -e "$REPO_STATE" ] && printf absent || printf present)"
 
 run_hook "$PLAN_PROMPT_HOOK" \
-  "$(codex_prompt_input plan "$SESSION" 'Implement the plan.')"
+  "$(codex_prompt_input default "$SESSION" 'Implement the plan.' "$CODEX_PROMPT_PLAN_TRANSCRIPT")"
 assert_after_hook "the native phrase with no pending plan is also invisible in Plan Mode" \
   [ "$hook_stdout" = '{}' ]
 assert_equals "a no-pending Plan Mode phrase writes no state" \
   absent "$([ ! -e "$REPO_STATE" ] && printf absent || printf present)"
 
-first_plan='Repaso de cambios\nFull slice plan: alpha\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->'
+# Real Codex Stop transport appends one LF after the assistant's final logical
+# line. Preserve that escaped byte in the fixture so the digest assertion below
+# proves that acceptance does not normalize the wire representation.
+first_plan='Repaso de cambios\nFull slice plan: alpha\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\n'
 first_plan_digest="$(sha256_text "$first_plan")"
-run_hook "$PLAN_STOP_HOOK" "$(codex_stop_input plan "$SESSION" "$first_plan")"
-assert_after_hook "one exact final marker captures the Plan Mode document" \
+first_plan_without_host_lf='Repaso de cambios\nFull slice plan: alpha\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->'
+first_plan_without_host_lf_digest="$(sha256_text "$first_plan_without_host_lf")"
+run_hook "$PLAN_STOP_HOOK" \
+  "$(codex_stop_input default "$SESSION" "$first_plan" false "$CODEX_STOP_PLAN_TRANSCRIPT")"
+assert_after_hook "one host terminal LF preserves a real Codex Plan Mode document" \
   [ "$hook_stdout" = '{}' ]
 assert_equals "Stop records a pending approval" pending \
   "$(oso-state --session "$SESSION" get plan_approval)"
 assert_equals "Stop binds approval to the complete observed message digest" \
   "$first_plan_digest" "$(oso-state --session "$SESSION" get plan_approval_digest)"
+case "$first_plan_digest" in
+  "$first_plan_without_host_lf_digest")
+    echo "FAIL: the terminal-LF fixture was normalized before hashing"; fail=$((fail + 1)) ;;
+  *)
+    echo "ok: the terminal-LF fixture keeps its distinct wire digest"; pass=$((pass + 1)) ;;
+esac
 captured_plan_digest="$(oso-state --session "$SESSION" get plan_approval_digest)"
 case "$captured_plan_digest" in
   ''|*[!0-9a-f]*) digest_shape=invalid ;;
@@ -953,15 +1088,15 @@ assert_equals "a rejected premature amendment leaves current.md unchanged" \
 # from the same pending session means the operator requested replanning, so the
 # hook atomically invalidates that document before Codex handles the feedback.
 run_hook "$PLAN_PROMPT_HOOK" \
-  "$(codex_prompt_input default "$SESSION" 'please explain one risk first')"
+  "$(codex_prompt_input default "$SESSION" 'please explain one risk first' "$CODEX_PROMPT_DEFAULT_TRANSCRIPT")"
 assert_after_hook "ordinary non-plan feedback remains ordinary JSON success" \
   [ "$hook_stdout" = '{}' ]
 assert_equals "ordinary non-plan feedback leaves approval pending" pending \
   "$(oso-state --session "$SESSION" get plan_approval)"
 
 run_hook "$PLAN_PROMPT_HOOK" \
-  "$(codex_prompt_input plan "$SESSION" 'revise the second slice')"
-assert_after_hook "same-session Plan Mode feedback invalidates the pending document" \
+  "$(codex_prompt_input default "$SESSION" 'revise the second slice' "$CODEX_PROMPT_PLAN_TRANSCRIPT")"
+assert_after_hook "real Codex 0.146 Plan Mode feedback invalidates the pending document" \
   hook_returned_prompt_context
 assert_equals "Plan Mode feedback removes the stale approval state" \
   absent "$([ ! -e "$REPO_STATE" ] && printf absent || printf present)"
@@ -988,7 +1123,7 @@ assert_equals "a wrong-session cancellation does not erase pending state" \
   "$cancel_pending_snapshot" "$(approval_state_snapshot)"
 
 run_hook "$PLAN_PROMPT_HOOK" \
-  "$(codex_prompt_input plan "$SESSION" 'CANCEL OSO PLAN')"
+  "$(codex_prompt_input default "$SESSION" 'CANCEL OSO PLAN' "$CODEX_PROMPT_PLAN_TRANSCRIPT")"
 assert_after_hook "the exact same-session cancellation works in Plan Mode" \
   hook_returned_prompt_context
 assert_equals "Plan Mode cancellation removes pending state" \
@@ -1060,8 +1195,8 @@ assert_equals "an unknown permission mode does not mutate pending state" \
   "$pending_snapshot" "$(approval_state_snapshot)"
 
 run_hook "$PLAN_PROMPT_HOOK" \
-  "$(codex_prompt_input plan "$SESSION" 'Implement the plan.')"
-assert_after_hook "a pending plan still rejects the native phrase in Plan Mode" \
+  "$(codex_prompt_input default "$SESSION" 'Implement the plan.' "$CODEX_PROMPT_PLAN_TRANSCRIPT")"
+assert_after_hook "a real Codex 0.146 Plan turn still rejects the native phrase" \
   hook_returned_block
 assert_equals "a blocked Plan Mode phrase does not mutate pending state" \
   "$pending_snapshot" "$(approval_state_snapshot)"
@@ -1101,7 +1236,7 @@ assert_equals "an unsafe artifact cannot mutate pending state" \
 chmod 0600 "$first_presented_file"
 
 run_hook "$PLAN_PROMPT_HOOK" \
-  "$(codex_prompt_input default "$SESSION" 'Implement the plan.')"
+  "$(codex_prompt_input default "$SESSION" 'Implement the plan.' "$CODEX_PROMPT_DEFAULT_TRANSCRIPT")"
 assert_after_hook "the exact Default-mode native phrase approves its same-session plan" \
   hook_returned_prompt_context
 assert_equals "the accepted native phrase changes only the approval status" approved \
@@ -1183,6 +1318,67 @@ run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input Bash)" 0 '' \
 assert_after_hook "recapturing a changed plan closes allowlisted tools again" \
   hook_returned_deny
 oso-state --session "$SESSION" clear
+
+# Codex runs user hooks through a command runner its shell_environment_policy
+# never reaches, so OSO_STATE_BIN is unset for the whole rail and every case
+# above would still pass while the real host resolved nothing.  A plain system
+# PATH is the faithful fixture: oso-state is installed on none of these
+# directories, and unlike a symlink farm it cannot turn a missing state binary
+# into a missing coreutil — or a missing interpreter — the farm forgot.
+PLAN_RUNTIME="$TEST_HOME/plan-runtime"
+PLAN_RUNTIME_REPO="$TEST_HOME/plan-runtime-repo"
+PLAN_RUNTIME_PATH=/usr/local/bin:/usr/bin:/bin
+mkdir -p "$PLAN_RUNTIME/hooks" "$PLAN_RUNTIME/bin" "$PLAN_RUNTIME_REPO"
+cp "$PLUGIN/hooks/capture-plan-approval.sh" "$PLUGIN/hooks/approve-plan-token.sh" \
+  "$PLUGIN/hooks/lib.sh" "$PLUGIN/hooks/lexer.sh" "$PLAN_RUNTIME/hooks/"
+cp "$PLUGIN/bin/oso-state" "$PLAN_RUNTIME/bin/"
+chmod +x "$PLAN_RUNTIME/hooks/capture-plan-approval.sh" \
+  "$PLAN_RUNTIME/hooks/approve-plan-token.sh" "$PLAN_RUNTIME/bin/oso-state"
+assert_equals "the plan-rail regression PATH cannot resolve bare oso-state" \
+  "missing" "$(
+    PATH="$PLAN_RUNTIME_PATH"
+    hash -r
+    command -v oso-state >/dev/null 2>&1 && echo present || echo missing
+  )"
+
+runtime_plan_state() {
+  ( cd "$PLAN_RUNTIME_REPO" && oso-state --session "$SESSION" get "$1" )
+}
+
+runtime_plan_document="$(printf 'Repaso de cambios\nRuntime slice: oso-state resolves beside the hooks')"
+runtime_plan_message='Repaso de cambios\nRuntime slice: oso-state resolves beside the hooks\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->'
+runtime_stop_payload="$(printf '{"session_id":"%s","transcript_path":null,"cwd":"%s","permission_mode":"plan","hook_event_name":"Stop","turn_id":"turn-runtime-plan","stop_hook_active":false,"last_assistant_message":"%s"}' \
+  "$SESSION" "$PLAN_RUNTIME_REPO" "$runtime_plan_message")"
+runtime_approval_payload="$(printf '{"session_id":"%s","transcript_path":null,"cwd":"%s","permission_mode":"default","hook_event_name":"UserPromptSubmit","turn_id":"turn-runtime-approve","prompt":"Implement the plan."}' \
+  "$SESSION" "$PLAN_RUNTIME_REPO")"
+unset OSO_STATE_BIN
+OSO_AGENT=1 PATH="$PLAN_RUNTIME_PATH" run_hook \
+  "$PLAN_RUNTIME/hooks/capture-plan-approval.sh" "$runtime_stop_payload"
+assert_after_hook "the runtime-fallback Stop rail records the plan instead of blocking it" \
+  [ "$hook_stdout" = '{}' ]
+assert_equals "the runtime-fallback capture leaves the approval pending" \
+  pending "$(runtime_plan_state plan_approval)"
+runtime_plan_digest="$(runtime_plan_state plan_approval_digest)"
+case "$runtime_plan_digest" in
+  ''|*[!0-9a-f]*) runtime_digest_shape=invalid ;;
+  *) [ "${#runtime_plan_digest}" -eq 64 ] && runtime_digest_shape=valid || runtime_digest_shape=invalid ;;
+esac
+assert_equals "the runtime-fallback capture binds a 64-hex document digest" \
+  valid "$runtime_digest_shape"
+runtime_plan_dir="$STATE_DIR/plans/$(state_key_of "$PLAN_RUNTIME_REPO")"
+assert_equals "the runtime-fallback capture snapshots the pending document" \
+  "$runtime_plan_document" \
+  "$(cat "$runtime_plan_dir/presented-${runtime_plan_digest}.md" 2>/dev/null || true)"
+assert_equals "the runtime-fallback capture publishes the operational plan" \
+  "$runtime_plan_document" "$(cat "$runtime_plan_dir/current.md" 2>/dev/null || true)"
+
+OSO_AGENT=1 PATH="$PLAN_RUNTIME_PATH" run_hook \
+  "$PLAN_RUNTIME/hooks/approve-plan-token.sh" "$runtime_approval_payload"
+assert_after_hook "the runtime-fallback native phrase opens the execution gate" \
+  hook_returned_prompt_context
+assert_equals "the Codex plan rail records and approves through the installed runtime when OSO_STATE_BIN is unset" \
+  approved "$(runtime_plan_state plan_approval)"
+( cd "$PLAN_RUNTIME_REPO" && oso-state --session "$SESSION" clear >/dev/null )
 
 # --- Declarations: the Codex floor the installer's pin has to read ------------
 # The Codex port was designed against a CLI six versions behind what npm
@@ -1665,6 +1861,9 @@ done <<< "$S5_ROLE_MAP"
 integrator_smoke_function="$(sed -n \
   '/^run_integrator_fixture() {$/,/^}$/p' \
   "$REPO_ROOT/bootstrap/verify-codex.sh")"
+integrator_handoff_function="$(sed -n \
+  '/^integrator_handoff_consumed() {$/,/^}$/p' \
+  "$REPO_ROOT/bootstrap/verify-codex.sh")"
 assert_equals "the authenticated smoke preserves the integrator's live sandbox authority" \
   "1" "$(printf '%s\n' "$integrator_smoke_function" | \
     grep -Fc 'codex exec --ephemeral --json --sandbox danger-full-access --color never' || true)"
@@ -1674,6 +1873,122 @@ assert_equals "the authenticated smoke does not override the integrator back to 
 assert_equals "the authenticated smoke requires a fresh explicit integrator launch" \
   "1" "$(printf '%s\n' "$integrator_smoke_function" | \
     grep -Fc 'agent_type oso-integrator explicitly and launch it with fresh context by setting fork_context=false' || true)"
+integrator_smoke_observable_contract="$(
+  if printf '%s\n' "$integrator_smoke_function" | grep -F 'status: done' >/dev/null 2>&1 ||
+     printf '%s\n' "$integrator_smoke_function" | grep -F 'torn_down:' >/dev/null 2>&1; then
+    printf child-report-dependent
+  elif printf '%s\n' "$integrator_handoff_function" | grep -F 'item.get("type") != "command_execution"' >/dev/null 2>&1 &&
+       printf '%s\n' "$integrator_handoff_function" | grep -F 'tokens[1:3] != ["handoff", "consume"]' >/dev/null 2>&1 &&
+       printf '%s\n' "$integrator_handoff_function" | grep -F 'receipt["agent_id"] == agent_id' >/dev/null 2>&1 &&
+       printf '%s\n' "$integrator_handoff_function" | grep -F 'spawn_agent' >/dev/null 2>&1; then
+    printf spawn-parser-retained
+  elif printf '%s\n' "$integrator_handoff_function" | grep -F 'item.get("type") != "command_execution"' >/dev/null 2>&1 &&
+       printf '%s\n' "$integrator_handoff_function" | grep -F 'tokens[1:3] != ["handoff", "consume"]' >/dev/null 2>&1 &&
+       printf '%s\n' "$integrator_handoff_function" | grep -F 'receipt["agent_id"] == agent_id' >/dev/null 2>&1 &&
+       printf '%s\n' "$integrator_smoke_function" | grep -F 'HANDOFF SLICE: $SMOKE_HANDOFF_SLICE' >/dev/null 2>&1 &&
+       printf '%s\n' "$integrator_smoke_function" | grep -F 'HANDOFF ATTEMPT: $SMOKE_HANDOFF_ATTEMPT' >/dev/null 2>&1 &&
+       printf '%s\n' "$integrator_smoke_function" | grep -F 'oso-state handoff wait --slice $SMOKE_HANDOFF_SLICE --attempt $SMOKE_HANDOFF_ATTEMPT --agent-id <agent-id> --agent-type $SMOKE_INTEGRATOR_AGENT_TYPE --timeout 10' >/dev/null 2>&1 &&
+       printf '%s\n' "$integrator_smoke_function" | grep -F 'oso-state handoff consume --slice $SMOKE_HANDOFF_SLICE --attempt $SMOKE_HANDOFF_ATTEMPT --agent-id <agent-id> --agent-type $SMOKE_INTEGRATOR_AGENT_TYPE' >/dev/null 2>&1 &&
+       printf '%s\n' "$integrator_smoke_function" | grep -F 'integrator_handoff_consumed &&' >/dev/null 2>&1 &&
+       printf '%s\n' "$integrator_smoke_function" | grep -F '[ -f "$SMOKE_MAIN/integrated.txt" ]' >/dev/null 2>&1 &&
+       printf '%s\n' "$integrator_smoke_function" | grep -F "grep -Fqx 'integrated by oso-integrator' \"\$SMOKE_MAIN/integrated.txt\"" >/dev/null 2>&1 &&
+       printf '%s\n' "$integrator_smoke_function" | grep -F 'git -C "$SMOKE_MAIN" merge-base --is-ancestor "$SMOKE_SLICE_COMMIT" HEAD' >/dev/null 2>&1 &&
+       printf '%s\n' "$integrator_smoke_function" | grep -F 'git -C "$SMOKE_MAIN" show-ref --verify --quiet refs/heads/oso-smoke-slice' >/dev/null 2>&1 &&
+       printf '%s\n' "$integrator_smoke_function" | grep -F 'git -C "$SMOKE_MAIN" worktree list --porcelain' >/dev/null 2>&1 &&
+       printf '%s\n' "$integrator_smoke_function" | grep -F 'grep -F "$SMOKE_WORKTREE"' >/dev/null 2>&1; then
+    printf complete
+  else
+    printf incomplete
+  fi
+)"
+assert_equals "authenticated integrator smoke requires a consumed oso-integrator handoff plus repository effects" \
+  complete "$integrator_smoke_observable_contract"
+
+integrator_handoff_status() (
+  SMOKE_HANDOFF_SLICE=codex-integrator-smoke
+  SMOKE_HANDOFF_ATTEMPT=1
+  SMOKE_INTEGRATOR_AGENT_TYPE=oso-integrator
+  SMOKE_OUTPUT="$1"
+  eval "$integrator_handoff_function"
+  if integrator_handoff_consumed; then printf observed; else printf missing; fi
+)
+
+smoke_receipt_json() {
+  printf 'version=1\\nhook_session=session-smoke\\nslice=%s\\nattempt=%s\\nagent_id=%s\\nagent_type=%s' \
+    "$1" "$2" "$3" "$4"
+}
+
+smoke_consume_command() {
+  printf 'oso-state handoff consume --slice %s --attempt %s --agent-id %s --agent-type %s' \
+    "$1" "$2" "$3" "$4"
+}
+
+smoke_command_event() {
+  local command="$1" escaped_stdout="$2" status="${3:-completed}" exit_code="${4:-0}"
+  local event_type="${5:-item.completed}"
+  printf '{"type":"%s","item":{"type":"command_execution","command":"%s","status":"%s","stdout":"%s","exit_code":%s}}\n' \
+    "$event_type" "$command" "$status" "$escaped_stdout" "$exit_code"
+}
+
+# integrator_handoff_consumed returns 1 outright where python3 is absent, so the
+# whole group goes with the parser rather than the failing case alone: without it
+# the positive case reports missing, and every negative case below reports the
+# verdict it wants for the one reason that proves nothing about the parser.
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "skip: python3 is absent here, so the smoke's handoff receipt parser has nothing to run"
+  skipped=$((skipped + 1))
+else
+  smoke_agent_id=agent-smoke-123
+  smoke_valid_command="$(
+    smoke_consume_command codex-integrator-smoke 1 "$smoke_agent_id" oso-integrator
+  )"
+  smoke_valid_receipt="$(
+    smoke_receipt_json codex-integrator-smoke 1 "$smoke_agent_id" oso-integrator
+  )"
+  smoke_valid_jsonl="$(smoke_command_event "$smoke_valid_command" "$smoke_valid_receipt")"
+  assert_equals "valid completed consume plus matching receipt passes" \
+    observed "$(integrator_handoff_status "$smoke_valid_jsonl")"
+  assert_equals "missing receipt fails" \
+    missing "$(integrator_handoff_status "$(smoke_command_event "$smoke_valid_command" "")")"
+  assert_equals "failed command fails" \
+    missing "$(integrator_handoff_status "$(smoke_command_event "$smoke_valid_command" "$smoke_valid_receipt" failed 1)")"
+  assert_equals "started command event fails" \
+    missing "$(integrator_handoff_status "$(smoke_command_event "$smoke_valid_command" "$smoke_valid_receipt" completed 0 item.started)")"
+
+  smoke_wrong_slice_jsonl="$(
+    smoke_command_event \
+      "$(smoke_consume_command wrong-integrator-smoke 1 "$smoke_agent_id" oso-integrator)" \
+      "$(smoke_receipt_json wrong-integrator-smoke 1 "$smoke_agent_id" oso-integrator)"
+  )"
+  smoke_wrong_attempt_jsonl="$(
+    smoke_command_event \
+      "$(smoke_consume_command codex-integrator-smoke 2 "$smoke_agent_id" oso-integrator)" \
+      "$(smoke_receipt_json codex-integrator-smoke 2 "$smoke_agent_id" oso-integrator)"
+  )"
+  smoke_wrong_type_jsonl="$(
+    smoke_command_event \
+      "$(smoke_consume_command codex-integrator-smoke 1 "$smoke_agent_id" oso-verifier)" \
+      "$(smoke_receipt_json codex-integrator-smoke 1 "$smoke_agent_id" oso-verifier)"
+  )"
+  assert_equals "wrong slice, attempt, or agent type fails" \
+    "missing missing missing" \
+    "$(printf '%s %s %s' \
+      "$(integrator_handoff_status "$smoke_wrong_slice_jsonl")" \
+      "$(integrator_handoff_status "$smoke_wrong_attempt_jsonl")" \
+      "$(integrator_handoff_status "$smoke_wrong_type_jsonl")")"
+
+  smoke_mismatch_receipt="$(
+    smoke_receipt_json codex-integrator-smoke 1 agent-smoke-other oso-integrator
+  )"
+  assert_equals "receipt agent id mismatching the command fails" \
+    missing "$(integrator_handoff_status "$(smoke_command_event "$smoke_valid_command" "$smoke_mismatch_receipt")")"
+  smoke_spawn_only_jsonl='{"type":"item.completed","item":{"type":"collab_tool_call","tool":"spawn_agent","status":"completed","receiver_thread_ids":["agent-smoke-123"],"prompt":"BRANCH oso-smoke-slice"}}'
+  assert_equals "spawn-only JSONL fails" \
+    missing "$(integrator_handoff_status "$smoke_spawn_only_jsonl")"
+  smoke_report_only_jsonl='{"type":"item.completed","item":{"type":"agent_message","text":"oso-handoff: v=1 slice=codex-integrator-smoke attempt=1\nstatus: done"}}'
+  assert_equals "report-only JSONL fails" \
+    missing "$(integrator_handoff_status "$smoke_report_only_jsonl")"
+fi
 assert_equals "the shared Codex protocol forbids full-history forks with explicit roles" \
   "1" "$(grep -Fc 'Every launch that selects an explicit `agent_type` starts with fresh context: set `fork_context=false`.' \
     "$REPO_ROOT/plugin/skills/_shared/platform/codex/subagents.md" || true)"
@@ -2187,7 +2502,10 @@ full detail
 Plan Mode
 `$oso-code:plan`
 `/plan`
-`permission_mode`
+`permission_mode=default`
+`transcript_path`
+`turn_id`
+`task_started.collaboration_mode_kind`
 native plan approval control
 whole user prompt
 case-sensitive

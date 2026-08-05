@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.18.5
+
+**Reinstall required** — Codex's installed approval hooks and their published trust-boundary hashes changed. Pull the release, run `bash bootstrap/install-codex.sh --yes`, restart Codex, and start a new thread before testing `$oso-code:plan`.
+
+This patch repairs the native Plan Mode preflight and approval transport where 0.18.4 was stricter than Codex's real hook contract:
+
+- Codex 0.146 derives hook `permission_mode` from approval policy and therefore emits `default` during genuine native Plan turns. Oso no longer treats that field alone as collaboration-mode evidence.
+- One exact-turn resolver binds the hook's `session_id`, `transcript_path` and `turn_id` to the host-generated `task_started.collaboration_mode_kind` event. It rejects foreign sessions, duplicate turn events, symlinked transcripts and unknown modes, then falls back to the documented permission field so a future Codex correction does not require another Oso change.
+- The same resolver now governs plan entry, marker-bearing `Stop` capture, Plan feedback that invalidates a pending document, exact native approval after the client mode transition, and explicit cancellation. Ordinary Codex prompts and markerless responses remain invisible.
+- Regression coverage includes the observed Codex 0.146 payload shape — `permission_mode=default` with an exact-turn Plan event — through both the optional `jq` reader and the pure-Bash runtime fallback.
+- Plan capture now accepts the exact marker as the final logical line when Codex Stop appends its observed one terminal LF. The pending digest still covers the unnormalized raw field, while a second LF, CR, spaces, trailing text, wrong action, marker-only document or duplicate marker remains blocked.
+- The approval document now accounts for all five read-only planning phases, including slicing, wave width, a forced execution mode and its reason, and doubt-pass outcome or N/A. A malformed-marker rejection forbids replaying the same full document unchanged, closing the duplicate-plan failure mode.
+
 ## 0.18.4
 
 **Reinstall required** — Codex bootstrap composition and the installed shared delegation protocol changed. Pull the release and re-run `bash bootstrap/install-codex.sh --yes`; the transaction preserves Engram memories, personal Codex configuration and Oso plan artifacts.

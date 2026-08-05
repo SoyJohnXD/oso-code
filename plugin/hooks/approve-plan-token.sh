@@ -29,15 +29,18 @@ raw_prompt="$escaped"
 raw_session_id="$(json_field "$payload" session_id)"
 session_id="$(sanitize_session "$raw_session_id")"
 cwd="$(json_field "$payload" cwd)"
-permission_mode="$(json_field "$payload" permission_mode)"
+resolve_codex_turn_mode "$payload"
+native_mode="$CODEX_TURN_MODE"
 
 # A skill invocation does not switch Codex into native Plan Mode. Refuse the
 # known operator spelling before the model can render a plan-looking answer in
-# Default mode and fail only at Stop. The platform skill repeats this preflight
-# for installations whose user hooks have not been trusted yet.
+# Default mode and fail only at Stop. Codex 0.146 reports its approval policy in
+# `permission_mode`, so the shared resolver binds this exact turn to the native
+# collaboration mode instead. The platform skill repeats the preflight for
+# installations whose user hooks have not been trusted yet.
 case "$raw_prompt" in
   "$PLAN_INVOCATION"|"$PLAN_INVOCATION "*)
-    [ "$permission_mode" = plan ] || control_block \
+    [ "$native_mode" = plan ] || control_block \
       'oso-code: $oso-code:plan requires Codex native Plan Mode. Enter /plan (or use Shift+Tab), then invoke $oso-code:plan again.'
     ;;
 esac
@@ -57,7 +60,7 @@ esac
 # trapped behind the old execution gate. Everywhere else ordinary text remains
 # globally invisible.
 if [ "$control_action" = ordinary ]; then
-  [ "$permission_mode" = plan ] || finish_hook
+  [ "$native_mode" = plan ] || finish_hook
   [ -n "$session_id" ] && [ "$session_id" = "$raw_session_id" ] && [ -d "$cwd" ] ||
     finish_hook
   state_file="$(state_file_for "$cwd" 2>/dev/null)" || finish_hook
@@ -67,9 +70,13 @@ if [ "$control_action" = ordinary ]; then
   state_digest="$(state_value "$state_file" plan_approval_digest)"
   [ "$state_session" = "$session_id" ] && [ "$state_approval" = pending ] &&
     [[ "$state_digest" =~ ^[0-9a-f]{64}$ ]] || finish_hook
-  state_bin="${OSO_STATE_BIN:-oso-state}"
-  if ! (cd "$cwd" && "$state_bin" --session "$session_id" \
-    cancel-plan "$state_digest" >/dev/null 2>&1); then
+  state_bin="${OSO_STATE_BIN:-$HOOK_DIR/../bin/oso-state}"
+  # The block text names the outcome, never the cause, so a discarded stderr
+  # leaves the audit with no way to tell a lost compare-and-set from a state
+  # binary that never ran at all.
+  if ! cancel_error="$( (cd "$cwd" && "$state_bin" --session "$session_id" \
+    cancel-plan "$state_digest") 2>&1 >/dev/null )"; then
+    log_event plan-approval-cancel-blocked "$session_id" "$cancel_error" || true
     control_block \
       'oso-code: the pending document changed while returning to Plan Mode; retry the planning message.'
   fi
@@ -99,21 +106,21 @@ else
 fi
 
 if [ "$control_action" = approve ]; then
-  case "$permission_mode" in
-    default|acceptEdits|dontAsk|bypassPermissions) ;;
+  case "$native_mode" in
+    default) ;;
     plan)
       control_block \
         'oso-code: native plan approval arrived while Codex still reports Plan Mode; use the native approval control again after the mode transition completes.' ;;
     *)
       control_block \
-        'oso-code: native plan approval arrived in an unknown permission mode; execution remains blocked.' ;;
+        'oso-code: native plan approval arrived without an attested collaboration mode; execution remains blocked.' ;;
   esac
 else
-  case "$permission_mode" in
-    plan|default|acceptEdits|dontAsk|bypassPermissions) ;;
+  case "$native_mode" in
+    plan|default) ;;
     *)
       control_block \
-        'oso-code: the cancellation token arrived in an unknown permission mode; the pending gate remains armed.' ;;
+        'oso-code: the cancellation token arrived without an attested collaboration mode; the pending gate remains armed.' ;;
   esac
 fi
 
@@ -135,9 +142,10 @@ if [[ ! "$state_digest" =~ ^[0-9a-f]{64}$ ]]; then
     'oso-code: the pending plan has no valid document digest; present it again before approving.'
 fi
 
-state_bin="${OSO_STATE_BIN:-oso-state}"
-if ! (cd "$cwd" && "$state_bin" --session "$session_id" \
-  "${control_action}-plan" "$state_digest" >/dev/null 2>&1); then
+state_bin="${OSO_STATE_BIN:-$HOOK_DIR/../bin/oso-state}"
+if ! control_error="$( (cd "$cwd" && "$state_bin" --session "$session_id" \
+  "${control_action}-plan" "$state_digest") 2>&1 >/dev/null )"; then
+  log_event "plan-approval-${control_action}-blocked" "$session_id" "$control_error" || true
   control_block "oso-code: the ${control_action} request lost its pending compare-and-set; the gate did not change."
 fi
 
