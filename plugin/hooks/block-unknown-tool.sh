@@ -58,4 +58,4 @@ case "$tool_name" in ''|*[!A-Za-z0-9_:.-]*) ;;
 esac
 
 deny "oso-code: tool '${tool_name:-<missing>}' is not in this release's Codex hook allowlist." \
-  unknown-tool-denied "$session_id"
+  unknown-tool-denied "$session_id" "$tool_name"

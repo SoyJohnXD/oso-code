@@ -197,6 +197,7 @@ Three properties of the amendment log these files replace are facts to carry for
 - [0105](decisions/0105-explicit-codex-role-launches-set-fork-turns-none.md) — An explicit Codex role launches fresh through MultiAgentV2's `fork_turns`
 - [0106](decisions/0106-codex-host-contract-claims-are-checked-against-the-installed-binary.md) — Codex host-contract claims are checked against the installed binary
 - [0107](decisions/0107-plan-approval-keeps-its-own-session-key-apart-from-ownership.md) — Plan approval keeps its own session key apart from ownership, and the catch-all scopes to it
+- [0108](decisions/0108-deny-records-name-what-they-denied-with-a-schema-version.md) — Deny records name what they denied, with a schema version
 
 ## Foundational decisions
 

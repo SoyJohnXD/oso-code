@@ -14,15 +14,19 @@ finish_hook() {
   exit 0
 }
 
+# Every call here is Stop: the client's own hook name is fixed for the whole
+# file, so it is one literal reused for the audit line rather than a per-call
+# guess.
 stop_block() {
   local reason="$1" event="$2" session="$3" detail="${4:-}"
+  local hook_event=Stop
   if [ "${stop_hook_active:-false}" = true ]; then
     printf '{"continue":false,"stopReason":"%s","systemMessage":"%s"}\n' \
       "$(json_escape "$reason")" "$(json_escape "$reason")"
   else
     printf '{"decision":"block","reason":"%s"}\n' "$(json_escape "$reason")"
   fi
-  log_event "$event" "$session" "$detail" || true
+  log_event "$event" "$session" "$detail" "${0##*/}" "$hook_event" || true
   exit 0
 }
 
@@ -91,7 +95,7 @@ esac
 if [ "$raw_marker_is_terminal" != true ] || [ "$marker_lines" -ne 1 ] ||
    [ "$exact_lines" -ne 1 ]; then
   stop_block \
-    'oso-code: malformed plan approval marker; emit it exactly once as the final line of a non-empty plan document.' \
+    'oso-code: the plan approval marker must be the exact final line of the message, appearing exactly once.' \
     plan-approval-capture-blocked "$session_id"
 fi
 
@@ -102,7 +106,7 @@ if [ "$message" = "$PLAN_MARKER" ]; then
   [ "$CODEX_TURN_MODE_SOURCE" = transcript ] && [ -n "$turn_id" ] &&
     [ -n "$transcript_path" ] ||
     stop_block \
-      'oso-code: malformed plan approval marker; emit it exactly once as the final line of a non-empty plan document.' \
+      'oso-code: a marker-only response requires Plan Mode for this turn to be attested from the transcript, and none was available.' \
       plan-approval-capture-blocked "$session_id"
   plan_item="$(
     grep -F '"type":"event_msg"' "$transcript_path" 2>/dev/null |
@@ -113,25 +117,25 @@ if [ "$message" = "$PLAN_MARKER" ]; then
   case "$plan_item" in
     ''|*$'\n'*)
       stop_block \
-        'oso-code: malformed plan approval marker; emit it exactly once as the final line of a non-empty plan document.' \
+        'oso-code: the transcript must hold exactly one Plan item for this turn; none or more than one was found.' \
         plan-approval-capture-blocked "$session_id" ;;
   esac
   [ "$(json_field "$plan_item" turn_id)" = "$turn_id" ] &&
     [ "$(json_field "$plan_item" thread_id)" = "$raw_session_id" ] ||
     stop_block \
-      'oso-code: malformed plan approval marker; emit it exactly once as the final line of a non-empty plan document.' \
+      'oso-code: the transcript'\''s Plan item does not belong to this turn and thread.' \
       plan-approval-capture-blocked "$session_id"
   json_take_escaped_field "$plan_item" text
   raw_plan_document="$escaped"
   plan_document="$(json_unescape "$raw_plan_document")"
   [ -n "$plan_document" ] ||
     stop_block \
-      'oso-code: malformed plan approval marker; emit it exactly once as the final line of a non-empty plan document.' \
+      'oso-code: the transcript'\''s Plan item carries no plan text to approve.' \
       plan-approval-capture-blocked "$session_id"
   plan_marker_lines="$(printf '%s\n' "$plan_document" | grep -c '^<!-- oso-plan-approval:' || true)"
   [ "$plan_marker_lines" -eq 0 ] ||
     stop_block \
-      'oso-code: malformed plan approval marker; emit it exactly once as the final line of a non-empty plan document.' \
+      'oso-code: the transcript'\''s Plan item text must not itself carry an approval marker.' \
       plan-approval-capture-blocked "$session_id"
   digest_input="${raw_plan_document}\\n${raw_message}"
 else

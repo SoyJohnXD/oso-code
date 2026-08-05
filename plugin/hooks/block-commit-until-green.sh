@@ -254,4 +254,4 @@ if [ "$verdict" = residue ]; then
   exit 0
 fi
 
-deny_until_green "$session_id"
+deny_until_green "$session_id" "$command"

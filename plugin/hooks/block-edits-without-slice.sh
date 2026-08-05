@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # PreToolUse[Edit|MultiEdit|Write|NotebookEdit + a named allowlist of MCP writer
-# tools]: in plan mode, denies file edits when no slice is active. Reads only
-# state flags — never inspects model output.
+# tools]: in plan mode, denies file edits when no slice is active. The verdict
+# reads only state flags — never model output; the target path is read only once
+# a deny is already decided, to name it in the audit line rather than to judge it.
 #
 # The MCP half of that matcher is a list of tool names because a matcher holding
 # a metacharacter takes the regex path: `mcp__.*` would route EVERY MCP call
@@ -44,5 +45,8 @@ if state_says "$state_file" '^active_slice=.' "$session_id" &&
   exit 0
 fi
 
+# Every native writer in this gate's matcher spells its target `file_path`;
+# an MCP writer that spells it differently logs an empty detail rather than a
+# guessed second field name.
 deny "oso-code: plan mode is active but no slice is active. Activate the slice first (oso-state set active_slice=<n>) before editing files." \
-  edit-denied "$session_id"
+  edit-denied "$session_id" "$(json_field "$input" file_path)"

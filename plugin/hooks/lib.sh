@@ -301,21 +301,28 @@ deny_unusable_state() {
 # Both commit layers reach this verdict: the PreToolUse matcher on the command line
 # and the git pre-commit hook at the commit itself. They differ only in the channel
 # deny writes to, so the reason the operator reads and the event the audit records
-# live here rather than in each.
+# live here rather than in each. The command line is the one thing only the
+# PreToolUse layer has to give the audit — the git layer's own deny_until_green
+# call has no command to name, so its event keeps the empty detail it always had.
 deny_until_green() {
-  local session="$1"
+  local session="$1" command="${2:-}"
   deny "oso-code: the session verify is not green. Run the verify loop (plan mode) or the quality pass (quick mode) to zero warnings — it sets verify_green=true — then commit." \
-    commit-denied "$session"
+    commit-denied "$session" "$command"
 }
 
 # The client only reads a hook's JSON when the hook exits 0, so the verdict goes
 # out before anything that can fail, and telemetry can never retract it.
+#
+# Every caller of this function is a PreToolUse matcher — Codex's catch-all, the
+# slice gate, the commit gate — so hookEventName is one literal, not a guess per
+# caller, and the audit line below reuses the exact value the client already read.
 deny() {
-  local reason="$1" event="$2" session="$3"
-  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' \
-    "$(json_escape "$reason")"
+  local reason="$1" event="$2" session="$3" detail="${4:-}"
+  local hook_event=PreToolUse
+  printf '{"hookSpecificOutput":{"hookEventName":"%s","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' \
+    "$hook_event" "$(json_escape "$reason")"
   trap - ERR
-  log_event "$event" "$session" || true
+  log_event "$event" "$session" "$detail" "${0##*/}" "$hook_event" || true
   exit 0
 }
 
@@ -327,22 +334,40 @@ block_with_gate_error() {
   exit 2
 }
 
+# Bumped only when a field is added or its meaning changes. events.jsonl rotates
+# on a 30-day mtime, not on release, so a schema-2 line and every schema-1 line
+# written before this slice sit in the same file for as long as that window —
+# a consumer reads this field rather than guessing a shape from which keys
+# happen to be present.
+EVENTS_SCHEMA_VERSION=2
+
 # One JSONL line per gate event so the team can audit whether gates ever fire.
 # An event can carry command text, which carries whatever a command line carries,
 # so the log is created as private as the state files: owner-only, the mode
 # mktemp gives oso-state's writes. A log that cannot be written falls back to
 # stderr: telemetry cannot record a storage failure into the storage that failed.
+#
+# `gate` and `hook_event` are optional and additive, never inserted between the
+# schema-1 fields: state-mutation events (oso-state's own `set`/`event` verbs,
+# the residue-allowed count) pass neither and keep the exact line shape schema 1
+# had, which is what keeps the event-log size budget (tests/hooks-test.sh) from
+# growing for the highest-volume, longest-command lines. Only a `deny` — the
+# record this slice exists to make diagnosable without the UI — pays for the
+# two extra fields.
 log_event() {
-  local event="$1" session="$2" command="${3:-}"
+  local event="$1" session="$2" command="${3:-}" gate="${4:-}" hook_event="${5:-}"
   # The native install runs from a directory named after the client version —
   # the only free handle on the platform drift that breaks gates silently.
   local client="${CLAUDE_CODE_EXECPATH:-}"
   client="${client##*/}"
   local line
-  line="$(printf '{"ts":"%s","event":"%s","command":"%s","session":"%s","client":"%s"}' \
+  line="$(printf '{"ts":"%s","event":"%s","command":"%s","session":"%s","client":"%s","schema":%s' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(json_escape "$event")" \
     "$(json_escape "$(command_head "$command")")" \
-    "$(json_escape "$session")" "$(json_escape "$client")")"
+    "$(json_escape "$session")" "$(json_escape "$client")" "$EVENTS_SCHEMA_VERSION")"
+  [ -z "$gate" ] || line="${line},\"gate\":\"$(json_escape "$gate")\""
+  [ -z "$hook_event" ] || line="${line},\"hook_event\":\"$(json_escape "$hook_event")\""
+  line="${line}}"
   mkdir -p "$OSO_STATE_DIR" 2>/dev/null || true
   ( umask 077; printf '%s\n' "$line" 2>/dev/null >> "$OSO_STATE_DIR/events.jsonl" ) ||
     printf '%s\n' "$line" >&2
