@@ -7,7 +7,7 @@
 # dependency, then the shared lib.sh and lexer.sh dependencies. The Claude-only
 # persist-state-bin.sh is excluded. An installer reads these expected hashes and
 # compares installed bytes; it must never replace them with hashes it calculated.
-a336c2279402acffbd5eacff5f78df6ae15c18c434ac4ab1e786a38c87f85cfa  codex/hooks/hooks.json
+c7766ae910a9fdb95ea9b7b495935c6fd824ef6f2c309fcadad0261fbff98351  codex/hooks/hooks.json
 ff41240b7d2f93fec142b8a8a96e588e9c585376e07034a25d044ed688aec421  plugin/git-hooks/pre-commit
 4f1fc38f71fb86d10ff0f39c7e271ba316846dee20a85bfd40a12b8ee217ca81  plugin/hooks/block-commit-until-green.sh
 e66bbcd046e496b6b54412165c62baa08d9e1b69e173ffe80e467fbae277968a  plugin/hooks/block-edits-without-slice.sh

@@ -758,6 +758,50 @@ assert_after_hook "an unknown Codex tool is denied while oso-code state is armed
   hook_returned_deny
 oso-state --session "$SESSION" clear
 
+# --- Runtime: the catch-all's allowlist covers every spelling Codex has actually
+# denied in the field, not just the shape a maintainer guessed it would use -------
+# Eight live operator denials trace to two causes: the Engram Memory Protocol needs
+# five tools the table never carried (mem_context, mem_session_summary,
+# mem_current_project, mem_save_prompt, and mem_judge — the last a documented
+# deadlock, since mem_save's own judgment_required=true response mandates it), and
+# Codex renders two tool names differently than they're configured for
+# (image_gen__imagegen loses its `__`, and the hyphen in
+# mcp__context7__resolve-library-id becomes an underscore). A suspected third
+# shape, plugin-scoped MCP naming (e.g. `mcp__plugin_engram_engram__mem_save`),
+# is deliberately untested and absent from the table: Codex's own embedded model
+# instructions state plugin-provided MCP tools keep the standard `mcp__server__tool`
+# identifier regardless of provenance, confirmed live against this machine's
+# installed Engram MCP server (`tools/list` under the configured `--tools=agent`
+# profile returns bare `mcp__engram__*` names, never a plugin-scoped one). Read the
+# allowlist live off the renderer rather than duplicating it here as a second copy,
+# so a table regression is what turns this case red, not a stale copy of it.
+RENDERED_UNKNOWN_ALLOWLIST="$("$HOOK_RENDERER" --host codex --table "$REPO_ROOT/tools/hook-gates.txt" |
+  sed -n 's/.*--allow \\"\(.*\)\\""$/\1/p')"
+
+oso-state --session "$SESSION" set mode=plan active_slice=1 verify_green=false
+for observed_denial_name in \
+  mcp__engram__mem_current_project \
+  mcp__engram__mem_context \
+  mcp__engram__mem_session_summary \
+  mcp__engram__mem_judge \
+  mcp__engram__mem_save_prompt \
+  image_genimagegen \
+  mcp__context7__resolve_library_id; do
+  run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input "$observed_denial_name")" 0 '' \
+    --allow "$RENDERED_UNKNOWN_ALLOWLIST"
+  assert_after_hook "$observed_denial_name (live operator denial) now passes the catch-all" \
+    [ -z "$hook_stdout" ]
+done
+
+# A real tool on the same Engram MCP server that the table never named still
+# denies: the fix widens the table's known names, it does not turn the gate into
+# a prefix-only check for anything spelled mcp__engram__*.
+run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input mcp__engram__mem_stats)" 0 '' \
+  --allow "$RENDERED_UNKNOWN_ALLOWLIST"
+assert_after_hook "an unnamed Engram tool (mem_stats) is still denied by the catch-all" \
+  hook_returned_deny
+oso-state --session "$SESSION" clear
+
 # --- Runtime: Codex's plan approval is a three-hook hard gate ---------------
 # Stop observes exactly the repaso-first document Codex is about to finish with,
 # UserPromptSubmit composes Codex's native approval prompt with the pending

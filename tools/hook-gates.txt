@@ -104,14 +104,32 @@ tool  unknown  none  view_image
 tool  unknown  none  list_mcp_resources
 tool  unknown  none  list_mcp_resource_templates
 tool  unknown  none  read_mcp_resource
+# Captured verbatim from live operator-visible denials, not derived from a general
+# normalization rule: two samples are not enough to reverse-engineer how Codex
+# 0.146 rewrites a tool name before this gate sees it, so the rewritten spelling
+# earns its own row instead.
 tool  unknown  none  image_gen__imagegen
+tool  unknown  none  image_genimagegen
 tool  unknown  none  web__run
 tool  unknown  none  mcp__engram__mem_search
 tool  unknown  none  mcp__engram__mem_get_observation
 tool  unknown  none  mcp__engram__mem_save
 tool  unknown  none  mcp__engram__mem_update
+# The Engram Memory Protocol this harness installs and instructs the model to
+# follow needs more than the four tools above: mem_context and mem_current_project
+# open a session, mem_session_summary closes one, mem_save_prompt records intent,
+# and mem_judge is load-bearing — mem_save's own judgment_required=true response
+# mandates it, so without this row that response is an unresolvable deadlock.
+tool  unknown  none  mcp__engram__mem_context
+tool  unknown  none  mcp__engram__mem_session_summary
+tool  unknown  none  mcp__engram__mem_current_project
+tool  unknown  none  mcp__engram__mem_save_prompt
+tool  unknown  none  mcp__engram__mem_judge
 tool  unknown  none  mcp__context7__resolve-library-id
 tool  unknown  none  mcp__context7__query-docs
+# Same live-denial provenance as the image_gen row above: Codex turns this hyphen
+# into an underscore before the gate sees the name.
+tool  unknown  none  mcp__context7__resolve_library_id
 tool  unknown  none  mcp__fallow__find_dupes
 tool  unknown  none  mcp__fallow__get_cleanup_candidates
 tool  unknown  none  mcp__fallow__audit
