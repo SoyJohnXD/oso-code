@@ -15,7 +15,7 @@ render_codex_managed_config() {
   fi
   fallow_command="$(toml_quote "$fallow_command")"
   cat <<EOF
-default_permissions = "oso"
+default_permissions = ":workspace"
 
 [agents]
 max_threads = 4
@@ -29,14 +29,14 @@ OSO_STATE_BIN = $state_bin
 [permissions.oso]
 extends = ":workspace"
 
-description = "oso-code workspace profile"
+description = "oso-code workspace profile — selected per session with -c default_permissions=oso, never the machine default (ADR-0121)"
 
 [permissions.oso.workspace_roots]
 $state_root = true
 $worktree_root = true
 
 [permissions.oso.filesystem]
-glob_scan_max_depth = 4
+glob_scan_max_depth = 6
 
 [permissions.oso.filesystem.":workspace_roots"]
 "**/secrets/*" = "deny"
@@ -45,13 +45,33 @@ glob_scan_max_depth = 4
 "**/.env.*.local" = "deny"
 "**/.env.local" = "deny"
 "**/.env" = "deny"
+"**/.env.production" = "deny"
+"**/.npmrc" = "deny"
+"**/*.p12" = "deny"
+"**/*.pfx" = "deny"
+"**/*.jks" = "deny"
+"**/*.keystore" = "deny"
+"**/id_rsa" = "deny"
+"**/id_dsa" = "deny"
+"**/id_ecdsa" = "deny"
+"**/id_ecdsa_sk" = "deny"
+"**/id_ed25519" = "deny"
+"**/id_ed25519_sk" = "deny"
+"**/.ssh/**" = "deny"
+"**/.aws/**" = "deny"
+"**/.config/gcloud/**" = "deny"
+"**/.azure/**" = "deny"
+"**/.kube/**" = "deny"
 ".git/**" = "write"
+".git/config" = "read"
 
 [permissions.oso.network]
 enabled = true
 
 [permissions.oso.network.domains]
 "*" = "allow"
+"169.254.169.254" = "deny"
+"metadata.google.internal" = "deny"
 
 [mcp_servers.context7]
 url = "https://mcp.context7.com/mcp"

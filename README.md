@@ -75,6 +75,8 @@ Daily use:
 - Claude Code: `/oso-code:plan`, `/oso-code:quick`, `/oso-code:debug`; optionally `/output-style Oso`.
 - Codex: enter `/plan` (or Shift+Tab) before `$oso-code:plan`; `$oso-code:quick` and `$oso-code:debug` start from the normal mode.
 
+The installed `oso` permission profile — the wider `.git` write, workspace roots and network reach the harness needs for its own commits, worktrees and delegated roles — is never the machine default (ADR-0121). Start a Codex session for oso-code work with `codex -c default_permissions=oso`; a bare `codex` gets Codex's own stock `:workspace` profile instead, so an unrelated conversation in some other repository never inherits it. This is an operator- or wrapper-supplied launch flag, never something the model itself can select mid-session.
+
 Updating later follows the route for the host and artifact tier that changed:
 
 - `claude plugin update oso-code@oso-code` updates the plugin. The marketplace entry's source is `./plugin`, so that subtree is the whole payload — skills, agents, hooks, git-hooks, `oso-state`, the output style, and the `.mcp.json` that carries context7 — and it works from a marketplace install, with no working copy of this repo at all.

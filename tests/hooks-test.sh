@@ -2775,6 +2775,92 @@ assert_equals "no codex on PATH skips the host contract check rather than tallyi
     fi
   )"
 
+# --- ADR-0121: the default_permissions override contract, checked against ---
+# the installed binary the same way ADR-0106 checks fork_turns. `-P` selects a
+# profile only for `codex sandbox`, a one-shot runner; a real session's own
+# per-invocation selector is `-c default_permissions=<name>`, and these two
+# literals are what prove the binary actually resolves and validates it.
+HOST_CONTRACT_UNDEFINED_PROFILE_LITERAL='default_permissions refers to undefined profile `'
+HOST_CONTRACT_DUAL_OVERRIDE_LITERAL='`permission_profile` and `default_permissions` overrides cannot both be set'
+
+write_permission_override_codex_shim() {
+  local shim_dir="$1" with_undefined_profile="$2" with_dual_override="$3" version="$4"
+  mkdir -p "$shim_dir"
+  printf '%s\n' '#!/bin/sh' > "$shim_dir/codex"
+  if [ "$with_undefined_profile" = yes ]; then
+    printf '# %s\n' "$HOST_CONTRACT_UNDEFINED_PROFILE_LITERAL" >> "$shim_dir/codex"
+  fi
+  if [ "$with_dual_override" = yes ]; then
+    printf '# %s\n' "$HOST_CONTRACT_DUAL_OVERRIDE_LITERAL" >> "$shim_dir/codex"
+  fi
+  printf '%s\n' \
+    'case "$*" in' \
+    "  --version) printf '%s\\n' 'codex-cli $version' ;;" \
+    '  *) exit 1 ;;' \
+    'esac' >> "$shim_dir/codex"
+  chmod +x "$shim_dir/codex"
+}
+
+PERMISSION_OVERRIDE_CONFORMANT_SHIMS="$TEST_HOME/permission-override-conformant-shims"
+PERMISSION_OVERRIDE_CONFORMANT_HOME="$TEST_HOME/permission-override-conformant-home"
+mkdir -p "$PERMISSION_OVERRIDE_CONFORMANT_HOME/.codex"
+write_permission_override_codex_shim "$PERMISSION_OVERRIDE_CONFORMANT_SHIMS" yes yes \
+  "$HOST_CONTRACT_SUPPORTED_VERSION"
+PERMISSION_OVERRIDE_CONFORMANT_OUTPUT="$(
+  HOME="$PERMISSION_OVERRIDE_CONFORMANT_HOME" \
+    CODEX_HOME="$PERMISSION_OVERRIDE_CONFORMANT_HOME/.codex" \
+    PATH="$PERMISSION_OVERRIDE_CONFORMANT_SHIMS:$PATH" \
+    OSO_VERIFY_SKIP_SMOKE=1 \
+    bash "$HOST_CONTRACT_VERIFY_SH" 2>&1 || true
+)"
+assert_equals "a shim carrying both permission-override literals at the supported version reads as conformant" \
+  "1" "$(printf '%s\n' "$PERMISSION_OVERRIDE_CONFORMANT_OUTPUT" | \
+    grep -Fxc 'ok:   Codex binary matches the default_permissions override contract (conformant)' || true)"
+
+PERMISSION_OVERRIDE_NONCONFORMANT_SHIMS="$TEST_HOME/permission-override-nonconformant-shims"
+PERMISSION_OVERRIDE_NONCONFORMANT_HOME="$TEST_HOME/permission-override-nonconformant-home"
+mkdir -p "$PERMISSION_OVERRIDE_NONCONFORMANT_HOME/.codex"
+write_permission_override_codex_shim "$PERMISSION_OVERRIDE_NONCONFORMANT_SHIMS" no yes \
+  "$HOST_CONTRACT_SUPPORTED_VERSION"
+PERMISSION_OVERRIDE_NONCONFORMANT_OUTPUT="$(
+  HOME="$PERMISSION_OVERRIDE_NONCONFORMANT_HOME" \
+    CODEX_HOME="$PERMISSION_OVERRIDE_NONCONFORMANT_HOME/.codex" \
+    PATH="$PERMISSION_OVERRIDE_NONCONFORMANT_SHIMS:$PATH" \
+    OSO_VERIFY_SKIP_SMOKE=1 \
+    bash "$HOST_CONTRACT_VERIFY_SH" 2>&1 || true
+)"
+assert_equals "a shim missing one permission-override literal at the supported version fails through check() rather than passing" \
+  "1" "$(printf '%s\n' "$PERMISSION_OVERRIDE_NONCONFORMANT_OUTPUT" | \
+    grep -Fxc 'FAIL: Codex binary matches the default_permissions override contract — expected conformant, got nonconformant' || true)"
+
+PERMISSION_OVERRIDE_UNVERIFIED_SHIMS="$TEST_HOME/permission-override-unverified-shims"
+PERMISSION_OVERRIDE_UNVERIFIED_HOME="$TEST_HOME/permission-override-unverified-home"
+mkdir -p "$PERMISSION_OVERRIDE_UNVERIFIED_HOME/.codex"
+write_permission_override_codex_shim "$PERMISSION_OVERRIDE_UNVERIFIED_SHIMS" yes yes \
+  "$HOST_CONTRACT_UNVERIFIED_VERSION"
+PERMISSION_OVERRIDE_UNVERIFIED_OUTPUT="$(
+  HOME="$PERMISSION_OVERRIDE_UNVERIFIED_HOME" \
+    CODEX_HOME="$PERMISSION_OVERRIDE_UNVERIFIED_HOME/.codex" \
+    PATH="$PERMISSION_OVERRIDE_UNVERIFIED_SHIMS:$PATH" \
+    OSO_VERIFY_SKIP_SMOKE=1 \
+    bash "$HOST_CONTRACT_VERIFY_SH" 2>&1 || true
+)"
+assert_equals "a shim outside the supported version names both versions instead of asserting pass or fail" \
+  "1" "$(printf '%s\n' "$PERMISSION_OVERRIDE_UNVERIFIED_OUTPUT" | \
+    grep -Fxc "unverified: Codex permission-override contract — claims were verified against Codex $HOST_CONTRACT_SUPPORTED_VERSION only; installed $HOST_CONTRACT_UNVERIFIED_VERSION falls outside that window, so pass/fail is not asserted here" || true)"
+
+assert_equals "no codex on PATH skips the permission-override check rather than tallying a pass" \
+  "complete" "$(
+    if printf '%s\n' "$HOST_CONTRACT_SKIP_OUTPUT" | \
+        grep -Fxq 'skip: Codex permission-override contract — codex is not on PATH, so the host contract could not be asserted' &&
+       ! printf '%s\n' "$HOST_CONTRACT_SKIP_OUTPUT" | \
+        grep -Fq 'Codex binary matches the default_permissions override contract'; then
+      printf complete
+    else
+      printf incomplete
+    fi
+  )"
+
 # --- ADR-0120 capability columns: present, and inert to the render ---------
 # (a): the two capability cells exist on every tool row, and the manifests
 # operators and hosts actually read stay byte-identical to their addition --
@@ -7171,7 +7257,7 @@ assert_equals "the managed region closes before preserved projects tables" \
 assert_equals "the state binary setting points into the self-contained plugin copy" \
   "present" "$(grep -F "$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/bin/oso-state" "$CODEX_HAPPY_CONFIG" >/dev/null && echo present || echo missing)"
 for codex_config_contract in \
-  'default_permissions = "oso"' \
+  'default_permissions = ":workspace"' \
   'multi_agent = true' \
   'max_threads = 4' \
   'max_depth = 2' \
@@ -7186,8 +7272,48 @@ assert_equals "the managed permissions grant the settled state root" \
   "1" "$(grep -Fxc "\"$CODEX_HAPPY_HOME/.local/state/oso-code\" = true" "$CODEX_HAPPY_CONFIG" || true)"
 assert_equals "the managed permissions grant the settled worktree root" \
   "1" "$(grep -Fxc "\"$CODEX_HAPPY_HOME/.local/state/oso-code/worktrees\" = true" "$CODEX_HAPPY_CONFIG" || true)"
-assert_equals "the managed permissions keep secret material denied" \
-  "present" "$(grep -F '"**/*.key" = "deny"' "$CODEX_HAPPY_CONFIG" >/dev/null && echo present || echo missing)"
+
+# ADR-0121 (a): each named secret category is denied — driving the fixture the
+# installer actually renders, not eyeballing the TOML by hand. A pattern that
+# regresses out of the renderer turns exactly this line red.
+for codex_secret_pattern in \
+  '"**/*.key" = "deny"' \
+  '"**/*.pem" = "deny"' \
+  '"**/.env" = "deny"' \
+  '"**/.env.production" = "deny"' \
+  '"**/.npmrc" = "deny"' \
+  '"**/*.p12" = "deny"' \
+  '"**/*.pfx" = "deny"' \
+  '"**/*.jks" = "deny"' \
+  '"**/*.keystore" = "deny"' \
+  '"**/id_rsa" = "deny"' \
+  '"**/id_dsa" = "deny"' \
+  '"**/id_ecdsa" = "deny"' \
+  '"**/id_ed25519" = "deny"' \
+  '"**/.ssh/**" = "deny"' \
+  '"**/.aws/**" = "deny"' \
+  '"**/.config/gcloud/**" = "deny"' \
+  '"**/.azure/**" = "deny"' \
+  '"**/.kube/**" = "deny"'; do
+  assert_equals "the managed permissions deny $codex_secret_pattern" \
+    "present" "$(grep -Fx "$codex_secret_pattern" "$CODEX_HAPPY_CONFIG" >/dev/null && echo present || echo missing)"
+done
+
+# ADR-0121 (b): the three examined grants are asserted at the value this slice
+# settled on, so a later widening — the base default back to "oso", a `.git`
+# entry dropped, or the metadata IP reopened — turns exactly one of these red.
+assert_equals "a bare Codex session gets the narrower stock default, never the oso profile" \
+  "1" "$(grep -Fxc 'default_permissions = ":workspace"' "$CODEX_HAPPY_CONFIG" || true)"
+assert_equals "the oso profile itself still needs the full git-dir subtree for its own plumbing" \
+  "1" "$(grep -Fxc '".git/**" = "write"' "$CODEX_HAPPY_CONFIG" || true)"
+assert_equals "git config stays readable but not writable — closes the core.hooksPath/remote redirect vector" \
+  "1" "$(grep -Fxc '".git/config" = "read"' "$CODEX_HAPPY_CONFIG" || true)"
+assert_equals "network keeps the wide grant a generic project's own build/test needs require" \
+  "1" "$(grep -Fxc '"*" = "allow"' "$CODEX_HAPPY_CONFIG" || true)"
+assert_equals "the cloud metadata IMDS address is denied to close the classic SSRF-to-credential-theft route" \
+  "1" "$(grep -Fxc '"169.254.169.254" = "deny"' "$CODEX_HAPPY_CONFIG" || true)"
+assert_equals "the GCP metadata hostname alias is denied alongside the IMDS address" \
+  "1" "$(grep -Fxc '"metadata.google.internal" = "deny"' "$CODEX_HAPPY_CONFIG" || true)"
 
 assert_equals "Engram's instruction file survives the oso config merge" \
   "fixture Engram memory protocol" "$(sed -n 's/^# //p' "$CODEX_HAPPY_HOME/.codex/engram-instructions.md" | head -n 1)"

@@ -108,6 +108,33 @@ host_contract_status() {
   fi
 }
 
+# ADR-0121: `-P`/`--permission-profile` exists only on `codex sandbox`, a
+# one-shot command runner never used to launch a real session; `codex` and
+# `codex exec` carry no dedicated profile flag, so the durable per-invocation
+# selector the installed profile relies on is `-c default_permissions=<name>`,
+# the generic override the binary itself resolves and validates. This reads
+# the installed binary's own two literals proving that override is real
+# rather than an inert dotted path, the same discipline ADR-0106 established.
+permission_override_contract_status() {
+  local resolved installed_version
+  local undefined_profile_literal='default_permissions refers to undefined profile `'
+  local dual_override_literal='`permission_profile` and `default_permissions` overrides cannot both be set'
+  resolved="$(codex_binary_path)" || { printf 'codex-not-on-path'; return; }
+  installed_version="$(codex_version_status)"
+  if [ "$installed_version" != "$SUPPORTED_CODEX_VERSION" ]; then
+    # Read out of codex-cli 0.146.0, same as host_contract_status's own pair;
+    # a mismatch outside that window is unconfirmed, not broken.
+    printf 'unverified:%s' "$installed_version"
+    return
+  fi
+  if grep -aq "$undefined_profile_literal" "$resolved" 2>/dev/null &&
+     grep -aq "$dual_override_literal" "$resolved" 2>/dev/null; then
+    printf conformant
+  else
+    printf nonconformant
+  fi
+}
+
 plugin_install_status() {
   local listing
   if ! command -v python3 >/dev/null 2>&1; then
@@ -884,7 +911,7 @@ run_integrator_fixture() {
 }
 
 run_local_checks() {
-  local host_contract_result
+  local host_contract_result permission_override_result
   printf 'local checks:\n'
   check "Codex CLI version" "$SUPPORTED_CODEX_VERSION" "$(codex_version_status)"
   host_contract_result="$(host_contract_status)"
@@ -904,6 +931,22 @@ run_local_checks() {
       # an operator already past SUPPORTED_CODEX_VERSION must still be able to
       # install — only this diagnostic misses, never the install path itself.
       check "Codex binary matches the fork_turns host contract" conformant "$host_contract_result"
+      ;;
+  esac
+  permission_override_result="$(permission_override_contract_status)"
+  case "$permission_override_result" in
+    codex-not-on-path)
+      printf 'skip: Codex permission-override contract — codex is not on PATH, so the host contract could not be asserted\n'
+      ;;
+    unverified:*)
+      printf 'unverified: Codex permission-override contract — claims were verified against Codex %s only; installed %s falls outside that window, so pass/fail is not asserted here\n' \
+        "$SUPPORTED_CODEX_VERSION" "${permission_override_result#unverified:}"
+      ;;
+    conformant)
+      check "Codex binary matches the default_permissions override contract" conformant conformant
+      ;;
+    *)
+      check "Codex binary matches the default_permissions override contract" conformant "$permission_override_result"
       ;;
   esac
   check "oso-code plugin installed" installed "$(plugin_install_status)"
