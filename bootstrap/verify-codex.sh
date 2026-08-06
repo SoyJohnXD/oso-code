@@ -47,6 +47,26 @@ fold_lines() {
   tr '\n' ' ' | sed 's/[[:space:]][[:space:]]*/ /g; s/[[:space:]]*$//'
 }
 
+# Escapes $1 for use as a `sed` BRE PATTERN (not replacement text -- the `\`,
+# `&`, `|` escaping elsewhere in this file protects the replacement side and
+# the `|` delimiter, never the pattern's own metacharacters). Unescaped, a
+# path containing `.` (every real RUNTIME_ROOT does, via `.local`) matches any
+# single character there, so a path that differs from RUNTIME_ROOT by exactly
+# that one byte still normalizes to the same placeholder and the same hash --
+# a verified read of bytes the manifest never actually carried.
+escape_sed_pattern() {
+  local value=$1
+  value="${value//\\/\\\\}"
+  value="${value//./\\.}"
+  value="${value//\*/\\*}"
+  value="${value//\[/\\[}"
+  value="${value//\]/\\]}"
+  value="${value//^/\\^}"
+  value="${value//\$/\\$}"
+  value="${value//|/\\|}"
+  printf '%s' "$value"
+}
+
 sha256_file() {
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$1" 2>/dev/null | awk '{ print $1 }'
@@ -145,11 +165,43 @@ plugin_install_status() {
     printf '%s' "$(printf '%s' "$listing" | fold_lines)"
     return
   fi
+  # A substring test over the whole dumped entry (the prior shape) accepts
+  # `not-oso-code` (contains "oso-code"), a plugin sourced from a path like
+  # `/tmp/oso-code-backup` (same reason), or a disabled plugin whose other
+  # fields merely mention the name. Each field the CLI actually reports is
+  # checked exactly instead: identity (pluginId), version (against this
+  # checkout's own plugin.json, never a second hardcoded copy of it),
+  # marketplace, installed/enabled state, and the exact local source path
+  # this install renders.
   if printf '%s' "$listing" | python3 -c '
 import json, sys
+
+manifest_path, expected_source_path = sys.argv[1:3]
+with open(manifest_path, encoding="utf-8") as handle:
+    manifest = json.load(handle)
+expected_name = manifest.get("name")
+expected_version = manifest.get("version")
+expected_plugin_id = f"{expected_name}@{expected_name}"
 installed = json.load(sys.stdin).get("installed", [])
-raise SystemExit(0 if "oso-code" in json.dumps(installed) else 1)
-' >/dev/null 2>&1; then
+for plugin in installed:
+    if not isinstance(plugin, dict):
+        continue
+    if plugin.get("pluginId") != expected_plugin_id:
+        continue
+    if plugin.get("marketplaceName") != expected_name:
+        continue
+    if plugin.get("version") != expected_version:
+        continue
+    if plugin.get("installed") is not True or plugin.get("enabled") is not True:
+        continue
+    source = plugin.get("source")
+    if not isinstance(source, dict) or source.get("source") != "local":
+        continue
+    if source.get("path") != expected_source_path:
+        continue
+    raise SystemExit(0)
+raise SystemExit(1)
+' "$REPO_ROOT/codex/.codex-plugin/plugin.json" "$MARKETPLACE_ROOT/codex" >/dev/null 2>&1; then
     printf installed
   else
     printf absent-or-invalid
@@ -159,9 +211,7 @@ raise SystemExit(0 if "oso-code" in json.dumps(installed) else 1)
 installed_trust_status() {
   local expected relative installed actual escaped_runtime missing=""
   [ -f "$HASHES_FILE" ] || { printf 'missing hash manifest'; return; }
-  escaped_runtime="${RUNTIME_ROOT//\\/\\\\}"
-  escaped_runtime="${escaped_runtime//&/\\&}"
-  escaped_runtime="${escaped_runtime//|/\\|}"
+  escaped_runtime="$(escape_sed_pattern "$RUNTIME_ROOT")"
   while IFS='  ' read -r expected relative; do
     case "$expected" in ''|'#'*) continue ;; esac
     relative="${relative# }"

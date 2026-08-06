@@ -7318,8 +7318,7 @@ assert_equals "Codex config resolves a Cargo-home fallow binary outside PATH" \
     grep -Fxc "command = \"$CODEX_CARGO_FALLOW_HOME/.cargo/bin/fallow-mcp\"" || true)"
 
 CODEX_DECLINE_HOME="$TEST_HOME/codex-decline-home"
-write_codex_install_personal_state "$CODEX_DECLINE_HOME"
-printf '0.145.0\n' > "$CODEX_INSTALL_VERSION"
+printf '0.146.0\n' > "$CODEX_INSTALL_VERSION"
 : > "$CODEX_INSTALL_CALLS"
 printf 'n\n' > "$TEST_HOME/codex-decline-input"
 if HOME="$CODEX_DECLINE_HOME" \
@@ -7333,10 +7332,15 @@ if HOME="$CODEX_DECLINE_HOME" \
 else
   codex_decline_rc=$?
 fi
-assert_equals "declining the install exits before any global Codex update" \
+assert_equals "declining the install exits before any destination mutation" \
   "nonzero" "$([ "$codex_decline_rc" -ne 0 ] && echo nonzero || echo zero)"
-assert_equals "declining an old-version install makes no npm or Codex client call" \
-  "0" "$(wc -l < "$CODEX_INSTALL_CALLS" | tr -d ' ')"
+# The CLI pin is a precondition checked before confirm_install ever prompts
+# (defect 3 / D20), so a pinned CLI's single `--version` read is expected here
+# even on decline; nothing past it — no npm call, no second Codex call — runs.
+assert_equals "declining a pinned install makes no npm call and reads the version exactly once" \
+  "1" "$(wc -l < "$CODEX_INSTALL_CALLS" | tr -d ' ')"
+assert_equals "the one call declining makes is the version precondition, not an update" \
+  "codex:--version" "$(cat "$CODEX_INSTALL_CALLS")"
 
 CODEX_HAPPY_HOME="$TEST_HOME/codex-install-home"
 write_codex_install_personal_state "$CODEX_HAPPY_HOME"
@@ -7810,18 +7814,37 @@ assert_equals "a second Engram setup leaves both root pointers before oso-code o
     }
   ' "$CODEX_HAPPY_CONFIG")"
 
-# D14 is a behavioral pin: the wrong CLI is repaired to the ADR's exact floor,
-# then rechecked. `@latest` would make this fixture fail for the precise command.
+# D14 is still a behavioral pin (0.146.0, `@latest` never an escape hatch),
+# but D20 (defect 3) moved how it is reached: an old CLI is a precondition
+# failure now, never a silent in-place upgrade the transaction's rollback
+# could not have reverted had a later step failed.
 CODEX_OLD_HOME="$TEST_HOME/codex-old-version-home"
 write_codex_install_personal_state "$CODEX_OLD_HOME"
 printf '0.145.0\n' > "$CODEX_INSTALL_VERSION"
 run_codex_install "$CODEX_OLD_HOME"
-assert_equals "an old Codex is updated through the frozen package pin" \
-  "1" "$(grep -Fxc 'npm:install --global @openai/codex@0.146.0' "$CODEX_INSTALL_CALLS" || true)"
-assert_equals "the installer rechecks the CLI after the pinned update" \
-  "2" "$(grep -Fxc 'codex:--version' "$CODEX_INSTALL_CALLS" || true)"
+assert_equals "an old Codex CLI refuses the install instead of silently updating itself" \
+  "nonzero" "$([ "$CODEX_INSTALL_RC" -ne 0 ] && echo nonzero || echo zero)"
+assert_equals "the refusal names the exact pin command to run" \
+  "1" "$(printf '%s\n' "$CODEX_INSTALL_LOG" | grep -Fc 'npm install --global @openai/codex@0.146.0' || true)"
+assert_equals "an unmet CLI pin makes no npm call and reads the version exactly once" \
+  "codex:--version" "$(cat "$CODEX_INSTALL_CALLS")"
+assert_equals "an unmet CLI pin refusal happens before any destination mutation" \
+  "absent" "$([ -e "$CODEX_OLD_HOME/.codex/hooks.json" ] || [ -e "$CODEX_OLD_HOME/.local/share/oso-code" ] && echo mutated || echo absent)"
 assert_equals "the shipped Codex installer contains no @latest escape hatch" \
   "0" "$(grep -c '@latest' "$INSTALL_CODEX_SH" || true)"
+assert_equals "the shipped Codex installer never mutates the global CLI itself" \
+  "0" "$(grep -cE '^[[:space:]]*npm install' "$INSTALL_CODEX_SH" || true)"
+
+# Criterion (c): the ordering itself is asserted, not just today's behavior --
+# a regression that reintroduces the mutating install, or moves the
+# precondition past confirm_install/begin_transaction, must turn this red.
+CODEX_PREFLIGHT_LINE="$(grep -n '^  preflight_codex_version$' "$INSTALL_CODEX_SH" | head -n1 | cut -d: -f1)"
+CODEX_CONFIRM_LINE="$(grep -n '^  confirm_install$' "$INSTALL_CODEX_SH" | head -n1 | cut -d: -f1)"
+CODEX_BEGIN_TX_LINE="$(grep -n '^  begin_transaction$' "$INSTALL_CODEX_SH" | head -n1 | cut -d: -f1)"
+assert_equals "the CLI pin precondition is checked before confirm_install ever prompts" \
+  "before" "$([ "${CODEX_PREFLIGHT_LINE:-0}" -lt "${CODEX_CONFIRM_LINE:-0}" ] 2>/dev/null && echo before || echo not-before)"
+assert_equals "confirm_install still gates every mutation, including the transaction itself" \
+  "before" "$([ "${CODEX_CONFIRM_LINE:-0}" -lt "${CODEX_BEGIN_TX_LINE:-0}" ] 2>/dev/null && echo before || echo not-before)"
 
 # Published hashes are checked before the transaction starts. This fixture is a
 # release tree whose hook bytes were changed after publication; it must neither
@@ -8190,6 +8213,33 @@ assert_equals "agent symlink refusal preserves the link itself" \
   "$CODEX_LINKED_AGENTS_TARGET" "$(readlink "$CODEX_LINKED_AGENTS_HOME/.codex/agents")"
 assert_equals "agent symlink refusal preserves its external target" \
   "operator-owned linked role" "$(cat "$CODEX_LINKED_AGENTS_TARGET/personal.toml")"
+
+# Defect 1 (audit): `install_agents` refuses a symlinked AGENTS_TARGET itself
+# (above), but the role-file loop wrote through an inherited symlink one
+# level down -- `cp -R` preserves a symlink already inside an existing agents
+# directory, then plain `cp` onto that name follows it and writes through,
+# and `chmod` follows it too. Drive it with a fixture whose symlink points at
+# a sentinel file entirely outside ~/.codex, and prove neither the write nor
+# the chmod ever reached it.
+CODEX_ROLE_SYMLINK_HOME="$TEST_HOME/codex-role-symlink-home"
+write_codex_install_personal_state "$CODEX_ROLE_SYMLINK_HOME"
+CODEX_ROLE_SYMLINK_SENTINEL="$TEST_HOME/codex-role-symlink-sentinel.toml"
+printf 'sentinel: do not touch\n' > "$CODEX_ROLE_SYMLINK_SENTINEL"
+chmod 644 "$CODEX_ROLE_SYMLINK_SENTINEL"
+ln -s "$CODEX_ROLE_SYMLINK_SENTINEL" "$CODEX_ROLE_SYMLINK_HOME/.codex/agents/oso-applier.toml"
+printf '0.146.0\n' > "$CODEX_INSTALL_VERSION"
+run_codex_install "$CODEX_ROLE_SYMLINK_HOME"
+assert_equals "installing over a symlinked role file still completes" \
+  "0" "$CODEX_INSTALL_RC"
+assert_equals "a symlinked role file's write never reaches its external sentinel target" \
+  "sentinel: do not touch" "$(cat "$CODEX_ROLE_SYMLINK_SENTINEL")"
+assert_equals "a symlinked role file's chmod never reaches its external sentinel target" \
+  "0644" "$(find "$CODEX_ROLE_SYMLINK_SENTINEL" -maxdepth 0 -type f -perm 0644 -print | grep -q . && echo 0644 || echo wrong)"
+assert_equals "the staged role file replaces the symlink with the real oso-code role" \
+  "1" "$([ -f "$CODEX_ROLE_SYMLINK_HOME/.codex/agents/oso-applier.toml" ] && \
+    [ ! -L "$CODEX_ROLE_SYMLINK_HOME/.codex/agents/oso-applier.toml" ] && \
+    cmp -s "$REPO_ROOT/codex/agents/oso-applier.toml" \
+      "$CODEX_ROLE_SYMLINK_HOME/.codex/agents/oso-applier.toml" && echo 1 || echo 0)"
 
 # Marker damage is ambiguity, never permission to delete through the next end
 # marker or append a second region. Exercise each managed text file independently
@@ -8984,6 +9034,130 @@ assert_equals "restore recreates the exact dangling agents root link" \
   "missing-agents-target" "$(readlink "$CODEX_PURGE_SYMLINK_HOME/.agents")"
 assert_equals "root-link restore still leaves the external destination unchanged" \
   "external target survives" "$(cat "$CODEX_PURGE_SYMLINK_HOME/external-codex/sentinel")"
+
+# --- verify-codex.sh: a runtime path is checked exactly, never by an
+# unescaped regex substring (defect 2) ------------------------------------
+# `installed_trust_status` normalizes an installed hooks.json back to its
+# published placeholder before hashing it. Before this fix, RUNTIME_ROOT's
+# own literal `.` (every real RUNTIME_ROOT carries one, in `.local`) went
+# into that normalizing `sed` unescaped, so a BRE `.` matched any single
+# character there -- a manifest naming a DIFFERENT directory, one character
+# off at exactly that position, still normalized to the expected hash. Both
+# directions are proven: the wrong directory is reported, and the real one
+# still is not.
+CODEX_REGEX_HOME="$TEST_HOME/codex-runtime-regex-home"
+mkdir -p "$CODEX_REGEX_HOME/.codex"
+CODEX_REGEX_RUNTIME_ROOT="$CODEX_REGEX_HOME/.local/share/oso-code/runtime"
+CODEX_REGEX_WRONG_RUNTIME_ROOT="${CODEX_REGEX_RUNTIME_ROOT/.local/Xlocal}"
+CODEX_REGEX_SHIMS="$TEST_HOME/codex-runtime-regex-shims"
+write_host_contract_codex_shim "$CODEX_REGEX_SHIMS" no no "$HOST_CONTRACT_SUPPORTED_VERSION"
+
+sed "s|__OSO_HOOKS_DIR__|$CODEX_REGEX_WRONG_RUNTIME_ROOT/hooks|g" \
+  "$REPO_ROOT/codex/hooks/hooks.json" > "$CODEX_REGEX_HOME/.codex/hooks.json"
+CODEX_REGEX_WRONG_OUTPUT="$(
+  HOME="$CODEX_REGEX_HOME" \
+    CODEX_HOME="$CODEX_REGEX_HOME/.codex" \
+    PATH="$CODEX_REGEX_SHIMS:$PATH" \
+    OSO_VERIFY_SKIP_SMOKE=1 \
+    bash "$HOST_CONTRACT_VERIFY_SH" 2>&1 || true
+)"
+assert_equals "a runtime manifest one metacharacter off its real path is reported, not verified" \
+  "1" "$(printf '%s\n' "$CODEX_REGEX_WRONG_OUTPUT" | \
+    grep -Ec '^FAIL: published runtime bytes .* got bad:.*codex/hooks/hooks\.json' || true)"
+
+sed "s|__OSO_HOOKS_DIR__|$CODEX_REGEX_RUNTIME_ROOT/hooks|g" \
+  "$REPO_ROOT/codex/hooks/hooks.json" > "$CODEX_REGEX_HOME/.codex/hooks.json"
+CODEX_REGEX_CORRECT_OUTPUT="$(
+  HOME="$CODEX_REGEX_HOME" \
+    CODEX_HOME="$CODEX_REGEX_HOME/.codex" \
+    PATH="$CODEX_REGEX_SHIMS:$PATH" \
+    OSO_VERIFY_SKIP_SMOKE=1 \
+    bash "$HOST_CONTRACT_VERIFY_SH" 2>&1 || true
+)"
+assert_equals "the real runtime path never false-negatives the manifest bytes check" \
+  "0" "$(printf '%s\n' "$CODEX_REGEX_CORRECT_OUTPUT" | \
+    grep -Ec '^FAIL: published runtime bytes .* got bad:.*codex/hooks/hooks\.json' || true)"
+
+# --- verify-codex.sh: the installed-plugin check matches every field
+# exactly, never a substring over the whole payload (defect 4) -----------
+# The prior predicate was `"oso-code" in json.dumps(installed)`: a substring
+# test over the whole dumped entry. It accepts `not-oso-code` (contains
+# "oso-code"), a plugin sourced from a backup-shaped path like
+# `/tmp/oso-code-backup` (same reason), and a disabled plugin whose other
+# fields merely mention the name. Each named case is driven through the
+# real check, plus one control proving the fix still accepts the genuine
+# installed entry.
+CODEX_PLUGIN_MANIFEST="$REPO_ROOT/codex/.codex-plugin/plugin.json"
+CODEX_PLUGIN_VERSION="$(sed -n 's/^[[:space:]]*"version": "\(.*\)",$/\1/p' "$CODEX_PLUGIN_MANIFEST" | head -n1)"
+
+write_plugin_identity_codex_shim() {
+  local shim_dir="$1" listing_json="$2"
+  mkdir -p "$shim_dir"
+  printf '%s\n' \
+    '#!/bin/sh' \
+    'case "$*" in' \
+    "  --version) printf '%s\\n' 'codex-cli $HOST_CONTRACT_SUPPORTED_VERSION' ;;" \
+    "  \"plugin list --json\") cat '$listing_json' ;;" \
+    '  *) exit 1 ;;' \
+    'esac' > "$shim_dir/codex"
+  chmod +x "$shim_dir/codex"
+}
+
+run_plugin_identity_probe() {
+  local fixture_home="$1" listing_json="$2" shim_dir
+  shim_dir="$fixture_home/shims"
+  mkdir -p "$fixture_home/.codex"
+  write_plugin_identity_codex_shim "$shim_dir" "$listing_json"
+  HOME="$fixture_home" \
+    CODEX_HOME="$fixture_home/.codex" \
+    PATH="$shim_dir:$PATH" \
+    OSO_VERIFY_SKIP_SMOKE=1 \
+    bash "$HOST_CONTRACT_VERIFY_SH" 2>&1 || true
+}
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "skip: python3 is absent here, so the installed-plugin exact-match check has nothing to run"
+  skipped=$((skipped + 1))
+else
+  PLUGIN_IDENTITY_CORRECT_HOME="$TEST_HOME/plugin-identity-correct-home"
+  mkdir -p "$PLUGIN_IDENTITY_CORRECT_HOME"
+  PLUGIN_IDENTITY_CORRECT_JSON="$TEST_HOME/plugin-identity-correct.json"
+  printf '{"installed":[{"pluginId":"oso-code@oso-code","name":"oso-code","marketplaceName":"oso-code","version":"%s","installed":true,"enabled":true,"source":{"source":"local","path":"%s/.local/share/oso-code/codex-marketplace/codex"}}],"available":[]}\n' \
+    "$CODEX_PLUGIN_VERSION" "$PLUGIN_IDENTITY_CORRECT_HOME" > "$PLUGIN_IDENTITY_CORRECT_JSON"
+  PLUGIN_IDENTITY_CORRECT_OUTPUT="$(run_plugin_identity_probe "$PLUGIN_IDENTITY_CORRECT_HOME" "$PLUGIN_IDENTITY_CORRECT_JSON")"
+  assert_equals "the exact-match plugin check accepts the real installed entry" \
+    "1" "$(printf '%s\n' "$PLUGIN_IDENTITY_CORRECT_OUTPUT" | grep -Fxc 'ok:   oso-code plugin installed (installed)' || true)"
+
+  PLUGIN_IDENTITY_WRONG_NAME_HOME="$TEST_HOME/plugin-identity-wrong-name-home"
+  mkdir -p "$PLUGIN_IDENTITY_WRONG_NAME_HOME"
+  PLUGIN_IDENTITY_WRONG_NAME_JSON="$TEST_HOME/plugin-identity-wrong-name.json"
+  printf '{"installed":[{"pluginId":"not-oso-code@not-oso-code","name":"not-oso-code","marketplaceName":"not-oso-code","version":"%s","installed":true,"enabled":true,"source":{"source":"local","path":"%s/.local/share/oso-code/codex-marketplace/not-oso-code"}}],"available":[]}\n' \
+    "$CODEX_PLUGIN_VERSION" "$PLUGIN_IDENTITY_WRONG_NAME_HOME" > "$PLUGIN_IDENTITY_WRONG_NAME_JSON"
+  PLUGIN_IDENTITY_WRONG_NAME_OUTPUT="$(run_plugin_identity_probe "$PLUGIN_IDENTITY_WRONG_NAME_HOME" "$PLUGIN_IDENTITY_WRONG_NAME_JSON")"
+  assert_equals "a substring-matching but differently-named plugin fails the exact-match check" \
+    "1" "$(printf '%s\n' "$PLUGIN_IDENTITY_WRONG_NAME_OUTPUT" | \
+      grep -Fxc 'FAIL: oso-code plugin installed — expected installed, got absent-or-invalid' || true)"
+
+  PLUGIN_IDENTITY_BACKUP_SOURCE_HOME="$TEST_HOME/plugin-identity-backup-source-home"
+  mkdir -p "$PLUGIN_IDENTITY_BACKUP_SOURCE_HOME"
+  PLUGIN_IDENTITY_BACKUP_SOURCE_JSON="$TEST_HOME/plugin-identity-backup-source.json"
+  printf '{"installed":[{"pluginId":"oso-code@oso-code","name":"oso-code","marketplaceName":"oso-code","version":"%s","installed":true,"enabled":true,"source":{"source":"local","path":"/tmp/oso-code-backup/codex"}}],"available":[]}\n' \
+    "$CODEX_PLUGIN_VERSION" > "$PLUGIN_IDENTITY_BACKUP_SOURCE_JSON"
+  PLUGIN_IDENTITY_BACKUP_SOURCE_OUTPUT="$(run_plugin_identity_probe "$PLUGIN_IDENTITY_BACKUP_SOURCE_HOME" "$PLUGIN_IDENTITY_BACKUP_SOURCE_JSON")"
+  assert_equals "a plugin sourced from a backup-shaped path fails the exact-match check" \
+    "1" "$(printf '%s\n' "$PLUGIN_IDENTITY_BACKUP_SOURCE_OUTPUT" | \
+      grep -Fxc 'FAIL: oso-code plugin installed — expected installed, got absent-or-invalid' || true)"
+
+  PLUGIN_IDENTITY_DISABLED_HOME="$TEST_HOME/plugin-identity-disabled-home"
+  mkdir -p "$PLUGIN_IDENTITY_DISABLED_HOME"
+  PLUGIN_IDENTITY_DISABLED_JSON="$TEST_HOME/plugin-identity-disabled.json"
+  printf '{"installed":[{"pluginId":"oso-code@oso-code","name":"oso-code","marketplaceName":"oso-code","version":"%s","installed":true,"enabled":false,"source":{"source":"local","path":"%s/.local/share/oso-code/codex-marketplace/codex"}}],"available":[]}\n' \
+    "$CODEX_PLUGIN_VERSION" "$PLUGIN_IDENTITY_DISABLED_HOME" > "$PLUGIN_IDENTITY_DISABLED_JSON"
+  PLUGIN_IDENTITY_DISABLED_OUTPUT="$(run_plugin_identity_probe "$PLUGIN_IDENTITY_DISABLED_HOME" "$PLUGIN_IDENTITY_DISABLED_JSON")"
+  assert_equals "a disabled plugin fails the exact-match check" \
+    "1" "$(printf '%s\n' "$PLUGIN_IDENTITY_DISABLED_OUTPUT" | \
+      grep -Fxc 'FAIL: oso-code plugin installed — expected installed, got absent-or-invalid' || true)"
+fi
 
 # --- Codex verifier: fixture failures still produce the complete report -------
 VERIFY_CODEX_SH="$REPO_ROOT/bootstrap/verify-codex.sh"

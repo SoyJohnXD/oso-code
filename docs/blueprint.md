@@ -213,6 +213,7 @@ Three properties of the amendment log these files replace are facts to carry for
 - [0122](decisions/0122-the-oso-permission-profile-returns-to-the-machine-default.md) — The oso permission profile returns to the machine default
 - [0123](decisions/0123-the-integrator-smoke-gets-an-isolated-codex-home-and-correlated-proof.md) — The integrator smoke gets an isolated Codex home and correlated proof
 - [0124](decisions/0124-install-backups-get-a-restore-a-size-bounded-retention-and-impeccable-is-pinned.md) — Install backups get a restore, a size-bounded retention sequenced behind it, Impeccable is pinned, and three unbounded operations get the shared bound
+- [0125](decisions/0125-four-installer-integrity-defects-from-an-external-audit.md) — Four installer-integrity defects from an external audit, and the CLI pin becomes a precondition
 
 ## Foundational decisions
 

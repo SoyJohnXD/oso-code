@@ -156,21 +156,22 @@ codex_version() {
   codex --version 2>/dev/null | awk '{ print $NF }'
 }
 
-ensure_codex_version() {
+# D20: `begin_transaction` can only ever restore what it backed up -- cp -a
+# snapshots of paths under $HOME -- and a global npm package is neither: the
+# standalone Codex release on the machine this pin was read from runs to
+# ~300 MiB, which alone would blow the 300 MiB total `INSTALL_BACKUP_BUDGET_KIB`
+# every other snapshot in a run shares. An `npm install --global` this
+# transaction ran but could not honestly undo is exactly defect (3): a step
+# outside the transaction the rollback cannot reach. The CLI pin is a
+# precondition instead -- this never mutates it, so no later failure's
+# rollback ever needs to.
+preflight_codex_version() {
   local current=""
   if command -v codex >/dev/null 2>&1; then
     current="$(codex_version || true)"
   fi
-  if [ "$current" != "$SUPPORTED_CODEX_VERSION" ]; then
-    command -v npm >/dev/null 2>&1 ||
-      fail "npm is required to install Codex CLI $SUPPORTED_CODEX_VERSION"
-    info "installing Codex CLI $SUPPORTED_CODEX_VERSION"
-    npm install --global "@openai/codex@$SUPPORTED_CODEX_VERSION"
-  fi
-  command -v codex >/dev/null 2>&1 || fail "Codex CLI was not installed"
-  current="$(codex_version || true)"
   [ "$current" = "$SUPPORTED_CODEX_VERSION" ] ||
-    fail "Codex CLI must be exactly $SUPPORTED_CODEX_VERSION (found ${current:-unknown})"
+    fail "Codex CLI must already be exactly $SUPPORTED_CODEX_VERSION (found ${current:-not installed}); run: npm install --global @openai/codex@$SUPPORTED_CODEX_VERSION"
 }
 
 confirm_install() {
@@ -626,15 +627,24 @@ install_runtime_hooks() {
 }
 
 install_agents() {
-  local role stage
+  local role stage dest
   mkdir -p "$CODEX_HOME"
   stage="$(mktemp -d "$CODEX_HOME/.agents-install.XXXXXX")"
   if [ -d "$AGENTS_TARGET" ]; then
     cp -R "$AGENTS_TARGET/." "$stage/"
   fi
   for role in "$REPO_ROOT"/codex/agents/*.toml; do
-    cp "$role" "$stage/$(basename "$role")"
-    chmod 600 "$stage/$(basename "$role")"
+    dest="$stage/$(basename "$role")"
+    # preflight_agents only refuses a symlinked AGENTS_TARGET itself; an
+    # individual entry the `cp -R` above carried in stays a symlink (cp -R
+    # preserves one rather than following it). `cp` onto an existing symlink
+    # destination follows it and writes through to whatever it points at, and
+    # `chmod` follows it too -- both would land outside $CODEX_HOME entirely.
+    # Unlinking first guarantees the write and the chmod land on a fresh
+    # regular file inside the staging area.
+    [ -L "$dest" ] && rm -f "$dest"
+    cp "$role" "$dest"
+    chmod 600 "$dest"
   done
   replace_tree "$stage" "$AGENTS_TARGET"
 }
@@ -1058,8 +1068,8 @@ main() {
   preflight_global_agents
   preflight_agents
   preflight_hooks_manifest
+  preflight_codex_version
   confirm_install
-  ensure_codex_version
   trap on_exit EXIT
   begin_transaction
   checkpoint after-backup
