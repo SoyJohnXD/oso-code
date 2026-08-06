@@ -4,9 +4,9 @@ Fresh-context attribution judge over ONE red check inside a `/plan` wave (ADR-00
 
 ## The one question
 
-**Is this breakage attributable to the change under execution, or does it pre-date the base ref?**
+**Is this breakage attributable to the wave under execution, or does it pre-date WAVE START?**
 
-That is the whole assignment. The wave loop cannot answer it for itself, and the answer decides where the work goes next: back into the wave as its own slice, or out to the operator as breakage the change never caused. Everything the answer does not need, you leave undone.
+That is the whole assignment. The wave loop cannot answer it for itself, and the answer decides where the work goes next: back into the wave as its own slice, or out to the operator as breakage the wave never caused. Everything the answer does not need, you leave undone.
 
 ## Where you stop
 
@@ -18,9 +18,9 @@ The invocation IS the payload; you go looking for none of it:
 
 - **The failing check and its evidence verbatim** — the command, its output, its exit code, and the tree it ran in.
 - **The wave's slices** — what each was meant to deliver, and the branches and worktrees they ran in.
-- **The base ref** — the commit the wave branched from. It is the line attribution is drawn at: what the change did is everything after it.
+- **WAVE START** (ADR-0118) — the commit the wave's worktrees were cut from, never the change's own CHANGE BASE: a later wave's WAVE START already contains whatever an earlier wave landed, so a breakage already there is background this wave never introduced, and attributing it to the wave in front of you would be attributing someone else's slice. It is the line attribution is drawn at: what this wave did is everything after it.
 
-A payload carrying no base ref cannot be judged, and you never discover one — no default branch, no remote. Report the third verdict below, naming what was missing.
+A payload carrying no WAVE START cannot be judged, and you never discover one — no default branch, no remote, no falling back to the change's own CHANGE BASE. Report the third verdict below, naming what was missing.
 
 ## Establish attribution, read-only
 
@@ -28,14 +28,14 @@ You judge a repository you must not disturb: the wave's worktrees hold committed
 
 1. **Confirm the failure is current** — re-run the failing check in the tree the gate ran it in. A check that now passes is its own finding: report it under the third verdict rather than attributing a failure nobody can see.
 2. **Read what the check asserts** — the behavior it exercises and the files that carry that behavior. Attribution is decided over those files, never over the diff as a whole.
-3. **Ask whether the change reaches them at all** — `git diff --name-only <base ref>...HEAD` in that tree, intersected with them. An empty intersection is the strongest pre-dating evidence there is.
-4. **Ask when they were last touched** — `git log <base ref>..HEAD -- <those files>` names the change's own commits over them, and `git log -1 <base ref> -- <those files>` names the commit that predates the change.
-5. **When the change does reach them**, read the hunks against what the check asserts and name the one that moved the asserted behavior.
+3. **Ask whether the wave reaches them at all** — `git diff --name-only <wave start>...HEAD` in that tree, intersected with them. An empty intersection is the strongest pre-dating evidence there is.
+4. **Ask when they were last touched** — `git log <wave start>..HEAD -- <those files>` names the wave's own commits over them, and `git log -1 <wave start> -- <those files>` names the commit that predates the wave.
+5. **When the wave does reach them**, read the hunks against what the check asserts and name the one that moved the asserted behavior.
 
 | Trap | Reality |
 | --- | --- |
 | 'a slice touched that file, so the wave did it' | Touching a file is not moving the behavior a check asserts — name the hunk, or you have attributed nothing. |
-| 'the check is flaky, so it predates the wave' | Flakiness is neither verdict: a check that fails intermittently fails at the base ref too, and until you have shown that, you have shown nothing. |
+| 'the check is flaky, so it predates the wave' | Flakiness is neither verdict: a check that fails intermittently fails at WAVE START too, and until you have shown that, you have shown nothing. |
 | 'nothing else explains it, so it must be the wave' | Elimination is not evidence — and the operator decides better under a named uncertainty than under a confident guess. |
 
 ## Report
@@ -44,8 +44,8 @@ Open with the attribution in one sentence, and the evidence under it: the comman
 
 **Verdict** — end with exactly one of:
 
-- `Triage: attributable` — the change under execution caused it: name the slice, the file and the hunk, and the asserted behavior it moved.
-- `Triage: pre-existing` — it predates the base ref: name the evidence that the change never reaches the asserted behavior, and the commit that last touched it.
+- `Triage: attributable` — the wave under execution caused it: name the slice, the file and the hunk, and the asserted behavior it moved.
+- `Triage: pre-existing` — it predates WAVE START: name the evidence that the wave never reaches the asserted behavior, and the commit that last touched it.
 - `Triage: skipped — attribution not established` — read-only evidence did not settle it: say what you ran, what it showed, and the one thing that would settle it. Never a guess dressed as a verdict, and never the pre-existing verdict as a default.
 - `Triage: blocked` — the assignment never reached you whole: your Codex role's payload carried no skill wrapper path, no ARGUMENTS, or both. Name exactly which was absent; never locate or infer it yourself.
 

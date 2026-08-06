@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Lints the rules `claude plugin validate --strict` has no opinion on: it does
 # open hooks.json, skill frontmatter and the agents, and fails on a broken one
-# (probed against client 2.1.220), but it never asks what they SAY. Seventeen rules
+# (probed against client 2.1.220), but it never asks what they SAY. Twenty rules
 # hold that ground: a `context: fork` skill declares `background`; the same
 # skill declares an `end with exactly one of:` verdict block; every
 # `oso-code:<name>` the plugin's own prose points at resolves; every call site
@@ -13,7 +13,14 @@
 # belongs; each host's always-loaded routing file names every mode the model cannot
 # invoke on its own; every line that launches oso-verifier names the payload it
 # hands it; every line that launches oso-integrator names the wave's worktrees,
-# base ref and branch list; every decision under docs/decisions/ says where it
+# WAVE START and branch list; every plan-skill line that launches an applier or
+# verifier names SLICE START or WAVE START by name, a debt-cleanup or
+# judge-findings launch exempted since neither ever carries one; oso-integrator's
+# report, on both hosts, names next_wave_start as WAVE START's only producer and
+# states that a conflict or a blocked report yields none; triage's one question,
+# its comparison-coordinate bullet and its pre-existing verdict all name WAVE
+# START, the bullet disambiguating it from CHANGE BASE on the same line; every
+# decision under docs/decisions/ says where it
 # landed; every decision a skill cites resolves to one of those files AND is
 # named back by it; the prose that says how many rules hold this ground says a
 # number the functions below make true; both hook manifests plus every
@@ -460,10 +467,11 @@ check_verifier_launches_name_their_payload() {
 }
 
 # The integrator merges a wave it cannot re-derive: WHICH branches belong to the
-# wave, the WORKTREES they ran in, and the BASE REF they land on are decided by
-# the orchestrator and written down nowhere else, so a launch that leaves any of
-# the three implicit sends an agent to produce the one artifact nobody may
-# reproduce out of inputs it guessed. Those three and not a fourth: the rubric is
+# wave, the WORKTREES they ran in, and WAVE START — the commit they land on —
+# are decided by the orchestrator and written down nowhere else, so a launch
+# that leaves any of the three implicit sends an agent to produce the one
+# artifact nobody may reproduce out of inputs it guessed. Those three and not a
+# fourth: the rubric is
 # deliberately absent, because the integrator writes no code and judges nothing —
 # the bar belongs to the integration gate that follows, a separate oso-verifier
 # launch the rule above already holds to naming `rubric.md`. Demanding it here
@@ -477,7 +485,10 @@ check_verifier_launches_name_their_payload() {
 # reporting clean over it, so the launch site carries both tokens. The wave
 # loop's merge line in `skills/plan/SKILL.md` is the one launch site today, and
 # it arrived carrying all three because this rule stood before it did, rather
-# than being retrofitted after a wave merged onto a base ref nobody recorded.
+# than being retrofitted after a wave merged onto a ref nobody recorded — and
+# it moved from a bare `base ref` to the named `WAVE START` the same slice that
+# gave the wave loop's worktree cut the coordinate it was always missing
+# (docs/decisions/0118).
 # A launch site that does not exist is not a violation; a scan path that does not
 # exist is, so the tree scan keeps grep's stderr (`2>&1`, per the header) and
 # turns an unreadable path into a flag instead of a quiet zero. The integrator's
@@ -491,12 +502,114 @@ check_integrator_launches_name_their_payload() {
     for line in $({ grep -n 'oso-integrator' "$file" || true; } \
         | { grep -i 'launch' || true; } | cut -d: -f1); do
       launch="$(sed -n "${line}p" "$file")"
-      for marker in 'worktree' 'base ref' 'branch'; do
+      for marker in 'worktree' 'WAVE START' 'branch'; do
         printf '%s\n' "$launch" | grep -qF "$marker" \
           || flag "${file#"$PLUGIN_ROOT"/}:$line launches oso-integrator without naming $marker in its payload"
       done
     done
   done
+}
+
+# docs/decisions/0118 replaced the wave loop's single base ref with three named
+# coordinates precisely because a payload that just said BASE REF could not say
+# WHICH one it needed — the wave loop cut every worktree from CHANGE BASE
+# regardless of which wave was arming, and the sequential verifier's ref never
+# moved off it between slices either. Its verify criterion (d) is that every
+# applier/verifier launch now names SLICE START or WAVE START by that name.
+# This is a POSITIVE requirement, not a ban on the retired spelling: a rule
+# that only rejected the string BASE REF would pass a launch line naming NO
+# coordinate at all just as clean, which is the identical ambiguity under a
+# different shape — the gap a first cut of this rule left open. One kind is
+# excluded on purpose: a debt-cleanup or judge-findings launch (ADR-0063's
+# other two applier kinds) is self-contained by its own agent contract and
+# never carries a ref coordinate at all, so requiring one there would be a
+# false positive on a launch that is correctly starved of it — `debt cleanup`
+# and `judge findings` are this file's own stable vocabulary for those two
+# kinds, so a line naming either is exempted rather than demanded a
+# coordinate it structurally cannot have. Scoped to the `plan` skill alone —
+# the only flow with waves and more than one coordinate to confuse: `debug`'s
+# own applier/verifier launches legitimately say BASE REF for the single
+# pending-tree ref that flow has ever had (its own body names it `HEAD`), and
+# flagging those would be exactly the false positive this rule exists to
+# avoid. LINE-scoped for the reason `check_verifier_launches_name_their_payload`
+# already is: the payload is what the launched agent reads in one place, and a
+# launch worded around the coordinate on a later line is invisible here the
+# same way a launch worded around `oso-integrator` is invisible to the rule
+# above.
+check_plan_delegation_payloads_name_a_specific_coordinate() {
+  local skill="$PLUGIN_ROOT/skills/plan/SKILL.md"
+  local source line launch
+  [ -f "$skill" ] || { flag "no skills/plan/SKILL.md to check delegation payload coordinates"; return 0; }
+  for source in $(skill_sources "$skill"); do
+    for line in $({ grep -nE 'oso-applier|oso-verifier' "$source" || true; } \
+        | { grep -i 'launch' || true; } | cut -d: -f1); do
+      launch="$(sed -n "${line}p" "$source")"
+      printf '%s\n' "$launch" | grep -qE 'debt cleanup|judge findings' && continue
+      printf '%s\n' "$launch" | grep -qE 'SLICE START|WAVE START' \
+        || flag "${source#"$PLUGIN_ROOT"/}:$line launches an applier or verifier naming neither SLICE START nor WAVE START"
+    done
+  done
+  return 0
+}
+
+# docs/decisions/0118 names the integrator as WAVE START's only producer and
+# says a conflict or a blocked report yields no clean integration commit to
+# hand the next wave. Prose making that claim is exactly the shape a rewrite
+# can silently drop — nothing else in the harness re-derives `next_wave_start`,
+# so its absence from the report shape is invisible until a later wave cuts a
+# worktree from a stale ref. Two markers, on both the Claude agent file and
+# the Codex role that mirrors it: the field name itself, proving the report
+# shape carries it, and one line naming it beside BOTH `conflict` and
+# `blocked`, proving the no-clean-integration case is stated rather than
+# merely implied by the field's absence on those paths.
+check_integrator_report_names_next_wave_start() {
+  local file marker
+  for file in "$PLUGIN_ROOT/agents/oso-integrator.md" "$REPO_ROOT/codex/agents/oso-integrator.toml"; do
+    if [ ! -f "$file" ]; then
+      flag "no $file to check for next_wave_start"
+      continue
+    fi
+    grep -qF 'next_wave_start' "$file" \
+      || flag "${file#"$REPO_ROOT"/} never names next_wave_start as WAVE START's producer"
+    { grep -F 'next_wave_start' "$file" || true; } | grep -qi 'conflict' \
+      && { grep -F 'next_wave_start' "$file" || true; } | grep -qi 'blocked' \
+      || flag "${file#"$REPO_ROOT"/} never states that a conflict or a blocked report yields no next_wave_start"
+  done
+}
+
+# docs/decisions/0118 fixed triage's own ambiguity — "the base ref" could have
+# meant the wave's WAVE START or the change's own CHANGE BASE, and getting it
+# wrong misattributes an earlier wave's landed work to the wave in flight.
+# Naming WAVE START alone is not enough to prove the ambiguity is closed: a
+# rewrite could drop CHANGE BASE back in unnamed and reintroduce the same
+# question this decision closed. So three markers, each on the file's own
+# named anchor rather than scanned loose: the one question itself, the
+# comparison-coordinate bullet naming WAVE START beside CHANGE BASE on the
+# same line (the actual disambiguation), and the pre-existing verdict that
+# reads the answer back.
+check_triage_names_wave_start_unambiguously() {
+  local file="$PLUGIN_ROOT/skills/_shared/bodies/triage.md"
+  local question preexisting
+  if [ ! -f "$file" ]; then
+    flag "no triage body at skills/_shared/bodies/triage.md to check its comparison coordinate"
+    return 0
+  fi
+  question="$({ grep -F -- '**Is this breakage attributable' "$file" || true; })"
+  if [ -z "$question" ]; then
+    flag "skills/_shared/bodies/triage.md carries no 'Is this breakage attributable' question to check"
+  else
+    printf '%s\n' "$question" | grep -qF 'WAVE START' \
+      || flag "skills/_shared/bodies/triage.md's one question never names WAVE START"
+  fi
+  { grep -F 'WAVE START' "$file" || true; } | grep -qF 'CHANGE BASE' \
+    || flag "skills/_shared/bodies/triage.md names WAVE START but never disambiguates it from CHANGE BASE on the same line"
+  preexisting="$({ grep -F -- '`Triage: pre-existing`' "$file" || true; })"
+  if [ -z "$preexisting" ]; then
+    flag "skills/_shared/bodies/triage.md carries no Triage: pre-existing verdict line to check"
+  else
+    printf '%s\n' "$preexisting" | grep -qF 'WAVE START' \
+      || flag "skills/_shared/bodies/triage.md's Triage: pre-existing verdict never names WAVE START"
+  fi
 }
 
 # docs/blueprint.md forbids editing its frozen body silently, so every correction
@@ -570,7 +683,8 @@ check_present_tense_prose_names_the_rule_count() {
     5) spelled=five ;; 6) spelled=six ;; 7) spelled=seven ;; 8) spelled=eight ;;
     9) spelled=nine ;; 10) spelled=ten ;; 11) spelled=eleven ;; 12) spelled=twelve ;;
     13) spelled=thirteen ;; 14) spelled=fourteen ;; 15) spelled=fifteen ;;
-    16) spelled=sixteen ;; 17) spelled=seventeen ;;
+    16) spelled=sixteen ;; 17) spelled=seventeen ;; 18) spelled=eighteen ;;
+    19) spelled=nineteen ;; 20) spelled=twenty ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -770,6 +884,9 @@ check_call_sites_speak_their_emitters_verdict_vocabulary
 check_global_routing_names_every_operator_only_mode
 check_verifier_launches_name_their_payload
 check_integrator_launches_name_their_payload
+check_plan_delegation_payloads_name_a_specific_coordinate
+check_integrator_report_names_next_wave_start
+check_triage_names_wave_start_unambiguously
 check_every_decision_records_where_it_landed
 check_decision_citations_resolve_and_name_their_citer
 check_present_tense_prose_names_the_rule_count

@@ -2,6 +2,7 @@
 
 Date: 2026-08-02
 Status: accepted
+Superseded-by: ADR-0118 — retires only the "cut from the change's base ref" clause; every wave after the first cuts from WAVE START, the previous wave's own integration commit, instead. The worktree location, the per-slice branch naming and the integrator's teardown on a clean merge all stand unchanged
 Implemented-in: plugin/skills/_shared/bodies/plan.md, plugin/agents/oso-integrator.md
 Reconciled: applied — Mode 1 phase 6 names the worktree location and the per-slice branch.
 Source: this change (parallel wave execution); recorded with the change that made it

@@ -1,7 +1,7 @@
 ---
 name: triage
-description: Attribution judge for a check that went red inside a /plan wave. Launched by the /plan orchestrator's wave loop when the integration gate or a mid-wave check fails on something no slice's diff plainly explains — an orchestrator instrument, never a general debugging entry point. Answers ONE question from read-only git evidence — does this breakage belong to the change under execution, or does it predate the wave's base ref. It judges only — never edits, never fixes, never commits, never asks back; the fix is the operator's call and oso-code:debug is where they take it.
-argument-hint: "[failing check + its evidence verbatim] [+ the wave's slices] [+ base ref]"
+description: Attribution judge for a check that went red inside a /plan wave. Launched by the /plan orchestrator's wave loop when the integration gate or a mid-wave check fails on something no slice's diff plainly explains — an orchestrator instrument, never a general debugging entry point. Answers ONE question from read-only git evidence — does this breakage belong to the wave under execution, or does it predate WAVE START, the commit that wave's worktrees were cut from. It judges only — never edits, never fixes, never commits, never asks back; the fix is the operator's call and oso-code:debug is where they take it.
+argument-hint: "[failing check + its evidence verbatim] [+ the wave's slices] [+ WAVE START]"
 context: fork
 agent: general-purpose
 background: false

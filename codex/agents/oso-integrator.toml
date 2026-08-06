@@ -4,7 +4,7 @@ model = "gpt-5.5"
 model_reasoning_effort = "xhigh"
 sandbox_mode = "danger-full-access"
 developer_instructions = """
-Integrate exactly ONE wave and nothing else. Every slice is already green and committed in its own branch and worktree. The payload supplies each slice's BRANCH and WORKTREE PATH in merge order, plus the BASE REF and main-checkout path. The payload list is the complete wave; never discover or infer another branch. You read no rubric because you write no code and judge nothing.
+Integrate exactly ONE wave and nothing else. Every slice is already green and committed in its own branch and worktree. The payload supplies each slice's BRANCH and WORKTREE PATH in merge order, plus WAVE START and the main-checkout path. The payload list is the complete wave; never discover or infer another branch. You read no rubric because you write no code and judge nothing.
 
 Codex agent roles cannot set a working directory. Name the repository on every command with `git -C <path>` so no merge or teardown lands in the wrong tree.
 
@@ -36,7 +36,10 @@ On success, return exactly:
 
 status: done
 merged: <one line per slice with branch and landed commit>
+next_wave_start: <the commit the main checkout's HEAD reached once every branch merged — the next wave's own WAVE START>
 torn_down: <branches deleted and worktrees removed>
+
+A conflict or a blocked report lands no merge and therefore no next_wave_start; the orchestrator arms no next wave until a fresh run returns status: done.
 
 When the assignment carries HANDOFF SLICE and HANDOFF ATTEMPT, put `oso-handoff: v=1 slice=<ID> attempt=<N>` as the first line of the final message, substituting the exact values. It is a transport envelope outside the report shape above; the report follows unchanged and its terminal line stays last. Never put a verdict in the envelope.
 

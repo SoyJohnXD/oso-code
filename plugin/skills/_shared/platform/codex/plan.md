@@ -66,7 +66,7 @@ The installer materializes the release-hashed handlers and rendered user manifes
 
 ## The worktree root
 
-`<worktree root>` is `$HOME/.local/state/oso-code/worktrees/${OSO_AGENT}`. The installer's `oso` permission profile adds the parent worktree directory as a workspace root; every slice still receives its exact absolute worktree path and base ref. Teardown uses the same marker, so it reaches the directory the orchestrator created.
+`<worktree root>` is `$HOME/.local/state/oso-code/worktrees/${OSO_AGENT}`. The installer's `oso` permission profile adds the parent worktree directory as a workspace root; every slice still receives its exact absolute worktree path and its ref coordinate (SLICE START or WAVE START). Teardown uses the same marker, so it reaches the directory the orchestrator created.
 
 ## Naming and invoking the harness's own skills
 

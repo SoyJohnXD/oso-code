@@ -206,6 +206,7 @@ Three properties of the amendment log these files replace are facts to carry for
 - [0115](decisions/0115-milestone-reporting-is-a-shared-contract-with-a-length-bound.md) — Milestone reporting is a shared contract with required facts, a length bound, and one platform file per host
 - [0116](decisions/0116-the-design-foundation-slice-reads-impeccables-real-contract-before-it-is-cut.md) — The design-foundation slice reads Impeccable's real contract before it is cut
 - [0117](decisions/0117-a-harness-discovered-correction-to-a-not-started-slice-costs-one-confirmation.md) — A harness-discovered correction to a not-started slice costs one confirmation, not a re-approval
+- [0118](decisions/0118-three-coordinates-replace-the-single-base-ref.md) — Three coordinates replace the single base ref: CHANGE BASE, WAVE START, SLICE START
 
 ## Foundational decisions
 
