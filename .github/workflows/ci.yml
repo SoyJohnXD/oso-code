@@ -22,13 +22,23 @@ jobs:
       # a second reader, and one for the case whose only judge is a strict parser.
       - name: Hook regression suite on bash 3.2
         run: docker run --rm -v "$PWD":/repo -w /repo bash:3.2 bash tests/hooks-test.sh
-      # The only thing that runs verify.sh anywhere. It measures ONE property: the
-      # report reaches its summary. Against a fixture HOME the install checks fail
-      # legitimately — no authenticated CLI (this step runs before the CLI is even
-      # installed), no MCPs, no ~/.claude — so the script exits 1 by design and the
-      # `passed:` line, not the exit code, is the verdict. A substitution that dies
-      # under `set -euo pipefail` emits no such line, which is exactly the class this
-      # guards. OSO_VERIFY_SKIP_SLOW drops the two checks that would re-run the suite
+      # `grep -q '^passed:'` alone is a summary line printed over a screen of
+      # failures: it goes green the moment the script reaches its own last line,
+      # whatever it printed above that. Against a fixture HOME the install checks
+      # fail legitimately — no authenticated CLI (this step runs before the CLI is
+      # even installed), no MCPs, no ~/.claude — so the script exits 1 by design;
+      # `failed: 0` is therefore unreachable here (measured: today's fixture reads
+      # `passed: 2, failed: 8`), but two checks owe nothing to that missing
+      # install and pass here every run — legacy artifacts removed, no CR bytes
+      # shipped — so pinning `failed` at 8 gives the assertion real signal:
+      # either one breaking moves the number and turns this step red, which
+      # `grep -q` alone cannot do, since a fixture that already fails 8 checks
+      # reads identical whether it fails 8 or 9. A substitution that dies under
+      # `set -euo pipefail` still emits no `passed:` line at all, which is the
+      # class the plain grep already guarded and still does, first. Bump the
+      # pinned number only when a check legitimately joins or leaves this set —
+      # never to wave off a real one.
+      # OSO_VERIFY_SKIP_SLOW drops the two checks that would re-run the suite
       # this job already ran above and fetch impeccable from npm on every CI run.
       - name: Verify report reaches its summary
         env:
@@ -38,6 +48,24 @@ jobs:
           HOME="$(mktemp -d)" bash bootstrap/verify.sh > "$report" 2>&1 || true
           cat "$report"
           grep -q '^passed:' "$report"
+          failed="$(sed -n 's/^passed: [0-9]*, failed: \([0-9]*\)$/\1/p' "$report")"
+          [ "$failed" = "8" ]
+      # Same shape as the step above, with one real difference: this job never
+      # installs the codex CLI, so every local check here needs an install that
+      # never happened and fails for that reason alone — measured, today's
+      # fixture reads `passed: 0, failed: 14`, the entire local suite (the
+      # authenticated smoke below is skipped, not failed, so it never joins the
+      # tally). There is no check left that owes nothing to an install, so unlike
+      # verify.sh above this cannot floor on a nonzero `passed`; pinning `failed`
+      # to 14 is the only assertion this fixture can bear, and it still catches
+      # drift — a check that starts passing, one that stops running, or a new one
+      # that joins all move the number away from 14. Installing codex here so a
+      # real floor exists, the way verify.sh's own two install-independent checks
+      # do, is a real option this step does not take: it would cost this job a
+      # network dependency the sibling step is deliberately free of, on the same
+      # reasoning that keeps the sibling step running before any CLI is
+      # installed. OSO_VERIFY_SKIP_SMOKE skips the authenticated codex exec smoke,
+      # which needs a logged-in CLI this job never has either.
       - name: Codex verify report reaches its summary
         env:
           OSO_VERIFY_SKIP_SMOKE: 1
@@ -48,6 +76,8 @@ jobs:
             bash bootstrap/verify-codex.sh > "$report" 2>&1 || true
           cat "$report"
           grep -q '^passed:' "$report"
+          failed="$(sed -n 's/^passed: [0-9]*, failed: \([0-9]*\)$/\1/p' "$report")"
+          [ "$failed" = "14" ]
       - name: Shell script syntax
         run: |
           bash -n bootstrap/install.sh bootstrap/install-codex.sh bootstrap/purge-codex.sh bootstrap/verify.sh bootstrap/verify-codex.sh

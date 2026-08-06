@@ -207,6 +207,7 @@ Three properties of the amendment log these files replace are facts to carry for
 - [0116](decisions/0116-the-design-foundation-slice-reads-impeccables-real-contract-before-it-is-cut.md) — The design-foundation slice reads Impeccable's real contract before it is cut
 - [0117](decisions/0117-a-harness-discovered-correction-to-a-not-started-slice-costs-one-confirmation.md) — A harness-discovered correction to a not-started slice costs one confirmation, not a re-approval
 - [0118](decisions/0118-three-coordinates-replace-the-single-base-ref.md) — Three coordinates replace the single base ref: CHANGE BASE, WAVE START, SLICE START
+- [0119](decisions/0119-ci-asserts-a-verify-scripts-failure-count-and-the-decision-coverage-audit-closes-one-gap.md) — CI asserts a verify script's failure count, and the decision-coverage audit closes one real gap
 
 ## Foundational decisions
 

@@ -4878,6 +4878,13 @@ run_hook block-commit-until-green.sh "$(bash_input 'git commit -m x')"
 assert_logged "a denied commit writes the command it judged" \
   '"event":"commit-denied","command":"git commit -m x","session":"'
 assert_logged "every logged event carries the schema version" '"schema":2'
+# ADR-0108's own claim — "diagnosable from the log alone: which gate fired, on
+# which hook event" — names two fields deny() always passes; nothing before this
+# line ever grepped for either, so a future edit that dropped them from deny()
+# would have left this suite green.
+assert_logged "a deny names the gate script that fired" \
+  '"gate":"block-commit-until-green.sh"'
+assert_logged "a deny names the hook event it fired on" '"hook_event":"PreToolUse"'
 oso-state --session "$SESSION" clear
 
 # A byte cut can land inside a multi-byte character. 119 ASCII bytes put the
@@ -4910,6 +4917,16 @@ assert_equals "one event is one line, appended and nothing else" \
 oso-state --session "$SESSION" event integration-red
 assert_logged "an event with no detail is a well-formed line too" \
   '"event":"integration-red","command":"","session":"'
+# ADR-0108 scopes `gate`/`hook_event` to deny-shaped calls on purpose — widening
+# every line would grow the log's highest-volume lines past the budget the
+# decision sized against — so the event verb's own lines must carry neither.
+if grep -q '"gate"\|"hook_event"' "$events_log"; then
+  echo "FAIL: an event-verb line carries gate or hook_event, which ADR-0108 scopes to denies only"
+  fail=$((fail + 1))
+else
+  echo "ok: event-verb lines keep the unwidened five-field schema-1 shape"
+  pass=$((pass + 1))
+fi
 
 # --- Session-end cleanup + path traversal safety ---
 oso-state --session "$SESSION" set mode=plan verify_green=true
