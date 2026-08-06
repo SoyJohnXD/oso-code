@@ -5000,19 +5000,27 @@ else
     "$STATE_DIR/wt-dirty.state"
 fi
 
-# --- SessionStart: the state another session left is what the model must hear --
-# The hook that tells a resumed session its gates are off decides that from the
-# state dir alone, so what it names is the whole behaviour: another session's
-# state file, never its own, and never an entry in the dir that is no state file
-# at all — the worktrees a parallel wave puts there among them. Its own is the
-# one recording its session id, since a resumed session keeps that id and the
-# file it left is the repository's, waiting for it under a name nothing here
-# reads.
+# --- SessionStart: only THIS repository's own stale state is worth hearing ---
+# Every gate reads state_file_for(cwd) — never the whole state directory — so a
+# foreign repository's leftovers arm nothing here; naming one would hand the
+# operator a file no remedy run from this cwd could reach. The hook is scoped
+# to the one file its own gates actually read: this repository's, keyed by the
+# session recorded inside it, since a resumed session keeps that id and a file
+# this session armed is one it is resuming, not one it has to be told about.
+stale_session_input() { printf '{"session_id":"%s","cwd":"%s"}' "$SESSION" "$REPO_ROOT"; }
 
+# (a) Only a foreign repository's state exists — this repository has armed
+# nothing, so nothing is named.
+rm -f "$REPO_STATE"
 printf 'mode=plan\nsession=other-session\n' > "$STATE_DIR/other-session.state"
-printf 'mode=plan\nsession=%s\n' "$SESSION" > "$REPO_STATE"
+assert_allows "SessionStart names nothing when only a foreign repository's state exists" \
+  warn-stale-state.sh "$(stale_session_input)"
+
+# (b) THIS repository's own state names another session — the crash/resume
+# case the hook exists for — and it must still fire and still name it.
+printf 'mode=plan\nsession=other-session\n' > "$REPO_STATE"
 mkdir -p "$WORKTREES_DIR/wt-parallel/1"
-run_hook warn-stale-state.sh "$(printf '{"session_id":"%s"}' "$SESSION")"
+run_hook warn-stale-state.sh "$(stale_session_input)"
 # Which of the dir's entries reached the SessionStart context. The report is
 # prose the model reads, so the case asks which names it carries rather than how
 # the sentence around them is worded.
@@ -5021,29 +5029,55 @@ for dir_entry in "$(basename "$REPO_STATE")" other-session.state worktrees; do
   case "$hook_stdout" in *"$dir_entry"*) named_as_stale="$named_as_stale $dir_entry" ;; esac
 done
 named_as_stale="${named_as_stale# }"
-assert_after_hook "SessionStart names another session's state, never its own and never a worktree" \
-  [ "$named_as_stale" = other-session.state ]
+assert_after_hook "SessionStart names this repository's own stale state, never a foreign repository's and never a worktree" \
+  [ "$named_as_stale" = "$(basename "$REPO_STATE")" ]
 assert_equals "Claude stale-state guidance uses its installed slash route" \
   "present" "$(if printf '%s' "$hook_stdout" | grep -F '/oso-code:plan {change}' >/dev/null; then echo present; else echo missing; fi)"
 assert_equals "stale-state guidance prints a complete session-scoped clear command" \
   "present" "$(if printf '%s' "$hook_stdout" | grep -F -- "--session \\\"$SESSION\\\" clear" >/dev/null; then echo present; else echo missing; fi)"
+# (d) The old message claimed a repository-keyed file's flags arm this
+# session's gates no matter whose repository it named — false for a foreign
+# file, since every gate resolves its own state file from cwd. That
+# generalization is gone; what remains is true only because the file named
+# above is this session's own.
+assert_equals "SessionStart drops the false claim that a repository-keyed file arms this session's gates regardless of whose it is" \
+  "" "$(printf '%s' "$hook_stdout" | grep -F 'State is keyed by repository' || true)"
 
-OSO_AGENT=1 run_hook warn-stale-state.sh "$(printf '{"session_id":"%s"}' "$SESSION")"
+OSO_AGENT=1 run_hook warn-stale-state.sh "$(stale_session_input)"
 assert_equals "Codex stale-state guidance uses the discovered plugin route" \
   "present" "$(if printf '%s' "$hook_stdout" | grep -F '$oso-code:plan {change}' >/dev/null; then echo present; else echo missing; fi)"
 assert_equals "Codex stale-state guidance clears the fixed runtime identity" \
   "present" "$(if printf '%s' "$hook_stdout" | grep -F -- '--session \"1\" clear' >/dev/null; then echo present; else echo missing; fi)"
 
+# (c) Whatever the message named (captured above as named_as_stale) must be
+# reachable by the remedy it offers: run it exactly as printed, from this
+# repository, and confirm every file the message actually named is now gone —
+# not just the one file this fix happens to scope it to. Against the old sweep
+# this catches the real defect directly: a message naming a foreign file too
+# would still only ever clear this repository's own, leaving the foreign name
+# standing though the message said the remedy "drops it".
+( cd "$REPO_ROOT" && oso-state --session "$SESSION" clear )
+remedy_missed=""
+for dir_entry in $named_as_stale; do
+  [ ! -e "$STATE_DIR/$dir_entry" ] || remedy_missed="$remedy_missed $dir_entry"
+done
+if [ -z "$remedy_missed" ]; then
+  echo "ok: the remedy the message offers reaches every file the message named"; pass=$((pass + 1))
+else
+  echo "FAIL: the remedy the message offers left${remedy_missed} standing though the message named it"; fail=$((fail + 1))
+fi
+
 rm -f "$STATE_DIR/other-session.state"
+printf 'mode=plan\nsession=%s\n' "$SESSION" > "$REPO_STATE"
 assert_allows "SessionStart says nothing when the only state is this session's" \
-  warn-stale-state.sh "$(printf '{"session_id":"%s"}' "$SESSION")"
+  warn-stale-state.sh "$(stale_session_input)"
 
 # Fail-open on a machine that has never armed a session: no state dir at all.
 # HOME is what the state path hangs off, so the case moves it rather than
 # deleting the directory every later case reads.
 HOME="$TEST_HOME/never-armed"
 assert_allows "SessionStart says nothing where there is no state dir" \
-  warn-stale-state.sh "$(printf '{"session_id":"%s"}' "$SESSION")"
+  warn-stale-state.sh "$(stale_session_input)"
 HOME="$TEST_HOME"
 rm -rf "$WORKTREES_DIR/wt-parallel" "$REPO_STATE"
 
