@@ -505,6 +505,22 @@ else
     "tool for gate \`edits\` has no mapping for codex" \
     --repo-root "$REPO_ROOT" --table "$INCOMPLETE_TABLE" --check
 
+  # B1 (D18): a PreToolUse gate script that declares no recovery route must not
+  # land — a handler added (or edited down to) with no `# Recovery:` header line
+  # fails the same table check a missing matcher or a missing script already do.
+  RECOVERY_FIXTURE="$TEST_HOME/recovery-fixture"
+  copy_lint_fixture "$RECOVERY_FIXTURE"
+  RECOVERY_LESS_SCRIPT="$RECOVERY_FIXTURE/plugin/hooks/block-edits-without-slice.sh"
+  sed '/^# Recovery:/,+1d' "$RECOVERY_LESS_SCRIPT" > "$RECOVERY_LESS_SCRIPT.tmp"
+  mv "$RECOVERY_LESS_SCRIPT.tmp" "$RECOVERY_LESS_SCRIPT"
+  if grep -q '^# Recovery:' "$RECOVERY_LESS_SCRIPT"; then
+    echo "FAIL: the recovery-route mutation left the header line standing"; fail=$((fail + 1))
+  else
+    assert_renderer_rejects "a PreToolUse gate script with no declared recovery route fails the table check" \
+      "gate \`edits\` script \`block-edits-without-slice.sh\` declares no recovery route" \
+      --repo-root "$RECOVERY_FIXTURE" --table "$RECOVERY_FIXTURE/tools/hook-gates.txt" --check
+  fi
+
   assert_equals "a Codex tool absent from the table is default-denied" deny \
     "$("$HOOK_RENDERER" --table "$REPO_ROOT/tools/hook-gates.txt" \
       --classify codex edits mystery_writer)"
@@ -1694,6 +1710,109 @@ assert_denies "the edit gate denies a marked call while no slice is active" \
   block-edits-without-slice.sh "$edit_input"
 assert_allows "the edit gate stays off a call naming no session, armed repo or not" \
   block-edits-without-slice.sh "$unmarked_edit_input"
+oso-state --session "$SESSION" clear
+
+# --- B1 (D18): a deny hands over its remedy, executably, not a menu to guess --
+# A6 made a deny record what it denied; this is the other half — every deny
+# with a legitimate next step spells it as a runnable command or a named flow.
+# Assert per gate and per cause, not once globally: a shared assertion would
+# let one gate's remedy regress silently while the suite kept reading
+# someone else's.
+oso-state --session "$SESSION" set mode=plan active_slice=none verify_green=false
+assert_denies "the slice gate denies while no slice is active" \
+  block-edits-without-slice.sh "$edit_input"
+case "$hook_stdout" in
+  *"oso-state --session $SESSION set active_slice="*)
+    echo "ok: the slice gate's remedy is the exact oso-state call that arms a slice"; pass=$((pass + 1)) ;;
+  *)
+    echo "FAIL: the slice gate's remedy is not a runnable oso-state call — got: ${hook_stdout:-<empty>}"; fail=$((fail + 1)) ;;
+esac
+edit_denial_reason="$hook_stdout"
+
+plan_commit_reason=""
+quick_commit_reason=""
+debug_commit_reason=""
+for commit_mode in plan quick debug; do
+  oso-state --session "$SESSION" set mode="$commit_mode" active_slice=none verify_green=false
+  assert_denies "the commit gate denies red verify in $commit_mode mode" \
+    block-commit-until-green.sh "$(bash_input 'git commit -m x')"
+  case "$commit_mode" in
+    plan)
+      case "$hook_stdout" in
+        *'apply → verify loop'*) echo "ok: plan mode's remedy names its own loop"; pass=$((pass + 1)) ;;
+        *) echo "FAIL: plan mode's remedy does not name its own loop — got: ${hook_stdout:-<empty>}"; fail=$((fail + 1)) ;;
+      esac
+      plan_commit_reason="$hook_stdout" ;;
+    quick)
+      case "$hook_stdout" in
+        *'quick'*'close step'*) echo "ok: quick mode's remedy names its own close step"; pass=$((pass + 1)) ;;
+        *) echo "FAIL: quick mode's remedy does not name its own close step — got: ${hook_stdout:-<empty>}"; fail=$((fail + 1)) ;;
+      esac
+      quick_commit_reason="$hook_stdout" ;;
+    debug)
+      case "$hook_stdout" in
+        *'debug'*'close step'*) echo "ok: debug mode's remedy names its own close step"; pass=$((pass + 1)) ;;
+        *) echo "FAIL: debug mode's remedy does not name its own close step — got: ${hook_stdout:-<empty>}"; fail=$((fail + 1)) ;;
+      esac
+      debug_commit_reason="$hook_stdout" ;;
+  esac
+done
+if [ "$plan_commit_reason" = "$quick_commit_reason" ]; then
+  echo "FAIL: plan and quick mode share one commit remedy instead of naming their own flow"; fail=$((fail + 1))
+else
+  echo "ok: plan and quick mode's commit remedies name two different flows"; pass=$((pass + 1))
+fi
+
+oso-state --session "$SESSION" set mode=plan active_slice=1 verify_green=false
+run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input FutureWriter)" 0 '' \
+  --allow "$UNKNOWN_TOOL_ALLOWLIST"
+assert_after_hook "the unknown-tool gate denies a tool absent from the allowlist" \
+  hook_returned_deny
+case "$hook_stdout" in
+  *'Bash'*)
+    echo "ok: the unknown-tool gate's allowlist remedy names an allowed local tool"; pass=$((pass + 1)) ;;
+  *)
+    echo "FAIL: the unknown-tool gate's allowlist remedy names no allowed tool — got: ${hook_stdout:-<empty>}"; fail=$((fail + 1)) ;;
+esac
+allowlist_denial_reason="$hook_stdout"
+
+oso-state --session "$SESSION" set plan_approval=pending "plan_approval_session=$SESSION"
+run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input Bash)" 0 '' \
+  --allow "$UNKNOWN_TOOL_ALLOWLIST"
+assert_after_hook "the unknown-tool gate denies while its own plan approval is pending" \
+  hook_returned_deny
+pending_denial_reason="$hook_stdout"
+# Not mere string inequality — two unrelated messages, one of them empty of any
+# remedy, would already differ. This asserts each cause's OWN remedy content is
+# present and stayed out of the other's message, so a future collapse into one
+# shared sentence — or one cause silently losing its remedy — turns it red.
+case "$allowlist_denial_reason" in *'Bash'*) allowlist_has_own_remedy=true ;; *) allowlist_has_own_remedy=false ;; esac
+case "$pending_denial_reason" in *'CANCEL OSO PLAN'*) pending_has_own_remedy=true ;; *) pending_has_own_remedy=false ;; esac
+case "$allowlist_denial_reason" in *'CANCEL OSO PLAN'*) allowlist_leaked_pending=true ;; *) allowlist_leaked_pending=false ;; esac
+case "$pending_denial_reason" in *'Bash'*) pending_leaked_allowlist=true ;; *) pending_leaked_allowlist=false ;; esac
+if [ "$allowlist_has_own_remedy" = true ] && [ "$pending_has_own_remedy" = true ] &&
+   [ "$allowlist_leaked_pending" = false ] && [ "$pending_leaked_allowlist" = false ]; then
+  echo "ok: the unknown-tool gate's two causes carry two distinct, content-bearing remedies"; pass=$((pass + 1))
+else
+  echo "FAIL: the unknown-tool gate's two causes do not each carry their own remedy — allowlist: ${allowlist_denial_reason:-<empty>} / pending: ${pending_denial_reason:-<empty>}"; fail=$((fail + 1))
+fi
+
+# The security assertion: a remedy that told the operator to write
+# verify_green=true directly would be the bypass this slice exists to forbid,
+# so this scans every remedy captured above for that literal state write —
+# strict enough that adding it to any one of them turns this red.
+remedy_offers_bypass=""
+for remedy_text in "$edit_denial_reason" "$plan_commit_reason" "$quick_commit_reason" \
+    "$debug_commit_reason" "$allowlist_denial_reason" "$pending_denial_reason"; do
+  case "$remedy_text" in
+    *'verify_green=true'*) remedy_offers_bypass="yes" ;;
+  esac
+done
+if [ -n "$remedy_offers_bypass" ]; then
+  echo "FAIL: a captured remedy offers the state write that disarms its own gate"; fail=$((fail + 1))
+else
+  echo "ok: no captured remedy offers the state write that would disarm its gate"; pass=$((pass + 1))
+fi
 oso-state --session "$SESSION" clear
 
 # --- Invisibility: a session no mode ever armed must not know a gate ran -------
@@ -5586,6 +5705,12 @@ else
   mkdir -p "$COMMIT_REPO_STATE"
   assert_commit_aborted "the git layer denies a state path it cannot read" \
     'git commit -m x' 'cannot be read'
+  case "$commit_output" in
+    *"oso-state --session $SESSION clear"*)
+      echo "ok: an unreadable state file's remedy is the exact oso-state call that clears it"; pass=$((pass + 1)) ;;
+    *)
+      echo "FAIL: an unreadable state file's remedy is not a runnable oso-state call — got: ${commit_output:-<empty>}"; fail=$((fail + 1)) ;;
+  esac
   rmdir "$COMMIT_REPO_STATE"
   oso-state --session "$SESSION" clear
 fi

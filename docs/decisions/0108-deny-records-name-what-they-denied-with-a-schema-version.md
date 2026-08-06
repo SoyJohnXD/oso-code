@@ -3,7 +3,8 @@
 Date: 2026-08-05
 Status: accepted
 Implemented-in: plugin/hooks/lib.sh, plugin/hooks/block-unknown-tool.sh, plugin/hooks/block-edits-without-slice.sh, plugin/hooks/block-commit-until-green.sh, plugin/hooks/capture-plan-approval.sh, bootstrap/hook-hashes.txt, tests/hooks-test.sh, docs/blueprint.md
-Reconciled: applied — `deny()` gains a fourth `detail` argument threaded through its three PreToolUse callers; `log_event` gains `schema`, and optional `gate`/`hook_event` fields that only a deny-shaped call pays for; the six generic `stop_block` sentences in `capture-plan-approval.sh` each name their own structural cause.
+Superseded-by: ADR-0111 — retires only the claim that the command line reaches `deny_until_green` through its "new second argument"; ADR-0111 gives `deny_until_green` a `state_file` second argument for its mode-aware remedy, so `command` is now third. Everything else this decision records — the fourth `detail` argument on `deny()`, the `schema`/`gate`/`hook_event` fields, and the six named `stop_block` causes — stands unchanged.
+Reconciled: superseded — the one clause above now reads otherwise; the rest of this decision is still exactly what the code does.
 Source: `~/.local/state/oso-code/events.jsonl` — 2540 real events, every one of the 63 `commit-denied`, 9 `edit-denied` and 8 `unknown-tool-denied` lines carrying `"command":""`, and ten of the fifteen operator-visible Stop blocks in the real transcripts reading the identical sentence `malformed plan approval marker; emit it exactly once as the final line of a non-empty plan document.`
 
 ## Decision

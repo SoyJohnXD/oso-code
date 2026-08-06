@@ -36,6 +36,16 @@ host  codex   codex/hooks/hooks.json   "__OSO_HOOKS_DIR__"
 # which no other host writes; Codex user hooks get no shell_environment_policy at all,
 # so a Codex-wired handler resolves oso-state from the runtime sibling of its own
 # hooks directory instead. Wiring it there would cost a trusted position and do nothing.
+#
+# A PreToolUse gate's script declares its own way out or it does not land here
+# (D18, ADR-0111): a `# Recovery:` header line naming the operator's legitimate
+# next step, or explicitly stating there is none — never a cause the operator
+# has to translate into an action themselves, and never the state write that
+# would disarm the gate it belongs to. tools/render-hooks-json.sh's own parser
+# enforces this the same way it already enforces a matcher or a script's
+# existence: closed, before any render, check or classify mode runs. Stop and
+# UserPromptSubmit gates block through a different channel (`stop_block`,
+# `control_block`) this rule does not reach yet.
 
 gate  commit    PreToolUse    block-commit-until-green.sh   wired  wired
 gate  edits     PreToolUse    block-edits-without-slice.sh  wired  wired

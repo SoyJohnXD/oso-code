@@ -11,6 +11,9 @@
 # denies a tool absent from its release allowlist; once a new writer is admitted,
 # it must also land in this named matcher before it can edit outside an active
 # slice. Claude keeps this gate's existing named-list behavior.
+#
+# Recovery: the deny names the exact `oso-state` invocation (D18) that arms the
+# slice this gate is waiting for — the one thing only this gate knows.
 set -euo pipefail
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -48,5 +51,5 @@ fi
 # Every native writer in this gate's matcher spells its target `file_path`;
 # an MCP writer that spells it differently logs an empty detail rather than a
 # guessed second field name.
-deny "oso-code: plan mode is active but no slice is active. Activate the slice first (oso-state set active_slice=<n>) before editing files." \
+deny "oso-code: plan mode is active but no slice is active. Activate it first ($(oso_state_remedy "$session_id" "set active_slice=<n>")), then retry the edit." \
   edit-denied "$session_id" "$(json_field "$input" file_path)"

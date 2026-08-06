@@ -69,6 +69,16 @@ function expected_event(id) {
   return ""
 }
 function file_exists(path, probe) { probe = (getline ignored < path); close(path); return probe >= 0 }
+# D18 (ADR-0111): a PreToolUse gate can deny an operator call, so its script
+# must declare its own way out -- a "# Recovery:" header line naming the next
+# step, or explicitly saying there is none. Other events block through a
+# different channel (stop_block, control_block) this rule does not reach.
+function has_recovery_route(path,    line, found) {
+  found = 0
+  while ((getline line < path) > 0) if (line ~ /^# Recovery:/) { found = 1; break }
+  close(path)
+  return found
+}
 function parse(    line, fields, count, kind, i, id, expected) {
   while ((getline line < table) > 0) {
     sub(/^[[:space:]]+/, "", line)
@@ -93,6 +103,7 @@ function parse(    line, fields, count, kind, i, id, expected) {
       if (fields[4] != expected_script(id)) die("unknown script `" fields[4] "` for gate `" id "`")
       if (fields[3] != expected_event(id)) die("unknown event `" fields[3] "` for gate `" id "`")
       if (fields[4] !~ /^[A-Za-z0-9_.-]+$/ || !file_exists(repo "/plugin/hooks/" fields[4])) die("missing or unsafe gate script `" fields[4] "`")
+      if (fields[3] == "PreToolUse" && !has_recovery_route(repo "/plugin/hooks/" fields[4])) die("gate `" id "` script `" fields[4] "` declares no recovery route (see tools/hook-gates.txt header)")
       gate_seen[id] = 1; gate_count++; gate_id[gate_count] = id; gate_event[gate_count] = fields[3]; gate_script[gate_count] = fields[4]
       for (i = 1; i <= host_count; i++) {
         if (fields[4 + i] != "wired" && fields[4 + i] != "none") die("gate `" id "` has invalid mapping for " hosts[i])

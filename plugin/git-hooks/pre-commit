@@ -53,4 +53,4 @@ if state_says "$state_file" '^verify_green=true$' "$session_id"; then
   exit 0
 fi
 
-deny_until_green "$session_id"
+deny_until_green "$session_id" "$state_file"

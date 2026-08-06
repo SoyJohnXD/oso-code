@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # PreToolUse[Bash]: denies git commit while the session verify is not green.
 # Reads only state flags — never inspects model output.
+#
+# Recovery: the deny reads the session's own `mode` and names that mode's own
+# path to green (D18) — plan's apply → verify loop, or quick/debug's close
+# step — never a menu of every mode's step, and never the state write that
+# would flip the flag itself.
 set -euo pipefail
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -254,4 +259,4 @@ if [ "$verdict" = residue ]; then
   exit 0
 fi
 
-deny_until_green "$session_id" "$command"
+deny_until_green "$session_id" "$state_file" "$command"

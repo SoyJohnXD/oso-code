@@ -2,6 +2,10 @@
 # Codex catch-all gate: once oso-code state exists for the repository, deny each
 # local tool call for which Codex emits PreToolUse unless its exposed name is in
 # the release-rendered allowlist.
+#
+# Recovery: this gate denies for two distinct causes and gives each its own way
+# out (D18) — a pending plan names Codex's native approval controls; an
+# unlisted tool names the exact allowlist this release actually admits.
 set -euo pipefail
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -57,5 +61,5 @@ case "$tool_name" in ''|*[!A-Za-z0-9_:.-]*) ;;
     ;;
 esac
 
-deny "oso-code: tool '${tool_name:-<missing>}' is not in this release's Codex hook allowlist." \
+deny "oso-code: tool '${tool_name:-<missing>}' is not in this release's Codex hook allowlist. Use one of the allowed local tools instead: ${allowlist//|/, }." \
   unknown-tool-denied "$session_id" "$tool_name"

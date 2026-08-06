@@ -231,6 +231,21 @@ state_value() {
   grep "^${key}=" "$state_file" 2>/dev/null | cut -d= -f2- || true
 }
 
+# The `oso-state` half of a deny's remedy (D18), spelled once so the binary and
+# the real session id are never retyped per gate — the shape deny_unusable_state
+# already used before this slice. Composed straight into deny()'s own `reason`
+# argument at the call site, never into `detail`: A6 wired `detail` solely into
+# the audit log's `command` field, and the JSON permissionDecisionReason is the
+# only thing either host ever shows past a deny, so a remedy living in `detail`
+# would reach nobody. Not every remedy is one exact state write — "run the
+# checks", "use one of these tools" are named flows or facts a gate already
+# holds, composed as plain reason text instead — so this helper has no reach
+# past the remedies that ARE a single `oso-state` call.
+oso_state_remedy() {
+  local session="$1" verb_and_args="$2"
+  printf 'oso-state --session %s %s' "$session" "$verb_and_args"
+}
+
 # GNU and BSD stat spell mtime differently, and a file whose mtime neither can
 # read gets no age at all rather than a guessed one: each caller decides what its
 # own threshold makes of an unanswered age.
@@ -294,7 +309,7 @@ state_says() {
 
 deny_unusable_state() {
   local state_file="$1" session="$2"
-  deny "oso-code: this session is armed but its state file (${state_file}) cannot be read, so the gate cannot tell whether this call is safe. Remove or repair it (oso-state --session ${session} clear), then retry." \
+  deny "oso-code: this session is armed but its state file (${state_file}) cannot be read, so the gate cannot tell whether this call is safe. Remove or repair it ($(oso_state_remedy "$session" clear)), then retry." \
     state-unreadable "$session"
 }
 
@@ -304,9 +319,25 @@ deny_unusable_state() {
 # live here rather than in each. The command line is the one thing only the
 # PreToolUse layer has to give the audit — the git layer's own deny_until_green
 # call has no command to name, so its event keeps the empty detail it always had.
+#
+# The remedy (D18) is the active mode's own step, read off `mode` in the same
+# state file both layers already resolved — never a two- or three-way menu the
+# operator has to translate, and never the write (`verify_green=true`) that
+# would flip the flag itself: that write belongs to the checks actually running
+# clean, not to a shortcut this text could be copied into. A mode this gate
+# cannot read (missing, or a future one the case below has not met yet) falls
+# back to naming every route rather than guessing one.
 deny_until_green() {
-  local session="$1" command="${2:-}"
-  deny "oso-code: the session verify is not green. Run the verify loop (plan mode) or the quality pass (quick mode) to zero warnings — it sets verify_green=true — then commit." \
+  local session="$1" state_file="$2" command="${3:-}"
+  local mode remedy
+  mode="$(state_value "$state_file" mode)"
+  case "$mode" in
+    plan) remedy="Resume plan mode's apply → verify loop until the verifier returns pass" ;;
+    quick) remedy="Finish quick mode's close step — run the project's checks to zero warnings" ;;
+    debug) remedy="Finish debug mode's close step — run the quality-pass judge to zero warnings" ;;
+    *) remedy="Finish the active mode's checks to zero warnings — plan mode's apply → verify loop, or quick/debug mode's close step" ;;
+  esac
+  deny "oso-code: the session verify is not green. ${remedy}, then retry the commit." \
     commit-denied "$session" "$command"
 }
 
@@ -329,8 +360,13 @@ deny() {
 # The client ignores a hook's JSON when it exits 2, so this channel replaces a
 # verdict and must never follow one: gates arm it only where they have already
 # decided the call is theirs, and drop it the moment a verdict is out.
+#
+# No remedy rides here, and the text says so rather than implying one (D18):
+# every caller is a crash mid-gate or a malformed installer config (a missing
+# sha256sum, an empty or invalid Codex allowlist argument) — one class of
+# failure with no single operator-actionable fix, unlike a deny's own reason.
 block_with_gate_error() {
-  printf 'oso-code: %s failed unexpectedly and blocked this call instead of opening the gate.\n' "$1" >&2
+  printf 'oso-code: %s failed unexpectedly and blocked this call instead of opening the gate. No remedy is known for this failure.\n' "$1" >&2
   exit 2
 }
 

@@ -8,15 +8,15 @@
 # persist-state-bin.sh is excluded. An installer reads these expected hashes and
 # compares installed bytes; it must never replace them with hashes it calculated.
 c7766ae910a9fdb95ea9b7b495935c6fd824ef6f2c309fcadad0261fbff98351  codex/hooks/hooks.json
-ff41240b7d2f93fec142b8a8a96e588e9c585376e07034a25d044ed688aec421  plugin/git-hooks/pre-commit
-3e2376f0a9ab8bd14b5d9aed33ec3cfd627bf0940d509dd66bf21080f6c01fed  plugin/hooks/block-commit-until-green.sh
-49f4a830f5c61809c15cbc98508377d24298b7a64ee180ce37a26d8f071fa00d  plugin/hooks/block-edits-without-slice.sh
-bbd4c80dac9874a829566ee224ff936cf7ee4e3e045e983f5148031d84ac54ec  plugin/hooks/block-unknown-tool.sh
+86d5b09d031ff2b1379921af662992bf95b3eed86970f31956645765506dee29  plugin/git-hooks/pre-commit
+6b787ee19d26d241849349f721eb404d108663c96e8c8ed02a1b92485ff5b76b  plugin/hooks/block-commit-until-green.sh
+080a4c8ec70bc99d01a1401e29234511f0b6ab92864e5a6da790590d2bc9a815  plugin/hooks/block-edits-without-slice.sh
+440569ae28057c451e475bec187eba7b4c16fa5bdba362294c63ab0e5a1551d4  plugin/hooks/block-unknown-tool.sh
 645ce97ff6b0fdd4e4179dabc5a7b3f322258c19006db675fc305f96180a973c  plugin/hooks/publish-subagent-handoff.sh
 b9a55bdde5d49561376b6a4dac20a985305c2f89fb1fc5116ada1235dc7918b7  plugin/hooks/capture-plan-approval.sh
 52e1bc9f4a7685cc581be3f1806fd26db93eecdeacaa3d750519e7b61525a49c  plugin/hooks/approve-plan-token.sh
 143101740ac574cc348154f2e4f0e96076b010c2d66fd0bda4bca78194b63999  plugin/hooks/warn-stale-state.sh
 e828550127f43a50812117cf0db0eb3a1abab9b3905adfe94b3362a5dd7033e6  plugin/hooks/cleanup-state.sh
 0a9f752db3d5dbf00f86e00fa9bcf7a746db89b230be8c5dbac907445158583f  plugin/bin/oso-state
-dc7b9f84cd742573d33bd7a69030719bdc86e0201114923f4955dbecad580e71  plugin/hooks/lib.sh
+156c5185bca8b51526b379b998d852962945ab1b877ca2b8d17fcbdd307285fd  plugin/hooks/lib.sh
 6cae7d3728c1bac6b42e956023f3b069378a9ab776608b814f8dcf78cd5be939  plugin/hooks/lexer.sh
