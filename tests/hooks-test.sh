@@ -6972,6 +6972,63 @@ repair_engram_codex_contract_status() {
 assert_equals "repair-engram-codex shell surface is syntax-valid and contains fail-safe backup/checksum/setup/verification rails" \
   complete "$(repair_engram_codex_contract_status)"
 
+# --- repair-engram-codex.sh: the repair downloads are bounded, by name ------
+# download_file's bound is curl/wget's own native flag, not the front-surface
+# job-control idiom -- so this drives download_file directly (extracted, like
+# the other repair internals below run through OSO_REPAIR_ENGRAM_CODEX_TEST_RUN_REPAIRED
+# rather than a real network fetch) against a fake curl that reports its own
+# reserved timeout code immediately, proving download_file reads and reports
+# the bound rather than reproving curl's own timeout mechanism.
+REPAIR_DOWNLOAD_FUNCTION="$(sed -n '/^download_file() {$/,/^}$/p' "$REPAIR_ENGRAM_CODEX_SH")"
+REPAIR_DOWNLOAD_BOUND_LINE="$( { grep -F 'ENGRAM_DOWNLOAD_BOUND_SECONDS=' "$REPAIR_ENGRAM_CODEX_SH" || true; } | grep -v '^#' || true)"
+assert_equals "repair-engram-codex.sh defines download_file, so its bound has something to test" \
+  "present" "$([ -n "$REPAIR_DOWNLOAD_FUNCTION" ] && printf present || printf missing)"
+
+repair_download_probe() (
+  eval "$REPAIR_DOWNLOAD_BOUND_LINE"
+  eval "$REPAIR_DOWNLOAD_FUNCTION"
+  fail() { printf 'FAILCALL:%s\n' "$1"; exit 1; }
+  download_file "$1" "$2" "$3"
+)
+
+REPAIR_DOWNLOAD_SHIM_DIR="$TEST_HOME/repair-download-shims"
+mkdir -p "$REPAIR_DOWNLOAD_SHIM_DIR"
+REPAIR_DOWNLOAD_CURL_CALLS="$TEST_HOME/repair-download-curl-calls"
+
+write_repair_download_curl_shim() {
+  local exit_code="$1"
+  printf '%s\n' \
+    '#!/bin/sh' \
+    'printf '\''%s\n'\'' "$*" >> "$OSO_TEST_CURL_CALLS"' \
+    "exit $exit_code" > "$REPAIR_DOWNLOAD_SHIM_DIR/curl"
+  chmod +x "$REPAIR_DOWNLOAD_SHIM_DIR/curl"
+}
+
+: > "$REPAIR_DOWNLOAD_CURL_CALLS"
+write_repair_download_curl_shim 28
+REPAIR_DOWNLOAD_TIMEOUT_OUTPUT="$(
+  PATH="$REPAIR_DOWNLOAD_SHIM_DIR:$PATH" OSO_TEST_CURL_CALLS="$REPAIR_DOWNLOAD_CURL_CALLS" \
+    OSO_ENGRAM_DOWNLOAD_BOUND_SECONDS=2 \
+    repair_download_probe "https://example.test/asset.tar.gz" "$TEST_HOME/repair-download-dest" \
+      "Engram release archive" 2>&1
+)" || true
+assert_equals "curl's own reserved timeout code is named SLOW, with the operation and the bound" \
+  "1" "$(printf '%s\n' "$REPAIR_DOWNLOAD_TIMEOUT_OUTPUT" | \
+    grep -Fc 'FAILCALL:SLOW: download of Engram release archive did not finish within 2s: https://example.test/asset.tar.gz' || true)"
+assert_equals "the repair passes its own bound to curl's connect and max-time flags" \
+  "1" "$(grep -Fc -- '--connect-timeout 2 --max-time 2' "$REPAIR_DOWNLOAD_CURL_CALLS" || true)"
+
+write_repair_download_curl_shim 6
+REPAIR_DOWNLOAD_UNAVAILABLE_OUTPUT="$(
+  PATH="$REPAIR_DOWNLOAD_SHIM_DIR:$PATH" OSO_TEST_CURL_CALLS="$REPAIR_DOWNLOAD_CURL_CALLS" \
+    OSO_ENGRAM_DOWNLOAD_BOUND_SECONDS=2 \
+    repair_download_probe "https://example.test/asset.tar.gz" "$TEST_HOME/repair-download-dest" \
+      "Engram release archive" 2>&1
+)" || true
+assert_equals "a non-timeout curl failure is named UNAVAILABLE, never mistaken for a hang" \
+  "1" "$(printf '%s\n' "$REPAIR_DOWNLOAD_UNAVAILABLE_OUTPUT" | \
+    grep -Fc 'FAILCALL:UNAVAILABLE: download of Engram release archive failed: https://example.test/asset.tar.gz (curl exit 6)' || true)"
+
 # --- Codex installer: an isolated release install, not a real user mutation ---
 # S11 owns user-wide Codex state, which makes a source-only assertion too weak:
 # the test runs the shipped installer with HOME, CODEX_HOME and every external
@@ -8296,6 +8353,290 @@ assert_equals "the rollback report names the item that failed to restore" \
   "1" "$(printf '%s\n' "$CODEX_INSTALL_LOG" | grep -Fc "$rollback_honesty_target" || true)"
 assert_equals "the rollback report tells the operator the snapshot is still there to restore by hand" \
   "1" "$(printf '%s\n' "$CODEX_INSTALL_LOG" | grep -Ec 'snapshot.*restore it by hand' || true)"
+
+# --- Codex installer: Impeccable is pinned to the recorded version (D14, D4) --
+# The design-foundation slice (ADR-0116) reads the installed skill's own
+# `version:` frontmatter and records it in the plan ledger; this pin is what
+# lets that recorded read and the marketplace fetch agree instead of leaving
+# two unreconciled sources of truth. Three cases: a candidate that already
+# matches never triggers a fetch, one that does not match falls through to
+# the pinned `--ref skill-v<version>` fetch, and a fetch that itself reports
+# the wrong version fails loudly rather than mounting unpinned content.
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "skip: python3 is absent here, so the Impeccable marketplace pin fetch path has nothing to run"
+  skipped=$((skipped + 1))
+else
+  IMPECCABLE_PIN_VERSION="$(sed -n 's/^SUPPORTED_IMPECCABLE_VERSION=//p' "$INSTALL_CODEX_SH")"
+
+  write_impeccable_pin_codex_shim() {
+    local shim_dir="$1"
+    mkdir -p "$shim_dir"
+    printf '%s\n' \
+      '#!/bin/sh' \
+      'printf '\''codex:%s\n'\'' "$*" >> "$OSO_TEST_CALLS"' \
+      'case "$*" in' \
+      '  --version) printf '\''codex-cli %s\n'\'' "$(cat "$OSO_TEST_CODEX_VERSION")" ;;' \
+      '  "sandbox -P oso -- /bin/true") exit 0 ;;' \
+      '  "plugin marketplace list --json") printf '\''{"marketplaces":[]}\n'\'' ;;' \
+      "  \"plugin marketplace add pbakaus/impeccable --ref skill-v$IMPECCABLE_PIN_VERSION --json\")" \
+      '    printf '\''{"installedRoot":"%s"}\n'\'' "$OSO_TEST_IMPECCABLE_FETCHED_ROOT" ;;' \
+      '  "plugin marketplace add "*) exit 0 ;;' \
+      '  "plugin add oso-code@oso-code --json") exit 0 ;;' \
+      '  "plugin add impeccable@impeccable --json") exit 0 ;;' \
+      '  *) printf '\''unexpected codex call: %s\n'\'' "$*" >&2; exit 64 ;;' \
+      'esac' > "$shim_dir/codex"
+    chmod +x "$shim_dir/codex"
+  }
+
+  run_codex_install_impeccable_pin() {
+    local fixture_home="$1" shim_dir="$2" impeccable_source="$3" fetched_root="$4"
+    : > "$CODEX_INSTALL_CALLS"
+    printf '0.146.0\n' > "$CODEX_INSTALL_VERSION"
+    if HOME="$fixture_home" \
+      CODEX_HOME="$fixture_home/.codex" \
+      PATH="$shim_dir:$CODEX_INSTALL_SHIMS:$PATH" \
+      OSO_TEST_CALLS="$CODEX_INSTALL_CALLS" \
+      OSO_TEST_CODEX_VERSION="$CODEX_INSTALL_VERSION" \
+      OSO_IMPECCABLE_SOURCE="$impeccable_source" \
+      OSO_TEST_IMPECCABLE_FETCHED_ROOT="$fetched_root" \
+      bash "$INSTALL_CODEX_SH" --yes --no-git-hook > "$CODEX_INSTALL_OUTPUT" 2>&1; then
+      CODEX_INSTALL_RC=0
+    else
+      CODEX_INSTALL_RC=$?
+    fi
+    CODEX_INSTALL_LOG="$(cat "$CODEX_INSTALL_OUTPUT")"
+  }
+
+  IMPECCABLE_PIN_SHIM_DIR="$TEST_HOME/impeccable-pin-shims"
+  write_impeccable_pin_codex_shim "$IMPECCABLE_PIN_SHIM_DIR"
+
+  # (c-1) a discovered candidate that already matches the pin: no fetch call.
+  IMPECCABLE_PIN_MATCH_SOURCE="$TEST_HOME/impeccable-pin-match-source"
+  write_codex_impeccable_fixture "$IMPECCABLE_PIN_MATCH_SOURCE" \
+    'name: impeccable' "version: $IMPECCABLE_PIN_VERSION"
+  IMPECCABLE_PIN_MATCH_HOME="$TEST_HOME/impeccable-pin-match-home"
+  run_codex_install_impeccable_pin "$IMPECCABLE_PIN_MATCH_HOME" "$IMPECCABLE_PIN_SHIM_DIR" \
+    "$IMPECCABLE_PIN_MATCH_SOURCE" "$TEST_HOME/impeccable-pin-unused-root"
+  assert_equals "a candidate already at the pinned version installs cleanly" \
+    "0" "$CODEX_INSTALL_RC"
+  assert_equals "a candidate already at the pinned version triggers no marketplace fetch" \
+    "0" "$(grep -Fc 'plugin marketplace add pbakaus/impeccable' "$CODEX_INSTALL_CALLS" || true)"
+  assert_equals "the mounted skill carries the pinned version" \
+    "$IMPECCABLE_PIN_VERSION" \
+    "$(sed -n 's/^version:[[:space:]]*//p' \
+      "$IMPECCABLE_PIN_MATCH_HOME/.agents/skills/impeccable/SKILL.md" 2>/dev/null || true)"
+
+  # (c-2) a discovered candidate at a DIFFERENT version falls through to the
+  # pinned fetch, and the mount ends up at the pinned version regardless.
+  IMPECCABLE_PIN_MISMATCH_SOURCE="$TEST_HOME/impeccable-pin-mismatch-source"
+  write_codex_impeccable_fixture "$IMPECCABLE_PIN_MISMATCH_SOURCE" \
+    'name: impeccable' 'version: 1.2.3'
+  IMPECCABLE_PIN_FETCHED_ROOT="$TEST_HOME/impeccable-pin-fetched-root"
+  write_codex_impeccable_fixture \
+    "$IMPECCABLE_PIN_FETCHED_ROOT/.agents/skills/impeccable" \
+    'name: impeccable' "version: $IMPECCABLE_PIN_VERSION"
+  IMPECCABLE_PIN_MISMATCH_HOME="$TEST_HOME/impeccable-pin-mismatch-home"
+  run_codex_install_impeccable_pin "$IMPECCABLE_PIN_MISMATCH_HOME" "$IMPECCABLE_PIN_SHIM_DIR" \
+    "$IMPECCABLE_PIN_MISMATCH_SOURCE" "$IMPECCABLE_PIN_FETCHED_ROOT"
+  assert_equals "a candidate at a different version still installs cleanly, from the pinned fetch" \
+    "0" "$CODEX_INSTALL_RC"
+  assert_equals "a candidate at a different version falls through to the exact pinned ref" \
+    "1" "$(grep -Fc "plugin marketplace add pbakaus/impeccable --ref skill-v$IMPECCABLE_PIN_VERSION --json" \
+      "$CODEX_INSTALL_CALLS" || true)"
+  assert_equals "the pinned fetch replaces the mismatched candidate with the pinned version" \
+    "$IMPECCABLE_PIN_VERSION" \
+    "$(sed -n 's/^version:[[:space:]]*//p' \
+      "$IMPECCABLE_PIN_MISMATCH_HOME/.agents/skills/impeccable/SKILL.md" 2>/dev/null || true)"
+
+  # (c-3) the pinned fetch itself reports a different version -- an upstream
+  # inconsistency the installer cannot resolve, so it fails loudly and by
+  # name rather than mounting unpinned content.
+  IMPECCABLE_PIN_INCONSISTENT_ROOT="$TEST_HOME/impeccable-pin-inconsistent-root"
+  write_codex_impeccable_fixture \
+    "$IMPECCABLE_PIN_INCONSISTENT_ROOT/.agents/skills/impeccable" \
+    'name: impeccable' 'version: 9.9.9'
+  IMPECCABLE_PIN_INCONSISTENT_HOME="$TEST_HOME/impeccable-pin-inconsistent-home"
+  run_codex_install_impeccable_pin "$IMPECCABLE_PIN_INCONSISTENT_HOME" "$IMPECCABLE_PIN_SHIM_DIR" \
+    "$IMPECCABLE_PIN_MISMATCH_SOURCE" "$IMPECCABLE_PIN_INCONSISTENT_ROOT"
+  assert_equals "a pinned fetch that itself disagrees with the pin fails the install" \
+    "nonzero" "$([ "$CODEX_INSTALL_RC" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "the failure names the pin and what the fetch actually reported" \
+    "1" "$(printf '%s\n' "$CODEX_INSTALL_LOG" | \
+      grep -Fc "Impeccable is pinned to skill-v$IMPECCABLE_PIN_VERSION but the mounted skill reports version 9.9.9" || true)"
+fi
+
+# --- Codex installer: a restore that exists, and retention sequenced -------
+#     behind it (D14) ----------------------------------------------------------
+# Count-based retention does not answer "1.9 GiB across 17 snapshots" -- a
+# single snapshot already runs to ~110 MiB -- so this proves the size bound
+# instead, and proves it never engages until a real restore has succeeded at
+# least once: a purge that ran on its own first installation would delete the
+# very artifacts an operator would reach for if that installation went wrong.
+. "$REPO_ROOT/bootstrap/lib/install-backup.sh"
+RESTORE_CODEX_SH="$REPO_ROOT/bootstrap/restore-codex.sh"
+
+newest_install_backup_name() {
+  local root="$1/.local/state/oso-code" path
+  path="$(install_backup_dirs_newest_first "$root" | awk 'NR == 1 { print; exit }')"
+  printf '%s' "${path##*/}"
+}
+
+count_install_backups() {
+  install_backup_dirs_newest_first "$1/.local/state/oso-code" | wc -l | tr -d '[:space:]'
+}
+
+run_codex_restore() {
+  local fixture_home="$1" backup_name="$2"
+  if CODEX_RESTORE_OUTPUT="$(HOME="$fixture_home" bash "$RESTORE_CODEX_SH" --yes "$backup_name" 2>&1)"; then
+    CODEX_RESTORE_RC=0
+  else
+    CODEX_RESTORE_RC=$?
+  fi
+}
+
+CODEX_RESTORE_HOME="$TEST_HOME/codex-restore-retention-home"
+
+# Install #1: state A. Snapshotting it immediately captures exactly what
+# install #2's own backup will hold, since a backup is taken of whatever
+# exists right before that next install runs.
+run_codex_install "$CODEX_RESTORE_HOME"
+codex_restore_snapshot_a="$(install_file_snapshot "$CODEX_RESTORE_HOME")"
+
+# Install #2: state B. Its backup is exactly state A.
+run_codex_install "$CODEX_RESTORE_HOME"
+codex_restore_backup_2="$(newest_install_backup_name "$CODEX_RESTORE_HOME")"
+assert_equals "two installs leave exactly two backups" \
+  "2" "$(count_install_backups "$CODEX_RESTORE_HOME")"
+
+# (b), part 1: a third install runs under a budget too small for even one
+# snapshot, and retention still deletes nothing -- the restore path has
+# never been exercised on this fixture yet.
+export OSO_INSTALL_BACKUP_BUDGET_KIB=1
+run_codex_install "$CODEX_RESTORE_HOME"
+unset OSO_INSTALL_BACKUP_BUDGET_KIB
+assert_equals "retention skips every backup until the restore path is verified, even under an impossible budget" \
+  "3" "$(count_install_backups "$CODEX_RESTORE_HOME")"
+assert_equals "the skip is named, not silent" \
+  "1" "$(printf '%s\n' "$CODEX_INSTALL_LOG" | \
+    grep -Fc 'backup retention: skipped — the restore path has not been verified' || true)"
+
+# (a): corrupt the live tree, then restore backup #2 -- the exact snapshot
+# state A left behind -- and prove it comes back byte for byte.
+rm -rf "$CODEX_RESTORE_HOME/.codex/agents"
+printf 'operator broke this\n' > "$CODEX_RESTORE_HOME/.codex/config.toml"
+run_codex_restore "$CODEX_RESTORE_HOME" "$codex_restore_backup_2"
+assert_equals "the restore run exits clean" "0" "$CODEX_RESTORE_RC"
+assert_equals "restoring backup #2 brings the tree back to the exact state install #1 left" \
+  "$codex_restore_snapshot_a" "$(install_file_snapshot "$CODEX_RESTORE_HOME")"
+assert_equals "a successful restore records that the restore path has now been exercised" \
+  "present" "$([ -f "$CODEX_RESTORE_HOME/.local/state/oso-code/.install-restore-verified" ] \
+    && printf present || printf absent)"
+
+# (b), part 2: a fourth install, same impossible budget -- now pruning runs,
+# since the restore above just proved itself, keeping only what the budget
+# always guarantees: the newest backup alone.
+export OSO_INSTALL_BACKUP_BUDGET_KIB=1
+run_codex_install "$CODEX_RESTORE_HOME"
+unset OSO_INSTALL_BACKUP_BUDGET_KIB
+assert_equals "retention now prunes down to the newest backup once the restore path is proven" \
+  "1" "$(count_install_backups "$CODEX_RESTORE_HOME")"
+
+# A backup name outside install-codex.sh's own naming shape is refused
+# outright, never treated as a restorable snapshot.
+CODEX_RESTORE_BOGUS_HOME="$TEST_HOME/codex-restore-bogus-home"
+mkdir -p "$CODEX_RESTORE_BOGUS_HOME/.local/state/oso-code"
+run_codex_restore "$CODEX_RESTORE_BOGUS_HOME" "../../etc"
+assert_equals "a backup name that is not a bare directory name is refused" \
+  "nonzero" "$([ "$CODEX_RESTORE_RC" -ne 0 ] && echo nonzero || echo zero)"
+
+# --- verify-codex.sh: codex login status and codex exec are bounded (D14) ----
+# Both carry no timeout flag of their own, so both now run through
+# bounded_command_output -- the same in-shell job-control idiom
+# plugin/skills/_shared/front-surface.md defines and this file's own MCP
+# drift probe (mcp_server_tool_names, tested above) already reuses. Driven
+# here as a full subprocess run, the same mechanism the host-contract and MCP
+# drift cases above use, with OSO_VERIFY_SKIP_SMOKE left UNSET so the run
+# actually reaches run_authenticated_smoke.
+CODEX_LOGIN_HANG_SHIM_DIR="$TEST_HOME/codex-login-hang-shim"
+mkdir -p "$CODEX_LOGIN_HANG_SHIM_DIR"
+printf '%s\n' \
+  '#!/bin/sh' \
+  'case "$1" in' \
+  '  --version) printf '\''codex-cli 0.0.0-test\n'\''; exit 0 ;;' \
+  '  login) sleep 60 ;;' \
+  '  sandbox) exit 0 ;;' \
+  '  *) exit 1 ;;' \
+  'esac' > "$CODEX_LOGIN_HANG_SHIM_DIR/codex"
+chmod +x "$CODEX_LOGIN_HANG_SHIM_DIR/codex"
+
+CODEX_LOGIN_HANG_HOME="$TEST_HOME/codex-login-hang-home"
+mkdir -p "$CODEX_LOGIN_HANG_HOME/.codex"
+CODEX_LOGIN_HANG_START="$(date +%s)"
+CODEX_LOGIN_HANG_OUTPUT="$(
+  HOME="$CODEX_LOGIN_HANG_HOME" CODEX_HOME="$CODEX_LOGIN_HANG_HOME/.codex" \
+    PATH="$CODEX_LOGIN_HANG_SHIM_DIR:$PATH" \
+    OSO_CODEX_LOGIN_STATUS_BOUND_SECONDS=2 \
+    bash "$REPO_ROOT/bootstrap/verify-codex.sh" 2>&1 || true
+)"
+CODEX_LOGIN_HANG_ELAPSED=$(($(date +%s) - CODEX_LOGIN_HANG_START))
+assert_equals "codex login status names itself when it never answers, instead of hanging the verifier" \
+  "1" "$(printf '%s\n' "$CODEX_LOGIN_HANG_OUTPUT" | \
+    grep -Fxc 'FAIL: Codex authentication — expected logged-in, got SLOW: codex login status did not answer within 2s' || true)"
+assert_equals "the bounded codex login status ends well inside a generous multiple of its own bound" \
+  "bounded" "$([ "$CODEX_LOGIN_HANG_ELAPSED" -le 30 ] && printf bounded || printf "unbounded:${CODEX_LOGIN_HANG_ELAPSED}s")"
+if pgrep -f "$CODEX_LOGIN_HANG_SHIM_DIR/codex" >/dev/null 2>&1; then
+  echo "FAIL: the hanging codex login status fixture outlived the bounded check"; fail=$((fail + 1))
+else
+  echo "ok: the hanging codex login status fixture does not outlive the bounded check"; pass=$((pass + 1))
+fi
+
+# codex exec (the integrator smoke, D13/B13) reaches deep into
+# create_integrator_fixture/populate_smoke_codex_home, which needs a real git
+# checkout -- gated the way the rest of this suite gates its git-layer cases.
+if ! command -v git >/dev/null 2>&1; then
+  echo "skip: git is absent here, so the codex exec smoke bound cannot be exercised end to end"
+  skipped=$((skipped + 1))
+else
+  CODEX_EXEC_HANG_SHIM_DIR="$TEST_HOME/codex-exec-hang-shim"
+  mkdir -p "$CODEX_EXEC_HANG_SHIM_DIR"
+  printf '%s\n' \
+    '#!/bin/sh' \
+    'case "$1" in' \
+    '  --version) printf '\''codex-cli 0.0.0-test\n'\''; exit 0 ;;' \
+    '  login) [ "$2" = status ] && exit 0 || exit 1 ;;' \
+    '  exec) sleep 60 ;;' \
+    '  sandbox) exit 0 ;;' \
+    '  *) exit 1 ;;' \
+    'esac' > "$CODEX_EXEC_HANG_SHIM_DIR/codex"
+  chmod +x "$CODEX_EXEC_HANG_SHIM_DIR/codex"
+
+  CODEX_EXEC_HANG_HOME="$TEST_HOME/codex-exec-hang-home"
+  CODEX_EXEC_HANG_CODEX_HOME="$CODEX_EXEC_HANG_HOME/.codex"
+  mkdir -p "$CODEX_EXEC_HANG_CODEX_HOME/agents"
+  printf 'fixture-auth\n' > "$CODEX_EXEC_HANG_CODEX_HOME/auth.json"
+  printf '{"hooks":{}}\n' > "$CODEX_EXEC_HANG_CODEX_HOME/hooks.json"
+  printf '# fixture config, no mcp_servers table -- nothing for the drift check to spawn\n' \
+    > "$CODEX_EXEC_HANG_CODEX_HOME/config.toml"
+
+  CODEX_EXEC_HANG_START="$(date +%s)"
+  CODEX_EXEC_HANG_OUTPUT="$(
+    HOME="$CODEX_EXEC_HANG_HOME" CODEX_HOME="$CODEX_EXEC_HANG_CODEX_HOME" \
+      PATH="$CODEX_EXEC_HANG_SHIM_DIR:$PATH" \
+      OSO_CODEX_EXEC_SMOKE_BOUND_SECONDS=2 \
+      bash "$REPO_ROOT/bootstrap/verify-codex.sh" 2>&1 || true
+  )"
+  CODEX_EXEC_HANG_ELAPSED=$(($(date +%s) - CODEX_EXEC_HANG_START))
+  assert_equals "codex exec names itself when it never answers, instead of hanging the smoke" \
+    "1" "$(printf '%s\n' "$CODEX_EXEC_HANG_OUTPUT" | \
+      grep -Fxc 'FAIL: authenticated integrator smoke — expected integrated, got SLOW: codex exec smoke did not answer within 2s' || true)"
+  assert_equals "the bounded codex exec smoke ends well inside a generous multiple of its own bound" \
+    "bounded" "$([ "$CODEX_EXEC_HANG_ELAPSED" -le 30 ] && printf bounded || printf "unbounded:${CODEX_EXEC_HANG_ELAPSED}s")"
+  if pgrep -f "$CODEX_EXEC_HANG_SHIM_DIR/codex" >/dev/null 2>&1; then
+    echo "FAIL: the hanging codex exec fixture outlived the bounded check"; fail=$((fail + 1))
+  else
+    echo "ok: the hanging codex exec fixture does not outlive the bounded check"; pass=$((pass + 1))
+  fi
+fi
 
 # --- Codex purge: total, reversible and confined to a fixture HOME -----------
 # The operator's real migration is already complete. Every invocation below

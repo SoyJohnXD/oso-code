@@ -6,6 +6,12 @@
 set -euo pipefail
 
 SUPPORTED_CODEX_VERSION=0.146.0
+# The version design-foundation slice B8 (ADR-0116) reads from the installed
+# skill's own SKILL.md frontmatter and records in the plan ledger. Pinning the
+# marketplace fetch to the matching `skill-v<version>` tag is what lets that
+# recorded read and this pin agree instead of drifting into two sources of
+# truth (D4, D14).
+SUPPORTED_IMPECCABLE_VERSION=4.0.2
 CONFIG_MARKER_START="# oso-code:start"
 CONFIG_MARKER_END="# oso-code:end"
 FEATURE_MARKER_START="# oso-code:features:start"
@@ -30,6 +36,9 @@ initialize_paths() {
   [ -f "$SCRIPT_DIR/lib/engram-codex-pointers.sh" ] ||
     fail "Engram Codex pointer normalizer is missing"
   . "$SCRIPT_DIR/lib/engram-codex-pointers.sh"
+  [ -f "$SCRIPT_DIR/lib/install-backup.sh" ] ||
+    fail "install backup library is missing"
+  . "$SCRIPT_DIR/lib/install-backup.sh"
   CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
   CONFIG_FILE="$CODEX_HOME/config.toml"
   GLOBAL_FILE="$CODEX_HOME/AGENTS.md"
@@ -44,10 +53,22 @@ initialize_paths() {
   HASHES_FILE="$SCRIPT_DIR/hook-hashes.txt"
   IMPECCABLE_MOUNT="$HOME/.agents/skills/impeccable"
   IMPECCABLE_OPT_OUT_MARKER="$HOME/.local/state/oso-code/impeccable-opt-out"
-  TX_BACKUP_ROOT="$HOME/.local/state/oso-code/install-backup-$(date +%Y%m%d-%H%M%S)-$$"
+  INSTALL_BACKUPS_ROOT="$HOME/.local/state/oso-code"
+  TX_BACKUP_ROOT="$INSTALL_BACKUPS_ROOT/install-backup-$(date +%Y%m%d-%H%M%S)-$$"
   TX_MANIFEST="$TX_BACKUP_ROOT/manifest"
   TX_ACTIVE=false
   TX_COMMITTED=false
+  # D14: the measured problem is disk size (1.9 GiB across 17 snapshots on the
+  # machine that motivated this), not snapshot count -- a single snapshot here
+  # already runs to ~110 MiB, so bounding "the last N" would still let size
+  # grow unbounded as the transaction's own payload grows across releases.
+  # 300 MiB keeps roughly 2-3 recent snapshots (a real fallback depth, not
+  # just the last one) while cutting the measured worst case by over 80%. The
+  # newest snapshot is always kept regardless of budget -- see
+  # prune_install_backups -- so the run that just installed is never the one
+  # a tight budget empties.
+  INSTALL_BACKUP_BUDGET_KIB="${OSO_INSTALL_BACKUP_BUDGET_KIB:-307200}"
+  RESTORE_EXERCISED_MARKER="$INSTALL_BACKUPS_ROOT/.install-restore-verified"
 }
 
 parse_args() {
@@ -457,27 +478,19 @@ migrate_plan_approval_state() {
 }
 
 # Called as `rollback_transaction || true` (on_exit, below): that conditional
-# context turns off errexit for this whole function, so a failing `rm -rf` or
-# `cp -a` would otherwise continue silently with nothing to show for it. Every
-# restore is therefore checked explicitly rather than left to errexit, and one
-# item's failure never skips the rest — a partial restore beats a stopped one.
+# context turns off errexit for this whole function (and everything it calls,
+# restore_backup_manifest included), so a failing `rm -rf` or `cp -a` would
+# otherwise continue silently with nothing to show for it. Every restore is
+# therefore checked explicitly rather than left to errexit, and one item's
+# failure never skips the rest — a partial restore beats a stopped one. The
+# manifest replay itself lives in lib/install-backup.sh, shared with the
+# standalone restore-codex.sh (D14) so an in-run rollback and a later
+# operator-invoked restore can never read the same manifest two ways.
 rollback_transaction() {
   [ "$TX_ACTIVE" = true ] || return 0
   warn "installation failed; restoring the pre-install snapshot"
-  local status label target failed_count=0 failed_items=""
-  while IFS=$'\t' read -r status label target; do
-    [ -n "$target" ] || continue
-    local item_failed=false
-    rm -rf "$target" || item_failed=true
-    if [ "$status" = present ]; then
-      mkdir -p "$(dirname "$target")" || item_failed=true
-      cp -a "$TX_BACKUP_ROOT/items/$label" "$target" || item_failed=true
-    fi
-    if [ "$item_failed" = true ]; then
-      failed_count=$((failed_count + 1))
-      failed_items="${failed_items}${failed_items:+, }${target}"
-    fi
-  done < "$TX_MANIFEST"
+  restore_backup_manifest "$TX_MANIFEST" "$TX_BACKUP_ROOT/items"
+  local failed_count=$RESTORE_FAILED_COUNT failed_items=$RESTORE_FAILED_ITEMS
   if [ "${GIT_HOOKS_CONFIG_CAPTURED:-false}" = true ]; then
     if [ "${GIT_HOOKS_PATH_PRESENT:-false}" = true ]; then
       git -C "$REPO_ROOT" config --local core.hooksPath "$GIT_HOOKS_PATH_VALUE" ||
@@ -511,6 +524,39 @@ checkpoint() {
     fail "injected failure after $1"
   fi
   return 0
+}
+
+# D14: bounds total backup disk use rather than count (see the budget's own
+# comment in initialize_paths for the measured numbers this answers to), and
+# refuses to delete anything until RESTORE_EXERCISED_MARKER exists —
+# restore-codex.sh is the only thing that writes it, and only after it has
+# actually restored a snapshot on this machine. A retention policy that ran
+# on ITS OWN first installation would delete the one backup an operator would
+# reach for if that very installation went wrong; gating on a proven restore
+# is how this stays impossible rather than merely unlikely. Runs after
+# TX_COMMITTED so its own failure never touches rollback: a prune that could
+# not delete an old snapshot is disk pressure, never a reason to undo a
+# install that already succeeded.
+prune_install_backups() {
+  if [ ! -f "$RESTORE_EXERCISED_MARKER" ]; then
+    info "backup retention: skipped — the restore path has not been verified on this machine yet; run bootstrap/restore-codex.sh once to enable automatic pruning"
+    return 0
+  fi
+  local listing backup running_kib=0 size_kib kept=0
+  listing="$(mktemp "${TMPDIR:-/tmp}/oso-codex-backups.XXXXXX")" || return 0
+  install_backup_dirs_newest_first "$INSTALL_BACKUPS_ROOT" > "$listing"
+  while IFS= read -r backup; do
+    [ -n "$backup" ] || continue
+    size_kib="$(backup_size_kib "$backup")"
+    if [ "$kept" -eq 0 ] || [ "$((running_kib + size_kib))" -le "$INSTALL_BACKUP_BUDGET_KIB" ]; then
+      running_kib=$((running_kib + size_kib))
+      kept=$((kept + 1))
+      continue
+    fi
+    rm -rf "$backup"
+    info "backup retention: removed $backup (over the ${INSTALL_BACKUP_BUDGET_KIB} KiB budget)"
+  done < "$listing"
+  rm -f "$listing"
 }
 
 replace_tree() {
@@ -891,25 +937,56 @@ PY
   return 1
 }
 
-mount_impeccable() {
-  local source marketplace_result installed_root
-  if ! source="$(find_impeccable_source)"; then
-    marketplace_result="$(codex plugin marketplace add pbakaus/impeccable --json)"
-    command -v python3 >/dev/null 2>&1 ||
-      fail "python3 is required to resolve Impeccable's installed marketplace root"
-    installed_root="$(printf '%s' "$marketplace_result" | python3 -c '
+# Reads the same `version:` frontmatter field the design-foundation slice
+# reads off the installed SKILL.md (ADR-0116) and mount-impeccable.sh itself
+# validates the shape of, so a pin comparison never invents a second reading
+# of that field.
+impeccable_skill_version() {
+  [ -f "$1" ] || return 1
+  sed -n 's/^version:[[:space:]]*//p' "$1" | head -n1
+}
+
+# `codex plugin marketplace add owner/repo --ref <REF>` fetches a Git ref for
+# a marketplace source (confirmed against the installed codex-cli 0.146.0's
+# own --help; the upstream repo tags every skill release `skill-v<semver>`,
+# independent of its `cli-v*`/`ext-v*` lines) -- the mechanism this pins to,
+# rather than the unpinned bare `owner/repo` the mount used before.
+fetch_pinned_impeccable_source() {
+  local marketplace_result installed_root source
+  marketplace_result="$(codex plugin marketplace add pbakaus/impeccable \
+    --ref "skill-v$SUPPORTED_IMPECCABLE_VERSION" --json)"
+  command -v python3 >/dev/null 2>&1 ||
+    fail "python3 is required to resolve Impeccable's installed marketplace root"
+  installed_root="$(printf '%s' "$marketplace_result" | python3 -c '
 import json, sys
 data = json.load(sys.stdin)
 print(data.get("installedRoot", ""), end="")
 ')"
-    [ -n "$installed_root" ] ||
-      fail "Codex did not report Impeccable's installedRoot"
-    codex plugin add impeccable@impeccable --json
-    source="$installed_root/.agents/skills/impeccable"
-    [ -f "$source/SKILL.md" ] ||
-      fail "Impeccable marketplace has no Codex .agents build at $source"
+  [ -n "$installed_root" ] ||
+    fail "Codex did not report Impeccable's installedRoot"
+  codex plugin add impeccable@impeccable --json
+  source="$installed_root/.agents/skills/impeccable"
+  [ -f "$source/SKILL.md" ] ||
+    fail "Impeccable marketplace has no Codex .agents build at $source"
+  printf '%s' "$source"
+}
+
+mount_impeccable() {
+  local source
+  # A discovered source (test override or an already-installed marketplace
+  # checkout) is trusted only when its own version already agrees with the
+  # pin; anything else -- absent, unreadable, or a different version -- falls
+  # through to the pinned fetch instead of mounting unpinned content (D14).
+  if ! source="$(find_impeccable_source)" ||
+     [ "$(impeccable_skill_version "$source/SKILL.md")" != "$SUPPORTED_IMPECCABLE_VERSION" ]; then
+    source="$(fetch_pinned_impeccable_source)"
   fi
   "$SCRIPT_DIR/lib/mount-impeccable.sh" "$source"
+  # Defense in depth against a mistagged or moved upstream tag: the pin is
+  # never trusted just because the fetch step named it, only because the
+  # mounted skill's own frontmatter confirms it.
+  [ "$(impeccable_skill_version "$IMPECCABLE_MOUNT/SKILL.md")" = "$SUPPORTED_IMPECCABLE_VERSION" ] ||
+    fail "Impeccable is pinned to skill-v$SUPPORTED_IMPECCABLE_VERSION but the mounted skill reports version $(impeccable_skill_version "$IMPECCABLE_MOUNT/SKILL.md")"
   rm -f "$IMPECCABLE_OPT_OUT_MARKER"
 }
 
@@ -1019,6 +1096,10 @@ main() {
   checkpoint after-git-hook
   TX_COMMITTED=true
   TX_ACTIVE=false
+  # `|| true` for the same reason rollback_transaction gets it from on_exit: an
+  # install that already committed must report the success it earned even if
+  # deleting an old snapshot afterward hits a permission error or similar.
+  prune_install_backups || true
   info "installed oso-code for Codex $SUPPORTED_CODEX_VERSION"
   warn "review and trust the installed user hooks with /hooks; published file hashes verify their bytes but do not synthesize Codex trusted_hash entries"
   info "restart Codex and start a new thread to load the plugin, agents, hooks, MCPs, and global guidance"

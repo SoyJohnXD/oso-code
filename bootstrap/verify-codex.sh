@@ -314,6 +314,53 @@ engram_status() {
 # JSON-RPC-over-stdio method 5905a27 used by hand against the Engram binary.
 MCP_DRIFT_BOUND_SECONDS="${OSO_MCP_DRIFT_BOUND_SECONDS:-10}"
 
+# `codex login status` is a local status read with no network call of its
+# own; 20s matches the same "is this reachable at all" bound the pin recipe
+# in plugin/skills/_shared/front-surface.md uses for its own npx probe.
+# `codex exec` here is a real end-to-end delegation -- spawn, wait, consume --
+# so it gets a generous ceiling rather than a fast-probe one.
+CODEX_LOGIN_STATUS_BOUND_SECONDS="${OSO_CODEX_LOGIN_STATUS_BOUND_SECONDS:-20}"
+CODEX_EXEC_SMOKE_BOUND_SECONDS="${OSO_CODEX_EXEC_SMOKE_BOUND_SECONDS:-180}"
+
+# Bounds a Codex CLI call that carries no timeout flag of its own -- the same
+# in-shell technique as the pin recipe in plugin/skills/_shared/front-surface.md
+# and this file's own MCP drift probe below (mcp_server_tool_names): no GNU
+# timeout(1) on macOS, so job control plus a poll loop is what reaches the
+# command's process group instead of orphaning it.
+#
+# $1 = bound in seconds, $2 = the operation's name for a firing bound's
+# report, remaining = the command. Prints the command's combined stdout and
+# stderr on a normal exit; a fired bound prints a SLOW report naming the
+# operation instead and returns 124 -- timeout(1)'s own reserved exit code,
+# so callers can tell a hang from the command's own failure.
+bounded_command_output() {
+  local bound_seconds=$1 label=$2 out pid waited=0 rc
+  shift 2
+  out="$(mktemp "${TMPDIR:-/tmp}/oso-bounded.XXXXXX")" || return 1
+  ( set -m
+    "$@" >"$out" 2>&1 &
+    pid=$!
+    set +m
+    while kill -0 "$pid" 2>/dev/null; do
+      if [ "$waited" -ge "$bound_seconds" ]; then
+        kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null
+        exit 124
+      fi
+      sleep 1
+      waited=$((waited + 1))
+    done
+    wait "$pid"
+  )
+  rc=$?
+  if [ "$rc" -eq 124 ]; then
+    printf 'SLOW: %s did not answer within %ss\n' "$label" "$bound_seconds"
+  else
+    cat "$out"
+  fi
+  rm -f "$out"
+  return "$rc"
+}
+
 # Every `[mcp_servers.<name>]` table in config.toml names a server this
 # install wires, quoted or bare key alike.
 mcp_server_names() {
@@ -949,10 +996,11 @@ run_integrator_fixture() {
   # (D13); --dangerously-bypass-hook-trust runs its copied hooks.json without
   # that directory's own separate `[hooks.state]` trust records.
   SMOKE_OUTPUT="$(CODEX_HOME="$SMOKE_CODEX_HOME" \
+    bounded_command_output "$CODEX_EXEC_SMOKE_BOUND_SECONDS" "codex exec smoke" \
     codex exec --ephemeral --json --sandbox danger-full-access --color never \
     --dangerously-bypass-hook-trust \
     -C "$SMOKE_MAIN" --add-dir "$SMOKE_ROOT" \
-    "Delegate exactly one wave to the custom oso-integrator agent; never merge inline. Select agent_type oso-integrator explicitly and launch it with fresh context by setting fork_turns=\"none\" in the v2 spawn arguments beside a task_name; never use a full-history fork. Main checkout: $SMOKE_MAIN. BASE REF: $SMOKE_BASE_COMMIT. HANDOFF SLICE: $SMOKE_HANDOFF_SLICE. HANDOFF ATTEMPT: $SMOKE_HANDOFF_ATTEMPT. The complete wave has one slice, in this order: BRANCH oso-smoke-slice, WORKTREE PATH $SMOKE_WORKTREE. Require the integrator to begin its final message with exactly: oso-handoff: v=1 slice=$SMOKE_HANDOFF_SLICE attempt=$SMOKE_HANDOFF_ATTEMPT. Retain the spawned agent id, wait for the report, then run exactly oso-state handoff wait --slice $SMOKE_HANDOFF_SLICE --attempt $SMOKE_HANDOFF_ATTEMPT --agent-id <agent-id> --agent-type $SMOKE_INTEGRATOR_AGENT_TYPE --timeout 10 and exactly once oso-state handoff consume --slice $SMOKE_HANDOFF_SLICE --attempt $SMOKE_HANDOFF_ATTEMPT --agent-id <agent-id> --agent-type $SMOKE_INTEGRATOR_AGENT_TYPE from the main checkout. Do not quote or summarize the child report in your final response." 2>&1)" || return 1
+    "Delegate exactly one wave to the custom oso-integrator agent; never merge inline. Select agent_type oso-integrator explicitly and launch it with fresh context by setting fork_turns=\"none\" in the v2 spawn arguments beside a task_name; never use a full-history fork. Main checkout: $SMOKE_MAIN. BASE REF: $SMOKE_BASE_COMMIT. HANDOFF SLICE: $SMOKE_HANDOFF_SLICE. HANDOFF ATTEMPT: $SMOKE_HANDOFF_ATTEMPT. The complete wave has one slice, in this order: BRANCH oso-smoke-slice, WORKTREE PATH $SMOKE_WORKTREE. Require the integrator to begin its final message with exactly: oso-handoff: v=1 slice=$SMOKE_HANDOFF_SLICE attempt=$SMOKE_HANDOFF_ATTEMPT. Retain the spawned agent id, wait for the report, then run exactly oso-state handoff wait --slice $SMOKE_HANDOFF_SLICE --attempt $SMOKE_HANDOFF_ATTEMPT --agent-id <agent-id> --agent-type $SMOKE_INTEGRATOR_AGENT_TYPE --timeout 10 and exactly once oso-state handoff consume --slice $SMOKE_HANDOFF_SLICE --attempt $SMOKE_HANDOFF_ATTEMPT --agent-id <agent-id> --agent-type $SMOKE_INTEGRATOR_AGENT_TYPE from the main checkout. Do not quote or summarize the child report in your final response.")" || return 1
   integrator_handoff_consumed &&
     [ -f "$SMOKE_MAIN/integrated.txt" ] &&
     grep -Fqx 'integrated by oso-integrator' "$SMOKE_MAIN/integrated.txt" &&
@@ -1032,7 +1080,7 @@ run_authenticated_smoke() {
     printf 'skip: authenticated Codex smoke — OSO_VERIFY_SKIP_SMOKE\n'
     return
   fi
-  if ! login_output="$(codex login status 2>&1)"; then
+  if ! login_output="$(bounded_command_output "$CODEX_LOGIN_STATUS_BOUND_SECONDS" "codex login status" codex login status)"; then
     login_output="$(printf '%s' "$login_output" | fold_lines)"
     check "Codex authentication" logged-in "${login_output:-unavailable}"
     printf 'skip: codex exec smoke — authentication is unavailable\n'

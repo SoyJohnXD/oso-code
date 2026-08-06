@@ -59,6 +59,8 @@ Then restart Claude Code.
 
 The Codex path requires git and Node.js/npm. The installer pins the verified floor exactly — Codex `0.146.0`, never `@latest` — and transactionally installs the plugin, rendered user hooks, seven agent roles, bounded `config.toml` ownership blocks, MCP wiring, git gate, and mounted Impeccable skill. It preserves personal `[projects.*]` configuration and unrelated keys in shared tables such as `[features]`, and backs up every artifact it replaces. Reinstall also composes Engram's root instruction pointers with Oso's region and repairs only an exact clean official Engram marketplace cache that Codex left unregistered; modified, symlinked or unknown cache state is preserved and refused (ADR-0102).
 
+Every run's own `install-backup-*` snapshot under `~/.local/state/oso-code` — separate from the one-time purge/restore below — restores with `bash bootstrap/restore-codex.sh [--list] [--yes] [<backup-name>]`, reading each target from that backup's own manifest so an older or newer release's backup still restores; `core.hooksPath` is the one thing it cannot revert, since that value only ever lived in the installing run's own memory. Retention that prunes these snapshots by total size stays off on a machine that has never run a restore, and turns on only once one has (ADR-0124).
+
 ```bash
 bash bootstrap/install-codex.sh
 codex login                       # first install only; skip when already authenticated

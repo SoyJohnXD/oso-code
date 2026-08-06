@@ -246,12 +246,33 @@ create_backup() {
   info "backup: $BACKUP_DIR"
 }
 
+# curl and wget each ship their own portable connect/transfer timeout flags,
+# so a stalled repair download names itself instead of hanging indefinitely --
+# no GNU timeout(1) workaround needed here the way the in-shell bounded-
+# subshell idiom (plugin/skills/_shared/front-surface.md, reused by
+# verify-codex.sh) exists for a command with no such flag of its own.
+ENGRAM_DOWNLOAD_BOUND_SECONDS="${OSO_ENGRAM_DOWNLOAD_BOUND_SECONDS:-120}"
+
 download_file() {
-  local url=$1 destination=$2
+  local url=$1 destination=$2 label=$3 rc=0
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL --retry 3 --retry-delay 2 -o "$destination" "$url"
+    curl -fsSL --retry 3 --retry-delay 2 \
+      --connect-timeout "$ENGRAM_DOWNLOAD_BOUND_SECONDS" \
+      --max-time "$ENGRAM_DOWNLOAD_BOUND_SECONDS" \
+      -o "$destination" "$url" || rc=$?
+    case "$rc" in
+      0) return 0 ;;
+      # curl's own reserved code for --connect-timeout/--max-time firing.
+      28) fail "SLOW: download of $label did not finish within ${ENGRAM_DOWNLOAD_BOUND_SECONDS}s: $url" ;;
+      *) fail "UNAVAILABLE: download of $label failed: $url (curl exit $rc)" ;;
+    esac
   else
-    wget -q -O "$destination" "$url"
+    wget -q --tries=3 --timeout="$ENGRAM_DOWNLOAD_BOUND_SECONDS" -O "$destination" "$url" || rc=$?
+    # wget has no code of its own reserved for a fired --timeout the way curl's
+    # 28 is, so a nonzero exit here is reported the same honest way curl's own
+    # non-timeout failures are -- never a guessed cause the tool never confirmed.
+    [ "$rc" -eq 0 ] ||
+      fail "UNAVAILABLE: download of $label failed: $url (wget exit $rc)"
   fi
 }
 
@@ -277,8 +298,8 @@ verify_selected_checksum() {
 download_release() {
   TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/oso-engram-repair.XXXXXX")"
   info "downloading Engram $ENGRAM_RELEASE_TAG for linux/$ENGRAM_RELEASE_ARCH"
-  download_file "$ENGRAM_RELEASE_BASE/checksums.txt" "$TMP_ROOT/checksums.txt"
-  download_file "$ENGRAM_RELEASE_BASE/$ENGRAM_ASSET" "$TMP_ROOT/$ENGRAM_ASSET"
+  download_file "$ENGRAM_RELEASE_BASE/checksums.txt" "$TMP_ROOT/checksums.txt" "Engram checksums"
+  download_file "$ENGRAM_RELEASE_BASE/$ENGRAM_ASSET" "$TMP_ROOT/$ENGRAM_ASSET" "Engram release archive"
   verify_selected_checksum
 }
 
