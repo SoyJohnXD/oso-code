@@ -199,6 +199,7 @@ Three properties of the amendment log these files replace are facts to carry for
 - [0107](decisions/0107-plan-approval-keeps-its-own-session-key-apart-from-ownership.md) — Plan approval keeps its own session key apart from ownership, and the catch-all scopes to it
 - [0108](decisions/0108-deny-records-name-what-they-denied-with-a-schema-version.md) — Deny records name what they denied, with a schema version
 - [0109](decisions/0109-a-judge-that-runs-project-checks-cannot-stay-read-only.md) — A judge that runs project checks cannot stay read-only
+- [0110](decisions/0110-plan-approval-state-migrates-inside-a-transaction-that-tells-the-truth.md) — Plan-approval state migrates inside a transaction that tells the truth
 
 ## Foundational decisions
 

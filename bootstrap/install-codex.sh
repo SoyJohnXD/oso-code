@@ -120,6 +120,17 @@ plugin/hooks/lexer.sh'
     fail "published hook coverage or order differs from the frozen Codex trust set"
 }
 
+# The state migration below needs exactly OSO_STATE_DIR and state_value, both
+# already published and hash-verified above as part of the Codex trust set —
+# reusing them here keeps the state-file format defined in one place instead
+# of a second, driftable copy of the same grep. Sourced only after
+# verify_published_hooks so nothing in it runs before its bytes are checked.
+load_state_library() {
+  [ -f "$REPO_ROOT/plugin/hooks/lib.sh" ] ||
+    fail "oso-code state library is missing"
+  . "$REPO_ROOT/plugin/hooks/lib.sh"
+}
+
 codex_version() {
   codex --version 2>/dev/null | awk '{ print $NF }'
 }
@@ -400,16 +411,71 @@ backup_target() {
   fi
 }
 
+# ADR-0107 (526a558) split `session` (ownership) from `plan_approval_session`
+# (who may approve or cancel a pending plan), but an installed base of state
+# files predates the split and holds only the old key. Left alone, this
+# release would manufacture the exact trap that split closes:
+# `plan_approval=pending` with no `plan_approval_session` is unreachable by
+# the SessionEnd sweep (cleanup-state.sh's clear_orphaned_pending_of) and
+# unapprovable by the gate (approve-plan-token.sh), both of which now key off
+# the new field alone. Migrating here, inside begin_transaction's own
+# backup/rollback machinery, is what lets a later step's failure roll a
+# touched state file back with everything else instead of leaving it
+# half-converted. Every other key in every other state file is left alone —
+# this release changes nothing else about the schema.
+migrate_plan_approval_state() {
+  local state_file digest session
+  [ -d "$OSO_STATE_DIR" ] || return 0
+  for state_file in "$OSO_STATE_DIR"/*.state; do
+    [ -f "$state_file" ] || continue
+    [ "$(state_value "$state_file" plan_approval)" = pending ] || continue
+    # Already carries the new key: migrated already, or never pre-split.
+    # Idempotent by construction — re-running the installer must not churn it.
+    if grep -q '^plan_approval_session=' "$state_file"; then
+      continue
+    fi
+    digest="${state_file##*/}"
+    digest="${digest%.state}"
+    backup_target "state-$digest" "$state_file"
+    session="$(state_value "$state_file" session)"
+    if [ "$session" = 1 ]; then
+      # The marker means the presenting session is unrecoverable — nothing on
+      # disk names it, so this pending can never be approved or cancelled by
+      # anyone. `oso-state` can set a key but never delete one, so clearing it
+      # is the same operation `cancel-plan` and the SessionEnd sweep already
+      # use: the whole file, not a line inside it.
+      rm -f "$state_file"
+      rm -rf "${state_file}.lock"
+      info "migrated plan approval state: cleared an unrecoverable pending with no presenting session on disk (${digest})"
+    else
+      # The old value still names a real presenting session: that pending
+      # stays legitimately approvable by the session that presented it.
+      printf 'plan_approval_session=%s\n' "$session" >> "$state_file"
+      info "migrated plan approval state: backfilled plan_approval_session from the presenting session (${digest})"
+    fi
+  done
+}
+
+# Called as `rollback_transaction || true` (on_exit, below): that conditional
+# context turns off errexit for this whole function, so a failing `rm -rf` or
+# `cp -a` would otherwise continue silently with nothing to show for it. Every
+# restore is therefore checked explicitly rather than left to errexit, and one
+# item's failure never skips the rest — a partial restore beats a stopped one.
 rollback_transaction() {
   [ "$TX_ACTIVE" = true ] || return 0
   warn "installation failed; restoring the pre-install snapshot"
-  local status label target
+  local status label target failed_count=0 failed_items=""
   while IFS=$'\t' read -r status label target; do
     [ -n "$target" ] || continue
-    rm -rf "$target"
+    local item_failed=false
+    rm -rf "$target" || item_failed=true
     if [ "$status" = present ]; then
-      mkdir -p "$(dirname "$target")"
-      cp -a "$TX_BACKUP_ROOT/items/$label" "$target"
+      mkdir -p "$(dirname "$target")" || item_failed=true
+      cp -a "$TX_BACKUP_ROOT/items/$label" "$target" || item_failed=true
+    fi
+    if [ "$item_failed" = true ]; then
+      failed_count=$((failed_count + 1))
+      failed_items="${failed_items}${failed_items:+, }${target}"
     fi
   done < "$TX_MANIFEST"
   if [ "${GIT_HOOKS_CONFIG_CAPTURED:-false}" = true ]; then
@@ -421,12 +487,20 @@ rollback_transaction() {
     fi
   fi
   TX_ACTIVE=false
-  warn "rollback complete; snapshot kept at $TX_BACKUP_ROOT"
+  if [ "$failed_count" -eq 0 ]; then
+    warn "rollback complete; snapshot kept at $TX_BACKUP_ROOT"
+    return 0
+  fi
+  warn "rollback incomplete: $failed_count item(s) failed to restore ($failed_items); the pre-install snapshot is still at $TX_BACKUP_ROOT — restore it by hand"
+  return 1
 }
 
 on_exit() {
   local rc=$?
   if [ "$rc" -ne 0 ] && [ "${TX_COMMITTED:-false}" != true ]; then
+    # `|| true` keeps errexit off for the whole call (see rollback_transaction's
+    # own comment) and absorbs its new nonzero return on a failed restore — the
+    # exit code below must stay the original failure's, never rollback's own.
     rollback_transaction || true
   fi
   exit "$rc"
@@ -901,6 +975,7 @@ main() {
   parse_args "$@"
   [ -n "${HOME:-}" ] || fail "HOME is not set"
   verify_published_hooks
+  load_state_library
   preflight_release_payload
   preflight_config
   preflight_global_agents
@@ -911,6 +986,8 @@ main() {
   trap on_exit EXIT
   begin_transaction
   checkpoint after-backup
+  migrate_plan_approval_state
+  checkpoint after-state-migration
   repair_stale_engram_marketplace
   checkpoint after-engram-marketplace-repair
   assemble_marketplace

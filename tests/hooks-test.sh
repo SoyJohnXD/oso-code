@@ -7277,6 +7277,136 @@ assert_equals "a duplicate global start marker is rejected as malformed" \
 assert_equals "a malformed global file is untouched by the refused install" \
   "$bad_global_before" "$(file_sha256 "$bad_global")"
 
+# --- Codex installer: migrates a pre-split plan-approval state file inside
+# the transaction (ADR-0110/D20) -----------------------------------------------
+# 526a558 (ADR-0107) split `session` (ownership) from `plan_approval_session`
+# (who may approve or cancel a pending plan). A state file written before that
+# split holds only the old key; installing the split without converting it
+# manufactures the exact trap the split closes. state_key_of mirrors
+# state_file_for exactly, so each digest below names the same path both the
+# migration and the runtime hooks resolve for that repository identity.
+CODEX_MIGRATION_HOME="$TEST_HOME/codex-migration-home"
+write_codex_install_personal_state "$CODEX_MIGRATION_HOME"
+mkdir -p "$CODEX_MIGRATION_HOME/.local/state/oso-code"
+
+MIGRATION_ULID_REPO="$TEST_HOME/codex-migration-repo-ulid"
+MIGRATION_MARKER_REPO="$TEST_HOME/codex-migration-repo-marker"
+MIGRATION_SPLIT_REPO="$TEST_HOME/codex-migration-repo-split"
+mkdir -p "$MIGRATION_ULID_REPO" "$MIGRATION_MARKER_REPO" "$MIGRATION_SPLIT_REPO"
+
+migration_ulid_digest="$(state_key_of "$MIGRATION_ULID_REPO")"
+migration_marker_digest="$(state_key_of "$MIGRATION_MARKER_REPO")"
+migration_split_digest="$(state_key_of "$MIGRATION_SPLIT_REPO")"
+
+migration_ulid_state="$CODEX_MIGRATION_HOME/.local/state/oso-code/${migration_ulid_digest}.state"
+migration_marker_state="$CODEX_MIGRATION_HOME/.local/state/oso-code/${migration_marker_digest}.state"
+migration_split_state="$CODEX_MIGRATION_HOME/.local/state/oso-code/${migration_split_digest}.state"
+
+migration_plan_digest="$(printf '%064d' 0)"
+migration_presenting_session="01hqtq0z7hzx6z0z1z2z3z4z5z"
+
+# Case a: the old `session` value still names a real presenting session — that
+# pending stays legitimately approvable, so it is backfilled, not cleared.
+printf '%s\n' \
+  'mode=plan' 'active_slice=none' 'verify_green=false' \
+  'plan_approval=pending' \
+  "plan_approval_digest=$migration_plan_digest" \
+  "plan_snapshot_file=$MIGRATION_ULID_REPO/presented.md" \
+  "plan_current_file=$MIGRATION_ULID_REPO/current.md" \
+  'plan_revision=0' \
+  "session=$migration_presenting_session" > "$migration_ulid_state"
+
+# Case b: the old `session` value is the ownership marker — the presenting
+# session is unrecoverable, so this pending is cleared rather than preserved.
+printf '%s\n' \
+  'mode=plan' 'active_slice=none' 'verify_green=false' \
+  'plan_approval=pending' \
+  "plan_approval_digest=$migration_plan_digest" \
+  "plan_snapshot_file=$MIGRATION_MARKER_REPO/presented.md" \
+  "plan_current_file=$MIGRATION_MARKER_REPO/current.md" \
+  'plan_revision=0' \
+  'session=1' > "$migration_marker_state"
+
+# Case c: already carries the new key — migration must be idempotent.
+printf '%s\n' \
+  'mode=plan' 'active_slice=none' 'verify_green=false' \
+  'plan_approval=pending' \
+  "plan_approval_digest=$migration_plan_digest" \
+  'plan_approval_session=01hqtq0zalreadysplit000000' \
+  "plan_snapshot_file=$MIGRATION_SPLIT_REPO/presented.md" \
+  "plan_current_file=$MIGRATION_SPLIT_REPO/current.md" \
+  'plan_revision=0' \
+  'session=1' > "$migration_split_state"
+migration_split_before="$(file_sha256 "$migration_split_state")"
+
+printf '0.146.0\n' > "$CODEX_INSTALL_VERSION"
+run_codex_install "$CODEX_MIGRATION_HOME"
+assert_equals "an install that migrates plan-approval state still succeeds" \
+  "zero" "$([ "$CODEX_INSTALL_RC" -eq 0 ] && echo zero || echo nonzero)"
+
+assert_equals "a ULID-shaped pre-split session backfills plan_approval_session" \
+  "$migration_presenting_session" \
+  "$(sed -n 's/^plan_approval_session=//p' "$migration_ulid_state")"
+assert_equals "the backfilled file keeps its original pending flag" \
+  pending "$(sed -n 's/^plan_approval=//p' "$migration_ulid_state")"
+assert_equals "the backfill is reported so the operator can see what moved" \
+  "1" "$(printf '%s\n' "$CODEX_INSTALL_LOG" | grep -Fc "$migration_ulid_digest" || true)"
+
+assert_equals "a marker-owned pre-split pending is cleared, not left standing" \
+  "absent" "$([ -e "$migration_marker_state" ] && echo present || echo absent)"
+assert_equals "the clear is reported so the operator can see what moved" \
+  "1" "$(printf '%s\n' "$CODEX_INSTALL_LOG" | grep -Fc "$migration_marker_digest" || true)"
+
+assert_equals "a state file already carrying plan_approval_session is untouched" \
+  "$migration_split_before" "$(file_sha256 "$migration_split_state")"
+
+# The positive consequence, not just the bookkeeping: before the clear, the
+# leftover armed state denies any local tool outside the allowlist forever,
+# since nothing on disk can ever approve or cancel it. After the clear there
+# is no state file at all, so the catch-all is invisible again for this
+# repository — proven with a tool the allowlist has never carried, since Bash
+# would pass regardless of whether the pending were ever scoped to anyone.
+migration_marker_probe_input="$(printf '{"session_id":"%s","cwd":"%s","hook_event_name":"PreToolUse","tool_name":"%s","tool_input":{}}' \
+  "codex-migration-marker-probe-session" "$MIGRATION_MARKER_REPO" FutureWriter)"
+HOME="$CODEX_MIGRATION_HOME" run_hook "$UNKNOWN_TOOL_HOOK" "$migration_marker_probe_input" 0 '' \
+  --allow "$UNKNOWN_TOOL_ALLOWLIST"
+assert_after_hook "the cleared repository no longer denies a tool call at all" \
+  [ -z "$hook_stdout" ]
+
+# --- Codex installer: a partial rollback tells the truth (ADR-0110) ----------
+# on_exit calls `rollback_transaction || true`, which turns off errexit for the
+# whole function — the old code had no per-item check at all and always printed
+# "rollback complete" regardless of what `rm -rf`/`cp -a` actually did. The shim
+# below fails exactly the one restore call rollback issues for the fixture's
+# config.toml (a `cp -a SRC DST` whose DST is that exact path); every other
+# cp -a, including begin_transaction's own backup of the same file, passes
+# through to the real binary untouched.
+CODEX_ROLLBACK_HONESTY_HOME="$TEST_HOME/codex-rollback-honesty-home"
+write_codex_install_personal_state "$CODEX_ROLLBACK_HONESTY_HOME"
+rollback_honesty_target="$CODEX_ROLLBACK_HONESTY_HOME/.codex/config.toml"
+real_cp="$(command -v cp)"
+printf '%s\n' \
+  '#!/bin/sh' \
+  'printf '\''cp:%s\n'\'' "$*" >> "$OSO_TEST_CALLS"' \
+  'if [ "$1" = "-a" ] && [ "$#" -eq 3 ] && [ "$3" = "$OSO_TEST_ROLLBACK_FAIL_TARGET" ]; then' \
+  '  exit 1' \
+  'fi' \
+  'exec "$OSO_TEST_REAL_CP" "$@"' \
+  > "$CODEX_INSTALL_SHIMS/cp"
+chmod +x "$CODEX_INSTALL_SHIMS/cp"
+printf '0.146.0\n' > "$CODEX_INSTALL_VERSION"
+OSO_TEST_REAL_CP="$real_cp" OSO_TEST_ROLLBACK_FAIL_TARGET="$rollback_honesty_target" \
+  run_codex_install "$CODEX_ROLLBACK_HONESTY_HOME" after-backup
+rm -f "$CODEX_INSTALL_SHIMS/cp"
+assert_equals "a rollback with a failed restore item still exits nonzero" \
+  "nonzero" "$([ "$CODEX_INSTALL_RC" -ne 0 ] && echo nonzero || echo zero)"
+assert_equals "a failed restore item is never reported as a clean rollback" \
+  "0" "$(printf '%s\n' "$CODEX_INSTALL_LOG" | grep -Fc 'rollback complete' || true)"
+assert_equals "the rollback report names the item that failed to restore" \
+  "1" "$(printf '%s\n' "$CODEX_INSTALL_LOG" | grep -Fc "$rollback_honesty_target" || true)"
+assert_equals "the rollback report tells the operator the snapshot is still there to restore by hand" \
+  "1" "$(printf '%s\n' "$CODEX_INSTALL_LOG" | grep -Ec 'snapshot.*restore it by hand' || true)"
+
 # --- Codex purge: total, reversible and confined to a fixture HOME -----------
 # The operator's real migration is already complete. Every invocation below
 # redirects HOME and CODEX_HOME into a disposable tree, while client shims make
