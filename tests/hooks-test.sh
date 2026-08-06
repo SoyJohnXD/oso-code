@@ -553,7 +553,7 @@ fi
 
 LINT_RULE_COUNT_FIXTURE="$TEST_HOME/lint-rule-count"
 copy_lint_fixture "$LINT_RULE_COUNT_FIXTURE"
-sed 's/thirteen rules/twelve rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
+sed 's/fifteen rules/fourteen rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
   > "$LINT_RULE_COUNT_FIXTURE/README.md.tmp"
 mv "$LINT_RULE_COUNT_FIXTURE/README.md.tmp" "$LINT_RULE_COUNT_FIXTURE/README.md"
 if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
@@ -561,11 +561,115 @@ if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
   echo "FAIL: rule 12 accepted stale present-tense rule-count prose"; fail=$((fail + 1))
 else
   case "$rule_count_lint_report" in
-    *"README.md does not name the thirteen rules this linter declares"*)
+    *"README.md does not name the fifteen rules this linter declares"*)
       echo "ok: rule 12 rejects stale present-tense rule-count prose"; pass=$((pass + 1)) ;;
     *)
       echo "FAIL: rule 12 mutation failed for the wrong reason — $(printf '%s' "$rule_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
   esac
+fi
+
+# B7 (D3): rule 14 must reject a flow body that stopped pointing at the
+# milestone contract, and name THAT body — never pass on the strength of the
+# other two still carrying the reference. Strip only debug.md's sentence.
+LINT_MILESTONE_BODY_FIXTURE="$TEST_HOME/lint-milestone-body"
+copy_lint_fixture "$LINT_MILESTONE_BODY_FIXTURE"
+milestone_body_target="$LINT_MILESTONE_BODY_FIXTURE/plugin/skills/_shared/bodies/debug.md"
+if ! grep -qF 'reports under the milestone contract at `_shared/reporting.md`' "$milestone_body_target"; then
+  echo "FAIL: the milestone-body mutation found no reporting.md reference to remove from debug.md"; fail=$((fail + 1))
+else
+  sed '/reports under the milestone contract at `_shared\/reporting\.md`/d' "$milestone_body_target" \
+    > "$milestone_body_target.tmp"
+  mv "$milestone_body_target.tmp" "$milestone_body_target"
+  if grep -qF 'reporting.md' "$milestone_body_target"; then
+    echo "FAIL: the milestone-body mutation left a reporting.md reference standing in debug.md"; fail=$((fail + 1))
+  elif milestone_body_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_MILESTONE_BODY_FIXTURE/plugin" "$LINT_MILESTONE_BODY_FIXTURE" 2>&1)"; then
+    echo "FAIL: a flow body missing the milestone contract reference passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$milestone_body_report" in
+      *"skills/_shared/bodies/debug.md arms or launches without referencing the milestone contract"*)
+        echo "ok: rule 14 rejects debug.md by name when it stops pointing at the milestone contract"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the milestone-body mutation failed for the wrong reason — $(printf '%s' "$milestone_body_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+# B7 (D3): rule 14's second half — a milestone reduced to "report the result"
+# is the exact defect this contract exists to close, so mention of the
+# "Closing" header alone must not satisfy it once its required facts (commit,
+# next) are gone.
+LINT_MILESTONE_FACTS_FIXTURE="$TEST_HOME/lint-milestone-facts"
+copy_lint_fixture "$LINT_MILESTONE_FACTS_FIXTURE"
+milestone_facts_target="$LINT_MILESTONE_FACTS_FIXTURE/plugin/skills/_shared/reporting.md"
+if ! grep -qF -- '- **Closing** —' "$milestone_facts_target"; then
+  echo "FAIL: the milestone-facts mutation found no Closing bullet to reduce"; fail=$((fail + 1))
+else
+  sed 's/^- \*\*Closing\*\* —.*/- **Closing** — report the result./' "$milestone_facts_target" \
+    > "$milestone_facts_target.tmp"
+  mv "$milestone_facts_target.tmp" "$milestone_facts_target"
+  if milestone_facts_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_MILESTONE_FACTS_FIXTURE/plugin" "$LINT_MILESTONE_FACTS_FIXTURE" 2>&1)"; then
+    echo "FAIL: a 'Closing' milestone reduced to report-the-result passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$milestone_facts_report" in
+      *"'Closing' milestone never names its required fact: commit"*)
+        echo "ok: rule 14 rejects a milestone reduced to report-the-result for missing its required facts"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the milestone-facts mutation failed for the wrong reason — $(printf '%s' "$milestone_facts_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+# B7 (D3): rule 14's length bound — the operator asked for visibility, not
+# narration, so the contract must state a bound in prose the linter can find;
+# remove it and confirm the rule notices rather than reading a milestone list
+# with no ceiling as complete.
+LINT_MILESTONE_BOUND_FIXTURE="$TEST_HOME/lint-milestone-bound"
+copy_lint_fixture "$LINT_MILESTONE_BOUND_FIXTURE"
+milestone_bound_target="$LINT_MILESTONE_BOUND_FIXTURE/plugin/skills/_shared/reporting.md"
+if ! grep -qE '^At most [0-9]+ lines' "$milestone_bound_target"; then
+  echo "FAIL: the milestone-bound mutation found no length-bound sentence to remove"; fail=$((fail + 1))
+else
+  sed '/^At most [0-9][0-9]* lines/d' "$milestone_bound_target" > "$milestone_bound_target.tmp"
+  mv "$milestone_bound_target.tmp" "$milestone_bound_target"
+  if milestone_bound_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_MILESTONE_BOUND_FIXTURE/plugin" "$LINT_MILESTONE_BOUND_FIXTURE" 2>&1)"; then
+    echo "FAIL: a milestone contract with no length bound passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$milestone_bound_report" in
+      *"skills/_shared/reporting.md names no length bound on a milestone report"*)
+        echo "ok: rule 14 rejects a milestone contract with no stated length bound"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the milestone-bound mutation failed for the wrong reason — $(printf '%s' "$milestone_bound_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+# B7 (D3): rule 15 — the Claude-card fact belongs to exactly one platform/claude
+# file. Copy its sentence into a SECOND one (quick.md) and confirm the rule
+# counts files rather than merely checking the fact is stated somewhere.
+LINT_MILESTONE_HOST_FIXTURE="$TEST_HOME/lint-milestone-host"
+copy_lint_fixture "$LINT_MILESTONE_HOST_FIXTURE"
+milestone_host_source="$LINT_MILESTONE_HOST_FIXTURE/plugin/skills/_shared/platform/claude/reporting.md"
+milestone_host_target="$LINT_MILESTONE_HOST_FIXTURE/plugin/skills/_shared/platform/claude/quick.md"
+if [ ! -f "$milestone_host_source" ] || [ ! -f "$milestone_host_target" ]; then
+  echo "FAIL: the milestone-host mutation is missing its source or target file"; fail=$((fail + 1))
+else
+  { grep -F 'native subagent card' "$milestone_host_source" || true; } >> "$milestone_host_target"
+  if ! grep -qF 'native subagent card' "$milestone_host_target"; then
+    echo "FAIL: the milestone-host mutation did not duplicate the native-card sentence"; fail=$((fail + 1))
+  elif milestone_host_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_MILESTONE_HOST_FIXTURE/plugin" "$LINT_MILESTONE_HOST_FIXTURE" 2>&1)"; then
+    echo "FAIL: the native-card fact duplicated across two platform/claude files passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$milestone_host_report" in
+      *"the native-card difference is stated in 2 platform/claude files instead of exactly one"*)
+        echo "ok: rule 15 rejects the native-card fact duplicated across two platform/claude files"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the milestone-host mutation failed for the wrong reason — $(printf '%s' "$milestone_host_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
 fi
 
 # --- Declarations: generated hooks and published trust hashes -----------------

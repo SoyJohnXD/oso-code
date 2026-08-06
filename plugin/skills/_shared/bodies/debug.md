@@ -37,6 +37,8 @@ Save ONCE per ADR-0039: `mem_save(title: "oso/{bug}/diagnosis — {human descrip
 
 ## 4. Delegated fix — you never write it inline
 
+Every arm below, every launch of the applier or verifier, every verdict read, and every judge invoked at the close reports under the milestone contract at `_shared/reporting.md` — the single source for what each moment states and how long it may run, delivered under the platform file's delivery contract like the triage report and diagnosis presentation already are.
+
 Arm the state — the whole triple goes in every write because `oso-state` can set a key but never delete one: a stale green or a slice left armed by an abandoned flow is overwritten here, never inherited.
 `oso-state set mode=debug active_slice=fix verify_green=false`
 Read it back with `oso-state show` and confirm the three keys came back as written — a write that silently failed leaves the commit gate open with no other signal, so stop and tell the operator instead of delegating.

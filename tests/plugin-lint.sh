@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Lints the rules `claude plugin validate --strict` has no opinion on: it does
 # open hooks.json, skill frontmatter and the agents, and fails on a broken one
-# (probed against client 2.1.220), but it never asks what they SAY. Thirteen rules
+# (probed against client 2.1.220), but it never asks what they SAY. Fifteen rules
 # hold that ground: a `context: fork` skill declares `background`; the same
 # skill declares an `end with exactly one of:` verdict block; every
 # `oso-code:<name>` the plugin's own prose points at resolves; every call site
@@ -16,9 +16,14 @@
 # base ref and branch list; every decision under docs/decisions/ says where it
 # landed; every decision a skill cites resolves to one of those files AND is
 # named back by it; the prose that says how many rules hold this ground says a
-# number the functions below make true; and both hook manifests plus every
-# release-published hook hash exactly match their single source. Each rule states
-# its own reason above
+# number the functions below make true; both hook manifests plus every
+# release-published hook hash exactly match their single source; the milestone
+# reporting contract names every required fact of its five milestones plus a
+# length bound, and every flow body that arms a slice or launches a delegation
+# points at it; and the Claude-card/Codex-no-card difference the contract defers
+# to a host lives in exactly one platform file per host, never in the neutral
+# body and never in both hosts' trees at once. Each rule states its own reason
+# above
 # it; `background` is the one whose cost is least visible: as of client v2.1.218
 # a fork returns immediately and its verdict arrives in a LATER turn, while every
 # call site in plan/quick/debug reads that verdict in-turn.
@@ -559,7 +564,7 @@ check_present_tense_prose_names_the_rule_count() {
   case "$declared" in
     5) spelled=five ;; 6) spelled=six ;; 7) spelled=seven ;; 8) spelled=eight ;;
     9) spelled=nine ;; 10) spelled=ten ;; 11) spelled=eleven ;; 12) spelled=twelve ;;
-    13) spelled=thirteen ;;
+    13) spelled=thirteen ;; 14) spelled=fourteen ;; 15) spelled=fifteen ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -592,6 +597,112 @@ check_hook_renders_and_published_hashes_match() {
   fi
 }
 
+# An operator running unattended sees a tool call and its output and nothing
+# else unless something in the harness SAYS what it means — "report the
+# result" already existed before this rule and already produced the
+# complaint, so mention of the contract is not the bar: each of its five
+# milestone bullets must carry the facts that make it more than that sentence,
+# a length bound must exist so the fix does not trade silence for narration,
+# and every flow body that arms a slice or launches a delegation must point at
+# it — checked per body, never as one file's existence standing in for three.
+# The required-fact markers below are this rule's own choice, not a text
+# copied out of the contract file — chosen because the contract's own prose
+# already carries them for the readability win they name, so a milestone
+# stripped to "report the result" loses the marker along with the meaning.
+check_milestone_reporting_contract_is_complete() {
+  local contract="$PLUGIN_ROOT/skills/_shared/reporting.md"
+  if [ ! -f "$contract" ]; then
+    flag "no milestone reporting contract at skills/_shared/reporting.md"
+    return 0
+  fi
+
+  milestone_bullet_names_its_facts "$contract" "Arming" "slice" "Goal"
+  milestone_bullet_names_its_facts "$contract" "Launching" "role" "assignment" "tree"
+  milestone_bullet_names_its_facts "$contract" "Reading a verdict" "pass" "fail" "blocked" "fact"
+  milestone_bullet_names_its_facts "$contract" "A judge's outcome" "verdict" "count"
+  milestone_bullet_names_its_facts "$contract" "Closing" "commit" "next"
+
+  grep -qE '[Aa]t most [0-9]+ lines?' "$contract" \
+    || flag "skills/_shared/reporting.md names no length bound on a milestone report"
+
+  # Discovered the same way rule 7 discovers an operator-only mode — from
+  # `disable-model-invocation: true` frontmatter — rather than a hardcoded
+  # plan/quick/debug list, so a fourth mode is caught the same way a fourth
+  # routing gap already is.
+  local mode_skill mode mode_body
+  for mode_skill in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
+    [ -f "$mode_skill" ] || continue
+    printf '%s\n' "$(frontmatter "$mode_skill")" \
+      | grep -qE '^disable-model-invocation:[[:space:]]*true[[:space:]]*$' || continue
+    mode="$(basename "$(dirname "$mode_skill")")"
+    mode_body="$PLUGIN_ROOT/skills/_shared/bodies/$mode.md"
+    if [ ! -f "$mode_body" ]; then
+      flag "$mode is an operator-only mode with no skills/_shared/bodies/$mode.md to carry the milestone contract"
+      continue
+    fi
+    grep -qF 'reporting.md' "$mode_body" \
+      || flag "skills/_shared/bodies/$mode.md arms or launches without referencing the milestone contract at _shared/reporting.md"
+  done
+}
+
+# A bullet that names its own header but not the facts underneath is exactly
+# the "report the result" shape the operator's complaint already produced, so
+# mention of the milestone alone must not satisfy this — every marker is
+# required on the SAME line as the header, this repo's own dense
+# single-line-bullet style (ADR-0114 notes call sites are written this way).
+milestone_bullet_names_its_facts() {
+  local contract="$1" name="$2" bullet marker
+  shift 2
+  bullet="$({ grep -F -- "**$name**" "$contract" || true; })"
+  if [ -z "$bullet" ]; then
+    flag "skills/_shared/reporting.md names no '$name' milestone"
+    return 0
+  fi
+  for marker in "$@"; do
+    printf '%s\n' "$bullet" | grep -qi -- "$marker" \
+      || flag "skills/_shared/reporting.md's '$name' milestone never names its required fact: $marker"
+  done
+}
+
+# The TUI-card difference is real (Claude draws one over a launch, Codex draws
+# none) and is exactly the kind of fact this change's own goal forbids writing
+# twice: it must live in ONE platform file per host, never inside the neutral
+# contract and never repeated across a host's own three mode wrappers. The two
+# marker phrases are this rule's fixture for that fact, matched against the
+# exact prose the reporting files carry — a drift that copies the sentence
+# into a second file, or lets it leak into skills/_shared/bodies or the other
+# host's tree, is what this counts rather than merely asking whether the file
+# exists.
+check_reporting_host_difference_is_single_sourced() {
+  local claude_marker='native subagent card'
+  local codex_marker='draws no card'
+  local claude_hosts codex_hosts neutral_leak cross_leak count
+
+  claude_hosts="$({ grep -rlF "$claude_marker" "$PLUGIN_ROOT/skills/_shared/platform/claude" 2>&1 || true; })"
+  count="$(printf '%s\n' "$claude_hosts" | grep -c . || true)"
+  case "$count" in
+    1) ;;
+    0) flag "no file under skills/_shared/platform/claude states the native-card difference the milestone contract needs" ;;
+    *) flag "the native-card difference is stated in $count platform/claude files instead of exactly one: $(printf '%s' "$claude_hosts" | tr '\n' ' ')" ;;
+  esac
+
+  codex_hosts="$({ grep -rlF "$codex_marker" "$PLUGIN_ROOT/skills/_shared/platform/codex" 2>&1 || true; })"
+  count="$(printf '%s\n' "$codex_hosts" | grep -c . || true)"
+  case "$count" in
+    1) ;;
+    0) flag "no file under skills/_shared/platform/codex states the no-card difference the milestone contract needs" ;;
+    *) flag "the no-card difference is stated in $count platform/codex files instead of exactly one: $(printf '%s' "$codex_hosts" | tr '\n' ' ')" ;;
+  esac
+
+  neutral_leak="$({ grep -rlE "$claude_marker|$codex_marker" \
+    "$PLUGIN_ROOT/skills/_shared/bodies" "$PLUGIN_ROOT/skills/_shared/reporting.md" 2>&1 || true; })"
+  [ -z "$neutral_leak" ] || flag "the host-specific card difference leaked into the neutral body or contract: $(printf '%s' "$neutral_leak" | tr '\n' ' ')"
+
+  cross_leak="$({ grep -rlF "$codex_marker" "$PLUGIN_ROOT/skills/_shared/platform/claude" 2>&1 || true
+    grep -rlF "$claude_marker" "$PLUGIN_ROOT/skills/_shared/platform/codex" 2>&1 || true; })"
+  [ -z "$cross_leak" ] || flag "a host-specific card difference crossed into the other host's platform tree: $(printf '%s' "$cross_leak" | tr '\n' ' ')"
+}
+
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }
 
 check_forked_skills_declare_background
@@ -607,6 +718,8 @@ check_every_decision_records_where_it_landed
 check_decision_citations_resolve_and_name_their_citer
 check_present_tense_prose_names_the_rule_count
 check_hook_renders_and_published_hashes_match
+check_milestone_reporting_contract_is_complete
+check_reporting_host_difference_is_single_sourced
 
 if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"

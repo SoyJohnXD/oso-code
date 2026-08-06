@@ -80,3 +80,7 @@ Forked judges and operational agents are the exception to inline reading. READ `
 ## Front-surface binding
 
 When `../../front-surface.md`'s trigger fires, READ `front-surface.md` beside this file NOW. It is the single Codex binding for Impeccable's mounted path, all three argument routes, package-version record, agent route and absence remedy; this mode supplies only the PLAN wiring indexed by the neutral matrix.
+
+## Reporting binding
+
+READ `reporting.md` beside this file NOW. It is the single Codex binding for what this host's own UI shows, and does not show, when the milestone contract at `../../reporting.md` fires.
