@@ -111,14 +111,28 @@ function parse(    line, fields, count, kind, i, id, expected) {
       }
     } else if (kind == "tool") {
       if (!host_count) die("tool row appears before any host")
-      expected = 2 + host_count
+      # Two trailing cells close every tool row after the per-host mappings:
+      # the ADR-0120 capability class (read|write|role) and whether the name
+      # is mandated by a harness-installed protocol (yes|no). Neither is read
+      # again below -- render()/coverage()/classify() never look past a row
+      # host cells, so these two cannot change a byte of what renders; they
+      # exist for the drift check in bootstrap/verify-codex.sh and for a
+      # human reading this table.
+      expected = 2 + host_count + 2
       if (count != expected) {
-        if (count < expected) die("tool for gate `" fields[2] "` has no mapping for " hosts[count - 2 + 1])
-        die("tool `" fields[3] "` has too many host mappings")
+        if (count < 2 + host_count) die("tool for gate `" fields[2] "` has no mapping for " hosts[count - 2 + 1])
+        if (count < expected) die("tool `" fields[3] "` has no capability class or mandated cell")
+        die("tool `" fields[3] "` has too many host mappings or capability cells")
       }
       id = fields[2]; if (!gate_seen[id]) die("tool `" fields[3] "` names unknown gate `" id "`")
       tool_count++; tool_gate[tool_count] = id
       for (i = 1; i <= host_count; i++) { validate_cell(fields[2 + i], "tool `" fields[3] "`"); tool_cell[tool_count, i] = fields[2 + i] }
+      tool_class = fields[2 + host_count + 1]
+      if (tool_class != "read" && tool_class != "write" && tool_class != "role")
+        die("tool `" fields[3] "` has invalid capability class `" tool_class "`")
+      tool_mandated = fields[2 + host_count + 2]
+      if (tool_mandated != "yes" && tool_mandated != "no")
+        die("tool `" fields[3] "` has invalid mandated cell `" tool_mandated "`")
     } else die("unknown record kind `" kind "`")
   }
   close(table)

@@ -9,6 +9,22 @@
 #   host <name> <manifest, relative to the repo root> <command root>
 #   gate <id> <event> <script under the hooks directory> <wired|none per host>
 #   tool <gate id> <the name that host spells the tool with, or none, per host>
+#        <read|write|role> <yes|no>
+#
+# A tool row's last two cells are the capability model (ADR-0120), independent
+# of how many hosts precede them: whether the name READS or WRITES — the class
+# that decides whether a tool could ever belong behind the `edits` gate at all,
+# since only a tool that can mutate repository files earns that gate rather
+# than the `unknown` catch-all alone — and whether the name is MANDATED by a
+# protocol this harness itself installs and instructs the model to follow,
+# which is what made mem_judge's absence a deadlock rather than an
+# inconvenience (5905a27). A `handoff` row names a subagent role rather than
+# an invocable tool, so `role` answers its class instead of read or write; its
+# mandated cell is still real — the harness's own delegation protocol requires
+# exactly these eight role identifiers. Nothing here is a second copy of the
+# renderer's own answer: render() below never reads past each row's per-host
+# cells, so these two never change a byte of what renders (tools/plugin-lint.sh
+# rule 13 asserts the committed manifests are still exactly that render).
 #
 # `none` is an answer, not an omission — the host has no counterpart. A row that
 # leaves a host unanswered is refused. Runtime default-deny is separate and real:
@@ -64,83 +80,83 @@ gate  teardown  SessionEnd    cleanup-state.sh              wired  wired
 # under development at the declared Codex floor (ADR-0094), and the allowlist is
 # named tool by tool rather than by a wildcard for the reason the header gives.
 
-tool  commit  Bash                    Bash
-tool  edits   Edit                    apply_patch
-tool  edits   MultiEdit               none
-tool  edits   Write                   apply_patch
-tool  edits   NotebookEdit            none
-tool  edits   mcp__fallow__fix_apply  mcp__fallow__fix_apply
+tool  commit  Bash                    Bash                     write  no
+tool  edits   Edit                    apply_patch              write  no
+tool  edits   MultiEdit               none                     write  no
+tool  edits   Write                   apply_patch              write  no
+tool  edits   NotebookEdit            none                     write  no
+tool  edits   mcp__fallow__fix_apply  mcp__fallow__fix_apply    write  no
 
 # SubagentStop matches role names rather than tool names. The built-in explorer
 # is part of the plan's delegated surface map; the other seven are the exact S5
 # custom roles. Claude launches these synchronously and needs no receipt hook.
-tool  handoff  none  explorer
-tool  handoff  none  oso-applier
-tool  handoff  none  oso-verifier
-tool  handoff  none  oso-integrator
-tool  handoff  none  oso-doubt-pass
-tool  handoff  none  oso-debt-sweep
-tool  handoff  none  oso-triage
-tool  handoff  none  oso-security-reviewer
+tool  handoff  none  explorer               role  yes
+tool  handoff  none  oso-applier            role  yes
+tool  handoff  none  oso-verifier           role  yes
+tool  handoff  none  oso-integrator         role  yes
+tool  handoff  none  oso-doubt-pass         role  yes
+tool  handoff  none  oso-debt-sweep         role  yes
+tool  handoff  none  oso-triage             role  yes
+tool  handoff  none  oso-security-reviewer  role  yes
 
 # Exact runtime allowlist consumed by the `unknown` catch-all. Claude has no such
 # gate, so every Claude cell is explicitly `none`. A newly introduced Codex tool
 # fails closed in an armed oso-code repository until it lands here.
-tool  unknown  none  Bash
-tool  unknown  none  apply_patch
-tool  unknown  none  update_plan
-tool  unknown  none  request_user_input
-tool  unknown  none  Agent
-tool  unknown  none  collaborationspawn_agent
-tool  unknown  none  collaborationsend_message
-tool  unknown  none  collaborationfollowup_task
-tool  unknown  none  collaborationwait_agent
-tool  unknown  none  collaborationinterrupt_agent
-tool  unknown  none  collaborationlist_agents
-tool  unknown  none  spawn_agent
-tool  unknown  none  send_input
-tool  unknown  none  resume_agent
-tool  unknown  none  close_agent
-tool  unknown  none  send_message
-tool  unknown  none  followup_task
-tool  unknown  none  wait_agent
-tool  unknown  none  interrupt_agent
-tool  unknown  none  list_agents
-tool  unknown  none  wait
-tool  unknown  none  create_goal
-tool  unknown  none  get_goal
-tool  unknown  none  update_goal
-tool  unknown  none  view_image
-tool  unknown  none  list_mcp_resources
-tool  unknown  none  list_mcp_resource_templates
-tool  unknown  none  read_mcp_resource
+tool  unknown  none  Bash                           write  no
+tool  unknown  none  apply_patch                    write  no
+tool  unknown  none  update_plan                    write  no
+tool  unknown  none  request_user_input             read   no
+tool  unknown  none  Agent                          write  no
+tool  unknown  none  collaborationspawn_agent       write  no
+tool  unknown  none  collaborationsend_message      write  no
+tool  unknown  none  collaborationfollowup_task     write  no
+tool  unknown  none  collaborationwait_agent        read   no
+tool  unknown  none  collaborationinterrupt_agent   write  no
+tool  unknown  none  collaborationlist_agents       read   no
+tool  unknown  none  spawn_agent                    write  no
+tool  unknown  none  send_input                     write  no
+tool  unknown  none  resume_agent                   write  no
+tool  unknown  none  close_agent                    write  no
+tool  unknown  none  send_message                   write  no
+tool  unknown  none  followup_task                  write  no
+tool  unknown  none  wait_agent                     read   no
+tool  unknown  none  interrupt_agent                write  no
+tool  unknown  none  list_agents                    read   no
+tool  unknown  none  wait                           read   no
+tool  unknown  none  create_goal                    write  no
+tool  unknown  none  get_goal                       read   no
+tool  unknown  none  update_goal                    write  no
+tool  unknown  none  view_image                     read   no
+tool  unknown  none  list_mcp_resources             read   no
+tool  unknown  none  list_mcp_resource_templates    read   no
+tool  unknown  none  read_mcp_resource              read   no
 # Captured verbatim from live operator-visible denials, not derived from a general
 # normalization rule: two samples are not enough to reverse-engineer how Codex
 # 0.146 rewrites a tool name before this gate sees it, so the rewritten spelling
 # earns its own row instead.
-tool  unknown  none  image_gen__imagegen
-tool  unknown  none  image_genimagegen
-tool  unknown  none  web__run
-tool  unknown  none  mcp__engram__mem_search
-tool  unknown  none  mcp__engram__mem_get_observation
-tool  unknown  none  mcp__engram__mem_save
-tool  unknown  none  mcp__engram__mem_update
+tool  unknown  none  image_gen__imagegen               write  no
+tool  unknown  none  image_genimagegen                 write  no
+tool  unknown  none  web__run                          read   no
+tool  unknown  none  mcp__engram__mem_search           read   yes
+tool  unknown  none  mcp__engram__mem_get_observation  read   yes
+tool  unknown  none  mcp__engram__mem_save             write  yes
+tool  unknown  none  mcp__engram__mem_update           write  no
 # The Engram Memory Protocol this harness installs and instructs the model to
 # follow needs more than the four tools above: mem_context and mem_current_project
 # open a session, mem_session_summary closes one, mem_save_prompt records intent,
 # and mem_judge is load-bearing — mem_save's own judgment_required=true response
 # mandates it, so without this row that response is an unresolvable deadlock.
-tool  unknown  none  mcp__engram__mem_context
-tool  unknown  none  mcp__engram__mem_session_summary
-tool  unknown  none  mcp__engram__mem_current_project
-tool  unknown  none  mcp__engram__mem_save_prompt
-tool  unknown  none  mcp__engram__mem_judge
-tool  unknown  none  mcp__context7__resolve-library-id
-tool  unknown  none  mcp__context7__query-docs
+tool  unknown  none  mcp__engram__mem_context           read   yes
+tool  unknown  none  mcp__engram__mem_session_summary   write  yes
+tool  unknown  none  mcp__engram__mem_current_project   read   yes
+tool  unknown  none  mcp__engram__mem_save_prompt       write  yes
+tool  unknown  none  mcp__engram__mem_judge             write  yes
+tool  unknown  none  mcp__context7__resolve-library-id  read   no
+tool  unknown  none  mcp__context7__query-docs          read   no
 # Same live-denial provenance as the image_gen row above: Codex turns this hyphen
 # into an underscore before the gate sees the name.
-tool  unknown  none  mcp__context7__resolve_library_id
-tool  unknown  none  mcp__fallow__find_dupes
-tool  unknown  none  mcp__fallow__get_cleanup_candidates
-tool  unknown  none  mcp__fallow__audit
-tool  unknown  none  mcp__fallow__fix_apply
+tool  unknown  none  mcp__context7__resolve_library_id     read   no
+tool  unknown  none  mcp__fallow__find_dupes               read   no
+tool  unknown  none  mcp__fallow__get_cleanup_candidates   read   no
+tool  unknown  none  mcp__fallow__audit                    read   no
+tool  unknown  none  mcp__fallow__fix_apply                write  no

@@ -51,18 +51,26 @@ jobs:
           failed="$(sed -n 's/^passed: [0-9]*, failed: \([0-9]*\)$/\1/p' "$report")"
           [ "$failed" = "8" ]
       # Same shape as the step above, with one real difference: this job never
-      # installs the codex CLI, so every local check here needs an install that
-      # never happened and fails for that reason alone — measured, today's
-      # fixture reads `passed: 0, failed: 14`, the entire local suite (the
-      # authenticated smoke below is skipped, not failed, so it never joins the
-      # tally). There is no check left that owes nothing to an install, so unlike
-      # verify.sh above this cannot floor on a nonzero `passed`; pinning `failed`
-      # to 14 is the only assertion this fixture can bear, and it still catches
-      # drift — a check that starts passing, one that stops running, or a new one
-      # that joins all move the number away from 14. Installing codex here so a
-      # real floor exists, the way verify.sh's own two install-independent checks
-      # do, is a real option this step does not take: it would cost this job a
-      # network dependency the sibling step is deliberately free of, on the same
+      # installs the codex CLI, so almost every local check here needs an
+      # install that never happened and fails for that reason alone — measured,
+      # today's fixture reads `passed: 1, failed: 14` (the entire local suite;
+      # the authenticated smoke below is skipped, not failed, so it never joins
+      # the tally). ADR-0120 adds the one exception: its MCP-tool-table
+      # agreement check compares tools/hook-gates.txt against its own
+      # hardcoded mandated-tool list, needs neither a server nor a config.toml,
+      # and passes here every run; the live per-server half of that same
+      # decision needs an MCP server this job does not have, so it skips
+      # rather than joining the tally (D2, ADR-0120) — which is why `failed`
+      # stayed at 14 even though a new check legitimately joined the set. One
+      # install-independent check is not the floor verify.sh's own two give
+      # it, so unlike verify.sh above this still cannot floor on a nonzero
+      # `passed`; pinning `failed` to 14 is still the only assertion this
+      # fixture can bear, and it still catches drift — a check that starts
+      # passing, one that stops running, or a new one that joins all move the
+      # number away from 14. Installing codex here so a real floor exists, the
+      # way verify.sh's own two install-independent checks do, is a real
+      # option this step does not take: it would cost this job a network
+      # dependency the sibling step is deliberately free of, on the same
       # reasoning that keeps the sibling step running before any CLI is
       # installed. OSO_VERIFY_SKIP_SMOKE skips the authenticated codex exec smoke,
       # which needs a logged-in CLI this job never has either.

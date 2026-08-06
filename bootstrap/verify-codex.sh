@@ -278,6 +278,244 @@ engram_status() {
   rm -f "$normalized"
 }
 
+# ADR-0120: the hand-maintained allowlist in tools/hook-gates.txt drifts from
+# what a wired MCP server actually exposes -- mem_judge's absence (5905a27)
+# was exactly this, undetected until a live operator denial found it. CI has
+# none of these servers installed (B6, 4620b8e), so this check is LOCAL: it
+# spawns each server this Codex install actually wires and compares its own
+# live `tools/list` answer against the table, following the same raw
+# JSON-RPC-over-stdio method 5905a27 used by hand against the Engram binary.
+MCP_DRIFT_BOUND_SECONDS="${OSO_MCP_DRIFT_BOUND_SECONDS:-10}"
+
+# Every `[mcp_servers.<name>]` table in config.toml names a server this
+# install wires, quoted or bare key alike.
+mcp_server_names() {
+  awk '
+    /^\[mcp_servers\.[^]]+\]/ {
+      name = $0
+      sub(/^\[mcp_servers\./, "", name)
+      sub(/\].*/, "", name)
+      gsub(/^"|"$/, "", name)
+      print name
+    }
+  ' "$CONFIG_FILE" 2>/dev/null
+}
+
+# $1 = server name. Prints "command\nargs..." (one token per line) for a
+# spawnable `[mcp_servers.<name>]` table, or nothing when the table has no
+# local `command` -- context7's entry is a remote `url`, and drift for a
+# Streamable HTTP server would need an HTTP client this check does not carry;
+# that is named at the call site rather than guessed at here.
+mcp_server_command() {
+  local server="$1"
+  awk -v target="[mcp_servers.$server]" '
+    function unquote(v) { gsub(/^"|"$/, "", v); return v }
+    /^\[/ { inside = ($0 == target) }
+    inside && /^command[[:space:]]*=/ {
+      value = $0
+      sub(/^command[[:space:]]*=[[:space:]]*/, "", value)
+      print unquote(value)
+    }
+    inside && /^args[[:space:]]*=/ {
+      value = $0
+      sub(/^args[[:space:]]*=[[:space:]]*\[/, "", value)
+      sub(/\][[:space:]]*$/, "", value)
+      n = split(value, parts, ",")
+      for (i = 1; i <= n; i++) {
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", parts[i])
+        if (parts[i] != "") print unquote(parts[i])
+      }
+    }
+  ' "$CONFIG_FILE" 2>/dev/null
+}
+
+# The tool names the Engram Memory Protocol instructs the model to call
+# unconditionally: its own "CORE TOOLS (always available)" list, plus
+# mem_judge -- conditionally mandated the moment mem_save answers
+# judgment_required=true (5905a27). Independent of tools/hook-gates.txt on
+# purpose: the drift this exists to catch is a mandated tool with NO row yet,
+# so reading "mandated" off the table itself could never see that case. No
+# other wired server ships a protocol this harness installs and instructs the
+# model to follow, so every other server's set is empty here.
+server_mandated_tools() {
+  case "$1" in
+    engram)
+      printf '%s\n' mem_save mem_search mem_context mem_session_summary \
+        mem_get_observation mem_save_prompt mem_current_project mem_judge
+      ;;
+  esac
+}
+
+# $1 = command, remaining = args. Prints one bare tool name per line read from
+# a live `tools/list` call, bounded so a server that never answers ends this
+# with nothing rather than hanging the check -- the in-shell bounded-subshell
+# idiom plugin/skills/_shared/front-surface.md's pinned-detect gate uses, for
+# the same reason: no GNU timeout(1) on macOS's bash 3.2. The server outlives
+# its own answer (stdio MCP servers hold the connection open), so the bound
+# is what ends it either way, not its own exit.
+mcp_server_tool_names() {
+  local command="$1" out line pid waited
+  shift
+  out="$(mktemp "${TMPDIR:-/tmp}/oso-mcp-tools.XXXXXX")" || return 1
+  ( set -m
+    { printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"oso-verify-codex","version":"1"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+      printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+      sleep "$MCP_DRIFT_BOUND_SECONDS"
+    } | "$command" "$@" >"$out" 2>/dev/null &
+    pid=$!
+    waited=0
+    while kill -0 "$pid" 2>/dev/null; do
+      grep -q '"id":2,"result"' "$out" 2>/dev/null && break
+      if [ "$waited" -ge "$MCP_DRIFT_BOUND_SECONDS" ]; then
+        kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null
+        break
+      fi
+      sleep 1
+      waited=$((waited + 1))
+    done
+    kill -TERM "-$pid" 2>/dev/null
+    wait "$pid" 2>/dev/null
+  )
+  line="$(grep -m1 '"id":2,"result"' "$out" 2>/dev/null)"
+  if [ -n "$line" ] && command -v jq >/dev/null 2>&1; then
+    printf '%s\n' "$line" | jq -r '.result.tools[]?.name // empty' 2>/dev/null
+  elif [ -n "$line" ]; then
+    printf '%s\n' "$line" | grep -o '"name":"[^"]*"' | sed 's/^"name":"//; s/"$//'
+  fi
+  rm -f "$out"
+}
+
+# The table rows currently naming server-prefixed tools for $1, deduplicated
+# -- a tool wired to both `edits` and `unknown` (mcp__fallow__fix_apply) names
+# two rows for one live tool and must only be compared once.
+table_codex_tools_for_server() {
+  awk -v want="mcp__$1__" '
+    $1 == "tool" && index($4, want) == 1 { print $4 }
+  ' "$REPO_ROOT/tools/hook-gates.txt" | sort -u
+}
+
+table_has_codex_tool() {
+  awk -v want="$1" '$1 == "tool" && $4 == want { found = 1 } END { exit !found }' \
+    "$REPO_ROOT/tools/hook-gates.txt"
+}
+
+table_codex_tool_is_mandated() {
+  awk -v want="$1" '$1 == "tool" && $4 == want && $NF == "yes" { found = 1 } END { exit !found }' \
+    "$REPO_ROOT/tools/hook-gates.txt"
+}
+
+# Every MCP server this harness ever wires (bootstrap/install.sh's engram
+# plugin mount, migrate_context7, wire_fallow) -- fixed independently of any
+# one machine's config.toml, so the agreement check below runs with no
+# config and no server at all.
+KNOWN_MCP_SERVERS="engram context7 fallow"
+
+# The other half of ADR-0120's drift check: independent of any live server or
+# config.toml, the hardcoded mandated set above must agree with
+# tools/hook-gates.txt's own mandated column, in both directions -- a table
+# row marked yes with no hardcoded counterpart would silently stop being
+# enforced, and a hardcoded name with no yes row is dead data nothing
+# actually gates on. Neither direction needs a server or a config, so this is
+# exactly the part CI's fixture HOME (no MCP servers installed at all) can
+# run; everything above needs a live server CI does not have.
+table_mandated_agreement_status() {
+  local server name row bare mismatch=""
+  for server in $KNOWN_MCP_SERVERS; do
+    while IFS= read -r name; do
+      [ -n "$name" ] || continue
+      table_codex_tool_is_mandated "mcp__${server}__${name}" ||
+        mismatch="${mismatch:+$mismatch,}mcp__${server}__${name}(hardcoded-not-a-yes-row)"
+    done <<EOF
+$(server_mandated_tools "$server")
+EOF
+  done
+  while IFS= read -r row; do
+    [ -n "$row" ] || continue
+    for server in $KNOWN_MCP_SERVERS; do
+      case "$row" in
+        "mcp__${server}__"*)
+          bare="${row#mcp__${server}__}"
+          printf '%s\n' "$(server_mandated_tools "$server")" | grep -qxF "$bare" ||
+            mismatch="${mismatch:+$mismatch,}$row(yes-row-not-hardcoded)"
+          break
+          ;;
+      esac
+    done
+  done <<EOF
+$(awk '$1 == "tool" && $NF == "yes" && $4 ~ /^mcp__/ { print $4 }' "$REPO_ROOT/tools/hook-gates.txt" | sort -u)
+EOF
+  printf '%s' "${mismatch:-agree}"
+}
+
+# D18: names the exact row to add, not just that something drifted. $2 is the
+# newline-separated live tool list already read from the server.
+mcp_missing_mandated_tools() {
+  local server="$1" exposed="$2" name row missing=""
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    printf '%s\n' "$exposed" | grep -qxF "$name" || continue
+    row="mcp__${server}__${name}"
+    table_has_codex_tool "$row" || missing="${missing:+$missing,}$row"
+  done <<EOF
+$(server_mandated_tools "$server")
+EOF
+  printf '%s' "${missing:-none}"
+}
+
+# The mirror case: a row whose exact spelling the live server no longer
+# exposes -- stale, and how a mangled spelling would otherwise stand forever.
+mcp_stale_table_rows() {
+  local server="$1" exposed="$2" row bare stale=""
+  while IFS= read -r row; do
+    [ -n "$row" ] || continue
+    bare="${row#mcp__${server}__}"
+    printf '%s\n' "$exposed" | grep -qxF "$bare" || stale="${stale:+$stale,}$row"
+  done <<EOF
+$(table_codex_tools_for_server "$server")
+EOF
+  printf '%s' "${stale:-none}"
+}
+
+run_mcp_tool_drift_checks() {
+  local server command_line argv_token argv exposed
+  printf 'MCP tool table drift:\n'
+  check "the hardcoded mandated tool list agrees with tools/hook-gates.txt in both directions" \
+    agree "$(table_mandated_agreement_status)"
+  while IFS= read -r server; do
+    [ -n "$server" ] || continue
+    command_line="$(mcp_server_command "$server")"
+    if [ -z "$command_line" ]; then
+      printf 'skip: %s MCP tool drift — no local command in %s (a remote/URL-based server has no process this check spawns)\n' \
+        "$server" "$CONFIG_FILE"
+      continue
+    fi
+    argv=()
+    while IFS= read -r argv_token; do
+      [ -n "$argv_token" ] && argv+=("$argv_token")
+    done <<EOF
+$command_line
+EOF
+    if ! command -v "${argv[0]}" >/dev/null 2>&1 && [ ! -x "${argv[0]}" ]; then
+      printf 'skip: %s MCP tool drift — %s is not executable, so the live tool list could not be read\n' \
+        "$server" "${argv[0]}"
+      continue
+    fi
+    exposed="$(mcp_server_tool_names "${argv[@]}")"
+    if [ -z "$exposed" ]; then
+      printf 'skip: %s MCP tool drift — tools/list did not answer within %ss, so drift could not be checked\n' \
+        "$server" "$MCP_DRIFT_BOUND_SECONDS"
+      continue
+    fi
+    check "$server MCP protocol-mandated tools present in tools/hook-gates.txt" \
+      none "$(mcp_missing_mandated_tools "$server" "$exposed")"
+    check "$server MCP table rows all match a live tool" \
+      none "$(mcp_stale_table_rows "$server" "$exposed")"
+  done <<EOF
+$(mcp_server_names)
+EOF
+}
+
 impeccable_status() {
   if [ -f "$IMPECCABLE_OPT_OUT_MARKER" ]; then
     printf opted-out
@@ -689,6 +927,7 @@ run_local_checks() {
     wired) check "git commit gate" wired wired ;;
     *) printf 'note: git commit gate is not wired for this checkout; the installer may have run with --no-git-hook\n' ;;
   esac
+  run_mcp_tool_drift_checks
 }
 
 run_authenticated_smoke() {

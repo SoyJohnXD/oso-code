@@ -208,6 +208,7 @@ Three properties of the amendment log these files replace are facts to carry for
 - [0117](decisions/0117-a-harness-discovered-correction-to-a-not-started-slice-costs-one-confirmation.md) — A harness-discovered correction to a not-started slice costs one confirmation, not a re-approval
 - [0118](decisions/0118-three-coordinates-replace-the-single-base-ref.md) — Three coordinates replace the single base ref: CHANGE BASE, WAVE START, SLICE START
 - [0119](decisions/0119-ci-asserts-a-verify-scripts-failure-count-and-the-decision-coverage-audit-closes-one-gap.md) — CI asserts a verify script's failure count, and the decision-coverage audit closes one real gap
+- [0120](decisions/0120-the-allowlist-gets-a-capability-model-and-a-local-drift-check.md) — The allowlist gets a capability model, and a local drift check against the servers it names
 
 ## Foundational decisions
 

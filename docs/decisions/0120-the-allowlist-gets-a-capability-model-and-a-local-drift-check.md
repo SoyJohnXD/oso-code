@@ -1,0 +1,49 @@
+# 0120 — The allowlist gets a capability model, and a local drift check against the servers it names
+
+Date: 2026-08-06
+Status: accepted
+Implemented-in: tools/hook-gates.txt, tools/render-hooks-json.sh, bootstrap/verify-codex.sh, tests/hooks-test.sh, .github/workflows/ci.yml, docs/blueprint.md
+Reconciled: applied — `tools/hook-gates.txt` gains two trailing cells on every `tool` row (a read/write/role class, a yes/no mandated flag); `tools/render-hooks-json.sh`'s parser accepts and validates them without either ever reaching `render()`; `bootstrap/verify-codex.sh` gains `run_mcp_tool_drift_checks`, one unconditional server-independent agreement check plus per-server checks spawning each locally-wired MCP server and comparing its live `tools/list` answer against the table; `tests/hooks-test.sh` drives all five named cases against fixtures; `.github/workflows/ci.yml`'s comment for the unchanged `failed: 14` pin now names the one check that owes nothing to the missing Codex install.
+Source: slice A3 (5905a27) fixed the table's content — five Engram protocol tools plus two rewritten spellings — after eight live operator denials. Slice B6 (4620b8e) measured that the ledger's original plan, a CI gate, would skip on every run: CI installs neither Engram nor Fallow nor even the Codex CLI, which is exactly how the delegation-schema defect the pre-freeze doubt pass named went unnoticed. This decision is the mechanism that stops A3's fix from re-drifting.
+
+## Decision
+
+### Part 1 — capability columns, not a second file
+
+The header already states the rule: "the matcher a host spells for a gate is a cell in this file and nowhere else." Adding a parallel manifest for what a tool DOES would violate that on day one — a maintainer editing one file and forgetting the other is the exact failure this table exists to prevent. So the model is two more cells on the existing `tool` rows, always after the per-host name cells:
+
+```
+tool <gate id> <name per host, or none> <read|write|role> <yes|no>
+```
+
+- **Class** — `read` or `write` answers whether the tool can mutate anything at all, independent of which gate row lists it; `role` answers instead for the eight `handoff` rows, which name a subagent identity rather than an invocable tool. This is the fact that decides whether a tool could ever belong behind the `edits` gate: only a tool that can write repository files earns that gate rather than the `unknown` catch-all alone, which is why Engram's own write tools (`mem_save`, `mem_judge`, …) are `write` but still correctly live only under `unknown` — they mutate a memory store, not the repository.
+- **Mandated** — `yes` when a protocol this harness itself installs and instructs the model to follow requires the name unconditionally. Today that is exactly sixteen rows: the Engram Memory Protocol's seven "CORE TOOLS (always available)" plus `mem_judge` — conditionally mandated the moment `mem_save` answers `judgment_required=true` (5905a27), eight rows in all — and the eight `handoff` rows, since the harness's own delegation protocol requires exactly those role identifiers. Everything else, including `mem_update` (Engram's own protocol marks it DEFERRED, not core) and every context7/Fallow/native-host tool, is `no`: no other wired server ships a protocol this harness installs.
+
+**Confirmed inert to the render.** `tools/render-hooks-json.sh`'s `render()`, `coverage()` and `classify()` only ever read `fields[2 + i]` for `i` in `1..host_count` — never past a row's host cells. The parser's `tool` branch now requires and validates the two trailing cells (closed vocabulary, same `die()` idiom as every other structural rule in that file) but stores neither anywhere `render()` reads. Proven, not just argued: `tools/render-hooks-json.sh --check` and `--check-hashes` both still report the pre-existing manifests unchanged after every row gained its two cells, and `tests/hooks-test.sh` asserts the rendered bytes are `cmp`-identical to the committed `plugin/hooks/hooks.json` and `codex/hooks/hooks.json` directly, with no git history required (the `bash:3.2` suite runs without `git`).
+
+### Part 2 — a LOCAL drift check, not a CI gate
+
+The ledger's original wording called for "a CI gate comparing the model against the real MCP servers." B6 measured the ground that stands on: this CI job installs neither Engram, context7 nor Fallow, and never even installs the Codex CLI. A gate placed there would report `skip` on literally every run — CI is "the only place drift is caught" per the doubt pass, and a check that only ever skips there catches nothing, ever, exactly how `mem_judge`'s absence survived until a live operator hit it.
+
+So the check lives where the servers actually run: `bootstrap/verify-codex.sh`, following the shape ADR-0106 established for `host_contract_status` — a named skip lane per absent precondition, real `check()`-tallied pass/fail once the precondition holds, never a silent pass. `run_mcp_tool_drift_checks`:
+
+0. **Runs one check unconditionally, needing neither a server nor a config.toml at all — this is the part CI can run.** `table_mandated_agreement_status` cross-checks the hardcoded mandated-tool list (Part 1's authority for "mandated," kept independent of the table on purpose — see step 5 below) against `tools/hook-gates.txt`'s own `mandated` column, in both directions: a `yes` row with no hardcoded counterpart would silently stop being enforced, and a hardcoded name with no `yes` row is dead data nothing actually gates on. Pure text comparison between one file and one function's own output — no process spawned, so nothing here needed the CI-has-no-servers reframing at all.
+1. Reads every `[mcp_servers.<name>]` table `~/.codex/config.toml` names.
+2. For each, resolves a local `command`/`args` — **skips**, named, when the table has only a remote `url` (context7's real shape: Streamable HTTP, a transport this check does not speak, named at the call site rather than guessed at).
+3. **Skips**, named, when the resolved command is not executable.
+4. Sends a raw `initialize` / `notifications/initialized` / `tools/list` JSON-RPC-over-stdio sequence — the same method A3 used by hand against the Engram binary, generalized to any spawnable server — and reads the answer bounded so a server that never responds ends the check with a **skip**, named, inside the bound rather than hanging it. The bound is the in-shell, job-control, `kill -TERM "-$pid"` idiom `plugin/skills/_shared/front-surface.md`'s pinned-detect gate already uses, for the same reason: no GNU `timeout(1)` on macOS's `bash 3.2`.
+5. Once a server answers, two `check()` calls compare its exposed tool names against the table's rows for that server (`mcp__<server>__*`, deduplicated): one reports any exposed tool that is both mandated (server-specific, hardcoded — independent of the table on purpose, since the drift this exists to catch is a mandated tool with NO row yet, and a value living only on an existing row could never see that case) and missing from the table, naming the exact row to add (D18); the other reports any table row the server no longer exposes — stale, and how a mangled spelling would otherwise stand forever.
+
+`jq` is used when present (`.result.tools[]?.name`) and never required — a `grep -o '"name":"[^"]*"'` fallback reads the same field when it is absent, verified to extract the identical eighteen names from a live Engram response either way.
+
+**Verified against the real machine**, not only fixtures: against this checkout's actual `~/.codex/config.toml`, the check reports `context7` skipped (remote URL), and both `engram` and `fallow` clean (`none`, `none`) — Fallow exposes twenty-five tools against the table's four, none of them mandated, so the check is silent about the twenty-one it deliberately does not allowlist, exactly as intended.
+
+**CI's pin, measured rather than assumed to move.** ADR-0119 pinned `verify-codex.sh`'s fixture-HOME `failed:` count at 14 because, at the time, "there is no check left that owes nothing to" the missing Codex install. Step 0 above is now that one exception: measured against the exact fixture `.github/workflows/ci.yml` builds (`mktemp -d` HOME, `codex` stripped from `PATH`), the report reads `passed: 1, failed: 14` — one new check joined the set and passed, so `failed` itself did not move. The pin in `ci.yml` stays `14`; its comment is updated to name the new exception rather than continuing to claim none exists.
+
+## Consequences
+
+- `mem_judge`'s class of defect — a protocol-mandated tool the table never carried — now fails `bootstrap/verify-codex.sh` locally, on the machine where the server that would have exposed it actually runs, the first time an operator runs the installed verifier after the drift lands upstream.
+- A mangled or renamed spelling in the table (image_gen's `__` loss, context7's hyphen-to-underscore rewrite — both discovered live, per A3) now has a mechanical second witness beyond another live denial: a row the server no longer answers to.
+- A maintainer who hardcodes a new mandated tool name in `server_mandated_tools` without adding or updating its `tools/hook-gates.txt` row — or vice versa — now fails `bootstrap/verify-codex.sh` everywhere, including CI, with no server or install required to catch it.
+- `tools/hook-gates.txt` stays the single source: no second manifest of tool capabilities exists anywhere, and the render is proven — not merely argued — unchanged by the two new cells.
+- Two servers this harness wires (context7, and any future remote-URL server) are named out of the live half of this check's scope rather than silently assumed covered: their drift needs an HTTP-transport reader this check does not carry, which is a real option future work can take up, not a gap this decision hides.

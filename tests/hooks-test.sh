@@ -861,7 +861,7 @@ else
   for matcherless_gate in planstop planprompt; do
     IGNORED_MATCHER_TABLE="$TEST_HOME/${matcherless_gate}-ignored-matcher.txt"
     cp "$REPO_ROOT/tools/hook-gates.txt" "$IGNORED_MATCHER_TABLE"
-    printf '\ntool  %s  none  ignored\n' "$matcherless_gate" >> "$IGNORED_MATCHER_TABLE"
+    printf '\ntool  %s  none  ignored  read  no\n' "$matcherless_gate" >> "$IGNORED_MATCHER_TABLE"
     case "$matcherless_gate" in
       planstop) matcherless_event=Stop ;;
       planprompt) matcherless_event=UserPromptSubmit ;;
@@ -872,7 +872,7 @@ else
   done
 
   INCOMPLETE_CATCHALL_TABLE="$TEST_HOME/catchall-without-bash.txt"
-  sed '/^tool  unknown  none  Bash$/d' \
+  sed '/^tool  unknown  none  Bash[[:space:]]/d' \
     "$REPO_ROOT/tools/hook-gates.txt" > "$INCOMPLETE_CATCHALL_TABLE"
   if cmp -s "$REPO_ROOT/tools/hook-gates.txt" "$INCOMPLETE_CATCHALL_TABLE"; then
     echo "FAIL: incomplete-catchall mutation removed no Bash row"; fail=$((fail + 1))
@@ -2774,6 +2774,181 @@ assert_equals "no codex on PATH skips the host contract check rather than tallyi
       printf incomplete
     fi
   )"
+
+# --- ADR-0120 capability columns: present, and inert to the render ---------
+# (a): the two capability cells exist on every tool row, and the manifests
+# operators and hosts actually read stay byte-identical to their addition --
+# no git history needed, since a renderer that reads past a row's host cells
+# would be the thing to catch here, and the committed manifests already ARE
+# the render this proves against.
+CAPABILITY_COLUMN_STATUS="$(awk '
+  $1 == "tool" {
+    n = split($0, f)
+    class = f[n - 1]; mandated = f[n]
+    if (class != "read" && class != "write" && class != "role") { bad = "bad-class:" $0 }
+    else if (mandated != "yes" && mandated != "no") { bad = "bad-mandated:" $0 }
+  }
+  END { print (bad ? bad : "ok") }
+' "$REPO_ROOT/tools/hook-gates.txt")"
+assert_equals "every tool row in tools/hook-gates.txt carries a read/write/role class and a yes/no mandated cell" \
+  "ok" "$CAPABILITY_COLUMN_STATUS"
+assert_equals "the capability columns leave the committed Claude manifest byte-identical" \
+  identical "$("$HOOK_RENDERER" --host claude --table "$REPO_ROOT/tools/hook-gates.txt" | \
+    cmp -s - "$REPO_ROOT/plugin/hooks/hooks.json" && echo identical || echo divergent)"
+assert_equals "the capability columns leave the committed Codex manifest byte-identical" \
+  identical "$("$HOOK_RENDERER" --host codex --table "$REPO_ROOT/tools/hook-gates.txt" | \
+    cmp -s - "$REPO_ROOT/codex/hooks/hooks.json" && echo identical || echo divergent)"
+
+# --- Codex MCP tool table drift (ADR-0120) -------------------------------
+# 5905a27 found mem_judge missing by reading the live Engram server by hand.
+# This is the check that catches the next one on its own. Driven here against
+# fixture servers rather than the live one, so the case is reproducible and
+# fast rather than depending on whatever happens to be installed on the
+# machine running the suite.
+MCP_DRIFT_FIXTURE_SERVER="$TEST_HOME/mcp-drift-fixture-server.sh"
+cat > "$MCP_DRIFT_FIXTURE_SERVER" <<'EOF'
+#!/bin/sh
+# A minimal stdio MCP server: answers tools/list with exactly the tool names
+# given as arguments, then stays alive like a real server would -- the
+# caller's own bound is what ends this, never its own exit.
+names=""
+for n in "$@"; do
+  names="${names:+$names,}{\"name\":\"$n\"}"
+done
+printf '{"jsonrpc":"2.0","id":2,"result":{"tools":[%s]}}\n' "$names"
+sleep 30
+EOF
+chmod +x "$MCP_DRIFT_FIXTURE_SERVER"
+
+MCP_DRIFT_HANGING_SERVER="$TEST_HOME/mcp-drift-hanging-server.sh"
+printf '%s\n' '#!/bin/sh' 'sleep 60' > "$MCP_DRIFT_HANGING_SERVER"
+chmod +x "$MCP_DRIFT_HANGING_SERVER"
+
+mcp_drift_config_home() {
+  local codex_home="$1" body="$2"
+  mkdir -p "$codex_home"
+  printf '%s\n' "$body" > "$codex_home/config.toml"
+}
+
+# $1 = repo root to run bootstrap/verify-codex.sh from, $2 = CODEX_HOME,
+# $3 = bound in seconds. Runs the whole script the same way the host-contract
+# cases above do: as a subprocess, main() is unconditional at its tail.
+run_mcp_drift_check() {
+  local repo_root="$1" codex_home="$2" bound="$3"
+  HOME="$(dirname "$codex_home")" CODEX_HOME="$codex_home" \
+    OSO_VERIFY_SKIP_SMOKE=1 OSO_MCP_DRIFT_BOUND_SECONDS="$bound" \
+    bash "$repo_root/bootstrap/verify-codex.sh" 2>&1 || true
+}
+
+# (b) + (c): a scratch table copy with mem_judge removed and a stale
+# mcp__engram__mem_ghost row added, checked against a fixture Engram server
+# that exposes the eight mandated tools minus mem_judge -- never mem_ghost.
+MCP_DRIFT_TABLE_FIXTURE="$TEST_HOME/mcp-drift-table-fixture"
+copy_lint_fixture "$MCP_DRIFT_TABLE_FIXTURE"
+sed -e '/^tool  unknown  none  mcp__engram__mem_judge/d' \
+  -e '$a\
+tool  unknown  none  mcp__engram__mem_ghost  read  no' \
+  "$REPO_ROOT/tools/hook-gates.txt" > "$MCP_DRIFT_TABLE_FIXTURE/tools/hook-gates.txt.tmp"
+mv "$MCP_DRIFT_TABLE_FIXTURE/tools/hook-gates.txt.tmp" "$MCP_DRIFT_TABLE_FIXTURE/tools/hook-gates.txt"
+if grep -q 'mcp__engram__mem_judge' "$MCP_DRIFT_TABLE_FIXTURE/tools/hook-gates.txt" ||
+   ! grep -q 'mcp__engram__mem_ghost' "$MCP_DRIFT_TABLE_FIXTURE/tools/hook-gates.txt"; then
+  echo "FAIL: the drift-fixture table mutation did not remove mem_judge and add mem_ghost"; fail=$((fail + 1))
+else
+  MCP_DRIFT_TABLE_HOME="$TEST_HOME/mcp-drift-table-home/.codex"
+  mcp_drift_config_home "$MCP_DRIFT_TABLE_HOME" "
+[mcp_servers.engram]
+command = \"$MCP_DRIFT_FIXTURE_SERVER\"
+args = [\"mem_save\", \"mem_search\", \"mem_context\", \"mem_session_summary\", \"mem_get_observation\", \"mem_save_prompt\", \"mem_current_project\", \"mem_update\", \"mem_judge\"]
+"
+  MCP_DRIFT_TABLE_OUTPUT="$(run_mcp_drift_check "$MCP_DRIFT_TABLE_FIXTURE" "$MCP_DRIFT_TABLE_HOME" 5)"
+  assert_equals "a live protocol-mandated tool missing from the table names the exact row to add" \
+    "1" "$(printf '%s\n' "$MCP_DRIFT_TABLE_OUTPUT" | \
+      grep -Fxc 'FAIL: engram MCP protocol-mandated tools present in tools/hook-gates.txt — expected none, got mcp__engram__mem_judge' || true)"
+  assert_equals "a table row the live server no longer exposes is named stale" \
+    "1" "$(printf '%s\n' "$MCP_DRIFT_TABLE_OUTPUT" | \
+      grep -Fxc 'FAIL: engram MCP table rows all match a live tool — expected none, got mcp__engram__mem_ghost' || true)"
+fi
+
+# (d): an absent server -- no executable at the configured command -- takes
+# the named skip lane rather than ever being tallied as a pass.
+MCP_DRIFT_ABSENT_HOME="$TEST_HOME/mcp-drift-absent-home/.codex"
+mcp_drift_config_home "$MCP_DRIFT_ABSENT_HOME" '
+[mcp_servers.engram]
+command = "/nonexistent/oso-mcp-drift-fixture"
+'
+MCP_DRIFT_ABSENT_OUTPUT="$(run_mcp_drift_check "$REPO_ROOT" "$MCP_DRIFT_ABSENT_HOME" 3)"
+assert_equals "a server with no executable at its configured command skips rather than tallying a pass" \
+  "complete" "$(
+    if printf '%s\n' "$MCP_DRIFT_ABSENT_OUTPUT" | \
+        grep -Fxq 'skip: engram MCP tool drift — /nonexistent/oso-mcp-drift-fixture is not executable, so the live tool list could not be read' &&
+       ! printf '%s\n' "$MCP_DRIFT_ABSENT_OUTPUT" | grep -Fq 'engram MCP protocol-mandated tools' &&
+       ! printf '%s\n' "$MCP_DRIFT_ABSENT_OUTPUT" | grep -Fq 'engram MCP table rows'; then
+      printf complete
+    else
+      printf incomplete
+    fi
+  )"
+
+# A remote/URL-based server (context7's real shape) has no command this check
+# spawns and takes its own named skip lane instead of a guess at that transport.
+MCP_DRIFT_URL_HOME="$TEST_HOME/mcp-drift-url-home/.codex"
+mcp_drift_config_home "$MCP_DRIFT_URL_HOME" '
+[mcp_servers.context7]
+url = "https://mcp.context7.com/mcp"
+'
+MCP_DRIFT_URL_OUTPUT="$(run_mcp_drift_check "$REPO_ROOT" "$MCP_DRIFT_URL_HOME" 3)"
+assert_equals "a remote url-based server skips with its own named reason" 1 \
+  "$(printf '%s\n' "$MCP_DRIFT_URL_OUTPUT" | \
+    grep -Fc 'skip: context7 MCP tool drift — no local command in' || true)"
+
+# (e): a server that never answers ends the check with a verdict inside the
+# configured bound rather than hanging bootstrap/verify-codex.sh.
+MCP_DRIFT_HANG_HOME="$TEST_HOME/mcp-drift-hang-home/.codex"
+mcp_drift_config_home "$MCP_DRIFT_HANG_HOME" "
+[mcp_servers.engram]
+command = \"$MCP_DRIFT_HANGING_SERVER\"
+"
+MCP_DRIFT_HANG_START="$(date +%s)"
+MCP_DRIFT_HANG_OUTPUT="$(run_mcp_drift_check "$REPO_ROOT" "$MCP_DRIFT_HANG_HOME" 2)"
+MCP_DRIFT_HANG_ELAPSED=$(($(date +%s) - MCP_DRIFT_HANG_START))
+assert_equals "a server that never answers tools/list skips within its bound rather than hanging" \
+  "1" "$(printf '%s\n' "$MCP_DRIFT_HANG_OUTPUT" | \
+    grep -Fxc 'skip: engram MCP tool drift — tools/list did not answer within 2s, so drift could not be checked' || true)"
+assert_equals "the bounded MCP drift check ends well inside a generous multiple of its own bound" \
+  "bounded" "$([ "$MCP_DRIFT_HANG_ELAPSED" -le 30 ] && printf bounded || printf "unbounded:${MCP_DRIFT_HANG_ELAPSED}s")"
+if pgrep -f "$MCP_DRIFT_HANGING_SERVER" >/dev/null 2>&1; then
+  echo "FAIL: the hanging MCP fixture server outlived the bounded check"; fail=$((fail + 1))
+else
+  echo "ok: the hanging MCP fixture server does not outlive the bounded check"; pass=$((pass + 1))
+fi
+
+# The static half (step 0): agreement between the hardcoded mandated list and
+# the table's own mandated column, needing no server and no config.toml at
+# all -- this is the half CI can run. Both mismatch directions, driven with
+# no CODEX_HOME/config.toml present whatsoever.
+MCP_DRIFT_AGREEMENT_FIXTURE="$TEST_HOME/mcp-drift-agreement-fixture"
+copy_lint_fixture "$MCP_DRIFT_AGREEMENT_FIXTURE"
+sed -e '/^tool  unknown  none  mcp__engram__mem_search /d' \
+  -e '$a\
+tool  unknown  none  mcp__engram__mem_stats  read  yes' \
+  "$REPO_ROOT/tools/hook-gates.txt" > "$MCP_DRIFT_AGREEMENT_FIXTURE/tools/hook-gates.txt.tmp"
+mv "$MCP_DRIFT_AGREEMENT_FIXTURE/tools/hook-gates.txt.tmp" "$MCP_DRIFT_AGREEMENT_FIXTURE/tools/hook-gates.txt"
+if grep -q 'mcp__engram__mem_search  ' "$MCP_DRIFT_AGREEMENT_FIXTURE/tools/hook-gates.txt" ||
+   ! grep -q 'mcp__engram__mem_stats' "$MCP_DRIFT_AGREEMENT_FIXTURE/tools/hook-gates.txt"; then
+  echo "FAIL: the agreement-fixture table mutation did not remove mem_search and add mem_stats"; fail=$((fail + 1))
+else
+  MCP_DRIFT_NO_CONFIG_HOME="$TEST_HOME/mcp-drift-no-config-home"
+  MCP_DRIFT_AGREEMENT_OUTPUT="$(
+    HOME="$MCP_DRIFT_NO_CONFIG_HOME" CODEX_HOME="$MCP_DRIFT_NO_CONFIG_HOME/.codex" \
+      OSO_VERIFY_SKIP_SMOKE=1 bash "$MCP_DRIFT_AGREEMENT_FIXTURE/bootstrap/verify-codex.sh" 2>&1 || true
+  )"
+  assert_equals "a hardcoded mandated tool with no yes row in the table fails with no config.toml or server present" \
+    "1" "$(printf '%s\n' "$MCP_DRIFT_AGREEMENT_OUTPUT" | \
+      grep -Fc 'mcp__engram__mem_search(hardcoded-not-a-yes-row)' || true)"
+  assert_equals "a yes row with no hardcoded counterpart fails with no config.toml or server present" \
+    "1" "$(printf '%s\n' "$MCP_DRIFT_AGREEMENT_OUTPUT" | \
+      grep -Fc 'mcp__engram__mem_stats(yes-row-not-hardcoded)' || true)"
+fi
 
 TOML_REMOVE_TABLE_INPUT="$TEST_HOME/toml-remove-table-input.toml"
 TOML_REMOVE_TABLE_ACTUAL="$TEST_HOME/toml-remove-table-actual.toml"
