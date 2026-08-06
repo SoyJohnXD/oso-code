@@ -2,7 +2,7 @@
 # UserPromptSubmit: bind oso-code to Codex's native Plan Mode transition. The
 # native approval prompt is consumed only when this repository has a matching
 # pending document; everywhere else it remains ordinary Codex conversation.
-# An ordinary Plan Mode reply invalidates a same-session pending document.
+# An ordinary Plan Mode reply amends a same-session pending document in place.
 set -euo pipefail
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -11,6 +11,7 @@ HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APPROVAL_PROMPT='Implement the plan.'
 CANCEL_TOKEN='CANCEL OSO PLAN'
 PLAN_INVOCATION='$oso-code:plan'
+FEEDBACK_AMENDMENT_LABEL='plan-mode-feedback'
 
 finish_hook() {
   printf '{}\n'
@@ -55,10 +56,14 @@ case "$raw_prompt" in
 esac
 
 # Returning to Plan Mode with an ordinary message is a request to change or
-# discuss the plan. If this exact session has a pending document, invalidate it
-# atomically before the new turn so read tools and request_user_input are not
-# trapped behind the old execution gate. Everywhere else ordinary text remains
-# globally invisible.
+# discuss the plan. If this exact session has a pending document, amend it in
+# place atomically before the new turn rather than destroying it: the operator
+# asked for a change to what they already read, not to re-read it from
+# scratch. The digest stays bound to the presented snapshot untouched, so
+# approve-plan's own content-parity check (plugin/bin/oso-state) still refuses
+# to approve until a fresh capture reconciles current.md with what was
+# presented — approval keeps binding the exact document, never the request
+# that changed it. Everywhere else ordinary text remains globally invisible.
 if [ "$control_action" = ordinary ]; then
   [ "$native_mode" = plan ] || finish_hook
   [ -n "$session_id" ] && [ "$session_id" = "$raw_session_id" ] && [ -d "$cwd" ] ||
@@ -75,17 +80,19 @@ if [ "$control_action" = ordinary ]; then
   [ "$state_session" = "$session_id" ] && [ "$state_approval" = pending ] &&
     [[ "$state_digest" =~ ^[0-9a-f]{64}$ ]] || finish_hook
   state_bin="${OSO_STATE_BIN:-$HOOK_DIR/../bin/oso-state}"
+  prompt_text="$(json_field "$payload" prompt)"
   # The block text names the outcome, never the cause, so a discarded stderr
-  # leaves the audit with no way to tell a lost compare-and-set from a state
-  # binary that never ran at all.
-  if ! cancel_error="$( (cd "$cwd" && "$state_bin" --session "$session_id" \
-    cancel-plan "$state_digest") 2>&1 >/dev/null )"; then
-    log_event plan-approval-cancel-blocked "$session_id" "$cancel_error" || true
+  # leaves the audit with no way to tell a lost amendment from a state binary
+  # that never ran at all.
+  if ! amend_error="$(printf '%s' "$prompt_text" |
+    (cd "$cwd" && "$state_bin" --session "$session_id" \
+      amend-plan "$FEEDBACK_AMENDMENT_LABEL") 2>&1 >/dev/null)"; then
+    log_event plan-approval-amend-blocked "$session_id" "$amend_error" || true
     control_block \
-      'oso-code: the pending document changed while returning to Plan Mode; retry the planning message.'
+      'oso-code: the pending document could not be amended; retry the planning message.'
   fi
   printf '%s\n' \
-    '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"oso-code: this Plan Mode turn invalidated the previously pending document. Replan as requested, then present the complete updated plan with a fresh internal approval marker before asking for approval again."}}'
+    '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"oso-code: this Plan Mode turn amended the pending document instead of discarding it. Present the amendment — what changed and why — not the complete plan, then re-emit the internal approval marker so a fresh capture binds the complete updated document before approval can succeed."}}'
   exit 0
 fi
 

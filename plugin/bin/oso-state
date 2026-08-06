@@ -606,6 +606,13 @@ case "$action" in
     plan_regular_file "$plan_current_file" ||
       plan_fail "current plan is missing or unsafe"
     if plan_regular_file "$plan_presented_file"; then
+      # An in-place amendment (amend-plan, pending branch) only ever rewrites
+      # current.md, never the immutable presented snapshot — so this is the one
+      # place a revision the operator has not re-presented becomes visible.
+      # The digest alone cannot catch it: nothing about approving THIS digest
+      # changed, only what current.md now holds under it.
+      cmp -s "$plan_current_file" "$plan_presented_file" ||
+        plan_fail "the pending plan changed since it was presented; capture it again before approving"
       if [ -e "$plan_approved_file" ]; then
         plan_regular_file "$plan_approved_file" ||
           plan_fail "approved snapshot is not a private regular file"
@@ -659,51 +666,66 @@ case "$action" in
     ;;
   amend-plan)
     [ $# -eq 1 ] || usage
-    amendment_slice="$1"
-    plan_slice_valid "$amendment_slice" ||
+    amendment_label="$1"
+    plan_slice_valid "$amendment_label" ||
       plan_fail "amend-plan requires a safe slice id"
     mkdir -p "$OSO_STATE_DIR"
     amendment_input="$(mktemp "${OSO_STATE_DIR}/.plan-amendment.XXXXXX")"
     cat > "$amendment_input"
     [ -s "$amendment_input" ] || {
       rm -f "$amendment_input"
-      plan_fail "amend-plan requires a non-empty slice document on stdin"
+      plan_fail "amend-plan requires a non-empty document on stdin"
     }
     acquire_lock
     [ -f "$state_file" ] && [ -r "$state_file" ] && [ ! -L "$state_file" ] || {
       rm -f "$amendment_input"
-      plan_fail "no readable approved plan for session ${session_id}"
+      plan_fail "no readable plan for session ${session_id}"
     }
     [ "$(state_value "$state_file" plan_approval_session)" = "$session_id" ] || {
       rm -f "$amendment_input"
-      plan_fail "approved plan belongs to another session"
+      plan_fail "the plan belongs to another session"
     }
     [ "$(state_value "$state_file" mode)" = plan ] || {
       rm -f "$amendment_input"
       plan_fail "amendments require active plan execution state"
     }
-    [ "$(state_value "$state_file" plan_approval)" = approved ] || {
-      rm -f "$amendment_input"
-      plan_fail "amendments require an approved plan"
-    }
+    # Two amendable states, one verb: an approved plan takes an in-scope hot
+    # slice against its immutable approved-<digest>.md, unchanged from before
+    # this branch existed; a still-pending plan takes operator feedback
+    # against its presented-<digest>.md instead — the digest itself never
+    # moves for either, so approve-plan's own content-parity check (never this
+    # verb) is what stops a pending amendment from being approved unread.
+    amendment_approval="$(state_value "$state_file" plan_approval)"
+    case "$amendment_approval" in
+      approved) amendment_heading='Execution amendment' amendment_classification=in-scope ;;
+      pending) amendment_heading='Plan Mode feedback' amendment_classification=feedback ;;
+      *)
+        rm -f "$amendment_input"
+        plan_fail "amendments require a pending or approved plan" ;;
+    esac
     approval_digest="$(state_value "$state_file" plan_approval_digest)"
     plan_digest_valid "$approval_digest" || {
       rm -f "$amendment_input"
-      plan_fail "approved plan has no valid digest"
+      plan_fail "the plan has no valid digest"
     }
     plan_paths "$approval_digest"
     ensure_plan_dir
-    [ "$(state_value "$state_file" plan_snapshot_file)" = "$plan_approved_file" ] || {
+    if [ "$amendment_approval" = approved ]; then
+      amendment_snapshot_file="$plan_approved_file"
+    else
+      amendment_snapshot_file="$plan_presented_file"
+    fi
+    [ "$(state_value "$state_file" plan_snapshot_file)" = "$amendment_snapshot_file" ] || {
       rm -f "$amendment_input"
-      plan_fail "approved state does not name its immutable snapshot"
+      plan_fail "plan state does not name its expected immutable snapshot"
     }
     [ "$(state_value "$state_file" plan_current_file)" = "$plan_current_file" ] || {
       rm -f "$amendment_input"
-      plan_fail "approved state does not name its operational plan"
+      plan_fail "plan state does not name its operational plan"
     }
-    plan_regular_file "$plan_approved_file" || {
+    plan_regular_file "$amendment_snapshot_file" || {
       rm -f "$amendment_input"
-      plan_fail "approved snapshot is missing or unsafe"
+      plan_fail "the immutable snapshot is missing or unsafe"
     }
     plan_regular_file "$plan_current_file" || {
       rm -f "$amendment_input"
@@ -717,16 +739,16 @@ case "$action" in
     next_revision=$((plan_revision + 1))
     amendment_tmp="$(mktemp "${plan_dir}/.amended.XXXXXX")"
     cat "$plan_current_file" > "$amendment_tmp"
-    printf '\n\n## Execution amendment — %s\n\n' "$amendment_slice" >> "$amendment_tmp"
-    printf -- '- Added-at: %s\n- Requested-by: operator\n- Classification: in-scope\n\n' \
-      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$amendment_tmp"
+    printf '\n\n## %s — %s\n\n' "$amendment_heading" "$amendment_label" >> "$amendment_tmp"
+    printf -- '- Added-at: %s\n- Requested-by: operator\n- Classification: %s\n\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$amendment_classification" >> "$amendment_tmp"
     cat "$amendment_input" >> "$amendment_tmp"
     printf '\n' >> "$amendment_tmp"
     chmod 600 "$amendment_tmp"
     mv "$amendment_tmp" "$plan_current_file"
     rm -f "$amendment_input"
     publish_state_pairs "plan_revision=${next_revision}" verify_green=false
-    log_event plan-amended "$session_id" "$amendment_slice"
+    log_event plan-amended "$session_id" "$amendment_label"
     ;;
   handoff)
     subaction="${1:-}"

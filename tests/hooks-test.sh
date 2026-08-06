@@ -1222,17 +1222,44 @@ assert_equals "pending plan artifacts are owner-only" 0600 \
 assert_equals "the hidden marker is absent from both persisted plan artifacts" \
   0 "$(grep -l 'oso-plan-approval:' "$first_presented_file" "$first_current_file" 2>/dev/null | wc -l | tr -d ' ')"
 pending_current_before_amendment="$(cat "$first_current_file")"
-if printf '%s' '### Premature slice' | oso-state --session "$SESSION" amend-plan premature >/dev/null 2>&1; then
-  echo "FAIL: amend-plan accepted a slice before native approval"; fail=$((fail + 1))
-else
-  echo "ok: amend-plan rejects a slice before native approval"; pass=$((pass + 1))
-fi
-assert_equals "a rejected premature amendment leaves current.md unchanged" \
-  "$pending_current_before_amendment" "$(cat "$first_current_file")"
 
-# A normal non-plan reply does not silently approve or cancel. A Plan Mode reply
-# from the same pending session means the operator requested replanning, so the
-# hook atomically invalidates that document before Codex handles the feedback.
+# D18's second half: a pending plan is amendable in place, directly through
+# oso-state, rather than only after approval. Neither the presented snapshot
+# nor its digest moves for a pending amendment.
+if printf '%s' '### Direct feedback' | oso-state --session "$SESSION" amend-plan direct-feedback >/dev/null 2>&1; then
+  echo "ok: amend-plan accepts a direct amendment while a plan is pending"; pass=$((pass + 1))
+else
+  echo "FAIL: amend-plan rejected a pending amendment"; fail=$((fail + 1))
+fi
+assert_equals "a direct pending amendment leaves approval pending" pending \
+  "$(oso-state --session "$SESSION" get plan_approval)"
+assert_equals "a direct pending amendment increments the operational plan revision" \
+  1 "$(oso-state --session "$SESSION" get plan_revision)"
+case "$(cat "$first_current_file")" in
+  *'## Plan Mode feedback — direct-feedback'*'Requested-by: operator'*'### Direct feedback'*)
+    echo "ok: the operational plan records the pending amendment"; pass=$((pass + 1)) ;;
+  *)
+    echo "FAIL: the operational plan does not contain the pending amendment"; fail=$((fail + 1)) ;;
+esac
+assert_equals "a pending amendment never mutates the immutable presented snapshot" \
+  "$first_plan_document" "$(cat "$first_presented_file" 2>/dev/null || true)"
+
+# Case (c), made strict: the digest never moved, but the document it named has,
+# so approving the OLD digest must fail — the proof that fluidity did not cost
+# the property that approval binds the exact document the operator read.
+if oso-state --session "$SESSION" approve-plan "$first_plan_digest" >/dev/null 2>&1; then
+  echo "FAIL: approve-plan approved a document amended since it was presented"; fail=$((fail + 1))
+else
+  echo "ok: approve-plan rejects the presented digest once the pending document is amended"; pass=$((pass + 1))
+fi
+assert_equals "a rejected stale approval leaves approval pending" pending \
+  "$(oso-state --session "$SESSION" get plan_approval)"
+assert_equals "a rejected stale approval does not touch the immutable presented snapshot" \
+  "$first_plan_document" "$(cat "$first_presented_file" 2>/dev/null || true)"
+
+# A normal non-plan reply does not silently approve or cancel. A Plan Mode
+# reply from the same pending session means the operator requested a change,
+# and the hook now routes that through amend-plan instead of cancel-plan.
 run_hook "$PLAN_PROMPT_HOOK" \
   "$(codex_prompt_input default "$SESSION" 'please explain one risk first' "$CODEX_PROMPT_DEFAULT_TRANSCRIPT")"
 assert_after_hook "ordinary non-plan feedback remains ordinary JSON success" \
@@ -1240,25 +1267,45 @@ assert_after_hook "ordinary non-plan feedback remains ordinary JSON success" \
 assert_equals "ordinary non-plan feedback leaves approval pending" pending \
   "$(oso-state --session "$SESSION" get plan_approval)"
 
+session_before_ordinary_amendment="$(oso-state --session "$SESSION" get plan_approval_session)"
 run_hook "$PLAN_PROMPT_HOOK" \
   "$(codex_prompt_input default "$SESSION" 'revise the second slice' "$CODEX_PROMPT_PLAN_TRANSCRIPT")"
-assert_after_hook "real Codex 0.146 Plan Mode feedback invalidates the pending document" \
+assert_after_hook "real Codex 0.146 Plan Mode feedback amends the pending document" \
   hook_returned_prompt_context
-assert_equals "Plan Mode feedback removes the stale approval state" \
-  absent "$([ ! -e "$REPO_STATE" ] && printf absent || printf present)"
-assert_equals "feedback invalidation removes the unapproved presented snapshot" \
-  absent "$([ ! -e "$first_presented_file" ] && printf absent || printf present)"
-assert_equals "feedback invalidation removes the abandoned operational copy" \
-  absent "$([ ! -e "$first_current_file" ] && printf absent || printf present)"
+case "$hook_stdout" in
+  *'Present the amendment'*) echo "ok: Case (e) — the guidance asks for the amendment"; pass=$((pass + 1)) ;;
+  *) echo "FAIL: Case (e) — the guidance does not name the amendment — got: $hook_stdout"; fail=$((fail + 1)) ;;
+esac
+case "$hook_stdout" in
+  *'not the complete plan'*) echo "ok: Case (e) — the guidance excuses the complete document"; pass=$((pass + 1)) ;;
+  *) echo "FAIL: Case (e) — the guidance does not excuse the complete document"; fail=$((fail + 1)) ;;
+esac
+case "$hook_stdout" in
+  *'invalidated'*) echo "FAIL: the guidance still speaks of invalidating the pending document"; fail=$((fail + 1)) ;;
+  *) echo "ok: the guidance no longer speaks of invalidating the pending document"; pass=$((pass + 1)) ;;
+esac
+assert_equals "Case (a) — an ordinary Plan Mode turn leaves plan_approval=pending standing" pending \
+  "$(oso-state --session "$SESSION" get plan_approval)"
+assert_equals "Case (a) — an ordinary Plan Mode turn increments plan_revision" \
+  2 "$(oso-state --session "$SESSION" get plan_revision)"
+assert_equals "Case (b) — plan_approval_session survives the amendment unchanged" \
+  "$session_before_ordinary_amendment" "$(oso-state --session "$SESSION" get plan_approval_session)"
+assert_equals "an ordinary Plan Mode turn does not clear the pending state" \
+  present "$([ -e "$REPO_STATE" ] && printf present || printf absent)"
+assert_equals "an ordinary Plan Mode turn preserves the unapproved presented snapshot" \
+  present "$([ -e "$first_presented_file" ] && printf present || printf absent)"
+assert_equals "an ordinary Plan Mode turn preserves the operational copy" \
+  present "$([ -e "$first_current_file" ] && printf present || printf absent)"
 run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input Bash)" 0 '' \
   --allow "$UNKNOWN_TOOL_ALLOWLIST"
-assert_after_hook "replanning feedback reopens local read-only review calls" \
-  [ -z "$hook_stdout" ]
+assert_after_hook "a still-pending amendment keeps local tools gated exactly as a fresh pending would" \
+  hook_returned_deny
 
-# Explicit cancellation is an abandonment rail, not a second approval prompt.
-# It works before or after the UI mode toggle, but only for the pending session.
+# Case (d): explicit cancellation stays exactly as it was — an abandonment
+# rail, not a second approval prompt. It works before or after the UI mode
+# toggle, but only for the pending session.
 run_hook "$PLAN_STOP_HOOK" "$(codex_stop_input plan "$SESSION" "$first_plan")"
-assert_after_hook "the plan can be re-presented after feedback invalidation" \
+assert_after_hook "the plan can be re-presented after an amendment" \
   [ "$hook_stdout" = '{}' ]
 cancel_pending_snapshot="$(approval_state_snapshot)"
 run_hook "$PLAN_PROMPT_HOOK" \

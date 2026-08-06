@@ -201,6 +201,7 @@ Three properties of the amendment log these files replace are facts to carry for
 - [0109](decisions/0109-a-judge-that-runs-project-checks-cannot-stay-read-only.md) — A judge that runs project checks cannot stay read-only
 - [0110](decisions/0110-plan-approval-state-migrates-inside-a-transaction-that-tells-the-truth.md) — Plan-approval state migrates inside a transaction that tells the truth
 - [0111](decisions/0111-a-deny-hands-over-its-remedy-executably-or-says-it-has-none.md) — A deny hands over its remedy, executably, or says it has none
+- [0112](decisions/0112-feedback-amends-a-pending-plan-in-place.md) — Feedback amends a pending plan in place, never destroying it
 
 ## Foundational decisions
 
