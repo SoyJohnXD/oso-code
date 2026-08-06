@@ -79,7 +79,7 @@ function has_recovery_route(path,    line, found) {
   close(path)
   return found
 }
-function parse(    line, fields, count, kind, i, id, expected) {
+function parse(    line, fields, count, kind, i, id, expected, tool_class, tool_mandated) {
   while ((getline line < table) > 0) {
     sub(/^[[:space:]]+/, "", line)
     if (line == "" || line ~ /^#/) continue

@@ -40,6 +40,7 @@ initialize_paths() {
 }
 
 parse_args() {
+  local arg
   ASSUME_YES=false
   LIST_ONLY=false
   BACKUP_NAME=""
@@ -97,6 +98,7 @@ validate_backup_dir() {
 }
 
 confirm_restore() {
+  local answer
   [ "$ASSUME_YES" = true ] && return 0
   info "this overwrites the current Codex install state with the snapshot at $RESTORE_TARGET"
   printf '[oso-code] proceed? [y/N] '

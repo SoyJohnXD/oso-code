@@ -83,12 +83,23 @@ drop_state_file() {
 # says the orphan is this session's own. `oso-state` can set a key but never
 # delete one, so a pending is cleared the same way `cancel-plan` already clears
 # one: the whole file, not a single line inside it.
+#
+# That file may be the ownership sweep's own miss, not its catch: `state_armed_by`
+# above stops at the first file whose `session` matches, so a repository this
+# session also armed under that same shared marker can sit unvisited while this
+# loop is the only thing that ever reaches it. Its worktree directory is named
+# by `session`, not by the id this function was called with, and repo_path to
+# prune it in lives nowhere but the file about to disappear — so the teardown
+# has to run on what the file itself still says, right before drop_state_file
+# takes the last handle on it with it.
 clear_orphaned_pending_of() {
-  local real_session_id="$1" state_file
+  local real_session_id="$1" state_file owner_session
   [ -n "$real_session_id" ] || return 0
   for state_file in "$OSO_STATE_DIR"/*.state; do
     [ -f "$state_file" ] || continue
     [ "$(state_value "$state_file" plan_approval_session)" = "$real_session_id" ] || continue
+    owner_session="$(sanitize_session "$(state_value "$state_file" session)")"
+    remove_worktrees_of "$owner_session" "$state_file"
     drop_state_file "$state_file"
   done
 }

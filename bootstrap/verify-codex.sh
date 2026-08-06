@@ -105,54 +105,46 @@ codex_binary_path() {
 # ADR-0106: every other check here asserts the harness against its own prose;
 # this one reads the installed binary's own rejection/acceptance text, because
 # ADR-0105 found six sites instructing a spelling the host had already refused
-# and nothing in the repo could have caught it without this.
-host_contract_status() {
-  local resolved installed_version
-  local fork_context_rejection='fork_context is not supported in MultiAgentV2; use fork_turns instead'
-  local fork_turns_contract='fork_turns must be `none`, `all`, or a positive integer string'
+# and nothing in the repo could have caught it without this. ADR-0121 checks a
+# second contract (the `default_permissions` override) the same way, so the
+# shape — resolve the binary, gate on the version window, grep both literals —
+# is parameterized here rather than carried twice: which two literals prove
+# the contract is the only thing that differs between callers.
+binary_contract_status() {
+  local literal_a="$1" literal_b="$2" resolved installed_version
   resolved="$(codex_binary_path)" || { printf 'codex-not-on-path'; return; }
   installed_version="$(codex_version_status)"
   if [ "$installed_version" != "$SUPPORTED_CODEX_VERSION" ]; then
-    # The two literals below were read out of codex-cli 0.146.0; a different
-    # version may have moved or reworded them, so a mismatch outside that
-    # window is unconfirmed, not broken, and grepping would misreport one as
-    # the other.
+    # Every literal pair passed in here was read out of codex-cli 0.146.0; a
+    # different version may have moved or reworded them, so a mismatch outside
+    # that window is unconfirmed, not broken, and grepping would misreport one
+    # as the other.
     printf 'unverified:%s' "$installed_version"
     return
   fi
-  if grep -aq "$fork_context_rejection" "$resolved" 2>/dev/null &&
-     grep -aq "$fork_turns_contract" "$resolved" 2>/dev/null; then
+  if grep -aq "$literal_a" "$resolved" 2>/dev/null &&
+     grep -aq "$literal_b" "$resolved" 2>/dev/null; then
     printf conformant
   else
     printf nonconformant
   fi
 }
 
+host_contract_status() {
+  binary_contract_status \
+    'fork_context is not supported in MultiAgentV2; use fork_turns instead' \
+    'fork_turns must be `none`, `all`, or a positive integer string'
+}
+
 # ADR-0121: `-P`/`--permission-profile` exists only on `codex sandbox`, a
 # one-shot command runner never used to launch a real session; `codex` and
 # `codex exec` carry no dedicated profile flag, so the durable per-invocation
 # selector the installed profile relies on is `-c default_permissions=<name>`,
-# the generic override the binary itself resolves and validates. This reads
-# the installed binary's own two literals proving that override is real
-# rather than an inert dotted path, the same discipline ADR-0106 established.
+# the generic override the binary itself resolves and validates.
 permission_override_contract_status() {
-  local resolved installed_version
-  local undefined_profile_literal='default_permissions refers to undefined profile `'
-  local dual_override_literal='`permission_profile` and `default_permissions` overrides cannot both be set'
-  resolved="$(codex_binary_path)" || { printf 'codex-not-on-path'; return; }
-  installed_version="$(codex_version_status)"
-  if [ "$installed_version" != "$SUPPORTED_CODEX_VERSION" ]; then
-    # Read out of codex-cli 0.146.0, same as host_contract_status's own pair;
-    # a mismatch outside that window is unconfirmed, not broken.
-    printf 'unverified:%s' "$installed_version"
-    return
-  fi
-  if grep -aq "$undefined_profile_literal" "$resolved" 2>/dev/null &&
-     grep -aq "$dual_override_literal" "$resolved" 2>/dev/null; then
-    printf conformant
-  else
-    printf nonconformant
-  fi
+  binary_contract_status \
+    'default_permissions refers to undefined profile `' \
+    '`permission_profile` and `default_permissions` overrides cannot both be set'
 }
 
 plugin_install_status() {
@@ -1060,45 +1052,40 @@ run_integrator_fixture() {
     ! printf '%s\n' "$smoke_worktrees" | grep -F "$SMOKE_WORKTREE" >/dev/null 2>&1
 }
 
-run_local_checks() {
-  local host_contract_result permission_override_result
-  printf 'local checks:\n'
-  check "Codex CLI version" "$SUPPORTED_CODEX_VERSION" "$(codex_version_status)"
-  host_contract_result="$(host_contract_status)"
-  case "$host_contract_result" in
+# Both binary_contract_status callers report through the same four-arm shape
+# (skip on an absent CLI, `unverified` outside the read window, pass, fail) —
+# only the label the operator reads and the exact check name differ, so this
+# is where the report is written once rather than eye-verified as two copies.
+report_binary_contract_status() {
+  local short_label="$1" full_check_name="$2" result="$3"
+  case "$result" in
     codex-not-on-path)
-      printf 'skip: Codex host contract — codex is not on PATH, so the host contract could not be asserted\n'
+      printf 'skip: %s — codex is not on PATH, so the host contract could not be asserted\n' "$short_label"
       ;;
     unverified:*)
-      printf 'unverified: Codex host contract — claims were verified against Codex %s only; installed %s falls outside that window, so pass/fail is not asserted here\n' \
-        "$SUPPORTED_CODEX_VERSION" "${host_contract_result#unverified:}"
+      printf 'unverified: %s — claims were verified against Codex %s only; installed %s falls outside that window, so pass/fail is not asserted here\n' \
+        "$short_label" "$SUPPORTED_CODEX_VERSION" "${result#unverified:}"
       ;;
     conformant)
-      check "Codex binary matches the fork_turns host contract" conformant conformant
+      check "$full_check_name" conformant conformant
       ;;
     *)
       # Fails the report so drift is visible, but never blocks bootstrap/install-codex.sh:
       # an operator already past SUPPORTED_CODEX_VERSION must still be able to
       # install — only this diagnostic misses, never the install path itself.
-      check "Codex binary matches the fork_turns host contract" conformant "$host_contract_result"
+      check "$full_check_name" conformant "$result"
       ;;
   esac
-  permission_override_result="$(permission_override_contract_status)"
-  case "$permission_override_result" in
-    codex-not-on-path)
-      printf 'skip: Codex permission-override contract — codex is not on PATH, so the host contract could not be asserted\n'
-      ;;
-    unverified:*)
-      printf 'unverified: Codex permission-override contract — claims were verified against Codex %s only; installed %s falls outside that window, so pass/fail is not asserted here\n' \
-        "$SUPPORTED_CODEX_VERSION" "${permission_override_result#unverified:}"
-      ;;
-    conformant)
-      check "Codex binary matches the default_permissions override contract" conformant conformant
-      ;;
-    *)
-      check "Codex binary matches the default_permissions override contract" conformant "$permission_override_result"
-      ;;
-  esac
+}
+
+run_local_checks() {
+  printf 'local checks:\n'
+  check "Codex CLI version" "$SUPPORTED_CODEX_VERSION" "$(codex_version_status)"
+  report_binary_contract_status "Codex host contract" \
+    "Codex binary matches the fork_turns host contract" "$(host_contract_status)"
+  report_binary_contract_status "Codex permission-override contract" \
+    "Codex binary matches the default_permissions override contract" \
+    "$(permission_override_contract_status)"
   check "oso-code plugin installed" installed "$(plugin_install_status)"
   check "published runtime bytes" verified "$(installed_trust_status)"
   check "runtime entrypoints executable" executable "$(runtime_executable_status)"

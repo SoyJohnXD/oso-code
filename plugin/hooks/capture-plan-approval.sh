@@ -14,19 +14,15 @@ finish_hook() {
   exit 0
 }
 
-# Every call here is Stop: the client's own hook name is fixed for the whole
-# file, so it is one literal reused for the audit line rather than a per-call
-# guess.
 stop_block() {
   local reason="$1" event="$2" session="$3" detail="${4:-}"
-  local hook_event=Stop
   if [ "${stop_hook_active:-false}" = true ]; then
     printf '{"continue":false,"stopReason":"%s","systemMessage":"%s"}\n' \
       "$(json_escape "$reason")" "$(json_escape "$reason")"
   else
     printf '{"decision":"block","reason":"%s"}\n' "$(json_escape "$reason")"
   fi
-  log_event "$event" "$session" "$detail" "${0##*/}" "$hook_event" || true
+  log_event "$event" "$session" "$detail" "${0##*/}" Stop || true
   exit 0
 }
 

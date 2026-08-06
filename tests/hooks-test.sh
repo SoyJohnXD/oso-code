@@ -504,26 +504,29 @@ else
   fi
 fi
 
-# S14 closes on linter rules 10–12 rather than a clean-tree run alone. Each
-# mutation removes exactly the relation that rule owns and requires that rule's
-# own diagnostic, so another incidental red cannot masquerade as coverage.
+# S14 closes on three specific linter rules rather than a clean-tree run alone.
+# Each mutation removes exactly the relation that rule owns and requires that
+# rule's own diagnostic, so another incidental red cannot masquerade as
+# coverage. Cases are named after the FUNCTION each exercises rather than a
+# rule ordinal — an ordinal drifts the moment a rule is inserted above it,
+# while a function name stays self-locating.
 LINT_RECONCILIATION_FIXTURE="$TEST_HOME/lint-decision-reconciliation"
 copy_lint_fixture "$LINT_RECONCILIATION_FIXTURE"
 reconciliation_decision="$LINT_RECONCILIATION_FIXTURE/docs/decisions/0094-codex-baseline-and-minimum-version.md"
 if [ ! -f "$reconciliation_decision" ]; then
-  echo "FAIL: rule 10 mutation has no ADR-0094 fixture"; fail=$((fail + 1))
+  echo "FAIL: check_every_decision_records_where_it_landed mutation has no ADR-0094 fixture"; fail=$((fail + 1))
 else
   sed '/^Reconciled:/d' "$reconciliation_decision" > "$reconciliation_decision.tmp"
   mv "$reconciliation_decision.tmp" "$reconciliation_decision"
   if reconciliation_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
       "$LINT_RECONCILIATION_FIXTURE/plugin" "$LINT_RECONCILIATION_FIXTURE" 2>&1)"; then
-    echo "FAIL: rule 10 accepted a decision with no reconciliation record"; fail=$((fail + 1))
+    echo "FAIL: check_every_decision_records_where_it_landed accepted a decision with no reconciliation record"; fail=$((fail + 1))
   else
     case "$reconciliation_lint_report" in
       *"docs/decisions/0094-codex-baseline-and-minimum-version.md"*"carries no Reconciled:"*)
-        echo "ok: rule 10 rejects a decision with no reconciliation record"; pass=$((pass + 1)) ;;
+        echo "ok: check_every_decision_records_where_it_landed rejects a decision with no reconciliation record"; pass=$((pass + 1)) ;;
       *)
-        echo "FAIL: rule 10 mutation failed for the wrong reason — $(printf '%s' "$reconciliation_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+        echo "FAIL: check_every_decision_records_where_it_landed mutation failed for the wrong reason — $(printf '%s' "$reconciliation_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi
@@ -532,45 +535,46 @@ LINT_CITATION_FIXTURE="$TEST_HOME/lint-decision-citation"
 copy_lint_fixture "$LINT_CITATION_FIXTURE"
 citation_decision="$LINT_CITATION_FIXTURE/docs/decisions/0095-runtime-state-keyed-by-repository.md"
 if [ ! -f "$citation_decision" ]; then
-  echo "FAIL: rule 11 mutation has no ADR-0095 fixture"; fail=$((fail + 1))
+  echo "FAIL: check_decision_citations_resolve_and_name_their_citer mutation has no ADR-0095 fixture"; fail=$((fail + 1))
 else
   sed 's/plugin\/hooks\/lib\.sh, //' "$citation_decision" > "$citation_decision.tmp"
   mv "$citation_decision.tmp" "$citation_decision"
   if grep -F 'Implemented-in:' "$citation_decision" | grep -qF 'plugin/hooks/lib.sh'; then
-    echo "FAIL: rule 11 mutation did not remove its cited implementation"; fail=$((fail + 1))
+    echo "FAIL: check_decision_citations_resolve_and_name_their_citer mutation did not remove its cited implementation"; fail=$((fail + 1))
   elif citation_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
       "$LINT_CITATION_FIXTURE/plugin" "$LINT_CITATION_FIXTURE" 2>&1)"; then
-    echo "FAIL: rule 11 accepted a decision that does not name its citer"; fail=$((fail + 1))
+    echo "FAIL: check_decision_citations_resolve_and_name_their_citer accepted a decision that does not name its citer"; fail=$((fail + 1))
   else
     case "$citation_lint_report" in
       *"docs/decisions/0095-runtime-state-keyed-by-repository.md"*"cited by plugin/hooks/lib.sh"*"does not name it in Implemented-in:"*)
-        echo "ok: rule 11 rejects a decision that does not name its citer"; pass=$((pass + 1)) ;;
+        echo "ok: check_decision_citations_resolve_and_name_their_citer rejects a decision that does not name its citer"; pass=$((pass + 1)) ;;
       *)
-        echo "FAIL: rule 11 mutation failed for the wrong reason — $(printf '%s' "$citation_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+        echo "FAIL: check_decision_citations_resolve_and_name_their_citer mutation failed for the wrong reason — $(printf '%s' "$citation_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi
 
 LINT_RULE_COUNT_FIXTURE="$TEST_HOME/lint-rule-count"
 copy_lint_fixture "$LINT_RULE_COUNT_FIXTURE"
-sed 's/twenty rules/nineteen rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
+sed 's/twenty-two rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
   > "$LINT_RULE_COUNT_FIXTURE/README.md.tmp"
 mv "$LINT_RULE_COUNT_FIXTURE/README.md.tmp" "$LINT_RULE_COUNT_FIXTURE/README.md"
 if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
     "$LINT_RULE_COUNT_FIXTURE/plugin" "$LINT_RULE_COUNT_FIXTURE" 2>&1)"; then
-  echo "FAIL: rule 12 accepted stale present-tense rule-count prose"; fail=$((fail + 1))
+  echo "FAIL: check_present_tense_prose_names_the_rule_count accepted stale present-tense rule-count prose"; fail=$((fail + 1))
 else
   case "$rule_count_lint_report" in
-    *"README.md does not name the twenty rules this linter declares"*)
-      echo "ok: rule 12 rejects stale present-tense rule-count prose"; pass=$((pass + 1)) ;;
+    *"README.md does not name the twenty-two rules this linter declares"*)
+      echo "ok: check_present_tense_prose_names_the_rule_count rejects stale present-tense rule-count prose"; pass=$((pass + 1)) ;;
     *)
-      echo "FAIL: rule 12 mutation failed for the wrong reason — $(printf '%s' "$rule_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+      echo "FAIL: check_present_tense_prose_names_the_rule_count mutation failed for the wrong reason — $(printf '%s' "$rule_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
   esac
 fi
 
-# B7 (D3): rule 14 must reject a flow body that stopped pointing at the
-# milestone contract, and name THAT body — never pass on the strength of the
-# other two still carrying the reference. Strip only debug.md's sentence.
+# B7 (D3): check_milestone_reporting_contract_is_complete must reject a flow
+# body that stopped pointing at the milestone contract, and name THAT body —
+# never pass on the strength of the other two still carrying the reference.
+# Strip only debug.md's sentence.
 LINT_MILESTONE_BODY_FIXTURE="$TEST_HOME/lint-milestone-body"
 copy_lint_fixture "$LINT_MILESTONE_BODY_FIXTURE"
 milestone_body_target="$LINT_MILESTONE_BODY_FIXTURE/plugin/skills/_shared/bodies/debug.md"
@@ -588,17 +592,17 @@ else
   else
     case "$milestone_body_report" in
       *"skills/_shared/bodies/debug.md arms or launches without referencing the milestone contract"*)
-        echo "ok: rule 14 rejects debug.md by name when it stops pointing at the milestone contract"; pass=$((pass + 1)) ;;
+        echo "ok: check_milestone_reporting_contract_is_complete rejects debug.md by name when it stops pointing at the milestone contract"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: the milestone-body mutation failed for the wrong reason — $(printf '%s' "$milestone_body_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi
 
-# B7 (D3): rule 14's second half — a milestone reduced to "report the result"
-# is the exact defect this contract exists to close, so mention of the
-# "Closing" header alone must not satisfy it once its required facts (commit,
-# next) are gone.
+# B7 (D3): check_milestone_reporting_contract_is_complete's second half — a
+# milestone reduced to "report the result" is the exact defect this contract
+# exists to close, so mention of the "Closing" header alone must not satisfy
+# it once its required facts (commit, next) are gone.
 LINT_MILESTONE_FACTS_FIXTURE="$TEST_HOME/lint-milestone-facts"
 copy_lint_fixture "$LINT_MILESTONE_FACTS_FIXTURE"
 milestone_facts_target="$LINT_MILESTONE_FACTS_FIXTURE/plugin/skills/_shared/reporting.md"
@@ -614,17 +618,17 @@ else
   else
     case "$milestone_facts_report" in
       *"'Closing' milestone never names its required fact: commit"*)
-        echo "ok: rule 14 rejects a milestone reduced to report-the-result for missing its required facts"; pass=$((pass + 1)) ;;
+        echo "ok: check_milestone_reporting_contract_is_complete rejects a milestone reduced to report-the-result for missing its required facts"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: the milestone-facts mutation failed for the wrong reason — $(printf '%s' "$milestone_facts_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi
 
-# B7 (D3): rule 14's length bound — the operator asked for visibility, not
-# narration, so the contract must state a bound in prose the linter can find;
-# remove it and confirm the rule notices rather than reading a milestone list
-# with no ceiling as complete.
+# B7 (D3): check_milestone_reporting_contract_is_complete's length bound — the
+# operator asked for visibility, not narration, so the contract must state a
+# bound in prose the linter can find; remove it and confirm the rule notices
+# rather than reading a milestone list with no ceiling as complete.
 LINT_MILESTONE_BOUND_FIXTURE="$TEST_HOME/lint-milestone-bound"
 copy_lint_fixture "$LINT_MILESTONE_BOUND_FIXTURE"
 milestone_bound_target="$LINT_MILESTONE_BOUND_FIXTURE/plugin/skills/_shared/reporting.md"
@@ -639,16 +643,17 @@ else
   else
     case "$milestone_bound_report" in
       *"skills/_shared/reporting.md names no length bound on a milestone report"*)
-        echo "ok: rule 14 rejects a milestone contract with no stated length bound"; pass=$((pass + 1)) ;;
+        echo "ok: check_milestone_reporting_contract_is_complete rejects a milestone contract with no stated length bound"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: the milestone-bound mutation failed for the wrong reason — $(printf '%s' "$milestone_bound_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi
 
-# B7 (D3): rule 15 — the Claude-card fact belongs to exactly one platform/claude
-# file. Copy its sentence into a SECOND one (quick.md) and confirm the rule
-# counts files rather than merely checking the fact is stated somewhere.
+# B7 (D3): check_reporting_host_difference_is_single_sourced — the Claude-card
+# fact belongs to exactly one platform/claude file. Copy its sentence into a
+# SECOND one (quick.md) and confirm the rule counts files rather than merely
+# checking the fact is stated somewhere.
 LINT_MILESTONE_HOST_FIXTURE="$TEST_HOME/lint-milestone-host"
 copy_lint_fixture "$LINT_MILESTONE_HOST_FIXTURE"
 milestone_host_source="$LINT_MILESTONE_HOST_FIXTURE/plugin/skills/_shared/platform/claude/reporting.md"
@@ -665,75 +670,145 @@ else
   else
     case "$milestone_host_report" in
       *"the native-card difference is stated in 2 platform/claude files instead of exactly one"*)
-        echo "ok: rule 15 rejects the native-card fact duplicated across two platform/claude files"; pass=$((pass + 1)) ;;
+        echo "ok: check_reporting_host_difference_is_single_sourced rejects the native-card fact duplicated across two platform/claude files"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: the milestone-host mutation failed for the wrong reason — $(printf '%s' "$milestone_host_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi
 
-# B8 (D4/ADR-0116): rule 16 must reject a design-foundation slice paragraph that
-# regressed to the undifferentiated `init`/`document` phrasing the Astro-landing
-# incident traced to — strip only the `init` attribution and confirm the
-# paragraph-scoped check names it specifically, not the read-before-cut markers
-# still standing beside it.
+# B8 (D4/ADR-0116): check_design_foundation_slice_reads_the_installed_contract
+# must reject a design-foundation slice paragraph that regressed to the
+# undifferentiated `init`/`document` phrasing the Astro-landing incident traced
+# to — strip only the `init` attribution and confirm the paragraph-scoped
+# check names it specifically, not the read-before-cut markers still standing
+# beside it.
 LINT_DESIGN_FOUNDATION_FIXTURE="$TEST_HOME/lint-design-foundation"
 copy_lint_fixture "$LINT_DESIGN_FOUNDATION_FIXTURE"
 design_foundation_target="$LINT_DESIGN_FOUNDATION_FIXTURE/plugin/skills/_shared/bodies/plan.md"
 if ! grep -qF '`init` writes `PRODUCT.md`' "$design_foundation_target"; then
-  echo "FAIL: rule 16 mutation found no init/PRODUCT.md attribution to remove from plan.md"; fail=$((fail + 1))
+  echo "FAIL: check_design_foundation_slice_reads_the_installed_contract mutation found no init/PRODUCT.md attribution to remove from plan.md"; fail=$((fail + 1))
 else
   sed 's/`init` writes `PRODUCT\.md`/`init` writes a document/' "$design_foundation_target" \
     > "$design_foundation_target.tmp"
   mv "$design_foundation_target.tmp" "$design_foundation_target"
   if grep -qF '`init` writes `PRODUCT.md`' "$design_foundation_target"; then
-    echo "FAIL: rule 16 mutation left the init/PRODUCT.md attribution standing in plan.md"; fail=$((fail + 1))
+    echo "FAIL: check_design_foundation_slice_reads_the_installed_contract mutation left the init/PRODUCT.md attribution standing in plan.md"; fail=$((fail + 1))
   elif design_foundation_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
       "$LINT_DESIGN_FOUNDATION_FIXTURE/plugin" "$LINT_DESIGN_FOUNDATION_FIXTURE" 2>&1)"; then
     echo "FAIL: a Design-foundation slice paragraph missing its init/PRODUCT.md attribution passed plugin lint"; fail=$((fail + 1))
   else
     case "$design_foundation_report" in
       *"skills/_shared/bodies/plan.md's Design-foundation slice paragraph never states: \`init\` writes \`PRODUCT.md\`"*)
-        echo "ok: rule 16 rejects a design-foundation slice paragraph that drops what init produces"; pass=$((pass + 1)) ;;
+        echo "ok: check_design_foundation_slice_reads_the_installed_contract rejects a design-foundation slice paragraph that drops what init produces"; pass=$((pass + 1)) ;;
       *)
-        echo "FAIL: rule 16 mutation failed for the wrong reason — $(printf '%s' "$design_foundation_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+        echo "FAIL: check_design_foundation_slice_reads_the_installed_contract mutation failed for the wrong reason — $(printf '%s' "$design_foundation_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi
 
-# B9 (D4/ADR-0117): rule 17 must reject the third amendment lane if it loses
-# its citation requirement specifically — the condition the ledger names as the
-# one that must never silently drop, since an uncited correction is the harness
-# rewriting an approved slice on its own word.
+# B9 (D4/ADR-0117): check_third_amendment_lane_names_its_conditions must
+# reject the third amendment lane if it loses its citation requirement
+# specifically — the condition the ledger names as the one that must never
+# silently drop, since an uncited correction is the harness rewriting an
+# approved slice on its own word.
 LINT_THIRD_LANE_FIXTURE="$TEST_HOME/lint-third-amendment-lane"
 copy_lint_fixture "$LINT_THIRD_LANE_FIXTURE"
 third_lane_target="$LINT_THIRD_LANE_FIXTURE/plugin/skills/_shared/platform/codex/plan.md"
 if ! grep -qF 'CITES the evidence' "$third_lane_target"; then
-  echo "FAIL: rule 17 mutation found no CITES condition to remove from the Codex plan platform file"; fail=$((fail + 1))
+  echo "FAIL: check_third_amendment_lane_names_its_conditions mutation found no CITES condition to remove from the Codex plan platform file"; fail=$((fail + 1))
 else
   sed 's/CITES the evidence/names the evidence/' "$third_lane_target" \
     > "$third_lane_target.tmp"
   mv "$third_lane_target.tmp" "$third_lane_target"
   if grep -qF 'CITES the evidence' "$third_lane_target"; then
-    echo "FAIL: rule 17 mutation left the CITES condition standing in the Codex plan platform file"; fail=$((fail + 1))
+    echo "FAIL: check_third_amendment_lane_names_its_conditions mutation left the CITES condition standing in the Codex plan platform file"; fail=$((fail + 1))
   elif third_lane_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
       "$LINT_THIRD_LANE_FIXTURE/plugin" "$LINT_THIRD_LANE_FIXTURE" 2>&1)"; then
     echo "FAIL: a third amendment lane missing its citation condition passed plugin lint"; fail=$((fail + 1))
   else
     case "$third_lane_report" in
       *"skills/_shared/platform/codex/plan.md's harness-discovered-correction lane never asserts: CITES"*)
-        echo "ok: rule 17 rejects a third amendment lane that drops its citation condition"; pass=$((pass + 1)) ;;
+        echo "ok: check_third_amendment_lane_names_its_conditions rejects a third amendment lane that drops its citation condition"; pass=$((pass + 1)) ;;
       *)
-        echo "FAIL: rule 17 mutation failed for the wrong reason — $(printf '%s' "$third_lane_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+        echo "FAIL: check_third_amendment_lane_names_its_conditions mutation failed for the wrong reason — $(printf '%s' "$third_lane_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+# D19 applied to the rules themselves: check_blueprint_index_names_every_decision
+# guards that docs/blueprint.md's own decision index names every file
+# docs/decisions/ holds. Drop ADR-0126 — the decision this same close
+# introduced — from the index while leaving its file in place under
+# docs/decisions/, and require the exact per-decision diagnostic rather than a
+# clean run mistaken for coverage.
+LINT_BLUEPRINT_INDEX_FIXTURE="$TEST_HOME/lint-blueprint-index"
+copy_lint_fixture "$LINT_BLUEPRINT_INDEX_FIXTURE"
+blueprint_index_target="$LINT_BLUEPRINT_INDEX_FIXTURE/docs/blueprint.md"
+if ! grep -qF '[0126](decisions/0126-wave-1s-wave-start-accounts-for-a-wave-0-that-already-landed.md)' "$blueprint_index_target"; then
+  echo "FAIL: check_blueprint_index_names_every_decision mutation found no ADR-0126 index entry to remove from blueprint.md"; fail=$((fail + 1))
+else
+  sed '/0126/d' "$blueprint_index_target" > "$blueprint_index_target.tmp"
+  mv "$blueprint_index_target.tmp" "$blueprint_index_target"
+  if grep -qF '0126' "$blueprint_index_target"; then
+    echo "FAIL: check_blueprint_index_names_every_decision mutation left the ADR-0126 index entry standing in blueprint.md"; fail=$((fail + 1))
+  elif blueprint_index_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_BLUEPRINT_INDEX_FIXTURE/plugin" "$LINT_BLUEPRINT_INDEX_FIXTURE" 2>&1)"; then
+    echo "FAIL: a decision file dropped from the blueprint index passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$blueprint_index_report" in
+      *"docs/blueprint.md's decision index never names 0126 (docs/decisions/0126-wave-1s-wave-start-accounts-for-a-wave-0-that-already-landed.md)"*)
+        echo "ok: check_blueprint_index_names_every_decision rejects a decision file the blueprint index dropped"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: check_blueprint_index_names_every_decision mutation failed for the wrong reason — $(printf '%s' "$blueprint_index_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+# D19 applied to the rules themselves: rule 22 guards that every line naming
+# "wave 1" in bodies/plan.md conditions its WAVE START on wave 0, closing the
+# hole docs/decisions/0126 records. Revert the "Three coordinates" paragraph's
+# wave-1 clause to the flat form that hole let stand — CHANGE BASE alone, no
+# wave-0 conditioning — while WAVE START stays named earlier on the same
+# line, so only the wave-0 half of the guard can fire. The target line is
+# located by its own post-mutation content below, never a hardcoded number, so
+# an edit adding a line above the paragraph cannot desync the two.
+LINT_WAVE_ZERO_FIXTURE="$TEST_HOME/lint-wave-1-wave-start"
+copy_lint_fixture "$LINT_WAVE_ZERO_FIXTURE"
+wave_zero_target="$LINT_WAVE_ZERO_FIXTURE/plugin/skills/_shared/bodies/plan.md"
+if ! grep -qF "wave 1's is the CHANGE BASE §3 recorded when no wave 0 ran, and wave 0's own landing commit when it did (ADR-0126)" "$wave_zero_target"; then
+  echo "FAIL: rule 22 mutation found no wave-1/wave-0 conditioning clause to flatten in plan.md"; fail=$((fail + 1))
+else
+  sed "s/wave 1's is the CHANGE BASE §3 recorded when no wave 0 ran, and wave 0's own landing commit when it did (ADR-0126)/wave 1's is the CHANGE BASE §3 recorded (ADR-0126)/" \
+    "$wave_zero_target" > "$wave_zero_target.tmp"
+  mv "$wave_zero_target.tmp" "$wave_zero_target"
+  # Same idiom check_wave_1_wave_start_accounts_for_wave_0 itself uses to turn a
+  # grep -n hit into a bare line number: strip everything from the first colon on.
+  wave_zero_entry="$(grep -nF "wave 1's is the CHANGE BASE §3 recorded (ADR-0126)" "$wave_zero_target" | head -n 1)"
+  wave_zero_linenum="${wave_zero_entry%%:*}"
+  if [ -z "$wave_zero_linenum" ]; then
+    echo "FAIL: rule 22 mutation could not locate its flattened wave-1 clause in plan.md"; fail=$((fail + 1))
+  elif printf '%s\n' "${wave_zero_entry#*:}" | grep -qiF 'wave 0'; then
+    echo "FAIL: rule 22 mutation left wave 0 named on plan.md:$wave_zero_linenum"; fail=$((fail + 1))
+  elif wave_zero_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_WAVE_ZERO_FIXTURE/plugin" "$LINT_WAVE_ZERO_FIXTURE" 2>&1)"; then
+    echo "FAIL: a wave-1 WAVE START claim flattened back to CHANGE BASE alone passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$wave_zero_report" in
+      *"skills/_shared/bodies/plan.md:$wave_zero_linenum states wave 1's own WAVE START without conditioning it on wave 0 (docs/decisions/0126)"*)
+        echo "ok: rule 22 rejects wave 1's WAVE START claim once it stops conditioning on wave 0"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: rule 22 mutation failed for the wrong reason — $(printf '%s' "$wave_zero_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi
 
 # --- Declarations: generated hooks and published trust hashes -----------------
-# Rule 13 keeps the committed tree green; these mutations prove each half can go
-# red for the reason it claims. The default-deny prefix and the load-bearing
-# fragment are both required, so a missing executable or an unrelated parser
-# crash cannot masquerade as enforcement.
+# check_hook_renders_and_published_hashes_match keeps the committed tree green;
+# these mutations prove each half can go red for the reason it claims. The
+# default-deny prefix and the load-bearing fragment are both required, so a
+# missing executable or an unrelated parser crash cannot masquerade as
+# enforcement.
 HOOK_RENDERER="$REPO_ROOT/tools/render-hooks-json.sh"
 assert_renderer_rejects() {
   local name="$1" expected="$2"
@@ -5640,6 +5715,24 @@ else
     '"event":"worktree-teardown-failed"'
   assert_pruned "the session whose worktree outlived it still loses its state file" \
     "$STATE_DIR/wt-dirty.state"
+
+  # The orphan sweep's own state file is the only record of repo_path, and it
+  # names its worktree by `session` — the wave's ownership marker, never the
+  # real `plan_approval_session` id this sweep matches on (ADR-0107). Dropping
+  # it without pruning first would leave that worktree with nothing able to
+  # reach it again: not even the 7-day sweep above, which reads repo_path from
+  # this same file.
+  arm_wave_for orphan-wt-owner "$WORKTREE_REPO"
+  printf 'plan_approval=pending\nplan_approval_session=orphan-wt-real\n' \
+    >> "$STATE_DIR/orphan-wt-owner.state"
+  registered_before="$(worktrees_registered_for orphan-wt-owner)"
+  OSO_AGENT=1 run_hook cleanup-state.sh '{"session_id":"orphan-wt-real"}'
+  assert_pruned "clearing an orphaned pending drops its state file" \
+    "$STATE_DIR/orphan-wt-owner.state"
+  assert_pruned "clearing an orphaned pending removes its worktree tree" \
+    "$WORKTREES_DIR/orphan-wt-owner"
+  assert_equals "clearing an orphaned pending leaves nothing of it registered in the repo" "1 -> 0" \
+    "$registered_before -> $(worktrees_registered_for orphan-wt-owner)"
 fi
 
 # --- SessionStart: only THIS repository's own stale state is worth hearing ---

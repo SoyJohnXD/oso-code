@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Lints the rules `claude plugin validate --strict` has no opinion on: it does
 # open hooks.json, skill frontmatter and the agents, and fails on a broken one
-# (probed against client 2.1.220), but it never asks what they SAY. Twenty rules
+# (probed against client 2.1.220), but it never asks what they SAY. Twenty-two rules
 # hold that ground: a `context: fork` skill declares `background`; the same
 # skill declares an `end with exactly one of:` verdict block; every
 # `oso-code:<name>` the plugin's own prose points at resolves; every call site
@@ -21,7 +21,8 @@
 # its comparison-coordinate bullet and its pre-existing verdict all name WAVE
 # START, the bullet disambiguating it from CHANGE BASE on the same line; every
 # decision under docs/decisions/ says where it
-# landed; every decision a skill cites resolves to one of those files AND is
+# landed; the blueprint's own decision index names every file docs/decisions/
+# holds; every decision a skill cites resolves to one of those files AND is
 # named back by it; the prose that says how many rules hold this ground says a
 # number the functions below make true; both hook manifests plus every
 # release-published hook hash exactly match their single source; the milestone
@@ -31,11 +32,12 @@
 # to a host lives in exactly one platform file per host, never in the neutral
 # body and never in both hosts' trees at once; the design-foundation slice
 # paragraph names what `init` and `document` each produce and requires reading
-# and recording the installed Impeccable version before the slice is cut; and
-# the Codex harness-discovered-correction amendment lane asserts all four of
+# and recording the installed Impeccable version before the slice is cut; the
+# Codex harness-discovered-correction amendment lane asserts all four of
 # its conditions — an unstarted slice, a cited file and line, one operator
-# confirmation, and a recorded amendment. Each rule states its own reason
-# above
+# confirmation, and a recorded amendment; and the Wave 0 bullet and the
+# Cut-one-worktree-per-slice paragraph never go back to contradicting each
+# other over wave 1's own WAVE START. Each rule states its own reason above
 # it; `background` is the one whose cost is least visible: as of client v2.1.218
 # a fork returns immediately and its verdict arrives in a LATER turn, while every
 # call site in plan/quick/debug reads that verdict in-turn.
@@ -234,7 +236,7 @@ check_impeccable_pin_is_never_a_placeholder() {
 # oso-applier and oso-verifier's differently-shaped `status:`/`verdict:` lines
 # stay outside this rule's reach exactly like a skill with no verdict block
 # stays outside the rule above it — an honest boundary, not an oversight.
-ROUTE_WORDS_RE='resolve|relaunch|re-invoke|reinvoke|invoke|launch|route|report|operator|offer|apply|fix|escalate|retry|loop|unlock|repeat|accept|reject|continue|resume|re-run|rerun'
+ROUTE_WORDS_RE='resolve|invoke|launch|route|report|operator|offer|apply|fix|escalate|retry|loop|unlock|repeat|accept|reject|continue|resume|re-run|rerun'
 
 check_call_sites_speak_their_emitters_verdict_vocabulary() {
   local skill emitter host caller caller_sources agent agent_name
@@ -563,7 +565,7 @@ check_plan_delegation_payloads_name_a_specific_coordinate() {
 # `blocked`, proving the no-clean-integration case is stated rather than
 # merely implied by the field's absence on those paths.
 check_integrator_report_names_next_wave_start() {
-  local file marker
+  local file
   for file in "$PLUGIN_ROOT/agents/oso-integrator.md" "$REPO_ROOT/codex/agents/oso-integrator.toml"; do
     if [ ! -f "$file" ]; then
       flag "no $file to check for next_wave_start"
@@ -571,8 +573,7 @@ check_integrator_report_names_next_wave_start() {
     fi
     grep -qF 'next_wave_start' "$file" \
       || flag "${file#"$REPO_ROOT"/} never names next_wave_start as WAVE START's producer"
-    { grep -F 'next_wave_start' "$file" || true; } | grep -qi 'conflict' \
-      && { grep -F 'next_wave_start' "$file" || true; } | grep -qi 'blocked' \
+    { grep -F 'next_wave_start' "$file" || true; } | { grep -i 'conflict' || true; } | grep -qi 'blocked' \
       || flag "${file#"$REPO_ROOT"/} never states that a conflict or a blocked report yields no next_wave_start"
   done
 }
@@ -633,6 +634,25 @@ check_every_decision_records_where_it_landed() {
   [ "$found" -gt 0 ] || flag "docs/decisions/ holds no decision files to check"
 }
 
+# The rule above proves every FILE says where it landed; it never proves the
+# INDEX names every file — 0113 carried a clean Reconciled line and still read
+# as though it never happened, because nothing checked the index against the
+# directory it is supposed to summarize. A decision dropped from the index is
+# invisible to a reader who trusts the index and never lists docs/decisions/
+# directly, which is what the index exists to save them from doing.
+check_blueprint_index_names_every_decision() {
+  local decision base id found=0
+  for decision in "$REPO_ROOT"/docs/decisions/*.md; do
+    [ -f "$decision" ] || continue
+    found=$((found + 1))
+    base="$(basename "$decision")"
+    id="${base%%-*}"
+    grep -qF "[$id](decisions/$base)" "$REPO_ROOT/docs/blueprint.md" \
+      || flag "docs/blueprint.md's decision index never names $id (docs/decisions/$base)"
+  done
+  [ "$found" -gt 0 ] || flag "docs/decisions/ holds no decision files to check against the blueprint index"
+}
+
 # Checking only that a cited id EXISTS cannot catch a citation retargeted to the
 # wrong decision, and five of the twelve citations were disambiguated by reading
 # what the citing prose describes — a judgment nothing else in the repo records.
@@ -667,24 +687,30 @@ decision_citations() {
   { grep -rEo 'ADR-[0-9][0-9][0-9][0-9]' "$REPO_ROOT/plugin" 2>&1 || true; } | LC_ALL=C sort -u
 }
 
-# How many rules hold this ground is prose in two places — this file's header and
-# README's linter row — and true in exactly one: the functions above. Nothing tied
-# the three together, so a rule could land while both surfaces went on naming the
-# old number, and a reader who checked would learn the count is decoration. Only
-# PRESENT-tense surfaces are read: the changelog and the blueprint say what a
-# release shipped, and a rule that read those would demand history be rewritten.
-# Both surfaces spell the number out, so the table below turns the count into the
-# word they use and a count past its end flags instead of guessing. The count
-# includes this rule, which is the only way it can ever be right.
+# How many rules hold this ground is prose in three places — this file's header,
+# README's linter row, and the changelog entry for the release still being cut —
+# and true in exactly one: the functions above. Nothing tied them together, so a
+# rule could land while every surface went on naming the old number, and a reader
+# who checked would learn the count is decoration. The first two are read in full:
+# they always describe THIS moment, so the table below turns the count into the
+# word they spell it as and a count past its end flags instead of guessing. The
+# changelog is different — every entry but the top one is a release already
+# shipped, and a rule that read those would demand history be rewritten — so only
+# its TOP entry is read, and only for the one line shaped like a rule-count claim;
+# the moment a later release's own heading lands above it, that entry stops being
+# the top one and this rule stops reaching it, freezing it the same way the entry
+# itself will. The count includes this rule, which is the only way it can ever be
+# right.
 check_present_tense_prose_names_the_rule_count() {
-  local declared spelled surface named
-  declared="$({ grep -c '^check_[a-z_]*() {$' "$REPO_ROOT/tests/plugin-lint.sh" 2>&1 || true; })"
+  local declared spelled surface named changelog_top changelog_claim
+  declared="$({ grep -c '^check_[a-z0-9_]*() {$' "$REPO_ROOT/tests/plugin-lint.sh" 2>&1 || true; })"
   case "$declared" in
     5) spelled=five ;; 6) spelled=six ;; 7) spelled=seven ;; 8) spelled=eight ;;
     9) spelled=nine ;; 10) spelled=ten ;; 11) spelled=eleven ;; 12) spelled=twelve ;;
     13) spelled=thirteen ;; 14) spelled=fourteen ;; 15) spelled=fifteen ;;
     16) spelled=sixteen ;; 17) spelled=seventeen ;; 18) spelled=eighteen ;;
-    19) spelled=nineteen ;; 20) spelled=twenty ;;
+    19) spelled=nineteen ;; 20) spelled=twenty ;; 21) spelled=twenty-one ;;
+    22) spelled=twenty-two ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -693,6 +719,19 @@ check_present_tense_prose_names_the_rule_count() {
       ''|0|*[!0-9]*) flag "$surface does not name the $spelled rules this linter declares (grep answered ${named:-empty})" ;;
     esac
   done
+
+  # Same fact, stated a third way in the changelog: a numeral, not the spelled
+  # word above (`` `tests/plugin-lint.sh` grows from 13 rules to 20 ``). Scoped
+  # to the TOP section alone — everything from the file's first `## ` heading up
+  # to, never including, the second — which is exactly the sed idiom's job: hold
+  # space remembers whether a `## ` line has already been seen, and quits before
+  # printing the second one.
+  changelog_top="$(sed -n '/^## /{x;/./{q};x;h};p' "$REPO_ROOT/CHANGELOG.md" 2>&1 || true)"
+  changelog_claim="$(printf '%s\n' "$changelog_top" \
+    | sed -n 's/.*plugin-lint\.sh.*rules to \([0-9][0-9]*\).*/\1/p')"
+  if [ -n "$changelog_claim" ] && [ "$changelog_claim" != "$declared" ]; then
+    flag "CHANGELOG.md's top entry says tests/plugin-lint.sh grows to $changelog_claim rules, but this linter declares $declared"
+  fi
 }
 
 # A generated artifact that is merely valid can still be the wrong artifact:
@@ -873,6 +912,48 @@ check_third_amendment_lane_names_its_conditions() {
   done
 }
 
+# docs/decisions/0126 closed a contract hole where a paragraph could flatly
+# claim "wave 1's WAVE START is the CHANGE BASE" without conditioning it on
+# whether a wave 0 ran: a wave 0 that ran commits directly to the main
+# checkout (its own per-slice commit, ADR-0093, made by the orchestrator
+# rather than through step 4's applier/verifier loop), which moves HEAD past
+# CHANGE BASE before wave 1 ever cuts a worktree. Round 2 fixed this by
+# anchoring on two paragraphs by their own bold lead-in — the Wave 0 bullet
+# and the Cut-one-worktree-per-slice paragraph — and missed a third: the
+# "Three coordinates" paragraph carried the identical flat claim under a
+# lead-in neither anchor matched, so the guard reported clean over a live
+# contradiction. A per-paragraph allowlist chases sites one at a time and
+# stays exactly as blind to a fourth as it was to the third, so this rule
+# instead scans every LINE naming "wave 1" — the one term this file uses
+# nowhere except this contract — wherever it lives, and holds each one to
+# naming both WAVE START (never the vague "the base ref" phrasing whose
+# ambiguity is what opened this hole in the first place, per
+# docs/decisions/0118's own Context) and wave 0 (proving the CHANGE BASE
+# claim is conditioned rather than stated flat again). A rewrite that drops
+# either marker from any such line, present or future, reopens the hole
+# silently, the same way dropping one of ADR-0116's five markers would.
+check_wave_1_wave_start_accounts_for_wave_0() {
+  local body="$PLUGIN_ROOT/skills/_shared/bodies/plan.md"
+  local sites entry linenum
+  if [ ! -f "$body" ]; then
+    flag "no plan body at skills/_shared/bodies/plan.md to check wave 1's WAVE START against wave 0"
+    return 0
+  fi
+  sites="$({ grep -inF -- 'wave 1' "$body" || true; })"
+  if [ -z "$sites" ]; then
+    flag "skills/_shared/bodies/plan.md carries no line naming wave 1 to check its own WAVE START against wave 0"
+    return 0
+  fi
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    linenum="${entry%%:*}"
+    printf '%s\n' "$entry" | grep -qF 'WAVE START' \
+      || flag "skills/_shared/bodies/plan.md:$linenum names wave 1 without naming WAVE START — the vague \"the base ref\" phrasing is what let wave 1 branch before wave 0 landed"
+    printf '%s\n' "$entry" | grep -qiF 'wave 0' \
+      || flag "skills/_shared/bodies/plan.md:$linenum states wave 1's own WAVE START without conditioning it on wave 0 (docs/decisions/0126)"
+  done <<< "$sites"
+}
+
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }
 
 check_forked_skills_declare_background
@@ -888,6 +969,7 @@ check_plan_delegation_payloads_name_a_specific_coordinate
 check_integrator_report_names_next_wave_start
 check_triage_names_wave_start_unambiguously
 check_every_decision_records_where_it_landed
+check_blueprint_index_names_every_decision
 check_decision_citations_resolve_and_name_their_citer
 check_present_tense_prose_names_the_rule_count
 check_hook_renders_and_published_hashes_match
@@ -895,6 +977,7 @@ check_milestone_reporting_contract_is_complete
 check_reporting_host_difference_is_single_sourced
 check_design_foundation_slice_reads_the_installed_contract
 check_third_amendment_lane_names_its_conditions
+check_wave_1_wave_start_accounts_for_wave_0
 
 if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"

@@ -86,13 +86,23 @@ jobs:
           grep -q '^passed:' "$report"
           failed="$(sed -n 's/^passed: [0-9]*, failed: \([0-9]*\)$/\1/p' "$report")"
           [ "$failed" = "14" ]
+      # A hand-enumerated list is honest only until the next script lands
+      # beside it unnamed — this same release already needed a guard to keep
+      # three separate rule-count surfaces in sync by hand, and a fourth
+      # surface of that shape is the same defect again, not a new one. Every
+      # directory that holds a .sh file globs instead, so the list is
+      # exhaustive by construction and never rots; only the two
+      # extension-less singletons stay named, since a glob there would
+      # assume every future file dropped into bin/ or git-hooks/ is a shell
+      # script.
       - name: Shell script syntax
         run: |
-          bash -n bootstrap/install.sh bootstrap/install-codex.sh bootstrap/purge-codex.sh bootstrap/verify.sh bootstrap/verify-codex.sh
-          bash -n bootstrap/lib/codex-managed-config.sh bootstrap/lib/mount-impeccable.sh
+          bash -n bootstrap/*.sh
+          bash -n bootstrap/lib/*.sh
+          bash -n tools/*.sh
           bash -n plugin/hooks/*.sh
           bash -n plugin/bin/oso-state plugin/git-hooks/pre-commit
-          bash -n tests/hooks-test.sh tests/plugin-lint.sh tests/fixtures/crashing-hook.sh
+          bash -n tests/*.sh tests/fixtures/*.sh
       - name: Install Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code
       - name: Validate plugin manifest
@@ -125,14 +135,17 @@ jobs:
         run: |
           jq --version
           bash tests/hooks-test.sh
+      # Same list as the ubuntu job's own Shell script syntax step — globbed
+      # for the same reason: see the comment there.
       - name: Shell script syntax
         shell: bash
         run: |
-          bash -n bootstrap/install.sh bootstrap/install-codex.sh bootstrap/purge-codex.sh bootstrap/verify.sh bootstrap/verify-codex.sh
-          bash -n bootstrap/lib/codex-managed-config.sh bootstrap/lib/mount-impeccable.sh
+          bash -n bootstrap/*.sh
+          bash -n bootstrap/lib/*.sh
+          bash -n tools/*.sh
           bash -n plugin/hooks/*.sh
           bash -n plugin/bin/oso-state plugin/git-hooks/pre-commit
-          bash -n tests/hooks-test.sh tests/plugin-lint.sh tests/fixtures/crashing-hook.sh
+          bash -n tests/*.sh tests/fixtures/*.sh
       - name: Bootstrapper (CI-safe mode)
         shell: powershell
         run: .\bootstrap\install.ps1 -CiMode
