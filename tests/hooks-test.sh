@@ -2031,15 +2031,29 @@ while IFS='|' read -r role_kind source_name codex_role; do
   assert_equals "$codex_role has observable nonempty developer instructions" \
     "nonempty" "$(developer_instructions_status "$role_file")"
   if [ "$codex_role" = oso-security-reviewer ]; then
-    # Unlike the three non-security judges, this role starts a nested `codex review`.
+    # Unlike the other judges, this role starts a nested `codex review`.
     # A read-only role cannot start that path. The outer CLI needs authenticated
     # runtime paths and network beyond the workspace; the nested review is the
     # layer constrained back to workspace-write.
     assert_equals "oso-security-reviewer can run the native Codex review" \
       "danger-full-access" "$(toml_scalar "$role_file" sandbox_mode)"
-  elif [ "$role_kind" = judge ]; then
-    assert_equals "$codex_role is read-only" \
+  elif [ "$codex_role" = oso-doubt-pass ]; then
+    # doubt-pass judges a frozen-candidate ledger from intent, surface map and
+    # bare decisions alone; its body runs no project check, so read-only stays
+    # the mechanical guarantee the contract needs (ADR-0109).
+    assert_equals "oso-doubt-pass is read-only" \
       "read-only" "$(toml_scalar "$role_file" sandbox_mode)"
+  elif [ "$role_kind" = judge ]; then
+    # debt-sweep and triage each re-run project checks (the zero-warnings bar,
+    # a failing check's re-run) their own bodies require, and those checks
+    # write caches, build output and coverage dumps a read-only sandbox cannot
+    # produce. They match oso-verifier's workspace-write precedent; ADR-0109
+    # records the mechanical read-only guarantee this trades for a prompt
+    # instruction, asserted next.
+    assert_equals "$codex_role is workspace-write" \
+      "workspace-write" "$(toml_scalar "$role_file" sandbox_mode)"
+    assert_equals "$codex_role names an explicit never-edit-source instruction now that the sandbox no longer enforces it" \
+      "present" "$(grep -qF 'edit a source file' "$role_file" && printf present || printf missing)"
   else
     writer_sandbox="$(toml_scalar "$role_file" sandbox_mode)"
     case "$writer_sandbox" in
@@ -2628,8 +2642,8 @@ security_parity_status() {
   native_row="$(parity_row 'The native security reviewer' 2>/dev/null)" \
     || { printf native-row-count; return; }
   for phrase in 'Four dedicated custom roles' '`gpt-5.5`' '`xhigh`' \
-    'three non-security judges' 'read-only' '`oso-security-reviewer`' \
-    '`danger-full-access`' '`workspace-write`' 'Settled'; do
+    '`oso-doubt-pass`' '`oso-debt-sweep`' '`oso-triage`' 'read-only' \
+    '`oso-security-reviewer`' '`danger-full-access`' '`workspace-write`' 'Settled'; do
     case "$forked_row" in *"$phrase"*) ;; *) printf 'forked-row:%s' "$phrase"; return ;; esac
   done
   for phrase in '`oso-security-reviewer`' '`codex review`' 'native target selector' \
