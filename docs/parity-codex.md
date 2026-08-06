@@ -36,7 +36,7 @@ An unknown host fact blocks a release claim; this document does not ship placeho
 
 ## Frozen loss and degradation ledger
 
-These five entries are release requirements, not a summary inferred from the divergence table. A mitigation stays beside the boundary it cannot remove.
+These six entries are release requirements, not a summary inferred from the divergence table. A mitigation stays beside the boundary it cannot remove.
 
 | Loss or degradation | Codex mitigation | Boundary that remains |
 |---|---|---|
@@ -45,6 +45,7 @@ These five entries are release requirements, not a summary inferred from the div
 | Security review uses a different native reviewer | The dedicated security subagent runs `codex review` with a security-only instruction and reports its exact covered scope | It is not Anthropic's native `security-review` skill; the review engine and report semantics are Codex's |
 | Two agent sessions in one repository share one state file | Repository keying keeps the main checkout and every linked worktree on the same commit and edit gates | Session isolation is deliberately lost; the last writer owns the file's `session` field and teardown |
 | The authenticated integrator smoke runs outside CI | `bootstrap/verify-codex.sh` always reaches a `passed:` summary and runs the real delegation when Codex authentication is available | CI sets the explicit `OSO_VERIFY_SKIP_SMOKE` boundary; authenticated release evidence requires an operator-run local release check |
+| The oso permission profile is the machine default because Codex has no per-project profile selection (ADR-0122) | The extended secret denylist, `.git/config` = `"read"`, and the metadata-IMDS denies from ADR-0121 apply to every session regardless of relatedness | Any Codex session on this machine, not only oso-code work, can write under `.git` outside `.git/config`, and can reach every repository's `oso-state` flags, plan documents and install-backup snapshots under the shared state root |
 
 ## Where the shared tree has to land
 

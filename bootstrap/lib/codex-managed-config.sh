@@ -15,7 +15,7 @@ render_codex_managed_config() {
   fi
   fallow_command="$(toml_quote "$fallow_command")"
   cat <<EOF
-default_permissions = ":workspace"
+default_permissions = "oso"
 
 [agents]
 max_threads = 4
@@ -29,7 +29,7 @@ OSO_STATE_BIN = $state_bin
 [permissions.oso]
 extends = ":workspace"
 
-description = "oso-code workspace profile — selected per session with -c default_permissions=oso, never the machine default (ADR-0121)"
+description = "oso-code workspace profile"
 
 [permissions.oso.workspace_roots]
 $state_root = true

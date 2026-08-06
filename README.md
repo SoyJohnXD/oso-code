@@ -75,7 +75,7 @@ Daily use:
 - Claude Code: `/oso-code:plan`, `/oso-code:quick`, `/oso-code:debug`; optionally `/output-style Oso`.
 - Codex: enter `/plan` (or Shift+Tab) before `$oso-code:plan`; `$oso-code:quick` and `$oso-code:debug` start from the normal mode.
 
-The installed `oso` permission profile — the wider `.git` write, workspace roots and network reach the harness needs for its own commits, worktrees and delegated roles — is never the machine default (ADR-0121). Start a Codex session for oso-code work with `codex -c default_permissions=oso`; a bare `codex` gets Codex's own stock `:workspace` profile instead, so an unrelated conversation in some other repository never inherits it. This is an operator- or wrapper-supplied launch flag, never something the model itself can select mid-session.
+The installed `oso` permission profile — the wider `.git` write, workspace roots and network reach the harness needs for its own commits, worktrees and delegated roles — is the machine default for every Codex session (ADR-0121, ADR-0122): the installed binary offers no per-project profile selection, so scoping it any narrower would mean typing a flag on every launch with no escape. `.git/config` stays read-only, the extended secret denylist and the cloud-metadata network denies still apply regardless of scope (ADR-0121) — this is a discipline rail, not a lock, the same framing the runtime gates below carry.
 
 Updating later follows the route for the host and artifact tier that changed:
 

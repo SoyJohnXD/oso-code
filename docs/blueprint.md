@@ -210,6 +210,7 @@ Three properties of the amendment log these files replace are facts to carry for
 - [0119](decisions/0119-ci-asserts-a-verify-scripts-failure-count-and-the-decision-coverage-audit-closes-one-gap.md) — CI asserts a verify script's failure count, and the decision-coverage audit closes one real gap
 - [0120](decisions/0120-the-allowlist-gets-a-capability-model-and-a-local-drift-check.md) — The allowlist gets a capability model, and a local drift check against the servers it names
 - [0121](decisions/0121-the-oso-permission-profile-is-opt-in-and-its-three-broad-grants-are-narrowed.md) — The oso permission profile is opt-in, and its three broad grants are narrowed
+- [0122](decisions/0122-the-oso-permission-profile-returns-to-the-machine-default.md) — The oso permission profile returns to the machine default
 
 ## Foundational decisions
 

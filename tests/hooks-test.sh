@@ -3473,8 +3473,8 @@ case "$codex_question_section$codex_question_parity_row" in
     echo "ok: the settled Codex question cap carries no PLACEHOLDER/4 contract"; pass=$((pass + 1)) ;;
 esac
 
-# ADR-0097 makes these five losses release input, not explanatory prose. Require
-# exactly five table rows and the load-bearing boundary in each one; this is the
+# ADR-0097 makes these six losses release input, not explanatory prose. Require
+# exactly six table rows and the load-bearing boundary in each one; this is the
 # parity mutation gate S14 needs in addition to linter rules 10–12.
 codex_loss_ledger="$(sed -n \
   '/^## Frozen loss and degradation ledger$/,/^## /p' \
@@ -3485,8 +3485,8 @@ codex_loss_rows="$(printf '%s\n' "$codex_loss_ledger" | awk '
   /^\|/ { rows++ }
   END { print rows + 0 }
 ')"
-assert_equals "the frozen Codex ledger carries exactly its five release losses" \
-  "5" "$codex_loss_rows"
+assert_equals "the frozen Codex ledger carries exactly its six release losses" \
+  "6" "$codex_loss_rows"
 assert_says_every "the frozen Codex ledger names every loss and remaining boundary" \
   "$codex_loss_ledger" <<'CODEX_FROZEN_LOSS_TABLE'
 Plan approval composes native UI with a narrower local rail
@@ -3500,6 +3500,9 @@ Security review uses a different native reviewer
 Two agent sessions in one repository share one state file
 The authenticated integrator smoke runs outside CI
 operator-run local release check
+The oso permission profile is the machine default because Codex has no per-project profile selection
+`.git/config` = `"read"`
+`oso-state` flags, plan documents and install-backup snapshots
 CODEX_FROZEN_LOSS_TABLE
 
 # S7's Codex approval prose has a runtime gate behind it, but the hook cannot
@@ -7257,7 +7260,7 @@ assert_equals "the managed region closes before preserved projects tables" \
 assert_equals "the state binary setting points into the self-contained plugin copy" \
   "present" "$(grep -F "$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/bin/oso-state" "$CODEX_HAPPY_CONFIG" >/dev/null && echo present || echo missing)"
 for codex_config_contract in \
-  'default_permissions = ":workspace"' \
+  'default_permissions = "oso"' \
   'multi_agent = true' \
   'max_threads = 4' \
   'max_depth = 2' \
@@ -7299,11 +7302,13 @@ for codex_secret_pattern in \
     "present" "$(grep -Fx "$codex_secret_pattern" "$CODEX_HAPPY_CONFIG" >/dev/null && echo present || echo missing)"
 done
 
-# ADR-0121 (b): the three examined grants are asserted at the value this slice
-# settled on, so a later widening — the base default back to "oso", a `.git`
-# entry dropped, or the metadata IP reopened — turns exactly one of these red.
-assert_equals "a bare Codex session gets the narrower stock default, never the oso profile" \
-  "1" "$(grep -Fxc 'default_permissions = ":workspace"' "$CODEX_HAPPY_CONFIG" || true)"
+# ADR-0121/ADR-0122 (b): the three examined grants are asserted at the value
+# this slice settled on, so a later regression — a `.git` entry dropped, or the
+# metadata IP reopened — turns exactly one of these red. The permission
+# profile's own default reverted to "oso" under ADR-0122 (no per-project
+# selection exists to opt into); the other two examined grants are unaffected.
+assert_equals "the oso profile is the machine default, since Codex has no per-project profile selection to scope it narrower" \
+  "1" "$(grep -Fxc 'default_permissions = "oso"' "$CODEX_HAPPY_CONFIG" || true)"
 assert_equals "the oso profile itself still needs the full git-dir subtree for its own plumbing" \
   "1" "$(grep -Fxc '".git/**" = "write"' "$CODEX_HAPPY_CONFIG" || true)"
 assert_equals "git config stays readable but not writable — closes the core.hooksPath/remote redirect vector" \
