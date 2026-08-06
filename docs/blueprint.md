@@ -202,6 +202,7 @@ Three properties of the amendment log these files replace are facts to carry for
 - [0110](decisions/0110-plan-approval-state-migrates-inside-a-transaction-that-tells-the-truth.md) — Plan-approval state migrates inside a transaction that tells the truth
 - [0111](decisions/0111-a-deny-hands-over-its-remedy-executably-or-says-it-has-none.md) — A deny hands over its remedy, executably, or says it has none
 - [0112](decisions/0112-feedback-amends-a-pending-plan-in-place.md) — Feedback amends a pending plan in place, never destroying it
+- [0114](decisions/0114-blocked-is-first-class-with-recovery-routes-and-the-linter-checks-routing.md) — `blocked` is a first-class verdict with recovery routes, and the linter checks routing, not mention
 
 ## Foundational decisions
 

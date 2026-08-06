@@ -21,5 +21,6 @@ End with exactly one of:
 
 - `Doubt Pass: clean` — nothing survives scrutiny; the ledger stands as candidate.
 - `Doubt Pass: findings` — each finding names the decision it attacks, what is wrong or unconsidered, and the concrete consequence if it stands. A finding without its consequence is not a finding — drop it.
+- `Doubt Pass: blocked` — the assignment never reached you whole: your Codex role's payload carried no skill wrapper path, no ARGUMENTS, or both. Name exactly which was absent; never locate or infer it yourself.
 
 Save nothing to engram — the orchestrator owns persistence. Your final message is data for the orchestrator, not prose for a user.

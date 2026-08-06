@@ -270,13 +270,119 @@ else
     echo "FAIL: a bare Codex skill call with no verdict vocabulary passed plugin lint"; fail=$((fail + 1))
   else
     case "$mutated_call_lint_report" in
-      *"skills/quick/SKILL.md invokes debt-sweep on codex"*"none of its verdict tokens"*)
+      *"skills/quick/SKILL.md invokes debt-sweep on codex"*"carries none of its"*)
         echo "ok: a bare Codex call missing its emitter vocabulary fails lint"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: the Codex call-site mutation failed for the wrong reason — $(printf '%s' "$mutated_call_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi
+
+# B4/B5 (D9): rule 6 now demands EVERY token of an axis a caller engages, not
+# just one of the emitter's whole flattened vocabulary — the delta a `blocked`
+# drift exploited, since a caller could satisfy the old floor by naming any
+# OTHER token of the same emitter and never carry the one that actually went
+# missing. Remove only the sentence that routes debt-sweep's whole-report
+# `blocked` token from a real, otherwise-complete caller (debug's close still
+# names `Debt Sweep: clean`, `findings`, and `Conformance: skipped` — every
+# token the OLD "at least one" floor ever required). The old rule would have
+# read this caller clean; the new one must not.
+LINT_MISSING_TOKEN_FIXTURE="$TEST_HOME/lint-missing-token"
+copy_lint_fixture "$LINT_MISSING_TOKEN_FIXTURE"
+missing_token_body="$LINT_MISSING_TOKEN_FIXTURE/plugin/skills/_shared/bodies/debug.md"
+if ! grep -q 'A third, whole-report token can arrive instead: `Debt Sweep: blocked`' "$missing_token_body"; then
+  echo "FAIL: the missing-token mutation found no Debt Sweep: blocked route to remove from debug.md"; fail=$((fail + 1))
+else
+  sed 's/ A third, whole-report token can arrive instead:.*//' "$missing_token_body" > "$missing_token_body.tmp"
+  mv "$missing_token_body.tmp" "$missing_token_body"
+  if grep -q 'Debt Sweep: blocked' "$missing_token_body"; then
+    echo "FAIL: the missing-token mutation left Debt Sweep: blocked standing in debug.md"; fail=$((fail + 1))
+  elif missing_token_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_MISSING_TOKEN_FIXTURE/plugin" "$LINT_MISSING_TOKEN_FIXTURE" 2>&1)"; then
+    echo "FAIL: a caller missing one axis's whole-report token passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$missing_token_report" in
+      *"skills/debug/SKILL.md invokes debt-sweep on claude but carries none of its Debt Sweep tokens"*)
+        echo "ok: rule 6 rejects a caller missing debt-sweep's blocked token even though its other tokens are complete"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the missing-token mutation failed for the wrong reason — $(printf '%s' "$missing_token_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+# B5 (D9): the harder half — a token named with no action beside it is the
+# boilerplate the doubt pass predicted this rule would produce if it graded
+# mention alone. Inject a caller that never invoked debt-sweep before, naming
+# EVERY one of its six tokens across all three axes verbatim, with zero
+# recovery verb anywhere near them. The floor (every token present) is fully
+# satisfied; only the routing half can still fail this, and it must.
+LINT_BARE_LIST_FIXTURE="$TEST_HOME/lint-bare-list"
+copy_lint_fixture "$LINT_BARE_LIST_FIXTURE"
+bare_list_target="$LINT_BARE_LIST_FIXTURE/plugin/skills/_shared/platform/claude/quick.md"
+if [ ! -f "$bare_list_target" ]; then
+  echo "FAIL: the bare-list mutation has no quick platform file to change"; fail=$((fail + 1))
+else
+  printf '\n| the debt-sweep judge | `oso-code:debt-sweep` | the Skill tool |\nTerminal tokens: `Debt Sweep: blocked`, `Debt Sweep: clean`, `Debt Sweep: findings`, `Conformance: clean`, `Conformance: findings`, `Conformance: skipped — no ledger provided`.\n' \
+    >> "$bare_list_target"
+  if bare_list_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_BARE_LIST_FIXTURE/plugin" "$LINT_BARE_LIST_FIXTURE" 2>&1)"; then
+    echo "FAIL: a caller naming every token of an emitter but routing none of them passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$bare_list_report" in
+      *"skills/quick/SKILL.md invokes debt-sweep on claude"*"names every Debt Sweep token but leaves some with no route beside the token"*"bare: \`Debt Sweep: blocked\`"* | \
+      *"skills/quick/SKILL.md invokes debt-sweep on claude"*"names every Debt Sweep token but leaves some with no route beside the token"*"bare: \`Debt Sweep: clean\`, \`Debt Sweep: findings\`"*)
+        echo "ok: rule 6 rejects a caller that names every token of an emitter but routes none of them"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the bare-list mutation failed for the wrong reason — $(printf '%s' "$bare_list_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+# B5 (D9): agents join skills as emitters — the drift this rule exists to
+# close (oso-integrator's `status: blocked`) came from agents sitting outside
+# its reach entirely. Remove the one sentence that routes it from the real,
+# already-fixed body and confirm the mechanism itself — not just the fixed
+# prose — is what proves the route exists: a rule that only ever reads clean
+# never proves it would have caught the drift it was built for.
+LINT_AGENT_FIXTURE="$TEST_HOME/lint-agent-token"
+copy_lint_fixture "$LINT_AGENT_FIXTURE"
+agent_route_body="$LINT_AGENT_FIXTURE/plugin/skills/_shared/bodies/plan.md"
+if ! grep -q '^\*\*When the integrator returns `status: blocked` instead (ADR-0114)\*\*' "$agent_route_body"; then
+  echo "FAIL: the agent-token mutation found no integrator blocked route to remove from plan.md"; fail=$((fail + 1))
+else
+  sed '/^\*\*When the integrator returns `status: blocked` instead (ADR-0114)\*\*/d' "$agent_route_body" > "$agent_route_body.tmp"
+  mv "$agent_route_body.tmp" "$agent_route_body"
+  if grep -q 'status: blocked' "$agent_route_body"; then
+    echo "FAIL: the agent-token mutation left status: blocked standing in plan.md"; fail=$((fail + 1))
+  elif agent_route_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_AGENT_FIXTURE/plugin" "$LINT_AGENT_FIXTURE" 2>&1)"; then
+    echo "FAIL: a caller of an agent emitter missing one of its status tokens passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$agent_route_report" in
+      *"skills/plan/SKILL.md invokes oso-integrator on claude and names some of its status tokens but not all — missing \`status: blocked\`"*)
+        echo "ok: rule 6 reaches oso-integrator as an agent emitter and rejects a caller with no route for its blocked token"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the agent-token mutation failed for the wrong reason — $(printf '%s' "$agent_route_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+# B4 (D9/D18): the defect this change closes — `bodies/plan.md`'s security-pass
+# re-run loop terminates only on `clean` or an explicit operator acceptance,
+# and a Codex-only `blocked` was neither. Assert the reachable exit is written
+# into all three callers directly, rather than only through the vocabulary
+# rule above: this is the concrete symptom named in the slice, so it earns its
+# own assertion beside the mechanism that now enforces it structurally.
+for security_pass_caller in plan quick debug; do
+  security_pass_source="$REPO_ROOT/plugin/skills/_shared/bodies/$security_pass_caller.md"
+  security_pass_route="$({ grep -F 'Security Pass: blocked' "$security_pass_source" || true; })"
+  case "$security_pass_route" in
+    *'Security Pass: blocked'*'resolve'*'invoke'*)
+      echo "ok: bodies/$security_pass_caller.md routes Security Pass: blocked to a resolve-and-reinvoke exit"; pass=$((pass + 1)) ;;
+    *)
+      echo "FAIL: bodies/$security_pass_caller.md carries no reachable route for Security Pass: blocked"; fail=$((fail + 1)) ;;
+  esac
+done
 
 # Rule 7 is host-specific: Claude's always-loaded source routes the three
 # operator-only modes through `/oso-code:<mode>`, while Codex's routes the same

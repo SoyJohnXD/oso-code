@@ -14,6 +14,14 @@ Where the wave lives (ADR-0076):
 - Branches are `oso/<change>/<slice>`.
 - Worktrees are `~/.local/state/oso-code/worktrees/<session>/<slice>`.
 
+## Verdict
+
+End with exactly one of:
+
+- `status: done` — every branch merged clean; see "When you finish" below.
+- `status: conflict` — the merge stopped on its first conflicting file; see "When the merge stops on a conflict" below.
+- `status: blocked` — the payload does not match what git actually holds; see "When you cannot finish" below.
+
 ## Contract
 
 - Merge one branch at a time, in the order the payload lists them, so a stop names the branch that hit it and the ones already in.

@@ -48,5 +48,6 @@ Under a native header the body is the native reviewer's report verbatim — neve
 
 - `Security Pass: clean` — no finding. On the native path, the report you relayed lists none.
 - `Security Pass: findings` — the body above carries at least one. On the native path, the report you relayed lists at least one.
+- `Security Pass: blocked` — the review never ran at all: your Codex role's payload carried no skill wrapper path, no ARGUMENTS, or both, or your host's native reviewer itself could not run (see the platform file). Name exactly what stopped you; never locate or infer a missing field, and never silently substitute the fallback for a native failure.
 
 Save nothing to engram — the orchestrator owns persistence. Your final message is data for the orchestrator, not prose for a user.

@@ -5,9 +5,10 @@
 # hold that ground: a `context: fork` skill declares `background`; the same
 # skill declares an `end with exactly one of:` verdict block; every
 # `oso-code:<name>` the plugin's own prose points at resolves; every call site
-# of a skill that declares such a block carries AT LEAST ONE of that skill's
-# tokens verbatim AND names the skipped verdict of any axis whose other
-# verdicts it reads; security-pass never acquires its diff from a remote-qualified
+# of a skill OR AGENT that declares such a block carries EVERY token of an
+# axis it engages, each paired on its own line with a recovery verb rather
+# than merely named, and the skipped verdict of any axis whose other verdicts
+# it reads; security-pass never acquires its diff from a remote-qualified
 # ref; the Impeccable detect gate never carries a placeholder where its pin
 # belongs; each host's always-loaded routing file names every mode the model cannot
 # invoke on its own; every line that launches oso-verifier names the payload it
@@ -173,36 +174,57 @@ check_impeccable_pin_is_never_a_placeholder() {
 }
 
 # The rule above asks whether a fork DECLARES its verdict tokens; this one asks
-# whether the call sites SPEAK them — for EVERY skill carrying a terminal-token
-# block, not just the forked ones: quality-pass runs inline and still ends on
-# `Quality Pass: passed`, and a gate worded around a verdict its emitter never
-# says is equally broken either way. A caller that loops until a bare `clean`
-# never terminates on `Conformance: skipped — no ledger provided` — it reads a
-# verdict outside its vocabulary as a pass, and the gate the loop guards opens
-# over an axis that never ran. The FLOOR is at least one token verbatim, never
-# the full set: demanding all of them would fail /debug forever, which passes no
-# ledger and has no reason to name the two conformance verdicts it can never
-# reach, while carrying one is how a site proves it speaks the emitter's
-# vocabulary. One token is not optional above that floor — the skipped verdict of
-# an axis whose OTHER verdicts the site already names. Naming `Conformance:
-# clean` is what turns the skip into a hole: a site that acts on an axis and
-# never carries the answer "it did not run" reads that answer as neither verdict
-# and opens its green write over an axis that never ran, which is exactly what
-# deleting the skip from /plan would leave clean under the floor alone. A site
-# that names only the skip — /debug, whose sweep has no ledger to judge against —
-# reads no verdict of that axis and is asked for nothing. `skipped` is the whole
-# did-not-run vocabulary the emitters have; a second spelling would be a second
-# vocabulary. Decidable both ways: the emitter declares its tokens, and a call
-# site either carries one verbatim or does not.
+# whether the call sites SPEAK AND ROUTE them — for every skill AND agent
+# carrying a terminal-token block, not just the forked skills: quality-pass
+# runs inline and still ends on `Quality Pass: passed`, oso-integrator carries
+# no SKILL.md at all and still ends on `status: blocked`, and a gate worded
+# around a verdict its emitter never says is equally broken either way.
+#
+# Tokens are read per AXIS — one `end with exactly one of:` block — because an
+# emitter can hold several that never resolve together: debt-sweep's debt
+# findings and ledger conformance both run on every invocation, and a
+# whole-report `blocked` axis of one token pre-empts either running at all.
+# Flattening every axis into one bag, the way this rule used to, is what let a
+# caller satisfy the whole emitter by naming one token from whichever axis was
+# easiest — never proving it could handle the axis a `blocked` drift actually
+# lands on. Within an axis, the token containing `: skipped` is the one
+# legitimate partial read: a caller that names ONLY it — /debug's Conformance
+# axis, whose sweep never carries a ledger to judge — is asked for nothing
+# else, because `skipped` is the whole did-not-run vocabulary that axis has.
+# Naming any OTHER token of the axis makes every other one mandatory, skip
+# included: a site that acts on an axis and never carries the answer "it did
+# not run" reads that answer as neither verdict and opens its green write over
+# an axis that never ran.
+#
+# Mention is not the bar the doubt pass asked for: "callers gain mechanical
+# token lists that satisfy the lint while handling nothing." A token is
+# ROUTED only when some LINE carrying it also carries one of this repo's own
+# recovery verbs below — never a bare backtick list pasted to satisfy a lint.
+# That pairing is a heuristic, not a proof: it cannot tell a verb that truly
+# answers THIS token from one describing an unrelated clause sharing its long
+# paragraph-line, and it cannot read a route spread across several lines the
+# way `check_verifier_launches_name_their_payload` above deliberately reads a
+# launch as one line. Both are this rule's stated ceiling, not a silent gap:
+# within it, the check is exact — an axis's coverage is one of a small,
+# enumerable set of shapes below, and anything outside that set is flagged
+# with the token that made it so.
+#
+# Agents are reachable here too, but only as far as an agent file volunteers a
+# vocabulary: `status: done|conflict|blocked` bare-word verdicts collide with
+# ordinary prose too often to grep safely on their own, so an agent counts as
+# an emitter only once its file carries the SAME `end with exactly one of:`
+# block a skill body already uses. oso-integrator is the one agent that does;
+# oso-applier and oso-verifier's differently-shaped `status:`/`verdict:` lines
+# stay outside this rule's reach exactly like a skill with no verdict block
+# stays outside the rule above it — an honest boundary, not an oversight.
+ROUTE_WORDS_RE='resolve|relaunch|re-invoke|reinvoke|invoke|launch|route|report|operator|offer|apply|fix|escalate|retry|loop|unlock|repeat|accept|reject|continue|resume|re-run|rerun'
+
 check_call_sites_speak_their_emitters_verdict_vocabulary() {
-  local skill emitter host tokens skipped_verdicts caller caller_sources skip axis verdicts_that_ran
+  local skill emitter host caller caller_sources agent agent_name
   for skill in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
     [ -f "$skill" ] || continue
     emitter="$(basename "$(dirname "$skill")")"
     for host in claude codex; do
-      tokens="$(emitter_verdict_tokens "$skill" "$host")"
-      [ -n "$tokens" ] || continue
-      skipped_verdicts="$(printf '%s\n' "$tokens" | { grep -F ': skipped' || true; })"
       for caller in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
         [ -f "$caller" ] || continue
         caller_sources="$(skill_sources "$caller" "$host" | tr '\n' ' ')"
@@ -214,47 +236,125 @@ check_call_sites_speak_their_emitters_verdict_vocabulary() {
           claude) grep -qE "oso-code:$emitter([^A-Za-z0-9_-]|\$)" $caller_sources || continue ;;
           codex) grep -qF "\`oso-code:$emitter\`" $caller_sources || continue ;;
         esac
-        printf '%s\n' "$tokens" | grep -qFf - $caller_sources \
-          || flag "${caller#"$PLUGIN_ROOT"/} invokes $emitter on $host but carries none of its verdict tokens"
-        [ -n "$skipped_verdicts" ] || continue
-        while IFS= read -r skip; do
-          axis="${skip%%:*}"
-          verdicts_that_ran="$(printf '%s\n' "$tokens" \
-            | { grep -F "$axis:" || true; } | { grep -vxF "$skip" || true; })"
-          [ -n "$verdicts_that_ran" ] || continue
-          printf '%s\n' "$verdicts_that_ran" | grep -qFf - $caller_sources || continue
-          grep -qF "$skip" $caller_sources \
-            || flag "${caller#"$PLUGIN_ROOT"/} reads $axis verdicts of $emitter on $host but never names \`$skip\`"
-        done <<< "$skipped_verdicts"
+        axis_coverage_is_routed "${caller#"$PLUGIN_ROOT"/} invokes $emitter on $host" \
+          "$(verdict_axes_from_sources $(skill_sources "$skill" "$host"))" $caller_sources
+      done
+    done
+  done
+
+  # A custom-role agent is named identically on every host — the same bare
+  # backtick identity (`oso-integrator`) and the same `status:` values launch
+  # it whether the caller runs on Claude or Codex — so unlike a skill's
+  # `oso-code:` prefix, no host split is needed to recognize a caller here.
+  for agent in "$PLUGIN_ROOT"/agents/*.md; do
+    [ -f "$agent" ] || continue
+    grep -qi 'end with exactly one of:' "$agent" || continue
+    agent_name="$(basename "$agent" .md)"
+    for host in claude codex; do
+      for caller in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
+        [ -f "$caller" ] || continue
+        caller_sources="$(skill_sources "$caller" "$host" | tr '\n' ' ')"
+        grep -qF "\`$agent_name\`" $caller_sources || continue
+        axis_coverage_is_routed "${caller#"$PLUGIN_ROOT"/} invokes $agent_name on $host" \
+          "$(verdict_axes_from_sources "$agent")" $caller_sources
       done
     done
   done
 }
 
-# Every token the skill declares, gathered across the files it binds — the verdict
-# block sits in the neutral body, since the vocabulary is what BOTH hosts answer
-# in and duplicating it per wrapper is the one thing the split exists to prevent.
-emitter_verdict_tokens() {
-  local skill="$1" host="${2:-all}" source
-  for source in $(skill_sources "$skill" "$host"); do
-    verdict_tokens "$source"
+# One line per axis, its tokens tab-joined — gathered across every bound
+# source an emitter carries, since the verdict block always lives in exactly
+# one of them but a multi-file skill hands its sources to callers uniformly
+# elsewhere in this linter, and a future split across files should not go
+# unseen here either.
+verdict_axes_from_sources() {
+  local source header
+  for source in "$@"; do
+    [ -f "$source" ] || continue
+    for header in $({ grep -in 'end with exactly one of:' "$source" || true; } | cut -d: -f1); do
+      tokens_after_header "$source" "$header" | tr '\n' '\t'
+      echo
+    done
   done
 }
 
-# The backticked list items under an `end with exactly one of:` header — blank
-# lines skipped, the run ending at the first line that is neither. Matched
-# case-insensitively for the same reason the declaration rule is.
-verdict_tokens() {
-  local skill="$1" header line token
-  for header in $({ grep -in 'end with exactly one of:' "$skill" || true; } | cut -d: -f1); do
-    while IFS= read -r line; do
-      case "$line" in
-        '') continue ;;
-        '- `'*) token="${line#- \`}"; printf '%s\n' "${token%%\`*}" ;;
-        *) break ;;
-      esac
-    done <<< "$(sed -n "$((header + 1)),\$p" "$skill")"
-  done
+# The backticked list items under one `end with exactly one of:` header — blank
+# lines skipped, the run ending at the first line that is neither.
+tokens_after_header() {
+  local source="$1" header="$2" line token
+  while IFS= read -r line; do
+    case "$line" in
+      '') continue ;;
+      '- `'*) token="${line#- \`}"; printf '%s\n' "${token%%\`*}" ;;
+      *) break ;;
+    esac
+  done <<< "$(sed -n "$((header + 1)),\$p" "$source")"
+}
+
+# One axis's tab-joined tokens against one caller's bound sources (the
+# trailing arguments). `label` opens every flag this axis can raise, so a
+# report reads as one sentence continued rather than three different voices
+# depending on which of the shapes below a caller's coverage turned out to be.
+axis_coverage_is_routed() {
+  local label="$1" axes="$2"; shift 2
+  local axis_line axis_name first_token skip others token
+  local total=0 named=0 missing unrouted
+  [ -n "$axes" ] || return 0
+  while IFS= read -r axis_line; do
+    [ -n "$axis_line" ] || continue
+    first_token="$(printf '%s\n' "$axis_line" | tr '\t' '\n' | head -1)"
+    axis_name="${first_token%%:*}"
+    skip="$(printf '%s\n' "$axis_line" | tr '\t' '\n' | { grep -F ': skipped' || true; })"
+    others="$(printf '%s\n' "$axis_line" | tr '\t' '\n' | { grep -vF ': skipped' || true; } | { grep -v '^$' || true; })"
+    [ -n "$others" ] || continue
+    total=0; named=0; missing=""
+    while IFS= read -r token; do
+      [ -n "$token" ] || continue
+      total=$((total + 1))
+      if grep -qF -- "$token" "$@"; then
+        named=$((named + 1))
+      else
+        missing="$missing\`$token\`, "
+      fi
+    done <<< "$others"
+    if [ "$named" -eq 0 ]; then
+      if [ -n "$skip" ] && grep -qF -- "$skip" "$@"; then
+        continue # the sanctioned partial read: skip named, nothing else is
+      fi
+      flag "$label but carries none of its $axis_name tokens"
+      continue
+    fi
+    if [ "$named" -lt "$total" ]; then
+      flag "$label and names some of its $axis_name tokens but not all — missing ${missing%, }"
+      continue
+    fi
+    if [ -n "$skip" ] && ! grep -qF -- "$skip" "$@"; then
+      flag "$label and reads $axis_name verdicts but never names \`$skip\`"
+      continue
+    fi
+    unrouted=""
+    while IFS= read -r token; do
+      [ -n "$token" ] || continue
+      token_is_routed "$token" "$@" || unrouted="$unrouted\`$token\`, "
+    done <<< "$others"
+    if [ -n "$skip" ] && ! token_is_routed "$skip" "$@"; then
+      unrouted="$unrouted\`$skip\`, "
+    fi
+    [ -z "$unrouted" ] || \
+      flag "$label and names every $axis_name token but leaves some with no route beside the token — bare: ${unrouted%, }"
+  done <<< "$axes"
+}
+
+# True once some LINE across the given files carries the token verbatim AND
+# one of the route words above — a bare list item never does, since the words
+# alone would satisfy the file-scoped presence check this function replaces.
+# `-h` drops grep's own filename prefix from the piped line: a fixture path
+# ending in `-fixture` carries `fix` as a plain substring, and without `-h`
+# that path text, never the prose, is what would satisfy the second grep.
+token_is_routed() {
+  local token="$1"; shift
+  [ "$#" -gt 0 ] || return 1
+  { grep -Fh -- "$token" "$@" || true; } | grep -qEi "$ROUTE_WORDS_RE"
 }
 
 # `disable-model-invocation: true` is what makes a mode a mode: the model can

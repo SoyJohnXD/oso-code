@@ -41,7 +41,11 @@ When no ledger is provided (direct operator invocation on a branch, or any non-p
 
 ## 3. Report
 
-Two labeled sections, never merged — a conformance gap must never hide inside the debt list, nor a debt finding inside conformance.
+If the assignment never reached you whole — your Codex role's payload carried no skill wrapper path, no ARGUMENTS, or both — neither axis below can run: name exactly which was absent and end with exactly one of:
+
+- `Debt Sweep: blocked` — never locate or infer the missing field yourself.
+
+Otherwise, two labeled sections, never merged — a conformance gap must never hide inside the debt list, nor a debt finding inside conformance.
 
 **Debt findings** — end with exactly one of:
 
