@@ -697,6 +697,17 @@ commit_hook_red_status() {
   printf '%s' "$result"
 }
 
+# Part 2: presence of the right tokens in a stream is falsifiable -- a shell
+# comment can carry them with nothing behind it, and the parent can merge
+# inline and still produce the git effects this smoke checks separately. What
+# Codex 0.146's own event stream can actually correlate is one host-assigned
+# agent id across three independent, host-mediated facts: a completed
+# spawn_agent collab tool call named that id, a completed `oso-state handoff
+# wait` reporting a matching receipt, and a completed `oso-state handoff
+# consume` reporting the same receipt (oso-state prints it on both verbs --
+# plugin/bin/oso-state). The stream carries no field naming which *role* a
+# spawned id was given (ADR-0100's own boundary), so this proves delegation
+# happened for that id, not that the child ran as oso-integrator specifically.
 integrator_handoff_consumed() {
   command -v python3 >/dev/null 2>&1 || return 1
   printf '%s\n' "$SMOKE_OUTPUT" | python3 -c '
@@ -705,6 +716,7 @@ import shlex
 
 expected_slice, expected_attempt, expected_agent_type = sys.argv[1:4]
 receipt_keys = {"version", "hook_session", "slice", "attempt", "agent_id", "agent_type"}
+handoff_option_keys = {"--slice", "--attempt", "--agent-id", "--agent-type"}
 
 def completed_successfully(item):
     if item.get("status") != "completed":
@@ -715,8 +727,12 @@ def completed_successfully(item):
 def candidate_command_tokens(command):
     if not isinstance(command, str):
         return
+    # comments=True matches real bash: a bare `#` starts a live comment, so
+    # nothing after it ran. The old parser fell back to a naive whitespace
+    # split when shlex found no tokens, which let a comment carrying the
+    # exact oso-state tokens satisfy it with no command behind it at all.
     try:
-        outer_tokens = shlex.split(command)
+        outer_tokens = shlex.split(command, comments=True)
     except ValueError:
         outer_tokens = []
     groups = []
@@ -725,41 +741,43 @@ def candidate_command_tokens(command):
     for index, token in enumerate(outer_tokens[:-1]):
         if token in ("-c", "-lc"):
             try:
-                groups.append(shlex.split(outer_tokens[index + 1]))
+                groups.append(shlex.split(outer_tokens[index + 1], comments=True))
             except ValueError:
                 pass
-    if not groups:
-        groups.append(command.split())
     for tokens in groups:
         for index, token in enumerate(tokens):
             if token.split("/")[-1] == "oso-state":
                 yield tokens[index:]
 
-def consume_agent_id(command):
+def handoff_command_agent_id(command):
+    # (verb, agent_id) for a real `oso-state handoff wait|consume` whose
+    # options match the expected identity for this launch, else (None, None).
+    # `wait` always carries --timeout; its value is not part of the identity.
     for tokens in candidate_command_tokens(command):
-        if len(tokens) < 3 or tokens[0].split("/")[-1] != "oso-state":
+        if len(tokens) < 3 or tokens[0].split("/")[-1] != "oso-state" or tokens[1] != "handoff":
             continue
-        if tokens[1:3] != ["handoff", "consume"]:
+        verb = tokens[2]
+        if verb not in ("wait", "consume"):
             continue
-        parsed = {}
         option_tokens = tokens[3:]
         if len(option_tokens) % 2 != 0:
             continue
+        allowed = handoff_option_keys | ({"--timeout"} if verb == "wait" else set())
+        parsed = {}
         for index in range(0, len(option_tokens), 2):
-            key = option_tokens[index]
-            value = option_tokens[index + 1]
-            if key not in {"--slice", "--attempt", "--agent-id", "--agent-type"}:
-                break
-            if key in parsed:
+            key, value = option_tokens[index], option_tokens[index + 1]
+            if key not in allowed or key in parsed:
                 break
             parsed[key] = value
         else:
+            if verb == "wait" and "--timeout" not in parsed:
+                continue
             if parsed.get("--slice") == expected_slice and \
                     parsed.get("--attempt") == expected_attempt and \
                     parsed.get("--agent-type") == expected_agent_type and \
                     parsed.get("--agent-id"):
-                return parsed["--agent-id"]
-    return None
+                return verb, parsed["--agent-id"]
+    return None, None
 
 def command_stdout(item):
     for key in ("stdout", "output", "aggregated_output"):
@@ -784,6 +802,18 @@ def receipt_from(output):
         return None
     return receipt
 
+def receipt_matches(item, agent_id):
+    receipt = receipt_from(command_stdout(item))
+    return bool(receipt) and \
+        receipt["slice"] == expected_slice and \
+        receipt["attempt"] == expected_attempt and \
+        receipt["agent_id"] == agent_id and \
+        receipt["agent_type"] == expected_agent_type
+
+spawned_agent_ids = set()
+waited_agent_ids = set()
+consumed_agent_ids = set()
+
 for line in sys.stdin:
     try:
         event = json.loads(line)
@@ -794,19 +824,76 @@ for line in sys.stdin:
     item = event.get("item", {})
     if not isinstance(item, dict):
         continue
+    if item.get("type") == "collab_tool_call":
+        if item.get("tool") == "spawn_agent" and item.get("status") == "completed":
+            for agent_id in item.get("receiver_thread_ids") or []:
+                if isinstance(agent_id, str) and agent_id:
+                    spawned_agent_ids.add(agent_id)
+        continue
     if item.get("type") != "command_execution" or not completed_successfully(item):
         continue
-    agent_id = consume_agent_id(item.get("command"))
-    if not agent_id:
+    verb, agent_id = handoff_command_agent_id(item.get("command"))
+    if not agent_id or not receipt_matches(item, agent_id):
         continue
-    receipt = receipt_from(command_stdout(item))
-    if receipt and receipt["slice"] == expected_slice and \
-            receipt["attempt"] == expected_attempt and \
-            receipt["agent_id"] == agent_id and \
-            receipt["agent_type"] == expected_agent_type:
-        raise SystemExit(0)
-raise SystemExit(1)
+    (waited_agent_ids if verb == "wait" else consumed_agent_ids).add(agent_id)
+
+correlated = spawned_agent_ids & waited_agent_ids & consumed_agent_ids
+raise SystemExit(0 if correlated else 1)
 ' "$SMOKE_HANDOFF_SLICE" "$SMOKE_HANDOFF_ATTEMPT" "$SMOKE_INTEGRATOR_AGENT_TYPE" >/dev/null 2>&1
+}
+
+# D13: a disposable repository does not make the Codex identity running
+# against it disposable too. Pointing the smoke's own `codex exec` at the
+# operator's real CODEX_HOME (ADR-0100's original design) meant every write
+# that launch provoked -- project-trust registration included -- landed in
+# `config.toml` permanently, with no reliable path back out (nine orphan
+# tables were the measured proof). Isolating CODEX_HOME instead means the
+# only file that absorbs those writes lives under $SMOKE_ROOT and is removed
+# by the same trap as the rest of this fixture; the real config.toml is never
+# opened for writing by the smoke at all.
+#
+# The credentials contradiction this creates is resolved by copying, never
+# symlinking, the operator's auth.json into the disposable home: a symlink
+# would let the child's own token refresh mutate the real file in place,
+# which is the opposite of isolation. The copy's mode matches its source
+# (600) and its lifetime is bounded to $SMOKE_ROOT -- torn down by
+# cleanup_smoke_on_exit's trap on normal exit, and lost only the way every
+# other fixture file already is if that trap never runs (a killed process).
+# The role definitions and hooks.json are copied rather than re-rendered so
+# the smoke exercises what is actually installed, not a second template of
+# it; --dangerously-bypass-hook-trust lets those copied hooks run without
+# reproducing this machine's separate `[hooks.state]` trust records.
+populate_smoke_codex_home() {
+  SMOKE_CODEX_HOME="$SMOKE_ROOT/codex-home"
+  mkdir -p "$SMOKE_CODEX_HOME" && chmod 700 "$SMOKE_CODEX_HOME" || {
+    SMOKE_SETUP_RESULT=codex-home-setup-failed
+    return 1
+  }
+  [ -f "$CODEX_HOME/auth.json" ] || {
+    SMOKE_SETUP_RESULT=codex-auth-missing
+    return 1
+  }
+  cp "$CODEX_HOME/auth.json" "$SMOKE_CODEX_HOME/auth.json" &&
+    chmod 600 "$SMOKE_CODEX_HOME/auth.json" || {
+    SMOKE_SETUP_RESULT=codex-auth-copy-failed
+    return 1
+  }
+  [ -d "$AGENTS_DIR" ] && [ -f "$HOOKS_FILE" ] || {
+    SMOKE_SETUP_RESULT=codex-install-incomplete
+    return 1
+  }
+  cp -R "$AGENTS_DIR" "$SMOKE_CODEX_HOME/agents" &&
+    cp "$HOOKS_FILE" "$SMOKE_CODEX_HOME/hooks.json" || {
+    SMOKE_SETUP_RESULT=codex-payload-copy-failed
+    return 1
+  }
+  { render_codex_managed_config "$SMOKE_CODEX_HOME" "$RUNTIME_ROOT" &&
+    printf '\n[features]\n' &&
+    render_codex_managed_features; } > "$SMOKE_CODEX_HOME/config.toml" &&
+    chmod 600 "$SMOKE_CODEX_HOME/config.toml" || {
+    SMOKE_SETUP_RESULT=codex-config-render-failed
+    return 1
+  }
 }
 
 create_integrator_fixture() {
@@ -843,53 +930,13 @@ create_integrator_fixture() {
     return 1
   fi
   SMOKE_SLICE_COMMIT="$(git -C "$SMOKE_WORKTREE" rev-parse HEAD 2>/dev/null)"
+  populate_smoke_codex_home || return 1
   SMOKE_SETUP_RESULT=ready
 }
 
 cleanup_smoke_on_exit() {
-  local cleanup_status=0
-  if [ -n "${SMOKE_MAIN:-}" ]; then
-    cleanup_smoke_project_config || cleanup_status=1
-  fi
-  if [ -n "${SMOKE_ROOT:-}" ]; then
-    remove_temporary_fixture "$SMOKE_ROOT" "$SMOKE_PARENT" || cleanup_status=1
-  fi
-  return "$cleanup_status"
-}
-
-cleanup_smoke_project_config() {
-  # ADR-0102 removes this run's exact table from the latest config, never by
-  # restoring a whole pre-smoke snapshot over unrelated concurrent changes.
-  [ -f "$CONFIG_FILE" ] && [ ! -L "$CONFIG_FILE" ] || return 1
-  local target_header source candidate attempt
-  target_header="[projects.\"$SMOKE_MAIN\"]"
-  attempt=1
-  while [ "$attempt" -le 3 ]; do
-    source="$(mktemp "$CODEX_HOME/.smoke-config-source.XXXXXX")" || return 1
-    candidate="$(mktemp "$CODEX_HOME/.smoke-config-clean.XXXXXX")" || {
-      rm -f "$source"
-      return 1
-    }
-    if ! cp -p "$CONFIG_FILE" "$source" ||
-       ! cp -p "$source" "$candidate" ||
-       ! awk -v action=remove-table -v target_header="$target_header" \
-         -f "$SCRIPT_DIR/lib/toml-regions.awk" "$source" > "$candidate"; then
-      rm -f "$source" "$candidate"
-      return 1
-    fi
-    if cmp -s "$source" "$candidate"; then
-      rm -f "$source" "$candidate"
-      return 0
-    fi
-    if cmp -s "$source" "$CONFIG_FILE"; then
-      mv "$candidate" "$CONFIG_FILE"
-      rm -f "$source"
-      return 0
-    fi
-    rm -f "$source" "$candidate"
-    attempt=$((attempt + 1))
-  done
-  return 1
+  [ -n "${SMOKE_ROOT:-}" ] || return 0
+  remove_temporary_fixture "$SMOKE_ROOT" "$SMOKE_PARENT"
 }
 
 run_integrator_fixture() {
@@ -898,7 +945,12 @@ run_integrator_fixture() {
   # ADR-0100: a live parent --sandbox overrides the custom agent's default.
   # Match the integrator's declared authority so the smoke exercises it rather
   # than forcing the delegated role back behind workspace-write's .git guard.
-  SMOKE_OUTPUT="$(codex exec --ephemeral --json --sandbox danger-full-access --color never \
+  # CODEX_HOME points at the disposable copy populate_smoke_codex_home built
+  # (D13); --dangerously-bypass-hook-trust runs its copied hooks.json without
+  # that directory's own separate `[hooks.state]` trust records.
+  SMOKE_OUTPUT="$(CODEX_HOME="$SMOKE_CODEX_HOME" \
+    codex exec --ephemeral --json --sandbox danger-full-access --color never \
+    --dangerously-bypass-hook-trust \
     -C "$SMOKE_MAIN" --add-dir "$SMOKE_ROOT" \
     "Delegate exactly one wave to the custom oso-integrator agent; never merge inline. Select agent_type oso-integrator explicitly and launch it with fresh context by setting fork_turns=\"none\" in the v2 spawn arguments beside a task_name; never use a full-history fork. Main checkout: $SMOKE_MAIN. BASE REF: $SMOKE_BASE_COMMIT. HANDOFF SLICE: $SMOKE_HANDOFF_SLICE. HANDOFF ATTEMPT: $SMOKE_HANDOFF_ATTEMPT. The complete wave has one slice, in this order: BRANCH oso-smoke-slice, WORKTREE PATH $SMOKE_WORKTREE. Require the integrator to begin its final message with exactly: oso-handoff: v=1 slice=$SMOKE_HANDOFF_SLICE attempt=$SMOKE_HANDOFF_ATTEMPT. Retain the spawned agent id, wait for the report, then run exactly oso-state handoff wait --slice $SMOKE_HANDOFF_SLICE --attempt $SMOKE_HANDOFF_ATTEMPT --agent-id <agent-id> --agent-type $SMOKE_INTEGRATOR_AGENT_TYPE --timeout 10 and exactly once oso-state handoff consume --slice $SMOKE_HANDOFF_SLICE --attempt $SMOKE_HANDOFF_ATTEMPT --agent-id <agent-id> --agent-type $SMOKE_INTEGRATOR_AGENT_TYPE from the main checkout. Do not quote or summarize the child report in your final response." 2>&1)" || return 1
   integrator_handoff_consumed &&

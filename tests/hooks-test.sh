@@ -2514,6 +2514,9 @@ integrator_smoke_function="$(sed -n \
 integrator_handoff_function="$(sed -n \
   '/^integrator_handoff_consumed() {$/,/^}$/p' \
   "$REPO_ROOT/bootstrap/verify-codex.sh")"
+populate_smoke_home_function="$(sed -n \
+  '/^populate_smoke_codex_home() {$/,/^}$/p' \
+  "$REPO_ROOT/bootstrap/verify-codex.sh")"
 assert_equals "the authenticated smoke preserves the integrator's live sandbox authority" \
   "1" "$(printf '%s\n' "$integrator_smoke_function" | \
     grep -Fc 'codex exec --ephemeral --json --sandbox danger-full-access --color never' || true)"
@@ -2523,36 +2526,51 @@ assert_equals "the authenticated smoke does not override the integrator back to 
 assert_equals "the authenticated smoke requires a fresh explicit integrator launch" \
   "1" "$(printf '%s\n' "$integrator_smoke_function" | \
     grep -Fc 'agent_type oso-integrator explicitly and launch it with fresh context by setting fork_turns=\"none\"' || true)"
+# Part 1 (D13): the smoke's own codex exec never resolves CODEX_HOME to the
+# operator's real one, and runs its copied hooks.json without this machine's
+# separate hook-trust records.
+assert_equals "the smoke's exec targets the disposable Codex home, never the operator's default" \
+  "1" "$(printf '%s\n' "$integrator_smoke_function" | \
+    grep -Fc 'CODEX_HOME="$SMOKE_CODEX_HOME"' || true)"
+assert_equals "the smoke runs its copied hooks without this machine's separate hook-trust records" \
+  "1" "$(printf '%s\n' "$integrator_smoke_function" | grep -v '^[[:space:]]*#' | \
+    grep -Fc -- '--dangerously-bypass-hook-trust' || true)"
+# Part 2: the parser must correlate a real spawn_agent completion, a real
+# `oso-state handoff wait` and a real `oso-state handoff consume` on one
+# Codex-assigned agent id -- token presence in a stream is not enough.
 integrator_smoke_observable_contract="$(
-  if printf '%s\n' "$integrator_smoke_function" | grep -F 'status: done' >/dev/null 2>&1 ||
-     printf '%s\n' "$integrator_smoke_function" | grep -F 'torn_down:' >/dev/null 2>&1; then
-    printf child-report-dependent
-  elif printf '%s\n' "$integrator_handoff_function" | grep -F 'item.get("type") != "command_execution"' >/dev/null 2>&1 &&
-       printf '%s\n' "$integrator_handoff_function" | grep -F 'tokens[1:3] != ["handoff", "consume"]' >/dev/null 2>&1 &&
-       printf '%s\n' "$integrator_handoff_function" | grep -F 'receipt["agent_id"] == agent_id' >/dev/null 2>&1 &&
-       printf '%s\n' "$integrator_handoff_function" | grep -F 'spawn_agent' >/dev/null 2>&1; then
-    printf spawn-parser-retained
-  elif printf '%s\n' "$integrator_handoff_function" | grep -F 'item.get("type") != "command_execution"' >/dev/null 2>&1 &&
-       printf '%s\n' "$integrator_handoff_function" | grep -F 'tokens[1:3] != ["handoff", "consume"]' >/dev/null 2>&1 &&
-       printf '%s\n' "$integrator_handoff_function" | grep -F 'receipt["agent_id"] == agent_id' >/dev/null 2>&1 &&
-       printf '%s\n' "$integrator_smoke_function" | grep -F 'HANDOFF SLICE: $SMOKE_HANDOFF_SLICE' >/dev/null 2>&1 &&
-       printf '%s\n' "$integrator_smoke_function" | grep -F 'HANDOFF ATTEMPT: $SMOKE_HANDOFF_ATTEMPT' >/dev/null 2>&1 &&
-       printf '%s\n' "$integrator_smoke_function" | grep -F 'oso-state handoff wait --slice $SMOKE_HANDOFF_SLICE --attempt $SMOKE_HANDOFF_ATTEMPT --agent-id <agent-id> --agent-type $SMOKE_INTEGRATOR_AGENT_TYPE --timeout 10' >/dev/null 2>&1 &&
-       printf '%s\n' "$integrator_smoke_function" | grep -F 'oso-state handoff consume --slice $SMOKE_HANDOFF_SLICE --attempt $SMOKE_HANDOFF_ATTEMPT --agent-id <agent-id> --agent-type $SMOKE_INTEGRATOR_AGENT_TYPE' >/dev/null 2>&1 &&
-       printf '%s\n' "$integrator_smoke_function" | grep -F 'integrator_handoff_consumed &&' >/dev/null 2>&1 &&
-       printf '%s\n' "$integrator_smoke_function" | grep -F '[ -f "$SMOKE_MAIN/integrated.txt" ]' >/dev/null 2>&1 &&
-       printf '%s\n' "$integrator_smoke_function" | grep -F "grep -Fqx 'integrated by oso-integrator' \"\$SMOKE_MAIN/integrated.txt\"" >/dev/null 2>&1 &&
-       printf '%s\n' "$integrator_smoke_function" | grep -F 'git -C "$SMOKE_MAIN" merge-base --is-ancestor "$SMOKE_SLICE_COMMIT" HEAD' >/dev/null 2>&1 &&
-       printf '%s\n' "$integrator_smoke_function" | grep -F 'git -C "$SMOKE_MAIN" show-ref --verify --quiet refs/heads/oso-smoke-slice' >/dev/null 2>&1 &&
-       printf '%s\n' "$integrator_smoke_function" | grep -F 'git -C "$SMOKE_MAIN" worktree list --porcelain' >/dev/null 2>&1 &&
-       printf '%s\n' "$integrator_smoke_function" | grep -F 'grep -F "$SMOKE_WORKTREE"' >/dev/null 2>&1; then
+  if printf '%s\n' "$integrator_handoff_function" | grep -F 'item.get("type") == "collab_tool_call"' >/dev/null 2>&1 &&
+     printf '%s\n' "$integrator_handoff_function" | grep -F 'item.get("tool") == "spawn_agent"' >/dev/null 2>&1 &&
+     printf '%s\n' "$integrator_handoff_function" | grep -F 'shlex.split(command, comments=True)' >/dev/null 2>&1 &&
+     printf '%s\n' "$integrator_handoff_function" | grep -F 'spawned_agent_ids & waited_agent_ids & consumed_agent_ids' >/dev/null 2>&1 &&
+     printf '%s\n' "$integrator_smoke_function" | grep -F 'HANDOFF SLICE: $SMOKE_HANDOFF_SLICE' >/dev/null 2>&1 &&
+     printf '%s\n' "$integrator_smoke_function" | grep -F 'HANDOFF ATTEMPT: $SMOKE_HANDOFF_ATTEMPT' >/dev/null 2>&1 &&
+     printf '%s\n' "$integrator_smoke_function" | grep -F 'oso-state handoff wait --slice $SMOKE_HANDOFF_SLICE --attempt $SMOKE_HANDOFF_ATTEMPT --agent-id <agent-id> --agent-type $SMOKE_INTEGRATOR_AGENT_TYPE --timeout 10' >/dev/null 2>&1 &&
+     printf '%s\n' "$integrator_smoke_function" | grep -F 'oso-state handoff consume --slice $SMOKE_HANDOFF_SLICE --attempt $SMOKE_HANDOFF_ATTEMPT --agent-id <agent-id> --agent-type $SMOKE_INTEGRATOR_AGENT_TYPE' >/dev/null 2>&1 &&
+     printf '%s\n' "$integrator_smoke_function" | grep -F 'integrator_handoff_consumed &&' >/dev/null 2>&1 &&
+     printf '%s\n' "$integrator_smoke_function" | grep -F '[ -f "$SMOKE_MAIN/integrated.txt" ]' >/dev/null 2>&1 &&
+     printf '%s\n' "$integrator_smoke_function" | grep -F "grep -Fqx 'integrated by oso-integrator' \"\$SMOKE_MAIN/integrated.txt\"" >/dev/null 2>&1 &&
+     printf '%s\n' "$integrator_smoke_function" | grep -F 'git -C "$SMOKE_MAIN" merge-base --is-ancestor "$SMOKE_SLICE_COMMIT" HEAD' >/dev/null 2>&1 &&
+     printf '%s\n' "$integrator_smoke_function" | grep -F 'git -C "$SMOKE_MAIN" show-ref --verify --quiet refs/heads/oso-smoke-slice' >/dev/null 2>&1 &&
+     printf '%s\n' "$integrator_smoke_function" | grep -F 'git -C "$SMOKE_MAIN" worktree list --porcelain' >/dev/null 2>&1 &&
+     printf '%s\n' "$integrator_smoke_function" | grep -F 'grep -F "$SMOKE_WORKTREE"' >/dev/null 2>&1; then
     printf complete
   else
     printf incomplete
   fi
 )"
-assert_equals "authenticated integrator smoke requires a consumed oso-integrator handoff plus repository effects" \
+assert_equals "authenticated integrator smoke requires a spawn/wait/consume-correlated handoff plus repository effects" \
   complete "$integrator_smoke_observable_contract"
+assert_equals "the isolated home is populated by copying the operator's credential, never linking it" \
+  "1" "$(printf '%s\n' "$populate_smoke_home_function" | \
+    grep -Fc 'cp "$CODEX_HOME/auth.json" "$SMOKE_CODEX_HOME/auth.json"' || true)"
+assert_equals "the isolated home never symlinks the operator's credential" \
+  "0" "$(printf '%s\n' "$populate_smoke_home_function" | grep -Fc 'ln -s' || true)"
+assert_equals "the isolated config reuses the installer's own managed-config renderer" \
+  "1" "$(printf '%s\n' "$populate_smoke_home_function" | \
+    grep -Fc 'render_codex_managed_config "$SMOKE_CODEX_HOME" "$RUNTIME_ROOT"' || true)"
+assert_equals "the per-run config-table cleanup is gone now that the smoke never writes the real config" \
+  "0" "$(grep -Fc 'cleanup_smoke_project_config' "$REPO_ROOT/bootstrap/verify-codex.sh" || true)"
 
 integrator_handoff_status() (
   SMOKE_HANDOFF_SLICE=codex-integrator-smoke
@@ -2568,9 +2586,17 @@ smoke_receipt_json() {
     "$1" "$2" "$3" "$4"
 }
 
-smoke_consume_command() {
-  printf 'oso-state handoff consume --slice %s --attempt %s --agent-id %s --agent-type %s' \
-    "$1" "$2" "$3" "$4"
+# $1 = wait|consume, $2 slice, $3 attempt, $4 agent id, $5 agent type. `wait`
+# always carries --timeout, matching plugin/bin/oso-state's own usage line.
+smoke_handoff_command() {
+  local verb="$1" slice="$2" attempt="$3" agent_id="$4" agent_type="$5"
+  if [ "$verb" = wait ]; then
+    printf 'oso-state handoff wait --slice %s --attempt %s --agent-id %s --agent-type %s --timeout 10' \
+      "$slice" "$attempt" "$agent_id" "$agent_type"
+  else
+    printf 'oso-state handoff consume --slice %s --attempt %s --agent-id %s --agent-type %s' \
+      "$slice" "$attempt" "$agent_id" "$agent_type"
+  fi
 }
 
 smoke_command_event() {
@@ -2578,6 +2604,16 @@ smoke_command_event() {
   local event_type="${5:-item.completed}"
   printf '{"type":"%s","item":{"type":"command_execution","command":"%s","status":"%s","stdout":"%s","exit_code":%s}}\n' \
     "$event_type" "$command" "$status" "$escaped_stdout" "$exit_code"
+}
+
+# $1 = agent id Codex assigns to the spawn, $2 = status. This is the real
+# collab_tool_call shape a completed spawn_agent reports (also used by the
+# spawn-only case below), the only source of a host-assigned id this parser
+# now requires before any wait or consume can correlate against it.
+smoke_spawn_event() {
+  local agent_id="$1" status="${2:-completed}"
+  printf '{"type":"item.completed","item":{"type":"collab_tool_call","tool":"spawn_agent","status":"%s","receiver_thread_ids":["%s"],"prompt":"delegate one wave"}}\n' \
+    "$status" "$agent_id"
 }
 
 # integrator_handoff_consumed returns 1 outright where python3 is absent, so the
@@ -2589,69 +2625,127 @@ if ! command -v python3 >/dev/null 2>&1; then
   skipped=$((skipped + 1))
 else
   smoke_agent_id=agent-smoke-123
-  smoke_valid_command="$(
-    smoke_consume_command codex-integrator-smoke 1 "$smoke_agent_id" oso-integrator
-  )"
-  smoke_valid_receipt="$(
-    smoke_receipt_json codex-integrator-smoke 1 "$smoke_agent_id" oso-integrator
-  )"
-  smoke_valid_jsonl="$(smoke_command_event "$smoke_valid_command" "$smoke_valid_receipt")"
-  assert_equals "valid completed consume plus matching receipt passes" \
-    observed "$(integrator_handoff_status "$smoke_valid_jsonl")"
-  assert_equals "missing receipt fails" \
-    missing "$(integrator_handoff_status "$(smoke_command_event "$smoke_valid_command" "")")"
-  assert_equals "failed command fails" \
-    missing "$(integrator_handoff_status "$(smoke_command_event "$smoke_valid_command" "$smoke_valid_receipt" failed 1)")"
-  assert_equals "started command event fails" \
-    missing "$(integrator_handoff_status "$(smoke_command_event "$smoke_valid_command" "$smoke_valid_receipt" completed 0 item.started)")"
+  smoke_receipt="$(smoke_receipt_json codex-integrator-smoke 1 "$smoke_agent_id" oso-integrator)"
+  smoke_spawn_valid="$(smoke_spawn_event "$smoke_agent_id")"
+  smoke_wait_valid="$(smoke_command_event \
+    "$(smoke_handoff_command wait codex-integrator-smoke 1 "$smoke_agent_id" oso-integrator)" \
+    "$smoke_receipt")"
+  smoke_consume_command_valid="$(smoke_handoff_command consume codex-integrator-smoke 1 "$smoke_agent_id" oso-integrator)"
+  smoke_consume_valid="$(smoke_command_event "$smoke_consume_command_valid" "$smoke_receipt")"
 
-  smoke_wrong_slice_jsonl="$(
-    smoke_command_event \
-      "$(smoke_consume_command wrong-integrator-smoke 1 "$smoke_agent_id" oso-integrator)" \
-      "$(smoke_receipt_json wrong-integrator-smoke 1 "$smoke_agent_id" oso-integrator)"
-  )"
-  smoke_wrong_attempt_jsonl="$(
-    smoke_command_event \
-      "$(smoke_consume_command codex-integrator-smoke 2 "$smoke_agent_id" oso-integrator)" \
-      "$(smoke_receipt_json codex-integrator-smoke 2 "$smoke_agent_id" oso-integrator)"
-  )"
-  smoke_wrong_type_jsonl="$(
-    smoke_command_event \
-      "$(smoke_consume_command codex-integrator-smoke 1 "$smoke_agent_id" oso-verifier)" \
-      "$(smoke_receipt_json codex-integrator-smoke 1 "$smoke_agent_id" oso-verifier)"
-  )"
-  assert_equals "wrong slice, attempt, or agent type fails" \
-    "missing missing missing" \
-    "$(printf '%s %s %s' \
-      "$(integrator_handoff_status "$smoke_wrong_slice_jsonl")" \
-      "$(integrator_handoff_status "$smoke_wrong_attempt_jsonl")" \
-      "$(integrator_handoff_status "$smoke_wrong_type_jsonl")")"
+  assert_equals "a real spawn, wait and consume on the same agent id passes" \
+    observed "$(integrator_handoff_status "$(printf '%s\n%s\n%s\n' \
+      "$smoke_spawn_valid" "$smoke_wait_valid" "$smoke_consume_valid")")"
 
-  smoke_mismatch_receipt="$(
-    smoke_receipt_json codex-integrator-smoke 1 agent-smoke-other oso-integrator
-  )"
-  assert_equals "receipt agent id mismatching the command fails" \
-    missing "$(integrator_handoff_status "$(smoke_command_event "$smoke_valid_command" "$smoke_mismatch_receipt")")"
-  smoke_spawn_only_jsonl='{"type":"item.completed","item":{"type":"collab_tool_call","tool":"spawn_agent","status":"completed","receiver_thread_ids":["agent-smoke-123"],"prompt":"BRANCH oso-smoke-slice"}}'
+  # This is the case that matters most: the handoff consume tokens are
+  # present, with a matching receipt, but no spawn or wait ever correlates
+  # them to a real Codex-assigned agent id.
+  assert_equals "a falsified stream -- handoff consume tokens with no correlated spawn -- is rejected" \
+    missing "$(integrator_handoff_status "$smoke_consume_valid")"
+
+  # A real spawn and a real wait for the same id, but the consume's oso-state
+  # tokens live only in a trailing shell comment on a command that never ran
+  # them -- the exact forgery named in the defect report.
+  smoke_forged_consume="$(smoke_command_event \
+    "printf leftover # $smoke_consume_command_valid" "$smoke_receipt")"
+  assert_equals "oso-state tokens living only in a trailing comment are not the command that ran" \
+    missing "$(integrator_handoff_status "$(printf '%s\n%s\n%s\n' \
+      "$smoke_spawn_valid" "$smoke_wait_valid" "$smoke_forged_consume")")"
+
+  # A real spawn for a different agent id does not correlate with a genuine
+  # wait and consume for this one.
+  assert_equals "a spawn for a different agent id does not correlate" \
+    missing "$(integrator_handoff_status "$(printf '%s\n%s\n%s\n' \
+      "$(smoke_spawn_event agent-smoke-decoy)" "$smoke_wait_valid" "$smoke_consume_valid")")"
+
+  # A real spawn and a real consume, but no genuine wait for the same id.
+  assert_equals "a consume with no genuine wait for the same id is rejected" \
+    missing "$(integrator_handoff_status "$(printf '%s\n%s\n' \
+      "$smoke_spawn_valid" "$smoke_consume_valid")")"
+
   assert_equals "spawn-only JSONL fails" \
-    missing "$(integrator_handoff_status "$smoke_spawn_only_jsonl")"
+    missing "$(integrator_handoff_status "$smoke_spawn_valid")"
   smoke_report_only_jsonl='{"type":"item.completed","item":{"type":"agent_message","text":"oso-handoff: v=1 slice=codex-integrator-smoke attempt=1\nstatus: done"}}'
   assert_equals "report-only JSONL fails" \
     missing "$(integrator_handoff_status "$smoke_report_only_jsonl")"
+
+  assert_equals "missing receipt fails" \
+    missing "$(integrator_handoff_status "$(printf '%s\n%s\n%s\n' \
+      "$smoke_spawn_valid" "$smoke_wait_valid" "$(smoke_command_event "$smoke_consume_command_valid" "")")")"
+  assert_equals "failed consume command fails" \
+    missing "$(integrator_handoff_status "$(printf '%s\n%s\n%s\n' \
+      "$smoke_spawn_valid" "$smoke_wait_valid" \
+      "$(smoke_command_event "$smoke_consume_command_valid" "$smoke_receipt" failed 1)")")"
+  assert_equals "started consume event fails" \
+    missing "$(integrator_handoff_status "$(printf '%s\n%s\n%s\n' \
+      "$smoke_spawn_valid" "$smoke_wait_valid" \
+      "$(smoke_command_event "$smoke_consume_command_valid" "$smoke_receipt" completed 0 item.started)")")"
+
+  smoke_wrong_slice_consume="$(smoke_command_event \
+    "$(smoke_handoff_command consume wrong-integrator-smoke 1 "$smoke_agent_id" oso-integrator)" \
+    "$(smoke_receipt_json wrong-integrator-smoke 1 "$smoke_agent_id" oso-integrator)")"
+  smoke_wrong_attempt_consume="$(smoke_command_event \
+    "$(smoke_handoff_command consume codex-integrator-smoke 2 "$smoke_agent_id" oso-integrator)" \
+    "$(smoke_receipt_json codex-integrator-smoke 2 "$smoke_agent_id" oso-integrator)")"
+  smoke_wrong_type_consume="$(smoke_command_event \
+    "$(smoke_handoff_command consume codex-integrator-smoke 1 "$smoke_agent_id" oso-verifier)" \
+    "$(smoke_receipt_json codex-integrator-smoke 1 "$smoke_agent_id" oso-verifier)")"
+  assert_equals "wrong slice, attempt, or agent type in an otherwise genuine consume still fails" \
+    "missing missing missing" \
+    "$(printf '%s %s %s' \
+      "$(integrator_handoff_status "$(printf '%s\n%s\n%s\n' "$smoke_spawn_valid" "$smoke_wait_valid" "$smoke_wrong_slice_consume")")" \
+      "$(integrator_handoff_status "$(printf '%s\n%s\n%s\n' "$smoke_spawn_valid" "$smoke_wait_valid" "$smoke_wrong_attempt_consume")")" \
+      "$(integrator_handoff_status "$(printf '%s\n%s\n%s\n' "$smoke_spawn_valid" "$smoke_wait_valid" "$smoke_wrong_type_consume")")")"
+
+  smoke_mismatch_receipt="$(smoke_receipt_json codex-integrator-smoke 1 agent-smoke-other oso-integrator)"
+  assert_equals "receipt agent id mismatching the command fails" \
+    missing "$(integrator_handoff_status "$(printf '%s\n%s\n%s\n' \
+      "$smoke_spawn_valid" "$smoke_wait_valid" \
+      "$(smoke_command_event "$smoke_consume_command_valid" "$smoke_mismatch_receipt")")")"
 fi
 assert_equals "the shared Codex protocol forbids full-history forks with explicit roles" \
   "1" "$(grep -Fc 'Every launch that selects an explicit `agent_type` starts with fresh context: set `fork_turns="none"`.' \
     "$REPO_ROOT/plugin/skills/_shared/platform/codex/subagents.md" || true)"
-smoke_cleanup_function="$(sed -n \
-  '/^cleanup_smoke_project_config() {$/,/^}$/p' \
-  "$REPO_ROOT/bootstrap/verify-codex.sh")"
-assert_equals "the smoke cleanup removes only its exact project table from the latest config" \
-  "complete" "$(
-    printf '%s\n' "$smoke_cleanup_function" | grep -F 'target_header="[projects.\"$SMOKE_MAIN\"]"' >/dev/null &&
-    printf '%s\n' "$smoke_cleanup_function" | grep -F 'action=remove-table' >/dev/null &&
-    printf '%s\n' "$smoke_cleanup_function" | grep -F 'cmp -s "$source" "$CONFIG_FILE"' >/dev/null &&
-    printf complete || printf incomplete
-  )"
+
+# Verify (b): populate_smoke_codex_home is the whole read/write surface the
+# smoke has against Codex identity. Driving it directly against a fixture
+# "operator" home proves it never mutates that home -- config.toml included
+# -- without needing a real authenticated `codex exec` run.
+SMOKE_HOME_FIXTURE="$TEST_HOME/smoke-home-fixture/.codex"
+mkdir -p "$SMOKE_HOME_FIXTURE/agents"
+printf 'fixture-auth\n' > "$SMOKE_HOME_FIXTURE/auth.json"
+printf 'fixture-role\n' > "$SMOKE_HOME_FIXTURE/agents/oso-integrator.toml"
+printf '{"hooks":{}}\n' > "$SMOKE_HOME_FIXTURE/hooks.json"
+printf '# operator config.toml, unrelated to any smoke run\n' > "$SMOKE_HOME_FIXTURE/config.toml"
+SMOKE_HOME_SNAPSHOT="$TEST_HOME/smoke-home-fixture-snapshot"
+cp -a "$SMOKE_HOME_FIXTURE" "$SMOKE_HOME_SNAPSHOT"
+
+smoke_home_probe() (
+  CODEX_HOME="$SMOKE_HOME_FIXTURE"
+  AGENTS_DIR="$SMOKE_HOME_FIXTURE/agents"
+  HOOKS_FILE="$SMOKE_HOME_FIXTURE/hooks.json"
+  RUNTIME_ROOT="$TEST_HOME/smoke-home-fixture-runtime"
+  SMOKE_ROOT="$TEST_HOME/smoke-home-fixture-root"
+  mkdir -p "$SMOKE_ROOT"
+  . "$REPO_ROOT/bootstrap/lib/codex-managed-config.sh"
+  eval "$populate_smoke_home_function"
+  if ! populate_smoke_codex_home; then
+    printf 'setup-failed:%s' "${SMOKE_SETUP_RESULT:-unknown}"
+    return
+  fi
+  if [ -f "$SMOKE_CODEX_HOME/auth.json" ] &&
+     [ -f "$SMOKE_CODEX_HOME/agents/oso-integrator.toml" ] &&
+     [ -f "$SMOKE_CODEX_HOME/hooks.json" ] &&
+     [ -f "$SMOKE_CODEX_HOME/config.toml" ]; then
+    printf populated
+  else
+    printf incomplete
+  fi
+)
+assert_equals "the isolated Codex home receives a copied credential, role and rendered config" \
+  populated "$(smoke_home_probe)"
+assert_equals "building the isolated home leaves the operator's own Codex home byte-identical, config.toml included" \
+  "identical" "$(diff -rq "$SMOKE_HOME_SNAPSHOT" "$SMOKE_HOME_FIXTURE" >/dev/null 2>&1 && printf identical || printf mutated)"
 
 # --- Codex host contract: claims checked against the installed binary ---------
 # ADR-0106: every other check here asserts the harness against its own prose;

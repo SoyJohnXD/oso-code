@@ -211,6 +211,7 @@ Three properties of the amendment log these files replace are facts to carry for
 - [0120](decisions/0120-the-allowlist-gets-a-capability-model-and-a-local-drift-check.md) — The allowlist gets a capability model, and a local drift check against the servers it names
 - [0121](decisions/0121-the-oso-permission-profile-is-opt-in-and-its-three-broad-grants-are-narrowed.md) — The oso permission profile is opt-in, and its three broad grants are narrowed
 - [0122](decisions/0122-the-oso-permission-profile-returns-to-the-machine-default.md) — The oso permission profile returns to the machine default
+- [0123](decisions/0123-the-integrator-smoke-gets-an-isolated-codex-home-and-correlated-proof.md) — The integrator smoke gets an isolated Codex home and correlated proof
 
 ## Foundational decisions
 
