@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Lints the rules `claude plugin validate --strict` has no opinion on: it does
 # open hooks.json, skill frontmatter and the agents, and fails on a broken one
-# (probed against client 2.1.220), but it never asks what they SAY. Fifteen rules
+# (probed against client 2.1.220), but it never asks what they SAY. Seventeen rules
 # hold that ground: a `context: fork` skill declares `background`; the same
 # skill declares an `end with exactly one of:` verdict block; every
 # `oso-code:<name>` the plugin's own prose points at resolves; every call site
@@ -20,9 +20,14 @@
 # release-published hook hash exactly match their single source; the milestone
 # reporting contract names every required fact of its five milestones plus a
 # length bound, and every flow body that arms a slice or launches a delegation
-# points at it; and the Claude-card/Codex-no-card difference the contract defers
+# points at it; the Claude-card/Codex-no-card difference the contract defers
 # to a host lives in exactly one platform file per host, never in the neutral
-# body and never in both hosts' trees at once. Each rule states its own reason
+# body and never in both hosts' trees at once; the design-foundation slice
+# paragraph names what `init` and `document` each produce and requires reading
+# and recording the installed Impeccable version before the slice is cut; and
+# the Codex harness-discovered-correction amendment lane asserts all four of
+# its conditions — an unstarted slice, a cited file and line, one operator
+# confirmation, and a recorded amendment. Each rule states its own reason
 # above
 # it; `background` is the one whose cost is least visible: as of client v2.1.218
 # a fork returns immediately and its verdict arrives in a LATER turn, while every
@@ -565,6 +570,7 @@ check_present_tense_prose_names_the_rule_count() {
     5) spelled=five ;; 6) spelled=six ;; 7) spelled=seven ;; 8) spelled=eight ;;
     9) spelled=nine ;; 10) spelled=ten ;; 11) spelled=eleven ;; 12) spelled=twelve ;;
     13) spelled=thirteen ;; 14) spelled=fourteen ;; 15) spelled=fifteen ;;
+    16) spelled=sixteen ;; 17) spelled=seventeen ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -703,6 +709,56 @@ check_reporting_host_difference_is_single_sourced() {
   [ -z "$cross_leak" ] || flag "a host-specific card difference crossed into the other host's platform tree: $(printf '%s' "$cross_leak" | tr '\n' ' ')"
 }
 
+# The Astro-landing incident (docs/decisions/0116) traced to one paragraph that
+# asserted Impeccable's `init`/`document` split from this file's own memory
+# instead of the installed contract, and to nobody recording which version was
+# actually read — the version slice B14's pin must reconcile against. Both are
+# now single, literal sentences a future rewrite could silently drop; this
+# holds the paragraph to naming all five, so losing one fails instead of
+# drifting back to the same guess. Same technique as
+# `milestone_bullet_names_its_facts`: find the one paragraph by its own bold
+# lead-in, then hold it to every marker.
+check_design_foundation_slice_reads_the_installed_contract() {
+  local body="$PLUGIN_ROOT/skills/_shared/bodies/plan.md"
+  local paragraph marker
+  if [ ! -f "$body" ]; then
+    flag "no plan body at skills/_shared/bodies/plan.md to check the design-foundation slice paragraph"
+    return 0
+  fi
+  paragraph="$({ grep -F -- '**Design-foundation slice' "$body" || true; })"
+  if [ -z "$paragraph" ]; then
+    flag "skills/_shared/bodies/plan.md carries no Design-foundation slice paragraph"
+    return 0
+  fi
+  for marker in 'SKILL.md' 'version' 'ledger' '`init` writes `PRODUCT.md`' '`document` writes `DESIGN.md`'; do
+    printf '%s\n' "$paragraph" | grep -qF -- "$marker" \
+      || flag "skills/_shared/bodies/plan.md's Design-foundation slice paragraph never states: $marker"
+  done
+}
+
+# Verify criterion (d) for docs/decisions/0117 asks for all four conditions
+# asserted together, the citation especially — a lane that drops the citation
+# is the harness rewriting an approved slice on its own word, exactly what the
+# operator objected to losing. Same technique as the rule above: one paragraph
+# found by its own bold lead-in, held to every marker.
+check_third_amendment_lane_names_its_conditions() {
+  local file="$PLUGIN_ROOT/skills/_shared/platform/codex/plan.md"
+  local paragraph marker
+  if [ ! -f "$file" ]; then
+    flag "no Codex plan platform file to check the third amendment lane"
+    return 0
+  fi
+  paragraph="$({ grep -F -- 'harness-discovered correction' "$file" || true; })"
+  if [ -z "$paragraph" ]; then
+    flag "skills/_shared/platform/codex/plan.md carries no harness-discovered-correction amendment lane"
+    return 0
+  fi
+  for marker in 'NOT STARTED' 'CITES' 'CONFIRMS' 'amend-plan'; do
+    printf '%s\n' "$paragraph" | grep -qF -- "$marker" \
+      || flag "skills/_shared/platform/codex/plan.md's harness-discovered-correction lane never asserts: $marker"
+  done
+}
+
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }
 
 check_forked_skills_declare_background
@@ -720,6 +776,8 @@ check_present_tense_prose_names_the_rule_count
 check_hook_renders_and_published_hashes_match
 check_milestone_reporting_contract_is_complete
 check_reporting_host_difference_is_single_sourced
+check_design_foundation_slice_reads_the_installed_contract
+check_third_amendment_lane_names_its_conditions
 
 if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"

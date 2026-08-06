@@ -553,7 +553,7 @@ fi
 
 LINT_RULE_COUNT_FIXTURE="$TEST_HOME/lint-rule-count"
 copy_lint_fixture "$LINT_RULE_COUNT_FIXTURE"
-sed 's/fifteen rules/fourteen rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
+sed 's/seventeen rules/sixteen rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
   > "$LINT_RULE_COUNT_FIXTURE/README.md.tmp"
 mv "$LINT_RULE_COUNT_FIXTURE/README.md.tmp" "$LINT_RULE_COUNT_FIXTURE/README.md"
 if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
@@ -561,7 +561,7 @@ if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
   echo "FAIL: rule 12 accepted stale present-tense rule-count prose"; fail=$((fail + 1))
 else
   case "$rule_count_lint_report" in
-    *"README.md does not name the fifteen rules this linter declares"*)
+    *"README.md does not name the seventeen rules this linter declares"*)
       echo "ok: rule 12 rejects stale present-tense rule-count prose"; pass=$((pass + 1)) ;;
     *)
       echo "FAIL: rule 12 mutation failed for the wrong reason — $(printf '%s' "$rule_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
@@ -668,6 +668,63 @@ else
         echo "ok: rule 15 rejects the native-card fact duplicated across two platform/claude files"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: the milestone-host mutation failed for the wrong reason — $(printf '%s' "$milestone_host_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+# B8 (D4/ADR-0116): rule 16 must reject a design-foundation slice paragraph that
+# regressed to the undifferentiated `init`/`document` phrasing the Astro-landing
+# incident traced to — strip only the `init` attribution and confirm the
+# paragraph-scoped check names it specifically, not the read-before-cut markers
+# still standing beside it.
+LINT_DESIGN_FOUNDATION_FIXTURE="$TEST_HOME/lint-design-foundation"
+copy_lint_fixture "$LINT_DESIGN_FOUNDATION_FIXTURE"
+design_foundation_target="$LINT_DESIGN_FOUNDATION_FIXTURE/plugin/skills/_shared/bodies/plan.md"
+if ! grep -qF '`init` writes `PRODUCT.md`' "$design_foundation_target"; then
+  echo "FAIL: rule 16 mutation found no init/PRODUCT.md attribution to remove from plan.md"; fail=$((fail + 1))
+else
+  sed 's/`init` writes `PRODUCT\.md`/`init` writes a document/' "$design_foundation_target" \
+    > "$design_foundation_target.tmp"
+  mv "$design_foundation_target.tmp" "$design_foundation_target"
+  if grep -qF '`init` writes `PRODUCT.md`' "$design_foundation_target"; then
+    echo "FAIL: rule 16 mutation left the init/PRODUCT.md attribution standing in plan.md"; fail=$((fail + 1))
+  elif design_foundation_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_DESIGN_FOUNDATION_FIXTURE/plugin" "$LINT_DESIGN_FOUNDATION_FIXTURE" 2>&1)"; then
+    echo "FAIL: a Design-foundation slice paragraph missing its init/PRODUCT.md attribution passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$design_foundation_report" in
+      *"skills/_shared/bodies/plan.md's Design-foundation slice paragraph never states: \`init\` writes \`PRODUCT.md\`"*)
+        echo "ok: rule 16 rejects a design-foundation slice paragraph that drops what init produces"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: rule 16 mutation failed for the wrong reason — $(printf '%s' "$design_foundation_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+# B9 (D4/ADR-0117): rule 17 must reject the third amendment lane if it loses
+# its citation requirement specifically — the condition the ledger names as the
+# one that must never silently drop, since an uncited correction is the harness
+# rewriting an approved slice on its own word.
+LINT_THIRD_LANE_FIXTURE="$TEST_HOME/lint-third-amendment-lane"
+copy_lint_fixture "$LINT_THIRD_LANE_FIXTURE"
+third_lane_target="$LINT_THIRD_LANE_FIXTURE/plugin/skills/_shared/platform/codex/plan.md"
+if ! grep -qF 'CITES the evidence' "$third_lane_target"; then
+  echo "FAIL: rule 17 mutation found no CITES condition to remove from the Codex plan platform file"; fail=$((fail + 1))
+else
+  sed 's/CITES the evidence/names the evidence/' "$third_lane_target" \
+    > "$third_lane_target.tmp"
+  mv "$third_lane_target.tmp" "$third_lane_target"
+  if grep -qF 'CITES the evidence' "$third_lane_target"; then
+    echo "FAIL: rule 17 mutation left the CITES condition standing in the Codex plan platform file"; fail=$((fail + 1))
+  elif third_lane_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_THIRD_LANE_FIXTURE/plugin" "$LINT_THIRD_LANE_FIXTURE" 2>&1)"; then
+    echo "FAIL: a third amendment lane missing its citation condition passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$third_lane_report" in
+      *"skills/_shared/platform/codex/plan.md's harness-discovered-correction lane never asserts: CITES"*)
+        echo "ok: rule 17 rejects a third amendment lane that drops its citation condition"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: rule 17 mutation failed for the wrong reason — $(printf '%s' "$third_lane_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi

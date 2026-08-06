@@ -204,6 +204,8 @@ Three properties of the amendment log these files replace are facts to carry for
 - [0112](decisions/0112-feedback-amends-a-pending-plan-in-place.md) — Feedback amends a pending plan in place, never destroying it
 - [0114](decisions/0114-blocked-is-first-class-with-recovery-routes-and-the-linter-checks-routing.md) — `blocked` is a first-class verdict with recovery routes, and the linter checks routing, not mention
 - [0115](decisions/0115-milestone-reporting-is-a-shared-contract-with-a-length-bound.md) — Milestone reporting is a shared contract with required facts, a length bound, and one platform file per host
+- [0116](decisions/0116-the-design-foundation-slice-reads-impeccables-real-contract-before-it-is-cut.md) — The design-foundation slice reads Impeccable's real contract before it is cut
+- [0117](decisions/0117-a-harness-discovered-correction-to-a-not-started-slice-costs-one-confirmation.md) — A harness-discovered correction to a not-started slice costs one confirmation, not a re-approval
 
 ## Foundational decisions
 
