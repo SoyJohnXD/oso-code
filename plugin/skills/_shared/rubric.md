@@ -54,7 +54,7 @@ The rubric serves readability; readability never serves the rubric.
 
 - Dead code: unused imports or exports, unreachable branches, commented-out blocks.
 - Leftover debug output, temporary flags, or stray TODOs without an owner.
-- Over-documentation. The default is ZERO comments — naming and structure carry the meaning:
+- Over-documentation. The inline comment is a debt CLASS with no exceptions — every one is debt, and the judgment contract cannot override this. Zero is the default and the ceiling: naming and structure carry the meaning, no density threshold makes an inline comment acceptable, and no external constraint earns one. Only the language's standard public-API doc form stands outside it, and only as narrowly as below:
   - JSDoc is the exception, not a habit: only on code whose behavior or contract cannot be made obvious from names and types alone (non-trivial algorithms, surprising edge semantics like float rounding, external or legal constraints).
   - When JSDoc is earned, use the standard shape: one-line description, then `@param`/`@returns` only where they add meaning beyond the types (units, ranges, invariants).
   - A why-shaped sentence over self-evident code is still a WHAT comment — dressing noise as rationale does not save it. If a one-line function needs a comment, fix the name instead.
@@ -62,5 +62,5 @@ The rubric serves readability; readability never serves the rubric.
     - Before: `// increment the counter by one` above `counter += 1` — restates the code.
     - Also before: `// we increment here so the total stays in sync` — why-shaped, but the sync is already obvious from context; still noise.
     - After: no comment; the statement speaks for itself.
-    - Earned WHY: `// vendor API rejects batches over 500, so we page` — an external constraint the code cannot show.
+    - Still debt: `// D22: retries cap at 3` above `const MAX_RETRIES = 3` — a decision, ticket, or process citation is external to the code and unshowable by it, and debt regardless. Provenance belongs in the change's ledger, the PR body, or the commit message, never in the source.
   - Scarcity check: if most exports in a file carry JSDoc, that is over-documentation and a violation in itself.

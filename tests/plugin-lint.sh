@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Lints the rules `claude plugin validate --strict` has no opinion on: it does
 # open hooks.json, skill frontmatter and the agents, and fails on a broken one
-# (probed against client 2.1.220), but it never asks what they SAY. Twenty-two rules
+# (probed against client 2.1.220), but it never asks what they SAY. Twenty-three rules
 # hold that ground: a `context: fork` skill declares `background`; the same
 # skill declares an `end with exactly one of:` verdict block; every
 # `oso-code:<name>` the plugin's own prose points at resolves; every call site
@@ -35,10 +35,12 @@
 # and recording the installed Impeccable version before the slice is cut; the
 # Codex harness-discovered-correction amendment lane asserts all four of
 # its conditions — an unstarted slice, a cited file and line, one operator
-# confirmation, and a recorded amendment; and the Wave 0 bullet and the
+# confirmation, and a recorded amendment; the Wave 0 bullet and the
 # Cut-one-worktree-per-slice paragraph never go back to contradicting each
-# other over wave 1's own WAVE START. Each rule states its own reason above
-# it; `background` is the one whose cost is least visible: as of client v2.1.218
+# other over wave 1's own WAVE START; and the shared rubric states the inline
+# comment as a debt class with no exceptions, one the judgment contract cannot
+# override, carrying no earned-WHY escape hatch. Each rule states its own reason
+# above it; `background` is the one whose cost is least visible: as of client v2.1.218
 # a fork returns immediately and its verdict arrives in a LATER turn, while every
 # call site in plan/quick/debug reads that verdict in-turn.
 # Only decidable rules live here. Pure sed and grep, no jq: tests/hooks-test.sh
@@ -710,7 +712,7 @@ check_present_tense_prose_names_the_rule_count() {
     13) spelled=thirteen ;; 14) spelled=fourteen ;; 15) spelled=fifteen ;;
     16) spelled=sixteen ;; 17) spelled=seventeen ;; 18) spelled=eighteen ;;
     19) spelled=nineteen ;; 20) spelled=twenty ;; 21) spelled=twenty-one ;;
-    22) spelled=twenty-two ;;
+    22) spelled=twenty-two ;; 23) spelled=twenty-three ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -954,6 +956,37 @@ check_wave_1_wave_start_accounts_for_wave_0() {
   done <<< "$sites"
 }
 
+# The rubric's own escape hatch cost more than any rule it holds: an `Earned WHY`
+# example blessed "an external constraint the code cannot show", and a comment
+# citing a frozen ledger decision wears exactly that costume — the decision IS
+# external to the code and the code genuinely cannot show it — so 1,441 of them
+# survived one review. The judgment contract compounds it: a rule stated as a
+# preference is waved away by "no concrete readability win", so the ban has to
+# carry the same carve-out the Hard blockers heading does, in the bullet itself.
+# Held to the three strings that make it a class rule rather than a preference,
+# never to the paragraph around them, which any rewording would break; and the
+# retired label is kept from growing back the way the pin placeholder above is.
+check_rubric_bans_inline_comments_without_an_escape_hatch() {
+  local rubric="$PLUGIN_ROOT/skills/_shared/rubric.md"
+  local bullet marker hit
+  if [ ! -f "$rubric" ]; then
+    flag "no shared rubric at skills/_shared/rubric.md to check the inline-comment ban"
+    return 0
+  fi
+  bullet="$({ grep -F -- '- Over-documentation.' "$rubric" || true; })"
+  if [ -z "$bullet" ]; then
+    flag "skills/_shared/rubric.md carries no Over-documentation bullet to state the inline-comment ban"
+    return 0
+  fi
+  for marker in 'debt CLASS' 'no exceptions' 'the judgment contract cannot override this'; do
+    printf '%s\n' "$bullet" | grep -qF -- "$marker" \
+      || flag "skills/_shared/rubric.md's Over-documentation bullet never states the inline comment as a class: $marker"
+  done
+  for hit in $({ grep -nF 'Earned WHY' "$rubric" || true; } | cut -d: -f1); do
+    flag "skills/_shared/rubric.md:$hit carries the retired Earned WHY escape hatch again"
+  done
+}
+
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }
 
 check_forked_skills_declare_background
@@ -978,6 +1011,7 @@ check_reporting_host_difference_is_single_sourced
 check_design_foundation_slice_reads_the_installed_contract
 check_third_amendment_lane_names_its_conditions
 check_wave_1_wave_start_accounts_for_wave_0
+check_rubric_bans_inline_comments_without_an_escape_hatch
 
 if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"
