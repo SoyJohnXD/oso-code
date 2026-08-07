@@ -7789,6 +7789,72 @@ esac
 assert_equals "the CR scan names every directory and extension a shipped executable can arrive under, and verify.bat is inside what that expands to" \
   "$EXPECTED_CR_SCAN_TARGETS| reached" "$cr_scan_targets| $cr_scan_reaches_verify_bat"
 
+# --- The Windows claims, held to what the code does (D18) --------------------
+# README told a Windows operator they needed "nothing pre-installed", and every
+# defect this change closed was downstream of believing it: winget is what
+# provisions the machine and its absence now stops the run, and Git Bash is not a
+# vehicle the install discards afterward but the shell a native client spawns all
+# five .sh hooks through for the rest of the machine's life. A claim is the one
+# artifact no runtime check reaches, so the guard is here — a doc that quietly
+# goes back to promising a free lunch is red in the commit that writes it.
+# The row is located by its leading cell rather than by line number, which moves
+# with every paragraph added above it.
+README_WINDOWS_ROW="$(grep -m1 '^| Windows |' "$REPO_ROOT/README.md" || true)"
+windows_row_claims=""
+case "$README_WINDOWS_ROW" in
+  '') windows_row_claims="no Windows row in README.md" ;;
+  *'nothing pre-installed'*) windows_row_claims="still promises nothing pre-installed" ;;
+  *winget*) : ;;
+  *) windows_row_claims="names no winget" ;;
+esac
+if [ -z "$windows_row_claims" ]; then
+  case "$README_WINDOWS_ROW" in
+    *'Git Bash'*) : ;;
+    *) windows_row_claims="names no Git Bash" ;;
+  esac
+fi
+if [ -z "$windows_row_claims" ]; then
+  case "$README_WINDOWS_ROW" in
+    *runtime*) windows_row_claims=honest ;;
+    *) windows_row_claims="names Git Bash without calling it a runtime dependency" ;;
+  esac
+fi
+assert_equals "README's Windows row names winget and states Git Bash as a runtime dependency" \
+  "honest" "$windows_row_claims"
+
+# The guide the row points at, held from both ends: a link to a file nobody wrote
+# and a file nothing links to fail the same operator in opposite directions.
+WINDOWS_GUIDE="$REPO_ROOT/docs/windows.md"
+windows_guide_reachable=missing
+if [ -f "$WINDOWS_GUIDE" ]; then
+  windows_guide_reachable=unlinked
+  if grep -qF 'docs/windows.md' "$REPO_ROOT/README.md"; then
+    windows_guide_reachable=reachable
+  fi
+fi
+assert_equals "the Windows guide exists and README links it" \
+  "reachable" "$windows_guide_reachable"
+
+# Two numbers the guide states that the code decides, so a bump in either place
+# leaves the operator following a version that was never provisioned. Both are
+# read out of the scripts rather than spelled here: a pin copied into a test is a
+# third place to forget.
+ps1_node_floor="$(sed -n 's/^\$NodeMajorFloor = \([0-9][0-9]*\).*$/\1/p' "$REPO_ROOT/bootstrap/install.ps1")"
+guide_node_floor=absent
+if [ -n "$ps1_node_floor" ] && grep -qF "Node.js $ps1_node_floor" "$WINDOWS_GUIDE" 2>/dev/null; then
+  guide_node_floor="$ps1_node_floor"
+fi
+assert_equals "the Windows guide states the Node floor install.ps1 enforces" \
+  "${ps1_node_floor:-unreadable}" "$guide_node_floor"
+
+install_fallow_pin="$(sed -n 's/^SUPPORTED_FALLOW_VERSION=\(.*\)$/\1/p' "$REPO_ROOT/bootstrap/install.sh")"
+guide_fallow_pin=absent
+if [ -n "$install_fallow_pin" ] && grep -qF "fallow@$install_fallow_pin" "$WINDOWS_GUIDE" 2>/dev/null; then
+  guide_fallow_pin="$install_fallow_pin"
+fi
+assert_equals "the Windows guide names the fallow package at the pin install.sh provisions" \
+  "${install_fallow_pin:-unreadable}" "$guide_fallow_pin"
+
 # --- CI's verify assertion: the SET of check names, never a bare count (D6) ---
 # Every check a fixture HOME reaches fails there by construction, so `failed: 9`
 # reads identical whether a check was dropped, renamed or quietly stopped running

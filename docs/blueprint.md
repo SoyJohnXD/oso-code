@@ -131,7 +131,7 @@ Three properties of the amendment log these files replace are facts to carry for
 
 **2026-07-25 — harness-hardening pass · commit `bdd9cb6` · released 0.16.0**
 
-- [0066](decisions/0066-fallow-is-reported-never-asserted.md) — fallow is reported, never asserted
+- [0066](decisions/0066-fallow-is-reported-never-asserted.md) — fallow is reported, never asserted *(superseded)*
 - [0067](decisions/0067-impeccable-opt-out-is-recorded-data.md) — The `--no-impeccable` opt-out is recorded, and cleared
 - [0068](decisions/0068-debug-verify-exception.md) — `/debug` gains a bounded `Verify-exception`
 - [0069](decisions/0069-debug-verifier-payload.md) — `/debug`'s verifier launch names its whole payload
@@ -217,6 +217,12 @@ Three properties of the amendment log these files replace are facts to carry for
 - [0125](decisions/0125-four-installer-integrity-defects-from-an-external-audit.md) — Four installer-integrity defects from an external audit, and the CLI pin becomes a precondition
 - [0126](decisions/0126-wave-1s-wave-start-accounts-for-a-wave-0-that-already-landed.md) — Wave 1's WAVE START accounts for a wave 0 that already landed
 
+**2026-08-07 — windows-install-reliability**
+
+- [0127](decisions/0127-the-windows-runtime-is-git-bash-and-the-state-layer-is-published.md) — The Windows runtime is Git Bash, and the state layer is published rather than hoped for
+- [0128](decisions/0128-fallow-is-provisioned-from-npm-and-counted.md) — fallow is provisioned from its npm package at a pin, and counted like every other MCP
+- [0129](decisions/0129-provisioning-is-per-user-consent-bound-and-asserted.md) — Provisioning is per-user, consent-bound, and asserted rather than assumed
+
 ## Foundational decisions
 
 | Decision | Choice | Rationale |
@@ -278,8 +284,8 @@ Stop-the-line triage for a break — reproduce-first, minimal fix scope, no feat
 
 ## Bootstrap responsibilities
 
-1. Prerequisites (runtime) per OS: Linux, macOS, Windows.
-2. MCP install and wiring verification: engram and context7 asserted connected; fallow wired for debt-sweep use but only reported, since nothing provisions the Rust it builds from and a hard check would make the one-step Windows path red by construction. The Impeccable plugin installs by default (`--no-impeccable` opts out, recorded as a marker file the installer writes and clears), and `verify.sh` asserts the plugin — a `note:` naming the opt-out instead, wherever that marker stands — plus the `npx impeccable` CLI behind a 20-second in-shell bound, since an unreachable registry would otherwise hang the report short of its summary.
+1. Prerequisites (runtime) per OS: Linux, macOS, Windows — where Git Bash is a permanent RUNTIME dependency and not an install vehicle, since every hook this plugin registers is a `.sh` a native Windows client spawns through it, and `install.ps1` owns a fail-closed preflight over the whole set before it delegates (ADR-0127).
+2. MCP install and wiring verification: engram, context7 and fallow all asserted connected, each against the artifact that actually starts it — engram's pinned binary is downloaded, checksum-verified and asked to answer rather than inferred from a plugin install, and fallow is provisioned from its pinned npm package on every supported host, which is what retired the Rust prerequisite that had kept it on a `note:` (ADR-0128, ADR-0129). The Impeccable plugin installs by default (`--no-impeccable` opts out, recorded as a marker file the installer writes and clears), and `verify.sh` asserts the plugin — a `note:` naming the opt-out instead, wherever that marker stands — plus the `npx impeccable` CLI behind a 20-second in-shell bound, since an unreachable registry would otherwise hang the report short of its summary.
 3. Legacy cleanup: remove gentle-ai configs, hooks, skills, and CLAUDE.md blocks. Known duplication to kill: engram protocol (currently in three places). The persona is already consolidated in `plugin/output-styles/oso.md` — one place, no duplication to kill.
 
 ## Skill authoring rule

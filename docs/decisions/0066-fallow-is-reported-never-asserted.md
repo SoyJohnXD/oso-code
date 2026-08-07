@@ -1,9 +1,10 @@
 # 0066 — fallow is reported, never asserted
 
 Date: 2026-07-25
-Status: accepted
+Status: superseded
 Supersedes: ADR-0019 (its "fallow present AND Connected" assertion)
-Reconciled: applied — Bootstrap responsibilities item 2 reads fallow as wired for debt-sweep use but only reported.
+Superseded-by: ADR-0128 — the whole of it: fallow is provisioned from its npm package at a pin on every host and counted like every other MCP, which removed the Rust prerequisite this decision's reasoning rested on
+Reconciled: superseded — Bootstrap responsibilities item 2 reads fallow as asserted connected beside engram and context7, so the body deliberately reads the opposite of what this decided.
 Source: this change (harness-hardening pass); recorded with the change that made it
 
 ## Decision

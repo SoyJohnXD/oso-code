@@ -2,8 +2,8 @@
 
 Date: 2026-07-16
 Status: accepted
-Superseded-by: ADR-0066 — retires only the "fallow present AND Connected" assertion; the wiring and the accumulate-then-summarize installer policy still stand
-Reconciled: superseded — Bootstrap responsibilities item 2 reports fallow instead of asserting it, the shape ADR-0066 left.
+Superseded-by: ADR-0066 — retired only the "fallow present AND Connected" assertion, which ADR-0128 restored once the npm package removed the Rust prerequisite behind it; the wiring and the accumulate-then-summarize installer policy never moved
+Reconciled: applied — Bootstrap responsibilities item 2 asserts engram, context7 and fallow connected again, the shape ADR-0128 left.
 Source: docs/blueprint.md amendment of 2026-07-16 (windows-install-behavior), decision (D3), deciding commit 2905cde
 
 ## Decision
