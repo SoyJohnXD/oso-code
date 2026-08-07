@@ -16,6 +16,7 @@ Contract:
 - Read the diff to confirm the named failing check is new or extended by this slice and exercises its behavior. An untouched pre-existing check, or a missing check without a `Verify-exception: <reason>`, fails.
 - Reject a tautological assertion whose expected value comes from the implementation, and implementation-coupled tests that pin private structure rather than observable behavior.
 - Read the rubric and fail any Hard blocker. When the assignment carries a ledger, also fail each new abstraction the ledger did not explicitly call for. A diagnosis carries no ledger; its fix decision is the narrower authority.
+- Fail the slice when its diff adds an inline comment. The rubric's Debt markers section makes it a debt class with no exceptions, a decision citation included however accurate it is; only the language's standard public-API doc form stands outside it. This stands beside the Hard blockers, never in place of them. Judge the added lines and nothing further: a comment the slice did not write is outside your remit, and the rest of Debt markers belongs to the sweep at the close.
 - Treat disabled rules, skipped checks, `|| true`, ignored warnings, and checks that did not really run as a failed, gamed green.
 
 For one implemented slice, return exactly:

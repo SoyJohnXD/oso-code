@@ -30,7 +30,7 @@ Collect findings as `file:line — [severity: blocker|structural|nit] — violat
 
 A second axis, judged and reported apart from debt. The `/plan` orchestrator passes the frozen ledger in this skill's invocation ARGUMENTS, alongside the base ref and in the shape the `argument-hint` declares — the BARE decisions + scope only, never the rationale or rejected alternatives: you check the assembled code against what was decided, and a judge who reads the author's reasoning anchors on it.
 
-Judge the change against the ledger and flag every gap:
+Judge the change against the ledger and flag every gap. A trace is executable implementation — the code, configuration, or instruction that enacts a decision and makes the change behave as it was decided. A comment naming a decision is never one: it is over-documentation, so it lands in the debt section as a finding and leaves the decision unimplemented here. The two sections stay separate for exactly this — a citation that counted as a trace would clear conformance with the very artifact the debt axis is flagging.
 
 - **Unimplemented** — a decision with no trace in the diff.
 - **Contradicts-decision** — an implementation that does the opposite of, or diverges from, a decision.

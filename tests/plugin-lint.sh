@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Lints the rules `claude plugin validate --strict` has no opinion on: it does
 # open hooks.json, skill frontmatter and the agents, and fails on a broken one
-# (probed against client 2.1.220), but it never asks what they SAY. Twenty-four rules
+# (probed against client 2.1.220), but it never asks what they SAY. Twenty-five rules
 # hold that ground: a `context: fork` skill declares `background`; the same
 # skill declares an `end with exactly one of:` verdict block; every
 # `oso-code:<name>` the plugin's own prose points at resolves; every call site
@@ -39,9 +39,11 @@
 # Cut-one-worktree-per-slice paragraph never go back to contradicting each
 # other over wave 1's own WAVE START; the shared rubric states the inline
 # comment as a debt class with no exceptions, one the judgment contract cannot
-# override, carrying no earned-WHY escape hatch; and oso-applier's rubric mapping
+# override, carrying no earned-WHY escape hatch; oso-applier's rubric mapping
 # names all five of that rubric's sections, Debt markers included, so the writer
-# is told the section it is graded on. Each rule states its own reason
+# is told the section it is graded on; and oso-verifier's contract, on both hosts,
+# fails a slice whose diff adds an inline comment, so the judge that runs before
+# each slice commits can refuse one. Each rule states its own reason
 # above it; `background` is the one whose cost is least visible: as of client v2.1.218
 # a fork returns immediately and its verdict arrives in a LATER turn, while every
 # call site in plan/quick/debug reads that verdict in-turn.
@@ -715,6 +717,7 @@ check_present_tense_prose_names_the_rule_count() {
     16) spelled=sixteen ;; 17) spelled=seventeen ;; 18) spelled=eighteen ;;
     19) spelled=nineteen ;; 20) spelled=twenty ;; 21) spelled=twenty-one ;;
     22) spelled=twenty-two ;; 23) spelled=twenty-three ;; 24) spelled=twenty-four ;;
+    25) spelled=twenty-five ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -1020,6 +1023,40 @@ check_applier_rubric_mapping_names_every_section() {
   done
 }
 
+# The two rules above bind the rubric and the writer; this one binds the judge
+# that stands between them, and it is the one that ran and saw nothing. oso-verifier
+# is the judge each slice passes before its work is committed, and its whole
+# rubric mandate was the Hard blockers — a section the inline comment does not
+# live in — so a change cut into N slices cleared N gates that structurally could
+# not fail one for a comment, and 1,441 of them survived exactly that. Both hosts
+# run the verifier, so both contracts carry the mandate and both are held here.
+# Located by the class's own name, `inline comment` — the words the rubric's
+# Debt markers bullet and both applier contracts already use — over the lines
+# naming it taken together, one line in each contract today. Held to the two
+# clauses that make it a gate rather than a preference: it FAILS, and it judges
+# what the diff ADDED, never a comment the slice inherited. A rewording that drops
+# the phrase fails at the locator instead of slipping past it. Markers match
+# case-insensitively because the Claude contract capitalizes for emphasis where
+# the terser Codex one does not, and the claim is the same in either case.
+check_verifier_gate_fails_an_added_inline_comment() {
+  local agent mandate marker
+  for agent in "$PLUGIN_ROOT/agents/oso-verifier.md" "$REPO_ROOT/codex/agents/oso-verifier.toml"; do
+    if [ ! -f "$agent" ]; then
+      flag "no oso-verifier contract at ${agent#"$REPO_ROOT"/} to check its inline-comment gate"
+      continue
+    fi
+    mandate="$({ grep -F -- 'inline comment' "$agent" || true; })"
+    if [ -z "$mandate" ]; then
+      flag "${agent#"$REPO_ROOT"/} never names the inline comment its per-slice gate has to fail"
+      continue
+    fi
+    for marker in 'Fail the slice' 'diff adds'; do
+      printf '%s\n' "$mandate" | grep -qiF -- "$marker" \
+        || flag "${agent#"$REPO_ROOT"/}'s inline-comment mandate is no gate over what the slice added: $marker"
+    done
+  done
+}
+
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }
 
 check_forked_skills_declare_background
@@ -1046,6 +1083,7 @@ check_third_amendment_lane_names_its_conditions
 check_wave_1_wave_start_accounts_for_wave_0
 check_rubric_bans_inline_comments_without_an_escape_hatch
 check_applier_rubric_mapping_names_every_section
+check_verifier_gate_fails_an_added_inline_comment
 
 if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"
