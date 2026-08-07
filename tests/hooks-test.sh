@@ -7083,6 +7083,235 @@ assert_equals "the delegation check joins both sides of its argv on a mark no ar
   "$argv_boundary_kind / $(printf '%s\n' "$delegation_check" |
     grep -oE -- '-join [^ )]+' | LC_ALL=C sort -u)"
 
+# --- The backup an install promises, and the copies that make it true (D11) ---
+# Three separate failures lived here: a backup directory announced in the plan
+# and not created until phase 6 of 7, so every run that died earlier left the
+# operator holding a path that had never existed; a backup set that covered the
+# two files phases 6 and 7 rewrite and none of the client state phases 2 to 5
+# replace, including the user-scope context7 entry migrate_context7 deletes
+# outright; and one more directory left under ~/.local/state/oso-code per run,
+# forever. Every case below runs install.sh in a HOME of its own so the fixtures
+# cannot see each other's snapshots.
+#
+# All of them enter through the sourcing guard one process out, the way
+# winget_provisioning does: in_installer's subshell runs from a `|| true`
+# context, whose errexit suppression reaches every subshell of it, so nothing
+# asserted through that helper can observe install.sh dying — and what makes a
+# run reach `report_backup_coverage` at all is the errexit only a child process
+# of its own carries.
+INSTALLER_RUN_LOG="$TEST_HOME/installer-phase-log"
+INSTALLER_RUN_OUTPUT="$TEST_HOME/installer-run-output"
+
+# The path spelled out here rather than read from install.sh, the way the state
+# path and the opt-out marker above are: asserting the layout independently is
+# what catches a backup written somewhere no operator was told to look.
+claude_backups_root_of() { printf '%s/.local/state/oso-code/claude-backups' "$1"; }
+
+count_claude_backups() {
+  local entry count=0
+  for entry in "$(claude_backups_root_of "$1")"/install-backup-*; do
+    if [ -d "$entry" ]; then count=$((count + 1)); fi
+  done
+  printf '%s' "$count"
+}
+
+# The snapshot a run left behind, to read its contents back: the stamp is
+# fixed-width, so the last name the glob yields is the newest.
+newest_claude_backup() {
+  local entry newest=""
+  for entry in "$(claude_backups_root_of "$1")"/install-backup-*; do
+    if [ -d "$entry" ]; then newest="$entry"; fi
+  done
+  printf '%s' "$newest"
+}
+
+# Read at the moment the line is PRINTED, not after confirm_plan returns: a
+# mkdir arriving minutes later in phase 6 satisfies every assertion made
+# afterwards and none of them is the promise the operator read.
+announced_backup_state() {
+  HOME="$1" bash -c '
+    installer="$1"
+    set --
+    . "$installer"
+    ASSUME_YES=true
+    info() {
+      case "$1" in
+        *"backup location: "*)
+          announced="${1#*backup location: }"
+          if [ -d "$announced" ]; then printf "exists\n"; else printf "promised only\n"; fi
+          ;;
+      esac
+    }
+    confirm_plan
+  ' _ "$INSTALL_SH"
+}
+
+# One run of main() with every phase but the backup, the retention and the
+# closing report replaced after the source. What these cases are about is WHEN
+# the copy is taken and what the run leaves behind, and running the real wiring
+# to find that out would need an authenticated client, a network and a package
+# manager. Each stub records whether the copies of the files its phase changes
+# were already on disk when it ran, naming any that were not — the two live in
+# the same phase, so which one is missing is the whole diagnosis.
+# The wire_mcps stub also overwrites settings.json the way `claude plugin
+# marketplace add` does, so a pre-image taken too late is a copy of the run's
+# own work rather than of the operator's file.
+shadowed_install_run() {
+  local fixture_home="$1" budget="${2:-}"
+  : > "$INSTALLER_RUN_LOG"
+  HOME="$fixture_home" bash -c '
+    installer="$1" log="$2" budget="$3"
+    set --
+    . "$installer"
+    ASSUME_YES=true
+    if [ -n "$budget" ]; then OSO_INSTALL_BACKUP_BUDGET_KIB="$budget"; fi
+    record() {
+      local missing=""
+      [ -f "$BACKUP_DIR/client-config/.claude.json" ] || missing="$missing client-config"
+      [ -f "$BACKUP_DIR/settings.json" ] || missing="$missing settings.json"
+      if [ -n "$missing" ]; then
+        printf "%s:uncopied(%s)\n" "$1" "${missing# }" >> "$log"
+      else
+        printf "%s:copied\n" "$1" >> "$log"
+      fi
+    }
+    ensure_prerequisites() { :; }
+    ensure_node() { :; }
+    wire_mcps() {
+      record wire_mcps
+      mkdir -p "$CLAUDE_DIR"
+      printf "{\"extraKnownMarketplaces\":{\"engram\":{}}}\n" > "$CLAUDE_DIR/settings.json"
+    }
+    install_plugin() { record install_plugin; }
+    wire_git_commit_hook() { record wire_git_commit_hook; }
+    wire_impeccable() { record wire_impeccable; }
+    remove_legacy_artifacts() { record remove_legacy_artifacts; }
+    remove_legacy_settings_entries() { :; }
+    ensure_output_style() { :; }
+    merge_global_claude_md() { record merge_global_claude_md; }
+    print_wiring_summary() { :; }
+    main
+  ' _ "$INSTALL_SH" "$INSTALLER_RUN_LOG" "$budget" > "$INSTALLER_RUN_OUTPUT" 2>&1 || true
+  tr '\n' ' ' < "$INSTALLER_RUN_LOG"
+}
+
+INSTALLER_ANNOUNCE_HOME="$TEST_HOME/installer-announce-home"
+mkdir -p "$INSTALLER_ANNOUNCE_HOME"
+assert_equals "the backup directory exists at the moment the plan names it" \
+  "exists" "$(announced_backup_state "$INSTALLER_ANNOUNCE_HOME")"
+
+# A plan the operator declines leaves nothing behind: the directory is created
+# before the prompt, so a `no` that kept it would silt the state dir up one empty
+# snapshot per decline — and each one would then count as a real backup. A HOME
+# of its own, because the run above created one on purpose.
+INSTALLER_DECLINED_HOME="$TEST_HOME/installer-declined-home"
+mkdir -p "$INSTALLER_DECLINED_HOME"
+printf 'n\n' | HOME="$INSTALLER_DECLINED_HOME" bash -c '
+  installer="$1"
+  set --
+  . "$installer"
+  confirm_plan
+' _ "$INSTALL_SH" >/dev/null 2>&1 || true
+assert_equals "a declined plan leaves no empty backup behind" \
+  "0" "$(count_claude_backups "$INSTALLER_DECLINED_HOME")"
+
+# The client state phases 2 to 5 replace: user-scope MCP servers in
+# ~/.claude.json (migrate_context7 deletes the context7 entry there outright and
+# before anything confirms a replacement) and the plugin/marketplace
+# registrations at the top of ~/.claude/plugins. The subdirectories below it are
+# the unpacked marketplaces and the plugin cache, which no backup should carry.
+INSTALLER_COPY_HOME="$TEST_HOME/installer-copy-home"
+mkdir -p "$INSTALLER_COPY_HOME/.claude/plugins/marketplaces/engram"
+printf '{"mcpServers":{"context7":{"command":"npx"}}}\n' > "$INSTALLER_COPY_HOME/.claude.json"
+printf '{"engram":{"source":"Gentleman-Programming/engram"}}\n' \
+  > "$INSTALLER_COPY_HOME/.claude/plugins/known_marketplaces.json"
+printf 'unpacked plugin content\n' \
+  > "$INSTALLER_COPY_HOME/.claude/plugins/marketplaces/engram/plugin.js"
+
+client_config_backup_state() {
+  HOME="$1" bash -c '
+    installer="$1"
+    set --
+    . "$installer"
+    backup_client_config
+    copied="$BACKUP_DIR/client-config"
+    mcp=missing
+    if grep -q context7 "$copied/.claude.json" 2>/dev/null; then mcp=captured; fi
+    registrations=missing
+    if [ -f "$copied/.claude/plugins/known_marketplaces.json" ]; then registrations=captured; fi
+    cache=copied
+    if [ ! -e "$copied/.claude/plugins/marketplaces" ]; then cache=left; fi
+    printf "mcp=%s registrations=%s cache=%s" "$mcp" "$registrations" "$cache"
+  ' _ "$INSTALL_SH"
+}
+
+assert_equals "the copy holds the MCP entry and the registrations the install replaces, and none of the plugin content the client re-fetches" \
+  "mcp=captured registrations=captured cache=left" \
+  "$(client_config_backup_state "$INSTALLER_COPY_HOME")"
+
+# The ordering, which is the whole of "backed up first": each phase reports
+# whether the copies were already there when it ran, so a backup taken after the
+# wiring reads as loudly as no backup at all. settings.json is in the fixture
+# because phases 2, 3 and 5 all write it — the client records its known
+# marketplaces and its enabled plugins there — and a copy of it taken in phase 6
+# is three phases of operator state too late.
+INSTALLER_ORDER_HOME="$TEST_HOME/installer-order-home"
+INSTALLER_ORDER_SETTINGS='{"enabledPlugins":{"impeccable@impeccable":false}}'
+mkdir -p "$INSTALLER_ORDER_HOME/.claude"
+printf '{"mcpServers":{"context7":{"command":"npx"}}}\n' > "$INSTALLER_ORDER_HOME/.claude.json"
+printf '%s\n' "$INSTALLER_ORDER_SETTINGS" > "$INSTALLER_ORDER_HOME/.claude/settings.json"
+assert_equals "every phase that changes the client's state runs after the copy of it" \
+  "wire_mcps:copied install_plugin:copied wire_git_commit_hook:copied wire_impeccable:copied remove_legacy_artifacts:copied merge_global_claude_md:copied " \
+  "$(shadowed_install_run "$INSTALLER_ORDER_HOME")"
+
+# The other half of first: a pre-image is only a pre-image if it holds the bytes
+# the operator brought. The run above overwrote settings.json in phase 2, so an
+# opt-out the operator set on purpose survives in the backup only when the copy
+# was taken before that.
+assert_equals "the backed up settings.json is the operator's, not the one phase 2 wrote over it" \
+  "$INSTALLER_ORDER_SETTINGS" \
+  "$(cat "$(newest_claude_backup "$INSTALLER_ORDER_HOME")/settings.json" 2>/dev/null)"
+
+# What the operator is handed at the end, because D11 buys honest backups and no
+# restore command: a recovery that is theirs to perform has to name its own
+# edges, the way restore-codex.sh names the one thing its restore cannot revert.
+coverage_named() {
+  local phrase
+  for phrase in "$@"; do
+    case "$(cat "$INSTALLER_RUN_OUTPUT")" in
+      *"$phrase"*) ;;
+      *) printf 'missing:%s' "$phrase"; return ;;
+    esac
+  done
+  printf 'named'
+}
+assert_equals "the run names the backup, that nothing restores it for you, and the wiring it cannot undo" \
+  "named" "$(coverage_named 'backup: ' 'no restore command on this side' 'core.hooksPath')"
+
+# Retention, through the call site that has to carry it: three older snapshots,
+# a budget nothing fits in, and one install. ADR-0124's bound always keeps the
+# newest whatever the budget says, so what survives is this run's own — and
+# repeated installs stop being repeated directories.
+INSTALLER_RETENTION_HOME="$TEST_HOME/installer-retention-home"
+INSTALLER_RETENTION_ROOT="$(claude_backups_root_of "$INSTALLER_RETENTION_HOME")"
+mkdir -p "$INSTALLER_RETENTION_HOME/.claude"
+printf '{"mcpServers":{}}\n' > "$INSTALLER_RETENTION_HOME/.claude.json"
+for stamp in 20260101-010101 20260202-020202 20260303-030303; do
+  mkdir -p "$INSTALLER_RETENTION_ROOT/install-backup-$stamp-1/client-config"
+  printf 'an older install\n' > "$INSTALLER_RETENTION_ROOT/install-backup-$stamp-1/settings.json"
+done
+shadowed_install_run "$INSTALLER_RETENTION_HOME" 1 >/dev/null
+# WHICH one survived is the other half: a bound that kept the newest of the
+# planted three and deleted the snapshot the run had just taken would leave the
+# same count behind and none of the protection.
+retention_survivor="an older snapshot"
+if [ ! -d "$INSTALLER_RETENTION_ROOT/install-backup-20260303-030303-1" ]; then
+  retention_survivor="this run's own"
+fi
+assert_equals "an install prunes the older backups its budget cannot hold and keeps the one it just took" \
+  "1 / this run's own" \
+  "$(count_claude_backups "$INSTALLER_RETENTION_HOME") / $retention_survivor"
+
 # --- The npx probe's bound: a hang may not take the whole report with it -------
 # verify.sh runs standalone via curl and defines its own helpers, so the bound is
 # READ OUT of the shipped file rather than reimplemented here — a rename or a move

@@ -1,13 +1,20 @@
-# Shared backup-manifest replay and inventory for install-codex.sh's own
-# `install-backup-*` snapshots under ~/.local/state/oso-code.
+# Shared backup-manifest replay, inventory and retention bound for the
+# `install-backup-*` snapshots both installers leave under ~/.local/state/oso-code.
 #
-# Two independent callers read this: install-codex.sh's in-run
+# Three independent callers read this: install-codex.sh's in-run
 # rollback_transaction (restores the CURRENT run's own backup the moment a
-# step fails) and the standalone bootstrap/restore-codex.sh (restores an
-# OLDER backup, any time later, at the operator's request). Both must read
-# the same manifest the same way -- one format, one replay -- so a mid-run
-# rollback and a later operator-invoked restore can never drift into two
-# readings of the same backup.
+# step fails), the standalone bootstrap/restore-codex.sh (restores an
+# OLDER backup, any time later, at the operator's request), and install.sh,
+# which takes no manifest and reads only the inventory and the bound. The
+# first two must read the same manifest the same way -- one format, one
+# replay -- so a mid-run rollback and a later operator-invoked restore can
+# never drift into two readings of the same backup; all three must bound
+# disk the same way, or "300 MiB" means something different per installer.
+#
+# Each installer hands in a ROOT of its own and the glob below never
+# recurses, so one library reads two snapshot sets without either side ever
+# being offered the other's: only install-codex.sh's snapshots carry the
+# manifest restore-codex.sh replays.
 #
 # Sourced, not executed: functions only, no side effects at source time.
 
@@ -43,6 +50,42 @@ install_backup_dirs_newest_first() {
 # agree on, unlike -b (GNU-only) or --apparent-size.
 backup_size_kib() {
   du -sk "$1" 2>/dev/null | awk '{ print $1 + 0 }'
+}
+
+# The one place the retention budget is written down, for every installer that
+# has one. 300 MiB (D14, ADR-0124): the measured problem was 1.9 GiB across 17
+# snapshots and a single Codex snapshot already runs to ~110 MiB, so bounding
+# "the last N" would leave size free to grow with whatever a future release's
+# transaction happens to back up. Bounding size keeps roughly 2-3 recent Codex
+# snapshots -- a real fallback depth, not just the last one -- while cutting
+# that measured worst case by over 80%. The override is what lets a test hand
+# in a budget nothing can fit.
+install_backup_budget_kib() {
+  printf '%s' "${OSO_INSTALL_BACKUP_BUDGET_KIB:-307200}"
+}
+
+# The backups under $1 that do not fit that budget, one absolute path per line
+# in the same newest-first order: this decides WHICH snapshots are surplus, and
+# the caller deletes them and reports the removal in its own voice, since the
+# two installers say it differently and neither's wording belongs here.
+# The newest is never named however small the budget is -- the run that just
+# installed is never the one a tight budget empties.
+install_backups_over_budget() {
+  local root=$1 listing backup budget_kib running_kib=0 size_kib kept=0
+  budget_kib="$(install_backup_budget_kib)"
+  listing="$(mktemp "${TMPDIR:-/tmp}/oso-install-backups.XXXXXX")" || return 0
+  install_backup_dirs_newest_first "$root" > "$listing"
+  while IFS= read -r backup; do
+    [ -n "$backup" ] || continue
+    size_kib="$(backup_size_kib "$backup")"
+    if [ "$kept" -eq 0 ] || [ "$((running_kib + size_kib))" -le "$budget_kib" ]; then
+      running_kib=$((running_kib + size_kib))
+      kept=$((kept + 1))
+      continue
+    fi
+    printf '%s\n' "$backup"
+  done < "$listing"
+  rm -f "$listing"
 }
 
 # Replays one backup manifest: for every recorded target, remove whatever is

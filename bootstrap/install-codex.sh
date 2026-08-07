@@ -58,16 +58,11 @@ initialize_paths() {
   TX_MANIFEST="$TX_BACKUP_ROOT/manifest"
   TX_ACTIVE=false
   TX_COMMITTED=false
-  # D14: the measured problem is disk size (1.9 GiB across 17 snapshots on the
-  # machine that motivated this), not snapshot count -- a single snapshot here
-  # already runs to ~110 MiB, so bounding "the last N" would still let size
-  # grow unbounded as the transaction's own payload grows across releases.
-  # 300 MiB keeps roughly 2-3 recent snapshots (a real fallback depth, not
-  # just the last one) while cutting the measured worst case by over 80%. The
-  # newest snapshot is always kept regardless of budget -- see
-  # prune_install_backups -- so the run that just installed is never the one
-  # a tight budget empties.
-  INSTALL_BACKUP_BUDGET_KIB="${OSO_INSTALL_BACKUP_BUDGET_KIB:-307200}"
+  # D14: read from lib/install-backup.sh, which is where the budget and the
+  # measured numbers behind it live now that install.sh bounds its own backup
+  # root by the same one. Held in a variable here only so the removal line
+  # below can name the budget it enforced.
+  INSTALL_BACKUP_BUDGET_KIB="$(install_backup_budget_kib)"
   RESTORE_EXERCISED_MARKER="$INSTALL_BACKUPS_ROOT/.install-restore-verified"
 }
 
@@ -527,9 +522,11 @@ checkpoint() {
   return 0
 }
 
-# D14: bounds total backup disk use rather than count (see the budget's own
-# comment in initialize_paths for the measured numbers this answers to), and
-# refuses to delete anything until RESTORE_EXERCISED_MARKER exists —
+# D14: bounds total backup disk use rather than count (lib/install-backup.sh
+# carries the budget, the measured numbers behind it, and the selection this
+# deletes from — shared with install.sh, which bounds a backup root of its own
+# by the same one), and refuses to delete anything until
+# RESTORE_EXERCISED_MARKER exists —
 # restore-codex.sh is the only thing that writes it, and only after it has
 # actually restored a snapshot on this machine. A retention policy that ran
 # on ITS OWN first installation would delete the one backup an operator would
@@ -543,21 +540,11 @@ prune_install_backups() {
     info "backup retention: skipped — the restore path has not been verified on this machine yet; run bootstrap/restore-codex.sh once to enable automatic pruning"
     return 0
   fi
-  local listing backup running_kib=0 size_kib kept=0
-  listing="$(mktemp "${TMPDIR:-/tmp}/oso-codex-backups.XXXXXX")" || return 0
-  install_backup_dirs_newest_first "$INSTALL_BACKUPS_ROOT" > "$listing"
-  while IFS= read -r backup; do
-    [ -n "$backup" ] || continue
-    size_kib="$(backup_size_kib "$backup")"
-    if [ "$kept" -eq 0 ] || [ "$((running_kib + size_kib))" -le "$INSTALL_BACKUP_BUDGET_KIB" ]; then
-      running_kib=$((running_kib + size_kib))
-      kept=$((kept + 1))
-      continue
-    fi
+  local backup
+  install_backups_over_budget "$INSTALL_BACKUPS_ROOT" | while IFS= read -r backup; do
     rm -rf "$backup"
     info "backup retention: removed $backup (over the ${INSTALL_BACKUP_BUDGET_KIB} KiB budget)"
-  done < "$listing"
-  rm -f "$listing"
+  done
 }
 
 replace_tree() {

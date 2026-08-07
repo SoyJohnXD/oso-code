@@ -14,9 +14,31 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 CLAUDE_DIR="${HOME}/.claude"
-BACKUP_DIR="${HOME}/.local/state/oso-code/backup-$(date +%Y%m%d-%H%M%S)"
+# A backup root of this side's own, one directory below install-codex.sh's, in
+# the naming shape lib/install-backup.sh defines. Both halves matter: the shape
+# is what lets that library's inventory find these at all, and the deeper root is
+# what keeps the two snapshot sets out of each other's reach — its glob never
+# recurses, so restore-codex.sh cannot offer one of these as a snapshot to replay
+# (they carry no manifest) and cannot count one against a budget that is not this
+# side's. The pid is part of the stamp because two runs can start in one second.
+BACKUP_ROOT="${HOME}/.local/state/oso-code/claude-backups"
+BACKUP_DIR="$BACKUP_ROOT/install-backup-$(date +%Y%m%d-%H%M%S)-$$"
 MARKER_START="<!-- oso-code:start -->"
 MARKER_END="<!-- oso-code:end -->"
+
+# The retention bound and the backup inventory are ADR-0124's, already bounding
+# install-codex.sh's snapshots; a second copy of either here is how the two would
+# drift into meaning different things by "300 MiB". Sourced when it is beside this
+# script and never fatal when it is not: every other shared value in this file is
+# duplicated with a "keep this identical" note precisely because the shape that
+# pipes this through curl has no bootstrap/lib to source, and retention is the one
+# thing here that can be skipped without changing what gets installed — a run
+# without the library prunes nothing and says so, which is what every run did
+# before there was a bound at all.
+BACKUP_LIB="$SCRIPT_DIR/lib/install-backup.sh"
+if [ -f "$BACKUP_LIB" ]; then
+  . "$BACKUP_LIB"
+fi
 
 # Context budget for the global CLAUDE.md: 8000 bytes ≈ 2k tokens.
 # Keep this identical to CLAUDE_MD_BUDGET_BYTES in bootstrap/verify.sh — the
@@ -107,12 +129,21 @@ confirm_plan() {
   else
     info "  - merge the oso-code block into ~/.claude/CLAUDE.md between markers (backed up first)"
   fi
+  # Created before the line that promises it, rather than at the first copy: that
+  # first mkdir used to sit in phase 6 of 7, so every run that died earlier left
+  # the operator reading a path that had never existed. An answer of no takes the
+  # still-empty directory straight back out — nothing was backed up, so nothing
+  # is left behind, and repeated declines cannot silt up the state dir.
+  mkdir -p "$BACKUP_DIR"
   info "  - backup location: $BACKUP_DIR"
 
   if [ "$ASSUME_YES" = false ]; then
     printf '[oso-code] proceed? [y/N] '
     read -r answer
-    case "$answer" in [Yy]|[Yy][Ee][Ss]) ;; *) fail "aborted by user" ;; esac
+    case "$answer" in
+      [Yy]|[Yy][Ee][Ss]) ;;
+      *) rmdir "$BACKUP_DIR" 2>/dev/null || true; fail "aborted by user" ;;
+    esac
   fi
 }
 
@@ -195,6 +226,60 @@ winget_install_per_user() {
   esac
   winget "${unattended_install[@]}" \
     || { warn "the machine-wide install of $winget_id failed — fix: $manual"; return 1; }
+}
+
+# Every mutation main() makes, walked in its own order against whether a copy of
+# what it replaces exists first — which is what this function closes for phases
+# 2 to 5, where the gaps were:
+#   1/7  jq, Node.js and fallow-mcp package installs — additive, nothing replaced.
+#   2/7  `claude mcp add` and `claude plugin marketplace add` / `plugin install`
+#        write all three config locations below, and a `marketplace add` against
+#        a name already registered can repoint it — which is the very thing
+#        ensure_marketplace_source stops to ask the operator about, in
+#        settings.json's extraKnownMarketplaces as much as in the registration
+#        file beside it.
+#   3/7  migrate_context7 runs `claude mcp remove --scope user context7`
+#        unconditionally, before anything has confirmed the plugin-shipped
+#        replacement registered: the one outright DELETE this installer performs
+#        on state it did not create, and the reason the copy cannot wait.
+#        install_plugin's own marketplace add and plugin install write
+#        settings.json again on the way there.
+#   4/7  core.hooksPath is deliberately NOT copied — see wire_git_commit_hook.
+#   5/7  wire_impeccable's plugin install writes settings.json a third time, and
+#        an enabledPlugins entry the operator set to false is what it flips back
+#        to true. The opt-out marker beside it is this installer's own one-line
+#        record, rewritten by design; operator state it is not.
+#   6/7 and 7/7  legacy artifacts and CLAUDE.md are copied by the function that
+#        changes them, and nothing earlier in the run touches either.
+#        settings.json is the exception this function exists to cover: by the
+#        time remove_legacy_settings_entries and ensure_output_style rewrite it,
+#        three earlier phases have already written it, so the copy taken here is
+#        the only one that can still hold what the operator brought — and, so a
+#        recovery cannot pick the wrong one, the only one taken at all.
+# User-scope MCP servers live in ~/.claude.json, the client keeps its plugin and
+# marketplace registrations at the top of ~/.claude/plugins, and it records
+# extraKnownMarketplaces and enabledPlugins in ~/.claude/settings.json. The
+# registration files are taken as a glob rather than by name: the directory is
+# documented and the file names inside it are the client's, so a list here would
+# go on succeeding while protecting nothing the day one is renamed. What is under
+# those subdirectories — the unpacked marketplaces and the plugin cache — is
+# deliberately left out: hundreds of MiB the client re-fetches on its own.
+# settings.json alone lands at the top of the backup rather than under
+# client-config/, beside the CLAUDE.md and the legacy artifacts the later phases
+# put there: that is the ~/.claude-relative layout the operator is pointed at,
+# and it keeps this file at one path in the backup instead of two.
+backup_client_config() {
+  local source relative
+  for source in "$HOME/.claude.json" "$CLAUDE_DIR"/plugins/*.json; do
+    [ -f "$source" ] || continue
+    relative="${source#"$HOME"/}"
+    mkdir -p "$BACKUP_DIR/client-config/$(dirname "$relative")"
+    cp -a "$source" "$BACKUP_DIR/client-config/$relative"
+  done
+  if [ -f "$CLAUDE_DIR/settings.json" ]; then
+    mkdir -p "$BACKUP_DIR"
+    cp -a "$CLAUDE_DIR/settings.json" "$BACKUP_DIR/settings.json"
+  fi
 }
 
 wire_mcps() {
@@ -408,6 +493,11 @@ GIT_HOOKS_DIR="$REPO_ROOT/plugin/git-hooks"
 # core.hooksPath is a repo setting — and never over another tool's hooks, because
 # setting it makes git ignore .git/hooks entirely and would silently disable
 # whatever that team relies on.
+# That refusal is also why the prior value is not backed up: git_hooks_owner names
+# any core.hooksPath that is not this same directory and any hook standing in
+# .git/hooks, so the only value this can ever write over is absent or already
+# ours. A copy of something nothing destroys would make the backup set look more
+# protective than it is.
 wire_git_commit_hook() {
   local owner err
   owner="$(git_hooks_owner)"
@@ -519,11 +609,12 @@ remove_legacy_artifacts() {
   fi
 }
 
+# No copy here, and none in ensure_output_style below: backup_client_config took
+# the pre-image in phase 2, before the client wrote this file three times, and a
+# copy taken now would hold the run's own work under the same name.
 remove_legacy_settings_entries() {
   local settings="$CLAUDE_DIR/settings.json"
   [ -f "$settings" ] || return 0
-  mkdir -p "$BACKUP_DIR"
-  cp -a "$settings" "$BACKUP_DIR/settings.json"
   # Drop gentle-ai hook entries; the output style is repointed separately by
   # ensure_output_style.
   jq '(.hooks // {}) |= with_entries(
@@ -550,9 +641,8 @@ ensure_output_style() {
 
   case "$current" in
     absent | Gentleman | Oso)
-      mkdir -p "$BACKUP_DIR" "$CLAUDE_DIR"
+      mkdir -p "$CLAUDE_DIR"
       if [ -f "$settings" ]; then
-        [ -f "$BACKUP_DIR/settings.json" ] || cp -a "$settings" "$BACKUP_DIR/settings.json"
         jq '.outputStyle = "Oso"' "$settings" > "${settings}.tmp"
         mv "${settings}.tmp" "$settings"
       else
@@ -610,12 +700,52 @@ merge_global_claude_md() {
   fi
 }
 
+# Every install used to leave one more backup directory in the operator's home,
+# forever. The bound is ADR-0124's, reached through the shared library rather
+# than restated: total size rather than count, and the newest snapshot kept
+# whatever the budget says, so the run that just installed is never the one a
+# tight budget empties.
+# What this side does NOT carry is that policy's restore-verified gate. There,
+# pruning waits until restore-codex.sh has proved a replay works on this machine,
+# because a broken automated restore must keep its fuel. D11 gives this side no
+# restore command at all: recovery is a copy the operator makes by hand out of a
+# directory of plain files, so there is no replay whose provenness could be in
+# doubt — and a gate on a marker only the Codex restore can ever write would
+# leave this unbounded on every Claude-only machine, which is the defect it is
+# here to close. Runs after the install, so a run that died half way keeps every
+# older snapshot it might be recovered from.
+prune_install_backups() {
+  if ! command -v install_backups_over_budget >/dev/null 2>&1; then
+    info "backup retention: skipped — $BACKUP_LIB is not beside this script, so older backups under $BACKUP_ROOT stay until you remove them"
+    return 0
+  fi
+  local backup budget_kib
+  budget_kib="$(install_backup_budget_kib)"
+  install_backups_over_budget "$BACKUP_ROOT" | while IFS= read -r backup; do
+    rm -rf "$backup"
+    info "backup retention: removed $backup (over the ${budget_kib} KiB budget)"
+  done
+}
+
+# D11 is honest backups, not a transaction: there is no restore command on this
+# side, so the recovery path is the operator's own `cp -a` and they have to be
+# told at the end of the run exactly how far it reaches. restore-codex.sh names
+# the one thing its restore cannot revert for the same reason — here the whole
+# recovery is manual, so the whole boundary gets named.
+report_backup_coverage() {
+  info "backup: $BACKUP_DIR"
+  info "  it holds what this run replaced, as it stood before the run started — Claude Code's user config and plugin registrations, settings.json, CLAUDE.md, and every legacy artifact removed. Copy one back by hand to undo it; there is no restore command on this side."
+  info "  it does not undo: packages installed (jq, Node.js, fallow-mcp); the plugin and marketplace CONTENT the client downloaded, since only the registration files are copied; and core.hooksPath, which this wires per repo and only where nothing else owned it — clear it with: git -C $REPO_ROOT config --unset core.hooksPath"
+  info "  releases before this one wrote their backups to ~/.local/state/oso-code/backup-* instead, outside this root: nothing here lists or prunes those, so remove them yourself once you no longer want them"
+}
+
 main() {
   confirm_plan
   info "1/7 prerequisites"
   ensure_prerequisites
   ensure_node
   info "2/7 MCP wiring"
+  backup_client_config
   wire_mcps
   info "3/7 oso-code plugin"
   install_plugin
@@ -638,6 +768,8 @@ main() {
   info "7/7 global CLAUDE.md"
   merge_global_claude_md
   print_wiring_summary
+  prune_install_backups
+  report_backup_coverage
   info "done — restart your Claude Code sessions to pick everything up"
 }
 
