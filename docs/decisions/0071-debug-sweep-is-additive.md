@@ -3,7 +3,8 @@
 Date: 2026-07-25
 Status: accepted
 Supersedes: ADR-0038 (its debt-sweep escalation, which read as a replacement for the quality pass)
-Reconciled: applied — Mode 3 §5 reads the sweep as additive, never instead of the quality pass.
+Superseded-by: ADR-0130 — retires only the "loops judge-to-fix until `Debt Sweep: clean`" clause, which that decision replaces with a severity band under a hard cap; the sweep's additive standing beside the quality pass, the no-ledger `Conformance: skipped` contract and the quality-pass re-run over whatever cleanup lands all still stand
+Reconciled: superseded — Mode 3 §5 still reads the sweep as additive, never instead of the quality pass, but its loop now exits on ADR-0130's band, so the body deliberately reads otherwise on the "until `Debt Sweep: clean`" clause alone.
 Source: this change (harness-hardening pass); recorded with the change that made it
 
 ## Decision

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Lints the rules `claude plugin validate --strict` has no opinion on: it does
 # open hooks.json, skill frontmatter and the agents, and fails on a broken one
-# (probed against client 2.1.220), but it never asks what they SAY. Twenty-five rules
+# (probed against client 2.1.220), but it never asks what they SAY. Twenty-six rules
 # hold that ground: a `context: fork` skill declares `background`; the same
 # skill declares an `end with exactly one of:` verdict block; every
 # `oso-code:<name>` the plugin's own prose points at resolves; every call site
@@ -41,9 +41,13 @@
 # comment as a debt class with no exceptions, one the judgment contract cannot
 # override, carrying no earned-WHY escape hatch; oso-applier's rubric mapping
 # names all five of that rubric's sections, Debt markers included, so the writer
-# is told the section it is graded on; and oso-verifier's contract, on both hosts,
+# is told the section it is graded on; oso-verifier's contract, on both hosts,
 # fails a slice whose diff adds an inline comment, so the judge that runs before
-# each slice commits can refuse one. Each rule states its own reason
+# each slice commits can refuse one; and both bodies that run a debt-sweep judge →
+# fix loop state an exit bar for it — a severity band, a hard cap of three rounds
+# and the operator's three routes at that cap — so the loop can never go back to
+# running until clean, and no surface that states that loop's outcome reads
+# `Debt Sweep: clean` as the whole of its pass. Each rule states its own reason
 # above it; `background` is the one whose cost is least visible: as of client v2.1.218
 # a fork returns immediately and its verdict arrives in a LATER turn, while every
 # call site in plan/quick/debug reads that verdict in-turn.
@@ -717,7 +721,7 @@ check_present_tense_prose_names_the_rule_count() {
     16) spelled=sixteen ;; 17) spelled=seventeen ;; 18) spelled=eighteen ;;
     19) spelled=nineteen ;; 20) spelled=twenty ;; 21) spelled=twenty-one ;;
     22) spelled=twenty-two ;; 23) spelled=twenty-three ;; 24) spelled=twenty-four ;;
-    25) spelled=twenty-five ;;
+    25) spelled=twenty-five ;; 26) spelled=twenty-six ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -1057,6 +1061,81 @@ check_verifier_gate_fails_an_added_inline_comment() {
   done
 }
 
+# The rules above bind what a judge may find; this one binds when its LOOP is
+# allowed to stop. The debt sweep's judge → fix loop said "until clean" and
+# nothing more, so one real close ran seven rounds over three hours in which the
+# last three found only the damage the fifth round's own applier had left: an
+# uncapped loop with a fallible fixer inside it does not converge, it grinds.
+# The two bodies that run that loop — plan.md's §7 close and debug.md's additive
+# sweep at §5 — now state a bar, and both are held to it here. quick.md runs no
+# sweep and the judge's own body declares verdicts rather than a caller's exit,
+# so neither is on this list; a body that grows a sweep loop later has to join
+# it, which is this rule's ceiling and not a claim it makes for itself.
+# Located by `**Exit bar**`, the bolded label that opens each of them — a
+# paragraph in plan, a bullet in debug — one line in each body and no other line
+# of either. The literal carries the closing `**`, so the same label worn with a
+# qualifier (front-surface's `**Exit bar, read as an ADAPTER**`, a different
+# judge's loop) is a different string and the shared vocabulary collides with
+# nothing. That one line is the whole bar, this repo's dense single-line style,
+# so every marker below is asked of it alone. The markers are the clauses the
+# bar collapses without: the BAND that replaced "until clean" — `blocker` and
+# `structural` are what must be closed, `nit` is what may stay — the NAMED
+# RESIDUAL that keeps a surviving nit from ending with the loop, and the CAP
+# with the operator's escape: its number, the closure of the route set, and each
+# of the three routes, whose third is spelled per body (§6 as a slice in plan,
+# §4 as an apply/verify pass in debug) and is held by the phrase the two
+# spellings share. Deleting the paragraph fails at the locator; thinning it
+# fails at the marker that went.
+#
+# The bar's own line is half the ground. The defect is a STATEMENT of the retired
+# exit condition, and one outlived the bodies' move in `_shared/front-surface.md`,
+# whose PLAN cell gated the design audit on the sweep RETURNING `Debt Sweep:
+# clean` — a precondition the band can never produce, so a close ending in a nit
+# residual would have skipped that audit in silence. The second half therefore
+# reads, line by line, the surfaces that state this loop's outcome: the two
+# bodies, that matrix, and `docs/blueprint.md`'s narrative of the same close.
+# Under the band `Debt Sweep: clean` is one of TWO outcomes that clear the debt
+# axis, so a line naming it with no `Debt Sweep: findings` beside it is naming
+# the old bar; that co-occurrence is the whole locator and it is a heuristic, not
+# a proof — a restatement worded around the tokens ("once the sweep comes back
+# clean") still passes, and the judge's own body, whose verdict list defines one
+# token per line, stays off this list for the reason it is off the one above.
+# Every line of the four surfaces naming the token today carries `findings`
+# beside it, so the rule starts at zero and any hit is new.
+check_sweep_exit_bar_is_banded_and_capped() {
+  local body bar marker surface hit
+  for body in "$PLUGIN_ROOT/skills/_shared/bodies/plan.md" "$PLUGIN_ROOT/skills/_shared/bodies/debug.md"; do
+    if [ ! -f "$body" ]; then
+      flag "no ${body#"$PLUGIN_ROOT"/} to check the debt sweep's exit bar"
+      continue
+    fi
+    bar="$({ grep -F -- '**Exit bar**' "$body" || true; })"
+    if [ -z "$bar" ]; then
+      flag "${body#"$PLUGIN_ROOT"/} states no **Exit bar** for its debt-sweep judge → fix loop"
+      continue
+    fi
+    for marker in '`blocker`' '`structural`' '`nit`' 'NAMED RESIDUAL' 'HARD CAP three' \
+      'exactly three routes' 'accept the residual' 'grant a stated number of further rounds' \
+      'the remainder back to §'; do
+      printf '%s\n' "$bar" | grep -qF -- "$marker" \
+        || flag "${body#"$PLUGIN_ROOT"/}'s exit bar drops the clause that makes it one: $marker"
+    done
+  done
+
+  for surface in "$PLUGIN_ROOT/skills/_shared/bodies/plan.md" "$PLUGIN_ROOT/skills/_shared/bodies/debug.md" \
+    "$PLUGIN_ROOT/skills/_shared/front-surface.md" "$REPO_ROOT/docs/blueprint.md"; do
+    if [ ! -f "$surface" ]; then
+      flag "no ${surface#"$REPO_ROOT"/} to check for a restatement of the retired sweep exit"
+      continue
+    fi
+    while IFS= read -r hit; do
+      [ -n "$hit" ] || continue
+      printf '%s\n' "$hit" | grep -qF -- '`Debt Sweep: findings`' \
+        || flag "${surface#"$REPO_ROOT"/}:${hit%%:*} reads \`Debt Sweep: clean\` as the whole of the debt axis's pass, the exit the band retired"
+    done <<< "$({ grep -nF -- '`Debt Sweep: clean`' "$surface" || true; })"
+  done
+}
+
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }
 
 check_forked_skills_declare_background
@@ -1084,6 +1163,7 @@ check_wave_1_wave_start_accounts_for_wave_0
 check_rubric_bans_inline_comments_without_an_escape_hatch
 check_applier_rubric_mapping_names_every_section
 check_verifier_gate_fails_an_added_inline_comment
+check_sweep_exit_bar_is_banded_and_capped
 
 if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"
