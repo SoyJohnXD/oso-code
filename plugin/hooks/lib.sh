@@ -37,15 +37,25 @@ json_command_line() {
 # Extracts a string field from the hook's stdin JSON, decoded: callers get the
 # text the client sent, not its escaping. Field names used here (session_id,
 # command) are unique in hook input, so the search is by name.
+#
+# A trailing carriage return is dropped from whatever either reader answers.
+# BOTH readers can produce one: a Windows jq build terminates its line CRLF and
+# `$(…)` strips only the newline, while the pattern reader decodes a `\r` the
+# client escaped into that same byte. The value most of these fields feed is
+# `cwd`, and one CR there moves the state-file digest — so a session writes
+# `verify_green=true` into one file and the commit gate reads another. Dropped
+# once here, where the two readers meet, rather than at each of the four gates
+# that hand a field on.
 json_field() {
-  local json="$1" field="$2" escaped
+  local json="$1" field="$2" escaped value
   if [ "$JSON_READER" = jq ]; then
-    printf '%s' "$json" | jq -r --arg field "$field" \
-      'first(.. | objects | .[$field]? | select(type == "string")) // empty' 2>/dev/null || true
-    return 0
+    value="$(printf '%s' "$json" | jq -r --arg field "$field" \
+      'first(.. | objects | .[$field]? | select(type == "string")) // empty' 2>/dev/null || true)"
+  else
+    json_take_escaped_field "$json" "$field"
+    value="$(json_unescape "$escaped")"
   fi
-  json_take_escaped_field "$json" "$field"
-  json_unescape "$escaped"
+  printf '%s' "${value%$'\r'}"
 }
 
 # The field as the client wrote it, escapes and all, into $escaped: sizing a
@@ -212,8 +222,16 @@ hook_session() {
 # sanitizing against traversal either; GNU coreutils and macOS spell it the two
 # ways `seconds_since_modified` below spells one mtime, and a host that answers
 # neither blocks rather than filing every repository under one name.
+#
+# The trailing carriage return json_field already drops is dropped here too,
+# because this is the choke point where one costs most rather than a little:
+# `git -C` cannot open a directory whose name ends in CR, so `identity` comes
+# back empty and the fallback below digests the CR-bearing path itself — the
+# same repository under a second name, which is the split the digest exists to
+# prevent. Any future caller that resolves a directory some other way is covered
+# by that alone.
 state_file_for() {
-  local directory="$1" identity digest
+  local directory="${1%$'\r'}" identity digest
   identity="$(git -C "$directory" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || identity=""
   digest="$(printf '%s' "${identity:-$directory}" |
     { sha256sum 2>/dev/null || shasum -a 256 2>/dev/null; })" || digest=""

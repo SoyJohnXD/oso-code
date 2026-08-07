@@ -12,3 +12,14 @@ plugin/git-hooks/pre-commit text eol=lf
 # run — and bootstrap/verify.sh check 11 scans both for CR bytes either way.
 *.ps1                       text eol=lf
 *.bat                       text eol=lf
+
+# The two data files the bootstrap READS, pinned for the same class of reason
+# one layer up. A trailing CR on a gentle-manifest.txt line makes every
+# `[ -e "$CLAUDE_DIR/$rel" ]` test miss, so the legacy cleanup removes nothing,
+# announces 0 and is confirmed removed by verify.sh — three layers agreeing over
+# a cleanup that never ran. claude-global.md is copied verbatim into the
+# operator's always-loaded CLAUDE.md, whose budget check counts every byte it
+# would gain. Neither pin is the whole fix: .gitattributes renormalizes no clone
+# that already exists, so the manifest's three readers drop the CR themselves.
+bootstrap/gentle-manifest.txt text eol=lf
+bootstrap/claude-global.md    text eol=lf

@@ -86,6 +86,14 @@ fi
 if legacy_manifest="$(cat "$SCRIPT_DIR/gentle-manifest.txt" 2>&1)"; then
   legacy_left=0
   while IFS= read -r rel; do
+    # The manifest is data, so check 11 below never scanned it for CR bytes and
+    # .gitattributes renormalizes no clone that already exists: on a CRLF
+    # checkout every path carries a trailing CR, `[ -e ]` matches nothing, and
+    # this check reports the cleanup done (0) while every legacy artifact is
+    # still live — the worst shape a verifier has, green over nothing scanned.
+    # Same strip as install.sh's two manifest readers; the two scripts run
+    # standalone via curl and cannot source a shared file.
+    rel="${rel%$'\r'}"
     case "$rel" in ''|'#'*) continue ;; esac
     if [ -e "$CLAUDE_DIR/$rel" ] || [ -L "$CLAUDE_DIR/$rel" ]; then
       legacy_left=$((legacy_left + 1))

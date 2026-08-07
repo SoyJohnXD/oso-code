@@ -75,6 +75,13 @@ run_wiring() {
 confirm_plan() {
   local artifact_count=0 rel
   while IFS= read -r rel; do
+    # A CRLF checkout of the manifest — what Git for Windows' default autocrlf
+    # hands a Windows operator — puts a trailing CR on every path, and no
+    # "$CLAUDE_DIR/$rel" then exists: this count announces 0, remove_legacy_artifacts
+    # removes nothing, and verify.sh confirms the cleanup as done. .gitattributes
+    # pins the file, but it renormalizes no clone that already exists, so each of
+    # the three readers drops the CR itself.
+    rel="${rel%$'\r'}"
     case "$rel" in ''|'#'*) continue ;; esac
     if [ -e "$CLAUDE_DIR/$rel" ] || [ -L "$CLAUDE_DIR/$rel" ]; then
       artifact_count=$((artifact_count + 1))
@@ -411,6 +418,10 @@ remove_legacy_artifacts() {
   local rel target
   mkdir -p "$BACKUP_DIR"
   while IFS= read -r rel; do
+    # The CR strip confirm_plan explains, and it runs BEFORE the guard below
+    # rather than after: a line that is nothing but a CR has to read as blank,
+    # or $rel is empty, "$CLAUDE_DIR/" exists, and the rm below takes ~/.claude.
+    rel="${rel%$'\r'}"
     case "$rel" in ''|'#'*) continue ;; esac
     target="$CLAUDE_DIR/$rel"
     if [ -e "$target" ] || [ -L "$target" ]; then
@@ -488,11 +499,19 @@ merge_global_claude_md() {
     return 0
   fi
 
+  # The markers are matched with a trailing CR stripped rather than byte-exact.
+  # This file is the OPERATOR's, not one this installer owns, and a Windows
+  # editor rewrites it CRLF: the markers an earlier run wrote come back as
+  # "<!-- oso-code:start -->\r" and equal neither test, so the strip below turns
+  # into a no-op and the block is appended a SECOND time — a third run a third
+  # time — until the size warning at the end of this function is the only
+  # symptom. `print` writes $0, so their own line endings survive untouched.
   local without_block
   without_block="$(awk -v start="$MARKER_START" -v end="$MARKER_END" '
-    $0 == start { skipping = 1; next }
-    $0 == end   { skipping = 0; next }
-    !skipping   { print }
+    { marker = $0; sub(/\r$/, "", marker) }
+    marker == start { skipping = 1; next }
+    marker == end   { skipping = 0; next }
+    !skipping       { print }
   ' "$target")"
   {
     printf '%s\n' "$without_block"

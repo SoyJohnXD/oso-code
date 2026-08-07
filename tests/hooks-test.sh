@@ -6373,6 +6373,30 @@ assert_equals_or_skip "jq leaves the same over-bound payload unread as the fallb
   jq "jq is absent here, so the bound has only one reader to hold for" \
   "$over_bound_line" read_by jq "$over_bound_input"
 
+# A carriage return is the one byte both readers can add on their own: a Windows
+# jq build ends its answer CRLF and `$(…)` strips only the newline, and the
+# pattern reader decodes an escaped `\r` into that same byte. `cwd` is the field
+# where it costs, because state_file_for digests it — one CR and the session
+# arms one state file while the commit gate reads another. Asserted against
+# $REPO_STATE, the name this suite computes for itself at the top, so a reader
+# that passes the CR on is caught by the two spellings disagreeing.
+state_file_by_reader() {
+  ( . "$PLUGIN/hooks/lib.sh"; JSON_READER="$1"; state_file_for "$(json_field "$2" cwd)" )
+}
+
+cr_cwd_input="$(bash_input 'npm test' "$REPO_ROOT"'\r')"
+assert_equals "the pattern reader's CR-bearing cwd still names this repository's own state file" \
+  "$REPO_STATE" "$(state_file_by_reader pattern "$cr_cwd_input")"
+assert_equals_or_skip "jq's CR-bearing cwd names the same file the fallback does" \
+  jq "jq is absent here, so the digest has only one reader to hold for" \
+  "$REPO_STATE" state_file_by_reader jq "$cr_cwd_input"
+
+# The choke point in its own right, where a CR does total rather than partial
+# damage: `git -C` cannot open a directory whose name ends in CR, so the identity
+# comes back empty and the raw CR-bearing path is what gets digested.
+assert_equals "state_file_for digests the repository, not a CR-bearing spelling of its path" \
+  "$REPO_STATE" "$( . "$PLUGIN/hooks/lib.sh"; state_file_for "$REPO_ROOT"$'\r' )"
+
 # A gate reading its envelope by pattern is a degraded gate; the log is the only
 # place that difference can show up, and an armed session is the only place it may
 # be written — see the invisibility cases above.
@@ -6554,9 +6578,13 @@ chmod +x "$CLAUDE_SHIM_DIR/claude"
 # library's: sourcing install.sh brings its `set -e` and its globals along, and
 # neither may reach the rest of the suite. The call is saved before the subshell
 # clears $@, which a sourced file inherits from its caller and reads as flags.
+# INSTALLER_SCRIPT names a COPY of install.sh under a fixture bootstrap/ for the
+# cases that need it to read a different gentle-manifest.txt: the script resolves
+# that file from its own location, so a copy beside one is the only handle on it.
+# An env prefix rather than a parameter, because every argument here is the call.
 in_installer() {
   local call=("$@")
-  ( set --; PATH="$CLAUDE_SHIM_DIR:$PATH"; . "$INSTALL_SH"; "${call[@]}" )
+  ( set --; PATH="$CLAUDE_SHIM_DIR:$PATH"; . "${INSTALLER_SCRIPT:-$INSTALL_SH}"; "${call[@]}" )
 }
 
 # Every fixture below is a verbatim failure of `claude plugin marketplace add`,
@@ -6675,8 +6703,12 @@ printf '%s\n' \
   > "$VERIFY_INSTALLED_ROOT/hooks/block-commit-until-green.sh"
 chmod +x "$VERIFY_INSTALLED_ROOT/hooks/block-commit-until-green.sh"
 
+# VERIFY_SCRIPT points this at a fixture copy of verify.sh the way INSTALLER_SCRIPT
+# does for in_installer, and for the same reason: the manifest it checks is
+# resolved from the script's own location.
 verify_report() {
-  ( PATH="$CLAUDE_SHIM_DIR:$PATH"; OSO_VERIFY_SKIP_SLOW=1 bash "$REPO_ROOT/bootstrap/verify.sh" 2>&1 || true )
+  ( PATH="$CLAUDE_SHIM_DIR:$PATH"
+    OSO_VERIFY_SKIP_SLOW=1 bash "${VERIFY_SCRIPT:-$REPO_ROOT/bootstrap/verify.sh}" 2>&1 || true )
 }
 
 # What the report SAYS about one check, which is the whole difference between a
@@ -6706,6 +6738,55 @@ assert_equals "verify.sh exports the agent marker when probing the installed com
   "ok" "$(report_line_kind "$report_without_marker" 'installed hook denies red commit (e2e)')"
 assert_equals "the report still reaches its summary" "reached" \
   "$(printf '%s\n' "$report_without_marker" | grep -q '^passed:' && echo reached || echo missing)"
+
+# --- A CRLF checkout: the cleanup that removes nothing and is confirmed done ---
+# gentle-manifest.txt is DATA, so verify.sh's CR scan never covered it and
+# .gitattributes cannot renormalize a clone made before its pin. On a Windows
+# checkout every path in it arrives with a trailing CR, no "$CLAUDE_DIR/$rel"
+# matches, and all three readers agree the cleanup succeeded while every legacy
+# artifact is still live — the verifier's own check the loudest of the three,
+# because green over nothing scanned is what an operator trusts. The fixture is a
+# bootstrap/ of its own: both scripts resolve the manifest from their own
+# location, so a copy beside one is the only way to hand them a different one.
+CRLF_BOOTSTRAP="$TEST_HOME/crlf-bootstrap"
+CRLF_LEGACY_ARTIFACT="commands/sdd-apply.md"
+mkdir -p "$CRLF_BOOTSTRAP" "$HOME/.claude/commands"
+cp "$INSTALL_SH" "$REPO_ROOT/bootstrap/verify.sh" "$CRLF_BOOTSTRAP/"
+printf '# Legacy artifacts, as a CRLF checkout hands them over.\r\n%s\r\n' \
+  "$CRLF_LEGACY_ARTIFACT" > "$CRLF_BOOTSTRAP/gentle-manifest.txt"
+printf 'legacy\n' > "$HOME/.claude/$CRLF_LEGACY_ARTIFACT"
+
+crlf_verify_report="$(VERIFY_SCRIPT="$CRLF_BOOTSTRAP/verify.sh" verify_report)"
+crlf_artifact_named=unnamed
+case "$crlf_verify_report" in
+  *"still present: $CRLF_LEGACY_ARTIFACT"*) crlf_artifact_named=named ;;
+esac
+assert_equals "a CRLF manifest still shows the verifier the legacy artifact that is standing" \
+  "fail / named" \
+  "$(report_line_kind "$crlf_verify_report" 'legacy artifacts removed') / $crlf_artifact_named"
+
+crlf_removal="$(INSTALLER_SCRIPT="$CRLF_BOOTSTRAP/install.sh" in_installer remove_legacy_artifacts)"
+crlf_removed_count=unreported
+case "$crlf_removal" in *'removed 1 legacy artifacts'*) crlf_removed_count="removed 1" ;; esac
+crlf_artifact_state="$([ -e "$HOME/.claude/$CRLF_LEGACY_ARTIFACT" ] && echo standing || echo gone)"
+assert_equals "a CRLF manifest still removes the artifact it names" \
+  "removed 1 / gone" "$crlf_removed_count / $crlf_artifact_state"
+
+# --- A CRLF CLAUDE.md: one managed block, however the operator's editor writes -
+# ~/.claude/CLAUDE.md belongs to the OPERATOR, and a Windows editor rewrites it
+# CRLF, so the markers an earlier install wrote come back carrying a CR and a
+# byte-exact strip matches neither. Two runs is the smallest shape that shows the
+# cost: the first appends beside the stale block it failed to strip, the second
+# beside its own, and nothing says so until the file crosses the size budget.
+CRLF_GLOBAL_MD="$HOME/.claude/CLAUDE.md"
+printf '# personal rules\r\n\r\n%s\r\nstale block from an earlier install\r\n%s\r\n' \
+  '<!-- oso-code:start -->' '<!-- oso-code:end -->' > "$CRLF_GLOBAL_MD"
+in_installer merge_global_claude_md >/dev/null
+in_installer merge_global_claude_md >/dev/null
+crlf_managed_blocks="$(grep -c '<!-- oso-code:start -->' "$CRLF_GLOBAL_MD" || true)"
+crlf_personal_text="$(grep -q '# personal rules' "$CRLF_GLOBAL_MD" && echo kept || echo lost)"
+assert_equals "two merges over CRLF markers leave one managed block and the operator's own text" \
+  "1 block / kept" "$crlf_managed_blocks block / $crlf_personal_text"
 
 # --- The npx probe's bound: a hang may not take the whole report with it -------
 # verify.sh runs standalone via curl and defines its own helpers, so the bound is
