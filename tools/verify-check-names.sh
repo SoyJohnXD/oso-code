@@ -3,16 +3,8 @@
 # per line, sorted, `ok:` and `FAIL:` alike. A `note:` line is not a check and
 # never appears here — that is the shape verify.sh gives an optional piece or a
 # machine-shaped fact, and it moves neither half of the tally.
-#
-# It exists because a failure COUNT cannot stand alone as CI's assertion. Every
-# check a fixture HOME reaches fails there by construction — no authenticated CLI,
-# no MCPs, no ~/.claude — so `failed: 9` reads identical whether a check was
-# dropped, renamed, or quietly stopped running, and it has already hidden exactly
-# that: one check left the report and another took its place at the same total.
-# Pinned as a SET, a check joining or leaving is a one-line diff in the commit
-# that causes it. Three callers read it: both verify.sh steps in
-# .github/workflows/ci.yml, and the regression case in tests/hooks-test.sh that
-# holds those pins to what verify.sh actually prints.
+# What the set is pinned against, and why a count alone could not carry it, is in
+# $VERIFY_CHECK_NAMES at the top of .github/workflows/ci.yml.
 set -euo pipefail
 
 report="${1:?usage: verify-check-names.sh <verify.sh report file>}"

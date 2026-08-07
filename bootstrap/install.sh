@@ -26,15 +26,22 @@ BACKUP_DIR="$BACKUP_ROOT/install-backup-$(date +%Y%m%d-%H%M%S)-$$"
 MARKER_START="<!-- oso-code:start -->"
 MARKER_END="<!-- oso-code:end -->"
 
+# Every helper and value below marked "keep this identical" is duplicated byte for
+# byte in bootstrap/verify.sh, and no constraint keeps them apart: both scripts
+# resolve $SCRIPT_DIR from $BASH_SOURCE and read files beside it, so neither has
+# ever run from a pipe — `cat bootstrap/install.sh | bash` dies on the $SCRIPT_DIR
+# line under `set -u` — and this one already sources bootstrap/lib/*.sh below. The
+# copies are debt, to be replaced by a shared file under that same lib/; until
+# then the parity notes and the cases in tests/hooks-test.sh behind them are what
+# holds the two sides equal.
+
 # The retention bound and the backup inventory are ADR-0124's, already bounding
 # install-codex.sh's snapshots; a second copy of either here is how the two would
 # drift into meaning different things by "300 MiB". Sourced when it is beside this
-# script and never fatal when it is not: every other shared value in this file is
-# duplicated with a "keep this identical" note precisely because the shape that
-# pipes this through curl has no bootstrap/lib to source, and retention is the one
-# thing here that can be skipped without changing what gets installed — a run
-# without the library prunes nothing and says so, which is what every run did
-# before there was a bound at all.
+# script and never fatal when it is not: retention is the one thing here that can
+# be skipped without changing what gets installed, so a copy of this file reached
+# by some path with no bootstrap/lib beside it prunes nothing and says so, which is
+# what every run did before there was a bound at all.
 BACKUP_LIB="$SCRIPT_DIR/lib/install-backup.sh"
 if [ -f "$BACKUP_LIB" ]; then
   . "$BACKUP_LIB"
@@ -43,17 +50,16 @@ fi
 # resolve_fallow_mcp_command, for the same reason and on the same terms: fallow
 # now arrives as an npm package whose Windows shim is a .cmd no POSIX PATH search
 # finds, and the Codex renderer already had to answer which spelling a client can
-# spawn. Sourced beside this script and never fatal without it — the curl shape
-# has no bootstrap/lib to source, and wire_fallow falls back there to the bare
-# name PATH resolves everywhere except Windows.
+# spawn. Sourced beside this script and never fatal without it — where the library
+# is not there, wire_fallow falls back to the bare name PATH resolves everywhere
+# except Windows.
 FALLOW_COMMAND_LIB="$SCRIPT_DIR/lib/codex-managed-config.sh"
 if [ -f "$FALLOW_COMMAND_LIB" ]; then
   . "$FALLOW_COMMAND_LIB"
 fi
 
 # Context budget for the global CLAUDE.md: 8000 bytes ≈ 2k tokens.
-# Keep this identical to CLAUDE_MD_BUDGET_BYTES in bootstrap/verify.sh — the
-# two scripts run standalone via curl and cannot source a shared file.
+# Keep this identical to CLAUDE_MD_BUDGET_BYTES in bootstrap/verify.sh.
 CLAUDE_MD_BUDGET_BYTES=8000
 
 ASSUME_YES=false
@@ -207,7 +213,7 @@ ensure_node() {
 # operator answered yes to raising it. The flags are the other half of running
 # unattended — winget otherwise stops on package and source agreements in a shell
 # nobody is watching. install.ps1 carries this same policy for the runs that start
-# there; the two scripts run standalone via curl and cannot source a shared file.
+# there, in its own copy: PowerShell can share no code with this file.
 # It also reads the answer to this same question with `-match '^y(es)?$'`, which
 # PowerShell matches case-insensitively, so the prompts here take y and yes in any
 # case too: an operator meets whichever prompt their entry point raises, and `Yes`
@@ -246,51 +252,25 @@ winget_install_per_user() {
     || { warn "the machine-wide install of $winget_id failed — fix: $manual"; return 1; }
 }
 
-# Every mutation main() makes, walked in its own order against whether a copy of
-# what it replaces exists first — which is what this function closes for phases
-# 2 to 6, where the gaps were:
-#   1/8  jq, Node.js and the fallow npm package — additive, nothing replaced.
-#   2/8  `claude mcp add` and `claude plugin marketplace add` / `plugin install`
-#        write all three config locations below, and a `marketplace add` against
-#        a name already registered can repoint it — which is the very thing
-#        ensure_marketplace_source stops to ask the operator about, in
-#        settings.json's extraKnownMarketplaces as much as in the registration
-#        file beside it.
-#   3/8  migrate_context7 runs `claude mcp remove --scope user context7`
-#        unconditionally, before anything has confirmed the plugin-shipped
-#        replacement registered: the one outright DELETE this installer performs
-#        on state it did not create, and the reason the copy cannot wait.
-#        install_plugin's own marketplace add and plugin install write
-#        settings.json again on the way there.
-#   4/8  publish_client_environment writes settings.json itself, adding two keys
-#        to its `env` block — and one of them, CLAUDE_CODE_GIT_BASH_PATH, is the
-#        only operator value this installer ever writes over. It does that only
-#        where the stored one no longer resolves (D10), so the pre-image taken
-#        here is what holds the value that was replaced.
-#   5/8  core.hooksPath is deliberately NOT copied — see wire_git_commit_hook.
-#   6/8  wire_impeccable's plugin install writes settings.json a fourth time, and
-#        an enabledPlugins entry the operator set to false is what it flips back
-#        to true. The opt-out marker beside it is this installer's own one-line
-#        record, rewritten by design; operator state it is not.
-#   7/8 and 8/8  legacy artifacts and CLAUDE.md are copied by the function that
-#        changes them, and nothing earlier in the run touches either.
-#        settings.json is the exception this function exists to cover: by the
-#        time remove_legacy_settings_entries and ensure_output_style rewrite it,
-#        four earlier phases have already written it, so the copy taken here is
-#        the only one that can still hold what the operator brought — and, so a
-#        recovery cannot pick the wrong one, the only one taken at all.
+# The pre-image of the client state the phases after this one rewrite, taken
+# before the first of them runs and only here, so a recovery cannot pick the wrong
+# copy. It cannot wait: migrate_context7's `claude mcp remove` is an outright
+# delete of state this installer did not create, and four phases write
+# settings.json — marketplace add, plugin install, publish_client_environment,
+# wire_impeccable — so a copy taken any later holds this run's own work instead of
+# what the operator brought. core.hooksPath is the one mutation deliberately not
+# copied; see wire_git_commit_hook.
 # User-scope MCP servers live in ~/.claude.json, the client keeps its plugin and
 # marketplace registrations at the top of ~/.claude/plugins, and it records
 # extraKnownMarketplaces and enabledPlugins in ~/.claude/settings.json. The
-# registration files are taken as a glob rather than by name: the directory is
-# documented and the file names inside it are the client's, so a list here would
-# go on succeeding while protecting nothing the day one is renamed. What is under
-# those subdirectories — the unpacked marketplaces and the plugin cache — is
-# deliberately left out: hundreds of MiB the client re-fetches on its own.
-# settings.json alone lands at the top of the backup rather than under
-# client-config/, beside the CLAUDE.md and the legacy artifacts the later phases
-# put there: that is the ~/.claude-relative layout the operator is pointed at,
-# and it keeps this file at one path in the backup instead of two.
+# registration files are taken as a glob rather than by name: the file names inside
+# that documented directory are the client's, so a list here would go on succeeding
+# while protecting nothing the day one is renamed. What is under those
+# subdirectories — the unpacked marketplaces and the plugin cache — is left out:
+# hundreds of MiB the client re-fetches on its own. settings.json alone lands at
+# the top of the backup rather than under client-config/, beside the CLAUDE.md and
+# the legacy artifacts the later phases put there: that is the ~/.claude-relative
+# layout the operator is pointed at.
 backup_client_config() {
   local source relative
   for source in "$HOME/.claude.json" "$CLAUDE_DIR"/plugins/*.json; do
@@ -341,8 +321,7 @@ install_engram_plugin() {
 # ENGRAM_RELEASE_VERSION in bootstrap/repair-engram-codex.sh: that script swaps the
 # binary beside a live ~/.engram database and this one puts the first copy on the
 # machine, so two pins would mean which engram a machine runs depends on which
-# script ran last. The two cannot source a shared file — this one runs standalone
-# via curl, with no bootstrap/lib beside it.
+# script ran last.
 SUPPORTED_ENGRAM_VERSION=1.20.0
 
 # An engram the client can already resolve is left exactly where it is, whatever
@@ -385,8 +364,7 @@ provision_engram_binary() {
 # sitting in one of them would report a working install to an operator whose client
 # can never start it — the same split between what this shell sees and what the
 # client sees that verify.sh's home-dir check exists for.
-# Keep this identical to engram_client_binary in bootstrap/verify.sh — the two
-# scripts run standalone via curl and cannot source a shared file.
+# Keep this identical to engram_client_binary in bootstrap/verify.sh.
 engram_client_binary() {
   local entry candidate name
   name="$(engram_binary_name)"
@@ -418,8 +396,7 @@ engram_client_binary() {
 # supported Windows and is already this repo's Windows entry point, so it is what
 # reads them back; a run where it cannot answer yields nothing, which every caller
 # reads as "not found" rather than as agreement.
-# Keep this identical to client_path_entries in bootstrap/verify.sh — the two
-# scripts run standalone via curl and cannot source a shared file.
+# Keep this identical to client_path_entries in bootstrap/verify.sh.
 client_path_entries() {
   if ! running_on_windows; then
     printf '%s\n' "${PATH//:/$'\n'}"
@@ -433,8 +410,7 @@ client_path_entries() {
 # Whether this shell is Git Bash on Windows, which decides three things a POSIX
 # host answers differently: which asset engram publishes, the .exe suffix a native
 # client needs to spawn a bare name, and whose PATH that name is resolved against.
-# Keep this identical to running_on_windows in bootstrap/verify.sh — the two
-# scripts run standalone via curl and cannot source a shared file.
+# Keep this identical to running_on_windows in bootstrap/verify.sh.
 running_on_windows() {
   case "$(uname -s 2>/dev/null || true)" in
     MINGW*|MSYS*|CYGWIN*) return 0 ;;
@@ -442,8 +418,7 @@ running_on_windows() {
   return 1
 }
 
-# Keep this identical to engram_binary_name in bootstrap/verify.sh — the two
-# scripts run standalone via curl and cannot source a shared file.
+# Keep this identical to engram_binary_name in bootstrap/verify.sh.
 engram_binary_name() {
   if running_on_windows; then printf 'engram.exe'; else printf 'engram'; fi
 }
@@ -455,8 +430,7 @@ engram_binary_name() {
 # scanners flagging them as a heuristic false positive — a quarantined copy
 # surfaces here, as a binary that is gone or will not start, instead of as a
 # confusing failure somewhere downstream.
-# Keep this identical to engram_binary_runs in bootstrap/verify.sh — the two
-# scripts run standalone via curl and cannot source a shared file.
+# Keep this identical to engram_binary_runs in bootstrap/verify.sh.
 engram_binary_runs() {
   "$1" version >/dev/null 2>&1
 }
@@ -693,7 +667,8 @@ wire_fallow() {
   fi
   # The bare name is what PATH resolves everywhere but Windows, where the npm shim
   # is a .cmd the client has to be pointed at; the shared resolver knows both, and
-  # is simply absent from the curl shape that has no bootstrap/lib beside it.
+  # is absent only from a copy of this file reached by some path with no
+  # bootstrap/lib beside it.
   local fallow_command=fallow-mcp
   if command -v resolve_fallow_mcp_command >/dev/null 2>&1; then
     fallow_command="$(resolve_fallow_mcp_command "$HOME")" || fallow_command=fallow-mcp
@@ -734,8 +709,7 @@ fallow_wired_command() {
 # Whether the operator opted out is DATA verify.sh reads, never a flag it can see:
 # while its impeccable check is hard, an install that skipped the plugin on purpose
 # has no green path and no way to tell that choice from a broken install. Keep this
-# path identical to IMPECCABLE_OPT_OUT_MARKER in bootstrap/verify.sh — the two
-# scripts run standalone via curl and cannot source a shared file.
+# path identical to IMPECCABLE_OPT_OUT_MARKER in bootstrap/verify.sh.
 IMPECCABLE_OPT_OUT_MARKER="${HOME}/.local/state/oso-code/impeccable-opt-out"
 
 wire_impeccable() {
@@ -861,10 +835,10 @@ classify_marketplace_add_failure() {
   esac
 }
 
-# Registering a working tree as a plugin source is only safe when it is one. Piped
-# through `curl | bash` there is no $BASH_SOURCE, so $REPO_ROOT lands on `/` under
-# bash 3.2 or on the parent of the operator's cwd elsewhere, and a marketplace
-# manifest is the one thing that tells a real clone from either.
+# Registering a working tree as a plugin source is only safe when it is one, and
+# $REPO_ROOT is the parent of wherever this file sits — a copy of the two bootstrap
+# scripts dropped in a directory of their own makes it any directory at all. A
+# marketplace manifest is the one thing that tells a real clone from that.
 register_clone_marketplace() {
   local clone="$1" output
   [ -f "$clone/.claude-plugin/marketplace.json" ] || return 1
@@ -954,10 +928,9 @@ publish_state_bin_path() {
 # The oso-state a session actually runs: the bin of the plugin version the client
 # records as installed, which the phase before this one has just installed or
 # updated. Never this clone's own copy — an operator is free to move or delete
-# that, and a `curl | bash` run has none — and never a version directory guessed
-# out of the cache: an empty answer is reported by the caller, because a path
-# published from a guess is exactly the silent degradation this phase exists to
-# end.
+# that — and never a version directory guessed out of the cache: an empty answer
+# is reported by the caller, because a path published from a guess is exactly the
+# silent degradation this phase exists to end.
 installed_oso_state_path() {
   local install_root state_bin
   install_root="$(jq -r '.plugins["oso-code@oso-code"][0].installPath // empty' \
@@ -1020,8 +993,7 @@ publish_git_bash_path() {
 }
 
 # Whether a path stored for a native Windows consumer still names a file here.
-# Keep this identical to git_bash_resolves in bootstrap/verify.sh — the two
-# scripts run standalone via curl and cannot source a shared file.
+# Keep this identical to git_bash_resolves in bootstrap/verify.sh.
 git_bash_resolves() {
   [ -n "$1" ] && [ -f "$(shell_spelling_of "$1")" ]
 }
@@ -1031,8 +1003,7 @@ git_bash_resolves() {
 # cygpath is what turns either — and a POSIX path, unchanged — into something a
 # file test can read. Off Windows there is one spelling and the path comes back as
 # it went in.
-# Keep this identical to shell_spelling_of in bootstrap/verify.sh — the two
-# scripts run standalone via curl and cannot source a shared file.
+# Keep this identical to shell_spelling_of in bootstrap/verify.sh.
 shell_spelling_of() {
   if running_on_windows; then
     cygpath -u "$1" 2>/dev/null || printf '%s' "$1"
@@ -1081,8 +1052,7 @@ store_client_env() {
 
 # What the client will hand every session for one key of its settings.json `env`
 # block, empty when the file, the block, the key or jq itself is not there.
-# Keep this identical to client_env_value in bootstrap/verify.sh — the two scripts
-# run standalone via curl and cannot source a shared file.
+# Keep this identical to client_env_value in bootstrap/verify.sh.
 client_env_value() {
   jq -r --arg key "$1" '.env[$key] // empty' "$CLAUDE_DIR/settings.json" 2>/dev/null || true
 }
@@ -1155,8 +1125,7 @@ git_hooks_owner() {
 # comparison folds BOTH sides through it — a fold that fires where no Windows path
 # exists fires on both sides and cannot change a verdict. Valid inside one
 # comparison only: never stored, never printed back to an operator.
-# Keep this identical to normalized_path in bootstrap/verify.sh — the two scripts
-# run standalone via curl and cannot source a shared file.
+# Keep this identical to normalized_path in bootstrap/verify.sh.
 normalized_path() {
   local path="${1//\\//}"
   case "$path" in
@@ -1385,8 +1354,7 @@ main() {
 
 # Installing is what running this file does and sourcing it is not: the suite reads
 # the two decisions that can repoint the marketplace by sourcing this and calling
-# them directly. Piped through `curl | bash` there is no $BASH_SOURCE at all, and
-# that shape has to keep installing.
-if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
+# them directly.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   main
 fi

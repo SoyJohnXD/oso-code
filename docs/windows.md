@@ -17,7 +17,7 @@ Everything here is Claude Code. The Codex host has its own prerequisites and its
 
 **Git Bash is not an install vehicle you can uninstall afterward.** All five hooks this plugin registers are `.sh` files, and a native Windows Claude Code spawns each of them through Git Bash — so a machine that loses Git Bash loses every runtime gate at once, silently. That is why `install.ps1` waives every other probe under `-SkipPrerequisiteCheck` and never waives this one: with nothing to delegate *to*, continuing only moves the same abort somewhere less legible.
 
-Provisioning is best effort; the requirements are not. Whatever winget could not install, the preflight names before anything is installed — all of the gaps at once, each with the command that closes it — and stops there. It fails closed on purpose: a gap carried past that line buys you the entire winget and vendor-install wait for the same refusal, delivered by a bash script, with the actionable half of the message already scrolled off a double-clicked console.
+Provisioning is best effort; the requirements are not. Provisioning runs first and the preflight reads the machine after it: whatever winget could not install, it names — all of the gaps at once, each with the command that closes it — and stops there, before the run hands off to `install.sh`. It fails closed on purpose: a gap carried past that line reaches the same refusal from a bash script instead, with the actionable half of the message already scrolled off a double-clicked console.
 
 ## Installing
 
@@ -93,7 +93,7 @@ Two things are worth knowing anyway:
 - **Git must be installed** for Desktop's local sessions on Windows. The Git for Windows this bootstrap provisions satisfies that, so a machine installed the way this page describes already has it.
 - **The chat tab is a different surface.** `%APPDATA%\Claude\claude_desktop_config.json` carries MCP servers for the chat tab only. It reaches no files, and nothing in this harness reads or writes it. Wiring a server there does not wire it for the Code tab, and vice versa.
 
-Desktop is an application, not something this bootstrap can provision. `verify.sh` reports whether the machine carries it and says on its own line what that does not prove — an absent Desktop is a `note:`, never a failure, because a CLI-only operator must not go red for software they never wanted.
+Desktop is an application, not something this bootstrap can provision. `verify.sh` reports whether the machine carries it, and says what that does not prove, on a `note:` either way — a CLI-only operator must not go red for software they never wanted, and nothing about an application no installer here touches can fail a run, so the tally never counts it.
 
 ## Verifying the install
 
@@ -109,7 +109,7 @@ note: Claude Desktop — …
 
 - `ok:` and `FAIL:` are checks; they are what move `passed:` and `failed:`. **The run is green when `failed: 0`** — not when a particular number of checks passed — and that is what the exit status reports: zero on green, nonzero otherwise.
 - A `FAIL:` carries its remediation on the same line, after `fix:`. That is the command to run; the sections below explain the ones that need explaining.
-- A `note:` is **not a check and moves neither number.** Notes are where your own choices and the optional pieces get reported: an `--no-impeccable` opt-out, no jq to read the install record with, a repo whose `core.hooksPath` belongs to another tool, an absent Claude Desktop. A green run is every `ok:` plus whatever notes describe your machine.
+- A `note:` is **not a check and moves neither number.** Notes are where your own choices and the optional pieces get reported: an `--no-impeccable` opt-out, no jq to read the install record with, a repo whose `core.hooksPath` belongs to another tool, Claude Desktop whether it is there or not. A green run is every `ok:` plus whatever notes describe your machine.
 
 ## Troubleshooting, by symptom
 

@@ -248,26 +248,18 @@ jobs:
           diff "$report.pinned" "$report.reached"
           failed="$(sed -n 's/^passed: [0-9]*, failed: \([0-9]*\)$/\1/p' "$report")"
           [ "$failed" = "11" ]
-      # The double-clickable verifier, end to end and as cmd runs it — the only
-      # gate there can be on a .bat, since no shell the regression suite runs
-      # under can execute one and the PowerShell parser above reads .ps1 only.
-      # What it proves is the whole reason the file exists: that cmd finds Git
-      # Bash where Git's installer leaves it, that verify.sh runs and reaches its
-      # summary through that hand-off, and that the HOME pin holds. HOME is seeded
-      # with a decoy for that last one, because the runner's own HOME already
-      # equals %USERPROFILE% and an unpinned run would look identical to a pinned
-      # one — verify.sh's own home-dir check is what reads the verdict back, and
-      # it goes red on the decoy the moment the .bat stops setting HOME. The
-      # report itself is expected to end non-zero here (this runner has no
-      # install), so the checks are those two LINES, never the exit code — and
-      # the summary line is the second of them because the home-dir verdict is
-      # printed near the end but not at it: a hand-off that died between the two
-      # would still carry the line this step reads the pin off, so `passed:` is
-      # what says the report the .bat produced is a whole one. Each findstr
-      # carries its own `|| exit /b 1` because under `shell: cmd` only the LAST
-      # command's exit code reaches the step — a bare findstr above another one
-      # asserts nothing, which is the exact shape adding the second line here
-      # would otherwise have created.
+      # The double-clickable verifier as cmd runs it — the only gate there can be
+      # on a .bat: no shell the regression suite runs under executes one, and the
+      # PowerShell parser above reads .ps1 only. HOME is seeded with a decoy
+      # because the runner's own already equals %USERPROFILE%, so an unpinned run
+      # would look identical to a pinned one; verify.sh's home-dir check reads the
+      # verdict back and goes red on the decoy the moment the .bat stops setting
+      # HOME. The report is expected to end non-zero here (this runner has no
+      # install), so the two LINES are the assertion and never the exit code —
+      # `passed:` among them because the home-dir verdict prints near the end but
+      # not at it, and a hand-off that died between the two would still carry it.
+      # Each findstr carries its own `|| exit /b 1`: under `shell: cmd` only the
+      # LAST command's exit code reaches the step.
       - name: Windows verifier entry point (verify.bat)
         shell: cmd
         env:

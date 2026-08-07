@@ -6646,11 +6646,10 @@ assert_classified "a missing manifest is the same again" invalid-manifest \
 assert_classified "a message this script has never seen takes no fallback" unknown \
   "Adding marketplace…✘ Failed to add marketplace: something the client learned to say after this was written"
 
-# Registering a working tree as a plugin source: install.sh derives $REPO_ROOT
-# from $BASH_SOURCE, which `curl | bash` leaves unset — on bash 3.2 that lands
-# $REPO_ROOT on `/`, elsewhere on the parent of the operator's cwd. A refusal that
-# still calls the client refuses nothing, so what the client was asked to register
-# is half of every case here.
+# Registering a working tree as a plugin source: install.sh derives $REPO_ROOT from
+# $BASH_SOURCE, so a copy of the script dropped somewhere of its own makes that any
+# directory at all. A refusal that still calls the client refuses nothing, so what
+# the client was asked to register is half of every case here.
 clone_registration_of() {
   local verdict=registered
   : > "$CLIENT_CALLS"
@@ -6695,12 +6694,11 @@ assert_equals "a wiring summary with nothing in it prints instead of aborting un
   "[oso-code] wiring summary:" "$empty_summary"
 
 # --- The opt-out marker: the only thing verify.sh can read the choice from -----
-# The two bootstrap scripts run standalone via curl and share no file, so the
-# opt-out is DATA at a path each spells for itself — spelled a third time here,
-# which is what catches a wrong constant in either. Both halves are cases because
-# the CLEAR is the one that is easy to forget: a marker left behind by an earlier
-# opt-out would report a genuinely failed impeccable install as the operator's own
-# choice forever.
+# The two bootstrap scripts share no file, so the opt-out is DATA at a path each
+# spells for itself — spelled a third time here, which is what catches a wrong
+# constant in either. Both halves are cases because the CLEAR is the one that is
+# easy to forget: a marker left behind by an earlier opt-out would report a
+# genuinely failed impeccable install as the operator's own choice forever.
 IMPECCABLE_MARKER="$STATE_DIR/impeccable-opt-out"
 marker_state() { [ -f "$IMPECCABLE_MARKER" ] && echo recorded || echo cleared; }
 
@@ -6770,14 +6768,15 @@ assert_equals "verify.sh exports the agent marker when probing the installed com
 assert_equals "the report still reaches its summary" "reached" \
   "$(printf '%s\n' "$report_without_marker" | grep -q '^passed:' && echo reached || echo missing)"
 
-# --- Claude Desktop: the second surface, asserted where it exists (D4) --------
+# --- Claude Desktop: the second surface, reported and never counted (D4) ------
 # Desktop's Code tab runs the CLI's engine and shares this same ~/.claude, so the
 # report has to say so — and it is an APPLICATION no installer here provisions, so
 # saying so may never cost a CLI-only operator a red line for software they never
-# wanted. That makes both directions cases: present has to reach the tally as a
-# pass, and absent has to reach neither half of it, which is the whole difference
-# between a note and a check and the one thing a `note:` regressed into a check
-# would break silently.
+# wanted. Nothing about it can be red, then, which is what makes both directions
+# cases: neither may reach either half of the tally, and a `note:` regressed into a
+# check is the one thing that would break that silently. A counted line here could
+# only ever be a pass, and a tally that counts what cannot fail says less than the
+# same run's notes do.
 # ~/.config/Claude is the fixture because it is the one location verify.sh looks in
 # that this suite's own HOME owns; the tally is read as a DELTA between the two
 # runs rather than against a number, since every other check here answers to a
@@ -6815,10 +6814,10 @@ else
   desktop_present_report="$(verify_report)"
   rm -rf "$DESKTOP_FIXTURE"
 
-  assert_equals "a Claude Desktop install is asserted, and that assertion joins the tally as a pass" \
-    "ok / +1 pass +0 fail" \
+  assert_equals "a Claude Desktop install is reported on a note, moving neither half of the tally" \
+    "note / +0 pass +0 fail" \
     "$(report_line_kind "$desktop_present_report" 'Claude Desktop') / $(tally_delta "$desktop_absent_report" "$desktop_present_report")"
-  assert_equals "no Claude Desktop is a note, so a CLI-only machine is complete rather than red" \
+  assert_equals "no Claude Desktop is a note too, so a CLI-only machine is complete rather than red" \
     "note" "$(report_line_kind "$desktop_absent_report" 'Claude Desktop')"
 fi
 
@@ -6878,11 +6877,11 @@ assert_equals "two merges over CRLF markers leave one managed block and the oper
 # byte the two never match, and the cost falls on the SECOND install: the
 # installer reads its own wiring as a foreign owner and wires nothing, while
 # verify.sh calls the commit gate unwired on a repo where it is wired. Both
-# scripts run standalone via curl and cannot source a shared file, so each carries
-# its own copy of the normalizer and ONE table judges both twins — install.sh's
-# copy arrives with the sourced script, verify.sh's is read out of the shipped
-# file the way the npx bound below is. The POSIX row is the guard that none of
-# this changed anything for Linux and macOS, where one spelling is all there is.
+# scripts carry their own copy of the normalizer, so ONE table judges both twins:
+# install.sh's copy arrives with the sourced script, verify.sh's is read out of the
+# shipped file the way the npx bound below is. The POSIX row is the guard that
+# none of this changed anything for Linux and macOS, where one spelling is all
+# there is.
 WINDOWS_HOOKS_DIR='C:/Users/o/oso-code/plugin/git-hooks'
 POSIX_HOOKS_DIR='/home/o/oso-code/plugin/git-hooks'
 HOOKS_DIR_SPELLINGS_NORMALIZED="$WINDOWS_HOOKS_DIR $WINDOWS_HOOKS_DIR $WINDOWS_HOOKS_DIR $WINDOWS_HOOKS_DIR $POSIX_HOOKS_DIR"
@@ -7242,8 +7241,8 @@ ENGRAM_RELEASE_TAG_URL="https://github.com/Gentleman-Programming/engram/releases
 # Two provisioners, one pin: install.sh puts the first engram on a machine and
 # repair-engram-codex.sh swaps one beside a live ~/.engram database, so which
 # version a machine ends up running must not depend on which of them ran last.
-# Neither can source the other — install.sh runs standalone via curl — so the
-# agreement is asserted here, spelled out the way the fallow pin above is.
+# Neither script sources the other, so the agreement is asserted here, spelled out
+# the way the fallow pin above is.
 assert_equals "the installer and the Codex repair pin one engram between them" \
   "SUPPORTED_ENGRAM_VERSION=$EXPECTED_ENGRAM_VERSION / ENGRAM_RELEASE_VERSION=$EXPECTED_ENGRAM_VERSION" \
   "$(grep -m1 '^SUPPORTED_ENGRAM_VERSION=' "$INSTALL_SH") / $(grep -m1 '^ENGRAM_RELEASE_VERSION=' "$REPO_ROOT/bootstrap/repair-engram-codex.sh")"
@@ -7638,6 +7637,45 @@ assert_equals "each MCP check carries its remediation on the same line as the ve
   "inline / inline / inline" \
   "$(mcp_check_fix_kind "$report_without_marker" 'engram MCP connected') / $(mcp_check_fix_kind "$report_without_marker" 'context7 MCP connected') / $(mcp_check_fix_kind "$report_without_marker" 'fallow MCP connected')"
 
+# --- The name those checks match on: the whole one, never a lookalike (D17) ----
+# `claude mcp list` prints a plugin-shipped server as `plugin:<plugin>:<server>:`
+# and a user-scope one as `<server>:`, so the pattern has to accept both spellings
+# — and an unanchored one accepts much more than that: any Connected entry whose
+# name merely CONTAINS the server's satisfies the check while the real server is
+# down, which is the green-over-nothing shape verify.sh exists against. The three
+# lookalikes below are the ones a machine can plausibly carry: a user-scope entry
+# left behind by an older wiring, a proxy, a renamed copy.
+# Read out of the shipped file the way the normalizer above is — verify.sh is a
+# run of checks top to bottom, so sourcing it for one function would run the whole
+# report against this suite's HOME.
+verify_mcp_matcher="$(sed -n '/^mcp_connected()/,/^}/p' "$REPO_ROOT/bootstrap/verify.sh")"
+mcp_connected_verdicts() {
+  local mcps="$1" name verdicts=""
+  eval "$verify_mcp_matcher"
+  for name in engram context7 fallow; do
+    verdicts="$verdicts$(mcp_connected "$name")"
+  done
+  printf '%s' "$verdicts"
+}
+
+MCP_LIST_SERVERS="$(printf '%s\n' \
+  'plugin:engram:engram: engram mcp --tools=agent - ✓ Connected' \
+  'plugin:oso-code:context7: npx -y @upstash/context7-mcp - ✓ Connected' \
+  'fallow: fallow-mcp - ✓ Connected')"
+MCP_LIST_LOOKALIKES="$(printf '%s\n' \
+  'engram-legacy: engram mcp - ✓ Connected' \
+  'context7-proxy: npx -y @upstash/context7-mcp - ✓ Connected' \
+  'fallow-old: fallow-mcp - ✓ Connected')"
+
+if [ -z "$verify_mcp_matcher" ]; then
+  echo "FAIL: bootstrap/verify.sh defines no mcp_connected, so nothing here reads the pattern its MCP checks match on"
+  fail=$((fail + 1))
+else
+  assert_equals "each MCP check matches its own server under both spellings the client prints, and no name that merely contains it" \
+    "111 / 000" \
+    "$(mcp_connected_verdicts "$MCP_LIST_SERVERS") / $(mcp_connected_verdicts "$MCP_LIST_LOOKALIKES")"
+fi
+
 # --- impeccable: the same read-back, one notch smaller ------------------------
 # `claude plugin install` exits 0 both on a plugin it installed and on one that was
 # already there, while verify.sh holds this to the client LISTING the plugin — so a
@@ -7856,14 +7894,11 @@ assert_equals "the Windows guide names the fallow package at the pin install.sh 
   "${install_fallow_pin:-unreadable}" "$guide_fallow_pin"
 
 # --- CI's verify assertion: the SET of check names, never a bare count (D6) ---
-# Every check a fixture HOME reaches fails there by construction, so `failed: 9`
-# reads identical whether a check was dropped, renamed or quietly stopped running
-# — and it has already hidden exactly that, when one check left the report and
-# another took its place at the same total. ci.yml pins the names now, and this is
-# what holds that pin to what verify.sh actually prints: a check added without the
-# list moving is red HERE, in the commit that adds it, rather than on a push.
-# The extractor is the one ci.yml runs, so a pin that agrees with a parser nobody
-# else uses is not something this can report as agreement.
+# ci.yml pins the names — its own $VERIFY_CHECK_NAMES comment carries why a count
+# could not — and this is what holds that pin to what verify.sh actually prints: a
+# check added without the list moving is red HERE, in the commit that adds it,
+# rather than on a push. The extractor is the one ci.yml runs, so a pin that agrees
+# with a parser nobody else uses is not something this can report as agreement.
 CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
 ci_pinned_check_names() {
   awk -v header="  $1: |" '
@@ -7892,26 +7927,24 @@ mkdir -p "$CI_VERIFY_HOME"
     bash "$REPO_ROOT/bootstrap/verify.sh" ) > "$CI_VERIFY_REPORT" 2>&1 || true
 ci_verify_report="$(cat "$CI_VERIFY_REPORT")"
 
-# A CI runner carries no Claude Desktop and no core.hooksPath wired into this
-# checkout; a contributor's machine may carry either, and either one turns a
-# `note:` into a counted check and so into a name this pin does not list. Both are
-# read off the report rather than probed for again, so what stands the case down is
-# the same reading the assertion would have made.
-# Only an `ok:` stands the Desktop half down, never `!= note`: the check reads
-# `absent` when it has been deleted or renamed, and standing down on THAT would
-# retire the only local holder of ci.yml's pin in the very commit that broke it —
-# silently, since a skip is green. The git-hook half is `= absent` for the
-# opposite reason and not by oversight: verify.sh prints no line of that name at
-# all where core.hooksPath is unwired, so absent is what a CI runner reads there.
-if [ "$(report_line_kind "$ci_verify_report" 'Claude Desktop')" != ok ] &&
-  [ "$(report_line_kind "$ci_verify_report" 'git commit hook executable')" = absent ]; then
+# A CI runner has no core.hooksPath wired into this checkout and a contributor's
+# machine may, which turns that `note:` into a counted check and so into a name
+# this pin does not list. It is read off the report rather than probed for again,
+# so what stands the case down is the same reading the assertion would have made.
+# `= absent` rather than `!= ok`, and not by oversight: verify.sh prints no line of
+# that name at all where core.hooksPath is unwired, so absent is what a CI runner
+# reads — and a check deleted or renamed reads absent too, which runs the
+# assertion rather than standing it down, so the only local holder of ci.yml's pin
+# cannot retire itself in the very commit that breaks it, silently, since a skip
+# is green.
+if [ "$(report_line_kind "$ci_verify_report" 'git commit hook executable')" = absent ]; then
   ci_expected_check_names="$( { ci_pinned_check_names VERIFY_CHECK_NAMES
     ci_windows_only_check_names; } | LC_ALL=C sort)"
   assert_equals "ci.yml pins the exact set of checks verify.sh reaches against a fixture HOME" \
     "$ci_expected_check_names" \
     "$(bash "$REPO_ROOT/tools/verify-check-names.sh" "$CI_VERIFY_REPORT")"
 else
-  echo "skip: this machine reaches checks a CI runner does not (a Claude Desktop of its own, or a core.hooksPath wired into this checkout), so its report describes a different set than the pin does"
+  echo "skip: this checkout has a core.hooksPath a CI runner does not, so verify.sh reaches a check there that its report describes and the pin does not"
   skipped=$((skipped + 1))
 fi
 
@@ -8188,9 +8221,8 @@ else
   printf '%s\n' '#!/bin/sh' 'exit 0' > "$CLIENT_ENV_STATE_BIN"
   chmod +x "$CLIENT_ENV_STATE_BIN"
   # The record the client keeps of which version a session runs. install.sh
-  # resolves the path it publishes out of THIS rather than out of its own clone:
-  # the clone is the operator's to move or delete, and a `curl | bash` run has
-  # none at all.
+  # resolves the path it publishes out of THIS rather than out of its own clone,
+  # which is the operator's to move or delete.
   printf '{"plugins":{"oso-code@oso-code":[{"installPath":"%s"}]}}\n' \
     "$CLIENT_ENV_PLUGIN_ROOT" > "$CLIENT_ENV_HOME/.claude/plugins/installed_plugins.json"
   printf 'a bash.exe this run found\n' > "$CLIENT_ENV_GIT_BASH"
@@ -8348,9 +8380,9 @@ OK|Git Bash path|published: $CLIENT_ENV_GIT_BASH" \
     "ok / fail / note" \
     "$(report_line_kind "$verify_env_published_report" 'Git Bash path') / $(report_line_kind "$verify_env_stale_report" 'Git Bash path') / $(report_line_kind "$verify_env_bare_report" 'Git Bash path')"
 
-  # Both scripts carry their own copy of what "still resolves" means — neither can
-  # source the other, since each runs standalone via curl — and a bar that drifted
-  # would have the installer publishing a path the verifier calls broken.
+  # Both scripts carry their own copy of what "still resolves" means, and a bar
+  # that drifted would have the installer publishing a path the verifier calls
+  # broken.
   # Walked in a fixed order rather than in each file's own: both scripts define
   # these where their first reader needs them, and an order the comparison
   # inherited would report a difference that is only a line number.
@@ -8370,10 +8402,11 @@ OK|Git Bash path|published: $CLIENT_ENV_GIT_BASH" \
 fi
 
 # --- The npx probe's bound: a hang may not take the whole report with it -------
-# verify.sh runs standalone via curl and defines its own helpers, so the bound is
-# READ OUT of the shipped file rather than reimplemented here — a rename or a move
-# leaves this block with nothing to run and says so. The bound value is the one
-# thing the cases override: 20 seconds is what an operator waits, not a suite.
+# verify.sh is a run of checks top to bottom rather than a library this suite can
+# source, so the bound is READ OUT of the shipped file rather than reimplemented
+# here — a rename or a move leaves this block with nothing to run and says so.
+# The bound value is the one thing the cases override: 20 seconds is what an
+# operator waits, not a suite.
 bounded_probe="$(sed -n '/^impeccable_cli_runnable()/,/^}/p' "$REPO_ROOT/bootstrap/verify.sh")"
 NPX_SHIM_DIR="$TEST_HOME/npx-shim"
 NPX_ORPHAN_MARKER="$TEST_HOME/npx-orphan"

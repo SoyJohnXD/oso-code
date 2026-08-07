@@ -56,7 +56,7 @@ codex login
 
 The installer pins the supported Codex version and installs the oso-code
 surfaces. Login is always an operator action. Afterward, review hook trust with
-`/hooks`, restart Codex, and run the Codex verifier when Slice 13 supplies it.
+`/hooks`, restart Codex, and run `bash bootstrap/verify-codex.sh`.
 
 ## Restore a recorded backup
 

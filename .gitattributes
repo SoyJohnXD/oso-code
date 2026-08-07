@@ -1,35 +1,19 @@
-# Line endings are pinned here instead of being left to each contributor's
-# core.autocrlf. A CRLF checkout of a shipped hook is not cosmetic: bash reads
-# `then\r` as a command, so the hook dies mid-verdict and every tool call it
-# gates is denied with a syntax error (probe-verified: exit 2). The data files
-# beside it fail more quietly: a trailing CR on a gentle-manifest.txt line makes
-# every `[ -e "$CLAUDE_DIR/$rel" ]` test miss, so the legacy cleanup removes
-# nothing, announces 0 and is confirmed removed by verify.sh — three layers
-# agreeing over a cleanup that never ran — and claude-global.md is copied
-# verbatim into the operator's always-loaded CLAUDE.md, whose budget check counts
-# every byte it would gain.
+# A CRLF checkout of a shipped hook is not cosmetic: bash reads `then\r` as a
+# command, so the hook dies mid-verdict and every tool call it gates is denied
+# with a syntax error (probe-verified: exit 2). The data files beside it fail more
+# quietly — a trailing CR on a gentle-manifest.txt line makes every
+# `[ -e "$CLAUDE_DIR/$rel" ]` test miss, so the legacy cleanup removes nothing and
+# all three of its readers agree it succeeded.
 #
-# ONE rule for the whole tree, because naming the files one at a time has already
-# been reopened twice: the shell layer was pinned, then those two data files, and
-# plugin/hooks/hooks.json was still the single file inside verify.sh's CR scan
-# with no entry here. windows-latest checks out under core.autocrlf=true, so that
-# file arrived CRLF, failed the scan, and made the rendered-hooks comparison
-# report every line of an unchanged manifest as diverged. codex/hooks/hooks.json,
-# hook-hashes.txt, hook-gates.txt and every .md the installer copies verbatim
-# were the same class waiting their turn; a glob per extension only moves the
-# boundary to whichever extension lands next.
+# ONE rule for the whole tree rather than a list of names or a glob per extension,
+# both of which were reopened by whichever file landed next. `text=auto` rather
+# than `text`, so a binary added later is decided by its own content.
 #
-# `text=auto` rather than `text`, so a binary added later is decided by its own
-# content instead of needing a line here. Every tracked file today is text and
-# none carries a CR byte, so this normalizes nothing that already exists — it
-# holds what arrives.
+# install.bat, verify.bat and install.ps1 are LF here against the platform
+# convention, deliberately: LF is the form that has actually been run, and CRLF
+# would ship one nothing here has. Reversing that takes an override line under
+# this one and a run behind it.
 #
-# The Windows entry points are the one place this contradicts the platform
-# convention: install.bat, verify.bat and install.ps1 are LF in this tree today,
-# so LF is the form that has actually been exercised, and CRLF would ship a form
-# nothing here has run. Reversing that takes an override line under this one and
-# a run behind it; verify.sh check 11 scans all three for CR bytes either way.
-#
-# No pin here is the whole fix: .gitattributes renormalizes no clone that already
-# exists, so the manifest's three readers strip the CR themselves.
+# This pin renormalizes no clone that already exists, so the manifest's three
+# readers strip the CR themselves.
 * text=auto eol=lf

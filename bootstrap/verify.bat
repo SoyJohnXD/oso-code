@@ -4,7 +4,7 @@ REM install.bat's sibling, and the same window handling: all the logic lives in
 REM verify.sh, which is where a report an operator can read has to come from.
 setlocal
 
-REM Slice 2's policy, applied at this file's own delegation point the way
+REM ADR-0127's HOME pin, applied at this file's own delegation point the way
 REM install.ps1 applies it at its one. Git Bash takes $HOME from an inherited
 REM $HOME first, then HOMEDRIVE+HOMEPATH, and only then %USERPROFILE%; the client
 REM is a Node process, so os.homedir() - %USERPROFILE%, always - is the only tree

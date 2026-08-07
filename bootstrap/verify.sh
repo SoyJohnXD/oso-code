@@ -10,9 +10,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 CLAUDE_DIR="${HOME}/.claude"
 
+# Every helper and value below marked "keep this identical" is duplicated byte for
+# byte in bootstrap/install.sh, and no constraint keeps them apart: both scripts
+# resolve $SCRIPT_DIR from $BASH_SOURCE and read files beside it, so neither has
+# ever run from a pipe — `cat bootstrap/verify.sh | bash` dies on the $SCRIPT_DIR
+# line under `set -u` — and install.sh already sources bootstrap/lib/*.sh. The
+# copies are debt, to be replaced by a shared file under that same lib/; until
+# then the parity notes and the cases in tests/hooks-test.sh behind them are what
+# holds the two sides equal.
+
 # Context budget for the global CLAUDE.md: 8000 bytes ≈ 2k tokens.
-# Keep this identical to CLAUDE_MD_BUDGET_BYTES in bootstrap/install.sh — the
-# two scripts run standalone via curl and cannot source a shared file.
+# Keep this identical to CLAUDE_MD_BUDGET_BYTES in bootstrap/install.sh.
 CLAUDE_MD_BUDGET_BYTES=8000
 
 pass=0
@@ -63,12 +71,22 @@ fi
 plugin_listed="$(claude plugin list 2>/dev/null | grep -c 'oso-code' || true)"
 check "oso-code plugin installed" "1" "$([ "$plugin_listed" -ge 1 ] && echo 1 || echo 0)"
 
-# 2. MCP servers wired and connected (engram + context7 ride plugins and render
-#    as `plugin:<plugin>:<server>`; fallow is a user-scope entry). Assert each
-#    server's line reports Connected, not merely that the name is present.
+# 2. MCP servers wired and connected. Two things have to hold at once, and each
+#    was a way of reading green over a server that is down (D17). The line must
+#    report Connected, never merely that the name is registered — `claude mcp list`
+#    spawns each server, so Connected is the only word that says one answered. And
+#    the name must be the WHOLE name: engram and context7 ride plugins and render
+#    as `plugin:<plugin>:<server>` while fallow is a user-scope entry, so the
+#    pattern takes an optional plugin prefix and closes on the colon the client
+#    prints after every name. Unanchored, a Connected `engram-legacy` beside a dead
+#    engram passed this check for the server it is not.
 mcps="$(claude mcp list 2>/dev/null || true)"
 mcp_connected() {
-  if printf '%s\n' "$mcps" | grep -E "$1" | grep -q 'Connected'; then echo 1; else echo 0; fi
+  if printf '%s\n' "$mcps" | grep -E "^(plugin:[^:]+:)?$1:" | grep -q 'Connected'; then
+    echo 1
+  else
+    echo 0
+  fi
 }
 #    Both remediations name the artifact the check is actually missing, because
 #    neither server fails for the reason its name suggests: engram needs a BINARY
@@ -107,8 +125,7 @@ if legacy_manifest="$(cat "$SCRIPT_DIR/gentle-manifest.txt" 2>&1)"; then
     # checkout every path carries a trailing CR, `[ -e ]` matches nothing, and
     # this check reports the cleanup done (0) while every legacy artifact is
     # still live — the worst shape a verifier has, green over nothing scanned.
-    # Same strip as install.sh's two manifest readers; the two scripts run
-    # standalone via curl and cannot source a shared file.
+    # Same strip as install.sh's two manifest readers.
     rel="${rel%$'\r'}"
     case "$rel" in ''|'#'*) continue ;; esac
     if [ -e "$CLAUDE_DIR/$rel" ] || [ -L "$CLAUDE_DIR/$rel" ]; then
@@ -181,8 +198,7 @@ fi
 
 # What the client will hand every session for one key of its settings.json `env`
 # block, empty when the file, the block, the key or jq itself is not there.
-# Keep this identical to client_env_value in bootstrap/install.sh — the two scripts
-# run standalone via curl and cannot source a shared file.
+# Keep this identical to client_env_value in bootstrap/install.sh.
 client_env_value() {
   jq -r --arg key "$1" '.env[$key] // empty' "$CLAUDE_DIR/settings.json" 2>/dev/null || true
 }
@@ -242,8 +258,7 @@ fi
 #    An operator who ran --no-impeccable on purpose has no green path while this
 #    check is hard, and no way to tell that choice from a broken install, so
 #    install.sh records the opt-out as data and this reads it. Keep the path
-#    identical to IMPECCABLE_OPT_OUT_MARKER in bootstrap/install.sh — the two
-#    scripts run standalone via curl and cannot source a shared file.
+#    identical to IMPECCABLE_OPT_OUT_MARKER in bootstrap/install.sh.
 IMPECCABLE_OPT_OUT_MARKER="${HOME}/.local/state/oso-code/impeccable-opt-out"
 if [ -f "$IMPECCABLE_OPT_OUT_MARKER" ]; then
   echo "note: impeccable plugin skipped — install.sh ran with --no-impeccable, so the design bar has no plugin half here; re-run install.sh without the flag to wire it"
@@ -302,8 +317,7 @@ fi
 # comparison folds BOTH sides through it — a fold that fires where no Windows path
 # exists fires on both sides and cannot change a verdict. Valid inside one
 # comparison only: never stored, never printed back to an operator.
-# Keep this identical to normalized_path in bootstrap/install.sh — the two scripts
-# run standalone via curl and cannot source a shared file.
+# Keep this identical to normalized_path in bootstrap/install.sh.
 normalized_path() {
   local path="${1//\\//}"
   case "$path" in
@@ -392,8 +406,7 @@ fi
 # Whether this shell is Git Bash on Windows, which decides three things a POSIX
 # host answers differently: which asset engram publishes, the .exe suffix a native
 # client needs to spawn a bare name, and whose PATH that name is resolved against.
-# Keep this identical to running_on_windows in bootstrap/install.sh — the two
-# scripts run standalone via curl and cannot source a shared file.
+# Keep this identical to running_on_windows in bootstrap/install.sh.
 running_on_windows() {
   case "$(uname -s 2>/dev/null || true)" in
     MINGW*|MSYS*|CYGWIN*) return 0 ;;
@@ -401,8 +414,7 @@ running_on_windows() {
   return 1
 }
 
-# Keep this identical to engram_binary_name in bootstrap/install.sh — the two
-# scripts run standalone via curl and cannot source a shared file.
+# Keep this identical to engram_binary_name in bootstrap/install.sh.
 engram_binary_name() {
   if running_on_windows; then printf 'engram.exe'; else printf 'engram'; fi
 }
@@ -416,8 +428,7 @@ engram_binary_name() {
 # supported Windows and is already this repo's Windows entry point, so it is what
 # reads them back; a run where it cannot answer yields nothing, which every caller
 # reads as "not found" rather than as agreement.
-# Keep this identical to client_path_entries in bootstrap/install.sh — the two
-# scripts run standalone via curl and cannot source a shared file.
+# Keep this identical to client_path_entries in bootstrap/install.sh.
 client_path_entries() {
   if ! running_on_windows; then
     printf '%s\n' "${PATH//:/$'\n'}"
@@ -433,8 +444,7 @@ client_path_entries() {
 # /mingw64/bin and $HOME/bin, which a native claude.exe cannot use, so an engram
 # sitting in one of them would report a working install to an operator whose client
 # can never start it.
-# Keep this identical to engram_client_binary in bootstrap/install.sh — the two
-# scripts run standalone via curl and cannot source a shared file.
+# Keep this identical to engram_client_binary in bootstrap/install.sh.
 engram_client_binary() {
   local entry candidate name
   name="$(engram_binary_name)"
@@ -464,8 +474,7 @@ engram_client_binary() {
 # scanners flagging them as a heuristic false positive — a quarantined copy
 # surfaces here, as a binary that is gone or will not start, instead of as a
 # confusing failure somewhere downstream.
-# Keep this identical to engram_binary_runs in bootstrap/install.sh — the two
-# scripts run standalone via curl and cannot source a shared file.
+# Keep this identical to engram_binary_runs in bootstrap/install.sh.
 engram_binary_runs() {
   "$1" version >/dev/null 2>&1
 }
@@ -508,8 +517,7 @@ fi
 # cygpath is what turns either — and a POSIX path, unchanged — into something a
 # file test can read. Off Windows there is one spelling and the path comes back as
 # it went in.
-# Keep this identical to shell_spelling_of in bootstrap/install.sh — the two
-# scripts run standalone via curl and cannot source a shared file.
+# Keep this identical to shell_spelling_of in bootstrap/install.sh.
 shell_spelling_of() {
   if running_on_windows; then
     cygpath -u "$1" 2>/dev/null || printf '%s' "$1"
@@ -519,8 +527,7 @@ shell_spelling_of() {
 }
 
 # Whether a path stored for a native Windows consumer still names a file here.
-# Keep this identical to git_bash_resolves in bootstrap/install.sh — the two
-# scripts run standalone via curl and cannot source a shared file.
+# Keep this identical to git_bash_resolves in bootstrap/install.sh.
 git_bash_resolves() {
   [ -n "$1" ] && [ -f "$(shell_spelling_of "$1")" ]
 }
@@ -586,30 +593,18 @@ claude_desktop_install() {
 # 15. Claude Desktop — the second surface this same ~/.claude drives. Its Code tab
 #     runs the CLI's engine behind a window and shares the CLI's configuration
 #     (CLAUDE.md, MCP servers, hooks, skills and settings), so every check above
-#     already answers for it: the tree they read is the tree Desktop opens, and the
-#     settings.json `env` block checks 7 and 14 read is how a client started from
-#     Explorer or the Dock is handed what a client started from a shell gets out of
-#     its shell.
-#     Which leaves this one thing to observe, and it observes only that: whether
-#     the machine carries the app. Desktop is an APPLICATION and no installer here
-#     provisions one, so its absence is a note and never a failure — a CLI-only
-#     operator must not go red for software they never wanted (D4).
-#     Expected and actual are one value on purpose. What there is to see is the
-#     location, and `check` is how seeing it joins the tally D4 asks for rather
-#     than the notes; there is no second half to compare it against, because every
+#     already answers for it, and there is nothing left here to assert: every
 #     property of Desktop a shell can reach is one the CLI shares and the checks
-#     above already assert. Saying so on the line beside it is the price of that:
-#     a verdict read as more than it observed is the class this whole file exists
-#     against, and this one proves an app is installed, never that a running
-#     Desktop has loaded any of this — no shell can see that — and never anything
-#     about the chat tab, whose claude_desktop_config.json carries MCP servers
-#     only, reaches no files, and is written by nothing here.
+#     above already hold. What is left is a machine-shaped fact — whether the app
+#     is on this machine — which is what a `note:` is for, on both branches. A
+#     counted check needs a way to be red, and this one had none: no installer here
+#     provisions Desktop, so its absence cannot fail a run (D4), and its presence
+#     was compared against itself.
 desktop_install="$(claude_desktop_install)"
 if [ -z "$desktop_install" ]; then
   echo "note: Claude Desktop — none of $(claude_desktop_locations | tr '\n' ' ')is here, so this machine runs the CLI alone and the checks above are the whole install; Desktop is an application to download from claude.ai/download, not something this bootstrap installs, and it would need nothing installed here that is not already"
 else
-  check "Claude Desktop installed on this machine" "$desktop_install" "$desktop_install"
-  echo "      its Code tab runs the CLI's engine and shares this ~/.claude — CLAUDE.md, MCP servers, hooks, skills and settings — so every check above answers for it too; what no shell can see is whether a running Desktop has loaded them, and the chat tab is a separate surface nothing here writes"
+  echo "note: Claude Desktop — $desktop_install; its Code tab runs the CLI's engine and shares this ~/.claude — CLAUDE.md, MCP servers, hooks, skills and settings — so every check above answers for it too; what no shell can see is whether a running Desktop has loaded them, and the chat tab is a separate surface nothing here writes"
 fi
 
 echo "----"
