@@ -47,7 +47,7 @@ bash bootstrap/install.sh     # prerequisites, MCPs, plugins, legacy cleanup (as
 bash bootstrap/verify.sh      # measurable post-install E2E — every check ok:, ending on failed: 0
 ```
 
-`verify.sh` prints one line per check, `ok:` or `FAIL:`, and closes with `passed: N, failed: M` — the run is green when `failed: 0`, which is also its exit status. A `note:` line is not a check and moves neither number: notes are where the optional pieces and your own choices get reported (an `--no-impeccable` opt-out; no jq to read the install record; a repo whose `core.hooksPath` belongs to another tool; and, off Windows, the home dir the Windows client reads, since there is no `%USERPROFILE%` there to disagree with `$HOME`). So a green run is every `ok:` plus whatever notes describe your machine.
+`verify.sh` prints one line per check, `ok:` or `FAIL:`, and closes with `passed: N, failed: M` — the run is green when `failed: 0`, which is also its exit status. A `note:` line is not a check and moves neither number: notes are where the optional pieces and your own choices get reported (an `--no-impeccable` opt-out; no jq to read the install record; a repo whose `core.hooksPath` belongs to another tool; and, off Windows, both the home dir the Windows client reads — there is no `%USERPROFILE%` there to disagree with `$HOME` — and the PATH it resolves the engram binary against, which off Windows is the same PATH the engram MCP check already exercises). So a green run is every `ok:` plus whatever notes describe your machine.
 
 Installing fallow by hand, if you ever need to — `bash bootstrap/install.sh` runs both steps for you:
 

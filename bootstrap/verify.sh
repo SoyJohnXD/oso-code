@@ -70,8 +70,18 @@ mcps="$(claude mcp list 2>/dev/null || true)"
 mcp_connected() {
   if printf '%s\n' "$mcps" | grep -E "$1" | grep -q 'Connected'; then echo 1; else echo 0; fi
 }
-check "engram MCP connected"   "1" "$(mcp_connected 'engram')"
-check "context7 MCP connected" "1" "$(mcp_connected 'context7')"
+#    Both remediations name the artifact the check is actually missing, because
+#    neither server fails for the reason its name suggests: engram needs a BINARY
+#    that no plugin install puts on the machine (install.sh downloads the pinned
+#    release, and check 13 below answers whether the client can see it and whether
+#    it runs), and context7 needs the plugin registered plus a Node.js for npx to
+#    start it with. Which of those two a red line here means is not something this
+#    check can tell — it sees a server that did not connect — so the remediation
+#    names both rather than asserting the one it cannot know.
+check "engram MCP connected"   "1" "$(mcp_connected 'engram')" \
+  "bash bootstrap/install.sh installs the engram plugin AND the pinned engram binary its .mcp.json spawns by name; where that binary is installed but the client still cannot start it, either the directory holding it is not on the PATH Claude Code reads or the copy there does not run at all — that run's wiring summary says which and names the command for it (check 13 below discriminates the two on Windows), and Claude Code has to be restarted after"
+check "context7 MCP connected" "1" "$(mcp_connected 'context7')" \
+  "claude plugin install oso-code@oso-code registers it (it ships in the plugin's .mcp.json, so there is no mcp add to run), and it starts through npx — so install Node.js if npx is missing, then restart Claude Code"
 # fallow was the one OPTIONAL MCP, reported on a `note:` this never counted,
 # because it built from Rust that no OS here requires and no entry point
 # provisions — so a hard check would have made the one-step Windows path red by
@@ -361,6 +371,120 @@ if [ -n "${USERPROFILE:-}" ]; then
     "re-run from PowerShell (bootstrap/install.ps1 sets HOME to %USERPROFILE% for you), or export HOME=\"\$USERPROFILE\" in Git Bash and re-run bootstrap/install.sh"
 else
   echo "note: home dir the Windows client reads — %USERPROFILE% is unset, so no Windows-native client reads a home dir here and \$HOME ($HOME) is the only tree in play"
+fi
+
+# Whether this shell is Git Bash on Windows, which decides three things a POSIX
+# host answers differently: which asset engram publishes, the .exe suffix a native
+# client needs to spawn a bare name, and whose PATH that name is resolved against.
+# Keep this identical to running_on_windows in bootstrap/install.sh — the two
+# scripts run standalone via curl and cannot source a shared file.
+running_on_windows() {
+  case "$(uname -s 2>/dev/null || true)" in
+    MINGW*|MSYS*|CYGWIN*) return 0 ;;
+  esac
+  return 1
+}
+
+# Keep this identical to engram_binary_name in bootstrap/install.sh — the two
+# scripts run standalone via curl and cannot source a shared file.
+engram_binary_name() {
+  if running_on_windows; then printf 'engram.exe'; else printf 'engram'; fi
+}
+
+# The PATH a newly launched Claude Code resolves a bare command name against, one
+# entry per line. Off Windows that is this shell's own — the client starts from a
+# shell like this one. On Windows it is emphatically not: Git Bash builds its PATH
+# from the persisted one plus MSYS directories no native process can use, while
+# claude.exe reads the persisted machine and user scopes, which is exactly the pair
+# bootstrap/install.ps1's Update-EnvPath re-reads. PowerShell ships with every
+# supported Windows and is already this repo's Windows entry point, so it is what
+# reads them back; a run where it cannot answer yields nothing, which every caller
+# reads as "not found" rather than as agreement.
+# Keep this identical to client_path_entries in bootstrap/install.sh — the two
+# scripts run standalone via curl and cannot source a shared file.
+client_path_entries() {
+  if ! running_on_windows; then
+    printf '%s\n' "${PATH//:/$'\n'}"
+    return 0
+  fi
+  powershell -NoProfile -NonInteractive -Command \
+    '@("Machine","User") | ForEach-Object { [Environment]::GetEnvironmentVariable("Path", $_) } | Where-Object { $_ } | ForEach-Object { $_ -split ";" }' \
+    2>/dev/null || true
+}
+
+# The engram a newly launched Claude Code would spawn, empty when it would find
+# none. Never `command -v`: on Windows this shell's PATH carries /usr/bin,
+# /mingw64/bin and $HOME/bin, which a native claude.exe cannot use, so an engram
+# sitting in one of them would report a working install to an operator whose client
+# can never start it.
+# Keep this identical to engram_client_binary in bootstrap/install.sh — the two
+# scripts run standalone via curl and cannot source a shared file.
+engram_client_binary() {
+  local entry candidate name
+  name="$(engram_binary_name)"
+  while IFS= read -r entry; do
+    # A registry PATH entry arrives in whatever spelling was written into it:
+    # backslashes, sometimes a trailing separator, and — since PowerShell ends its
+    # lines the Windows way — a carriage return this shell would otherwise make
+    # part of the directory name. Forward slashes are what `[ -x ]` reads most
+    # reliably under Git Bash, and a trailing separator would make the join a `//`.
+    entry="${entry%$'\r'}"
+    entry="${entry//\\//}"
+    entry="${entry%/}"
+    [ -n "$entry" ] || continue
+    candidate="$entry/$name"
+    if [ -f "$candidate" ] && [ -x "$candidate" ]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done <<< "$(client_path_entries)"
+  return 0
+}
+
+# The bar every engram gets held to here, whichever run put it on the machine: a
+# checksum proves which bytes arrived and a file test proves they are there, but
+# asking the binary to answer is what proves this machine will let it run.
+# Upstream's prebuilt releases are unsigned and it documents Defender and other
+# scanners flagging them as a heuristic false positive — a quarantined copy
+# surfaces here, as a binary that is gone or will not start, instead of as a
+# confusing failure somewhere downstream.
+# Keep this identical to engram_binary_runs in bootstrap/install.sh — the two
+# scripts run standalone via curl and cannot source a shared file.
+engram_binary_runs() {
+  "$1" version >/dev/null 2>&1
+}
+
+# 13. The binary check 2's engram line depends on: resolvable against the PATH the
+#     CLIENT resolves it with, and able to answer when it is run. The engram
+#     plugin's .mcp.json launches `{"command": "engram"}`, so what starts that
+#     server is a PATH lookup inside
+#     claude.exe — and check 2 runs `claude mcp list` from THIS shell, whose PATH
+#     under Git Bash carries /usr/bin, /mingw64/bin and $HOME/bin, none of which a
+#     native Windows process can use. An engram reachable only from here would make
+#     check 2 green for a client that will never start it, and one installed while
+#     this shell holds a stale PATH would make it red for a client that will.
+#     Resolving is half the answer: a file test says a binary is there, and check 2
+#     goes red over a quarantined one that cannot start — so a green here on a
+#     binary nobody ran would corroborate a PATH diagnosis for a machine whose PATH
+#     is fine, which is the one thing a check beside a red one must not do.
+#     Off Windows there is one PATH: the client starts from a shell like this one,
+#     so check 2 already exercises the same lookup by spawning the server, and this
+#     is a note rather than a check that could only pass vacuously — the shape
+#     check 12 takes where %USERPROFILE% is unset.
+if running_on_windows; then
+  engram_binary="$(engram_client_binary)"
+  if [ -z "$engram_binary" ]; then
+    engram_binary_state="no $(engram_binary_name) on the persisted machine or user PATH"
+  elif engram_binary_runs "$engram_binary"; then
+    engram_binary_state=1
+  else
+    engram_binary_state="$engram_binary does not run"
+  fi
+  check "engram binary the client resolves and runs" "1" "$engram_binary_state" \
+    "bash bootstrap/install.sh downloads the pinned engram release into ~/.local/bin and reports it only once it answers; where one is already installed elsewhere, the verdict above says which half is missing — a directory not on the persisted PATH, which that run's wiring summary names the command to add (a new terminal plus a Claude Code restart is what picks it up), or a copy that does not run, which an antivirus may have quarantined and which that run tells you how to replace"
+  [ -z "$engram_binary" ] || echo "      engram binary: $engram_binary"
+else
+  echo "note: engram binary the client resolves and runs — this is not Git Bash on Windows, so the client resolves a bare \`engram\` against this same PATH and starting the server exercises both, which check 2 already does"
 fi
 
 echo "----"

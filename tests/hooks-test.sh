@@ -7149,6 +7149,463 @@ assert_equals "an entry whose command cannot be read back is a failure, never a 
   "$(fallow_wiring_verdict)"
 rm -f "$FALLOW_WIRED_ENTRY"
 
+# --- engram: the binary a plugin install never puts on the machine ------------
+# `claude plugin install engram@engram` brings skills, hooks and a .mcp.json whose
+# server is `{"command": "engram"}` — a bare binary nothing here provisioned. The
+# summary reported that plugin install as engram itself, so a clean Windows box
+# read `engram: OK` and then could not start the server. D3 provisions it: the
+# official release, at a pin, checksum-verified, per-user, no elevation.
+# Nothing below reaches the network — the fetch is a stub serving a fixture release
+# out of a directory — and nothing installs an engram on the machine running this
+# suite: every write lands in a fixture HOME.
+EXPECTED_ENGRAM_VERSION=1.20.0
+ENGRAM_LINUX_ASSET="engram_${EXPECTED_ENGRAM_VERSION}_linux_amd64.tar.gz"
+ENGRAM_RELEASE_TAG_URL="https://github.com/Gentleman-Programming/engram/releases/download/v$EXPECTED_ENGRAM_VERSION"
+
+# Two provisioners, one pin: install.sh puts the first engram on a machine and
+# repair-engram-codex.sh swaps one beside a live ~/.engram database, so which
+# version a machine ends up running must not depend on which of them ran last.
+# Neither can source the other — install.sh runs standalone via curl — so the
+# agreement is asserted here, spelled out the way the fallow pin above is.
+assert_equals "the installer and the Codex repair pin one engram between them" \
+  "SUPPORTED_ENGRAM_VERSION=$EXPECTED_ENGRAM_VERSION / ENGRAM_RELEASE_VERSION=$EXPECTED_ENGRAM_VERSION" \
+  "$(grep -m1 '^SUPPORTED_ENGRAM_VERSION=' "$INSTALL_SH") / $(grep -m1 '^ENGRAM_RELEASE_VERSION=' "$REPO_ROOT/bootstrap/repair-engram-codex.sh")"
+
+ENGRAM_STUB_DIR="$TEST_HOME/engram-stub"
+ENGRAM_FIXTURE_HOME="$TEST_HOME/engram-home"
+ENGRAM_RELEASE_DIR="$TEST_HOME/engram-release"
+ENGRAM_TAMPERED_DIR="$TEST_HOME/engram-release-tampered"
+ENGRAM_DEAD_DIR="$TEST_HOME/engram-release-dead"
+ENGRAM_CALLS="$TEST_HOME/engram-calls"
+ENGRAM_VERDICT="$TEST_HOME/engram-verdict"
+ENGRAM_SERVE_POINTER="$TEST_HOME/engram-serve-from"
+ENGRAM_UNAME_POINTER="$TEST_HOME/engram-uname"
+mkdir -p "$ENGRAM_STUB_DIR" "$ENGRAM_FIXTURE_HOME" \
+  "$ENGRAM_RELEASE_DIR/payload" "$ENGRAM_TAMPERED_DIR" "$ENGRAM_DEAD_DIR/payload"
+
+# The provisioning runs with the stub dir as its whole PATH, so a real engram on
+# the machine running this suite cannot answer for the fixture one — which is the
+# whole point of the probe under test. Everything the provisioning shells out to is
+# linked in; a host missing one of them skips this block rather than reporting a
+# green it never measured. uname and curl are stubs instead: the asset name has to
+# be the same on every host that runs this suite, and the download must not happen.
+# gzip is in the list because GNU tar shells out to it for -z: without it on this
+# PATH the unpack fails for a reason that has nothing to do with the code here.
+ENGRAM_FIXTURE_TOOLS="mktemp awk tar gzip find head mkdir cp chmod mv rm"
+engram_digest_tool=""
+engram_tools_ready=yes
+for engram_tool in sha256sum shasum; do
+  if [ -z "$engram_digest_tool" ] && command -v "$engram_tool" >/dev/null 2>&1; then
+    engram_digest_tool="$engram_tool"
+  fi
+done
+for engram_tool in $ENGRAM_FIXTURE_TOOLS; do
+  command -v "$engram_tool" >/dev/null 2>&1 || engram_tools_ready=no
+done
+[ -n "$engram_digest_tool" ] || engram_tools_ready=no
+
+if [ "$engram_tools_ready" = no ]; then
+  echo "skip: engram provisioning — this host lacks a SHA-256 tool or one of: $ENGRAM_FIXTURE_TOOLS"
+  skipped=$((skipped + 1))
+else
+  for engram_tool in $ENGRAM_FIXTURE_TOOLS "$engram_digest_tool"; do
+    ln -sf "$(command -v "$engram_tool")" "$ENGRAM_STUB_DIR/$engram_tool"
+  done
+  printf '%s\n' \
+    '#!/bin/sh' \
+    "read kernel machine < \"$ENGRAM_UNAME_POINTER\"" \
+    'case "$1" in' \
+    '  -m) echo "$machine" ;;' \
+    '  *) echo "$kernel" ;;' \
+    'esac' > "$ENGRAM_STUB_DIR/uname"
+  # The release, served out of a fixture directory instead of over the network, and
+  # every URL it was asked for recorded: which asset a host downloads and whether
+  # the checksums came first are half of what these cases assert.
+  printf '%s\n' \
+    '#!/bin/sh' \
+    'destination=""' \
+    'url=""' \
+    'while [ "$#" -gt 0 ]; do' \
+    '  case "$1" in' \
+    '    -o) destination="$2"; shift 2 ;;' \
+    '    http*) url="$1"; shift ;;' \
+    '    *) shift ;;' \
+    '  esac' \
+    'done' \
+    "read fixture < \"$ENGRAM_SERVE_POINTER\"" \
+    "echo \"\$url\" >> \"$ENGRAM_CALLS\"" \
+    'asset="${url##*/}"' \
+    '[ -f "$fixture/$asset" ] || exit 22' \
+    'cp "$fixture/$asset" "$destination"' > "$ENGRAM_STUB_DIR/curl"
+  chmod +x "$ENGRAM_STUB_DIR/uname" "$ENGRAM_STUB_DIR/curl"
+
+  printf '%s\n' '#!/bin/sh' "echo \"engram $EXPECTED_ENGRAM_VERSION\"" \
+    > "$ENGRAM_RELEASE_DIR/payload/engram"
+  chmod +x "$ENGRAM_RELEASE_DIR/payload/engram"
+  ( cd "$ENGRAM_RELEASE_DIR/payload" && tar -czf "../$ENGRAM_LINUX_ASSET" engram )
+  engram_fixture_digest="$(
+    { sha256sum "$ENGRAM_RELEASE_DIR/$ENGRAM_LINUX_ASSET" 2>/dev/null ||
+      shasum -a 256 "$ENGRAM_RELEASE_DIR/$ENGRAM_LINUX_ASSET"; } | awk '{ print $1 }')"
+  # One published checksums.txt covers every asset in the release, so a row for one
+  # this host never downloads belongs in the fixture: a checker handed the whole
+  # file would go red on it, which is why the code selects its own row first.
+  printf '%s  %s\n' \
+    0000000000000000000000000000000000000000000000000000000000000000 \
+    "engram_${EXPECTED_ENGRAM_VERSION}_darwin_arm64.tar.gz" \
+    > "$ENGRAM_RELEASE_DIR/checksums.txt"
+  printf '%s  %s\n' "$engram_fixture_digest" "$ENGRAM_LINUX_ASSET" \
+    >> "$ENGRAM_RELEASE_DIR/checksums.txt"
+  # The same release with an archive that is not what its checksums.txt publishes:
+  # the bytes a mirror, a proxy or a tampered download hands over.
+  cp "$ENGRAM_RELEASE_DIR/checksums.txt" "$ENGRAM_TAMPERED_DIR/checksums.txt"
+  printf 'not the engram anybody published\n' > "$ENGRAM_TAMPERED_DIR/$ENGRAM_LINUX_ASSET"
+  # And a release that clears every gate but the last one: its checksum matches the
+  # archive it publishes, the archive carries an engram, and that engram does not
+  # run — the state a scanner leaves behind on the unsigned prebuilt upstream
+  # documents it flagging.
+  printf '%s\n' '#!/bin/sh' 'exit 1' > "$ENGRAM_DEAD_DIR/payload/engram"
+  chmod +x "$ENGRAM_DEAD_DIR/payload/engram"
+  ( cd "$ENGRAM_DEAD_DIR/payload" && tar -czf "../$ENGRAM_LINUX_ASSET" engram )
+  engram_dead_digest="$(
+    { sha256sum "$ENGRAM_DEAD_DIR/$ENGRAM_LINUX_ASSET" 2>/dev/null ||
+      shasum -a 256 "$ENGRAM_DEAD_DIR/$ENGRAM_LINUX_ASSET"; } | awk '{ print $1 }')"
+  printf '%s  %s\n' "$engram_dead_digest" "$ENGRAM_LINUX_ASSET" \
+    > "$ENGRAM_DEAD_DIR/checksums.txt"
+
+  # One provisioning, leaving behind every URL it asked for and the verdict it
+  # recorded. PATH is replaced AFTER the source the way run_fallow_wiring does it —
+  # install.sh resolves its own directory and stamps a backup name at source time —
+  # and the fixture's own bin joins it, because what the probe answers about is the
+  # PATH a client resolves the plugin's bare `engram` against.
+  run_engram_provisioning() {
+    printf '%s\n' "$1" > "$ENGRAM_SERVE_POINTER"
+    printf 'Linux x86_64\n' > "$ENGRAM_UNAME_POINTER"
+    : > "$ENGRAM_CALLS"
+    : > "$ENGRAM_VERDICT"
+    bash -c '
+      installer="$1" stub_path="$2" fixture_home="$3" verdict="$4"
+      set --
+      . "$installer"
+      PATH="$stub_path:$fixture_home/.local/bin"
+      HOME="$fixture_home"
+      provision_engram_binary
+      printf "%s\n" "${WIRING_SUMMARY[@]}" > "$verdict"
+    ' _ "$INSTALL_SH" "$ENGRAM_STUB_DIR" "$ENGRAM_FIXTURE_HOME" "$ENGRAM_VERDICT" \
+      >/dev/null 2>&1 || true
+  }
+
+  rm -rf "$ENGRAM_FIXTURE_HOME/.local"
+  run_engram_provisioning "$ENGRAM_RELEASE_DIR"
+  assert_equals "a machine with no engram fetches the pinned release from the pinned tag, checksums first" \
+    "$ENGRAM_RELEASE_TAG_URL/checksums.txt
+$ENGRAM_RELEASE_TAG_URL/$ENGRAM_LINUX_ASSET" \
+    "$(cat "$ENGRAM_CALLS")"
+  assert_equals "the release lands where the client resolves it, runnable, and the summary names the version" \
+    "engram $EXPECTED_ENGRAM_VERSION / OK|engram (binary)|installed $EXPECTED_ENGRAM_VERSION at $ENGRAM_FIXTURE_HOME/.local/bin/engram" \
+    "$("$ENGRAM_FIXTURE_HOME/.local/bin/engram" version 2>/dev/null || echo "never installed") / $(cat "$ENGRAM_VERDICT")"
+
+  # An engram already reachable is left exactly where it is: it owns
+  # ~/.engram/engram.db, whose schema its own version migrates, and pairing a
+  # migrated database with an older binary is the accident repair-engram-codex.sh
+  # exists to prevent — this installer must not cause it by re-provisioning.
+  run_engram_provisioning "$ENGRAM_RELEASE_DIR"
+  assert_equals "an engram the client already resolves is reported, never downloaded over" \
+    "no download / OK|engram (binary)|already installed where Claude Code resolves it: $ENGRAM_FIXTURE_HOME/.local/bin/engram" \
+    "$([ -s "$ENGRAM_CALLS" ] && echo "downloaded again" || echo "no download") / $(cat "$ENGRAM_VERDICT")"
+
+  # What every one of these failures hands the operator, spelled here the way the
+  # pins above are rather than read out of install.sh.
+  ENGRAM_MANUAL_FIX="install engram yourself — brew install gentleman-programming/tap/engram, or go install github.com/Gentleman-Programming/engram/cmd/engram@v$EXPECTED_ENGRAM_VERSION — then re-run this installer"
+
+  # The same "already resolved" branch over a binary that no longer answers. A file
+  # test says installed; running it says otherwise — and the branch beside it has
+  # held that running bar since it was written. Reported OK, this is the false green
+  # every remediation downstream then argues from: verify.sh's engram line blames a
+  # PATH the directory is already on. The operator's own copy stays where it is,
+  # because which engram their machine keeps is not this installer's call.
+  ENGRAM_RESOLVED_BINARY="$ENGRAM_FIXTURE_HOME/.local/bin/engram"
+  rm -rf "$ENGRAM_FIXTURE_HOME/.local"
+  mkdir -p "$ENGRAM_FIXTURE_HOME/.local/bin"
+  printf '%s\n' '#!/bin/sh' 'exit 1' > "$ENGRAM_RESOLVED_BINARY"
+  chmod +x "$ENGRAM_RESOLVED_BINARY"
+  run_engram_provisioning "$ENGRAM_RELEASE_DIR"
+  assert_equals "an engram the client resolves but cannot run is a failure naming the way out, never an OK" \
+    "no download / left standing / FAILED|engram (binary)|the engram Claude Code resolves at $ENGRAM_RESOLVED_BINARY does not run, so its MCP cannot start — an antivirus may have quarantined it, which upstream documents happening to unsigned prebuilt releases — fix: rm \"$ENGRAM_RESOLVED_BINARY\", then re-run this installer to put the pinned release there; if that one will not run either, $ENGRAM_MANUAL_FIX" \
+    "$([ -s "$ENGRAM_CALLS" ] && echo "downloaded over it" || echo "no download") / $([ -e "$ENGRAM_RESOLVED_BINARY" ] && echo "left standing" || echo removed) / $(cat "$ENGRAM_VERDICT")"
+
+  # The same binary arriving from the release instead, twice — because "re-run this
+  # installer" is how every remediation here ends, and a re-run resolves that name
+  # before it downloads anything. A dead copy left standing turns the operator's
+  # whole loop into an OK for a binary that starts no MCP.
+  ENGRAM_DEAD_VERDICT="FAILED|engram (binary)|engram $EXPECTED_ENGRAM_VERSION was verified and placed at $ENGRAM_RESOLVED_BINARY but would not run there — an antivirus may have quarantined it, which upstream documents happening to its unsigned prebuilt releases — fix: $ENGRAM_MANUAL_FIX"
+  rm -rf "$ENGRAM_FIXTURE_HOME/.local"
+  run_engram_provisioning "$ENGRAM_DEAD_DIR"
+  engram_dead_first_verdict="$(cat "$ENGRAM_VERDICT")"
+  engram_dead_leftover="$([ -e "$ENGRAM_RESOLVED_BINARY" ] && echo "left standing" || echo "taken back out")"
+  run_engram_provisioning "$ENGRAM_DEAD_DIR"
+  assert_equals "a downloaded engram that will not run is taken back out, and the re-run tries again instead of reporting it installed" \
+    "$ENGRAM_DEAD_VERDICT / taken back out / downloaded again / $ENGRAM_DEAD_VERDICT" \
+    "$engram_dead_first_verdict / $engram_dead_leftover / $([ -s "$ENGRAM_CALLS" ] && echo "downloaded again" || echo "no download") / $(cat "$ENGRAM_VERDICT")"
+
+  # The other half of a checksum: it has to be able to REFUSE. A mismatch that
+  # installed anyway would make the verification a decoration on a supply chain.
+  rm -rf "$ENGRAM_FIXTURE_HOME/.local"
+  run_engram_provisioning "$ENGRAM_TAMPERED_DIR"
+  assert_equals "an archive that does not match its published checksum installs nothing and names the asset" \
+    "nothing installed / FAILED|engram (binary)|$ENGRAM_LINUX_ASSET does not match its published SHA-256 checksum, so nothing was installed — fix: $ENGRAM_MANUAL_FIX" \
+    "$([ -e "$ENGRAM_FIXTURE_HOME/.local/bin/engram" ] && echo installed || echo "nothing installed") / $(cat "$ENGRAM_VERDICT")"
+
+  # The asset table, spelled here rather than derived from install.sh: upstream
+  # publishes a zip for Windows and a tar.gz everywhere else, and a host outside
+  # the table gets no guessed name at all — it gets the manual install.
+  engram_asset_for() {
+    printf '%s %s\n' "$1" "$2" > "$ENGRAM_UNAME_POINTER"
+    bash -c '
+      installer="$1" stub_path="$2"
+      set --
+      . "$installer"
+      PATH="$stub_path"
+      engram_release_asset || printf unsupported
+    ' _ "$INSTALL_SH" "$ENGRAM_STUB_DIR" 2>/dev/null
+  }
+  assert_equals "the release table names each host's own artifact, and nothing off it" \
+    "$ENGRAM_LINUX_ASSET / engram_${EXPECTED_ENGRAM_VERSION}_darwin_arm64.tar.gz / engram_${EXPECTED_ENGRAM_VERSION}_windows_amd64.zip / engram_${EXPECTED_ENGRAM_VERSION}_windows_arm64.zip / unsupported" \
+    "$(engram_asset_for Linux x86_64) / $(engram_asset_for Darwin arm64) / $(engram_asset_for MINGW64_NT-10.0 x86_64) / $(engram_asset_for MINGW64_NT-10.0 aarch64) / $(engram_asset_for SunOS sparc)"
+fi
+
+# --- Whose PATH answers for a bare `engram`: the client's, never this shell's --
+# The plugin's .mcp.json launches the command by NAME, and it is claude.exe that
+# resolves it — a native Windows process that cannot see /usr/bin, /mingw64/bin or
+# $HOME/bin, the directories Git Bash adds to the PATH the installer runs under. A
+# probe reading $PATH answers about a machine the client does not live on: green
+# here, dead there. What claude.exe reads is the persisted machine+user PATH, which
+# is why the stub below is a PowerShell that hands one back.
+# Both bootstrap scripts carry a copy of the probe — neither can source a shared
+# file — so ONE table judges both, the way the path normalizer's does above:
+# install.sh's copy arrives with the sourced script, verify.sh's is read out of the
+# shipped file.
+ENGRAM_WINDOWS_STUB_DIR="$TEST_HOME/engram-windows-stub"
+ENGRAM_CLIENT_BIN_DIR="$TEST_HOME/engram-client-bin"
+ENGRAM_CLIENT_EMPTY_DIR="$TEST_HOME/engram-client-empty"
+ENGRAM_CLIENT_PATH_FILE="$TEST_HOME/engram-client-path"
+mkdir -p "$ENGRAM_WINDOWS_STUB_DIR" "$ENGRAM_CLIENT_BIN_DIR" "$ENGRAM_CLIENT_EMPTY_DIR"
+printf '%s\n' '#!/bin/sh' 'echo MINGW64_NT-10.0' > "$ENGRAM_WINDOWS_STUB_DIR/uname"
+printf '%s\n' '#!/bin/sh' "cat \"$ENGRAM_CLIENT_PATH_FILE\"" \
+  > "$ENGRAM_WINDOWS_STUB_DIR/powershell"
+# The engram.exe only THIS shell can see, in the directory that is the shell's
+# whole PATH: a probe that reads $PATH answers with it, and is wrong every time.
+printf '%s\n' '#!/bin/sh' 'echo "engram from the shell PATH"' \
+  > "$ENGRAM_WINDOWS_STUB_DIR/engram.exe"
+printf '%s\n' '#!/bin/sh' 'echo "engram from the client PATH"' \
+  > "$ENGRAM_CLIENT_BIN_DIR/engram.exe"
+chmod +x "$ENGRAM_WINDOWS_STUB_DIR/uname" "$ENGRAM_WINDOWS_STUB_DIR/powershell" \
+  "$ENGRAM_WINDOWS_STUB_DIR/engram.exe" "$ENGRAM_CLIENT_BIN_DIR/engram.exe"
+ln -sf "$(command -v cat)" "$ENGRAM_WINDOWS_STUB_DIR/cat"
+
+engram_probe_answer() {
+  local probe_source="$1" client_entries="$2"
+  printf '%s\n' "$client_entries" > "$ENGRAM_CLIENT_PATH_FILE"
+  bash -c '
+    probe_source="$1" stub_path="$2"
+    set --
+    eval "$probe_source"
+    PATH="$stub_path"
+    engram_client_binary
+  ' _ "$probe_source" "$ENGRAM_WINDOWS_STUB_DIR" 2>/dev/null
+}
+
+# Three readings of one probe: the entry that holds the binary, an entry that does
+# not while the shell's PATH does, and the same directory as Windows hands it back
+# — backslashes, a trailing separator, and the carriage return PowerShell ends its
+# lines with, which unstripped becomes part of the directory name.
+engram_probe_table() {
+  local probe_source="$1" found unseen spelled
+  found="$(engram_probe_answer "$probe_source" "$ENGRAM_CLIENT_EMPTY_DIR
+$ENGRAM_CLIENT_BIN_DIR")"
+  unseen="$(engram_probe_answer "$probe_source" "$ENGRAM_CLIENT_EMPTY_DIR")"
+  spelled="$(engram_probe_answer "$probe_source" "$(windows_spelling_of "$ENGRAM_CLIENT_BIN_DIR")$(printf '\r')")"
+  printf '%s / %s / %s' "${found:-none}" "${unseen:-none}" "${spelled:-none}"
+}
+
+ENGRAM_PROBE_ANSWERS="$ENGRAM_CLIENT_BIN_DIR/engram.exe / none / $ENGRAM_CLIENT_BIN_DIR/engram.exe"
+assert_equals "install.sh's engram probe answers about the client's PATH, never this shell's" \
+  "$ENGRAM_PROBE_ANSWERS" "$(engram_probe_table ". \"$INSTALL_SH\"")"
+
+verify_engram_probe="$(sed -n \
+  -e '/^running_on_windows()/,/^}/p' \
+  -e '/^engram_binary_name()/,/^}/p' \
+  -e '/^client_path_entries()/,/^}/p' \
+  -e '/^engram_client_binary()/,/^}/p' "$REPO_ROOT/bootstrap/verify.sh")"
+if [ -z "$verify_engram_probe" ]; then
+  echo "FAIL: bootstrap/verify.sh defines no engram client probe, so its half of the comparison has nothing to test"
+  fail=$((fail + 1))
+else
+  assert_equals "verify.sh's own copy of that probe answers the same table identically" \
+    "$ENGRAM_PROBE_ANSWERS" "$(engram_probe_table "$verify_engram_probe")"
+fi
+
+# --- Resolving is half the answer: the binary also has to run -----------------
+# That probe reads a file test, which a quarantined engram passes while starting no
+# MCP. install.sh holds the copy it places to running, so both bootstrap scripts
+# hold every copy to it — otherwise verify.sh's own check goes green on a dead
+# binary at the same moment its MCP check goes red, corroborating a PATH diagnosis
+# for a machine whose PATH is fine.
+ENGRAM_RUNNABLE_BINARY="$TEST_HOME/engram-runnable"
+ENGRAM_UNRUNNABLE_BINARY="$TEST_HOME/engram-unrunnable"
+printf '%s\n' '#!/bin/sh' "echo \"engram $EXPECTED_ENGRAM_VERSION\"" \
+  > "$ENGRAM_RUNNABLE_BINARY"
+printf '%s\n' '#!/bin/sh' 'exit 1' > "$ENGRAM_UNRUNNABLE_BINARY"
+chmod +x "$ENGRAM_RUNNABLE_BINARY" "$ENGRAM_UNRUNNABLE_BINARY"
+
+engram_runs_verdicts() {
+  bash -c '
+    bar="$1" runnable="$2" unrunnable="$3"
+    eval "$bar"
+    engram_binary_runs "$runnable" && printf runs || printf "does not run"
+    printf " / "
+    engram_binary_runs "$unrunnable" && printf runs || printf "does not run"
+  ' _ "$1" "$ENGRAM_RUNNABLE_BINARY" "$ENGRAM_UNRUNNABLE_BINARY" 2>/dev/null
+}
+
+engram_runs_bar_install="$(sed -n '/^engram_binary_runs()/,/^}/p' "$INSTALL_SH")"
+engram_runs_bar_verify="$(sed -n '/^engram_binary_runs()/,/^}/p' \
+  "$REPO_ROOT/bootstrap/verify.sh")"
+assert_equals "install.sh's runnability bar tells a binary that answers from one that does not" \
+  "runs / does not run" "$(engram_runs_verdicts "$engram_runs_bar_install")"
+assert_equals "verify.sh holds that same bar, byte for byte" \
+  "$engram_runs_bar_install" "$engram_runs_bar_verify"
+
+# --- context7: the legacy entry deleted before its replacement was confirmed ---
+# `claude mcp remove --scope user context7` is the one outright DELETE this
+# installer performs on state it did not create, and it ran unconditionally —
+# before anything had confirmed the plugin-shipped replacement was registered,
+# with the verdict beside it read off `command -v npx`. A plugin cache written but
+# not loaded, a stale version, a .mcp.json the client rejected: any of them left
+# the operator with no context7 at all and a summary that said OK.
+# The stub PATH deliberately carries no npx, so a verdict still derived from its
+# presence could not read OK on any of these cases.
+CONTEXT7_STUB_DIR="$TEST_HOME/context7-stub"
+CONTEXT7_CALLS="$TEST_HOME/context7-calls"
+CONTEXT7_LIST="$TEST_HOME/context7-mcp-list"
+CONTEXT7_VERDICT="$TEST_HOME/context7-verdict"
+mkdir -p "$CONTEXT7_STUB_DIR"
+printf '%s\n' \
+  '#!/bin/sh' \
+  "echo \"claude \$*\" >> \"$CONTEXT7_CALLS\"" \
+  'case "$*" in' \
+  "  'mcp list') cat \"$CONTEXT7_LIST\" ;;" \
+  'esac' \
+  'exit 0' > "$CONTEXT7_STUB_DIR/claude"
+chmod +x "$CONTEXT7_STUB_DIR/claude"
+ln -sf "$(command -v cat)" "$CONTEXT7_STUB_DIR/cat"
+ln -sf "$(command -v grep)" "$CONTEXT7_STUB_DIR/grep"
+ln -sf "$(command -v head)" "$CONTEXT7_STUB_DIR/head"
+
+run_context7_migration() {
+  printf '%s\n' "$1" > "$CONTEXT7_LIST"
+  : > "$CONTEXT7_CALLS"
+  : > "$CONTEXT7_VERDICT"
+  bash -c '
+    installer="$1" stub_path="$2" verdict="$3"
+    set --
+    . "$installer"
+    PATH="$stub_path"
+    migrate_context7
+    printf "%s\n" "${WIRING_SUMMARY[@]}" > "$verdict"
+  ' _ "$INSTALL_SH" "$CONTEXT7_STUB_DIR" "$CONTEXT7_VERDICT" >/dev/null 2>&1 || true
+}
+
+context7_legacy_entry_state() {
+  case "$(cat "$CONTEXT7_CALLS")" in
+    *'mcp remove --scope user context7'*) printf 'deleted' ;;
+    *) printf 'left standing' ;;
+  esac
+}
+
+# The legacy entry answering on its own is exactly the state that must not read as
+# its own replacement: it is the bare name, and the plugin's server renders under a
+# `plugin:` prefix.
+CONTEXT7_LEGACY_ONLY_LIST='context7: npx -y @upstash/context7-mcp - ✓ Connected'
+CONTEXT7_REGISTERED_LIST='plugin:oso-code:context7: npx -y @upstash/context7-mcp - ✗ Failed to connect'
+CONTEXT7_CONNECTED_LIST='plugin:oso-code:context7: npx -y @upstash/context7-mcp - ✓ Connected'
+
+run_context7_migration "$CONTEXT7_LEGACY_ONLY_LIST"
+assert_equals "an unregistered replacement never costs the operator the context7 they already have" \
+  "left standing / FAILED|context7|the oso-code plugin's context7 server is not registered with the client, so a legacy user-scope entry, if any, was left standing rather than removed — fix: claude plugin install oso-code@oso-code, restart Claude Code, then re-run this installer" \
+  "$(context7_legacy_entry_state) / $(cat "$CONTEXT7_VERDICT")"
+
+run_context7_migration "$CONTEXT7_REGISTERED_LIST"
+assert_equals "a replacement registered but not answering is no reason to delete either, and the report quotes what the client said" \
+  "left standing / FAILED|context7|the oso-code plugin's context7 is registered but did not answer ($CONTEXT7_REGISTERED_LIST), so a legacy user-scope entry, if any, was left standing rather than removed — fix: install Node.js (context7 starts through npx), restart Claude Code, then re-run this installer" \
+  "$(context7_legacy_entry_state) / $(cat "$CONTEXT7_VERDICT")"
+
+run_context7_migration "$CONTEXT7_CONNECTED_LIST"
+assert_equals "a replacement the client actually started is what the deletion waits for, and the verdict owes nothing to npx" \
+  "deleted / OK|context7|ships with the oso-code plugin, registered and connected" \
+  "$(context7_legacy_entry_state) / $(cat "$CONTEXT7_VERDICT")"
+
+# Every MCP check the verifier can fail hands back something to run. engram's was
+# the only failure in that file carrying no remediation at all, and context7's went
+# the same way — a check an operator cannot act on is a check that reports a
+# problem to nobody.
+mcp_check_fix_kind() {
+  local line
+  line="$(printf '%s\n' "$1" | grep -F "FAIL: $2" || true)"
+  case "$line" in
+    '') printf 'absent' ;;
+    *' — fix: '*) printf 'inline' ;;
+    *) printf 'unfixable' ;;
+  esac
+}
+assert_equals "each MCP check carries its remediation on the same line as the verdict it explains" \
+  "inline / inline / inline" \
+  "$(mcp_check_fix_kind "$report_without_marker" 'engram MCP connected') / $(mcp_check_fix_kind "$report_without_marker" 'context7 MCP connected') / $(mcp_check_fix_kind "$report_without_marker" 'fallow MCP connected')"
+
+# --- impeccable: the same read-back, one notch smaller ------------------------
+# `claude plugin install` exits 0 both on a plugin it installed and on one that was
+# already there, while verify.sh holds this to the client LISTING the plugin — so a
+# summary reporting the exit code claims something the verifier measures another
+# way, which is the engram shape at a smaller scale (D3). The opt-out marker cases
+# above cover the choice; these two cover what the line SAYS about the install.
+IMPECCABLE_STUB_DIR="$TEST_HOME/impeccable-stub"
+IMPECCABLE_PLUGIN_LIST="$TEST_HOME/impeccable-plugin-list"
+IMPECCABLE_VERDICT="$TEST_HOME/impeccable-verdict"
+IMPECCABLE_FIXTURE_HOME="$TEST_HOME/impeccable-home"
+mkdir -p "$IMPECCABLE_STUB_DIR" "$IMPECCABLE_FIXTURE_HOME"
+printf '%s\n' \
+  '#!/bin/sh' \
+  'case "$*" in' \
+  "  'plugin list') cat \"$IMPECCABLE_PLUGIN_LIST\" ;;" \
+  'esac' \
+  'exit 0' > "$IMPECCABLE_STUB_DIR/claude"
+chmod +x "$IMPECCABLE_STUB_DIR/claude"
+ln -sf "$(command -v cat)" "$IMPECCABLE_STUB_DIR/cat"
+ln -sf "$(command -v grep)" "$IMPECCABLE_STUB_DIR/grep"
+ln -sf "$(command -v rm)" "$IMPECCABLE_STUB_DIR/rm"
+
+impeccable_wiring_verdict() {
+  printf '%s\n' "$1" > "$IMPECCABLE_PLUGIN_LIST"
+  : > "$IMPECCABLE_VERDICT"
+  bash -c '
+    installer="$1" stub_path="$2" fixture_home="$3" verdict="$4"
+    set --
+    . "$installer"
+    PATH="$stub_path"
+    HOME="$fixture_home"
+    wire_impeccable
+    printf "%s\n" "${WIRING_SUMMARY[@]}" > "$verdict"
+  ' _ "$INSTALL_SH" "$IMPECCABLE_STUB_DIR" "$IMPECCABLE_FIXTURE_HOME" "$IMPECCABLE_VERDICT" \
+    >/dev/null 2>&1 || true
+  cat "$IMPECCABLE_VERDICT"
+}
+
+assert_equals "impeccable is reported installed only once the client lists it" \
+  "OK|impeccable (plugin)|installed" \
+  "$(impeccable_wiring_verdict 'impeccable@impeccable  v1.4.0  enabled')"
+assert_equals "an install the client cannot show is a failure here rather than a surprise in the verifier" \
+  "FAILED|impeccable (plugin)|the install reported success but the client lists no impeccable plugin — fix: claude plugin install impeccable@impeccable, then restart Claude Code" \
+  "$(impeccable_wiring_verdict 'oso-code@oso-code  v0.19.0  enabled')"
+
 # --- The flag surface: four flags, and the entry point that has to spell them --
 # install.sh makes an unknown flag a hard exit, and install.ps1 is the only way a
 # Windows operator reaches it: a flag PowerShell does not declare cannot be passed

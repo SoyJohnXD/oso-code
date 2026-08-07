@@ -123,6 +123,10 @@ confirm_plan() {
 
   info "this will:"
   info "  - install/verify MCPs (engram, context7, fallow) and the oso-code plugin"
+  # Named on its own line because it is the one step that downloads a binary from
+  # outside npm and writes it outside ~/.claude — and the one the operator can
+  # already have satisfied, in which case nothing is fetched at all.
+  info "  - download engram $SUPPORTED_ENGRAM_VERSION (checksum-verified) into ~/.local/bin, unless Claude Code can already resolve an engram"
   if [ "$INSTALL_IMPECCABLE" = true ]; then
     info "  - install the impeccable plugin (opt out with --no-impeccable)"
   else
@@ -300,14 +304,359 @@ wire_mcps() {
   wire_fallow
 }
 
+# engram arrives in TWO artifacts and this used to install one of them: the plugin
+# carries the skills, the hooks and the .mcp.json, and that .mcp.json launches
+# `{"command": "engram"}` — a bare binary the plugin install never puts anywhere.
+# Reported from the plugin install's exit code alone, a clean Windows box read
+# `engram: OK — plugin installed` and then failed to start the server (D3).
 wire_engram() {
-  # engram: persistent memory (plugin that ships its own MCP server)
-  claude plugin marketplace add Gentleman-Programming/engram >/dev/null 2>&1 || true
+  install_engram_plugin
+  provision_engram_binary
+}
+
+# One repo behind both halves: the plugin marketplace and the binary releases live
+# in it, so a fork or a rename moves them together instead of drifting apart.
+ENGRAM_SOURCE_REPO=Gentleman-Programming/engram
+
+install_engram_plugin() {
+  claude plugin marketplace add "$ENGRAM_SOURCE_REPO" >/dev/null 2>&1 || true
   local err
   if err="$(run_wiring claude plugin install engram@engram)"; then
-    wiring_ok engram "plugin installed"
+    wiring_ok "engram (plugin)" "installed"
   else
-    wiring_fail engram "plugin install failed: $err — fix: claude plugin install engram@engram"
+    wiring_fail "engram (plugin)" "plugin install failed: $err — fix: claude plugin install engram@engram"
+  fi
+}
+
+# The engram release this repo has verified, pinned the way fallow, the Codex CLI
+# and Impeccable are — a version, never `@latest`. Keep this identical to
+# ENGRAM_RELEASE_VERSION in bootstrap/repair-engram-codex.sh: that script swaps the
+# binary beside a live ~/.engram database and this one puts the first copy on the
+# machine, so two pins would mean which engram a machine runs depends on which
+# script ran last. The two cannot source a shared file — this one runs standalone
+# via curl, with no bootstrap/lib beside it.
+SUPPORTED_ENGRAM_VERSION=1.20.0
+
+# An engram the client can already resolve is left exactly where it is, whatever
+# version it is: it owns ~/.engram/engram.db, whose schema the binary migrates, and
+# pairing a database a newer engram has migrated with this older pin is the very
+# accident repair-engram-codex.sh exists to keep from happening on purpose. Left
+# where it is, never taken on trust: it is held to the same bar as a copy this
+# script places, because a binary that cannot answer starts no MCP whichever run
+# put it there.
+provision_engram_binary() {
+  local install_dir="$HOME/.local/bin" resolved failure
+  resolved="$(engram_client_binary)"
+  if [ -n "$resolved" ]; then
+    if engram_binary_runs "$resolved"; then
+      wiring_ok "engram (binary)" "already installed where Claude Code resolves it: $resolved"
+    else
+      # This one is not removed the way place_engram_binary removes its own dead
+      # copy: it is the operator's, and which engram their machine keeps is not a
+      # call an installer makes for them — so the way out is theirs to run.
+      wiring_fail "engram (binary)" "the engram Claude Code resolves at $resolved does not run, so its MCP cannot start — an antivirus may have quarantined it, which upstream documents happening to unsigned prebuilt releases — fix: rm \"$resolved\", then re-run this installer to put the pinned release there; if that one will not run either, $(engram_manual_install_command)"
+    fi
+    return 0
+  fi
+  info "installing engram $SUPPORTED_ENGRAM_VERSION from its official release"
+  if ! failure="$(install_pinned_engram "$install_dir")"; then
+    wiring_fail "engram (binary)" "$failure — fix: $(engram_manual_install_command)"
+    return 0
+  fi
+  resolved="$(engram_client_binary)"
+  if [ -n "$resolved" ]; then
+    wiring_ok "engram (binary)" "installed $SUPPORTED_ENGRAM_VERSION at $resolved"
+  else
+    wiring_fail "engram (binary)" "installed $SUPPORTED_ENGRAM_VERSION into $install_dir, which is not on the PATH Claude Code reads — the plugin spawns a bare \`engram\`, so its MCP cannot start until that directory is on it — fix: $(engram_path_fix_command "$install_dir")"
+  fi
+}
+
+# The engram a newly launched Claude Code would spawn, empty when it would find
+# none. Never `command -v`: on Windows this shell's PATH carries /usr/bin,
+# /mingw64/bin and $HOME/bin, which a native claude.exe cannot use, so an engram
+# sitting in one of them would report a working install to an operator whose client
+# can never start it — the same split between what this shell sees and what the
+# client sees that verify.sh's home-dir check exists for.
+# Keep this identical to engram_client_binary in bootstrap/verify.sh — the two
+# scripts run standalone via curl and cannot source a shared file.
+engram_client_binary() {
+  local entry candidate name
+  name="$(engram_binary_name)"
+  while IFS= read -r entry; do
+    # A registry PATH entry arrives in whatever spelling was written into it:
+    # backslashes, sometimes a trailing separator, and — since PowerShell ends its
+    # lines the Windows way — a carriage return this shell would otherwise make
+    # part of the directory name. Forward slashes are what `[ -x ]` reads most
+    # reliably under Git Bash, and a trailing separator would make the join a `//`.
+    entry="${entry%$'\r'}"
+    entry="${entry//\\//}"
+    entry="${entry%/}"
+    [ -n "$entry" ] || continue
+    candidate="$entry/$name"
+    if [ -f "$candidate" ] && [ -x "$candidate" ]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done <<< "$(client_path_entries)"
+  return 0
+}
+
+# The PATH a newly launched Claude Code resolves a bare command name against, one
+# entry per line. Off Windows that is this shell's own — the client starts from a
+# shell like this one. On Windows it is emphatically not: Git Bash builds its PATH
+# from the persisted one plus MSYS directories no native process can use, while
+# claude.exe reads the persisted machine and user scopes, which is exactly the pair
+# bootstrap/install.ps1's Update-EnvPath re-reads. PowerShell ships with every
+# supported Windows and is already this repo's Windows entry point, so it is what
+# reads them back; a run where it cannot answer yields nothing, which every caller
+# reads as "not found" rather than as agreement.
+# Keep this identical to client_path_entries in bootstrap/verify.sh — the two
+# scripts run standalone via curl and cannot source a shared file.
+client_path_entries() {
+  if ! running_on_windows; then
+    printf '%s\n' "${PATH//:/$'\n'}"
+    return 0
+  fi
+  powershell -NoProfile -NonInteractive -Command \
+    '@("Machine","User") | ForEach-Object { [Environment]::GetEnvironmentVariable("Path", $_) } | Where-Object { $_ } | ForEach-Object { $_ -split ";" }' \
+    2>/dev/null || true
+}
+
+# Whether this shell is Git Bash on Windows, which decides three things a POSIX
+# host answers differently: which asset engram publishes, the .exe suffix a native
+# client needs to spawn a bare name, and whose PATH that name is resolved against.
+# Keep this identical to running_on_windows in bootstrap/verify.sh — the two
+# scripts run standalone via curl and cannot source a shared file.
+running_on_windows() {
+  case "$(uname -s 2>/dev/null || true)" in
+    MINGW*|MSYS*|CYGWIN*) return 0 ;;
+  esac
+  return 1
+}
+
+# Keep this identical to engram_binary_name in bootstrap/verify.sh — the two
+# scripts run standalone via curl and cannot source a shared file.
+engram_binary_name() {
+  if running_on_windows; then printf 'engram.exe'; else printf 'engram'; fi
+}
+
+# The bar every engram gets held to here, whichever run put it on the machine: a
+# checksum proves which bytes arrived and a file test proves they are there, but
+# asking the binary to answer is what proves this machine will let it run.
+# Upstream's prebuilt releases are unsigned and it documents Defender and other
+# scanners flagging them as a heuristic false positive — a quarantined copy
+# surfaces here, as a binary that is gone or will not start, instead of as a
+# confusing failure somewhere downstream.
+# Keep this identical to engram_binary_runs in bootstrap/verify.sh — the two
+# scripts run standalone via curl and cannot source a shared file.
+engram_binary_runs() {
+  "$1" version >/dev/null 2>&1
+}
+
+# Prints nothing when the pinned engram lands at $1; on any failure prints the
+# reason for the summary and returns 1, because a wiring step never aborts the
+# install. It owns the staging directory's whole lifetime — that is the one thing
+# the steps below cannot each own for themselves.
+install_pinned_engram() {
+  local install_dir="$1" staging staged reason status=0
+  staging="$(mktemp -d "${TMPDIR:-/tmp}/oso-engram.XXXXXX" 2>/dev/null)" || {
+    printf 'could not create a staging directory for the engram release'
+    return 1
+  }
+  if staged="$(download_verified_engram "$staging")"; then
+    reason="$(place_engram_binary "$staged" "$install_dir")" || status=1
+  else
+    reason="$staged"
+    status=1
+  fi
+  rm -rf "$staging"
+  if [ "$status" -ne 0 ]; then
+    printf '%s' "$reason"
+    return 1
+  fi
+}
+
+# The verified binary's path inside $1 on success, the reason on failure. Every
+# step that can fail says which one did: "engram did not install" is no diagnosis
+# on a machine that has no curl, one whose architecture upstream publishes nothing
+# for, and one whose download arrived corrupted.
+download_verified_engram() {
+  local staging="$1" asset release_base archive extracted binary
+  asset="$(engram_release_asset)" || {
+    printf 'engram publishes no official release for %s/%s' \
+      "$(uname -s 2>/dev/null || echo unknown)" "$(uname -m 2>/dev/null || echo unknown)"
+    return 1
+  }
+  if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+    printf 'no curl or wget here to download the engram release with'
+    return 1
+  fi
+  if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
+    printf 'no sha256sum or shasum here, and an engram release nothing can verify is never installed'
+    return 1
+  fi
+  release_base="https://github.com/$ENGRAM_SOURCE_REPO/releases/download/v$SUPPORTED_ENGRAM_VERSION"
+  archive="$staging/$asset"
+  extracted="$staging/extracted"
+  download_release_file "$release_base/checksums.txt" "$staging/checksums.txt" || {
+    printf 'could not download %s' "$release_base/checksums.txt"
+    return 1
+  }
+  download_release_file "$release_base/$asset" "$archive" || {
+    printf 'could not download %s' "$release_base/$asset"
+    return 1
+  }
+  engram_checksum_matches "$staging" "$asset" || {
+    printf '%s does not match its published SHA-256 checksum, so nothing was installed' "$asset"
+    return 1
+  }
+  mkdir -p "$extracted" && extract_engram_archive "$archive" "$extracted" || {
+    printf 'could not unpack %s' "$asset"
+    return 1
+  }
+  binary="$(find "$extracted" -type f -name "$(engram_binary_name)" 2>/dev/null | head -1)"
+  if [ -z "$binary" ]; then
+    printf '%s carries no %s' "$asset" "$(engram_binary_name)"
+    return 1
+  fi
+  printf '%s' "$binary"
+}
+
+# Upstream publishes one asset per platform under goreleaser's
+# <name>_<version>_<os>_<arch> naming — tar.gz for Linux and macOS, zip for Windows
+# — plus one checksums.txt covering the whole release. A host outside that table
+# gets no guessed asset name: the caller says so and hands over the manual install.
+engram_release_asset() {
+  local os arch
+  case "$(uname -s 2>/dev/null || true)" in
+    Linux) os=linux ;;
+    Darwin) os=darwin ;;
+    MINGW*|MSYS*|CYGWIN*) os=windows ;;
+    *) return 1 ;;
+  esac
+  case "$(uname -m 2>/dev/null || true)" in
+    x86_64|amd64) arch=amd64 ;;
+    aarch64|arm64) arch=arm64 ;;
+    *) return 1 ;;
+  esac
+  if [ "$os" = windows ]; then
+    printf 'engram_%s_windows_%s.zip' "$SUPPORTED_ENGRAM_VERSION" "$arch"
+  else
+    printf 'engram_%s_%s_%s.tar.gz' "$SUPPORTED_ENGRAM_VERSION" "$os" "$arch"
+  fi
+}
+
+# curl and wget each carry their own connect and transfer timeouts, so a stalled
+# download names itself instead of hanging an install nobody is watching — no
+# GNU timeout(1) needed, which macOS ships none of anyway. The 120 seconds is the
+# value repair-engram-codex.sh bounds this same download with.
+ENGRAM_DOWNLOAD_BOUND_SECONDS=120
+
+download_release_file() {
+  local url="$1" destination="$2"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --retry 3 --retry-delay 2 \
+      --connect-timeout "$ENGRAM_DOWNLOAD_BOUND_SECONDS" \
+      --max-time "$ENGRAM_DOWNLOAD_BOUND_SECONDS" \
+      -o "$destination" "$url" 2>/dev/null
+  else
+    wget -q --tries=3 --timeout="$ENGRAM_DOWNLOAD_BOUND_SECONDS" -O "$destination" "$url" 2>/dev/null
+  fi
+}
+
+# checksums.txt covers every asset in the release, so the row for THIS one is
+# selected first and checked on its own — `sha256sum -c` over the whole file would
+# go red on the five assets that were never downloaded. Exactly one row must name
+# the asset: none means the release does not carry it, and two would leave which
+# hash was checked to the tool's own ordering.
+engram_checksum_matches() {
+  local staging="$1" asset="$2" selected="$staging/selected-checksum.txt"
+  awk -v asset="$asset" '$2 == asset { print; rows++ } END { exit rows == 1 ? 0 : 1 }' \
+    "$staging/checksums.txt" > "$selected" 2>/dev/null || return 1
+  if command -v sha256sum >/dev/null 2>&1; then
+    ( cd "$staging" && sha256sum -c "$selected" >/dev/null 2>&1 )
+  else
+    ( cd "$staging" && shasum -a 256 -c "$selected" >/dev/null 2>&1 )
+  fi
+}
+
+extract_engram_archive() {
+  local archive="$1" destination="$2"
+  case "$archive" in
+    *.zip)
+      # Git Bash ships no unzip and its GNU tar cannot read a zip, so what unpacks
+      # the Windows asset is what every supported Windows carries and what
+      # upstream's own Windows instructions use. The paths are converted first:
+      # inside a -Command string they are PowerShell's to resolve, and MSYS
+      # rewrites only arguments that are a path by themselves.
+      powershell -NoProfile -NonInteractive -Command \
+        "Expand-Archive -LiteralPath '$(cygpath -w "$archive")' -DestinationPath '$(cygpath -w "$destination")' -Force" \
+        >/dev/null 2>&1
+      ;;
+    *) tar -xzf "$archive" -C "$destination" >/dev/null 2>&1 ;;
+  esac
+}
+
+# Written through a pending name in the target directory so a failed or killed copy
+# never leaves half a binary at the name the client spawns.
+place_engram_binary() {
+  local staged="$1" install_dir="$2" target pending
+  target="$install_dir/$(engram_binary_name)"
+  pending="$target.oso-pending-$$"
+  mkdir -p "$install_dir" 2>/dev/null || {
+    printf 'could not create %s' "$install_dir"
+    return 1
+  }
+  if ! { cp "$staged" "$pending" 2>/dev/null && chmod 755 "$pending" 2>/dev/null; }; then
+    rm -f "$pending"
+    printf 'could not write %s' "$target"
+    return 1
+  fi
+  mv -f "$pending" "$target" 2>/dev/null || {
+    rm -f "$pending"
+    printf 'could not move the downloaded engram into %s' "$install_dir"
+    return 1
+  }
+  engram_binary_runs "$target" || {
+    # Removed rather than moved aside under another name: every remediation this
+    # installer prints ends in "re-run this installer", and a re-run resolves this
+    # name before it downloads anything — so a copy left dead here is one the
+    # operator would have to delete by hand before a re-run could even try again.
+    # Nothing is lost by deleting: these bytes are the release the checksum just
+    # matched, and a re-run fetches them again.
+    rm -f "$target" 2>/dev/null || true
+    printf 'engram %s was verified and placed at %s but would not run there — an antivirus may have quarantined it, which upstream documents happening to its unsigned prebuilt releases' \
+      "$SUPPORTED_ENGRAM_VERSION" "$target"
+    return 1
+  }
+}
+
+# The one action this installer will not take for the operator: a persisted PATH
+# entry outlives the install and is theirs to own, so it is handed over as the
+# exact command instead. Windows gets the per-user environment call upstream's own
+# instructions use — no elevation, no machine scope — and the directory in the
+# spelling PowerShell can act on; a POSIX host gets its profile, since a client
+# started from a shell inherits that shell's PATH.
+engram_path_fix_command() {
+  local install_dir="$1" windows_dir
+  if ! running_on_windows; then
+    printf 'add %s to your PATH (in ~/.profile, say), then restart Claude Code' "$install_dir"
+    return 0
+  fi
+  windows_dir="$(cygpath -w "$install_dir" 2>/dev/null || printf '%s' "$install_dir")"
+  printf '%s' "powershell -NoProfile -Command \"[Environment]::SetEnvironmentVariable('Path', '$windows_dir;' + [Environment]::GetEnvironmentVariable('Path','User'), 'User')\", then open a new terminal and restart Claude Code"
+}
+
+# Upstream's own recommended paths, in its own order: Homebrew where it has a tap,
+# and a local Go build on Windows — which it recommends there precisely because a
+# binary compiled on the machine is the one thing no antivirus heuristic flags.
+engram_manual_install_command() {
+  if running_on_windows; then
+    printf 'install engram yourself — go install github.com/%s/cmd/engram@v%s, or unpack the release zip from https://github.com/%s/releases/tag/v%s onto the PATH Claude Code reads — then re-run this installer' \
+      "$ENGRAM_SOURCE_REPO" "$SUPPORTED_ENGRAM_VERSION" "$ENGRAM_SOURCE_REPO" "$SUPPORTED_ENGRAM_VERSION"
+  else
+    printf 'install engram yourself — brew install gentleman-programming/tap/engram, or go install github.com/%s/cmd/engram@v%s — then re-run this installer' \
+      "$ENGRAM_SOURCE_REPO" "$SUPPORTED_ENGRAM_VERSION"
   fi
 }
 
@@ -389,10 +738,17 @@ wire_impeccable() {
   rm -f "$IMPECCABLE_OPT_OUT_MARKER"
   claude plugin marketplace add pbakaus/impeccable >/dev/null 2>&1 || true
   local err
-  if err="$(run_wiring claude plugin install impeccable@impeccable)"; then
+  if ! err="$(run_wiring claude plugin install impeccable@impeccable)"; then
+    wiring_fail "impeccable (plugin)" "install failed: $err — fix: claude plugin install impeccable@impeccable"
+    return 0
+  fi
+  # Read back rather than reported from the exit code: verify.sh holds this to the
+  # client LISTING the plugin, and a summary claiming installed while that check
+  # goes red is the engram shape one notch smaller (D3).
+  if claude plugin list 2>/dev/null | grep -Fq impeccable; then
     wiring_ok "impeccable (plugin)" "installed"
   else
-    wiring_fail "impeccable (plugin)" "install failed: $err — fix: claude plugin install impeccable@impeccable"
+    wiring_fail "impeccable (plugin)" "the install reported success but the client lists no impeccable plugin — fix: claude plugin install impeccable@impeccable, then restart Claude Code"
   fi
 }
 
@@ -512,16 +868,48 @@ register_clone_marketplace() {
   return 0
 }
 
+# context7 ships in the oso-code plugin's .mcp.json and registers with the plugin,
+# so a legacy hand-added user-scope entry is a second source of truth for one
+# server and this is what removes it. What it no longer does is remove it FIRST:
+# that delete is the one outright destruction this installer performs on state it
+# did not create, it ran unconditionally, and the verdict beside it came from
+# `command -v npx` — so a plugin whose server never registered took a working
+# context7 with it and the summary still printed OK.
+# What the client can be asked instead is which servers it now knows about and
+# whether each answered: `claude mcp list` spawns them and prints Connected per
+# line, the same bar verify.sh holds this to. `claude mcp get` was the other
+# candidate and is not one — it exits 0 for an entry whose command cannot be
+# spawned, which is the lesson fallow's read-back above was built on.
+# Connected rather than merely listed is the bar for deleting, because a
+# replacement that does not start is exactly the state the legacy entry is worth
+# keeping through: registered-but-silent leaves the operator whatever context7 they
+# already had, and says why.
 migrate_context7() {
-  # context7 now ships in the oso-code plugin's .mcp.json and auto-registers
-  # with the plugin. Drop any legacy hand-added user-scope entry so there is
-  # exactly one source of truth. Tolerate its absence.
-  claude mcp remove --scope user context7 >/dev/null 2>&1 || true
-  if command -v npx >/dev/null; then
-    wiring_ok context7 "ships with the oso-code plugin"
-  else
-    wiring_fail context7 "plugin wired but npx (Node.js) is missing, so it cannot start — fix: install Node.js, then restart Claude Code"
+  local entry
+  entry="$(plugin_context7_entry)"
+  if [ -z "$entry" ]; then
+    wiring_fail context7 "the oso-code plugin's context7 server is not registered with the client, so a legacy user-scope entry, if any, was left standing rather than removed — fix: claude plugin install oso-code@oso-code, restart Claude Code, then re-run this installer"
+    return 0
   fi
+  case "$entry" in
+    *Connected*) ;;
+    *)
+      wiring_fail context7 "the oso-code plugin's context7 is registered but did not answer ($entry), so a legacy user-scope entry, if any, was left standing rather than removed — fix: install Node.js (context7 starts through npx), restart Claude Code, then re-run this installer"
+      return 0
+      ;;
+  esac
+  claude mcp remove --scope user context7 >/dev/null 2>&1 || true
+  wiring_ok context7 "ships with the oso-code plugin, registered and connected"
+}
+
+# The client's own line for the plugin-shipped context7, empty when it lists none.
+# Plugin servers render with a `plugin:<plugin>:<server>` prefix, which is what
+# tells the replacement apart from the very legacy user-scope `context7` entry this
+# migration deletes — matched on the two parts rather than the whole rendering,
+# because the client's exact spacing and decoration are its own business and a
+# reworded line must cost a confirmation, never a wrong deletion.
+plugin_context7_entry() {
+  claude mcp list 2>/dev/null | grep -F context7 | grep -F 'plugin:' | head -1 || true
 }
 
 # The shipped git hook, next to the lib it reads session state with. core.hooksPath
