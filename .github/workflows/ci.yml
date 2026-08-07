@@ -5,6 +5,35 @@ on:
     branches: [main]
   pull_request:
 
+# The checks bootstrap/verify.sh reaches a verdict on against a fixture HOME —
+# pinned as a SET, because the failure count alone cannot carry the assertion
+# (see the step that reads it). Both jobs read these: the fixture is the same
+# empty tree on either runner, so the only difference is which checks that
+# runner's OS lets the script get to at all. A `note:` line never appears here —
+# it is not a check and moves neither half of the tally — so an entry leaving
+# this list is either a check deleted or a check demoted to a note, and both are
+# decisions, not drift.
+env:
+  VERIFY_CHECK_NAMES: |
+    oso-code plugin installed
+    engram MCP connected
+    context7 MCP connected
+    fallow MCP connected
+    legacy artifacts removed
+    settings.json free of gentle hooks
+    CLAUDE.md under budget
+    plugin install path found
+    OSO_STATE_BIN round-trips oso-state (e2e)
+    impeccable plugin installed
+    shipped executables carry no CR bytes
+  # The two that only a Windows runner reaches: off Windows there is no
+  # %USERPROFILE% for $HOME to disagree with and no second PATH for the client to
+  # resolve a bare `engram` against, so verify.sh reports both as notes rather
+  # than as checks that could only ever pass vacuously.
+  VERIFY_CHECK_NAMES_WINDOWS: |
+    home dir the Windows client reads
+    engram binary the client resolves and runs
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -17,28 +46,31 @@ jobs:
       # git nor jq, so the cases behind those two tools do not run here. HOW MANY is
       # the gap between the two steps' `passed:` lines, never a literal written down
       # here that the next case added would rot; how many LINES stand for them is
-      # this step's own `skipped:` — one for the whole git-layer block and one for
-      # the whole worktree-teardown block, two for the reader-parity cases that need
-      # a second reader, and one for the case whose only judge is a strict parser.
+      # this step's own `skipped:` — one line per block or case that declares its
+      # own reason for standing down, so that number moves with every such case
+      # added and is no more written down here than the first one is.
       - name: Hook regression suite on bash 3.2
         run: docker run --rm -v "$PWD":/repo -w /repo bash:3.2 bash tests/hooks-test.sh
       # `grep -q '^passed:'` alone is a summary line printed over a screen of
       # failures: it goes green the moment the script reaches its own last line,
       # whatever it printed above that. Against a fixture HOME the install checks
       # fail legitimately — no authenticated CLI (this step runs before the CLI is
-      # even installed), no MCPs, no ~/.claude — so the script exits 1 by design;
-      # `failed: 0` is therefore unreachable here (measured: today's fixture reads
-      # `passed: 2, failed: 9` — 8 until fallow stopped being a `note:` and
-      # joined the tally as a counted check, D2), but two checks owe nothing to
-      # that missing install and pass here every run — legacy artifacts removed,
-      # no CR bytes shipped — so pinning `failed` at 9 gives the assertion real
-      # signal: either one breaking moves the number and turns this step red,
-      # which `grep -q` alone cannot do, since a fixture that already fails 9
-      # checks reads identical whether it fails 9 or 10. A substitution that dies under
-      # `set -euo pipefail` still emits no `passed:` line at all, which is the
-      # class the plain grep already guarded and still does, first. Bump the
-      # pinned number only when a check legitimately joins or leaves this set —
-      # never to wave off a real one.
+      # even installed), no MCPs, no ~/.claude — so the script exits 1 by design and
+      # `failed: 0` is unreachable here. Two checks owe nothing to that missing
+      # install and pass every run — legacy artifacts removed, no CR bytes shipped —
+      # which is what gives the count signal at all: either one breaking moves it.
+      # What the count cannot say is WHICH nine. Every other check fails here by
+      # construction, so `failed: 9` reads identical whether a check was dropped,
+      # renamed, or quietly stopped running — and it has already hidden exactly
+      # that: `plugin install path found (oso-state)` left the report and
+      # `OSO_STATE_BIN round-trips oso-state (e2e)` took its place at the same
+      # total, and nothing here recorded either (D6). So the SET of names is pinned
+      # beside the count, in $VERIFY_CHECK_NAMES at the top of this file: a check
+      # joining or leaving is a one-line diff in the commit that causes it, and the
+      # count keeps catching one that flips verdict under an unchanged name. Both
+      # move only on a decision — never to wave off a real failure. A substitution
+      # that dies under `set -euo pipefail` emits no `passed:` line at all, which is
+      # the class the plain grep guards, and it still guards it first.
       # OSO_VERIFY_SKIP_SLOW drops the two checks that would re-run the suite
       # this job already ran above and fetch impeccable from npm on every CI run.
       - name: Verify report reaches its summary
@@ -49,6 +81,9 @@ jobs:
           HOME="$(mktemp -d)" bash bootstrap/verify.sh > "$report" 2>&1 || true
           cat "$report"
           grep -q '^passed:' "$report"
+          printf '%s' "$VERIFY_CHECK_NAMES" | LC_ALL=C sort > "$report.pinned"
+          bash tools/verify-check-names.sh "$report" > "$report.reached"
+          diff "$report.pinned" "$report.reached"
           failed="$(sed -n 's/^passed: [0-9]*, failed: \([0-9]*\)$/\1/p' "$report")"
           [ "$failed" = "9" ]
       # Same shape as the step above, with one real difference: this job never
@@ -115,6 +150,16 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      # install.ps1 refuses to install below Node 22 and this job is the only
+      # thing that exercises that refusal's other side. Unpinned it never did:
+      # the runner image carries whatever LTS is current (24, then 26), so the
+      # floor was tested against a version far above it and a floor raised past
+      # what the prerequisite check actually accepts would still read green here.
+      # Pinned AT the floor, this job tests the version an operator is allowed to
+      # be on rather than the one the image happens to ship.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       # windows-latest already ships jq: the last green run's `-CiMode` step logged
       # `jq already present` and installed nothing, so the suite exercises the jq
       # reader — the one the hooks use in production — on this platform as it stands.
@@ -179,3 +224,57 @@ jobs:
       - name: Bootstrapper (CI-safe mode)
         shell: powershell
         run: .\bootstrap\install.ps1 -CiMode -Yes -ReplaceClaudeMd -NoImpeccable -NoGitHook
+      # Same shape and same reasoning as the ubuntu job's own verify step — see
+      # the comment there — with the two differences a Windows runner makes. The
+      # name set gains $VERIFY_CHECK_NAMES_WINDOWS, the two checks that are notes
+      # off Windows, and the count goes up by exactly those two: %USERPROFILE% and
+      # the fixture HOME name different trees by construction, and no engram sits
+      # on the persisted PATH this runner carries. Until this step existed the only
+      # thing that ever ran verify.sh was the ubuntu job, so every Windows-only
+      # branch in it — the PATH the client reads, the home dir it opens, the Git
+      # Bash it spawns hooks through — shipped with no runner having executed it.
+      - name: Verify report reaches its summary
+        shell: bash
+        env:
+          OSO_VERIFY_SKIP_SLOW: 1
+        run: |
+          report="$(mktemp)"
+          HOME="$(mktemp -d)" bash bootstrap/verify.sh > "$report" 2>&1 || true
+          cat "$report"
+          grep -q '^passed:' "$report"
+          printf '%s%s' "$VERIFY_CHECK_NAMES" "$VERIFY_CHECK_NAMES_WINDOWS" |
+            LC_ALL=C sort > "$report.pinned"
+          bash tools/verify-check-names.sh "$report" > "$report.reached"
+          diff "$report.pinned" "$report.reached"
+          failed="$(sed -n 's/^passed: [0-9]*, failed: \([0-9]*\)$/\1/p' "$report")"
+          [ "$failed" = "11" ]
+      # The double-clickable verifier, end to end and as cmd runs it — the only
+      # gate there can be on a .bat, since no shell the regression suite runs
+      # under can execute one and the PowerShell parser above reads .ps1 only.
+      # What it proves is the whole reason the file exists: that cmd finds Git
+      # Bash where Git's installer leaves it, that verify.sh runs and reaches its
+      # summary through that hand-off, and that the HOME pin holds. HOME is seeded
+      # with a decoy for that last one, because the runner's own HOME already
+      # equals %USERPROFILE% and an unpinned run would look identical to a pinned
+      # one — verify.sh's own home-dir check is what reads the verdict back, and
+      # it goes red on the decoy the moment the .bat stops setting HOME. The
+      # report itself is expected to end non-zero here (this runner has no
+      # install), so the checks are those two LINES, never the exit code — and
+      # the summary line is the second of them because the home-dir verdict is
+      # printed near the end but not at it: a hand-off that died between the two
+      # would still carry the line this step reads the pin off, so `passed:` is
+      # what says the report the .bat produced is a whole one. Each findstr
+      # carries its own `|| exit /b 1` because under `shell: cmd` only the LAST
+      # command's exit code reaches the step — a bare findstr above another one
+      # asserts nothing, which is the exact shape adding the second line here
+      # would otherwise have created.
+      - name: Windows verifier entry point (verify.bat)
+        shell: cmd
+        env:
+          OSO_VERIFY_SKIP_SLOW: 1
+          HOME: C:\oso-code-decoy-home
+        run: |
+          call bootstrap\verify.bat > verify-bat-report.txt 2>&1
+          type verify-bat-report.txt
+          findstr /c:"ok:   home dir the Windows client reads" verify-bat-report.txt >nul || exit /b 1
+          findstr /b /c:"passed:" verify-bat-report.txt >nul || exit /b 1

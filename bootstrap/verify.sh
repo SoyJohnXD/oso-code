@@ -345,10 +345,15 @@ fi
 #     The Windows entrypoints are in scope because that is where this class has
 #     actually shipped from here, twice (bb4356f, 88f0c1e) — both times in
 #     install.ps1 or install.bat, which nothing was scanning.
+#     Those two were named one by one until verify.bat landed beside them as the
+#     third file of exactly that class, so both extensions glob now (D16): a
+#     hand-written list is honest only until the next entry point lands unnamed,
+#     which is the same reasoning ci.yml's own `bash -n` steps glob under, and
+#     bootstrap/ is where every Windows entry point this repo ships lives.
 #     grep exits 1 on a clean tree, so guard the substitution like the rest of this
 #     block; keep grep's stderr in the value so a scan path that vanished fails loudly
 #     instead of reporting green on nothing scanned.
-cr_shipped="$(cd "$REPO_ROOT" && LC_ALL=C grep -rlF -e $'\r' plugin/hooks plugin/bin plugin/git-hooks bootstrap/*.sh bootstrap/install.ps1 bootstrap/install.bat 2>&1 | tr '\n' ' ' || true)"
+cr_shipped="$(cd "$REPO_ROOT" && LC_ALL=C grep -rlF -e $'\r' plugin/hooks plugin/bin plugin/git-hooks bootstrap/*.sh bootstrap/*.ps1 bootstrap/*.bat 2>&1 | tr '\n' ' ' || true)"
 check "shipped executables carry no CR bytes" "none" "${cr_shipped:-none}"
 
 # 12. The home dir this install wrote to, against the one the client reads. Git
@@ -546,6 +551,65 @@ else
   # `set -e` a false test would take the whole report down one line before its
   # summary. Check 13's `|| echo` shape cannot.
   [ "$git_bash_state" != 1 ] || echo "      Git Bash: $stored_git_bash"
+fi
+
+# Where Claude Desktop lands on each host it ships for — macOS, Windows, and the
+# Debian/Ubuntu package — with the per-user data directory listed beside the
+# application on every one of them. The two answer the same question from
+# different sides: the application is what an install puts down at a location an
+# operator can move, while the data directory is the one path Anthropic documents
+# per host (it is where claude_desktop_config.json lives) and so still answers for
+# an app installed somewhere this list does not know. Tested for, never read.
+claude_desktop_locations() {
+  printf '%s\n' \
+    "/Applications/Claude.app" \
+    "$HOME/Library/Application Support/Claude" \
+    "${LOCALAPPDATA:-$HOME/AppData/Local}/AnthropicClaude" \
+    "${APPDATA:-$HOME/AppData/Roaming}/Claude" \
+    "$HOME/.config/Claude"
+}
+
+# The first of those this machine holds, empty when it holds none. Spelled through
+# shell_spelling_of because two of the five come out of the Windows environment in
+# the C:\… form only a native process reads.
+claude_desktop_install() {
+  local candidate
+  while IFS= read -r candidate; do
+    if [ -e "$(shell_spelling_of "$candidate")" ]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done <<< "$(claude_desktop_locations)"
+  return 0
+}
+
+# 15. Claude Desktop — the second surface this same ~/.claude drives. Its Code tab
+#     runs the CLI's engine behind a window and shares the CLI's configuration
+#     (CLAUDE.md, MCP servers, hooks, skills and settings), so every check above
+#     already answers for it: the tree they read is the tree Desktop opens, and the
+#     settings.json `env` block checks 7 and 14 read is how a client started from
+#     Explorer or the Dock is handed what a client started from a shell gets out of
+#     its shell.
+#     Which leaves this one thing to observe, and it observes only that: whether
+#     the machine carries the app. Desktop is an APPLICATION and no installer here
+#     provisions one, so its absence is a note and never a failure — a CLI-only
+#     operator must not go red for software they never wanted (D4).
+#     Expected and actual are one value on purpose. What there is to see is the
+#     location, and `check` is how seeing it joins the tally D4 asks for rather
+#     than the notes; there is no second half to compare it against, because every
+#     property of Desktop a shell can reach is one the CLI shares and the checks
+#     above already assert. Saying so on the line beside it is the price of that:
+#     a verdict read as more than it observed is the class this whole file exists
+#     against, and this one proves an app is installed, never that a running
+#     Desktop has loaded any of this — no shell can see that — and never anything
+#     about the chat tab, whose claude_desktop_config.json carries MCP servers
+#     only, reaches no files, and is written by nothing here.
+desktop_install="$(claude_desktop_install)"
+if [ -z "$desktop_install" ]; then
+  echo "note: Claude Desktop — none of $(claude_desktop_locations | tr '\n' ' ')is here, so this machine runs the CLI alone and the checks above are the whole install; Desktop is an application to download from claude.ai/download, not something this bootstrap installs, and it would need nothing installed here that is not already"
+else
+  check "Claude Desktop installed on this machine" "$desktop_install" "$desktop_install"
+  echo "      its Code tab runs the CLI's engine and shares this ~/.claude — CLAUDE.md, MCP servers, hooks, skills and settings — so every check above answers for it too; what no shell can see is whether a running Desktop has loaded them, and the chat tab is a separate surface nothing here writes"
 fi
 
 echo "----"

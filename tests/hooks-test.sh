@@ -6770,6 +6770,58 @@ assert_equals "verify.sh exports the agent marker when probing the installed com
 assert_equals "the report still reaches its summary" "reached" \
   "$(printf '%s\n' "$report_without_marker" | grep -q '^passed:' && echo reached || echo missing)"
 
+# --- Claude Desktop: the second surface, asserted where it exists (D4) --------
+# Desktop's Code tab runs the CLI's engine and shares this same ~/.claude, so the
+# report has to say so — and it is an APPLICATION no installer here provisions, so
+# saying so may never cost a CLI-only operator a red line for software they never
+# wanted. That makes both directions cases: present has to reach the tally as a
+# pass, and absent has to reach neither half of it, which is the whole difference
+# between a note and a check and the one thing a `note:` regressed into a check
+# would break silently.
+# ~/.config/Claude is the fixture because it is the one location verify.sh looks in
+# that this suite's own HOME owns; the tally is read as a DELTA between the two
+# runs rather than against a number, since every other check here answers to a
+# fixture HOME that earlier cases have been writing into.
+DESKTOP_FIXTURE="$HOME/.config/Claude"
+
+# The Claude Desktop locations that are NOT under this fixture's HOME. A machine
+# carrying the app there has verify.sh reporting it on every run whatever this
+# fixture does, so the pair below stands down there instead of reading a
+# contributor's own install as a regression.
+desktop_outside_fixture_home() {
+  [ -e "/Applications/Claude.app" ] && return 0
+  [ -n "${LOCALAPPDATA:-}" ] && [ -e "$LOCALAPPDATA/AnthropicClaude" ] && return 0
+  [ -n "${APPDATA:-}" ] && [ -e "$APPDATA/Claude" ] && return 0
+  return 1
+}
+
+report_tally() {
+  printf '%s\n' "$1" | sed -n 's/^passed: \([0-9]*\), failed: \([0-9]*\)$/\1 \2/p'
+}
+
+tally_delta() {
+  local before="$(report_tally "$1")" after="$(report_tally "$2")"
+  printf '+%s pass +%s fail' \
+    "$(( ${after%% *} - ${before%% *} ))" "$(( ${after##* } - ${before##* } ))"
+}
+
+if desktop_outside_fixture_home; then
+  echo "skip: this machine carries Claude Desktop outside \$HOME, so no fixture can show the verifier a machine without one"
+  skipped=$((skipped + 1))
+else
+  rm -rf "$DESKTOP_FIXTURE"
+  desktop_absent_report="$(verify_report)"
+  mkdir -p "$DESKTOP_FIXTURE"
+  desktop_present_report="$(verify_report)"
+  rm -rf "$DESKTOP_FIXTURE"
+
+  assert_equals "a Claude Desktop install is asserted, and that assertion joins the tally as a pass" \
+    "ok / +1 pass +0 fail" \
+    "$(report_line_kind "$desktop_present_report" 'Claude Desktop') / $(tally_delta "$desktop_absent_report" "$desktop_present_report")"
+  assert_equals "no Claude Desktop is a note, so a CLI-only machine is complete rather than red" \
+    "note" "$(report_line_kind "$desktop_absent_report" 'Claude Desktop')"
+fi
+
 # --- A CRLF checkout: the cleanup that removes nothing and is confirmed done ---
 # gentle-manifest.txt is DATA, so verify.sh's CR scan never covered it and
 # .gitattributes cannot renormalize a clone made before its pin. On a Windows
@@ -7692,6 +7744,110 @@ assert_equals "the delegation check joins both sides of its argv on a mark no ar
   "unforgeable / -join \$argvBoundary" \
   "$argv_boundary_kind / $(printf '%s\n' "$delegation_check" |
     grep -oE -- '-join [^ )]+' | LC_ALL=C sort -u)"
+
+# --- The double-clickable verifier, and the class of file it joins (D16) ------
+# README hands a Windows operator install.bat as THE path — no terminal, just a
+# double-click — and then had nothing to offer for proving the install but
+# `bash bootstrap/verify.sh` from a shell they were told they would not need.
+# verify.bat closes that, and no platform this suite runs on can execute one, so
+# what is asserted here is what a .bat can be held to statically: the HOME pin,
+# and the bytes. The rest — that cmd finds Git Bash, that the delegation runs, and
+# that the pin actually reaches verify.sh — is ci.yml's windows-latest step, which
+# runs the file against a decoy HOME and reads the verdict back off the report.
+# The HOME pin is a whole line rather than a substring: %USERPROFILE% with its
+# backslashes intact is a different value from the one Git Bash resolves, and a
+# case matching only the variable name would pass on either.
+VERIFY_BAT="$REPO_ROOT/bootstrap/verify.bat"
+verify_bat_bytes=clean
+if [ ! -f "$VERIFY_BAT" ]; then
+  verify_bat_bytes="no $VERIFY_BAT"
+elif LC_ALL=C grep -qF -e "$(printf '\r')" "$VERIFY_BAT"; then
+  verify_bat_bytes="carries a CR byte"
+elif LC_ALL=C grep -q '[^[:print:][:space:]]' "$VERIFY_BAT"; then
+  verify_bat_bytes="carries a non-ASCII byte"
+fi
+assert_equals "verify.bat pins HOME to the tree the client reads, in bytes a PowerShell-less cmd parses the same way twice" \
+  'set "HOME=%USERPROFILE:\=/%" / clean' \
+  "$(grep -F 'set "HOME=' "$VERIFY_BAT" 2>/dev/null || true) / $verify_bat_bytes"
+
+# The scan list itself, not merely verify.bat's presence in it: a lone CR makes
+# bash read `then\r` as a command, this repo has shipped that class from a Windows
+# entry point twice (bb4356f, 88f0c1e), and both times the file it shipped from
+# was one nothing was scanning. Named one by one the list is honest only until the
+# next entry point lands beside it, so both extensions glob — and the second half
+# of the pair is what proves a glob is not a way of naming nothing: it expands
+# over the shipped tree and verify.bat has to be in what comes back. Spelled here
+# rather than derived from the file under test, the way the flag table above is.
+EXPECTED_CR_SCAN_TARGETS="$(printf '%s\n' plugin/hooks plugin/bin plugin/git-hooks \
+  'bootstrap/*.sh' 'bootstrap/*.ps1' 'bootstrap/*.bat' | LC_ALL=C sort | tr '\n' ' ')"
+cr_scan_targets="$(sed -n 's/^cr_shipped=.*grep -rlF -e \$.\\r. \(.*\) 2>&1.*$/\1/p' \
+  "$REPO_ROOT/bootstrap/verify.sh" | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')"
+cr_scan_reaches_verify_bat=unreached
+case " $(cd "$REPO_ROOT" && echo bootstrap/*.bat) " in
+  *' bootstrap/verify.bat '*) cr_scan_reaches_verify_bat=reached ;;
+esac
+assert_equals "the CR scan names every directory and extension a shipped executable can arrive under, and verify.bat is inside what that expands to" \
+  "$EXPECTED_CR_SCAN_TARGETS| reached" "$cr_scan_targets| $cr_scan_reaches_verify_bat"
+
+# --- CI's verify assertion: the SET of check names, never a bare count (D6) ---
+# Every check a fixture HOME reaches fails there by construction, so `failed: 9`
+# reads identical whether a check was dropped, renamed or quietly stopped running
+# — and it has already hidden exactly that, when one check left the report and
+# another took its place at the same total. ci.yml pins the names now, and this is
+# what holds that pin to what verify.sh actually prints: a check added without the
+# list moving is red HERE, in the commit that adds it, rather than on a push.
+# The extractor is the one ci.yml runs, so a pin that agrees with a parser nobody
+# else uses is not something this can report as agreement.
+CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
+ci_pinned_check_names() {
+  awk -v header="  $1: |" '
+    $0 == header { inside = 1; next }
+    inside && sub(/^    /, "") { print; next }
+    inside { exit }
+  ' "$CI_YML"
+}
+
+# The two checks only a Windows runner reaches, contributed on the host that
+# reaches them: off Windows verify.sh reports both as notes, so no single pinned
+# list could describe both runners at once. A function rather than a `case` at the
+# call site because bash 3.2 miscounts the parentheses of a case pattern inside a
+# command substitution, and the caller below is one.
+ci_windows_only_check_names() {
+  case "$(uname -s 2>/dev/null || true)" in
+    MINGW*|MSYS*|CYGWIN*) ci_pinned_check_names VERIFY_CHECK_NAMES_WINDOWS ;;
+  esac
+}
+
+CI_VERIFY_HOME="$TEST_HOME/ci-verify-home"
+CI_VERIFY_REPORT="$TEST_HOME/ci-verify-report"
+mkdir -p "$CI_VERIFY_HOME"
+( PATH="$CLAUDE_SHIM_DIR:$PATH"
+  OSO_VERIFY_SKIP_SLOW=1 HOME="$CI_VERIFY_HOME" \
+    bash "$REPO_ROOT/bootstrap/verify.sh" ) > "$CI_VERIFY_REPORT" 2>&1 || true
+ci_verify_report="$(cat "$CI_VERIFY_REPORT")"
+
+# A CI runner carries no Claude Desktop and no core.hooksPath wired into this
+# checkout; a contributor's machine may carry either, and either one turns a
+# `note:` into a counted check and so into a name this pin does not list. Both are
+# read off the report rather than probed for again, so what stands the case down is
+# the same reading the assertion would have made.
+# Only an `ok:` stands the Desktop half down, never `!= note`: the check reads
+# `absent` when it has been deleted or renamed, and standing down on THAT would
+# retire the only local holder of ci.yml's pin in the very commit that broke it —
+# silently, since a skip is green. The git-hook half is `= absent` for the
+# opposite reason and not by oversight: verify.sh prints no line of that name at
+# all where core.hooksPath is unwired, so absent is what a CI runner reads there.
+if [ "$(report_line_kind "$ci_verify_report" 'Claude Desktop')" != ok ] &&
+  [ "$(report_line_kind "$ci_verify_report" 'git commit hook executable')" = absent ]; then
+  ci_expected_check_names="$( { ci_pinned_check_names VERIFY_CHECK_NAMES
+    ci_windows_only_check_names; } | LC_ALL=C sort)"
+  assert_equals "ci.yml pins the exact set of checks verify.sh reaches against a fixture HOME" \
+    "$ci_expected_check_names" \
+    "$(bash "$REPO_ROOT/tools/verify-check-names.sh" "$CI_VERIFY_REPORT")"
+else
+  echo "skip: this machine reaches checks a CI runner does not (a Claude Desktop of its own, or a core.hooksPath wired into this checkout), so its report describes a different set than the pin does"
+  skipped=$((skipped + 1))
+fi
 
 # --- The backup an install promises, and the copies that make it true (D11) ---
 # Three separate failures lived here: a backup directory announced in the plan
