@@ -19,11 +19,11 @@ pass=0
 fail=0
 
 check() {
-  local name="$1" expected="$2" actual="$3"
+  local name="$1" expected="$2" actual="$3" fix="${4:-}"
   if [ "$expected" = "$actual" ]; then
     echo "ok:   $name ($actual)"; pass=$((pass + 1))
   else
-    echo "FAIL: $name — expected $expected, got $actual"; fail=$((fail + 1))
+    echo "FAIL: $name — expected $expected, got $actual${fix:+ — fix: $fix}"; fail=$((fail + 1))
   fi
 }
 
@@ -37,7 +37,8 @@ check() {
 # a newline in it is folded first, because `check` prints it inline and a reason
 # orphaned on the next line reads as a verdict contradicting itself. Numeric checks
 # are the one exception: text in the value is a shell error, so they branch on the
-# read.
+# read. A remediation belongs on that same line for the same reason: it travels as
+# `check`'s optional fourth argument, printed only on the verdict it explains.
 
 # The ACTIVE installed version dir (cache copy, not the repo) — a new session runs
 # the installPath recorded in installed_plugins.json, so resolve THAT, never
@@ -260,13 +261,51 @@ else
   check "impeccable CLI runnable via npx" "1" "$(impeccable_cli_runnable)"
 fi
 
+# One spelling for a directory Windows writes four ways, so a comparison can be
+# about the directory instead of about who built the string. install.sh wires
+# core.hooksPath from a path `cd`+`pwd` spells /c/Users/…, but MSYS argv conversion
+# rewrites a POSIX-form argument before a native git.exe ever sees it — so
+# C:/Users/… is what lands in .git/config, and the two are never byte-equal. Read
+# byte for byte, check 10 below tells a Windows operator whose commit gate IS
+# wired that it is not, which is the one thing a verifier may never get wrong in
+# that direction. A backslash spelling, a lowercase drive letter and a trailing
+# slash are the other ways the same directory comes back.
+# It builds a comparison key, not a canonical path: /u/jane comes back as U:/jane,
+# and a backslash inside a POSIX filename comes back as a separator, so what it
+# returns can be a spelling no filesystem holds. What makes that safe is that every
+# comparison folds BOTH sides through it — a fold that fires where no Windows path
+# exists fires on both sides and cannot change a verdict. Valid inside one
+# comparison only: never stored, never printed back to an operator.
+# Keep this identical to normalized_path in bootstrap/install.sh — the two scripts
+# run standalone via curl and cannot source a shared file.
+normalized_path() {
+  local path="${1//\\//}"
+  case "$path" in
+    /[A-Za-z]/*|/[A-Za-z])
+      path="${path#/}"              # /c/Users/x -> c/Users/x
+      path="${path%%/*}:${path#?}"  # c/Users/x  -> c:/Users/x
+      ;;
+  esac
+  # bash 3.2 has no ${var^^}, so the drive letter costs a fork — and only where it
+  # is the lowercase spelling that needs one.
+  case "$path" in
+    [a-z]:*) path="$(printf '%s' "${path%%:*}" | tr 'a-z' 'A-Z'):${path#*:}" ;;
+  esac
+  # A trailing separator names the same directory. `/` is a root, not a trailing
+  # separator, so it keeps its own name.
+  case "$path" in ?*/) path="${path%/}" ;; esac
+  printf '%s' "$path"
+}
+
 # 10. The commit gate's primary layer, where this repo has it: the git hook only
 #     exists while core.hooksPath still points at it, and it only runs while it is
 #     executable. A repo whose hooks belong to another tool never had this layer
 #     wired (see wire_git_commit_hook in install.sh), so that is a note, not a fail.
+#     The note names the stored spelling rather than the normalized one, because
+#     that is the value an operator would go and edit.
 git_hook="$REPO_ROOT/plugin/git-hooks/pre-commit"
 wired_hooks_path="$(git -C "$REPO_ROOT" config --get core.hooksPath 2>/dev/null || true)"
-if [ "$wired_hooks_path" = "$(dirname "$git_hook")" ]; then
+if [ "$(normalized_path "$wired_hooks_path")" = "$(normalized_path "$(dirname "$git_hook")")" ]; then
   check "git commit hook executable at the wired core.hooksPath" "1" \
     "$([ -x "$git_hook" ] && echo 1 || echo 0)"
 else
@@ -285,6 +324,39 @@ fi
 #     instead of reporting green on nothing scanned.
 cr_shipped="$(cd "$REPO_ROOT" && LC_ALL=C grep -rlF -e $'\r' plugin/hooks plugin/bin plugin/git-hooks bootstrap/*.sh bootstrap/install.ps1 bootstrap/install.bat 2>&1 | tr '\n' ' ' || true)"
 check "shipped executables carry no CR bytes" "none" "${cr_shipped:-none}"
+
+# 12. The home dir this install wrote to, against the one the client reads. Git
+#     Bash takes $HOME from an inherited $HOME first, then HOMEDRIVE+HOMEPATH, and
+#     only then %USERPROFILE%; claude.exe is a Node process, so os.homedir() —
+#     %USERPROFILE%, always — is the only tree it ever opens. A roaming or
+#     HOMESHARE corporate profile, or a machine carrying an MSYS2 $HOME of its
+#     own, splits the two: install.sh then wrote CLAUDE.md, settings.json and
+#     every backup where the client never looks, and EVERY check above read that
+#     same wrong tree and stayed green — an install that did nothing, confirmed.
+#     bootstrap/install.ps1 exports a matching HOME before it delegates, so what
+#     this covers is the `bash bootstrap/install.sh` path README documents, which
+#     never passes through PowerShell.
+#     Normalized on both sides for the reason check 10 is: /c/Users/x and
+#     C:\Users\x are one tree and never byte-equal. Only the verdict comes from the
+#     fold, though — what the line names is what the environment holds, again like
+#     check 10: a folded value is a comparison key and not a path, so a POSIX $HOME
+#     of /u/jane would be reported back as U:/jane, a home dir nobody can go and act
+#     on. One tree therefore reaches `check` as one spelling, and only a real
+#     disagreement reaches it as two.
+#     Where the environment carries no %USERPROFILE% there is no Windows-native
+#     client to disagree with $HOME, so this is a note rather than a check that
+#     could only ever pass vacuously — Linux, macOS, and the CI fixture with them.
+if [ -n "${USERPROFILE:-}" ]; then
+  client_home="$USERPROFILE"
+  git_bash_home="$HOME"
+  if [ "$(normalized_path "$client_home")" = "$(normalized_path "$git_bash_home")" ]; then
+    client_home="$git_bash_home"
+  fi
+  check "home dir the Windows client reads" "$client_home" "$git_bash_home" \
+    "re-run from PowerShell (bootstrap/install.ps1 sets HOME to %USERPROFILE% for you), or export HOME=\"\$USERPROFILE\" in Git Bash and re-run bootstrap/install.sh"
+else
+  echo "note: home dir the Windows client reads — %USERPROFILE% is unset, so no Windows-native client reads a home dir here and \$HOME ($HOME) is the only tree in play"
+fi
 
 echo "----"
 echo "passed: $pass, failed: $fail"

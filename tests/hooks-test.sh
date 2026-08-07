@@ -6788,6 +6788,145 @@ crlf_personal_text="$(grep -q '# personal rules' "$CRLF_GLOBAL_MD" && echo kept 
 assert_equals "two merges over CRLF markers leave one managed block and the operator's own text" \
   "1 block / kept" "$crlf_managed_blocks block / $crlf_personal_text"
 
+# --- One directory, two spellings: what git stored vs. what the shell built ----
+# $GIT_HOOKS_DIR is built from `cd`+`pwd`, which under Git Bash reads /c/Users/…,
+# and MSYS argv conversion rewrites a POSIX-form argument before a native git.exe
+# ever sees it — so C:/Users/… is what lands in .git/config. Compared byte for
+# byte the two never match, and the cost falls on the SECOND install: the
+# installer reads its own wiring as a foreign owner and wires nothing, while
+# verify.sh calls the commit gate unwired on a repo where it is wired. Both
+# scripts run standalone via curl and cannot source a shared file, so each carries
+# its own copy of the normalizer and ONE table judges both twins — install.sh's
+# copy arrives with the sourced script, verify.sh's is read out of the shipped
+# file the way the npx bound below is. The POSIX row is the guard that none of
+# this changed anything for Linux and macOS, where one spelling is all there is.
+WINDOWS_HOOKS_DIR='C:/Users/o/oso-code/plugin/git-hooks'
+POSIX_HOOKS_DIR='/home/o/oso-code/plugin/git-hooks'
+HOOKS_DIR_SPELLINGS_NORMALIZED="$WINDOWS_HOOKS_DIR $WINDOWS_HOOKS_DIR $WINDOWS_HOOKS_DIR $WINDOWS_HOOKS_DIR $POSIX_HOOKS_DIR"
+normalized_hooks_dir_spellings() {
+  local spelling joined=""
+  for spelling in \
+    '/c/Users/o/oso-code/plugin/git-hooks' \
+    "$WINDOWS_HOOKS_DIR" \
+    'c:\Users\o\oso-code\plugin\git-hooks' \
+    "$WINDOWS_HOOKS_DIR/" \
+    "$POSIX_HOOKS_DIR"; do
+    joined="$joined${joined:+ }$(normalized_path "$spelling")"
+  done
+  printf '%s' "$joined"
+}
+
+assert_equals "install.sh reads four Windows spellings as one directory and a POSIX path as itself" \
+  "$HOOKS_DIR_SPELLINGS_NORMALIZED" "$(in_installer normalized_hooks_dir_spellings)"
+
+verify_normalizer="$(sed -n '/^normalized_path()/,/^}/p' "$REPO_ROOT/bootstrap/verify.sh")"
+if [ -z "$verify_normalizer" ]; then
+  echo "FAIL: bootstrap/verify.sh defines no normalized_path, so its half of the comparison has nothing to test"
+  fail=$((fail + 1))
+else
+  assert_equals "verify.sh's own copy of the normalizer answers that table identically" \
+    "$HOOKS_DIR_SPELLINGS_NORMALIZED" "$(eval "$verify_normalizer"; normalized_hooks_dir_spellings)"
+fi
+
+# The same directory as a native Windows tool spells it back: the separators MSYS
+# converts on the way in, and a trailing one a hand-wired value can carry.
+windows_spelling_of() {
+  printf '%s\\' "$(printf '%s' "$1" | tr '/' '\\')"
+}
+
+# --- A second install, and the verifier reading back what the first one wired --
+# Both readers of core.hooksPath, put behind a repo that is ALREADY correctly
+# wired in the spelling the other side writes. The fixture is a repository of its
+# own with a bootstrap/ beside it: both scripts derive $REPO_ROOT from their own
+# location, so a copy is the only way to hand them a repo that is not this one —
+# and this one's .git/config is the operator's, never a test's to write. The
+# drive-letter half of the rewrite has no fixture on either platform this suite
+# runs on, since a /c/… tree exists only on Windows and there the installer builds
+# that spelling itself; what differs here is the half that travels, separators and
+# a trailing slash. The table above covers the drive letter.
+if command -v git >/dev/null 2>&1; then
+  mkdir -p "$TEST_HOME/wired-repo/bootstrap" "$TEST_HOME/wired-repo/plugin/git-hooks"
+  # Spelled the way the scripts will spell it: they resolve their own location
+  # through `cd`+`pwd`, which resolves the /var symlink macOS hands mktemp back.
+  WIRED_REPO="$(cd "$TEST_HOME/wired-repo" && pwd)"
+  cp "$INSTALL_SH" "$REPO_ROOT/bootstrap/verify.sh" "$WIRED_REPO/bootstrap/"
+  cp "$REPO_ROOT/plugin/git-hooks/pre-commit" "$WIRED_REPO/plugin/git-hooks/"
+  git init -q "$WIRED_REPO"
+  git -C "$WIRED_REPO" config core.hooksPath \
+    "$(windows_spelling_of "$WIRED_REPO/plugin/git-hooks")"
+
+  assert_equals "an installer's own wiring, in the spelling git stored it, is no foreign owner" \
+    "" "$(INSTALLER_SCRIPT="$WIRED_REPO/bootstrap/install.sh" in_installer git_hooks_owner)"
+  assert_equals "the verifier counts a commit gate it can see wired, whatever the spelling" \
+    "ok" "$(report_line_kind \
+      "$(VERIFY_SCRIPT="$WIRED_REPO/bootstrap/verify.sh" verify_report)" \
+      'git commit hook executable at the wired core.hooksPath')"
+else
+  echo "skip: git is absent here, so a wired core.hooksPath has no repository to be read back from"
+  skipped=$((skipped + 1))
+fi
+
+# --- The tree the client reads, and the tree the installer wrote to -----------
+# Git Bash takes $HOME from an inherited $HOME first, then HOMEDRIVE+HOMEPATH, and
+# only then %USERPROFILE%; claude.exe is a Node process, so os.homedir() —
+# %USERPROFILE%, always — is the only tree it reads. A roaming or HOMESHARE
+# profile, or a machine carrying an MSYS2 $HOME of its own, splits the two, and
+# then the install writes CLAUDE.md, settings.json and every backup where the
+# client never looks while every check in the report reads that same wrong tree
+# and stays green. install.ps1 exports a matching HOME now, so what this stands
+# for is the Git Bash path README documents, which never passes through
+# PowerShell.
+# The AGREEING direction is a case in its own right because CI's fixture runs
+# HOME="$(mktemp -d)" with no %USERPROFILE% at all: without it nothing anywhere
+# would exercise the passing side, and a comparison made byte for byte would read
+# correct here and fail on every real Windows install, where the client's spelling
+# and Git Bash's never match.
+HOME_CHECK_NAME='home dir the Windows client reads'
+home_check_report() {
+  local profile="$1"
+  ( if [ -n "$profile" ]; then export USERPROFILE="$profile"; else unset USERPROFILE; fi
+    verify_report )
+}
+
+# The one line of the report that names this check, whichever way it counted, so a
+# case can read what the line HANDS BACK. The check folds both spellings to compare
+# them, and a fold is a comparison key rather than a path: reported back it names a
+# home dir the environment does not hold and an operator cannot go and act on.
+# Both fixtures below are spelled so the two differ — the Windows spelling on the
+# failing side, a trailing separator (which the fold drops) on the agreeing one.
+home_check_line() {
+  printf '%s\n' "$1" | grep -F "$HOME_CHECK_NAME" || true
+}
+
+# The remediation is read off the verdict LINE, not off the report: printed on a
+# line of its own it reads as a verdict of its own, which is the shape verify.sh's
+# header rules out — and the failing side is the only side an operator reads it on.
+SPLIT_HOME_PROFILE="$(windows_spelling_of "$TEST_HOME/roaming-profile")"
+split_home_report="$(home_check_report "$SPLIT_HOME_PROFILE")"
+split_home_line="$(home_check_line "$split_home_report")"
+split_home_fix=orphaned
+case "$split_home_line" in
+  *' — fix: '*) split_home_fix=inline ;;
+esac
+split_home_spelling=folded
+case "$split_home_line" in
+  *"expected $SPLIT_HOME_PROFILE, got $HOME —"*) split_home_spelling=raw ;;
+esac
+assert_equals "a client home naming another tree than the install wrote to is a counted failure carrying its own fix, in the spellings the environment holds" \
+  "fail / inline / raw" \
+  "$(report_line_kind "$split_home_report" "$HOME_CHECK_NAME") / $split_home_fix / $split_home_spelling"
+AGREEING_HOME_PROFILE="$(windows_spelling_of "$HOME")"
+agreeing_home_report="$(HOME="$HOME/"; home_check_report "$AGREEING_HOME_PROFILE")"
+agreeing_home_spelling=folded
+case "$(home_check_line "$agreeing_home_report")" in
+  *"($HOME/)"*) agreeing_home_spelling=raw ;;
+esac
+assert_equals "the same tree spelled the Windows way is still the same tree, named as \$HOME holds it" \
+  "ok / raw" \
+  "$(report_line_kind "$agreeing_home_report" "$HOME_CHECK_NAME") / $agreeing_home_spelling"
+assert_equals "no %USERPROFILE% is a note, so the tally never moves on Linux or macOS" \
+  "note" "$(report_line_kind "$(home_check_report '')" "$HOME_CHECK_NAME")"
+
 # --- The npx probe's bound: a hang may not take the whole report with it -------
 # verify.sh runs standalone via curl and defines its own helpers, so the bound is
 # READ OUT of the shipped file rather than reimplemented here — a rename or a move

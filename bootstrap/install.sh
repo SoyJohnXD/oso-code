@@ -385,7 +385,11 @@ wire_git_commit_hook() {
 git_hooks_owner() {
   local configured git_dir hook
   configured="$(git -C "$REPO_ROOT" config --get core.hooksPath 2>/dev/null || true)"
-  if [ -n "$configured" ] && [ "$configured" != "$GIT_HOOKS_DIR" ]; then
+  # Normalized on both sides rather than byte-compared: what git stored is not the
+  # string this script built, so on Windows a byte comparison finds a foreign owner
+  # in this installer's OWN wiring on every run after the first.
+  if [ -n "$configured" ] &&
+     [ "$(normalized_path "$configured")" != "$(normalized_path "$GIT_HOOKS_DIR")" ]; then
     printf 'core.hooksPath=%s' "$configured"
     return 0
   fi
@@ -397,6 +401,40 @@ git_hooks_owner() {
       return 0
     fi
   done
+}
+
+# One spelling for a directory Windows writes four ways, so a comparison can be
+# about the directory instead of about who built the string. $GIT_HOOKS_DIR comes
+# from `cd`+`pwd`, which under Git Bash reads /c/Users/…, but MSYS argv conversion
+# rewrites a POSIX-form argument before a native git.exe ever sees it — so
+# C:/Users/… is what lands in .git/config, and the two are never byte-equal. A
+# backslash spelling, a lowercase drive letter and a trailing slash are the other
+# ways the same directory comes back out of a config someone else wired.
+# It builds a comparison key, not a canonical path: /u/jane comes back as U:/jane,
+# and a backslash inside a POSIX filename comes back as a separator, so what it
+# returns can be a spelling no filesystem holds. What makes that safe is that every
+# comparison folds BOTH sides through it — a fold that fires where no Windows path
+# exists fires on both sides and cannot change a verdict. Valid inside one
+# comparison only: never stored, never printed back to an operator.
+# Keep this identical to normalized_path in bootstrap/verify.sh — the two scripts
+# run standalone via curl and cannot source a shared file.
+normalized_path() {
+  local path="${1//\\//}"
+  case "$path" in
+    /[A-Za-z]/*|/[A-Za-z])
+      path="${path#/}"              # /c/Users/x -> c/Users/x
+      path="${path%%/*}:${path#?}"  # c/Users/x  -> c:/Users/x
+      ;;
+  esac
+  # bash 3.2 has no ${var^^}, so the drive letter costs a fork — and only where it
+  # is the lowercase spelling that needs one.
+  case "$path" in
+    [a-z]:*) path="$(printf '%s' "${path%%:*}" | tr 'a-z' 'A-Z'):${path#*:}" ;;
+  esac
+  # A trailing separator names the same directory. `/` is a root, not a trailing
+  # separator, so it keeps its own name.
+  case "$path" in ?*/) path="${path%/}" ;; esac
+  printf '%s' "$path"
 }
 
 print_wiring_summary() {

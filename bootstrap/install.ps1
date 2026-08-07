@@ -206,6 +206,17 @@ function Invoke-Installer {
     if ($ReplaceClaudeMd) { $forwarded += '--replace-claude-md' }
     if ($NoImpeccable) { $forwarded += '--no-impeccable' }
 
+    # Git Bash takes $HOME from an inherited $HOME first, then HOMEDRIVE+HOMEPATH,
+    # and only then %USERPROFILE%; claude.exe is a Node process, so os.homedir() -
+    # %USERPROFILE%, always - is the only tree it ever opens. A roaming or
+    # HOMESHARE corporate profile, or a machine carrying an MSYS2 $HOME of its own,
+    # splits the two, and then install.sh writes CLAUDE.md, settings.json and every
+    # backup where the client never looks while verify.sh reads that same wrong
+    # tree and reports green. The child inherits this process environment, so one
+    # assignment settles it. Forward slashes for the reason Get-InstallShPath
+    # hands them over.
+    $env:HOME = $env:USERPROFILE -replace '\\', '/'
+
     Write-Info "delegating to install.sh under Git Bash ($BashExe)"
     & $BashExe $installSh @forwarded
     $installExit = $LASTEXITCODE
