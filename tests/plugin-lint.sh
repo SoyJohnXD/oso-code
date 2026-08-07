@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Lints the rules `claude plugin validate --strict` has no opinion on: it does
 # open hooks.json, skill frontmatter and the agents, and fails on a broken one
-# (probed against client 2.1.220), but it never asks what they SAY. Twenty-six rules
+# (probed against client 2.1.220), but it never asks what they SAY. Twenty-seven rules
 # hold that ground: a `context: fork` skill declares `background`; the same
 # skill declares an `end with exactly one of:` verdict block; every
 # `oso-code:<name>` the plugin's own prose points at resolves; every call site
@@ -43,11 +43,15 @@
 # names all five of that rubric's sections, Debt markers included, so the writer
 # is told the section it is graded on; oso-verifier's contract, on both hosts,
 # fails a slice whose diff adds an inline comment, so the judge that runs before
-# each slice commits can refuse one; and both bodies that run a debt-sweep judge →
+# each slice commits can refuse one; both bodies that run a debt-sweep judge →
 # fix loop state an exit bar for it — a severity band, a hard cap of three rounds
 # and the operator's three routes at that cap — so the loop can never go back to
 # running until clean, and no surface that states that loop's outcome reads
-# `Debt Sweep: clean` as the whole of its pass. Each rule states its own reason
+# `Debt Sweep: clean` as the whole of its pass; and that same loop carries its
+# own memory across rounds — each body's re-invocation restating the prior
+# findings' dispositions and nothing of the reasoning behind them, and the
+# judge's own body naming a dispositioned finding as settled instead of raising
+# it again — so no round can re-litigate what the last one closed. Each rule states its own reason
 # above it; `background` is the one whose cost is least visible: as of client v2.1.218
 # a fork returns immediately and its verdict arrives in a LATER turn, while every
 # call site in plan/quick/debug reads that verdict in-turn.
@@ -721,7 +725,7 @@ check_present_tense_prose_names_the_rule_count() {
     16) spelled=sixteen ;; 17) spelled=seventeen ;; 18) spelled=eighteen ;;
     19) spelled=nineteen ;; 20) spelled=twenty ;; 21) spelled=twenty-one ;;
     22) spelled=twenty-two ;; 23) spelled=twenty-three ;; 24) spelled=twenty-four ;;
-    25) spelled=twenty-five ;; 26) spelled=twenty-six ;;
+    25) spelled=twenty-five ;; 26) spelled=twenty-six ;; 27) spelled=twenty-seven ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -1136,6 +1140,86 @@ check_sweep_exit_bar_is_banded_and_capped() {
   done
 }
 
+# The rule above binds when the sweep loop STOPS; this one binds what it
+# remembers while it runs. The judge is a fresh fork every round, and the
+# re-invocation restated two arguments — the base ref and the ledger — and
+# nothing at all about the rounds already run, while no rule anywhere forbade
+# raising a finding a previous round had settled. One real close paid for that
+# twice over: the orchestrator hand-carried a growing "do NOT re-raise" list, 2
+# items by round 3 and 14 by round 7, and one dismissed clone group was examined
+# three times anyway. The exit bar above made this defect QUIETER rather than
+# louder — a blind judge no longer grinds visibly for seven rounds, it spends the
+# cap re-arguing what the operator already settled and then hands them the
+# choice — and nothing else in the harness reads this contract at all, which is
+# why it is the clause held here rather than the cleanup applier's own boundary:
+# a cleanup that overreaches writes damage the next round FINDS, expensively but
+# visibly.
+#
+# The contract has two ends, and a rule holding one would pass over a half-landed
+# edit: a sender restating dispositions to a judge whose body never mentions them
+# is a payload nobody reads, and a judge refusing to re-raise what no sender ever
+# hands it is a rule about nothing. So both ends are read, the way
+# check_decision_citations_resolve_and_name_their_citer reads both ends of a
+# citation. On the SENDER side that is the two bodies that run the loop —
+# plan.md's §7 close and debug.md's additive sweep, the same pair as the rule
+# above and for the same reason, so a third body growing a sweep loop later has
+# to join this list too. Each is located by `re-invoke the debt-sweep judge`, the
+# phrase both restatements open with: one line in each body today and no other
+# line of either, so both markers are asked of that one value — a second
+# re-invocation line would join it and the markers could then be met by the pair
+# rather than by each, which is this shape's ceiling and not a claim it makes for
+# itself. Two markers, one per clause the decision has: that a disposition
+# travels at all, and that it travels with no reasoning attached — a rewrite that
+# helpfully explains WHY each finding was dismissed hands the fresh eyes the
+# author's case and gets an anchored judge back, which is the same trade the
+# bare-ledger rule already refuses on the conformance axis.
+#
+# The RECEIVER is the judge's own body, read as a section rather than a line
+# because the input contract is a section there — from its `## Prior rounds`
+# heading to the next `## `, so a heading that goes takes the whole rule's
+# locator with it and flags. Its markers are the parts a thinning would drop
+# first: the three tag values, held here where they are CONSUMED rather than at
+# all three ends, since a value the judge does not recognize is a hole wherever
+# the senders spell it; the ban and its substitute, which is what makes a tag
+# binding rather than advisory — never RAISE it again, name it AS SETTLED
+# instead; and the same bare-tags clause the senders carry, stated at the end
+# that has to refuse the reasoning if it arrives anyway. Every marker matches
+# case-insensitively: plan.md capitalizes DISPOSITION for emphasis where debug.md
+# does not, and the claim is identical either way.
+check_sweep_loop_remembers_its_dispositioned_findings() {
+  local body reinvocation marker judge settled
+  for body in "$PLUGIN_ROOT/skills/_shared/bodies/plan.md" "$PLUGIN_ROOT/skills/_shared/bodies/debug.md"; do
+    if [ ! -f "$body" ]; then
+      flag "no ${body#"$PLUGIN_ROOT"/} to check what its sweep re-invocation carries"
+      continue
+    fi
+    reinvocation="$({ grep -iF -- 're-invoke the debt-sweep judge' "$body" || true; })"
+    if [ -z "$reinvocation" ]; then
+      flag "${body#"$PLUGIN_ROOT"/} re-invokes no debt-sweep judge, so nothing in it can carry the prior rounds' dispositions"
+      continue
+    fi
+    for marker in 'disposition' 'never why'; do
+      printf '%s\n' "$reinvocation" | grep -qiF -- "$marker" \
+        || flag "${body#"$PLUGIN_ROOT"/}'s sweep re-invocation drops the clause that keeps the next round from re-litigating: $marker"
+    done
+  done
+
+  judge="$PLUGIN_ROOT/skills/_shared/bodies/debt-sweep.md"
+  if [ ! -f "$judge" ]; then
+    flag "no skills/_shared/bodies/debt-sweep.md to check what the judge does with a dispositioned finding"
+    return 0
+  fi
+  settled="$({ sed -n '/^## Prior rounds$/,/^## /p' "$judge" 2>&1 || true; })"
+  if [ -z "$settled" ]; then
+    flag "skills/_shared/bodies/debt-sweep.md states no Prior rounds section, so the dispositions the loop restates reach a judge with no rule for them"
+    return 0
+  fi
+  for marker in '`fixed`' '`operator-dismissed`' '`accepted-residual`' 'never raise' 'as settled' 'never why'; do
+    printf '%s\n' "$settled" | grep -qiF -- "$marker" \
+      || flag "skills/_shared/bodies/debt-sweep.md's Prior rounds section drops the clause that makes a disposition binding: $marker"
+  done
+}
+
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }
 
 check_forked_skills_declare_background
@@ -1164,6 +1248,7 @@ check_rubric_bans_inline_comments_without_an_escape_hatch
 check_applier_rubric_mapping_names_every_section
 check_verifier_gate_fails_an_added_inline_comment
 check_sweep_exit_bar_is_banded_and_capped
+check_sweep_loop_remembers_its_dispositioned_findings
 
 if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"

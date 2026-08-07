@@ -226,6 +226,7 @@ Three properties of the amendment log these files replace are facts to carry for
 **2026-08-07 — clean-bar-convergence**
 
 - [0130](decisions/0130-the-sweeps-judge-fix-loop-exits-on-a-band-under-a-cap.md) — The debt sweep's judge → fix loop exits on a severity band under a hard cap
+- [0131](decisions/0131-the-sweep-loop-remembers-its-rounds-and-its-cleanup-sweeps-a-class.md) — The debt-sweep loop remembers its rounds, and its cleanup sweeps a class inside a stated boundary
 
 ## Foundational decisions
 

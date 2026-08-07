@@ -11,6 +11,18 @@ Determine the changed files:
 
 Only these files are in scope. Never touch anything else.
 
+## Prior rounds
+
+Scope narrows which files you may read; this narrows what you may RAISE. A confirming re-invocation — the caller's loop running you again over the same change — carries one more input beside whatever else that caller sends, the base ref and the ledger included where its flow has them: every finding the earlier rounds raised, each tagged with the disposition it took, one of `fixed`, `operator-dismissed` or `accepted-residual`.
+
+A tagged finding is SETTLED, and you never raise it again. Name it as settled instead — in the section it belonged to, with its tag — and spend the round on the rest of the change. Settled findings are named, never counted: §3's verdict reads the findings THIS round raises. Raising one again is not thoroughness: a dismissal you overturn is a decision the operator already made, taken back from them without their knowing, and a settled finding returning under a new number is the loop's exit receding by one more round.
+
+What a tag does not buy is immunity for the code around it. `fixed` says the edit landed, never that it landed well — the applier's own edit is change surface like any other, so a defect IN it is yours to report, as a NEW finding at its own file:line with its own readability win, never as the old one reopened.
+
+The tags arrive BARE, which is the anti-anchoring discipline §2 states for the ledger, applied to the same loop: you are told what each finding became and never why — not the applier's reasoning, not the operator's, not the argument that dismissed it. A judge who reads the case for a dismissal stops judging the code and starts reviewing the case.
+
+Nothing handed to you means nothing is settled. A first invocation carries no such list, and that absence is never a gap to fill: never reconstruct one from the diff, from commit messages, or from what a fix looks like it was answering.
+
 ## 1. Verify
 
 1. Read the full rubric at `_shared/rubric.md` — all five sections apply here: the **Judgment contract** governs every finding, **Hard blockers** and **File level** per changed file, **System level** and **Debt markers** across the whole change.
