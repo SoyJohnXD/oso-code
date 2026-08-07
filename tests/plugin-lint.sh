@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Lints the rules `claude plugin validate --strict` has no opinion on: it does
 # open hooks.json, skill frontmatter and the agents, and fails on a broken one
-# (probed against client 2.1.220), but it never asks what they SAY. Twenty-three rules
+# (probed against client 2.1.220), but it never asks what they SAY. Twenty-four rules
 # hold that ground: a `context: fork` skill declares `background`; the same
 # skill declares an `end with exactly one of:` verdict block; every
 # `oso-code:<name>` the plugin's own prose points at resolves; every call site
@@ -37,9 +37,11 @@
 # its conditions — an unstarted slice, a cited file and line, one operator
 # confirmation, and a recorded amendment; the Wave 0 bullet and the
 # Cut-one-worktree-per-slice paragraph never go back to contradicting each
-# other over wave 1's own WAVE START; and the shared rubric states the inline
+# other over wave 1's own WAVE START; the shared rubric states the inline
 # comment as a debt class with no exceptions, one the judgment contract cannot
-# override, carrying no earned-WHY escape hatch. Each rule states its own reason
+# override, carrying no earned-WHY escape hatch; and oso-applier's rubric mapping
+# names all five of that rubric's sections, Debt markers included, so the writer
+# is told the section it is graded on. Each rule states its own reason
 # above it; `background` is the one whose cost is least visible: as of client v2.1.218
 # a fork returns immediately and its verdict arrives in a LATER turn, while every
 # call site in plan/quick/debug reads that verdict in-turn.
@@ -712,7 +714,7 @@ check_present_tense_prose_names_the_rule_count() {
     13) spelled=thirteen ;; 14) spelled=fourteen ;; 15) spelled=fifteen ;;
     16) spelled=sixteen ;; 17) spelled=seventeen ;; 18) spelled=eighteen ;;
     19) spelled=nineteen ;; 20) spelled=twenty ;; 21) spelled=twenty-one ;;
-    22) spelled=twenty-two ;; 23) spelled=twenty-three ;;
+    22) spelled=twenty-two ;; 23) spelled=twenty-three ;; 24) spelled=twenty-four ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -987,6 +989,37 @@ check_rubric_bans_inline_comments_without_an_escape_hatch() {
   done
 }
 
+# The rule above holds the rubric; this one holds the agent that has to have read
+# it. oso-applier writes every line of code this harness produces, and its
+# rubric-reading bullet enumerated the Judgment contract, Hard blockers, File
+# level and System level — four of the five sections, dropping the one that bans
+# the inline comment, while both judges that grade the result name all five. A
+# writer told four sections and graded on five is how 1,441 comments were typed
+# before any judge saw one. Both hosts run that writer, so both contracts are
+# held to the five section names on the mapping bullet itself, the same way the
+# milestone bullets are held to their facts — the bullet is located by the
+# opening `Read the whole` both hosts already share, so that opening is pinned,
+# the rest of the sentence is each host's own register, and no rewording of it
+# may drop a section from the map.
+check_applier_rubric_mapping_names_every_section() {
+  local agent mapping section
+  for agent in "$PLUGIN_ROOT/agents/oso-applier.md" "$REPO_ROOT/codex/agents/oso-applier.toml"; do
+    if [ ! -f "$agent" ]; then
+      flag "no oso-applier contract at ${agent#"$REPO_ROOT"/} to check its rubric mapping"
+      continue
+    fi
+    mapping="$({ grep -F -- 'Read the whole' "$agent" || true; })"
+    if [ -z "$mapping" ]; then
+      flag "${agent#"$REPO_ROOT"/} carries no rubric-reading bullet to map the rubric's sections"
+      continue
+    fi
+    for section in 'Judgment contract' 'Hard blockers' 'File level' 'System level' 'Debt markers'; do
+      printf '%s\n' "$mapping" | grep -qF -- "$section" \
+        || flag "${agent#"$REPO_ROOT"/}'s rubric mapping never names the rubric's $section section"
+    done
+  done
+}
+
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }
 
 check_forked_skills_declare_background
@@ -1012,6 +1045,7 @@ check_design_foundation_slice_reads_the_installed_contract
 check_third_amendment_lane_names_its_conditions
 check_wave_1_wave_start_accounts_for_wave_0
 check_rubric_bans_inline_comments_without_an_escape_hatch
+check_applier_rubric_mapping_names_every_section
 
 if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"

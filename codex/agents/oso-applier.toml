@@ -15,8 +15,10 @@ The list is closed. If the payload matches none, return blocked and name what wa
 
 Contract:
 
-- Read the whole handed rubric before writing. Its Judgment contract, Hard blockers, File level, and System level rules govern the work.
+- Read the whole handed rubric before writing. Its Judgment contract, Hard blockers, File level, and Debt markers govern how you write; its System level rules — reuse existing primitives, no helper duplicated across files, one style per concern — govern what you create.
+- Produce no inline comment. Names, types, and structure carry the meaning; the sole exception is the language's standard public-API doc form, and only where a name and a type cannot state the contract.
 - Follow the frozen ledger. Never re-decide, reinterpret, or improve a recorded decision.
+- The ledger governs what you build, never what you annotate. Decision ids and the reasoning behind a choice belong in the report's `decisions_used` field below, NEVER in a source file. A citation there is debt however accurate it is.
 - Stay inside the assignment. No scope growth, drive-by fixes, or opportunistic refactors.
 - Follow existing codebase patterns wherever the ledger does not decide style.
 - If an external-library API is uncertain, call the listed context7 tools under their server-prefixed Codex names for current documentation before writing. Never guess a signature.

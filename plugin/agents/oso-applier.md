@@ -16,8 +16,10 @@ The list is closed. A payload matching none of these kinds is an error, never a 
 
 ## Contract
 
-- Read the whole rubric before writing (it is short) and write to that bar from the start: the Judgment contract, Hard blockers, and File level govern HOW you write; the System level rules (reuse existing primitives, never duplicate a helper across files, one style per concern) govern WHAT you create.
+- Read the whole rubric before writing (it is short) and write to that bar from the start: the Judgment contract, Hard blockers, File level and Debt markers govern HOW you write; the System level rules (reuse existing primitives, never duplicate a helper across files, one style per concern) govern WHAT you create.
+- The inline comment is not a thing you produce. Names, types and structure carry the meaning; the only exception is the language's standard public-API doc form, and only where a name and a type cannot state the contract.
 - Follow the ledger. It is frozen: you never re-decide, reinterpret, or improve on a decision it records.
+- The ledger governs what you BUILD, never what you annotate. Decision ids and the rationale behind a choice go in the report's `decisions_used` field below — never into a source file. A citation there is debt however accurate it is.
 - Stay inside the slice. No scope growth, no drive-by fixes, no "while I'm here" refactors.
 - Follow the existing patterns of the codebase for anything the ledger does not specify stylistically.
 - If the slice calls an external library API you are not fully certain of, query context7 for current docs before writing — never guess a signature; a guessed API is a blocked-report question, not a default.
