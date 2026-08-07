@@ -112,7 +112,7 @@ confirm_plan() {
   if [ "$ASSUME_YES" = false ]; then
     printf '[oso-code] proceed? [y/N] '
     read -r answer
-    case "$answer" in y|Y|yes|YES) ;; *) fail "aborted by user" ;; esac
+    case "$answer" in [Yy]|[Yy][Ee][Ss]) ;; *) fail "aborted by user" ;; esac
   fi
 }
 
@@ -129,7 +129,7 @@ ensure_prerequisites() {
   elif command -v pacman >/dev/null; then sudo pacman -S --noconfirm jq
   elif command -v apt-get >/dev/null; then sudo apt-get install -y jq
   elif command -v dnf >/dev/null; then sudo dnf install -y jq
-  elif command -v winget >/dev/null; then winget install jqlang.jq
+  elif command -v winget >/dev/null; then winget_install_per_user jqlang.jq || true
   else fail "could not detect a package manager — install jq manually, then re-run"
   fi
   # On Windows, winget installs do not join PATH until a new shell.
@@ -146,11 +146,55 @@ ensure_node() {
   elif command -v pacman  >/dev/null; then sudo pacman -S --noconfirm nodejs npm || true
   elif command -v apt-get >/dev/null; then sudo apt-get install -y nodejs npm || true
   elif command -v dnf     >/dev/null; then sudo dnf install -y nodejs npm || true
-  elif command -v winget  >/dev/null; then winget install OpenJS.NodeJS.LTS || true
+  elif command -v winget  >/dev/null; then winget_install_per_user OpenJS.NodeJS.LTS || true
   else warn "no package manager detected — install Node.js manually so context7 can start"; return 0
   fi
   command -v npx >/dev/null \
     || warn "Node.js not on PATH yet — context7 will start once npx is available (open a new terminal if you just installed it)"
+}
+
+# Provisioning on Windows without asking for administrator rights: the per-user
+# scope first, and the machine-wide retry that raises a UAC prompt only where the
+# operator answered yes to raising it. The flags are the other half of running
+# unattended — winget otherwise stops on package and source agreements in a shell
+# nobody is watching. install.ps1 carries this same policy for the runs that start
+# there; the two scripts run standalone via curl and cannot source a shared file.
+# It also reads the answer to this same question with `-match '^y(es)?$'`, which
+# PowerShell matches case-insensitively, so the prompts here take y and yes in any
+# case too: an operator meets whichever prompt their entry point raises, and `Yes`
+# cannot mean elevate on one half and skip on the other.
+#
+# That twin tells an unsupported scope from a transient failure by winget's own
+# exit code (0x8A150010, APPINSTALLER_CLI_ERROR_NO_APPLICABLE_INSTALLER), which no
+# shell can read here: $? is eight bits wide and that HRESULT does not fit in it.
+# So this half asks about ANY per-user failure — one prompt too many at worst,
+# never an elevation prompt the operator did not ask for.
+#
+# The guard is what the callers add: under `set -euo pipefail` a bare winget call
+# that exits non-zero — an already-installed package, an unreachable source — took
+# the whole installer down in phase 1 of 7.
+winget_install_per_user() {
+  local winget_id="$1" answer
+  local manual="winget install --id $winget_id --exact"
+  # One list for both calls, so the retry differs from the first attempt in the
+  # scope and in nothing else — the shape install.ps1's own $common builds.
+  local unattended_install=(install --id "$winget_id" --exact
+    --accept-package-agreements --accept-source-agreements --silent)
+  if winget "${unattended_install[@]}" --scope user; then
+    return 0
+  fi
+  if [ "$ASSUME_YES" = true ]; then
+    warn "could not install $winget_id per-user, and an unattended run never asks Windows for administrator approval — install it yourself, then re-run: $manual"
+    return 1
+  fi
+  printf '[oso-code] could not install %s per-user. Retry machine-wide? Windows will ask for administrator approval. [y/N] ' "$winget_id"
+  read -r answer
+  case "$answer" in
+    [Yy]|[Yy][Ee][Ss]) ;;
+    *) warn "skipping the machine-wide install of $winget_id — run it yourself when ready: $manual"; return 1 ;;
+  esac
+  winget "${unattended_install[@]}" \
+    || { warn "the machine-wide install of $winget_id failed — fix: $manual"; return 1; }
 }
 
 wire_mcps() {
@@ -290,7 +334,7 @@ repoint_approved() {
   printf '[oso-code] repoint it at %s? uncommitted work in %s stops loading. [y/N] ' \
     "$MARKETPLACE_SOURCE" "$1"
   read -r answer
-  case "$answer" in y|Y|yes|YES) return 0 ;; esac
+  case "$answer" in [Yy]|[Yy][Ee][Ss]) return 0 ;; esac
   info "keeping the local source — repoint anytime: claude plugin marketplace add $MARKETPLACE_SOURCE"
   return 1
 }

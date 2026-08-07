@@ -6927,6 +6927,162 @@ assert_equals "the same tree spelled the Windows way is still the same tree, nam
 assert_equals "no %USERPROFILE% is a note, so the tally never moves on Linux or macOS" \
   "note" "$(report_line_kind "$(home_check_report '')" "$HOME_CHECK_NAME")"
 
+# --- Windows provisioning: per-user first, and nobody elevates uninvited ------
+# A machine-wide winget install raises a UAC prompt, and the one-step Windows
+# install README documents is a promise that it needs no administrator. These two
+# calls are the half that runs when the operator starts from Git Bash directly —
+# also documented — and `winget install jqlang.jq` was machine-wide by default,
+# carried none of the flags that answer winget's package and source agreements in
+# a shell nobody is watching, and had no guard, so a benign non-zero exit killed
+# the installer inside phase 1 of 7.
+# The stub is the winget the installer sees: it records every call and refuses on
+# demand, the way the client shim above does. git and claude are stubs on that
+# same PATH because ensure_prerequisites checks them before it ever reaches jq,
+# and jq is the one that has to be ABSENT for the winget branch to run at all —
+# so the fixture PATH holds these three and nothing else, which is also what keeps
+# `sudo pacman -S` and the other package managers out of the if-chain.
+WINGET_STUB_DIR="$TEST_HOME/winget-stub"
+WINGET_CALLS="$TEST_HOME/winget-calls"
+WINGET_REFUSAL="$TEST_HOME/winget-refusal"
+mkdir -p "$WINGET_STUB_DIR"
+printf '#!/bin/sh\necho "$*" >> "%s"\nif [ -f "%s" ]; then exit 1; fi\nexit 0\n' \
+  "$WINGET_CALLS" "$WINGET_REFUSAL" > "$WINGET_STUB_DIR/winget"
+printf '#!/bin/sh\nexit 0\n' > "$WINGET_STUB_DIR/git"
+cp "$WINGET_STUB_DIR/git" "$WINGET_STUB_DIR/claude"
+chmod +x "$WINGET_STUB_DIR/winget" "$WINGET_STUB_DIR/git" "$WINGET_STUB_DIR/claude"
+
+# The machine-wide call is the per-user one minus the scope, which is the policy
+# stated as data: anything else in that difference is a second decision nobody
+# recorded. Spelled in the order install.ps1's twin builds them, scope last.
+MACHINE_WIDE_JQ_CALL='install --id jqlang.jq --exact --accept-package-agreements --accept-source-agreements --silent'
+PER_USER_JQ_CALL="$MACHINE_WIDE_JQ_CALL --scope user"
+
+# Every winget call one run made, with the answer to the consent prompt fed on
+# stdin. Whether the installer was still standing at the end of the phase is read
+# off its stderr separately: jq never appears on that PATH, so the phase always
+# ends at its own "not on PATH yet" abort — and that line is the proof it got
+# there, since a `set -e` death at the winget call leaves it unsaid.
+# It enters install.sh through the same sourcing guard in_installer uses, but one
+# process further out, and that is the whole reason it exists: in_installer's
+# subshell runs from a `|| true` context, bash's errexit suppression reaches every
+# subshell of such a context, and re-arming `set -e` inside does not bring it back
+# (measured both ways). Through in_installer everything survives a failing winget,
+# including the code that did not — a case that cannot fail. A child process
+# carries an errexit of its own, which is the one install.sh runs under for real.
+# ASSUME_YES is set the way the flag sets it: $@ is cleared before sourcing, or
+# install.sh reads this fixture's own arguments as flags and exits on the first.
+winget_provisioning() {
+  local assume_yes="$1" consent="$2"
+  : > "$WINGET_CALLS"
+  printf '%s\n' "$consent" | bash -c '
+    installer="$1" stub_path="$2" assume_yes="$3"
+    set --
+    . "$installer"
+    PATH="$stub_path"
+    ASSUME_YES="$assume_yes"
+    ensure_prerequisites
+  ' _ "$INSTALL_SH" "$WINGET_STUB_DIR" "$assume_yes" 2>"$INSTALLER_STDERR" >/dev/null || true
+  cat "$WINGET_CALLS"
+}
+
+assert_equals "the installer asks winget for a per-user install and answers its agreement prompts" \
+  "$PER_USER_JQ_CALL" "$(winget_provisioning false n)"
+
+# Unattended, both halves at once: --yes is consent to install.sh's own plan and
+# never to a UAC dialog no one is there to click, so the run takes no second call,
+# hands over the command to run by hand, and carries on to the phase's own verdict
+# instead of dying at the winget line.
+: > "$WINGET_REFUSAL"
+unattended_calls="$(winget_provisioning true '')"
+unattended_survived=died-at-winget
+case "$(cat "$INSTALLER_STDERR")" in
+  *'jq installed but not on PATH yet'*) unattended_survived=survived ;;
+esac
+unattended_manual=unnamed
+case "$(cat "$INSTALLER_STDERR")" in
+  *"winget install --id jqlang.jq --exact"*) unattended_manual=named ;;
+esac
+assert_equals "an unattended run never elevates: one per-user attempt, the manual command, and an installer still standing" \
+  "$PER_USER_JQ_CALL / named / survived" \
+  "$unattended_calls / $unattended_manual / $unattended_survived"
+
+assert_equals "a declined prompt takes no machine-wide retry" \
+  "$PER_USER_JQ_CALL" "$(winget_provisioning false n)"
+assert_equals "consent to the administrator prompt is what the machine-wide retry waits for" \
+  "$PER_USER_JQ_CALL
+$MACHINE_WIDE_JQ_CALL" "$(winget_provisioning false y)"
+
+# install.ps1 raises this same question on the runs that start there and reads the
+# answer with `-match '^y(es)?$'`, which PowerShell matches case-insensitively. A
+# `Yes` typed at this prompt declined here and consented there — the same word,
+# opposite outcomes, decided by which entry point the operator happened to use.
+assert_equals "the prompt reads consent the way the PowerShell twin does, in any case" \
+  "$PER_USER_JQ_CALL
+$MACHINE_WIDE_JQ_CALL" "$(winget_provisioning false Yes)"
+rm -f "$WINGET_REFUSAL"
+
+# --- The flag surface: four flags, and the entry point that has to spell them --
+# install.sh makes an unknown flag a hard exit, and install.ps1 is the only way a
+# Windows operator reaches it: a flag PowerShell does not declare cannot be passed
+# at all (param binding refuses it before bash is ever started), and one forwarded
+# under a spelling install.sh does not know stops the install at its argument
+# parser. Neither half can be derived from the other, so the table is spelled here
+# and both files are held to it — install.ps1 is not runnable from this suite on
+# any platform it runs on, so what it declares and what it forwards are read out
+# of the shipped file the way verify.sh's normalizer is above. The pairing is the
+# assertion that matters: a set alone reads identical whether -NoGitHook forwards
+# --no-git-hook or a copy-pasted --no-impeccable.
+INSTALL_PS1="$REPO_ROOT/bootstrap/install.ps1"
+expected_installer_flags="$(printf '%s\n' --yes --replace-claude-md --no-impeccable --no-git-hook |
+  LC_ALL=C sort | tr '\n' ' ')"
+parsed_installer_flags="$(awk '/^for arg in "\$@"; do$/,/^done$/' "$INSTALL_SH" |
+  sed -n 's/^[[:space:]]*\(--[a-z-]*\)).*/\1/p' | LC_ALL=C sort | tr '\n' ' ')"
+assert_equals "install.sh accepts exactly the four flags a Windows run has to be able to reach" \
+  "$expected_installer_flags" "$parsed_installer_flags"
+
+assert_equals "install.ps1 forwards each of its switches as its own flag" \
+  "$(printf '%s\n' Yes=--yes ReplaceClaudeMd=--replace-claude-md \
+      NoImpeccable=--no-impeccable NoGitHook=--no-git-hook | tr '\n' ' ')" \
+  "$(sed -n 's/^[[:space:]]*if (\$\([A-Za-z]*\)) { \$forwarded += .\(--[a-z-]*\). }$/\1=\2/p' \
+      "$INSTALL_PS1" | tr '\n' ' ')"
+
+# The two that stop at PowerShell are named here too, so the whole Windows flag
+# surface moves only on purpose: -CiMode is CI's boundary and
+# -SkipPrerequisiteCheck is the escape hatch for a machine whose tools the probes
+# cannot see, and neither means anything to install.sh.
+assert_equals "install.ps1 declares a switch for each forwarded flag, beside the two that stop there" \
+  "$(printf '%s\n' Yes ReplaceClaudeMd NoImpeccable NoGitHook SkipPrerequisiteCheck CiMode |
+      LC_ALL=C sort | tr '\n' ' ')" \
+  "$(sed -n 's/^[[:space:]]*\[switch\]\$\([A-Za-z]*\),*$/\1/p' "$INSTALL_PS1" |
+      LC_ALL=C sort | tr '\n' ' ')"
+
+# --- The collapsed splat, which a joined command line cannot show -------------
+# -CiMode is the only runner of Invoke-Installer anywhere, and it catches a
+# dropped or misspelled flag by recording the argv the delegation hands Git Bash,
+# one argument per line. The OTHER bug it exists for is a splat that collapses
+# those flags into one string — PowerShell 5.1 has cost this file exactly that
+# (88f0c1e), and install.sh answers it with `unknown flag` in front of the
+# operator. Joined on a plain space the collapsed form is byte-identical to the
+# correct command line, so that comparison shipped it green; joined on a mark no
+# argument can hold, the boundaries are part of what is compared.
+# Running that comparison needs PowerShell and a .cmd stub, so no platform this
+# suite runs on can execute it — ci.yml's windows-latest `-CiMode` step is what
+# exercises it, and this case is what keeps the property that step depends on
+# from being joined away again: the mark carries a pipe, which Windows forbids in
+# a path and no forwarded flag spells, and both sides of the comparison are
+# joined on it and on nothing else.
+delegation_check="$(sed -n '/^function Invoke-DelegationSmokeTest/,/^}/p' "$INSTALL_PS1")"
+argv_boundary="$(printf '%s\n' "$delegation_check" |
+  sed -n 's/^[[:space:]]*\$argvBoundary = .\(.*\).$/\1/p')"
+argv_boundary_kind=forgeable
+case "$argv_boundary" in
+  *'|'*) argv_boundary_kind=unforgeable ;;
+esac
+assert_equals "the delegation check joins both sides of its argv on a mark no argument can forge, so a collapsed splat cannot read as the correct command line" \
+  "unforgeable / -join \$argvBoundary" \
+  "$argv_boundary_kind / $(printf '%s\n' "$delegation_check" |
+    grep -oE -- '-join [^ )]+' | LC_ALL=C sort -u)"
+
 # --- The npx probe's bound: a hang may not take the whole report with it -------
 # verify.sh runs standalone via curl and defines its own helpers, so the bound is
 # READ OUT of the shipped file rather than reimplemented here — a rename or a move

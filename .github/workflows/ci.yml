@@ -146,6 +146,35 @@ jobs:
           bash -n plugin/hooks/*.sh
           bash -n plugin/bin/oso-state plugin/git-hooks/pre-commit
           bash -n tests/*.sh tests/fixtures/*.sh
+      # `bash -n` covers every shell script in the repo and no .ps1, so the one
+      # file a Windows operator actually starts from had no static check at all.
+      # It has shipped two parse bugs of exactly the kind this catches: a BOM-less
+      # file read as ANSI, where an em-dash byte parses as a curly quote
+      # (bb4356f), and a child command PowerShell 5.1 would not accept as written
+      # (88f0c1e). The language parser is what PowerShell reads a script with
+      # anyway and needs no module installed, so this stays as dependency-free as
+      # the `bash -n` steps above; `shell: powershell` is 5.1, which is the
+      # version whose reading of the file is the one that has been wrong.
+      - name: PowerShell script syntax
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          $path = (Resolve-Path .\bootstrap\install.ps1).Path
+          [void][System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Host "line $($_.Extent.StartLineNumber): $($_.Message)" }
+            exit 1
+          }
+          Write-Host "install.ps1 parses clean ($($tokens.Count) tokens)"
+      # Every forwardable flag, because forwarding is what this step asserts:
+      # -CiMode delegates through Invoke-Installer to a stub that records its
+      # argv, and with no flags passed there is nothing to get wrong. -Yes has a
+      # second job here — it is what keeps a winget install that fails on the
+      # runner from stopping at a consent prompt nobody is there to answer. The
+      # runner must carry the prerequisites install.ps1 now enforces (git, jq,
+      # Git Bash, Node at the floor); `claude` is the one it exempts in CI mode,
+      # since this job deliberately never installs it.
       - name: Bootstrapper (CI-safe mode)
         shell: powershell
-        run: .\bootstrap\install.ps1 -CiMode
+        run: .\bootstrap\install.ps1 -CiMode -Yes -ReplaceClaudeMd -NoImpeccable -NoGitHook
