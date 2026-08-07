@@ -72,15 +72,20 @@ mcp_connected() {
 }
 check "engram MCP connected"   "1" "$(mcp_connected 'engram')"
 check "context7 MCP connected" "1" "$(mcp_connected 'context7')"
-# fallow is the one OPTIONAL MCP, so it is reported and never counted: it needs
-# Rust to build, README requires Rust on no OS, install.ps1 provisions none, and
-# install.sh's own wiring records its absence without failing. A hard check here
-# would make the documented one-step Windows path red by construction.
-if [ "$(mcp_connected 'fallow')" = 1 ]; then
-  echo "note: fallow MCP connected (optional — the debt-sweep uses it on TS/JS projects)"
-else
-  echo "note: fallow MCP not connected (optional — the debt-sweep then runs rubric-only on TS/JS) — fix: cargo install fallow-mcp, then claude mcp add --scope user fallow -- fallow-mcp"
-fi
+# fallow was the one OPTIONAL MCP, reported on a `note:` this never counted,
+# because it built from Rust that no OS here requires and no entry point
+# provisions — so a hard check would have made the one-step Windows path red by
+# construction. install.sh now installs it from its npm package, at a pin, on
+# every supported host, so that bound is gone and this counts like its two
+# neighbours (D2). What it counts is the wired command RESOLVING AND ANSWERING:
+# `claude mcp list` spawns each server and reports whether it handshook, which
+# asks nothing of the network and so stays outside OSO_VERIFY_SKIP_SLOW.
+# The remediation is two commands because the client refuses to overwrite an entry
+# `claude mcp add` did not write: where this goes red over a stale command rather
+# than a missing entry, re-running the installer takes that same refusal and leaves
+# the entry exactly where it is — which would make this check unclearable.
+check "fallow MCP connected" "1" "$(mcp_connected 'fallow')" \
+  "bash bootstrap/install.sh installs the pinned fallow package from npm and wires a missing entry; an existing one it never touches, so repoint that with claude mcp remove fallow -s user && claude mcp add --scope user fallow -- the command that run names"
 
 # 3. Legacy gentle-ai artifacts fully removed. Read whole, so a manifest the loop
 #    cannot open reports its own reason instead of "0 still present".

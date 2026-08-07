@@ -6732,8 +6732,14 @@ assert_equals "an opt-out turns the impeccable plugin check into a note" \
   "note" "$(report_line_kind "$report_with_marker" 'impeccable plugin')"
 assert_equals "a cleared marker puts the hard impeccable check back — red in this fixture HOME" \
   "fail" "$(report_line_kind "$report_without_marker" 'impeccable plugin')"
-assert_equals "an absent fallow is reported as a note the tally never counts" \
-  "note" "$(report_line_kind "$report_without_marker" 'fallow MCP')"
+# This case is ADR-0066's own regression test, turned around rather than dropped:
+# it pinned fallow to a `note:` because fallow built from a Rust toolchain nothing
+# here provisions, so a hard check would have made the one-step Windows path red
+# by construction. install.sh installs the pinned npm package on every supported
+# host now, so the reason is gone and the reading flips — an absent fallow is a
+# broken install and the tally has to say so (D2).
+assert_equals "an absent fallow fails the run now that every host is provisioned with it" \
+  "fail" "$(report_line_kind "$report_without_marker" 'fallow MCP')"
 assert_equals "verify.sh exports the agent marker when probing the installed commit gate" \
   "ok" "$(report_line_kind "$report_without_marker" 'installed hook denies red commit (e2e)')"
 assert_equals "the report still reaches its summary" "reached" \
@@ -7020,6 +7026,128 @@ assert_equals "the prompt reads consent the way the PowerShell twin does, in any
   "$PER_USER_JQ_CALL
 $MACHINE_WIDE_JQ_CALL" "$(winget_provisioning false Yes)"
 rm -f "$WINGET_REFUSAL"
+
+# --- fallow: an npm pin that applies on every host, with no Rust anywhere ------
+# fallow used to need `cargo install fallow-mcp` and this repo provisions Rust on
+# no OS, which is the whole reason ADR-0066 made it a note verify.sh never counts.
+# Its npm package ships prebuilt Windows, Linux and macOS binaries, so the
+# toolchain wall is gone and the check is counted (D2) — and a counted check is
+# what makes both cases below matter: the provisioning has to be real on every
+# host, and the pin has to reach the machines that already have some fallow.
+# The stubs are npm and the client and the PATH holds nothing else: cargo absent
+# is half of what the first case asserts.
+# Spelled here rather than read out of install.sh, the way the state path and the
+# opt-out marker above are — a pin nobody asserts independently is a pin one edit
+# can quietly turn into `@latest`.
+EXPECTED_FALLOW_VERSION=3.14.0
+FALLOW_STUB_DIR="$TEST_HOME/fallow-stub"
+FALLOW_CALLS="$TEST_HOME/fallow-calls"
+FALLOW_VERDICT="$TEST_HOME/fallow-verdict"
+FALLOW_WIRED_ENTRY="$TEST_HOME/fallow-already-wired"
+FALLOW_FIXTURE_HOME="$TEST_HOME/fallow-home"
+mkdir -p "$FALLOW_STUB_DIR" "$FALLOW_FIXTURE_HOME"
+printf '#!/bin/sh\necho "npm $*" >> "%s"\nexit 0\n' "$FALLOW_CALLS" > "$FALLOW_STUB_DIR/npm"
+# The client an install meets on a machine that already has an entry: `mcp add`
+# refuses an existing one with exit 1 and a message that says "already", while
+# `mcp get` exits 0 for it whether or not the command behind it can be spawned —
+# so this stub answers the way the real client does, with the entry's own command
+# on a `  Command:` line among the other fields it prints. The entry fixture holds
+# that command; an empty one stands for a client that describes the entry without
+# naming a command at all.
+printf '%s\n' \
+  '#!/bin/sh' \
+  "echo \"claude \$*\" >> \"$FALLOW_CALLS\"" \
+  'case "$*" in' \
+  "  'mcp get fallow')" \
+  "    [ -f \"$FALLOW_WIRED_ENTRY\" ] || exit 1" \
+  "    wired=\"\$(cat \"$FALLOW_WIRED_ENTRY\")\"" \
+  '    echo "fallow:"' \
+  '    echo "  Scope: User config (available in all your projects)"' \
+  '    echo "  Type: stdio"' \
+  '    [ -z "$wired" ] || echo "  Command: $wired"' \
+  '    echo "  Args:"' \
+  '    ;;' \
+  "  'mcp add'*) if [ -f \"$FALLOW_WIRED_ENTRY\" ]; then" \
+  '                echo "already exists in user config" >&2; exit 1' \
+  '              fi ;;' \
+  'esac' \
+  'exit 0' > "$FALLOW_STUB_DIR/claude"
+chmod +x "$FALLOW_STUB_DIR/npm" "$FALLOW_STUB_DIR/claude"
+# The stub dir IS the PATH the wiring runs under, so the two text tools either side
+# of it needs are linked in: `cat` for the stub itself, `sed` for the read-back.
+# What the isolation is for is unchanged — no cargo, and no fallow-mcp.
+ln -sf "$(command -v cat)" "$FALLOW_STUB_DIR/cat"
+ln -sf "$(command -v sed)" "$FALLOW_STUB_DIR/sed"
+
+# One wiring, leaving behind every call it made in order and the verdict it
+# recorded — the two halves the cases below read separately. PATH is replaced AFTER
+# the source the way winget_provisioning does it: install.sh resolves its own
+# directory and stamps a backup name at source time, and neither `dirname` nor
+# `date` is in the stub dir. HOME is a fixture with no ~/.cargo and APPDATA is
+# emptied, so what the resolver answers is the bare name and not a fallow the
+# machine running this suite has.
+run_fallow_wiring() {
+  : > "$FALLOW_CALLS"
+  : > "$FALLOW_VERDICT"
+  bash -c '
+    installer="$1" stub_path="$2" fixture_home="$3" verdict="$4"
+    set --
+    . "$installer"
+    PATH="$stub_path"
+    HOME="$fixture_home"
+    APPDATA=""
+    wire_fallow
+    printf "%s\n" "${WIRING_SUMMARY[@]}" > "$verdict"
+  ' _ "$INSTALL_SH" "$FALLOW_STUB_DIR" "$FALLOW_FIXTURE_HOME" "$FALLOW_VERDICT" \
+    >/dev/null 2>&1 || true
+}
+
+fallow_wiring_calls() { run_fallow_wiring; cat "$FALLOW_CALLS"; }
+fallow_wiring_verdict() { run_fallow_wiring; cat "$FALLOW_VERDICT"; }
+
+rm -f "$FALLOW_WIRED_ENTRY"
+assert_equals "a host with no Rust gets fallow from its npm package at the pin, then wires it" \
+  "npm install --global fallow@$EXPECTED_FALLOW_VERSION
+claude mcp add --scope user fallow -- fallow-mcp" \
+  "$(fallow_wiring_calls)"
+
+# The other half of a pin: a run that returns "already wired" the moment any entry
+# exists never installs anything, so the pinned version only ever lands on a clean
+# machine — which is the one machine nobody can go and look at. What the pin governs
+# is the package; which command the entry names is the next three cases.
+printf '%s\n' fallow-mcp > "$FALLOW_WIRED_ENTRY"
+assert_equals "a fallow already wired still gets the pinned package, so the pin is not for clean machines only" \
+  "npm install --global fallow@$EXPECTED_FALLOW_VERSION
+claude mcp add --scope user fallow -- fallow-mcp
+claude mcp get fallow" \
+  "$(fallow_wiring_calls)"
+
+# What that `mcp get` is FOR, and it is not the exit code: the client returns 0 for
+# an entry whose command cannot be spawned, so an existence test reports every stale
+# entry as wired. verify.sh counts this entry connecting now, and `mcp add` refuses
+# to touch one it did not write — so "already wired" over a stale command is a red
+# no re-run of the installer can clear. The command is read back and compared.
+assert_equals "an entry already naming the resolved command is wired, and the verdict says which" \
+  "OK|fallow|already wired: fallow-mcp" "$(fallow_wiring_verdict)"
+
+# The Windows shape this whole change exists for: an earlier run wired the bare name
+# or the .ps1 beside it, neither of which a native Windows client can spawn. Both
+# commands belong in the report — an operator cannot repoint an entry they are not
+# told the target of — and the remedy has to be the two-step, because the installer
+# takes this same refusal every time it runs.
+printf '%s\n' 'C:/Users/dev/AppData/Roaming/npm/fallow-mcp.ps1' > "$FALLOW_WIRED_ENTRY"
+assert_equals "an entry naming a different command fails, with both commands and the two-step repoint" \
+  "FAILED|fallow|wired to C:/Users/dev/AppData/Roaming/npm/fallow-mcp.ps1, not the fallow-mcp this host resolves — no re-run of this installer can repoint it — fix: claude mcp remove fallow -s user && claude mcp add --scope user fallow -- fallow-mcp" \
+  "$(fallow_wiring_verdict)"
+
+# An entry the client describes without naming a command reads as nothing read back,
+# and the one safe reading of nothing is a problem — claiming success there is the
+# exact shape this case exists to keep out.
+: > "$FALLOW_WIRED_ENTRY"
+assert_equals "an entry whose command cannot be read back is a failure, never a silent ok" \
+  "FAILED|fallow|mcp add failed: already exists in user config — fix: claude mcp add --scope user fallow -- fallow-mcp" \
+  "$(fallow_wiring_verdict)"
+rm -f "$FALLOW_WIRED_ENTRY"
 
 # --- The flag surface: four flags, and the entry point that has to spell them --
 # install.sh makes an unknown flag a hard exit, and install.ps1 is the only way a
@@ -8006,14 +8134,64 @@ mkdir -p "$CODEX_CARGO_FALLOW_HOME/.cargo/bin" "$CODEX_NO_FALLOW_PATH"
 ln -s "$(command -v cat)" "$CODEX_NO_FALLOW_PATH/cat"
 printf '%s\n' '#!/bin/sh' 'exit 0' > "$CODEX_CARGO_FALLOW_HOME/.cargo/bin/fallow-mcp"
 chmod +x "$CODEX_CARGO_FALLOW_HOME/.cargo/bin/fallow-mcp"
+# APPDATA is pinned empty rather than assumed absent: CI runs this suite on
+# windows-latest, where it is always set, and the Windows probe that reads it comes
+# first — an ambient value there decides this case by what that runner happens to
+# have installed.
 cargo_fallow_config="$(
-  PATH="$CODEX_NO_FALLOW_PATH" render_codex_managed_config \
+  PATH="$CODEX_NO_FALLOW_PATH" APPDATA="" render_codex_managed_config \
     "$CODEX_CARGO_FALLOW_HOME" \
     "$CODEX_CARGO_FALLOW_HOME/.local/share/oso-code/runtime"
 )"
 assert_equals "Codex config resolves a Cargo-home fallow binary outside PATH" \
   "1" "$(printf '%s\n' "$cargo_fallow_config" |
     grep -Fxc "command = \"$CODEX_CARGO_FALLOW_HOME/.cargo/bin/fallow-mcp\"" || true)"
+
+# The spelling a Windows install produces now that fallow comes from npm (D2):
+# `npm install --global` drops fallow-mcp.cmd in %APPDATA%\npm beside a .ps1 and
+# an extensionless sh script, and the client that spawns this command is a native
+# Windows process which can run only the .cmd. Resolving the sh script instead
+# would wire an entry that never connects — and the check that reads it is counted
+# now, so that lands as a red run rather than as the note it used to be.
+CODEX_NPM_FALLOW_HOME="$TEST_HOME/codex-npm-fallow-home"
+CODEX_NPM_FALLOW_APPDATA="$CODEX_NPM_FALLOW_HOME/AppData/Roaming"
+mkdir -p "$CODEX_NPM_FALLOW_APPDATA/npm"
+printf '%s\n' '@echo off' > "$CODEX_NPM_FALLOW_APPDATA/npm/fallow-mcp.cmd"
+chmod +x "$CODEX_NPM_FALLOW_APPDATA/npm/fallow-mcp.cmd"
+npm_fallow_config="$(
+  PATH="$CODEX_NO_FALLOW_PATH" APPDATA="$CODEX_NPM_FALLOW_APPDATA" \
+    render_codex_managed_config "$CODEX_NPM_FALLOW_HOME" \
+      "$CODEX_NPM_FALLOW_HOME/.local/share/oso-code/runtime"
+)"
+assert_equals "the npm .cmd shim is the fallow command a Windows install resolves" \
+  "1" "$(printf '%s\n' "$npm_fallow_config" |
+    grep -Fxc "command = \"$CODEX_NPM_FALLOW_APPDATA/npm/fallow-mcp.cmd\"" || true)"
+
+# %APPDATA%\npm is only npm's DEFAULT global prefix. An operator who set their own
+# `prefix` has the shims somewhere else entirely, and looking under the default
+# there finds nothing and drops through to the extensionless sh script the case
+# above exists to skip — so npm names the prefix whenever npm is there to ask.
+# APPDATA points at the fixture that DOES hold a .cmd, which is what makes this an
+# assertion about the source and not about which paths happen to exist.
+CODEX_NPM_PREFIX_HOME="$TEST_HOME/codex-npm-prefix-home"
+CODEX_NPM_PREFIX_DIR="$CODEX_NPM_PREFIX_HOME/opt/npm-global"
+CODEX_NPM_PREFIX_PATH="$TEST_HOME/npm-prefix-stub"
+mkdir -p "$CODEX_NPM_PREFIX_DIR" "$CODEX_NPM_PREFIX_PATH"
+printf '%s\n' '#!/bin/sh' \
+  "[ \"\$*\" = 'prefix -g' ] || exit 1" \
+  "echo '$CODEX_NPM_PREFIX_DIR'" > "$CODEX_NPM_PREFIX_PATH/npm"
+chmod +x "$CODEX_NPM_PREFIX_PATH/npm"
+printf '%s\n' '@echo off' > "$CODEX_NPM_PREFIX_DIR/fallow-mcp.cmd"
+chmod +x "$CODEX_NPM_PREFIX_DIR/fallow-mcp.cmd"
+npm_prefix_config="$(
+  PATH="$CODEX_NPM_PREFIX_PATH:$CODEX_NO_FALLOW_PATH" \
+    APPDATA="$CODEX_NPM_FALLOW_APPDATA" \
+    render_codex_managed_config "$CODEX_NPM_PREFIX_HOME" \
+      "$CODEX_NPM_PREFIX_HOME/.local/share/oso-code/runtime"
+)"
+assert_equals "a custom npm prefix is where the Windows shim is looked for, not the default one" \
+  "1" "$(printf '%s\n' "$npm_prefix_config" |
+    grep -Fxc "command = \"$CODEX_NPM_PREFIX_DIR/fallow-mcp.cmd\"" || true)"
 
 CODEX_DECLINE_HOME="$TEST_HOME/codex-decline-home"
 printf '0.146.0\n' > "$CODEX_INSTALL_VERSION"

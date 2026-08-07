@@ -81,12 +81,37 @@ command = $fallow_command
 EOF
 }
 
+# Which spelling of the fallow MCP binary a CLIENT can launch — not which one a
+# shell can. Both installers ask it: the renderer above writes the command Codex
+# spawns, and bootstrap/install.sh wires the one Claude Code spawns, so a second
+# copy of this would answer the same question differently the day either side
+# learns a new install location.
 resolve_fallow_mcp_command() {
   [ "$#" -eq 1 ] || {
     printf 'resolve_fallow_mcp_command requires HOME\n' >&2
     return 2
   }
-  local target_home=$1 resolved
+  local target_home=$1 resolved appdata npm_prefix=""
+  # Windows first, and only because of what a PATH search would answer instead:
+  # `npm install --global fallow` drops THREE shims in npm's global prefix — the
+  # .cmd, a .ps1, and an extensionless sh script for Git Bash. That last one is the
+  # one `command -v` finds, and the client spawning this command is a native Windows
+  # process that cannot execute it. %APPDATA%\npm is only npm's DEFAULT prefix, so
+  # npm names its own: an operator who set `prefix` has the .cmd somewhere else
+  # entirely and would otherwise fall through to the sh shim this probe exists to
+  # skip. Either spelling comes back in Windows form, which `[ -x ]` reads more
+  # reliably with forward slashes. %APPDATA% is also the gate — no Windows, no .cmd,
+  # and no reason to spawn npm at all.
+  appdata="${APPDATA:-}"
+  if [ -n "$appdata" ]; then
+    npm_prefix="$(npm prefix -g 2>/dev/null || true)"
+    [ -n "$npm_prefix" ] || npm_prefix="$appdata/npm"
+    npm_prefix="${npm_prefix//\\//}"
+  fi
+  if [ -n "$npm_prefix" ] && [ -x "$npm_prefix/fallow-mcp.cmd" ]; then
+    printf '%s\n' "$npm_prefix/fallow-mcp.cmd"
+    return 0
+  fi
   if resolved="$(command -v fallow-mcp 2>/dev/null)" && [ -n "$resolved" ]; then
     printf '%s\n' "$resolved"
     return 0

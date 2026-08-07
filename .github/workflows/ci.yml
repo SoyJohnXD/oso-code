@@ -28,12 +28,13 @@ jobs:
       # fail legitimately — no authenticated CLI (this step runs before the CLI is
       # even installed), no MCPs, no ~/.claude — so the script exits 1 by design;
       # `failed: 0` is therefore unreachable here (measured: today's fixture reads
-      # `passed: 2, failed: 8`), but two checks owe nothing to that missing
-      # install and pass here every run — legacy artifacts removed, no CR bytes
-      # shipped — so pinning `failed` at 8 gives the assertion real signal:
-      # either one breaking moves the number and turns this step red, which
-      # `grep -q` alone cannot do, since a fixture that already fails 8 checks
-      # reads identical whether it fails 8 or 9. A substitution that dies under
+      # `passed: 2, failed: 9` — 8 until fallow stopped being a `note:` and
+      # joined the tally as a counted check, D2), but two checks owe nothing to
+      # that missing install and pass here every run — legacy artifacts removed,
+      # no CR bytes shipped — so pinning `failed` at 9 gives the assertion real
+      # signal: either one breaking moves the number and turns this step red,
+      # which `grep -q` alone cannot do, since a fixture that already fails 9
+      # checks reads identical whether it fails 9 or 10. A substitution that dies under
       # `set -euo pipefail` still emits no `passed:` line at all, which is the
       # class the plain grep already guarded and still does, first. Bump the
       # pinned number only when a check legitimately joins or leaves this set —
@@ -49,7 +50,7 @@ jobs:
           cat "$report"
           grep -q '^passed:' "$report"
           failed="$(sed -n 's/^passed: [0-9]*, failed: \([0-9]*\)$/\1/p' "$report")"
-          [ "$failed" = "8" ]
+          [ "$failed" = "9" ]
       # Same shape as the step above, with one real difference: this job never
       # installs the codex CLI, so almost every local check here needs an
       # install that never happened and fails for that reason alone — measured,

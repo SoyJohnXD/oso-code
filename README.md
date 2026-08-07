@@ -40,14 +40,23 @@ Prerequisites per OS — the bootstrap checks and guides you, but know what you 
 | macOS | git, Claude Code, Node.js | jq auto-installs via Homebrew |
 | Windows | nothing pre-installed — just double-click `bootstrap\install.bat` | it provisions Git for Windows, Node.js, and jq via winget — Claude Code through its own official installer — then runs the installer under Git Bash |
 
-Optional on every OS: Rust (`cargo`) for the fallow analyzer — without it the debt-sweep runs rubric-only on TS/JS projects. Optional at both ends: the installer records a missing fallow in its wiring summary and carries on, and `verify.sh` reports it as a `note:` line that never counts against the run.
+No OS needs a Rust toolchain: the installer provisions the fallow analyzer itself on Linux, macOS and Windows from its npm package, pinned to `3.14.0`, which ships prebuilt binaries for all three. The only prerequisite that costs is Node.js, already in the table above — and `verify.sh` counts fallow as a check like the other MCPs rather than reporting it.
 
 ```bash
 bash bootstrap/install.sh     # prerequisites, MCPs, plugins, legacy cleanup (asks before anything destructive)
 bash bootstrap/verify.sh      # measurable post-install E2E — every check ok:, ending on failed: 0
 ```
 
-`verify.sh` prints one line per check, `ok:` or `FAIL:`, and closes with `passed: N, failed: M` — the run is green when `failed: 0`, which is also its exit status. A `note:` line is not a check and moves neither number: notes are where the optional pieces and your own choices get reported (the optional fallow MCP, connected or not; an `--no-impeccable` opt-out; no jq to read the install record; a repo whose `core.hooksPath` belongs to another tool; and, off Windows, the home dir the Windows client reads, since there is no `%USERPROFILE%` there to disagree with `$HOME`). So a green run is every `ok:` plus whatever notes describe your machine.
+`verify.sh` prints one line per check, `ok:` or `FAIL:`, and closes with `passed: N, failed: M` — the run is green when `failed: 0`, which is also its exit status. A `note:` line is not a check and moves neither number: notes are where the optional pieces and your own choices get reported (an `--no-impeccable` opt-out; no jq to read the install record; a repo whose `core.hooksPath` belongs to another tool; and, off Windows, the home dir the Windows client reads, since there is no `%USERPROFILE%` there to disagree with `$HOME`). So a green run is every `ok:` plus whatever notes describe your machine.
+
+Installing fallow by hand, if you ever need to — `bash bootstrap/install.sh` runs both steps for you:
+
+```bash
+npm install --global fallow@3.14.0
+claude mcp add --scope user fallow -- fallow-mcp
+```
+
+On Windows, point that second command at the shim npm actually writes, `%APPDATA%\npm\fallow-mcp.cmd`: the extensionless file beside it is a shell script for Git Bash, and the Claude Code client is a native Windows process that cannot spawn it. Building the server yourself with `cargo install fallow-mcp` still works as an alternative; nothing here requires it.
 
 The installer also installs the Impeccable plugin (the design bar) by default — pass `--no-impeccable` (`-NoImpeccable` on `install.ps1`) to skip it. That choice is recorded as a marker file the installer writes and clears, and `verify.sh` reads it: the plugin check becomes a `note:` naming the opt-out instead of running, so the verification still ends at `failed: 0`. Its second impeccable check stays green either way: `npx` fetches the CLI from the public registry rather than from the plugin install. That check runs the unpinned name, so it answers whether `npx` can fetch and run impeccable at all — not whether the version the `detect` gate pins resolves.
 

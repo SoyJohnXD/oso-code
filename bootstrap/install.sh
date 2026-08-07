@@ -40,6 +40,17 @@ if [ -f "$BACKUP_LIB" ]; then
   . "$BACKUP_LIB"
 fi
 
+# resolve_fallow_mcp_command, for the same reason and on the same terms: fallow
+# now arrives as an npm package whose Windows shim is a .cmd no POSIX PATH search
+# finds, and the Codex renderer already had to answer which spelling a client can
+# spawn. Sourced beside this script and never fatal without it — the curl shape
+# has no bootstrap/lib to source, and wire_fallow falls back there to the bare
+# name PATH resolves everywhere except Windows.
+FALLOW_COMMAND_LIB="$SCRIPT_DIR/lib/codex-managed-config.sh"
+if [ -f "$FALLOW_COMMAND_LIB" ]; then
+  . "$FALLOW_COMMAND_LIB"
+fi
+
 # Context budget for the global CLAUDE.md: 8000 bytes ≈ 2k tokens.
 # Keep this identical to CLAUDE_MD_BUDGET_BYTES in bootstrap/verify.sh — the
 # two scripts run standalone via curl and cannot source a shared file.
@@ -82,10 +93,10 @@ wiring_fail() { WIRING_SUMMARY+=("FAILED|$1|$2"); }
 run_wiring() {
   # Run a wiring command without aborting; on failure echo its output so the
   # caller can record the reason. Idempotence is the command's own exit code and
-  # never its prose: `claude plugin install` and `cargo install` both exit 0 on an
-  # already-installed package, while `cargo install` exits 101 when a binary it
-  # does not track already sits in the destination — a hard failure whose message
-  # also says "already".
+  # never its prose: `claude plugin install` and `npm install --global` both exit
+  # 0 on a package that is already installed, while "already" in a message is no
+  # verdict at all — `claude mcp add` says exactly that on the exit 1 that means
+  # it refused to touch an entry someone else put there.
   local output
   if output="$("$@" 2>&1)"; then
     return 0
@@ -231,7 +242,7 @@ winget_install_per_user() {
 # Every mutation main() makes, walked in its own order against whether a copy of
 # what it replaces exists first — which is what this function closes for phases
 # 2 to 5, where the gaps were:
-#   1/7  jq, Node.js and fallow-mcp package installs — additive, nothing replaced.
+#   1/7  jq, Node.js and the fallow npm package — additive, nothing replaced.
 #   2/7  `claude mcp add` and `claude plugin marketplace add` / `plugin install`
 #        write all three config locations below, and a `marketplace add` against
 #        a name already registered can repoint it — which is the very thing
@@ -300,37 +311,68 @@ wire_engram() {
   fi
 }
 
+# The fallow version this repo has verified, pinned the way install-codex.sh pins
+# the Codex CLI and Impeccable — a version, never `@latest`. `fallow` is the
+# package; `fallow-mcp` is one of the bins it ships and is no package name at all.
+# It ships prebuilt binaries for Windows, Linux and macOS, which is what took the
+# Rust toolchain out of this path and let verify.sh count fallow (D2).
+SUPPORTED_FALLOW_VERSION=3.14.0
+
 wire_fallow() {
-  # fallow: TS/JS codebase analysis, used by the debt-sweep phase
-  if fallow_is_wired; then
-    wiring_ok fallow "already wired"
+  # fallow: TS/JS codebase analysis, used by the debt-sweep phase.
+  local err wired_command fix="npm install --global fallow@$SUPPORTED_FALLOW_VERSION, then claude mcp add --scope user fallow -- fallow-mcp"
+  if ! command -v npm >/dev/null; then
+    wiring_fail fallow "no npm to install the fallow package with — fix: install Node.js 22 or newer, then $fix"
     return 0
   fi
-  local err fix="cargo install fallow-mcp, then claude mcp add --scope user fallow -- fallow-mcp"
-  if ! command -v fallow-mcp >/dev/null; then
-    if ! command -v cargo >/dev/null; then
-      wiring_fail fallow "no fallow-mcp binary and no cargo to build it — fix: install Rust, then $fix"
-      return 0
-    fi
-    info "installing fallow-mcp via cargo (this can take a few minutes)"
-    if ! err="$(run_wiring cargo install fallow-mcp)"; then
-      wiring_fail fallow "cargo install fallow-mcp failed: $err — fix: $fix"
-      return 0
-    fi
+  # Installed on every run, wired or not. Skipping this wherever an entry already
+  # exists is how the pin came to apply on clean machines only — which are exactly
+  # the machines nobody can go and look at — and an entry says nothing about which
+  # version the binary behind it is.
+  info "installing fallow@$SUPPORTED_FALLOW_VERSION from npm"
+  if ! err="$(run_wiring npm install --global "fallow@$SUPPORTED_FALLOW_VERSION")"; then
+    wiring_fail fallow "could not install fallow@$SUPPORTED_FALLOW_VERSION: $err — a fallow already wired here keeps working, at whatever version it is — fix: $fix"
+    return 0
   fi
-  # `claude mcp add` is the one wiring step that reports an existing entry as a
-  # failure (exit 1, "already exists in user config"), which the health check at
-  # the top of this function only misses when it could not run at all.
-  if err="$(run_wiring claude mcp add --scope user fallow -- fallow-mcp)"; then
-    wiring_ok fallow "wired (user scope)"
-  elif fallow_is_wired; then
-    wiring_ok fallow "already wired"
+  # The bare name is what PATH resolves everywhere but Windows, where the npm shim
+  # is a .cmd the client has to be pointed at; the shared resolver knows both, and
+  # is simply absent from the curl shape that has no bootstrap/lib beside it.
+  local fallow_command=fallow-mcp
+  if command -v resolve_fallow_mcp_command >/dev/null 2>&1; then
+    fallow_command="$(resolve_fallow_mcp_command "$HOME")" || fallow_command=fallow-mcp
+  fi
+  # `claude mcp add` is the one wiring step that refuses an entry someone else put
+  # there (exit 1, "already exists in user config") and leaves it untouched, so on
+  # that refusal the question is not whether an entry exists but whether the one
+  # that does points at the command resolved above. verify.sh counts that entry
+  # connecting, and reporting a stale one as wired would make its check a red no
+  # re-run of this installer could ever clear.
+  if err="$(run_wiring claude mcp add --scope user fallow -- "$fallow_command")"; then
+    wiring_ok fallow "wired (user scope): $fallow_command"
+    return 0
+  fi
+  wired_command="$(fallow_wired_command)"
+  if [ "$wired_command" = "$fallow_command" ]; then
+    wiring_ok fallow "already wired: $fallow_command"
+  elif [ -n "$wired_command" ]; then
+    wiring_fail fallow "wired to $wired_command, not the $fallow_command this host resolves — no re-run of this installer can repoint it — fix: claude mcp remove fallow -s user && claude mcp add --scope user fallow -- $fallow_command"
   else
-    wiring_fail fallow "mcp add failed: $err — fix: claude mcp add --scope user fallow -- fallow-mcp"
+    wiring_fail fallow "mcp add failed: $err — fix: claude mcp add --scope user fallow -- $fallow_command"
   fi
 }
 
-fallow_is_wired() { claude mcp get fallow >/dev/null 2>&1; }
+# The command the wired entry holds, empty when none can be read. `claude mcp get`
+# exits 0 on an entry whose command cannot be spawned, so its exit code answers
+# existence and never correctness — only the Command line it prints tells a stale
+# entry from a live one. Matched loosely because the client's spacing is its own
+# business, and a line that never arrives comes back empty, which the caller reads
+# as a problem rather than as agreement.
+fallow_wired_command() {
+  local entry
+  entry="$(claude mcp get fallow 2>/dev/null || true)"
+  printf '%s\n' "$entry" |
+    sed -n -e 's/[[:space:]]*$//' -e 's/^[[:space:]]*Command:[[:space:]]*//p'
+}
 
 # Whether the operator opted out is DATA verify.sh reads, never a flag it can see:
 # while its impeccable check is hard, an install that skipped the plugin on purpose
@@ -735,7 +777,7 @@ prune_install_backups() {
 report_backup_coverage() {
   info "backup: $BACKUP_DIR"
   info "  it holds what this run replaced, as it stood before the run started — Claude Code's user config and plugin registrations, settings.json, CLAUDE.md, and every legacy artifact removed. Copy one back by hand to undo it; there is no restore command on this side."
-  info "  it does not undo: packages installed (jq, Node.js, fallow-mcp); the plugin and marketplace CONTENT the client downloaded, since only the registration files are copied; and core.hooksPath, which this wires per repo and only where nothing else owned it — clear it with: git -C $REPO_ROOT config --unset core.hooksPath"
+  info "  it does not undo: packages installed (jq, Node.js, fallow); the plugin and marketplace CONTENT the client downloaded, since only the registration files are copied; and core.hooksPath, which this wires per repo and only where nothing else owned it — clear it with: git -C $REPO_ROOT config --unset core.hooksPath"
   info "  releases before this one wrote their backups to ~/.local/state/oso-code/backup-* instead, outside this root: nothing here lists or prunes those, so remove them yourself once you no longer want them"
 }
 
