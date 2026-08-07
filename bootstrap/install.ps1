@@ -440,6 +440,20 @@ function Invoke-Installer {
     # hands them over.
     $env:HOME = $env:USERPROFILE -replace '\\', '/'
 
+    # The Git Bash this run found, handed to install.sh to publish as
+    # env.CLAUDE_CODE_GIT_BASH_PATH in settings.json - what Claude Code spawns
+    # every one of this plugin's .sh hooks through when it cannot locate Git Bash
+    # by itself. Discovered HERE (Find-GitBash already had to answer it) and
+    # WRITTEN there, never from PowerShell: 5.1's ConvertFrom-Json |
+    # ConvertTo-Json defaults to -Depth 2 and flattens everything deeper, and
+    # settings.json holds nested hook arrays - a whole-file rewrite from this side
+    # would make the least-tested half of this bootstrap silently destructive.
+    # It travels as the child's environment, the same one-assignment idiom
+    # $env:HOME above uses, rather than as a flag: Get-ForwardedFlags below is the
+    # argv the CI delegation smoke test compares element for element, and a value
+    # that differs on every machine has no place in that comparison.
+    $env:CLAUDE_CODE_GIT_BASH_PATH = $BashExe
+
     Write-Info "delegating to install.sh under Git Bash ($BashExe)"
     & $BashExe $installSh @forwarded
 }

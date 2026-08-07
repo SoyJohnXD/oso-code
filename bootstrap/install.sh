@@ -137,6 +137,9 @@ confirm_plan() {
   else
     info "  - skip the git pre-commit gate (--no-git-hook)"
   fi
+  # Named here because one half of it is the only operator value this installer
+  # writes over, and consent to that belongs in the plan the operator answers.
+  info "  - publish OSO_STATE_BIN into ~/.claude/settings.json so every skill reaches oso-state by path, and on Windows the Git Bash path the client spawns the hooks through — replacing a stored one only where it no longer resolves (backed up first)"
   info "  - remove $artifact_count legacy gentle-ai artifacts from ~/.claude (backed up first)"
   info "  - clean legacy hook entries from settings.json (backed up first)"
   if [ "$REPLACE_CLAUDE_MD" = true ]; then
@@ -245,30 +248,35 @@ winget_install_per_user() {
 
 # Every mutation main() makes, walked in its own order against whether a copy of
 # what it replaces exists first — which is what this function closes for phases
-# 2 to 5, where the gaps were:
-#   1/7  jq, Node.js and the fallow npm package — additive, nothing replaced.
-#   2/7  `claude mcp add` and `claude plugin marketplace add` / `plugin install`
+# 2 to 6, where the gaps were:
+#   1/8  jq, Node.js and the fallow npm package — additive, nothing replaced.
+#   2/8  `claude mcp add` and `claude plugin marketplace add` / `plugin install`
 #        write all three config locations below, and a `marketplace add` against
 #        a name already registered can repoint it — which is the very thing
 #        ensure_marketplace_source stops to ask the operator about, in
 #        settings.json's extraKnownMarketplaces as much as in the registration
 #        file beside it.
-#   3/7  migrate_context7 runs `claude mcp remove --scope user context7`
+#   3/8  migrate_context7 runs `claude mcp remove --scope user context7`
 #        unconditionally, before anything has confirmed the plugin-shipped
 #        replacement registered: the one outright DELETE this installer performs
 #        on state it did not create, and the reason the copy cannot wait.
 #        install_plugin's own marketplace add and plugin install write
 #        settings.json again on the way there.
-#   4/7  core.hooksPath is deliberately NOT copied — see wire_git_commit_hook.
-#   5/7  wire_impeccable's plugin install writes settings.json a third time, and
+#   4/8  publish_client_environment writes settings.json itself, adding two keys
+#        to its `env` block — and one of them, CLAUDE_CODE_GIT_BASH_PATH, is the
+#        only operator value this installer ever writes over. It does that only
+#        where the stored one no longer resolves (D10), so the pre-image taken
+#        here is what holds the value that was replaced.
+#   5/8  core.hooksPath is deliberately NOT copied — see wire_git_commit_hook.
+#   6/8  wire_impeccable's plugin install writes settings.json a fourth time, and
 #        an enabledPlugins entry the operator set to false is what it flips back
 #        to true. The opt-out marker beside it is this installer's own one-line
 #        record, rewritten by design; operator state it is not.
-#   6/7 and 7/7  legacy artifacts and CLAUDE.md are copied by the function that
+#   7/8 and 8/8  legacy artifacts and CLAUDE.md are copied by the function that
 #        changes them, and nothing earlier in the run touches either.
 #        settings.json is the exception this function exists to cover: by the
 #        time remove_legacy_settings_entries and ensure_output_style rewrite it,
-#        three earlier phases have already written it, so the copy taken here is
+#        four earlier phases have already written it, so the copy taken here is
 #        the only one that can still hold what the operator brought — and, so a
 #        recovery cannot pick the wrong one, the only one taken at all.
 # User-scope MCP servers live in ~/.claude.json, the client keeps its plugin and
@@ -912,6 +920,173 @@ plugin_context7_entry() {
   claude mcp list 2>/dev/null | grep -F context7 | grep -F 'plugin:' | head -1 || true
 }
 
+# The two values Claude Code has to carry for anything here to work, written where
+# the client reads them at the start of every session: the `env` block of its own
+# settings.json (D9, D10). Neither rides a PATH any more. The plugin's bin
+# directory reaches the Bash tool through an injection the client documents
+# nowhere and that has already failed on Windows, and a skill whose
+# "${OSO_STATE_BIN:-oso-state}" fell through to the bare name found nothing there
+# — every plan capture on that host blocked on a sentence that named no cause.
+# settings.json is read the same way by the CLI and by Claude Desktop, so one
+# write covers both surfaces.
+publish_client_environment() {
+  publish_state_bin_path
+  publish_git_bash_path
+}
+
+# OSO_STATE_BIN, absolute: what makes the skills' and hooks' oso-state a path
+# instead of a name. Every failure here is recorded and never fatal, the way the
+# wiring phases before it are.
+publish_state_bin_path() {
+  local state_bin failure
+  state_bin="$(installed_oso_state_path)"
+  if [ -z "$state_bin" ]; then
+    wiring_fail "oso-state path" "the client records no installed oso-code plugin carrying a runnable bin/oso-state, so there is no absolute path to publish and every skill falls back to a bare \`oso-state\` on PATH — which resolves to nothing on Windows — fix: claude plugin install oso-code@oso-code, restart Claude Code, then re-run this installer"
+    return 0
+  fi
+  if failure="$(store_client_env OSO_STATE_BIN "$state_bin")"; then
+    wiring_ok "oso-state path" "every session reads OSO_STATE_BIN=$state_bin"
+  else
+    wiring_fail "oso-state path" "$failure — fix: add \"env\": { \"OSO_STATE_BIN\": \"$state_bin\" } to $CLAUDE_DIR/settings.json by hand, then restart Claude Code"
+  fi
+}
+
+# The oso-state a session actually runs: the bin of the plugin version the client
+# records as installed, which the phase before this one has just installed or
+# updated. Never this clone's own copy — an operator is free to move or delete
+# that, and a `curl | bash` run has none — and never a version directory guessed
+# out of the cache: an empty answer is reported by the caller, because a path
+# published from a guess is exactly the silent degradation this phase exists to
+# end.
+installed_oso_state_path() {
+  local install_root state_bin
+  install_root="$(jq -r '.plugins["oso-code@oso-code"][0].installPath // empty' \
+    "$CLAUDE_DIR/plugins/installed_plugins.json" 2>/dev/null || true)"
+  [ -n "$install_root" ] || return 0
+  state_bin="$install_root/bin/oso-state"
+  if running_on_windows; then
+    # claude.exe records installPath in its own native spelling (C:\Users\…), and
+    # what lands in settings.json has to be readable by this shell AND by a native
+    # process — the drive-letter form with forward slashes is the one spelling
+    # that is both, and the one MSYS form (/c/Users/…) is not.
+    state_bin="$(cygpath -m "$state_bin" 2>/dev/null || printf '%s' "$state_bin")"
+  fi
+  [ -x "$(shell_spelling_of "$state_bin")" ] || return 0
+  printf '%s' "$state_bin"
+}
+
+# CLAUDE_CODE_GIT_BASH_PATH: what the client spawns every one of this plugin's
+# hooks through where it cannot find Git Bash on its own — all five entries of
+# plugin/hooks/hooks.json are .sh files, so a Windows machine without it loses
+# every gate at once. Only ever
+# written where there is something to write: a stored value that still resolves is
+# the operator's and is left exactly as they set it, and one that no longer
+# resolves is REPAIRED — a Git reinstalled, moved from Scoop to the official
+# package or landed on another drive otherwise leaves the client spawning a
+# bash.exe that is gone, permanently and invisibly (D10).
+# The path is discovered by bootstrap/install.ps1, which hands it over in this
+# same variable. The write is on this side because PowerShell 5.1's
+# ConvertFrom-Json | ConvertTo-Json defaults to -Depth 2 and flattens everything
+# deeper, and settings.json holds nested hook arrays: a whole-file rewrite from
+# there would make the least-tested half of this bootstrap silently destructive.
+publish_git_bash_path() {
+  local stored candidate="${CLAUDE_CODE_GIT_BASH_PATH:-}" outcome failure
+  # The key means nothing off Windows, and publishing it there would put a dead
+  # variable into every session the client starts.
+  running_on_windows || return 0
+  stored="$(client_env_value CLAUDE_CODE_GIT_BASH_PATH)"
+  if git_bash_resolves "$stored"; then
+    wiring_ok "Git Bash path" "left as you set it: $stored"
+    return 0
+  fi
+  if ! git_bash_resolves "$candidate"; then
+    # Nothing stored and nothing handed over is the ordinary shape of a run
+    # started from Git Bash rather than from install.ps1: the client looks for Git
+    # Bash itself and usually finds it, so there is nothing to report and
+    # verify.sh says as much on a note. A stored path that no longer resolves is a
+    # different machine entirely, and nothing in this run can put it back.
+    if [ -n "$stored" ]; then
+      wiring_fail "Git Bash path" "settings.json points CLAUDE_CODE_GIT_BASH_PATH at $stored, which is not there any more, and this run was handed no Git Bash to repair it with — the client spawns every oso-code hook through that path, so the gates are off until it resolves — fix: re-run from PowerShell via bootstrap\\install.ps1, which finds Git Bash and hands it to this script, or set the key yourself to the bash.exe you have (typically C:\\Program Files\\Git\\bin\\bash.exe)"
+    fi
+    return 0
+  fi
+  outcome=published
+  [ -z "$stored" ] || outcome="repaired from $stored"
+  if failure="$(store_client_env CLAUDE_CODE_GIT_BASH_PATH "$candidate")"; then
+    wiring_ok "Git Bash path" "$outcome: $candidate"
+  else
+    wiring_fail "Git Bash path" "$failure — fix: add \"env\": { \"CLAUDE_CODE_GIT_BASH_PATH\": \"$candidate\" } to $CLAUDE_DIR/settings.json by hand, then restart Claude Code"
+  fi
+}
+
+# Whether a path stored for a native Windows consumer still names a file here.
+# Keep this identical to git_bash_resolves in bootstrap/verify.sh — the two
+# scripts run standalone via curl and cannot source a shared file.
+git_bash_resolves() {
+  [ -n "$1" ] && [ -f "$(shell_spelling_of "$1")" ]
+}
+
+# A path written for a native Windows process, in the spelling THIS shell can
+# stat: settings.json holds C:\… from an operator and C:/… from this script, and
+# cygpath is what turns either — and a POSIX path, unchanged — into something a
+# file test can read. Off Windows there is one spelling and the path comes back as
+# it went in.
+# Keep this identical to shell_spelling_of in bootstrap/verify.sh — the two
+# scripts run standalone via curl and cannot source a shared file.
+shell_spelling_of() {
+  if running_on_windows; then
+    cygpath -u "$1" 2>/dev/null || printf '%s' "$1"
+  else
+    printf '%s' "$1"
+  fi
+}
+
+# Prints nothing when $1 reads back out of the client's env block as $2; on any
+# failure prints the reason for the summary and returns 1, the shape
+# install_pinned_engram above reports through. jq rather than a hand-rolled
+# rewrite because settings.json is the operator's file and this script already
+# edits it that way — and because jq creates `.env` on assignment, so one
+# expression covers a file that has the block and one that does not.
+# The read-back is not ceremony: a write nobody read back is how a summary comes
+# to report a health nothing measured, which is the class this whole change closes.
+store_client_env() {
+  local key="$1" value="$2" settings="$CLAUDE_DIR/settings.json" failure
+  if ! mkdir -p "$CLAUDE_DIR" 2>/dev/null; then
+    printf 'could not create %s' "$CLAUDE_DIR"
+    return 1
+  fi
+  if [ ! -f "$settings" ] && ! printf '{}\n' > "$settings" 2>/dev/null; then
+    printf 'could not create %s' "$settings"
+    return 1
+  fi
+  if ! failure="$(jq --arg key "$key" --arg value "$value" '.env[$key] = $value' \
+    "$settings" 2>&1 >"${settings}.tmp")"; then
+    # The rewrite lands in the .tmp beside it first, so a jq that refuses the file
+    # — an operator's settings.json carrying a stray comma — leaves that file
+    # exactly as it was rather than truncated to nothing.
+    rm -f "${settings}.tmp"
+    printf 'jq could not write %s into %s: %s' "$key" "$settings" "${failure//$'\n'/ }"
+    return 1
+  fi
+  if ! failure="$(mv "${settings}.tmp" "$settings" 2>&1)"; then
+    rm -f "${settings}.tmp"
+    printf 'could not put the rewritten %s back: %s' "$settings" "${failure//$'\n'/ }"
+    return 1
+  fi
+  if [ "$(client_env_value "$key")" != "$value" ]; then
+    printf '%s was written into %s and did not read back as %s' "$key" "$settings" "$value"
+    return 1
+  fi
+}
+
+# What the client will hand every session for one key of its settings.json `env`
+# block, empty when the file, the block, the key or jq itself is not there.
+# Keep this identical to client_env_value in bootstrap/verify.sh — the two scripts
+# run standalone via curl and cannot source a shared file.
+client_env_value() {
+  jq -r --arg key "$1" '.env[$key] // empty' "$CLAUDE_DIR/settings.json" 2>/dev/null || true
+}
+
 # The shipped git hook, next to the lib it reads session state with. core.hooksPath
 # names its directory, so both copies work: this clone, and the plugin cache a
 # marketplace install unpacks.
@@ -1040,8 +1215,9 @@ remove_legacy_artifacts() {
 }
 
 # No copy here, and none in ensure_output_style below: backup_client_config took
-# the pre-image in phase 2, before the client wrote this file three times, and a
-# copy taken now would hold the run's own work under the same name.
+# the pre-image in phase 2, before the client wrote this file three times and
+# publish_client_environment added its env block to it, and a copy taken now would
+# hold the run's own work under the same name.
 remove_legacy_settings_entries() {
   local settings="$CLAUDE_DIR/settings.json"
   [ -f "$settings" ] || return 0
@@ -1171,31 +1347,35 @@ report_backup_coverage() {
 
 main() {
   confirm_plan
-  info "1/7 prerequisites"
+  info "1/8 prerequisites"
   ensure_prerequisites
   ensure_node
-  info "2/7 MCP wiring"
+  info "2/8 MCP wiring"
   backup_client_config
   wire_mcps
-  info "3/7 oso-code plugin"
+  info "3/8 oso-code plugin"
   install_plugin
-  info "4/7 git commit hook"
+  # After the plugin, never before: the path published here is the installed
+  # plugin's own bin/oso-state, and phase 3 is what puts that version on the disk.
+  info "4/8 client environment"
+  publish_client_environment
+  info "5/8 git commit hook"
   if [ "$INSTALL_GIT_HOOK" = true ]; then
     wire_git_commit_hook
   else
     info "skipping the git commit hook (--no-git-hook)"
   fi
-  info "5/7 impeccable"
+  info "6/8 impeccable"
   if [ "$INSTALL_IMPECCABLE" = true ]; then
     wire_impeccable
   else
     skip_impeccable
   fi
-  info "6/7 legacy cleanup"
+  info "7/8 legacy cleanup"
   remove_legacy_artifacts
   remove_legacy_settings_entries
   ensure_output_style
-  info "7/7 global CLAUDE.md"
+  info "8/8 global CLAUDE.md"
   merge_global_claude_md
   print_wiring_summary
   prune_install_backups

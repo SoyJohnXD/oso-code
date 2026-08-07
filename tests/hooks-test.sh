@@ -5420,7 +5420,32 @@ persisted="$(. "$env_file"; printf '%s' "${OSO_STATE_BIN:-}")"
 assert_after_hook "SessionStart persists OSO_STATE_BIN to an executable" [ -x "$persisted" ]
 rm -f "$env_file"
 
-# No CLAUDE_ENV_FILE must degrade to a silent no-op (Windows-safe old behavior).
+# The value this writes OVERRIDES the OSO_STATE_BIN install.sh publishes into
+# settings.json, for every Bash command in the session — so the two must not
+# disagree about how a path is spelled, or a session that has both ends up with
+# the worse of the two. `pwd` under Git Bash reads /c/Users/…, the one form a
+# native consumer cannot resolve; install.sh stores what cygpath -m returns, and
+# this asks for the same conversion rather than for whatever the shell built.
+STATE_BIN_WINDOWS_STUB="$TEST_HOME/state-bin-windows-stub"
+mkdir -p "$STATE_BIN_WINDOWS_STUB"
+printf '%s\n' '#!/bin/sh' 'echo MINGW64_NT-10.0' > "$STATE_BIN_WINDOWS_STUB/uname"
+# Stands in for a cygpath this host does not have, and records the conversion it
+# was asked for: -m is the drive-letter-with-forward-slashes spelling both a
+# native process and this shell can read.
+printf '%s\n' '#!/bin/sh' 'printf "converted%s:%s\n" "$1" "$2"' \
+  > "$STATE_BIN_WINDOWS_STUB/cygpath"
+chmod +x "$STATE_BIN_WINDOWS_STUB/uname" "$STATE_BIN_WINDOWS_STUB/cygpath"
+env_file="$(mktemp)"
+export CLAUDE_ENV_FILE="$env_file"
+( PATH="$STATE_BIN_WINDOWS_STUB:$PATH"; "$PLUGIN/hooks/persist-state-bin.sh" ) >/dev/null 2>&1 || true
+assert_equals "SessionStart persists the spelling of oso-state a native consumer can read, never the MSYS one" \
+  "converted-m:$PLUGIN/bin/oso-state" \
+  "$(. "$env_file"; printf '%s' "${OSO_STATE_BIN:-}")"
+rm -f "$env_file"
+
+# No CLAUDE_ENV_FILE must degrade to a silent no-op: settings.json is the durable
+# route for this value now (D9), so a client that writes no env file costs the
+# session nothing.
 unset CLAUDE_ENV_FILE
 run_hook persist-state-bin.sh ''
 assert_after_hook "SessionStart no-ops when CLAUDE_ENV_FILE is unset" [ -z "$hook_stdout" ]
@@ -7768,6 +7793,7 @@ shadowed_install_run() {
       printf "{\"extraKnownMarketplaces\":{\"engram\":{}}}\n" > "$CLAUDE_DIR/settings.json"
     }
     install_plugin() { record install_plugin; }
+    publish_client_environment() { record publish_client_environment; }
     wire_git_commit_hook() { record wire_git_commit_hook; }
     wire_impeccable() { record wire_impeccable; }
     remove_legacy_artifacts() { record remove_legacy_artifacts; }
@@ -7837,16 +7863,20 @@ assert_equals "the copy holds the MCP entry and the registrations the install re
 # The ordering, which is the whole of "backed up first": each phase reports
 # whether the copies were already there when it ran, so a backup taken after the
 # wiring reads as loudly as no backup at all. settings.json is in the fixture
-# because phases 2, 3 and 5 all write it — the client records its known
-# marketplaces and its enabled plugins there — and a copy of it taken in phase 6
-# is three phases of operator state too late.
+# because phases 2, 3, 4 and 6 all write it — the client records its known
+# marketplaces and its enabled plugins there, and phase 4 publishes the env block
+# the skills and the hooks are reached through — and a copy of it taken in phase 7
+# is four phases of operator state too late. Phase 4 is the one that can write
+# over an operator value at all (a CLAUDE_CODE_GIT_BASH_PATH that no longer
+# resolves), which is what makes its position in this list load-bearing rather
+# than tidy.
 INSTALLER_ORDER_HOME="$TEST_HOME/installer-order-home"
 INSTALLER_ORDER_SETTINGS='{"enabledPlugins":{"impeccable@impeccable":false}}'
 mkdir -p "$INSTALLER_ORDER_HOME/.claude"
 printf '{"mcpServers":{"context7":{"command":"npx"}}}\n' > "$INSTALLER_ORDER_HOME/.claude.json"
 printf '%s\n' "$INSTALLER_ORDER_SETTINGS" > "$INSTALLER_ORDER_HOME/.claude/settings.json"
 assert_equals "every phase that changes the client's state runs after the copy of it" \
-  "wire_mcps:copied install_plugin:copied wire_git_commit_hook:copied wire_impeccable:copied remove_legacy_artifacts:copied merge_global_claude_md:copied " \
+  "wire_mcps:copied install_plugin:copied publish_client_environment:copied wire_git_commit_hook:copied wire_impeccable:copied remove_legacy_artifacts:copied merge_global_claude_md:copied " \
   "$(shadowed_install_run "$INSTALLER_ORDER_HOME")"
 
 # The other half of first: a pre-image is only a pre-image if it holds the bytes
@@ -7896,6 +7926,226 @@ fi
 assert_equals "an install prunes the older backups its budget cannot hold and keeps the one it just took" \
   "1 / this run's own" \
   "$(count_claude_backups "$INSTALLER_RETENTION_HOME") / $retention_survivor"
+
+# --- The client env block: an absolute oso-state, and the Git Bash the hooks
+#     are spawned through (D9, D10) --------------------------------------------
+# Two variables the client reads out of settings.json at the start of every
+# session, and neither used to be written by anything here. OSO_STATE_BIN reached
+# a session only through a SessionStart hook writing $CLAUDE_ENV_FILE, on top of
+# an undocumented injection of the plugin's bin/ into the Bash tool PATH that had
+# already failed on Windows — and the skills' "${OSO_STATE_BIN:-oso-state}" then
+# fell through to a bare name that resolves to nothing there, which is how every
+# plan capture on one host came to block on a sentence that named no cause.
+# CLAUDE_CODE_GIT_BASH_PATH is documented by Claude Code and was written by
+# nothing: every hook in this plugin is a .sh, so a Windows client that cannot
+# find Git Bash by itself loses all five gates at once.
+# Both writes are on the bash side with jq, which is why this whole block needs
+# one: PowerShell 5.1's ConvertFrom-Json | ConvertTo-Json defaults to -Depth 2 and
+# would flatten the nested hook arrays settings.json holds, so a whole-file
+# rewrite from install.ps1 would make the least-tested half of this bootstrap
+# silently destructive. The nested-hooks case below is that reason, asserted.
+if ! command -v jq >/dev/null 2>&1; then
+  echo "skip: the client env block — jq is absent here, and it is what both writes and every read-back go through"
+  skipped=$((skipped + 1))
+else
+  CLIENT_ENV_HOME="$TEST_HOME/client-env-home"
+  CLIENT_ENV_SETTINGS="$CLIENT_ENV_HOME/.claude/settings.json"
+  CLIENT_ENV_PLUGIN_ROOT="$CLIENT_ENV_HOME/.claude/plugins/cache/oso-code/oso-code/9.9.9"
+  CLIENT_ENV_STATE_BIN="$CLIENT_ENV_PLUGIN_ROOT/bin/oso-state"
+  CLIENT_ENV_WINDOWS_STUB="$TEST_HOME/client-env-windows-stub"
+  CLIENT_ENV_VERDICT="$TEST_HOME/client-env-verdict"
+  # Three bash.exe paths: the one this run discovers, the one an operator set for
+  # themselves, and one whose Git is gone — a reinstall, a move from Scoop to the
+  # official package, a drive that is not mounted.
+  CLIENT_ENV_GIT_BASH="$TEST_HOME/client-env-git/bin/bash.exe"
+  CLIENT_ENV_OPERATOR_BASH="$TEST_HOME/client-env-operator-git/bin/bash.exe"
+  CLIENT_ENV_UNINSTALLED_BASH="$TEST_HOME/client-env-uninstalled-git/bin/bash.exe"
+  mkdir -p "$CLIENT_ENV_PLUGIN_ROOT/bin" "$CLIENT_ENV_HOME/.claude/plugins" \
+    "$CLIENT_ENV_WINDOWS_STUB" "$(dirname "$CLIENT_ENV_GIT_BASH")" \
+    "$(dirname "$CLIENT_ENV_OPERATOR_BASH")"
+  printf '%s\n' '#!/bin/sh' 'exit 0' > "$CLIENT_ENV_STATE_BIN"
+  chmod +x "$CLIENT_ENV_STATE_BIN"
+  # The record the client keeps of which version a session runs. install.sh
+  # resolves the path it publishes out of THIS rather than out of its own clone:
+  # the clone is the operator's to move or delete, and a `curl | bash` run has
+  # none at all.
+  printf '{"plugins":{"oso-code@oso-code":[{"installPath":"%s"}]}}\n' \
+    "$CLIENT_ENV_PLUGIN_ROOT" > "$CLIENT_ENV_HOME/.claude/plugins/installed_plugins.json"
+  printf 'a bash.exe this run found\n' > "$CLIENT_ENV_GIT_BASH"
+  printf 'the bash.exe the operator pointed at\n' > "$CLIENT_ENV_OPERATOR_BASH"
+  # The Git Bash key is Windows-only — publishing it elsewhere would put a dead
+  # variable into every session — so the whole of it is reached through a uname
+  # that says so. cygpath is absent on this host and every conversion falls back
+  # to the path it was given, which is what lets a POSIX fixture stand in for a
+  # Windows one here.
+  printf '%s\n' '#!/bin/sh' 'echo MINGW64_NT-10.0' > "$CLIENT_ENV_WINDOWS_STUB/uname"
+  chmod +x "$CLIENT_ENV_WINDOWS_STUB/uname"
+
+  # A settings.json shaped like the client's own: hook entries nested three levels
+  # deep, which is exactly what a PowerShell rewrite would flatten.
+  CLIENT_ENV_NESTED_HOOKS='{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"block-commit-until-green.sh"}]}],"SessionStart":[{"matcher":"*","hooks":[{"type":"command","command":"persist-state-bin.sh"}]}]}'
+
+  # $1 is the `env` block this settings.json arrives carrying; empty plants a file
+  # that has no env block at all, the shape a client writes before anything here
+  # has touched it.
+  plant_client_env_settings() {
+    if [ -n "$1" ]; then
+      printf '{"outputStyle":"Oso","hooks":%s,"env":%s}\n' "$CLIENT_ENV_NESTED_HOOKS" "$1" \
+        > "$CLIENT_ENV_SETTINGS"
+    else
+      printf '{"outputStyle":"Oso","hooks":%s}\n' "$CLIENT_ENV_NESTED_HOOKS" \
+        > "$CLIENT_ENV_SETTINGS"
+    fi
+  }
+
+  # One publish, leaving behind the settings.json it wrote and the verdicts it
+  # recorded. $1 is the Git Bash path install.ps1 hands over in the child's
+  # environment — empty for a run started from Git Bash instead, which is handed
+  # none. PATH is prepended AFTER the source the way the fixtures above do it:
+  # install.sh resolves its own directory and stamps a backup name at source time,
+  # and only `uname` has to answer differently.
+  publish_client_env_run() {
+    : > "$CLIENT_ENV_VERDICT"
+    CLAUDE_CODE_GIT_BASH_PATH="$1" HOME="$CLIENT_ENV_HOME" bash -c '
+      installer="$1" stub_path="$2" verdict="$3"
+      set --
+      . "$installer"
+      PATH="$stub_path:$PATH"
+      publish_client_environment
+      printf "%s\n" "${WIRING_SUMMARY[@]}" > "$verdict"
+    ' _ "$INSTALL_SH" "$CLIENT_ENV_WINDOWS_STUB" "$CLIENT_ENV_VERDICT" >/dev/null 2>&1 || true
+  }
+
+  client_env_stored() {
+    jq -r --arg key "$1" '.env[$key] // "absent"' "$CLIENT_ENV_SETTINGS" 2>/dev/null \
+      || printf 'unreadable'
+  }
+
+  plant_client_env_settings ''
+  client_env_hooks_before="$(jq -c '.hooks' "$CLIENT_ENV_SETTINGS")"
+  publish_client_env_run "$CLIENT_ENV_GIT_BASH"
+  assert_equals "the install publishes an absolute oso-state and the Git Bash the client spawns the hooks through" \
+    "$CLIENT_ENV_STATE_BIN / $CLIENT_ENV_GIT_BASH" \
+    "$(client_env_stored OSO_STATE_BIN) / $(client_env_stored CLAUDE_CODE_GIT_BASH_PATH)"
+  # The published path is what a session RUNS, so it has to be runnable as it is
+  # stored — not merely present in the file.
+  assert_equals "the published oso-state runs from the spelling that was stored" \
+    "runs" "$("$(client_env_stored OSO_STATE_BIN)" >/dev/null 2>&1 && echo runs || echo "does not run")"
+  assert_equals "the summary names both values it published, and claims nothing else" \
+    "OK|oso-state path|every session reads OSO_STATE_BIN=$CLIENT_ENV_STATE_BIN
+OK|Git Bash path|published: $CLIENT_ENV_GIT_BASH" \
+    "$(cat "$CLIENT_ENV_VERDICT")"
+  # The whole reason both writes are on this side rather than in install.ps1: a
+  # PowerShell 5.1 ConvertTo-Json would hand these three-level entries back as
+  # flattened strings. The keys added are half the case on purpose — a write that
+  # never happened leaves the hooks perfectly intact too.
+  assert_equals "the nested hook arrays survive the write, and nothing but the two env keys joins them" \
+    "$client_env_hooks_before / added: CLAUDE_CODE_GIT_BASH_PATH OSO_STATE_BIN" \
+    "$(jq -c '.hooks' "$CLIENT_ENV_SETTINGS") / added: $(jq -r '(.env // {}) | keys | join(" ")' "$CLIENT_ENV_SETTINGS")"
+
+  # An operator value that still resolves is theirs. Overwriting it would repoint
+  # the client at another bash.exe on every install, which is the one thing
+  # "install it for me" may never mean here.
+  plant_client_env_settings "$(printf '{"CLAUDE_CODE_GIT_BASH_PATH":"%s"}' "$CLIENT_ENV_OPERATOR_BASH")"
+  publish_client_env_run "$CLIENT_ENV_GIT_BASH"
+  assert_equals "a Git Bash path the operator set and that still resolves is left exactly as they set it" \
+    "$CLIENT_ENV_OPERATOR_BASH / OK|Git Bash path|left as you set it: $CLIENT_ENV_OPERATOR_BASH" \
+    "$(client_env_stored CLAUDE_CODE_GIT_BASH_PATH) / $(grep -F 'Git Bash path' "$CLIENT_ENV_VERDICT")"
+
+  # The other half of never overwriting: a stored value whose Git is gone leaves
+  # the client spawning a bash.exe that is not there, so every gate is off — and a
+  # rule that only ever preserves would leave that machine broken forever, and
+  # invisibly, since the key that names the problem is the one nothing rewrites.
+  plant_client_env_settings "$(printf '{"CLAUDE_CODE_GIT_BASH_PATH":"%s"}' "$CLIENT_ENV_UNINSTALLED_BASH")"
+  publish_client_env_run "$CLIENT_ENV_GIT_BASH"
+  assert_equals "a stored Git Bash path that no longer resolves is repaired, and the summary says what it replaced" \
+    "$CLIENT_ENV_GIT_BASH / OK|Git Bash path|repaired from $CLIENT_ENV_UNINSTALLED_BASH: $CLIENT_ENV_GIT_BASH" \
+    "$(client_env_stored CLAUDE_CODE_GIT_BASH_PATH) / $(grep -F 'Git Bash path' "$CLIENT_ENV_VERDICT")"
+
+  # The same stale value on a run that was handed nothing to repair it with —
+  # started from Git Bash rather than from install.ps1. Reporting it as fine is
+  # the false green this whole change exists to end, and silently deleting the
+  # operator's key is a destruction no installer gets to make on their behalf.
+  plant_client_env_settings "$(printf '{"CLAUDE_CODE_GIT_BASH_PATH":"%s"}' "$CLIENT_ENV_UNINSTALLED_BASH")"
+  publish_client_env_run ""
+  client_env_stale_line="$(grep -F 'Git Bash path' "$CLIENT_ENV_VERDICT" || true)"
+  client_env_stale_fix=unfixable
+  case "$client_env_stale_line" in *' — fix: '*) client_env_stale_fix=inline ;; esac
+  assert_equals "a stale Git Bash path nothing can repair is a failure naming the way out, never an OK" \
+    "$CLIENT_ENV_UNINSTALLED_BASH / FAILED / inline" \
+    "$(client_env_stored CLAUDE_CODE_GIT_BASH_PATH) / ${client_env_stale_line%%|*} / $client_env_stale_fix"
+
+  # Nothing stored and nothing handed over is the ordinary shape of that same run
+  # on a machine whose client finds Git Bash by itself: there is nothing to write
+  # and nothing to report, and inventing a red line there would fail every machine
+  # that is working. The oso-state half is published all the same — it depends on
+  # no Windows at all — which is what keeps this case about the Git Bash key
+  # rather than about a phase that did nothing.
+  plant_client_env_settings ''
+  publish_client_env_run ""
+  assert_equals "a run with no Git Bash to publish and none stored says nothing about it, and publishes oso-state regardless" \
+    "absent / no line / $CLIENT_ENV_STATE_BIN" \
+    "$(client_env_stored CLAUDE_CODE_GIT_BASH_PATH) / $(grep -F 'Git Bash path' "$CLIENT_ENV_VERDICT" || echo 'no line') / $(client_env_stored OSO_STATE_BIN)"
+
+  # --- What the verifier proves about the two published values ----------------
+  # The round trip goes through the STORED path, never one this script resolved
+  # for itself: a probe against a path found by walking the plugin cache passes on
+  # a machine that published none, where every skill still falls through to the
+  # bare `oso-state` a Windows client resolves to nothing. Each fixture HOME is
+  # its own, so the report reads one state at a time; the suite's own HOME never
+  # gains a settings.json from this.
+  verify_home_report() {
+    ( HOME="$1"; verify_report )
+  }
+  plant_verify_env_home() {
+    local home="$1" env_block="$2"
+    mkdir -p "$home/.claude"
+    printf '{"hooks":%s,"env":%s}\n' "$CLIENT_ENV_NESTED_HOOKS" "$env_block" \
+      > "$home/.claude/settings.json"
+  }
+
+  VERIFY_ENV_PUBLISHED_HOME="$TEST_HOME/verify-env-published-home"
+  VERIFY_ENV_STALE_HOME="$TEST_HOME/verify-env-stale-home"
+  VERIFY_ENV_BARE_HOME="$TEST_HOME/verify-env-bare-home"
+  plant_verify_env_home "$VERIFY_ENV_PUBLISHED_HOME" \
+    "$(printf '{"OSO_STATE_BIN":"%s","CLAUDE_CODE_GIT_BASH_PATH":"%s"}' \
+      "$PLUGIN/bin/oso-state" "$CLIENT_ENV_GIT_BASH")"
+  plant_verify_env_home "$VERIFY_ENV_STALE_HOME" \
+    "$(printf '{"OSO_STATE_BIN":"%s","CLAUDE_CODE_GIT_BASH_PATH":"%s"}' \
+      "$TEST_HOME/no-such-oso-state" "$CLIENT_ENV_UNINSTALLED_BASH")"
+  mkdir -p "$VERIFY_ENV_BARE_HOME"
+
+  verify_env_published_report="$(verify_home_report "$VERIFY_ENV_PUBLISHED_HOME")"
+  verify_env_stale_report="$(verify_home_report "$VERIFY_ENV_STALE_HOME")"
+  verify_env_bare_report="$(verify_home_report "$VERIFY_ENV_BARE_HOME")"
+
+  assert_equals "the verifier round-trips oso-state through the path settings.json stores, and goes red on a stored path that is not there" \
+    "ok / fail / fail" \
+    "$(report_line_kind "$verify_env_published_report" 'OSO_STATE_BIN round-trips') / $(report_line_kind "$verify_env_stale_report" 'OSO_STATE_BIN round-trips') / $(report_line_kind "$verify_env_bare_report" 'OSO_STATE_BIN round-trips')"
+  assert_equals "the verifier names a stored Git Bash path that no longer resolves, passes one that is there, and stays a note where none is published" \
+    "ok / fail / note" \
+    "$(report_line_kind "$verify_env_published_report" 'Git Bash path') / $(report_line_kind "$verify_env_stale_report" 'Git Bash path') / $(report_line_kind "$verify_env_bare_report" 'Git Bash path')"
+
+  # Both scripts carry their own copy of what "still resolves" means — neither can
+  # source the other, since each runs standalone via curl — and a bar that drifted
+  # would have the installer publishing a path the verifier calls broken.
+  # Walked in a fixed order rather than in each file's own: both scripts define
+  # these where their first reader needs them, and an order the comparison
+  # inherited would report a difference that is only a line number.
+  client_env_bar_of() {
+    local file="$1" reader
+    for reader in shell_spelling_of git_bash_resolves client_env_value; do
+      sed -n "/^$reader()/,/^}/p" "$file"
+    done
+  }
+  client_env_bar_install="$(client_env_bar_of "$INSTALL_SH")"
+  assert_equals "the installer and the verifier read a stored path by the same bar, byte for byte" \
+    "$client_env_bar_install" "$(client_env_bar_of "$REPO_ROOT/bootstrap/verify.sh")"
+  # An extraction that found nothing in either file agrees with itself, which is
+  # the one way the case above can go green over a bar that is no longer there.
+  assert_equals "that comparison is three real function bodies, not two empty extractions agreeing" \
+    "3" "$(printf '%s\n' "$client_env_bar_install" | grep -c '^[a-z_]*() {$' || true)"
+fi
 
 # --- The npx probe's bound: a hang may not take the whole report with it -------
 # verify.sh runs standalone via curl and defines its own helpers, so the bound is

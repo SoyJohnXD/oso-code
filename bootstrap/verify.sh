@@ -179,36 +179,47 @@ else
   check "plugin install path found" "1" "0"
 fi
 
-# 7. oso-state reachable end-to-end through OSO_STATE_BIN from the INSTALL path —
-#    the exact "${OSO_STATE_BIN:-oso-state}" form the skills use, not a PATH or
-#    absolute-path shortcut. A silent no-op here means skills can't touch state.
-if [ -n "$install_root" ]; then
-  state_bin="$(find "$install_root" -path '*/bin/oso-state' 2>/dev/null | head -1 || true)"
-  if [ -n "$state_bin" ] && [ -x "$state_bin" ]; then
-    # One chain, so the round-trip's own failure IS the value, and three ways to
-    # lose that failure go with it: `export` masks the status of a substitution in
-    # its value (`export X="$(false)"` succeeds), so the temp HOME is made on its
-    # own line; a command substitution does not inherit errexit, so a `set` sent to
-    # `>/dev/null 2>&1` failed invisibly and left the check red with an empty value;
-    # and the subshell's status was `clear`'s, so a failing clear aborted the report.
-    # Hence stdout only is dropped from the calls with nothing to say — their stderr
-    # is the reason a red check needs.
-    probe="$(
-      {
-        probe_home="$(mktemp -d)" \
-          && export HOME="$probe_home" OSO_STATE_BIN="$state_bin" \
-          && "${OSO_STATE_BIN:-oso-state}" --session verify-probe set mode=probe >/dev/null \
-          && "${OSO_STATE_BIN:-oso-state}" --session verify-probe get mode \
-          && "${OSO_STATE_BIN:-oso-state}" --session verify-probe clear >/dev/null
-      } 2>&1 || true
-    )"
-    probe="${probe//$'\n'/ }"
-    check "OSO_STATE_BIN round-trips oso-state (e2e)" "probe" "${probe:-empty}"
-  else
-    check "installed oso-state executable" "1" "0"
-  fi
+# What the client will hand every session for one key of its settings.json `env`
+# block, empty when the file, the block, the key or jq itself is not there.
+# Keep this identical to client_env_value in bootstrap/install.sh — the two scripts
+# run standalone via curl and cannot source a shared file.
+client_env_value() {
+  jq -r --arg key "$1" '.env[$key] // empty' "$CLAUDE_DIR/settings.json" 2>/dev/null || true
+}
+
+# 7. oso-state reachable end-to-end through the OSO_STATE_BIN THE CLIENT PUBLISHES
+#    — the absolute path install.sh writes into settings.json's `env` block (D9),
+#    exercised in the exact "${OSO_STATE_BIN:-oso-state}" form the skills use. The
+#    stored value is the whole check: a probe against a path this script found for
+#    itself by walking the plugin cache passes on a machine that published none,
+#    where every skill still falls through to the bare `oso-state` a Windows client
+#    resolves to nothing. A silent no-op here means skills can't touch state.
+stored_state_bin="$(client_env_value OSO_STATE_BIN)"
+STATE_BIN_FIX="bash bootstrap/install.sh publishes the installed plugin's absolute bin/oso-state there, then restart Claude Code"
+if [ -n "$stored_state_bin" ]; then
+  # One chain, so the round-trip's own failure IS the value, and three ways to
+  # lose that failure go with it: `export` masks the status of a substitution in
+  # its value (`export X="$(false)"` succeeds), so the temp HOME is made on its
+  # own line; a command substitution does not inherit errexit, so a `set` sent to
+  # `>/dev/null 2>&1` failed invisibly and left the check red with an empty value;
+  # and the subshell's status was `clear`'s, so a failing clear aborted the report.
+  # Hence stdout only is dropped from the calls with nothing to say — their stderr
+  # is the reason a red check needs.
+  probe="$(
+    {
+      probe_home="$(mktemp -d)" \
+        && export HOME="$probe_home" OSO_STATE_BIN="$stored_state_bin" \
+        && "${OSO_STATE_BIN:-oso-state}" --session verify-probe set mode=probe >/dev/null \
+        && "${OSO_STATE_BIN:-oso-state}" --session verify-probe get mode \
+        && "${OSO_STATE_BIN:-oso-state}" --session verify-probe clear >/dev/null
+    } 2>&1 || true
+  )"
+  probe="${probe//$'\n'/ }"
+  check "OSO_STATE_BIN round-trips oso-state (e2e)" "probe" "${probe:-empty}" "$STATE_BIN_FIX"
+  echo "      OSO_STATE_BIN: $stored_state_bin"
 else
-  check "plugin install path found (oso-state)" "1" "0"
+  check "OSO_STATE_BIN round-trips oso-state (e2e)" "probe" \
+    "no OSO_STATE_BIN in $CLAUDE_DIR/settings.json" "$STATE_BIN_FIX"
 fi
 
 # 8. Repo test suite still green
@@ -485,6 +496,56 @@ if running_on_windows; then
   [ -z "$engram_binary" ] || echo "      engram binary: $engram_binary"
 else
   echo "note: engram binary the client resolves and runs — this is not Git Bash on Windows, so the client resolves a bare \`engram\` against this same PATH and starting the server exercises both, which check 2 already does"
+fi
+
+# A path written for a native Windows process, in the spelling THIS shell can
+# stat: settings.json holds C:\… from an operator and C:/… from this script, and
+# cygpath is what turns either — and a POSIX path, unchanged — into something a
+# file test can read. Off Windows there is one spelling and the path comes back as
+# it went in.
+# Keep this identical to shell_spelling_of in bootstrap/install.sh — the two
+# scripts run standalone via curl and cannot source a shared file.
+shell_spelling_of() {
+  if running_on_windows; then
+    cygpath -u "$1" 2>/dev/null || printf '%s' "$1"
+  else
+    printf '%s' "$1"
+  fi
+}
+
+# Whether a path stored for a native Windows consumer still names a file here.
+# Keep this identical to git_bash_resolves in bootstrap/install.sh — the two
+# scripts run standalone via curl and cannot source a shared file.
+git_bash_resolves() {
+  [ -n "$1" ] && [ -f "$(shell_spelling_of "$1")" ]
+}
+
+# 14. The Git Bash the client spawns this plugin's hooks through. Claude Code
+#     reads env.CLAUDE_CODE_GIT_BASH_PATH out of settings.json wherever it cannot
+#     find Git Bash by itself, and every hook here is a .sh — so a stored path that
+#     no longer resolves (a Git reinstalled, moved from Scoop to the official
+#     package, or on a drive that is not mounted) takes every gate on the machine
+#     with it, and says nothing. install.sh writes the key where it is absent and
+#     repairs it where it has gone stale, never over a value that still resolves,
+#     so what is stored is either the operator's own or this bootstrap's (D10).
+#     Nothing stored is the ordinary state off Windows and on a client that finds
+#     Git Bash on its own, so it is a note: a hard check there could only ever fail
+#     for machines that are working — the shape checks 12 and 13 take.
+stored_git_bash="$(client_env_value CLAUDE_CODE_GIT_BASH_PATH)"
+if [ -z "$stored_git_bash" ]; then
+  echo "note: Git Bash path the client spawns hooks with — settings.json publishes no CLAUDE_CODE_GIT_BASH_PATH, so Claude Code locates Git Bash itself; bootstrap/install.ps1 is what discovers a path and hands it to install.sh to publish"
+else
+  if git_bash_resolves "$stored_git_bash"; then
+    git_bash_state=1
+  else
+    git_bash_state="$stored_git_bash is not there any more"
+  fi
+  check "Git Bash path the client spawns hooks with" "1" "$git_bash_state" \
+    "point CLAUDE_CODE_GIT_BASH_PATH at the bash.exe you have (typically C:\\Program Files\\Git\\bin\\bash.exe) — bootstrap\\install.ps1 finds it and hands it to install.sh, which repairs the stored value; then restart Claude Code"
+  # Never `[ … ] && echo`: this is the last command of the branch, so under
+  # `set -e` a false test would take the whole report down one line before its
+  # summary. Check 13's `|| echo` shape cannot.
+  [ "$git_bash_state" != 1 ] || echo "      Git Bash: $stored_git_bash"
 fi
 
 echo "----"
