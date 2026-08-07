@@ -3,7 +3,6 @@
 Date: 2026-08-06
 Status: accepted
 Superseded-by: ADR-0122 — retires only the `default_permissions` clause (the profile returns to the machine default `"oso"`, since Codex has no per-project profile selection to opt into); the narrowed `.git`, network and secret-denylist grants, and the host-contract check proving the override mechanism is real, all still stand
-Implemented-in: bootstrap/lib/codex-managed-config.sh, bootstrap/verify-codex.sh, tests/hooks-test.sh, docs/blueprint.md, README.md
 Reconciled: superseded — the `default_permissions` clause above is retired by ADR-0122, which reverts the rendered `config.toml` to the machine default `"oso"`; `.git`, network and the secret denylist stay narrowed exactly as decided here, and `bootstrap/verify-codex.sh` still carries the host-contract check proving the override mechanism is real, independent of whether the harness's own default relies on it.
 Source: this change (codex-fluidity), ledger decision D11; the doubt pass that found `default_permissions = "oso"` was the operator's machine-wide default and that a denylist extended by enumeration was being enumerated again
 

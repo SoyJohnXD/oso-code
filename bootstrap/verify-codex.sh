@@ -102,12 +102,12 @@ codex_binary_path() {
   printf '%s' "$resolved"
 }
 
-# ADR-0106: every other check here asserts the harness against its own prose;
-# this one reads the installed binary's own rejection/acceptance text, because
-# ADR-0105 found six sites instructing a spelling the host had already refused
-# and nothing in the repo could have caught it without this. ADR-0121 checks a
-# second contract (the `default_permissions` override) the same way, so the
-# shape — resolve the binary, gate on the version window, grep both literals —
+# Every other check here asserts the harness against its own prose; this one
+# reads the installed binary's own rejection/acceptance text, because an audit
+# once found six sites instructing a spelling the host had already refused
+# and nothing in the repo could have caught it without this. The
+# `default_permissions` override is a second contract checked the same way, so
+# the shape — resolve the binary, gate on the version window, grep both literals —
 # is parameterized here rather than carried twice: which two literals prove
 # the contract is the only thing that differs between callers.
 binary_contract_status() {
@@ -136,7 +136,7 @@ host_contract_status() {
     'fork_turns must be `none`, `all`, or a positive integer string'
 }
 
-# ADR-0121: `-P`/`--permission-profile` exists only on `codex sandbox`, a
+# `-P`/`--permission-profile` exists only on `codex sandbox`, a
 # one-shot command runner never used to launch a real session; `codex` and
 # `codex exec` carry no dedicated profile flag, so the durable per-invocation
 # selector the installed profile relies on is `-c default_permissions=<name>`,
@@ -347,10 +347,10 @@ engram_status() {
   rm -f "$normalized"
 }
 
-# ADR-0120: the hand-maintained allowlist in tools/hook-gates.txt drifts from
+# The hand-maintained allowlist in tools/hook-gates.txt drifts from
 # what a wired MCP server actually exposes -- mem_judge's absence (5905a27)
 # was exactly this, undetected until a live operator denial found it. CI has
-# none of these servers installed (B6, 4620b8e), so this check is LOCAL: it
+# none of these servers installed (4620b8e), so this check is LOCAL: it
 # spawns each server this Codex install actually wires and compares its own
 # live `tools/list` answer against the table, following the same raw
 # JSON-RPC-over-stdio method 5905a27 used by hand against the Engram binary.
@@ -527,7 +527,7 @@ table_codex_tool_is_mandated() {
 # config and no server at all.
 KNOWN_MCP_SERVERS="engram context7 fallow"
 
-# The other half of ADR-0120's drift check: independent of any live server or
+# The other half of that drift check: independent of any live server or
 # config.toml, the hardcoded mandated set above must agree with
 # tools/hook-gates.txt's own mandated column, in both directions -- a table
 # row marked yes with no hardcoded counterpart would silently stop being
@@ -564,7 +564,7 @@ EOF
   printf '%s' "${mismatch:-agree}"
 }
 
-# D18: names the exact row to add, not just that something drifted. $2 is the
+# Names the exact row to add, not just that something drifted. $2 is the
 # newline-separated live tool list already read from the server.
 mcp_missing_mandated_tools() {
   local server="$1" exposed="$2" name row missing=""
@@ -795,7 +795,7 @@ commit_hook_red_status() {
 # wait` reporting a matching receipt, and a completed `oso-state handoff
 # consume` reporting the same receipt (oso-state prints it on both verbs --
 # plugin/bin/oso-state). The stream carries no field naming which *role* a
-# spawned id was given (ADR-0100's own boundary), so this proves delegation
+# spawned id was given, so this proves delegation
 # happened for that id, not that the child ran as oso-integrator specifically.
 integrator_handoff_consumed() {
   command -v python3 >/dev/null 2>&1 || return 1
@@ -931,9 +931,9 @@ raise SystemExit(0 if correlated else 1)
 ' "$SMOKE_HANDOFF_SLICE" "$SMOKE_HANDOFF_ATTEMPT" "$SMOKE_INTEGRATOR_AGENT_TYPE" >/dev/null 2>&1
 }
 
-# D13: a disposable repository does not make the Codex identity running
+# A disposable repository does not make the Codex identity running
 # against it disposable too. Pointing the smoke's own `codex exec` at the
-# operator's real CODEX_HOME (ADR-0100's original design) meant every write
+# operator's real CODEX_HOME, as this fixture originally did, meant every write
 # that launch provoked -- project-trust registration included -- landed in
 # `config.toml` permanently, with no reliable path back out (nine orphan
 # tables were the measured proof). Isolating CODEX_HOME instead means the
@@ -1031,11 +1031,11 @@ cleanup_smoke_on_exit() {
 run_integrator_fixture() {
   local smoke_worktrees
 
-  # ADR-0100: a live parent --sandbox overrides the custom agent's default.
+  # A live parent --sandbox overrides the custom agent's default.
   # Match the integrator's declared authority so the smoke exercises it rather
   # than forcing the delegated role back behind workspace-write's .git guard.
-  # CODEX_HOME points at the disposable copy populate_smoke_codex_home built
-  # (D13); --dangerously-bypass-hook-trust runs its copied hooks.json without
+  # CODEX_HOME points at the disposable copy populate_smoke_codex_home built;
+  # --dangerously-bypass-hook-trust runs its copied hooks.json without
   # that directory's own separate `[hooks.state]` trust records.
   SMOKE_OUTPUT="$(CODEX_HOME="$SMOKE_CODEX_HOME" \
     bounded_command_output "$CODEX_EXEC_SMOKE_BOUND_SECONDS" "codex exec smoke" \

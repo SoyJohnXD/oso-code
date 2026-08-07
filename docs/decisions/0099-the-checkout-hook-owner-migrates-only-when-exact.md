@@ -3,7 +3,6 @@
 Date: 2026-08-03
 Status: accepted
 Amends: ADR-0051 (an oso-code-owned checkout path is not a foreign hook owner, but losing any sibling hook would still be an overwrite)
-Implemented-in: docs/blueprint.md, docs/parity-codex.md, README.md, CHANGELOG.md, bootstrap/hook-hashes.txt, bootstrap/install-codex.sh, bootstrap/verify-codex.sh, tools/render-hooks-json.sh, tests/hooks-test.sh
 Reconciled: applied — the Codex installer migrates the one exact, single-hook oso-code checkout path to its self-contained runtime and rejects every lookalike or mixed directory.
 Source: the authenticated 0.18.0 installation smoke; this repository already carried the older `core.hooksPath=<checkout>/plugin/git-hooks` wiring
 

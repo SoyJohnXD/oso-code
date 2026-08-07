@@ -3,7 +3,6 @@
 Date: 2026-08-02
 Status: accepted
 Superseded-by: ADR-0118 — retires only the single BASE REF the ref coordinate named regardless of position; three named coordinates (CHANGE BASE, WAVE START, SLICE START) now split what that ref means by where the payload is built. The WORKTREE PATH pairing, the diff formula shape and the applier's skipped self-check under parallel all stand unchanged
-Implemented-in: plugin/agents/oso-applier.md, plugin/agents/oso-verifier.md
 Reconciled: applied — Mode 1 phase 6 names the two coordinates in both payloads.
 Source: this change (parallel wave execution); recorded with the change that made it
 

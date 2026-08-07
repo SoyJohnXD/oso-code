@@ -2,7 +2,6 @@
 
 Date: 2026-08-05
 Status: accepted
-Implemented-in: plugin/hooks/warn-stale-state.sh, tests/hooks-test.sh, bootstrap/hook-hashes.txt
 Reconciled: applied — `warn-stale-state.sh` resolves one file (`state_file_for(cwd)`) instead of sweeping `$OSO_STATE_DIR/*.state`, and its message drops the claim that a repository-keyed file arms this session's gates regardless of whose repository it names.
 Source: operator complaint, live during this change — a session in `oso-code` was told about a `.state` file that resolved to an unrelated checkout (`loyalty-landing`) two directories over; D18 (forward recovery — a message naming something the operator cannot act on is the shape this rail exists to remove)
 

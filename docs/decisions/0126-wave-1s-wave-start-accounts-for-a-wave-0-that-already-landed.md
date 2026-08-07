@@ -3,7 +3,6 @@
 Date: 2026-08-06
 Status: accepted
 Supersedes: ADR-0118 (its "Wave 1's WAVE START is the CHANGE BASE §3 recorded" clause — that held only when no design-foundation slice ran; every other coordinate ADR-0118 names stands unchanged)
-Implemented-in: plugin/skills/_shared/bodies/plan.md, tests/plugin-lint.sh
 Reconciled: applied — the Wave 0 bullet (§4), the Cut-one-worktree-per-slice paragraph (§6) and the "Three coordinates" paragraph (§6's own preamble, corrected after this ADR's first landing missed it) all read the corrected coordinate; `tests/plugin-lint.sh`'s guard scans every line of `plugin/skills/_shared/bodies/plan.md` naming wave 1 rather than two hardcoded paragraph anchors, so it reaches this site and any future one the same way.
 Source: this change (codex-fluidity), round 2 of the close, debt-sweep confirmation run; ledger decision D8 (extended, not contradicted) and D16 (per-slice commits are the orchestrator's)
 

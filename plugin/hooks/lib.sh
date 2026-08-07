@@ -208,7 +208,7 @@ hook_session() {
 # worktree read the state the orchestrator armed in the main checkout.
 # `--git-common-dir` alone does not say that — it answers a relative `.git` in
 # the main checkout and an absolute path inside a linked worktree, one repository
-# under two names — so the identity is the absolute spelling (ADR-0095). Where
+# under two names — so the identity is the absolute spelling. Where
 # git places nothing there is no commit for the rail to gate, and the directory
 # the work happens in is identity enough.
 #
@@ -249,11 +249,11 @@ state_value() {
   grep "^${key}=" "$state_file" 2>/dev/null | cut -d= -f2- || true
 }
 
-# The `oso-state` half of a deny's remedy (D18), spelled once so the binary and
+# The `oso-state` half of a deny's remedy, spelled once so the binary and
 # the real session id are never retyped per gate — the shape deny_unusable_state
 # already used before this slice. Composed straight into deny()'s own `reason`
-# argument at the call site, never into `detail`: A6 wired `detail` solely into
-# the audit log's `command` field, and the JSON permissionDecisionReason is the
+# argument at the call site, never into `detail`: `detail` reaches the audit log's
+# `command` field and nothing else, and the JSON permissionDecisionReason is the
 # only thing either host ever shows past a deny, so a remedy living in `detail`
 # would reach nobody. Not every remedy is one exact state write — "run the
 # checks", "use one of these tools" are named flows or facts a gate already
@@ -338,7 +338,7 @@ deny_unusable_state() {
 # PreToolUse layer has to give the audit — the git layer's own deny_until_green
 # call has no command to name, so its event keeps the empty detail it always had.
 #
-# The remedy (D18) is the active mode's own step, read off `mode` in the same
+# The remedy is the active mode's own step, read off `mode` in the same
 # state file both layers already resolved — never a two- or three-way menu the
 # operator has to translate, and never the write (`verify_green=true`) that
 # would flip the flag itself: that write belongs to the checks actually running
@@ -379,7 +379,7 @@ deny() {
 # verdict and must never follow one: gates arm it only where they have already
 # decided the call is theirs, and drop it the moment a verdict is out.
 #
-# No remedy rides here, and the text says so rather than implying one (D18):
+# No remedy rides here, and the text says so rather than implying one:
 # every caller is a crash mid-gate or a malformed installer config (a missing
 # sha256sum, an empty or invalid Codex allowlist argument) — one class of
 # failure with no single operator-actionable fix, unlike a deny's own reason.

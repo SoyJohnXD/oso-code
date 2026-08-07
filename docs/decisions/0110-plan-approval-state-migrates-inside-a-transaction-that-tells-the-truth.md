@@ -2,7 +2,6 @@
 
 Date: 2026-08-05
 Status: accepted
-Implemented-in: bootstrap/install-codex.sh, tests/hooks-test.sh, docs/blueprint.md
 Reconciled: applied — `install-codex.sh` sources `plugin/hooks/lib.sh` after `verify_published_hooks` confirms its bytes, gains `migrate_plan_approval_state` (called once, inside the transaction, right after the backup) and `rollback_transaction` now checks and reports every restore item instead of printing one unconditional closing line.
 Source: ADR-0107 (526a558) split `session` from `plan_approval_session`; D20 records that 0.19.0 must not manufacture ADR-0107's own bug on an installed base that predates the split, and that the transaction's rollback — the one step this release has no other way to revert — must report what it actually did.
 

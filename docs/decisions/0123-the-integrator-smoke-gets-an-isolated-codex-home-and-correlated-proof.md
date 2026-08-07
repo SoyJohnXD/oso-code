@@ -3,7 +3,6 @@
 Date: 2026-08-06
 Status: accepted
 Amends: ADR-0100 (the outer sandbox stays `danger-full-access`, but no longer points at the operator's real `CODEX_HOME`), ADR-0102 (retires the per-run `cleanup_smoke_project_config` table removal, replaced by never writing the real file at all)
-Implemented-in: bootstrap/verify-codex.sh, tests/hooks-test.sh, docs/parity-codex.md, docs/blueprint.md
 Reconciled: applied — `verify-codex.sh` gains `populate_smoke_codex_home`, called from `create_integrator_fixture`; `run_integrator_fixture` launches with `CODEX_HOME="$SMOKE_CODEX_HOME"` and `--dangerously-bypass-hook-trust`; `cleanup_smoke_project_config` is deleted; `integrator_handoff_consumed` requires a completed `spawn_agent` collab tool call, a completed `oso-state handoff wait` and a completed `oso-state handoff consume` to agree on one Codex-assigned agent id, each parsed with `shlex.split(..., comments=True)`. Nine pre-existing orphan tables were removed from the operator's real `~/.codex/config.toml` after a verified backup.
 Source: the operator's real `~/.codex/config.toml`, which carried nine orphan `[projects."/tmp/oso-codex-smoke.*/main"]` tables from prior runs; `codex exec --help` and `strings` extraction against the installed `codex-cli 0.146.0` binary; three scratch-home, unauthenticated `codex exec` probes against a disposable git repository proving what does and does not suppress project-trust persistence
 

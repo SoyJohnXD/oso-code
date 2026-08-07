@@ -2,7 +2,6 @@
 
 Date: 2026-08-06
 Status: accepted
-Implemented-in: bootstrap/install-codex.sh, bootstrap/restore-codex.sh, bootstrap/lib/install-backup.sh, bootstrap/verify-codex.sh, bootstrap/repair-engram-codex.sh, tests/hooks-test.sh, docs/blueprint.md, README.md
 Reconciled: applied — every file above carries the change this decision records.
 Source: measured on the operator's own machine: 17 `install-backup-*` snapshots under `~/.local/state/oso-code/`, 1.9 GiB total, the largest single snapshot ~110 MiB; the installed Impeccable skill's `SKILL.md` reads `version: 4.0.2`; `codex plugin marketplace add --help` against the installed `codex-cli 0.146.0`; `git ls-remote --tags` against `pbakaus/impeccable`
 

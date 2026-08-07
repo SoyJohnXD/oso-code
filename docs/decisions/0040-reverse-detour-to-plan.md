@@ -2,7 +2,6 @@
 
 Date: 2026-07-22
 Status: accepted
-Implemented-in: plugin/skills/_shared/bodies/debug.md
 Reconciled: applied — Mode 3 §3 carries the detour and the diagnosis-as-intent handoff.
 Source: docs/blueprint.md amendment of 2026-07-22 (debug-security-flows), decision (D6), deciding commit e556769
 

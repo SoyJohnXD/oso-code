@@ -35,13 +35,13 @@ MARKER_END="<!-- oso-code:end -->"
 # then the parity notes and the cases in tests/hooks-test.sh behind them are what
 # holds the two sides equal.
 
-# The retention bound and the backup inventory are ADR-0124's, already bounding
-# install-codex.sh's snapshots; a second copy of either here is how the two would
-# drift into meaning different things by "300 MiB". Sourced when it is beside this
-# script and never fatal when it is not: retention is the one thing here that can
-# be skipped without changing what gets installed, so a copy of this file reached
-# by some path with no bootstrap/lib beside it prunes nothing and says so, which is
-# what every run did before there was a bound at all.
+# The retention bound and the backup inventory are the shared library's, already
+# bounding install-codex.sh's snapshots; a second copy of either here is how the
+# two would drift into meaning different things by "300 MiB". Sourced when it is
+# beside this script and never fatal when it is not: retention is the one thing
+# here that can be skipped without changing what gets installed, so a copy of
+# this file reached by some path with no bootstrap/lib beside it prunes nothing
+# and says so, which is what every run did before there was a bound at all.
 BACKUP_LIB="$SCRIPT_DIR/lib/install-backup.sh"
 if [ -f "$BACKUP_LIB" ]; then
   . "$BACKUP_LIB"
@@ -296,7 +296,7 @@ wire_mcps() {
 # carries the skills, the hooks and the .mcp.json, and that .mcp.json launches
 # `{"command": "engram"}` — a bare binary the plugin install never puts anywhere.
 # Reported from the plugin install's exit code alone, a clean Windows box read
-# `engram: OK — plugin installed` and then failed to start the server (D3).
+# `engram: OK — plugin installed` and then failed to start the server.
 wire_engram() {
   install_engram_plugin
   provision_engram_binary
@@ -646,7 +646,7 @@ engram_manual_install_command() {
 # the Codex CLI and Impeccable — a version, never `@latest`. `fallow` is the
 # package; `fallow-mcp` is one of the bins it ships and is no package name at all.
 # It ships prebuilt binaries for Windows, Linux and macOS, which is what took the
-# Rust toolchain out of this path and let verify.sh count fallow (D2).
+# Rust toolchain out of this path and let verify.sh count fallow.
 SUPPORTED_FALLOW_VERSION=3.14.0
 
 wire_fallow() {
@@ -726,7 +726,7 @@ wire_impeccable() {
   fi
   # Read back rather than reported from the exit code: verify.sh holds this to the
   # client LISTING the plugin, and a summary claiming installed while that check
-  # goes red is the engram shape one notch smaller (D3).
+  # goes red is the engram shape one notch smaller.
   if claude plugin list 2>/dev/null | grep -Fq impeccable; then
     wiring_ok "impeccable (plugin)" "installed"
   else
@@ -896,7 +896,7 @@ plugin_context7_entry() {
 
 # The two values Claude Code has to carry for anything here to work, written where
 # the client reads them at the start of every session: the `env` block of its own
-# settings.json (D9, D10). Neither rides a PATH any more. The plugin's bin
+# settings.json. Neither rides a PATH any more. The plugin's bin
 # directory reaches the Bash tool through an injection the client documents
 # nowhere and that has already failed on Windows, and a skill whose
 # "${OSO_STATE_BIN:-oso-state}" fell through to the bare name found nothing there
@@ -956,7 +956,7 @@ installed_oso_state_path() {
 # the operator's and is left exactly as they set it, and one that no longer
 # resolves is REPAIRED — a Git reinstalled, moved from Scoop to the official
 # package or landed on another drive otherwise leaves the client spawning a
-# bash.exe that is gone, permanently and invisibly (D10).
+# bash.exe that is gone, permanently and invisibly.
 # The path is discovered by bootstrap/install.ps1, which hands it over in this
 # same variable. The write is on this side because PowerShell 5.1's
 # ConvertFrom-Json | ConvertTo-Json defaults to -Depth 2 and flattens everything
@@ -1276,13 +1276,13 @@ merge_global_claude_md() {
 }
 
 # Every install used to leave one more backup directory in the operator's home,
-# forever. The bound is ADR-0124's, reached through the shared library rather
+# forever. The bound is the shared library's, reached through it rather
 # than restated: total size rather than count, and the newest snapshot kept
 # whatever the budget says, so the run that just installed is never the one a
 # tight budget empties.
 # What this side does NOT carry is that policy's restore-verified gate. There,
 # pruning waits until restore-codex.sh has proved a replay works on this machine,
-# because a broken automated restore must keep its fuel. D11 gives this side no
+# because a broken automated restore must keep its fuel. This side has no
 # restore command at all: recovery is a copy the operator makes by hand out of a
 # directory of plain files, so there is no replay whose provenness could be in
 # doubt — and a gate on a marker only the Codex restore can ever write would
@@ -1302,11 +1302,11 @@ prune_install_backups() {
   done
 }
 
-# D11 is honest backups, not a transaction: there is no restore command on this
-# side, so the recovery path is the operator's own `cp -a` and they have to be
-# told at the end of the run exactly how far it reaches. restore-codex.sh names
-# the one thing its restore cannot revert for the same reason — here the whole
-# recovery is manual, so the whole boundary gets named.
+# What this side promises is honest backups, not a transaction: there is no
+# restore command here, so the recovery path is the operator's own `cp -a` and
+# they have to be told at the end of the run exactly how far it reaches.
+# restore-codex.sh names the one thing its restore cannot revert for the same
+# reason — here the whole recovery is manual, so the whole boundary gets named.
 report_backup_coverage() {
   info "backup: $BACKUP_DIR"
   info "  it holds what this run replaced, as it stood before the run started — Claude Code's user config and plugin registrations, settings.json, CLAUDE.md, and every legacy artifact removed. Copy one back by hand to undo it; there is no restore command on this side."

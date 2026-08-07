@@ -2,7 +2,6 @@
 
 Date: 2026-08-02
 Status: accepted
-Implemented-in: docs/parity-codex.md, tests/hooks-test.sh, plugin/hooks/capture-plan-approval.sh, plugin/hooks/approve-plan-token.sh, plugin/hooks/block-unknown-tool.sh, plugin/bin/oso-state, tools/hook-gates.txt, tools/render-hooks-json.sh, codex/hooks/hooks.json, bootstrap/hook-hashes.txt, bootstrap/install-codex.sh, bootstrap/verify-codex.sh
 Reconciled: applied — tests hold the floor; the lifecycle handlers, atomic state transitions, pending-tool deny, rendered manifest and published trust ledger implement the corrected approval rail; the installer pins 0.146.0 and the post-install verifier checks that exact version.
 Source: this change (Codex port), ledger decision D14; recorded with the change that made it
 

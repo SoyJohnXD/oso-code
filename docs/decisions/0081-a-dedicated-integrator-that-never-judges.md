@@ -2,7 +2,6 @@
 
 Date: 2026-08-02
 Status: accepted
-Implemented-in: plugin/agents/oso-integrator.md, plugin/skills/_shared/bodies/plan.md
 Reconciled: applied — Mode 1 phase 6 names the integrator as the merger and the gate after it as the judge.
 Source: this change (parallel wave execution); recorded with the change that made it
 

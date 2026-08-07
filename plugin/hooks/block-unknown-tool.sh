@@ -4,7 +4,7 @@
 # the release-rendered allowlist.
 #
 # Recovery: this gate denies for two distinct causes and gives each its own way
-# out (D18) — a pending plan names Codex's native approval controls; an
+# out — a pending plan names Codex's native approval controls; an
 # unlisted tool names the exact allowlist this release actually admits.
 set -euo pipefail
 

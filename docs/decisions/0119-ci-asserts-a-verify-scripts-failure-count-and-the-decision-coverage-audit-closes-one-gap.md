@@ -2,7 +2,6 @@
 
 Date: 2026-08-06
 Status: accepted
-Implemented-in: .github/workflows/ci.yml, tests/hooks-test.sh, docs/blueprint.md
 Reconciled: applied — both verify steps in `.github/workflows/ci.yml` now assert a pinned `failed:` count beside the pre-existing `grep -q '^passed:'`; `tests/hooks-test.sh` gained two assertions closing the one coverage gap the audit below found; nothing else in this change's decision set needed a new check.
 Source: the pre-freeze doubt pass's finding that this change's bar "cannot fail on most of what it decides," resequenced to run after B7, B8-B9 and B10 landed their own lint rules — this decision is the audit of what remained once those three slices closed their share
 

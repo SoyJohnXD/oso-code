@@ -2,7 +2,6 @@
 
 Date: 2026-08-05
 Status: accepted
-Implemented-in: plugin/bin/oso-state, plugin/hooks/approve-plan-token.sh, plugin/skills/_shared/platform/codex/plan.md, bootstrap/hook-hashes.txt, tests/hooks-test.sh, docs/blueprint.md
 Reconciled: applied — `amend-plan` now takes either an approved or a pending plan; `approve-plan` gained a content-parity check between `current.md` and the presented snapshot; `approve-plan-token.sh`'s ordinary-turn path calls `amend-plan` instead of `cancel-plan` and returns amendment guidance instead of a full re-presentation demand.
 Source: the operator's own complaint, captured live in their session — an ordinary Plan Mode reply destroyed the pending document and forced a full re-presentation for one requested change; named directly as the harness answering "cosas muy raras" with blocks and repetition instead of intelligent maneuvering. D18's first half (executable remedies) landed at `d43303a`; this is its second.
 

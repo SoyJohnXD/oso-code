@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Lints the rules `claude plugin validate --strict` has no opinion on: it does
 # open hooks.json, skill frontmatter and the agents, and fails on a broken one
-# (probed against client 2.1.220), but it never asks what they SAY. Twenty-seven rules
-# hold that ground: a `context: fork` skill declares `background`; the same
-# skill declares an `end with exactly one of:` verdict block; every
-# `oso-code:<name>` the plugin's own prose points at resolves; every call site
-# of a skill OR AGENT that declares such a block carries EVERY token of an
-# axis it engages, each paired on its own line with a recovery verb rather
+# (probed against client 2.1.220), but it never asks what they SAY.
+# Twenty-eight rules hold that ground: a `context: fork` skill declares
+# `background`; the same skill declares an `end with exactly one of:` verdict
+# block; every `oso-code:<name>` the plugin's own prose points at resolves; every
+# call site of a skill OR AGENT that declares such a block carries EVERY token
+# of an axis it engages, each paired on its own line with a recovery verb rather
 # than merely named, and the skipped verdict of any axis whose other verdicts
 # it reads; security-pass never acquires its diff from a remote-qualified
 # ref; the Impeccable detect gate never carries a placeholder where its pin
@@ -22,9 +22,10 @@
 # START, the bullet disambiguating it from CHANGE BASE on the same line; every
 # decision under docs/decisions/ says where it
 # landed; the blueprint's own decision index names every file docs/decisions/
-# holds; every decision a skill cites resolves to one of those files AND is
-# named back by it; the prose that says how many rules hold this ground says a
-# number the functions below make true; both hook manifests plus every
+# holds; every decision id the plugin's prose cites resolves to one of those
+# files, while no comment in an executable this repo ships cites one at all; the
+# prose that says how many rules hold this ground says a number the functions
+# below make true; both hook manifests plus every
 # release-published hook hash exactly match their single source; the milestone
 # reporting contract names every required fact of its five milestones plus a
 # length bound, and every flow body that arms a slice or launches a delegation
@@ -51,10 +52,24 @@
 # own memory across rounds — each body's re-invocation restating the prior
 # findings' dispositions and nothing of the reasoning behind them, and the
 # judge's own body naming a dispositioned finding as settled instead of raising
-# it again — so no round can re-litigate what the last one closed. Each rule states its own reason
-# above it; `background` is the one whose cost is least visible: as of client v2.1.218
-# a fork returns immediately and its verdict arrives in a LATER turn, while every
-# call site in plan/quick/debug reads that verdict in-turn.
+# it again — so no round can re-litigate what the last one closed. Each rule
+# states its own reason above it; `background` is the one whose cost is least
+# visible: as of client v2.1.218 a fork returns immediately and its verdict
+# arrives in a LATER turn, while every call site in plan/quick/debug reads that
+# verdict in-turn.
+#
+# That reason is a rule's SPECIFICATION — the defect it caught, what keeps it
+# decidable, the ceiling it does not reach past — and it sits above the function
+# because a preceding block is the only place shell has to put a contract a name
+# cannot carry. This header is where that shape is claimed as a file's contract,
+# and it is claimed HERE rather than in anything the harness exports: the shared
+# rubric's inline-comment class stays absolute for the code a change lands in a
+# project, and a decision citation above a constant in a target project's source
+# is exactly as indefensible as it was before this file said any of it. No reason
+# below carries a decision id in any notation this repo writes one, which is the
+# one thing the reasons and the exported bar agree on exactly, and which the last
+# decision rule scans this file for alongside every other executable here.
+#
 # Only decidable rules live here. Pure sed and grep, no jq: tests/hooks-test.sh
 # runs this linter as one of its own cases, and CI runs that suite in the
 # bash:3.2 container, which carries neither git nor jq. A rule that scans a TREE
@@ -67,12 +82,13 @@
 set -euo pipefail
 
 PLUGIN_ROOT="${1:-$(cd "$(dirname "$0")/../plugin" && pwd)}"
-# Five rules below reach outside the plugin tree — the pin scan, the routing
-# files, the decision files, the citations that bind the plugin to them, and the
-# rule count's own prose surfaces — so the repo resolves the same way the default
-# PLUGIN_ROOT does. A second argument exists only so tests/hooks-test.sh can run
-# the whole linter against an isolated mutated copy; normal calls omit it and
-# resolve from this file's own location.
+# Six rules below reach outside the plugin tree — the pin scan, the routing
+# files, the decision files, the citations that bind the plugin to them, the
+# executables the citation ban scans, and the rule count's own prose surfaces —
+# so the repo resolves the same way the default PLUGIN_ROOT does. A second
+# argument exists only so tests/hooks-test.sh can run the whole linter against an
+# isolated mutated copy; normal calls omit it and resolve from this file's own
+# location.
 REPO_ROOT="${2:-$(cd "$(dirname "$0")/.." && pwd)}"
 
 violations=0
@@ -503,8 +519,7 @@ check_verifier_launches_name_their_payload() {
 # it arrived carrying all three because this rule stood before it did, rather
 # than being retrofitted after a wave merged onto a ref nobody recorded — and
 # it moved from a bare `base ref` to the named `WAVE START` the same slice that
-# gave the wave loop's worktree cut the coordinate it was always missing
-# (docs/decisions/0118).
+# gave the wave loop's worktree cut the coordinate it was always missing.
 # A launch site that does not exist is not a violation; a scan path that does not
 # exist is, so the tree scan keeps grep's stderr (`2>&1`, per the header) and
 # turns an unreadable path into a flag instead of a quiet zero. The integrator's
@@ -526,19 +541,19 @@ check_integrator_launches_name_their_payload() {
   done
 }
 
-# docs/decisions/0118 replaced the wave loop's single base ref with three named
-# coordinates precisely because a payload that just said BASE REF could not say
-# WHICH one it needed — the wave loop cut every worktree from CHANGE BASE
-# regardless of which wave was arming, and the sequential verifier's ref never
-# moved off it between slices either. Its verify criterion (d) is that every
-# applier/verifier launch now names SLICE START or WAVE START by that name.
+# The wave loop's single base ref became three named coordinates precisely
+# because a payload that just said BASE REF could not say WHICH one it needed —
+# the wave loop cut every worktree from CHANGE BASE regardless of which wave was
+# arming, and the sequential verifier's ref never moved off it between slices
+# either. So every applier/verifier launch names SLICE START or WAVE START by
+# that name.
 # This is a POSITIVE requirement, not a ban on the retired spelling: a rule
 # that only rejected the string BASE REF would pass a launch line naming NO
 # coordinate at all just as clean, which is the identical ambiguity under a
 # different shape — the gap a first cut of this rule left open. One kind is
-# excluded on purpose: a debt-cleanup or judge-findings launch (ADR-0063's
-# other two applier kinds) is self-contained by its own agent contract and
-# never carries a ref coordinate at all, so requiring one there would be a
+# excluded on purpose: a debt-cleanup or judge-findings launch — the applier's
+# other two kinds — is self-contained by its own agent contract and never carries
+# a ref coordinate at all, so requiring one there would be a
 # false positive on a launch that is correctly starved of it — `debt cleanup`
 # and `judge findings` are this file's own stable vocabulary for those two
 # kinds, so a line naming either is exempted rather than demanded a
@@ -568,16 +583,15 @@ check_plan_delegation_payloads_name_a_specific_coordinate() {
   return 0
 }
 
-# docs/decisions/0118 names the integrator as WAVE START's only producer and
-# says a conflict or a blocked report yields no clean integration commit to
-# hand the next wave. Prose making that claim is exactly the shape a rewrite
-# can silently drop — nothing else in the harness re-derives `next_wave_start`,
-# so its absence from the report shape is invisible until a later wave cuts a
-# worktree from a stale ref. Two markers, on both the Claude agent file and
-# the Codex role that mirrors it: the field name itself, proving the report
-# shape carries it, and one line naming it beside BOTH `conflict` and
-# `blocked`, proving the no-clean-integration case is stated rather than
-# merely implied by the field's absence on those paths.
+# The integrator is WAVE START's only producer, and a conflict or a blocked
+# report yields no clean integration commit to hand the next wave. Prose making
+# that claim is exactly the shape a rewrite can silently drop — nothing else in
+# the harness re-derives `next_wave_start`, so its absence from the report shape
+# is invisible until a later wave cuts a worktree from a stale ref. Two markers,
+# on both the Claude agent file and the Codex role that mirrors it: the field
+# name itself, proving the report shape carries it, and one line naming it beside
+# BOTH `conflict` and `blocked`, proving the no-clean-integration case is stated
+# rather than merely implied by the field's absence on those paths.
 check_integrator_report_names_next_wave_start() {
   local file
   for file in "$PLUGIN_ROOT/agents/oso-integrator.md" "$REPO_ROOT/codex/agents/oso-integrator.toml"; do
@@ -592,13 +606,12 @@ check_integrator_report_names_next_wave_start() {
   done
 }
 
-# docs/decisions/0118 fixed triage's own ambiguity — "the base ref" could have
-# meant the wave's WAVE START or the change's own CHANGE BASE, and getting it
-# wrong misattributes an earlier wave's landed work to the wave in flight.
-# Naming WAVE START alone is not enough to prove the ambiguity is closed: a
-# rewrite could drop CHANGE BASE back in unnamed and reintroduce the same
-# question this decision closed. So three markers, each on the file's own
-# named anchor rather than scanned loose: the one question itself, the
+# Triage carried the same ambiguity — "the base ref" could have meant the wave's
+# WAVE START or the change's own CHANGE BASE, and getting it wrong misattributes
+# an earlier wave's landed work to the wave in flight. Naming WAVE START alone is
+# not enough to prove the ambiguity is closed: a rewrite could drop CHANGE BASE
+# back in unnamed and reintroduce the same question. So three markers, each on
+# the file's own named anchor rather than scanned loose: the one question, the
 # comparison-coordinate bullet naming WAVE START beside CHANGE BASE on the
 # same line (the actual disambiguation), and the pre-existing verdict that
 # reads the answer back.
@@ -649,11 +662,12 @@ check_every_decision_records_where_it_landed() {
 }
 
 # The rule above proves every FILE says where it landed; it never proves the
-# INDEX names every file — 0113 carried a clean Reconciled line and still read
-# as though it never happened, because nothing checked the index against the
-# directory it is supposed to summarize. A decision dropped from the index is
-# invisible to a reader who trusts the index and never lists docs/decisions/
-# directly, which is what the index exists to save them from doing.
+# INDEX names every file — a decision file once carried a clean Reconciled line
+# and still read as though it never happened, because nothing checked the index
+# against the directory it is supposed to summarize. A decision dropped from the
+# index is invisible to a reader who trusts the index and never lists
+# docs/decisions/ directly, which is what the index exists to save them from
+# doing.
 check_blueprint_index_names_every_decision() {
   local decision base id found=0
   for decision in "$REPO_ROOT"/docs/decisions/*.md; do
@@ -667,15 +681,22 @@ check_blueprint_index_names_every_decision() {
   [ "$found" -gt 0 ] || flag "docs/decisions/ holds no decision files to check against the blueprint index"
 }
 
-# Checking only that a cited id EXISTS cannot catch a citation retargeted to the
-# wrong decision, and five of the twelve citations were disambiguated by reading
-# what the citing prose describes — a judgment nothing else in the repo records.
-# So the relation is written from both ends and read from both: the skill names a
-# decision id, that decision names the skill back in `Implemented-in:`, and a
-# retarget breaks the second half even when the first still resolves. Scoped to
-# the plugin tree, because that is where citations live and the blueprint's index
-# names every id while implementing none.
-check_decision_citations_resolve_and_name_their_citer() {
+# What survives here is link integrity for DOCUMENTS, and only that. This rule
+# used to read the relation from both ends — the citer names a decision, that
+# decision names the citer back in `Implemented-in:` — and the back-reference half
+# is gone with the lines that fed it: no decision file carries `Implemented-in:`
+# any more, so the second half would now fail on every citation in the tree.
+# What is left is a real defect class of its own. Thirty-six decision ids are
+# named across twelve markdown files under skills/ and agents/, forty-three of
+# those references in `bodies/plan.md` alone, and a decision renumbered or removed
+# leaves every one of them pointing at nothing: a reader follows the id to a file
+# that is not there, and no other check in this repo resolves one of these ids.
+# Scoped to the plugin tree, because that is where they live and the blueprint's
+# index names every id while implementing none. Every reference the scan now finds
+# is markdown PROSE — a document pointing at the document that decided it, which
+# is a cross-reference — because the rule below forbids the comment form outright,
+# in the executables where an id names something a reader of the code cannot open.
+check_cited_decisions_resolve_to_a_file() {
   local citation file id decision found
   for citation in $(decision_citations); do
     file="${citation%%:*}"
@@ -685,20 +706,91 @@ check_decision_citations_resolve_and_name_their_citer() {
       [ -f "$decision" ] || continue
       found="$decision"
     done
-    if [ -z "$found" ]; then
-      flag "${file#"$REPO_ROOT"/} cites $id, which resolves to no file under docs/decisions/"
-      continue
-    fi
-    { grep -F 'Implemented-in:' "$found" || true; } | grep -qF "${file#"$REPO_ROOT"/}" \
-      || flag "${found#"$REPO_ROOT"/} is cited by ${file#"$REPO_ROOT"/} but does not name it in Implemented-in:"
+    [ -n "$found" ] \
+      || flag "${file#"$REPO_ROOT"/} cites $id, which resolves to no file under docs/decisions/"
   done
 }
 
-# grep prints the filename itself under -r, so `path:ADR-0046` needs no line
-# number to name both ends of the pair — and dropping the line number is what
-# collapses a decision cited twice in one file to the one pair that has to hold.
+# grep prints the filename itself under -r, so the `path:id` pair needs no line
+# number to name both ends of it — and dropping the line number is what collapses
+# a decision cited twice in one file to the one pair that has to hold.
 decision_citations() {
   { grep -rEo 'ADR-[0-9][0-9][0-9][0-9]' "$REPO_ROOT/plugin" 2>&1 || true; } | LC_ALL=C sort -u
+}
+
+# The inverse of the rule above, and the reason it can stay narrow. A decision id
+# in a document is a cross-reference; the same id in a comment is provenance the
+# code cannot show and the reader cannot open — and this repo taught the habit by
+# example. Its own executables carried a hundred and fifty-five of them, in the
+# files an applier reads to learn how this project writes shell; the notation then
+# arrives in a target project's source, where the ledger those tags name did not
+# outlive the change that wrote it and never existed for that reader at all. The
+# shared rubric bans it there. This bans it here, so the harness cannot go on
+# exporting the convention by demonstration. Every shape it bans is spelled out in
+# the pattern below and NOWHERE in this prose, because this file is one of the
+# files scanned: a reason that reached for an example would be a violation of the
+# rule it is explaining, which is the ban holding without an exception carved for
+# the rule that states it.
+#
+# The file set is the six `bash -n` groups ci.yml runs, spelled the same way and
+# in the same order — every shell script this repo ships, plus the two executables
+# that carry no `.sh` extension — so "executable" means one thing to this rule and
+# to the syntax gate both. The scan keeps grep's stderr (`2>&1`, per the header),
+# so a glob whose directory vanished surfaces as two misnamed violations instead
+# of an empty read.
+#
+# COMMENT lines only, and the locator is the line rather than the syntax tree, so a
+# `#`-leading line inside a heredoc reads as a comment here — which errs toward
+# flagging, never toward missing one — while every string literal reads as exempt
+# whether or not it earns the exemption. Data is what the exemption is for:
+# `tests/hooks-test.sh` greps flow bodies for prose that legitimately keeps its own
+# parenthesized decision reference, and its linter fixtures name the decision file
+# each mutation edits. A string that is provenance instead — a diagnostic citing a
+# decision as the authority for what it asserts — is the same defect as a comment's,
+# and it is held by review, the one part of this ban no check here reaches.
+#
+# Four alternations, because this repo writes the reference four ways: the `ADR-`
+# prefix and a four-digit id, the `docs/decisions/` path and the same four digits,
+# the id bare with nothing but the digits to mark it, and a change ledger's own
+# letter-and-digits tag. The two qualified forms hold at any id number; the bare
+# form has no qualifier, so it is bounded to the numbering actually issued — a
+# leading zero, and a hundreds digit held to the two values every id filed here
+# uses — which is that alternation's ceiling and not a claim it makes for itself: a
+# numbering that reaches the next hundred has to widen it. That bound is numeric and
+# nothing more, so every line the bare form flags that is not a citation carries a
+# four-digit run inside the window: which of those runs the delimiters admit is the
+# pattern's to say rather than this prose's, and what such a run actually numbers
+# — an id, or anything else written four digits wide — is not a question a pattern
+# can answer at all. So the rule does not try, and errs toward flagging the way a
+# `#`-leading heredoc line does. The concession that stays true without an audit is
+# the other side of that: these files are the ones the rule scans, so a run it would
+# flag here already reads as this linter's own red, which is what keeps the
+# concession from going stale without the bar going red first.
+#
+# The ledger tag's letter is held to the four this repo's conventions have issued,
+# that alternation's own ceiling: a convention that mints a fifth has to join the
+# set. Widening it to any capital was measured and rejected — it flags a comment
+# naming a markdown heading level, and a two-character span inside a backticked
+# character class, both shapes already standing in these files, so it would ban
+# innocent prose rather than a citation, and prose is not what is wrong here.
+check_executables_carry_no_decision_citations() {
+  local citation
+  for citation in $(executable_comment_citations); do
+    flag "${citation#"$REPO_ROOT"/} cites a decision id in a comment"
+  done
+}
+
+# `path:line` per hit and none of the line's text, the way the remote-ref rule
+# above keeps its own scan down to a line number: the flag names where to look and
+# the citation is readable there, while quoting the line would reprint the
+# citation into this linter's own output, the one place the ban cannot reach.
+executable_comment_citations() {
+  { grep -nE '^[[:space:]]*#.*(ADR-[0-9][0-9][0-9][0-9]|docs/decisions/[0-9][0-9][0-9][0-9]|[^[:alnum:]+]0[01][0-9][0-9]([^[:alnum:]]|$)|[^[:alnum:]][ABDS][0-9][0-9]*([^[:alnum:]]|$))' \
+      "$REPO_ROOT"/bootstrap/*.sh "$REPO_ROOT"/bootstrap/lib/*.sh \
+      "$REPO_ROOT"/tools/*.sh "$REPO_ROOT"/plugin/hooks/*.sh \
+      "$REPO_ROOT/plugin/bin/oso-state" "$REPO_ROOT/plugin/git-hooks/pre-commit" \
+      "$REPO_ROOT"/tests/*.sh "$REPO_ROOT"/tests/fixtures/*.sh 2>&1 || true; } \
+    | cut -d: -f1,2
 }
 
 # How many rules hold this ground is prose in three places — this file's header,
@@ -726,6 +818,7 @@ check_present_tense_prose_names_the_rule_count() {
     19) spelled=nineteen ;; 20) spelled=twenty ;; 21) spelled=twenty-one ;;
     22) spelled=twenty-two ;; 23) spelled=twenty-three ;; 24) spelled=twenty-four ;;
     25) spelled=twenty-five ;; 26) spelled=twenty-six ;; 27) spelled=twenty-seven ;;
+    28) spelled=twenty-eight ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -823,7 +916,7 @@ check_milestone_reporting_contract_is_complete() {
 # the "report the result" shape the operator's complaint already produced, so
 # mention of the milestone alone must not satisfy this — every marker is
 # required on the SAME line as the header, this repo's own dense
-# single-line-bullet style (ADR-0114 notes call sites are written this way).
+# single-line-bullet style.
 milestone_bullet_names_its_facts() {
   local contract="$1" name="$2" bullet marker
   shift 2
@@ -877,11 +970,11 @@ check_reporting_host_difference_is_single_sourced() {
   [ -z "$cross_leak" ] || flag "a host-specific card difference crossed into the other host's platform tree: $(printf '%s' "$cross_leak" | tr '\n' ' ')"
 }
 
-# The Astro-landing incident (docs/decisions/0116) traced to one paragraph that
-# asserted Impeccable's `init`/`document` split from this file's own memory
-# instead of the installed contract, and to nobody recording which version was
-# actually read — the version slice B14's pin must reconcile against. Both are
-# now single, literal sentences a future rewrite could silently drop; this
+# The Astro-landing incident traced to one paragraph that asserted Impeccable's
+# `init`/`document` split from this file's own memory instead of the installed
+# contract, and to nobody recording which version was actually read — the version
+# the release's Impeccable pin must reconcile against. Both are now single,
+# literal sentences a future rewrite could silently drop; this
 # holds the paragraph to naming all five, so losing one fails instead of
 # drifting back to the same guess. Same technique as
 # `milestone_bullet_names_its_facts`: find the one paragraph by its own bold
@@ -904,10 +997,10 @@ check_design_foundation_slice_reads_the_installed_contract() {
   done
 }
 
-# Verify criterion (d) for docs/decisions/0117 asks for all four conditions
-# asserted together, the citation especially — a lane that drops the citation
-# is the harness rewriting an approved slice on its own word, exactly what the
-# operator objected to losing. Same technique as the rule above: one paragraph
+# The amendment lane needs all four of its conditions asserted together, the
+# citation especially — a lane that drops the citation is the harness rewriting
+# an approved slice on its own word, exactly what the operator objected to
+# losing. Same technique as the rule above: one paragraph
 # found by its own bold lead-in, held to every marker.
 check_third_amendment_lane_names_its_conditions() {
   local file="$PLUGIN_ROOT/skills/_shared/platform/codex/plan.md"
@@ -927,12 +1020,11 @@ check_third_amendment_lane_names_its_conditions() {
   done
 }
 
-# docs/decisions/0126 closed a contract hole where a paragraph could flatly
-# claim "wave 1's WAVE START is the CHANGE BASE" without conditioning it on
-# whether a wave 0 ran: a wave 0 that ran commits directly to the main
-# checkout (its own per-slice commit, ADR-0093, made by the orchestrator
-# rather than through step 4's applier/verifier loop), which moves HEAD past
-# CHANGE BASE before wave 1 ever cuts a worktree. Round 2 fixed this by
+# A contract hole once let a paragraph flatly claim "wave 1's WAVE START is the
+# CHANGE BASE" without conditioning it on whether a wave 0 ran: a wave 0 that ran
+# commits directly to the main checkout (its own per-slice commit, made by the
+# orchestrator rather than through step 4's applier/verifier loop), which moves
+# HEAD past CHANGE BASE before wave 1 ever cuts a worktree. Round 2 fixed this by
 # anchoring on two paragraphs by their own bold lead-in — the Wave 0 bullet
 # and the Cut-one-worktree-per-slice paragraph — and missed a third: the
 # "Three coordinates" paragraph carried the identical flat claim under a
@@ -942,11 +1034,11 @@ check_third_amendment_lane_names_its_conditions() {
 # instead scans every LINE naming "wave 1" — the one term this file uses
 # nowhere except this contract — wherever it lives, and holds each one to
 # naming both WAVE START (never the vague "the base ref" phrasing whose
-# ambiguity is what opened this hole in the first place, per
-# docs/decisions/0118's own Context) and wave 0 (proving the CHANGE BASE
-# claim is conditioned rather than stated flat again). A rewrite that drops
-# either marker from any such line, present or future, reopens the hole
-# silently, the same way dropping one of ADR-0116's five markers would.
+# ambiguity is what opened this hole in the first place) and wave 0 (proving
+# the CHANGE BASE claim is conditioned rather than stated flat again). A
+# rewrite that drops either marker from any such line, present or future,
+# reopens the hole silently, the same way dropping one of the
+# design-foundation paragraph's five markers would.
 check_wave_1_wave_start_accounts_for_wave_0() {
   local body="$PLUGIN_ROOT/skills/_shared/bodies/plan.md"
   local sites entry linenum
@@ -965,7 +1057,7 @@ check_wave_1_wave_start_accounts_for_wave_0() {
     printf '%s\n' "$entry" | grep -qF 'WAVE START' \
       || flag "skills/_shared/bodies/plan.md:$linenum names wave 1 without naming WAVE START — the vague \"the base ref\" phrasing is what let wave 1 branch before wave 0 landed"
     printf '%s\n' "$entry" | grep -qiF 'wave 0' \
-      || flag "skills/_shared/bodies/plan.md:$linenum states wave 1's own WAVE START without conditioning it on wave 0 (docs/decisions/0126)"
+      || flag "skills/_shared/bodies/plan.md:$linenum states wave 1's own WAVE START without conditioning it on wave 0"
   done <<< "$sites"
 }
 
@@ -1158,10 +1250,10 @@ check_sweep_exit_bar_is_banded_and_capped() {
 # The contract has two ends, and a rule holding one would pass over a half-landed
 # edit: a sender restating dispositions to a judge whose body never mentions them
 # is a payload nobody reads, and a judge refusing to re-raise what no sender ever
-# hands it is a rule about nothing. So both ends are read, the way
-# check_decision_citations_resolve_and_name_their_citer reads both ends of a
-# citation. On the SENDER side that is the two bodies that run the loop —
-# plan.md's §7 close and debug.md's additive sweep, the same pair as the rule
+# hands it is a rule about nothing. So both ends are read, the way the pair of
+# decision rules above read a decision file and the index that has to name it. On
+# the SENDER side that is the two bodies that run the loop — plan.md's §7 close
+# and debug.md's additive sweep, the same pair as the rule
 # above and for the same reason, so a third body growing a sweep loop later has
 # to join this list too. Each is located by `re-invoke the debt-sweep judge`, the
 # phrase both restatements open with: one line in each body today and no other
@@ -1236,7 +1328,8 @@ check_integrator_report_names_next_wave_start
 check_triage_names_wave_start_unambiguously
 check_every_decision_records_where_it_landed
 check_blueprint_index_names_every_decision
-check_decision_citations_resolve_and_name_their_citer
+check_cited_decisions_resolve_to_a_file
+check_executables_carry_no_decision_citations
 check_present_tense_prose_names_the_rule_count
 check_hook_renders_and_published_hashes_match
 check_milestone_reporting_contract_is_complete

@@ -2,7 +2,6 @@
 
 Date: 2026-08-02
 Status: accepted
-Implemented-in: plugin/skills/_shared/bodies/plan.md
 Reconciled: applied — Mode 1 phase 4 states the cut is by the vertical bar and the graph derived from it.
 Source: this change (parallel wave execution); recorded with the change that made it
 

@@ -3,7 +3,6 @@
 Date: 2026-08-04
 Status: accepted
 Amends: ADR-0033 (Codex now composes its native approval UI instead of inventing a second operator token), ADR-0094 (the verified lifecycle evidence includes the native `Implement the plan.` prompt), ADR-0097 (the approval degradation is narrower hook coverage, not a second non-native approval interaction)
-Implemented-in: docs/blueprint.md, docs/parity-codex.md, README.md, CHANGELOG.md, bootstrap/codex-global.md, bootstrap/verify-codex.sh, codex/skills/plan/SKILL.md, plugin/skills/_shared/platform/codex/plan.md, plugin/hooks/capture-plan-approval.sh, plugin/hooks/approve-plan-token.sh, plugin/hooks/block-unknown-tool.sh, plugin/bin/oso-state, tests/hooks-test.sh, bootstrap/hook-hashes.txt
 Reconciled: applied — Codex requires native Plan Mode before the skill starts, binds its native approval prompt to the pending digest, persists separate approved and operational artifacts, and permits only operator-requested in-scope hot slices outside a new planning cycle.
 Source: the first live Codex 0.146.0 plan run after release 0.18.2 and the operator's 2026-08-04 lifecycle decision
 

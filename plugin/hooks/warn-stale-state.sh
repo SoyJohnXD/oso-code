@@ -14,7 +14,7 @@ session_id="$(hook_session "$payload")"
 # Every gate this session meets resolves state_file_for(cwd) — never the whole
 # state directory — so a repository other than this one arms nothing here, and
 # naming it would hand the operator a file no remedy run from this cwd could
-# ever reach (D18). The one file worth a warning is this repository's own, and
+# ever reach. The one file worth a warning is this repository's own, and
 # the session recorded inside it is the key: a file this session armed is one
 # it is resuming, not one it has to be told about.
 state_file="$(state_file_for "$(json_field "$payload" cwd)")"

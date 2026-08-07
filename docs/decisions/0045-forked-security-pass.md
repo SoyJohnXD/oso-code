@@ -4,7 +4,6 @@ Date: 2026-07-24
 Status: accepted
 Supersedes: ADR-0044 (the inline Skill-tool invocation)
 Superseded-by: ADR-0061 — writes this skill's fallback review surface and verdict line to what it does
-Implemented-in: plugin/skills/_shared/bodies/quick.md, plugin/skills/_shared/bodies/debug.md
 Reconciled: applied — Mode 1 §7, Mode 2 and Mode 3 §5 read the forked skill.
 Source: docs/blueprint.md amendment of 2026-07-24 (secfork-impeccable-pocock), joint marker (D1/D7), deciding commit 7d52356
 

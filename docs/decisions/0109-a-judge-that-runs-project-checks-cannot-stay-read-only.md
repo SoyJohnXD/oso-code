@@ -2,7 +2,6 @@
 
 Date: 2026-08-05
 Status: accepted
-Implemented-in: codex/agents/oso-debt-sweep.toml, codex/agents/oso-triage.toml, tests/hooks-test.sh, docs/parity-codex.md, docs/blueprint.md
 Reconciled: applied — `oso-debt-sweep` and `oso-triage` now declare `sandbox_mode = "workspace-write"`, matching `oso-verifier`; `oso-doubt-pass` is unchanged at `read-only`; both moved role files gained an explicit never-edit-source sentence in their `developer_instructions`; the suite's judge-sandbox assertion at `tests/hooks-test.sh` splits into three named branches instead of one blanket "every judge is read-only" case, and a new assertion pins the never-edit-source sentence in the two moved files.
 Source: `plugin/skills/_shared/bodies/debt-sweep.md:25` ("Run the project's zero-warnings bar") and `plugin/skills/_shared/bodies/triage.md:27,29` ("running a check is not writing code" / "re-run the failing check in the tree the gate ran it in"), read against `codex/agents/oso-debt-sweep.toml:5` and `codex/agents/oso-triage.toml:5` pinning `sandbox_mode = "read-only"`; `oso-verifier`'s existing `workspace-write` for the identical problem is the precedent; the pre-freeze doubt pass on this change raised the cost recorded below as the accepted residual
 

@@ -2,7 +2,6 @@
 
 Date: 2026-08-05
 Status: accepted
-Implemented-in: bootstrap/verify-codex.sh, tests/hooks-test.sh, docs/blueprint.md
 Reconciled: applied — `verify-codex.sh` gains `host_contract_status`, a check that greps the resolved `codex` binary for two literal strings and compares its reported version to `SUPPORTED_CODEX_VERSION`; `hooks-test.sh` gains one behavioral case that drives `host_contract_status` itself through a fake `codex` shim on PATH, asserting all four outcomes — conformant, nonconformant, unverified, skip — including under `bash:3.2`.
 Source: literal strings in the installed `codex-cli 0.146.0` binary resolved from `command -v codex` — the same evidence ADR-0105 corrected against — and the fact that ADR-0105's two rejected assertions passed unnoticed because nothing in the repo read the binary itself.
 

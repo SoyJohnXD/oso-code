@@ -3,7 +3,6 @@
 Date: 2026-08-02
 Status: accepted
 Supersedes: ADR-0003 (the per-session file name; the flat key=value format and the location outside the project both stand), ADR-0089 (its `oso-state-unreachable` teardown event alone — the `event` verb and every other line it writes still stand)
-Implemented-in: docs/blueprint.md, docs/parity-codex.md, plugin/hooks/lib.sh, plugin/bin/oso-state, plugin/hooks/cleanup-state.sh, plugin/hooks/warn-stale-state.sh, plugin/hooks/block-commit-until-green.sh, plugin/hooks/block-edits-without-slice.sh, plugin/git-hooks/pre-commit, plugin/skills/_shared/platform/codex/plan.md, plugin/skills/_shared/platform/codex/quick.md, plugin/skills/_shared/platform/codex/debug.md
 Reconciled: applied — the blueprint's Hooks section now names repository-keyed state and its shared-session consequence; the hook library, `oso-state` and every reader implement that identity.
 Source: this change (Codex port), ledger decisions D2 as amended and D16; recorded with the change that made it
 

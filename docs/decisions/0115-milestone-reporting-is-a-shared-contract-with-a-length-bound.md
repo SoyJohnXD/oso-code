@@ -2,7 +2,6 @@
 
 Date: 2026-08-05
 Status: accepted
-Implemented-in: plugin/skills/_shared/reporting.md, plugin/skills/_shared/platform/claude/reporting.md, plugin/skills/_shared/platform/codex/reporting.md, plugin/skills/_shared/platform/claude/plan.md, plugin/skills/_shared/platform/claude/quick.md, plugin/skills/_shared/platform/claude/debug.md, plugin/skills/_shared/platform/codex/plan.md, plugin/skills/_shared/platform/codex/quick.md, plugin/skills/_shared/platform/codex/debug.md, plugin/skills/_shared/bodies/plan.md, plugin/skills/_shared/bodies/quick.md, plugin/skills/_shared/bodies/debug.md, tests/plugin-lint.sh, tests/hooks-test.sh, README.md, docs/blueprint.md
 Reconciled: applied — the neutral contract lives once at `_shared/reporting.md`, each flow body points at it from the moment it arms or launches, the two platform files carry the one host-specific fact each host needs, and `tests/plugin-lint.sh` gained the two rules (14, 15) that keep all of that true.
 Source: the operator's own words — "el orquestador ... no me dice casi nada de los apply, debt y estas cosas" — traced to a harness gap: a grep for reporting language across the bodies found four incidental mentions (`bodies/plan.md:193` "report the result to the user", `:223` "report the wave to the operator", and two "relay the returned markdown report verbatim" in the security offers) and nothing that says what a report CONTAINS. Claude's own native subagent cards mask the gap on that host; Codex draws no card at all, which is why the operator saw only tool calls there.
 

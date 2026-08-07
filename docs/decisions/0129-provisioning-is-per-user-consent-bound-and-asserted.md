@@ -2,7 +2,6 @@
 
 Date: 2026-08-07
 Status: accepted
-Implemented-in: bootstrap/install.ps1, bootstrap/install.sh, bootstrap/verify.sh, tests/hooks-test.sh, docs/blueprint.md, docs/windows.md, README.md
 Reconciled: applied — every file above carries the change this decision records; Bootstrap responsibilities item 2 reads engram, context7 and fallow as asserted against the artifact that actually starts each one.
 Source: this change (windows-install-reliability); winget's documented return codes, where `APPINSTALLER_CLI_ERROR_NO_APPLICABLE_INSTALLER` (0x8A150010, surfacing through PowerShell as -1978335216) is the only code meaning the manifest has no installer for the requested scope; measured that a clean Windows box got `engram: OK — plugin installed` from a plugin install's exit code and then a bare `FAIL` from `verify.sh`; ledger decisions D1, D3, D4
 

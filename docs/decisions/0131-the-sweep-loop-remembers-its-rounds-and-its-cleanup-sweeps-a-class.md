@@ -2,7 +2,6 @@
 
 Date: 2026-08-07
 Status: accepted
-Implemented-in: plugin/skills/_shared/bodies/debt-sweep.md, plugin/skills/_shared/bodies/plan.md, plugin/skills/_shared/bodies/debug.md, plugin/agents/oso-applier.md, codex/agents/oso-applier.toml, codex/agents/oso-debt-sweep.toml, tests/plugin-lint.sh
 Reconciled: applied — the judge's own body carries a `Prior rounds` input contract and the Codex judge role names that input beside the two it already listed, `/plan` §7 step 3 and `/debug` §5 step 1 restate the prior findings' dispositions on their re-invocations and hand the cleanup a stated payload, both `oso-applier` contracts carry that payload, the class sweep and its boundary plus finding-keyed reporting, and `tests/plugin-lint.sh`'s `check_sweep_loop_remembers_its_dispositioned_findings` holds both ends of the memory contract. `docs/blueprint.md`'s Mode 1 §7 narrative needed no move: it already defers this loop's contract to the mode body, and its one sentence about the cleanup — readability and semantics only, never functionality — stands unchanged under a sweep that is still both.
 Source: this change (clean-bar-convergence); the same close ADR-0130 was cut from, read for what it spent its rounds ON rather than how many it ran; ledger decisions D5, D6, D8
 

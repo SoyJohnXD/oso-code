@@ -2,7 +2,6 @@
 
 Date: 2026-07-22
 Status: accepted
-Implemented-in: plugin/skills/_shared/bodies/debug.md
 Reconciled: applied — Mode 3 §3 carries the single save and the no-index rule.
 Source: docs/blueprint.md amendment of 2026-07-22 (debug-security-flows), decision (D5), deciding commit e556769
 

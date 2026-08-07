@@ -3,7 +3,6 @@
 Date: 2026-08-03
 Status: accepted
 Supersedes: the foundational Platform, Distribution and Enforcement choices in `docs/blueprint.md` — Claude Code is no longer the only current host, one Claude plugin is no longer the whole distribution, and approval hooks now inspect a bounded transport marker and token as well as state booleans
-Implemented-in: docs/blueprint.md, plugin/skills/_shared/bodies/, plugin/skills/_shared/platform/claude/, plugin/skills/_shared/platform/codex/, plugin/skills/, codex/skills/, codex/agents/, codex/.codex-plugin/plugin.json, bootstrap/install-codex.sh, bootstrap/codex-global.md
 Reconciled: applied — the blueprint's foundational rows describe two first-class adapters, their split distribution and the bounded content-aware approval rail.
 Source: this change (Codex port), ledger decisions D1, D3, D9, D13, D15 and D16; recorded with the release that made both hosts installable
 

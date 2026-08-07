@@ -72,7 +72,7 @@ plugin_listed="$(claude plugin list 2>/dev/null | grep -c 'oso-code' || true)"
 check "oso-code plugin installed" "1" "$([ "$plugin_listed" -ge 1 ] && echo 1 || echo 0)"
 
 # 2. MCP servers wired and connected. Two things have to hold at once, and each
-#    was a way of reading green over a server that is down (D17). The line must
+#    was a way of reading green over a server that is down. The line must
 #    report Connected, never merely that the name is registered — `claude mcp list`
 #    spawns each server, so Connected is the only word that says one answered. And
 #    the name must be the WHOLE name: engram and context7 ride plugins and render
@@ -105,7 +105,7 @@ check "context7 MCP connected" "1" "$(mcp_connected 'context7')" \
 # provisions — so a hard check would have made the one-step Windows path red by
 # construction. install.sh now installs it from its npm package, at a pin, on
 # every supported host, so that bound is gone and this counts like its two
-# neighbours (D2). What it counts is the wired command RESOLVING AND ANSWERING:
+# neighbours. What it counts is the wired command RESOLVING AND ANSWERING:
 # `claude mcp list` spawns each server and reports whether it handshook, which
 # asks nothing of the network and so stays outside OSO_VERIFY_SKIP_SLOW.
 # The remediation is two commands because the client refuses to overwrite an entry
@@ -204,7 +204,7 @@ client_env_value() {
 }
 
 # 7. oso-state reachable end-to-end through the OSO_STATE_BIN THE CLIENT PUBLISHES
-#    — the absolute path install.sh writes into settings.json's `env` block (D9),
+#    — the absolute path install.sh writes into settings.json's `env` block,
 #    exercised in the exact "${OSO_STATE_BIN:-oso-state}" form the skills use. The
 #    stored value is the whole check: a probe against a path this script found for
 #    itself by walking the plugin cache passes on a machine that published none,
@@ -360,7 +360,7 @@ fi
 #     actually shipped from here, twice (bb4356f, 88f0c1e) — both times in
 #     install.ps1 or install.bat, which nothing was scanning.
 #     Those two were named one by one until verify.bat landed beside them as the
-#     third file of exactly that class, so both extensions glob now (D16): a
+#     third file of exactly that class, so both extensions glob now: a
 #     hand-written list is honest only until the next entry point lands unnamed,
 #     which is the same reasoning ci.yml's own `bash -n` steps glob under, and
 #     bootstrap/ is where every Windows entry point this repo ships lives.
@@ -539,7 +539,7 @@ git_bash_resolves() {
 #     package, or on a drive that is not mounted) takes every gate on the machine
 #     with it, and says nothing. install.sh writes the key where it is absent and
 #     repairs it where it has gone stale, never over a value that still resolves,
-#     so what is stored is either the operator's own or this bootstrap's (D10).
+#     so what is stored is either the operator's own or this bootstrap's.
 #     Nothing stored is the ordinary state off Windows and on a client that finds
 #     Git Bash on its own, so it is a note: a hard check there could only ever fail
 #     for machines that are working — the shape checks 12 and 13 take.
@@ -598,7 +598,7 @@ claude_desktop_install() {
 #     above already hold. What is left is a machine-shaped fact — whether the app
 #     is on this machine — which is what a `note:` is for, on both branches. A
 #     counted check needs a way to be red, and this one had none: no installer here
-#     provisions Desktop, so its absence cannot fail a run (D4), and its presence
+#     provisions Desktop, so its absence cannot fail a run, and its presence
 #     was compared against itself.
 desktop_install="$(claude_desktop_install)"
 if [ -z "$desktop_install" ]; then

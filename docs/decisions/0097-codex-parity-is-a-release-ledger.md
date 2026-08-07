@@ -2,7 +2,6 @@
 
 Date: 2026-08-03
 Status: accepted
-Implemented-in: docs/parity-codex.md, docs/blueprint.md, plugin/skills/_shared/platform/codex/plan.md
 Reconciled: applied — the blueprint assigns host spellings and assurance differences to the mandatory ledger in `docs/parity-codex.md`, and that ledger carries every frozen degradation.
 Source: this change (Codex port), ledger decision D17; recorded with the release that made Codex a first-class host
 

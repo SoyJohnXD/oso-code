@@ -4,7 +4,6 @@ Date: 2026-08-04
 Status: accepted
 Amends: ADR-0097 (installed verification now covers the explicit-profile launch constraint and cleans its own project registration), ADR-0098 (Engram's root keys compose with Oso's managed region), ADR-0100 (the integrator smoke must launch the selected profile without a full-history fork)
 Superseded-by: ADR-0105 — retires only the `fork_context=false` spelling, which the installed MultiAgentV2 host rejects in favor of `fork_turns="none"`; the fresh explicit-role launch with a complete payload still stands
-Implemented-in: bootstrap/install-codex.sh, bootstrap/repair-engram-codex.sh, bootstrap/verify-codex.sh, bootstrap/lib/engram-codex-pointers.sh, bootstrap/lib/toml-regions.awk, plugin/skills/_shared/platform/codex/subagents.md, tests/hooks-test.sh, docs/blueprint.md, docs/parity-codex.md, README.md, CHANGELOG.md
 Reconciled: applied — the installer repairs only exact Engram state under rollback, explicit Codex roles start fresh with complete payloads, and the verifier removes only its own temporary project table.
 Source: the operator's real 0.18.3 install and authenticated `bootstrap/verify-codex.sh` run on 2026-08-04
 

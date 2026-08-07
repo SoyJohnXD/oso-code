@@ -3,7 +3,6 @@
 Date: 2026-08-05
 Status: accepted
 Supersedes: ADR-0046 (its own and `bodies/plan.md`'s undifferentiated `DESIGN.md`/`PRODUCT.md` phrasing for what `init` and `document` each produce; the FIRST-slice structure, the orchestrator-runs-it-directly exception and the front-surface absence policy it establishes all stand unchanged)
-Implemented-in: plugin/skills/_shared/bodies/plan.md, plugin/skills/_shared/front-surface.md, docs/decisions/0046-front-surface-design-bar.md, docs/blueprint.md, tests/plugin-lint.sh, tests/hooks-test.sh, README.md
 Reconciled: applied — §4's design-foundation-slice paragraph and Wave 0 bullet now attribute `PRODUCT.md` to `init` and `DESIGN.md` to `document`, require reading the installed `SKILL.md` and recording its version in the ledger before the slice is cut, and name the front-surface absence policy as the lane for when that read cannot happen; `tests/plugin-lint.sh` gained a rule (16) holding the paragraph to it.
 Source: the operator's real greenfield Astro-landing-page `/plan` run — Wave 0 was planned as "generate DESIGN.md via Impeccable init", approved, then found wrong against the installed contract only at execution, sending the operator back through Plan Mode to re-approve a corrected plan over their objection ("como así? no entiendo para qué necesitas el plan mode otra vez?"). Confirmed against the installed `~/.agents/skills/impeccable/SKILL.md`, version 4.0.2, and `reference/init.md`, `reference/document.md`, `reference/new-work.md` on this machine.
 

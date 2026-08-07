@@ -3,7 +3,6 @@
 Date: 2026-08-03
 Status: accepted
 Amends: ADR-0096 (the Codex adapter's authenticated verifier must exercise the integrator's real sandbox contract), ADR-0097 (the operator-run smoke is release evidence only when its parent does not narrow the delegated role)
-Implemented-in: docs/blueprint.md, docs/parity-codex.md, README.md, CHANGELOG.md, bootstrap/verify-codex.sh, tests/hooks-test.sh
 Reconciled: applied — the authenticated smoke launches its disposable parent with `danger-full-access`, observes a completed subagent spawn carrying the exact fixture coordinates, and requires observable merge and teardown evidence.
 Source: the authenticated 0.18.0 verifier run; Codex 0.146.0 reapplied the parent's live `--sandbox workspace-write` override to the child and correctly denied writes to the fixture's Git metadata
 

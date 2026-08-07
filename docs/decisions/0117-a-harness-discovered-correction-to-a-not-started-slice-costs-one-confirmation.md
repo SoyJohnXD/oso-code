@@ -2,7 +2,6 @@
 
 Date: 2026-08-05
 Status: accepted
-Implemented-in: plugin/skills/_shared/platform/codex/plan.md, tests/plugin-lint.sh, tests/hooks-test.sh, docs/blueprint.md, README.md
 Reconciled: applied — the Codex plan platform file gains a third amendment lane beside the material-change rule and the hot-slice lane, gated on the slice being unstarted, an evidence citation, one operator confirmation, and the same `amend-plan` recording mechanics the hot-slice lane already uses; `tests/plugin-lint.sh` gained a rule (17) holding the lane to all four conditions.
 Source: the same incident ADR-0116 traces, its second defect — the model's own words while working inside the gap it exposes: "aunque en este caso se sienta ceremonioso". D18 (forward recovery), the same ledger decision `docs/decisions/0113-stale-state-warning-is-scoped-to-this-repositorys-own-file.md` already applied to a different mechanism in this change.
 

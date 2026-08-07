@@ -3,7 +3,6 @@
 Date: 2026-08-04
 Status: accepted
 Amends: ADR-0094 (the frozen 0.146 hook contract includes its observed runtime mismatch), ADR-0101 (native-mode checks no longer equate Codex collaboration mode with `permission_mode`)
-Implemented-in: docs/blueprint.md, docs/parity-codex.md, docs/decisions/0101-codex-native-approval-and-operational-plan-artifacts.md, README.md, plugin/skills/_shared/platform/codex/plan.md, plugin/hooks/lib.sh, plugin/hooks/capture-plan-approval.sh, plugin/hooks/approve-plan-token.sh, tests/hooks-test.sh, bootstrap/hook-hashes.txt, CHANGELOG.md
 Reconciled: applied — plan entry, presentation, replanning feedback and native approval all resolve the collaboration mode from one exact-turn compatibility adapter.
 Source: three blocked native Plan Mode turns in the Codex 0.146.0 rollout `019fcda1-996b-7372-aa97-d20932088948`, the tagged 0.146.0 hook schema and `hook_runtime.rs` implementation, and the operator's 2026-08-04 compatibility decision
 

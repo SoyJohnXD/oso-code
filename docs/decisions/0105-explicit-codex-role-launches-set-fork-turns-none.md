@@ -3,7 +3,6 @@
 Date: 2026-08-05
 Status: accepted
 Supersedes: ADR-0102 (its `fork_context=false` spelling, which the installed MultiAgentV2 host rejects outright)
-Implemented-in: plugin/skills/_shared/platform/codex/subagents.md, bootstrap/verify-codex.sh, docs/parity-codex.md, docs/decisions/0102-codex-post-install-repair-is-bounded-and-profile-launches-are-fresh.md, docs/blueprint.md, tests/hooks-test.sh
 Reconciled: applied — the shared delegation protocol, the authenticated integrator smoke and the three parity rows spell the freshness constraint the way the installed host accepts it.
 Source: literal strings in the installed `codex-cli 0.146.0` binary resolved from `command -v codex`, plus an external audit run on this machine whose four subagents had to be launched with `fork_turns:"none"`
 

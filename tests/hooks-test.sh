@@ -221,7 +221,7 @@ assert_equals "marketplace catalogs do not duplicate the plugin release version"
   "0" "$marketplace_version_fields"
 
 # The clean-tree call above proves only that today's Codex bodies happen to be
-# clean. Before S4, skill_sources followed the Claude wrapper alone, so the same
+# clean. Earlier, skill_sources followed the Claude wrapper alone, so the same
 # forbidden acquisition command went red under platform/claude and silently green
 # under platform/codex. Run the WHOLE linter over an isolated copy with exactly
 # that mutation: a failure for any other reason does not clear the case, because
@@ -278,15 +278,15 @@ else
   fi
 fi
 
-# B4/B5 (D9): rule 6 now demands EVERY token of an axis a caller engages, not
-# just one of the emitter's whole flattened vocabulary — the delta a `blocked`
-# drift exploited, since a caller could satisfy the old floor by naming any
-# OTHER token of the same emitter and never carry the one that actually went
-# missing. Remove only the sentence that routes debt-sweep's whole-report
-# `blocked` token from a real, otherwise-complete caller (debug's close still
-# names `Debt Sweep: clean`, `findings`, and `Conformance: skipped` — every
-# token the OLD "at least one" floor ever required). The old rule would have
-# read this caller clean; the new one must not.
+# Rule 6 demands EVERY token of an axis a caller engages, not just one of the
+# emitter's whole flattened vocabulary — the delta a `blocked` drift exploited,
+# since a caller could satisfy the old floor by naming any OTHER token of the
+# same emitter and never carry the one that actually went missing. Remove only
+# the sentence that routes debt-sweep's whole-report `blocked` token from a
+# real, otherwise-complete caller (debug's close still names `Debt Sweep:
+# clean`, `findings`, and `Conformance: skipped` — every token the OLD "at least
+# one" floor ever required). The old rule would have read this caller clean; the
+# new one must not.
 LINT_MISSING_TOKEN_FIXTURE="$TEST_HOME/lint-missing-token"
 copy_lint_fixture "$LINT_MISSING_TOKEN_FIXTURE"
 missing_token_body="$LINT_MISSING_TOKEN_FIXTURE/plugin/skills/_shared/bodies/debug.md"
@@ -310,12 +310,12 @@ else
   fi
 fi
 
-# B5 (D9): the harder half — a token named with no action beside it is the
-# boilerplate the doubt pass predicted this rule would produce if it graded
-# mention alone. Inject a caller that never invoked debt-sweep before, naming
-# EVERY one of its six tokens across all three axes verbatim, with zero
-# recovery verb anywhere near them. The floor (every token present) is fully
-# satisfied; only the routing half can still fail this, and it must.
+# The harder half — a token named with no action beside it is the boilerplate
+# the doubt pass predicted this rule would produce if it graded mention alone.
+# Inject a caller that never invoked debt-sweep before, naming EVERY one of its
+# six tokens across all three axes verbatim, with zero recovery verb anywhere
+# near them. The floor (every token present) is fully satisfied; only the
+# routing half can still fail this, and it must.
 LINT_BARE_LIST_FIXTURE="$TEST_HOME/lint-bare-list"
 copy_lint_fixture "$LINT_BARE_LIST_FIXTURE"
 bare_list_target="$LINT_BARE_LIST_FIXTURE/plugin/skills/_shared/platform/claude/quick.md"
@@ -338,12 +338,12 @@ else
   fi
 fi
 
-# B5 (D9): agents join skills as emitters — the drift this rule exists to
-# close (oso-integrator's `status: blocked`) came from agents sitting outside
-# its reach entirely. Remove the one sentence that routes it from the real,
-# already-fixed body and confirm the mechanism itself — not just the fixed
-# prose — is what proves the route exists: a rule that only ever reads clean
-# never proves it would have caught the drift it was built for.
+# Agents join skills as emitters — the drift this rule exists to close
+# (oso-integrator's `status: blocked`) came from agents sitting outside its
+# reach entirely. Remove the one sentence that routes it from the real,
+# already-fixed body and confirm the mechanism itself — not just the fixed prose
+# — is what proves the route exists: a rule that only ever reads clean never
+# proves it would have caught the drift it was built for.
 LINT_AGENT_FIXTURE="$TEST_HOME/lint-agent-token"
 copy_lint_fixture "$LINT_AGENT_FIXTURE"
 agent_route_body="$LINT_AGENT_FIXTURE/plugin/skills/_shared/bodies/plan.md"
@@ -367,12 +367,12 @@ else
   fi
 fi
 
-# B4 (D9/D18): the defect this change closes — `bodies/plan.md`'s security-pass
-# re-run loop terminates only on `clean` or an explicit operator acceptance,
-# and a Codex-only `blocked` was neither. Assert the reachable exit is written
-# into all three callers directly, rather than only through the vocabulary
-# rule above: this is the concrete symptom named in the slice, so it earns its
-# own assertion beside the mechanism that now enforces it structurally.
+# The defect this closes — `bodies/plan.md`'s security-pass re-run loop
+# terminates only on `clean` or an explicit operator acceptance, and a
+# Codex-only `blocked` was neither. Assert the reachable exit is written into
+# all three callers directly, rather than only through the vocabulary rule
+# above: this is the concrete symptom named in the slice, so it earns its own
+# assertion beside the mechanism that now enforces it structurally.
 for security_pass_caller in plan quick debug; do
   security_pass_source="$REPO_ROOT/plugin/skills/_shared/bodies/$security_pass_caller.md"
   security_pass_route="$({ grep -F 'Security Pass: blocked' "$security_pass_source" || true; })"
@@ -504,9 +504,9 @@ else
   fi
 fi
 
-# S14 closes on three specific linter rules rather than a clean-tree run alone.
-# Each mutation removes exactly the relation that rule owns and requires that
-# rule's own diagnostic, so another incidental red cannot masquerade as
+# The cases below close on specific linter rules rather than a clean-tree run
+# alone. Each mutation removes exactly the relation that rule owns and requires
+# that rule's own diagnostic, so another incidental red cannot masquerade as
 # coverage. Cases are named after the FUNCTION each exercises rather than a
 # rule ordinal — an ordinal drifts the moment a rule is inserted above it,
 # while a function name stays self-locating.
@@ -531,32 +531,84 @@ else
   fi
 fi
 
+# The mutation is the defect this rule now exists for and the only one it still
+# catches: a decision file that goes while the prose citing it stays. Delete the
+# file rather than retarget the citation, because a renumber or a removal is how
+# this actually happens, and a reference nothing resolves is invisible to every
+# other rule here — the two decision rules above iterate the files that ARE
+# there, so a missing one makes both of them quieter, never louder.
 LINT_CITATION_FIXTURE="$TEST_HOME/lint-decision-citation"
 copy_lint_fixture "$LINT_CITATION_FIXTURE"
-citation_decision="$LINT_CITATION_FIXTURE/docs/decisions/0095-runtime-state-keyed-by-repository.md"
-if [ ! -f "$citation_decision" ]; then
-  echo "FAIL: check_decision_citations_resolve_and_name_their_citer mutation has no ADR-0095 fixture"; fail=$((fail + 1))
+cited_decision="$LINT_CITATION_FIXTURE/docs/decisions/0077-slice-independence-from-surface-map-edges.md"
+if [ ! -f "$cited_decision" ]; then
+  echo "FAIL: check_cited_decisions_resolve_to_a_file mutation has no ADR-0077 fixture"; fail=$((fail + 1))
+elif ! grep -qF 'ADR-0077' "$LINT_CITATION_FIXTURE/plugin/skills/_shared/bodies/plan.md"; then
+  echo "FAIL: check_cited_decisions_resolve_to_a_file mutation has no plan.md citation of ADR-0077 to dangle"; fail=$((fail + 1))
 else
-  sed 's/plugin\/hooks\/lib\.sh, //' "$citation_decision" > "$citation_decision.tmp"
-  mv "$citation_decision.tmp" "$citation_decision"
-  if grep -F 'Implemented-in:' "$citation_decision" | grep -qF 'plugin/hooks/lib.sh'; then
-    echo "FAIL: check_decision_citations_resolve_and_name_their_citer mutation did not remove its cited implementation"; fail=$((fail + 1))
-  elif citation_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+  rm -f "$cited_decision"
+  if citation_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
       "$LINT_CITATION_FIXTURE/plugin" "$LINT_CITATION_FIXTURE" 2>&1)"; then
-    echo "FAIL: check_decision_citations_resolve_and_name_their_citer accepted a decision that does not name its citer"; fail=$((fail + 1))
+    echo "FAIL: check_cited_decisions_resolve_to_a_file accepted a citation resolving to no decision file"; fail=$((fail + 1))
   else
     case "$citation_lint_report" in
-      *"docs/decisions/0095-runtime-state-keyed-by-repository.md"*"cited by plugin/hooks/lib.sh"*"does not name it in Implemented-in:"*)
-        echo "ok: check_decision_citations_resolve_and_name_their_citer rejects a decision that does not name its citer"; pass=$((pass + 1)) ;;
+      *"skills/_shared/bodies/plan.md cites ADR-0077, which resolves to no file"*)
+        echo "ok: check_cited_decisions_resolve_to_a_file rejects a citation whose decision file is gone"; pass=$((pass + 1)) ;;
       *)
-        echo "FAIL: check_decision_citations_resolve_and_name_their_citer mutation failed for the wrong reason — $(printf '%s' "$citation_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+        echo "FAIL: check_cited_decisions_resolve_to_a_file mutation failed for the wrong reason — $(printf '%s' "$citation_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi
 
+# The inverse rule, driven with one citation per PATH PATTERN in its file set —
+# every glob plus the two extension-less files the set has to name by hand —
+# because a pattern dropped from it stops being scanned in silence: every other
+# diagnostic still fires, so nothing but that pattern's own citation going
+# unflagged can show it. The notations carry the other axis on the same lines: each
+# of the four shapes the pattern admits is written twice, and no line matches a
+# shape other than its own, so dropping an alternation leaves the two lines written
+# in it unnamed while a dropped pattern leaves exactly one — neither failure can
+# hide behind the other. Each is a fresh line appended to the fixture's copy: no
+# existing line is edited, so nothing else in the fixture can move with it.
+# Mutating a hook's bytes also leaves the published hash ledger stale by
+# construction, so this report is red twice over — which is why every diagnostic is
+# required BY NAME and the hash rule's own red cannot stand in for any of them.
+LINT_EXECUTABLE_CITATION_FIXTURE="$TEST_HOME/lint-executable-citation"
+copy_lint_fixture "$LINT_EXECUTABLE_CITATION_FIXTURE"
+printf '# D22: the ledger entry that ordered this remedy.\n' \
+  >> "$LINT_EXECUTABLE_CITATION_FIXTURE/plugin/hooks/lib.sh"
+printf '# ADR-0911 is why this check reports the way it does.\n' \
+  >> "$LINT_EXECUTABLE_CITATION_FIXTURE/bootstrap/verify.sh"
+printf '# docs/decisions/0926 is the record behind this case.\n' \
+  >> "$LINT_EXECUTABLE_CITATION_FIXTURE/tests/hooks-test.sh"
+printf '# 0113 settled the scope this key is read under.\n' \
+  >> "$LINT_EXECUTABLE_CITATION_FIXTURE/plugin/bin/oso-state"
+printf '# ADR-0947 is the record this mount step came from.\n' \
+  >> "$LINT_EXECUTABLE_CITATION_FIXTURE/bootstrap/lib/mount-impeccable.sh"
+printf '# docs/decisions/0933 is why this guard refuses the commit.\n' \
+  >> "$LINT_EXECUTABLE_CITATION_FIXTURE/plugin/git-hooks/pre-commit"
+printf '# 0068 is the scope this fixture was written for.\n' \
+  >> "$LINT_EXECUTABLE_CITATION_FIXTURE/tests/fixtures/crashing-hook.sh"
+printf '# A4 is the amendment that added this emitter.\n' \
+  >> "$LINT_EXECUTABLE_CITATION_FIXTURE/tools/render-hooks-json.sh"
+if executable_citation_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+    "$LINT_EXECUTABLE_CITATION_FIXTURE/plugin" "$LINT_EXECUTABLE_CITATION_FIXTURE" 2>&1)"; then
+  echo "FAIL: check_executables_carry_no_decision_citations accepted decision citations in every path pattern it scans"; fail=$((fail + 1))
+else
+  for cited_executable in plugin/hooks/lib.sh bootstrap/verify.sh tests/hooks-test.sh \
+      plugin/bin/oso-state bootstrap/lib/mount-impeccable.sh plugin/git-hooks/pre-commit \
+      tests/fixtures/crashing-hook.sh tools/render-hooks-json.sh; do
+    case "$executable_citation_lint_report" in
+      *"$cited_executable:"*"cites a decision id in a comment"*)
+        echo "ok: check_executables_carry_no_decision_citations names $cited_executable"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: check_executables_carry_no_decision_citations never named $cited_executable — $(printf '%s' "$executable_citation_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  done
+fi
+
 LINT_RULE_COUNT_FIXTURE="$TEST_HOME/lint-rule-count"
 copy_lint_fixture "$LINT_RULE_COUNT_FIXTURE"
-sed 's/twenty-seven rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
+sed 's/twenty-eight rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
   > "$LINT_RULE_COUNT_FIXTURE/README.md.tmp"
 mv "$LINT_RULE_COUNT_FIXTURE/README.md.tmp" "$LINT_RULE_COUNT_FIXTURE/README.md"
 if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
@@ -564,14 +616,14 @@ if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
   echo "FAIL: check_present_tense_prose_names_the_rule_count accepted stale present-tense rule-count prose"; fail=$((fail + 1))
 else
   case "$rule_count_lint_report" in
-    *"README.md does not name the twenty-seven rules this linter declares"*)
+    *"README.md does not name the twenty-eight rules this linter declares"*)
       echo "ok: check_present_tense_prose_names_the_rule_count rejects stale present-tense rule-count prose"; pass=$((pass + 1)) ;;
     *)
       echo "FAIL: check_present_tense_prose_names_the_rule_count mutation failed for the wrong reason — $(printf '%s' "$rule_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
   esac
 fi
 
-# B7 (D3): check_milestone_reporting_contract_is_complete must reject a flow
+# check_milestone_reporting_contract_is_complete must reject a flow
 # body that stopped pointing at the milestone contract, and name THAT body —
 # never pass on the strength of the other two still carrying the reference.
 # Strip only debug.md's sentence.
@@ -599,7 +651,7 @@ else
   fi
 fi
 
-# B7 (D3): check_milestone_reporting_contract_is_complete's second half — a
+# check_milestone_reporting_contract_is_complete's second half — a
 # milestone reduced to "report the result" is the exact defect this contract
 # exists to close, so mention of the "Closing" header alone must not satisfy
 # it once its required facts (commit, next) are gone.
@@ -625,7 +677,7 @@ else
   fi
 fi
 
-# B7 (D3): check_milestone_reporting_contract_is_complete's length bound — the
+# check_milestone_reporting_contract_is_complete's length bound — the
 # operator asked for visibility, not narration, so the contract must state a
 # bound in prose the linter can find; remove it and confirm the rule notices
 # rather than reading a milestone list with no ceiling as complete.
@@ -650,7 +702,7 @@ else
   fi
 fi
 
-# B7 (D3): check_reporting_host_difference_is_single_sourced — the Claude-card
+# check_reporting_host_difference_is_single_sourced — the Claude-card
 # fact belongs to exactly one platform/claude file. Copy its sentence into a
 # SECOND one (quick.md) and confirm the rule counts files rather than merely
 # checking the fact is stated somewhere.
@@ -677,7 +729,7 @@ else
   fi
 fi
 
-# B8 (D4/ADR-0116): check_design_foundation_slice_reads_the_installed_contract
+# check_design_foundation_slice_reads_the_installed_contract
 # must reject a design-foundation slice paragraph that regressed to the
 # undifferentiated `init`/`document` phrasing the Astro-landing incident traced
 # to — strip only the `init` attribution and confirm the paragraph-scoped
@@ -707,7 +759,7 @@ else
   fi
 fi
 
-# B9 (D4/ADR-0117): check_third_amendment_lane_names_its_conditions must
+# check_third_amendment_lane_names_its_conditions must
 # reject the third amendment lane if it loses its citation requirement
 # specifically — the condition the ledger names as the one that must never
 # silently drop, since an uncited correction is the harness rewriting an
@@ -736,12 +788,11 @@ else
   fi
 fi
 
-# D19 applied to the rules themselves: check_blueprint_index_names_every_decision
-# guards that docs/blueprint.md's own decision index names every file
-# docs/decisions/ holds. Drop ADR-0126 — the decision this same close
-# introduced — from the index while leaving its file in place under
-# docs/decisions/, and require the exact per-decision diagnostic rather than a
-# clean run mistaken for coverage.
+# check_blueprint_index_names_every_decision guards that docs/blueprint.md's
+# own decision index names every file docs/decisions/ holds. Drop one entry from
+# the index while leaving its file in place under docs/decisions/, and require
+# the exact per-decision diagnostic rather than a clean run mistaken for
+# coverage.
 LINT_BLUEPRINT_INDEX_FIXTURE="$TEST_HOME/lint-blueprint-index"
 copy_lint_fixture "$LINT_BLUEPRINT_INDEX_FIXTURE"
 blueprint_index_target="$LINT_BLUEPRINT_INDEX_FIXTURE/docs/blueprint.md"
@@ -765,14 +816,14 @@ else
   fi
 fi
 
-# D19 applied to the rules themselves: rule 22 guards that every line naming
-# "wave 1" in bodies/plan.md conditions its WAVE START on wave 0, closing the
-# hole docs/decisions/0126 records. Revert the "Three coordinates" paragraph's
-# wave-1 clause to the flat form that hole let stand — CHANGE BASE alone, no
-# wave-0 conditioning — while WAVE START stays named earlier on the same
-# line, so only the wave-0 half of the guard can fire. The target line is
-# located by its own post-mutation content below, never a hardcoded number, so
-# an edit adding a line above the paragraph cannot desync the two.
+# Rule 22 guards that every line naming "wave 1" in bodies/plan.md conditions
+# its WAVE START on wave 0, closing a hole an earlier close of this repo's own
+# left standing. Revert the "Three coordinates" paragraph's wave-1 clause to the
+# flat form that hole let stand — CHANGE BASE alone, no wave-0 conditioning —
+# while WAVE START stays named earlier on the same line, so only the wave-0 half
+# of the guard can fire. The target line is located by its own post-mutation
+# content below, never a hardcoded number, so an edit adding a line above the
+# paragraph cannot desync the two.
 LINT_WAVE_ZERO_FIXTURE="$TEST_HOME/lint-wave-1-wave-start"
 copy_lint_fixture "$LINT_WAVE_ZERO_FIXTURE"
 wave_zero_target="$LINT_WAVE_ZERO_FIXTURE/plugin/skills/_shared/bodies/plan.md"
@@ -795,7 +846,7 @@ else
     echo "FAIL: a wave-1 WAVE START claim flattened back to CHANGE BASE alone passed plugin lint"; fail=$((fail + 1))
   else
     case "$wave_zero_report" in
-      *"skills/_shared/bodies/plan.md:$wave_zero_linenum states wave 1's own WAVE START without conditioning it on wave 0 (docs/decisions/0126)"*)
+      *"skills/_shared/bodies/plan.md:$wave_zero_linenum states wave 1's own WAVE START without conditioning it on wave 0"*)
         echo "ok: rule 22 rejects wave 1's WAVE START claim once it stops conditioning on wave 0"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: rule 22 mutation failed for the wrong reason — $(printf '%s' "$wave_zero_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
@@ -841,13 +892,14 @@ else
   INCOMPLETE_TABLE="$TEST_HOME/incomplete-hook-gates.txt"
   cp "$REPO_ROOT/tools/hook-gates.txt" "$INCOMPLETE_TABLE"
   # One tool spelling and no answer for the second host: this was the quiet-allow
-  # shape D11 forbids. `none` would be an explicit answer; an absent cell is not.
+  # shape the table forbids. `none` would be an explicit answer; an absent cell
+  # is not.
   printf '\ntool  edits  FutureWriter\n' >> "$INCOMPLETE_TABLE"
   assert_renderer_rejects "an unknown writer with an incomplete host mapping is denied at render" \
     "tool for gate \`edits\` has no mapping for codex" \
     --repo-root "$REPO_ROOT" --table "$INCOMPLETE_TABLE" --check
 
-  # B1 (D18): a PreToolUse gate script that declares no recovery route must not
+  # A PreToolUse gate script that declares no recovery route must not
   # land — a handler added (or edited down to) with no `# Recovery:` header line
   # fails the same table check a missing matcher or a missing script already do.
   RECOVERY_FIXTURE="$TEST_HOME/recovery-fixture"
@@ -1118,7 +1170,7 @@ assert_after_hook "an unknown Codex tool is denied while oso-code state is armed
 oso-state --session "$SESSION" clear
 
 # --- Runtime: the catch-all's pending check is scoped to plan_approval_session,
-# never the repository at large (ADR-0107) -------------------------------------
+# never the repository at large ------------------------------------------------
 # A stale or foreign pending must never deny a session with nothing pending —
 # Bash included, since that was the trap: denied before the allowlist, with no
 # local escape. The session that actually owns the pending plan still loses
@@ -1409,9 +1461,9 @@ for marker_only_bad_transcript in \
     absent "$([ ! -e "$REPO_STATE" ] && printf absent || printf present)"
 done
 
-# --- A6: the six structurally distinct marker failures read as six distinct
-# causes, not one collapsed sentence — a future re-merge back into the pre-A6
-# catch-all sentence is exactly what this turns red. -------------------------
+# --- The six structurally distinct marker failures read as six distinct
+# causes, not one collapsed sentence — a future re-merge back into a single
+# catch-all sentence is exactly what this turns red. ------------------------
 run_hook "$PLAN_STOP_HOOK" \
   "$(codex_stop_input plan "$SESSION" 'Repaso\n<!-- oso-plan-approval: v=2 action=WRONG_ACTION -->')"
 assert_after_hook "the marker position-and-count cause blocks Stop" hook_returned_block
@@ -1565,9 +1617,9 @@ assert_equals "the hidden marker is absent from both persisted plan artifacts" \
   0 "$(grep -l 'oso-plan-approval:' "$first_presented_file" "$first_current_file" 2>/dev/null | wc -l | tr -d ' ')"
 pending_current_before_amendment="$(cat "$first_current_file")"
 
-# D18's second half: a pending plan is amendable in place, directly through
-# oso-state, rather than only after approval. Neither the presented snapshot
-# nor its digest moves for a pending amendment.
+# A pending plan is amendable in place, directly through oso-state, rather than
+# only after approval. Neither the presented snapshot nor its digest moves for a
+# pending amendment.
 if printf '%s' '### Direct feedback' | oso-state --session "$SESSION" amend-plan direct-feedback >/dev/null 2>&1; then
   echo "ok: amend-plan accepts a direct amendment while a plan is pending"; pass=$((pass + 1))
 else
@@ -1916,7 +1968,7 @@ assert_equals "the Codex plan rail records and approves through the installed ru
 ( cd "$PLAN_RUNTIME_REPO" && oso-state --session "$SESSION" clear >/dev/null )
 
 # --- Runtime: plan_approval_session survives a model-issued write under the
-# fixed Codex marker (ADR-0107) -------------------------------------------
+# fixed Codex marker ------------------------------------------------------
 # Every model-issued oso-state call on Codex carries the same OSO_AGENT=1
 # marker, never the real session capture-plan recorded, so one shared key
 # could not tell the two identities apart. This proves the second key does:
@@ -1944,7 +1996,7 @@ oso-state --session "$SESSION" clear
 
 # --- Runtime: native approval survives an ordinary model-issued write under
 # the fixed Codex marker end to end, through approve-plan-token.sh itself
-# (ADR-0107) -------------------------------------------------------------
+# itself -----------------------------------------------------------------
 # Between a plan going pending and the operator approving it, Codex's own flow
 # issues ordinary state writes under OSO_AGENT (mode=plan, active_slice,
 # verify_green — plan.md §6 step 1) that overwrite `session`, the ownership
@@ -2083,11 +2135,11 @@ oso-state --session "$SESSION" clear
 # --- Both PreToolUse gates arm on the session their payload names -------------
 # A PreToolUse hook has no agent environment to read — the client puts no
 # CLAUDE_CODE_* variable in one, which is why every gate-written line in the
-# event log carries an empty `client` field (ADR-0095) — so the session the
-# payload names is the marker, and a payload naming none is nobody's call. That
-# name used to pick the state file too; now the state file is the repository's
-# and exists whether or not an agent is running, which leaves the marker as the
-# only thing between either gate and a call it has no business judging.
+# event log carries an empty `client` field — so the session the payload names is
+# the marker, and a payload naming none is nobody's call. That name used to pick
+# the state file too; now the state file is the repository's and exists whether or
+# not an agent is running, which leaves the marker as the only thing between
+# either gate and a call it has no business judging.
 unmarked_bash_input="$(printf '{"cwd":"%s","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git commit -m x"}}' "$REPO_ROOT")"
 unmarked_edit_input="$(printf '{"cwd":"%s","hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"/tmp/x.ts","old_string":"a","new_string":"b"}}' "$REPO_ROOT")"
 oso-state --session "$SESSION" set mode=plan active_slice=none verify_green=false
@@ -2101,8 +2153,8 @@ assert_allows "the edit gate stays off a call naming no session, armed repo or n
   block-edits-without-slice.sh "$unmarked_edit_input"
 oso-state --session "$SESSION" clear
 
-# --- B1 (D18): a deny hands over its remedy, executably, not a menu to guess --
-# A6 made a deny record what it denied; this is the other half — every deny
+# --- A deny hands over its remedy, executably, not a menu to guess ------------
+# A deny already records what it denied; this is the other half — every deny
 # with a legitimate next step spells it as a runnable command or a named flow.
 # Assert per gate and per cause, not once globally: a shared assertion would
 # let one gate's remedy regress silently while the suite kept reading
@@ -2548,16 +2600,15 @@ while IFS='|' read -r role_kind source_name codex_role; do
   elif [ "$codex_role" = oso-doubt-pass ]; then
     # doubt-pass judges a frozen-candidate ledger from intent, surface map and
     # bare decisions alone; its body runs no project check, so read-only stays
-    # the mechanical guarantee the contract needs (ADR-0109).
+    # the mechanical guarantee the contract needs.
     assert_equals "oso-doubt-pass is read-only" \
       "read-only" "$(toml_scalar "$role_file" sandbox_mode)"
   elif [ "$role_kind" = judge ]; then
     # debt-sweep and triage each re-run project checks (the zero-warnings bar,
     # a failing check's re-run) their own bodies require, and those checks
     # write caches, build output and coverage dumps a read-only sandbox cannot
-    # produce. They match oso-verifier's workspace-write precedent; ADR-0109
-    # records the mechanical read-only guarantee this trades for a prompt
-    # instruction, asserted next.
+    # produce. They match oso-verifier's workspace-write precedent, trading the
+    # mechanical read-only guarantee for a prompt instruction, asserted next.
     assert_equals "$codex_role is workspace-write" \
       "workspace-write" "$(toml_scalar "$role_file" sandbox_mode)"
     assert_equals "$codex_role names an explicit never-edit-source instruction now that the sandbox no longer enforces it" \
@@ -2601,9 +2652,9 @@ assert_equals "the authenticated smoke does not override the integrator back to 
 assert_equals "the authenticated smoke requires a fresh explicit integrator launch" \
   "1" "$(printf '%s\n' "$integrator_smoke_function" | \
     grep -Fc 'agent_type oso-integrator explicitly and launch it with fresh context by setting fork_turns=\"none\"' || true)"
-# Part 1 (D13): the smoke's own codex exec never resolves CODEX_HOME to the
-# operator's real one, and runs its copied hooks.json without this machine's
-# separate hook-trust records.
+# The smoke's own codex exec never resolves CODEX_HOME to the operator's real
+# one, and runs its copied hooks.json without this machine's separate hook-trust
+# records.
 assert_equals "the smoke's exec targets the disposable Codex home, never the operator's default" \
   "1" "$(printf '%s\n' "$integrator_smoke_function" | \
     grep -Fc 'CODEX_HOME="$SMOKE_CODEX_HOME"' || true)"
@@ -2823,11 +2874,11 @@ assert_equals "building the isolated home leaves the operator's own Codex home b
   "identical" "$(diff -rq "$SMOKE_HOME_SNAPSHOT" "$SMOKE_HOME_FIXTURE" >/dev/null 2>&1 && printf identical || printf mutated)"
 
 # --- Codex host contract: claims checked against the installed binary ---------
-# ADR-0106: every other check here asserts the harness against its own prose;
-# this one drives host_contract_status() itself, through a fake `codex` on
-# PATH whose bytes carry (or omit) the two literals ADR-0105 found six sites
-# instructing a spelling the host had already refused. verify-codex.sh calls
-# main unconditionally at its tail (install-codex.sh's sourcing guard has no
+# Every other check here asserts the harness against its own prose; this one
+# drives host_contract_status() itself, through a fake `codex` on PATH whose
+# bytes carry (or omit) the two literals an audit found six sites instructing a
+# spelling the host had already refused. verify-codex.sh calls main
+# unconditionally at its tail (install-codex.sh's sourcing guard has no
 # counterpart here), so the whole script runs as a subprocess with env
 # overrides — the mechanism the "incomplete Codex fixture" case below already
 # uses — rather than being sourced or having a guard added for this slice.
@@ -2944,8 +2995,8 @@ assert_equals "no codex on PATH skips the host contract check rather than tallyi
     fi
   )"
 
-# --- ADR-0121: the default_permissions override contract, checked against ---
-# the installed binary the same way ADR-0106 checks fork_turns. `-P` selects a
+# --- The default_permissions override contract, checked against the ---------
+# installed binary the same way the fork_turns contract is. `-P` selects a
 # profile only for `codex sandbox`, a one-shot runner; a real session's own
 # per-invocation selector is `-c default_permissions=<name>`, and these two
 # literals are what prove the binary actually resolves and validates it.
@@ -3030,7 +3081,7 @@ assert_equals "no codex on PATH skips the permission-override check rather than 
     fi
   )"
 
-# --- ADR-0120 capability columns: present, and inert to the render ---------
+# --- The capability columns: present, and inert to the render --------------
 # (a): the two capability cells exist on every tool row, and the manifests
 # operators and hosts actually read stay byte-identical to their addition --
 # no git history needed, since a renderer that reads past a row's host cells
@@ -3054,7 +3105,7 @@ assert_equals "the capability columns leave the committed Codex manifest byte-id
   identical "$("$HOOK_RENDERER" --host codex --table "$REPO_ROOT/tools/hook-gates.txt" | \
     cmp -s - "$REPO_ROOT/codex/hooks/hooks.json" && echo identical || echo divergent)"
 
-# --- Codex MCP tool table drift (ADR-0120) -------------------------------
+# --- Codex MCP tool table drift ------------------------------------------
 # 5905a27 found mem_judge missing by reading the live Engram server by hand.
 # This is the check that catches the next one on its own. Driven here against
 # fixture servers rather than the live one, so the case is reproducible and
@@ -3274,7 +3325,7 @@ awk '
 assert_equals "a read-only native security reviewer is observable at its TOML boundary" \
   "read-only" "$(toml_scalar "$SECURITY_ROLE_FIXTURE" sandbox_mode)"
 
-# S9 turns Codex's separate CLI review into this judge's native path.  The
+# Codex's separate CLI review is this judge's native path now.  The
 # adapter is the routing contract and the role's multiline instructions are the
 # execution contract, so read those two bounded regions independently.  A
 # `codex review` mention in a wrapper, a TOML description or a neighbouring
@@ -3487,7 +3538,7 @@ assert_equals "a base-coverage header outside the native route cannot satisfy it
   codex-base "$(security_header_status "$SECURITY_BODY" \
     "$CLAUDE_SECURITY_PLATFORM" "$SECURITY_HEADER_FIXTURE")"
 
-# D17 makes parity part of the contract, not release-note decoration. Select
+# Parity is part of the contract, not release-note decoration. Select
 # each row by its first cell and require exactly one: a stale original beside a
 # corrected duplicate must fail rather than letting the new row hide the old.
 parity_row() {
@@ -3537,7 +3588,7 @@ done
 assert_equals "all seven roles preserve their report inside the explicit handoff envelope" \
   "" "$handoff_envelope_missing"
 
-# S5 also closes the three orchestration placeholders.  Other placeholders in
+# The three orchestration placeholders close here too.  Other placeholders in
 # these files intentionally belong to later slices, so reject only claims that
 # delegated agents or forked judges themselves are still unavailable.  All three
 # call sites route through one shared Codex protocol: repeating the seven-name
@@ -3642,9 +3693,9 @@ case "$codex_question_section$codex_question_parity_row" in
     echo "ok: the settled Codex question cap carries no PLACEHOLDER/4 contract"; pass=$((pass + 1)) ;;
 esac
 
-# ADR-0097 makes these six losses release input, not explanatory prose. Require
-# exactly six table rows and the load-bearing boundary in each one; this is the
-# parity mutation gate S14 needs in addition to linter rules 10–12.
+# These six losses are release input, not explanatory prose. Require exactly
+# six table rows and the load-bearing boundary in each one; this is the parity
+# mutation gate the linter rules alone do not give.
 codex_loss_ledger="$(sed -n \
   '/^## Frozen loss and degradation ledger$/,/^## /p' \
   "$REPO_ROOT/docs/parity-codex.md" 2>/dev/null)"
@@ -3674,7 +3725,7 @@ The oso permission profile is the machine default because Codex has no per-proje
 `oso-state` flags, plan documents and install-backup snapshots
 CODEX_FROZEN_LOSS_TABLE
 
-# S7's Codex approval prose has a runtime gate behind it, but the hook cannot
+# The Codex approval prose has a runtime gate behind it, but the hook cannot
 # repair an orchestrator that never presents the plan or tells the operator how
 # to cross Plan Mode's read-only boundary. Read only the platform section that
 # defines that handoff so a phrase in a placeholder, wrapper or unrelated warning
@@ -3789,10 +3840,11 @@ case "$approval_parity_row" in
     echo "ok: the approval parity row no longer defers S7"; pass=$((pass + 1)) ;;
 esac
 
-# D6 is a prose rail as well as a file primitive.  A perfectly atomic receipt
-# still breaks the flow if the orchestrator treats its existence as `pass`, or
-# if the read-only child is told to write it.  The shared Codex protocol is the
-# single source for every mode, so pin each load-bearing statement there.
+# The handoff receipt is a prose rail as well as a file primitive.  A perfectly
+# atomic one still breaks the flow if the orchestrator treats its existence as
+# `pass`, or if the read-only child is told to write it.  The shared Codex
+# protocol is the single source for every mode, so pin each load-bearing
+# statement there.
 assert_says_every "the Codex delegation protocol makes the file a precondition, never a verdict" \
   "$(cat "$codex_subagent_protocol")" <<'HANDOFF_PROTOCOL_TABLE'
 `HANDOFF SLICE`
@@ -4211,8 +4263,8 @@ elif mount_report="$("$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" 2>&1)"; then
     "" "$mounted_impeccable_refs_missing"
 
   # A mounted copy must remain usable after the cache entry changes.  This is
-  # the behavioural distinction D8 makes; checking only `test ! -L` at the root
-  # would miss a bind made of symlinked descendants.
+  # the behavioural distinction that matters; checking only `test ! -L` at the
+  # root would miss a bind made of symlinked descendants.
   printf '%s\n' 'cache changed later' > "$IMPECCABLE_CACHE/reference/playbook.md"
   assert_equals "the mounted reference is independent of later cache mutation" \
     "stable playbook" "$(cat "$IMPECCABLE_MOUNT/reference/playbook.md")"
@@ -5289,7 +5341,7 @@ assert_not_logged() {
 
 assert_logged "both gates log their denies" '"event":"commit-denied"' '"event":"edit-denied"'
 
-# --- A6: every deny records what it denied, not just that it denied -----------
+# --- Every deny records what it denied, not just that it denied ---------------
 rm -f "$events_log"
 oso-state --session "$SESSION" set mode=plan active_slice=1 verify_green=false
 run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input FutureWriter)" 0 '' \
@@ -5311,7 +5363,7 @@ run_hook block-commit-until-green.sh "$(bash_input 'git commit -m x')"
 assert_logged "a denied commit writes the command it judged" \
   '"event":"commit-denied","command":"git commit -m x","session":"'
 assert_logged "every logged event carries the schema version" '"schema":2'
-# ADR-0108's own claim — "diagnosable from the log alone: which gate fired, on
+# The log's own claim — "diagnosable from the log alone: which gate fired, on
 # which hook event" — names two fields deny() always passes; nothing before this
 # line ever grepped for either, so a future edit that dropped them from deny()
 # would have left this suite green.
@@ -5350,11 +5402,11 @@ assert_equals "one event is one line, appended and nothing else" \
 oso-state --session "$SESSION" event integration-red
 assert_logged "an event with no detail is a well-formed line too" \
   '"event":"integration-red","command":"","session":"'
-# ADR-0108 scopes `gate`/`hook_event` to deny-shaped calls on purpose — widening
+# `gate`/`hook_event` are scoped to deny-shaped calls on purpose — widening
 # every line would grow the log's highest-volume lines past the budget the
-# decision sized against — so the event verb's own lines must carry neither.
+# schema was sized against — so the event verb's own lines must carry neither.
 if grep -q '"gate"\|"hook_event"' "$events_log"; then
-  echo "FAIL: an event-verb line carries gate or hook_event, which ADR-0108 scopes to denies only"
+  echo "FAIL: an event-verb line carries gate or hook_event, which the log schema scopes to denies only"
   fail=$((fail + 1))
 else
   echo "ok: event-verb lines keep the unwidened five-field schema-1 shape"
@@ -5395,7 +5447,7 @@ assert_after_hook "Codex SessionEnd cleans fixed-marker state despite a differen
   [ ! -f "$elsewhere_state" ]
 
 # --- Runtime: SessionEnd clears its own orphaned pending by plan_approval_session,
-# never a stranger's (ADR-0107) --------------------------------------------------
+# never a stranger's -------------------------------------------------------------
 # hook_session() is the fixed OSO_AGENT marker on Codex, so the ownership sweep
 # above can never match a pending still carrying the real session capture-plan
 # recorded under it — the orphan a second, narrower sweep on the real SessionEnd
@@ -5444,7 +5496,7 @@ assert_equals "SessionStart persists the spelling of oso-state a native consumer
 rm -f "$env_file"
 
 # No CLAUDE_ENV_FILE must degrade to a silent no-op: settings.json is the durable
-# route for this value now (D9), so a client that writes no env file costs the
+# route for this value now, so a client that writes no env file costs the
 # session nothing.
 unset CLAUDE_ENV_FILE
 run_hook persist-state-bin.sh ''
@@ -5743,7 +5795,7 @@ else
 
   # The orphan sweep's own state file is the only record of repo_path, and it
   # names its worktree by `session` — the wave's ownership marker, never the
-  # real `plan_approval_session` id this sweep matches on (ADR-0107). Dropping
+  # real `plan_approval_session` id this sweep matches on. Dropping
   # it without pruning first would leave that worktree with nothing able to
   # reach it again: not even the 7-day sweep above, which reads repo_path from
   # this same file.
@@ -6300,7 +6352,7 @@ assert_allows "a pipe into a program that is no shell stays clear" \
   block-commit-until-green.sh "$(bash_input 'cat notes.md | grep commit')"
 assert_not_logged "neither clear line is counted as residue"
 
-# D19: past the input bound the lexer does not lex, because a line's cost grows
+# Past the input bound the lexer does not lex, because a line's cost grows
 # faster than its length and a hook runs before every call. So a long line is
 # undecidable by construction — allowed and counted, never denied for a verb
 # nobody read — and the pair pins the bound from both sides.
@@ -6318,12 +6370,12 @@ assert_denies "a line just under the input bound is still read" \
 assert_logged "a line past the input bound is logged with the head of the line" \
   '"event":"residue-allowed","command":"git commit -m x && echo aaa'
 
-# D20: decoding a payload costs what lexing it costs — the same escapes×bytes
+# Decoding a payload costs what lexing it costs — the same escapes×bytes
 # shape — and it runs before the lexer's bound can apply, so 4000 escapes cost
 # seconds on the machines that have no jq. The bound is therefore measured on the
 # escaped payload the client sent, which is never smaller than what it decodes to
 # and needs no reader to size: past it nothing decodes and nothing lexes. Same
-# threshold, same marker, so this pair pins it from both sides the D19 pair does.
+# threshold, same marker, so this pins it from both sides the lexer pair does.
 assert_allows "residue: a payload whose escapes run past the bound is not decoded, so it passes counted" \
   block-commit-until-green.sh "$(bash_input "$(commit_line_of_length 3100 '\"aaaa')")"
 assert_denies "a payload whose escapes fit the bound is decoded and read" \
@@ -6336,10 +6388,10 @@ assert_logged "a payload past the decoder bound is logged with the head the clie
 # LOG_COMMAND_HEAD_BYTES=120, plus one envelope — the ts, event, session, client
 # and schema fields run about 115 bytes with this suite's session name and longer
 # in a real session, where the id is a uuid — plus the gate and hook_event fields
-# a deny record carries (A6), up to "block-edits-without-slice.sh" and
-# "PreToolUse", the longest either family has — plus room for the escapes a head
-# can add. Over it, something wrote more than a head, which is how a whole 3 KB
-# command line would land in the log. Nor is any of it safe to leave
+# a deny record carries, up to "block-edits-without-slice.sh" and "PreToolUse",
+# the longest either family has — plus room for the escapes a head can add. Over
+# it, something wrote more than a head, which is how a whole 3 KB command line
+# would land in the log. Nor is any of it safe to leave
 # world-readable while the state files are not.
 longest_event=0
 while IFS= read -r event_line; do
@@ -6755,12 +6807,12 @@ assert_equals "an opt-out turns the impeccable plugin check into a note" \
   "note" "$(report_line_kind "$report_with_marker" 'impeccable plugin')"
 assert_equals "a cleared marker puts the hard impeccable check back — red in this fixture HOME" \
   "fail" "$(report_line_kind "$report_without_marker" 'impeccable plugin')"
-# This case is ADR-0066's own regression test, turned around rather than dropped:
-# it pinned fallow to a `note:` because fallow built from a Rust toolchain nothing
+# This case is the old `note:`'s own regression test, turned around rather than
+# dropped: it pinned fallow that way because it built from a Rust toolchain nothing
 # here provisions, so a hard check would have made the one-step Windows path red
 # by construction. install.sh installs the pinned npm package on every supported
 # host now, so the reason is gone and the reading flips — an absent fallow is a
-# broken install and the tally has to say so (D2).
+# broken install and the tally has to say so.
 assert_equals "an absent fallow fails the run now that every host is provisioned with it" \
   "fail" "$(report_line_kind "$report_without_marker" 'fallow MCP')"
 assert_equals "verify.sh exports the agent marker when probing the installed commit gate" \
@@ -6768,7 +6820,7 @@ assert_equals "verify.sh exports the agent marker when probing the installed com
 assert_equals "the report still reaches its summary" "reached" \
   "$(printf '%s\n' "$report_without_marker" | grep -q '^passed:' && echo reached || echo missing)"
 
-# --- Claude Desktop: the second surface, reported and never counted (D4) ------
+# --- Claude Desktop: the second surface, reported and never counted -----------
 # Desktop's Code tab runs the CLI's engine and shares this same ~/.claude, so the
 # report has to say so — and it is an APPLICATION no installer here provisions, so
 # saying so may never cost a CLI-only operator a red line for software they never
@@ -7105,9 +7157,9 @@ rm -f "$WINGET_REFUSAL"
 
 # --- fallow: an npm pin that applies on every host, with no Rust anywhere ------
 # fallow used to need `cargo install fallow-mcp` and this repo provisions Rust on
-# no OS, which is the whole reason ADR-0066 made it a note verify.sh never counts.
+# no OS, which is the whole reason it stayed a note verify.sh never counted.
 # Its npm package ships prebuilt Windows, Linux and macOS binaries, so the
-# toolchain wall is gone and the check is counted (D2) — and a counted check is
+# toolchain wall is gone and the check is counted — and a counted check is
 # what makes both cases below matter: the provisioning has to be real on every
 # host, and the pin has to reach the machines that already have some fallow.
 # The stubs are npm and the client and the PATH holds nothing else: cargo absent
@@ -7229,8 +7281,8 @@ rm -f "$FALLOW_WIRED_ENTRY"
 # `claude plugin install engram@engram` brings skills, hooks and a .mcp.json whose
 # server is `{"command": "engram"}` — a bare binary nothing here provisioned. The
 # summary reported that plugin install as engram itself, so a clean Windows box
-# read `engram: OK` and then could not start the server. D3 provisions it: the
-# official release, at a pin, checksum-verified, per-user, no elevation.
+# read `engram: OK` and then could not start the server. install.sh provisions
+# it: the official release, at a pin, checksum-verified, per-user, no elevation.
 # Nothing below reaches the network — the fetch is a stub serving a fixture release
 # out of a directory — and nothing installs an engram on the machine running this
 # suite: every write lands in a fixture HOME.
@@ -7637,7 +7689,7 @@ assert_equals "each MCP check carries its remediation on the same line as the ve
   "inline / inline / inline" \
   "$(mcp_check_fix_kind "$report_without_marker" 'engram MCP connected') / $(mcp_check_fix_kind "$report_without_marker" 'context7 MCP connected') / $(mcp_check_fix_kind "$report_without_marker" 'fallow MCP connected')"
 
-# --- The name those checks match on: the whole one, never a lookalike (D17) ----
+# --- The name those checks match on: the whole one, never a lookalike ----------
 # `claude mcp list` prints a plugin-shipped server as `plugin:<plugin>:<server>:`
 # and a user-scope one as `<server>:`, so the pattern has to accept both spellings
 # — and an unanchored one accepts much more than that: any Connected entry whose
@@ -7680,7 +7732,7 @@ fi
 # `claude plugin install` exits 0 both on a plugin it installed and on one that was
 # already there, while verify.sh holds this to the client LISTING the plugin — so a
 # summary reporting the exit code claims something the verifier measures another
-# way, which is the engram shape at a smaller scale (D3). The opt-out marker cases
+# way, which is the engram shape at a smaller scale. The opt-out marker cases
 # above cover the choice; these two cover what the line SAYS about the install.
 IMPECCABLE_STUB_DIR="$TEST_HOME/impeccable-stub"
 IMPECCABLE_PLUGIN_LIST="$TEST_HOME/impeccable-plugin-list"
@@ -7783,7 +7835,7 @@ assert_equals "the delegation check joins both sides of its argv on a mark no ar
   "$argv_boundary_kind / $(printf '%s\n' "$delegation_check" |
     grep -oE -- '-join [^ )]+' | LC_ALL=C sort -u)"
 
-# --- The double-clickable verifier, and the class of file it joins (D16) ------
+# --- The double-clickable verifier, and the class of file it joins ------------
 # README hands a Windows operator install.bat as THE path — no terminal, just a
 # double-click — and then had nothing to offer for proving the install but
 # `bash bootstrap/verify.sh` from a shell they were told they would not need.
@@ -7827,7 +7879,7 @@ esac
 assert_equals "the CR scan names every directory and extension a shipped executable can arrive under, and verify.bat is inside what that expands to" \
   "$EXPECTED_CR_SCAN_TARGETS| reached" "$cr_scan_targets| $cr_scan_reaches_verify_bat"
 
-# --- The Windows claims, held to what the code does (D18) --------------------
+# --- The Windows claims, held to what the code does --------------------------
 # README told a Windows operator they needed "nothing pre-installed", and every
 # defect this change closed was downstream of believing it: winget is what
 # provisions the machine and its absence now stops the run, and Git Bash is not a
@@ -7893,7 +7945,7 @@ fi
 assert_equals "the Windows guide names the fallow package at the pin install.sh provisions" \
   "${install_fallow_pin:-unreadable}" "$guide_fallow_pin"
 
-# --- CI's verify assertion: the SET of check names, never a bare count (D6) ---
+# --- CI's verify assertion: the SET of check names, never a bare count --------
 # ci.yml pins the names — its own $VERIFY_CHECK_NAMES comment carries why a count
 # could not — and this is what holds that pin to what verify.sh actually prints: a
 # check added without the list moving is red HERE, in the commit that adds it,
@@ -7948,7 +8000,7 @@ else
   skipped=$((skipped + 1))
 fi
 
-# --- The backup an install promises, and the copies that make it true (D11) ---
+# --- The backup an install promises, and the copies that make it true ---------
 # Three separate failures lived here: a backup directory announced in the plan
 # and not created until phase 6 of 7, so every run that died earlier left the
 # operator holding a path that had never existed; a backup set that covered the
@@ -8142,8 +8194,8 @@ assert_equals "the backed up settings.json is the operator's, not the one phase 
   "$INSTALLER_ORDER_SETTINGS" \
   "$(cat "$(newest_claude_backup "$INSTALLER_ORDER_HOME")/settings.json" 2>/dev/null)"
 
-# What the operator is handed at the end, because D11 buys honest backups and no
-# restore command: a recovery that is theirs to perform has to name its own
+# What the operator is handed at the end, because the install buys honest backups
+# and no restore command: a recovery that is theirs to perform has to name its own
 # edges, the way restore-codex.sh names the one thing its restore cannot revert.
 coverage_named() {
   local phrase
@@ -8159,7 +8211,7 @@ assert_equals "the run names the backup, that nothing restores it for you, and t
   "named" "$(coverage_named 'backup: ' 'no restore command on this side' 'core.hooksPath')"
 
 # Retention, through the call site that has to carry it: three older snapshots,
-# a budget nothing fits in, and one install. ADR-0124's bound always keeps the
+# a budget nothing fits in, and one install. The bound always keeps the
 # newest whatever the budget says, so what survives is this run's own — and
 # repeated installs stop being repeated directories.
 INSTALLER_RETENTION_HOME="$TEST_HOME/installer-retention-home"
@@ -8183,7 +8235,7 @@ assert_equals "an install prunes the older backups its budget cannot hold and ke
   "$(count_claude_backups "$INSTALLER_RETENTION_HOME") / $retention_survivor"
 
 # --- The client env block: an absolute oso-state, and the Git Bash the hooks
-#     are spawned through (D9, D10) --------------------------------------------
+#     are spawned through ------------------------------------------------------
 # Two variables the client reads out of settings.json at the start of every
 # session, and neither used to be written by anything here. OSO_STATE_BIN reached
 # a session only through a SessionStart hook writing $CLAUDE_ENV_FILE, on top of
@@ -8818,7 +8870,7 @@ assert_equals "a non-timeout curl failure is named UNAVAILABLE, never mistaken f
     grep -Fc 'FAILCALL:UNAVAILABLE: download of Engram release archive failed: https://example.test/asset.tar.gz (curl exit 6)' || true)"
 
 # --- Codex installer: an isolated release install, not a real user mutation ---
-# S11 owns user-wide Codex state, which makes a source-only assertion too weak:
+# User-wide Codex state is at stake, which makes a source-only assertion too weak:
 # the test runs the shipped installer with HOME, CODEX_HOME and every external
 # client redirected into this fixture. The shims model only the public contracts
 # the installer is allowed to rely on. An unexpected client spelling is a hard
@@ -9109,7 +9161,7 @@ assert_equals "Codex config resolves a Cargo-home fallow binary outside PATH" \
   "1" "$(printf '%s\n' "$cargo_fallow_config" |
     grep -Fxc "command = \"$CODEX_CARGO_FALLOW_HOME/.cargo/bin/fallow-mcp\"" || true)"
 
-# The spelling a Windows install produces now that fallow comes from npm (D2):
+# The spelling a Windows install produces now that fallow comes from npm:
 # `npm install --global` drops fallow-mcp.cmd in %APPDATA%\npm beside a .ps1 and
 # an extensionless sh script, and the client that spawns this command is a native
 # Windows process which can run only the .cmd. Resolving the sh script instead
@@ -9172,9 +9224,9 @@ else
 fi
 assert_equals "declining the install exits before any destination mutation" \
   "nonzero" "$([ "$codex_decline_rc" -ne 0 ] && echo nonzero || echo zero)"
-# The CLI pin is a precondition checked before confirm_install ever prompts
-# (defect 3 / D20), so a pinned CLI's single `--version` read is expected here
-# even on decline; nothing past it — no npm call, no second Codex call — runs.
+# The CLI pin is a precondition checked before confirm_install ever prompts, so
+# a pinned CLI's single `--version` read is expected here even on decline;
+# nothing past it — no npm call, no second Codex call — runs.
 assert_equals "declining a pinned install makes no npm call and reads the version exactly once" \
   "1" "$(wc -l < "$CODEX_INSTALL_CALLS" | tr -d ' ')"
 assert_equals "the one call declining makes is the version precondition, not an update" \
@@ -9269,9 +9321,9 @@ assert_equals "the managed permissions grant the settled state root" \
 assert_equals "the managed permissions grant the settled worktree root" \
   "1" "$(grep -Fxc "\"$CODEX_HAPPY_HOME/.local/state/oso-code/worktrees\" = true" "$CODEX_HAPPY_CONFIG" || true)"
 
-# ADR-0121 (a): each named secret category is denied — driving the fixture the
-# installer actually renders, not eyeballing the TOML by hand. A pattern that
-# regresses out of the renderer turns exactly this line red.
+# Each named secret category is denied — driving the fixture the installer
+# actually renders, not eyeballing the TOML by hand. A pattern that regresses
+# out of the renderer turns exactly this line red.
 for codex_secret_pattern in \
   '"**/*.key" = "deny"' \
   '"**/*.pem" = "deny"' \
@@ -9295,11 +9347,11 @@ for codex_secret_pattern in \
     "present" "$(grep -Fx "$codex_secret_pattern" "$CODEX_HAPPY_CONFIG" >/dev/null && echo present || echo missing)"
 done
 
-# ADR-0121/ADR-0122 (b): the three examined grants are asserted at the value
-# this slice settled on, so a later regression — a `.git` entry dropped, or the
-# metadata IP reopened — turns exactly one of these red. The permission
-# profile's own default reverted to "oso" under ADR-0122 (no per-project
-# selection exists to opt into); the other two examined grants are unaffected.
+# The three examined grants are asserted at the value the profile settled on, so
+# a later regression — a `.git` entry dropped, or the metadata IP reopened —
+# turns exactly one of these red. The permission profile's own default is "oso"
+# (no per-project selection exists to opt into); the other two examined grants
+# are unaffected.
 assert_equals "the oso profile is the machine default, since Codex has no per-project profile selection to scope it narrower" \
   "1" "$(grep -Fxc 'default_permissions = "oso"' "$CODEX_HAPPY_CONFIG" || true)"
 assert_equals "the oso profile itself still needs the full git-dir subtree for its own plumbing" \
@@ -9652,8 +9704,8 @@ assert_equals "a second Engram setup leaves both root pointers before oso-code o
     }
   ' "$CODEX_HAPPY_CONFIG")"
 
-# D14 is still a behavioral pin (0.146.0, `@latest` never an escape hatch),
-# but D20 (defect 3) moved how it is reached: an old CLI is a precondition
+# The version is still a behavioral pin (0.146.0, `@latest` never an escape
+# hatch), but how it is reached moved: an old CLI is a precondition
 # failure now, never a silent in-place upgrade the transaction's rollback
 # could not have reverted had a later step failed.
 CODEX_OLD_HOME="$TEST_HOME/codex-old-version-home"
@@ -9792,7 +9844,7 @@ assert_equals "profile validation rejection rolls every destination back byte-fo
   "$codex_config_reject_before" "$codex_config_reject_after"
 
 if command -v git >/dev/null 2>&1; then
-  # ADR-0099: a previous oso-code install may have pointed this checkout at the
+  # A previous oso-code install may have pointed this checkout at the
   # published source directory. That exact, single-hook owner is safe to migrate
   # to the self-contained runtime; a lookalike path or any sibling is not.
   CODEX_GIT_MIGRATE_RELEASE="$TEST_HOME/codex-git-migrate-release"
@@ -10113,8 +10165,8 @@ assert_equals "a malformed global file is untouched by the refused install" \
   "$bad_global_before" "$(file_sha256 "$bad_global")"
 
 # --- Codex installer: migrates a pre-split plan-approval state file inside
-# the transaction (ADR-0110/D20) -----------------------------------------------
-# 526a558 (ADR-0107) split `session` (ownership) from `plan_approval_session`
+# the transaction --------------------------------------------------------------
+# 526a558 split `session` (ownership) from `plan_approval_session`
 # (who may approve or cancel a pending plan). A state file written before that
 # split holds only the old key; installing the split without converting it
 # manufactures the exact trap the split closes. state_key_of mirrors
@@ -10208,7 +10260,7 @@ HOME="$CODEX_MIGRATION_HOME" run_hook "$UNKNOWN_TOOL_HOOK" "$migration_marker_pr
 assert_after_hook "the cleared repository no longer denies a tool call at all" \
   [ -z "$hook_stdout" ]
 
-# --- Codex installer: a partial rollback tells the truth (ADR-0110) ----------
+# --- Codex installer: a partial rollback tells the truth ---------------------
 # on_exit calls `rollback_transaction || true`, which turns off errexit for the
 # whole function — the old code had no per-item check at all and always printed
 # "rollback complete" regardless of what `rm -rf`/`cp -a` actually did. The shim
@@ -10242,11 +10294,11 @@ assert_equals "the rollback report names the item that failed to restore" \
 assert_equals "the rollback report tells the operator the snapshot is still there to restore by hand" \
   "1" "$(printf '%s\n' "$CODEX_INSTALL_LOG" | grep -Ec 'snapshot.*restore it by hand' || true)"
 
-# --- Codex installer: Impeccable is pinned to the recorded version (D14, D4) --
-# The design-foundation slice (ADR-0116) reads the installed skill's own
-# `version:` frontmatter and records it in the plan ledger; this pin is what
-# lets that recorded read and the marketplace fetch agree instead of leaving
-# two unreconciled sources of truth. Three cases: a candidate that already
+# --- Codex installer: Impeccable is pinned to the recorded version ----------
+# The design-foundation slice reads the installed skill's own `version:`
+# frontmatter and records it in the plan ledger; this pin is what lets that
+# recorded read and the marketplace fetch agree instead of leaving two
+# unreconciled sources of truth. Three cases: a candidate that already
 # matches never triggers a fetch, one that does not match falls through to
 # the pinned `--ref skill-v<version>` fetch, and a fetch that itself reports
 # the wrong version fails loudly rather than mounting unpinned content.
@@ -10354,7 +10406,7 @@ else
 fi
 
 # --- Codex installer: a restore that exists, and retention sequenced -------
-#     behind it (D14) ----------------------------------------------------------
+#     behind it ----------------------------------------------------------------
 # Count-based retention does not answer "1.9 GiB across 17 snapshots" -- a
 # single snapshot already runs to ~110 MiB -- so this proves the size bound
 # instead, and proves it never engages until a real restore has succeeded at
@@ -10437,7 +10489,7 @@ run_codex_restore "$CODEX_RESTORE_BOGUS_HOME" "../../etc"
 assert_equals "a backup name that is not a bare directory name is refused" \
   "nonzero" "$([ "$CODEX_RESTORE_RC" -ne 0 ] && echo nonzero || echo zero)"
 
-# --- verify-codex.sh: codex login status and codex exec are bounded (D14) ----
+# --- verify-codex.sh: codex login status and codex exec are bounded ----------
 # Both carry no timeout flag of their own, so both now run through
 # bounded_command_output -- the same in-shell job-control idiom
 # plugin/skills/_shared/front-surface.md defines and this file's own MCP
@@ -10478,7 +10530,7 @@ else
   echo "ok: the hanging codex login status fixture does not outlive the bounded check"; pass=$((pass + 1))
 fi
 
-# codex exec (the integrator smoke, D13/B13) reaches deep into
+# codex exec (the integrator smoke) reaches deep into
 # create_integrator_fixture/populate_smoke_codex_home, which needs a real git
 # checkout -- gated the way the rest of this suite gates its git-layer cases.
 if ! command -v git >/dev/null 2>&1; then

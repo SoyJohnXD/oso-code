@@ -2,7 +2,7 @@
 # SessionStart: persist OSO_STATE_BIN so skills reach oso-state by an explicit
 # path. bootstrap/install.sh publishes that same path into the `env` block of
 # ~/.claude/settings.json, which the client hands to every session it starts and
-# which needs no injection at all (D9); this hook covers the sessions that write
+# which needs no injection at all; this hook covers the sessions that write
 # never reached — a plugin installed straight from the marketplace, a machine the
 # installer has not run on since. Writing the path into $CLAUDE_ENV_FILE makes
 # every later Bash command in the session see it. When CLAUDE_ENV_FILE is unset

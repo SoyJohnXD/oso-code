@@ -3,7 +3,7 @@
 # Reads only state flags — never inspects model output.
 #
 # Recovery: the deny reads the session's own `mode` and names that mode's own
-# path to green (D18) — plan's apply → verify loop, or quick/debug's close
+# path to green — plan's apply → verify loop, or quick/debug's close
 # step — never a menu of every mode's step, and never the state write that
 # would flip the flag itself.
 set -euo pipefail

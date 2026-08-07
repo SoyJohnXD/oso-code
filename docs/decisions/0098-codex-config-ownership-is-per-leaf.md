@@ -3,7 +3,6 @@
 Date: 2026-08-03
 Status: accepted
 Amends: ADR-0096 (the Codex installer distribution boundary — a host table is not wholly installer-owned merely because oso-code owns keys inside it)
-Implemented-in: docs/blueprint.md, docs/parity-codex.md, README.md, CHANGELOG.md, bootstrap/install-codex.sh, bootstrap/lib/codex-managed-config.sh, bootstrap/lib/toml-regions.awk, bootstrap/verify-codex.sh, tests/hooks-test.sh
 Reconciled: applied — the installer and verifier use a primary config region plus a leaf-level block inside the shared `[features]` table, preserving every unrelated feature key.
 Source: the authenticated 0.18.0 installation smoke on a login-only Codex home; Codex had written `prevent_idle_sleep = true` before oso-code installation
 

@@ -6,11 +6,11 @@
 set -euo pipefail
 
 SUPPORTED_CODEX_VERSION=0.146.0
-# The version design-foundation slice B8 (ADR-0116) reads from the installed
+# The version the design-foundation slice reads from the installed
 # skill's own SKILL.md frontmatter and records in the plan ledger. Pinning the
 # marketplace fetch to the matching `skill-v<version>` tag is what lets that
 # recorded read and this pin agree instead of drifting into two sources of
-# truth (D4, D14).
+# truth.
 SUPPORTED_IMPECCABLE_VERSION=4.0.2
 CONFIG_MARKER_START="# oso-code:start"
 CONFIG_MARKER_END="# oso-code:end"
@@ -58,7 +58,7 @@ initialize_paths() {
   TX_MANIFEST="$TX_BACKUP_ROOT/manifest"
   TX_ACTIVE=false
   TX_COMMITTED=false
-  # D14: read from lib/install-backup.sh, which is where the budget and the
+  # Read from lib/install-backup.sh, which is where the budget and the
   # measured numbers behind it live now that install.sh bounds its own backup
   # root by the same one. Held in a variable here only so the removal line
   # below can name the budget it enforced.
@@ -151,7 +151,7 @@ codex_version() {
   codex --version 2>/dev/null | awk '{ print $NF }'
 }
 
-# D20: `begin_transaction` can only ever restore what it backed up -- cp -a
+# `begin_transaction` can only ever restore what it backed up -- cp -a
 # snapshots of paths under $HOME -- and a global npm package is neither: the
 # standalone Codex release on the machine this pin was read from runs to
 # ~300 MiB, which alone would blow the 300 MiB total `INSTALL_BACKUP_BUDGET_KIB`
@@ -428,7 +428,7 @@ backup_target() {
   fi
 }
 
-# ADR-0107 (526a558) split `session` (ownership) from `plan_approval_session`
+# An earlier release split `session` (ownership) from `plan_approval_session`
 # (who may approve or cancel a pending plan), but an installed base of state
 # files predates the split and holds only the old key. Left alone, this
 # release would manufacture the exact trap that split closes:
@@ -480,7 +480,7 @@ migrate_plan_approval_state() {
 # therefore checked explicitly rather than left to errexit, and one item's
 # failure never skips the rest — a partial restore beats a stopped one. The
 # manifest replay itself lives in lib/install-backup.sh, shared with the
-# standalone restore-codex.sh (D14) so an in-run rollback and a later
+# standalone restore-codex.sh so an in-run rollback and a later
 # operator-invoked restore can never read the same manifest two ways.
 rollback_transaction() {
   [ "$TX_ACTIVE" = true ] || return 0
@@ -522,7 +522,7 @@ checkpoint() {
   return 0
 }
 
-# D14: bounds total backup disk use rather than count (lib/install-backup.sh
+# Bounds total backup disk use rather than count (lib/install-backup.sh
 # carries the budget, the measured numbers behind it, and the selection this
 # deletes from — shared with install.sh, which bounds a backup root of its own
 # by the same one), and refuses to delete anything until
@@ -665,7 +665,7 @@ raise SystemExit(1)
 }
 
 validate_stale_engram_marketplace() {
-  # ADR-0102 permits cleanup only for the exact clean checkout Codex orphaned.
+  # Cleanup is permitted only for the exact clean checkout Codex orphaned.
   [ ! -L "$ENGRAM_MARKETPLACE_CACHE" ] ||
     fail "refusing to remove symlinked unregistered Engram marketplace cache: $ENGRAM_MARKETPLACE_CACHE"
   [ -d "$ENGRAM_MARKETPLACE_CACHE" ] ||
@@ -741,7 +741,7 @@ repair_stale_engram_marketplace() {
 }
 
 normalize_installed_engram_pointers() {
-  # ADR-0102 composes Engram's root keys before Oso replaces its own region.
+  # Engram's root keys are composed before Oso replaces its own region.
   [ -f "$CONFIG_FILE" ] ||
     fail "engram setup codex did not create Codex config.toml"
   local candidate validation_home status=0
@@ -935,7 +935,7 @@ PY
 }
 
 # Reads the same `version:` frontmatter field the design-foundation slice
-# reads off the installed SKILL.md (ADR-0116) and mount-impeccable.sh itself
+# reads off the installed SKILL.md and mount-impeccable.sh itself
 # validates the shape of, so a pin comparison never invents a second reading
 # of that field.
 impeccable_skill_version() {
@@ -973,7 +973,7 @@ mount_impeccable() {
   # A discovered source (test override or an already-installed marketplace
   # checkout) is trusted only when its own version already agrees with the
   # pin; anything else -- absent, unreadable, or a different version -- falls
-  # through to the pinned fetch instead of mounting unpinned content (D14).
+  # through to the pinned fetch instead of mounting unpinned content.
   if ! source="$(find_impeccable_source)" ||
      [ "$(impeccable_skill_version "$source/SKILL.md")" != "$SUPPORTED_IMPECCABLE_VERSION" ]; then
     source="$(fetch_pinned_impeccable_source)"
@@ -995,7 +995,7 @@ legacy_oso_git_hooks_path() {
   [ -f "$configured/pre-commit" ] && [ ! -L "$configured/pre-commit" ] \
     && [ -x "$configured/pre-commit" ] || return 1
 
-  # ADR-0099: this exact checkout path is an older oso-code wiring, but only
+  # This exact checkout path is an older oso-code wiring, but only
   # while it contains the one hook oso-code publishes. A sibling belongs to an
   # unknown owner and must not disappear when the runtime path replaces it.
   for entry in "$configured"/* "$configured"/.[!.]* "$configured"/..?*; do

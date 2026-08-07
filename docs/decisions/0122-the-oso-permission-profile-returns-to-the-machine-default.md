@@ -3,7 +3,6 @@
 Date: 2026-08-06
 Status: accepted
 Supersedes: ADR-0121 (only its `default_permissions` clause — the profile moves back to the machine default `"oso"`; the narrowed `.git`, network and secret-denylist grants, and the host-contract check proving the override mechanism is real, all stand unchanged)
-Implemented-in: bootstrap/lib/codex-managed-config.sh, README.md, tests/hooks-test.sh, docs/decisions/0121-the-oso-permission-profile-is-opt-in-and-its-three-broad-grants-are-narrowed.md, docs/blueprint.md, docs/parity-codex.md
 Reconciled: applied — the rendered `config.toml` writes `default_permissions = "oso"` again; README's operator-facing note and the fixture assertions read the machine-default profile instead of a per-invocation override.
 Source: this change (codex-fluidity); the operator's reversal of ledger decision D11's opt-in clause, with the tradeoff put to them explicitly against ADR-0121's own finding
 

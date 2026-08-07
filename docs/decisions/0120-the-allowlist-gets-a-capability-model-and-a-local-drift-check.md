@@ -2,7 +2,6 @@
 
 Date: 2026-08-06
 Status: accepted
-Implemented-in: tools/hook-gates.txt, tools/render-hooks-json.sh, bootstrap/verify-codex.sh, tests/hooks-test.sh, .github/workflows/ci.yml, docs/blueprint.md
 Reconciled: applied — `tools/hook-gates.txt` gains two trailing cells on every `tool` row (a read/write/role class, a yes/no mandated flag); `tools/render-hooks-json.sh`'s parser accepts and validates them without either ever reaching `render()`; `bootstrap/verify-codex.sh` gains `run_mcp_tool_drift_checks`, one unconditional server-independent agreement check plus per-server checks spawning each locally-wired MCP server and comparing its live `tools/list` answer against the table; `tests/hooks-test.sh` drives all five named cases against fixtures; `.github/workflows/ci.yml`'s comment for the unchanged `failed: 14` pin now names the one check that owes nothing to the missing Codex install.
 Source: slice A3 (5905a27) fixed the table's content — five Engram protocol tools plus two rewritten spellings — after eight live operator denials. Slice B6 (4620b8e) measured that the ledger's original plan, a CI gate, would skip on every run: CI installs neither Engram nor Fallow nor even the Codex CLI, which is exactly how the delegation-schema defect the pre-freeze doubt pass named went unnoticed. This decision is the mechanism that stops A3's fix from re-drifting.
 

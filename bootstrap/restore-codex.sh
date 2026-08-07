@@ -107,7 +107,7 @@ confirm_restore() {
 }
 
 # The retention policy in install-codex.sh's prune_install_backups refuses to
-# delete anything until this file exists (D14): a purge that ran on its first
+# delete anything until this file exists: a purge that ran on its first
 # installation would delete the very artifacts an operator reaches for if
 # that installation goes wrong, so pruning stays off until a restore has
 # actually been proven to work on this machine at least once.

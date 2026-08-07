@@ -3,7 +3,6 @@
 Date: 2026-08-07
 Status: accepted
 Supersedes: ADR-0066 (the whole of it — fallow is no longer reported on a `note:`, and the Rust prerequisite its reasoning rested on is gone)
-Implemented-in: bootstrap/install.sh, bootstrap/lib/codex-managed-config.sh, bootstrap/verify.sh, tests/hooks-test.sh, docs/blueprint.md, docs/windows.md, README.md
 Reconciled: applied — every file above carries the change this decision records; Bootstrap responsibilities item 2 reads fallow as asserted connected beside engram and context7.
 Source: this change (windows-install-reliability); the `fallow` npm package's own published platform matrix (win32-x64, win32-arm64, darwin-x64, darwin-arm64, linux-x64-gnu, linux-x64-musl) and its `engines: node >=22`; measured that `claude mcp get fallow` exits 0 for an entry whose command cannot be spawned; ledger decision D2
 

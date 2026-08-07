@@ -2,7 +2,6 @@
 
 Date: 2026-08-02
 Status: accepted
-Implemented-in: plugin/skills/_shared/bodies/plan.md, plugin/hooks/cleanup-state.sh
 Reconciled: applied — the Hooks section's per-session-file bullet names `repo_path` and the SessionEnd teardown, and Mode 1 phase 7 opens on clearing the trees and then the branches.
 Source: this change (parallel wave execution); recorded with the change that made it
 

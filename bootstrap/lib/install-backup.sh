@@ -53,7 +53,7 @@ backup_size_kib() {
 }
 
 # The one place the retention budget is written down, for every installer that
-# has one. 300 MiB (D14, ADR-0124): the measured problem was 1.9 GiB across 17
+# has one. 300 MiB: the measured problem was 1.9 GiB across 17
 # snapshots and a single Codex snapshot already runs to ~110 MiB, so bounding
 # "the last N" would leave size free to grow with whatever a future release's
 # transaction happens to back up. Bounding size keeps roughly 2-3 recent Codex

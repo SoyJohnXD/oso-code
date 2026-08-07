@@ -3,7 +3,6 @@
 Date: 2026-08-04
 Status: accepted
 Amends: ADR-0101 (the wire-exact approval digest distinguishes transport bytes from the marker's logical terminal-line contract)
-Implemented-in: docs/blueprint.md, docs/parity-codex.md, docs/decisions/0101-codex-native-approval-and-operational-plan-artifacts.md, README.md, CHANGELOG.md, plugin/skills/_shared/bodies/plan.md, plugin/skills/_shared/platform/codex/plan.md, plugin/hooks/capture-plan-approval.sh, tests/hooks-test.sh, bootstrap/hook-hashes.txt
 Reconciled: applied — Stop accepts the final marker with zero or one host terminal LF, reconstructs marker-only native Plan renderer splits from the unique exact-turn Plan item, binds the exact approval content, exposes conditional planning dispositions, and forbids blind unchanged retries.
 Source: the live Codex rollout `019fce3d-e58a-7d90-872a-20458d9f3442`, its two `plan-approval-capture-blocked` events, and the operator's 2026-08-04 repair decision
 

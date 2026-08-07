@@ -3,7 +3,6 @@
 Date: 2026-08-07
 Status: accepted
 Supersedes: ADR-0071 (its "loops judge-to-fix until `Debt Sweep: clean`" clause alone — the loop now ends on a severity band under a cap; the sweep's additive standing beside the quality pass, its no-ledger `Conformance: skipped` contract and the quality-pass re-run over the cleanup all stand unchanged)
-Implemented-in: plugin/skills/_shared/bodies/plan.md, plugin/skills/_shared/bodies/debug.md, plugin/skills/_shared/front-surface.md, plugin/skills/_shared/reporting.md, tests/plugin-lint.sh, docs/blueprint.md
 Reconciled: applied — Mode 1 §7 step 3 and Mode 3 §5 step 1 each state the band, the cap and the three routes; the greens at Mode 1 §7 step 7 and Mode 3 §5 step 4 read that bar instead of a token; the front-surface matrix's PLAN cell points at the bar rather than restating a token the bar can no longer produce; `_shared/reporting.md` carries the residual's reporting exception; and `tests/plugin-lint.sh` holds both the bar's own clauses and the surfaces that must not restate the retired one.
 Source: this change (clean-bar-convergence); one real close that ran seven judge → fix rounds over three hours, whose last three rounds found only the damage the fifth round's own applier had left; ledger decision D3
 

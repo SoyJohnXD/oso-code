@@ -2,7 +2,6 @@
 
 Date: 2026-08-06
 Status: accepted
-Implemented-in: bootstrap/install-codex.sh, bootstrap/verify-codex.sh, tests/hooks-test.sh, docs/blueprint.md
 Reconciled: applied — every file above carries the change this decision records.
 Source: an external audit of `740cad3`; each claimed defect was reproduced on a scratch fixture before being fixed (measured: `cp -R` preserves a symlinked role file into the staging area, a plain `cp` onto it writes through, `chmod` follows it too; an unescaped `.` in a `sed` BRE pattern matches an arbitrary substituted character, normalizing a wrong path to the expected hash; the standalone Codex release on the machine this pin was read from runs to ~300 MiB, matching order of magnitude to the whole 300 MiB `INSTALL_BACKUP_BUDGET_KIB` every other snapshot shares (D14, ADR-0124); `codex plugin list --json` against a real marketplace install, read directly)
 

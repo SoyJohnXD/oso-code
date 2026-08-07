@@ -2,7 +2,6 @@
 
 Date: 2026-08-02
 Status: accepted
-Implemented-in: plugin/skills/_shared/bodies/plan.md
 Reconciled: applied — Mode 1 phase 6 reads the first wave as what answers it; the question itself sits in the skill's §3 Verification row, which the frozen body never enumerated.
 Source: this change (parallel wave execution); recorded with the change that made it
 

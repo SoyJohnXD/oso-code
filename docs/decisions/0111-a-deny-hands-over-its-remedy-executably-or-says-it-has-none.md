@@ -3,7 +3,6 @@
 Date: 2026-08-05
 Status: accepted
 Supersedes: ADR-0108 (only its description of the command line reaching `deny_until_green` through "its new second argument" — `deny_until_green` now takes `state_file` second and `command` third; every other line of ADR-0108 stands)
-Implemented-in: plugin/hooks/lib.sh, plugin/hooks/block-edits-without-slice.sh, plugin/hooks/block-commit-until-green.sh, plugin/hooks/block-unknown-tool.sh, plugin/git-hooks/pre-commit, tools/hook-gates.txt, tools/render-hooks-json.sh, bootstrap/hook-hashes.txt, tests/hooks-test.sh, docs/blueprint.md
 Reconciled: applied — `lib.sh` gains `oso_state_remedy()` and a mode-aware `deny_until_green()`; the three PreToolUse gates each carry a `# Recovery:` header line and a deny reason ending in a concrete next step; `block_with_gate_error` says explicitly that no remedy is known; `tools/render-hooks-json.sh`'s table parser rejects a PreToolUse gate script with no declared recovery route, and `tools/hook-gates.txt`'s header records the rule next to the gate rows it governs.
 Source: the operator's own complaint that the harness "me manda hacia atrás en vez de recuperarse hacia adelante"; the pre-freeze doubt pass on the codex-fluidity ledger, whose verdict on the twenty prior decisions was that "the change can land complete, meet its bar, and leave the operator's lived experience of being blocked substantially unchanged"; A6 (`349ea70`, ADR-0108) which made a deny name what it denied but not what would undo it
 

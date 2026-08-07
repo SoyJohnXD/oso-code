@@ -2,7 +2,6 @@
 
 Date: 2026-08-05
 Status: accepted
-Implemented-in: plugin/hooks/lib.sh, plugin/hooks/block-unknown-tool.sh, plugin/hooks/cleanup-state.sh, plugin/bin/oso-state, plugin/skills/_shared/platform/codex/plan.md, bootstrap/hook-hashes.txt, tests/hooks-test.sh, docs/blueprint.md
 Reconciled: applied — `capture-plan` now writes `plan_approval_session` beside `session`; `approve-plan`, `cancel-plan` and `amend-plan` compare against the new key; the catch-all's pending check is scoped to it; SessionEnd gained a second sweep that clears an orphan by that key; `state_says` grew an optional owner-key argument rather than a new sibling.
 Source: the operator-reported trap — a stale `plan_approval=pending` denied `Bash` itself, with no local escape, in a repository no session currently owned
 

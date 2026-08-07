@@ -12,7 +12,7 @@
 # it must also land in this named matcher before it can edit outside an active
 # slice. Claude keeps this gate's existing named-list behavior.
 #
-# Recovery: the deny names the exact `oso-state` invocation (D18) that arms the
+# Recovery: the deny names the exact `oso-state` invocation that arms the
 # slice this gate is waiting for — the one thing only this gate knows.
 set -euo pipefail
 

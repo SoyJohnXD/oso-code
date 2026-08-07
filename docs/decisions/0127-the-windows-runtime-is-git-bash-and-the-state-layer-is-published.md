@@ -2,7 +2,6 @@
 
 Date: 2026-08-07
 Status: accepted
-Implemented-in: bootstrap/install.ps1, bootstrap/install.sh, bootstrap/verify.sh, bootstrap/verify.bat, bootstrap/install.bat, plugin/hooks/lib.sh, plugin/hooks/persist-state-bin.sh, .gitattributes, tests/hooks-test.sh, docs/blueprint.md, docs/windows.md, README.md
 Reconciled: applied — every file above carries the change this decision records; Bootstrap responsibilities item 1 names Git Bash as the runtime dependency it is.
 Source: this change (windows-install-reliability), measured on a real Windows 11 machine: `core.hooksPath` written and then read back as a foreign owner on the second run; `CLAUDE.md`, `settings.json` and every backup written into a `HOMEDRIVE`+`HOMEPATH` tree the client never opens while `verify.sh` read the same tree and reported green; every skill falling through to a bare `oso-state` that resolved to nothing; ledger decisions D1, D2, D9, D10
 
