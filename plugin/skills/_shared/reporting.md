@@ -1,6 +1,6 @@
 # Milestone reporting
 
-Shared contract for what the orchestrator tells the operator while `/plan`, `/quick` and `/debug` run autonomously — the gap this file closes is that nothing else in the harness says what a report CONTAINS, so a model left to its own judgment satisfies "report the result" with exactly that sentence and the operator is left reading tool calls and nothing else. Referenced by path from every flow body's own arm, launch, verdict-read, judge-outcome and close moments, so there is one definition, never a copy.
+Shared contract for what the orchestrator tells the operator while `/plan`, `/quick`, `/debug` and `/roadmap` run autonomously — the gap this file closes is that nothing else in the harness says what a report CONTAINS, so a model left to its own judgment satisfies "report the result" with exactly that sentence and the operator is left reading tool calls and nothing else. Referenced by path from every flow body's own arm, launch, verdict-read, judge-outcome and close moments, so there is one definition, never a copy.
 
 ## Milestones
 

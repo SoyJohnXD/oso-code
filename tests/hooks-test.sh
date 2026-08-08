@@ -3704,8 +3704,8 @@ case "$codex_question_section$codex_question_parity_row" in
     echo "ok: the settled Codex question cap carries no PLACEHOLDER/4 contract"; pass=$((pass + 1)) ;;
 esac
 
-# These six losses are release input, not explanatory prose. Require exactly
-# six table rows and the load-bearing boundary in each one; this is the parity
+# These seven losses are release input, not explanatory prose. Require exactly
+# seven table rows and the load-bearing boundary in each one; this is the parity
 # mutation gate the linter rules alone do not give.
 codex_loss_ledger="$(sed -n \
   '/^## Frozen loss and degradation ledger$/,/^## /p' \
@@ -3716,8 +3716,8 @@ codex_loss_rows="$(printf '%s\n' "$codex_loss_ledger" | awk '
   /^\|/ { rows++ }
   END { print rows + 0 }
 ')"
-assert_equals "the frozen Codex ledger carries exactly its six release losses" \
-  "6" "$codex_loss_rows"
+assert_equals "the frozen Codex ledger carries exactly its seven release losses" \
+  "7" "$codex_loss_rows"
 assert_says_every "the frozen Codex ledger names every loss and remaining boundary" \
   "$codex_loss_ledger" <<'CODEX_FROZEN_LOSS_TABLE'
 Plan approval composes native UI with a narrower local rail
@@ -3734,6 +3734,8 @@ operator-run local release check
 The oso permission profile is the machine default because Codex has no per-project profile selection
 `.git/config` = `"read"`
 `oso-state` flags, plan documents and install-backup snapshots
+A roadmap runs ASSISTED here, never unattended
+present once per child
 CODEX_FROZEN_LOSS_TABLE
 
 # The Codex approval prose has a runtime gate behind it, but the hook cannot
@@ -9628,8 +9630,8 @@ assert_equals "the installed Codex plugin carries a real wrapper" \
   "present" "$([ -f "$CODEX_STAGED_MARKETPLACE/codex/skills/plan/SKILL.md" ] && [ ! -L "$CODEX_STAGED_MARKETPLACE/codex/skills/plan/SKILL.md" ] && echo present || echo missing)"
 assert_equals "the installed Codex plugin carries the shared body beside its wrappers" \
   "present" "$([ -f "$CODEX_STAGED_MARKETPLACE/codex/skills/_shared/bodies/plan.md" ] && [ ! -L "$CODEX_STAGED_MARKETPLACE/codex/skills/_shared/bodies/plan.md" ] && echo present || echo missing)"
-assert_equals "the staged plugin carries all eight Codex skill wrappers" \
-  "8" "$(find "$CODEX_STAGED_MARKETPLACE/codex/skills" -mindepth 2 -maxdepth 2 -type f -name SKILL.md -print | wc -l | tr -d ' ')"
+assert_equals "the staged plugin carries all nine Codex skill wrappers" \
+  "9" "$(find "$CODEX_STAGED_MARKETPLACE/codex/skills" -mindepth 2 -maxdepth 2 -type f -name SKILL.md -print | wc -l | tr -d ' ')"
 assert_equals "the installed Codex plugin is self-contained, not linked to the checkout" \
   "0" "$(find "$CODEX_STAGED_MARKETPLACE" -type l -print | wc -l | tr -d ' ')"
 assert_equals "the plugin manifest remains skills-only rather than claiming user hooks" \

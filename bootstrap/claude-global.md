@@ -14,4 +14,5 @@
 - Substantial changes (features, refactors, anything needing architecture or contract decisions): use `/oso-code:plan`.
 - Small, quickly verifiable changes: use `/oso-code:quick`.
 - Something broke (a bug, a crash, a failing behavior): use `/oso-code:debug`.
+- Several substantial changes known up front, decided in one sitting and run one after another: use `/oso-code:roadmap`.
 - Every change closes at zero warnings. `/plan` commits each slice as it lands; never push or open a PR unless asked.
