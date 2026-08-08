@@ -2,7 +2,7 @@
 # Lints the rules `claude plugin validate --strict` has no opinion on: it does
 # open hooks.json, skill frontmatter and the agents, and fails on a broken one
 # (probed against client 2.1.220), but it never asks what they SAY.
-# Twenty-nine rules hold that ground: a `context: fork` skill declares
+# Thirty rules hold that ground: a `context: fork` skill declares
 # `background`; the same skill declares an `end with exactly one of:` verdict
 # block; every `oso-code:<name>` the plugin's own prose points at resolves; every
 # call site of a skill OR AGENT that declares such a block carries EVERY token
@@ -56,7 +56,12 @@
 # body's approval phase names every clause that bounds its one approval — the
 # planning and the execution it covers, every child of the queue, the fresh
 # approval a materially changed queue needs, each child's own plan document, and
-# the platform file that owns a host's extra stop. Each rule
+# the platform file that owns a host's extra stop; and that body's autonomy-policy
+# phase declares every clause its policy turns on — the three tiers it resolves a
+# decision by, the delegated record whichever tier answers takes, the
+# irreversibility bar and the four-item never-solo list that stop it deciding at
+# all, and the inherited entry and the reconciliation that keep the global ledger
+# answering a child's question without overruling the child's own evidence. Each rule
 # states its own reason above it; `background` is the one whose cost is least
 # visible: as of client v2.1.218 a fork returns immediately and its verdict
 # arrives in a LATER turn, while every call site in plan/quick/debug reads that
@@ -843,7 +848,7 @@ check_present_tense_prose_names_the_rule_count() {
     19) spelled=nineteen ;; 20) spelled=twenty ;; 21) spelled=twenty-one ;;
     22) spelled=twenty-two ;; 23) spelled=twenty-three ;; 24) spelled=twenty-four ;;
     25) spelled=twenty-five ;; 26) spelled=twenty-six ;; 27) spelled=twenty-seven ;;
-    28) spelled=twenty-eight ;; 29) spelled=twenty-nine ;;
+    28) spelled=twenty-eight ;; 29) spelled=twenty-nine ;; 30) spelled=thirty ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -1380,6 +1385,51 @@ check_roadmap_umbrella_approval_names_its_bounds() {
   done
 }
 
+# The same body's autonomy policy is the operator's absence priced: every question
+# a child would have asked them arrives with nobody there, and what that phase
+# declares is the whole of what may answer one. Each clause fails its own way when
+# it goes missing, which is why they are held one at a time rather than by the
+# phase merely existing. Lose a tier and the ladder still reads like a ladder while
+# the case that tier covered resolves by whatever an agent finds most plausible —
+# the improvisation a declared policy exists to forbid. Lose the delegated record
+# and the decision is taken with no trace, so the child's own freeze has nothing to
+# reconcile it against and the one approval covers an answer nobody can find. Lose
+# the bar and the confidence that picks a library name picks a destructive
+# migration, where being wrong costs a restore instead of an edit. Lose one item of
+# the never-solo list — the deletion item first, since it reads like plumbing
+# rather than a decision — and a policy naming three of the four reads like the
+# closed list it has stopped being. Lose the inherited entry or the reconciliation
+# and the global ledger either stops answering a child's question or starts
+# answering it over the child's own contrary evidence, which is the outcome the
+# queue exists to prevent.
+#
+# Located by the phase's own heading and read to the next `## `, the approval rule's
+# own locator and for its reason. Three markers are vocabulary the flows already
+# carry — the delegated mark, the inherited entry, the reconciliation — which is
+# what keeps this body from growing a second spelling for any of them. The neutral
+# body alone is scanned, this rule's ceiling as much as the approval rule's: what a
+# host adds around the same policy is its platform file's, so holding those files
+# to these markers would flag the file that records the difference.
+check_roadmap_autonomy_policy_declares_its_ladder_and_its_bar() {
+  local body="$PLUGIN_ROOT/skills/_shared/bodies/roadmap.md"
+  local phase marker
+  if [ ! -f "$body" ]; then
+    flag "no roadmap body at skills/_shared/bodies/roadmap.md to check what its autonomy policy may decide"
+    return 0
+  fi
+  phase="$({ sed -n '/^## [0-9][0-9]*\. The autonomy policy/,/^## /p' "$body" 2>&1 || true; })"
+  if [ -z "$phase" ]; then
+    flag "skills/_shared/bodies/roadmap.md carries no numbered autonomy-policy phase to check what its policy may decide"
+    return 0
+  fi
+  for marker in "the flow's own recommendation" 'standard practice' 'simplest for the operator' \
+      'recorded as delegated' 'irreversibility bar' 'never-solo' 'never a push' \
+      'ledger amendment' 'security residual' 'forced deletion' 'inherited' 'reconciliation'; do
+    printf '%s\n' "$phase" | grep -qiF -- "$marker" \
+      || flag "skills/_shared/bodies/roadmap.md's autonomy-policy phase drops a clause its policy turns on: $marker"
+  done
+}
+
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }
 
 check_forked_skills_declare_background
@@ -1411,6 +1461,7 @@ check_verifier_gate_fails_an_added_inline_comment
 check_sweep_exit_bar_is_banded_and_capped
 check_sweep_loop_remembers_its_dispositioned_findings
 check_roadmap_umbrella_approval_names_its_bounds
+check_roadmap_autonomy_policy_declares_its_ladder_and_its_bar
 
 if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"

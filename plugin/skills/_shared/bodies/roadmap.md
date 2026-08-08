@@ -48,7 +48,30 @@ A decision will surface after the operator has gone; an unattended chain guarant
 
 It has two outcomes and no third. A decision the policy resolves is taken and RECORDED AS DELEGATED, naming the policy that decided it. A decision that structurally needs the human is QUEUED for §5 and the chain moves on — queuing never blocks it, and nothing queued is answered by guessing.
 
+**The policy answers the residue, never the record.** §1 front-loaded most of these decisions deliberately, so what reaches the policy is what those ledgers leave. A per-child decision from that phase answers first — the narrower one wins, which is §1's precedence and not a second rule — and where there is none, the global entry that child records as INHERITED, naming the entry it came from, has answered before any round of the child's own could ask. The ladder below is reached only for a question neither of them answers. §1's third part is the one no tier ever touches: an inherited entry the child's own evidence contradicts is not a missing answer but two answers, and choosing between them is the operator's, so a RECONCILIATION takes the queued outcome above the way everything else this policy will not decide does.
+
+**Three tiers, and a tier is reached only when the one above it has nothing to say.**
+
+- **The flow's own recommendation, first.** Where the decision can be put the way §1's rounds and a child's own decision rounds are both already required to put one — options with their tradeoffs, the recommendation FIRST with why it wins and whether it is current standard practice, and current docs checked before anything that turns on an external library or API is recommended — that recommendation is the answer. This tier invents nothing; running unattended changed only who was there to read what those rounds produce anyway. A recommendation you could not justify in those same terms, on the evidence in front of you, is not one — the tier is silent rather than dressing a coin toss as a recommendation.
+- **Current standard practice, next.** Where the tradeoffs do not separate the options, what current practice standardly does in that case decides, established the way the tier above would have had to establish it: against current docs wherever an external library, framework or API is what the choice turns on, never from a memory of one. The tier above must already SAY whether its recommendation is standard practice, which is what makes this the tier beneath it rather than a rival to it.
+- **Simplest for the operator, last.** Where practice standardizes nothing here, or standardizes two things equally, the option that costs the operator least to live with wins: the fewest moving parts, the least to learn, the least to keep working. Simplest to IMPLEMENT is a different question, and this tier never answers that one.
+
+Whichever of the three answers, the answer is recorded in vocabulary that already exists: the delegated mark the PLAN mode's §3 writes for a decision handed to the flow, its rationale naming the tier that decided it and why that tier was the one reached. Nothing here adds a second shape for recording one — that mark is exactly what a child's own freeze reconciles against, per §3's first bullet.
+
+**The irreversibility bar.** A tier's confidence is not an undo, so one class of decision is refused however plainly a tier would have answered it, and one question decides which: if this answer is wrong, does undoing it need more than an edit and a re-run in this repository? Anything whose undo needs a restore from a backup, a refund, a revocation, a retraction, or another person is over the bar — a destructive migration, deleted data, spend or a commitment to spend, an external signup, and whatever else is irreversible or externally visible. Such a decision DEFERS instead of resolving: it takes the queued outcome, and no tier is consulted for it. The bar governs what this POLICY decides and never what the operator already decided — a destructive step §1's ledger settled is their own decision, and carrying it out is what §3's approval covers.
+
+**The never-solo list, fixed at four.** None of these is a new refusal; each is already refused where it lives, and the list stands here so a declared policy can never be read as covering them:
+
+- **A push, a PR, or a release.** The PLAN mode's close holds the push and the PR for the operator to ask for, and its per-slice commit says in the same breath that it is a commit and never a push — a release reaches anybody only through one of those.
+- **A ledger amendment.** A frozen decision is amended through that mode's conformance triage, where the operator — never the flow — picks the amendment over the other reading, because that ledger is the reviewer's evidence for the code it judges. Where a host's own rail lets an approved plan be amended at all, the operator's request or their one-line confirmation is what authorizes it, never a finding of the harness's own.
+- **Accepting a security residual.** The security review at that same close ends in fixes the operator accepted or in a residual the operator explicitly accepted; both are theirs to give, and neither is the flow's to grant itself.
+- **A forced deletion.** That close names a removal git refuses to the operator instead of forcing it, and takes a branch out with `-d` and never `-D`.
+
+None of the four is a tier's question: each takes the queued outcome. What queuing then costs the child it surfaced in is §3's last bullet's to say, and it is said once, there.
+
 Once declared, the policy is saved into the roadmap's ledger topic at §1's key — a `mem_update` that merges it in beside the queue and overwrites nothing there.
+
+Exit: the three tiers, the bar and the never-solo list are declared and ready for the one document §3 presents, and the policy sits in the roadmap's ledger topic beside the queue. Nothing has been decided under it yet — the first decision it takes belongs to a child, past the one gate §3 is.
 
 ## 3. Approval — once, for the whole roadmap
 

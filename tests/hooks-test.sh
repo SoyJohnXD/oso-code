@@ -620,7 +620,7 @@ fi
 
 LINT_RULE_COUNT_FIXTURE="$TEST_HOME/lint-rule-count"
 copy_lint_fixture "$LINT_RULE_COUNT_FIXTURE"
-sed 's/twenty-nine rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
+sed 's/thirty rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
   > "$LINT_RULE_COUNT_FIXTURE/README.md.tmp"
 mv "$LINT_RULE_COUNT_FIXTURE/README.md.tmp" "$LINT_RULE_COUNT_FIXTURE/README.md"
 if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
@@ -628,7 +628,7 @@ if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
   echo "FAIL: check_present_tense_prose_names_the_rule_count accepted stale present-tense rule-count prose"; fail=$((fail + 1))
 else
   case "$rule_count_lint_report" in
-    *"README.md does not name the twenty-nine rules this linter declares"*)
+    *"README.md does not name the thirty rules this linter declares"*)
       echo "ok: check_present_tense_prose_names_the_rule_count rejects stale present-tense rule-count prose"; pass=$((pass + 1)) ;;
     *)
       echo "FAIL: check_present_tense_prose_names_the_rule_count mutation failed for the wrong reason — $(printf '%s' "$rule_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
@@ -892,6 +892,37 @@ else
         echo "ok: rule 29 rejects a roadmap approval that stops naming each child's own plan document"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: rule 29 mutation failed for the wrong reason — $(printf '%s' "$roadmap_approval_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+# Rule 30 holds the same body's autonomy policy to naming every clause it turns on.
+# The never-solo item likeliest to fall out of a rewrite is the deletion one: it
+# reads like plumbing beside a push or a ledger amendment, and its refusal lives
+# entirely in another mode's close, so a reader of this phase alone would never
+# learn the policy may not take it. Drop that bullet and leave the rest of the
+# phase standing — a phase that reads clean with three of four items is a closed
+# list that has quietly stopped being one.
+LINT_ROADMAP_POLICY_FIXTURE="$TEST_HOME/lint-roadmap-policy"
+copy_lint_fixture "$LINT_ROADMAP_POLICY_FIXTURE"
+roadmap_policy_target="$LINT_ROADMAP_POLICY_FIXTURE/plugin/skills/_shared/bodies/roadmap.md"
+if ! grep -qF -- '- **A forced deletion.**' "$roadmap_policy_target"; then
+  echo "FAIL: rule 30 mutation found no forced-deletion bullet to remove from the roadmap autonomy policy"; fail=$((fail + 1))
+else
+  sed '/^- \*\*A forced deletion\.\*\*/d' "$roadmap_policy_target" \
+    > "$roadmap_policy_target.tmp"
+  mv "$roadmap_policy_target.tmp" "$roadmap_policy_target"
+  if grep -qiF 'forced deletion' "$roadmap_policy_target"; then
+    echo "FAIL: rule 30 mutation left a forced-deletion clause standing in the roadmap body"; fail=$((fail + 1))
+  elif roadmap_policy_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_ROADMAP_POLICY_FIXTURE/plugin" "$LINT_ROADMAP_POLICY_FIXTURE" 2>&1)"; then
+    echo "FAIL: a roadmap autonomy policy that drops the forced deletion it may never take passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$roadmap_policy_report" in
+      *"autonomy-policy phase drops a clause its policy turns on: forced deletion"*)
+        echo "ok: rule 30 rejects a roadmap autonomy policy that stops naming the forced deletion it may never take"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: rule 30 mutation failed for the wrong reason — $(printf '%s' "$roadmap_policy_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi
