@@ -36,6 +36,14 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/warn-stale-state.sh"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/warn-stale-version.sh"
+          }
+        ]
       }
     ],
     "SessionEnd": [

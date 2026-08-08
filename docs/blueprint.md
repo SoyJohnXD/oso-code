@@ -228,6 +228,7 @@ Three properties of the amendment log these files replace are facts to carry for
 - [0130](decisions/0130-the-sweeps-judge-fix-loop-exits-on-a-band-under-a-cap.md) — The debt sweep's judge → fix loop exits on a severity band under a hard cap
 - [0131](decisions/0131-the-sweep-loop-remembers-its-rounds-and-its-cleanup-sweeps-a-class.md) — The debt-sweep loop remembers its rounds, and its cleanup sweeps a class inside a stated boundary
 - [0132](decisions/0132-decision-citations-leave-executable-code-and-a-rule-keeps-them-out.md) — Decision citations leave executable code, and a lint rule keeps them out
+- [0133](decisions/0133-a-session-says-when-its-plugin-is-behind-the-published-release.md) — A session says once when its plugin is behind the published release
 
 ## Foundational decisions
 

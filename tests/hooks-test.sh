@@ -977,7 +977,7 @@ else
       echo "FAIL: missing-${approval_gate} mutation removed no gate row"; fail=$((fail + 1))
     else
       assert_renderer_rejects "the hard approval rail cannot omit ${approval_gate}" \
-        "table must declare exactly the nine known gates" \
+        "table must declare exactly the ten known gates" \
         --repo-root "$REPO_ROOT" --table "$MISSING_APPROVAL_GATE_TABLE" --check
     fi
   done
@@ -5892,6 +5892,187 @@ assert_allows "SessionStart says nothing where there is no state dir" \
   warn-stale-state.sh "$(stale_session_input)"
 HOME="$TEST_HOME"
 rm -rf "$WORKTREES_DIR/wt-parallel" "$REPO_STATE"
+
+# --- SessionStart: an install behind the release published for it -------------
+# The version this hook compares is the one in the manifest beside it, so the
+# cases run the shipped hook from a plugin root of their own: the hook and the two
+# libraries behind it, copied byte for byte, next to a manifest whose version and
+# repository this suite chooses. Case (a) is the reporting case and every later
+# case that resets the baseline changes exactly one fact of it, which is what
+# makes silence evidence rather than an assertion — the run that speaks and the
+# run that says nothing differ by the one thing the case is named for. The two
+# starts that reset nothing are follow-on runs, reading the cache window the run
+# before them opened. curl is a stub on PATH recording what it was handed, so a
+# case that failed to intercept the fetch goes silent instead of passing on
+# whatever github.com publishes today.
+DRIFT_FIXTURE="$TEST_HOME/version-drift-plugin"
+DRIFT_HOOK="$DRIFT_FIXTURE/hooks/warn-stale-version.sh"
+DRIFT_MANIFEST="$DRIFT_FIXTURE/.claude-plugin/plugin.json"
+DRIFT_SLUG="oso-fixture/oso-code"
+DRIFT_CACHE="$STATE_DIR/published-release"
+DRIFT_MARKETPLACES="$HOME/.claude/plugins/known_marketplaces.json"
+DRIFT_STUB_DIR="$TEST_HOME/version-drift-stubs"
+DRIFT_ADVERTISEMENT="$TEST_HOME/version-drift-advertisement"
+export OSO_TEST_CURL_CALLS="$TEST_HOME/version-drift-curl-calls"
+export OSO_TEST_ADVERTISEMENT="$DRIFT_ADVERTISEMENT"
+export OSO_TEST_CURL_EXIT=0
+
+if [ ! -f "$PLUGIN/hooks/warn-stale-version.sh" ]; then
+  echo "FAIL: the version-drift cases have no SessionStart hook to run"; fail=$((fail + 1))
+else
+  mkdir -p "$DRIFT_FIXTURE/hooks" "$DRIFT_FIXTURE/.claude-plugin" \
+    "$DRIFT_STUB_DIR" "$(dirname "$DRIFT_MARKETPLACES")"
+  cp "$PLUGIN/hooks/warn-stale-version.sh" "$PLUGIN/hooks/lib.sh" \
+    "$PLUGIN/hooks/lexer.sh" "$DRIFT_FIXTURE/hooks/"
+
+  # The advertisement shape the hook reads: the service header, a first ref whose
+  # capability list hangs off a NUL byte, an annotated tag's peeled `^{}`
+  # companion, and tag names in the order GitHub answers them — v0.5.0 after the
+  # v0.19.0 that is actually the newest.
+  {
+    printf '001e# service=git-upload-pack\n0000\n'
+    printf '00a5%s refs/heads/main\0multi_ack symref=HEAD:refs/heads/main\n' aaa0001
+    printf '003f%s refs/tags/v0.19.0\n' aaa0002
+    printf '0041%s refs/tags/v0.19.0^{}\n' aaa0003
+    printf '003f%s refs/tags/v0.5.0\n' aaa0004
+    printf '0000'
+  } > "$DRIFT_ADVERTISEMENT"
+
+  printf '%s\n' \
+    '#!/bin/sh' \
+    'printf '\''%s\n'\'' "$*" >> "$OSO_TEST_CURL_CALLS"' \
+    '[ "$OSO_TEST_CURL_EXIT" -eq 0 ] || exit "$OSO_TEST_CURL_EXIT"' \
+    'cat "$OSO_TEST_ADVERTISEMENT"' > "$DRIFT_STUB_DIR/curl"
+  chmod +x "$DRIFT_STUB_DIR/curl"
+
+  write_drift_manifest() {
+    printf '{\n  "name": "oso-code",\n  "version": "%s",\n  "repository": "https://github.com/%s"\n}\n' \
+      "$1" "${2:-$DRIFT_SLUG}" > "$DRIFT_MANIFEST"
+  }
+
+  write_drift_marketplace_source() {
+    printf '{\n  "oso-code": {\n    "source": {\n      "source": "%s",\n      "%s": "%s"\n    }\n  }\n}\n' \
+      "$1" "$2" "$3" > "$DRIFT_MARKETPLACES"
+  }
+
+  drift_input() {
+    printf '{"session_id":"%s","cwd":"%s","hook_event_name":"SessionStart","source":"%s"}' \
+      "$SESSION" "$REPO_ROOT" "$1"
+  }
+
+  # The answer that speaks: a 0.17.0 install, a marketplace serving the
+  # repository that manifest names, an empty call log and a reachable
+  # advertisement. A case changes one of those and nothing else.
+  reset_drift_baseline() {
+    write_drift_manifest 0.17.0
+    write_drift_marketplace_source github repo "$DRIFT_SLUG"
+    rm -f "$DRIFT_CACHE"
+    : > "$OSO_TEST_CURL_CALLS"
+    OSO_TEST_CURL_EXIT=0
+  }
+
+  drift_fetches_made() {
+    grep -c . "$OSO_TEST_CURL_CALLS" 2>/dev/null | tr -d ' ' || true
+  }
+
+  run_drift_hook() {
+    local previous_path="$PATH"
+    PATH="$DRIFT_STUB_DIR:$PATH"
+    run_hook "$DRIFT_HOOK" "$(drift_input "${1:-startup}")"
+    PATH="$previous_path"
+  }
+
+  assert_drift_silent() {
+    local name="$1"
+    shift
+    run_drift_hook "$@"
+    assert_after_hook "$name" [ -z "$hook_stdout" ]
+  }
+
+  # (a) The install is behind, so both versions and both commands are named —
+  # from the highest tag, not the last one the advertisement carries.
+  reset_drift_baseline
+  run_drift_hook
+  drift_named=""
+  for drift_fact in 0.17.0 0.19.0 0.5.0 \
+    'claude plugin marketplace update oso-code' 'claude plugin update oso-code@oso-code'; do
+    case "$hook_stdout" in *"$drift_fact"*) drift_named="$drift_named|$drift_fact" ;; esac
+  done
+  assert_equals "a stale install names both versions and the update, never the highest-sorting tag" \
+    "|0.17.0|0.19.0|claude plugin marketplace update oso-code|claude plugin update oso-code@oso-code" \
+    "$drift_named"
+  # Counted rather than measured for a newline: a report of nothing at all has no
+  # newline in it either, and this case has to tell one from one line.
+  assert_equals "the stale-install report is one line" "1" \
+    "$( { printf '%s' "$hook_stdout" | grep -c ''; } || true)"
+  assert_equals "the tag list is fetched from the repository the manifest names" "1" \
+    "$(grep -Fc -- "https://github.com/$DRIFT_SLUG.git/info/refs?service=git-upload-pack" \
+      "$OSO_TEST_CURL_CALLS" || true)"
+  assert_equals "the fetch carries curl's own connect and total bounds" "1" \
+    "$(grep -Fc -- '--connect-timeout 2 --max-time 4' "$OSO_TEST_CURL_CALLS" || true)"
+
+  # (b) The cached answer is what an ordinary start reads: the next start inside
+  # the window reports the same drift with the network taken away from it.
+  OSO_TEST_CURL_EXIT=28
+  run_drift_hook
+  assert_after_hook "a start inside the window reports from the cache" \
+    [ -n "$hook_stdout" ]
+  assert_equals "a start inside the window fetches nothing" "1" "$(drift_fetches_made)"
+  OSO_TEST_CURL_EXIT=0
+
+  # (c) The one changed fact is a fetch that never answers.
+  reset_drift_baseline
+  OSO_TEST_CURL_EXIT=28
+  assert_drift_silent "a fetch that answers nothing leaves the session silent"
+  assert_drift_silent "the start after it stays silent too"
+  assert_equals "an unreachable source is attempted once inside the window, not once per session" \
+    "1" "$(drift_fetches_made)"
+  OSO_TEST_CURL_EXIT=0
+
+  # (d) The one changed fact is the installed version.
+  reset_drift_baseline
+  write_drift_manifest 0.19.0
+  assert_drift_silent "an install already on the published release says nothing"
+  reset_drift_baseline
+  write_drift_manifest 0.20.0
+  assert_drift_silent "an install ahead of the published release says nothing"
+
+  # (e) The one changed fact is the version this session can read of itself.
+  reset_drift_baseline
+  write_drift_manifest unknown
+  assert_drift_silent "a manifest whose version is not a release says nothing"
+  reset_drift_baseline
+  rm -f "$DRIFT_MANIFEST"
+  assert_drift_silent "a plugin root with no readable manifest says nothing"
+
+  # (f) The one changed fact is who serves the marketplace. A local clone is the
+  # shape a machine developing this plugin has: it loads that working tree, so
+  # there is no published release for it to be behind, and no fetch is worth
+  # making either.
+  reset_drift_baseline
+  write_drift_marketplace_source github repo other-owner/other-plugin
+  assert_drift_silent "a marketplace serving another repository says nothing"
+  reset_drift_baseline
+  write_drift_marketplace_source directory path "$REPO_ROOT"
+  assert_drift_silent "a marketplace registered from a local clone says nothing"
+  reset_drift_baseline
+  rm -f "$DRIFT_MARKETPLACES"
+  assert_drift_silent "a machine with no registered marketplace says nothing"
+  assert_equals "a source this plugin does not publish is never fetched" "0" \
+    "$(drift_fetches_made)"
+
+  # (g) The one changed fact is the event's source: a compaction restarts it
+  # inside a session that already heard the line, and every other source is a
+  # session that has not.
+  reset_drift_baseline
+  assert_drift_silent "a compaction says nothing a second time" compact
+  reset_drift_baseline
+  run_drift_hook resume
+  assert_after_hook "a resumed session still hears it" [ -n "$hook_stdout" ]
+
+  rm -f "$DRIFT_CACHE" "$DRIFT_MARKETPLACES"
+fi
+unset OSO_TEST_CURL_CALLS OSO_TEST_ADVERTISEMENT OSO_TEST_CURL_EXIT
 
 # --- Commit gate: one table per question the matcher has to answer -----------
 # A table line is a whole case, and the command is its name: the point of these

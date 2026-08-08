@@ -56,6 +56,7 @@ function expected_script(id) {
   if (id == "planprompt") return "approve-plan-token.sh"
   if (id == "statebin") return "persist-state-bin.sh"
   if (id == "stale") return "warn-stale-state.sh"
+  if (id == "version") return "warn-stale-version.sh"
   if (id == "teardown") return "cleanup-state.sh"
   return ""
 }
@@ -64,7 +65,7 @@ function expected_event(id) {
   if (id == "handoff") return "SubagentStop"
   if (id == "planstop") return "Stop"
   if (id == "planprompt") return "UserPromptSubmit"
-  if (id == "statebin" || id == "stale") return "SessionStart"
+  if (id == "statebin" || id == "stale" || id == "version") return "SessionStart"
   if (id == "teardown") return "SessionEnd"
   return ""
 }
@@ -139,7 +140,7 @@ function parse(    line, fields, count, kind, i, id, expected, tool_class, tool_
   if (host_count != 2 || hosts[1] != "claude" || hosts[2] != "codex") die("hosts must be exactly and in order: claude, codex")
   if (manifests[1] != "plugin/hooks/hooks.json" || roots[1] != "\"${CLAUDE_PLUGIN_ROOT}\"/hooks") die("claude host manifest or command root is not the supported value")
   if (manifests[2] != "codex/hooks/hooks.json" || roots[2] != "\"__OSO_HOOKS_DIR__\"") die("codex host manifest or command root is not the supported value")
-  if (gate_count != 9) die("table must declare exactly the nine known gates")
+  if (gate_count != 10) die("table must declare exactly the ten known gates")
   for (g = 1; g <= gate_count; g++) for (h = 1; h <= host_count; h++) {
     mappings = 0
     for (t = 1; t <= tool_count; t++) if (tool_gate[t] == gate_id[g] && tool_cell[t, h] != "none") mappings++

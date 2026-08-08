@@ -91,7 +91,7 @@ The installed `oso` permission profile — the wider `.git` write, workspace roo
 
 Updating later follows the route for the host and artifact tier that changed:
 
-- `claude plugin update oso-code@oso-code` updates the plugin. The marketplace entry's source is `./plugin`, so that subtree is the whole payload — skills, agents, hooks, git-hooks, `oso-state`, the output style, and the `.mcp.json` that carries context7 — and it works from a marketplace install, with no working copy of this repo at all.
+- `claude plugin marketplace update oso-code && claude plugin update oso-code@oso-code` updates the plugin: the refresh comes first because the client installs from its own clone of the marketplace, and an update on its own reinstalls whatever that clone already holds. The marketplace entry's source is `./plugin`, so that subtree is the whole payload — skills, agents, hooks, git-hooks, `oso-state`, the output style, and the `.mcp.json` that carries context7 — and it works from a marketplace install, with no working copy of this repo at all.
 - Codex releases are re-applied with `bash bootstrap/install-codex.sh`: its plugin carries skills only, while the installer owns the user hooks, agents, bounded config blocks, MCPs, runtime and git gate around it.
 - When a release's entry in [CHANGELOG.md](CHANGELOG.md) is marked **Reinstall required**, `bootstrap/` changed and a plugin-only update cannot carry the complete release: pull the repo and re-run the installer for your host.
 

@@ -53,6 +53,13 @@ host  codex   codex/hooks/hooks.json   "__OSO_HOOKS_DIR__"
 # so a Codex-wired handler resolves oso-state from the runtime sibling of its own
 # hooks directory instead. Wiring it there would cost a trusted position and do nothing.
 #
+# warn-stale-version.sh is Claude-only for the same reason read the other way: it
+# compares an install against the marketplace that served it, and Codex has no
+# marketplace — bootstrap/install-codex.sh copies a clone's files to a runtime
+# directory, which the `claude plugin` commands its message names cannot reach. A
+# Codex-wired handler would either never speak or tell an operator to update an
+# install that came from somewhere else.
+#
 # A PreToolUse gate's script declares its own way out or it does not land here
 # (D18, ADR-0111): a `# Recovery:` header line naming the operator's legitimate
 # next step, or explicitly stating there is none — never a cause the operator
@@ -71,6 +78,7 @@ gate  planstop  Stop          capture-plan-approval.sh       none   wired
 gate  planprompt UserPromptSubmit approve-plan-token.sh       none   wired
 gate  statebin  SessionStart  persist-state-bin.sh          wired  none
 gate  stale     SessionStart  warn-stale-state.sh           wired  wired
+gate  version   SessionStart  warn-stale-version.sh         wired  none
 gate  teardown  SessionEnd    cleanup-state.sh              wired  wired
 
 # Codex routes every file write through apply_patch, so four Claude writers collapse
