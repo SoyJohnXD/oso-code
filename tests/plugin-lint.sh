@@ -2,7 +2,7 @@
 # Lints the rules `claude plugin validate --strict` has no opinion on: it does
 # open hooks.json, skill frontmatter and the agents, and fails on a broken one
 # (probed against client 2.1.220), but it never asks what they SAY.
-# Twenty-eight rules hold that ground: a `context: fork` skill declares
+# Twenty-nine rules hold that ground: a `context: fork` skill declares
 # `background`; the same skill declares an `end with exactly one of:` verdict
 # block; every `oso-code:<name>` the plugin's own prose points at resolves; every
 # call site of a skill OR AGENT that declares such a block carries EVERY token
@@ -52,7 +52,11 @@
 # own memory across rounds — each body's re-invocation restating the prior
 # findings' dispositions and nothing of the reasoning behind them, and the
 # judge's own body naming a dispositioned finding as settled instead of raising
-# it again — so no round can re-litigate what the last one closed. Each rule
+# it again — so no round can re-litigate what the last one closed; and the roadmap
+# body's approval phase names every clause that bounds its one approval — the
+# planning and the execution it covers, every child of the queue, the fresh
+# approval a materially changed queue needs, each child's own plan document, and
+# the platform file that owns a host's extra stop. Each rule
 # states its own reason above it; `background` is the one whose cost is least
 # visible: as of client v2.1.218 a fork returns immediately and its verdict
 # arrives in a LATER turn, while every call site in plan/quick/debug reads that
@@ -839,7 +843,7 @@ check_present_tense_prose_names_the_rule_count() {
     19) spelled=nineteen ;; 20) spelled=twenty ;; 21) spelled=twenty-one ;;
     22) spelled=twenty-two ;; 23) spelled=twenty-three ;; 24) spelled=twenty-four ;;
     25) spelled=twenty-five ;; 26) spelled=twenty-six ;; 27) spelled=twenty-seven ;;
-    28) spelled=twenty-eight ;;
+    28) spelled=twenty-eight ;; 29) spelled=twenty-nine ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -1332,6 +1336,50 @@ check_sweep_loop_remembers_its_dispositioned_findings() {
   done
 }
 
+# The roadmap mode's whole trade is ONE approval over a queue, and every way that
+# trade can be lost is a rewrite of one phase. Drop the planning half and the
+# approval authorizes execution only — the chain then stalls at the first child
+# that arrived with an intent and no plan of its own, which is the case a queue
+# exists to serve. Drop the bound and it covers a queue nobody presented: a child
+# added or an intent redrawn after the gate would ride an approval given over
+# different work. Drop the per-child scope and it is a per-child gate again, which
+# is the mode's opposite. And the clause a host's own rail leans on is the easiest
+# of them to lose, because nothing in the neutral flow needs it: a child planned
+# unattended still BUILDS and delivers its own plan document, and where a host
+# stops at each child that document is what the operator releases — a body implying
+# children skip it turns a recorded per-host degradation into a false claim.
+#
+# So the phase is held to naming all of it: both halves of what the approval
+# covers, the whole-queue scope, the re-presentation that bounds it, each child's
+# own plan document, and the deferral that leaves a host's extra stop to the
+# platform file instead of answering it twice. Located by the phase's own heading,
+# read to the next `## ` — a renumbering keeps the anchor and a deleted phase fails
+# at it. Two markers are the PLAN mode's existing vocabulary for the same facts,
+# which is what keeps this body from growing a second spelling for either. The
+# neutral body alone is scanned, and that is this rule's ceiling: where a host's
+# rail asks for more than the one approval is the platform file's own answer, so
+# holding those files to these markers would flag the very file that states the
+# degradation. Within the body it is a marker check like the design-foundation
+# paragraph's — a rewording that keeps the claim in other words fails too, which
+# errs toward flagging rather than toward missing one.
+check_roadmap_umbrella_approval_names_its_bounds() {
+  local body="$PLUGIN_ROOT/skills/_shared/bodies/roadmap.md"
+  local phase marker
+  if [ ! -f "$body" ]; then
+    flag "no roadmap body at skills/_shared/bodies/roadmap.md to check what its one approval covers"
+    return 0
+  fi
+  phase="$({ sed -n '/^## [0-9][0-9]*\. Approval/,/^## /p' "$body" 2>&1 || true; })"
+  if [ -z "$phase" ]; then
+    flag "skills/_shared/bodies/roadmap.md carries no numbered Approval phase to check what its one approval covers"
+    return 0
+  fi
+  for marker in 'planning every child' 'executing every child' 'every child' 'fresh approval' 'plan document' 'platform file'; do
+    printf '%s\n' "$phase" | grep -qiF -- "$marker" \
+      || flag "skills/_shared/bodies/roadmap.md's Approval phase drops a clause that bounds its one approval: $marker"
+  done
+}
+
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }
 
 check_forked_skills_declare_background
@@ -1362,6 +1410,7 @@ check_applier_rubric_mapping_names_every_section
 check_verifier_gate_fails_an_added_inline_comment
 check_sweep_exit_bar_is_banded_and_capped
 check_sweep_loop_remembers_its_dispositioned_findings
+check_roadmap_umbrella_approval_names_its_bounds
 
 if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"

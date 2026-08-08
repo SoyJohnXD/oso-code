@@ -620,7 +620,7 @@ fi
 
 LINT_RULE_COUNT_FIXTURE="$TEST_HOME/lint-rule-count"
 copy_lint_fixture "$LINT_RULE_COUNT_FIXTURE"
-sed 's/twenty-eight rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
+sed 's/twenty-nine rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
   > "$LINT_RULE_COUNT_FIXTURE/README.md.tmp"
 mv "$LINT_RULE_COUNT_FIXTURE/README.md.tmp" "$LINT_RULE_COUNT_FIXTURE/README.md"
 if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
@@ -628,7 +628,7 @@ if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
   echo "FAIL: check_present_tense_prose_names_the_rule_count accepted stale present-tense rule-count prose"; fail=$((fail + 1))
 else
   case "$rule_count_lint_report" in
-    *"README.md does not name the twenty-eight rules this linter declares"*)
+    *"README.md does not name the twenty-nine rules this linter declares"*)
       echo "ok: check_present_tense_prose_names_the_rule_count rejects stale present-tense rule-count prose"; pass=$((pass + 1)) ;;
     *)
       echo "FAIL: check_present_tense_prose_names_the_rule_count mutation failed for the wrong reason — $(printf '%s' "$rule_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
@@ -861,6 +861,37 @@ else
         echo "ok: rule 22 rejects wave 1's WAVE START claim once it stops conditioning on wave 0"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: rule 22 mutation failed for the wrong reason — $(printf '%s' "$wave_zero_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+# Rule 29 holds the roadmap's one approval to naming every clause that bounds it.
+# The clause the neutral flow needs least is the one a host's approval rail leans
+# on hardest — a child planned unattended still delivers its own plan document, and
+# a host that stops at each child stops in front of exactly that document — so drop
+# that bullet alone and leave the rest of the phase standing. A body that reads
+# clean without it is a body whose recorded per-host degradation has nothing left
+# to rest on.
+LINT_ROADMAP_APPROVAL_FIXTURE="$TEST_HOME/lint-roadmap-approval"
+copy_lint_fixture "$LINT_ROADMAP_APPROVAL_FIXTURE"
+roadmap_approval_target="$LINT_ROADMAP_APPROVAL_FIXTURE/plugin/skills/_shared/bodies/roadmap.md"
+if ! grep -qF -- "- **A child's own plan document.**" "$roadmap_approval_target"; then
+  echo "FAIL: rule 29 mutation found no plan-document bullet to remove from the roadmap approval phase"; fail=$((fail + 1))
+else
+  sed "/^- \*\*A child's own plan document\.\*\*/d" "$roadmap_approval_target" \
+    > "$roadmap_approval_target.tmp"
+  mv "$roadmap_approval_target.tmp" "$roadmap_approval_target"
+  if grep -qF 'plan document' "$roadmap_approval_target"; then
+    echo "FAIL: rule 29 mutation left a plan document clause standing in the roadmap body"; fail=$((fail + 1))
+  elif roadmap_approval_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_ROADMAP_APPROVAL_FIXTURE/plugin" "$LINT_ROADMAP_APPROVAL_FIXTURE" 2>&1)"; then
+    echo "FAIL: a roadmap approval phase that drops each child's own plan document passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$roadmap_approval_report" in
+      *"Approval phase drops a clause that bounds its one approval: plan document"*)
+        echo "ok: rule 29 rejects a roadmap approval that stops naming each child's own plan document"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: rule 29 mutation failed for the wrong reason — $(printf '%s' "$roadmap_approval_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi

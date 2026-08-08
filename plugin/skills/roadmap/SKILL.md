@@ -1,6 +1,6 @@
 ---
 name: roadmap
-description: Auto mode for a queue of changes. Plans the whole queue with the operator — the children in order, the decisions that hold across all of them, and the policy that answers what surfaces later — takes one approval for the lot, then plans, executes and closes each child and chains the next. Use when several substantial changes are known up front and the operator wants to decide once.
+description: Auto mode for a queue of changes. Plans the whole queue with the operator — the children in order, the decisions that hold across all of them, and the policy that answers what surfaces later — takes one approval for the lot, then plans, executes and closes each child, sets aside any child that hits a decision only the operator can take, and chains the next. Use when several substantial changes are known up front and the operator wants to decide once.
 argument-hint: [roadmap name or the changes to queue]
 disable-model-invocation: true
 ---
