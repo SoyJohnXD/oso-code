@@ -8064,8 +8064,8 @@ assert_equals "the CR scan names every directory and extension a shipped executa
 # README told a Windows operator they needed "nothing pre-installed", and every
 # defect this change closed was downstream of believing it: winget is what
 # provisions the machine and its absence now stops the run, and Git Bash is not a
-# vehicle the install discards afterward but the shell a native client spawns all
-# five .sh hooks through for the rest of the machine's life. A claim is the one
+# vehicle the install discards afterward but the shell a native client spawns
+# every .sh hook through for the rest of the machine's life. A claim is the one
 # artifact no runtime check reaches, so the guard is here — a doc that quietly
 # goes back to promising a free lunch is red in the commit that writes it.
 # The row is located by its leading cell rather than by line number, which moves
@@ -8426,7 +8426,7 @@ assert_equals "an install prunes the older backups its budget cannot hold and ke
 # plan capture on one host came to block on a sentence that named no cause.
 # CLAUDE_CODE_GIT_BASH_PATH is documented by Claude Code and was written by
 # nothing: every hook in this plugin is a .sh, so a Windows client that cannot
-# find Git Bash by itself loses all five gates at once.
+# find Git Bash by itself loses every gate at once.
 # Both writes are on the bash side with jq, which is why this whole block needs
 # one: PowerShell 5.1's ConvertFrom-Json | ConvertTo-Json defaults to -Depth 2 and
 # would flatten the nested hook arrays settings.json holds, so a whole-file

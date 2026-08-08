@@ -949,14 +949,13 @@ installed_oso_state_path() {
 }
 
 # CLAUDE_CODE_GIT_BASH_PATH: what the client spawns every one of this plugin's
-# hooks through where it cannot find Git Bash on its own — all five entries of
-# plugin/hooks/hooks.json are .sh files, so a Windows machine without it loses
-# every gate at once. Only ever
-# written where there is something to write: a stored value that still resolves is
-# the operator's and is left exactly as they set it, and one that no longer
-# resolves is REPAIRED — a Git reinstalled, moved from Scoop to the official
-# package or landed on another drive otherwise leaves the client spawning a
-# bash.exe that is gone, permanently and invisibly.
+# hooks through where it cannot find Git Bash on its own — every entry of
+# plugin/hooks/hooks.json is a .sh file, so a Windows machine without it loses
+# every gate at once. Only ever written where there is something to write: a
+# stored value that still resolves is the operator's and is left exactly as they
+# set it, and one that no longer resolves is REPAIRED — a Git reinstalled, moved
+# from Scoop to the official package or landed on another drive otherwise leaves
+# the client spawning a bash.exe that is gone, permanently and invisibly.
 # The path is discovered by bootstrap/install.ps1, which hands it over in this
 # same variable. The write is on this side because PowerShell 5.1's
 # ConvertFrom-Json | ConvertTo-Json defaults to -Depth 2 and flattens everything

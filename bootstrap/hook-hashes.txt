@@ -4,9 +4,10 @@
 # Coverage and order are verified, not inferred from this file: the rendered
 # Codex manifest, the git commit boundary, every Codex-wired handler in
 # hook-gates.txt (deduplicated in table order), the handoff handler's oso-state
-# dependency, then the shared lib.sh and lexer.sh dependencies. The Claude-only
-# persist-state-bin.sh is excluded. An installer reads these expected hashes and
-# compares installed bytes; it must never replace them with hashes it calculated.
+# dependency, then the shared lib.sh and lexer.sh dependencies. A handler the
+# table wires on Claude alone is excluded, because nothing on Codex installs it.
+# An installer reads these expected hashes and compares installed bytes; it must
+# never replace them with hashes it calculated.
 c7766ae910a9fdb95ea9b7b495935c6fd824ef6f2c309fcadad0261fbff98351  codex/hooks/hooks.json
 86d5b09d031ff2b1379921af662992bf95b3eed86970f31956645765506dee29  plugin/git-hooks/pre-commit
 36b2718f495379f96653164b3f25f1eda77f21eea1dbadc79ceaea1a334ae8fa  plugin/hooks/block-commit-until-green.sh

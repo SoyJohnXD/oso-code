@@ -1,0 +1,59 @@
+# 0134 — The inline comment is a debt class with no exceptions, held at three layers
+
+Date: 2026-08-07
+Status: accepted
+Reconciled: elsewhere — landed in `plugin/skills/_shared/rubric.md`'s Debt markers section, in both hosts' `oso-applier` and `oso-verifier` contracts, in `bodies/quick.md`'s write-time bar for the mode that has no applier to coach, in `bodies/debt-sweep.md`'s definition of a conformance trace, in README's debt-sweep row, and in three `tests/plugin-lint.sh` rules — `check_rubric_bans_inline_comments_without_an_escape_hatch`, `check_applier_rubric_mapping_names_every_section` and `check_verifier_gate_fails_an_added_inline_comment`. The frozen body needed no move: it never carried the rubric's content, and Mode 1 §7 names the rubric as the debt axis's bar without restating what the rubric says.
+Source: this change (clean-bar-convergence); one real PR the harness drove, whose diff added 1,441 whole-line comments — 234 of them citing a ledger decision id — and which merged in forty-eight minutes with no human review; a field close whose one judge to flag the density was overruled on the external-constraint reading; ledger decision D2
+
+## Decision
+
+In the code a change lands in a project, the inline comment is a debt CLASS with no exceptions. Zero is the default AND the ceiling: no density threshold makes one acceptable, and no external constraint earns one. A decision, ticket or process citation is debt regardless of how accurate it is — provenance belongs to the change's ledger, the PR body or the commit message, all three of which a reader can open and none of which goes stale against code it no longer describes.
+
+The one form outside the class is the host language's standard public-API doc form — JSDoc, a Python docstring, a Rust doc comment — and only where a name and a type cannot carry the contract.
+
+### Part 1 — stated where the judgment contract cannot reach it
+
+The class lives in Debt markers, below a judgment contract that overrides every rule beneath it and requires every finding to name a concrete readability win. An accurate citation defeats that test on the contract's own terms: it carries something the code cannot show, so a judge weighing the win can always find it absent and drop the finding. A rule stated as a preference is waved away by exactly one sentence.
+
+So the bullet carries the Hard blockers' own phrase — the judgment contract cannot override this — and it is the only rule in the rubric outside that section to claim it. What the contract still governs is everything it was written for: the soft triggers, the idiom rules, the reading that keeps a rule from making code worse. It does not get to weigh a comment.
+
+ADR-0005's stack-translation clause stands untouched, and the doc-form carve-out rests on it: as the rubric states that clause, it already read the over-documentation rule as targeting redundant inline comments rather than a language's conventional API docs. ADR-0005's own body records the clause and not that reading, which is why Context below can say no decision file names the rule — the clause is the decision, the reading is where it landed. Nothing there narrows. What goes is the second exception it never asked for.
+
+### Part 2 — three layers, because three holes let the class through
+
+The rule is held at write time, per slice, and over the whole change, and each layer closes a hole that was open:
+
+- **Write time — both hosts' `oso-applier` contracts.** The agent that writes every line of code had never been told the rule. Its rubric map enumerated the Judgment contract, Hard blockers, File level and System level — four of five sections, dropping the one that bans the comment — while the two judges the rubric names as its consumers, `quality-pass` and `debt-sweep`, apply all five to what it wrote. The map now names all five, the contract states at write time that the inline comment is not a thing the applier produces, and decision ids and rationale route to the report's `decisions_used` field. `/quick` binds its own writer the same way, because the orchestrator is the writer there and has no applier to coach.
+- **Per slice — both hosts' `oso-verifier` contracts.** The per-slice verifier's whole rubric mandate was the Hard blockers, and this class lives in Debt markers, so a change executed as N slices passed N gates that structurally could not fail one for a comment. The gate now fails a diff that ADDS an inline comment, BESIDE the Hard blockers rather than in place of them, and judges the added lines and nothing further: a comment the slice did not write is not its business, and the rest of Debt markers waits for the sweep, so a slice gate never becomes the unbounded auditor.
+- **Whole change — the sweep's debt axis, with the conformance axis no longer paying for a citation.** The debt axis already carried over-documentation; the axis beside it was rewarding the defect. It called an unimplemented decision one with no trace in the diff, and a line reading `// D22:` is the cheapest trace there is, while scope-creep closed the other exit. A trace is now the executable implementation that enacts a decision; a comment naming one lands in the debt section and leaves the decision unimplemented, which is what two separate sections were for.
+
+No single layer would hold. The rule is about what a writer produces, and the only place to stop a comment before it exists is the writer's own contract — but a contract is an instruction, and the two judges are what make an instruction a bar.
+
+### Part 3 — the boundary, and where it is claimed
+
+This bar governs the code a change lands in a project. `tests/plugin-lint.sh` documents a specification above each of its own rules, and claims that shape in its own header; ADR-0132 Part 3 records the same boundary from the other side. Neither is a carve-out a target project can declare itself into: the exemption is claimed for one file, by name, inside that file, and what the two sides agree on exactly is the citation, which no comment in any executable here now carries.
+
+## Context
+
+The reason is the one the operator gave. The comments dirty the code; they are not timeless and they confuse; the code is the source of truth. A comment is the one artifact in a source file that no compiler, test or reader ever checks against the lines it describes, so it is written against one version of them and drifts from every version after — a reader who trusts it is reading the past. The bar the harness is held to is code that is self-explanatory, semantic and simple, and a second source of truth is not on the way to any of the three.
+
+The rubric already banned over-documentation and then handed the exception back. Its Debt markers section opened with "The default is ZERO comments" and closed on an `Earned WHY` example blessing a comment that carries "an external constraint the code cannot show" — and a frozen ledger decision wears that costume exactly: it IS external to the code and the code genuinely cannot show it. That is the reading the measured PR's comments cleared, and the harness's own gates were the only thing that could have stopped them, because the review did not. Part 2 names the three places those gates were not looking.
+
+No earlier decision established either half, so this file has no predecessor to narrow and carries no `Supersedes:` line. Nothing under `docs/decisions/` names the over-documentation rule, the `Earned WHY` example, or the inline comment at all. Both halves arrived without one. The rule itself came in `eff93a1`, a `fix(quality)` commit that amended the blueprint nowhere and so left nothing for this log to extract when it was created later that month. The exception came nine days after it in `8b8456e` — ADR-0005's own deciding commit, whose four recorded clauses do not include the example. The escape hatch was never decided; it rode in beside one.
+
+The class is not a preference read off a single PR. This repo's own windows-install-reliability change recorded, in its ledger, a comment asserting an invariant the code does not hold as the single most expensive defect class in it — five extra rounds across five slices. And ADR-0132 records the other half of the same failure: these executables carried a hundred and fifty-five decision citations behind a linter rule that made the notation look like a checked contract worth copying, which is how it reached a customer's TypeScript at all.
+
+Two alternatives were rejected.
+
+**A single external-constraint exception** — the industry-standard shape, and the one the rubric already had — reopens the exact door that leaked. Every citation can dress itself as an external constraint because every citation IS one, so the exception requires a judgment call at every line, and that is the judgment that already failed on both sides: the harness cleared the comments, and the one judge to flag the density in a field close was overruled on precisely that reading, then went four rounds unheard. An exception a reader can talk their way through is not a bar, and a bar is what was asked for.
+
+**A density threshold** — a percentage of the diff — was rejected as arbitrary and as an answer to a different question. A threshold reduces a count; it cannot remove a class, and whatever value it takes licenses every comment beneath it, a citation included. Nothing picks the number, which makes it a negotiation rather than a rule, and the answer given was zero.
+
+## Consequences
+
+- The rule is enforced at three layers rather than one, and the three are not redundant: the applier's contract is the only one that acts before a comment exists, the slice gates are the only ones that run while a change is still cheap to correct, and the sweep is the only one that reads the change whole. A rule at the rubric alone would pass over contracts nobody updated; a rule at the contracts alone would pass over a rubric that grew the hatch back, which is why `tests/plugin-lint.sh` holds all three.
+- The judgment contract can no longer spare an accurate comment, and it is a narrower contract for it. Its own text still overrides every other rule below it; this one bullet is carved out of its reach, in the bullet, by the sentence the Hard blockers heading uses.
+- The slice gate reads ADDED lines, not touched files. An untouched comment in a file the slice edited is not the gate's finding — it reaches the sweep's debt axis at the close instead. That is what keeps a per-slice judge from failing a slice for a file's history, and it is the same narrowing that keeps its remit smaller than the sweep's.
+- A project whose convention IS the doc comment loses nothing. The carve-out is the standard public-API form in the host language, and ADR-0005's stack-translation clause already required every rule here to be read in that language's terms.
+- The cost falls on the one case that justified the exception: a genuinely load-bearing external constraint now has to be carried by a name, a type, or the standard doc form rather than a sentence beside the line. That is the price and it was named as the price — a rule that admits the comment which earns its keep admits every comment that claims to.
+- The harness stops banning in a target project what it was teaching by example in its own. ADR-0132 is that half: the export stopped too, so a writer reading these executables to learn the house style no longer finds the notation this rule forbids.

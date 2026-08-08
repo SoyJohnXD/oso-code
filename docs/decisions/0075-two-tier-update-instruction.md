@@ -2,7 +2,8 @@
 
 Date: 2026-07-25
 Status: accepted
-Reconciled: elsewhere — landed in README.md and CHANGELOG.md; the frozen body's Distribution row names `/plugin` install/update as the mechanism, never the two tiers.
+Superseded-by: ADR-0133 — retires only the single-command spelling of the plugin tier; a `claude plugin marketplace update oso-code` now comes first, because the client installs from its own clone of the marketplace and an update alone reinstalls whatever that clone already holds. The two tiers themselves, the `./plugin` payload boundary and the **Reinstall required** marker on every release whose `bootstrap/` moved all still stand
+Reconciled: elsewhere — landed in README.md and CHANGELOG.md; the frozen body's Distribution row names what a release packages and says nothing about how an installed one is updated, so neither tier appears in it.
 Source: this change (harness-hardening pass); recorded with the change that made it
 
 ## Decision

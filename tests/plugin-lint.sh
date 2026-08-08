@@ -1064,7 +1064,7 @@ check_wave_1_wave_start_accounts_for_wave_0() {
 # The rubric's own escape hatch cost more than any rule it holds: an `Earned WHY`
 # example blessed "an external constraint the code cannot show", and a comment
 # citing a frozen ledger decision wears exactly that costume — the decision IS
-# external to the code and the code genuinely cannot show it — so 1,441 of them
+# external to the code and the code genuinely cannot show it — so 234 of them
 # survived one review. The judgment contract compounds it: a rule stated as a
 # preference is waved away by "no concrete readability win", so the ban has to
 # carry the same carve-out the Hard blockers heading does, in the bullet itself.

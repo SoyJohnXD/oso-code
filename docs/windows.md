@@ -15,7 +15,7 @@ Everything here is Claude Code. The Codex host has its own prerequisites and its
 | jq | the bootstrap, via winget `jqlang.jq` | the installer reads and rewrites `settings.json` with it |
 | Claude Code | the bootstrap, via Anthropic's own installer | `install.sh` refuses to run without a `claude` on PATH |
 
-**Git Bash is not an install vehicle you can uninstall afterward.** All five hooks this plugin registers are `.sh` files, and a native Windows Claude Code spawns each of them through Git Bash — so a machine that loses Git Bash loses every runtime gate at once, silently. That is why `install.ps1` waives every other probe under `-SkipPrerequisiteCheck` and never waives this one: with nothing to delegate *to*, continuing only moves the same abort somewhere less legible.
+**Git Bash is not an install vehicle you can uninstall afterward.** Every hook this plugin registers is a `.sh` file, and a native Windows Claude Code spawns each one through Git Bash — so a machine that loses Git Bash loses every runtime gate at once, silently. That is why `install.ps1` waives every other probe under `-SkipPrerequisiteCheck` and never waives this one: with nothing to delegate *to*, continuing only moves the same abort somewhere less legible.
 
 Provisioning is best effort; the requirements are not. Provisioning runs first and the preflight reads the machine after it: whatever winget could not install, it names — all of the gaps at once, each with the command that closes it — and stops there, before the run hands off to `install.sh`. It fails closed on purpose: a gap carried past that line reaches the same refusal from a bash script instead, with the actionable half of the message already scrolled off a double-clicked console.
 

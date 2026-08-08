@@ -1,7 +1,8 @@
 # The gates, once, for every host the harness runs on. tools/render-hooks-json.sh
-# turns this table into each host's hooks.json; tests/plugin-lint.sh rule 13 fails
-# when a committed manifest is not what it renders. Nothing here is written twice:
-# the matcher a host spells for a gate is a cell in this file and nowhere else.
+# turns this table into each host's hooks.json; tests/plugin-lint.sh's
+# check_hook_renders_and_published_hashes_match fails when a committed manifest is
+# not what it renders. Nothing here is written twice: the matcher a host spells
+# for a gate is a cell in this file and nowhere else.
 #
 # Three record kinds, each labelled by its first field, each ending in ONE CELL PER
 # HOST in the order the `host` rows appear:
@@ -11,8 +12,8 @@
 #   tool <gate id> <the name that host spells the tool with, or none, per host>
 #        <read|write|role> <yes|no>
 #
-# A tool row's last two cells are the capability model (ADR-0120), independent
-# of how many hosts precede them: whether the name READS or WRITES — the class
+# A tool row's last two cells are the capability model, independent of how many
+# hosts precede them: whether the name READS or WRITES — the class
 # that decides whether a tool could ever belong behind the `edits` gate at all,
 # since only a tool that can mutate repository files earns that gate rather
 # than the `unknown` catch-all alone — and whether the name is MANDATED by a
@@ -23,8 +24,9 @@
 # mandated cell is still real — the harness's own delegation protocol requires
 # exactly these eight role identifiers. Nothing here is a second copy of the
 # renderer's own answer: render() below never reads past each row's per-host
-# cells, so these two never change a byte of what renders (tools/plugin-lint.sh
-# rule 13 asserts the committed manifests are still exactly that render).
+# cells, so these two never change a byte of what renders (the same
+# tests/plugin-lint.sh rule asserts the committed manifests are still exactly
+# that render).
 #
 # `none` is an answer, not an omission — the host has no counterpart. A row that
 # leaves a host unanswered is refused. Runtime default-deny is separate and real:
@@ -35,9 +37,9 @@
 #
 # The command root is quoted so a path with spaces survives the shell each host
 # runs the command through. Claude Code interpolates ${CLAUDE_PLUGIN_ROOT} itself;
-# Codex has no such variable and its hooks are user-level rather than bundled
-# (ADR-0094), so the installer that places them substitutes __OSO_HOOKS_DIR__ for
-# the absolute directory it wrote them to. The renderer also prefixes every
+# Codex has no such variable and its hooks are user-level rather than bundled, so
+# the installer that places them substitutes __OSO_HOOKS_DIR__ for the absolute
+# directory it wrote them to. The renderer also prefixes every
 # Codex command with `OSO_AGENT=1`: Codex 0.146 does not pass its tool-command
 # shell_environment_policy into the separate user-hook command runner.
 
@@ -60,9 +62,9 @@ host  codex   codex/hooks/hooks.json   "__OSO_HOOKS_DIR__"
 # Codex-wired handler would either never speak or tell an operator to update an
 # install that came from somewhere else.
 #
-# A PreToolUse gate's script declares its own way out or it does not land here
-# (D18, ADR-0111): a `# Recovery:` header line naming the operator's legitimate
-# next step, or explicitly stating there is none — never a cause the operator
+# A PreToolUse gate's script declares its own way out or it does not land here:
+# a `# Recovery:` header line naming the operator's legitimate next step, or
+# explicitly stating there is none — never a cause the operator
 # has to translate into an action themselves, and never the state write that
 # would disarm the gate it belongs to. tools/render-hooks-json.sh's own parser
 # enforces this the same way it already enforces a matcher or a script's
@@ -85,8 +87,8 @@ gate  teardown  SessionEnd    cleanup-state.sh              wired  wired
 # onto one name — the renderer keeps first occurrence and drops the repeat. MultiEdit
 # and NotebookEdit have no counterpart there at all. MCP tools keep their
 # server-prefixed spelling on both hosts: `non_prefixed_mcp_tool_names` is still
-# under development at the declared Codex floor (ADR-0094), and the allowlist is
-# named tool by tool rather than by a wildcard for the reason the header gives.
+# under development at the declared Codex floor, and the allowlist is named tool
+# by tool rather than by a wildcard for the reason the header gives.
 
 tool  commit  Bash                    Bash                     write  no
 tool  edits   Edit                    apply_patch              write  no
@@ -96,8 +98,9 @@ tool  edits   NotebookEdit            none                     write  no
 tool  edits   mcp__fallow__fix_apply  mcp__fallow__fix_apply    write  no
 
 # SubagentStop matches role names rather than tool names. The built-in explorer
-# is part of the plan's delegated surface map; the other seven are the exact S5
-# custom roles. Claude launches these synchronously and needs no receipt hook.
+# is part of the plan's delegated surface map; the other seven are the exact
+# custom roles this harness installs. Claude launches these synchronously and
+# needs no receipt hook.
 tool  handoff  none  explorer               role  yes
 tool  handoff  none  oso-applier            role  yes
 tool  handoff  none  oso-verifier           role  yes

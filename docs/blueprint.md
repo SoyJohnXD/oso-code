@@ -6,7 +6,7 @@ Frozen design for the oso-code harness. A change to it takes a new decision unde
 
 Every decision this design has taken since the freeze is one file under [docs/decisions/](decisions/) — one per decision, numbered in the order it was written. `Date:` is a field, so a decision filed out of date order keeps its id and the index below sorts by date instead; the ids are cited from the skills, so they never move.
 
-Each file carries its date, its status, what supersedes it and what it supersedes, the files that cite it, and a `Reconciled:` line saying where the decision landed:
+Each file carries its date, its status, what supersedes it and what it supersedes, the source the decision came out of, and a `Reconciled:` line saying where the decision landed:
 
 | `Reconciled:` | Means |
 |---|---|
@@ -229,6 +229,7 @@ Three properties of the amendment log these files replace are facts to carry for
 - [0131](decisions/0131-the-sweep-loop-remembers-its-rounds-and-its-cleanup-sweeps-a-class.md) — The debt-sweep loop remembers its rounds, and its cleanup sweeps a class inside a stated boundary
 - [0132](decisions/0132-decision-citations-leave-executable-code-and-a-rule-keeps-them-out.md) — Decision citations leave executable code, and a lint rule keeps them out
 - [0133](decisions/0133-a-session-says-when-its-plugin-is-behind-the-published-release.md) — A session says once when its plugin is behind the published release
+- [0134](decisions/0134-the-inline-comment-is-a-debt-class-with-no-exceptions.md) — The inline comment is a debt class with no exceptions, held at three layers
 
 ## Foundational decisions
 
