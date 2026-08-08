@@ -4,14 +4,14 @@ REM install.bat's sibling, and the same window handling: all the logic lives in
 REM verify.sh, which is where a report an operator can read has to come from.
 setlocal
 
-REM ADR-0127's HOME pin, applied at this file's own delegation point the way
-REM install.ps1 applies it at its one. Git Bash takes $HOME from an inherited
-REM $HOME first, then HOMEDRIVE+HOMEPATH, and only then %USERPROFILE%; the client
-REM is a Node process, so os.homedir() - %USERPROFILE%, always - is the only tree
-REM it opens. Unpinned, a roaming or HOMESHARE profile or a machine carrying an
-REM MSYS2 $HOME of its own sends this verifier into a tree the client never reads,
-REM where every check answers about the wrong install and the report is green over
-REM nothing. Forward slashes because Git Bash reads a backslash as an escape.
+REM The same $HOME pin install.ps1 applies at its own delegation point. Git Bash
+REM takes $HOME from an inherited $HOME first, then HOMEDRIVE+HOMEPATH, and only
+REM then %USERPROFILE%; the client is a Node process, so os.homedir() -
+REM %USERPROFILE%, always - is the only tree it opens. Unpinned, a roaming or
+REM HOMESHARE profile or a machine carrying an MSYS2 $HOME of its own sends this
+REM verifier into a tree the client never reads, where every check answers about
+REM the wrong install and the report is green over nothing. Forward slashes
+REM because Git Bash reads a backslash as an escape.
 set "HOME=%USERPROFILE:\=/%"
 
 REM Git Bash directly, not through PowerShell: install.bat hands off to

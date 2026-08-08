@@ -4,8 +4,8 @@
 # the release-rendered allowlist.
 #
 # Recovery: this gate denies for two distinct causes and gives each its own way
-# out — a pending plan names Codex's native approval controls; an
-# unlisted tool names the exact allowlist this release actually admits.
+# out — a pending plan names Codex's native approval controls; an unlisted tool
+# names the exact allowlist this release actually admits.
 set -euo pipefail
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

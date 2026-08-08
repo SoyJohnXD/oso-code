@@ -13,20 +13,19 @@
 #        <read|write|role> <yes|no>
 #
 # A tool row's last two cells are the capability model, independent of how many
-# hosts precede them: whether the name READS or WRITES — the class
-# that decides whether a tool could ever belong behind the `edits` gate at all,
-# since only a tool that can mutate repository files earns that gate rather
-# than the `unknown` catch-all alone — and whether the name is MANDATED by a
-# protocol this harness itself installs and instructs the model to follow,
-# which is what made mem_judge's absence a deadlock rather than an
-# inconvenience (5905a27). A `handoff` row names a subagent role rather than
-# an invocable tool, so `role` answers its class instead of read or write; its
-# mandated cell is still real — the harness's own delegation protocol requires
-# exactly these eight role identifiers. Nothing here is a second copy of the
-# renderer's own answer: render() below never reads past each row's per-host
-# cells, so these two never change a byte of what renders (the same
-# tests/plugin-lint.sh rule asserts the committed manifests are still exactly
-# that render).
+# hosts precede them: whether the name READS or WRITES — the class that decides
+# whether a tool could ever belong behind the `edits` gate at all, since only a
+# tool that can mutate repository files earns that gate rather than the
+# `unknown` catch-all alone — and whether the name is MANDATED by a protocol
+# this harness itself installs and instructs the model to follow, which is what
+# made mem_judge's absence a deadlock rather than an inconvenience (5905a27). A
+# `handoff` row names a subagent role rather than an invocable tool, so `role`
+# answers its class instead of read or write; its mandated cell is still real —
+# the harness's own delegation protocol requires exactly these eight role
+# identifiers. Nothing here is a second copy of the renderer's own answer:
+# render() below never reads past each row's per-host cells, so these two never
+# change a byte of what renders (the same tests/plugin-lint.sh rule asserts the
+# committed manifests are still exactly that render).
 #
 # `none` is an answer, not an omission — the host has no counterpart. A row that
 # leaves a host unanswered is refused. Runtime default-deny is separate and real:
@@ -64,9 +63,9 @@ host  codex   codex/hooks/hooks.json   "__OSO_HOOKS_DIR__"
 #
 # A PreToolUse gate's script declares its own way out or it does not land here:
 # a `# Recovery:` header line naming the operator's legitimate next step, or
-# explicitly stating there is none — never a cause the operator
-# has to translate into an action themselves, and never the state write that
-# would disarm the gate it belongs to. tools/render-hooks-json.sh's own parser
+# explicitly stating there is none — never a cause the operator has to
+# translate into an action themselves, and never the state write that would
+# disarm the gate it belongs to. tools/render-hooks-json.sh's own parser
 # enforces this the same way it already enforces a matcher or a script's
 # existence: closed, before any render, check or classify mode runs. Stop and
 # UserPromptSubmit gates block through a different channel (`stop_block`,

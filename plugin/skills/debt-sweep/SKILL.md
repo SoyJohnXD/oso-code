@@ -1,7 +1,7 @@
 ---
 name: debt-sweep
 description: Whole-change judge after functionality is confirmed, on two axes — code debt (dead code, duplication, over-documentation, rubric violations) and ledger conformance (the assembled change against the frozen decisions that shaped it). Reports both with evidence in separate sections — it never edits anything; fixes are applied by a separate applier. Use when a plan-mode change is complete, or when the user asks to sweep a branch or recent work for debt.
-argument-hint: "[base ref, e.g. main] [+ frozen ledger: bare decisions + scope]"
+argument-hint: "[base ref, e.g. main] [+ frozen ledger: bare decisions + scope] [+ on re-invocation: every prior finding with its bare disposition]"
 context: fork
 agent: general-purpose
 background: false

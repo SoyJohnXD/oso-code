@@ -208,9 +208,9 @@ hook_session() {
 # worktree read the state the orchestrator armed in the main checkout.
 # `--git-common-dir` alone does not say that — it answers a relative `.git` in
 # the main checkout and an absolute path inside a linked worktree, one repository
-# under two names — so the identity is the absolute spelling. Where
-# git places nothing there is no commit for the rail to gate, and the directory
-# the work happens in is identity enough.
+# under two names — so the identity is the absolute spelling. Where git places
+# nothing there is no commit for the rail to gate, and the directory the work
+# happens in is identity enough.
 #
 # That path is DIGESTED, never sanitized into a name. A file name has a charset
 # and a length a path has not, and forcing a path into either opens the gate:

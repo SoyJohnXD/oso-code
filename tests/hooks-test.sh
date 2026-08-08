@@ -563,15 +563,18 @@ fi
 # every glob plus the two extension-less files the set has to name by hand —
 # because a pattern dropped from it stops being scanned in silence: every other
 # diagnostic still fires, so nothing but that pattern's own citation going
-# unflagged can show it. The notations carry the other axis on the same lines: each
-# of the four shapes the pattern admits is written twice, and no line matches a
-# shape other than its own, so dropping an alternation leaves the two lines written
-# in it unnamed while a dropped pattern leaves exactly one — neither failure can
-# hide behind the other. Each is a fresh line appended to the fixture's copy: no
-# existing line is edited, so nothing else in the fixture can move with it.
-# Mutating a hook's bytes also leaves the published hash ledger stale by
-# construction, so this report is red twice over — which is why every diagnostic is
-# required BY NAME and the hash rule's own red cannot stand in for any of them.
+# unflagged can show it. Two more axes ride the same lines. Each of the four
+# notations the pattern admits is written three times, no line matching a notation
+# other than its own, so a dropped alternation goes unnamed in three files across
+# three different patterns while a dropped pattern takes only its own files with
+# it. Each of the three comment markers is written too, which is why the `.bat`
+# glob carries two: dropping `REM` leaves verify.bat alone unnamed, dropping `::`
+# install.bat alone, dropping the glob both, and dropping `#` the other ten. Each
+# citation is a fresh line appended to the fixture's copy: no existing line is
+# edited, so nothing else in the fixture can move with it. Mutating a hook's bytes
+# also leaves the published hash ledger stale by construction, so this report is
+# red twice over — which is why every diagnostic is required BY NAME and the hash
+# rule's own red cannot stand in for any of them.
 LINT_EXECUTABLE_CITATION_FIXTURE="$TEST_HOME/lint-executable-citation"
 copy_lint_fixture "$LINT_EXECUTABLE_CITATION_FIXTURE"
 printf '# D22: the ledger entry that ordered this remedy.\n' \
@@ -590,13 +593,22 @@ printf '# 0068 is the scope this fixture was written for.\n' \
   >> "$LINT_EXECUTABLE_CITATION_FIXTURE/tests/fixtures/crashing-hook.sh"
 printf '# A4 is the amendment that added this emitter.\n' \
   >> "$LINT_EXECUTABLE_CITATION_FIXTURE/tools/render-hooks-json.sh"
+printf 'REM ADR-0952 is the record this window handling came from.\n' \
+  >> "$LINT_EXECUTABLE_CITATION_FIXTURE/bootstrap/verify.bat"
+printf ':: docs/decisions/0958 is why this entry point hands off.\n' \
+  >> "$LINT_EXECUTABLE_CITATION_FIXTURE/bootstrap/install.bat"
+printf '# 0116 is the scope this provisioning step was cut to.\n' \
+  >> "$LINT_EXECUTABLE_CITATION_FIXTURE/bootstrap/install.ps1"
+printf '# S3 is the amendment this region splitter answers to.\n' \
+  >> "$LINT_EXECUTABLE_CITATION_FIXTURE/bootstrap/lib/toml-regions.awk"
 if executable_citation_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
     "$LINT_EXECUTABLE_CITATION_FIXTURE/plugin" "$LINT_EXECUTABLE_CITATION_FIXTURE" 2>&1)"; then
   echo "FAIL: check_executables_carry_no_decision_citations accepted decision citations in every path pattern it scans"; fail=$((fail + 1))
 else
   for cited_executable in plugin/hooks/lib.sh bootstrap/verify.sh tests/hooks-test.sh \
       plugin/bin/oso-state bootstrap/lib/mount-impeccable.sh plugin/git-hooks/pre-commit \
-      tests/fixtures/crashing-hook.sh tools/render-hooks-json.sh; do
+      tests/fixtures/crashing-hook.sh tools/render-hooks-json.sh bootstrap/verify.bat \
+      bootstrap/install.bat bootstrap/install.ps1 bootstrap/lib/toml-regions.awk; do
     case "$executable_citation_lint_report" in
       *"$cited_executable:"*"cites a decision id in a comment"*)
         echo "ok: check_executables_carry_no_decision_citations names $cited_executable"; pass=$((pass + 1)) ;;
@@ -651,10 +663,10 @@ else
   fi
 fi
 
-# check_milestone_reporting_contract_is_complete's second half — a
-# milestone reduced to "report the result" is the exact defect this contract
-# exists to close, so mention of the "Closing" header alone must not satisfy
-# it once its required facts (commit, next) are gone.
+# check_milestone_reporting_contract_is_complete's second half — a milestone
+# reduced to "report the result" is the exact defect this contract exists to
+# close, so mention of the "Closing" header alone must not satisfy it once
+# its required facts (commit, next) are gone.
 LINT_MILESTONE_FACTS_FIXTURE="$TEST_HOME/lint-milestone-facts"
 copy_lint_fixture "$LINT_MILESTONE_FACTS_FIXTURE"
 milestone_facts_target="$LINT_MILESTONE_FACTS_FIXTURE/plugin/skills/_shared/reporting.md"
@@ -729,12 +741,11 @@ else
   fi
 fi
 
-# check_design_foundation_slice_reads_the_installed_contract
-# must reject a design-foundation slice paragraph that regressed to the
-# undifferentiated `init`/`document` phrasing the Astro-landing incident traced
-# to — strip only the `init` attribution and confirm the paragraph-scoped
-# check names it specifically, not the read-before-cut markers still standing
-# beside it.
+# check_design_foundation_slice_reads_the_installed_contract must reject a
+# design-foundation slice paragraph that regressed to the undifferentiated
+# `init`/`document` phrasing the Astro-landing incident traced to — strip only
+# the `init` attribution and confirm the paragraph-scoped check names it
+# specifically, not the read-before-cut markers still standing beside it.
 LINT_DESIGN_FOUNDATION_FIXTURE="$TEST_HOME/lint-design-foundation"
 copy_lint_fixture "$LINT_DESIGN_FOUNDATION_FIXTURE"
 design_foundation_target="$LINT_DESIGN_FOUNDATION_FIXTURE/plugin/skills/_shared/bodies/plan.md"
@@ -759,11 +770,11 @@ else
   fi
 fi
 
-# check_third_amendment_lane_names_its_conditions must
-# reject the third amendment lane if it loses its citation requirement
-# specifically — the condition the ledger names as the one that must never
-# silently drop, since an uncited correction is the harness rewriting an
-# approved slice on its own word.
+# check_third_amendment_lane_names_its_conditions must reject the third
+# amendment lane if it loses its citation requirement specifically — the
+# condition the ledger names as the one that must never silently drop,
+# since an uncited correction is the harness rewriting an approved slice
+# on its own word.
 LINT_THIRD_LANE_FIXTURE="$TEST_HOME/lint-third-amendment-lane"
 copy_lint_fixture "$LINT_THIRD_LANE_FIXTURE"
 third_lane_target="$LINT_THIRD_LANE_FIXTURE/plugin/skills/_shared/platform/codex/plan.md"
@@ -899,9 +910,9 @@ else
     "tool for gate \`edits\` has no mapping for codex" \
     --repo-root "$REPO_ROOT" --table "$INCOMPLETE_TABLE" --check
 
-  # A PreToolUse gate script that declares no recovery route must not
-  # land — a handler added (or edited down to) with no `# Recovery:` header line
-  # fails the same table check a missing matcher or a missing script already do.
+  # A PreToolUse gate script that declares no recovery route must not land — a
+  # handler added (or edited down to) with no `# Recovery:` header line fails
+  # the same table check a missing matcher or a missing script already do.
   RECOVERY_FIXTURE="$TEST_HOME/recovery-fixture"
   copy_lint_fixture "$RECOVERY_FIXTURE"
   RECOVERY_LESS_SCRIPT="$RECOVERY_FIXTURE/plugin/hooks/block-edits-without-slice.sh"
@@ -3325,11 +3336,11 @@ awk '
 assert_equals "a read-only native security reviewer is observable at its TOML boundary" \
   "read-only" "$(toml_scalar "$SECURITY_ROLE_FIXTURE" sandbox_mode)"
 
-# Codex's separate CLI review is this judge's native path now.  The
-# adapter is the routing contract and the role's multiline instructions are the
-# execution contract, so read those two bounded regions independently.  A
-# `codex review` mention in a wrapper, a TOML description or a neighbouring
-# markdown section is deliberately invisible here.
+# Codex's separate CLI review is this judge's native path now. The adapter is
+# the routing contract and the role's multiline instructions are the execution
+# contract, so read those two bounded regions independently. A `codex review`
+# mention in a wrapper, a TOML description or a neighbouring markdown section
+# is deliberately invisible here.
 markdown_h2_section() {
   local file="$1" heading="$2"
   awk -v heading="$heading" '
@@ -3538,8 +3549,8 @@ assert_equals "a base-coverage header outside the native route cannot satisfy it
   codex-base "$(security_header_status "$SECURITY_BODY" \
     "$CLAUDE_SECURITY_PLATFORM" "$SECURITY_HEADER_FIXTURE")"
 
-# Parity is part of the contract, not release-note decoration. Select
-# each row by its first cell and require exactly one: a stale original beside a
+# Parity is part of the contract, not release-note decoration. Select each row
+# by its first cell and require exactly one: a stale original beside a
 # corrected duplicate must fail rather than letting the new row hide the old.
 parity_row() {
   local label="$1"
@@ -5795,8 +5806,8 @@ else
 
   # The orphan sweep's own state file is the only record of repo_path, and it
   # names its worktree by `session` — the wave's ownership marker, never the
-  # real `plan_approval_session` id this sweep matches on. Dropping
-  # it without pruning first would leave that worktree with nothing able to
+  # real `plan_approval_session` id this sweep matches on. Dropping it
+  # without pruning first would leave that worktree with nothing able to
   # reach it again: not even the 7-day sweep above, which reads repo_path from
   # this same file.
   arm_wave_for orphan-wt-owner "$WORKTREE_REPO"
@@ -6572,8 +6583,8 @@ assert_logged "a payload past the decoder bound is logged with the head the clie
 # a deny record carries, up to "block-edits-without-slice.sh" and "PreToolUse",
 # the longest either family has — plus room for the escapes a head can add. Over
 # it, something wrote more than a head, which is how a whole 3 KB command line
-# would land in the log. Nor is any of it safe to leave
-# world-readable while the state files are not.
+# would land in the log. Nor is any of it safe to leave world-readable while the
+# state files are not.
 longest_event=0
 while IFS= read -r event_line; do
   if [ "${#event_line}" -gt "$longest_event" ]; then
@@ -10025,9 +10036,9 @@ assert_equals "profile validation rejection rolls every destination back byte-fo
   "$codex_config_reject_before" "$codex_config_reject_after"
 
 if command -v git >/dev/null 2>&1; then
-  # A previous oso-code install may have pointed this checkout at the
-  # published source directory. That exact, single-hook owner is safe to migrate
-  # to the self-contained runtime; a lookalike path or any sibling is not.
+  # A previous oso-code install may have pointed this checkout at the published
+  # source directory. That exact, single-hook owner is safe to migrate to the
+  # self-contained runtime; a lookalike path or any sibling is not.
   CODEX_GIT_MIGRATE_RELEASE="$TEST_HOME/codex-git-migrate-release"
   mkdir -p "$CODEX_GIT_MIGRATE_RELEASE"
   cp -R "$REPO_ROOT/.agents" "$REPO_ROOT/bootstrap" "$REPO_ROOT/codex" \
@@ -10347,9 +10358,9 @@ assert_equals "a malformed global file is untouched by the refused install" \
 
 # --- Codex installer: migrates a pre-split plan-approval state file inside
 # the transaction --------------------------------------------------------------
-# 526a558 split `session` (ownership) from `plan_approval_session`
-# (who may approve or cancel a pending plan). A state file written before that
-# split holds only the old key; installing the split without converting it
+# 526a558 split `session` (ownership) from `plan_approval_session` (who may
+# approve or cancel a pending plan). A state file written before that split
+# holds only the old key; installing the split without converting it
 # manufactures the exact trap the split closes. state_key_of mirrors
 # state_file_for exactly, so each digest below names the same path both the
 # migration and the runtime hooks resolve for that repository identity.

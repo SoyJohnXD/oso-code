@@ -6,11 +6,10 @@
 set -euo pipefail
 
 SUPPORTED_CODEX_VERSION=0.146.0
-# The version the design-foundation slice reads from the installed
-# skill's own SKILL.md frontmatter and records in the plan ledger. Pinning the
-# marketplace fetch to the matching `skill-v<version>` tag is what lets that
-# recorded read and this pin agree instead of drifting into two sources of
-# truth.
+# The version the design-foundation slice reads from the installed skill's own
+# SKILL.md frontmatter and records in the plan ledger. Pinning the marketplace
+# fetch to the matching `skill-v<version>` tag is what lets that recorded read
+# and this pin agree instead of drifting into two sources of truth.
 SUPPORTED_IMPECCABLE_VERSION=4.0.2
 CONFIG_MARKER_START="# oso-code:start"
 CONFIG_MARKER_END="# oso-code:end"
@@ -151,15 +150,14 @@ codex_version() {
   codex --version 2>/dev/null | awk '{ print $NF }'
 }
 
-# `begin_transaction` can only ever restore what it backed up -- cp -a
-# snapshots of paths under $HOME -- and a global npm package is neither: the
-# standalone Codex release on the machine this pin was read from runs to
-# ~300 MiB, which alone would blow the 300 MiB total `INSTALL_BACKUP_BUDGET_KIB`
-# every other snapshot in a run shares. An `npm install --global` this
-# transaction ran but could not honestly undo is exactly defect (3): a step
-# outside the transaction the rollback cannot reach. The CLI pin is a
-# precondition instead -- this never mutates it, so no later failure's
-# rollback ever needs to.
+# `begin_transaction` can only ever restore what it backed up -- cp -a snapshots
+# of paths under $HOME -- and a global npm package is neither: the standalone
+# Codex release on the machine this pin was read from runs to ~300 MiB, which
+# alone would blow the 300 MiB total `INSTALL_BACKUP_BUDGET_KIB` every other
+# snapshot in a run shares. An `npm install --global` this transaction ran but
+# could not honestly undo is exactly defect (3): a step outside the transaction
+# the rollback cannot reach. The CLI pin is a precondition instead -- this never
+# mutates it, so no later failure's rollback ever needs to.
 preflight_codex_version() {
   local current=""
   if command -v codex >/dev/null 2>&1; then
@@ -995,9 +993,9 @@ legacy_oso_git_hooks_path() {
   [ -f "$configured/pre-commit" ] && [ ! -L "$configured/pre-commit" ] \
     && [ -x "$configured/pre-commit" ] || return 1
 
-  # This exact checkout path is an older oso-code wiring, but only
-  # while it contains the one hook oso-code publishes. A sibling belongs to an
-  # unknown owner and must not disappear when the runtime path replaces it.
+  # This exact checkout path is an older oso-code wiring, but only while it
+  # contains the one hook oso-code publishes. A sibling belongs to an unknown
+  # owner and must not disappear when the runtime path replaces it.
   for entry in "$configured"/* "$configured"/.[!.]* "$configured"/..?*; do
     [ -e "$entry" ] || [ -L "$entry" ] || continue
     [ "${entry##*/}" = pre-commit ] || return 1

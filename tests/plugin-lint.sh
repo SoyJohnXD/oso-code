@@ -553,20 +553,19 @@ check_integrator_launches_name_their_payload() {
 # different shape — the gap a first cut of this rule left open. One kind is
 # excluded on purpose: a debt-cleanup or judge-findings launch — the applier's
 # other two kinds — is self-contained by its own agent contract and never carries
-# a ref coordinate at all, so requiring one there would be a
-# false positive on a launch that is correctly starved of it — `debt cleanup`
-# and `judge findings` are this file's own stable vocabulary for those two
-# kinds, so a line naming either is exempted rather than demanded a
-# coordinate it structurally cannot have. Scoped to the `plan` skill alone —
-# the only flow with waves and more than one coordinate to confuse: `debug`'s
-# own applier/verifier launches legitimately say BASE REF for the single
-# pending-tree ref that flow has ever had (its own body names it `HEAD`), and
-# flagging those would be exactly the false positive this rule exists to
-# avoid. LINE-scoped for the reason `check_verifier_launches_name_their_payload`
-# already is: the payload is what the launched agent reads in one place, and a
-# launch worded around the coordinate on a later line is invisible here the
-# same way a launch worded around `oso-integrator` is invisible to the rule
-# above.
+# a ref coordinate at all, so requiring one there would be a false positive on a
+# launch that is correctly starved of it — `debt cleanup` and `judge findings`
+# are this file's own stable vocabulary for those two kinds, so a line naming
+# either is exempted rather than demanded a coordinate it structurally cannot
+# have. Scoped to the `plan` skill alone — the only flow with waves and more than
+# one coordinate to confuse: `debug`'s own applier/verifier launches legitimately
+# say BASE REF for the single pending-tree ref that flow has ever had (its own
+# body names it `HEAD`), and flagging those would be exactly the false positive
+# this rule exists to avoid. LINE-scoped for the reason
+# `check_verifier_launches_name_their_payload` already is: the payload is what
+# the launched agent reads in one place, and a launch worded around the
+# coordinate on a later line is invisible here the same way a launch worded
+# around `oso-integrator` is invisible to the rule above.
 check_plan_delegation_payloads_name_a_specific_coordinate() {
   local skill="$PLUGIN_ROOT/skills/plan/SKILL.md"
   local source line launch
@@ -721,8 +720,8 @@ decision_citations() {
 # The inverse of the rule above, and the reason it can stay narrow. A decision id
 # in a document is a cross-reference; the same id in a comment is provenance the
 # code cannot show and the reader cannot open — and this repo taught the habit by
-# example. Its own executables carried a hundred and fifty-five of them, in the
-# files an applier reads to learn how this project writes shell; the notation then
+# example. Its own executables carried a hundred and fifty-six of them, in the
+# files an applier reads to learn how this project writes a script; the notation
 # arrives in a target project's source, where the ledger those tags name did not
 # outlive the change that wrote it and never existed for that reader at all. The
 # shared rubric bans it there. This bans it here, so the harness cannot go on
@@ -732,22 +731,42 @@ decision_citations() {
 # rule it is explaining, which is the ban holding without an exception carved for
 # the rule that states it.
 #
-# The file set is the six `bash -n` groups ci.yml runs, spelled the same way and
-# in the same order — every shell script this repo ships, plus the two executables
-# that carry no `.sh` extension — so "executable" means one thing to this rule and
-# to the syntax gate both. The scan keeps grep's stderr (`2>&1`, per the header),
-# so a glob whose directory vanished surfaces as two misnamed violations instead
-# of an empty read.
+# The file set opens with the six `bash -n` groups ci.yml runs, spelled the same
+# way and in the same order, and does not close there: that gate reaches what bash
+# can parse, while this ban is about what the repo ships to be RUN, so the Windows
+# entry points and the awk program under bootstrap/lib follow them. The paths
+# below are the whole of it — an executable written in a language none of them
+# names goes unscanned until it joins them, which is this set's ceiling and not a
+# claim it makes for itself. The scan keeps grep's stderr (`2>&1`, per the
+# header), so a glob whose directory vanished surfaces as two misnamed violations
+# instead of an empty read.
 #
 # COMMENT lines only, and the locator is the line rather than the syntax tree, so a
 # `#`-leading line inside a heredoc reads as a comment here — which errs toward
-# flagging, never toward missing one — while every string literal reads as exempt
-# whether or not it earns the exemption. Data is what the exemption is for:
-# `tests/hooks-test.sh` greps flow bodies for prose that legitimately keeps its own
-# parenthesized decision reference, and its linter fixtures name the decision file
-# each mutation edits. A string that is provenance instead — a diagnostic citing a
-# decision as the authority for what it asserts — is the same defect as a comment's,
-# and it is held by review, the one part of this ban no check here reaches.
+# flagging, never toward missing one — while a string literal on a line that opens
+# with none of the markers below reads as exempt whether or not it earns the
+# exemption. Data is what the exemption is for: `tests/hooks-test.sh` greps flow
+# bodies for prose that legitimately keeps its own parenthesized decision
+# reference, and its linter fixtures name the decision file each mutation edits. A
+# string that is provenance instead — a diagnostic citing a decision as the
+# authority for what it asserts — is the same defect as a comment's, and it is held
+# by review, the one part of this ban no check here reaches.
+#
+# Three markers, because the set writes a comment three ways: `#` for the shell,
+# PowerShell and awk files, and batch's `REM` and `::` for the two `.bat` entry
+# points. `REM` is matched case-folded, the way cmd reads it, and carrying the
+# space every batch comment here follows it with — the bare word would pull the
+# `rem`-leading lines in the shell files into the scan for their string literals.
+# Every marker is asked of every file rather than of its own language, which errs
+# toward flagging the way the heredoc case does: a shell line opening `::` is no
+# comment, and one carrying a citation shape would be flagged anyway. Measured
+# against this tree, no line outside the `.bat` files opens either batch marker
+# at all.
+#
+# One shape a line locator cannot reach is PowerShell's `<# ... #>` block: its
+# interior carries no marker the block itself puts there, so a citation on a line
+# that does not happen to open with one is out of this rule's sight, and held by
+# review beside the provenance-string half of the exemption above.
 #
 # Four alternations, because this repo writes the reference four ways: the `ADR-`
 # prefix and a four-digit id, the `docs/decisions/` path and the same four digits,
@@ -785,11 +804,13 @@ check_executables_carry_no_decision_citations() {
 # the citation is readable there, while quoting the line would reprint the
 # citation into this linter's own output, the one place the ban cannot reach.
 executable_comment_citations() {
-  { grep -nE '^[[:space:]]*#.*(ADR-[0-9][0-9][0-9][0-9]|docs/decisions/[0-9][0-9][0-9][0-9]|[^[:alnum:]+]0[01][0-9][0-9]([^[:alnum:]]|$)|[^[:alnum:]][ABDS][0-9][0-9]*([^[:alnum:]]|$))' \
+  { grep -nE '^[[:space:]]*(#|[Rr][Ee][Mm][[:space:]]|::).*(ADR-[0-9][0-9][0-9][0-9]|docs/decisions/[0-9][0-9][0-9][0-9]|[^[:alnum:]+]0[01][0-9][0-9]([^[:alnum:]]|$)|[^[:alnum:]][ABDS][0-9][0-9]*([^[:alnum:]]|$))' \
       "$REPO_ROOT"/bootstrap/*.sh "$REPO_ROOT"/bootstrap/lib/*.sh \
       "$REPO_ROOT"/tools/*.sh "$REPO_ROOT"/plugin/hooks/*.sh \
       "$REPO_ROOT/plugin/bin/oso-state" "$REPO_ROOT/plugin/git-hooks/pre-commit" \
-      "$REPO_ROOT"/tests/*.sh "$REPO_ROOT"/tests/fixtures/*.sh 2>&1 || true; } \
+      "$REPO_ROOT"/tests/*.sh "$REPO_ROOT"/tests/fixtures/*.sh \
+      "$REPO_ROOT"/bootstrap/*.bat "$REPO_ROOT"/bootstrap/*.ps1 \
+      "$REPO_ROOT"/bootstrap/lib/*.awk 2>&1 || true; } \
     | cut -d: -f1,2
 }
 
@@ -974,11 +995,10 @@ check_reporting_host_difference_is_single_sourced() {
 # `init`/`document` split from this file's own memory instead of the installed
 # contract, and to nobody recording which version was actually read — the version
 # the release's Impeccable pin must reconcile against. Both are now single,
-# literal sentences a future rewrite could silently drop; this
-# holds the paragraph to naming all five, so losing one fails instead of
-# drifting back to the same guess. Same technique as
-# `milestone_bullet_names_its_facts`: find the one paragraph by its own bold
-# lead-in, then hold it to every marker.
+# literal sentences a future rewrite could silently drop; this holds the
+# paragraph to naming all five, so losing one fails instead of drifting back to
+# the same guess. Same technique as `milestone_bullet_names_its_facts`: find the
+# one paragraph by its own bold lead-in, then hold it to every marker.
 check_design_foundation_slice_reads_the_installed_contract() {
   local body="$PLUGIN_ROOT/skills/_shared/bodies/plan.md"
   local paragraph marker
@@ -1000,8 +1020,8 @@ check_design_foundation_slice_reads_the_installed_contract() {
 # The amendment lane needs all four of its conditions asserted together, the
 # citation especially — a lane that drops the citation is the harness rewriting
 # an approved slice on its own word, exactly what the operator objected to
-# losing. Same technique as the rule above: one paragraph
-# found by its own bold lead-in, held to every marker.
+# losing. Same technique as the rule above: one paragraph found by its own bold
+# lead-in, held to every marker.
 check_third_amendment_lane_names_its_conditions() {
   local file="$PLUGIN_ROOT/skills/_shared/platform/codex/plan.md"
   local paragraph marker
@@ -1037,8 +1057,8 @@ check_third_amendment_lane_names_its_conditions() {
 # ambiguity is what opened this hole in the first place) and wave 0 (proving
 # the CHANGE BASE claim is conditioned rather than stated flat again). A
 # rewrite that drops either marker from any such line, present or future,
-# reopens the hole silently, the same way dropping one of the
-# design-foundation paragraph's five markers would.
+# reopens the hole silently, the same way dropping one of the design-foundation
+# paragraph's five markers would.
 check_wave_1_wave_start_accounts_for_wave_0() {
   local body="$PLUGIN_ROOT/skills/_shared/bodies/plan.md"
   local sites entry linenum
@@ -1253,18 +1273,18 @@ check_sweep_exit_bar_is_banded_and_capped() {
 # hands it is a rule about nothing. So both ends are read, the way the pair of
 # decision rules above read a decision file and the index that has to name it. On
 # the SENDER side that is the two bodies that run the loop — plan.md's §7 close
-# and debug.md's additive sweep, the same pair as the rule
-# above and for the same reason, so a third body growing a sweep loop later has
-# to join this list too. Each is located by `re-invoke the debt-sweep judge`, the
-# phrase both restatements open with: one line in each body today and no other
-# line of either, so both markers are asked of that one value — a second
-# re-invocation line would join it and the markers could then be met by the pair
-# rather than by each, which is this shape's ceiling and not a claim it makes for
-# itself. Two markers, one per clause the decision has: that a disposition
-# travels at all, and that it travels with no reasoning attached — a rewrite that
-# helpfully explains WHY each finding was dismissed hands the fresh eyes the
-# author's case and gets an anchored judge back, which is the same trade the
-# bare-ledger rule already refuses on the conformance axis.
+# and debug.md's additive sweep, the same pair as the rule above and for the same
+# reason, so a third body growing a sweep loop later has to join this list too.
+# Each is located by `re-invoke the debt-sweep judge`, the phrase both
+# restatements open with: one line in each body today and no other line of
+# either, so both markers are asked of that one value — a second re-invocation
+# line would join it and the markers could then be met by the pair rather than by
+# each, which is this shape's ceiling and not a claim it makes for itself. Two
+# markers, one per clause the decision has: that a disposition travels at all,
+# and that it travels with no reasoning attached — a rewrite that helpfully
+# explains WHY each finding was dismissed hands the fresh eyes the author's case
+# and gets an anchored judge back, which is the same trade the bare-ledger rule
+# already refuses on the conformance axis.
 #
 # The RECEIVER is the judge's own body, read as a section rather than a line
 # because the input contract is a section there — from its `## Prior rounds`

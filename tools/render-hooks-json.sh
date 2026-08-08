@@ -70,10 +70,10 @@ function expected_event(id) {
   return ""
 }
 function file_exists(path, probe) { probe = (getline ignored < path); close(path); return probe >= 0 }
-# A PreToolUse gate can deny an operator call, so its script
-# must declare its own way out -- a "# Recovery:" header line naming the next
-# step, or explicitly saying there is none. Other events block through a
-# different channel (stop_block, control_block) this rule does not reach.
+# A PreToolUse gate can deny an operator call, so its script must declare its
+# own way out -- a "# Recovery:" header line naming the next step, or
+# explicitly saying there is none. Other events block through a different
+# channel (stop_block, control_block) this rule does not reach.
 function has_recovery_route(path,    line, found) {
   found = 0
   while ((getline line < path) > 0) if (line ~ /^# Recovery:/) { found = 1; break }
@@ -113,8 +113,8 @@ function parse(    line, fields, count, kind, i, id, expected, tool_class, tool_
     } else if (kind == "tool") {
       if (!host_count) die("tool row appears before any host")
       # Two trailing cells close every tool row after the per-host mappings:
-      # the capability class (read|write|role) and whether the name
-      # is mandated by a harness-installed protocol (yes|no). Neither is read
+      # the capability class (read|write|role) and whether the name is
+      # mandated by a harness-installed protocol (yes|no). Neither is read
       # again below -- render()/coverage()/classify() never look past a row
       # host cells, so these two cannot change a byte of what renders; they
       # exist for the drift check in bootstrap/verify-codex.sh and for a

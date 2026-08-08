@@ -896,13 +896,12 @@ plugin_context7_entry() {
 
 # The two values Claude Code has to carry for anything here to work, written where
 # the client reads them at the start of every session: the `env` block of its own
-# settings.json. Neither rides a PATH any more. The plugin's bin
-# directory reaches the Bash tool through an injection the client documents
-# nowhere and that has already failed on Windows, and a skill whose
-# "${OSO_STATE_BIN:-oso-state}" fell through to the bare name found nothing there
-# — every plan capture on that host blocked on a sentence that named no cause.
-# settings.json is read the same way by the CLI and by Claude Desktop, so one
-# write covers both surfaces.
+# settings.json. Neither rides a PATH any more. The plugin's bin directory reaches
+# the Bash tool through an injection the client documents nowhere and that has
+# already failed on Windows, and a skill whose "${OSO_STATE_BIN:-oso-state}" fell
+# through to the bare name found nothing there — every plan capture on that host
+# blocked on a sentence that named no cause. settings.json is read the same way by
+# the CLI and by Claude Desktop, so one write covers both surfaces.
 publish_client_environment() {
   publish_state_bin_path
   publish_git_bash_path
@@ -1275,10 +1274,10 @@ merge_global_claude_md() {
 }
 
 # Every install used to leave one more backup directory in the operator's home,
-# forever. The bound is the shared library's, reached through it rather
-# than restated: total size rather than count, and the newest snapshot kept
-# whatever the budget says, so the run that just installed is never the one a
-# tight budget empties.
+# forever. The bound is the shared library's, reached through it rather than
+# restated: total size rather than count, and the newest snapshot kept whatever
+# the budget says, so the run that just installed is never the one a tight
+# budget empties.
 # What this side does NOT carry is that policy's restore-verified gate. There,
 # pruning waits until restore-codex.sh has proved a replay works on this machine,
 # because a broken automated restore must keep its fuel. This side has no

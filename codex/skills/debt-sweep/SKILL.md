@@ -1,7 +1,7 @@
 ---
 name: debt-sweep
 description: "Whole-change judge after functionality is confirmed, on two axes — code debt (dead code, duplication, over-documentation, rubric violations) and ledger conformance (the assembled change against the frozen decisions that shaped it). Reports both with evidence in separate sections — it never edits anything; fixes are applied by a separate applier. Use when a plan-mode change is complete, or when the user asks to sweep a branch or recent work for debt."
-argument-hint: "[base ref, e.g. main] [+ frozen ledger: bare decisions + scope]"
+argument-hint: "[base ref, e.g. main] [+ frozen ledger: bare decisions + scope] [+ on re-invocation: every prior finding with its bare disposition]"
 ---
 
 # Debt sweep
@@ -13,4 +13,4 @@ This judge's instructions live in two files. READ BOTH NOW, in this order, and f
 
 Where the neutral body defers to "your host", the platform file is the answer, and it is the only answer — never improvise a spelling the platform file does not give.
 
-This judge runs with FRESH EYES as the `oso-debt-sweep` custom role, in a context that never wrote the code it grades. The caller passes this wrapper's absolute path as `SKILL PATH` and the base ref plus frozen ledger as `ARGUMENTS`; the reviewer reads this file and both bindings above for itself.
+This judge runs with FRESH EYES as the `oso-debt-sweep` custom role, in a context that never wrote the code it grades. The caller passes this wrapper's absolute path as `SKILL PATH` and the base ref plus frozen ledger as `ARGUMENTS`, adding on a re-invocation every prior finding with its bare disposition; the reviewer reads this file and both bindings above for itself.

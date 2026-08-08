@@ -136,11 +136,11 @@ host_contract_status() {
     'fork_turns must be `none`, `all`, or a positive integer string'
 }
 
-# `-P`/`--permission-profile` exists only on `codex sandbox`, a
-# one-shot command runner never used to launch a real session; `codex` and
-# `codex exec` carry no dedicated profile flag, so the durable per-invocation
-# selector the installed profile relies on is `-c default_permissions=<name>`,
-# the generic override the binary itself resolves and validates.
+# `-P`/`--permission-profile` exists only on `codex sandbox`, a one-shot
+# command runner never used to launch a real session; `codex` and `codex exec`
+# carry no dedicated profile flag, so the durable per-invocation selector the
+# installed profile relies on is `-c default_permissions=<name>`, the generic
+# override the binary itself resolves and validates.
 permission_override_contract_status() {
   binary_contract_status \
     'default_permissions refers to undefined profile `' \
@@ -795,8 +795,8 @@ commit_hook_red_status() {
 # wait` reporting a matching receipt, and a completed `oso-state handoff
 # consume` reporting the same receipt (oso-state prints it on both verbs --
 # plugin/bin/oso-state). The stream carries no field naming which *role* a
-# spawned id was given, so this proves delegation
-# happened for that id, not that the child ran as oso-integrator specifically.
+# spawned id was given, so this proves delegation happened for that id, not
+# that the child ran as oso-integrator specifically.
 integrator_handoff_consumed() {
   command -v python3 >/dev/null 2>&1 || return 1
   printf '%s\n' "$SMOKE_OUTPUT" | python3 -c '
@@ -931,15 +931,15 @@ raise SystemExit(0 if correlated else 1)
 ' "$SMOKE_HANDOFF_SLICE" "$SMOKE_HANDOFF_ATTEMPT" "$SMOKE_INTEGRATOR_AGENT_TYPE" >/dev/null 2>&1
 }
 
-# A disposable repository does not make the Codex identity running
-# against it disposable too. Pointing the smoke's own `codex exec` at the
-# operator's real CODEX_HOME, as this fixture originally did, meant every write
-# that launch provoked -- project-trust registration included -- landed in
-# `config.toml` permanently, with no reliable path back out (nine orphan
-# tables were the measured proof). Isolating CODEX_HOME instead means the
-# only file that absorbs those writes lives under $SMOKE_ROOT and is removed
-# by the same trap as the rest of this fixture; the real config.toml is never
-# opened for writing by the smoke at all.
+# A disposable repository does not make the Codex identity running against it
+# disposable too. Pointing the smoke's own `codex exec` at the operator's real
+# CODEX_HOME, as this fixture originally did, meant every write that launch
+# provoked -- project-trust registration included -- landed in `config.toml`
+# permanently, with no reliable path back out (nine orphan tables were the
+# measured proof). Isolating CODEX_HOME instead means the only file that
+# absorbs those writes lives under $SMOKE_ROOT and is removed by the same trap
+# as the rest of this fixture; the real config.toml is never opened for writing
+# by the smoke at all.
 #
 # The credentials contradiction this creates is resolved by copying, never
 # symlinking, the operator's auth.json into the disposable home: a symlink

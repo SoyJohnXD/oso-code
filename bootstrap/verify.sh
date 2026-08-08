@@ -360,10 +360,10 @@ fi
 #     actually shipped from here, twice (bb4356f, 88f0c1e) — both times in
 #     install.ps1 or install.bat, which nothing was scanning.
 #     Those two were named one by one until verify.bat landed beside them as the
-#     third file of exactly that class, so both extensions glob now: a
-#     hand-written list is honest only until the next entry point lands unnamed,
-#     which is the same reasoning ci.yml's own `bash -n` steps glob under, and
-#     bootstrap/ is where every Windows entry point this repo ships lives.
+#     third file of exactly that class, so both extensions glob now: a hand-written
+#     list is honest only until the next entry point lands unnamed, which is the
+#     same reasoning ci.yml's own `bash -n` steps glob under, and bootstrap/ is
+#     where every Windows entry point this repo ships lives.
 #     grep exits 1 on a clean tree, so guard the substitution like the rest of this
 #     block; keep grep's stderr in the value so a scan path that vanished fails loudly
 #     instead of reporting green on nothing scanned.
