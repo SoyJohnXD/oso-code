@@ -620,7 +620,7 @@ fi
 
 LINT_RULE_COUNT_FIXTURE="$TEST_HOME/lint-rule-count"
 copy_lint_fixture "$LINT_RULE_COUNT_FIXTURE"
-sed 's/thirty rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
+sed 's/thirty-one rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
   > "$LINT_RULE_COUNT_FIXTURE/README.md.tmp"
 mv "$LINT_RULE_COUNT_FIXTURE/README.md.tmp" "$LINT_RULE_COUNT_FIXTURE/README.md"
 if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
@@ -628,7 +628,7 @@ if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
   echo "FAIL: check_present_tense_prose_names_the_rule_count accepted stale present-tense rule-count prose"; fail=$((fail + 1))
 else
   case "$rule_count_lint_report" in
-    *"README.md does not name the thirty rules this linter declares"*)
+    *"README.md does not name the thirty-one rules this linter declares"*)
       echo "ok: check_present_tense_prose_names_the_rule_count rejects stale present-tense rule-count prose"; pass=$((pass + 1)) ;;
     *)
       echo "FAIL: check_present_tense_prose_names_the_rule_count mutation failed for the wrong reason — $(printf '%s' "$rule_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
@@ -923,6 +923,72 @@ else
         echo "ok: rule 30 rejects a roadmap autonomy policy that stops naming the forced deletion it may never take"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: rule 30 mutation failed for the wrong reason — $(printf '%s' "$roadmap_policy_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+# Rule 31 holds the two texts that hand a decision to the operator to keeping that
+# instruction absolute while naming the roadmap that conditions it. The worse of
+# the two half-landed edits is the flow body losing the absolute: the roadmap
+# clause stays, reads as the whole rule, and every change in every repository then
+# has its decisions taken for it. Strip that one sentence from the route line and
+# leave the rest of it standing — the condition, its queued bound and the relaunch
+# — so only the absolute half of the guard can fire, and assert the condition
+# survived rather than trusting the sed to have been surgical.
+LINT_ROADMAP_SCOPE_FIXTURE="$TEST_HOME/lint-roadmap-scope"
+copy_lint_fixture "$LINT_ROADMAP_SCOPE_FIXTURE"
+roadmap_scope_target="$LINT_ROADMAP_SCOPE_FIXTURE/plugin/skills/_shared/bodies/plan.md"
+if ! grep -qF "Never answer on the user's behalf." "$roadmap_scope_target"; then
+  echo "FAIL: rule 31 mutation found no absolute decision instruction to strip from plan.md's applier-blocked route"; fail=$((fail + 1))
+else
+  sed "s/ Never answer on the user's behalf\.//" "$roadmap_scope_target" \
+    > "$roadmap_scope_target.tmp"
+  mv "$roadmap_scope_target.tmp" "$roadmap_scope_target"
+  if grep -qiF "answer on the user's behalf" "$roadmap_scope_target"; then
+    echo "FAIL: rule 31 mutation left the absolute decision instruction standing in plan.md"; fail=$((fail + 1))
+  elif ! grep -qiF 'Under a ROADMAP the user is not there to resolve them' "$roadmap_scope_target"; then
+    echo "FAIL: rule 31 mutation took the roadmap condition it was supposed to leave standing"; fail=$((fail + 1))
+  elif roadmap_scope_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_ROADMAP_SCOPE_FIXTURE/plugin" "$LINT_ROADMAP_SCOPE_FIXTURE" 2>&1)"; then
+    echo "FAIL: an applier-blocked route whose roadmap condition outlived its absolute passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$roadmap_scope_report" in
+      *"applier-blocked route drops the clause that keeps a roadmap a bounded exception: never answer on the user's behalf"*)
+        echo "ok: rule 31 rejects an applier-blocked route whose roadmap condition swallowed the absolute beside it"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: rule 31 mutation failed for the wrong reason — $(printf '%s' "$roadmap_scope_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+# The rule's other end, and the other half-landed edit: the output style keeps the
+# absolute AND the roadmap while losing the BOUND, so the exception reads as a
+# policy that answers everything — the destructive migration and the four things it
+# may never take included. Strip the queued clause alone, which is also what proves
+# the two ends are read separately: a rule holding only the flow body would pass
+# this fixture, since plan.md is untouched here.
+LINT_ROADMAP_BOUND_FIXTURE="$TEST_HOME/lint-roadmap-bound"
+copy_lint_fixture "$LINT_ROADMAP_BOUND_FIXTURE"
+roadmap_bound_target="$LINT_ROADMAP_BOUND_FIXTURE/plugin/output-styles/oso.md"
+if ! grep -qF 'while anything the policy refuses is queued for them rather than guessed' "$roadmap_bound_target"; then
+  echo "FAIL: rule 31 mutation found no queued bound to strip from the output style's decision rule"; fail=$((fail + 1))
+else
+  sed 's/, while anything the policy refuses is queued for them rather than guessed//' \
+    "$roadmap_bound_target" > "$roadmap_bound_target.tmp"
+  mv "$roadmap_bound_target.tmp" "$roadmap_bound_target"
+  if grep -qiF 'queued' "$roadmap_bound_target"; then
+    echo "FAIL: rule 31 mutation left a queued bound standing in output-styles/oso.md"; fail=$((fail + 1))
+  elif ! grep -qiF 'roadmap' "$roadmap_bound_target"; then
+    echo "FAIL: rule 31 mutation took the roadmap condition it was supposed to leave standing"; fail=$((fail + 1))
+  elif roadmap_bound_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_ROADMAP_BOUND_FIXTURE/plugin" "$LINT_ROADMAP_BOUND_FIXTURE" 2>&1)"; then
+    echo "FAIL: a decision rule whose roadmap exception lost its queued bound passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$roadmap_bound_report" in
+      *"output-styles/oso.md's decision rule drops the clause that keeps a roadmap a bounded exception: queued"*)
+        echo "ok: rule 31 rejects a decision rule whose roadmap exception stops saying what the policy refuses"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: rule 31 mutation failed for the wrong reason — $(printf '%s' "$roadmap_bound_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi

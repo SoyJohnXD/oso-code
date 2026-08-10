@@ -2,7 +2,7 @@
 # Lints the rules `claude plugin validate --strict` has no opinion on: it does
 # open hooks.json, skill frontmatter and the agents, and fails on a broken one
 # (probed against client 2.1.220), but it never asks what they SAY.
-# Thirty rules hold that ground: a `context: fork` skill declares
+# Thirty-one rules hold that ground: a `context: fork` skill declares
 # `background`; the same skill declares an `end with exactly one of:` verdict
 # block; every `oso-code:<name>` the plugin's own prose points at resolves; every
 # call site of a skill OR AGENT that declares such a block carries EVERY token
@@ -61,7 +61,11 @@
 # decision by, the delegated record whichever tier answers takes, the
 # irreversibility bar and the four-item never-solo list that stop it deciding at
 # all, and the inherited entry and the reconciliation that keep the global ledger
-# answering a child's question without overruling the child's own evidence. Each rule
+# answering a child's question without overruling the child's own evidence; and the
+# two texts that hand a decision to the operator — the plan body's applier-blocked
+# route and the output style's decision rule — keep that instruction absolute while
+# naming the roadmap that conditions it and the queued outcome that bounds what the
+# condition buys. Each rule
 # states its own reason above it; `background` is the one whose cost is least
 # visible: as of client v2.1.218 a fork returns immediately and its verdict
 # arrives in a LATER turn, while every call site in plan/quick/debug reads that
@@ -849,6 +853,7 @@ check_present_tense_prose_names_the_rule_count() {
     22) spelled=twenty-two ;; 23) spelled=twenty-three ;; 24) spelled=twenty-four ;;
     25) spelled=twenty-five ;; 26) spelled=twenty-six ;; 27) spelled=twenty-seven ;;
     28) spelled=twenty-eight ;; 29) spelled=twenty-nine ;; 30) spelled=thirty ;;
+    31) spelled=thirty-one ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -1430,6 +1435,63 @@ check_roadmap_autonomy_policy_declares_its_ladder_and_its_bar() {
   done
 }
 
+# Two texts in this harness tell the flow to hand a decision to the operator and
+# to do nothing else with it, and a roadmap is the one execution where nobody is
+# there to take one — so both carry a condition naming that case, and how tightly
+# that condition is written is the difference between the mode being safe and
+# being a licence. Written tight it reaches only a queue the operator approved a
+# policy over before leaving. Lose the absolute half and every change in every
+# repository has its decisions taken for it, which is the behaviour this harness
+# exists to refuse; keep the absolute half but lose the BOUND and the exception
+# reads as a policy answering everything, the destructive migration and the four
+# things that policy may never take at all included. Neither loss shows up as a
+# broken flow: both read as fluent prose and change only what an agent does with a
+# decision it should never have taken.
+#
+# So each text is held to three clauses on its own line — the absolute instruction
+# in its own words, the roadmap that conditions it, and the QUEUED outcome that
+# bounds what the condition buys. One line each carries the locator and no other
+# line of either file does, so all three markers are asked of that one value. The
+# two marker sets differ because the two texts state the absolute differently —
+# the flow body forbids answering for the user, the output style says the human
+# decides — and holding each to its own words is what stops a rewrite satisfying
+# this rule by quoting the other file. Its ceiling: each host's always-loaded
+# routing file carries the same instruction as one of the OPERATOR's own global
+# rules rather than as a step of this flow, so neither is on this list, and a
+# rewording that keeps a clause in other words ("queues" for "queued") fails here
+# too, which errs toward flagging rather than toward missing one.
+check_roadmap_condition_never_loosens_the_operator_rule() {
+  local body="$PLUGIN_ROOT/skills/_shared/bodies/plan.md"
+  local style="$PLUGIN_ROOT/output-styles/oso.md"
+  local route persona marker
+  if [ ! -f "$body" ]; then
+    flag "no plan body at skills/_shared/bodies/plan.md to check what its applier-blocked route grants a roadmap"
+  else
+    route="$({ grep -F -- 'If it returns `blocked`:' "$body" 2>&1 || true; })"
+    if [ -z "$route" ]; then
+      flag "skills/_shared/bodies/plan.md states no applier-blocked route, the one text where a roadmap's policy answers a slice's own question"
+    else
+      for marker in "never answer on the user's behalf" 'roadmap' 'queued'; do
+        printf '%s\n' "$route" | grep -qiF -- "$marker" \
+          || flag "skills/_shared/bodies/plan.md's applier-blocked route drops the clause that keeps a roadmap a bounded exception: $marker"
+      done
+    fi
+  fi
+  if [ ! -f "$style" ]; then
+    flag "no output-styles/oso.md to check what its decision rule grants a roadmap"
+    return 0
+  fi
+  persona="$({ grep -F -- 'When a real decision exists' "$style" 2>&1 || true; })"
+  if [ -z "$persona" ]; then
+    flag "output-styles/oso.md states no decision rule, the one text that tells every reply who decides"
+    return 0
+  fi
+  for marker in 'the human decides' 'roadmap' 'queued'; do
+    printf '%s\n' "$persona" | grep -qiF -- "$marker" \
+      || flag "output-styles/oso.md's decision rule drops the clause that keeps a roadmap a bounded exception: $marker"
+  done
+}
+
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }
 
 check_forked_skills_declare_background
@@ -1462,6 +1524,7 @@ check_sweep_exit_bar_is_banded_and_capped
 check_sweep_loop_remembers_its_dispositioned_findings
 check_roadmap_umbrella_approval_names_its_bounds
 check_roadmap_autonomy_policy_declares_its_ladder_and_its_bar
+check_roadmap_condition_never_loosens_the_operator_rule
 
 if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"
