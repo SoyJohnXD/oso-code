@@ -1,7 +1,7 @@
 {
   "name": "oso-code",
-  "version": "0.21.0",
-  "description": "Team harness for Codex with plan, quick, and debug modes, delegated apply/verify loops, runtime gates, and quality review passes.",
+  "version": "0.22.0",
+  "description": "Team harness for Codex with plan, quick, debug and roadmap modes, delegated apply/verify loops, runtime gates, and quality review passes.",
   "author": {
     "name": "Osoria Tech",
     "url": "https://github.com/SoyJohnXD"
@@ -20,7 +20,7 @@
   "interface": {
     "displayName": "oso-code",
     "shortDescription": "Plan, apply, verify, and review changes in Codex.",
-    "longDescription": "A disciplined engineering harness for Codex with substantial, quick, and debug workflows, delegated agents, lifecycle gates, and zero-warning closes.",
+    "longDescription": "A disciplined engineering harness for Codex with substantial, quick, debug and queued-roadmap workflows, delegated agents, lifecycle gates, and zero-warning closes.",
     "developerName": "Osoria Tech",
     "category": "Developer Tools",
     "capabilities": [

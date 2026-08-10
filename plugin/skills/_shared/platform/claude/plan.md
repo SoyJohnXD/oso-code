@@ -12,6 +12,8 @@ The tool is `AskUserQuestion`, and one round holds 4 questions maximum — its p
 
 `ExitPlanMode` is the single approval gate, and the plan document §5 builds is its `plan` argument — repaso-first, full-detail-after. Its native approval UI is what renders that document, and the operator's approval there is what starts execution. On approval, exit Plan Mode.
 
+Where this change is running as a child of the ROADMAP mode's chain, this gate is not its to reach: `roadmap.md` beside this file states what stands in its place — the one approval that mode's §3 took, and the plain-text delivery §5's document rides instead of the `plan` argument above. Read it there before phase 1, and present no gate the roadmap already passed.
+
 ## Making a launch wait
 
 Since client v2.1.198 a subagent runs in the BACKGROUND unless the call passes `run_in_background: false`, and a background result arrives in a LATER turn. So every subagent delegation §6 makes — applier, verifier and integrator alike — carries `run_in_background: false`, and that flag is what turns a delegation into the wait the neutral body requires, for one of them and for N in a single message alike.

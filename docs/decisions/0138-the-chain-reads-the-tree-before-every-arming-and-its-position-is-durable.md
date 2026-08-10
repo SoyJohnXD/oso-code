@@ -1,0 +1,62 @@
+# 0138 — The chain reads the tree before every arming, and its position is durable
+
+Date: 2026-08-10
+Status: accepted
+Reconciled: applied — `docs/blueprint.md`'s Mode 4 phase 4 states the arming, the two words, the bar over both places it reads, the refusal and the durable position. The chain is `plugin/skills/_shared/bodies/roadmap.md` §4; the runtime key is written and disarmed there through the same `oso-state` verbs every flow here uses; `plugin/hooks/cleanup-state.sh` drops a state file naming a roadmap in flight for the session that armed it, worktrees first, and `plugin/hooks/warn-stale-state.sh` reports that file with the roadmap's resume route and the one command that drops the claim — both hooks' bytes therefore move in `bootstrap/hook-hashes.txt`, and no gate reads the key. `tests/plugin-lint.sh`'s `check_roadmap_chain_declares_its_tree_bar_and_its_state_key` holds the `git status --porcelain` bar, the worktree root read as a second place beside it, the refusal, the key's arming write, the `none` that disarms it, the gate it arms nowhere, and both hooks reading that exact key through the shared state reader. README's runtime-state paragraph carries the operator-facing half.
+Source: this change (roadmap-auto-mode); the set-aside dispositions ADR-0137 leaves behind on purpose — an applier's pending edits, a conflicted merge, a wave's standing worktrees — each of which the next child would otherwise have been armed over
+
+## Decision
+
+**The chain hands the next child ONE working tree in one repository, and it reads that tree before EVERY arming.** Everything a child is credited and judged on is read off it — its SLICE START is `HEAD`, its commit step runs `git -C <main checkout> add -A`, and its verifier judges `git -C <main checkout> diff HEAD` — so the bar is that the tree holds nothing but what that child is about to write.
+
+### Part 1 — two probes, because one place is not where a wave's mess lands
+
+`git -C <main checkout> status --porcelain`, and EMPTY is the bar — an untracked file included, since `add -A` takes one exactly as it takes a modification.
+
+A child that ran PARALLEL cuts worktrees beside that tree, so the bar reads a SECOND place: the WORKTREE ROOT, whose spelling is each host's `platform/<host>/plan.md`'s — the same file the child itself reads it from. Mode 1 cuts `<worktree root>/<slice>`, where the slice is the only component past that root and nothing in the path names the child that owns it, so a worktree left standing there is a name the next child's own first wave cuts. `git worktree add` creates the branch BEFORE it fails on the path: exit 128 over a path git already holds, and a dangling branch behind it. At arming time the next child's slices may not be cut yet, so nothing can say which path would collide — a worktree standing under that root fails the bar whichever child left it.
+
+Four things fail the bar, and the first three are what a set-aside leaves:
+
+- **A child set aside mid-slice** left its applier's uncommitted edits standing. Armed over them, the next child COMMITS them inside its first slice's commit and its verifier judges them inside that slice's diff — a child credited with work it never wrote, and a failing-check contract answering its "new or extended by THIS slice" question about somebody else's.
+- **A child set aside on a merge conflict** left the checkout conflicted with markers in it, both halves' branches standing beside it. As the next child's CHANGE BASE no bar can pass that, so its first verification is red for a reason no slice of it explains.
+- **A child set aside mid-WAVE** left that wave's worktrees standing, which no teardown of a never-integrated wave removes. The porcelain probe reads EMPTY over them, since a worktree dirties nothing in the main checkout — which is the whole of why the second probe exists.
+- **Whatever was already uncommitted when the chain started.** The same `add -A` and the same false attribution, and no exception is made for it: with the operator present a mis-commit is seen and amended, and this mode's whole premise is that nobody is watching the ones it writes.
+
+A probe that cannot answer at all passes NEITHER bar, because a fact nobody can read may never pass for the reassuring one. What the bar does not reach is the BRANCHES those worktrees hold: `oso/<change>/<slice>` names the change that owns it, so however many stand there the next child's cut collides with none, and neither probe reads them.
+
+### Part 2 — a bar that refuses arms nothing further, and touches nothing
+
+Every child still un-run is SET ASIDE with the tree or the standing worktree that stopped it and the child that left it, the runtime key is disarmed, and all of it reaches the presence phase beside everything the policy queued. It is not a stall in front of the operator: the chain reaches its end and REPORTS rather than waiting for somebody who is not coming, the same trade ADR-0137 makes when it lets a queued decision cost a child rather than the chain.
+
+Nothing the bar stopped on is touched on the way out, and each alternative was weighed and is worse:
+
+- **Discarding the work** is over ADR-0136's irreversibility bar, which refuses it before any tier is consulted: undoing a discard needs a restore rather than an edit and a re-run, and the work discarded is an applier's, never a tier's to spend.
+- **Committing it under the next child's name** is precisely the false attribution the bar exists to refuse, and committing it under the set-aside child's name puts work no verifier ever read into the base every later child builds and verifies on, which Mode 1's own close refuses for the same reason.
+- **Naming it and arming anyway** is the first of those two with a sentence in front of it.
+
+The tree is the operator's: the partial edits theirs to finish or drop, the conflict theirs to resolve or abort — it was a decision only they could take that set that child aside in the first place. A standing worktree is theirs the same way and for one reason more: `git worktree remove` refuses one holding uncommitted work, forcing it is on the never-solo list, and the SessionEnd teardown is no fallback — its own removal is unforced too, so it logs the failure and leaves the tree standing, then drops the state file that named the repository to prune it in. Such a worktree therefore stands INDEFINITELY and no later teardown reaches it, which the flow says plainly rather than implying somebody tidies up.
+
+### Part 3 — the position is written down, never remembered
+
+The chain runs IN-SESSION and needs no relaunch while the session lives; a compaction costs it nothing, because everything it knows is written down. Two of the three stores were already there — the roadmap's ledger topic holds the queue and every disposition, its `oso/index` row's `NEXT:` line holds the position — and the third is a runtime key naming the roadmap in flight, so a session that finds this repository already claimed learns what claimed it:
+
+- **Armed before the first child** with `oso-state set roadmap={roadmap}` and read back with `oso-state show`, the way every state write in these flows is.
+- **It arms NO gate**, and no gate ever will read it. A write that did not land therefore costs recoverability and never safety: record it and run on, rather than stopping a chain over a key nothing denies on. That is also what lets it be durable at all.
+- **Beside a child's own keys, never over them.** A state write merges, so `mode`, `active_slice` and `verify_green` keep saying exactly what the child makes them say, and the chain runs `oso-state clear` at no point between children.
+- **Disarmed the moment the chain has nothing left to arm** with `oso-state set roadmap=none` — the sentinel, because `oso-state` can set a key and never delete one, exactly as `active_slice=none` closes a slice. A claim on this repository that outlives its chain is an instruction to resume something nobody is running.
+
+A session that DIED mid-chain never reached that disarm, and the harness closes that end without depending on the flow: the SessionEnd teardown drops a state file naming a roadmap in flight for the session that armed it, worktrees first, and the SessionStart signal for this repository's own file names the roadmap's resume route instead of a change's when the file names one, plus the command that drops the claim locally. Nothing is auto-resumed: the next session is TOLD, and the operator's re-invocation is what runs.
+
+## Context
+
+The bar exists because ADR-0137 deliberately leaves a dirty tree behind. Every one of the four failing states is a state the harness itself produces on purpose — an applier's edits left for the operator to read, a conflict left exactly as git left it, a wave's worktrees left standing because no worktree is torn down while any slice of the wave is still working. With an operator present each of those is seen; in a chain the next arming is the first thing that touches them, and `add -A` cannot tell whose work it is committing.
+
+The worktree probe is not a second guess at the same fact. It exists because the first probe reads EMPTY over exactly the case that hurts most: a wave set aside dirties the main checkout nowhere, while its survivors sit on the very paths the next child's first wave will cut, with the same slice numbers and no child anywhere in the name.
+
+## Consequences
+
+- One dirty tree can end a roadmap early. That is the accepted cost of never committing work under a name that did not write it, and it is bounded and reported: every un-run child is set aside with the reason, and the presence phase ranks that item first because every child behind it went un-run.
+- A standing worktree can outlive every automated route to it. The record naming the repository goes with the state file, so nothing later can prune it — which is why its PATH travels to the presence phase rather than a count of them, and why the flow says the disposal is the operator's alone.
+- The runtime key is the first state key in this harness that no gate reads, and that is a property to keep rather than an omission to close. A key nothing denies on can be written best-effort, which is what makes a chain recoverable without making a failed write dangerous; wiring a gate to it later would trade that away.
+- Both `SessionEnd` and `SessionStart` handlers changed bytes, so `bootstrap/hook-hashes.txt` moves and a Codex operator must re-trust the installed hooks through `/hooks` after reinstalling. The trust boundary moving is what makes this release a reinstall on that host rather than a plugin update.
+- The worktree root the bar reads is spelled in each host's `platform/<host>/plan.md`, the file the child itself reads it from, and the roadmap's own platform files do not restate it. That keeps one spelling per host rather than two that can drift, and it means a reader following the roadmap body's deferral has to reach the plan platform file beside it.
