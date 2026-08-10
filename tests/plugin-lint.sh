@@ -2,7 +2,7 @@
 # Lints the rules `claude plugin validate --strict` has no opinion on: it does
 # open hooks.json, skill frontmatter and the agents, and fails on a broken one
 # (probed against client 2.1.220), but it never asks what they SAY.
-# Thirty-one rules hold that ground: a `context: fork` skill declares
+# Thirty-two rules hold that ground: a `context: fork` skill declares
 # `background`; the same skill declares an `end with exactly one of:` verdict
 # block; every `oso-code:<name>` the plugin's own prose points at resolves; every
 # call site of a skill OR AGENT that declares such a block carries EVERY token
@@ -65,7 +65,12 @@
 # two texts that hand a decision to the operator — the plan body's applier-blocked
 # route and the output style's decision rule — keep that instruction absolute while
 # naming the roadmap that conditions it and the queued outcome that bounds what the
-# condition buys. Each rule
+# condition buys; and that body's chain phase declares what an unattended arming
+# turns on — the porcelain bar it reads before handing one working tree to the
+# next child, the worktree root it reads beside it, the refusal it takes when
+# either fails, and the runtime key that makes the chain recoverable, armed and
+# disarmed by the flow, read by the two hooks that drop it and report it, and
+# gating nothing. Each rule
 # states its own reason above it; `background` is the one whose cost is least
 # visible: as of client v2.1.218 a fork returns immediately and its verdict
 # arrives in a LATER turn, while every call site in plan/quick/debug reads that
@@ -853,7 +858,7 @@ check_present_tense_prose_names_the_rule_count() {
     22) spelled=twenty-two ;; 23) spelled=twenty-three ;; 24) spelled=twenty-four ;;
     25) spelled=twenty-five ;; 26) spelled=twenty-six ;; 27) spelled=twenty-seven ;;
     28) spelled=twenty-eight ;; 29) spelled=twenty-nine ;; 30) spelled=thirty ;;
-    31) spelled=thirty-one ;;
+    31) spelled=thirty-one ;; 32) spelled=thirty-two ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -1492,6 +1497,57 @@ check_roadmap_condition_never_loosens_the_operator_rule() {
   done
 }
 
+# The same body's chain phase is the only section written for an execution nobody
+# watches, and four of its clauses are the whole of why an unwatched one can be
+# trusted. The first two are the bar it reads before it arms a child: ONE tree
+# crosses to the next child, and a child set aside mid-slice leaves uncommitted
+# edits in it while one set aside on a merge conflict leaves markers — arm over
+# either and the next child commits work it never wrote and is judged on it, an
+# attribution nothing downstream can tell from a real one. One set aside mid-WAVE
+# dirties that tree nowhere, so its worktrees are what the WORKTREE ROOT is read
+# as a SECOND place for, and what the next child's first cut collides with. Lose
+# either probe and an arming carries one; lose the refusal and the bar is advice.
+#
+# The third is the key that makes a chain recoverable at all, and the fourth is
+# that no gate reads it: the flow arms the key, a SessionEnd sweep drops it, and a
+# SessionStart signal turns it into the resume command a dead run's next session
+# gets — durable state whose orphan may deny nothing, which is the one property
+# that lets it be durable. That contract is spelled in three files and nothing but
+# this rule holds the spelling together: rename the key in the body and every test
+# still passes while recovery never fires again, since each side stays internally
+# consistent. So the body is held to the write, to the `none` that disarms it and
+# to the gate it arms nowhere, and both hooks to reading that exact key through the
+# shared state reader — the closing paren is part of the marker, or a hook renaming
+# the key to `roadmap_slug` would satisfy a check looking for a prefix of its own
+# new name. The spelling is this rule's ceiling: whether the hooks then behave is
+# tests/hooks-test.sh's, where the sweep's reach and the signal's silence are
+# proved case by case.
+check_roadmap_chain_declares_its_tree_bar_and_its_state_key() {
+  local body="$PLUGIN_ROOT/skills/_shared/bodies/roadmap.md"
+  local phase hook marker
+  if [ ! -f "$body" ]; then
+    flag "no roadmap body at skills/_shared/bodies/roadmap.md to check what its chain hands the next child"
+    return 0
+  fi
+  phase="$({ sed -n '/^## [0-9][0-9]*\. The chain/,/^## /p' "$body" 2>&1 || true; })"
+  if [ -z "$phase" ]; then
+    flag "skills/_shared/bodies/roadmap.md carries no numbered chain phase to check what it hands the next child"
+    return 0
+  fi
+  for marker in 'status --porcelain' 'a SECOND place: the WORKTREE ROOT' \
+      'arms nothing further' 'arms no gate' 'roadmap={roadmap}' 'roadmap=none'; do
+    printf '%s\n' "$phase" | grep -qiF -- "$marker" \
+      || flag "skills/_shared/bodies/roadmap.md's chain phase drops a clause its unattended arming turns on: $marker"
+  done
+  for hook in plugin/hooks/warn-stale-state.sh plugin/hooks/cleanup-state.sh; do
+    if [ ! -f "$REPO_ROOT/$hook" ]; then
+      flag "no $hook to check that it reads the roadmap key that body's chain phase arms"
+    elif ! grep -qF -- 'state_value "$state_file" roadmap)' "$REPO_ROOT/$hook"; then
+      flag "$hook never reads the roadmap key the roadmap body's chain phase arms and disarms"
+    fi
+  done
+}
+
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }
 
 check_forked_skills_declare_background
@@ -1525,6 +1581,7 @@ check_sweep_loop_remembers_its_dispositioned_findings
 check_roadmap_umbrella_approval_names_its_bounds
 check_roadmap_autonomy_policy_declares_its_ladder_and_its_bar
 check_roadmap_condition_never_loosens_the_operator_rule
+check_roadmap_chain_declares_its_tree_bar_and_its_state_key
 
 if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"

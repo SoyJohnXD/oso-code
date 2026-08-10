@@ -104,6 +104,19 @@ clear_orphaned_pending_of() {
   done
 }
 
+clear_roadmap_in_flight_of() {
+  local session_id="$1" state_file roadmap
+  [ -n "$session_id" ] || return 0
+  for state_file in "$OSO_STATE_DIR"/*.state; do
+    [ -f "$state_file" ] || continue
+    [ "$(state_value "$state_file" session)" = "$session_id" ] || continue
+    roadmap="$(state_value "$state_file" roadmap)"
+    [ -n "$roadmap" ] && [ "$roadmap" != none ] || continue
+    remove_worktrees_of "$session_id" "$state_file"
+    drop_state_file "$state_file"
+  done
+}
+
 # Renaming is atomic, so an append racing this rotation lands whole in one file
 # or the other. Filtering the log in place would instead drop every line written
 # between the read and the swap, and a lost line is a deny nobody can audit.
@@ -146,6 +159,7 @@ own_state="$(state_armed_by "$session_id")"
 remove_worktrees_of "$session_id" "$own_state"
 drop_state_file "$own_state"
 clear_orphaned_pending_of "$(sanitize_session "$(json_field "$payload" session_id)")"
+clear_roadmap_in_flight_of "$session_id"
 rotate_aged_events_log
 prune_abandoned_state "$session_id" "$own_state"
 exit 0

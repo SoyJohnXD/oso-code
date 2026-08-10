@@ -436,8 +436,7 @@ backup_target() {
 # the new field alone. Migrating here, inside begin_transaction's own
 # backup/rollback machinery, is what lets a later step's failure roll a
 # touched state file back with everything else instead of leaving it
-# half-converted. Every other key in every other state file is left alone —
-# this release changes nothing else about the schema.
+# half-converted. Every other key in every other state file is left alone.
 migrate_plan_approval_state() {
   local state_file digest session
   [ -d "$OSO_STATE_DIR" ] || return 0

@@ -620,7 +620,7 @@ fi
 
 LINT_RULE_COUNT_FIXTURE="$TEST_HOME/lint-rule-count"
 copy_lint_fixture "$LINT_RULE_COUNT_FIXTURE"
-sed 's/thirty-one rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
+sed 's/thirty-two rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
   > "$LINT_RULE_COUNT_FIXTURE/README.md.tmp"
 mv "$LINT_RULE_COUNT_FIXTURE/README.md.tmp" "$LINT_RULE_COUNT_FIXTURE/README.md"
 if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
@@ -628,7 +628,7 @@ if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
   echo "FAIL: check_present_tense_prose_names_the_rule_count accepted stale present-tense rule-count prose"; fail=$((fail + 1))
 else
   case "$rule_count_lint_report" in
-    *"README.md does not name the thirty-one rules this linter declares"*)
+    *"README.md does not name the thirty-two rules this linter declares"*)
       echo "ok: check_present_tense_prose_names_the_rule_count rejects stale present-tense rule-count prose"; pass=$((pass + 1)) ;;
     *)
       echo "FAIL: check_present_tense_prose_names_the_rule_count mutation failed for the wrong reason — $(printf '%s' "$rule_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
@@ -989,6 +989,97 @@ else
         echo "ok: rule 31 rejects a decision rule whose roadmap exception stops saying what the policy refuses"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: rule 31 mutation failed for the wrong reason — $(printf '%s' "$roadmap_bound_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_CHAIN_TREE_FIXTURE="$TEST_HOME/lint-chain-tree"
+copy_lint_fixture "$LINT_CHAIN_TREE_FIXTURE"
+chain_tree_target="$LINT_CHAIN_TREE_FIXTURE/plugin/skills/_shared/bodies/roadmap.md"
+if ! grep -qF 'status --porcelain' "$chain_tree_target"; then
+  echo "FAIL: rule 32 mutation found no porcelain bar to strip from the roadmap body's chain phase"; fail=$((fail + 1))
+else
+  sed 's/ — `git -C <main checkout> status --porcelain`, and EMPTY is the bar//' \
+    "$chain_tree_target" > "$chain_tree_target.tmp"
+  mv "$chain_tree_target.tmp" "$chain_tree_target"
+  if grep -qF 'status --porcelain' "$chain_tree_target"; then
+    echo "FAIL: rule 32 mutation left the porcelain bar standing in the roadmap body"; fail=$((fail + 1))
+  elif ! grep -qiF 'arms nothing further' "$chain_tree_target"; then
+    echo "FAIL: rule 32 mutation took the refusal it was supposed to leave standing"; fail=$((fail + 1))
+  elif chain_tree_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_CHAIN_TREE_FIXTURE/plugin" "$LINT_CHAIN_TREE_FIXTURE" 2>&1)"; then
+    echo "FAIL: a chain phase that arms a child over any tree at all passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$chain_tree_report" in
+      *"chain phase drops a clause its unattended arming turns on: status --porcelain"*)
+        echo "ok: rule 32 rejects a chain phase whose tree bar stopped being mechanical"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: rule 32 mutation failed for the wrong reason — $(printf '%s' "$chain_tree_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_CHAIN_WORKTREE_FIXTURE="$TEST_HOME/lint-chain-worktree"
+copy_lint_fixture "$LINT_CHAIN_WORKTREE_FIXTURE"
+chain_worktree_target="$LINT_CHAIN_WORKTREE_FIXTURE/plugin/skills/_shared/bodies/roadmap.md"
+chain_worktree_probe='a SECOND place: the WORKTREE ROOT'
+if ! grep -qF "$chain_worktree_probe" "$chain_worktree_target"; then
+  echo "FAIL: rule 32 mutation found no second probe to strip from the roadmap body's chain phase"; fail=$((fail + 1))
+else
+  sed 's/, so the bar reads a SECOND place: the WORKTREE ROOT the platform file spells//' \
+    "$chain_worktree_target" > "$chain_worktree_target.tmp"
+  mv "$chain_worktree_target.tmp" "$chain_worktree_target"
+  if grep -qiF "$chain_worktree_probe" "$chain_worktree_target"; then
+    echo "FAIL: rule 32 mutation left the second probe standing in the roadmap body"; fail=$((fail + 1))
+  elif ! grep -qiF '<worktree root>/<slice>' "$chain_worktree_target"; then
+    echo "FAIL: rule 32 mutation took the path citation the probe's marker has to see past"; fail=$((fail + 1))
+  elif ! grep -qiF 'status --porcelain' "$chain_worktree_target"; then
+    echo "FAIL: rule 32 mutation took the porcelain probe it was supposed to leave standing"; fail=$((fail + 1))
+  elif chain_worktree_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_CHAIN_WORKTREE_FIXTURE/plugin" "$LINT_CHAIN_WORKTREE_FIXTURE" 2>&1)"; then
+    echo "FAIL: a chain phase reading no worktree root before it arms a PARALLEL child passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$chain_worktree_report" in
+      *"chain phase drops a clause its unattended arming turns on: $chain_worktree_probe"*)
+        echo "ok: rule 32 rejects a chain phase that lost its worktree-root probe while still citing \`<worktree root>/<slice>\`"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: rule 32 mutation failed for the wrong reason — $(printf '%s' "$chain_worktree_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_CHAIN_KEY_FIXTURE="$TEST_HOME/lint-chain-key"
+copy_lint_fixture "$LINT_CHAIN_KEY_FIXTURE"
+chain_key_target="$LINT_CHAIN_KEY_FIXTURE/plugin/hooks/warn-stale-state.sh"
+if ! grep -qF 'state_value "$state_file" roadmap)' "$chain_key_target"; then
+  echo "FAIL: rule 32 mutation found no roadmap key read to rename in warn-stale-state.sh"; fail=$((fail + 1))
+else
+  sed 's/state_value "$state_file" roadmap)/state_value "$state_file" roadmap_slug)/' \
+    "$chain_key_target" > "$chain_key_target.tmp"
+  mv "$chain_key_target.tmp" "$chain_key_target"
+  chain_key_hashes="$LINT_CHAIN_KEY_FIXTURE/bootstrap/hook-hashes.txt"
+  chain_key_digest="$({ sha256sum "$chain_key_target" 2>/dev/null ||
+    shasum -a 256 "$chain_key_target" 2>/dev/null; } || true)"
+  chain_key_digest="${chain_key_digest%% *}"
+  if [ -n "$chain_key_digest" ]; then
+    sed "s|^[0-9a-f]*  plugin/hooks/warn-stale-state.sh\$|$chain_key_digest  plugin/hooks/warn-stale-state.sh|" \
+      "$chain_key_hashes" > "$chain_key_hashes.tmp"
+    mv "$chain_key_hashes.tmp" "$chain_key_hashes"
+  fi
+  if grep -qF 'state_value "$state_file" roadmap)' "$chain_key_target"; then
+    echo "FAIL: rule 32 mutation left the original roadmap key read standing in the hook"; fail=$((fail + 1))
+  elif ! grep -qF 'state_value "$state_file" roadmap)' \
+      "$LINT_CHAIN_KEY_FIXTURE/plugin/hooks/cleanup-state.sh"; then
+    echo "FAIL: rule 32 mutation reached the other hook it was supposed to leave alone"; fail=$((fail + 1))
+  elif chain_key_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_CHAIN_KEY_FIXTURE/plugin" "$LINT_CHAIN_KEY_FIXTURE" 2>&1)"; then
+    echo "FAIL: a SessionStart signal reading a key no flow ever writes passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$chain_key_report" in
+      *"plugin/hooks/warn-stale-state.sh never reads the roadmap key"*)
+        echo "ok: rule 32 rejects a hook whose spelling of the roadmap key drifted from the flow that arms it"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: rule 32 mutation failed for the wrong reason — $(printf '%s' "$chain_key_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi
@@ -5603,6 +5694,30 @@ OSO_AGENT=1 run_hook cleanup-state.sh '{"session_id":"orphan-real-session"}'
 assert_after_hook "SessionEnd for the session whose plan_approval_session matches drops its own orphaned pending" \
   [ ! -f "$orphan_pending_state" ]
 
+# --- Runtime: SessionEnd drops a roadmap left in flight, and only that ----------
+roadmap_decoy_state="$STATE_DIR/aa-roadmap-decoy.state"
+roadmap_live_state="$STATE_DIR/zz-roadmap-live.state"
+printf 'mode=plan\nsession=roadmap-owner\n' > "$roadmap_decoy_state"
+printf 'mode=plan\nsession=roadmap-owner\nroadmap=auth-hardening\n' > "$roadmap_live_state"
+run_hook cleanup-state.sh '{"session_id":"roadmap-owner"}'
+assert_after_hook "the ownership sweep still takes the first file the glob hands it" \
+  [ ! -f "$roadmap_decoy_state" ]
+assert_after_hook "SessionEnd reaches the roadmap in flight the ownership sweep's first match left standing" \
+  [ ! -f "$roadmap_live_state" ]
+
+roadmap_foreign_state="$STATE_DIR/zz-roadmap-foreign.state"
+printf 'mode=plan\nsession=someone-else\nroadmap=auth-hardening\n' > "$roadmap_foreign_state"
+roadmap_disarmed_decoy="$STATE_DIR/aa-roadmap-disarmed-decoy.state"
+roadmap_disarmed_state="$STATE_DIR/zz-roadmap-disarmed.state"
+printf 'mode=plan\nsession=roadmap-finished\n' > "$roadmap_disarmed_decoy"
+printf 'mode=plan\nsession=roadmap-finished\nroadmap=none\n' > "$roadmap_disarmed_state"
+run_hook cleanup-state.sh '{"session_id":"roadmap-finished"}'
+assert_after_hook "SessionEnd leaves another session's roadmap in flight alone" \
+  [ -f "$roadmap_foreign_state" ]
+assert_after_hook "a disarmed roadmap key is left to the passes that already covered it" \
+  [ -f "$roadmap_disarmed_state" ]
+rm -f "$roadmap_foreign_state" "$roadmap_disarmed_state"
+
 # --- SessionStart: OSO_STATE_BIN reaches the real oso-state binary ---
 # The skills invoke "${OSO_STATE_BIN:-oso-state}"; this hook is what makes that
 # env var land in the session, so assert it resolves to a runnable binary.
@@ -5951,6 +6066,18 @@ else
     "$WORKTREES_DIR/orphan-wt-owner"
   assert_equals "clearing an orphaned pending leaves nothing of it registered in the repo" "1 -> 0" \
     "$registered_before -> $(worktrees_registered_for orphan-wt-owner)"
+
+  printf 'mode=plan\nsession=zz-roadmap-wt\n' > "$STATE_DIR/aa-roadmap-wt-decoy.state"
+  arm_wave_for zz-roadmap-wt "$WORKTREE_REPO"
+  printf 'roadmap=auth-hardening\n' >> "$STATE_DIR/zz-roadmap-wt.state"
+  roadmap_wt_before="$(worktrees_registered_for zz-roadmap-wt)"
+  run_hook cleanup-state.sh '{"session_id":"zz-roadmap-wt"}'
+  assert_pruned "clearing a roadmap in flight drops its state file" \
+    "$STATE_DIR/zz-roadmap-wt.state"
+  assert_pruned "clearing a roadmap in flight removes the worktree tree its last wave left" \
+    "$WORKTREES_DIR/zz-roadmap-wt"
+  assert_equals "clearing a roadmap in flight leaves nothing of it registered in the repo" "1 -> 0" \
+    "$roadmap_wt_before -> $(worktrees_registered_for zz-roadmap-wt)"
 fi
 
 # --- SessionStart: only THIS repository's own stale state is worth hearing ---
@@ -6033,6 +6160,49 @@ assert_allows "SessionStart says nothing where there is no state dir" \
   warn-stale-state.sh "$(stale_session_input)"
 HOME="$TEST_HOME"
 rm -rf "$WORKTREES_DIR/wt-parallel" "$REPO_STATE"
+
+# --- SessionStart: a roadmap a dead session left in flight gets its own route ---
+roadmap_state_of() {
+  printf 'mode=plan\nsession=other-session\nroadmap=%s\n' "$1" > "$REPO_STATE"
+}
+roadmap_state_of auth-hardening
+run_hook warn-stale-state.sh "$(stale_session_input)"
+assert_equals "the stale-state signal routes a roadmap in flight to the roadmap it names" \
+  "present" "$(if printf '%s' "$hook_stdout" | grep -F '/oso-code:roadmap auth-hardening' >/dev/null; then echo present; else echo missing; fi)"
+assert_equals "a roadmap in flight is never routed to the plan flow that runs its children" \
+  "" "$(printf '%s' "$hook_stdout" | grep -oF 'oso-code:plan' || true)"
+assert_equals "the roadmap route arrives with the disarm that drops the claim alone" \
+  "present" "$(if printf '%s' "$hook_stdout" | grep -F -- "--session \\\"$SESSION\\\" set roadmap=none" >/dev/null; then echo present; else echo missing; fi)"
+assert_equals "the roadmap route arrives with the clear that drops the whole file" \
+  "present" "$(if printf '%s' "$hook_stdout" | grep -F -- "--session \\\"$SESSION\\\" clear" >/dev/null; then echo present; else echo missing; fi)"
+
+OSO_AGENT=1 run_hook warn-stale-state.sh "$(stale_session_input)"
+assert_equals "Codex gets the roadmap resume route in its own invocation spelling" \
+  "present" "$(if printf '%s' "$hook_stdout" | grep -F '$oso-code:roadmap auth-hardening' >/dev/null; then echo present; else echo missing; fi)"
+
+roadmap_state_of 'Not A Slug; rm -rf /'
+run_hook warn-stale-state.sh "$(stale_session_input)"
+assert_equals "a value that is not a slug reaches the resume route as the placeholder, never as itself" \
+  "present" "$(if printf '%s' "$hook_stdout" | grep -F '/oso-code:roadmap {roadmap}' >/dev/null; then echo present; else echo missing; fi)"
+assert_equals "no unslugged value reaches the context the model reads" \
+  "" "$(printf '%s' "$hook_stdout" | grep -oF 'rm -rf' || true)"
+
+roadmap_state_of none
+run_hook warn-stale-state.sh "$(stale_session_input)"
+assert_equals "the disarmed sentinel puts the signal back on the plan route it had before" \
+  "present" "$(if printf '%s' "$hook_stdout" | grep -F '/oso-code:plan {change}' >/dev/null; then echo present; else echo missing; fi)"
+assert_equals "a disarmed roadmap is named nowhere in the signal" \
+  "" "$(printf '%s' "$hook_stdout" | grep -oF 'oso-code:roadmap' || true)"
+
+printf 'mode=plan\nsession=%s\nroadmap=auth-hardening\n' "$SESSION" > "$REPO_STATE"
+assert_allows "SessionStart says nothing about a roadmap this session is running itself" \
+  warn-stale-state.sh "$(stale_session_input)"
+
+rm -f "$REPO_STATE"
+printf 'mode=plan\nsession=other-session\nroadmap=auth-hardening\n' > "$STATE_DIR/other-roadmap.state"
+assert_allows "SessionStart says nothing about a roadmap in flight in another repository" \
+  warn-stale-state.sh "$(stale_session_input)"
+rm -f "$STATE_DIR/other-roadmap.state"
 
 # --- SessionStart: an install behind the release published for it -------------
 # The version this hook compares is the one in the manifest beside it, so the
