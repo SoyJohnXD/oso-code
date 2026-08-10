@@ -620,7 +620,7 @@ fi
 
 LINT_RULE_COUNT_FIXTURE="$TEST_HOME/lint-rule-count"
 copy_lint_fixture "$LINT_RULE_COUNT_FIXTURE"
-sed 's/thirty-two rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
+sed 's/thirty-three rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
   > "$LINT_RULE_COUNT_FIXTURE/README.md.tmp"
 mv "$LINT_RULE_COUNT_FIXTURE/README.md.tmp" "$LINT_RULE_COUNT_FIXTURE/README.md"
 if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
@@ -628,7 +628,7 @@ if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
   echo "FAIL: check_present_tense_prose_names_the_rule_count accepted stale present-tense rule-count prose"; fail=$((fail + 1))
 else
   case "$rule_count_lint_report" in
-    *"README.md does not name the thirty-two rules this linter declares"*)
+    *"README.md does not name the thirty-three rules this linter declares"*)
       echo "ok: check_present_tense_prose_names_the_rule_count rejects stale present-tense rule-count prose"; pass=$((pass + 1)) ;;
     *)
       echo "FAIL: check_present_tense_prose_names_the_rule_count mutation failed for the wrong reason — $(printf '%s' "$rule_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
@@ -1080,6 +1080,88 @@ else
         echo "ok: rule 32 rejects a hook whose spelling of the roadmap key drifted from the flow that arms it"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: rule 32 mutation failed for the wrong reason — $(printf '%s' "$chain_key_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_PRESENCE_PUSH_FIXTURE="$TEST_HOME/lint-presence-push"
+copy_lint_fixture "$LINT_PRESENCE_PUSH_FIXTURE"
+presence_push_target="$LINT_PRESENCE_PUSH_FIXTURE/plugin/skills/_shared/bodies/roadmap.md"
+presence_push_exclusion='A per-child CLOSE is none of the three'
+if ! grep -qF "$presence_push_exclusion" "$presence_push_target"; then
+  echo "FAIL: rule 33 mutation found no per-child-close exclusion to reword in the roadmap body's presence phase"; fail=$((fail + 1))
+else
+  sed "s/$presence_push_exclusion/A per-child close is one report among many/" \
+    "$presence_push_target" > "$presence_push_target.tmp"
+  mv "$presence_push_target.tmp" "$presence_push_target"
+  if grep -qiF "$presence_push_exclusion" "$presence_push_target"; then
+    echo "FAIL: rule 33 mutation left the per-child-close exclusion standing in the roadmap body"; fail=$((fail + 1))
+  elif ! grep -qiF 'chain is BLOCKED' "$presence_push_target"; then
+    echo "FAIL: rule 33 mutation took a notification moment it was supposed to leave standing"; fail=$((fail + 1))
+  elif presence_push_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_PRESENCE_PUSH_FIXTURE/plugin" "$LINT_PRESENCE_PUSH_FIXTURE" 2>&1)"; then
+    echo "FAIL: a presence phase that stopped excluding a per-child close from its three pushes passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$presence_push_report" in
+      *"presence phase drops a clause the operator's one return turns on: $presence_push_exclusion"*)
+        echo "ok: rule 33 rejects a presence phase whose three notification moments stopped excluding a per-child close"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: rule 33 mutation failed for the wrong reason — $(printf '%s' "$presence_push_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_PRESENCE_ORDER_FIXTURE="$TEST_HOME/lint-presence-order"
+copy_lint_fixture "$LINT_PRESENCE_ORDER_FIXTURE"
+presence_order_target="$LINT_PRESENCE_ORDER_FIXTURE/plugin/skills/_shared/bodies/roadmap.md"
+presence_order_rule='Prioritized means ORDERED'
+if ! grep -qF "$presence_order_rule" "$presence_order_target"; then
+  echo "FAIL: rule 33 mutation found no ordering rule to soften in the roadmap body's presence phase"; fail=$((fail + 1))
+else
+  sed "s/$presence_order_rule, and the order is a rule rather than a judgment/Prioritized means the items that matter most come first/" \
+    "$presence_order_target" > "$presence_order_target.tmp"
+  mv "$presence_order_target.tmp" "$presence_order_target"
+  if grep -qiF "$presence_order_rule" "$presence_order_target"; then
+    echo "FAIL: rule 33 mutation left the ordering rule standing in the roadmap body"; fail=$((fail + 1))
+  elif ! grep -qiF 'break every tie by' "$presence_order_target"; then
+    echo "FAIL: rule 33 mutation took the tie-break it was supposed to leave standing"; fail=$((fail + 1))
+  elif presence_order_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_PRESENCE_ORDER_FIXTURE/plugin" "$LINT_PRESENCE_ORDER_FIXTURE" 2>&1)"; then
+    echo "FAIL: a presence phase whose prioritized queue became a judgment call passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$presence_order_report" in
+      *"presence phase drops a clause the operator's one return turns on: $presence_order_rule"*)
+        echo "ok: rule 33 rejects a presence phase whose prioritized queue stopped being an order two runs reproduce"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: rule 33 mutation failed for the wrong reason — $(printf '%s' "$presence_order_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_ROADMAP_REPORT_BOUND_FIXTURE="$TEST_HOME/lint-roadmap-report-bound"
+copy_lint_fixture "$LINT_ROADMAP_REPORT_BOUND_FIXTURE"
+roadmap_report_bound_target="$LINT_ROADMAP_REPORT_BOUND_FIXTURE/plugin/skills/_shared/reporting.md"
+if ! grep -qF -- "A roadmap's final report" "$roadmap_report_bound_target"; then
+  echo "FAIL: the roadmap-report-bound mutation found no stated exception to remove from the milestone contract"; fail=$((fail + 1))
+else
+  sed '/^\*\*A roadmap.s final report\*\*/d' \
+    "$roadmap_report_bound_target" > "$roadmap_report_bound_target.tmp"
+  mv "$roadmap_report_bound_target.tmp" "$roadmap_report_bound_target"
+  if grep -qF -- "A roadmap's final report" "$roadmap_report_bound_target"; then
+    echo "FAIL: the roadmap-report-bound mutation left the stated exception standing"; fail=$((fail + 1))
+  elif ! grep -qE '^At most [0-9]+ lines' "$roadmap_report_bound_target"; then
+    echo "FAIL: the roadmap-report-bound mutation took the bound the exception is an exception to"; fail=$((fail + 1))
+  elif ! grep -qF -- 'The named residual' "$roadmap_report_bound_target"; then
+    echo "FAIL: the roadmap-report-bound mutation took the other exception it was supposed to leave standing"; fail=$((fail + 1))
+  elif roadmap_report_bound_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_ROADMAP_REPORT_BOUND_FIXTURE/plugin" "$LINT_ROADMAP_REPORT_BOUND_FIXTURE" 2>&1)"; then
+    echo "FAIL: a milestone contract that bounds a roadmap's whole final report at three lines passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$roadmap_report_bound_report" in
+      *"states no exception to that bound for a roadmap's final report"*)
+        echo "ok: check_milestone_reporting_contract_is_complete rejects a contract whose bound reaches a roadmap's final report"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the roadmap-report-bound mutation failed for the wrong reason — $(printf '%s' "$roadmap_report_bound_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi

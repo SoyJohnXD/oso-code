@@ -2,7 +2,7 @@
 # Lints the rules `claude plugin validate --strict` has no opinion on: it does
 # open hooks.json, skill frontmatter and the agents, and fails on a broken one
 # (probed against client 2.1.220), but it never asks what they SAY.
-# Thirty-two rules hold that ground: a `context: fork` skill declares
+# Thirty-three rules hold that ground: a `context: fork` skill declares
 # `background`; the same skill declares an `end with exactly one of:` verdict
 # block; every `oso-code:<name>` the plugin's own prose points at resolves; every
 # call site of a skill OR AGENT that declares such a block carries EVERY token
@@ -27,9 +27,9 @@
 # prose that says how many rules hold this ground says a number the functions
 # below make true; both hook manifests plus every
 # release-published hook hash exactly match their single source; the milestone
-# reporting contract names every required fact of its five milestones plus a
-# length bound, and every flow body that arms a slice or launches a delegation
-# points at it; the Claude-card/Codex-no-card difference the contract defers
+# reporting contract names every required fact of its six milestones plus a
+# length bound and the exception a roadmap's final report takes to that bound,
+# and every flow body that arms a slice or launches a delegation points at it; the Claude-card/Codex-no-card difference the contract defers
 # to a host lives in exactly one platform file per host, never in the neutral
 # body and never in both hosts' trees at once; the design-foundation slice
 # paragraph names what `init` and `document` each produce and requires reading
@@ -70,7 +70,12 @@
 # next child, the worktree root it reads beside it, the refusal it takes when
 # either fails, and the runtime key that makes the chain recoverable, armed and
 # disarmed by the flow, read by the two hooks that drop it and report it, and
-# gating nothing. Each rule
+# gating nothing; and that body's presence phase declares the one queue the
+# operator comes back to — every class of item that reaches it, the ranking that
+# makes `prioritized` an order two runs can reproduce rather than a judgment, the
+# three parts of the final report that heads it, and the three moments allowed to
+# interrupt an absent operator, a per-child close deliberately none of them.
+# Each rule
 # states its own reason above it; `background` is the one whose cost is least
 # visible: as of client v2.1.218 a fork returns immediately and its verdict
 # arrives in a LATER turn, while every call site in plan/quick/debug reads that
@@ -859,6 +864,7 @@ check_present_tense_prose_names_the_rule_count() {
     25) spelled=twenty-five ;; 26) spelled=twenty-six ;; 27) spelled=twenty-seven ;;
     28) spelled=twenty-eight ;; 29) spelled=twenty-nine ;; 30) spelled=thirty ;;
     31) spelled=thirty-one ;; 32) spelled=thirty-two ;;
+    33) spelled=thirty-three ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -907,11 +913,14 @@ check_hook_renders_and_published_hashes_match() {
 # An operator running unattended sees a tool call and its output and nothing
 # else unless something in the harness SAYS what it means — "report the
 # result" already existed before this rule and already produced the
-# complaint, so mention of the contract is not the bar: each of its five
+# complaint, so mention of the contract is not the bar: each of its six
 # milestone bullets must carry the facts that make it more than that sentence,
 # a length bound must exist so the fix does not trade silence for narration,
-# and every flow body that arms a slice or launches a delegation must point at
-# it — checked per body, never as one file's existence standing in for three.
+# a roadmap's final report must carry its stated exception to that bound or the
+# whole account of an unwatched run is trimmed to three lines to fit a contract
+# written for a slice, and every flow body that arms a slice or launches a
+# delegation must point at it — checked per body, never as one file's existence
+# standing in for three.
 # The required-fact markers below are this rule's own choice, not a text
 # copied out of the contract file — chosen because the contract's own prose
 # already carries them for the readability win they name, so a milestone
@@ -928,9 +937,13 @@ check_milestone_reporting_contract_is_complete() {
   milestone_bullet_names_its_facts "$contract" "Reading a verdict" "pass" "fail" "blocked" "fact"
   milestone_bullet_names_its_facts "$contract" "A judge's outcome" "verdict" "count"
   milestone_bullet_names_its_facts "$contract" "Closing" "commit" "next"
+  milestone_bullet_names_its_facts "$contract" "A child's disposition" \
+    "closed" "set aside" "next" "session stream"
 
   grep -qE '[Aa]t most [0-9]+ lines?' "$contract" \
     || flag "skills/_shared/reporting.md names no length bound on a milestone report"
+  grep -qF -- "A roadmap's final report" "$contract" \
+    || flag "skills/_shared/reporting.md states no exception to that bound for a roadmap's final report, so a whole unwatched run reaches its operator in three lines"
 
   # Discovered the same way rule 7 discovers an operator-only mode — from
   # `disable-model-invocation: true` frontmatter — rather than a hardcoded
@@ -1548,6 +1561,29 @@ check_roadmap_chain_declares_its_tree_bar_and_its_state_key() {
   done
 }
 
+check_roadmap_presence_phase_declares_its_order_and_its_three_pushes() {
+  local body="$PLUGIN_ROOT/skills/_shared/bodies/roadmap.md"
+  local phase marker
+  if [ ! -f "$body" ]; then
+    flag "no roadmap body at skills/_shared/bodies/roadmap.md to check what its one return hands the operator"
+    return 0
+  fi
+  phase="$({ sed -n '/^## [0-9][0-9]*\. The presence phase/,/^## /p' "$body" 2>&1 || true; })"
+  if [ -z "$phase" ]; then
+    flag "skills/_shared/bodies/roadmap.md carries no numbered presence phase to check what its one return hands the operator"
+    return 0
+  fi
+  for marker in 'non-code pendings' 'standing worktree' \
+      'as ONE item with the decision that set it aside' \
+      'Prioritized means ORDERED' 'break every tie by' \
+      'decided for them' 'deferred, and why' 'awaited their hand' \
+      'roadmap is COMPLETE' 'queue is READY' 'chain is BLOCKED' \
+      'A per-child CLOSE is none of the three' 'That is what ends a roadmap'; do
+    printf '%s\n' "$phase" | grep -qiF -- "$marker" \
+      || flag "skills/_shared/bodies/roadmap.md's presence phase drops a clause the operator's one return turns on: $marker"
+  done
+}
+
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }
 
 check_forked_skills_declare_background
@@ -1582,6 +1618,7 @@ check_roadmap_umbrella_approval_names_its_bounds
 check_roadmap_autonomy_policy_declares_its_ladder_and_its_bar
 check_roadmap_condition_never_loosens_the_operator_rule
 check_roadmap_chain_declares_its_tree_bar_and_its_state_key
+check_roadmap_presence_phase_declares_its_order_and_its_three_pushes
 
 if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"
