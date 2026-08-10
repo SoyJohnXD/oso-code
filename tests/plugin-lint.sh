@@ -722,92 +722,72 @@ check_sweep_loop_remembers_its_dispositioned_findings() {
 }
 
 check_roadmap_umbrella_approval_names_its_bounds() {
-  local body="$PLUGIN_ROOT/skills/_shared/bodies/roadmap.md"
-  local phase marker
+  roadmap_phase_names_its_clauses Approval 'Approval phase' \
+    'a clause that bounds its one approval' \
+    'planning every child' 'executing every child' 'every child' 'fresh approval' \
+    'plan document' 'platform file'
+}
+
+roadmap_phase_names_its_clauses() {
+  local heading="$1" flagged_as="$2" dropped="$3"
+  local body="$PLUGIN_ROOT/skills/_shared/bodies/roadmap.md" phase marker
+  shift 3
   if [ ! -f "$body" ]; then
-    flag "no roadmap body at skills/_shared/bodies/roadmap.md to check what its one approval covers"
+    flag "no roadmap body at skills/_shared/bodies/roadmap.md to check its $flagged_as"
     return 0
   fi
-  phase="$({ sed -n '/^## [0-9][0-9]*\. Approval/,/^## /p' "$body" 2>&1 || true; })"
+  phase="$({ sed -n "/^## [0-9][0-9]*\. $heading/,/^## /p" "$body" 2>&1 || true; })"
   if [ -z "$phase" ]; then
-    flag "skills/_shared/bodies/roadmap.md carries no numbered Approval phase to check what its one approval covers"
+    flag "skills/_shared/bodies/roadmap.md carries no numbered $flagged_as"
     return 0
   fi
-  for marker in 'planning every child' 'executing every child' 'every child' 'fresh approval' 'plan document' 'platform file'; do
+  for marker in "$@"; do
     printf '%s\n' "$phase" | grep -qiF -- "$marker" \
-      || flag "skills/_shared/bodies/roadmap.md's Approval phase drops a clause that bounds its one approval: $marker"
+      || flag "skills/_shared/bodies/roadmap.md's $flagged_as drops $dropped: $marker"
   done
 }
 
 check_roadmap_autonomy_policy_declares_its_ladder_and_its_bar() {
-  local body="$PLUGIN_ROOT/skills/_shared/bodies/roadmap.md"
-  local phase marker
-  if [ ! -f "$body" ]; then
-    flag "no roadmap body at skills/_shared/bodies/roadmap.md to check what its autonomy policy may decide"
-    return 0
-  fi
-  phase="$({ sed -n '/^## [0-9][0-9]*\. The autonomy policy/,/^## /p' "$body" 2>&1 || true; })"
-  if [ -z "$phase" ]; then
-    flag "skills/_shared/bodies/roadmap.md carries no numbered autonomy-policy phase to check what its policy may decide"
-    return 0
-  fi
-  for marker in "the flow's own recommendation" 'standard practice' 'simplest for the operator' \
-      'recorded as delegated' 'irreversibility bar' 'never-solo' 'never a push' \
-      'ledger amendment' 'security residual' 'forced deletion' 'inherited' 'reconciliation'; do
-    printf '%s\n' "$phase" | grep -qiF -- "$marker" \
-      || flag "skills/_shared/bodies/roadmap.md's autonomy-policy phase drops a clause its policy turns on: $marker"
-  done
+  roadmap_phase_names_its_clauses 'The autonomy policy' 'autonomy-policy phase' \
+    'a clause its policy turns on' \
+    "the flow's own recommendation" 'standard practice' 'simplest for the operator' \
+    'recorded as delegated' 'irreversibility bar' 'never-solo' 'never a push' \
+    'ledger amendment' 'security residual' 'forced deletion' 'inherited' 'reconciliation'
 }
 
 check_roadmap_condition_never_loosens_the_operator_rule() {
-  local body="$PLUGIN_ROOT/skills/_shared/bodies/plan.md"
-  local style="$PLUGIN_ROOT/output-styles/oso.md"
-  local route persona marker
-  if [ ! -f "$body" ]; then
-    flag "no plan body at skills/_shared/bodies/plan.md to check what its applier-blocked route grants a roadmap"
-  else
-    route="$({ grep -F -- 'If it returns `blocked`:' "$body" 2>&1 || true; })"
-    if [ -z "$route" ]; then
-      flag "skills/_shared/bodies/plan.md states no applier-blocked route, the one text where a roadmap's policy answers a slice's own question"
-    else
-      for marker in "never answer on the user's behalf" 'roadmap' 'queued'; do
-        printf '%s\n' "$route" | grep -qiF -- "$marker" \
-          || flag "skills/_shared/bodies/plan.md's applier-blocked route drops the clause that keeps a roadmap a bounded exception: $marker"
-      done
-    fi
-  fi
-  if [ ! -f "$style" ]; then
-    flag "no output-styles/oso.md to check what its decision rule grants a roadmap"
+  roadmap_exception_stays_bounded_in "$PLUGIN_ROOT/skills/_shared/bodies/plan.md" \
+    'If it returns `blocked`:' 'applier-blocked route' \
+    "never answer on the user's behalf" 'roadmap' 'queued'
+  roadmap_exception_stays_bounded_in "$PLUGIN_ROOT/output-styles/oso.md" \
+    'When a real decision exists' 'decision rule' \
+    'the human decides' 'roadmap' 'queued'
+}
+
+roadmap_exception_stays_bounded_in() {
+  local file="$1" anchor="$2" flagged_as="$3" text marker
+  shift 3
+  if [ ! -f "$file" ]; then
+    flag "no ${file#"$PLUGIN_ROOT"/} to check what its $flagged_as grants a roadmap"
     return 0
   fi
-  persona="$({ grep -F -- 'When a real decision exists' "$style" 2>&1 || true; })"
-  if [ -z "$persona" ]; then
-    flag "output-styles/oso.md states no decision rule, the one text that tells every reply who decides"
+  text="$({ grep -F -- "$anchor" "$file" 2>&1 || true; })"
+  if [ -z "$text" ]; then
+    flag "${file#"$PLUGIN_ROOT"/} states no $flagged_as, the one text whose absolute a roadmap may never loosen"
     return 0
   fi
-  for marker in 'the human decides' 'roadmap' 'queued'; do
-    printf '%s\n' "$persona" | grep -qiF -- "$marker" \
-      || flag "output-styles/oso.md's decision rule drops the clause that keeps a roadmap a bounded exception: $marker"
+  for marker in "$@"; do
+    printf '%s\n' "$text" | grep -qiF -- "$marker" \
+      || flag "${file#"$PLUGIN_ROOT"/}'s $flagged_as drops the clause that keeps a roadmap a bounded exception: $marker"
   done
 }
 
 check_roadmap_chain_declares_its_tree_bar_and_its_state_key() {
-  local body="$PLUGIN_ROOT/skills/_shared/bodies/roadmap.md"
-  local phase hook marker
-  if [ ! -f "$body" ]; then
-    flag "no roadmap body at skills/_shared/bodies/roadmap.md to check what its chain hands the next child"
-    return 0
-  fi
-  phase="$({ sed -n '/^## [0-9][0-9]*\. The chain/,/^## /p' "$body" 2>&1 || true; })"
-  if [ -z "$phase" ]; then
-    flag "skills/_shared/bodies/roadmap.md carries no numbered chain phase to check what it hands the next child"
-    return 0
-  fi
-  for marker in 'status --porcelain' 'a SECOND place: the WORKTREE ROOT' \
-      'arms nothing further' 'arms no gate' 'roadmap={roadmap}' 'roadmap=none'; do
-    printf '%s\n' "$phase" | grep -qiF -- "$marker" \
-      || flag "skills/_shared/bodies/roadmap.md's chain phase drops a clause its unattended arming turns on: $marker"
-  done
+  local hook
+  roadmap_phase_names_its_clauses 'The chain' 'chain phase' \
+    'a clause its unattended arming turns on' \
+    'status --porcelain' 'a SECOND place: the WORKTREE ROOT' \
+    'arms nothing further' 'arms no gate' 'roadmap={roadmap}' 'roadmap=none'
   for hook in plugin/hooks/warn-stale-state.sh plugin/hooks/cleanup-state.sh; do
     if [ ! -f "$REPO_ROOT/$hook" ]; then
       flag "no $hook to check that it reads the roadmap key that body's chain phase arms"
@@ -818,26 +798,14 @@ check_roadmap_chain_declares_its_tree_bar_and_its_state_key() {
 }
 
 check_roadmap_presence_phase_declares_its_order_and_its_three_pushes() {
-  local body="$PLUGIN_ROOT/skills/_shared/bodies/roadmap.md"
-  local phase marker
-  if [ ! -f "$body" ]; then
-    flag "no roadmap body at skills/_shared/bodies/roadmap.md to check what its one return hands the operator"
-    return 0
-  fi
-  phase="$({ sed -n '/^## [0-9][0-9]*\. The presence phase/,/^## /p' "$body" 2>&1 || true; })"
-  if [ -z "$phase" ]; then
-    flag "skills/_shared/bodies/roadmap.md carries no numbered presence phase to check what its one return hands the operator"
-    return 0
-  fi
-  for marker in 'non-code pendings' 'standing worktree' \
-      'as ONE item with the decision that set it aside' \
-      'Prioritized means ORDERED' 'break every tie by' \
-      'decided for them' 'deferred, and why' 'awaited their hand' \
-      'roadmap is COMPLETE' 'queue is READY' 'chain is BLOCKED' \
-      'A per-child CLOSE is none of the three' 'That is what ends a roadmap'; do
-    printf '%s\n' "$phase" | grep -qiF -- "$marker" \
-      || flag "skills/_shared/bodies/roadmap.md's presence phase drops a clause the operator's one return turns on: $marker"
-  done
+  roadmap_phase_names_its_clauses 'The presence phase' 'presence phase' \
+    "a clause the operator's one return turns on" \
+    'non-code pendings' 'standing worktree' \
+    'as ONE item with the decision that set it aside' \
+    'Prioritized means ORDERED' 'break every tie by' \
+    'decided for them' 'deferred, and why' 'awaited their hand' \
+    'roadmap is COMPLETE' 'queue is READY' 'chain is BLOCKED' \
+    'A per-child CLOSE is none of the three' 'That is what ends a roadmap'
 }
 
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }

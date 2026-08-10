@@ -22,6 +22,15 @@ All of it. §3's approval is the only one this host asks the operator for: §4 r
 
 Wherever the neutral body names a file as `_shared/<file>.md`, it is spelled `${CLAUDE_SKILL_DIR}/../_shared/<file>.md` here. That interpolation resolves to an absolute path, which is what a payload handed to another context needs.
 
+## The state command and the worktree root — routed to `plan.md`, not restated here
+
+§4 reaches for two host spellings, and both are already written in `plan.md` beside this file, where the child itself reads them. This file ROUTES to them and restates neither, so one spelling per host cannot drift into two:
+
+- **The state command** — every `oso-state <verb> …` §4 instructs, its `set roadmap={roadmap}`, its `set roadmap=none` and the `show` that reads either back included, runs under the prefix that file's own **The state command** section spells. Spelled bare, without that prefix, the command exits on its usage message and writes nothing at all, so following this route is not optional.
+- **The worktree root** — `<worktree root>`, the SECOND place §4's bar reads before every arming, is the path that file's own **The worktree root** section spells.
+
+READ both sections there before §4 arms its first child.
+
 ## Reporting binding
 
 READ `reporting.md` beside this file NOW. It is the single Claude Code binding for what this host's own UI shows, and does not show, when the milestone contract at `../../reporting.md` fires.

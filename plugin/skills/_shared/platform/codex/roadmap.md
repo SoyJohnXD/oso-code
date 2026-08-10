@@ -22,6 +22,15 @@ That is a DEGRADATION against the flow the neutral body describes, not a local v
 
 Wherever the neutral body names a file as `_shared/<file>.md`, it is spelled `../_shared/<file>.md` here, resolved against the directory holding the `SKILL.md` you were routed through — the resolution rule Codex states for every relative path a skill writes. Expand it to an absolute path before putting it in a payload another context reads.
 
+## The state command and the worktree root — routed to `plan.md`, not restated here
+
+§4 reaches for two host spellings, and both are already written in `plan.md` beside this file, where the child itself reads them. This file ROUTES to them and restates neither, so one spelling per host cannot drift into two:
+
+- **The state command** — every `oso-state <verb> …` §4 instructs, its `set roadmap={roadmap}`, its `set roadmap=none` and the `show` that reads either back included, runs under the binary and the session marker that file's own **The state command** section spells. Spelled bare, without them, the command exits on its usage message and writes nothing at all, so following this route is not optional.
+- **The worktree root** — `<worktree root>`, the SECOND place §4's bar reads before every arming, is the path that file's own **The worktree root** section spells.
+
+READ both sections there before §4 arms its first child.
+
 ## Reporting binding
 
 READ `reporting.md` beside this file NOW. It is the single Codex binding for what this host's own UI shows, and does not show, when the milestone contract at `../../reporting.md` fires.

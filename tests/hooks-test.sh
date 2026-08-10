@@ -383,10 +383,10 @@ for security_pass_caller in plan quick debug; do
   esac
 done
 
-# Rule 7 is host-specific: Claude's always-loaded source routes the three
-# operator-only modes through `/oso-code:<mode>`, while Codex's routes the same
+# Rule 7 is host-specific: Claude's always-loaded source routes every
+# operator-only mode through `/oso-code:<mode>`, while Codex's routes the same
 # independently-declared wrappers through `$oso-code:<mode>`. A clean-tree lint cannot
-# prove either scan is real — all six names also occur elsewhere in the fixture.
+# prove either scan is real — those names also occur elsewhere in the fixture.
 # Remove each real Workflow route in turn, leave a longer lookalike INSIDE that
 # block, and leave the exact spelling OUTSIDE it.  Only a section-bounded,
 # token-bounded scan of the right host source can reject this mutation for the
@@ -442,9 +442,9 @@ for routing_host in claude codex; do
   done
 done
 
-# The three mutations above could still pass against a linter that hardcodes
-# today's three names.  Add a fourth operator-only mode to each host tree without
-# adding a route: the diagnostic must be derived from that wrapper's frontmatter.
+# The mutations above could still pass against a linter hardcoding today's
+# operator-only names.  Add one more mode to each host tree without adding a
+# route: the diagnostic must be derived from that wrapper's frontmatter.
 for routing_host in claude codex; do
   LINT_DISCOVERY_FIXTURE="$TEST_HOME/lint-routing-discovery-$routing_host"
   copy_lint_fixture "$LINT_DISCOVERY_FIXTURE"
@@ -2562,18 +2562,22 @@ assert_leaves_no_trace "an unarmed session leaves the slice gate silent without 
   block-edits-without-slice.sh "$edit_input"
 
 # --- Integration: every state write the skills instruct carries the full triple -
-# The three mode skills are the only writers, and a write that names fewer than
-# three keys leaves the other two standing: that is how a slice-pass write left
-# the previous slice armed and a phase boundary left both gates open. Backticks
-# delimit every command these documents instruct, so each span that invokes the
-# state binary with `set` has to spell mode, active_slice and verify_green.
+# The modes that arm a slice of their own are the writers of that triple — the
+# roadmap arms none and writes ONE key beside a child's own, never over them, so
+# it is excluded by the name below rather than by omission — and a write that
+# names fewer than three keys leaves the other two standing: that is how a
+# slice-pass write left the previous slice armed and a phase boundary left both
+# gates open. Backticks delimit every command these documents instruct, so each
+# span that invokes the state binary with `set` has to spell mode, active_slice
+# and verify_green.
 # Read out of the NEUTRAL bodies, which is where the keys are written: the binary
 # and the flag that names the session are host spellings and live in each mode's
 # platform file, so the span a mode instructs reads `oso-state set …` and the
 # triple is the whole of what is left to check here.
 partial_state_writes=""
 skills_with_no_write=""
-for state_writer in plan quick debug; do
+modes_arming_a_slice_of_their_own="plan quick debug"
+for state_writer in $modes_arming_a_slice_of_their_own; do
   writes_read=0
   while IFS= read -r instructed_command; do
     case "$instructed_command" in
@@ -2592,9 +2596,9 @@ done
 if [ -n "$skills_with_no_write" ]; then
   echo "FAIL: no state write left to check in —$skills_with_no_write"; fail=$((fail + 1))
 elif [ -z "$partial_state_writes" ]; then
-  echo "ok: every state write the mode skills instruct carries the full triple"; pass=$((pass + 1))
+  echo "ok: every state write the slice-arming mode skills instruct carries the full triple"; pass=$((pass + 1))
 else
-  echo "FAIL: a mode skill instructs a partial state write —$partial_state_writes"; fail=$((fail + 1))
+  echo "FAIL: a slice-arming mode skill instructs a partial state write —$partial_state_writes"; fail=$((fail + 1))
 fi
 
 # --- Integration: the wrappers and the shared bodies they bind ---------------
@@ -4349,7 +4353,7 @@ for codex_front_mode in plan quick debug; do
   grep -qF 'front-surface.md' "$CODEX_PLATFORM/$codex_front_mode.md" 2>/dev/null \
     || codex_front_surface_routes_missing="$codex_front_surface_routes_missing $codex_front_mode"
 done
-assert_equals "all three Codex modes route front work through one platform adapter" \
+assert_equals "every Codex mode with front work routes it through one platform adapter" \
   "" "$codex_front_surface_routes_missing"
 
 # Resolve the prose's actual relative token from the file that carries it.  A

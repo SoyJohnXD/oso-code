@@ -19,6 +19,6 @@ other skill invocation, so this instruction is the whole of that boundary.
 This mode's instructions live in two files. READ BOTH NOW, in this order, and follow them as binding — as if their text stood here. Both paths resolve against the directory holding this file:
 
 1. `../_shared/bodies/roadmap.md` — the flow itself: the queue, the autonomy policy, the single approval, the chain, the presence phase. It is the same on every host this harness runs on.
-2. `../_shared/platform/codex/roadmap.md` — what the flow leaves to the host: how far the chain runs unattended, the paths it resolves, and where each child still waits for the operator.
+2. `../_shared/platform/codex/roadmap.md` — what the flow leaves to the host: how far the chain runs unattended, the paths it resolves, where each child still waits for the operator, and the state command every runtime write of the chain runs under, which that file routes to `plan.md` beside it rather than spelling twice.
 
 Where the neutral body defers to "your host", the platform file is the answer, and it is the only answer.
