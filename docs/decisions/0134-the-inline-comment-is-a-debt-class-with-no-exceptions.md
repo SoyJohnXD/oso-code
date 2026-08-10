@@ -2,6 +2,7 @@
 
 Date: 2026-08-07
 Status: accepted
+Superseded-by: ADR-0140 — retires only Part 3's exemption, the same clause ADR-0132's Part 3 recorded from the other side and on the same terms: `tests/plugin-lint.sh` no longer documents a specification above each of its own rules and no longer claims that shape in its own header. The debt class itself, its three layers, its doc-form carve-out and Part 3's own boundary — this bar governs the code a change lands in a project — all still stand
 Reconciled: elsewhere — landed in `plugin/skills/_shared/rubric.md`'s Debt markers section, in both hosts' `oso-applier` and `oso-verifier` contracts, in `bodies/quick.md`'s write-time bar for the mode that has no applier to coach, in `bodies/debt-sweep.md`'s definition of a conformance trace, in README's debt-sweep row, and in three `tests/plugin-lint.sh` rules — `check_rubric_bans_inline_comments_without_an_escape_hatch`, `check_applier_rubric_mapping_names_every_section` and `check_verifier_gate_fails_an_added_inline_comment`. The frozen body needed no move: it never carried the rubric's content, and Mode 1 §7 names the rubric as the debt axis's bar without restating what the rubric says.
 Source: this change (clean-bar-convergence); one real PR the harness drove, whose diff added 1,441 whole-line comments — 234 of them citing a ledger decision id — and which merged in forty-eight minutes with no human review; a field close whose one judge to flag the density was overruled on the external-constraint reading; ledger decision D2
 

@@ -238,6 +238,7 @@ Three properties of the amendment log these files replace are facts to carry for
 - [0137](decisions/0137-a-queued-decision-sets-its-child-aside-and-costs-the-chain-nothing.md) — A queued decision sets its child aside, and costs the chain nothing
 - [0138](decisions/0138-the-chain-reads-the-tree-before-every-arming-and-its-position-is-durable.md) — The chain reads the tree before every arming, and its position is durable
 - [0139](decisions/0139-the-presence-phase-is-one-ordered-queue-behind-one-report.md) — The presence phase is one ordered queue behind one report
+- [0140](decisions/0140-the-per-rule-rationale-block-leaves-the-linter.md) — The per-rule rationale block leaves the linter, and the ceilings it carried land here
 
 ## Foundational decisions
 

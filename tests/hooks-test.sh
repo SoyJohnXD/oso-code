@@ -187,8 +187,7 @@ assert_equals "every hooks.json command is an executable script" "" "$unrunnable
 # --- Declarations: what `claude plugin validate --strict` has no opinion on ---
 # The validator does open skill frontmatter, but never for `background` on a fork
 # and never to resolve the plugin's own cross-references, so those two have no
-# gate but this one — see tests/plugin-lint.sh for what it asserts and why each
-# rule is decidable.
+# gate but this one.
 if lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" 2>&1)"; then
   echo "ok: plugin frontmatter and cross-references lint clean"; pass=$((pass + 1))
 else
@@ -531,12 +530,6 @@ else
   fi
 fi
 
-# The mutation is the defect this rule now exists for and the only one it still
-# catches: a decision file that goes while the prose citing it stays. Delete the
-# file rather than retarget the citation, because a renumber or a removal is how
-# this actually happens, and a reference nothing resolves is invisible to every
-# other rule here — the two decision rules above iterate the files that ARE
-# there, so a missing one makes both of them quieter, never louder.
 LINT_CITATION_FIXTURE="$TEST_HOME/lint-decision-citation"
 copy_lint_fixture "$LINT_CITATION_FIXTURE"
 cited_decision="$LINT_CITATION_FIXTURE/docs/decisions/0077-slice-independence-from-surface-map-edges.md"
@@ -559,22 +552,6 @@ else
   fi
 fi
 
-# The inverse rule, driven with one citation per PATH PATTERN in its file set —
-# every glob plus the two extension-less files the set has to name by hand —
-# because a pattern dropped from it stops being scanned in silence: every other
-# diagnostic still fires, so nothing but that pattern's own citation going
-# unflagged can show it. Two more axes ride the same lines. Each of the four
-# notations the pattern admits is written three times, no line matching a notation
-# other than its own, so a dropped alternation goes unnamed in three files across
-# three different patterns while a dropped pattern takes only its own files with
-# it. Each of the three comment markers is written too, which is why the `.bat`
-# glob carries two: dropping `REM` leaves verify.bat alone unnamed, dropping `::`
-# install.bat alone, dropping the glob both, and dropping `#` the other ten. Each
-# citation is a fresh line appended to the fixture's copy: no existing line is
-# edited, so nothing else in the fixture can move with it. Mutating a hook's bytes
-# also leaves the published hash ledger stale by construction, so this report is
-# red twice over — which is why every diagnostic is required BY NAME and the hash
-# rule's own red cannot stand in for any of them.
 LINT_EXECUTABLE_CITATION_FIXTURE="$TEST_HOME/lint-executable-citation"
 copy_lint_fixture "$LINT_EXECUTABLE_CITATION_FIXTURE"
 printf '# D22: the ledger entry that ordered this remedy.\n' \
@@ -865,13 +842,6 @@ else
   fi
 fi
 
-# Rule 29 holds the roadmap's one approval to naming every clause that bounds it.
-# The clause the neutral flow needs least is the one a host's approval rail leans
-# on hardest — a child planned unattended still delivers its own plan document, and
-# a host that stops at each child stops in front of exactly that document — so drop
-# that bullet alone and leave the rest of the phase standing. A body that reads
-# clean without it is a body whose recorded per-host degradation has nothing left
-# to rest on.
 LINT_ROADMAP_APPROVAL_FIXTURE="$TEST_HOME/lint-roadmap-approval"
 copy_lint_fixture "$LINT_ROADMAP_APPROVAL_FIXTURE"
 roadmap_approval_target="$LINT_ROADMAP_APPROVAL_FIXTURE/plugin/skills/_shared/bodies/roadmap.md"
@@ -896,13 +866,6 @@ else
   fi
 fi
 
-# Rule 30 holds the same body's autonomy policy to naming every clause it turns on.
-# The never-solo item likeliest to fall out of a rewrite is the deletion one: it
-# reads like plumbing beside a push or a ledger amendment, and its refusal lives
-# entirely in another mode's close, so a reader of this phase alone would never
-# learn the policy may not take it. Drop that bullet and leave the rest of the
-# phase standing — a phase that reads clean with three of four items is a closed
-# list that has quietly stopped being one.
 LINT_ROADMAP_POLICY_FIXTURE="$TEST_HOME/lint-roadmap-policy"
 copy_lint_fixture "$LINT_ROADMAP_POLICY_FIXTURE"
 roadmap_policy_target="$LINT_ROADMAP_POLICY_FIXTURE/plugin/skills/_shared/bodies/roadmap.md"
@@ -927,14 +890,6 @@ else
   fi
 fi
 
-# Rule 31 holds the two texts that hand a decision to the operator to keeping that
-# instruction absolute while naming the roadmap that conditions it. The worse of
-# the two half-landed edits is the flow body losing the absolute: the roadmap
-# clause stays, reads as the whole rule, and every change in every repository then
-# has its decisions taken for it. Strip that one sentence from the route line and
-# leave the rest of it standing — the condition, its queued bound and the relaunch
-# — so only the absolute half of the guard can fire, and assert the condition
-# survived rather than trusting the sed to have been surgical.
 LINT_ROADMAP_SCOPE_FIXTURE="$TEST_HOME/lint-roadmap-scope"
 copy_lint_fixture "$LINT_ROADMAP_SCOPE_FIXTURE"
 roadmap_scope_target="$LINT_ROADMAP_SCOPE_FIXTURE/plugin/skills/_shared/bodies/plan.md"
@@ -961,12 +916,6 @@ else
   fi
 fi
 
-# The rule's other end, and the other half-landed edit: the output style keeps the
-# absolute AND the roadmap while losing the BOUND, so the exception reads as a
-# policy that answers everything — the destructive migration and the four things it
-# may never take included. Strip the queued clause alone, which is also what proves
-# the two ends are read separately: a rule holding only the flow body would pass
-# this fixture, since plan.md is untouched here.
 LINT_ROADMAP_BOUND_FIXTURE="$TEST_HOME/lint-roadmap-bound"
 copy_lint_fixture "$LINT_ROADMAP_BOUND_FIXTURE"
 roadmap_bound_target="$LINT_ROADMAP_BOUND_FIXTURE/plugin/output-styles/oso.md"
@@ -6287,17 +6236,6 @@ assert_allows "SessionStart says nothing about a roadmap in flight in another re
 rm -f "$STATE_DIR/other-roadmap.state"
 
 # --- SessionStart: an install behind the release published for it -------------
-# The version this hook compares is the one in the manifest beside it, so the
-# cases run the shipped hook from a plugin root of their own: the hook and the two
-# libraries behind it, copied byte for byte, next to a manifest whose version and
-# repository this suite chooses. Case (a) is the reporting case and every later
-# case that resets the baseline changes exactly one fact of it, which is what
-# makes silence evidence rather than an assertion — the run that speaks and the
-# run that says nothing differ by the one thing the case is named for. The two
-# starts that reset nothing are follow-on runs, reading the cache window the run
-# before them opened. curl is a stub on PATH recording what it was handed, so a
-# case that failed to intercept the fetch goes silent instead of passing on
-# whatever github.com publishes today.
 DRIFT_FIXTURE="$TEST_HOME/version-drift-plugin"
 DRIFT_HOOK="$DRIFT_FIXTURE/hooks/warn-stale-version.sh"
 DRIFT_MANIFEST="$DRIFT_FIXTURE/.claude-plugin/plugin.json"
@@ -6318,10 +6256,6 @@ else
   cp "$PLUGIN/hooks/warn-stale-version.sh" "$PLUGIN/hooks/lib.sh" \
     "$PLUGIN/hooks/lexer.sh" "$DRIFT_FIXTURE/hooks/"
 
-  # The advertisement shape the hook reads: the service header, a first ref whose
-  # capability list hangs off a NUL byte, an annotated tag's peeled `^{}`
-  # companion, and tag names in the order GitHub answers them — v0.5.0 after the
-  # v0.19.0 that is actually the newest.
   {
     printf '001e# service=git-upload-pack\n0000\n'
     printf '00a5%s refs/heads/main\0multi_ack symref=HEAD:refs/heads/main\n' aaa0001
@@ -6353,9 +6287,6 @@ else
       "$SESSION" "$REPO_ROOT" "$1"
   }
 
-  # The answer that speaks: a 0.17.0 install, a marketplace serving the
-  # repository that manifest names, an empty call log and a reachable
-  # advertisement. A case changes one of those and nothing else.
   reset_drift_baseline() {
     write_drift_manifest 0.17.0
     write_drift_marketplace_source github repo "$DRIFT_SLUG"
@@ -6382,8 +6313,6 @@ else
     assert_after_hook "$name" [ -z "$hook_stdout" ]
   }
 
-  # (a) The install is behind, so both versions and both commands are named —
-  # from the highest tag, not the last one the advertisement carries.
   reset_drift_baseline
   run_drift_hook
   drift_named=""
@@ -6394,8 +6323,6 @@ else
   assert_equals "a stale install names both versions and the update, never the highest-sorting tag" \
     "|0.17.0|0.19.0|claude plugin marketplace update oso-code|claude plugin update oso-code@oso-code" \
     "$drift_named"
-  # Counted rather than measured for a newline: a report of nothing at all has no
-  # newline in it either, and this case has to tell one from one line.
   assert_equals "the stale-install report is one line" "1" \
     "$( { printf '%s' "$hook_stdout" | grep -c ''; } || true)"
   assert_equals "the tag list is fetched from the repository the manifest names" "1" \
@@ -6404,8 +6331,6 @@ else
   assert_equals "the fetch carries curl's own connect and total bounds" "1" \
     "$(grep -Fc -- '--connect-timeout 2 --max-time 4' "$OSO_TEST_CURL_CALLS" || true)"
 
-  # (b) The cached answer is what an ordinary start reads: the next start inside
-  # the window reports the same drift with the network taken away from it.
   OSO_TEST_CURL_EXIT=28
   run_drift_hook
   assert_after_hook "a start inside the window reports from the cache" \
@@ -6413,7 +6338,6 @@ else
   assert_equals "a start inside the window fetches nothing" "1" "$(drift_fetches_made)"
   OSO_TEST_CURL_EXIT=0
 
-  # (c) The one changed fact is a fetch that never answers.
   reset_drift_baseline
   OSO_TEST_CURL_EXIT=28
   assert_drift_silent "a fetch that answers nothing leaves the session silent"
@@ -6422,7 +6346,6 @@ else
     "1" "$(drift_fetches_made)"
   OSO_TEST_CURL_EXIT=0
 
-  # (d) The one changed fact is the installed version.
   reset_drift_baseline
   write_drift_manifest 0.19.0
   assert_drift_silent "an install already on the published release says nothing"
@@ -6430,7 +6353,6 @@ else
   write_drift_manifest 0.20.0
   assert_drift_silent "an install ahead of the published release says nothing"
 
-  # (e) The one changed fact is the version this session can read of itself.
   reset_drift_baseline
   write_drift_manifest unknown
   assert_drift_silent "a manifest whose version is not a release says nothing"
@@ -6438,10 +6360,6 @@ else
   rm -f "$DRIFT_MANIFEST"
   assert_drift_silent "a plugin root with no readable manifest says nothing"
 
-  # (f) The one changed fact is who serves the marketplace. A local clone is the
-  # shape a machine developing this plugin has: it loads that working tree, so
-  # there is no published release for it to be behind, and no fetch is worth
-  # making either.
   reset_drift_baseline
   write_drift_marketplace_source github repo other-owner/other-plugin
   assert_drift_silent "a marketplace serving another repository says nothing"
@@ -6454,9 +6372,6 @@ else
   assert_equals "a source this plugin does not publish is never fetched" "0" \
     "$(drift_fetches_made)"
 
-  # (g) The one changed fact is the event's source: a compaction restarts it
-  # inside a session that already heard the line, and every other source is a
-  # session that has not.
   reset_drift_baseline
   assert_drift_silent "a compaction says nothing a second time" compact
   reset_drift_baseline
