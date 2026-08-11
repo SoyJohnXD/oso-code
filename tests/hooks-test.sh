@@ -1087,30 +1087,30 @@ else
   fi
 fi
 
-LINT_ROADMAP_REPORT_BOUND_FIXTURE="$TEST_HOME/lint-roadmap-report-bound"
-copy_lint_fixture "$LINT_ROADMAP_REPORT_BOUND_FIXTURE"
-roadmap_report_bound_target="$LINT_ROADMAP_REPORT_BOUND_FIXTURE/plugin/skills/_shared/reporting.md"
-if ! grep -qF -- "A roadmap's final report" "$roadmap_report_bound_target"; then
-  echo "FAIL: the roadmap-report-bound mutation found no stated exception to remove from the milestone contract"; fail=$((fail + 1))
+LINT_ABSENT_REPORT_BOUND_FIXTURE="$TEST_HOME/lint-absent-report-bound"
+copy_lint_fixture "$LINT_ABSENT_REPORT_BOUND_FIXTURE"
+absent_report_bound_target="$LINT_ABSENT_REPORT_BOUND_FIXTURE/plugin/skills/_shared/reporting.md"
+if ! grep -qF -- "An absent-operator run's final report" "$absent_report_bound_target"; then
+  echo "FAIL: the absent-report-bound mutation found no exception covering the final report of a run its operator was absent for"; fail=$((fail + 1))
 else
-  sed '/^\*\*A roadmap.s final report\*\*/d' \
-    "$roadmap_report_bound_target" > "$roadmap_report_bound_target.tmp"
-  mv "$roadmap_report_bound_target.tmp" "$roadmap_report_bound_target"
-  if grep -qF -- "A roadmap's final report" "$roadmap_report_bound_target"; then
-    echo "FAIL: the roadmap-report-bound mutation left the stated exception standing"; fail=$((fail + 1))
-  elif ! grep -qE '^At most [0-9]+ lines' "$roadmap_report_bound_target"; then
-    echo "FAIL: the roadmap-report-bound mutation took the bound the exception is an exception to"; fail=$((fail + 1))
-  elif ! grep -qF -- 'The named residual' "$roadmap_report_bound_target"; then
-    echo "FAIL: the roadmap-report-bound mutation took the other exception it was supposed to leave standing"; fail=$((fail + 1))
-  elif roadmap_report_bound_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
-      "$LINT_ROADMAP_REPORT_BOUND_FIXTURE/plugin" "$LINT_ROADMAP_REPORT_BOUND_FIXTURE" 2>&1)"; then
-    echo "FAIL: a milestone contract that bounds a roadmap's whole final report at three lines passed plugin lint"; fail=$((fail + 1))
+  sed '/^\*\*An absent-operator run.s final report\*\*/d' \
+    "$absent_report_bound_target" > "$absent_report_bound_target.tmp"
+  mv "$absent_report_bound_target.tmp" "$absent_report_bound_target"
+  if grep -qF -- 'final report**' "$absent_report_bound_target"; then
+    echo "FAIL: the absent-report-bound mutation left the stated exception standing"; fail=$((fail + 1))
+  elif ! grep -qE '^At most [0-9]+ lines' "$absent_report_bound_target"; then
+    echo "FAIL: the absent-report-bound mutation took the bound the exception is an exception to"; fail=$((fail + 1))
+  elif ! grep -qF -- 'The named residual' "$absent_report_bound_target"; then
+    echo "FAIL: the absent-report-bound mutation took the other exception it was supposed to leave standing"; fail=$((fail + 1))
+  elif absent_report_bound_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_ABSENT_REPORT_BOUND_FIXTURE/plugin" "$LINT_ABSENT_REPORT_BOUND_FIXTURE" 2>&1)"; then
+    echo "FAIL: a milestone contract that bounds an unwatched run's whole final report at three lines passed plugin lint"; fail=$((fail + 1))
   else
-    case "$roadmap_report_bound_report" in
-      *"states no exception to that bound for a roadmap's final report"*)
-        echo "ok: check_milestone_reporting_contract_is_complete rejects a contract whose bound reaches a roadmap's final report"; pass=$((pass + 1)) ;;
+    case "$absent_report_bound_report" in
+      *"states no exception to that bound for the final report of a run the operator was absent for"*)
+        echo "ok: check_milestone_reporting_contract_is_complete rejects a contract whose bound reaches the final report of a run nobody watched"; pass=$((pass + 1)) ;;
       *)
-        echo "FAIL: the roadmap-report-bound mutation failed for the wrong reason — $(printf '%s' "$roadmap_report_bound_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+        echo "FAIL: the absent-report-bound mutation failed for the wrong reason — $(printf '%s' "$absent_report_bound_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi

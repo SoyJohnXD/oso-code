@@ -475,8 +475,16 @@ check_milestone_reporting_contract_is_complete() {
 
   grep -qE '[Aa]t most [0-9]+ lines?' "$contract" \
     || flag "skills/_shared/reporting.md names no length bound on a milestone report"
-  grep -qF -- "A roadmap's final report" "$contract" \
-    || flag "skills/_shared/reporting.md states no exception to that bound for a roadmap's final report, so a whole unwatched run reaches its operator in three lines"
+  local final_report_exception marker
+  final_report_exception="$({ grep -F -- 'final report**' "$contract" || true; })"
+  if [ -z "$final_report_exception" ]; then
+    flag "skills/_shared/reporting.md states no exception to that bound for the final report of a run the operator was absent for, so a whole unwatched run reaches its operator in three lines"
+  else
+    for marker in "ROADMAP mode's §5" 'under its own AUTO' 'bodies/plan.md'; do
+      printf '%s\n' "$final_report_exception" | grep -qiF -- "$marker" \
+        || flag "skills/_shared/reporting.md's final-report exception stops covering both runs an operator can be absent for: $marker"
+    done
+  fi
 
   local mode_skill mode mode_body
   for mode_skill in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
