@@ -908,7 +908,7 @@ else
     echo "FAIL: an applier-blocked route whose roadmap condition outlived its absolute passed plugin lint"; fail=$((fail + 1))
   else
     case "$roadmap_scope_report" in
-      *"applier-blocked route drops the clause that keeps a roadmap a bounded exception: never answer on the user's behalf"*)
+      *"applier-blocked route drops a clause it turns on: never answer on the user's behalf"*)
         echo "ok: rule 31 rejects an applier-blocked route whose roadmap condition swallowed the absolute beside it"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: rule 31 mutation failed for the wrong reason — $(printf '%s' "$roadmap_scope_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
@@ -934,7 +934,7 @@ else
     echo "FAIL: a decision rule whose roadmap exception lost its queued bound passed plugin lint"; fail=$((fail + 1))
   else
     case "$roadmap_bound_report" in
-      *"output-styles/oso.md's decision rule drops the clause that keeps a roadmap a bounded exception: queued"*)
+      *"output-styles/oso.md's decision rule drops a clause it turns on: queued"*)
         echo "ok: rule 31 rejects a decision rule whose roadmap exception stops saying what the policy refuses"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: rule 31 mutation failed for the wrong reason — $(printf '%s' "$roadmap_bound_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
@@ -1134,7 +1134,7 @@ else
     echo "FAIL: a sequential fail route whose no-exception verdict the orchestrator may weigh for itself passed plugin lint"; fail=$((fail + 1))
   else
     case "$no_countermand_report" in
-      *"sequential fail route drops the clause that keeps a roadmap a bounded exception: yours to overrule"*)
+      *"sequential fail route drops a clause it turns on: yours to overrule"*)
         echo "ok: check_fail_routes_forward_findings_verbatim_and_never_overrule_them rejects a fail route that stopped binding the orchestrator to a no-exception verdict"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: the check_fail_routes_forward_findings_verbatim_and_never_overrule_them mutation failed for the wrong reason — $(printf '%s' "$no_countermand_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
@@ -1219,7 +1219,7 @@ else
     echo "FAIL: a plan body where any operator message ends AUTO passed plugin lint"; fail=$((fail + 1))
   else
     case "$auto_disposition_report" in
-      *"unattended ground rule drops the clause"*"disarms nothing"*)
+      *"unattended ground rule drops a clause it turns on: disarms nothing"*)
         echo "ok: check_auto_disposition_is_a_ledger_toggle_that_parks_on_a_question rejects an AUTO run a passing operator message disarms"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: the check_auto_disposition_is_a_ledger_toggle_that_parks_on_a_question mutation failed for the wrong reason — $(printf '%s' "$auto_disposition_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;

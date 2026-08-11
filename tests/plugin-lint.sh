@@ -766,29 +766,29 @@ check_roadmap_autonomy_policy_declares_its_ladder_and_its_bar() {
 }
 
 check_roadmap_condition_never_loosens_the_operator_rule() {
-  roadmap_exception_stays_bounded_in "$PLUGIN_ROOT/skills/_shared/bodies/plan.md" \
+  anchored_absolute_stays_bounded_in "$PLUGIN_ROOT/skills/_shared/bodies/plan.md" \
     'If it returns `blocked`:' 'applier-blocked route' \
     "never answer on the user's behalf" 'roadmap' 'queued'
-  roadmap_exception_stays_bounded_in "$PLUGIN_ROOT/output-styles/oso.md" \
+  anchored_absolute_stays_bounded_in "$PLUGIN_ROOT/output-styles/oso.md" \
     'When a real decision exists' 'decision rule' \
     'the human decides' 'roadmap' 'queued'
 }
 
-roadmap_exception_stays_bounded_in() {
+anchored_absolute_stays_bounded_in() {
   local file="$1" anchor="$2" flagged_as="$3" text marker
   shift 3
   if [ ! -f "$file" ]; then
-    flag "no ${file#"$PLUGIN_ROOT"/} to check what its $flagged_as grants a roadmap"
+    flag "no ${file#"$PLUGIN_ROOT"/} to check what bounds its $flagged_as"
     return 0
   fi
   text="$({ grep -F -- "$anchor" "$file" 2>&1 || true; })"
   if [ -z "$text" ]; then
-    flag "${file#"$PLUGIN_ROOT"/} states no $flagged_as, the one text whose absolute a roadmap may never loosen"
+    flag "${file#"$PLUGIN_ROOT"/} states no $flagged_as, so nothing there carries the clauses that bound it"
     return 0
   fi
   for marker in "$@"; do
     printf '%s\n' "$text" | grep -qiF -- "$marker" \
-      || flag "${file#"$PLUGIN_ROOT"/}'s $flagged_as drops the clause that keeps a roadmap a bounded exception: $marker"
+      || flag "${file#"$PLUGIN_ROOT"/}'s $flagged_as drops a clause it turns on: $marker"
   done
 }
 
@@ -820,18 +820,18 @@ check_roadmap_presence_phase_declares_its_order_and_its_three_pushes() {
 
 check_fail_routes_forward_findings_verbatim_and_never_overrule_them() {
   local plan="$PLUGIN_ROOT/skills/_shared/bodies/plan.md"
-  roadmap_exception_stays_bounded_in "$plan" 'On `fail`: relaunch the applier' \
+  anchored_absolute_stays_bounded_in "$plan" 'On `fail`: relaunch the applier' \
     'sequential fail route' \
     'findings VERBATIM' 'never your summary of them' 'yours to overrule' \
     'instruct any judge away' 'ESCALATE' 'doubt-pass reconciliation' 'travel BARE'
-  roadmap_exception_stays_bounded_in "$plan" '**A red slice**' 'red-slice fail route' \
+  anchored_absolute_stays_bounded_in "$plan" '**A red slice**' 'red-slice fail route' \
     'findings VERBATIM' 'never your summary of them' 'yours to overrule' \
     'instruct any judge away'
-  roadmap_exception_stays_bounded_in "$PLUGIN_ROOT/skills/_shared/bodies/debug.md" \
+  anchored_absolute_stays_bounded_in "$PLUGIN_ROOT/skills/_shared/bodies/debug.md" \
     'Verifier `fail` → relaunch the applier' 'verifier fail route' \
     'findings VERBATIM' 'never your summary of them' 'yours to overrule' \
     'instruct any judge away'
-  roadmap_exception_stays_bounded_in "$PLUGIN_ROOT/skills/_shared/front-surface.md" \
+  anchored_absolute_stays_bounded_in "$PLUGIN_ROOT/skills/_shared/front-surface.md" \
     '**Fix route**' 'design-audit fix route' \
     'findings VERBATIM' 'never your summary of them'
 }
@@ -896,25 +896,25 @@ check_no_exception_rules_outrank_repo_convention() {
     done
   fi
 
-  roadmap_exception_stays_bounded_in "$plan" 'It leaves exactly two routes' 'ESCALATE route' \
+  anchored_absolute_stays_bounded_in "$plan" 'It leaves exactly two routes' 'ESCALATE route' \
     'canonical case' 'legacy-convention conflict' 'the banned thing everywhere' 'only they may take'
 }
 
 check_auto_disposition_is_a_ledger_toggle_that_parks_on_a_question() {
   local plan="$PLUGIN_ROOT/skills/_shared/bodies/plan.md"
-  roadmap_exception_stays_bounded_in "$plan" "A ROADMAP's child never waits for the operator" \
+  anchored_absolute_stays_bounded_in "$plan" "A ROADMAP's child never waits for the operator" \
     'unattended ground rule' \
     "child of the ROADMAP mode's chain" 'a change executing under AUTO' \
     'explicit operator instruction' 'disarmed the same way' 'recorded DATED' \
     'disarms nothing' 'consumed as operator input' 'explicit resume instruction' \
     'autonomy policy' "THIS change's scale" 'frozen ledger answering first' \
     '`mode=plan` throughout' 'no fourth key' 'TWO substitutions'
-  roadmap_exception_stays_bounded_in "$plan" 'What that policy will not answer costs this change' \
+  anchored_absolute_stays_bounded_in "$plan" 'What that policy will not answer costs this change' \
     'set-aside ground rule' \
     'its OWN final report' 'this run PARKS' 'reports BLOCKED' \
     'oso-state set mode=plan active_slice=none verify_green=false' \
     'expects resumption' 'END OF THE TURN'
-  roadmap_exception_stays_bounded_in "$plan" '**The execution disposition' \
+  anchored_absolute_stays_bounded_in "$plan" '**The execution disposition' \
     'execution-disposition question' \
     "round's second question" 'NORMAL is the default' 'under AUTO' 'PARKING' \
     'never re-ask what the ledger already answers'
