@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Thirty-five rules over what the plugin's declarations, prose and delegation
+# Thirty-six rules over what the plugin's declarations, prose and delegation
 # payloads SAY, which `claude plugin validate --strict` never reads.
 set -euo pipefail
 
@@ -425,7 +425,7 @@ check_present_tense_prose_names_the_rule_count() {
     28) spelled=twenty-eight ;; 29) spelled=twenty-nine ;; 30) spelled=thirty ;;
     31) spelled=thirty-one ;; 32) spelled=thirty-two ;;
     33) spelled=thirty-three ;; 34) spelled=thirty-four ;;
-    35) spelled=thirty-five ;;
+    35) spelled=thirty-five ;; 36) spelled=thirty-six ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -855,6 +855,42 @@ check_verifier_payload_is_closed_and_its_comment_gate_scans() {
   done
 }
 
+check_no_exception_rules_outrank_repo_convention() {
+  local rubric="$PLUGIN_ROOT/skills/_shared/rubric.md"
+  local plan="$PLUGIN_ROOT/skills/_shared/bodies/plan.md"
+  local precedence audit marker
+  if [ ! -f "$rubric" ]; then
+    flag "no shared rubric at skills/_shared/rubric.md to check what its no-exception rules outrank"
+  else
+    precedence="$({ grep -F -- 'outrank the conventions of the repo under judgment' "$rubric" || true; })"
+    if [ -z "$precedence" ]; then
+      flag "skills/_shared/rubric.md ranks its no-exception rules against nothing, so a target repo's convention is free to outrank them"
+    else
+      for marker in 'three Hard blockers' 'inline-comment debt class' 'does not soften it' 'QUESTION for the operator'; do
+        printf '%s\n' "$precedence" | grep -qF -- "$marker" \
+          || flag "skills/_shared/rubric.md's precedence rule leaves a conflicting convention somewhere to win: $marker"
+      done
+    fi
+  fi
+
+  if [ ! -f "$plan" ]; then
+    flag "no plan body at skills/_shared/bodies/plan.md to check its surface map against the no-exception rules"
+    return 0
+  fi
+  audit="$({ grep -F -- 'Audit the map a second time' "$plan" || true; })"
+  if [ -z "$audit" ]; then
+    flag "skills/_shared/bodies/plan.md never reads its surface map against those four rules, so a conflicting convention reaches execution unasked"
+  else
+    for marker in 'battery QUESTION' 'Decision rounds' 'recorded in the ledger' 'project convention'; do
+      printf '%s\n' "$audit" | grep -qF -- "$marker" \
+        || flag "skills/_shared/bodies/plan.md's no-exception audit stops short of routing the conflict to the operator: $marker"
+    done
+  fi
+
+  roadmap_exception_stays_bounded_in "$plan" 'It leaves exactly two routes' 'ESCALATE route' \
+    'canonical case' 'legacy-convention conflict' 'the banned thing everywhere' 'only they may take'
+}
+
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }
 
 check_forked_skills_declare_background
@@ -892,6 +928,7 @@ check_roadmap_chain_declares_its_tree_bar_and_its_state_key
 check_roadmap_presence_phase_declares_its_order_and_its_three_pushes
 check_fail_routes_forward_findings_verbatim_and_never_overrule_them
 check_verifier_payload_is_closed_and_its_comment_gate_scans
+check_no_exception_rules_outrank_repo_convention
 
 if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"

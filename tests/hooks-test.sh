@@ -597,7 +597,7 @@ fi
 
 LINT_RULE_COUNT_FIXTURE="$TEST_HOME/lint-rule-count"
 copy_lint_fixture "$LINT_RULE_COUNT_FIXTURE"
-sed 's/thirty-five rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
+sed 's/thirty-six rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
   > "$LINT_RULE_COUNT_FIXTURE/README.md.tmp"
 mv "$LINT_RULE_COUNT_FIXTURE/README.md.tmp" "$LINT_RULE_COUNT_FIXTURE/README.md"
 if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
@@ -605,7 +605,7 @@ if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
   echo "FAIL: check_present_tense_prose_names_the_rule_count accepted stale present-tense rule-count prose"; fail=$((fail + 1))
 else
   case "$rule_count_lint_report" in
-    *"README.md does not name the thirty-five rules this linter declares"*)
+    *"README.md does not name the thirty-six rules this linter declares"*)
       echo "ok: check_present_tense_prose_names_the_rule_count rejects stale present-tense rule-count prose"; pass=$((pass + 1)) ;;
     *)
       echo "FAIL: check_present_tense_prose_names_the_rule_count mutation failed for the wrong reason — $(printf '%s' "$rule_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
@@ -1165,6 +1165,34 @@ else
         echo "ok: check_verifier_payload_is_closed_and_its_comment_gate_scans rejects a verifier payload a standing ruling can be appended to"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: the check_verifier_payload_is_closed_and_its_comment_gate_scans mutation failed for the wrong reason — $(printf '%s' "$closed_payload_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_CONVENTION_PRECEDENCE_FIXTURE="$TEST_HOME/lint-convention-precedence"
+copy_lint_fixture "$LINT_CONVENTION_PRECEDENCE_FIXTURE"
+convention_precedence_target="$LINT_CONVENTION_PRECEDENCE_FIXTURE/plugin/skills/_shared/rubric.md"
+convention_precedence_neighbour="$LINT_CONVENTION_PRECEDENCE_FIXTURE/plugin/skills/_shared/bodies/plan.md"
+convention_precedence_clause='outrank the conventions of the repo under judgment'
+if ! grep -qF "$convention_precedence_clause" "$convention_precedence_target"; then
+  echo "FAIL: the check_no_exception_rules_outrank_repo_convention mutation found no precedence rule to soften in the shared rubric"; fail=$((fail + 1))
+else
+  sed "s/$convention_precedence_clause/bend to the conventions of the repo under judgment/" \
+    "$convention_precedence_target" > "$convention_precedence_target.tmp"
+  mv "$convention_precedence_target.tmp" "$convention_precedence_target"
+  if grep -qiF "$convention_precedence_clause" "$convention_precedence_target"; then
+    echo "FAIL: the check_no_exception_rules_outrank_repo_convention mutation left the precedence rule standing in the shared rubric"; fail=$((fail + 1))
+  elif ! grep -qF 'Audit the map a second time' "$convention_precedence_neighbour"; then
+    echo "FAIL: the check_no_exception_rules_outrank_repo_convention mutation took the surface-map audit it was supposed to leave standing"; fail=$((fail + 1))
+  elif convention_precedence_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_CONVENTION_PRECEDENCE_FIXTURE/plugin" "$LINT_CONVENTION_PRECEDENCE_FIXTURE" 2>&1)"; then
+    echo "FAIL: a rubric whose no-exception rules bend to the conventions of the repo under judgment passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$convention_precedence_report" in
+      *"skills/_shared/rubric.md ranks its no-exception rules against nothing"*)
+        echo "ok: check_no_exception_rules_outrank_repo_convention rejects a rubric a target repo's convention can soften"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the check_no_exception_rules_outrank_repo_convention mutation failed for the wrong reason — $(printf '%s' "$convention_precedence_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi

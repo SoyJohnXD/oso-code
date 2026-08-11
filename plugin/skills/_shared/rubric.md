@@ -11,6 +11,7 @@ The rubric serves readability; readability never serves the rubric.
 - Verify before flagging: read the surrounding code and confirm the "violation" is not already the clearest available shape.
 - Soft triggers, never gates: more than 3–4 positional parameters, a function past roughly 40 lines, or nesting past 3 levels demands a written justification in the report — the justification may win, but it must be written. These are review triggers, never mechanical fails.
 - The idioms below are named in TS/JS terms as examples; apply the host language's equivalent (sum types, enums-with-data, the language's standard doc-comment form) and never flag code for lacking a construct the language does not have. Where public-API doc comments are the language convention (Python docstrings, Rust doc comments), the over-documentation rule targets redundant inline comments, not conventional API docs.
+- Four rules stand outside this contract — the three Hard blockers below and the inline-comment debt class under Debt markers — and they outrank the conventions of the repo under judgment as well. A codebase whose existing pattern violates one of the four does not soften it: the pattern is evidence about that repo, never a standing exception, and the conflict is a QUESTION for the operator — never a decision an author, a judge or an orchestrator takes downstream. The doc-form carve-out above is no instance of a convention winning: the debt class grants it, so it holds wherever that class does and nowhere a repo's own habit puts it.
 
 ## Hard blockers — any one fails the gate; the judgment contract cannot override these
 
@@ -47,7 +48,7 @@ The rubric serves readability; readability never serves the rubric.
 - Dependency direction holds: domain code never imports infrastructure, UI, or framework glue.
 - Primitives are reused: the change uses existing helpers, error types, shared types, and existing constants instead of recreating them — no two constants with the same value and meaning across the change.
 - No god-module growth: no file quietly absorbed responsibilities that belong elsewhere.
-- One style per concern: the change follows the codebase's existing pattern for a concern instead of introducing a competing one.
+- One style per concern: the change follows the codebase's existing pattern for a concern instead of introducing a competing one. That deference ends at the four rules the judgment contract puts outside it: a pattern that violates one is not a style to follow, and the conflict goes to the operator as a question.
 - Logic lives in its layer: validation, normalization, and calculation helpers belong to the domain layer — not scattered through UI or component folders.
 
 ## Debt markers — none may remain
