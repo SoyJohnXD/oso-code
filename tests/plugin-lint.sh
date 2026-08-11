@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Thirty-four rules over what the plugin's declarations, prose and delegation
+# Thirty-five rules over what the plugin's declarations, prose and delegation
 # payloads SAY, which `claude plugin validate --strict` never reads.
 set -euo pipefail
 
@@ -425,6 +425,7 @@ check_present_tense_prose_names_the_rule_count() {
     28) spelled=twenty-eight ;; 29) spelled=twenty-nine ;; 30) spelled=thirty ;;
     31) spelled=thirty-one ;; 32) spelled=thirty-two ;;
     33) spelled=thirty-three ;; 34) spelled=thirty-four ;;
+    35) spelled=thirty-five ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -826,6 +827,34 @@ check_fail_routes_forward_findings_verbatim_and_never_overrule_them() {
     'findings VERBATIM' 'never your summary of them'
 }
 
+check_verifier_payload_is_closed_and_its_comment_gate_scans() {
+  local agent payload gate marker
+  for agent in "$PLUGIN_ROOT/agents/oso-verifier.md" "$REPO_ROOT/codex/agents/oso-verifier.toml"; do
+    if [ ! -f "$agent" ]; then
+      flag "no oso-verifier contract at ${agent#"$REPO_ROOT"/} to check its payload list and its comment-gate scan"
+      continue
+    fi
+    payload="$({ grep -iF -- 'CLOSED list' "$agent" || true; })"
+    if [ -z "$payload" ]; then
+      flag "${agent#"$REPO_ROOT"/} leaves its payload fields an open list, the shape a standing ruling arrives through"
+    else
+      for marker in 'standing ruling' 'softens a gate' 'blocked' 'APPLIER input' 'the rubric alone'; do
+        printf '%s\n' "$payload" | grep -qiF -- "$marker" \
+          || flag "${agent#"$REPO_ROOT"/}'s payload list names itself closed and then leaves the door it closes open: $marker"
+      done
+    fi
+    gate="$({ grep -iF -- 'inline comment' "$agent" || true; })"
+    if [ -z "$gate" ]; then
+      flag "${agent#"$REPO_ROOT"/} names no inline-comment gate for a scan of the diff to feed"
+      continue
+    fi
+    for marker in 'RUN a scan' 'command and output' 'evidence' 'never scanned'; do
+      printf '%s\n' "$gate" | grep -qiF -- "$marker" \
+        || flag "${agent#"$REPO_ROOT"/}'s inline-comment gate rests on judgment with no scan of the diff behind it: $marker"
+    done
+  done
+}
+
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }
 
 check_forked_skills_declare_background
@@ -862,6 +891,7 @@ check_roadmap_condition_never_loosens_the_operator_rule
 check_roadmap_chain_declares_its_tree_bar_and_its_state_key
 check_roadmap_presence_phase_declares_its_order_and_its_three_pushes
 check_fail_routes_forward_findings_verbatim_and_never_overrule_them
+check_verifier_payload_is_closed_and_its_comment_gate_scans
 
 if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"

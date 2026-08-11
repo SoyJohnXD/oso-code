@@ -597,7 +597,7 @@ fi
 
 LINT_RULE_COUNT_FIXTURE="$TEST_HOME/lint-rule-count"
 copy_lint_fixture "$LINT_RULE_COUNT_FIXTURE"
-sed 's/thirty-four rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
+sed 's/thirty-five rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
   > "$LINT_RULE_COUNT_FIXTURE/README.md.tmp"
 mv "$LINT_RULE_COUNT_FIXTURE/README.md.tmp" "$LINT_RULE_COUNT_FIXTURE/README.md"
 if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
@@ -605,7 +605,7 @@ if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
   echo "FAIL: check_present_tense_prose_names_the_rule_count accepted stale present-tense rule-count prose"; fail=$((fail + 1))
 else
   case "$rule_count_lint_report" in
-    *"README.md does not name the thirty-four rules this linter declares"*)
+    *"README.md does not name the thirty-five rules this linter declares"*)
       echo "ok: check_present_tense_prose_names_the_rule_count rejects stale present-tense rule-count prose"; pass=$((pass + 1)) ;;
     *)
       echo "FAIL: check_present_tense_prose_names_the_rule_count mutation failed for the wrong reason — $(printf '%s' "$rule_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
@@ -1138,6 +1138,33 @@ else
         echo "ok: check_fail_routes_forward_findings_verbatim_and_never_overrule_them rejects a fail route that stopped binding the orchestrator to a no-exception verdict"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: the check_fail_routes_forward_findings_verbatim_and_never_overrule_them mutation failed for the wrong reason — $(printf '%s' "$no_countermand_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_CLOSED_PAYLOAD_FIXTURE="$TEST_HOME/lint-closed-payload"
+copy_lint_fixture "$LINT_CLOSED_PAYLOAD_FIXTURE"
+closed_payload_target="$LINT_CLOSED_PAYLOAD_FIXTURE/plugin/agents/oso-verifier.md"
+closed_payload_clause='Those fields are a CLOSED list'
+if ! grep -qF "$closed_payload_clause" "$closed_payload_target"; then
+  echo "FAIL: the check_verifier_payload_is_closed_and_its_comment_gate_scans mutation found no closed payload list to open in the Claude verifier contract"; fail=$((fail + 1))
+else
+  sed "s/$closed_payload_clause/Those fields are the ones a payload usually carries/" \
+    "$closed_payload_target" > "$closed_payload_target.tmp"
+  mv "$closed_payload_target.tmp" "$closed_payload_target"
+  if grep -qiF 'closed list' "$closed_payload_target"; then
+    echo "FAIL: the check_verifier_payload_is_closed_and_its_comment_gate_scans mutation left the closed payload list standing"; fail=$((fail + 1))
+  elif ! grep -qF 'RUN a scan' "$closed_payload_target"; then
+    echo "FAIL: the check_verifier_payload_is_closed_and_its_comment_gate_scans mutation took the comment-gate scan clause it was supposed to leave standing"; fail=$((fail + 1))
+  elif closed_payload_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_CLOSED_PAYLOAD_FIXTURE/plugin" "$LINT_CLOSED_PAYLOAD_FIXTURE" 2>&1)"; then
+    echo "FAIL: a verifier contract whose payload fields are an open list passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$closed_payload_report" in
+      *"agents/oso-verifier.md leaves its payload fields an open list"*)
+        echo "ok: check_verifier_payload_is_closed_and_its_comment_gate_scans rejects a verifier payload a standing ruling can be appended to"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the check_verifier_payload_is_closed_and_its_comment_gate_scans mutation failed for the wrong reason — $(printf '%s' "$closed_payload_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi
