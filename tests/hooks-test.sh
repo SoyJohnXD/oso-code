@@ -597,7 +597,7 @@ fi
 
 LINT_RULE_COUNT_FIXTURE="$TEST_HOME/lint-rule-count"
 copy_lint_fixture "$LINT_RULE_COUNT_FIXTURE"
-sed 's/thirty-six rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
+sed 's/thirty-seven rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
   > "$LINT_RULE_COUNT_FIXTURE/README.md.tmp"
 mv "$LINT_RULE_COUNT_FIXTURE/README.md.tmp" "$LINT_RULE_COUNT_FIXTURE/README.md"
 if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
@@ -605,7 +605,7 @@ if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
   echo "FAIL: check_present_tense_prose_names_the_rule_count accepted stale present-tense rule-count prose"; fail=$((fail + 1))
 else
   case "$rule_count_lint_report" in
-    *"README.md does not name the thirty-six rules this linter declares"*)
+    *"README.md does not name the thirty-seven rules this linter declares"*)
       echo "ok: check_present_tense_prose_names_the_rule_count rejects stale present-tense rule-count prose"; pass=$((pass + 1)) ;;
     *)
       echo "FAIL: check_present_tense_prose_names_the_rule_count mutation failed for the wrong reason — $(printf '%s' "$rule_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
@@ -1193,6 +1193,36 @@ else
         echo "ok: check_no_exception_rules_outrank_repo_convention rejects a rubric a target repo's convention can soften"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: the check_no_exception_rules_outrank_repo_convention mutation failed for the wrong reason — $(printf '%s' "$convention_precedence_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_AUTO_DISPOSITION_FIXTURE="$TEST_HOME/lint-auto-disposition"
+copy_lint_fixture "$LINT_AUTO_DISPOSITION_FIXTURE"
+auto_disposition_target="$LINT_AUTO_DISPOSITION_FIXTURE/plugin/skills/_shared/bodies/plan.md"
+auto_disposition_clause='disarms nothing'
+auto_disposition_answer='consumed as operator input and the run continues under AUTO'
+auto_disposition_neighbour='this run PARKS'
+if ! grep -qF "$auto_disposition_clause" "$auto_disposition_target"; then
+  echo "FAIL: the check_auto_disposition_is_a_ledger_toggle_that_parks_on_a_question mutation found no flip contract to invert in the plan body"; fail=$((fail + 1))
+else
+  sed -e "s/$auto_disposition_clause/is what hands the flow back to them/" \
+    -e "s/$auto_disposition_answer/read as the operator taking the run back/" \
+    "$auto_disposition_target" > "$auto_disposition_target.tmp"
+  mv "$auto_disposition_target.tmp" "$auto_disposition_target"
+  if grep -qiF "$auto_disposition_clause" "$auto_disposition_target"; then
+    echo "FAIL: the check_auto_disposition_is_a_ledger_toggle_that_parks_on_a_question mutation left the flip contract standing in the plan body"; fail=$((fail + 1))
+  elif ! grep -qF "$auto_disposition_neighbour" "$auto_disposition_target"; then
+    echo "FAIL: the check_auto_disposition_is_a_ledger_toggle_that_parks_on_a_question mutation took the park substitution it was supposed to leave standing"; fail=$((fail + 1))
+  elif auto_disposition_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_AUTO_DISPOSITION_FIXTURE/plugin" "$LINT_AUTO_DISPOSITION_FIXTURE" 2>&1)"; then
+    echo "FAIL: a plan body where any operator message ends AUTO passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$auto_disposition_report" in
+      *"unattended ground rule drops the clause"*"disarms nothing"*)
+        echo "ok: check_auto_disposition_is_a_ledger_toggle_that_parks_on_a_question rejects an AUTO run a passing operator message disarms"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the check_auto_disposition_is_a_ledger_toggle_that_parks_on_a_question mutation failed for the wrong reason — $(printf '%s' "$auto_disposition_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi

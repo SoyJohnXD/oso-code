@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Thirty-six rules over what the plugin's declarations, prose and delegation
+# Thirty-seven rules over what the plugin's declarations, prose and delegation
 # payloads SAY, which `claude plugin validate --strict` never reads.
 set -euo pipefail
 
@@ -426,6 +426,7 @@ check_present_tense_prose_names_the_rule_count() {
     31) spelled=thirty-one ;; 32) spelled=thirty-two ;;
     33) spelled=thirty-three ;; 34) spelled=thirty-four ;;
     35) spelled=thirty-five ;; 36) spelled=thirty-six ;;
+    37) spelled=thirty-seven ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -891,6 +892,26 @@ check_no_exception_rules_outrank_repo_convention() {
     'canonical case' 'legacy-convention conflict' 'the banned thing everywhere' 'only they may take'
 }
 
+check_auto_disposition_is_a_ledger_toggle_that_parks_on_a_question() {
+  local plan="$PLUGIN_ROOT/skills/_shared/bodies/plan.md"
+  roadmap_exception_stays_bounded_in "$plan" "A ROADMAP's child never waits for the operator" \
+    'unattended ground rule' \
+    "child of the ROADMAP mode's chain" 'a change executing under AUTO' \
+    'explicit operator instruction' 'disarmed the same way' 'recorded DATED' \
+    'disarms nothing' 'consumed as operator input' 'explicit resume instruction' \
+    'autonomy policy' "THIS change's scale" 'frozen ledger answering first' \
+    '`mode=plan` throughout' 'no fourth key' 'TWO substitutions'
+  roadmap_exception_stays_bounded_in "$plan" 'What that policy will not answer costs this change' \
+    'set-aside ground rule' \
+    'its OWN final report' 'this run PARKS' 'reports BLOCKED' \
+    'oso-state set mode=plan active_slice=none verify_green=false' \
+    'expects resumption' 'END OF THE TURN'
+  roadmap_exception_stays_bounded_in "$plan" '**The execution disposition' \
+    'execution-disposition question' \
+    "round's second question" 'NORMAL is the default' 'under AUTO' 'PARKING' \
+    'never re-ask what the ledger already answers'
+}
+
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }
 
 check_forked_skills_declare_background
@@ -929,6 +950,7 @@ check_roadmap_presence_phase_declares_its_order_and_its_three_pushes
 check_fail_routes_forward_findings_verbatim_and_never_overrule_them
 check_verifier_payload_is_closed_and_its_comment_gate_scans
 check_no_exception_rules_outrank_repo_convention
+check_auto_disposition_is_a_ledger_toggle_that_parks_on_a_question
 
 if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"
