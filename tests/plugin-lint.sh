@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Thirty-three rules over what the plugin's declarations, prose and delegation
+# Thirty-four rules over what the plugin's declarations, prose and delegation
 # payloads SAY, which `claude plugin validate --strict` never reads.
 set -euo pipefail
 
@@ -424,7 +424,7 @@ check_present_tense_prose_names_the_rule_count() {
     25) spelled=twenty-five ;; 26) spelled=twenty-six ;; 27) spelled=twenty-seven ;;
     28) spelled=twenty-eight ;; 29) spelled=twenty-nine ;; 30) spelled=thirty ;;
     31) spelled=thirty-one ;; 32) spelled=thirty-two ;;
-    33) spelled=thirty-three ;;
+    33) spelled=thirty-three ;; 34) spelled=thirty-four ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -808,6 +808,24 @@ check_roadmap_presence_phase_declares_its_order_and_its_three_pushes() {
     'A per-child CLOSE is none of the three' 'That is what ends a roadmap'
 }
 
+check_fail_routes_forward_findings_verbatim_and_never_overrule_them() {
+  local plan="$PLUGIN_ROOT/skills/_shared/bodies/plan.md"
+  roadmap_exception_stays_bounded_in "$plan" 'On `fail`: relaunch the applier' \
+    'sequential fail route' \
+    'findings VERBATIM' 'never your summary of them' 'yours to overrule' \
+    'instruct any judge away' 'ESCALATE' 'doubt-pass reconciliation' 'travel BARE'
+  roadmap_exception_stays_bounded_in "$plan" '**A red slice**' 'red-slice fail route' \
+    'findings VERBATIM' 'never your summary of them' 'yours to overrule' \
+    'instruct any judge away'
+  roadmap_exception_stays_bounded_in "$PLUGIN_ROOT/skills/_shared/bodies/debug.md" \
+    'Verifier `fail` → relaunch the applier' 'verifier fail route' \
+    'findings VERBATIM' 'never your summary of them' 'yours to overrule' \
+    'instruct any judge away'
+  roadmap_exception_stays_bounded_in "$PLUGIN_ROOT/skills/_shared/front-surface.md" \
+    '**Fix route**' 'design-audit fix route' \
+    'findings VERBATIM' 'never your summary of them'
+}
+
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }
 
 check_forked_skills_declare_background
@@ -843,6 +861,7 @@ check_roadmap_autonomy_policy_declares_its_ladder_and_its_bar
 check_roadmap_condition_never_loosens_the_operator_rule
 check_roadmap_chain_declares_its_tree_bar_and_its_state_key
 check_roadmap_presence_phase_declares_its_order_and_its_three_pushes
+check_fail_routes_forward_findings_verbatim_and_never_overrule_them
 
 if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"

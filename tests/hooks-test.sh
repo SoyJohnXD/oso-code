@@ -597,7 +597,7 @@ fi
 
 LINT_RULE_COUNT_FIXTURE="$TEST_HOME/lint-rule-count"
 copy_lint_fixture "$LINT_RULE_COUNT_FIXTURE"
-sed 's/thirty-three rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
+sed 's/thirty-four rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
   > "$LINT_RULE_COUNT_FIXTURE/README.md.tmp"
 mv "$LINT_RULE_COUNT_FIXTURE/README.md.tmp" "$LINT_RULE_COUNT_FIXTURE/README.md"
 if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
@@ -605,7 +605,7 @@ if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
   echo "FAIL: check_present_tense_prose_names_the_rule_count accepted stale present-tense rule-count prose"; fail=$((fail + 1))
 else
   case "$rule_count_lint_report" in
-    *"README.md does not name the thirty-three rules this linter declares"*)
+    *"README.md does not name the thirty-four rules this linter declares"*)
       echo "ok: check_present_tense_prose_names_the_rule_count rejects stale present-tense rule-count prose"; pass=$((pass + 1)) ;;
     *)
       echo "FAIL: check_present_tense_prose_names_the_rule_count mutation failed for the wrong reason — $(printf '%s' "$rule_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
@@ -1111,6 +1111,33 @@ else
         echo "ok: check_milestone_reporting_contract_is_complete rejects a contract whose bound reaches a roadmap's final report"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: the roadmap-report-bound mutation failed for the wrong reason — $(printf '%s' "$roadmap_report_bound_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_NO_COUNTERMAND_FIXTURE="$TEST_HOME/lint-no-countermand"
+copy_lint_fixture "$LINT_NO_COUNTERMAND_FIXTURE"
+no_countermand_target="$LINT_NO_COUNTERMAND_FIXTURE/plugin/skills/_shared/bodies/plan.md"
+no_countermand_rule='is never yours to overrule: the rubric holds exactly four of those'
+if ! grep -qF "$no_countermand_rule" "$no_countermand_target"; then
+  echo "FAIL: the check_fail_routes_forward_findings_verbatim_and_never_overrule_them mutation found no no-countermand rule to soften in the plan body's sequential fail route"; fail=$((fail + 1))
+else
+  sed "s/$no_countermand_rule/is yours to weigh against the change in front of you: the rubric holds exactly four of those/" \
+    "$no_countermand_target" > "$no_countermand_target.tmp"
+  mv "$no_countermand_target.tmp" "$no_countermand_target"
+  if grep -qiF 'never yours to overrule' "$no_countermand_target"; then
+    echo "FAIL: the check_fail_routes_forward_findings_verbatim_and_never_overrule_them mutation left the no-countermand rule standing in the plan body"; fail=$((fail + 1))
+  elif ! grep -qF 'doubt-pass reconciliation stays yours' "$no_countermand_target"; then
+    echo "FAIL: the check_fail_routes_forward_findings_verbatim_and_never_overrule_them mutation took the carve-out it was supposed to leave standing"; fail=$((fail + 1))
+  elif no_countermand_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_NO_COUNTERMAND_FIXTURE/plugin" "$LINT_NO_COUNTERMAND_FIXTURE" 2>&1)"; then
+    echo "FAIL: a sequential fail route whose no-exception verdict the orchestrator may weigh for itself passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$no_countermand_report" in
+      *"sequential fail route drops the clause that keeps a roadmap a bounded exception: yours to overrule"*)
+        echo "ok: check_fail_routes_forward_findings_verbatim_and_never_overrule_them rejects a fail route that stopped binding the orchestrator to a no-exception verdict"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the check_fail_routes_forward_findings_verbatim_and_never_overrule_them mutation failed for the wrong reason — $(printf '%s' "$no_countermand_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi
