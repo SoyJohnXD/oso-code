@@ -8324,6 +8324,80 @@ crlf_artifact_state="$([ -e "$HOME/.claude/$CRLF_LEGACY_ARTIFACT" ] && echo stan
 assert_equals "a CRLF manifest still removes the artifact it names" \
   "removed 1 / gone" "$crlf_removed_count / $crlf_artifact_state"
 
+if ! command -v jq >/dev/null 2>&1; then
+  echo "skip: phase 7's settings.json rewrites — jq is absent here, and it is what performs them"
+  skipped=$((skipped + 1))
+else
+  SETTINGS_PHASE_HOME="$TEST_HOME/settings-phase-home"
+  SETTINGS_PHASE_FILE="$SETTINGS_PHASE_HOME/.claude/settings.json"
+  mkdir -p "$SETTINGS_PHASE_HOME/.claude"
+
+  phase_seven_rewrite_over() {
+    local phase_function="$1" settings_fixture="$2"
+    rm -f "${SETTINGS_PHASE_FILE}.tmp"
+    printf '%s' "$settings_fixture" > "$SETTINGS_PHASE_FILE"
+    HOME="$SETTINGS_PHASE_HOME" bash -c '
+      installer="$1" rewrite="$2"
+      set --
+      . "$installer"
+      "$rewrite"
+    ' _ "$INSTALL_SH" "$phase_function" >/dev/null 2>&1 && printf 'survived' || printf 'died'
+    printf ' / %s' "$([ -e "${SETTINGS_PHASE_FILE}.tmp" ] && echo 'tmp left behind' || echo 'no tmp left')"
+  }
+
+  legacy_entry_removal_over() { phase_seven_rewrite_over remove_legacy_settings_entries "$1"; }
+  output_style_over() { phase_seven_rewrite_over ensure_output_style "$1"; }
+
+  no_hooks_settings='{"env":{"OSO_STATE_BIN":"/x/oso-state"},"outputStyle":"Oso"}'
+  no_hooks_verdict="$(legacy_entry_removal_over "$no_hooks_settings")"
+  assert_equals "a settings.json with no hooks block survives phase 7 with its keys intact" \
+    "survived / no tmp left / $(printf '%s' "$no_hooks_settings" | jq -Sc .)" \
+    "$no_hooks_verdict / $(jq -Sc . "$SETTINGS_PHASE_FILE" 2>/dev/null || echo unreadable)"
+
+  legacy_hooks_settings='{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"~/.claude/hooks/gentle-ai/clean-code-gate.sh"}]},{"matcher":"Edit","hooks":[{"type":"command","command":"block-edits-without-slice.sh"}]}],"SessionStart":[{"matcher":"*","hooks":[{"type":"command","command":"skill-registry-refresh.sh"}]}]}}'
+  legacy_hooks_verdict="$(legacy_entry_removal_over "$legacy_hooks_settings")"
+  assert_equals "phase 7 drops the legacy hook entries and keeps the plugin's own" \
+    "survived / no tmp left / "'{"hooks":{"PreToolUse":[{"hooks":[{"command":"block-edits-without-slice.sh","type":"command"}],"matcher":"Edit"}]}}' \
+    "$legacy_hooks_verdict / $(jq -Sc . "$SETTINGS_PHASE_FILE" 2>/dev/null || echo unreadable)"
+
+  malformed_settings='{"hooks":{"PreToolUse":[]},}'
+  malformed_verdict="$(legacy_entry_removal_over "$malformed_settings")"
+  assert_equals "a settings.json jq refuses ends phase 7 with the operator's file byte for byte" \
+    "survived / no tmp left / $malformed_settings" \
+    "$malformed_verdict / $(cat "$SETTINGS_PHASE_FILE")"
+
+  malformed_style_verdict="$(output_style_over "$malformed_settings")"
+  assert_equals "a settings.json jq refuses leaves the output style where it was rather than ending the install" \
+    "survived / no tmp left / $malformed_settings" \
+    "$malformed_style_verdict / $(cat "$SETTINGS_PHASE_FILE")"
+
+  foreign_style_settings='{"outputStyle":"Explanatory"}'
+  foreign_style_verdict="$(output_style_over "$foreign_style_settings")"
+  assert_equals "an output style the operator chose survives phase 7 untouched" \
+    "survived / no tmp left / $foreign_style_settings" \
+    "$foreign_style_verdict / $(cat "$SETTINGS_PHASE_FILE")"
+
+  absent_style_verdict="$(output_style_over '{"env":{}}')"
+  assert_equals "a settings.json with no style at all comes out of phase 7 pointing at Oso" \
+    "survived / no tmp left / Oso" \
+    "$absent_style_verdict / $(jq -r '.outputStyle' "$SETTINGS_PHASE_FILE")"
+
+  empty_removal_verdict="$(legacy_entry_removal_over '')"
+  assert_equals "a zero-byte settings.json is not what phase 7's hook cleanup writes back" \
+    "survived / no tmp left / 0" \
+    "$empty_removal_verdict / $(wc -c < "$SETTINGS_PHASE_FILE" | tr -d ' ')"
+
+  empty_style_verdict="$(output_style_over '')"
+  assert_equals "a zero-byte settings.json comes out of phase 7 pointing at Oso, never blank" \
+    "survived / no tmp left / Oso" \
+    "$empty_style_verdict / $(jq -r '.outputStyle' "$SETTINGS_PHASE_FILE" 2>/dev/null || echo blank)"
+
+  whitespace_style_verdict="$(output_style_over '   ')"
+  assert_equals "a whitespace-only settings.json is never blanked by the style write" \
+    "survived / no tmp left / 3" \
+    "$whitespace_style_verdict / $(wc -c < "$SETTINGS_PHASE_FILE" | tr -d ' ')"
+fi
+
 # --- A CRLF CLAUDE.md: one managed block, however the operator's editor writes -
 # ~/.claude/CLAUDE.md belongs to the OPERATOR, and a Windows editor rewrites it
 # CRLF, so the markers an earlier install wrote come back carrying a CR and a

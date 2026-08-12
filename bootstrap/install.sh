@@ -1018,28 +1018,39 @@ shell_spelling_of() {
 # expression covers a file that has the block and one that does not.
 # The read-back is not ceremony: a write nobody read back is how a summary comes
 # to report a health nothing measured, which is the class this whole change closes.
+rewrite_settings_json() {
+  local settings="$1" program="$2" failure
+  shift 2
+  if ! failure="$(jq "$@" "$program" "$settings" 2>&1 >"${settings}.tmp")"; then
+    rm -f "${settings}.tmp"
+    printf 'jq refused %s: %s' "$settings" "${failure//$'\n'/ }"
+    return 1
+  fi
+  if [ ! -s "${settings}.tmp" ]; then
+    rm -f "${settings}.tmp"
+    printf 'jq read no JSON value out of %s' "$settings"
+    return 1
+  fi
+  if ! failure="$(mv "${settings}.tmp" "$settings" 2>&1)"; then
+    rm -f "${settings}.tmp"
+    printf 'could not put the rewritten %s back: %s' "$settings" "${failure//$'\n'/ }"
+    return 1
+  fi
+}
+
 store_client_env() {
   local key="$1" value="$2" settings="$CLAUDE_DIR/settings.json" failure
   if ! mkdir -p "$CLAUDE_DIR" 2>/dev/null; then
     printf 'could not create %s' "$CLAUDE_DIR"
     return 1
   fi
-  if [ ! -f "$settings" ] && ! printf '{}\n' > "$settings" 2>/dev/null; then
+  if [ ! -s "$settings" ] && ! printf '{}\n' > "$settings" 2>/dev/null; then
     printf 'could not create %s' "$settings"
     return 1
   fi
-  if ! failure="$(jq --arg key "$key" --arg value "$value" '.env[$key] = $value' \
-    "$settings" 2>&1 >"${settings}.tmp")"; then
-    # The rewrite lands in the .tmp beside it first, so a jq that refuses the file
-    # — an operator's settings.json carrying a stray comma — leaves that file
-    # exactly as it was rather than truncated to nothing.
-    rm -f "${settings}.tmp"
-    printf 'jq could not write %s into %s: %s' "$key" "$settings" "${failure//$'\n'/ }"
-    return 1
-  fi
-  if ! failure="$(mv "${settings}.tmp" "$settings" 2>&1)"; then
-    rm -f "${settings}.tmp"
-    printf 'could not put the rewritten %s back: %s' "$settings" "${failure//$'\n'/ }"
+  if ! failure="$(rewrite_settings_json "$settings" '.env[$key] = $value' \
+    --arg key "$key" --arg value "$value")"; then
+    printf 'could not write %s into %s — %s' "$key" "$settings" "$failure"
     return 1
   fi
   if [ "$(client_env_value "$key")" != "$value" ]; then
@@ -1181,52 +1192,57 @@ remove_legacy_artifacts() {
   fi
 }
 
-# No copy here, and none in ensure_output_style below: backup_client_config took
-# the pre-image in phase 2, before the client wrote this file three times and
-# publish_client_environment added its env block to it, and a copy taken now would
-# hold the run's own work under the same name.
 remove_legacy_settings_entries() {
-  local settings="$CLAUDE_DIR/settings.json"
-  [ -f "$settings" ] || return 0
-  # Drop gentle-ai hook entries; the output style is repointed separately by
-  # ensure_output_style.
-  jq '(.hooks // {}) |= with_entries(
-        .value |= map(select(
-          [.hooks[]?.command // ""]
-          | any(test("check-plan-contract|clean-code-gate|skill-registry-refresh|gentle-ai"))
-          | not
-        ))
-      )
-      | .hooks |= with_entries(select(.value | length > 0))' \
-    "$settings" > "${settings}.tmp"
-  mv "${settings}.tmp" "$settings"
+  local settings="$CLAUDE_DIR/settings.json" failure
+  local legacy_hook_commands='check-plan-contract|clean-code-gate|skill-registry-refresh|gentle-ai'
+  [ -s "$settings" ] || return 0
+  if ! failure="$(rewrite_settings_json "$settings" '
+        if (.hooks | type) != "object" then .
+        else
+          .hooks |= (
+            with_entries(.value |= map(select(
+              [.hooks[]?.command // ""] | any(test($legacy)) | not
+            )))
+            | with_entries(select(.value | length > 0))
+          )
+        end' --arg legacy "$legacy_hook_commands")"; then
+    warn "left settings.json exactly as it was — $failure"
+    return 0
+  fi
   info "cleaned legacy hook entries from settings.json"
 }
 
 ensure_output_style() {
-  # Point Claude Code at the Oso output style: fresh-set it on a clean machine
-  # (no style yet, absent or dangling "Gentleman"), but never override a style
-  # the operator chose on purpose — just show how to switch. The manifest removes
-  # output-styles/gentleman.md, so a lingering "Gentleman" pointer would dangle.
-  local settings="$CLAUDE_DIR/settings.json"
+  local settings="$CLAUDE_DIR/settings.json" failure
   local current=absent
-  [ -f "$settings" ] && current="$(jq -r '.outputStyle // "absent"' "$settings")"
+  if [ -s "$settings" ] && ! current="$(jq -r '.outputStyle // "absent"' "$settings" 2>&1)"; then
+    warn "left your output style alone — jq could not read settings.json: ${current//$'\n'/ }"
+    return 0
+  fi
+  [ -n "$current" ] || current=absent
 
   case "$current" in
-    absent | Gentleman | Oso)
-      mkdir -p "$CLAUDE_DIR"
-      if [ -f "$settings" ]; then
-        jq '.outputStyle = "Oso"' "$settings" > "${settings}.tmp"
-        mv "${settings}.tmp" "$settings"
-      else
-        jq -n '{outputStyle: "Oso"}' > "$settings"
-      fi
-      info "output style set to Oso"
-      ;;
+    absent | Gentleman | Oso) ;;
     *)
       info "keeping your output style \"$current\" — switch to Oso anytime via /config → output style"
+      return 0
       ;;
   esac
+
+  if ! failure="$(mkdir -p "$CLAUDE_DIR" 2>&1)"; then
+    warn "left your output style unset — could not create $CLAUDE_DIR: ${failure//$'\n'/ }"
+    return 0
+  fi
+  if [ ! -s "$settings" ]; then
+    if ! failure="$(jq -n '{outputStyle: "Oso"}' 2>&1 >"$settings")"; then
+      warn "left your output style unset — could not write $settings: ${failure//$'\n'/ }"
+      return 0
+    fi
+  elif ! failure="$(rewrite_settings_json "$settings" '.outputStyle = "Oso"')"; then
+    warn "left your output style as it was — $failure"
+    return 0
+  fi
+  info "output style set to Oso"
 }
 
 merge_global_claude_md() {
