@@ -4,6 +4,8 @@
 
 The Claude Code TUI drops assistant text that precedes a tool call in the same turn. So operator-facing content — the intent presentation, the surface-map presentation, any narrative the operator must read — must END the turn as plain text, with the tool call (`AskUserQuestion`, `ExitPlanMode`) in a LATER turn. Context a question round needs travels INSIDE the `AskUserQuestion` fields (question text, option descriptions), never as prose before the call.
 
+One exception stands and `reporting.md` beside this file states it whole rather than this section restating it: while this repository's state carries `auto=running`, the run is UNATTENDED and its milestone text rides the stream instead of ending the turn, journaled full-text in its place, with the park and the final report still ending it. Nothing here changes for a run with no such marker — and phases 1–5 always run with the operator, so no exception reaches this file's own gates.
+
 ## Question rounds
 
 The tool is `AskUserQuestion`, and one round holds 4 questions maximum — its platform cap. §2 step 5 feeds Decision rounds at that same number.
@@ -44,6 +46,16 @@ The commit rail has two layers and the wave loop's green window (§6) exists bec
 - the `PreToolUse` matcher, because it reads the command line and nothing else.
 
 The teardown §6 arms `repo_path` for is the `SessionEnd` hook, which runs `git worktree remove` and `git worktree prune` in the repo named there.
+
+## What the unattended marker arms on this host
+
+Three of this plugin's hooks read the `auto` marker the AUTO disposition writes, and they are what "unattended" costs and buys here:
+
+- `auto-continue.sh` — the `Stop` net. It reads `auto=running` and pushes the run on when a turn ends without parking or closing it, capped at a fixed number of pushes that moved the journal nowhere. `reporting.md` beside this file owns the delivery carve-out this net stands behind.
+- `reanchor-after-compact.sh` — `SessionStart` with `source=compact`. A compaction takes the window and not the position: this hook hands the fresh context the three places the position actually lives — the `oso/index` row's `NEXT:` line, `oso-state show`, and the run journal. How much window the client holds before compacting is the `autoCompactWindow` setting, which the harness can ask for and never guarantee, so this re-anchor is the floor under an unattended run rather than the window being one.
+- `block-prod-deploy.sh` — a `PreToolUse` rail armed only while the marker is running: a production deploy, and a push off the run's own branch, are denied to a run nobody is watching. Taking the run back (`auto=done`) is what disarms it.
+
+The marker is the flow's to write, never a hook's: `oso-state set auto=running auto_change=<change-slug>`, `auto=parked`, `auto=done`, exactly where the neutral body's own ground rules put each flip.
 
 ## The worktree root
 

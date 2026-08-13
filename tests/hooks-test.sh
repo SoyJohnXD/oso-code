@@ -624,7 +624,7 @@ fi
 
 LINT_RULE_COUNT_FIXTURE="$TEST_HOME/lint-rule-count"
 copy_lint_fixture "$LINT_RULE_COUNT_FIXTURE"
-sed 's/thirty-seven rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
+sed 's/thirty-eight rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
   > "$LINT_RULE_COUNT_FIXTURE/README.md.tmp"
 mv "$LINT_RULE_COUNT_FIXTURE/README.md.tmp" "$LINT_RULE_COUNT_FIXTURE/README.md"
 if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
@@ -632,7 +632,7 @@ if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
   echo "FAIL: check_present_tense_prose_names_the_rule_count accepted stale present-tense rule-count prose"; fail=$((fail + 1))
 else
   case "$rule_count_lint_report" in
-    *"README.md does not name the thirty-seven rules this linter declares"*)
+    *"README.md does not name the thirty-eight rules this linter declares"*)
       echo "ok: check_present_tense_prose_names_the_rule_count rejects stale present-tense rule-count prose"; pass=$((pass + 1)) ;;
     *)
       echo "FAIL: check_present_tense_prose_names_the_rule_count mutation failed for the wrong reason — $(printf '%s' "$rule_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
@@ -1250,6 +1250,60 @@ else
         echo "ok: check_auto_disposition_is_a_ledger_toggle_that_parks_on_a_question rejects an AUTO run a passing operator message disarms"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: the check_auto_disposition_is_a_ledger_toggle_that_parks_on_a_question mutation failed for the wrong reason — $(printf '%s' "$auto_disposition_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_UNATTENDED_CARVE_OUT_FIXTURE="$TEST_HOME/lint-unattended-carve-out"
+copy_lint_fixture "$LINT_UNATTENDED_CARVE_OUT_FIXTURE"
+unattended_carve_out_target="$LINT_UNATTENDED_CARVE_OUT_FIXTURE/plugin/skills/_shared/platform/claude/reporting.md"
+unattended_carve_out_clause='does NOT end the turn'
+unattended_carve_out_neighbour='oso-state journal'
+if ! grep -qF "$unattended_carve_out_clause" "$unattended_carve_out_target"; then
+  echo "FAIL: the check_unattended_run_carves_out_the_delivery_contract mutation found no carve-out to take back in the Claude reporting binding"; fail=$((fail + 1))
+else
+  sed "s/$unattended_carve_out_clause/ends the turn like every other one/" \
+    "$unattended_carve_out_target" > "$unattended_carve_out_target.tmp"
+  mv "$unattended_carve_out_target.tmp" "$unattended_carve_out_target"
+  if grep -qF "$unattended_carve_out_clause" "$unattended_carve_out_target"; then
+    echo "FAIL: the check_unattended_run_carves_out_the_delivery_contract mutation left the carve-out standing in the Claude reporting binding"; fail=$((fail + 1))
+  elif ! grep -qF "$unattended_carve_out_neighbour" "$unattended_carve_out_target"; then
+    echo "FAIL: the check_unattended_run_carves_out_the_delivery_contract mutation took the journal duty it was supposed to leave standing"; fail=$((fail + 1))
+  elif unattended_carve_out_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_UNATTENDED_CARVE_OUT_FIXTURE/plugin" "$LINT_UNATTENDED_CARVE_OUT_FIXTURE" 2>&1)"; then
+    echo "FAIL: a delivery contract that ends the turn on every milestone of an unattended run passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$unattended_carve_out_report" in
+      *"unattended-run carve-out drops a clause it turns on: does NOT end the turn"*)
+        echo "ok: check_unattended_run_carves_out_the_delivery_contract rejects a host that orders an unattended run to stop at every milestone"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the check_unattended_run_carves_out_the_delivery_contract mutation failed for the wrong reason — $(printf '%s' "$unattended_carve_out_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_COMPACTION_COST_FIXTURE="$TEST_HOME/lint-compaction-cost"
+copy_lint_fixture "$LINT_COMPACTION_COST_FIXTURE"
+compaction_cost_target="$LINT_COMPACTION_COST_FIXTURE/plugin/skills/_shared/bodies/roadmap.md"
+compaction_cost_clause='a compaction mid-chain costs it its WINDOW and never its POSITION'
+compaction_cost_neighbour='auto=running auto_change='
+if ! grep -qF "$compaction_cost_clause" "$compaction_cost_target"; then
+  echo "FAIL: the check_unattended_run_carves_out_the_delivery_contract mutation found no compaction economy to overstate in the roadmap body"; fail=$((fail + 1))
+else
+  sed "s/$compaction_cost_clause/a compaction costs it nothing/" \
+    "$compaction_cost_target" > "$compaction_cost_target.tmp"
+  mv "$compaction_cost_target.tmp" "$compaction_cost_target"
+  if ! grep -qF "$compaction_cost_neighbour" "$compaction_cost_target"; then
+    echo "FAIL: the check_unattended_run_carves_out_the_delivery_contract mutation took the chain's own marker arming it was supposed to leave standing"; fail=$((fail + 1))
+  elif compaction_cost_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_COMPACTION_COST_FIXTURE/plugin" "$LINT_COMPACTION_COST_FIXTURE" 2>&1)"; then
+    echo "FAIL: a roadmap body claiming a compaction costs its chain nothing passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$compaction_cost_report" in
+      *"still says a compaction costs the chain nothing"*)
+        echo "ok: check_unattended_run_carves_out_the_delivery_contract rejects a chain whose survivability rests on a window nobody can guarantee"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the compaction-economy mutation failed for the wrong reason — $(printf '%s' "$compaction_cost_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi
@@ -2740,8 +2794,8 @@ assert_leaves_no_trace "an unarmed session leaves the slice gate silent without 
 # names fewer than three keys leaves the other two standing: that is how a
 # slice-pass write left the previous slice armed and a phase boundary left both
 # gates open. Backticks delimit every command these documents instruct, so each
-# span that invokes the state binary with `set` has to spell mode, active_slice
-# and verify_green.
+# span that invokes the state binary with `set` over any key of that triple has
+# to spell all three of them.
 # Read out of the NEUTRAL bodies, which is where the keys are written: the binary
 # and the flag that names the session are host spellings and live in each mode's
 # platform file, so the span a mode instructs reads `oso-state set …` and the
@@ -2755,6 +2809,10 @@ for state_writer in $modes_arming_a_slice_of_their_own; do
     case "$instructed_command" in
       *oso-state" set "*) writes_read=$((writes_read + 1)) ;;
       *) continue ;;
+    esac
+    case "$instructed_command" in
+      *mode=*|*active_slice=*|*verify_green=*) ;;
+      *"set auto="*) continue ;;
     esac
     case "$instructed_command" in
       *"set mode="*" active_slice="*" verify_green="*) ;;
@@ -4442,6 +4500,23 @@ assert_says_every "the close asks for a push and a PR, never for a commit" \
 A COMMIT is part of the flow and is never asked for
 PUSH and PR are the two that still require the operator to ask
 COMMIT_BOUNDARY_TABLE
+
+assert_says_every "the disposition round records the AUTO answer and leaves the arming to §5" \
+  "$(plan_section 4)" <<'AUTO_MARKER_ROUND_TABLE'
+RECORDED here and ARMED at §5
+this phase writes no runtime state at all
+AUTO_MARKER_ROUND_TABLE
+
+assert_says_every "the initialize arms the marker with the rest of the execution state" \
+  "$(plan_section 5)" <<'AUTO_MARKER_ARMING_TABLE'
+`auto=running auto_change=<change-slug>` in that same write
+AUTO_MARKER_ARMING_TABLE
+
+assert_says_every "the close disarms the marker before it delivers the final report" \
+  "$(plan_section 7)" <<'AUTO_MARKER_CLOSE_TABLE'
+DISARM first — `oso-state set auto=done`, a tool call
+that same turn's trailing text
+AUTO_MARKER_CLOSE_TABLE
 
 # The same trees from the other end: the close clears the ones the operator
 # reached, and the resume is where they hear about the ones nobody did. No hook

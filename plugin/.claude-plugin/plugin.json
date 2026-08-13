@@ -1,7 +1,7 @@
 {
   "name": "oso-code",
   "description": "Team harness for Claude Code: guided orchestrator with four modes (/plan for substantial changes, /quick for fast iteration, /debug for reproduce-first bug fixing, /roadmap for a queue of changes decided once and then run unattended), apply/verify loops, a forked pre-commit security review, an Impeccable design bar on front surfaces, and a final debt-sweep phase.",
-  "version": "0.23.0",
+  "version": "0.24.0",
   "outputStyles": "./output-styles/",
   "author": {
     "name": "Osoria Tech"

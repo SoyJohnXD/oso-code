@@ -2,7 +2,9 @@
 
 ## The delivery contract — anti-swallow
 
-The Claude Code TUI drops assistant text that precedes a tool call in the same turn. So operator-facing content — the queue as it is planned, the approval document, the presence phase, every milestone report the chain makes while the operator is away — must END the turn as plain text, with the tool call in a LATER turn. Context a question round needs travels INSIDE the `AskUserQuestion` fields (question text, option descriptions), never as prose before the call.
+The Claude Code TUI drops assistant text that precedes a tool call in the same turn. So operator-facing content — the queue as it is planned, the approval document, the presence phase — must END the turn as plain text, with the tool call in a LATER turn. Context a question round needs travels INSIDE the `AskUserQuestion` fields (question text, option descriptions), never as prose before the call.
+
+Every milestone report the chain makes while the operator is away is the exception, and `reporting.md` beside this file states it whole rather than this section restating it: a chain arming its children under `auto=running` is an UNATTENDED RUN, so its milestone text rides the stream instead of ending the turn and is journaled full-text in its place, while §5's three stopping moments — the roadmap complete, the queue ready, the chain blocked — end the turn the way this section opens, because each is the chain handing itself back.
 
 ## Question rounds
 
@@ -28,8 +30,9 @@ Wherever the neutral body names a file as `_shared/<file>.md`, it is spelled `${
 
 - **The state command** — every `oso-state <verb> …` §4 instructs, its `set roadmap={roadmap}`, its `set roadmap=none` and the `show` that reads either back included, runs under the prefix that file's own **The state command** section spells. Spelled bare, without that prefix, the command exits on its usage message and writes nothing at all, so following this route is not optional.
 - **The worktree root** — `<worktree root>`, the SECOND place §4's bar reads before every arming, is the path that file's own **The worktree root** section spells.
+- **The unattended rails** — the three hooks §4's `auto=running` arms on this host, named one by one in that file's own **What the unattended marker arms on this host** section: the `Stop` net that pushes the chain on, the `SessionStart` re-anchor after a compaction, and the production-boundary rail that stands while the marker does.
 
-READ both sections there before §4 arms its first child.
+READ all three sections there before §4 arms its first child.
 
 ## Reporting binding
 

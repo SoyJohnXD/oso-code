@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Thirty-seven rules over what the plugin's declarations, prose and delegation
+# Thirty-eight rules over what the plugin's declarations, prose and delegation
 # payloads SAY, which `claude plugin validate --strict` never reads.
 set -euo pipefail
 
@@ -426,7 +426,7 @@ check_present_tense_prose_names_the_rule_count() {
     31) spelled=thirty-one ;; 32) spelled=thirty-two ;;
     33) spelled=thirty-three ;; 34) spelled=thirty-four ;;
     35) spelled=thirty-five ;; 36) spelled=thirty-six ;;
-    37) spelled=thirty-seven ;;
+    37) spelled=thirty-seven ;; 38) spelled=thirty-eight ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -908,7 +908,7 @@ check_auto_disposition_is_a_ledger_toggle_that_parks_on_a_question() {
     'explicit operator instruction' 'disarmed the same way' 'recorded DATED' \
     'disarms nothing' 'consumed as operator input' 'explicit resume instruction' \
     'autonomy policy' "THIS change's scale" 'frozen ledger answering first' \
-    '`mode=plan` throughout' 'no fourth key' 'TWO substitutions'
+    '`mode=plan` throughout' 'beside that triple and never over it' 'TWO substitutions'
   anchored_absolute_stays_bounded_in "$plan" 'What that policy will not answer costs this change' \
     'set-aside ground rule' \
     'its OWN final report' 'this run PARKS' 'reports BLOCKED' \
@@ -918,6 +918,40 @@ check_auto_disposition_is_a_ledger_toggle_that_parks_on_a_question() {
     'execution-disposition question' \
     "round's second question" 'NORMAL is the default' 'under AUTO' 'PARKING' \
     'never re-ask what the ledger already answers'
+}
+
+check_unattended_run_carves_out_the_delivery_contract() {
+  local carve_out="$PLUGIN_ROOT/skills/_shared/platform/claude/reporting.md"
+  local roadmap="$PLUGIN_ROOT/skills/_shared/bodies/roadmap.md"
+  local statement marker
+  if [ ! -f "$carve_out" ]; then
+    flag "no Claude reporting binding at skills/_shared/platform/claude/reporting.md to carry the unattended run's delivery carve-out"
+  else
+    statement="$({ sed -n '/^## The unattended run/,/^## /p' "$carve_out" 2>&1 || true; })"
+    if [ -z "$statement" ]; then
+      flag "skills/_shared/platform/claude/reporting.md carves no unattended run out of its delivery contract, so every milestone of a run nobody is watching ends the turn and waits for somebody who is not coming"
+    else
+      for marker in 'auto=running' 'does NOT end the turn' 'oso-state journal' \
+          'END THE TURN' 'auto=done' 'auto-continue.sh'; do
+        printf '%s\n' "$statement" | grep -qF -- "$marker" \
+          || flag "skills/_shared/platform/claude/reporting.md's unattended-run carve-out drops a clause it turns on: $marker"
+      done
+    fi
+  fi
+
+  anchored_absolute_stays_bounded_in "$PLUGIN_ROOT/skills/_shared/bodies/plan.md" \
+    "A ROADMAP's child never waits for the operator" 'unattended marker flips' \
+    'auto=running' 'auto=parked' 'auto=done' 'oso-state journal'
+
+  if [ ! -f "$roadmap" ]; then
+    flag "no roadmap body at skills/_shared/bodies/roadmap.md to check what a compaction costs a chain in flight"
+    return 0
+  fi
+  if grep -qF -- 'a compaction costs it nothing' "$roadmap"; then
+    flag "skills/_shared/bodies/roadmap.md still says a compaction costs the chain nothing, a claim resting on a client window the harness can ask for and never guarantee"
+  fi
+  anchored_absolute_stays_bounded_in "$roadmap" '**What survives the session' \
+    'compaction economy' 'best-effort' 're-anchor' 'run journal'
 }
 
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }
@@ -959,6 +993,7 @@ check_fail_routes_forward_findings_verbatim_and_never_overrule_them
 check_verifier_payload_is_closed_and_its_comment_gate_scans
 check_no_exception_rules_outrank_repo_convention
 check_auto_disposition_is_a_ledger_toggle_that_parks_on_a_question
+check_unattended_run_carves_out_the_delivery_contract
 
 if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"
