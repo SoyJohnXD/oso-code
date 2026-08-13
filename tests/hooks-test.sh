@@ -5194,6 +5194,150 @@ oso-state --session "$SESSION" set stale_ok=yes >/dev/null 2>&1 || true
 assert_equals "stale lock is reclaimed" yes "$(oso-state --session "$SESSION" get stale_ok)"
 oso-state --session "$SESSION" clear
 
+JOURNAL_DIR="$STATE_DIR/runs/$REPO_KEY"
+
+journal_milestone() {
+  ( cd "${2:-$REPO_ROOT}" && oso-state --session "$SESSION" journal "$1" ) 2>/dev/null || true
+}
+
+journal_texts_in() {
+  { cut -d' ' -f2- "$1" 2>/dev/null || true; } | tr '\n' '>'
+}
+
+rm -rf "$STATE_DIR/runs"
+long_milestone='wave 3 verifier'
+while [ "${#long_milestone}" -lt 240 ]; do
+  long_milestone="$long_milestone, slice 7 applied and the bar closed green"
+done
+journal_milestone "$long_milestone"
+journaled_line="$({ cat "$JOURNAL_DIR/run.log" 2>/dev/null || true; })"
+journaled_text="${journaled_line#* }"
+assert_equals "the journaled milestone runs past the event log's 120-byte command head" \
+  "past" "$([ "${#journaled_text}" -gt 200 ] && echo past || echo short)"
+assert_equals "a milestone longer than the event cap is journaled byte-intact, never truncated" \
+  "$long_milestone" "$journaled_text"
+
+rm -rf "$STATE_DIR/runs"
+journal_milestone "wave 1 armed"
+journal_milestone "wave 1 verified"
+assert_equals "two milestones append to one journal in the order they happened" \
+  "wave 1 armed>wave 1 verified>" "$(journal_texts_in "$JOURNAL_DIR/run.log")"
+
+rm -rf "$STATE_DIR/runs"
+marker_reads=""
+for run_marker in running parked done; do
+  oso-state --session "$SESSION" set "auto=$run_marker" auto_change=auto-continuity
+  journal_milestone "the run is $run_marker"
+  marker_reads="$marker_reads $(oso-state --session "$SESSION" get auto)"
+done
+assert_equals "the run marker round-trips running, parked and done, journaling under its change" \
+  "running parked done|the run is running>the run is parked>the run is done>" \
+  "${marker_reads# }|$(journal_texts_in "$JOURNAL_DIR/auto-continuity.log")"
+marker_shown="$(oso-state --session "$SESSION" show)"
+marker_keys_unshown=""
+for marker_key in auto auto_change; do
+  case "$marker_shown" in
+    *"$marker_key="*) ;;
+    *) marker_keys_unshown="$marker_keys_unshown $marker_key" ;;
+  esac
+done
+assert_equals "show carries the marker beside the change slug its journal is named after" \
+  "|auto-continuity.log" "$marker_keys_unshown|$(ls "$JOURNAL_DIR" 2>/dev/null || true)"
+oso-state --session "$SESSION" clear
+
+rm -rf "$STATE_DIR/runs"
+JOURNAL_PLAIN="$TEST_HOME/journal-outside-git"
+mkdir -p "$JOURNAL_PLAIN"
+journal_milestone "no repository names this directory" "$JOURNAL_PLAIN"
+assert_equals "a directory git cannot name journals under the same fallback its state file takes" \
+  "no repository names this directory>" \
+  "$(journal_texts_in "$STATE_DIR/runs/$(state_key_of "$JOURNAL_PLAIN")/run.log")"
+
+rm -rf "$STATE_DIR/runs"
+JOURNAL_REPO="$TEST_HOME/journal-repo"
+JOURNAL_WORKTREE="$TEST_HOME/journal-worktree"
+if ! command -v git >/dev/null 2>&1; then
+  echo "skip: git is absent here, so a run has no second tree to journal from"
+  skipped=$((skipped + 1))
+else
+  mkdir -p "$JOURNAL_REPO"
+  git -C "$JOURNAL_REPO" init -q
+  git -C "$JOURNAL_REPO" config user.email tests@oso-code.invalid
+  git -C "$JOURNAL_REPO" config user.name "oso-code tests"
+  git -C "$JOURNAL_REPO" config commit.gpgsign false
+  printf 'base\n' > "$JOURNAL_REPO/base.txt"
+  git -C "$JOURNAL_REPO" add base.txt
+  git -C "$JOURNAL_REPO" commit -qm base
+  git -C "$JOURNAL_REPO" worktree add -q -b oso/journal "$JOURNAL_WORKTREE"
+  ( cd "$JOURNAL_REPO" && oso-state --session "$SESSION" set auto_change=wave-2 >/dev/null )
+  journal_milestone "the orchestrator armed wave 2" "$JOURNAL_REPO"
+  journal_milestone "the applier landed slice 3" "$JOURNAL_WORKTREE"
+  assert_equals "a linked worktree appends to the journal its main checkout opened" \
+    "the orchestrator armed wave 2>the applier landed slice 3>" \
+    "$(journal_texts_in "$STATE_DIR/runs/$(state_key_of "$JOURNAL_REPO")/wave-2.log")"
+  ( cd "$JOURNAL_REPO" && oso-state --session "$SESSION" clear )
+  git -C "$JOURNAL_REPO" worktree remove --force "$JOURNAL_WORKTREE"
+  git -C "$JOURNAL_REPO" worktree prune
+  rm -rf "$JOURNAL_REPO"
+fi
+
+rm -rf "$STATE_DIR/runs"
+journal_usage_stderr="$TEST_HOME/journal-usage-stderr"
+journal_missing_rc=0
+oso-state --session "$SESSION" journal 2>"$journal_usage_stderr" || journal_missing_rc=$?
+journal_empty_rc=0
+oso-state --session "$SESSION" journal "" 2>>"$journal_usage_stderr" || journal_empty_rc=$?
+journal_after_refusal="$(ls "$STATE_DIR/runs" 2>/dev/null || echo unwritten)"
+case "$({ cat "$journal_usage_stderr" 2>/dev/null || true; })" in
+  usage:*) journal_refusal=usage ;;
+  '') journal_refusal=silent ;;
+  *) journal_refusal=other ;;
+esac
+journal_milestone "the milestone that does carry text"
+assert_equals "a journal call with no milestone text is a usage error, never a timestamped empty line" \
+  "1 1 usage unwritten opened" \
+  "$journal_missing_rc $journal_empty_rc $journal_refusal $journal_after_refusal $([ -s "$JOURNAL_DIR/run.log" ] && echo opened || echo unopened)"
+rm -rf "$STATE_DIR/runs"
+oso-state --session "$SESSION" clear >/dev/null 2>&1 || true
+
+rm -rf "$STATE_DIR/runs"
+oso-state --session "$SESSION" set auto_change=../escape >/dev/null
+journal_milestone "the slug climbed out of its run directory"
+oso-state --session "$SESSION" set auto_change=a/b >/dev/null
+journal_milestone "the slug named a subdirectory"
+journal_tree="$(find "$STATE_DIR/runs" -mindepth 1 -print 2>/dev/null | LC_ALL=C sort | tr '\n' '>' || true)"
+assert_equals "a change slug carrying a path separator journals under the fallback, leaving nothing outside its own run directory" \
+  "$JOURNAL_DIR>$JOURNAL_DIR/run.log>|the slug climbed out of its run directory>the slug named a subdirectory>" \
+  "$journal_tree|$(journal_texts_in "$JOURNAL_DIR/run.log")"
+
+rm -rf "$STATE_DIR/runs"
+over_length_change=w
+while [ "${#over_length_change}" -le 64 ]; do
+  over_length_change="${over_length_change}9"
+done
+oso-state --session "$SESSION" set "auto_change=$over_length_change" >/dev/null
+journal_milestone "the slug ran past 64 characters"
+oso-state --session "$SESSION" set auto_change=Wave-2 >/dev/null
+journal_milestone "the slug shouted"
+oso-state --session "$SESSION" set "auto_change=wave 2" >/dev/null
+journal_milestone "the slug carried a space"
+assert_equals "an over-length or out-of-charset change slug journals under the fallback, never under itself" \
+  "run.log|the slug ran past 64 characters>the slug shouted>the slug carried a space>" \
+  "$(ls "$JOURNAL_DIR" 2>/dev/null || true)|$(journal_texts_in "$JOURNAL_DIR/run.log")"
+
+rm -rf "$STATE_DIR/runs"
+maximal_change=w9
+while [ "${#maximal_change}" -lt 64 ]; do
+  maximal_change="${maximal_change}-9"
+done
+oso-state --session "$SESSION" set "auto_change=$maximal_change" >/dev/null
+journal_milestone "the longest slug the rule admits"
+assert_equals "a 64-character slug of the admitted charset names its journal verbatim" \
+  "64 ${maximal_change}.log|the longest slug the rule admits>" \
+  "${#maximal_change} $(ls "$JOURNAL_DIR" 2>/dev/null || true)|$(journal_texts_in "$JOURNAL_DIR/${maximal_change}.log")"
+rm -rf "$STATE_DIR/runs"
+oso-state --session "$SESSION" clear >/dev/null 2>&1 || true
+
 # --- Delegation handoff: exact attempt, bounded wait, atomic one-shot receipt --
 # The report itself stays in the SubagentStop message.  The file rail stores only
 # an identity-bound receipt for that message.  Parent wait/consume calls therefore

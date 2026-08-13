@@ -249,6 +249,18 @@ state_value() {
   grep "^${key}=" "$state_file" 2>/dev/null | cut -d= -f2- || true
 }
 
+journal_file_for() {
+  local directory="$1" state_file repository auto_change change=run
+  state_file="$(state_file_for "$directory")"
+  repository="${state_file##*/}"
+  repository="${repository%.state}"
+  auto_change="$(state_value "$state_file" auto_change)"
+  if [[ "$auto_change" =~ ^[a-z0-9][a-z0-9-]{0,63}$ ]]; then
+    change="$auto_change"
+  fi
+  printf '%s/runs/%s/%s.log' "$OSO_STATE_DIR" "$repository" "$change"
+}
+
 # The `oso-state` half of a deny's remedy, spelled once so the binary and
 # the real session id are never retyped per gate — the shape deny_unusable_state
 # already used before this slice. Composed straight into deny()'s own `reason`
