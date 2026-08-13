@@ -185,6 +185,122 @@ resolve_codex_turn_mode() {
   esac
 }
 
+line_verdict() {
+  local command_line="$1" judge="$2"
+  local record verdict=clear command_stdin=""
+  local -a command_tokens=()
+  while IFS= read -r record; do
+    case "$record" in
+      "$LEX_UNREAD_PAYLOAD_MARKER") if [ "$verdict" = clear ]; then verdict=residue; fi ;;
+      '>'*) "$judge"; command_tokens=("${record#>}"); command_stdin="" ;;
+      '.'*) command_tokens+=("${record#.}") ;;
+      '<'*) command_stdin="$command_stdin${record#<}" ;;
+    esac
+  done <<< "$(shell_commands "$command_line")"
+  "$judge"
+  printf '%s' "$verdict"
+}
+
+GIT_VERB_UNRESOLVED='?'
+
+is_git_call() {
+  if [ "${#command_tokens[@]}" -eq 0 ]; then
+    return 1
+  fi
+  case "${command_tokens[0]##*/}" in
+    git|git.exe) return 0 ;;
+  esac
+  return 1
+}
+
+git_verb() {
+  local index=1 argument
+  while [ "$index" -lt "${#command_tokens[@]}" ]; do
+    argument="${command_tokens[$index]}"
+    case "$argument" in
+      --*=*) ;;
+      -*)
+        if git_option_prints_and_exits "$argument"; then
+          return 0
+        elif git_option_takes_a_value "$argument"; then
+          index=$((index + 1))
+        elif ! git_option_stands_alone "$argument"; then
+          printf '%s' "$GIT_VERB_UNRESOLVED"
+          return 0
+        fi
+        ;;
+      *) printf '%s' "$argument"; return 0 ;;
+    esac
+    index=$((index + 1))
+  done
+}
+
+git_option_takes_a_value() {
+  case "$1" in
+    -C|-c|--git-dir|--work-tree|--namespace|--config-env|--attr-source) return 0 ;;
+  esac
+  return 1
+}
+
+git_option_prints_and_exits() {
+  case "$1" in
+    -h|--help|-v|--version) return 0 ;;
+    --exec-path|--html-path|--man-path|--info-path) return 0 ;;
+  esac
+  return 1
+}
+
+git_option_stands_alone() {
+  case "$1" in
+    -p|-P|--paginate|--no-pager|--bare) return 0 ;;
+    --no-replace-objects|--no-lazy-fetch|--no-optional-locks|--no-advice) return 0 ;;
+    --literal-pathspecs|--glob-pathspecs|--noglob-pathspecs|--icase-pathspecs) return 0 ;;
+  esac
+  return 1
+}
+
+is_residue_call() {
+  local subjects="$1"
+  if [ "${#command_tokens[@]}" -eq 0 ]; then
+    return 1
+  fi
+  case "${command_tokens[0]}" in
+    *'$'*) return 0 ;;
+  esac
+  if is_git_call; then
+    case "$(git_verb)" in
+      "$GIT_VERB_UNRESOLVED"|*'$'*) return 0 ;;
+    esac
+    return 1
+  fi
+  is_interpreter_handed_a_subject "$subjects"
+}
+
+is_interpreter_handed_a_subject() {
+  local subjects="$1" interpreter="${command_tokens[0]##*/}" index=1
+  case "${interpreter%%[0-9]*}" in
+    python|node|perl|ruby|php) ;;
+    *) return 1 ;;
+  esac
+  while [ "$index" -lt "${#command_tokens[@]}" ]; do
+    if mentions_a_subject "${command_tokens[$index]}" "$subjects"; then
+      return 0
+    fi
+    index=$((index + 1))
+  done
+  mentions_a_subject "$command_stdin" "$subjects"
+}
+
+mentions_a_subject() {
+  local text="$1" subjects="$2" subject
+  for subject in $subjects; do
+    case "$text" in
+      *"$subject"*) return 0 ;;
+    esac
+  done
+  return 1
+}
+
 OSO_STATE_DIR="${HOME}/.local/state/oso-code"
 
 # Session ids become file names — strip anything that could traverse paths.
@@ -259,6 +375,13 @@ journal_file_for() {
     change="$auto_change"
   fi
   printf '%s/runs/%s/%s.log' "$OSO_STATE_DIR" "$repository" "$change"
+}
+
+unattended_run_marker() {
+  local state_file="$1" session="$2"
+  [ -f "$state_file" ] && [ -r "$state_file" ] || return 1
+  [ "$(state_value "$state_file" session)" = "$session" ] || return 1
+  state_value "$state_file" auto
 }
 
 # The `oso-state` half of a deny's remedy, spelled once so the binary and

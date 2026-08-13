@@ -3,7 +3,7 @@
 Date: 2026-08-13
 Status: accepted
 Reconciled: elsewhere — it landed in the state binary, the hooks library, the flow bodies and the Claude platform binding, and the frozen body never carried a record of this kind. `plugin/bin/oso-state` gained the `journal` verb; `plugin/hooks/lib.sh` gained `journal_file_for`, which resolves the path both the verb and the hooks read. `plugin/skills/_shared/platform/claude/reporting.md`'s unattended-run section names the journal as what replaces the interrupted stream, `plugin/skills/_shared/reporting.md` names it as what every host taking the carve-out writes, and `plugin/skills/_shared/bodies/plan.md`'s AUTO ground rule and `bodies/roadmap.md` §4 each require the append per milestone with `auto_change` naming the file. `plugin/hooks/auto-continue.sh` reads its size as the run's only progress signal and journals its own give-up; `plugin/hooks/reanchor-after-compact.sh` names its path among the three places a compacted context re-reads the position. `bootstrap/hook-hashes.txt` moved with the state binary and the library.
-Source: this change (auto-continuity), decisions D4 and D6; the carve-out in ADR-0145, which trades a milestone's visibility for a run that keeps moving and is only payable if something else holds the account
+Source: this change (auto-continuity), decision D7; the carve-out in ADR-0145, which trades a milestone's visibility for a run that keeps moving and is only payable if something else holds the account
 
 ## Decision
 

@@ -699,7 +699,7 @@ check_sweep_exit_bar_is_banded_and_capped() {
 }
 
 check_sweep_loop_remembers_its_dispositioned_findings() {
-  local body reinvocation marker judge settled
+  local body reinvocation marker
   for body in "$PLUGIN_ROOT/skills/_shared/bodies/plan.md" "$PLUGIN_ROOT/skills/_shared/bodies/debug.md"; do
     if [ ! -f "$body" ]; then
       flag "no ${body#"$PLUGIN_ROOT"/} to check what its sweep re-invocation carries"
@@ -711,25 +711,14 @@ check_sweep_loop_remembers_its_dispositioned_findings() {
       continue
     fi
     for marker in 'disposition' 'never why'; do
-      printf '%s\n' "$reinvocation" | grep -qiF -- "$marker" \
+      grep -qiF -- "$marker" <<< "$reinvocation" \
         || flag "${body#"$PLUGIN_ROOT"/}'s sweep re-invocation drops the clause that keeps the next round from re-litigating: $marker"
     done
   done
 
-  judge="$PLUGIN_ROOT/skills/_shared/bodies/debt-sweep.md"
-  if [ ! -f "$judge" ]; then
-    flag "no skills/_shared/bodies/debt-sweep.md to check what the judge does with a dispositioned finding"
-    return 0
-  fi
-  settled="$({ sed -n '/^## Prior rounds$/,/^## /p' "$judge" 2>&1 || true; })"
-  if [ -z "$settled" ]; then
-    flag "skills/_shared/bodies/debt-sweep.md states no Prior rounds section, so the dispositions the loop restates reach a judge with no rule for them"
-    return 0
-  fi
-  for marker in '`fixed`' '`operator-dismissed`' '`accepted-residual`' 'never raise' 'as settled' 'never why'; do
-    printf '%s\n' "$settled" | grep -qiF -- "$marker" \
-      || flag "skills/_shared/bodies/debt-sweep.md's Prior rounds section drops the clause that makes a disposition binding: $marker"
-  done
+  section_names_its_clauses "$PLUGIN_ROOT/skills/_shared/bodies/debt-sweep.md" \
+    'Prior rounds$' 'Prior rounds section' 'the clause that makes a disposition binding' any-case \
+    '`fixed`' '`operator-dismissed`' '`accepted-residual`' 'never raise' 'as settled' 'never why'
 }
 
 check_roadmap_umbrella_approval_names_its_bounds() {
@@ -741,20 +730,32 @@ check_roadmap_umbrella_approval_names_its_bounds() {
 
 roadmap_phase_names_its_clauses() {
   local heading="$1" flagged_as="$2" dropped="$3"
-  local body="$PLUGIN_ROOT/skills/_shared/bodies/roadmap.md" phase marker
   shift 3
-  if [ ! -f "$body" ]; then
-    flag "no roadmap body at skills/_shared/bodies/roadmap.md to check its $flagged_as"
+  section_names_its_clauses "$PLUGIN_ROOT/skills/_shared/bodies/roadmap.md" \
+    "[0-9][0-9]*\. $heading" "$flagged_as" "$dropped" any-case "$@"
+}
+
+section_names_its_clauses() {
+  local file="$1" heading="$2" flagged_as="$3" dropped="$4" matching="$5"
+  local section marker match_flags
+  shift 5
+  case "$matching" in
+    any-case) match_flags=-qiF ;;
+    exact-case) match_flags=-qF ;;
+    *) flag "section_names_its_clauses was asked for unknown matching $matching"; return 0 ;;
+  esac
+  if [ ! -f "$file" ]; then
+    flag "no ${file#"$PLUGIN_ROOT"/} to check the clauses its $flagged_as names"
     return 0
   fi
-  phase="$({ sed -n "/^## [0-9][0-9]*\. $heading/,/^## /p" "$body" 2>&1 || true; })"
-  if [ -z "$phase" ]; then
-    flag "skills/_shared/bodies/roadmap.md carries no numbered $flagged_as"
+  section="$({ sed -n "/^## $heading/,/^## /p" "$file" 2>&1 || true; })"
+  if [ -z "$section" ]; then
+    flag "${file#"$PLUGIN_ROOT"/} carries no $flagged_as, so nothing there carries the clauses it turns on"
     return 0
   fi
   for marker in "$@"; do
-    printf '%s\n' "$phase" | grep -qiF -- "$marker" \
-      || flag "skills/_shared/bodies/roadmap.md's $flagged_as drops $dropped: $marker"
+    grep "$match_flags" -- "$marker" <<< "$section" \
+      || flag "${file#"$PLUGIN_ROOT"/}'s $flagged_as drops $dropped: $marker"
   done
 }
 
@@ -788,7 +789,7 @@ anchored_absolute_stays_bounded_in() {
     return 0
   fi
   for marker in "$@"; do
-    printf '%s\n' "$text" | grep -qiF -- "$marker" \
+    grep -qiF -- "$marker" <<< "$text" \
       || flag "${file#"$PLUGIN_ROOT"/}'s $flagged_as drops a clause it turns on: $marker"
   done
 }
@@ -922,25 +923,13 @@ check_auto_disposition_is_a_ledger_toggle_that_parks_on_a_question() {
 }
 
 check_unattended_run_carves_out_the_delivery_contract() {
-  local carve_out="$PLUGIN_ROOT/skills/_shared/platform/claude/reporting.md"
-  local roadmap="$PLUGIN_ROOT/skills/_shared/bodies/roadmap.md"
-  local statement marker
-  if [ ! -f "$carve_out" ]; then
-    flag "no Claude reporting binding at skills/_shared/platform/claude/reporting.md to carry the unattended run's delivery carve-out"
-  else
-    statement="$({ sed -n '/^## The unattended run/,/^## /p' "$carve_out" 2>&1 || true; })"
-    if [ -z "$statement" ]; then
-      flag "skills/_shared/platform/claude/reporting.md carves no unattended run out of its delivery contract, so every milestone of a run nobody is watching ends the turn and waits for somebody who is not coming"
-    else
-      for marker in 'auto=running' 'does NOT end the turn' 'oso-state journal' \
-          'END THE TURN' 'auto=done' 'auto-continue.sh' \
-          'the run THE OPERATOR ARMED' '`bodies/roadmap.md` §5' \
-          "roadmap CHILD's own close is NEITHER of the two"; do
-        printf '%s\n' "$statement" | grep -qF -- "$marker" \
-          || flag "skills/_shared/platform/claude/reporting.md's unattended-run carve-out drops a clause it turns on: $marker"
-      done
-    fi
-  fi
+  local roadmap="$PLUGIN_ROOT/skills/_shared/bodies/roadmap.md" retired
+  section_names_its_clauses "$PLUGIN_ROOT/skills/_shared/platform/claude/reporting.md" \
+    'The unattended run' 'unattended-run carve-out' 'a clause it turns on' exact-case \
+    'auto=running' 'does NOT end the turn' 'oso-state journal' \
+    'END THE TURN' 'auto=done' 'auto-continue.sh' \
+    'the run THE OPERATOR ARMED' '`bodies/roadmap.md` §5' \
+    "roadmap CHILD's own close is NEITHER of the two"
 
   anchored_absolute_stays_bounded_in "$PLUGIN_ROOT/skills/_shared/platform/claude/roadmap.md" \
     'Every milestone report the chain' 'chain milestone exception' \
@@ -954,9 +943,9 @@ check_unattended_run_carves_out_the_delivery_contract() {
     flag "no roadmap body at skills/_shared/bodies/roadmap.md to check what a compaction costs a chain in flight"
     return 0
   fi
-  if grep -qF -- 'a compaction costs it nothing' "$roadmap"; then
-    flag "skills/_shared/bodies/roadmap.md still says a compaction costs the chain nothing, a claim resting on a client window the harness can ask for and never guarantee"
-  fi
+  for retired in $({ grep -nF 'a compaction costs it nothing' "$roadmap" || true; } | cut -d: -f1); do
+    flag "skills/_shared/bodies/roadmap.md:$retired still says a compaction costs the chain nothing, a claim resting on a client window the harness can ask for and never guarantee"
+  done
   anchored_absolute_stays_bounded_in "$roadmap" '**What survives the session' \
     'compaction economy' 'best-effort' 're-anchor' 'run journal'
 }

@@ -4,7 +4,7 @@ Date: 2026-08-13
 Status: accepted
 Supersedes: ADR-0138 (its Part 3 clause "a compaction costs it nothing" — the POSITION half of that claim was right and is unchanged; what was unpriced is the WINDOW, and the floor under an unattended run is now the host's re-anchor rather than a client setting nobody can promise)
 Reconciled: elsewhere — it landed in a hook, a platform file and the roadmap body, and the frozen body never carried a context claim of its own. `plugin/hooks/reanchor-after-compact.sh` is the `SessionStart` handler, wired in `plugin/hooks/hooks.json` alone and recorded in `tools/hook-gates.txt` as Claude-wired with no Codex counterpart. `plugin/skills/_shared/platform/claude/plan.md` names it among the three hooks the marker arms and states the `autoCompactWindow` fact behind it; `plugin/skills/_shared/bodies/roadmap.md`'s chain phase states the honest form of the survivability claim — window and not position, best-effort, the re-anchor as the floor, and the three things the re-anchor reads — and `bodies/plan.md`'s AUTO ground rule states the same for a plain run. `tests/plugin-lint.sh`'s `check_unattended_run_carves_out_the_delivery_contract` flags the retired absolute by its own words if it returns to the roadmap body and holds the three clauses that replaced it.
-Source: this change (auto-continuity), decision D8; ADR-0138's own durability claim read back against a run long enough to be compacted, where the position survived and the instructions holding the run together did not
+Source: this change (auto-continuity), decision D2; ADR-0138's own durability claim read back against a run long enough to be compacted, where the position survived and the instructions holding the run together did not
 
 ## Decision
 

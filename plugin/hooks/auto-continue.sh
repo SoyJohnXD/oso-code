@@ -13,6 +13,12 @@ allow_stop() {
   exit 0
 }
 
+allow_stop_degraded() {
+  local session="$1" cause="$2"
+  log_event auto-continue-degraded "$session" "$cause" "${0##*/}" Stop || true
+  allow_stop
+}
+
 push_continuation() {
   local session="$1"
   printf '{"decision":"block","reason":"%s"}\n' "$(json_escape "$CONTINUATION_ORDER")"
@@ -41,12 +47,12 @@ journal_bytes_in() {
 }
 
 remember_push_or_allow_stop() {
-  local tally_file="$1" pushes="$2" journal_bytes="$3"
-  (
+  local tally_file="$1" pushes="$2" journal_bytes="$3" session="$4" write_error
+  write_error="$( {
     umask 077
     mkdir -p "${tally_file%/*}" &&
       printf 'pushes=%s\njournal_bytes=%s\n' "$pushes" "$journal_bytes" > "$tally_file"
-  ) || allow_stop
+  } 2>&1 )" || allow_stop_degraded "$session" "$write_error"
 }
 
 payload="$(cat)"
@@ -57,11 +63,10 @@ project_dir="$(json_field "$payload" cwd)"
 [ -d "$project_dir" ] || allow_stop
 
 state_file="$(state_file_for "$project_dir" 2>/dev/null)" || allow_stop
-[ -f "$state_file" ] && [ -r "$state_file" ] || allow_stop
-[ "$(state_value "$state_file" auto)" = running ] || allow_stop
-[ "$(state_value "$state_file" session)" = "$session_id" ] || allow_stop
+[ "$(unattended_run_marker "$state_file" "$session_id")" = running ] || allow_stop
 
-journal_file="$(journal_file_for "$project_dir" 2>/dev/null)" || allow_stop
+journal_file="$(journal_file_for "$project_dir" 2>/dev/null)" ||
+  allow_stop_degraded "$session_id" "the run journal path is unresolvable"
 push_tally_file="${journal_file%.log}.pushes"
 journal_bytes="$(journal_bytes_in "$journal_file")"
 
@@ -76,11 +81,14 @@ if [ "$turn_already_continued" = true ]; then
   pushes_without_progress=1
 fi
 if [ -e "$push_tally_file" ]; then
-  [ -f "$push_tally_file" ] && [ -r "$push_tally_file" ] || allow_stop
+  [ -f "$push_tally_file" ] && [ -r "$push_tally_file" ] ||
+    allow_stop_degraded "$session_id" "the push tally is not a readable file"
   remembered_pushes="$(state_value "$push_tally_file" pushes)"
   journal_bytes_at_last_push="$(state_value "$push_tally_file" journal_bytes)"
-  is_count "$remembered_pushes" || allow_stop
-  is_count "$journal_bytes_at_last_push" || allow_stop
+  is_count "$remembered_pushes" ||
+    allow_stop_degraded "$session_id" "the push tally holds no count of pushes: $remembered_pushes"
+  is_count "$journal_bytes_at_last_push" ||
+    allow_stop_degraded "$session_id" "the push tally holds no count of journal bytes: $journal_bytes_at_last_push"
   if [ "$journal_bytes" -gt "$journal_bytes_at_last_push" ]; then
     pushes_without_progress=0
   else
@@ -93,9 +101,10 @@ if [ "$pushes_without_progress" -gt "$PUSHES_WITHOUT_PROGRESS_CAP" ]; then
   if [ "$pushes_without_progress" -eq "$((PUSHES_WITHOUT_PROGRESS_CAP + 1))" ]; then
     announce_cap "$session_id" "$project_dir"
   fi
-  remember_push_or_allow_stop "$push_tally_file" "$pushes_without_progress" "$(journal_bytes_in "$journal_file")"
+  remember_push_or_allow_stop "$push_tally_file" "$pushes_without_progress" \
+    "$(journal_bytes_in "$journal_file")" "$session_id"
   allow_stop
 fi
 
-remember_push_or_allow_stop "$push_tally_file" "$pushes_without_progress" "$journal_bytes"
+remember_push_or_allow_stop "$push_tally_file" "$pushes_without_progress" "$journal_bytes" "$session_id"
 push_continuation "$session_id"

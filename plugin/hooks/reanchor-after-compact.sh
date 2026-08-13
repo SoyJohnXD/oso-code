@@ -4,10 +4,6 @@ set -euo pipefail
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HOOK_DIR/lib.sh"
 
-run_is_unattended() {
-  [ "$(state_value "$1" auto)" = running ]
-}
-
 slice_is_armed() {
   local state_file="$1" active_slice
   [ "$(state_value "$state_file" mode)" = plan ] || return 1
@@ -45,11 +41,10 @@ project_dir="$(json_field "$payload" cwd)"
 [ -d "$project_dir" ] || exit 0
 
 state_file="$(state_file_for "$project_dir" 2>/dev/null)" || exit 0
-[ -f "$state_file" ] && [ -r "$state_file" ] || exit 0
-[ "$(state_value "$state_file" session)" = "$session_id" ] || exit 0
+run_marker="$(unattended_run_marker "$state_file" "$session_id")" || exit 0
 
 unattended_run=false
-if run_is_unattended "$state_file"; then
+if [ "$run_marker" = running ]; then
   unattended_run=true
 elif ! slice_is_armed "$state_file"; then
   exit 0

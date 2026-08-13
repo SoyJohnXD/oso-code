@@ -5,25 +5,15 @@ set -euo pipefail
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HOOK_DIR/lib.sh"
 
-line_verdict() {
-  local record verdict=clear
-  local -a command_tokens=()
-  while IFS= read -r record; do
-    case "$record" in
-      "$LEX_UNREAD_PAYLOAD_MARKER") if [ "$verdict" = clear ]; then verdict=residue; fi ;;
-      '>'*) judge_command; command_tokens=("${record#>}") ;;
-      '.'*) command_tokens+=("${record#.}") ;;
-    esac
-  done <<< "$(shell_commands "$1")"
-  judge_command
-  printf '%s' "$verdict"
-}
+PRODUCTION_BOUNDARY_SUBJECTS='git deploy vercel netlify firebase'
 
 judge_command() {
   if runs_a_production_deploy; then
     verdict=production
   elif [ "$verdict" != production ] && pushes_off_the_run_branch; then
     verdict=push
+  elif [ "$verdict" = clear ] && is_residue_call "$PRODUCTION_BOUNDARY_SUBJECTS"; then
+    verdict=residue
   fi
 }
 
@@ -95,31 +85,6 @@ pushes_off_the_run_branch() {
   ! names_the_run_branch
 }
 
-is_git_call() {
-  if [ "${#command_tokens[@]}" -eq 0 ]; then
-    return 1
-  fi
-  case "${command_tokens[0]##*/}" in
-    git|git.exe) return 0 ;;
-  esac
-  return 1
-}
-
-GIT_OPTIONS_TAKING_A_VALUE=' -C -c --git-dir --work-tree --namespace --config-env --attr-source '
-
-git_verb() {
-  local index=1 token
-  while [ "$index" -lt "${#command_tokens[@]}" ]; do
-    token="${command_tokens[$index]}"
-    case "$token" in
-      --*=*) ;;
-      -*) case "$GIT_OPTIONS_TAKING_A_VALUE" in *" $token "*) index=$((index + 1)) ;; esac ;;
-      *) printf '%s' "$token"; return 0 ;;
-    esac
-    index=$((index + 1))
-  done
-}
-
 RUN_BRANCH_REF='^oso-run/[a-z0-9-]+$'
 RUN_BRANCH_REFSPEC='^[^:]+:(refs/heads/)?oso-run/[a-z0-9-]+$'
 
@@ -164,8 +129,7 @@ run_marker_of() {
     printf uncertain
     return 0
   fi
-  if [ "$(state_value "$state_file" auto)" = running ] &&
-     [ "$(state_value "$state_file" session)" = "$session" ]; then
+  if [ "$(unattended_run_marker "$state_file" "$session")" = running ]; then
     printf armed
     return 0
   fi
@@ -216,7 +180,7 @@ if repository_denies_command "$state_file" "$command"; then
     "$command"
 fi
 
-verdict="$(line_verdict "$command")"
+verdict="$(line_verdict "$command" judge_command)"
 case "$verdict" in
   production)
     deny_production_boundary "oso-code: an unattended run is in flight, so a production deploy stays with the operator. Take the run back ($(oso_state_remedy "$session_id" 'set auto=done')) and deploy from your own terminal, or deploy after the run closes at its pull request." \

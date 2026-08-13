@@ -5694,6 +5694,23 @@ done
 assert_equals "a turn this hook already continued counts as a push even before any tally exists" \
   "push push stop" "${auto_belt_verdicts# }"
 
+auto_degradations_recorded() {
+  grep -c '"event":"auto-continue-degraded","command":"[^"]' "$STATE_DIR/events.jsonl" 2>/dev/null || true
+}
+
+arm_unattended_run
+auto_degradations_before="$(auto_degradations_recorded)"
+mkdir -p "${AUTO_JOURNAL%.log}.pushes"
+auto_degraded_verdicts=" $(auto_stop_verdict "$(auto_stop_input)")"
+rm -rf "$JOURNAL_DIR"
+printf 'a file stands where the run directory belongs\n' > "$JOURNAL_DIR"
+auto_degraded_verdicts="$auto_degraded_verdicts $(auto_stop_verdict "$(auto_stop_input)")"
+rm -f "$JOURNAL_DIR"
+auto_degradations_after="$(auto_degradations_recorded)"
+assert_equals "a push tally the net can neither read nor write allows the stop and puts the cause on the record" \
+  "stop stop 2" \
+  "${auto_degraded_verdicts# } $((auto_degradations_after - auto_degradations_before))"
+
 rm -rf "$STATE_DIR/runs"
 oso-state --session "$SESSION" clear >/dev/null 2>&1 || true
 
@@ -5725,6 +5742,18 @@ prod_verdicts_for() {
   printf '%s' "${verdicts# }"
 }
 
+prod_residues_allowed() {
+  grep -c residue-allowed "$STATE_DIR/events.jsonl" 2>/dev/null || true
+}
+
+prod_verdicts_and_residues_for() {
+  local before after
+  before="$(prod_residues_allowed)"
+  prod_verdicts_for "$@"
+  after="$(prod_residues_allowed)"
+  printf ' %s' "$((after - before))"
+}
+
 arm_unattended_run
 assert_equals "every built-in production shape is denied while the run is in flight" \
   "deny deny deny deny deny deny" \
@@ -5747,8 +5776,12 @@ assert_equals "the run's own branch push is the finish this gate exists to prote
 run_hook block-prod-deploy.sh "$(prod_mcp_input mcp__plugin_vercel_vercel__deploy_to_vercel)"
 assert_after_hook "a deploy-shaped MCP tool is the operator's own call while the run is in flight" \
   hook_returned_deny
+case "$hook_stdout" in
+  *'MCP deploy stays with the operator'*) prod_mcp_deny_naming=named ;;
+  *) prod_mcp_deny_naming=unnamed ;;
+esac
 assert_equals "the MCP deny says whose call a deploy is, not merely that it was refused" \
-  "named" "$(case "$hook_stdout" in *'MCP deploy stays with the operator'*) echo named ;; *) echo unnamed ;; esac)"
+  "named" "$prod_mcp_deny_naming"
 assert_equals "a Bash sibling tool the matcher also reaches is judged by neither half" \
   "allow" "$(prod_gate_verdict "$(prod_mcp_input BashOutput)")"
 
@@ -5764,12 +5797,18 @@ prod_long_command='vercel --prod'
 while [ "${#prod_long_command}" -le "$((3072 + 16))" ]; do
   prod_long_command="$prod_long_command and echo padding"
 done
-prod_residue_before="$(grep -c residue-allowed "$STATE_DIR/events.jsonl" 2>/dev/null || true)"
-prod_residue_verdict="$(prod_gate_verdict "$(bash_input "$prod_long_command")")"
-prod_residue_after="$(grep -c residue-allowed "$STATE_DIR/events.jsonl" 2>/dev/null || true)"
 assert_equals "a line past the lexer's bound passes counted, the way the commit rail already spends its residue" \
-  "allow 1" \
-  "$prod_residue_verdict $((prod_residue_after - prod_residue_before))"
+  "allow 1" "$(prod_verdicts_and_residues_for "$prod_long_command")"
+
+assert_equals "an unresolved git option shape, a command word only the shell resolves and an interpreter's deploy payload all pass counted, exactly as the commit rail counts them" \
+  "allow allow allow 3" \
+  "$(prod_verdicts_and_residues_for 'git --super-prefix x/ push origin main' \
+    'python3 deploy.py' '$DEPLOY --prod')"
+
+assert_equals "a line the resolver answers spends no residue: a build, the run's own push, and an option git answers itself instead of pushing" \
+  "allow allow allow 0" \
+  "$(prod_verdicts_and_residues_for 'npm run build' \
+    'git push origin oso-run/auto-continuity' 'git --version push origin main')"
 
 prod_settled_verdicts=""
 for settled_marker in parked done; do
@@ -5797,12 +5836,12 @@ prod_uncertain_verdicts="$prod_uncertain_verdicts $(prod_verdicts_for 'vercel --
 rmdir "$REPO_STATE"
 assert_equals "a state file the gate cannot read as state closes the production door and nothing else" \
   "deny allow allow deny allow" "$prod_uncertain_verdicts"
+case "$prod_uncertain_reason" in
+  *"oso-state --session $SESSION clear"*) prod_uncertain_remedy=repair ;;
+  *) prod_uncertain_remedy=elsewhere ;;
+esac
 assert_equals "the uncertain deny hands over the remedy that fits an unreadable state, not the one that needs a readable marker" \
-  "repair" \
-  "$(case "$prod_uncertain_reason" in
-    *"oso-state --session $SESSION clear"*) echo repair ;;
-    *) echo elsewhere ;;
-  esac)"
+  "repair" "$prod_uncertain_remedy"
 
 rm -rf "$STATE_DIR/runs" "${PROD_PATTERNS_FILE%/*}"
 oso-state --session "$SESSION" clear >/dev/null 2>&1 || true
@@ -7147,12 +7186,12 @@ for reanchor_position in 'mem_search oso/index' mem_get_observation 'NEXT:' 'oso
 done
 assert_equals "a compacted session is handed back every position source that outlived its window" \
   "" "$reanchor_position_unnamed"
+case "$hook_stdout" in
+  *'"hookEventName":"SessionStart"'*'"additionalContext"'*) reanchor_context_envelope=present ;;
+  *) reanchor_context_envelope=missing ;;
+esac
 assert_equals "the re-anchor reaches the model as session-start context, never as bare stdout" \
-  "present" \
-  "$(case "$hook_stdout" in
-    *'"hookEventName":"SessionStart"'*'"additionalContext"'*) echo present ;;
-    *) echo missing ;;
-  esac)"
+  "present" "$reanchor_context_envelope"
 assert_equals "an attended run is re-anchored, and without the order that belongs to an unattended one" \
   "spoken|" \
   "$([ -n "$hook_stdout" ] && echo spoken || echo silent)|$(printf '%s' "$hook_stdout" | grep -oF "$REANCHOR_CONTINUE_ORDER" || true)"
