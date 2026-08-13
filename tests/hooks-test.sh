@@ -152,15 +152,15 @@ expected_tools="$(printf '%s\n' Bash Edit MultiEdit NotebookEdit Write mcp__fall
 assert_equals "PreToolUse matchers cover exactly the gated tools" "$expected_tools" "$gated_tools"
 
 codex_hooks_manifest="$REPO_ROOT/codex/hooks/hooks.json"
-codex_event_group() {
-  awk -v heading="    \"$1\": [" '
+event_group_in() {
+  awk -v heading="    \"$2\": [" '
     $0 == heading { inside = 1 }
     inside { print }
     inside && /^    ](,)?$/ { exit }
-  ' "$codex_hooks_manifest"
+  ' "$1"
 }
 for matcherless_event in Stop UserPromptSubmit; do
-  matcherless_group="$(codex_event_group "$matcherless_event")"
+  matcherless_group="$(event_group_in "$codex_hooks_manifest" "$matcherless_event")"
   case "$matcherless_group" in
     *"\"${matcherless_event}\""*)
       echo "ok: the Codex manifest contains the ${matcherless_event} approval group"; pass=$((pass + 1)) ;;
@@ -174,6 +174,18 @@ for matcherless_event in Stop UserPromptSubmit; do
       echo "ok: ${matcherless_event} remains matcherless in the Codex manifest"; pass=$((pass + 1)) ;;
   esac
 done
+
+claude_stop_group="$(event_group_in "$hooks_manifest" Stop)"
+assert_equals "the Claude manifest runs exactly the continuation net on Stop" \
+  "auto-continue.sh" \
+  "$(printf '%s\n' "$claude_stop_group" | sed -n 's|.*/hooks/\([^"]*\)".*|\1|p' | tr '\n' ' ' | sed 's/ *$//')"
+assert_equals "the Claude Stop handler stays matcherless" \
+  "0" "$(printf '%s\n' "$claude_stop_group" | grep -c '"matcher"' || true)"
+assert_equals "the Claude-only continuation net is absent from the Codex manifest" \
+  "0" "$(grep -c 'auto-continue.sh' "$codex_hooks_manifest" || true)"
+assert_equals "rendering the continuation net leaves the Codex manifest on its published bytes" \
+  "$(sed -n 's|^\([0-9a-f]*\)  codex/hooks/hooks.json$|\1|p' "$REPO_ROOT/bootstrap/hook-hashes.txt")" \
+  "$({ sha256sum "$codex_hooks_manifest" 2>/dev/null || shasum -a 256 "$codex_hooks_manifest" 2>/dev/null; } | awk '{ print $1 }')"
 
 unrunnable=""
 manifest_commands="$(sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' "$hooks_manifest")"
@@ -1350,7 +1362,7 @@ else
       echo "FAIL: missing-${approval_gate} mutation removed no gate row"; fail=$((fail + 1))
     else
       assert_renderer_rejects "the hard approval rail cannot omit ${approval_gate}" \
-        "table must declare exactly the ten known gates" \
+        "table must declare exactly the eleven known gates" \
         --repo-root "$REPO_ROOT" --table "$MISSING_APPROVAL_GATE_TABLE" --check
     fi
   done
@@ -1358,16 +1370,18 @@ else
   # Codex explicitly ignores matcher on Stop and UserPromptSubmit. Letting the
   # source table add one would render a filter that looks protective and never
   # runs, so these global events must remain matcherless by construction.
-  for matcherless_gate in planstop planprompt; do
+  for matcherless_gate in planstop autocontinue planprompt; do
     IGNORED_MATCHER_TABLE="$TEST_HOME/${matcherless_gate}-ignored-matcher.txt"
     cp "$REPO_ROOT/tools/hook-gates.txt" "$IGNORED_MATCHER_TABLE"
-    printf '\ntool  %s  none  ignored  read  no\n' "$matcherless_gate" >> "$IGNORED_MATCHER_TABLE"
     case "$matcherless_gate" in
-      planstop) matcherless_event=Stop ;;
-      planprompt) matcherless_event=UserPromptSubmit ;;
+      planstop) matcherless_event=Stop; matcherless_host=codex; matcherless_cells='none  ignored' ;;
+      autocontinue) matcherless_event=Stop; matcherless_host=claude; matcherless_cells='ignored  none' ;;
+      planprompt) matcherless_event=UserPromptSubmit; matcherless_host=codex; matcherless_cells='none  ignored' ;;
     esac
-    assert_renderer_rejects "${matcherless_gate} cannot carry a matcher Codex ignores" \
-      "matcherless ${matcherless_event} gate \`${matcherless_gate}\` has matcher mappings for codex" \
+    printf '\ntool  %s  %s  read  no\n' "$matcherless_gate" "$matcherless_cells" \
+      >> "$IGNORED_MATCHER_TABLE"
+    assert_renderer_rejects "${matcherless_gate} cannot carry a matcher its host ignores" \
+      "matcherless ${matcherless_event} gate \`${matcherless_gate}\` has matcher mappings for ${matcherless_host}" \
       --repo-root "$REPO_ROOT" --table "$IGNORED_MATCHER_TABLE" --check
   done
 
@@ -5335,6 +5349,107 @@ journal_milestone "the longest slug the rule admits"
 assert_equals "a 64-character slug of the admitted charset names its journal verbatim" \
   "64 ${maximal_change}.log|the longest slug the rule admits>" \
   "${#maximal_change} $(ls "$JOURNAL_DIR" 2>/dev/null || true)|$(journal_texts_in "$JOURNAL_DIR/${maximal_change}.log")"
+rm -rf "$STATE_DIR/runs"
+oso-state --session "$SESSION" clear >/dev/null 2>&1 || true
+
+AUTO_JOURNAL="$JOURNAL_DIR/auto-continuity.log"
+
+auto_stop_input() {
+  printf '{"session_id":"%s","transcript_path":"%s","cwd":"%s","hook_event_name":"Stop","stop_hook_active":%s}' \
+    "${1:-$SESSION}" "$TRANSCRIPT" "${3:-$REPO_ROOT}" "${2:-false}"
+}
+
+arm_unattended_run() {
+  rm -rf "$STATE_DIR/runs"
+  oso-state --session "$SESSION" set auto=running auto_change=auto-continuity >/dev/null
+}
+
+auto_stop_verdict() {
+  run_hook auto-continue.sh "$1"
+  if [ -n "$hook_problem" ]; then
+    printf 'crashed:%s' "$hook_problem"
+  elif hook_returned_block; then
+    printf 'push'
+  elif [ "$hook_stdout" = '{}' ]; then
+    printf 'stop'
+  else
+    printf 'neither:%s' "${hook_stdout:-<empty>}"
+  fi
+}
+
+arm_unattended_run
+run_hook auto-continue.sh "$(auto_stop_input)"
+assert_after_hook "a turn ending while an unattended run is in flight is pushed back into motion" \
+  hook_returned_block
+auto_push_reason="$(printf '%s' "$hook_stdout" | sed -n 's/.*"reason":"\(.*\)"}$/\1/p')"
+auto_anchors_missing=""
+for auto_anchor in 'oso/index NEXT:' active_slice 'oso-state journal' park; do
+  case "$auto_push_reason" in
+    *"$auto_anchor"*) ;;
+    *) auto_anchors_missing="$auto_anchors_missing $auto_anchor" ;;
+  esac
+done
+assert_equals "the push re-anchors the run on position, journal and park, never a bare block" \
+  "" "$auto_anchors_missing"
+
+auto_settled_verdicts=""
+for settled_marker in parked done; do
+  oso-state --session "$SESSION" set "auto=$settled_marker" >/dev/null
+  auto_settled_verdicts="$auto_settled_verdicts $(auto_stop_verdict "$(auto_stop_input)")"
+done
+oso-state --session "$SESSION" clear
+auto_settled_verdicts="$auto_settled_verdicts $(auto_stop_verdict "$(auto_stop_input)")"
+arm_unattended_run
+auto_settled_verdicts="$auto_settled_verdicts $(auto_stop_verdict "$(auto_stop_input another-session)")"
+assert_equals "a parked run, a finished one, an unmarked repository and a foreign session all end their turn untouched" \
+  "stop stop stop stop" "${auto_settled_verdicts# }"
+
+oso-state --session "$SESSION" clear
+rm -rf "$STATE_DIR/runs"
+mkdir -p "$REPO_STATE"
+auto_uncertain_verdicts=" $(auto_stop_verdict "$(auto_stop_input)")"
+rmdir "$REPO_STATE"
+printf 'this file is not state at all\n' > "$REPO_STATE"
+auto_uncertain_verdicts="$auto_uncertain_verdicts $(auto_stop_verdict "$(auto_stop_input)")"
+rm -f "$REPO_STATE"
+arm_unattended_run
+auto_uncertain_verdicts="$auto_uncertain_verdicts $(auto_stop_verdict 'this payload is not JSON')"
+auto_uncertain_verdicts="$auto_uncertain_verdicts $(auto_stop_verdict '{"hook_event_name":"Stop"}')"
+assert_equals "an unreadable state path, a garbage one and an unparseable payload fail open, writing no run trail" \
+  "stop stop stop stop|unwritten" \
+  "${auto_uncertain_verdicts# }|$(ls "$STATE_DIR/runs" 2>/dev/null || echo unwritten)"
+
+AUTO_CAP_MILESTONE='auto-continue: cap reached after 3 pushes without progress — allowing the stop'
+arm_unattended_run
+auto_cap_verdicts=" $(auto_stop_verdict "$(auto_stop_input)")"
+for _ in 1 2 3; do
+  auto_cap_verdicts="$auto_cap_verdicts $(auto_stop_verdict "$(auto_stop_input "$SESSION" true)")"
+done
+assert_equals "three pushes without a milestone between them exhaust the net, and the fourth stop stands in the journal" \
+  "push push push stop|$AUTO_CAP_MILESTONE>" \
+  "${auto_cap_verdicts# }|$(journal_texts_in "$AUTO_JOURNAL")"
+auto_past_cap_verdict="$(auto_stop_verdict "$(auto_stop_input "$SESSION" true)")"
+assert_equals "past the cap every stop stands and the trail says so exactly once" \
+  "stop|$AUTO_CAP_MILESTONE>" \
+  "$auto_past_cap_verdict|$(journal_texts_in "$AUTO_JOURNAL")"
+
+arm_unattended_run
+auto_progress_verdicts=""
+for auto_slice in 1 2 3 4; do
+  auto_progress_verdicts="$auto_progress_verdicts $(auto_stop_verdict "$(auto_stop_input "$SESSION" true)")"
+  journal_milestone "the applier landed slice $auto_slice"
+done
+assert_equals "a milestone between pushes resets the count, so the net never lets go of a run that is moving" \
+  "push push push push" "${auto_progress_verdicts# }"
+
+arm_unattended_run
+auto_belt_verdicts=""
+for _ in 1 2 3; do
+  auto_belt_verdicts="$auto_belt_verdicts $(auto_stop_verdict "$(auto_stop_input "$SESSION" true)")"
+done
+assert_equals "a turn this hook already continued counts as a push even before any tally exists" \
+  "push push stop" "${auto_belt_verdicts# }"
+
 rm -rf "$STATE_DIR/runs"
 oso-state --session "$SESSION" clear >/dev/null 2>&1 || true
 
