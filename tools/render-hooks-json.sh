@@ -59,10 +59,11 @@ function expected_script(id) {
   if (id == "stale") return "warn-stale-state.sh"
   if (id == "version") return "warn-stale-version.sh"
   if (id == "teardown") return "cleanup-state.sh"
+  if (id == "proddeploy") return "block-prod-deploy.sh"
   return ""
 }
 function expected_event(id) {
-  if (id == "commit" || id == "edits" || id == "unknown") return "PreToolUse"
+  if (id == "commit" || id == "edits" || id == "unknown" || id == "proddeploy") return "PreToolUse"
   if (id == "handoff") return "SubagentStop"
   if (id == "planstop" || id == "autocontinue") return "Stop"
   if (id == "planprompt") return "UserPromptSubmit"
@@ -141,7 +142,7 @@ function parse(    line, fields, count, kind, i, id, expected, tool_class, tool_
   if (host_count != 2 || hosts[1] != "claude" || hosts[2] != "codex") die("hosts must be exactly and in order: claude, codex")
   if (manifests[1] != "plugin/hooks/hooks.json" || roots[1] != "\"${CLAUDE_PLUGIN_ROOT}\"/hooks") die("claude host manifest or command root is not the supported value")
   if (manifests[2] != "codex/hooks/hooks.json" || roots[2] != "\"__OSO_HOOKS_DIR__\"") die("codex host manifest or command root is not the supported value")
-  if (gate_count != 11) die("table must declare exactly the eleven known gates")
+  if (gate_count != 12) die("table must declare exactly the twelve known gates")
   for (g = 1; g <= gate_count; g++) for (h = 1; h <= host_count; h++) {
     mappings = 0
     for (t = 1; t <= tool_count; t++) if (tool_gate[t] == gate_id[g] && tool_cell[t, h] != "none") mappings++
@@ -183,6 +184,7 @@ function render(name,    h, g, t, first_group, first_tool, matcher, command, see
       allowlist = matcher
       if (gate_id[gg] == "unknown") matcher = ".*"
       if (gate_id[gg] == "handoff") matcher = "^(" matcher ")$"
+      if (gate_id[gg] == "proddeploy") matcher = matcher "|mcp__.*deploy.*"
       if (!event_first) print ","; event_first = 0
       print "      {"
       if (matcher != "") print "        \"matcher\": \"" escape_json(matcher) "\","

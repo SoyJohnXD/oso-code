@@ -18,6 +18,15 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/block-edits-without-slice.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash|mcp__.*deploy.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/block-prod-deploy.sh"
+          }
+        ]
       }
     ],
     "Stop": [

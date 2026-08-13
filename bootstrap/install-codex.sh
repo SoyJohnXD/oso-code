@@ -103,6 +103,7 @@ plugin/hooks/capture-plan-approval.sh
 plugin/hooks/approve-plan-token.sh
 plugin/hooks/warn-stale-state.sh
 plugin/hooks/cleanup-state.sh
+plugin/hooks/block-prod-deploy.sh
 plugin/bin/oso-state
 plugin/hooks/lib.sh
 plugin/hooks/lexer.sh'
@@ -130,7 +131,7 @@ plugin/hooks/lexer.sh'
       fail "published hook hash mismatch for $relative (expected $expected, got $actual)"
     count=$((count + 1))
   done < "$HASHES_FILE"
-  [ "$count" -eq 13 ] || fail "published hook manifest must cover exactly 13 Codex trust files (found $count)"
+  [ "$count" -eq 14 ] || fail "published hook manifest must cover exactly 14 Codex trust files (found $count)"
   [ "$paths" = "$required_paths" ] ||
     fail "published hook coverage or order differs from the frozen Codex trust set"
 }
@@ -311,6 +312,7 @@ allowed = {
     "approve-plan-token.sh",
     "warn-stale-state.sh",
     "cleanup-state.sh",
+    "block-prod-deploy.sh",
 }
 with open(manifest, encoding="utf-8") as handle:
     data = json.load(handle)

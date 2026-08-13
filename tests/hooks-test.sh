@@ -122,7 +122,7 @@ assert_equals() {
 TRANSCRIPT="$HOME/.claude/projects/oso-code/$SESSION.jsonl"
 bash_input() {
   printf '{"session_id":"%s","transcript_path":"%s","cwd":"%s","permission_mode":"default","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"%s","description":"regression case"}}' \
-    "$SESSION" "$TRANSCRIPT" "${2:-$REPO_ROOT}" "$1"
+    "${3:-$SESSION}" "$TRANSCRIPT" "${2:-$REPO_ROOT}" "$1"
 }
 edit_input="$(printf '{"session_id":"%s","transcript_path":"%s","cwd":"%s","permission_mode":"default","hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"/tmp/x.ts","old_string":"const slice = 1;","new_string":"const slice = 2;","replace_all":false}}' \
   "$SESSION" "$TRANSCRIPT" "$REPO_ROOT")"
@@ -148,7 +148,7 @@ assert_allows "a declared hook crash is not a case failure" "$CRASH_HOOK" "$(bas
 # refused and what the named list costs.
 hooks_manifest="$PLUGIN/hooks/hooks.json"
 gated_tools="$(sed -n 's/.*"matcher"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$hooks_manifest" | tr '|' '\n' | LC_ALL=C sort | tr '\n' ' ')"
-expected_tools="$(printf '%s\n' Bash Edit MultiEdit NotebookEdit Write mcp__fallow__fix_apply | LC_ALL=C sort | tr '\n' ' ')"
+expected_tools="$(printf '%s\n' Bash Bash Edit MultiEdit NotebookEdit Write 'mcp__.*deploy.*' mcp__fallow__fix_apply | LC_ALL=C sort | tr '\n' ' ')"
 assert_equals "PreToolUse matchers cover exactly the gated tools" "$expected_tools" "$gated_tools"
 
 codex_hooks_manifest="$REPO_ROOT/codex/hooks/hooks.json"
@@ -174,6 +174,16 @@ for matcherless_event in Stop UserPromptSubmit; do
       echo "ok: ${matcherless_event} remains matcherless in the Codex manifest"; pass=$((pass + 1)) ;;
   esac
 done
+
+prod_gate_matcher_in() {
+  awk '
+    /"matcher"/ { matcher = $0; sub(/^[^:]*: "/, "", matcher); sub(/",$/, "", matcher) }
+    /block-prod-deploy\.sh/ { print matcher; exit }
+  ' "$1"
+}
+assert_equals "both hosts route the shell tool and deploy-shaped MCP names into the production boundary" \
+  'Bash|mcp__.*deploy.*+Bash|mcp__.*deploy.*' \
+  "$(prod_gate_matcher_in "$hooks_manifest")+$(prod_gate_matcher_in "$codex_hooks_manifest")"
 
 claude_stop_group="$(event_group_in "$hooks_manifest" Stop)"
 assert_equals "the Claude manifest runs exactly the continuation net on Stop" \
@@ -1362,10 +1372,21 @@ else
       echo "FAIL: missing-${approval_gate} mutation removed no gate row"; fail=$((fail + 1))
     else
       assert_renderer_rejects "the hard approval rail cannot omit ${approval_gate}" \
-        "table must declare exactly the eleven known gates" \
+        "table must declare exactly the twelve known gates" \
         --repo-root "$REPO_ROOT" --table "$MISSING_APPROVAL_GATE_TABLE" --check
     fi
   done
+
+  MISSING_PROD_GATE_TABLE="$TEST_HOME/missing-proddeploy-gate.txt"
+  sed -e '/^gate  proddeploy[[:space:]]/d' -e '/^tool  proddeploy[[:space:]]/d' \
+    "$REPO_ROOT/tools/hook-gates.txt" > "$MISSING_PROD_GATE_TABLE"
+  if cmp -s "$REPO_ROOT/tools/hook-gates.txt" "$MISSING_PROD_GATE_TABLE"; then
+    echo "FAIL: missing-proddeploy mutation removed no gate row"; fail=$((fail + 1))
+  else
+    assert_renderer_rejects "the closed gate set cannot lose the production boundary" \
+      "table must declare exactly the twelve known gates" \
+      --repo-root "$REPO_ROOT" --table "$MISSING_PROD_GATE_TABLE" --check
+  fi
 
   # Codex explicitly ignores matcher on Stop and UserPromptSubmit. Letting the
   # source table add one would render a filter that looks protective and never
@@ -1499,6 +1520,15 @@ else
     2 "$approval_handlers_read"
   assert_equals "both approval handlers are inside the published trust boundary" \
     "" "$unpublished_approval_hooks"
+
+  prod_gate_hash="$({
+    sha256sum "$PLUGIN/hooks/block-prod-deploy.sh" 2>/dev/null ||
+      shasum -a 256 "$PLUGIN/hooks/block-prod-deploy.sh" 2>/dev/null
+  } | awk '{ print $1 }')"
+  assert_equals "the production boundary a Codex run meets is inside the published trust boundary" \
+    "$prod_gate_hash" \
+    "$(sed -n 's|^\([0-9a-f][0-9a-f]*\)  plugin/hooks/block-prod-deploy\.sh$|\1|p' \
+      "$REPO_ROOT/bootstrap/hook-hashes.txt")"
 fi
 
 # --- Runtime dispatch: Codex catch-all defaults unknown tools to deny ----------
@@ -5451,6 +5481,116 @@ assert_equals "a turn this hook already continued counts as a push even before a
   "push push stop" "${auto_belt_verdicts# }"
 
 rm -rf "$STATE_DIR/runs"
+oso-state --session "$SESSION" clear >/dev/null 2>&1 || true
+
+PROD_PATTERNS_FILE="$STATE_DIR/deploy-deny/$REPO_KEY.patterns"
+
+prod_gate_verdict() {
+  run_hook block-prod-deploy.sh "$1"
+  if [ -n "$hook_problem" ]; then
+    printf 'crashed:%s' "$hook_problem"
+  elif hook_returned_deny; then
+    printf 'deny'
+  elif [ -z "$hook_stdout" ]; then
+    printf 'allow'
+  else
+    printf 'neither:%s' "$hook_stdout"
+  fi
+}
+
+prod_mcp_input() {
+  printf '{"session_id":"%s","transcript_path":"%s","cwd":"%s","hook_event_name":"PreToolUse","tool_name":"%s","tool_input":{"project":"acme"}}' \
+    "$SESSION" "$TRANSCRIPT" "$REPO_ROOT" "$1"
+}
+
+prod_verdicts_for() {
+  local verdicts="" prod_command
+  for prod_command in "$@"; do
+    verdicts="$verdicts $(prod_gate_verdict "$(bash_input "$prod_command")")"
+  done
+  printf '%s' "${verdicts# }"
+}
+
+arm_unattended_run
+assert_equals "every built-in production shape is denied while the run is in flight" \
+  "deny deny deny deny deny deny" \
+  "$(prod_verdicts_for 'vercel --prod' 'vercel deploy --prod --yes' 'npx vercel --prod' \
+    'pnpm dlx vercel --target production' 'netlify deploy --prod' 'firebase deploy')"
+assert_equals "the preview and staging shapes of the same CLIs keep passing" \
+  "allow allow allow allow" \
+  "$(prod_verdicts_for vercel 'vercel deploy' 'vercel deploy --target=staging' 'netlify deploy')"
+assert_equals "the work of the run itself is none of this gate's business" \
+  "allow allow allow" \
+  "$(prod_verdicts_for 'npm run build' 'git commit -m wip' 'git commit -m push')"
+
+assert_equals "a push that does not name the run branch is denied while the run is in flight" \
+  "deny deny deny" \
+  "$(prod_verdicts_for 'git push origin main' 'git push' 'git -C . push origin main')"
+assert_equals "the run's own branch push is the finish this gate exists to protect" \
+  "allow allow" \
+  "$(prod_verdicts_for 'git push origin oso-run/auto-continuity' 'git push origin HEAD:oso-run/x')"
+
+run_hook block-prod-deploy.sh "$(prod_mcp_input mcp__plugin_vercel_vercel__deploy_to_vercel)"
+assert_after_hook "a deploy-shaped MCP tool is the operator's own call while the run is in flight" \
+  hook_returned_deny
+assert_equals "the MCP deny says whose call a deploy is, not merely that it was refused" \
+  "named" "$(case "$hook_stdout" in *'MCP deploy stays with the operator'*) echo named ;; *) echo unnamed ;; esac)"
+assert_equals "a Bash sibling tool the matcher also reaches is judged by neither half" \
+  "allow" "$(prod_gate_verdict "$(prod_mcp_input BashOutput)")"
+
+mkdir -p "${PROD_PATTERNS_FILE%/*}"
+printf 'npm run deploy:prod\n\n^ship-it\n' > "$PROD_PATTERNS_FILE"
+prod_pattern_verdicts="$(prod_verdicts_for 'npm run deploy:prod' 'ship-it now' 'npm run build')"
+rm -f "$PROD_PATTERNS_FILE"
+assert_equals "this repository's own deny patterns bite while the run is in flight, and only where they match" \
+  "deny deny allow|allow deny" \
+  "$prod_pattern_verdicts|$(prod_verdicts_for 'npm run deploy:prod' 'vercel --prod')"
+
+prod_long_command='vercel --prod'
+while [ "${#prod_long_command}" -le "$((3072 + 16))" ]; do
+  prod_long_command="$prod_long_command and echo padding"
+done
+prod_residue_before="$(grep -c residue-allowed "$STATE_DIR/events.jsonl" 2>/dev/null || true)"
+prod_residue_verdict="$(prod_gate_verdict "$(bash_input "$prod_long_command")")"
+prod_residue_after="$(grep -c residue-allowed "$STATE_DIR/events.jsonl" 2>/dev/null || true)"
+assert_equals "a line past the lexer's bound passes counted, the way the commit rail already spends its residue" \
+  "allow 1" \
+  "$prod_residue_verdict $((prod_residue_after - prod_residue_before))"
+
+prod_settled_verdicts=""
+for settled_marker in parked done; do
+  oso-state --session "$SESSION" set "auto=$settled_marker" >/dev/null
+  prod_settled_verdicts="$prod_settled_verdicts $(prod_verdicts_for 'vercel --prod' 'git push origin main')"
+done
+oso-state --session "$SESSION" clear
+oso-state --session "$SESSION" set mode=plan active_slice=3 verify_green=false >/dev/null
+prod_settled_verdicts="$prod_settled_verdicts $(prod_verdicts_for 'vercel --prod' 'git push origin main')"
+oso-state --session "$SESSION" clear
+prod_settled_verdicts="$prod_settled_verdicts $(prod_verdicts_for 'vercel --prod' 'git push origin main')"
+arm_unattended_run
+prod_settled_verdicts="$prod_settled_verdicts $(prod_gate_verdict "$(bash_input 'vercel --prod' "$REPO_ROOT" another-session)")"
+assert_equals "a parked run, a finished one, an attended session, an unmarked repository and a foreign session all deploy untouched" \
+  "allow allow allow allow allow allow allow allow allow" "${prod_settled_verdicts# }"
+
+oso-state --session "$SESSION" clear
+printf 'this file is not state at all\n' > "$REPO_STATE"
+prod_uncertain_verdicts="$(prod_verdicts_for 'vercel --prod' 'npm run build' 'git push origin main')"
+run_hook block-prod-deploy.sh "$(bash_input 'vercel --prod')"
+prod_uncertain_reason="$hook_stdout"
+rm -f "$REPO_STATE"
+mkdir -p "$REPO_STATE"
+prod_uncertain_verdicts="$prod_uncertain_verdicts $(prod_verdicts_for 'vercel --prod' 'npm run build')"
+rmdir "$REPO_STATE"
+assert_equals "a state file the gate cannot read as state closes the production door and nothing else" \
+  "deny allow allow deny allow" "$prod_uncertain_verdicts"
+assert_equals "the uncertain deny hands over the remedy that fits an unreadable state, not the one that needs a readable marker" \
+  "repair" \
+  "$(case "$prod_uncertain_reason" in
+    *"oso-state --session $SESSION clear"*) echo repair ;;
+    *) echo elsewhere ;;
+  esac)"
+
+rm -rf "$STATE_DIR/runs" "${PROD_PATTERNS_FILE%/*}"
 oso-state --session "$SESSION" clear >/dev/null 2>&1 || true
 
 # --- Delegation handoff: exact attempt, bounded wait, atomic one-shot receipt --
@@ -10666,7 +10806,7 @@ awk '
 mv "$CODEX_DUPLICATE_HASH_RELEASE/bootstrap/hook-hashes.txt.tmp" \
   "$CODEX_DUPLICATE_HASH_RELEASE/bootstrap/hook-hashes.txt"
 run_codex_install "$CODEX_HASH_HOME" "" "$CODEX_DUPLICATE_HASH_RELEASE/bootstrap/install-codex.sh"
-assert_equals "a duplicate published hash path is rejected even with thirteen rows" \
+assert_equals "a duplicate published hash path is rejected even with fourteen rows" \
   "duplicate path" "$(codex_install_log_class 'duplicate path' 'duplicate published hook path')"
 assert_equals "duplicate hash coverage is rejected before any destination mutation" \
   "absent" "$([ -e "$CODEX_HASH_HOME/.codex" ] || [ -e "$CODEX_HASH_HOME/.agents" ] || [ -e "$CODEX_HASH_HOME/.local/share/oso-code" ] && echo mutated || echo absent)"
