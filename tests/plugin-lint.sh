@@ -933,12 +933,18 @@ check_unattended_run_carves_out_the_delivery_contract() {
       flag "skills/_shared/platform/claude/reporting.md carves no unattended run out of its delivery contract, so every milestone of a run nobody is watching ends the turn and waits for somebody who is not coming"
     else
       for marker in 'auto=running' 'does NOT end the turn' 'oso-state journal' \
-          'END THE TURN' 'auto=done' 'auto-continue.sh'; do
+          'END THE TURN' 'auto=done' 'auto-continue.sh' \
+          'the run THE OPERATOR ARMED' '`bodies/roadmap.md` §5' \
+          "roadmap CHILD's own close is NEITHER of the two"; do
         printf '%s\n' "$statement" | grep -qF -- "$marker" \
           || flag "skills/_shared/platform/claude/reporting.md's unattended-run carve-out drops a clause it turns on: $marker"
       done
     fi
   fi
+
+  anchored_absolute_stays_bounded_in "$PLUGIN_ROOT/skills/_shared/platform/claude/roadmap.md" \
+    'Every milestone report the chain' 'chain milestone exception' \
+    'the chain and its children'
 
   anchored_absolute_stays_bounded_in "$PLUGIN_ROOT/skills/_shared/bodies/plan.md" \
     "A ROADMAP's child never waits for the operator" 'unattended marker flips' \
@@ -990,7 +996,7 @@ check_the_project_record_is_honest_about_its_scope() {
     'never asked for its production route'
   anchored_absolute_stays_bounded_in "$plan" "AUTO's CEILING" 'ceiling arming ask' \
     'FIRST ARMING IN THIS PROJECT' 'mem_update' 'deploy-deny' 'ONE ERE PER LINE' \
-    'never skipped in silence' 'arms no AUTO at all'
+    'mkdir -p' 'never skipped in silence' 'arms no AUTO at all'
   for retired in $({ grep -nF 'per-machine ($HOME)' "$plan" || true; } | cut -d: -f1); do
     flag "skills/_shared/bodies/plan.md:$retired claims the per-project record reaches this whole machine again, a reach mem_search never had"
   done

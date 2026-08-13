@@ -3,6 +3,7 @@
 Date: 2026-08-02
 Status: accepted
 Supersedes: ADR-0085 (its "always, with no operator question about it" clause — per-slice commits are ON by default and off where the ledger's §3 Verification row says so)
+Superseded-by: ADR-0147 — retires only the ABSOLUTE standing of "push and PR are the two the operator is asked for". It holds word for word wherever an operator is at the run, and Mode 3 is unmoved; under an unattended run the push of that run's own `oso-run/<change>` branch and the PR that closes it are the FINISH the plan approval chartered, parked as a named pending where no remote or no PR route takes them. The commit boundary itself, the per-slice commit, the ledger's Verification row and the PR body's ledger requirement all stand
 Reconciled: applied — Mode 1 phase 7 and Mode 3 phase 5 read push and PR as the only two the operator is asked for.
 Source: this change (parallel wave execution); recorded with the change that made it
 

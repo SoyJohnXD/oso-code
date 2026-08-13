@@ -4,7 +4,7 @@
 
 The Claude Code TUI drops assistant text that precedes a tool call in the same turn. So operator-facing content — the queue as it is planned, the approval document, the presence phase — must END the turn as plain text, with the tool call in a LATER turn. Context a question round needs travels INSIDE the `AskUserQuestion` fields (question text, option descriptions), never as prose before the call.
 
-Every milestone report the chain makes while the operator is away is the exception, and `reporting.md` beside this file states it whole rather than this section restating it: a chain arming its children under `auto=running` is an UNATTENDED RUN, so its milestone text rides the stream instead of ending the turn and is journaled full-text in its place, while §5's three stopping moments — the roadmap complete, the queue ready, the chain blocked — end the turn the way this section opens, because each is the chain handing itself back.
+Every milestone report the chain and its children make while the operator is away is the exception, and `reporting.md` beside this file states it whole rather than this section restating it: a chain arming its children under `auto=running` is an UNATTENDED RUN, so its milestone text rides the stream instead of ending the turn and is journaled full-text in its place, while §5's three stopping moments — the roadmap complete, the queue ready, the chain blocked — end the turn the way this section opens, because each is the chain handing itself back.
 
 ## Question rounds
 

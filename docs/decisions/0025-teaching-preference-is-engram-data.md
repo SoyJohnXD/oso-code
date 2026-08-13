@@ -2,6 +2,7 @@
 
 Date: 2026-07-16
 Status: accepted
+Superseded-by: ADR-0149 — retires only the per-machine framing this decision's context rests on; the decision itself, that the preference is engram data and never a repo default, stands entire and holds more strongly at the per-project scope `mem_search` can actually retrieve
 Reconciled: nowhere — it changed no file; the value lives in engram.
 Source: docs/blueprint.md amendment of 2026-07-16 (windows-install-behavior), decision (D9), deciding commit 2905cde
 

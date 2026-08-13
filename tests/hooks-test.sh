@@ -1282,6 +1282,34 @@ else
   fi
 fi
 
+LINT_CHILD_CLOSE_FIXTURE="$TEST_HOME/lint-child-close"
+copy_lint_fixture "$LINT_CHILD_CLOSE_FIXTURE"
+child_close_target="$LINT_CHILD_CLOSE_FIXTURE/plugin/skills/_shared/platform/claude/reporting.md"
+child_close_clause="roadmap CHILD's own close is NEITHER of the two"
+child_close_neighbour='the run THE OPERATOR ARMED'
+if ! grep -qF "$child_close_clause" "$child_close_target"; then
+  echo "FAIL: the check_unattended_run_carves_out_the_delivery_contract mutation found no child's-close exclusion to take back in the Claude reporting binding"; fail=$((fail + 1))
+else
+  sed "s/$child_close_clause/roadmap CHILD's own close is ONE of the two/" \
+    "$child_close_target" > "$child_close_target.tmp"
+  mv "$child_close_target.tmp" "$child_close_target"
+  if grep -qF "$child_close_clause" "$child_close_target"; then
+    echo "FAIL: the check_unattended_run_carves_out_the_delivery_contract mutation left the child's-close exclusion standing in the Claude reporting binding"; fail=$((fail + 1))
+  elif ! grep -qF "$child_close_neighbour" "$child_close_target"; then
+    echo "FAIL: the check_unattended_run_carves_out_the_delivery_contract mutation took the two-turn-ender list it was supposed to leave standing"; fail=$((fail + 1))
+  elif child_close_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_CHILD_CLOSE_FIXTURE/plugin" "$LINT_CHILD_CLOSE_FIXTURE" 2>&1)"; then
+    echo "FAIL: a delivery contract where every roadmap child's close interrupts an absent operator passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$child_close_report" in
+      *"unattended-run carve-out drops a clause it turns on: roadmap CHILD's own close is NEITHER of the two"*)
+        echo "ok: check_unattended_run_carves_out_the_delivery_contract rejects a host that ends the turn on a child's close inside a chain still running"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the child's-close exclusion mutation failed for the wrong reason — $(printf '%s' "$child_close_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
 LINT_COMPACTION_COST_FIXTURE="$TEST_HOME/lint-compaction-cost"
 copy_lint_fixture "$LINT_COMPACTION_COST_FIXTURE"
 compaction_cost_target="$LINT_COMPACTION_COST_FIXTURE/plugin/skills/_shared/bodies/roadmap.md"
