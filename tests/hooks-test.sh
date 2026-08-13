@@ -1974,8 +1974,8 @@ establish_premise() {
 }
 
 case "$(uname -s)" in
-  MINGW*|MSYS*|CYGWIN*) POSIX_MODES_ARE_EMULATED=true ;;
-  *) POSIX_MODES_ARE_EMULATED=false ;;
+  MINGW*|MSYS*|CYGWIN*) POSIX_MODES_ARE_EMULATED=true; RUNS_ON_WINDOWS_BASH=true ;;
+  *) POSIX_MODES_ARE_EMULATED=false; RUNS_ON_WINDOWS_BASH=false ;;
 esac
 
 oso-state --session "$SESSION" clear
@@ -2168,6 +2168,26 @@ assert_equals "the hidden marker is stripped from a CRLF-decoded document too" \
 assert_equals "a CRLF-decoded document is bound to the digest of the raw escaped field, CR escapes and all" \
   "$crlf_plan_digest" "$(oso-state --session "$SESSION" get plan_approval_digest)"
 establish_premise "the CRLF fixture leaves no approval pending" \
+  oso-state --session "$SESSION" clear
+
+doubled_cr_plan='Repaso de cambios\r\r\nFull slice plan: text-mode jq host\r\r\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\n'
+doubled_cr_plan_digest="$(sha256_text "$doubled_cr_plan")"
+doubled_cr_presented_file="$REPO_PLAN_DIR/presented-${doubled_cr_plan_digest}.md"
+doubled_cr_current_file="$REPO_PLAN_DIR/current.md"
+doubled_cr_plan_document="$(printf 'Repaso de cambios\nFull slice plan: text-mode jq host')"
+run_hook "$PLAN_STOP_HOOK" \
+  "$(codex_stop_input default "$SESSION" "$doubled_cr_plan" false "$CODEX_STOP_PLAN_TRANSCRIPT")"
+assert_after_hook "a document a text-mode jq re-terminated over CRLF content is still captured" \
+  [ "$hook_stdout" = '{}' ]
+assert_equals "the snapshot of a doubled-CR document holds the human plan with LF line endings" \
+  "$doubled_cr_plan_document" "$(cat "$doubled_cr_presented_file" 2>/dev/null || true)"
+assert_equals "the operational copy of a doubled-CR document holds that same LF-ended plan" \
+  "$doubled_cr_plan_document" "$(cat "$doubled_cr_current_file" 2>/dev/null || true)"
+assert_equals "neither persisted artifact of a doubled-CR document carries a CR byte" \
+  0 "$(LC_ALL=C grep -lF -e "$(printf '\r')" "$doubled_cr_presented_file" "$doubled_cr_current_file" 2>/dev/null | wc -l | tr -d ' ')"
+assert_equals "a doubled-CR document is bound to the digest of the raw escaped field, every CR escape intact" \
+  "$doubled_cr_plan_digest" "$(oso-state --session "$SESSION" get plan_approval_digest)"
+establish_premise "the doubled-CR fixture leaves no approval pending" \
   oso-state --session "$SESSION" clear
 
 # Real Codex Stop transport appends one LF after the assistant's final logical
@@ -2913,10 +2933,15 @@ assert_leaves_no_trace() {
   fi
 }
 
-assert_leaves_no_trace "an unarmed session leaves the commit gate silent without jq" \
-  block-commit-until-green.sh "$(bash_input 'git commit -m x')"
-assert_leaves_no_trace "an unarmed session leaves the slice gate silent without jq" \
-  block-edits-without-slice.sh "$edit_input"
+if [ "$RUNS_ON_WINDOWS_BASH" = true ]; then
+  echo "skip: the stripped-interpreter simulation cannot be built where bash's own libraries do not travel with the copy, so neither unarmed gate has an interpreter to answer from"
+  skipped=$((skipped + 1))
+else
+  assert_leaves_no_trace "an unarmed session leaves the commit gate silent without jq" \
+    block-commit-until-green.sh "$(bash_input 'git commit -m x')"
+  assert_leaves_no_trace "an unarmed session leaves the slice gate silent without jq" \
+    block-edits-without-slice.sh "$edit_input"
+fi
 
 # --- Integration: every state write the skills instruct carries the full triple -
 # The modes that arm a slice of their own are the writers of that triple — the
@@ -4918,7 +4943,10 @@ printf '%s\n' 'stable asset' > "$IMPECCABLE_CACHE/assets/palette.txt"
 printf '%s\n' 'stable playbook' > "$IMPECCABLE_CACHE/reference/linked-playbook.md"
 printf '%s\n' 'stable asset' > "$IMPECCABLE_CACHE/reference/linked-assets/palette.txt"
 
-if [ ! -x "$MOUNT_IMPECCABLE" ]; then
+if [ "$RUNS_ON_WINDOWS_BASH" = true ]; then
+  echo "skip: the dangling-symlink owner idiom this mount publishes cannot exist where ln -s copies, so no case resting on a completed mount has a premise here — the product gap stands recorded"
+  skipped=$((skipped + 1))
+elif [ ! -x "$MOUNT_IMPECCABLE" ]; then
   echo "FAIL: the Codex Impeccable mount helper is absent or not executable"
   fail=$((fail + 1))
 elif mount_report="$("$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" 2>&1)"; then

@@ -46,7 +46,9 @@ json_field() {
     json_take_escaped_field "$json" "$field"
     value="$(json_unescape "$escaped")"
   fi
-  value="${value//$'\r\n'/$'\n'}"
+  while [ "$value" != "${value//$'\r\n'/$'\n'}" ]; do
+    value="${value//$'\r\n'/$'\n'}"
+  done
   printf '%s' "${value%$'\r'}"
 }
 
