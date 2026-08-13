@@ -197,6 +197,11 @@ assert_equals "rendering the continuation net leaves the Codex manifest on its p
   "$(sed -n 's|^\([0-9a-f]*\)  codex/hooks/hooks.json$|\1|p' "$REPO_ROOT/bootstrap/hook-hashes.txt")" \
   "$({ sha256sum "$codex_hooks_manifest" 2>/dev/null || shasum -a 256 "$codex_hooks_manifest" 2>/dev/null; } | awk '{ print $1 }')"
 
+claude_session_start_group="$(event_group_in "$hooks_manifest" SessionStart)"
+assert_equals "the compaction re-anchor runs last on Claude session-start and nowhere on Codex" \
+  "persist-state-bin.sh warn-stale-state.sh warn-stale-version.sh reanchor-after-compact.sh|0" \
+  "$(printf '%s\n' "$claude_session_start_group" | sed -n 's|.*/hooks/\([^"]*\)".*|\1|p' | tr '\n' ' ' | sed 's/ *$//')|$(grep -c 'reanchor-after-compact.sh' "$codex_hooks_manifest" || true)"
+
 unrunnable=""
 manifest_commands="$(sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' "$hooks_manifest")"
 while IFS= read -r manifest_command; do
@@ -1372,7 +1377,7 @@ else
       echo "FAIL: missing-${approval_gate} mutation removed no gate row"; fail=$((fail + 1))
     else
       assert_renderer_rejects "the hard approval rail cannot omit ${approval_gate}" \
-        "table must declare exactly the twelve known gates" \
+        "table must declare exactly the thirteen known gates" \
         --repo-root "$REPO_ROOT" --table "$MISSING_APPROVAL_GATE_TABLE" --check
     fi
   done
@@ -1384,8 +1389,19 @@ else
     echo "FAIL: missing-proddeploy mutation removed no gate row"; fail=$((fail + 1))
   else
     assert_renderer_rejects "the closed gate set cannot lose the production boundary" \
-      "table must declare exactly the twelve known gates" \
+      "table must declare exactly the thirteen known gates" \
       --repo-root "$REPO_ROOT" --table "$MISSING_PROD_GATE_TABLE" --check
+  fi
+
+  MISSING_REANCHOR_GATE_TABLE="$TEST_HOME/missing-reanchor-gate.txt"
+  sed '/^gate  reanchor[[:space:]]/d' \
+    "$REPO_ROOT/tools/hook-gates.txt" > "$MISSING_REANCHOR_GATE_TABLE"
+  if cmp -s "$REPO_ROOT/tools/hook-gates.txt" "$MISSING_REANCHOR_GATE_TABLE"; then
+    echo "FAIL: missing-reanchor mutation removed no gate row"; fail=$((fail + 1))
+  else
+    assert_renderer_rejects "the closed gate set cannot lose the compaction re-anchor" \
+      "table must declare exactly the thirteen known gates" \
+      --repo-root "$REPO_ROOT" --table "$MISSING_REANCHOR_GATE_TABLE" --check
   fi
 
   # Codex explicitly ignores matcher on Stop and UserPromptSubmit. Letting the
@@ -6896,6 +6912,98 @@ else
   rm -f "$DRIFT_CACHE" "$DRIFT_MARKETPLACES"
 fi
 unset OSO_TEST_CURL_CALLS OSO_TEST_ADVERTISEMENT OSO_TEST_CURL_EXIT
+
+REANCHOR_CONTINUE_ORDER='continue it now rather than waiting'
+
+reanchor_input() {
+  printf '{"session_id":"%s","cwd":"%s","hook_event_name":"SessionStart","source":"%s"}' \
+    "${2:-$SESSION}" "$REPO_ROOT" "$1"
+}
+
+reanchor_verdict() {
+  run_hook reanchor-after-compact.sh "$1"
+  if [ -n "$hook_problem" ]; then
+    printf 'crashed:%s' "$hook_problem"
+  elif [ -z "$hook_stdout" ]; then
+    printf 'silent'
+  else
+    printf 'speaks'
+  fi
+}
+
+arm_compacted_slice() {
+  rm -f "$REPO_STATE"
+  oso-state --session "$SESSION" set mode=plan active_slice=3 >/dev/null
+}
+
+rm -rf "$STATE_DIR/runs"
+arm_compacted_slice
+run_hook reanchor-after-compact.sh "$(reanchor_input compact)"
+reanchor_position_unnamed=""
+for reanchor_position in 'mem_search oso/index' mem_get_observation 'NEXT:' 'oso-state show' \
+  "$JOURNAL_DIR/run.log" 'oso-state journal'; do
+  case "$hook_stdout" in
+    *"$reanchor_position"*) ;;
+    *) reanchor_position_unnamed="$reanchor_position_unnamed|$reanchor_position" ;;
+  esac
+done
+assert_equals "a compacted session is handed back every position source that outlived its window" \
+  "" "$reanchor_position_unnamed"
+assert_equals "the re-anchor reaches the model as session-start context, never as bare stdout" \
+  "present" \
+  "$(case "$hook_stdout" in
+    *'"hookEventName":"SessionStart"'*'"additionalContext"'*) echo present ;;
+    *) echo missing ;;
+  esac)"
+assert_equals "an attended run is re-anchored, and without the order that belongs to an unattended one" \
+  "spoken|" \
+  "$([ -n "$hook_stdout" ] && echo spoken || echo silent)|$(printf '%s' "$hook_stdout" | grep -oF "$REANCHOR_CONTINUE_ORDER" || true)"
+
+rm -f "$REPO_STATE"
+oso-state --session "$SESSION" set auto=running auto_change=auto-continuity >/dev/null
+run_hook reanchor-after-compact.sh "$(reanchor_input compact)"
+reanchor_unattended_read=""
+for reanchor_order in "$REANCHOR_CONTINUE_ORDER" park "$AUTO_JOURNAL"; do
+  case "$hook_stdout" in
+    *"$reanchor_order"*) reanchor_unattended_read="$reanchor_unattended_read|$reanchor_order" ;;
+  esac
+done
+assert_equals "an unattended run is told to keep going, to park what needs the operator, and where its own journal is" \
+  "|$REANCHOR_CONTINUE_ORDER|park|$AUTO_JOURNAL" "$reanchor_unattended_read"
+
+oso-state --session "$SESSION" set auto_change=../escape >/dev/null
+run_hook reanchor-after-compact.sh "$(reanchor_input compact)"
+assert_equals "a change slug the reader refuses re-anchors on the fallback journal, never on the slug itself" \
+  "$JOURNAL_DIR/run.log|" \
+  "$(printf '%s' "$hook_stdout" | grep -oF "$JOURNAL_DIR/run.log" || true)|$(printf '%s' "$hook_stdout" | grep -oF '../escape' || true)"
+
+oso-state --session "$SESSION" set auto_change=auto-continuity >/dev/null
+reanchor_start_verdicts=""
+for reanchor_start in startup resume clear; do
+  reanchor_start_verdicts="$reanchor_start_verdicts $(reanchor_verdict "$(reanchor_input "$reanchor_start")")"
+done
+reanchor_start_verdicts="$reanchor_start_verdicts $(reanchor_verdict \
+  "$(printf '{"session_id":"%s","cwd":"%s","hook_event_name":"SessionStart"}' "$SESSION" "$REPO_ROOT")")"
+assert_equals "every session start that is not a compaction stays silent, however live the run is" \
+  "silent silent silent silent" "${reanchor_start_verdicts# }"
+
+oso-state --session "$SESSION" clear
+reanchor_uncertain_verdicts=" $(reanchor_verdict "$(reanchor_input compact)")"
+oso-state --session "$SESSION" set mode=plan active_slice=none >/dev/null
+reanchor_uncertain_verdicts="$reanchor_uncertain_verdicts $(reanchor_verdict "$(reanchor_input compact)")"
+arm_compacted_slice
+reanchor_uncertain_verdicts="$reanchor_uncertain_verdicts $(reanchor_verdict "$(reanchor_input compact another-session)")"
+printf 'this file is not state at all\n' > "$REPO_STATE"
+reanchor_uncertain_verdicts="$reanchor_uncertain_verdicts $(reanchor_verdict "$(reanchor_input compact)")"
+rm -f "$REPO_STATE"
+mkdir -p "$REPO_STATE"
+reanchor_uncertain_verdicts="$reanchor_uncertain_verdicts $(reanchor_verdict "$(reanchor_input compact)")"
+rmdir "$REPO_STATE"
+assert_equals "no state, a disarmed slice, a foreign session, a garbage file and an unreadable path all leave a compaction silent" \
+  "silent silent silent silent silent" "${reanchor_uncertain_verdicts# }"
+
+rm -rf "$STATE_DIR/runs"
+oso-state --session "$SESSION" clear >/dev/null 2>&1 || true
 
 # --- Commit gate: one table per question the matcher has to answer -----------
 # A table line is a whole case, and the command is its name: the point of these

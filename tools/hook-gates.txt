@@ -83,6 +83,7 @@ gate  stale     SessionStart  warn-stale-state.sh           wired  wired
 gate  version   SessionStart  warn-stale-version.sh         wired  none
 gate  teardown  SessionEnd    cleanup-state.sh              wired  wired
 gate  proddeploy PreToolUse   block-prod-deploy.sh          wired  wired
+gate  reanchor  SessionStart  reanchor-after-compact.sh     wired  none
 
 # Codex routes every file write through apply_patch, so four Claude writers collapse
 # onto one name — the renderer keeps first occurrence and drops the repeat. MultiEdit
