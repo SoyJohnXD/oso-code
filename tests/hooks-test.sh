@@ -624,7 +624,7 @@ fi
 
 LINT_RULE_COUNT_FIXTURE="$TEST_HOME/lint-rule-count"
 copy_lint_fixture "$LINT_RULE_COUNT_FIXTURE"
-sed 's/thirty-eight rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
+sed 's/thirty-nine rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
   > "$LINT_RULE_COUNT_FIXTURE/README.md.tmp"
 mv "$LINT_RULE_COUNT_FIXTURE/README.md.tmp" "$LINT_RULE_COUNT_FIXTURE/README.md"
 if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
@@ -632,7 +632,7 @@ if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
   echo "FAIL: check_present_tense_prose_names_the_rule_count accepted stale present-tense rule-count prose"; fail=$((fail + 1))
 else
   case "$rule_count_lint_report" in
-    *"README.md does not name the thirty-eight rules this linter declares"*)
+    *"README.md does not name the thirty-nine rules this linter declares"*)
       echo "ok: check_present_tense_prose_names_the_rule_count rejects stale present-tense rule-count prose"; pass=$((pass + 1)) ;;
     *)
       echo "FAIL: check_present_tense_prose_names_the_rule_count mutation failed for the wrong reason — $(printf '%s' "$rule_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
@@ -1304,6 +1304,33 @@ else
         echo "ok: check_unattended_run_carves_out_the_delivery_contract rejects a chain whose survivability rests on a window nobody can guarantee"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: the compaction-economy mutation failed for the wrong reason — $(printf '%s' "$compaction_cost_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_AUTO_CEILING_FIXTURE="$TEST_HOME/lint-auto-ceiling"
+copy_lint_fixture "$LINT_AUTO_CEILING_FIXTURE"
+auto_ceiling_target="$LINT_AUTO_CEILING_FIXTURE/plugin/skills/_shared/bodies/roadmap.md"
+auto_ceiling_bullet='- **A production deploy.**'
+auto_ceiling_neighbour='CHANGE BRANCH'
+if ! grep -qF -- "$auto_ceiling_bullet" "$auto_ceiling_target"; then
+  echo "FAIL: the check_auto_ceiling_holds_the_finish_and_the_evidence mutation found no production-deploy refusal to take back in the roadmap body"; fail=$((fail + 1))
+else
+  sed '/^- \*\*A production deploy\.\*\*/d' "$auto_ceiling_target" > "$auto_ceiling_target.tmp"
+  mv "$auto_ceiling_target.tmp" "$auto_ceiling_target"
+  if grep -qiF 'production deploy' "$auto_ceiling_target"; then
+    echo "FAIL: the check_auto_ceiling_holds_the_finish_and_the_evidence mutation left the production-deploy refusal standing in the roadmap body"; fail=$((fail + 1))
+  elif ! grep -qF "$auto_ceiling_neighbour" "$auto_ceiling_target"; then
+    echo "FAIL: the check_auto_ceiling_holds_the_finish_and_the_evidence mutation took the run's own finish it was supposed to leave standing"; fail=$((fail + 1))
+  elif auto_ceiling_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_AUTO_CEILING_FIXTURE/plugin" "$LINT_AUTO_CEILING_FIXTURE" 2>&1)"; then
+    echo "FAIL: an autonomy policy that lets a tier put the change into production passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$auto_ceiling_report" in
+      *"autonomy-policy phase drops a clause that bounds how far an unattended run reaches and what its answers rest on: a production deploy"*)
+        echo "ok: check_auto_ceiling_holds_the_finish_and_the_evidence rejects a policy whose ceiling stopped refusing a production deploy"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the check_auto_ceiling_holds_the_finish_and_the_evidence mutation failed for the wrong reason — $(printf '%s' "$auto_ceiling_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi
@@ -4517,6 +4544,30 @@ assert_says_every "the close disarms the marker before it delivers the final rep
 DISARM first — `oso-state set auto=done`, a tool call
 that same turn's trailing text
 AUTO_MARKER_CLOSE_TABLE
+
+assert_says_every "the initialize cuts the run its own branch beside the marker" \
+  "$(plan_section 5)" <<'AUTO_RUN_BRANCH_TABLE'
+checkout -b oso-run/<change>
+skipped only on a RESUME
+Record the branch in the ledger
+AUTO_RUN_BRANCH_TABLE
+
+assert_says_every "the close finishes an unattended run at its own branch and PR" \
+  "$(plan_section 7)" <<'AUTO_FINISH_TABLE'
+Under an UNATTENDED run they are the FINISH instead
+push -u origin
+gh pr create
+its MERGE, a release and a production deploy are on the never-solo list
+PARKED as a named pending
+never a silent skip and never a retry loop
+AUTO_FINISH_TABLE
+
+assert_says_every "the roadmap's blocked exit parks the child's marker instead of leaving it running" \
+  "$(grep -F -- '**The chain is BLOCKED**' "$PLUGIN/skills/_shared/bodies/roadmap.md")" \
+  <<'BLOCKED_PARK_TABLE'
+oso-state set auto=parked
+The `roadmap` key stays armed
+BLOCKED_PARK_TABLE
 
 # The same trees from the other end: the close clears the ones the operator
 # reached, and the resume is where they hear about the ones nobody did. No hook

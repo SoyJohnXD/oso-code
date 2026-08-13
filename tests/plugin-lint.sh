@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Thirty-eight rules over what the plugin's declarations, prose and delegation
+# Thirty-nine rules over what the plugin's declarations, prose and delegation
 # payloads SAY, which `claude plugin validate --strict` never reads.
 set -euo pipefail
 
@@ -427,6 +427,7 @@ check_present_tense_prose_names_the_rule_count() {
     33) spelled=thirty-three ;; 34) spelled=thirty-four ;;
     35) spelled=thirty-five ;; 36) spelled=thirty-six ;;
     37) spelled=thirty-seven ;; 38) spelled=thirty-eight ;;
+    39) spelled=thirty-nine ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -954,6 +955,21 @@ check_unattended_run_carves_out_the_delivery_contract() {
     'compaction economy' 'best-effort' 're-anchor' 'run journal'
 }
 
+check_auto_ceiling_holds_the_finish_and_the_evidence() {
+  roadmap_phase_names_its_clauses 'The autonomy policy' 'autonomy-policy phase' \
+    'a clause that bounds how far an unattended run reaches and what its answers rest on' \
+    'a SHARED branch' 'PR MERGE' 'a release' 'a production deploy' \
+    'CHANGE BRANCH' 'opens the PR' 'cites' 'unsourced'
+  anchored_absolute_stays_bounded_in "$PLUGIN_ROOT/skills/_shared/bodies/plan.md" \
+    'PUSH and PR are the two that still require the operator to ask' \
+    "close step 8's finish" \
+    'unattended' 'push -u origin' 'gh pr create' 'per-project record' \
+    'PARKED as a named pending' 'never a retry loop' 'production deploy'
+  anchored_absolute_stays_bounded_in "$PLUGIN_ROOT/skills/_shared/bodies/roadmap.md" \
+    'The chain is BLOCKED' "blocked exit's marker write" \
+    'oso-state set auto=parked' 'INTENDED'
+}
+
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }
 
 check_forked_skills_declare_background
@@ -994,6 +1010,7 @@ check_verifier_payload_is_closed_and_its_comment_gate_scans
 check_no_exception_rules_outrank_repo_convention
 check_auto_disposition_is_a_ledger_toggle_that_parks_on_a_question
 check_unattended_run_carves_out_the_delivery_contract
+check_auto_ceiling_holds_the_finish_and_the_evidence
 
 if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"

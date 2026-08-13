@@ -15,4 +15,4 @@
 - Small, quickly verifiable changes: use `/oso-code:quick`.
 - Something broke (a bug, a crash, a failing behavior): use `/oso-code:debug`.
 - Several substantial changes known up front, decided in one sitting and run one after another: use `/oso-code:roadmap`.
-- Every change closes at zero warnings. `/plan` commits each slice as it lands; never push or open a PR unless asked.
+- Every change closes at zero warnings. `/plan` commits each slice as it lands; never push or open a PR unless asked. The one exception is armed, never assumed: a run under the AUTO disposition finishes by pushing its own change branch and opening the PR for it, and stops there — the merge, a release and any production deploy stay yours.
