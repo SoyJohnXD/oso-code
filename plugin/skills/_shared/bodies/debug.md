@@ -6,7 +6,7 @@ Operator-facing content — triage reports, the diagnosis presentation — is de
 
 ## 0. Resume check (light)
 
-Before starting over, `mem_search(query: "oso/{bug}/diagnosis")` for an existing diagnosis that matches the symptom — engram gotcha: previews are 300 chars, `mem_get_observation(id)` for full content. Read `oso/preferences` (`mem_search` → `mem_get_observation`) and apply its depth and teaching values SILENTLY — debug never re-asks.
+Before starting over, `mem_search(query: "oso/{bug}/diagnosis")` for an existing diagnosis that matches the symptom — engram gotcha: previews are 300 chars, `mem_get_observation(id)` for full content. Read this project's own `oso/preferences` record (`mem_search` → `mem_get_observation` — one per project) and apply its depth and teaching values SILENTLY — debug never re-asks.
 
 ## 1. Reproduce — before any code
 

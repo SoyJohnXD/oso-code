@@ -624,7 +624,7 @@ fi
 
 LINT_RULE_COUNT_FIXTURE="$TEST_HOME/lint-rule-count"
 copy_lint_fixture "$LINT_RULE_COUNT_FIXTURE"
-sed 's/thirty-nine rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
+sed 's/forty rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
   > "$LINT_RULE_COUNT_FIXTURE/README.md.tmp"
 mv "$LINT_RULE_COUNT_FIXTURE/README.md.tmp" "$LINT_RULE_COUNT_FIXTURE/README.md"
 if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
@@ -632,7 +632,7 @@ if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
   echo "FAIL: check_present_tense_prose_names_the_rule_count accepted stale present-tense rule-count prose"; fail=$((fail + 1))
 else
   case "$rule_count_lint_report" in
-    *"README.md does not name the thirty-nine rules this linter declares"*)
+    *"README.md does not name the forty rules this linter declares"*)
       echo "ok: check_present_tense_prose_names_the_rule_count rejects stale present-tense rule-count prose"; pass=$((pass + 1)) ;;
     *)
       echo "FAIL: check_present_tense_prose_names_the_rule_count mutation failed for the wrong reason — $(printf '%s' "$rule_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
@@ -1331,6 +1331,34 @@ else
         echo "ok: check_auto_ceiling_holds_the_finish_and_the_evidence rejects a policy whose ceiling stopped refusing a production deploy"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: the check_auto_ceiling_holds_the_finish_and_the_evidence mutation failed for the wrong reason — $(printf '%s' "$auto_ceiling_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_PROJECT_RECORD_FIXTURE="$TEST_HOME/lint-project-record"
+copy_lint_fixture "$LINT_PROJECT_RECORD_FIXTURE"
+project_record_target="$LINT_PROJECT_RECORD_FIXTURE/plugin/skills/_shared/bodies/plan.md"
+project_record_clause='Per-project is therefore the scope the memory layer can actually retrieve'
+project_record_neighbour='ONE record PER PROJECT'
+if ! grep -qF "$project_record_clause" "$project_record_target"; then
+  echo "FAIL: the check_the_project_record_is_honest_about_its_scope mutation found no scope sentence to take back in the plan body"; fail=$((fail + 1))
+else
+  sed 's/Per-project is therefore the scope the memory layer can actually retrieve/Scope is honest: per-machine ($HOME), not per-person/' \
+    "$project_record_target" > "$project_record_target.tmp"
+  mv "$project_record_target.tmp" "$project_record_target"
+  if ! grep -qF 'per-machine ($HOME)' "$project_record_target"; then
+    echo "FAIL: the check_the_project_record_is_honest_about_its_scope mutation never put the retired per-machine claim back in the plan body"; fail=$((fail + 1))
+  elif ! grep -qF "$project_record_neighbour" "$project_record_target"; then
+    echo "FAIL: the check_the_project_record_is_honest_about_its_scope mutation took the per-project record sentence it was supposed to leave standing"; fail=$((fail + 1))
+  elif project_record_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_PROJECT_RECORD_FIXTURE/plugin" "$LINT_PROJECT_RECORD_FIXTURE" 2>&1)"; then
+    echo "FAIL: a plan body claiming the per-project record reaches this whole machine passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$project_record_report" in
+      *"claims the per-project record reaches this whole machine again"*)
+        echo "ok: check_the_project_record_is_honest_about_its_scope rejects the retired per-machine claim in the plan body"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the check_the_project_record_is_honest_about_its_scope mutation failed for the wrong reason — $(printf '%s' "$project_record_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi
@@ -4561,6 +4589,22 @@ its MERGE, a release and a production deploy are on the never-solo list
 PARKED as a named pending
 never a silent skip and never a retry loop
 AUTO_FINISH_TABLE
+
+assert_says_every "the resume check migrates a legacy personal-scope record instead of re-asking the project" \
+  "$(plan_section 0)" <<'PROJECT_RECORD_MIGRATION_TABLE'
+under `scope: personal` migrates
+scope becomes project, every value it holds is kept
+never a reason to ask them again
+PROJECT_RECORD_MIGRATION_TABLE
+
+assert_says_every "the ceiling ask mirrors the production route into the file the gate reads" \
+  "$(grep -F -- "AUTO's CEILING" "$PLAN_BODY")" <<'CEILING_MIRROR_TABLE'
+deploy-deny/<digest>.patterns
+ONE ERE PER LINE
+through SHELL
+is REPORTED, with what could not be written and where
+arms no AUTO at all
+CEILING_MIRROR_TABLE
 
 assert_says_every "the roadmap's blocked exit parks the child's marker instead of leaving it running" \
   "$(grep -F -- '**The chain is BLOCKED**' "$PLUGIN/skills/_shared/bodies/roadmap.md")" \

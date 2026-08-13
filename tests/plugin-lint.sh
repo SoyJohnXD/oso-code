@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Thirty-nine rules over what the plugin's declarations, prose and delegation
+# Forty rules over what the plugin's declarations, prose and delegation
 # payloads SAY, which `claude plugin validate --strict` never reads.
 set -euo pipefail
 
@@ -427,7 +427,7 @@ check_present_tense_prose_names_the_rule_count() {
     33) spelled=thirty-three ;; 34) spelled=thirty-four ;;
     35) spelled=thirty-five ;; 36) spelled=thirty-six ;;
     37) spelled=thirty-seven ;; 38) spelled=thirty-eight ;;
-    39) spelled=thirty-nine ;;
+    39) spelled=thirty-nine ;; 40) spelled=forty ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -970,6 +970,32 @@ check_auto_ceiling_holds_the_finish_and_the_evidence() {
     'oso-state set auto=parked' 'INTENDED'
 }
 
+check_the_project_record_is_honest_about_its_scope() {
+  local plan="$PLUGIN_ROOT/skills/_shared/bodies/plan.md"
+  local retired
+  anchored_absolute_stays_bounded_in "$plan" "Read this project's operator record" \
+    'per-project record read' \
+    'ONE record PER PROJECT' 'filters by it unconditionally' 'unreachable from this one' \
+    'asked once'
+  anchored_absolute_stays_bounded_in "$plan" 'Self-heal before applying' \
+    'record self-heal' \
+    'now-retired field' 'under `scope: personal` migrates' 'every value it holds is kept' \
+    'never a reason to ask them again'
+  anchored_absolute_stays_bounded_in "$plan" '**Behavior — asked at the FIRST PLAN' \
+    'first-plan behavior ask' \
+    'ONE round of two questions'
+  anchored_absolute_stays_bounded_in "$plan" '**Ceiling — asked at the FIRST AUTO' \
+    'first-arming ceiling ask' \
+    'STAGING ROUTE' 'PRODUCTION ROUTE' 'PR BASE BRANCH' \
+    'never asked for its production route'
+  anchored_absolute_stays_bounded_in "$plan" "AUTO's CEILING" 'ceiling arming ask' \
+    'FIRST ARMING IN THIS PROJECT' 'mem_update' 'deploy-deny' 'ONE ERE PER LINE' \
+    'never skipped in silence' 'arms no AUTO at all'
+  for retired in $({ grep -nF 'per-machine ($HOME)' "$plan" || true; } | cut -d: -f1); do
+    flag "skills/_shared/bodies/plan.md:$retired claims the per-project record reaches this whole machine again, a reach mem_search never had"
+  done
+}
+
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }
 
 check_forked_skills_declare_background
@@ -1011,6 +1037,7 @@ check_no_exception_rules_outrank_repo_convention
 check_auto_disposition_is_a_ledger_toggle_that_parks_on_a_question
 check_unattended_run_carves_out_the_delivery_contract
 check_auto_ceiling_holds_the_finish_and_the_evidence
+check_the_project_record_is_honest_about_its_scope
 
 if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"
