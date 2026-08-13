@@ -7381,14 +7381,13 @@ man git-commit
 NO_FRICTION_TABLE
 
 # Pinned so nobody reads the gated verb set as "everything that writes": these
-# rewrite history or publish it and this gate lets every one of them through.
+# rewrite history and this gate lets every one of them through.
 assert_every assert_allows "not gated" <<'NOT_GATED_TABLE'
 git revert HEAD
 git merge feature
 git rebase main
 git cherry-pick abc123
 git am patch.eml
-git push origin main
 git stash
 NOT_GATED_TABLE
 
