@@ -37,15 +37,6 @@ json_command_line() {
 # Extracts a string field from the hook's stdin JSON, decoded: callers get the
 # text the client sent, not its escaping. Field names used here (session_id,
 # command) are unique in hook input, so the search is by name.
-#
-# A trailing carriage return is dropped from whatever either reader answers.
-# BOTH readers can produce one: a Windows jq build terminates its line CRLF and
-# `$(…)` strips only the newline, while the pattern reader decodes a `\r` the
-# client escaped into that same byte. The value most of these fields feed is
-# `cwd`, and one CR there moves the state-file digest — so a session writes
-# `verify_green=true` into one file and the commit gate reads another. Dropped
-# once here, where the two readers meet, rather than at each of the four gates
-# that hand a field on.
 json_field() {
   local json="$1" field="$2" escaped value
   if [ "$JSON_READER" = jq ]; then
@@ -55,6 +46,7 @@ json_field() {
     json_take_escaped_field "$json" "$field"
     value="$(json_unescape "$escaped")"
   fi
+  value="${value//$'\r\n'/$'\n'}"
   printf '%s' "${value%$'\r'}"
 }
 

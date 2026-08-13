@@ -1964,6 +1964,20 @@ approval_state_snapshot() {
   fi
 }
 
+establish_premise() {
+  local premise="$1"
+  shift
+  "$@" >/dev/null || {
+    echo "FAIL: the premise that $premise could not be established"
+    fail=$((fail + 1))
+  }
+}
+
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) POSIX_MODES_ARE_EMULATED=true ;;
+  *) POSIX_MODES_ARE_EMULATED=false ;;
+esac
+
 oso-state --session "$SESSION" clear
 events_before_ordinary_stop="$(wc -c < "$STATE_DIR/events.jsonl" 2>/dev/null || printf 0)"
 run_hook "$PLAN_STOP_HOOK" \
@@ -2134,6 +2148,28 @@ assert_after_hook "the native phrase with no pending plan is also invisible in P
 assert_equals "a no-pending Plan Mode phrase writes no state" \
   absent "$([ ! -e "$REPO_STATE" ] && printf absent || printf present)"
 
+crlf_plan='Repaso de cambios\r\nFull slice plan: crlf host\r\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\n'
+crlf_plan_digest="$(sha256_text "$crlf_plan")"
+crlf_presented_file="$REPO_PLAN_DIR/presented-${crlf_plan_digest}.md"
+crlf_current_file="$REPO_PLAN_DIR/current.md"
+crlf_plan_document="$(printf 'Repaso de cambios\nFull slice plan: crlf host')"
+run_hook "$PLAN_STOP_HOOK" \
+  "$(codex_stop_input default "$SESSION" "$crlf_plan" false "$CODEX_STOP_PLAN_TRANSCRIPT")"
+assert_after_hook "a document whose decoded lines end CRLF is still captured" \
+  [ "$hook_stdout" = '{}' ]
+assert_equals "the snapshot of a CRLF-decoded document holds the human plan with LF line endings" \
+  "$crlf_plan_document" "$(cat "$crlf_presented_file" 2>/dev/null || true)"
+assert_equals "the operational copy of a CRLF-decoded document holds that same LF-ended plan" \
+  "$crlf_plan_document" "$(cat "$crlf_current_file" 2>/dev/null || true)"
+assert_equals "neither persisted artifact of a CRLF-decoded document carries a CR byte" \
+  0 "$(LC_ALL=C grep -lF -e "$(printf '\r')" "$crlf_presented_file" "$crlf_current_file" 2>/dev/null | wc -l | tr -d ' ')"
+assert_equals "the hidden marker is stripped from a CRLF-decoded document too" \
+  0 "$(grep -l 'oso-plan-approval:' "$crlf_presented_file" "$crlf_current_file" 2>/dev/null | wc -l | tr -d ' ')"
+assert_equals "a CRLF-decoded document is bound to the digest of the raw escaped field, CR escapes and all" \
+  "$crlf_plan_digest" "$(oso-state --session "$SESSION" get plan_approval_digest)"
+establish_premise "the CRLF fixture leaves no approval pending" \
+  oso-state --session "$SESSION" clear
+
 # Real Codex Stop transport appends one LF after the assistant's final logical
 # line. Preserve that escaped byte in the fixture so the digest assertion below
 # proves that acceptance does not normalize the wire representation.
@@ -2177,15 +2213,19 @@ assert_equals "the pending snapshot contains the human plan without the internal
   "$first_plan_document" "$(cat "$first_presented_file" 2>/dev/null || true)"
 assert_equals "the operational plan starts from the same human document" \
   "$first_plan_document" "$(cat "$first_current_file" 2>/dev/null || true)"
-assert_equals "the repository plan directory is owner-only" 0700 \
-  "$([ -d "$REPO_PLAN_DIR" ] && find "$REPO_PLAN_DIR" -maxdepth 0 -type d -perm 0700 -print | grep -q . && printf 0700 || printf wrong)"
-assert_equals "pending plan artifacts are owner-only" 0600 \
-  "$([ -f "$first_presented_file" ] && [ -f "$first_current_file" ] && \
-      find "$first_presented_file" "$first_current_file" -maxdepth 0 -type f -perm 0600 -print | \
-        wc -l | tr -d ' ' | grep -qx 2 && printf 0600 || printf wrong)"
+if [ "$POSIX_MODES_ARE_EMULATED" = true ]; then
+  echo "skip: exact POSIX mode probes are not reliable on this host's mounts, so the plan directory and its artifacts have no mode to answer with"
+  skipped=$((skipped + 1))
+else
+  assert_equals "the repository plan directory is owner-only" 0700 \
+    "$([ -d "$REPO_PLAN_DIR" ] && find "$REPO_PLAN_DIR" -maxdepth 0 -type d -perm 0700 -print | grep -q . && printf 0700 || printf wrong)"
+  assert_equals "pending plan artifacts are owner-only" 0600 \
+    "$([ -f "$first_presented_file" ] && [ -f "$first_current_file" ] && \
+        find "$first_presented_file" "$first_current_file" -maxdepth 0 -type f -perm 0600 -print | \
+          wc -l | tr -d ' ' | grep -qx 2 && printf 0600 || printf wrong)"
+fi
 assert_equals "the hidden marker is absent from both persisted plan artifacts" \
   0 "$(grep -l 'oso-plan-approval:' "$first_presented_file" "$first_current_file" 2>/dev/null | wc -l | tr -d ' ')"
-pending_current_before_amendment="$(cat "$first_current_file")"
 
 # A pending plan is amendable in place, directly through oso-state, rather than
 # only after approval. Neither the presented snapshot nor its digest moves for a
@@ -2327,7 +2367,8 @@ fi
 assert_equals "a stale cancellation CAS leaves pending state byte-identical" \
   "$pending_snapshot" "$(approval_state_snapshot)"
 
-oso-state --session "$SESSION" set mode=debug >/dev/null
+establish_premise "the pending session's mode disagrees with its own approval" \
+  oso-state --session "$SESSION" set mode=debug
 inconsistent_pending_snapshot="$(approval_state_snapshot)"
 run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input Bash)" 0 '' \
   --allow "$UNKNOWN_TOOL_ALLOWLIST"
@@ -2382,15 +2423,22 @@ run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input Bash)" 0 '' \
 assert_after_hook "pending approval denies even an allowlisted local tool" \
   hook_returned_deny
 
-chmod 0644 "$first_presented_file"
-unsafe_artifact_snapshot="$(approval_state_snapshot)"
-run_hook "$PLAN_PROMPT_HOOK" \
-  "$(codex_prompt_input default "$SESSION" 'Implement the plan.')"
-assert_after_hook "native approval rejects a non-private pending snapshot" \
-  hook_returned_block
-assert_equals "an unsafe artifact cannot mutate pending state" \
-  "$unsafe_artifact_snapshot" "$(approval_state_snapshot)"
-chmod 0600 "$first_presented_file"
+if [ "$POSIX_MODES_ARE_EMULATED" = true ]; then
+  echo "skip: the non-private premise cannot be established where chmod is a no-op, so an unsafe artifact's rejection is unobservable here"
+  skipped=$((skipped + 1))
+else
+  establish_premise "the pending snapshot is readable beyond its owner" \
+    chmod 0644 "$first_presented_file"
+  unsafe_artifact_snapshot="$(approval_state_snapshot)"
+  run_hook "$PLAN_PROMPT_HOOK" \
+    "$(codex_prompt_input default "$SESSION" 'Implement the plan.')"
+  assert_after_hook "native approval rejects a non-private pending snapshot" \
+    hook_returned_block
+  assert_equals "an unsafe artifact cannot mutate pending state" \
+    "$unsafe_artifact_snapshot" "$(approval_state_snapshot)"
+  establish_premise "the pending snapshot is owner-only again" \
+    chmod 0600 "$first_presented_file"
+fi
 
 run_hook "$PLAN_PROMPT_HOOK" \
   "$(codex_prompt_input default "$SESSION" 'Implement the plan.' "$CODEX_PROMPT_DEFAULT_TRANSCRIPT")"
@@ -2407,7 +2455,7 @@ assert_equals "native approval removes the pending snapshot spelling" \
 assert_equals "native approval preserves the immutable approved document" \
   "$first_plan_document" "$(cat "$first_approved_file" 2>/dev/null || true)"
 
-approved_snapshot_before_amendment="$(cat "$first_approved_file")"
+approved_snapshot_before_amendment="$(cat "$first_approved_file" 2>/dev/null || true)"
 hot_slice='### Slice 3 — approval regression\n\n- Goal: cover native approval.\n- Files: tests/hooks-test.sh\n- Verify: bash tests/hooks-test.sh\n- Depends-on: Slice 2'
 if printf '%b' "$hot_slice" | oso-state --session "$SESSION" amend-plan slice-3 >/dev/null 2>&1; then
   echo "ok: an approved plan accepts one explicit in-scope hot slice"; pass=$((pass + 1))
