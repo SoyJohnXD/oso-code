@@ -624,7 +624,7 @@ fi
 
 LINT_RULE_COUNT_FIXTURE="$TEST_HOME/lint-rule-count"
 copy_lint_fixture "$LINT_RULE_COUNT_FIXTURE"
-sed 's/forty rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
+sed 's/forty-one rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
   > "$LINT_RULE_COUNT_FIXTURE/README.md.tmp"
 mv "$LINT_RULE_COUNT_FIXTURE/README.md.tmp" "$LINT_RULE_COUNT_FIXTURE/README.md"
 if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
@@ -632,7 +632,7 @@ if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
   echo "FAIL: check_present_tense_prose_names_the_rule_count accepted stale present-tense rule-count prose"; fail=$((fail + 1))
 else
   case "$rule_count_lint_report" in
-    *"README.md does not name the forty rules this linter declares"*)
+    *"README.md does not name the forty-one rules this linter declares"*)
       echo "ok: check_present_tense_prose_names_the_rule_count rejects stale present-tense rule-count prose"; pass=$((pass + 1)) ;;
     *)
       echo "FAIL: check_present_tense_prose_names_the_rule_count mutation failed for the wrong reason — $(printf '%s' "$rule_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
@@ -1387,6 +1387,34 @@ else
         echo "ok: check_the_project_record_is_honest_about_its_scope rejects the retired per-machine claim in the plan body"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: the check_the_project_record_is_honest_about_its_scope mutation failed for the wrong reason — $(printf '%s' "$project_record_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_LAUNCH_WAIT_FIXTURE="$TEST_HOME/lint-launch-wait"
+copy_lint_fixture "$LINT_LAUNCH_WAIT_FIXTURE"
+launch_wait_target="$LINT_LAUNCH_WAIT_FIXTURE/plugin/skills/_shared/platform/claude/plan.md"
+launch_wait_clause='That notification IS the resume.'
+launch_wait_neighbour='Nothing may act on a report it has not read'
+if ! grep -qF "$launch_wait_clause" "$launch_wait_target"; then
+  echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation found no resume clause to take back in the Claude plan binding"; fail=$((fail + 1))
+else
+  sed "s/$launch_wait_clause/The launching turn carries on regardless./" \
+    "$launch_wait_target" > "$launch_wait_target.tmp"
+  mv "$launch_wait_target.tmp" "$launch_wait_target"
+  if grep -qF "$launch_wait_clause" "$launch_wait_target"; then
+    echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation left the resume clause standing in the Claude plan binding"; fail=$((fail + 1))
+  elif ! grep -qF "$launch_wait_neighbour" "$launch_wait_target"; then
+    echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation took the unread-report rule it was supposed to leave standing"; fail=$((fail + 1))
+  elif launch_wait_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_LAUNCH_WAIT_FIXTURE/plugin" "$LINT_LAUNCH_WAIT_FIXTURE" 2>&1)"; then
+    echo "FAIL: a wait contract that names no notification resuming the launching turn passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$launch_wait_report" in
+      *"platform/claude/plan.md's launch-wait contract drops a clause the launch it governs turns on: IS the resume"*)
+        echo "ok: check_launch_wait_contract_states_the_mechanism_this_host_has rejects a Claude binding whose launch contract loses the notification that resumes the run"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation failed for the wrong reason — $(printf '%s' "$launch_wait_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.25.0
+
+- **The record moves with it.** `tests/plugin-lint.sh` grows from 40 rules to 41.
+
 ## 0.24.0
 
 **Reinstall on both hosts — this release moves hook bytes, and one of the moved gates is Codex-wired.** On Codex run `bash bootstrap/install-codex.sh --yes`, restart, and re-trust through `/hooks`: `plugin/hooks/lib.sh`, `plugin/bin/oso-state`, the Codex hook manifest and the new production-boundary gate all changed, so `bootstrap/hook-hashes.txt` moved with them and grew from 13 published hashes to 14 — the installer also owns the block in `~/.codex/AGENTS.md` that gained this release's ceiling clause. On Claude Code `claude plugin marketplace update oso-code && claude plugin update oso-code@oso-code` carries the hooks, the contracts and the output style, and `bash bootstrap/install.sh` is owed on top of it this time — `bootstrap/claude-global.md` gained a clause and no plugin payload reaches the block it merges into `~/.claude/CLAUDE.md`. Every release through `v0.23.0` is published and tagged, so a machine on the newest published release crosses only this one.

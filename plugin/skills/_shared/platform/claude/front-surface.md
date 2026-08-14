@@ -6,5 +6,5 @@ This file binds the platform-shaped edges of `../../front-surface.md`; it does n
 - Invoke the installed `impeccable:impeccable` skill through the Skill tool. Pass `init`, `document` or `audit <touched surfaces>` as the explicit argument the neutral file names; none is a skill of its own.
 - The filesystem payload to an applier uses the installed Impeccable skill's `SKILL.md` and `reference/` playbook directory. The applier reads those files; it does not invoke the skill.
 - Record the independent installed-plugin numeral from `claude plugin list`; the npm CLI numeral still comes from the neutral pin recipe.
-- Route design findings to the `oso-applier` agent through the Agent tool in fresh context.
+- Route design findings to the `oso-applier` agent through the Agent tool in fresh context, under the wait rule `plan.md` beside this file states whole rather than this file restating it — read it there before delegating.
 - When Impeccable is absent, give the two-step remedy `/plugin marketplace add pbakaus/impeccable` then `/plugin install impeccable@impeccable`, continue without the design bar and record the gap where the invoking mode requires.

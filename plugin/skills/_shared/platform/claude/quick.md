@@ -23,7 +23,7 @@ The neutral body names each one by role; here they carry the plugin prefix, and 
 | the quality-pass judge | `oso-code:quality-pass` | the Skill tool |
 | the security-pass judge | `oso-code:security-pass` | the Skill tool; its frontmatter is what forks it |
 
-The delegate the close names — `oso-applier` — is an agent, not a skill: reach it with the Agent tool.
+The delegate the close names — `oso-applier` — is an agent, not a skill: reach it with the Agent tool, under the wait rule `plan.md` beside this file states whole rather than this file restating it — read it there before delegating.
 
 ## Front-surface binding
 

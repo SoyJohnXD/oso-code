@@ -103,8 +103,9 @@ tool  proddeploy  Bash  Bash  write  no
 
 # SubagentStop matches role names rather than tool names. The built-in explorer
 # is part of the plan's delegated surface map; the other seven are the exact
-# custom roles this harness installs. Claude launches these synchronously and
-# needs no receipt hook.
+# custom roles this harness installs. Claude launches these in the background and
+# its own completion notification carries the report, so no receipt hook is needed
+# there.
 tool  handoff  none  explorer               role  yes
 tool  handoff  none  oso-applier            role  yes
 tool  handoff  none  oso-verifier           role  yes
