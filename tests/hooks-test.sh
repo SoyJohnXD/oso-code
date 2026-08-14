@@ -5701,13 +5701,13 @@ assert_after_hook "a turn ending while an unattended run is in flight is pushed 
   hook_returned_block
 auto_push_reason="$(printf '%s' "$hook_stdout" | sed -n 's/.*"reason":"\(.*\)"}$/\1/p')"
 auto_anchors_missing=""
-for auto_anchor in 'oso/index NEXT:' active_slice 'oso-state journal' park; do
+for auto_anchor in 'oso/index NEXT:' active_slice 'oso-state journal' park 'do NOT relaunch it'; do
   case "$auto_push_reason" in
     *"$auto_anchor"*) ;;
     *) auto_anchors_missing="$auto_anchors_missing $auto_anchor" ;;
   esac
 done
-assert_equals "the push re-anchors the run on position, journal and park, never a bare block" \
+assert_equals "the push re-anchors the run on position, journal and park, and forbids relaunching a delegation, never a bare block" \
   "" "$auto_anchors_missing"
 
 auto_settled_verdicts=""
@@ -5784,6 +5784,84 @@ auto_degradations_after="$(auto_degradations_recorded)"
 assert_equals "a push tally the net can neither read nor write allows the stop and puts the cause on the record" \
   "stop stop 2" \
   "${auto_degraded_verdicts# } $((auto_degradations_after - auto_degradations_before))"
+
+AUTO_TALLY="${AUTO_JOURNAL%.log}.pushes"
+AUTO_WAIT_MARK="${AUTO_JOURNAL%.log}.waiting"
+AUTO_EXPIRED_CLAUSE='older than 45 minutes'
+AUTO_EXPIRED_CAP_MILESTONE='auto-continue: cap reached after 3 pushes with a delegation marked in flight past 45 minutes — allowing the stop'
+
+auto_tally_of() {
+  { cat "$AUTO_TALLY" 2>/dev/null || echo unwritten; } | tr '\n' '>'
+}
+
+auto_holds_recorded() {
+  grep -c '"event":"auto-continue-held","command":"[^"]' "$STATE_DIR/events.jsonl" 2>/dev/null || true
+}
+
+arm_unattended_run
+auto_wait_verdicts=" $(auto_stop_verdict "$(auto_stop_input)")"
+oso-state --session "$SESSION" set auto_wait=3 >/dev/null
+auto_holds_before="$(auto_holds_recorded)"
+auto_wait_verdicts="$auto_wait_verdicts $(auto_stop_verdict "$(auto_stop_input "$SESSION" true)")"
+auto_holds_after="$(auto_holds_recorded)"
+assert_equals "a turn ending on a delegation still in flight is a hold, not a stall: the stop stands and the push tally is left exactly where it was" \
+  "push stop|pushes=1>journal_bytes=0>" "${auto_wait_verdicts# }|$(auto_tally_of)"
+assert_equals "the held turn leaves one auto-continue-held line, so a net that held on purpose never reads back as one that never ran" \
+  "1" "$((auto_holds_after - auto_holds_before))"
+
+oso-state --session "$SESSION" set auto_wait=none >/dev/null
+auto_sentinel_verdict="$(auto_stop_verdict "$(auto_stop_input)")"
+assert_equals "the none sentinel is no delegation at all: the turn is pushed and the stale wait mark is cleared for the next delegation's clock" \
+  "push cleared pushes=2>journal_bytes=0>" \
+  "$auto_sentinel_verdict $([ -e "$AUTO_WAIT_MARK" ] && printf standing || printf cleared) $(auto_tally_of)"
+
+arm_unattended_run
+over_length_wait=w
+while [ "${#over_length_wait}" -le 64 ]; do
+  over_length_wait="${over_length_wait}9"
+done
+auto_garbled_verdicts=""
+for garbled_wait in 'slice 3' '-3' "$over_length_wait"; do
+  oso-state --session "$SESSION" set "auto_wait=$garbled_wait" >/dev/null
+  auto_garbled_verdicts="$auto_garbled_verdicts $(auto_stop_verdict "$(auto_stop_input)")"
+done
+assert_equals "a wait mark the net cannot read is no evidence of live work: every such turn is pushed and counted exactly as an unmarked run" \
+  "push push push|pushes=3>journal_bytes=0>" "${auto_garbled_verdicts# }|$(auto_tally_of)"
+
+arm_unattended_run
+oso-state --session "$SESSION" set auto_wait=wave-2 >/dev/null
+auto_cap_after_holds=""
+for _ in 1 2 3; do
+  auto_cap_after_holds="$auto_cap_after_holds $(auto_stop_verdict "$(auto_stop_input)")"
+done
+oso-state --session "$SESSION" set auto_wait=none >/dev/null
+for _ in 1 2 3 4; do
+  auto_cap_after_holds="$auto_cap_after_holds $(auto_stop_verdict "$(auto_stop_input)")"
+done
+assert_equals "held turns spend none of the net: a run that stalls after waiting still gets its three pushes and the plain give-up" \
+  "stop stop stop push push push stop|$AUTO_CAP_MILESTONE>" \
+  "${auto_cap_after_holds# }|$(journal_texts_in "$AUTO_JOURNAL")"
+
+arm_unattended_run
+oso-state --session "$SESSION" set auto_wait=wave-2 >/dev/null
+auto_expiry_verdicts=" $(auto_stop_verdict "$(auto_stop_input)")"
+touch -t 200001010000 "$AUTO_WAIT_MARK"
+run_hook auto-continue.sh "$(auto_stop_input)"
+assert_after_hook "a wait mark still standing past the ceiling stops being believed, and the turn is pushed" \
+  hook_returned_block
+auto_expired_reason="$(printf '%s' "$hook_stdout" | sed -n 's/.*"reason":"\(.*\)"}$/\1/p')"
+case "$auto_expired_reason" in
+  *"$AUTO_EXPIRED_CLAUSE"*) auto_expired_wording=dated ;;
+  *) auto_expired_wording="undated:$auto_expired_reason" ;;
+esac
+assert_equals "the push that follows an expired mark hands over the stale mark instead of repeating the plain order" \
+  "dated" "$auto_expired_wording"
+for _ in 1 2 3; do
+  auto_expiry_verdicts="$auto_expiry_verdicts $(auto_stop_verdict "$(auto_stop_input)")"
+done
+assert_equals "an expired mark spends the cap like any stall, and the give-up names the mark rather than claiming there was no progress" \
+  "stop push push stop|$AUTO_EXPIRED_CAP_MILESTONE>" \
+  "${auto_expiry_verdicts# }|$(journal_texts_in "$AUTO_JOURNAL")"
 
 rm -rf "$STATE_DIR/runs"
 oso-state --session "$SESSION" clear >/dev/null 2>&1 || true
