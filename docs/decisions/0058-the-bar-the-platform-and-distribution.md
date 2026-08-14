@@ -3,6 +3,7 @@
 Date: 2026-07-25
 Status: accepted
 Supersedes: ADR-0038 (its `model: opus` pin on `/debug`)
+Superseded-by: ADR-0150 — retires only "the foreground requirement for applier and verifier is stated in both `plan` and `debug`", and by a schema read rather than a change of mind: the `Agent` tool has never carried a foreground flag, so what those two files stated was unfollowable and every delegation ended its turn. What that clause was FOR — the applier's report is read before the verifier runs — is the invariant that decision states instead, and how a host delivers the report is its platform file's. The three forked skills pinning `background: false` and the `model: opus` reasoning that removes the pin from `plan` and `debug` while the forks keep it both stand, along with every other clause this decision records
 Reconciled: elsewhere — landed in the tests, the skills, `.gitattributes` and ci.yml; the frozen body never carried the bar.
 Source: docs/blueprint.md amendment of 2026-07-25 (gates-hardening), joint marker (D9/D11/D10/D17), deciding commit 7d52356
 

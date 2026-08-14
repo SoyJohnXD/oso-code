@@ -255,6 +255,10 @@ Three properties of the amendment log these files replace are facts to carry for
 - [0148](decisions/0148-the-run-journal-is-the-trail-a-run-nobody-watched-leaves.md) — The run journal: the trail a run nobody watched leaves behind
 - [0149](decisions/0149-the-per-project-record-honest-scope-and-an-absorbed-ceiling.md) — The per-project record: the scope it can actually be retrieved at, and the ceiling it absorbs
 
+**2026-08-14 — stop-net-delegations**
+
+- [0150](decisions/0150-a-delegation-in-flight-is-not-a-stall-the-wait-marker-its-ceiling-and-the-invariant.md) — A delegation in flight is not a stall: the wait marker, its ceiling, and the invariant that is reading
+
 ## Foundational decisions
 
 | Decision | Choice | Rationale |
