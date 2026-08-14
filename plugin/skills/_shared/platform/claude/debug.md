@@ -4,6 +4,8 @@
 
 The Claude Code TUI drops assistant text that precedes a tool call in the same turn. So operator-facing content — the triage report, the diagnosis presentation, any narrative the operator must read — must END the turn as plain text, with the tool call in a LATER turn.
 
+One exception stands and `reporting.md` beside this file states it whole rather than this section restating it: while this repository's state carries `auto=running`, the run is UNATTENDED and its milestone text rides the stream instead of ending the turn, journaled full-text in its place. This mode arms no such marker of its own — a fix run reaches its operator at the diagnosis either way — so the exception reads inert here unless a run that armed it is what this flow was invoked from.
+
 ## Making a launch wait
 
 Since client v2.1.198 a subagent runs in the BACKGROUND unless the call passes `run_in_background: false`, and a background result arrives in a LATER turn. So every subagent delegation §4 makes — applier and verifier alike — carries `run_in_background: false`, and that flag is what turns a delegation into the wait the neutral body requires.

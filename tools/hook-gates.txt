@@ -76,11 +76,14 @@ gate  edits     PreToolUse    block-edits-without-slice.sh  wired  wired
 gate  unknown   PreToolUse    block-unknown-tool.sh          none   wired
 gate  handoff   SubagentStop  publish-subagent-handoff.sh    none   wired
 gate  planstop  Stop          capture-plan-approval.sh       none   wired
+gate  autocontinue Stop       auto-continue.sh              wired  none
 gate  planprompt UserPromptSubmit approve-plan-token.sh       none   wired
 gate  statebin  SessionStart  persist-state-bin.sh          wired  none
 gate  stale     SessionStart  warn-stale-state.sh           wired  wired
 gate  version   SessionStart  warn-stale-version.sh         wired  none
 gate  teardown  SessionEnd    cleanup-state.sh              wired  wired
+gate  proddeploy PreToolUse   block-prod-deploy.sh          wired  wired
+gate  reanchor  SessionStart  reanchor-after-compact.sh     wired  none
 
 # Codex routes every file write through apply_patch, so four Claude writers collapse
 # onto one name — the renderer keeps first occurrence and drops the repeat. MultiEdit
@@ -95,6 +98,8 @@ tool  edits   MultiEdit               none                     write  no
 tool  edits   Write                   apply_patch              write  no
 tool  edits   NotebookEdit            none                     write  no
 tool  edits   mcp__fallow__fix_apply  mcp__fallow__fix_apply    write  no
+
+tool  proddeploy  Bash  Bash  write  no
 
 # SubagentStop matches role names rather than tool names. The built-in explorer
 # is part of the plan's delegated surface map; the other seven are the exact

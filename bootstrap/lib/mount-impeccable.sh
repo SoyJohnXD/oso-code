@@ -93,7 +93,9 @@ fi
 mkdir -p "$skills_dir"
 lock_registry=$skills_dir/.impeccable.mount.lock
 lock_token=$$-${RANDOM:-0}-${RANDOM:-0}
-owner_link=$lock_registry/owner.$lock_token
+owner_identity_leaf=identity
+owner_dir=$lock_registry/owner.$lock_token
+owner_identity_file=$owner_dir/$owner_identity_leaf
 owner_identity=pid=$$\;token=$lock_token
 owner_published=false
 stage_dir=
@@ -102,13 +104,15 @@ mounted=false
 lock_read_pid=
 lock_read_token=
 
-read_owner_link() {
-  inspected_link=$1
+read_owner_record() {
+  inspected_owner=$1
+  inspected_identity=$inspected_owner/$owner_identity_leaf
   lock_read_pid=
   lock_read_token=
 
-  [ -L "$inspected_link" ] || return 1
-  owner_value=$(readlink "$inspected_link" 2>/dev/null) || return 1
+  { [ -d "$inspected_owner" ] && [ ! -L "$inspected_owner" ] \
+    && [ -f "$inspected_identity" ] && [ ! -L "$inspected_identity" ]; } || return 1
+  owner_value=$(cat "$inspected_identity" 2>/dev/null) || return 1
   case "$owner_value" in
     pid=*';token='*) ;;
     *) return 1 ;;
@@ -123,7 +127,7 @@ read_owner_link() {
   case "$lock_read_token" in
     ''|*[!a-zA-Z0-9._-]*) return 1 ;;
   esac
-  [ "${inspected_link##*/}" = "owner.$lock_read_token" ] || return 1
+  [ "${inspected_owner##*/}" = "owner.$lock_read_token" ] || return 1
 }
 
 owner_is_live() {
@@ -133,8 +137,8 @@ owner_is_live() {
 
 release_owned_lock() {
   [ "$owner_published" = true ] || return 0
-  if [ "$(readlink "$owner_link" 2>/dev/null)" = "$owner_identity" ]; then
-    rm -f "$owner_link"
+  if [ "$(cat "$owner_identity_file" 2>/dev/null)" = "$owner_identity" ]; then
+    rm -rf "$owner_dir"
   fi
   owner_published=false
 }
@@ -149,14 +153,20 @@ acquire_lock() {
     mkdir -p "$lock_registry"
   fi
 
-  # A symlink publishes the complete identity in one filesystem operation. A
-  # preempted publisher can only fail later; it can never overwrite a newer
-  # owner because ln does not replace an existing path.
-  if ! ln -s "$owner_identity" "$owner_link" 2>/dev/null; then
+  # A directory claims the unique owner path in one filesystem operation, and
+  # the identity lands inside it. A preempted publisher can only fail later; it
+  # can never overwrite a newer owner because mkdir does not replace one.
+  if ! mkdir "$owner_dir" 2>/dev/null; then
     echo "mount-impeccable: could not publish a unique mount owner" >&2
     return 1
   fi
   owner_published=true
+  if ! printf '%s\n' "$owner_identity" > "$owner_identity_file"; then
+    rm -rf "$owner_dir"
+    owner_published=false
+    echo "mount-impeccable: could not record the published mount owner" >&2
+    return 1
+  fi
 
   # Snapshot every immediate child after publication. nullglob distinguishes
   # an absent match from a captured entry that later disappears; dotglob keeps
@@ -176,11 +186,11 @@ acquire_lock() {
         return 1
         ;;
     esac
-    if ! read_owner_link "$contender"; then
+    if ! read_owner_record "$contender"; then
       echo "mount-impeccable: lock registry contains an invalid owner" >&2
       return 1
     fi
-    [ "$contender" = "$owner_link" ] && continue
+    [ "$contender" = "$owner_dir" ] && continue
     if owner_is_live "$lock_read_pid"; then
       echo "mount-impeccable: another mount is already in progress (pid $lock_read_pid)" >&2
       return 1
@@ -203,7 +213,7 @@ cleanup() {
 
   # Publication spans the complete critical section above: staging, replacement
   # and backup cleanup. A publisher arriving at any point before EXIT therefore
-  # scans this process as live and withdraws; only here may our unique link go.
+  # scans this process as live and withdraws; only here may our unique owner go.
   release_owned_lock
 }
 on_signal() {

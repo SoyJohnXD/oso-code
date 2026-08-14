@@ -19,6 +19,7 @@
 #   oso-state --session <id> approve-plan <sha256>
 #   oso-state --session <id> cancel-plan <sha256>
 #   oso-state --session <id> amend-plan <slice-id>
+#   oso-state journal <text>
 #   oso-state handoff publish --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --hook-session <id>
 #   oso-state handoff wait --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --timeout <seconds>
 #   oso-state handoff consume --slice <id> --attempt <n> --agent-id <id> --agent-type <type>
@@ -38,6 +39,7 @@ usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> approve-plan <sha256>
        oso-state --session <id> cancel-plan <sha256>
        oso-state --session <id> amend-plan <slice-id>
+       oso-state journal <text>
        oso-state handoff publish --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --hook-session <id>
        oso-state handoff wait --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --timeout <seconds>
        oso-state handoff consume --slice <id> --attempt <n> --agent-id <id> --agent-type <type>
@@ -51,18 +53,21 @@ EOF
 
 raw_session_id=""
 session_id=""
-if [ "${1:-}" = handoff ]; then
-  action=handoff
-  shift
-else
-  [ "${1:-}" = "--session" ] || usage
-  raw_session_id="${2:-}"
-  session_id="$(sanitize_session "$raw_session_id")"
-  [ -n "$session_id" ] || usage
-  shift 2
-  action="${1:-}"
-  shift || true
-fi
+case "${1:-}" in
+  handoff|journal)
+    action="$1"
+    shift
+    ;;
+  *)
+    [ "${1:-}" = "--session" ] || usage
+    raw_session_id="${2:-}"
+    session_id="$(sanitize_session "$raw_session_id")"
+    [ -n "$session_id" ] || usage
+    shift 2
+    action="${1:-}"
+    shift || true
+    ;;
+esac
 
 state_file="$(state_file_for "$PWD")"
 lock_dir="${state_file}.lock"
@@ -514,6 +519,19 @@ case "$action" in
     # session's state file, while this appends one line to the event log every
     # hook already appends to unlocked and no state file is touched at all.
     log_event "$1" "$session_id" "${2:-}"
+    ;;
+  journal)
+    [ $# -eq 1 ] || usage
+    [ -n "$1" ] || usage
+    journal_file="$(journal_file_for "$PWD")"
+    (
+      umask 077
+      mkdir -p "${journal_file%/*}" &&
+        printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" >> "$journal_file"
+    ) || {
+      echo "oso-state: journal: cannot append the milestone to ${journal_file}" >&2
+      exit 1
+    }
     ;;
   capture-plan)
     [ $# -eq 1 ] || usage

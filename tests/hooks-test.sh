@@ -122,7 +122,7 @@ assert_equals() {
 TRANSCRIPT="$HOME/.claude/projects/oso-code/$SESSION.jsonl"
 bash_input() {
   printf '{"session_id":"%s","transcript_path":"%s","cwd":"%s","permission_mode":"default","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"%s","description":"regression case"}}' \
-    "$SESSION" "$TRANSCRIPT" "${2:-$REPO_ROOT}" "$1"
+    "${3:-$SESSION}" "$TRANSCRIPT" "${2:-$REPO_ROOT}" "$1"
 }
 edit_input="$(printf '{"session_id":"%s","transcript_path":"%s","cwd":"%s","permission_mode":"default","hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"/tmp/x.ts","old_string":"const slice = 1;","new_string":"const slice = 2;","replace_all":false}}' \
   "$SESSION" "$TRANSCRIPT" "$REPO_ROOT")"
@@ -148,19 +148,19 @@ assert_allows "a declared hook crash is not a case failure" "$CRASH_HOOK" "$(bas
 # refused and what the named list costs.
 hooks_manifest="$PLUGIN/hooks/hooks.json"
 gated_tools="$(sed -n 's/.*"matcher"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$hooks_manifest" | tr '|' '\n' | LC_ALL=C sort | tr '\n' ' ')"
-expected_tools="$(printf '%s\n' Bash Edit MultiEdit NotebookEdit Write mcp__fallow__fix_apply | LC_ALL=C sort | tr '\n' ' ')"
+expected_tools="$(printf '%s\n' Bash Bash Edit MultiEdit NotebookEdit Write 'mcp__.*deploy.*' mcp__fallow__fix_apply | LC_ALL=C sort | tr '\n' ' ')"
 assert_equals "PreToolUse matchers cover exactly the gated tools" "$expected_tools" "$gated_tools"
 
 codex_hooks_manifest="$REPO_ROOT/codex/hooks/hooks.json"
-codex_event_group() {
-  awk -v heading="    \"$1\": [" '
+event_group_in() {
+  awk -v heading="    \"$2\": [" '
     $0 == heading { inside = 1 }
     inside { print }
     inside && /^    ](,)?$/ { exit }
-  ' "$codex_hooks_manifest"
+  ' "$1"
 }
 for matcherless_event in Stop UserPromptSubmit; do
-  matcherless_group="$(codex_event_group "$matcherless_event")"
+  matcherless_group="$(event_group_in "$codex_hooks_manifest" "$matcherless_event")"
   case "$matcherless_group" in
     *"\"${matcherless_event}\""*)
       echo "ok: the Codex manifest contains the ${matcherless_event} approval group"; pass=$((pass + 1)) ;;
@@ -174,6 +174,33 @@ for matcherless_event in Stop UserPromptSubmit; do
       echo "ok: ${matcherless_event} remains matcherless in the Codex manifest"; pass=$((pass + 1)) ;;
   esac
 done
+
+prod_gate_matcher_in() {
+  awk '
+    /"matcher"/ { matcher = $0; sub(/^[^:]*: "/, "", matcher); sub(/",$/, "", matcher) }
+    /block-prod-deploy\.sh/ { print matcher; exit }
+  ' "$1"
+}
+assert_equals "both hosts route the shell tool and deploy-shaped MCP names into the production boundary" \
+  'Bash|mcp__.*deploy.*+Bash|mcp__.*deploy.*' \
+  "$(prod_gate_matcher_in "$hooks_manifest")+$(prod_gate_matcher_in "$codex_hooks_manifest")"
+
+claude_stop_group="$(event_group_in "$hooks_manifest" Stop)"
+assert_equals "the Claude manifest runs exactly the continuation net on Stop" \
+  "auto-continue.sh" \
+  "$(printf '%s\n' "$claude_stop_group" | sed -n 's|.*/hooks/\([^"]*\)".*|\1|p' | tr '\n' ' ' | sed 's/ *$//')"
+assert_equals "the Claude Stop handler stays matcherless" \
+  "0" "$(printf '%s\n' "$claude_stop_group" | grep -c '"matcher"' || true)"
+assert_equals "the Claude-only continuation net is absent from the Codex manifest" \
+  "0" "$(grep -c 'auto-continue.sh' "$codex_hooks_manifest" || true)"
+assert_equals "rendering the continuation net leaves the Codex manifest on its published bytes" \
+  "$(sed -n 's|^\([0-9a-f]*\)  codex/hooks/hooks.json$|\1|p' "$REPO_ROOT/bootstrap/hook-hashes.txt")" \
+  "$({ sha256sum "$codex_hooks_manifest" 2>/dev/null || shasum -a 256 "$codex_hooks_manifest" 2>/dev/null; } | awk '{ print $1 }')"
+
+claude_session_start_group="$(event_group_in "$hooks_manifest" SessionStart)"
+assert_equals "the compaction re-anchor runs last on Claude session-start and nowhere on Codex" \
+  "persist-state-bin.sh warn-stale-state.sh warn-stale-version.sh reanchor-after-compact.sh|0" \
+  "$(printf '%s\n' "$claude_session_start_group" | sed -n 's|.*/hooks/\([^"]*\)".*|\1|p' | tr '\n' ' ' | sed 's/ *$//')|$(grep -c 'reanchor-after-compact.sh' "$codex_hooks_manifest" || true)"
 
 unrunnable=""
 manifest_commands="$(sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' "$hooks_manifest")"
@@ -597,7 +624,7 @@ fi
 
 LINT_RULE_COUNT_FIXTURE="$TEST_HOME/lint-rule-count"
 copy_lint_fixture "$LINT_RULE_COUNT_FIXTURE"
-sed 's/thirty-seven rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
+sed 's/forty rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
   > "$LINT_RULE_COUNT_FIXTURE/README.md.tmp"
 mv "$LINT_RULE_COUNT_FIXTURE/README.md.tmp" "$LINT_RULE_COUNT_FIXTURE/README.md"
 if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
@@ -605,7 +632,7 @@ if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
   echo "FAIL: check_present_tense_prose_names_the_rule_count accepted stale present-tense rule-count prose"; fail=$((fail + 1))
 else
   case "$rule_count_lint_report" in
-    *"README.md does not name the thirty-seven rules this linter declares"*)
+    *"README.md does not name the forty rules this linter declares"*)
       echo "ok: check_present_tense_prose_names_the_rule_count rejects stale present-tense rule-count prose"; pass=$((pass + 1)) ;;
     *)
       echo "FAIL: check_present_tense_prose_names_the_rule_count mutation failed for the wrong reason — $(printf '%s' "$rule_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
@@ -1227,6 +1254,143 @@ else
   fi
 fi
 
+LINT_UNATTENDED_CARVE_OUT_FIXTURE="$TEST_HOME/lint-unattended-carve-out"
+copy_lint_fixture "$LINT_UNATTENDED_CARVE_OUT_FIXTURE"
+unattended_carve_out_target="$LINT_UNATTENDED_CARVE_OUT_FIXTURE/plugin/skills/_shared/platform/claude/reporting.md"
+unattended_carve_out_clause='does NOT end the turn'
+unattended_carve_out_neighbour='oso-state journal'
+if ! grep -qF "$unattended_carve_out_clause" "$unattended_carve_out_target"; then
+  echo "FAIL: the check_unattended_run_carves_out_the_delivery_contract mutation found no carve-out to take back in the Claude reporting binding"; fail=$((fail + 1))
+else
+  sed "s/$unattended_carve_out_clause/ends the turn like every other one/" \
+    "$unattended_carve_out_target" > "$unattended_carve_out_target.tmp"
+  mv "$unattended_carve_out_target.tmp" "$unattended_carve_out_target"
+  if grep -qF "$unattended_carve_out_clause" "$unattended_carve_out_target"; then
+    echo "FAIL: the check_unattended_run_carves_out_the_delivery_contract mutation left the carve-out standing in the Claude reporting binding"; fail=$((fail + 1))
+  elif ! grep -qF "$unattended_carve_out_neighbour" "$unattended_carve_out_target"; then
+    echo "FAIL: the check_unattended_run_carves_out_the_delivery_contract mutation took the journal duty it was supposed to leave standing"; fail=$((fail + 1))
+  elif unattended_carve_out_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_UNATTENDED_CARVE_OUT_FIXTURE/plugin" "$LINT_UNATTENDED_CARVE_OUT_FIXTURE" 2>&1)"; then
+    echo "FAIL: a delivery contract that ends the turn on every milestone of an unattended run passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$unattended_carve_out_report" in
+      *"unattended-run carve-out drops a clause it turns on: does NOT end the turn"*)
+        echo "ok: check_unattended_run_carves_out_the_delivery_contract rejects a host that orders an unattended run to stop at every milestone"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the check_unattended_run_carves_out_the_delivery_contract mutation failed for the wrong reason — $(printf '%s' "$unattended_carve_out_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_CHILD_CLOSE_FIXTURE="$TEST_HOME/lint-child-close"
+copy_lint_fixture "$LINT_CHILD_CLOSE_FIXTURE"
+child_close_target="$LINT_CHILD_CLOSE_FIXTURE/plugin/skills/_shared/platform/claude/reporting.md"
+child_close_clause="roadmap CHILD's own close is NEITHER of the two"
+child_close_neighbour='the run THE OPERATOR ARMED'
+if ! grep -qF "$child_close_clause" "$child_close_target"; then
+  echo "FAIL: the check_unattended_run_carves_out_the_delivery_contract mutation found no child's-close exclusion to take back in the Claude reporting binding"; fail=$((fail + 1))
+else
+  sed "s/$child_close_clause/roadmap CHILD's own close is ONE of the two/" \
+    "$child_close_target" > "$child_close_target.tmp"
+  mv "$child_close_target.tmp" "$child_close_target"
+  if grep -qF "$child_close_clause" "$child_close_target"; then
+    echo "FAIL: the check_unattended_run_carves_out_the_delivery_contract mutation left the child's-close exclusion standing in the Claude reporting binding"; fail=$((fail + 1))
+  elif ! grep -qF "$child_close_neighbour" "$child_close_target"; then
+    echo "FAIL: the check_unattended_run_carves_out_the_delivery_contract mutation took the two-turn-ender list it was supposed to leave standing"; fail=$((fail + 1))
+  elif child_close_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_CHILD_CLOSE_FIXTURE/plugin" "$LINT_CHILD_CLOSE_FIXTURE" 2>&1)"; then
+    echo "FAIL: a delivery contract where every roadmap child's close interrupts an absent operator passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$child_close_report" in
+      *"unattended-run carve-out drops a clause it turns on: roadmap CHILD's own close is NEITHER of the two"*)
+        echo "ok: check_unattended_run_carves_out_the_delivery_contract rejects a host that ends the turn on a child's close inside a chain still running"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the child's-close exclusion mutation failed for the wrong reason — $(printf '%s' "$child_close_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_COMPACTION_COST_FIXTURE="$TEST_HOME/lint-compaction-cost"
+copy_lint_fixture "$LINT_COMPACTION_COST_FIXTURE"
+compaction_cost_target="$LINT_COMPACTION_COST_FIXTURE/plugin/skills/_shared/bodies/roadmap.md"
+compaction_cost_clause='a compaction mid-chain costs it its WINDOW and never its POSITION'
+compaction_cost_neighbour='auto=running auto_change='
+if ! grep -qF "$compaction_cost_clause" "$compaction_cost_target"; then
+  echo "FAIL: the check_unattended_run_carves_out_the_delivery_contract mutation found no compaction economy to overstate in the roadmap body"; fail=$((fail + 1))
+else
+  sed "s/$compaction_cost_clause/a compaction costs it nothing/" \
+    "$compaction_cost_target" > "$compaction_cost_target.tmp"
+  mv "$compaction_cost_target.tmp" "$compaction_cost_target"
+  if ! grep -qF "$compaction_cost_neighbour" "$compaction_cost_target"; then
+    echo "FAIL: the check_unattended_run_carves_out_the_delivery_contract mutation took the chain's own marker arming it was supposed to leave standing"; fail=$((fail + 1))
+  elif compaction_cost_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_COMPACTION_COST_FIXTURE/plugin" "$LINT_COMPACTION_COST_FIXTURE" 2>&1)"; then
+    echo "FAIL: a roadmap body claiming a compaction costs its chain nothing passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$compaction_cost_report" in
+      *"still says a compaction costs the chain nothing"*)
+        echo "ok: check_unattended_run_carves_out_the_delivery_contract rejects a chain whose survivability rests on a window nobody can guarantee"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the compaction-economy mutation failed for the wrong reason — $(printf '%s' "$compaction_cost_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_AUTO_CEILING_FIXTURE="$TEST_HOME/lint-auto-ceiling"
+copy_lint_fixture "$LINT_AUTO_CEILING_FIXTURE"
+auto_ceiling_target="$LINT_AUTO_CEILING_FIXTURE/plugin/skills/_shared/bodies/roadmap.md"
+auto_ceiling_bullet='- **A production deploy.**'
+auto_ceiling_neighbour='CHANGE BRANCH'
+if ! grep -qF -- "$auto_ceiling_bullet" "$auto_ceiling_target"; then
+  echo "FAIL: the check_auto_ceiling_holds_the_finish_and_the_evidence mutation found no production-deploy refusal to take back in the roadmap body"; fail=$((fail + 1))
+else
+  sed '/^- \*\*A production deploy\.\*\*/d' "$auto_ceiling_target" > "$auto_ceiling_target.tmp"
+  mv "$auto_ceiling_target.tmp" "$auto_ceiling_target"
+  if grep -qiF 'production deploy' "$auto_ceiling_target"; then
+    echo "FAIL: the check_auto_ceiling_holds_the_finish_and_the_evidence mutation left the production-deploy refusal standing in the roadmap body"; fail=$((fail + 1))
+  elif ! grep -qF "$auto_ceiling_neighbour" "$auto_ceiling_target"; then
+    echo "FAIL: the check_auto_ceiling_holds_the_finish_and_the_evidence mutation took the run's own finish it was supposed to leave standing"; fail=$((fail + 1))
+  elif auto_ceiling_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_AUTO_CEILING_FIXTURE/plugin" "$LINT_AUTO_CEILING_FIXTURE" 2>&1)"; then
+    echo "FAIL: an autonomy policy that lets a tier put the change into production passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$auto_ceiling_report" in
+      *"autonomy-policy phase drops a clause that bounds how far an unattended run reaches and what its answers rest on: a production deploy"*)
+        echo "ok: check_auto_ceiling_holds_the_finish_and_the_evidence rejects a policy whose ceiling stopped refusing a production deploy"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the check_auto_ceiling_holds_the_finish_and_the_evidence mutation failed for the wrong reason — $(printf '%s' "$auto_ceiling_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_PROJECT_RECORD_FIXTURE="$TEST_HOME/lint-project-record"
+copy_lint_fixture "$LINT_PROJECT_RECORD_FIXTURE"
+project_record_target="$LINT_PROJECT_RECORD_FIXTURE/plugin/skills/_shared/bodies/plan.md"
+project_record_clause='Per-project is therefore the scope the memory layer can actually retrieve'
+project_record_neighbour='ONE record PER PROJECT'
+if ! grep -qF "$project_record_clause" "$project_record_target"; then
+  echo "FAIL: the check_the_project_record_is_honest_about_its_scope mutation found no scope sentence to take back in the plan body"; fail=$((fail + 1))
+else
+  sed 's/Per-project is therefore the scope the memory layer can actually retrieve/Scope is honest: per-machine ($HOME), not per-person/' \
+    "$project_record_target" > "$project_record_target.tmp"
+  mv "$project_record_target.tmp" "$project_record_target"
+  if ! grep -qF 'per-machine ($HOME)' "$project_record_target"; then
+    echo "FAIL: the check_the_project_record_is_honest_about_its_scope mutation never put the retired per-machine claim back in the plan body"; fail=$((fail + 1))
+  elif ! grep -qF "$project_record_neighbour" "$project_record_target"; then
+    echo "FAIL: the check_the_project_record_is_honest_about_its_scope mutation took the per-project record sentence it was supposed to leave standing"; fail=$((fail + 1))
+  elif project_record_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_PROJECT_RECORD_FIXTURE/plugin" "$LINT_PROJECT_RECORD_FIXTURE" 2>&1)"; then
+    echo "FAIL: a plan body claiming the per-project record reaches this whole machine passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$project_record_report" in
+      *"claims the per-project record reaches this whole machine again"*)
+        echo "ok: check_the_project_record_is_honest_about_its_scope rejects the retired per-machine claim in the plan body"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the check_the_project_record_is_honest_about_its_scope mutation failed for the wrong reason — $(printf '%s' "$project_record_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
 # --- Declarations: generated hooks and published trust hashes -----------------
 # check_hook_renders_and_published_hashes_match keeps the committed tree green;
 # these mutations prove each half can go red for the reason it claims. The
@@ -1350,24 +1514,48 @@ else
       echo "FAIL: missing-${approval_gate} mutation removed no gate row"; fail=$((fail + 1))
     else
       assert_renderer_rejects "the hard approval rail cannot omit ${approval_gate}" \
-        "table must declare exactly the ten known gates" \
+        "table must declare exactly the thirteen known gates" \
         --repo-root "$REPO_ROOT" --table "$MISSING_APPROVAL_GATE_TABLE" --check
     fi
   done
 
+  MISSING_PROD_GATE_TABLE="$TEST_HOME/missing-proddeploy-gate.txt"
+  sed -e '/^gate  proddeploy[[:space:]]/d' -e '/^tool  proddeploy[[:space:]]/d' \
+    "$REPO_ROOT/tools/hook-gates.txt" > "$MISSING_PROD_GATE_TABLE"
+  if cmp -s "$REPO_ROOT/tools/hook-gates.txt" "$MISSING_PROD_GATE_TABLE"; then
+    echo "FAIL: missing-proddeploy mutation removed no gate row"; fail=$((fail + 1))
+  else
+    assert_renderer_rejects "the closed gate set cannot lose the production boundary" \
+      "table must declare exactly the thirteen known gates" \
+      --repo-root "$REPO_ROOT" --table "$MISSING_PROD_GATE_TABLE" --check
+  fi
+
+  MISSING_REANCHOR_GATE_TABLE="$TEST_HOME/missing-reanchor-gate.txt"
+  sed '/^gate  reanchor[[:space:]]/d' \
+    "$REPO_ROOT/tools/hook-gates.txt" > "$MISSING_REANCHOR_GATE_TABLE"
+  if cmp -s "$REPO_ROOT/tools/hook-gates.txt" "$MISSING_REANCHOR_GATE_TABLE"; then
+    echo "FAIL: missing-reanchor mutation removed no gate row"; fail=$((fail + 1))
+  else
+    assert_renderer_rejects "the closed gate set cannot lose the compaction re-anchor" \
+      "table must declare exactly the thirteen known gates" \
+      --repo-root "$REPO_ROOT" --table "$MISSING_REANCHOR_GATE_TABLE" --check
+  fi
+
   # Codex explicitly ignores matcher on Stop and UserPromptSubmit. Letting the
   # source table add one would render a filter that looks protective and never
   # runs, so these global events must remain matcherless by construction.
-  for matcherless_gate in planstop planprompt; do
+  for matcherless_gate in planstop autocontinue planprompt; do
     IGNORED_MATCHER_TABLE="$TEST_HOME/${matcherless_gate}-ignored-matcher.txt"
     cp "$REPO_ROOT/tools/hook-gates.txt" "$IGNORED_MATCHER_TABLE"
-    printf '\ntool  %s  none  ignored  read  no\n' "$matcherless_gate" >> "$IGNORED_MATCHER_TABLE"
     case "$matcherless_gate" in
-      planstop) matcherless_event=Stop ;;
-      planprompt) matcherless_event=UserPromptSubmit ;;
+      planstop) matcherless_event=Stop; matcherless_host=codex; matcherless_cells='none  ignored' ;;
+      autocontinue) matcherless_event=Stop; matcherless_host=claude; matcherless_cells='ignored  none' ;;
+      planprompt) matcherless_event=UserPromptSubmit; matcherless_host=codex; matcherless_cells='none  ignored' ;;
     esac
-    assert_renderer_rejects "${matcherless_gate} cannot carry a matcher Codex ignores" \
-      "matcherless ${matcherless_event} gate \`${matcherless_gate}\` has matcher mappings for codex" \
+    printf '\ntool  %s  %s  read  no\n' "$matcherless_gate" "$matcherless_cells" \
+      >> "$IGNORED_MATCHER_TABLE"
+    assert_renderer_rejects "${matcherless_gate} cannot carry a matcher its host ignores" \
+      "matcherless ${matcherless_event} gate \`${matcherless_gate}\` has matcher mappings for ${matcherless_host}" \
       --repo-root "$REPO_ROOT" --table "$IGNORED_MATCHER_TABLE" --check
   done
 
@@ -1485,6 +1673,15 @@ else
     2 "$approval_handlers_read"
   assert_equals "both approval handlers are inside the published trust boundary" \
     "" "$unpublished_approval_hooks"
+
+  prod_gate_hash="$({
+    sha256sum "$PLUGIN/hooks/block-prod-deploy.sh" 2>/dev/null ||
+      shasum -a 256 "$PLUGIN/hooks/block-prod-deploy.sh" 2>/dev/null
+  } | awk '{ print $1 }')"
+  assert_equals "the production boundary a Codex run meets is inside the published trust boundary" \
+    "$prod_gate_hash" \
+    "$(sed -n 's|^\([0-9a-f][0-9a-f]*\)  plugin/hooks/block-prod-deploy\.sh$|\1|p' \
+      "$REPO_ROOT/bootstrap/hook-hashes.txt")"
 fi
 
 # --- Runtime dispatch: Codex catch-all defaults unknown tools to deny ----------
@@ -1767,6 +1964,20 @@ approval_state_snapshot() {
   fi
 }
 
+establish_premise() {
+  local premise="$1"
+  shift
+  "$@" >/dev/null || {
+    echo "FAIL: the premise that $premise could not be established"
+    fail=$((fail + 1))
+  }
+}
+
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) POSIX_MODES_ARE_EMULATED=true; RUNS_ON_WINDOWS_BASH=true ;;
+  *) POSIX_MODES_ARE_EMULATED=false; RUNS_ON_WINDOWS_BASH=false ;;
+esac
+
 oso-state --session "$SESSION" clear
 events_before_ordinary_stop="$(wc -c < "$STATE_DIR/events.jsonl" 2>/dev/null || printf 0)"
 run_hook "$PLAN_STOP_HOOK" \
@@ -1937,6 +2148,48 @@ assert_after_hook "the native phrase with no pending plan is also invisible in P
 assert_equals "a no-pending Plan Mode phrase writes no state" \
   absent "$([ ! -e "$REPO_STATE" ] && printf absent || printf present)"
 
+crlf_plan='Repaso de cambios\r\nFull slice plan: crlf host\r\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\n'
+crlf_plan_digest="$(sha256_text "$crlf_plan")"
+crlf_presented_file="$REPO_PLAN_DIR/presented-${crlf_plan_digest}.md"
+crlf_current_file="$REPO_PLAN_DIR/current.md"
+crlf_plan_document="$(printf 'Repaso de cambios\nFull slice plan: crlf host')"
+run_hook "$PLAN_STOP_HOOK" \
+  "$(codex_stop_input default "$SESSION" "$crlf_plan" false "$CODEX_STOP_PLAN_TRANSCRIPT")"
+assert_after_hook "a document whose decoded lines end CRLF is still captured" \
+  [ "$hook_stdout" = '{}' ]
+assert_equals "the snapshot of a CRLF-decoded document holds the human plan with LF line endings" \
+  "$crlf_plan_document" "$(cat "$crlf_presented_file" 2>/dev/null || true)"
+assert_equals "the operational copy of a CRLF-decoded document holds that same LF-ended plan" \
+  "$crlf_plan_document" "$(cat "$crlf_current_file" 2>/dev/null || true)"
+assert_equals "neither persisted artifact of a CRLF-decoded document carries a CR byte" \
+  0 "$(LC_ALL=C grep -lF -e "$(printf '\r')" "$crlf_presented_file" "$crlf_current_file" 2>/dev/null | wc -l | tr -d ' ')"
+assert_equals "the hidden marker is stripped from a CRLF-decoded document too" \
+  0 "$(grep -l 'oso-plan-approval:' "$crlf_presented_file" "$crlf_current_file" 2>/dev/null | wc -l | tr -d ' ')"
+assert_equals "a CRLF-decoded document is bound to the digest of the raw escaped field, CR escapes and all" \
+  "$crlf_plan_digest" "$(oso-state --session "$SESSION" get plan_approval_digest)"
+establish_premise "the CRLF fixture leaves no approval pending" \
+  oso-state --session "$SESSION" clear
+
+doubled_cr_plan='Repaso de cambios\r\r\nFull slice plan: text-mode jq host\r\r\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\n'
+doubled_cr_plan_digest="$(sha256_text "$doubled_cr_plan")"
+doubled_cr_presented_file="$REPO_PLAN_DIR/presented-${doubled_cr_plan_digest}.md"
+doubled_cr_current_file="$REPO_PLAN_DIR/current.md"
+doubled_cr_plan_document="$(printf 'Repaso de cambios\nFull slice plan: text-mode jq host')"
+run_hook "$PLAN_STOP_HOOK" \
+  "$(codex_stop_input default "$SESSION" "$doubled_cr_plan" false "$CODEX_STOP_PLAN_TRANSCRIPT")"
+assert_after_hook "a document a text-mode jq re-terminated over CRLF content is still captured" \
+  [ "$hook_stdout" = '{}' ]
+assert_equals "the snapshot of a doubled-CR document holds the human plan with LF line endings" \
+  "$doubled_cr_plan_document" "$(cat "$doubled_cr_presented_file" 2>/dev/null || true)"
+assert_equals "the operational copy of a doubled-CR document holds that same LF-ended plan" \
+  "$doubled_cr_plan_document" "$(cat "$doubled_cr_current_file" 2>/dev/null || true)"
+assert_equals "neither persisted artifact of a doubled-CR document carries a CR byte" \
+  0 "$(LC_ALL=C grep -lF -e "$(printf '\r')" "$doubled_cr_presented_file" "$doubled_cr_current_file" 2>/dev/null | wc -l | tr -d ' ')"
+assert_equals "a doubled-CR document is bound to the digest of the raw escaped field, every CR escape intact" \
+  "$doubled_cr_plan_digest" "$(oso-state --session "$SESSION" get plan_approval_digest)"
+establish_premise "the doubled-CR fixture leaves no approval pending" \
+  oso-state --session "$SESSION" clear
+
 # Real Codex Stop transport appends one LF after the assistant's final logical
 # line. Preserve that escaped byte in the fixture so the digest assertion below
 # proves that acceptance does not normalize the wire representation.
@@ -1980,15 +2233,19 @@ assert_equals "the pending snapshot contains the human plan without the internal
   "$first_plan_document" "$(cat "$first_presented_file" 2>/dev/null || true)"
 assert_equals "the operational plan starts from the same human document" \
   "$first_plan_document" "$(cat "$first_current_file" 2>/dev/null || true)"
-assert_equals "the repository plan directory is owner-only" 0700 \
-  "$([ -d "$REPO_PLAN_DIR" ] && find "$REPO_PLAN_DIR" -maxdepth 0 -type d -perm 0700 -print | grep -q . && printf 0700 || printf wrong)"
-assert_equals "pending plan artifacts are owner-only" 0600 \
-  "$([ -f "$first_presented_file" ] && [ -f "$first_current_file" ] && \
-      find "$first_presented_file" "$first_current_file" -maxdepth 0 -type f -perm 0600 -print | \
-        wc -l | tr -d ' ' | grep -qx 2 && printf 0600 || printf wrong)"
+if [ "$POSIX_MODES_ARE_EMULATED" = true ]; then
+  echo "skip: exact POSIX mode probes are not reliable on this host's mounts, so the plan directory and its artifacts have no mode to answer with"
+  skipped=$((skipped + 1))
+else
+  assert_equals "the repository plan directory is owner-only" 0700 \
+    "$([ -d "$REPO_PLAN_DIR" ] && find "$REPO_PLAN_DIR" -maxdepth 0 -type d -perm 0700 -print | grep -q . && printf 0700 || printf wrong)"
+  assert_equals "pending plan artifacts are owner-only" 0600 \
+    "$([ -f "$first_presented_file" ] && [ -f "$first_current_file" ] && \
+        find "$first_presented_file" "$first_current_file" -maxdepth 0 -type f -perm 0600 -print | \
+          wc -l | tr -d ' ' | grep -qx 2 && printf 0600 || printf wrong)"
+fi
 assert_equals "the hidden marker is absent from both persisted plan artifacts" \
   0 "$(grep -l 'oso-plan-approval:' "$first_presented_file" "$first_current_file" 2>/dev/null | wc -l | tr -d ' ')"
-pending_current_before_amendment="$(cat "$first_current_file")"
 
 # A pending plan is amendable in place, directly through oso-state, rather than
 # only after approval. Neither the presented snapshot nor its digest moves for a
@@ -2130,7 +2387,8 @@ fi
 assert_equals "a stale cancellation CAS leaves pending state byte-identical" \
   "$pending_snapshot" "$(approval_state_snapshot)"
 
-oso-state --session "$SESSION" set mode=debug >/dev/null
+establish_premise "the pending session's mode disagrees with its own approval" \
+  oso-state --session "$SESSION" set mode=debug
 inconsistent_pending_snapshot="$(approval_state_snapshot)"
 run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input Bash)" 0 '' \
   --allow "$UNKNOWN_TOOL_ALLOWLIST"
@@ -2185,15 +2443,22 @@ run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input Bash)" 0 '' \
 assert_after_hook "pending approval denies even an allowlisted local tool" \
   hook_returned_deny
 
-chmod 0644 "$first_presented_file"
-unsafe_artifact_snapshot="$(approval_state_snapshot)"
-run_hook "$PLAN_PROMPT_HOOK" \
-  "$(codex_prompt_input default "$SESSION" 'Implement the plan.')"
-assert_after_hook "native approval rejects a non-private pending snapshot" \
-  hook_returned_block
-assert_equals "an unsafe artifact cannot mutate pending state" \
-  "$unsafe_artifact_snapshot" "$(approval_state_snapshot)"
-chmod 0600 "$first_presented_file"
+if [ "$POSIX_MODES_ARE_EMULATED" = true ]; then
+  echo "skip: the non-private premise cannot be established where chmod is a no-op, so an unsafe artifact's rejection is unobservable here"
+  skipped=$((skipped + 1))
+else
+  establish_premise "the pending snapshot is readable beyond its owner" \
+    chmod 0644 "$first_presented_file"
+  unsafe_artifact_snapshot="$(approval_state_snapshot)"
+  run_hook "$PLAN_PROMPT_HOOK" \
+    "$(codex_prompt_input default "$SESSION" 'Implement the plan.')"
+  assert_after_hook "native approval rejects a non-private pending snapshot" \
+    hook_returned_block
+  assert_equals "an unsafe artifact cannot mutate pending state" \
+    "$unsafe_artifact_snapshot" "$(approval_state_snapshot)"
+  establish_premise "the pending snapshot is owner-only again" \
+    chmod 0600 "$first_presented_file"
+fi
 
 run_hook "$PLAN_PROMPT_HOOK" \
   "$(codex_prompt_input default "$SESSION" 'Implement the plan.' "$CODEX_PROMPT_DEFAULT_TRANSCRIPT")"
@@ -2210,7 +2475,7 @@ assert_equals "native approval removes the pending snapshot spelling" \
 assert_equals "native approval preserves the immutable approved document" \
   "$first_plan_document" "$(cat "$first_approved_file" 2>/dev/null || true)"
 
-approved_snapshot_before_amendment="$(cat "$first_approved_file")"
+approved_snapshot_before_amendment="$(cat "$first_approved_file" 2>/dev/null || true)"
 hot_slice='### Slice 3 — approval regression\n\n- Goal: cover native approval.\n- Files: tests/hooks-test.sh\n- Verify: bash tests/hooks-test.sh\n- Depends-on: Slice 2'
 if printf '%b' "$hot_slice" | oso-state --session "$SESSION" amend-plan slice-3 >/dev/null 2>&1; then
   echo "ok: an approved plan accepts one explicit in-scope hot slice"; pass=$((pass + 1))
@@ -2287,7 +2552,7 @@ oso-state --session "$SESSION" clear
 # into a missing coreutil — or a missing interpreter — the farm forgot.
 PLAN_RUNTIME="$TEST_HOME/plan-runtime"
 PLAN_RUNTIME_REPO="$TEST_HOME/plan-runtime-repo"
-PLAN_RUNTIME_PATH=/usr/local/bin:/usr/bin:/bin
+SYSTEM_PATH_WITHOUT_OSO_STATE=/usr/local/bin:/usr/bin:/bin
 mkdir -p "$PLAN_RUNTIME/hooks" "$PLAN_RUNTIME/bin" "$PLAN_RUNTIME_REPO"
 cp "$PLUGIN/hooks/capture-plan-approval.sh" "$PLUGIN/hooks/approve-plan-token.sh" \
   "$PLUGIN/hooks/lib.sh" "$PLUGIN/hooks/lexer.sh" "$PLAN_RUNTIME/hooks/"
@@ -2296,7 +2561,7 @@ chmod +x "$PLAN_RUNTIME/hooks/capture-plan-approval.sh" \
   "$PLAN_RUNTIME/hooks/approve-plan-token.sh" "$PLAN_RUNTIME/bin/oso-state"
 assert_equals "the plan-rail regression PATH cannot resolve bare oso-state" \
   "missing" "$(
-    PATH="$PLAN_RUNTIME_PATH"
+    PATH="$SYSTEM_PATH_WITHOUT_OSO_STATE"
     hash -r
     command -v oso-state >/dev/null 2>&1 && echo present || echo missing
   )"
@@ -2312,7 +2577,7 @@ runtime_stop_payload="$(printf '{"session_id":"%s","transcript_path":null,"cwd":
 runtime_approval_payload="$(printf '{"session_id":"%s","transcript_path":null,"cwd":"%s","permission_mode":"default","hook_event_name":"UserPromptSubmit","turn_id":"turn-runtime-approve","prompt":"Implement the plan."}' \
   "$SESSION" "$PLAN_RUNTIME_REPO")"
 unset OSO_STATE_BIN
-OSO_AGENT=1 PATH="$PLAN_RUNTIME_PATH" run_hook \
+OSO_AGENT=1 PATH="$SYSTEM_PATH_WITHOUT_OSO_STATE" run_hook \
   "$PLAN_RUNTIME/hooks/capture-plan-approval.sh" "$runtime_stop_payload"
 assert_after_hook "the runtime-fallback Stop rail records the plan instead of blocking it" \
   [ "$hook_stdout" = '{}' ]
@@ -2332,7 +2597,7 @@ assert_equals "the runtime-fallback capture snapshots the pending document" \
 assert_equals "the runtime-fallback capture publishes the operational plan" \
   "$runtime_plan_document" "$(cat "$runtime_plan_dir/current.md" 2>/dev/null || true)"
 
-OSO_AGENT=1 PATH="$PLAN_RUNTIME_PATH" run_hook \
+OSO_AGENT=1 PATH="$SYSTEM_PATH_WITHOUT_OSO_STATE" run_hook \
   "$PLAN_RUNTIME/hooks/approve-plan-token.sh" "$runtime_approval_payload"
 assert_after_hook "the runtime-fallback native phrase opens the execution gate" \
   hook_returned_prompt_context
@@ -2668,10 +2933,15 @@ assert_leaves_no_trace() {
   fi
 }
 
-assert_leaves_no_trace "an unarmed session leaves the commit gate silent without jq" \
-  block-commit-until-green.sh "$(bash_input 'git commit -m x')"
-assert_leaves_no_trace "an unarmed session leaves the slice gate silent without jq" \
-  block-edits-without-slice.sh "$edit_input"
+if [ "$RUNS_ON_WINDOWS_BASH" = true ]; then
+  echo "skip: the stripped-interpreter simulation cannot be built where bash's own libraries do not travel with the copy, so neither unarmed gate has an interpreter to answer from"
+  skipped=$((skipped + 1))
+else
+  assert_leaves_no_trace "an unarmed session leaves the commit gate silent without jq" \
+    block-commit-until-green.sh "$(bash_input 'git commit -m x')"
+  assert_leaves_no_trace "an unarmed session leaves the slice gate silent without jq" \
+    block-edits-without-slice.sh "$edit_input"
+fi
 
 # --- Integration: every state write the skills instruct carries the full triple -
 # The modes that arm a slice of their own are the writers of that triple — the
@@ -2680,8 +2950,8 @@ assert_leaves_no_trace "an unarmed session leaves the slice gate silent without 
 # names fewer than three keys leaves the other two standing: that is how a
 # slice-pass write left the previous slice armed and a phase boundary left both
 # gates open. Backticks delimit every command these documents instruct, so each
-# span that invokes the state binary with `set` has to spell mode, active_slice
-# and verify_green.
+# span that invokes the state binary with `set` over any key of that triple has
+# to spell all three of them.
 # Read out of the NEUTRAL bodies, which is where the keys are written: the binary
 # and the flag that names the session are host spellings and live in each mode's
 # platform file, so the span a mode instructs reads `oso-state set …` and the
@@ -2695,6 +2965,10 @@ for state_writer in $modes_arming_a_slice_of_their_own; do
     case "$instructed_command" in
       *oso-state" set "*) writes_read=$((writes_read + 1)) ;;
       *) continue ;;
+    esac
+    case "$instructed_command" in
+      *mode=*|*active_slice=*|*verify_green=*) ;;
+      *"set auto="*) continue ;;
     esac
     case "$instructed_command" in
       *"set mode="*" active_slice="*" verify_green="*) ;;
@@ -4383,6 +4657,63 @@ A COMMIT is part of the flow and is never asked for
 PUSH and PR are the two that still require the operator to ask
 COMMIT_BOUNDARY_TABLE
 
+assert_says_every "the disposition round records the AUTO answer and leaves the arming to §5" \
+  "$(plan_section 4)" <<'AUTO_MARKER_ROUND_TABLE'
+RECORDED here and ARMED at §5
+this phase writes no runtime state at all
+AUTO_MARKER_ROUND_TABLE
+
+assert_says_every "the initialize arms the marker with the rest of the execution state" \
+  "$(plan_section 5)" <<'AUTO_MARKER_ARMING_TABLE'
+`auto=running auto_change=<change-slug>` in that same write
+AUTO_MARKER_ARMING_TABLE
+
+assert_says_every "the close disarms the marker before it delivers the final report" \
+  "$(plan_section 7)" <<'AUTO_MARKER_CLOSE_TABLE'
+DISARM first — `oso-state set auto=done`, a tool call
+that same turn's trailing text
+AUTO_MARKER_CLOSE_TABLE
+
+assert_says_every "the initialize cuts the run its own branch beside the marker" \
+  "$(plan_section 5)" <<'AUTO_RUN_BRANCH_TABLE'
+checkout -b oso-run/<change>
+skipped only on a RESUME
+Record the branch in the ledger
+AUTO_RUN_BRANCH_TABLE
+
+assert_says_every "the close finishes an unattended run at its own branch and PR" \
+  "$(plan_section 7)" <<'AUTO_FINISH_TABLE'
+Under an UNATTENDED run they are the FINISH instead
+push -u origin
+gh pr create
+its MERGE, a release and a production deploy are on the never-solo list
+PARKED as a named pending
+never a silent skip and never a retry loop
+AUTO_FINISH_TABLE
+
+assert_says_every "the resume check migrates a legacy personal-scope record instead of re-asking the project" \
+  "$(plan_section 0)" <<'PROJECT_RECORD_MIGRATION_TABLE'
+under `scope: personal` migrates
+scope becomes project, every value it holds is kept
+never a reason to ask them again
+PROJECT_RECORD_MIGRATION_TABLE
+
+assert_says_every "the ceiling ask mirrors the production route into the file the gate reads" \
+  "$(grep -F -- "AUTO's CEILING" "$PLAN_BODY")" <<'CEILING_MIRROR_TABLE'
+deploy-deny/<digest>.patterns
+ONE ERE PER LINE
+through SHELL
+is REPORTED, with what could not be written and where
+arms no AUTO at all
+CEILING_MIRROR_TABLE
+
+assert_says_every "the roadmap's blocked exit parks the child's marker instead of leaving it running" \
+  "$(grep -F -- '**The chain is BLOCKED**' "$PLUGIN/skills/_shared/bodies/roadmap.md")" \
+  <<'BLOCKED_PARK_TABLE'
+oso-state set auto=parked
+The `roadmap` key stays armed
+BLOCKED_PARK_TABLE
+
 # The same trees from the other end: the close clears the ones the operator
 # reached, and the resume is where they hear about the ones nobody did. No hook
 # covers that either — warn-stale-state.sh reports state FILES and is right not
@@ -4669,14 +5000,14 @@ elif mount_report="$("$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" 2>&1)"; then
     fail=$((fail + 1))
   fi
 
-  # The registry directory is stable; ownership is one unique symlink per
-  # acquirer, published atomically. A process removes only its own link. Dead
-  # links are logical stale records (ignored but retained), while a live link
-  # blocks and any entry outside the exact symlink grammar fails closed.
+  # The registry directory is stable; ownership is one unique directory per
+  # acquirer, published atomically. A process removes only its own. Dead owners
+  # are logical stale records (ignored but retained), while a live owner blocks
+  # and any entry outside the exact owner grammar fails closed.
   IMPECCABLE_MOUNT_LOCK="$HOME/.agents/skills/.impeccable.mount.lock"
-  mkdir -p "$IMPECCABLE_MOUNT_LOCK"
-  ln -s "pid=$$;token=live-fixture-token" \
-    "$IMPECCABLE_MOUNT_LOCK/owner.live-fixture-token"
+  mkdir -p "$IMPECCABLE_MOUNT_LOCK/owner.live-fixture-token"
+  printf 'pid=%s;token=live-fixture-token\n' "$$" \
+    > "$IMPECCABLE_MOUNT_LOCK/owner.live-fixture-token/identity"
   printf '%s\n' 'must survive a live lock' > "$IMPECCABLE_MOUNT/live-lock-sentinel"
   if "$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" >/dev/null 2>&1; then
     echo "FAIL: a live Impeccable mount lock was stolen"
@@ -4687,13 +5018,14 @@ elif mount_report="$("$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" 2>&1)"; then
   fi
   assert_equals "live-lock rejection preserves the mounted snapshot" \
     "must survive a live lock" "$(cat "$IMPECCABLE_MOUNT/live-lock-sentinel")"
-  assert_equals "live-lock rejection preserves the owner's exact target" \
+  assert_equals "live-lock rejection preserves the owner's exact identity" \
     "pid=$$;token=live-fixture-token" \
-    "$(readlink "$IMPECCABLE_MOUNT_LOCK/owner.live-fixture-token")"
+    "$(cat "$IMPECCABLE_MOUNT_LOCK/owner.live-fixture-token/identity")"
 
-  rm -f "$IMPECCABLE_MOUNT_LOCK/owner.live-fixture-token"
-  ln -s 'pid=2147483647;token=dead-fixture-token' \
-    "$IMPECCABLE_MOUNT_LOCK/owner.dead-fixture-token"
+  rm -rf "$IMPECCABLE_MOUNT_LOCK/owner.live-fixture-token"
+  mkdir -p "$IMPECCABLE_MOUNT_LOCK/owner.dead-fixture-token"
+  printf 'pid=2147483647;token=dead-fixture-token\n' \
+    > "$IMPECCABLE_MOUNT_LOCK/owner.dead-fixture-token/identity"
   if "$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" >/dev/null 2>&1; then
     echo "ok: a dead Impeccable mount owner is ignored so mounting can continue"
     pass=$((pass + 1))
@@ -4705,9 +5037,9 @@ elif mount_report="$("$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" 2>&1)"; then
     "gone" "$([ ! -e "$IMPECCABLE_MOUNT/live-lock-sentinel" ] && printf gone || printf present)"
   assert_equals "dead-lock recovery never deletes a foreign owner record" \
     "pid=2147483647;token=dead-fixture-token" \
-    "$(readlink "$IMPECCABLE_MOUNT_LOCK/owner.dead-fixture-token")"
+    "$(cat "$IMPECCABLE_MOUNT_LOCK/owner.dead-fixture-token/identity")"
 
-  rm -f "$IMPECCABLE_MOUNT_LOCK/owner.dead-fixture-token"
+  rm -rf "$IMPECCABLE_MOUNT_LOCK/owner.dead-fixture-token"
   printf '%s\n' 'must survive only until empty-lock recovery' \
     > "$IMPECCABLE_MOUNT/empty-lock-sentinel"
   if "$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" >/dev/null 2>&1; then
@@ -4768,7 +5100,7 @@ token=legacy-live-token" "$(cat "$IMPECCABLE_MOUNT_LOCK/owner")"
 
   # Deterministic ABA regression. A pauses immediately before publishing its
   # ownership primitive (the former implementation used mv; the atomic one uses
-  # ln). B publishes and reaches the protected copy while A is still paused.
+  # mkdir). B publishes and reaches the protected copy while A is still paused.
   # Resuming A must make A withdraw/fail without touching B's unique owner.
   ABA_HOME="$TEST_HOME/impeccable-aba-home"
   ABA_CONTROL="$TEST_HOME/impeccable-aba-control"
@@ -4783,7 +5115,7 @@ token=legacy-live-token" "$(cat "$IMPECCABLE_MOUNT_LOCK/owner")"
   printf '%s\n' 'complete source A' > "$ABA_SOURCE_A/reference/race-winner.md"
   printf '%s\n' 'complete source B' > "$ABA_SOURCE_B/reference/race-winner.md"
 
-  ABA_REAL_LN="$(command -v ln)"
+  ABA_REAL_MKDIR="$(command -v mkdir)"
   ABA_REAL_MV="$(command -v mv)"
   ABA_REAL_CP="$(command -v cp)"
   printf '%s\n' \
@@ -4796,8 +5128,8 @@ token=legacy-live-token" "$(cat "$IMPECCABLE_MOUNT_LOCK/owner")"
     '    while [ ! -f "$ABA_CONTROL/release-a" ]; do sleep 1; done' \
     '    ;;' \
     'esac' \
-    'exec "$ABA_REAL_LN" "$@"' \
-    > "$ABA_SHIMS/ln"
+    'exec "$ABA_REAL_MKDIR" "$@"' \
+    > "$ABA_SHIMS/mkdir"
   printf '%s\n' \
     '#!/bin/sh' \
     'last=' \
@@ -4818,7 +5150,7 @@ token=legacy-live-token" "$(cat "$IMPECCABLE_MOUNT_LOCK/owner")"
     'fi' \
     'exec "$ABA_REAL_CP" "$@"' \
     > "$ABA_SHIMS/cp"
-  chmod +x "$ABA_SHIMS/ln" "$ABA_SHIMS/mv" "$ABA_SHIMS/cp"
+  chmod +x "$ABA_SHIMS/mkdir" "$ABA_SHIMS/mv" "$ABA_SHIMS/cp"
 
   wait_for_aba_marker() {
     local marker="$1" process_id="$2" waited=0
@@ -4832,7 +5164,7 @@ token=legacy-live-token" "$(cat "$IMPECCABLE_MOUNT_LOCK/owner")"
 
   (
     if HOME="$ABA_HOME" PATH="$ABA_SHIMS:$PATH" \
-      ABA_CONTROL="$ABA_CONTROL" ABA_REAL_LN="$ABA_REAL_LN" \
+      ABA_CONTROL="$ABA_CONTROL" ABA_REAL_MKDIR="$ABA_REAL_MKDIR" \
       ABA_REAL_MV="$ABA_REAL_MV" ABA_REAL_CP="$ABA_REAL_CP" \
       ABA_PAUSE_OWNER_PUBLICATION=1 \
       "$MOUNT_IMPECCABLE" "$ABA_SOURCE_A" \
@@ -4856,7 +5188,7 @@ token=legacy-live-token" "$(cat "$IMPECCABLE_MOUNT_LOCK/owner")"
   if [ "$aba_ready" = true ]; then
     (
       if HOME="$ABA_HOME" PATH="$ABA_SHIMS:$PATH" \
-        ABA_CONTROL="$ABA_CONTROL" ABA_REAL_LN="$ABA_REAL_LN" \
+        ABA_CONTROL="$ABA_CONTROL" ABA_REAL_MKDIR="$ABA_REAL_MKDIR" \
         ABA_REAL_MV="$ABA_REAL_MV" ABA_REAL_CP="$ABA_REAL_CP" \
         ABA_PAUSE_PROTECTED_COPY=1 \
         "$MOUNT_IMPECCABLE" "$ABA_SOURCE_B" \
@@ -4884,7 +5216,7 @@ token=legacy-live-token" "$(cat "$IMPECCABLE_MOUNT_LOCK/owner")"
     wait "$aba_a_pid" 2>/dev/null || true
 
     aba_registry="$ABA_HOME/.agents/skills/.impeccable.mount.lock"
-    aba_owner_entries="$(find "$aba_registry" -mindepth 1 -maxdepth 1 -type l -name 'owner.*' 2>/dev/null)"
+    aba_owner_entries="$(find "$aba_registry" -mindepth 1 -maxdepth 1 -type d -name 'owner.*' 2>/dev/null)"
     aba_owner_count="$(printf '%s\n' "$aba_owner_entries" | awk 'NF { count++ } END { print count + 0 }')"
     assert_equals "losing process A never cleans up process B's published owner" \
       "1" "$aba_owner_count"
@@ -5194,6 +5526,400 @@ oso-state --session "$SESSION" set stale_ok=yes >/dev/null 2>&1 || true
 assert_equals "stale lock is reclaimed" yes "$(oso-state --session "$SESSION" get stale_ok)"
 oso-state --session "$SESSION" clear
 
+JOURNAL_DIR="$STATE_DIR/runs/$REPO_KEY"
+
+journal_milestone() {
+  ( cd "${2:-$REPO_ROOT}" && oso-state --session "$SESSION" journal "$1" ) 2>/dev/null || true
+}
+
+journal_texts_in() {
+  { cut -d' ' -f2- "$1" 2>/dev/null || true; } | tr '\n' '>'
+}
+
+rm -rf "$STATE_DIR/runs"
+long_milestone='wave 3 verifier'
+while [ "${#long_milestone}" -lt 240 ]; do
+  long_milestone="$long_milestone, slice 7 applied and the bar closed green"
+done
+journal_milestone "$long_milestone"
+journaled_line="$({ cat "$JOURNAL_DIR/run.log" 2>/dev/null || true; })"
+journaled_text="${journaled_line#* }"
+assert_equals "the journaled milestone runs past the event log's 120-byte command head" \
+  "past" "$([ "${#journaled_text}" -gt 200 ] && echo past || echo short)"
+assert_equals "a milestone longer than the event cap is journaled byte-intact, never truncated" \
+  "$long_milestone" "$journaled_text"
+
+rm -rf "$STATE_DIR/runs"
+journal_milestone "wave 1 armed"
+journal_milestone "wave 1 verified"
+assert_equals "two milestones append to one journal in the order they happened" \
+  "wave 1 armed>wave 1 verified>" "$(journal_texts_in "$JOURNAL_DIR/run.log")"
+
+rm -rf "$STATE_DIR/runs"
+marker_reads=""
+for run_marker in running parked done; do
+  oso-state --session "$SESSION" set "auto=$run_marker" auto_change=auto-continuity
+  journal_milestone "the run is $run_marker"
+  marker_reads="$marker_reads $(oso-state --session "$SESSION" get auto)"
+done
+assert_equals "the run marker round-trips running, parked and done, journaling under its change" \
+  "running parked done|the run is running>the run is parked>the run is done>" \
+  "${marker_reads# }|$(journal_texts_in "$JOURNAL_DIR/auto-continuity.log")"
+marker_shown="$(oso-state --session "$SESSION" show)"
+marker_keys_unshown=""
+for marker_key in auto auto_change; do
+  case "$marker_shown" in
+    *"$marker_key="*) ;;
+    *) marker_keys_unshown="$marker_keys_unshown $marker_key" ;;
+  esac
+done
+assert_equals "show carries the marker beside the change slug its journal is named after" \
+  "|auto-continuity.log" "$marker_keys_unshown|$(ls "$JOURNAL_DIR" 2>/dev/null || true)"
+oso-state --session "$SESSION" clear
+
+rm -rf "$STATE_DIR/runs"
+JOURNAL_PLAIN="$TEST_HOME/journal-outside-git"
+mkdir -p "$JOURNAL_PLAIN"
+journal_milestone "no repository names this directory" "$JOURNAL_PLAIN"
+assert_equals "a directory git cannot name journals under the same fallback its state file takes" \
+  "no repository names this directory>" \
+  "$(journal_texts_in "$STATE_DIR/runs/$(state_key_of "$JOURNAL_PLAIN")/run.log")"
+
+rm -rf "$STATE_DIR/runs"
+JOURNAL_REPO="$TEST_HOME/journal-repo"
+JOURNAL_WORKTREE="$TEST_HOME/journal-worktree"
+if ! command -v git >/dev/null 2>&1; then
+  echo "skip: git is absent here, so a run has no second tree to journal from"
+  skipped=$((skipped + 1))
+else
+  mkdir -p "$JOURNAL_REPO"
+  git -C "$JOURNAL_REPO" init -q
+  git -C "$JOURNAL_REPO" config user.email tests@oso-code.invalid
+  git -C "$JOURNAL_REPO" config user.name "oso-code tests"
+  git -C "$JOURNAL_REPO" config commit.gpgsign false
+  printf 'base\n' > "$JOURNAL_REPO/base.txt"
+  git -C "$JOURNAL_REPO" add base.txt
+  git -C "$JOURNAL_REPO" commit -qm base
+  git -C "$JOURNAL_REPO" worktree add -q -b oso/journal "$JOURNAL_WORKTREE"
+  ( cd "$JOURNAL_REPO" && oso-state --session "$SESSION" set auto_change=wave-2 >/dev/null )
+  journal_milestone "the orchestrator armed wave 2" "$JOURNAL_REPO"
+  journal_milestone "the applier landed slice 3" "$JOURNAL_WORKTREE"
+  assert_equals "a linked worktree appends to the journal its main checkout opened" \
+    "the orchestrator armed wave 2>the applier landed slice 3>" \
+    "$(journal_texts_in "$STATE_DIR/runs/$(state_key_of "$JOURNAL_REPO")/wave-2.log")"
+  ( cd "$JOURNAL_REPO" && oso-state --session "$SESSION" clear )
+  git -C "$JOURNAL_REPO" worktree remove --force "$JOURNAL_WORKTREE"
+  git -C "$JOURNAL_REPO" worktree prune
+  rm -rf "$JOURNAL_REPO"
+fi
+
+rm -rf "$STATE_DIR/runs"
+journal_usage_stderr="$TEST_HOME/journal-usage-stderr"
+journal_missing_rc=0
+oso-state --session "$SESSION" journal 2>"$journal_usage_stderr" || journal_missing_rc=$?
+journal_empty_rc=0
+oso-state --session "$SESSION" journal "" 2>>"$journal_usage_stderr" || journal_empty_rc=$?
+journal_after_refusal="$(ls "$STATE_DIR/runs" 2>/dev/null || echo unwritten)"
+case "$({ cat "$journal_usage_stderr" 2>/dev/null || true; })" in
+  usage:*) journal_refusal=usage ;;
+  '') journal_refusal=silent ;;
+  *) journal_refusal=other ;;
+esac
+journal_milestone "the milestone that does carry text"
+assert_equals "a journal call with no milestone text is a usage error, never a timestamped empty line" \
+  "1 1 usage unwritten opened" \
+  "$journal_missing_rc $journal_empty_rc $journal_refusal $journal_after_refusal $([ -s "$JOURNAL_DIR/run.log" ] && echo opened || echo unopened)"
+rm -rf "$STATE_DIR/runs"
+oso-state --session "$SESSION" clear >/dev/null 2>&1 || true
+
+rm -rf "$STATE_DIR/runs"
+oso-state --session "$SESSION" set auto_change=../escape >/dev/null
+journal_milestone "the slug climbed out of its run directory"
+oso-state --session "$SESSION" set auto_change=a/b >/dev/null
+journal_milestone "the slug named a subdirectory"
+journal_tree="$(find "$STATE_DIR/runs" -mindepth 1 -print 2>/dev/null | LC_ALL=C sort | tr '\n' '>' || true)"
+assert_equals "a change slug carrying a path separator journals under the fallback, leaving nothing outside its own run directory" \
+  "$JOURNAL_DIR>$JOURNAL_DIR/run.log>|the slug climbed out of its run directory>the slug named a subdirectory>" \
+  "$journal_tree|$(journal_texts_in "$JOURNAL_DIR/run.log")"
+
+rm -rf "$STATE_DIR/runs"
+over_length_change=w
+while [ "${#over_length_change}" -le 64 ]; do
+  over_length_change="${over_length_change}9"
+done
+oso-state --session "$SESSION" set "auto_change=$over_length_change" >/dev/null
+journal_milestone "the slug ran past 64 characters"
+oso-state --session "$SESSION" set auto_change=Wave-2 >/dev/null
+journal_milestone "the slug shouted"
+oso-state --session "$SESSION" set "auto_change=wave 2" >/dev/null
+journal_milestone "the slug carried a space"
+assert_equals "an over-length or out-of-charset change slug journals under the fallback, never under itself" \
+  "run.log|the slug ran past 64 characters>the slug shouted>the slug carried a space>" \
+  "$(ls "$JOURNAL_DIR" 2>/dev/null || true)|$(journal_texts_in "$JOURNAL_DIR/run.log")"
+
+rm -rf "$STATE_DIR/runs"
+maximal_change=w9
+while [ "${#maximal_change}" -lt 64 ]; do
+  maximal_change="${maximal_change}-9"
+done
+oso-state --session "$SESSION" set "auto_change=$maximal_change" >/dev/null
+journal_milestone "the longest slug the rule admits"
+assert_equals "a 64-character slug of the admitted charset names its journal verbatim" \
+  "64 ${maximal_change}.log|the longest slug the rule admits>" \
+  "${#maximal_change} $(ls "$JOURNAL_DIR" 2>/dev/null || true)|$(journal_texts_in "$JOURNAL_DIR/${maximal_change}.log")"
+rm -rf "$STATE_DIR/runs"
+oso-state --session "$SESSION" clear >/dev/null 2>&1 || true
+
+AUTO_JOURNAL="$JOURNAL_DIR/auto-continuity.log"
+
+auto_stop_input() {
+  printf '{"session_id":"%s","transcript_path":"%s","cwd":"%s","hook_event_name":"Stop","stop_hook_active":%s}' \
+    "${1:-$SESSION}" "$TRANSCRIPT" "${3:-$REPO_ROOT}" "${2:-false}"
+}
+
+arm_unattended_run() {
+  rm -rf "$STATE_DIR/runs"
+  oso-state --session "$SESSION" set auto=running auto_change=auto-continuity >/dev/null
+}
+
+auto_stop_verdict() {
+  run_hook auto-continue.sh "$1"
+  if [ -n "$hook_problem" ]; then
+    printf 'crashed:%s' "$hook_problem"
+  elif hook_returned_block; then
+    printf 'push'
+  elif [ "$hook_stdout" = '{}' ]; then
+    printf 'stop'
+  else
+    printf 'neither:%s' "${hook_stdout:-<empty>}"
+  fi
+}
+
+arm_unattended_run
+run_hook auto-continue.sh "$(auto_stop_input)"
+assert_after_hook "a turn ending while an unattended run is in flight is pushed back into motion" \
+  hook_returned_block
+auto_push_reason="$(printf '%s' "$hook_stdout" | sed -n 's/.*"reason":"\(.*\)"}$/\1/p')"
+auto_anchors_missing=""
+for auto_anchor in 'oso/index NEXT:' active_slice 'oso-state journal' park; do
+  case "$auto_push_reason" in
+    *"$auto_anchor"*) ;;
+    *) auto_anchors_missing="$auto_anchors_missing $auto_anchor" ;;
+  esac
+done
+assert_equals "the push re-anchors the run on position, journal and park, never a bare block" \
+  "" "$auto_anchors_missing"
+
+auto_settled_verdicts=""
+for settled_marker in parked done; do
+  oso-state --session "$SESSION" set "auto=$settled_marker" >/dev/null
+  auto_settled_verdicts="$auto_settled_verdicts $(auto_stop_verdict "$(auto_stop_input)")"
+done
+oso-state --session "$SESSION" clear
+auto_settled_verdicts="$auto_settled_verdicts $(auto_stop_verdict "$(auto_stop_input)")"
+arm_unattended_run
+auto_settled_verdicts="$auto_settled_verdicts $(auto_stop_verdict "$(auto_stop_input another-session)")"
+assert_equals "a parked run, a finished one, an unmarked repository and a foreign session all end their turn untouched" \
+  "stop stop stop stop" "${auto_settled_verdicts# }"
+
+oso-state --session "$SESSION" clear
+rm -rf "$STATE_DIR/runs"
+mkdir -p "$REPO_STATE"
+auto_uncertain_verdicts=" $(auto_stop_verdict "$(auto_stop_input)")"
+rmdir "$REPO_STATE"
+printf 'this file is not state at all\n' > "$REPO_STATE"
+auto_uncertain_verdicts="$auto_uncertain_verdicts $(auto_stop_verdict "$(auto_stop_input)")"
+rm -f "$REPO_STATE"
+arm_unattended_run
+auto_uncertain_verdicts="$auto_uncertain_verdicts $(auto_stop_verdict 'this payload is not JSON')"
+auto_uncertain_verdicts="$auto_uncertain_verdicts $(auto_stop_verdict '{"hook_event_name":"Stop"}')"
+assert_equals "an unreadable state path, a garbage one and an unparseable payload fail open, writing no run trail" \
+  "stop stop stop stop|unwritten" \
+  "${auto_uncertain_verdicts# }|$(ls "$STATE_DIR/runs" 2>/dev/null || echo unwritten)"
+
+AUTO_CAP_MILESTONE='auto-continue: cap reached after 3 pushes without progress — allowing the stop'
+arm_unattended_run
+auto_cap_verdicts=" $(auto_stop_verdict "$(auto_stop_input)")"
+for _ in 1 2 3; do
+  auto_cap_verdicts="$auto_cap_verdicts $(auto_stop_verdict "$(auto_stop_input "$SESSION" true)")"
+done
+assert_equals "three pushes without a milestone between them exhaust the net, and the fourth stop stands in the journal" \
+  "push push push stop|$AUTO_CAP_MILESTONE>" \
+  "${auto_cap_verdicts# }|$(journal_texts_in "$AUTO_JOURNAL")"
+auto_past_cap_verdict="$(auto_stop_verdict "$(auto_stop_input "$SESSION" true)")"
+assert_equals "past the cap every stop stands and the trail says so exactly once" \
+  "stop|$AUTO_CAP_MILESTONE>" \
+  "$auto_past_cap_verdict|$(journal_texts_in "$AUTO_JOURNAL")"
+
+arm_unattended_run
+auto_progress_verdicts=""
+for auto_slice in 1 2 3 4; do
+  auto_progress_verdicts="$auto_progress_verdicts $(auto_stop_verdict "$(auto_stop_input "$SESSION" true)")"
+  journal_milestone "the applier landed slice $auto_slice"
+done
+assert_equals "a milestone between pushes resets the count, so the net never lets go of a run that is moving" \
+  "push push push push" "${auto_progress_verdicts# }"
+
+arm_unattended_run
+auto_belt_verdicts=""
+for _ in 1 2 3; do
+  auto_belt_verdicts="$auto_belt_verdicts $(auto_stop_verdict "$(auto_stop_input "$SESSION" true)")"
+done
+assert_equals "a turn this hook already continued counts as a push even before any tally exists" \
+  "push push stop" "${auto_belt_verdicts# }"
+
+auto_degradations_recorded() {
+  grep -c '"event":"auto-continue-degraded","command":"[^"]' "$STATE_DIR/events.jsonl" 2>/dev/null || true
+}
+
+arm_unattended_run
+auto_degradations_before="$(auto_degradations_recorded)"
+mkdir -p "${AUTO_JOURNAL%.log}.pushes"
+auto_degraded_verdicts=" $(auto_stop_verdict "$(auto_stop_input)")"
+rm -rf "$JOURNAL_DIR"
+printf 'a file stands where the run directory belongs\n' > "$JOURNAL_DIR"
+auto_degraded_verdicts="$auto_degraded_verdicts $(auto_stop_verdict "$(auto_stop_input)")"
+rm -f "$JOURNAL_DIR"
+auto_degradations_after="$(auto_degradations_recorded)"
+assert_equals "a push tally the net can neither read nor write allows the stop and puts the cause on the record" \
+  "stop stop 2" \
+  "${auto_degraded_verdicts# } $((auto_degradations_after - auto_degradations_before))"
+
+rm -rf "$STATE_DIR/runs"
+oso-state --session "$SESSION" clear >/dev/null 2>&1 || true
+
+PROD_PATTERNS_FILE="$STATE_DIR/deploy-deny/$REPO_KEY.patterns"
+
+prod_gate_verdict() {
+  run_hook block-prod-deploy.sh "$1"
+  if [ -n "$hook_problem" ]; then
+    printf 'crashed:%s' "$hook_problem"
+  elif hook_returned_deny; then
+    printf 'deny'
+  elif [ -z "$hook_stdout" ]; then
+    printf 'allow'
+  else
+    printf 'neither:%s' "$hook_stdout"
+  fi
+}
+
+prod_mcp_input() {
+  printf '{"session_id":"%s","transcript_path":"%s","cwd":"%s","hook_event_name":"PreToolUse","tool_name":"%s","tool_input":{"project":"acme"}}' \
+    "$SESSION" "$TRANSCRIPT" "$REPO_ROOT" "$1"
+}
+
+prod_verdicts_for() {
+  local verdicts="" prod_command
+  for prod_command in "$@"; do
+    verdicts="$verdicts $(prod_gate_verdict "$(bash_input "$prod_command")")"
+  done
+  printf '%s' "${verdicts# }"
+}
+
+prod_residues_allowed() {
+  grep -c residue-allowed "$STATE_DIR/events.jsonl" 2>/dev/null || true
+}
+
+prod_verdicts_and_residues_for() {
+  local before after
+  before="$(prod_residues_allowed)"
+  prod_verdicts_for "$@"
+  after="$(prod_residues_allowed)"
+  printf ' %s' "$((after - before))"
+}
+
+arm_unattended_run
+assert_equals "every built-in production shape is denied while the run is in flight" \
+  "deny deny deny deny deny deny" \
+  "$(prod_verdicts_for 'vercel --prod' 'vercel deploy --prod --yes' 'npx vercel --prod' \
+    'pnpm dlx vercel --target production' 'netlify deploy --prod' 'firebase deploy')"
+assert_equals "the preview and staging shapes of the same CLIs keep passing" \
+  "allow allow allow allow" \
+  "$(prod_verdicts_for vercel 'vercel deploy' 'vercel deploy --target=staging' 'netlify deploy')"
+assert_equals "the work of the run itself is none of this gate's business" \
+  "allow allow allow" \
+  "$(prod_verdicts_for 'npm run build' 'git commit -m wip' 'git commit -m push')"
+
+assert_equals "a push that does not name the run branch is denied while the run is in flight" \
+  "deny deny deny" \
+  "$(prod_verdicts_for 'git push origin main' 'git push' 'git -C . push origin main')"
+assert_equals "the run's own branch push is the finish this gate exists to protect" \
+  "allow allow" \
+  "$(prod_verdicts_for 'git push origin oso-run/auto-continuity' 'git push origin HEAD:oso-run/x')"
+
+run_hook block-prod-deploy.sh "$(prod_mcp_input mcp__plugin_vercel_vercel__deploy_to_vercel)"
+assert_after_hook "a deploy-shaped MCP tool is the operator's own call while the run is in flight" \
+  hook_returned_deny
+case "$hook_stdout" in
+  *'MCP deploy stays with the operator'*) prod_mcp_deny_naming=named ;;
+  *) prod_mcp_deny_naming=unnamed ;;
+esac
+assert_equals "the MCP deny says whose call a deploy is, not merely that it was refused" \
+  "named" "$prod_mcp_deny_naming"
+assert_equals "a Bash sibling tool the matcher also reaches is judged by neither half" \
+  "allow" "$(prod_gate_verdict "$(prod_mcp_input BashOutput)")"
+
+mkdir -p "${PROD_PATTERNS_FILE%/*}"
+printf 'npm run deploy:prod\n\n^ship-it\n' > "$PROD_PATTERNS_FILE"
+prod_pattern_verdicts="$(prod_verdicts_for 'npm run deploy:prod' 'ship-it now' 'npm run build')"
+rm -f "$PROD_PATTERNS_FILE"
+assert_equals "this repository's own deny patterns bite while the run is in flight, and only where they match" \
+  "deny deny allow|allow deny" \
+  "$prod_pattern_verdicts|$(prod_verdicts_for 'npm run deploy:prod' 'vercel --prod')"
+
+prod_long_command='vercel --prod'
+while [ "${#prod_long_command}" -le "$((3072 + 16))" ]; do
+  prod_long_command="$prod_long_command and echo padding"
+done
+assert_equals "a line past the lexer's bound passes counted, the way the commit rail already spends its residue" \
+  "allow 1" "$(prod_verdicts_and_residues_for "$prod_long_command")"
+
+assert_equals "an unresolved git option shape, a command word only the shell resolves and an interpreter's deploy payload all pass counted, exactly as the commit rail counts them" \
+  "allow allow allow 3" \
+  "$(prod_verdicts_and_residues_for 'git --super-prefix x/ push origin main' \
+    'python3 deploy.py' '$DEPLOY --prod')"
+
+assert_equals "a line the resolver answers spends no residue: a build, the run's own push, and an option git answers itself instead of pushing" \
+  "allow allow allow 0" \
+  "$(prod_verdicts_and_residues_for 'npm run build' \
+    'git push origin oso-run/auto-continuity' 'git --version push origin main')"
+
+prod_settled_verdicts=""
+for settled_marker in parked done; do
+  oso-state --session "$SESSION" set "auto=$settled_marker" >/dev/null
+  prod_settled_verdicts="$prod_settled_verdicts $(prod_verdicts_for 'vercel --prod' 'git push origin main')"
+done
+oso-state --session "$SESSION" clear
+oso-state --session "$SESSION" set mode=plan active_slice=3 verify_green=false >/dev/null
+prod_settled_verdicts="$prod_settled_verdicts $(prod_verdicts_for 'vercel --prod' 'git push origin main')"
+oso-state --session "$SESSION" clear
+prod_settled_verdicts="$prod_settled_verdicts $(prod_verdicts_for 'vercel --prod' 'git push origin main')"
+arm_unattended_run
+prod_settled_verdicts="$prod_settled_verdicts $(prod_gate_verdict "$(bash_input 'vercel --prod' "$REPO_ROOT" another-session)")"
+assert_equals "a parked run, a finished one, an attended session, an unmarked repository and a foreign session all deploy untouched" \
+  "allow allow allow allow allow allow allow allow allow" "${prod_settled_verdicts# }"
+
+oso-state --session "$SESSION" clear
+printf 'this file is not state at all\n' > "$REPO_STATE"
+prod_uncertain_verdicts="$(prod_verdicts_for 'vercel --prod' 'npm run build' 'git push origin main')"
+run_hook block-prod-deploy.sh "$(bash_input 'vercel --prod')"
+prod_uncertain_reason="$hook_stdout"
+rm -f "$REPO_STATE"
+mkdir -p "$REPO_STATE"
+prod_uncertain_verdicts="$prod_uncertain_verdicts $(prod_verdicts_for 'vercel --prod' 'npm run build')"
+rmdir "$REPO_STATE"
+assert_equals "a state file the gate cannot read as state closes the production door and nothing else" \
+  "deny allow allow deny allow" "$prod_uncertain_verdicts"
+case "$prod_uncertain_reason" in
+  *"oso-state --session $SESSION clear"*) prod_uncertain_remedy=repair ;;
+  *) prod_uncertain_remedy=elsewhere ;;
+esac
+assert_equals "the uncertain deny hands over the remedy that fits an unreadable state, not the one that needs a readable marker" \
+  "repair" "$prod_uncertain_remedy"
+
+rm -rf "$STATE_DIR/runs" "${PROD_PATTERNS_FILE%/*}"
+oso-state --session "$SESSION" clear >/dev/null 2>&1 || true
+
 # --- Delegation handoff: exact attempt, bounded wait, atomic one-shot receipt --
 # The report itself stays in the SubagentStop message.  The file rail stores only
 # an identity-bound receipt for that message.  Parent wait/consume calls therefore
@@ -5263,27 +5989,21 @@ assert_equals "the host-published receipt is consumed through the same one-shot 
 
 ( cd "$HANDOFF_REPO" && oso-state --session 1 set mode=plan active_slice=fixed-marker verify_green=false >/dev/null )
 HANDOFF_RUNTIME="$TEST_HOME/handoff-runtime"
-HANDOFF_NO_STATE_PATH="$TEST_HOME/handoff-no-state-path"
-mkdir -p "$HANDOFF_RUNTIME/hooks" "$HANDOFF_RUNTIME/bin" "$HANDOFF_NO_STATE_PATH"
-for handoff_runtime_tool in bash cat chmod date dirname grep mkdir mktemp mv rm rmdir sha256sum shasum sleep stat tr wc; do
-  handoff_runtime_tool_path="$(PATH=/usr/bin:/bin command -v "$handoff_runtime_tool" 2>/dev/null || true)"
-  [ -n "$handoff_runtime_tool_path" ] || continue
-  ln -s "$handoff_runtime_tool_path" "$HANDOFF_NO_STATE_PATH/$handoff_runtime_tool"
-done
+mkdir -p "$HANDOFF_RUNTIME/hooks" "$HANDOFF_RUNTIME/bin"
 cp "$PLUGIN/hooks/publish-subagent-handoff.sh" "$PLUGIN/hooks/lib.sh" "$PLUGIN/hooks/lexer.sh" \
   "$HANDOFF_RUNTIME/hooks/"
 cp "$PLUGIN/bin/oso-state" "$HANDOFF_RUNTIME/bin/"
 chmod +x "$HANDOFF_RUNTIME/hooks/publish-subagent-handoff.sh" "$HANDOFF_RUNTIME/bin/oso-state"
 assert_equals "the runtime fallback regression PATH cannot resolve bare oso-state" \
   "missing" "$(
-    PATH="$HANDOFF_NO_STATE_PATH"
+    PATH="$SYSTEM_PATH_WITHOUT_OSO_STATE"
     hash -r
     command -v oso-state >/dev/null 2>&1 && echo present || echo missing
   )"
 fixed_marker_payload="$(printf '{\"session_id\":\"%s\",\"cwd\":\"%s\",\"hook_event_name\":\"SubagentStop\",\"turn_id\":\"turn-fixed-marker\",\"agent_id\":\"agent-fixed-marker\",\"agent_type\":\"oso-verifier\",\"agent_transcript_path\":\"%s\",\"stop_hook_active\":false,\"last_assistant_message\":\"oso-handoff: v=1 slice=slice-fixed-marker attempt=2\\nevidence: the named check is green\\nverdict: pass\"}' \
   "payload-native-uuid-7d1a-4d1e-bf19" "$HANDOFF_REPO" "$TEST_HOME/agent-fixed-marker.jsonl")"
 unset OSO_STATE_BIN
-OSO_AGENT=1 PATH="$HANDOFF_NO_STATE_PATH" run_hook "$HANDOFF_RUNTIME/hooks/publish-subagent-handoff.sh" "$fixed_marker_payload"
+OSO_AGENT=1 PATH="$SYSTEM_PATH_WITHOUT_OSO_STATE" run_hook "$HANDOFF_RUNTIME/hooks/publish-subagent-handoff.sh" "$fixed_marker_payload"
 assert_after_hook "Codex SubagentStop resolves oso-state from its installed runtime when OSO_STATE_BIN is unset" \
   [ "$hook_stdout" = '{}' ]
 fixed_marker_receipt="$(expected_receipt 1 slice-fixed-marker 2 agent-fixed-marker oso-verifier)"
@@ -5645,8 +6365,13 @@ status: done' handoff publish \
   --slice slice-lock --attempt 1 --agent-id "$lock_agent" --agent-type oso-applier \
   --hook-session hook-lock
 lock_wait_elapsed=$(( $(date +%s) - lock_wait_started ))
-case "$handoff_rc:$lock_wait_elapsed:$([ -d "$lock_dir" ] && printf retained || printf removed)" in
-  1:1:retained|1:2:retained|1:3:retained) lock_wait_status=bounded-retained ;;
+lock_wait_ceiling_seconds=10
+lock_wait_band=off-bound
+if [ "$lock_wait_elapsed" -ge 1 ] && [ "$lock_wait_elapsed" -le "$lock_wait_ceiling_seconds" ]; then
+  lock_wait_band=waited-in-bound
+fi
+case "$handoff_rc:$lock_wait_band:$([ -d "$lock_dir" ] && printf retained || printf removed)" in
+  1:waited-in-bound:retained) lock_wait_status=bounded-retained ;;
   *) lock_wait_status="rc=$handoff_rc elapsed=${lock_wait_elapsed}s lock=$([ -d "$lock_dir" ] && printf retained || printf removed)" ;;
 esac
 assert_equals "handoff lock acquisition is bounded and never reclaims an old live lock" \
@@ -6498,6 +7223,98 @@ else
 fi
 unset OSO_TEST_CURL_CALLS OSO_TEST_ADVERTISEMENT OSO_TEST_CURL_EXIT
 
+REANCHOR_CONTINUE_ORDER='continue it now rather than waiting'
+
+reanchor_input() {
+  printf '{"session_id":"%s","cwd":"%s","hook_event_name":"SessionStart","source":"%s"}' \
+    "${2:-$SESSION}" "$REPO_ROOT" "$1"
+}
+
+reanchor_verdict() {
+  run_hook reanchor-after-compact.sh "$1"
+  if [ -n "$hook_problem" ]; then
+    printf 'crashed:%s' "$hook_problem"
+  elif [ -z "$hook_stdout" ]; then
+    printf 'silent'
+  else
+    printf 'speaks'
+  fi
+}
+
+arm_compacted_slice() {
+  rm -f "$REPO_STATE"
+  oso-state --session "$SESSION" set mode=plan active_slice=3 >/dev/null
+}
+
+rm -rf "$STATE_DIR/runs"
+arm_compacted_slice
+run_hook reanchor-after-compact.sh "$(reanchor_input compact)"
+reanchor_position_unnamed=""
+for reanchor_position in 'mem_search oso/index' mem_get_observation 'NEXT:' 'oso-state show' \
+  "$JOURNAL_DIR/run.log" 'oso-state journal'; do
+  case "$hook_stdout" in
+    *"$reanchor_position"*) ;;
+    *) reanchor_position_unnamed="$reanchor_position_unnamed|$reanchor_position" ;;
+  esac
+done
+assert_equals "a compacted session is handed back every position source that outlived its window" \
+  "" "$reanchor_position_unnamed"
+case "$hook_stdout" in
+  *'"hookEventName":"SessionStart"'*'"additionalContext"'*) reanchor_context_envelope=present ;;
+  *) reanchor_context_envelope=missing ;;
+esac
+assert_equals "the re-anchor reaches the model as session-start context, never as bare stdout" \
+  "present" "$reanchor_context_envelope"
+assert_equals "an attended run is re-anchored, and without the order that belongs to an unattended one" \
+  "spoken|" \
+  "$([ -n "$hook_stdout" ] && echo spoken || echo silent)|$(printf '%s' "$hook_stdout" | grep -oF "$REANCHOR_CONTINUE_ORDER" || true)"
+
+rm -f "$REPO_STATE"
+oso-state --session "$SESSION" set auto=running auto_change=auto-continuity >/dev/null
+run_hook reanchor-after-compact.sh "$(reanchor_input compact)"
+reanchor_unattended_read=""
+for reanchor_order in "$REANCHOR_CONTINUE_ORDER" park "$AUTO_JOURNAL"; do
+  case "$hook_stdout" in
+    *"$reanchor_order"*) reanchor_unattended_read="$reanchor_unattended_read|$reanchor_order" ;;
+  esac
+done
+assert_equals "an unattended run is told to keep going, to park what needs the operator, and where its own journal is" \
+  "|$REANCHOR_CONTINUE_ORDER|park|$AUTO_JOURNAL" "$reanchor_unattended_read"
+
+oso-state --session "$SESSION" set auto_change=../escape >/dev/null
+run_hook reanchor-after-compact.sh "$(reanchor_input compact)"
+assert_equals "a change slug the reader refuses re-anchors on the fallback journal, never on the slug itself" \
+  "$JOURNAL_DIR/run.log|" \
+  "$(printf '%s' "$hook_stdout" | grep -oF "$JOURNAL_DIR/run.log" || true)|$(printf '%s' "$hook_stdout" | grep -oF '../escape' || true)"
+
+oso-state --session "$SESSION" set auto_change=auto-continuity >/dev/null
+reanchor_start_verdicts=""
+for reanchor_start in startup resume clear; do
+  reanchor_start_verdicts="$reanchor_start_verdicts $(reanchor_verdict "$(reanchor_input "$reanchor_start")")"
+done
+reanchor_start_verdicts="$reanchor_start_verdicts $(reanchor_verdict \
+  "$(printf '{"session_id":"%s","cwd":"%s","hook_event_name":"SessionStart"}' "$SESSION" "$REPO_ROOT")")"
+assert_equals "every session start that is not a compaction stays silent, however live the run is" \
+  "silent silent silent silent" "${reanchor_start_verdicts# }"
+
+oso-state --session "$SESSION" clear
+reanchor_uncertain_verdicts=" $(reanchor_verdict "$(reanchor_input compact)")"
+oso-state --session "$SESSION" set mode=plan active_slice=none >/dev/null
+reanchor_uncertain_verdicts="$reanchor_uncertain_verdicts $(reanchor_verdict "$(reanchor_input compact)")"
+arm_compacted_slice
+reanchor_uncertain_verdicts="$reanchor_uncertain_verdicts $(reanchor_verdict "$(reanchor_input compact another-session)")"
+printf 'this file is not state at all\n' > "$REPO_STATE"
+reanchor_uncertain_verdicts="$reanchor_uncertain_verdicts $(reanchor_verdict "$(reanchor_input compact)")"
+rm -f "$REPO_STATE"
+mkdir -p "$REPO_STATE"
+reanchor_uncertain_verdicts="$reanchor_uncertain_verdicts $(reanchor_verdict "$(reanchor_input compact)")"
+rmdir "$REPO_STATE"
+assert_equals "no state, a disarmed slice, a foreign session, a garbage file and an unreadable path all leave a compaction silent" \
+  "silent silent silent silent silent" "${reanchor_uncertain_verdicts# }"
+
+rm -rf "$STATE_DIR/runs"
+oso-state --session "$SESSION" clear >/dev/null 2>&1 || true
+
 # --- Commit gate: one table per question the matcher has to answer -----------
 # A table line is a whole case, and the command is its name: the point of these
 # is coverage of shapes, and a hand-written label per line would only repeat the
@@ -6676,14 +7493,13 @@ man git-commit
 NO_FRICTION_TABLE
 
 # Pinned so nobody reads the gated verb set as "everything that writes": these
-# rewrite history or publish it and this gate lets every one of them through.
+# rewrite history and this gate lets every one of them through.
 assert_every assert_allows "not gated" <<'NOT_GATED_TABLE'
 git revert HEAD
 git merge feature
 git rebase main
 git cherry-pick abc123
 git am patch.eml
-git push origin main
 git stash
 NOT_GATED_TABLE
 
@@ -7009,10 +7825,15 @@ if [ "$longest_event" -le 350 ]; then
 else
   echo "FAIL: an event line ran to $longest_event characters"; fail=$((fail + 1))
 fi
-case "$(ls -l "$events_log" | cut -c1-10)" in
-  -rw-------) echo "ok: the event log is owner-only, like the state files"; pass=$((pass + 1)) ;;
-  *) echo "FAIL: the event log is $(ls -l "$events_log" | cut -c1-10), and it carries command text"; fail=$((fail + 1)) ;;
-esac
+if [ "$POSIX_MODES_ARE_EMULATED" = true ]; then
+  echo "skip: exact POSIX mode probes are not reliable on this host's mounts, so the event log has no mode to answer with"
+  skipped=$((skipped + 1))
+else
+  case "$(ls -l "$events_log" | cut -c1-10)" in
+    -rw-------) echo "ok: the event log is owner-only, like the state files"; pass=$((pass + 1)) ;;
+    *) echo "FAIL: the event log is $(ls -l "$events_log" | cut -c1-10), and it carries command text"; fail=$((fail + 1)) ;;
+  esac
+fi
 
 # --- Reader parity: jq and the fallback hand the gate the same text ----------
 # A fixture table only proves the platform it ran on unless both readers hand the
@@ -7511,6 +8332,80 @@ crlf_artifact_state="$([ -e "$HOME/.claude/$CRLF_LEGACY_ARTIFACT" ] && echo stan
 assert_equals "a CRLF manifest still removes the artifact it names" \
   "removed 1 / gone" "$crlf_removed_count / $crlf_artifact_state"
 
+if ! command -v jq >/dev/null 2>&1; then
+  echo "skip: phase 7's settings.json rewrites — jq is absent here, and it is what performs them"
+  skipped=$((skipped + 1))
+else
+  SETTINGS_PHASE_HOME="$TEST_HOME/settings-phase-home"
+  SETTINGS_PHASE_FILE="$SETTINGS_PHASE_HOME/.claude/settings.json"
+  mkdir -p "$SETTINGS_PHASE_HOME/.claude"
+
+  phase_seven_rewrite_over() {
+    local phase_function="$1" settings_fixture="$2"
+    rm -f "${SETTINGS_PHASE_FILE}.tmp"
+    printf '%s' "$settings_fixture" > "$SETTINGS_PHASE_FILE"
+    HOME="$SETTINGS_PHASE_HOME" bash -c '
+      installer="$1" rewrite="$2"
+      set --
+      . "$installer"
+      "$rewrite"
+    ' _ "$INSTALL_SH" "$phase_function" >/dev/null 2>&1 && printf 'survived' || printf 'died'
+    printf ' / %s' "$([ -e "${SETTINGS_PHASE_FILE}.tmp" ] && echo 'tmp left behind' || echo 'no tmp left')"
+  }
+
+  legacy_entry_removal_over() { phase_seven_rewrite_over remove_legacy_settings_entries "$1"; }
+  output_style_over() { phase_seven_rewrite_over ensure_output_style "$1"; }
+
+  no_hooks_settings='{"env":{"OSO_STATE_BIN":"/x/oso-state"},"outputStyle":"Oso"}'
+  no_hooks_verdict="$(legacy_entry_removal_over "$no_hooks_settings")"
+  assert_equals "a settings.json with no hooks block survives phase 7 with its keys intact" \
+    "survived / no tmp left / $(printf '%s' "$no_hooks_settings" | jq -Sc .)" \
+    "$no_hooks_verdict / $(jq -Sc . "$SETTINGS_PHASE_FILE" 2>/dev/null || echo unreadable)"
+
+  legacy_hooks_settings='{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"~/.claude/hooks/gentle-ai/clean-code-gate.sh"}]},{"matcher":"Edit","hooks":[{"type":"command","command":"block-edits-without-slice.sh"}]}],"SessionStart":[{"matcher":"*","hooks":[{"type":"command","command":"skill-registry-refresh.sh"}]}]}}'
+  legacy_hooks_verdict="$(legacy_entry_removal_over "$legacy_hooks_settings")"
+  assert_equals "phase 7 drops the legacy hook entries and keeps the plugin's own" \
+    "survived / no tmp left / "'{"hooks":{"PreToolUse":[{"hooks":[{"command":"block-edits-without-slice.sh","type":"command"}],"matcher":"Edit"}]}}' \
+    "$legacy_hooks_verdict / $(jq -Sc . "$SETTINGS_PHASE_FILE" 2>/dev/null || echo unreadable)"
+
+  malformed_settings='{"hooks":{"PreToolUse":[]},}'
+  malformed_verdict="$(legacy_entry_removal_over "$malformed_settings")"
+  assert_equals "a settings.json jq refuses ends phase 7 with the operator's file byte for byte" \
+    "survived / no tmp left / $malformed_settings" \
+    "$malformed_verdict / $(cat "$SETTINGS_PHASE_FILE")"
+
+  malformed_style_verdict="$(output_style_over "$malformed_settings")"
+  assert_equals "a settings.json jq refuses leaves the output style where it was rather than ending the install" \
+    "survived / no tmp left / $malformed_settings" \
+    "$malformed_style_verdict / $(cat "$SETTINGS_PHASE_FILE")"
+
+  foreign_style_settings='{"outputStyle":"Explanatory"}'
+  foreign_style_verdict="$(output_style_over "$foreign_style_settings")"
+  assert_equals "an output style the operator chose survives phase 7 untouched" \
+    "survived / no tmp left / $foreign_style_settings" \
+    "$foreign_style_verdict / $(cat "$SETTINGS_PHASE_FILE")"
+
+  absent_style_verdict="$(output_style_over '{"env":{}}')"
+  assert_equals "a settings.json with no style at all comes out of phase 7 pointing at Oso" \
+    "survived / no tmp left / Oso" \
+    "$absent_style_verdict / $(jq -r '.outputStyle' "$SETTINGS_PHASE_FILE")"
+
+  empty_removal_verdict="$(legacy_entry_removal_over '')"
+  assert_equals "a zero-byte settings.json is not what phase 7's hook cleanup writes back" \
+    "survived / no tmp left / 0" \
+    "$empty_removal_verdict / $(wc -c < "$SETTINGS_PHASE_FILE" | tr -d ' ')"
+
+  empty_style_verdict="$(output_style_over '')"
+  assert_equals "a zero-byte settings.json comes out of phase 7 pointing at Oso, never blank" \
+    "survived / no tmp left / Oso" \
+    "$empty_style_verdict / $(jq -r '.outputStyle' "$SETTINGS_PHASE_FILE" 2>/dev/null || echo blank)"
+
+  whitespace_style_verdict="$(output_style_over '   ')"
+  assert_equals "a whitespace-only settings.json is never blanked by the style write" \
+    "survived / no tmp left / 3" \
+    "$whitespace_style_verdict / $(wc -c < "$SETTINGS_PHASE_FILE" | tr -d ' ')"
+fi
+
 # --- A CRLF CLAUDE.md: one managed block, however the operator's editor writes -
 # ~/.claude/CLAUDE.md belongs to the OPERATOR, and a Windows editor rewrites it
 # CRLF, so the markers an earlier install wrote come back carrying a CR and a
@@ -7772,115 +8667,120 @@ rm -f "$WINGET_REFUSAL"
 # Spelled here rather than read out of install.sh, the way the state path and the
 # opt-out marker above are — a pin nobody asserts independently is a pin one edit
 # can quietly turn into `@latest`.
-EXPECTED_FALLOW_VERSION=3.14.0
-FALLOW_STUB_DIR="$TEST_HOME/fallow-stub"
-FALLOW_CALLS="$TEST_HOME/fallow-calls"
-FALLOW_VERDICT="$TEST_HOME/fallow-verdict"
-FALLOW_WIRED_ENTRY="$TEST_HOME/fallow-already-wired"
-FALLOW_FIXTURE_HOME="$TEST_HOME/fallow-home"
-mkdir -p "$FALLOW_STUB_DIR" "$FALLOW_FIXTURE_HOME"
-printf '#!/bin/sh\necho "npm $*" >> "%s"\nexit 0\n' "$FALLOW_CALLS" > "$FALLOW_STUB_DIR/npm"
-# The client an install meets on a machine that already has an entry: `mcp add`
-# refuses an existing one with exit 1 and a message that says "already", while
-# `mcp get` exits 0 for it whether or not the command behind it can be spawned —
-# so this stub answers the way the real client does, with the entry's own command
-# on a `  Command:` line among the other fields it prints. The entry fixture holds
-# that command; an empty one stands for a client that describes the entry without
-# naming a command at all.
-printf '%s\n' \
-  '#!/bin/sh' \
-  "echo \"claude \$*\" >> \"$FALLOW_CALLS\"" \
-  'case "$*" in' \
-  "  'mcp get fallow')" \
-  "    [ -f \"$FALLOW_WIRED_ENTRY\" ] || exit 1" \
-  "    wired=\"\$(cat \"$FALLOW_WIRED_ENTRY\")\"" \
-  '    echo "fallow:"' \
-  '    echo "  Scope: User config (available in all your projects)"' \
-  '    echo "  Type: stdio"' \
-  '    [ -z "$wired" ] || echo "  Command: $wired"' \
-  '    echo "  Args:"' \
-  '    ;;' \
-  "  'mcp add'*) if [ -f \"$FALLOW_WIRED_ENTRY\" ]; then" \
-  '                echo "already exists in user config" >&2; exit 1' \
-  '              fi ;;' \
-  'esac' \
-  'exit 0' > "$FALLOW_STUB_DIR/claude"
-chmod +x "$FALLOW_STUB_DIR/npm" "$FALLOW_STUB_DIR/claude"
-# The stub dir IS the PATH the wiring runs under, so the two text tools either side
-# of it needs are linked in: `cat` for the stub itself, `sed` for the read-back.
-# What the isolation is for is unchanged — no cargo, and no fallow-mcp.
-ln -sf "$(command -v cat)" "$FALLOW_STUB_DIR/cat"
-ln -sf "$(command -v sed)" "$FALLOW_STUB_DIR/sed"
+if [ "$RUNS_ON_WINDOWS_BASH" = true ]; then
+  echo "skip: the fallow wiring runs with its stub dir as its whole PATH, and the linked cat and sed in it are copies without their libraries, so neither the calls it made nor its verdict comes back to read"
+  skipped=$((skipped + 1))
+else
+  EXPECTED_FALLOW_VERSION=3.14.0
+  FALLOW_STUB_DIR="$TEST_HOME/fallow-stub"
+  FALLOW_CALLS="$TEST_HOME/fallow-calls"
+  FALLOW_VERDICT="$TEST_HOME/fallow-verdict"
+  FALLOW_WIRED_ENTRY="$TEST_HOME/fallow-already-wired"
+  FALLOW_FIXTURE_HOME="$TEST_HOME/fallow-home"
+  mkdir -p "$FALLOW_STUB_DIR" "$FALLOW_FIXTURE_HOME"
+  printf '#!/bin/sh\necho "npm $*" >> "%s"\nexit 0\n' "$FALLOW_CALLS" > "$FALLOW_STUB_DIR/npm"
+  # The client an install meets on a machine that already has an entry: `mcp add`
+  # refuses an existing one with exit 1 and a message that says "already", while
+  # `mcp get` exits 0 for it whether or not the command behind it can be spawned —
+  # so this stub answers the way the real client does, with the entry's own command
+  # on a `  Command:` line among the other fields it prints. The entry fixture holds
+  # that command; an empty one stands for a client that describes the entry without
+  # naming a command at all.
+  printf '%s\n' \
+    '#!/bin/sh' \
+    "echo \"claude \$*\" >> \"$FALLOW_CALLS\"" \
+    'case "$*" in' \
+    "  'mcp get fallow')" \
+    "    [ -f \"$FALLOW_WIRED_ENTRY\" ] || exit 1" \
+    "    wired=\"\$(cat \"$FALLOW_WIRED_ENTRY\")\"" \
+    '    echo "fallow:"' \
+    '    echo "  Scope: User config (available in all your projects)"' \
+    '    echo "  Type: stdio"' \
+    '    [ -z "$wired" ] || echo "  Command: $wired"' \
+    '    echo "  Args:"' \
+    '    ;;' \
+    "  'mcp add'*) if [ -f \"$FALLOW_WIRED_ENTRY\" ]; then" \
+    '                echo "already exists in user config" >&2; exit 1' \
+    '              fi ;;' \
+    'esac' \
+    'exit 0' > "$FALLOW_STUB_DIR/claude"
+  chmod +x "$FALLOW_STUB_DIR/npm" "$FALLOW_STUB_DIR/claude"
+  # The stub dir IS the PATH the wiring runs under, so the two text tools either side
+  # of it needs are linked in: `cat` for the stub itself, `sed` for the read-back.
+  # What the isolation is for is unchanged — no cargo, and no fallow-mcp.
+  ln -sf "$(command -v cat)" "$FALLOW_STUB_DIR/cat"
+  ln -sf "$(command -v sed)" "$FALLOW_STUB_DIR/sed"
 
-# One wiring, leaving behind every call it made in order and the verdict it
-# recorded — the two halves the cases below read separately. PATH is replaced AFTER
-# the source the way winget_provisioning does it: install.sh resolves its own
-# directory and stamps a backup name at source time, and neither `dirname` nor
-# `date` is in the stub dir. HOME is a fixture with no ~/.cargo and APPDATA is
-# emptied, so what the resolver answers is the bare name and not a fallow the
-# machine running this suite has.
-run_fallow_wiring() {
-  : > "$FALLOW_CALLS"
-  : > "$FALLOW_VERDICT"
-  bash -c '
-    installer="$1" stub_path="$2" fixture_home="$3" verdict="$4"
-    set --
-    . "$installer"
-    PATH="$stub_path"
-    HOME="$fixture_home"
-    APPDATA=""
-    wire_fallow
-    printf "%s\n" "${WIRING_SUMMARY[@]}" > "$verdict"
-  ' _ "$INSTALL_SH" "$FALLOW_STUB_DIR" "$FALLOW_FIXTURE_HOME" "$FALLOW_VERDICT" \
-    >/dev/null 2>&1 || true
-}
+  # One wiring, leaving behind every call it made in order and the verdict it
+  # recorded — the two halves the cases below read separately. PATH is replaced AFTER
+  # the source the way winget_provisioning does it: install.sh resolves its own
+  # directory and stamps a backup name at source time, and neither `dirname` nor
+  # `date` is in the stub dir. HOME is a fixture with no ~/.cargo and APPDATA is
+  # emptied, so what the resolver answers is the bare name and not a fallow the
+  # machine running this suite has.
+  run_fallow_wiring() {
+    : > "$FALLOW_CALLS"
+    : > "$FALLOW_VERDICT"
+    bash -c '
+      installer="$1" stub_path="$2" fixture_home="$3" verdict="$4"
+      set --
+      . "$installer"
+      PATH="$stub_path"
+      HOME="$fixture_home"
+      APPDATA=""
+      wire_fallow
+      printf "%s\n" "${WIRING_SUMMARY[@]}" > "$verdict"
+    ' _ "$INSTALL_SH" "$FALLOW_STUB_DIR" "$FALLOW_FIXTURE_HOME" "$FALLOW_VERDICT" \
+      >/dev/null 2>&1 || true
+  }
 
-fallow_wiring_calls() { run_fallow_wiring; cat "$FALLOW_CALLS"; }
-fallow_wiring_verdict() { run_fallow_wiring; cat "$FALLOW_VERDICT"; }
+  fallow_wiring_calls() { run_fallow_wiring; cat "$FALLOW_CALLS"; }
+  fallow_wiring_verdict() { run_fallow_wiring; cat "$FALLOW_VERDICT"; }
 
-rm -f "$FALLOW_WIRED_ENTRY"
-assert_equals "a host with no Rust gets fallow from its npm package at the pin, then wires it" \
-  "npm install --global fallow@$EXPECTED_FALLOW_VERSION
+  rm -f "$FALLOW_WIRED_ENTRY"
+  assert_equals "a host with no Rust gets fallow from its npm package at the pin, then wires it" \
+    "npm install --global fallow@$EXPECTED_FALLOW_VERSION
 claude mcp add --scope user fallow -- fallow-mcp" \
-  "$(fallow_wiring_calls)"
+    "$(fallow_wiring_calls)"
 
-# The other half of a pin: a run that returns "already wired" the moment any entry
-# exists never installs anything, so the pinned version only ever lands on a clean
-# machine — which is the one machine nobody can go and look at. What the pin governs
-# is the package; which command the entry names is the next three cases.
-printf '%s\n' fallow-mcp > "$FALLOW_WIRED_ENTRY"
-assert_equals "a fallow already wired still gets the pinned package, so the pin is not for clean machines only" \
-  "npm install --global fallow@$EXPECTED_FALLOW_VERSION
+  # The other half of a pin: a run that returns "already wired" the moment any entry
+  # exists never installs anything, so the pinned version only ever lands on a clean
+  # machine — which is the one machine nobody can go and look at. What the pin governs
+  # is the package; which command the entry names is the next three cases.
+  printf '%s\n' fallow-mcp > "$FALLOW_WIRED_ENTRY"
+  assert_equals "a fallow already wired still gets the pinned package, so the pin is not for clean machines only" \
+    "npm install --global fallow@$EXPECTED_FALLOW_VERSION
 claude mcp add --scope user fallow -- fallow-mcp
 claude mcp get fallow" \
-  "$(fallow_wiring_calls)"
+    "$(fallow_wiring_calls)"
 
-# What that `mcp get` is FOR, and it is not the exit code: the client returns 0 for
-# an entry whose command cannot be spawned, so an existence test reports every stale
-# entry as wired. verify.sh counts this entry connecting now, and `mcp add` refuses
-# to touch one it did not write — so "already wired" over a stale command is a red
-# no re-run of the installer can clear. The command is read back and compared.
-assert_equals "an entry already naming the resolved command is wired, and the verdict says which" \
-  "OK|fallow|already wired: fallow-mcp" "$(fallow_wiring_verdict)"
+  # What that `mcp get` is FOR, and it is not the exit code: the client returns 0 for
+  # an entry whose command cannot be spawned, so an existence test reports every stale
+  # entry as wired. verify.sh counts this entry connecting now, and `mcp add` refuses
+  # to touch one it did not write — so "already wired" over a stale command is a red
+  # no re-run of the installer can clear. The command is read back and compared.
+  assert_equals "an entry already naming the resolved command is wired, and the verdict says which" \
+    "OK|fallow|already wired: fallow-mcp" "$(fallow_wiring_verdict)"
 
-# The Windows shape this whole change exists for: an earlier run wired the bare name
-# or the .ps1 beside it, neither of which a native Windows client can spawn. Both
-# commands belong in the report — an operator cannot repoint an entry they are not
-# told the target of — and the remedy has to be the two-step, because the installer
-# takes this same refusal every time it runs.
-printf '%s\n' 'C:/Users/dev/AppData/Roaming/npm/fallow-mcp.ps1' > "$FALLOW_WIRED_ENTRY"
-assert_equals "an entry naming a different command fails, with both commands and the two-step repoint" \
-  "FAILED|fallow|wired to C:/Users/dev/AppData/Roaming/npm/fallow-mcp.ps1, not the fallow-mcp this host resolves — no re-run of this installer can repoint it — fix: claude mcp remove fallow -s user && claude mcp add --scope user fallow -- fallow-mcp" \
-  "$(fallow_wiring_verdict)"
+  # The Windows shape this whole change exists for: an earlier run wired the bare name
+  # or the .ps1 beside it, neither of which a native Windows client can spawn. Both
+  # commands belong in the report — an operator cannot repoint an entry they are not
+  # told the target of — and the remedy has to be the two-step, because the installer
+  # takes this same refusal every time it runs.
+  printf '%s\n' 'C:/Users/dev/AppData/Roaming/npm/fallow-mcp.ps1' > "$FALLOW_WIRED_ENTRY"
+  assert_equals "an entry naming a different command fails, with both commands and the two-step repoint" \
+    "FAILED|fallow|wired to C:/Users/dev/AppData/Roaming/npm/fallow-mcp.ps1, not the fallow-mcp this host resolves — no re-run of this installer can repoint it — fix: claude mcp remove fallow -s user && claude mcp add --scope user fallow -- fallow-mcp" \
+    "$(fallow_wiring_verdict)"
 
-# An entry the client describes without naming a command reads as nothing read back,
-# and the one safe reading of nothing is a problem — claiming success there is the
-# exact shape this case exists to keep out.
-: > "$FALLOW_WIRED_ENTRY"
-assert_equals "an entry whose command cannot be read back is a failure, never a silent ok" \
-  "FAILED|fallow|mcp add failed: already exists in user config — fix: claude mcp add --scope user fallow -- fallow-mcp" \
-  "$(fallow_wiring_verdict)"
-rm -f "$FALLOW_WIRED_ENTRY"
+  # An entry the client describes without naming a command reads as nothing read back,
+  # and the one safe reading of nothing is a problem — claiming success there is the
+  # exact shape this case exists to keep out.
+  : > "$FALLOW_WIRED_ENTRY"
+  assert_equals "an entry whose command cannot be read back is a failure, never a silent ok" \
+    "FAILED|fallow|mcp add failed: already exists in user config — fix: claude mcp add --scope user fallow -- fallow-mcp" \
+    "$(fallow_wiring_verdict)"
+  rm -f "$FALLOW_WIRED_ENTRY"
+fi
 
 # --- engram: the binary a plugin install never puts on the machine ------------
 # `claude plugin install engram@engram` brings skills, hooks and a .mcp.json whose
@@ -7937,7 +8837,10 @@ for engram_tool in $ENGRAM_FIXTURE_TOOLS; do
 done
 [ -n "$engram_digest_tool" ] || engram_tools_ready=no
 
-if [ "$engram_tools_ready" = no ]; then
+if [ "$RUNS_ON_WINDOWS_BASH" = true ]; then
+  echo "skip: engram provisioning — the fixture PATH is a farm of linked coreutils, and where ln -s copies them each copy is an interpreter without its libraries, so nothing on that PATH can answer"
+  skipped=$((skipped + 1))
+elif [ "$engram_tools_ready" = no ]; then
   echo "skip: engram provisioning — this host lacks a SHA-256 tool or one of: $ENGRAM_FIXTURE_TOOLS"
   skipped=$((skipped + 1))
 else
@@ -8117,64 +9020,69 @@ fi
 # file — so ONE table judges both, the way the path normalizer's does above:
 # install.sh's copy arrives with the sourced script, verify.sh's is read out of the
 # shipped file.
-ENGRAM_WINDOWS_STUB_DIR="$TEST_HOME/engram-windows-stub"
-ENGRAM_CLIENT_BIN_DIR="$TEST_HOME/engram-client-bin"
-ENGRAM_CLIENT_EMPTY_DIR="$TEST_HOME/engram-client-empty"
-ENGRAM_CLIENT_PATH_FILE="$TEST_HOME/engram-client-path"
-mkdir -p "$ENGRAM_WINDOWS_STUB_DIR" "$ENGRAM_CLIENT_BIN_DIR" "$ENGRAM_CLIENT_EMPTY_DIR"
-printf '%s\n' '#!/bin/sh' 'echo MINGW64_NT-10.0' > "$ENGRAM_WINDOWS_STUB_DIR/uname"
-printf '%s\n' '#!/bin/sh' "cat \"$ENGRAM_CLIENT_PATH_FILE\"" \
-  > "$ENGRAM_WINDOWS_STUB_DIR/powershell"
-# The engram.exe only THIS shell can see, in the directory that is the shell's
-# whole PATH: a probe that reads $PATH answers with it, and is wrong every time.
-printf '%s\n' '#!/bin/sh' 'echo "engram from the shell PATH"' \
-  > "$ENGRAM_WINDOWS_STUB_DIR/engram.exe"
-printf '%s\n' '#!/bin/sh' 'echo "engram from the client PATH"' \
-  > "$ENGRAM_CLIENT_BIN_DIR/engram.exe"
-chmod +x "$ENGRAM_WINDOWS_STUB_DIR/uname" "$ENGRAM_WINDOWS_STUB_DIR/powershell" \
-  "$ENGRAM_WINDOWS_STUB_DIR/engram.exe" "$ENGRAM_CLIENT_BIN_DIR/engram.exe"
-ln -sf "$(command -v cat)" "$ENGRAM_WINDOWS_STUB_DIR/cat"
-
-engram_probe_answer() {
-  local probe_source="$1" client_entries="$2"
-  printf '%s\n' "$client_entries" > "$ENGRAM_CLIENT_PATH_FILE"
-  bash -c '
-    probe_source="$1" stub_path="$2"
-    set --
-    eval "$probe_source"
-    PATH="$stub_path"
-    engram_client_binary
-  ' _ "$probe_source" "$ENGRAM_WINDOWS_STUB_DIR" 2>/dev/null
-}
-
-# Three readings of one probe: the entry that holds the binary, an entry that does
-# not while the shell's PATH does, and the same directory as Windows hands it back
-# — backslashes, a trailing separator, and the carriage return PowerShell ends its
-# lines with, which unstripped becomes part of the directory name.
-engram_probe_table() {
-  local probe_source="$1" found unseen spelled
-  found="$(engram_probe_answer "$probe_source" "$ENGRAM_CLIENT_EMPTY_DIR
-$ENGRAM_CLIENT_BIN_DIR")"
-  unseen="$(engram_probe_answer "$probe_source" "$ENGRAM_CLIENT_EMPTY_DIR")"
-  spelled="$(engram_probe_answer "$probe_source" "$(windows_spelling_of "$ENGRAM_CLIENT_BIN_DIR")$(printf '\r')")"
-  printf '%s / %s / %s' "${found:-none}" "${unseen:-none}" "${spelled:-none}"
-}
-
-ENGRAM_PROBE_ANSWERS="$ENGRAM_CLIENT_BIN_DIR/engram.exe / none / $ENGRAM_CLIENT_BIN_DIR/engram.exe"
-assert_equals "install.sh's engram probe answers about the client's PATH, never this shell's" \
-  "$ENGRAM_PROBE_ANSWERS" "$(engram_probe_table ". \"$INSTALL_SH\"")"
-
-verify_engram_probe="$(sed -n \
-  -e '/^running_on_windows()/,/^}/p' \
-  -e '/^engram_binary_name()/,/^}/p' \
-  -e '/^client_path_entries()/,/^}/p' \
-  -e '/^engram_client_binary()/,/^}/p' "$REPO_ROOT/bootstrap/verify.sh")"
-if [ -z "$verify_engram_probe" ]; then
-  echo "FAIL: bootstrap/verify.sh defines no engram client probe, so its half of the comparison has nothing to test"
-  fail=$((fail + 1))
+if [ "$RUNS_ON_WINDOWS_BASH" = true ]; then
+  echo "skip: the client-PATH probe's stub dir is the shell's whole PATH and holds a linked cat, which ln-as-copy leaves without its libraries, so the PowerShell stub hands back no client PATH to read"
+  skipped=$((skipped + 1))
 else
-  assert_equals "verify.sh's own copy of that probe answers the same table identically" \
-    "$ENGRAM_PROBE_ANSWERS" "$(engram_probe_table "$verify_engram_probe")"
+  ENGRAM_WINDOWS_STUB_DIR="$TEST_HOME/engram-windows-stub"
+  ENGRAM_CLIENT_BIN_DIR="$TEST_HOME/engram-client-bin"
+  ENGRAM_CLIENT_EMPTY_DIR="$TEST_HOME/engram-client-empty"
+  ENGRAM_CLIENT_PATH_FILE="$TEST_HOME/engram-client-path"
+  mkdir -p "$ENGRAM_WINDOWS_STUB_DIR" "$ENGRAM_CLIENT_BIN_DIR" "$ENGRAM_CLIENT_EMPTY_DIR"
+  printf '%s\n' '#!/bin/sh' 'echo MINGW64_NT-10.0' > "$ENGRAM_WINDOWS_STUB_DIR/uname"
+  printf '%s\n' '#!/bin/sh' "cat \"$ENGRAM_CLIENT_PATH_FILE\"" \
+    > "$ENGRAM_WINDOWS_STUB_DIR/powershell"
+  # The engram.exe only THIS shell can see, in the directory that is the shell's
+  # whole PATH: a probe that reads $PATH answers with it, and is wrong every time.
+  printf '%s\n' '#!/bin/sh' 'echo "engram from the shell PATH"' \
+    > "$ENGRAM_WINDOWS_STUB_DIR/engram.exe"
+  printf '%s\n' '#!/bin/sh' 'echo "engram from the client PATH"' \
+    > "$ENGRAM_CLIENT_BIN_DIR/engram.exe"
+  chmod +x "$ENGRAM_WINDOWS_STUB_DIR/uname" "$ENGRAM_WINDOWS_STUB_DIR/powershell" \
+    "$ENGRAM_WINDOWS_STUB_DIR/engram.exe" "$ENGRAM_CLIENT_BIN_DIR/engram.exe"
+  ln -sf "$(command -v cat)" "$ENGRAM_WINDOWS_STUB_DIR/cat"
+
+  engram_probe_answer() {
+    local probe_source="$1" client_entries="$2"
+    printf '%s\n' "$client_entries" > "$ENGRAM_CLIENT_PATH_FILE"
+    bash -c '
+      probe_source="$1" stub_path="$2"
+      set --
+      eval "$probe_source"
+      PATH="$stub_path"
+      engram_client_binary
+    ' _ "$probe_source" "$ENGRAM_WINDOWS_STUB_DIR" 2>/dev/null
+  }
+
+  # Three readings of one probe: the entry that holds the binary, an entry that does
+  # not while the shell's PATH does, and the same directory as Windows hands it back
+  # — backslashes, a trailing separator, and the carriage return PowerShell ends its
+  # lines with, which unstripped becomes part of the directory name.
+  engram_probe_table() {
+    local probe_source="$1" found unseen spelled
+    found="$(engram_probe_answer "$probe_source" "$ENGRAM_CLIENT_EMPTY_DIR
+$ENGRAM_CLIENT_BIN_DIR")"
+    unseen="$(engram_probe_answer "$probe_source" "$ENGRAM_CLIENT_EMPTY_DIR")"
+    spelled="$(engram_probe_answer "$probe_source" "$(windows_spelling_of "$ENGRAM_CLIENT_BIN_DIR")$(printf '\r')")"
+    printf '%s / %s / %s' "${found:-none}" "${unseen:-none}" "${spelled:-none}"
+  }
+
+  ENGRAM_PROBE_ANSWERS="$ENGRAM_CLIENT_BIN_DIR/engram.exe / none / $ENGRAM_CLIENT_BIN_DIR/engram.exe"
+  assert_equals "install.sh's engram probe answers about the client's PATH, never this shell's" \
+    "$ENGRAM_PROBE_ANSWERS" "$(engram_probe_table ". \"$INSTALL_SH\"")"
+
+  verify_engram_probe="$(sed -n \
+    -e '/^running_on_windows()/,/^}/p' \
+    -e '/^engram_binary_name()/,/^}/p' \
+    -e '/^client_path_entries()/,/^}/p' \
+    -e '/^engram_client_binary()/,/^}/p' "$REPO_ROOT/bootstrap/verify.sh")"
+  if [ -z "$verify_engram_probe" ]; then
+    echo "FAIL: bootstrap/verify.sh defines no engram client probe, so its half of the comparison has nothing to test"
+    fail=$((fail + 1))
+  else
+    assert_equals "verify.sh's own copy of that probe answers the same table identically" \
+      "$ENGRAM_PROBE_ANSWERS" "$(engram_probe_table "$verify_engram_probe")"
+  fi
 fi
 
 # --- Resolving is half the answer: the binary also has to run -----------------
@@ -8217,65 +9125,70 @@ assert_equals "verify.sh holds that same bar, byte for byte" \
 # the operator with no context7 at all and a summary that said OK.
 # The stub PATH deliberately carries no npx, so a verdict still derived from its
 # presence could not read OK on any of these cases.
-CONTEXT7_STUB_DIR="$TEST_HOME/context7-stub"
-CONTEXT7_CALLS="$TEST_HOME/context7-calls"
-CONTEXT7_LIST="$TEST_HOME/context7-mcp-list"
-CONTEXT7_VERDICT="$TEST_HOME/context7-verdict"
-mkdir -p "$CONTEXT7_STUB_DIR"
-printf '%s\n' \
-  '#!/bin/sh' \
-  "echo \"claude \$*\" >> \"$CONTEXT7_CALLS\"" \
-  'case "$*" in' \
-  "  'mcp list') cat \"$CONTEXT7_LIST\" ;;" \
-  'esac' \
-  'exit 0' > "$CONTEXT7_STUB_DIR/claude"
-chmod +x "$CONTEXT7_STUB_DIR/claude"
-ln -sf "$(command -v cat)" "$CONTEXT7_STUB_DIR/cat"
-ln -sf "$(command -v grep)" "$CONTEXT7_STUB_DIR/grep"
-ln -sf "$(command -v head)" "$CONTEXT7_STUB_DIR/head"
+if [ "$RUNS_ON_WINDOWS_BASH" = true ]; then
+  echo "skip: the context7 migration runs with its stub dir as its whole PATH, and the linked cat, grep and head in it are copies without their libraries, so no migration case has a PATH that answers"
+  skipped=$((skipped + 1))
+else
+  CONTEXT7_STUB_DIR="$TEST_HOME/context7-stub"
+  CONTEXT7_CALLS="$TEST_HOME/context7-calls"
+  CONTEXT7_LIST="$TEST_HOME/context7-mcp-list"
+  CONTEXT7_VERDICT="$TEST_HOME/context7-verdict"
+  mkdir -p "$CONTEXT7_STUB_DIR"
+  printf '%s\n' \
+    '#!/bin/sh' \
+    "echo \"claude \$*\" >> \"$CONTEXT7_CALLS\"" \
+    'case "$*" in' \
+    "  'mcp list') cat \"$CONTEXT7_LIST\" ;;" \
+    'esac' \
+    'exit 0' > "$CONTEXT7_STUB_DIR/claude"
+  chmod +x "$CONTEXT7_STUB_DIR/claude"
+  ln -sf "$(command -v cat)" "$CONTEXT7_STUB_DIR/cat"
+  ln -sf "$(command -v grep)" "$CONTEXT7_STUB_DIR/grep"
+  ln -sf "$(command -v head)" "$CONTEXT7_STUB_DIR/head"
 
-run_context7_migration() {
-  printf '%s\n' "$1" > "$CONTEXT7_LIST"
-  : > "$CONTEXT7_CALLS"
-  : > "$CONTEXT7_VERDICT"
-  bash -c '
-    installer="$1" stub_path="$2" verdict="$3"
-    set --
-    . "$installer"
-    PATH="$stub_path"
-    migrate_context7
-    printf "%s\n" "${WIRING_SUMMARY[@]}" > "$verdict"
-  ' _ "$INSTALL_SH" "$CONTEXT7_STUB_DIR" "$CONTEXT7_VERDICT" >/dev/null 2>&1 || true
-}
+  run_context7_migration() {
+    printf '%s\n' "$1" > "$CONTEXT7_LIST"
+    : > "$CONTEXT7_CALLS"
+    : > "$CONTEXT7_VERDICT"
+    bash -c '
+      installer="$1" stub_path="$2" verdict="$3"
+      set --
+      . "$installer"
+      PATH="$stub_path"
+      migrate_context7
+      printf "%s\n" "${WIRING_SUMMARY[@]}" > "$verdict"
+    ' _ "$INSTALL_SH" "$CONTEXT7_STUB_DIR" "$CONTEXT7_VERDICT" >/dev/null 2>&1 || true
+  }
 
-context7_legacy_entry_state() {
-  case "$(cat "$CONTEXT7_CALLS")" in
-    *'mcp remove --scope user context7'*) printf 'deleted' ;;
-    *) printf 'left standing' ;;
-  esac
-}
+  context7_legacy_entry_state() {
+    case "$(cat "$CONTEXT7_CALLS")" in
+      *'mcp remove --scope user context7'*) printf 'deleted' ;;
+      *) printf 'left standing' ;;
+    esac
+  }
 
-# The legacy entry answering on its own is exactly the state that must not read as
-# its own replacement: it is the bare name, and the plugin's server renders under a
-# `plugin:` prefix.
-CONTEXT7_LEGACY_ONLY_LIST='context7: npx -y @upstash/context7-mcp - ✓ Connected'
-CONTEXT7_REGISTERED_LIST='plugin:oso-code:context7: npx -y @upstash/context7-mcp - ✗ Failed to connect'
-CONTEXT7_CONNECTED_LIST='plugin:oso-code:context7: npx -y @upstash/context7-mcp - ✓ Connected'
+  # The legacy entry answering on its own is exactly the state that must not read as
+  # its own replacement: it is the bare name, and the plugin's server renders under a
+  # `plugin:` prefix.
+  CONTEXT7_LEGACY_ONLY_LIST='context7: npx -y @upstash/context7-mcp - ✓ Connected'
+  CONTEXT7_REGISTERED_LIST='plugin:oso-code:context7: npx -y @upstash/context7-mcp - ✗ Failed to connect'
+  CONTEXT7_CONNECTED_LIST='plugin:oso-code:context7: npx -y @upstash/context7-mcp - ✓ Connected'
 
-run_context7_migration "$CONTEXT7_LEGACY_ONLY_LIST"
-assert_equals "an unregistered replacement never costs the operator the context7 they already have" \
-  "left standing / FAILED|context7|the oso-code plugin's context7 server is not registered with the client, so a legacy user-scope entry, if any, was left standing rather than removed — fix: claude plugin install oso-code@oso-code, restart Claude Code, then re-run this installer" \
-  "$(context7_legacy_entry_state) / $(cat "$CONTEXT7_VERDICT")"
+  run_context7_migration "$CONTEXT7_LEGACY_ONLY_LIST"
+  assert_equals "an unregistered replacement never costs the operator the context7 they already have" \
+    "left standing / FAILED|context7|the oso-code plugin's context7 server is not registered with the client, so a legacy user-scope entry, if any, was left standing rather than removed — fix: claude plugin install oso-code@oso-code, restart Claude Code, then re-run this installer" \
+    "$(context7_legacy_entry_state) / $(cat "$CONTEXT7_VERDICT")"
 
-run_context7_migration "$CONTEXT7_REGISTERED_LIST"
-assert_equals "a replacement registered but not answering is no reason to delete either, and the report quotes what the client said" \
-  "left standing / FAILED|context7|the oso-code plugin's context7 is registered but did not answer ($CONTEXT7_REGISTERED_LIST), so a legacy user-scope entry, if any, was left standing rather than removed — fix: install Node.js (context7 starts through npx), restart Claude Code, then re-run this installer" \
-  "$(context7_legacy_entry_state) / $(cat "$CONTEXT7_VERDICT")"
+  run_context7_migration "$CONTEXT7_REGISTERED_LIST"
+  assert_equals "a replacement registered but not answering is no reason to delete either, and the report quotes what the client said" \
+    "left standing / FAILED|context7|the oso-code plugin's context7 is registered but did not answer ($CONTEXT7_REGISTERED_LIST), so a legacy user-scope entry, if any, was left standing rather than removed — fix: install Node.js (context7 starts through npx), restart Claude Code, then re-run this installer" \
+    "$(context7_legacy_entry_state) / $(cat "$CONTEXT7_VERDICT")"
 
-run_context7_migration "$CONTEXT7_CONNECTED_LIST"
-assert_equals "a replacement the client actually started is what the deletion waits for, and the verdict owes nothing to npx" \
-  "deleted / OK|context7|ships with the oso-code plugin, registered and connected" \
-  "$(context7_legacy_entry_state) / $(cat "$CONTEXT7_VERDICT")"
+  run_context7_migration "$CONTEXT7_CONNECTED_LIST"
+  assert_equals "a replacement the client actually started is what the deletion waits for, and the verdict owes nothing to npx" \
+    "deleted / OK|context7|ships with the oso-code plugin, registered and connected" \
+    "$(context7_legacy_entry_state) / $(cat "$CONTEXT7_VERDICT")"
+fi
 
 # Every MCP check the verifier can fail hands back something to run. engram's was
 # the only failure in that file carrying no remediation at all, and context7's went
@@ -8339,44 +9252,49 @@ fi
 # summary reporting the exit code claims something the verifier measures another
 # way, which is the engram shape at a smaller scale. The opt-out marker cases
 # above cover the choice; these two cover what the line SAYS about the install.
-IMPECCABLE_STUB_DIR="$TEST_HOME/impeccable-stub"
-IMPECCABLE_PLUGIN_LIST="$TEST_HOME/impeccable-plugin-list"
-IMPECCABLE_VERDICT="$TEST_HOME/impeccable-verdict"
-IMPECCABLE_FIXTURE_HOME="$TEST_HOME/impeccable-home"
-mkdir -p "$IMPECCABLE_STUB_DIR" "$IMPECCABLE_FIXTURE_HOME"
-printf '%s\n' \
-  '#!/bin/sh' \
-  'case "$*" in' \
-  "  'plugin list') cat \"$IMPECCABLE_PLUGIN_LIST\" ;;" \
-  'esac' \
-  'exit 0' > "$IMPECCABLE_STUB_DIR/claude"
-chmod +x "$IMPECCABLE_STUB_DIR/claude"
-ln -sf "$(command -v cat)" "$IMPECCABLE_STUB_DIR/cat"
-ln -sf "$(command -v grep)" "$IMPECCABLE_STUB_DIR/grep"
-ln -sf "$(command -v rm)" "$IMPECCABLE_STUB_DIR/rm"
+if [ "$RUNS_ON_WINDOWS_BASH" = true ]; then
+  echo "skip: the impeccable wiring runs with its stub dir as its whole PATH, and the linked cat, grep and rm in it are copies without their libraries, so no verdict comes back to read"
+  skipped=$((skipped + 1))
+else
+  IMPECCABLE_STUB_DIR="$TEST_HOME/impeccable-stub"
+  IMPECCABLE_PLUGIN_LIST="$TEST_HOME/impeccable-plugin-list"
+  IMPECCABLE_VERDICT="$TEST_HOME/impeccable-verdict"
+  IMPECCABLE_FIXTURE_HOME="$TEST_HOME/impeccable-home"
+  mkdir -p "$IMPECCABLE_STUB_DIR" "$IMPECCABLE_FIXTURE_HOME"
+  printf '%s\n' \
+    '#!/bin/sh' \
+    'case "$*" in' \
+    "  'plugin list') cat \"$IMPECCABLE_PLUGIN_LIST\" ;;" \
+    'esac' \
+    'exit 0' > "$IMPECCABLE_STUB_DIR/claude"
+  chmod +x "$IMPECCABLE_STUB_DIR/claude"
+  ln -sf "$(command -v cat)" "$IMPECCABLE_STUB_DIR/cat"
+  ln -sf "$(command -v grep)" "$IMPECCABLE_STUB_DIR/grep"
+  ln -sf "$(command -v rm)" "$IMPECCABLE_STUB_DIR/rm"
 
-impeccable_wiring_verdict() {
-  printf '%s\n' "$1" > "$IMPECCABLE_PLUGIN_LIST"
-  : > "$IMPECCABLE_VERDICT"
-  bash -c '
-    installer="$1" stub_path="$2" fixture_home="$3" verdict="$4"
-    set --
-    . "$installer"
-    PATH="$stub_path"
-    HOME="$fixture_home"
-    wire_impeccable
-    printf "%s\n" "${WIRING_SUMMARY[@]}" > "$verdict"
-  ' _ "$INSTALL_SH" "$IMPECCABLE_STUB_DIR" "$IMPECCABLE_FIXTURE_HOME" "$IMPECCABLE_VERDICT" \
-    >/dev/null 2>&1 || true
-  cat "$IMPECCABLE_VERDICT"
-}
+  impeccable_wiring_verdict() {
+    printf '%s\n' "$1" > "$IMPECCABLE_PLUGIN_LIST"
+    : > "$IMPECCABLE_VERDICT"
+    bash -c '
+      installer="$1" stub_path="$2" fixture_home="$3" verdict="$4"
+      set --
+      . "$installer"
+      PATH="$stub_path"
+      HOME="$fixture_home"
+      wire_impeccable
+      printf "%s\n" "${WIRING_SUMMARY[@]}" > "$verdict"
+    ' _ "$INSTALL_SH" "$IMPECCABLE_STUB_DIR" "$IMPECCABLE_FIXTURE_HOME" "$IMPECCABLE_VERDICT" \
+      >/dev/null 2>&1 || true
+    cat "$IMPECCABLE_VERDICT"
+  }
 
-assert_equals "impeccable is reported installed only once the client lists it" \
-  "OK|impeccable (plugin)|installed" \
-  "$(impeccable_wiring_verdict 'impeccable@impeccable  v1.4.0  enabled')"
-assert_equals "an install the client cannot show is a failure here rather than a surprise in the verifier" \
-  "FAILED|impeccable (plugin)|the install reported success but the client lists no impeccable plugin — fix: claude plugin install impeccable@impeccable, then restart Claude Code" \
-  "$(impeccable_wiring_verdict 'oso-code@oso-code  v0.19.0  enabled')"
+  assert_equals "impeccable is reported installed only once the client lists it" \
+    "OK|impeccable (plugin)|installed" \
+    "$(impeccable_wiring_verdict 'impeccable@impeccable  v1.4.0  enabled')"
+  assert_equals "an install the client cannot show is a failure here rather than a surprise in the verifier" \
+    "FAILED|impeccable (plugin)|the install reported success but the client lists no impeccable plugin — fix: claude plugin install impeccable@impeccable, then restart Claude Code" \
+    "$(impeccable_wiring_verdict 'oso-code@oso-code  v0.19.0  enabled')"
+fi
 
 # --- The flag surface: four flags, and the entry point that has to spell them --
 # install.sh makes an unknown flag a hard exit, and install.ps1 is the only way a
@@ -8839,6 +9757,13 @@ assert_equals "an install prunes the older backups its budget cannot hold and ke
   "1 / this run's own" \
   "$(count_claude_backups "$INSTALLER_RETENTION_HOME") / $retention_survivor"
 
+native_path_form() {
+  local posix_form
+  command -v cygpath >/dev/null 2>&1 || { printf '%s' "$1"; return; }
+  posix_form="$(cygpath -u "$1" 2>/dev/null)" || posix_form="$1"
+  cygpath -m "$posix_form" 2>/dev/null || printf '%s' "$1"
+}
+
 # --- The client env block: an absolute oso-state, and the Git Bash the hooks
 #     are spawned through ------------------------------------------------------
 # Two variables the client reads out of settings.json at the start of every
@@ -8936,15 +9861,15 @@ else
   client_env_hooks_before="$(jq -c '.hooks' "$CLIENT_ENV_SETTINGS")"
   publish_client_env_run "$CLIENT_ENV_GIT_BASH"
   assert_equals "the install publishes an absolute oso-state and the Git Bash the client spawns the hooks through" \
-    "$CLIENT_ENV_STATE_BIN / $CLIENT_ENV_GIT_BASH" \
-    "$(client_env_stored OSO_STATE_BIN) / $(client_env_stored CLAUDE_CODE_GIT_BASH_PATH)"
+    "$(native_path_form "$CLIENT_ENV_STATE_BIN") / $(native_path_form "$CLIENT_ENV_GIT_BASH")" \
+    "$(native_path_form "$(client_env_stored OSO_STATE_BIN)") / $(native_path_form "$(client_env_stored CLAUDE_CODE_GIT_BASH_PATH)")"
   # The published path is what a session RUNS, so it has to be runnable as it is
   # stored — not merely present in the file.
   assert_equals "the published oso-state runs from the spelling that was stored" \
     "runs" "$("$(client_env_stored OSO_STATE_BIN)" >/dev/null 2>&1 && echo runs || echo "does not run")"
   assert_equals "the summary names both values it published, and claims nothing else" \
-    "OK|oso-state path|every session reads OSO_STATE_BIN=$CLIENT_ENV_STATE_BIN
-OK|Git Bash path|published: $CLIENT_ENV_GIT_BASH" \
+    "OK|oso-state path|every session reads OSO_STATE_BIN=$(native_path_form "$CLIENT_ENV_STATE_BIN")
+OK|Git Bash path|published: $(native_path_form "$CLIENT_ENV_GIT_BASH")" \
     "$(cat "$CLIENT_ENV_VERDICT")"
   # The whole reason both writes are on this side rather than in install.ps1: a
   # PowerShell 5.1 ConvertTo-Json would hand these three-level entries back as
@@ -8970,8 +9895,8 @@ OK|Git Bash path|published: $CLIENT_ENV_GIT_BASH" \
   plant_client_env_settings "$(printf '{"CLAUDE_CODE_GIT_BASH_PATH":"%s"}' "$CLIENT_ENV_UNINSTALLED_BASH")"
   publish_client_env_run "$CLIENT_ENV_GIT_BASH"
   assert_equals "a stored Git Bash path that no longer resolves is repaired, and the summary says what it replaced" \
-    "$CLIENT_ENV_GIT_BASH / OK|Git Bash path|repaired from $CLIENT_ENV_UNINSTALLED_BASH: $CLIENT_ENV_GIT_BASH" \
-    "$(client_env_stored CLAUDE_CODE_GIT_BASH_PATH) / $(grep -F 'Git Bash path' "$CLIENT_ENV_VERDICT")"
+    "$(native_path_form "$CLIENT_ENV_GIT_BASH") / OK|Git Bash path|repaired from $CLIENT_ENV_UNINSTALLED_BASH: $(native_path_form "$CLIENT_ENV_GIT_BASH")" \
+    "$(native_path_form "$(client_env_stored CLAUDE_CODE_GIT_BASH_PATH)") / $(grep -F 'Git Bash path' "$CLIENT_ENV_VERDICT")"
 
   # The same stale value on a run that was handed nothing to repair it with —
   # started from Git Bash rather than from install.ps1. Reporting it as fine is
@@ -8995,8 +9920,8 @@ OK|Git Bash path|published: $CLIENT_ENV_GIT_BASH" \
   plant_client_env_settings ''
   publish_client_env_run ""
   assert_equals "a run with no Git Bash to publish and none stored says nothing about it, and publishes oso-state regardless" \
-    "absent / no line / $CLIENT_ENV_STATE_BIN" \
-    "$(client_env_stored CLAUDE_CODE_GIT_BASH_PATH) / $(grep -F 'Git Bash path' "$CLIENT_ENV_VERDICT" || echo 'no line') / $(client_env_stored OSO_STATE_BIN)"
+    "absent / no line / $(native_path_form "$CLIENT_ENV_STATE_BIN")" \
+    "$(client_env_stored CLAUDE_CODE_GIT_BASH_PATH) / $(grep -F 'Git Bash path' "$CLIENT_ENV_VERDICT" || echo 'no line') / $(native_path_form "$(client_env_stored OSO_STATE_BIN)")"
 
   # --- What the verifier proves about the two published values ----------------
   # The round trip goes through the STORED path, never one this script resolved
@@ -9414,8 +10339,13 @@ repair_engram_codex_contract_status() {
   printf complete
 }
 
-assert_equals "repair-engram-codex shell surface is syntax-valid and contains fail-safe backup/checksum/setup/verification rails" \
-  complete "$(repair_engram_codex_contract_status)"
+if [ "$RUNS_ON_WINDOWS_BASH" = true ]; then
+  echo "skip: two of this contract's behaviours rest on a .codex directory and a config.toml that escape through a symlink, and ln-as-copy publishes a real directory and a real file instead"
+  skipped=$((skipped + 1))
+else
+  assert_equals "repair-engram-codex shell surface is syntax-valid and contains fail-safe backup/checksum/setup/verification rails" \
+    complete "$(repair_engram_codex_contract_status)"
+fi
 
 # --- repair-engram-codex.sh: the repair downloads are bounded, by name ------
 # download_file's bound is curl/wget's own native flag, not the front-surface
@@ -9746,71 +10676,76 @@ assert_equals "sourcing install-codex exposes main without running it" \
 assert_equals "sourcing install-codex leaves the isolated HOME untouched" \
   "absent" "$([ -e "$CODEX_SOURCE_HOME/.codex" ] || [ -e "$CODEX_SOURCE_HOME/.agents" ] && echo mutated || echo absent)"
 
-. "$REPO_ROOT/bootstrap/lib/codex-managed-config.sh"
-CODEX_CARGO_FALLOW_HOME="$TEST_HOME/codex-cargo-fallow-home"
-CODEX_NO_FALLOW_PATH="$TEST_HOME/no-fallow-path"
-mkdir -p "$CODEX_CARGO_FALLOW_HOME/.cargo/bin" "$CODEX_NO_FALLOW_PATH"
-ln -s "$(command -v cat)" "$CODEX_NO_FALLOW_PATH/cat"
-printf '%s\n' '#!/bin/sh' 'exit 0' > "$CODEX_CARGO_FALLOW_HOME/.cargo/bin/fallow-mcp"
-chmod +x "$CODEX_CARGO_FALLOW_HOME/.cargo/bin/fallow-mcp"
-# APPDATA is pinned empty rather than assumed absent: CI runs this suite on
-# windows-latest, where it is always set, and the Windows probe that reads it comes
-# first — an ambient value there decides this case by what that runner happens to
-# have installed.
-cargo_fallow_config="$(
-  PATH="$CODEX_NO_FALLOW_PATH" APPDATA="" render_codex_managed_config \
-    "$CODEX_CARGO_FALLOW_HOME" \
-    "$CODEX_CARGO_FALLOW_HOME/.local/share/oso-code/runtime"
-)"
-assert_equals "Codex config resolves a Cargo-home fallow binary outside PATH" \
-  "1" "$(printf '%s\n' "$cargo_fallow_config" |
-    grep -Fxc "command = \"$CODEX_CARGO_FALLOW_HOME/.cargo/bin/fallow-mcp\"" || true)"
+if [ "$RUNS_ON_WINDOWS_BASH" = true ]; then
+  echo "skip: the fallow resolver fixture PATH is one linked cat and nothing else, and that copy runs without its libraries, so no rendered Codex config comes back to read"
+  skipped=$((skipped + 1))
+else
+  . "$REPO_ROOT/bootstrap/lib/codex-managed-config.sh"
+  CODEX_CARGO_FALLOW_HOME="$TEST_HOME/codex-cargo-fallow-home"
+  CODEX_NO_FALLOW_PATH="$TEST_HOME/no-fallow-path"
+  mkdir -p "$CODEX_CARGO_FALLOW_HOME/.cargo/bin" "$CODEX_NO_FALLOW_PATH"
+  ln -s "$(command -v cat)" "$CODEX_NO_FALLOW_PATH/cat"
+  printf '%s\n' '#!/bin/sh' 'exit 0' > "$CODEX_CARGO_FALLOW_HOME/.cargo/bin/fallow-mcp"
+  chmod +x "$CODEX_CARGO_FALLOW_HOME/.cargo/bin/fallow-mcp"
+  # APPDATA is pinned empty rather than assumed absent: CI runs this suite on
+  # windows-latest, where it is always set, and the Windows probe that reads it comes
+  # first — an ambient value there decides this case by what that runner happens to
+  # have installed.
+  cargo_fallow_config="$(
+    PATH="$CODEX_NO_FALLOW_PATH" APPDATA="" render_codex_managed_config \
+      "$CODEX_CARGO_FALLOW_HOME" \
+      "$CODEX_CARGO_FALLOW_HOME/.local/share/oso-code/runtime"
+  )"
+  assert_equals "Codex config resolves a Cargo-home fallow binary outside PATH" \
+    "1" "$(printf '%s\n' "$cargo_fallow_config" |
+      grep -Fxc "command = \"$CODEX_CARGO_FALLOW_HOME/.cargo/bin/fallow-mcp\"" || true)"
 
-# The spelling a Windows install produces now that fallow comes from npm:
-# `npm install --global` drops fallow-mcp.cmd in %APPDATA%\npm beside a .ps1 and
-# an extensionless sh script, and the client that spawns this command is a native
-# Windows process which can run only the .cmd. Resolving the sh script instead
-# would wire an entry that never connects — and the check that reads it is counted
-# now, so that lands as a red run rather than as the note it used to be.
-CODEX_NPM_FALLOW_HOME="$TEST_HOME/codex-npm-fallow-home"
-CODEX_NPM_FALLOW_APPDATA="$CODEX_NPM_FALLOW_HOME/AppData/Roaming"
-mkdir -p "$CODEX_NPM_FALLOW_APPDATA/npm"
-printf '%s\n' '@echo off' > "$CODEX_NPM_FALLOW_APPDATA/npm/fallow-mcp.cmd"
-chmod +x "$CODEX_NPM_FALLOW_APPDATA/npm/fallow-mcp.cmd"
-npm_fallow_config="$(
-  PATH="$CODEX_NO_FALLOW_PATH" APPDATA="$CODEX_NPM_FALLOW_APPDATA" \
-    render_codex_managed_config "$CODEX_NPM_FALLOW_HOME" \
-      "$CODEX_NPM_FALLOW_HOME/.local/share/oso-code/runtime"
-)"
-assert_equals "the npm .cmd shim is the fallow command a Windows install resolves" \
-  "1" "$(printf '%s\n' "$npm_fallow_config" |
-    grep -Fxc "command = \"$CODEX_NPM_FALLOW_APPDATA/npm/fallow-mcp.cmd\"" || true)"
+  # The spelling a Windows install produces now that fallow comes from npm:
+  # `npm install --global` drops fallow-mcp.cmd in %APPDATA%\npm beside a .ps1 and
+  # an extensionless sh script, and the client that spawns this command is a native
+  # Windows process which can run only the .cmd. Resolving the sh script instead
+  # would wire an entry that never connects — and the check that reads it is counted
+  # now, so that lands as a red run rather than as the note it used to be.
+  CODEX_NPM_FALLOW_HOME="$TEST_HOME/codex-npm-fallow-home"
+  CODEX_NPM_FALLOW_APPDATA="$CODEX_NPM_FALLOW_HOME/AppData/Roaming"
+  mkdir -p "$CODEX_NPM_FALLOW_APPDATA/npm"
+  printf '%s\n' '@echo off' > "$CODEX_NPM_FALLOW_APPDATA/npm/fallow-mcp.cmd"
+  chmod +x "$CODEX_NPM_FALLOW_APPDATA/npm/fallow-mcp.cmd"
+  npm_fallow_config="$(
+    PATH="$CODEX_NO_FALLOW_PATH" APPDATA="$CODEX_NPM_FALLOW_APPDATA" \
+      render_codex_managed_config "$CODEX_NPM_FALLOW_HOME" \
+        "$CODEX_NPM_FALLOW_HOME/.local/share/oso-code/runtime"
+  )"
+  assert_equals "the npm .cmd shim is the fallow command a Windows install resolves" \
+    "1" "$(printf '%s\n' "$npm_fallow_config" |
+      grep -Fxc "command = \"$CODEX_NPM_FALLOW_APPDATA/npm/fallow-mcp.cmd\"" || true)"
 
-# %APPDATA%\npm is only npm's DEFAULT global prefix. An operator who set their own
-# `prefix` has the shims somewhere else entirely, and looking under the default
-# there finds nothing and drops through to the extensionless sh script the case
-# above exists to skip — so npm names the prefix whenever npm is there to ask.
-# APPDATA points at the fixture that DOES hold a .cmd, which is what makes this an
-# assertion about the source and not about which paths happen to exist.
-CODEX_NPM_PREFIX_HOME="$TEST_HOME/codex-npm-prefix-home"
-CODEX_NPM_PREFIX_DIR="$CODEX_NPM_PREFIX_HOME/opt/npm-global"
-CODEX_NPM_PREFIX_PATH="$TEST_HOME/npm-prefix-stub"
-mkdir -p "$CODEX_NPM_PREFIX_DIR" "$CODEX_NPM_PREFIX_PATH"
-printf '%s\n' '#!/bin/sh' \
-  "[ \"\$*\" = 'prefix -g' ] || exit 1" \
-  "echo '$CODEX_NPM_PREFIX_DIR'" > "$CODEX_NPM_PREFIX_PATH/npm"
-chmod +x "$CODEX_NPM_PREFIX_PATH/npm"
-printf '%s\n' '@echo off' > "$CODEX_NPM_PREFIX_DIR/fallow-mcp.cmd"
-chmod +x "$CODEX_NPM_PREFIX_DIR/fallow-mcp.cmd"
-npm_prefix_config="$(
-  PATH="$CODEX_NPM_PREFIX_PATH:$CODEX_NO_FALLOW_PATH" \
-    APPDATA="$CODEX_NPM_FALLOW_APPDATA" \
-    render_codex_managed_config "$CODEX_NPM_PREFIX_HOME" \
-      "$CODEX_NPM_PREFIX_HOME/.local/share/oso-code/runtime"
-)"
-assert_equals "a custom npm prefix is where the Windows shim is looked for, not the default one" \
-  "1" "$(printf '%s\n' "$npm_prefix_config" |
-    grep -Fxc "command = \"$CODEX_NPM_PREFIX_DIR/fallow-mcp.cmd\"" || true)"
+  # %APPDATA%\npm is only npm's DEFAULT global prefix. An operator who set their own
+  # `prefix` has the shims somewhere else entirely, and looking under the default
+  # there finds nothing and drops through to the extensionless sh script the case
+  # above exists to skip — so npm names the prefix whenever npm is there to ask.
+  # APPDATA points at the fixture that DOES hold a .cmd, which is what makes this an
+  # assertion about the source and not about which paths happen to exist.
+  CODEX_NPM_PREFIX_HOME="$TEST_HOME/codex-npm-prefix-home"
+  CODEX_NPM_PREFIX_DIR="$CODEX_NPM_PREFIX_HOME/opt/npm-global"
+  CODEX_NPM_PREFIX_PATH="$TEST_HOME/npm-prefix-stub"
+  mkdir -p "$CODEX_NPM_PREFIX_DIR" "$CODEX_NPM_PREFIX_PATH"
+  printf '%s\n' '#!/bin/sh' \
+    "[ \"\$*\" = 'prefix -g' ] || exit 1" \
+    "echo '$CODEX_NPM_PREFIX_DIR'" > "$CODEX_NPM_PREFIX_PATH/npm"
+  chmod +x "$CODEX_NPM_PREFIX_PATH/npm"
+  printf '%s\n' '@echo off' > "$CODEX_NPM_PREFIX_DIR/fallow-mcp.cmd"
+  chmod +x "$CODEX_NPM_PREFIX_DIR/fallow-mcp.cmd"
+  npm_prefix_config="$(
+    PATH="$CODEX_NPM_PREFIX_PATH:$CODEX_NO_FALLOW_PATH" \
+      APPDATA="$CODEX_NPM_FALLOW_APPDATA" \
+      render_codex_managed_config "$CODEX_NPM_PREFIX_HOME" \
+        "$CODEX_NPM_PREFIX_HOME/.local/share/oso-code/runtime"
+  )"
+  assert_equals "a custom npm prefix is where the Windows shim is looked for, not the default one" \
+    "1" "$(printf '%s\n' "$npm_prefix_config" |
+      grep -Fxc "command = \"$CODEX_NPM_PREFIX_DIR/fallow-mcp.cmd\"" || true)"
+fi
 
 CODEX_DECLINE_HOME="$TEST_HOME/codex-decline-home"
 printf '0.146.0\n' > "$CODEX_INSTALL_VERSION"
@@ -9857,7 +10792,7 @@ assert_equals "the installer registers the staged Codex marketplace root exactly
 assert_equals "the installer calls the oso-code marketplace entry exactly" \
   "1" "$(grep -Fxc 'codex:plugin add oso-code@oso-code --json' "$CODEX_INSTALL_CALLS" || true)"
 assert_equals "a Codex already at the frozen floor is never replaced through npm" \
-  "0" "$(grep -c '^npm:' "$CODEX_INSTALL_CALLS" || true)"
+  "0" "$(grep '^npm:' "$CODEX_INSTALL_CALLS" | grep -vc '^npm:prefix -g$' || true)"
 assert_equals "Engram restores its own Codex integration exactly once" \
   "1" "$(grep -Fxc 'engram:setup codex' "$CODEX_INSTALL_CALLS" || true)"
 assert_equals "the installer asks Codex itself to validate the merged config" \
@@ -10015,8 +10950,8 @@ while IFS='  ' read -r published_digest published_path; do
   case "$published_path" in
     codex/hooks/hooks.json)
       installed_hook_path="$CODEX_HAPPY_HOME/.codex/hooks.json"
-      normalized_hook_digest="$(sed "s|$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/hooks|__OSO_HOOKS_DIR__|g" "$installed_hook_path" |
-        { sha256sum 2>/dev/null || shasum -a 256 2>/dev/null; })"
+      normalized_hook_digest="$(sed "s|$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/hooks|__OSO_HOOKS_DIR__|g" "$installed_hook_path" 2>/dev/null |
+        { sha256sum 2>/dev/null || shasum -a 256 2>/dev/null; })" || normalized_hook_digest=""
       normalized_hook_digest="${normalized_hook_digest%% *}"
       [ "$normalized_hook_digest" = "$published_digest" ] \
         || missing_installed_hook="$missing_installed_hook $published_path"
@@ -10333,9 +11268,12 @@ assert_equals "the shipped Codex installer never mutates the global CLI itself" 
 # Criterion (c): the ordering itself is asserted, not just today's behavior --
 # a regression that reintroduces the mutating install, or moves the
 # precondition past confirm_install/begin_transaction, must turn this red.
-CODEX_PREFLIGHT_LINE="$(grep -n '^  preflight_codex_version$' "$INSTALL_CODEX_SH" | head -n1 | cut -d: -f1)"
-CODEX_CONFIRM_LINE="$(grep -n '^  confirm_install$' "$INSTALL_CODEX_SH" | head -n1 | cut -d: -f1)"
-CODEX_BEGIN_TX_LINE="$(grep -n '^  begin_transaction$' "$INSTALL_CODEX_SH" | head -n1 | cut -d: -f1)"
+CODEX_PREFLIGHT_LINE="$(grep -n '^  preflight_codex_version$' "$INSTALL_CODEX_SH" |
+  head -n1 | cut -d: -f1)" || CODEX_PREFLIGHT_LINE=""
+CODEX_CONFIRM_LINE="$(grep -n '^  confirm_install$' "$INSTALL_CODEX_SH" |
+  head -n1 | cut -d: -f1)" || CODEX_CONFIRM_LINE=""
+CODEX_BEGIN_TX_LINE="$(grep -n '^  begin_transaction$' "$INSTALL_CODEX_SH" |
+  head -n1 | cut -d: -f1)" || CODEX_BEGIN_TX_LINE=""
 assert_equals "the CLI pin precondition is checked before confirm_install ever prompts" \
   "before" "$([ "${CODEX_PREFLIGHT_LINE:-0}" -lt "${CODEX_CONFIRM_LINE:-0}" ] 2>/dev/null && echo before || echo not-before)"
 assert_equals "confirm_install still gates every mutation, including the transaction itself" \
@@ -10407,7 +11345,7 @@ awk '
 mv "$CODEX_DUPLICATE_HASH_RELEASE/bootstrap/hook-hashes.txt.tmp" \
   "$CODEX_DUPLICATE_HASH_RELEASE/bootstrap/hook-hashes.txt"
 run_codex_install "$CODEX_HASH_HOME" "" "$CODEX_DUPLICATE_HASH_RELEASE/bootstrap/install-codex.sh"
-assert_equals "a duplicate published hash path is rejected even with thirteen rows" \
+assert_equals "a duplicate published hash path is rejected even with fourteen rows" \
   "duplicate path" "$(codex_install_log_class 'duplicate path' 'duplicate published hook path')"
 assert_equals "duplicate hash coverage is rejected before any destination mutation" \
   "absent" "$([ -e "$CODEX_HASH_HOME/.codex" ] || [ -e "$CODEX_HASH_HOME/.agents" ] || [ -e "$CODEX_HASH_HOME/.local/share/oso-code" ] && echo mutated || echo absent)"
@@ -10469,8 +11407,8 @@ if command -v git >/dev/null 2>&1; then
   assert_equals "the checkout hook migration is reported explicitly" \
     "migration" "$(codex_install_log_class migration 'migrating oso-code.*checkout hook')"
   assert_equals "the migrated git gate points at the self-contained runtime" \
-    "$CODEX_GIT_MIGRATE_HOME/.local/share/oso-code/runtime/git-hooks" \
-    "$(git -C "$CODEX_GIT_MIGRATE_RELEASE" config --local --get core.hooksPath)"
+    "$(native_path_form "$CODEX_GIT_MIGRATE_HOME/.local/share/oso-code/runtime/git-hooks")" \
+    "$(native_path_form "$(git -C "$CODEX_GIT_MIGRATE_RELEASE" config --local --get core.hooksPath)")"
   assert_equals "the migrated runtime git gate keeps the published bytes" \
     "identical" "$(cmp -s "$CODEX_GIT_MIGRATE_RELEASE/plugin/git-hooks/pre-commit" \
       "$CODEX_GIT_MIGRATE_HOME/.local/share/oso-code/runtime/git-hooks/pre-commit" \
@@ -10498,8 +11436,8 @@ if command -v git >/dev/null 2>&1; then
   assert_equals "a failure after legacy hook migration exits nonzero" \
     "nonzero" "$([ "$CODEX_INSTALL_RC" -ne 0 ] && echo nonzero || echo zero)"
   assert_equals "legacy hook rollback restores its exact checkout path" \
-    "$legacy_rollback_path" \
-    "$(git -C "$CODEX_GIT_LEGACY_ROLLBACK_RELEASE" config --local --get core.hooksPath)"
+    "$(native_path_form "$legacy_rollback_path")" \
+    "$(native_path_form "$(git -C "$CODEX_GIT_LEGACY_ROLLBACK_RELEASE" config --local --get core.hooksPath)")"
   assert_equals "legacy hook rollback restores every installed destination" \
     "$legacy_rollback_before" \
     "$(install_file_snapshot "$CODEX_GIT_LEGACY_ROLLBACK_HOME")"
@@ -10520,8 +11458,8 @@ if command -v git >/dev/null 2>&1; then
   assert_equals "identical hook bytes at another path remain foreign" \
     "foreign owner" "$(codex_install_log_class 'foreign owner' 'refusing to replace existing git hook owner')"
   assert_equals "a refused lookalike hook keeps its configured owner" \
-    "$CODEX_GIT_LOOKALIKE_RELEASE/operator-hooks" \
-    "$(git -C "$CODEX_GIT_LOOKALIKE_RELEASE" config --local --get core.hooksPath)"
+    "$(native_path_form "$CODEX_GIT_LOOKALIKE_RELEASE/operator-hooks")" \
+    "$(native_path_form "$(git -C "$CODEX_GIT_LOOKALIKE_RELEASE" config --local --get core.hooksPath)")"
 
   CODEX_GIT_SIBLING_RELEASE="$TEST_HOME/codex-git-sibling-release"
   mkdir -p "$CODEX_GIT_SIBLING_RELEASE"
@@ -10539,51 +11477,56 @@ if command -v git >/dev/null 2>&1; then
   assert_equals "an extra hook beside oso-code prevents migration" \
     "foreign owner" "$(codex_install_log_class 'foreign owner' 'refusing to replace existing git hook owner')"
   assert_equals "a refused mixed checkout keeps its configured owner" \
-    "$CODEX_GIT_SIBLING_RELEASE/plugin/git-hooks" \
-    "$(git -C "$CODEX_GIT_SIBLING_RELEASE" config --local --get core.hooksPath)"
+    "$(native_path_form "$CODEX_GIT_SIBLING_RELEASE/plugin/git-hooks")" \
+    "$(native_path_form "$(git -C "$CODEX_GIT_SIBLING_RELEASE" config --local --get core.hooksPath)")"
   assert_equals "a refused mixed checkout preserves its hidden sibling" \
     "operator-owned hidden sibling" \
     "$(cat "$CODEX_GIT_SIBLING_RELEASE/plugin/git-hooks/.operator-hook")"
 
-  CODEX_GIT_LINK_RELEASE="$TEST_HOME/codex-git-link-release"
-  mkdir -p "$CODEX_GIT_LINK_RELEASE"
-  cp -R "$REPO_ROOT/.agents" "$REPO_ROOT/bootstrap" "$REPO_ROOT/codex" \
-    "$REPO_ROOT/plugin" "$CODEX_GIT_LINK_RELEASE/"
-  mv "$CODEX_GIT_LINK_RELEASE/plugin/git-hooks" \
-    "$CODEX_GIT_LINK_RELEASE/plugin/git-hooks-source"
-  ln -s git-hooks-source "$CODEX_GIT_LINK_RELEASE/plugin/git-hooks"
-  git init -q "$CODEX_GIT_LINK_RELEASE"
-  git -C "$CODEX_GIT_LINK_RELEASE" config core.hooksPath \
-    "$CODEX_GIT_LINK_RELEASE/plugin/git-hooks"
-  CODEX_GIT_LINK_HOME="$TEST_HOME/codex-git-link-home"
-  write_codex_install_personal_state "$CODEX_GIT_LINK_HOME"
-  run_codex_install_with_git_hook "$CODEX_GIT_LINK_HOME" \
-    "$CODEX_GIT_LINK_RELEASE/bootstrap/install-codex.sh"
-  assert_equals "a symlinked checkout hook directory is never adopted" \
-    "foreign owner" "$(codex_install_log_class 'foreign owner' 'refusing to replace existing git hook owner')"
-  assert_equals "a refused checkout hook directory remains a symlink" \
-    "git-hooks-source" "$(readlink "$CODEX_GIT_LINK_RELEASE/plugin/git-hooks")"
+  if [ "$RUNS_ON_WINDOWS_BASH" = true ]; then
+    echo "skip: a symlinked hook directory and a symlinked pre-commit are the whole premise here, and ln-as-copy publishes the real directory and the real file an installer is right to adopt"
+    skipped=$((skipped + 1))
+  else
+    CODEX_GIT_LINK_RELEASE="$TEST_HOME/codex-git-link-release"
+    mkdir -p "$CODEX_GIT_LINK_RELEASE"
+    cp -R "$REPO_ROOT/.agents" "$REPO_ROOT/bootstrap" "$REPO_ROOT/codex" \
+      "$REPO_ROOT/plugin" "$CODEX_GIT_LINK_RELEASE/"
+    mv "$CODEX_GIT_LINK_RELEASE/plugin/git-hooks" \
+      "$CODEX_GIT_LINK_RELEASE/plugin/git-hooks-source"
+    ln -s git-hooks-source "$CODEX_GIT_LINK_RELEASE/plugin/git-hooks"
+    git init -q "$CODEX_GIT_LINK_RELEASE"
+    git -C "$CODEX_GIT_LINK_RELEASE" config core.hooksPath \
+      "$CODEX_GIT_LINK_RELEASE/plugin/git-hooks"
+    CODEX_GIT_LINK_HOME="$TEST_HOME/codex-git-link-home"
+    write_codex_install_personal_state "$CODEX_GIT_LINK_HOME"
+    run_codex_install_with_git_hook "$CODEX_GIT_LINK_HOME" \
+      "$CODEX_GIT_LINK_RELEASE/bootstrap/install-codex.sh"
+    assert_equals "a symlinked checkout hook directory is never adopted" \
+      "foreign owner" "$(codex_install_log_class 'foreign owner' 'refusing to replace existing git hook owner')"
+    assert_equals "a refused checkout hook directory remains a symlink" \
+      "git-hooks-source" "$(readlink "$CODEX_GIT_LINK_RELEASE/plugin/git-hooks")"
 
-  CODEX_GIT_FILE_LINK_RELEASE="$TEST_HOME/codex-git-file-link-release"
-  mkdir -p "$CODEX_GIT_FILE_LINK_RELEASE"
-  cp -R "$REPO_ROOT/.agents" "$REPO_ROOT/bootstrap" "$REPO_ROOT/codex" \
-    "$REPO_ROOT/plugin" "$CODEX_GIT_FILE_LINK_RELEASE/"
-  mv "$CODEX_GIT_FILE_LINK_RELEASE/plugin/git-hooks/pre-commit" \
-    "$CODEX_GIT_FILE_LINK_RELEASE/plugin/git-hooks/published-pre-commit"
-  ln -s published-pre-commit \
-    "$CODEX_GIT_FILE_LINK_RELEASE/plugin/git-hooks/pre-commit"
-  git init -q "$CODEX_GIT_FILE_LINK_RELEASE"
-  git -C "$CODEX_GIT_FILE_LINK_RELEASE" config core.hooksPath \
-    "$CODEX_GIT_FILE_LINK_RELEASE/plugin/git-hooks"
-  CODEX_GIT_FILE_LINK_HOME="$TEST_HOME/codex-git-file-link-home"
-  write_codex_install_personal_state "$CODEX_GIT_FILE_LINK_HOME"
-  run_codex_install_with_git_hook "$CODEX_GIT_FILE_LINK_HOME" \
-    "$CODEX_GIT_FILE_LINK_RELEASE/bootstrap/install-codex.sh"
-  assert_equals "a symlinked pre-commit is never adopted" \
-    "foreign owner" "$(codex_install_log_class 'foreign owner' 'refusing to replace existing git hook owner')"
-  assert_equals "a refused pre-commit remains a symlink" \
-    "published-pre-commit" \
-    "$(readlink "$CODEX_GIT_FILE_LINK_RELEASE/plugin/git-hooks/pre-commit")"
+    CODEX_GIT_FILE_LINK_RELEASE="$TEST_HOME/codex-git-file-link-release"
+    mkdir -p "$CODEX_GIT_FILE_LINK_RELEASE"
+    cp -R "$REPO_ROOT/.agents" "$REPO_ROOT/bootstrap" "$REPO_ROOT/codex" \
+      "$REPO_ROOT/plugin" "$CODEX_GIT_FILE_LINK_RELEASE/"
+    mv "$CODEX_GIT_FILE_LINK_RELEASE/plugin/git-hooks/pre-commit" \
+      "$CODEX_GIT_FILE_LINK_RELEASE/plugin/git-hooks/published-pre-commit"
+    ln -s published-pre-commit \
+      "$CODEX_GIT_FILE_LINK_RELEASE/plugin/git-hooks/pre-commit"
+    git init -q "$CODEX_GIT_FILE_LINK_RELEASE"
+    git -C "$CODEX_GIT_FILE_LINK_RELEASE" config core.hooksPath \
+      "$CODEX_GIT_FILE_LINK_RELEASE/plugin/git-hooks"
+    CODEX_GIT_FILE_LINK_HOME="$TEST_HOME/codex-git-file-link-home"
+    write_codex_install_personal_state "$CODEX_GIT_FILE_LINK_HOME"
+    run_codex_install_with_git_hook "$CODEX_GIT_FILE_LINK_HOME" \
+      "$CODEX_GIT_FILE_LINK_RELEASE/bootstrap/install-codex.sh"
+    assert_equals "a symlinked pre-commit is never adopted" \
+      "foreign owner" "$(codex_install_log_class 'foreign owner' 'refusing to replace existing git hook owner')"
+    assert_equals "a refused pre-commit remains a symlink" \
+      "published-pre-commit" \
+      "$(readlink "$CODEX_GIT_FILE_LINK_RELEASE/plugin/git-hooks/pre-commit")"
+  fi
 
   CODEX_GIT_GLOBAL_RELEASE="$TEST_HOME/codex-git-global-release"
   mkdir -p "$CODEX_GIT_GLOBAL_RELEASE"
@@ -10601,8 +11544,8 @@ if command -v git >/dev/null 2>&1; then
   assert_equals "a refused global owner does not create a local replacement" \
     "absent" "$(if git -C "$CODEX_GIT_GLOBAL_RELEASE" config --local --get core.hooksPath >/dev/null 2>&1; then echo present; else echo absent; fi)"
   assert_equals "a refused global owner remains byte-identical" \
-    "$CODEX_GIT_GLOBAL_RELEASE/plugin/git-hooks" \
-    "$(HOME="$CODEX_GIT_GLOBAL_HOME" git config --global --get core.hooksPath)"
+    "$(native_path_form "$CODEX_GIT_GLOBAL_RELEASE/plugin/git-hooks")" \
+    "$(native_path_form "$(HOME="$CODEX_GIT_GLOBAL_HOME" git config --global --get core.hooksPath)")"
 
   CODEX_GIT_ROLLBACK_RELEASE="$TEST_HOME/codex-git-rollback-release"
   mkdir -p "$CODEX_GIT_ROLLBACK_RELEASE"
@@ -10694,47 +11637,52 @@ assert_equals "one valid oso command cannot annex a second operator-owned hook h
 assert_equals "mixed hook ownership refusal preserves the complete manifest" \
   "$mixed_hooks_before" "$(install_file_snapshot "$CODEX_MIXED_HOOKS_HOME")"
 
-CODEX_LINKED_AGENTS_HOME="$TEST_HOME/codex-linked-agents-home"
-write_codex_install_personal_state "$CODEX_LINKED_AGENTS_HOME"
-CODEX_LINKED_AGENTS_TARGET="$TEST_HOME/codex-personal-agent-target"
-mkdir -p "$CODEX_LINKED_AGENTS_TARGET"
-printf 'operator-owned linked role\n' > "$CODEX_LINKED_AGENTS_TARGET/personal.toml"
-rm -rf "$CODEX_LINKED_AGENTS_HOME/.codex/agents"
-ln -s "$CODEX_LINKED_AGENTS_TARGET" "$CODEX_LINKED_AGENTS_HOME/.codex/agents"
-run_codex_install "$CODEX_LINKED_AGENTS_HOME"
-assert_equals "a symlink-managed agents directory is rejected instead of rewritten" \
-  "linked agents" "$(codex_install_log_class 'linked agents' 'symlinked Codex agents directory')"
-assert_equals "agent symlink refusal preserves the link itself" \
-  "$CODEX_LINKED_AGENTS_TARGET" "$(readlink "$CODEX_LINKED_AGENTS_HOME/.codex/agents")"
-assert_equals "agent symlink refusal preserves its external target" \
-  "operator-owned linked role" "$(cat "$CODEX_LINKED_AGENTS_TARGET/personal.toml")"
+if [ "$RUNS_ON_WINDOWS_BASH" = true ]; then
+  echo "skip: a symlinked agents directory and a symlinked role file are the whole premise here, and ln-as-copy publishes a real directory and a real file, so neither the refusal nor the write-through has anything to be observed against"
+  skipped=$((skipped + 1))
+else
+  CODEX_LINKED_AGENTS_HOME="$TEST_HOME/codex-linked-agents-home"
+  write_codex_install_personal_state "$CODEX_LINKED_AGENTS_HOME"
+  CODEX_LINKED_AGENTS_TARGET="$TEST_HOME/codex-personal-agent-target"
+  mkdir -p "$CODEX_LINKED_AGENTS_TARGET"
+  printf 'operator-owned linked role\n' > "$CODEX_LINKED_AGENTS_TARGET/personal.toml"
+  rm -rf "$CODEX_LINKED_AGENTS_HOME/.codex/agents"
+  ln -s "$CODEX_LINKED_AGENTS_TARGET" "$CODEX_LINKED_AGENTS_HOME/.codex/agents"
+  run_codex_install "$CODEX_LINKED_AGENTS_HOME"
+  assert_equals "a symlink-managed agents directory is rejected instead of rewritten" \
+    "linked agents" "$(codex_install_log_class 'linked agents' 'symlinked Codex agents directory')"
+  assert_equals "agent symlink refusal preserves the link itself" \
+    "$CODEX_LINKED_AGENTS_TARGET" "$(readlink "$CODEX_LINKED_AGENTS_HOME/.codex/agents")"
+  assert_equals "agent symlink refusal preserves its external target" \
+    "operator-owned linked role" "$(cat "$CODEX_LINKED_AGENTS_TARGET/personal.toml")"
 
-# Defect 1 (audit): `install_agents` refuses a symlinked AGENTS_TARGET itself
-# (above), but the role-file loop wrote through an inherited symlink one
-# level down -- `cp -R` preserves a symlink already inside an existing agents
-# directory, then plain `cp` onto that name follows it and writes through,
-# and `chmod` follows it too. Drive it with a fixture whose symlink points at
-# a sentinel file entirely outside ~/.codex, and prove neither the write nor
-# the chmod ever reached it.
-CODEX_ROLE_SYMLINK_HOME="$TEST_HOME/codex-role-symlink-home"
-write_codex_install_personal_state "$CODEX_ROLE_SYMLINK_HOME"
-CODEX_ROLE_SYMLINK_SENTINEL="$TEST_HOME/codex-role-symlink-sentinel.toml"
-printf 'sentinel: do not touch\n' > "$CODEX_ROLE_SYMLINK_SENTINEL"
-chmod 644 "$CODEX_ROLE_SYMLINK_SENTINEL"
-ln -s "$CODEX_ROLE_SYMLINK_SENTINEL" "$CODEX_ROLE_SYMLINK_HOME/.codex/agents/oso-applier.toml"
-printf '0.146.0\n' > "$CODEX_INSTALL_VERSION"
-run_codex_install "$CODEX_ROLE_SYMLINK_HOME"
-assert_equals "installing over a symlinked role file still completes" \
-  "0" "$CODEX_INSTALL_RC"
-assert_equals "a symlinked role file's write never reaches its external sentinel target" \
-  "sentinel: do not touch" "$(cat "$CODEX_ROLE_SYMLINK_SENTINEL")"
-assert_equals "a symlinked role file's chmod never reaches its external sentinel target" \
-  "0644" "$(find "$CODEX_ROLE_SYMLINK_SENTINEL" -maxdepth 0 -type f -perm 0644 -print | grep -q . && echo 0644 || echo wrong)"
-assert_equals "the staged role file replaces the symlink with the real oso-code role" \
-  "1" "$([ -f "$CODEX_ROLE_SYMLINK_HOME/.codex/agents/oso-applier.toml" ] && \
-    [ ! -L "$CODEX_ROLE_SYMLINK_HOME/.codex/agents/oso-applier.toml" ] && \
-    cmp -s "$REPO_ROOT/codex/agents/oso-applier.toml" \
-      "$CODEX_ROLE_SYMLINK_HOME/.codex/agents/oso-applier.toml" && echo 1 || echo 0)"
+  # Defect 1 (audit): `install_agents` refuses a symlinked AGENTS_TARGET itself
+  # (above), but the role-file loop wrote through an inherited symlink one
+  # level down -- `cp -R` preserves a symlink already inside an existing agents
+  # directory, then plain `cp` onto that name follows it and writes through,
+  # and `chmod` follows it too. Drive it with a fixture whose symlink points at
+  # a sentinel file entirely outside ~/.codex, and prove neither the write nor
+  # the chmod ever reached it.
+  CODEX_ROLE_SYMLINK_HOME="$TEST_HOME/codex-role-symlink-home"
+  write_codex_install_personal_state "$CODEX_ROLE_SYMLINK_HOME"
+  CODEX_ROLE_SYMLINK_SENTINEL="$TEST_HOME/codex-role-symlink-sentinel.toml"
+  printf 'sentinel: do not touch\n' > "$CODEX_ROLE_SYMLINK_SENTINEL"
+  chmod 644 "$CODEX_ROLE_SYMLINK_SENTINEL"
+  ln -s "$CODEX_ROLE_SYMLINK_SENTINEL" "$CODEX_ROLE_SYMLINK_HOME/.codex/agents/oso-applier.toml"
+  printf '0.146.0\n' > "$CODEX_INSTALL_VERSION"
+  run_codex_install "$CODEX_ROLE_SYMLINK_HOME"
+  assert_equals "installing over a symlinked role file still completes" \
+    "0" "$CODEX_INSTALL_RC"
+  assert_equals "a symlinked role file's write never reaches its external sentinel target" \
+    "sentinel: do not touch" "$(cat "$CODEX_ROLE_SYMLINK_SENTINEL")"
+  assert_equals "a symlinked role file's chmod never reaches its external sentinel target" \
+    "0644" "$(find "$CODEX_ROLE_SYMLINK_SENTINEL" -maxdepth 0 -type f -perm 0644 -print | grep -q . && echo 0644 || echo wrong)"
+  assert_equals "the staged role file replaces the symlink with the real oso-code role" \
+    "1" "$([ -f "$CODEX_ROLE_SYMLINK_HOME/.codex/agents/oso-applier.toml" ] && \
+      [ ! -L "$CODEX_ROLE_SYMLINK_HOME/.codex/agents/oso-applier.toml" ] && \
+      cmp -s "$REPO_ROOT/codex/agents/oso-applier.toml" \
+        "$CODEX_ROLE_SYMLINK_HOME/.codex/agents/oso-applier.toml" && echo 1 || echo 0)"
+fi
 
 # Marker damage is ambiguity, never permission to delete through the next end
 # marker or append a second region. Exercise each managed text file independently
@@ -11187,348 +12135,360 @@ fi
 # The operator's real migration is already complete. Every invocation below
 # redirects HOME and CODEX_HOME into a disposable tree, while client shims make
 # an accidental install, uninstall or login call a visible test failure.
-PURGE_CODEX_SH="$REPO_ROOT/bootstrap/purge-codex.sh"
-CODEX_PURGE_OUTPUT="$TEST_HOME/codex-purge-output"
-CODEX_PURGE_CLIENT_CALLS="$TEST_HOME/codex-purge-client-calls"
-CODEX_PURGE_SHIMS="$TEST_HOME/codex-purge-shims"
-mkdir -p "$CODEX_PURGE_SHIMS"
-for purge_client in codex npm; do
-  printf '%s\n' \
-    '#!/bin/sh' \
-    'printf '\''%s:%s\n'\'' "$(basename "$0")" "$*" >> "$OSO_PURGE_CLIENT_CALLS"' \
-    'exit 97' > "$CODEX_PURGE_SHIMS/$purge_client"
-  chmod +x "$CODEX_PURGE_SHIMS/$purge_client"
-done
-
-write_codex_purge_fixture() {
-  local fixture_home="$1"
-  mkdir -p \
-    "$fixture_home/.codex/plugins/gentle-ai" \
-    "$fixture_home/.codex/agents" \
-    "$fixture_home/.codex/personal/empty" \
-    "$fixture_home/.agents/skills/gentle" \
-    "$fixture_home/.agents/skills/oso-local" \
-    "$fixture_home/.agents/personal/empty" \
-    "$fixture_home/.claude" \
-    "$fixture_home/.local/share/oso-code/runtime" \
-    "$fixture_home/.local/state/oso-code/worktrees/keep"
-  printf 'personal codex config\n' > "$fixture_home/.codex/config.toml"
-  printf 'legacy gentle plugin\n' > "$fixture_home/.codex/plugins/gentle-ai/plugin.json"
-  printf 'oso role\n' > "$fixture_home/.codex/agents/oso-applier.toml"
-  printf '\001\002personal bytes\000\377' > "$fixture_home/.codex/personal/blob.bin"
-  printf 'gentle skill\n' > "$fixture_home/.agents/skills/gentle/SKILL.md"
-  printf 'personal oso skill\n' > "$fixture_home/.agents/skills/oso-local/SKILL.md"
-  ln -s gentle "$fixture_home/.agents/skills/current"
-  chmod 640 "$fixture_home/.codex/personal/blob.bin"
-  chmod 750 "$fixture_home/.codex/personal" "$fixture_home/.agents/personal"
-  printf 'claude survives\n' > "$fixture_home/.claude/sentinel"
-  printf 'runtime survives\n' > "$fixture_home/.local/share/oso-code/runtime/sentinel"
-  printf 'state survives\n' > "$fixture_home/.local/state/oso-code/worktrees/keep/sentinel"
-}
-
-purge_tree_snapshot() {
-  local fixture_home="$1" path rel permissions digest
-  for path in "$fixture_home/.codex" "$fixture_home/.agents"; do
-    [ -e "$path" ] || [ -L "$path" ] || continue
-    find "$path" -print
-  done | LC_ALL=C sort | while IFS= read -r path; do
-    rel="${path#$fixture_home/}"
-    permissions="$(LC_ALL=C ls -ld "$path" | awk '{ print $1 }')"
-    if [ -L "$path" ]; then
-      printf 'link %s %s -> %s\n' "$permissions" "$rel" "$(readlink "$path")"
-    elif [ -d "$path" ]; then
-      printf 'dir  %s %s\n' "$permissions" "$rel"
-    elif [ -f "$path" ]; then
-      digest="$(file_sha256 "$path")"
-      printf 'file %s %s %s\n' "$permissions" "$rel" "$digest"
-    else
-      printf 'other %s %s\n' "$permissions" "$rel"
-    fi
+if [ "$RUNS_ON_WINDOWS_BASH" = true ]; then
+  echo "skip: every purge fixture publishes a symlink — a Codex root link, a dangling agents link, a relative skills pointer — and ln-as-copy can express none of them, so no purge case has a tree to run against"
+  skipped=$((skipped + 1))
+else
+  PURGE_CODEX_SH="$REPO_ROOT/bootstrap/purge-codex.sh"
+  CODEX_PURGE_OUTPUT="$TEST_HOME/codex-purge-output"
+  CODEX_PURGE_CLIENT_CALLS="$TEST_HOME/codex-purge-client-calls"
+  CODEX_PURGE_SHIMS="$TEST_HOME/codex-purge-shims"
+  mkdir -p "$CODEX_PURGE_SHIMS"
+  for purge_client in codex npm; do
+    printf '%s\n' \
+      '#!/bin/sh' \
+      'printf '\''%s:%s\n'\'' "$(basename "$0")" "$*" >> "$OSO_PURGE_CLIENT_CALLS"' \
+      'exit 97' > "$CODEX_PURGE_SHIMS/$purge_client"
+    chmod +x "$CODEX_PURGE_SHIMS/$purge_client"
   done
-}
 
-purge_backup_count() {
-  local fixture_home="$1" backup_parent
-  backup_parent="$fixture_home/.local/state/oso-code/purge-backups"
-  [ -d "$backup_parent" ] || { printf '0'; return; }
-  find "$backup_parent" -mindepth 1 -maxdepth 1 -type d -print | wc -l | tr -d ' '
-}
+  write_codex_purge_fixture() {
+    local fixture_home="$1"
+    mkdir -p \
+      "$fixture_home/.codex/plugins/gentle-ai" \
+      "$fixture_home/.codex/agents" \
+      "$fixture_home/.codex/personal/empty" \
+      "$fixture_home/.agents/skills/gentle" \
+      "$fixture_home/.agents/skills/oso-local" \
+      "$fixture_home/.agents/personal/empty" \
+      "$fixture_home/.claude" \
+      "$fixture_home/.local/share/oso-code/runtime" \
+      "$fixture_home/.local/state/oso-code/worktrees/keep"
+    printf 'personal codex config\n' > "$fixture_home/.codex/config.toml"
+    printf 'legacy gentle plugin\n' > "$fixture_home/.codex/plugins/gentle-ai/plugin.json"
+    printf 'oso role\n' > "$fixture_home/.codex/agents/oso-applier.toml"
+    printf '\001\002personal bytes\000\377' > "$fixture_home/.codex/personal/blob.bin"
+    printf 'gentle skill\n' > "$fixture_home/.agents/skills/gentle/SKILL.md"
+    printf 'personal oso skill\n' > "$fixture_home/.agents/skills/oso-local/SKILL.md"
+    ln -s gentle "$fixture_home/.agents/skills/current"
+    chmod 640 "$fixture_home/.codex/personal/blob.bin"
+    chmod 750 "$fixture_home/.codex/personal" "$fixture_home/.agents/personal"
+    printf 'claude survives\n' > "$fixture_home/.claude/sentinel"
+    printf 'runtime survives\n' > "$fixture_home/.local/share/oso-code/runtime/sentinel"
+    printf 'state survives\n' > "$fixture_home/.local/state/oso-code/worktrees/keep/sentinel"
+  }
 
-run_codex_purge() {
-  local fixture_home="$1"
-  shift
+  purge_tree_snapshot() {
+    local fixture_home="$1" path rel permissions digest
+    for path in "$fixture_home/.codex" "$fixture_home/.agents"; do
+      [ -e "$path" ] || [ -L "$path" ] || continue
+      find "$path" -print
+    done | LC_ALL=C sort | while IFS= read -r path; do
+      rel="${path#$fixture_home/}"
+      permissions="$(LC_ALL=C ls -ld "$path" | awk '{ print $1 }')"
+      if [ -L "$path" ]; then
+        printf 'link %s %s -> %s\n' "$permissions" "$rel" "$(readlink "$path")"
+      elif [ -d "$path" ]; then
+        printf 'dir  %s %s\n' "$permissions" "$rel"
+      elif [ -f "$path" ]; then
+        digest="$(file_sha256 "$path")"
+        printf 'file %s %s %s\n' "$permissions" "$rel" "$digest"
+      else
+        printf 'other %s %s\n' "$permissions" "$rel"
+      fi
+    done
+  }
+
+  purge_backup_count() {
+    local fixture_home="$1" backup_parent
+    backup_parent="$fixture_home/.local/state/oso-code/purge-backups"
+    [ -d "$backup_parent" ] || { printf '0'; return; }
+    find "$backup_parent" -mindepth 1 -maxdepth 1 -type d -print | wc -l | tr -d ' '
+  }
+
+  run_codex_purge() {
+    local fixture_home="$1"
+    shift
+    : > "$CODEX_PURGE_CLIENT_CALLS"
+    if HOME="$fixture_home" \
+      CODEX_HOME="$fixture_home/.codex" \
+      PATH="$CODEX_PURGE_SHIMS:$PATH" \
+      OSO_PURGE_CLIENT_CALLS="$CODEX_PURGE_CLIENT_CALLS" \
+      OSO_PURGE_FAIL_AFTER="${OSO_PURGE_FAIL_AFTER:-}" \
+      bash "$PURGE_CODEX_SH" "$@" > "$CODEX_PURGE_OUTPUT" 2>&1; then
+      CODEX_PURGE_RC=0
+    else
+      CODEX_PURGE_RC=$?
+    fi
+    CODEX_PURGE_LOG="$(cat "$CODEX_PURGE_OUTPUT")"
+  }
+
+  verify_purge_manifest() {
+    local backup="$1"
+    if command -v sha256sum >/dev/null 2>&1; then
+      (cd "$backup" && sha256sum -c manifest.sha256 >/dev/null 2>&1)
+    else
+      (cd "$backup" && shasum -a 256 -c manifest.sha256 >/dev/null 2>&1)
+    fi
+  }
+
+  purge_backup_snapshot() {
+    local backup="$1" path
+    [ -d "$backup" ] || return 0
+    find "$backup" -type f -print | LC_ALL=C sort | while IFS= read -r path; do
+      printf '%s %s\n' "${path#$backup/}" "$(file_sha256 "$path")"
+    done
+  }
+
+  purge_backup_location() {
+    local backup="$1" fixture_home="$2"
+    case "$backup" in
+      "$fixture_home"/.local/state/oso-code/purge-backups/*) printf 'inside' ;;
+      *) printf 'outside' ;;
+    esac
+  }
+
+  CODEX_PURGE_DECLINE_HOME="$TEST_HOME/codex-purge-decline-home"
+  write_codex_purge_fixture "$CODEX_PURGE_DECLINE_HOME"
+  codex_purge_decline_before="$(purge_tree_snapshot "$CODEX_PURGE_DECLINE_HOME")"
+  printf '\n' > "$TEST_HOME/codex-purge-decline-input"
   : > "$CODEX_PURGE_CLIENT_CALLS"
-  if HOME="$fixture_home" \
-    CODEX_HOME="$fixture_home/.codex" \
+  if HOME="$CODEX_PURGE_DECLINE_HOME" \
+    CODEX_HOME="$CODEX_PURGE_DECLINE_HOME/.codex" \
     PATH="$CODEX_PURGE_SHIMS:$PATH" \
     OSO_PURGE_CLIENT_CALLS="$CODEX_PURGE_CLIENT_CALLS" \
-    OSO_PURGE_FAIL_AFTER="${OSO_PURGE_FAIL_AFTER:-}" \
-    bash "$PURGE_CODEX_SH" "$@" > "$CODEX_PURGE_OUTPUT" 2>&1; then
-    CODEX_PURGE_RC=0
+    bash "$PURGE_CODEX_SH" < "$TEST_HOME/codex-purge-decline-input" \
+      > "$CODEX_PURGE_OUTPUT" 2>&1; then
+    codex_purge_decline_rc=0
   else
-    CODEX_PURGE_RC=$?
+    codex_purge_decline_rc=$?
   fi
-  CODEX_PURGE_LOG="$(cat "$CODEX_PURGE_OUTPUT")"
-}
+  assert_equals "the Codex purge defaults to no without explicit confirmation" \
+    "nonzero" "$([ "$codex_purge_decline_rc" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "declining the Codex purge preserves both source trees exactly" \
+    "$codex_purge_decline_before" "$(purge_tree_snapshot "$CODEX_PURGE_DECLINE_HOME")"
+  assert_equals "declining the Codex purge creates no backup" \
+    "0" "$(purge_backup_count "$CODEX_PURGE_DECLINE_HOME")"
 
-verify_purge_manifest() {
-  local backup="$1"
-  if command -v sha256sum >/dev/null 2>&1; then
-    (cd "$backup" && sha256sum -c manifest.sha256 >/dev/null 2>&1)
+  run_codex_purge "$CODEX_PURGE_DECLINE_HOME" --unknown
+  assert_equals "an unknown Codex purge flag is a usage error" \
+    "2" "$CODEX_PURGE_RC"
+  assert_equals "a usage error preserves both Codex source trees exactly" \
+    "$codex_purge_decline_before" "$(purge_tree_snapshot "$CODEX_PURGE_DECLINE_HOME")"
+
+  : > "$CODEX_PURGE_CLIENT_CALLS"
+  if HOME="$CODEX_PURGE_DECLINE_HOME" \
+    CODEX_HOME="$TEST_HOME/outside-codex-home" \
+    PATH="$CODEX_PURGE_SHIMS:$PATH" \
+    OSO_PURGE_CLIENT_CALLS="$CODEX_PURGE_CLIENT_CALLS" \
+    bash "$PURGE_CODEX_SH" --yes > "$CODEX_PURGE_OUTPUT" 2>&1; then
+    codex_purge_override_rc=0
   else
-    (cd "$backup" && shasum -a 256 -c manifest.sha256 >/dev/null 2>&1)
+    codex_purge_override_rc=$?
   fi
-}
+  assert_equals "the purge rejects a CODEX_HOME outside HOME/.codex" \
+    "nonzero" "$([ "$codex_purge_override_rc" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "a CODEX_HOME refusal preserves both source trees exactly" \
+    "$codex_purge_decline_before" "$(purge_tree_snapshot "$CODEX_PURGE_DECLINE_HOME")"
 
-purge_backup_snapshot() {
-  local backup="$1" path
-  find "$backup" -type f -print | LC_ALL=C sort | while IFS= read -r path; do
-    printf '%s %s\n' "${path#$backup/}" "$(file_sha256 "$path")"
+  CODEX_PURGE_OVERLAP_HOME="$TEST_HOME/codex-purge-overlap-home"
+  write_codex_purge_fixture "$CODEX_PURGE_OVERLAP_HOME"
+  mkdir -p "$CODEX_PURGE_OVERLAP_HOME/.codex/backups"
+  ln -s ../../../.codex/backups \
+    "$CODEX_PURGE_OVERLAP_HOME/.local/state/oso-code/purge-backups"
+  codex_purge_overlap_before="$(purge_tree_snapshot "$CODEX_PURGE_OVERLAP_HOME")"
+  run_codex_purge "$CODEX_PURGE_OVERLAP_HOME" --yes
+  assert_equals "a physical backup path inside a purge target is rejected" \
+    "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "backup overlap refusal preserves both purge targets exactly" \
+    "$codex_purge_overlap_before" "$(purge_tree_snapshot "$CODEX_PURGE_OVERLAP_HOME")"
+  assert_equals "backup overlap refusal preserves the indirection that exposed it" \
+    "../../../.codex/backups" "$(readlink "$CODEX_PURGE_OVERLAP_HOME/.local/state/oso-code/purge-backups")"
+
+  CODEX_PURGE_ANCESTOR_HOME="$TEST_HOME/codex-purge-ancestor-home"
+  mkdir -p "$CODEX_PURGE_ANCESTOR_HOME/.codex/local" \
+    "$CODEX_PURGE_ANCESTOR_HOME/.agents"
+  printf 'must remain byte-identical\n' > "$CODEX_PURGE_ANCESTOR_HOME/.codex/config.toml"
+  ln -s .codex/local "$CODEX_PURGE_ANCESTOR_HOME/.local"
+  codex_purge_ancestor_before="$(purge_tree_snapshot "$CODEX_PURGE_ANCESTOR_HOME")"
+  run_codex_purge "$CODEX_PURGE_ANCESTOR_HOME" --yes
+  assert_equals "backup ancestor overlap is rejected before mkdir can mutate a target" \
+    "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "preflight overlap refusal leaves both purge targets byte-identical" \
+    "$codex_purge_ancestor_before" "$(purge_tree_snapshot "$CODEX_PURGE_ANCESTOR_HOME")"
+  assert_equals "preflight overlap refusal creates no downstream backup directories" \
+    "absent" "$([ ! -e "$CODEX_PURGE_ANCESTOR_HOME/.codex/local/state" ] && echo absent || echo present)"
+
+  CODEX_PURGE_EXTERNAL_HOME="$TEST_HOME/codex-purge-external-home"
+  CODEX_PURGE_EXTERNAL_PARENT="$TEST_HOME/codex-purge-external-parent"
+  mkdir -p "$CODEX_PURGE_EXTERNAL_HOME/.codex" \
+    "$CODEX_PURGE_EXTERNAL_HOME/.agents" \
+    "$CODEX_PURGE_EXTERNAL_PARENT"
+  printf 'external preflight source\n' > "$CODEX_PURGE_EXTERNAL_HOME/.codex/config.toml"
+  ln -s "$CODEX_PURGE_EXTERNAL_PARENT" "$CODEX_PURGE_EXTERNAL_HOME/.local"
+  codex_purge_external_before="$(purge_tree_snapshot "$CODEX_PURGE_EXTERNAL_HOME")"
+  run_codex_purge "$CODEX_PURGE_EXTERNAL_HOME" --yes
+  assert_equals "an external backup ancestor is rejected before mkdir" \
+    "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "external ancestor refusal leaves both purge targets byte-identical" \
+    "$codex_purge_external_before" "$(purge_tree_snapshot "$CODEX_PURGE_EXTERNAL_HOME")"
+  assert_equals "external ancestor refusal creates nothing outside fixture HOME" \
+    "absent" "$([ ! -e "$CODEX_PURGE_EXTERNAL_PARENT/state" ] && echo absent || echo present)"
+
+  CODEX_PURGE_FAILURE_HOME="$TEST_HOME/codex-purge-failure-home"
+  write_codex_purge_fixture "$CODEX_PURGE_FAILURE_HOME"
+  codex_purge_failure_before="$(purge_tree_snapshot "$CODEX_PURGE_FAILURE_HOME")"
+  OSO_PURGE_FAIL_AFTER=after-backup run_codex_purge "$CODEX_PURGE_FAILURE_HOME" --yes
+  assert_equals "a deterministic failure after backup exits before deletion" \
+    "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "a verified-backup failure leaves both source trees exactly intact" \
+    "$codex_purge_failure_before" "$(purge_tree_snapshot "$CODEX_PURGE_FAILURE_HOME")"
+  assert_equals "the pre-delete failure retains exactly one diagnostic backup" \
+    "1" "$(purge_backup_count "$CODEX_PURGE_FAILURE_HOME")"
+  CODEX_PURGE_FAILURE_BACKUP="$(find "$CODEX_PURGE_FAILURE_HOME/.local/state/oso-code/purge-backups" \
+    -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | head -n 1)" \
+    || CODEX_PURGE_FAILURE_BACKUP=""
+  assert_equals "the retained pre-delete backup still passes its manifest" \
+    "valid" "$(verify_purge_manifest "$CODEX_PURGE_FAILURE_BACKUP" && echo valid || echo invalid)"
+
+  CODEX_PURGE_HOME="$TEST_HOME/codex-purge-home"
+  write_codex_purge_fixture "$CODEX_PURGE_HOME"
+  codex_purge_before="$(purge_tree_snapshot "$CODEX_PURGE_HOME")"
+  run_codex_purge "$CODEX_PURGE_HOME" --yes
+  codex_purge_outcome="$CODEX_PURGE_RC"
+  if [ "$CODEX_PURGE_RC" -ne 0 ]; then
+    codex_purge_outcome="$CODEX_PURGE_RC ($CODEX_PURGE_LOG)"
+  fi
+  assert_equals "the fixture-only Codex purge completes" "0" "$codex_purge_outcome"
+  CODEX_PURGE_BACKUP="$(printf '%s\n' "$CODEX_PURGE_LOG" | sed -n 's/^\[oso-code\] backup: //p' | tail -n 1)"
+  establish_premise "the completed purge published a backup directory to read back" \
+    [ -d "$CODEX_PURGE_BACKUP" ]
+  assert_equals "the purge reports one absolute backup inside the fixture HOME" \
+    "inside" "$(purge_backup_location "$CODEX_PURGE_BACKUP" "$CODEX_PURGE_HOME")"
+  assert_equals "the purge backup root has mode 0700" \
+    "0700" "$([ -d "$CODEX_PURGE_BACKUP" ] && find "$CODEX_PURGE_BACKUP" -maxdepth 0 -type d -perm 0700 -print | grep -q . && echo 0700 || echo wrong)"
+
+  missing_purge_backup_file=""
+  for purge_backup_file in \
+    format \
+    codex-home.target codex-home.state codex-home.tar \
+    agents-home.target agents-home.state agents-home.tar \
+    manifest.sha256; do
+    [ -f "$CODEX_PURGE_BACKUP/$purge_backup_file" ] \
+      || missing_purge_backup_file="$missing_purge_backup_file $purge_backup_file"
   done
-}
+  assert_equals "the purge publishes its complete restorable backup contract" \
+    "" "$missing_purge_backup_file"
+  missing_purge_manifest_row=""
+  for purge_manifest_path in \
+    format \
+    codex-home.target codex-home.state codex-home.tar \
+    agents-home.target agents-home.state agents-home.tar; do
+    awk -v path="$purge_manifest_path" '$2 == path { found++ } END { exit found == 1 ? 0 : 1 }' \
+      "$CODEX_PURGE_BACKUP/manifest.sha256" \
+      || missing_purge_manifest_row="$missing_purge_manifest_row $purge_manifest_path"
+  done
+  assert_equals "the purge manifest signs every decision-bearing backup file once" \
+    "" "$missing_purge_manifest_row"
+  assert_equals "the purge records the exact Codex destination" \
+    "$CODEX_PURGE_HOME/.codex" "$(cat "$CODEX_PURGE_BACKUP/codex-home.target")"
+  assert_equals "the purge records the exact shared agents destination" \
+    "$CODEX_PURGE_HOME/.agents" "$(cat "$CODEX_PURGE_BACKUP/agents-home.target")"
+  assert_equals "the published purge manifest verifies every recorded payload" \
+    "valid" "$(verify_purge_manifest "$CODEX_PURGE_BACKUP" && echo valid || echo invalid)"
+  assert_equals "the complete Codex tree is absent after its verified backup" \
+    "absent" "$([ ! -e "$CODEX_PURGE_HOME/.codex" ] && [ ! -L "$CODEX_PURGE_HOME/.codex" ] && echo absent || echo present)"
+  assert_equals "the complete shared agents tree is absent after its verified backup" \
+    "absent" "$([ ! -e "$CODEX_PURGE_HOME/.agents" ] && [ ! -L "$CODEX_PURGE_HOME/.agents" ] && echo absent || echo present)"
+  assert_equals "the purge preserves Claude state outside its two-target boundary" \
+    "claude survives" "$(cat "$CODEX_PURGE_HOME/.claude/sentinel")"
+  assert_equals "the purge preserves the installed oso runtime outside its boundary" \
+    "runtime survives" "$(cat "$CODEX_PURGE_HOME/.local/share/oso-code/runtime/sentinel")"
+  assert_equals "the purge preserves oso worktree state outside its boundary" \
+    "state survives" "$(cat "$CODEX_PURGE_HOME/.local/state/oso-code/worktrees/keep/sentinel")"
+  assert_equals "the purge never invokes Codex, npm or login" \
+    "0" "$(wc -l < "$CODEX_PURGE_CLIENT_CALLS" | tr -d ' ')"
 
-purge_backup_location() {
-  local backup="$1" fixture_home="$2"
-  case "$backup" in
-    "$fixture_home"/.local/state/oso-code/purge-backups/*) printf 'inside' ;;
-    *) printf 'outside' ;;
-  esac
-}
+  codex_purge_backup_count="$(purge_backup_count "$CODEX_PURGE_HOME")"
+  run_codex_purge "$CODEX_PURGE_HOME" --yes
+  assert_equals "purging an already empty Codex home is idempotent" "0" "$CODEX_PURGE_RC"
+  assert_equals "an empty idempotent purge creates no redundant backup" \
+    "$codex_purge_backup_count" "$(purge_backup_count "$CODEX_PURGE_HOME")"
 
-CODEX_PURGE_DECLINE_HOME="$TEST_HOME/codex-purge-decline-home"
-write_codex_purge_fixture "$CODEX_PURGE_DECLINE_HOME"
-codex_purge_decline_before="$(purge_tree_snapshot "$CODEX_PURGE_DECLINE_HOME")"
-printf '\n' > "$TEST_HOME/codex-purge-decline-input"
-: > "$CODEX_PURGE_CLIENT_CALLS"
-if HOME="$CODEX_PURGE_DECLINE_HOME" \
-  CODEX_HOME="$CODEX_PURGE_DECLINE_HOME/.codex" \
-  PATH="$CODEX_PURGE_SHIMS:$PATH" \
-  OSO_PURGE_CLIENT_CALLS="$CODEX_PURGE_CLIENT_CALLS" \
-  bash "$PURGE_CODEX_SH" < "$TEST_HOME/codex-purge-decline-input" \
-    > "$CODEX_PURGE_OUTPUT" 2>&1; then
-  codex_purge_decline_rc=0
-else
-  codex_purge_decline_rc=$?
+  CODEX_TAMPERED_PURGE_BACKUP="$TEST_HOME/codex-tampered-purge-backup"
+  establish_premise "the published backup copies into the archive-tamper fixture" \
+    cp -R "$CODEX_PURGE_BACKUP" "$CODEX_TAMPERED_PURGE_BACKUP"
+  printf 'tamper\n' >> "$CODEX_TAMPERED_PURGE_BACKUP/codex-home.tar" || true
+  run_codex_purge "$CODEX_PURGE_HOME" --restore "$CODEX_TAMPERED_PURGE_BACKUP"
+  assert_equals "a modified purge archive is rejected by its published digest" \
+    "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "a corrupt restore writes neither Codex destination" \
+    "absent" "$([ ! -e "$CODEX_PURGE_HOME/.codex" ] && [ ! -e "$CODEX_PURGE_HOME/.agents" ] && echo absent || echo present)"
+
+  CODEX_TAMPERED_PURGE_METADATA="$TEST_HOME/codex-tampered-purge-metadata"
+  establish_premise "the published backup copies into the metadata-tamper fixture" \
+    cp -R "$CODEX_PURGE_BACKUP" "$CODEX_TAMPERED_PURGE_METADATA"
+  printf 'absent\n' > "$CODEX_TAMPERED_PURGE_METADATA/codex-home.state" || true
+  run_codex_purge "$CODEX_PURGE_HOME" --restore "$CODEX_TAMPERED_PURGE_METADATA"
+  assert_equals "modified purge metadata is rejected by its published digest" \
+    "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "corrupt absence metadata cannot silently omit a Codex restore" \
+    "absent" "$([ ! -e "$CODEX_PURGE_HOME/.codex" ] && [ ! -e "$CODEX_PURGE_HOME/.agents" ] && echo absent || echo present)"
+
+  OSO_PURGE_FAIL_AFTER=after-codex-restore run_codex_purge \
+    "$CODEX_PURGE_HOME" --restore "$CODEX_PURGE_BACKUP"
+  assert_equals "a failure after publishing the first restore target exits nonzero" \
+    "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "a partial restore failure rolls both destinations back to absent" \
+    "absent" "$([ ! -e "$CODEX_PURGE_HOME/.codex" ] && [ ! -L "$CODEX_PURGE_HOME/.codex" ] && [ ! -e "$CODEX_PURGE_HOME/.agents" ] && [ ! -L "$CODEX_PURGE_HOME/.agents" ] && echo absent || echo present)"
+
+  purge_backup_before_restore="$(purge_backup_snapshot "$CODEX_PURGE_BACKUP")"
+  run_codex_purge "$CODEX_PURGE_HOME" --restore "$CODEX_PURGE_BACKUP"
+  codex_restore_outcome="$CODEX_PURGE_RC"
+  if [ "$CODEX_PURGE_RC" -ne 0 ]; then
+    codex_restore_outcome="$CODEX_PURGE_RC ($CODEX_PURGE_LOG)"
+  fi
+  assert_equals "the verified Codex purge backup restores successfully" "0" "$codex_restore_outcome"
+  assert_equals "restore reproduces bytes, links, empty directories and modes" \
+    "$codex_purge_before" "$(purge_tree_snapshot "$CODEX_PURGE_HOME")"
+  purge_backup_after_restore="$(purge_backup_snapshot "$CODEX_PURGE_BACKUP")"
+  assert_equals "a successful restore retains the verified backup unchanged" \
+    "$purge_backup_before_restore" "$purge_backup_after_restore"
+
+  codex_restored_before_conflict="$(purge_tree_snapshot "$CODEX_PURGE_HOME")"
+  run_codex_purge "$CODEX_PURGE_HOME" --restore "$CODEX_PURGE_BACKUP"
+  assert_equals "restore refuses to merge over existing Codex destinations" \
+    "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "a restore conflict leaves both existing trees exactly intact" \
+    "$codex_restored_before_conflict" "$(purge_tree_snapshot "$CODEX_PURGE_HOME")"
+  assert_equals "a restore conflict leaves the backup manifest valid" \
+    "valid" "$(verify_purge_manifest "$CODEX_PURGE_BACKUP" && echo valid || echo invalid)"
+
+  CODEX_PURGE_SYMLINK_HOME="$TEST_HOME/codex-purge-symlink-home"
+  mkdir -p "$CODEX_PURGE_SYMLINK_HOME/external-codex"
+  printf 'external target survives\n' > "$CODEX_PURGE_SYMLINK_HOME/external-codex/sentinel"
+  ln -s external-codex "$CODEX_PURGE_SYMLINK_HOME/.codex"
+  ln -s missing-agents-target "$CODEX_PURGE_SYMLINK_HOME/.agents"
+  run_codex_purge "$CODEX_PURGE_SYMLINK_HOME" --yes
+  CODEX_PURGE_SYMLINK_BACKUP="$(printf '%s\n' "$CODEX_PURGE_LOG" | sed -n 's/^\[oso-code\] backup: //p' | tail -n 1)"
+  assert_equals "the total purge removes a symlinked Codex root without following it" \
+    "absent" "$([ ! -e "$CODEX_PURGE_SYMLINK_HOME/.codex" ] && [ ! -L "$CODEX_PURGE_SYMLINK_HOME/.codex" ] && echo absent || echo present)"
+  assert_equals "the total purge removes a dangling agents root link" \
+    "absent" "$([ ! -e "$CODEX_PURGE_SYMLINK_HOME/.agents" ] && [ ! -L "$CODEX_PURGE_SYMLINK_HOME/.agents" ] && echo absent || echo present)"
+  assert_equals "purging a root link preserves its external destination" \
+    "external target survives" "$(cat "$CODEX_PURGE_SYMLINK_HOME/external-codex/sentinel")"
+  assert_equals "the backup records a symlinked Codex root without dereferencing it" \
+    "symlink" "$(cat "$CODEX_PURGE_SYMLINK_BACKUP/codex-home.state")"
+  assert_equals "the backup records a dangling agents root link" \
+    "symlink" "$(cat "$CODEX_PURGE_SYMLINK_BACKUP/agents-home.state")"
+  run_codex_purge "$CODEX_PURGE_SYMLINK_HOME" --restore "$CODEX_PURGE_SYMLINK_BACKUP"
+  assert_equals "restore recreates the exact Codex root link" \
+    "external-codex" "$(readlink "$CODEX_PURGE_SYMLINK_HOME/.codex")"
+  assert_equals "restore recreates the exact dangling agents root link" \
+    "missing-agents-target" "$(readlink "$CODEX_PURGE_SYMLINK_HOME/.agents")"
+  assert_equals "root-link restore still leaves the external destination unchanged" \
+    "external target survives" "$(cat "$CODEX_PURGE_SYMLINK_HOME/external-codex/sentinel")"
 fi
-assert_equals "the Codex purge defaults to no without explicit confirmation" \
-  "nonzero" "$([ "$codex_purge_decline_rc" -ne 0 ] && echo nonzero || echo zero)"
-assert_equals "declining the Codex purge preserves both source trees exactly" \
-  "$codex_purge_decline_before" "$(purge_tree_snapshot "$CODEX_PURGE_DECLINE_HOME")"
-assert_equals "declining the Codex purge creates no backup" \
-  "0" "$(purge_backup_count "$CODEX_PURGE_DECLINE_HOME")"
-
-run_codex_purge "$CODEX_PURGE_DECLINE_HOME" --unknown
-assert_equals "an unknown Codex purge flag is a usage error" \
-  "2" "$CODEX_PURGE_RC"
-assert_equals "a usage error preserves both Codex source trees exactly" \
-  "$codex_purge_decline_before" "$(purge_tree_snapshot "$CODEX_PURGE_DECLINE_HOME")"
-
-: > "$CODEX_PURGE_CLIENT_CALLS"
-if HOME="$CODEX_PURGE_DECLINE_HOME" \
-  CODEX_HOME="$TEST_HOME/outside-codex-home" \
-  PATH="$CODEX_PURGE_SHIMS:$PATH" \
-  OSO_PURGE_CLIENT_CALLS="$CODEX_PURGE_CLIENT_CALLS" \
-  bash "$PURGE_CODEX_SH" --yes > "$CODEX_PURGE_OUTPUT" 2>&1; then
-  codex_purge_override_rc=0
-else
-  codex_purge_override_rc=$?
-fi
-assert_equals "the purge rejects a CODEX_HOME outside HOME/.codex" \
-  "nonzero" "$([ "$codex_purge_override_rc" -ne 0 ] && echo nonzero || echo zero)"
-assert_equals "a CODEX_HOME refusal preserves both source trees exactly" \
-  "$codex_purge_decline_before" "$(purge_tree_snapshot "$CODEX_PURGE_DECLINE_HOME")"
-
-CODEX_PURGE_OVERLAP_HOME="$TEST_HOME/codex-purge-overlap-home"
-write_codex_purge_fixture "$CODEX_PURGE_OVERLAP_HOME"
-mkdir -p "$CODEX_PURGE_OVERLAP_HOME/.codex/backups"
-ln -s ../../../.codex/backups \
-  "$CODEX_PURGE_OVERLAP_HOME/.local/state/oso-code/purge-backups"
-codex_purge_overlap_before="$(purge_tree_snapshot "$CODEX_PURGE_OVERLAP_HOME")"
-run_codex_purge "$CODEX_PURGE_OVERLAP_HOME" --yes
-assert_equals "a physical backup path inside a purge target is rejected" \
-  "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
-assert_equals "backup overlap refusal preserves both purge targets exactly" \
-  "$codex_purge_overlap_before" "$(purge_tree_snapshot "$CODEX_PURGE_OVERLAP_HOME")"
-assert_equals "backup overlap refusal preserves the indirection that exposed it" \
-  "../../../.codex/backups" "$(readlink "$CODEX_PURGE_OVERLAP_HOME/.local/state/oso-code/purge-backups")"
-
-CODEX_PURGE_ANCESTOR_HOME="$TEST_HOME/codex-purge-ancestor-home"
-mkdir -p "$CODEX_PURGE_ANCESTOR_HOME/.codex/local" \
-  "$CODEX_PURGE_ANCESTOR_HOME/.agents"
-printf 'must remain byte-identical\n' > "$CODEX_PURGE_ANCESTOR_HOME/.codex/config.toml"
-ln -s .codex/local "$CODEX_PURGE_ANCESTOR_HOME/.local"
-codex_purge_ancestor_before="$(purge_tree_snapshot "$CODEX_PURGE_ANCESTOR_HOME")"
-run_codex_purge "$CODEX_PURGE_ANCESTOR_HOME" --yes
-assert_equals "backup ancestor overlap is rejected before mkdir can mutate a target" \
-  "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
-assert_equals "preflight overlap refusal leaves both purge targets byte-identical" \
-  "$codex_purge_ancestor_before" "$(purge_tree_snapshot "$CODEX_PURGE_ANCESTOR_HOME")"
-assert_equals "preflight overlap refusal creates no downstream backup directories" \
-  "absent" "$([ ! -e "$CODEX_PURGE_ANCESTOR_HOME/.codex/local/state" ] && echo absent || echo present)"
-
-CODEX_PURGE_EXTERNAL_HOME="$TEST_HOME/codex-purge-external-home"
-CODEX_PURGE_EXTERNAL_PARENT="$TEST_HOME/codex-purge-external-parent"
-mkdir -p "$CODEX_PURGE_EXTERNAL_HOME/.codex" \
-  "$CODEX_PURGE_EXTERNAL_HOME/.agents" \
-  "$CODEX_PURGE_EXTERNAL_PARENT"
-printf 'external preflight source\n' > "$CODEX_PURGE_EXTERNAL_HOME/.codex/config.toml"
-ln -s "$CODEX_PURGE_EXTERNAL_PARENT" "$CODEX_PURGE_EXTERNAL_HOME/.local"
-codex_purge_external_before="$(purge_tree_snapshot "$CODEX_PURGE_EXTERNAL_HOME")"
-run_codex_purge "$CODEX_PURGE_EXTERNAL_HOME" --yes
-assert_equals "an external backup ancestor is rejected before mkdir" \
-  "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
-assert_equals "external ancestor refusal leaves both purge targets byte-identical" \
-  "$codex_purge_external_before" "$(purge_tree_snapshot "$CODEX_PURGE_EXTERNAL_HOME")"
-assert_equals "external ancestor refusal creates nothing outside fixture HOME" \
-  "absent" "$([ ! -e "$CODEX_PURGE_EXTERNAL_PARENT/state" ] && echo absent || echo present)"
-
-CODEX_PURGE_FAILURE_HOME="$TEST_HOME/codex-purge-failure-home"
-write_codex_purge_fixture "$CODEX_PURGE_FAILURE_HOME"
-codex_purge_failure_before="$(purge_tree_snapshot "$CODEX_PURGE_FAILURE_HOME")"
-OSO_PURGE_FAIL_AFTER=after-backup run_codex_purge "$CODEX_PURGE_FAILURE_HOME" --yes
-assert_equals "a deterministic failure after backup exits before deletion" \
-  "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
-assert_equals "a verified-backup failure leaves both source trees exactly intact" \
-  "$codex_purge_failure_before" "$(purge_tree_snapshot "$CODEX_PURGE_FAILURE_HOME")"
-assert_equals "the pre-delete failure retains exactly one diagnostic backup" \
-  "1" "$(purge_backup_count "$CODEX_PURGE_FAILURE_HOME")"
-CODEX_PURGE_FAILURE_BACKUP="$(find "$CODEX_PURGE_FAILURE_HOME/.local/state/oso-code/purge-backups" -mindepth 1 -maxdepth 1 -type d -print | head -n 1)"
-assert_equals "the retained pre-delete backup still passes its manifest" \
-  "valid" "$(verify_purge_manifest "$CODEX_PURGE_FAILURE_BACKUP" && echo valid || echo invalid)"
-
-CODEX_PURGE_HOME="$TEST_HOME/codex-purge-home"
-write_codex_purge_fixture "$CODEX_PURGE_HOME"
-codex_purge_before="$(purge_tree_snapshot "$CODEX_PURGE_HOME")"
-run_codex_purge "$CODEX_PURGE_HOME" --yes
-codex_purge_outcome="$CODEX_PURGE_RC"
-if [ "$CODEX_PURGE_RC" -ne 0 ]; then
-  codex_purge_outcome="$CODEX_PURGE_RC ($CODEX_PURGE_LOG)"
-fi
-assert_equals "the fixture-only Codex purge completes" "0" "$codex_purge_outcome"
-CODEX_PURGE_BACKUP="$(printf '%s\n' "$CODEX_PURGE_LOG" | sed -n 's/^\[oso-code\] backup: //p' | tail -n 1)"
-assert_equals "the purge reports one absolute backup inside the fixture HOME" \
-  "inside" "$(purge_backup_location "$CODEX_PURGE_BACKUP" "$CODEX_PURGE_HOME")"
-assert_equals "the purge backup root has mode 0700" \
-  "0700" "$([ -d "$CODEX_PURGE_BACKUP" ] && find "$CODEX_PURGE_BACKUP" -maxdepth 0 -type d -perm 0700 -print | grep -q . && echo 0700 || echo wrong)"
-
-missing_purge_backup_file=""
-for purge_backup_file in \
-  format \
-  codex-home.target codex-home.state codex-home.tar \
-  agents-home.target agents-home.state agents-home.tar \
-  manifest.sha256; do
-  [ -f "$CODEX_PURGE_BACKUP/$purge_backup_file" ] \
-    || missing_purge_backup_file="$missing_purge_backup_file $purge_backup_file"
-done
-assert_equals "the purge publishes its complete restorable backup contract" \
-  "" "$missing_purge_backup_file"
-missing_purge_manifest_row=""
-for purge_manifest_path in \
-  format \
-  codex-home.target codex-home.state codex-home.tar \
-  agents-home.target agents-home.state agents-home.tar; do
-  awk -v path="$purge_manifest_path" '$2 == path { found++ } END { exit found == 1 ? 0 : 1 }' \
-    "$CODEX_PURGE_BACKUP/manifest.sha256" \
-    || missing_purge_manifest_row="$missing_purge_manifest_row $purge_manifest_path"
-done
-assert_equals "the purge manifest signs every decision-bearing backup file once" \
-  "" "$missing_purge_manifest_row"
-assert_equals "the purge records the exact Codex destination" \
-  "$CODEX_PURGE_HOME/.codex" "$(cat "$CODEX_PURGE_BACKUP/codex-home.target")"
-assert_equals "the purge records the exact shared agents destination" \
-  "$CODEX_PURGE_HOME/.agents" "$(cat "$CODEX_PURGE_BACKUP/agents-home.target")"
-assert_equals "the published purge manifest verifies every recorded payload" \
-  "valid" "$(verify_purge_manifest "$CODEX_PURGE_BACKUP" && echo valid || echo invalid)"
-assert_equals "the complete Codex tree is absent after its verified backup" \
-  "absent" "$([ ! -e "$CODEX_PURGE_HOME/.codex" ] && [ ! -L "$CODEX_PURGE_HOME/.codex" ] && echo absent || echo present)"
-assert_equals "the complete shared agents tree is absent after its verified backup" \
-  "absent" "$([ ! -e "$CODEX_PURGE_HOME/.agents" ] && [ ! -L "$CODEX_PURGE_HOME/.agents" ] && echo absent || echo present)"
-assert_equals "the purge preserves Claude state outside its two-target boundary" \
-  "claude survives" "$(cat "$CODEX_PURGE_HOME/.claude/sentinel")"
-assert_equals "the purge preserves the installed oso runtime outside its boundary" \
-  "runtime survives" "$(cat "$CODEX_PURGE_HOME/.local/share/oso-code/runtime/sentinel")"
-assert_equals "the purge preserves oso worktree state outside its boundary" \
-  "state survives" "$(cat "$CODEX_PURGE_HOME/.local/state/oso-code/worktrees/keep/sentinel")"
-assert_equals "the purge never invokes Codex, npm or login" \
-  "0" "$(wc -l < "$CODEX_PURGE_CLIENT_CALLS" | tr -d ' ')"
-
-codex_purge_backup_count="$(purge_backup_count "$CODEX_PURGE_HOME")"
-run_codex_purge "$CODEX_PURGE_HOME" --yes
-assert_equals "purging an already empty Codex home is idempotent" "0" "$CODEX_PURGE_RC"
-assert_equals "an empty idempotent purge creates no redundant backup" \
-  "$codex_purge_backup_count" "$(purge_backup_count "$CODEX_PURGE_HOME")"
-
-CODEX_TAMPERED_PURGE_BACKUP="$TEST_HOME/codex-tampered-purge-backup"
-cp -R "$CODEX_PURGE_BACKUP" "$CODEX_TAMPERED_PURGE_BACKUP"
-printf 'tamper\n' >> "$CODEX_TAMPERED_PURGE_BACKUP/codex-home.tar"
-run_codex_purge "$CODEX_PURGE_HOME" --restore "$CODEX_TAMPERED_PURGE_BACKUP"
-assert_equals "a modified purge archive is rejected by its published digest" \
-  "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
-assert_equals "a corrupt restore writes neither Codex destination" \
-  "absent" "$([ ! -e "$CODEX_PURGE_HOME/.codex" ] && [ ! -e "$CODEX_PURGE_HOME/.agents" ] && echo absent || echo present)"
-
-CODEX_TAMPERED_PURGE_METADATA="$TEST_HOME/codex-tampered-purge-metadata"
-cp -R "$CODEX_PURGE_BACKUP" "$CODEX_TAMPERED_PURGE_METADATA"
-printf 'absent\n' > "$CODEX_TAMPERED_PURGE_METADATA/codex-home.state"
-run_codex_purge "$CODEX_PURGE_HOME" --restore "$CODEX_TAMPERED_PURGE_METADATA"
-assert_equals "modified purge metadata is rejected by its published digest" \
-  "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
-assert_equals "corrupt absence metadata cannot silently omit a Codex restore" \
-  "absent" "$([ ! -e "$CODEX_PURGE_HOME/.codex" ] && [ ! -e "$CODEX_PURGE_HOME/.agents" ] && echo absent || echo present)"
-
-OSO_PURGE_FAIL_AFTER=after-codex-restore run_codex_purge \
-  "$CODEX_PURGE_HOME" --restore "$CODEX_PURGE_BACKUP"
-assert_equals "a failure after publishing the first restore target exits nonzero" \
-  "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
-assert_equals "a partial restore failure rolls both destinations back to absent" \
-  "absent" "$([ ! -e "$CODEX_PURGE_HOME/.codex" ] && [ ! -L "$CODEX_PURGE_HOME/.codex" ] && [ ! -e "$CODEX_PURGE_HOME/.agents" ] && [ ! -L "$CODEX_PURGE_HOME/.agents" ] && echo absent || echo present)"
-
-purge_backup_before_restore="$(purge_backup_snapshot "$CODEX_PURGE_BACKUP")"
-run_codex_purge "$CODEX_PURGE_HOME" --restore "$CODEX_PURGE_BACKUP"
-codex_restore_outcome="$CODEX_PURGE_RC"
-if [ "$CODEX_PURGE_RC" -ne 0 ]; then
-  codex_restore_outcome="$CODEX_PURGE_RC ($CODEX_PURGE_LOG)"
-fi
-assert_equals "the verified Codex purge backup restores successfully" "0" "$codex_restore_outcome"
-assert_equals "restore reproduces bytes, links, empty directories and modes" \
-  "$codex_purge_before" "$(purge_tree_snapshot "$CODEX_PURGE_HOME")"
-purge_backup_after_restore="$(purge_backup_snapshot "$CODEX_PURGE_BACKUP")"
-assert_equals "a successful restore retains the verified backup unchanged" \
-  "$purge_backup_before_restore" "$purge_backup_after_restore"
-
-codex_restored_before_conflict="$(purge_tree_snapshot "$CODEX_PURGE_HOME")"
-run_codex_purge "$CODEX_PURGE_HOME" --restore "$CODEX_PURGE_BACKUP"
-assert_equals "restore refuses to merge over existing Codex destinations" \
-  "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
-assert_equals "a restore conflict leaves both existing trees exactly intact" \
-  "$codex_restored_before_conflict" "$(purge_tree_snapshot "$CODEX_PURGE_HOME")"
-assert_equals "a restore conflict leaves the backup manifest valid" \
-  "valid" "$(verify_purge_manifest "$CODEX_PURGE_BACKUP" && echo valid || echo invalid)"
-
-CODEX_PURGE_SYMLINK_HOME="$TEST_HOME/codex-purge-symlink-home"
-mkdir -p "$CODEX_PURGE_SYMLINK_HOME/external-codex"
-printf 'external target survives\n' > "$CODEX_PURGE_SYMLINK_HOME/external-codex/sentinel"
-ln -s external-codex "$CODEX_PURGE_SYMLINK_HOME/.codex"
-ln -s missing-agents-target "$CODEX_PURGE_SYMLINK_HOME/.agents"
-run_codex_purge "$CODEX_PURGE_SYMLINK_HOME" --yes
-CODEX_PURGE_SYMLINK_BACKUP="$(printf '%s\n' "$CODEX_PURGE_LOG" | sed -n 's/^\[oso-code\] backup: //p' | tail -n 1)"
-assert_equals "the total purge removes a symlinked Codex root without following it" \
-  "absent" "$([ ! -e "$CODEX_PURGE_SYMLINK_HOME/.codex" ] && [ ! -L "$CODEX_PURGE_SYMLINK_HOME/.codex" ] && echo absent || echo present)"
-assert_equals "the total purge removes a dangling agents root link" \
-  "absent" "$([ ! -e "$CODEX_PURGE_SYMLINK_HOME/.agents" ] && [ ! -L "$CODEX_PURGE_SYMLINK_HOME/.agents" ] && echo absent || echo present)"
-assert_equals "purging a root link preserves its external destination" \
-  "external target survives" "$(cat "$CODEX_PURGE_SYMLINK_HOME/external-codex/sentinel")"
-assert_equals "the backup records a symlinked Codex root without dereferencing it" \
-  "symlink" "$(cat "$CODEX_PURGE_SYMLINK_BACKUP/codex-home.state")"
-assert_equals "the backup records a dangling agents root link" \
-  "symlink" "$(cat "$CODEX_PURGE_SYMLINK_BACKUP/agents-home.state")"
-run_codex_purge "$CODEX_PURGE_SYMLINK_HOME" --restore "$CODEX_PURGE_SYMLINK_BACKUP"
-assert_equals "restore recreates the exact Codex root link" \
-  "external-codex" "$(readlink "$CODEX_PURGE_SYMLINK_HOME/.codex")"
-assert_equals "restore recreates the exact dangling agents root link" \
-  "missing-agents-target" "$(readlink "$CODEX_PURGE_SYMLINK_HOME/.agents")"
-assert_equals "root-link restore still leaves the external destination unchanged" \
-  "external target survives" "$(cat "$CODEX_PURGE_SYMLINK_HOME/external-codex/sentinel")"
 
 # --- verify-codex.sh: a runtime path is checked exactly, never by an
 # unescaped regex substring (defect 2) ------------------------------------

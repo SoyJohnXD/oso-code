@@ -15,7 +15,7 @@
 - Small, quickly verifiable changes: the operator starts `$oso-code:quick`.
 - Something broke (a bug, a crash, a failing behavior): the operator starts `$oso-code:debug`.
 - Several substantial changes known up front, decided in one sitting and run one after another: the operator enters native `/plan` (or Shift+Tab), then starts `$oso-code:roadmap`; each child still waits for its own plan approval on this host.
-- Every change closes at zero warnings. `$oso-code:plan` commits each slice as it lands; never push or open a PR unless asked.
+- Every change closes at zero warnings. `$oso-code:plan` commits each slice as it lands; never push or open a PR unless asked. The one exception is armed, never assumed: a run under the AUTO disposition finishes by pushing its own change branch and opening the PR for it, and stops there — the merge, a release and any production deploy stay yours.
 
 # Voice
 

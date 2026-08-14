@@ -2,6 +2,7 @@
 
 Date: 2026-07-21
 Status: accepted
+Superseded-by: ADR-0145 — retires only this rule's UNCONDITIONAL standing, and only for a MILESTONE report on a host whose platform file carves an unattended run out of it. The rule governs every other class of operator-facing content exactly as written, it governs a milestone on a host that carves out nothing, and the park and the final report stay inside it on every host
 Reconciled: elsewhere — landed in the skills, plugin/output-styles/oso.md and bootstrap/claude-global.md; the frozen body never carried it.
 Source: docs/blueprint.md amendment of 2026-07-21 (repaso-categories-antiswallow), decision (D5), deciding commit 4cc2020
 

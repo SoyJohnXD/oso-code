@@ -2,7 +2,7 @@
 
 Date: 2026-07-11
 Status: accepted
-Superseded-by: ADR-0030 — retires only the third preference field; the store, its topic key and its read/upsert discipline still stand
+Superseded-by: ADR-0030 — retires only the third preference field; the store, its topic key and its read/upsert discipline still stand. ADR-0149 retires one field more, the `scope: personal` argument and its "honest per-machine: `$HOME`" gloss: `mem_search` filters by the resolved project unconditionally and a scope argument only adds a filter over that, so per-machine reach was never what that field bought — the record is ONE PER PROJECT, saved at engram's own default scope, and it now carries the ceiling fields beside the behavior ones
 Reconciled: superseded — Mode 1 §0 asks the two questions ADR-0030 left, so the body deliberately reads otherwise on the third field.
 Source: docs/blueprint.md amendment of 2026-07-11 (adaptive behavior), decision (a), deciding commit 577f972
 
