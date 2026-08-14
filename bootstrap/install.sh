@@ -981,6 +981,7 @@ publish_git_bash_path() {
     fi
     return 0
   fi
+  candidate="$(cygpath -m "$candidate" 2>/dev/null || printf '%s' "$candidate")"
   outcome=published
   [ -z "$stored" ] || outcome="repaired from $stored"
   if failure="$(store_client_env CLAUDE_CODE_GIT_BASH_PATH "$candidate")"; then

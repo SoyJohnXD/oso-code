@@ -4943,10 +4943,7 @@ printf '%s\n' 'stable asset' > "$IMPECCABLE_CACHE/assets/palette.txt"
 printf '%s\n' 'stable playbook' > "$IMPECCABLE_CACHE/reference/linked-playbook.md"
 printf '%s\n' 'stable asset' > "$IMPECCABLE_CACHE/reference/linked-assets/palette.txt"
 
-if [ "$RUNS_ON_WINDOWS_BASH" = true ]; then
-  echo "skip: the dangling-symlink owner idiom this mount publishes cannot exist where ln -s copies, so no case resting on a completed mount has a premise here — the product gap stands recorded"
-  skipped=$((skipped + 1))
-elif [ ! -x "$MOUNT_IMPECCABLE" ]; then
+if [ ! -x "$MOUNT_IMPECCABLE" ]; then
   echo "FAIL: the Codex Impeccable mount helper is absent or not executable"
   fail=$((fail + 1))
 elif mount_report="$("$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" 2>&1)"; then
@@ -5003,14 +5000,14 @@ elif mount_report="$("$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" 2>&1)"; then
     fail=$((fail + 1))
   fi
 
-  # The registry directory is stable; ownership is one unique symlink per
-  # acquirer, published atomically. A process removes only its own link. Dead
-  # links are logical stale records (ignored but retained), while a live link
-  # blocks and any entry outside the exact symlink grammar fails closed.
+  # The registry directory is stable; ownership is one unique directory per
+  # acquirer, published atomically. A process removes only its own. Dead owners
+  # are logical stale records (ignored but retained), while a live owner blocks
+  # and any entry outside the exact owner grammar fails closed.
   IMPECCABLE_MOUNT_LOCK="$HOME/.agents/skills/.impeccable.mount.lock"
-  mkdir -p "$IMPECCABLE_MOUNT_LOCK"
-  ln -s "pid=$$;token=live-fixture-token" \
-    "$IMPECCABLE_MOUNT_LOCK/owner.live-fixture-token"
+  mkdir -p "$IMPECCABLE_MOUNT_LOCK/owner.live-fixture-token"
+  printf 'pid=%s;token=live-fixture-token\n' "$$" \
+    > "$IMPECCABLE_MOUNT_LOCK/owner.live-fixture-token/identity"
   printf '%s\n' 'must survive a live lock' > "$IMPECCABLE_MOUNT/live-lock-sentinel"
   if "$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" >/dev/null 2>&1; then
     echo "FAIL: a live Impeccable mount lock was stolen"
@@ -5021,13 +5018,14 @@ elif mount_report="$("$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" 2>&1)"; then
   fi
   assert_equals "live-lock rejection preserves the mounted snapshot" \
     "must survive a live lock" "$(cat "$IMPECCABLE_MOUNT/live-lock-sentinel")"
-  assert_equals "live-lock rejection preserves the owner's exact target" \
+  assert_equals "live-lock rejection preserves the owner's exact identity" \
     "pid=$$;token=live-fixture-token" \
-    "$(readlink "$IMPECCABLE_MOUNT_LOCK/owner.live-fixture-token")"
+    "$(cat "$IMPECCABLE_MOUNT_LOCK/owner.live-fixture-token/identity")"
 
-  rm -f "$IMPECCABLE_MOUNT_LOCK/owner.live-fixture-token"
-  ln -s 'pid=2147483647;token=dead-fixture-token' \
-    "$IMPECCABLE_MOUNT_LOCK/owner.dead-fixture-token"
+  rm -rf "$IMPECCABLE_MOUNT_LOCK/owner.live-fixture-token"
+  mkdir -p "$IMPECCABLE_MOUNT_LOCK/owner.dead-fixture-token"
+  printf 'pid=2147483647;token=dead-fixture-token\n' \
+    > "$IMPECCABLE_MOUNT_LOCK/owner.dead-fixture-token/identity"
   if "$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" >/dev/null 2>&1; then
     echo "ok: a dead Impeccable mount owner is ignored so mounting can continue"
     pass=$((pass + 1))
@@ -5039,9 +5037,9 @@ elif mount_report="$("$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" 2>&1)"; then
     "gone" "$([ ! -e "$IMPECCABLE_MOUNT/live-lock-sentinel" ] && printf gone || printf present)"
   assert_equals "dead-lock recovery never deletes a foreign owner record" \
     "pid=2147483647;token=dead-fixture-token" \
-    "$(readlink "$IMPECCABLE_MOUNT_LOCK/owner.dead-fixture-token")"
+    "$(cat "$IMPECCABLE_MOUNT_LOCK/owner.dead-fixture-token/identity")"
 
-  rm -f "$IMPECCABLE_MOUNT_LOCK/owner.dead-fixture-token"
+  rm -rf "$IMPECCABLE_MOUNT_LOCK/owner.dead-fixture-token"
   printf '%s\n' 'must survive only until empty-lock recovery' \
     > "$IMPECCABLE_MOUNT/empty-lock-sentinel"
   if "$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" >/dev/null 2>&1; then
@@ -5102,7 +5100,7 @@ token=legacy-live-token" "$(cat "$IMPECCABLE_MOUNT_LOCK/owner")"
 
   # Deterministic ABA regression. A pauses immediately before publishing its
   # ownership primitive (the former implementation used mv; the atomic one uses
-  # ln). B publishes and reaches the protected copy while A is still paused.
+  # mkdir). B publishes and reaches the protected copy while A is still paused.
   # Resuming A must make A withdraw/fail without touching B's unique owner.
   ABA_HOME="$TEST_HOME/impeccable-aba-home"
   ABA_CONTROL="$TEST_HOME/impeccable-aba-control"
@@ -5117,7 +5115,7 @@ token=legacy-live-token" "$(cat "$IMPECCABLE_MOUNT_LOCK/owner")"
   printf '%s\n' 'complete source A' > "$ABA_SOURCE_A/reference/race-winner.md"
   printf '%s\n' 'complete source B' > "$ABA_SOURCE_B/reference/race-winner.md"
 
-  ABA_REAL_LN="$(command -v ln)"
+  ABA_REAL_MKDIR="$(command -v mkdir)"
   ABA_REAL_MV="$(command -v mv)"
   ABA_REAL_CP="$(command -v cp)"
   printf '%s\n' \
@@ -5130,8 +5128,8 @@ token=legacy-live-token" "$(cat "$IMPECCABLE_MOUNT_LOCK/owner")"
     '    while [ ! -f "$ABA_CONTROL/release-a" ]; do sleep 1; done' \
     '    ;;' \
     'esac' \
-    'exec "$ABA_REAL_LN" "$@"' \
-    > "$ABA_SHIMS/ln"
+    'exec "$ABA_REAL_MKDIR" "$@"' \
+    > "$ABA_SHIMS/mkdir"
   printf '%s\n' \
     '#!/bin/sh' \
     'last=' \
@@ -5152,7 +5150,7 @@ token=legacy-live-token" "$(cat "$IMPECCABLE_MOUNT_LOCK/owner")"
     'fi' \
     'exec "$ABA_REAL_CP" "$@"' \
     > "$ABA_SHIMS/cp"
-  chmod +x "$ABA_SHIMS/ln" "$ABA_SHIMS/mv" "$ABA_SHIMS/cp"
+  chmod +x "$ABA_SHIMS/mkdir" "$ABA_SHIMS/mv" "$ABA_SHIMS/cp"
 
   wait_for_aba_marker() {
     local marker="$1" process_id="$2" waited=0
@@ -5166,7 +5164,7 @@ token=legacy-live-token" "$(cat "$IMPECCABLE_MOUNT_LOCK/owner")"
 
   (
     if HOME="$ABA_HOME" PATH="$ABA_SHIMS:$PATH" \
-      ABA_CONTROL="$ABA_CONTROL" ABA_REAL_LN="$ABA_REAL_LN" \
+      ABA_CONTROL="$ABA_CONTROL" ABA_REAL_MKDIR="$ABA_REAL_MKDIR" \
       ABA_REAL_MV="$ABA_REAL_MV" ABA_REAL_CP="$ABA_REAL_CP" \
       ABA_PAUSE_OWNER_PUBLICATION=1 \
       "$MOUNT_IMPECCABLE" "$ABA_SOURCE_A" \
@@ -5190,7 +5188,7 @@ token=legacy-live-token" "$(cat "$IMPECCABLE_MOUNT_LOCK/owner")"
   if [ "$aba_ready" = true ]; then
     (
       if HOME="$ABA_HOME" PATH="$ABA_SHIMS:$PATH" \
-        ABA_CONTROL="$ABA_CONTROL" ABA_REAL_LN="$ABA_REAL_LN" \
+        ABA_CONTROL="$ABA_CONTROL" ABA_REAL_MKDIR="$ABA_REAL_MKDIR" \
         ABA_REAL_MV="$ABA_REAL_MV" ABA_REAL_CP="$ABA_REAL_CP" \
         ABA_PAUSE_PROTECTED_COPY=1 \
         "$MOUNT_IMPECCABLE" "$ABA_SOURCE_B" \
@@ -5218,7 +5216,7 @@ token=legacy-live-token" "$(cat "$IMPECCABLE_MOUNT_LOCK/owner")"
     wait "$aba_a_pid" 2>/dev/null || true
 
     aba_registry="$ABA_HOME/.agents/skills/.impeccable.mount.lock"
-    aba_owner_entries="$(find "$aba_registry" -mindepth 1 -maxdepth 1 -type l -name 'owner.*' 2>/dev/null)"
+    aba_owner_entries="$(find "$aba_registry" -mindepth 1 -maxdepth 1 -type d -name 'owner.*' 2>/dev/null)"
     aba_owner_count="$(printf '%s\n' "$aba_owner_entries" | awk 'NF { count++ } END { print count + 0 }')"
     assert_equals "losing process A never cleans up process B's published owner" \
       "1" "$aba_owner_count"
@@ -7822,10 +7820,15 @@ if [ "$longest_event" -le 350 ]; then
 else
   echo "FAIL: an event line ran to $longest_event characters"; fail=$((fail + 1))
 fi
-case "$(ls -l "$events_log" | cut -c1-10)" in
-  -rw-------) echo "ok: the event log is owner-only, like the state files"; pass=$((pass + 1)) ;;
-  *) echo "FAIL: the event log is $(ls -l "$events_log" | cut -c1-10), and it carries command text"; fail=$((fail + 1)) ;;
-esac
+if [ "$POSIX_MODES_ARE_EMULATED" = true ]; then
+  echo "skip: exact POSIX mode probes are not reliable on this host's mounts, so the event log has no mode to answer with"
+  skipped=$((skipped + 1))
+else
+  case "$(ls -l "$events_log" | cut -c1-10)" in
+    -rw-------) echo "ok: the event log is owner-only, like the state files"; pass=$((pass + 1)) ;;
+    *) echo "FAIL: the event log is $(ls -l "$events_log" | cut -c1-10), and it carries command text"; fail=$((fail + 1)) ;;
+  esac
+fi
 
 # --- Reader parity: jq and the fallback hand the gate the same text ----------
 # A fixture table only proves the platform it ran on unless both readers hand the
@@ -9749,6 +9752,13 @@ assert_equals "an install prunes the older backups its budget cannot hold and ke
   "1 / this run's own" \
   "$(count_claude_backups "$INSTALLER_RETENTION_HOME") / $retention_survivor"
 
+native_path_form() {
+  local posix_form
+  command -v cygpath >/dev/null 2>&1 || { printf '%s' "$1"; return; }
+  posix_form="$(cygpath -u "$1" 2>/dev/null)" || posix_form="$1"
+  cygpath -m "$posix_form" 2>/dev/null || printf '%s' "$1"
+}
+
 # --- The client env block: an absolute oso-state, and the Git Bash the hooks
 #     are spawned through ------------------------------------------------------
 # Two variables the client reads out of settings.json at the start of every
@@ -9842,13 +9852,6 @@ else
       || printf 'unreadable'
   }
 
-  native_path_form() {
-    local posix_form
-    command -v cygpath >/dev/null 2>&1 || { printf '%s' "$1"; return; }
-    posix_form="$(cygpath -u "$1" 2>/dev/null)" || posix_form="$1"
-    cygpath -m "$posix_form" 2>/dev/null || printf '%s' "$1"
-  }
-
   plant_client_env_settings ''
   client_env_hooks_before="$(jq -c '.hooks' "$CLIENT_ENV_SETTINGS")"
   publish_client_env_run "$CLIENT_ENV_GIT_BASH"
@@ -9860,8 +9863,8 @@ else
   assert_equals "the published oso-state runs from the spelling that was stored" \
     "runs" "$("$(client_env_stored OSO_STATE_BIN)" >/dev/null 2>&1 && echo runs || echo "does not run")"
   assert_equals "the summary names both values it published, and claims nothing else" \
-    "OK|oso-state path|every session reads OSO_STATE_BIN=$CLIENT_ENV_STATE_BIN
-OK|Git Bash path|published: $CLIENT_ENV_GIT_BASH" \
+    "OK|oso-state path|every session reads OSO_STATE_BIN=$(native_path_form "$CLIENT_ENV_STATE_BIN")
+OK|Git Bash path|published: $(native_path_form "$CLIENT_ENV_GIT_BASH")" \
     "$(cat "$CLIENT_ENV_VERDICT")"
   # The whole reason both writes are on this side rather than in install.ps1: a
   # PowerShell 5.1 ConvertTo-Json would hand these three-level entries back as
@@ -9887,7 +9890,7 @@ OK|Git Bash path|published: $CLIENT_ENV_GIT_BASH" \
   plant_client_env_settings "$(printf '{"CLAUDE_CODE_GIT_BASH_PATH":"%s"}' "$CLIENT_ENV_UNINSTALLED_BASH")"
   publish_client_env_run "$CLIENT_ENV_GIT_BASH"
   assert_equals "a stored Git Bash path that no longer resolves is repaired, and the summary says what it replaced" \
-    "$(native_path_form "$CLIENT_ENV_GIT_BASH") / OK|Git Bash path|repaired from $CLIENT_ENV_UNINSTALLED_BASH: $CLIENT_ENV_GIT_BASH" \
+    "$(native_path_form "$CLIENT_ENV_GIT_BASH") / OK|Git Bash path|repaired from $CLIENT_ENV_UNINSTALLED_BASH: $(native_path_form "$CLIENT_ENV_GIT_BASH")" \
     "$(native_path_form "$(client_env_stored CLAUDE_CODE_GIT_BASH_PATH)") / $(grep -F 'Git Bash path' "$CLIENT_ENV_VERDICT")"
 
   # The same stale value on a run that was handed nothing to repair it with —
@@ -11428,8 +11431,8 @@ if command -v git >/dev/null 2>&1; then
   assert_equals "a failure after legacy hook migration exits nonzero" \
     "nonzero" "$([ "$CODEX_INSTALL_RC" -ne 0 ] && echo nonzero || echo zero)"
   assert_equals "legacy hook rollback restores its exact checkout path" \
-    "$legacy_rollback_path" \
-    "$(git -C "$CODEX_GIT_LEGACY_ROLLBACK_RELEASE" config --local --get core.hooksPath)"
+    "$(native_path_form "$legacy_rollback_path")" \
+    "$(native_path_form "$(git -C "$CODEX_GIT_LEGACY_ROLLBACK_RELEASE" config --local --get core.hooksPath)")"
   assert_equals "legacy hook rollback restores every installed destination" \
     "$legacy_rollback_before" \
     "$(install_file_snapshot "$CODEX_GIT_LEGACY_ROLLBACK_HOME")"
@@ -11450,8 +11453,8 @@ if command -v git >/dev/null 2>&1; then
   assert_equals "identical hook bytes at another path remain foreign" \
     "foreign owner" "$(codex_install_log_class 'foreign owner' 'refusing to replace existing git hook owner')"
   assert_equals "a refused lookalike hook keeps its configured owner" \
-    "$CODEX_GIT_LOOKALIKE_RELEASE/operator-hooks" \
-    "$(git -C "$CODEX_GIT_LOOKALIKE_RELEASE" config --local --get core.hooksPath)"
+    "$(native_path_form "$CODEX_GIT_LOOKALIKE_RELEASE/operator-hooks")" \
+    "$(native_path_form "$(git -C "$CODEX_GIT_LOOKALIKE_RELEASE" config --local --get core.hooksPath)")"
 
   CODEX_GIT_SIBLING_RELEASE="$TEST_HOME/codex-git-sibling-release"
   mkdir -p "$CODEX_GIT_SIBLING_RELEASE"
@@ -11469,8 +11472,8 @@ if command -v git >/dev/null 2>&1; then
   assert_equals "an extra hook beside oso-code prevents migration" \
     "foreign owner" "$(codex_install_log_class 'foreign owner' 'refusing to replace existing git hook owner')"
   assert_equals "a refused mixed checkout keeps its configured owner" \
-    "$CODEX_GIT_SIBLING_RELEASE/plugin/git-hooks" \
-    "$(git -C "$CODEX_GIT_SIBLING_RELEASE" config --local --get core.hooksPath)"
+    "$(native_path_form "$CODEX_GIT_SIBLING_RELEASE/plugin/git-hooks")" \
+    "$(native_path_form "$(git -C "$CODEX_GIT_SIBLING_RELEASE" config --local --get core.hooksPath)")"
   assert_equals "a refused mixed checkout preserves its hidden sibling" \
     "operator-owned hidden sibling" \
     "$(cat "$CODEX_GIT_SIBLING_RELEASE/plugin/git-hooks/.operator-hook")"
@@ -11536,8 +11539,8 @@ if command -v git >/dev/null 2>&1; then
   assert_equals "a refused global owner does not create a local replacement" \
     "absent" "$(if git -C "$CODEX_GIT_GLOBAL_RELEASE" config --local --get core.hooksPath >/dev/null 2>&1; then echo present; else echo absent; fi)"
   assert_equals "a refused global owner remains byte-identical" \
-    "$CODEX_GIT_GLOBAL_RELEASE/plugin/git-hooks" \
-    "$(HOME="$CODEX_GIT_GLOBAL_HOME" git config --global --get core.hooksPath)"
+    "$(native_path_form "$CODEX_GIT_GLOBAL_RELEASE/plugin/git-hooks")" \
+    "$(native_path_form "$(HOME="$CODEX_GIT_GLOBAL_HOME" git config --global --get core.hooksPath)")"
 
   CODEX_GIT_ROLLBACK_RELEASE="$TEST_HOME/codex-git-rollback-release"
   mkdir -p "$CODEX_GIT_ROLLBACK_RELEASE"

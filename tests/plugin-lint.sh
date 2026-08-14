@@ -45,8 +45,8 @@ check_forked_skills_declare_background() {
   for skill in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
     [ -f "$skill" ] || continue
     frontmatter_text="$(frontmatter "$skill")"
-    printf '%s\n' "$frontmatter_text" | grep -qE '^context:[[:space:]]*fork[[:space:]]*$' || continue
-    printf '%s\n' "$frontmatter_text" | grep -qE '^background:[[:space:]]*(true|false)[[:space:]]*$' \
+    grep -qE '^context:[[:space:]]*fork[[:space:]]*$' <<< "$frontmatter_text" || continue
+    grep -qE '^background:[[:space:]]*(true|false)[[:space:]]*$' <<< "$frontmatter_text" \
       || flag "${skill#"$PLUGIN_ROOT"/} declares context: fork without background"
   done
 }
@@ -69,7 +69,7 @@ check_forked_skills_declare_a_verdict_token() {
   for skill in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
     [ -f "$skill" ] || continue
     frontmatter_text="$(frontmatter "$skill")"
-    printf '%s\n' "$frontmatter_text" | grep -qE '^context:[[:space:]]*fork[[:space:]]*$' || continue
+    grep -qE '^context:[[:space:]]*fork[[:space:]]*$' <<< "$frontmatter_text" || continue
     for host in claude codex; do
       sources="$(skill_sources "$skill" "$host" | tr '\n' ' ')"
       [ -n "$sources" ] && grep -qi 'end with exactly one of:' $sources \
@@ -254,7 +254,7 @@ check_global_routing_names_every_operator_only_mode() {
           invocation="\$oso-code:$mode"
           ;;
       esac
-      printf '%s\n' "$workflow_block" | grep -qF "\`$invocation\`" \
+      grep -qF "\`$invocation\`" <<< "$workflow_block" \
         || flag "${routing_file#"$REPO_ROOT"/} omits $invocation from its Workflow routing"
     done
   done
@@ -269,10 +269,10 @@ check_verifier_launches_name_their_payload() {
           | { grep -i 'launch' || true; } | cut -d: -f1); do
         launch="$(sed -n "${line}p" "$source")"
         for marker in 'criteria' 'zero-warnings' 'rubric.md'; do
-          printf '%s\n' "$launch" | grep -qF "$marker" \
+          grep -qF "$marker" <<< "$launch" \
             || flag "${source#"$PLUGIN_ROOT"/}:$line launches oso-verifier without naming $marker in its payload"
         done
-        printf '%s\n' "$launch" | grep -qE 'ledger|diagnosis' \
+        grep -qE 'ledger|diagnosis' <<< "$launch" \
           || flag "${source#"$PLUGIN_ROOT"/}:$line launches oso-verifier without naming the ledger or diagnosis it judges against"
       done
     done
@@ -288,7 +288,7 @@ check_integrator_launches_name_their_payload() {
         | { grep -i 'launch' || true; } | cut -d: -f1); do
       launch="$(sed -n "${line}p" "$file")"
       for marker in 'worktree' 'WAVE START' 'branch'; do
-        printf '%s\n' "$launch" | grep -qF "$marker" \
+        grep -qF "$marker" <<< "$launch" \
           || flag "${file#"$PLUGIN_ROOT"/}:$line launches oso-integrator without naming $marker in its payload"
       done
     done
@@ -303,8 +303,8 @@ check_plan_delegation_payloads_name_a_specific_coordinate() {
     for line in $({ grep -nE 'oso-applier|oso-verifier' "$source" || true; } \
         | { grep -i 'launch' || true; } | cut -d: -f1); do
       launch="$(sed -n "${line}p" "$source")"
-      printf '%s\n' "$launch" | grep -qE 'debt cleanup|judge findings' && continue
-      printf '%s\n' "$launch" | grep -qE 'SLICE START|WAVE START' \
+      grep -qE 'debt cleanup|judge findings' <<< "$launch" && continue
+      grep -qE 'SLICE START|WAVE START' <<< "$launch" \
         || flag "${source#"$PLUGIN_ROOT"/}:$line launches an applier or verifier naming neither SLICE START nor WAVE START"
     done
   done
@@ -336,7 +336,7 @@ check_triage_names_wave_start_unambiguously() {
   if [ -z "$question" ]; then
     flag "skills/_shared/bodies/triage.md carries no 'Is this breakage attributable' question to check"
   else
-    printf '%s\n' "$question" | grep -qF 'WAVE START' \
+    grep -qF 'WAVE START' <<< "$question" \
       || flag "skills/_shared/bodies/triage.md's one question never names WAVE START"
   fi
   { grep -F 'WAVE START' "$file" || true; } | grep -qF 'CHANGE BASE' \
@@ -345,7 +345,7 @@ check_triage_names_wave_start_unambiguously() {
   if [ -z "$preexisting" ]; then
     flag "skills/_shared/bodies/triage.md carries no Triage: pre-existing verdict line to check"
   else
-    printf '%s\n' "$preexisting" | grep -qF 'WAVE START' \
+    grep -qF 'WAVE START' <<< "$preexisting" \
       || flag "skills/_shared/bodies/triage.md's Triage: pre-existing verdict never names WAVE START"
   fi
 }
@@ -482,7 +482,7 @@ check_milestone_reporting_contract_is_complete() {
     flag "skills/_shared/reporting.md states no exception to that bound for the final report of a run the operator was absent for, so a whole unwatched run reaches its operator in three lines"
   else
     for marker in "ROADMAP mode's §5" 'under its own AUTO' 'bodies/plan.md'; do
-      printf '%s\n' "$final_report_exception" | grep -qiF -- "$marker" \
+      grep -qiF -- "$marker" <<< "$final_report_exception" \
         || flag "skills/_shared/reporting.md's final-report exception stops covering both runs an operator can be absent for: $marker"
     done
   fi
@@ -512,7 +512,7 @@ milestone_bullet_names_its_facts() {
     return 0
   fi
   for marker in "$@"; do
-    printf '%s\n' "$bullet" | grep -qi -- "$marker" \
+    grep -qi -- "$marker" <<< "$bullet" \
       || flag "skills/_shared/reporting.md's '$name' milestone never names its required fact: $marker"
   done
 }
@@ -560,7 +560,7 @@ check_design_foundation_slice_reads_the_installed_contract() {
     return 0
   fi
   for marker in 'SKILL.md' 'version' 'ledger' '`init` writes `PRODUCT.md`' '`document` writes `DESIGN.md`'; do
-    printf '%s\n' "$paragraph" | grep -qF -- "$marker" \
+    grep -qF -- "$marker" <<< "$paragraph" \
       || flag "skills/_shared/bodies/plan.md's Design-foundation slice paragraph never states: $marker"
   done
 }
@@ -578,7 +578,7 @@ check_third_amendment_lane_names_its_conditions() {
     return 0
   fi
   for marker in 'NOT STARTED' 'CITES' 'CONFIRMS' 'amend-plan'; do
-    printf '%s\n' "$paragraph" | grep -qF -- "$marker" \
+    grep -qF -- "$marker" <<< "$paragraph" \
       || flag "skills/_shared/platform/codex/plan.md's harness-discovered-correction lane never asserts: $marker"
   done
 }
@@ -598,9 +598,9 @@ check_wave_1_wave_start_accounts_for_wave_0() {
   while IFS= read -r entry; do
     [ -n "$entry" ] || continue
     linenum="${entry%%:*}"
-    printf '%s\n' "$entry" | grep -qF 'WAVE START' \
+    grep -qF 'WAVE START' <<< "$entry" \
       || flag "skills/_shared/bodies/plan.md:$linenum names wave 1 without naming WAVE START — the vague \"the base ref\" phrasing is what let wave 1 branch before wave 0 landed"
-    printf '%s\n' "$entry" | grep -qiF 'wave 0' \
+    grep -qiF 'wave 0' <<< "$entry" \
       || flag "skills/_shared/bodies/plan.md:$linenum states wave 1's own WAVE START without conditioning it on wave 0"
   done <<< "$sites"
 }
@@ -618,7 +618,7 @@ check_rubric_bans_inline_comments_without_an_escape_hatch() {
     return 0
   fi
   for marker in 'debt CLASS' 'no exceptions' 'the judgment contract cannot override this'; do
-    printf '%s\n' "$bullet" | grep -qF -- "$marker" \
+    grep -qF -- "$marker" <<< "$bullet" \
       || flag "skills/_shared/rubric.md's Over-documentation bullet never states the inline comment as a class: $marker"
   done
   for hit in $({ grep -nF 'Earned WHY' "$rubric" || true; } | cut -d: -f1); do
@@ -639,7 +639,7 @@ check_applier_rubric_mapping_names_every_section() {
       continue
     fi
     for section in 'Judgment contract' 'Hard blockers' 'File level' 'System level' 'Debt markers'; do
-      printf '%s\n' "$mapping" | grep -qF -- "$section" \
+      grep -qF -- "$section" <<< "$mapping" \
         || flag "${agent#"$REPO_ROOT"/}'s rubric mapping never names the rubric's $section section"
     done
   done
@@ -658,7 +658,7 @@ check_verifier_gate_fails_an_added_inline_comment() {
       continue
     fi
     for marker in 'Fail the slice' 'diff adds'; do
-      printf '%s\n' "$mandate" | grep -qiF -- "$marker" \
+      grep -qiF -- "$marker" <<< "$mandate" \
         || flag "${agent#"$REPO_ROOT"/}'s inline-comment mandate is no gate over what the slice added: $marker"
     done
   done
@@ -679,7 +679,7 @@ check_sweep_exit_bar_is_banded_and_capped() {
     for marker in '`blocker`' '`structural`' '`nit`' 'NAMED RESIDUAL' 'HARD CAP three' \
       'exactly three routes' 'accept the residual' 'grant a stated number of further rounds' \
       'the remainder back to §'; do
-      printf '%s\n' "$bar" | grep -qF -- "$marker" \
+      grep -qF -- "$marker" <<< "$bar" \
         || flag "${body#"$PLUGIN_ROOT"/}'s exit bar drops the clause that makes it one: $marker"
     done
   done
@@ -692,7 +692,7 @@ check_sweep_exit_bar_is_banded_and_capped() {
     fi
     while IFS= read -r hit; do
       [ -n "$hit" ] || continue
-      printf '%s\n' "$hit" | grep -qF -- '`Debt Sweep: findings`' \
+      grep -qF -- '`Debt Sweep: findings`' <<< "$hit" \
         || flag "${surface#"$REPO_ROOT"/}:${hit%%:*} reads \`Debt Sweep: clean\` as the whole of the debt axis's pass, the exit the band retired"
     done <<< "$({ grep -nF -- '`Debt Sweep: clean`' "$surface" || true; })"
   done
@@ -850,7 +850,7 @@ check_verifier_payload_is_closed_and_its_comment_gate_scans() {
       flag "${agent#"$REPO_ROOT"/} leaves its payload fields an open list, the shape a standing ruling arrives through"
     else
       for marker in 'standing ruling' 'softens a gate' 'blocked' 'APPLIER input' 'the rubric alone'; do
-        printf '%s\n' "$payload" | grep -qiF -- "$marker" \
+        grep -qiF -- "$marker" <<< "$payload" \
           || flag "${agent#"$REPO_ROOT"/}'s payload list names itself closed and then leaves the door it closes open: $marker"
       done
     fi
@@ -860,7 +860,7 @@ check_verifier_payload_is_closed_and_its_comment_gate_scans() {
       continue
     fi
     for marker in 'RUN a scan' 'command and output' 'evidence' 'never scanned'; do
-      printf '%s\n' "$gate" | grep -qiF -- "$marker" \
+      grep -qiF -- "$marker" <<< "$gate" \
         || flag "${agent#"$REPO_ROOT"/}'s inline-comment gate rests on judgment with no scan of the diff behind it: $marker"
     done
   done
@@ -878,7 +878,7 @@ check_no_exception_rules_outrank_repo_convention() {
       flag "skills/_shared/rubric.md ranks its no-exception rules against nothing, so a target repo's convention is free to outrank them"
     else
       for marker in 'three Hard blockers' 'inline-comment debt class' 'does not soften it' 'QUESTION for the operator'; do
-        printf '%s\n' "$precedence" | grep -qF -- "$marker" \
+        grep -qF -- "$marker" <<< "$precedence" \
           || flag "skills/_shared/rubric.md's precedence rule leaves a conflicting convention somewhere to win: $marker"
       done
     fi
@@ -893,7 +893,7 @@ check_no_exception_rules_outrank_repo_convention() {
     flag "skills/_shared/bodies/plan.md never reads its surface map against those four rules, so a conflicting convention reaches execution unasked"
   else
     for marker in 'battery QUESTION' 'Decision rounds' 'recorded in the ledger' 'project convention'; do
-      printf '%s\n' "$audit" | grep -qF -- "$marker" \
+      grep -qF -- "$marker" <<< "$audit" \
         || flag "skills/_shared/bodies/plan.md's no-exception audit stops short of routing the conflict to the operator: $marker"
     done
   fi
