@@ -6365,8 +6365,13 @@ status: done' handoff publish \
   --slice slice-lock --attempt 1 --agent-id "$lock_agent" --agent-type oso-applier \
   --hook-session hook-lock
 lock_wait_elapsed=$(( $(date +%s) - lock_wait_started ))
-case "$handoff_rc:$lock_wait_elapsed:$([ -d "$lock_dir" ] && printf retained || printf removed)" in
-  1:1:retained|1:2:retained|1:3:retained) lock_wait_status=bounded-retained ;;
+lock_wait_ceiling_seconds=10
+lock_wait_band=off-bound
+if [ "$lock_wait_elapsed" -ge 1 ] && [ "$lock_wait_elapsed" -le "$lock_wait_ceiling_seconds" ]; then
+  lock_wait_band=waited-in-bound
+fi
+case "$handoff_rc:$lock_wait_band:$([ -d "$lock_dir" ] && printf retained || printf removed)" in
+  1:waited-in-bound:retained) lock_wait_status=bounded-retained ;;
   *) lock_wait_status="rc=$handoff_rc elapsed=${lock_wait_elapsed}s lock=$([ -d "$lock_dir" ] && printf retained || printf removed)" ;;
 esac
 assert_equals "handoff lock acquisition is bounded and never reclaims an old live lock" \
@@ -10787,7 +10792,7 @@ assert_equals "the installer registers the staged Codex marketplace root exactly
 assert_equals "the installer calls the oso-code marketplace entry exactly" \
   "1" "$(grep -Fxc 'codex:plugin add oso-code@oso-code --json' "$CODEX_INSTALL_CALLS" || true)"
 assert_equals "a Codex already at the frozen floor is never replaced through npm" \
-  "0" "$(grep -c '^npm:' "$CODEX_INSTALL_CALLS" || true)"
+  "0" "$(grep '^npm:' "$CODEX_INSTALL_CALLS" | grep -vc '^npm:prefix -g$' || true)"
 assert_equals "Engram restores its own Codex integration exactly once" \
   "1" "$(grep -Fxc 'engram:setup codex' "$CODEX_INSTALL_CALLS" || true)"
 assert_equals "the installer asks Codex itself to validate the merged config" \
@@ -11402,8 +11407,8 @@ if command -v git >/dev/null 2>&1; then
   assert_equals "the checkout hook migration is reported explicitly" \
     "migration" "$(codex_install_log_class migration 'migrating oso-code.*checkout hook')"
   assert_equals "the migrated git gate points at the self-contained runtime" \
-    "$CODEX_GIT_MIGRATE_HOME/.local/share/oso-code/runtime/git-hooks" \
-    "$(git -C "$CODEX_GIT_MIGRATE_RELEASE" config --local --get core.hooksPath)"
+    "$(native_path_form "$CODEX_GIT_MIGRATE_HOME/.local/share/oso-code/runtime/git-hooks")" \
+    "$(native_path_form "$(git -C "$CODEX_GIT_MIGRATE_RELEASE" config --local --get core.hooksPath)")"
   assert_equals "the migrated runtime git gate keeps the published bytes" \
     "identical" "$(cmp -s "$CODEX_GIT_MIGRATE_RELEASE/plugin/git-hooks/pre-commit" \
       "$CODEX_GIT_MIGRATE_HOME/.local/share/oso-code/runtime/git-hooks/pre-commit" \

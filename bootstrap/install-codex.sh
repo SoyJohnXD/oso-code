@@ -675,7 +675,7 @@ validate_stale_engram_marketplace() {
   local checkout_root remotes remote status manifest plugin_manifest
   local head_commit remote_head_ref remote_head_commit
   checkout_root="$(git -C "$ENGRAM_MARKETPLACE_CACHE" rev-parse --show-toplevel 2>/dev/null || true)"
-  [ "$checkout_root" = "$ENGRAM_MARKETPLACE_CACHE" ] ||
+  [ "$(shell_spelling_of "$checkout_root")" = "$ENGRAM_MARKETPLACE_CACHE" ] ||
     fail "refusing to remove an unregistered Engram marketplace cache that is not an exact Git checkout"
   remotes="$(git -C "$ENGRAM_MARKETPLACE_CACHE" remote 2>/dev/null || true)"
   [ "$remotes" = origin ] ||
@@ -986,18 +986,34 @@ mount_impeccable() {
   rm -f "$IMPECCABLE_OPT_OUT_MARKER"
 }
 
+running_on_windows() {
+  case "$(uname -s 2>/dev/null || true)" in
+    MINGW*|MSYS*|CYGWIN*) return 0 ;;
+  esac
+  return 1
+}
+
+shell_spelling_of() {
+  if running_on_windows; then
+    cygpath -u "$1" 2>/dev/null || printf '%s' "$1"
+  else
+    printf '%s' "$1"
+  fi
+}
+
 legacy_oso_git_hooks_path() {
-  local configured=$1 local_configured=$2 entry
-  [ "$configured" = "$REPO_ROOT/plugin/git-hooks" ] || return 1
+  local configured=$1 local_configured=$2 hooks_dir entry
   [ "$local_configured" = "$configured" ] || return 1
-  [ -d "$configured" ] && [ ! -L "$configured" ] || return 1
-  [ -f "$configured/pre-commit" ] && [ ! -L "$configured/pre-commit" ] \
-    && [ -x "$configured/pre-commit" ] || return 1
+  hooks_dir="$(shell_spelling_of "$configured")"
+  [ "$hooks_dir" = "$REPO_ROOT/plugin/git-hooks" ] || return 1
+  [ -d "$hooks_dir" ] && [ ! -L "$hooks_dir" ] || return 1
+  [ -f "$hooks_dir/pre-commit" ] && [ ! -L "$hooks_dir/pre-commit" ] \
+    && [ -x "$hooks_dir/pre-commit" ] || return 1
 
   # This exact checkout path is an older oso-code wiring, but only while it
   # contains the one hook oso-code publishes. A sibling belongs to an unknown
   # owner and must not disappear when the runtime path replaces it.
-  for entry in "$configured"/* "$configured"/.[!.]* "$configured"/..?*; do
+  for entry in "$hooks_dir"/* "$hooks_dir"/.[!.]* "$hooks_dir"/..?*; do
     [ -e "$entry" ] || [ -L "$entry" ] || continue
     [ "${entry##*/}" = pre-commit ] || return 1
   done
@@ -1008,7 +1024,8 @@ git_hooks_owner() {
   local configured local_configured git_dir hook
   configured="$(git -C "$REPO_ROOT" config --get core.hooksPath 2>/dev/null || true)"
   local_configured="$(git -C "$REPO_ROOT" config --local --get-all core.hooksPath 2>/dev/null || true)"
-  if [ -n "$configured" ] && [ "$configured" != "$RUNTIME_ROOT/git-hooks" ]; then
+  if [ -n "$configured" ] &&
+     [ "$(shell_spelling_of "$configured")" != "$RUNTIME_ROOT/git-hooks" ]; then
     if ! legacy_oso_git_hooks_path "$configured" "$local_configured"; then
       printf 'core.hooksPath=%s' "$configured"
       return 0
@@ -1032,10 +1049,12 @@ wire_git_hook() {
     [ -f "$RUNTIME_ROOT/git-hooks/pre-commit" ] \
       && [ ! -L "$RUNTIME_ROOT/git-hooks/pre-commit" ] \
       && [ -x "$RUNTIME_ROOT/git-hooks/pre-commit" ] \
-      && cmp -s "$configured/pre-commit" "$RUNTIME_ROOT/git-hooks/pre-commit" ||
+      && cmp -s "$(shell_spelling_of "$configured")/pre-commit" \
+        "$RUNTIME_ROOT/git-hooks/pre-commit" ||
       fail "the staged git hook differs from the published checkout hook"
     info "migrating oso-code's checkout hook to the self-contained runtime"
-  elif [ -n "$configured" ] && [ "$configured" != "$RUNTIME_ROOT/git-hooks" ]; then
+  elif [ -n "$configured" ] &&
+       [ "$(shell_spelling_of "$configured")" != "$RUNTIME_ROOT/git-hooks" ]; then
     fail "refusing to replace existing git hook owner: core.hooksPath=$configured"
   fi
   owner="$(git_hooks_owner)"

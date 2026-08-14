@@ -83,6 +83,21 @@ sha256_stream() {
   fi
 }
 
+running_on_windows() {
+  case "$(uname -s 2>/dev/null || true)" in
+    MINGW*|MSYS*|CYGWIN*) return 0 ;;
+  esac
+  return 1
+}
+
+shell_spelling_of() {
+  if running_on_windows; then
+    cygpath -u "$1" 2>/dev/null || printf '%s' "$1"
+  else
+    printf '%s' "$1"
+  fi
+}
+
 codex_version_status() {
   local output version
   if ! output="$(codex --version 2>&1)"; then
@@ -148,7 +163,7 @@ permission_override_contract_status() {
 }
 
 plugin_install_status() {
-  local listing
+  local listing candidate_source_paths source_path
   if ! command -v python3 >/dev/null 2>&1; then
     printf 'python3 unavailable'
     return
@@ -165,10 +180,10 @@ plugin_install_status() {
   # checkout's own plugin.json, never a second hardcoded copy of it),
   # marketplace, installed/enabled state, and the exact local source path
   # this install renders.
-  if printf '%s' "$listing" | python3 -c '
+  candidate_source_paths="$(printf '%s' "$listing" | python3 -c '
 import json, sys
 
-manifest_path, expected_source_path = sys.argv[1:3]
+manifest_path = sys.argv[1]
 with open(manifest_path, encoding="utf-8") as handle:
     manifest = json.load(handle)
 expected_name = manifest.get("name")
@@ -189,15 +204,19 @@ for plugin in installed:
     source = plugin.get("source")
     if not isinstance(source, dict) or source.get("source") != "local":
         continue
-    if source.get("path") != expected_source_path:
-        continue
-    raise SystemExit(0)
-raise SystemExit(1)
-' "$REPO_ROOT/codex/.codex-plugin/plugin.json" "$MARKETPLACE_ROOT/codex" >/dev/null 2>&1; then
+    path = source.get("path")
+    if isinstance(path, str):
+        print(path)
+' "$REPO_ROOT/codex/.codex-plugin/plugin.json" 2>/dev/null)"
+  while IFS= read -r source_path; do
+    [ -n "$source_path" ] || continue
+    [ "$(shell_spelling_of "$source_path")" = "$MARKETPLACE_ROOT/codex" ] || continue
     printf installed
-  else
-    printf absent-or-invalid
-  fi
+    return
+  done <<EOF
+$candidate_source_paths
+EOF
+  printf absent-or-invalid
 }
 
 installed_trust_status() {
