@@ -9842,12 +9842,19 @@ else
       || printf 'unreadable'
   }
 
+  native_path_form() {
+    local posix_form
+    command -v cygpath >/dev/null 2>&1 || { printf '%s' "$1"; return; }
+    posix_form="$(cygpath -u "$1" 2>/dev/null)" || posix_form="$1"
+    cygpath -m "$posix_form" 2>/dev/null || printf '%s' "$1"
+  }
+
   plant_client_env_settings ''
   client_env_hooks_before="$(jq -c '.hooks' "$CLIENT_ENV_SETTINGS")"
   publish_client_env_run "$CLIENT_ENV_GIT_BASH"
   assert_equals "the install publishes an absolute oso-state and the Git Bash the client spawns the hooks through" \
-    "$CLIENT_ENV_STATE_BIN / $CLIENT_ENV_GIT_BASH" \
-    "$(client_env_stored OSO_STATE_BIN) / $(client_env_stored CLAUDE_CODE_GIT_BASH_PATH)"
+    "$(native_path_form "$CLIENT_ENV_STATE_BIN") / $(native_path_form "$CLIENT_ENV_GIT_BASH")" \
+    "$(native_path_form "$(client_env_stored OSO_STATE_BIN)") / $(native_path_form "$(client_env_stored CLAUDE_CODE_GIT_BASH_PATH)")"
   # The published path is what a session RUNS, so it has to be runnable as it is
   # stored — not merely present in the file.
   assert_equals "the published oso-state runs from the spelling that was stored" \
@@ -9880,8 +9887,8 @@ OK|Git Bash path|published: $CLIENT_ENV_GIT_BASH" \
   plant_client_env_settings "$(printf '{"CLAUDE_CODE_GIT_BASH_PATH":"%s"}' "$CLIENT_ENV_UNINSTALLED_BASH")"
   publish_client_env_run "$CLIENT_ENV_GIT_BASH"
   assert_equals "a stored Git Bash path that no longer resolves is repaired, and the summary says what it replaced" \
-    "$CLIENT_ENV_GIT_BASH / OK|Git Bash path|repaired from $CLIENT_ENV_UNINSTALLED_BASH: $CLIENT_ENV_GIT_BASH" \
-    "$(client_env_stored CLAUDE_CODE_GIT_BASH_PATH) / $(grep -F 'Git Bash path' "$CLIENT_ENV_VERDICT")"
+    "$(native_path_form "$CLIENT_ENV_GIT_BASH") / OK|Git Bash path|repaired from $CLIENT_ENV_UNINSTALLED_BASH: $CLIENT_ENV_GIT_BASH" \
+    "$(native_path_form "$(client_env_stored CLAUDE_CODE_GIT_BASH_PATH)") / $(grep -F 'Git Bash path' "$CLIENT_ENV_VERDICT")"
 
   # The same stale value on a run that was handed nothing to repair it with —
   # started from Git Bash rather than from install.ps1. Reporting it as fine is
@@ -9905,8 +9912,8 @@ OK|Git Bash path|published: $CLIENT_ENV_GIT_BASH" \
   plant_client_env_settings ''
   publish_client_env_run ""
   assert_equals "a run with no Git Bash to publish and none stored says nothing about it, and publishes oso-state regardless" \
-    "absent / no line / $CLIENT_ENV_STATE_BIN" \
-    "$(client_env_stored CLAUDE_CODE_GIT_BASH_PATH) / $(grep -F 'Git Bash path' "$CLIENT_ENV_VERDICT" || echo 'no line') / $(client_env_stored OSO_STATE_BIN)"
+    "absent / no line / $(native_path_form "$CLIENT_ENV_STATE_BIN")" \
+    "$(client_env_stored CLAUDE_CODE_GIT_BASH_PATH) / $(grep -F 'Git Bash path' "$CLIENT_ENV_VERDICT" || echo 'no line') / $(native_path_form "$(client_env_stored OSO_STATE_BIN)")"
 
   # --- What the verifier proves about the two published values ----------------
   # The round trip goes through the STORED path, never one this script resolved
@@ -10935,8 +10942,8 @@ while IFS='  ' read -r published_digest published_path; do
   case "$published_path" in
     codex/hooks/hooks.json)
       installed_hook_path="$CODEX_HAPPY_HOME/.codex/hooks.json"
-      normalized_hook_digest="$(sed "s|$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/hooks|__OSO_HOOKS_DIR__|g" "$installed_hook_path" |
-        { sha256sum 2>/dev/null || shasum -a 256 2>/dev/null; })"
+      normalized_hook_digest="$(sed "s|$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/hooks|__OSO_HOOKS_DIR__|g" "$installed_hook_path" 2>/dev/null |
+        { sha256sum 2>/dev/null || shasum -a 256 2>/dev/null; })" || normalized_hook_digest=""
       normalized_hook_digest="${normalized_hook_digest%% *}"
       [ "$normalized_hook_digest" = "$published_digest" ] \
         || missing_installed_hook="$missing_installed_hook $published_path"
@@ -11253,9 +11260,12 @@ assert_equals "the shipped Codex installer never mutates the global CLI itself" 
 # Criterion (c): the ordering itself is asserted, not just today's behavior --
 # a regression that reintroduces the mutating install, or moves the
 # precondition past confirm_install/begin_transaction, must turn this red.
-CODEX_PREFLIGHT_LINE="$(grep -n '^  preflight_codex_version$' "$INSTALL_CODEX_SH" | head -n1 | cut -d: -f1)"
-CODEX_CONFIRM_LINE="$(grep -n '^  confirm_install$' "$INSTALL_CODEX_SH" | head -n1 | cut -d: -f1)"
-CODEX_BEGIN_TX_LINE="$(grep -n '^  begin_transaction$' "$INSTALL_CODEX_SH" | head -n1 | cut -d: -f1)"
+CODEX_PREFLIGHT_LINE="$(grep -n '^  preflight_codex_version$' "$INSTALL_CODEX_SH" |
+  head -n1 | cut -d: -f1)" || CODEX_PREFLIGHT_LINE=""
+CODEX_CONFIRM_LINE="$(grep -n '^  confirm_install$' "$INSTALL_CODEX_SH" |
+  head -n1 | cut -d: -f1)" || CODEX_CONFIRM_LINE=""
+CODEX_BEGIN_TX_LINE="$(grep -n '^  begin_transaction$' "$INSTALL_CODEX_SH" |
+  head -n1 | cut -d: -f1)" || CODEX_BEGIN_TX_LINE=""
 assert_equals "the CLI pin precondition is checked before confirm_install ever prompts" \
   "before" "$([ "${CODEX_PREFLIGHT_LINE:-0}" -lt "${CODEX_CONFIRM_LINE:-0}" ] 2>/dev/null && echo before || echo not-before)"
 assert_equals "confirm_install still gates every mutation, including the transaction itself" \
@@ -12216,6 +12226,7 @@ else
 
   purge_backup_snapshot() {
     local backup="$1" path
+    [ -d "$backup" ] || return 0
     find "$backup" -type f -print | LC_ALL=C sort | while IFS= read -r path; do
       printf '%s %s\n' "${path#$backup/}" "$(file_sha256 "$path")"
     done
@@ -12326,7 +12337,9 @@ else
     "$codex_purge_failure_before" "$(purge_tree_snapshot "$CODEX_PURGE_FAILURE_HOME")"
   assert_equals "the pre-delete failure retains exactly one diagnostic backup" \
     "1" "$(purge_backup_count "$CODEX_PURGE_FAILURE_HOME")"
-  CODEX_PURGE_FAILURE_BACKUP="$(find "$CODEX_PURGE_FAILURE_HOME/.local/state/oso-code/purge-backups" -mindepth 1 -maxdepth 1 -type d -print | head -n 1)"
+  CODEX_PURGE_FAILURE_BACKUP="$(find "$CODEX_PURGE_FAILURE_HOME/.local/state/oso-code/purge-backups" \
+    -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | head -n 1)" \
+    || CODEX_PURGE_FAILURE_BACKUP=""
   assert_equals "the retained pre-delete backup still passes its manifest" \
     "valid" "$(verify_purge_manifest "$CODEX_PURGE_FAILURE_BACKUP" && echo valid || echo invalid)"
 
@@ -12340,6 +12353,8 @@ else
   fi
   assert_equals "the fixture-only Codex purge completes" "0" "$codex_purge_outcome"
   CODEX_PURGE_BACKUP="$(printf '%s\n' "$CODEX_PURGE_LOG" | sed -n 's/^\[oso-code\] backup: //p' | tail -n 1)"
+  establish_premise "the completed purge published a backup directory to read back" \
+    [ -d "$CODEX_PURGE_BACKUP" ]
   assert_equals "the purge reports one absolute backup inside the fixture HOME" \
     "inside" "$(purge_backup_location "$CODEX_PURGE_BACKUP" "$CODEX_PURGE_HOME")"
   assert_equals "the purge backup root has mode 0700" \
@@ -12393,8 +12408,9 @@ else
     "$codex_purge_backup_count" "$(purge_backup_count "$CODEX_PURGE_HOME")"
 
   CODEX_TAMPERED_PURGE_BACKUP="$TEST_HOME/codex-tampered-purge-backup"
-  cp -R "$CODEX_PURGE_BACKUP" "$CODEX_TAMPERED_PURGE_BACKUP"
-  printf 'tamper\n' >> "$CODEX_TAMPERED_PURGE_BACKUP/codex-home.tar"
+  establish_premise "the published backup copies into the archive-tamper fixture" \
+    cp -R "$CODEX_PURGE_BACKUP" "$CODEX_TAMPERED_PURGE_BACKUP"
+  printf 'tamper\n' >> "$CODEX_TAMPERED_PURGE_BACKUP/codex-home.tar" || true
   run_codex_purge "$CODEX_PURGE_HOME" --restore "$CODEX_TAMPERED_PURGE_BACKUP"
   assert_equals "a modified purge archive is rejected by its published digest" \
     "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
@@ -12402,8 +12418,9 @@ else
     "absent" "$([ ! -e "$CODEX_PURGE_HOME/.codex" ] && [ ! -e "$CODEX_PURGE_HOME/.agents" ] && echo absent || echo present)"
 
   CODEX_TAMPERED_PURGE_METADATA="$TEST_HOME/codex-tampered-purge-metadata"
-  cp -R "$CODEX_PURGE_BACKUP" "$CODEX_TAMPERED_PURGE_METADATA"
-  printf 'absent\n' > "$CODEX_TAMPERED_PURGE_METADATA/codex-home.state"
+  establish_premise "the published backup copies into the metadata-tamper fixture" \
+    cp -R "$CODEX_PURGE_BACKUP" "$CODEX_TAMPERED_PURGE_METADATA"
+  printf 'absent\n' > "$CODEX_TAMPERED_PURGE_METADATA/codex-home.state" || true
   run_codex_purge "$CODEX_PURGE_HOME" --restore "$CODEX_TAMPERED_PURGE_METADATA"
   assert_equals "modified purge metadata is rejected by its published digest" \
     "nonzero" "$([ "$CODEX_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
