@@ -993,23 +993,21 @@ check_the_project_record_is_honest_about_its_scope() {
 }
 
 check_launch_wait_contract_states_the_mechanism_this_host_has() {
-  local mode retired ceiling_clause
+  local retired ceiling_clause
   ceiling_clause="$({ sed -n 's/^DELEGATION_WAIT_CEILING_MINUTES=\([0-9][0-9]*\)$/\1 minutes/p' \
     "$PLUGIN_ROOT/hooks/auto-continue.sh" 2>/dev/null || true; })"
   case "$ceiling_clause" in
     [0-9]*' minutes') ;;
     *)
-      flag "hooks/auto-continue.sh states no single delegation-wait ceiling for the Claude bindings to name"
+      flag "hooks/auto-continue.sh states no single delegation-wait ceiling for the Claude binding to name"
       ceiling_clause='the ceiling auto-continue.sh no longer states' ;;
   esac
-  for mode in plan debug; do
-    section_names_its_clauses "$PLUGIN_ROOT/skills/_shared/platform/claude/$mode.md" \
-      'Making a launch wait' 'launch-wait contract' 'a clause the launch it governs turns on' exact-case \
-      'always launches in the BACKGROUND' 'completion notification' 'IS the resume' \
-      'Nothing may act on a report it has not read' \
-      'auto_wait=<label>' 'auto_wait=none' 'never relaunch a delegation' \
-      "$ceiling_clause"
-  done
+  section_names_its_clauses "$PLUGIN_ROOT/skills/_shared/platform/claude/delegation-wait.md" \
+    'Making a launch wait' 'launch-wait contract' 'a clause the launch it governs turns on' exact-case \
+    'always launches in the BACKGROUND' 'completion notification' 'IS the resume' \
+    'Nothing may act on a report it has not read' \
+    'auto_wait=<label>' 'auto_wait=none' 'never relaunch a delegation' \
+    "$ceiling_clause"
   for retired in $({ grep -rlF 'run_in_background' "$PLUGIN_ROOT/skills" || true; }); do
     flag "${retired#"$PLUGIN_ROOT"/} tells a launch to pass a foreground flag the Agent tool's schema does not accept"
   done

@@ -69,13 +69,18 @@ this_run_already_sighted() {
     [ "$(state_value "$wait_file" session)" = "$session" ]
 }
 
-remember_sighting_or_allow_stop() {
-  local wait_file="$1" label="$2" session="$3" write_error
+write_private_or_allow_stop() {
+  local file="$1" content="$2" session="$3" write_error
   write_error="$( {
     umask 077
-    mkdir -p "${wait_file%/*}" &&
-      printf 'label=%s\nsession=%s\n' "$label" "$session" > "$wait_file"
+    mkdir -p "${file%/*}" && printf '%s' "$content" > "$file"
   } 2>&1 )" || allow_stop_degraded "$session" "$write_error"
+}
+
+remember_sighting_or_allow_stop() {
+  local wait_file="$1" label="$2" session="$3" sighting
+  printf -v sighting 'label=%s\nsession=%s\n' "$label" "$session"
+  write_private_or_allow_stop "$wait_file" "$sighting" "$session"
 }
 
 forget_sighting_and_allow_stop() {
@@ -87,12 +92,9 @@ forget_sighting_and_allow_stop() {
 }
 
 remember_push_or_allow_stop() {
-  local tally_file="$1" pushes="$2" journal_bytes="$3" session="$4" write_error
-  write_error="$( {
-    umask 077
-    mkdir -p "${tally_file%/*}" &&
-      printf 'pushes=%s\njournal_bytes=%s\n' "$pushes" "$journal_bytes" > "$tally_file"
-  } 2>&1 )" || allow_stop_degraded "$session" "$write_error"
+  local tally_file="$1" pushes="$2" journal_bytes="$3" session="$4" tally
+  printf -v tally 'pushes=%s\njournal_bytes=%s\n' "$pushes" "$journal_bytes"
+  write_private_or_allow_stop "$tally_file" "$tally" "$session"
 }
 
 payload="$(cat)"

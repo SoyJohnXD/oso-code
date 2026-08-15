@@ -1393,17 +1393,17 @@ fi
 
 LINT_LAUNCH_WAIT_FIXTURE="$TEST_HOME/lint-launch-wait"
 copy_lint_fixture "$LINT_LAUNCH_WAIT_FIXTURE"
-launch_wait_target="$LINT_LAUNCH_WAIT_FIXTURE/plugin/skills/_shared/platform/claude/plan.md"
+launch_wait_target="$LINT_LAUNCH_WAIT_FIXTURE/plugin/skills/_shared/platform/claude/delegation-wait.md"
 launch_wait_clause='That notification IS the resume.'
 launch_wait_neighbour='Nothing may act on a report it has not read'
 if ! grep -qF "$launch_wait_clause" "$launch_wait_target"; then
-  echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation found no resume clause to take back in the Claude plan binding"; fail=$((fail + 1))
+  echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation found no resume clause to take back in the Claude launch-wait binding"; fail=$((fail + 1))
 else
   sed "s/$launch_wait_clause/The launching turn carries on regardless./" \
     "$launch_wait_target" > "$launch_wait_target.tmp"
   mv "$launch_wait_target.tmp" "$launch_wait_target"
   if grep -qF "$launch_wait_clause" "$launch_wait_target"; then
-    echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation left the resume clause standing in the Claude plan binding"; fail=$((fail + 1))
+    echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation left the resume clause standing in the Claude launch-wait binding"; fail=$((fail + 1))
   elif ! grep -qF "$launch_wait_neighbour" "$launch_wait_target"; then
     echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation took the unread-report rule it was supposed to leave standing"; fail=$((fail + 1))
   elif launch_wait_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
@@ -1411,10 +1411,66 @@ else
     echo "FAIL: a wait contract that names no notification resuming the launching turn passed plugin lint"; fail=$((fail + 1))
   else
     case "$launch_wait_report" in
-      *"platform/claude/plan.md's launch-wait contract drops a clause the launch it governs turns on: IS the resume"*)
+      *"platform/claude/delegation-wait.md's launch-wait contract drops a clause the launch it governs turns on: IS the resume"*)
         echo "ok: check_launch_wait_contract_states_the_mechanism_this_host_has rejects a Claude binding whose launch contract loses the notification that resumes the run"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation failed for the wrong reason — $(printf '%s' "$launch_wait_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_WAIT_CEILING_FIXTURE="$TEST_HOME/lint-wait-ceiling"
+copy_lint_fixture "$LINT_WAIT_CEILING_FIXTURE"
+wait_ceiling_target="$LINT_WAIT_CEILING_FIXTURE/plugin/hooks/auto-continue.sh"
+wait_ceiling_constant='DELEGATION_WAIT_CEILING_MINUTES=45'
+wait_ceiling_neighbour='DELEGATION_WAIT_CEILING_SECONDS='
+if ! grep -qF "$wait_ceiling_constant" "$wait_ceiling_target"; then
+  echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation found no single ceiling to unsettle in the Stop net"; fail=$((fail + 1))
+else
+  sed 's/^DELEGATION_WAIT_CEILING_MINUTES=45$/DELEGATION_WAIT_CEILING_MINUTES="${OSO_DELEGATION_WAIT_CEILING_MINUTES:-45}"/' \
+    "$wait_ceiling_target" > "$wait_ceiling_target.tmp"
+  mv "$wait_ceiling_target.tmp" "$wait_ceiling_target"
+  if grep -qF "$wait_ceiling_constant" "$wait_ceiling_target"; then
+    echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation left the single ceiling standing in the Stop net"; fail=$((fail + 1))
+  elif ! grep -qF "$wait_ceiling_neighbour" "$wait_ceiling_target"; then
+    echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation took the derived seconds constant it was supposed to leave standing"; fail=$((fail + 1))
+  elif wait_ceiling_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_WAIT_CEILING_FIXTURE/plugin" "$LINT_WAIT_CEILING_FIXTURE" 2>&1)"; then
+    echo "FAIL: a Stop net stating no single delegation-wait ceiling passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$wait_ceiling_report" in
+      *"hooks/auto-continue.sh states no single delegation-wait ceiling for the Claude binding to name"*)
+        echo "ok: check_launch_wait_contract_states_the_mechanism_this_host_has rejects a hook whose ceiling the Claude binding can no longer be pinned to"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the delegation-wait ceiling mutation failed for the wrong reason — $(printf '%s' "$wait_ceiling_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_RETIRED_FLAG_FIXTURE="$TEST_HOME/lint-retired-flag"
+copy_lint_fixture "$LINT_RETIRED_FLAG_FIXTURE"
+retired_flag_target="$LINT_RETIRED_FLAG_FIXTURE/plugin/skills/_shared/platform/claude/plan.md"
+retired_flag_clause='under the wait rule below'
+retired_flag_neighbour='## Delegation-wait binding'
+if ! grep -qF "$retired_flag_clause" "$retired_flag_target"; then
+  echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation found no wait cross-reference to overwrite in the Claude plan binding"; fail=$((fail + 1))
+else
+  sed 's/under the wait rule below/under the retired `run_in_background: false` flag/' \
+    "$retired_flag_target" > "$retired_flag_target.tmp"
+  mv "$retired_flag_target.tmp" "$retired_flag_target"
+  if ! grep -qF 'run_in_background' "$retired_flag_target"; then
+    echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation never put the retired foreground flag back in the Claude plan binding"; fail=$((fail + 1))
+  elif ! grep -qF "$retired_flag_neighbour" "$retired_flag_target"; then
+    echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation took the wait binding section it was supposed to leave standing"; fail=$((fail + 1))
+  elif retired_flag_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_RETIRED_FLAG_FIXTURE/plugin" "$LINT_RETIRED_FLAG_FIXTURE" 2>&1)"; then
+    echo "FAIL: a Claude binding ordering the foreground flag the Agent tool never carried passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$retired_flag_report" in
+      *"skills/_shared/platform/claude/plan.md tells a launch to pass a foreground flag the Agent tool's schema does not accept"*)
+        echo "ok: check_launch_wait_contract_states_the_mechanism_this_host_has rejects the retired foreground flag by its own spelling anywhere under plugin/skills"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the retired foreground-flag mutation failed for the wrong reason — $(printf '%s' "$retired_flag_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi
@@ -5796,19 +5852,19 @@ done
 assert_equals "a turn this hook already continued counts as a push even before any tally exists" \
   "push push stop" "${auto_belt_verdicts# }"
 
-auto_degradations_recorded() {
-  grep -c '"event":"auto-continue-degraded","command":"[^"]' "$STATE_DIR/events.jsonl" 2>/dev/null || true
+auto_events_recorded() {
+  grep -c '"event":"'"$1"'","command":"[^"]' "$STATE_DIR/events.jsonl" 2>/dev/null || true
 }
 
 arm_unattended_run
-auto_degradations_before="$(auto_degradations_recorded)"
+auto_degradations_before="$(auto_events_recorded auto-continue-degraded)"
 mkdir -p "${AUTO_JOURNAL%.log}.pushes"
 auto_degraded_verdicts=" $(auto_stop_verdict "$(auto_stop_input)")"
 rm -rf "$JOURNAL_DIR"
 printf 'a file stands where the run directory belongs\n' > "$JOURNAL_DIR"
 auto_degraded_verdicts="$auto_degraded_verdicts $(auto_stop_verdict "$(auto_stop_input)")"
 rm -f "$JOURNAL_DIR"
-auto_degradations_after="$(auto_degradations_recorded)"
+auto_degradations_after="$(auto_events_recorded auto-continue-degraded)"
 assert_equals "a push tally the net can neither read nor write allows the stop and puts the cause on the record" \
   "stop stop 2" \
   "${auto_degraded_verdicts# } $((auto_degradations_after - auto_degradations_before))"
@@ -5822,16 +5878,12 @@ auto_tally_of() {
   { cat "$AUTO_TALLY" 2>/dev/null || echo unwritten; } | tr '\n' '>'
 }
 
-auto_holds_recorded() {
-  grep -c '"event":"auto-continue-held","command":"[^"]' "$STATE_DIR/events.jsonl" 2>/dev/null || true
-}
-
 arm_unattended_run
 auto_wait_verdicts=" $(auto_stop_verdict "$(auto_stop_input)")"
 oso-state --session "$SESSION" set auto_wait=3 >/dev/null
-auto_holds_before="$(auto_holds_recorded)"
+auto_holds_before="$(auto_events_recorded auto-continue-held)"
 auto_wait_verdicts="$auto_wait_verdicts $(auto_stop_verdict "$(auto_stop_input "$SESSION" true)")"
-auto_holds_after="$(auto_holds_recorded)"
+auto_holds_after="$(auto_events_recorded auto-continue-held)"
 assert_equals "a turn ending on a delegation still in flight is a hold, not a stall: the stop stands and the push tally is left exactly where it was" \
   "push stop|pushes=1>journal_bytes=0>" "${auto_wait_verdicts# }|$(auto_tally_of)"
 assert_equals "the held turn leaves one auto-continue-held line, so a net that held on purpose never reads back as one that never ran" \

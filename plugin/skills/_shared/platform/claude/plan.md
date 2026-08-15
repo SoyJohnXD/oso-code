@@ -16,18 +16,6 @@ The tool is `AskUserQuestion`, and one round holds 4 questions maximum — its p
 
 Where this change is running as a child of the ROADMAP mode's chain, this gate is not its to reach: `roadmap.md` beside this file states what stands in its place — the one approval that mode's §3 took, and the plain-text delivery §5's document rides instead of the `plan` argument above. Read it there before phase 1, and present no gate the roadmap already passed.
 
-## Making a launch wait
-
-This host offers no foreground flag on a launch — the flag this section claimed until now is retired, because the `Agent` tool's schema never carried it. That tool always launches in the BACKGROUND and returns at once, with the agent id and nothing about the work.
-
-The delegation's report therefore arrives in a LATER turn, as a completion notification that re-enters the conversation. That notification IS the resume. The turn that launched ends there, and ending it is correct rather than a stall.
-
-**Nothing may act on a report it has not read.** A step taken before the notification arrives is a step taken on a verdict nobody has, which is the whole reason the neutral body requires the read at all. So never predict, assume or report a delegation's result before its notification, and never relaunch a delegation that is in flight — the notification is what resumes it, and a second launch over the same tree is two writers in one slice.
-
-**The marker.** Before any launch whose result arrives in a later turn, arm `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" set auto_wait=<label>` — the label being the slice number or `wave-<n>`, matching `^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$` — and return it to `auto_wait=none` the same way once every report for that label has been read. Under an unattended run this is what stops the `Stop` net counting a delegation's turn-end as a stall; the net believes a mark for 45 minutes and then stops believing it, so a mark left armed EXPIRES rather than disarming the net for good. Arm it on EVERY delegation and not only under `auto=running`: one unconditional rule survives a compaction where a conditional the orchestrator must re-derive does not, and nothing reads the key without the marker, so an attended run pays only the write.
-
-This governs every launch made through the Agent tool, named by that property rather than by a list the next tool change would falsify — §6's applier, verifier and integrator, §2's exploration subagents, the integration gate's verifier, a red slice's relaunched applier, §7's debt-cleanup applier. N launches in one message all end the same turn and each returns its own notification; the wave loop reads every report before anything moves.
-
 ## The explorer
 
 §2 step 1's exploration subagents are the built-in `Explore` agent.
@@ -82,7 +70,11 @@ The neutral body names each one by role; here they carry the plugin prefix, and 
 | the triage judge | `oso-code:triage` | the Skill tool; its frontmatter is what forks it |
 | the security-pass judge | `oso-code:security-pass` | the Skill tool; its frontmatter is what forks it |
 
-The three delegates the body names — `oso-applier`, `oso-verifier`, `oso-integrator` — are agents, not skills: reach them with the Agent tool, under the wait rule above. An applier has no Skill tool of its own, which is why §6 step 2 hands it Impeccable's files as PATHS to read rather than a skill to invoke.
+The three delegates the body names — `oso-applier`, `oso-verifier`, `oso-integrator` — are agents, not skills: reach them with the Agent tool, under the wait rule below. An applier has no Skill tool of its own, which is why §6 step 2 hands it Impeccable's files as PATHS to read rather than a skill to invoke.
+
+## Delegation-wait binding
+
+READ `delegation-wait.md` beside this file NOW. It is the single Claude Code binding for how a delegation's report arrives on this host and for the marker every delegation arms. Here that rule reaches §6's applier, verifier and integrator, §2's exploration subagents, the integration gate's verifier, a red slice's relaunched applier and §7's debt-cleanup applier. N delegations in one message all end the same turn and each returns its own notification; the wave loop reads every report before anything moves.
 
 ## Front-surface binding
 
