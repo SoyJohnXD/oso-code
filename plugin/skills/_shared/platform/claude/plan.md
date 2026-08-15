@@ -16,10 +16,6 @@ The tool is `AskUserQuestion`, and one round holds 4 questions maximum — its p
 
 Where this change is running as a child of the ROADMAP mode's chain, this gate is not its to reach: `roadmap.md` beside this file states what stands in its place — the one approval that mode's §3 took, and the plain-text delivery §5's document rides instead of the `plan` argument above. Read it there before phase 1, and present no gate the roadmap already passed.
 
-## Making a launch wait
-
-Since client v2.1.198 a subagent runs in the BACKGROUND unless the call passes `run_in_background: false`, and a background result arrives in a LATER turn. So every subagent delegation §6 makes — applier, verifier and integrator alike — carries `run_in_background: false`, and that flag is what turns a delegation into the wait the neutral body requires, for one of them and for N in a single message alike.
-
 ## The explorer
 
 §2 step 1's exploration subagents are the built-in `Explore` agent.
@@ -74,7 +70,11 @@ The neutral body names each one by role; here they carry the plugin prefix, and 
 | the triage judge | `oso-code:triage` | the Skill tool; its frontmatter is what forks it |
 | the security-pass judge | `oso-code:security-pass` | the Skill tool; its frontmatter is what forks it |
 
-The three delegates the body names — `oso-applier`, `oso-verifier`, `oso-integrator` — are agents, not skills: reach them with the Agent tool, under the wait rule above. An applier has no Skill tool of its own, which is why §6 step 2 hands it Impeccable's files as PATHS to read rather than a skill to invoke.
+The three delegates the body names — `oso-applier`, `oso-verifier`, `oso-integrator` — are agents, not skills: reach them with the Agent tool, under the wait rule below. An applier has no Skill tool of its own, which is why §6 step 2 hands it Impeccable's files as PATHS to read rather than a skill to invoke.
+
+## Delegation-wait binding
+
+READ `delegation-wait.md` beside this file NOW. It is the single Claude Code binding for how a delegation's report arrives on this host and for the marker every delegation arms. Here that rule reaches §6's applier, verifier and integrator, §2's exploration subagents, the integration gate's verifier, a red slice's relaunched applier and §7's debt-cleanup applier. N delegations in one message all end the same turn and each returns its own notification; the wave loop reads every report before anything moves.
 
 ## Front-surface binding
 

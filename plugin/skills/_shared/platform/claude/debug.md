@@ -6,10 +6,6 @@ The Claude Code TUI drops assistant text that precedes a tool call in the same t
 
 One exception stands and `reporting.md` beside this file states it whole rather than this section restating it: while this repository's state carries `auto=running`, the run is UNATTENDED and its milestone text rides the stream instead of ending the turn, journaled full-text in its place. This mode arms no such marker of its own — a fix run reaches its operator at the diagnosis either way — so the exception reads inert here unless a run that armed it is what this flow was invoked from.
 
-## Making a launch wait
-
-Since client v2.1.198 a subagent runs in the BACKGROUND unless the call passes `run_in_background: false`, and a background result arrives in a LATER turn. So every subagent delegation §4 makes — applier and verifier alike — carries `run_in_background: false`, and that flag is what turns a delegation into the wait the neutral body requires.
-
 ## Shared-file paths
 
 Wherever the neutral body names a file as `_shared/<file>.md`, it is spelled `${CLAUDE_SKILL_DIR}/../_shared/<file>.md` here. That interpolation resolves to an absolute path, which is what a payload handed to another context needs.
@@ -33,7 +29,11 @@ The neutral body names each one by role; here they carry the plugin prefix, and 
 | the debt-sweep judge | `oso-code:debt-sweep` | the Skill tool; its frontmatter is what forks it |
 | the security-pass judge | `oso-code:security-pass` | the Skill tool; its frontmatter is what forks it |
 
-The two delegates the body names — `oso-applier`, `oso-verifier` — are agents, not skills: reach them with the Agent tool, under the wait rule above.
+The two delegates the body names — `oso-applier`, `oso-verifier` — are agents, not skills: reach them with the Agent tool, under the wait rule below.
+
+## Delegation-wait binding
+
+READ `delegation-wait.md` beside this file NOW. It is the single Claude Code binding for how a delegation's report arrives on this host and for the marker every delegation arms. Here that rule reaches §4's applier and verifier, and §5's debt-cleanup applier.
 
 ## Front-surface binding
 

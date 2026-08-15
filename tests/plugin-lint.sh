@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Forty rules over what the plugin's declarations, prose and delegation
+# Forty-one rules over what the plugin's declarations, prose and delegation
 # payloads SAY, which `claude plugin validate --strict` never reads.
 set -euo pipefail
 
@@ -428,6 +428,7 @@ check_present_tense_prose_names_the_rule_count() {
     35) spelled=thirty-five ;; 36) spelled=thirty-six ;;
     37) spelled=thirty-seven ;; 38) spelled=thirty-eight ;;
     39) spelled=thirty-nine ;; 40) spelled=forty ;;
+    41) spelled=forty-one ;;
     *) flag "tests/plugin-lint.sh declares $declared rule functions, a count this rule has no word to look for"; return 0 ;;
   esac
   for surface in tests/plugin-lint.sh README.md; do
@@ -991,6 +992,27 @@ check_the_project_record_is_honest_about_its_scope() {
   done
 }
 
+check_launch_wait_contract_states_the_mechanism_this_host_has() {
+  local retired ceiling_clause
+  ceiling_clause="$({ sed -n 's/^DELEGATION_WAIT_CEILING_MINUTES=\([0-9][0-9]*\)$/\1 minutes/p' \
+    "$PLUGIN_ROOT/hooks/auto-continue.sh" 2>/dev/null || true; })"
+  case "$ceiling_clause" in
+    [0-9]*' minutes') ;;
+    *)
+      flag "hooks/auto-continue.sh states no single delegation-wait ceiling for the Claude binding to name"
+      ceiling_clause='the ceiling auto-continue.sh no longer states' ;;
+  esac
+  section_names_its_clauses "$PLUGIN_ROOT/skills/_shared/platform/claude/delegation-wait.md" \
+    'Making a launch wait' 'launch-wait contract' 'a clause the launch it governs turns on' exact-case \
+    'always launches in the BACKGROUND' 'completion notification' 'IS the resume' \
+    'Nothing may act on a report it has not read' \
+    'auto_wait=<label>' 'auto_wait=none' 'never relaunch a delegation' \
+    "$ceiling_clause"
+  for retired in $({ grep -rlF 'run_in_background' "$PLUGIN_ROOT/skills" || true; }); do
+    flag "${retired#"$PLUGIN_ROOT"/} tells a launch to pass a foreground flag the Agent tool's schema does not accept"
+  done
+}
+
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }
 
 check_forked_skills_declare_background
@@ -1033,6 +1055,7 @@ check_auto_disposition_is_a_ledger_toggle_that_parks_on_a_question
 check_unattended_run_carves_out_the_delivery_contract
 check_auto_ceiling_holds_the_finish_and_the_evidence
 check_the_project_record_is_honest_about_its_scope
+check_launch_wait_contract_states_the_mechanism_this_host_has
 
 if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"

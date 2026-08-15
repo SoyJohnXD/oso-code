@@ -624,7 +624,7 @@ fi
 
 LINT_RULE_COUNT_FIXTURE="$TEST_HOME/lint-rule-count"
 copy_lint_fixture "$LINT_RULE_COUNT_FIXTURE"
-sed 's/forty rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
+sed 's/forty-one rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
   > "$LINT_RULE_COUNT_FIXTURE/README.md.tmp"
 mv "$LINT_RULE_COUNT_FIXTURE/README.md.tmp" "$LINT_RULE_COUNT_FIXTURE/README.md"
 if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
@@ -632,7 +632,7 @@ if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
   echo "FAIL: check_present_tense_prose_names_the_rule_count accepted stale present-tense rule-count prose"; fail=$((fail + 1))
 else
   case "$rule_count_lint_report" in
-    *"README.md does not name the forty rules this linter declares"*)
+    *"README.md does not name the forty-one rules this linter declares"*)
       echo "ok: check_present_tense_prose_names_the_rule_count rejects stale present-tense rule-count prose"; pass=$((pass + 1)) ;;
     *)
       echo "FAIL: check_present_tense_prose_names_the_rule_count mutation failed for the wrong reason — $(printf '%s' "$rule_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
@@ -1387,6 +1387,90 @@ else
         echo "ok: check_the_project_record_is_honest_about_its_scope rejects the retired per-machine claim in the plan body"; pass=$((pass + 1)) ;;
       *)
         echo "FAIL: the check_the_project_record_is_honest_about_its_scope mutation failed for the wrong reason — $(printf '%s' "$project_record_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_LAUNCH_WAIT_FIXTURE="$TEST_HOME/lint-launch-wait"
+copy_lint_fixture "$LINT_LAUNCH_WAIT_FIXTURE"
+launch_wait_target="$LINT_LAUNCH_WAIT_FIXTURE/plugin/skills/_shared/platform/claude/delegation-wait.md"
+launch_wait_clause='That notification IS the resume.'
+launch_wait_neighbour='Nothing may act on a report it has not read'
+if ! grep -qF "$launch_wait_clause" "$launch_wait_target"; then
+  echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation found no resume clause to take back in the Claude launch-wait binding"; fail=$((fail + 1))
+else
+  sed "s/$launch_wait_clause/The launching turn carries on regardless./" \
+    "$launch_wait_target" > "$launch_wait_target.tmp"
+  mv "$launch_wait_target.tmp" "$launch_wait_target"
+  if grep -qF "$launch_wait_clause" "$launch_wait_target"; then
+    echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation left the resume clause standing in the Claude launch-wait binding"; fail=$((fail + 1))
+  elif ! grep -qF "$launch_wait_neighbour" "$launch_wait_target"; then
+    echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation took the unread-report rule it was supposed to leave standing"; fail=$((fail + 1))
+  elif launch_wait_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_LAUNCH_WAIT_FIXTURE/plugin" "$LINT_LAUNCH_WAIT_FIXTURE" 2>&1)"; then
+    echo "FAIL: a wait contract that names no notification resuming the launching turn passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$launch_wait_report" in
+      *"platform/claude/delegation-wait.md's launch-wait contract drops a clause the launch it governs turns on: IS the resume"*)
+        echo "ok: check_launch_wait_contract_states_the_mechanism_this_host_has rejects a Claude binding whose launch contract loses the notification that resumes the run"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation failed for the wrong reason — $(printf '%s' "$launch_wait_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_WAIT_CEILING_FIXTURE="$TEST_HOME/lint-wait-ceiling"
+copy_lint_fixture "$LINT_WAIT_CEILING_FIXTURE"
+wait_ceiling_target="$LINT_WAIT_CEILING_FIXTURE/plugin/hooks/auto-continue.sh"
+wait_ceiling_constant='DELEGATION_WAIT_CEILING_MINUTES=45'
+wait_ceiling_neighbour='DELEGATION_WAIT_CEILING_SECONDS='
+if ! grep -qF "$wait_ceiling_constant" "$wait_ceiling_target"; then
+  echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation found no single ceiling to unsettle in the Stop net"; fail=$((fail + 1))
+else
+  sed 's/^DELEGATION_WAIT_CEILING_MINUTES=45$/DELEGATION_WAIT_CEILING_MINUTES="${OSO_DELEGATION_WAIT_CEILING_MINUTES:-45}"/' \
+    "$wait_ceiling_target" > "$wait_ceiling_target.tmp"
+  mv "$wait_ceiling_target.tmp" "$wait_ceiling_target"
+  if grep -qF "$wait_ceiling_constant" "$wait_ceiling_target"; then
+    echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation left the single ceiling standing in the Stop net"; fail=$((fail + 1))
+  elif ! grep -qF "$wait_ceiling_neighbour" "$wait_ceiling_target"; then
+    echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation took the derived seconds constant it was supposed to leave standing"; fail=$((fail + 1))
+  elif wait_ceiling_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_WAIT_CEILING_FIXTURE/plugin" "$LINT_WAIT_CEILING_FIXTURE" 2>&1)"; then
+    echo "FAIL: a Stop net stating no single delegation-wait ceiling passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$wait_ceiling_report" in
+      *"hooks/auto-continue.sh states no single delegation-wait ceiling for the Claude binding to name"*)
+        echo "ok: check_launch_wait_contract_states_the_mechanism_this_host_has rejects a hook whose ceiling the Claude binding can no longer be pinned to"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the delegation-wait ceiling mutation failed for the wrong reason — $(printf '%s' "$wait_ceiling_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_RETIRED_FLAG_FIXTURE="$TEST_HOME/lint-retired-flag"
+copy_lint_fixture "$LINT_RETIRED_FLAG_FIXTURE"
+retired_flag_target="$LINT_RETIRED_FLAG_FIXTURE/plugin/skills/_shared/platform/claude/plan.md"
+retired_flag_clause='under the wait rule below'
+retired_flag_neighbour='## Delegation-wait binding'
+if ! grep -qF "$retired_flag_clause" "$retired_flag_target"; then
+  echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation found no wait cross-reference to overwrite in the Claude plan binding"; fail=$((fail + 1))
+else
+  sed 's/under the wait rule below/under the retired `run_in_background: false` flag/' \
+    "$retired_flag_target" > "$retired_flag_target.tmp"
+  mv "$retired_flag_target.tmp" "$retired_flag_target"
+  if ! grep -qF 'run_in_background' "$retired_flag_target"; then
+    echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation never put the retired foreground flag back in the Claude plan binding"; fail=$((fail + 1))
+  elif ! grep -qF "$retired_flag_neighbour" "$retired_flag_target"; then
+    echo "FAIL: the check_launch_wait_contract_states_the_mechanism_this_host_has mutation took the wait binding section it was supposed to leave standing"; fail=$((fail + 1))
+  elif retired_flag_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_RETIRED_FLAG_FIXTURE/plugin" "$LINT_RETIRED_FLAG_FIXTURE" 2>&1)"; then
+    echo "FAIL: a Claude binding ordering the foreground flag the Agent tool never carried passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$retired_flag_report" in
+      *"skills/_shared/platform/claude/plan.md tells a launch to pass a foreground flag the Agent tool's schema does not accept"*)
+        echo "ok: check_launch_wait_contract_states_the_mechanism_this_host_has rejects the retired foreground flag by its own spelling anywhere under plugin/skills"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the retired foreground-flag mutation failed for the wrong reason — $(printf '%s' "$retired_flag_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
     esac
   fi
 fi
@@ -5701,13 +5785,13 @@ assert_after_hook "a turn ending while an unattended run is in flight is pushed 
   hook_returned_block
 auto_push_reason="$(printf '%s' "$hook_stdout" | sed -n 's/.*"reason":"\(.*\)"}$/\1/p')"
 auto_anchors_missing=""
-for auto_anchor in 'oso/index NEXT:' active_slice 'oso-state journal' park; do
+for auto_anchor in 'oso/index NEXT:' active_slice 'oso-state journal' park 'do NOT relaunch it'; do
   case "$auto_push_reason" in
     *"$auto_anchor"*) ;;
     *) auto_anchors_missing="$auto_anchors_missing $auto_anchor" ;;
   esac
 done
-assert_equals "the push re-anchors the run on position, journal and park, never a bare block" \
+assert_equals "the push re-anchors the run on position, journal and park, and forbids relaunching a delegation, never a bare block" \
   "" "$auto_anchors_missing"
 
 auto_settled_verdicts=""
@@ -5768,22 +5852,128 @@ done
 assert_equals "a turn this hook already continued counts as a push even before any tally exists" \
   "push push stop" "${auto_belt_verdicts# }"
 
-auto_degradations_recorded() {
-  grep -c '"event":"auto-continue-degraded","command":"[^"]' "$STATE_DIR/events.jsonl" 2>/dev/null || true
+auto_events_recorded() {
+  grep -c '"event":"'"$1"'","command":"[^"]' "$STATE_DIR/events.jsonl" 2>/dev/null || true
 }
 
 arm_unattended_run
-auto_degradations_before="$(auto_degradations_recorded)"
+auto_degradations_before="$(auto_events_recorded auto-continue-degraded)"
 mkdir -p "${AUTO_JOURNAL%.log}.pushes"
 auto_degraded_verdicts=" $(auto_stop_verdict "$(auto_stop_input)")"
 rm -rf "$JOURNAL_DIR"
 printf 'a file stands where the run directory belongs\n' > "$JOURNAL_DIR"
 auto_degraded_verdicts="$auto_degraded_verdicts $(auto_stop_verdict "$(auto_stop_input)")"
 rm -f "$JOURNAL_DIR"
-auto_degradations_after="$(auto_degradations_recorded)"
+auto_degradations_after="$(auto_events_recorded auto-continue-degraded)"
 assert_equals "a push tally the net can neither read nor write allows the stop and puts the cause on the record" \
   "stop stop 2" \
   "${auto_degraded_verdicts# } $((auto_degradations_after - auto_degradations_before))"
+
+AUTO_TALLY="${AUTO_JOURNAL%.log}.pushes"
+AUTO_WAIT_MARK="${AUTO_JOURNAL%.log}.waiting"
+AUTO_EXPIRED_CLAUSE='older than 45 minutes'
+AUTO_EXPIRED_CAP_MILESTONE='auto-continue: cap reached after 3 pushes with a delegation marked in flight past 45 minutes — allowing the stop'
+
+auto_tally_of() {
+  { cat "$AUTO_TALLY" 2>/dev/null || echo unwritten; } | tr '\n' '>'
+}
+
+arm_unattended_run
+auto_wait_verdicts=" $(auto_stop_verdict "$(auto_stop_input)")"
+oso-state --session "$SESSION" set auto_wait=3 >/dev/null
+auto_holds_before="$(auto_events_recorded auto-continue-held)"
+auto_wait_verdicts="$auto_wait_verdicts $(auto_stop_verdict "$(auto_stop_input "$SESSION" true)")"
+auto_holds_after="$(auto_events_recorded auto-continue-held)"
+assert_equals "a turn ending on a delegation still in flight is a hold, not a stall: the stop stands and the push tally is left exactly where it was" \
+  "push stop|pushes=1>journal_bytes=0>" "${auto_wait_verdicts# }|$(auto_tally_of)"
+assert_equals "the held turn leaves one auto-continue-held line, so a net that held on purpose never reads back as one that never ran" \
+  "1" "$((auto_holds_after - auto_holds_before))"
+
+oso-state --session "$SESSION" set auto_wait=none >/dev/null
+auto_sentinel_verdict="$(auto_stop_verdict "$(auto_stop_input)")"
+assert_equals "the none sentinel is no delegation at all: the turn is pushed and the stale wait mark is cleared for the next delegation's clock" \
+  "push cleared pushes=2>journal_bytes=0>" \
+  "$auto_sentinel_verdict $([ -e "$AUTO_WAIT_MARK" ] && printf standing || printf cleared) $(auto_tally_of)"
+
+arm_unattended_run
+over_length_wait=w
+while [ "${#over_length_wait}" -le 64 ]; do
+  over_length_wait="${over_length_wait}9"
+done
+auto_garbled_verdicts=""
+for garbled_wait in 'slice 3' '-3' "$over_length_wait"; do
+  oso-state --session "$SESSION" set "auto_wait=$garbled_wait" >/dev/null
+  auto_garbled_verdicts="$auto_garbled_verdicts $(auto_stop_verdict "$(auto_stop_input)")"
+done
+assert_equals "a wait mark the net cannot read is no evidence of live work: every such turn is pushed and counted exactly as an unmarked run" \
+  "push push push|pushes=3>journal_bytes=0>" "${auto_garbled_verdicts# }|$(auto_tally_of)"
+
+arm_unattended_run
+oso-state --session "$SESSION" set auto_wait=wave-2 >/dev/null
+auto_cap_after_holds=""
+for _ in 1 2 3; do
+  auto_cap_after_holds="$auto_cap_after_holds $(auto_stop_verdict "$(auto_stop_input)")"
+done
+oso-state --session "$SESSION" set auto_wait=none >/dev/null
+for _ in 1 2 3 4; do
+  auto_cap_after_holds="$auto_cap_after_holds $(auto_stop_verdict "$(auto_stop_input)")"
+done
+assert_equals "held turns spend none of the net: a run that stalls after waiting still gets its three pushes and the plain give-up" \
+  "stop stop stop push push push stop|$AUTO_CAP_MILESTONE>" \
+  "${auto_cap_after_holds# }|$(journal_texts_in "$AUTO_JOURNAL")"
+
+arm_unattended_run
+oso-state --session "$SESSION" set auto_wait=wave-2 >/dev/null
+auto_expiry_verdicts=" $(auto_stop_verdict "$(auto_stop_input)")"
+touch -t 200001010000 "$AUTO_WAIT_MARK"
+run_hook auto-continue.sh "$(auto_stop_input)"
+assert_after_hook "a wait mark still standing past the ceiling stops being believed, and the turn is pushed" \
+  hook_returned_block
+auto_expired_reason="$(printf '%s' "$hook_stdout" | sed -n 's/.*"reason":"\(.*\)"}$/\1/p')"
+case "$auto_expired_reason" in
+  *"$AUTO_EXPIRED_CLAUSE"*) auto_expired_wording=dated ;;
+  *) auto_expired_wording="undated:$auto_expired_reason" ;;
+esac
+assert_equals "the push that follows an expired mark hands over the stale mark instead of repeating the plain order" \
+  "dated" "$auto_expired_wording"
+for _ in 1 2 3; do
+  auto_expiry_verdicts="$auto_expiry_verdicts $(auto_stop_verdict "$(auto_stop_input)")"
+done
+assert_equals "an expired mark spends the cap like any stall, and the give-up names the mark rather than claiming there was no progress" \
+  "stop push push stop|$AUTO_EXPIRED_CAP_MILESTONE>" \
+  "${auto_expiry_verdicts# }|$(journal_texts_in "$AUTO_JOURNAL")"
+
+arm_unattended_run
+oso-state --session "$SESSION" set auto_wait=wave-2 >/dev/null
+auto_next_run_verdicts=" $(auto_stop_verdict "$(auto_stop_input)")"
+touch -t 200001010000 "$AUTO_WAIT_MARK"
+oso-state --session "$SESSION" set auto=done >/dev/null
+oso-state --session another-session set auto=running auto_wait=wave-2 >/dev/null
+for _ in 1 2; do
+  auto_next_run_verdicts="$auto_next_run_verdicts $(auto_stop_verdict "$(auto_stop_input another-session)")"
+done
+assert_equals "a mark the run before left behind is no sighting of a later run's delegation, so the same label is held on this run's own clock" \
+  "stop stop stop" "${auto_next_run_verdicts# }"
+
+arm_unattended_run
+oso-state --session "$SESSION" set auto_wait=wave-2 >/dev/null
+auto_resumed_verdicts=" $(auto_stop_verdict "$(auto_stop_input)")"
+touch -t 200001010000 "$AUTO_WAIT_MARK"
+oso-state --session "$SESSION" set auto=parked >/dev/null
+auto_resumed_verdicts="$auto_resumed_verdicts $(auto_stop_verdict "$(auto_stop_input)")"
+auto_mark_after_park="$([ -e "$AUTO_WAIT_MARK" ] && printf standing || printf cleared)"
+oso-state --session "$SESSION" set auto=running >/dev/null
+auto_resumed_verdicts="$auto_resumed_verdicts $(auto_stop_verdict "$(auto_stop_input)")"
+assert_equals "a run that parks with a delegation still armed leaves no mark for its resumption to inherit" \
+  "stop stop stop|cleared" "${auto_resumed_verdicts# }|$auto_mark_after_park"
+
+arm_unattended_run
+mkdir -p "${AUTO_WAIT_MARK%/*}"
+printf 'wave-2\n' > "$AUTO_WAIT_MARK"
+touch -t 200001010000 "$AUTO_WAIT_MARK"
+oso-state --session "$SESSION" set auto_wait=wave-2 >/dev/null
+assert_equals "a mark an older net wrote names no run, so it is a stale file rather than this run's first sighting" \
+  "stop" "$(auto_stop_verdict "$(auto_stop_input)")"
 
 rm -rf "$STATE_DIR/runs"
 oso-state --session "$SESSION" clear >/dev/null 2>&1 || true
