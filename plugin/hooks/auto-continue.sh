@@ -63,19 +63,27 @@ is_delegation_label() {
   [[ "$label" =~ $DELEGATION_LABEL_PATTERN ]]
 }
 
-sighted_label_in() {
-  local wait_file="$1" sighted=""
-  [ -f "$wait_file" ] && [ -r "$wait_file" ] || return 0
-  IFS= read -r sighted < "$wait_file" || true
-  printf '%s' "$sighted"
+this_run_already_sighted() {
+  local wait_file="$1" label="$2" session="$3"
+  [ "$(state_value "$wait_file" label)" = "$label" ] &&
+    [ "$(state_value "$wait_file" session)" = "$session" ]
 }
 
 remember_sighting_or_allow_stop() {
   local wait_file="$1" label="$2" session="$3" write_error
   write_error="$( {
     umask 077
-    mkdir -p "${wait_file%/*}" && printf '%s\n' "$label" > "$wait_file"
+    mkdir -p "${wait_file%/*}" &&
+      printf 'label=%s\nsession=%s\n' "$label" "$session" > "$wait_file"
   } 2>&1 )" || allow_stop_degraded "$session" "$write_error"
+}
+
+forget_sighting_and_allow_stop() {
+  local project_dir="$1" journal_file
+  if journal_file="$(journal_file_for "$project_dir" 2>/dev/null)"; then
+    rm -f "${journal_file%.log}.waiting" 2>/dev/null || true
+  fi
+  allow_stop
 }
 
 remember_push_or_allow_stop() {
@@ -95,7 +103,8 @@ project_dir="$(json_field "$payload" cwd)"
 [ -d "$project_dir" ] || allow_stop
 
 state_file="$(state_file_for "$project_dir" 2>/dev/null)" || allow_stop
-[ "$(unattended_run_marker "$state_file" "$session_id")" = running ] || allow_stop
+run_marker="$(unattended_run_marker "$state_file" "$session_id")" || allow_stop
+[ "$run_marker" = running ] || forget_sighting_and_allow_stop "$project_dir"
 
 journal_file="$(journal_file_for "$project_dir" 2>/dev/null)" ||
   allow_stop_degraded "$session_id" "the run journal path is unresolvable"
@@ -107,7 +116,7 @@ continuation_order="$CONTINUATION_ORDER"
 cap_milestone="$CAP_MILESTONE"
 delegation_label="$(state_value "$state_file" auto_wait)"
 if is_delegation_label "$delegation_label"; then
-  if [ "$(sighted_label_in "$wait_file")" != "$delegation_label" ]; then
+  if ! this_run_already_sighted "$wait_file" "$delegation_label" "$session_id"; then
     remember_sighting_or_allow_stop "$wait_file" "$delegation_label" "$session_id"
     hold_for_delegation "$session_id" "$delegation_label"
   fi

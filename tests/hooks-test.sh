@@ -5891,6 +5891,38 @@ assert_equals "an expired mark spends the cap like any stall, and the give-up na
   "stop push push stop|$AUTO_EXPIRED_CAP_MILESTONE>" \
   "${auto_expiry_verdicts# }|$(journal_texts_in "$AUTO_JOURNAL")"
 
+arm_unattended_run
+oso-state --session "$SESSION" set auto_wait=wave-2 >/dev/null
+auto_next_run_verdicts=" $(auto_stop_verdict "$(auto_stop_input)")"
+touch -t 200001010000 "$AUTO_WAIT_MARK"
+oso-state --session "$SESSION" set auto=done >/dev/null
+oso-state --session another-session set auto=running auto_wait=wave-2 >/dev/null
+for _ in 1 2; do
+  auto_next_run_verdicts="$auto_next_run_verdicts $(auto_stop_verdict "$(auto_stop_input another-session)")"
+done
+assert_equals "a mark the run before left behind is no sighting of a later run's delegation, so the same label is held on this run's own clock" \
+  "stop stop stop" "${auto_next_run_verdicts# }"
+
+arm_unattended_run
+oso-state --session "$SESSION" set auto_wait=wave-2 >/dev/null
+auto_resumed_verdicts=" $(auto_stop_verdict "$(auto_stop_input)")"
+touch -t 200001010000 "$AUTO_WAIT_MARK"
+oso-state --session "$SESSION" set auto=parked >/dev/null
+auto_resumed_verdicts="$auto_resumed_verdicts $(auto_stop_verdict "$(auto_stop_input)")"
+auto_mark_after_park="$([ -e "$AUTO_WAIT_MARK" ] && printf standing || printf cleared)"
+oso-state --session "$SESSION" set auto=running >/dev/null
+auto_resumed_verdicts="$auto_resumed_verdicts $(auto_stop_verdict "$(auto_stop_input)")"
+assert_equals "a run that parks with a delegation still armed leaves no mark for its resumption to inherit" \
+  "stop stop stop|cleared" "${auto_resumed_verdicts# }|$auto_mark_after_park"
+
+arm_unattended_run
+mkdir -p "${AUTO_WAIT_MARK%/*}"
+printf 'wave-2\n' > "$AUTO_WAIT_MARK"
+touch -t 200001010000 "$AUTO_WAIT_MARK"
+oso-state --session "$SESSION" set auto_wait=wave-2 >/dev/null
+assert_equals "a mark an older net wrote names no run, so it is a stale file rather than this run's first sighting" \
+  "stop" "$(auto_stop_verdict "$(auto_stop_input)")"
+
 rm -rf "$STATE_DIR/runs"
 oso-state --session "$SESSION" clear >/dev/null 2>&1 || true
 
