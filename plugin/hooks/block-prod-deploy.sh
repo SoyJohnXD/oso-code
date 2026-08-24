@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Recovery: take the run back (`oso-state --session <id> set auto=done`) and run the command from your own terminal — this gate arms only while THIS session's unattended run is still in flight.
 set -euo pipefail
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,7 +9,8 @@ PRODUCTION_BOUNDARY_SUBJECTS='git deploy vercel netlify firebase'
 judge_command() {
   if runs_a_production_deploy; then
     verdict=production
-  elif [ "$verdict" != production ] && pushes_off_the_run_branch; then
+  elif [ "$verdict" != production ] && [ "$verdict" != unread ] &&
+    pushes_off_the_run_branch; then
     verdict=push
   elif [ "$verdict" = clear ] && is_residue_call "$PRODUCTION_BOUNDARY_SUBJECTS"; then
     verdict=residue
@@ -18,7 +18,12 @@ judge_command() {
 }
 
 runs_a_production_deploy() {
-  case "$(deploy_command_name)" in
+  local deploy_cli
+  deploy_cli="$(deploy_command_name)" || return 1
+  if arguments_arrived_unread; then
+    return 0
+  fi
+  case "$deploy_cli" in
     vercel) vercel_targets_production ;;
     netlify) command_carries deploy && command_carries --prod ;;
     firebase) command_carries deploy ;;
@@ -26,10 +31,17 @@ runs_a_production_deploy() {
   esac
 }
 
+arguments_arrived_unread() {
+  case "$command_stdin" in
+    *"$LEX_UNREAD_PAYLOAD_MARKER"*) return 0 ;;
+  esac
+  return 1
+}
+
 deploy_command_name() {
   local index=0 word
   while [ "$index" -lt "${#command_tokens[@]}" ]; do
-    word="${command_tokens[$index]##*/}"
+    word="$(package_spec_name "${command_tokens[$index]}")"
     case "$word" in
       vercel|netlify|firebase) printf '%s' "$word"; return 0 ;;
     esac
@@ -39,6 +51,14 @@ deploy_command_name() {
     index=$((index + 1))
   done
   return 1
+}
+
+package_spec_name() {
+  local token="${1##*/}"
+  case "$token" in
+    ?*@*) printf '%s' "${token%@*}" ;;
+    *) printf '%s' "$token" ;;
+  esac
 }
 
 is_package_runner() {
@@ -167,10 +187,10 @@ trap 'block_with_gate_error "the production boundary gate"' ERR
 
 tool_name="$(json_field "$input" tool_name)"
 case "$tool_name" in
-  mcp__*deploy*)
+  *deploy*)
     deny_production_boundary "oso-code: an unattended run is in flight, so an MCP deploy stays with the operator. Take the run back ($(oso_state_remedy "$session_id" 'set auto=done')) and run the deploy yourself." \
       "$tool_name" ;;
-  Bash) ;;
+  Bash|bash) ;;
   *) exit 0 ;;
 esac
 
@@ -184,6 +204,9 @@ verdict="$(line_verdict "$command" judge_command)"
 case "$verdict" in
   production)
     deny_production_boundary "oso-code: an unattended run is in flight, so a production deploy stays with the operator. Take the run back ($(oso_state_remedy "$session_id" 'set auto=done')) and deploy from your own terminal, or deploy after the run closes at its pull request." \
+      "$command" ;;
+  unread)
+    deny_production_boundary "oso-code: an unattended run is in flight, and this command line is past what the production boundary can read, so it is treated as a production deploy. Take the run back ($(oso_state_remedy "$session_id" 'set auto=done')) and run it from your own terminal, or spell it in lines this boundary can read." \
       "$command" ;;
   push)
     if [ "$run_marker" = armed ]; then

@@ -1,11 +1,4 @@
 #!/usr/bin/env bash
-# Materialize an installed Impeccable skill for Codex.
-#
-# Usage: mount-impeccable.sh <source-skill-directory>
-#
-# The caller resolves Impeccable's Codex-specific `.agents` skill directory,
-# usually from its marketplace checkout. This script deliberately does not
-# preserve that source path: Codex reads the stable, user-wide copy below.
 
 set -eu
 
@@ -72,9 +65,6 @@ for command_name in init document audit; do
   fi
 done
 
-# Impeccable publishes provider-specific compilations. A Claude compilation is
-# structurally similar enough to copy successfully but teaches unusable paths
-# and slash commands to Codex, so validate two stable provider markers first.
 if ! grep -F '.agents/skills/impeccable' "$source_dir/SKILL.md" >/dev/null \
   || ! grep -F '$impeccable' "$source_dir/SKILL.md" >/dev/null; then
   echo "mount-impeccable: source is not the Codex .agents build" >&2
@@ -153,9 +143,6 @@ acquire_lock() {
     mkdir -p "$lock_registry"
   fi
 
-  # A directory claims the unique owner path in one filesystem operation, and
-  # the identity lands inside it. A preempted publisher can only fail later; it
-  # can never overwrite a newer owner because mkdir does not replace one.
   if ! mkdir "$owner_dir" 2>/dev/null; then
     echo "mount-impeccable: could not publish a unique mount owner" >&2
     return 1
@@ -168,9 +155,6 @@ acquire_lock() {
     return 1
   fi
 
-  # Snapshot every immediate child after publication. nullglob distinguishes
-  # an absent match from a captured entry that later disappears; dotglob keeps
-  # a hidden or legacy entry from bypassing the owner grammar.
   shopt -s nullglob dotglob
   registry_entries=("$lock_registry"/*)
   shopt -u nullglob dotglob
@@ -195,8 +179,6 @@ acquire_lock() {
       echo "mount-impeccable: another mount is already in progress (pid $lock_read_pid)" >&2
       return 1
     fi
-    # A valid dead contender is logically stale. Its unique path is never
-    # reused and need not be compare/deleted, so stale recovery has no ABA edge.
   done
 }
 
@@ -211,9 +193,6 @@ cleanup() {
     mv "$backup_dir" "$target_dir"
   fi
 
-  # Publication spans the complete critical section above: staging, replacement
-  # and backup cleanup. A publisher arriving at any point before EXIT therefore
-  # scans this process as live and withdraws; only here may our unique owner go.
   release_owned_lock
 }
 on_signal() {
@@ -226,9 +205,6 @@ acquire_lock || exit 1
 
 stage_dir=$(mktemp -d "$skills_dir/.impeccable.mount.XXXXXX")
 
-# A link anywhere below the provider build could preserve a cache pointer or
-# escape the trusted source tree. The published Codex build contains regular
-# files, so reject links instead of following them.
 if [ -n "$(find "$source_dir" -type l -print -quit)" ]; then
   echo "mount-impeccable: source contains a symbolic link" >&2
   exit 1

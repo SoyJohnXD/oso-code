@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Stop: bind the exact plan document Codex just presented to a pending approval.
-# The marker is emitted only by oso-code's plan rail, so ordinary Stop events
-# remain completely invisible even though this user-level hook sees them too.
 set -euo pipefail
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,19 +38,11 @@ raw_message="$escaped"
 message="$(json_field "$payload" last_assistant_message)"
 last_line="${message##*$'\n'}"
 
-# A normal Codex response has no private oso-code marker. Do not inspect the
-# repository or session before this return: invisibility includes no event,
-# state directory, stderr, or incidental git lookup. Only the reserved prefix
-# on the final decoded line identifies a harness presentation; prose that merely
-# mentions the protocol earlier is still an ordinary response.
 case "$last_line" in
   '<!-- oso-plan-approval:'*) ;;
   *) finish_hook ;;
 esac
 
-# A blocked Stop is invoked once more with this boolean set. Blocking it again
-# would create an infinite correction loop, so the second failure uses Codex's
-# common stop output and ends cleanly with the same reason.
 stop_hook_active=false
 stop_active_pattern='"stop_hook_active"[[:space:]]*:[[:space:]]*(true|false)'
 if [[ "$payload" =~ $stop_active_pattern ]]; then
@@ -81,9 +70,6 @@ native_mode="$CODEX_TURN_MODE"
 
 marker_lines="$(printf '%s\n' "$message" | grep -c '^<!-- oso-plan-approval:' || true)"
 exact_lines="$(printf '%s\n' "$message" | grep -cxF "$PLAN_MARKER" || true)"
-# Codex may serialize one host-owned terminal LF after the assistant's final
-# logical line. Accept that one transport suffix without normalizing the bytes:
-# the digest below still binds the exact raw field that Stop delivered.
 raw_marker_is_terminal=false
 case "$raw_message" in
   *"$PLAN_MARKER"|*"$PLAN_MARKER\\n") raw_marker_is_terminal=true ;;
@@ -142,9 +128,6 @@ digest="$(sha256_text "$digest_input")" ||
   stop_block 'oso-code: no SHA-256 implementation is available to bind this approval document.' \
     plan-approval-capture-blocked "$session_id"
 state_bin="${OSO_STATE_BIN:-$HOOK_DIR/../bin/oso-state}"
-# The operator reads the same generic sentence whatever went wrong, so a
-# discarded stderr is a cause nobody can recover afterwards; the audit line is
-# where it survives without reaching the transcript or this hook's own stderr.
 if ! capture_error="$(printf '%s' "$plan_document" |
   (cd "$cwd" && "$state_bin" --session "$session_id" capture-plan "$digest") 2>&1 >/dev/null)"; then
   stop_block 'oso-code: the approval document or its plan artifacts could not be recorded; execution remains blocked.' \

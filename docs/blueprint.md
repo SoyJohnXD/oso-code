@@ -259,16 +259,32 @@ Three properties of the amendment log these files replace are facts to carry for
 
 - [0150](decisions/0150-a-delegation-in-flight-is-not-a-stall-the-wait-marker-its-ceiling-and-the-invariant.md) — A delegation in flight is not a stall: the wait marker, its ceiling, and the invariant that is reading
 
+**2026-08-18 — opencode-parity**
+
+- [0151](decisions/0151-opencode-baseline-and-f7-verdict.md) — The OpenCode baseline: the pin, the plugin contract, and the F7 verdict
+- [0152](decisions/0152-skill-visibility-control-on-the-pinned-host.md) — Skill visibility control on the pinned host
+
+**2026-08-19 — opencode-parity**
+
+- [0153](decisions/0153-opencode-installer-verifier-and-ci-host-facts.md) — The OpenCode installer, verifier and CI host facts
+
+**2026-08-23 — opencode-runtime-parity**
+
+- [0154](decisions/0154-the-retroactive-shell-comment-sweep-and-the-rule-that-closes-the-class.md) — The retroactive shell comment sweep, the boundary it kept, and the rule that closes the class
+- [0155](decisions/0155-a-model-less-variant-is-dropped-so-d15s-max-siblings-are-closed.md) — A model-less `variant:` is dropped at runtime, so D15's `-max` siblings are closed rather than built
+- [0156](decisions/0156-the-opencode-smoke-names-the-hosts-own-refusal-instead-of-failing-for-it.md) — The OpenCode wave smoke names the host's own refusal instead of failing for it
+- [0157](decisions/0157-a-machines-own-paths-and-a-tools-own-cache-never-reach-the-published-tree.md) — A machine's own paths and a tool's own cache never reach the published tree
+
 ## Foundational decisions
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Platform | Claude Code and Codex as first-class adapters over neutral behavioral bodies (ADR-0096) | One harness contract; host tools, lifecycle and paths stay in their own bindings |
-| Distribution | One release: a native Claude plugin plus a Codex skills plugin and installer-owned roles, hooks, bounded config leaves and MCP wiring (ADR-0096, ADR-0098, ADR-0099, ADR-0102) | Codex's plugin schema cannot carry or pre-trust every runtime surface; the installer verifies its own leaves, composes Engram's root pointers, and repairs only exact Oso/Engram state without annexing shared host tables or foreign owners |
+| Platform | Claude Code, Codex and OpenCode as first-class adapters over neutral behavioral bodies (ADR-0096, ADR-0151) | One harness contract; host tools, lifecycle and paths stay in their own bindings |
+| Distribution | One release: a native Claude plugin plus a Codex skills plugin and installer-owned roles, hooks, bounded config leaves and MCP wiring, and an OpenCode installer owning a strict-JSON config wholesale plus the plugin, verifier and purge under the same transactional discipline (ADR-0096, ADR-0098, ADR-0099, ADR-0102, ADR-0153) | Codex's plugin schema cannot carry or pre-trust every runtime surface; the installer verifies its own leaves, composes Engram's root pointers, and repairs only exact Oso/Engram state without annexing shared host tables or foreign owners. OpenCode's config is strict JSON, so its installer owns the file wholesale and re-applies the operator's five keys from a verified backup |
 | Plan state | Engram for semantic recall; Codex additionally keeps immutable approval snapshots and mutable operational plans below `~/.local/state/oso-code/plans/` (ADR-0101) — no files inside project repos | Clean projects, durable per-machine execution evidence, and bounded hot amendments without rewriting what was approved |
 | Enforcement | Native Plan Mode plus host approval adapter, state gates and prompt guidance (ADR-0096, ADR-0101, ADR-0102, ADR-0103, ADR-0104) | Runtime gates read state; Codex attests native mode from the exact turn, accepts its one host-owned terminal LF without normalizing the wire digest, binds the native approval prompt through that pending digest, and launches explicit delegated profiles with fresh complete context |
 | Repos | This monorepo; legacy repos harvested then archived | Atomic versioning of rubric + gate + skill |
-| Context budget | Each host's always-loaded global guidance ≤ 2k tokens | Behavior moves to on-demand skills; adding a second adapter does not duplicate the harness into startup context |
+| Context budget | Each host's always-loaded global guidance ≤ 2k tokens | Behavior moves to on-demand skills; adding a second and a third adapter does not duplicate the harness into startup context |
 | Reference | gentle-ai kept as prompting reference only | The system works; oso-code is tailored, not a fork |
 
 ## Mode 1 — `/plan` (substantial changes)

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Sourceable renderer for the oso-code-owned Codex configuration region.
 
 render_codex_managed_config() {
   [ "$#" -eq 2 ] || {
@@ -81,27 +80,12 @@ command = $fallow_command
 EOF
 }
 
-# Which spelling of the fallow MCP binary a CLIENT can launch — not which one a
-# shell can. Both installers ask it: the renderer above writes the command Codex
-# spawns, and bootstrap/install.sh wires the one Claude Code spawns, so a second
-# copy of this would answer the same question differently the day either side
-# learns a new install location.
 resolve_fallow_mcp_command() {
   [ "$#" -eq 1 ] || {
     printf 'resolve_fallow_mcp_command requires HOME\n' >&2
     return 2
   }
   local target_home=$1 resolved appdata npm_prefix=""
-  # Windows first, and only because of what a PATH search would answer instead:
-  # `npm install --global fallow` drops THREE shims in npm's global prefix — the
-  # .cmd, a .ps1, and an extensionless sh script for Git Bash. That last one is the
-  # one `command -v` finds, and the client spawning this command is a native Windows
-  # process that cannot execute it. %APPDATA%\npm is only npm's DEFAULT prefix, so
-  # npm names its own: an operator who set `prefix` has the .cmd somewhere else
-  # entirely and would otherwise fall through to the sh shim this probe exists to
-  # skip. Either spelling comes back in Windows form, which `[ -x ]` reads more
-  # reliably with forward slashes. %APPDATA% is also the gate — no Windows, no .cmd,
-  # and no reason to spawn npm at all.
   appdata="${APPDATA:-}"
   if [ -n "$appdata" ]; then
     npm_prefix="$(npm prefix -g 2>/dev/null || true)"
@@ -138,9 +122,6 @@ multi_agent = true
 EOF
 }
 
-# Return 0 for an exact oso-code features leaf, 1 when it is absent, 2 when its
-# markers/table shape are malformed, and 3 when the owned bytes diverge. The
-# parser keeps marker-looking lines inside multiline TOML strings inert.
 codex_managed_features_region_status() {
   [ "$#" -eq 4 ] || {
     printf 'codex_managed_features_region_status requires source, parser, start marker, and end marker\n' >&2

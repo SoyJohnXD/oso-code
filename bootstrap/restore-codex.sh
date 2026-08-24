@@ -1,23 +1,4 @@
 #!/usr/bin/env bash
-# Restore a Codex installation from one of install-codex.sh's own backups.
-#
-# Usage: restore-codex.sh [--yes] [--list] [<backup-name>]
-#   --list        List available backups, newest first, and exit. Nothing is
-#                 touched.
-#   --yes         Skip the confirmation prompt.
-#   <backup-name> One of the directory names --list prints. Defaults to the
-#                 most recent backup when omitted.
-#
-# Every target this restores is read from that backup's OWN manifest -- the
-# exact set install-codex.sh's begin_transaction backed up at install time --
-# never guessed from what this version of install-codex.sh currently writes,
-# so a backup made by an older or newer install-codex.sh still restores.
-#
-# core.hooksPath (the git commit-hook wiring) is the one thing install-codex.sh's
-# in-run rollback can revert that this cannot: that value is only ever held in
-# memory for the run that captured it, never written to the backup itself, so
-# a restore run afterwards has nothing on disk to read it back from. Re-run
-# install-codex.sh, or wire the git hook by hand, if that also needs to change.
 
 set -euo pipefail
 
@@ -27,6 +8,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   exit 1
 }
 . "$SCRIPT_DIR/lib/install-backup.sh"
+[ -f "$SCRIPT_DIR/lib/codex-install-backups.sh" ] || {
+  printf '[oso-code] ERROR: Codex backup identity library is missing\n' >&2
+  exit 1
+}
+. "$SCRIPT_DIR/lib/codex-install-backups.sh"
 
 info() { printf '[oso-code] %s\n' "$1"; }
 warn() { printf '[oso-code] WARNING: %s\n' "$1" >&2; }
@@ -36,7 +22,7 @@ usage_error() { printf '[oso-code] ERROR: %s\n' "$1" >&2; exit 2; }
 initialize_paths() {
   [ -n "${HOME:-}" ] || fail "HOME is not set"
   BACKUPS_ROOT="$HOME/.local/state/oso-code"
-  RESTORE_EXERCISED_MARKER="$BACKUPS_ROOT/.install-restore-verified"
+  RESTORE_EXERCISED_MARKER="$BACKUPS_ROOT/.install-restore-verified-codex"
 }
 
 parse_args() {
@@ -60,9 +46,9 @@ parse_args() {
 list_backups() {
   local listing backup
   listing="$(mktemp "${TMPDIR:-/tmp}/oso-codex-restore-list.XXXXXX")"
-  install_backup_dirs_newest_first "$BACKUPS_ROOT" > "$listing"
+  codex_install_backups_newest_first "$BACKUPS_ROOT" > "$listing"
   if [ ! -s "$listing" ]; then
-    info "no install backups found under $BACKUPS_ROOT"
+    info "no install-codex.sh backups found under $BACKUPS_ROOT"
     rm -f "$listing"
     return 0
   fi
@@ -82,17 +68,20 @@ resolve_backup_dir() {
     return 0
   fi
   listing="$(mktemp "${TMPDIR:-/tmp}/oso-codex-restore-latest.XXXXXX")"
-  install_backup_dirs_newest_first "$BACKUPS_ROOT" > "$listing"
+  codex_install_backups_newest_first "$BACKUPS_ROOT" > "$listing"
   RESTORE_TARGET="$(awk 'NR == 1 { print; exit }' "$listing")"
   rm -f "$listing"
-  [ -n "$RESTORE_TARGET" ] || fail "no install backups found under $BACKUPS_ROOT"
+  [ -n "$RESTORE_TARGET" ] ||
+    fail "no install-codex.sh backups found under $BACKUPS_ROOT"
 }
 
 validate_backup_dir() {
   local dir=$1 name
   [ -d "$dir" ] && [ ! -L "$dir" ] || fail "not a backup directory: $dir"
   name="${dir##*/}"
-  is_install_backup_name "$name" || fail "not one of install-codex.sh's own backups: $dir"
+  is_install_backup_name "$name" || fail "not one of this installer's own backups: $dir"
+  is_codex_install_backup "$dir" ||
+    fail "not an install-codex.sh backup: $dir — restore-opencode.sh replays the OpenCode installer's own snapshots"
   [ -f "$dir/manifest" ] && [ ! -L "$dir/manifest" ] || fail "backup has no manifest: $dir"
   [ -d "$dir/items" ] && [ ! -L "$dir/items" ] || fail "backup has no items directory: $dir"
 }
@@ -106,11 +95,6 @@ confirm_restore() {
   case "$answer" in y|Y|yes|YES) ;; *) fail "aborted by user" ;; esac
 }
 
-# The retention policy in install-codex.sh's prune_install_backups refuses to
-# delete anything until this file exists: a purge that ran on its first
-# installation would delete the very artifacts an operator reaches for if
-# that installation goes wrong, so pruning stays off until a restore has
-# actually been proven to work on this machine at least once.
 record_restore_exercised() {
   mkdir -p "$BACKUPS_ROOT"
   printf 'restored %s from %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$RESTORE_TARGET" \

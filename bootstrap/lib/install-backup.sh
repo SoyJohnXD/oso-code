@@ -11,18 +11,16 @@
 # never drift into two readings of the same backup; all three must bound
 # disk the same way, or "300 MiB" means something different per installer.
 #
-# Each installer hands in a ROOT of its own and the glob below never
-# recurses, so one library reads two snapshot sets without either side ever
-# being offered the other's: only install-codex.sh's snapshots carry the
-# manifest restore-codex.sh replays.
+# install-codex.sh and install-opencode.sh share ONE root, so the name shape
+# alone never tells their snapshots apart. install_backup_declares is what
+# does: a snapshot carries the format marker its own installer wrote, or --
+# for snapshots older than that marker -- a manifest label only that installer
+# records. Every caller that restores, lists or PRUNES filters through it
+# first, because a retention pass that enumerated the shared root would delete
+# the other host's snapshots on a budget it never spent.
 #
 # Sourced, not executed: functions only, no side effects at source time.
 
-# The exact naming shape begin_transaction stamps on every backup it creates
-# (`install-backup-<date>-<time>-<pid>`). Both the pruning side
-# (install-codex.sh) and the restore side (restore-codex.sh) check a
-# candidate against this once, so neither can drift from what the other
-# treats as a real snapshot.
 is_install_backup_name() {
   case "$1" in
     install-backup-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]-*) return 0 ;;
@@ -30,10 +28,6 @@ is_install_backup_name() {
   esac
 }
 
-# One absolute backup path per line, newest first. The timestamp prefix is
-# fixed-width, so a plain lexicographic reverse sort is already chronological
-# order; nothing here is a backup unless it is a real directory (never a
-# symlink) whose name is the exact stamp above.
 install_backup_dirs_newest_first() {
   local root=$1 entry name
   [ -d "$root" ] || return 0
@@ -46,35 +40,36 @@ install_backup_dirs_newest_first() {
   done | LC_ALL=C sort -r
 }
 
-# Portable apparent-size read, in KiB: -k is the one du flag GNU and BSD du
-# agree on, unlike -b (GNU-only) or --apparent-size.
 backup_size_kib() {
   du -sk "$1" 2>/dev/null | awk '{ print $1 + 0 }'
 }
 
-# The one place the retention budget is written down, for every installer that
-# has one. 300 MiB: the measured problem was 1.9 GiB across 17 snapshots and a
-# single Codex snapshot already runs to ~110 MiB, so bounding "the last N"
-# would leave size free to grow with whatever a future release's transaction
-# happens to back up. Bounding size keeps roughly 2-3 recent Codex snapshots
-# -- a real fallback depth, not just the last one -- while cutting that
-# measured worst case by over 80%. The override is what lets a test hand in a
-# budget nothing can fit.
 install_backup_budget_kib() {
   printf '%s' "${OSO_INSTALL_BACKUP_BUDGET_KIB:-307200}"
 }
 
-# The backups under $1 that do not fit that budget, one absolute path per line
-# in the same newest-first order: this decides WHICH snapshots are surplus, and
-# the caller deletes them and reports the removal in its own voice, since the
-# two installers say it differently and neither's wording belongs here.
-# The newest is never named however small the budget is -- the run that just
-# installed is never the one a tight budget empties.
+install_backup_declares() {
+  local backup=$1 format=$2 label_only_this_installer_records=$3
+  [ -d "$backup" ] && [ ! -L "$backup" ] || return 1
+  if [ "$(head -1 "$backup/format" 2>/dev/null)" = "$format" ]; then
+    return 0
+  fi
+  [ -f "$backup/manifest" ] || return 1
+  awk -F'\t' -v label="$label_only_this_installer_records" \
+    '$2 == label { found = 1 } END { exit !found }' "$backup/manifest"
+}
+
+install_backups_declaring() {
+  local root=$1 format=$2 label_only_this_installer_records=$3 backup
+  install_backup_dirs_newest_first "$root" | while IFS= read -r backup; do
+    install_backup_declares "$backup" "$format" "$label_only_this_installer_records" || continue
+    printf '%s\n' "$backup"
+  done
+}
+
 install_backups_over_budget() {
-  local root=$1 listing backup budget_kib running_kib=0 size_kib kept=0
+  local backup budget_kib running_kib=0 size_kib kept=0
   budget_kib="$(install_backup_budget_kib)"
-  listing="$(mktemp "${TMPDIR:-/tmp}/oso-install-backups.XXXXXX")" || return 0
-  install_backup_dirs_newest_first "$root" > "$listing"
   while IFS= read -r backup; do
     [ -n "$backup" ] || continue
     size_kib="$(backup_size_kib "$backup")"
@@ -84,16 +79,9 @@ install_backups_over_budget() {
       continue
     fi
     printf '%s\n' "$backup"
-  done < "$listing"
-  rm -f "$listing"
+  done
 }
 
-# Replays one backup manifest: for every recorded target, remove whatever is
-# there now and, if the entry was `present` at backup time, copy the backed
-# up snapshot back over it. Every item is attempted even after an earlier one
-# fails, so one bad item never hides the rest. Sets RESTORE_FAILED_COUNT and
-# RESTORE_FAILED_ITEMS for the caller to report; returns success only when
-# every item restored cleanly.
 restore_backup_manifest() {
   local manifest=$1 items_dir=$2
   local status label target item_failed

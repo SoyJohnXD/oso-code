@@ -1,11 +1,4 @@
 #!/usr/bin/env bash
-# Safely repair Engram's Codex integration after closing Codex.
-#
-# Usage: repair-engram-codex.sh
-# Optional overrides:
-#   ENGRAM_DATA_DIR=/absolute/path/to/.engram
-#   ENGRAM_BIN=/absolute/path/to/engram
-#   ENGRAM_REPAIR_BACKUP_PARENT=/absolute/path/outside/this/repo
 
 set -Eeuo pipefail
 
@@ -246,11 +239,6 @@ create_backup() {
   info "backup: $BACKUP_DIR"
 }
 
-# curl and wget each ship their own portable connect/transfer timeout flags,
-# so a stalled repair download names itself instead of hanging indefinitely --
-# no GNU timeout(1) workaround needed here the way the in-shell bounded-
-# subshell idiom (plugin/skills/_shared/front-surface.md, reused by
-# verify-codex.sh) exists for a command with no such flag of its own.
 ENGRAM_DOWNLOAD_BOUND_SECONDS="${OSO_ENGRAM_DOWNLOAD_BOUND_SECONDS:-120}"
 
 download_file() {
@@ -262,15 +250,11 @@ download_file() {
       -o "$destination" "$url" || rc=$?
     case "$rc" in
       0) return 0 ;;
-      # curl's own reserved code for --connect-timeout/--max-time firing.
       28) fail "SLOW: download of $label did not finish within ${ENGRAM_DOWNLOAD_BOUND_SECONDS}s: $url" ;;
       *) fail "UNAVAILABLE: download of $label failed: $url (curl exit $rc)" ;;
     esac
   else
     wget -q --tries=3 --timeout="$ENGRAM_DOWNLOAD_BOUND_SECONDS" -O "$destination" "$url" || rc=$?
-    # wget has no code of its own reserved for a fired --timeout the way curl's
-    # 28 is, so a nonzero exit here is reported the same honest way curl's own
-    # non-timeout failures are -- never a guessed cause the tool never confirmed.
     [ "$rc" -eq 0 ] ||
       fail "UNAVAILABLE: download of $label failed: $url (wget exit $rc)"
   fi

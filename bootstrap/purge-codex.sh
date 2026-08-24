@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Back up and remove Codex user state before a clean oso-code installation.
-#
-# Usage:
-#   purge-codex.sh [--yes]
-#   purge-codex.sh --restore BACKUP_DIR
 
 set -euo pipefail
 

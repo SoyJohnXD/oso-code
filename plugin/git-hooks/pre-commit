@@ -1,25 +1,9 @@
 #!/usr/bin/env bash
-# git pre-commit: denies a commit while the session verify is not green. This is
-# the commit's own boundary, so there is no command line to parse and nothing to
-# resolve: a wrapper whose option arity no table can answer, an alias that never
-# spells the verb, a remote or containerized shell, an absolute /usr/bin/git — every
-# shape that reaches a commit reaches this. What it cannot see is what the
-# PreToolUse matcher is still for: --no-verify skips it by git's own design, and
-# commit-tree and update-ref write history without running a pre-commit hook at all.
-#
-# It lives outside hooks/ because hooks/ is the Claude Code hook surface, enumerated
-# in hooks.json and invoked with a JSON payload on stdin — and outside bin/, which
-# is what a session puts on its PATH. This one is invoked by git, through a repo's
-# core.hooksPath, and speaks git's protocol: exit code and stderr.
 set -euo pipefail
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HOOK_DIR/../hooks/lib.sh"
 
-# A git hook has no PreToolUse channel: it aborts by exiting non-zero and speaks on
-# stderr. Overriding the channel here is what lets the state resolution, the
-# polarity, the reasons and the telemetry stay lib.sh's, shared with that layer
-# rather than written twice.
 deny() {
   local reason="$1" event="$2" session="$3"
   printf '%s\n' "$reason" >&2
@@ -28,25 +12,12 @@ deny() {
   exit 1
 }
 
-# An agent runs git through its own tool, so the git process inherits whatever
-# marks that agent's environment — `CLAUDE_CODE_SESSION_ID` on Claude Code, which
-# also names the session, and `OSO_AGENT` on a host that publishes no session id
-# of its own. A human committing from their own terminal carries neither, and
-# that marker is now the whole of what keeps this hook off their commits: the
-# state file belongs to the repository and exists whether or not an agent is
-# running. No marker, no verdict, no trace — the gate is the agent's discipline
-# rail, never a lock on the operator's own repo.
 session_id="$(sanitize_session "${CLAUDE_CODE_SESSION_ID:-${OSO_AGENT:-}}")"
 [ -n "$session_id" ] || exit 0
 
-# git runs a pre-commit hook at the top of the working tree, so this resolves the
-# same state file the matcher reads — from a linked worktree too, where the
-# repository the wave was cut from is what both of them answer.
 state_file="$(state_file_for "$PWD")"
 require_readable_state "$state_file" "$session_id"
 
-# Armed from here, so a failure of this hook's own aborts the commit instead of
-# waving it through — the direction the matcher's trap points too.
 trap 'block_with_gate_error "the commit hook"' ERR
 
 if state_says "$state_file" '^verify_green=true$' "$session_id"; then
