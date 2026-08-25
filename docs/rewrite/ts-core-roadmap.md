@@ -100,6 +100,8 @@ Bundles are committed because a Claude Code marketplace install is a git checkou
 | teardown | SessionEnd | exec form | shell form | in-process, `dispose` |
 | git pre-commit | git hook | 3-line `sh` wrapper (git supplies `sh` on every OS) calling `node <plugin>/dist/precommit.js` | same wrapper | same wrapper |
 
+The ERROR PATHS of every gate are unchanged and carried by the parity fixtures: no session id in the envelope → allow and log `payload-unparseable`; no state file for the repository → allow; a state file that exists but cannot be read → deny with `deny_unusable_state`'s message; an internal failure inside a gate → deny with the `failed unexpectedly and blocked this call` message (fail closed). A gate never invents a fourth outcome.
+
 The deny mechanism for Claude and Codex stays the exit-code contract (exit 2, message on stderr) because both hosts honour it today and the parity fixtures assert it byte for byte. JSON output is used only where a gate already returns structured data (`additionalContext` on SessionStart, the Stop push). The OpenCode adapter maps a `GateVerdict` to the host exactly as `translateGateResult` does today, minus the subprocess.
 
 **G6 — State. DECIDED.** `core/src/state/schema.ts` types the runtime state as a discriminated shape and `store.ts` reads/writes the SAME `key=value` file at the SAME path (`$HOME/.local/state/oso-code/<sha256 of the git common dir>.state`) with the same atomic-rename write; illegal combinations are rejected on read with a named error (`StateInvariantError`) instead of being interpreted. `transitions.ts` owns every multi-key write the flows perform (`arm slice`, `close slice`, `arm auto`, `park`, `disarm`), so a rule such as "a slice close returns `auto_wait` to `none`" is CODE the CLI runs, never prose the orchestrator must remember. The CLI keeps every verb and flag `plugin/bin/oso-state` accepts today (`set get show clear event capture-plan approve-plan cancel-plan amend-plan journal handoff publish|wait|consume`) with identical stdout/stderr, plus two new verbs: `close-slice <n>` (writes `active_slice=none verify_green=true auto_wait=none` in one atomic write) and `deny-pattern add <pattern>` (the write `bodies/plan.md:19` currently asks the orchestrator to do by hand).
@@ -119,6 +121,8 @@ The deny mechanism for Claude and Codex stays the exit-code contract (exit 2, me
 **G13 — Models. DECIDED.** The operator runs the orchestrator on Opus. `oso-applier`, `oso-verifier` and the judges launch with `model: sonnet` by default, named in the announcing sentence. `model: opus`, with the reason named, on exactly these slices: C1-S2 (extracting the parity fixtures out of `tests/hooks-test.sh`), C2-S1 (the shell lexer port and the four PreToolUse deniers — the option-arity defect class lives there), C2-S3 (the Stop contract measured against the pinned client), C4-S1 (the bars against real binaries).
 
 **G14 — Deletion discipline. DECIDED.** Every bash file is removed only by a CONTRACT slice whose Verify carries the completeness grep proving zero remaining references (`rg -n '<file>' --glob '!docs/decisions/**'` returns nothing) and whose diff deletes the tests that exercised it. Expand and Migrate slices never delete.
+
+**G16 — Landing. DECIDED.** The PLAN mode's own rule applies to every child: an AUTO child cuts `oso-run/<child>` from wherever the checkout stands, commits on it per slice, and its close pushes that branch and opens its PR against `main`. Children are strictly sequential, so the branches STACK: each child's branch carries every earlier child's commits. Nothing merges mid-chain (a PR merge is never-solo). At the presence phase the operator merges the LAST closed child's PR — it carries everything — and closes the earlier PRs as superseded by it. The production boundary for this repository stays "writing to `main`" (the `oso/preferences` record: no separate staging, PR base `main`).
 
 **G15 — Inherited from `opencode-plan-execution` (engram `oso/opencode-plan-execution/ledger`, `/plan`). DECIDED.** That run was PARKED at slice 3 of 11 on 2026-08-25. Its frozen decisions D2–D9 and D13 stay decided and are NOT re-planned: §11 assigns each to the child that lands it and the test that proves it, and that child's ledger records them as INHERITED naming this entry. Its slices 4–11 are never executed as written; their intent lands through §11. Its named pendings travel to this roadmap's presence phase.
 
@@ -232,6 +236,7 @@ The roadmap mode's three tiers, its irreversibility bar and its never-solo list 
 - Any finding that a documented host contract differs from what the pinned binary does is a RECONCILIATION: record what was measured, emit what works, and queue the divergence for the presence phase with the evidence. It never blocks a child.
 - A verifier that fails a slice on PROSE it was not asked to judge is outside its remit (G12): the orchestrator routes the finding to the sweep and does not re-run the applier for it.
 - The two pendings of C6 (tag, publish) are the operator's.
+- **The set-aside cascade, stated rather than hidden.** The children are sequential dependencies (C1 needs C0's gate, C2 needs C1's state library, and so on). The roadmap's own rule arms the next child after a set-aside; here that next child's first bar goes BLOCKED, which is one of the three moments the chain stops at and hands itself back. So a set-aside in C0–C5 ends the run at that point, and the answer is completeness in this document, never a question mid-chain. The children's decision rounds must find every core lens answered here: Contracts (G5, G6, G7), Architecture (G1, G2, G10), Errors (G5's error paths, G6's `StateInvariantError`), Verification (G4, G8, G9, each child's bar), Reuse (G1's Node APIs, G3's single runtime dependency); derived — rollback/release (G14, C6), observability (G7, C4-D1), record integrity (G11), security (trust hashes in G2 and C3-D1).
 
 ## 5. Host compatibility after the rewrite
 
@@ -282,6 +287,22 @@ The run `opencode-plan-execution` is PARKED (`auto=parked`, state `mode=plan act
 4. `git switch main && git pull && git status --porcelain` is empty; `opencode --version` is whatever it is — C0-S2 makes the suite stop caring.
 5. The operator runs `/oso-code:roadmap ts-core-rewrite` and points §1 at this file; the queue, the global ledger and each child's decisions are read from here; G15 and §11 are the inheritance.
 6. Model policy G13 is stated in the arming instruction.
+
+### 9.1 Ambient conditions of the run — the installed 0.25.0 rails govern it, with their known defects
+
+The chain runs under the INSTALLED plugin (0.25.0, bash), not under the tree it rewrites, until C6. The orchestrator respects these at every child and every slice:
+
+- `oso-state journal --path` does not exist in 0.25.0 (it appends `--path` as text). The journal is `~/.local/state/oso-code/runs/<repo digest>/<child slug>.log`; append with `oso-state journal <text>`, resolve the path by hand.
+- Defect 1 of the installed stop net: `auto_wait` is never returned to `none` by the close commands. At EVERY slice close and child close the orchestrator writes `auto_wait=none` in the same `oso-state set` as the close, and removes the sidecar `~/.local/state/oso-code/runs/<repo digest>/<child slug>.waiting`. On a resume, a sidecar naming a dead session is removed first.
+- The 0.25.0 sidecar compares only label and session: a second delegation under one slice label inherits the first one's clock. Re-arm `auto_wait=<label>` per delegation and clear it when its report is read.
+- A delegation can die on an API timeout AFTER writing to disk (it happened twice on 2026-08-25). On any dead delegation, audit the tree by mtime against the launch window before relaunching; never assume a clean start or a finished round.
+- The commit rail reads state at call time: the green write and the commit are two separate Bash calls.
+- Until C0-S2 lands, the installed `opencode` binary self-updates and turns every pin check red; a red on a pin check is ambient, not a slice's, and is not chased by editing the pin. `bootstrap/verify-codex.sh` is ambient red for the same class.
+- Model policy G13. Every launch names the model in its announcing sentence.
+
+### 9.2 The arming instruction (what the operator pastes)
+
+`/oso-code:roadmap ts-core-rewrite` — with this text: "Everything is decided in `docs/rewrite/ts-core-roadmap.md`. §1 reads the queue, the global ledger G1–G16 and each child's decisions from that file and asks nothing the file answers; §2 takes the policy in §4 of the file; present the one approval document. Every child is unattended (AUTO). Respect §9.1 of the file at every slice. Landing per G16. Models per G13."
 
 ## 11. Inherited defects and decisions — where each lands, and what proves it
 
