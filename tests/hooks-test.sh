@@ -99,6 +99,16 @@ assert_equals() {
   fi
 }
 
+oso_nightly_only() {
+  local name="$1"
+  if [ "${OSO_NIGHTLY:-}" = 1 ]; then
+    return 0
+  fi
+  echo "skip: $name — reads the developer machine, so it waits for OSO_NIGHTLY=1"
+  skipped=$((skipped + 1))
+  return 1
+}
+
 TRANSCRIPT="$HOME/.claude/projects/oso-code/$SESSION.jsonl"
 bash_input() {
   printf '{"session_id":"%s","transcript_path":"%s","cwd":"%s","permission_mode":"default","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"%s","description":"regression case"}}' \
@@ -4300,8 +4310,10 @@ MCP_DRIFT_HANG_ELAPSED=$(($(date +%s) - MCP_DRIFT_HANG_START))
 assert_equals "a server that never answers tools/list skips within its bound rather than hanging" \
   "1" "$(printf '%s\n' "$MCP_DRIFT_HANG_OUTPUT" | \
     grep -Fxc 'skip: engram MCP tool drift — tools/list did not answer within 2s, so drift could not be checked' || true)"
-assert_equals "the bounded MCP drift check ends well inside a generous multiple of its own bound" \
-  "bounded" "$([ "$MCP_DRIFT_HANG_ELAPSED" -le 30 ] && printf bounded || printf "unbounded:${MCP_DRIFT_HANG_ELAPSED}s")"
+if oso_nightly_only "the bounded MCP drift check ends well inside a generous multiple of its own bound"; then
+  assert_equals "the bounded MCP drift check ends well inside a generous multiple of its own bound" \
+    "bounded" "$([ "$MCP_DRIFT_HANG_ELAPSED" -le 30 ] && printf bounded || printf "unbounded:${MCP_DRIFT_HANG_ELAPSED}s")"
+fi
 if pgrep -f "$MCP_DRIFT_HANGING_SERVER" >/dev/null 2>&1; then
   echo "FAIL: the hanging MCP fixture server outlived the bounded check"; fail=$((fail + 1))
 else
@@ -6631,11 +6643,16 @@ run_handoff "" handoff wait \
   --slice slice-absent --attempt 1 --agent-id agent-absent \
   --agent-type oso-verifier --timeout 1
 missing_wait_elapsed=$(( $(date +%s) - missing_wait_started ))
-case "$handoff_rc:$missing_wait_elapsed" in
-  1:1|1:2) missing_wait_status=bounded ;;
-  *) missing_wait_status="rc=$handoff_rc elapsed=${missing_wait_elapsed}s" ;;
-esac
-assert_equals "an absent handoff stops at its declared timeout" bounded "$missing_wait_status"
+assert_equals "an absent handoff reports its declared timeout as a stop, not any other outcome" \
+  "1" "$handoff_rc"
+if oso_nightly_only "an absent handoff's timeout wall-clock lands at its declared bound"; then
+  case "$missing_wait_elapsed" in
+    1|2) missing_wait_status=bounded ;;
+    *) missing_wait_status="elapsed=${missing_wait_elapsed}s" ;;
+  esac
+  assert_equals "an absent handoff's timeout wall-clock lands at its declared bound" \
+    bounded "$missing_wait_status"
+fi
 handoff_files_after_timeout="$(find "$STATE_DIR/.handoffs" -type f -print 2>/dev/null | LC_ALL=C sort || true)"
 assert_equals "a timed-out wait leaves no synthetic receipt or watermark" \
   "$handoff_files_before_timeout" "$handoff_files_after_timeout"
@@ -6788,17 +6805,18 @@ status: done' handoff publish \
   --slice slice-lock --attempt 1 --agent-id "$lock_agent" --agent-type oso-applier \
   --hook-session hook-lock
 lock_wait_elapsed=$(( $(date +%s) - lock_wait_started ))
-lock_wait_ceiling_seconds=10
-lock_wait_band=off-bound
-if [ "$lock_wait_elapsed" -ge 1 ] && [ "$lock_wait_elapsed" -le "$lock_wait_ceiling_seconds" ]; then
-  lock_wait_band=waited-in-bound
+assert_equals "handoff lock acquisition never reclaims an old live lock" \
+  "rc=1 lock=retained" \
+  "rc=$handoff_rc lock=$([ -d "$lock_dir" ] && printf retained || printf removed)"
+if oso_nightly_only "handoff lock acquisition waits inside its bound rather than returning instantly or hanging"; then
+  lock_wait_ceiling_seconds=10
+  lock_wait_band=off-bound
+  if [ "$lock_wait_elapsed" -ge 1 ] && [ "$lock_wait_elapsed" -le "$lock_wait_ceiling_seconds" ]; then
+    lock_wait_band=waited-in-bound
+  fi
+  assert_equals "handoff lock acquisition waits inside its bound rather than returning instantly or hanging" \
+    waited-in-bound "$lock_wait_band"
 fi
-case "$handoff_rc:$lock_wait_band:$([ -d "$lock_dir" ] && printf retained || printf removed)" in
-  1:waited-in-bound:retained) lock_wait_status=bounded-retained ;;
-  *) lock_wait_status="rc=$handoff_rc elapsed=${lock_wait_elapsed}s lock=$([ -d "$lock_dir" ] && printf retained || printf removed)" ;;
-esac
-assert_equals "handoff lock acquisition is bounded and never reclaims an old live lock" \
-  bounded-retained "$lock_wait_status"
 rmdir "$lock_dir"
 
 rm -rf "$STATE_DIR/.handoffs"
@@ -11387,8 +11405,10 @@ CODEX_LOGIN_HANG_ELAPSED=$(($(date +%s) - CODEX_LOGIN_HANG_START))
 assert_equals "codex login status names itself when it never answers, instead of hanging the verifier" \
   "1" "$(printf '%s\n' "$CODEX_LOGIN_HANG_OUTPUT" | \
     grep -Fxc 'FAIL: Codex authentication — expected logged-in, got SLOW: codex login status did not answer within 2s' || true)"
-assert_equals "the bounded codex login status ends well inside a generous multiple of its own bound" \
-  "bounded" "$([ "$CODEX_LOGIN_HANG_ELAPSED" -le 30 ] && printf bounded || printf "unbounded:${CODEX_LOGIN_HANG_ELAPSED}s")"
+if oso_nightly_only "the bounded codex login status ends well inside a generous multiple of its own bound"; then
+  assert_equals "the bounded codex login status ends well inside a generous multiple of its own bound" \
+    "bounded" "$([ "$CODEX_LOGIN_HANG_ELAPSED" -le 30 ] && printf bounded || printf "unbounded:${CODEX_LOGIN_HANG_ELAPSED}s")"
+fi
 if pgrep -f "$CODEX_LOGIN_HANG_SHIM_DIR/codex" >/dev/null 2>&1; then
   echo "FAIL: the hanging codex login status fixture outlived the bounded check"; fail=$((fail + 1))
 else
@@ -11431,8 +11451,10 @@ else
   assert_equals "codex exec names itself when it never answers, instead of hanging the smoke" \
     "1" "$(printf '%s\n' "$CODEX_EXEC_HANG_OUTPUT" | \
       grep -Fxc 'FAIL: authenticated integrator smoke — expected integrated, got SLOW: codex exec smoke did not answer within 2s' || true)"
-  assert_equals "the bounded codex exec smoke ends well inside a generous multiple of its own bound" \
-    "bounded" "$([ "$CODEX_EXEC_HANG_ELAPSED" -le 30 ] && printf bounded || printf "unbounded:${CODEX_EXEC_HANG_ELAPSED}s")"
+  if oso_nightly_only "the bounded codex exec smoke ends well inside a generous multiple of its own bound"; then
+    assert_equals "the bounded codex exec smoke ends well inside a generous multiple of its own bound" \
+      "bounded" "$([ "$CODEX_EXEC_HANG_ELAPSED" -le 30 ] && printf bounded || printf "unbounded:${CODEX_EXEC_HANG_ELAPSED}s")"
+  fi
   if pgrep -f "$CODEX_EXEC_HANG_SHIM_DIR/codex" >/dev/null 2>&1; then
     echo "FAIL: the hanging codex exec fixture outlived the bounded check"; fail=$((fail + 1))
   else
@@ -11961,13 +11983,45 @@ assert_equals "fixture verification never attempts Codex authentication or execu
 
 OPENCODE_INSTALLER="$REPO_ROOT/bootstrap/install-opencode.sh"
 OPENCODE_PIN="$(sed -n 's/^SUPPORTED_OPENCODE_VERSION=//p' "$OPENCODE_INSTALLER" | head -1 || true)"
+OPENCODE_VERSION_PIN_SHIM="$TEST_HOME/opencode-version-pin-shim"
+
+write_opencode_version_pin_shim() {
+  local version="$1"
+  printf '%s\n' \
+    '#!/bin/sh' \
+    'case "$*" in' \
+    "  --version) printf '$version\\n' ;;" \
+    '  *) exit 64 ;;' \
+    'esac' > "$OPENCODE_VERSION_PIN_SHIM"
+  chmod +x "$OPENCODE_VERSION_PIN_SHIM"
+}
+
+opencode_pin_comparison_status() {
+  local fixture_probe
+  write_opencode_version_pin_shim "$OSO_PINNED_OPENCODE_VERSION"
+  fixture_probe="$(opencode_version_of "$OPENCODE_VERSION_PIN_SHIM" 2>/dev/null || true)"
+  [ "$OPENCODE_PIN" = "$fixture_probe" ] && printf match || printf mismatch
+}
+
 if [ -z "$OPENCODE_PIN" ]; then
   assert_equals "the opencode installer carries a version pin" "nonempty" "empty"
-elif command -v opencode >/dev/null 2>&1; then
-  opencode_probe="$(opencode_version_of "$(command -v opencode)" 2>/dev/null || true)"
-  assert_equals "the opencode installer pin matches the installed binary" "$OPENCODE_PIN" "$opencode_probe"
 else
-  skipped=$((skipped + 1))
+  OSO_PINNED_OPENCODE_VERSION="${OPENCODE_PIN}-fixture-drift"
+  assert_equals "the pin comparison reports a fixture pinned to a different version as a mismatch" \
+    mismatch "$(opencode_pin_comparison_status)"
+
+  OSO_PINNED_OPENCODE_VERSION="$OPENCODE_PIN"
+  assert_equals "the pin comparison reports a fixture pinned to the installer's own version as a match" \
+    match "$(opencode_pin_comparison_status)"
+
+  if oso_nightly_only "the opencode installer pin matches the installed binary"; then
+    if command -v opencode >/dev/null 2>&1; then
+      opencode_probe="$(opencode_version_of "$(command -v opencode)" 2>/dev/null || true)"
+      assert_equals "the opencode installer pin matches the installed binary" "$OPENCODE_PIN" "$opencode_probe"
+    else
+      skipped=$((skipped + 1))
+    fi
+  fi
 fi
 
 ROUTES_TS="$REPO_ROOT/opencode/hooks/routes.ts"
@@ -12826,7 +12880,7 @@ process.stdout.write(resolveHookScript(process.argv[2]));
   OPENCODE_INSTALL_HOME="$TEST_HOME/opencode-install-home"
   write_opencode_install_fixture "$OPENCODE_INSTALL_HOME"
   opencode_install_before="$(opencode_install_tree_snapshot "$OPENCODE_INSTALL_HOME")"
-  OPENCODE_IMPECCABLE_SOURCE="$(opencode_install_impeccable_source "$OPENCODE_INSTALL_HOME" "4.0.2")" \
+  OSO_IMPECCABLE_SOURCE="$(opencode_install_impeccable_source "$OPENCODE_INSTALL_HOME" "4.0.2")" \
     run_opencode_install "$OPENCODE_INSTALL_HOME" --yes
   opencode_install_outcome="$OPENCODE_INSTALL_RC"
   if [ "$OPENCODE_INSTALL_RC" -ne 0 ]; then
@@ -13004,11 +13058,11 @@ gamma config" "$(cat "$OPENCODE_INSTALL_HOME/repos/alpha/opencode.json"
 
   OPENCODE_INSTALL_IDEM_HOME="$TEST_HOME/opencode-install-idem-home"
   write_opencode_install_fixture "$OPENCODE_INSTALL_IDEM_HOME"
-  OPENCODE_IMPECCABLE_SOURCE="$(opencode_install_impeccable_source "$OPENCODE_INSTALL_IDEM_HOME" "4.0.2")" \
+  OSO_IMPECCABLE_SOURCE="$(opencode_install_impeccable_source "$OPENCODE_INSTALL_IDEM_HOME" "4.0.2")" \
     run_opencode_install "$OPENCODE_INSTALL_IDEM_HOME" --yes
   opencode_install_idem_first="$OPENCODE_INSTALL_RC"
   opencode_install_idem_tree="$(opencode_install_tree_snapshot "$OPENCODE_INSTALL_IDEM_HOME")"
-  OPENCODE_IMPECCABLE_SOURCE="$(opencode_install_impeccable_source "$OPENCODE_INSTALL_IDEM_HOME" "4.0.2")" \
+  OSO_IMPECCABLE_SOURCE="$(opencode_install_impeccable_source "$OPENCODE_INSTALL_IDEM_HOME" "4.0.2")" \
     run_opencode_install "$OPENCODE_INSTALL_IDEM_HOME" --yes
   assert_equals "re-running the install over an installed home succeeds" \
     "0" "$([ "$opencode_install_idem_first" -eq 0 ] && [ "$OPENCODE_INSTALL_RC" -eq 0 ] && echo 0 || echo $OPENCODE_INSTALL_RC)"
@@ -13063,7 +13117,7 @@ gamma config" "$(cat "$OPENCODE_INSTALL_HOME/repos/alpha/opencode.json"
     skipped=$((skipped + 1))
     OPENCODE_INSTALL_MISMATCH_HOME="$TEST_HOME/opencode-install-mismatch-home"
     write_opencode_install_fixture "$OPENCODE_INSTALL_MISMATCH_HOME"
-    OPENCODE_IMPECCABLE_SOURCE="$(opencode_install_impeccable_source "$OPENCODE_INSTALL_MISMATCH_HOME" "9.9.9")" \
+    OSO_IMPECCABLE_SOURCE="$(opencode_install_impeccable_source "$OPENCODE_INSTALL_MISMATCH_HOME" "9.9.9")" \
       run_opencode_install "$OPENCODE_INSTALL_MISMATCH_HOME" --yes
     assert_equals "an unpinned Impeccable source fails loudly without git" \
       "nonzero" "$([ "$OPENCODE_INSTALL_RC" -ne 0 ] && echo nonzero || echo zero)"
