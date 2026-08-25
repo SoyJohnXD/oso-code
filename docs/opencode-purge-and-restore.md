@@ -83,7 +83,7 @@ bash bootstrap/install-opencode.sh --yes
 ```
 
 The installer pins the supported OpenCode version in
-`SUPPORTED_OPENCODE_VERSION` (1.18.20; the baseline that pin descends from is
+`SUPPORTED_OPENCODE_VERSION` (1.18.22; the baseline that pin descends from is
 `docs/decisions/0151-opencode-baseline-and-f7-verdict.md`, which took it at
 1.18.18; install at https://opencode.ai/install). It writes only the keys it needs into
 `~/.config/opencode/opencode.json` and leaves every other key that file holds

@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-SUPPORTED_OPENCODE_VERSION=1.18.20
+SUPPORTED_OPENCODE_VERSION=1.18.22
 IMPECCABLE_REMOTE=https://github.com/pbakaus/impeccable.git
 OWNER_INSTALLER=installer
 OWNER_OPERATOR=operator
