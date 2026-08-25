@@ -12895,8 +12895,8 @@ process.stdout.write(resolveHookScript(process.argv[2]));
     "$(ls "$REPO_ROOT/opencode/agents"/oso-*.md | wc -l | tr -d ' ')" "$(ls "$OPENCODE_INSTALL_HOME"/.config/opencode/agent/oso-*.md 2>/dev/null | wc -l | tr -d ' ')"
   assert_equals "the installed command tree carries the four mode commands" \
     "4" "$(ls "$OPENCODE_INSTALL_HOME"/.config/opencode/command/oso-*.md 2>/dev/null | wc -l | tr -d ' ')"
-  assert_equals "the plan command routes to the dedicated plan agent" \
-    "oso-plan" "$(sed -n 's/^agent:[[:space:]]*//p' "$OPENCODE_INSTALL_HOME/.config/opencode/command/oso-plan.md" | head -1)"
+  assert_equals "the plan command routes to the primary agent that can execute its slices" \
+    "build" "$(sed -n 's/^agent:[[:space:]]*//p' "$OPENCODE_INSTALL_HOME/.config/opencode/command/oso-plan.md" | head -1)"
   assert_equals "the roadmap command routes to the primary agent that can run the chain" \
     "build" "$(sed -n 's/^agent:[[:space:]]*//p' "$OPENCODE_INSTALL_HOME/.config/opencode/command/oso-roadmap.md" | head -1)"
   assert_equals "the installed config hides the roadmap mode from the model" \

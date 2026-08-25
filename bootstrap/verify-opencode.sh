@@ -289,7 +289,7 @@ opencode_command_status() {
   done
   [ "$count" -eq 4 ] || { printf 'count:%s' "$count"; return; }
   [ -z "$divergent" ] || { printf 'divergent:%s' "$divergent"; return; }
-  for rel in oso-plan:oso-plan oso-quick:build oso-debug:build oso-roadmap:build; do
+  for rel in oso-plan:build oso-quick:build oso-debug:build oso-roadmap:build; do
     route="$(sed -n 's/^agent:[[:space:]]*//p' "$LOCAL_FIXTURE_CONFIG_HOME/command/${rel%%:*}.md" | head -1)"
     [ "$route" = "${rel#*:}" ] || { printf 'route:%s=%s' "${rel%%:*}" "${route:-empty}"; return; }
   done

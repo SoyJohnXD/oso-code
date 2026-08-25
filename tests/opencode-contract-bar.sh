@@ -18,7 +18,9 @@ PLAN_CANCEL_TOOL_ID=oso_plan_cancel
 FIX_APPLY_TOOL_ID=fallow_fix_apply
 GRANT_BOUND_PERMISSION=ask
 WORKSPACE_ADAPTER_TYPE=oso-code
-EXPECTED_CHECK_COUNT=66
+PLAN_COMMAND=oso-plan
+MUTATION_DEMO_AGENT=oso-applier
+EXPECTED_CHECK_COUNT=58
 
 pass=0
 fail=0
@@ -87,22 +89,6 @@ contract_bar_source_skill_names() {
     [ -d "$dir" ] || continue
     basename "$dir"
   done
-}
-
-contract_bar_source_command_names() {
-  local file
-  for file in "$FIXTURE_SOURCE_ROOT"/opencode/commands/oso-*.md; do
-    [ -f "$file" ] || continue
-    basename "$file" .md
-  done
-}
-
-contract_bar_source_command_route() {
-  local name=$1 file route
-  file="$FIXTURE_SOURCE_ROOT/opencode/commands/$name.md"
-  [ -f "$file" ] || { printf absent; return; }
-  route="$(sed -n 's/^agent:[[:space:]]*//p' "$file" | head -1)"
-  printf '%s' "${route:-unset}"
 }
 
 contract_bar_config_command_field() {
@@ -262,28 +248,19 @@ contract_bar_check_agents_inherit_the_session_model() {
   fi
 }
 
-contract_bar_expected_question_rule() {
-  case "$(contract_bar_source_agent_mode "$1")" in
-    subagent) printf deny ;;
-    *) printf allow ;;
-  esac
-}
-
-contract_bar_check_only_the_operators_agent_may_ask() {
+contract_bar_check_no_roster_agent_asks_the_operator() {
   local config_out=$1 name rules
   rules="$(contract_bar_config_agent_permission "$config_out" question)"
   while IFS= read -r name; do
     [ -n "$name" ] || continue
     check "the real binary resolves $name's question rule from the fixture install" \
-      "$(contract_bar_expected_question_rule "$name")" \
-      "$(contract_bar_field_of "$rules" "$name")"
+      deny "$(contract_bar_field_of "$rules" "$name")"
   done < <(contract_bar_source_agent_names)
 }
 
 contract_bar_expected_shell_rule() {
   case "$1" in
     oso-doubt-pass) printf deny ;;
-    oso-plan) printf allowlist ;;
     *) printf absent ;;
   esac
 }
@@ -314,31 +291,68 @@ contract_bar_check_the_fix_tool_reaches_the_applier_alone() {
   done < <(contract_bar_source_agent_names)
 }
 
-contract_bar_check_grant_bound_tools_reach_the_plan_agent_alone() {
-  local config_out=$1 name expected approvals cancels
+contract_bar_check_no_roster_agent_reaches_the_grant_bound_tools() {
+  local config_out=$1 name approvals cancels
   approvals="$(contract_bar_config_agent_permission "$config_out" "$PLAN_APPROVAL_TOOL_ID")"
   cancels="$(contract_bar_config_agent_permission "$config_out" "$PLAN_CANCEL_TOOL_ID")"
   while IFS= read -r name; do
     [ -n "$name" ] || continue
-    case "$(contract_bar_source_agent_mode "$name")" in
-      subagent) expected="deny deny" ;;
-      *) expected="absent absent" ;;
-    esac
     check "the real binary resolves $name's grant-bound tool rules from the fixture install" \
-      "$expected" \
+      "deny deny" \
       "$(contract_bar_field_of "$approvals" "$name") $(contract_bar_field_of "$cancels" "$name")"
   done < <(contract_bar_source_agent_names)
 }
 
-contract_bar_check_command_routes() {
-  local config_out=$1 name routes
-  routes="$(contract_bar_config_command_field "$config_out" agent)"
-  while IFS= read -r name; do
-    [ -n "$name" ] || continue
-    check "the real binary resolves /$name to the agent its command file routes to" \
-      "$(contract_bar_source_command_route "$name")" \
-      "$(contract_bar_field_of "$routes" "$name")"
-  done < <(contract_bar_source_command_names)
+contract_bar_execution_powers_denied() {
+  python3 - "$1" <<'PY'
+import fnmatch
+import json
+import sys
+
+EXECUTION_PHASE_POWERS = (
+    ("the state command", "bash", "oso-state set active_slice=1"),
+    ("the slice commit", "bash", "git commit -m slice"),
+    ("the slice's own edits", "edit", "src/slice.ts"),
+)
+
+
+def resolved_action(rules, permission, target):
+    action = "unruled"
+    for rule in rules:
+        if rule.get("permission") not in (permission, "*"):
+            continue
+        if fnmatch.fnmatchcase(target, rule.get("pattern") or "*"):
+            action = rule.get("action")
+    return action
+
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    rules = json.load(handle).get("permission") or []
+print(", ".join(
+    power for power, permission, target in EXECUTION_PHASE_POWERS
+    if resolved_action(rules, permission, target) != "allow"
+))
+PY
+}
+
+contract_bar_check_the_plan_route_admits_the_execution_phase() {
+  local config_out=$1 route out err rc denied
+  local claim="the real binary routes /$PLAN_COMMAND to an agent whose ruleset admits the execution phase"
+  route="$(contract_bar_field_of "$(contract_bar_config_command_field "$config_out" agent)" "$PLAN_COMMAND")"
+  out="$OPENCODE_FIXTURE_ROOT/debug-agent.out"
+  err="$OPENCODE_FIXTURE_ROOT/debug-agent.err"
+  contract_bar_invoke "$out" "$err" debug agent "$route"
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    check "$claim" admits "$route resolves to no agent: $(fold_lines < "$err")"
+    return
+  fi
+  denied="$(contract_bar_execution_powers_denied "$out")"
+  if [ -n "$denied" ]; then
+    check "$claim" admits "$route denies $denied"
+  else
+    check "$claim" admits admits
+  fi
 }
 
 contract_bar_check_shell_allowlists_carry_exact_forms() {
@@ -558,12 +572,12 @@ contract_bar_battery() {
   if [ "$rc" -eq 0 ]; then
     contract_bar_check_agent_modes "$config_out"
     contract_bar_check_agents_inherit_the_session_model "$config_out"
-    contract_bar_check_only_the_operators_agent_may_ask "$config_out"
+    contract_bar_check_no_roster_agent_asks_the_operator "$config_out"
     contract_bar_check_no_agent_block_grants_a_whole_tool "$config_out"
     contract_bar_check_the_fix_tool_reaches_the_applier_alone "$config_out"
-    contract_bar_check_grant_bound_tools_reach_the_plan_agent_alone "$config_out"
+    contract_bar_check_no_roster_agent_reaches_the_grant_bound_tools "$config_out"
     contract_bar_check_shell_allowlists_carry_exact_forms "$config_out"
-    contract_bar_check_command_routes "$config_out"
+    contract_bar_check_the_plan_route_admits_the_execution_phase "$config_out"
     check "the real binary resolves the $PLAN_APPROVAL_TOOL_ID permission from the fixture install" \
       "$GRANT_BOUND_PERMISSION" "$(contract_bar_config_permission "$config_out" "$PLAN_APPROVAL_TOOL_ID")"
     check "the real binary resolves the $PLAN_CANCEL_TOOL_ID permission from the fixture install" \
@@ -588,7 +602,7 @@ contract_bar_run() {
 }
 
 contract_bar_demo_agent_mode_mutation() {
-  local target=${1:-oso-plan} agent_file source_mode mutated_mode
+  local target=${1:-$MUTATION_DEMO_AGENT} agent_file source_mode mutated_mode
   local before_out before_err after_out after_err restored_out restored_err
   local before_fail after_fail restored_fail
   printf 'contract bar demonstration: a mutated agent mode must turn red and name the agent\n'
@@ -650,7 +664,7 @@ if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
   case "${1:-}" in
     --demo-agent-mode-mutation)
       shift
-      contract_bar_demo_agent_mode_mutation "${1:-oso-plan}"
+      contract_bar_demo_agent_mode_mutation "${1:-$MUTATION_DEMO_AGENT}"
       ;;
     *)
       contract_bar_run "${1:-$REPO_ROOT}"

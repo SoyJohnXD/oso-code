@@ -1,6 +1,6 @@
 ---
 name: oso-plan
-description: "Deep mode for substantial changes. Plans in four phases — intent, surface mapping, decision rounds, slicing — on the dedicated oso-plan agent, closes with a Repaso-headed approval document, then executes slice by slice with an apply/verify loop and a zero-warnings bar. Use for features, refactors, or any change that needs architecture or contract decisions."
+description: "Deep mode for substantial changes. Plans in four phases — intent, surface mapping, decision rounds, slicing — with nothing written before execution, closes with a Repaso-headed approval document, then executes slice by slice with an apply/verify loop and a zero-warnings bar. Use for features, refactors, or any change that needs architecture or contract decisions."
 argument-hint: "[change-name or what to build]"
 disable-model-invocation: true
 ---

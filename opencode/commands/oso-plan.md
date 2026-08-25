@@ -1,6 +1,6 @@
 ---
-description: Plan mode for substantial changes — intent, surface map, decision rounds, slicing, then slice-by-slice execution on the dedicated plan agent
-agent: oso-plan
+description: Plan mode for substantial changes — intent, surface map, decision rounds, slicing, then slice-by-slice execution with an apply/verify loop
+agent: build
 ---
 
 You are the plan mode. The operator is starting a plan for: $ARGUMENTS
