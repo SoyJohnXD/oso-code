@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Renders both hosts' hooks.json from hook-gates.txt and verifies the published
-# Codex hook artifact hashes. Bash 3.2; no jq and no associative arrays.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,8 +34,6 @@ done
 
 [ -r "$TABLE" ] || { printf 'deny: hook table is unreadable: %s\n' "$TABLE" >&2; exit 1; }
 
-# One parser owns validation, rendering and classification so a malformed table
-# cannot be accepted by one mode and interpreted differently by another.
 table_awk='
 function die(message) { failed = 1; print "deny: " message > "/dev/stderr"; exit 1 }
 function escape_json(value) {
@@ -72,18 +68,21 @@ function expected_event(id) {
   if (id == "teardown") return "SessionEnd"
   return ""
 }
-function file_exists(path, probe) { probe = (getline ignored < path); close(path); return probe >= 0 }
-# A PreToolUse gate can deny an operator call, so its script must declare its
-# own way out -- a "# Recovery:" header line naming the next step, or
-# explicitly saying there is none. Other events block through a different
-# channel (stop_block, control_block) this rule does not reach.
-function has_recovery_route(path,    line, found) {
-  found = 0
-  while ((getline line < path) > 0) if (line ~ /^# Recovery:/) { found = 1; break }
-  close(path)
-  return found
+function expected_opencode_mechanism(id) {
+  if (id == "commit" || id == "edits" || id == "unknown" || id == "proddeploy") return "tool.execute.before"
+  if (id == "stale") return "experimental.chat.system.transform"
+  if (id == "reanchor") return "event"
+  if (id == "teardown") return "dispose"
+  if (id == "statebin" || id == "handoff" || id == "autocontinue") return "native"
+  return ""
 }
-function parse(    line, fields, count, kind, i, id, expected, tool_class, tool_mandated) {
+function valid_mechanism(host_name, value, id) {
+  if (value == "none") return 1
+  if (host_name == "opencode") return value == expected_opencode_mechanism(id)
+  return value == "subprocess"
+}
+function file_exists(path, probe) { probe = (getline ignored < path); close(path); return probe >= 0 }
+function parse(    line, fields, count, kind, i, id, expected, tool_class, tool_mandated, mechanism) {
   while ((getline line < table) > 0) {
     sub(/^[[:space:]]+/, "", line)
     if (line == "" || line ~ /^#/) continue
@@ -91,15 +90,16 @@ function parse(    line, fields, count, kind, i, id, expected, tool_class, tool_
     if (kind == "host") {
       if (gate_count || tool_count) die("host rows must precede gate and tool rows")
       if (count != 4) die("malformed host row: " line)
-      if (fields[2] != "claude" && fields[2] != "codex") die("unknown host `" fields[2] "`")
+      if (fields[2] != "claude" && fields[2] != "codex" && fields[2] != "opencode") die("unknown host `" fields[2] "`")
       if (fields[3] ~ /^\// || fields[3] ~ /(^|\/)\.\.($|\/)/ || fields[3] !~ /^[A-Za-z0-9_.\/-]+$/) die("unsafe host manifest `" fields[3] "`")
       for (i = 1; i <= host_count; i++) if (hosts[i] == fields[2]) die("duplicate host `" fields[2] "`")
       host_count++; hosts[host_count] = fields[2]; manifests[host_count] = fields[3]; roots[host_count] = fields[4]
     } else if (kind == "gate") {
       if (!host_count) die("gate row appears before any host")
-      expected = 4 + host_count
+      expected = 4 + 2 * host_count
       if (count != expected) {
-        if (count < expected) die("gate `" fields[2] "` has no mapping for " hosts[count - 4 + 1])
+        if (count < 4 + host_count) die("gate `" fields[2] "` has no mapping for " hosts[count - 4 + 1])
+        if (count < expected) die("gate `" fields[2] "` has no mechanism for " hosts[count - 3 - host_count])
         die("gate `" fields[2] "` has too many host mappings")
       }
       id = fields[2]; if (gate_seen[id]) die("duplicate gate `" id "`")
@@ -107,21 +107,20 @@ function parse(    line, fields, count, kind, i, id, expected, tool_class, tool_
       if (fields[4] != expected_script(id)) die("unknown script `" fields[4] "` for gate `" id "`")
       if (fields[3] != expected_event(id)) die("unknown event `" fields[3] "` for gate `" id "`")
       if (fields[4] !~ /^[A-Za-z0-9_.-]+$/ || !file_exists(repo "/plugin/hooks/" fields[4])) die("missing or unsafe gate script `" fields[4] "`")
-      if (fields[3] == "PreToolUse" && !has_recovery_route(repo "/plugin/hooks/" fields[4])) die("gate `" id "` script `" fields[4] "` declares no recovery route (see tools/hook-gates.txt header)")
       gate_seen[id] = 1; gate_count++; gate_id[gate_count] = id; gate_event[gate_count] = fields[3]; gate_script[gate_count] = fields[4]
       for (i = 1; i <= host_count; i++) {
         if (fields[4 + i] != "wired" && fields[4 + i] != "none") die("gate `" id "` has invalid mapping for " hosts[i])
         gate_cell[gate_count, i] = fields[4 + i]
+        mechanism = fields[4 + host_count + i]
+        if (!valid_mechanism(hosts[i], mechanism, id)) die("gate `" id "` declares mechanism `" mechanism "` for " hosts[i] ", which is not the one measured for that host")
+        gate_mechanism[gate_count, i] = mechanism
       }
+    } else if (kind == "recovery") {
+      if (count < 3) die("recovery row for gate `" fields[2] "` names no route")
+      if (recovery_route[fields[2]]) die("duplicate recovery route for gate `" fields[2] "`")
+      recovery_count++; recovery_id[recovery_count] = fields[2]; recovery_route[fields[2]] = 1
     } else if (kind == "tool") {
       if (!host_count) die("tool row appears before any host")
-      # Two trailing cells close every tool row after the per-host mappings:
-      # the capability class (read|write|role) and whether the name is
-      # mandated by a harness-installed protocol (yes|no). Neither is read
-      # again below -- render()/coverage()/classify() never look past a row
-      # host cells, so these two cannot change a byte of what renders; they
-      # exist for the drift check in bootstrap/verify-codex.sh and for a
-      # human reading this table.
       expected = 2 + host_count + 2
       if (count != expected) {
         if (count < 2 + host_count) die("tool for gate `" fields[2] "` has no mapping for " hosts[count - 2 + 1])
@@ -140,10 +139,18 @@ function parse(    line, fields, count, kind, i, id, expected, tool_class, tool_
     } else die("unknown record kind `" kind "`")
   }
   close(table)
-  if (host_count != 2 || hosts[1] != "claude" || hosts[2] != "codex") die("hosts must be exactly and in order: claude, codex")
+  if (host_count != 3 || hosts[1] != "claude" || hosts[2] != "codex" || hosts[3] != "opencode") die("hosts must be exactly and in order: claude, codex, opencode")
   if (manifests[1] != "plugin/hooks/hooks.json" || roots[1] != "\"${CLAUDE_PLUGIN_ROOT}\"/hooks") die("claude host manifest or command root is not the supported value")
   if (manifests[2] != "codex/hooks/hooks.json" || roots[2] != "\"__OSO_HOOKS_DIR__\"") die("codex host manifest or command root is not the supported value")
+  if (manifests[3] != "opencode/hooks/routes.ts" || roots[3] != "<module-relative>") die("opencode host manifest or command root is not the supported value")
   if (gate_count != 13) die("table must declare exactly the thirteen known gates")
+  for (g = 1; g <= gate_count; g++)
+    if (gate_event[g] == "PreToolUse" && !recovery_route[gate_id[g]])
+      die("gate `" gate_id[g] "` script `" gate_script[g] "` declares no recovery route (see tools/hook-gates.txt header)")
+  for (r = 1; r <= recovery_count; r++) {
+    if (!gate_seen[recovery_id[r]]) die("recovery route names unknown gate `" recovery_id[r] "`")
+    if (expected_event(recovery_id[r]) != "PreToolUse") die("recovery route for gate `" recovery_id[r] "`, which denies through no PreToolUse channel")
+  }
   for (g = 1; g <= gate_count; g++) for (h = 1; h <= host_count; h++) {
     mappings = 0
     for (t = 1; t <= tool_count; t++) if (tool_gate[t] == gate_id[g] && tool_cell[t, h] != "none") mappings++
@@ -151,9 +158,12 @@ function parse(    line, fields, count, kind, i, id, expected, tool_class, tool_
     if (gate_cell[g, h] == "wired" && (gate_event[g] == "PreToolUse" || gate_event[g] == "SubagentStop") && !mappings) die("wired " gate_event[g] " gate `" gate_id[g] "` has no matcher for " hosts[h])
     if ((gate_event[g] == "Stop" || gate_event[g] == "UserPromptSubmit") && mappings) die("matcherless " gate_event[g] " gate `" gate_id[g] "` has matcher mappings for " hosts[h])
   }
-  # Every tool routed to a specific Codex gate must also pass the final catch-all.
-  # Otherwise the specific gate can allow it and the catch-all immediately denies
-  # it, making the two generated groups contradict their single source table.
+  for (g = 1; g <= gate_count; g++) for (h = 1; h <= host_count; h++) {
+    if (gate_cell[g, h] == "wired" && (gate_mechanism[g, h] == "none" || gate_mechanism[g, h] == "native"))
+      die("wired gate `" gate_id[g] "` names no hook mechanism for " hosts[h])
+    if (gate_cell[g, h] == "none" && gate_mechanism[g, h] != "none" && gate_mechanism[g, h] != "native")
+      die("unwired gate `" gate_id[g] "` names hook mechanism `" gate_mechanism[g, h] "` for " hosts[h])
+  }
   for (g = 1; g <= gate_count; g++) if (gate_id[g] == "unknown") unknown_gate_index = g
   for (h = 1; h <= host_count; h++) if (gate_cell[unknown_gate_index, h] == "wired") {
     for (t = 1; t <= tool_count; t++) if (tool_gate[t] != "unknown" && tool_cell[t, h] != "none") {
@@ -170,8 +180,8 @@ function parse(    line, fields, count, kind, i, id, expected, tool_class, tool_
 function host_index(name,    i) { for (i = 1; i <= host_count; i++) if (hosts[i] == name) return i; return 0 }
 function render(name,    h, g, t, first_group, first_tool, matcher, command, seen) {
   h = host_index(name); if (!h) die("unknown host `" name "`")
+  if (name == "opencode") return render_routes(name)
   print "{"; print "  \"hooks\": {"; first_group = 1
-  # Event order follows first occurrence in the gate table.
   for (g = 1; g <= gate_count; g++) {
     if (gate_cell[g, h] != "wired" || event_done[gate_event[g]]) continue
     if (!first_group) print ","; first_group = 0; event_done[gate_event[g]] = 1
@@ -185,14 +195,12 @@ function render(name,    h, g, t, first_group, first_tool, matcher, command, see
       allowlist = matcher
       if (gate_id[gg] == "unknown") matcher = ".*"
       if (gate_id[gg] == "handoff") matcher = "^(" matcher ")$"
-      if (gate_id[gg] == "proddeploy") matcher = matcher "|mcp__.*deploy.*"
+      if (gate_id[gg] == "proddeploy" && name == "opencode") matcher = matcher "|.*deploy.*"
+      if (gate_id[gg] == "proddeploy" && name != "opencode") matcher = matcher "|mcp__.*deploy.*"
       if (!event_first) print ","; event_first = 0
       print "      {"
       if (matcher != "") print "        \"matcher\": \"" escape_json(matcher) "\","
       command = roots[h] "/" gate_script[gg]
-      # shell_environment_policy applies to model tool commands, not user-hook
-      # handlers in Codex 0.146. Publish the fixed state identity on the hook
-      # command itself so lifecycle and gating scripts see the same marker.
       if (name == "codex") command = "OSO_AGENT=1 " command
       if (gate_id[gg] == "unknown") command = command " --allow \"" allowlist "\""
       print "        \"hooks\": ["
@@ -207,7 +215,58 @@ function render(name,    h, g, t, first_group, first_tool, matcher, command, see
   }
   print ""; print "  }"; print "}"
 }
-function coverage(name,    h, g, path, seen_path, state_needed) {
+function render_routes(name,    h, g, t, i, n, wired_gates, matcher, hook, sep, seen, allow_seen, hook_count, hooks_seen, route_hooks) {
+  h = host_index(name); if (!h) die("unknown host `" name "`")
+  n = 0
+  for (g = 1; g <= gate_count; g++) if (gate_cell[g, h] == "wired") wired_gates[++n] = g
+  hook_count = 0
+  for (i = 1; i <= n; i++) {
+    hook = gate_mechanism[wired_gates[i], h]
+    if (!hooks_seen[hook]++) route_hooks[++hook_count] = hook
+  }
+  print "// Generated by tools/render-hooks-json.sh --write from tools/hook-gates.txt."
+  print "// Gate routes for the opencode host. Do not edit by hand."
+  print ""
+  print "export type OpenCodeHook ="
+  for (i = 1; i <= hook_count; i++) printf "  | \"%s\"%s\n", route_hooks[i], (i == hook_count ? ";" : "")
+  print ""
+  print "export interface OpenCodeGateRoute {"
+  print "  readonly hook: OpenCodeHook;"
+  print "  readonly gate: string;"
+  print "  readonly script: string;"
+  print "  readonly matcher: string;"
+  print "  readonly allow: readonly string[];"
+  print "}"
+  print ""
+  print "export const routes: readonly OpenCodeGateRoute[] = ["
+  for (i = 1; i <= n; i++) {
+    g = wired_gates[i]
+    hook = gate_mechanism[g, h]
+    matcher = ""
+    for (t = 1; t <= tool_count; t++) if (tool_gate[t] == gate_id[g] && tool_cell[t, h] != "none" && !seen[g, tool_cell[t, h]]++) {
+      if (matcher != "") matcher = matcher "|"; matcher = matcher tool_cell[t, h]
+    }
+    if (gate_id[g] == "unknown") matcher = ".*"
+    if (gate_id[g] == "proddeploy") matcher = matcher "|.*deploy.*"
+    print "  {"
+    print "    hook: \"" hook "\","
+    print "    gate: \"" gate_id[g] "\","
+    print "    script: \"" gate_script[g] "\","
+    print "    matcher: \"" escape_json(matcher) "\","
+    printf "    allow: ["
+    if (gate_id[g] == "unknown") {
+      sep = ""
+      for (t = 1; t <= tool_count; t++) if (tool_gate[t] == "unknown" && tool_cell[t, h] != "none" && !allow_seen[tool_cell[t, h]]++) {
+        printf "%s\"%s\"", sep, escape_json(tool_cell[t, h]); sep = ", "
+      }
+    }
+    print "],"
+    if (i < n) print "  },"
+    else print "  }"
+  }
+  print "];"
+}
+function coverage(name, beyond,    h, b, g, path, seen_path, state_needed) {
   h = host_index(name); if (!h) die("unknown host `" name "`")
   print manifests[h]
   if (name == "codex") print "plugin/git-hooks/pre-commit"
@@ -217,10 +276,17 @@ function coverage(name,    h, g, path, seen_path, state_needed) {
   }
   for (g = 1; g <= gate_count; g++) if ((gate_id[g] == "handoff" || gate_id[g] == "planstop" || gate_id[g] == "planprompt") && gate_cell[g, h] == "wired") state_needed = 1
   if (state_needed) print "plugin/bin/oso-state"
-  print "plugin/hooks/lib.sh"
-  print "plugin/hooks/lexer.sh"
+  print "plugin/hooks/lib.sh"; seen_path["plugin/hooks/lib.sh"] = 1
+  print "plugin/hooks/lexer.sh"; seen_path["plugin/hooks/lexer.sh"] = 1
+  if (beyond == "") return
+  b = host_index(beyond); if (!b) die("unknown host `" beyond "`")
+  for (g = 1; g <= gate_count; g++) if (gate_cell[g, b] == "wired") {
+    path = "plugin/hooks/" gate_script[g]
+    if (!seen_path[path]++) print path
+  }
+  print manifests[b]
 }
-BEGIN { parse(); if (action == "render") render(target); if (action == "coverage") coverage(target) }
+BEGIN { parse(); if (action == "render") render(target); if (action == "coverage") coverage(target, beyond) }
 END { if (!failed && action == "classify") {
   h = host_index(target); if (!h || !gate_seen[class_gate]) { print "deny"; exit }
   for (g = 1; g <= gate_count; g++) if (gate_id[g] == class_gate) class_gate_index = g
@@ -276,7 +342,8 @@ check_hashes() {
   local published="${HASH_FILE:-$REPO_ROOT/bootstrap/hook-hashes.txt}"
   local expected separator path actual count=0 seen=" " listed_paths=""
   local required_paths
-  required_paths="$(awk -v table="$TABLE" -v repo="$REPO_ROOT" -v action=coverage -v target=codex "$table_awk" </dev/null)"
+  required_paths="$(awk -v table="$TABLE" -v repo="$REPO_ROOT" -v action=coverage \
+    -v target=codex -v beyond=opencode "$table_awk" </dev/null)"
   [ -r "$published" ] || { printf 'deny: published hook hashes are unreadable: %s\n' "$published" >&2; return 1; }
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in ''|'#'*) continue ;; esac
@@ -301,7 +368,7 @@ check_hashes() {
   done < "$published"
   [ "$count" -gt 0 ] || { printf 'deny: published hook hash list is empty\n' >&2; return 1; }
   [ "$listed_paths" = "$required_paths" ] || {
-    printf 'deny: published hook hash coverage or order differs from the rendered Codex hook artifacts\n' >&2
+    printf 'deny: published hook hash coverage or order differs from the Codex and opencode hook artifacts these hosts install\n' >&2
     return 1
   }
   printf 'hooks: %s published hash(es) match\n' "$count"

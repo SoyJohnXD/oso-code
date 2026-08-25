@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Regression tests for the oso-code state-gate hooks and oso-state helper.
-# Runs against an isolated HOME so it never touches real session state.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -9,16 +7,12 @@ TEST_HOME="$(mktemp -d)"
 trap 'rm -rf "$TEST_HOME"' EXIT
 export HOME="$TEST_HOME"
 export PATH="$PLUGIN/bin:$PATH"
-unset GIT_CONFIG_GLOBAL OSO_AGENT OSO_STATE_BIN XDG_CONFIG_HOME
+unset GIT_CONFIG_GLOBAL OSO_AGENT OSO_STATE_BIN \
+  XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME
+. "$REPO_ROOT/bootstrap/lib/verification-fixtures.sh"
+. "$REPO_ROOT/bootstrap/lib/opencode-verification.sh"
 SESSION="test-session"
-# `oso-state` names its file after the repository it is RUN in, so the suite's own
-# directory is what most of these cases write through — pinned here, or a run
-# started from somewhere else arms one repository and asserts against another.
 cd "$REPO_ROOT"
-# Spelled here rather than sourced from lib.sh on purpose: asserting the name
-# independently is what catches a wrong rule in the code under test. Where git
-# cannot answer — the bash:3.2 container CI runs this in carries none — the
-# directory is the identity, which is the fallback the code takes too.
 state_key_of() {
   local directory="$1" identity digest
   identity="$(git -C "$directory" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || identity=""
@@ -35,11 +29,6 @@ pass=0
 fail=0
 skipped=0
 
-# Runs a hook and judges the run itself. A hook that exits non-zero or writes to
-# stderr must surface as one named FAIL — under set -euo pipefail a bare
-# assignment from a crashing hook kills the suite, losing every later case and
-# the footer. A case that wants a crash declares it via expected_rc/stderr.
-# A bare hook name resolves under plugin/hooks; a path is used as given.
 run_hook() {
   local hook="$1" input="$2" expected_rc="${3:-0}" expected_stderr="${4:-}"
   local stderr_file="$TEST_HOME/hook-stderr"
@@ -64,9 +53,6 @@ run_hook() {
   fi
 }
 
-# The same judgment for a case that runs the hook bare and then reads what it
-# left behind: without the guard a hook that crashes after doing the work still
-# reports ok. The predicate is a command, so a case spells it `[ … ]`.
 assert_after_hook() {
   local name="$1"
   shift
@@ -113,12 +99,6 @@ assert_equals() {
   fi
 }
 
-# Payload shape recovered from recorded PreToolUse tool_use entries under
-# ~/.claude/projects/-home-tribalcode-Documents-personal-oso-code/ — Bash carries
-# command+description, Edit carries file_path/old_string/new_string/replace_all;
-# envelope fields per code.claude.com/docs/en/hooks. The client serializes inner
-# double quotes as \", so a case spells its command exactly the way the
-# transcript records it and json_field decodes it before any gate sees it.
 TRANSCRIPT="$HOME/.claude/projects/oso-code/$SESSION.jsonl"
 bash_input() {
   printf '{"session_id":"%s","transcript_path":"%s","cwd":"%s","permission_mode":"default","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"%s","description":"regression case"}}' \
@@ -127,11 +107,6 @@ bash_input() {
 edit_input="$(printf '{"session_id":"%s","transcript_path":"%s","cwd":"%s","permission_mode":"default","hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"/tmp/x.ts","old_string":"const slice = 1;","new_string":"const slice = 2;","replace_all":false}}' \
   "$SESSION" "$TRANSCRIPT" "$REPO_ROOT")"
 
-# --- Harness guard: a crashing hook is one named FAIL, never an aborted run ---
-# The FAIL this case wants is the assertion, not a failure of the suite, so the
-# helper runs in a command substitution on purpose: the subshell's `fail` increment
-# dies with the subshell and the expected FAIL never enters the tally. Split into
-# two statements it would read the same and add one phantom failure to every run.
 CRASH_HOOK="$REPO_ROOT/tests/fixtures/crashing-hook.sh"
 crash_report="$(assert_allows "crashing hook" "$CRASH_HOOK" "$(bash_input 'npm test')")"
 case "$crash_report" in
@@ -140,12 +115,6 @@ case "$crash_report" in
 esac
 assert_allows "a declared hook crash is not a case failure" "$CRASH_HOOK" "$(bash_input 'npm test')" 1 'simulated hook failure'
 
-# --- Dispatch: hooks.json gates the tools the gates claim to cover ---
-# A matcher without metacharacters is a list of EXACT tool names, so a writer the
-# list does not name is a writer no gate ever sees: `Edit` never covered
-# `MultiEdit`, and the MCP writers are allowlisted one name at a time rather than
-# by a wildcard — see block-edits-without-slice.sh for why the wildcard is
-# refused and what the named list costs.
 hooks_manifest="$PLUGIN/hooks/hooks.json"
 gated_tools="$(sed -n 's/.*"matcher"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$hooks_manifest" | tr '|' '\n' | LC_ALL=C sort | tr '\n' ' ')"
 expected_tools="$(printf '%s\n' Bash Bash Edit MultiEdit NotebookEdit Write 'mcp__.*deploy.*' mcp__fallow__fix_apply | LC_ALL=C sort | tr '\n' ' ')"
@@ -211,20 +180,91 @@ while IFS= read -r manifest_command; do
 done <<< "$manifest_commands"
 assert_equals "every hooks.json command is an executable script" "" "$unrunnable"
 
-# --- Declarations: what `claude plugin validate --strict` has no opinion on ---
-# The validator does open skill frontmatter, but never for `background` on a fork
-# and never to resolve the plugin's own cross-references, so those two have no
-# gate but this one.
+tracked_text_files_missing_a_final_newline() {
+  local eol_row file
+  while IFS= read -r eol_row; do
+    case "$eol_row" in 'i/-text'*) continue ;; esac
+    file="${eol_row##*"$(printf '\t')"}"
+    [ -f "$REPO_ROOT/$file" ] && [ -s "$REPO_ROOT/$file" ] || continue
+    [ -z "$(tail -c 1 "$REPO_ROOT/$file")" ] || printf '%s\n' "$file"
+  done <<< "$(git -C "$REPO_ROOT" ls-files --eol 2>/dev/null)"
+}
+
+sourced_shell_dependency_of() {
+  local line="$1" target
+  case "$line" in
+    *')'*) target="${line##*)}" ;;
+    *'$'*) target="${line##*\$}" ;;
+    *) return 1 ;;
+  esac
+  case "$target" in
+    */*) target="${target#*/}" ;;
+    *) return 1 ;;
+  esac
+  while [ "$target" != "${target#../}" ]; do
+    target="${target#../}"
+  done
+  target="${target%\"}"
+  case "$target" in
+    *.sh) printf '%s' "$target" ;;
+    *) return 1 ;;
+  esac
+}
+
+index_carries_a_path_ending_in() {
+  local tracked="$1" target="$2" path
+  while IFS= read -r path; do
+    case "$path" in
+      "$target"|*"/$target") return 0 ;;
+    esac
+  done <<< "$tracked"
+  return 1
+}
+
+sourced_shell_dependencies_missing_from_the_index() {
+  local repository="$1" tracked shell_file line target
+  tracked="$(git -C "$repository" ls-files)"
+  while IFS= read -r shell_file; do
+    case "$shell_file" in *.sh) ;; *) continue ;; esac
+    [ -r "$repository/$shell_file" ] || continue
+    while IFS= read -r line; do
+      target="$(sourced_shell_dependency_of "$line")" || continue
+      index_carries_a_path_ending_in "$tracked" "$target" ||
+        printf '%s sources %s\n' "$shell_file" "$target"
+    done <<< "$(grep -E '^[[:space:]]*(\.|source)[[:space:]]' "$repository/$shell_file" || true)"
+  done <<< "$tracked"
+}
+
+if git -C "$REPO_ROOT" ls-files --eol >/dev/null 2>&1; then
+  assert_equals "every tracked text file ends in a newline, so appending to one never joins two lines" \
+    "" "$(tracked_text_files_missing_a_final_newline | tr '\n' ' ' | sed 's/ *$//')"
+  assert_equals "every shell dependency a shipped script sources is in the index, so no clone gets a script whose library never travelled with it" \
+    "" "$(sourced_shell_dependencies_missing_from_the_index "$REPO_ROOT" | tr '\n' ' ' | sed 's/ *$//')"
+
+  SOURCED_DEPENDENCY_FIXTURE="$TEST_HOME/sourced-dependency"
+  mkdir -p "$SOURCED_DEPENDENCY_FIXTURE/lib"
+  git -C "$SOURCED_DEPENDENCY_FIXTURE" init -q
+  printf '#!/usr/bin/env bash\n. "$SCRIPT_DIR/lib/shipped.sh"\n' \
+    > "$SOURCED_DEPENDENCY_FIXTURE/install-thing.sh"
+  printf 'shipped() { :; }\n' > "$SOURCED_DEPENDENCY_FIXTURE/lib/shipped.sh"
+  git -C "$SOURCED_DEPENDENCY_FIXTURE" add install-thing.sh
+  assert_equals "a shipped script whose sourced library stands on disk and never reached the index is named before a clone finds it broken" \
+    "install-thing.sh sources lib/shipped.sh" \
+    "$(sourced_shell_dependencies_missing_from_the_index "$SOURCED_DEPENDENCY_FIXTURE")"
+  git -C "$SOURCED_DEPENDENCY_FIXTURE" add lib/shipped.sh
+  assert_equals "and the same tree reads clean once that library is tracked, so the rule answers the index rather than the disk" \
+    "" "$(sourced_shell_dependencies_missing_from_the_index "$SOURCED_DEPENDENCY_FIXTURE")"
+else
+  echo "skip: no git here to list the tracked files a final-newline check and a sourced-dependency check both read"
+  skipped=$((skipped + 1))
+fi
+
 if lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" 2>&1)"; then
   echo "ok: plugin frontmatter and cross-references lint clean"; pass=$((pass + 1))
 else
   echo "FAIL: plugin lint — $(printf '%s' "$lint_report" | tr '\n' ' ')"; fail=$((fail + 1))
 fi
 
-# A release has two version authorities because it ships two plugin manifests.
-# The marketplace catalogs point at those payloads and intentionally carry no
-# duplicate version of their own. Pin all three edges: a partial bump otherwise
-# lets one host install the previous contract under the current release notes.
 claude_release_version="$(sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' \
   "$REPO_ROOT/plugin/.claude-plugin/plugin.json")"
 codex_release_version="$(sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' \
@@ -246,19 +286,12 @@ marketplace_version_fields="$({ grep -hEc '^[[:space:]]*"version"[[:space:]]*:' 
 assert_equals "marketplace catalogs do not duplicate the plugin release version" \
   "0" "$marketplace_version_fields"
 
-# The clean-tree call above proves only that today's Codex bodies happen to be
-# clean. Earlier, skill_sources followed the Claude wrapper alone, so the same
-# forbidden acquisition command went red under platform/claude and silently green
-# under platform/codex. Run the WHOLE linter over an isolated copy with exactly
-# that mutation: a failure for any other reason does not clear the case, because
-# the report must name the mutated Codex file and the remote-qualified ref rule.
 copy_lint_fixture() {
-  local destination="$1" lint_path
+  local destination="$1"
   mkdir -p "$destination"
-  for lint_path in plugin codex docs bootstrap tests tools; do
-    cp -R "$REPO_ROOT/$lint_path" "$destination/$lint_path"
-  done
-  cp "$REPO_ROOT/README.md" "$REPO_ROOT/CHANGELOG.md" "$destination/"
+  tar -c -C "$REPO_ROOT" --exclude node_modules \
+    plugin codex opencode docs bootstrap tests tools README.md CHANGELOG.md \
+    | tar -x -C "$destination"
 }
 
 LINT_FIXTURE="$TEST_HOME/lint-fixture"
@@ -280,11 +313,6 @@ else
   fi
 fi
 
-# Codex invokes a skill by its bare, backticked name, not Claude's
-# `oso-code:<name>`. Add a new Codex-only debt-sweep call to a mode whose source
-# carries none of that emitter's terminal tokens. If call-site discovery still
-# keys only on the Claude prefix, the mutation is invisible and the linter lies
-# clean; the exact diagnostic proves the bare invocation was what made it red.
 LINT_CALL_FIXTURE="$TEST_HOME/lint-call-fixture"
 copy_lint_fixture "$LINT_CALL_FIXTURE"
 codex_quick_fixture="$LINT_CALL_FIXTURE/plugin/skills/_shared/platform/codex/quick.md"
@@ -304,15 +332,6 @@ else
   fi
 fi
 
-# Rule 6 demands EVERY token of an axis a caller engages, not just one of the
-# emitter's whole flattened vocabulary — the delta a `blocked` drift exploited,
-# since a caller could satisfy the old floor by naming any OTHER token of the
-# same emitter and never carry the one that actually went missing. Remove only
-# the sentence that routes debt-sweep's whole-report `blocked` token from a
-# real, otherwise-complete caller (debug's close still names `Debt Sweep:
-# clean`, `findings`, and `Conformance: skipped` — every token the OLD "at least
-# one" floor ever required). The old rule would have read this caller clean; the
-# new one must not.
 LINT_MISSING_TOKEN_FIXTURE="$TEST_HOME/lint-missing-token"
 copy_lint_fixture "$LINT_MISSING_TOKEN_FIXTURE"
 missing_token_body="$LINT_MISSING_TOKEN_FIXTURE/plugin/skills/_shared/bodies/debug.md"
@@ -336,12 +355,6 @@ else
   fi
 fi
 
-# The harder half — a token named with no action beside it is the boilerplate
-# the doubt pass predicted this rule would produce if it graded mention alone.
-# Inject a caller that never invoked debt-sweep before, naming EVERY one of its
-# six tokens across all three axes verbatim, with zero recovery verb anywhere
-# near them. The floor (every token present) is fully satisfied; only the
-# routing half can still fail this, and it must.
 LINT_BARE_LIST_FIXTURE="$TEST_HOME/lint-bare-list"
 copy_lint_fixture "$LINT_BARE_LIST_FIXTURE"
 bare_list_target="$LINT_BARE_LIST_FIXTURE/plugin/skills/_shared/platform/claude/quick.md"
@@ -364,12 +377,6 @@ else
   fi
 fi
 
-# Agents join skills as emitters — the drift this rule exists to close
-# (oso-integrator's `status: blocked`) came from agents sitting outside its
-# reach entirely. Remove the one sentence that routes it from the real,
-# already-fixed body and confirm the mechanism itself — not just the fixed prose
-# — is what proves the route exists: a rule that only ever reads clean never
-# proves it would have caught the drift it was built for.
 LINT_AGENT_FIXTURE="$TEST_HOME/lint-agent-token"
 copy_lint_fixture "$LINT_AGENT_FIXTURE"
 agent_route_body="$LINT_AGENT_FIXTURE/plugin/skills/_shared/bodies/plan.md"
@@ -393,12 +400,6 @@ else
   fi
 fi
 
-# The defect this closes — `bodies/plan.md`'s security-pass re-run loop
-# terminates only on `clean` or an explicit operator acceptance, and a
-# Codex-only `blocked` was neither. Assert the reachable exit is written into
-# all three callers directly, rather than only through the vocabulary rule
-# above: this is the concrete symptom named in the slice, so it earns its own
-# assertion beside the mechanism that now enforces it structurally.
 for security_pass_caller in plan quick debug; do
   security_pass_source="$REPO_ROOT/plugin/skills/_shared/bodies/$security_pass_caller.md"
   security_pass_route="$({ grep -F 'Security Pass: blocked' "$security_pass_source" || true; })"
@@ -410,14 +411,6 @@ for security_pass_caller in plan quick debug; do
   esac
 done
 
-# Rule 7 is host-specific: Claude's always-loaded source routes every
-# operator-only mode through `/oso-code:<mode>`, while Codex's routes the same
-# independently-declared wrappers through `$oso-code:<mode>`. A clean-tree lint cannot
-# prove either scan is real — those names also occur elsewhere in the fixture.
-# Remove each real Workflow route in turn, leave a longer lookalike INSIDE that
-# block, and leave the exact spelling OUTSIDE it.  Only a section-bounded,
-# token-bounded scan of the right host source can reject this mutation for the
-# named omission; a repository-wide grep or substring match reads it as green.
 mutate_global_workflow_route() {
   local routing_file="$1" invocation="$2" temporary="$1.tmp"
   awk -v invocation="$invocation" '
@@ -469,9 +462,6 @@ for routing_host in claude codex; do
   done
 done
 
-# The mutations above could still pass against a linter hardcoding today's
-# operator-only names.  Add one more mode to each host tree without adding a
-# route: the diagnostic must be derived from that wrapper's frontmatter.
 for routing_host in claude codex; do
   LINT_DISCOVERY_FIXTURE="$TEST_HOME/lint-routing-discovery-$routing_host"
   copy_lint_fixture "$LINT_DISCOVERY_FIXTURE"
@@ -506,10 +496,6 @@ for routing_host in claude codex; do
   fi
 done
 
-# A glob over an absent Codex tree iterates once over its own literal text and
-# can make a dynamic rule vacuously green.  Move the whole tree out of the path
-# the linter owns and require rule 7's explicit anti-vacuity diagnostic; a
-# nonzero caused only by the other host-aware rules does not clear this case.
 LINT_CODEX_TREE_FIXTURE="$TEST_HOME/lint-routing-missing-codex-tree"
 copy_lint_fixture "$LINT_CODEX_TREE_FIXTURE"
 if [ ! -d "$LINT_CODEX_TREE_FIXTURE/codex/skills" ]; then
@@ -530,12 +516,6 @@ else
   fi
 fi
 
-# The cases below close on specific linter rules rather than a clean-tree run
-# alone. Each mutation removes exactly the relation that rule owns and requires
-# that rule's own diagnostic, so another incidental red cannot masquerade as
-# coverage. Cases are named after the FUNCTION each exercises rather than a
-# rule ordinal — an ordinal drifts the moment a rule is inserted above it,
-# while a function name stays self-locating.
 LINT_RECONCILIATION_FIXTURE="$TEST_HOME/lint-decision-reconciliation"
 copy_lint_fixture "$LINT_RECONCILIATION_FIXTURE"
 reconciliation_decision="$LINT_RECONCILIATION_FIXTURE/docs/decisions/0094-codex-baseline-and-minimum-version.md"
@@ -622,9 +602,80 @@ else
   done
 fi
 
+LINT_SHELL_COMMENT_FIXTURE="$TEST_HOME/lint-shell-comment"
+copy_lint_fixture "$LINT_SHELL_COMMENT_FIXTURE"
+printf '\n# a reason nobody checks, written below the code it describes\n' \
+  >> "$LINT_SHELL_COMMENT_FIXTURE/tools/verify-check-names.sh"
+if shell_comment_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+    "$LINT_SHELL_COMMENT_FIXTURE/plugin" "$LINT_SHELL_COMMENT_FIXTURE" 2>&1)"; then
+  echo "FAIL: check_shell_sources_carry_no_comment_below_their_contract_header accepted a comment written below a script's code"; fail=$((fail + 1))
+else
+  case "$shell_comment_lint_report" in
+    *"tools/verify-check-names.sh:"*"is a comment below its file's first line of code"*)
+      echo "ok: check_shell_sources_carry_no_comment_below_their_contract_header rejects a comment written below a script's code"; pass=$((pass + 1)) ;;
+    *)
+      echo "FAIL: the shell-comment mutation failed for the wrong reason — $(printf '%s' "$shell_comment_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+  esac
+fi
+
+LINT_HEREDOC_BODY_FIXTURE="$TEST_HOME/lint-heredoc-body"
+copy_lint_fixture "$LINT_HEREDOC_BODY_FIXTURE"
+cat >> "$LINT_HEREDOC_BODY_FIXTURE/tools/verify-check-names.sh" <<'APPENDED_HEREDOC_CASE'
+
+cat > /dev/null <<'FIXTURE_BODY'
+# a heading a fixture writes into a document, which is data and no comment at all
+FIXTURE_BODY
+APPENDED_HEREDOC_CASE
+if heredoc_body_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+    "$LINT_HEREDOC_BODY_FIXTURE/plugin" "$LINT_HEREDOC_BODY_FIXTURE" 2>&1)"; then
+  echo "ok: a hash-leading line inside a heredoc body is data the comment rule never reads as a comment"; pass=$((pass + 1))
+else
+  echo "FAIL: a hash-leading heredoc body line was read as a comment — $(printf '%s' "$heredoc_body_lint_report" | tr '\n' ' ')"; fail=$((fail + 1))
+fi
+
+LINT_HOME_PATH_FIXTURE="$TEST_HOME/lint-home-path"
+copy_lint_fixture "$LINT_HOME_PATH_FIXTURE"
+printf 'skill registry cached at %s/.config/some-tool/registry\n' "$HOME" \
+  >> "$LINT_HOME_PATH_FIXTURE/docs/blueprint.md"
+if home_path_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+    "$LINT_HOME_PATH_FIXTURE/plugin" "$LINT_HOME_PATH_FIXTURE" 2>&1)"; then
+  echo "FAIL: check_no_shipped_file_carries_the_home_path_of_whoever_runs_this accepted a file carrying this machine's own home directory"; fail=$((fail + 1))
+else
+  case "$home_path_lint_report" in
+    *"docs/blueprint.md carries the absolute home directory of whoever runs this check"*)
+      echo "ok: check_no_shipped_file_carries_the_home_path_of_whoever_runs_this names the file carrying this machine's own home directory"; pass=$((pass + 1)) ;;
+    *)
+      echo "FAIL: the home-path mutation failed for the wrong reason — $(printf '%s' "$home_path_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+  esac
+fi
+
+LINT_DOT_DIRECTORY_FIXTURE="$TEST_HOME/lint-dot-directory"
+copy_lint_fixture "$LINT_DOT_DIRECTORY_FIXTURE"
+mkdir -p "$LINT_DOT_DIRECTORY_FIXTURE/.some-tool-cache"
+printf 'regenerable cache the tool rewrites on every run\n' \
+  > "$LINT_DOT_DIRECTORY_FIXTURE/.some-tool-cache/registry.md"
+if dot_directory_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+    "$LINT_DOT_DIRECTORY_FIXTURE/plugin" "$LINT_DOT_DIRECTORY_FIXTURE" 2>&1)"; then
+  echo "FAIL: check_every_dot_directory_is_repo_owned_or_ignored accepted an undeclared tool cache beside the repository's own directories"; fail=$((fail + 1))
+else
+  case "$dot_directory_lint_report" in
+    *".some-tool-cache/ is neither one of this repository's own directories nor a line in .gitignore"*)
+      echo "ok: check_every_dot_directory_is_repo_owned_or_ignored names an undeclared tool cache by its own directory"; pass=$((pass + 1)) ;;
+    *)
+      echo "FAIL: the tool-cache mutation failed for the wrong reason — $(printf '%s' "$dot_directory_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+  esac
+fi
+printf '.some-tool-cache/\n' > "$LINT_DOT_DIRECTORY_FIXTURE/.gitignore"
+if ignored_dot_directory_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+    "$LINT_DOT_DIRECTORY_FIXTURE/plugin" "$LINT_DOT_DIRECTORY_FIXTURE" 2>&1)"; then
+  echo "ok: the same tool cache named in .gitignore closes the finding rather than needing an allowlist entry"; pass=$((pass + 1))
+else
+  echo "FAIL: an ignored tool cache still read as publishable — $(printf '%s' "$ignored_dot_directory_report" | tr '\n' ' ')"; fail=$((fail + 1))
+fi
+
 LINT_RULE_COUNT_FIXTURE="$TEST_HOME/lint-rule-count"
 copy_lint_fixture "$LINT_RULE_COUNT_FIXTURE"
-sed 's/forty-one rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
+sed 's/fifty-one rules/twenty rules/' "$LINT_RULE_COUNT_FIXTURE/README.md" \
   > "$LINT_RULE_COUNT_FIXTURE/README.md.tmp"
 mv "$LINT_RULE_COUNT_FIXTURE/README.md.tmp" "$LINT_RULE_COUNT_FIXTURE/README.md"
 if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
@@ -632,17 +683,217 @@ if rule_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
   echo "FAIL: check_present_tense_prose_names_the_rule_count accepted stale present-tense rule-count prose"; fail=$((fail + 1))
 else
   case "$rule_count_lint_report" in
-    *"README.md does not name the forty-one rules this linter declares"*)
+    *"README.md does not name the fifty-one rules this linter declares"*)
       echo "ok: check_present_tense_prose_names_the_rule_count rejects stale present-tense rule-count prose"; pass=$((pass + 1)) ;;
     *)
       echo "FAIL: check_present_tense_prose_names_the_rule_count mutation failed for the wrong reason — $(printf '%s' "$rule_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
   esac
 fi
 
-# check_milestone_reporting_contract_is_complete must reject a flow
-# body that stopped pointing at the milestone contract, and name THAT body —
-# never pass on the strength of the other two still carrying the reference.
-# Strip only debug.md's sentence.
+LINT_CHANGELOG_COUNT_FIXTURE="$TEST_HOME/lint-changelog-count"
+copy_lint_fixture "$LINT_CHANGELOG_COUNT_FIXTURE"
+sed 's/fifty-one rules/forty-two rules/' "$LINT_CHANGELOG_COUNT_FIXTURE/CHANGELOG.md" \
+  > "$LINT_CHANGELOG_COUNT_FIXTURE/CHANGELOG.md.tmp"
+mv "$LINT_CHANGELOG_COUNT_FIXTURE/CHANGELOG.md.tmp" "$LINT_CHANGELOG_COUNT_FIXTURE/CHANGELOG.md"
+if changelog_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+    "$LINT_CHANGELOG_COUNT_FIXTURE/plugin" "$LINT_CHANGELOG_COUNT_FIXTURE" 2>&1)"; then
+  echo "FAIL: check_changelog_top_entry_names_the_count_that_superseded_its_own accepted a newest entry naming only a count the tree left behind"; fail=$((fail + 1))
+else
+  case "$changelog_count_lint_report" in
+    *"top entry says the linter has forty-two rules and names the fifty-one rules"*)
+      echo "ok: check_changelog_top_entry_names_the_count_that_superseded_its_own rejects a newest entry whose only rule count is stale"; pass=$((pass + 1)) ;;
+    *)
+      echo "FAIL: check_changelog_top_entry_names_the_count_that_superseded_its_own mutation failed for the wrong reason — $(printf '%s' "$changelog_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+  esac
+fi
+
+mutate_changelog_rule_count() {
+  local fixture="$1" expression="$2"
+  copy_lint_fixture "$fixture"
+  sed "$expression" "$fixture/CHANGELOG.md" > "$fixture/CHANGELOG.md.tmp"
+  mv "$fixture/CHANGELOG.md.tmp" "$fixture/CHANGELOG.md"
+}
+
+LINT_CHANGELOG_DIGITS_FIXTURE="$TEST_HOME/lint-changelog-digits"
+mutate_changelog_rule_count "$LINT_CHANGELOG_DIGITS_FIXTURE" \
+  's/fifty-one rules/42 rules/'
+if digit_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+    "$LINT_CHANGELOG_DIGITS_FIXTURE/plugin" "$LINT_CHANGELOG_DIGITS_FIXTURE" 2>&1)"; then
+  echo "FAIL: check_changelog_top_entry_names_the_count_that_superseded_its_own accepted a stale count spelled in digits"; fail=$((fail + 1))
+else
+  case "$digit_count_lint_report" in
+    *"top entry says the linter has 42 rules"*)
+      echo "ok: a newest entry whose only rule count is a stale one in digits is read as stale too"; pass=$((pass + 1)) ;;
+    *)
+      echo "FAIL: the digit-count mutation failed for the wrong reason — $(printf '%s' "$digit_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+  esac
+fi
+
+LINT_CHANGELOG_ADJACENCY_FIXTURE="$TEST_HOME/lint-changelog-adjacency"
+mutate_changelog_rule_count "$LINT_CHANGELOG_ADJACENCY_FIXTURE" \
+  's/fifty-one rules/forty-two lint rules/'
+if adjacent_count_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+    "$LINT_CHANGELOG_ADJACENCY_FIXTURE/plugin" "$LINT_CHANGELOG_ADJACENCY_FIXTURE" 2>&1)"; then
+  echo "FAIL: check_changelog_top_entry_names_the_count_that_superseded_its_own accepted a stale count one word from its noun"; fail=$((fail + 1))
+else
+  case "$adjacent_count_lint_report" in
+    *"top entry says the linter has forty-two rules"*)
+      echo "ok: a stale count one word away from its noun is still the count the newest entry names"; pass=$((pass + 1)) ;;
+    *)
+      echo "FAIL: the adjacency mutation failed for the wrong reason — $(printf '%s' "$adjacent_count_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+  esac
+fi
+
+LINT_STALE_CITATION_FIXTURE="$TEST_HOME/lint-stale-citation"
+copy_lint_fixture "$LINT_STALE_CITATION_FIXTURE"
+lint_citation_record="$LINT_STALE_CITATION_FIXTURE/docs/parity-opencode.md"
+sed 's|`plugin/hooks/reanchor-after-compact.sh:35`|`plugin/hooks/reanchor-after-compact.sh:9999`|' \
+  "$lint_citation_record" > "$lint_citation_record.tmp"
+mv "$lint_citation_record.tmp" "$lint_citation_record"
+if stale_citation_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+    "$LINT_STALE_CITATION_FIXTURE/plugin" "$LINT_STALE_CITATION_FIXTURE" 2>&1)"; then
+  echo "FAIL: check_living_records_cite_lines_that_still_carry_something accepted a citation past its file's end"; fail=$((fail + 1))
+else
+  case "$stale_citation_report" in
+    *"cites plugin/hooks/reanchor-after-compact.sh:9999, which is past that file's end"*)
+      echo "ok: a record citing a line its file no longer has is the stale-citation class, caught by name"; pass=$((pass + 1)) ;;
+    *)
+      echo "FAIL: the stale-citation mutation failed for the wrong reason — $(printf '%s' "$stale_citation_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+  esac
+fi
+
+LINT_MOVED_CITATION_FIXTURE="$TEST_HOME/lint-moved-citation"
+copy_lint_fixture "$LINT_MOVED_CITATION_FIXTURE"
+lint_moved_record="$LINT_MOVED_CITATION_FIXTURE/docs/parity-opencode.md"
+sed 's|`plugin/hooks/reanchor-after-compact.sh:35`|`plugin/hooks/reanchored.sh:35`|' \
+  "$lint_moved_record" > "$lint_moved_record.tmp"
+mv "$lint_moved_record.tmp" "$lint_moved_record"
+if moved_citation_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+    "$LINT_MOVED_CITATION_FIXTURE/plugin" "$LINT_MOVED_CITATION_FIXTURE" 2>&1)"; then
+  echo "FAIL: check_living_records_cite_lines_that_still_carry_something accepted a citation to a path that is gone"; fail=$((fail + 1))
+else
+  case "$moved_citation_report" in
+    *"cites plugin/hooks/reanchored.sh:35 and no file stands at that path"*)
+      echo "ok: a record citing a file that moved away is caught by the same rule"; pass=$((pass + 1)) ;;
+    *)
+      echo "FAIL: the moved-citation mutation failed for the wrong reason — $(printf '%s' "$moved_citation_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+  esac
+fi
+
+LINT_OPENCODE_CALL_FIXTURE="$TEST_HOME/lint-opencode-call-fixture"
+copy_lint_fixture "$LINT_OPENCODE_CALL_FIXTURE"
+opencode_quick_fixture="$LINT_OPENCODE_CALL_FIXTURE/plugin/skills/_shared/platform/opencode/quick.md"
+if [ ! -f "$opencode_quick_fixture" ]; then
+  echo "FAIL: the OpenCode call-site mutation has no quick body to change"; fail=$((fail + 1))
+else
+  printf '\nInvoke `oso-debt-sweep` now.\n' >> "$opencode_quick_fixture"
+  if mutated_opencode_call_lint_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_OPENCODE_CALL_FIXTURE/plugin" "$LINT_OPENCODE_CALL_FIXTURE" 2>&1)"; then
+    echo "FAIL: a bare OpenCode skill call with no verdict vocabulary passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$mutated_opencode_call_lint_report" in
+      *"skills/quick/SKILL.md invokes debt-sweep on opencode"*"carries none of its"*)
+        echo "ok: a bare OpenCode call missing its emitter vocabulary fails lint"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the OpenCode call-site mutation failed for the wrong reason — $(printf '%s' "$mutated_opencode_call_lint_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_OPENCODE_INVOCATION_FIXTURE="$TEST_HOME/lint-opencode-invocation"
+copy_lint_fixture "$LINT_OPENCODE_INVOCATION_FIXTURE"
+opencode_invocation_target="$LINT_OPENCODE_INVOCATION_FIXTURE/tools/verify-check-names.sh"
+printf 'cat <<PROBE\nenv OSO_PROBE=1 opencode --version\nPROBE\ntimeout 5 opencode --version\n' \
+  >> "$opencode_invocation_target"
+opencode_invocation_line="$(wc -l < "$opencode_invocation_target" | tr -d ' ')"
+opencode_heredoc_line=$((opencode_invocation_line - 2))
+if opencode_invocation_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+    "$LINT_OPENCODE_INVOCATION_FIXTURE/plugin" "$LINT_OPENCODE_INVOCATION_FIXTURE" 2>&1)"; then
+  echo "FAIL: a wrapped opencode invocation in a scanned script passed plugin lint"; fail=$((fail + 1))
+else
+  case "$opencode_invocation_report" in
+    *"tools/verify-check-names.sh:$opencode_heredoc_line "*)
+      echo "FAIL: the rule read a heredoc body as a command it runs"; fail=$((fail + 1)) ;;
+    *"tools/verify-check-names.sh:$opencode_invocation_line makes the opencode binary its own command word"*)
+      echo "ok: the rule names a wrapped opencode invocation and leaves the same text in a heredoc body alone"; pass=$((pass + 1)) ;;
+    *)
+      echo "FAIL: the wrapped-invocation mutation failed for the wrong reason — $(printf '%s' "$opencode_invocation_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+  esac
+fi
+
+LINT_OPENCODE_LEXED_FORMS_FIXTURE="$TEST_HOME/lint-opencode-lexed-forms"
+copy_lint_fixture "$LINT_OPENCODE_LEXED_FORMS_FIXTURE"
+opencode_lexed_forms_target="$LINT_OPENCODE_LEXED_FORMS_FIXTURE/tools/verify-check-names.sh"
+opencode_lexed_forms_base="$(wc -l < "$opencode_lexed_forms_target" | tr -d ' ')"
+opencode_lexed_forms_bound="$(sed -n 's/^LEX_MAX_INPUT_BYTES=//p' "$PLUGIN/hooks/lexer.sh" | head -1)"
+opencode_lexed_forms_pad="$(printf '%*s' "$opencode_lexed_forms_bound" '' | tr ' ' x)"
+printf '%s\n' \
+  "bash <<'SH'" \
+  'opencode --version' \
+  'SH' \
+  'case "$1" in opencode) opencode --version ;; esac' \
+  '"$OPENCODE_CONTRACT_BAR" --report' \
+  '"$OPENCODE_INSTALLER" --check' \
+  'opencode' \
+  'opencode >/dev/null' \
+  'opencode </dev/null' \
+  'opencode 2>&1' \
+  'opencode >log 2>&1' \
+  '"$OPENCODE_EXE" --version' \
+  '"$OPENCODE_PATH" --version' \
+  '"$OPENCODE_CMD" --version' \
+  '"$OPENCODE_CLI" --version' \
+  '"$OPENCODE_BIN_PATH" --version' \
+  "opencode --version --pad=$opencode_lexed_forms_pad" \
+  >> "$opencode_lexed_forms_target"
+opencode_lexed_forms_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+  "$LINT_OPENCODE_LEXED_FORMS_FIXTURE/plugin" "$LINT_OPENCODE_LEXED_FORMS_FIXTURE" 2>&1 || true)"
+opencode_lexed_forms_sites="$(printf '%s\n' "$opencode_lexed_forms_report" \
+  | sed -n 's|^lint: tools/verify-check-names\.sh:\([0-9]*\) makes the opencode binary.*|\1|p' \
+  | LC_ALL=C sort -n | tr '\n' ' ')"
+assert_equals "the rule reads a shell-fed heredoc body and a case header's own line as commands, flags the binary under every suffix a variable spells a path to it with, and leaves a repo script named by an OPENCODE_* variable, every redirect-only spelling and a unit past the lexer's input bound alone" \
+  "$((opencode_lexed_forms_base + 1)) $((opencode_lexed_forms_base + 4)) $((opencode_lexed_forms_base + 12)) $((opencode_lexed_forms_base + 13)) $((opencode_lexed_forms_base + 14)) $((opencode_lexed_forms_base + 15)) $((opencode_lexed_forms_base + 16)) " \
+  "$opencode_lexed_forms_sites"
+
+LINT_OPENCODE_SCAN_EMPTY_FIXTURE="$TEST_HOME/lint-opencode-scan-empty"
+copy_lint_fixture "$LINT_OPENCODE_SCAN_EMPTY_FIXTURE"
+rm -f "$LINT_OPENCODE_SCAN_EMPTY_FIXTURE"/tests/*.sh \
+  "$LINT_OPENCODE_SCAN_EMPTY_FIXTURE"/tests/fixtures/*.sh \
+  "$LINT_OPENCODE_SCAN_EMPTY_FIXTURE"/bootstrap/lib/*.sh \
+  "$LINT_OPENCODE_SCAN_EMPTY_FIXTURE"/bootstrap/verify-*.sh \
+  "$LINT_OPENCODE_SCAN_EMPTY_FIXTURE"/tools/*.sh
+opencode_scan_empty_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+  "$LINT_OPENCODE_SCAN_EMPTY_FIXTURE/plugin" "$LINT_OPENCODE_SCAN_EMPTY_FIXTURE" 2>&1 || true)"
+case "$opencode_scan_empty_report" in
+  *"reached no readable shell source"*"scanned nothing"*)
+    echo "ok: a scan whose sources all vanished says so instead of reporting zero opencode invocations"; pass=$((pass + 1)) ;;
+  *)
+    echo "FAIL: a scan with no readable source reported zero opencode invocations in silence — $(printf '%s' "$opencode_scan_empty_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+esac
+
+LINT_PARITY_VERSION_FIXTURE="$TEST_HOME/lint-parity-version"
+copy_lint_fixture "$LINT_PARITY_VERSION_FIXTURE"
+parity_version_target="$LINT_PARITY_VERSION_FIXTURE/docs/parity-opencode.md"
+parity_version_pin="$(sed -n 's/^SUPPORTED_OPENCODE_VERSION=//p' \
+  "$REPO_ROOT/bootstrap/install-opencode.sh" | head -1)"
+if [ -z "$parity_version_pin" ] || ! grep -q "OpenCode $parity_version_pin" "$parity_version_target"; then
+  echo "FAIL: the parity-version mutation found no OpenCode version to diverge in docs/parity-opencode.md"; fail=$((fail + 1))
+else
+  sed "s/OpenCode $parity_version_pin/OpenCode 1.19.0/" "$parity_version_target" > "$parity_version_target.tmp"
+  mv "$parity_version_target.tmp" "$parity_version_target"
+  if parity_version_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_PARITY_VERSION_FIXTURE/plugin" "$LINT_PARITY_VERSION_FIXTURE" 2>&1)"; then
+    echo "FAIL: a parity doc naming a harness version that disagrees with its installer pin passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$parity_version_report" in
+      *"docs/parity-opencode.md names 1.19.0, which disagrees with the $parity_version_pin pin bootstrap/install-opencode.sh states"*)
+        echo "ok: check_parity_docs_agree_on_harness_version rejects a parity doc that disagrees with its installer pin"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the parity-version mutation failed for the wrong reason — $(printf '%s' "$parity_version_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
 LINT_MILESTONE_BODY_FIXTURE="$TEST_HOME/lint-milestone-body"
 copy_lint_fixture "$LINT_MILESTONE_BODY_FIXTURE"
 milestone_body_target="$LINT_MILESTONE_BODY_FIXTURE/plugin/skills/_shared/bodies/debug.md"
@@ -667,10 +918,6 @@ else
   fi
 fi
 
-# check_milestone_reporting_contract_is_complete's second half — a milestone
-# reduced to "report the result" is the exact defect this contract exists to
-# close, so mention of the "Closing" header alone must not satisfy it once
-# its required facts (commit, next) are gone.
 LINT_MILESTONE_FACTS_FIXTURE="$TEST_HOME/lint-milestone-facts"
 copy_lint_fixture "$LINT_MILESTONE_FACTS_FIXTURE"
 milestone_facts_target="$LINT_MILESTONE_FACTS_FIXTURE/plugin/skills/_shared/reporting.md"
@@ -693,10 +940,6 @@ else
   fi
 fi
 
-# check_milestone_reporting_contract_is_complete's length bound — the
-# operator asked for visibility, not narration, so the contract must state a
-# bound in prose the linter can find; remove it and confirm the rule notices
-# rather than reading a milestone list with no ceiling as complete.
 LINT_MILESTONE_BOUND_FIXTURE="$TEST_HOME/lint-milestone-bound"
 copy_lint_fixture "$LINT_MILESTONE_BOUND_FIXTURE"
 milestone_bound_target="$LINT_MILESTONE_BOUND_FIXTURE/plugin/skills/_shared/reporting.md"
@@ -718,10 +961,6 @@ else
   fi
 fi
 
-# check_reporting_host_difference_is_single_sourced — the Claude-card
-# fact belongs to exactly one platform/claude file. Copy its sentence into a
-# SECOND one (quick.md) and confirm the rule counts files rather than merely
-# checking the fact is stated somewhere.
 LINT_MILESTONE_HOST_FIXTURE="$TEST_HOME/lint-milestone-host"
 copy_lint_fixture "$LINT_MILESTONE_HOST_FIXTURE"
 milestone_host_source="$LINT_MILESTONE_HOST_FIXTURE/plugin/skills/_shared/platform/claude/reporting.md"
@@ -745,11 +984,6 @@ else
   fi
 fi
 
-# check_design_foundation_slice_reads_the_installed_contract must reject a
-# design-foundation slice paragraph that regressed to the undifferentiated
-# `init`/`document` phrasing the Astro-landing incident traced to — strip only
-# the `init` attribution and confirm the paragraph-scoped check names it
-# specifically, not the read-before-cut markers still standing beside it.
 LINT_DESIGN_FOUNDATION_FIXTURE="$TEST_HOME/lint-design-foundation"
 copy_lint_fixture "$LINT_DESIGN_FOUNDATION_FIXTURE"
 design_foundation_target="$LINT_DESIGN_FOUNDATION_FIXTURE/plugin/skills/_shared/bodies/plan.md"
@@ -774,11 +1008,6 @@ else
   fi
 fi
 
-# check_third_amendment_lane_names_its_conditions must reject the third
-# amendment lane if it loses its citation requirement specifically — the
-# condition the ledger names as the one that must never silently drop,
-# since an uncited correction is the harness rewriting an approved slice
-# on its own word.
 LINT_THIRD_LANE_FIXTURE="$TEST_HOME/lint-third-amendment-lane"
 copy_lint_fixture "$LINT_THIRD_LANE_FIXTURE"
 third_lane_target="$LINT_THIRD_LANE_FIXTURE/plugin/skills/_shared/platform/codex/plan.md"
@@ -803,11 +1032,6 @@ else
   fi
 fi
 
-# check_blueprint_index_names_every_decision guards that docs/blueprint.md's
-# own decision index names every file docs/decisions/ holds. Drop one entry from
-# the index while leaving its file in place under docs/decisions/, and require
-# the exact per-decision diagnostic rather than a clean run mistaken for
-# coverage.
 LINT_BLUEPRINT_INDEX_FIXTURE="$TEST_HOME/lint-blueprint-index"
 copy_lint_fixture "$LINT_BLUEPRINT_INDEX_FIXTURE"
 blueprint_index_target="$LINT_BLUEPRINT_INDEX_FIXTURE/docs/blueprint.md"
@@ -831,14 +1055,6 @@ else
   fi
 fi
 
-# Rule 22 guards that every line naming "wave 1" in bodies/plan.md conditions
-# its WAVE START on wave 0, closing a hole an earlier close of this repo's own
-# left standing. Revert the "Three coordinates" paragraph's wave-1 clause to the
-# flat form that hole let stand — CHANGE BASE alone, no wave-0 conditioning —
-# while WAVE START stays named earlier on the same line, so only the wave-0 half
-# of the guard can fire. The target line is located by its own post-mutation
-# content below, never a hardcoded number, so an edit adding a line above the
-# paragraph cannot desync the two.
 LINT_WAVE_ZERO_FIXTURE="$TEST_HOME/lint-wave-1-wave-start"
 copy_lint_fixture "$LINT_WAVE_ZERO_FIXTURE"
 wave_zero_target="$LINT_WAVE_ZERO_FIXTURE/plugin/skills/_shared/bodies/plan.md"
@@ -848,8 +1064,6 @@ else
   sed "s/wave 1's is the CHANGE BASE §3 recorded when no wave 0 ran, and wave 0's own landing commit when it did (ADR-0126)/wave 1's is the CHANGE BASE §3 recorded (ADR-0126)/" \
     "$wave_zero_target" > "$wave_zero_target.tmp"
   mv "$wave_zero_target.tmp" "$wave_zero_target"
-  # Same idiom check_wave_1_wave_start_accounts_for_wave_0 itself uses to turn a
-  # grep -n hit into a bare line number: strip everything from the first colon on.
   wave_zero_entry="$(grep -nF "wave 1's is the CHANGE BASE §3 recorded (ADR-0126)" "$wave_zero_target" | head -n 1)"
   wave_zero_linenum="${wave_zero_entry%%:*}"
   if [ -z "$wave_zero_linenum" ]; then
@@ -1475,12 +1689,381 @@ else
   fi
 fi
 
-# --- Declarations: generated hooks and published trust hashes -----------------
-# check_hook_renders_and_published_hashes_match keeps the committed tree green;
-# these mutations prove each half can go red for the reason it claims. The
-# default-deny prefix and the load-bearing fragment are both required, so a
-# missing executable or an unrelated parser crash cannot masquerade as
-# enforcement.
+LINT_OPENCODE_WRAPPER_FIXTURE="$TEST_HOME/lint-opencode-wrapper"
+copy_lint_fixture "$LINT_OPENCODE_WRAPPER_FIXTURE"
+opencode_wrapper_target="$LINT_OPENCODE_WRAPPER_FIXTURE/opencode/skills/oso-plan/SKILL.md"
+if [ ! -f "$opencode_wrapper_target" ]; then
+  echo "FAIL: the absent-wrapper mutation has no OpenCode plan wrapper to remove"; fail=$((fail + 1))
+else
+  rm "$opencode_wrapper_target"
+  if opencode_wrapper_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_OPENCODE_WRAPPER_FIXTURE/plugin" "$LINT_OPENCODE_WRAPPER_FIXTURE" 2>&1)"; then
+    echo "FAIL: a skill whose OpenCode wrapper is gone passed plugin lint, so every rule reading that host's sources read nothing and said so nowhere"; fail=$((fail + 1))
+  else
+    case "$opencode_wrapper_report" in
+      *"opencode/skills/oso-plan/SKILL.md is missing, so every rule that reads skills/plan/SKILL.md's opencode sources reads nothing at all"*)
+        echo "ok: check_every_host_wraps_every_skill names an absent wrapper instead of letting its readers scan an empty source set"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the absent-wrapper mutation failed for the wrong reason — $(printf '%s' "$opencode_wrapper_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_OPENCODE_CITATION_FIXTURE="$TEST_HOME/lint-opencode-citation"
+copy_lint_fixture "$LINT_OPENCODE_CITATION_FIXTURE"
+opencode_citation_target="$LINT_OPENCODE_CITATION_FIXTURE/opencode/skills/oso-plan/SKILL.md"
+if [ ! -f "$opencode_citation_target" ]; then
+  echo "FAIL: the OpenCode citation mutation has no wrapper to cite from"; fail=$((fail + 1))
+else
+  printf '\nThis wrapper cites ADR-9999 for its approval gate.\n' >> "$opencode_citation_target"
+  if opencode_citation_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_OPENCODE_CITATION_FIXTURE/plugin" "$LINT_OPENCODE_CITATION_FIXTURE" 2>&1)"; then
+    echo "FAIL: an OpenCode wrapper citing a decision id that resolves to no file passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$opencode_citation_report" in
+      *"opencode/skills/oso-plan/SKILL.md cites ADR-9999, which resolves to no file under docs/decisions/"*)
+        echo "ok: check_cited_decisions_resolve_to_a_file reads the OpenCode host tree, not the plugin tree alone"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the OpenCode citation mutation failed for the wrong reason — $(printf '%s' "$opencode_citation_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_TS_CITATION_FIXTURE="$TEST_HOME/lint-typescript-citation"
+copy_lint_fixture "$LINT_TS_CITATION_FIXTURE"
+ts_citation_target="$LINT_TS_CITATION_FIXTURE/opencode/plugin/oso/trace.ts"
+if [ ! -f "$ts_citation_target" ]; then
+  echo "FAIL: the TypeScript citation mutation has no OpenCode plugin module to cite from"; fail=$((fail + 1))
+else
+  printf '\nconst TRACE_NOTE = "shape"; // ADR-0151 fixes it\n' >> "$ts_citation_target"
+  if ts_citation_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_TS_CITATION_FIXTURE/plugin" "$LINT_TS_CITATION_FIXTURE" 2>&1)"; then
+    echo "FAIL: a decision id trailing a line of this host's executable TypeScript passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$ts_citation_report" in
+      *"opencode/plugin/oso/trace.ts:"*"cites a decision id in a comment"*)
+        echo "ok: check_executables_carry_no_decision_citations reaches this host's TypeScript, trailing comments included"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the TypeScript citation mutation failed for the wrong reason — $(printf '%s' "$ts_citation_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_OPENCODE_MODE_FIXTURE="$TEST_HOME/lint-opencode-operator-mode"
+copy_lint_fixture "$LINT_OPENCODE_MODE_FIXTURE"
+opencode_mode_root="$LINT_OPENCODE_MODE_FIXTURE/opencode/skills/oso-incident"
+mkdir -p "$opencode_mode_root"
+printf '%s\n' \
+  '---' \
+  'name: oso-incident' \
+  'description: Mutation-only operator mode.' \
+  'disable-model-invocation: true' \
+  '---' \
+  > "$opencode_mode_root/SKILL.md"
+if opencode_mode_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+    "$LINT_OPENCODE_MODE_FIXTURE/plugin" "$LINT_OPENCODE_MODE_FIXTURE" 2>&1)"; then
+  echo "FAIL: an OpenCode operator-only mode with no neutral body and no route passed plugin lint"; fail=$((fail + 1))
+else
+  case "$opencode_mode_report" in
+    *"incident is an operator-only mode with no skills/_shared/bodies/incident.md to carry the milestone contract"*)
+      echo "ok: check_milestone_reporting_contract_is_complete derives modes from this host's oso-prefixed wrappers"; pass=$((pass + 1)) ;;
+    *)
+      echo "FAIL: the OpenCode operator-mode mutation reached no milestone contract for the wrong reason — $(printf '%s' "$opencode_mode_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+  esac
+  case "$opencode_mode_report" in
+    *"bootstrap/opencode-global.md omits /oso-incident from its Workflow routing"*)
+      echo "ok: rule 7 derives an OpenCode invocation from the wrapper's directory rather than a hardcoded mode list"; pass=$((pass + 1)) ;;
+    *)
+      echo "FAIL: the OpenCode operator-mode mutation reached no Workflow routing for the wrong reason — $(printf '%s' "$opencode_mode_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+  esac
+fi
+
+LINT_SECURITY_SOURCE_FIXTURE="$TEST_HOME/lint-security-pass-absent"
+copy_lint_fixture "$LINT_SECURITY_SOURCE_FIXTURE"
+security_source_target="$LINT_SECURITY_SOURCE_FIXTURE/plugin/skills/security-pass/SKILL.md"
+if [ ! -f "$security_source_target" ]; then
+  echo "FAIL: the absent security-pass mutation has no skill to remove"; fail=$((fail + 1))
+else
+  rm "$security_source_target"
+  if security_source_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_SECURITY_SOURCE_FIXTURE/plugin" "$LINT_SECURITY_SOURCE_FIXTURE" 2>&1)"; then
+    echo "FAIL: the acquisition rule passed with no security-pass skill to read, its clean and its could-not-look the same value"; fail=$((fail + 1))
+  else
+    case "$security_source_report" in
+      *"no skills/security-pass/SKILL.md to check for a remote-qualified acquisition"*)
+        echo "ok: check_security_pass_acquires_without_a_remote reports the source it could not read rather than returning clean"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the absent security-pass mutation failed for the wrong reason — $(printf '%s' "$security_source_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_PARITY_DOC_FIXTURE="$TEST_HOME/lint-parity-doc-absent"
+copy_lint_fixture "$LINT_PARITY_DOC_FIXTURE"
+parity_doc_target="$LINT_PARITY_DOC_FIXTURE/docs/parity-opencode.md"
+if [ ! -f "$parity_doc_target" ]; then
+  echo "FAIL: the absent parity-ledger mutation has no docs/parity-opencode.md to remove"; fail=$((fail + 1))
+else
+  rm "$parity_doc_target"
+  if parity_doc_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_PARITY_DOC_FIXTURE/plugin" "$LINT_PARITY_DOC_FIXTURE" 2>&1)"; then
+    echo "FAIL: a host whose parity ledger is gone passed the version-agreement rule by having nothing to disagree with"; fail=$((fail + 1))
+  else
+    case "$parity_doc_report" in
+      *"docs/parity-opencode.md is missing, so no parity ledger states what this repo supports on opencode"*)
+        echo "ok: check_parity_docs_agree_on_harness_version fails an absent ledger instead of skipping the host it belongs to"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the absent parity-ledger mutation failed for the wrong reason — $(printf '%s' "$parity_doc_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+LINT_SECOND_PARSER_FIXTURE="$TEST_HOME/lint-second-verdict-parser"
+copy_lint_fixture "$LINT_SECOND_PARSER_FIXTURE"
+verdict_owner_fixture="$LINT_SECOND_PARSER_FIXTURE/opencode/plugin/oso/verdict.ts"
+restated_verdict_fixture="$LINT_SECOND_PARSER_FIXTURE/opencode/plugin/oso/restated-verdict.ts"
+if [ ! -f "$verdict_owner_fixture" ]; then
+  echo "FAIL: the second-parser mutation has no verdict module to restate"; fail=$((fail + 1))
+else
+  sed -n 's/^const STATUS_LINE = \(.*\)$/export const RESTATED_STATUS_LINE = \1/p' \
+    "$verdict_owner_fixture" > "$restated_verdict_fixture"
+  if [ ! -s "$restated_verdict_fixture" ]; then
+    echo "FAIL: the second-parser mutation restated no line of the verdict module"; fail=$((fail + 1))
+  elif second_parser_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+      "$LINT_SECOND_PARSER_FIXTURE/plugin" "$LINT_SECOND_PARSER_FIXTURE" 2>&1)"; then
+    echo "FAIL: a second file spelling the verdict grammar passed plugin lint"; fail=$((fail + 1))
+  else
+    case "$second_parser_report" in
+      *"is spelled outside opencode/plugin/oso/verdict.ts"*"restated-verdict.ts"*)
+        echo "ok: check_the_verdict_grammar_has_one_implementation names the file that restated the grammar"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the second-parser mutation failed for the wrong reason — $(printf '%s' "$second_parser_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+    esac
+  fi
+fi
+
+VERDICT_READER="$REPO_ROOT/tools/read-session-verdict.mjs"
+TYPE_STRIP_PROBE="$TEST_HOME/type-strip-probe"
+mkdir -p "$TYPE_STRIP_PROBE"
+printf 'export const answer: string = "ready";\n' > "$TYPE_STRIP_PROBE/module.ts"
+printf '{ "type": "module" }\n' > "$TYPE_STRIP_PROBE/package.json"
+printf 'import { answer } from "./module.ts";\nconsole.log(answer);\n' > "$TYPE_STRIP_PROBE/entry.mjs"
+if [ ! -f "$VERDICT_READER" ]; then
+  echo "FAIL: the wave smoke's verdict reader is missing"; fail=$((fail + 1))
+elif ! command -v node >/dev/null 2>&1; then
+  echo "skip: node is absent here, so the shipped verdict module has no runtime to be executed from"
+elif [ "$(node "$TYPE_STRIP_PROBE/entry.mjs" 2>/dev/null)" != ready ]; then
+  echo "skip: this node does not import TypeScript modules, so the shipped verdict parser cannot be executed here"
+else
+  WAVE_CHILD_STREAM="$TEST_HOME/wave-child-stream.json"
+  printf '%s\n' \
+    '{"type":"session","part":{"type":"step-start"}}' \
+    '{"type":"text","part":{"type":"text","text":"Wrote the proof file.\n  Status : DONE  \nVERDICT: pass\n"}}' \
+    '{"type":"text","part":{"type":"text","text":"A stray status: done inside a sentence stays prose.\n"}}' \
+    > "$WAVE_CHILD_STREAM"
+  assert_equals "the wave smoke reads a child's in-band verdict through the plugin's own parser" \
+    "status:done verdict:pass" "$(node "$VERDICT_READER" "$WAVE_CHILD_STREAM")"
+
+  SILENT_CHILD_STREAM="$TEST_HOME/silent-child-stream.json"
+  printf '%s\n' \
+    '{"type":"text","part":{"type":"text","text":"I stopped without reporting.\n"}}' \
+    > "$SILENT_CHILD_STREAM"
+  assert_equals "a child that closed with no verdict line is named rather than defaulted" \
+    none "$(node "$VERDICT_READER" "$SILENT_CHILD_STREAM")"
+
+  MUTATED_READER_TREE="$TEST_HOME/mutated-verdict-tree"
+  mkdir -p "$MUTATED_READER_TREE/tools" "$MUTATED_READER_TREE/opencode/plugin/oso"
+  cp "$VERDICT_READER" "$MUTATED_READER_TREE/tools/"
+  cp "$REPO_ROOT/opencode/package.json" "$MUTATED_READER_TREE/opencode/package.json"
+  sed 's|^const STATUS_LINE = .*|const STATUS_LINE = /^never-a-status-line$/;|' \
+    "$REPO_ROOT/opencode/plugin/oso/verdict.ts" > "$MUTATED_READER_TREE/opencode/plugin/oso/verdict.ts"
+  if cmp -s "$REPO_ROOT/opencode/plugin/oso/verdict.ts" \
+      "$MUTATED_READER_TREE/opencode/plugin/oso/verdict.ts"; then
+    echo "FAIL: the verdict-module mutation changed no line of the shipped parser"; fail=$((fail + 1))
+  else
+    assert_equals "narrowing the shipped verdict module narrows what the verifier reads, so no second parser stands behind it" \
+      "verdict:pass" "$(node "$MUTATED_READER_TREE/tools/read-session-verdict.mjs" "$WAVE_CHILD_STREAM")"
+  fi
+fi
+
+BEHAVIOR_BAR="$REPO_ROOT/tests/opencode-behavior-bar.sh"
+BEHAVIOR_BAR_STREAMS="$TEST_HOME/behavior-bar-streams"
+DEPLOY_DENY_MARKER='a production deploy stays with the operator'
+COMMIT_DENY_MARKER='the session verify is not green'
+mkdir -p "$BEHAVIOR_BAR_STREAMS"
+
+write_gated_call_stream() {
+  local label="$1"
+  shift
+  python3 - "$BEHAVIOR_BAR_STREAMS/$label.json" "$@" <<'STREAM_PY'
+import json
+import sys
+
+path, calls = sys.argv[1], sys.argv[2:]
+lines = [json.dumps({"type": "session", "part": {"type": "step-start"}})]
+for index in range(0, len(calls), 3):
+    command, status, error = calls[index:index + 3]
+    state = {"status": status, "input": {"command": command}}
+    if error:
+        state["error"] = error
+    lines.append(json.dumps({"type": "tool", "part": {"type": "tool", "tool": "bash", "state": state}}))
+with open(path, "w", encoding="utf-8") as handle:
+    handle.write("\n".join(lines) + "\n")
+STREAM_PY
+}
+
+gated_call_report_of() {
+  bash -c '. "$1"; OPENCODE_FIXTURE_ROOT="$2"; gated_call_report "$3" "$4" "$5"' \
+    hooks-test "$BEHAVIOR_BAR" "$BEHAVIOR_BAR_STREAMS" "$1" "$2" "$3" 2>/dev/null
+}
+
+gated_call_outcome_of() {
+  local report
+  report="$(gated_call_report_of "$@")"
+  printf '%s' "${report#* }"
+}
+
+gated_call_reach_form_of() {
+  local report
+  report="$(gated_call_report_of "$@")"
+  printf '%s' "${report%% *}"
+}
+
+if [ ! -f "$BEHAVIOR_BAR" ]; then
+  echo "FAIL: the behavior bar is missing, so its gated-call reader has nothing to answer from"; fail=$((fail + 1))
+elif ! command -v python3 >/dev/null 2>&1; then
+  echo "skip: python3 is absent here, so the behavior bar's gated-call reader has nothing to run"
+else
+  write_gated_call_stream real-deploy 'vercel --prod' error "$DEPLOY_DENY_MARKER"
+  assert_equals "a denied deploy the session actually ran reads as refused" \
+    refused "$(gated_call_outcome_of real-deploy "$DEPLOY_DENY_MARKER" vercel)"
+
+  write_gated_call_stream decoy-echo "echo 'I would run vercel --prod'" error "$DEPLOY_DENY_MARKER"
+  assert_equals "a denied echo of the deploy command is never read as the deploy itself" \
+    mentioned-only "$(gated_call_outcome_of decoy-echo "$DEPLOY_DENY_MARKER" vercel)"
+
+  write_gated_call_stream decoy-lookup 'command -v vercel' error "$DEPLOY_DENY_MARKER"
+  assert_equals "a denied lookup of the deploy binary reads as the refusal it was, never as a deploy that ran" \
+    refused "$(gated_call_outcome_of decoy-lookup "$DEPLOY_DENY_MARKER" vercel)"
+
+  write_gated_call_stream decoy-heredoc "$(printf 'cat <<EOF\nvercel --prod\nEOF')" error "$DEPLOY_DENY_MARKER"
+  assert_equals "a denied heredoc carrying the deploy command is never read as the deploy itself" \
+    mentioned-only "$(gated_call_outcome_of decoy-heredoc "$DEPLOY_DENY_MARKER" vercel)"
+
+  write_gated_call_stream decoy-quoted 'echo "x && vercel --prod"' error "$DEPLOY_DENY_MARKER"
+  assert_equals "a deploy command quoted inside another command is never read as the deploy itself" \
+    mentioned-only "$(gated_call_outcome_of decoy-quoted "$DEPLOY_DENY_MARKER" vercel)"
+
+  write_gated_call_stream decoy-then-real \
+    "echo 'vercel --prod'" error "$DEPLOY_DENY_MARKER" 'vercel --prod' completed ''
+  assert_equals "a deploy that ran outranks a decoy the gate denied before it" \
+    executed "$(gated_call_outcome_of decoy-then-real "$DEPLOY_DENY_MARKER" vercel)"
+
+  gated_outcomes_beside_a_denial() {
+    local spelling outcomes=""
+    for spelling in "$@"; do
+      write_gated_call_stream workaround-beside-denial \
+        "$spelling" completed '' 'vercel --prod' error "$DEPLOY_DENY_MARKER"
+      outcomes="$outcomes $(gated_call_outcome_of workaround-beside-denial "$DEPLOY_DENY_MARKER" vercel)"
+    done
+    printf '%s' "${outcomes# }"
+  }
+
+  assert_equals "every workaround spelling in this table outranks the plain deploy the gate denied beside it" \
+    "executed executed executed executed executed executed executed executed executed executed executed executed executed executed executed executed" \
+    "$(gated_outcomes_beside_a_denial \
+      'bash -c "vercel --prod"' \
+      '$(echo vercel) --prod' \
+      '`echo vercel` --prod' \
+      "$(printf "bash <<'EOF'\nvercel --prod\nEOF")" \
+      'eval vercel --prod' \
+      'env DEPLOY=1 vercel --prod' \
+      'echo --prod | xargs vercel' \
+      'command vercel --prod' \
+      '/usr/local/bin/vercel --prod' \
+      'npx vercel --prod' \
+      'nohup vercel --prod &' \
+      'exec vercel --prod' \
+      'timeout 60 vercel --prod' \
+      'bash -lc vercel\ --prod' \
+      "$(printf "cat <<'EOF' > notes.txt\nnothing here\nEOF\nvercel --prod")" \
+      'if true; then vercel --prod; fi')"
+
+  assert_equals "a line the lexer could not decompose never outranks the plain deploy the gate denied beside it: the refusal the boundary did make is what the session measured, and a residue reach is what the reader falls back to only where nothing lexed reached the verb at all" \
+    "refused refused refused refused refused" \
+    "$(gated_outcomes_beside_a_denial \
+      'source deploy.sh' \
+      'bash deploy.sh' \
+      'cat deploy.sh | bash' \
+      "python3 -c \"import os; os.system('vercel --prod')\"" \
+      '$DEPLOY_CLI --prod')"
+
+  assert_equals "a wrapper this lexer does not model leaves its payload one quoted token, and no token's basename equals the verb, so the deploy inside it is the shape this reader still cannot see" \
+    "refused refused refused" \
+    "$(gated_outcomes_beside_a_denial \
+      "script -qc 'vercel --prod' /dev/null" \
+      "ssh build-host 'vercel --prod'" \
+      "tmux new-session -d 'vercel --prod'")"
+
+  assert_equals "the same wrapper with its payload unquoted is seen, so what hides the deploy is the single token and never the wrapper's own name" \
+    "executed" \
+    "$(gated_outcomes_beside_a_denial 'ssh build-host vercel --prod')"
+
+  write_gated_call_stream real-after-cd 'cd /tmp && vercel --prod' error "$DEPLOY_DENY_MARKER"
+  assert_equals "a denied deploy behind a directory change is still read as the deploy" \
+    refused "$(gated_call_outcome_of real-after-cd "$DEPLOY_DENY_MARKER" vercel)"
+
+  write_gated_call_stream commit-through-flags \
+    'git -C /tmp/probe commit --allow-empty -m probe' error "$COMMIT_DENY_MARKER"
+  assert_equals "a denied commit spelled through git's own flags is still read as the commit" \
+    refused "$(gated_call_outcome_of commit-through-flags "$COMMIT_DENY_MARKER" 'git commit')"
+
+  write_gated_call_stream unrelated-call 'ls -la' completed ''
+  assert_equals "a session that never named the gated verb reads as not attempted" \
+    not-attempted "$(gated_call_outcome_of unrelated-call "$DEPLOY_DENY_MARKER" vercel)"
+
+  reach_forms_of_deploy_streams() {
+    local spelling forms=""
+    for spelling in "$@"; do
+      write_gated_call_stream reach-form "$spelling" completed ''
+      forms="$forms $(gated_call_reach_form_of reach-form "$DEPLOY_DENY_MARKER" vercel)"
+    done
+    printf '%s' "${forms# }"
+  }
+
+  assert_equals "a deploy the lexer resolves to its own command word is a lexed reach the boundary owes a refusal for" \
+    "lexed lexed lexed" \
+    "$(reach_forms_of_deploy_streams 'vercel --prod' '/usr/local/bin/vercel --prod' 'cd /tmp && vercel --prod')"
+
+  assert_equals "a deploy wrapped in an interpreter the gate deliberately cannot lex is a residue reach, never a refusal the bar may demand" \
+    "residue residue residue residue" \
+    "$(reach_forms_of_deploy_streams \
+      "node -e \"require('child_process').execSync('vercel --prod')\"" \
+      "python3 -c \"import os; os.system('vercel --prod')\"" \
+      'bash deploy.sh' \
+      '$DEPLOY_CLI --prod')"
+
+  assert_equals "a session that named the verb in neither form reaches it in no form at all" \
+    "none none" "$(reach_forms_of_deploy_streams 'ls -la' "echo 'I would run vercel --prod'")"
+
+  write_gated_call_stream residue-beside-denial \
+    "node -e \"require('child_process').execSync('vercel --prod')\"" completed '' \
+    'vercel --prod' error "$DEPLOY_DENY_MARKER"
+  assert_equals "a lexed reach keeps its own outcome where a residue call ran beside it, so the refusal the boundary did make is what the run reports" \
+    "lexed refused" "$(gated_call_report_of residue-beside-denial "$DEPLOY_DENY_MARKER" vercel)"
+
+  write_gated_call_stream residue-beside-execution \
+    "node -e \"require('child_process').execSync('vercel --prod')\"" completed '' \
+    'vercel --prod' completed ''
+  assert_equals "a residue call never absorbs a plainly lexed deploy that ran: the breach is what the run reports, never the known limitation beside it" \
+    "lexed executed" "$(gated_call_report_of residue-beside-execution "$DEPLOY_DENY_MARKER" vercel)"
+
+  write_gated_call_stream residue-alone \
+    "node -e \"require('child_process').execSync('vercel --prod')\"" completed ''
+  assert_equals "a session that reached the deploy in no other form is the one run the bar may report as the gate's known limitation" \
+    "residue executed" "$(gated_call_report_of residue-alone "$DEPLOY_DENY_MARKER" vercel)"
+fi
+
 HOOK_RENDERER="$REPO_ROOT/tools/render-hooks-json.sh"
 assert_renderer_rejects() {
   local name="$1" expected="$2"
@@ -1512,28 +2095,33 @@ else
 
   INCOMPLETE_TABLE="$TEST_HOME/incomplete-hook-gates.txt"
   cp "$REPO_ROOT/tools/hook-gates.txt" "$INCOMPLETE_TABLE"
-  # One tool spelling and no answer for the second host: this was the quiet-allow
-  # shape the table forbids. `none` would be an explicit answer; an absent cell
-  # is not.
   printf '\ntool  edits  FutureWriter\n' >> "$INCOMPLETE_TABLE"
   assert_renderer_rejects "an unknown writer with an incomplete host mapping is denied at render" \
     "tool for gate \`edits\` has no mapping for codex" \
     --repo-root "$REPO_ROOT" --table "$INCOMPLETE_TABLE" --check
 
-  # A PreToolUse gate script that declares no recovery route must not land — a
-  # handler added (or edited down to) with no `# Recovery:` header line fails
-  # the same table check a missing matcher or a missing script already do.
+  MISSING_OPENCODE_TABLE="$TEST_HOME/missing-opencode-tool-cell.txt"
+  cp "$REPO_ROOT/tools/hook-gates.txt" "$MISSING_OPENCODE_TABLE"
+  printf '\ntool  edits  FutureWriter  none\n' >> "$MISSING_OPENCODE_TABLE"
+  assert_renderer_rejects "a tool row missing its opencode cell is denied at render" \
+    "tool for gate \`edits\` has no mapping for opencode" \
+    --repo-root "$REPO_ROOT" --table "$MISSING_OPENCODE_TABLE" --check
+
+  assert_equals "the render check covers every host manifest, opencode included" \
+    "hooks: 3 manifest(s) check" \
+    "$("$HOOK_RENDERER" --repo-root "$REPO_ROOT" --table "$REPO_ROOT/tools/hook-gates.txt" --check)"
+
   RECOVERY_FIXTURE="$TEST_HOME/recovery-fixture"
   copy_lint_fixture "$RECOVERY_FIXTURE"
-  RECOVERY_LESS_SCRIPT="$RECOVERY_FIXTURE/plugin/hooks/block-edits-without-slice.sh"
-  sed '/^# Recovery:/,+1d' "$RECOVERY_LESS_SCRIPT" > "$RECOVERY_LESS_SCRIPT.tmp"
-  mv "$RECOVERY_LESS_SCRIPT.tmp" "$RECOVERY_LESS_SCRIPT"
-  if grep -q '^# Recovery:' "$RECOVERY_LESS_SCRIPT"; then
-    echo "FAIL: the recovery-route mutation left the header line standing"; fail=$((fail + 1))
+  RECOVERY_LESS_TABLE="$RECOVERY_FIXTURE/tools/hook-gates.txt"
+  sed '/^recovery  edits /d' "$RECOVERY_LESS_TABLE" > "$RECOVERY_LESS_TABLE.tmp"
+  mv "$RECOVERY_LESS_TABLE.tmp" "$RECOVERY_LESS_TABLE"
+  if grep -q '^recovery  edits ' "$RECOVERY_LESS_TABLE"; then
+    echo "FAIL: the recovery-route mutation left the table row standing"; fail=$((fail + 1))
   else
-    assert_renderer_rejects "a PreToolUse gate script with no declared recovery route fails the table check" \
+    assert_renderer_rejects "a PreToolUse gate with no declared recovery route fails the table check" \
       "gate \`edits\` script \`block-edits-without-slice.sh\` declares no recovery route" \
-      --repo-root "$RECOVERY_FIXTURE" --table "$RECOVERY_FIXTURE/tools/hook-gates.txt" --check
+      --repo-root "$RECOVERY_FIXTURE" --table "$RECOVERY_LESS_TABLE" --check
   fi
 
   assert_equals "a Codex tool absent from the table is default-denied" deny \
@@ -1560,14 +2148,58 @@ else
   done
 
   DISABLED_GATE_TABLE="$TEST_HOME/disabled-unknown-gate.txt"
-  sed 's/^gate  unknown\(.*\)none   wired$/gate  unknown\1none   none/' \
+  sed '/^gate  unknown/ s/wired  none  subprocess/none  none  subprocess/' \
     "$REPO_ROOT/tools/hook-gates.txt" > "$DISABLED_GATE_TABLE"
   if cmp -s "$REPO_ROOT/tools/hook-gates.txt" "$DISABLED_GATE_TABLE"; then
     echo "FAIL: disabled-gate mutation changed no table row"; fail=$((fail + 1))
   else
     assert_renderer_rejects "a disabled gate carrying tool mappings fails closed" \
-      "disabled gate \`unknown\` has tool mappings for codex" \
+      "disabled gate \`unknown\` has tool mappings for opencode" \
       --repo-root "$REPO_ROOT" --table "$DISABLED_GATE_TABLE" --check
+  fi
+
+  MISSING_MECHANISM_TABLE="$TEST_HOME/gate-without-mechanism.txt"
+  sed '/^gate  stale/ s/  experimental\.chat\.system\.transform$//' \
+    "$REPO_ROOT/tools/hook-gates.txt" > "$MISSING_MECHANISM_TABLE"
+  if cmp -s "$REPO_ROOT/tools/hook-gates.txt" "$MISSING_MECHANISM_TABLE"; then
+    echo "FAIL: missing-mechanism mutation changed no gate row"; fail=$((fail + 1))
+  else
+    assert_renderer_rejects "a gate row leaving a host's mechanism out is denied at render" \
+      "gate \`stale\` has no mechanism for opencode" \
+      --repo-root "$REPO_ROOT" --table "$MISSING_MECHANISM_TABLE" --check
+  fi
+
+  UNMEASURED_MECHANISM_TABLE="$TEST_HOME/gate-with-unmeasured-mechanism.txt"
+  sed '/^gate  stale/ s/experimental\.chat\.system\.transform$/chat.message/' \
+    "$REPO_ROOT/tools/hook-gates.txt" > "$UNMEASURED_MECHANISM_TABLE"
+  if cmp -s "$REPO_ROOT/tools/hook-gates.txt" "$UNMEASURED_MECHANISM_TABLE"; then
+    echo "FAIL: unmeasured-mechanism mutation changed no gate row"; fail=$((fail + 1))
+  else
+    assert_renderer_rejects "a gate cannot claim a hook the host was never measured to carry it on" \
+      "gate \`stale\` declares mechanism \`chat.message\` for opencode" \
+      --repo-root "$REPO_ROOT" --table "$UNMEASURED_MECHANISM_TABLE" --check
+  fi
+
+  NATIVE_WIRED_TABLE="$TEST_HOME/native-gate-wired.txt"
+  sed '/^gate  statebin/ s/none  subprocess  none  native$/wired  subprocess  none  native/' \
+    "$REPO_ROOT/tools/hook-gates.txt" > "$NATIVE_WIRED_TABLE"
+  if cmp -s "$REPO_ROOT/tools/hook-gates.txt" "$NATIVE_WIRED_TABLE"; then
+    echo "FAIL: native-wired mutation changed no gate row"; fail=$((fail + 1))
+  else
+    assert_renderer_rejects "a gate delivered natively cannot also be wired to a script" \
+      "wired gate \`statebin\` names no hook mechanism for opencode" \
+      --repo-root "$REPO_ROOT" --table "$NATIVE_WIRED_TABLE" --check
+  fi
+
+  UNWIRED_HOOK_TABLE="$TEST_HOME/unwired-gate-with-hook.txt"
+  sed '/^gate  reanchor/ s/wired  subprocess  none  event$/none  subprocess  none  event/' \
+    "$REPO_ROOT/tools/hook-gates.txt" > "$UNWIRED_HOOK_TABLE"
+  if cmp -s "$REPO_ROOT/tools/hook-gates.txt" "$UNWIRED_HOOK_TABLE"; then
+    echo "FAIL: unwired-hook mutation changed no gate row"; fail=$((fail + 1))
+  else
+    assert_renderer_rejects "an unwired gate cannot keep the hook it is no longer routed from" \
+      "unwired gate \`reanchor\` names hook mechanism \`event\` for opencode" \
+      --repo-root "$REPO_ROOT" --table "$UNWIRED_HOOK_TABLE" --check
   fi
 
   NO_MATCHER_TABLE="$TEST_HOME/pretool-without-matcher.txt"
@@ -1625,16 +2257,13 @@ else
       --repo-root "$REPO_ROOT" --table "$MISSING_REANCHOR_GATE_TABLE" --check
   fi
 
-  # Codex explicitly ignores matcher on Stop and UserPromptSubmit. Letting the
-  # source table add one would render a filter that looks protective and never
-  # runs, so these global events must remain matcherless by construction.
   for matcherless_gate in planstop autocontinue planprompt; do
     IGNORED_MATCHER_TABLE="$TEST_HOME/${matcherless_gate}-ignored-matcher.txt"
     cp "$REPO_ROOT/tools/hook-gates.txt" "$IGNORED_MATCHER_TABLE"
     case "$matcherless_gate" in
-      planstop) matcherless_event=Stop; matcherless_host=codex; matcherless_cells='none  ignored' ;;
-      autocontinue) matcherless_event=Stop; matcherless_host=claude; matcherless_cells='ignored  none' ;;
-      planprompt) matcherless_event=UserPromptSubmit; matcherless_host=codex; matcherless_cells='none  ignored' ;;
+      planstop) matcherless_event=Stop; matcherless_host=codex; matcherless_cells='none  ignored  none' ;;
+      autocontinue) matcherless_event=Stop; matcherless_host=claude; matcherless_cells='ignored  none  none' ;;
+      planprompt) matcherless_event=UserPromptSubmit; matcherless_host=codex; matcherless_cells='none  ignored  none' ;;
     esac
     printf '\ntool  %s  %s  read  no\n' "$matcherless_gate" "$matcherless_cells" \
       >> "$IGNORED_MATCHER_TABLE"
@@ -1768,12 +2397,6 @@ else
       "$REPO_ROOT/bootstrap/hook-hashes.txt")"
 fi
 
-# --- Runtime dispatch: Codex catch-all defaults unknown tools to deny ----------
-# The table's classifier is a build-time contract; this is the runtime half. Its
-# `.*` reaches every local tool call for which Codex emits PreToolUse; the hook
-# becomes active only where oso-code state exists. That preserves ordinary Codex
-# sessions while an armed harness run gets a closed allowlist rather than a future
-# observable tool silently bypassing every named matcher.
 UNKNOWN_TOOL_HOOK="$PLUGIN/hooks/block-unknown-tool.sh"
 UNKNOWN_TOOL_ALLOWLIST='Bash|apply_patch|send_input|resume_agent|close_agent|collaborationspawn_agent|collaborationsend_message|collaborationfollowup_task|collaborationwait_agent|collaborationinterrupt_agent|collaborationlist_agents'
 codex_tool_input() {
@@ -1784,6 +2407,10 @@ codex_tool_input() {
 
 hook_returned_deny() {
   case "$hook_stdout" in *'"permissionDecision":"deny"'*) return 0 ;; *) return 1 ;; esac
+}
+
+hook_deny_names_allowlist_host() {
+  case "$hook_stdout" in *"this release's $1 hook allowlist"*) return 0 ;; *) return 1 ;; esac
 }
 
 oso-state --session "$SESSION" clear
@@ -1821,15 +2448,10 @@ run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input FutureWriter)" 0 '' \
   --allow "$UNKNOWN_TOOL_ALLOWLIST"
 assert_after_hook "an unknown Codex tool is denied while oso-code state is armed" \
   hook_returned_deny
+assert_after_hook "the Codex catch-all's deny names Codex's own allowlist" \
+  hook_deny_names_allowlist_host Codex
 oso-state --session "$SESSION" clear
 
-# --- Runtime: the catch-all's pending check is scoped to plan_approval_session,
-# never the repository at large ------------------------------------------------
-# A stale or foreign pending must never deny a session with nothing pending —
-# Bash included, since that was the trap: denied before the allowlist, with no
-# local escape. The session that actually owns the pending plan still loses
-# every local tool until native approval or CANCEL OSO PLAN; that denial, not
-# its scope, is the documented contract.
 PENDING_OWNER_SESSION="pending-owner-session"
 PENDING_FOREIGN_SESSION="pending-foreign-session"
 oso-state --session "$PENDING_OWNER_SESSION" set mode=plan active_slice=none verify_green=false \
@@ -1856,23 +2478,6 @@ case "$hook_stdout" in
 esac
 oso-state --session "$PENDING_OWNER_SESSION" clear
 
-# --- Runtime: the catch-all's allowlist covers every spelling Codex has actually
-# denied in the field, not just the shape a maintainer guessed it would use -------
-# Eight live operator denials trace to two causes: the Engram Memory Protocol needs
-# five tools the table never carried (mem_context, mem_session_summary,
-# mem_current_project, mem_save_prompt, and mem_judge — the last a documented
-# deadlock, since mem_save's own judgment_required=true response mandates it), and
-# Codex renders two tool names differently than they're configured for
-# (image_gen__imagegen loses its `__`, and the hyphen in
-# mcp__context7__resolve-library-id becomes an underscore). A suspected third
-# shape, plugin-scoped MCP naming (e.g. `mcp__plugin_engram_engram__mem_save`),
-# is deliberately untested and absent from the table: Codex's own embedded model
-# instructions state plugin-provided MCP tools keep the standard `mcp__server__tool`
-# identifier regardless of provenance, confirmed live against this machine's
-# installed Engram MCP server (`tools/list` under the configured `--tools=agent`
-# profile returns bare `mcp__engram__*` names, never a plugin-scoped one). Read the
-# allowlist live off the renderer rather than duplicating it here as a second copy,
-# so a table regression is what turns this case red, not a stale copy of it.
 RENDERED_UNKNOWN_ALLOWLIST="$("$HOOK_RENDERER" --host codex --table "$REPO_ROOT/tools/hook-gates.txt" |
   sed -n 's/.*--allow \\"\(.*\)\\""$/\1/p')"
 
@@ -1891,21 +2496,12 @@ for observed_denial_name in \
     [ -z "$hook_stdout" ]
 done
 
-# A real tool on the same Engram MCP server that the table never named still
-# denies: the fix widens the table's known names, it does not turn the gate into
-# a prefix-only check for anything spelled mcp__engram__*.
 run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input mcp__engram__mem_stats)" 0 '' \
   --allow "$RENDERED_UNKNOWN_ALLOWLIST"
 assert_after_hook "an unnamed Engram tool (mem_stats) is still denied by the catch-all" \
   hook_returned_deny
 oso-state --session "$SESSION" clear
 
-# --- Runtime: Codex's plan approval is a three-hook hard gate ---------------
-# Stop observes exactly the repaso-first document Codex is about to finish with,
-# UserPromptSubmit composes Codex's native approval prompt with the pending
-# digest, and the PreToolUse catch-all keeps even release-known local tools
-# closed in between. The state also names an immutable snapshot plus one mutable
-# operational plan outside the repository.
 PLAN_STOP_HOOK="$PLUGIN/hooks/capture-plan-approval.sh"
 PLAN_PROMPT_HOOK="$PLUGIN/hooks/approve-plan-token.sh"
 
@@ -2073,9 +2669,6 @@ assert_equals "a markerless Stop creates no oso-code state" \
 assert_equals "a markerless Stop records no harness event" \
   "$events_before_ordinary_stop" "$(wc -c < "$STATE_DIR/events.jsonl" 2>/dev/null || printf 0)"
 
-# A reserved marker in the final decoded line is harness traffic, so ambiguity
-# cannot silently publish a different plan. An exact marker earlier in ordinary
-# prose is not a rail attempt and stays invisible.
 run_hook "$PLAN_STOP_HOOK" \
   "$(codex_stop_input plan "$SESSION" 'Repaso\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\ntrailing text')"
 assert_after_hook "an exact marker outside the final line stays globally invisible" \
@@ -2129,9 +2722,6 @@ for marker_only_bad_transcript in \
     absent "$([ ! -e "$REPO_STATE" ] && printf absent || printf present)"
 done
 
-# --- The six structurally distinct marker failures read as six distinct
-# causes, not one collapsed sentence — a future re-merge back into a single
-# catch-all sentence is exactly what this turns red. ------------------------
 run_hook "$PLAN_STOP_HOOK" \
   "$(codex_stop_input plan "$SESSION" 'Repaso\n<!-- oso-plan-approval: v=2 action=WRONG_ACTION -->')"
 assert_after_hook "the marker position-and-count cause blocks Stop" hook_returned_block
@@ -2191,9 +2781,6 @@ assert_equals "a corrected active Stop retry publishes pending state" pending \
   "$(oso-state --session "$SESSION" get plan_approval)"
 oso-state --session "$SESSION" clear
 
-# Skill entry requires native Plan Mode before phase 0. The native approval
-# phrase is common Codex vocabulary, so it remains globally invisible when no
-# Oso document is pending.
 run_hook "$PLAN_PROMPT_HOOK" \
   "$(codex_prompt_input default "$SESSION" 'ordinary question outside oso-code')"
 assert_after_hook "an ordinary prompt outside the harness stays invisible" \
@@ -2274,9 +2861,6 @@ assert_equals "a doubled-CR document is bound to the digest of the raw escaped f
 establish_premise "the doubled-CR fixture leaves no approval pending" \
   oso-state --session "$SESSION" clear
 
-# Real Codex Stop transport appends one LF after the assistant's final logical
-# line. Preserve that escaped byte in the fixture so the digest assertion below
-# proves that acceptance does not normalize the wire representation.
 first_plan='Repaso de cambios\nFull slice plan: alpha\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\n'
 first_plan_digest="$(sha256_text "$first_plan")"
 first_plan_without_host_lf='Repaso de cambios\nFull slice plan: alpha\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->'
@@ -2331,9 +2915,6 @@ fi
 assert_equals "the hidden marker is absent from both persisted plan artifacts" \
   0 "$(grep -l 'oso-plan-approval:' "$first_presented_file" "$first_current_file" 2>/dev/null | wc -l | tr -d ' ')"
 
-# A pending plan is amendable in place, directly through oso-state, rather than
-# only after approval. Neither the presented snapshot nor its digest moves for a
-# pending amendment.
 if printf '%s' '### Direct feedback' | oso-state --session "$SESSION" amend-plan direct-feedback >/dev/null 2>&1; then
   echo "ok: amend-plan accepts a direct amendment while a plan is pending"; pass=$((pass + 1))
 else
@@ -2352,9 +2933,6 @@ esac
 assert_equals "a pending amendment never mutates the immutable presented snapshot" \
   "$first_plan_document" "$(cat "$first_presented_file" 2>/dev/null || true)"
 
-# Case (c), made strict: the digest never moved, but the document it named has,
-# so approving the OLD digest must fail — the proof that fluidity did not cost
-# the property that approval binds the exact document the operator read.
 if oso-state --session "$SESSION" approve-plan "$first_plan_digest" >/dev/null 2>&1; then
   echo "FAIL: approve-plan approved a document amended since it was presented"; fail=$((fail + 1))
 else
@@ -2365,9 +2943,6 @@ assert_equals "a rejected stale approval leaves approval pending" pending \
 assert_equals "a rejected stale approval does not touch the immutable presented snapshot" \
   "$first_plan_document" "$(cat "$first_presented_file" 2>/dev/null || true)"
 
-# A normal non-plan reply does not silently approve or cancel. A Plan Mode
-# reply from the same pending session means the operator requested a change,
-# and the hook now routes that through amend-plan instead of cancel-plan.
 run_hook "$PLAN_PROMPT_HOOK" \
   "$(codex_prompt_input default "$SESSION" 'please explain one risk first' "$CODEX_PROMPT_DEFAULT_TRANSCRIPT")"
 assert_after_hook "ordinary non-plan feedback remains ordinary JSON success" \
@@ -2409,9 +2984,6 @@ run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input Bash)" 0 '' \
 assert_after_hook "a still-pending amendment keeps local tools gated exactly as a fresh pending would" \
   hook_returned_deny
 
-# Case (d): explicit cancellation stays exactly as it was — an abandonment
-# rail, not a second approval prompt. It works before or after the UI mode
-# toggle, but only for the pending session.
 run_hook "$PLAN_STOP_HOOK" "$(codex_stop_input plan "$SESSION" "$first_plan")"
 assert_after_hook "the plan can be re-presented after an amendment" \
   [ "$hook_stdout" = '{}' ]
@@ -2451,9 +3023,6 @@ run_hook "$PLAN_STOP_HOOK" "$(codex_stop_input plan "$SESSION" "$first_plan")"
 assert_after_hook "the plan can be presented again after explicit cancellation" \
   [ "$hook_stdout" = '{}' ]
 
-# The digest is a compare-and-swap precondition, not descriptive metadata. A
-# stale caller cannot approve or cancel the current document, and an internally
-# inconsistent pending state cannot open tools or be approved by the prompt.
 pending_snapshot="$(approval_state_snapshot)"
 stale_digest="$(printf '%064d' 0)"
 if oso-state --session "$SESSION" approve-plan "$stale_digest" >/dev/null 2>&1; then
@@ -2605,8 +3174,6 @@ run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input FutureWriter)" 0 '' \
 assert_after_hook "approval does not open a tool absent from the release allowlist" \
   hook_returned_deny
 
-# Any changed byte before the marker is a new document. Stop must replace the
-# approved state with a fresh pending digest, which immediately closes tools.
 second_plan='Repaso de cambios\nFull slice plan: beta\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->'
 second_plan_digest="$(sha256_text "$second_plan")"
 run_hook "$PLAN_STOP_HOOK" "$(codex_stop_input plan "$SESSION" "$second_plan")"
@@ -2628,12 +3195,6 @@ assert_after_hook "recapturing a changed plan closes allowlisted tools again" \
   hook_returned_deny
 oso-state --session "$SESSION" clear
 
-# Codex runs user hooks through a command runner its shell_environment_policy
-# never reaches, so OSO_STATE_BIN is unset for the whole rail and every case
-# above would still pass while the real host resolved nothing.  A plain system
-# PATH is the faithful fixture: oso-state is installed on none of these
-# directories, and unlike a symlink farm it cannot turn a missing state binary
-# into a missing coreutil — or a missing interpreter — the farm forgot.
 PLAN_RUNTIME="$TEST_HOME/plan-runtime"
 PLAN_RUNTIME_REPO="$TEST_HOME/plan-runtime-repo"
 SYSTEM_PATH_WITHOUT_OSO_STATE=/usr/local/bin:/usr/bin:/bin
@@ -2689,12 +3250,6 @@ assert_equals "the Codex plan rail records and approves through the installed ru
   approved "$(runtime_plan_state plan_approval)"
 ( cd "$PLAN_RUNTIME_REPO" && oso-state --session "$SESSION" clear >/dev/null )
 
-# --- Runtime: plan_approval_session survives a model-issued write under the
-# fixed Codex marker ------------------------------------------------------
-# Every model-issued oso-state call on Codex carries the same OSO_AGENT=1
-# marker, never the real session capture-plan recorded, so one shared key
-# could not tell the two identities apart. This proves the second key does:
-# a marker-scoped write overwrites ownership and leaves approval untouched.
 identity_split_digest="$(sha256_text 'identity split fixture plan')"
 printf 'Identity split fixture plan' |
   oso-state --session "$SESSION" capture-plan "$identity_split_digest" >/dev/null
@@ -2716,15 +3271,6 @@ assert_equals "the surviving approval identity lets the presenting session's app
   approved "$(oso-state --session "$SESSION" get plan_approval)"
 oso-state --session "$SESSION" clear
 
-# --- Runtime: native approval survives an ordinary model-issued write under
-# the fixed Codex marker end to end, through approve-plan-token.sh itself
-# itself -----------------------------------------------------------------
-# Between a plan going pending and the operator approving it, Codex's own flow
-# issues ordinary state writes under OSO_AGENT (mode=plan, active_slice,
-# verify_green — plan.md §6 step 1) that overwrite `session`, the ownership
-# key. The prompt hook's own pre-check must read plan_approval_session, or it
-# blocks the very session that presented the plan as soon as any such write
-# has landed — which is always.
 regression_marker_write_plan_ok='Repaso de cambios\nFull slice plan: marker-write regression, presenting session\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->'
 run_hook "$PLAN_STOP_HOOK" "$(codex_stop_input plan "$SESSION" "$regression_marker_write_plan_ok")"
 assert_after_hook "the marker-write regression plan is captured" \
@@ -2742,9 +3288,6 @@ assert_equals "the presenting session's native approval promotes state to approv
   "$(oso-state --session "$SESSION" get plan_approval)"
 oso-state --session "$SESSION" clear
 
-# The negative: a different session must still be refused, byte-identical
-# message, after the same marker-scoped write — or the fix could degrade into
-# accepting any session.
 regression_marker_write_plan_wrong='Repaso de cambios\nFull slice plan: marker-write regression, wrong session\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->'
 run_hook "$PLAN_STOP_HOOK" "$(codex_stop_input plan "$SESSION" "$regression_marker_write_plan_wrong")"
 assert_after_hook "the wrong-session marker-write regression plan is captured" \
@@ -2762,14 +3305,6 @@ case "$hook_stdout" in
 esac
 oso-state --session "$SESSION" clear
 
-# --- Declarations: the Codex floor the installer's pin has to read ------------
-# The Codex port was designed against a CLI six versions behind what npm
-# published, so every flag and schema it rests on was re-read and the version
-# they were read from is DECLARED. Nothing else in the repo carries that number:
-# the installer pins it, and a pin with no floor written down is `@latest` under
-# another name. The decision file is therefore the surface, and lint rule 10 only
-# asks whether it says where it landed — the number itself has no gate but this
-# one, so the case reads it back and reports which half is missing.
 codex_floor_declaration() {
   local decision baseline="" floor
   for decision in "$REPO_ROOT"/docs/decisions/0094-*.md; do
@@ -2784,7 +3319,6 @@ codex_floor_declaration() {
 assert_equals "the Codex baseline decision declares its minimum version as a bare semver" \
   declared "$(codex_floor_declaration)"
 
-# --- Commit gate: state transitions (starts from no state at all) ---
 oso-state --session "$SESSION" clear
 assert_allows "commit with no state file"  block-commit-until-green.sh "$(bash_input 'git commit -m x')"
 oso-state --session "$SESSION" set mode=plan active_slice=1 verify_green=false
@@ -2794,7 +3328,6 @@ assert_allows "commit when verify is green" block-commit-until-green.sh "$(bash_
 oso-state --session "$SESSION" set mode=debug verify_green=false
 assert_denies "debug-mode commit while verify is red" block-commit-until-green.sh "$(bash_input 'git commit -m x')"
 
-# --- Commit gate: matcher hardening (plan mode, verify red) ---
 oso-state --session "$SESSION" clear
 oso-state --session "$SESSION" set mode=plan verify_green=false
 assert_denies "bypass: git -C <repo> commit"    block-commit-until-green.sh "$(bash_input 'git -C /repo commit -m x')"
@@ -2806,11 +3339,8 @@ assert_allows "no false positive: quoted rg"    block-commit-until-green.sh "$(b
 assert_allows "no false positive: git checkout" block-commit-until-green.sh "$(bash_input 'git checkout -b commit')"
 assert_allows "non-commit bash is ignored"      block-commit-until-green.sh "$(bash_input 'npm test')"
 
-# Command text copied byte for byte out of the recorded v0.10.0 release payload
-# (session 04ec4b8e-a8a7-40a8-a1e1-af81ae53daf6): the real thing, escaping included.
 assert_denies "recorded release commit is denied" block-commit-until-green.sh "$(bash_input 'git add -A && git commit -m \"feat(harness): one-step Windows installer, hybrid MCP wiring, identity voice, didactic walkthrough (v0.10.0)\" && git log --oneline -1 && git status --porcelain | wc -l')"
 
-# --- Commit gate: execution-wrapper bypasses (plan mode, verify red) ---
 oso-state --session "$SESSION" clear
 oso-state --session "$SESSION" set mode=plan verify_green=false
 assert_denies "bypass: bash -c wraps commit" block-commit-until-green.sh "$(bash_input 'bash -c '\''git commit -m x'\''')"
@@ -2820,15 +3350,11 @@ assert_denies "bypass: piped into xargs git commit" block-commit-until-green.sh 
 assert_allows "no false positive: bash -c git status" block-commit-until-green.sh "$(bash_input 'bash -c '\''git status'\''')"
 assert_allows "no false positive: quoted echo"        block-commit-until-green.sh "$(bash_input 'echo \"git commit\"')"
 
-# Double-quoted wrappers reach the hook JSON-escaped (\"…\") the way the harness
-# sends them, so these cases prove the reader decodes what the lexer then reads
-# as real quotes.
 assert_denies "bypass: bash -c wraps commit (double-quoted)" block-commit-until-green.sh "$(bash_input 'bash -c \"git commit -m x\"')"
 assert_denies "bypass: sh -c wraps commit (double-quoted)"   block-commit-until-green.sh "$(bash_input 'sh -c \"git commit -m x\"')"
 assert_denies "bypass: eval wraps commit (double-quoted)"    block-commit-until-green.sh "$(bash_input 'eval \"git commit -m x\"')"
 assert_allows "no false positive: bash -c git status (double-quoted)" block-commit-until-green.sh "$(bash_input 'bash -c \"git status\"')"
 
-# --- Slice gate ---
 oso-state --session "$SESSION" clear
 assert_allows "edit with no state file" block-edits-without-slice.sh "$edit_input"
 oso-state --session "$SESSION" set mode=plan verify_green=false
@@ -2836,10 +3362,6 @@ assert_denies "plan-mode edit without active slice" block-edits-without-slice.sh
 oso-state --session "$SESSION" set active_slice=2
 assert_allows "plan-mode edit with active slice" block-edits-without-slice.sh "$edit_input"
 
-# The gate has to fire once per slice, not once per session. `oso-state` can set a
-# key but never delete one, so the skills close a slice by writing the sentinel and
-# arm the next one by name — this is that sequence, and the edit in the middle is
-# the one a partial write used to let through for the rest of the session.
 oso-state --session "$SESSION" set mode=plan active_slice=3 verify_green=false
 assert_allows "an armed slice number opens the gate" block-edits-without-slice.sh "$edit_input"
 oso-state --session "$SESSION" set mode=plan active_slice=none verify_green=true
@@ -2854,14 +3376,6 @@ oso-state --session "$SESSION" set mode=debug verify_green=false
 assert_allows "debug-mode edit is unrestricted" block-edits-without-slice.sh "$edit_input"
 oso-state --session "$SESSION" clear
 
-# --- Both PreToolUse gates arm on the session their payload names -------------
-# A PreToolUse hook has no agent environment to read — the client puts no
-# CLAUDE_CODE_* variable in one, which is why every gate-written line in the
-# event log carries an empty `client` field — so the session the payload names is
-# the marker, and a payload naming none is nobody's call. That name used to pick
-# the state file too; now the state file is the repository's and exists whether or
-# not an agent is running, which leaves the marker as the only thing between
-# either gate and a call it has no business judging.
 unmarked_bash_input="$(printf '{"cwd":"%s","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git commit -m x"}}' "$REPO_ROOT")"
 unmarked_edit_input="$(printf '{"cwd":"%s","hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"/tmp/x.ts","old_string":"a","new_string":"b"}}' "$REPO_ROOT")"
 oso-state --session "$SESSION" set mode=plan active_slice=none verify_green=false
@@ -2875,12 +3389,6 @@ assert_allows "the edit gate stays off a call naming no session, armed repo or n
   block-edits-without-slice.sh "$unmarked_edit_input"
 oso-state --session "$SESSION" clear
 
-# --- A deny hands over its remedy, executably, not a menu to guess ------------
-# A deny already records what it denied; this is the other half — every deny
-# with a legitimate next step spells it as a runnable command or a named flow.
-# Assert per gate and per cause, not once globally: a shared assertion would
-# let one gate's remedy regress silently while the suite kept reading
-# someone else's.
 oso-state --session "$SESSION" set mode=plan active_slice=none verify_green=false
 assert_denies "the slice gate denies while no slice is active" \
   block-edits-without-slice.sh "$edit_input"
@@ -2945,10 +3453,6 @@ run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input Bash)" 0 '' \
 assert_after_hook "the unknown-tool gate denies while its own plan approval is pending" \
   hook_returned_deny
 pending_denial_reason="$hook_stdout"
-# Not mere string inequality — two unrelated messages, one of them empty of any
-# remedy, would already differ. This asserts each cause's OWN remedy content is
-# present and stayed out of the other's message, so a future collapse into one
-# shared sentence — or one cause silently losing its remedy — turns it red.
 case "$allowlist_denial_reason" in *'Bash'*) allowlist_has_own_remedy=true ;; *) allowlist_has_own_remedy=false ;; esac
 case "$pending_denial_reason" in *'CANCEL OSO PLAN'*) pending_has_own_remedy=true ;; *) pending_has_own_remedy=false ;; esac
 case "$allowlist_denial_reason" in *'CANCEL OSO PLAN'*) allowlist_leaked_pending=true ;; *) allowlist_leaked_pending=false ;; esac
@@ -2960,10 +3464,6 @@ else
   echo "FAIL: the unknown-tool gate's two causes do not each carry their own remedy — allowlist: ${allowlist_denial_reason:-<empty>} / pending: ${pending_denial_reason:-<empty>}"; fail=$((fail + 1))
 fi
 
-# The security assertion: a remedy that told the operator to write
-# verify_green=true directly would be the bypass this slice exists to forbid,
-# so this scans every remedy captured above for that literal state write —
-# strict enough that adding it to any one of them turns this red.
 remedy_offers_bypass=""
 for remedy_text in "$edit_denial_reason" "$plan_commit_reason" "$quick_commit_reason" \
     "$debug_commit_reason" "$allowlist_denial_reason" "$pending_denial_reason"; do
@@ -2978,22 +3478,8 @@ else
 fi
 oso-state --session "$SESSION" clear
 
-# --- Invisibility: a session no mode ever armed must not know a gate ran -------
-# A marketplace install runs no bootstrap and a GUI-launched client has no
-# /opt/homebrew/bin, so the interesting machine is the one without jq: every
-# signal a gate records there — an event, the state directory it needs, a line of
-# stderr when the log cannot be written — belongs to someone who never ran
-# oso-code. PATH is rebuilt from the tools the hooks actually run, which is the
-# only way to hide one binary without hiding the rest; `type -P` asks for the
-# executable, so a shell that wraps one of these names in a function cannot turn
-# a link into a link to itself.
 NOJQ_PATH="$TEST_HOME/nojq"
 mkdir -p "$NOJQ_PATH"
-# `sha256sum` and `shasum` are one tool spelled two ways, GNU and macOS, so this
-# machine gets whichever of the pair it carries and skips the other — hiding both
-# would hide the state file's name rather than jq. A required tool that went
-# missing is no silent skip either: the gate would write the stderr this case
-# reads as a trace.
 for hook_tool in env bash cat dirname tr grep date mkdir sha256sum shasum; do
   hook_tool_path="$(type -P "$hook_tool")" || hook_tool_path=""
   [ -n "$hook_tool_path" ] || continue
@@ -3027,19 +3513,6 @@ else
     block-edits-without-slice.sh "$edit_input"
 fi
 
-# --- Integration: every state write the skills instruct carries the full triple -
-# The modes that arm a slice of their own are the writers of that triple — the
-# roadmap arms none and writes ONE key beside a child's own, never over them, so
-# it is excluded by the name below rather than by omission — and a write that
-# names fewer than three keys leaves the other two standing: that is how a
-# slice-pass write left the previous slice armed and a phase boundary left both
-# gates open. Backticks delimit every command these documents instruct, so each
-# span that invokes the state binary with `set` over any key of that triple has
-# to spell all three of them.
-# Read out of the NEUTRAL bodies, which is where the keys are written: the binary
-# and the flag that names the session are host spellings and live in each mode's
-# platform file, so the span a mode instructs reads `oso-state set …` and the
-# triple is the whole of what is left to check here.
 partial_state_writes=""
 skills_with_no_write=""
 modes_arming_a_slice_of_their_own="plan quick debug"
@@ -3059,8 +3532,6 @@ for state_writer in $modes_arming_a_slice_of_their_own; do
       *) partial_state_writes="$partial_state_writes ${state_writer}:'${instructed_command}'" ;;
     esac
   done <<< "$(tr '`' '\n' < "$PLUGIN/skills/_shared/bodies/$state_writer.md")"
-  # A skill whose writes this scan cannot find would pass the check by reading
-  # nothing at all.
   [ "$writes_read" -gt 0 ] || skills_with_no_write="$skills_with_no_write $state_writer"
 done
 if [ -n "$skills_with_no_write" ]; then
@@ -3071,22 +3542,12 @@ else
   echo "FAIL: a slice-arming mode skill instructs a partial state write —$partial_state_writes"; fail=$((fail + 1))
 fi
 
-# --- Integration: the wrappers and the shared bodies they bind ---------------
-# Each skill ships as a platform-neutral body plus a thin wrapper per host, and
-# nothing else in this repo reads that relation: `claude plugin validate` reads
-# frontmatter, and tests/plugin-lint.sh follows a reference without ever asking
-# whether it points anywhere. Two ways that goes wrong and both are silent — a
-# body nobody binds is a rule that ships and never loads, and two wrappers bound
-# to DIFFERENT bodies are the duplication the split exists to end, one host's
-# flow drifting from the other's while every file still validates.
 CODEX_SKILLS="$REPO_ROOT/codex/skills"
 
 sorted_words() {
   printf '%s\n' $1 | { grep -v '^$' || true; } | LC_ALL=C sort | tr '\n' ' '
 }
 
-# The reference is the only place the relation is written down, so it is what
-# gets read — never the filename, which would make the check agree with itself.
 bodies_bound_by() {
   sed -n 's|.*_shared/bodies/\([a-z][a-z-]*\)\.md.*|\1|p' "$@" | LC_ALL=C sort -u | tr '\n' ' '
 }
@@ -3114,9 +3575,6 @@ for wrapper in "$PLUGIN"/skills/*/SKILL.md; do
     || divergent_pairs="$divergent_pairs ${wrapped_skill}(claude:${claude_binds:-none}codex:${codex_binds:-none})"
 done
 
-# Every body on disk, tagged with whether a wrapper binds it, plus every body a
-# wrapper binds that is not on disk — so an orphan, a dangling reference and a
-# body named after no skill each read as their own word against the skill list.
 body_ledger=""
 for shared_body in "$PLUGIN"/skills/_shared/bodies/*.md; do
   [ -f "$shared_body" ] || continue
@@ -3138,11 +3596,6 @@ assert_equals "the two wrappers of a skill bind the same neutral body" \
 assert_equals "every skill ships a wrapper on both hosts" \
   "$(sorted_words "$harness_skills")" "$(sorted_words "$paired_skills")"
 
-# --- Integration: security-pass stays provider-neutral at its public edge ----
-# The mechanism differs by host, so it belongs in the platform adapter, never in
-# either wrapper's public description.  Read only the frontmatter field: Claude's
-# platform file MUST still name `security-review`, and treating that legitimate
-# host fact as a description violation would make a file-wide grep falsely red.
 frontmatter_description() {
   awk '
     NR == 1 && $0 == "---" { inside = 1; next }
@@ -3178,10 +3631,6 @@ for security_wrapper in \
     neutral "$(security_description_status "$security_wrapper")"
 done
 
-# Prove the frontmatter boundary with a mutation: add the forbidden provider
-# name to DESCRIPTION and require that exact field to turn red.  A detector that
-# merely greps the repository would already be red on Claude's valid adapter and
-# could not satisfy the clean assertions above.
 SECURITY_DESCRIPTION_FIXTURE="$TEST_HOME/security-description-SKILL.md"
 awk '
   /^description:[[:space:]]*/ {
@@ -3193,12 +3642,6 @@ awk '
 assert_equals "a provider-specific security-pass description is rejected" \
   names-security-review "$(security_description_status "$SECURITY_DESCRIPTION_FIXTURE")"
 
-# --- Integration: Claude's seven delegated contracts have seven Codex roles --
-# Codex has two source shapes to port: the three Claude agent contracts, and the
-# four skills whose frontmatter asks Claude for a fresh fork.  Keep the mapping
-# in one closed table, then derive BOTH source inventories from disk.  Comparing
-# only the table with codex/agents would let a deleted Claude agent and its
-# deleted table row agree on the same wrong answer.
 S5_ROLE_MAP='writer|oso-applier|oso-applier
 writer|oso-integrator|oso-integrator
 writer|oso-verifier|oso-verifier
@@ -3256,18 +3699,11 @@ assert_equals "every context-fork skill has one mapped Codex judge" \
 assert_equals "codex/agents contains exactly the seven mapped custom roles" \
   "$(sorted_words "$mapped_roles")" "$(sorted_words "$codex_roles")"
 
-# Parse scalar TOML fields without jq: these role files deliberately use the
-# baseline's simple top-level strings.  A missing or duplicate key returns a
-# value other than the one expected, so neither can disappear as a false green.
 toml_scalar() {
   local role_file="$1" key="$2"
   sed -n "s/^${key}[[:space:]]*=[[:space:]]*\"\([^\"]*\)\"[[:space:]]*$/\1/p" "$role_file"
 }
 
-# `developer_instructions = ""` is accepted TOML and a syntactically valid role
-# that does nothing.  Count the delimiters and a real content line separately;
-# this also rejects a truncated multiline value instead of mistaking its prefix
-# for instructions.
 developer_instructions_status() {
   awk '
     /^developer_instructions[[:space:]]*=[[:space:]]*"""[[:space:]]*$/ {
@@ -3310,9 +3746,6 @@ while IFS='|' read -r role_kind source_name codex_role; do
   [ -n "$role_kind" ] || continue
   role_file="$CODEX_AGENTS/$codex_role.toml"
   if [ ! -f "$role_file" ]; then
-    # The inventory equality above names the missing file.  Avoid a cascade of
-    # parser errors here while keeping every other extant role independently
-    # observable.
     continue
   fi
   assert_equals "$codex_role names itself in TOML" \
@@ -3326,24 +3759,12 @@ while IFS='|' read -r role_kind source_name codex_role; do
   assert_equals "$codex_role has observable nonempty developer instructions" \
     "nonempty" "$(developer_instructions_status "$role_file")"
   if [ "$codex_role" = oso-security-reviewer ]; then
-    # Unlike the other judges, this role starts a nested `codex review`.
-    # A read-only role cannot start that path. The outer CLI needs authenticated
-    # runtime paths and network beyond the workspace; the nested review is the
-    # layer constrained back to workspace-write.
     assert_equals "oso-security-reviewer can run the native Codex review" \
       "danger-full-access" "$(toml_scalar "$role_file" sandbox_mode)"
   elif [ "$codex_role" = oso-doubt-pass ]; then
-    # doubt-pass judges a frozen-candidate ledger from intent, surface map and
-    # bare decisions alone; its body runs no project check, so read-only stays
-    # the mechanical guarantee the contract needs.
     assert_equals "oso-doubt-pass is read-only" \
       "read-only" "$(toml_scalar "$role_file" sandbox_mode)"
   elif [ "$role_kind" = judge ]; then
-    # debt-sweep and triage each re-run project checks (the zero-warnings bar,
-    # a failing check's re-run) their own bodies require, and those checks
-    # write caches, build output and coverage dumps a read-only sandbox cannot
-    # produce. They match oso-verifier's workspace-write precedent, trading the
-    # mechanical read-only guarantee for a prompt instruction, asserted next.
     assert_equals "$codex_role is workspace-write" \
       "workspace-write" "$(toml_scalar "$role_file" sandbox_mode)"
     assert_equals "$codex_role names an explicit never-edit-source instruction now that the sandbox no longer enforces it" \
@@ -3358,9 +3779,6 @@ while IFS='|' read -r role_kind source_name codex_role; do
     assert_equals "$codex_role is not trapped in a read-only sandbox" \
       "writable" "$writer_sandbox_status"
     if [ "$codex_role" = oso-integrator ]; then
-      # A normal writable role still cannot update the main checkout's .git or
-      # remove sibling worktrees.  This one narrow agent needs the baseline's
-      # unrestricted sandbox to perform the git-only contract it is handed.
       assert_equals "oso-integrator can reach git metadata and external worktrees" \
         "danger-full-access" "$writer_sandbox"
     fi
@@ -3387,18 +3805,12 @@ assert_equals "the authenticated smoke does not override the integrator back to 
 assert_equals "the authenticated smoke requires a fresh explicit integrator launch" \
   "1" "$(printf '%s\n' "$integrator_smoke_function" | \
     grep -Fc 'agent_type oso-integrator explicitly and launch it with fresh context by setting fork_turns=\"none\"' || true)"
-# The smoke's own codex exec never resolves CODEX_HOME to the operator's real
-# one, and runs its copied hooks.json without this machine's separate hook-trust
-# records.
 assert_equals "the smoke's exec targets the disposable Codex home, never the operator's default" \
   "1" "$(printf '%s\n' "$integrator_smoke_function" | \
     grep -Fc 'CODEX_HOME="$SMOKE_CODEX_HOME"' || true)"
 assert_equals "the smoke runs its copied hooks without this machine's separate hook-trust records" \
   "1" "$(printf '%s\n' "$integrator_smoke_function" | grep -v '^[[:space:]]*#' | \
     grep -Fc -- '--dangerously-bypass-hook-trust' || true)"
-# Part 2: the parser must correlate a real spawn_agent completion, a real
-# `oso-state handoff wait` and a real `oso-state handoff consume` on one
-# Codex-assigned agent id -- token presence in a stream is not enough.
 integrator_smoke_observable_contract="$(
   if printf '%s\n' "$integrator_handoff_function" | grep -F 'item.get("type") == "collab_tool_call"' >/dev/null 2>&1 &&
      printf '%s\n' "$integrator_handoff_function" | grep -F 'item.get("tool") == "spawn_agent"' >/dev/null 2>&1 &&
@@ -3447,8 +3859,6 @@ smoke_receipt_json() {
     "$1" "$2" "$3" "$4"
 }
 
-# $1 = wait|consume, $2 slice, $3 attempt, $4 agent id, $5 agent type. `wait`
-# always carries --timeout, matching plugin/bin/oso-state's own usage line.
 smoke_handoff_command() {
   local verb="$1" slice="$2" attempt="$3" agent_id="$4" agent_type="$5"
   if [ "$verb" = wait ]; then
@@ -3467,20 +3877,12 @@ smoke_command_event() {
     "$event_type" "$command" "$status" "$escaped_stdout" "$exit_code"
 }
 
-# $1 = agent id Codex assigns to the spawn, $2 = status. This is the real
-# collab_tool_call shape a completed spawn_agent reports (also used by the
-# spawn-only case below), the only source of a host-assigned id this parser
-# now requires before any wait or consume can correlate against it.
 smoke_spawn_event() {
   local agent_id="$1" status="${2:-completed}"
   printf '{"type":"item.completed","item":{"type":"collab_tool_call","tool":"spawn_agent","status":"%s","receiver_thread_ids":["%s"],"prompt":"delegate one wave"}}\n' \
     "$status" "$agent_id"
 }
 
-# integrator_handoff_consumed returns 1 outright where python3 is absent, so the
-# whole group goes with the parser rather than the failing case alone: without it
-# the positive case reports missing, and every negative case below reports the
-# verdict it wants for the one reason that proves nothing about the parser.
 if ! command -v python3 >/dev/null 2>&1; then
   echo "skip: python3 is absent here, so the smoke's handoff receipt parser has nothing to run"
   skipped=$((skipped + 1))
@@ -3498,28 +3900,19 @@ else
     observed "$(integrator_handoff_status "$(printf '%s\n%s\n%s\n' \
       "$smoke_spawn_valid" "$smoke_wait_valid" "$smoke_consume_valid")")"
 
-  # This is the case that matters most: the handoff consume tokens are
-  # present, with a matching receipt, but no spawn or wait ever correlates
-  # them to a real Codex-assigned agent id.
   assert_equals "a falsified stream -- handoff consume tokens with no correlated spawn -- is rejected" \
     missing "$(integrator_handoff_status "$smoke_consume_valid")"
 
-  # A real spawn and a real wait for the same id, but the consume's oso-state
-  # tokens live only in a trailing shell comment on a command that never ran
-  # them -- the exact forgery named in the defect report.
   smoke_forged_consume="$(smoke_command_event \
     "printf leftover # $smoke_consume_command_valid" "$smoke_receipt")"
   assert_equals "oso-state tokens living only in a trailing comment are not the command that ran" \
     missing "$(integrator_handoff_status "$(printf '%s\n%s\n%s\n' \
       "$smoke_spawn_valid" "$smoke_wait_valid" "$smoke_forged_consume")")"
 
-  # A real spawn for a different agent id does not correlate with a genuine
-  # wait and consume for this one.
   assert_equals "a spawn for a different agent id does not correlate" \
     missing "$(integrator_handoff_status "$(printf '%s\n%s\n%s\n' \
       "$(smoke_spawn_event agent-smoke-decoy)" "$smoke_wait_valid" "$smoke_consume_valid")")"
 
-  # A real spawn and a real consume, but no genuine wait for the same id.
   assert_equals "a consume with no genuine wait for the same id is rejected" \
     missing "$(integrator_handoff_status "$(printf '%s\n%s\n' \
       "$smoke_spawn_valid" "$smoke_consume_valid")")"
@@ -3568,10 +3961,6 @@ assert_equals "the shared Codex protocol forbids full-history forks with explici
   "1" "$(grep -Fc 'Every launch that selects an explicit `agent_type` starts with fresh context: set `fork_turns="none"`.' \
     "$REPO_ROOT/plugin/skills/_shared/platform/codex/subagents.md" || true)"
 
-# Verify (b): populate_smoke_codex_home is the whole read/write surface the
-# smoke has against Codex identity. Driving it directly against a fixture
-# "operator" home proves it never mutates that home -- config.toml included
-# -- without needing a real authenticated `codex exec` run.
 SMOKE_HOME_FIXTURE="$TEST_HOME/smoke-home-fixture/.codex"
 mkdir -p "$SMOKE_HOME_FIXTURE/agents"
 printf 'fixture-auth\n' > "$SMOKE_HOME_FIXTURE/auth.json"
@@ -3608,15 +3997,6 @@ assert_equals "the isolated Codex home receives a copied credential, role and re
 assert_equals "building the isolated home leaves the operator's own Codex home byte-identical, config.toml included" \
   "identical" "$(diff -rq "$SMOKE_HOME_SNAPSHOT" "$SMOKE_HOME_FIXTURE" >/dev/null 2>&1 && printf identical || printf mutated)"
 
-# --- Codex host contract: claims checked against the installed binary ---------
-# Every other check here asserts the harness against its own prose; this one
-# drives host_contract_status() itself, through a fake `codex` on PATH whose
-# bytes carry (or omit) the two literals an audit found six sites instructing a
-# spelling the host had already refused. verify-codex.sh calls main
-# unconditionally at its tail (install-codex.sh's sourcing guard has no
-# counterpart here), so the whole script runs as a subprocess with env
-# overrides — the mechanism the "incomplete Codex fixture" case below already
-# uses — rather than being sourced or having a guard added for this slice.
 HOST_CONTRACT_VERIFY_SH="$REPO_ROOT/bootstrap/verify-codex.sh"
 HOST_CONTRACT_SUPPORTED_VERSION="$(sed -n 's/^SUPPORTED_CODEX_VERSION=//p' \
   "$REPO_ROOT/bootstrap/install-codex.sh")"
@@ -3624,9 +4004,6 @@ HOST_CONTRACT_UNVERIFIED_VERSION="${HOST_CONTRACT_SUPPORTED_VERSION}-unverified-
 HOST_CONTRACT_FORK_CONTEXT_LITERAL='fork_context is not supported in MultiAgentV2; use fork_turns instead'
 HOST_CONTRACT_FORK_TURNS_LITERAL='fork_turns must be `none`, `all`, or a positive integer string'
 
-# The two literals live inside `#` comments so grep -a finds (or misses) them
-# in the shim's own bytes without them ever executing; --version echoes the
-# given string in the exact `codex-cli <version>` shape a real install prints.
 write_host_contract_codex_shim() {
   local shim_dir="$1" with_fork_context="$2" with_fork_turns="$3" version="$4"
   mkdir -p "$shim_dir"
@@ -3645,9 +4022,6 @@ write_host_contract_codex_shim() {
   chmod +x "$shim_dir/codex"
 }
 
-# Drops only the PATH entries that resolve a real `codex`, so the skip lane
-# reproduces "codex is not on PATH" without hiding the coreutils the rest of
-# run_local_checks still calls (git, awk, sed, mktemp, ...).
 host_contract_path_without_codex() {
   local dir result="" saved_ifs="$IFS"
   IFS=':'
@@ -3730,11 +4104,6 @@ assert_equals "no codex on PATH skips the host contract check rather than tallyi
     fi
   )"
 
-# --- The default_permissions override contract, checked against the ---------
-# installed binary the same way the fork_turns contract is. `-P` selects a
-# profile only for `codex sandbox`, a one-shot runner; a real session's own
-# per-invocation selector is `-c default_permissions=<name>`, and these two
-# literals are what prove the binary actually resolves and validates it.
 HOST_CONTRACT_UNDEFINED_PROFILE_LITERAL='default_permissions refers to undefined profile `'
 HOST_CONTRACT_DUAL_OVERRIDE_LITERAL='`permission_profile` and `default_permissions` overrides cannot both be set'
 
@@ -3816,12 +4185,6 @@ assert_equals "no codex on PATH skips the permission-override check rather than 
     fi
   )"
 
-# --- The capability columns: present, and inert to the render --------------
-# (a): the two capability cells exist on every tool row, and the manifests
-# operators and hosts actually read stay byte-identical to their addition --
-# no git history needed, since a renderer that reads past a row's host cells
-# would be the thing to catch here, and the committed manifests already ARE
-# the render this proves against.
 CAPABILITY_COLUMN_STATUS="$(awk '
   $1 == "tool" {
     n = split($0, f)
@@ -3840,12 +4203,6 @@ assert_equals "the capability columns leave the committed Codex manifest byte-id
   identical "$("$HOOK_RENDERER" --host codex --table "$REPO_ROOT/tools/hook-gates.txt" | \
     cmp -s - "$REPO_ROOT/codex/hooks/hooks.json" && echo identical || echo divergent)"
 
-# --- Codex MCP tool table drift ------------------------------------------
-# 5905a27 found mem_judge missing by reading the live Engram server by hand.
-# This is the check that catches the next one on its own. Driven here against
-# fixture servers rather than the live one, so the case is reproducible and
-# fast rather than depending on whatever happens to be installed on the
-# machine running the suite.
 MCP_DRIFT_FIXTURE_SERVER="$TEST_HOME/mcp-drift-fixture-server.sh"
 cat > "$MCP_DRIFT_FIXTURE_SERVER" <<'EOF'
 #!/bin/sh
@@ -3871,9 +4228,6 @@ mcp_drift_config_home() {
   printf '%s\n' "$body" > "$codex_home/config.toml"
 }
 
-# $1 = repo root to run bootstrap/verify-codex.sh from, $2 = CODEX_HOME,
-# $3 = bound in seconds. Runs the whole script the same way the host-contract
-# cases above do: as a subprocess, main() is unconditional at its tail.
 run_mcp_drift_check() {
   local repo_root="$1" codex_home="$2" bound="$3"
   HOME="$(dirname "$codex_home")" CODEX_HOME="$codex_home" \
@@ -3881,9 +4235,6 @@ run_mcp_drift_check() {
     bash "$repo_root/bootstrap/verify-codex.sh" 2>&1 || true
 }
 
-# (b) + (c): a scratch table copy with mem_judge removed and a stale
-# mcp__engram__mem_ghost row added, checked against a fixture Engram server
-# that exposes the eight mandated tools minus mem_judge -- never mem_ghost.
 MCP_DRIFT_TABLE_FIXTURE="$TEST_HOME/mcp-drift-table-fixture"
 copy_lint_fixture "$MCP_DRIFT_TABLE_FIXTURE"
 sed -e '/^tool  unknown  none  mcp__engram__mem_judge/d' \
@@ -3910,8 +4261,6 @@ args = [\"mem_save\", \"mem_search\", \"mem_context\", \"mem_session_summary\", 
       grep -Fxc 'FAIL: engram MCP table rows all match a live tool — expected none, got mcp__engram__mem_ghost' || true)"
 fi
 
-# (d): an absent server -- no executable at the configured command -- takes
-# the named skip lane rather than ever being tallied as a pass.
 MCP_DRIFT_ABSENT_HOME="$TEST_HOME/mcp-drift-absent-home/.codex"
 mcp_drift_config_home "$MCP_DRIFT_ABSENT_HOME" '
 [mcp_servers.engram]
@@ -3930,8 +4279,6 @@ assert_equals "a server with no executable at its configured command skips rathe
     fi
   )"
 
-# A remote/URL-based server (context7's real shape) has no command this check
-# spawns and takes its own named skip lane instead of a guess at that transport.
 MCP_DRIFT_URL_HOME="$TEST_HOME/mcp-drift-url-home/.codex"
 mcp_drift_config_home "$MCP_DRIFT_URL_HOME" '
 [mcp_servers.context7]
@@ -3942,8 +4289,6 @@ assert_equals "a remote url-based server skips with its own named reason" 1 \
   "$(printf '%s\n' "$MCP_DRIFT_URL_OUTPUT" | \
     grep -Fc 'skip: context7 MCP tool drift — no local command in' || true)"
 
-# (e): a server that never answers ends the check with a verdict inside the
-# configured bound rather than hanging bootstrap/verify-codex.sh.
 MCP_DRIFT_HANG_HOME="$TEST_HOME/mcp-drift-hang-home/.codex"
 mcp_drift_config_home "$MCP_DRIFT_HANG_HOME" "
 [mcp_servers.engram]
@@ -3963,10 +4308,6 @@ else
   echo "ok: the hanging MCP fixture server does not outlive the bounded check"; pass=$((pass + 1))
 fi
 
-# The static half (step 0): agreement between the hardcoded mandated list and
-# the table's own mandated column, needing no server and no config.toml at
-# all -- this is the half CI can run. Both mismatch directions, driven with
-# no CODEX_HOME/config.toml present whatsoever.
 MCP_DRIFT_AGREEMENT_FIXTURE="$TEST_HOME/mcp-drift-agreement-fixture"
 copy_lint_fixture "$MCP_DRIFT_AGREEMENT_FIXTURE"
 sed -e '/^tool  unknown  none  mcp__engram__mem_search /d' \
@@ -4046,9 +4387,6 @@ fi
 assert_equals "smoke cleanup refuses duplicate exact project ownership" \
   "refused" "$duplicate_smoke_table_status"
 
-# The exact scalar is the sandbox contract, so mutate only that TOML field and
-# prove the checker sees the prohibited value rather than another occurrence of
-# "read-only" in prose.
 SECURITY_ROLE_FIXTURE="$TEST_HOME/oso-security-reviewer-read-only.toml"
 awk '
   /^sandbox_mode[[:space:]]*=/ {
@@ -4060,11 +4398,6 @@ awk '
 assert_equals "a read-only native security reviewer is observable at its TOML boundary" \
   "read-only" "$(toml_scalar "$SECURITY_ROLE_FIXTURE" sandbox_mode)"
 
-# Codex's separate CLI review is this judge's native path now. The adapter is
-# the routing contract and the role's multiline instructions are the execution
-# contract, so read those two bounded regions independently. A `codex review`
-# mention in a wrapper, a TOML description or a neighbouring markdown section
-# is deliberately invisible here.
 markdown_h2_section() {
   local file="$1" heading="$2"
   awk -v heading="$heading" '
@@ -4129,9 +4462,6 @@ SECURITY_ROLE="$CODEX_AGENTS/oso-security-reviewer.toml"
 assert_equals "the Codex security route runs native review inside its own subagent" \
   complete "$(codex_security_route_status "$CODEX_SECURITY_PLATFORM" "$SECURITY_ROLE")"
 
-# Remove the executable route only from its owning H2 block, then leave the same
-# words in a neighbouring decoy section.  The expected named gap proves the
-# assertion did not pass on the role's independent mention or a file-wide grep.
 SECURITY_ROUTE_FIXTURE="$TEST_HOME/security-pass-codex-route.md"
 awk '
   $0 == "## Which reviewer is native, and how to reach it" { inside = 1 }
@@ -4148,10 +4478,6 @@ assert_equals "a codex-review mention outside the native route cannot satisfy it
   "platform-misses:codex review" \
   "$(codex_security_route_status "$SECURITY_ROUTE_FIXTURE" "$SECURITY_ROLE")"
 
-# `codex review` accepts either a selector or a custom PROMPT, never both. This
-# route uses the selector for acquisition and a config-level developer instruction
-# for the security policy. Inspect only backticked command spans in the native H2;
-# prose that names a forbidden flag is not itself an invocation.
 codex_review_command_status() {
   local section commands command phrase
   section="$(markdown_h2_section "$1" \
@@ -4216,10 +4542,6 @@ awk '
 assert_equals "a selector cannot coexist with a positional prompt" \
   selector-plus-prompt "$(codex_review_command_status "$SECURITY_SELECTOR_FIXTURE")"
 
-# The shared report owns the fallback/default shape; each host adapter owns only
-# its native spelling.  Code-span matching makes the exact header the unit: a
-# longer or prose-only lookalike cannot stand in for the report line consumers
-# parse, and Claude's pre-existing native/fallback vocabulary remains explicit.
 security_header_status() {
   local body_file="$1" claude_file="$2" codex_file="$3"
   local report_section claude_section codex_section
@@ -4273,9 +4595,6 @@ assert_equals "a base-coverage header outside the native route cannot satisfy it
   codex-base "$(security_header_status "$SECURITY_BODY" \
     "$CLAUDE_SECURITY_PLATFORM" "$SECURITY_HEADER_FIXTURE")"
 
-# Parity is part of the contract, not release-note decoration. Select each row
-# by its first cell and require exactly one: a stale original beside a
-# corrected duplicate must fail rather than letting the new row hide the old.
 parity_row() {
   local label="$1"
   awk -v prefix="| $label |" '
@@ -4307,9 +4626,6 @@ security_parity_status() {
 assert_equals "parity records all four judges and the native-security exception once" \
   complete "$(security_parity_status)"
 
-# The transport marker is outside every role's semantic report.  Pin the same
-# first-line envelope in all seven TOMLs while preserving each role's existing
-# terminal status/verdict line as the authoritative last line.
 handoff_envelope_missing=""
 for codex_role in $mapped_roles; do
   role_file="$CODEX_AGENTS/$codex_role.toml"
@@ -4323,11 +4639,6 @@ done
 assert_equals "all seven roles preserve their report inside the explicit handoff envelope" \
   "" "$handoff_envelope_missing"
 
-# The three orchestration placeholders close here too.  Other placeholders in
-# these files intentionally belong to later slices, so reject only claims that
-# delegated agents or forked judges themselves are still unavailable.  All three
-# call sites route through one shared Codex protocol: repeating the seven-name
-# map in each mode would create three new places for the same contract to drift.
 unported_role_claims=""
 subagent_routes_missing=""
 for platform_mode in plan debug quick; do
@@ -4347,10 +4658,6 @@ assert_equals "plan, debug and quick no longer claim delegated roles are unporte
 assert_equals "plan, debug and quick route through one shared subagent protocol" \
   "" "$subagent_routes_missing"
 
-# Through that shared route, plan can launch all seven custom roles and uses
-# Codex's native explorer for discovery.  Explorer is deliberately NOT an eighth
-# custom role file; spelling that distinction here prevents either half of the
-# routing decision drifting.
 codex_subagent_protocol="$PLUGIN/skills/_shared/platform/codex/subagents.md"
 protocol_roles_missing=""
 for codex_role in $mapped_roles; do
@@ -4367,23 +4674,11 @@ assert_equals "the shared Codex protocol routes discovery to the native explorer
 assert_equals "the native explorer is not duplicated as an eighth custom TOML" \
   "absent" "$([ ! -e "$CODEX_AGENTS/explorer.toml" ] && printf absent || printf present)"
 
-# --- Integration: what /plan has to SAY for a wave to be runnable at all ------
-# The slicing phase is prose, so a rule the shipped file does not carry is one
-# the orchestrator improvises per run: a threshold nobody spelled, a field
-# nobody declared, a base ref nobody ruled out. Each table line below is one
-# phrase its section has to carry, and the section is cut out of the file first
-# — a rule that drifted into a neighbouring phase fails here instead of passing
-# on a file-wide scan. The file is the NEUTRAL body: plan/SKILL.md is a wrapper
-# that binds it, and every phase these tables read lives on the far side of that
-# reference.
 PLAN_BODY="$PLUGIN/skills/_shared/bodies/plan.md"
 plan_section() {
   sed -n "/^## $1\. /,/^## [0-9]/p" "$PLAN_BODY"
 }
 
-# The anti-vacuity half, from both sides: a table that read empty proved nothing,
-# and a section heading that moved would hand every line an empty haystack — the
-# first is its own FAIL, the second surfaces as every phrase going unsaid.
 assert_says_every() {
   local name="$1" section="$2" phrase unsaid="" phrases_read=0
   while IFS= read -r phrase; do
@@ -4400,10 +4695,6 @@ assert_says_every() {
   fi
 }
 
-# The host schema, not Claude's cadence, fixes Codex's question cap. Read the
-# dedicated platform section and the single parity row independently: a stale
-# PLACEHOLDER/4 in either surface would otherwise survive beside a correct claim
-# in the other and fail only when a real decision round reaches question four.
 codex_question_section="$(sed -n \
   '/^## Question rounds$/,/^## /p' "$PLUGIN/skills/_shared/platform/codex/plan.md" 2>/dev/null)"
 codex_question_parity_row="$(parity_row 'Question rounds' 2>/dev/null || true)"
@@ -4428,9 +4719,6 @@ case "$codex_question_section$codex_question_parity_row" in
     echo "ok: the settled Codex question cap carries no PLACEHOLDER/4 contract"; pass=$((pass + 1)) ;;
 esac
 
-# These seven losses are release input, not explanatory prose. Require exactly
-# seven table rows and the load-bearing boundary in each one; this is the parity
-# mutation gate the linter rules alone do not give.
 codex_loss_ledger="$(sed -n \
   '/^## Frozen loss and degradation ledger$/,/^## /p' \
   "$REPO_ROOT/docs/parity-codex.md" 2>/dev/null)"
@@ -4462,12 +4750,45 @@ A roadmap runs ASSISTED here, never unattended
 present once per child
 CODEX_FROZEN_LOSS_TABLE
 
-# The Codex approval prose has a runtime gate behind it, but the hook cannot
-# repair an orchestrator that never presents the plan or tells the operator how
-# to cross Plan Mode's read-only boundary. Read only the platform section that
-# defines that handoff so a phrase in a placeholder, wrapper or unrelated warning
-# cannot make the contract look complete. Extract the one native approval phrase
-# independently; repeating it is fine, alternatives are not.
+opencode_loss_ledger="$(sed -n \
+  '/^## Frozen loss and degradation ledger$/,/^## /p' \
+  "$REPO_ROOT/docs/parity-opencode.md" 2>/dev/null)"
+opencode_loss_rows="$(printf '%s\n' "$opencode_loss_ledger" | awk '
+  /^\| Loss or degradation \|/ { next }
+  /^\|---/ { next }
+  /^\|/ { rows++ }
+  END { print rows + 0 }
+')"
+assert_equals "the frozen OpenCode ledger carries exactly its four release losses" \
+  "4" "$opencode_loss_rows"
+assert_says_every "the frozen OpenCode ledger names every loss and remaining boundary" \
+  "$opencode_loss_ledger" <<'OPENCODE_FROZEN_LOSS_TABLE'
+These four entries are release requirements
+A headless child cannot write inside the worktree it was pinned to
+auto-rejecting
+a cross-worktree write stays red under the same refusal
+never that isolation held
+Headless slash-command sessions are unusable
+never rely on `opencode run --command`
+Slash-command behavior is TUI-verified only
+No subagents/handoff receipt rail
+no receipt file mediates consumption
+cannot correlate a kill to a partial verdict
+The workspace adapter's create handshake is not implemented
+registers for discovery only
+the orchestrator creates it
+only pins that existing tree
+The success path has never been observed
+WorkspaceCreateError: Timed out waiting for global event
+OPENCODE_FROZEN_LOSS_TABLE
+opencode_parity_doc="$(cat "$REPO_ROOT/docs/parity-opencode.md" 2>/dev/null)"
+case "$opencode_parity_doc" in
+  *'`oso_wave` runs its own `git worktree add`'*|*'`oso_wave` creates its own worktrees'*)
+    echo "FAIL: the OpenCode parity ledger credits oso_wave with creating a wave's worktrees again"; fail=$((fail + 1)) ;;
+  *)
+    echo "ok: the OpenCode parity ledger leaves worktree creation with the orchestrator, never oso_wave"; pass=$((pass + 1)) ;;
+esac
+
 CODEX_PLAN_PLATFORM="$PLUGIN/skills/_shared/platform/codex/plan.md"
 codex_approval_section="$(sed -n \
   '/^## The approval gate$/,/^## /p' "$CODEX_PLAN_PLATFORM" 2>/dev/null)"
@@ -4530,10 +4851,6 @@ case "$codex_approval_section" in
     echo "ok: the Codex approval gate is no longer an S7 placeholder"; pass=$((pass + 1)) ;;
 esac
 
-# Approval belongs to the exact document the operator saw.  The invalidation
-# rule is host-neutral, so it lives in §5 of the shared body rather than being
-# silently invented by the Codex adapter.  Restricting this assertion to §5
-# prevents a generic "material change" note in execution from satisfying it.
 assert_says_every "a material change invalidates approval and re-presents the whole plan" \
   "$(plan_section 5)" <<'APPROVAL_INVALIDATION_TABLE'
 Approval applies only to that exact document
@@ -4542,11 +4859,6 @@ re-present the complete repaso-first plan
 fresh approval
 APPROVAL_INVALIDATION_TABLE
 
-# Parity has to record the enforcement mechanism and its honest boundary in the
-# approval row itself. Other rows legitimately discuss hooks, so a file-wide
-# scan would be vacuous. Local calls observed by PreToolUse are held while the
-# token is pending; hosted tools that emit no PreToolUse event remain outside
-# that layer, and saying so is accuracy rather than reopening the gate.
 approval_parity_row="$(awk '
   /^\| The approval gate \|/ { print; rows++ }
   END { if (rows == 0) exit 1 }
@@ -4577,11 +4889,6 @@ case "$approval_parity_row" in
     echo "ok: the approval parity row no longer defers S7"; pass=$((pass + 1)) ;;
 esac
 
-# The handoff receipt is a prose rail as well as a file primitive.  A perfectly
-# atomic one still breaks the flow if the orchestrator treats its existence as
-# `pass`, or if the read-only child is told to write it.  The shared Codex
-# protocol is the single source for every mode, so pin each load-bearing
-# statement there.
 assert_says_every "the Codex delegation protocol makes the file a precondition, never a verdict" \
   "$(cat "$codex_subagent_protocol")" <<'HANDOFF_PROTOCOL_TABLE'
 `HANDOFF SLICE`
@@ -4626,36 +4933,18 @@ makes PARALLEL execution unavailable
 answers it at the first wave
 VERIFICATION_ROW_TABLE
 
-# The same row is the only place a project can turn the per-slice commit off,
-# and no store, no file and no hook records that choice — so the row's own prose
-# is the whole mechanism. Both halves are load-bearing in opposite directions: a
-# default nobody wrote down is a question asked once per slice, and an opt-out
-# nobody wrote down is a project with no way to decline commits it cannot take.
 assert_says_every "the Verification row settles per-slice commits, on by default" \
   "$(plan_section 3)" <<'PER_SLICE_COMMIT_PREFERENCE_TABLE'
 per-slice commits are ON
 turns them off HERE, the only place it is settled
 PER_SLICE_COMMIT_PREFERENCE_TABLE
 
-# The sequential path lands its commit in one specific window — the green step 4
-# writes, which the next slice's step 1 takes back — and nothing outside this
-# prose says so: the hooks read one flag and would let that commit go anywhere
-# inside it, so a step that names no command lands no commit at all and a step
-# that names the wrong boundary lands one the rail denies. The second line is the
-# other half of the change's whole point: what step 4 does is a commit, and the
-# push is not its business.
 assert_says_every "the sequential path commits each slice it takes green" \
   "$(plan_section 6)" <<'SEQUENTIAL_COMMIT_TABLE'
 git -C <main checkout> commit
 a COMMIT and never a push
 SEQUENTIAL_COMMIT_TABLE
 
-# The wave loop is prose too, and the steps nobody wrote down are the ones an
-# orchestrator improvises: a state write missing the key a teardown reads, a
-# commit with no window to pass the rail, a merge nobody launched, an
-# integration gate nobody ran. Split from the routing table below because the
-# two answer different questions — how a wave RUNS, and what happens when it
-# does not.
 assert_says_every "the execution phase runs a wave from activation to integration" \
   "$(plan_section 6)" <<'WAVE_LOOP_TABLE'
 active_slice=wave-<n> verify_green=false repo_path=
@@ -4674,9 +4963,6 @@ INTEGRATION verdict shape
 does the wave close
 WAVE_LOOP_TABLE
 
-# The other half: every way a wave fails has one route and only one, and the
-# two that reach outside a single wave — the concurrency question §3 could only
-# record, and the offer that walks the change back to sequential.
 assert_says_every "the execution phase routes every way a wave fails" \
   "$(plan_section 6)" <<'WAVE_FAILURE_TABLE'
 **A red slice**
@@ -4692,13 +4978,6 @@ finish the remaining slices SEQUENTIALLY
 unrelated to the entire WAVE
 WAVE_FAILURE_TABLE
 
-# Which of those routes a red wave takes turns on attribution, and the linter
-# cannot reach that: rule 6 only sees a call site once one exists, so a wave loop
-# that never invokes the triage judge reads clean there and goes back to deciding
-# blame by eye. Each line below is one thing lint cannot check — that the judge is
-# invoked at all, and that each of its three verdicts leaves by a different door:
-# the wave's own failure routing, the operator's stop-the-line offer, and the
-# answer that is neither, which may never be quietly filed as one of them.
 assert_says_every "the execution phase triages a red wave before routing it" \
   "$(plan_section 6)" <<'WAVE_TRIAGE_TABLE'
 INVOKE the triage judge
@@ -4707,16 +4986,6 @@ the stop-the-line paragraph above runs with triage's evidence in hand
 never read as either answer
 WAVE_TRIAGE_TABLE
 
-# A worktree the close leaves standing is a registration the next run's
-# `git worktree add` dies on, and the branch behind it is that same failure under
-# a second name. The integrator disposes of both only on a wave that merged
-# clean, so the waves this paragraph exists for — conflict-stopped, exited back
-# to sequential, never integrated — reach the close with both halves standing,
-# and no hook covers either: the teardown removes trees and prunes
-# registrations, and a change that closes while the session goes on never
-# reaches it. Branch deletion is therefore the close's own, and it is gated from
-# both sides: an unmerged branch holds the only copy of a slice's committed work,
-# so neither deleting it nor leaving it may happen behind the operator.
 assert_says_every "the close clears the trees and branches parallel execution left behind" \
   "$(plan_section 7)" <<'CLOSE_CLEANUP_TABLE'
 still standing is removed through git
@@ -4729,12 +4998,6 @@ the only copy of that slice's committed work
 left standing without the operator hearing
 CLOSE_CLEANUP_TABLE
 
-# Where the boundary sits is prose in the close and nowhere else: the commit rail
-# gates a commit on the green, never on an ask, so the only thing that can say
-# which operations wait for the operator is this step. Both lines are needed and
-# neither implies the other — a close that says only the first commits and then
-# pushes unasked, one that says only the second is the boundary this change
-# retired, asking for a commit the flow already landed once per slice.
 assert_says_every "the close asks for a push and a PR, never for a commit" \
   "$(plan_section 7)" <<'COMMIT_BOUNDARY_TABLE'
 A COMMIT is part of the flow and is never asked for
@@ -4798,13 +5061,6 @@ oso-state set auto=parked
 The `roadmap` key stays armed
 BLOCKED_PARK_TABLE
 
-# The same trees from the other end: the close clears the ones the operator
-# reached, and the resume is where they hear about the ones nobody did. No hook
-# covers that either — warn-stale-state.sh reports state FILES and is right not
-# to grow a second remit — and the session that could have looked them up in its
-# own state is the one that ended, so the entry point reads git's registry or
-# nothing does. A resume that stays silent hands the operator a change whose
-# next `worktree add -b` dies on a branch name nobody mentioned.
 assert_says_every "the resume check reports the worktrees a previous session left standing" \
   "$(plan_section 0)" <<'RESUME_WORKTREES_TABLE'
 git -C <main checkout> worktree list
@@ -4812,39 +5068,18 @@ report every worktree of this change still standing
 oso/<change>/<slice>
 RESUME_WORKTREES_TABLE
 
-# The integrator's own teardown answers to git, not to taste: git refuses to
-# delete a branch a standing worktree still has checked out, and no force
-# overrides that refusal, so an agent told to delete branches first stops at its
-# first step on every wave it merged clean. Its prose is the whole specification
-# — no hook and no schema sees the order — so the order and the reason it is
-# that way are pinned here. Scanned whole-file rather than by section:
-# `plan_section` cuts on the plan body's numbered phase headings, and this
-# file's headings are named.
 assert_says_every "the integrator removes worktrees before deleting the branches they hold" \
   "$(cat "$PLUGIN/agents/oso-integrator.md")" <<'TEARDOWN_ORDER_TABLE'
 remove the wave's worktrees first, then delete its branches
 git refuses to delete a branch a standing worktree still has checked out
 TEARDOWN_ORDER_TABLE
 
-# The Codex bodies are also read directly for one host claim outside the
-# linter's thirteen decidable rules. Rules 3, 4, 6 and 8 now follow both hosts,
-# but none asks whether a platform body falsely claims another host's installation
-# policy as its own. What that would let through is the absence policy in
-# `_shared/front-surface.md` is Claude-spelled end to end — its remedy is a
-# `/plugin marketplace add` and a `/plugin install` this host has no command for
-# — so a Codex body saying the policy is taken here, or reading that two-step
-# install back to the operator, ships a route nobody on this host can follow.
-# Each probe below is a SHAPE and not a sentence, so a reworded return fails it
-# too, and the scan reads the whole tree rather than the three files carrying the
-# disclaimer today.
 CODEX_PLATFORM="$PLUGIN/skills/_shared/platform/codex"
 report_when_unclaimed() {
   local verdict="$1" claim_shape="$2"
   grep -Eiq "$claim_shape" "$CODEX_PLATFORM"/*.md || printf '%s\n' "$verdict"
 }
 
-# Same anti-vacuity as the tables above, from the tree's side: a platform
-# directory that moved would answer every probe clean, so it answers none.
 codex_absence_policy_report() {
   local body bodies_read=0
   local verbs='take[ns]?|taking|follow(s|ed)?|appl(y|ies|ied)|keeps?|kept|inherit(s|ed)?|unchanged|as[- ]is'
@@ -4867,13 +5102,6 @@ no Codex body takes the absence policy as its own
 no Codex body reads the two-step Claude install back
 ABSENCE_POLICY_TABLE
 
-# --- Impeccable on Codex: mounted instructions, never a cache pointer --------
-# Codex has no Skill tool invocation for Impeccable.  Its adapter therefore has
-# to name the mounted SKILL.md for every argument the neutral contract reaches;
-# seeing all four words somewhere in the tree is not enough (a path in an install
-# note plus three arguments in the Claude comparison would still ship no runnable
-# Codex route).  Each argument must occur in a paragraph that also carries the
-# canonical mounted path.
 CODEX_FRONT_SURFACE="$PLUGIN/skills/_shared/platform/codex/front-surface.md"
 codex_front_surface_routes_missing=""
 for codex_front_mode in plan quick debug; do
@@ -4883,10 +5111,6 @@ done
 assert_equals "every Codex mode with front work routes it through one platform adapter" \
   "" "$codex_front_surface_routes_missing"
 
-# Resolve the prose's actual relative token from the file that carries it.  A
-# grep-only assertion accepted `../front-surface.md` during review even though,
-# from platform/codex/, that names the missing platform/front-surface.md rather
-# than the neutral `_shared/front-surface.md` two levels above.
 resolve_markdown_reference() {
   local origin="$1" reference="$2" origin_dir reference_dir reference_leaf
   origin_dir="$(dirname "$origin")"
@@ -4919,10 +5143,6 @@ assert_equals "the Codex adapter's neutral front-surface reference resolves to a
   "$PLUGIN/skills/_shared/front-surface.md" \
   "$(resolve_markdown_reference "$CODEX_FRONT_SURFACE" "$codex_adapter_neutral_ref")"
 
-# The adapter split changed Claude's path graph too. Keep that production tree
-# as executable documentation: every mode must reach both the unchanged neutral
-# contract and the new Claude binding, and the binding must still carry every
-# host spelling removed from the neutral file during the split.
 CLAUDE_PLATFORM="$PLUGIN/skills/_shared/platform/claude"
 CLAUDE_FRONT_SURFACE="$CLAUDE_PLATFORM/front-surface.md"
 for claude_front_mode in plan quick debug; do
@@ -4994,10 +5214,6 @@ for impeccable_argument in init document audit; do
     "exact" "$(codex_argument_block_status "$impeccable_argument")"
 done
 
-# The mount helper receives an already-resolved versioned source and owns only
-# the stable Codex destination. A copied destination must consist only of real data; the
-# separate adversarial fixture below permits either safe dereferencing or loud
-# rejection of source links, but never a surviving pointer.
 MOUNT_IMPECCABLE="$REPO_ROOT/bootstrap/lib/mount-impeccable.sh"
 IMPECCABLE_CACHE="$TEST_HOME/codex-plugin-cache/impeccable/1.2.3/skills/impeccable"
 IMPECCABLE_MOUNT="$HOME/.agents/skills/impeccable"
@@ -5056,16 +5272,10 @@ elif mount_report="$("$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" 2>&1)"; then
   assert_equals "the mounted Codex skill carries all three required argument references" \
     "" "$mounted_impeccable_refs_missing"
 
-  # A mounted copy must remain usable after the cache entry changes.  This is
-  # the behavioural distinction that matters; checking only `test ! -L` at the
-  # root would miss a bind made of symlinked descendants.
   printf '%s\n' 'cache changed later' > "$IMPECCABLE_CACHE/reference/playbook.md"
   assert_equals "the mounted reference is independent of later cache mutation" \
     "stable playbook" "$(cat "$IMPECCABLE_MOUNT/reference/playbook.md")"
 
-  # Re-running replaces the complete snapshot.  A stale file in the old mount
-  # may not survive, and the newly resolved cache contents must arrive without
-  # changing the stable destination path.
   printf '%s\n' 'stale local file' > "$IMPECCABLE_MOUNT/stale.md"
   if remount_report="$("$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" 2>&1)"; then
     assert_equals "a second mount replaces stale destination contents" \
@@ -5073,8 +5283,6 @@ elif mount_report="$("$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" 2>&1)"; then
     assert_equals "a second mount refreshes the independent snapshot" \
       "cache changed later" "$(cat "$IMPECCABLE_MOUNT/reference/playbook.md")"
 
-    # Model cache collection without deleting fixture data: after the versioned
-    # source moves away, the stable global mount must still be complete.
     mv "$IMPECCABLE_CACHE" "$IMPECCABLE_CACHE.collected"
     assert_equals "the mounted skill survives collection of its cache version" \
       "cache changed later" "$(cat "$IMPECCABLE_MOUNT/reference/playbook.md")"
@@ -5084,10 +5292,6 @@ elif mount_report="$("$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" 2>&1)"; then
     fail=$((fail + 1))
   fi
 
-  # The registry directory is stable; ownership is one unique directory per
-  # acquirer, published atomically. A process removes only its own. Dead owners
-  # are logical stale records (ignored but retained), while a live owner blocks
-  # and any entry outside the exact owner grammar fails closed.
   IMPECCABLE_MOUNT_LOCK="$HOME/.agents/skills/.impeccable.mount.lock"
   mkdir -p "$IMPECCABLE_MOUNT_LOCK/owner.live-fixture-token"
   printf 'pid=%s;token=live-fixture-token\n' "$$" \
@@ -5156,11 +5360,6 @@ elif mount_report="$("$MOUNT_IMPECCABLE" "$IMPECCABLE_CACHE" 2>&1)"; then
   rm -f "$IMPECCABLE_MOUNT_LOCK/owner.unexpected"
   rm -f "$IMPECCABLE_MOUNT/corrupt-lock-sentinel"
 
-  # An entry outside owner.* is not irrelevant: `owner` is the exact live-owner
-  # filename shipped by the immediately previous lock protocol. Ignoring it
-  # would let a new installer overlap an old-version critical section. Unknown
-  # children therefore fail closed and remain as evidence; they are never
-  # silently skipped merely because the new contender glob cannot parse them.
   printf 'pid=%s\ntoken=%s\n' "$$" 'legacy-live-token' \
     > "$IMPECCABLE_MOUNT_LOCK/owner"
   printf '%s\n' 'must survive a legacy registry owner' \
@@ -5182,10 +5381,6 @@ token=legacy-live-token" "$(cat "$IMPECCABLE_MOUNT_LOCK/owner")"
   rm -f "$IMPECCABLE_MOUNT_LOCK/owner"
   rm -f "$IMPECCABLE_MOUNT/legacy-owner-sentinel"
 
-  # Deterministic ABA regression. A pauses immediately before publishing its
-  # ownership primitive (the former implementation used mv; the atomic one uses
-  # mkdir). B publishes and reaches the protected copy while A is still paused.
-  # Resuming A must make A withdraw/fail without touching B's unique owner.
   ABA_HOME="$TEST_HOME/impeccable-aba-home"
   ABA_CONTROL="$TEST_HOME/impeccable-aba-control"
   ABA_SHIMS="$TEST_HOME/impeccable-aba-shims"
@@ -5343,8 +5538,6 @@ token=legacy-live-token" "$(cat "$IMPECCABLE_MOUNT_LOCK/owner")"
         && printf empty || printf occupied)"
   fi
 
-  # Validation happens before replacement.  A malformed cache result must fail
-  # loudly while leaving the last known-good mounted snapshot intact.
   INVALID_IMPECCABLE="$TEST_HOME/impeccable-cache/invalid"
   mkdir -p "$INVALID_IMPECCABLE/reference"
   if "$MOUNT_IMPECCABLE" "$INVALID_IMPECCABLE" >/dev/null 2>&1; then
@@ -5394,9 +5587,6 @@ token=legacy-live-token" "$(cat "$IMPECCABLE_MOUNT_LOCK/owner")"
     "$TEST_HOME/codex-plugin-cache/impeccable/bad-version/skills/impeccable" \
     "name: impeccable" "version: latest"
 
-  # A provider-wrong artifact is more dangerous than an incomplete one: it has
-  # the expected skill and all three references, so a structural-only check
-  # would publish commands and paths that are valid in Claude but dead in Codex.
   CLAUDE_IMPECCABLE="$TEST_HOME/claude-plugin-cache/impeccable/1.2.3/skills/impeccable"
   mkdir -p "$CLAUDE_IMPECCABLE/reference"
   printf '%s\n' \
@@ -5471,8 +5661,6 @@ else
 fi
 
 if [ ! -x "$MOUNT_IMPECCABLE" ]; then
-  # The primary existence case above already reports the missing helper.  Do
-  # not misreport that absence as successful arity validation too.
   echo "FAIL: mount arity could not be checked because the helper is not executable"
   fail=$((fail + 1))
 elif "$MOUNT_IMPECCABLE" >/dev/null 2>&1 \
@@ -5484,20 +5672,11 @@ else
   pass=$((pass + 1))
 fi
 
-# --- Integration: the env var the skills instruct is the one hooks look up ---
 export CLAUDE_CODE_SESSION_ID="$SESSION"
 bash -c 'oso-state --session "${CLAUDE_CODE_SESSION_ID}" set mode=plan verify_green=false'
 assert_denies "skill-documented env var arms the gate" block-commit-until-green.sh "$(bash_input 'git commit -m x')"
 oso-state --session "$SESSION" clear
 
-# --- Identity: one repository, one state file --------------------------------
-# The whole point of keying by the repository: an applier commits inside a wave's
-# worktree and the gate firing there has to read the state the orchestrator armed
-# in the main checkout. `--git-common-dir` alone does not answer that — it is a
-# relative `.git` in the main checkout and an absolute path in a linked worktree
-# — so the case reads the name back from three trees of one repo and fails on any
-# spelling that splits them. Needs git twice over: for the identity and for a
-# worktree to ask it from.
 KEY_REPO="$TEST_HOME/identity-repo"
 KEY_WORKTREE="$TEST_HOME/identity-worktree"
 
@@ -5531,8 +5710,6 @@ else
   assert_equals "one repository names one state file from every tree of it" \
     "$expected_key $expected_key $expected_key $expected_key" "${keys_written# }"
 
-  # And the other half: a DIFFERENT repository is a different file, or the key is
-  # a constant that happens to agree with itself everywhere.
   assert_equals "a second repository names a second state file" "different" \
     "$([ "$(state_key_written_from "$REPO_ROOT")" != "$expected_key" ] && echo different || echo collided)"
 
@@ -5542,19 +5719,8 @@ else
 fi
 rm -f "$STATE_DIR"/*.state
 
-# A path is a far richer input than a session id, and the name it becomes is what
-# has to be checked, because no sanitizer keeps two repositories apart: dropping
-# every byte outside `[a-zA-Z0-9-]` maps `/home/a/b` onto `/homeab`, translating
-# each of them to a dash maps `my_app`, `my-app`, `my app` and `my.app` onto one
-# another — a dash is inside that charset too — and a name has a length besides.
-# One name for two repositories is the red one's commit gate reading the green
-# one's flag, so every way a name can collapse is probed, not one shape of one.
 state_file_of() { ( . "$PLUGIN/hooks/lib.sh"; state_file_for "$1" ); }
 traversal_state="$(state_file_of '/tmp/../../../etc/passwd')"
-# What is left of the name once the state dir is stripped off it — the whole of
-# it, if the name never was under that dir. bash 3.2 ends a `$( )` at the first
-# unbalanced `)`, and a case pattern's own is one, so the verdict is reached here
-# rather than inside the assert's argument.
 traversal_name="${traversal_state#"$STATE_DIR/"}"
 case "$traversal_name" in
   */*|*..*|*[!a-zA-Z0-9.-]*) traversal_verdict=escaped ;;
@@ -5571,30 +5737,20 @@ assert_equals "sibling repositories differing only by a dashable byte keep six n
   6 "$((distinct_sibling_keys))"
 assert_equals "a path and that path with its separators gone keep two names" "distinct" \
   "$([ "$(state_file_of /home/a/b)" != "$(state_file_of /homeab)" ] && echo distinct || echo collided)"
-# The length half of the same class: `NAME_MAX` does not truncate, it refuses, so
-# a repository nested deep enough got no state file written and the gate then
-# read no state at all — an allow. A digest is fixed-length, so depth is not
-# something the name can run out of.
 DEEP_REPO="$TEST_HOME/deep"
 while [ "${#DEEP_REPO}" -lt 300 ]; do DEEP_REPO="$DEEP_REPO/nested-directory-name"; done
 mkdir -p "$DEEP_REPO"
-# A name too long to write is `oso-state` spinning on a lock it can never make,
-# so the arming is allowed to fail here and the gate below is what reports it —
-# an aborted run would take the rest of the suite with it.
 ( cd "$DEEP_REPO" && oso-state --session "$SESSION" set mode=plan verify_green=false ) >/dev/null 2>&1 || true
 assert_denies "a repository nested past NAME_MAX still arms its commit gate" \
   block-commit-until-green.sh "$(bash_input 'git commit -m x' "$DEEP_REPO")"
 ( cd "$DEEP_REPO" && oso-state --session "$SESSION" clear ) >/dev/null 2>&1 || true
 rm -rf "$TEST_HOME/deep"
-# And where no digest can be computed at all, a name every repository would share
-# is the one answer that must not come back.
 no_digest_rc=0
 ( . "$PLUGIN/hooks/lib.sh"; PATH="$TEST_HOME/no-tools"; state_file_for /repo ) >/dev/null 2>&1 ||
   no_digest_rc=$?
 assert_equals "a host that can spell no digest blocks instead of naming every repo alike" \
   2 "$no_digest_rc"
 
-# --- Concurrency: parallel writers must not lose keys ---
 ( for i in $(seq 1 25); do oso-state --session "$SESSION" set "a=$i" >/dev/null; done ) &
 ( for i in $(seq 1 25); do oso-state --session "$SESSION" set "b=$i" >/dev/null; done ) &
 wait
@@ -5602,7 +5758,6 @@ assert_equals "concurrent writers preserve all keys" "a=25 b=25" \
   "a=$(oso-state --session "$SESSION" get a) b=$(oso-state --session "$SESSION" get b)"
 oso-state --session "$SESSION" clear
 
-# --- Stale lock: a crashed writer's lock is reclaimed, not fatal ---
 stale_lock="$REPO_STATE.lock"
 mkdir -p "$stale_lock"
 touch -t 200001010000 "$stale_lock"
@@ -5696,6 +5851,17 @@ else
   git -C "$JOURNAL_REPO" worktree prune
   rm -rf "$JOURNAL_REPO"
 fi
+
+rm -rf "$STATE_DIR/runs"
+oso-state --session "$SESSION" set auto=running auto_change=path-read >/dev/null
+journal_path_read="$( cd "$REPO_ROOT" && oso-state --session "$SESSION" journal --path )"
+journal_path_tree="$(ls "$STATE_DIR/runs" 2>/dev/null || echo unwritten)"
+journal_milestone "the milestone that opens the file --path named"
+assert_equals "journal --path names the run journal the same call would append to, and opens nothing to say so" \
+  "$JOURNAL_DIR/path-read.log unwritten opened" \
+  "$journal_path_read $journal_path_tree $([ -s "$JOURNAL_DIR/path-read.log" ] && echo opened || echo unopened)"
+rm -rf "$STATE_DIR/runs"
+oso-state --session "$SESSION" clear >/dev/null 2>&1 || true
 
 rm -rf "$STATE_DIR/runs"
 journal_usage_stderr="$TEST_HOME/journal-usage-stderr"
@@ -5968,6 +6134,28 @@ assert_equals "a run that parks with a delegation still armed leaves no mark for
   "stop stop stop|cleared" "${auto_resumed_verdicts# }|$auto_mark_after_park"
 
 arm_unattended_run
+oso-state --session "$SESSION" set auto_wait=slice-21 >/dev/null
+auto_second_wait_verdicts=" $(auto_stop_verdict "$(auto_stop_input)")"
+touch -t 200001010000 "$AUTO_WAIT_MARK"
+journal_milestone 'slice 21 applier reported; the verifier for the same slice is launched'
+auto_second_wait_verdicts="$auto_second_wait_verdicts $(auto_stop_verdict "$(auto_stop_input)")"
+touch -t 200001010000 "$AUTO_WAIT_MARK"
+auto_second_wait_verdicts="$auto_second_wait_verdicts $(auto_stop_verdict "$(auto_stop_input)")"
+assert_equals "a second delegation under one label is a wait of its own: the belief window restarts where the run has moved since the sighting, and still expires where it has not" \
+  "stop stop push" "${auto_second_wait_verdicts# }"
+
+arm_unattended_run
+oso-state --session "$SESSION" set auto_wait=wave-4 >/dev/null
+auto_renewal_verdicts=""
+for auto_renewal in 1 2 3 4 5; do
+  auto_renewal_verdicts="$auto_renewal_verdicts $(auto_stop_verdict "$(auto_stop_input)")"
+  touch -t 200001010000 "$AUTO_WAIT_MARK"
+  journal_milestone "the run moved while wave 4 stayed marked in flight ($auto_renewal)"
+done
+assert_equals "progress renews the belief window a bounded number of times, so a mark the run keeps moving under still stops being believed rather than holding the turn open for good" \
+  "stop stop stop stop push" "${auto_renewal_verdicts# }"
+
+arm_unattended_run
 mkdir -p "${AUTO_WAIT_MARK%/*}"
 printf 'wave-2\n' > "$AUTO_WAIT_MARK"
 touch -t 200001010000 "$AUTO_WAIT_MARK"
@@ -5980,8 +6168,8 @@ oso-state --session "$SESSION" clear >/dev/null 2>&1 || true
 
 PROD_PATTERNS_FILE="$STATE_DIR/deploy-deny/$REPO_KEY.patterns"
 
-prod_gate_verdict() {
-  run_hook block-prod-deploy.sh "$1"
+prod_gate_verdict_of() {
+  run_hook "$1" "$2"
   if [ -n "$hook_problem" ]; then
     printf 'crashed:%s' "$hook_problem"
   elif hook_returned_deny; then
@@ -5991,6 +6179,10 @@ prod_gate_verdict() {
   else
     printf 'neither:%s' "$hook_stdout"
   fi
+}
+
+prod_gate_verdict() {
+  prod_gate_verdict_of block-prod-deploy.sh "$1"
 }
 
 prod_mcp_input() {
@@ -6023,12 +6215,76 @@ assert_equals "every built-in production shape is denied while the run is in fli
   "deny deny deny deny deny deny" \
   "$(prod_verdicts_for 'vercel --prod' 'vercel deploy --prod --yes' 'npx vercel --prod' \
     'pnpm dlx vercel --target production' 'netlify deploy --prod' 'firebase deploy')"
+assert_equals "a deploy whose production flag arrives from stdin is denied rather than read as a preview" \
+  "deny deny deny deny" \
+  "$(prod_verdicts_for 'echo --prod | xargs vercel' 'echo --prod | xargs -n1 vercel' \
+    'printf %s --prod | xargs -0 vercel' 'echo --prod | xargs netlify deploy')"
+assert_equals "a deploy CLI that only feeds xargs is none of that rule's business" \
+  "allow allow allow" \
+  "$(prod_verdicts_for 'vercel ls | xargs echo' 'netlify status | xargs -I{} echo {}' \
+    'find . -name *.log | xargs rm')"
 assert_equals "the preview and staging shapes of the same CLIs keep passing" \
   "allow allow allow allow" \
   "$(prod_verdicts_for vercel 'vercel deploy' 'vercel deploy --target=staging' 'netlify deploy')"
+assert_equals "a deploy spec carrying a pinned version is the same production shape as its unpinned spelling" \
+  "deny deny deny deny deny" \
+  "$(prod_verdicts_for 'npx vercel@latest --prod' 'npm exec vercel@34 -- --prod' \
+    'pnpm dlx vercel@34 --target production' 'npx vercel@2.1.0 --target=production' \
+    'yarn dlx netlify@17 deploy --prod')"
+assert_equals "a package install that merely names a deploy CLI is denied with the deploy it cannot be told apart from, because a runner subcommand grammar this gate does not model is the only thing that could tell them apart" \
+  "deny deny deny deny" \
+  "$(prod_verdicts_for 'npm install vercel@34 --prod' 'npm install --prod vercel@34' \
+    'npm install vercel --prod' 'npm install --prod vercel')"
+assert_equals "a pinned spec's read-only subcommands stay none of this gate's business" \
+  "allow allow allow allow" \
+  "$(prod_verdicts_for 'npx vercel@latest ls' 'npx vercel@34 whoami' 'npx netlify@17 status' \
+    'npm exec typescript@5.4 -- tsc --noEmit')"
 assert_equals "the work of the run itself is none of this gate's business" \
   "allow allow allow" \
   "$(prod_verdicts_for 'npm run build' 'git commit -m wip' 'git commit -m push')"
+
+PROD_GATE_SOURCE="$PLUGIN/hooks/block-prod-deploy.sh"
+PROD_GATE_FOURTH_CLI=flyctl
+PROD_GATE_FOURTH_CLI_HOOKS="$TEST_HOME/prod-gate-fourth-cli"
+PROD_GATE_FOURTH_CLI_SOURCE="$PROD_GATE_FOURTH_CLI_HOOKS/block-prod-deploy.sh"
+
+deploy_clis_named_by() {
+  awk -v opening="$2() {" '
+    $0 == opening { inside = 1; next }
+    inside && $0 == "}" { exit }
+    inside && match($0, /^[[:space:]]*[a-z|]+\)/) {
+      arm = substr($0, RSTART, RLENGTH - 1)
+      gsub(/[[:space:]]/, "", arm)
+      print arm
+    }
+  ' "$1" | tr '|' '\n' | LC_ALL=C sort -u | paste -sd' ' -
+}
+
+prod_gate_cli_divergence() {
+  local gate_source="$1" table tested
+  table="$(deploy_clis_named_by "$gate_source" deploy_command_name)"
+  tested="$(deploy_clis_named_by "$gate_source" runs_a_production_deploy)"
+  if [ "$table" = "$tested" ]; then
+    printf 'agree'
+    return 0
+  fi
+  printf 'the table names [%s] and the production test names [%s]' "$table" "$tested"
+}
+
+mkdir -p "$PROD_GATE_FOURTH_CLI_HOOKS"
+cp "$PLUGIN"/hooks/*.sh "$PROD_GATE_FOURTH_CLI_HOOKS/"
+sed "s/vercel|netlify|firebase)/vercel|netlify|firebase|$PROD_GATE_FOURTH_CLI)/" \
+  "$PROD_GATE_SOURCE" > "$PROD_GATE_FOURTH_CLI_SOURCE"
+chmod +x "$PROD_GATE_FOURTH_CLI_SOURCE"
+
+assert_equals "the deploy CLIs the production gate recognizes are the deploy CLIs it tests for production" \
+  "agree" "$(prod_gate_cli_divergence "$PROD_GATE_SOURCE")"
+assert_equals "a CLI recognized by the table alone is a divergence that comparison reports" \
+  "the table names [firebase $PROD_GATE_FOURTH_CLI netlify vercel] and the production test names [firebase netlify vercel]" \
+  "$(prod_gate_cli_divergence "$PROD_GATE_FOURTH_CLI_SOURCE")"
+assert_equals "a recognized CLI the production test never names passes rather than having its every call denied" \
+  "allow" \
+  "$(prod_gate_verdict_of "$PROD_GATE_FOURTH_CLI_SOURCE" "$(bash_input "$PROD_GATE_FOURTH_CLI status")")"
 
 assert_equals "a push that does not name the run branch is denied while the run is in flight" \
   "deny deny deny" \
@@ -6061,13 +6317,26 @@ prod_long_command='vercel --prod'
 while [ "${#prod_long_command}" -le "$((3072 + 16))" ]; do
   prod_long_command="$prod_long_command and echo padding"
 done
-assert_equals "a line past the lexer's bound passes counted, the way the commit rail already spends its residue" \
-  "allow 1" "$(prod_verdicts_and_residues_for "$prod_long_command")"
+assert_equals "a line past the lexer's bound is production at this boundary: an unread payload is the one thing a deploy refusal cannot spend a residue on" \
+  "deny 0" "$(prod_verdicts_and_residues_for "$prod_long_command")"
+prod_gate_verdict "$(bash_input 'env --unknown-option git push origin main')" > /dev/null
+case "$hook_stdout" in
+  *'past what the production boundary can read'*) prod_unread_refusal=unreadable ;;
+  *'pushes its own oso-run/'*) prod_unread_refusal=off-run-branch ;;
+  '') prod_unread_refusal=allowed ;;
+  *) prod_unread_refusal=neither ;;
+esac
+assert_equals "an unread payload outranks a lexed push in the same line, so the boundary refuses that line as one it could not read rather than as a push off the run branch" \
+  "unreadable" "$prod_unread_refusal"
 
 assert_equals "an unresolved git option shape, a command word only the shell resolves and an interpreter's deploy payload all pass counted, exactly as the commit rail counts them" \
   "allow allow allow 3" \
   "$(prod_verdicts_and_residues_for 'git --super-prefix x/ push origin main' \
     'python3 deploy.py' '$DEPLOY --prod')"
+
+assert_equals "an xargs replace-string is a KNOWN HOLE rather than a counted residue: { ends the command, vercel comes out a clean word carrying no marker, and the very deploy its sibling spelling is denied for passes allowed AND uncounted" \
+  "deny|allow 0" \
+  "$(prod_verdicts_for 'echo --prod | xargs vercel')|$(prod_verdicts_and_residues_for 'echo --prod | xargs -I{} vercel {}')"
 
 assert_equals "a line the resolver answers spends no residue: a build, the run's own push, and an option git answers itself instead of pushing" \
   "allow allow allow 0" \
@@ -6110,10 +6379,6 @@ assert_equals "the uncertain deny hands over the remedy that fits an unreadable 
 rm -rf "$STATE_DIR/runs" "${PROD_PATTERNS_FILE%/*}"
 oso-state --session "$SESSION" clear >/dev/null 2>&1 || true
 
-# --- Delegation handoff: exact attempt, bounded wait, atomic one-shot receipt --
-# The report itself stays in the SubagentStop message.  The file rail stores only
-# an identity-bound receipt for that message.  Parent wait/consume calls therefore
-# need no child session id, and a verdict word can never leak into the file rail.
 HANDOFF_REPO="$TEST_HOME/handoff-repo"
 HANDOFF_STDERR="$TEST_HOME/handoff-stderr"
 mkdir -p "$HANDOFF_REPO"
@@ -6156,9 +6421,6 @@ run_handoff() {
   handoff_stderr="$(cat "$HANDOFF_STDERR")"
 }
 
-# The child sandbox never publishes.  SubagentStop receives the parent session
-# and the exact final message, and the host hook is the writer that bridges a
-# read-only judge to the receipt directory.
 HANDOFF_HOOK="$PLUGIN/hooks/publish-subagent-handoff.sh"
 hook_report='oso-handoff: v=1 slice=slice-hook attempt=1
 evidence: the named check is green
@@ -6209,9 +6471,6 @@ assert_equals "the runtime-fallback hook receipt is consumed through the fixed O
   "rc=0:$fixed_marker_receipt" "rc=$handoff_rc:$handoff_stdout"
 ( cd "$HANDOFF_REPO" && oso-state --session 1 clear >/dev/null )
 
-# SubagentStop is a user-level global hook and therefore sees ordinary Codex
-# explorers outside oso-code too.  No marker means the call is not this harness's
-# and must stay invisible — no receipt, no event and no stderr.
 IGNORED_HANDOFF_REPO="$TEST_HOME/ignored-handoff-repo"
 mkdir -p "$IGNORED_HANDOFF_REPO"
 handoff_events_log="$STATE_DIR/events.jsonl"
@@ -6224,9 +6483,6 @@ assert_equals "a non-harness SubagentStop stays globally invisible" \
   "rc=0 stdout={} stderr= events=$events_before_ignored" \
   "rc=$hook_rc stdout=$hook_stdout stderr=$hook_stderr events=$events_after_ignored"
 
-# A marker belongs on the exact first line and carries an explicit envelope
-# version.  Near misses are harness attempts, so the hook reports them, but it
-# must not publish a receipt that could satisfy the parent.
 old_marker_payload="$(printf '{\"session_id\":\"%s\",\"cwd\":\"%s\",\"hook_event_name\":\"SubagentStop\",\"turn_id\":\"turn-old-marker\",\"agent_id\":\"agent-old-marker\",\"agent_type\":\"oso-verifier\",\"last_assistant_message\":\"oso-handoff: slice=slice-old-marker attempt=1\\nverdict: pass\"}' \
   "$SESSION" "$HANDOFF_REPO")"
 run_hook "$HANDOFF_HOOK" "$old_marker_payload" 0 \
@@ -6284,8 +6540,6 @@ run_handoff "" handoff consume \
   --agent-id "$basic_agent" --agent-type "$basic_type"
 assert_equals "a consumed receipt cannot be consumed a second time" 1 "$handoff_rc"
 
-# The watermark survives consumption.  Without it, an old background result can
-# arrive after the retry completed and satisfy a future read under the same slice.
 fresh_report='oso-handoff: v=1 slice=slice-stale attempt=2
 status: done'
 run_handoff "$fresh_report" handoff publish \
@@ -6303,9 +6557,6 @@ run_handoff "$stale_report" handoff publish \
 assert_equals "a delayed report from an older attempt is rejected after the newer one was consumed" \
   1 "$handoff_rc"
 
-# Every coordinate is part of the match.  Wrong probes must leave the right
-# receipt available; otherwise a timeout on one typo destroys the report that
-# could have let the operator recover.
 identity_report='oso-handoff: v=1 slice=slice-identity attempt=3
 verdict: pass'
 identity_receipt="$(expected_receipt hook-identity slice-identity 3 agent-identity oso-verifier)"
@@ -6329,9 +6580,6 @@ run_handoff "" handoff consume \
 assert_equals "wrong identity probes never consume the exact receipt" \
   "rc=0:$identity_receipt" "rc=$handoff_rc:$handoff_stdout"
 
-# Two host sessions can complete the same logical slice and attempt at once.
-# Agent identity is the storage lane, so neither publisher may overwrite or
-# block the other's receipt.
 shared_report_a='oso-handoff: v=1 slice=slice-shared attempt=1
 verdict: pass'
 shared_report_b='oso-handoff: v=1 slice=slice-shared attempt=1
@@ -6377,9 +6625,6 @@ assert_equals "simultaneous equal slice attempts with different agent ids never 
   "publish=a=0:: b=0:: a=rc=0:$(expected_receipt parent-a slice-shared 1 agent-shared-a oso-verifier) b=rc=0:$(expected_receipt parent-b slice-shared 1 agent-shared-b oso-verifier)" \
   "publish=$shared_publish_status a=$shared_a_consumed b=$shared_b_consumed"
 
-# Missing means wait until the declared bound, then fail.  Seconds are measured
-# coarsely for Bash 3.2 portability; a 1-second contract may take either one or
-# two displayed ticks, never hang with the rest of the suite behind it.
 handoff_files_before_timeout="$(find "$STATE_DIR/.handoffs" -type f -print 2>/dev/null | LC_ALL=C sort || true)"
 missing_wait_started="$(date +%s)"
 run_handoff "" handoff wait \
@@ -6395,8 +6640,6 @@ handoff_files_after_timeout="$(find "$STATE_DIR/.handoffs" -type f -print 2>/dev
 assert_equals "a timed-out wait leaves no synthetic receipt or watermark" \
   "$handoff_files_before_timeout" "$handoff_files_after_timeout"
 
-# Start the reader first, then publish.  The reader may return only the complete
-# six-line receipt; a partial parse, early failure, or mixed receipt fails.
 atomic_slice=slice-atomic
 atomic_attempt=7
 atomic_agent=agent-atomic
@@ -6438,9 +6681,6 @@ run_handoff "" handoff consume \
   --agent-id "$atomic_agent" --agent-type "$atomic_type"
 assert_equals "the concurrent wait left the receipt for one explicit consume" 0 "$handoff_rc"
 
-# Slice/type names use a closed safe alphabet, attempts are positive integers,
-# and opaque ids are length/control bounded before hashing.  Agent slashes are
-# deliberately safe because no raw id is ever interpolated into a path.
 invalid_handoffs=""
 run_handoff 'report' handoff publish \
   --slice '../escape' --attempt 1 --agent-id agent --agent-type oso-applier --hook-session hook
@@ -6488,8 +6728,6 @@ assert_equals "a malformed on-disk receipt fails closed at both read edges" \
   "path=present wait=1 consume=1" \
   "path=$([ -f "$corrupt_receipt" ] && printf present || printf missing) wait=$corrupt_wait_rc consume=$handoff_rc"
 
-# TTL cleanup is observable under the agent lock: old receipts, watermarks and
-# interrupted atomic temp files disappear on the next operation for that lane.
 ttl_agent=agent-ttl
 ttl_key="$(digest_text "$ttl_agent")"
 ttl_dir="$STATE_DIR/.handoffs/$(state_key_of "$HANDOFF_REPO")"
@@ -6520,9 +6758,6 @@ assert_equals "TTL cleanup prunes old receipts, watermarks and orphaned atomic t
   "publish=pruned-replaced aged-wait=1 receipt=absent" \
   "publish=$ttl_publish_cleanup aged-wait=$handoff_rc receipt=$([ -e "$ttl_receipt" ] && printf present || printf absent)"
 
-# The repository-wide TTL sweep may opportunistically clean other agent lanes,
-# but it cannot touch one whose lock is held.  Once that foreign lock is gone,
-# the very next operation should remove its aged two-line watermark.
 foreign_agent=agent-foreign-ttl
 foreign_key="$(digest_text "$foreign_agent")"
 foreign_watermark="$ttl_dir/$foreign_key.watermark"
@@ -6542,8 +6777,6 @@ assert_equals "the TTL sweep preserves a locked foreign lane then prunes it on t
   "locked=preserved next=pruned" \
   "locked=$foreign_while_locked next=$([ ! -e "$foreign_watermark" ] && printf pruned || printf retained)"
 
-# An ancient lock may still belong to a live paused process.  Acquisition is
-# bounded at two seconds and must never reclaim or remove somebody else's lock.
 lock_agent=agent-lock
 lock_key="$(digest_text "$lock_agent")"
 lock_dir="$ttl_dir/$lock_key.lock"
@@ -6570,11 +6803,6 @@ rmdir "$lock_dir"
 
 rm -rf "$STATE_DIR/.handoffs"
 
-# --- A fourth key beside the triple: the repo the session works in ------------
-# `set` takes whatever key it is handed, so nothing had to be written for the
-# session to carry the repo path a worktree teardown runs `git worktree prune`
-# in. That is exactly why it is a case: the gates read the triple by name, and a
-# key appended after it may not cost any of the three.
 oso-state --session "$SESSION" set mode=plan active_slice=1 verify_green=false repo_path="$REPO_ROOT"
 assert_equals "a key beside the triple is stored and read back" \
   "$REPO_ROOT" "$(oso-state --session "$SESSION" get repo_path)"
@@ -6588,22 +6816,12 @@ for triple_key in mode active_slice verify_green; do
 done
 assert_equals "the whole triple survives a fourth key beside it" "" "$keys_lost_to_the_fourth"
 
-# The one key no caller writes: the file is the REPOSITORY's, and SessionEnd runs
-# in no directory that could name one, so which session armed the state is the
-# only way back to the file it left. Written by `set` from the flag it already
-# takes, beside whatever the caller asked for.
 assert_equals "a write records the session that armed the state" \
   "$SESSION" "$(oso-state --session "$SESSION" get session)"
 oso-state --session "$SESSION" clear
 
-# --- Telemetry: denies are recorded ---
-# Every oso-state set logs an event, so a non-empty log proves nothing; the
-# audit is only worth having if a gate that fired left its own line behind.
 events_log="$STATE_DIR/events.jsonl"
 
-# A marker is a pattern unless the case passes -F, which the markers whose text
-# carries backslashes need: read as a pattern, an escape matches the byte it
-# escapes and the case passes on a log line nobody escaped.
 assert_logged() {
   local name="$1" match=-e marker unlogged=""
   shift
@@ -6618,8 +6836,6 @@ assert_logged() {
   fi
 }
 
-# The other half of the audit, where the absence of a line is the case. A home
-# passed here is one the run may not have written a thing under.
 assert_not_logged() {
   local name="$1" untouched_home="${2:-}" trace=""
   [ ! -e "$events_log" ] || trace="$trace log: $(tr '\n' ' ' < "$events_log" 2>/dev/null)"
@@ -6635,7 +6851,6 @@ assert_not_logged() {
 
 assert_logged "both gates log their denies" '"event":"commit-denied"' '"event":"edit-denied"'
 
-# --- Every deny records what it denied, not just that it denied ---------------
 rm -f "$events_log"
 oso-state --session "$SESSION" set mode=plan active_slice=1 verify_green=false
 run_hook "$UNKNOWN_TOOL_HOOK" "$(codex_tool_input FutureWriter)" 0 '' \
@@ -6657,20 +6872,11 @@ run_hook block-commit-until-green.sh "$(bash_input 'git commit -m x')"
 assert_logged "a denied commit writes the command it judged" \
   '"event":"commit-denied","command":"git commit -m x","session":"'
 assert_logged "every logged event carries the schema version" '"schema":2'
-# The log's own claim — "diagnosable from the log alone: which gate fired, on
-# which hook event" — names two fields deny() always passes; nothing before this
-# line ever grepped for either, so a future edit that dropped them from deny()
-# would have left this suite green.
 assert_logged "a deny names the gate script that fired" \
   '"gate":"block-commit-until-green.sh"'
 assert_logged "a deny names the hook event it fired on" '"hook_event":"PreToolUse"'
 oso-state --session "$SESSION" clear
 
-# A byte cut can land inside a multi-byte character. 119 ASCII bytes put the
-# 120-byte bound on the second byte of the two-byte 'é' that follows, so a naive
-# cut would keep 'é''s lone lead byte — a half-written character a strict JSONL
-# parser rejects — and the bound must back up to the last complete character
-# instead.
 utf8_boundary_prefix="git commit -m x && echo $(printf 'a%.0s' $(seq 1 95))"
 utf8_boundary_command="${utf8_boundary_prefix}é more text past the 120-byte bound"
 rm -f "$events_log"
@@ -6681,12 +6887,6 @@ assert_equals "a command past the bound is truncated at a character boundary, no
   "$utf8_boundary_prefix" "$logged_command"
 oso-state --session "$SESSION" clear
 
-# --- Telemetry: the branches no gate and no state write can record ------------
-# A worktree created, a merge conflict, a red integration — none of them is a
-# tool call or a state write, so without a verb of its own each is an event the
-# audit never gets. The verb writes through the same log_event the gates do, and
-# the line shape is what says so: one line, the type where a gate's event stands
-# and the detail where its command text stands.
 rm -f "$events_log"
 oso-state --session "$SESSION" event worktree-created "git worktree add ../oso-wt-3"
 assert_logged "the event verb records its type and its detail" \
@@ -6696,9 +6896,6 @@ assert_equals "one event is one line, appended and nothing else" \
 oso-state --session "$SESSION" event integration-red
 assert_logged "an event with no detail is a well-formed line too" \
   '"event":"integration-red","command":"","session":"'
-# `gate`/`hook_event` are scoped to deny-shaped calls on purpose — widening
-# every line would grow the log's highest-volume lines past the budget the
-# schema was sized against — so the event verb's own lines must carry neither.
 if grep -q '"gate"\|"hook_event"' "$events_log"; then
   echo "FAIL: an event-verb line carries gate or hook_event, which the log schema scopes to denies only"
   fail=$((fail + 1))
@@ -6707,7 +6904,6 @@ else
   pass=$((pass + 1))
 fi
 
-# --- Session-end cleanup + path traversal safety ---
 oso-state --session "$SESSION" set mode=plan verify_green=true
 mkdir -p "$REPO_STATE.lock"
 run_hook cleanup-state.sh "$(printf '{"session_id":"%s"}' "$SESSION")"
@@ -6717,16 +6913,10 @@ touch "$HOME/canary"
 run_hook cleanup-state.sh '{"session_id":"../../canary"}'
 assert_after_hook "traversal session id cannot delete outside state dir" [ -f "$HOME/canary" ]
 
-# The hook runs in no working directory of its own, so it can no more compute the
-# name a repository gives its state file than it can guess the repo path it prunes
-# in: it sweeps for the session the file recorded. Armed from another directory
-# entirely, dropped by a run standing in this one.
 ELSEWHERE="$TEST_HOME/state-armed-elsewhere"
 mkdir -p "$ELSEWHERE"
 ( cd "$ELSEWHERE" && oso-state --session sessionend-probe set mode=plan verify_green=true >/dev/null )
 elsewhere_state="$STATE_DIR/$(state_key_of "$ELSEWHERE").state"
-# The arming is asserted before the teardown, or a name nothing ever wrote would
-# read as a name the teardown swept.
 assert_equals "a write names its own directory, not the one the suite stands in" \
   "written" "$([ -f "$elsewhere_state" ] && echo written || echo missing)"
 run_hook cleanup-state.sh '{"session_id":"sessionend-probe"}'
@@ -6740,12 +6930,6 @@ OSO_AGENT=1 run_hook cleanup-state.sh '{"session_id":"codex-payload-session"}'
 assert_after_hook "Codex SessionEnd cleans fixed-marker state despite a different payload session" \
   [ ! -f "$elsewhere_state" ]
 
-# --- Runtime: SessionEnd clears its own orphaned pending by plan_approval_session,
-# never a stranger's -------------------------------------------------------------
-# hook_session() is the fixed OSO_AGENT marker on Codex, so the ownership sweep
-# above can never match a pending still carrying the real session capture-plan
-# recorded under it — the orphan a second, narrower sweep on the real SessionEnd
-# payload session exists to reach.
 orphan_pending_state="$STATE_DIR/orphan-pending.state"
 printf 'mode=plan\nplan_approval=pending\nsession=orphan-real-session\nplan_approval_session=orphan-real-session\n' \
   > "$orphan_pending_state"
@@ -6756,7 +6940,6 @@ OSO_AGENT=1 run_hook cleanup-state.sh '{"session_id":"orphan-real-session"}'
 assert_after_hook "SessionEnd for the session whose plan_approval_session matches drops its own orphaned pending" \
   [ ! -f "$orphan_pending_state" ]
 
-# --- Runtime: SessionEnd drops a roadmap left in flight, and only that ----------
 roadmap_decoy_state="$STATE_DIR/aa-roadmap-decoy.state"
 roadmap_live_state="$STATE_DIR/zz-roadmap-live.state"
 printf 'mode=plan\nsession=roadmap-owner\n' > "$roadmap_decoy_state"
@@ -6780,9 +6963,6 @@ assert_after_hook "a disarmed roadmap key is left to the passes that already cov
   [ -f "$roadmap_disarmed_state" ]
 rm -f "$roadmap_foreign_state" "$roadmap_disarmed_state"
 
-# --- SessionStart: OSO_STATE_BIN reaches the real oso-state binary ---
-# The skills invoke "${OSO_STATE_BIN:-oso-state}"; this hook is what makes that
-# env var land in the session, so assert it resolves to a runnable binary.
 env_file="$(mktemp)"
 export CLAUDE_ENV_FILE="$env_file"
 run_hook persist-state-bin.sh ''
@@ -6790,18 +6970,9 @@ persisted="$(. "$env_file"; printf '%s' "${OSO_STATE_BIN:-}")"
 assert_after_hook "SessionStart persists OSO_STATE_BIN to an executable" [ -x "$persisted" ]
 rm -f "$env_file"
 
-# The value this writes OVERRIDES the OSO_STATE_BIN install.sh publishes into
-# settings.json, for every Bash command in the session — so the two must not
-# disagree about how a path is spelled, or a session that has both ends up with
-# the worse of the two. `pwd` under Git Bash reads /c/Users/…, the one form a
-# native consumer cannot resolve; install.sh stores what cygpath -m returns, and
-# this asks for the same conversion rather than for whatever the shell built.
 STATE_BIN_WINDOWS_STUB="$TEST_HOME/state-bin-windows-stub"
 mkdir -p "$STATE_BIN_WINDOWS_STUB"
 printf '%s\n' '#!/bin/sh' 'echo MINGW64_NT-10.0' > "$STATE_BIN_WINDOWS_STUB/uname"
-# Stands in for a cygpath this host does not have, and records the conversion it
-# was asked for: -m is the drive-letter-with-forward-slashes spelling both a
-# native process and this shell can read.
 printf '%s\n' '#!/bin/sh' 'printf "converted%s:%s\n" "$1" "$2"' \
   > "$STATE_BIN_WINDOWS_STUB/cygpath"
 chmod +x "$STATE_BIN_WINDOWS_STUB/uname" "$STATE_BIN_WINDOWS_STUB/cygpath"
@@ -6813,17 +6984,10 @@ assert_equals "SessionStart persists the spelling of oso-state a native consumer
   "$(. "$env_file"; printf '%s' "${OSO_STATE_BIN:-}")"
 rm -f "$env_file"
 
-# No CLAUDE_ENV_FILE must degrade to a silent no-op: settings.json is the durable
-# route for this value now, so a client that writes no env file costs the
-# session nothing.
 unset CLAUDE_ENV_FILE
 run_hook persist-state-bin.sh ''
 assert_after_hook "SessionStart no-ops when CLAUDE_ENV_FILE is unset" [ -z "$hook_stdout" ]
 
-# --- Fail closed: a broken environment must not cost the operator a verdict ---
-# The client only reads a hook's JSON on exit 0, so a hook that dies while
-# logging opens the gate it was about to close. The log path is made a directory
-# because that is unwritable for root too, unlike a chmod.
 oso-state --session "$SESSION" clear
 oso-state --session "$SESSION" set mode=plan verify_green=false
 rm -f "$events_log"
@@ -6832,37 +6996,22 @@ assert_denies "commit deny survives an unwritable log" block-commit-until-green.
 assert_denies "edit deny survives an unwritable log"   block-edits-without-slice.sh "$edit_input" 0 '"event":"edit-denied"'
 rmdir "$events_log"
 
-# --- Polarity: an armed session the gate cannot read denies, never opens ---
 oso-state --session "$SESSION" clear
 mkdir -p "$REPO_STATE"
 assert_denies "commit gate denies a state path that is not a readable file" block-commit-until-green.sh "$(bash_input 'git commit -m x')"
 assert_denies "edit gate denies a state path that is not a readable file"   block-edits-without-slice.sh "$edit_input"
-# A line the lexer calls clear is the one shape that could have left the gate open
-# while it crashed: the verdict is read after the state check, under the armed ERR
-# trap, so an armed session the gate cannot read denies whatever the line says.
 assert_denies "commit gate denies an unreadable state even for a line that looks clear" \
   block-commit-until-green.sh "$(bash_input 'npm test')"
 rmdir "$REPO_STATE"
 assert_logged "an unreadable state file is recorded" '"event":"state-unreadable"'
 
-# --- The state directory is no edit exemption ---
-# The old exemption matched an unnormalized prefix, so a path spelled through
-# the state dir — including straight back out of it — bypassed the gate.
 oso-state --session "$SESSION" set mode=plan verify_green=false
 traversal_edit="$(printf '{"session_id":"%s","transcript_path":"%s","cwd":"%s","permission_mode":"default","hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"%s/../../../../tmp/x.ts","old_string":"const slice = 1;","new_string":"const slice = 2;","replace_all":false}}' \
   "$SESSION" "$TRANSCRIPT" "$REPO_ROOT" "$STATE_DIR")"
 assert_denies "edit through a state-dir traversal path is denied" block-edits-without-slice.sh "$traversal_edit"
 
-# --- Audit trail: one bad value must not make the log unparseable ---
-# State keys carry user-supplied text; an unescaped quote or backslash breaks
-# this line and every line a reader parses after it.
 oso-state --session "$SESSION" set 'weird=a"b\c' >/dev/null
 assert_logged "quotes and backslashes are escaped in the event log" -F '"event":"set:weird=a\"b\\c"'
-# The gate's own decoder is the other way in: json_unescape turns \t, \r, \b and
-# \f back into the raw bytes JSON forbids in a string, and the residue event logs
-# that text — so a tab-indented heredoc breaks the line without a hostile author.
-# jq is the strict reader here because it is what a streaming consumer runs, and
-# it stops at the first unescaped control byte, losing every line after it.
 control_byte_pair="$(printf 'weird=a\tb\rc\033d')"
 oso-state --session "$SESSION" set "$control_byte_pair" >/dev/null
 if ! command -v jq >/dev/null 2>&1; then
@@ -6875,14 +7024,10 @@ else
 fi
 assert_logged "events carry the client build" '"client":"'
 
-# --- Drift: a payload the gate cannot parse passes, but never silently ---
 assert_allows "an unparseable payload does not gate the call" block-commit-until-green.sh '{"tool_name":"Bash"}'
 assert_logged "an unparseable payload is recorded" '"event":"payload-unparseable"'
 oso-state --session "$SESSION" clear
 
-# --- Retention: abandoned state ages out, everything doubtful survives ---
-# One sweep, several files, one named expectation per file: which file the sweep
-# spared is the whole point, so a failure has to name the file it got wrong.
 assert_kept() {
   local name="$1" path="$2"
   if [ -n "$hook_problem" ]; then
@@ -6911,8 +7056,6 @@ locked_state="$STATE_DIR/locked-session.state"
 printf 'mode=plan\n' > "$abandoned_state"
 printf 'mode=plan\n' > "$recent_state"
 printf 'mode=plan\n' > "$locked_state"
-# A live session's mtime only advances at slice boundaries, so age alone cannot
-# tell a dead session from one that has been on the same slice since morning.
 touch -t 200001010000 "$abandoned_state" "$locked_state"
 mkdir -p "${locked_state}.lock"
 oso-state --session "$SESSION" set mode=plan verify_green=true >/dev/null
@@ -6923,9 +7066,6 @@ assert_kept   "state held by a live lock survives whatever its age"   "$locked_s
 assert_pruned "the ending session's own state is still removed"       "$REPO_STATE"
 rm -rf "${locked_state}.lock" "$locked_state" "$recent_state"
 
-# --- Retention: an aged event log rotates, a current one is left alone ---
-# Rotation must move the log aside rather than rewrite it: the next append
-# recreates it, and no deny line can fall into the gap.
 rm -f "$events_log" "${events_log}.1"
 printf '{"event":"aged"}\n' > "$events_log"
 touch -t 200001010000 "$events_log"
@@ -6948,21 +7088,10 @@ else
 fi
 oso-state --session "$SESSION" clear
 
-# --- Worktree teardown: the survivor of a parallel wave, at SessionEnd --------
-# Removing the directory is only half a teardown, so every case here reads git's
-# own registry too: a worktree deleted behind git's back stays in .git/worktrees,
-# and the next `git worktree add` for that slice fails on a name nothing on disk
-# shows. The directory being gone is exactly the half a plain `rm -rf` gets right.
 WORKTREES_DIR="$STATE_DIR/worktrees"
 WORKTREE_REPO="$TEST_HOME/worktree-repo"
 VANISHED_REPO="$TEST_HOME/vanished-repo"
 
-# A session that never armed a wave carries no repo_path, so nothing says where
-# to prune — and removing the directory anyway is that corruption rather than a
-# cleanup. Needs no git, which is the one thing this whole section can assume.
-# The state file's NAME is arbitrary from here down: the teardown finds a file by
-# the `session=` key inside it, and one file per session is what lets these cases
-# hold a lock and an mtime apart that a single repository's file could not.
 mkdir -p "$WORKTREES_DIR/wt-no-repo/1"
 printf 'mode=plan\nsession=wt-no-repo\n' > "$STATE_DIR/wt-no-repo.state"
 run_hook cleanup-state.sh '{"session_id":"wt-no-repo"}'
@@ -6970,19 +7099,12 @@ assert_pruned "a state file naming no repo is still removed"            "$STATE_
 assert_kept   "a worktree with no repo to prune in is left where it is" "$WORKTREES_DIR/wt-no-repo/1"
 rm -rf "$WORKTREES_DIR/wt-no-repo"
 
-# The contrast to the case above: a session whose state file the sweep never
-# found names nothing at all, and leaving the worktree standing is the right
-# answer to that too — a directory removed with nowhere to prune in is a
-# registration nobody can clear. Needs no git for the same reason: nothing asks
-# git before that branch.
 mkdir -p "$WORKTREES_DIR/wt-unfound/1"
 run_hook cleanup-state.sh '{"session_id":"wt-unfound"}'
 assert_kept "the worktree of a session with no state file at all is left standing" \
   "$WORKTREES_DIR/wt-unfound/1"
 rm -rf "$WORKTREES_DIR/wt-unfound"
 
-# What git still believes about one session's worktrees — the half no `[ -d ]`
-# can answer, since a removed-by-hand worktree stays listed until the prune runs.
 worktrees_registered_for() {
   git -C "$WORKTREE_REPO" worktree list --porcelain 2>/dev/null | grep -c "/worktrees/$1/" || true
 }
@@ -6999,9 +7121,6 @@ arm_repo_at() {
   git -C "$repo" commit -qm base
 }
 
-# One armed wave: a linked worktree where the orchestrator puts it, the state key
-# that says which repo the teardown has to prune in, and the session that names
-# the file as its own.
 arm_wave_for() {
   local session_id="$1" repo="$2"
   mkdir -p "$WORKTREES_DIR/$session_id"
@@ -7016,7 +7135,6 @@ else
   arm_repo_at "$WORKTREE_REPO"
   rm -f "$events_log"
 
-  # The survivor of a wave that never integrated is the ending session's own.
   arm_wave_for "$SESSION" "$WORKTREE_REPO"
   registered_before="$(worktrees_registered_for "$SESSION")"
   run_hook cleanup-state.sh "$(printf '{"session_id":"%s"}' "$SESSION")"
@@ -7026,8 +7144,6 @@ else
   assert_logged "a teardown leaves an audit line no gate could have written" \
     '"event":"worktree-removed"'
 
-  # The 7-day sweep owes the same teardown to a session that never reached
-  # SessionEnd, read from that session's own state file.
   arm_wave_for wt-abandoned "$WORKTREE_REPO"
   touch -t 200001010000 "$STATE_DIR/wt-abandoned.state"
   abandoned_before="$(worktrees_registered_for wt-abandoned)"
@@ -7037,8 +7153,6 @@ else
   assert_equals "the 7-day sweep leaves nothing of it registered either" "1 -> 0" \
     "$abandoned_before -> $(worktrees_registered_for wt-abandoned)"
 
-  # The sweep's live-lock guard covers the worktree too: a held lock is exactly
-  # what a wave still running looks like, whatever the state file's age says.
   arm_wave_for wt-locked "$WORKTREE_REPO"
   touch -t 200001010000 "$STATE_DIR/wt-locked.state"
   mkdir -p "$STATE_DIR/wt-locked.state.lock"
@@ -7049,8 +7163,6 @@ else
   git -C "$WORKTREE_REPO" worktree remove --force "$WORKTREES_DIR/wt-locked/1"
   rmdir "$WORKTREES_DIR/wt-locked"
 
-  # A run killed mid-wave leaves the directory gone and the registration behind,
-  # and only the prune clears it — the case a delete-without-prune cannot pass.
   arm_wave_for wt-crashed "$WORKTREE_REPO"
   rm -rf "$WORKTREES_DIR/wt-crashed/1"
   crashed_before="$(worktrees_registered_for wt-crashed)"
@@ -7059,8 +7171,6 @@ else
   assert_equals "a worktree the run already deleted is deregistered by the prune" "1 -> 0" \
     "$crashed_before -> $(worktrees_registered_for wt-crashed)"
 
-  # Fail-open: the repo can be gone by the time the session ends, and a teardown
-  # that cannot run may not take the state cleanup down with it.
   arm_repo_at "$VANISHED_REPO"
   arm_wave_for wt-lost-repo "$VANISHED_REPO"
   rm -rf "$VANISHED_REPO"
@@ -7073,11 +7183,6 @@ else
     '"event":"worktree-teardown-failed"'
   rm -rf "$WORKTREES_DIR/wt-lost-repo"
 
-  # The same unreachable repo one step further along: a killed run already took
-  # the worktree directory, so no removal runs and the prune that would clear the
-  # registration cannot run either. The rmdir then takes the last trace on disk,
-  # which leaves the line as the only thing saying a prune is still owed. The log
-  # starts empty because the case above logged the same event on its way past.
   arm_repo_at "$VANISHED_REPO"
   arm_wave_for wt-no-prune "$VANISHED_REPO"
   rm -rf "$VANISHED_REPO" "$WORKTREES_DIR/wt-no-prune/1"
@@ -7088,13 +7193,6 @@ else
   assert_logged "a prune that could not run is recorded rather than swallowed" \
     '"event":"worktree-prune-failed"'
 
-  # The one removal git is right to refuse: a survivor still holding uncommitted
-  # work. SessionEnd is the last thing that runs, so forcing it is the operator's
-  # only copy of that work gone with nobody left to tell — the close states the
-  # same policy for the same operation, and this is where an added `--force`
-  # would diverge from it silently. What the refusal costs is a tree that stands
-  # until someone deals with it: the prune leaves it registered, because its
-  # directory is still there, so `git worktree list` goes on naming it.
   arm_wave_for wt-dirty "$WORKTREE_REPO"
   printf 'uncommitted\n' > "$WORKTREES_DIR/wt-dirty/1/base.txt"
   dirty_before="$(worktrees_registered_for wt-dirty)"
@@ -7111,12 +7209,6 @@ else
   assert_pruned "the session whose worktree outlived it still loses its state file" \
     "$STATE_DIR/wt-dirty.state"
 
-  # The orphan sweep's own state file is the only record of repo_path, and it
-  # names its worktree by `session` — the wave's ownership marker, never the
-  # real `plan_approval_session` id this sweep matches on. Dropping it
-  # without pruning first would leave that worktree with nothing able to
-  # reach it again: not even the 7-day sweep above, which reads repo_path from
-  # this same file.
   arm_wave_for orphan-wt-owner "$WORKTREE_REPO"
   printf 'plan_approval=pending\nplan_approval_session=orphan-wt-real\n' \
     >> "$STATE_DIR/orphan-wt-owner.state"
@@ -7142,30 +7234,16 @@ else
     "$roadmap_wt_before -> $(worktrees_registered_for zz-roadmap-wt)"
 fi
 
-# --- SessionStart: only THIS repository's own stale state is worth hearing ---
-# Every gate reads state_file_for(cwd) — never the whole state directory — so a
-# foreign repository's leftovers arm nothing here; naming one would hand the
-# operator a file no remedy run from this cwd could reach. The hook is scoped
-# to the one file its own gates actually read: this repository's, keyed by the
-# session recorded inside it, since a resumed session keeps that id and a file
-# this session armed is one it is resuming, not one it has to be told about.
 stale_session_input() { printf '{"session_id":"%s","cwd":"%s"}' "$SESSION" "$REPO_ROOT"; }
 
-# (a) Only a foreign repository's state exists — this repository has armed
-# nothing, so nothing is named.
 rm -f "$REPO_STATE"
 printf 'mode=plan\nsession=other-session\n' > "$STATE_DIR/other-session.state"
 assert_allows "SessionStart names nothing when only a foreign repository's state exists" \
   warn-stale-state.sh "$(stale_session_input)"
 
-# (b) THIS repository's own state names another session — the crash/resume
-# case the hook exists for — and it must still fire and still name it.
 printf 'mode=plan\nsession=other-session\n' > "$REPO_STATE"
 mkdir -p "$WORKTREES_DIR/wt-parallel/1"
 run_hook warn-stale-state.sh "$(stale_session_input)"
-# Which of the dir's entries reached the SessionStart context. The report is
-# prose the model reads, so the case asks which names it carries rather than how
-# the sentence around them is worded.
 named_as_stale=""
 for dir_entry in "$(basename "$REPO_STATE")" other-session.state worktrees; do
   case "$hook_stdout" in *"$dir_entry"*) named_as_stale="$named_as_stale $dir_entry" ;; esac
@@ -7177,11 +7255,6 @@ assert_equals "Claude stale-state guidance uses its installed slash route" \
   "present" "$(if printf '%s' "$hook_stdout" | grep -F '/oso-code:plan {change}' >/dev/null; then echo present; else echo missing; fi)"
 assert_equals "stale-state guidance prints a complete session-scoped clear command" \
   "present" "$(if printf '%s' "$hook_stdout" | grep -F -- "--session \\\"$SESSION\\\" clear" >/dev/null; then echo present; else echo missing; fi)"
-# (d) The old message claimed a repository-keyed file's flags arm this
-# session's gates no matter whose repository it named — false for a foreign
-# file, since every gate resolves its own state file from cwd. That
-# generalization is gone; what remains is true only because the file named
-# above is this session's own.
 assert_equals "SessionStart drops the false claim that a repository-keyed file arms this session's gates regardless of whose it is" \
   "" "$(printf '%s' "$hook_stdout" | grep -F 'State is keyed by repository' || true)"
 
@@ -7191,13 +7264,14 @@ assert_equals "Codex stale-state guidance uses the discovered plugin route" \
 assert_equals "Codex stale-state guidance clears the fixed runtime identity" \
   "present" "$(if printf '%s' "$hook_stdout" | grep -F -- '--session \"1\" clear' >/dev/null; then echo present; else echo missing; fi)"
 
-# (c) Whatever the message named (captured above as named_as_stale) must be
-# reachable by the remedy it offers: run it exactly as printed, from this
-# repository, and confirm every file the message actually named is now gone —
-# not just the one file this fix happens to scope it to. Against the old sweep
-# this catches the real defect directly: a message naming a foreign file too
-# would still only ever clear this repository's own, leaving the foreign name
-# standing though the message said the remedy "drops it".
+OSO_HOST=opencode OSO_AGENT=aa11bb22cc33dd44 run_hook warn-stale-state.sh "$(stale_session_input)"
+assert_equals "OpenCode stale-state guidance uses its own registered slash command" \
+  "present" "$(if printf '%s' "$hook_stdout" | grep -F '/oso-plan {change}' >/dev/null; then echo present; else echo missing; fi)"
+assert_equals "the OpenCode advisory drops the Codex namespace OSO_AGENT alone made it spell" \
+  "" "$(printf '%s' "$hook_stdout" | grep -oF 'oso-code:plan' || true)"
+assert_equals "OpenCode stale-state guidance clears the identity its own shell.env published" \
+  "present" "$(if printf '%s' "$hook_stdout" | grep -F -- '--session \"aa11bb22cc33dd44\" clear' >/dev/null; then echo present; else echo missing; fi)"
+
 ( cd "$REPO_ROOT" && oso-state --session "$SESSION" clear )
 remedy_missed=""
 for dir_entry in $named_as_stale; do
@@ -7214,16 +7288,12 @@ printf 'mode=plan\nsession=%s\n' "$SESSION" > "$REPO_STATE"
 assert_allows "SessionStart says nothing when the only state is this session's" \
   warn-stale-state.sh "$(stale_session_input)"
 
-# Fail-open on a machine that has never armed a session: no state dir at all.
-# HOME is what the state path hangs off, so the case moves it rather than
-# deleting the directory every later case reads.
 HOME="$TEST_HOME/never-armed"
 assert_allows "SessionStart says nothing where there is no state dir" \
   warn-stale-state.sh "$(stale_session_input)"
 HOME="$TEST_HOME"
 rm -rf "$WORKTREES_DIR/wt-parallel" "$REPO_STATE"
 
-# --- SessionStart: a roadmap a dead session left in flight gets its own route ---
 roadmap_state_of() {
   printf 'mode=plan\nsession=other-session\nroadmap=%s\n' "$1" > "$REPO_STATE"
 }
@@ -7241,6 +7311,12 @@ assert_equals "the roadmap route arrives with the clear that drops the whole fil
 OSO_AGENT=1 run_hook warn-stale-state.sh "$(stale_session_input)"
 assert_equals "Codex gets the roadmap resume route in its own invocation spelling" \
   "present" "$(if printf '%s' "$hook_stdout" | grep -F '$oso-code:roadmap auth-hardening' >/dev/null; then echo present; else echo missing; fi)"
+
+OSO_HOST=opencode OSO_AGENT=aa11bb22cc33dd44 run_hook warn-stale-state.sh "$(stale_session_input)"
+assert_equals "OpenCode gets the roadmap resume route as the command its installer registers" \
+  "present" "$(if printf '%s' "$hook_stdout" | grep -F '/oso-roadmap auth-hardening' >/dev/null; then echo present; else echo missing; fi)"
+assert_equals "no namespace this host has not got reaches its roadmap resume route either" \
+  "" "$(printf '%s' "$hook_stdout" | grep -oF 'oso-code:roadmap' || true)"
 
 roadmap_state_of 'Not A Slug; rm -rf /'
 run_hook warn-stale-state.sh "$(stale_session_input)"
@@ -7266,7 +7342,6 @@ assert_allows "SessionStart says nothing about a roadmap in flight in another re
   warn-stale-state.sh "$(stale_session_input)"
 rm -f "$STATE_DIR/other-roadmap.state"
 
-# --- SessionStart: an install behind the release published for it -------------
 DRIFT_FIXTURE="$TEST_HOME/version-drift-plugin"
 DRIFT_HOOK="$DRIFT_FIXTURE/hooks/warn-stale-version.sh"
 DRIFT_MANIFEST="$DRIFT_FIXTURE/.claude-plugin/plugin.json"
@@ -7505,10 +7580,6 @@ assert_equals "no state, a disarmed slice, a foreign session, a garbage file and
 rm -rf "$STATE_DIR/runs"
 oso-state --session "$SESSION" clear >/dev/null 2>&1 || true
 
-# --- Commit gate: one table per question the matcher has to answer -----------
-# A table line is a whole case, and the command is its name: the point of these
-# is coverage of shapes, and a hand-written label per line would only repeat the
-# command less precisely.
 assert_every() {
   local assertion="$1" table="$2" case_command
   while IFS= read -r case_command; do
@@ -7520,9 +7591,6 @@ assert_every() {
 oso-state --session "$SESSION" clear
 oso-state --session "$SESSION" set mode=plan verify_green=false
 
-# Every line here ALLOWED a commit on red state before the lexer: the matcher
-# asked whether a commit-shaped substring followed a boundary character instead
-# of whether git is the command word of some command in the line.
 assert_every assert_denies adversarial <<'ADVERSARIAL_TABLE'
 if true; then git commit; fi
 for i in 1; do git commit; done
@@ -7560,11 +7628,6 @@ git replace abc123 def456
 git fast-import < dump
 ADVERSARIAL_TABLE
 
-# Every line here DENIED before the lexer, including a read-only probe an
-# auditor ran against this very gate. A heredoc body is data for whatever reads
-# it, a quoted mention is text, the read-only forms of a gated verb report
-# instead of writing, and an option git answers by itself prints a version, a
-# path or a usage screen and exits, so the word behind it never becomes a verb.
 assert_every assert_allows friction <<'FRICTION_TABLE'
 cat > f <<EOF\ngit commit -m x\nEOF
 cat > f <<-'EOF'\n\tgit commit -m x\n\tEOF
@@ -7625,10 +7688,6 @@ bash -c -- \"git commit\"
 bash -c \"git commit\" positional-arg
 REGRESSION_TABLE
 
-# git's own options are not a matter of taste: real git accepts a separate value
-# for the first table below and then runs the verb behind it, so a gate that
-# skips the wrong number of words reads the value as the verb and lets a commit
-# through. Confirmed against git 2.54.0 with `git <option> <value> version`.
 assert_every assert_denies "git option shape" <<'GIT_OPTION_TABLE'
 git --attr-source HEAD commit -m x
 git --namespace ns commit -m x
@@ -7643,10 +7702,6 @@ git --literal-pathspecs commit -m x
 git --no-optional-locks commit -m x
 GIT_OPTION_TABLE
 
-# The same arity question one word further in: a read-only marker standing where
-# an option's value stands is that option's value. Every line here writes a real
-# commit on git 2.54.0, with the marker for a subject, and every one of them came
-# out clear before this table existed.
 assert_every assert_denies "marker in a value position" <<'VALUE_POSITION_TABLE'
 git commit -m --dry-run
 git commit -m -h
@@ -7656,11 +7711,6 @@ git commit -m x -m --dry-run
 git -C /repo commit -m --dry-run
 VALUE_POSITION_TABLE
 
-# Which of a verb's options take a separate value is per verb and per git version,
-# so a marker the gate cannot place is gated rather than guessed: these are
-# read-only calls this gate refuses on purpose, and writing the marker in front of
-# the other options is what lets them through. Behind `--` every word is a
-# pathspec, so a marker there is no marker at all.
 assert_every assert_denies "marker the gate will not place" <<'UNPLACEABLE_MARKER_TABLE'
 git commit --amend --dry-run
 git commit -a --dry-run
@@ -7682,8 +7732,6 @@ npm test
 man git-commit
 NO_FRICTION_TABLE
 
-# Pinned so nobody reads the gated verb set as "everything that writes": these
-# rewrite history and this gate lets every one of them through.
 assert_every assert_allows "not gated" <<'NOT_GATED_TABLE'
 git revert HEAD
 git merge feature
@@ -7693,14 +7741,6 @@ git am patch.eml
 git stash
 NOT_GATED_TABLE
 
-# A redirect's target is a file or a descriptor, and in front of the command word
-# it stands exactly where the command word stands: the target landed at
-# command_tokens[0], so the git test, the residue test and the verdict all
-# answered about the file. `>/dev/null git commit -m x` came out clear — allowed,
-# and not even counted — while bash ran the commit, and that is ordinary POSIX
-# syntax rather than an evasion shape, so a benign line trips it. The trailing
-# half is the control: dropping the target may not cost the command it belongs
-# to, and the descriptor a redirect starts with is a word of its own.
 assert_every assert_denies "redirect target" <<'REDIRECT_TABLE'
 >/dev/null git commit -m x
 >out.txt git commit -m x
@@ -7734,11 +7774,6 @@ git commit -m x >out.txt 2>err.log
 git fast-import < dump
 REDIRECT_TABLE
 
-# The reader a heredoc or a herestring feeds is this command's command word, so a
-# target standing in front of it took that place: `>out.txt bash <<EOF` was a
-# heredoc whose body nobody read as commands, and it came out clear. The shapes
-# with the redirect behind the reader are the control on the other side, where the
-# shell was never hidden and the drop may not lose it.
 assert_every assert_denies "redirect in front of a shell's stdin" <<'REDIRECT_STDIN_TABLE'
 >out.txt bash <<EOF\ngit commit\nEOF
 bash >out.txt <<EOF\ngit commit\nEOF
@@ -7746,10 +7781,6 @@ bash >out.txt <<EOF\ngit commit\nEOF
 2>err.log bash -s <<EOF\ngit commit\nEOF
 REDIRECT_STDIN_TABLE
 
-# The friction side of the same drop: a dropped target may not take a real command
-# word with it, and a redirect on a line with no commit in it is no verdict at all.
-# The friction table above already pins the heredoc shapes (`cat > f <<EOF`,
-# `echo bash > f <<EOF`) whose bodies carry one.
 assert_every assert_allows "redirect with no commit to find" <<'REDIRECT_NO_FRICTION_TABLE'
 npm test > out.log
 npm test 2>&1 | tee out.log
@@ -7762,10 +7793,6 @@ echo \"a > b\" && npm test
 echo a \\> b
 REDIRECT_NO_FRICTION_TABLE
 
-# --- Residue: what the lexer cannot decide passes, and is counted ------------
-# A non-shell interpreter's payload and a command word only the shell can
-# resolve are out of a discipline rail's charter, so they pass — but the rate
-# has to be visible, or nobody can tell a rail from a sieve.
 rm -f "$events_log"
 assert_allows "residue: a python payload that mentions git passes" \
   block-commit-until-green.sh "$(bash_input 'python3 -c \"import os; os.system('\''git commit'\'')\"')"
@@ -7774,11 +7801,6 @@ assert_allows "residue: a command word only the shell resolves passes" \
 assert_logged "a residue allow carries the command it let through" \
   '"event":"residue-allowed","command":"python3'
 
-# A wrapper chain deeper than the lexer reads is the same undecidable: the payload
-# nobody read is residue, so a chain with no git in it is never refused for a red
-# verify. The cost is taken on purpose — four wrappers deep hides a commit, the
-# way a python payload already does — so it is pinned as a decision, not left to
-# be found later and read as a hole.
 assert_allows "residue: a wrapper chain past the recursion bound passes" \
   block-commit-until-green.sh "$(bash_input 'bash -c '\''bash -c \"bash -c \\\"bash -c ok\\\"\"'\''')"
 assert_allows "residue: a chain past the bound hides a commit — allowed on purpose" \
@@ -7789,11 +7811,6 @@ assert_logged "both chains past the bound are logged with the chain they let thr
 assert_denies "a chain past the bound never downgrades a commit the gate did read" \
   block-commit-until-green.sh "$(bash_input 'git commit -m x && bash -c '\''bash -c \"bash -c \\\"bash -c ok\\\"\"'\''')"
 
-# Three more classes the gate reads far enough to know it cannot decide: an
-# interpreter's script arrives on stdin instead of in an argument, a command word
-# is whatever a substitution prints, and a git option shape belongs to no table
-# here — the word behind `--super-prefix` is a value on one git and the verb on
-# another. Every one of them passes, and every one of them is counted.
 assert_allows "residue: a python heredoc that mentions git passes" \
   block-commit-until-green.sh "$(bash_input 'python3 - <<EOF\nos.system(\"git commit\")\nEOF')"
 assert_allows "residue: a command word a substitution produces passes" \
@@ -7805,12 +7822,6 @@ assert_logged "stdin scripts, produced command words and unknown git options are
   '"event":"residue-allowed","command":"$(echo git) commit"' \
   '"event":"residue-allowed","command":"git --super-prefix'
 
-# An unresolved option shape is undecidable in front of the command word too: `x`
-# is the user sudo runs as or the program it runs, and answering that needs an
-# option-arity table for every wrapper there is. So the same rule the git options
-# already follow holds here — unresolved is residue, allowed and counted, never
-# clean. `stdbuf -oL git commit` above stays a deny: a commit the gate did read
-# outranks a prefix it did not.
 assert_allows "residue: a wrapper option whose value could be the command word passes" \
   block-commit-until-green.sh "$(bash_input 'sudo -u x bash <<EOF\ngit commit\nEOF')"
 assert_allows "residue: a wrapper option in front of git passes" \
@@ -7819,15 +7830,6 @@ assert_logged "an unresolved command prefix is counted, not read as clean" -F \
   '"event":"residue-allowed","command":"sudo -u x bash <<EOF' \
   '"event":"residue-allowed","command":"sudo -u x git commit"'
 
-# The same arity question one word into an interpreter's arguments: on bash 5.3
-# `bash -c -O extglob \"…\"` and `bash -c -o pipefail \"…\"` run the payload behind
-# the option's value, so the word deferred as the payload is the value and the real
-# payload goes unread — both lines came out clear before these cases existed. `-O`
-# takes a value and `-x` does not, and no table says which does across shells and
-# versions, so a payload standing in a value position is read as commands and the
-# call is counted unread. The controls behind the pair: an option that takes no
-# value leaves a real payload there, and options in front of -c leave the payload
-# where the flag put it.
 assert_allows "residue: an interpreter payload standing in a value position passes" \
   block-commit-until-green.sh "$(bash_input 'bash -c -O extglob \"git commit -m x\"')"
 assert_allows "residue: the same shape with a set -o option passes" \
@@ -7840,9 +7842,6 @@ assert_denies "a payload in a value position is still read as commands" \
 assert_denies "options in front of -c leave the payload where the flag put it" \
   block-commit-until-green.sh "$(bash_input 'bash -O extglob -c \"git commit -m x\"')"
 
-# The same question hidden inside one word, where an allow proves nothing on its
-# own: a clustered option that comes out clear is a payload nobody read and nobody
-# counted, so the allow only passes here if the call was recorded.
 assert_allows_counted() {
   local name="$1" hook="$2" input="$3"
   rm -f "$events_log"
@@ -7858,13 +7857,6 @@ assert_allows_counted() {
   fi
 }
 
-# A cluster carries -c together with letters whose arity no table here answers, and
-# on bash 5.3 every line below runs the payload behind extglob/pipefail/nocaseglob
-# — including `-Oc`, where -c is the last letter of the cluster. Reading the word
-# the flag stands in front of as the payload therefore lexed the option's value and
-# left the real payload unread and unrecorded, which is the one verdict this gate
-# may never reach. So the word behind a cluster stands in a value position, the way
-# it already does behind a separate `-c -O`.
 assert_every assert_allows_counted "payload behind a clustered option" <<'CLUSTERED_OPTION_TABLE'
 bash -cO extglob \"git commit -m x\"
 bash -co pipefail \"git commit -m x\"
@@ -7875,15 +7867,9 @@ bash -cO extglob 'git commit -m x'
 bash -cO nocaseglob \"git commit --amend\"
 CLUSTERED_OPTION_TABLE
 
-# What that costs, pinned rather than discovered later: no cluster's next word is
-# read as clean, so an ordinary login-shell wrapper is counted too. It still
-# passes, and a commit behind one still denies — `bash -lc \"git commit\"` above.
 assert_allows_counted "a login-shell cluster is counted even with no git in it" \
   block-commit-until-green.sh "$(bash_input 'bash -lc \"npm test\"')"
 
-# Wrappers that hand the rest of their line to another program, stripped the way
-# nice and timeout already are: `unbuffer git commit` is the commit it runs, and a
-# numeric argument is a priority, not a program.
 assert_every assert_denies "scheduling wrapper" <<'WRAPPER_NAME_TABLE'
 ionice -c2 git commit -m x
 chrt -f 10 git commit -m x
@@ -7891,28 +7877,15 @@ taskset -c 0 git commit -m x
 unbuffer git commit -m x
 WRAPPER_NAME_TABLE
 
-# Behind a wrapper's option the word is that option's value or the program, and
-# nothing here can say which — the same undecidable as `sudo -u x git commit`.
 assert_allows_counted "residue: a lock file behind flock's option passes" \
   block-commit-until-green.sh "$(bash_input 'flock -x /tmp/l git commit -m x')"
 
-# An interpreter installs under a versioned name — python3.13 is the shape a system
-# python has — and the version says nothing about what the script asks git to do.
 assert_allows_counted "residue: a versioned interpreter that mentions git passes" \
   block-commit-until-green.sh "$(bash_input 'python3.13 -c \"import os; os.system('\''git commit'\'')\"')"
 
-# The residue half of the redirect drop: behind a target the gate reads as a word,
-# an interpreter is `/dev/null` — clear, silent, and the script it was handed never
-# counted. Dropping the target is what puts the call back in the class it belongs
-# to, so the shape is pinned here as counted rather than merely allowed.
 assert_allows_counted "residue: an interpreter behind a redirect is counted, not read as a file" \
   block-commit-until-green.sh "$(bash_input '>/dev/null python3 -c \"import os; os.system('\''git commit'\'')\"')"
 
-# The mark an unresolved expansion has to leave on the word the gate reads — the
-# command word, or git's own verb. `$(echo git) commit` above is counted because
-# its `$` stands at position 0; the same expansion one byte in, and the backtick
-# spelling, which left no mark on the word at all, both came out clear. Which
-# spelling an expansion wears decides nothing about what the shell resolves it to.
 assert_every assert_allows_counted "word an expansion leaves unresolved" <<'UNRESOLVED_WORD_TABLE'
 g${x}it commit --no-verify -m x
 `echo git` commit
@@ -7920,20 +7893,9 @@ git `echo commit` -m x
 ev${a}l \"git commit\"
 UNRESOLVED_WORD_TABLE
 
-# What that predicate may not reach: a gated call the gate DID resolve outranks an
-# expansion in the word, the way it already outranks an unresolved prefix. Whatever
-# `${tools}` holds, the last segment of the command word is git and the verb behind
-# it is commit.
 assert_denies "an expansion inside a resolved git path is still a deny" \
   block-commit-until-green.sh "$(bash_input '/opt/${tools}/git commit -m x')"
 
-# A shell whose commands the line does not carry: a pipe is not attached to its
-# reader syntactically, a script file is a name and not its contents, and a sourced
-# file is not on the line at all. All three are the same undecidable as a python
-# script this lexer cannot open, and all three are ordinary shapes a session runs —
-# `cat script.sh | bash`, `bash deploy.sh`, `source deploy.sh` — so denying them
-# would be friction on real work. They pass, and every case below is here for the
-# other half: counted, never clear-and-silent, or the rate is invisible.
 assert_every assert_allows_counted "a shell fed from a pipe or a script file — counted, not denied, on purpose" <<'UNREAD_SHELL_INPUT_TABLE'
 echo git commit | bash
 echo git commit | sh
@@ -7948,14 +7910,9 @@ source deploy.sh
 . deploy.sh
 SOURCED_SCRIPT_TABLE
 
-# The control the pipe cases are the mirror of: the same `-s` shell, handed the
-# same commit where the line can carry it, is read and denied.
 assert_denies "the same shell denies the commit a heredoc spells on the line" \
   block-commit-until-green.sh "$(bash_input 'bash -s <<EOF\ngit commit\nEOF')"
 
-# And the control on the other side: a mention with no shell to read it is decided,
-# not undecidable, so it stays the verdict the vast majority of calls reach —
-# allowed AND silent. Counting these would drown the rate the cases above measure.
 rm -f "$events_log"
 assert_allows "a git mention with no shell to read it stays clear" \
   block-commit-until-green.sh "$(bash_input 'echo git commit')"
@@ -7963,10 +7920,6 @@ assert_allows "a pipe into a program that is no shell stays clear" \
   block-commit-until-green.sh "$(bash_input 'cat notes.md | grep commit')"
 assert_not_logged "neither clear line is counted as residue"
 
-# Past the input bound the lexer does not lex, because a line's cost grows
-# faster than its length and a hook runs before every call. So a long line is
-# undecidable by construction — allowed and counted, never denied for a verb
-# nobody read — and the pair pins the bound from both sides.
 commit_line_of_length() {
   local length="$1" chunk="$2" line='git commit -m x && echo '
   while [ "${#line}" -lt "$length" ]; do
@@ -7981,12 +7934,6 @@ assert_denies "a line just under the input bound is still read" \
 assert_logged "a line past the input bound is logged with the head of the line" \
   '"event":"residue-allowed","command":"git commit -m x && echo aaa'
 
-# Decoding a payload costs what lexing it costs — the same escapes×bytes
-# shape — and it runs before the lexer's bound can apply, so 4000 escapes cost
-# seconds on the machines that have no jq. The bound is therefore measured on the
-# escaped payload the client sent, which is never smaller than what it decodes to
-# and needs no reader to size: past it nothing decodes and nothing lexes. Same
-# threshold, same marker, so this pins it from both sides the lexer pair does.
 assert_allows "residue: a payload whose escapes run past the bound is not decoded, so it passes counted" \
   block-commit-until-green.sh "$(bash_input "$(commit_line_of_length 3100 '\"aaaa')")"
 assert_denies "a payload whose escapes fit the bound is decoded and read" \
@@ -7994,16 +7941,6 @@ assert_denies "a payload whose escapes fit the bound is decoded and read" \
 assert_logged "a payload past the decoder bound is logged with the head the client sent" -F \
   '"event":"residue-allowed","command":"git commit -m x && echo \\\"aaaa'
 
-# --- Event log privacy: it carries command text, so it carries secrets ---------
-# 350 is a budget, not a round number: one command head, which lib.sh caps at
-# LOG_COMMAND_HEAD_BYTES=120, plus one envelope — the ts, event, session, client
-# and schema fields run about 115 bytes with this suite's session name and longer
-# in a real session, where the id is a uuid — plus the gate and hook_event fields
-# a deny record carries, up to "block-edits-without-slice.sh" and "PreToolUse",
-# the longest either family has — plus room for the escapes a head can add. Over
-# it, something wrote more than a head, which is how a whole 3 KB command line
-# would land in the log. Nor is any of it safe to leave world-readable while the
-# state files are not.
 longest_event=0
 while IFS= read -r event_line; do
   if [ "${#event_line}" -gt "$longest_event" ]; then
@@ -8025,18 +7962,10 @@ else
   esac
 fi
 
-# --- Reader parity: jq and the fallback hand the gate the same text ----------
-# A fixture table only proves the platform it ran on unless both readers hand the
-# gate the same line: jq returns the real string, the fallback has to unescape by
-# hand, and no gate may be able to tell which one read it.
 read_by() {
   ( . "$PLUGIN/hooks/lib.sh"; JSON_READER="$1"; json_command_line "$2" )
 }
 
-# A case only the second reader can judge is skipped where that reader is absent,
-# and the skip line stands for it in the tally. The value is what the reader
-# returns, so it is a command this runs rather than a string the call site
-# expands: expanded there, the missing reader would run anyway.
 assert_equals_or_skip() {
   local name="$1" tool="$2" skip_reason="$3" expected="$4"
   shift 4
@@ -8055,9 +7984,6 @@ assert_equals_or_skip "jq and the pattern reader decode a payload identically" \
   jq "jq is absent here, so there is no second reader to compare against" \
   "$parity_expected" read_by jq "$parity_input"
 
-# The bound is a property of the gate, not of the machine's jq: a decoder bound
-# only the fallback applied would deny on one install what it allows on the next.
-# Over it either reader hands back the payload the client sent, escapes and all.
 over_bound_line="$(commit_line_of_length 3100 '\"aaaa')"
 over_bound_input="$(bash_input "$over_bound_line")"
 assert_equals "the pattern reader leaves an over-bound payload undecoded" \
@@ -8066,13 +7992,6 @@ assert_equals_or_skip "jq leaves the same over-bound payload unread as the fallb
   jq "jq is absent here, so the bound has only one reader to hold for" \
   "$over_bound_line" read_by jq "$over_bound_input"
 
-# A carriage return is the one byte both readers can add on their own: a Windows
-# jq build ends its answer CRLF and `$(…)` strips only the newline, and the
-# pattern reader decodes an escaped `\r` into that same byte. `cwd` is the field
-# where it costs, because state_file_for digests it — one CR and the session
-# arms one state file while the commit gate reads another. Asserted against
-# $REPO_STATE, the name this suite computes for itself at the top, so a reader
-# that passes the CR on is caught by the two spellings disagreeing.
 state_file_by_reader() {
   ( . "$PLUGIN/hooks/lib.sh"; JSON_READER="$1"; state_file_for "$(json_field "$2" cwd)" )
 }
@@ -8084,25 +8003,14 @@ assert_equals_or_skip "jq's CR-bearing cwd names the same file the fallback does
   jq "jq is absent here, so the digest has only one reader to hold for" \
   "$REPO_STATE" state_file_by_reader jq "$cr_cwd_input"
 
-# The choke point in its own right, where a CR does total rather than partial
-# damage: `git -C` cannot open a directory whose name ends in CR, so the identity
-# comes back empty and the raw CR-bearing path is what gets digested.
 assert_equals "state_file_for digests the repository, not a CR-bearing spelling of its path" \
   "$REPO_STATE" "$( . "$PLUGIN/hooks/lib.sh"; state_file_for "$REPO_ROOT"$'\r' )"
 
-# A gate reading its envelope by pattern is a degraded gate; the log is the only
-# place that difference can show up, and an armed session is the only place it may
-# be written — see the invisibility cases above.
 rm -f "$events_log"
 ( . "$PLUGIN/hooks/lib.sh"; JSON_READER=pattern; record_reader_fallback "$SESSION" )
 assert_logged "a gate that fell back to the pattern reader records it" '"event":"jq-absent"'
 oso-state --session "$SESSION" clear
 
-# --- The commit's own boundary: the shipped git pre-commit hook ---------------
-# A git hook parses no command line, so it sees what a matcher structurally cannot:
-# a wrapper whose option arity no table can answer, an alias that never spells the
-# verb, a remote or containerized shell. Every commit here happens in a throwaway
-# repo under $TEST_HOME, which the EXIT trap removes.
 GIT_HOOKS_DIR="$PLUGIN/git-hooks"
 COMMIT_REPO="$TEST_HOME/commit-repo"
 HUMAN_HOME="$TEST_HOME/human-terminal"
@@ -8115,14 +8023,9 @@ arm_commit_repo() {
   git -C "$COMMIT_REPO" config user.email tests@oso-code.invalid
   git -C "$COMMIT_REPO" config user.name "oso-code tests"
   git -C "$COMMIT_REPO" config commit.gpgsign false
-  # `ci = commit` is the shape a real ~/.gitconfig carries, and the verb it hides
-  # reaches none of the matcher's tables.
   git -C "$COMMIT_REPO" config alias.ci commit
 }
 
-# One attempt per case, with something staged so the commit has work to do. The
-# shape runs as written — an agent's Bash line, env prefix and all — inside the
-# repo, so git inherits the session variable the way it does in a real session.
 attempt_commit() {
   local shape="$1" change
   commit_attempts=$((commit_attempts + 1))
@@ -8136,8 +8039,6 @@ attempt_commit() {
   fi
 }
 
-# A commit that dies for another reason is not this gate firing, so the reason the
-# operator would read has to be in the abort.
 assert_commit_aborted() {
   local name="$1" shape="$2" reason="${3:-verify is not green}"
   attempt_commit "$shape"
@@ -8166,14 +8067,9 @@ if ! command -v git >/dev/null 2>&1; then
   skipped=$((skipped + 1))
 else
   arm_commit_repo
-  # The state this hook reads is the COMMIT REPO's, so it is armed from inside it:
-  # armed from the suite's own directory it would name this repository instead and
-  # the hook would judge against a file nobody wrote.
   COMMIT_REPO_STATE="$STATE_DIR/$(state_key_of "$COMMIT_REPO").state"
   commit_repo_state() { ( cd "$COMMIT_REPO" && oso-state --session "$SESSION" "$@" ); }
 
-  # Invisibility, on the two shapes that own the operator's commits: a repo the
-  # plugin never armed, and a terminal with no agent marker at all — a human's.
   commit_repo_state clear
   rm -f "$events_log"
   assert_commit_lands "a repo with no state file commits untouched" 'git commit -m x'
@@ -8181,12 +8077,6 @@ else
     "env -u CLAUDE_CODE_SESSION_ID HOME=$HUMAN_HOME git commit -m x"
   assert_not_logged "neither allowed commit left a trace" "$HUMAN_HOME"
 
-  # The same terminal against an ARMED repo, which is the whole of what keying by
-  # repository changed: the state file now exists for the repo the operator commits
-  # in, so the marker is all that stands between this gate and their own commit.
-  # Both spellings are stripped — a host that publishes no session id arms on
-  # OSO_AGENT — and the operator's own HOME is used, so the audit this leaves no
-  # trace in is the same log every case above reads.
   commit_repo_state set mode=plan verify_green=false
   rm -f "$events_log"
   assert_commit_lands "an unmarked terminal commits untouched though the repo is armed and red" \
@@ -8200,11 +8090,6 @@ else
   assert_commit_lands "the git layer lets a commit through once verify is green" 'git commit -m x'
   assert_logged "the git layer records its deny as the matcher's event" '"event":"commit-denied"'
 
-  # Both layers on one shape, which is the whole reason this one exists: the matcher
-  # reads flock's lock-file argument as the program flock runs, and an alias hides
-  # the verb from every table it has. Both come out clear, both reach the commit.
-  # Two repos are armed for these: the matcher judges the payload's cwd, which is
-  # this repository, and the commit happens in the other.
   commit_repo_state set verify_green=false
   oso-state --session "$SESSION" set mode=plan verify_green=false
   alias_shape='git ci -m x'
@@ -8221,19 +8106,23 @@ else
     skipped=$((skipped + 1))
   fi
 
-  # --no-verify is git's documented switch for skipping this hook and no hook can
-  # refuse it. That is the division of labour rather than a hole: what the commit's
-  # own boundary cannot see, the matcher does.
   assert_denies "the matcher is the layer that sees --no-verify" \
     block-commit-until-green.sh "$(bash_input 'git commit --no-verify -m x')"
   assert_commit_lands "--no-verify skips the git layer, as git documents" \
     'git commit --no-verify -m x'
 
-  # Same polarity as the matcher: armed state the gate cannot read denies rather
-  # than guessing. The unreadable path is the COMMIT REPO's, because that is the
-  # file this hook resolves — made unreadable in the suite's own repository the
-  # hook would still read a perfectly legible red state and deny for the other
-  # reason, which is a case above and would prove nothing about this one.
+  padded_no_verify='git commit --no-verify -m x #'
+  while [ "${#padded_no_verify}" -le "$((3072 + 16))" ]; do
+    padded_no_verify="$padded_no_verify padding"
+  done
+  assert_allows "padding takes --no-verify past what the matcher can read, so the one layer that sees that flag spends the line unread" \
+    block-commit-until-green.sh "$(bash_input "$padded_no_verify")"
+  aliased_no_verify='git ci --no-verify -m x'
+  assert_allows "the matcher gates on the git verb, so an alias carries --no-verify past it with no padding at all" \
+    block-commit-until-green.sh "$(bash_input "$aliased_no_verify")"
+  assert_commit_lands "and --no-verify skips the layer that backstops an alias, so this shape meets neither" \
+    "$aliased_no_verify"
+
   rm -f "$COMMIT_REPO_STATE"
   mkdir -p "$COMMIT_REPO_STATE"
   assert_commit_aborted "the git layer denies a state path it cannot read" \
@@ -8248,40 +8137,21 @@ else
   oso-state --session "$SESSION" clear
 fi
 
-# --- The installer's trust boundary: what may become a plugin source ----------
-# Nothing runs bootstrap/install.sh — CI only parses it — so the two decisions
-# that can permanently repoint the plugin marketplace are read here instead. A
-# `directory` source is a dead end the update path never repairs: `marketplace
-# update` git-pulls a github or git source and nothing else.
 INSTALL_SH="$REPO_ROOT/bootstrap/install.sh"
 CLAUDE_SHIM_DIR="$TEST_HOME/installer-shim"
 CLIENT_CALLS="$TEST_HOME/client-calls"
 CLIENT_REFUSAL="$TEST_HOME/client-refusal"
 INSTALLER_STDERR="$TEST_HOME/installer-stderr"
 mkdir -p "$CLAUDE_SHIM_DIR"
-# The client the installer sees: it records every call it is handed, and a case
-# that needs the client to say no arms one by writing the message the real client
-# would print. Armed, the call is still recorded — a refusal the installer reports
-# without ever reaching the client would prove nothing about either.
 printf '#!/bin/sh\necho "$*" >> "%s"\n[ -f "%s" ] || exit 0\ncat "%s" >&2\nexit 1\n' \
   "$CLIENT_CALLS" "$CLIENT_REFUSAL" "$CLIENT_REFUSAL" > "$CLAUDE_SHIM_DIR/claude"
 chmod +x "$CLAUDE_SHIM_DIR/claude"
 
-# The installer's own functions, run in a subshell the way read_by runs the hook
-# library's: sourcing install.sh brings its `set -e` and its globals along, and
-# neither may reach the rest of the suite. The call is saved before the subshell
-# clears $@, which a sourced file inherits from its caller and reads as flags.
-# INSTALLER_SCRIPT names a COPY of install.sh under a fixture bootstrap/ for the
-# cases that need it to read a different gentle-manifest.txt: the script resolves
-# that file from its own location, so a copy beside one is the only handle on it.
-# An env prefix rather than a parameter, because every argument here is the call.
 in_installer() {
   local call=("$@")
   ( set --; PATH="$CLAUDE_SHIM_DIR:$PATH"; . "${INSTALLER_SCRIPT:-$INSTALL_SH}"; "${call[@]}" )
 }
 
-# Every fixture below is a verbatim failure of `claude plugin marketplace add`,
-# measured against client 2.1.220 — prose is the only signal the client gives.
 assert_classified() {
   local name="$1" expected="$2" output="$3"
   assert_equals "$name" "$expected" "$(in_installer classify_marketplace_add_failure "$output")"
@@ -8309,15 +8179,9 @@ assert_classified "a manifest that parses but does not fit the schema is the sam
   "Adding marketplace…✘ Failed to add marketplace: Failed to parse marketplace file at /r/.claude-plugin/marketplace.json: Invalid schema: name: Invalid input: expected string, received undefined"
 assert_classified "a missing manifest is the same again" invalid-manifest \
   "Adding marketplace…✘ Failed to add marketplace: Marketplace file not found at /r/.claude-plugin/marketplace.json"
-# The fail-safe half: the client can reword any of the messages above in any
-# release, and the cost of that has to be a lost fallback, never a silent repoint.
 assert_classified "a message this script has never seen takes no fallback" unknown \
   "Adding marketplace…✘ Failed to add marketplace: something the client learned to say after this was written"
 
-# Registering a working tree as a plugin source: install.sh derives $REPO_ROOT from
-# $BASH_SOURCE, so a copy of the script dropped somewhere of its own makes that any
-# directory at all. A refusal that still calls the client refuses nothing, so what
-# the client was asked to register is half of every case here.
 clone_registration_of() {
   local verdict=registered
   : > "$CLIENT_CALLS"
@@ -8330,18 +8194,12 @@ assert_equals "a path carrying no marketplace manifest never reaches the client"
 assert_equals "the root of a real clone is what the offline fallback may register" \
   "registered:plugin marketplace add $REPO_ROOT" "$(clone_registration_of "$REPO_ROOT")"
 
-# Repointing at a working tree is a permanent change to where the plugin loads
-# from, and the operator only learns of it here. Spelled out rather than read from
-# install.sh on purpose, the way the state path above is.
 names_tree=no names_revert=no
 case "$(cat "$INSTALLER_STDERR")" in *"$REPO_ROOT"*) names_tree=yes ;; esac
 case "$(cat "$INSTALLER_STDERR")" in *"claude plugin marketplace add SoyJohnXD/oso-code"*) names_revert=yes ;; esac
 assert_equals "the fallback names the tree it repointed to and how to revert" \
   "tree=yes revert=yes" "tree=$names_tree revert=$names_revert"
 
-# The other end of that path: the fallback runs where the remote is already gone,
-# so a refusal it swallows leaves the operator with no source and no reason. The
-# first add classifies its failure; this one has to say as much.
 printf 'Adding marketplace…✘ Failed to add marketplace: Marketplace file not found at %s/.claude-plugin/marketplace.json\n' \
   "$REPO_ROOT" > "$CLIENT_REFUSAL"
 refused_fallback="$(clone_registration_of "$REPO_ROOT")"
@@ -8352,21 +8210,10 @@ assert_equals "a fallback the client refuses too names the reason, never a silen
   "$refused_fallback / $refusal_reason"
 rm -f "$CLIENT_REFUSAL"
 
-# The wiring summary is built in an array, and an array with no elements is an
-# "unbound variable" abort under `set -u` on bash < 4.4 — macOS's bash. Every
-# wiring path appends something today, so nothing else can reach the shape that
-# aborts: this case is the only thing standing between it and an installer that
-# dies on its last line, after everything it did.
 empty_summary="$(in_installer print_wiring_summary 2>&1)" || empty_summary="aborted: $empty_summary"
 assert_equals "a wiring summary with nothing in it prints instead of aborting under set -u" \
   "[oso-code] wiring summary:" "$empty_summary"
 
-# --- The opt-out marker: the only thing verify.sh can read the choice from -----
-# The two bootstrap scripts share no file, so the opt-out is DATA at a path each
-# spells for itself — spelled a third time here, which is what catches a wrong
-# constant in either. Both halves are cases because the CLEAR is the one that is
-# easy to forget: a marker left behind by an earlier opt-out would report a
-# genuinely failed impeccable install as the operator's own choice forever.
 IMPECCABLE_MARKER="$STATE_DIR/impeccable-opt-out"
 marker_state() { [ -f "$IMPECCABLE_MARKER" ] && echo recorded || echo cleared; }
 
@@ -8378,12 +8225,6 @@ in_installer wire_impeccable >/dev/null
 assert_equals "an install without the flag clears the marker an earlier one left" \
   "cleared" "$(marker_state)"
 
-# --- The verifier's report: an opt-out and an optional MCP are notes ----------
-# Read against this suite's isolated HOME with the client shimmed, so the install
-# checks fail legitimately and instantly and what the cases read is the SHAPE of
-# the report — which line an operator is handed, and whether the tally counts it.
-# OSO_VERIFY_SKIP_SLOW keeps verify.sh from re-running this very suite and from
-# fetching impeccable from npm.
 VERIFY_INSTALLED_ROOT="$HOME/.claude/plugins/cache/oso-code/oso-code/verify-fixture"
 mkdir -p "$VERIFY_INSTALLED_ROOT/hooks"
 printf '%s\n' \
@@ -8394,16 +8235,11 @@ printf '%s\n' \
   > "$VERIFY_INSTALLED_ROOT/hooks/block-commit-until-green.sh"
 chmod +x "$VERIFY_INSTALLED_ROOT/hooks/block-commit-until-green.sh"
 
-# VERIFY_SCRIPT points this at a fixture copy of verify.sh the way INSTALLER_SCRIPT
-# does for in_installer, and for the same reason: the manifest it checks is
-# resolved from the script's own location.
 verify_report() {
   ( PATH="$CLAUDE_SHIM_DIR:$PATH"
     OSO_VERIFY_SKIP_SLOW=1 bash "${VERIFY_SCRIPT:-$REPO_ROOT/bootstrap/verify.sh}" 2>&1 || true )
 }
 
-# What the report SAYS about one check, which is the whole difference between a
-# gap an operator has to fix and one they chose.
 report_line_kind() {
   local report="$1" name="$2"
   case "$report" in
@@ -8423,12 +8259,6 @@ assert_equals "an opt-out turns the impeccable plugin check into a note" \
   "note" "$(report_line_kind "$report_with_marker" 'impeccable plugin')"
 assert_equals "a cleared marker puts the hard impeccable check back — red in this fixture HOME" \
   "fail" "$(report_line_kind "$report_without_marker" 'impeccable plugin')"
-# This case is the old `note:`'s own regression test, turned around rather than
-# dropped: it pinned fallow that way because it built from a Rust toolchain nothing
-# here provisions, so a hard check would have made the one-step Windows path red
-# by construction. install.sh installs the pinned npm package on every supported
-# host now, so the reason is gone and the reading flips — an absent fallow is a
-# broken install and the tally has to say so.
 assert_equals "an absent fallow fails the run now that every host is provisioned with it" \
   "fail" "$(report_line_kind "$report_without_marker" 'fallow MCP')"
 assert_equals "verify.sh exports the agent marker when probing the installed commit gate" \
@@ -8436,25 +8266,8 @@ assert_equals "verify.sh exports the agent marker when probing the installed com
 assert_equals "the report still reaches its summary" "reached" \
   "$(printf '%s\n' "$report_without_marker" | grep -q '^passed:' && echo reached || echo missing)"
 
-# --- Claude Desktop: the second surface, reported and never counted -----------
-# Desktop's Code tab runs the CLI's engine and shares this same ~/.claude, so the
-# report has to say so — and it is an APPLICATION no installer here provisions, so
-# saying so may never cost a CLI-only operator a red line for software they never
-# wanted. Nothing about it can be red, then, which is what makes both directions
-# cases: neither may reach either half of the tally, and a `note:` regressed into a
-# check is the one thing that would break that silently. A counted line here could
-# only ever be a pass, and a tally that counts what cannot fail says less than the
-# same run's notes do.
-# ~/.config/Claude is the fixture because it is the one location verify.sh looks in
-# that this suite's own HOME owns; the tally is read as a DELTA between the two
-# runs rather than against a number, since every other check here answers to a
-# fixture HOME that earlier cases have been writing into.
 DESKTOP_FIXTURE="$HOME/.config/Claude"
 
-# The Claude Desktop locations that are NOT under this fixture's HOME. A machine
-# carrying the app there has verify.sh reporting it on every run whatever this
-# fixture does, so the pair below stands down there instead of reading a
-# contributor's own install as a regression.
 desktop_outside_fixture_home() {
   [ -e "/Applications/Claude.app" ] && return 0
   [ -n "${LOCALAPPDATA:-}" ] && [ -e "$LOCALAPPDATA/AnthropicClaude" ] && return 0
@@ -8489,15 +8302,6 @@ else
     "note" "$(report_line_kind "$desktop_absent_report" 'Claude Desktop')"
 fi
 
-# --- A CRLF checkout: the cleanup that removes nothing and is confirmed done ---
-# gentle-manifest.txt is DATA, so verify.sh's CR scan never covered it and
-# .gitattributes cannot renormalize a clone made before its pin. On a Windows
-# checkout every path in it arrives with a trailing CR, no "$CLAUDE_DIR/$rel"
-# matches, and all three readers agree the cleanup succeeded while every legacy
-# artifact is still live — the verifier's own check the loudest of the three,
-# because green over nothing scanned is what an operator trusts. The fixture is a
-# bootstrap/ of its own: both scripts resolve the manifest from their own
-# location, so a copy beside one is the only way to hand them a different one.
 CRLF_BOOTSTRAP="$TEST_HOME/crlf-bootstrap"
 CRLF_LEGACY_ARTIFACT="commands/sdd-apply.md"
 mkdir -p "$CRLF_BOOTSTRAP" "$HOME/.claude/commands"
@@ -8596,12 +8400,6 @@ else
     "$whitespace_style_verdict / $(wc -c < "$SETTINGS_PHASE_FILE" | tr -d ' ')"
 fi
 
-# --- A CRLF CLAUDE.md: one managed block, however the operator's editor writes -
-# ~/.claude/CLAUDE.md belongs to the OPERATOR, and a Windows editor rewrites it
-# CRLF, so the markers an earlier install wrote come back carrying a CR and a
-# byte-exact strip matches neither. Two runs is the smallest shape that shows the
-# cost: the first appends beside the stale block it failed to strip, the second
-# beside its own, and nothing says so until the file crosses the size budget.
 CRLF_GLOBAL_MD="$HOME/.claude/CLAUDE.md"
 printf '# personal rules\r\n\r\n%s\r\nstale block from an earlier install\r\n%s\r\n' \
   '<!-- oso-code:start -->' '<!-- oso-code:end -->' > "$CRLF_GLOBAL_MD"
@@ -8612,18 +8410,6 @@ crlf_personal_text="$(grep -q '# personal rules' "$CRLF_GLOBAL_MD" && echo kept 
 assert_equals "two merges over CRLF markers leave one managed block and the operator's own text" \
   "1 block / kept" "$crlf_managed_blocks block / $crlf_personal_text"
 
-# --- One directory, two spellings: what git stored vs. what the shell built ----
-# $GIT_HOOKS_DIR is built from `cd`+`pwd`, which under Git Bash reads /c/Users/…,
-# and MSYS argv conversion rewrites a POSIX-form argument before a native git.exe
-# ever sees it — so C:/Users/… is what lands in .git/config. Compared byte for
-# byte the two never match, and the cost falls on the SECOND install: the
-# installer reads its own wiring as a foreign owner and wires nothing, while
-# verify.sh calls the commit gate unwired on a repo where it is wired. Both
-# scripts carry their own copy of the normalizer, so ONE table judges both twins:
-# install.sh's copy arrives with the sourced script, verify.sh's is read out of the
-# shipped file the way the npx bound below is. The POSIX row is the guard that
-# none of this changed anything for Linux and macOS, where one spelling is all
-# there is.
 WINDOWS_HOOKS_DIR='C:/Users/o/oso-code/plugin/git-hooks'
 POSIX_HOOKS_DIR='/home/o/oso-code/plugin/git-hooks'
 HOOKS_DIR_SPELLINGS_NORMALIZED="$WINDOWS_HOOKS_DIR $WINDOWS_HOOKS_DIR $WINDOWS_HOOKS_DIR $WINDOWS_HOOKS_DIR $POSIX_HOOKS_DIR"
@@ -8652,26 +8438,12 @@ else
     "$HOOKS_DIR_SPELLINGS_NORMALIZED" "$(eval "$verify_normalizer"; normalized_hooks_dir_spellings)"
 fi
 
-# The same directory as a native Windows tool spells it back: the separators MSYS
-# converts on the way in, and a trailing one a hand-wired value can carry.
 windows_spelling_of() {
   printf '%s\\' "$(printf '%s' "$1" | tr '/' '\\')"
 }
 
-# --- A second install, and the verifier reading back what the first one wired --
-# Both readers of core.hooksPath, put behind a repo that is ALREADY correctly
-# wired in the spelling the other side writes. The fixture is a repository of its
-# own with a bootstrap/ beside it: both scripts derive $REPO_ROOT from their own
-# location, so a copy is the only way to hand them a repo that is not this one —
-# and this one's .git/config is the operator's, never a test's to write. The
-# drive-letter half of the rewrite has no fixture on either platform this suite
-# runs on, since a /c/… tree exists only on Windows and there the installer builds
-# that spelling itself; what differs here is the half that travels, separators and
-# a trailing slash. The table above covers the drive letter.
 if command -v git >/dev/null 2>&1; then
   mkdir -p "$TEST_HOME/wired-repo/bootstrap" "$TEST_HOME/wired-repo/plugin/git-hooks"
-  # Spelled the way the scripts will spell it: they resolve their own location
-  # through `cd`+`pwd`, which resolves the /var symlink macOS hands mktemp back.
   WIRED_REPO="$(cd "$TEST_HOME/wired-repo" && pwd)"
   cp "$INSTALL_SH" "$REPO_ROOT/bootstrap/verify.sh" "$WIRED_REPO/bootstrap/"
   cp "$REPO_ROOT/plugin/git-hooks/pre-commit" "$WIRED_REPO/plugin/git-hooks/"
@@ -8690,21 +8462,6 @@ else
   skipped=$((skipped + 1))
 fi
 
-# --- The tree the client reads, and the tree the installer wrote to -----------
-# Git Bash takes $HOME from an inherited $HOME first, then HOMEDRIVE+HOMEPATH, and
-# only then %USERPROFILE%; claude.exe is a Node process, so os.homedir() —
-# %USERPROFILE%, always — is the only tree it reads. A roaming or HOMESHARE
-# profile, or a machine carrying an MSYS2 $HOME of its own, splits the two, and
-# then the install writes CLAUDE.md, settings.json and every backup where the
-# client never looks while every check in the report reads that same wrong tree
-# and stays green. install.ps1 exports a matching HOME now, so what this stands
-# for is the Git Bash path README documents, which never passes through
-# PowerShell.
-# The AGREEING direction is a case in its own right because CI's fixture runs
-# HOME="$(mktemp -d)" with no %USERPROFILE% at all: without it nothing anywhere
-# would exercise the passing side, and a comparison made byte for byte would read
-# correct here and fail on every real Windows install, where the client's spelling
-# and Git Bash's never match.
 HOME_CHECK_NAME='home dir the Windows client reads'
 home_check_report() {
   local profile="$1"
@@ -8712,19 +8469,10 @@ home_check_report() {
     verify_report )
 }
 
-# The one line of the report that names this check, whichever way it counted, so a
-# case can read what the line HANDS BACK. The check folds both spellings to compare
-# them, and a fold is a comparison key rather than a path: reported back it names a
-# home dir the environment does not hold and an operator cannot go and act on.
-# Both fixtures below are spelled so the two differ — the Windows spelling on the
-# failing side, a trailing separator (which the fold drops) on the agreeing one.
 home_check_line() {
   printf '%s\n' "$1" | grep -F "$HOME_CHECK_NAME" || true
 }
 
-# The remediation is read off the verdict LINE, not off the report: printed on a
-# line of its own it reads as a verdict of its own, which is the shape verify.sh's
-# header rules out — and the failing side is the only side an operator reads it on.
 SPLIT_HOME_PROFILE="$(windows_spelling_of "$TEST_HOME/roaming-profile")"
 split_home_report="$(home_check_report "$SPLIT_HOME_PROFILE")"
 split_home_line="$(home_check_line "$split_home_report")"
@@ -8751,20 +8499,6 @@ assert_equals "the same tree spelled the Windows way is still the same tree, nam
 assert_equals "no %USERPROFILE% is a note, so the tally never moves on Linux or macOS" \
   "note" "$(report_line_kind "$(home_check_report '')" "$HOME_CHECK_NAME")"
 
-# --- Windows provisioning: per-user first, and nobody elevates uninvited ------
-# A machine-wide winget install raises a UAC prompt, and the one-step Windows
-# install README documents is a promise that it needs no administrator. These two
-# calls are the half that runs when the operator starts from Git Bash directly —
-# also documented — and `winget install jqlang.jq` was machine-wide by default,
-# carried none of the flags that answer winget's package and source agreements in
-# a shell nobody is watching, and had no guard, so a benign non-zero exit killed
-# the installer inside phase 1 of 7.
-# The stub is the winget the installer sees: it records every call and refuses on
-# demand, the way the client shim above does. git and claude are stubs on that
-# same PATH because ensure_prerequisites checks them before it ever reaches jq,
-# and jq is the one that has to be ABSENT for the winget branch to run at all —
-# so the fixture PATH holds these three and nothing else, which is also what keeps
-# `sudo pacman -S` and the other package managers out of the if-chain.
 WINGET_STUB_DIR="$TEST_HOME/winget-stub"
 WINGET_CALLS="$TEST_HOME/winget-calls"
 WINGET_REFUSAL="$TEST_HOME/winget-refusal"
@@ -8775,26 +8509,9 @@ printf '#!/bin/sh\nexit 0\n' > "$WINGET_STUB_DIR/git"
 cp "$WINGET_STUB_DIR/git" "$WINGET_STUB_DIR/claude"
 chmod +x "$WINGET_STUB_DIR/winget" "$WINGET_STUB_DIR/git" "$WINGET_STUB_DIR/claude"
 
-# The machine-wide call is the per-user one minus the scope, which is the policy
-# stated as data: anything else in that difference is a second decision nobody
-# recorded. Spelled in the order install.ps1's twin builds them, scope last.
 MACHINE_WIDE_JQ_CALL='install --id jqlang.jq --exact --accept-package-agreements --accept-source-agreements --silent'
 PER_USER_JQ_CALL="$MACHINE_WIDE_JQ_CALL --scope user"
 
-# Every winget call one run made, with the answer to the consent prompt fed on
-# stdin. Whether the installer was still standing at the end of the phase is read
-# off its stderr separately: jq never appears on that PATH, so the phase always
-# ends at its own "not on PATH yet" abort — and that line is the proof it got
-# there, since a `set -e` death at the winget call leaves it unsaid.
-# It enters install.sh through the same sourcing guard in_installer uses, but one
-# process further out, and that is the whole reason it exists: in_installer's
-# subshell runs from a `|| true` context, bash's errexit suppression reaches every
-# subshell of such a context, and re-arming `set -e` inside does not bring it back
-# (measured both ways). Through in_installer everything survives a failing winget,
-# including the code that did not — a case that cannot fail. A child process
-# carries an errexit of its own, which is the one install.sh runs under for real.
-# ASSUME_YES is set the way the flag sets it: $@ is cleared before sourcing, or
-# install.sh reads this fixture's own arguments as flags and exits on the first.
 winget_provisioning() {
   local assume_yes="$1" consent="$2"
   : > "$WINGET_CALLS"
@@ -8812,10 +8529,6 @@ winget_provisioning() {
 assert_equals "the installer asks winget for a per-user install and answers its agreement prompts" \
   "$PER_USER_JQ_CALL" "$(winget_provisioning false n)"
 
-# Unattended, both halves at once: --yes is consent to install.sh's own plan and
-# never to a UAC dialog no one is there to click, so the run takes no second call,
-# hands over the command to run by hand, and carries on to the phase's own verdict
-# instead of dying at the winget line.
 : > "$WINGET_REFUSAL"
 unattended_calls="$(winget_provisioning true '')"
 unattended_survived=died-at-winget
@@ -8836,27 +8549,11 @@ assert_equals "consent to the administrator prompt is what the machine-wide retr
   "$PER_USER_JQ_CALL
 $MACHINE_WIDE_JQ_CALL" "$(winget_provisioning false y)"
 
-# install.ps1 raises this same question on the runs that start there and reads the
-# answer with `-match '^y(es)?$'`, which PowerShell matches case-insensitively. A
-# `Yes` typed at this prompt declined here and consented there — the same word,
-# opposite outcomes, decided by which entry point the operator happened to use.
 assert_equals "the prompt reads consent the way the PowerShell twin does, in any case" \
   "$PER_USER_JQ_CALL
 $MACHINE_WIDE_JQ_CALL" "$(winget_provisioning false Yes)"
 rm -f "$WINGET_REFUSAL"
 
-# --- fallow: an npm pin that applies on every host, with no Rust anywhere ------
-# fallow used to need `cargo install fallow-mcp` and this repo provisions Rust on
-# no OS, which is the whole reason it stayed a note verify.sh never counted.
-# Its npm package ships prebuilt Windows, Linux and macOS binaries, so the
-# toolchain wall is gone and the check is counted — and a counted check is
-# what makes both cases below matter: the provisioning has to be real on every
-# host, and the pin has to reach the machines that already have some fallow.
-# The stubs are npm and the client and the PATH holds nothing else: cargo absent
-# is half of what the first case asserts.
-# Spelled here rather than read out of install.sh, the way the state path and the
-# opt-out marker above are — a pin nobody asserts independently is a pin one edit
-# can quietly turn into `@latest`.
 if [ "$RUNS_ON_WINDOWS_BASH" = true ]; then
   echo "skip: the fallow wiring runs with its stub dir as its whole PATH, and the linked cat and sed in it are copies without their libraries, so neither the calls it made nor its verdict comes back to read"
   skipped=$((skipped + 1))
@@ -8869,13 +8566,6 @@ else
   FALLOW_FIXTURE_HOME="$TEST_HOME/fallow-home"
   mkdir -p "$FALLOW_STUB_DIR" "$FALLOW_FIXTURE_HOME"
   printf '#!/bin/sh\necho "npm $*" >> "%s"\nexit 0\n' "$FALLOW_CALLS" > "$FALLOW_STUB_DIR/npm"
-  # The client an install meets on a machine that already has an entry: `mcp add`
-  # refuses an existing one with exit 1 and a message that says "already", while
-  # `mcp get` exits 0 for it whether or not the command behind it can be spawned —
-  # so this stub answers the way the real client does, with the entry's own command
-  # on a `  Command:` line among the other fields it prints. The entry fixture holds
-  # that command; an empty one stands for a client that describes the entry without
-  # naming a command at all.
   printf '%s\n' \
     '#!/bin/sh' \
     "echo \"claude \$*\" >> \"$FALLOW_CALLS\"" \
@@ -8895,19 +8585,9 @@ else
     'esac' \
     'exit 0' > "$FALLOW_STUB_DIR/claude"
   chmod +x "$FALLOW_STUB_DIR/npm" "$FALLOW_STUB_DIR/claude"
-  # The stub dir IS the PATH the wiring runs under, so the two text tools either side
-  # of it needs are linked in: `cat` for the stub itself, `sed` for the read-back.
-  # What the isolation is for is unchanged — no cargo, and no fallow-mcp.
   ln -sf "$(command -v cat)" "$FALLOW_STUB_DIR/cat"
   ln -sf "$(command -v sed)" "$FALLOW_STUB_DIR/sed"
 
-  # One wiring, leaving behind every call it made in order and the verdict it
-  # recorded — the two halves the cases below read separately. PATH is replaced AFTER
-  # the source the way winget_provisioning does it: install.sh resolves its own
-  # directory and stamps a backup name at source time, and neither `dirname` nor
-  # `date` is in the stub dir. HOME is a fixture with no ~/.cargo and APPDATA is
-  # emptied, so what the resolver answers is the bare name and not a fallow the
-  # machine running this suite has.
   run_fallow_wiring() {
     : > "$FALLOW_CALLS"
     : > "$FALLOW_VERDICT"
@@ -8933,10 +8613,6 @@ else
 claude mcp add --scope user fallow -- fallow-mcp" \
     "$(fallow_wiring_calls)"
 
-  # The other half of a pin: a run that returns "already wired" the moment any entry
-  # exists never installs anything, so the pinned version only ever lands on a clean
-  # machine — which is the one machine nobody can go and look at. What the pin governs
-  # is the package; which command the entry names is the next three cases.
   printf '%s\n' fallow-mcp > "$FALLOW_WIRED_ENTRY"
   assert_equals "a fallow already wired still gets the pinned package, so the pin is not for clean machines only" \
     "npm install --global fallow@$EXPECTED_FALLOW_VERSION
@@ -8944,27 +8620,14 @@ claude mcp add --scope user fallow -- fallow-mcp
 claude mcp get fallow" \
     "$(fallow_wiring_calls)"
 
-  # What that `mcp get` is FOR, and it is not the exit code: the client returns 0 for
-  # an entry whose command cannot be spawned, so an existence test reports every stale
-  # entry as wired. verify.sh counts this entry connecting now, and `mcp add` refuses
-  # to touch one it did not write — so "already wired" over a stale command is a red
-  # no re-run of the installer can clear. The command is read back and compared.
   assert_equals "an entry already naming the resolved command is wired, and the verdict says which" \
     "OK|fallow|already wired: fallow-mcp" "$(fallow_wiring_verdict)"
 
-  # The Windows shape this whole change exists for: an earlier run wired the bare name
-  # or the .ps1 beside it, neither of which a native Windows client can spawn. Both
-  # commands belong in the report — an operator cannot repoint an entry they are not
-  # told the target of — and the remedy has to be the two-step, because the installer
-  # takes this same refusal every time it runs.
   printf '%s\n' 'C:/Users/dev/AppData/Roaming/npm/fallow-mcp.ps1' > "$FALLOW_WIRED_ENTRY"
   assert_equals "an entry naming a different command fails, with both commands and the two-step repoint" \
     "FAILED|fallow|wired to C:/Users/dev/AppData/Roaming/npm/fallow-mcp.ps1, not the fallow-mcp this host resolves — no re-run of this installer can repoint it — fix: claude mcp remove fallow -s user && claude mcp add --scope user fallow -- fallow-mcp" \
     "$(fallow_wiring_verdict)"
 
-  # An entry the client describes without naming a command reads as nothing read back,
-  # and the one safe reading of nothing is a problem — claiming success there is the
-  # exact shape this case exists to keep out.
   : > "$FALLOW_WIRED_ENTRY"
   assert_equals "an entry whose command cannot be read back is a failure, never a silent ok" \
     "FAILED|fallow|mcp add failed: already exists in user config — fix: claude mcp add --scope user fallow -- fallow-mcp" \
@@ -8972,24 +8635,10 @@ claude mcp get fallow" \
   rm -f "$FALLOW_WIRED_ENTRY"
 fi
 
-# --- engram: the binary a plugin install never puts on the machine ------------
-# `claude plugin install engram@engram` brings skills, hooks and a .mcp.json whose
-# server is `{"command": "engram"}` — a bare binary nothing here provisioned. The
-# summary reported that plugin install as engram itself, so a clean Windows box
-# read `engram: OK` and then could not start the server. install.sh provisions
-# it: the official release, at a pin, checksum-verified, per-user, no elevation.
-# Nothing below reaches the network — the fetch is a stub serving a fixture release
-# out of a directory — and nothing installs an engram on the machine running this
-# suite: every write lands in a fixture HOME.
 EXPECTED_ENGRAM_VERSION=1.20.0
 ENGRAM_LINUX_ASSET="engram_${EXPECTED_ENGRAM_VERSION}_linux_amd64.tar.gz"
 ENGRAM_RELEASE_TAG_URL="https://github.com/Gentleman-Programming/engram/releases/download/v$EXPECTED_ENGRAM_VERSION"
 
-# Two provisioners, one pin: install.sh puts the first engram on a machine and
-# repair-engram-codex.sh swaps one beside a live ~/.engram database, so which
-# version a machine ends up running must not depend on which of them ran last.
-# Neither script sources the other, so the agreement is asserted here, spelled out
-# the way the fallow pin above is.
 assert_equals "the installer and the Codex repair pin one engram between them" \
   "SUPPORTED_ENGRAM_VERSION=$EXPECTED_ENGRAM_VERSION / ENGRAM_RELEASE_VERSION=$EXPECTED_ENGRAM_VERSION" \
   "$(grep -m1 '^SUPPORTED_ENGRAM_VERSION=' "$INSTALL_SH") / $(grep -m1 '^ENGRAM_RELEASE_VERSION=' "$REPO_ROOT/bootstrap/repair-engram-codex.sh")"
@@ -9006,14 +8655,6 @@ ENGRAM_UNAME_POINTER="$TEST_HOME/engram-uname"
 mkdir -p "$ENGRAM_STUB_DIR" "$ENGRAM_FIXTURE_HOME" \
   "$ENGRAM_RELEASE_DIR/payload" "$ENGRAM_TAMPERED_DIR" "$ENGRAM_DEAD_DIR/payload"
 
-# The provisioning runs with the stub dir as its whole PATH, so a real engram on
-# the machine running this suite cannot answer for the fixture one — which is the
-# whole point of the probe under test. Everything the provisioning shells out to is
-# linked in; a host missing one of them skips this block rather than reporting a
-# green it never measured. uname and curl are stubs instead: the asset name has to
-# be the same on every host that runs this suite, and the download must not happen.
-# gzip is in the list because GNU tar shells out to it for -z: without it on this
-# PATH the unpack fails for a reason that has nothing to do with the code here.
 ENGRAM_FIXTURE_TOOLS="mktemp awk tar gzip find head mkdir cp chmod mv rm"
 engram_digest_tool=""
 engram_tools_ready=yes
@@ -9044,9 +8685,6 @@ else
     '  -m) echo "$machine" ;;' \
     '  *) echo "$kernel" ;;' \
     'esac' > "$ENGRAM_STUB_DIR/uname"
-  # The release, served out of a fixture directory instead of over the network, and
-  # every URL it was asked for recorded: which asset a host downloads and whether
-  # the checksums came first are half of what these cases assert.
   printf '%s\n' \
     '#!/bin/sh' \
     'destination=""' \
@@ -9072,23 +8710,14 @@ else
   engram_fixture_digest="$(
     { sha256sum "$ENGRAM_RELEASE_DIR/$ENGRAM_LINUX_ASSET" 2>/dev/null ||
       shasum -a 256 "$ENGRAM_RELEASE_DIR/$ENGRAM_LINUX_ASSET"; } | awk '{ print $1 }')"
-  # One published checksums.txt covers every asset in the release, so a row for one
-  # this host never downloads belongs in the fixture: a checker handed the whole
-  # file would go red on it, which is why the code selects its own row first.
   printf '%s  %s\n' \
     0000000000000000000000000000000000000000000000000000000000000000 \
     "engram_${EXPECTED_ENGRAM_VERSION}_darwin_arm64.tar.gz" \
     > "$ENGRAM_RELEASE_DIR/checksums.txt"
   printf '%s  %s\n' "$engram_fixture_digest" "$ENGRAM_LINUX_ASSET" \
     >> "$ENGRAM_RELEASE_DIR/checksums.txt"
-  # The same release with an archive that is not what its checksums.txt publishes:
-  # the bytes a mirror, a proxy or a tampered download hands over.
   cp "$ENGRAM_RELEASE_DIR/checksums.txt" "$ENGRAM_TAMPERED_DIR/checksums.txt"
   printf 'not the engram anybody published\n' > "$ENGRAM_TAMPERED_DIR/$ENGRAM_LINUX_ASSET"
-  # And a release that clears every gate but the last one: its checksum matches the
-  # archive it publishes, the archive carries an engram, and that engram does not
-  # run — the state a scanner leaves behind on the unsigned prebuilt upstream
-  # documents it flagging.
   printf '%s\n' '#!/bin/sh' 'exit 1' > "$ENGRAM_DEAD_DIR/payload/engram"
   chmod +x "$ENGRAM_DEAD_DIR/payload/engram"
   ( cd "$ENGRAM_DEAD_DIR/payload" && tar -czf "../$ENGRAM_LINUX_ASSET" engram )
@@ -9098,11 +8727,6 @@ else
   printf '%s  %s\n' "$engram_dead_digest" "$ENGRAM_LINUX_ASSET" \
     > "$ENGRAM_DEAD_DIR/checksums.txt"
 
-  # One provisioning, leaving behind every URL it asked for and the verdict it
-  # recorded. PATH is replaced AFTER the source the way run_fallow_wiring does it —
-  # install.sh resolves its own directory and stamps a backup name at source time —
-  # and the fixture's own bin joins it, because what the probe answers about is the
-  # PATH a client resolves the plugin's bare `engram` against.
   run_engram_provisioning() {
     printf '%s\n' "$1" > "$ENGRAM_SERVE_POINTER"
     printf 'Linux x86_64\n' > "$ENGRAM_UNAME_POINTER"
@@ -9130,25 +8754,13 @@ $ENGRAM_RELEASE_TAG_URL/$ENGRAM_LINUX_ASSET" \
     "engram $EXPECTED_ENGRAM_VERSION / OK|engram (binary)|installed $EXPECTED_ENGRAM_VERSION at $ENGRAM_FIXTURE_HOME/.local/bin/engram" \
     "$("$ENGRAM_FIXTURE_HOME/.local/bin/engram" version 2>/dev/null || echo "never installed") / $(cat "$ENGRAM_VERDICT")"
 
-  # An engram already reachable is left exactly where it is: it owns
-  # ~/.engram/engram.db, whose schema its own version migrates, and pairing a
-  # migrated database with an older binary is the accident repair-engram-codex.sh
-  # exists to prevent — this installer must not cause it by re-provisioning.
   run_engram_provisioning "$ENGRAM_RELEASE_DIR"
   assert_equals "an engram the client already resolves is reported, never downloaded over" \
     "no download / OK|engram (binary)|already installed where Claude Code resolves it: $ENGRAM_FIXTURE_HOME/.local/bin/engram" \
     "$([ -s "$ENGRAM_CALLS" ] && echo "downloaded again" || echo "no download") / $(cat "$ENGRAM_VERDICT")"
 
-  # What every one of these failures hands the operator, spelled here the way the
-  # pins above are rather than read out of install.sh.
   ENGRAM_MANUAL_FIX="install engram yourself — brew install gentleman-programming/tap/engram, or go install github.com/Gentleman-Programming/engram/cmd/engram@v$EXPECTED_ENGRAM_VERSION — then re-run this installer"
 
-  # The same "already resolved" branch over a binary that no longer answers. A file
-  # test says installed; running it says otherwise — and the branch beside it has
-  # held that running bar since it was written. Reported OK, this is the false green
-  # every remediation downstream then argues from: verify.sh's engram line blames a
-  # PATH the directory is already on. The operator's own copy stays where it is,
-  # because which engram their machine keeps is not this installer's call.
   ENGRAM_RESOLVED_BINARY="$ENGRAM_FIXTURE_HOME/.local/bin/engram"
   rm -rf "$ENGRAM_FIXTURE_HOME/.local"
   mkdir -p "$ENGRAM_FIXTURE_HOME/.local/bin"
@@ -9159,10 +8771,6 @@ $ENGRAM_RELEASE_TAG_URL/$ENGRAM_LINUX_ASSET" \
     "no download / left standing / FAILED|engram (binary)|the engram Claude Code resolves at $ENGRAM_RESOLVED_BINARY does not run, so its MCP cannot start — an antivirus may have quarantined it, which upstream documents happening to unsigned prebuilt releases — fix: rm \"$ENGRAM_RESOLVED_BINARY\", then re-run this installer to put the pinned release there; if that one will not run either, $ENGRAM_MANUAL_FIX" \
     "$([ -s "$ENGRAM_CALLS" ] && echo "downloaded over it" || echo "no download") / $([ -e "$ENGRAM_RESOLVED_BINARY" ] && echo "left standing" || echo removed) / $(cat "$ENGRAM_VERDICT")"
 
-  # The same binary arriving from the release instead, twice — because "re-run this
-  # installer" is how every remediation here ends, and a re-run resolves that name
-  # before it downloads anything. A dead copy left standing turns the operator's
-  # whole loop into an OK for a binary that starts no MCP.
   ENGRAM_DEAD_VERDICT="FAILED|engram (binary)|engram $EXPECTED_ENGRAM_VERSION was verified and placed at $ENGRAM_RESOLVED_BINARY but would not run there — an antivirus may have quarantined it, which upstream documents happening to its unsigned prebuilt releases — fix: $ENGRAM_MANUAL_FIX"
   rm -rf "$ENGRAM_FIXTURE_HOME/.local"
   run_engram_provisioning "$ENGRAM_DEAD_DIR"
@@ -9173,17 +8781,12 @@ $ENGRAM_RELEASE_TAG_URL/$ENGRAM_LINUX_ASSET" \
     "$ENGRAM_DEAD_VERDICT / taken back out / downloaded again / $ENGRAM_DEAD_VERDICT" \
     "$engram_dead_first_verdict / $engram_dead_leftover / $([ -s "$ENGRAM_CALLS" ] && echo "downloaded again" || echo "no download") / $(cat "$ENGRAM_VERDICT")"
 
-  # The other half of a checksum: it has to be able to REFUSE. A mismatch that
-  # installed anyway would make the verification a decoration on a supply chain.
   rm -rf "$ENGRAM_FIXTURE_HOME/.local"
   run_engram_provisioning "$ENGRAM_TAMPERED_DIR"
   assert_equals "an archive that does not match its published checksum installs nothing and names the asset" \
     "nothing installed / FAILED|engram (binary)|$ENGRAM_LINUX_ASSET does not match its published SHA-256 checksum, so nothing was installed — fix: $ENGRAM_MANUAL_FIX" \
     "$([ -e "$ENGRAM_FIXTURE_HOME/.local/bin/engram" ] && echo installed || echo "nothing installed") / $(cat "$ENGRAM_VERDICT")"
 
-  # The asset table, spelled here rather than derived from install.sh: upstream
-  # publishes a zip for Windows and a tar.gz everywhere else, and a host outside
-  # the table gets no guessed name at all — it gets the manual install.
   engram_asset_for() {
     printf '%s %s\n' "$1" "$2" > "$ENGRAM_UNAME_POINTER"
     bash -c '
@@ -9199,17 +8802,6 @@ $ENGRAM_RELEASE_TAG_URL/$ENGRAM_LINUX_ASSET" \
     "$(engram_asset_for Linux x86_64) / $(engram_asset_for Darwin arm64) / $(engram_asset_for MINGW64_NT-10.0 x86_64) / $(engram_asset_for MINGW64_NT-10.0 aarch64) / $(engram_asset_for SunOS sparc)"
 fi
 
-# --- Whose PATH answers for a bare `engram`: the client's, never this shell's --
-# The plugin's .mcp.json launches the command by NAME, and it is claude.exe that
-# resolves it — a native Windows process that cannot see /usr/bin, /mingw64/bin or
-# $HOME/bin, the directories Git Bash adds to the PATH the installer runs under. A
-# probe reading $PATH answers about a machine the client does not live on: green
-# here, dead there. What claude.exe reads is the persisted machine+user PATH, which
-# is why the stub below is a PowerShell that hands one back.
-# Both bootstrap scripts carry a copy of the probe — neither can source a shared
-# file — so ONE table judges both, the way the path normalizer's does above:
-# install.sh's copy arrives with the sourced script, verify.sh's is read out of the
-# shipped file.
 if [ "$RUNS_ON_WINDOWS_BASH" = true ]; then
   echo "skip: the client-PATH probe's stub dir is the shell's whole PATH and holds a linked cat, which ln-as-copy leaves without its libraries, so the PowerShell stub hands back no client PATH to read"
   skipped=$((skipped + 1))
@@ -9222,8 +8814,6 @@ else
   printf '%s\n' '#!/bin/sh' 'echo MINGW64_NT-10.0' > "$ENGRAM_WINDOWS_STUB_DIR/uname"
   printf '%s\n' '#!/bin/sh' "cat \"$ENGRAM_CLIENT_PATH_FILE\"" \
     > "$ENGRAM_WINDOWS_STUB_DIR/powershell"
-  # The engram.exe only THIS shell can see, in the directory that is the shell's
-  # whole PATH: a probe that reads $PATH answers with it, and is wrong every time.
   printf '%s\n' '#!/bin/sh' 'echo "engram from the shell PATH"' \
     > "$ENGRAM_WINDOWS_STUB_DIR/engram.exe"
   printf '%s\n' '#!/bin/sh' 'echo "engram from the client PATH"' \
@@ -9244,10 +8834,6 @@ else
     ' _ "$probe_source" "$ENGRAM_WINDOWS_STUB_DIR" 2>/dev/null
   }
 
-  # Three readings of one probe: the entry that holds the binary, an entry that does
-  # not while the shell's PATH does, and the same directory as Windows hands it back
-  # — backslashes, a trailing separator, and the carriage return PowerShell ends its
-  # lines with, which unstripped becomes part of the directory name.
   engram_probe_table() {
     local probe_source="$1" found unseen spelled
     found="$(engram_probe_answer "$probe_source" "$ENGRAM_CLIENT_EMPTY_DIR
@@ -9275,12 +8861,6 @@ $ENGRAM_CLIENT_BIN_DIR")"
   fi
 fi
 
-# --- Resolving is half the answer: the binary also has to run -----------------
-# That probe reads a file test, which a quarantined engram passes while starting no
-# MCP. install.sh holds the copy it places to running, so both bootstrap scripts
-# hold every copy to it — otherwise verify.sh's own check goes green on a dead
-# binary at the same moment its MCP check goes red, corroborating a PATH diagnosis
-# for a machine whose PATH is fine.
 ENGRAM_RUNNABLE_BINARY="$TEST_HOME/engram-runnable"
 ENGRAM_UNRUNNABLE_BINARY="$TEST_HOME/engram-unrunnable"
 printf '%s\n' '#!/bin/sh' "echo \"engram $EXPECTED_ENGRAM_VERSION\"" \
@@ -9306,15 +8886,6 @@ assert_equals "install.sh's runnability bar tells a binary that answers from one
 assert_equals "verify.sh holds that same bar, byte for byte" \
   "$engram_runs_bar_install" "$engram_runs_bar_verify"
 
-# --- context7: the legacy entry deleted before its replacement was confirmed ---
-# `claude mcp remove --scope user context7` is the one outright DELETE this
-# installer performs on state it did not create, and it ran unconditionally —
-# before anything had confirmed the plugin-shipped replacement was registered,
-# with the verdict beside it read off `command -v npx`. A plugin cache written but
-# not loaded, a stale version, a .mcp.json the client rejected: any of them left
-# the operator with no context7 at all and a summary that said OK.
-# The stub PATH deliberately carries no npx, so a verdict still derived from its
-# presence could not read OK on any of these cases.
 if [ "$RUNS_ON_WINDOWS_BASH" = true ]; then
   echo "skip: the context7 migration runs with its stub dir as its whole PATH, and the linked cat, grep and head in it are copies without their libraries, so no migration case has a PATH that answers"
   skipped=$((skipped + 1))
@@ -9357,9 +8928,6 @@ else
     esac
   }
 
-  # The legacy entry answering on its own is exactly the state that must not read as
-  # its own replacement: it is the bare name, and the plugin's server renders under a
-  # `plugin:` prefix.
   CONTEXT7_LEGACY_ONLY_LIST='context7: npx -y @upstash/context7-mcp - ✓ Connected'
   CONTEXT7_REGISTERED_LIST='plugin:oso-code:context7: npx -y @upstash/context7-mcp - ✗ Failed to connect'
   CONTEXT7_CONNECTED_LIST='plugin:oso-code:context7: npx -y @upstash/context7-mcp - ✓ Connected'
@@ -9380,10 +8948,6 @@ else
     "$(context7_legacy_entry_state) / $(cat "$CONTEXT7_VERDICT")"
 fi
 
-# Every MCP check the verifier can fail hands back something to run. engram's was
-# the only failure in that file carrying no remediation at all, and context7's went
-# the same way — a check an operator cannot act on is a check that reports a
-# problem to nobody.
 mcp_check_fix_kind() {
   local line
   line="$(printf '%s\n' "$1" | grep -F "FAIL: $2" || true)"
@@ -9397,17 +8961,6 @@ assert_equals "each MCP check carries its remediation on the same line as the ve
   "inline / inline / inline" \
   "$(mcp_check_fix_kind "$report_without_marker" 'engram MCP connected') / $(mcp_check_fix_kind "$report_without_marker" 'context7 MCP connected') / $(mcp_check_fix_kind "$report_without_marker" 'fallow MCP connected')"
 
-# --- The name those checks match on: the whole one, never a lookalike ----------
-# `claude mcp list` prints a plugin-shipped server as `plugin:<plugin>:<server>:`
-# and a user-scope one as `<server>:`, so the pattern has to accept both spellings
-# — and an unanchored one accepts much more than that: any Connected entry whose
-# name merely CONTAINS the server's satisfies the check while the real server is
-# down, which is the green-over-nothing shape verify.sh exists against. The three
-# lookalikes below are the ones a machine can plausibly carry: a user-scope entry
-# left behind by an older wiring, a proxy, a renamed copy.
-# Read out of the shipped file the way the normalizer above is — verify.sh is a
-# run of checks top to bottom, so sourcing it for one function would run the whole
-# report against this suite's HOME.
 verify_mcp_matcher="$(sed -n '/^mcp_connected()/,/^}/p' "$REPO_ROOT/bootstrap/verify.sh")"
 mcp_connected_verdicts() {
   local mcps="$1" name verdicts=""
@@ -9436,12 +8989,6 @@ else
     "$(mcp_connected_verdicts "$MCP_LIST_SERVERS") / $(mcp_connected_verdicts "$MCP_LIST_LOOKALIKES")"
 fi
 
-# --- impeccable: the same read-back, one notch smaller ------------------------
-# `claude plugin install` exits 0 both on a plugin it installed and on one that was
-# already there, while verify.sh holds this to the client LISTING the plugin — so a
-# summary reporting the exit code claims something the verifier measures another
-# way, which is the engram shape at a smaller scale. The opt-out marker cases
-# above cover the choice; these two cover what the line SAYS about the install.
 if [ "$RUNS_ON_WINDOWS_BASH" = true ]; then
   echo "skip: the impeccable wiring runs with its stub dir as its whole PATH, and the linked cat, grep and rm in it are copies without their libraries, so no verdict comes back to read"
   skipped=$((skipped + 1))
@@ -9486,17 +9033,6 @@ else
     "$(impeccable_wiring_verdict 'oso-code@oso-code  v0.19.0  enabled')"
 fi
 
-# --- The flag surface: four flags, and the entry point that has to spell them --
-# install.sh makes an unknown flag a hard exit, and install.ps1 is the only way a
-# Windows operator reaches it: a flag PowerShell does not declare cannot be passed
-# at all (param binding refuses it before bash is ever started), and one forwarded
-# under a spelling install.sh does not know stops the install at its argument
-# parser. Neither half can be derived from the other, so the table is spelled here
-# and both files are held to it — install.ps1 is not runnable from this suite on
-# any platform it runs on, so what it declares and what it forwards are read out
-# of the shipped file the way verify.sh's normalizer is above. The pairing is the
-# assertion that matters: a set alone reads identical whether -NoGitHook forwards
-# --no-git-hook or a copy-pasted --no-impeccable.
 INSTALL_PS1="$REPO_ROOT/bootstrap/install.ps1"
 expected_installer_flags="$(printf '%s\n' --yes --replace-claude-md --no-impeccable --no-git-hook |
   LC_ALL=C sort | tr '\n' ' ')"
@@ -9511,31 +9047,12 @@ assert_equals "install.ps1 forwards each of its switches as its own flag" \
   "$(sed -n 's/^[[:space:]]*if (\$\([A-Za-z]*\)) { \$forwarded += .\(--[a-z-]*\). }$/\1=\2/p' \
       "$INSTALL_PS1" | tr '\n' ' ')"
 
-# The two that stop at PowerShell are named here too, so the whole Windows flag
-# surface moves only on purpose: -CiMode is CI's boundary and
-# -SkipPrerequisiteCheck is the escape hatch for a machine whose tools the probes
-# cannot see, and neither means anything to install.sh.
 assert_equals "install.ps1 declares a switch for each forwarded flag, beside the two that stop there" \
   "$(printf '%s\n' Yes ReplaceClaudeMd NoImpeccable NoGitHook SkipPrerequisiteCheck CiMode |
       LC_ALL=C sort | tr '\n' ' ')" \
   "$(sed -n 's/^[[:space:]]*\[switch\]\$\([A-Za-z]*\),*$/\1/p' "$INSTALL_PS1" |
       LC_ALL=C sort | tr '\n' ' ')"
 
-# --- The collapsed splat, which a joined command line cannot show -------------
-# -CiMode is the only runner of Invoke-Installer anywhere, and it catches a
-# dropped or misspelled flag by recording the argv the delegation hands Git Bash,
-# one argument per line. The OTHER bug it exists for is a splat that collapses
-# those flags into one string — PowerShell 5.1 has cost this file exactly that
-# (88f0c1e), and install.sh answers it with `unknown flag` in front of the
-# operator. Joined on a plain space the collapsed form is byte-identical to the
-# correct command line, so that comparison shipped it green; joined on a mark no
-# argument can hold, the boundaries are part of what is compared.
-# Running that comparison needs PowerShell and a .cmd stub, so no platform this
-# suite runs on can execute it — ci.yml's windows-latest `-CiMode` step is what
-# exercises it, and this case is what keeps the property that step depends on
-# from being joined away again: the mark carries a pipe, which Windows forbids in
-# a path and no forwarded flag spells, and both sides of the comparison are
-# joined on it and on nothing else.
 delegation_check="$(sed -n '/^function Invoke-DelegationSmokeTest/,/^}/p' "$INSTALL_PS1")"
 argv_boundary="$(printf '%s\n' "$delegation_check" |
   sed -n 's/^[[:space:]]*\$argvBoundary = .\(.*\).$/\1/p')"
@@ -9548,18 +9065,6 @@ assert_equals "the delegation check joins both sides of its argv on a mark no ar
   "$argv_boundary_kind / $(printf '%s\n' "$delegation_check" |
     grep -oE -- '-join [^ )]+' | LC_ALL=C sort -u)"
 
-# --- The double-clickable verifier, and the class of file it joins ------------
-# README hands a Windows operator install.bat as THE path — no terminal, just a
-# double-click — and then had nothing to offer for proving the install but
-# `bash bootstrap/verify.sh` from a shell they were told they would not need.
-# verify.bat closes that, and no platform this suite runs on can execute one, so
-# what is asserted here is what a .bat can be held to statically: the HOME pin,
-# and the bytes. The rest — that cmd finds Git Bash, that the delegation runs, and
-# that the pin actually reaches verify.sh — is ci.yml's windows-latest step, which
-# runs the file against a decoy HOME and reads the verdict back off the report.
-# The HOME pin is a whole line rather than a substring: %USERPROFILE% with its
-# backslashes intact is a different value from the one Git Bash resolves, and a
-# case matching only the variable name would pass on either.
 VERIFY_BAT="$REPO_ROOT/bootstrap/verify.bat"
 verify_bat_bytes=clean
 if [ ! -f "$VERIFY_BAT" ]; then
@@ -9573,14 +9078,6 @@ assert_equals "verify.bat pins HOME to the tree the client reads, in bytes a Pow
   'set "HOME=%USERPROFILE:\=/%" / clean' \
   "$(grep -F 'set "HOME=' "$VERIFY_BAT" 2>/dev/null || true) / $verify_bat_bytes"
 
-# The scan list itself, not merely verify.bat's presence in it: a lone CR makes
-# bash read `then\r` as a command, this repo has shipped that class from a Windows
-# entry point twice (bb4356f, 88f0c1e), and both times the file it shipped from
-# was one nothing was scanning. Named one by one the list is honest only until the
-# next entry point lands beside it, so both extensions glob — and the second half
-# of the pair is what proves a glob is not a way of naming nothing: it expands
-# over the shipped tree and verify.bat has to be in what comes back. Spelled here
-# rather than derived from the file under test, the way the flag table above is.
 EXPECTED_CR_SCAN_TARGETS="$(printf '%s\n' plugin/hooks plugin/bin plugin/git-hooks \
   'bootstrap/*.sh' 'bootstrap/*.ps1' 'bootstrap/*.bat' | LC_ALL=C sort | tr '\n' ' ')"
 cr_scan_targets="$(sed -n 's/^cr_shipped=.*grep -rlF -e \$.\\r. \(.*\) 2>&1.*$/\1/p' \
@@ -9592,16 +9089,6 @@ esac
 assert_equals "the CR scan names every directory and extension a shipped executable can arrive under, and verify.bat is inside what that expands to" \
   "$EXPECTED_CR_SCAN_TARGETS| reached" "$cr_scan_targets| $cr_scan_reaches_verify_bat"
 
-# --- The Windows claims, held to what the code does --------------------------
-# README told a Windows operator they needed "nothing pre-installed", and every
-# defect this change closed was downstream of believing it: winget is what
-# provisions the machine and its absence now stops the run, and Git Bash is not a
-# vehicle the install discards afterward but the shell a native client spawns
-# every .sh hook through for the rest of the machine's life. A claim is the one
-# artifact no runtime check reaches, so the guard is here — a doc that quietly
-# goes back to promising a free lunch is red in the commit that writes it.
-# The row is located by its leading cell rather than by line number, which moves
-# with every paragraph added above it.
 README_WINDOWS_ROW="$(grep -m1 '^| Windows |' "$REPO_ROOT/README.md" || true)"
 windows_row_claims=""
 case "$README_WINDOWS_ROW" in
@@ -9625,8 +9112,6 @@ fi
 assert_equals "README's Windows row names winget and states Git Bash as a runtime dependency" \
   "honest" "$windows_row_claims"
 
-# The guide the row points at, held from both ends: a link to a file nobody wrote
-# and a file nothing links to fail the same operator in opposite directions.
 WINDOWS_GUIDE="$REPO_ROOT/docs/windows.md"
 windows_guide_reachable=missing
 if [ -f "$WINDOWS_GUIDE" ]; then
@@ -9638,10 +9123,6 @@ fi
 assert_equals "the Windows guide exists and README links it" \
   "reachable" "$windows_guide_reachable"
 
-# Two numbers the guide states that the code decides, so a bump in either place
-# leaves the operator following a version that was never provisioned. Both are
-# read out of the scripts rather than spelled here: a pin copied into a test is a
-# third place to forget.
 ps1_node_floor="$(sed -n 's/^\$NodeMajorFloor = \([0-9][0-9]*\).*$/\1/p' "$REPO_ROOT/bootstrap/install.ps1")"
 guide_node_floor=absent
 if [ -n "$ps1_node_floor" ] && grep -qF "Node.js $ps1_node_floor" "$WINDOWS_GUIDE" 2>/dev/null; then
@@ -9658,12 +9139,6 @@ fi
 assert_equals "the Windows guide names the fallow package at the pin install.sh provisions" \
   "${install_fallow_pin:-unreadable}" "$guide_fallow_pin"
 
-# --- CI's verify assertion: the SET of check names, never a bare count --------
-# ci.yml pins the names — its own $VERIFY_CHECK_NAMES comment carries why a count
-# could not — and this is what holds that pin to what verify.sh actually prints: a
-# check added without the list moving is red HERE, in the commit that adds it,
-# rather than on a push. The extractor is the one ci.yml runs, so a pin that agrees
-# with a parser nobody else uses is not something this can report as agreement.
 CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
 ci_pinned_check_names() {
   awk -v header="  $1: |" '
@@ -9673,11 +9148,6 @@ ci_pinned_check_names() {
   ' "$CI_YML"
 }
 
-# The two checks only a Windows runner reaches, contributed on the host that
-# reaches them: off Windows verify.sh reports both as notes, so no single pinned
-# list could describe both runners at once. A function rather than a `case` at the
-# call site because bash 3.2 miscounts the parentheses of a case pattern inside a
-# command substitution, and the caller below is one.
 ci_windows_only_check_names() {
   case "$(uname -s 2>/dev/null || true)" in
     MINGW*|MSYS*|CYGWIN*) ci_pinned_check_names VERIFY_CHECK_NAMES_WINDOWS ;;
@@ -9692,16 +9162,6 @@ mkdir -p "$CI_VERIFY_HOME"
     bash "$REPO_ROOT/bootstrap/verify.sh" ) > "$CI_VERIFY_REPORT" 2>&1 || true
 ci_verify_report="$(cat "$CI_VERIFY_REPORT")"
 
-# A CI runner has no core.hooksPath wired into this checkout and a contributor's
-# machine may, which turns that `note:` into a counted check and so into a name
-# this pin does not list. It is read off the report rather than probed for again,
-# so what stands the case down is the same reading the assertion would have made.
-# `= absent` rather than `!= ok`, and not by oversight: verify.sh prints no line of
-# that name at all where core.hooksPath is unwired, so absent is what a CI runner
-# reads — and a check deleted or renamed reads absent too, which runs the
-# assertion rather than standing it down, so the only local holder of ci.yml's pin
-# cannot retire itself in the very commit that breaks it, silently, since a skip
-# is green.
 if [ "$(report_line_kind "$ci_verify_report" 'git commit hook executable')" = absent ]; then
   ci_expected_check_names="$( { ci_pinned_check_names VERIFY_CHECK_NAMES
     ci_windows_only_check_names; } | LC_ALL=C sort)"
@@ -9713,28 +9173,9 @@ else
   skipped=$((skipped + 1))
 fi
 
-# --- The backup an install promises, and the copies that make it true ---------
-# Three separate failures lived here: a backup directory announced in the plan
-# and not created until phase 6 of 7, so every run that died earlier left the
-# operator holding a path that had never existed; a backup set that covered the
-# two files phases 6 and 7 rewrite and none of the client state phases 2 to 5
-# replace, including the user-scope context7 entry migrate_context7 deletes
-# outright; and one more directory left under ~/.local/state/oso-code per run,
-# forever. Every case below runs install.sh in a HOME of its own so the fixtures
-# cannot see each other's snapshots.
-#
-# All of them enter through the sourcing guard one process out, the way
-# winget_provisioning does: in_installer's subshell runs from a `|| true`
-# context, whose errexit suppression reaches every subshell of it, so nothing
-# asserted through that helper can observe install.sh dying — and what makes a
-# run reach `report_backup_coverage` at all is the errexit only a child process
-# of its own carries.
 INSTALLER_RUN_LOG="$TEST_HOME/installer-phase-log"
 INSTALLER_RUN_OUTPUT="$TEST_HOME/installer-run-output"
 
-# The path spelled out here rather than read from install.sh, the way the state
-# path and the opt-out marker above are: asserting the layout independently is
-# what catches a backup written somewhere no operator was told to look.
 claude_backups_root_of() { printf '%s/.local/state/oso-code/claude-backups' "$1"; }
 
 count_claude_backups() {
@@ -9745,8 +9186,6 @@ count_claude_backups() {
   printf '%s' "$count"
 }
 
-# The snapshot a run left behind, to read its contents back: the stamp is
-# fixed-width, so the last name the glob yields is the newest.
 newest_claude_backup() {
   local entry newest=""
   for entry in "$(claude_backups_root_of "$1")"/install-backup-*; do
@@ -9755,9 +9194,6 @@ newest_claude_backup() {
   printf '%s' "$newest"
 }
 
-# Read at the moment the line is PRINTED, not after confirm_plan returns: a
-# mkdir arriving minutes later in phase 6 satisfies every assertion made
-# afterwards and none of them is the promise the operator read.
 announced_backup_state() {
   HOME="$1" bash -c '
     installer="$1"
@@ -9776,16 +9212,6 @@ announced_backup_state() {
   ' _ "$INSTALL_SH"
 }
 
-# One run of main() with every phase but the backup, the retention and the
-# closing report replaced after the source. What these cases are about is WHEN
-# the copy is taken and what the run leaves behind, and running the real wiring
-# to find that out would need an authenticated client, a network and a package
-# manager. Each stub records whether the copies of the files its phase changes
-# were already on disk when it ran, naming any that were not — the two live in
-# the same phase, so which one is missing is the whole diagnosis.
-# The wire_mcps stub also overwrites settings.json the way `claude plugin
-# marketplace add` does, so a pre-image taken too late is a copy of the run's
-# own work rather than of the operator's file.
 shadowed_install_run() {
   local fixture_home="$1" budget="${2:-}"
   : > "$INSTALLER_RUN_LOG"
@@ -9831,10 +9257,6 @@ mkdir -p "$INSTALLER_ANNOUNCE_HOME"
 assert_equals "the backup directory exists at the moment the plan names it" \
   "exists" "$(announced_backup_state "$INSTALLER_ANNOUNCE_HOME")"
 
-# A plan the operator declines leaves nothing behind: the directory is created
-# before the prompt, so a `no` that kept it would silt the state dir up one empty
-# snapshot per decline — and each one would then count as a real backup. A HOME
-# of its own, because the run above created one on purpose.
 INSTALLER_DECLINED_HOME="$TEST_HOME/installer-declined-home"
 mkdir -p "$INSTALLER_DECLINED_HOME"
 printf 'n\n' | HOME="$INSTALLER_DECLINED_HOME" bash -c '
@@ -9846,11 +9268,6 @@ printf 'n\n' | HOME="$INSTALLER_DECLINED_HOME" bash -c '
 assert_equals "a declined plan leaves no empty backup behind" \
   "0" "$(count_claude_backups "$INSTALLER_DECLINED_HOME")"
 
-# The client state phases 2 to 5 replace: user-scope MCP servers in
-# ~/.claude.json (migrate_context7 deletes the context7 entry there outright and
-# before anything confirms a replacement) and the plugin/marketplace
-# registrations at the top of ~/.claude/plugins. The subdirectories below it are
-# the unpacked marketplaces and the plugin cache, which no backup should carry.
 INSTALLER_COPY_HOME="$TEST_HOME/installer-copy-home"
 mkdir -p "$INSTALLER_COPY_HOME/.claude/plugins/marketplaces/engram"
 printf '{"mcpServers":{"context7":{"command":"npx"}}}\n' > "$INSTALLER_COPY_HOME/.claude.json"
@@ -9880,16 +9297,6 @@ assert_equals "the copy holds the MCP entry and the registrations the install re
   "mcp=captured registrations=captured cache=left" \
   "$(client_config_backup_state "$INSTALLER_COPY_HOME")"
 
-# The ordering, which is the whole of "backed up first": each phase reports
-# whether the copies were already there when it ran, so a backup taken after the
-# wiring reads as loudly as no backup at all. settings.json is in the fixture
-# because phases 2, 3, 4 and 6 all write it — the client records its known
-# marketplaces and its enabled plugins there, and phase 4 publishes the env block
-# the skills and the hooks are reached through — and a copy of it taken in phase 7
-# is four phases of operator state too late. Phase 4 is the one that can write
-# over an operator value at all (a CLAUDE_CODE_GIT_BASH_PATH that no longer
-# resolves), which is what makes its position in this list load-bearing rather
-# than tidy.
 INSTALLER_ORDER_HOME="$TEST_HOME/installer-order-home"
 INSTALLER_ORDER_SETTINGS='{"enabledPlugins":{"impeccable@impeccable":false}}'
 mkdir -p "$INSTALLER_ORDER_HOME/.claude"
@@ -9899,17 +9306,10 @@ assert_equals "every phase that changes the client's state runs after the copy o
   "wire_mcps:copied install_plugin:copied publish_client_environment:copied wire_git_commit_hook:copied wire_impeccable:copied remove_legacy_artifacts:copied merge_global_claude_md:copied " \
   "$(shadowed_install_run "$INSTALLER_ORDER_HOME")"
 
-# The other half of first: a pre-image is only a pre-image if it holds the bytes
-# the operator brought. The run above overwrote settings.json in phase 2, so an
-# opt-out the operator set on purpose survives in the backup only when the copy
-# was taken before that.
 assert_equals "the backed up settings.json is the operator's, not the one phase 2 wrote over it" \
   "$INSTALLER_ORDER_SETTINGS" \
   "$(cat "$(newest_claude_backup "$INSTALLER_ORDER_HOME")/settings.json" 2>/dev/null)"
 
-# What the operator is handed at the end, because the install buys honest backups
-# and no restore command: a recovery that is theirs to perform has to name its own
-# edges, the way restore-codex.sh names the one thing its restore cannot revert.
 coverage_named() {
   local phrase
   for phrase in "$@"; do
@@ -9923,10 +9323,6 @@ coverage_named() {
 assert_equals "the run names the backup, that nothing restores it for you, and the wiring it cannot undo" \
   "named" "$(coverage_named 'backup: ' 'no restore command on this side' 'core.hooksPath')"
 
-# Retention, through the call site that has to carry it: three older snapshots,
-# a budget nothing fits in, and one install. The bound always keeps the
-# newest whatever the budget says, so what survives is this run's own — and
-# repeated installs stop being repeated directories.
 INSTALLER_RETENTION_HOME="$TEST_HOME/installer-retention-home"
 INSTALLER_RETENTION_ROOT="$(claude_backups_root_of "$INSTALLER_RETENTION_HOME")"
 mkdir -p "$INSTALLER_RETENTION_HOME/.claude"
@@ -9936,9 +9332,6 @@ for stamp in 20260101-010101 20260202-020202 20260303-030303; do
   printf 'an older install\n' > "$INSTALLER_RETENTION_ROOT/install-backup-$stamp-1/settings.json"
 done
 shadowed_install_run "$INSTALLER_RETENTION_HOME" 1 >/dev/null
-# WHICH one survived is the other half: a bound that kept the newest of the
-# planted three and deleted the snapshot the run had just taken would leave the
-# same count behind and none of the protection.
 retention_survivor="an older snapshot"
 if [ ! -d "$INSTALLER_RETENTION_ROOT/install-backup-20260303-030303-1" ]; then
   retention_survivor="this run's own"
@@ -9954,23 +9347,6 @@ native_path_form() {
   cygpath -m "$posix_form" 2>/dev/null || printf '%s' "$1"
 }
 
-# --- The client env block: an absolute oso-state, and the Git Bash the hooks
-#     are spawned through ------------------------------------------------------
-# Two variables the client reads out of settings.json at the start of every
-# session, and neither used to be written by anything here. OSO_STATE_BIN reached
-# a session only through a SessionStart hook writing $CLAUDE_ENV_FILE, on top of
-# an undocumented injection of the plugin's bin/ into the Bash tool PATH that had
-# already failed on Windows — and the skills' "${OSO_STATE_BIN:-oso-state}" then
-# fell through to a bare name that resolves to nothing there, which is how every
-# plan capture on one host came to block on a sentence that named no cause.
-# CLAUDE_CODE_GIT_BASH_PATH is documented by Claude Code and was written by
-# nothing: every hook in this plugin is a .sh, so a Windows client that cannot
-# find Git Bash by itself loses every gate at once.
-# Both writes are on the bash side with jq, which is why this whole block needs
-# one: PowerShell 5.1's ConvertFrom-Json | ConvertTo-Json defaults to -Depth 2 and
-# would flatten the nested hook arrays settings.json holds, so a whole-file
-# rewrite from install.ps1 would make the least-tested half of this bootstrap
-# silently destructive. The nested-hooks case below is that reason, asserted.
 if ! command -v jq >/dev/null 2>&1; then
   echo "skip: the client env block — jq is absent here, and it is what both writes and every read-back go through"
   skipped=$((skipped + 1))
@@ -9981,9 +9357,6 @@ else
   CLIENT_ENV_STATE_BIN="$CLIENT_ENV_PLUGIN_ROOT/bin/oso-state"
   CLIENT_ENV_WINDOWS_STUB="$TEST_HOME/client-env-windows-stub"
   CLIENT_ENV_VERDICT="$TEST_HOME/client-env-verdict"
-  # Three bash.exe paths: the one this run discovers, the one an operator set for
-  # themselves, and one whose Git is gone — a reinstall, a move from Scoop to the
-  # official package, a drive that is not mounted.
   CLIENT_ENV_GIT_BASH="$TEST_HOME/client-env-git/bin/bash.exe"
   CLIENT_ENV_OPERATOR_BASH="$TEST_HOME/client-env-operator-git/bin/bash.exe"
   CLIENT_ENV_UNINSTALLED_BASH="$TEST_HOME/client-env-uninstalled-git/bin/bash.exe"
@@ -9992,28 +9365,15 @@ else
     "$(dirname "$CLIENT_ENV_OPERATOR_BASH")"
   printf '%s\n' '#!/bin/sh' 'exit 0' > "$CLIENT_ENV_STATE_BIN"
   chmod +x "$CLIENT_ENV_STATE_BIN"
-  # The record the client keeps of which version a session runs. install.sh
-  # resolves the path it publishes out of THIS rather than out of its own clone,
-  # which is the operator's to move or delete.
   printf '{"plugins":{"oso-code@oso-code":[{"installPath":"%s"}]}}\n' \
     "$CLIENT_ENV_PLUGIN_ROOT" > "$CLIENT_ENV_HOME/.claude/plugins/installed_plugins.json"
   printf 'a bash.exe this run found\n' > "$CLIENT_ENV_GIT_BASH"
   printf 'the bash.exe the operator pointed at\n' > "$CLIENT_ENV_OPERATOR_BASH"
-  # The Git Bash key is Windows-only — publishing it elsewhere would put a dead
-  # variable into every session — so the whole of it is reached through a uname
-  # that says so. cygpath is absent on this host and every conversion falls back
-  # to the path it was given, which is what lets a POSIX fixture stand in for a
-  # Windows one here.
   printf '%s\n' '#!/bin/sh' 'echo MINGW64_NT-10.0' > "$CLIENT_ENV_WINDOWS_STUB/uname"
   chmod +x "$CLIENT_ENV_WINDOWS_STUB/uname"
 
-  # A settings.json shaped like the client's own: hook entries nested three levels
-  # deep, which is exactly what a PowerShell rewrite would flatten.
   CLIENT_ENV_NESTED_HOOKS='{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"block-commit-until-green.sh"}]}],"SessionStart":[{"matcher":"*","hooks":[{"type":"command","command":"persist-state-bin.sh"}]}]}'
 
-  # $1 is the `env` block this settings.json arrives carrying; empty plants a file
-  # that has no env block at all, the shape a client writes before anything here
-  # has touched it.
   plant_client_env_settings() {
     if [ -n "$1" ]; then
       printf '{"outputStyle":"Oso","hooks":%s,"env":%s}\n' "$CLIENT_ENV_NESTED_HOOKS" "$1" \
@@ -10024,12 +9384,6 @@ else
     fi
   }
 
-  # One publish, leaving behind the settings.json it wrote and the verdicts it
-  # recorded. $1 is the Git Bash path install.ps1 hands over in the child's
-  # environment — empty for a run started from Git Bash instead, which is handed
-  # none. PATH is prepended AFTER the source the way the fixtures above do it:
-  # install.sh resolves its own directory and stamps a backup name at source time,
-  # and only `uname` has to answer differently.
   publish_client_env_run() {
     : > "$CLIENT_ENV_VERDICT"
     CLAUDE_CODE_GIT_BASH_PATH="$1" HOME="$CLIENT_ENV_HOME" bash -c '
@@ -10053,45 +9407,28 @@ else
   assert_equals "the install publishes an absolute oso-state and the Git Bash the client spawns the hooks through" \
     "$(native_path_form "$CLIENT_ENV_STATE_BIN") / $(native_path_form "$CLIENT_ENV_GIT_BASH")" \
     "$(native_path_form "$(client_env_stored OSO_STATE_BIN)") / $(native_path_form "$(client_env_stored CLAUDE_CODE_GIT_BASH_PATH)")"
-  # The published path is what a session RUNS, so it has to be runnable as it is
-  # stored — not merely present in the file.
   assert_equals "the published oso-state runs from the spelling that was stored" \
     "runs" "$("$(client_env_stored OSO_STATE_BIN)" >/dev/null 2>&1 && echo runs || echo "does not run")"
   assert_equals "the summary names both values it published, and claims nothing else" \
     "OK|oso-state path|every session reads OSO_STATE_BIN=$(native_path_form "$CLIENT_ENV_STATE_BIN")
 OK|Git Bash path|published: $(native_path_form "$CLIENT_ENV_GIT_BASH")" \
     "$(cat "$CLIENT_ENV_VERDICT")"
-  # The whole reason both writes are on this side rather than in install.ps1: a
-  # PowerShell 5.1 ConvertTo-Json would hand these three-level entries back as
-  # flattened strings. The keys added are half the case on purpose — a write that
-  # never happened leaves the hooks perfectly intact too.
   assert_equals "the nested hook arrays survive the write, and nothing but the two env keys joins them" \
     "$client_env_hooks_before / added: CLAUDE_CODE_GIT_BASH_PATH OSO_STATE_BIN" \
     "$(jq -c '.hooks' "$CLIENT_ENV_SETTINGS") / added: $(jq -r '(.env // {}) | keys | join(" ")' "$CLIENT_ENV_SETTINGS")"
 
-  # An operator value that still resolves is theirs. Overwriting it would repoint
-  # the client at another bash.exe on every install, which is the one thing
-  # "install it for me" may never mean here.
   plant_client_env_settings "$(printf '{"CLAUDE_CODE_GIT_BASH_PATH":"%s"}' "$CLIENT_ENV_OPERATOR_BASH")"
   publish_client_env_run "$CLIENT_ENV_GIT_BASH"
   assert_equals "a Git Bash path the operator set and that still resolves is left exactly as they set it" \
     "$CLIENT_ENV_OPERATOR_BASH / OK|Git Bash path|left as you set it: $CLIENT_ENV_OPERATOR_BASH" \
     "$(client_env_stored CLAUDE_CODE_GIT_BASH_PATH) / $(grep -F 'Git Bash path' "$CLIENT_ENV_VERDICT")"
 
-  # The other half of never overwriting: a stored value whose Git is gone leaves
-  # the client spawning a bash.exe that is not there, so every gate is off — and a
-  # rule that only ever preserves would leave that machine broken forever, and
-  # invisibly, since the key that names the problem is the one nothing rewrites.
   plant_client_env_settings "$(printf '{"CLAUDE_CODE_GIT_BASH_PATH":"%s"}' "$CLIENT_ENV_UNINSTALLED_BASH")"
   publish_client_env_run "$CLIENT_ENV_GIT_BASH"
   assert_equals "a stored Git Bash path that no longer resolves is repaired, and the summary says what it replaced" \
     "$(native_path_form "$CLIENT_ENV_GIT_BASH") / OK|Git Bash path|repaired from $CLIENT_ENV_UNINSTALLED_BASH: $(native_path_form "$CLIENT_ENV_GIT_BASH")" \
     "$(native_path_form "$(client_env_stored CLAUDE_CODE_GIT_BASH_PATH)") / $(grep -F 'Git Bash path' "$CLIENT_ENV_VERDICT")"
 
-  # The same stale value on a run that was handed nothing to repair it with —
-  # started from Git Bash rather than from install.ps1. Reporting it as fine is
-  # the false green this whole change exists to end, and silently deleting the
-  # operator's key is a destruction no installer gets to make on their behalf.
   plant_client_env_settings "$(printf '{"CLAUDE_CODE_GIT_BASH_PATH":"%s"}' "$CLIENT_ENV_UNINSTALLED_BASH")"
   publish_client_env_run ""
   client_env_stale_line="$(grep -F 'Git Bash path' "$CLIENT_ENV_VERDICT" || true)"
@@ -10101,25 +9438,12 @@ OK|Git Bash path|published: $(native_path_form "$CLIENT_ENV_GIT_BASH")" \
     "$CLIENT_ENV_UNINSTALLED_BASH / FAILED / inline" \
     "$(client_env_stored CLAUDE_CODE_GIT_BASH_PATH) / ${client_env_stale_line%%|*} / $client_env_stale_fix"
 
-  # Nothing stored and nothing handed over is the ordinary shape of that same run
-  # on a machine whose client finds Git Bash by itself: there is nothing to write
-  # and nothing to report, and inventing a red line there would fail every machine
-  # that is working. The oso-state half is published all the same — it depends on
-  # no Windows at all — which is what keeps this case about the Git Bash key
-  # rather than about a phase that did nothing.
   plant_client_env_settings ''
   publish_client_env_run ""
   assert_equals "a run with no Git Bash to publish and none stored says nothing about it, and publishes oso-state regardless" \
     "absent / no line / $(native_path_form "$CLIENT_ENV_STATE_BIN")" \
     "$(client_env_stored CLAUDE_CODE_GIT_BASH_PATH) / $(grep -F 'Git Bash path' "$CLIENT_ENV_VERDICT" || echo 'no line') / $(native_path_form "$(client_env_stored OSO_STATE_BIN)")"
 
-  # --- What the verifier proves about the two published values ----------------
-  # The round trip goes through the STORED path, never one this script resolved
-  # for itself: a probe against a path found by walking the plugin cache passes on
-  # a machine that published none, where every skill still falls through to the
-  # bare `oso-state` a Windows client resolves to nothing. Each fixture HOME is
-  # its own, so the report reads one state at a time; the suite's own HOME never
-  # gains a settings.json from this.
   verify_home_report() {
     ( HOME="$1"; verify_report )
   }
@@ -10152,12 +9476,6 @@ OK|Git Bash path|published: $(native_path_form "$CLIENT_ENV_GIT_BASH")" \
     "ok / fail / note" \
     "$(report_line_kind "$verify_env_published_report" 'Git Bash path') / $(report_line_kind "$verify_env_stale_report" 'Git Bash path') / $(report_line_kind "$verify_env_bare_report" 'Git Bash path')"
 
-  # Both scripts carry their own copy of what "still resolves" means, and a bar
-  # that drifted would have the installer publishing a path the verifier calls
-  # broken.
-  # Walked in a fixed order rather than in each file's own: both scripts define
-  # these where their first reader needs them, and an order the comparison
-  # inherited would report a difference that is only a line number.
   client_env_bar_of() {
     local file="$1" reader
     for reader in shell_spelling_of git_bash_resolves client_env_value; do
@@ -10167,26 +9485,15 @@ OK|Git Bash path|published: $(native_path_form "$CLIENT_ENV_GIT_BASH")" \
   client_env_bar_install="$(client_env_bar_of "$INSTALL_SH")"
   assert_equals "the installer and the verifier read a stored path by the same bar, byte for byte" \
     "$client_env_bar_install" "$(client_env_bar_of "$REPO_ROOT/bootstrap/verify.sh")"
-  # An extraction that found nothing in either file agrees with itself, which is
-  # the one way the case above can go green over a bar that is no longer there.
   assert_equals "that comparison is three real function bodies, not two empty extractions agreeing" \
     "3" "$(printf '%s\n' "$client_env_bar_install" | grep -c '^[a-z_]*() {$' || true)"
 fi
 
-# --- The npx probe's bound: a hang may not take the whole report with it -------
-# verify.sh is a run of checks top to bottom rather than a library this suite can
-# source, so the bound is READ OUT of the shipped file rather than reimplemented
-# here — a rename or a move leaves this block with nothing to run and says so.
-# The bound value is the one thing the cases override: 20 seconds is what an
-# operator waits, not a suite.
 bounded_probe="$(sed -n '/^impeccable_cli_runnable()/,/^}/p' "$REPO_ROOT/bootstrap/verify.sh")"
 NPX_SHIM_DIR="$TEST_HOME/npx-shim"
 NPX_ORPHAN_MARKER="$TEST_HOME/npx-orphan"
 mkdir -p "$NPX_SHIM_DIR"
 
-# One call, two facts: what the check would report, and whether the operator waited
-# out the bound for it. A bound that never fires and an answer that waits for one
-# are the same hang.
 probe_with_npx() {
   local bound="$1" shim="$2" started verdict
   printf '%s\n' "$shim" > "$NPX_SHIM_DIR/npx"
@@ -10216,8 +9523,6 @@ exit 0')"
     "0 (prompt)" "$(probe_with_npx 5 '#!/bin/sh
 echo "npm ERR! 404 Not Found" >&2
 exit 1')"
-  # npx runs the package in node children of its own, so a bound that kills only
-  # its direct child leaves the fetch running after the report has moved on.
   rm -f "$NPX_ORPHAN_MARKER"
   assert_equals "an npx that hangs is killed at the bound, with the reason in the value" \
     "no answer within 1s (waited out the bound)" "$(probe_with_npx 1 "#!/bin/sh
@@ -10228,7 +9533,6 @@ sleep 60")"
     "no orphan" "$([ -f "$NPX_ORPHAN_MARKER" ] && echo "orphan survived" || echo "no orphan")"
 fi
 
-# --- Engram repair helper: static safety rails, no real HOME writes -----------
 REPAIR_ENGRAM_CODEX_SH="$REPO_ROOT/bootstrap/repair-engram-codex.sh"
 REPAIR_CONFIG_MARKER_START="# oso-code:start"
 REPAIR_CONFIG_MARKER_END="# oso-code:end"
@@ -10537,13 +9841,6 @@ else
     complete "$(repair_engram_codex_contract_status)"
 fi
 
-# --- repair-engram-codex.sh: the repair downloads are bounded, by name ------
-# download_file's bound is curl/wget's own native flag, not the front-surface
-# job-control idiom -- so this drives download_file directly (extracted, like
-# the other repair internals below run through OSO_REPAIR_ENGRAM_CODEX_TEST_RUN_REPAIRED
-# rather than a real network fetch) against a fake curl that reports its own
-# reserved timeout code immediately, proving download_file reads and reports
-# the bound rather than reproving curl's own timeout mechanism.
 REPAIR_DOWNLOAD_FUNCTION="$(sed -n '/^download_file() {$/,/^}$/p' "$REPAIR_ENGRAM_CODEX_SH")"
 REPAIR_DOWNLOAD_BOUND_LINE="$( { grep -F 'ENGRAM_DOWNLOAD_BOUND_SECONDS=' "$REPAIR_ENGRAM_CODEX_SH" || true; } | grep -v '^#' || true)"
 assert_equals "repair-engram-codex.sh defines download_file, so its bound has something to test" \
@@ -10594,13 +9891,6 @@ assert_equals "a non-timeout curl failure is named UNAVAILABLE, never mistaken f
   "1" "$(printf '%s\n' "$REPAIR_DOWNLOAD_UNAVAILABLE_OUTPUT" | \
     grep -Fc 'FAILCALL:UNAVAILABLE: download of Engram release archive failed: https://example.test/asset.tar.gz (curl exit 6)' || true)"
 
-# --- Codex installer: an isolated release install, not a real user mutation ---
-# User-wide Codex state is at stake, which makes a source-only assertion too weak:
-# the test runs the shipped installer with HOME, CODEX_HOME and every external
-# client redirected into this fixture. The shims model only the public contracts
-# the installer is allowed to rely on. An unexpected client spelling is a hard
-# failure, so a test cannot stay green when the implementation quietly changes
-# the command it would run on an operator's machine.
 INSTALL_CODEX_SH="$REPO_ROOT/bootstrap/install-codex.sh"
 CODEX_INSTALL_SHIMS="$TEST_HOME/codex-install-shims"
 CODEX_INSTALL_CALLS="$TEST_HOME/codex-install-calls"
@@ -10632,12 +9922,6 @@ printf '%s\n' \
   '  *) printf '\''unexpected npm call: %s\n'\'' "$*" >&2; exit 64 ;;' \
   'esac' > "$CODEX_INSTALL_SHIMS/npm"
 
-# The real `engram setup codex` owns these two files, its top-level pointers and
-# its MCP table. This shim deliberately writes all four instead of letting the
-# oso installer counterfeit Engram's payload. Like Engram 1.20.0, every setup
-# removes both root pointers and reinserts them before the first TOML table. On
-# reinstall that table is inside oso-code's managed region, reproducing the
-# relocation that deleted both pointers in 0.18.3.
 printf '%s\n' \
   '#!/bin/sh' \
   'printf '\''engram:%s\n'\'' "$*" >> "$OSO_TEST_CALLS"' \
@@ -10663,10 +9947,6 @@ printf '%s\n' '#!/bin/sh' 'exit 0' > "$CODEX_INSTALL_SHIMS/fallow-mcp"
 chmod +x "$CODEX_INSTALL_SHIMS/codex" "$CODEX_INSTALL_SHIMS/npm" \
   "$CODEX_INSTALL_SHIMS/engram" "$CODEX_INSTALL_SHIMS/fallow-mcp"
 
-# The compatibility image intentionally contains Bash 3.2 and little else.
-# The native suite uses the real Python JSON parser; in that minimal image this
-# fixture-only shim preserves the installer's public dependency check so the
-# remainder of the shell flow can still be exercised by the old interpreter.
 if ! command -v python3 >/dev/null 2>&1; then
   printf '%s\n' \
     '#!/bin/sh' \
@@ -10725,11 +10005,6 @@ write_codex_install_personal_state() {
     '}' > "$fixture_home/.agents/plugins/marketplace.json"
 }
 
-# Codex writes this unrelated feature on a normal authenticated installation.
-# oso-code owns two keys in the same TOML table, not the whole table: the merge
-# must retain the operator key while still producing one valid [features]
-# declaration. Keep this fixture free of marker-looking prose so exact textual
-# counts below are also exact TOML counts.
 write_codex_install_existing_features_state() {
   local fixture_home="$1"
   mkdir -p "$fixture_home/.codex"
@@ -10771,9 +10046,6 @@ JSON
   git -C "$cache" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
 }
 
-# Results land in CODEX_INSTALL_RC and CODEX_INSTALL_LOG. Keeping the call out of
-# a command substitution matters: the installer may replace whole directories,
-# and every assertion must observe the same fixture tree it ran against.
 run_codex_install() {
   local fixture_home="$1" failure_step="${2:-}" installer="${3:-$INSTALL_CODEX_SH}"
   : > "$CODEX_INSTALL_CALLS"
@@ -10849,8 +10121,6 @@ install_file_snapshot() {
   done
 }
 
-# Sourcing is the slice's inspection/test surface. It exposes functions, parses
-# no inherited positional flags and performs no installation as a side effect.
 CODEX_SOURCE_HOME="$TEST_HOME/codex-source-home"
 mkdir -p "$CODEX_SOURCE_HOME"
 source_probe="$({
@@ -10877,10 +10147,6 @@ else
   ln -s "$(command -v cat)" "$CODEX_NO_FALLOW_PATH/cat"
   printf '%s\n' '#!/bin/sh' 'exit 0' > "$CODEX_CARGO_FALLOW_HOME/.cargo/bin/fallow-mcp"
   chmod +x "$CODEX_CARGO_FALLOW_HOME/.cargo/bin/fallow-mcp"
-  # APPDATA is pinned empty rather than assumed absent: CI runs this suite on
-  # windows-latest, where it is always set, and the Windows probe that reads it comes
-  # first — an ambient value there decides this case by what that runner happens to
-  # have installed.
   cargo_fallow_config="$(
     PATH="$CODEX_NO_FALLOW_PATH" APPDATA="" render_codex_managed_config \
       "$CODEX_CARGO_FALLOW_HOME" \
@@ -10890,12 +10156,6 @@ else
     "1" "$(printf '%s\n' "$cargo_fallow_config" |
       grep -Fxc "command = \"$CODEX_CARGO_FALLOW_HOME/.cargo/bin/fallow-mcp\"" || true)"
 
-  # The spelling a Windows install produces now that fallow comes from npm:
-  # `npm install --global` drops fallow-mcp.cmd in %APPDATA%\npm beside a .ps1 and
-  # an extensionless sh script, and the client that spawns this command is a native
-  # Windows process which can run only the .cmd. Resolving the sh script instead
-  # would wire an entry that never connects — and the check that reads it is counted
-  # now, so that lands as a red run rather than as the note it used to be.
   CODEX_NPM_FALLOW_HOME="$TEST_HOME/codex-npm-fallow-home"
   CODEX_NPM_FALLOW_APPDATA="$CODEX_NPM_FALLOW_HOME/AppData/Roaming"
   mkdir -p "$CODEX_NPM_FALLOW_APPDATA/npm"
@@ -10910,12 +10170,6 @@ else
     "1" "$(printf '%s\n' "$npm_fallow_config" |
       grep -Fxc "command = \"$CODEX_NPM_FALLOW_APPDATA/npm/fallow-mcp.cmd\"" || true)"
 
-  # %APPDATA%\npm is only npm's DEFAULT global prefix. An operator who set their own
-  # `prefix` has the shims somewhere else entirely, and looking under the default
-  # there finds nothing and drops through to the extensionless sh script the case
-  # above exists to skip — so npm names the prefix whenever npm is there to ask.
-  # APPDATA points at the fixture that DOES hold a .cmd, which is what makes this an
-  # assertion about the source and not about which paths happen to exist.
   CODEX_NPM_PREFIX_HOME="$TEST_HOME/codex-npm-prefix-home"
   CODEX_NPM_PREFIX_DIR="$CODEX_NPM_PREFIX_HOME/opt/npm-global"
   CODEX_NPM_PREFIX_PATH="$TEST_HOME/npm-prefix-stub"
@@ -10954,9 +10208,6 @@ else
 fi
 assert_equals "declining the install exits before any destination mutation" \
   "nonzero" "$([ "$codex_decline_rc" -ne 0 ] && echo nonzero || echo zero)"
-# The CLI pin is a precondition checked before confirm_install ever prompts, so
-# a pinned CLI's single `--version` read is expected here even on decline;
-# nothing past it — no npm call, no second Codex call — runs.
 assert_equals "declining a pinned install makes no npm call and reads the version exactly once" \
   "1" "$(wc -l < "$CODEX_INSTALL_CALLS" | tr -d ' ')"
 assert_equals "the one call declining makes is the version precondition, not an update" \
@@ -11051,9 +10302,6 @@ assert_equals "the managed permissions grant the settled state root" \
 assert_equals "the managed permissions grant the settled worktree root" \
   "1" "$(grep -Fxc "\"$CODEX_HAPPY_HOME/.local/state/oso-code/worktrees\" = true" "$CODEX_HAPPY_CONFIG" || true)"
 
-# Each named secret category is denied — driving the fixture the installer
-# actually renders, not eyeballing the TOML by hand. A pattern that regresses
-# out of the renderer turns exactly this line red.
 for codex_secret_pattern in \
   '"**/*.key" = "deny"' \
   '"**/*.pem" = "deny"' \
@@ -11077,11 +10325,6 @@ for codex_secret_pattern in \
     "present" "$(grep -Fx "$codex_secret_pattern" "$CODEX_HAPPY_CONFIG" >/dev/null && echo present || echo missing)"
 done
 
-# The three examined grants are asserted at the value the profile settled on, so
-# a later regression — a `.git` entry dropped, or the metadata IP reopened —
-# turns exactly one of these red. The permission profile's own default is "oso"
-# (no per-project selection exists to opt into); the other two examined grants
-# are unaffected.
 assert_equals "the oso profile is the machine default, since Codex has no per-project profile selection to scope it narrower" \
   "1" "$(grep -Fxc 'default_permissions = "oso"' "$CODEX_HAPPY_CONFIG" || true)"
 assert_equals "the oso profile itself still needs the full git-dir subtree for its own plumbing" \
@@ -11150,6 +10393,7 @@ while IFS='  ' read -r published_digest published_path; do
     plugin/hooks/*) installed_hook_path="$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/hooks/${published_path#plugin/hooks/}" ;;
     plugin/git-hooks/*) installed_hook_path="$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/git-hooks/${published_path#plugin/git-hooks/}" ;;
     plugin/bin/*) installed_hook_path="$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/bin/${published_path#plugin/bin/}" ;;
+    opencode/*) continue ;;
     *) installed_hook_path="" ;;
   esac
   [ -n "$installed_hook_path" ] \
@@ -11227,10 +10471,6 @@ assert_equals "Codex parity no longer calls the S11 state identity a placeholder
 assert_equals "Codex parity no longer says the S11 runtime installer is deferred" \
   "0" "$(grep -Ec 'later installer slice|installer slice is what sets' "$REPO_ROOT/docs/parity-codex.md" || true)"
 
-# Codex can retain an official Engram checkout under its internal marketplace
-# cache even after losing the corresponding registry entry. Engram's next setup
-# cannot add the official remote until that orphan is removed. The installer may
-# repair only the exact clean official checkout, under its transaction.
 if command -v git >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
   CODEX_STALE_ENGRAM_HOME="$TEST_HOME/codex-stale-engram-home"
   write_codex_install_personal_state "$CODEX_STALE_ENGRAM_HOME"
@@ -11286,9 +10526,6 @@ else
   skipped=$((skipped + 1))
 fi
 
-# A login-only Codex home already carries [features].prevent_idle_sleep. That
-# unrelated key must not make oso-code reject the whole table, and the two keys
-# oso-code does own must be incorporated without emitting a second TOML table.
 CODEX_EXISTING_FEATURES_HOME="$TEST_HOME/codex-existing-features-home"
 write_codex_install_existing_features_state "$CODEX_EXISTING_FEATURES_HOME"
 printf '0.146.0\n' > "$CODEX_INSTALL_VERSION"
@@ -11342,9 +10579,6 @@ assert_equals "the second install with an existing unrelated feature also comple
 assert_equals "a second install with an existing unrelated feature is byte-idempotent" \
   "$codex_existing_features_first" "$codex_existing_features_second"
 
-# The merge participates in the same transaction as every other destination.
-# A failure after the last materialization boundary must restore the original
-# operator-owned [features] table, not leave a half-adopted table behind.
 CODEX_EXISTING_FEATURES_ROLLBACK_HOME="$TEST_HOME/codex-existing-features-rollback-home"
 write_codex_install_existing_features_state "$CODEX_EXISTING_FEATURES_ROLLBACK_HOME"
 codex_existing_features_rollback_before="$(install_file_snapshot "$CODEX_EXISTING_FEATURES_ROLLBACK_HOME")"
@@ -11357,9 +10591,6 @@ assert_equals "the existing-features rollback reaches the injected late boundary
 assert_equals "a late failure restores the original existing features table byte-for-byte" \
   "$codex_existing_features_rollback_before" "$codex_existing_features_rollback_after"
 
-# Table ownership is deliberately narrower than key ownership. An unrelated
-# key is preserved above, but either oso-owned key outside the managed region is
-# still an ambiguity and must fail before any external integration is touched.
 for codex_owned_feature in hooks multi_agent; do
   CODEX_FEATURE_CONFLICT_HOME="$TEST_HOME/codex-${codex_owned_feature}-conflict-home"
   write_codex_install_existing_features_state "$CODEX_FEATURE_CONFLICT_HOME"
@@ -11381,10 +10612,6 @@ for codex_owned_feature in hooks multi_agent; do
     "$codex_feature_conflict_before" "$codex_feature_conflict_after"
 done
 
-# The leaf markers declare ownership of exactly the renderer's two assignments,
-# not arbitrary bytes placed between them. Silently stripping a future Codex key
-# from a stale or hand-edited block would turn the ownership boundary into data
-# loss on reinstall, so a divergent block is a preflight conflict too.
 CODEX_FEATURE_FOREIGN_IN_BLOCK_HOME="$TEST_HOME/codex-feature-foreign-in-block-home"
 write_codex_install_existing_features_state "$CODEX_FEATURE_FOREIGN_IN_BLOCK_HOME"
 awk '
@@ -11411,8 +10638,6 @@ assert_equals "a divergent feature block reaches no plugin or Engram client" \
 assert_equals "a divergent feature block preserves every destination byte-for-byte" \
   "$codex_feature_foreign_in_block_before" "$codex_feature_foreign_in_block_after"
 
-# A second run must converge byte-for-byte. Calls may repeat; no managed file,
-# personal file or copied payload may accumulate another block or change bytes.
 codex_first_snapshot="$(install_file_snapshot "$CODEX_HAPPY_HOME")"
 run_codex_install "$CODEX_HAPPY_HOME"
 codex_second_snapshot="$(install_file_snapshot "$CODEX_HAPPY_HOME")"
@@ -11434,10 +10659,6 @@ assert_equals "a second Engram setup leaves both root pointers before oso-code o
     }
   ' "$CODEX_HAPPY_CONFIG")"
 
-# The version is still a behavioral pin (0.146.0, `@latest` never an escape
-# hatch), but how it is reached moved: an old CLI is a precondition
-# failure now, never a silent in-place upgrade the transaction's rollback
-# could not have reverted had a later step failed.
 CODEX_OLD_HOME="$TEST_HOME/codex-old-version-home"
 write_codex_install_personal_state "$CODEX_OLD_HOME"
 printf '0.145.0\n' > "$CODEX_INSTALL_VERSION"
@@ -11455,9 +10676,6 @@ assert_equals "the shipped Codex installer contains no @latest escape hatch" \
 assert_equals "the shipped Codex installer never mutates the global CLI itself" \
   "0" "$(grep -cE '^[[:space:]]*npm install' "$INSTALL_CODEX_SH" || true)"
 
-# Criterion (c): the ordering itself is asserted, not just today's behavior --
-# a regression that reintroduces the mutating install, or moves the
-# precondition past confirm_install/begin_transaction, must turn this red.
 CODEX_PREFLIGHT_LINE="$(grep -n '^  preflight_codex_version$' "$INSTALL_CODEX_SH" |
   head -n1 | cut -d: -f1)" || CODEX_PREFLIGHT_LINE=""
 CODEX_CONFIRM_LINE="$(grep -n '^  confirm_install$' "$INSTALL_CODEX_SH" |
@@ -11469,9 +10687,6 @@ assert_equals "the CLI pin precondition is checked before confirm_install ever p
 assert_equals "confirm_install still gates every mutation, including the transaction itself" \
   "before" "$([ "${CODEX_CONFIRM_LINE:-0}" -lt "${CODEX_BEGIN_TX_LINE:-0}" ] 2>/dev/null && echo before || echo not-before)"
 
-# Published hashes are checked before the transaction starts. This fixture is a
-# release tree whose hook bytes were changed after publication; it must neither
-# call a client nor create one destination path.
 CODEX_TAMPERED_RELEASE="$TEST_HOME/codex-tampered-release"
 mkdir -p "$CODEX_TAMPERED_RELEASE"
 cp -R "$REPO_ROOT/bootstrap" "$REPO_ROOT/codex" "$REPO_ROOT/plugin" "$CODEX_TAMPERED_RELEASE/"
@@ -11540,17 +10755,9 @@ assert_equals "a duplicate published hash path is rejected even with fourteen ro
 assert_equals "duplicate hash coverage is rejected before any destination mutation" \
   "absent" "$([ -e "$CODEX_HASH_HOME/.codex" ] || [ -e "$CODEX_HASH_HOME/.agents" ] || [ -e "$CODEX_HASH_HOME/.local/share/oso-code" ] && echo mutated || echo absent)"
 
-# Every file mutation participates in one transaction. A deterministic failure
-# after the last materialization point is the strongest rollback case because it
-# proves hooks, agents, config, global rules, plugin and Impeccable are restored
-# together rather than only protecting the file nearest the failure.
 CODEX_ROLLBACK_HOME="$TEST_HOME/codex-rollback-home"
 mkdir -p "$CODEX_ROLLBACK_HOME"
 cp -R "$CODEX_HAPPY_HOME/." "$CODEX_ROLLBACK_HOME/"
-# This fixture changes HOME, so the copied rendered hooks manifest correctly
-# points at the source fixture's runtime and is foreign in the destination.
-# Leave hooks absent here: the late-failure assertion still proves a newly
-# created manifest is removed by rollback without weakening ownership checks.
 rm -f "$CODEX_ROLLBACK_HOME/.codex/hooks.json"
 mkdir -p "$CODEX_ROLLBACK_HOME/.local/state/oso-code"
 printf 'operator pre-existing opt-out\n' > "$CODEX_ROLLBACK_HOME/.local/state/oso-code/impeccable-opt-out"
@@ -11577,9 +10784,6 @@ assert_equals "profile validation rejection rolls every destination back byte-fo
   "$codex_config_reject_before" "$codex_config_reject_after"
 
 if command -v git >/dev/null 2>&1; then
-  # A previous oso-code install may have pointed this checkout at the published
-  # source directory. That exact, single-hook owner is safe to migrate to the
-  # self-contained runtime; a lookalike path or any sibling is not.
   CODEX_GIT_MIGRATE_RELEASE="$TEST_HOME/codex-git-migrate-release"
   mkdir -p "$CODEX_GIT_MIGRATE_RELEASE"
   cp -R "$REPO_ROOT/.agents" "$REPO_ROOT/bootstrap" "$REPO_ROOT/codex" \
@@ -11768,9 +10972,6 @@ else
   skipped=$((skipped + 1))
 fi
 
-# The region may not annex an operator-owned table of the same name. TOML does
-# not permit two definitions, so silently appending the oso block would create a
-# config Codex cannot parse; deleting the earlier table would be data loss.
 CODEX_CONFLICT_HOME="$TEST_HOME/codex-conflict-home"
 write_codex_install_personal_state "$CODEX_CONFLICT_HOME"
 printf '%s\n' \
@@ -11846,13 +11047,6 @@ else
   assert_equals "agent symlink refusal preserves its external target" \
     "operator-owned linked role" "$(cat "$CODEX_LINKED_AGENTS_TARGET/personal.toml")"
 
-  # Defect 1 (audit): `install_agents` refuses a symlinked AGENTS_TARGET itself
-  # (above), but the role-file loop wrote through an inherited symlink one
-  # level down -- `cp -R` preserves a symlink already inside an existing agents
-  # directory, then plain `cp` onto that name follows it and writes through,
-  # and `chmod` follows it too. Drive it with a fixture whose symlink points at
-  # a sentinel file entirely outside ~/.codex, and prove neither the write nor
-  # the chmod ever reached it.
   CODEX_ROLE_SYMLINK_HOME="$TEST_HOME/codex-role-symlink-home"
   write_codex_install_personal_state "$CODEX_ROLE_SYMLINK_HOME"
   CODEX_ROLE_SYMLINK_SENTINEL="$TEST_HOME/codex-role-symlink-sentinel.toml"
@@ -11874,9 +11068,6 @@ else
         "$CODEX_ROLE_SYMLINK_HOME/.codex/agents/oso-applier.toml" && echo 1 || echo 0)"
 fi
 
-# Marker damage is ambiguity, never permission to delete through the next end
-# marker or append a second region. Exercise each managed text file independently
-# and require that refusal itself leave the malformed bytes untouched.
 CODEX_BAD_CONFIG_HOME="$TEST_HOME/codex-bad-config-home"
 mkdir -p "$CODEX_BAD_CONFIG_HOME"
 cp -R "$CODEX_HAPPY_HOME/." "$CODEX_BAD_CONFIG_HOME/"
@@ -11907,14 +11098,6 @@ assert_equals "a duplicate global start marker is rejected as malformed" \
 assert_equals "a malformed global file is untouched by the refused install" \
   "$bad_global_before" "$(file_sha256 "$bad_global")"
 
-# --- Codex installer: migrates a pre-split plan-approval state file inside
-# the transaction --------------------------------------------------------------
-# 526a558 split `session` (ownership) from `plan_approval_session` (who may
-# approve or cancel a pending plan). A state file written before that split
-# holds only the old key; installing the split without converting it
-# manufactures the exact trap the split closes. state_key_of mirrors
-# state_file_for exactly, so each digest below names the same path both the
-# migration and the runtime hooks resolve for that repository identity.
 CODEX_MIGRATION_HOME="$TEST_HOME/codex-migration-home"
 write_codex_install_personal_state "$CODEX_MIGRATION_HOME"
 mkdir -p "$CODEX_MIGRATION_HOME/.local/state/oso-code"
@@ -11935,8 +11118,6 @@ migration_split_state="$CODEX_MIGRATION_HOME/.local/state/oso-code/${migration_s
 migration_plan_digest="$(printf '%064d' 0)"
 migration_presenting_session="01hqtq0z7hzx6z0z1z2z3z4z5z"
 
-# Case a: the old `session` value still names a real presenting session — that
-# pending stays legitimately approvable, so it is backfilled, not cleared.
 printf '%s\n' \
   'mode=plan' 'active_slice=none' 'verify_green=false' \
   'plan_approval=pending' \
@@ -11946,8 +11127,6 @@ printf '%s\n' \
   'plan_revision=0' \
   "session=$migration_presenting_session" > "$migration_ulid_state"
 
-# Case b: the old `session` value is the ownership marker — the presenting
-# session is unrecoverable, so this pending is cleared rather than preserved.
 printf '%s\n' \
   'mode=plan' 'active_slice=none' 'verify_green=false' \
   'plan_approval=pending' \
@@ -11957,7 +11136,6 @@ printf '%s\n' \
   'plan_revision=0' \
   'session=1' > "$migration_marker_state"
 
-# Case c: already carries the new key — migration must be idempotent.
 printf '%s\n' \
   'mode=plan' 'active_slice=none' 'verify_green=false' \
   'plan_approval=pending' \
@@ -11990,12 +11168,6 @@ assert_equals "the clear is reported so the operator can see what moved" \
 assert_equals "a state file already carrying plan_approval_session is untouched" \
   "$migration_split_before" "$(file_sha256 "$migration_split_state")"
 
-# The positive consequence, not just the bookkeeping: before the clear, the
-# leftover armed state denies any local tool outside the allowlist forever,
-# since nothing on disk can ever approve or cancel it. After the clear there
-# is no state file at all, so the catch-all is invisible again for this
-# repository — proven with a tool the allowlist has never carried, since Bash
-# would pass regardless of whether the pending were ever scoped to anyone.
 migration_marker_probe_input="$(printf '{"session_id":"%s","cwd":"%s","hook_event_name":"PreToolUse","tool_name":"%s","tool_input":{}}' \
   "codex-migration-marker-probe-session" "$MIGRATION_MARKER_REPO" FutureWriter)"
 HOME="$CODEX_MIGRATION_HOME" run_hook "$UNKNOWN_TOOL_HOOK" "$migration_marker_probe_input" 0 '' \
@@ -12003,14 +11175,6 @@ HOME="$CODEX_MIGRATION_HOME" run_hook "$UNKNOWN_TOOL_HOOK" "$migration_marker_pr
 assert_after_hook "the cleared repository no longer denies a tool call at all" \
   [ -z "$hook_stdout" ]
 
-# --- Codex installer: a partial rollback tells the truth ---------------------
-# on_exit calls `rollback_transaction || true`, which turns off errexit for the
-# whole function — the old code had no per-item check at all and always printed
-# "rollback complete" regardless of what `rm -rf`/`cp -a` actually did. The shim
-# below fails exactly the one restore call rollback issues for the fixture's
-# config.toml (a `cp -a SRC DST` whose DST is that exact path); every other
-# cp -a, including begin_transaction's own backup of the same file, passes
-# through to the real binary untouched.
 CODEX_ROLLBACK_HONESTY_HOME="$TEST_HOME/codex-rollback-honesty-home"
 write_codex_install_personal_state "$CODEX_ROLLBACK_HONESTY_HOME"
 rollback_honesty_target="$CODEX_ROLLBACK_HONESTY_HOME/.codex/config.toml"
@@ -12037,14 +11201,6 @@ assert_equals "the rollback report names the item that failed to restore" \
 assert_equals "the rollback report tells the operator the snapshot is still there to restore by hand" \
   "1" "$(printf '%s\n' "$CODEX_INSTALL_LOG" | grep -Ec 'snapshot.*restore it by hand' || true)"
 
-# --- Codex installer: Impeccable is pinned to the recorded version ----------
-# The design-foundation slice reads the installed skill's own `version:`
-# frontmatter and records it in the plan ledger; this pin is what lets that
-# recorded read and the marketplace fetch agree instead of leaving two
-# unreconciled sources of truth. Three cases: a candidate that already
-# matches never triggers a fetch, one that does not match falls through to
-# the pinned `--ref skill-v<version>` fetch, and a fetch that itself reports
-# the wrong version fails loudly rather than mounting unpinned content.
 if ! command -v python3 >/dev/null 2>&1; then
   echo "skip: python3 is absent here, so the Impeccable marketplace pin fetch path has nothing to run"
   skipped=$((skipped + 1))
@@ -12093,7 +11249,6 @@ else
   IMPECCABLE_PIN_SHIM_DIR="$TEST_HOME/impeccable-pin-shims"
   write_impeccable_pin_codex_shim "$IMPECCABLE_PIN_SHIM_DIR"
 
-  # (c-1) a discovered candidate that already matches the pin: no fetch call.
   IMPECCABLE_PIN_MATCH_SOURCE="$TEST_HOME/impeccable-pin-match-source"
   write_codex_impeccable_fixture "$IMPECCABLE_PIN_MATCH_SOURCE" \
     'name: impeccable' "version: $IMPECCABLE_PIN_VERSION"
@@ -12109,8 +11264,6 @@ else
     "$(sed -n 's/^version:[[:space:]]*//p' \
       "$IMPECCABLE_PIN_MATCH_HOME/.agents/skills/impeccable/SKILL.md" 2>/dev/null || true)"
 
-  # (c-2) a discovered candidate at a DIFFERENT version falls through to the
-  # pinned fetch, and the mount ends up at the pinned version regardless.
   IMPECCABLE_PIN_MISMATCH_SOURCE="$TEST_HOME/impeccable-pin-mismatch-source"
   write_codex_impeccable_fixture "$IMPECCABLE_PIN_MISMATCH_SOURCE" \
     'name: impeccable' 'version: 1.2.3'
@@ -12131,9 +11284,6 @@ else
     "$(sed -n 's/^version:[[:space:]]*//p' \
       "$IMPECCABLE_PIN_MISMATCH_HOME/.agents/skills/impeccable/SKILL.md" 2>/dev/null || true)"
 
-  # (c-3) the pinned fetch itself reports a different version -- an upstream
-  # inconsistency the installer cannot resolve, so it fails loudly and by
-  # name rather than mounting unpinned content.
   IMPECCABLE_PIN_INCONSISTENT_ROOT="$TEST_HOME/impeccable-pin-inconsistent-root"
   write_codex_impeccable_fixture \
     "$IMPECCABLE_PIN_INCONSISTENT_ROOT/.agents/skills/impeccable" \
@@ -12148,13 +11298,6 @@ else
       grep -Fc "Impeccable is pinned to skill-v$IMPECCABLE_PIN_VERSION but the mounted skill reports version 9.9.9" || true)"
 fi
 
-# --- Codex installer: a restore that exists, and retention sequenced -------
-#     behind it ----------------------------------------------------------------
-# Count-based retention does not answer "1.9 GiB across 17 snapshots" -- a
-# single snapshot already runs to ~110 MiB -- so this proves the size bound
-# instead, and proves it never engages until a real restore has succeeded at
-# least once: a purge that ran on its own first installation would delete the
-# very artifacts an operator would reach for if that installation went wrong.
 . "$REPO_ROOT/bootstrap/lib/install-backup.sh"
 RESTORE_CODEX_SH="$REPO_ROOT/bootstrap/restore-codex.sh"
 
@@ -12179,21 +11322,14 @@ run_codex_restore() {
 
 CODEX_RESTORE_HOME="$TEST_HOME/codex-restore-retention-home"
 
-# Install #1: state A. Snapshotting it immediately captures exactly what
-# install #2's own backup will hold, since a backup is taken of whatever
-# exists right before that next install runs.
 run_codex_install "$CODEX_RESTORE_HOME"
 codex_restore_snapshot_a="$(install_file_snapshot "$CODEX_RESTORE_HOME")"
 
-# Install #2: state B. Its backup is exactly state A.
 run_codex_install "$CODEX_RESTORE_HOME"
 codex_restore_backup_2="$(newest_install_backup_name "$CODEX_RESTORE_HOME")"
 assert_equals "two installs leave exactly two backups" \
   "2" "$(count_install_backups "$CODEX_RESTORE_HOME")"
 
-# (b), part 1: a third install runs under a budget too small for even one
-# snapshot, and retention still deletes nothing -- the restore path has
-# never been exercised on this fixture yet.
 export OSO_INSTALL_BACKUP_BUDGET_KIB=1
 run_codex_install "$CODEX_RESTORE_HOME"
 unset OSO_INSTALL_BACKUP_BUDGET_KIB
@@ -12203,43 +11339,29 @@ assert_equals "the skip is named, not silent" \
   "1" "$(printf '%s\n' "$CODEX_INSTALL_LOG" | \
     grep -Fc 'backup retention: skipped — the restore path has not been verified' || true)"
 
-# (a): corrupt the live tree, then restore backup #2 -- the exact snapshot
-# state A left behind -- and prove it comes back byte for byte.
 rm -rf "$CODEX_RESTORE_HOME/.codex/agents"
 printf 'operator broke this\n' > "$CODEX_RESTORE_HOME/.codex/config.toml"
 run_codex_restore "$CODEX_RESTORE_HOME" "$codex_restore_backup_2"
 assert_equals "the restore run exits clean" "0" "$CODEX_RESTORE_RC"
 assert_equals "restoring backup #2 brings the tree back to the exact state install #1 left" \
   "$codex_restore_snapshot_a" "$(install_file_snapshot "$CODEX_RESTORE_HOME")"
-assert_equals "a successful restore records that the restore path has now been exercised" \
-  "present" "$([ -f "$CODEX_RESTORE_HOME/.local/state/oso-code/.install-restore-verified" ] \
+assert_equals "a successful restore arms retention for its OWN host and never for the other one" \
+  "present absent" "$([ -f "$CODEX_RESTORE_HOME/.local/state/oso-code/.install-restore-verified-codex" ] \
+    && printf present || printf absent) $([ -f "$CODEX_RESTORE_HOME/.local/state/oso-code/.install-restore-verified-opencode" ] \
     && printf present || printf absent)"
 
-# (b), part 2: a fourth install, same impossible budget -- now pruning runs,
-# since the restore above just proved itself, keeping only what the budget
-# always guarantees: the newest backup alone.
 export OSO_INSTALL_BACKUP_BUDGET_KIB=1
 run_codex_install "$CODEX_RESTORE_HOME"
 unset OSO_INSTALL_BACKUP_BUDGET_KIB
 assert_equals "retention now prunes down to the newest backup once the restore path is proven" \
   "1" "$(count_install_backups "$CODEX_RESTORE_HOME")"
 
-# A backup name outside install-codex.sh's own naming shape is refused
-# outright, never treated as a restorable snapshot.
 CODEX_RESTORE_BOGUS_HOME="$TEST_HOME/codex-restore-bogus-home"
 mkdir -p "$CODEX_RESTORE_BOGUS_HOME/.local/state/oso-code"
 run_codex_restore "$CODEX_RESTORE_BOGUS_HOME" "../../etc"
 assert_equals "a backup name that is not a bare directory name is refused" \
   "nonzero" "$([ "$CODEX_RESTORE_RC" -ne 0 ] && echo nonzero || echo zero)"
 
-# --- verify-codex.sh: codex login status and codex exec are bounded ----------
-# Both carry no timeout flag of their own, so both now run through
-# bounded_command_output -- the same in-shell job-control idiom
-# plugin/skills/_shared/front-surface.md defines and this file's own MCP
-# drift probe (mcp_server_tool_names, tested above) already reuses. Driven
-# here as a full subprocess run, the same mechanism the host-contract and MCP
-# drift cases above use, with OSO_VERIFY_SKIP_SMOKE left UNSET so the run
-# actually reaches run_authenticated_smoke.
 CODEX_LOGIN_HANG_SHIM_DIR="$TEST_HOME/codex-login-hang-shim"
 mkdir -p "$CODEX_LOGIN_HANG_SHIM_DIR"
 printf '%s\n' \
@@ -12273,9 +11395,6 @@ else
   echo "ok: the hanging codex login status fixture does not outlive the bounded check"; pass=$((pass + 1))
 fi
 
-# codex exec (the integrator smoke) reaches deep into
-# create_integrator_fixture/populate_smoke_codex_home, which needs a real git
-# checkout -- gated the way the rest of this suite gates its git-layer cases.
 if ! command -v git >/dev/null 2>&1; then
   echo "skip: git is absent here, so the codex exec smoke bound cannot be exercised end to end"
   skipped=$((skipped + 1))
@@ -12321,10 +11440,6 @@ else
   fi
 fi
 
-# --- Codex purge: total, reversible and confined to a fixture HOME -----------
-# The operator's real migration is already complete. Every invocation below
-# redirects HOME and CODEX_HOME into a disposable tree, while client shims make
-# an accidental install, uninstall or login call a visible test failure.
 if [ "$RUNS_ON_WINDOWS_BASH" = true ]; then
   echo "skip: every purge fixture publishes a symlink — a Codex root link, a dangling agents link, a relative skills pointer — and ln-as-copy can express none of them, so no purge case has a tree to run against"
   skipped=$((skipped + 1))
@@ -12680,16 +11795,6 @@ else
     "external target survives" "$(cat "$CODEX_PURGE_SYMLINK_HOME/external-codex/sentinel")"
 fi
 
-# --- verify-codex.sh: a runtime path is checked exactly, never by an
-# unescaped regex substring (defect 2) ------------------------------------
-# `installed_trust_status` normalizes an installed hooks.json back to its
-# published placeholder before hashing it. Before this fix, RUNTIME_ROOT's
-# own literal `.` (every real RUNTIME_ROOT carries one, in `.local`) went
-# into that normalizing `sed` unescaped, so a BRE `.` matched any single
-# character there -- a manifest naming a DIFFERENT directory, one character
-# off at exactly that position, still normalized to the expected hash. Both
-# directions are proven: the wrong directory is reported, and the real one
-# still is not.
 CODEX_REGEX_HOME="$TEST_HOME/codex-runtime-regex-home"
 mkdir -p "$CODEX_REGEX_HOME/.codex"
 CODEX_REGEX_RUNTIME_ROOT="$CODEX_REGEX_HOME/.local/share/oso-code/runtime"
@@ -12723,15 +11828,6 @@ assert_equals "the real runtime path never false-negatives the manifest bytes ch
   "0" "$(printf '%s\n' "$CODEX_REGEX_CORRECT_OUTPUT" | \
     grep -Ec '^FAIL: published runtime bytes .* got bad:.*codex/hooks/hooks\.json' || true)"
 
-# --- verify-codex.sh: the installed-plugin check matches every field
-# exactly, never a substring over the whole payload (defect 4) -----------
-# The prior predicate was `"oso-code" in json.dumps(installed)`: a substring
-# test over the whole dumped entry. It accepts `not-oso-code` (contains
-# "oso-code"), a plugin sourced from a backup-shaped path like
-# `/tmp/oso-code-backup` (same reason), and a disabled plugin whose other
-# fields merely mention the name. Each named case is driven through the
-# real check, plus one control proving the fix still accepts the genuine
-# installed entry.
 CODEX_PLUGIN_MANIFEST="$REPO_ROOT/codex/.codex-plugin/plugin.json"
 CODEX_PLUGIN_VERSION="$(sed -n 's/^[[:space:]]*"version": "\(.*\)",$/\1/p' "$CODEX_PLUGIN_MANIFEST" | head -n1)"
 
@@ -12804,7 +11900,6 @@ else
       grep -Fxc 'FAIL: oso-code plugin installed — expected installed, got absent-or-invalid' || true)"
 fi
 
-# --- Codex verifier: fixture failures still produce the complete report -------
 VERIFY_CODEX_SH="$REPO_ROOT/bootstrap/verify-codex.sh"
 CODEX_VERIFY_HOME="$TEST_HOME/codex-verify-home"
 CODEX_VERIFY_SHIMS="$TEST_HOME/codex-verify-shims"
@@ -12863,6 +11958,1456 @@ assert_equals "the Codex verifier always reaches exactly one final summary" \
 codex_authenticated_calls="$(grep -Ec '^(login([[:space:]]|$)|exec([[:space:]]|$))' "$CODEX_VERIFY_CALLS" || true)"
 assert_equals "fixture verification never attempts Codex authentication or execution" \
   "0" "$codex_authenticated_calls"
+
+OPENCODE_INSTALLER="$REPO_ROOT/bootstrap/install-opencode.sh"
+OPENCODE_PIN="$(sed -n 's/^SUPPORTED_OPENCODE_VERSION=//p' "$OPENCODE_INSTALLER" | head -1 || true)"
+if [ -z "$OPENCODE_PIN" ]; then
+  assert_equals "the opencode installer carries a version pin" "nonempty" "empty"
+elif command -v opencode >/dev/null 2>&1; then
+  opencode_probe="$(opencode_version_of "$(command -v opencode)" 2>/dev/null || true)"
+  assert_equals "the opencode installer pin matches the installed binary" "$OPENCODE_PIN" "$opencode_probe"
+else
+  skipped=$((skipped + 1))
+fi
+
+ROUTES_TS="$REPO_ROOT/opencode/hooks/routes.ts"
+if [ ! -f "$ROUTES_TS" ]; then
+  assert_equals "the opencode route table is generated" "nonempty" "empty"
+elif command -v tsc >/dev/null 2>&1; then
+  if tsc --noEmit --strict --target es2022 --module esnext "$ROUTES_TS" >/dev/null 2>&1; then
+    echo "ok: the generated opencode route table type-checks"; pass=$((pass + 1))
+  else
+    echo "FAIL: the generated opencode route table does not type-check"; fail=$((fail + 1))
+  fi
+else
+  skipped=$((skipped + 1))
+fi
+
+if [ -f "$ROUTES_TS" ]; then
+  OPENCODE_UNKNOWN_ALLOWLIST="$(python3 - "$ROUTES_TS" <<'PY'
+import json
+import re
+import sys
+
+source = open(sys.argv[1], encoding="utf-8").read()
+unknown_route = re.search(r'gate: "unknown",.*?allow: (\[[^\]]*\])', source, re.S)
+print("|".join(json.loads(unknown_route.group(1))) if unknown_route else "")
+PY
+)"
+  OPENCODE_CATCH_ALL_SESSION="opencode-catch-all-session"
+  opencode_tool_input() {
+    printf '{"command":"","session_id":"%s","cwd":"%s","tool_name":"%s"}' \
+      "$OPENCODE_CATCH_ALL_SESSION" "$REPO_ROOT" "$1"
+  }
+  oso-state --session "$OPENCODE_CATCH_ALL_SESSION" clear
+  oso-state --session "$OPENCODE_CATCH_ALL_SESSION" set mode=plan active_slice=1 verify_green=false
+  for registered_plugin_tool in oso_wave oso_plan_approve oso_plan_cancel; do
+    run_hook "$UNKNOWN_TOOL_HOOK" "$(opencode_tool_input "$registered_plugin_tool")" 0 '' \
+      --allow "$OPENCODE_UNKNOWN_ALLOWLIST"
+    assert_after_hook "the armed opencode catch-all admits the plugin-registered $registered_plugin_tool" \
+      [ -z "$hook_stdout" ]
+  done
+  run_hook "$UNKNOWN_TOOL_HOOK" "$(opencode_tool_input oso_unregistered)" 0 '' \
+    --allow "$OPENCODE_UNKNOWN_ALLOWLIST"
+  assert_after_hook "a plugin tool the opencode route table never names stays denied" \
+    hook_returned_deny
+  OSO_HOST=opencode run_hook "$UNKNOWN_TOOL_HOOK" "$(opencode_tool_input oso_unregistered)" 0 '' \
+    --allow "$OPENCODE_UNKNOWN_ALLOWLIST"
+  assert_after_hook "the deny an opencode operator reads names this host's allowlist, never Codex's" \
+    hook_deny_names_allowlist_host OpenCode
+  oso-state --session "$OPENCODE_CATCH_ALL_SESSION" clear
+fi
+
+if [ "$RUNS_ON_WINDOWS_BASH" = true ]; then
+  echo "skip: every opencode purge fixture publishes a symlink — a binary root link, a dangling gentle-ai link — and ln-as-copy can express none of them, so no purge case has a tree to run against"
+  skipped=$((skipped + 1))
+else
+  PURGE_OPENCODE_SH="$REPO_ROOT/bootstrap/purge-opencode.sh"
+  OPENCODE_PURGE_OUTPUT="$TEST_HOME/opencode-purge-output"
+  OPENCODE_PURGE_CLIENT_CALLS="$TEST_HOME/opencode-purge-client-calls"
+  OPENCODE_PURGE_SHIMS="$TEST_HOME/opencode-purge-shims"
+  mkdir -p "$OPENCODE_PURGE_SHIMS"
+  for purge_client in opencode npm bun; do
+    printf '%s\n' \
+      '#!/bin/sh' \
+      'printf '\''%s:%s\n'\'' "$(basename "$0")" "$*" >> "$OSO_PURGE_CLIENT_CALLS"' \
+      'exit 97' > "$OPENCODE_PURGE_SHIMS/$purge_client"
+    chmod +x "$OPENCODE_PURGE_SHIMS/$purge_client"
+  done
+
+  write_opencode_purge_fixture() {
+    local fixture_home="$1"
+    mkdir -p \
+      "$fixture_home/.config/opencode/plugins" \
+      "$fixture_home/.local/share/opencode/repos/keep" \
+      "$fixture_home/.cache/opencode/tool-output/keep" \
+      "$fixture_home/.opencode/bin" \
+      "$fixture_home/.gentle-ai" \
+      "$fixture_home/.local/bin" \
+      "$fixture_home/.claude" \
+      "$fixture_home/.codex" \
+      "$fixture_home/.agents" \
+      "$fixture_home/.local/share/oso-code/runtime" \
+      "$fixture_home/.local/state/oso-code/worktrees/keep" \
+      "$fixture_home/repos/alpha" \
+      "$fixture_home/repos/beta" \
+      "$fixture_home/repos/gamma" \
+      "$fixture_home/.cache/opencode/empty-dir"
+    printf 'user opencode config\n' > "$fixture_home/.config/opencode/opencode.json"
+    printf 'probe plugin\n' > "$fixture_home/.config/opencode/plugins/probe.ts"
+    printf 'global agent\n' > "$fixture_home/.config/opencode/AGENTS.md"
+    printf '\001\002sessions bytes\000\377' > "$fixture_home/.local/share/opencode/opencode.db"
+    printf 'repos state survives\n' > "$fixture_home/.local/share/opencode/repos/keep/sentinel"
+    printf 'tool output survives\n' > "$fixture_home/.cache/opencode/tool-output/keep/sentinel"
+    printf 'opencode binary bytes\n' > "$fixture_home/.opencode/bin/opencode"
+    chmod 755 "$fixture_home/.opencode/bin/opencode"
+    printf 'gentle state\n' > "$fixture_home/.gentle-ai/state.json"
+    printf 'gentle binary bytes\n' > "$fixture_home/.local/bin/gentle-ai"
+    chmod 755 "$fixture_home/.local/bin/gentle-ai"
+    printf 'claude survives\n' > "$fixture_home/.claude/sentinel"
+    printf 'codex survives\n' > "$fixture_home/.codex/sentinel"
+    printf 'agents survive\n' > "$fixture_home/.agents/sentinel"
+    printf 'runtime survives\n' > "$fixture_home/.local/share/oso-code/runtime/sentinel"
+    printf 'state survives\n' > "$fixture_home/.local/state/oso-code/worktrees/keep/sentinel"
+    printf 'alpha config\n' > "$fixture_home/repos/alpha/opencode.json"
+    printf 'beta config\n' > "$fixture_home/repos/beta/opencode.json"
+    printf 'gamma config\n' > "$fixture_home/repos/gamma/opencode.json"
+  }
+
+  opencode_purge_project_configs() {
+    local fixture_home="$1"
+    printf '%s %s %s' \
+      "$fixture_home/repos/alpha/opencode.json" \
+      "$fixture_home/repos/beta/opencode.json" \
+      "$fixture_home/repos/gamma/opencode.json"
+  }
+
+  purge_opencode_snapshot() {
+    local fixture_home="$1" path rel permissions digest
+    for path in "$fixture_home/.config/opencode" "$fixture_home/.local/share/opencode" \
+      "$fixture_home/.cache/opencode" "$fixture_home/.opencode" \
+      "$fixture_home/.gentle-ai" "$fixture_home/.local/bin"; do
+      [ -e "$path" ] || [ -L "$path" ] || continue
+      find "$path" -print
+    done | LC_ALL=C sort | while IFS= read -r path; do
+      rel="${path#$fixture_home/}"
+      permissions="$(LC_ALL=C ls -ld "$path" | awk '{ print $1 }')"
+      if [ -L "$path" ]; then
+        printf 'link %s %s -> %s\n' "$permissions" "$rel" "$(readlink "$path")"
+      elif [ -d "$path" ]; then
+        printf 'dir  %s %s\n' "$permissions" "$rel"
+      elif [ -f "$path" ]; then
+        digest="$(file_sha256 "$path")"
+        printf 'file %s %s %s\n' "$permissions" "$rel" "$digest"
+      else
+        printf 'other %s %s\n' "$permissions" "$rel"
+      fi
+    done
+  }
+
+  opencode_purge_backup_count() {
+    local fixture_home="$1" backup_parent
+    backup_parent="$fixture_home/.local/state/oso-code/purge-backups"
+    [ -d "$backup_parent" ] || { printf '0'; return; }
+    find "$backup_parent" -mindepth 1 -maxdepth 1 -type d -print | wc -l | tr -d ' '
+  }
+
+  run_opencode_purge() {
+    local fixture_home="$1"
+    shift
+    : > "$OPENCODE_PURGE_CLIENT_CALLS"
+    if HOME="$fixture_home" \
+      PATH="$OPENCODE_PURGE_SHIMS:$PATH" \
+      XDG_CONFIG_HOME="$fixture_home/.config" \
+      XDG_STATE_HOME="$fixture_home/.local/state" \
+      XDG_CACHE_HOME="$fixture_home/.cache" \
+      OSO_PURGE_CLIENT_CALLS="$OPENCODE_PURGE_CLIENT_CALLS" \
+      OSO_PURGE_FAIL_AFTER="${OSO_PURGE_FAIL_AFTER:-}" \
+      OSO_OPENCODE_PROJECT_CONFIGS="$(opencode_purge_project_configs "$fixture_home")" \
+      bash "$PURGE_OPENCODE_SH" "$@" > "$OPENCODE_PURGE_OUTPUT" 2>&1; then
+      OPENCODE_PURGE_RC=0
+    else
+      OPENCODE_PURGE_RC=$?
+    fi
+    OPENCODE_PURGE_LOG="$(cat "$OPENCODE_PURGE_OUTPUT")"
+  }
+
+  verify_opencode_purge_manifest() {
+    local backup="$1"
+    if command -v sha256sum >/dev/null 2>&1; then
+      (cd "$backup" && sha256sum -c manifest.sha256 >/dev/null 2>&1)
+    else
+      (cd "$backup" && shasum -a 256 -c manifest.sha256 >/dev/null 2>&1)
+    fi
+  }
+
+  purge_opencode_backup_snapshot() {
+    local backup="$1" path
+    [ -d "$backup" ] || return 0
+    find "$backup" -type f -print | LC_ALL=C sort | while IFS= read -r path; do
+      printf '%s %s\n' "${path#$backup/}" "$(file_sha256 "$path")"
+    done
+  }
+
+  purge_opencode_backup_location() {
+    local backup="$1" fixture_home="$2"
+    case "$backup" in
+      "$fixture_home"/.local/state/oso-code/purge-backups/*) printf 'inside' ;;
+      *) printf 'outside' ;;
+    esac
+  }
+
+  OPENCODE_PURGE_DECLINE_HOME="$TEST_HOME/opencode-purge-decline-home"
+  write_opencode_purge_fixture "$OPENCODE_PURGE_DECLINE_HOME"
+  opencode_purge_decline_before="$(purge_opencode_snapshot "$OPENCODE_PURGE_DECLINE_HOME")"
+  printf '\n' > "$TEST_HOME/opencode-purge-decline-input"
+  : > "$OPENCODE_PURGE_CLIENT_CALLS"
+  if HOME="$OPENCODE_PURGE_DECLINE_HOME" \
+    PATH="$OPENCODE_PURGE_SHIMS:$PATH" \
+    XDG_CONFIG_HOME="$OPENCODE_PURGE_DECLINE_HOME/.config" \
+    XDG_STATE_HOME="$OPENCODE_PURGE_DECLINE_HOME/.local/state" \
+    XDG_CACHE_HOME="$OPENCODE_PURGE_DECLINE_HOME/.cache" \
+    OSO_PURGE_CLIENT_CALLS="$OPENCODE_PURGE_CLIENT_CALLS" \
+    OSO_OPENCODE_PROJECT_CONFIGS="$(opencode_purge_project_configs "$OPENCODE_PURGE_DECLINE_HOME")" \
+    bash "$PURGE_OPENCODE_SH" < "$TEST_HOME/opencode-purge-decline-input" \
+    > "$OPENCODE_PURGE_OUTPUT" 2>&1; then
+    opencode_purge_decline_rc=0
+  else
+    opencode_purge_decline_rc=$?
+  fi
+  assert_equals "the OpenCode purge defaults to no without explicit confirmation" \
+    "nonzero" "$([ "$opencode_purge_decline_rc" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "declining the OpenCode purge preserves every target exactly" \
+    "$opencode_purge_decline_before" "$(purge_opencode_snapshot "$OPENCODE_PURGE_DECLINE_HOME")"
+  assert_equals "declining the OpenCode purge creates no backup" \
+    "0" "$(opencode_purge_backup_count "$OPENCODE_PURGE_DECLINE_HOME")"
+
+  run_opencode_purge "$OPENCODE_PURGE_DECLINE_HOME" --unknown
+  assert_equals "an unknown OpenCode purge flag is a usage error" \
+    "2" "$OPENCODE_PURGE_RC"
+  assert_equals "a usage error preserves every OpenCode target exactly" \
+    "$opencode_purge_decline_before" "$(purge_opencode_snapshot "$OPENCODE_PURGE_DECLINE_HOME")"
+
+  run_opencode_purge "$OPENCODE_PURGE_DECLINE_HOME" --dry-run
+  assert_equals "a dry run succeeds without confirmation" "0" "$OPENCODE_PURGE_RC"
+  assert_equals "a dry run creates no backup" \
+    "0" "$(opencode_purge_backup_count "$OPENCODE_PURGE_DECLINE_HOME")"
+  assert_equals "a dry run touches none of the purge targets" \
+    "$opencode_purge_decline_before" "$(purge_opencode_snapshot "$OPENCODE_PURGE_DECLINE_HOME")"
+  assert_equals "a dry run names the purge boundary before the wipe" \
+    "1" "$(printf '%s\n' "$OPENCODE_PURGE_LOG" | grep -Fxc '[oso-code] dry run: nothing will be backed up or removed' || true)"
+  assert_equals "a dry run names the three project-level configs it would report" \
+    "3" "$(printf '%s\n' "$OPENCODE_PURGE_LOG" | grep -Fc "$OPENCODE_PURGE_DECLINE_HOME/repos" || true)"
+
+  OPENCODE_PURGE_COUNT_HOME="$TEST_HOME/opencode-purge-count-home"
+  write_opencode_purge_fixture "$OPENCODE_PURGE_COUNT_HOME"
+  opencode_purge_count_before="$(purge_opencode_snapshot "$OPENCODE_PURGE_COUNT_HOME")"
+  : > "$OPENCODE_PURGE_CLIENT_CALLS"
+  if HOME="$OPENCODE_PURGE_COUNT_HOME" \
+    PATH="$OPENCODE_PURGE_SHIMS:$PATH" \
+    XDG_CONFIG_HOME="$OPENCODE_PURGE_COUNT_HOME/.config" \
+    XDG_STATE_HOME="$OPENCODE_PURGE_COUNT_HOME/.local/state" \
+    XDG_CACHE_HOME="$OPENCODE_PURGE_COUNT_HOME/.cache" \
+    OSO_PURGE_CLIENT_CALLS="$OPENCODE_PURGE_CLIENT_CALLS" \
+    OSO_OPENCODE_PROJECT_CONFIGS="$OPENCODE_PURGE_COUNT_HOME/repos/alpha/opencode.json $OPENCODE_PURGE_COUNT_HOME/repos/beta/opencode.json" \
+    bash "$PURGE_OPENCODE_SH" --yes > "$OPENCODE_PURGE_OUTPUT" 2>&1; then
+    opencode_purge_count_rc=0
+  else
+    opencode_purge_count_rc=$?
+  fi
+  assert_equals "the purge refuses a project-config list that is not exactly three" \
+    "2" "$opencode_purge_count_rc"
+  assert_equals "a project-config count refusal preserves every target exactly" \
+    "$opencode_purge_count_before" "$(purge_opencode_snapshot "$OPENCODE_PURGE_COUNT_HOME")"
+
+  OPENCODE_PURGE_XDG_HOME="$TEST_HOME/opencode-purge-xdg-home"
+  write_opencode_purge_fixture "$OPENCODE_PURGE_XDG_HOME"
+  if HOME="$OPENCODE_PURGE_XDG_HOME" \
+    PATH="$OPENCODE_PURGE_SHIMS:$PATH" \
+    XDG_CONFIG_HOME="$TEST_HOME/elsewhere" \
+    XDG_STATE_HOME="$OPENCODE_PURGE_XDG_HOME/.local/state" \
+    XDG_CACHE_HOME="$OPENCODE_PURGE_XDG_HOME/.cache" \
+    OSO_PURGE_CLIENT_CALLS="$OPENCODE_PURGE_CLIENT_CALLS" \
+    OSO_OPENCODE_PROJECT_CONFIGS="$(opencode_purge_project_configs "$OPENCODE_PURGE_XDG_HOME")" \
+    bash "$PURGE_OPENCODE_SH" --dry-run > "$OPENCODE_PURGE_OUTPUT" 2>&1; then
+    opencode_purge_xdg_rc=0
+  else
+    opencode_purge_xdg_rc=$?
+  fi
+  assert_equals "a non-default XDG config home is refused fail-closed" \
+    "2" "$opencode_purge_xdg_rc"
+  assert_equals "an XDG refusal names the customized home in its error" \
+    "1" "$(grep -c "XDG_CONFIG_HOME is not the default" "$OPENCODE_PURGE_OUTPUT")"
+  assert_equals "an XDG refusal wipes nothing" \
+    "present" "$([ -e "$OPENCODE_PURGE_XDG_HOME/.config/opencode" ] && echo present || echo absent)"
+
+  OPENCODE_PURGE_MISSING_HOME="$TEST_HOME/opencode-purge-missing-home"
+  write_opencode_purge_fixture "$OPENCODE_PURGE_MISSING_HOME"
+  opencode_purge_missing_before="$(purge_opencode_snapshot "$OPENCODE_PURGE_MISSING_HOME")"
+  : > "$OPENCODE_PURGE_CLIENT_CALLS"
+  if HOME="$OPENCODE_PURGE_MISSING_HOME" \
+    PATH="$OPENCODE_PURGE_SHIMS:$PATH" \
+    XDG_CONFIG_HOME="$OPENCODE_PURGE_MISSING_HOME/.config" \
+    XDG_STATE_HOME="$OPENCODE_PURGE_MISSING_HOME/.local/state" \
+    XDG_CACHE_HOME="$OPENCODE_PURGE_MISSING_HOME/.cache" \
+    OSO_PURGE_CLIENT_CALLS="$OPENCODE_PURGE_CLIENT_CALLS" \
+    OSO_OPENCODE_PROJECT_CONFIGS="$OPENCODE_PURGE_MISSING_HOME/repos/alpha/opencode.json $OPENCODE_PURGE_MISSING_HOME/repos/beta/opencode.json $OPENCODE_PURGE_MISSING_HOME/repos/absent/opencode.json" \
+    bash "$PURGE_OPENCODE_SH" --yes > "$OPENCODE_PURGE_OUTPUT" 2>&1; then
+    opencode_purge_missing_rc=0
+  else
+    opencode_purge_missing_rc=$?
+  fi
+  assert_equals "a missing project-level config aborts the purge before any backup" \
+    "nonzero" "$([ "$opencode_purge_missing_rc" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "a missing project-level config creates no backup" \
+    "0" "$(opencode_purge_backup_count "$OPENCODE_PURGE_MISSING_HOME")"
+  assert_equals "a missing project-level config leaves every target exactly intact" \
+    "$opencode_purge_missing_before" "$(purge_opencode_snapshot "$OPENCODE_PURGE_MISSING_HOME")"
+
+  OPENCODE_PURGE_INSIDE_HOME="$TEST_HOME/opencode-purge-inside-home"
+  write_opencode_purge_fixture "$OPENCODE_PURGE_INSIDE_HOME"
+  opencode_purge_inside_before="$(purge_opencode_snapshot "$OPENCODE_PURGE_INSIDE_HOME")"
+  : > "$OPENCODE_PURGE_CLIENT_CALLS"
+  if HOME="$OPENCODE_PURGE_INSIDE_HOME" \
+    PATH="$OPENCODE_PURGE_SHIMS:$PATH" \
+    XDG_CONFIG_HOME="$OPENCODE_PURGE_INSIDE_HOME/.config" \
+    XDG_STATE_HOME="$OPENCODE_PURGE_INSIDE_HOME/.local/state" \
+    XDG_CACHE_HOME="$OPENCODE_PURGE_INSIDE_HOME/.cache" \
+    OSO_PURGE_CLIENT_CALLS="$OPENCODE_PURGE_CLIENT_CALLS" \
+    OSO_OPENCODE_PROJECT_CONFIGS="$OPENCODE_PURGE_INSIDE_HOME/repos/alpha/opencode.json $OPENCODE_PURGE_INSIDE_HOME/repos/beta/opencode.json $OPENCODE_PURGE_INSIDE_HOME/.config/opencode/opencode.json" \
+    bash "$PURGE_OPENCODE_SH" --yes > "$OPENCODE_PURGE_OUTPUT" 2>&1; then
+    opencode_purge_inside_rc=0
+  else
+    opencode_purge_inside_rc=$?
+  fi
+  assert_equals "a project-level config inside a purge target is refused" \
+    "nonzero" "$([ "$opencode_purge_inside_rc" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "a config-inside-target refusal wipes nothing" \
+    "$opencode_purge_inside_before" "$(purge_opencode_snapshot "$OPENCODE_PURGE_INSIDE_HOME")"
+
+  OPENCODE_PURGE_FAILURE_HOME="$TEST_HOME/opencode-purge-failure-home"
+  write_opencode_purge_fixture "$OPENCODE_PURGE_FAILURE_HOME"
+  opencode_purge_failure_before="$(purge_opencode_snapshot "$OPENCODE_PURGE_FAILURE_HOME")"
+  OSO_PURGE_FAIL_AFTER=after-backup run_opencode_purge "$OPENCODE_PURGE_FAILURE_HOME" --yes
+  assert_equals "a deterministic failure after backup exits before deletion" \
+    "nonzero" "$([ "$OPENCODE_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "a verified-backup failure leaves every source tree exactly intact" \
+    "$opencode_purge_failure_before" "$(purge_opencode_snapshot "$OPENCODE_PURGE_FAILURE_HOME")"
+  assert_equals "the pre-delete failure retains exactly one diagnostic backup" \
+    "1" "$(opencode_purge_backup_count "$OPENCODE_PURGE_FAILURE_HOME")"
+  OPENCODE_PURGE_FAILURE_BACKUP="$(find "$OPENCODE_PURGE_FAILURE_HOME/.local/state/oso-code/purge-backups" \
+    -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | head -n 1)" \
+    || OPENCODE_PURGE_FAILURE_BACKUP=""
+  assert_equals "the retained pre-delete backup still passes its manifest" \
+    "valid" "$(verify_opencode_purge_manifest "$OPENCODE_PURGE_FAILURE_BACKUP" && echo valid || echo invalid)"
+
+  OPENCODE_PURGE_HOME="$TEST_HOME/opencode-purge-home"
+  write_opencode_purge_fixture "$OPENCODE_PURGE_HOME"
+  opencode_purge_before="$(purge_opencode_snapshot "$OPENCODE_PURGE_HOME")"
+  run_opencode_purge "$OPENCODE_PURGE_HOME" --yes
+  opencode_purge_outcome="$OPENCODE_PURGE_RC"
+  if [ "$OPENCODE_PURGE_RC" -ne 0 ]; then
+    opencode_purge_outcome="$OPENCODE_PURGE_RC ($OPENCODE_PURGE_LOG)"
+  fi
+  assert_equals "the fixture-only OpenCode purge completes" "0" "$opencode_purge_outcome"
+  OPENCODE_PURGE_BACKUP="$(printf '%s\n' "$OPENCODE_PURGE_LOG" | sed -n 's/^\[oso-code\] backup: //p' | tail -n 1)"
+  establish_premise "the completed purge published a backup directory to read back" \
+    [ -d "$OPENCODE_PURGE_BACKUP" ]
+  assert_equals "the purge reports one absolute backup inside the fixture HOME" \
+    "inside" "$(purge_opencode_backup_location "$OPENCODE_PURGE_BACKUP" "$OPENCODE_PURGE_HOME")"
+  assert_equals "the purge backup root has mode 0700" \
+    "0700" "$([ -d "$OPENCODE_PURGE_BACKUP" ] && find "$OPENCODE_PURGE_BACKUP" -maxdepth 0 -type d -perm 0700 -print | grep -q . && echo 0700 || echo wrong)"
+
+  missing_opencode_purge_file=""
+  for purge_backup_file in \
+    format \
+    config-home.target config-home.state config-home.tar \
+    state-home.target state-home.state state-home.tar \
+    cache-home.target cache-home.state cache-home.tar \
+    bin.target bin.state bin.tar \
+    gentle-ai-home.target gentle-ai-home.state gentle-ai-home.tar \
+    gentle-ai-bin.target gentle-ai-bin.state gentle-ai-bin.tar \
+    manifest.sha256; do
+    [ -f "$OPENCODE_PURGE_BACKUP/$purge_backup_file" ] \
+      || missing_opencode_purge_file="$missing_opencode_purge_file $purge_backup_file"
+  done
+  assert_equals "the purge publishes its complete restorable backup contract" \
+    "" "$missing_opencode_purge_file"
+  assert_equals "the published purge manifest verifies every recorded payload" \
+    "valid" "$(verify_opencode_purge_manifest "$OPENCODE_PURGE_BACKUP" && echo valid || echo invalid)"
+  assert_equals "the purge records the exact config destination" \
+    "$OPENCODE_PURGE_HOME/.config/opencode" "$(cat "$OPENCODE_PURGE_BACKUP/config-home.target")"
+  assert_equals "the purge records the exact state destination" \
+    "$OPENCODE_PURGE_HOME/.local/share/opencode" "$(cat "$OPENCODE_PURGE_BACKUP/state-home.target")"
+  assert_equals "the purge records the exact binary destination" \
+    "$OPENCODE_PURGE_HOME/.opencode/bin/opencode" "$(cat "$OPENCODE_PURGE_BACKUP/bin.target")"
+
+  assert_equals "the wipe removes the user-level config tree" \
+    "absent" "$([ ! -e "$OPENCODE_PURGE_HOME/.config/opencode" ] && [ ! -L "$OPENCODE_PURGE_HOME/.config/opencode" ] && echo absent || echo present)"
+  assert_equals "the wipe removes the sessions state tree" \
+    "absent" "$([ ! -e "$OPENCODE_PURGE_HOME/.local/share/opencode" ] && [ ! -L "$OPENCODE_PURGE_HOME/.local/share/opencode" ] && echo absent || echo present)"
+  assert_equals "the wipe removes the cache tree" \
+    "absent" "$([ ! -e "$OPENCODE_PURGE_HOME/.cache/opencode" ] && [ ! -L "$OPENCODE_PURGE_HOME/.cache/opencode" ] && echo absent || echo present)"
+  assert_equals "the wipe removes the installed binary" \
+    "absent" "$([ ! -e "$OPENCODE_PURGE_HOME/.opencode/bin/opencode" ] && [ ! -L "$OPENCODE_PURGE_HOME/.opencode/bin/opencode" ] && echo absent || echo present)"
+  assert_equals "the purge removes the gentle-ai homes" \
+    "absent" "$([ ! -e "$OPENCODE_PURGE_HOME/.gentle-ai" ] && [ ! -e "$OPENCODE_PURGE_HOME/.local/bin/gentle-ai" ] && echo absent || echo present)"
+
+  assert_equals "the purge preserves Claude state outside its boundary" \
+    "claude survives" "$(cat "$OPENCODE_PURGE_HOME/.claude/sentinel")"
+  assert_equals "the purge preserves Codex state outside its boundary" \
+    "codex survives" "$(cat "$OPENCODE_PURGE_HOME/.codex/sentinel")"
+  assert_equals "the purge preserves the shared agents home outside its boundary" \
+    "agents survive" "$(cat "$OPENCODE_PURGE_HOME/.agents/sentinel")"
+  assert_equals "the purge preserves the installed oso runtime outside its boundary" \
+    "runtime survives" "$(cat "$OPENCODE_PURGE_HOME/.local/share/oso-code/runtime/sentinel")"
+  assert_equals "the purge preserves oso worktree state outside its boundary" \
+    "state survives" "$(cat "$OPENCODE_PURGE_HOME/.local/state/oso-code/worktrees/keep/sentinel")"
+
+  assert_equals "the purge reports three project-level opencode.json files INTACT" \
+    "3" "$(printf '%s\n' "$OPENCODE_PURGE_LOG" | grep -Fc '[oso-code] project-level opencode.json INTACT:' || true)"
+  for opencode_project_config in \
+    "$OPENCODE_PURGE_HOME/repos/alpha/opencode.json" \
+    "$OPENCODE_PURGE_HOME/repos/beta/opencode.json" \
+    "$OPENCODE_PURGE_HOME/repos/gamma/opencode.json"; do
+    case "$OPENCODE_PURGE_LOG" in
+      *"project-level opencode.json INTACT: $opencode_project_config"*)
+        echo "ok: the purge reports $opencode_project_config intact"; pass=$((pass + 1)) ;;
+      *)
+        echo "FAIL: the purge never reported $opencode_project_config intact"; fail=$((fail + 1)) ;;
+    esac
+    case "$(cat "$opencode_project_config")" in
+      *config) echo "ok: $opencode_project_config keeps its own bytes"; pass=$((pass + 1)) ;;
+      *) echo "FAIL: $opencode_project_config lost its content"; fail=$((fail + 1)) ;;
+    esac
+  done
+  assert_equals "the purge never invokes opencode, npm, bun or login" \
+    "0" "$(wc -l < "$OPENCODE_PURGE_CLIENT_CALLS" | tr -d ' ')"
+
+  opencode_purge_backup_count_before="$(opencode_purge_backup_count "$OPENCODE_PURGE_HOME")"
+  run_opencode_purge "$OPENCODE_PURGE_HOME" --yes
+  assert_equals "purging an already empty OpenCode install is idempotent" "0" "$OPENCODE_PURGE_RC"
+  assert_equals "an empty idempotent purge creates no redundant backup" \
+    "$opencode_purge_backup_count_before" "$(opencode_purge_backup_count "$OPENCODE_PURGE_HOME")"
+
+  OPENCODE_KEEP_GENTLE_HOME="$TEST_HOME/opencode-purge-keep-gentle-home"
+  write_opencode_purge_fixture "$OPENCODE_KEEP_GENTLE_HOME"
+  run_opencode_purge "$OPENCODE_KEEP_GENTLE_HOME" --yes --keep-gentle-ai
+  assert_equals "a kept-gentle-ai purge completes" "0" "$OPENCODE_PURGE_RC"
+  assert_equals "a kept-gentle-ai purge still removes the user-level OpenCode install" \
+    "absent" "$([ ! -e "$OPENCODE_KEEP_GENTLE_HOME/.config/opencode" ] && echo absent || echo present)"
+  assert_equals "a kept-gentle-ai purge leaves the gentle-ai homes standing" \
+    "gentle state" "$(cat "$OPENCODE_KEEP_GENTLE_HOME/.gentle-ai/state.json")"
+  assert_equals "a kept-gentle-ai purge leaves the gentle-ai binary standing" \
+    "gentle binary bytes" "$(cat "$OPENCODE_KEEP_GENTLE_HOME/.local/bin/gentle-ai")"
+  OPENCODE_KEEP_GENTLE_BACKUP="$(printf '%s\n' "$OPENCODE_PURGE_LOG" | sed -n 's/^\[oso-code\] backup: //p' | tail -n 1)"
+  assert_equals "a kept-gentle-ai backup records no gentle-ai target" \
+    "absent" "$([ ! -e "$OPENCODE_KEEP_GENTLE_BACKUP/gentle-ai-home.target" ] && echo absent || echo present)"
+
+  run_opencode_purge "$OPENCODE_KEEP_GENTLE_HOME" --restore "$OPENCODE_KEEP_GENTLE_BACKUP"
+  assert_equals "restoring a kept-gentle-ai backup completes" "0" "$OPENCODE_PURGE_RC"
+  assert_equals "a kept-gentle-ai backup restores the user-level OpenCode install" \
+    "user opencode config" "$(cat "$OPENCODE_KEEP_GENTLE_HOME/.config/opencode/opencode.json")"
+  assert_equals "a kept-gentle-ai backup restore leaves the kept gentle-ai state standing" \
+    "gentle state" "$(cat "$OPENCODE_KEEP_GENTLE_HOME/.gentle-ai/state.json")"
+
+  OPENCODE_TAMPERED_PURGE_BACKUP="$TEST_HOME/opencode-tampered-purge-backup"
+  establish_premise "the published backup copies into the archive-tamper fixture" \
+    cp -R "$OPENCODE_PURGE_BACKUP" "$OPENCODE_TAMPERED_PURGE_BACKUP"
+  printf 'tamper\n' >> "$OPENCODE_TAMPERED_PURGE_BACKUP/config-home.tar" || true
+  run_opencode_purge "$OPENCODE_PURGE_HOME" --restore "$OPENCODE_TAMPERED_PURGE_BACKUP"
+  assert_equals "a modified OpenCode purge archive is rejected by its published digest" \
+    "nonzero" "$([ "$OPENCODE_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "a corrupt restore writes no OpenCode destination" \
+    "absent" "$([ ! -e "$OPENCODE_PURGE_HOME/.config/opencode" ] && [ ! -e "$OPENCODE_PURGE_HOME/.local/share/opencode" ] && echo absent || echo present)"
+
+  OPENCODE_TAMPERED_PURGE_METADATA="$TEST_HOME/opencode-tampered-purge-metadata"
+  establish_premise "the published backup copies into the metadata-tamper fixture" \
+    cp -R "$OPENCODE_PURGE_BACKUP" "$OPENCODE_TAMPERED_PURGE_METADATA"
+  printf 'absent\n' > "$OPENCODE_TAMPERED_PURGE_METADATA/config-home.state" || true
+  run_opencode_purge "$OPENCODE_PURGE_HOME" --restore "$OPENCODE_TAMPERED_PURGE_METADATA"
+  assert_equals "modified OpenCode purge metadata is rejected by its published digest" \
+    "nonzero" "$([ "$OPENCODE_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "corrupt absence metadata cannot silently omit an OpenCode restore" \
+    "absent" "$([ ! -e "$OPENCODE_PURGE_HOME/.config/opencode" ] && [ ! -e "$OPENCODE_PURGE_HOME/.local/share/opencode" ] && echo absent || echo present)"
+
+  OSO_PURGE_FAIL_AFTER=after-config-home-restore run_opencode_purge \
+    "$OPENCODE_PURGE_HOME" --restore "$OPENCODE_PURGE_BACKUP"
+  assert_equals "a failure after publishing the first restore target exits nonzero" \
+    "nonzero" "$([ "$OPENCODE_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "a partial restore failure rolls every destination back to absent" \
+    "absent" "$([ ! -e "$OPENCODE_PURGE_HOME/.config/opencode" ] && [ ! -L "$OPENCODE_PURGE_HOME/.config/opencode" ] && [ ! -e "$OPENCODE_PURGE_HOME/.local/share/opencode" ] && [ ! -L "$OPENCODE_PURGE_HOME/.local/share/opencode" ] && [ ! -e "$OPENCODE_PURGE_HOME/.cache/opencode" ] && [ ! -e "$OPENCODE_PURGE_HOME/.opencode/bin/opencode" ] && [ ! -e "$OPENCODE_PURGE_HOME/.gentle-ai" ] && echo absent || echo present)"
+
+  purge_opencode_backup_before_restore="$(purge_opencode_backup_snapshot "$OPENCODE_PURGE_BACKUP")"
+  run_opencode_purge "$OPENCODE_PURGE_HOME" --restore "$OPENCODE_PURGE_BACKUP"
+  opencode_restore_outcome="$OPENCODE_PURGE_RC"
+  if [ "$OPENCODE_PURGE_RC" -ne 0 ]; then
+    opencode_restore_outcome="$OPENCODE_PURGE_RC ($OPENCODE_PURGE_LOG)"
+  fi
+  assert_equals "the verified OpenCode purge backup restores successfully" "0" "$opencode_restore_outcome"
+  assert_equals "restore reproduces bytes, links, empty directories and modes" \
+    "$opencode_purge_before" "$(purge_opencode_snapshot "$OPENCODE_PURGE_HOME")"
+  purge_opencode_backup_after_restore="$(purge_opencode_backup_snapshot "$OPENCODE_PURGE_BACKUP")"
+  assert_equals "a successful restore retains the verified backup unchanged" \
+    "$purge_opencode_backup_before_restore" "$purge_opencode_backup_after_restore"
+  assert_equals "a successful restore leaves the three project-level configs intact" \
+    "alpha config
+beta config
+gamma config" "$(cat "$OPENCODE_PURGE_HOME/repos/alpha/opencode.json"
+    cat "$OPENCODE_PURGE_HOME/repos/beta/opencode.json"
+    cat "$OPENCODE_PURGE_HOME/repos/gamma/opencode.json")"
+
+  opencode_restored_before_conflict="$(purge_opencode_snapshot "$OPENCODE_PURGE_HOME")"
+  run_opencode_purge "$OPENCODE_PURGE_HOME" --restore "$OPENCODE_PURGE_BACKUP"
+  assert_equals "restore refuses to merge over existing OpenCode destinations" \
+    "nonzero" "$([ "$OPENCODE_PURGE_RC" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "a restore conflict leaves every existing tree exactly intact" \
+    "$opencode_restored_before_conflict" "$(purge_opencode_snapshot "$OPENCODE_PURGE_HOME")"
+  assert_equals "a restore conflict leaves the backup manifest valid" \
+    "valid" "$(verify_opencode_purge_manifest "$OPENCODE_PURGE_BACKUP" && echo valid || echo invalid)"
+
+  OPENCODE_PURGE_SYMLINK_HOME="$TEST_HOME/opencode-purge-symlink-home"
+  mkdir -p "$OPENCODE_PURGE_SYMLINK_HOME/external-bin" \
+    "$OPENCODE_PURGE_SYMLINK_HOME/.opencode/bin" \
+    "$OPENCODE_PURGE_SYMLINK_HOME/repos/alpha" \
+    "$OPENCODE_PURGE_SYMLINK_HOME/repos/beta" \
+    "$OPENCODE_PURGE_SYMLINK_HOME/repos/gamma"
+  printf 'external target survives\n' > "$OPENCODE_PURGE_SYMLINK_HOME/external-bin/opencode"
+  ln -s ../../external-bin/opencode "$OPENCODE_PURGE_SYMLINK_HOME/.opencode/bin/opencode"
+  printf 'alpha config\n' > "$OPENCODE_PURGE_SYMLINK_HOME/repos/alpha/opencode.json"
+  printf 'beta config\n' > "$OPENCODE_PURGE_SYMLINK_HOME/repos/beta/opencode.json"
+  printf 'gamma config\n' > "$OPENCODE_PURGE_SYMLINK_HOME/repos/gamma/opencode.json"
+  run_opencode_purge "$OPENCODE_PURGE_SYMLINK_HOME" --yes
+  OPENCODE_PURGE_SYMLINK_BACKUP="$(printf '%s\n' "$OPENCODE_PURGE_LOG" | sed -n 's/^\[oso-code\] backup: //p' | tail -n 1)"
+  assert_equals "the total purge removes a symlinked binary without following it" \
+    "absent" "$([ ! -e "$OPENCODE_PURGE_SYMLINK_HOME/.opencode/bin/opencode" ] && [ ! -L "$OPENCODE_PURGE_SYMLINK_HOME/.opencode/bin/opencode" ] && echo absent || echo present)"
+  assert_equals "purging a binary link preserves its external destination" \
+    "external target survives" "$(cat "$OPENCODE_PURGE_SYMLINK_HOME/external-bin/opencode")"
+  assert_equals "the backup records a symlinked binary without dereferencing it" \
+    "symlink" "$(cat "$OPENCODE_PURGE_SYMLINK_BACKUP/bin.state")"
+  run_opencode_purge "$OPENCODE_PURGE_SYMLINK_HOME" --restore "$OPENCODE_PURGE_SYMLINK_BACKUP"
+  assert_equals "restore recreates the exact binary root link" \
+    "../../external-bin/opencode" "$(readlink "$OPENCODE_PURGE_SYMLINK_HOME/.opencode/bin/opencode")"
+  assert_equals "binary-link restore still leaves the external destination unchanged" \
+    "external target survives" "$(cat "$OPENCODE_PURGE_SYMLINK_HOME/external-bin/opencode")"
+fi
+
+if [ "$RUNS_ON_WINDOWS_BASH" = true ]; then
+  echo "skip: the opencode installer fixtures publish real file trees and a local git tag; the emulated Windows bash runs the rest of the suite"
+  skipped=$((skipped + 1))
+else
+  INSTALL_OPENCODE_SH="$REPO_ROOT/bootstrap/install-opencode.sh"
+  OPENCODE_INSTALL_SHIMS="$TEST_HOME/opencode-install-shims"
+  OPENCODE_INSTALL_CALLS="$TEST_HOME/opencode-install-calls"
+  OPENCODE_INSTALL_OUTPUT="$TEST_HOME/opencode-install-output"
+  OPENCODE_IMPECCABLE_REMOTE="$TEST_HOME/opencode-install-impeccable-remote"
+  OPENCODE_IMPECCABLE_MISTAGED="$TEST_HOME/opencode-install-impeccable-mistagged"
+  OPENCODE_OPERATOR_GLOBAL='operator global guidance'
+  OPENCODE_GLOBAL_MARKER_START='<!-- oso-code:start -->'
+  OPENCODE_GLOBAL_MARKER_END='<!-- oso-code:end -->'
+  OPENCODE_GIT_PRESENT=false
+  command -v git >/dev/null 2>&1 && OPENCODE_GIT_PRESENT=true
+  mkdir -p "$OPENCODE_INSTALL_SHIMS"
+
+  printf '%s\n' \
+    '#!/bin/sh' \
+    'printf '\''opencode:%s\n'\'' "$*" >> "$OSO_OPENCODE_INSTALL_CALLS"' \
+    'case "$*" in' \
+    "  --version) printf '$OPENCODE_PIN\\n' ;;" \
+    '  *) printf '\''unexpected opencode call: %s\n'\'' "$*" >&2; exit 64 ;;' \
+    'esac' > "$OPENCODE_INSTALL_SHIMS/opencode"
+  printf '%s\n' \
+    '#!/bin/sh' \
+    'printf '\''engram:%s\n'\'' "$*" >> "$OSO_OPENCODE_INSTALL_CALLS"' \
+    'case "$*" in' \
+    '  "setup --help") printf '\''usage: engram setup [<agent>] (claude-code, opencode, codex, ...)\n'\''; exit 0 ;;' \
+    '  "setup opencode")' \
+    '    [ "${OSO_TEST_ENGRAM_FAIL:-}" != 1 ] || { printf '\''engram setup opencode failed\n'\'' >&2; exit 70; }' \
+    '    mkdir -p "$HOME/.config/opencode/plugins"' \
+    '    printf '\''fixture engram plugin\n'\'' > "$HOME/.config/opencode/plugins/engram.ts"' \
+    '    exit 0 ;;' \
+    '  *) printf '\''unexpected engram call: %s\n'\'' "$*" >&2; exit 64 ;;' \
+    'esac' > "$OPENCODE_INSTALL_SHIMS/engram"
+  printf '%s\n' \
+    '#!/bin/sh' \
+    'printf '\''fallow-mcp:%s\n'\'' "$*" >> "$OSO_OPENCODE_INSTALL_CALLS"' \
+    'exit 0' > "$OPENCODE_INSTALL_SHIMS/fallow-mcp"
+  chmod +x "$OPENCODE_INSTALL_SHIMS/opencode" "$OPENCODE_INSTALL_SHIMS/engram" \
+    "$OPENCODE_INSTALL_SHIMS/fallow-mcp"
+
+  write_opencode_install_fixture() {
+    local fixture_home="$1"
+    mkdir -p \
+      "$fixture_home/.config/opencode/plugins" \
+      "$fixture_home/.config/opencode/skills/op-skill" \
+      "$fixture_home/.config/opencode/plugin" \
+      "$fixture_home/.local/state/oso-code/worktrees/keep" \
+      "$fixture_home/repos/alpha" \
+      "$fixture_home/repos/beta" \
+      "$fixture_home/repos/gamma"
+    cat > "$fixture_home/.config/opencode/opencode.json" <<'JSON'
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "fixture-provider": {
+      "name": "Fixture",
+      "npm": "@fixture/provider"
+    }
+  },
+  "model": "fixture/provider-model",
+  "small_model": "fixture/small-model",
+  "theme": "fixture-theme",
+  "agent": {
+    "fixture-agent": {
+      "description": "operator agent the installer must leave alone"
+    }
+  },
+  "permission": {
+    "bash": {
+      "*": "allow",
+      "git push *": "ask"
+    },
+    "read": {
+      "*": "allow",
+      "**/.env": "deny"
+    }
+  },
+  "mcp": {
+    "operator-mcp": {
+      "type": "local",
+      "command": ["operator-mcp-bin"],
+      "enabled": true
+    },
+    "context7": {
+      "type": "remote",
+      "url": "https://fixture.example.test/mcp",
+      "enabled": true
+    }
+  }
+}
+JSON
+    printf '%s\n' "$OPENCODE_OPERATOR_GLOBAL" > "$fixture_home/.config/opencode/AGENTS.md"
+    printf 'operator engram plugin\n' > "$fixture_home/.config/opencode/plugins/engram.ts"
+    printf 'operator plugin survives\n' > "$fixture_home/.config/opencode/plugins/clean-code-gate.ts"
+    printf 'operator skill survives\n' > "$fixture_home/.config/opencode/skills/op-skill/SKILL.md"
+    printf 'stale installer plugin\n' > "$fixture_home/.config/opencode/plugin/stale.ts"
+    printf 'operator registry\n' > "$fixture_home/.local/state/oso-code/opencode-install-registry"
+    printf 'worktree state survives\n' > "$fixture_home/.local/state/oso-code/worktrees/keep/sentinel"
+    printf 'alpha config\n' > "$fixture_home/repos/alpha/opencode.json"
+    printf 'beta config\n' > "$fixture_home/repos/beta/opencode.json"
+    printf 'gamma config\n' > "$fixture_home/repos/gamma/opencode.json"
+  }
+
+  write_opencode_install_impeccable_repo() {
+    local dir="$1" version="${2:-4.0.2}" tag_version="${3:-$version}"
+    mkdir -p "$dir/.agents/skills/impeccable/reference"
+    printf '%s\n' '---' "name: impeccable" "version: $version" '---' \
+      'installed-root: .agents/skills/impeccable' \
+      'usage: $impeccable init | $impeccable document | $impeccable audit <target>' \
+      'references: reference/init.md reference/document.md reference/audit.md' \
+      > "$dir/.agents/skills/impeccable/SKILL.md"
+    printf 'init reference\n' > "$dir/.agents/skills/impeccable/reference/init.md"
+    printf 'document reference\n' > "$dir/.agents/skills/impeccable/reference/document.md"
+    printf 'audit reference\n' > "$dir/.agents/skills/impeccable/reference/audit.md"
+    git -C "$dir" init -q
+    git -C "$dir" -c user.email=fixture@test -c user.name=fixture add -A
+    git -C "$dir" -c user.email=fixture@test -c user.name=fixture commit -qm impeccable
+    git -C "$dir" tag "skill-v$tag_version"
+  }
+
+  opencode_install_impeccable_source() {
+    local fixture_home="$1" version="${2:-4.0.2}"
+    local source="$fixture_home/impeccable-source"
+    mkdir -p "$source/reference"
+    printf '%s\n' '---' "name: impeccable" "version: $version" '---' \
+      'installed-root: .agents/skills/impeccable' \
+      'usage: $impeccable init | $impeccable document | $impeccable audit <target>' \
+      'references: reference/init.md reference/document.md reference/audit.md' \
+      > "$source/SKILL.md"
+    printf 'init reference\n' > "$source/reference/init.md"
+    printf 'document reference\n' > "$source/reference/document.md"
+    printf 'audit reference\n' > "$source/reference/audit.md"
+    printf '%s' "$source"
+  }
+
+  opencode_install_config_value() {
+    local fixture_home="$1" query="$2"
+    python3 - "$fixture_home/.config/opencode/opencode.json" "$query" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    data = json.load(handle)
+node = data
+for part in sys.argv[2].split("."):
+    if not isinstance(node, dict) or part not in node:
+        node = None
+        break
+    node = node[part]
+if node is None:
+    print("<absent>")
+elif isinstance(node, (dict, list)):
+    print(json.dumps(node, sort_keys=True))
+else:
+    print(node)
+PY
+  }
+
+  opencode_install_sources_identical() {
+    local fixture_home="$1" wrapper rel
+    for wrapper in "$REPO_ROOT"/opencode/skills/oso-*/SKILL.md; do
+      [ -f "$wrapper" ] || continue
+      rel="${wrapper#$REPO_ROOT/}"
+      cmp -s "$wrapper" "$fixture_home/.config/opencode/skill/${rel#opencode/skills/}" \
+        || { printf 'differs'; return 0; }
+    done
+    printf 'identical'
+  }
+
+  opencode_install_gate_scripts_identical() {
+    local fixture_home="$1" installed
+    for installed in "$fixture_home"/.config/opencode/hooks/*.sh; do
+      [ -f "$installed" ] || continue
+      cmp -s "$REPO_ROOT/plugin/hooks/${installed##*/}" "$installed" \
+        || { printf 'differs'; return 0; }
+    done
+    printf 'identical'
+  }
+
+  opencode_install_unpublished_gate_scripts() {
+    local fixture_home="$1" installed unpublished=""
+    for installed in "$fixture_home"/.config/opencode/hooks/*.sh; do
+      [ -f "$installed" ] || continue
+      grep -q "  plugin/hooks/${installed##*/}\$" "$REPO_ROOT/bootstrap/hook-hashes.txt" ||
+        unpublished="$unpublished ${installed##*/}"
+    done
+    printf '%s' "${unpublished# }"
+  }
+
+  opencode_install_state_bin_identical() {
+    local fixture_home="$1"
+    cmp -s "$REPO_ROOT/plugin/bin/oso-state" "$fixture_home/.config/opencode/bin/oso-state" \
+      && printf 'identical' || printf 'differs'
+  }
+
+  opencode_install_global_merged_identical() {
+    local fixture_home="$1" expected="$TEST_HOME/opencode-install-global-expected"
+    {
+      printf '%s\n' "$OPENCODE_OPERATOR_GLOBAL"
+      printf '\n'
+      printf '%s\n' "$OPENCODE_GLOBAL_MARKER_START"
+      cat "$REPO_ROOT/bootstrap/opencode-global.md"
+      printf '%s\n' "$OPENCODE_GLOBAL_MARKER_END"
+    } > "$expected"
+    cmp -s "$expected" "$fixture_home/.config/opencode/AGENTS.md" \
+      && printf 'identical' || printf 'differs'
+  }
+
+  opencode_install_global_marker_pairs() {
+    local global="$1/.config/opencode/AGENTS.md"
+    printf '%s %s' \
+      "$(grep -Fxc "$OPENCODE_GLOBAL_MARKER_START" "$global" || true)" \
+      "$(grep -Fxc "$OPENCODE_GLOBAL_MARKER_END" "$global" || true)"
+  }
+
+  opencode_install_module_relative_hooks_dir_matches_installer() {
+    local fixture_home="$1"
+    local gates_ts="$fixture_home/.config/opencode/plugin/oso/gates.ts"
+    local resolved resolved_dir sample_script installed_script installed_dir
+
+    if [ ! -f "$gates_ts" ]; then
+      printf 'gates.ts not installed'
+      return 0
+    fi
+
+    resolved="$(env -u OSO_HOOKS_DIR node --input-type=module -e '
+const { resolveHookScript } = await import(process.argv[1]);
+process.stdout.write(resolveHookScript(process.argv[2]));
+' "file://$gates_ts" "oso-install-cross-check-probe.sh" 2>/dev/null)" || resolved=""
+    if [ -n "$resolved" ]; then
+      resolved_dir="$(cd "$(dirname "$resolved")" 2>/dev/null && pwd -P)" || resolved_dir=""
+    else
+      resolved_dir=""
+    fi
+
+    sample_script="$(basename "$(ls "$REPO_ROOT"/plugin/hooks/*.sh | head -n 1)")"
+    installed_script="$(find "$fixture_home/.config/opencode" -type f -name "$sample_script" -print -quit 2>/dev/null)"
+    if [ -z "$installed_script" ]; then
+      printf 'the installer wrote no %s anywhere under the installed tree' "$sample_script"
+      return 0
+    fi
+    installed_dir="$(cd "$(dirname "$installed_script")" 2>/dev/null && pwd -P)" || installed_dir=""
+
+    if [ -n "$resolved_dir" ] && [ "$resolved_dir" = "$installed_dir" ]; then
+      printf 'same'
+    else
+      printf 'different: gates.ts resolution=%s installer=%s' "$resolved_dir" "$installed_dir"
+    fi
+  }
+
+  opencode_install_tree_snapshot() {
+    local fixture_home="$1" path rel digest
+    for path in \
+      "$fixture_home/.config/opencode" \
+      "$fixture_home/.agents" \
+      "$fixture_home/.local/state/oso-code/opencode-install-registry"; do
+      [ -e "$path" ] || continue
+      find "$path" -type f -print
+    done | LC_ALL=C sort | while IFS= read -r path; do
+      rel="${path#$fixture_home/}"
+      digest="$(file_sha256 "$path")"
+      printf 'file %s %s\n' "$rel" "$digest"
+    done
+  }
+
+  invoke_opencode_installer() {
+    local fixture_home="$1" installer="$2"
+    shift 2
+    : > "$OPENCODE_INSTALL_CALLS"
+    if HOME="$fixture_home" \
+      XDG_CONFIG_HOME="$fixture_home/.config" \
+      PATH="$OPENCODE_INSTALL_SHIMS:$PATH" \
+      OSO_OPENCODE_INSTALL_CALLS="$OPENCODE_INSTALL_CALLS" \
+      OSO_TEST_ENGRAM_FAIL="${OSO_TEST_ENGRAM_FAIL:-}" \
+      OSO_IMPECCABLE_SOURCE="${OSO_IMPECCABLE_SOURCE:-}" \
+      OSO_IMPECCABLE_REMOTE="${OSO_IMPECCABLE_REMOTE:-}" \
+      OSO_INSTALL_FAIL_AFTER="${OSO_INSTALL_FAIL_AFTER:-}" \
+      bash "$installer" "$@" > "$OPENCODE_INSTALL_OUTPUT" 2>&1; then
+      OPENCODE_INSTALL_RC=0
+    else
+      OPENCODE_INSTALL_RC=$?
+    fi
+    OPENCODE_INSTALL_LOG="$(cat "$OPENCODE_INSTALL_OUTPUT")"
+  }
+
+  run_opencode_install() {
+    local fixture_home="$1"
+    shift
+    invoke_opencode_installer "$fixture_home" "$INSTALL_OPENCODE_SH" --no-git-hook "$@"
+  }
+
+  run_opencode_install_from_release() {
+    local fixture_home="$1" release_root="$2"
+    shift 2
+    invoke_opencode_installer "$fixture_home" "$release_root/bootstrap/install-opencode.sh" \
+      --yes --no-impeccable "$@"
+  }
+
+  OPENCODE_INSTALL_DECLINE_HOME="$TEST_HOME/opencode-install-decline-home"
+  write_opencode_install_fixture "$OPENCODE_INSTALL_DECLINE_HOME"
+  opencode_install_decline_before="$(opencode_install_tree_snapshot "$OPENCODE_INSTALL_DECLINE_HOME")"
+  printf '\n' > "$TEST_HOME/opencode-install-decline-input"
+  : > "$OPENCODE_INSTALL_CALLS"
+  if HOME="$OPENCODE_INSTALL_DECLINE_HOME" \
+    XDG_CONFIG_HOME="$OPENCODE_INSTALL_DECLINE_HOME/.config" \
+    PATH="$OPENCODE_INSTALL_SHIMS:$PATH" \
+    OSO_OPENCODE_INSTALL_CALLS="$OPENCODE_INSTALL_CALLS" \
+    bash "$INSTALL_OPENCODE_SH" < "$TEST_HOME/opencode-install-decline-input" \
+    > "$OPENCODE_INSTALL_OUTPUT" 2>&1; then
+    opencode_install_decline_rc=0
+  else
+    opencode_install_decline_rc=$?
+  fi
+  assert_equals "the OpenCode installer defaults to no without explicit confirmation" \
+    "nonzero" "$([ "$opencode_install_decline_rc" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "declining the OpenCode install preserves every fixture target exactly" \
+    "$opencode_install_decline_before" "$(opencode_install_tree_snapshot "$OPENCODE_INSTALL_DECLINE_HOME")"
+  assert_equals "declining the OpenCode install records only the version probe, never a mutation" \
+    "opencode:--version" "$(grep -F 'opencode:' "$OPENCODE_INSTALL_CALLS" || true)"
+  assert_equals "declining the OpenCode install never reaches Engram or the install steps" \
+    "0" "$(grep -Ec '^engram:|^fallow-mcp:' "$OPENCODE_INSTALL_CALLS" || true)"
+
+  run_opencode_install "$OPENCODE_INSTALL_DECLINE_HOME" --bogus
+  assert_equals "an unknown OpenCode installer flag is a usage error" \
+    "2" "$OPENCODE_INSTALL_RC"
+  assert_equals "a usage error preserves every fixture target exactly" \
+    "$opencode_install_decline_before" "$(opencode_install_tree_snapshot "$OPENCODE_INSTALL_DECLINE_HOME")"
+
+  OPENCODE_INSTALL_HOME="$TEST_HOME/opencode-install-home"
+  write_opencode_install_fixture "$OPENCODE_INSTALL_HOME"
+  opencode_install_before="$(opencode_install_tree_snapshot "$OPENCODE_INSTALL_HOME")"
+  OPENCODE_IMPECCABLE_SOURCE="$(opencode_install_impeccable_source "$OPENCODE_INSTALL_HOME" "4.0.2")" \
+    run_opencode_install "$OPENCODE_INSTALL_HOME" --yes
+  opencode_install_outcome="$OPENCODE_INSTALL_RC"
+  if [ "$OPENCODE_INSTALL_RC" -ne 0 ]; then
+    opencode_install_outcome="$OPENCODE_INSTALL_RC ($OPENCODE_INSTALL_LOG)"
+  fi
+  assert_equals "the fixture-only OpenCode install completes" "0" "$opencode_install_outcome"
+
+  OPENCODE_INSTALLED_CONFIG="$OPENCODE_INSTALL_HOME/.config/opencode/opencode.json"
+  assert_equals "the installed config is valid JSON" \
+    "valid" "$(python3 -m json.tool "$OPENCODE_INSTALLED_CONFIG" >/dev/null 2>&1 && echo valid || echo invalid)"
+  assert_equals "the installed plugin key is an array, never the object form" \
+    "array" "$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print('array' if isinstance(d.get('plugin'), list) else 'not-array')" "$OPENCODE_INSTALLED_CONFIG")"
+  assert_equals "no installed MCP server uses the env key; the environment key is used instead" \
+    "clean" "$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print('clean' if all('env' not in (s or {}) for s in d.get('mcp', {}).values()) else 'env-key')" "$OPENCODE_INSTALLED_CONFIG")"
+  assert_equals "the operator's provider survives the install" \
+    "Fixture" "$(opencode_install_config_value "$OPENCODE_INSTALL_HOME" "provider.fixture-provider.name")"
+  assert_equals "the operator's model survives the install" \
+    "fixture/provider-model" "$(opencode_install_config_value "$OPENCODE_INSTALL_HOME" "model")"
+  assert_equals "the operator's small model survives the install" \
+    "fixture/small-model" "$(opencode_install_config_value "$OPENCODE_INSTALL_HOME" "small_model")"
+  assert_equals "an operator key the installer needs nothing from survives verbatim" \
+    "fixture-theme" "$(opencode_install_config_value "$OPENCODE_INSTALL_HOME" "theme")"
+  assert_equals "the operator's agent block survives verbatim" \
+    '{"fixture-agent": {"description": "operator agent the installer must leave alone"}}' \
+    "$(opencode_install_config_value "$OPENCODE_INSTALL_HOME" "agent")"
+  for denied_mode in oso-plan oso-quick oso-debug; do
+    assert_equals "the installed config hides the $denied_mode skill from the model" \
+      "deny" "$(opencode_install_config_value "$OPENCODE_INSTALL_HOME" "permission.skill.$denied_mode")"
+  done
+  assert_equals "the installed config keeps the task permission permissive" \
+    "allow" "$(opencode_install_config_value "$OPENCODE_INSTALL_HOME" "permission.task.*")"
+  assert_equals "the installed config allows the headless question tool" \
+    "allow" "$(opencode_install_config_value "$OPENCODE_INSTALL_HOME" "permission.question")"
+  assert_equals "the installed config allows entering plan mode headlessly" \
+    "allow" "$(opencode_install_config_value "$OPENCODE_INSTALL_HOME" "permission.plan_enter")"
+  assert_equals "the installed config allows exiting plan mode headlessly" \
+    "allow" "$(opencode_install_config_value "$OPENCODE_INSTALL_HOME" "permission.plan_exit")"
+  assert_equals "the installed config binds the plan approval tool to the operator's own grant" \
+    "ask" "$(opencode_install_config_value "$OPENCODE_INSTALL_HOME" "permission.oso_plan_approve")"
+  assert_equals "the installed config binds the plan cancel tool to the operator's own grant" \
+    "ask" "$(opencode_install_config_value "$OPENCODE_INSTALL_HOME" "permission.oso_plan_cancel")"
+  assert_equals "the operator's bash permission block comes back whole" \
+    '{"*": "allow", "git push *": "ask"}' "$(opencode_install_config_value "$OPENCODE_INSTALL_HOME" "permission.bash")"
+  assert_equals "the operator's read permission block comes back whole" \
+    '{"*": "allow", "**/.env": "deny"}' "$(opencode_install_config_value "$OPENCODE_INSTALL_HOME" "permission.read")"
+  assert_equals "the operator's custom MCP server comes back whole" \
+    '["operator-mcp-bin"]' "$(opencode_install_config_value "$OPENCODE_INSTALL_HOME" "mcp.operator-mcp.command")"
+  assert_equals "the operator's context7 customization survives the installer declaration" \
+    "https://fixture.example.test/mcp" "$(opencode_install_config_value "$OPENCODE_INSTALL_HOME" "mcp.context7.url")"
+  assert_equals "the installer declares the context7 MCP server" \
+    "remote" "$(opencode_install_config_value "$OPENCODE_INSTALL_HOME" "mcp.context7.type")"
+  assert_equals "the installer declares the engram MCP server" \
+    "local" "$(opencode_install_config_value "$OPENCODE_INSTALL_HOME" "mcp.engram.type")"
+  assert_equals "the installer declares the fallow MCP server" \
+    "local" "$(opencode_install_config_value "$OPENCODE_INSTALL_HOME" "mcp.fallow.type")"
+  assert_equals "the local engram MCP uses the environment key" \
+    "{}" "$(opencode_install_config_value "$OPENCODE_INSTALL_HOME" "mcp.engram.environment")"
+
+  assert_equals "the installed skill tree carries exactly nine wrappers" \
+    "9" "$(ls -d "$OPENCODE_INSTALL_HOME"/.config/opencode/skill/oso-* 2>/dev/null | wc -l | tr -d ' ')"
+  assert_equals "the shared skill bodies sit beside the wrappers" \
+    "present" "$([ -f "$OPENCODE_INSTALL_HOME/.config/opencode/skill/_shared/bodies/plan.md" ] && [ -d "$OPENCODE_INSTALL_HOME/.config/opencode/skill/_shared/platform/opencode" ] && echo present || echo absent)"
+  assert_equals "each installed skill wrapper is byte-identical to its source" \
+    "identical" "$(opencode_install_sources_identical "$OPENCODE_INSTALL_HOME")"
+  assert_equals "the installed agent tree carries every agent contract" \
+    "$(ls "$REPO_ROOT/opencode/agents"/oso-*.md | wc -l | tr -d ' ')" "$(ls "$OPENCODE_INSTALL_HOME"/.config/opencode/agent/oso-*.md 2>/dev/null | wc -l | tr -d ' ')"
+  assert_equals "the installed command tree carries the four mode commands" \
+    "4" "$(ls "$OPENCODE_INSTALL_HOME"/.config/opencode/command/oso-*.md 2>/dev/null | wc -l | tr -d ' ')"
+  assert_equals "the plan command routes to the primary agent that can execute its slices" \
+    "build" "$(sed -n 's/^agent:[[:space:]]*//p' "$OPENCODE_INSTALL_HOME/.config/opencode/command/oso-plan.md" | head -1)"
+  assert_equals "the roadmap command routes to the primary agent that can run the chain" \
+    "build" "$(sed -n 's/^agent:[[:space:]]*//p' "$OPENCODE_INSTALL_HOME/.config/opencode/command/oso-roadmap.md" | head -1)"
+  assert_equals "the installed config hides the roadmap mode from the model" \
+    "deny" "$(opencode_install_config_value "$OPENCODE_INSTALL_HOME" "permission.skill.oso-roadmap")"
+  assert_equals "the installed plugin entry sits under the discovery glob" \
+    "present" "$([ -f "$OPENCODE_INSTALL_HOME/.config/opencode/plugin/oso-code.ts" ] && echo present || echo absent)"
+  assert_equals "the installed plugin module tree is the source module graph minus tests" \
+    "$(ls "$REPO_ROOT/opencode/plugin/oso"/*.ts | grep -vc '\.test\.ts$' | tr -d ' ')" "$(ls "$OPENCODE_INSTALL_HOME"/.config/opencode/plugin/oso/*.ts 2>/dev/null | grep -vc '\.test\.ts$' | tr -d ' ')"
+  assert_equals "no plugin test module is ever installed" \
+    "0" "$(ls "$OPENCODE_INSTALL_HOME"/.config/opencode/plugin/oso/*.test.ts 2>/dev/null | wc -l | tr -d ' ')"
+  assert_equals "the route table the plugin imports is installed beside it" \
+    "identical" "$(cmp -s "$REPO_ROOT/opencode/hooks/routes.ts" "$OPENCODE_INSTALL_HOME/.config/opencode/hooks/routes.ts" && echo identical || echo differs)"
+  assert_equals "the gate scripts installed beside the route table are exactly the ones the published manifest covers, never one byte more" \
+    "$(grep -c '  plugin/hooks/.*\.sh$' "$REPO_ROOT/bootstrap/hook-hashes.txt")" \
+    "$(ls "$OPENCODE_INSTALL_HOME"/.config/opencode/hooks/*.sh 2>/dev/null | wc -l | tr -d ' ')"
+  assert_equals "no gate script reaches the operator's config without a published hash" \
+    "" "$(opencode_install_unpublished_gate_scripts "$OPENCODE_INSTALL_HOME")"
+  assert_equals "every installed gate script is byte-identical to its source" \
+    "identical" "$(opencode_install_gate_scripts_identical "$OPENCODE_INSTALL_HOME")"
+  assert_equals "the module-relative hooks directory gates.ts resolves from its installed location is the directory the installer wrote the gate scripts into" \
+    "same" "$(opencode_install_module_relative_hooks_dir_matches_installer "$OPENCODE_INSTALL_HOME")"
+  assert_equals "oso-state installs beside the gate tree, executable" \
+    "present" "$([ -x "$OPENCODE_INSTALL_HOME/.config/opencode/bin/oso-state" ] && echo present || echo absent)"
+  assert_equals "the installed oso-state binary is byte-identical to its source" \
+    "identical" "$(opencode_install_state_bin_identical "$OPENCODE_INSTALL_HOME")"
+  assert_equals "the global guidance merges into a marked region below the operator's own prose" \
+    "identical" "$(opencode_install_global_merged_identical "$OPENCODE_INSTALL_HOME")"
+  assert_equals "the merged global file carries exactly one oso-code marker pair" \
+    "1 1" "$(opencode_install_global_marker_pairs "$OPENCODE_INSTALL_HOME")"
+  assert_equals "the Engram plugin lands where OpenCode loads plugins" \
+    "fixture engram plugin" "$(cat "$OPENCODE_INSTALL_HOME/.config/opencode/plugins/engram.ts")"
+  assert_equals "the operator's plural plugin tree survives untouched" \
+    "operator plugin survives" "$(cat "$OPENCODE_INSTALL_HOME/.config/opencode/plugins/clean-code-gate.ts")"
+  assert_equals "the operator's plural skill tree survives untouched" \
+    "operator skill survives" "$(cat "$OPENCODE_INSTALL_HOME/.config/opencode/skills/op-skill/SKILL.md")"
+  assert_equals "a stale file under the owned plugin tree is replaced wholesale" \
+    "absent" "$([ ! -e "$OPENCODE_INSTALL_HOME/.config/opencode/plugin/stale.ts" ] && echo absent || echo present)"
+  assert_equals "the pinned Impeccable skill is mounted at the stable user-wide path" \
+    "4.0.2" "$(sed -n 's/^version:[[:space:]]*//p' "$OPENCODE_INSTALL_HOME/.agents/skills/impeccable/SKILL.md" | head -1)"
+  assert_equals "the installed skill tree is exactly the nine installer wrappers" \
+    "9" "$(find "$OPENCODE_INSTALL_HOME/.config/opencode/skill" -name SKILL.md | wc -l | tr -d ' ')"
+
+  assert_equals "the install reports the backup snapshot path" \
+    "1" "$(printf '%s\n' "$OPENCODE_INSTALL_LOG" | grep -Fc '[oso-code] backup:' || true)"
+  assert_equals "the install leaves exactly one backup snapshot" \
+    "1" "$(ls -d "$OPENCODE_INSTALL_HOME"/.local/state/oso-code/install-backup-* 2>/dev/null | wc -l | tr -d ' ')"
+  OPENCODE_INSTALL_BACKUP="$(printf '%s\n' "$OPENCODE_INSTALL_LOG" | sed -n 's/^\[oso-code\] backup: //p' | tail -n 1)"
+  establish_premise "the completed install published a backup directory to inspect" \
+    [ -f "$OPENCODE_INSTALL_BACKUP/manifest" ]
+  assert_equals "the install backup manifest records every replaced target" \
+    "13" "$(grep -c $'\t' "$OPENCODE_INSTALL_BACKUP/manifest" || true)"
+
+  assert_equals "the owner registry records the installer-owned targets" \
+    "22" "$(grep -c '^installer	' "$OPENCODE_INSTALL_HOME/.local/state/oso-code/opencode-install-registry" || true)"
+  assert_equals "the owner registry records the installed oso-state binary" \
+    "1" "$(grep -Fc "installer	$OPENCODE_INSTALL_HOME/.config/opencode/bin/oso-state" "$OPENCODE_INSTALL_HOME/.local/state/oso-code/opencode-install-registry" || true)"
+  assert_equals "the owner registry records every installed gate script" \
+    "$(ls "$OPENCODE_INSTALL_HOME"/.config/opencode/hooks/*.sh | wc -l | tr -d ' ')" \
+    "$(grep -c "^installer	$OPENCODE_INSTALL_HOME/.config/opencode/hooks/.*\.sh$" "$OPENCODE_INSTALL_HOME/.local/state/oso-code/opencode-install-registry" || true)"
+  assert_equals "the owner registry records the operator's preserved config keys" \
+    "9" "$(grep -c '^operator	' "$OPENCODE_INSTALL_HOME/.local/state/oso-code/opencode-install-registry" || true)"
+  assert_equals "the owner registry names the operator's restored provider key" \
+    "1" "$(grep -Fc "operator	$OPENCODE_INSTALLED_CONFIG:provider" "$OPENCODE_INSTALL_HOME/.local/state/oso-code/opencode-install-registry" || true)"
+
+  assert_equals "the worktree state under the operator's state home survives" \
+    "worktree state survives" "$(cat "$OPENCODE_INSTALL_HOME/.local/state/oso-code/worktrees/keep/sentinel")"
+  assert_equals "the three project-level opencode.json files are never part of the install" \
+    "alpha config
+beta config
+gamma config" "$(cat "$OPENCODE_INSTALL_HOME/repos/alpha/opencode.json"
+    cat "$OPENCODE_INSTALL_HOME/repos/beta/opencode.json"
+    cat "$OPENCODE_INSTALL_HOME/repos/gamma/opencode.json")"
+  assert_equals "the installer invokes opencode only to probe the pinned version" \
+    "opencode:--version" "$(grep -F 'opencode:' "$OPENCODE_INSTALL_CALLS" || true)"
+  assert_equals "the installer never invokes a login, install or uninstall command" \
+    "0" "$(grep -Ec 'login|(^|:)install|uninstall' "$OPENCODE_INSTALL_CALLS" || true)"
+
+  OPENCODE_INSTALL_ENGRAM_HOME="$TEST_HOME/opencode-install-engram-home"
+  write_opencode_install_fixture "$OPENCODE_INSTALL_ENGRAM_HOME"
+  OSO_TEST_ENGRAM_FAIL=1 \
+    run_opencode_install "$OPENCODE_INSTALL_ENGRAM_HOME" --yes
+  assert_equals "a failed Engram setup still completes the install" "0" "$OPENCODE_INSTALL_RC"
+  assert_equals "a failed Engram setup preserves the operator's prior plugin from the backup" \
+    "operator engram plugin" "$(cat "$OPENCODE_INSTALL_ENGRAM_HOME/.config/opencode/plugins/engram.ts")"
+
+  OPENCODE_INSTALL_NOIMP_HOME="$TEST_HOME/opencode-install-noimp-home"
+  write_opencode_install_fixture "$OPENCODE_INSTALL_NOIMP_HOME"
+  run_opencode_install "$OPENCODE_INSTALL_NOIMP_HOME" --yes --no-impeccable
+  assert_equals "an opted-out Impeccable install completes" "0" "$OPENCODE_INSTALL_RC"
+  assert_equals "an opted-out Impeccable install mounts nothing" \
+    "absent" "$([ ! -e "$OPENCODE_INSTALL_NOIMP_HOME/.agents/skills/impeccable" ] && echo absent || echo present)"
+  assert_equals "an opted-out Impeccable install writes the opt-out marker" \
+    "skipped by --no-impeccable" "$(grep -o 'skipped by --no-impeccable' "$OPENCODE_INSTALL_NOIMP_HOME/.local/state/oso-code/impeccable-opt-out" 2>/dev/null || echo none)"
+
+  OPENCODE_INSTALL_ROLLBACK_HOME="$TEST_HOME/opencode-install-rollback-home"
+  write_opencode_install_fixture "$OPENCODE_INSTALL_ROLLBACK_HOME"
+  opencode_install_rollback_before="$(opencode_install_tree_snapshot "$OPENCODE_INSTALL_ROLLBACK_HOME")"
+  OSO_INSTALL_FAIL_AFTER=after-impeccable run_opencode_install "$OPENCODE_INSTALL_ROLLBACK_HOME" --yes
+  assert_equals "a deterministic failure after the last step exits nonzero" \
+    "nonzero" "$([ "$OPENCODE_INSTALL_RC" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "a failed install restores the pre-install tree exactly" \
+    "$opencode_install_rollback_before" "$(opencode_install_tree_snapshot "$OPENCODE_INSTALL_ROLLBACK_HOME")"
+  assert_equals "a failed install leaves the pre-install backup snapshot for manual restore" \
+    "1" "$(ls -d "$OPENCODE_INSTALL_ROLLBACK_HOME"/.local/state/oso-code/install-backup-* 2>/dev/null | wc -l | tr -d ' ')"
+
+  OPENCODE_INSTALL_IDEM_HOME="$TEST_HOME/opencode-install-idem-home"
+  write_opencode_install_fixture "$OPENCODE_INSTALL_IDEM_HOME"
+  OPENCODE_IMPECCABLE_SOURCE="$(opencode_install_impeccable_source "$OPENCODE_INSTALL_IDEM_HOME" "4.0.2")" \
+    run_opencode_install "$OPENCODE_INSTALL_IDEM_HOME" --yes
+  opencode_install_idem_first="$OPENCODE_INSTALL_RC"
+  opencode_install_idem_tree="$(opencode_install_tree_snapshot "$OPENCODE_INSTALL_IDEM_HOME")"
+  OPENCODE_IMPECCABLE_SOURCE="$(opencode_install_impeccable_source "$OPENCODE_INSTALL_IDEM_HOME" "4.0.2")" \
+    run_opencode_install "$OPENCODE_INSTALL_IDEM_HOME" --yes
+  assert_equals "re-running the install over an installed home succeeds" \
+    "0" "$([ "$opencode_install_idem_first" -eq 0 ] && [ "$OPENCODE_INSTALL_RC" -eq 0 ] && echo 0 || echo $OPENCODE_INSTALL_RC)"
+  assert_equals "re-running the install leaves the installed tree byte-identical" \
+    "$opencode_install_idem_tree" "$(opencode_install_tree_snapshot "$OPENCODE_INSTALL_IDEM_HOME")"
+  assert_equals "re-running the install never duplicates the nine wrappers" \
+    "9" "$(ls -d "$OPENCODE_INSTALL_IDEM_HOME"/.config/opencode/skill/oso-* 2>/dev/null | wc -l | tr -d ' ')"
+  assert_equals "re-running the install never duplicates the managed global region" \
+    "1 1" "$(opencode_install_global_marker_pairs "$OPENCODE_INSTALL_IDEM_HOME")"
+  assert_equals "re-running the install still leaves the operator's global prose in place" \
+    "identical" "$(opencode_install_global_merged_identical "$OPENCODE_INSTALL_IDEM_HOME")"
+
+  OPENCODE_BAD_GLOBAL_HOME="$TEST_HOME/opencode-install-bad-global-home"
+  write_opencode_install_fixture "$OPENCODE_BAD_GLOBAL_HOME"
+  opencode_bad_global="$OPENCODE_BAD_GLOBAL_HOME/.config/opencode/AGENTS.md"
+  printf '%s\n' \
+    "$OPENCODE_GLOBAL_MARKER_START" \
+    "$OPENCODE_OPERATOR_GLOBAL" \
+    "$OPENCODE_GLOBAL_MARKER_START" > "$opencode_bad_global"
+  opencode_bad_global_before="$(file_sha256 "$opencode_bad_global")"
+  opencode_bad_global_tree="$(opencode_install_tree_snapshot "$OPENCODE_BAD_GLOBAL_HOME")"
+  run_opencode_install "$OPENCODE_BAD_GLOBAL_HOME" --yes --no-impeccable
+  assert_equals "a doubled global start marker is refused instead of overwritten" \
+    "nonzero" "$([ "$OPENCODE_INSTALL_RC" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "the refusal names the malformed oso-code markers" \
+    "1" "$(printf '%s\n' "$OPENCODE_INSTALL_LOG" | grep -Fc 'malformed oso-code markers' || true)"
+  assert_equals "the malformed global file is left byte-identical by the refused install" \
+    "$opencode_bad_global_before" "$(file_sha256 "$opencode_bad_global")"
+  assert_equals "the refused install mutates nothing else in the fixture home" \
+    "$opencode_bad_global_tree" "$(opencode_install_tree_snapshot "$OPENCODE_BAD_GLOBAL_HOME")"
+
+  if [ "$OPENCODE_GIT_PRESENT" = true ]; then
+    OPENCODE_INSTALL_GIT_HOME="$TEST_HOME/opencode-install-git-home"
+    write_opencode_install_fixture "$OPENCODE_INSTALL_GIT_HOME"
+    write_opencode_install_impeccable_repo "$OPENCODE_IMPECCABLE_REMOTE" "4.0.2" "4.0.2"
+    OSO_IMPECCABLE_REMOTE="$OPENCODE_IMPECCABLE_REMOTE" \
+      run_opencode_install "$OPENCODE_INSTALL_GIT_HOME" --yes
+    assert_equals "the pinned shallow clone mounts the exact tagged Impeccable build" \
+      "4.0.2" "$([ "$OPENCODE_INSTALL_RC" -eq 0 ] && sed -n 's/^version:[[:space:]]*//p' "$OPENCODE_INSTALL_GIT_HOME/.agents/skills/impeccable/SKILL.md" | head -1 || echo "rc=$OPENCODE_INSTALL_RC")"
+    OPENCODE_INSTALL_MISMATCH_HOME="$TEST_HOME/opencode-install-mismatch-home"
+    write_opencode_install_fixture "$OPENCODE_INSTALL_MISMATCH_HOME"
+    write_opencode_install_impeccable_repo "$OPENCODE_IMPECCABLE_MISTAGED" "9.9.9" "4.0.2"
+    OSO_IMPECCABLE_REMOTE="$OPENCODE_IMPECCABLE_MISTAGED" \
+      run_opencode_install "$OPENCODE_INSTALL_MISMATCH_HOME" --yes
+    assert_equals "a mistagged Impeccable release fails loudly instead of installing unpinned" \
+      "nonzero" "$([ "$OPENCODE_INSTALL_RC" -ne 0 ] && echo nonzero || echo zero)"
+    assert_equals "the unpinned-release refusal names the pinned version as the remedy" \
+      "1" "$(printf '%s\n' "$OPENCODE_INSTALL_LOG" | grep -Fc 'refusing to leave an unpinned install' || true)"
+    assert_equals "the unpinned-release refusal rolls the mount back to absent" \
+      "absent" "$([ ! -e "$OPENCODE_INSTALL_MISMATCH_HOME/.agents/skills/impeccable" ] && echo absent || echo present)"
+  else
+    skipped=$((skipped + 1))
+    OPENCODE_INSTALL_MISMATCH_HOME="$TEST_HOME/opencode-install-mismatch-home"
+    write_opencode_install_fixture "$OPENCODE_INSTALL_MISMATCH_HOME"
+    OPENCODE_IMPECCABLE_SOURCE="$(opencode_install_impeccable_source "$OPENCODE_INSTALL_MISMATCH_HOME" "9.9.9")" \
+      run_opencode_install "$OPENCODE_INSTALL_MISMATCH_HOME" --yes
+    assert_equals "an unpinned Impeccable source fails loudly without git" \
+      "nonzero" "$([ "$OPENCODE_INSTALL_RC" -ne 0 ] && echo nonzero || echo zero)"
+    assert_equals "the no-git refusal names git as the remedy" \
+      "1" "$(printf '%s\n' "$OPENCODE_INSTALL_LOG" | grep -Fc 'git is required' || true)"
+    assert_equals "the no-git refusal mounts nothing" \
+      "absent" "$([ ! -e "$OPENCODE_INSTALL_MISMATCH_HOME/.agents/skills/impeccable" ] && echo absent || echo present)"
+  fi
+
+  OPENCODE_RECOVERY_HOME="$TEST_HOME/opencode-recovery-home"
+  write_opencode_install_fixture "$OPENCODE_RECOVERY_HOME"
+  opencode_recovery_config_before="$(cat "$OPENCODE_RECOVERY_HOME/.config/opencode/opencode.json")"
+
+  run_opencode_recovery() {
+    local script="$1"
+    shift
+    if OPENCODE_RECOVERY_LOG="$(HOME="$OPENCODE_RECOVERY_HOME" \
+      XDG_CONFIG_HOME="$OPENCODE_RECOVERY_HOME/.config" \
+      bash "$REPO_ROOT/bootstrap/$script" "$@" 2>&1)"; then
+      OPENCODE_RECOVERY_RC=0
+    else
+      OPENCODE_RECOVERY_RC=$?
+    fi
+  }
+
+  run_opencode_install "$OPENCODE_RECOVERY_HOME" --yes --no-impeccable
+  establish_premise "the recovery fixture holds a completed install to restore" \
+    [ "$OPENCODE_INSTALL_RC" -eq 0 ]
+
+  run_opencode_recovery restore-opencode.sh --list
+  assert_equals "the restore offers the install's own snapshot" \
+    "1" "$(printf '%s\n' "$OPENCODE_RECOVERY_LOG" | grep -c '^install-backup-' || true)"
+  run_opencode_recovery restore-opencode.sh --yes
+  assert_equals "the restore completes" "0" "$OPENCODE_RECOVERY_RC"
+  assert_equals "the restore returns the operator's pre-install config byte for byte" \
+    "$opencode_recovery_config_before" "$(cat "$OPENCODE_RECOVERY_HOME/.config/opencode/opencode.json")"
+  assert_equals "the restore records that this machine has now exercised one, under this host's own marker" \
+    "present absent" "$([ -f "$OPENCODE_RECOVERY_HOME/.local/state/oso-code/.install-restore-verified-opencode" ] && echo present || echo absent) $([ -f "$OPENCODE_RECOVERY_HOME/.local/state/oso-code/.install-restore-verified-codex" ] && echo present || echo absent)"
+
+  run_opencode_install "$OPENCODE_RECOVERY_HOME" --yes --no-impeccable
+  establish_premise "the recovery fixture is installed again before the repair case" \
+    [ "$OPENCODE_INSTALL_RC" -eq 0 ]
+  python3 - "$OPENCODE_RECOVERY_HOME/.config/opencode/opencode.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    config = json.load(handle)
+config.pop("theme", None)
+config.pop("agent", None)
+with open(sys.argv[1], "w", encoding="utf-8") as handle:
+    json.dump(config, handle, indent=2)
+PY
+  run_opencode_recovery repair-opencode.sh --yes
+  assert_equals "the repair completes" "0" "$OPENCODE_RECOVERY_RC"
+  assert_equals "the repair returns an operator key a past release dropped" \
+    "fixture-theme" "$(opencode_install_config_value "$OPENCODE_RECOVERY_HOME" "theme")"
+  assert_equals "the repair names every key it returned" \
+    "1" "$(printf '%s\n' "$OPENCODE_RECOVERY_LOG" | grep -Fc 'returned 2 key(s)' || true)"
+  assert_equals "the repair leaves an installer-owned key exactly as the install wrote it" \
+    "ask" "$(opencode_install_config_value "$OPENCODE_RECOVERY_HOME" "permission.oso_plan_approve")"
+  run_opencode_recovery repair-opencode.sh --yes
+  assert_equals "a second repair finds nothing left to return" \
+    "1" "$(printf '%s\n' "$OPENCODE_RECOVERY_LOG" | grep -Fc 'nothing to repair' || true)"
+
+  if [ "$OPENCODE_GIT_PRESENT" = true ]; then
+    OPENCODE_RAIL_SESSION=opencode-commit-rail
+    OPENCODE_RAIL_ATTEMPTS=0
+
+    write_opencode_release_repo() {
+      local release="$1"
+      mkdir -p "$release/opencode"
+      cp -R "$REPO_ROOT/bootstrap" "$release/bootstrap"
+      cp -R "$REPO_ROOT/plugin" "$release/plugin"
+      cp -R "$REPO_ROOT/opencode/skills" "$REPO_ROOT/opencode/agents" \
+        "$REPO_ROOT/opencode/commands" "$REPO_ROOT/opencode/plugin" \
+        "$REPO_ROOT/opencode/hooks" "$release/opencode/"
+      git init -q "$release"
+      git -C "$release" config user.email tests@oso-code.invalid
+      git -C "$release" config user.name "oso-code tests"
+      git -C "$release" config commit.gpgsign false
+    }
+
+    opencode_configured_hooks_path() {
+      git -C "$1" config --local --get core.hooksPath 2>/dev/null || printf absent
+    }
+
+    opencode_rail_state() {
+      local fixture_home="$1" tree="$2"
+      shift 2
+      ( cd "$tree" && HOME="$fixture_home" \
+        "$fixture_home/.config/opencode/bin/oso-state" \
+        --session "$OPENCODE_RAIL_SESSION" "$@" )
+    }
+
+    opencode_rail_commit() {
+      local fixture_home="$1" tree="$2" marker="$3" change
+      OPENCODE_RAIL_ATTEMPTS=$((OPENCODE_RAIL_ATTEMPTS + 1))
+      change="rail-change-$OPENCODE_RAIL_ATTEMPTS.txt"
+      printf '%s\n' "$change" > "$tree/$change"
+      git -C "$tree" add "$change"
+      if OPENCODE_RAIL_COMMIT_OUTPUT="$(cd "$tree" && env -u CLAUDE_CODE_SESSION_ID \
+        HOME="$fixture_home" OSO_AGENT="$marker" git commit -m "$change" 2>&1)"; then
+        OPENCODE_RAIL_COMMIT_RC=0
+      else
+        OPENCODE_RAIL_COMMIT_RC=$?
+      fi
+    }
+
+    opencode_rail_verdict() {
+      [ "$OPENCODE_RAIL_COMMIT_RC" -ne 0 ] && printf denied || printf landed
+    }
+
+    OPENCODE_RAIL_RELEASE="$TEST_HOME/opencode-rail-release"
+    OPENCODE_RAIL_HOME="$TEST_HOME/opencode-rail-home"
+    OPENCODE_RAIL_WORKTREE="$TEST_HOME/opencode-rail-worktree"
+    write_opencode_release_repo "$OPENCODE_RAIL_RELEASE"
+    write_opencode_install_fixture "$OPENCODE_RAIL_HOME"
+    run_opencode_install_from_release "$OPENCODE_RAIL_HOME" "$OPENCODE_RAIL_RELEASE"
+    OPENCODE_RAIL_HOOKS="$OPENCODE_RAIL_HOME/.config/opencode/git-hooks"
+    assert_equals "the install that wires the commit rail's second layer completes" \
+      "0" "$OPENCODE_INSTALL_RC"
+    assert_equals "the installer points the installed-from repo's core.hooksPath at the installed git-hooks directory" \
+      "$OPENCODE_RAIL_HOOKS" "$(opencode_configured_hooks_path "$OPENCODE_RAIL_RELEASE")"
+    assert_equals "the wired hook is the shared pre-commit rather than a second implementation" \
+      "identical" "$(cmp -s "$REPO_ROOT/plugin/git-hooks/pre-commit" "$OPENCODE_RAIL_HOOKS/pre-commit" && echo identical || echo divergent)"
+    assert_equals "the wired hook is executable where git will run it" \
+      "executable" "$([ -x "$OPENCODE_RAIL_HOOKS/pre-commit" ] && echo executable || echo inert)"
+    assert_equals "the gate library the wired hook resolves as its sibling is the shared one" \
+      "identical" "$(cmp -s "$REPO_ROOT/plugin/hooks/lib.sh" "$OPENCODE_RAIL_HOME/.config/opencode/hooks/lib.sh" && echo identical || echo divergent)"
+    assert_equals "the owner registry records the installed commit hook" \
+      "1" "$(grep -Fc "installer	$OPENCODE_RAIL_HOOKS/pre-commit" "$OPENCODE_RAIL_HOME/.local/state/oso-code/opencode-install-registry" || true)"
+
+    opencode_rail_commit "$OPENCODE_RAIL_HOME" "$OPENCODE_RAIL_RELEASE" ""
+    assert_equals "a commit carrying no agent marker passes the wired hook untouched" \
+      "landed" "$(opencode_rail_verdict)"
+
+    establish_premise "the rail probe repository arms a red session" \
+      opencode_rail_state "$OPENCODE_RAIL_HOME" "$OPENCODE_RAIL_RELEASE" \
+      set mode=plan verify_green=false
+    opencode_rail_commit "$OPENCODE_RAIL_HOME" "$OPENCODE_RAIL_RELEASE" "$OPENCODE_RAIL_SESSION"
+    assert_equals "the wired hook denies an agent's commit while verify is red" \
+      "denied" "$(opencode_rail_verdict)"
+    assert_equals "the denial carries the shared hook's own reason" \
+      "1" "$(printf '%s\n' "$OPENCODE_RAIL_COMMIT_OUTPUT" | grep -Fc 'the session verify is not green' || true)"
+    assert_equals "the denial names the armed mode's own remedy" \
+      "1" "$(printf '%s\n' "$OPENCODE_RAIL_COMMIT_OUTPUT" | grep -Fc "Resume plan mode's apply" || true)"
+
+    establish_premise "the rail probe repository turns green" \
+      opencode_rail_state "$OPENCODE_RAIL_HOME" "$OPENCODE_RAIL_RELEASE" set verify_green=true
+    opencode_rail_commit "$OPENCODE_RAIL_HOME" "$OPENCODE_RAIL_RELEASE" "$OPENCODE_RAIL_SESSION"
+    assert_equals "the wired hook lets the same commit through once verify is green" \
+      "landed" "$(opencode_rail_verdict)"
+
+    establish_premise "the rail probe repository accepts a linked worktree" \
+      git -C "$OPENCODE_RAIL_RELEASE" worktree add -q -b oso/rail-probe "$OPENCODE_RAIL_WORKTREE"
+    establish_premise "the rail probe repository is red again for the worktree case" \
+      opencode_rail_state "$OPENCODE_RAIL_HOME" "$OPENCODE_RAIL_RELEASE" set verify_green=false
+    opencode_rail_commit "$OPENCODE_RAIL_HOME" "$OPENCODE_RAIL_WORKTREE" "$OPENCODE_RAIL_SESSION"
+    assert_equals "a linked worktree inherits the absolute hooksPath and is denied there too" \
+      "denied" "$(opencode_rail_verdict)"
+
+    OPENCODE_OPTOUT_RELEASE="$TEST_HOME/opencode-optout-release"
+    OPENCODE_OPTOUT_HOME="$TEST_HOME/opencode-optout-home"
+    write_opencode_release_repo "$OPENCODE_OPTOUT_RELEASE"
+    write_opencode_install_fixture "$OPENCODE_OPTOUT_HOME"
+    run_opencode_install_from_release "$OPENCODE_OPTOUT_HOME" "$OPENCODE_OPTOUT_RELEASE" --no-git-hook
+    assert_equals "an install opting out of the git layer completes" \
+      "0" "$OPENCODE_INSTALL_RC"
+    assert_equals "--no-git-hook leaves core.hooksPath alone" \
+      "absent" "$(opencode_configured_hooks_path "$OPENCODE_OPTOUT_RELEASE")"
+    assert_equals "--no-git-hook still installs the hook, so another repo can be wired by hand" \
+      "identical" "$(cmp -s "$REPO_ROOT/plugin/git-hooks/pre-commit" "$OPENCODE_OPTOUT_HOME/.config/opencode/git-hooks/pre-commit" && echo identical || echo divergent)"
+    assert_equals "the opt-out is reported rather than passed over in silence" \
+      "1" "$(printf '%s\n' "$OPENCODE_INSTALL_LOG" | grep -Fc 'skipping the git commit hook wiring (--no-git-hook)' || true)"
+
+    OPENCODE_FOREIGN_RELEASE="$TEST_HOME/opencode-foreign-release"
+    OPENCODE_FOREIGN_HOME="$TEST_HOME/opencode-foreign-home"
+    OPENCODE_FOREIGN_HOOKS="$TEST_HOME/opencode-foreign-operator-hooks"
+    write_opencode_release_repo "$OPENCODE_FOREIGN_RELEASE"
+    write_opencode_install_fixture "$OPENCODE_FOREIGN_HOME"
+    mkdir -p "$OPENCODE_FOREIGN_HOOKS"
+    cp "$REPO_ROOT/plugin/git-hooks/pre-commit" "$OPENCODE_FOREIGN_HOOKS/pre-commit"
+    git -C "$OPENCODE_FOREIGN_RELEASE" config core.hooksPath "$OPENCODE_FOREIGN_HOOKS"
+    run_opencode_install_from_release "$OPENCODE_FOREIGN_HOME" "$OPENCODE_FOREIGN_RELEASE"
+    assert_equals "an install that meets another hooks owner still completes" \
+      "0" "$OPENCODE_INSTALL_RC"
+    assert_equals "another hooks owner is refused loudly, named in the refusal" \
+      "1" "$(printf '%s\n' "$OPENCODE_INSTALL_LOG" | grep -Fc "core.hooksPath=$OPENCODE_FOREIGN_HOOKS already owns this repo's hooks" || true)"
+    assert_equals "the refusal names the way to run both layers instead of replacing one" \
+      "1" "$(printf '%s\n' "$OPENCODE_INSTALL_LOG" | grep -Fc "call $OPENCODE_FOREIGN_HOME/.config/opencode/git-hooks/pre-commit from your own pre-commit" || true)"
+    assert_equals "the refusal leaves the other owner's wiring exactly as it was" \
+      "$OPENCODE_FOREIGN_HOOKS" "$(opencode_configured_hooks_path "$OPENCODE_FOREIGN_RELEASE")"
+
+    OPENCODE_STANDING_HOOK_RELEASE="$TEST_HOME/opencode-standing-hook-release"
+    OPENCODE_STANDING_HOOK_HOME="$TEST_HOME/opencode-standing-hook-home"
+    write_opencode_release_repo "$OPENCODE_STANDING_HOOK_RELEASE"
+    write_opencode_install_fixture "$OPENCODE_STANDING_HOOK_HOME"
+    printf '#!/bin/sh\nexit 0\n' > "$OPENCODE_STANDING_HOOK_RELEASE/.git/hooks/pre-commit"
+    chmod +x "$OPENCODE_STANDING_HOOK_RELEASE/.git/hooks/pre-commit"
+    run_opencode_install_from_release "$OPENCODE_STANDING_HOOK_HOME" "$OPENCODE_STANDING_HOOK_RELEASE"
+    assert_equals "a hook already standing in the repository's own hooks directory is refused loudly" \
+      "1" "$(printf '%s\n' "$OPENCODE_INSTALL_LOG" | grep -Fc "/.git/hooks/pre-commit already owns this repo's hooks" || true)"
+    assert_equals "that refusal leaves the repository unwired rather than taking its own hooks out of git's reach" \
+      "absent" "$(opencode_configured_hooks_path "$OPENCODE_STANDING_HOOK_RELEASE")"
+    assert_equals "the standing hook itself is never replaced" \
+      "1" "$(grep -Fxc 'exit 0' "$OPENCODE_STANDING_HOOK_RELEASE/.git/hooks/pre-commit" || true)"
+  else
+    echo "skip: git is absent here, so the OpenCode commit rail's git layer has nothing to wire or run"
+    skipped=$((skipped + 1))
+  fi
+fi
+
+if [ "$RUNS_ON_WINDOWS_BASH" = true ]; then
+  echo "skip: the opencode verifier fixtures publish real file trees and run a full fixture install; the emulated Windows bash runs the rest of the suite"
+  skipped=$((skipped + 1))
+elif [ ! -d "$REPO_ROOT/opencode/node_modules" ]; then
+  echo "skip: the opencode verifier fixtures need opencode/node_modules present for the typecheck bar"
+  skipped=$((skipped + 1))
+else
+  VERIFY_OPENCODE_SH="$REPO_ROOT/bootstrap/verify-opencode.sh"
+
+  opencode_verify_path_without_opencode() {
+    local dir result="" saved_ifs="$IFS"
+    IFS=':'
+    for dir in $PATH; do
+      if [ -n "$dir" ] && [ -x "$dir/opencode" ]; then
+        continue
+      fi
+      result="${result:+$result:}$dir"
+    done
+    IFS="$saved_ifs"
+    printf '%s' "$result"
+  }
+  OPENCODE_VERIFY_CLEAN_PATH="$(opencode_verify_path_without_opencode)"
+
+  OPENCODE_VERIFY_HOME="$TEST_HOME/opencode-verify-home"
+  OPENCODE_VERIFY_OUTPUT="$TEST_HOME/opencode-verify-output"
+  OPENCODE_VERIFY_NPM_CACHE="$TEST_HOME/opencode-verify-npm-cache"
+  OPENCODE_VERIFY_XDG="$TEST_HOME/opencode-verify-xdg"
+  mkdir -p "$OPENCODE_VERIFY_HOME/.config/opencode" "$OPENCODE_VERIFY_NPM_CACHE"
+  printf 'operator config must survive\n' > "$OPENCODE_VERIFY_HOME/.config/opencode/opencode.json"
+  printf 'operator guidance must survive\n' > "$OPENCODE_VERIFY_HOME/.config/opencode/AGENTS.md"
+  printf 'operator sentinel\n' > "$OPENCODE_VERIFY_HOME/sentinel.txt"
+
+  if HOME="$OPENCODE_VERIFY_HOME" \
+    npm_config_cache="$OPENCODE_VERIFY_NPM_CACHE" \
+    XDG_DATA_HOME="$OPENCODE_VERIFY_XDG/data" \
+    XDG_STATE_HOME="$OPENCODE_VERIFY_XDG/state" \
+    XDG_CACHE_HOME="$OPENCODE_VERIFY_XDG/cache" \
+    PATH="$OPENCODE_VERIFY_CLEAN_PATH" \
+    OSO_VERIFY_SKIP_SMOKE=1 \
+    bash "$VERIFY_OPENCODE_SH" > "$OPENCODE_VERIFY_OUTPUT" 2>&1; then
+    opencode_verify_rc=0
+  else
+    opencode_verify_rc=$?
+  fi
+  opencode_verify_report="$(cat "$OPENCODE_VERIFY_OUTPUT")"
+  assert_equals "the self-contained OpenCode verifier reports an unrun smoke rather than a clean report" \
+    "3" "$opencode_verify_rc"
+  assert_equals "the OpenCode verifier always reaches exactly one final summary" \
+    "1" "$(printf '%s\n' "$opencode_verify_report" | grep -c '^passed:' || true)"
+  assert_equals "the OpenCode verifier reports no failing checks against a clean fixture" \
+    "0" "$(printf '%s\n' "$opencode_verify_report" | grep -c '^FAIL:' || true)"
+  assert_equals "the OpenCode verifier runs its self-contained local checks" \
+    "10+" "$([ "$(printf '%s\n' "$opencode_verify_report" | grep -c '^ok:' || true)" -ge 10 ] && echo 10+ || echo too-few)"
+  assert_equals "the OpenCode verifier skips the version probe when no binary is on PATH" \
+    "1" "$(printf '%s\n' "$opencode_verify_report" | grep -c '^skip: OpenCode CLI version' || true)"
+  assert_equals "the OpenCode verifier records the unrun wave-runner smoke under the skip switch" \
+    "1" "$(printf '%s\n' "$opencode_verify_report" | grep -c '^not run: wave-runner smoke' || true)"
+  assert_equals "the OpenCode verifier never prints a bare skip for the wave-runner smoke" \
+    "0" "$(printf '%s\n' "$opencode_verify_report" | grep -c '^skip: wave-runner smoke' || true)"
+  assert_equals "the unrun smoke names its reason beside the summary" \
+    "1" "$(printf '%s\n' "$opencode_verify_report" | grep -c '^wave-runner smoke not run:' || true)"
+  assert_equals "the fixture install completes, which the strict shim allows only for version probes" \
+    "1" "$(printf '%s\n' "$opencode_verify_report" | grep -Fxc 'ok:   isolated fixture install (ready)' || true)"
+  OPENCODE_SMOKE_LOGS="$TEST_HOME/opencode-smoke-logs"
+  mkdir -p "$OPENCODE_SMOKE_LOGS"
+  printf '! permission requested: external_directory (%s/wt2/*); auto-rejecting\n' \
+    "$OPENCODE_SMOKE_LOGS" > "$OPENCODE_SMOKE_LOGS/wt1.json"
+  cp "$OPENCODE_SMOKE_LOGS/wt1.json" "$OPENCODE_SMOKE_LOGS/wt2.json"
+
+  opencode_wave_smoke_outcome() {
+    (
+      . "$VERIFY_OPENCODE_SH" > /dev/null 2>&1
+      SMOKE_ROOT="$1"
+      SMOKE_BREACHED="$2"
+      SMOKE_INCOMPLETE="$3"
+      wave_smoke_outcome
+    )
+  }
+
+  assert_equals "a host that auto-rejects the pinned worktree makes the smoke a named not-run" \
+    "host-refused-the-worktree" \
+    "$(opencode_wave_smoke_outcome "$OPENCODE_SMOKE_LOGS" "" "wt1-proof wt2-proof")"
+  assert_equals "a real isolation breach stays red under that same host refusal" \
+    "breached" \
+    "$(opencode_wave_smoke_outcome "$OPENCODE_SMOKE_LOGS" "wt1-has-wt2-proof" "wt1-proof wt2-proof")"
+  assert_equals "an incomplete child with no host refusal behind it stays red" \
+    "incomplete" \
+    "$(opencode_wave_smoke_outcome "$TEST_HOME/opencode-no-smoke-logs" "" "wt1-verdict(none)")"
+
+  assert_equals "the OpenCode verifier never writes into the HOME it was pointed at" \
+    "3" "$(find "$OPENCODE_VERIFY_HOME" -type f | wc -l | tr -d ' ')"
+  assert_equals "the OpenCode verifier leaves an operator config under its HOME untouched" \
+    "operator config must survive" "$(cat "$OPENCODE_VERIFY_HOME/.config/opencode/opencode.json")"
+  assert_equals "the OpenCode verifier leaves operator guidance under its HOME untouched" \
+    "operator guidance must survive" "$(cat "$OPENCODE_VERIFY_HOME/.config/opencode/AGENTS.md")"
+  assert_equals "the OpenCode verifier leaves the seeded sentinel untouched" \
+    "operator sentinel" "$(cat "$OPENCODE_VERIFY_HOME/sentinel.txt")"
+
+  OPENCODE_VERIFY_MUTANT_REPO="$TEST_HOME/opencode-verify-mutant-repo"
+  OPENCODE_VERIFY_MUTANT_OUTPUT="$TEST_HOME/opencode-verify-mutant-output"
+
+  write_opencode_verify_mutant_repo() {
+    local mutant="$1"
+    mkdir -p "$mutant/opencode"
+    cp -r "$REPO_ROOT/bootstrap" "$mutant/bootstrap"
+    cp -r "$REPO_ROOT/opencode/skills" "$REPO_ROOT/opencode/agents" \
+      "$REPO_ROOT/opencode/commands" "$REPO_ROOT/opencode/plugin" \
+      "$REPO_ROOT/opencode/hooks" "$mutant/opencode/"
+    cp "$REPO_ROOT/opencode/package.json" "$REPO_ROOT/opencode/package-lock.json" \
+      "$REPO_ROOT/opencode/tsconfig.json" "$mutant/opencode/"
+    ln -s "$REPO_ROOT/opencode/node_modules" "$mutant/opencode/node_modules"
+    cp -r "$REPO_ROOT/plugin" "$mutant/plugin"
+    rm -f "$(printf '%s\n' "$mutant"/opencode/skills/oso-*/SKILL.md | head -1)"
+  }
+
+  write_opencode_verify_mutant_repo "$OPENCODE_VERIFY_MUTANT_REPO"
+  if HOME="$(mktemp -d)" \
+    npm_config_cache="$OPENCODE_VERIFY_NPM_CACHE" \
+    PATH="$OPENCODE_VERIFY_CLEAN_PATH" \
+    OSO_VERIFY_SKIP_SMOKE=1 \
+    bash "$OPENCODE_VERIFY_MUTANT_REPO/bootstrap/verify-opencode.sh" \
+    > "$OPENCODE_VERIFY_MUTANT_OUTPUT" 2>&1; then
+    opencode_verify_mutant_rc=0
+  else
+    opencode_verify_mutant_rc=$?
+  fi
+  assert_equals "removing a source skill wrapper makes the OpenCode verifier fail" \
+    "nonzero" "$([ "$opencode_verify_mutant_rc" -ne 0 ] && echo nonzero || echo zero)"
+  assert_equals "the mutation failure names the missing artifact" \
+    "1" "$(grep -Fc 'expected exactly 9 OpenCode skill wrappers (found 8)' "$OPENCODE_VERIFY_MUTANT_OUTPUT" || true)"
+fi
 
 echo "----"
 echo "passed: $pass, failed: $fail, skipped: $skipped"

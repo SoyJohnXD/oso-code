@@ -1,15 +1,8 @@
 #!/usr/bin/env bash
-# Install oso-code's Codex surfaces without purging unrelated user state.
-#
-# Usage: install-codex.sh [--yes] [--no-impeccable] [--no-git-hook]
 
 set -euo pipefail
 
 SUPPORTED_CODEX_VERSION=0.146.0
-# The version the design-foundation slice reads from the installed skill's own
-# SKILL.md frontmatter and records in the plan ledger. Pinning the marketplace
-# fetch to the matching `skill-v<version>` tag is what lets that recorded read
-# and this pin agree instead of drifting into two sources of truth.
 SUPPORTED_IMPECCABLE_VERSION=4.0.2
 CONFIG_MARKER_START="# oso-code:start"
 CONFIG_MARKER_END="# oso-code:end"
@@ -38,6 +31,9 @@ initialize_paths() {
   [ -f "$SCRIPT_DIR/lib/install-backup.sh" ] ||
     fail "install backup library is missing"
   . "$SCRIPT_DIR/lib/install-backup.sh"
+  [ -f "$SCRIPT_DIR/lib/codex-install-backups.sh" ] ||
+    fail "the Codex backup identity library is missing"
+  . "$SCRIPT_DIR/lib/codex-install-backups.sh"
   CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
   CONFIG_FILE="$CODEX_HOME/config.toml"
   GLOBAL_FILE="$CODEX_HOME/AGENTS.md"
@@ -57,12 +53,8 @@ initialize_paths() {
   TX_MANIFEST="$TX_BACKUP_ROOT/manifest"
   TX_ACTIVE=false
   TX_COMMITTED=false
-  # Read from lib/install-backup.sh, which is where the budget and the
-  # measured numbers behind it live now that install.sh bounds its own backup
-  # root by the same one. Held in a variable here only so the removal line
-  # below can name the budget it enforced.
   INSTALL_BACKUP_BUDGET_KIB="$(install_backup_budget_kib)"
-  RESTORE_EXERCISED_MARKER="$INSTALL_BACKUPS_ROOT/.install-restore-verified"
+  RESTORE_EXERCISED_MARKER="$INSTALL_BACKUPS_ROOT/.install-restore-verified-codex"
 }
 
 parse_args() {
@@ -106,10 +98,12 @@ plugin/hooks/cleanup-state.sh
 plugin/hooks/block-prod-deploy.sh
 plugin/bin/oso-state
 plugin/hooks/lib.sh
-plugin/hooks/lexer.sh'
+plugin/hooks/lexer.sh
+plugin/hooks/reanchor-after-compact.sh'
   while IFS='  ' read -r expected relative; do
     case "$expected" in ''|'#'*) continue ;; esac
     relative="${relative# }"
+    case "$relative" in opencode/*) continue ;; esac
     case "$expected" in
       *[!0-9a-f]*|'') fail "invalid published SHA-256 in $HASHES_FILE" ;;
     esac
@@ -131,16 +125,11 @@ plugin/hooks/lexer.sh'
       fail "published hook hash mismatch for $relative (expected $expected, got $actual)"
     count=$((count + 1))
   done < "$HASHES_FILE"
-  [ "$count" -eq 14 ] || fail "published hook manifest must cover exactly 14 Codex trust files (found $count)"
+  [ "$count" -eq 15 ] || fail "published hook manifest must cover exactly 15 Codex trust files (found $count)"
   [ "$paths" = "$required_paths" ] ||
     fail "published hook coverage or order differs from the frozen Codex trust set"
 }
 
-# The state migration below needs exactly OSO_STATE_DIR and state_value, both
-# already published and hash-verified above as part of the Codex trust set —
-# reusing them here keeps the state-file format defined in one place instead
-# of a second, driftable copy of the same grep. Sourced only after
-# verify_published_hooks so nothing in it runs before its bytes are checked.
 load_state_library() {
   [ -f "$REPO_ROOT/plugin/hooks/lib.sh" ] ||
     fail "oso-code state library is missing"
@@ -151,14 +140,6 @@ codex_version() {
   codex --version 2>/dev/null | awk '{ print $NF }'
 }
 
-# `begin_transaction` can only ever restore what it backed up -- cp -a snapshots
-# of paths under $HOME -- and a global npm package is neither: the standalone
-# Codex release on the machine this pin was read from runs to ~300 MiB, which
-# alone would blow the 300 MiB total `INSTALL_BACKUP_BUDGET_KIB` every other
-# snapshot in a run shares. An `npm install --global` this transaction ran but
-# could not honestly undo is exactly defect (3): a step outside the transaction
-# the rollback cannot reach. The CLI pin is a precondition instead -- this never
-# mutates it, so no later failure's rollback ever needs to.
 preflight_codex_version() {
   local current=""
   if command -v codex >/dev/null 2>&1; then
@@ -293,10 +274,6 @@ preflight_hooks_manifest() {
   escaped="${escaped//|/\\|}"
   sed "s|__OSO_HOOKS_DIR__|$escaped/hooks|g" "$REPO_ROOT/codex/hooks/hooks.json" > "$expected"
   if ! cmp -s "$expected" "$HOOKS_TARGET"; then
-    # A prior oso-code release is also ours even when its matcher set changed,
-    # but merely mentioning our path as an argument is not ownership. Parse the
-    # JSON and accept only one of the released handlers as the command word,
-    # optionally preceded by the fixed Codex marker.
     if ! python3 - "$HOOKS_TARGET" "$RUNTIME_ROOT/hooks" <<'PY'
 import json
 import re
@@ -386,6 +363,7 @@ begin_transaction() {
   umask 077
   mkdir -p "$TX_BACKUP_ROOT/items"
   chmod 700 "$TX_BACKUP_ROOT"
+  printf '%s\n' "$CODEX_INSTALL_BACKUP_FORMAT" > "$TX_BACKUP_ROOT/format"
   : > "$TX_MANIFEST"
   TX_ACTIVE=true
   backup_target marketplace "$MARKETPLACE_ROOT"
@@ -428,25 +406,12 @@ backup_target() {
   fi
 }
 
-# An earlier release split `session` (ownership) from `plan_approval_session`
-# (who may approve or cancel a pending plan), but an installed base of state
-# files predates the split and holds only the old key. Left alone, this
-# release would manufacture the exact trap that split closes:
-# `plan_approval=pending` with no `plan_approval_session` is unreachable by
-# the SessionEnd sweep (cleanup-state.sh's clear_orphaned_pending_of) and
-# unapprovable by the gate (approve-plan-token.sh), both of which now key off
-# the new field alone. Migrating here, inside begin_transaction's own
-# backup/rollback machinery, is what lets a later step's failure roll a
-# touched state file back with everything else instead of leaving it
-# half-converted. Every other key in every other state file is left alone.
 migrate_plan_approval_state() {
   local state_file digest session
   [ -d "$OSO_STATE_DIR" ] || return 0
   for state_file in "$OSO_STATE_DIR"/*.state; do
     [ -f "$state_file" ] || continue
     [ "$(state_value "$state_file" plan_approval)" = pending ] || continue
-    # Already carries the new key: migrated already, or never pre-split.
-    # Idempotent by construction — re-running the installer must not churn it.
     if grep -q '^plan_approval_session=' "$state_file"; then
       continue
     fi
@@ -455,32 +420,16 @@ migrate_plan_approval_state() {
     backup_target "state-$digest" "$state_file"
     session="$(state_value "$state_file" session)"
     if [ "$session" = 1 ]; then
-      # The marker means the presenting session is unrecoverable — nothing on
-      # disk names it, so this pending can never be approved or cancelled by
-      # anyone. `oso-state` can set a key but never delete one, so clearing it
-      # is the same operation `cancel-plan` and the SessionEnd sweep already
-      # use: the whole file, not a line inside it.
       rm -f "$state_file"
       rm -rf "${state_file}.lock"
       info "migrated plan approval state: cleared an unrecoverable pending with no presenting session on disk (${digest})"
     else
-      # The old value still names a real presenting session: that pending
-      # stays legitimately approvable by the session that presented it.
       printf 'plan_approval_session=%s\n' "$session" >> "$state_file"
       info "migrated plan approval state: backfilled plan_approval_session from the presenting session (${digest})"
     fi
   done
 }
 
-# Called as `rollback_transaction || true` (on_exit, below): that conditional
-# context turns off errexit for this whole function (and everything it calls,
-# restore_backup_manifest included), so a failing `rm -rf` or `cp -a` would
-# otherwise continue silently with nothing to show for it. Every restore is
-# therefore checked explicitly rather than left to errexit, and one item's
-# failure never skips the rest — a partial restore beats a stopped one. The
-# manifest replay itself lives in lib/install-backup.sh, shared with the
-# standalone restore-codex.sh so an in-run rollback and a later
-# operator-invoked restore can never read the same manifest two ways.
 rollback_transaction() {
   [ "$TX_ACTIVE" = true ] || return 0
   warn "installation failed; restoring the pre-install snapshot"
@@ -506,9 +455,6 @@ rollback_transaction() {
 on_exit() {
   local rc=$?
   if [ "$rc" -ne 0 ] && [ "${TX_COMMITTED:-false}" != true ]; then
-    # `|| true` keeps errexit off for the whole call (see rollback_transaction's
-    # own comment) and absorbs its new nonzero return on a failed restore — the
-    # exit code below must stay the original failure's, never rollback's own.
     rollback_transaction || true
   fi
   exit "$rc"
@@ -521,26 +467,14 @@ checkpoint() {
   return 0
 }
 
-# Bounds total backup disk use rather than count (lib/install-backup.sh
-# carries the budget, the measured numbers behind it, and the selection this
-# deletes from — shared with install.sh, which bounds a backup root of its own
-# by the same one), and refuses to delete anything until
-# RESTORE_EXERCISED_MARKER exists —
-# restore-codex.sh is the only thing that writes it, and only after it has
-# actually restored a snapshot on this machine. A retention policy that ran
-# on ITS OWN first installation would delete the one backup an operator would
-# reach for if that very installation went wrong; gating on a proven restore
-# is how this stays impossible rather than merely unlikely. Runs after
-# TX_COMMITTED so its own failure never touches rollback: a prune that could
-# not delete an old snapshot is disk pressure, never a reason to undo a
-# install that already succeeded.
 prune_install_backups() {
   if [ ! -f "$RESTORE_EXERCISED_MARKER" ]; then
     info "backup retention: skipped — the restore path has not been verified on this machine yet; run bootstrap/restore-codex.sh once to enable automatic pruning"
     return 0
   fi
   local backup
-  install_backups_over_budget "$INSTALL_BACKUPS_ROOT" | while IFS= read -r backup; do
+  codex_install_backups_newest_first "$INSTALL_BACKUPS_ROOT" |
+    install_backups_over_budget | while IFS= read -r backup; do
     rm -rf "$backup"
     info "backup retention: removed $backup (over the ${INSTALL_BACKUP_BUDGET_KIB} KiB budget)"
   done
@@ -595,6 +529,7 @@ install_runtime_hooks() {
   while IFS='  ' read -r expected relative; do
     case "$expected" in ''|'#'*) continue ;; esac
     relative="${relative# }"
+    case "$relative" in opencode/*) continue ;; esac
     actual=""
     case "$relative" in
       plugin/hooks/*.sh) actual="$(sha256_file "$stage/hooks/$(basename "$relative")")" ;;
@@ -621,13 +556,6 @@ install_agents() {
   fi
   for role in "$REPO_ROOT"/codex/agents/*.toml; do
     dest="$stage/$(basename "$role")"
-    # preflight_agents only refuses a symlinked AGENTS_TARGET itself; an
-    # individual entry the `cp -R` above carried in stays a symlink (cp -R
-    # preserves one rather than following it). `cp` onto an existing symlink
-    # destination follows it and writes through to whatever it points at, and
-    # `chmod` follows it too -- both would land outside $CODEX_HOME entirely.
-    # Unlinking first guarantees the write and the chmod land on a fresh
-    # regular file inside the staging area.
     [ -L "$dest" ] && rm -f "$dest"
     cp "$role" "$dest"
     chmod 600 "$dest"
@@ -664,7 +592,6 @@ raise SystemExit(1)
 }
 
 validate_stale_engram_marketplace() {
-  # Cleanup is permitted only for the exact clean checkout Codex orphaned.
   [ ! -L "$ENGRAM_MARKETPLACE_CACHE" ] ||
     fail "refusing to remove symlinked unregistered Engram marketplace cache: $ENGRAM_MARKETPLACE_CACHE"
   [ -d "$ENGRAM_MARKETPLACE_CACHE" ] ||
@@ -740,7 +667,6 @@ repair_stale_engram_marketplace() {
 }
 
 normalize_installed_engram_pointers() {
-  # Engram's root keys are composed before Oso replaces its own region.
   [ -f "$CONFIG_FILE" ] ||
     fail "engram setup codex did not create Codex config.toml"
   local candidate validation_home status=0
@@ -933,20 +859,11 @@ PY
   return 1
 }
 
-# Reads the same `version:` frontmatter field the design-foundation slice
-# reads off the installed SKILL.md and mount-impeccable.sh itself
-# validates the shape of, so a pin comparison never invents a second reading
-# of that field.
 impeccable_skill_version() {
   [ -f "$1" ] || return 1
   sed -n 's/^version:[[:space:]]*//p' "$1" | head -n1
 }
 
-# `codex plugin marketplace add owner/repo --ref <REF>` fetches a Git ref for
-# a marketplace source (confirmed against the installed codex-cli 0.146.0's
-# own --help; the upstream repo tags every skill release `skill-v<semver>`,
-# independent of its `cli-v*`/`ext-v*` lines) -- the mechanism this pins to,
-# rather than the unpinned bare `owner/repo` the mount used before.
 fetch_pinned_impeccable_source() {
   local marketplace_result installed_root source
   marketplace_result="$(codex plugin marketplace add pbakaus/impeccable \
@@ -969,18 +886,11 @@ print(data.get("installedRoot", ""), end="")
 
 mount_impeccable() {
   local source
-  # A discovered source (test override or an already-installed marketplace
-  # checkout) is trusted only when its own version already agrees with the
-  # pin; anything else -- absent, unreadable, or a different version -- falls
-  # through to the pinned fetch instead of mounting unpinned content.
   if ! source="$(find_impeccable_source)" ||
      [ "$(impeccable_skill_version "$source/SKILL.md")" != "$SUPPORTED_IMPECCABLE_VERSION" ]; then
     source="$(fetch_pinned_impeccable_source)"
   fi
   "$SCRIPT_DIR/lib/mount-impeccable.sh" "$source"
-  # Defense in depth against a mistagged or moved upstream tag: the pin is
-  # never trusted just because the fetch step named it, only because the
-  # mounted skill's own frontmatter confirms it.
   [ "$(impeccable_skill_version "$IMPECCABLE_MOUNT/SKILL.md")" = "$SUPPORTED_IMPECCABLE_VERSION" ] ||
     fail "Impeccable is pinned to skill-v$SUPPORTED_IMPECCABLE_VERSION but the mounted skill reports version $(impeccable_skill_version "$IMPECCABLE_MOUNT/SKILL.md")"
   rm -f "$IMPECCABLE_OPT_OUT_MARKER"
@@ -1010,9 +920,6 @@ legacy_oso_git_hooks_path() {
   [ -f "$hooks_dir/pre-commit" ] && [ ! -L "$hooks_dir/pre-commit" ] \
     && [ -x "$hooks_dir/pre-commit" ] || return 1
 
-  # This exact checkout path is an older oso-code wiring, but only while it
-  # contains the one hook oso-code publishes. A sibling belongs to an unknown
-  # owner and must not disappear when the runtime path replaces it.
   for entry in "$hooks_dir"/* "$hooks_dir"/.[!.]* "$hooks_dir"/..?*; do
     [ -e "$entry" ] || [ -L "$entry" ] || continue
     [ "${entry##*/}" = pre-commit ] || return 1
@@ -1111,9 +1018,6 @@ main() {
   checkpoint after-git-hook
   TX_COMMITTED=true
   TX_ACTIVE=false
-  # `|| true` for the same reason rollback_transaction gets it from on_exit: an
-  # install that already committed must report the success it earned even if
-  # deleting an old snapshot afterward hits a permission error or similar.
   prune_install_backups || true
   info "installed oso-code for Codex $SUPPORTED_CODEX_VERSION"
   warn "review and trust the installed user hooks with /hooks; published file hashes verify their bytes but do not synthesize Codex trusted_hash entries"

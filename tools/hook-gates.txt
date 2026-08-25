@@ -1,16 +1,34 @@
 # The gates, once, for every host the harness runs on. tools/render-hooks-json.sh
-# turns this table into each host's hooks.json; tests/plugin-lint.sh's
+# turns this table into each host's manifest: hooks.json for Claude and Codex,
+# and a TypeScript route table (opencode/hooks/routes.ts) for opencode, whose
+# gates are a TS shim rather than subprocess hooks. tests/plugin-lint.sh's
 # check_hook_renders_and_published_hashes_match fails when a committed manifest is
 # not what it renders. Nothing here is written twice: the matcher a host spells
 # for a gate is a cell in this file and nowhere else.
 #
-# Three record kinds, each labelled by its first field, each ending in ONE CELL PER
-# HOST in the order the `host` rows appear:
+# Four record kinds, each labelled by its first field. `host`, `gate` and `tool`
+# each end in ONE CELL PER HOST in the order the `host` rows appear; `recovery`
+# carries prose and is read by nobody but the parser's presence check and you:
 #
 #   host <name> <manifest, relative to the repo root> <command root>
 #   gate <id> <event> <script under the hooks directory> <wired|none per host>
+#        <mechanism per host>
+#   recovery <gate id> <the operator's legitimate next step, in prose>
 #   tool <gate id> <the name that host spells the tool with, or none, per host>
 #        <read|write|role> <yes|no>
+#
+# A gate row answers each host TWICE, in the same host order: first whether that
+# host runs the gate SCRIPT, then by what mechanism. `subprocess` is the answer
+# for every Claude and Codex gate that runs — the host spawns the script on the
+# event column's event. opencode has no subprocess hooks, so its answer is the
+# name of the hook the TS shim routes the script from. `native` is the third
+# answer neither cell can give alone: the harness delivers that gate's BEHAVIOUR
+# from its own plugin code with no script running at all, which is why
+# persist-state-bin.sh, publish-subagent-handoff.sh and auto-continue.sh read
+# `none` on opencode and are still delivered there. A mechanism that is not the
+# one measured for its host is refused before any render, the same way an unknown
+# script or event is: docs/parity-opencode.md carries the per-gate evidence
+# behind each of them.
 #
 # A tool row's last two cells are the capability model, independent of how many
 # hosts precede them: whether the name READS or WRITES — the class that decides
@@ -29,7 +47,8 @@
 #
 # `none` is an answer, not an omission — the host has no counterpart. A row that
 # leaves a host unanswered is refused. Runtime default-deny is separate and real:
-# the Codex-only `unknown` gate renders a final `.*` matcher and its tool rows are
+# the `unknown` gate — wired on Codex and on opencode, and on Claude not at all —
+# renders a final `.*` matcher on both, and its tool rows are
 # the exact allowlist passed to block-unknown-tool.sh. Specific Bash/apply_patch
 # gates still make their own state verdict; the catch-all only rejects a tool name
 # absent here, and only after an oso-code state exists for the repository.
@@ -40,10 +59,22 @@
 # the installer that places them substitutes __OSO_HOOKS_DIR__ for the absolute
 # directory it wrote them to. The renderer also prefixes every
 # Codex command with `OSO_AGENT=1`: Codex 0.146 does not pass its tool-command
-# shell_environment_policy into the separate user-hook command runner.
+# shell_environment_policy into the separate user-hook command runner. opencode
+# publishes the same identity marker through its own shell.env hook (the parity
+# ledger's D13), so no command prefix is needed there.
+#
+# opencode carries no substituted root at all: routes.ts is TypeScript the
+# plugin imports rather than a JSON manifest a host reads, so the module
+# always knows its own location and resolves the installed gate tree — a
+# sibling `hooks/` directory beside the route table — from import.meta.url.
+# Baking an absolute path into an installed file the way Codex's sed
+# substitution does would leave a moved HOME silently pointing the gates at
+# nothing. The opencode host row's command-root cell is therefore
+# documentation only, unread by the renderer.
 
 host  claude  plugin/hooks/hooks.json  "${CLAUDE_PLUGIN_ROOT}"/hooks
 host  codex   codex/hooks/hooks.json   "__OSO_HOOKS_DIR__"
+host  opencode  opencode/hooks/routes.ts  <module-relative>
 
 # Row order is render order, and on Codex render order is TRUST order: `[hooks.state]`
 # keys each trusted hash by position (`<hooks.json>:<event>:<group>:<handler>`), so
@@ -61,29 +92,34 @@ host  codex   codex/hooks/hooks.json   "__OSO_HOOKS_DIR__"
 # Codex-wired handler would either never speak or tell an operator to update an
 # install that came from somewhere else.
 #
-# A PreToolUse gate's script declares its own way out or it does not land here:
-# a `# Recovery:` header line naming the operator's legitimate next step, or
-# explicitly stating there is none — never a cause the operator has to
-# translate into an action themselves, and never the state write that would
-# disarm the gate it belongs to. tools/render-hooks-json.sh's own parser
-# enforces this the same way it already enforces a matcher or a script's
-# existence: closed, before any render, check or classify mode runs. Stop and
-# UserPromptSubmit gates block through a different channel (`stop_block`,
-# `control_block`) this rule does not reach yet.
+# A PreToolUse gate declares its own way out or it does not land here: a
+# `recovery` row below naming the operator's legitimate next step, or explicitly
+# stating there is none — never a cause the operator has to translate into an
+# action themselves, and never the state write that would disarm the gate it
+# belongs to. tools/render-hooks-json.sh's own parser enforces this the same way
+# it already enforces a matcher or a script's existence: closed, before any
+# render, check or classify mode runs. Stop and UserPromptSubmit gates block
+# through a different channel (`stop_block`, `control_block`) this rule does not
+# reach yet.
 
-gate  commit    PreToolUse    block-commit-until-green.sh   wired  wired
-gate  edits     PreToolUse    block-edits-without-slice.sh  wired  wired
-gate  unknown   PreToolUse    block-unknown-tool.sh          none   wired
-gate  handoff   SubagentStop  publish-subagent-handoff.sh    none   wired
-gate  planstop  Stop          capture-plan-approval.sh       none   wired
-gate  autocontinue Stop       auto-continue.sh              wired  none
-gate  planprompt UserPromptSubmit approve-plan-token.sh       none   wired
-gate  statebin  SessionStart  persist-state-bin.sh          wired  none
-gate  stale     SessionStart  warn-stale-state.sh           wired  wired
-gate  version   SessionStart  warn-stale-version.sh         wired  none
-gate  teardown  SessionEnd    cleanup-state.sh              wired  wired
-gate  proddeploy PreToolUse   block-prod-deploy.sh          wired  wired
-gate  reanchor  SessionStart  reanchor-after-compact.sh     wired  none
+gate  commit    PreToolUse    block-commit-until-green.sh   wired  wired  wired  subprocess  subprocess  tool.execute.before
+gate  edits     PreToolUse    block-edits-without-slice.sh  wired  wired  wired  subprocess  subprocess  tool.execute.before
+gate  unknown   PreToolUse    block-unknown-tool.sh          none   wired  wired  none  subprocess  tool.execute.before
+gate  handoff   SubagentStop  publish-subagent-handoff.sh    none   wired  none  none  subprocess  native
+gate  planstop  Stop          capture-plan-approval.sh       none   wired  none  none  subprocess  none
+gate  autocontinue Stop       auto-continue.sh              wired  none  none  subprocess  none  native
+gate  planprompt UserPromptSubmit approve-plan-token.sh       none   wired  none  none  subprocess  none
+gate  statebin  SessionStart  persist-state-bin.sh          wired  none  none  subprocess  none  native
+gate  stale     SessionStart  warn-stale-state.sh           wired  wired  wired  subprocess  subprocess  experimental.chat.system.transform
+gate  version   SessionStart  warn-stale-version.sh         wired  none  none  subprocess  none  none
+gate  teardown  SessionEnd    cleanup-state.sh              wired  wired  wired  subprocess  subprocess  dispose
+gate  proddeploy PreToolUse   block-prod-deploy.sh          wired  wired  wired  subprocess  subprocess  tool.execute.before
+gate  reanchor  SessionStart  reanchor-after-compact.sh     wired  none  wired  subprocess  none  event
+
+recovery  commit      the deny reads the session's own `mode` and names that mode's own path to green — plan's apply → verify loop, or quick/debug's close step — never a menu of every mode's step, and never the state write that would flip the flag itself.
+recovery  edits       the deny names the exact `oso-state` invocation that arms the slice this gate is waiting for — the one thing only this gate knows.
+recovery  unknown     this gate denies for two distinct causes and gives each its own way out — a pending plan names Codex's native approval controls; an unlisted tool names the exact allowlist this release actually admits.
+recovery  proddeploy  take the run back (`oso-state --session <id> set auto=done`) and run the command from your own terminal — this gate arms only while THIS session's unattended run is still in flight.
 
 # Codex routes every file write through apply_patch, so four Claude writers collapse
 # onto one name — the renderer keeps first occurrence and drops the repeat. MultiEdit
@@ -92,87 +128,108 @@ gate  reanchor  SessionStart  reanchor-after-compact.sh     wired  none
 # under development at the declared Codex floor, and the allowlist is named tool
 # by tool rather than by a wildcard for the reason the header gives.
 
-tool  commit  Bash                    Bash                     write  no
-tool  edits   Edit                    apply_patch              write  no
-tool  edits   MultiEdit               none                     write  no
-tool  edits   Write                   apply_patch              write  no
-tool  edits   NotebookEdit            none                     write  no
-tool  edits   mcp__fallow__fix_apply  mcp__fallow__fix_apply    write  no
+tool  commit  Bash                    Bash                    bash  write  no
+tool  edits   Edit                    apply_patch             edit   write  no
+tool  edits   MultiEdit               none                    none   write  no
+tool  edits   Write                   apply_patch             write  write  no
+tool  edits   NotebookEdit            none                    none   write  no
+tool  edits   mcp__fallow__fix_apply  mcp__fallow__fix_apply  fallow_fix_apply  write  no
+# opencode ships its own apply_patch built-in, distinct from the Codex rewrite
+# of Claude's Edit/Write, so it earns its own row behind the same gate.
+tool  edits   none                    none                    apply_patch  write  no
 
-tool  proddeploy  Bash  Bash  write  no
+tool  proddeploy  Bash  Bash  bash  write  no
 
 # SubagentStop matches role names rather than tool names. The built-in explorer
 # is part of the plan's delegated surface map; the other seven are the exact
 # custom roles this harness installs. Claude launches these in the background and
 # its own completion notification carries the report, so no receipt hook is needed
 # there.
-tool  handoff  none  explorer               role  yes
-tool  handoff  none  oso-applier            role  yes
-tool  handoff  none  oso-verifier           role  yes
-tool  handoff  none  oso-integrator         role  yes
-tool  handoff  none  oso-doubt-pass         role  yes
-tool  handoff  none  oso-debt-sweep         role  yes
-tool  handoff  none  oso-triage             role  yes
-tool  handoff  none  oso-security-reviewer  role  yes
+tool  handoff  none  explorer               none  role  yes
+tool  handoff  none  oso-applier            none  role  yes
+tool  handoff  none  oso-verifier           none  role  yes
+tool  handoff  none  oso-integrator         none  role  yes
+tool  handoff  none  oso-doubt-pass         none  role  yes
+tool  handoff  none  oso-debt-sweep         none  role  yes
+tool  handoff  none  oso-triage             none  role  yes
+tool  handoff  none  oso-security-reviewer  none  role  yes
 
 # Exact runtime allowlist consumed by the `unknown` catch-all. Claude has no such
 # gate, so every Claude cell is explicitly `none`. A newly introduced Codex tool
 # fails closed in an armed oso-code repository until it lands here.
-tool  unknown  none  Bash                           write  no
-tool  unknown  none  apply_patch                    write  no
-tool  unknown  none  update_plan                    write  no
-tool  unknown  none  request_user_input             read   no
-tool  unknown  none  Agent                          write  no
-tool  unknown  none  collaborationspawn_agent       write  no
-tool  unknown  none  collaborationsend_message      write  no
-tool  unknown  none  collaborationfollowup_task     write  no
-tool  unknown  none  collaborationwait_agent        read   no
-tool  unknown  none  collaborationinterrupt_agent   write  no
-tool  unknown  none  collaborationlist_agents       read   no
-tool  unknown  none  spawn_agent                    write  no
-tool  unknown  none  send_input                     write  no
-tool  unknown  none  resume_agent                   write  no
-tool  unknown  none  close_agent                    write  no
-tool  unknown  none  send_message                   write  no
-tool  unknown  none  followup_task                  write  no
-tool  unknown  none  wait_agent                     read   no
-tool  unknown  none  interrupt_agent                write  no
-tool  unknown  none  list_agents                    read   no
-tool  unknown  none  wait                           read   no
-tool  unknown  none  create_goal                    write  no
-tool  unknown  none  get_goal                       read   no
-tool  unknown  none  update_goal                    write  no
-tool  unknown  none  view_image                     read   no
-tool  unknown  none  list_mcp_resources             read   no
-tool  unknown  none  list_mcp_resource_templates    read   no
-tool  unknown  none  read_mcp_resource              read   no
+tool  unknown  none  Bash                           bash             write  no
+tool  unknown  none  apply_patch                    apply_patch      write  no
+tool  unknown  none  update_plan                    none             write  no
+tool  unknown  none  request_user_input             none             read   no
+tool  unknown  none  Agent                          task             write  no
+tool  unknown  none  collaborationspawn_agent       none             write  no
+tool  unknown  none  collaborationsend_message      none             write  no
+tool  unknown  none  collaborationfollowup_task     none             write  no
+tool  unknown  none  collaborationwait_agent        none             read   no
+tool  unknown  none  collaborationinterrupt_agent   none             write  no
+tool  unknown  none  collaborationlist_agents       none             read   no
+tool  unknown  none  spawn_agent                    none             write  no
+tool  unknown  none  send_input                     none             write  no
+tool  unknown  none  resume_agent                   none             write  no
+tool  unknown  none  close_agent                    none             write  no
+tool  unknown  none  send_message                   none             write  no
+tool  unknown  none  followup_task                  none             write  no
+tool  unknown  none  wait_agent                     none             read   no
+tool  unknown  none  interrupt_agent                none             write  no
+tool  unknown  none  list_agents                    none             read   no
+tool  unknown  none  wait                           none             read   no
+tool  unknown  none  create_goal                    none             write  no
+tool  unknown  none  get_goal                       none             read   no
+tool  unknown  none  update_goal                    none             write  no
+tool  unknown  none  view_image                     none             read   no
+tool  unknown  none  list_mcp_resources             list_mcp_resources            read   no
+tool  unknown  none  list_mcp_resource_templates    list_mcp_resource_templates   read   no
+tool  unknown  none  read_mcp_resource              read_mcp_resource             read   no
 # Captured verbatim from live operator-visible denials, not derived from a general
 # normalization rule: two samples are not enough to reverse-engineer how Codex
 # 0.146 rewrites a tool name before this gate sees it, so the rewritten spelling
 # earns its own row instead.
-tool  unknown  none  image_gen__imagegen               write  no
-tool  unknown  none  image_genimagegen                 write  no
-tool  unknown  none  web__run                          read   no
-tool  unknown  none  mcp__engram__mem_search           read   yes
-tool  unknown  none  mcp__engram__mem_get_observation  read   yes
-tool  unknown  none  mcp__engram__mem_save             write  yes
-tool  unknown  none  mcp__engram__mem_update           write  no
+tool  unknown  none  image_gen__imagegen               none                write  no
+tool  unknown  none  image_genimagegen                 none                write  no
+tool  unknown  none  web__run                          none                read   no
+tool  unknown  none  mcp__engram__mem_search           engram_mem_search           read   yes
+tool  unknown  none  mcp__engram__mem_get_observation  engram_mem_get_observation  read   yes
+tool  unknown  none  mcp__engram__mem_save             engram_mem_save             write  yes
+tool  unknown  none  mcp__engram__mem_update           engram_mem_update           write  no
 # The Engram Memory Protocol this harness installs and instructs the model to
 # follow needs more than the four tools above: mem_context and mem_current_project
 # open a session, mem_session_summary closes one, mem_save_prompt records intent,
 # and mem_judge is load-bearing — mem_save's own judgment_required=true response
 # mandates it, so without this row that response is an unresolvable deadlock.
-tool  unknown  none  mcp__engram__mem_context           read   yes
-tool  unknown  none  mcp__engram__mem_session_summary   write  yes
-tool  unknown  none  mcp__engram__mem_current_project   read   yes
-tool  unknown  none  mcp__engram__mem_save_prompt       write  yes
-tool  unknown  none  mcp__engram__mem_judge             write  yes
-tool  unknown  none  mcp__context7__resolve-library-id  read   no
-tool  unknown  none  mcp__context7__query-docs          read   no
+tool  unknown  none  mcp__engram__mem_context           engram_mem_context           read   yes
+tool  unknown  none  mcp__engram__mem_session_summary   engram_mem_session_summary   write  yes
+tool  unknown  none  mcp__engram__mem_current_project   engram_mem_current_project   read   yes
+tool  unknown  none  mcp__engram__mem_save_prompt       engram_mem_save_prompt       write  yes
+tool  unknown  none  mcp__engram__mem_judge             engram_mem_judge             write  yes
+tool  unknown  none  mcp__context7__resolve-library-id  context7_resolve-library-id  read   no
+tool  unknown  none  mcp__context7__query-docs          context7_query-docs          read   no
 # Same live-denial provenance as the image_gen row above: Codex turns this hyphen
-# into an underscore before the gate sees the name.
-tool  unknown  none  mcp__context7__resolve_library_id     read   no
-tool  unknown  none  mcp__fallow__find_dupes               read   no
-tool  unknown  none  mcp__fallow__get_cleanup_candidates   read   no
-tool  unknown  none  mcp__fallow__audit                    read   no
-tool  unknown  none  mcp__fallow__fix_apply                write  no
+# into an underscore before the gate sees the name. opencode keeps the hyphen, so
+# the underscore spelling has no counterpart there.
+tool  unknown  none  mcp__context7__resolve_library_id     none                       read   no
+tool  unknown  none  mcp__fallow__find_dupes               fallow_find_dupes          read   no
+tool  unknown  none  mcp__fallow__get_cleanup_candidates   fallow_get_cleanup_candidates  read   no
+tool  unknown  none  mcp__fallow__audit                    fallow_audit               read   no
+tool  unknown  none  mcp__fallow__fix_apply                fallow_fix_apply          write  no
+# opencode built-ins with no Claude or Codex counterpart. Names are the exact tool
+# ids the pinned binary spelled when this table was written (1.18.18), like bash.
+tool  unknown  none  none  edit       write  no
+tool  unknown  none  none  write      write  no
+tool  unknown  none  none  read       read   no
+tool  unknown  none  none  grep       read   no
+tool  unknown  none  none  glob       read   no
+tool  unknown  none  none  skill      read   no
+tool  unknown  none  none  todowrite  write  no
+tool  unknown  none  none  webfetch   read   no
+tool  unknown  none  none  websearch  read   no
+tool  unknown  none  none  question   read   no
+tool  unknown  none  none  lsp        read   no
+tool  unknown  none  none  plan_exit  read   no
+tool  unknown  none  none  oso_plan_approve  read   no
+tool  unknown  none  none  oso_plan_cancel   write  no
+tool  unknown  none  none  oso_wave          write  no

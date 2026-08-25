@@ -4,6 +4,8 @@ The one-step path is real — clone the repo and double-click `bootstrap\install
 
 Everything here is Claude Code. The Codex host has its own prerequisites and its own installer, documented in [the README](../README.md#codex); nothing below applies to it.
 
+**OpenCode on Windows is UNVERIFIED.** Its installer, verifier, restore, repair and purge scripts are bash and Git Bash is the only runtime here that could host them, but no run of any of them has been observed on Windows: there is no `install.bat` counterpart for that host and CI runs its job on ubuntu alone. That is an absent claim, not a declaration that the host does not apply — [the OpenCode install and restore guide](opencode-purge-and-restore.md#platform-coverage) records it and says what would close it.
+
 ## What a clean Windows 10 or 11 machine needs
 
 | Requirement | Who provides it | Why it is on this list |

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Normalize Engram's two Codex root pointers without owning any other TOML.
 
 normalize_engram_codex_pointers() {
   [ "$#" -eq 10 ] || return 64

@@ -1,28 +1,4 @@
 #!/usr/bin/env bash
-# Runtime state for oso-code hooks. Flat key=value lines, one file per
-# REPOSITORY — resolved from the directory this runs in — stored outside any
-# project so repos stay clean. The session is still named: it is what the audit
-# trail records every line under, and what the teardown reads back to find the
-# state a session armed.
-#
-# State-file writes take a portable mkdir-lock and publish with a single atomic
-# mv. Plan artifacts use that same lock and publish each file atomically before
-# publishing state, so a visible pending state never points at a partial file.
-#
-# Usage:
-#   oso-state --session <id> set key=value [key=value ...]
-#   oso-state --session <id> get key
-#   oso-state --session <id> show
-#   oso-state --session <id> clear
-#   oso-state --session <id> event <type> [detail]
-#   oso-state --session <id> capture-plan <sha256>
-#   oso-state --session <id> approve-plan <sha256>
-#   oso-state --session <id> cancel-plan <sha256>
-#   oso-state --session <id> amend-plan <slice-id>
-#   oso-state journal <text>
-#   oso-state handoff publish --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --hook-session <id>
-#   oso-state handoff wait --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --timeout <seconds>
-#   oso-state handoff consume --slice <id> --attempt <n> --agent-id <id> --agent-type <type>
 set -euo pipefail
 
 BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -40,6 +16,7 @@ usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> cancel-plan <sha256>
        oso-state --session <id> amend-plan <slice-id>
        oso-state journal <text>
+       oso-state journal --path
        oso-state handoff publish --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --hook-session <id>
        oso-state handoff wait --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --timeout <seconds>
        oso-state handoff consume --slice <id> --attempt <n> --agent-id <id> --agent-type <type>
@@ -71,7 +48,6 @@ esac
 
 state_file="$(state_file_for "$PWD")"
 lock_dir="${state_file}.lock"
-# A writer killed mid-write leaves its lock forever; reclaim it after this long.
 lock_stale_seconds=30
 
 lock_is_stale() {
@@ -84,7 +60,6 @@ acquire_lock() {
   local tries=0 reclaimed=false
   until mkdir "$lock_dir" 2>/dev/null; do
     if [ "$reclaimed" = false ] && lock_is_stale; then
-      # A SIGKILL'd writer never runs its EXIT trap — reclaim the stale lock once.
       rmdir "$lock_dir" 2>/dev/null || true
       reclaimed=true
       continue
@@ -157,10 +132,6 @@ plan_regular_file() {
     [ "$(find "$1" -prune -type f -perm 0600 -print 2>/dev/null)" = "$1" ]
 }
 
-# A SubagentStop hook, not the delegated agent, publishes this receipt. That is
-# what lets reviewer roles remain read-only while the host still leaves durable
-# completion evidence. The receipt intentionally has no verdict field: the
-# message the orchestrator reads remains authoritative.
 HANDOFF_MAX_TIMEOUT_SECONDS=600
 HANDOFF_TTL_SECONDS=86400
 HANDOFF_LOCK_TIMEOUT_SECONDS=2
@@ -305,10 +276,6 @@ handoff_paths() {
   handoff_snapshot=""
 }
 
-# Sweep every expired lane in this repository before taking the caller's own
-# lock. A foreign lane is touched only while its own lock can be created without
-# waiting; a live or orphaned lock is never reclaimed. Names outside this closed
-# set are ignored, and the file is revalidated after the lock closes the race.
 handoff_global_sweep() {
   local artifact name key sweep_lock age
   for artifact in "${handoff_dir}"/* "${handoff_dir}"/.*; do
@@ -376,9 +343,6 @@ handoff_publish() (
   ( umask 077; mkdir -p "$handoff_dir" )
   chmod 700 "$handoff_dir" 2>/dev/null || handoff_fail "cannot protect receipt directory"
   handoff_global_sweep
-  # Drain stdin: the hook owns and validates the message envelope. json_field's
-  # decoded string is not a byte-stable provenance source, so no digest belongs
-  # in this file rail.
   cat >/dev/null
   handoff_lock_deadline="$(($(date +%s) + HANDOFF_LOCK_TIMEOUT_SECONDS))"
   handoff_lock_acquire
@@ -417,9 +381,6 @@ handoff_publish() (
   } > "$handoff_tmp"
   mv "$handoff_tmp" "$handoff_receipt"
   handoff_tmp=""
-  # Receipt first: a crash may leave completion evidence without its watermark,
-  # which consume repairs. The inverse would reserve an attempt whose receipt
-  # was never published and make the host unable to retry it.
   handoff_write_watermark
 )
 
@@ -493,10 +454,6 @@ case "$action" in
     [ $# -ge 1 ] || usage
     mkdir -p "$OSO_STATE_DIR"
     acquire_lock
-    # The session goes in beside the caller's keys, last so the flag wins: the
-    # file is named after the repository now, and the teardown runs in no
-    # directory that could name one — which session armed the state is the only
-    # way back to the file it left.
     publish_state_pairs "$@"
     log_event "set:$*" "$session_id"
     ;;
@@ -515,15 +472,16 @@ case "$action" in
     ;;
   event)
     [ $# -ge 1 ] && [ $# -le 2 ] || usage
-    # No lock, unlike set and clear: the lock serializes publication of THIS
-    # session's state file, while this appends one line to the event log every
-    # hook already appends to unlocked and no state file is touched at all.
     log_event "$1" "$session_id" "${2:-}"
     ;;
   journal)
     [ $# -eq 1 ] || usage
     [ -n "$1" ] || usage
     journal_file="$(journal_file_for "$PWD")"
+    if [ "$1" = --path ]; then
+      printf '%s\n' "$journal_file"
+      exit 0
+    fi
     (
       umask 077
       mkdir -p "${journal_file%/*}" &&
@@ -572,12 +530,6 @@ case "$action" in
     chmod 600 "$current_tmp"
     mv "$current_tmp" "$plan_current_file"
     rm -f "$incoming_plan"
-    # Codex never exposes its hook session id to the model, so runtime state is
-    # shared by repository and `session` becomes whichever call last wrote it —
-    # ownership, not who is allowed to approve. plan_approval_session is that
-    # approval identity instead: only this action ever writes it, so a later
-    # OSO_AGENT-marked write cannot overwrite the presenting session out from
-    # under a still-pending approval.
     publish_state_pairs \
       mode=plan active_slice=none verify_green=false \
       plan_approval=pending "plan_approval_digest=${approval_digest}" \
@@ -624,11 +576,6 @@ case "$action" in
     plan_regular_file "$plan_current_file" ||
       plan_fail "current plan is missing or unsafe"
     if plan_regular_file "$plan_presented_file"; then
-      # An in-place amendment (amend-plan, pending branch) only ever rewrites
-      # current.md, never the immutable presented snapshot — so this is the one
-      # place a revision the operator has not re-presented becomes visible.
-      # The digest alone cannot catch it: nothing about approving THIS digest
-      # changed, only what current.md now holds under it.
       cmp -s "$plan_current_file" "$plan_presented_file" ||
         plan_fail "the pending plan changed since it was presented; capture it again before approving"
       if [ -e "$plan_approved_file" ]; then
@@ -707,12 +654,6 @@ case "$action" in
       rm -f "$amendment_input"
       plan_fail "amendments require active plan execution state"
     }
-    # Two amendable states, one verb: an approved plan takes an in-scope hot
-    # slice against its immutable approved-<digest>.md, unchanged from before
-    # this branch existed; a still-pending plan takes operator feedback
-    # against its presented-<digest>.md instead — the digest itself never
-    # moves for either, so approve-plan's own content-parity check (never this
-    # verb) is what stops a pending amendment from being approved unread.
     amendment_approval="$(state_value "$state_file" plan_approval)"
     case "$amendment_approval" in
       approved) amendment_heading='Execution amendment' amendment_classification=in-scope ;;

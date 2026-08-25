@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Post-install verification that leaves user configuration and repositories unchanged.
 
 set -o pipefail
 
@@ -12,6 +11,7 @@ GLOBAL_MARKER_END="<!-- oso-code:end -->"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+. "$SCRIPT_DIR/lib/verification-fixtures.sh"
 . "$SCRIPT_DIR/lib/codex-managed-config.sh"
 . "$SCRIPT_DIR/lib/engram-codex-pointers.sh"
 SUPPORTED_CODEX_VERSION="$(sed -n 's/^SUPPORTED_CODEX_VERSION=//p' "$SCRIPT_DIR/install-codex.sh")"
@@ -25,6 +25,7 @@ CONFIG_FILE="$CODEX_HOME/config.toml"
 GLOBAL_FILE="$CODEX_HOME/AGENTS.md"
 HOOKS_FILE="$CODEX_HOME/hooks.json"
 AGENTS_DIR="$CODEX_HOME/agents"
+SMOKE_FIXTURE_PREFIX=oso-codex-smoke
 SMOKE_HANDOFF_SLICE=codex-integrator-smoke
 SMOKE_HANDOFF_ATTEMPT=1
 SMOKE_INTEGRATOR_AGENT_TYPE=oso-integrator
@@ -43,17 +44,6 @@ check() {
   fi
 }
 
-fold_lines() {
-  tr '\n' ' ' | sed 's/[[:space:]][[:space:]]*/ /g; s/[[:space:]]*$//'
-}
-
-# Escapes $1 for use as a `sed` BRE PATTERN (not replacement text -- the `\`,
-# `&`, `|` escaping elsewhere in this file protects the replacement side and
-# the `|` delimiter, never the pattern's own metacharacters). Unescaped, a
-# path containing `.` (every real RUNTIME_ROOT does, via `.local`) matches any
-# single character there, so a path that differs from RUNTIME_ROOT by exactly
-# that one byte still normalizes to the same placeholder and the same hash --
-# a verified read of bytes the manifest never actually carried.
 escape_sed_pattern() {
   local value=$1
   value="${value//\\/\\\\}"
@@ -117,23 +107,11 @@ codex_binary_path() {
   printf '%s' "$resolved"
 }
 
-# Every other check here asserts the harness against its own prose; this one
-# reads the installed binary's own rejection/acceptance text, because an audit
-# once found six sites instructing a spelling the host had already refused
-# and nothing in the repo could have caught it without this. The
-# `default_permissions` override is a second contract checked the same way, so
-# the shape — resolve the binary, gate on the version window, grep both literals —
-# is parameterized here rather than carried twice: which two literals prove
-# the contract is the only thing that differs between callers.
 binary_contract_status() {
   local literal_a="$1" literal_b="$2" resolved installed_version
   resolved="$(codex_binary_path)" || { printf 'codex-not-on-path'; return; }
   installed_version="$(codex_version_status)"
   if [ "$installed_version" != "$SUPPORTED_CODEX_VERSION" ]; then
-    # Every literal pair passed in here was read out of codex-cli 0.146.0; a
-    # different version may have moved or reworded them, so a mismatch outside
-    # that window is unconfirmed, not broken, and grepping would misreport one
-    # as the other.
     printf 'unverified:%s' "$installed_version"
     return
   fi
@@ -151,11 +129,6 @@ host_contract_status() {
     'fork_turns must be `none`, `all`, or a positive integer string'
 }
 
-# `-P`/`--permission-profile` exists only on `codex sandbox`, a one-shot
-# command runner never used to launch a real session; `codex` and `codex exec`
-# carry no dedicated profile flag, so the durable per-invocation selector the
-# installed profile relies on is `-c default_permissions=<name>`, the generic
-# override the binary itself resolves and validates.
 permission_override_contract_status() {
   binary_contract_status \
     'default_permissions refers to undefined profile `' \
@@ -172,14 +145,6 @@ plugin_install_status() {
     printf '%s' "$(printf '%s' "$listing" | fold_lines)"
     return
   fi
-  # A substring test over the whole dumped entry (the prior shape) accepts
-  # `not-oso-code` (contains "oso-code"), a plugin sourced from a path like
-  # `/tmp/oso-code-backup` (same reason), or a disabled plugin whose other
-  # fields merely mention the name. Each field the CLI actually reports is
-  # checked exactly instead: identity (pluginId), version (against this
-  # checkout's own plugin.json, never a second hardcoded copy of it),
-  # marketplace, installed/enabled state, and the exact local source path
-  # this install renders.
   candidate_source_paths="$(printf '%s' "$listing" | python3 -c '
 import json, sys
 
@@ -226,6 +191,7 @@ installed_trust_status() {
   while IFS='  ' read -r expected relative; do
     case "$expected" in ''|'#'*) continue ;; esac
     relative="${relative# }"
+    case "$relative" in opencode/*) continue ;; esac
     case "$relative" in
       codex/hooks/hooks.json)
         installed="$HOOKS_FILE"
@@ -366,34 +332,11 @@ engram_status() {
   rm -f "$normalized"
 }
 
-# The hand-maintained allowlist in tools/hook-gates.txt drifts from
-# what a wired MCP server actually exposes -- mem_judge's absence (5905a27)
-# was exactly this, undetected until a live operator denial found it. CI has
-# none of these servers installed (4620b8e), so this check is LOCAL: it
-# spawns each server this Codex install actually wires and compares its own
-# live `tools/list` answer against the table, following the same raw
-# JSON-RPC-over-stdio method 5905a27 used by hand against the Engram binary.
 MCP_DRIFT_BOUND_SECONDS="${OSO_MCP_DRIFT_BOUND_SECONDS:-10}"
 
-# `codex login status` is a local status read with no network call of its
-# own; 20s matches the same "is this reachable at all" bound the pin recipe
-# in plugin/skills/_shared/front-surface.md uses for its own npx probe.
-# `codex exec` here is a real end-to-end delegation -- spawn, wait, consume --
-# so it gets a generous ceiling rather than a fast-probe one.
 CODEX_LOGIN_STATUS_BOUND_SECONDS="${OSO_CODEX_LOGIN_STATUS_BOUND_SECONDS:-20}"
 CODEX_EXEC_SMOKE_BOUND_SECONDS="${OSO_CODEX_EXEC_SMOKE_BOUND_SECONDS:-180}"
 
-# Bounds a Codex CLI call that carries no timeout flag of its own -- the same
-# in-shell technique as the pin recipe in plugin/skills/_shared/front-surface.md
-# and this file's own MCP drift probe below (mcp_server_tool_names): no GNU
-# timeout(1) on macOS, so job control plus a poll loop is what reaches the
-# command's process group instead of orphaning it.
-#
-# $1 = bound in seconds, $2 = the operation's name for a firing bound's
-# report, remaining = the command. Prints the command's combined stdout and
-# stderr on a normal exit; a fired bound prints a SLOW report naming the
-# operation instead and returns 124 -- timeout(1)'s own reserved exit code,
-# so callers can tell a hang from the command's own failure.
 bounded_command_output() {
   local bound_seconds=$1 label=$2 out pid waited=0 rc
   shift 2
@@ -422,8 +365,6 @@ bounded_command_output() {
   return "$rc"
 }
 
-# Every `[mcp_servers.<name>]` table in config.toml names a server this
-# install wires, quoted or bare key alike.
 mcp_server_names() {
   awk '
     /^\[mcp_servers\.[^]]+\]/ {
@@ -436,11 +377,6 @@ mcp_server_names() {
   ' "$CONFIG_FILE" 2>/dev/null
 }
 
-# $1 = server name. Prints "command\nargs..." (one token per line) for a
-# spawnable `[mcp_servers.<name>]` table, or nothing when the table has no
-# local `command` -- context7's entry is a remote `url`, and drift for a
-# Streamable HTTP server would need an HTTP client this check does not carry;
-# that is named at the call site rather than guessed at here.
 mcp_server_command() {
   local server="$1"
   awk -v target="[mcp_servers.$server]" '
@@ -464,14 +400,6 @@ mcp_server_command() {
   ' "$CONFIG_FILE" 2>/dev/null
 }
 
-# The tool names the Engram Memory Protocol instructs the model to call
-# unconditionally: its own "CORE TOOLS (always available)" list, plus
-# mem_judge -- conditionally mandated the moment mem_save answers
-# judgment_required=true (5905a27). Independent of tools/hook-gates.txt on
-# purpose: the drift this exists to catch is a mandated tool with NO row yet,
-# so reading "mandated" off the table itself could never see that case. No
-# other wired server ships a protocol this harness installs and instructs the
-# model to follow, so every other server's set is empty here.
 server_mandated_tools() {
   case "$1" in
     engram)
@@ -481,13 +409,6 @@ server_mandated_tools() {
   esac
 }
 
-# $1 = command, remaining = args. Prints one bare tool name per line read from
-# a live `tools/list` call, bounded so a server that never answers ends this
-# with nothing rather than hanging the check -- the in-shell bounded-subshell
-# idiom plugin/skills/_shared/front-surface.md's pinned-detect gate uses, for
-# the same reason: no GNU timeout(1) on macOS's bash 3.2. The server outlives
-# its own answer (stdio MCP servers hold the connection open), so the bound
-# is what ends it either way, not its own exit.
 mcp_server_tool_names() {
   local command="$1" out line pid waited
   shift
@@ -521,9 +442,6 @@ mcp_server_tool_names() {
   rm -f "$out"
 }
 
-# The table rows currently naming server-prefixed tools for $1, deduplicated
-# -- a tool wired to both `edits` and `unknown` (mcp__fallow__fix_apply) names
-# two rows for one live tool and must only be compared once.
 table_codex_tools_for_server() {
   awk -v want="mcp__$1__" '
     $1 == "tool" && index($4, want) == 1 { print $4 }
@@ -540,20 +458,8 @@ table_codex_tool_is_mandated() {
     "$REPO_ROOT/tools/hook-gates.txt"
 }
 
-# Every MCP server this harness ever wires (bootstrap/install.sh's engram
-# plugin mount, migrate_context7, wire_fallow) -- fixed independently of any
-# one machine's config.toml, so the agreement check below runs with no
-# config and no server at all.
 KNOWN_MCP_SERVERS="engram context7 fallow"
 
-# The other half of that drift check: independent of any live server or
-# config.toml, the hardcoded mandated set above must agree with
-# tools/hook-gates.txt's own mandated column, in both directions -- a table
-# row marked yes with no hardcoded counterpart would silently stop being
-# enforced, and a hardcoded name with no yes row is dead data nothing
-# actually gates on. Neither direction needs a server or a config, so this is
-# exactly the part CI's fixture HOME (no MCP servers installed at all) can
-# run; everything above needs a live server CI does not have.
 table_mandated_agreement_status() {
   local server name row bare mismatch=""
   for server in $KNOWN_MCP_SERVERS; do
@@ -583,8 +489,6 @@ EOF
   printf '%s' "${mismatch:-agree}"
 }
 
-# Names the exact row to add, not just that something drifted. $2 is the
-# newline-separated live tool list already read from the server.
 mcp_missing_mandated_tools() {
   local server="$1" exposed="$2" name row missing=""
   while IFS= read -r name; do
@@ -598,8 +502,6 @@ EOF
   printf '%s' "${missing:-none}"
 }
 
-# The mirror case: a row whose exact spelling the live server no longer
-# exposes -- stale, and how a mangled spelling would otherwise stand forever.
 mcp_stale_table_rows() {
   local server="$1" exposed="$2" row bare stale=""
   while IFS= read -r row; do
@@ -672,16 +574,6 @@ git_hook_status() {
   fi
 }
 
-remove_temporary_fixture() {
-  local fixture_root=$1 fixture_parent=$2
-  [ -n "$fixture_root" ] && [ "$fixture_root" != / ] || return 1
-  [ "$(dirname "$fixture_root")" = "$fixture_parent" ] || return 1
-  case "$(basename "$fixture_root")" in
-    oso-codex-smoke.*|oso-state-probe.*|oso-plan-probe.*|oso-git-hook-probe.*) rm -rf "$fixture_root" ;;
-    *) return 1 ;;
-  esac
-}
-
 codex_config_runtime_status() {
   local output expected
   expected="1
@@ -696,10 +588,10 @@ $RUNTIME_ROOT/bin/oso-state"
 }
 
 state_round_trip_status() {
-  local probe_parent probe_root probe_repo probe_value
+  local probe_prefix=oso-state-probe probe_parent probe_root probe_repo probe_value
   probe_parent="$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)"
   [ -n "$probe_parent" ] || { printf temporary-parent-unavailable; return; }
-  if ! probe_root="$(mktemp -d "$probe_parent/oso-state-probe.XXXXXX" 2>&1)"; then
+  if ! probe_root="$(mktemp -d "$probe_parent/$probe_prefix.XXXXXX" 2>&1)"; then
     printf '%s' "$(printf '%s' "$probe_root" | fold_lines)"
     return
   fi
@@ -716,17 +608,17 @@ state_round_trip_status() {
     )" ||
       probe_value="round-trip-failed:${probe_value:-empty}"
   fi
-  remove_temporary_fixture "$probe_root" "$probe_parent" ||
+  remove_temporary_fixture "$probe_root" "$probe_parent" "$probe_prefix" ||
     probe_value="${probe_value:-empty}:cleanup-failed"
   printf '%s' "$probe_value"
 }
 
 plan_artifact_round_trip_status() {
-  local probe_parent probe_root probe_repo probe_value="" digest
+  local probe_prefix=oso-plan-probe probe_parent probe_root probe_repo probe_value="" digest
   local state_output snapshot current
   probe_parent="$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)"
   [ -n "$probe_parent" ] || { printf temporary-parent-unavailable; return; }
-  if ! probe_root="$(mktemp -d "$probe_parent/oso-plan-probe.XXXXXX" 2>&1)"; then
+  if ! probe_root="$(mktemp -d "$probe_parent/$probe_prefix.XXXXXX" 2>&1)"; then
     printf '%s' "$(printf '%s' "$probe_root" | fold_lines)"
     return
   fi
@@ -760,16 +652,16 @@ plan_artifact_round_trip_status() {
       probe_value=artifact-contract-mismatch
     fi
   fi
-  remove_temporary_fixture "$probe_root" "$probe_parent" ||
+  remove_temporary_fixture "$probe_root" "$probe_parent" "$probe_prefix" ||
     probe_value="${probe_value:-empty}:cleanup-failed"
   printf '%s' "$probe_value"
 }
 
 commit_hook_red_status() {
-  local probe_parent probe_root probe_repo base_commit denied_output result
+  local probe_prefix=oso-git-hook-probe probe_parent probe_root probe_repo base_commit denied_output result
   probe_parent="$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)"
   [ -n "$probe_parent" ] || { printf temporary-parent-unavailable; return; }
-  if ! probe_root="$(mktemp -d "$probe_parent/oso-git-hook-probe.XXXXXX" 2>&1)"; then
+  if ! probe_root="$(mktemp -d "$probe_parent/$probe_prefix.XXXXXX" 2>&1)"; then
     printf '%s' "$(printf '%s' "$probe_root" | fold_lines)"
     return
   fi
@@ -801,21 +693,10 @@ commit_hook_red_status() {
       fi
     fi
   fi
-  remove_temporary_fixture "$probe_root" "$probe_parent" || result="$result:cleanup-failed"
+  remove_temporary_fixture "$probe_root" "$probe_parent" "$probe_prefix" || result="$result:cleanup-failed"
   printf '%s' "$result"
 }
 
-# Part 2: presence of the right tokens in a stream is falsifiable -- a shell
-# comment can carry them with nothing behind it, and the parent can merge
-# inline and still produce the git effects this smoke checks separately. What
-# Codex 0.146's own event stream can actually correlate is one host-assigned
-# agent id across three independent, host-mediated facts: a completed
-# spawn_agent collab tool call named that id, a completed `oso-state handoff
-# wait` reporting a matching receipt, and a completed `oso-state handoff
-# consume` reporting the same receipt (oso-state prints it on both verbs --
-# plugin/bin/oso-state). The stream carries no field naming which *role* a
-# spawned id was given, so this proves delegation happened for that id, not
-# that the child ran as oso-integrator specifically.
 integrator_handoff_consumed() {
   command -v python3 >/dev/null 2>&1 || return 1
   printf '%s\n' "$SMOKE_OUTPUT" | python3 -c '
@@ -835,10 +716,6 @@ def completed_successfully(item):
 def candidate_command_tokens(command):
     if not isinstance(command, str):
         return
-    # comments=True matches real bash: a bare `#` starts a live comment, so
-    # nothing after it ran. The old parser fell back to a naive whitespace
-    # split when shlex found no tokens, which let a comment carrying the
-    # exact oso-state tokens satisfy it with no command behind it at all.
     try:
         outer_tokens = shlex.split(command, comments=True)
     except ValueError:
@@ -858,9 +735,6 @@ def candidate_command_tokens(command):
                 yield tokens[index:]
 
 def handoff_command_agent_id(command):
-    # (verb, agent_id) for a real `oso-state handoff wait|consume` whose
-    # options match the expected identity for this launch, else (None, None).
-    # `wait` always carries --timeout; its value is not part of the identity.
     for tokens in candidate_command_tokens(command):
         if len(tokens) < 3 or tokens[0].split("/")[-1] != "oso-state" or tokens[1] != "handoff":
             continue
@@ -950,27 +824,6 @@ raise SystemExit(0 if correlated else 1)
 ' "$SMOKE_HANDOFF_SLICE" "$SMOKE_HANDOFF_ATTEMPT" "$SMOKE_INTEGRATOR_AGENT_TYPE" >/dev/null 2>&1
 }
 
-# A disposable repository does not make the Codex identity running against it
-# disposable too. Pointing the smoke's own `codex exec` at the operator's real
-# CODEX_HOME, as this fixture originally did, meant every write that launch
-# provoked -- project-trust registration included -- landed in `config.toml`
-# permanently, with no reliable path back out (nine orphan tables were the
-# measured proof). Isolating CODEX_HOME instead means the only file that
-# absorbs those writes lives under $SMOKE_ROOT and is removed by the same trap
-# as the rest of this fixture; the real config.toml is never opened for writing
-# by the smoke at all.
-#
-# The credentials contradiction this creates is resolved by copying, never
-# symlinking, the operator's auth.json into the disposable home: a symlink
-# would let the child's own token refresh mutate the real file in place,
-# which is the opposite of isolation. The copy's mode matches its source
-# (600) and its lifetime is bounded to $SMOKE_ROOT -- torn down by
-# cleanup_smoke_on_exit's trap on normal exit, and lost only the way every
-# other fixture file already is if that trap never runs (a killed process).
-# The role definitions and hooks.json are copied rather than re-rendered so
-# the smoke exercises what is actually installed, not a second template of
-# it; --dangerously-bypass-hook-trust lets those copied hooks run without
-# reproducing this machine's separate `[hooks.state]` trust records.
 populate_smoke_codex_home() {
   SMOKE_CODEX_HOME="$SMOKE_ROOT/codex-home"
   mkdir -p "$SMOKE_CODEX_HOME" && chmod 700 "$SMOKE_CODEX_HOME" || {
@@ -1007,7 +860,7 @@ populate_smoke_codex_home() {
 create_integrator_fixture() {
   SMOKE_PARENT="$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)"
   [ -n "$SMOKE_PARENT" ] || { SMOKE_SETUP_RESULT=temporary-parent-unavailable; return 1; }
-  if ! SMOKE_ROOT="$(mktemp -d "$SMOKE_PARENT/oso-codex-smoke.XXXXXX" 2>&1)"; then
+  if ! SMOKE_ROOT="$(mktemp -d "$SMOKE_PARENT/$SMOKE_FIXTURE_PREFIX.XXXXXX" 2>&1)"; then
     SMOKE_SETUP_RESULT="$(printf '%s' "$SMOKE_ROOT" | fold_lines)"
     return 1
   fi
@@ -1044,18 +897,12 @@ create_integrator_fixture() {
 
 cleanup_smoke_on_exit() {
   [ -n "${SMOKE_ROOT:-}" ] || return 0
-  remove_temporary_fixture "$SMOKE_ROOT" "$SMOKE_PARENT"
+  remove_temporary_fixture "$SMOKE_ROOT" "$SMOKE_PARENT" "$SMOKE_FIXTURE_PREFIX"
 }
 
 run_integrator_fixture() {
   local smoke_worktrees
 
-  # A live parent --sandbox overrides the custom agent's default.
-  # Match the integrator's declared authority so the smoke exercises it rather
-  # than forcing the delegated role back behind workspace-write's .git guard.
-  # CODEX_HOME points at the disposable copy populate_smoke_codex_home built;
-  # --dangerously-bypass-hook-trust runs its copied hooks.json without
-  # that directory's own separate `[hooks.state]` trust records.
   SMOKE_OUTPUT="$(CODEX_HOME="$SMOKE_CODEX_HOME" \
     bounded_command_output "$CODEX_EXEC_SMOKE_BOUND_SECONDS" "codex exec smoke" \
     codex exec --ephemeral --json --sandbox danger-full-access --color never \
@@ -1071,10 +918,6 @@ run_integrator_fixture() {
     ! printf '%s\n' "$smoke_worktrees" | grep -F "$SMOKE_WORKTREE" >/dev/null 2>&1
 }
 
-# Both binary_contract_status callers report through the same four-arm shape
-# (skip on an absent CLI, `unverified` outside the read window, pass, fail) —
-# only the label the operator reads and the exact check name differ, so this
-# is where the report is written once rather than eye-verified as two copies.
 report_binary_contract_status() {
   local short_label="$1" full_check_name="$2" result="$3"
   case "$result" in
@@ -1089,9 +932,6 @@ report_binary_contract_status() {
       check "$full_check_name" conformant conformant
       ;;
     *)
-      # Fails the report so drift is visible, but never blocks bootstrap/install-codex.sh:
-      # an operator already past SUPPORTED_CODEX_VERSION must still be able to
-      # install — only this diagnostic misses, never the install path itself.
       check "$full_check_name" conformant "$result"
       ;;
   esac

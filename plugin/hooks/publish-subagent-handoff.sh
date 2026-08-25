@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# SubagentStop publishes completion evidence outside the child sandbox. The
-# semantic report stays in last_assistant_message; this hook writes only the
-# receipt that proves Codex stopped the expected agent for this exact attempt.
 set -euo pipefail
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,10 +20,6 @@ payload="$(cat)"
 message="$(json_field "$payload" last_assistant_message)"
 marker_count="$(printf '%s\n' "$message" | grep -c '^oso-handoff:' || true)"
 
-# This user-level hook also sees matching roles launched outside oso-code. No
-# marker means no harness launch, so stay byte-for-byte silent and create no
-# event or state. The bounded caller-side wait is what reports a missing marker
-# on a launch that really did belong to the harness.
 [ "$marker_count" -gt 0 ] || finish_hook
 
 session_id="$(hook_session "$payload")"

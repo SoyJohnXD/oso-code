@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# SessionStart: if this repository's own runtime state names another session
-# (crashed or resumed work), tell the model so an in-flight /plan change gets
-# re-armed, or an in-flight /roadmap chain resumed, instead of silently running
-# with every gate off.
 set -euo pipefail
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,17 +8,13 @@ payload="$(cat)"
 session_id="$(hook_session "$payload")"
 [ -d "$OSO_STATE_DIR" ] || exit 0
 
-# Every gate this session meets resolves state_file_for(cwd) — never the whole
-# state directory — so a repository other than this one arms nothing here, and
-# naming it would hand the operator a file no remedy run from this cwd could
-# ever reach. The one file worth a warning is this repository's own, and
-# the session recorded inside it is the key: a file this session armed is one
-# it is resuming, not one it has to be told about.
 state_file="$(state_file_for "$(json_field "$payload" cwd)")"
 [ -e "$state_file" ] || exit 0
 [ "$(state_value "$state_file" session)" != "$session_id" ] || exit 0
 
-if [ -n "${OSO_AGENT:-}" ]; then
+if [ "${OSO_HOST:-}" = opencode ]; then
+  skill_prefix='/oso-'
+elif [ -n "${OSO_AGENT:-}" ]; then
   skill_prefix='$oso-code:'
 else
   skill_prefix='/oso-code:'
