@@ -22,7 +22,7 @@ PRODUCTION_BOUNDARY_DENY_MARKER='a production deploy stays with the operator'
 HOST_PLUGIN_LOAD_ERROR='failed to load plugin'
 PLAN_APPROVAL_TOOL_ID=oso_plan_approve
 PLAN_APPROVAL_DOCUMENT='# Repaso de cambios -- one slice, verified by the behavior bar.'
-EXPECTED_CHECK_COUNT=10
+EXPECTED_CHECK_COUNT=11
 KEEP_FIXTURE_HINT='re-run with OSO_KEEP_FIXTURE=1 to keep the session streams, the install log and the deploy-CLI marker for inspection'
 
 pass=0
@@ -157,13 +157,18 @@ choose_session_model() {
   [ -n "$SESSION_MODEL" ]
 }
 
-run_probe_session() {
-  local label=$1 command=$2
+run_session_with_prompt() {
+  local label=$1 prompt=$2
   run_within_bound "$SESSION_BOUND_SECONDS" \
     run_in_installed_fixture "$OPENCODE_BIN" \
-    run --dir "$PROBE_REPO" -m "$SESSION_MODEL" --format json \
-    "Use the bash tool to run exactly this command: $command    Then reply with status: done" \
+    run --dir "$PROBE_REPO" -m "$SESSION_MODEL" --format json "$prompt" \
     > "$OPENCODE_FIXTURE_ROOT/$label.json" 2> "$OPENCODE_FIXTURE_ROOT/$label.err"
+}
+
+run_probe_session() {
+  local label=$1 command=$2
+  run_session_with_prompt "$label" \
+    "Use the bash tool to run exactly this command: $command    Then reply with status: done"
 }
 
 gated_call_report() {
@@ -357,11 +362,8 @@ approved_plan_artifacts() {
 
 run_approval_session() {
   local label=$1
-  run_within_bound "$SESSION_BOUND_SECONDS" \
-    run_in_installed_fixture "$OPENCODE_BIN" \
-    run --dir "$PROBE_REPO" -m "$SESSION_MODEL" --format json \
-    "Call the $PLAN_APPROVAL_TOOL_ID tool exactly once with plan set to: $PLAN_APPROVAL_DOCUMENT    Then reply with status: done" \
-    > "$OPENCODE_FIXTURE_ROOT/$label.json" 2> "$OPENCODE_FIXTURE_ROOT/$label.err"
+  run_session_with_prompt "$label" \
+    "Call the $PLAN_APPROVAL_TOOL_ID tool exactly once with plan set to: $PLAN_APPROVAL_DOCUMENT    Then reply with status: done"
 }
 
 check_the_approval_binds_to_the_operators_grant() {
@@ -375,6 +377,94 @@ check_the_approval_binds_to_the_operators_grant() {
   check "the host asks the operator to authorize $PLAN_APPROVAL_TOOL_ID in a real session" \
     asked "$(approval_prompt_outcome approval)"
   check "a refused authorization leaves no approved plan behind" none "$(approved_plan_artifacts)"
+  return 0
+}
+
+run_same_turn_delivery_session() {
+  local label=$1
+  run_session_with_prompt "$label" \
+    "Reply in ONE turn with two things in this order. First write exactly this line as plain text: milestone: the delivery probe is under way    Then, in that same turn, use the bash tool to run exactly this command: echo the delivery probe reached the shell    Then reply with status: done"
+}
+
+same_turn_delivery_order() {
+  python3 - "$OPENCODE_FIXTURE_ROOT/$1.json" <<'PY'
+import json
+import sys
+
+
+def delivery_order(stream_path):
+    parts = list(stream_parts(stream_path))
+    if not parts:
+        return "no-session"
+    tool_parts = parts_of_type(parts, "tool")
+    if not tool_parts:
+        return "no-tool-call"
+    text_starts = earliest_start_per_message(parts_of_type(parts, "text"))
+    if any_text_started_first(tool_parts, text_starts):
+        return "text-then-tool"
+    return "tool-first"
+
+
+def stream_parts(stream_path):
+    with open(stream_path, encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            yield event.get("part") or {}
+
+
+def parts_of_type(parts, part_type):
+    return [part for part in parts if part.get("type") == part_type]
+
+
+def earliest_start_per_message(parts):
+    earliest = {}
+    for part in parts:
+        started = emission_start(part)
+        if started is None:
+            continue
+        message = part.get("messageID")
+        earliest[message] = min(started, earliest.get(message, started))
+    return earliest
+
+
+def any_text_started_first(tool_parts, text_starts):
+    for tool in tool_parts:
+        tool_started = emission_start(tool)
+        text_started = text_starts.get(tool.get("messageID"))
+        if tool_started is None or text_started is None:
+            continue
+        if text_started < tool_started:
+            return True
+    return False
+
+
+def emission_start(part):
+    timing = part.get("time") or (part.get("state") or {}).get("time") or {}
+    return timing.get("start")
+
+
+print(delivery_order(sys.argv[1]))
+PY
+}
+
+check_text_before_a_same_turn_tool_call_survives() {
+  local session_exit order
+  run_same_turn_delivery_session delivery
+  session_exit=$?
+  order="$(same_turn_delivery_order delivery)"
+  case "$order" in
+    no-session|no-tool-call)
+      record_not_run "the same-turn delivery session drove no tool call after its text with $SESSION_MODEL (exit $session_exit, $order)"
+      return 1 ;;
+  esac
+  check "text emitted before a same-turn tool call survives the host transcript" \
+    text-then-tool "$order"
   return 0
 }
 
@@ -486,7 +576,8 @@ behavior_bar_battery() {
   fi
   if check_the_gate_refuses_a_real_tool_call &&
      check_the_production_boundary_refuses_a_real_deploy &&
-     check_the_approval_binds_to_the_operators_grant; then
+     check_the_approval_binds_to_the_operators_grant &&
+     check_text_before_a_same_turn_tool_call_survives; then
     check_a_plugin_that_registers_nothing_is_caught
   fi
   behavior_bar_teardown_fixture
