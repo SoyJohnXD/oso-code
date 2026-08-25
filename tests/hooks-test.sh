@@ -9139,18 +9139,18 @@ fi
 assert_equals "the Windows guide names the fallow package at the pin install.sh provisions" \
   "${install_fallow_pin:-unreadable}" "$guide_fallow_pin"
 
-CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
-ci_pinned_check_names() {
+NIGHTLY_YML="$REPO_ROOT/.github/workflows/nightly.yml"
+nightly_pinned_check_names() {
   awk -v header="  $1: |" '
     $0 == header { inside = 1; next }
     inside && sub(/^    /, "") { print; next }
     inside { exit }
-  ' "$CI_YML"
+  ' "$NIGHTLY_YML"
 }
 
-ci_windows_only_check_names() {
+nightly_windows_only_check_names() {
   case "$(uname -s 2>/dev/null || true)" in
-    MINGW*|MSYS*|CYGWIN*) ci_pinned_check_names VERIFY_CHECK_NAMES_WINDOWS ;;
+    MINGW*|MSYS*|CYGWIN*) nightly_pinned_check_names VERIFY_CHECK_NAMES_WINDOWS ;;
   esac
 }
 
@@ -9163,9 +9163,9 @@ mkdir -p "$CI_VERIFY_HOME"
 ci_verify_report="$(cat "$CI_VERIFY_REPORT")"
 
 if [ "$(report_line_kind "$ci_verify_report" 'git commit hook executable')" = absent ]; then
-  ci_expected_check_names="$( { ci_pinned_check_names VERIFY_CHECK_NAMES
-    ci_windows_only_check_names; } | LC_ALL=C sort)"
-  assert_equals "ci.yml pins the exact set of checks verify.sh reaches against a fixture HOME" \
+  ci_expected_check_names="$( { nightly_pinned_check_names VERIFY_CHECK_NAMES
+    nightly_windows_only_check_names; } | LC_ALL=C sort)"
+  assert_equals "nightly.yml pins the exact set of checks verify.sh reaches against a fixture HOME" \
     "$ci_expected_check_names" \
     "$(bash "$REPO_ROOT/tools/verify-check-names.sh" "$CI_VERIFY_REPORT")"
 else
