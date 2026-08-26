@@ -7,13 +7,28 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Install workspace dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck the core workspace
+        run: npm run typecheck
+      - name: Core unit tests
+        run: npm test
+      - name: Build the oso-state bundle and confirm the committed bundle matches a fresh build
+        run: |
+          npm run build
+          npm run check
       - name: Shell script syntax
+        shell: bash
         run: |
           bash -n bootstrap/*.sh
           bash -n bootstrap/lib/*.sh
@@ -22,17 +37,23 @@ jobs:
           bash -n plugin/bin/oso-state plugin/git-hooks/pre-commit
           bash -n tests/*.sh tests/fixtures/*.sh
       - name: Plugin linter
+        shell: bash
         run: bash tests/plugin-lint.sh
       - name: OpenCode unit suite
+        shell: bash
         run: |
           cd opencode
-          npm ci --no-audit --no-fund
           npm test
-      - name: Hook regression suite
+      - name: Hook regression suite (ubuntu only — Windows needs the jq provisioning nightly.yml does)
+        if: runner.os == 'Linux'
+        shell: bash
         run: tests/hooks-test.sh
-      - name: Install Claude Code CLI
+      - name: Install Claude Code CLI (ubuntu only — feeds the two validate steps below)
+        if: runner.os == 'Linux'
         run: npm install -g @anthropic-ai/claude-code
-      - name: Validate plugin manifest
+      - name: Validate plugin manifest (ubuntu only)
+        if: runner.os == 'Linux'
         run: claude plugin validate --strict plugin
-      - name: Validate marketplace manifest
+      - name: Validate marketplace manifest (ubuntu only)
+        if: runner.os == 'Linux'
         run: claude plugin validate --strict .

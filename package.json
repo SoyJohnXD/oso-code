@@ -1,0 +1,16 @@
+{
+  "private": true,
+  "workspaces": ["core", "opencode"],
+  "engines": { "node": ">=22" },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "esbuild": "0.28.2",
+    "@types/node": "26.3.0"
+  },
+  "scripts": {
+    "build": "node core/scripts/build-oso-state.mjs",
+    "test": "npm run test --workspace=core",
+    "typecheck": "tsc -p tsconfig.json",
+    "check": "node core/scripts/build-oso-state.mjs --check"
+  }
+}

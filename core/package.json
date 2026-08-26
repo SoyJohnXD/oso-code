@@ -1,0 +1,9 @@
+{
+  "name": "@oso-code/core",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --experimental-strip-types --test"
+  }
+}
