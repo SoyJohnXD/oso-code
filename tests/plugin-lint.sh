@@ -295,6 +295,10 @@ check_shell_sources_carry_no_comment_below_their_contract_header() {
   done <<< "$(comment_sites_below_a_contract_header)"
 }
 
+repo_root_is_a_git_work_tree() {
+  git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1
+}
+
 directories_the_repository_ignores() {
   local line
   [ -r "$REPO_ROOT/.gitignore" ] || return 0
@@ -305,20 +309,52 @@ directories_the_repository_ignores() {
   done < "$REPO_ROOT/.gitignore"
 }
 
-files_naming_this_machines_home() {
+files_under_repo_root_a_root_gitignore_prune_reaches() {
   local -a prune_expression=(-name .git)
-  local ignored candidate candidates
+  local ignored
   while IFS= read -r ignored; do
     [ -n "$ignored" ] || continue
     prune_expression+=(-o -name "$ignored")
   done <<< "$(directories_the_repository_ignores)"
-  if ! candidates="$(find "$REPO_ROOT" -type d \( "${prune_expression[@]}" \) -prune -o -type f -print)"; then
+  find "$REPO_ROOT" -type d \( "${prune_expression[@]}" \) -prune -o -type f -print
+}
+
+files_under_repo_root_git_does_not_ignore() {
+  local candidates ignored status
+  if ! candidates="$(find "$REPO_ROOT" -type d -name .git -prune -o -type f -print)"; then
     return 1
   fi
+  [ -n "$candidates" ] || return 0
+  ignored="$(git -C "$REPO_ROOT" check-ignore --stdin <<< "$candidates" 2>/dev/null)" && status=0 || status=$?
+  if [ "$status" -eq 0 ]; then
+    grep -vxFf <(printf '%s\n' "$ignored") <<< "$candidates" || true
+    return 0
+  fi
+  if [ "$status" -ne 1 ]; then
+    return 1
+  fi
+  printf '%s\n' "$candidates"
+}
+
+candidates_naming_this_machines_home() {
+  local candidates="$1" candidate
   while IFS= read -r candidate; do
     [ -n "$candidate" ] || continue
     grep -lF -- "$HOME" "$candidate" || true
   done <<< "$candidates"
+}
+
+files_naming_this_machines_home() {
+  local candidates
+  if repo_root_is_a_git_work_tree; then
+    if ! candidates="$(files_under_repo_root_git_does_not_ignore)"; then
+      return 1
+    fi
+  elif ! candidates="$(files_under_repo_root_a_root_gitignore_prune_reaches)"; then
+    return 1
+  fi
+  [ -n "$candidates" ] || return 1
+  candidates_naming_this_machines_home "$candidates"
 }
 
 check_no_shipped_file_carries_the_home_path_of_whoever_runs_this() {
@@ -329,7 +365,7 @@ check_no_shipped_file_carries_the_home_path_of_whoever_runs_this() {
       return 0 ;;
   esac
   if ! carriers="$(files_naming_this_machines_home)"; then
-    flag "the scan for files naming this machine's home directory could not walk $REPO_ROOT, so this rule reports none having searched nothing"
+    flag "the scan for files naming this machine's home directory read nothing under $REPO_ROOT, so this rule reports none having searched nothing"
     return 0
   fi
   while IFS= read -r carrier; do
@@ -350,6 +386,15 @@ dot_directories_at_the_repository_root() {
   done
 }
 
+directory_is_ignored() {
+  local directory="$1" name="${1##*/}"
+  if repo_root_is_a_git_work_tree; then
+    git -C "$REPO_ROOT" check-ignore -q -- "$directory" 2>/dev/null
+  else
+    printf '%s\n' "$(directories_the_repository_ignores)" | grep -qxF "$name"
+  fi
+}
+
 check_every_dot_directory_is_repo_owned_or_ignored() {
   local directory name
   while IFS= read -r directory; do
@@ -358,7 +403,7 @@ check_every_dot_directory_is_repo_owned_or_ignored() {
     case "$REPO_OWNED_DOT_DIRECTORIES" in
       *" $name "*) continue ;;
     esac
-    if ! printf '%s\n' "$(directories_the_repository_ignores)" | grep -qxF "$name"; then
+    if ! directory_is_ignored "$directory"; then
       flag "$name/ is neither one of this repository's own directories nor a line in .gitignore, so whatever the tool that wrote it leaves there is one commit away from being published"
     fi
   done <<< "$(dot_directories_at_the_repository_root)"

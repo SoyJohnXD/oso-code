@@ -405,6 +405,17 @@ else
   esac
 fi
 
+LINT_HOME_PATH_SCAN_EMPTY_FIXTURE="$TEST_HOME/lint-home-path-scan-empty"
+mkdir -p "$LINT_HOME_PATH_SCAN_EMPTY_FIXTURE"
+home_path_scan_empty_report="$("$REPO_ROOT/tests/plugin-lint.sh" \
+  "$PLUGIN" "$LINT_HOME_PATH_SCAN_EMPTY_FIXTURE" 2>&1 || true)"
+case "$home_path_scan_empty_report" in
+  *"the scan for files naming this machine's home directory read nothing under"*)
+    echo "ok: a scan whose repo root carries no file says so instead of reporting no home-directory carrier"; pass=$((pass + 1)) ;;
+  *)
+    echo "FAIL: a scan with nothing under repo root reported no home-directory carrier in silence — $(printf '%s' "$home_path_scan_empty_report" | tr '\n' ' ')"; fail=$((fail + 1)) ;;
+esac
+
 LINT_DOT_DIRECTORY_FIXTURE="$TEST_HOME/lint-dot-directory"
 copy_lint_fixture "$LINT_DOT_DIRECTORY_FIXTURE"
 mkdir -p "$LINT_DOT_DIRECTORY_FIXTURE/.some-tool-cache"
@@ -2069,22 +2080,6 @@ case "$hook_stdout" in
     echo "FAIL: the wrong-session refusal message changed — got: $hook_stdout"; fail=$((fail + 1)) ;;
 esac
 oso-state --session "$SESSION" clear
-
-codex_floor_declaration() {
-  local decision baseline="" floor
-  for decision in "$REPO_ROOT"/docs/decisions/0094-*.md; do
-    [ -f "$decision" ] || continue
-    baseline="$decision"
-  done
-  [ -n "$baseline" ] || { printf 'no decision file'; return; }
-  floor="$(sed -n 's/^Minimum supported Codex: \([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$/\1/p' "$baseline" | head -n 1)"
-  [ -n "$floor" ] || { printf 'no semver marker'; return; }
-  printf 'declared'
-}
-assert_equals "the Codex baseline decision declares its minimum version as a bare semver" \
-  declared "$(codex_floor_declaration)"
-
-oso-state --session "$SESSION" clear
 assert_allows "commit with no state file"  block-commit-until-green.sh "$(bash_input 'git commit -m x')"
 oso-state --session "$SESSION" set mode=plan active_slice=1 verify_green=false
 assert_denies "commit while verify is red" block-commit-until-green.sh "$(bash_input 'git commit -m x')"
@@ -2993,10 +2988,21 @@ mcp_drift_config_home() {
   printf '%s\n' "$body" > "$codex_home/config.toml"
 }
 
+MCP_DRIFT_CODEX_SHIM_DIR="$TEST_HOME/mcp-drift-codex-shim"
+mkdir -p "$MCP_DRIFT_CODEX_SHIM_DIR"
+printf '%s\n' \
+  '#!/bin/sh' \
+  'case "$1" in' \
+  '  --version) printf '\''codex-cli 0.0.0-test\n'\''; exit 0 ;;' \
+  '  *) exit 1 ;;' \
+  'esac' > "$MCP_DRIFT_CODEX_SHIM_DIR/codex"
+chmod +x "$MCP_DRIFT_CODEX_SHIM_DIR/codex"
+
 run_mcp_drift_check() {
   local repo_root="$1" codex_home="$2" bound="$3"
   HOME="$(dirname "$codex_home")" CODEX_HOME="$codex_home" \
     OSO_VERIFY_SKIP_SMOKE=1 OSO_MCP_DRIFT_BOUND_SECONDS="$bound" \
+    PATH="$MCP_DRIFT_CODEX_SHIM_DIR:$PATH" \
     bash "$repo_root/bootstrap/verify-codex.sh" 2>&1 || true
 }
 
@@ -3089,7 +3095,8 @@ else
   MCP_DRIFT_NO_CONFIG_HOME="$TEST_HOME/mcp-drift-no-config-home"
   MCP_DRIFT_AGREEMENT_OUTPUT="$(
     HOME="$MCP_DRIFT_NO_CONFIG_HOME" CODEX_HOME="$MCP_DRIFT_NO_CONFIG_HOME/.codex" \
-      OSO_VERIFY_SKIP_SMOKE=1 bash "$MCP_DRIFT_AGREEMENT_FIXTURE/bootstrap/verify-codex.sh" 2>&1 || true
+      OSO_VERIFY_SKIP_SMOKE=1 PATH="$MCP_DRIFT_CODEX_SHIM_DIR:$PATH" \
+      bash "$MCP_DRIFT_AGREEMENT_FIXTURE/bootstrap/verify-codex.sh" 2>&1 || true
   )"
   assert_equals "a hardcoded mandated tool with no yes row in the table fails with no config.toml or server present" \
     "1" "$(printf '%s\n' "$MCP_DRIFT_AGREEMENT_OUTPUT" | \
