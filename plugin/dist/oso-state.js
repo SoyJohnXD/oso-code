@@ -1,11 +1,18 @@
 // core/src/state/cli.ts
-import { mkdirSync as mkdirSync2 } from "node:fs";
+import { mkdirSync as mkdirSync4, readFileSync as readFileSync4 } from "node:fs";
+
+// core/src/state/handoff.ts
+import { chmodSync, existsSync, mkdirSync as mkdirSync2, readFileSync as readFileSync2, readdirSync, rmSync as rmSync2 } from "node:fs";
+import path2 from "node:path";
 
 // core/src/state/store.ts
 import { execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import {
+  accessSync,
   appendFileSync,
+  constants,
+  lstatSync,
   mkdirSync,
   readFileSync,
   renameSync,
@@ -39,26 +46,36 @@ var StateFileUnreadableError = class extends Error {
   }
 };
 var CHANGE_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
+var NAME_TOKEN_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
+var NAME_TOKEN_MAX_LENGTH = 128;
 var LOCK_STALE_SECONDS = 30;
 var LOCK_MAX_TRIES = 200;
 var LOCK_RETRY_MS = 50;
 var EVENTS_SCHEMA_VERSION = 2;
 var COMMAND_HEAD_BYTES = 120;
+function sha256Hex(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
 function stateRootDirectory() {
   return path.join(homeDirectory(), ".local", "state", "oso-code");
 }
 function stateFileFor(cwd) {
   const directory = cwd.replace(/\r$/, "");
   const identity = gitCommonDirectory(directory) || directory;
-  const digest = createHash("sha256").update(identity).digest("hex");
-  return path.join(stateRootDirectory(), `${digest}.state`);
+  return path.join(stateRootDirectory(), `${sha256Hex(identity)}.state`);
+}
+function repositoryIdFor(stateFile) {
+  return path.basename(stateFile, ".state");
 }
 function journalFileFor(cwd) {
   const stateFile = stateFileFor(cwd);
-  const repositoryId = path.basename(stateFile, ".state");
+  const repositoryId = repositoryIdFor(stateFile);
   const autoChange = readValue(stateFile, "auto_change") ?? "";
   const change = CHANGE_SLUG_PATTERN.test(autoChange) ? autoChange : "run";
   return path.join(stateRootDirectory(), "runs", repositoryId, `${change}.log`);
+}
+function isNameToken(value) {
+  return value.length >= 1 && value.length <= NAME_TOKEN_MAX_LENGTH && NAME_TOKEN_PATTERN.test(value);
 }
 function readValue(stateFile, key) {
   const content = readFileIfPresent(stateFile);
@@ -94,6 +111,51 @@ function writeStatePairs(stateFile, pairs, sessionId) {
 }
 function clearStateFile(stateFile) {
   rmSync(stateFile, { force: true });
+}
+function isSymlink(target) {
+  const stats = lstatOrUndefined(target);
+  return stats !== void 0 && stats.isSymbolicLink();
+}
+function isDirectory(target) {
+  const stats = statOrUndefined(target);
+  return stats !== void 0 && stats.isDirectory();
+}
+function isRegularNonSymlinkFile(target) {
+  const stats = lstatOrUndefined(target);
+  return stats !== void 0 && stats.isFile();
+}
+function isReadableRegularFile(target) {
+  if (!isRegularNonSymlinkFile(target)) return false;
+  try {
+    accessSync(target, constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function isPrivateRegularFile(target) {
+  if (!isReadableRegularFile(target)) return false;
+  return (statSync(target).mode & 511) === 384;
+}
+function secondsSinceModified(target) {
+  const stats = statOrUndefined(target);
+  if (stats === void 0) return void 0;
+  return (Date.now() - stats.mtimeMs) / 1e3;
+}
+function writeFileAtomically(directory, finalPath, content, tempPrefix) {
+  mkdirSync(directory, { recursive: true });
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const candidate = path.join(directory, `${tempPrefix}${randomBytes(3).toString("hex")}`);
+    try {
+      writeFileSync(candidate, content, { flag: "wx", mode: 384 });
+    } catch (error) {
+      if (isErrnoException(error) && error.code === "EEXIST") continue;
+      throw error;
+    }
+    renameSync(candidate, finalPath);
+    return;
+  }
+  throw new Error(`could not create a temp file under ${directory}`);
 }
 function withLock(stateFile, sessionId, run) {
   const release = acquireLock(stateFile, sessionId);
@@ -222,6 +284,20 @@ function withOwnerOnlyUmask(run) {
 function isoTimestamp() {
   return (/* @__PURE__ */ new Date()).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
+function lstatOrUndefined(target) {
+  try {
+    return lstatSync(target);
+  } catch {
+    return void 0;
+  }
+}
+function statOrUndefined(target) {
+  try {
+    return statSync(target);
+  } catch {
+    return void 0;
+  }
+}
 function serializeEvent(entry) {
   const client = path.basename(process.env["CLAUDE_CODE_EXECPATH"] ?? "");
   const fields = [
@@ -280,6 +356,531 @@ function isErrnoException(error) {
   return error instanceof Error && "code" in error;
 }
 
+// core/src/state/handoff.ts
+var HandoffFailure = class extends Error {
+};
+var MAX_TIMEOUT_SECONDS = 600;
+var TTL_SECONDS = 86400;
+var LOCK_TIMEOUT_SECONDS = 2;
+var POLL_INTERVAL_MS = 50;
+var OPAQUE_ID_PATTERN = /^[a-zA-Z0-9._:/-]+$/;
+var OPAQUE_ID_MAX_LENGTH = 256;
+var ATTEMPT_PATTERN = /^[1-9][0-9]{0,8}$/;
+var ATTEMPT_VALUE_PATTERN = /^attempt=[1-9][0-9]{0,8}$/;
+var TIMEOUT_PATTERN = /^(0|[1-9][0-9]{0,2})$/;
+var RECEIPT_ARTIFACT_PATTERN = /^([0-9a-f]{64})\.(receipt|consumed|watermark)$/;
+var TEMP_ARTIFACT_PATTERN = /^\.([0-9a-f]{64})\.(receipt|consuming|watermark)\.[a-zA-Z0-9]{6}$/;
+var RECEIPT_KEYS = ["version", "hook_session", "slice", "attempt", "agent_id", "agent_type"];
+var WATERMARK_KEYS = ["version", "attempt"];
+function runHandoffPublish(cwd, coordinates, hookSession) {
+  validateCoordinates(coordinates);
+  if (!isValidOpaqueId(hookSession)) throw new HandoffFailure("invalid hook session id");
+  const paths = handoffPaths(cwd, coordinates.agentId);
+  mkdirSync2(paths.directory, { recursive: true, mode: 448 });
+  protectDirectory(paths.directory);
+  globalSweep(paths.directory);
+  acquireHandoffLock(paths, nowEpochSeconds() + LOCK_TIMEOUT_SECONDS);
+  try {
+    pruneLocked(paths);
+    const newest = newestRecordedAttempt(paths);
+    const attempt = Number(coordinates.attempt);
+    if (attempt < newest) {
+      throw new HandoffFailure(`stale publish for slice ${coordinates.slice}: attempt ${attempt}, newest ${newest}`);
+    }
+    if (attempt === newest) {
+      if (existsSync(paths.receipt) && receiptMatches(paths.receipt, coordinates) && recordsInclude(paths.receipt, `hook_session=${hookSession}`)) {
+        return;
+      }
+      throw new HandoffFailure(`attempt ${attempt} for slice ${coordinates.slice} was already published or consumed`);
+    }
+    const content = receiptContent(hookSession, coordinates);
+    writeFileAtomically(paths.directory, paths.receipt, content, `.${paths.agentKey}.receipt.`);
+    writeWatermark(paths, coordinates.attempt);
+  } finally {
+    releaseHandoffLock(paths);
+  }
+}
+function runHandoffWait(cwd, coordinates, timeoutText) {
+  validateCoordinates(coordinates);
+  if (!isValidTimeoutText(timeoutText)) {
+    throw new HandoffFailure(`timeout must be an integer from 0 to ${MAX_TIMEOUT_SECONDS}`);
+  }
+  const paths = handoffPaths(cwd, coordinates.agentId);
+  mkdirSync2(paths.directory, { recursive: true, mode: 448 });
+  globalSweep(paths.directory);
+  const deadline = nowEpochSeconds() + Number(timeoutText);
+  for (; ; ) {
+    const lockDeadline = Math.min(nowEpochSeconds() + LOCK_TIMEOUT_SECONDS, deadline);
+    acquireHandoffLock(paths, lockDeadline);
+    let receiptText;
+    try {
+      pruneLocked(paths);
+      receiptText = matchingReceiptOrStop(paths, coordinates);
+    } finally {
+      releaseHandoffLock(paths);
+    }
+    if (receiptText !== void 0) return receiptText;
+    if (nowEpochSeconds() >= deadline) {
+      throw new HandoffFailure(
+        `timed out waiting for slice ${coordinates.slice} attempt ${coordinates.attempt} after ${timeoutText}s`
+      );
+    }
+    sleepSync(POLL_INTERVAL_MS);
+  }
+}
+function runHandoffConsume(cwd, coordinates) {
+  validateCoordinates(coordinates);
+  const paths = handoffPaths(cwd, coordinates.agentId);
+  if (!isDirectory(paths.directory)) {
+    throw new HandoffFailure(`no receipt for slice ${coordinates.slice} attempt ${coordinates.attempt}`);
+  }
+  globalSweep(paths.directory);
+  acquireHandoffLock(paths, nowEpochSeconds() + LOCK_TIMEOUT_SECONDS);
+  try {
+    pruneLocked(paths);
+    if (!existsSync(paths.receipt)) {
+      throw new HandoffFailure(`no unconsumed receipt for slice ${coordinates.slice} attempt ${coordinates.attempt}`);
+    }
+    requireMatchingReceipt(paths.receipt, coordinates, "receipt identity does not match the delegated result");
+    const content = readFileSync2(paths.receipt, "utf8");
+    writeWatermark(paths, coordinates.attempt);
+    rmSync2(paths.receipt, { force: true });
+    return content;
+  } finally {
+    releaseHandoffLock(paths);
+  }
+}
+function matchingReceiptOrStop(paths, coordinates) {
+  if (existsSync(paths.receipt)) {
+    requireMatchingReceipt(paths.receipt, coordinates, "receipt identity does not match the awaited delegation");
+    return readFileSync2(paths.receipt, "utf8");
+  }
+  if (existsSync(paths.watermark)) {
+    if (!watermarkIsValid(paths.watermark)) throw new HandoffFailure(`malformed watermark at ${paths.watermark}`);
+    if (attemptOf(paths.watermark) >= Number(coordinates.attempt)) {
+      throw new HandoffFailure(
+        `receipt for slice ${coordinates.slice} attempt ${coordinates.attempt} was already consumed or superseded`
+      );
+    }
+  }
+  return void 0;
+}
+function requireMatchingReceipt(receiptPath, coordinates, identityMessage) {
+  if (!receiptIsValid(receiptPath)) throw new HandoffFailure(`malformed receipt at ${receiptPath}`);
+  const actualAttempt = attemptOf(receiptPath);
+  if (String(actualAttempt) !== coordinates.attempt) {
+    throw new HandoffFailure(
+      `stale or superseding receipt for slice ${coordinates.slice}: expected attempt ${coordinates.attempt}, found ${actualAttempt}`
+    );
+  }
+  if (!receiptMatches(receiptPath, coordinates)) throw new HandoffFailure(identityMessage);
+}
+function validateCoordinates(coordinates) {
+  if (!isNameToken(coordinates.slice)) throw new HandoffFailure("invalid slice id");
+  if (!ATTEMPT_PATTERN.test(coordinates.attempt)) {
+    throw new HandoffFailure("attempt must be an integer from 1 to 999999999");
+  }
+  if (!isValidOpaqueId(coordinates.agentId)) throw new HandoffFailure("invalid agent id");
+  if (!isNameToken(coordinates.agentType)) throw new HandoffFailure("invalid agent type");
+}
+function isValidOpaqueId(value) {
+  return value.length >= 1 && value.length <= OPAQUE_ID_MAX_LENGTH && OPAQUE_ID_PATTERN.test(value);
+}
+function isValidTimeoutText(value) {
+  return TIMEOUT_PATTERN.test(value) && Number(value) <= MAX_TIMEOUT_SECONDS;
+}
+function handoffPaths(cwd, agentId) {
+  const stateFile = stateFileFor(cwd);
+  const agentKey = sha256Hex(agentId);
+  const directory = path2.join(stateRootDirectory(), ".handoffs", repositoryIdFor(stateFile));
+  return {
+    directory,
+    agentId,
+    agentKey,
+    receipt: path2.join(directory, `${agentKey}.receipt`),
+    watermark: path2.join(directory, `${agentKey}.watermark`),
+    lockDir: path2.join(directory, `${agentKey}.lock`)
+  };
+}
+function protectDirectory(directory) {
+  try {
+    chmodSync(directory, 448);
+  } catch {
+    throw new HandoffFailure("cannot protect receipt directory");
+  }
+}
+function nowEpochSeconds() {
+  return Math.floor(Date.now() / 1e3);
+}
+function acquireHandoffLock(paths, deadline) {
+  for (; ; ) {
+    try {
+      mkdirSync2(paths.lockDir);
+      return;
+    } catch (error) {
+      if (!isErrnoException(error) || error.code !== "EEXIST") throw error;
+    }
+    if (nowEpochSeconds() >= deadline) {
+      throw new HandoffFailure(`could not acquire receipt lock for agent ${paths.agentId} before the bound`);
+    }
+    sleepSync(POLL_INTERVAL_MS);
+  }
+}
+function releaseHandoffLock(paths) {
+  rmSync2(paths.lockDir, { recursive: true, force: true });
+}
+function globalSweep(directory) {
+  for (const name of directoryEntries(directory)) {
+    const key = sweepableArtifactKey(name);
+    if (key === void 0) continue;
+    sweepArtifact(path2.join(directory, name), path2.join(directory, `${key}.lock`));
+  }
+}
+function sweepableArtifactKey(name) {
+  return name.match(RECEIPT_ARTIFACT_PATTERN)?.[1] ?? name.match(TEMP_ARTIFACT_PATTERN)?.[1];
+}
+function sweepArtifact(artifactPath, sweepLockDir) {
+  if (!tryAcquireBareLock(sweepLockDir)) return;
+  try {
+    if (!isRegularNonSymlinkFile(artifactPath)) return;
+    const age = secondsSinceModified(artifactPath);
+    if (age === void 0 || age < TTL_SECONDS) return;
+    rmSync2(artifactPath, { force: true });
+  } finally {
+    rmSync2(sweepLockDir, { recursive: true, force: true });
+  }
+}
+function tryAcquireBareLock(lockDir) {
+  try {
+    mkdirSync2(lockDir);
+    return true;
+  } catch (error) {
+    if (isErrnoException(error) && error.code === "EEXIST") return false;
+    throw error;
+  }
+}
+function pruneLocked(paths) {
+  for (const artifact of [paths.receipt, paths.watermark, ...matchingTempArtifacts(paths)]) {
+    if (!existsSync(artifact)) continue;
+    if (!isRegularNonSymlinkFile(artifact)) {
+      throw new HandoffFailure(`handoff artifact is not a regular file at ${artifact}`);
+    }
+    const age = secondsSinceModified(artifact);
+    if (age === void 0) throw new HandoffFailure(`cannot determine receipt age at ${artifact}`);
+    if (age >= TTL_SECONDS) rmSync2(artifact, { force: true });
+  }
+}
+function matchingTempArtifacts(paths) {
+  const prefixes = [`.${paths.agentKey}.receipt.`, `.${paths.agentKey}.consuming.`, `.${paths.agentKey}.watermark.`];
+  return directoryEntries(paths.directory).filter((name) => prefixes.some((prefix) => name.startsWith(prefix))).map((name) => path2.join(paths.directory, name));
+}
+function directoryEntries(directory) {
+  try {
+    return readdirSync(directory);
+  } catch {
+    return [];
+  }
+}
+function newestRecordedAttempt(paths) {
+  let newest = 0;
+  if (existsSync(paths.receipt)) {
+    if (!receiptIsValid(paths.receipt)) throw new HandoffFailure(`malformed receipt at ${paths.receipt}`);
+    newest = Math.max(newest, attemptOf(paths.receipt));
+  }
+  if (existsSync(paths.watermark)) {
+    if (!watermarkIsValid(paths.watermark)) throw new HandoffFailure(`malformed watermark at ${paths.watermark}`);
+    newest = Math.max(newest, attemptOf(paths.watermark));
+  }
+  return newest;
+}
+function writeWatermark(paths, attempt) {
+  if (existsSync(paths.watermark)) {
+    if (!watermarkIsValid(paths.watermark)) throw new HandoffFailure(`malformed watermark at ${paths.watermark}`);
+    const recorded = attemptOf(paths.watermark);
+    const attemptNumber = Number(attempt);
+    if (recorded > attemptNumber) {
+      throw new HandoffFailure(`watermark attempt ${recorded} supersedes receipt attempt ${attemptNumber}`);
+    }
+    if (recorded === attemptNumber) return;
+  }
+  writeFileAtomically(
+    paths.directory,
+    paths.watermark,
+    `version=1
+attempt=${attempt}
+`,
+    `.${paths.agentKey}.watermark.`
+  );
+}
+function receiptContent(hookSession, coordinates) {
+  return `version=1
+hook_session=${hookSession}
+slice=${coordinates.slice}
+attempt=${coordinates.attempt}
+agent_id=${coordinates.agentId}
+agent_type=${coordinates.agentType}
+`;
+}
+function receiptIsValid(receiptPath) {
+  const content = readPrivateFileContent(receiptPath);
+  if (content === void 0 || !isWellFormedRecordFile(content, 6, RECEIPT_KEYS)) return false;
+  return recordsOf(content).some((record) => ATTEMPT_VALUE_PATTERN.test(record));
+}
+function watermarkIsValid(watermarkPath) {
+  const content = readPrivateFileContent(watermarkPath);
+  if (content === void 0 || !isWellFormedRecordFile(content, 2, WATERMARK_KEYS)) return false;
+  return recordsOf(content).some((record) => ATTEMPT_VALUE_PATTERN.test(record));
+}
+function receiptMatches(receiptPath, coordinates) {
+  return receiptIsValid(receiptPath) && recordsInclude(receiptPath, `slice=${coordinates.slice}`) && recordsInclude(receiptPath, `attempt=${coordinates.attempt}`) && recordsInclude(receiptPath, `agent_id=${coordinates.agentId}`) && recordsInclude(receiptPath, `agent_type=${coordinates.agentType}`);
+}
+function attemptOf(filePath) {
+  return Number(readValue(filePath, "attempt"));
+}
+function recordsInclude(filePath, record) {
+  return recordsOf(readPrivateFileContent(filePath) ?? "").includes(record);
+}
+function isWellFormedRecordFile(content, expectedNewlines, keys) {
+  if (newlineCount(content) !== expectedNewlines) return false;
+  const records = recordsOf(content);
+  if (records.some((record) => !keys.some((key) => record.startsWith(`${key}=`)))) return false;
+  if (records.filter((record) => record === "version=1").length !== 1) return false;
+  return keys.filter((key) => key !== "version").every((key) => records.filter((record) => record.startsWith(`${key}=`)).length === 1);
+}
+function newlineCount(content) {
+  return (content.match(/\n/g) ?? []).length;
+}
+function recordsOf(content) {
+  if (content === "") return [];
+  const lines = content.split("\n");
+  if (lines[lines.length - 1] === "") lines.pop();
+  return lines;
+}
+function readPrivateFileContent(target) {
+  if (!isReadableRegularFile(target)) return void 0;
+  return readFileSync2(target, "utf8");
+}
+
+// core/src/state/plan.ts
+import { chmodSync as chmodSync2, existsSync as existsSync2, mkdirSync as mkdirSync3, readFileSync as readFileSync3, renameSync as renameSync2, rmSync as rmSync3 } from "node:fs";
+import path3 from "node:path";
+var PlanFailure = class extends Error {
+};
+var PlanApprovalError = class extends Error {
+};
+var PLAN_DIGEST_PATTERN = /^[0-9a-f]{64}$/;
+function isValidPlanDigest(value) {
+  return PLAN_DIGEST_PATTERN.test(value);
+}
+function planPaths(stateFile, digest) {
+  const root = path3.join(stateRootDirectory(), "plans");
+  const dir = path3.join(root, repositoryIdFor(stateFile));
+  return {
+    root,
+    dir,
+    presentedFile: path3.join(dir, `presented-${digest}.md`),
+    approvedFile: path3.join(dir, `approved-${digest}.md`),
+    currentFile: path3.join(dir, "current.md")
+  };
+}
+function ensurePlanDirectory(paths) {
+  requireNonSymlinkDirectory(stateRootDirectory(), "state root");
+  requireNonSymlinkDirectory(paths.root, "plan root");
+  requireNonSymlinkDirectory(paths.dir, "repository plan directory", "repository plan path");
+  chmodSync2(paths.root, 448);
+  chmodSync2(paths.dir, 448);
+}
+function requireNonSymlinkDirectory(target, symlinkLabel, directoryLabel = symlinkLabel) {
+  if (isSymlink(target)) throw new PlanFailure(`${symlinkLabel} is a symlink: ${target}`);
+  mkdirSync3(target, { recursive: true, mode: 448 });
+  if (!isDirectory(target)) throw new PlanFailure(`${directoryLabel} is not a directory: ${target}`);
+}
+function runCapturePlan(cwd, sessionId, digest, document) {
+  if (!isValidPlanDigest(digest)) throw new PlanFailure("capture-plan requires one lowercase SHA-256 digest");
+  const stateFile = stateFileFor(cwd);
+  const paths = planPaths(stateFile, digest);
+  ensurePlanDirectory(paths);
+  if (document.length === 0) throw new PlanFailure("capture-plan requires a non-empty plan document on stdin");
+  return withLock(stateFile, sessionId, () => {
+    if (existsSync2(paths.presentedFile)) {
+      if (!isPrivateRegularFile(paths.presentedFile)) {
+        throw new PlanFailure("presented snapshot is not a private regular file");
+      }
+      if (readFileSync3(paths.presentedFile, "utf8") !== document) {
+        throw new PlanFailure("presented snapshot content disagrees with its approval digest");
+      }
+    } else {
+      writeFileAtomically(paths.dir, paths.presentedFile, document, ".snapshot.");
+    }
+    if (existsSync2(paths.currentFile) && !isPrivateRegularFile(paths.currentFile)) {
+      throw new PlanFailure("current plan is not a private regular file");
+    }
+    writeFileAtomically(paths.dir, paths.currentFile, document, ".current.");
+    writeStatePairs(
+      stateFile,
+      [
+        "mode=plan",
+        "active_slice=none",
+        "verify_green=false",
+        "plan_approval=pending",
+        `plan_approval_digest=${digest}`,
+        `plan_approval_session=${sessionId}`,
+        `plan_snapshot_file=${paths.presentedFile}`,
+        `plan_current_file=${paths.currentFile}`,
+        "plan_revision=0"
+      ],
+      sessionId
+    );
+    logEvent({ event: "plan-artifact-captured", session: sessionId, command: digest });
+    return 0;
+  });
+}
+function runApprovePlan(cwd, sessionId, digest) {
+  if (!isValidPlanDigest(digest)) {
+    throw new PlanApprovalError("approve-plan requires one lowercase SHA-256 digest");
+  }
+  const stateFile = stateFileFor(cwd);
+  mkdirSync3(stateRootDirectory(), { recursive: true });
+  return withLock(stateFile, sessionId, () => {
+    if (!isReadableRegularFile(stateFile)) {
+      throw new PlanApprovalError(`no readable pending plan approval for session ${sessionId}`);
+    }
+    if (readValue(stateFile, "plan_approval_session") !== sessionId) {
+      throw new PlanApprovalError("pending plan approval belongs to another session");
+    }
+    if (readValue(stateFile, "mode") !== "plan") {
+      throw new PlanApprovalError("pending approval is not attached to plan mode state");
+    }
+    if (readValue(stateFile, "plan_approval") !== "pending") {
+      throw new PlanApprovalError("plan approval is not pending");
+    }
+    if (readValue(stateFile, "plan_approval_digest") !== digest) {
+      throw new PlanApprovalError("pending plan digest changed before approval");
+    }
+    const paths = planPaths(stateFile, digest);
+    ensurePlanDirectory(paths);
+    if (readValue(stateFile, "plan_snapshot_file") !== paths.presentedFile) {
+      throw new PlanFailure("pending state does not name the expected presented snapshot");
+    }
+    if (readValue(stateFile, "plan_current_file") !== paths.currentFile) {
+      throw new PlanFailure("pending state does not name the expected current plan");
+    }
+    if (!isPrivateRegularFile(paths.currentFile)) {
+      throw new PlanFailure("current plan is missing or unsafe");
+    }
+    if (isPrivateRegularFile(paths.presentedFile)) {
+      if (readFileSync3(paths.currentFile, "utf8") !== readFileSync3(paths.presentedFile, "utf8")) {
+        throw new PlanFailure("the pending plan changed since it was presented; capture it again before approving");
+      }
+      if (existsSync2(paths.approvedFile)) {
+        if (!isPrivateRegularFile(paths.approvedFile)) {
+          throw new PlanFailure("approved snapshot is not a private regular file");
+        }
+        if (readFileSync3(paths.presentedFile, "utf8") !== readFileSync3(paths.approvedFile, "utf8")) {
+          throw new PlanFailure("approved snapshot content disagrees with the pending document");
+        }
+        rmSync3(paths.presentedFile, { force: true });
+      } else {
+        renameSync2(paths.presentedFile, paths.approvedFile);
+      }
+    } else if (!isPrivateRegularFile(paths.approvedFile)) {
+      throw new PlanFailure("presented plan snapshot is missing");
+    }
+    writeStatePairs(stateFile, ["plan_approval=approved", `plan_snapshot_file=${paths.approvedFile}`], sessionId);
+    logEvent({ event: "plan-approval-approved", session: sessionId });
+    return 0;
+  });
+}
+function runCancelPlan(cwd, sessionId, digest) {
+  if (!isValidPlanDigest(digest)) {
+    throw new PlanApprovalError("cancel-plan requires one lowercase SHA-256 digest");
+  }
+  const stateFile = stateFileFor(cwd);
+  mkdirSync3(stateRootDirectory(), { recursive: true });
+  return withLock(stateFile, sessionId, () => {
+    if (!isReadableRegularFile(stateFile)) {
+      throw new PlanApprovalError(`no readable pending plan approval for session ${sessionId}`);
+    }
+    if (readValue(stateFile, "plan_approval_session") !== sessionId) {
+      throw new PlanApprovalError("pending plan approval belongs to another session");
+    }
+    if (readValue(stateFile, "plan_approval") !== "pending") {
+      throw new PlanApprovalError("plan approval is not pending");
+    }
+    if (readValue(stateFile, "plan_approval_digest") !== digest) {
+      throw new PlanApprovalError("pending plan digest changed before cancellation");
+    }
+    const paths = planPaths(stateFile, digest);
+    if (readValue(stateFile, "plan_snapshot_file") === paths.presentedFile) {
+      rmSync3(paths.presentedFile, { force: true });
+    }
+    if (readValue(stateFile, "plan_current_file") === paths.currentFile) {
+      rmSync3(paths.currentFile, { force: true });
+    }
+    clearStateFile(stateFile);
+    logEvent({ event: "plan-approval-cancelled", session: sessionId });
+    return 0;
+  });
+}
+function runAmendPlan(cwd, sessionId, sliceId, document) {
+  if (!isNameToken(sliceId)) throw new PlanFailure("amend-plan requires a safe slice id");
+  const stateFile = stateFileFor(cwd);
+  mkdirSync3(stateRootDirectory(), { recursive: true });
+  if (document.length === 0) throw new PlanFailure("amend-plan requires a non-empty document on stdin");
+  return withLock(stateFile, sessionId, () => {
+    if (!isReadableRegularFile(stateFile)) {
+      throw new PlanFailure(`no readable plan for session ${sessionId}`);
+    }
+    if (readValue(stateFile, "plan_approval_session") !== sessionId) {
+      throw new PlanFailure("the plan belongs to another session");
+    }
+    if (readValue(stateFile, "mode") !== "plan") {
+      throw new PlanFailure("amendments require active plan execution state");
+    }
+    const amendmentApproval = readValue(stateFile, "plan_approval");
+    const shape = amendmentShapeFor(amendmentApproval);
+    const approvalDigest = readValue(stateFile, "plan_approval_digest") ?? "";
+    if (!isValidPlanDigest(approvalDigest)) throw new PlanFailure("the plan has no valid digest");
+    const paths = planPaths(stateFile, approvalDigest);
+    ensurePlanDirectory(paths);
+    const amendmentSnapshotFile = amendmentApproval === "approved" ? paths.approvedFile : paths.presentedFile;
+    if (readValue(stateFile, "plan_snapshot_file") !== amendmentSnapshotFile) {
+      throw new PlanFailure("plan state does not name its expected immutable snapshot");
+    }
+    if (readValue(stateFile, "plan_current_file") !== paths.currentFile) {
+      throw new PlanFailure("plan state does not name its operational plan");
+    }
+    if (!isPrivateRegularFile(amendmentSnapshotFile)) {
+      throw new PlanFailure("the immutable snapshot is missing or unsafe");
+    }
+    if (!isPrivateRegularFile(paths.currentFile)) {
+      throw new PlanFailure("current plan is missing or unsafe");
+    }
+    const revisionText = readValue(stateFile, "plan_revision") ?? "";
+    if (!/^[0-9]+$/.test(revisionText)) throw new PlanFailure("current plan has no valid revision");
+    const nextRevision = Number(revisionText) + 1;
+    const amended = `${readFileSync3(paths.currentFile, "utf8")}
+
+## ${shape.heading} \u2014 ${sliceId}
+
+- Added-at: ${isoTimestamp()}
+- Requested-by: operator
+- Classification: ${shape.classification}
+
+${document}
+`;
+    writeFileAtomically(paths.dir, paths.currentFile, amended, ".amended.");
+    writeStatePairs(stateFile, [`plan_revision=${nextRevision}`, "verify_green=false"], sessionId);
+    logEvent({ event: "plan-amended", session: sessionId, command: sliceId });
+    return 0;
+  });
+}
+function amendmentShapeFor(approval) {
+  if (approval === "approved") return { heading: "Execution amendment", classification: "in-scope" };
+  if (approval === "pending") return { heading: "Plan Mode feedback", classification: "feedback" };
+  throw new PlanFailure("amendments require a pending or approved plan");
+}
+
 // core/src/state/cli.ts
 var USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> get key
@@ -302,14 +903,6 @@ be between 0 and 600 seconds.
 `;
 var UsageError = class extends Error {
 };
-var UnimplementedVerbError = class extends Error {
-  verb;
-  constructor(verb) {
-    super(`${verb} is not implemented in this port yet`);
-    this.verb = verb;
-  }
-};
-var PLAN_VERBS = ["capture-plan", "approve-plan", "cancel-plan", "amend-plan"];
 var HANDOFF_SUBACTIONS = ["publish", "wait", "consume"];
 var HANDOFF_FLAGS = {
   "--slice": "slice",
@@ -346,8 +939,18 @@ function report(error) {
 `);
     return 1;
   }
-  if (error instanceof UnimplementedVerbError) {
+  if (error instanceof PlanApprovalError) {
     process.stderr.write(`oso-state: ${error.message}
+`);
+    return 1;
+  }
+  if (error instanceof PlanFailure) {
+    process.stderr.write(`oso-state: plan: ${error.message}
+`);
+    return 1;
+  }
+  if (error instanceof HandoffFailure) {
+    process.stderr.write(`oso-state: handoff: ${error.message}
 `);
     return 1;
   }
@@ -378,24 +981,24 @@ function dispatch(argv) {
       return runEvent(sessionId, remaining);
     case "journal":
       return runJournal(remaining);
+    case "capture-plan":
+      return runCapturePlan2(sessionId, remaining);
+    case "approve-plan":
+      return runApprovePlan2(sessionId, remaining);
+    case "cancel-plan":
+      return runCancelPlan2(sessionId, remaining);
+    case "amend-plan":
+      return runAmendPlan2(sessionId, remaining);
     case "handoff":
       return dispatchHandoff(remaining);
     default:
-      if (isPlanVerb(action)) return runUnimplementedPlanVerb(action, remaining);
       throw new UsageError();
   }
-}
-function isPlanVerb(action) {
-  return PLAN_VERBS.includes(action);
-}
-function runUnimplementedPlanVerb(verb, remaining) {
-  if (remaining.length !== 1) throw new UsageError();
-  throw new UnimplementedVerbError(verb);
 }
 function runSet(sessionId, pairs) {
   if (pairs.length < 1) throw new UsageError();
   const stateFile = stateFileFor(process.cwd());
-  mkdirSync2(stateRootDirectory(), { recursive: true });
+  mkdirSync4(stateRootDirectory(), { recursive: true });
   return withLock(stateFile, sessionId, () => {
     writeStatePairs(stateFile, pairs, sessionId);
     logEvent({ event: `set:${pairs.join(" ")}`, session: sessionId });
@@ -429,7 +1032,7 @@ function runShow() {
 }
 function runClear(sessionId) {
   const stateFile = stateFileFor(process.cwd());
-  mkdirSync2(stateRootDirectory(), { recursive: true });
+  mkdirSync4(stateRootDirectory(), { recursive: true });
   return withLock(stateFile, sessionId, () => {
     clearStateFile(stateFile);
     logEvent({ event: "clear", session: sessionId });
@@ -456,12 +1059,53 @@ function runJournal(remaining) {
   appendJournal(journalFile, text);
   return 0;
 }
+function runCapturePlan2(sessionId, remaining) {
+  if (remaining.length !== 1) throw new UsageError();
+  const digest = remaining[0];
+  return runCapturePlan(process.cwd(), sessionId, digest, readStdin());
+}
+function runApprovePlan2(sessionId, remaining) {
+  if (remaining.length !== 1) throw new UsageError();
+  const digest = remaining[0];
+  return runApprovePlan(process.cwd(), sessionId, digest);
+}
+function runCancelPlan2(sessionId, remaining) {
+  if (remaining.length !== 1) throw new UsageError();
+  const digest = remaining[0];
+  return runCancelPlan(process.cwd(), sessionId, digest);
+}
+function runAmendPlan2(sessionId, remaining) {
+  if (remaining.length !== 1) throw new UsageError();
+  const sliceId = remaining[0];
+  return runAmendPlan(process.cwd(), sessionId, sliceId, readStdin());
+}
+function readStdin() {
+  return readFileSync4(0, "utf8");
+}
 function dispatchHandoff(remaining) {
   const [subaction, ...rest] = remaining;
   if (!isHandoffSubaction(subaction)) throw new UsageError();
-  const coordinates = parseHandoffCoordinates(rest);
-  checkHandoffCoordinateShape(subaction, coordinates);
-  throw new UnimplementedVerbError(`handoff ${subaction}`);
+  const flags = parseHandoffCoordinates(rest);
+  checkHandoffCoordinateShape(subaction, flags);
+  const coordinates = {
+    slice: flags.slice ?? "",
+    attempt: flags.attempt ?? "",
+    agentId: flags.agentId ?? "",
+    agentType: flags.agentType ?? ""
+  };
+  const cwd = process.cwd();
+  switch (subaction) {
+    case "publish":
+      readStdin();
+      runHandoffPublish(cwd, coordinates, flags.hookSession ?? "");
+      return 0;
+    case "wait":
+      process.stdout.write(runHandoffWait(cwd, coordinates, flags.timeout ?? ""));
+      return 0;
+    case "consume":
+      process.stdout.write(runHandoffConsume(cwd, coordinates));
+      return 0;
+  }
 }
 function isHandoffSubaction(value) {
   return value !== void 0 && HANDOFF_SUBACTIONS.includes(value);

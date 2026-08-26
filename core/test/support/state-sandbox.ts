@@ -22,8 +22,6 @@ export type StateSubject = {
   readonly unimplementedVerbs: readonly string[];
 };
 
-const PLAN_AND_HANDOFF_VERBS: readonly string[] = ["capture-plan", "approve-plan", "cancel-plan", "amend-plan", "handoff"];
-
 export const STATE_SUBJECTS: readonly StateSubject[] = [
   {
     name: "plugin/bin/oso-state",
@@ -33,7 +31,7 @@ export const STATE_SUBJECTS: readonly StateSubject[] = [
   {
     name: "node plugin/dist/oso-state.js",
     command: ["node", path.join(repositoryRoot, "plugin", "dist", "oso-state.js")],
-    unimplementedVerbs: PLAN_AND_HANDOFF_VERBS,
+    unimplementedVerbs: [],
   },
 ];
 

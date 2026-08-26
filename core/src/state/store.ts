@@ -1,11 +1,15 @@
 import { execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import {
+  accessSync,
   appendFileSync,
+  constants,
+  lstatSync,
   mkdirSync,
   readFileSync,
   renameSync,
   rmSync,
+  type Stats,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -39,11 +43,17 @@ export class StateFileUnreadableError extends Error {
 }
 
 const CHANGE_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const NAME_TOKEN_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
+const NAME_TOKEN_MAX_LENGTH = 128;
 const LOCK_STALE_SECONDS = 30;
 const LOCK_MAX_TRIES = 200;
 const LOCK_RETRY_MS = 50;
 const EVENTS_SCHEMA_VERSION = 2;
 const COMMAND_HEAD_BYTES = 120;
+
+export function sha256Hex(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
 
 export function stateRootDirectory(): string {
   return path.join(homeDirectory(), ".local", "state", "oso-code");
@@ -52,16 +62,23 @@ export function stateRootDirectory(): string {
 export function stateFileFor(cwd: string): string {
   const directory = cwd.replace(/\r$/, "");
   const identity = gitCommonDirectory(directory) || directory;
-  const digest = createHash("sha256").update(identity).digest("hex");
-  return path.join(stateRootDirectory(), `${digest}.state`);
+  return path.join(stateRootDirectory(), `${sha256Hex(identity)}.state`);
+}
+
+export function repositoryIdFor(stateFile: string): string {
+  return path.basename(stateFile, ".state");
 }
 
 export function journalFileFor(cwd: string): string {
   const stateFile = stateFileFor(cwd);
-  const repositoryId = path.basename(stateFile, ".state");
+  const repositoryId = repositoryIdFor(stateFile);
   const autoChange = readValue(stateFile, "auto_change") ?? "";
   const change = CHANGE_SLUG_PATTERN.test(autoChange) ? autoChange : "run";
   return path.join(stateRootDirectory(), "runs", repositoryId, `${change}.log`);
+}
+
+export function isNameToken(value: string): boolean {
+  return value.length >= 1 && value.length <= NAME_TOKEN_MAX_LENGTH && NAME_TOKEN_PATTERN.test(value);
 }
 
 export function readValue(stateFile: string, key: string): string | undefined {
@@ -106,6 +123,58 @@ export function writeStatePairs(stateFile: string, pairs: readonly string[], ses
 
 export function clearStateFile(stateFile: string): void {
   rmSync(stateFile, { force: true });
+}
+
+export function isSymlink(target: string): boolean {
+  const stats = lstatOrUndefined(target);
+  return stats !== undefined && stats.isSymbolicLink();
+}
+
+export function isDirectory(target: string): boolean {
+  const stats = statOrUndefined(target);
+  return stats !== undefined && stats.isDirectory();
+}
+
+export function isRegularNonSymlinkFile(target: string): boolean {
+  const stats = lstatOrUndefined(target);
+  return stats !== undefined && stats.isFile();
+}
+
+export function isReadableRegularFile(target: string): boolean {
+  if (!isRegularNonSymlinkFile(target)) return false;
+  try {
+    accessSync(target, constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function isPrivateRegularFile(target: string): boolean {
+  if (!isReadableRegularFile(target)) return false;
+  return (statSync(target).mode & 0o777) === 0o600;
+}
+
+export function secondsSinceModified(target: string): number | undefined {
+  const stats = statOrUndefined(target);
+  if (stats === undefined) return undefined;
+  return (Date.now() - stats.mtimeMs) / 1000;
+}
+
+export function writeFileAtomically(directory: string, finalPath: string, content: string, tempPrefix: string): void {
+  mkdirSync(directory, { recursive: true });
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const candidate = path.join(directory, `${tempPrefix}${randomBytes(3).toString("hex")}`);
+    try {
+      writeFileSync(candidate, content, { flag: "wx", mode: 0o600 });
+    } catch (error) {
+      if (isErrnoException(error) && error.code === "EEXIST") continue;
+      throw error;
+    }
+    renameSync(candidate, finalPath);
+    return;
+  }
+  throw new Error(`could not create a temp file under ${directory}`);
 }
 
 export function withLock<T>(stateFile: string, sessionId: string, run: () => T): T {
@@ -242,7 +311,7 @@ function lockIsStale(lockDir: string): boolean {
   return heldForSeconds >= LOCK_STALE_SECONDS;
 }
 
-function sleepSync(milliseconds: number): void {
+export function sleepSync(milliseconds: number): void {
   const signal = new Int32Array(new SharedArrayBuffer(4));
   Atomics.wait(signal, 0, 0, milliseconds);
 }
@@ -256,8 +325,24 @@ function withOwnerOnlyUmask<T>(run: () => T): T {
   }
 }
 
-function isoTimestamp(): string {
+export function isoTimestamp(): string {
   return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+function lstatOrUndefined(target: string): Stats | undefined {
+  try {
+    return lstatSync(target);
+  } catch {
+    return undefined;
+  }
+}
+
+function statOrUndefined(target: string): Stats | undefined {
+  try {
+    return statSync(target);
+  } catch {
+    return undefined;
+  }
 }
 
 function serializeEvent(entry: LoggedEvent): string {
@@ -318,6 +403,6 @@ function commandHead(command: string): string {
   return buffer.subarray(0, end).toString("utf8");
 }
 
-function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
+export function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
 }

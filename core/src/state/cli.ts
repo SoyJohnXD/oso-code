@@ -1,4 +1,6 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
+import * as handoff from "./handoff.ts";
+import * as plan from "./plan.ts";
 import * as store from "./store.ts";
 
 const USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
@@ -22,17 +24,6 @@ be between 0 and 600 seconds.
 `;
 
 class UsageError extends Error {}
-
-class UnimplementedVerbError extends Error {
-  readonly verb: string;
-  constructor(verb: string) {
-    super(`${verb} is not implemented in this port yet`);
-    this.verb = verb;
-  }
-}
-
-const PLAN_VERBS = ["capture-plan", "approve-plan", "cancel-plan", "amend-plan"] as const;
-type PlanVerb = (typeof PLAN_VERBS)[number];
 
 const HANDOFF_SUBACTIONS = ["publish", "wait", "consume"] as const;
 type HandoffSubaction = (typeof HANDOFF_SUBACTIONS)[number];
@@ -73,8 +64,16 @@ function report(error: unknown): number {
     process.stderr.write(`oso-state: set: ${error.message}\n`);
     return 1;
   }
-  if (error instanceof UnimplementedVerbError) {
+  if (error instanceof plan.PlanApprovalError) {
     process.stderr.write(`oso-state: ${error.message}\n`);
+    return 1;
+  }
+  if (error instanceof plan.PlanFailure) {
+    process.stderr.write(`oso-state: plan: ${error.message}\n`);
+    return 1;
+  }
+  if (error instanceof handoff.HandoffFailure) {
+    process.stderr.write(`oso-state: handoff: ${error.message}\n`);
     return 1;
   }
   const message = error instanceof Error ? error.message : String(error);
@@ -106,21 +105,19 @@ function dispatch(argv: readonly string[]): number {
       return runEvent(sessionId, remaining);
     case "journal":
       return runJournal(remaining);
+    case "capture-plan":
+      return runCapturePlan(sessionId, remaining);
+    case "approve-plan":
+      return runApprovePlan(sessionId, remaining);
+    case "cancel-plan":
+      return runCancelPlan(sessionId, remaining);
+    case "amend-plan":
+      return runAmendPlan(sessionId, remaining);
     case "handoff":
       return dispatchHandoff(remaining);
     default:
-      if (isPlanVerb(action)) return runUnimplementedPlanVerb(action, remaining);
       throw new UsageError();
   }
-}
-
-function isPlanVerb(action: string): action is PlanVerb {
-  return (PLAN_VERBS as readonly string[]).includes(action);
-}
-
-function runUnimplementedPlanVerb(verb: PlanVerb, remaining: readonly string[]): number {
-  if (remaining.length !== 1) throw new UsageError();
-  throw new UnimplementedVerbError(verb);
 }
 
 function runSet(sessionId: string, pairs: readonly string[]): number {
@@ -189,12 +186,58 @@ function runJournal(remaining: readonly string[]): number {
   return 0;
 }
 
+function runCapturePlan(sessionId: string, remaining: readonly string[]): number {
+  if (remaining.length !== 1) throw new UsageError();
+  const digest = remaining[0] as string;
+  return plan.runCapturePlan(process.cwd(), sessionId, digest, readStdin());
+}
+
+function runApprovePlan(sessionId: string, remaining: readonly string[]): number {
+  if (remaining.length !== 1) throw new UsageError();
+  const digest = remaining[0] as string;
+  return plan.runApprovePlan(process.cwd(), sessionId, digest);
+}
+
+function runCancelPlan(sessionId: string, remaining: readonly string[]): number {
+  if (remaining.length !== 1) throw new UsageError();
+  const digest = remaining[0] as string;
+  return plan.runCancelPlan(process.cwd(), sessionId, digest);
+}
+
+function runAmendPlan(sessionId: string, remaining: readonly string[]): number {
+  if (remaining.length !== 1) throw new UsageError();
+  const sliceId = remaining[0] as string;
+  return plan.runAmendPlan(process.cwd(), sessionId, sliceId, readStdin());
+}
+
+function readStdin(): string {
+  return readFileSync(0, "utf8");
+}
+
 function dispatchHandoff(remaining: readonly string[]): number {
   const [subaction, ...rest] = remaining;
   if (!isHandoffSubaction(subaction)) throw new UsageError();
-  const coordinates = parseHandoffCoordinates(rest);
-  checkHandoffCoordinateShape(subaction, coordinates);
-  throw new UnimplementedVerbError(`handoff ${subaction}`);
+  const flags = parseHandoffCoordinates(rest);
+  checkHandoffCoordinateShape(subaction, flags);
+  const coordinates: handoff.HandoffCoordinates = {
+    slice: flags.slice ?? "",
+    attempt: flags.attempt ?? "",
+    agentId: flags.agentId ?? "",
+    agentType: flags.agentType ?? "",
+  };
+  const cwd = process.cwd();
+  switch (subaction) {
+    case "publish":
+      readStdin();
+      handoff.runHandoffPublish(cwd, coordinates, flags.hookSession ?? "");
+      return 0;
+    case "wait":
+      process.stdout.write(handoff.runHandoffWait(cwd, coordinates, flags.timeout ?? ""));
+      return 0;
+    case "consume":
+      process.stdout.write(handoff.runHandoffConsume(cwd, coordinates));
+      return 0;
+  }
 }
 
 function isHandoffSubaction(value: string | undefined): value is HandoffSubaction {
