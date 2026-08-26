@@ -9,6 +9,7 @@ import {
   type ParityFixture,
 } from "./support/parity-fixture.ts";
 import {
+  skipUnlessImplemented,
   skipUnlessSpawnable,
   STATE_SUBJECTS,
   StateSandbox,
@@ -38,7 +39,7 @@ for (const subject of STATE_SUBJECTS) {
     { skip: skipUnlessSpawnable(subject) },
     () => {
       for (const fixture of fixtures) {
-        test(fixture.name, () => {
+        test(fixture.name, { skip: skipUnlessImplemented(subject, fixture.argv) }, () => {
           assert.deepEqual(mismatchesAgainst(subject, fixture), []);
         });
       }
