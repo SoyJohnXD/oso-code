@@ -1,0 +1,31 @@
+{
+  "name": "handoff publish fails closed on a malformed attempt",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5488,
+      "assertion": "assert_equals \"malformed, traversal-shaped, or overlong handoff coordinates fail closed\" \\\n  \"\" \"$invalid_handoffs\""
+    }
+  ],
+  "env": {},
+  "state_before": {},
+  "cwd": "workspace",
+  "argv": [
+    "handoff",
+    "publish",
+    "--slice",
+    "slice-safe",
+    "--attempt",
+    "1x",
+    "--agent-id",
+    "agent",
+    "--agent-type",
+    "oso-applier",
+    "--hook-session",
+    "hook"
+  ],
+  "stdin": "report",
+  "expect": {
+    "exit": 1
+  }
+}

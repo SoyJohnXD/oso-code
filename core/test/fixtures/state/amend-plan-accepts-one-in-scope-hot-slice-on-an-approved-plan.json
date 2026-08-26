@@ -1,0 +1,63 @@
+{
+  "name": "amend-plan accepts one in-scope hot slice on an approved plan",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 1909,
+      "assertion": "if printf '%b' \"$hot_slice\" | oso-state --session \"$SESSION\" amend-plan slice-3 >/dev/null 2>&1; then\n  echo \"ok: an approved plan accepts one explicit in-scope hot slice\"; pass=$((pass + 1))\nelse\n  echo \"FAIL: an approved plan rejected a valid hot slice\"; fail=$((fail + 1))\nfi"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 1914,
+      "assertion": "assert_equals \"a hot slice increments the operational plan revision\" \\\n  1 \"$(oso-state --session \"$SESSION\" get plan_revision)\""
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 1916,
+      "assertion": "assert_equals \"a hot slice reopens the overall verification flag\" \\\n  false \"$(oso-state --session \"$SESSION\" get verify_green)\""
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 1918,
+      "assertion": "case \"$(cat \"$first_current_file\")\" in\n  *'## Execution amendment — slice-3'*'Requested-by: operator'*'### Slice 3 — approval regression'*)\n    echo \"ok: the operational plan records the dated in-scope amendment\"; pass=$((pass + 1)) ;;\n  *)\n    echo \"FAIL: the operational plan does not contain the hot slice amendment\"; fail=$((fail + 1)) ;;\nesac"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 1924,
+      "assertion": "assert_equals \"a hot slice never mutates the immutable approved snapshot\" \\\n  \"$approved_snapshot_before_amendment\" \"$(cat \"$first_approved_file\")\""
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=true\nplan_approval=approved\nplan_approval_digest=d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb\nplan_approval_session=test-session\nplan_snapshot_file={home}/.local/state/oso-code/plans/{repo}/approved-d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb.md\nplan_current_file={home}/.local/state/oso-code/plans/{repo}/current.md\nplan_revision=0\nsession=test-session\n",
+    ".local/state/oso-code/plans/{repo}/approved-d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb.md": "Identity split fixture plan",
+    ".local/state/oso-code/plans/{repo}/current.md": "Identity split fixture plan"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "amend-plan",
+    "slice-3"
+  ],
+  "stdin": "### Slice 3 — approval regression\n\n- Goal: cover native approval.\n- Files: tests/hooks-test.sh\n- Verify: bash tests/hooks-test.sh\n- Depends-on: Slice 2",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": {
+        "contains": [
+          "plan_revision=1",
+          "verify_green=false"
+        ]
+      },
+      ".local/state/oso-code/plans/{repo}/current.md": {
+        "contains": [
+          "## Execution amendment — slice-3",
+          "Requested-by: operator",
+          "### Slice 3 — approval regression"
+        ]
+      },
+      ".local/state/oso-code/plans/{repo}/approved-d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb.md": "Identity split fixture plan"
+    }
+  }
+}

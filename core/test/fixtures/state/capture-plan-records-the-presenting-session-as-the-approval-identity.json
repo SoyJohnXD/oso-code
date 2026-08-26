@@ -1,0 +1,30 @@
+{
+  "name": "capture-plan records the presenting session as the approval identity",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 2032,
+      "assertion": "assert_equals \"capture-plan records the presenting session as the approval identity\" \\\n  \"$SESSION\" \"$(oso-state --session \"$SESSION\" get plan_approval_session)\""
+    }
+  ],
+  "env": {},
+  "state_before": {},
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "capture-plan",
+    "b9550c6a0ab898822538bc2649dcf87da3f812e83e24927ad54f3347de9db7a7"
+  ],
+  "stdin": "Identity split fixture plan",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": {
+        "contains": [
+          "plan_approval_session=test-session"
+        ]
+      }
+    }
+  }
+}

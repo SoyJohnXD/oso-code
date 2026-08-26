@@ -1,0 +1,28 @@
+{
+  "name": "a set escapes quotes and backslashes in the event log",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5794,
+      "assertion": "assert_logged \"quotes and backslashes are escaped in the event log\" -F '\"event\":\"set:weird=a\\\"b\\\\c\"'"
+    }
+  ],
+  "env": {},
+  "state_before": {},
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "set",
+    "weird=a\"b\\c"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "events_appended": [
+      {
+        "event": "set:weird=a\"b\\c"
+      }
+    ]
+  }
+}

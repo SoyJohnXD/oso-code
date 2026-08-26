@@ -1,0 +1,27 @@
+{
+  "name": "amend-plan rejects an unsafe slice id",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 1926,
+      "assertion": "if printf '%s' 'invalid slice' | oso-state --session \"$SESSION\" amend-plan '../escape' >/dev/null 2>&1; then\n  echo \"FAIL: amend-plan accepted an unsafe slice id\"; fail=$((fail + 1))\nelse\n  echo \"ok: amend-plan rejects an unsafe slice id\"; pass=$((pass + 1))\nfi"
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=true\nplan_approval=approved\nplan_approval_digest=d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb\nplan_approval_session=test-session\nplan_snapshot_file={home}/.local/state/oso-code/plans/{repo}/approved-d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb.md\nplan_current_file={home}/.local/state/oso-code/plans/{repo}/current.md\nplan_revision=0\nsession=test-session\n",
+    ".local/state/oso-code/plans/{repo}/approved-d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb.md": "Identity split fixture plan",
+    ".local/state/oso-code/plans/{repo}/current.md": "Identity split fixture plan"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "amend-plan",
+    "../escape"
+  ],
+  "stdin": "invalid slice",
+  "expect": {
+    "exit": 1
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "name": "journal under an armed run writes beneath the run change slug",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 4578,
+      "assertion": "assert_equals \"the run marker round-trips running, parked and done, journaling under its change\" \\\n  \"running parked done|the run is running>the run is parked>the run is done>\" \\\n  \"${marker_reads# }|$(journal_texts_in \"$JOURNAL_DIR/auto-continuity.log\")\""
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 4589,
+      "assertion": "assert_equals \"show carries the marker beside the change slug its journal is named after\" \\\n  \"|auto-continuity.log\" \"$marker_keys_unshown|$(ls \"$JOURNAL_DIR\" 2>/dev/null || true)\""
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "journal",
+    "the run is running"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      ".local/state/oso-code/runs/{repo}/auto-continuity.log": { "journal_texts_in": "the run is running\n" }
+    }
+  }
+}

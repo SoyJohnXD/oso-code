@@ -1,0 +1,31 @@
+{
+  "name": "show carries the whole triple past a fourth key",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5597,
+      "assertion": "assert_equals \"the whole triple survives a fourth key beside it\" \"\" \"$keys_lost_to_the_fourth\""
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=1\nverify_green=false\nrepo_path={cwd}\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "show"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "mode=",
+        "active_slice=",
+        "verify_green="
+      ]
+    }
+  }
+}

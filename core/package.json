@@ -4,6 +4,6 @@
   "type": "module",
   "engines": { "node": ">=22" },
   "scripts": {
-    "test": "node --experimental-strip-types --test"
+    "test": "node --experimental-strip-types --test 'test/**/*.test.ts'"
   }
 }

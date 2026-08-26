@@ -1,0 +1,35 @@
+{
+  "name": "set reclaims a stale lock",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 4539,
+      "assertion": "assert_equals \"stale lock is reclaimed\" yes \"$(oso-state --session \"$SESSION\" get stale_ok)\""
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state.lock": {
+      "kind": "directory",
+      "aged": true
+    }
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "set",
+    "stale_ok=yes"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": {
+        "contains": [
+          "stale_ok=yes"
+        ]
+      }
+    }
+  }
+}

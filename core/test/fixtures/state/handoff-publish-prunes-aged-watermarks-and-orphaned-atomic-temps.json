@@ -1,0 +1,52 @@
+{
+  "name": "handoff publish prunes aged watermarks and orphaned atomic temps",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5536,
+      "assertion": "assert_equals \"TTL cleanup prunes old receipts, watermarks and orphaned atomic temps\" \\\n  \"publish=pruned-replaced aged-wait=1 receipt=absent\" \\\n  \"publish=$ttl_publish_cleanup aged-wait=$handoff_rc receipt=$([ -e \"$ttl_receipt\" ] && printf present || printf absent)\""
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-ttl}.watermark": {
+      "kind": "file",
+      "content": "version=1\nattempt=1\n",
+      "aged": true
+    },
+    ".local/state/oso-code/.handoffs/{repo}/.{sha256:agent-ttl}.receipt.orphan": {
+      "kind": "file",
+      "content": "",
+      "aged": true
+    },
+    ".local/state/oso-code/.handoffs/{repo}/.{sha256:agent-ttl}.consuming.orphan": {
+      "kind": "file",
+      "content": "",
+      "aged": true
+    }
+  },
+  "cwd": "workspace",
+  "argv": [
+    "handoff",
+    "publish",
+    "--slice",
+    "slice-ttl",
+    "--attempt",
+    "2",
+    "--agent-id",
+    "agent-ttl",
+    "--agent-type",
+    "oso-applier",
+    "--hook-session",
+    "hook-ttl-two"
+  ],
+  "stdin": "oso-handoff: v=1 slice=slice-ttl attempt=2\nstatus: done",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-ttl}.watermark": "version=1\nattempt=2\n",
+      ".local/state/oso-code/.handoffs/{repo}/.{sha256:agent-ttl}.receipt.orphan": null,
+      ".local/state/oso-code/.handoffs/{repo}/.{sha256:agent-ttl}.consuming.orphan": null
+    }
+  }
+}

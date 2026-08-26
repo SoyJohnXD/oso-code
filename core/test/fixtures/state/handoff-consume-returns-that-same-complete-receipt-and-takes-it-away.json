@@ -1,0 +1,40 @@
+{
+  "name": "handoff consume returns that same complete receipt and takes it away",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5310,
+      "assertion": "assert_equals \"consume returns that same complete receipt\" \\\n  \"rc=0:$basic_receipt\" \"rc=$handoff_rc:$handoff_stdout\""
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5315,
+      "assertion": "assert_equals \"a consumed receipt cannot be consumed a second time\" 1 \"$handoff_rc\""
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-basic}.receipt": "version=1\nhook_session=hook-basic\nslice=slice-basic\nattempt=1\nagent_id=agent-basic\nagent_type=oso-verifier\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "handoff",
+    "consume",
+    "--slice",
+    "slice-basic",
+    "--attempt",
+    "1",
+    "--agent-id",
+    "agent-basic",
+    "--agent-type",
+    "oso-verifier"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "stdout": "version=1\nhook_session=hook-basic\nslice=slice-basic\nattempt=1\nagent_id=agent-basic\nagent_type=oso-verifier\n",
+    "state_after": {
+      ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-basic}.receipt": null
+    }
+  }
+}

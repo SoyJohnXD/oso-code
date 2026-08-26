@@ -1,0 +1,39 @@
+{
+  "name": "an equal slice attempt from a second agent id never collides",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5398,
+      "assertion": "assert_equals \"simultaneous equal slice attempts with different agent ids never collide\" \\\n  \"publish=a=0:: b=0:: a=rc=0:$(expected_receipt parent-a slice-shared 1 agent-shared-a oso-verifier) b=rc=0:$(expected_receipt parent-b slice-shared 1 agent-shared-b oso-verifier)\" \\\n  \"publish=$shared_publish_status a=$shared_a_consumed b=$shared_b_consumed\""
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-shared-a}.receipt": "version=1\nhook_session=parent-a\nslice=slice-shared\nattempt=1\nagent_id=agent-shared-a\nagent_type=oso-verifier\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "handoff",
+    "publish",
+    "--slice",
+    "slice-shared",
+    "--attempt",
+    "1",
+    "--agent-id",
+    "agent-shared-b",
+    "--agent-type",
+    "oso-verifier",
+    "--hook-session",
+    "parent-b"
+  ],
+  "stdin": "oso-handoff: v=1 slice=slice-shared attempt=1\nverdict: blocked",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-shared-a}.receipt": "version=1\nhook_session=parent-a\nslice=slice-shared\nattempt=1\nagent_id=agent-shared-a\nagent_type=oso-verifier\n",
+      ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-shared-b}.receipt": "version=1\nhook_session=parent-b\nslice=slice-shared\nattempt=1\nagent_id=agent-shared-b\nagent_type=oso-verifier\n"
+    }
+  }
+}

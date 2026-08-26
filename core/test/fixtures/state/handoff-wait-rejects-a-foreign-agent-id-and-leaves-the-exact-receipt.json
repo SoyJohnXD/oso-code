@@ -1,0 +1,41 @@
+{
+  "name": "handoff wait rejects a foreign agent id and leaves the exact receipt",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5350,
+      "assertion": "  assert_equals \"a receipt rejects mismatched identity: $wrong_identity\" 1 \"$handoff_rc\""
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5354,
+      "assertion": "assert_equals \"wrong identity probes never consume the exact receipt\" \\\n  \"rc=0:$identity_receipt\" \"rc=$handoff_rc:$handoff_stdout\""
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-identity}.receipt": "version=1\nhook_session=hook-identity\nslice=slice-identity\nattempt=3\nagent_id=agent-identity\nagent_type=oso-verifier\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "handoff",
+    "wait",
+    "--slice",
+    "slice-identity",
+    "--attempt",
+    "3",
+    "--agent-id",
+    "agent-other",
+    "--agent-type",
+    "oso-verifier",
+    "--timeout",
+    "0"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 1,
+    "state_after": {
+      ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-identity}.receipt": "{present}"
+    }
+  }
+}

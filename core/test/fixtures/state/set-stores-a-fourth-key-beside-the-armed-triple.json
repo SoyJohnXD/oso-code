@@ -1,0 +1,47 @@
+{
+  "name": "set stores a fourth key beside the armed triple",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5587,
+      "assertion": "assert_equals \"a key beside the triple is stored and read back\" \\\n  \"$REPO_ROOT\" \"$(oso-state --session \"$SESSION\" get repo_path)\""
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5597,
+      "assertion": "assert_equals \"the whole triple survives a fourth key beside it\" \"\" \"$keys_lost_to_the_fourth\""
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5599,
+      "assertion": "assert_equals \"a write records the session that armed the state\" \\\n  \"$SESSION\" \"$(oso-state --session \"$SESSION\" get session)\""
+    }
+  ],
+  "env": {},
+  "state_before": {},
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "set",
+    "mode=plan",
+    "active_slice=1",
+    "verify_green=false",
+    "repo_path={cwd}"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": {
+        "contains": [
+          "mode=plan",
+          "active_slice=1",
+          "verify_green=false",
+          "repo_path={cwd}",
+          "session=test-session"
+        ]
+      }
+    }
+  }
+}

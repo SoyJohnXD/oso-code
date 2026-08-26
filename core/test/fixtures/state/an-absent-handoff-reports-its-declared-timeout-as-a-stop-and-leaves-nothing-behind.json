@@ -1,0 +1,44 @@
+{
+  "name": "an absent handoff reports its declared timeout as a stop and leaves nothing behind",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5408,
+      "assertion": "assert_equals \"an absent handoff reports its declared timeout as a stop, not any other outcome\" \\\n  \"1\" \"$handoff_rc\""
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5419,
+      "assertion": "assert_equals \"a timed-out wait leaves no synthetic receipt or watermark\" \\\n  \"$handoff_files_before_timeout\" \"$handoff_files_after_timeout\""
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/.handoffs/{repo}": {
+      "kind": "directory"
+    }
+  },
+  "cwd": "workspace",
+  "argv": [
+    "handoff",
+    "wait",
+    "--slice",
+    "slice-absent",
+    "--attempt",
+    "1",
+    "--agent-id",
+    "agent-absent",
+    "--agent-type",
+    "oso-verifier",
+    "--timeout",
+    "1"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 1,
+    "state_after": {
+      ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-absent}.receipt": null,
+      ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-absent}.watermark": null
+    }
+  }
+}

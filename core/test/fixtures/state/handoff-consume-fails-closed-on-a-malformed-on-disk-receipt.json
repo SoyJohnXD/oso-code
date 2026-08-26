@@ -1,0 +1,34 @@
+{
+  "name": "handoff consume fails closed on a malformed on-disk receipt",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5506,
+      "assertion": "assert_equals \"a malformed on-disk receipt fails closed at both read edges\" \\\n  \"path=present wait=1 consume=1\" \\\n  \"path=$([ -f \"$corrupt_receipt\" ] && printf present || printf missing) wait=$corrupt_wait_rc consume=$handoff_rc\""
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-corrupt}.receipt": "version=1\nslice=slice-corrupt\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "handoff",
+    "consume",
+    "--slice",
+    "slice-corrupt",
+    "--attempt",
+    "1",
+    "--agent-id",
+    "agent-corrupt",
+    "--agent-type",
+    "oso-verifier"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 1,
+    "state_after": {
+      ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-corrupt}.receipt": "{present}"
+    }
+  }
+}

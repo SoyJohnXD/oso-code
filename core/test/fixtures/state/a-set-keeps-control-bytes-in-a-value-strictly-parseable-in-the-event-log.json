@@ -1,0 +1,28 @@
+{
+  "name": "a set keeps control bytes in a value strictly parseable in the event log",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5797,
+      "assertion": "if ! command -v jq >/dev/null 2>&1; then\n  echo \"skip: jq is absent here, so no strict parser can read the line back\"\n  skipped=$((skipped + 1))\nelif [ \"$(tail -n 1 \"$events_log\" | jq -r '.event')\" = \"set:$control_byte_pair\" ]; then\n  echo \"ok: control bytes in a value keep the event log strictly parseable\"; pass=$((pass + 1))\nelse\n  echo \"FAIL: a control byte broke the event log — $(tail -n 1 \"$events_log\" | jq . 2>&1 | head -n 1)\"; fail=$((fail + 1))\nfi"
+    }
+  ],
+  "env": {},
+  "state_before": {},
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "set",
+    "weird=a\tb\rc\u001bd"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "events_appended": [
+      {
+        "event": "set:weird=a\tb\rc\u001bd"
+      }
+    ]
+  }
+}

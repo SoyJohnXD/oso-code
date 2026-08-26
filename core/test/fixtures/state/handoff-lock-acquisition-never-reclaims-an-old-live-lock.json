@@ -1,0 +1,39 @@
+{
+  "name": "handoff lock acquisition never reclaims an old live lock",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5570,
+      "assertion": "assert_equals \"handoff lock acquisition never reclaims an old live lock\" \\\n  \"rc=1 lock=retained\" \\\n  \"rc=$handoff_rc lock=$([ -d \"$lock_dir\" ] && printf retained || printf removed)\""
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-lock}.lock": {
+      "kind": "directory",
+      "aged": true
+    }
+  },
+  "cwd": "workspace",
+  "argv": [
+    "handoff",
+    "publish",
+    "--slice",
+    "slice-lock",
+    "--attempt",
+    "1",
+    "--agent-id",
+    "agent-lock",
+    "--agent-type",
+    "oso-applier",
+    "--hook-session",
+    "hook-lock"
+  ],
+  "stdin": "oso-handoff: v=1 slice=slice-lock attempt=1\nstatus: done",
+  "expect": {
+    "exit": 1,
+    "state_after": {
+      ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-lock}.lock": "{present}"
+    }
+  }
+}

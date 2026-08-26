@@ -1,0 +1,33 @@
+{
+  "name": "a consumed receipt cannot be consumed a second time",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5315,
+      "assertion": "assert_equals \"a consumed receipt cannot be consumed a second time\" 1 \"$handoff_rc\""
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/.handoffs/{repo}": {
+      "kind": "directory"
+    }
+  },
+  "cwd": "workspace",
+  "argv": [
+    "handoff",
+    "consume",
+    "--slice",
+    "slice-basic",
+    "--attempt",
+    "1",
+    "--agent-id",
+    "agent-basic",
+    "--agent-type",
+    "oso-verifier"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 1
+  }
+}

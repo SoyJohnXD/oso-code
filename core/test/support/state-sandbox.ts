@@ -1,0 +1,168 @@
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+export const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+
+export type StateSubject = { readonly name: string; readonly command: readonly string[] };
+
+export const STATE_SUBJECTS: readonly StateSubject[] = [
+  { name: "plugin/bin/oso-state", command: [path.join(repositoryRoot, "plugin", "bin", "oso-state")] },
+];
+
+export type SeededEntry =
+  | string
+  | { kind: "file"; content: string; aged?: boolean }
+  | { kind: "directory"; aged?: boolean };
+
+export type ObservedEntry =
+  | { kind: "file"; content: string }
+  | { kind: "directory" }
+  | { kind: "absent" };
+
+export type SubjectRun = { exit: number; stdout: string; stderr: string };
+
+const EVENT_LOG = ".local/state/oso-code/events.jsonl";
+const PAST_THE_TTL = new Date("2000-01-01T00:00:00Z");
+const OWNER_ONLY_FILE = 0o600;
+const OWNER_ONLY_DIRECTORY = 0o700;
+
+function sha256Hex(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function subjectSpawns(subject: StateSubject): boolean {
+  const [command, ...leading] = subject.command;
+  if (command === undefined) return false;
+  const probe = spawnSync(command, leading, {
+    env: { HOME: tmpdir(), PATH: process.env["PATH"] ?? "" },
+    encoding: "utf8",
+  });
+  return probe.error === undefined;
+}
+
+const SPAWNABLE_STATE_SUBJECTS: readonly StateSubject[] = STATE_SUBJECTS.filter(subjectSpawns);
+
+export function skipUnlessSpawnable(subject: StateSubject): false | string {
+  if (SPAWNABLE_STATE_SUBJECTS.includes(subject)) return false;
+  return `${subject.name} cannot be spawned here, so its behaviour cannot be measured on this platform`;
+}
+
+export function withStateSandbox<T>(workspace: string, use: (sandbox: StateSandbox) => T): T {
+  const sandbox = new StateSandbox(workspace);
+  try {
+    return use(sandbox);
+  } finally {
+    sandbox.dispose();
+  }
+}
+
+export class StateSandbox {
+  readonly root: string;
+  readonly home: string;
+  readonly cwd: string;
+  readonly repositoryKey: string;
+
+  constructor(workspace: string) {
+    this.root = mkdtempSync(path.join(tmpdir(), "oso-state-"));
+    this.home = path.join(this.root, "home");
+    this.cwd = path.join(this.root, workspace);
+    mkdirSync(this.home, { recursive: true });
+    mkdirSync(this.cwd, { recursive: true });
+    this.repositoryKey = sha256Hex(this.gitCommonDirectory() || this.cwd);
+  }
+
+  expand(text: string): string {
+    return text
+      .replaceAll("{home}", this.home)
+      .replaceAll("{cwd}", this.cwd)
+      .replaceAll("{repo}", this.repositoryKey)
+      .replace(/\{sha256:([^}]*)\}/g, (_whole, value: string) => sha256Hex(value));
+  }
+
+  seed(entries: Readonly<Record<string, SeededEntry>>): void {
+    for (const [relativePath, entry] of Object.entries(entries)) {
+      const target = path.join(this.home, this.expand(relativePath));
+      mkdirSync(path.dirname(target), { recursive: true });
+      const seeded = typeof entry === "string" ? { kind: "file" as const, content: entry } : entry;
+      if (seeded.kind === "directory") {
+        mkdirSync(target, { recursive: true });
+        chmodSync(target, OWNER_ONLY_DIRECTORY);
+      } else {
+        writeFileSync(target, this.expand(seeded.content));
+        chmodSync(target, OWNER_ONLY_FILE);
+      }
+      if (seeded.aged === true) utimesSync(target, PAST_THE_TTL, PAST_THE_TTL);
+    }
+  }
+
+  read(relativePath: string): ObservedEntry {
+    const target = path.join(this.home, this.expand(relativePath));
+    const stats = statSync(target, { throwIfNoEntry: false });
+    if (stats === undefined) return { kind: "absent" };
+    if (stats.isDirectory()) return { kind: "directory" };
+    return { kind: "file", content: readFileSync(target, "utf8") };
+  }
+
+  eventLogLines(): string[] {
+    const log = this.read(EVENT_LOG);
+    if (log.kind !== "file") return [];
+    return log.content.split("\n").filter((line) => line !== "");
+  }
+
+  run(
+    subject: StateSubject,
+    argv: readonly string[],
+    options: { stdin?: string; env?: Readonly<Record<string, string>> } = {},
+  ): SubjectRun {
+    const [command, ...leading] = subject.command;
+    if (command === undefined) throw new Error(`subject ${subject.name} names no command`);
+    const result = spawnSync(command, [...leading, ...argv.map((argument) => this.expand(argument))], {
+      cwd: this.cwd,
+      input: options.stdin ?? "",
+      env: this.subjectEnvironment(options.env ?? {}),
+      encoding: "utf8",
+    });
+    if (result.error !== undefined) throw result.error;
+    if (result.signal !== null) throw new Error(`${subject.name} was killed by ${result.signal}`);
+    if (result.status === null) throw new Error(`${subject.name} produced no exit status`);
+    return { exit: result.status, stdout: result.stdout, stderr: result.stderr };
+  }
+
+  dispose(): void {
+    rmSync(this.root, { recursive: true, force: true });
+  }
+
+  private subjectEnvironment(extra: Readonly<Record<string, string>>): Record<string, string> {
+    return {
+      HOME: this.home,
+      PATH: process.env["PATH"] ?? "",
+      XDG_CONFIG_HOME: path.join(this.home, ".config"),
+      XDG_DATA_HOME: path.join(this.home, ".local", "share"),
+      XDG_STATE_HOME: path.join(this.home, ".local", "state"),
+      XDG_CACHE_HOME: path.join(this.home, ".cache"),
+      ...extra,
+    };
+  }
+
+  private gitCommonDirectory(): string {
+    const named = spawnSync("git", ["-C", this.cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"], {
+      env: this.subjectEnvironment({}),
+      encoding: "utf8",
+    });
+    if (named.error !== undefined || named.status !== 0) return "";
+    return named.stdout.replace(/\n+$/, "");
+  }
+}

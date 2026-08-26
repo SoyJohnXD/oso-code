@@ -1,0 +1,26 @@
+{
+  "name": "get reads back a key stored beside the triple",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5587,
+      "assertion": "assert_equals \"a key beside the triple is stored and read back\" \\\n  \"$REPO_ROOT\" \"$(oso-state --session \"$SESSION\" get repo_path)\""
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=1\nverify_green=false\nrepo_path={cwd}\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "get",
+    "repo_path"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "stdout": "{cwd}"
+  }
+}

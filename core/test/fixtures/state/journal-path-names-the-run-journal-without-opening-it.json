@@ -1,0 +1,29 @@
+{
+  "name": "journal --path names the run journal without opening it",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 4634,
+      "assertion": "assert_equals \"journal --path names the run journal the same call would append to, and opens nothing to say so\" \\\n  \"$JOURNAL_DIR/path-read.log unwritten opened\" \\\n  \"$journal_path_read $journal_path_tree $([ -s \"$JOURNAL_DIR/path-read.log\" ] && echo opened || echo unopened)\""
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=path-read\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "journal",
+    "--path"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "stdout": "{home}/.local/state/oso-code/runs/{repo}/path-read.log",
+    "state_after": {
+      ".local/state/oso-code/runs": null
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "journal with no milestone text is a usage error",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 4653,
+      "assertion": "assert_equals \"a journal call with no milestone text is a usage error, never a timestamped empty line\" \\\n  \"1 1 usage unwritten opened\" \\\n  \"$journal_missing_rc $journal_empty_rc $journal_refusal $journal_after_refusal $([ -s \"$JOURNAL_DIR/run.log\" ] && echo opened || echo unopened)\""
+    }
+  ],
+  "env": {},
+  "state_before": {},
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "journal"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 1,
+    "stderr": {
+      "contains": [
+        "usage:"
+      ]
+    },
+    "state_after": {
+      ".local/state/oso-code/runs": null
+    }
+  }
+}

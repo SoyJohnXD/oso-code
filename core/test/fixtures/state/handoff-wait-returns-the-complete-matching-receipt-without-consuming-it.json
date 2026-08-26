@@ -1,0 +1,37 @@
+{
+  "name": "handoff wait returns the complete matching receipt without consuming it",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5304,
+      "assertion": "assert_equals \"wait returns the complete matching receipt without consuming it\" \\\n  \"rc=0:$basic_receipt\" \"rc=$handoff_rc:$handoff_stdout\""
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-basic}.receipt": "version=1\nhook_session=hook-basic\nslice=slice-basic\nattempt=1\nagent_id=agent-basic\nagent_type=oso-verifier\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "handoff",
+    "wait",
+    "--slice",
+    "slice-basic",
+    "--attempt",
+    "1",
+    "--agent-id",
+    "agent-basic",
+    "--agent-type",
+    "oso-verifier",
+    "--timeout",
+    "0"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "stdout": "version=1\nhook_session=hook-basic\nslice=slice-basic\nattempt=1\nagent_id=agent-basic\nagent_type=oso-verifier\n",
+    "state_after": {
+      ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-basic}.receipt": "{present}"
+    }
+  }
+}

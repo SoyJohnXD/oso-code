@@ -1,0 +1,55 @@
+{
+  "name": "the event verb records its type and its detail on one line",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5672,
+      "assertion": "assert_logged \"the event verb records its type and its detail\" \\\n  '\"event\":\"worktree-created\",\"command\":\"git worktree add ../oso-wt-3\",\"session\":\"'"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5674,
+      "assertion": "assert_equals \"one event is one line, appended and nothing else\" \\\n  1 \"$(grep -c '' \"$events_log\")\""
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5654,
+      "assertion": "assert_logged \"every logged event carries the schema version\" '\"schema\":2'"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5679,
+      "assertion": "if grep -q '\"gate\"\\|\"hook_event\"' \"$events_log\"; then\n  echo \"FAIL: an event-verb line carries gate or hook_event, which the log schema scopes to denies only\"\n  fail=$((fail + 1))\nelse\n  echo \"ok: event-verb lines keep the unwidened five-field schema-1 shape\"\n  pass=$((pass + 1))\nfi"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5805,
+      "assertion": "assert_logged \"events carry the client build\" '\"client\":\"'"
+    }
+  ],
+  "env": {},
+  "state_before": {},
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "event",
+    "worktree-created",
+    "git worktree add ../oso-wt-3"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "events_appended": [
+      {
+        "event": "worktree-created",
+        "command": "git worktree add ../oso-wt-3",
+        "session": "{present}",
+        "schema": 2,
+        "client": "{present}",
+        "gate": null,
+        "hook_event": null
+      }
+    ]
+  }
+}
