@@ -1,6 +1,6 @@
 # oso-code — Blueprint
 
-Frozen design for the oso-code harness. A change to it takes a new decision under [docs/decisions/](decisions/), never a silent edit here.
+Frozen design for the oso-code harness. [docs/decisions/](decisions/) is itself frozen as history now: nothing is deleted from it, nothing new is added to it, and no check reads it any more. The live record it used to be is the roadmap's own design document at [docs/rewrite/ts-core-roadmap.md](rewrite/ts-core-roadmap.md) and the engram ledgers — a change to this design takes a decision there, never a silent edit here and never a new file under `docs/decisions/`.
 
 ## Decisions
 
