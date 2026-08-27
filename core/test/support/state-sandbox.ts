@@ -19,33 +19,18 @@ export const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.met
 export type StateSubject = {
   readonly name: string;
   readonly command: readonly string[];
-  readonly unimplementedVerbs: readonly string[];
 };
 
 export const STATE_SUBJECTS: readonly StateSubject[] = [
   {
     name: "plugin/bin/oso-state",
     command: [path.join(repositoryRoot, "plugin", "bin", "oso-state")],
-    unimplementedVerbs: [],
   },
   {
     name: "node plugin/dist/oso-state.js",
     command: ["node", path.join(repositoryRoot, "plugin", "dist", "oso-state.js")],
-    unimplementedVerbs: [],
   },
 ];
-
-export function verbOf(argv: readonly string[]): string {
-  const [first] = argv;
-  if (first === "journal" || first === "handoff") return first;
-  return argv[2] ?? "";
-}
-
-export function skipUnlessImplemented(subject: StateSubject, argv: readonly string[]): false | string {
-  const verb = verbOf(argv);
-  if (!subject.unimplementedVerbs.includes(verb)) return false;
-  return `${subject.name} does not implement ${verb} yet`;
-}
 
 export type SeededEntry =
   | string

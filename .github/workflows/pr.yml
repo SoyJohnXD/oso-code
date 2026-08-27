@@ -23,10 +23,8 @@ jobs:
         run: npm run typecheck
       - name: Core unit tests
         run: npm test
-      - name: Build the oso-state bundle and confirm the committed bundle matches a fresh build
-        run: |
-          npm run build
-          npm run check
+      - name: Confirm the committed oso-state bundle matches source
+        run: npm run check
       - name: Shell script syntax
         shell: bash
         run: |

@@ -52,6 +52,7 @@ initialize_paths() {
   GATES_SOURCE="$REPO_ROOT/plugin/hooks"
   GIT_HOOKS_SOURCE="$REPO_ROOT/plugin/git-hooks"
   STATE_BIN_SOURCE="$REPO_ROOT/plugin/bin/oso-state"
+  STATE_BIN_PACKAGE_SOURCE="$REPO_ROOT/plugin/bin/package.json"
   GLOBAL_SOURCE="$SCRIPT_DIR/opencode-global.md"
   HASHES_FILE="$SCRIPT_DIR/hook-hashes.txt"
   IMPECCABLE_MOUNT="$HOME/.agents/skills/impeccable"
@@ -135,6 +136,8 @@ preflight_payload() {
     fail "the shared commit hook is missing: $GIT_HOOKS_SOURCE/pre-commit"
   [ -f "$STATE_BIN_SOURCE" ] ||
     fail "the oso-state binary is missing: $STATE_BIN_SOURCE"
+  [ -f "$STATE_BIN_PACKAGE_SOURCE" ] ||
+    fail "the oso-state module manifest is missing: $STATE_BIN_PACKAGE_SOURCE"
   command -v python3 >/dev/null 2>&1 ||
     fail "python3 is required to render and merge the OpenCode config"
   local wrapper_count=0 agent_count=0 wrapper agent
@@ -444,6 +447,7 @@ EOF
 
   state_bin_stage="$(mktemp -d "$OPENCODE_CONFIG_HOME/.bin-install.XXXXXX")"
   cp "$STATE_BIN_SOURCE" "$state_bin_stage/oso-state"
+  cp "$STATE_BIN_PACKAGE_SOURCE" "$state_bin_stage/package.json"
   chmod 700 "$state_bin_stage/oso-state"
   replace_tree "$state_bin_stage" "$STATE_BIN_TARGET"
   info "installed the OpenCode plugin into $PLUGIN_TARGET, the gate tree into $HOOKS_TARGET and oso-state into $STATE_BIN_TARGET"

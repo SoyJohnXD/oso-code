@@ -26,8 +26,8 @@ export class LockTimeoutError extends Error {
 
 export class JournalAppendError extends Error {
   readonly journalFile: string;
-  constructor(journalFile: string) {
-    super(`cannot append the milestone to ${journalFile}`);
+  constructor(journalFile: string, options?: ErrorOptions) {
+    super(`cannot append the milestone to ${journalFile}`, options);
     this.name = "JournalAppendError";
     this.journalFile = journalFile;
   }
@@ -193,8 +193,8 @@ export function appendJournal(journalFile: string, text: string): void {
       mkdirSync(path.dirname(journalFile), { recursive: true });
       appendFileSync(journalFile, line);
     });
-  } catch {
-    throw new JournalAppendError(journalFile);
+  } catch (error) {
+    throw new JournalAppendError(journalFile, { cause: error });
   }
 }
 
@@ -273,7 +273,7 @@ function createTempFile(directory: string, content: string): string {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const candidate = path.join(directory, `.tmp.${randomBytes(4).toString("hex")}`);
     try {
-      writeFileSync(candidate, content, { flag: "wx" });
+      writeFileSync(candidate, content, { flag: "wx", mode: 0o600 });
       return candidate;
     } catch (error) {
       if (!isErrnoException(error) || error.code !== "EEXIST") throw error;

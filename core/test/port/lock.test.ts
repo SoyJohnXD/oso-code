@@ -8,10 +8,10 @@ const STATE_LOCK = ".local/state/oso-code/{repo}.state.lock";
 
 for (const subject of STATE_SUBJECTS) {
   describe(
-    `${subject.name}: the lock-acquisition bound, which no assertion in tests/hooks-test.sh covers — port tests read from plugin/bin/oso-state:59-75, never parity evidence`,
+    `${subject.name}: the lock-acquisition bound, which no assertion in tests/hooks-test.sh covers — port tests read from 8c54fd8:plugin/bin/oso-state:59-75, never parity evidence`,
     { skip: skipUnlessSpawnable(subject) },
     () => {
-      test("a live lock younger than the stale bound exhausts the retries, names the session and writes no state (read from plugin/bin/oso-state:61-72)", () => {
+      test("a live lock younger than the stale bound exhausts the retries, names the session and writes no state (read from 8c54fd8:plugin/bin/oso-state:61-72)", () => {
         withStateSandbox("workspace", (sandbox) => {
           sandbox.seed({ [STATE_LOCK]: { kind: "directory" } });
           const run = sandbox.run(subject, ["--session", SESSION, "set", "mode=plan"]);

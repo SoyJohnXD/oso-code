@@ -18,10 +18,10 @@ function makeUnreadable(sandbox: StateSandbox, relativePath: string): string {
 
 for (const subject of STATE_SUBJECTS) {
   describe(
-    `${subject.name}: set against a state file it cannot read, which no assertion in tests/hooks-test.sh covers — port tests read from plugin/bin/oso-state:77-89, never parity evidence`,
+    `${subject.name}: set against a state file it cannot read, which no assertion in tests/hooks-test.sh covers — port tests read from 8c54fd8:plugin/bin/oso-state:77-89, never parity evidence`,
     { skip: skipUnlessSpawnable(subject) },
     () => {
-      test("set on an unreadable existing state file leaves it byte-for-byte intact and fails loudly (read from plugin/bin/oso-state:80)", () => {
+      test("set on an unreadable existing state file leaves it byte-for-byte intact and fails loudly (read from 8c54fd8:plugin/bin/oso-state:80)", () => {
         withStateSandbox("workspace", (sandbox) => {
           sandbox.seed({ [STATE_FILE]: PREEXISTING_STATE });
           const target = makeUnreadable(sandbox, STATE_FILE);
@@ -33,7 +33,7 @@ for (const subject of STATE_SUBJECTS) {
         });
       });
 
-      test("set on an absent state file still succeeds and creates it (read from plugin/bin/oso-state:80)", () => {
+      test("set on an absent state file still succeeds and creates it (read from 8c54fd8:plugin/bin/oso-state:80)", () => {
         withStateSandbox("workspace", (sandbox) => {
           const run = sandbox.run(subject, ["--session", SESSION, "set", "fresh=1"]);
           assert.equal(run.exit, 0, `stderr was ${JSON.stringify(run.stderr)}`);
@@ -52,7 +52,7 @@ if (nodeSubject === undefined) {
 }
 
 describe(
-  `${nodeSubject.name}: show against a state file it cannot read, a fix plugin/bin/oso-state:465 itself does not carry (it reports the file absent instead) — read from core/src/state/store.ts:83-90 and cli.ts:149-152, never parity evidence`,
+  `${nodeSubject.name}: show against a state file it cannot read, a fix 8c54fd8:plugin/bin/oso-state:465 itself does not carry (it reports the file absent instead) — read from core/src/state/store.ts:100-107 and cli.ts:156, never parity evidence`,
   { skip: skipUnlessSpawnable(nodeSubject) },
   () => {
     test("show on an unreadable state file fails loudly instead of reporting the file absent", () => {

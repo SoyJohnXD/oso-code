@@ -353,6 +353,8 @@ preflight_release_payload() {
     fail "Codex managed-config renderer is missing"
   [ -f "$SCRIPT_DIR/lib/engram-codex-pointers.sh" ] ||
     fail "Engram Codex pointer normalizer is missing"
+  [ -f "$REPO_ROOT/plugin/bin/package.json" ] ||
+    fail "the oso-state module manifest is missing: $REPO_ROOT/plugin/bin/package.json"
   python3 -m json.tool "$MARKETPLACE_TEMPLATE" >/dev/null ||
     fail "Codex marketplace template is invalid JSON"
   python3 -m json.tool "$REPO_ROOT/codex/.codex-plugin/plugin.json" >/dev/null ||
@@ -525,6 +527,7 @@ install_runtime_hooks() {
       plugin/bin/oso-state) cp "$REPO_ROOT/$relative" "$stage/bin/oso-state" ;;
     esac
   done < "$HASHES_FILE"
+  cp "$REPO_ROOT/plugin/bin/package.json" "$stage/bin/package.json"
   chmod 700 "$stage/hooks"/*.sh "$stage/bin/oso-state" "$stage/git-hooks/pre-commit"
   while IFS='  ' read -r expected relative; do
     case "$expected" in ''|'#'*) continue ;; esac

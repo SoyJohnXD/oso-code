@@ -6,9 +6,12 @@ import { fileURLToPath } from "node:url";
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const entryPoint = join(repoRoot, "core", "src", "bin", "oso-state.ts");
 const distOutfile = join(repoRoot, "plugin", "dist", "oso-state.js");
+const distPackageJson = join(repoRoot, "plugin", "dist", "package.json");
 const binOutfile = join(repoRoot, "plugin", "bin", "oso-state");
+const binPackageJson = join(repoRoot, "plugin", "bin", "package.json");
 const binMode = 0o755;
 const shebang = "#!/usr/bin/env node\n";
+const modulePackageJson = '{\n  "private": true,\n  "type": "module"\n}\n';
 
 async function freshBundleText() {
   const result = await build({
@@ -56,6 +59,14 @@ async function check() {
     process.stderr.write("oso-state: plugin/bin/oso-state is not executable — run npm run build\n");
     ok = false;
   }
+  if (readTextOrNull(distPackageJson) !== modulePackageJson) {
+    process.stderr.write("oso-state: plugin/dist/package.json is stale — run npm run build\n");
+    ok = false;
+  }
+  if (readTextOrNull(binPackageJson) !== modulePackageJson) {
+    process.stderr.write("oso-state: plugin/bin/package.json is stale — run npm run build\n");
+    ok = false;
+  }
   process.exitCode = ok ? 0 : 1;
 }
 
@@ -63,9 +74,11 @@ async function writeBundle() {
   const fresh = await freshBundleText();
   mkdirSync(dirname(distOutfile), { recursive: true });
   writeFileSync(distOutfile, fresh);
+  writeFileSync(distPackageJson, modulePackageJson);
   mkdirSync(dirname(binOutfile), { recursive: true });
   writeFileSync(binOutfile, shebang + fresh);
   chmodSync(binOutfile, binMode);
+  writeFileSync(binPackageJson, modulePackageJson);
 }
 
 if (process.argv.includes("--check")) {

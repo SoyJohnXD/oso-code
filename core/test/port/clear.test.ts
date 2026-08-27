@@ -10,10 +10,10 @@ const ARMED_STATE = `mode=plan\nactive_slice=1\nverify_green=false\nsession=${SE
 
 for (const subject of STATE_SUBJECTS) {
   describe(
-    `${subject.name}: clear, which no assertion in tests/hooks-test.sh covers — port tests read from plugin/bin/oso-state:467-472, never parity evidence`,
+    `${subject.name}: clear, which no assertion in tests/hooks-test.sh covers — port tests read from 8c54fd8:plugin/bin/oso-state:467-472, never parity evidence`,
     { skip: skipUnlessSpawnable(subject) },
     () => {
-      test("clear removes the state file of the directory it stands in (read from plugin/bin/oso-state:49 and :470)", () => {
+      test("clear removes the state file of the directory it stands in (read from 8c54fd8:plugin/bin/oso-state:49 and :470)", () => {
         withStateSandbox("workspace", (sandbox) => {
           sandbox.seed({ [STATE_FILE]: ARMED_STATE });
           const run = sandbox.run(subject, ["--session", SESSION, "clear"]);
@@ -22,7 +22,7 @@ for (const subject of STATE_SUBJECTS) {
         });
       });
 
-      test("clear with no state file to remove still exits 0 (read from plugin/bin/oso-state:470)", () => {
+      test("clear with no state file to remove still exits 0 (read from 8c54fd8:plugin/bin/oso-state:470)", () => {
         withStateSandbox("workspace", (sandbox) => {
           const run = sandbox.run(subject, ["--session", SESSION, "clear"]);
           assert.equal(run.exit, 0);
@@ -32,7 +32,7 @@ for (const subject of STATE_SUBJECTS) {
         });
       });
 
-      test("clear appends exactly one clear event naming its session (read from plugin/bin/oso-state:471)", () => {
+      test("clear appends exactly one clear event naming its session (read from 8c54fd8:plugin/bin/oso-state:471)", () => {
         withStateSandbox("workspace", (sandbox) => {
           sandbox.seed({ [STATE_FILE]: ARMED_STATE });
           sandbox.run(subject, ["--session", SESSION, "clear"]);
@@ -45,7 +45,7 @@ for (const subject of STATE_SUBJECTS) {
         });
       });
 
-      test("clear leaves another repository's state file alone (read from plugin/bin/oso-state:49)", () => {
+      test("clear leaves another repository's state file alone (read from 8c54fd8:plugin/bin/oso-state:49)", () => {
         withStateSandbox("workspace", (sandbox) => {
           sandbox.seed({ [STATE_FILE]: ARMED_STATE, [FOREIGN_STATE]: "mode=quick\nsession=elsewhere\n" });
           sandbox.run(subject, ["--session", SESSION, "clear"]);
@@ -56,7 +56,7 @@ for (const subject of STATE_SUBJECTS) {
         });
       });
 
-      test("clear releases the lock it took (read from plugin/bin/oso-state:74)", () => {
+      test("clear releases the lock it took (read from 8c54fd8:plugin/bin/oso-state:74)", () => {
         withStateSandbox("workspace", (sandbox) => {
           sandbox.seed({ [STATE_FILE]: ARMED_STATE });
           sandbox.run(subject, ["--session", SESSION, "clear"]);

@@ -1,6 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
 import * as store from "./store.ts";
+import * as transitions from "./transitions.ts";
 
 export class PlanFailure extends Error {}
 
@@ -67,12 +68,13 @@ export function runCapturePlan(cwd: string, sessionId: string, digest: string, d
       throw new PlanFailure("current plan is not a private regular file");
     }
     store.writeFileAtomically(paths.dir, paths.currentFile, document, ".current.");
+    const arming = transitions.armPlan();
     store.writeStatePairs(
       stateFile,
       [
-        "mode=plan",
-        "active_slice=none",
-        "verify_green=false",
+        `mode=${arming.mode}`,
+        `active_slice=${arming.active_slice}`,
+        `verify_green=${arming.verify_green}`,
         "plan_approval=pending",
         `plan_approval_digest=${digest}`,
         `plan_approval_session=${sessionId}`,

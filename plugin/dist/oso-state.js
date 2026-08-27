@@ -31,8 +31,8 @@ var LockTimeoutError = class extends Error {
 };
 var JournalAppendError = class extends Error {
   journalFile;
-  constructor(journalFile) {
-    super(`cannot append the milestone to ${journalFile}`);
+  constructor(journalFile, options) {
+    super(`cannot append the milestone to ${journalFile}`, options);
     this.name = "JournalAppendError";
     this.journalFile = journalFile;
   }
@@ -173,8 +173,8 @@ function appendJournal(journalFile, text) {
       mkdirSync(path.dirname(journalFile), { recursive: true });
       appendFileSync(journalFile, line);
     });
-  } catch {
-    throw new JournalAppendError(journalFile);
+  } catch (error) {
+    throw new JournalAppendError(journalFile, { cause: error });
   }
 }
 function logEvent(entry) {
@@ -234,7 +234,7 @@ function createTempFile(directory, content) {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const candidate = path.join(directory, `.tmp.${randomBytes(4).toString("hex")}`);
     try {
-      writeFileSync(candidate, content, { flag: "wx" });
+      writeFileSync(candidate, content, { flag: "wx", mode: 384 });
       return candidate;
     } catch (error) {
       if (!isErrnoException(error) || error.code !== "EEXIST") throw error;
@@ -505,8 +505,8 @@ function handoffPaths(cwd, agentId) {
 function protectDirectory(directory) {
   try {
     chmodSync(directory, 448);
-  } catch {
-    throw new HandoffFailure("cannot protect receipt directory");
+  } catch (error) {
+    throw new HandoffFailure("cannot protect receipt directory", { cause: error });
   }
 }
 function nowEpochSeconds() {
@@ -664,6 +664,13 @@ function readPrivateFileContent(target) {
 // core/src/state/plan.ts
 import { chmodSync as chmodSync2, existsSync as existsSync2, mkdirSync as mkdirSync3, readFileSync as readFileSync3, renameSync as renameSync2, rmSync as rmSync3 } from "node:fs";
 import path3 from "node:path";
+
+// core/src/state/transitions.ts
+function armPlan() {
+  return { mode: "plan", active_slice: "none", verify_green: "false" };
+}
+
+// core/src/state/plan.ts
 var PlanFailure = class extends Error {
 };
 var PlanApprovalError = class extends Error {
@@ -716,12 +723,13 @@ function runCapturePlan(cwd, sessionId, digest, document) {
       throw new PlanFailure("current plan is not a private regular file");
     }
     writeFileAtomically(paths.dir, paths.currentFile, document, ".current.");
+    const arming = armPlan();
     writeStatePairs(
       stateFile,
       [
-        "mode=plan",
-        "active_slice=none",
-        "verify_green=false",
+        `mode=${arming.mode}`,
+        `active_slice=${arming.active_slice}`,
+        `verify_green=${arming.verify_green}`,
         "plan_approval=pending",
         `plan_approval_digest=${digest}`,
         `plan_approval_session=${sessionId}`,
@@ -916,10 +924,15 @@ function main(argv) {
   try {
     return dispatch(argv);
   } catch (error) {
-    return report(error);
+    return report(error, verbOf(argv));
   }
 }
-function report(error) {
+function verbOf(argv) {
+  const first = argv[0];
+  if (first === "journal" || first === "handoff") return first;
+  return argv[2] ?? "";
+}
+function report(error, verb) {
   if (error instanceof UsageError) {
     process.stderr.write(USAGE);
     return 1;
@@ -935,7 +948,7 @@ function report(error) {
     return 1;
   }
   if (error instanceof StateFileUnreadableError) {
-    process.stderr.write(`oso-state: set: ${error.message}
+    process.stderr.write(`oso-state: ${verb}: ${error.message}
 `);
     return 1;
   }
@@ -1022,11 +1035,7 @@ function runShow() {
 `);
     return 0;
   }
-  if (read.kind === "unreadable") {
-    process.stderr.write(`oso-state: show: cannot read state at ${stateFile}: ${read.cause}
-`);
-    return 1;
-  }
+  if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
   process.stdout.write(read.content);
   return 0;
 }

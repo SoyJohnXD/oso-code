@@ -182,8 +182,8 @@ function handoffPaths(cwd: string, agentId: string): HandoffPaths {
 function protectDirectory(directory: string): void {
   try {
     chmodSync(directory, 0o700);
-  } catch {
-    throw new HandoffFailure("cannot protect receipt directory");
+  } catch (error) {
+    throw new HandoffFailure("cannot protect receipt directory", { cause: error });
   }
 }
 

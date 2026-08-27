@@ -3,7 +3,7 @@ import * as handoff from "./handoff.ts";
 import * as plan from "./plan.ts";
 import * as store from "./store.ts";
 
-export const USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
+const USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> get key
        oso-state --session <id> show
        oso-state --session <id> clear
@@ -43,11 +43,17 @@ export function main(argv: readonly string[]): number {
   try {
     return dispatch(argv);
   } catch (error) {
-    return report(error);
+    return report(error, verbOf(argv));
   }
 }
 
-function report(error: unknown): number {
+function verbOf(argv: readonly string[]): string {
+  const first = argv[0];
+  if (first === "journal" || first === "handoff") return first;
+  return argv[2] ?? "";
+}
+
+function report(error: unknown, verb: string): number {
   if (error instanceof UsageError) {
     process.stderr.write(USAGE);
     return 1;
@@ -61,7 +67,7 @@ function report(error: unknown): number {
     return 1;
   }
   if (error instanceof store.StateFileUnreadableError) {
-    process.stderr.write(`oso-state: set: ${error.message}\n`);
+    process.stderr.write(`oso-state: ${verb}: ${error.message}\n`);
     return 1;
   }
   if (error instanceof plan.PlanApprovalError) {
@@ -147,10 +153,7 @@ function runShow(): number {
     process.stdout.write(`no state at ${stateFile}\n`);
     return 0;
   }
-  if (read.kind === "unreadable") {
-    process.stderr.write(`oso-state: show: cannot read state at ${stateFile}: ${read.cause}\n`);
-    return 1;
-  }
+  if (read.kind === "unreadable") throw new store.StateFileUnreadableError(stateFile, read.cause);
   process.stdout.write(read.content);
   return 0;
 }
