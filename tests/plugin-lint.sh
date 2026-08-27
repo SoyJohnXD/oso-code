@@ -256,7 +256,7 @@ collect_shell_sources() {
   local candidate
   SHELL_SOURCES=()
   for candidate in "$REPO_ROOT"/bootstrap/*.sh "$REPO_ROOT"/bootstrap/lib/*.sh \
-    "$REPO_ROOT"/plugin/hooks/*.sh "$REPO_ROOT/plugin/bin/oso-state" \
+    "$REPO_ROOT"/plugin/hooks/*.sh \
     "$REPO_ROOT/plugin/git-hooks/pre-commit" "$REPO_ROOT"/tests/*.sh \
     "$REPO_ROOT"/tests/fixtures/*.sh "$REPO_ROOT"/tools/*.sh; do
     if [ -r "$candidate" ]; then

@@ -1,11 +1,14 @@
 import { build } from "esbuild";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const entryPoint = join(repoRoot, "core", "src", "bin", "oso-state.ts");
-const outfile = join(repoRoot, "plugin", "dist", "oso-state.js");
+const distOutfile = join(repoRoot, "plugin", "dist", "oso-state.js");
+const binOutfile = join(repoRoot, "plugin", "bin", "oso-state");
+const binMode = 0o755;
+const shebang = "#!/usr/bin/env node\n";
 
 async function freshBundleText() {
   const result = await build({
@@ -18,28 +21,51 @@ async function freshBundleText() {
   return result.outputFiles[0].text;
 }
 
-async function check() {
-  const fresh = await freshBundleText();
-  let committed;
+function readTextOrNull(path) {
   try {
-    committed = readFileSync(outfile, "utf8");
+    return readFileSync(path, "utf8");
   } catch {
-    committed = null;
+    return null;
   }
-  if (committed !== fresh) {
+}
+
+function isExecutableByOwner(path) {
+  try {
+    return (statSync(path).mode & binMode) === binMode;
+  } catch {
+    return false;
+  }
+}
+
+async function check() {
+  const freshDist = await freshBundleText();
+  const freshBin = shebang + freshDist;
+  let ok = true;
+  if (readTextOrNull(distOutfile) !== freshDist) {
     process.stderr.write(
       "oso-state: plugin/dist/oso-state.js is stale against core/src/bin/oso-state.ts — run npm run build\n",
     );
-    process.exitCode = 1;
-    return;
+    ok = false;
   }
-  process.exitCode = 0;
+  if (readTextOrNull(binOutfile) !== freshBin) {
+    process.stderr.write(
+      "oso-state: plugin/bin/oso-state is stale against core/src/bin/oso-state.ts — run npm run build\n",
+    );
+    ok = false;
+  } else if (!isExecutableByOwner(binOutfile)) {
+    process.stderr.write("oso-state: plugin/bin/oso-state is not executable — run npm run build\n");
+    ok = false;
+  }
+  process.exitCode = ok ? 0 : 1;
 }
 
 async function writeBundle() {
   const fresh = await freshBundleText();
-  mkdirSync(dirname(outfile), { recursive: true });
-  writeFileSync(outfile, fresh);
+  mkdirSync(dirname(distOutfile), { recursive: true });
+  writeFileSync(distOutfile, fresh);
+  mkdirSync(dirname(binOutfile), { recursive: true });
+  writeFileSync(binOutfile, shebang + fresh);
+  chmodSync(binOutfile, binMode);
 }
 
 if (process.argv.includes("--check")) {

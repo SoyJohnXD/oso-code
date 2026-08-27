@@ -3,7 +3,7 @@ import * as handoff from "./handoff.ts";
 import * as plan from "./plan.ts";
 import * as store from "./store.ts";
 
-const USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
+export const USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> get key
        oso-state --session <id> show
        oso-state --session <id> clear

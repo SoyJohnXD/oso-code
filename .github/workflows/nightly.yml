@@ -130,7 +130,7 @@ jobs:
           bash -n bootstrap/lib/*.sh
           bash -n tools/*.sh
           bash -n plugin/hooks/*.sh
-          bash -n plugin/bin/oso-state plugin/git-hooks/pre-commit
+          bash -n plugin/git-hooks/pre-commit
           bash -n tests/*.sh tests/fixtures/*.sh
       - name: PowerShell script syntax
         shell: powershell

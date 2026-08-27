@@ -403,7 +403,6 @@ run_shell_syntax() {
     "$REPO_ROOT"/plugin/hooks/*.sh \
     "$REPO_ROOT"/tests/*.sh \
     "$REPO_ROOT"/tests/fixtures/*.sh \
-    "$REPO_ROOT/plugin/bin/oso-state" \
     "$REPO_ROOT/plugin/git-hooks/pre-commit"; do
     [ -f "$file" ] || continue
     bash -n "$file" >/dev/null 2>&1 || bad="$bad $(basename "$file")"
