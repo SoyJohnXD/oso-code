@@ -134,6 +134,7 @@ function isReadableRegularFile(target) {
   }
 }
 function isPrivateRegularFile(target) {
+  if (process.platform === "win32") return isReadableRegularFile(target);
   if (!isReadableRegularFile(target)) return false;
   return (statSync(target).mode & 511) === 384;
 }

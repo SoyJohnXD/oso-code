@@ -8,10 +8,12 @@ import {
   unresolvedCitations,
   type ParityFixture,
 } from "./support/parity-fixture.ts";
+import { provedSomething } from "./support/proved.ts";
 import {
   skipUnlessSpawnable,
   STATE_SUBJECTS,
   StateSandbox,
+  unmeasurableSubjectsReport,
   withStateSandbox,
   type ObservedEntry,
   type StateSubject,
@@ -19,18 +21,22 @@ import {
 
 const fixtures = loadParityFixtures();
 
-test(`at least one parity fixture loaded from ${PARITY_FIXTURE_DIRECTORY}, or this suite proved nothing`, () => {
-  assert.ok(fixtures.length > 0, `zero parity fixtures loaded from ${PARITY_FIXTURE_DIRECTORY}`);
-});
+provedSomething(
+  `at least one parity fixture loaded from ${PARITY_FIXTURE_DIRECTORY}`,
+  fixtures.length > 0,
+  `zero parity fixtures loaded from ${PARITY_FIXTURE_DIRECTORY}`,
+);
 
 test(`all ${fixtures.length} parity fixtures cite an assertion that still stands in tests/hooks-test.sh`, () => {
   const suiteLines = readSuiteLines();
   assert.deepEqual(fixtures.flatMap((fixture) => unresolvedCitations(fixture, suiteLines)), []);
 });
 
-test(`at least one of ${STATE_SUBJECTS.length} configured subject(s) is measurable here, or this suite proved nothing`, () => {
-  assert.ok(STATE_SUBJECTS.some((subject) => skipUnlessSpawnable(subject) === false), unmeasurableSubjectsReport());
-});
+provedSomething(
+  `at least one of ${STATE_SUBJECTS.length} configured subject(s) is measurable here`,
+  STATE_SUBJECTS.some((subject) => skipUnlessSpawnable(subject) === false),
+  unmeasurableSubjectsReport(),
+);
 
 for (const subject of STATE_SUBJECTS) {
   describe(
@@ -63,9 +69,4 @@ function mismatchesAgainst(subject: StateSubject, fixture: ParityFixture): strin
 function entriesTheExpectationNames(sandbox: StateSandbox, fixture: ParityFixture): Map<string, ObservedEntry> {
   const named = Object.keys(fixture.expect.state_after ?? {});
   return new Map(named.map((entryPath) => [entryPath, sandbox.read(entryPath)]));
-}
-
-function unmeasurableSubjectsReport(): string {
-  const reasons = STATE_SUBJECTS.map((subject) => `${subject.name}: ${skipUnlessSpawnable(subject)}`);
-  return `zero of ${STATE_SUBJECTS.length} configured subjects were measurable\n${reasons.join("\n")}`;
 }

@@ -151,6 +151,7 @@ export function isReadableRegularFile(target: string): boolean {
 }
 
 export function isPrivateRegularFile(target: string): boolean {
+  if (process.platform === "win32") return isReadableRegularFile(target);
   if (!isReadableRegularFile(target)) return false;
   return (statSync(target).mode & 0o777) === 0o600;
 }

@@ -1,10 +1,22 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { skipUnlessSpawnable, STATE_SUBJECTS, withStateSandbox } from "../support/state-sandbox.ts";
+import { provedSomething } from "../support/proved.ts";
+import {
+  skipUnlessSpawnable,
+  STATE_SUBJECTS,
+  unmeasurableSubjectsReport,
+  withStateSandbox,
+} from "../support/state-sandbox.ts";
 
 const SESSION = "lock-port-case";
 const STATE_FILE = ".local/state/oso-code/{repo}.state";
 const STATE_LOCK = ".local/state/oso-code/{repo}.state.lock";
+
+provedSomething(
+  `at least one of ${STATE_SUBJECTS.length} configured subject(s) is measurable here`,
+  STATE_SUBJECTS.some((subject) => skipUnlessSpawnable(subject) === false),
+  unmeasurableSubjectsReport(),
+);
 
 for (const subject of STATE_SUBJECTS) {
   describe(

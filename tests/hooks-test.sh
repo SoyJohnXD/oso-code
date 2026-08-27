@@ -10787,13 +10787,30 @@ else
 fi
 
 ROUTES_TS="$REPO_ROOT/opencode/hooks/routes.ts"
+tsc_type_checks_outside_any_tsconfig_tree() {
+  local source_file="$1" sandbox
+  sandbox="$(mktemp -d)"
+  cp "$source_file" "$sandbox/$(basename "$source_file")"
+  (cd "$sandbox" && tsc --noEmit --strict --target es2022 --module esnext "$(basename "$source_file")") \
+    >/dev/null 2>&1
+  local status=$?
+  rm -rf "$sandbox"
+  return "$status"
+}
 if [ ! -f "$ROUTES_TS" ]; then
   assert_equals "the opencode route table is generated" "nonempty" "empty"
 elif command -v tsc >/dev/null 2>&1; then
-  if tsc --noEmit --strict --target es2022 --module esnext "$ROUTES_TS" >/dev/null 2>&1; then
+  if tsc_type_checks_outside_any_tsconfig_tree "$ROUTES_TS"; then
     echo "ok: the generated opencode route table type-checks"; pass=$((pass + 1))
   else
     echo "FAIL: the generated opencode route table does not type-check"; fail=$((fail + 1))
+  fi
+  ILL_TYPED_TS="$TEST_HOME/opencode-routes-tsc-ill-typed-probe.ts"
+  printf '%s\n' 'const oughtToFailTypeCheck: number = "not a number";' > "$ILL_TYPED_TS"
+  if tsc_type_checks_outside_any_tsconfig_tree "$ILL_TYPED_TS"; then
+    echo "FAIL: the route table tsc check cannot detect a type error"; fail=$((fail + 1))
+  else
+    echo "ok: the route table tsc check still fails on ill-typed input"; pass=$((pass + 1))
   fi
 else
   skipped=$((skipped + 1))

@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { provedSomething } from "../support/proved.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
 
 const selfPath = path.relative(repositoryRoot, fileURLToPath(import.meta.url));
@@ -83,9 +84,17 @@ test("bashTreatmentLineNumbers does not flag prose mentioning both bash and the 
   );
 });
 
+const scannableTrackedFiles = trackedRepositoryFiles().filter(
+  (relativePath) => relativePath !== selfPath && isScannablePath(relativePath),
+);
+
+provedSomething(
+  "the bash-treatment scan reads at least one tracked, scannable file",
+  scannableTrackedFiles.length > 0,
+  "git ls-files returned zero scannable tracked files, so the scan below would pass having looked at nothing",
+);
+
 test("no tracked file spawns, syntax-checks, or scans plugin/bin/oso-state as a bash source", () => {
-  const violations = trackedRepositoryFiles()
-    .filter((relativePath) => relativePath !== selfPath && isScannablePath(relativePath))
-    .flatMap(bashTreatmentViolations);
+  const violations = scannableTrackedFiles.flatMap(bashTreatmentViolations);
   assert.deepEqual(violations, []);
 });

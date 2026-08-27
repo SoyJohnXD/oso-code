@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { skipUnlessSpawnable, STATE_SUBJECTS, withStateSandbox } from "../support/state-sandbox.ts";
+import { provedSomething } from "../support/proved.ts";
+import {
+  skipUnlessSpawnable,
+  STATE_SUBJECTS,
+  unmeasurableSubjectsReport,
+  withStateSandbox,
+} from "../support/state-sandbox.ts";
 
 type RefusedArgv = { readonly refuses: string; readonly readFrom: string; readonly argv: readonly string[] };
 
@@ -32,6 +38,12 @@ const REFUSED_ARGV: readonly RefusedArgv[] = [
   { refuses: "handoff publish carrying a timeout", readFrom: "8c54fd8:plugin/bin/oso-state:339", argv: ["handoff", "publish", ...HANDOFF_COORDINATES, "--hook-session", "h", "--timeout", "5"] },
   { refuses: "handoff consume carrying a hook session", readFrom: "8c54fd8:plugin/bin/oso-state:429", argv: ["handoff", "consume", ...HANDOFF_COORDINATES, "--hook-session", "h"] },
 ];
+
+provedSomething(
+  `at least one of ${STATE_SUBJECTS.length} configured subject(s) is measurable here`,
+  STATE_SUBJECTS.some((subject) => skipUnlessSpawnable(subject) === false),
+  unmeasurableSubjectsReport(),
+);
 
 for (const subject of STATE_SUBJECTS) {
   describe(

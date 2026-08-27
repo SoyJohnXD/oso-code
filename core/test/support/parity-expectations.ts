@@ -93,11 +93,11 @@ function textMismatch(
   if (typeof expected !== "string") {
     return expected.contains
       .map((fragment) => expand(fragment))
-      .filter((fragment) => !captured.includes(fragment))
+      .filter((fragment) => !pathInsensitiveIncludes(captured, fragment))
       .map((fragment) => `${label}: expected it to carry ${JSON.stringify(fragment)}, got ${JSON.stringify(captured)}`);
   }
   const wanted = asShellWouldCapture(expand(expected));
-  if (wanted === captured) return [];
+  if (pathSeparatorsEqual(wanted, captured)) return [];
   return [`${label}: expected ${JSON.stringify(wanted)}, got ${JSON.stringify(captured)}`];
 }
 
@@ -109,7 +109,7 @@ function journalTextMismatch(
 ): string[] {
   const wanted = asShellWouldCapture(expand(expected));
   const captured = asShellWouldCapture(journalTextsIn(actual));
-  if (wanted === captured) return [];
+  if (pathSeparatorsEqual(wanted, captured)) return [];
   return [`${label}: expected ${JSON.stringify(wanted)}, got ${JSON.stringify(captured)}`];
 }
 
@@ -149,4 +149,16 @@ function eventFieldMismatches(wanted: EventExpectation, line: string, index: num
 
 function asShellWouldCapture(text: string): string {
   return text.replace(/\n+$/, "");
+}
+
+function withUnifiedPathSeparators(text: string): string {
+  return text.replaceAll("\\", "/");
+}
+
+function pathSeparatorsEqual(expected: string, actual: string): boolean {
+  return withUnifiedPathSeparators(expected) === withUnifiedPathSeparators(actual);
+}
+
+function pathInsensitiveIncludes(haystack: string, needle: string): boolean {
+  return withUnifiedPathSeparators(haystack).includes(withUnifiedPathSeparators(needle));
 }

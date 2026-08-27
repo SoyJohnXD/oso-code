@@ -70,6 +70,11 @@ export function skipUnlessSpawnable(subject: StateSubject): false | string {
   return `${subject.name} cannot be spawned here, so its behaviour cannot be measured on this platform`;
 }
 
+export function unmeasurableSubjectsReport(): string {
+  const reasons = STATE_SUBJECTS.map((subject) => `${subject.name}: ${skipUnlessSpawnable(subject)}`);
+  return `zero of ${STATE_SUBJECTS.length} configured subjects were measurable\n${reasons.join("\n")}`;
+}
+
 export function withStateSandbox<T>(workspace: string, use: (sandbox: StateSandbox) => T): T {
   const sandbox = new StateSandbox(workspace);
   try {
