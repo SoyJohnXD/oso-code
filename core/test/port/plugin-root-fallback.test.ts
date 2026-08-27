@@ -6,16 +6,21 @@ import { test } from "node:test";
 import { pluginRootAbove, pluginRootDirectory } from "../../src/gates/preflight.ts";
 import { runGate } from "../../src/gates/dispatch.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
+import { pathInsensitiveIncludes } from "../support/parity-expectations.ts";
 import { repositoryRoot, withStateSandbox } from "../support/state-sandbox.ts";
 
 const EXPECTED_PLUGIN_ROOT = path.join(repositoryRoot, "plugin");
 const EXPECTED_STATE_BIN = path.join(EXPECTED_PLUGIN_ROOT, "bin", "oso-state");
+const HOOKS_MANIFEST_FINGERPRINT_CONTENT =
+  '{"hooks":{"PreToolUse":[{"hooks":[{"command":"block-commit-until-green.sh"}]}]}}';
 
-function flatInstallFixture(prefix: string, siblings: readonly string[]): string {
+function flatInstallFixture(prefix: string, siblings: readonly string[], manifestSegments: readonly string[]): string {
   const root = mkdtempSync(path.join(tmpdir(), prefix));
   mkdirSync(path.join(root, "bin"), { recursive: true });
   writeFileSync(path.join(root, "bin", "oso-state"), "");
   for (const sibling of siblings) mkdirSync(path.join(root, sibling), { recursive: true });
+  mkdirSync(path.join(root, ...manifestSegments.slice(0, -1)), { recursive: true });
+  writeFileSync(path.join(root, ...manifestSegments), HOOKS_MANIFEST_FINGERPRINT_CONTENT);
   return root;
 }
 
@@ -67,18 +72,46 @@ test(
 test("pluginRootAbove fails closed when no ancestor carries a bin/oso-state, instead of guessing", () => {
   const isolated = mkdtempSync(path.join(tmpdir(), "oso-plugin-root-"));
   try {
-    assert.throws(() => pluginRootAbove(isolated), /carries a bin\/oso-state, directly or one level under plugin\//);
+    assert.throws(
+      () => pluginRootAbove(isolated),
+      /carries a verified oso-code bin\/oso-state, directly or one level under plugin\//,
+    );
   } finally {
     rmSync(isolated, { recursive: true, force: true });
   }
 });
 
 test(
+  "pluginRootAbove skips a decoy ancestor's unrelated bin/oso-state and fails closed instead of resolving " +
+    "to it (reachable today: a PATH shim at ~/.local/bin/oso-state sits above ~/.local/share/oso-code/runtime, " +
+    "the finding's reproduced scenario)",
+  () => {
+    const decoyAncestor = mkdtempSync(path.join(tmpdir(), "oso-plugin-decoy-"));
+    mkdirSync(path.join(decoyAncestor, "bin"), { recursive: true });
+    writeFileSync(path.join(decoyAncestor, "bin", "oso-state"), "");
+    const moduleDirectory = path.join(decoyAncestor, "share", "oso-code", "runtime");
+    mkdirSync(moduleDirectory, { recursive: true });
+    try {
+      assert.throws(
+        () => pluginRootAbove(moduleDirectory),
+        /carries a verified oso-code bin\/oso-state, directly or one level under plugin\//,
+      );
+    } finally {
+      rmSync(decoyAncestor, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
   "pluginRootAbove resolves the real installed Claude Code plugin cache layout — bin/, hooks/, agents/, " +
     "skills/ and git-hooks/ sit flat under the install root with no plugin/ wrapper (verified against " +
     "~/.claude/plugins/cache/oso-code/oso-code/0.25.0/, finding A)",
   () => {
-    const root = flatInstallFixture("oso-claude-cache-", ["hooks", "agents", "skills", "git-hooks"]);
+    const root = flatInstallFixture(
+      "oso-claude-cache-",
+      ["hooks", "agents", "skills", "git-hooks"],
+      ["hooks", "hooks.json"],
+    );
     try {
       assert.equal(pluginRootAbove(path.join(root, "hooks")), root);
       assert.equal(pluginRootAbove(path.join(root, "agents")), root);
@@ -90,9 +123,10 @@ test(
 
 test(
   "pluginRootAbove resolves the real Codex staged runtime layout — hooks/, bin/ and git-hooks/ are flat " +
-    "siblings under the runtime root with no plugin/ wrapper (bootstrap/install-codex.sh:514-531, finding A)",
+    "siblings under the runtime root with no plugin/ wrapper, and its own hooks.json (install-codex.sh:521, " +
+    "copied from codex/hooks/hooks.json) is what verifies it (bootstrap/install-codex.sh:514-531, finding A)",
   () => {
-    const root = flatInstallFixture("oso-codex-runtime-", ["hooks", "git-hooks"]);
+    const root = flatInstallFixture("oso-codex-runtime-", ["hooks", "git-hooks"], ["hooks.json"]);
     try {
       assert.equal(pluginRootAbove(path.join(root, "hooks")), root);
     } finally {
@@ -121,11 +155,10 @@ test(
       const stdin = sandbox.expandJson('{"session_id":"test-session","cwd":"{cwd}"}');
       const run = withHookEnvironment({ HOME: sandbox.home }, () => runGate(["stale"], stdin));
       assert.equal(run.exit, 0);
-      assert.match(run.stdout, new RegExp(escapeForRegExp(EXPECTED_STATE_BIN)));
+      assert.ok(
+        pathInsensitiveIncludes(run.stdout, EXPECTED_STATE_BIN),
+        `expected ${JSON.stringify(run.stdout)} to carry ${EXPECTED_STATE_BIN}`,
+      );
     });
   },
 );
-
-function escapeForRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}

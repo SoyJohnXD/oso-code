@@ -152,13 +152,13 @@ function asShellWouldCapture(text: string): string {
 }
 
 function withUnifiedPathSeparators(text: string): string {
-  return text.replaceAll("\\", "/");
+  return text.replace(/\\+/g, "/");
 }
 
-function pathSeparatorsEqual(expected: string, actual: string): boolean {
+export function pathSeparatorsEqual(expected: string, actual: string): boolean {
   return withUnifiedPathSeparators(expected) === withUnifiedPathSeparators(actual);
 }
 
-function pathInsensitiveIncludes(haystack: string, needle: string): boolean {
+export function pathInsensitiveIncludes(haystack: string, needle: string): boolean {
   return withUnifiedPathSeparators(haystack).includes(withUnifiedPathSeparators(needle));
 }

@@ -1,4 +1,4 @@
-import { accessSync, constants, existsSync, statSync } from "node:fs";
+import { accessSync, constants, existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GateOutcome, GateVerdict, HookEnvelope, PreToolUseVerdict } from "../hosts/envelope.ts";
@@ -117,21 +117,35 @@ export function pluginRootDirectory(): string {
 }
 
 const PLUGIN_ROOT_WRAPPERS: readonly (readonly string[])[] = [[], ["plugin"]];
+const HOOKS_MANIFEST_LOCATIONS: readonly (readonly string[])[] = [["hooks.json"], ["hooks", "hooks.json"]];
+const HOOKS_MANIFEST_FINGERPRINT = "block-commit-until-green.sh";
 
 export function pluginRootAbove(moduleDirectory: string): string {
   let candidate = moduleDirectory;
   while (true) {
     for (const wrapper of PLUGIN_ROOT_WRAPPERS) {
       const root = path.join(candidate, ...wrapper);
-      if (existsSync(path.join(root, "bin", "oso-state"))) return root;
+      if (existsSync(path.join(root, "bin", "oso-state")) && isVerifiedOsoCodeRoot(root)) return root;
     }
     const parent = path.dirname(candidate);
     if (parent === candidate) {
       throw new Error(
-        `no ancestor of ${moduleDirectory} carries a bin/oso-state, directly or one level under plugin/, ` +
-          "to anchor the plugin root on",
+        `no ancestor of ${moduleDirectory} carries a verified oso-code bin/oso-state, directly or one level ` +
+          "under plugin/, to anchor the plugin root on",
       );
     }
     candidate = parent;
+  }
+}
+
+function isVerifiedOsoCodeRoot(root: string): boolean {
+  return HOOKS_MANIFEST_LOCATIONS.some((segments) => hooksManifestFingerprinted(path.join(root, ...segments)));
+}
+
+function hooksManifestFingerprinted(manifestFile: string): boolean {
+  try {
+    return readFileSync(manifestFile, "utf8").includes(HOOKS_MANIFEST_FINGERPRINT);
+  } catch {
+    return false;
   }
 }

@@ -57,7 +57,7 @@ describe(
           const stdin = sandbox.expandJson('{"session_id":"test-session","cwd":"{cwd}"}');
           return withHookEnvironment({ HOME: sandbox.home }, () => anchorlessRunGate(["stale"], stdin));
         });
-        assertLoud(run, /carries a bin\/oso-state/);
+        assertLoud(run, /carries a verified oso-code bin\/oso-state/);
       },
     );
 
@@ -83,7 +83,7 @@ describe(
           const stdin = sandbox.expandJson('{"session_id":"test-session","cwd":"{cwd}","source":"startup"}');
           return withHookEnvironment({ HOME: sandbox.home }, () => anchorlessRunGate(["version"], stdin));
         });
-        assertLoud(run, /carries a bin\/oso-state/);
+        assertLoud(run, /carries a verified oso-code bin\/oso-state/);
       },
     );
 
@@ -116,7 +116,7 @@ describe(
             () => anchorlessRunGate(["statebin"], stdin),
           );
         });
-        assertLoud(run, /carries a bin\/oso-state/);
+        assertLoud(run, /carries a verified oso-code bin\/oso-state/);
       },
     );
 
