@@ -30,7 +30,7 @@ export function loadGateFixtures(): GateFixture[] {
 export function observeGate(sandbox: StateSandbox, fixture: GateFixture): ObservedRun {
   const eventsBefore = sandbox.eventLogLines().length;
   const run = withHookEnvironment({ HOME: sandbox.home, ...fixture.env }, () => {
-    const gateRun = runGate([fixture.gate, ...fixture.argv], sandbox.expand(fixture.stdin));
+    const gateRun = runGate([fixture.gate, ...fixture.argv], sandbox.expandJson(fixture.stdin));
     for (const event of gateRun.events) logEvent(event);
     return gateRun;
   });

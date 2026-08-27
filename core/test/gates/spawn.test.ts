@@ -35,7 +35,7 @@ describe(
     test("a deny is one JSON line on stdout and exit 0 (read from plugin/hooks/lib.sh:373-381)", () => {
       const run = withStateSandbox("workspace", (sandbox) => {
         sandbox.seed(ARMED_RED_STATE);
-        return sandbox.run(GATE_ENTRY_POINT, ["commit"], { stdin: sandbox.expand(COMMIT_ENVELOPE) });
+        return sandbox.run(GATE_ENTRY_POINT, ["commit"], { stdin: sandbox.expandJson(COMMIT_ENVELOPE) });
       });
       assert.equal(run.exit, 0);
       assert.equal(run.stderr, "");
@@ -53,7 +53,7 @@ describe(
     test("a gate error is plain text on stderr and exit 2 (read from plugin/hooks/lib.sh:383-386)", () => {
       const run = withStateSandbox("workspace", (sandbox) => {
         sandbox.seed(ARMED_RED_STATE);
-        return sandbox.run(GATE_ENTRY_POINT, ["frobnicate"], { stdin: sandbox.expand(COMMIT_ENVELOPE) });
+        return sandbox.run(GATE_ENTRY_POINT, ["frobnicate"], { stdin: sandbox.expandJson(COMMIT_ENVELOPE) });
       });
       assert.equal(run.exit, 2);
       assert.equal(run.stdout, "");
@@ -63,7 +63,7 @@ describe(
 
     test("an allow is silence and exit 0 (read from plugin/hooks/lib.sh:329-331)", () => {
       const run = withStateSandbox("workspace", (sandbox) =>
-        sandbox.run(GATE_ENTRY_POINT, ["commit"], { stdin: sandbox.expand(COMMIT_ENVELOPE) }),
+        sandbox.run(GATE_ENTRY_POINT, ["commit"], { stdin: sandbox.expandJson(COMMIT_ENVELOPE) }),
       );
       assert.equal(run.exit, 0);
       assert.equal(run.stdout, "");

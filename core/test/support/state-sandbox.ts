@@ -57,14 +57,22 @@ function joinForRoot(root: string): typeof path.posix.join {
   return root.includes("\\") ? path.win32.join : path.posix.join;
 }
 
-export function nativizeRootedPaths(text: string, root: string): string {
+type Escaper = (value: string) => string;
+
+const asIs: Escaper = (value) => value;
+
+function jsonEscape(value: string): string {
+  return JSON.stringify(value).slice(1, -1);
+}
+
+export function nativizeRootedPaths(text: string, root: string, escape: Escaper = asIs): string {
   if (root === "") return text;
   const escapedRoot = root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const suffixPattern = new RegExp(`${escapedRoot}((?:/[^\\s"'\\\\]+)+)`, "g");
   const join = joinForRoot(root);
   return text.replace(suffixPattern, (_whole, suffix: string) => {
     const segments = suffix.split("/").filter((segment) => segment !== "");
-    return join(root, ...segments);
+    return escape(join(root, ...segments));
   });
 }
 
@@ -121,12 +129,27 @@ export class StateSandbox {
   }
 
   expand(text: string): string {
+    return this.substitute(text, asIs);
+  }
+
+  expandJson(text: string): string {
+    return this.substitute(text, jsonEscape);
+  }
+
+  private substitute(text: string, escape: Escaper): string {
     const substituted = text
       .replaceAll("{home}", this.home)
       .replaceAll("{cwd}", this.cwd)
       .replaceAll("{repo}", this.repositoryKey)
       .replace(/\{sha256:([^}]*)\}/g, (_whole, value: string) => sha256Hex(value));
-    return [this.home, this.cwd].reduce((running, root) => nativizeRootedPaths(running, root), substituted);
+    const nativized = [this.home, this.cwd].reduce(
+      (running, root) => nativizeRootedPaths(running, root, escape),
+      substituted,
+    );
+    return [this.home, this.cwd].reduce(
+      (running, root) => (root === "" ? running : running.replaceAll(root, escape(root))),
+      nativized,
+    );
   }
 
   seed(entries: Readonly<Record<string, SeededEntry>>): void {

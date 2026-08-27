@@ -64,7 +64,7 @@ describe("core/src/gates/dispatch.ts: port tests read from the gate scripts, nev
   test("a gate that throws blocks on two lines, the fixed one and the cause (read from plugin/hooks/lib.sh:383-386)", () => {
     const run = withStateSandbox("workspace", (sandbox) => {
       sandbox.seed(ARMED_RED_STATE);
-      const envelope = sandbox.expand(bashEnvelope("git commit -m x"));
+      const envelope = sandbox.expandJson(bashEnvelope("git commit -m x"));
       return withHookEnvironment({ HOME: HOME_A_GATE_CANNOT_RESOLVE }, () => runGate(["commit"], envelope));
     });
     assert.equal(run.exit, 2);
@@ -144,6 +144,6 @@ function bashEnvelope(command: string): string {
 function judge(argv: readonly string[], seed: Readonly<Record<string, string>>, envelope: string) {
   return withStateSandbox("workspace", (sandbox) => {
     sandbox.seed(seed);
-    return withHookEnvironment({ HOME: sandbox.home }, () => runGate(argv, sandbox.expand(envelope)));
+    return withHookEnvironment({ HOME: sandbox.home }, () => runGate(argv, sandbox.expandJson(envelope)));
   });
 }
