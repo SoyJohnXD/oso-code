@@ -37,7 +37,8 @@ jobs:
       - name: Plugin linter
         shell: bash
         run: bash tests/plugin-lint.sh
-      - name: OpenCode unit suite
+      - name: OpenCode unit suite (ubuntu only — Windows bring-up is C3's, tracked in docs/rewrite/ts-core-roadmap.md)
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           cd opencode

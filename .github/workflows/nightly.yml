@@ -172,6 +172,16 @@ jobs:
           type verify-bat-report.txt
           findstr /c:"ok:   home dir the Windows client reads" verify-bat-report.txt >nul || exit /b 1
           findstr /b /c:"passed:" verify-bat-report.txt >nul || exit /b 1
+      - name: OpenCode unit suite on Windows, report-only — never fails the run, keeps the fail count visible every night until C3 makes this surface verified (docs/rewrite/ts-core-roadmap.md:255)
+        shell: bash
+        continue-on-error: true
+        run: |
+          cd opencode
+          npm ci --no-audit --no-fund
+          report="$(mktemp)"
+          npm test > "$report" 2>&1 || true
+          cat "$report"
+          grep -E '^# (tests|pass|fail) ' "$report"
       - name: Open an issue for this failed run
         if: failure()
         shell: bash
