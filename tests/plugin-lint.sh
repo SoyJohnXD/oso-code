@@ -329,14 +329,20 @@ files_under_repo_root_a_root_gitignore_prune_reaches() {
 }
 
 files_under_repo_root_git_does_not_ignore() {
-  local candidates ignored status
+  local candidates candidates_relative candidate ignored status
   if ! candidates="$(find "$REPO_ROOT" -type d -name .git -prune -o -type f -print)"; then
     return 1
   fi
   [ -n "$candidates" ] || return 0
-  ignored="$(git -C "$REPO_ROOT" check-ignore --stdin <<< "$candidates" 2>/dev/null)" && status=0 || status=$?
+  candidates_relative="$(while IFS= read -r candidate; do
+    printf '%s\n' "${candidate#"$REPO_ROOT"/}"
+  done <<< "$candidates")"
+  ignored="$(git -C "$REPO_ROOT" check-ignore --stdin <<< "$candidates_relative" 2>/dev/null)" && status=0 || status=$?
   if [ "$status" -eq 0 ]; then
-    grep -vxFf <(printf '%s\n' "$ignored") <<< "$candidates" || true
+    while IFS= read -r candidate; do
+      [ -n "$candidate" ] || continue
+      printf '%s\n' "$REPO_ROOT/$candidate"
+    done <<< "$(grep -vxFf <(printf '%s\n' "$ignored") <<< "$candidates_relative" || true)"
     return 0
   fi
   if [ "$status" -ne 1 ]; then
@@ -398,7 +404,7 @@ dot_directories_at_the_repository_root() {
 directory_is_ignored() {
   local directory="$1" name="${1##*/}"
   if repo_root_is_a_git_work_tree; then
-    git -C "$REPO_ROOT" check-ignore -q -- "$directory" 2>/dev/null
+    git -C "$REPO_ROOT" check-ignore -q -- "${directory#"$REPO_ROOT"/}" 2>/dev/null
   else
     printf '%s\n' "$(directories_the_repository_ignores)" | grep -qxF "$name"
   fi
