@@ -12242,6 +12242,14 @@ else
     "1" "$(grep -Fc 'expected exactly 9 OpenCode skill wrappers (found 8)' "$OPENCODE_VERIFY_MUTANT_OUTPUT" || true)"
 fi
 
+arm_unattended_run
+assert_equals "a command-string-carrying wrapper is a KNOWN HOLE at the production boundary gate too: script/ssh/tmux leave the deploy as one quoted token no basename comparison matches, so it passes allowed AND uncounted, the same shape as the xargs hole above" \
+  "allow allow allow 0" \
+  "$(prod_verdicts_and_residues_for \
+    "script -qc 'vercel --prod' /dev/null" \
+    "ssh build-host 'vercel --prod'" \
+    "tmux new-session -d 'vercel --prod'")"
+
 echo "----"
 echo "passed: $pass, failed: $fail, skipped: $skipped"
 [ "$fail" -eq 0 ]
