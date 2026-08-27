@@ -53,6 +53,21 @@ function sha256Hex(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function joinForRoot(root: string): typeof path.posix.join {
+  return root.includes("\\") ? path.win32.join : path.posix.join;
+}
+
+export function nativizeRootedPaths(text: string, root: string): string {
+  if (root === "") return text;
+  const escapedRoot = root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const suffixPattern = new RegExp(`${escapedRoot}((?:/[^\\s"'\\\\]+)+)`, "g");
+  const join = joinForRoot(root);
+  return text.replace(suffixPattern, (_whole, suffix: string) => {
+    const segments = suffix.split("/").filter((segment) => segment !== "");
+    return join(root, ...segments);
+  });
+}
+
 function subjectSpawns(subject: StateSubject): boolean {
   const [command, ...leading] = subject.command;
   if (command === undefined) return false;
@@ -100,11 +115,12 @@ export class StateSandbox {
   }
 
   expand(text: string): string {
-    return text
+    const substituted = text
       .replaceAll("{home}", this.home)
       .replaceAll("{cwd}", this.cwd)
       .replaceAll("{repo}", this.repositoryKey)
       .replace(/\{sha256:([^}]*)\}/g, (_whole, value: string) => sha256Hex(value));
+    return [this.home, this.cwd].reduce((running, root) => nativizeRootedPaths(running, root), substituted);
   }
 
   seed(entries: Readonly<Record<string, SeededEntry>>): void {
