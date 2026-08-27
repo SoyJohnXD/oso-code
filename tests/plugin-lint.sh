@@ -13,6 +13,15 @@ flag() {
   violations=$((violations + 1))
 }
 
+is_executable_regular_file() {
+  local target="$1"
+  [ -f "$target" ] || return 1
+  case "$(uname -s 2>/dev/null || true)" in
+    MINGW*|MSYS*|CYGWIN*) return 0 ;;
+  esac
+  [ -x "$target" ]
+}
+
 host_wrapper() {
   local skill="$1" host="$2" name
   name="$(basename "$(dirname "$skill")")"
@@ -411,7 +420,7 @@ check_every_dot_directory_is_repo_owned_or_ignored() {
 
 check_hook_renders_and_published_hashes_match() {
   local renderer="$REPO_ROOT/tools/render-hooks-json.sh" report
-  if [ ! -x "$renderer" ]; then
+  if ! is_executable_regular_file "$renderer"; then
     flag "tools/render-hooks-json.sh is missing or not executable"
     return 0
   fi

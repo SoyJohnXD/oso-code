@@ -6,6 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { planApprovalTool, planCancelTool, PLAN_APPROVAL_TOOL_ID, PLAN_CANCEL_TOOL_ID } from "./approval.ts";
+import { spawnStateBin } from "./gates.ts";
 import { deriveRootId } from "./identity.ts";
 import { digestOf, repoStateDir } from "./plan.ts";
 import type { HostPermissionRequest, PluginToolCall } from "./tool.ts";
@@ -41,7 +42,7 @@ interface StateRun {
 }
 
 function runStateVerb(fixture: ApprovalFixture, args: readonly string[], amendment = ""): StateRun {
-  const result = spawnSync(
+  const result = spawnStateBin(
     join(HARNESS_HOOKS_DIR, "..", "bin", "oso-state"),
     ["--session", fixture.owner, ...args],
     { cwd: fixture.repoDir, input: amendment, encoding: "utf8", env: { ...process.env } },

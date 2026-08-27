@@ -7,6 +7,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { osoCode } from "../oso-code.ts";
 import { continueUnattendedRun, recordSessionLineage, type ContinuationOutcome } from "./continuation-rail.ts";
+import { spawnStateBin } from "./gates.ts";
 import { deriveRootId } from "./identity.ts";
 import { CAP_MILESTONE, CONTINUATION_ORDER, PUSHES_WITHOUT_PROGRESS_CAP } from "./unattended-run.ts";
 import type { HostSessionApi } from "./wave.ts";
@@ -45,7 +46,7 @@ function makeFixture(): Fixture {
 }
 
 function runState(fixture: Fixture, args: readonly string[]): string {
-  const result = spawnSync(STATE_BIN, args, {
+  const result = spawnStateBin(STATE_BIN, args, {
     cwd: fixture.repo,
     encoding: "utf8",
     env: { ...process.env, HOME: fixture.home },

@@ -11,12 +11,14 @@ function fixtureDir(): string {
 
 function fakeStateBin(dir: string, exitCode: number): string {
   const path = join(dir, "oso-state");
-  const callsFile = join(dir, "calls").replace(/\\/g, "\\\\");
-  writeFileSync(
-    path,
-    `#!/bin/sh\nprintf '%s\\n' "$*" >> '${callsFile}'\nexit ${exitCode}\n`,
-    { mode: 0o755 },
-  );
+  const callsFile = join(dir, "calls");
+  const script = [
+    `const { appendFileSync } = require("node:fs");`,
+    `appendFileSync(${JSON.stringify(callsFile)}, process.argv.slice(2).join(" ") + "\\n");`,
+    `process.exit(${exitCode});`,
+    "",
+  ].join("\n");
+  writeFileSync(path, script);
   return path;
 }
 

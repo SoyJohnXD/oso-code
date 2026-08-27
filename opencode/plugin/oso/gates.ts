@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawnSync, type SpawnSyncOptionsWithStringEncoding, type SpawnSyncReturns } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -136,6 +136,14 @@ export function resolveHookScript(
 export function resolveStateBin(hooksDir?: string): string {
   const dir = resolveHookScript("", hooksDir);
   return resolve(dir, "..", "bin", "oso-state");
+}
+
+export function spawnStateBin(
+  stateBin: string,
+  args: readonly string[],
+  options: SpawnSyncOptionsWithStringEncoding,
+): SpawnSyncReturns<string> {
+  return spawnSync("node", [stateBin, ...args], options);
 }
 
 function gateEnvironment(directory: string, resolvedScript: string): NodeJS.ProcessEnv {

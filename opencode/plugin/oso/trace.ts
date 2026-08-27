@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawnStateBin } from "./gates.ts";
 
 export type TraceSeverity = "enforcement" | "advisory";
 export type TraceSinkName = "state" | "log" | "toast";
@@ -46,7 +46,7 @@ function tryStateSink(origin: string, detail: string, sessionID: string | undefi
   }
   try {
     const bin = process.env.OSO_STATE_BIN ?? "oso-state";
-    const result = spawnSync(bin, ["--session", sessionID, "event", origin, detail], {
+    const result = spawnStateBin(bin, ["--session", sessionID, "event", origin, detail], {
       encoding: "utf8",
       timeout: STATE_TRACE_TIMEOUT_MS,
     });

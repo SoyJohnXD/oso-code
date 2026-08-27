@@ -1,6 +1,5 @@
-import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { resolveStateBin } from "./gates.ts";
+import { resolveStateBin, spawnStateBin } from "./gates.ts";
 import { repoStateDir } from "./plan.ts";
 
 export interface ApprovedPlan {
@@ -65,7 +64,7 @@ function readStateKey(directory: string, owner: string, key: string): string {
 export function runStateCommand(directory: string, owner: string, args: readonly string[]): string {
   const stateBin = resolveStateBin();
   const verb = args[0] ?? "";
-  const run = spawnSync(stateBin, ["--session", owner, ...args], { cwd: directory, encoding: "utf8" });
+  const run = spawnStateBin(stateBin, ["--session", owner, ...args], { cwd: directory, encoding: "utf8" });
   if (run.error !== undefined) {
     throw new Error(`oso-code could not run "${stateBin} ${verb}": ${run.error.message}`);
   }

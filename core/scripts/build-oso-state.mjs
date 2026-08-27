@@ -1,7 +1,8 @@
 import { build } from "esbuild";
-import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isExecutableRegularFile } from "./lib/executable-file.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const entryPoint = join(repoRoot, "core", "src", "bin", "oso-state.ts");
@@ -32,14 +33,6 @@ function readTextOrNull(path) {
   }
 }
 
-function isExecutableByOwner(path) {
-  try {
-    return (statSync(path).mode & binMode) === binMode;
-  } catch {
-    return false;
-  }
-}
-
 async function check() {
   const freshDist = await freshBundleText();
   const freshBin = shebang + freshDist;
@@ -55,7 +48,7 @@ async function check() {
       "oso-state: plugin/bin/oso-state is stale against core/src/bin/oso-state.ts — run npm run build\n",
     );
     ok = false;
-  } else if (!isExecutableByOwner(binOutfile)) {
+  } else if (!isExecutableRegularFile(binOutfile)) {
     process.stderr.write("oso-state: plugin/bin/oso-state is not executable — run npm run build\n");
     ok = false;
   }

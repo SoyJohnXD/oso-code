@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { spawnStateBin } from "./gates.ts";
 import { deriveRootId } from "./identity.ts";
 import {
   applySighting,
@@ -237,7 +238,7 @@ function makeFixture(): Fixture {
 }
 
 function runState(fixture: Fixture, args: readonly string[]): string {
-  const result = spawnSync(STATE_BIN, args, {
+  const result = spawnStateBin(STATE_BIN, args, {
     cwd: fixture.repo,
     encoding: "utf8",
     env: { ...process.env, HOME: fixture.home },

@@ -6,6 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { osoCode } from "../oso-code.ts";
+import { spawnStateBin } from "./gates.ts";
 import { publishIdentity } from "./identity.ts";
 
 const HOOKS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../../plugin/hooks");
@@ -33,7 +34,7 @@ function makeFixture(): Fixture {
 }
 
 function armState(fixture: Fixture, session: string, pairs: readonly string[]): void {
-  const result = spawnSync(STATE_BIN, ["--session", session, "set", ...pairs], {
+  const result = spawnStateBin(STATE_BIN, ["--session", session, "set", ...pairs], {
     cwd: fixture.repo,
     encoding: "utf8",
     env: { ...process.env, HOME: fixture.home },

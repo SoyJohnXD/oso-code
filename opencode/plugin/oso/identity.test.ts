@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { spawnStateBin } from "./gates.ts";
 import { deriveRootId, publishIdentity, roleOf } from "./identity.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
@@ -49,7 +50,7 @@ function makeRepo(): RepoFixture {
 }
 
 function armSession(cwd: string, home: string, assignments: readonly string[]): void {
-  const result = spawnSync(OSO_STATE_BIN, ["--session", RAIL_SESSION, "set", ...assignments], {
+  const result = spawnStateBin(OSO_STATE_BIN, ["--session", RAIL_SESSION, "set", ...assignments], {
     cwd,
     encoding: "utf8",
     env: { ...process.env, HOME: home },
