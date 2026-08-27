@@ -1,14 +1,16 @@
-import { accessSync, constants, statSync } from "node:fs";
-import type { GateOutcome, HookEnvelope } from "../hosts/envelope.ts";
+import { accessSync, constants, existsSync, statSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import type { GateOutcome, GateVerdict, HookEnvelope, PreToolUseVerdict } from "../hosts/envelope.ts";
 import { gateRow, type GateId } from "../routes/routes.ts";
 import { readStateFile } from "../state/store.ts";
 
 export type GateRequest = Readonly<{ envelope: HookEnvelope; argv: readonly string[] }>;
 
-export type GateDefinition = Readonly<{
+export type GateDefinition<V extends GateVerdict = PreToolUseVerdict> = Readonly<{
   gate: GateId;
   errorSubject: string;
-  judge: (request: GateRequest) => GateOutcome;
+  judge: (request: GateRequest) => GateOutcome<V>;
 }>;
 
 export type ArmedState =
@@ -105,5 +107,31 @@ function isReadable(target: string): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+export function pluginRootDirectory(): string {
+  const configured = process.env["CLAUDE_PLUGIN_ROOT"];
+  if (configured !== undefined && configured !== "") return configured;
+  return pluginRootAbove(path.dirname(fileURLToPath(import.meta.url)));
+}
+
+const PLUGIN_ROOT_WRAPPERS: readonly (readonly string[])[] = [[], ["plugin"]];
+
+export function pluginRootAbove(moduleDirectory: string): string {
+  let candidate = moduleDirectory;
+  while (true) {
+    for (const wrapper of PLUGIN_ROOT_WRAPPERS) {
+      const root = path.join(candidate, ...wrapper);
+      if (existsSync(path.join(root, "bin", "oso-state"))) return root;
+    }
+    const parent = path.dirname(candidate);
+    if (parent === candidate) {
+      throw new Error(
+        `no ancestor of ${moduleDirectory} carries a bin/oso-state, directly or one level under plugin/, ` +
+          "to anchor the plugin root on",
+      );
+    }
+    candidate = parent;
   }
 }

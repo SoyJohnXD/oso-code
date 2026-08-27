@@ -1,0 +1,31 @@
+{
+  "name": "statebin gate: SessionStart persists OSO_STATE_BIN to an executable",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5748,
+      "assertion": "run_hook persist-state-bin.sh ''"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5750,
+      "assertion": "assert_after_hook \"SessionStart persists OSO_STATE_BIN to an executable\" [ -x \"$persisted\" ]"
+    }
+  ],
+  "gate": "statebin",
+  "argv": [],
+  "env": {
+    "CLAUDE_ENV_FILE": "{home}/claude-env-file"
+  },
+  "state_before": {},
+  "cwd": "workspace",
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": "",
+    "state_after": {
+      "claude-env-file": "export OSO_STATE_BIN={repoRoot}/plugin/bin/oso-state"
+    }
+  }
+}

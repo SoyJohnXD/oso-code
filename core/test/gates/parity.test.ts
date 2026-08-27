@@ -20,10 +20,12 @@ provedSomething(
   `zero gate parity fixtures loaded from ${GATE_FIXTURE_DIRECTORY}`,
 );
 
+const PORTED_GATES = "commit,edits,proddeploy,reanchor,stale,statebin,teardown,unknown,version";
+
 provedSomething(
-  `all four PreToolUse gates carry fixtures, not ${gatesCovered.join(", ")}`,
-  gatesCovered.join(",") === "commit,edits,proddeploy,unknown",
-  `the gate fixtures cover ${gatesCovered.join(", ")} rather than every PreToolUse gate`,
+  `all nine ported gates carry fixtures, not ${gatesCovered.join(", ")}`,
+  gatesCovered.join(",") === PORTED_GATES,
+  `the gate fixtures cover ${gatesCovered.join(", ")} rather than every ported gate`,
 );
 
 test(`all ${fixtures.length} gate fixtures cite an assertion that still stands in tests/hooks-test.sh`, () => {

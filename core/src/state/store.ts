@@ -42,7 +42,7 @@ export class StateFileUnreadableError extends Error {
   }
 }
 
-const CHANGE_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
+export const CHANGE_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const NAME_TOKEN_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
 const NAME_TOKEN_MAX_LENGTH = 128;
 const LOCK_STALE_SECONDS = 30;

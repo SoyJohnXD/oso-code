@@ -7,6 +7,7 @@ export type HookEnvelope = Readonly<{
   toolName: string;
   filePath: string;
   commandLine: string;
+  source: string;
 }>;
 
 export type GateVerdict =
@@ -18,13 +19,23 @@ export type GateVerdict =
   | { readonly kind: "noVerdict" };
 
 export type PreToolUseVerdict = Extract<GateVerdict, { kind: "deny" | "allow" | "gateError" }>;
+export type SessionStartVerdict = Extract<GateVerdict, { kind: "allow" | "context" | "gateError" }>;
+export type NoVerdictVerdict = Extract<GateVerdict, { kind: "noVerdict" | "gateError" }>;
 
-export type GateOutcome = Readonly<{
-  verdict: PreToolUseVerdict;
+export type GateOutcome<V extends GateVerdict = PreToolUseVerdict> = Readonly<{
+  verdict: V;
   events: readonly LoggedEvent[];
 }>;
 
-export const ALLOWED: GateOutcome = { verdict: { kind: "allow" }, events: [] };
+export const ALLOWED: GateOutcome<Extract<GateVerdict, { kind: "allow" }>> = {
+  verdict: { kind: "allow" },
+  events: [],
+};
+
+export const NO_VERDICT: GateOutcome<Extract<GateVerdict, { kind: "noVerdict" }>> = {
+  verdict: { kind: "noVerdict" },
+  events: [],
+};
 
 const JSON_SPACE = "[\\t\\n\\v\\f\\r ]";
 
@@ -35,6 +46,7 @@ export function readEnvelope(payload: string): HookEnvelope {
     toolName: jsonField(payload, "tool_name"),
     filePath: jsonField(payload, "file_path"),
     commandLine: jsonCommandLine(payload),
+    source: jsonField(payload, "source"),
   };
 }
 
@@ -44,7 +56,7 @@ function jsonCommandLine(payload: string): string {
   return jsonField(payload, "command");
 }
 
-function jsonField(payload: string, field: string): string {
+export function jsonField(payload: string, field: string): string {
   return withoutCarriageReturns(unescapeJsonString(escapedField(payload, field)));
 }
 

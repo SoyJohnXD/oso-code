@@ -3,7 +3,7 @@ import type { PreToolUseVerdict } from "./envelope.ts";
 export type HookRun = Readonly<{ exit: number; stdout: string; stderr: string }>;
 
 const HOOK_EVENT = "PreToolUse";
-const GATE_ERROR_EXIT = 2;
+export const GATE_ERROR_EXIT = 2;
 
 export function preToolUseRun(verdict: PreToolUseVerdict): HookRun {
   switch (verdict.kind) {

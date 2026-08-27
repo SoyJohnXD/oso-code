@@ -4,7 +4,7 @@ import { runGate } from "../../src/gates/dispatch.ts";
 import { logEvent } from "../../src/state/store.ts";
 import type { ObservedRun } from "./parity-expectations.ts";
 import type { FixtureExpectation, SuiteCitation } from "./parity-fixture.ts";
-import { repositoryRoot, type SeededEntry, type StateSandbox } from "./state-sandbox.ts";
+import { repositoryRoot, type ObservedEntry, type SeededEntry, type StateSandbox } from "./state-sandbox.ts";
 
 export const GATE_FIXTURE_DIRECTORY = path.join(repositoryRoot, "core", "test", "fixtures", "gates");
 
@@ -29,7 +29,8 @@ export function loadGateFixtures(): GateFixture[] {
 
 export function observeGate(sandbox: StateSandbox, fixture: GateFixture): ObservedRun {
   const eventsBefore = sandbox.eventLogLines().length;
-  const run = withHookEnvironment({ HOME: sandbox.home, ...fixture.env }, () => {
+  const env = { HOME: sandbox.home, ...expandedEnv(sandbox, fixture.env) };
+  const run = withHookEnvironment(env, () => {
     const gateRun = runGate([fixture.gate, ...fixture.argv], sandbox.expandJson(fixture.stdin));
     for (const event of gateRun.events) logEvent(event);
     return gateRun;
@@ -38,16 +39,30 @@ export function observeGate(sandbox: StateSandbox, fixture: GateFixture): Observ
     exit: run.exit,
     stdout: run.stdout,
     stderr: run.stderr,
-    entries: new Map(),
+    entries: entriesTheExpectationNames(sandbox, fixture),
     eventsAppended: sandbox.eventLogLines().slice(eventsBefore),
   };
 }
 
-const HOST_MARKERS_A_FIXTURE_OWNS = { OSO_AGENT: "", OSO_HOST: "" };
+function expandedEnv(sandbox: StateSandbox, env: Readonly<Record<string, string>>): Record<string, string> {
+  return Object.fromEntries(Object.entries(env).map(([name, value]) => [name, sandbox.expand(value)]));
+}
+
+function entriesTheExpectationNames(sandbox: StateSandbox, fixture: GateFixture): Map<string, ObservedEntry> {
+  const named = Object.keys(fixture.expect.state_after ?? {});
+  return new Map(named.map((entryPath) => [entryPath, sandbox.read(entryPath)]));
+}
+
+const AMBIENT_ENV_A_FIXTURE_OWNS = {
+  OSO_AGENT: "",
+  OSO_HOST: "",
+  OSO_STATE_BIN: "",
+  CLAUDE_PLUGIN_ROOT: "",
+};
 
 export function withHookEnvironment<T>(pinned: Readonly<Record<string, string>>, run: () => T): T {
   const restored = new Map<string, string | undefined>();
-  for (const [name, value] of Object.entries({ ...HOST_MARKERS_A_FIXTURE_OWNS, ...pinned })) {
+  for (const [name, value] of Object.entries({ ...AMBIENT_ENV_A_FIXTURE_OWNS, ...pinned })) {
     restored.set(name, process.env[name]);
     process.env[name] = value;
   }

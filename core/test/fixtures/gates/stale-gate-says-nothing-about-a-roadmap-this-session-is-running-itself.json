@@ -1,0 +1,20 @@
+{
+  "name": "stale gate: SessionStart says nothing about a roadmap this session is running itself",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 6115, "assertion": "printf 'mode=plan\\nsession=%s\\nroadmap=auth-hardening\\n' \"$SESSION\" > \"$REPO_STATE\"" },
+    { "file": "tests/hooks-test.sh", "line": 6116, "assertion": "assert_allows \"SessionStart says nothing about a roadmap this session is running itself\" \\\n  warn-stale-state.sh \"$(stale_session_input)\"" }
+  ],
+  "gate": "stale",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nsession=test-session\nroadmap=auth-hardening\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

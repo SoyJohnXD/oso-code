@@ -141,6 +141,7 @@ export class StateSandbox {
       .replaceAll("{home}", this.home)
       .replaceAll("{cwd}", this.cwd)
       .replaceAll("{repo}", this.repositoryKey)
+      .replaceAll("{repoRoot}", repositoryRoot)
       .replace(/\{sha256:([^}]*)\}/g, (_whole, value: string) => sha256Hex(value));
     const nativized = [this.home, this.cwd].reduce(
       (running, root) => nativizeRootedPaths(running, root, escape),

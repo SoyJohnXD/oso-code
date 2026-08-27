@@ -1,0 +1,31 @@
+{
+  "name": "version gate: a machine with no registered marketplace says nothing",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6256,
+      "assertion": "  rm -f \"$DRIFT_MARKETPLACES\""
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6257,
+      "assertion": "  assert_drift_silent \"a machine with no registered marketplace says nothing\""
+    }
+  ],
+  "gate": "version",
+  "argv": [],
+  "env": {
+    "CLAUDE_PLUGIN_ROOT": "{home}/plugin-fixture"
+  },
+  "state_before": {
+    "plugin-fixture/.claude-plugin/plugin.json": "{\n  \"name\": \"oso-code\",\n  \"version\": \"0.17.0\",\n  \"repository\": \"https://github.com/oso-fixture/oso-code\"\n}\n",
+    ".local/state/oso-code/published-release": "0.19.0"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"SessionStart\",\"source\":\"startup\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

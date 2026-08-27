@@ -1,0 +1,31 @@
+{
+  "name": "teardown gate: the abandoned-state sweep prunes what is old and unlocked, keeps what is recent or locked",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 5842, "assertion": "run_hook cleanup-state.sh \"$(printf '{\"session_id\":\"%s\"}' \"$SESSION\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 5843, "assertion": "assert_pruned \"state left by a session that ended weeks ago is swept\" \"$abandoned_state\"" },
+    { "file": "tests/hooks-test.sh", "line": 5844, "assertion": "assert_kept   \"state written within the week survives the sweep\"      \"$recent_state\"" },
+    { "file": "tests/hooks-test.sh", "line": 5845, "assertion": "assert_kept   \"state held by a live lock survives whatever its age\"   \"$locked_state\"" },
+    { "file": "tests/hooks-test.sh", "line": 5846, "assertion": "assert_pruned \"the ending session's own state is still removed\"       \"$REPO_STATE\"" }
+  ],
+  "gate": "teardown",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nverify_green=true\nsession=test-session\n",
+    ".local/state/oso-code/abandoned-session.state": { "kind": "file", "content": "mode=plan\n", "aged": true },
+    ".local/state/oso-code/recent-session.state": "mode=plan\n",
+    ".local/state/oso-code/locked-session.state": { "kind": "file", "content": "mode=plan\n", "aged": true },
+    ".local/state/oso-code/locked-session.state.lock": { "kind": "directory" }
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\"}",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      ".local/state/oso-code/abandoned-session.state": null,
+      ".local/state/oso-code/recent-session.state": "mode=plan\n",
+      ".local/state/oso-code/locked-session.state": "mode=plan\n",
+      ".local/state/oso-code/{repo}.state": null
+    }
+  }
+}

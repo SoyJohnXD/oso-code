@@ -1,0 +1,32 @@
+{
+  "name": "version gate: an install already on the published release says nothing",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6236,
+      "assertion": "  write_drift_manifest 0.19.0"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6237,
+      "assertion": "  assert_drift_silent \"an install already on the published release says nothing\""
+    }
+  ],
+  "gate": "version",
+  "argv": [],
+  "env": {
+    "CLAUDE_PLUGIN_ROOT": "{home}/plugin-fixture"
+  },
+  "state_before": {
+    "plugin-fixture/.claude-plugin/plugin.json": "{\n  \"name\": \"oso-code\",\n  \"version\": \"0.19.0\",\n  \"repository\": \"https://github.com/oso-fixture/oso-code\"\n}\n",
+    ".claude/plugins/known_marketplaces.json": "{\n  \"oso-code\": {\n    \"source\": {\n      \"source\": \"github\",\n      \"repo\": \"oso-fixture/oso-code\"\n    }\n  }\n}\n",
+    ".local/state/oso-code/published-release": "0.19.0"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"SessionStart\",\"source\":\"startup\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

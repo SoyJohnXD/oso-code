@@ -1,0 +1,28 @@
+{
+  "name": "reanchor gate: a session start whose source is not a compaction stays silent, however live the run is",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6337,
+      "assertion": "for reanchor_start in startup resume clear; do"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6342,
+      "assertion": "assert_equals \"every session start that is not a compaction stays silent, however live the run is\" \\\n  \"silent silent silent silent\" \"${reanchor_start_verdicts# }\""
+    }
+  ],
+  "gate": "reanchor",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=3\nsession=test-session\nauto=running\nauto_change=auto-continuity\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"SessionStart\",\"source\":\"startup\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "stale gate: SessionStart names nothing when only a foreign repository's state exists",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 6021, "assertion": "assert_allows \"SessionStart names nothing when only a foreign repository's state exists\" \\\n  warn-stale-state.sh \"$(stale_session_input)\"" }
+  ],
+  "gate": "stale",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/other-session.state": "mode=plan\nsession=other-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

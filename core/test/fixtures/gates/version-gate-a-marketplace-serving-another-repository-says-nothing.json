@@ -1,0 +1,32 @@
+{
+  "name": "version gate: a marketplace serving another repository says nothing",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6250,
+      "assertion": "  write_drift_marketplace_source github repo other-owner/other-plugin"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6251,
+      "assertion": "  assert_drift_silent \"a marketplace serving another repository says nothing\""
+    }
+  ],
+  "gate": "version",
+  "argv": [],
+  "env": {
+    "CLAUDE_PLUGIN_ROOT": "{home}/plugin-fixture"
+  },
+  "state_before": {
+    "plugin-fixture/.claude-plugin/plugin.json": "{\n  \"name\": \"oso-code\",\n  \"version\": \"0.17.0\",\n  \"repository\": \"https://github.com/oso-fixture/oso-code\"\n}\n",
+    ".claude/plugins/known_marketplaces.json": "{\n  \"oso-code\": {\n    \"source\": {\n      \"source\": \"github\",\n      \"repo\": \"other-owner/other-plugin\"\n    }\n  }\n}\n",
+    ".local/state/oso-code/published-release": "0.19.0"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"SessionStart\",\"source\":\"startup\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

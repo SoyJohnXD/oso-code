@@ -1,0 +1,34 @@
+{
+  "name": "teardown gate: session end drops the state of a directory it is not standing in",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5698,
+      "assertion": "( cd \"$ELSEWHERE\" && oso-state --session sessionend-probe set mode=plan verify_green=true >/dev/null )"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5702,
+      "assertion": "run_hook cleanup-state.sh '{\"session_id\":\"sessionend-probe\"}'"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5703,
+      "assertion": "assert_after_hook \"session end drops the state of a directory it is not standing in\" \\\n  [ ! -f \"$elsewhere_state\" ]"
+    }
+  ],
+  "gate": "teardown",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{sha256:elsewhere-repo}.state": "mode=plan\nverify_green=true\nsession=sessionend-probe\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"sessionend-probe\"}",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      ".local/state/oso-code/{sha256:elsewhere-repo}.state": null
+    }
+  }
+}
