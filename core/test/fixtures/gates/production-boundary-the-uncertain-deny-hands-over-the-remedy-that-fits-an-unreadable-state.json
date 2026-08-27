@@ -1,0 +1,36 @@
+{
+  "name": "production boundary: the uncertain deny hands over the remedy that fits an unreadable state",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5150,
+      "assertion": "assert_equals \"the uncertain deny hands over the remedy that fits an unreadable state, not the one that needs a readable marker\" \\\n  \"repair\" \"$prod_uncertain_remedy\""
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "this file is not state at all\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"vercel --prod\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "cannot be read",
+        "oso-state --session test-session clear"
+      ]
+    },
+    "stderr": "",
+    "events_appended": [
+      {
+        "event": "state-unreadable",
+        "session": "test-session",
+        "gate": "block-prod-deploy.sh",
+        "hook_event": "PreToolUse"
+      }
+    ]
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "name": "commit gate, a shell fed from a pipe or a script file — counted, not denied, on purpose: echo 'git commit --no-verify' | bash",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6679,
+      "assertion": "assert_every assert_allows_counted \"a shell fed from a pipe or a script file — counted, not denied, on purpose\" <<'UNREAD_SHELL_INPUT_TABLE'"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6684,
+      "assertion": "echo 'git commit --no-verify' | bash"
+    }
+  ],
+  "gate": "commit",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"echo 'git commit --no-verify' | bash\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": "",
+    "events_appended": [
+      {
+        "event": "residue-allowed"
+      }
+    ]
+  }
+}

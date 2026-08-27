@@ -1,0 +1,25 @@
+{
+  "name": "production boundary: an unreadable state path closes the production door — npm run build",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5144,
+      "assertion": "assert_equals \"a state file the gate cannot read as state closes the production door and nothing else\" \\\n  \"deny allow allow deny allow\" \"$prod_uncertain_verdicts\""
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": {
+      "kind": "directory"
+    }
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"npm run build\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

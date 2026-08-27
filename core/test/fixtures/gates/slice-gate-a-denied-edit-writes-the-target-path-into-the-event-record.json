@@ -1,0 +1,36 @@
+{
+  "name": "slice gate: a denied edit writes the target path into the event record",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5645,
+      "assertion": "assert_logged \"a denied edit writes the target path into the event record\" \\\n  '\"event\":\"edit-denied\",\"command\":\"/tmp/x.ts\",\"session\":\"'"
+    }
+  ],
+  "gate": "edits",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"/tmp/x.ts\",\"old_string\":\"const slice = 1;\",\"new_string\":\"const slice = 2;\",\"replace_all\":false}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\""
+      ]
+    },
+    "stderr": "",
+    "events_appended": [
+      {
+        "event": "edit-denied",
+        "command": "/tmp/x.ts",
+        "session": "test-session",
+        "gate": "block-edits-without-slice.sh",
+        "hook_event": "PreToolUse"
+      }
+    ]
+  }
+}

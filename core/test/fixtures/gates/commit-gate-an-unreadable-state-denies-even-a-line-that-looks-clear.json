@@ -1,0 +1,29 @@
+{
+  "name": "commit gate: an unreadable state denies even a line that looks clear",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5783,
+      "assertion": "assert_denies \"commit gate denies an unreadable state even for a line that looks clear\" \\\n  block-commit-until-green.sh \"$(bash_input 'npm test')\""
+    }
+  ],
+  "gate": "commit",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": {
+      "kind": "directory"
+    }
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"npm test\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\""
+      ]
+    },
+    "stderr": ""
+  }
+}

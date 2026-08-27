@@ -1,0 +1,41 @@
+{
+  "name": "production boundary: a deploy-shaped MCP tool is the operator's own call while the run is in flight",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5071,
+      "assertion": "assert_after_hook \"a deploy-shaped MCP tool is the operator's own call while the run is in flight\" \\\n  hook_returned_deny"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5077,
+      "assertion": "assert_equals \"the MCP deny says whose call a deploy is, not merely that it was refused\" \\\n  \"named\" \"$prod_mcp_deny_naming\""
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"mcp__plugin_vercel_vercel__deploy_to_vercel\",\"tool_input\":{\"project\":\"acme\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "MCP deploy stays with the operator"
+      ]
+    },
+    "stderr": "",
+    "events_appended": [
+      {
+        "event": "prod-deploy-denied",
+        "command": "mcp__plugin_vercel_vercel__deploy_to_vercel",
+        "session": "test-session",
+        "gate": "block-prod-deploy.sh",
+        "hook_event": "PreToolUse"
+      }
+    ]
+  }
+}

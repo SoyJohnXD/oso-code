@@ -1,0 +1,23 @@
+{
+  "name": "production boundary: netlify deploy",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5000,
+      "assertion": "assert_equals \"the preview and staging shapes of the same CLIs keep passing\" \\\n  \"allow allow allow allow\" \\\n  \"$(prod_verdicts_for vercel 'vercel deploy' 'vercel deploy --target=staging' 'netlify deploy')\""
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"netlify deploy\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

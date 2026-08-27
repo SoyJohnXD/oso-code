@@ -1,0 +1,28 @@
+{
+  "name": "commit gate, friction: echo \\\"run: (git commit)\\\"",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6411,
+      "assertion": "assert_every assert_allows friction <<'FRICTION_TABLE'"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6418,
+      "assertion": "echo \\\"run: (git commit)\\\""
+    }
+  ],
+  "gate": "commit",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"echo \\\"run: (git commit)\\\"\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "production boundary: npm run build",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5115,
+      "assertion": "assert_equals \"a line the resolver answers spends no residue: a build, the run's own push, and an option git answers itself instead of pushing\" \\\n  \"allow allow allow 0\" \\\n  \"$(prod_verdicts_and_residues_for 'npm run build' \\\n    'git push origin oso-run/auto-continuity' 'git --version push origin main')\""
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"npm run build\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

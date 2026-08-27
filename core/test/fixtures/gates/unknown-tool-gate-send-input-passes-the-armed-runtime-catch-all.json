@@ -1,0 +1,26 @@
+{
+  "name": "unknown-tool gate: send_input passes the armed runtime catch-all",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 1207,
+      "assertion": "  assert_after_hook \"$collaboration_tool passes the armed runtime catch-all\" \\\n    [ -z \"$hook_stdout\" ]"
+    }
+  ],
+  "gate": "unknown",
+  "argv": [
+    "--allow",
+    "Bash|apply_patch|send_input|resume_agent|close_agent|collaborationspawn_agent|collaborationsend_message|collaborationfollowup_task|collaborationwait_agent|collaborationinterrupt_agent|collaborationlist_agents"
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=1\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"send_input\",\"tool_input\":{}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

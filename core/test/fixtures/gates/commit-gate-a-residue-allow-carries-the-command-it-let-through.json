@@ -1,0 +1,38 @@
+{
+  "name": "commit gate: a residue allow carries the command it let through",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6577,
+      "assertion": "assert_allows \"residue: a python payload that mentions git passes\" \\\n  block-commit-until-green.sh \"$(bash_input 'python3 -c \\\"import os; os.system('\\''git commit'\\'')\\\"')\""
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6581,
+      "assertion": "assert_logged \"a residue allow carries the command it let through\" \\\n  '\"event\":\"residue-allowed\",\"command\":\"python3'"
+    }
+  ],
+  "gate": "commit",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"python3 -c \\\"import os; os.system('git commit')\\\"\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": "",
+    "events_appended": [
+      {
+        "event": "residue-allowed",
+        "command": "python3 -c \"import os; os.system('git commit')\"",
+        "session": "test-session",
+        "schema": 2,
+        "gate": null,
+        "hook_event": null
+      }
+    ]
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "name": "unknown-tool gate: an unknown Codex tool is denied while oso-code state is armed",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 1225,
+      "assertion": "assert_after_hook \"an unknown Codex tool is denied while oso-code state is armed\" \\\n  hook_returned_deny"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 1227,
+      "assertion": "assert_after_hook \"the Codex catch-all's deny names Codex's own allowlist\" \\\n  hook_deny_names_allowlist_host Codex"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5638,
+      "assertion": "assert_logged \"a denied tool call writes the tool name into the event record\" \\\n  '\"event\":\"unknown-tool-denied\",\"command\":\"FutureWriter\",\"session\":\"'"
+    }
+  ],
+  "gate": "unknown",
+  "argv": [
+    "--allow",
+    "Bash|apply_patch|send_input|resume_agent|close_agent|collaborationspawn_agent|collaborationsend_message|collaborationfollowup_task|collaborationwait_agent|collaborationinterrupt_agent|collaborationlist_agents"
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=1\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"FutureWriter\",\"tool_input\":{}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\"",
+        "this release's Codex hook allowlist",
+        "Bash"
+      ]
+    },
+    "stderr": "",
+    "events_appended": [
+      {
+        "event": "unknown-tool-denied",
+        "command": "FutureWriter",
+        "session": "test-session",
+        "gate": "block-unknown-tool.sh",
+        "hook_event": "PreToolUse"
+      }
+    ]
+  }
+}

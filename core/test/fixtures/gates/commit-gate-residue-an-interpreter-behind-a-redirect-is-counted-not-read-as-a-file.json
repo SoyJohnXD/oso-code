@@ -1,0 +1,28 @@
+{
+  "name": "commit gate: residue: an interpreter behind a redirect is counted, not read as a file",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6666,
+      "assertion": "assert_allows_counted \"residue: an interpreter behind a redirect is counted, not read as a file\" \\\n  block-commit-until-green.sh \"$(bash_input '>/dev/null python3 -c \\\"import os; os.system('\\''git commit'\\'')\\\"')\""
+    }
+  ],
+  "gate": "commit",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\">/dev/null python3 -c \\\"import os; os.system('git commit')\\\"\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": "",
+    "events_appended": [
+      {
+        "event": "residue-allowed"
+      }
+    ]
+  }
+}

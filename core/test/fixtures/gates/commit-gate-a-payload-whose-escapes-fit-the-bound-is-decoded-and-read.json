@@ -1,0 +1,27 @@
+{
+  "name": "commit gate: a payload whose escapes fit the bound is decoded and read",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6719,
+      "assertion": "assert_denies \"a payload whose escapes fit the bound is decoded and read\" \\\n  block-commit-until-green.sh \"$(bash_input \"$(commit_line_of_length 3000 '\\\"aaaa')\")\""
+    }
+  ],
+  "gate": "commit",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x && echo \\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\\\"aaaa\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\""
+      ]
+    },
+    "stderr": ""
+  }
+}

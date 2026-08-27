@@ -1,0 +1,28 @@
+{
+  "name": "commit gate, redirect with no commit to find: >out.log npm test",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6564,
+      "assertion": "assert_every assert_allows \"redirect with no commit to find\" <<'REDIRECT_NO_FRICTION_TABLE'"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6567,
+      "assertion": ">out.log npm test"
+    }
+  ],
+  "gate": "commit",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\">out.log npm test\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

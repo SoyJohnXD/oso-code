@@ -1,0 +1,23 @@
+{
+  "name": "production boundary: vercel ls | xargs echo",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 4996,
+      "assertion": "assert_equals \"a deploy CLI that only feeds xargs is none of that rule's business\" \\\n  \"allow allow allow\" \\\n  \"$(prod_verdicts_for 'vercel ls | xargs echo' 'netlify status | xargs -I{} echo {}' \\\n    'find . -name *.log | xargs rm')\""
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"vercel ls | xargs echo\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

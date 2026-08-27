@@ -5,7 +5,9 @@ import { repositoryRoot, type SeededEntry } from "./state-sandbox.ts";
 export const PARITY_FIXTURE_DIRECTORY = path.join(repositoryRoot, "core", "test", "fixtures", "state");
 const PARITY_SOURCE_SUITE = "tests/hooks-test.sh";
 
-type SuiteCitation = { file: string; line: number; assertion: string };
+export type SuiteCitation = { file: string; line: number; assertion: string };
+
+export type CitingFixture = { name: string; source: readonly SuiteCitation[] };
 
 export type TextExpectation = string | { contains: readonly string[] };
 
@@ -45,7 +47,7 @@ export function readSuiteLines(): string[] {
   return readFileSync(path.join(repositoryRoot, PARITY_SOURCE_SUITE), "utf8").split("\n");
 }
 
-export function unresolvedCitations(fixture: ParityFixture, suiteLines: readonly string[]): string[] {
+export function unresolvedCitations(fixture: CitingFixture, suiteLines: readonly string[]): string[] {
   return fixture.source.flatMap((citation) => {
     if (citation.file !== PARITY_SOURCE_SUITE) {
       return [`${fixture.name}: cites ${citation.file}, which is not ${PARITY_SOURCE_SUITE}`];

@@ -1,0 +1,27 @@
+{
+  "name": "commit gate: the same shell denies the commit a heredoc spells on the line",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6693,
+      "assertion": "assert_denies \"the same shell denies the commit a heredoc spells on the line\" \\\n  block-commit-until-green.sh \"$(bash_input 'bash -s <<EOF\\ngit commit\\nEOF')\""
+    }
+  ],
+  "gate": "commit",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"bash -s <<EOF\\ngit commit\\nEOF\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\""
+      ]
+    },
+    "stderr": ""
+  }
+}

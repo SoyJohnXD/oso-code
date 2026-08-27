@@ -1,0 +1,23 @@
+{
+  "name": "production boundary: git push origin oso-run/auto-continuity",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5066,
+      "assertion": "assert_equals \"the run's own branch push is the finish this gate exists to protect\" \\\n  \"allow allow\" \\\n  \"$(prod_verdicts_for 'git push origin oso-run/auto-continuity' 'git push origin HEAD:oso-run/x')\""
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push origin oso-run/auto-continuity\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

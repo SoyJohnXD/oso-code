@@ -68,20 +68,26 @@ export function nativizeRootedPaths(text: string, root: string): string {
   });
 }
 
+const spawnabilityBySubject = new Map<string, boolean>();
+
 function subjectSpawns(subject: StateSubject): boolean {
+  const remembered = spawnabilityBySubject.get(subject.name);
+  if (remembered !== undefined) return remembered;
   const [command, ...leading] = subject.command;
-  if (command === undefined) return false;
-  const probe = spawnSync(command, leading, {
-    env: { HOME: tmpdir(), PATH: process.env["PATH"] ?? "" },
-    encoding: "utf8",
-  });
-  return probe.error === undefined;
+  const probe =
+    command === undefined
+      ? undefined
+      : spawnSync(command, leading, {
+          env: { HOME: tmpdir(), PATH: process.env["PATH"] ?? "" },
+          encoding: "utf8",
+        });
+  const spawns = probe !== undefined && probe.error === undefined;
+  spawnabilityBySubject.set(subject.name, spawns);
+  return spawns;
 }
 
-const SPAWNABLE_STATE_SUBJECTS: readonly StateSubject[] = STATE_SUBJECTS.filter(subjectSpawns);
-
 export function skipUnlessSpawnable(subject: StateSubject): false | string {
-  if (SPAWNABLE_STATE_SUBJECTS.includes(subject)) return false;
+  if (subjectSpawns(subject)) return false;
   return `${subject.name} cannot be spawned here, so its behaviour cannot be measured on this platform`;
 }
 

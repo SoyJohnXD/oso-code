@@ -561,7 +561,7 @@ check_every_host_wraps_every_skill() {
 VERDICT_GRAMMAR_OWNER=opencode/plugin/oso/verdict.ts
 
 check_the_verdict_grammar_has_one_implementation() {
-  local owner="$REPO_ROOT/$VERDICT_GRAMMAR_OWNER" root alternation duplicates
+  local owner="$REPO_ROOT/$VERDICT_GRAMMAR_OWNER" root alternation alternations duplicates
   local searched=()
   if [ ! -f "$owner" ]; then
     flag "$VERDICT_GRAMMAR_OWNER is missing, so no file owns the verdict grammar a delegated report is read with"
@@ -574,11 +574,16 @@ check_the_verdict_grammar_has_one_implementation() {
     flag "no executable tree stands beside $VERDICT_GRAMMAR_OWNER, so a second parser of it could not be looked for"
     return 0
   fi
+  alternations="$(sed -n 's/.*\(([a-z][a-z]*|[a-z][a-z]*)\).*/\1/p' "$owner" | LC_ALL=C sort -u)"
+  if [ -z "$alternations" ]; then
+    flag "$VERDICT_GRAMMAR_OWNER spells no verdict vocabulary this rule can read, so it reports one implementation having compared nothing"
+    return 0
+  fi
   while IFS= read -r alternation; do
     [ -n "$alternation" ] || continue
     duplicates="$({ grep -rlF "$alternation" "${searched[@]}" 2>&1 || true; } | { grep -vxF "$owner" || true; })"
     [ -z "$duplicates" ] || flag "the verdict vocabulary $alternation is spelled outside $VERDICT_GRAMMAR_OWNER, so a delegated report is read by two parsers that can drift apart: $(printf '%s' "$duplicates" | tr '\n' ' ')"
-  done <<< "$(sed -n 's/.*\(([a-z][a-z]*|[a-z][a-z]*)\).*/\1/p' "$owner" | LC_ALL=C sort -u)"
+  done <<< "$alternations"
 }
 
 [ -d "$PLUGIN_ROOT/skills" ] || { echo "lint: no skills directory under $PLUGIN_ROOT"; exit 1; }

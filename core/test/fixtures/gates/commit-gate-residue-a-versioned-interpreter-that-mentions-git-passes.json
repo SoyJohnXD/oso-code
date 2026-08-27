@@ -1,0 +1,28 @@
+{
+  "name": "commit gate: residue: a versioned interpreter that mentions git passes",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6663,
+      "assertion": "assert_allows_counted \"residue: a versioned interpreter that mentions git passes\" \\\n  block-commit-until-green.sh \"$(bash_input 'python3.13 -c \\\"import os; os.system('\\''git commit'\\'')\\\"')\""
+    }
+  ],
+  "gate": "commit",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"python3.13 -c \\\"import os; os.system('git commit')\\\"\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": "",
+    "events_appended": [
+      {
+        "event": "residue-allowed"
+      }
+    ]
+  }
+}

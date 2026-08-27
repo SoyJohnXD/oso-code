@@ -1,0 +1,32 @@
+{
+  "name": "commit gate, adversarial: git update-ref refs/heads/main abc123",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6374,
+      "assertion": "assert_every assert_denies adversarial <<'ADVERSARIAL_TABLE'"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6404,
+      "assertion": "git update-ref refs/heads/main abc123"
+    }
+  ],
+  "gate": "commit",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git update-ref refs/heads/main abc123\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\""
+      ]
+    },
+    "stderr": ""
+  }
+}

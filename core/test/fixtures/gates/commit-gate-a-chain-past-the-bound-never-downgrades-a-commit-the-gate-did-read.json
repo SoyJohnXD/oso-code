@@ -1,0 +1,27 @@
+{
+  "name": "commit gate: a chain past the bound never downgrades a commit the gate did read",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6591,
+      "assertion": "assert_denies \"a chain past the bound never downgrades a commit the gate did read\" \\\n  block-commit-until-green.sh \"$(bash_input 'git commit -m x && bash -c '\\''bash -c \\\"bash -c \\\\\\\"bash -c ok\\\\\\\"\\\"'\\''')\""
+    }
+  ],
+  "gate": "commit",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x && bash -c 'bash -c \\\"bash -c \\\\\\\"bash -c ok\\\\\\\"\\\"'\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\""
+      ]
+    },
+    "stderr": ""
+  }
+}

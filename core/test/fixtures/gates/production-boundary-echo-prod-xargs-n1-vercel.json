@@ -1,0 +1,27 @@
+{
+  "name": "production boundary: echo --prod | xargs -n1 vercel",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 4992,
+      "assertion": "assert_equals \"a deploy whose production flag arrives from stdin is denied rather than read as a preview\" \\\n  \"deny deny deny deny\" \\\n  \"$(prod_verdicts_for 'echo --prod | xargs vercel' 'echo --prod | xargs -n1 vercel' \\\n    'printf %s --prod | xargs -0 vercel' 'echo --prod | xargs netlify deploy')\""
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"echo --prod | xargs -n1 vercel\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\""
+      ]
+    },
+    "stderr": ""
+  }
+}

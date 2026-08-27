@@ -1,0 +1,26 @@
+{
+  "name": "unknown-tool gate: a pending belonging to another session does not deny this session's Bash",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 1238,
+      "assertion": "assert_after_hook \"a pending belonging to another session does not deny this session's Bash\" \\\n  [ -z \"$hook_stdout\" ]"
+    }
+  ],
+  "gate": "unknown",
+  "argv": [
+    "--allow",
+    "Bash|apply_patch|send_input|resume_agent|close_agent|collaborationspawn_agent|collaborationsend_message|collaborationfollowup_task|collaborationwait_agent|collaborationinterrupt_agent|collaborationlist_agents"
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nplan_approval=pending\nplan_approval_session=pending-owner-session\nsession=pending-owner-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"pending-foreign-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}
