@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { waitExpired } from "../../src/gates/stale.ts";
+import { waitExpired } from "../../src/gates/delegation.ts";
 
 const CEILING_SECONDS = 45 * 60;
 const NOW = 1_000_000;

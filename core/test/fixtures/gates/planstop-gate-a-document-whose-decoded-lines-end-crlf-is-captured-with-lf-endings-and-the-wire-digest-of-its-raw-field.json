@@ -1,0 +1,32 @@
+{
+  "name": "planstop gate: a document whose decoded lines end CRLF is captured with LF endings and the wire digest of its raw field",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 1603, "assertion": "run_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input default \"$SESSION\" \"$crlf_plan\" false \"$CODEX_STOP_PLAN_TRANSCRIPT\")\"\nassert_after_hook \"a document whose decoded lines end CRLF is still captured\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1606, "assertion": "  [ \"$hook_stdout\" = '{}' ]\nassert_equals \"the snapshot of a CRLF-decoded document holds the human plan with LF line endings\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1608, "assertion": "  \"$crlf_plan_document\" \"$(cat \"$crlf_presented_file\" 2>/dev/null || true)\"\nassert_equals \"the operational copy of a CRLF-decoded document holds that same LF-ended plan\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1610, "assertion": "  \"$crlf_plan_document\" \"$(cat \"$crlf_current_file\" 2>/dev/null || true)\"\nassert_equals \"neither persisted artifact of a CRLF-decoded document carries a CR byte\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1616, "assertion": "  \"$crlf_plan_digest\" \"$(oso-state --session \"$SESSION\" get plan_approval_digest)\"\nestablish_premise \"the CRLF fixture leaves no approval pending\" \\" }
+  ],
+  "gate": "planstop",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".codex/sessions/2026/08/04/stop-plan.jsonl": "{\"timestamp\":\"2026-08-04T16:36:12.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"test-session\"}}\n{\"timestamp\":\"2026-08-04T16:36:12.013Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"turn_id\":\"turn-plan-stop\",\"collaboration_mode_kind\":\"plan\"}}\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.codex/sessions/2026/08/04/stop-plan.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"Stop\",\"turn_id\":\"turn-plan-stop\",\"stop_hook_active\":false,\"last_assistant_message\":\"Repaso de cambios\\r\\nFull slice plan: crlf host\\r\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\\n\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/plans/{repo}/presented-2c637296a84b32d448270894f3df86b4af2e7c13f2c7e3412d6528cc4aeb2868.md": "Repaso de cambios\nFull slice plan: crlf host",
+      ".local/state/oso-code/plans/{repo}/current.md": "Repaso de cambios\nFull slice plan: crlf host",
+      ".local/state/oso-code/{repo}.state": {
+        "contains": [
+          "plan_approval_digest=2c637296a84b32d448270894f3df86b4af2e7c13f2c7e3412d6528cc4aeb2868"
+        ]
+      }
+    }
+  }
+}

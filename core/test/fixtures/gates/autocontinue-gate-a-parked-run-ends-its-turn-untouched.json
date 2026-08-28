@@ -1,0 +1,21 @@
+{
+  "name": "autocontinue gate: a parked run ends its turn untouched",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 4738, "assertion": "for settled_marker in parked done; do\n  oso-state --session \"$SESSION\" set \"auto=$settled_marker\" >/dev/null\n  auto_settled_verdicts=\"$auto_settled_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"\ndone\noso-state --session \"$SESSION\" clear" },
+    { "file": "tests/hooks-test.sh", "line": 4746, "assertion": "assert_equals \"a parked run, a finished one, an unmarked repository and a foreign session all end their turn untouched\" \\\n  \"stop stop stop stop\" \"${auto_settled_verdicts# }\"" }
+  ],
+  "gate": "autocontinue",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=parked\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "events_appended": []
+  }
+}

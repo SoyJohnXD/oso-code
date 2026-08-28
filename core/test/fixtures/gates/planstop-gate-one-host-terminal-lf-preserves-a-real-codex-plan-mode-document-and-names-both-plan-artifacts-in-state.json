@@ -1,0 +1,38 @@
+{
+  "name": "planstop gate: one host terminal LF preserves a real Codex Plan Mode document and names both plan artifacts in state",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 1644, "assertion": "run_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input default \"$SESSION\" \"$first_plan\" false \"$CODEX_STOP_PLAN_TRANSCRIPT\")\"\nassert_after_hook \"one host terminal LF preserves a real Codex Plan Mode document\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1647, "assertion": "  [ \"$hook_stdout\" = '{}' ]\nassert_equals \"Stop records a pending approval\" pending \\" },
+    { "file": "tests/hooks-test.sh", "line": 1649, "assertion": "  \"$(oso-state --session \"$SESSION\" get plan_approval)\"\nassert_equals \"Stop binds approval to the complete observed message digest\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1651, "assertion": "  \"$first_plan_digest\" \"$(oso-state --session \"$SESSION\" get plan_approval_digest)\"\ncase \"$first_plan_digest\" in" },
+    { "file": "tests/hooks-test.sh", "line": 1674, "assertion": "assert_equals \"a newly captured operational plan starts at revision zero\" \\\n  0 \"$(oso-state --session \"$SESSION\" get plan_revision)\"" },
+    { "file": "tests/hooks-test.sh", "line": 1676, "assertion": "assert_equals \"the pending snapshot contains the human plan without the internal marker\" \\\n  \"$first_plan_document\" \"$(cat \"$first_presented_file\" 2>/dev/null || true)\"" },
+    { "file": "tests/hooks-test.sh", "line": 1678, "assertion": "assert_equals \"the operational plan starts from the same human document\" \\\n  \"$first_plan_document\" \"$(cat \"$first_current_file\" 2>/dev/null || true)\"" }
+  ],
+  "gate": "planstop",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".codex/sessions/2026/08/04/stop-plan.jsonl": "{\"timestamp\":\"2026-08-04T16:36:12.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"test-session\"}}\n{\"timestamp\":\"2026-08-04T16:36:12.013Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"turn_id\":\"turn-plan-stop\",\"collaboration_mode_kind\":\"plan\"}}\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.codex/sessions/2026/08/04/stop-plan.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"Stop\",\"turn_id\":\"turn-plan-stop\",\"stop_hook_active\":false,\"last_assistant_message\":\"Repaso de cambios\\nFull slice plan: alpha\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\\n\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": {
+        "contains": [
+          "plan_approval=pending",
+          "plan_approval_digest=a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc",
+          "plan_revision=0",
+          "plan_snapshot_file={home}/.local/state/oso-code/plans/{repo}/presented-a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc.md",
+          "plan_current_file={home}/.local/state/oso-code/plans/{repo}/current.md"
+        ]
+      },
+      ".local/state/oso-code/plans/{repo}/presented-a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc.md": "Repaso de cambios\nFull slice plan: alpha",
+      ".local/state/oso-code/plans/{repo}/current.md": "Repaso de cambios\nFull slice plan: alpha"
+    }
+  }
+}

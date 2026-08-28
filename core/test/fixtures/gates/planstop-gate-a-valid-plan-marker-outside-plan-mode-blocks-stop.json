@@ -1,0 +1,33 @@
+{
+  "name": "planstop gate: a valid plan marker outside Plan Mode blocks Stop",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 1538, "assertion": "run_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input default \"$SESSION\" 'Repaso\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->' false \"$CODEX_STOP_DEFAULT_TRANSCRIPT\")\"\nassert_after_hook \"a valid plan marker outside Plan Mode blocks Stop\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1541, "assertion": "  hook_returned_block\nassert_equals \"a wrong-mode Stop writes no approval state\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1543, "assertion": "  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"\n" }
+  ],
+  "gate": "planstop",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".codex/sessions/2026/08/04/stop-default.jsonl": "{\"timestamp\":\"2026-08-04T16:36:12.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"test-session\"}}\n{\"timestamp\":\"2026-08-04T16:36:12.013Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"turn_id\":\"turn-plan-stop\",\"collaboration_mode_kind\":\"default\"}}\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.codex/sessions/2026/08/04/stop-default.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"Stop\",\"turn_id\":\"turn-plan-stop\",\"stop_hook_active\":false,\"last_assistant_message\":\"Repaso\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{\"decision\":\"block\",\"reason\":\"oso-code: the approval document must be presented while Codex is still in Plan Mode.\"}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": null
+    },
+    "events_appended": [
+      {
+        "event": "plan-approval-capture-blocked",
+        "session": "test-session",
+        "command": "",
+        "gate": "capture-plan-approval.sh",
+        "hook_event": "Stop"
+      }
+    ]
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "planprompt gate: a phrase closing on a space does not approve",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 1858, "assertion": "for inexact_prompt in \\\n  'Implement the plan' \\\n  'Implement the plan.!' \\\n  ' Implement the plan.' \\\n  'Implement the plan. ' \\\n  'Implement the plan.\\n'; do\n  run_hook \"$PLAN_PROMPT_HOOK\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1865, "assertion": "    \"$(codex_prompt_input default \"$SESSION\" \"$inexact_prompt\")\"\n  assert_equals \"punctuation, whitespace or an escaped LF does not approve\" pending \\" }
+  ],
+  "gate": "planprompt",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nplan_approval=pending\nplan_approval_digest=a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc\nplan_approval_session=test-session\nplan_snapshot_file={home}/.local/state/oso-code/plans/{repo}/presented-a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc.md\nplan_current_file={home}/.local/state/oso-code/plans/{repo}/current.md\nplan_revision=0\nsession=test-session\n",
+    ".local/state/oso-code/plans/{repo}/presented-a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc.md": "Repaso de cambios\nFull slice plan: alpha",
+    ".local/state/oso-code/plans/{repo}/current.md": "Repaso de cambios\nFull slice plan: alpha"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":null,\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"UserPromptSubmit\",\"turn_id\":\"turn-plan-prompt\",\"prompt\":\"Implement the plan. \"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": {
+        "contains": [
+          "plan_approval=pending"
+        ]
+      }
+    },
+    "events_appended": []
+  }
+}

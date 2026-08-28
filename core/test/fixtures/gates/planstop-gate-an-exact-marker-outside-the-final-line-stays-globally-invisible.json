@@ -1,0 +1,25 @@
+{
+  "name": "planstop gate: an exact marker outside the final line stays globally invisible",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 1448, "assertion": "run_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input plan \"$SESSION\" 'Repaso\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\\ntrailing text')\"" },
+    { "file": "tests/hooks-test.sh", "line": 1450, "assertion": "assert_after_hook \"an exact marker outside the final line stays globally invisible\" \\\n  [ \"$hook_stdout\" = '{}' ]" },
+    { "file": "tests/hooks-test.sh", "line": 1452, "assertion": "assert_equals \"a non-final marker writes no approval state\" \\\n  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"" }
+  ],
+  "gate": "planstop",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".codex/sessions/2026/08/04/stop-plan.jsonl": "{\"timestamp\":\"2026-08-04T16:36:12.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"test-session\"}}\n{\"timestamp\":\"2026-08-04T16:36:12.013Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"turn_id\":\"turn-plan-stop\",\"collaboration_mode_kind\":\"plan\"}}\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":null,\"cwd\":\"{cwd}\",\"permission_mode\":\"plan\",\"hook_event_name\":\"Stop\",\"turn_id\":\"turn-plan-stop\",\"stop_hook_active\":false,\"last_assistant_message\":\"Repaso\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\\ntrailing text\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": null
+    },
+    "events_appended": []
+  }
+}

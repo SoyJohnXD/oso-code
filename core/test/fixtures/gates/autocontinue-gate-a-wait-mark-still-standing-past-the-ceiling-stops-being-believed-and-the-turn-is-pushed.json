@@ -1,0 +1,41 @@
+{
+  "name": "autocontinue gate: a wait mark still standing past the ceiling stops being believed and the turn is pushed",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 4865, "assertion": "arm_unattended_run\noso-state --session \"$SESSION\" set auto_wait=wave-2 >/dev/null\nauto_expiry_verdicts=\" $(auto_stop_verdict \"$(auto_stop_input)\")\"\ntouch -t 200001010000 \"$AUTO_WAIT_MARK\"" },
+    { "file": "tests/hooks-test.sh", "line": 4869, "assertion": "run_hook auto-continue.sh \"$(auto_stop_input)\"" },
+    { "file": "tests/hooks-test.sh", "line": 4870, "assertion": "assert_after_hook \"a wait mark still standing past the ceiling stops being believed, and the turn is pushed\" \\\n  hook_returned_block" },
+    { "file": "tests/hooks-test.sh", "line": 4877, "assertion": "assert_equals \"the push that follows an expired mark hands over the stale mark instead of repeating the plain order\" \\\n  \"dated\" \"$auto_expired_wording\"" }
+  ],
+  "gate": "autocontinue",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\nauto_wait=wave-2\n",
+    ".local/state/oso-code/runs/{repo}/test-session.waiting": {
+      "kind": "file",
+      "content": "run=auto-continuity\nsession=test-session\njournal_bytes=0\nrenewals=0\n",
+      "aged": true
+    }
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"decision\":\"block\"",
+        "older than 45 minutes"
+      ]
+    },
+    "events_appended": [
+      {
+        "event": "auto-continued",
+        "session": "test-session",
+        "command": "",
+        "schema": 2,
+        "gate": "auto-continue.sh",
+        "hook_event": "Stop"
+      }
+    ]
+  }
+}

@@ -34,7 +34,7 @@ export const STATE_SUBJECTS: readonly StateSubject[] = [
 
 export type SeededEntry =
   | string
-  | { kind: "file"; content: string; aged?: boolean }
+  | { kind: "file"; content: string; aged?: boolean; agedSeconds?: number }
   | { kind: "directory"; aged?: boolean };
 
 export type ObservedEntry =
@@ -104,6 +104,12 @@ export function unmeasurableSubjectsReport(): string {
   return `zero of ${STATE_SUBJECTS.length} configured subjects were measurable\n${reasons.join("\n")}`;
 }
 
+function datedAt(seeded: Exclude<SeededEntry, string>): Date | undefined {
+  if (seeded.aged === true) return PAST_THE_TTL;
+  if (seeded.kind === "directory" || seeded.agedSeconds === undefined) return undefined;
+  return new Date(Date.now() - seeded.agedSeconds * 1000);
+}
+
 export function withStateSandbox<T>(workspace: string, use: (sandbox: StateSandbox) => T): T {
   const sandbox = new StateSandbox(workspace);
   try {
@@ -165,7 +171,8 @@ export class StateSandbox {
         writeFileSync(target, this.expand(seeded.content));
         chmodSync(target, OWNER_ONLY_FILE);
       }
-      if (seeded.aged === true) utimesSync(target, PAST_THE_TTL, PAST_THE_TTL);
+      const dated = datedAt(seeded);
+      if (dated !== undefined) utimesSync(target, dated, dated);
     }
   }
 

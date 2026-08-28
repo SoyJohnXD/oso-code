@@ -1,0 +1,31 @@
+{
+  "name": "planprompt gate: an unknown permission mode cannot approve",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 1837, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input futureMode \"$SESSION\" 'Implement the plan.')\"" },
+    { "file": "tests/hooks-test.sh", "line": 1839, "assertion": "assert_after_hook \"an unknown permission mode cannot approve\" \\\n  hook_returned_block" },
+    { "file": "tests/hooks-test.sh", "line": 1841, "assertion": "assert_equals \"an unknown permission mode does not mutate pending state\" \\\n  \"$pending_snapshot\" \"$(approval_state_snapshot)\"" }
+  ],
+  "gate": "planprompt",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nplan_approval=pending\nplan_approval_digest=a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc\nplan_approval_session=test-session\nplan_snapshot_file={home}/.local/state/oso-code/plans/{repo}/presented-a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc.md\nplan_current_file={home}/.local/state/oso-code/plans/{repo}/current.md\nplan_revision=0\nsession=test-session\n",
+    ".local/state/oso-code/plans/{repo}/presented-a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc.md": "Repaso de cambios\nFull slice plan: alpha",
+    ".local/state/oso-code/plans/{repo}/current.md": "Repaso de cambios\nFull slice plan: alpha"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":null,\"cwd\":\"{cwd}\",\"permission_mode\":\"futureMode\",\"hook_event_name\":\"UserPromptSubmit\",\"turn_id\":\"turn-plan-prompt\",\"prompt\":\"Implement the plan.\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{\"decision\":\"block\",\"reason\":\"oso-code: native plan approval arrived without an attested collaboration mode; execution remains blocked.\"}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": {
+        "contains": [
+          "plan_approval=pending"
+        ]
+      }
+    },
+    "events_appended": []
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "planprompt gate: the native phrase with no pending plan is also invisible in Plan Mode",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 1591, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'Implement the plan.' \"$CODEX_PROMPT_PLAN_TRANSCRIPT\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 1593, "assertion": "assert_after_hook \"the native phrase with no pending plan is also invisible in Plan Mode\" \\\n  [ \"$hook_stdout\" = '{}' ]" },
+    { "file": "tests/hooks-test.sh", "line": 1595, "assertion": "assert_equals \"a no-pending Plan Mode phrase writes no state\" \\\n  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"" }
+  ],
+  "gate": "planprompt",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".codex/sessions/2026/08/04/prompt-plan.jsonl": "{\"timestamp\":\"2026-08-04T16:36:12.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"test-session\"}}\n{\"timestamp\":\"2026-08-04T16:36:12.013Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"turn_id\":\"turn-plan-prompt\",\"collaboration_mode_kind\":\"plan\"}}\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.codex/sessions/2026/08/04/prompt-plan.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"UserPromptSubmit\",\"turn_id\":\"turn-plan-prompt\",\"prompt\":\"Implement the plan.\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": null
+    },
+    "events_appended": []
+  }
+}

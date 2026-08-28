@@ -1,0 +1,31 @@
+{
+  "name": "planstop gate: a document a text-mode jq re-terminated over CRLF content is still captured",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 1625, "assertion": "run_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input default \"$SESSION\" \"$doubled_cr_plan\" false \"$CODEX_STOP_PLAN_TRANSCRIPT\")\"\nassert_after_hook \"a document a text-mode jq re-terminated over CRLF content is still captured\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1628, "assertion": "  [ \"$hook_stdout\" = '{}' ]\nassert_equals \"the snapshot of a doubled-CR document holds the human plan with LF line endings\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1630, "assertion": "  \"$doubled_cr_plan_document\" \"$(cat \"$doubled_cr_presented_file\" 2>/dev/null || true)\"\nassert_equals \"the operational copy of a doubled-CR document holds that same LF-ended plan\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1636, "assertion": "  \"$doubled_cr_plan_digest\" \"$(oso-state --session \"$SESSION\" get plan_approval_digest)\"\nestablish_premise \"the doubled-CR fixture leaves no approval pending\" \\" }
+  ],
+  "gate": "planstop",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".codex/sessions/2026/08/04/stop-plan.jsonl": "{\"timestamp\":\"2026-08-04T16:36:12.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"test-session\"}}\n{\"timestamp\":\"2026-08-04T16:36:12.013Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"turn_id\":\"turn-plan-stop\",\"collaboration_mode_kind\":\"plan\"}}\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.codex/sessions/2026/08/04/stop-plan.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"Stop\",\"turn_id\":\"turn-plan-stop\",\"stop_hook_active\":false,\"last_assistant_message\":\"Repaso de cambios\\r\\r\\nFull slice plan: text-mode jq host\\r\\r\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\\n\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/plans/{repo}/presented-41e0df7186427a3e1328217e36bbcf9697503ea66d088e42ffc6faf90df6be41.md": "Repaso de cambios\nFull slice plan: text-mode jq host",
+      ".local/state/oso-code/plans/{repo}/current.md": "Repaso de cambios\nFull slice plan: text-mode jq host",
+      ".local/state/oso-code/{repo}.state": {
+        "contains": [
+          "plan_approval_digest=41e0df7186427a3e1328217e36bbcf9697503ea66d088e42ffc6faf90df6be41"
+        ]
+      }
+    }
+  }
+}

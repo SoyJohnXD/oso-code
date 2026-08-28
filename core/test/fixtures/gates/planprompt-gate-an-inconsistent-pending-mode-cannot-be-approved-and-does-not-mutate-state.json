@@ -1,0 +1,38 @@
+{
+  "name": "planprompt gate: an inconsistent pending mode cannot be approved and does not mutate state",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 1826, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'Implement the plan.')\"" },
+    { "file": "tests/hooks-test.sh", "line": 1828, "assertion": "assert_after_hook \"an inconsistent pending mode cannot be approved\" \\\n  hook_returned_block" },
+    { "file": "tests/hooks-test.sh", "line": 1830, "assertion": "assert_equals \"a rejected inconsistent approval does not mutate state\" \\\n  \"$inconsistent_pending_snapshot\" \"$(approval_state_snapshot)\"" }
+  ],
+  "gate": "planprompt",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=debug\nactive_slice=none\nverify_green=false\nplan_approval=pending\nplan_approval_digest=a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc\nplan_approval_session=test-session\nplan_snapshot_file={home}/.local/state/oso-code/plans/{repo}/presented-a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc.md\nplan_current_file={home}/.local/state/oso-code/plans/{repo}/current.md\nplan_revision=0\nsession=test-session\n",
+    ".local/state/oso-code/plans/{repo}/presented-a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc.md": "Repaso de cambios\nFull slice plan: alpha",
+    ".local/state/oso-code/plans/{repo}/current.md": "Repaso de cambios\nFull slice plan: alpha"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":null,\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"UserPromptSubmit\",\"turn_id\":\"turn-plan-prompt\",\"prompt\":\"Implement the plan.\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{\"decision\":\"block\",\"reason\":\"oso-code: the approve request lost its pending compare-and-set; the gate did not change.\"}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": {
+        "contains": [
+          "plan_approval=pending",
+          "mode=debug"
+        ]
+      }
+    },
+    "events_appended": [
+      {
+        "event": "plan-approval-approve-blocked",
+        "session": "test-session",
+        "command": "pending approval is not attached to plan mode state"
+      }
+    ]
+  }
+}

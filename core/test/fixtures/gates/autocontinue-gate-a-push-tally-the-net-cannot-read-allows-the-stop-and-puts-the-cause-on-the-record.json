@@ -1,0 +1,33 @@
+{
+  "name": "autocontinue gate: a push tally the net cannot read allows the stop and puts the cause on the record",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 4801, "assertion": "mkdir -p \"${AUTO_JOURNAL%.log}.pushes\"\nauto_degraded_verdicts=\" $(auto_stop_verdict \"$(auto_stop_input)\")\"\nrm -rf \"$JOURNAL_DIR\"\nprintf 'a file stands where the run directory belongs\\n' > \"$JOURNAL_DIR\"" },
+    { "file": "tests/hooks-test.sh", "line": 4808, "assertion": "assert_equals \"a push tally the net can neither read nor write allows the stop and puts the cause on the record\" \\\n  \"stop stop 2\" \\\n  \"${auto_degraded_verdicts# } $((auto_degradations_after - auto_degradations_before))\"" }
+  ],
+  "gate": "autocontinue",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n",
+    ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": {
+      "kind": "directory"
+    }
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "events_appended": [
+      {
+        "event": "auto-continue-degraded",
+        "session": "test-session",
+        "command": "the push tally is not a readable file",
+        "schema": 2,
+        "gate": "auto-continue.sh",
+        "hook_event": "Stop"
+      }
+    ]
+  }
+}

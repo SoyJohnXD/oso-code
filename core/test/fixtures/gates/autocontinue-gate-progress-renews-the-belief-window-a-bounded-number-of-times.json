@@ -1,0 +1,40 @@
+{
+  "name": "autocontinue gate: progress renews the belief window a bounded number of times",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 4922, "assertion": "oso-state --session \"$SESSION\" set auto_wait=wave-4 >/dev/null\nauto_renewal_verdicts=\"\"\nfor auto_renewal in 1 2 3 4 5; do\n  auto_renewal_verdicts=\"$auto_renewal_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"\n  touch -t 200001010000 \"$AUTO_WAIT_MARK\"\n  journal_milestone \"the run moved while wave 4 stayed marked in flight ($auto_renewal)\"\ndone" },
+    { "file": "tests/hooks-test.sh", "line": 4929, "assertion": "assert_equals \"progress renews the belief window a bounded number of times, so a mark the run keeps moving under still stops being believed rather than holding the turn open for good\" \\\n  \"stop stop stop stop push\" \"${auto_renewal_verdicts# }\"\n" }
+  ],
+  "gate": "autocontinue",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\nauto_wait=wave-4\n",
+    ".local/state/oso-code/runs/{repo}/auto-continuity.log": "2026-08-27T00:00:00Z the run moved while wave 4 stayed marked in flight (4)\n",
+    ".local/state/oso-code/runs/{repo}/test-session.waiting": {
+      "kind": "file",
+      "content": "run=auto-continuity\nsession=test-session\njournal_bytes=0\nrenewals=3\n",
+      "aged": true
+    }
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"decision\":\"block\"",
+        "older than 45 minutes"
+      ]
+    },
+    "events_appended": [
+      {
+        "event": "auto-continued",
+        "session": "test-session",
+        "command": "",
+        "schema": 2,
+        "gate": "auto-continue.sh",
+        "hook_event": "Stop"
+      }
+    ]
+  }
+}

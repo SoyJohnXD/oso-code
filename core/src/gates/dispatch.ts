@@ -3,9 +3,16 @@ import { readEnvelope } from "../hosts/envelope.ts";
 import { preToolUseRun, type HookRun } from "../hosts/pretooluse.ts";
 import { sessionEndRun } from "../hosts/sessionend.ts";
 import { sessionStartRun } from "../hosts/sessionstart.ts";
+import { stopRun } from "../hosts/stop.ts";
+import { subagentStopRun } from "../hosts/subagentstop.ts";
+import { userPromptRun } from "../hosts/userprompt.ts";
 import type { LoggedEvent } from "../state/store.ts";
+import { AUTOCONTINUE_GATE } from "./autocontinue.ts";
 import { COMMIT_GATE } from "./commit.ts";
 import { EDITS_GATE } from "./edits.ts";
+import { HANDOFF_GATE } from "./handoff.ts";
+import { PLANPROMPT_GATE } from "./planprompt.ts";
+import { PLANSTOP_GATE } from "./planstop.ts";
 import type { GateDefinition, GateRequest } from "./preflight.ts";
 import { PROD_DEPLOY_GATE } from "./proddeploy.ts";
 import { REANCHOR_GATE } from "./reanchor.ts";
@@ -32,20 +39,42 @@ const NO_VERDICT_GATES: readonly GateDefinition<Extract<GateVerdict, { kind: "no
   TEARDOWN_GATE,
 ];
 
+const STOP_GATES: readonly GateDefinition<Extract<GateVerdict, { kind: "allow" | "deny" | "push" }>>[] = [
+  AUTOCONTINUE_GATE,
+  PLANSTOP_GATE,
+];
+
+const USER_PROMPT_GATES: readonly GateDefinition<Extract<GateVerdict, { kind: "allow" | "deny" | "context" }>>[] = [
+  PLANPROMPT_GATE,
+];
+
+const SUBAGENT_STOP_GATES: readonly GateDefinition<Extract<GateVerdict, { kind: "noVerdict" }>>[] = [HANDOFF_GATE];
+
 export function runGate(argv: readonly string[], payload: string): GateRun {
   const [name, ...gateArguments] = argv;
   const request: GateRequest = { envelope: readEnvelope(payload), argv: gateArguments };
+  const escalated = request.envelope.stopHookActive;
 
-  const preToolUse = PRE_TOOL_USE_GATES.find((definition) => definition.gate === name);
-  if (preToolUse !== undefined) return runWith(preToolUse, request, preToolUseRun, gateErrorRun);
+  const run =
+    routed(PRE_TOOL_USE_GATES, name, request, preToolUseRun, gateErrorRun) ??
+    routed(SESSION_START_GATES, name, request, sessionStartRun, loudRun) ??
+    routed(NO_VERDICT_GATES, name, request, sessionEndRun, loudRun) ??
+    routed(STOP_GATES, name, request, (verdict) => stopRun(verdict, escalated), loudRun) ??
+    routed(USER_PROMPT_GATES, name, request, userPromptRun, loudRun) ??
+    routed(SUBAGENT_STOP_GATES, name, request, subagentStopRun, loudRun);
 
-  const sessionStart = SESSION_START_GATES.find((definition) => definition.gate === name);
-  if (sessionStart !== undefined) return runWith(sessionStart, request, sessionStartRun, loudRun);
+  return run ?? gateErrorRun(`the gate entry point (unknown gate '${name ?? ""}')`);
+}
 
-  const sessionEnd = NO_VERDICT_GATES.find((definition) => definition.gate === name);
-  if (sessionEnd !== undefined) return runWith(sessionEnd, request, sessionEndRun, loudRun);
-
-  return gateErrorRun(`the gate entry point (unknown gate '${name ?? ""}')`);
+function routed<V extends GateVerdict>(
+  gates: readonly GateDefinition<V>[],
+  name: string | undefined,
+  request: GateRequest,
+  transport: (verdict: V) => HookRun,
+  onFailure: (subject: string, cause?: unknown) => GateRun,
+): GateRun | undefined {
+  const gate = gates.find((definition) => definition.gate === name);
+  return gate === undefined ? undefined : runWith(gate, request, transport, onFailure);
 }
 
 function runWith<V extends GateVerdict>(
@@ -56,7 +85,8 @@ function runWith<V extends GateVerdict>(
 ): GateRun {
   try {
     const outcome = gate.judge(request);
-    return { ...transport(outcome.verdict), events: outcome.events };
+    const run = transport(outcome.verdict);
+    return { ...run, stderr: run.stderr + (outcome.stderr ?? ""), events: outcome.events };
   } catch (cause) {
     return onFailure(gate.errorSubject, cause);
   }

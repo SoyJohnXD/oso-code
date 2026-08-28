@@ -1,0 +1,31 @@
+{
+  "name": "handoff gate: Codex SubagentStop resolves the fixed OSO_AGENT identity as the receipt's hook session",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 5230, "assertion": "  \"payload-native-uuid-7d1a-4d1e-bf19\" \"$HANDOFF_REPO\" \"$TEST_HOME/agent-fixed-marker.jsonl\")\"\nunset OSO_STATE_BIN\nOSO_AGENT=1 PATH=\"$SYSTEM_PATH_WITHOUT_OSO_STATE\" run_hook \"$HANDOFF_RUNTIME/hooks/publish-subagent-handoff.sh\" \"$fixed_marker_payload\"" },
+    { "file": "tests/hooks-test.sh", "line": 5233, "assertion": "assert_after_hook \"Codex SubagentStop resolves oso-state from its installed runtime when OSO_STATE_BIN is unset\" \\\n  [ \"$hook_stdout\" = '{}' ]" },
+    { "file": "tests/hooks-test.sh", "line": 5236, "assertion": "run_handoff \"\" handoff wait \\\n  --slice slice-fixed-marker --attempt 2 --agent-id agent-fixed-marker \\\n  --agent-type oso-verifier --timeout 0\nassert_equals \"the runtime-fallback hook receipt waits through the fixed OSO_AGENT rail\" \\" }
+  ],
+  "gate": "handoff",
+  "argv": [],
+  "env": {
+    "OSO_AGENT": "1"
+  },
+  "state_before": {},
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"payload-native-uuid-7d1a-4d1e-bf19\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"SubagentStop\",\"turn_id\":\"turn-fixed-marker\",\"agent_id\":\"agent-fixed-marker\",\"agent_type\":\"oso-verifier\",\"agent_transcript_path\":\"{home}/agent-fixed-marker.jsonl\",\"stop_hook_active\":false,\"last_assistant_message\":\"oso-handoff: v=1 slice=slice-fixed-marker attempt=2\\nevidence: the named check is green\\nverdict: pass\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-fixed-marker}.receipt": "version=1\nhook_session=1\nslice=slice-fixed-marker\nattempt=2\nagent_id=agent-fixed-marker\nagent_type=oso-verifier\n"
+    },
+    "events_appended": [
+      {
+        "event": "handoff-published",
+        "session": "1",
+        "command": "oso-verifier:slice-fixed-marker:2"
+      }
+    ]
+  }
+}

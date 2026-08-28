@@ -8,6 +8,16 @@ export type HookEnvelope = Readonly<{
   filePath: string;
   commandLine: string;
   source: string;
+  agentId: string;
+  agentType: string;
+  permissionMode: string;
+  transcriptPath: string;
+  turnId: string;
+  lastAssistantMessage: string;
+  escapedLastAssistantMessage: string;
+  prompt: string;
+  escapedPrompt: string;
+  stopHookActive: boolean;
 }>;
 
 export type GateVerdict =
@@ -21,10 +31,14 @@ export type GateVerdict =
 export type PreToolUseVerdict = Extract<GateVerdict, { kind: "deny" | "allow" | "gateError" }>;
 export type SessionStartVerdict = Extract<GateVerdict, { kind: "allow" | "context" | "gateError" }>;
 export type NoVerdictVerdict = Extract<GateVerdict, { kind: "noVerdict" | "gateError" }>;
+export type StopVerdict = Extract<GateVerdict, { kind: "allow" | "deny" | "push" }>;
+export type UserPromptVerdict = Extract<GateVerdict, { kind: "allow" | "deny" | "context" }>;
+export type SubagentStopVerdict = Extract<GateVerdict, { kind: "noVerdict" }>;
 
 export type GateOutcome<V extends GateVerdict = PreToolUseVerdict> = Readonly<{
   verdict: V;
   events: readonly LoggedEvent[];
+  stderr?: string;
 }>;
 
 export const ALLOWED: GateOutcome<Extract<GateVerdict, { kind: "allow" }>> = {
@@ -39,6 +53,8 @@ export const NO_VERDICT: GateOutcome<Extract<GateVerdict, { kind: "noVerdict" }>
 
 const JSON_SPACE = "[\\t\\n\\v\\f\\r ]";
 
+const STOP_HOOK_ACTIVE = new RegExp(`"stop_hook_active"${JSON_SPACE}*:${JSON_SPACE}*true`);
+
 export function readEnvelope(payload: string): HookEnvelope {
   return {
     sessionId: jsonField(payload, "session_id"),
@@ -47,6 +63,16 @@ export function readEnvelope(payload: string): HookEnvelope {
     filePath: jsonField(payload, "file_path"),
     commandLine: jsonCommandLine(payload),
     source: jsonField(payload, "source"),
+    agentId: jsonField(payload, "agent_id"),
+    agentType: jsonField(payload, "agent_type"),
+    permissionMode: jsonField(payload, "permission_mode"),
+    transcriptPath: jsonField(payload, "transcript_path"),
+    turnId: jsonField(payload, "turn_id"),
+    lastAssistantMessage: jsonField(payload, "last_assistant_message"),
+    escapedLastAssistantMessage: escapedField(payload, "last_assistant_message"),
+    prompt: jsonField(payload, "prompt"),
+    escapedPrompt: escapedField(payload, "prompt"),
+    stopHookActive: STOP_HOOK_ACTIVE.test(payload),
   };
 }
 
@@ -57,10 +83,14 @@ function jsonCommandLine(payload: string): string {
 }
 
 export function jsonField(payload: string, field: string): string {
-  return withoutCarriageReturns(unescapeJsonString(escapedField(payload, field)));
+  return withoutCarriageReturns(unescapedJson(escapedField(payload, field)));
 }
 
-function escapedField(payload: string, field: string): string {
+export function asCommandSubstitutionCaptures(text: string): string {
+  return text.replace(/\n+$/, "");
+}
+
+export function escapedField(payload: string, field: string): string {
   const pattern = new RegExp(`"${field}"${JSON_SPACE}*:${JSON_SPACE}*"((?:[^"\\\\]|\\\\[\\s\\S])*)"`);
   return pattern.exec(payload)?.[1] ?? "";
 }
@@ -73,7 +103,7 @@ const NAMED_ESCAPES: Readonly<Record<string, string>> = {
   f: "\f",
 };
 
-function unescapeJsonString(escaped: string): string {
+export function unescapedJson(escaped: string): string {
   let decoded = "";
   let rest = escaped;
   while (rest !== "") {

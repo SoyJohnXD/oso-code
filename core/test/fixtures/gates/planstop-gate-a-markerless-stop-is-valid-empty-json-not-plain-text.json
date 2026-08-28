@@ -1,0 +1,26 @@
+{
+  "name": "planstop gate: a markerless Stop is valid empty JSON, not plain text",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 1439, "assertion": "run_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input plan \"$SESSION\" 'ordinary plan-mode answer with no harness marker')\"" },
+    { "file": "tests/hooks-test.sh", "line": 1441, "assertion": "assert_after_hook \"a markerless Stop is valid empty JSON, not plain text\" \\\n  [ \"$hook_stdout\" = '{}' ]" },
+    { "file": "tests/hooks-test.sh", "line": 1443, "assertion": "assert_equals \"a markerless Stop creates no oso-code state\" \\\n  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"" },
+    { "file": "tests/hooks-test.sh", "line": 1445, "assertion": "assert_equals \"a markerless Stop records no harness event\" \\\n  \"$events_before_ordinary_stop\" \"$(wc -c < \"$STATE_DIR/events.jsonl\" 2>/dev/null || printf 0)\"" }
+  ],
+  "gate": "planstop",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".codex/sessions/2026/08/04/stop-plan.jsonl": "{\"timestamp\":\"2026-08-04T16:36:12.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"test-session\"}}\n{\"timestamp\":\"2026-08-04T16:36:12.013Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"turn_id\":\"turn-plan-stop\",\"collaboration_mode_kind\":\"plan\"}}\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":null,\"cwd\":\"{cwd}\",\"permission_mode\":\"plan\",\"hook_event_name\":\"Stop\",\"turn_id\":\"turn-plan-stop\",\"stop_hook_active\":false,\"last_assistant_message\":\"ordinary plan-mode answer with no harness marker\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": null
+    },
+    "events_appended": []
+  }
+}

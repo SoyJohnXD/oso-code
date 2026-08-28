@@ -2,10 +2,18 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { ALLOWED, type GateOutcome, type SessionStartVerdict } from "../hosts/envelope.ts";
 import { CHANGE_SLUG_PATTERN, isDirectory, readStateFile, stateFileFor, stateRootDirectory } from "../state/store.ts";
+import {
+  EXPIRED_DELEGATION_CLAUSE,
+  isDelegationLabel,
+  nowEpochSeconds,
+  readWaitMark,
+  waitExpired,
+  waitMarkFileFor,
+} from "./delegation.ts";
 import { hookSessionId, pluginRootDirectory, stateValue, type GateDefinition, type GateRequest } from "./preflight.ts";
 
-const DELEGATION_WAIT_CEILING_SECONDS = 45 * 60;
 const ROADMAP_DISARMED_SENTINEL = "none";
+const RUN_ARMED = "running";
 const ROADMAP_PLACEHOLDER = "{roadmap}";
 
 export const STALE_GATE: GateDefinition<SessionStartVerdict> = {
@@ -22,10 +30,35 @@ function judgeStale({ envelope }: GateRequest): GateOutcome<SessionStartVerdict>
 
   const content = contentOf(stateFile);
   const sessionId = hookSessionId(envelope);
-  if (stateValue(content, "session") === sessionId) return ALLOWED;
+  const advisories = [
+    ...staleStateAdvisory(stateFile, content, sessionId),
+    ...expiredDelegationAdvisory(envelope.cwd, content),
+  ];
+  if (advisories.length === 0) return ALLOWED;
 
-  const context = staleStateContext(stateFile, content, sessionId);
-  return { verdict: { kind: "context", additionalContext: context }, events: [] };
+  return { verdict: { kind: "context", additionalContext: advisories.join(" ") }, events: [] };
+}
+
+function staleStateAdvisory(stateFile: string, content: string, sessionId: string): string[] {
+  if (stateValue(content, "session") === sessionId) return [];
+  return [staleStateContext(stateFile, content, sessionId)];
+}
+
+function expiredDelegationAdvisory(cwd: string, content: string): string[] {
+  if (stateValue(content, "auto") !== RUN_ARMED) return [];
+  const label = stateValue(content, "auto_wait");
+  if (!isDelegationLabel(label)) return [];
+  const runSession = stateValue(content, "session");
+  if (runSession === "") return [];
+
+  const mark = readWaitMark(waitMarkFileFor(cwd, runSession));
+  if (mark === undefined || !waitExpired(nowEpochSeconds(), mark.markedAtEpochSeconds)) return [];
+
+  const disarmCommand = `${quoted(stateBinPath())} --session ${quoted(runSession)} set auto_wait=none`;
+  return [
+    `oso-code: this repository's unattended run is still marked as waiting on the delegation ${quoted(label)}. ` +
+      `${EXPIRED_DELEGATION_CLAUSE} Drop the mark with ${disarmCommand} and carry the run on.`,
+  ];
 }
 
 function staleStateContext(stateFile: string, content: string, sessionId: string): string {
@@ -76,8 +109,4 @@ function contentOf(stateFile: string): string {
 
 function quoted(value: string): string {
   return `"${value}"`;
-}
-
-export function waitExpired(now: number, markedAtEpochSeconds: number): boolean {
-  return now - markedAtEpochSeconds >= DELEGATION_WAIT_CEILING_SECONDS;
 }

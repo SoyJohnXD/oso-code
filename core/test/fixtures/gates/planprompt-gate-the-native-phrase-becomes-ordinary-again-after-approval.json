@@ -1,0 +1,31 @@
+{
+  "name": "planprompt gate: the native phrase becomes ordinary again after approval",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 1937, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'Implement the plan.')\"" },
+    { "file": "tests/hooks-test.sh", "line": 1939, "assertion": "assert_after_hook \"the native phrase becomes ordinary again after approval\" \\\n  [ \"$hook_stdout\" = '{}' ]" },
+    { "file": "tests/hooks-test.sh", "line": 1941, "assertion": "assert_equals \"a repeated native phrase cannot mutate approved state\" \\\n  \"$approved_state_after_amendment\" \"$(approval_state_snapshot)\"" }
+  ],
+  "gate": "planprompt",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nplan_approval=approved\nplan_approval_digest=a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc\nplan_approval_session=test-session\nplan_snapshot_file={home}/.local/state/oso-code/plans/{repo}/approved-a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc.md\nplan_current_file={home}/.local/state/oso-code/plans/{repo}/current.md\nplan_revision=0\nsession=test-session\n",
+    ".local/state/oso-code/plans/{repo}/approved-a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc.md": "Repaso de cambios\nFull slice plan: alpha",
+    ".local/state/oso-code/plans/{repo}/current.md": "Repaso de cambios\nFull slice plan: alpha"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":null,\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"UserPromptSubmit\",\"turn_id\":\"turn-plan-prompt\",\"prompt\":\"Implement the plan.\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": {
+        "contains": [
+          "plan_approval=approved"
+        ]
+      }
+    },
+    "events_appended": []
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "name": "handoff gate: SubagentStop publishes a receipt outside a read-only delegate",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 5202, "assertion": "hook_payload=\"$(printf '{\\\"session_id\\\":\\\"%s\\\",\\\"cwd\\\":\\\"%s\\\",\\\"hook_event_name\\\":\\\"SubagentStop\\\",\\\"turn_id\\\":\\\"turn-hook\\\",\\\"agent_id\\\":\\\"agent-hook\\\",\\\"agent_type\\\":\\\"oso-verifier\\\",\\\"agent_transcript_path\\\":\\\"%s\\\",\\\"stop_hook_active\\\":false,\\\"last_assistant_message\\\":\\\"oso-handoff: v=1 slice=slice-hook attempt=1\\\\nevidence: the named check is green\\\\nverdict: pass\\\"}' \\\n  \"$SESSION\" \"$HANDOFF_REPO\" \"$TEST_HOME/agent-hook.jsonl\")\"\nrun_hook \"$HANDOFF_HOOK\" \"$hook_payload\"" },
+    { "file": "tests/hooks-test.sh", "line": 5205, "assertion": "assert_after_hook \"SubagentStop publishes a receipt outside a read-only delegate\" \\\n  [ \"$hook_stdout\" = '{}' ]" },
+    { "file": "tests/hooks-test.sh", "line": 5207, "assertion": "hook_receipt=\"$(expected_receipt \"$SESSION\" slice-hook 1 agent-hook oso-verifier)\"\nrun_handoff \"\" handoff wait \\\n  --slice slice-hook --attempt 1 --agent-id agent-hook --agent-type oso-verifier --timeout 0" },
+    { "file": "tests/hooks-test.sh", "line": 5210, "assertion": "assert_equals \"the hook receipt binds host metadata while the message keeps the terminal verdict\" \\\n  \"rc=0:$hook_receipt\" \"rc=$handoff_rc:$handoff_stdout\"\nrun_handoff \"\" handoff consume \\" }
+  ],
+  "gate": "handoff",
+  "argv": [],
+  "env": {},
+  "state_before": {},
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"SubagentStop\",\"turn_id\":\"turn-hook\",\"agent_id\":\"agent-hook\",\"agent_type\":\"oso-verifier\",\"agent_transcript_path\":\"{home}/agent-hook.jsonl\",\"stop_hook_active\":false,\"last_assistant_message\":\"oso-handoff: v=1 slice=slice-hook attempt=1\\nevidence: the named check is green\\nverdict: pass\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-hook}.receipt": "version=1\nhook_session=test-session\nslice=slice-hook\nattempt=1\nagent_id=agent-hook\nagent_type=oso-verifier\n",
+      ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-hook}.watermark": "version=1\nattempt=1\n"
+    },
+    "events_appended": [
+      {
+        "event": "handoff-published",
+        "session": "test-session",
+        "command": "oso-verifier:slice-hook:1",
+        "schema": 2,
+        "gate": null,
+        "hook_event": null
+      }
+    ]
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "name": "autocontinue gate: an expired mark spends the cap like any stall and the give-up names the mark",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 4879, "assertion": "for _ in 1 2 3; do\n  auto_expiry_verdicts=\"$auto_expiry_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"\ndone" },
+    { "file": "tests/hooks-test.sh", "line": 4882, "assertion": "assert_equals \"an expired mark spends the cap like any stall, and the give-up names the mark rather than claiming there was no progress\" \\\n  \"stop push push stop|$AUTO_EXPIRED_CAP_MILESTONE>\" \\\n  \"${auto_expiry_verdicts# }|$(journal_texts_in \"$AUTO_JOURNAL\")\"" }
+  ],
+  "gate": "autocontinue",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\nauto_wait=wave-2\n",
+    ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=3\njournal_bytes=0\n",
+    ".local/state/oso-code/runs/{repo}/test-session.waiting": {
+      "kind": "file",
+      "content": "run=auto-continuity\nsession=test-session\njournal_bytes=0\nrenewals=0\n",
+      "aged": true
+    }
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/runs/{repo}/auto-continuity.log": {
+        "journal_texts_in": "auto-continue: cap reached after 3 pushes with a delegation marked in flight past 45 minutes — allowing the stop"
+      }
+    },
+    "events_appended": []
+  }
+}

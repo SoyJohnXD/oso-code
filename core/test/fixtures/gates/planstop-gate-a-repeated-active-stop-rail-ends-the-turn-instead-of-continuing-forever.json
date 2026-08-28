@@ -1,0 +1,31 @@
+{
+  "name": "planstop gate: a repeated active Stop rail ends the turn instead of continuing forever",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 1545, "assertion": "run_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input default \"$SESSION\" 'Repaso\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->' true)\"\nassert_after_hook \"a repeated active Stop rail ends instead of continuing forever\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1548, "assertion": "  hook_returned_continue_false\nassert_equals \"an active Stop retry writes no approval state\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1550, "assertion": "  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"\n" }
+  ],
+  "gate": "planstop",
+  "argv": [],
+  "env": {},
+  "state_before": {},
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":null,\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"Stop\",\"turn_id\":\"turn-plan-stop\",\"stop_hook_active\":true,\"last_assistant_message\":\"Repaso\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{\"continue\":false,\"stopReason\":\"oso-code: the approval document must be presented while Codex is still in Plan Mode.\",\"systemMessage\":\"oso-code: the approval document must be presented while Codex is still in Plan Mode.\"}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": null
+    },
+    "events_appended": [
+      {
+        "event": "plan-approval-capture-blocked",
+        "session": "test-session",
+        "command": "",
+        "gate": "capture-plan-approval.sh",
+        "hook_event": "Stop"
+      }
+    ]
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "name": "autocontinue gate: a turn this hook already continued counts as a push even before any tally exists",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 4787, "assertion": "arm_unattended_run\nauto_belt_verdicts=\"\"\nfor _ in 1 2 3; do\n  auto_belt_verdicts=\"$auto_belt_verdicts $(auto_stop_verdict \"$(auto_stop_input \"$SESSION\" true)\")\"\ndone" },
+    { "file": "tests/hooks-test.sh", "line": 4792, "assertion": "assert_equals \"a turn this hook already continued counts as a push even before any tally exists\" \\\n  \"push push stop\" \"${auto_belt_verdicts# }\"" }
+  ],
+  "gate": "autocontinue",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":true}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"shouldContinue\":true",
+        "\"decision\":\"block\""
+      ]
+    },
+    "state_after": {
+      ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=2\njournal_bytes=0\n"
+    },
+    "events_appended": [
+      {
+        "event": "auto-continued",
+        "session": "test-session",
+        "command": "",
+        "schema": 2,
+        "gate": "auto-continue.sh",
+        "hook_event": "Stop"
+      }
+    ]
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "name": "planprompt gate: a real Codex 0.146 Plan turn still rejects the native phrase",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 1844, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'Implement the plan.' \"$CODEX_PROMPT_PLAN_TRANSCRIPT\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 1846, "assertion": "assert_after_hook \"a real Codex 0.146 Plan turn still rejects the native phrase\" \\\n  hook_returned_block" },
+    { "file": "tests/hooks-test.sh", "line": 1848, "assertion": "assert_equals \"a blocked Plan Mode phrase does not mutate pending state\" \\\n  \"$pending_snapshot\" \"$(approval_state_snapshot)\"" }
+  ],
+  "gate": "planprompt",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nplan_approval=pending\nplan_approval_digest=a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc\nplan_approval_session=test-session\nplan_snapshot_file={home}/.local/state/oso-code/plans/{repo}/presented-a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc.md\nplan_current_file={home}/.local/state/oso-code/plans/{repo}/current.md\nplan_revision=0\nsession=test-session\n",
+    ".local/state/oso-code/plans/{repo}/presented-a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc.md": "Repaso de cambios\nFull slice plan: alpha",
+    ".local/state/oso-code/plans/{repo}/current.md": "Repaso de cambios\nFull slice plan: alpha",
+    ".codex/sessions/2026/08/04/prompt-plan.jsonl": "{\"timestamp\":\"2026-08-04T16:36:12.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"test-session\"}}\n{\"timestamp\":\"2026-08-04T16:36:12.013Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"turn_id\":\"turn-plan-prompt\",\"collaboration_mode_kind\":\"plan\"}}\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.codex/sessions/2026/08/04/prompt-plan.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"UserPromptSubmit\",\"turn_id\":\"turn-plan-prompt\",\"prompt\":\"Implement the plan.\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{\"decision\":\"block\",\"reason\":\"oso-code: native plan approval arrived while Codex still reports Plan Mode; use the native approval control again after the mode transition completes.\"}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": {
+        "contains": [
+          "plan_approval=pending"
+        ]
+      }
+    },
+    "events_appended": []
+  }
+}
