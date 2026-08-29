@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6493,
+      "line": 6470,
       "assertion": "assert_every assert_denies \"git option shape\" <<'GIT_OPTION_TABLE'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6499,
+      "line": 6476,
       "assertion": "git --exec-path=/usr/lib/git-core commit"
     }
   ],

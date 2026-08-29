@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6272,
+      "line": 6249,
       "assertion": "  write_drift_marketplace_source github repo other-owner/other-plugin"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6273,
+      "line": 6250,
       "assertion": "  assert_drift_silent \"a marketplace serving another repository says nothing\""
     }
   ],

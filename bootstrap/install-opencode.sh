@@ -48,8 +48,7 @@ initialize_paths() {
   SHARED_SKILLS_SOURCE="$REPO_ROOT/plugin/skills/_shared"
   AGENTS_SOURCE="$REPO_ROOT/opencode/agents"
   COMMANDS_SOURCE="$REPO_ROOT/opencode/commands"
-  PLUGIN_SOURCE="$REPO_ROOT/opencode/plugin"
-  HOOKS_SOURCE="$REPO_ROOT/opencode/hooks"
+  PLUGIN_BUNDLE_SOURCE="$REPO_ROOT/opencode/dist/oso-code.js"
   GATES_SOURCE="$REPO_ROOT/plugin/hooks"
   GIT_HOOKS_SOURCE="$REPO_ROOT/plugin/git-hooks"
   STATE_BIN_SOURCE="$REPO_ROOT/plugin/bin/oso-state"
@@ -124,10 +123,8 @@ preflight_payload() {
     fail "the OpenCode agent contracts are missing: $AGENTS_SOURCE"
   [ -d "$COMMANDS_SOURCE" ] ||
     fail "the OpenCode command templates are missing: $COMMANDS_SOURCE"
-  [ -f "$PLUGIN_SOURCE/oso-code.ts" ] ||
-    fail "the OpenCode plugin entry is missing: $PLUGIN_SOURCE/oso-code.ts"
-  [ -f "$HOOKS_SOURCE/routes.ts" ] ||
-    fail "the OpenCode gate route table is missing: $HOOKS_SOURCE/routes.ts"
+  [ -f "$PLUGIN_BUNDLE_SOURCE" ] ||
+    fail "the OpenCode plugin bundle is missing: $PLUGIN_BUNDLE_SOURCE"
   [ -d "$GATES_SOURCE" ] ||
     fail "the shared gate script tree is missing: $GATES_SOURCE"
   [ -f "$GATES_SOURCE/lib.sh" ] ||
@@ -437,19 +434,13 @@ published_dist_files() {
 }
 
 install_plugin() {
-  local stage hooks_stage state_bin_stage dist_stage module script bundle
+  local stage hooks_stage state_bin_stage dist_stage script bundle
   mkdir -p "$OPENCODE_CONFIG_HOME"
   stage="$(mktemp -d "$OPENCODE_CONFIG_HOME/.plugin-install.XXXXXX")"
-  cp "$PLUGIN_SOURCE/oso-code.ts" "$stage/oso-code.ts"
-  mkdir -p "$stage/oso"
-  for module in "$PLUGIN_SOURCE"/oso/*.ts; do
-    case "$(basename "$module")" in *.test.ts) continue ;; esac
-    cp "$module" "$stage/oso/$(basename "$module")"
-  done
+  cp "$PLUGIN_BUNDLE_SOURCE" "$stage/oso-code.js"
   replace_tree "$stage" "$PLUGIN_TARGET"
 
   hooks_stage="$(mktemp -d "$OPENCODE_CONFIG_HOME/.hooks-install.XXXXXX")"
-  cp "$HOOKS_SOURCE/routes.ts" "$hooks_stage/routes.ts"
   while IFS= read -r script; do
     [ -n "$script" ] || continue
     cp "$GATES_SOURCE/$script" "$hooks_stage/$script"
@@ -790,7 +781,6 @@ write_owner_registry() {
   printf '%s\t%s\n' "$OWNER_INSTALLER" "$AGENTS_TARGET" >> "$tmp"
   printf '%s\t%s\n' "$OWNER_INSTALLER" "$COMMANDS_TARGET" >> "$tmp"
   printf '%s\t%s\n' "$OWNER_INSTALLER" "$PLUGIN_TARGET" >> "$tmp"
-  printf '%s\t%s\n' "$OWNER_INSTALLER" "$HOOKS_TARGET/routes.ts" >> "$tmp"
   for gate in "$HOOKS_TARGET"/*.sh; do
     [ -f "$gate" ] || continue
     printf '%s\t%s\n' "$OWNER_INSTALLER" "$gate" >> "$tmp"

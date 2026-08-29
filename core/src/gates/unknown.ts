@@ -1,5 +1,6 @@
 import type { GateOutcome } from "../hosts/envelope.ts";
 import { ALLOWED } from "../hosts/envelope.ts";
+import type { HostName } from "../routes/routes.ts";
 import { stateFileFor } from "../state/store.ts";
 import {
   denied,
@@ -54,7 +55,7 @@ function judgeUnknownTool({ envelope, argv }: GateRequest): GateOutcome {
     gate: "unknown",
     message:
       `oso-code: tool '${toolName === "" ? "<missing>" : toolName}' is not in this release's ` +
-      `${allowlistHost()} hook allowlist. Use one of the allowed local tools instead: ` +
+      `${allowlistHost(envelope.caller.host)} hook allowlist. Use one of the allowed local tools instead: ` +
       `${allowlist.replaceAll("|", ", ")}.`,
     event: "unknown-tool-denied",
     session,
@@ -94,6 +95,6 @@ function allowlistCarries(allowlist: string, toolName: string): boolean {
   return `|${allowlist}|`.includes(`|${toolName}|`);
 }
 
-function allowlistHost(): string {
-  return process.env["OSO_HOST"] === "opencode" ? "OpenCode" : "Codex";
+function allowlistHost(host: HostName): string {
+  return host === "opencode" ? "OpenCode" : "Codex";
 }

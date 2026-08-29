@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6691,
+      "line": 6668,
       "assertion": "assert_every assert_allows_counted \"word an expansion leaves unresolved\" <<'UNRESOLVED_WORD_TABLE'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6694,
+      "line": 6671,
       "assertion": "git `echo commit` -m x"
     }
   ],

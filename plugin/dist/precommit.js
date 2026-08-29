@@ -23,6 +23,7 @@ import {
   statSync,
   writeFileSync
 } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 var EVENTS_SCHEMA_VERSION = 2;
 var COMMAND_HEAD_BYTES = 120;
@@ -30,6 +31,8 @@ function sha256Hex(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 function stateRootDirectory() {
+  const configured = process.env["OSO_STATE_DIR"];
+  if (configured !== void 0 && configured !== "") return configured;
   return path.join(homeDirectory(), ".local", "state", "oso-code");
 }
 function stateFileFor(cwd) {
@@ -52,17 +55,25 @@ function logEvent(entry) {
     mkdirSync(path.dirname(eventsLog), { recursive: true });
     withOwnerOnlyUmask(() => appendFileSync(eventsLog, `${line}
 `));
+    return true;
   } catch {
     process.stderr.write(`${line}
 `);
+    return false;
   }
 }
-function homeDirectory() {
-  const home = process.env["HOME"];
-  if (home === void 0 || home === "") {
-    throw new Error("HOME is not set");
+function homeDirectoryFrom(platform, environment) {
+  if (platform === "win32") {
+    const profile = environment["USERPROFILE"] ?? homedir();
+    if (profile === "") throw new Error("USERPROFILE is not set");
+    return profile;
   }
+  const home = environment["HOME"];
+  if (home === void 0 || home === "") throw new Error("HOME is not set");
   return home;
+}
+function homeDirectory() {
+  return homeDirectoryFrom(process.platform, process.env);
 }
 function gitCommonDirectory(cwd) {
   try {

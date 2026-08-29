@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6601,
+      "line": 6578,
       "assertion": "assert_allows \"residue: a command word only the shell resolves passes\" \\\n  block-commit-until-green.sh \"$(bash_input 'g=git; $g commit')\""
     }
   ],

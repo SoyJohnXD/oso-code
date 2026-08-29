@@ -1,9 +1,9 @@
 {
   "name": "autocontinue gate: the push re-anchors the run on position, journal and park, and forbids relaunching a delegation",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 4745, "assertion": "run_hook auto-continue.sh \"$(auto_stop_input)\"" },
-    { "file": "tests/hooks-test.sh", "line": 4749, "assertion": "auto_anchors_missing=\"\"\nfor auto_anchor in 'oso/index NEXT:' active_slice 'oso-state journal' park 'do NOT relaunch it'; do\n  case \"$auto_push_reason\" in\n    *\"$auto_anchor\"*) ;;\n    *) auto_anchors_missing=\"$auto_anchors_missing $auto_anchor\" ;;\n  esac\ndone\nassert_equals \"the push re-anchors the run on position, journal and park, and forbids relaunching a delegation, never a bare block\" \\\n  \"\" \"$auto_anchors_missing\"" },
-    { "file": "tests/hooks-test.sh", "line": 4756, "assertion": "assert_equals \"the push re-anchors the run on position, journal and park, and forbids relaunching a delegation, never a bare block\" \\\n  \"\" \"$auto_anchors_missing\"" }
+    { "file": "tests/hooks-test.sh", "line": 4722, "assertion": "run_hook auto-continue.sh \"$(auto_stop_input)\"" },
+    { "file": "tests/hooks-test.sh", "line": 4726, "assertion": "auto_anchors_missing=\"\"\nfor auto_anchor in 'oso/index NEXT:' active_slice 'oso-state journal' park 'do NOT relaunch it'; do\n  case \"$auto_push_reason\" in\n    *\"$auto_anchor\"*) ;;\n    *) auto_anchors_missing=\"$auto_anchors_missing $auto_anchor\" ;;\n  esac\ndone\nassert_equals \"the push re-anchors the run on position, journal and park, and forbids relaunching a delegation, never a bare block\" \\\n  \"\" \"$auto_anchors_missing\"" },
+    { "file": "tests/hooks-test.sh", "line": 4733, "assertion": "assert_equals \"the push re-anchors the run on position, journal and park, and forbids relaunching a delegation, never a bare block\" \\\n  \"\" \"$auto_anchors_missing\"" }
   ],
   "gate": "autocontinue",
   "argv": [],

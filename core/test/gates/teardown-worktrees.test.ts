@@ -3,6 +3,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { runGate } from "../../src/gates/dispatch.ts";
+import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
 import { skipUnlessGitSeedsRepositories, withStateSandbox, type StateSandbox } from "../support/state-sandbox.ts";
 
@@ -178,7 +179,7 @@ function waveState(sessionId: string, repository: string): string {
 
 function runTeardown(sandbox: StateSandbox, sessionId: string, env: Readonly<Record<string, string>> = {}): void {
   const stdin = sandbox.expandJson(`{"session_id":"${sessionId}","cwd":"{cwd}"}`);
-  const run = withHookEnvironment({ HOME: sandbox.home, ...env }, () => runGate(["teardown"], stdin));
+  const run = withHookEnvironment({ HOME: sandbox.home, ...env }, () => runGate(["teardown"], spawnedEnvelope(stdin, process.env)));
   assert.equal(run.exit, 0, `the teardown gate failed: ${run.stderr}`);
 }
 

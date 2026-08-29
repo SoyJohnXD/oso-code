@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6586,
+      "line": 6563,
       "assertion": "assert_every assert_allows \"redirect with no commit to find\" <<'REDIRECT_NO_FRICTION_TABLE'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6590,
+      "line": 6567,
       "assertion": "git diff > /tmp/d.patch"
     }
   ],

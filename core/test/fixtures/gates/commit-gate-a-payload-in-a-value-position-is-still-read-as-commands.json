@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6642,
+      "line": 6619,
       "assertion": "assert_denies \"a payload in a value position is still read as commands\" \\\n  block-commit-until-green.sh \"$(bash_input 'bash -c -x \\\"git commit -m x\\\"')\""
     }
   ],

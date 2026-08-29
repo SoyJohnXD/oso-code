@@ -5,12 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { spawnStateBin } from "./gates.ts";
 import { deriveRootId, publishIdentity, roleOf } from "./identity.ts";
+import { armStateUnder } from "../../test-support/state-fixture.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const SHARED_GIT_HOOKS_DIR = join(REPO_ROOT, "plugin", "git-hooks");
-const OSO_STATE_BIN = join(REPO_ROOT, "plugin", "bin", "oso-state");
 const RAIL_SESSION = "opencode-identity-rail";
 
 const COMMIT_ENV = {
@@ -50,12 +49,7 @@ function makeRepo(): RepoFixture {
 }
 
 function armSession(cwd: string, home: string, assignments: readonly string[]): void {
-  const result = spawnStateBin(OSO_STATE_BIN, ["--session", RAIL_SESSION, "set", ...assignments], {
-    cwd,
-    encoding: "utf8",
-    env: { ...process.env, HOME: home },
-  });
-  assert.equal(result.status, 0, result.stderr ?? "");
+  armStateUnder(home, cwd, RAIL_SESSION, assignments);
 }
 
 function commitInto(tree: string, home: string, marker: string, file: string) {

@@ -1,13 +1,11 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join } from "node:path";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
 import { osoCode } from "../oso-code.ts";
+import { stateBinPath } from "./installed-tree.ts";
 import { parseAgentVerdict } from "./verdict.ts";
-
-process.env.OSO_HOOKS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../../plugin/hooks");
 
 type LooseHooks = Record<string, (input?: unknown, output?: unknown) => unknown>;
 
@@ -105,10 +103,7 @@ test("shell.env publishes OSO_AGENT and OSO_STATE_BIN into the tool subprocess e
   const hooks = await loadHooks();
   const output = (await hooks["shell.env"]!({ cwd }, { env: {} })) as { env: Record<string, string> };
   assert.equal(output.env.OSO_AGENT, "");
-  assert.equal(
-    output.env.OSO_STATE_BIN,
-    resolve(process.env.OSO_HOOKS_DIR!, "..", "bin", "oso-state"),
-  );
+  assert.equal(output.env.OSO_STATE_BIN, stateBinPath());
   rmSync(cwd, { recursive: true, force: true });
 });
 

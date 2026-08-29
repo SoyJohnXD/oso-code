@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6268,
+      "line": 6245,
       "assertion": "  rm -f \"$DRIFT_MANIFEST\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6269,
+      "line": 6246,
       "assertion": "  assert_drift_silent \"a plugin root with no readable manifest says nothing\""
     }
   ],

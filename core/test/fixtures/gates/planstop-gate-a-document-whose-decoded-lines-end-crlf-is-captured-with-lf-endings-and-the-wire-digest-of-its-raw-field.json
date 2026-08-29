@@ -1,11 +1,11 @@
 {
   "name": "planstop gate: a document whose decoded lines end CRLF is captured with LF endings and the wire digest of its raw field",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1626, "assertion": "run_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input default \"$SESSION\" \"$crlf_plan\" false \"$CODEX_STOP_PLAN_TRANSCRIPT\")\"\nassert_after_hook \"a document whose decoded lines end CRLF is still captured\" \\" },
-    { "file": "tests/hooks-test.sh", "line": 1629, "assertion": "  [ \"$hook_stdout\" = '{}' ]\nassert_equals \"the snapshot of a CRLF-decoded document holds the human plan with LF line endings\" \\" },
-    { "file": "tests/hooks-test.sh", "line": 1631, "assertion": "  \"$crlf_plan_document\" \"$(cat \"$crlf_presented_file\" 2>/dev/null || true)\"\nassert_equals \"the operational copy of a CRLF-decoded document holds that same LF-ended plan\" \\" },
-    { "file": "tests/hooks-test.sh", "line": 1633, "assertion": "  \"$crlf_plan_document\" \"$(cat \"$crlf_current_file\" 2>/dev/null || true)\"\nassert_equals \"neither persisted artifact of a CRLF-decoded document carries a CR byte\" \\" },
-    { "file": "tests/hooks-test.sh", "line": 1639, "assertion": "  \"$crlf_plan_digest\" \"$(oso-state --session \"$SESSION\" get plan_approval_digest)\"\nestablish_premise \"the CRLF fixture leaves no approval pending\" \\" }
+    { "file": "tests/hooks-test.sh", "line": 1606, "assertion": "run_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input default \"$SESSION\" \"$crlf_plan\" false \"$CODEX_STOP_PLAN_TRANSCRIPT\")\"\nassert_after_hook \"a document whose decoded lines end CRLF is still captured\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1609, "assertion": "  [ \"$hook_stdout\" = '{}' ]\nassert_equals \"the snapshot of a CRLF-decoded document holds the human plan with LF line endings\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1611, "assertion": "  \"$crlf_plan_document\" \"$(cat \"$crlf_presented_file\" 2>/dev/null || true)\"\nassert_equals \"the operational copy of a CRLF-decoded document holds that same LF-ended plan\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1613, "assertion": "  \"$crlf_plan_document\" \"$(cat \"$crlf_current_file\" 2>/dev/null || true)\"\nassert_equals \"neither persisted artifact of a CRLF-decoded document carries a CR byte\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1619, "assertion": "  \"$crlf_plan_digest\" \"$(oso-state --session \"$SESSION\" get plan_approval_digest)\"\nestablish_premise \"the CRLF fixture leaves no approval pending\" \\" }
   ],
   "gate": "planstop",
   "argv": [],

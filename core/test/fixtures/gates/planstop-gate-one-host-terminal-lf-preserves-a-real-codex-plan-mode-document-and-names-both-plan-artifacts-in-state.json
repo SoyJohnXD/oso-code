@@ -1,13 +1,13 @@
 {
   "name": "planstop gate: one host terminal LF preserves a real Codex Plan Mode document and names both plan artifacts in state",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1667, "assertion": "run_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input default \"$SESSION\" \"$first_plan\" false \"$CODEX_STOP_PLAN_TRANSCRIPT\")\"\nassert_after_hook \"one host terminal LF preserves a real Codex Plan Mode document\" \\" },
-    { "file": "tests/hooks-test.sh", "line": 1670, "assertion": "  [ \"$hook_stdout\" = '{}' ]\nassert_equals \"Stop records a pending approval\" pending \\" },
-    { "file": "tests/hooks-test.sh", "line": 1672, "assertion": "  \"$(oso-state --session \"$SESSION\" get plan_approval)\"\nassert_equals \"Stop binds approval to the complete observed message digest\" \\" },
-    { "file": "tests/hooks-test.sh", "line": 1674, "assertion": "  \"$first_plan_digest\" \"$(oso-state --session \"$SESSION\" get plan_approval_digest)\"\ncase \"$first_plan_digest\" in" },
-    { "file": "tests/hooks-test.sh", "line": 1697, "assertion": "assert_equals \"a newly captured operational plan starts at revision zero\" \\\n  0 \"$(oso-state --session \"$SESSION\" get plan_revision)\"" },
-    { "file": "tests/hooks-test.sh", "line": 1699, "assertion": "assert_equals \"the pending snapshot contains the human plan without the internal marker\" \\\n  \"$first_plan_document\" \"$(cat \"$first_presented_file\" 2>/dev/null || true)\"" },
-    { "file": "tests/hooks-test.sh", "line": 1701, "assertion": "assert_equals \"the operational plan starts from the same human document\" \\\n  \"$first_plan_document\" \"$(cat \"$first_current_file\" 2>/dev/null || true)\"" }
+    { "file": "tests/hooks-test.sh", "line": 1647, "assertion": "run_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input default \"$SESSION\" \"$first_plan\" false \"$CODEX_STOP_PLAN_TRANSCRIPT\")\"\nassert_after_hook \"one host terminal LF preserves a real Codex Plan Mode document\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1650, "assertion": "  [ \"$hook_stdout\" = '{}' ]\nassert_equals \"Stop records a pending approval\" pending \\" },
+    { "file": "tests/hooks-test.sh", "line": 1652, "assertion": "  \"$(oso-state --session \"$SESSION\" get plan_approval)\"\nassert_equals \"Stop binds approval to the complete observed message digest\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1654, "assertion": "  \"$first_plan_digest\" \"$(oso-state --session \"$SESSION\" get plan_approval_digest)\"\ncase \"$first_plan_digest\" in" },
+    { "file": "tests/hooks-test.sh", "line": 1677, "assertion": "assert_equals \"a newly captured operational plan starts at revision zero\" \\\n  0 \"$(oso-state --session \"$SESSION\" get plan_revision)\"" },
+    { "file": "tests/hooks-test.sh", "line": 1679, "assertion": "assert_equals \"the pending snapshot contains the human plan without the internal marker\" \\\n  \"$first_plan_document\" \"$(cat \"$first_presented_file\" 2>/dev/null || true)\"" },
+    { "file": "tests/hooks-test.sh", "line": 1681, "assertion": "assert_equals \"the operational plan starts from the same human document\" \\\n  \"$first_plan_document\" \"$(cat \"$first_current_file\" 2>/dev/null || true)\"" }
   ],
   "gate": "planstop",
   "argv": [],

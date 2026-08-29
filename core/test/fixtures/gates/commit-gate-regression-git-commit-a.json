@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6464,
+      "line": 6441,
       "assertion": "assert_every assert_denies regression <<'REGRESSION_TABLE'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6475,
+      "line": 6452,
       "assertion": "git commit -a"
     }
   ],

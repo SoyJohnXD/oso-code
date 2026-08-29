@@ -1,8 +1,8 @@
 {
   "name": "planprompt gate: the real Codex 0.146 payload allows a native Plan Mode invocation",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1597, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" '$oso-code:plan repair approval' \"$CODEX_PROMPT_PLAN_TRANSCRIPT\")\"" },
-    { "file": "tests/hooks-test.sh", "line": 1599, "assertion": "assert_after_hook \"the real Codex 0.146 payload allows a native Plan Mode invocation\" \\\n  [ \"$hook_stdout\" = '{}' ]" }
+    { "file": "tests/hooks-test.sh", "line": 1577, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" '$oso-code:plan repair approval' \"$CODEX_PROMPT_PLAN_TRANSCRIPT\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 1579, "assertion": "assert_after_hook \"the real Codex 0.146 payload allows a native Plan Mode invocation\" \\\n  [ \"$hook_stdout\" = '{}' ]" }
   ],
   "gate": "planprompt",
   "argv": [],

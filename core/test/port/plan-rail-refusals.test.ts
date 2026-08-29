@@ -3,6 +3,7 @@ import { chmodSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { runGate, type GateRun } from "../../src/gates/dispatch.ts";
+import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { sha256Hex } from "../../src/state/store.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
 import { withStateSandbox, type SeededEntry, type StateSandbox } from "../support/state-sandbox.ts";
@@ -51,7 +52,7 @@ function judged(
   return withStateSandbox("workspace", (sandbox) => {
     sandbox.seed(seed);
     before(sandbox);
-    const run = withHookEnvironment({ HOME: sandbox.home }, () => runGate([gate], sandbox.expandJson(payload)));
+    const run = withHookEnvironment({ HOME: sandbox.home }, () => runGate([gate], spawnedEnvelope(sandbox.expandJson(payload), process.env)));
     restoreModes(sandbox, Object.keys(seed));
     return run;
   });

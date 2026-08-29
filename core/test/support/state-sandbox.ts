@@ -91,7 +91,7 @@ function subjectSpawns(subject: StateSubject): boolean {
     command === undefined
       ? undefined
       : spawnSync(command, leading, {
-          env: { HOME: tmpdir(), PATH: process.env["PATH"] ?? "" },
+          env: { HOME: tmpdir(), USERPROFILE: tmpdir(), PATH: process.env["PATH"] ?? "" },
           encoding: "utf8",
         });
   const spawns = probe !== undefined && probe.error === undefined;
@@ -260,6 +260,7 @@ export class StateSandbox {
   private subjectEnvironment(extra: Readonly<Record<string, string>>): Record<string, string> {
     return {
       HOME: this.home,
+      USERPROFILE: this.home,
       PATH: process.env["PATH"] ?? "",
       XDG_CONFIG_HOME: path.join(this.home, ".config"),
       XDG_DATA_HOME: path.join(this.home, ".local", "share"),

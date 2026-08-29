@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { runGate } from "../../src/gates/dispatch.ts";
+import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
 import { provedSomething } from "../support/proved.ts";
 import { withStateSandbox } from "../support/state-sandbox.ts";
@@ -15,7 +16,7 @@ const REASON_A_SUFFIX_ANCHORED_READER_TAKES = /.*"reason":"(.*)"}$/;
 function stopRun(gate: string, state: Record<string, string>, payload: string) {
   return withStateSandbox("workspace", (sandbox) => {
     sandbox.seed(state);
-    return withHookEnvironment({ HOME: sandbox.home }, () => runGate([gate], sandbox.expandJson(payload)));
+    return withHookEnvironment({ HOME: sandbox.home }, () => runGate([gate], spawnedEnvelope(sandbox.expandJson(payload), process.env)));
   });
 }
 

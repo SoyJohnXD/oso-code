@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6685,
+      "line": 6662,
       "assertion": "assert_allows_counted \"residue: a versioned interpreter that mentions git passes\" \\\n  block-commit-until-green.sh \"$(bash_input 'python3.13 -c \\\"import os; os.system('\\''git commit'\\'')\\\"')\""
     }
   ],

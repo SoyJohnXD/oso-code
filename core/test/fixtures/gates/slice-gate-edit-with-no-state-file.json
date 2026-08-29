@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2142,
+      "line": 2122,
       "assertion": "assert_allows \"edit with no state file\" block-edits-without-slice.sh \"$edit_input\""
     }
   ],

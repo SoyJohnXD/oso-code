@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6396,
+      "line": 6373,
       "assertion": "assert_every assert_denies adversarial <<'ADVERSARIAL_TABLE'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6418,
+      "line": 6395,
       "assertion": "env bash -c \\\"git commit\\\""
     }
   ],

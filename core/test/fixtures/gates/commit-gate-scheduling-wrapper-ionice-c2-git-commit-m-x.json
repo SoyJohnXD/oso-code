@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6675,
+      "line": 6652,
       "assertion": "assert_every assert_denies \"scheduling wrapper\" <<'WRAPPER_NAME_TABLE'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6676,
+      "line": 6653,
       "assertion": "ionice -c2 git commit -m x"
     }
   ],

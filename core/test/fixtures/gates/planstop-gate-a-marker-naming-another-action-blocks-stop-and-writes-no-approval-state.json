@@ -1,9 +1,9 @@
 {
   "name": "planstop gate: a marker naming another action blocks Stop and writes no approval state",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1479, "assertion": "  'Repaso\\n<!-- oso-plan-approval: v=2 action=WRONG_ACTION -->' \\\n  'Repaso\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\\n\\n' \\\n  '<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->' \\\n  'Repaso\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->'; do\n  run_hook \"$PLAN_STOP_HOOK\" \"$(codex_stop_input plan \"$SESSION\" \"$malformed_stop_case\")\"\n  assert_after_hook \"a malformed, double-LF, marker-only or duplicate rail blocks Stop\" \\" },
-    { "file": "tests/hooks-test.sh", "line": 1485, "assertion": "    hook_returned_block\n  assert_equals \"a rejected Stop marker writes no approval state\" \\" },
-    { "file": "tests/hooks-test.sh", "line": 1487, "assertion": "    absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"\ndone" }
+    { "file": "tests/hooks-test.sh", "line": 1459, "assertion": "  'Repaso\\n<!-- oso-plan-approval: v=2 action=WRONG_ACTION -->' \\\n  'Repaso\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\\n\\n' \\\n  '<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->' \\\n  'Repaso\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->'; do\n  run_hook \"$PLAN_STOP_HOOK\" \"$(codex_stop_input plan \"$SESSION\" \"$malformed_stop_case\")\"\n  assert_after_hook \"a malformed, double-LF, marker-only or duplicate rail blocks Stop\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1465, "assertion": "    hook_returned_block\n  assert_equals \"a rejected Stop marker writes no approval state\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1501, "assertion": "    absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"\ndone" }
   ],
   "gate": "planstop",
   "argv": [],

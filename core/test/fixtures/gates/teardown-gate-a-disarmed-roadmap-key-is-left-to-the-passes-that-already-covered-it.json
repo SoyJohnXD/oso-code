@@ -3,22 +3,22 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5759,
+      "line": 5736,
       "assertion": "printf 'mode=plan\\nsession=roadmap-finished\\n' > \"$roadmap_disarmed_decoy\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5760,
+      "line": 5737,
       "assertion": "printf 'mode=plan\\nsession=roadmap-finished\\nroadmap=none\\n' > \"$roadmap_disarmed_state\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5761,
+      "line": 5738,
       "assertion": "run_hook cleanup-state.sh '{\"session_id\":\"roadmap-finished\"}'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5764,
+      "line": 5741,
       "assertion": "assert_after_hook \"a disarmed roadmap key is left to the passes that already covered it\" \\\n  [ -f \"$roadmap_disarmed_state\" ]"
     }
   ],

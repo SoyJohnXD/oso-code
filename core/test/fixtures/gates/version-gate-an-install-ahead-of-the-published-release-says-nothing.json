@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6261,
+      "line": 6238,
       "assertion": "  write_drift_manifest 0.20.0"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6262,
+      "line": 6239,
       "assertion": "  assert_drift_silent \"an install ahead of the published release says nothing\""
     }
   ],

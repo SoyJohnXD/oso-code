@@ -1,10 +1,10 @@
 {
   "name": "planstop gate: a marker-only message with no transcript attestation blocks Stop and writes no approval state",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1482, "assertion": "  'Repaso\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->'; do" },
-    { "file": "tests/hooks-test.sh", "line": 1485, "assertion": "    hook_returned_block\n  assert_equals \"a rejected Stop marker writes no approval state\" \\" },
-    { "file": "tests/hooks-test.sh", "line": 1487, "assertion": "    absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"\ndone" },
-    { "file": "tests/hooks-test.sh", "line": 1527, "assertion": "marker_reason_position_count=\"$hook_stdout\"\n\nrun_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input plan \"$SESSION\" \"$PLAN_MARKER\")\"" }
+    { "file": "tests/hooks-test.sh", "line": 1462, "assertion": "  'Repaso\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->'; do" },
+    { "file": "tests/hooks-test.sh", "line": 1465, "assertion": "    hook_returned_block\n  assert_equals \"a rejected Stop marker writes no approval state\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1501, "assertion": "    absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"\ndone" },
+    { "file": "tests/hooks-test.sh", "line": 1507, "assertion": "marker_reason_position_count=\"$hook_stdout\"\n\nrun_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input plan \"$SESSION\" \"$PLAN_MARKER\")\"" }
   ],
   "gate": "planstop",
   "argv": [],

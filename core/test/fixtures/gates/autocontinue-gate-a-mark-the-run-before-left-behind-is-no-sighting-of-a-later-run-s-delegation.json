@@ -1,8 +1,8 @@
 {
   "name": "autocontinue gate: a mark the run before left behind is no sighting of a later run's delegation",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 4909, "assertion": "oso-state --session \"$SESSION\" set auto_wait=wave-2 >/dev/null\nauto_next_run_verdicts=\" $(auto_stop_verdict \"$(auto_stop_input)\")\"\ntouch -t 200001010000 \"$AUTO_WAIT_MARK\"\noso-state --session \"$SESSION\" set auto=done >/dev/null\noso-state --session another-session set auto=running auto_wait=wave-2 >/dev/null\nfor _ in 1 2; do\n  auto_next_run_verdicts=\"$auto_next_run_verdicts $(auto_stop_verdict \"$(auto_stop_input another-session)\")\"\ndone" },
-    { "file": "tests/hooks-test.sh", "line": 4917, "assertion": "assert_equals \"a mark the run before left behind is no sighting of a later run's delegation, so the same label is held on this run's own clock\" \\\n  \"stop stop stop\" \"${auto_next_run_verdicts# }\"" }
+    { "file": "tests/hooks-test.sh", "line": 4886, "assertion": "oso-state --session \"$SESSION\" set auto_wait=wave-2 >/dev/null\nauto_next_run_verdicts=\" $(auto_stop_verdict \"$(auto_stop_input)\")\"\ntouch -t 200001010000 \"$AUTO_WAIT_MARK\"\noso-state --session \"$SESSION\" set auto=done >/dev/null\noso-state --session another-session set auto=running auto_wait=wave-2 >/dev/null\nfor _ in 1 2; do\n  auto_next_run_verdicts=\"$auto_next_run_verdicts $(auto_stop_verdict \"$(auto_stop_input another-session)\")\"\ndone" },
+    { "file": "tests/hooks-test.sh", "line": 4894, "assertion": "assert_equals \"a mark the run before left behind is no sighting of a later run's delegation, so the same label is held on this run's own clock\" \\\n  \"stop stop stop\" \"${auto_next_run_verdicts# }\"" }
   ],
   "gate": "autocontinue",
   "argv": [],

@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2117,
+      "line": 2097,
       "assertion": "assert_denies \"bypass: git -c k=v commit\"       block-commit-until-green.sh \"$(bash_input 'git -c user.email=a@b commit')\""
     }
   ],

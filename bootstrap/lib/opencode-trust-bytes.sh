@@ -24,7 +24,7 @@ opencode_trust_file_under() {
     return 0
   fi
   case "$relative" in
-    opencode/hooks/routes.ts) printf '%s' "$root/hooks/routes.ts" ;;
+    opencode/dist/oso-code.js) printf '%s' "$root/plugin/oso-code.js" ;;
     plugin/dist/*) printf '%s' "$root/dist/${relative#plugin/dist/}" ;;
     plugin/hooks/*) printf '%s' "$root/hooks/${relative#plugin/hooks/}" ;;
     plugin/git-hooks/*) printf '%s' "$root/git-hooks/${relative#plugin/git-hooks/}" ;;

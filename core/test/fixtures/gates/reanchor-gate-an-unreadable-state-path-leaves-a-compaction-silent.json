@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6376,
+      "line": 6353,
       "assertion": "mkdir -p \"$REPO_STATE\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6377,
+      "line": 6354,
       "assertion": "reanchor_uncertain_verdicts=\"$reanchor_uncertain_verdicts $(reanchor_verdict \"$(reanchor_input compact)\")\""
     }
   ],

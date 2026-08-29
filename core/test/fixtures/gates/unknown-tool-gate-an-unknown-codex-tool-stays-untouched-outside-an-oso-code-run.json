@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 1218,
+      "line": 1198,
       "assertion": "assert_after_hook \"an unknown Codex tool stays untouched outside an oso-code run\" \\\n  [ -z \"$hook_stdout\" ]"
     }
   ],

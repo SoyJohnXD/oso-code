@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5133,
+      "line": 5110,
       "assertion": "assert_equals \"an xargs replace-string is a KNOWN HOLE rather than a counted residue: { ends the command, vercel comes out a clean word carrying no marker, and the very deploy its sibling spelling is denied for passes allowed AND uncounted\" \\\n  \"deny|allow 0\" \\\n  \"$(prod_verdicts_for 'echo --prod | xargs vercel')|$(prod_verdicts_and_residues_for 'echo --prod | xargs -I{} vercel {}')\""
     }
   ],

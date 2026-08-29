@@ -9,15 +9,27 @@ const renderModule = join(repoRoot, "core", "src", "routes", "render.ts");
 const hashFile = join(repoRoot, "bootstrap", "hook-hashes.txt");
 const publishedRow = /^([0-9a-f]{64})( {2})(\S.*)$/;
 
+const OPENCODE_HOST_PACKAGE = "@opencode-ai/plugin";
+
 function bundlesOf(render) {
-  return [
+  const spawned = [
     { source: "gate.ts", bundle: render.GATE_BUNDLE },
     { source: "precommit.ts", bundle: render.PRECOMMIT_BUNDLE },
   ].map(({ source, bundle }) => ({
     entryPoint: join(repoRoot, "core", "src", "bin", source),
     path: join(repoRoot, "plugin", render.BUNDLE_DIRECTORY, bundle),
     name: `plugin/${render.BUNDLE_DIRECTORY}/${bundle}`,
+    external: [],
   }));
+  return [
+    ...spawned,
+    {
+      entryPoint: join(repoRoot, ...render.OPENCODE_PLUGIN_ENTRY.split("/")),
+      path: join(repoRoot, ...render.OPENCODE_PLUGIN_BUNDLE.split("/")),
+      name: render.OPENCODE_PLUGIN_BUNDLE,
+      external: [OPENCODE_HOST_PACKAGE],
+    },
+  ];
 }
 
 function manifestsOf(render) {
@@ -44,7 +56,11 @@ function redigestedHashFile(writtenSoFar) {
 async function freshArtifacts() {
   const render = await importBundled(renderModule);
   const built = await Promise.all(
-    bundlesOf(render).map(async ({ entryPoint, path, name }) => ({ path, name, text: await bundleText(entryPoint) })),
+    bundlesOf(render).map(async ({ entryPoint, path, name, external }) => ({
+      path,
+      name,
+      text: await bundleText(entryPoint, external),
+    })),
   );
   const artifacts = [...built, ...manifestsOf(render)];
   return [...artifacts, redigestedHashFile(artifacts)];

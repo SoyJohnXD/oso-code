@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5803,
+      "line": 5780,
       "assertion": "assert_denies \"commit gate denies a state path that is not a readable file\" block-commit-until-green.sh \"$(bash_input 'git commit -m x')\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5808,
+      "line": 5785,
       "assertion": "assert_logged \"an unreadable state file is recorded\" '\"event\":\"state-unreadable\"'"
     }
   ],

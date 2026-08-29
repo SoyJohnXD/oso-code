@@ -3,6 +3,7 @@ import { statSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { runGate } from "../../src/gates/dispatch.ts";
+import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
 import { withStateSandbox, type StateSandbox } from "../support/state-sandbox.ts";
 
@@ -39,7 +40,7 @@ function pushedRunDirectoryModes(autoWait: string): { runs: number; repository: 
       [STATE_ROOT]: { kind: "directory" },
       [RUN_STATE_FILE]: stateText({ ...RUN_STATE, auto_wait: autoWait }),
     });
-    withHookEnvironment({ HOME: sandbox.home }, () => runGate(["autocontinue"], sandbox.expandJson(STOP_PAYLOAD)));
+    withHookEnvironment({ HOME: sandbox.home }, () => runGate(["autocontinue"], spawnedEnvelope(sandbox.expandJson(STOP_PAYLOAD), process.env)));
     return { runs: modeOf(sandbox, RUNS_DIR), repository: modeOf(sandbox, REPOSITORY_RUNS_DIR) };
   });
 }

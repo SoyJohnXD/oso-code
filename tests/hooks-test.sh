@@ -871,26 +871,6 @@ if [ ! -x "$HOOK_RENDERER" ]; then
 else
   RENDER_FIXTURE="$TEST_HOME/render-fixture"
   copy_lint_fixture "$RENDER_FIXTURE"
-  OPENCODE_ROUTE_TABLE="$RENDER_FIXTURE/opencode/hooks/routes.ts"
-  if [ ! -s "$OPENCODE_ROUTE_TABLE" ]; then
-    echo "FAIL: route-table divergence mutation has no opencode route table"; fail=$((fail + 1))
-  else
-    RENDERED_OPENCODE_ROUTES="$TEST_HOME/rendered-opencode-routes.ts"
-    "$HOOK_RENDERER" --repo-root "$RENDER_FIXTURE" \
-      --table "$RENDER_FIXTURE/tools/hook-gates.txt" --host opencode > "$RENDERED_OPENCODE_ROUTES" 2>/dev/null || true
-    if [ ! -s "$RENDERED_OPENCODE_ROUTES" ]; then
-      echo "FAIL: the opencode route render produced nothing, so divergence could not be read either way"
-      fail=$((fail + 1))
-    else
-      assert_equals "the committed opencode route table is exactly what the renderer still owning it renders" \
-        identical \
-        "$(cmp -s "$RENDERED_OPENCODE_ROUTES" "$OPENCODE_ROUTE_TABLE" && echo identical || echo divergent)"
-      printf '\n' >> "$OPENCODE_ROUTE_TABLE"
-      assert_equals "a committed opencode route table diverging by one byte is read as divergent" \
-        divergent \
-        "$(cmp -s "$RENDERED_OPENCODE_ROUTES" "$OPENCODE_ROUTE_TABLE" && echo identical || echo divergent)"
-    fi
-  fi
 
   INCOMPLETE_TABLE="$TEST_HOME/incomplete-hook-gates.txt"
   cp "$REPO_ROOT/tools/hook-gates.txt" "$INCOMPLETE_TABLE"
@@ -2979,9 +2959,6 @@ CAPABILITY_COLUMN_STATUS="$(awk '
 ' "$REPO_ROOT/tools/hook-gates.txt")"
 assert_equals "every tool row in tools/hook-gates.txt carries a read/write/role class and a yes/no mandated cell" \
   "ok" "$CAPABILITY_COLUMN_STATUS"
-assert_equals "the capability columns leave the committed opencode route table byte-identical" \
-  identical "$("$HOOK_RENDERER" --host opencode --table "$REPO_ROOT/tools/hook-gates.txt" | \
-    cmp -s - "$REPO_ROOT/opencode/hooks/routes.ts" && echo identical || echo divergent)"
 assert_equals "the capability columns are read by a render that produced a route table at all" \
   "0" "$("$HOOK_RENDERER" --host opencode --table "$REPO_ROOT/tools/hook-gates.txt" | wc -c | tr -d ' ' | { read -r bytes; [ "$bytes" -gt 0 ] && echo 0 || echo 1; })"
 
@@ -10809,47 +10786,15 @@ else
   fi
 fi
 
-ROUTES_TS="$REPO_ROOT/opencode/hooks/routes.ts"
-tsc_type_checks_outside_any_tsconfig_tree() {
-  local source_file="$1" sandbox
-  sandbox="$(mktemp -d)"
-  cp "$source_file" "$sandbox/$(basename "$source_file")"
-  (cd "$sandbox" && tsc --noEmit --strict --target es2022 --module esnext "$(basename "$source_file")") \
-    >/dev/null 2>&1
-  local status=$?
-  rm -rf "$sandbox"
-  return "$status"
-}
-if [ ! -f "$ROUTES_TS" ]; then
-  assert_equals "the opencode route table is generated" "nonempty" "empty"
-elif command -v tsc >/dev/null 2>&1; then
-  if tsc_type_checks_outside_any_tsconfig_tree "$ROUTES_TS"; then
-    echo "ok: the generated opencode route table type-checks"; pass=$((pass + 1))
-  else
-    echo "FAIL: the generated opencode route table does not type-check"; fail=$((fail + 1))
-  fi
-  ILL_TYPED_TS="$TEST_HOME/opencode-routes-tsc-ill-typed-probe.ts"
-  printf '%s\n' 'const oughtToFailTypeCheck: number = "not a number";' > "$ILL_TYPED_TS"
-  if tsc_type_checks_outside_any_tsconfig_tree "$ILL_TYPED_TS"; then
-    echo "FAIL: the route table tsc check cannot detect a type error"; fail=$((fail + 1))
-  else
-    echo "ok: the route table tsc check still fails on ill-typed input"; pass=$((pass + 1))
-  fi
+OPENCODE_UNKNOWN_ALLOWLIST="$(node --experimental-strip-types --input-type=module -e '
+const { openCodeRoutes } = await import(process.argv[1]);
+const unknown = openCodeRoutes().find((route) => route.gate === "unknown");
+process.stdout.write(unknown === undefined ? "" : unknown.allow.join("|"));
+' "file://$REPO_ROOT/core/src/routes/render.ts" 2>/dev/null)"
+if [ -z "$OPENCODE_UNKNOWN_ALLOWLIST" ]; then
+  echo "FAIL: core/src/routes/render.ts named no opencode unknown-tool allowlist, so the catch-all cases proved nothing"
+  fail=$((fail + 1))
 else
-  skipped=$((skipped + 1))
-fi
-
-if [ -f "$ROUTES_TS" ]; then
-  OPENCODE_UNKNOWN_ALLOWLIST="$(python3 - "$ROUTES_TS" <<'PY'
-import json
-import re
-import sys
-
-source = open(sys.argv[1], encoding="utf-8").read()
-unknown_route = re.search(r'gate: "unknown",.*?allow: (\[[^\]]*\])', source, re.S)
-print("|".join(json.loads(unknown_route.group(1))) if unknown_route else "")
-PY
-)"
   OPENCODE_CATCH_ALL_SESSION="opencode-catch-all-session"
   opencode_tool_input() {
     printf '{"command":"","session_id":"%s","cwd":"%s","tool_name":"%s"}' \
@@ -11566,39 +11511,45 @@ PY
       "$(grep -Fxc "$OPENCODE_GLOBAL_MARKER_END" "$global" || true)"
   }
 
-  opencode_install_module_relative_hooks_dir_matches_installer() {
-    local fixture_home="$1"
-    local gates_ts="$fixture_home/.config/opencode/plugin/oso/gates.ts"
-    local resolved resolved_dir sample_script installed_script installed_dir
+  opencode_installed_bundle_commit_verdict() {
+    local fixture_home="$1" arming="${2:-armed}"
+    local bundle="$fixture_home/.config/opencode/plugin/oso-code.js"
+    local probe_home probe_repo verdict
 
-    if [ ! -f "$gates_ts" ]; then
-      printf 'gates.ts not installed'
+    if [ ! -f "$bundle" ]; then
+      printf 'the installer wrote no plugin bundle'
       return 0
     fi
 
-    resolved="$(env -u OSO_HOOKS_DIR node --input-type=module -e '
-const { resolveHookScript } = await import(process.argv[1]);
-process.stdout.write(resolveHookScript(process.argv[2]));
-' "file://$gates_ts" "oso-install-cross-check-probe.sh" 2>/dev/null)" || resolved=""
-    if [ -n "$resolved" ]; then
-      resolved_dir="$(cd "$(dirname "$resolved")" 2>/dev/null && pwd -P)" || resolved_dir=""
-    else
-      resolved_dir=""
+    probe_home="$(mktemp -d "${TMPDIR:-/tmp}/oso-installed-bundle.XXXXXX")"
+    probe_repo="$probe_home/repo"
+    mkdir -p "$probe_repo"
+    git -C "$probe_repo" init -q >/dev/null 2>&1 || { rm -rf "$probe_home"; printf 'git could not seed the probe repository'; return 0; }
+    if [ "$arming" = armed ]; then
+      ( cd "$probe_repo" && OSO_STATE_DIR="$probe_home/state" \
+          node "$REPO_ROOT/plugin/bin/oso-state" --session installed-bundle-probe \
+            set mode=plan active_slice=4 verify_green=false ) >/dev/null 2>&1 \
+        || { rm -rf "$probe_home"; printf 'the probe could not arm the state file'; return 0; }
     fi
 
-    sample_script="$(basename "$(ls "$REPO_ROOT"/plugin/hooks/*.sh | head -n 1)")"
-    installed_script="$(find "$fixture_home/.config/opencode" -type f -name "$sample_script" -print -quit 2>/dev/null)"
-    if [ -z "$installed_script" ]; then
-      printf 'the installer wrote no %s anywhere under the installed tree' "$sample_script"
-      return 0
-    fi
-    installed_dir="$(cd "$(dirname "$installed_script")" 2>/dev/null && pwd -P)" || installed_dir=""
+    verdict="$(OSO_STATE_DIR="$probe_home/state" node --input-type=module -e '
+const { osoCode } = await import(process.argv[1]);
+const hooks = await osoCode({ directory: process.argv[2] });
+try {
+  await hooks["tool.execute.before"](
+    { tool: "bash", sessionID: "installed-bundle-probe", cwd: process.argv[2] },
+    { args: { command: "git commit -m probe" } },
+  );
+  process.stdout.write("allowed");
+} catch (error) {
+  process.stdout.write(/oso-code: the session verify is not green/.test(error.message)
+    ? "denied"
+    : `unexpected: ${error.message}`);
+}
+' "file://$bundle" "$probe_repo" 2>/dev/null)" || verdict=""
 
-    if [ -n "$resolved_dir" ] && [ "$resolved_dir" = "$installed_dir" ]; then
-      printf 'same'
-    else
-      printf 'different: gates.ts resolution=%s installer=%s' "$resolved_dir" "$installed_dir"
-    fi
+    rm -rf "$probe_home"
+    printf '%s' "${verdict:-the probe could not drive the installed bundle}"
   }
 
   opencode_install_tree_snapshot() {
@@ -11758,22 +11709,22 @@ process.stdout.write(resolveHookScript(process.argv[2]));
   assert_equals "the installed config hides the roadmap mode from the model" \
     "deny" "$(opencode_install_config_value "$OPENCODE_INSTALL_HOME" "permission.skill.oso-roadmap")"
   assert_equals "the installed plugin entry sits under the discovery glob" \
-    "present" "$([ -f "$OPENCODE_INSTALL_HOME/.config/opencode/plugin/oso-code.ts" ] && echo present || echo absent)"
-  assert_equals "the installed plugin module tree is the source module graph minus tests" \
-    "$(ls "$REPO_ROOT/opencode/plugin/oso"/*.ts | grep -vc '\.test\.ts$' | tr -d ' ')" "$(ls "$OPENCODE_INSTALL_HOME"/.config/opencode/plugin/oso/*.ts 2>/dev/null | grep -vc '\.test\.ts$' | tr -d ' ')"
-  assert_equals "no plugin test module is ever installed" \
-    "0" "$(ls "$OPENCODE_INSTALL_HOME"/.config/opencode/plugin/oso/*.test.ts 2>/dev/null | wc -l | tr -d ' ')"
-  assert_equals "the route table the plugin imports is installed beside it" \
-    "identical" "$(cmp -s "$REPO_ROOT/opencode/hooks/routes.ts" "$OPENCODE_INSTALL_HOME/.config/opencode/hooks/routes.ts" && echo identical || echo differs)"
-  assert_equals "the gate scripts installed beside the route table are exactly the ones the published manifest covers, never one byte more" \
+    "present" "$([ -f "$OPENCODE_INSTALL_HOME/.config/opencode/plugin/oso-code.js" ] && echo present || echo absent)"
+  assert_equals "the installed plugin entry is the committed bundle byte for byte" \
+    "identical" "$(cmp -s "$REPO_ROOT/opencode/dist/oso-code.js" "$OPENCODE_INSTALL_HOME/.config/opencode/plugin/oso-code.js" && echo identical || echo differs)"
+  assert_equals "the installed plugin is that one file and no TypeScript source beside it" \
+    "1" "$(find "$OPENCODE_INSTALL_HOME/.config/opencode/plugin" -type f | wc -l | tr -d ' ')"
+  assert_equals "the gate scripts installed beside the plugin are exactly the ones the published manifest covers, never one byte more" \
     "$(grep -c '  plugin/hooks/.*\.sh$' "$REPO_ROOT/bootstrap/hook-hashes.txt")" \
     "$(ls "$OPENCODE_INSTALL_HOME"/.config/opencode/hooks/*.sh 2>/dev/null | wc -l | tr -d ' ')"
   assert_equals "no gate script reaches the operator's config without a published hash" \
     "" "$(opencode_install_unpublished_gate_scripts "$OPENCODE_INSTALL_HOME")"
   assert_equals "every installed gate script is byte-identical to its source" \
     "identical" "$(opencode_install_gate_scripts_identical "$OPENCODE_INSTALL_HOME")"
-  assert_equals "the module-relative hooks directory gates.ts resolves from its installed location is the directory the installer wrote the gate scripts into" \
-    "same" "$(opencode_install_module_relative_hooks_dir_matches_installer "$OPENCODE_INSTALL_HOME")"
+  assert_equals "the installed bundle denies a red commit in-process, with no gate script spawned and no source tree beside it" \
+    "denied" "$(opencode_installed_bundle_commit_verdict "$OPENCODE_INSTALL_HOME")"
+  assert_equals "the same installed bundle leaves an unarmed repository's commit alone" \
+    "allowed" "$(opencode_installed_bundle_commit_verdict "$OPENCODE_INSTALL_HOME" unarmed)"
   assert_equals "oso-state installs beside the gate tree, executable" \
     "present" "$([ -x "$OPENCODE_INSTALL_HOME/.config/opencode/bin/oso-state" ] && echo present || echo absent)"
   assert_equals "the installed oso-state binary is byte-identical to its source" \
@@ -11806,7 +11757,7 @@ process.stdout.write(resolveHookScript(process.argv[2]));
     "14" "$(grep -c $'\t' "$OPENCODE_INSTALL_BACKUP/manifest" || true)"
 
   assert_equals "the owner registry records the installer-owned targets" \
-    "22" "$(grep -c '^installer	' "$OPENCODE_INSTALL_HOME/.local/state/oso-code/opencode-install-registry" || true)"
+    "21" "$(grep -c '^installer	' "$OPENCODE_INSTALL_HOME/.local/state/oso-code/opencode-install-registry" || true)"
   assert_equals "the owner registry records the installed oso-state binary" \
     "1" "$(grep -Fc "installer	$OPENCODE_INSTALL_HOME/.config/opencode/bin/oso-state" "$OPENCODE_INSTALL_HOME/.local/state/oso-code/opencode-install-registry" || true)"
   assert_equals "the owner registry records every installed gate script" \
@@ -11996,7 +11947,7 @@ PY
       cp -R "$REPO_ROOT/plugin" "$release/plugin"
       cp -R "$REPO_ROOT/opencode/skills" "$REPO_ROOT/opencode/agents" \
         "$REPO_ROOT/opencode/commands" "$REPO_ROOT/opencode/plugin" \
-        "$REPO_ROOT/opencode/hooks" "$release/opencode/"
+        "$REPO_ROOT/opencode/dist" "$release/opencode/"
       git init -q "$release"
       git -C "$release" config user.email tests@oso-code.invalid
       git -C "$release" config user.name "oso-code tests"
@@ -12240,7 +12191,7 @@ else
     cp -r "$REPO_ROOT/bootstrap" "$mutant/bootstrap"
     cp -r "$REPO_ROOT/opencode/skills" "$REPO_ROOT/opencode/agents" \
       "$REPO_ROOT/opencode/commands" "$REPO_ROOT/opencode/plugin" \
-      "$REPO_ROOT/opencode/hooks" "$mutant/opencode/"
+      "$REPO_ROOT/opencode/dist" "$mutant/opencode/"
     cp "$REPO_ROOT/opencode/package.json" "$REPO_ROOT/opencode/package-lock.json" \
       "$REPO_ROOT/opencode/tsconfig.json" "$mutant/opencode/"
     ln -s "$REPO_ROOT/opencode/node_modules" "$mutant/opencode/node_modules"

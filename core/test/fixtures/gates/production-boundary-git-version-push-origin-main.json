@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5137,
+      "line": 5114,
       "assertion": "assert_equals \"a line the resolver answers spends no residue: a build, the run's own push, and an option git answers itself instead of pushing\" \\\n  \"allow allow allow 0\" \\\n  \"$(prod_verdicts_and_residues_for 'npm run build' \\\n    'git push origin oso-run/auto-continuity' 'git --version push origin main')\""
     }
   ],

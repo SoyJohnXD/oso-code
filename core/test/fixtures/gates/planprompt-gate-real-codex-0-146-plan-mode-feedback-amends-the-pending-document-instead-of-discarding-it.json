@@ -1,11 +1,11 @@
 {
   "name": "planprompt gate: real Codex 0.146 Plan Mode feedback amends the pending document instead of discarding it",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1753, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'revise the second slice' \"$CODEX_PROMPT_PLAN_TRANSCRIPT\")\"" },
-    { "file": "tests/hooks-test.sh", "line": 1755, "assertion": "assert_after_hook \"real Codex 0.146 Plan Mode feedback amends the pending document\" \\\n  hook_returned_prompt_context" },
-    { "file": "tests/hooks-test.sh", "line": 1757, "assertion": "case \"$hook_stdout\" in\n  *'Present the amendment'*) echo \"ok: Case (e) — the guidance asks for the amendment\"; pass=$((pass + 1)) ;;\n  *) echo \"FAIL: Case (e) — the guidance does not name the amendment — got: $hook_stdout\"; fail=$((fail + 1)) ;;\nesac\ncase \"$hook_stdout\" in" },
-    { "file": "tests/hooks-test.sh", "line": 1770, "assertion": "  \"$(oso-state --session \"$SESSION\" get plan_approval)\"\nassert_equals \"Case (a) — an ordinary Plan Mode turn increments plan_revision\" \\" },
-    { "file": "tests/hooks-test.sh", "line": 1772, "assertion": "  2 \"$(oso-state --session \"$SESSION\" get plan_revision)\"\nassert_equals \"Case (b) — plan_approval_session survives the amendment unchanged\" \\" }
+    { "file": "tests/hooks-test.sh", "line": 1733, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'revise the second slice' \"$CODEX_PROMPT_PLAN_TRANSCRIPT\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 1735, "assertion": "assert_after_hook \"real Codex 0.146 Plan Mode feedback amends the pending document\" \\\n  hook_returned_prompt_context" },
+    { "file": "tests/hooks-test.sh", "line": 1737, "assertion": "case \"$hook_stdout\" in\n  *'Present the amendment'*) echo \"ok: Case (e) — the guidance asks for the amendment\"; pass=$((pass + 1)) ;;\n  *) echo \"FAIL: Case (e) — the guidance does not name the amendment — got: $hook_stdout\"; fail=$((fail + 1)) ;;\nesac\ncase \"$hook_stdout\" in" },
+    { "file": "tests/hooks-test.sh", "line": 1750, "assertion": "  \"$(oso-state --session \"$SESSION\" get plan_approval)\"\nassert_equals \"Case (a) — an ordinary Plan Mode turn increments plan_revision\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1752, "assertion": "  2 \"$(oso-state --session \"$SESSION\" get plan_revision)\"\nassert_equals \"Case (b) — plan_approval_session survives the amendment unchanged\" \\" }
   ],
   "gate": "planprompt",
   "argv": [],

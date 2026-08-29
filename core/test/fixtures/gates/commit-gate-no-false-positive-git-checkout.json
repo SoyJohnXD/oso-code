@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2122,
+      "line": 2102,
       "assertion": "assert_allows \"no false positive: git checkout\" block-commit-until-green.sh \"$(bash_input 'git checkout -b commit')\""
     }
   ],

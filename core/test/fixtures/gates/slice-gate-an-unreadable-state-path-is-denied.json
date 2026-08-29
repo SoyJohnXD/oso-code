@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5804,
+      "line": 5781,
       "assertion": "assert_denies \"edit gate denies a state path that is not a readable file\"   block-edits-without-slice.sh \"$edit_input\""
     }
   ],

@@ -1,9 +1,9 @@
 {
   "name": "teardown gate: session end removes state and a leftover lock",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 5711, "assertion": "run_hook cleanup-state.sh \"$(printf '{\"session_id\":\"%s\"}' \"$SESSION\")\"" },
-    { "file": "tests/hooks-test.sh", "line": 5712, "assertion": "assert_after_hook \"session end removes state\"         [ ! -f \"$REPO_STATE\" ]" },
-    { "file": "tests/hooks-test.sh", "line": 5713, "assertion": "assert_after_hook \"session end removes leftover lock\" [ ! -d \"$REPO_STATE.lock\" ]" }
+    { "file": "tests/hooks-test.sh", "line": 5688, "assertion": "run_hook cleanup-state.sh \"$(printf '{\"session_id\":\"%s\"}' \"$SESSION\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 5689, "assertion": "assert_after_hook \"session end removes state\"         [ ! -f \"$REPO_STATE\" ]" },
+    { "file": "tests/hooks-test.sh", "line": 5690, "assertion": "assert_after_hook \"session end removes leftover lock\" [ ! -d \"$REPO_STATE.lock\" ]" }
   ],
   "gate": "teardown",
   "argv": [],

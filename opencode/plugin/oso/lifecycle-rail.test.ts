@@ -6,11 +6,10 @@ import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { osoCode } from "../oso-code.ts";
-import { spawnStateBin } from "./gates.ts";
 import { publishIdentity } from "./identity.ts";
+import { armStateUnder } from "../../test-support/state-fixture.ts";
 
 const HOOKS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../../plugin/hooks");
-const STATE_BIN = resolve(HOOKS_DIR, "..", "bin", "oso-state");
 process.env.OSO_HOOKS_DIR = HOOKS_DIR;
 
 type LooseHooks = Record<string, (input?: unknown, output?: unknown) => unknown>;
@@ -34,12 +33,7 @@ function makeFixture(): Fixture {
 }
 
 function armState(fixture: Fixture, session: string, pairs: readonly string[]): void {
-  const result = spawnStateBin(STATE_BIN, ["--session", session, "set", ...pairs], {
-    cwd: fixture.repo,
-    encoding: "utf8",
-    env: { ...process.env, HOME: fixture.home },
-  });
-  assert.equal(result.status, 0, result.stderr ?? "");
+  armStateUnder(fixture.home, fixture.repo, session, pairs);
 }
 
 function stateFilesOf(fixture: Fixture): string[] {

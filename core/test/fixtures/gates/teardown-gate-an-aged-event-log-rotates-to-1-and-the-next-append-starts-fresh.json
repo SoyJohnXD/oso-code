@@ -1,11 +1,11 @@
 {
   "name": "teardown gate: an aged event log rotates to .1 and the next append starts a fresh one",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 5872, "assertion": "printf '{\"event\":\"aged\"}\\n' > \"$events_log\"" },
-    { "file": "tests/hooks-test.sh", "line": 5873, "assertion": "touch -t 200001010000 \"$events_log\"" },
-    { "file": "tests/hooks-test.sh", "line": 5874, "assertion": "run_hook cleanup-state.sh \"$(printf '{\"session_id\":\"%s\"}' \"$SESSION\")\"" },
-    { "file": "tests/hooks-test.sh", "line": 5876, "assertion": "if [ -z \"$hook_problem\" ] && grep -q '\"event\":\"aged\"' \"${events_log}.1\" 2>/dev/null &&" },
-    { "file": "tests/hooks-test.sh", "line": 5877, "assertion": "   ! grep -q '\"event\":\"aged\"' \"$events_log\" 2>/dev/null; then" }
+    { "file": "tests/hooks-test.sh", "line": 5849, "assertion": "printf '{\"event\":\"aged\"}\\n' > \"$events_log\"" },
+    { "file": "tests/hooks-test.sh", "line": 5850, "assertion": "touch -t 200001010000 \"$events_log\"" },
+    { "file": "tests/hooks-test.sh", "line": 5862, "assertion": "run_hook cleanup-state.sh \"$(printf '{\"session_id\":\"%s\"}' \"$SESSION\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 5853, "assertion": "if [ -z \"$hook_problem\" ] && grep -q '\"event\":\"aged\"' \"${events_log}.1\" 2>/dev/null &&" },
+    { "file": "tests/hooks-test.sh", "line": 5854, "assertion": "   ! grep -q '\"event\":\"aged\"' \"$events_log\" 2>/dev/null; then" }
   ],
   "gate": "teardown",
   "argv": [],

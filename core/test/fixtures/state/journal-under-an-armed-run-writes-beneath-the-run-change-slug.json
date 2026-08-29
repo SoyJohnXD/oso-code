@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 4600,
+      "line": 4577,
       "assertion": "assert_equals \"the run marker round-trips running, parked and done, journaling under its change\" \\\n  \"running parked done|the run is running>the run is parked>the run is done>\" \\\n  \"${marker_reads# }|$(journal_texts_in \"$JOURNAL_DIR/auto-continuity.log\")\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 4611,
+      "line": 4588,
       "assertion": "assert_equals \"show carries the marker beside the change slug its journal is named after\" \\\n  \"|auto-continuity.log\" \"$marker_keys_unshown|$(ls \"$JOURNAL_DIR\" 2>/dev/null || true)\""
     }
   ],

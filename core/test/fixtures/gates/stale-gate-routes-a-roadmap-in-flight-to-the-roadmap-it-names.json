@@ -3,27 +3,27 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6102,
+      "line": 6079,
       "assertion": "roadmap_state_of auth-hardening"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6103,
+      "line": 6101,
       "assertion": "run_hook warn-stale-state.sh \"$(stale_session_input)\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6104,
+      "line": 6081,
       "assertion": "assert_equals \"the stale-state signal routes a roadmap in flight to the roadmap it names\" \\\n  \"present\" \"$(if printf '%s' \"$hook_stdout\" | grep -F '/oso-code:roadmap auth-hardening' >/dev/null; then echo present; else echo missing; fi)\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6108,
+      "line": 6085,
       "assertion": "assert_equals \"the roadmap route arrives with the disarm that drops the claim alone\" \\\n  \"present\" \"$(if printf '%s' \"$hook_stdout\" | grep -F -- \"--session \\\\\\\"$SESSION\\\\\\\" set roadmap=none\" >/dev/null; then echo present; else echo missing; fi)\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6110,
+      "line": 6087,
       "assertion": "assert_equals \"the roadmap route arrives with the clear that drops the whole file\" \\\n  \"present\" \"$(if printf '%s' \"$hook_stdout\" | grep -F -- \"--session \\\\\\\"$SESSION\\\\\\\" clear\" >/dev/null; then echo present; else echo missing; fi)\""
     }
   ],

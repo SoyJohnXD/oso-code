@@ -1,10 +1,10 @@
 {
   "name": "planstop gate: a markerless Stop is valid empty JSON, not plain text",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1462, "assertion": "run_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input plan \"$SESSION\" 'ordinary plan-mode answer with no harness marker')\"" },
-    { "file": "tests/hooks-test.sh", "line": 1464, "assertion": "assert_after_hook \"a markerless Stop is valid empty JSON, not plain text\" \\\n  [ \"$hook_stdout\" = '{}' ]" },
-    { "file": "tests/hooks-test.sh", "line": 1466, "assertion": "assert_equals \"a markerless Stop creates no oso-code state\" \\\n  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"" },
-    { "file": "tests/hooks-test.sh", "line": 1468, "assertion": "assert_equals \"a markerless Stop records no harness event\" \\\n  \"$events_before_ordinary_stop\" \"$(wc -c < \"$STATE_DIR/events.jsonl\" 2>/dev/null || printf 0)\"" }
+    { "file": "tests/hooks-test.sh", "line": 1442, "assertion": "run_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input plan \"$SESSION\" 'ordinary plan-mode answer with no harness marker')\"" },
+    { "file": "tests/hooks-test.sh", "line": 1444, "assertion": "assert_after_hook \"a markerless Stop is valid empty JSON, not plain text\" \\\n  [ \"$hook_stdout\" = '{}' ]" },
+    { "file": "tests/hooks-test.sh", "line": 1446, "assertion": "assert_equals \"a markerless Stop creates no oso-code state\" \\\n  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"" },
+    { "file": "tests/hooks-test.sh", "line": 1448, "assertion": "assert_equals \"a markerless Stop records no harness event\" \\\n  \"$events_before_ordinary_stop\" \"$(wc -c < \"$STATE_DIR/events.jsonl\" 2>/dev/null || printf 0)\"" }
   ],
   "gate": "planstop",
   "argv": [],

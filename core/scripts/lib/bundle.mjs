@@ -1,12 +1,13 @@
 import { build } from "esbuild";
 import { readFileSync } from "node:fs";
 
-export async function bundleText(entryPoint) {
+export async function bundleText(entryPoint, external = []) {
   const result = await build({
     entryPoints: [entryPoint],
     bundle: true,
     platform: "node",
     format: "esm",
+    external,
     write: false,
   });
   return result.outputFiles[0].text;

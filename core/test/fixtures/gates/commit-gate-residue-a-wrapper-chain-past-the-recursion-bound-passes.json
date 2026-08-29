@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6606,
+      "line": 6583,
       "assertion": "assert_allows \"residue: a wrapper chain past the recursion bound passes\" \\\n  block-commit-until-green.sh \"$(bash_input 'bash -c '\\''bash -c \\\"bash -c \\\\\\\"bash -c ok\\\\\\\"\\\"'\\''')\""
     }
   ],

@@ -1,6 +1,8 @@
 export const BUNDLE_DIRECTORY = "dist";
 export const GATE_BUNDLE = "gate.js";
 export const PRECOMMIT_BUNDLE = "precommit.js";
+export const OPENCODE_PLUGIN_ENTRY = "opencode/plugin/oso-code.ts";
+export const OPENCODE_PLUGIN_BUNDLE = "opencode/dist/oso-code.js";
 
 export type HostName = "claude" | "codex" | "opencode";
 

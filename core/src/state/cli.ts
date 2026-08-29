@@ -128,13 +128,8 @@ function dispatch(argv: readonly string[]): number {
 
 function runSet(sessionId: string, pairs: readonly string[]): number {
   if (pairs.length < 1) throw new UsageError();
-  const stateFile = store.stateFileFor(process.cwd());
-  mkdirSync(store.stateRootDirectory(), { recursive: true });
-  return store.withLock(stateFile, sessionId, () => {
-    store.writeStatePairs(stateFile, pairs, sessionId);
-    store.logEvent({ event: `set:${pairs.join(" ")}`, session: sessionId });
-    return 0;
-  });
+  store.writeStateValues(process.cwd(), sessionId, pairs);
+  return 0;
 }
 
 function runGet(remaining: readonly string[]): number {

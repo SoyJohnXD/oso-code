@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 1242,
+      "line": 1222,
       "assertion": "  assert_after_hook \"$collaboration_tool passes the armed runtime catch-all\" \\\n    [ -z \"$hook_stdout\" ]"
     }
   ],

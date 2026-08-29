@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6635,
+      "line": 6612,
       "assertion": "assert_allows \"residue: an interpreter payload standing in a value position passes\" \\\n  block-commit-until-green.sh \"$(bash_input 'bash -c -O extglob \\\"git commit -m x\\\"')\""
     }
   ],

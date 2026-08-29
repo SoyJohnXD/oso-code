@@ -1,5 +1,4 @@
-import type { GateVerdict } from "../hosts/envelope.ts";
-import { readEnvelope } from "../hosts/envelope.ts";
+import type { GateVerdict, HookEnvelope } from "../hosts/envelope.ts";
 import { preToolUseRun, type HookRun } from "../hosts/pretooluse.ts";
 import { sessionEndRun } from "../hosts/sessionend.ts";
 import { sessionStartRun } from "../hosts/sessionstart.ts";
@@ -22,7 +21,7 @@ import { TEARDOWN_GATE } from "./teardown.ts";
 import { UNKNOWN_TOOL_GATE } from "./unknown.ts";
 import { VERSION_GATE } from "./version.ts";
 
-export type GateRun = HookRun & Readonly<{ events: readonly LoggedEvent[] }>;
+export type GateRun = HookRun & Readonly<{ verdict: GateVerdict; events: readonly LoggedEvent[] }>;
 
 const PRE_TOOL_USE_GATES: readonly GateDefinition[] = [
   COMMIT_GATE,
@@ -50,10 +49,10 @@ const USER_PROMPT_GATES: readonly GateDefinition<Extract<GateVerdict, { kind: "a
 
 const SUBAGENT_STOP_GATES: readonly GateDefinition<Extract<GateVerdict, { kind: "noVerdict" }>>[] = [HANDOFF_GATE];
 
-export function runGate(argv: readonly string[], payload: string): GateRun {
+export function runGate(argv: readonly string[], envelope: HookEnvelope): GateRun {
   const [name, ...gateArguments] = argv;
-  const request: GateRequest = { envelope: readEnvelope(payload), argv: gateArguments };
-  const escalated = request.envelope.stopHookActive;
+  const request: GateRequest = { envelope, argv: gateArguments };
+  const escalated = envelope.stopHookActive;
 
   const run =
     routed(PRE_TOOL_USE_GATES, name, request, preToolUseRun, gateErrorRun) ??
@@ -86,21 +85,28 @@ function runWith<V extends GateVerdict>(
   try {
     const outcome = gate.judge(request);
     const run = transport(outcome.verdict);
-    return { ...run, stderr: run.stderr + (outcome.stderr ?? ""), events: outcome.events };
+    return { ...run, stderr: run.stderr + (outcome.stderr ?? ""), verdict: outcome.verdict, events: outcome.events };
   } catch (cause) {
     return onFailure(gate.errorSubject, cause);
   }
 }
 
 function gateErrorRun(subject: string, cause?: unknown): GateRun {
-  const run = preToolUseRun({ kind: "gateError", subject });
-  return { ...run, stderr: run.stderr + explainedCause(cause), events: [] };
+  const verdict: GateVerdict = { kind: "gateError", subject };
+  const run = preToolUseRun(verdict);
+  return { ...run, stderr: run.stderr + explainedCause(cause), verdict, events: [] };
 }
 
 const LOUD_EXIT = 1;
 
-function loudRun(_subject: string, cause?: unknown): GateRun {
-  return { exit: LOUD_EXIT, stdout: "", stderr: explainedCause(cause), events: [] };
+function loudRun(subject: string, cause?: unknown): GateRun {
+  return {
+    exit: LOUD_EXIT,
+    stdout: "",
+    stderr: explainedCause(cause),
+    verdict: { kind: "gateError", subject },
+    events: [],
+  };
 }
 
 function explainedCause(cause: unknown): string {

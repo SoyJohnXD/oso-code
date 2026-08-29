@@ -1,8 +1,8 @@
 {
   "name": "autocontinue gate: a turn ending while an unattended run is in flight is pushed back into motion",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 4745, "assertion": "run_hook auto-continue.sh \"$(auto_stop_input)\"" },
-    { "file": "tests/hooks-test.sh", "line": 4746, "assertion": "assert_after_hook \"a turn ending while an unattended run is in flight is pushed back into motion\" \\\n  hook_returned_block" }
+    { "file": "tests/hooks-test.sh", "line": 4722, "assertion": "run_hook auto-continue.sh \"$(auto_stop_input)\"" },
+    { "file": "tests/hooks-test.sh", "line": 4723, "assertion": "assert_after_hook \"a turn ending while an unattended run is in flight is pushed back into motion\" \\\n  hook_returned_block" }
   ],
   "gate": "autocontinue",
   "argv": [],

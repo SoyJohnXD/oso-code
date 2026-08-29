@@ -3,6 +3,7 @@ import { chmodSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { runGate } from "../../src/gates/dispatch.ts";
+import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
 import { withStateSandbox, type StateSandbox } from "../support/state-sandbox.ts";
 
@@ -30,7 +31,7 @@ test(
       sandbox.seed({ [STATE_FILE]: "mode=plan\nsession=other-session\n" });
       const target = makeUnreadable(sandbox, STATE_FILE);
       const stdin = sandbox.expandJson('{"session_id":"test-session","cwd":"{cwd}"}');
-      const run = withHookEnvironment({ HOME: sandbox.home }, () => runGate(["stale"], stdin));
+      const run = withHookEnvironment({ HOME: sandbox.home }, () => runGate(["stale"], spawnedEnvelope(stdin, process.env)));
       chmodSync(target, OWNER_READ_WRITE);
       assert.equal(run.exit, 0);
       assert.match(run.stdout, /"additionalContext"/);

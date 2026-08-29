@@ -3,6 +3,7 @@ import { chmodSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { runGate } from "../../src/gates/dispatch.ts";
+import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
 import { withStateSandbox, type StateSandbox } from "../support/state-sandbox.ts";
 
@@ -41,7 +42,7 @@ describe(
           const stateRoot = stateRootPath(sandbox);
           chmodSync(stateRoot, READ_EXECUTE_ONLY_DIRECTORY);
           const stdin = sandbox.expandJson('{"session_id":"test-session","cwd":"{cwd}"}');
-          const result = withHookEnvironment({ HOME: sandbox.home }, () => runGate(["teardown"], stdin));
+          const result = withHookEnvironment({ HOME: sandbox.home }, () => runGate(["teardown"], spawnedEnvelope(stdin, process.env)));
           chmodSync(stateRoot, OWNER_ONLY_DIRECTORY);
           return result;
         });

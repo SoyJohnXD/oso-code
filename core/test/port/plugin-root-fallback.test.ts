@@ -5,6 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { pluginRootAbove, pluginRootDirectory } from "../../src/gates/preflight.ts";
 import { runGate } from "../../src/gates/dispatch.ts";
+import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
 import { pathInsensitiveIncludes } from "../support/parity-expectations.ts";
 import { repositoryRoot, withStateSandbox } from "../support/state-sandbox.ts";
@@ -153,7 +154,7 @@ test(
     withStateSandbox("workspace", (sandbox) => {
       sandbox.seed({ ".local/state/oso-code/{repo}.state": "mode=plan\nsession=other-session\n" });
       const stdin = sandbox.expandJson('{"session_id":"test-session","cwd":"{cwd}"}');
-      const run = withHookEnvironment({ HOME: sandbox.home }, () => runGate(["stale"], stdin));
+      const run = withHookEnvironment({ HOME: sandbox.home }, () => runGate(["stale"], spawnedEnvelope(stdin, process.env)));
       assert.equal(run.exit, 0);
       assert.ok(
         pathInsensitiveIncludes(run.stdout, EXPECTED_STATE_BIN),

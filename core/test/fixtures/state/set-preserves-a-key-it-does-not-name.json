@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 4553,
+      "line": 4530,
       "assertion": "assert_equals \"concurrent writers preserve all keys\" \"a=25 b=25\" \\\n  \"a=$(oso-state --session \"$SESSION\" get a) b=$(oso-state --session \"$SESSION\" get b)\""
     }
   ],

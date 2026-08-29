@@ -4,11 +4,19 @@ import {
   GATE_ROWS,
   HOST_ROWS,
   TOOL_ROWS,
+  type GateId,
   type GateRow,
   type HostName,
+  type PerHost,
 } from "./routes.ts";
 
-export { BUNDLE_DIRECTORY, GATE_BUNDLE, PRECOMMIT_BUNDLE } from "./routes.ts";
+export {
+  BUNDLE_DIRECTORY,
+  GATE_BUNDLE,
+  OPENCODE_PLUGIN_BUNDLE,
+  OPENCODE_PLUGIN_ENTRY,
+  PRECOMMIT_BUNDLE,
+} from "./routes.ts";
 
 export type ManifestHost = Extract<HostName, "claude" | "codex">;
 
@@ -18,7 +26,42 @@ const CLAUDE_PLUGIN_ROOT = "${CLAUDE_PLUGIN_ROOT}";
 const CODEX_STATE_MARKER = "OSO_AGENT=1";
 const NODE = "node";
 const UNKNOWN_TOOL_MATCHER = ".*";
-const DEPLOY_SHAPED_MCP_NAMES = "mcp__.*deploy.*";
+const DEPLOY_SHAPED_TOOL_NAMES: PerHost<string> = {
+  claude: "mcp__.*deploy.*",
+  codex: "mcp__.*deploy.*",
+  opencode: ".*deploy.*",
+};
+
+export type OpenCodeHook = "tool.execute.before" | "experimental.chat.system.transform" | "event" | "dispose";
+
+export type OpenCodeRoute = Readonly<{
+  hook: OpenCodeHook;
+  gate: GateId;
+  matcher: string;
+  allow: readonly string[];
+}>;
+
+const OPENCODE_HOOKS: readonly OpenCodeHook[] = [
+  "tool.execute.before",
+  "experimental.chat.system.transform",
+  "event",
+  "dispose",
+];
+
+export function openCodeRoutes(): readonly OpenCodeRoute[] {
+  return GATE_ROWS.filter((row) => row.wiring.opencode === "wired").map((row) => ({
+    hook: openCodeHookNamed(row.mechanism.opencode, row.gate),
+    gate: row.gate,
+    matcher: matcherFor("opencode", row),
+    allow: row.gate === "unknown" ? toolNamesFor("opencode", "unknown") : [],
+  }));
+}
+
+function openCodeHookNamed(mechanism: string, gate: string): OpenCodeHook {
+  const hook = OPENCODE_HOOKS.find((candidate) => candidate === mechanism);
+  if (hook === undefined) throw new Error(`gate ${gate} names no OpenCode hook the adapter routes: ${mechanism}`);
+  return hook;
+}
 
 export function claudeGateBundle(): string {
   return `${CLAUDE_PLUGIN_ROOT}/${BUNDLE_DIRECTORY}/${GATE_BUNDLE}`;
@@ -85,11 +128,11 @@ function handlerFor(host: ManifestHost, row: GateRow): Handler {
   return { command: `${CODEX_STATE_MARKER} ${NODE} ${root}/${GATE_BUNDLE} ${row.gate}${allow}` };
 }
 
-function matcherFor(host: ManifestHost, row: GateRow): string {
+function matcherFor(host: HostName, row: GateRow): string {
   const named = toolNamesFor(host, row.gate).join("|");
   if (row.gate === "unknown") return UNKNOWN_TOOL_MATCHER;
   if (row.gate === "handoff") return `^(${named})$`;
-  if (row.gate === "proddeploy") return `${named}|${DEPLOY_SHAPED_MCP_NAMES}`;
+  if (row.gate === "proddeploy") return `${named}|${DEPLOY_SHAPED_TOOL_NAMES[host]}`;
   return named;
 }
 
@@ -97,7 +140,7 @@ function allowlistFor(host: ManifestHost): string {
   return toolNamesFor(host, "unknown").join("|");
 }
 
-function toolNamesFor(host: ManifestHost, gate: string): string[] {
+function toolNamesFor(host: HostName, gate: string): string[] {
   const named: string[] = [];
   for (const row of TOOL_ROWS) {
     const name = row.names[host];

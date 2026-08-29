@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6396,
+      "line": 6373,
       "assertion": "assert_every assert_denies adversarial <<'ADVERSARIAL_TABLE'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6426,
+      "line": 6403,
       "assertion": "git update-ref refs/heads/main abc123"
     }
   ],

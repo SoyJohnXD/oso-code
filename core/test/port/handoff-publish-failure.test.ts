@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { runGate, type GateRun } from "../../src/gates/dispatch.ts";
+import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
 import { provedSomething } from "../support/proved.ts";
 import { withStateSandbox, type SeededEntry } from "../support/state-sandbox.ts";
@@ -21,7 +22,7 @@ function payloadFor({ session = "test-session", cwd = "{cwd}", agentId = "agent-
 function published(payload: Payload, seed: Readonly<Record<string, SeededEntry>> = {}): GateRun {
   return withStateSandbox("workspace", (sandbox) => {
     sandbox.seed(seed);
-    return withHookEnvironment({ HOME: sandbox.home }, () => runGate(["handoff"], sandbox.expandJson(payloadFor(payload))));
+    return withHookEnvironment({ HOME: sandbox.home }, () => runGate(["handoff"], spawnedEnvelope(sandbox.expandJson(payloadFor(payload)), process.env)));
   });
 }
 

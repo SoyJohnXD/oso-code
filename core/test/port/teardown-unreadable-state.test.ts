@@ -3,6 +3,7 @@ import { chmodSync, existsSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { runGate } from "../../src/gates/dispatch.ts";
+import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
 import { withStateSandbox, type StateSandbox } from "../support/state-sandbox.ts";
 
@@ -30,7 +31,7 @@ test(
       sandbox.seed({ [ABANDONED_STATE]: { kind: "file", content: "mode=plan\n", aged: true } });
       const target = makeUnreadable(sandbox, ABANDONED_STATE);
       const stdin = sandbox.expandJson('{"session_id":"test-session"}');
-      const run = withHookEnvironment({ HOME: sandbox.home }, () => runGate(["teardown"], stdin));
+      const run = withHookEnvironment({ HOME: sandbox.home }, () => runGate(["teardown"], spawnedEnvelope(stdin, process.env)));
       assert.equal(run.exit, 0);
       try {
         assert.equal(sandbox.read(ABANDONED_STATE).kind, "absent");

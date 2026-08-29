@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2132,
+      "line": 2112,
       "assertion": "assert_denies \"bypass: piped into xargs git commit\" block-commit-until-green.sh \"$(bash_input 'git diff --name-only | xargs git commit -m x')\""
     }
   ],

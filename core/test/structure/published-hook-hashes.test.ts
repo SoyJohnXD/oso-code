@@ -7,6 +7,7 @@ import {
   GATE_BUNDLE,
   GATE_ROWS,
   HOST_ROWS,
+  OPENCODE_PLUGIN_BUNDLE,
   PRECOMMIT_BUNDLE,
   type HostName,
 } from "../../src/routes/routes.ts";
@@ -72,7 +73,7 @@ function requiredPaths(): string[] {
     "plugin/hooks/lib.sh",
     "plugin/hooks/lexer.sh",
     ...gateScriptsWiredFor("opencode"),
-    manifestOf("opencode"),
+    OPENCODE_PLUGIN_BUNDLE,
   ]);
 }
 

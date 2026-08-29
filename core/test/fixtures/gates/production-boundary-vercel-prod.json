@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5010,
+      "line": 4987,
       "assertion": "assert_equals \"every built-in production shape is denied while the run is in flight\" \\\n  \"deny deny deny deny deny deny\" \\\n  \"$(prod_verdicts_for 'vercel --prod' 'vercel deploy --prod --yes' 'npx vercel --prod' \\\n    'pnpm dlx vercel --target production' 'netlify deploy --prod' 'firebase deploy')\""
     }
   ],

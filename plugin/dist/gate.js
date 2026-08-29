@@ -1,6 +1,122 @@
 // core/src/bin/gate.ts
 import { readFileSync as readFileSync7 } from "node:fs";
 
+// core/src/hosts/pretooluse.ts
+var HOOK_EVENT = "PreToolUse";
+var GATE_ERROR_EXIT = 2;
+function preToolUseRun(verdict) {
+  switch (verdict.kind) {
+    case "allow":
+      return { exit: 0, stdout: "", stderr: "" };
+    case "deny":
+      return { exit: 0, stdout: `${denyEnvelope(verdict.message)}
+`, stderr: "" };
+    case "gateError":
+      return { exit: GATE_ERROR_EXIT, stdout: "", stderr: gateErrorText(verdict.subject) };
+  }
+}
+function gateErrorText(subject) {
+  return `oso-code: ${subject} failed unexpectedly and blocked this call instead of opening the gate. No remedy is known for this failure.
+`;
+}
+function denyEnvelope(reason) {
+  return JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: HOOK_EVENT,
+      permissionDecision: "deny",
+      permissionDecisionReason: reason
+    }
+  });
+}
+
+// core/src/hosts/sessionend.ts
+function sessionEndRun(verdict) {
+  switch (verdict.kind) {
+    case "noVerdict":
+      return { exit: 0, stdout: "", stderr: "" };
+    case "gateError":
+      return { exit: GATE_ERROR_EXIT, stdout: "", stderr: gateErrorText(verdict.subject) };
+  }
+}
+
+// core/src/hosts/sessionstart.ts
+var HOOK_EVENT2 = "SessionStart";
+function sessionStartRun(verdict) {
+  switch (verdict.kind) {
+    case "allow":
+      return { exit: 0, stdout: "", stderr: "" };
+    case "context":
+      return { exit: 0, stdout: `${contextEnvelope(verdict.additionalContext)}
+`, stderr: "" };
+    case "gateError":
+      return { exit: GATE_ERROR_EXIT, stdout: "", stderr: gateErrorText(verdict.subject) };
+  }
+}
+function contextEnvelope(additionalContext) {
+  return JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: HOOK_EVENT2,
+      additionalContext
+    }
+  });
+}
+
+// core/src/hosts/stop.ts
+var NOTHING_TO_SAY = "{}";
+function stopRun(verdict, escalated) {
+  switch (verdict.kind) {
+    case "allow":
+      return spoken(NOTHING_TO_SAY);
+    case "push":
+      return spoken(JSON.stringify({ shouldContinue: true, decision: "block", reason: verdict.reason }));
+    case "deny":
+      return spoken(escalated ? endedEnvelope(verdict.message) : blockEnvelope(verdict.message));
+  }
+}
+function blockEnvelope(reason) {
+  return JSON.stringify({ decision: "block", reason });
+}
+function endedEnvelope(reason) {
+  return JSON.stringify({ continue: false, stopReason: reason, systemMessage: reason });
+}
+function spoken(stdout) {
+  return { exit: 0, stdout: `${stdout}
+`, stderr: "" };
+}
+
+// core/src/hosts/subagentstop.ts
+var NOTHING_TO_SAY2 = "{}";
+function subagentStopRun(_verdict) {
+  return { exit: 0, stdout: `${NOTHING_TO_SAY2}
+`, stderr: "" };
+}
+
+// core/src/hosts/userprompt.ts
+var HOOK_EVENT3 = "UserPromptSubmit";
+var NOTHING_TO_SAY3 = "{}";
+function userPromptRun(verdict) {
+  switch (verdict.kind) {
+    case "allow":
+      return spoken2(NOTHING_TO_SAY3);
+    case "deny":
+      return spoken2(JSON.stringify({ decision: "block", reason: verdict.message }));
+    case "context":
+      return spoken2(
+        JSON.stringify({
+          hookSpecificOutput: { hookEventName: HOOK_EVENT3, additionalContext: verdict.additionalContext }
+        })
+      );
+  }
+}
+function spoken2(stdout) {
+  return { exit: 0, stdout: `${stdout}
+`, stderr: "" };
+}
+
+// core/src/gates/autocontinue.ts
+import { mkdirSync as mkdirSync3, statSync as statSync4, writeFileSync as writeFileSync3 } from "node:fs";
+import path4 from "node:path";
+
 // core/src/shell/lexer.ts
 var MAX_LEXED_INPUT_BYTES = 3072;
 var UNREAD_PAYLOAD_MARKER = "!unread-payload";
@@ -434,8 +550,9 @@ var NO_VERDICT = {
 };
 var JSON_SPACE = "[\\t\\n\\v\\f\\r ]";
 var STOP_HOOK_ACTIVE = new RegExp(`"stop_hook_active"${JSON_SPACE}*:${JSON_SPACE}*true`);
-function readEnvelope(payload) {
+function readEnvelope(payload, caller) {
   return {
+    caller,
     sessionId: jsonField(payload, "session_id"),
     cwd: jsonField(payload, "cwd"),
     toolName: jsonField(payload, "tool_name"),
@@ -497,122 +614,6 @@ function withoutCarriageReturns(value) {
     settled = collapsed;
   }
 }
-
-// core/src/hosts/pretooluse.ts
-var HOOK_EVENT = "PreToolUse";
-var GATE_ERROR_EXIT = 2;
-function preToolUseRun(verdict) {
-  switch (verdict.kind) {
-    case "allow":
-      return { exit: 0, stdout: "", stderr: "" };
-    case "deny":
-      return { exit: 0, stdout: `${denyEnvelope(verdict.message)}
-`, stderr: "" };
-    case "gateError":
-      return { exit: GATE_ERROR_EXIT, stdout: "", stderr: gateErrorText(verdict.subject) };
-  }
-}
-function gateErrorText(subject) {
-  return `oso-code: ${subject} failed unexpectedly and blocked this call instead of opening the gate. No remedy is known for this failure.
-`;
-}
-function denyEnvelope(reason) {
-  return JSON.stringify({
-    hookSpecificOutput: {
-      hookEventName: HOOK_EVENT,
-      permissionDecision: "deny",
-      permissionDecisionReason: reason
-    }
-  });
-}
-
-// core/src/hosts/sessionend.ts
-function sessionEndRun(verdict) {
-  switch (verdict.kind) {
-    case "noVerdict":
-      return { exit: 0, stdout: "", stderr: "" };
-    case "gateError":
-      return { exit: GATE_ERROR_EXIT, stdout: "", stderr: gateErrorText(verdict.subject) };
-  }
-}
-
-// core/src/hosts/sessionstart.ts
-var HOOK_EVENT2 = "SessionStart";
-function sessionStartRun(verdict) {
-  switch (verdict.kind) {
-    case "allow":
-      return { exit: 0, stdout: "", stderr: "" };
-    case "context":
-      return { exit: 0, stdout: `${contextEnvelope(verdict.additionalContext)}
-`, stderr: "" };
-    case "gateError":
-      return { exit: GATE_ERROR_EXIT, stdout: "", stderr: gateErrorText(verdict.subject) };
-  }
-}
-function contextEnvelope(additionalContext) {
-  return JSON.stringify({
-    hookSpecificOutput: {
-      hookEventName: HOOK_EVENT2,
-      additionalContext
-    }
-  });
-}
-
-// core/src/hosts/stop.ts
-var NOTHING_TO_SAY = "{}";
-function stopRun(verdict, escalated) {
-  switch (verdict.kind) {
-    case "allow":
-      return spoken(NOTHING_TO_SAY);
-    case "push":
-      return spoken(JSON.stringify({ shouldContinue: true, decision: "block", reason: verdict.reason }));
-    case "deny":
-      return spoken(escalated ? endedEnvelope(verdict.message) : blockEnvelope(verdict.message));
-  }
-}
-function blockEnvelope(reason) {
-  return JSON.stringify({ decision: "block", reason });
-}
-function endedEnvelope(reason) {
-  return JSON.stringify({ continue: false, stopReason: reason, systemMessage: reason });
-}
-function spoken(stdout) {
-  return { exit: 0, stdout: `${stdout}
-`, stderr: "" };
-}
-
-// core/src/hosts/subagentstop.ts
-var NOTHING_TO_SAY2 = "{}";
-function subagentStopRun(_verdict) {
-  return { exit: 0, stdout: `${NOTHING_TO_SAY2}
-`, stderr: "" };
-}
-
-// core/src/hosts/userprompt.ts
-var HOOK_EVENT3 = "UserPromptSubmit";
-var NOTHING_TO_SAY3 = "{}";
-function userPromptRun(verdict) {
-  switch (verdict.kind) {
-    case "allow":
-      return spoken2(NOTHING_TO_SAY3);
-    case "deny":
-      return spoken2(JSON.stringify({ decision: "block", reason: verdict.message }));
-    case "context":
-      return spoken2(
-        JSON.stringify({
-          hookSpecificOutput: { hookEventName: HOOK_EVENT3, additionalContext: verdict.additionalContext }
-        })
-      );
-  }
-}
-function spoken2(stdout) {
-  return { exit: 0, stdout: `${stdout}
-`, stderr: "" };
-}
-
-// core/src/gates/autocontinue.ts
-import { mkdirSync as mkdirSync3, statSync as statSync4, writeFileSync as writeFileSync3 } from "node:fs";
-import path4 from "node:path";
 
 // core/src/routes/routes.ts
 var GATE_BUNDLE = "gate.js";
@@ -730,6 +731,7 @@ import {
   statSync,
   writeFileSync
 } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 var LockTimeoutError = class extends Error {
   sessionId;
@@ -767,6 +769,8 @@ function sha256Hex(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 function stateRootDirectory() {
+  const configured = process.env["OSO_STATE_DIR"];
+  if (configured !== void 0 && configured !== "") return configured;
   return path.join(homeDirectory(), ".local", "state", "oso-code");
 }
 function stateFileFor(cwd) {
@@ -895,17 +899,25 @@ function logEvent(entry) {
     mkdirSync(path.dirname(eventsLog), { recursive: true });
     withOwnerOnlyUmask(() => appendFileSync(eventsLog, `${line}
 `));
+    return true;
   } catch {
     process.stderr.write(`${line}
 `);
+    return false;
   }
 }
-function homeDirectory() {
-  const home = process.env["HOME"];
-  if (home === void 0 || home === "") {
-    throw new Error("HOME is not set");
+function homeDirectoryFrom(platform, environment) {
+  if (platform === "win32") {
+    const profile = environment["USERPROFILE"] ?? homedir();
+    if (profile === "") throw new Error("USERPROFILE is not set");
+    return profile;
   }
+  const home = environment["HOME"];
+  if (home === void 0 || home === "") throw new Error("HOME is not set");
   return home;
+}
+function homeDirectory() {
+  return homeDirectoryFrom(process.platform, process.env);
 }
 function gitCommonDirectory(cwd) {
   try {
@@ -1079,8 +1091,8 @@ function sanitizeSession(raw) {
   return raw.replace(/[^a-zA-Z0-9-]/g, "");
 }
 function hookSessionId(envelope) {
-  const marker = process.env["OSO_AGENT"];
-  return sanitizeSession(marker !== void 0 && marker !== "" ? marker : envelope.sessionId);
+  const named2 = envelope.caller.agentSession;
+  return sanitizeSession(named2 !== "" ? named2 : envelope.sessionId);
 }
 function payloadUnparseable() {
   return { verdict: { kind: "allow" }, events: [{ event: "payload-unparseable", session: "" }] };
@@ -1247,8 +1259,25 @@ var PUSHES_WITHOUT_PROGRESS_CAP = 3;
 var RUN_ARMED = "running";
 var OWNER_ONLY_FILE2 = 384;
 var OWNER_ONLY_DIRECTORY2 = 448;
-var CONTINUATION_ORDER = "oso-code: this run is unattended and still in flight, and this turn ended without parking or closing it. Continue it: re-read the position from the change's oso/index NEXT: line and from active_slice in oso-state, append every milestone to the run journal with oso-state journal, and park the run per the flow's own rules if a decision needs the operator. If a delegation is still in flight, do NOT relaunch it \u2014 its completion notification is what resumes the run, so wait for that instead.";
-var EXPIRED_DELEGATION_ORDER = `${CONTINUATION_ORDER} ${EXPIRED_DELEGATION_CLAUSE}`;
+var RE_ANCHOR_THE_RUN = "oso-code: this run is unattended and still in flight, and this turn ended without parking or closing it. Continue it: re-read the position from the change's oso/index NEXT: line and from active_slice in oso-state, append every milestone to the run journal with oso-state journal, and park the run per the flow's own rules if a decision needs the operator.";
+var NOTIFICATION_RESUMED_HOST = {
+  order: `${RE_ANCHOR_THE_RUN} If a delegation is still in flight, do NOT relaunch it \u2014 its completion notification is what resumes the run, so wait for that instead.`,
+  delegationsReturnInTurn: false,
+  sidecarPath: waitMarkFileFor
+};
+var DELEGATIONS_RETURN_IN_TURN_HOST = {
+  order: `${RE_ANCHOR_THE_RUN} A delegation on this host returns inside the turn that launched it, so a turn that has ended left none in flight: read the report the launch itself returned rather than waiting for a notification this host never sends.`,
+  delegationsReturnInTurn: true,
+  sidecarPath: waitMarkFileFor
+};
+var CONTINUATION_HOSTS = {
+  claude: NOTIFICATION_RESUMED_HOST,
+  codex: NOTIFICATION_RESUMED_HOST,
+  opencode: DELEGATIONS_RETURN_IN_TURN_HOST
+};
+function continuationHostOf(host) {
+  return CONTINUATION_HOSTS[host];
+}
 var CAP_MILESTONE = `auto-continue: cap reached after ${PUSHES_WITHOUT_PROGRESS_CAP} pushes without progress \u2014 allowing the stop`;
 var EXPIRED_DELEGATION_CAP_MILESTONE = `auto-continue: cap reached after ${PUSHES_WITHOUT_PROGRESS_CAP} pushes with a delegation marked in flight past ${DELEGATION_WAIT_CEILING_MINUTES} minutes \u2014 allowing the stop`;
 var AUTOCONTINUE_GATE = {
@@ -1257,13 +1286,14 @@ var AUTOCONTINUE_GATE = {
   judge: judgeAutocontinue
 };
 function judgeAutocontinue({ envelope }) {
+  const host = continuationHostOf(envelope.caller.host);
   const sessionId = hookSessionId(envelope);
   if (sessionId === "") return ALLOWED;
   const projectDir = envelope.cwd;
   if (!isDirectory(projectDir)) return ALLOWED;
   const content = ownRunState(stateFileFor(projectDir), sessionId);
   if (content === void 0) return ALLOWED;
-  const markFile = waitMarkFileFor(projectDir, sessionId);
+  const markFile = host.sidecarPath(projectDir, sessionId);
   if (stateValue(content, "auto") !== RUN_ARMED) {
     removeWaitMark(markFile);
     return ALLOWED;
@@ -1279,13 +1309,18 @@ function judgeAutocontinue({ envelope }) {
     run: stateValue(content, "auto_change")
   };
   const label = stateValue(content, "auto_wait");
-  if (!isDelegationLabel(label)) {
+  if (!isDelegationLabel(label) || host.delegationsReturnInTurn) {
     removeWaitMark(markFile);
-    return pushUnlessCapped(position, envelope.stopHookActive, CONTINUATION_ORDER, CAP_MILESTONE);
+    return pushUnlessCapped(position, envelope.stopHookActive, host.order, CAP_MILESTONE);
   }
   const held2 = holdUnlessExpired(position, label);
   if (held2 !== void 0) return held2;
-  return pushUnlessCapped(position, envelope.stopHookActive, EXPIRED_DELEGATION_ORDER, EXPIRED_DELEGATION_CAP_MILESTONE);
+  return pushUnlessCapped(
+    position,
+    envelope.stopHookActive,
+    `${host.order} ${EXPIRED_DELEGATION_CLAUSE}`,
+    EXPIRED_DELEGATION_CAP_MILESTONE
+  );
 }
 function holdUnlessExpired(position, label) {
   const standing = readWaitMark(position.markFile);
@@ -1849,12 +1884,12 @@ function judgeHandoff({ envelope }) {
   if (!isDirectory(envelope.cwd)) return publishFailed("missing or unreadable cwd", sessionId, agentType);
   if (envelope.agentId === "") return publishFailed("missing agent_id", sessionId, agentType);
   if (agentType === "") return publishFailed("missing agent_type", sessionId, "");
-  const named = MARKER.exec(message.split("\n")[0] ?? "");
-  if (markerLines.length !== 1 || named === null) {
+  const named2 = MARKER.exec(message.split("\n")[0] ?? "");
+  if (markerLines.length !== 1 || named2 === null) {
     return publishFailed(MALFORMED_MARKER, sessionId, agentType);
   }
-  const slice = named[1];
-  const attempt = named[2];
+  const slice = named2[1];
+  const attempt = named2[2];
   try {
     runHandoffPublish(envelope.cwd, { slice, attempt, agentId: envelope.agentId, agentType }, sessionId);
   } catch (cause) {
@@ -2609,11 +2644,11 @@ function readBracketMember(pattern, from) {
   return readRangeOrCharacter(pattern, from);
 }
 function readPosixClass(pattern, from) {
-  const named = POSIX_CLASS_NAME.exec(pattern.slice(from));
-  if (named === null) return void 0;
-  const members = POSIX_CLASS_MEMBERS[named[1]];
+  const named2 = POSIX_CLASS_NAME.exec(pattern.slice(from));
+  if (named2 === null) return void 0;
+  const members = POSIX_CLASS_MEMBERS[named2[1]];
   if (members === void 0) return void 0;
-  return namedMemberEndingAt(members, from + named[0].length, pattern);
+  return namedMemberEndingAt(members, from + named2[0].length, pattern);
 }
 function readCollatingSymbol(pattern, from) {
   const symbol = characterAt(pattern, from + 2);
@@ -2873,17 +2908,17 @@ function judgeStale({ envelope }) {
   const content = contentOf(stateFile);
   const sessionId = hookSessionId(envelope);
   const advisories = [
-    ...staleStateAdvisory(stateFile, content, sessionId),
-    ...expiredDelegationAdvisory(envelope.cwd, content)
+    ...staleStateAdvisory(envelope.caller, stateFile, content, sessionId),
+    ...expiredDelegationAdvisory(envelope.caller, envelope.cwd, content)
   ];
   if (advisories.length === 0) return ALLOWED;
   return { verdict: { kind: "context", additionalContext: advisories.join(" ") }, events: [] };
 }
-function staleStateAdvisory(stateFile, content, sessionId) {
+function staleStateAdvisory(caller, stateFile, content, sessionId) {
   if (stateValue(content, "session") === sessionId) return [];
-  return [staleStateContext(stateFile, content, sessionId)];
+  return [staleStateContext(caller, stateFile, content, sessionId)];
 }
-function expiredDelegationAdvisory(cwd, content) {
+function expiredDelegationAdvisory(caller, cwd, content) {
   if (stateValue(content, "auto") !== RUN_ARMED2) return [];
   const label = stateValue(content, "auto_wait");
   if (!isDelegationLabel(label)) return [];
@@ -2891,14 +2926,14 @@ function expiredDelegationAdvisory(cwd, content) {
   if (runSession === "") return [];
   const mark = readWaitMark(waitMarkFileFor(cwd, runSession));
   if (mark === void 0 || !waitExpired(nowEpochSeconds(), mark.markedAtEpochSeconds)) return [];
-  const disarmCommand = `${quoted(stateBinPath())} --session ${quoted(runSession)} set auto_wait=none`;
+  const disarmCommand = `${quoted(stateBinPath(caller))} --session ${quoted(runSession)} set auto_wait=none`;
   return [
     `oso-code: this repository's unattended run is still marked as waiting on the delegation ${quoted(label)}. ${EXPIRED_DELEGATION_CLAUSE} Drop the mark with ${disarmCommand} and carry the run on.`
   ];
 }
-function staleStateContext(stateFile, content, sessionId) {
-  const skillPrefix = skillPrefixFor();
-  const stateBin = quoted(stateBinPath());
+function staleStateContext(caller, stateFile, content, sessionId) {
+  const skillPrefix = skillPrefixFor(caller.host);
+  const stateBin = quoted(stateBinPath(caller));
   const clearCommand = `${stateBin} --session ${quoted(sessionId)} clear`;
   const leftByAnother = `oso-code: this repository's own runtime state (${path8.basename(stateFile)}) was left by another session, and its flags arm this session's gates too`;
   const roadmapValue = stateValue(content, "roadmap");
@@ -2910,15 +2945,12 @@ function staleStateContext(stateFile, content, sessionId) {
   const disarmCommand = `${stateBin} --session ${quoted(sessionId)} set roadmap=none`;
   return `${leftByAnother}, and it names a roadmap in flight \u2014 if the user is resuming that roadmap, run ${skillPrefix}roadmap ${routeSlug} so its chain re-reads its own record and arms the child that record leaves un-run; if that roadmap is over or abandoned, ${disarmCommand} drops the claim it makes on this repository and ${clearCommand} drops the whole file.`;
 }
-function skillPrefixFor() {
-  if (process.env["OSO_HOST"] === "opencode") return "/oso-";
-  const agent = process.env["OSO_AGENT"];
-  if (agent !== void 0 && agent !== "") return "$oso-code:";
-  return "/oso-code:";
+var SKILL_PREFIXES = { claude: "/oso-code:", codex: "$oso-code:", opencode: "/oso-" };
+function skillPrefixFor(host) {
+  return SKILL_PREFIXES[host];
 }
-function stateBinPath() {
-  const configured = process.env["OSO_STATE_BIN"];
-  if (configured !== void 0 && configured !== "") return configured;
+function stateBinPath(caller) {
+  if (caller.stateBin !== "") return caller.stateBin;
   return path8.join(pluginRootDirectory(), "bin", "oso-state");
 }
 function contentOf(stateFile) {
@@ -2951,6 +2983,7 @@ import { execFileSync as execFileSync2 } from "node:child_process";
 import { existsSync as existsSync5, readdirSync as readdirSync2, renameSync as renameSync3, rmSync as rmSync5, rmdirSync, statSync as statSync6 } from "node:fs";
 import path10 from "node:path";
 var ABANDONED_STATE_DAYS = 7;
+var JOURNAL_KEYED_WAIT_MARK_SUFFIX = ".waiting";
 var EVENTS_LOG_RETENTION_DAYS = 30;
 var SECONDS_PER_DAY = 86400;
 var TEARDOWN_GATE = {
@@ -2962,6 +2995,7 @@ function judgeTeardown({ envelope }) {
   const sessionId = hookSessionId(envelope);
   const ownState = stateArmedBy(sessionId);
   removeWorktreesOf(sessionId, ownState);
+  dropJournalKeyedWaitMark(envelope.cwd);
   dropStateFile(ownState);
   clearOrphanedPendingOf(sanitizeSession(envelope.sessionId));
   clearRoadmapInFlightOf(sessionId);
@@ -2992,6 +3026,11 @@ function removeWorktreesOf(sessionId, stateFile) {
   } catch {
     return;
   }
+}
+function dropJournalKeyedWaitMark(cwd) {
+  const journalFile = journalFileFor(cwd);
+  const stem = journalFile.endsWith(".log") ? journalFile.slice(0, -".log".length) : journalFile;
+  rmSync5(`${stem}${JOURNAL_KEYED_WAIT_MARK_SUFFIX}`, { force: true });
 }
 function dropStateFile(stateFile) {
   if (stateFile === void 0) return;
@@ -3106,7 +3145,7 @@ function judgeUnknownTool({ envelope, argv }) {
   if (TOOL_NAME.test(toolName) && allowlistCarries(allowlist, toolName)) return ALLOWED;
   return denied({
     gate: "unknown",
-    message: `oso-code: tool '${toolName === "" ? "<missing>" : toolName}' is not in this release's ${allowlistHost()} hook allowlist. Use one of the allowed local tools instead: ${allowlist.replaceAll("|", ", ")}.`,
+    message: `oso-code: tool '${toolName === "" ? "<missing>" : toolName}' is not in this release's ${allowlistHost(envelope.caller.host)} hook allowlist. Use one of the allowed local tools instead: ${allowlist.replaceAll("|", ", ")}.`,
     event: "unknown-tool-denied",
     session,
     detail: toolName
@@ -3136,8 +3175,8 @@ function thisSessionsPlanIsPending(stateContent, session) {
 function allowlistCarries(allowlist, toolName) {
   return `|${allowlist}|`.includes(`|${toolName}|`);
 }
-function allowlistHost() {
-  return process.env["OSO_HOST"] === "opencode" ? "OpenCode" : "Codex";
+function allowlistHost(host) {
+  return host === "opencode" ? "OpenCode" : "Codex";
 }
 
 // core/src/gates/version.ts
@@ -3279,10 +3318,10 @@ var USER_PROMPT_GATES = [
   PLANPROMPT_GATE
 ];
 var SUBAGENT_STOP_GATES = [HANDOFF_GATE];
-function runGate(argv, payload) {
+function runGate(argv, envelope) {
   const [name, ...gateArguments] = argv;
-  const request = { envelope: readEnvelope(payload), argv: gateArguments };
-  const escalated = request.envelope.stopHookActive;
+  const request = { envelope, argv: gateArguments };
+  const escalated = envelope.stopHookActive;
   const run2 = routed(PRE_TOOL_USE_GATES, name, request, preToolUseRun, gateErrorRun) ?? routed(SESSION_START_GATES, name, request, sessionStartRun, loudRun) ?? routed(NO_VERDICT_GATES, name, request, sessionEndRun, loudRun) ?? routed(STOP_GATES, name, request, (verdict) => stopRun(verdict, escalated), loudRun) ?? routed(USER_PROMPT_GATES, name, request, userPromptRun, loudRun) ?? routed(SUBAGENT_STOP_GATES, name, request, subagentStopRun, loudRun);
   return run2 ?? gateErrorRun(`the gate entry point (unknown gate '${name ?? ""}')`);
 }
@@ -3294,18 +3333,25 @@ function runWith(gate, request, transport, onFailure) {
   try {
     const outcome = gate.judge(request);
     const run2 = transport(outcome.verdict);
-    return { ...run2, stderr: run2.stderr + (outcome.stderr ?? ""), events: outcome.events };
+    return { ...run2, stderr: run2.stderr + (outcome.stderr ?? ""), verdict: outcome.verdict, events: outcome.events };
   } catch (cause) {
     return onFailure(gate.errorSubject, cause);
   }
 }
 function gateErrorRun(subject, cause) {
-  const run2 = preToolUseRun({ kind: "gateError", subject });
-  return { ...run2, stderr: run2.stderr + explainedCause(cause), events: [] };
+  const verdict = { kind: "gateError", subject };
+  const run2 = preToolUseRun(verdict);
+  return { ...run2, stderr: run2.stderr + explainedCause(cause), verdict, events: [] };
 }
 var LOUD_EXIT = 1;
-function loudRun(_subject, cause) {
-  return { exit: LOUD_EXIT, stdout: "", stderr: explainedCause(cause), events: [] };
+function loudRun(subject, cause) {
+  return {
+    exit: LOUD_EXIT,
+    stdout: "",
+    stderr: explainedCause(cause),
+    verdict: { kind: "gateError", subject },
+    events: []
+  };
 }
 function explainedCause(cause) {
   if (cause === void 0) return "";
@@ -3313,8 +3359,28 @@ function explainedCause(cause) {
 `;
 }
 
+// core/src/hosts/spawned.ts
+function named(environment, variable) {
+  const value = environment[variable];
+  return value === void 0 ? "" : value;
+}
+function spawningHost(environment) {
+  if (named(environment, "OSO_HOST") === "opencode") return "opencode";
+  return named(environment, "OSO_AGENT") === "" ? "claude" : "codex";
+}
+function spawnedCaller(environment) {
+  return {
+    host: spawningHost(environment),
+    agentSession: named(environment, "OSO_AGENT"),
+    stateBin: named(environment, "OSO_STATE_BIN")
+  };
+}
+function spawnedEnvelope(payload, environment) {
+  return readEnvelope(payload, spawnedCaller(environment));
+}
+
 // core/src/bin/gate.ts
-var run = runGate(process.argv.slice(2), readFileSync7(0, "utf8"));
+var run = runGate(process.argv.slice(2), spawnedEnvelope(readFileSync7(0, "utf8"), process.env));
 if (run.stdout !== "") process.stdout.write(run.stdout);
 if (run.stderr !== "") process.stderr.write(run.stderr);
 for (const event of run.events) logEvent(event);

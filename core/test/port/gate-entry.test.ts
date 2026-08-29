@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { runGate } from "../../src/gates/dispatch.ts";
-import { withHookEnvironment } from "../support/gate-fixture.ts";
+import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
+import { unresolvedHomeCause, withHookEnvironment } from "../support/gate-fixture.ts";
 import { provedSomething } from "../support/proved.ts";
 import { withStateSandbox } from "../support/state-sandbox.ts";
 
@@ -65,11 +66,11 @@ describe("core/src/gates/dispatch.ts: port tests read from the gate scripts, nev
     const run = withStateSandbox("workspace", (sandbox) => {
       sandbox.seed(ARMED_RED_STATE);
       const envelope = sandbox.expandJson(bashEnvelope("git commit -m x"));
-      return withHookEnvironment({ HOME: HOME_A_GATE_CANNOT_RESOLVE }, () => runGate(["commit"], envelope));
+      return withHookEnvironment({ HOME: HOME_A_GATE_CANNOT_RESOLVE }, () => runGate(["commit"], spawnedEnvelope(envelope, process.env)));
     });
     assert.equal(run.exit, 2);
     assert.equal(run.stdout, "");
-    assert.equal(run.stderr, `${gateErrorLineTheBashPrints("the commit gate")}oso-code: cause: HOME is not set\n`);
+    assert.equal(run.stderr, `${gateErrorLineTheBashPrints("the commit gate")}oso-code: cause: ${unresolvedHomeCause()}\n`);
     assert.deepEqual(run.events, []);
   });
 });
@@ -144,6 +145,6 @@ function bashEnvelope(command: string): string {
 function judge(argv: readonly string[], seed: Readonly<Record<string, string>>, envelope: string) {
   return withStateSandbox("workspace", (sandbox) => {
     sandbox.seed(seed);
-    return withHookEnvironment({ HOME: sandbox.home }, () => runGate(argv, sandbox.expandJson(envelope)));
+    return withHookEnvironment({ HOME: sandbox.home }, () => runGate(argv, spawnedEnvelope(sandbox.expandJson(envelope), process.env)));
   });
 }

@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6275,
+      "line": 6252,
       "assertion": "  write_drift_marketplace_source directory path \"$REPO_ROOT\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6276,
+      "line": 6253,
       "assertion": "  assert_drift_silent \"a marketplace registered from a local clone says nothing\""
     }
   ],

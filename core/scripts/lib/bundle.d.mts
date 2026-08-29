@@ -1,4 +1,4 @@
-export function bundleText(entryPoint: string): Promise<string>;
+export function bundleText(entryPoint: string, external?: readonly string[]): Promise<string>;
 
 export function importBundled(entryPoint: string): Promise<Record<string, unknown>>;
 

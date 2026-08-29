@@ -1,8 +1,8 @@
 {
   "name": "autocontinue gate: the none sentinel is no delegation at all, so the turn is pushed and the stale wait mark is cleared",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 4854, "assertion": "oso-state --session \"$SESSION\" set auto_wait=none >/dev/null\nauto_sentinel_verdict=\"$(auto_stop_verdict \"$(auto_stop_input)\")\"\nassert_equals \"the none sentinel is no delegation at all: the turn is pushed and the stale wait mark is cleared for the next delegation's clock\" \\" },
-    { "file": "tests/hooks-test.sh", "line": 4856, "assertion": "assert_equals \"the none sentinel is no delegation at all: the turn is pushed and the stale wait mark is cleared for the next delegation's clock\" \\\n  \"push cleared pushes=2>journal_bytes=0>\" \\\n  \"$auto_sentinel_verdict $([ -e \"$AUTO_WAIT_MARK\" ] && printf standing || printf cleared) $(auto_tally_of)\"" }
+    { "file": "tests/hooks-test.sh", "line": 4831, "assertion": "oso-state --session \"$SESSION\" set auto_wait=none >/dev/null\nauto_sentinel_verdict=\"$(auto_stop_verdict \"$(auto_stop_input)\")\"\nassert_equals \"the none sentinel is no delegation at all: the turn is pushed and the stale wait mark is cleared for the next delegation's clock\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 4833, "assertion": "assert_equals \"the none sentinel is no delegation at all: the turn is pushed and the stale wait mark is cleared for the next delegation's clock\" \\\n  \"push cleared pushes=2>journal_bytes=0>\" \\\n  \"$auto_sentinel_verdict $([ -e \"$AUTO_WAIT_MARK\" ] && printf standing || printf cleared) $(auto_tally_of)\"" }
   ],
   "gate": "autocontinue",
   "argv": [],

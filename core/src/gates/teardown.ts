@@ -2,10 +2,18 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, renameSync, rmSync, rmdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { NO_VERDICT, type GateOutcome, type NoVerdictVerdict } from "../hosts/envelope.ts";
-import { isDirectory, logEvent, readStateFile, secondsSinceModified, stateRootDirectory } from "../state/store.ts";
+import {
+  isDirectory,
+  journalFileFor,
+  logEvent,
+  readStateFile,
+  secondsSinceModified,
+  stateRootDirectory,
+} from "../state/store.ts";
 import { hookSessionId, sanitizeSession, stateValue, type GateDefinition, type GateRequest } from "./preflight.ts";
 
 const ABANDONED_STATE_DAYS = 7;
+const JOURNAL_KEYED_WAIT_MARK_SUFFIX = ".waiting";
 const EVENTS_LOG_RETENTION_DAYS = 30;
 const SECONDS_PER_DAY = 86400;
 
@@ -19,6 +27,7 @@ function judgeTeardown({ envelope }: GateRequest): GateOutcome<NoVerdictVerdict>
   const sessionId = hookSessionId(envelope);
   const ownState = stateArmedBy(sessionId);
   removeWorktreesOf(sessionId, ownState);
+  dropJournalKeyedWaitMark(envelope.cwd);
   dropStateFile(ownState);
   clearOrphanedPendingOf(sanitizeSession(envelope.sessionId));
   clearRoadmapInFlightOf(sessionId);
@@ -52,6 +61,12 @@ function removeWorktreesOf(sessionId: string, stateFile: string | undefined): vo
   } catch {
     return;
   }
+}
+
+function dropJournalKeyedWaitMark(cwd: string): void {
+  const journalFile = journalFileFor(cwd);
+  const stem = journalFile.endsWith(".log") ? journalFile.slice(0, -".log".length) : journalFile;
+  rmSync(`${stem}${JOURNAL_KEYED_WAIT_MARK_SUFFIX}`, { force: true });
 }
 
 function dropStateFile(stateFile: string | undefined): void {

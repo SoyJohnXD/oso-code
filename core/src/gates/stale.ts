@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { ALLOWED, type GateOutcome, type SessionStartVerdict } from "../hosts/envelope.ts";
+import { ALLOWED, type GateOutcome, type HookCaller, type SessionStartVerdict } from "../hosts/envelope.ts";
+import type { HostName, PerHost } from "../routes/routes.ts";
 import { CHANGE_SLUG_PATTERN, isDirectory, readStateFile, stateFileFor, stateRootDirectory } from "../state/store.ts";
 import {
   EXPIRED_DELEGATION_CLAUSE,
@@ -31,20 +32,25 @@ function judgeStale({ envelope }: GateRequest): GateOutcome<SessionStartVerdict>
   const content = contentOf(stateFile);
   const sessionId = hookSessionId(envelope);
   const advisories = [
-    ...staleStateAdvisory(stateFile, content, sessionId),
-    ...expiredDelegationAdvisory(envelope.cwd, content),
+    ...staleStateAdvisory(envelope.caller, stateFile, content, sessionId),
+    ...expiredDelegationAdvisory(envelope.caller, envelope.cwd, content),
   ];
   if (advisories.length === 0) return ALLOWED;
 
   return { verdict: { kind: "context", additionalContext: advisories.join(" ") }, events: [] };
 }
 
-function staleStateAdvisory(stateFile: string, content: string, sessionId: string): string[] {
+function staleStateAdvisory(
+  caller: HookCaller,
+  stateFile: string,
+  content: string,
+  sessionId: string,
+): string[] {
   if (stateValue(content, "session") === sessionId) return [];
-  return [staleStateContext(stateFile, content, sessionId)];
+  return [staleStateContext(caller, stateFile, content, sessionId)];
 }
 
-function expiredDelegationAdvisory(cwd: string, content: string): string[] {
+function expiredDelegationAdvisory(caller: HookCaller, cwd: string, content: string): string[] {
   if (stateValue(content, "auto") !== RUN_ARMED) return [];
   const label = stateValue(content, "auto_wait");
   if (!isDelegationLabel(label)) return [];
@@ -54,16 +60,16 @@ function expiredDelegationAdvisory(cwd: string, content: string): string[] {
   const mark = readWaitMark(waitMarkFileFor(cwd, runSession));
   if (mark === undefined || !waitExpired(nowEpochSeconds(), mark.markedAtEpochSeconds)) return [];
 
-  const disarmCommand = `${quoted(stateBinPath())} --session ${quoted(runSession)} set auto_wait=none`;
+  const disarmCommand = `${quoted(stateBinPath(caller))} --session ${quoted(runSession)} set auto_wait=none`;
   return [
     `oso-code: this repository's unattended run is still marked as waiting on the delegation ${quoted(label)}. ` +
       `${EXPIRED_DELEGATION_CLAUSE} Drop the mark with ${disarmCommand} and carry the run on.`,
   ];
 }
 
-function staleStateContext(stateFile: string, content: string, sessionId: string): string {
-  const skillPrefix = skillPrefixFor();
-  const stateBin = quoted(stateBinPath());
+function staleStateContext(caller: HookCaller, stateFile: string, content: string, sessionId: string): string {
+  const skillPrefix = skillPrefixFor(caller.host);
+  const stateBin = quoted(stateBinPath(caller));
   const clearCommand = `${stateBin} --session ${quoted(sessionId)} clear`;
   const leftByAnother =
     `oso-code: this repository's own runtime state (${path.basename(stateFile)}) was left by another session, ` +
@@ -89,16 +95,14 @@ function staleStateContext(stateFile: string, content: string, sessionId: string
   );
 }
 
-function skillPrefixFor(): string {
-  if (process.env["OSO_HOST"] === "opencode") return "/oso-";
-  const agent = process.env["OSO_AGENT"];
-  if (agent !== undefined && agent !== "") return "$oso-code:";
-  return "/oso-code:";
+const SKILL_PREFIXES: PerHost<string> = { claude: "/oso-code:", codex: "$oso-code:", opencode: "/oso-" };
+
+function skillPrefixFor(host: HostName): string {
+  return SKILL_PREFIXES[host];
 }
 
-function stateBinPath(): string {
-  const configured = process.env["OSO_STATE_BIN"];
-  if (configured !== undefined && configured !== "") return configured;
+function stateBinPath(caller: HookCaller): string {
+  if (caller.stateBin !== "") return caller.stateBin;
   return path.join(pluginRootDirectory(), "bin", "oso-state");
 }
 

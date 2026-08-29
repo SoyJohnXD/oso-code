@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6362,
+      "line": 6339,
       "assertion": "reanchor_start_verdicts=\"$reanchor_start_verdicts $(reanchor_verdict \\\n  \"$(printf '{\"session_id\":\"%s\",\"cwd\":\"%s\",\"hook_event_name\":\"SessionStart\"}' \"$SESSION\" \"$REPO_ROOT\")\")\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6364,
+      "line": 6341,
       "assertion": "assert_equals \"every session start that is not a compaction stays silent, however live the run is\" \\\n  \"silent silent silent silent\" \"${reanchor_start_verdicts# }\""
     }
   ],

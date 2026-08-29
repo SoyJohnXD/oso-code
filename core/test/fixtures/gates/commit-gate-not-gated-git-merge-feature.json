@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6537,
+      "line": 6514,
       "assertion": "assert_every assert_allows \"not gated\" <<'NOT_GATED_TABLE'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6539,
+      "line": 6516,
       "assertion": "git merge feature"
     }
   ],

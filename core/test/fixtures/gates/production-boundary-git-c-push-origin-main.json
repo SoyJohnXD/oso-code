@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5085,
+      "line": 5062,
       "assertion": "assert_equals \"a push that does not name the run branch is denied while the run is in flight\" \\\n  \"deny deny deny\" \\\n  \"$(prod_verdicts_for 'git push origin main' 'git push' 'git -C . push origin main')\""
     }
   ],

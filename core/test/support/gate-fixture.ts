@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { runGate } from "../../src/gates/dispatch.ts";
+import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { logEvent } from "../../src/state/store.ts";
 import type { ObservedRun } from "./parity-expectations.ts";
 import type { FixtureExpectation, SuiteCitation } from "./parity-fixture.ts";
@@ -31,7 +32,8 @@ export function observeGate(sandbox: StateSandbox, fixture: GateFixture): Observ
   const eventsBefore = sandbox.eventLogLines().length;
   const env = { HOME: sandbox.home, ...expandedEnv(sandbox, fixture.env) };
   const run = withHookEnvironment(env, () => {
-    const gateRun = runGate([fixture.gate, ...fixture.argv], sandbox.expandJson(fixture.stdin));
+    const envelope = spawnedEnvelope(sandbox.expandJson(fixture.stdin), process.env);
+    const gateRun = runGate([fixture.gate, ...fixture.argv], envelope);
     for (const event of gateRun.events) logEvent(event);
     return gateRun;
   });
@@ -57,12 +59,23 @@ const AMBIENT_ENV_A_FIXTURE_OWNS = {
   OSO_AGENT: "",
   OSO_HOST: "",
   OSO_STATE_BIN: "",
+  OSO_STATE_DIR: "",
   CLAUDE_PLUGIN_ROOT: "",
 };
 
+export function unresolvedHomeCause(): string {
+  return process.platform === "win32" ? "USERPROFILE is not set" : "HOME is not set";
+}
+
+function bothHomeProvenances(pinned: Readonly<Record<string, string>>): Record<string, string> {
+  const home = pinned["HOME"];
+  return home === undefined ? {} : { USERPROFILE: home };
+}
+
 export function withHookEnvironment<T>(pinned: Readonly<Record<string, string>>, run: () => T): T {
   const restored = new Map<string, string | undefined>();
-  for (const [name, value] of Object.entries({ ...AMBIENT_ENV_A_FIXTURE_OWNS, ...pinned })) {
+  const owned = { ...AMBIENT_ENV_A_FIXTURE_OWNS, ...bothHomeProvenances(pinned), ...pinned };
+  for (const [name, value] of Object.entries(owned)) {
     restored.set(name, process.env[name]);
     process.env[name] = value;
   }

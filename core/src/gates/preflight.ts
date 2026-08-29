@@ -31,8 +31,8 @@ export function sanitizeSession(raw: string): string {
 }
 
 export function hookSessionId(envelope: HookEnvelope): string {
-  const marker = process.env["OSO_AGENT"];
-  return sanitizeSession(marker !== undefined && marker !== "" ? marker : envelope.sessionId);
+  const named = envelope.caller.agentSession;
+  return sanitizeSession(named !== "" ? named : envelope.sessionId);
 }
 
 export function payloadUnparseable(): GateOutcome {

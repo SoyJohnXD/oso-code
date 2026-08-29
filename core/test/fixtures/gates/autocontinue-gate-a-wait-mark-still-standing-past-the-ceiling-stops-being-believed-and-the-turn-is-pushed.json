@@ -1,10 +1,10 @@
 {
   "name": "autocontinue gate: a wait mark still standing past the ceiling stops being believed and the turn is pushed",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 4887, "assertion": "arm_unattended_run\noso-state --session \"$SESSION\" set auto_wait=wave-2 >/dev/null\nauto_expiry_verdicts=\" $(auto_stop_verdict \"$(auto_stop_input)\")\"\ntouch -t 200001010000 \"$AUTO_WAIT_MARK\"" },
-    { "file": "tests/hooks-test.sh", "line": 4891, "assertion": "run_hook auto-continue.sh \"$(auto_stop_input)\"" },
-    { "file": "tests/hooks-test.sh", "line": 4892, "assertion": "assert_after_hook \"a wait mark still standing past the ceiling stops being believed, and the turn is pushed\" \\\n  hook_returned_block" },
-    { "file": "tests/hooks-test.sh", "line": 4899, "assertion": "assert_equals \"the push that follows an expired mark hands over the stale mark instead of repeating the plain order\" \\\n  \"dated\" \"$auto_expired_wording\"" }
+    { "file": "tests/hooks-test.sh", "line": 4864, "assertion": "arm_unattended_run\noso-state --session \"$SESSION\" set auto_wait=wave-2 >/dev/null\nauto_expiry_verdicts=\" $(auto_stop_verdict \"$(auto_stop_input)\")\"\ntouch -t 200001010000 \"$AUTO_WAIT_MARK\"" },
+    { "file": "tests/hooks-test.sh", "line": 4868, "assertion": "run_hook auto-continue.sh \"$(auto_stop_input)\"" },
+    { "file": "tests/hooks-test.sh", "line": 4869, "assertion": "assert_after_hook \"a wait mark still standing past the ceiling stops being believed, and the turn is pushed\" \\\n  hook_returned_block" },
+    { "file": "tests/hooks-test.sh", "line": 4876, "assertion": "assert_equals \"the push that follows an expired mark hands over the stale mark instead of repeating the plain order\" \\\n  \"dated\" \"$auto_expired_wording\"" }
   ],
   "gate": "autocontinue",
   "argv": [],

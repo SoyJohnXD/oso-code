@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 4702,
+      "line": 4679,
       "assertion": "assert_equals \"an over-length or out-of-charset change slug journals under the fallback, never under itself\" \\\n  \"run.log|the slug ran past 64 characters>the slug shouted>the slug carried a space>\" \\\n  \"$(ls \"$JOURNAL_DIR\" 2>/dev/null || true)|$(journal_texts_in \"$JOURNAL_DIR/run.log\")\""
     }
   ],

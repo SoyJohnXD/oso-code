@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 1949,
+      "line": 1929,
       "assertion": "if printf '%s' 'invalid slice' | oso-state --session \"$SESSION\" amend-plan '../escape' >/dev/null 2>&1; then\n  echo \"FAIL: amend-plan accepted an unsafe slice id\"; fail=$((fail + 1))\nelse\n  echo \"ok: amend-plan rejects an unsafe slice id\"; pass=$((pass + 1))\nfi"
     }
   ],

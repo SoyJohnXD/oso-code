@@ -13,6 +13,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 
 export class LockTimeoutError extends Error {
@@ -56,6 +57,8 @@ export function sha256Hex(value: string): string {
 }
 
 export function stateRootDirectory(): string {
+  const configured = process.env["OSO_STATE_DIR"];
+  if (configured !== undefined && configured !== "") return configured;
   return path.join(homeDirectory(), ".local", "state", "oso-code");
 }
 
@@ -119,6 +122,15 @@ export function writeStatePairs(stateFile: string, pairs: readonly string[], ses
   }
   const tempFile = createTempFile(directory, serializeStateLines(lines));
   renameSync(tempFile, stateFile);
+}
+
+export function writeStateValues(cwd: string, sessionId: string, pairs: readonly string[]): void {
+  const stateFile = stateFileFor(cwd);
+  mkdirSync(stateRootDirectory(), { recursive: true });
+  withLock(stateFile, sessionId, () => {
+    writeStatePairs(stateFile, pairs, sessionId);
+    logEvent({ event: `set:${pairs.join(" ")}`, session: sessionId });
+  });
 }
 
 export function clearStateFile(stateFile: string): void {
@@ -207,23 +219,32 @@ export type LoggedEvent = Readonly<{
   hookEvent?: string;
 }>;
 
-export function logEvent(entry: LoggedEvent): void {
+export function logEvent(entry: LoggedEvent): boolean {
   const line = serializeEvent(entry);
   const eventsLog = path.join(stateRootDirectory(), "events.jsonl");
   try {
     mkdirSync(path.dirname(eventsLog), { recursive: true });
     withOwnerOnlyUmask(() => appendFileSync(eventsLog, `${line}\n`));
+    return true;
   } catch {
     process.stderr.write(`${line}\n`);
+    return false;
   }
 }
 
-function homeDirectory(): string {
-  const home = process.env["HOME"];
-  if (home === undefined || home === "") {
-    throw new Error("HOME is not set");
+export function homeDirectoryFrom(platform: NodeJS.Platform, environment: NodeJS.ProcessEnv): string {
+  if (platform === "win32") {
+    const profile = environment["USERPROFILE"] ?? homedir();
+    if (profile === "") throw new Error("USERPROFILE is not set");
+    return profile;
   }
+  const home = environment["HOME"];
+  if (home === undefined || home === "") throw new Error("HOME is not set");
   return home;
+}
+
+export function homeDirectory(): string {
+  return homeDirectoryFrom(process.platform, process.env);
 }
 
 function gitCommonDirectory(cwd: string): string {

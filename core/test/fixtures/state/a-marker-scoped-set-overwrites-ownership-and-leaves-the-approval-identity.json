@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2059,
+      "line": 2039,
       "assertion": "assert_equals \"a marker-scoped model write overwrites ownership, not approval\" \\\n  1 \"$(oso-state --session \"$SESSION\" get session)\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 2061,
+      "line": 2041,
       "assertion": "assert_equals \"the approval identity survives the marker-scoped write\" \\\n  \"$SESSION\" \"$(oso-state --session \"$SESSION\" get plan_approval_session)\""
     }
   ],

@@ -1,7 +1,11 @@
+import type { HostName } from "../routes/routes.ts";
 import type { LoggedEvent } from "../state/store.ts";
 import { MAX_LEXED_INPUT_BYTES } from "../shell/lexer.ts";
 
+export type HookCaller = Readonly<{ host: HostName; agentSession: string; stateBin: string }>;
+
 export type HookEnvelope = Readonly<{
+  caller: HookCaller;
   sessionId: string;
   cwd: string;
   toolName: string;
@@ -55,8 +59,32 @@ const JSON_SPACE = "[\\t\\n\\v\\f\\r ]";
 
 const STOP_HOOK_ACTIVE = new RegExp(`"stop_hook_active"${JSON_SPACE}*:${JSON_SPACE}*true`);
 
-export function readEnvelope(payload: string): HookEnvelope {
+const NO_HOOK_FIELD_NAMED: Omit<HookEnvelope, "caller"> = {
+  sessionId: "",
+  cwd: "",
+  toolName: "",
+  filePath: "",
+  commandLine: "",
+  source: "",
+  agentId: "",
+  agentType: "",
+  permissionMode: "",
+  transcriptPath: "",
+  turnId: "",
+  lastAssistantMessage: "",
+  escapedLastAssistantMessage: "",
+  prompt: "",
+  escapedPrompt: "",
+  stopHookActive: false,
+};
+
+export function hostEnvelope(caller: HookCaller, named: Partial<Omit<HookEnvelope, "caller">>): HookEnvelope {
+  return { ...NO_HOOK_FIELD_NAMED, ...named, caller };
+}
+
+export function readEnvelope(payload: string, caller: HookCaller): HookEnvelope {
   return {
+    caller,
     sessionId: jsonField(payload, "session_id"),
     cwd: jsonField(payload, "cwd"),
     toolName: jsonField(payload, "tool_name"),

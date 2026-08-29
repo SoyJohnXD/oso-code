@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6698,
+      "line": 6675,
       "assertion": "assert_denies \"an expansion inside a resolved git path is still a deny\" \\\n  block-commit-until-green.sh \"$(bash_input '/opt/${tools}/git commit -m x')\""
     }
   ],

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
 import { runGate } from "../../src/gates/dispatch.ts";
+import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { withStateSandbox } from "../support/state-sandbox.ts";
 
 const STATE_FILE = ".local/state/oso-code/{repo}.state";
@@ -13,7 +14,7 @@ test(
     withStateSandbox("workspace", (sandbox) => {
       sandbox.seed({ [STATE_FILE]: "mode=plan\nsession=other-session\n" });
       const stdin = sandbox.expandJson('{"cwd":"{cwd}"}');
-      const run = withHookEnvironment({ HOME: sandbox.home }, () => runGate(["stale"], stdin));
+      const run = withHookEnvironment({ HOME: sandbox.home }, () => runGate(["stale"], spawnedEnvelope(stdin, process.env)));
       assert.equal(run.exit, 0);
       assert.match(run.stdout, /"additionalContext"/);
     });

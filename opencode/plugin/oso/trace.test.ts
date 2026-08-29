@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -9,17 +9,18 @@ function fixtureDir(): string {
   return mkdtempSync(join(tmpdir(), "oso-trace-test-"));
 }
 
-function fakeStateBin(dir: string, exitCode: number): string {
-  const path = join(dir, "oso-state");
-  const callsFile = join(dir, "calls");
-  const script = [
-    `const { appendFileSync } = require("node:fs");`,
-    `appendFileSync(${JSON.stringify(callsFile)}, process.argv.slice(2).join(" ") + "\\n");`,
-    `process.exit(${exitCode});`,
-    "",
-  ].join("\n");
-  writeFileSync(path, script);
-  return path;
+function eventsLogUnder(dir: string): string {
+  return join(dir, "state", "events.jsonl");
+}
+
+function stateRootTheSinkCanWrite(dir: string): string {
+  return join(dir, "state");
+}
+
+function stateRootNoDirectoryCanBe(dir: string): string {
+  const blocking = join(dir, "a-regular-file");
+  writeFileSync(blocking, "");
+  return join(blocking, "state");
 }
 
 function withConsoleError<T>(run: (lines: string[]) => T): T {
@@ -57,12 +58,11 @@ test("sink precedence is state, then log, then toast", () => {
   assert.deepEqual(TRACE_SINK_ORDER, ["state", "log", "toast"]);
 });
 
-test("every sink is attempted in that order and reported back", () => {
+test("every sink is attempted in that order and reported back, the state one writing the run's own event log", () => {
   const dir = fixtureDir();
-  const bin = fakeStateBin(dir, 0);
   const toastCalls: unknown[] = [];
   const client = { tui: { showToast: (input: unknown) => { toastCalls.push(input); } } };
-  const results = withEnv("OSO_STATE_BIN", bin, () =>
+  const results = withEnv("OSO_STATE_DIR", stateRootTheSinkCanWrite(dir), () =>
     withConsoleError(() =>
       recordTrace({ origin: "test-origin", detail: "test-detail", sessionID: "ses-1", client }),
     ),
@@ -70,32 +70,30 @@ test("every sink is attempted in that order and reported back", () => {
   assert.deepEqual(results.map((r) => r.sink), ["state", "log", "toast"]);
   assert.equal(results.every((r) => r.ok), true);
   assert.equal(toastCalls.length, 1);
+  assert.match(readFileSync(eventsLogUnder(dir), "utf8"), /"event":"test-origin"[\s\S]*"session":"ses-1"/);
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("a missing sessionID leaves the state sink unavailable without spawning anything", () => {
+test("a missing sessionID leaves the state sink unavailable without writing anything", () => {
   const dir = fixtureDir();
-  const bin = fakeStateBin(dir, 0);
-  const results = withEnv("OSO_STATE_BIN", bin, () =>
+  const results = withEnv("OSO_STATE_DIR", stateRootTheSinkCanWrite(dir), () =>
     withConsoleError(() => recordTrace({ origin: "install-check", detail: "no session yet" })),
   );
   const stateResult = results.find((r) => r.sink === "state");
   assert.equal(stateResult?.ok, false);
-  assert.throws(() => readFileSync(join(dir, "calls"), "utf8"));
+  assert.equal(existsSync(eventsLogUnder(dir)), false);
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("a failing state sink is never retried, and the log line records the state failure once", () => {
+test("a state sink that cannot write is reported once on the log line, never retried", () => {
   const dir = fixtureDir();
-  const bin = fakeStateBin(dir, 1);
-  const lines = withEnv("OSO_STATE_BIN", bin, () =>
+  const lines = withEnv("OSO_STATE_DIR", stateRootNoDirectoryCanBe(dir), () =>
     withConsoleError((captured) => {
       recordTrace({ origin: "test-origin", detail: "boom", sessionID: "ses-1" });
       return captured;
     }),
   );
-  const calls = readFileSync(join(dir, "calls"), "utf8").trim().split("\n");
-  assert.equal(calls.length, 1);
+  assert.equal(existsSync(eventsLogUnder(dir)), false);
   assert.equal(lines.length, 1);
   assert.match(lines[0]!, /state sink also failed/);
   rmSync(dir, { recursive: true, force: true });

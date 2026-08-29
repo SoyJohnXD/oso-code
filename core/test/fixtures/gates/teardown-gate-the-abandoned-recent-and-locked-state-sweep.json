@@ -1,11 +1,11 @@
 {
   "name": "teardown gate: the abandoned-state sweep prunes what is old and unlocked, keeps what is recent or locked",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 5864, "assertion": "run_hook cleanup-state.sh \"$(printf '{\"session_id\":\"%s\"}' \"$SESSION\")\"" },
-    { "file": "tests/hooks-test.sh", "line": 5865, "assertion": "assert_pruned \"state left by a session that ended weeks ago is swept\" \"$abandoned_state\"" },
-    { "file": "tests/hooks-test.sh", "line": 5866, "assertion": "assert_kept   \"state written within the week survives the sweep\"      \"$recent_state\"" },
-    { "file": "tests/hooks-test.sh", "line": 5867, "assertion": "assert_kept   \"state held by a live lock survives whatever its age\"   \"$locked_state\"" },
-    { "file": "tests/hooks-test.sh", "line": 5868, "assertion": "assert_pruned \"the ending session's own state is still removed\"       \"$REPO_STATE\"" }
+    { "file": "tests/hooks-test.sh", "line": 5862, "assertion": "run_hook cleanup-state.sh \"$(printf '{\"session_id\":\"%s\"}' \"$SESSION\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 5842, "assertion": "assert_pruned \"state left by a session that ended weeks ago is swept\" \"$abandoned_state\"" },
+    { "file": "tests/hooks-test.sh", "line": 5843, "assertion": "assert_kept   \"state written within the week survives the sweep\"      \"$recent_state\"" },
+    { "file": "tests/hooks-test.sh", "line": 5844, "assertion": "assert_kept   \"state held by a live lock survives whatever its age\"   \"$locked_state\"" },
+    { "file": "tests/hooks-test.sh", "line": 5845, "assertion": "assert_pruned \"the ending session's own state is still removed\"       \"$REPO_STATE\"" }
   ],
   "gate": "teardown",
   "argv": [],

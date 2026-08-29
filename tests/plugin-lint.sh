@@ -76,8 +76,7 @@ shell_comment_citations() {
 
 typescript_comment_citations() {
   { grep -nE "(//|^[[:space:]]*\*).*($DECISION_ID_RE)" \
-      "$REPO_ROOT"/opencode/plugin/*.ts "$REPO_ROOT"/opencode/plugin/oso/*.ts \
-      "$REPO_ROOT"/opencode/hooks/*.ts 2>&1 || true; } \
+      "$REPO_ROOT"/opencode/plugin/*.ts "$REPO_ROOT"/opencode/plugin/oso/*.ts 2>&1 || true; } \
     | cut -d: -f1,2
 }
 
@@ -424,23 +423,21 @@ check_every_dot_directory_is_repo_owned_or_ignored() {
   done <<< "$(dot_directories_at_the_repository_root)"
 }
 
-OPENCODE_ROUTE_TABLE=opencode/hooks/routes.ts
+OPENCODE_PLUGIN_BUNDLE=opencode/dist/oso-code.js
 
-check_the_opencode_route_table_matches_its_render() {
-  local renderer="$REPO_ROOT/tools/render-hooks-json.sh" rendered committed
-  if ! is_executable_regular_file "$renderer"; then
-    flag "tools/render-hooks-json.sh is missing or not executable"
+check_the_opencode_plugin_ships_as_one_bundled_file() {
+  local bundle="$REPO_ROOT/$OPENCODE_PLUGIN_BUNDLE" source_modules
+  if [ ! -s "$bundle" ]; then
+    flag "$OPENCODE_PLUGIN_BUNDLE is missing or empty, so the one file the OpenCode host loads is not in the tree"
     return 0
   fi
-  rendered="$(mktemp "${TMPDIR:-/tmp}/oso-opencode-routes.XXXXXX")"
-  "$renderer" --repo-root "$REPO_ROOT" --host opencode > "$rendered" 2>/dev/null || true
-  committed="$REPO_ROOT/$OPENCODE_ROUTE_TABLE"
-  if [ ! -s "$rendered" ] || [ ! -s "$committed" ]; then
-    flag "the opencode route render or the committed $OPENCODE_ROUTE_TABLE is empty, so this rule compared nothing"
-  elif ! cmp -s "$rendered" "$committed"; then
-    flag "$OPENCODE_ROUTE_TABLE diverges from what tools/render-hooks-json.sh renders out of tools/hook-gates.txt, so the one host the bash renderer still owns is reading a table nothing regenerated"
+  if ! grep -q 'osoCode' "$bundle"; then
+    flag "$OPENCODE_PLUGIN_BUNDLE carries no osoCode entry, so whatever it is the host would load nothing from it"
   fi
-  rm -f "$rendered"
+  source_modules="$(grep -c 'PLUGIN_SOURCE\|opencode/plugin/oso/' "$REPO_ROOT/bootstrap/install-opencode.sh" || true)"
+  if [ "$source_modules" != "0" ]; then
+    flag "bootstrap/install-opencode.sh still names TypeScript plugin sources, so the installed import graph is not the single $OPENCODE_PLUGIN_BUNDLE it must be"
+  fi
 }
 
 check_parity_docs_agree_on_harness_version() {
@@ -599,7 +596,7 @@ check_executables_carry_no_decision_citations
 check_shell_sources_carry_no_comment_below_their_contract_header
 check_no_shipped_file_carries_the_home_path_of_whoever_runs_this
 check_every_dot_directory_is_repo_owned_or_ignored
-check_the_opencode_route_table_matches_its_render
+check_the_opencode_plugin_ships_as_one_bundled_file
 check_parity_docs_agree_on_harness_version
 check_platform_section_inventory_is_matched_or_declared
 check_every_host_wraps_every_skill

@@ -4,194 +4,240 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { routes, type OpenCodeGateRoute } from "../../hooks/routes.ts";
+import { type OpenCodeRoute } from "@oso-code/core";
 import {
   assertGateRoutesCompile,
-  checkHarnessInstalled,
   composeEnvelope,
+  composeLifecycleEnvelope,
   matchesTool,
-  resolveHookScript,
-  resolveStateBin,
-  runGate,
-  type GateVerdict,
+  routeForGate,
+  routes,
+  runAdvisoryGate,
+  runToolGate,
   type ToolExecuteInput,
   type ToolExecuteOutput,
 } from "./gates.ts";
 import { publishIdentity } from "./identity.ts";
+import { stateBinPath } from "./installed-tree.ts";
+import { armStateUnder, underFixtureHome } from "../../test-support/state-fixture.ts";
 
-function fixtureDir(): string {
-  return mkdtempSync(join(tmpdir(), "oso-gates-test-"));
+const PRODUCTION_DEPLOY = "vercel --prod";
+const A_GATE_CORE_DOES_NOT_KNOW = "frobnicate" as OpenCodeRoute["gate"];
+const ARMED_SLICE_SESSION = "ses-armed";
+
+interface Fixture {
+  base: string;
+  repo: string;
+  home: string;
+  owner: string;
 }
 
-function repositoryShapedDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "oso-gates-repo-"));
-  mkdirSync(join(dir, ".git", "objects"), { recursive: true });
-  writeFileSync(join(dir, ".git", "HEAD"), "ref: refs/heads/main\n");
-  return dir;
+function makeFixture(): Fixture {
+  const base = mkdtempSync(join(tmpdir(), "oso-gates-"));
+  const repo = join(base, "repo");
+  const home = join(base, "home");
+  mkdirSync(join(repo, ".git", "objects"), { recursive: true });
+  writeFileSync(join(repo, ".git", "HEAD"), "ref: refs/heads/main\n");
+  mkdirSync(home, { recursive: true });
+  return { base, repo, home, owner: publishIdentity(repo).OSO_AGENT };
 }
 
-const ENVELOPE_READ = 'envelope="$(cat)"\n';
-
-function writeGate(dir: string, name: string, body: string): string {
-  const path = join(dir, name);
-  writeFileSync(path, `${ENVELOPE_READ}${body}`, { mode: 0o755 });
-  return path;
+function inHome<T>(fixture: Fixture, run: () => T): T {
+  return underFixtureHome(fixture.home, run);
 }
 
-function writeGateVerbatim(dir: string, name: string, body: string): string {
-  const path = join(dir, name);
-  writeFileSync(path, body, { mode: 0o755 });
-  return path;
+function arm(fixture: Fixture, pairs: readonly string[]): void {
+  armAs(fixture, fixture.owner, pairs);
 }
 
-const DENY_JSON =
-  '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"the remedy"}}';
+function armAs(fixture: Fixture, owner: string, pairs: readonly string[]): void {
+  armStateUnder(fixture.home, fixture.repo, owner, pairs);
+}
 
-const route = (script: string, allow: readonly string[] = []): OpenCodeGateRoute => ({
-  hook: "tool.execute.before",
-  gate: "test",
-  script,
-  matcher: ".*",
-  allow,
-});
+function toolCall(tool: string, args: Record<string, unknown>): [ToolExecuteInput, ToolExecuteOutput] {
+  return [{ tool, sessionID: "ses-tool", callID: "call-1" }, { args }];
+}
 
-const input: ToolExecuteInput = { tool: "bash", sessionID: "ses-test", callID: "call-1", cwd: tmpdir() };
-const output: ToolExecuteOutput = { args: {} };
+function gateOf(gate: string): OpenCodeRoute {
+  const route = routeForGate(routes, gate);
+  assert.ok(route !== undefined, `no route names the ${gate} gate`);
+  return route;
+}
 
-function denyEchoingGate(dir: string, name: string, envelopeVar: string): void {
-  writeGate(
-    dir,
-    name,
-    `printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\\n' "${envelopeVar}"\nexit 0\n`,
+function judgeTool(fixture: Fixture, gate: string, tool: string, args: Record<string, unknown>): {
+  kind: string;
+  message: string;
+} {
+  const [input, output] = toolCall(tool, args);
+  return inHome(fixture, () =>
+    runToolGate(gateOf(gate), { ...input, cwd: fixture.repo }, output));
+}
+
+test("the route table the adapter runs is the one core derives, and every matcher in it compiles", () => {
+  assert.ok(routes.length > 0, "the adapter was handed no routes at all");
+  assert.doesNotThrow(() => assertGateRoutesCompile(routes));
+  assert.throws(
+    () => assertGateRoutesCompile([{ ...gateOf("commit"), matcher: "(unclosed" }]),
+    /\(unclosed/,
   );
-}
-
-function run(dir: string, r: OpenCodeGateRoute, i = input, o = output): GateVerdict {
-  return runGate(r, i, o, { hooksDir: dir, timeoutMs: 2_000 });
-}
-
-test("deny: exit 0 with a deny JSON throws a deny verdict carrying the reason", () => {
-  const dir = fixtureDir();
-  writeGate(dir, "deny.sh", `printf '%s\n' '${DENY_JSON}'\nexit 0\n`);
-  const verdict = run(dir, route("deny.sh"));
-  assert.equal(verdict.kind, "deny");
-  assert.equal(verdict.message, "the remedy");
-  rmSync(dir, { recursive: true, force: true });
 });
 
-test("allow: exit 0 with empty stdout is a pass-through", () => {
-  const dir = fixtureDir();
-  writeGate(dir, "allow.sh", "exit 0\n");
-  const verdict = run(dir, route("allow.sh"));
-  assert.equal(verdict.kind, "allow");
-  rmSync(dir, { recursive: true, force: true });
+test("an unarmed repository lets a commit through", () => {
+  const fixture = makeFixture();
+  try {
+    const verdict = judgeTool(fixture, "commit", "bash", { command: "git commit -m x" });
+    assert.equal(verdict.kind, "allow");
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
 });
 
-test("allow: exit 0 with non-decision stdout is a pass-through", () => {
-  const dir = fixtureDir();
-  writeGate(dir, "noise.sh", "printf 'not a verdict\\n'\nexit 0\n");
-  const verdict = run(dir, route("noise.sh"));
-  assert.equal(verdict.kind, "allow");
-  rmSync(dir, { recursive: true, force: true });
+test("a red slice denies the commit in-process, carrying the gate's own remedy", () => {
+  const fixture = makeFixture();
+  try {
+    arm(fixture, ["mode=plan", "active_slice=4", "verify_green=false"]);
+    const verdict = judgeTool(fixture, "commit", "bash", { command: "git commit -m x" });
+    assert.equal(verdict.kind, "deny");
+    assert.match(verdict.message, /oso-code/);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
 });
 
-test("block: exit 2 with stderr is a block carrying the stderr message", () => {
-  const dir = fixtureDir();
-  writeGate(dir, "block.sh", "printf 'oso-code: gate exploded\\n' >&2\nexit 2\n");
-  const verdict = run(dir, route("block.sh"));
-  assert.equal(verdict.kind, "block");
-  assert.equal(verdict.message, "oso-code: gate exploded");
-  rmSync(dir, { recursive: true, force: true });
+test("an armed unattended run denies a production deploy in-process", () => {
+  const fixture = makeFixture();
+  try {
+    arm(fixture, ["auto=running", "auto_change=gate-probe"]);
+    const verdict = judgeTool(fixture, "proddeploy", "bash", { command: PRODUCTION_DEPLOY });
+    assert.equal(verdict.kind, "deny");
+    assert.match(verdict.message, /a production deploy stays with the operator/);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
 });
 
-test("unexpected exit blocks fail-closed with the stderr message", () => {
-  const dir = fixtureDir();
-  writeGate(dir, "crash.sh", "printf 'boom\\n' >&2\nexit 3\n");
-  const verdict = run(dir, route("crash.sh"));
-  assert.equal(verdict.kind, "block");
-  assert.equal(verdict.message, "boom");
-  rmSync(dir, { recursive: true, force: true });
+test("an edit with no slice armed is denied and names the state write that arms one", () => {
+  const fixture = makeFixture();
+  try {
+    arm(fixture, ["mode=plan", "active_slice=none", "verify_green=false"]);
+    const verdict = judgeTool(fixture, "edits", "edit", { filePath: join(fixture.repo, "a.ts") });
+    assert.equal(verdict.kind, "deny");
+    assert.match(verdict.message, /oso-state/);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
 });
 
-test("unexpected exit with no stderr blocks fail-closed with a named message", () => {
-  const dir = fixtureDir();
-  writeGate(dir, "silent-crash.sh", "exit 3\n");
-  const verdict = run(dir, route("silent-crash.sh"));
-  assert.equal(verdict.kind, "block");
-  assert.match(verdict.message, /silent-crash\.sh/);
-  assert.match(verdict.message, /exit 3/);
-  rmSync(dir, { recursive: true, force: true });
+test("the unknown-tool gate is handed its route's own allowlist, so a listed tool passes and a stranger does not", () => {
+  const fixture = makeFixture();
+  try {
+    arm(fixture, ["mode=plan", "active_slice=4", "verify_green=false"]);
+    assert.equal(judgeTool(fixture, "unknown", "bash", {}).kind, "allow");
+    const stranger = judgeTool(fixture, "unknown", "frobnicate", {});
+    assert.equal(stranger.kind, "deny");
+    assert.match(stranger.message, /OpenCode hook allowlist/);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
 });
 
-test("a timed-out gate blocks", () => {
-  const dir = fixtureDir();
-  writeGate(dir, "hang.sh", "sleep 30\n");
-  const verdict = run(dir, route("hang.sh"));
-  assert.equal(verdict.kind, "block");
-  rmSync(dir, { recursive: true, force: true });
+test("a gate core cannot run blocks the call fail-closed, carrying the gate error core reports", () => {
+  const fixture = makeFixture();
+  try {
+    const [input, output] = toolCall("bash", { command: "git commit -m x" });
+    const verdict = inHome(fixture, () =>
+      runToolGate({ ...gateOf("commit"), gate: A_GATE_CORE_DOES_NOT_KNOW }, { ...input, cwd: fixture.repo }, output));
+    assert.equal(verdict.kind, "block");
+    assert.match(verdict.message, /blocked this call instead of opening the gate/);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
 });
 
-const A_COMMAND_TOO_LONG_FOR_THE_PIPE_BUFFER = "x".repeat(2_000_000);
-
-const oversizedCall: ToolExecuteOutput = { args: { command: A_COMMAND_TOO_LONG_FOR_THE_PIPE_BUFFER } };
-
-test("a gate that dies whenever it is handed an envelope blocks at every command length", () => {
-  const dir = fixtureDir();
-  writeGateVerbatim(dir, "dies-on-its-envelope.sh", 'if IFS= read -r -n1 _; then kill -9 $$; fi\nexit 0\n');
-  const shortCommand = run(dir, route("dies-on-its-envelope.sh"), input, { args: { command: "git commit -m x" } });
-  const longCommand = run(dir, route("dies-on-its-envelope.sh"), input, oversizedCall);
-  assert.deepEqual([shortCommand.kind, longCommand.kind], ["block", "block"]);
-  rmSync(dir, { recursive: true, force: true });
+test("the stale advisory reaches the host as context, spelling this host's own skill prefix", () => {
+  const fixture = makeFixture();
+  try {
+    armAs(fixture, "another-session", ["mode=plan", "active_slice=4", "verify_green=false"]);
+    const outcome = inHome(fixture, () =>
+      runAdvisoryGate(gateOf("stale"), { sessionID: "ses-other", directory: fixture.repo, moment: "startup" }));
+    assert.equal(outcome.kind, "context");
+    assert.match(outcome.kind === "context" ? outcome.text : "", /\/oso-plan/);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
 });
 
-test("a gate that exits 0 without reading its envelope decided on nothing, so it blocks rather than allows", () => {
-  const dir = fixtureDir();
-  writeGateVerbatim(dir, "unread.sh", "exit 0\n");
-  const verdict = run(dir, route("unread.sh"), input, oversizedCall);
-  assert.equal(verdict.kind, "block");
-  assert.match(verdict.message, /before reading its envelope/);
-  rmSync(dir, { recursive: true, force: true });
+test("a repository with no state at all leaves the stale advisory silent", () => {
+  const fixture = makeFixture();
+  try {
+    const outcome = inHome(fixture, () =>
+      runAdvisoryGate(gateOf("stale"), { sessionID: "ses-other", directory: fixture.repo, moment: "startup" }));
+    assert.equal(outcome.kind, "silent");
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
 });
 
-test("a missing gate script blocks fail-closed", () => {
-  const verdict = runGate(route("absent.sh"), input, output, {
-    hooksDir: fixtureDir(),
-    timeoutMs: 2_000,
-  });
-  assert.equal(verdict.kind, "block");
-  assert.match(verdict.message, /not found/);
+test("teardown produces no advisory of its own", () => {
+  const fixture = makeFixture();
+  try {
+    arm(fixture, ["mode=plan"]);
+    const outcome = inHome(fixture, () =>
+      runAdvisoryGate(gateOf("teardown"), { sessionID: ARMED_SLICE_SESSION, directory: fixture.repo, moment: "end" }));
+    assert.equal(outcome.kind, "silent");
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
 });
 
-test("envelope: the bash command line becomes the command field", () => {
-  const envelope = composeEnvelope(input, { args: { script: "git commit -m x" } });
-  assert.equal(envelope.command, "git commit -m x");
-  assert.equal(envelope.session_id, "ses-test");
-  assert.equal(envelope.cwd, input.cwd);
-  assert.equal(envelope.tool_name, "bash");
+test("envelope: the bash command line becomes the command the lexer reads", () => {
+  const [input, output] = toolCall("bash", { script: "git commit -m x" });
+  const envelope = composeEnvelope(input, output);
+  assert.equal(envelope.commandLine, "git commit -m x");
+  assert.equal(envelope.sessionId, "ses-tool");
+  assert.equal(envelope.toolName, "bash");
 });
 
 test("envelope: a command-bearing tool without a script keeps its command", () => {
-  const envelope = composeEnvelope(input, { args: { command: "apply_patch x" } });
-  assert.equal(envelope.command, "apply_patch x");
+  const envelope = composeEnvelope(...toolCall("apply_patch", { command: "apply_patch x" }));
+  assert.equal(envelope.commandLine, "apply_patch x");
 });
 
-test("envelope: filePath maps to file_path", () => {
-  const envelope = composeEnvelope(input, { args: { filePath: "/repo/src/a.ts" } });
-  assert.equal(envelope.file_path, "/repo/src/a.ts");
-});
-
-test("envelope: a missing filePath stays absent from the envelope", () => {
-  const envelope = composeEnvelope(input, { args: {} });
-  assert.equal("file_path" in envelope, false);
+test("envelope: filePath is the file the edits gate judges, and its absence is the empty name", () => {
+  assert.equal(composeEnvelope(...toolCall("edit", { filePath: "/repo/src/a.ts" })).filePath, "/repo/src/a.ts");
+  assert.equal(composeEnvelope(...toolCall("edit", {})).filePath, "");
 });
 
 test("envelope: cwd falls back to the process working directory", () => {
-  const envelope = composeEnvelope({ tool: "bash", sessionID: "s" }, { args: {} });
+  const envelope = composeEnvelope({ tool: "bash" }, { args: {} });
   assert.equal(envelope.cwd, process.cwd());
 });
 
+test("envelope: the caller it carries names this host, its own root identity and the installed state binary", () => {
+  const fixture = makeFixture();
+  try {
+    const [input, output] = toolCall("bash", {});
+    const envelope = composeEnvelope({ ...input, cwd: fixture.repo }, output);
+    assert.deepEqual(envelope.caller, {
+      host: "opencode",
+      agentSession: fixture.owner,
+      stateBin: stateBinPath(),
+    });
+    assert.notEqual(envelope.caller.agentSession, envelope.sessionId);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
+});
+
+test("lifecycle envelope: the moment becomes the source every SessionStart gate reads, and end names none", () => {
+  const startup = composeLifecycleEnvelope({ sessionID: "s", directory: process.cwd(), moment: "startup" });
+  const compact = composeLifecycleEnvelope({ sessionID: "s", directory: process.cwd(), moment: "compact" });
+  const end = composeLifecycleEnvelope({ sessionID: "s", directory: process.cwd(), moment: "end" });
+  assert.deepEqual([startup.source, compact.source, end.source], ["startup", "compact", ""]);
+});
+
 test("matcher: an edits matcher applies to the native writers and nothing else", () => {
-  const matcher = "edit|write|fallow_fix_apply|apply_patch";
+  const matcher = gateOf("edits").matcher;
   assert.equal(matchesTool(matcher, "edit"), true);
   assert.equal(matchesTool(matcher, "write"), true);
   assert.equal(matchesTool(matcher, "apply_patch"), true);
@@ -200,136 +246,30 @@ test("matcher: an edits matcher applies to the native writers and nothing else",
 });
 
 test("matcher: a catch-all matcher applies to any tool", () => {
-  assert.equal(matchesTool(".*", "anything_else"), true);
+  assert.equal(matchesTool(gateOf("unknown").matcher, "anything_else"), true);
 });
 
 test("matcher: a matcher no regular expression compiles from is a broken route table, never an empty match set", () => {
   assert.throws(() => matchesTool("(unclosed", "bash"), /gate route table/);
 });
 
-test("matcher: every route the installed table carries is compiled before any tool call reaches it", () => {
-  assert.throws(
-    () => assertGateRoutesCompile([route("any.sh"), { ...route("any.sh"), matcher: "(unclosed" }]),
-    /\(unclosed/,
-  );
-  assert.doesNotThrow(() => assertGateRoutesCompile(routes));
-});
-
-test("allow list: the unknown-tool gate receives its route allow list", () => {
-  const dir = fixtureDir();
-  writeGate(
-    dir,
-    "allowcheck.sh",
-    'if [ "${1:-}" = --allow ] && [ "${2:-}" = "edit|write" ]; then exit 0; fi\nprintf \'%s\\n\' \'' + DENY_JSON + "'\nexit 0\n",
-  );
-  const allowed = run(dir, route("allowcheck.sh", ["edit", "write"]));
-  assert.equal(allowed.kind, "allow");
-  const without = run(dir, route("allowcheck.sh"));
-  assert.equal(without.kind, "deny");
-  rmSync(dir, { recursive: true, force: true });
-});
-
-test("harness install check: every referenced script present is installed", () => {
-  const dir = fixtureDir();
-  writeGate(dir, "a.sh", "exit 0\n");
-  writeGate(dir, "b.sh", "exit 0\n");
-  const status = checkHarnessInstalled([route("a.sh"), route("b.sh")], { hooksDir: dir });
-  assert.equal(status.installed, true);
-  assert.deepEqual(status.missing, []);
-  rmSync(dir, { recursive: true, force: true });
-});
-
-test("harness install check: a missing script is reported and not installed", () => {
-  const dir = fixtureDir();
-  writeGate(dir, "a.sh", "exit 0\n");
-  const status = checkHarnessInstalled([route("a.sh"), route("absent.sh")], { hooksDir: dir });
-  assert.equal(status.installed, false);
-  assert.match(status.missing[0] ?? "", /absent\.sh$/);
-  rmSync(dir, { recursive: true, force: true });
-});
-
-test("harness install check: the same missing script referenced by two routes is reported once", () => {
-  const dir = fixtureDir();
-  const status = checkHarnessInstalled([route("absent.sh"), route("absent.sh")], { hooksDir: dir });
-  assert.equal(status.installed, false);
-  assert.equal(status.missing.length, 1);
-  rmSync(dir, { recursive: true, force: true });
-});
-
-test("the gate reads the envelope it is handed", () => {
-  const dir = fixtureDir();
-  writeGate(
-    dir,
-    "reads.sh",
-    'case "$envelope" in *"\\"command\\":\\"git commit\\""*"\\"session_id\\":\\"ses-test\\""*) exit 0 ;; *) exit 2 ;;\nesac\n',
-  );
-  const verdict = run(dir, route("reads.sh"), input, { args: { script: "git commit" } });
-  assert.equal(verdict.kind, "allow");
-  rmSync(dir, { recursive: true, force: true });
-});
-
-test("the gate is spawned with its process cwd set to the call's cwd", () => {
-  const dir = fixtureDir();
-  const callCwd = mkdtempSync(join(tmpdir(), "oso-gates-cwd-"));
-  denyEchoingGate(dir, "cwd.sh", "$PWD");
-  const verdict = run(dir, route("cwd.sh"), { ...input, cwd: callCwd });
-  assert.equal(verdict.kind, "deny");
-  assert.equal(verdict.message, callCwd);
-  rmSync(dir, { recursive: true, force: true });
-  rmSync(callCwd, { recursive: true, force: true });
-});
-
-test("the gate is spawned with OSO_AGENT set to the call directory's root session id, never the host's own", () => {
-  const dir = fixtureDir();
-  const callCwd = repositoryShapedDir();
-  denyEchoingGate(dir, "agent.sh", "$OSO_AGENT");
-  const verdict = run(dir, route("agent.sh"), { ...input, sessionID: "ses-agent-check", cwd: callCwd });
-  assert.equal(verdict.kind, "deny");
-  assert.equal(verdict.message, publishIdentity(callCwd).OSO_AGENT);
-  assert.notEqual(verdict.message, "ses-agent-check");
-  rmSync(dir, { recursive: true, force: true });
-  rmSync(callCwd, { recursive: true, force: true });
-});
-
-test("the gate is spawned with OSO_HOST naming this host, so shared prose picks this host's spelling", () => {
-  const dir = fixtureDir();
-  denyEchoingGate(dir, "host.sh", "$OSO_HOST");
-  const verdict = run(dir, route("host.sh"));
-  assert.equal(verdict.kind, "deny");
-  assert.equal(verdict.message, "opencode");
-  rmSync(dir, { recursive: true, force: true });
-});
-
-test("the gate is spawned with OSO_STATE_BIN resolved to the sibling bin/oso-state of the gate tree", () => {
-  const dir = fixtureDir();
-  denyEchoingGate(dir, "statebin.sh", "$OSO_STATE_BIN");
-  const verdict = run(dir, route("statebin.sh"));
-  assert.equal(verdict.kind, "deny");
-  assert.equal(verdict.message, resolve(dir, "..", "bin", "oso-state"));
-  rmSync(dir, { recursive: true, force: true });
-});
-
-test("resolveStateBin: resolves to the sibling bin/oso-state of an explicit hooks directory", () => {
-  const dir = fixtureDir();
-  assert.equal(resolveStateBin(dir), resolve(dir, "..", "bin", "oso-state"));
-  rmSync(dir, { recursive: true, force: true });
-});
-
-test("resolveStateBin: with no hooksDir, it resolves through the same fallback resolveHookScript uses", () => {
-  const expectedHooksDir = dirname(resolveHookScript("cross-check-probe.sh"));
-  assert.equal(resolveStateBin(), resolve(expectedHooksDir, "..", "bin", "oso-state"));
-});
-
-test("resolveHookScript: with no hooksDir and no OSO_HOOKS_DIR, it lands on this module's own installed-layout hooks sibling", () => {
-  const previousHooksDir = process.env.OSO_HOOKS_DIR;
-  delete process.env.OSO_HOOKS_DIR;
-  const thisTestFileDir = dirname(fileURLToPath(import.meta.url));
-  const installedConfigRoot = dirname(dirname(thisTestFileDir));
-  const expected = join(installedConfigRoot, "hooks", "cross-check-probe.sh");
-  assert.equal(resolveHookScript("cross-check-probe.sh"), expected);
-  if (previousHooksDir === undefined) {
-    delete process.env.OSO_HOOKS_DIR;
-  } else {
-    process.env.OSO_HOOKS_DIR = previousHooksDir;
+test("the state binary the caller names is the operator's own when they publish one, and the plugin's sibling otherwise", () => {
+  const published = join(tmpdir(), "published-oso-state");
+  const previous = process.env.OSO_STATE_BIN;
+  try {
+    process.env.OSO_STATE_BIN = published;
+    assert.equal(stateBinPath(), published);
+    delete process.env.OSO_STATE_BIN;
+    assert.equal(stateBinPath(), resolve(dirname(fileURLToPath(import.meta.url)), "..", "bin", "oso-state"));
+  } finally {
+    restoreEnv("OSO_STATE_BIN", previous);
   }
 });
+
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
+}

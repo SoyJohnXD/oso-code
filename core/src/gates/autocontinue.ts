@@ -1,7 +1,7 @@
 import { mkdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { ALLOWED, type GateOutcome, type StopVerdict } from "../hosts/envelope.ts";
-import { gateRow } from "../routes/routes.ts";
+import { gateRow, type HostName } from "../routes/routes.ts";
 import {
   appendJournal,
   isDirectory,
@@ -27,19 +27,49 @@ import {
 } from "./delegation.ts";
 import { hookSessionId, stateValue, type GateDefinition, type GateRequest } from "./preflight.ts";
 
-const PUSHES_WITHOUT_PROGRESS_CAP = 3;
+export const PUSHES_WITHOUT_PROGRESS_CAP = 3;
 const RUN_ARMED = "running";
 const OWNER_ONLY_FILE = 0o600;
 const OWNER_ONLY_DIRECTORY = 0o700;
 
-const CONTINUATION_ORDER =
+const RE_ANCHOR_THE_RUN =
   "oso-code: this run is unattended and still in flight, and this turn ended without parking or closing it. " +
   "Continue it: re-read the position from the change's oso/index NEXT: line and from active_slice in oso-state, " +
   "append every milestone to the run journal with oso-state journal, and park the run per the flow's own rules " +
-  "if a decision needs the operator. If a delegation is still in flight, do NOT relaunch it — its completion " +
-  "notification is what resumes the run, so wait for that instead.";
+  "if a decision needs the operator.";
 
-const EXPIRED_DELEGATION_ORDER = `${CONTINUATION_ORDER} ${EXPIRED_DELEGATION_CLAUSE}`;
+export type ContinuationHost = Readonly<{
+  order: string;
+  delegationsReturnInTurn: boolean;
+  sidecarPath: (projectDir: string, runSession: string) => string;
+}>;
+
+export const NOTIFICATION_RESUMED_HOST: ContinuationHost = {
+  order:
+    `${RE_ANCHOR_THE_RUN} If a delegation is still in flight, do NOT relaunch it — its completion ` +
+    "notification is what resumes the run, so wait for that instead.",
+  delegationsReturnInTurn: false,
+  sidecarPath: waitMarkFileFor,
+};
+
+export const DELEGATIONS_RETURN_IN_TURN_HOST: ContinuationHost = {
+  order:
+    `${RE_ANCHOR_THE_RUN} A delegation on this host returns inside the turn that launched it, so a turn that ` +
+    "has ended left none in flight: read the report the launch itself returned rather than waiting for a " +
+    "notification this host never sends.",
+  delegationsReturnInTurn: true,
+  sidecarPath: waitMarkFileFor,
+};
+
+const CONTINUATION_HOSTS: Readonly<Record<HostName, ContinuationHost>> = {
+  claude: NOTIFICATION_RESUMED_HOST,
+  codex: NOTIFICATION_RESUMED_HOST,
+  opencode: DELEGATIONS_RETURN_IN_TURN_HOST,
+};
+
+export function continuationHostOf(host: HostName): ContinuationHost {
+  return CONTINUATION_HOSTS[host];
+}
 
 const CAP_MILESTONE =
   `auto-continue: cap reached after ${PUSHES_WITHOUT_PROGRESS_CAP} pushes without progress — allowing the stop`;
@@ -65,6 +95,7 @@ type RunPosition = Readonly<{
 }>;
 
 function judgeAutocontinue({ envelope }: GateRequest): GateOutcome<StopVerdict> {
+  const host = continuationHostOf(envelope.caller.host);
   const sessionId = hookSessionId(envelope);
   if (sessionId === "") return ALLOWED;
 
@@ -74,7 +105,7 @@ function judgeAutocontinue({ envelope }: GateRequest): GateOutcome<StopVerdict> 
   const content = ownRunState(stateFileFor(projectDir), sessionId);
   if (content === undefined) return ALLOWED;
 
-  const markFile = waitMarkFileFor(projectDir, sessionId);
+  const markFile = host.sidecarPath(projectDir, sessionId);
   if (stateValue(content, "auto") !== RUN_ARMED) {
     removeWaitMark(markFile);
     return ALLOWED;
@@ -92,14 +123,19 @@ function judgeAutocontinue({ envelope }: GateRequest): GateOutcome<StopVerdict> 
   };
 
   const label = stateValue(content, "auto_wait");
-  if (!isDelegationLabel(label)) {
+  if (!isDelegationLabel(label) || host.delegationsReturnInTurn) {
     removeWaitMark(markFile);
-    return pushUnlessCapped(position, envelope.stopHookActive, CONTINUATION_ORDER, CAP_MILESTONE);
+    return pushUnlessCapped(position, envelope.stopHookActive, host.order, CAP_MILESTONE);
   }
 
   const held = holdUnlessExpired(position, label);
   if (held !== undefined) return held;
-  return pushUnlessCapped(position, envelope.stopHookActive, EXPIRED_DELEGATION_ORDER, EXPIRED_DELEGATION_CAP_MILESTONE);
+  return pushUnlessCapped(
+    position,
+    envelope.stopHookActive,
+    `${host.order} ${EXPIRED_DELEGATION_CLAUSE}`,
+    EXPIRED_DELEGATION_CAP_MILESTONE,
+  );
 }
 
 function holdUnlessExpired(position: RunPosition, label: string): GateOutcome<StopVerdict> | undefined {

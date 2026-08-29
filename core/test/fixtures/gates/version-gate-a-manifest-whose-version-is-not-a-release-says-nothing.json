@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6265,
+      "line": 6242,
       "assertion": "  write_drift_manifest unknown"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6266,
+      "line": 6243,
       "assertion": "  assert_drift_silent \"a manifest whose version is not a release says nothing\""
     }
   ],

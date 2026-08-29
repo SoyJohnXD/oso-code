@@ -5,7 +5,8 @@ import path from "node:path";
 import { after, before, describe, test } from "node:test";
 import { pathToFileURL } from "node:url";
 import type { GateRun } from "../../src/gates/dispatch.ts";
-import { withHookEnvironment } from "../support/gate-fixture.ts";
+import type { HookEnvelope } from "../../src/hosts/envelope.ts";
+import { unresolvedHomeCause, withHookEnvironment } from "../support/gate-fixture.ts";
 import { repositoryRoot, withStateSandbox } from "../support/state-sandbox.ts";
 
 type IsolatedRunGate = (argv: readonly string[], payload: string) => GateRun;
@@ -16,9 +17,16 @@ let anchorlessRunGate: IsolatedRunGate;
 
 before(async () => {
   cpSync(path.join(repositoryRoot, "core", "src"), path.join(ANCHORLESS_CORE_ROOT, "src"), { recursive: true });
+  const anchorless = (name: string): string =>
+    pathToFileURL(path.join(ANCHORLESS_CORE_ROOT, "src", "hosts", name)).href;
   const dispatchUrl = pathToFileURL(path.join(ANCHORLESS_CORE_ROOT, "src", "gates", "dispatch.ts")).href;
-  const isolatedModule = (await import(dispatchUrl)) as { runGate: IsolatedRunGate };
-  anchorlessRunGate = isolatedModule.runGate;
+  const dispatch = (await import(dispatchUrl)) as {
+    runGate: (argv: readonly string[], envelope: HookEnvelope) => GateRun;
+  };
+  const spawned = (await import(anchorless("spawned.ts"))) as {
+    spawnedEnvelope: (payload: string, environment: NodeJS.ProcessEnv) => HookEnvelope;
+  };
+  anchorlessRunGate = (argv, payload) => dispatch.runGate(argv, spawned.spawnedEnvelope(payload, process.env));
 });
 
 after(() => {
@@ -72,7 +80,7 @@ describe(
           const stdin = sandbox.expandJson('{"session_id":"test-session","cwd":"{cwd}"}');
           return withHookEnvironment({ HOME: "" }, () => anchorlessRunGate(["stale"], stdin));
         });
-        assertLoud(run, /HOME/);
+        assertLoud(run, new RegExp(unresolvedHomeCause()));
       },
     );
 
@@ -99,7 +107,7 @@ describe(
           const stdin = sandbox.expandJson('{"session_id":"test-session","cwd":"{cwd}","source":"compact"}');
           return withHookEnvironment({ HOME: "" }, () => anchorlessRunGate(["reanchor"], stdin));
         });
-        assertLoud(run, /HOME/);
+        assertLoud(run, new RegExp(unresolvedHomeCause()));
       },
     );
 
@@ -131,7 +139,7 @@ describe(
           const stdin = sandbox.expandJson('{"session_id":"test-session","cwd":"{cwd}"}');
           return withHookEnvironment({ HOME: "" }, () => anchorlessRunGate(["teardown"], stdin));
         });
-        assertLoud(run, /HOME/);
+        assertLoud(run, new RegExp(unresolvedHomeCause()));
       },
     );
 
@@ -146,7 +154,7 @@ describe(
           );
           return withHookEnvironment({ HOME: "" }, () => anchorlessRunGate(["autocontinue"], stdin));
         });
-        assertLoud(run, /HOME/);
+        assertLoud(run, new RegExp(unresolvedHomeCause()));
       },
     );
 
@@ -162,7 +170,7 @@ describe(
           );
           return withHookEnvironment({ HOME: "" }, () => anchorlessRunGate(["planstop"], stdin));
         });
-        assertLoud(run, /HOME/);
+        assertLoud(run, new RegExp(unresolvedHomeCause()));
       },
     );
 
@@ -177,7 +185,7 @@ describe(
           );
           return withHookEnvironment({ HOME: "" }, () => anchorlessRunGate(["planprompt"], stdin));
         });
-        assertLoud(run, /HOME/);
+        assertLoud(run, new RegExp(unresolvedHomeCause()));
       },
     );
 
@@ -192,7 +200,7 @@ describe(
           );
           return withHookEnvironment({ HOME: "" }, () => anchorlessRunGate(["handoff"], stdin));
         });
-        assertLoud(run, /HOME/);
+        assertLoud(run, new RegExp(unresolvedHomeCause()));
       },
     );
 
@@ -210,7 +218,7 @@ describe(
         assert.equal(run.exit, 2);
         assert.equal(run.stdout, "");
         assert.match(run.stderr, /the commit gate failed unexpectedly and blocked this call/);
-        assert.match(run.stderr, /oso-code: cause: HOME is not set\n$/);
+        assert.match(run.stderr, new RegExp(`oso-code: cause: ${unresolvedHomeCause()}\\n$`));
       },
     );
   },

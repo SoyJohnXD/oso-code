@@ -1,9 +1,9 @@
 {
   "name": "planstop gate: a marker-only Stop with no Plan item at all blocks Stop and writes no approval state",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1509, "assertion": "oso-state --session \"$SESSION\" clear\n\nfor marker_only_bad_transcript in \\\n  \"$CODEX_STOP_NO_PLAN_TRANSCRIPT\" \\\n  \"$CODEX_STOP_FOREIGN_PLAN_TRANSCRIPT\" \\\n  \"$CODEX_STOP_DUPLICATE_PLAN_TRANSCRIPT\" \\\n  \"$CODEX_STOP_EMPTY_PLAN_TRANSCRIPT\"; do\n  run_hook \"$PLAN_STOP_HOOK\" \\" },
-    { "file": "tests/hooks-test.sh", "line": 1517, "assertion": "    \"$(codex_stop_input default \"$SESSION\" \"$PLAN_MARKER\" false \"$marker_only_bad_transcript\")\"\n  assert_after_hook \"marker-only Stop rejects missing, foreign, duplicate or empty native Plan items\" \\" },
-    { "file": "tests/hooks-test.sh", "line": 1519, "assertion": "    hook_returned_block\n  assert_equals \"a rejected marker-only Plan item writes no approval state\" \\" }
+    { "file": "tests/hooks-test.sh", "line": 1489, "assertion": "oso-state --session \"$SESSION\" clear\n\nfor marker_only_bad_transcript in \\\n  \"$CODEX_STOP_NO_PLAN_TRANSCRIPT\" \\\n  \"$CODEX_STOP_FOREIGN_PLAN_TRANSCRIPT\" \\\n  \"$CODEX_STOP_DUPLICATE_PLAN_TRANSCRIPT\" \\\n  \"$CODEX_STOP_EMPTY_PLAN_TRANSCRIPT\"; do\n  run_hook \"$PLAN_STOP_HOOK\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1497, "assertion": "    \"$(codex_stop_input default \"$SESSION\" \"$PLAN_MARKER\" false \"$marker_only_bad_transcript\")\"\n  assert_after_hook \"marker-only Stop rejects missing, foreign, duplicate or empty native Plan items\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1499, "assertion": "    hook_returned_block\n  assert_equals \"a rejected marker-only Plan item writes no approval state\" \\" }
   ],
   "gate": "planstop",
   "argv": [],

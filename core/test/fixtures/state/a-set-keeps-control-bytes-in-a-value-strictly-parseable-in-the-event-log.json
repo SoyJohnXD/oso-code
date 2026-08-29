@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5819,
+      "line": 5796,
       "assertion": "if ! command -v jq >/dev/null 2>&1; then\n  echo \"skip: jq is absent here, so no strict parser can read the line back\"\n  skipped=$((skipped + 1))\nelif [ \"$(tail -n 1 \"$events_log\" | jq -r '.event')\" = \"set:$control_byte_pair\" ]; then\n  echo \"ok: control bytes in a value keep the event log strictly parseable\"; pass=$((pass + 1))\nelse\n  echo \"FAIL: a control byte broke the event log — $(tail -n 1 \"$events_log\" | jq . 2>&1 | head -n 1)\"; fail=$((fail + 1))\nfi"
     }
   ],

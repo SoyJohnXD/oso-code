@@ -1,6 +1,6 @@
+import { PlanApprovalError, PlanFailure, runApprovePlan, runCapturePlan, sha256Hex } from "@oso-code/core";
 import { commonDirOf, deriveRootId } from "./identity.ts";
-import { approvePlan, capturePlan } from "./plan.ts";
-import { armApprovedPlan, approvedPlanFor, cancelApprovedPlan } from "./plan-state.ts";
+import { approvedPlanFor, cancelApprovedPlan } from "./plan-state.ts";
 import type { HostPermissionRequest, PluginTool, PluginToolCall, PluginToolResult } from "./tool.ts";
 
 export const PLAN_APPROVAL_TOOL_ID = "oso_plan_approve";
@@ -43,27 +43,21 @@ export function planCancelTool(): PluginTool {
 interface GrantBoundCall {
   askOperator: (request: HostPermissionRequest) => Promise<unknown>;
   directory: string;
-  commonDir: string;
   owner: string;
   sessionID: string;
 }
 
 async function approveOnOperatorGrant(planDocument: string, call: PluginToolCall): Promise<PluginToolResult> {
-  const { askOperator, directory, commonDir, owner, sessionID } = grantBoundCall(PLAN_APPROVAL_TOOL_ID, call);
-  const { digest } = capturePlan(commonDir, owner, planDocument);
+  const { askOperator, directory, owner, sessionID } = grantBoundCall(PLAN_APPROVAL_TOOL_ID, call);
+  const digest = sha256Hex(planDocument);
+  runCapturePlan(directory, owner, digest, planDocument);
   await askOperator({
     permission: PLAN_APPROVAL_TOOL_ID,
     patterns: [digest],
     always: [],
     metadata: { digest, characters: planDocument.length },
   });
-  const verdict = approvePlan(commonDir, digest, owner);
-  if (!verdict.ok) {
-    throw new Error(
-      `${PLAN_APPROVAL_TOOL_ID} did not record the operator's approval: ${verdict.error ?? "the presented plan could not be promoted"}`,
-    );
-  }
-  armApprovedPlan({ directory, commonDir, owner, digest });
+  promoteThePresentedPlan(directory, owner, digest);
   return {
     title: "plan approved",
     output: `The operator granted ${PLAN_APPROVAL_TOOL_ID} for the plan document whose digest is ${digest}.`
@@ -94,6 +88,15 @@ async function cancelOnOperatorGrant(call: PluginToolCall): Promise<PluginToolRe
   };
 }
 
+function promoteThePresentedPlan(directory: string, owner: string, digest: string): void {
+  try {
+    runApprovePlan(directory, owner, digest);
+  } catch (err) {
+    if (!(err instanceof PlanApprovalError) && !(err instanceof PlanFailure)) throw err;
+    throw new Error(`${PLAN_APPROVAL_TOOL_ID} did not record the operator's approval: ${err.message}`);
+  }
+}
+
 function grantBoundCall(toolId: string, call: PluginToolCall): GrantBoundCall {
   const askOperator = call.ask;
   if (askOperator === undefined) {
@@ -112,7 +115,7 @@ function grantBoundCall(toolId: string, call: PluginToolCall): GrantBoundCall {
       `${toolId} must run inside a git repository, and ${directory || "the directory the host named"} is not one`,
     );
   }
-  return { askOperator, directory, commonDir, owner: deriveRootId(directory), sessionID };
+  return { askOperator, directory, owner: deriveRootId(directory), sessionID };
 }
 
 function planDocumentOf(args: unknown): string {

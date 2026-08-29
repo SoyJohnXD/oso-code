@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5093,
+      "line": 5070,
       "assertion": "assert_after_hook \"a deploy-shaped MCP tool is the operator's own call while the run is in flight\" \\\n  hook_returned_deny"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5099,
+      "line": 5076,
       "assertion": "assert_equals \"the MCP deny says whose call a deploy is, not merely that it was refused\" \\\n  \"named\" \"$prod_mcp_deny_naming\""
     }
   ],
