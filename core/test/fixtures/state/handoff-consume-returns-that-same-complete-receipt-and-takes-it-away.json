@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5309,
+      "line": 5316,
       "assertion": "assert_equals \"consume returns that same complete receipt\" \\\n  \"rc=0:$basic_receipt\" \"rc=$handoff_rc:$handoff_stdout\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5314,
+      "line": 5321,
       "assertion": "assert_equals \"a consumed receipt cannot be consumed a second time\" 1 \"$handoff_rc\""
     }
   ],

@@ -3,17 +3,17 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5733,
+      "line": 5740,
       "assertion": "printf 'mode=plan\\nsession=someone-else\\nroadmap=auth-hardening\\n' > \"$roadmap_foreign_state\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5738,
+      "line": 5745,
       "assertion": "run_hook cleanup-state.sh '{\"session_id\":\"roadmap-finished\"}'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5739,
+      "line": 5746,
       "assertion": "assert_after_hook \"SessionEnd leaves another session's roadmap in flight alone\" \\\n  [ -f \"$roadmap_foreign_state\" ]"
     }
   ],

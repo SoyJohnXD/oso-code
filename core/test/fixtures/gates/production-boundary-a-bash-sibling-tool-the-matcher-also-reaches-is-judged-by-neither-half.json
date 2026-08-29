@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5078,
+      "line": 5085,
       "assertion": "assert_equals \"a Bash sibling tool the matcher also reaches is judged by neither half\" \\\n  \"allow\" \"$(prod_gate_verdict \"$(prod_mcp_input BashOutput)\")\""
     }
   ],

@@ -1,11 +1,11 @@
 {
   "name": "teardown gate: a state file naming no repo is still removed, and its worktree is left where it is",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 5874, "assertion": "mkdir -p \"$WORKTREES_DIR/wt-no-repo/1\"" },
-    { "file": "tests/hooks-test.sh", "line": 5875, "assertion": "printf 'mode=plan\\nsession=wt-no-repo\\n' > \"$STATE_DIR/wt-no-repo.state\"" },
-    { "file": "tests/hooks-test.sh", "line": 5876, "assertion": "run_hook cleanup-state.sh '{\"session_id\":\"wt-no-repo\"}'" },
-    { "file": "tests/hooks-test.sh", "line": 5877, "assertion": "assert_pruned \"a state file naming no repo is still removed\"            \"$STATE_DIR/wt-no-repo.state\"" },
-    { "file": "tests/hooks-test.sh", "line": 5878, "assertion": "assert_kept   \"a worktree with no repo to prune in is left where it is\" \"$WORKTREES_DIR/wt-no-repo/1\"" }
+    { "file": "tests/hooks-test.sh", "line": 5881, "assertion": "mkdir -p \"$WORKTREES_DIR/wt-no-repo/1\"" },
+    { "file": "tests/hooks-test.sh", "line": 5882, "assertion": "printf 'mode=plan\\nsession=wt-no-repo\\n' > \"$STATE_DIR/wt-no-repo.state\"" },
+    { "file": "tests/hooks-test.sh", "line": 5883, "assertion": "run_hook cleanup-state.sh '{\"session_id\":\"wt-no-repo\"}'" },
+    { "file": "tests/hooks-test.sh", "line": 5884, "assertion": "assert_pruned \"a state file naming no repo is still removed\"            \"$STATE_DIR/wt-no-repo.state\"" },
+    { "file": "tests/hooks-test.sh", "line": 5885, "assertion": "assert_kept   \"a worktree with no repo to prune in is left where it is\" \"$WORKTREES_DIR/wt-no-repo/1\"" }
   ],
   "gate": "teardown",
   "argv": [],

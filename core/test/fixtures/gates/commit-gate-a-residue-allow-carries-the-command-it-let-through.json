@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6576,
+      "line": 6583,
       "assertion": "assert_allows \"residue: a python payload that mentions git passes\" \\\n  block-commit-until-green.sh \"$(bash_input 'python3 -c \\\"import os; os.system('\\''git commit'\\'')\\\"')\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6580,
+      "line": 6587,
       "assertion": "assert_logged \"a residue allow carries the command it let through\" \\\n  '\"event\":\"residue-allowed\",\"command\":\"python3'"
     }
   ],

@@ -1,9 +1,9 @@
 {
   "name": "planprompt gate: a real Codex 0.146 Plan turn still rejects the native phrase",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1847, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'Implement the plan.' \"$CODEX_PROMPT_PLAN_TRANSCRIPT\")\"" },
-    { "file": "tests/hooks-test.sh", "line": 1849, "assertion": "assert_after_hook \"a real Codex 0.146 Plan turn still rejects the native phrase\" \\\n  hook_returned_block" },
-    { "file": "tests/hooks-test.sh", "line": 1851, "assertion": "assert_equals \"a blocked Plan Mode phrase does not mutate pending state\" \\\n  \"$pending_snapshot\" \"$(approval_state_snapshot)\"" }
+    { "file": "tests/hooks-test.sh", "line": 1854, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'Implement the plan.' \"$CODEX_PROMPT_PLAN_TRANSCRIPT\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 1856, "assertion": "assert_after_hook \"a real Codex 0.146 Plan turn still rejects the native phrase\" \\\n  hook_returned_block" },
+    { "file": "tests/hooks-test.sh", "line": 1858, "assertion": "assert_equals \"a blocked Plan Mode phrase does not mutate pending state\" \\\n  \"$pending_snapshot\" \"$(approval_state_snapshot)\"" }
   ],
   "gate": "planprompt",
   "argv": [],

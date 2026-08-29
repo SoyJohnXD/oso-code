@@ -1,10 +1,10 @@
 {
   "name": "handoff gate: SubagentStop publishes a receipt outside a read-only delegate",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 5201, "assertion": "hook_payload=\"$(printf '{\\\"session_id\\\":\\\"%s\\\",\\\"cwd\\\":\\\"%s\\\",\\\"hook_event_name\\\":\\\"SubagentStop\\\",\\\"turn_id\\\":\\\"turn-hook\\\",\\\"agent_id\\\":\\\"agent-hook\\\",\\\"agent_type\\\":\\\"oso-verifier\\\",\\\"agent_transcript_path\\\":\\\"%s\\\",\\\"stop_hook_active\\\":false,\\\"last_assistant_message\\\":\\\"oso-handoff: v=1 slice=slice-hook attempt=1\\\\nevidence: the named check is green\\\\nverdict: pass\\\"}' \\\n  \"$SESSION\" \"$HANDOFF_REPO\" \"$TEST_HOME/agent-hook.jsonl\")\"\nrun_hook \"$HANDOFF_HOOK\" \"$hook_payload\"" },
-    { "file": "tests/hooks-test.sh", "line": 5204, "assertion": "assert_after_hook \"SubagentStop publishes a receipt outside a read-only delegate\" \\\n  [ \"$hook_stdout\" = '{}' ]" },
-    { "file": "tests/hooks-test.sh", "line": 5206, "assertion": "hook_receipt=\"$(expected_receipt \"$SESSION\" slice-hook 1 agent-hook oso-verifier)\"\nrun_handoff \"\" handoff wait \\\n  --slice slice-hook --attempt 1 --agent-id agent-hook --agent-type oso-verifier --timeout 0" },
-    { "file": "tests/hooks-test.sh", "line": 5209, "assertion": "assert_equals \"the hook receipt binds host metadata while the message keeps the terminal verdict\" \\\n  \"rc=0:$hook_receipt\" \"rc=$handoff_rc:$handoff_stdout\"\nrun_handoff \"\" handoff consume \\" }
+    { "file": "tests/hooks-test.sh", "line": 5208, "assertion": "hook_payload=\"$(printf '{\\\"session_id\\\":\\\"%s\\\",\\\"cwd\\\":\\\"%s\\\",\\\"hook_event_name\\\":\\\"SubagentStop\\\",\\\"turn_id\\\":\\\"turn-hook\\\",\\\"agent_id\\\":\\\"agent-hook\\\",\\\"agent_type\\\":\\\"oso-verifier\\\",\\\"agent_transcript_path\\\":\\\"%s\\\",\\\"stop_hook_active\\\":false,\\\"last_assistant_message\\\":\\\"oso-handoff: v=1 slice=slice-hook attempt=1\\\\nevidence: the named check is green\\\\nverdict: pass\\\"}' \\\n  \"$SESSION\" \"$HANDOFF_REPO\" \"$TEST_HOME/agent-hook.jsonl\")\"\nrun_hook \"$HANDOFF_HOOK\" \"$hook_payload\"" },
+    { "file": "tests/hooks-test.sh", "line": 5211, "assertion": "assert_after_hook \"SubagentStop publishes a receipt outside a read-only delegate\" \\\n  [ \"$hook_stdout\" = '{}' ]" },
+    { "file": "tests/hooks-test.sh", "line": 5213, "assertion": "hook_receipt=\"$(expected_receipt \"$SESSION\" slice-hook 1 agent-hook oso-verifier)\"\nrun_handoff \"\" handoff wait \\\n  --slice slice-hook --attempt 1 --agent-id agent-hook --agent-type oso-verifier --timeout 0" },
+    { "file": "tests/hooks-test.sh", "line": 5216, "assertion": "assert_equals \"the hook receipt binds host metadata while the message keeps the terminal verdict\" \\\n  \"rc=0:$hook_receipt\" \"rc=$handoff_rc:$handoff_stdout\"\nrun_handoff \"\" handoff consume \\" }
   ],
   "gate": "handoff",
   "argv": [],

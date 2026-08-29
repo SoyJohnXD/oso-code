@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 4588,
+      "line": 4595,
       "assertion": "assert_equals \"show carries the marker beside the change slug its journal is named after\" \\\n  \"|auto-continuity.log\" \"$marker_keys_unshown|$(ls \"$JOURNAL_DIR\" 2>/dev/null || true)\""
     }
   ],

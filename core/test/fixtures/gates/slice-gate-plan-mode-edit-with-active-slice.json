@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2126,
+      "line": 2133,
       "assertion": "assert_allows \"plan-mode edit with active slice\" block-edits-without-slice.sh \"$edit_input\""
     }
   ],

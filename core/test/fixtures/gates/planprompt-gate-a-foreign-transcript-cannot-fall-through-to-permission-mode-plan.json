@@ -1,8 +1,8 @@
 {
   "name": "planprompt gate: a foreign transcript cannot fall through to permission_mode plan",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1582, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input plan \"$SESSION\" '$oso-code:plan repair approval' \"$CODEX_PROMPT_FOREIGN_TRANSCRIPT\")\"" },
-    { "file": "tests/hooks-test.sh", "line": 1584, "assertion": "assert_after_hook \"a foreign transcript cannot fall through to permission_mode=plan\" \\\n  hook_returned_block" }
+    { "file": "tests/hooks-test.sh", "line": 1589, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input plan \"$SESSION\" '$oso-code:plan repair approval' \"$CODEX_PROMPT_FOREIGN_TRANSCRIPT\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 1591, "assertion": "assert_after_hook \"a foreign transcript cannot fall through to permission_mode=plan\" \\\n  hook_returned_block" }
   ],
   "gate": "planprompt",
   "argv": [],

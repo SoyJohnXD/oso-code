@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2116,
+      "line": 2123,
       "assertion": "assert_denies \"bypass: bash -c wraps commit (double-quoted)\" block-commit-until-green.sh \"$(bash_input 'bash -c \\\"git commit -m x\\\"')\""
     }
   ],

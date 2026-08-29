@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2129,
+      "line": 2136,
       "assertion": "assert_allows \"an armed slice number opens the gate\" block-edits-without-slice.sh \"$edit_input\""
     }
   ],

@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2156,
+      "line": 2163,
       "assertion": "assert_denies \"the slice gate denies while no slice is active\" \\\n  block-edits-without-slice.sh \"$edit_input\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 2160,
+      "line": 2167,
       "assertion": "    echo \"ok: the slice gate's remedy is the exact oso-state call that arms a slice\"; pass=$((pass + 1)) ;;"
     }
   ],

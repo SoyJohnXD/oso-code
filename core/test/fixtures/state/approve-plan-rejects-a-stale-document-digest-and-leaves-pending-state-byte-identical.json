@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 1807,
+      "line": 1814,
       "assertion": "if oso-state --session \"$SESSION\" approve-plan \"$stale_digest\" >/dev/null 2>&1; then\n  echo \"FAIL: approve-plan accepted a stale document digest\"; fail=$((fail + 1))\nelse\n  echo \"ok: approve-plan rejects a stale document digest\"; pass=$((pass + 1))\nfi"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 1812,
+      "line": 1819,
       "assertion": "assert_equals \"a stale approval CAS leaves pending state byte-identical\" \\\n  \"$pending_snapshot\" \"$(approval_state_snapshot)\""
     }
   ],

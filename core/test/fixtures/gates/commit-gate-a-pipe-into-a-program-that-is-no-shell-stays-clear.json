@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6698,
+      "line": 6705,
       "assertion": "assert_allows \"a pipe into a program that is no shell stays clear\" \\\n  block-commit-until-green.sh \"$(bash_input 'cat notes.md | grep commit')\""
     }
   ],

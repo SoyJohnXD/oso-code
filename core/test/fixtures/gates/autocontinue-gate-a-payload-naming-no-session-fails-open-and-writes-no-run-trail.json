@@ -1,8 +1,8 @@
 {
   "name": "autocontinue gate: a payload naming no session fails open and writes no run trail",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 4757, "assertion": "auto_uncertain_verdicts=\"$auto_uncertain_verdicts $(auto_stop_verdict 'this payload is not JSON')\"" },
-    { "file": "tests/hooks-test.sh", "line": 4759, "assertion": "assert_equals \"an unreadable state path, a garbage one and an unparseable payload fail open, writing no run trail\" \\\n  \"stop stop stop stop|unwritten\" \\\n  \"${auto_uncertain_verdicts# }|$(ls \"$STATE_DIR/runs\" 2>/dev/null || echo unwritten)\"" }
+    { "file": "tests/hooks-test.sh", "line": 4764, "assertion": "auto_uncertain_verdicts=\"$auto_uncertain_verdicts $(auto_stop_verdict 'this payload is not JSON')\"" },
+    { "file": "tests/hooks-test.sh", "line": 4766, "assertion": "assert_equals \"an unreadable state path, a garbage one and an unparseable payload fail open, writing no run trail\" \\\n  \"stop stop stop stop|unwritten\" \\\n  \"${auto_uncertain_verdicts# }|$(ls \"$STATE_DIR/runs\" 2>/dev/null || echo unwritten)\"" }
   ],
   "gate": "autocontinue",
   "argv": [],

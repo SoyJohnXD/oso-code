@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6590,
+      "line": 6597,
       "assertion": "assert_denies \"a chain past the bound never downgrades a commit the gate did read\" \\\n  block-commit-until-green.sh \"$(bash_input 'git commit -m x && bash -c '\\''bash -c \\\"bash -c \\\\\\\"bash -c ok\\\\\\\"\\\"'\\''')\""
     }
   ],

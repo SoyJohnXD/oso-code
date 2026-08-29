@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5806,
+      "line": 5813,
       "assertion": "assert_allows \"an unparseable payload does not gate the call\" block-commit-until-green.sh '{\"tool_name\":\"Bash\"}'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5807,
+      "line": 5814,
       "assertion": "assert_logged \"an unparseable payload is recorded\" '\"event\":\"payload-unparseable\"'"
     }
   ],

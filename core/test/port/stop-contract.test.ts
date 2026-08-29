@@ -52,7 +52,7 @@ describe(
     });
 
     test(
-      "shouldContinue precedes the reason, so the suffix-anchored reader tests/hooks-test.sh:4749 uses still " +
+      "shouldContinue precedes the reason, so the suffix-anchored reader tests/hooks-test.sh:4756 uses still " +
         "takes the whole order out of the envelope",
       () => {
         const reason = REASON_A_SUFFIX_ANCHORED_READER_TAKES.exec(continuationPush().stdout.trimEnd())?.[1];

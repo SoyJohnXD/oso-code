@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6692,
+      "line": 6699,
       "assertion": "assert_denies \"the same shell denies the commit a heredoc spells on the line\" \\\n  block-commit-until-green.sh \"$(bash_input 'bash -s <<EOF\\ngit commit\\nEOF')\""
     }
   ],

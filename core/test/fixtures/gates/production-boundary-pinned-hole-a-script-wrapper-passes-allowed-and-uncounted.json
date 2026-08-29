@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 12220,
+      "line": 12231,
       "assertion": "assert_equals \"a command-string-carrying wrapper is a KNOWN HOLE at the production boundary gate too: script/ssh/tmux leave the deploy as one quoted token no basename comparison matches, so it passes allowed AND uncounted, the same shape as the xargs hole above\" \\\n  \"allow allow allow 0\" \\\n  \"$(prod_verdicts_and_residues_for \\\n    \"script -qc 'vercel --prod' /dev/null\" \\\n    \"ssh build-host 'vercel --prod'\" \\\n    \"tmux new-session -d 'vercel --prod'\")\""
     }
   ],

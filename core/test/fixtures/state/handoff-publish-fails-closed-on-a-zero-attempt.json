@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5487,
+      "line": 5494,
       "assertion": "assert_equals \"malformed, traversal-shaped, or overlong handoff coordinates fail closed\" \\\n  \"\" \"$invalid_handoffs\""
     }
   ],

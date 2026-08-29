@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6665,
+      "line": 6672,
       "assertion": "assert_allows_counted \"residue: an interpreter behind a redirect is counted, not read as a file\" \\\n  block-commit-until-green.sh \"$(bash_input '>/dev/null python3 -c \\\"import os; os.system('\\''git commit'\\'')\\\"')\""
     }
   ],

@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5303,
+      "line": 5310,
       "assertion": "assert_equals \"wait returns the complete matching receipt without consuming it\" \\\n  \"rc=0:$basic_receipt\" \"rc=$handoff_rc:$handoff_stdout\""
     }
   ],

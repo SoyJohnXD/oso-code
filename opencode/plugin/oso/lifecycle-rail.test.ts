@@ -45,12 +45,15 @@ function stateFilesOf(fixture: Fixture): string[] {
 }
 
 async function withFixtureHome<T>(fixture: Fixture, run: () => Promise<T>): Promise<T> {
-  const previous = process.env.HOME;
+  const previousHome = process.env.HOME;
+  const previousUserProfile = process.env.USERPROFILE;
   process.env.HOME = fixture.home;
+  process.env.USERPROFILE = fixture.home;
   try {
     return await run();
   } finally {
-    process.env.HOME = previous;
+    process.env.HOME = previousHome;
+    process.env.USERPROFILE = previousUserProfile;
   }
 }
 

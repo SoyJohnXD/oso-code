@@ -1,9 +1,9 @@
 {
   "name": "planprompt gate: an inconsistent pending mode cannot be approved and does not mutate state",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1829, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'Implement the plan.')\"" },
-    { "file": "tests/hooks-test.sh", "line": 1831, "assertion": "assert_after_hook \"an inconsistent pending mode cannot be approved\" \\\n  hook_returned_block" },
-    { "file": "tests/hooks-test.sh", "line": 1833, "assertion": "assert_equals \"a rejected inconsistent approval does not mutate state\" \\\n  \"$inconsistent_pending_snapshot\" \"$(approval_state_snapshot)\"" }
+    { "file": "tests/hooks-test.sh", "line": 1836, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'Implement the plan.')\"" },
+    { "file": "tests/hooks-test.sh", "line": 1838, "assertion": "assert_after_hook \"an inconsistent pending mode cannot be approved\" \\\n  hook_returned_block" },
+    { "file": "tests/hooks-test.sh", "line": 1840, "assertion": "assert_equals \"a rejected inconsistent approval does not mutate state\" \\\n  \"$inconsistent_pending_snapshot\" \"$(approval_state_snapshot)\"" }
   ],
   "gate": "planprompt",
   "argv": [],

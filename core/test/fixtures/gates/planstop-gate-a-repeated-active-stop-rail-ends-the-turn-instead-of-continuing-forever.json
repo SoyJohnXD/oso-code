@@ -1,9 +1,9 @@
 {
   "name": "planstop gate: a repeated active Stop rail ends the turn instead of continuing forever",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1548, "assertion": "run_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input default \"$SESSION\" 'Repaso\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->' true)\"\nassert_after_hook \"a repeated active Stop rail ends instead of continuing forever\" \\" },
-    { "file": "tests/hooks-test.sh", "line": 1551, "assertion": "  hook_returned_continue_false\nassert_equals \"an active Stop retry writes no approval state\" \\" },
-    { "file": "tests/hooks-test.sh", "line": 1575, "assertion": "  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"\n" }
+    { "file": "tests/hooks-test.sh", "line": 1555, "assertion": "run_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input default \"$SESSION\" 'Repaso\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->' true)\"\nassert_after_hook \"a repeated active Stop rail ends instead of continuing forever\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1558, "assertion": "  hook_returned_continue_false\nassert_equals \"an active Stop retry writes no approval state\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1582, "assertion": "  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"\n" }
   ],
   "gate": "planstop",
   "argv": [],

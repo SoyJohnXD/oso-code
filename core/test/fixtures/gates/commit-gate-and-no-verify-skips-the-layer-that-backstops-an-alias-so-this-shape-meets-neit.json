@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6902,
+      "line": 6909,
       "assertion": "  assert_commit_lands \"and --no-verify skips the layer that backstops an alias, so this shape meets neither\" \\\n    \"$aliased_no_verify\""
     }
   ],

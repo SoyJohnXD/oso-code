@@ -14,7 +14,7 @@ const STATE_DIRECTORY = ".local/state/oso-code";
 const BASE_FILE = "base.txt";
 
 describe(
-  "teardown gate: the git-worktree half of plugin/hooks/cleanup-state.sh, ported from tests/hooks-test.sh:5933-6037",
+  "teardown gate: the git-worktree half of plugin/hooks/cleanup-state.sh, ported from tests/hooks-test.sh:5940-6044",
   { skip: skipUnlessGitSeedsRepositories() },
   () => {
     test("session end removes the session's worktree tree, deregisters it and leaves an audit line", () => {

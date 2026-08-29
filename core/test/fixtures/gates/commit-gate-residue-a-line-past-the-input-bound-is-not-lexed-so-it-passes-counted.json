@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6709,
+      "line": 6716,
       "assertion": "assert_allows \"residue: a line past the input bound is not lexed, so it passes counted\" \\\n  block-commit-until-green.sh \"$(bash_input \"$(commit_line_of_length 3100 'aaaaaaaaaaaaaaaa')\")\""
     }
   ],

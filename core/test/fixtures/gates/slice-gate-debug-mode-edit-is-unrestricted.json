@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2139,
+      "line": 2146,
       "assertion": "assert_allows \"debug-mode edit is unrestricted\" block-edits-without-slice.sh \"$edit_input\""
     }
   ],

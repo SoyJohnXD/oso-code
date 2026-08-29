@@ -1,8 +1,8 @@
 {
   "name": "stale gate: OpenCode gets the roadmap resume route as the command its installer registers",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 6094, "assertion": "OSO_HOST=opencode OSO_AGENT=aa11bb22cc33dd44 run_hook warn-stale-state.sh \"$(stale_session_input)\"" },
-    { "file": "tests/hooks-test.sh", "line": 6095, "assertion": "assert_equals \"OpenCode gets the roadmap resume route as the command its installer registers\" \\\n  \"present\" \"$(if printf '%s' \"$hook_stdout\" | grep -F '/oso-roadmap auth-hardening' >/dev/null; then echo present; else echo missing; fi)\"" }
+    { "file": "tests/hooks-test.sh", "line": 6101, "assertion": "OSO_HOST=opencode OSO_AGENT=aa11bb22cc33dd44 run_hook warn-stale-state.sh \"$(stale_session_input)\"" },
+    { "file": "tests/hooks-test.sh", "line": 6102, "assertion": "assert_equals \"OpenCode gets the roadmap resume route as the command its installer registers\" \\\n  \"present\" \"$(if printf '%s' \"$hook_stdout\" | grep -F '/oso-roadmap auth-hardening' >/dev/null; then echo present; else echo missing; fi)\"" }
   ],
   "gate": "stale",
   "argv": [],

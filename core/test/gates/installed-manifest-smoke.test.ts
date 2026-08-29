@@ -55,7 +55,12 @@ function runInstalledHandler(sandbox: StateSandbox): { status: number | null; st
     {
       cwd: sandbox.cwd,
       input: sandbox.expandJson(COMMIT_ENVELOPE),
-      env: { HOME: sandbox.home, PATH: process.env["PATH"] ?? "", SYSTEMROOT: process.env["SYSTEMROOT"] ?? "" },
+      env: {
+        HOME: sandbox.home,
+        USERPROFILE: sandbox.home,
+        PATH: process.env["PATH"] ?? "",
+        SYSTEMROOT: process.env["SYSTEMROOT"] ?? "",
+      },
       encoding: "utf8",
     },
   );

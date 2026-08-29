@@ -1,13 +1,13 @@
 {
   "name": "planprompt gate: the exact Default-mode native phrase approves its same-session plan",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1895, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'Implement the plan.' \"$CODEX_PROMPT_DEFAULT_TRANSCRIPT\")\"" },
-    { "file": "tests/hooks-test.sh", "line": 1897, "assertion": "assert_after_hook \"the exact Default-mode native phrase approves its same-session plan\" \\\n  hook_returned_prompt_context" },
-    { "file": "tests/hooks-test.sh", "line": 1899, "assertion": "assert_equals \"the accepted native phrase changes only the approval status\" approved \\\n  \"$(oso-state --session \"$SESSION\" get plan_approval)\"" },
-    { "file": "tests/hooks-test.sh", "line": 1901, "assertion": "assert_equals \"approval retains the digest of the presented document\" \\\n  \"$first_plan_digest\" \"$(oso-state --session \"$SESSION\" get plan_approval_digest)\"" },
-    { "file": "tests/hooks-test.sh", "line": 1903, "assertion": "assert_equals \"native approval renames the immutable snapshot from presented to approved\" \\\n  \"$first_approved_file\" \"$(oso-state --session \"$SESSION\" get plan_snapshot_file)\"" },
-    { "file": "tests/hooks-test.sh", "line": 1905, "assertion": "assert_equals \"native approval removes the pending snapshot spelling\" \\\n  absent \"$([ ! -e \"$first_presented_file\" ] && printf absent || printf present)\"" },
-    { "file": "tests/hooks-test.sh", "line": 1907, "assertion": "assert_equals \"native approval preserves the immutable approved document\" \\\n  \"$first_plan_document\" \"$(cat \"$first_approved_file\" 2>/dev/null || true)\"" }
+    { "file": "tests/hooks-test.sh", "line": 1902, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'Implement the plan.' \"$CODEX_PROMPT_DEFAULT_TRANSCRIPT\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 1904, "assertion": "assert_after_hook \"the exact Default-mode native phrase approves its same-session plan\" \\\n  hook_returned_prompt_context" },
+    { "file": "tests/hooks-test.sh", "line": 1906, "assertion": "assert_equals \"the accepted native phrase changes only the approval status\" approved \\\n  \"$(oso-state --session \"$SESSION\" get plan_approval)\"" },
+    { "file": "tests/hooks-test.sh", "line": 1908, "assertion": "assert_equals \"approval retains the digest of the presented document\" \\\n  \"$first_plan_digest\" \"$(oso-state --session \"$SESSION\" get plan_approval_digest)\"" },
+    { "file": "tests/hooks-test.sh", "line": 1910, "assertion": "assert_equals \"native approval renames the immutable snapshot from presented to approved\" \\\n  \"$first_approved_file\" \"$(oso-state --session \"$SESSION\" get plan_snapshot_file)\"" },
+    { "file": "tests/hooks-test.sh", "line": 1912, "assertion": "assert_equals \"native approval removes the pending snapshot spelling\" \\\n  absent \"$([ ! -e \"$first_presented_file\" ] && printf absent || printf present)\"" },
+    { "file": "tests/hooks-test.sh", "line": 1914, "assertion": "assert_equals \"native approval preserves the immutable approved document\" \\\n  \"$first_plan_document\" \"$(cat \"$first_approved_file\" 2>/dev/null || true)\"" }
   ],
   "gate": "planprompt",
   "argv": [],

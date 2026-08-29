@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6255,
+      "line": 6262,
       "assertion": "  rm -f \"$DRIFT_MARKETPLACES\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6256,
+      "line": 6263,
       "assertion": "  assert_drift_silent \"a machine with no registered marketplace says nothing\""
     }
   ],

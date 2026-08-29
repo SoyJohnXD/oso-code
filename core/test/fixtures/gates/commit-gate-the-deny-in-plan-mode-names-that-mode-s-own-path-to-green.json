@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2171,
+      "line": 2178,
       "assertion": "  assert_denies \"the commit gate denies red verify in $commit_mode mode\" \\\n    block-commit-until-green.sh \"$(bash_input 'git commit -m x')\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 2176,
+      "line": 2183,
       "assertion": "        *'apply → verify loop'*) echo \"ok: plan mode's remedy names its own loop\"; pass=$((pass + 1)) ;;"
     }
   ],

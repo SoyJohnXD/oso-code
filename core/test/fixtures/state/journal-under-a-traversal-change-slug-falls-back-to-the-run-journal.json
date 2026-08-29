@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 4664,
+      "line": 4671,
       "assertion": "assert_equals \"a change slug carrying a path separator journals under the fallback, leaving nothing outside its own run directory\" \\\n  \"$JOURNAL_DIR>$JOURNAL_DIR/run.log>|the slug climbed out of its run directory>the slug named a subdirectory>\" \\\n  \"$journal_tree|$(journal_texts_in \"$JOURNAL_DIR/run.log\")\""
     }
   ],

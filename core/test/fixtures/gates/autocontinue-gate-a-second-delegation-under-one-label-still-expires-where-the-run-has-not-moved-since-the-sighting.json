@@ -1,8 +1,8 @@
 {
   "name": "autocontinue gate: a second delegation under one label still expires where the run has not moved since the sighting",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 4913, "assertion": "journal_milestone 'slice 21 applier reported; the verifier for the same slice is launched'\nauto_second_wait_verdicts=\"$auto_second_wait_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"\ntouch -t 200001010000 \"$AUTO_WAIT_MARK\"\nauto_second_wait_verdicts=\"$auto_second_wait_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"\nassert_equals \"a second delegation under one label is a wait of its own: the belief window restarts where the run has moved since the sighting, and still expires where it has not\" \\" },
-    { "file": "tests/hooks-test.sh", "line": 4917, "assertion": "assert_equals \"a second delegation under one label is a wait of its own: the belief window restarts where the run has moved since the sighting, and still expires where it has not\" \\\n  \"stop stop push\" \"${auto_second_wait_verdicts# }\"\n" }
+    { "file": "tests/hooks-test.sh", "line": 4920, "assertion": "journal_milestone 'slice 21 applier reported; the verifier for the same slice is launched'\nauto_second_wait_verdicts=\"$auto_second_wait_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"\ntouch -t 200001010000 \"$AUTO_WAIT_MARK\"\nauto_second_wait_verdicts=\"$auto_second_wait_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"\nassert_equals \"a second delegation under one label is a wait of its own: the belief window restarts where the run has moved since the sighting, and still expires where it has not\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 4924, "assertion": "assert_equals \"a second delegation under one label is a wait of its own: the belief window restarts where the run has moved since the sighting, and still expires where it has not\" \\\n  \"stop stop push\" \"${auto_second_wait_verdicts# }\"\n" }
   ],
   "gate": "autocontinue",
   "argv": [],

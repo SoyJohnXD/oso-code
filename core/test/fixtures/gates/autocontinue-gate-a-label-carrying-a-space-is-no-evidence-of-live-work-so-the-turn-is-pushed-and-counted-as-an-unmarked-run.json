@@ -1,8 +1,8 @@
 {
   "name": "autocontinue gate: a label carrying a space is no evidence of live work, so the turn is pushed and counted as an unmarked run",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 4838, "assertion": "over_length_wait=w\nwhile [ \"${#over_length_wait}\" -le 64 ]; do\n  over_length_wait=\"${over_length_wait}9\"\ndone\nauto_garbled_verdicts=\"\"\nfor garbled_wait in 'slice 3' '-3' \"$over_length_wait\"; do\n  oso-state --session \"$SESSION\" set \"auto_wait=$garbled_wait\" >/dev/null\n  auto_garbled_verdicts=\"$auto_garbled_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"\ndone" },
-    { "file": "tests/hooks-test.sh", "line": 4847, "assertion": "assert_equals \"a wait mark the net cannot read is no evidence of live work: every such turn is pushed and counted exactly as an unmarked run\" \\\n  \"push push push|pushes=3>journal_bytes=0>\" \"${auto_garbled_verdicts# }|$(auto_tally_of)\"" }
+    { "file": "tests/hooks-test.sh", "line": 4845, "assertion": "over_length_wait=w\nwhile [ \"${#over_length_wait}\" -le 64 ]; do\n  over_length_wait=\"${over_length_wait}9\"\ndone\nauto_garbled_verdicts=\"\"\nfor garbled_wait in 'slice 3' '-3' \"$over_length_wait\"; do\n  oso-state --session \"$SESSION\" set \"auto_wait=$garbled_wait\" >/dev/null\n  auto_garbled_verdicts=\"$auto_garbled_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"\ndone" },
+    { "file": "tests/hooks-test.sh", "line": 4854, "assertion": "assert_equals \"a wait mark the net cannot read is no evidence of live work: every such turn is pushed and counted exactly as an unmarked run\" \\\n  \"push push push|pushes=3>journal_bytes=0>\" \"${auto_garbled_verdicts# }|$(auto_tally_of)\"" }
   ],
   "gate": "autocontinue",
   "argv": [],

@@ -170,25 +170,25 @@ const LEXER_CASES: readonly LexerCase[] = [
 const PINNED_HOLE_CASES: readonly LexerCase[] = [
   {
     reads: "script -qc, whose payload no token's basename answers",
-    readFrom: "tests/hooks-test.sh:788",
+    readFrom: "tests/hooks-test.sh:795",
     line: "script -qc 'vercel --prod' /dev/null",
     records: [">script", ".-qc", ".vercel --prod", "./dev/null"],
   },
   {
     reads: "ssh, whose payload no token's basename answers",
-    readFrom: "tests/hooks-test.sh:788",
+    readFrom: "tests/hooks-test.sh:795",
     line: "ssh build-host 'vercel --prod'",
     records: [">ssh", ".build-host", ".vercel --prod"],
   },
   {
     reads: "tmux new-session, whose payload no token's basename answers",
-    readFrom: "tests/hooks-test.sh:788",
+    readFrom: "tests/hooks-test.sh:795",
     line: "tmux new-session -d 'vercel --prod'",
     records: [">tmux", ".new-session", ".-d", ".vercel --prod"],
   },
   {
     reads: "an xargs replace-string, whose brace ends the command and leaves a clean word",
-    readFrom: "tests/hooks-test.sh:5133",
+    readFrom: "tests/hooks-test.sh:5140",
     line: "echo --prod | xargs -I{} vercel {}",
     records: [">echo", ".--prod", ">vercel"],
   },
@@ -215,7 +215,7 @@ describe("core/src/shell/lexer.ts: the two PINNED HOLES, ported record for recor
     });
   }
 
-  test("the same wrapper with its payload unquoted leaves the verb a token of its own (pinned at tests/hooks-test.sh:795)", () => {
+  test("the same wrapper with its payload unquoted leaves the verb a token of its own (pinned at tests/hooks-test.sh:802)", () => {
     assert.deepEqual(rendered(lexShellCommands("ssh build-host vercel --prod")), [
       ">ssh",
       ".build-host",

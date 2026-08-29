@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2149,
+      "line": 2156,
       "assertion": "assert_denies \"the edit gate denies a marked call while no slice is active\" \\\n  block-edits-without-slice.sh \"$edit_input\""
     }
   ],

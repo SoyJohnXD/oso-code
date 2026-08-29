@@ -1,8 +1,8 @@
 {
   "name": "autocontinue gate: a garbage state file fails open and writes no run trail",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 4753, "assertion": "printf 'this file is not state at all\\n' > \"$REPO_STATE\"\nauto_uncertain_verdicts=\"$auto_uncertain_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"" },
-    { "file": "tests/hooks-test.sh", "line": 4759, "assertion": "assert_equals \"an unreadable state path, a garbage one and an unparseable payload fail open, writing no run trail\" \\\n  \"stop stop stop stop|unwritten\" \\\n  \"${auto_uncertain_verdicts# }|$(ls \"$STATE_DIR/runs\" 2>/dev/null || echo unwritten)\"" }
+    { "file": "tests/hooks-test.sh", "line": 4760, "assertion": "printf 'this file is not state at all\\n' > \"$REPO_STATE\"\nauto_uncertain_verdicts=\"$auto_uncertain_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 4766, "assertion": "assert_equals \"an unreadable state path, a garbage one and an unparseable payload fail open, writing no run trail\" \\\n  \"stop stop stop stop|unwritten\" \\\n  \"${auto_uncertain_verdicts# }|$(ls \"$STATE_DIR/runs\" 2>/dev/null || echo unwritten)\"" }
   ],
   "gate": "autocontinue",
   "argv": [],

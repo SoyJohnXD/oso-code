@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5596,
+      "line": 5603,
       "assertion": "assert_equals \"the whole triple survives a fourth key beside it\" \"\" \"$keys_lost_to_the_fourth\""
     }
   ],

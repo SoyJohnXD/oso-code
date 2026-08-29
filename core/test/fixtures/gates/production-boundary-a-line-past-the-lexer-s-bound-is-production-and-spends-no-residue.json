@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5093,
+      "line": 5100,
       "assertion": "assert_equals \"a line past the lexer's bound is production at this boundary: an unread payload is the one thing a deploy refusal cannot spend a residue on\" \\\n  \"deny 0\" \"$(prod_verdicts_and_residues_for \"$prod_long_command\")\""
     }
   ],

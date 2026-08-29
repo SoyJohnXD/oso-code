@@ -6,6 +6,13 @@ PLUGIN="$REPO_ROOT/plugin"
 TEST_HOME="$(mktemp -d)"
 trap 'rm -rf "$TEST_HOME"' EXIT
 export HOME="$TEST_HOME"
+USERPROFILE="$TEST_HOME"
+case "$(uname -s 2>/dev/null || true)" in
+  MINGW*|MSYS*|CYGWIN*)
+    USERPROFILE="$(cygpath -m "$TEST_HOME" 2>/dev/null || printf '%s' "$TEST_HOME")"
+    ;;
+esac
+export USERPROFILE
 export PATH="$PLUGIN/bin:$PATH"
 unset GIT_CONFIG_GLOBAL OSO_AGENT OSO_STATE_BIN \
   XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME
@@ -7936,8 +7943,12 @@ nightly_windows_only_check_names() {
 CI_VERIFY_HOME="$TEST_HOME/ci-verify-home"
 CI_VERIFY_REPORT="$TEST_HOME/ci-verify-report"
 mkdir -p "$CI_VERIFY_HOME"
+ci_verify_userprofile=""
+case "$(uname -s 2>/dev/null || true)" in
+  MINGW*|MSYS*|CYGWIN*) ci_verify_userprofile="$CI_VERIFY_HOME" ;;
+esac
 ( PATH="$CLAUDE_SHIM_DIR:$PATH"
-  OSO_VERIFY_SKIP_SLOW=1 HOME="$CI_VERIFY_HOME" \
+  OSO_VERIFY_SKIP_SLOW=1 HOME="$CI_VERIFY_HOME" USERPROFILE="$ci_verify_userprofile" \
     bash "$REPO_ROOT/bootstrap/verify.sh" ) > "$CI_VERIFY_REPORT" 2>&1 || true
 ci_verify_report="$(cat "$CI_VERIFY_REPORT")"
 

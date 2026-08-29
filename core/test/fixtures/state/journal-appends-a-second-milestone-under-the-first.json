@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 4567,
+      "line": 4574,
       "assertion": "assert_equals \"two milestones append to one journal in the order they happened\" \\\n  \"wave 1 armed>wave 1 verified>\" \"$(journal_texts_in \"$JOURNAL_DIR/run.log\")\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 4596,
+      "line": 4603,
       "assertion": "assert_equals \"a directory git cannot name journals under the same fallback its state file takes\" \\\n  \"no repository names this directory>\" \\\n  \"$(journal_texts_in \"$STATE_DIR/runs/$(state_key_of \"$JOURNAL_PLAIN\")/run.log\")\""
     }
   ],

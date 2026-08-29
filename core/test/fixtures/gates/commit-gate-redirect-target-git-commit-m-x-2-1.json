@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6523,
+      "line": 6530,
       "assertion": "assert_every assert_denies \"redirect target\" <<'REDIRECT_TABLE'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6549,
+      "line": 6556,
       "assertion": "git commit -m x 2>&1"
     }
   ],

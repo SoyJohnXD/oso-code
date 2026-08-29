@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6678,
+      "line": 6685,
       "assertion": "assert_every assert_allows_counted \"a shell fed from a pipe or a script file — counted, not denied, on purpose\" <<'UNREAD_SHELL_INPUT_TABLE'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6680,
+      "line": 6687,
       "assertion": "echo git commit | sh"
     }
   ],

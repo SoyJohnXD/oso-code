@@ -1,8 +1,8 @@
 {
   "name": "autocontinue gate: a turn this hook already continued counts as a push even before any tally exists",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 4786, "assertion": "arm_unattended_run\nauto_belt_verdicts=\"\"\nfor _ in 1 2 3; do\n  auto_belt_verdicts=\"$auto_belt_verdicts $(auto_stop_verdict \"$(auto_stop_input \"$SESSION\" true)\")\"\ndone" },
-    { "file": "tests/hooks-test.sh", "line": 4791, "assertion": "assert_equals \"a turn this hook already continued counts as a push even before any tally exists\" \\\n  \"push push stop\" \"${auto_belt_verdicts# }\"" }
+    { "file": "tests/hooks-test.sh", "line": 4793, "assertion": "arm_unattended_run\nauto_belt_verdicts=\"\"\nfor _ in 1 2 3; do\n  auto_belt_verdicts=\"$auto_belt_verdicts $(auto_stop_verdict \"$(auto_stop_input \"$SESSION\" true)\")\"\ndone" },
+    { "file": "tests/hooks-test.sh", "line": 4798, "assertion": "assert_equals \"a turn this hook already continued counts as a push even before any tally exists\" \\\n  \"push push stop\" \"${auto_belt_verdicts# }\"" }
   ],
   "gate": "autocontinue",
   "argv": [],

@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2105,
+      "line": 2112,
       "assertion": "assert_denies \"recorded release commit is denied\" block-commit-until-green.sh \"$(bash_input 'git add -A && git commit -m \\\"feat(harness): one-step Windows installer, hybrid MCP wiring, identity voice, didactic walkthrough (v0.10.0)\\\" && git log --oneline -1 && git status --porcelain | wc -l')\""
     }
   ],

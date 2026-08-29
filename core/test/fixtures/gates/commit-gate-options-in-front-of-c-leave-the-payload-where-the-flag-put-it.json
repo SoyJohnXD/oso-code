@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6621,
+      "line": 6628,
       "assertion": "assert_denies \"options in front of -c leave the payload where the flag put it\" \\\n  block-commit-until-green.sh \"$(bash_input 'bash -O extglob -c \\\"git commit -m x\\\"')\""
     }
   ],

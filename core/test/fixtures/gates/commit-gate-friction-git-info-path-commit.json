@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6410,
+      "line": 6417,
       "assertion": "assert_every assert_allows friction <<'FRICTION_TABLE'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6433,
+      "line": 6440,
       "assertion": "git --info-path commit"
     }
   ],

@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6877,
+      "line": 6884,
       "assertion": "  assert_commit_aborted \"the commit's own boundary stops the alias\" \"$alias_shape\""
     }
   ],

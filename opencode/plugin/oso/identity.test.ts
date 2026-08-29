@@ -59,6 +59,7 @@ function commitInto(tree: string, home: string, marker: string, file: string) {
     ...process.env,
     ...COMMIT_ENV,
     HOME: home,
+    USERPROFILE: home,
     OSO_AGENT: marker,
   };
   delete env.CLAUDE_CODE_SESSION_ID;

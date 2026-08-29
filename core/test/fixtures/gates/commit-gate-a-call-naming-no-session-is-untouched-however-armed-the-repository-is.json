@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2147,
+      "line": 2154,
       "assertion": "assert_allows \"the commit gate stays off a call naming no session, armed repo or not\" \\\n  block-commit-until-green.sh \"$unmarked_bash_input\""
     }
   ],

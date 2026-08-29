@@ -1,8 +1,8 @@
 {
   "name": "autocontinue gate: an expired mark spends the cap like any stall and the give-up names the mark",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 4878, "assertion": "for _ in 1 2 3; do\n  auto_expiry_verdicts=\"$auto_expiry_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"\ndone" },
-    { "file": "tests/hooks-test.sh", "line": 4881, "assertion": "assert_equals \"an expired mark spends the cap like any stall, and the give-up names the mark rather than claiming there was no progress\" \\\n  \"stop push push stop|$AUTO_EXPIRED_CAP_MILESTONE>\" \\\n  \"${auto_expiry_verdicts# }|$(journal_texts_in \"$AUTO_JOURNAL\")\"" }
+    { "file": "tests/hooks-test.sh", "line": 4885, "assertion": "for _ in 1 2 3; do\n  auto_expiry_verdicts=\"$auto_expiry_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"\ndone" },
+    { "file": "tests/hooks-test.sh", "line": 4888, "assertion": "assert_equals \"an expired mark spends the cap like any stall, and the give-up names the mark rather than claiming there was no progress\" \\\n  \"stop push push stop|$AUTO_EXPIRED_CAP_MILESTONE>\" \\\n  \"${auto_expiry_verdicts# }|$(journal_texts_in \"$AUTO_JOURNAL\")\"" }
   ],
   "gate": "autocontinue",
   "argv": [],

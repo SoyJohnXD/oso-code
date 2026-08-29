@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5015,
+      "line": 5022,
       "assertion": "assert_equals \"the work of the run itself is none of this gate's business\" \\\n  \"allow allow allow\" \\\n  \"$(prod_verdicts_for 'npm run build' 'git commit -m wip' 'git commit -m push')\""
     }
   ],

@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5002,
+      "line": 5009,
       "assertion": "assert_equals \"a deploy spec carrying a pinned version is the same production shape as its unpinned spelling\" \\\n  \"deny deny deny deny deny\" \\\n  \"$(prod_verdicts_for 'npx vercel@latest --prod' 'npm exec vercel@34 -- --prod' \\\n    'pnpm dlx vercel@34 --target production' 'npx vercel@2.1.0 --target=production' \\\n    'yarn dlx netlify@17 deploy --prod')\""
     }
   ],

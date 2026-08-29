@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6889,
+      "line": 6896,
       "assertion": "    block-commit-until-green.sh \"$(bash_input 'git commit --no-verify -m x')\""
     }
   ],

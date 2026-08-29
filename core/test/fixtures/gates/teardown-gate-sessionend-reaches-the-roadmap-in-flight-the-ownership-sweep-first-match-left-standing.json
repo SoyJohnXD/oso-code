@@ -3,27 +3,27 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5724,
+      "line": 5731,
       "assertion": "printf 'mode=plan\\nsession=roadmap-owner\\n' > \"$roadmap_decoy_state\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5725,
+      "line": 5732,
       "assertion": "printf 'mode=plan\\nsession=roadmap-owner\\nroadmap=auth-hardening\\n' > \"$roadmap_live_state\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5726,
+      "line": 5733,
       "assertion": "run_hook cleanup-state.sh '{\"session_id\":\"roadmap-owner\"}'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5727,
+      "line": 5734,
       "assertion": "assert_after_hook \"the ownership sweep still takes the first file the glob hands it\" \\\n  [ ! -f \"$roadmap_decoy_state\" ]"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5729,
+      "line": 5736,
       "assertion": "assert_after_hook \"SessionEnd reaches the roadmap in flight the ownership sweep's first match left standing\" \\\n  [ ! -f \"$roadmap_live_state\" ]"
     }
   ],

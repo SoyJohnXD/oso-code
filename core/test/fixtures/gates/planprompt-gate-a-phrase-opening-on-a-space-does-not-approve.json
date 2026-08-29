@@ -1,8 +1,8 @@
 {
   "name": "planprompt gate: a phrase opening on a space does not approve",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1861, "assertion": "for inexact_prompt in \\\n  'Implement the plan' \\\n  'Implement the plan.!' \\\n  ' Implement the plan.' \\\n  'Implement the plan. ' \\\n  'Implement the plan.\\n'; do\n  run_hook \"$PLAN_PROMPT_HOOK\" \\" },
-    { "file": "tests/hooks-test.sh", "line": 1868, "assertion": "    \"$(codex_prompt_input default \"$SESSION\" \"$inexact_prompt\")\"\n  assert_equals \"punctuation, whitespace or an escaped LF does not approve\" pending \\" }
+    { "file": "tests/hooks-test.sh", "line": 1868, "assertion": "for inexact_prompt in \\\n  'Implement the plan' \\\n  'Implement the plan.!' \\\n  ' Implement the plan.' \\\n  'Implement the plan. ' \\\n  'Implement the plan.\\n'; do\n  run_hook \"$PLAN_PROMPT_HOOK\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1875, "assertion": "    \"$(codex_prompt_input default \"$SESSION\" \"$inexact_prompt\")\"\n  assert_equals \"punctuation, whitespace or an escaped LF does not approve\" pending \\" }
   ],
   "gate": "planprompt",
   "argv": [],

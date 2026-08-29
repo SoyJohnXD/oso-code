@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5293,
+      "line": 5300,
       "assertion": "assert_equals \"publishing a handoff receipt succeeds silently\" \\\n  \"rc=0 stdout= stderr=\" \"rc=$handoff_rc stdout=$handoff_stdout stderr=$handoff_stderr\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5297,
+      "line": 5304,
       "assertion": "assert_equals \"the published file is exactly six provenance lines, never the report verdict\" \\\n  \"$basic_receipt\" \"$published_receipt\""
     }
   ],

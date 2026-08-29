@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5314,
+      "line": 5321,
       "assertion": "assert_equals \"a consumed receipt cannot be consumed a second time\" 1 \"$handoff_rc\""
     }
   ],
