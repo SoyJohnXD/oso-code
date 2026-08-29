@@ -31,6 +31,16 @@ provedSomething(
   `${HOOK_GATES_TABLE} parsed into ${tableRows.length} row(s) and ${hostNames.length} host(s), so this check compared nothing`,
 );
 
+const mandatedCells = TOOL_ROWS.map((row) => row.mandated).filter((cell) => cell === "yes" || cell === "no");
+
+provedSomething(
+  `${mandatedCells.length} of the ${TOOL_ROWS.length} tool row(s) carry the yes/no mandated cell that only ` +
+    `${HOOK_GATES_TABLE} spells, so the equality below compares that column rather than two absences`,
+  mandatedCells.length === TOOL_ROWS.length && TOOL_ROWS.length > 0,
+  `${mandatedCells.length} of ${TOOL_ROWS.length} tool row(s) carried a yes/no mandated cell, so C2-D24(1)'s ` +
+    "column is not the thing this check compares",
+);
+
 describe(`core/src/routes/routes.ts carries exactly what ${HOOK_GATES_TABLE} spells, while both exist`, () => {
   test("the host rows match", () => {
     assert.deepEqual(HOST_ROWS, rowsOfKind("host").map(hostRowOf));

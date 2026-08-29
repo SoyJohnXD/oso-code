@@ -7012,14 +7012,14 @@ assert_equals "an install without the flag clears the marker an earlier one left
   "cleared" "$(marker_state)"
 
 VERIFY_INSTALLED_ROOT="$HOME/.claude/plugins/cache/oso-code/oso-code/verify-fixture"
-mkdir -p "$VERIFY_INSTALLED_ROOT/hooks"
+mkdir -p "$VERIFY_INSTALLED_ROOT/dist"
 printf '%s\n' \
-  '#!/bin/sh' \
-  'cat >/dev/null' \
-  '[ "${OSO_AGENT:-}" = 1 ] || exit 0' \
-  'printf '\''{"hookSpecificOutput":{"permissionDecision":"deny"}}\n'\''' \
-  > "$VERIFY_INSTALLED_ROOT/hooks/block-commit-until-green.sh"
-chmod +x "$VERIFY_INSTALLED_ROOT/hooks/block-commit-until-green.sh"
+  'process.stdin.resume();' \
+  'process.stdin.on("end", () => {' \
+  '  if (process.env.OSO_AGENT !== "1") process.exit(0);' \
+  '  process.stdout.write(JSON.stringify({ hookSpecificOutput: { permissionDecision: "deny" } }));' \
+  '});' \
+  > "$VERIFY_INSTALLED_ROOT/dist/gate.js"
 
 verify_report() {
   ( PATH="$CLAUDE_SHIM_DIR:$PATH"

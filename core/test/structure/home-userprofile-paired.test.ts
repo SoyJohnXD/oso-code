@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { provedSomething } from "../support/proved.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
+import { trackedRepositoryFiles } from "../support/tracked-files.ts";
 
 const TS_SCAN_PREFIXES = ["core/", "opencode/"];
 const SHELL_SCAN_PREFIX = "tests/";
@@ -89,15 +89,6 @@ export function unpairedShellHomeSites(file: string, text: string): UnpairedHome
     if (!SHELL_USERPROFILE_PAIRED_PATTERN.test(window)) sites.push({ file, line: index + 1, text: lineText.trim() });
   });
   return sites;
-}
-
-function trackedRepositoryFiles(): string[] {
-  const listing = spawnSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], {
-    cwd: repositoryRoot,
-    encoding: "utf8",
-  });
-  assert.equal(listing.status, 0, `git ls-files failed: ${listing.stderr}`);
-  return listing.stdout.split("\n").filter((line) => line !== "");
 }
 
 const trackedFiles = trackedRepositoryFiles();

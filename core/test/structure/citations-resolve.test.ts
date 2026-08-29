@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { provedSomething } from "../support/proved.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
+import { readTrackedText, trackedRepositoryFiles } from "../support/tracked-files.ts";
 
 const SOURCE_EXTENSIONS = new Set(["sh", "ts", "tsx", "js", "mjs", "cjs", "md", "toml", "txt", "ps1", "yml", "yaml"]);
 const TARGET_EXTENSIONS = new Set([...SOURCE_EXTENSIONS, "json"]);
@@ -71,15 +71,6 @@ function specFitsWithin(spec: string, totalLines: number): boolean {
   });
 }
 
-function trackedRepositoryFiles(): string[] {
-  const listing = spawnSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], {
-    cwd: repositoryRoot,
-    encoding: "utf8",
-  });
-  assert.equal(listing.status, 0, `git ls-files failed: ${listing.stderr}`);
-  return listing.stdout.split("\n").filter((line) => line !== "");
-}
-
 function isScanned(file: string): boolean {
   return (
     SOURCE_EXTENSIONS.has(extensionOf(file)) &&
@@ -90,10 +81,7 @@ function isScanned(file: string): boolean {
 const trackedFiles = trackedRepositoryFiles();
 const trackedFileSet = new Set(trackedFiles);
 const scannedFiles = trackedFiles.filter(isScanned);
-const scannedFileTexts = scannedFiles.map((file) => ({
-  file,
-  text: readFileSync(path.join(repositoryRoot, file), "utf8"),
-}));
+const scannedFileTexts = scannedFiles.map(readTrackedText);
 const citationsFound = scannedFileTexts.flatMap(({ file, text }) => citationsIn(file, text));
 const bareCitationTotal = scannedFileTexts.reduce((total, { text }) => total + bareCitationCount(text), 0);
 
