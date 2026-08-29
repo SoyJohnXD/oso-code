@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5599,
+      "line": 5621,
       "assertion": "assert_equals \"a write records the session that armed the state\" \\\n  \"$SESSION\" \"$(oso-state --session \"$SESSION\" get session)\""
     }
   ],

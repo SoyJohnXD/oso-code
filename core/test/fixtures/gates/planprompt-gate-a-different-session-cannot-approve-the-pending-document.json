@@ -1,9 +1,9 @@
 {
   "name": "planprompt gate: a different session cannot approve the pending document",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1851, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default other-session 'Implement the plan.')\"" },
-    { "file": "tests/hooks-test.sh", "line": 1853, "assertion": "assert_after_hook \"a different session cannot approve the pending document\" \\\n  hook_returned_block" },
-    { "file": "tests/hooks-test.sh", "line": 1855, "assertion": "assert_equals \"a wrong-session approval prompt does not mutate pending state\" \\\n  \"$pending_snapshot\" \"$(approval_state_snapshot)\"" }
+    { "file": "tests/hooks-test.sh", "line": 1874, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default other-session 'Implement the plan.')\"" },
+    { "file": "tests/hooks-test.sh", "line": 1876, "assertion": "assert_after_hook \"a different session cannot approve the pending document\" \\\n  hook_returned_block" },
+    { "file": "tests/hooks-test.sh", "line": 1878, "assertion": "assert_equals \"a wrong-session approval prompt does not mutate pending state\" \\\n  \"$pending_snapshot\" \"$(approval_state_snapshot)\"" }
   ],
   "gate": "planprompt",
   "argv": [],

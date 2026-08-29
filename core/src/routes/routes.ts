@@ -1,3 +1,7 @@
+export const BUNDLE_DIRECTORY = "dist";
+export const GATE_BUNDLE = "gate.js";
+export const PRECOMMIT_BUNDLE = "precommit.js";
+
 export type HostName = "claude" | "codex" | "opencode";
 
 export type HostRow = Readonly<{ host: HostName; manifest: string; commandRoot: string }>;

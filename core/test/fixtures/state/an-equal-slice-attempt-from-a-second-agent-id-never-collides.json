@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5398,
+      "line": 5420,
       "assertion": "assert_equals \"simultaneous equal slice attempts with different agent ids never collide\" \\\n  \"publish=a=0:: b=0:: a=rc=0:$(expected_receipt parent-a slice-shared 1 agent-shared-a oso-verifier) b=rc=0:$(expected_receipt parent-b slice-shared 1 agent-shared-b oso-verifier)\" \\\n  \"publish=$shared_publish_status a=$shared_a_consumed b=$shared_b_consumed\""
     }
   ],

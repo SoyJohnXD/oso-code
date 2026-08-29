@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6515,
+      "line": 6537,
       "assertion": "assert_every assert_allows \"not gated\" <<'NOT_GATED_TABLE'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6519,
+      "line": 6541,
       "assertion": "git cherry-pick abc123"
     }
   ],

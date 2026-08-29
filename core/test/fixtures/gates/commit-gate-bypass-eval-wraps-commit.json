@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2108,
+      "line": 2131,
       "assertion": "assert_denies \"bypass: eval wraps commit\"    block-commit-until-green.sh \"$(bash_input 'eval '\\''git commit -m x'\\''')\""
     }
   ],

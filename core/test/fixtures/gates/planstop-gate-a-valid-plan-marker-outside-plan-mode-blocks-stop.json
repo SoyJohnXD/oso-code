@@ -1,9 +1,9 @@
 {
   "name": "planstop gate: a valid plan marker outside Plan Mode blocks Stop",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1538, "assertion": "run_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input default \"$SESSION\" 'Repaso\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->' false \"$CODEX_STOP_DEFAULT_TRANSCRIPT\")\"\nassert_after_hook \"a valid plan marker outside Plan Mode blocks Stop\" \\" },
-    { "file": "tests/hooks-test.sh", "line": 1541, "assertion": "  hook_returned_block\nassert_equals \"a wrong-mode Stop writes no approval state\" \\" },
-    { "file": "tests/hooks-test.sh", "line": 1543, "assertion": "  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"\n" }
+    { "file": "tests/hooks-test.sh", "line": 1561, "assertion": "run_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input default \"$SESSION\" 'Repaso\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->' false \"$CODEX_STOP_DEFAULT_TRANSCRIPT\")\"\nassert_after_hook \"a valid plan marker outside Plan Mode blocks Stop\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1564, "assertion": "  hook_returned_block\nassert_equals \"a wrong-mode Stop writes no approval state\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1566, "assertion": "  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"\n" }
   ],
   "gate": "planstop",
   "argv": [],

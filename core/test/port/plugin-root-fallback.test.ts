@@ -12,7 +12,7 @@ import { repositoryRoot, withStateSandbox } from "../support/state-sandbox.ts";
 const EXPECTED_PLUGIN_ROOT = path.join(repositoryRoot, "plugin");
 const EXPECTED_STATE_BIN = path.join(EXPECTED_PLUGIN_ROOT, "bin", "oso-state");
 const HOOKS_MANIFEST_FINGERPRINT_CONTENT =
-  '{"hooks":{"PreToolUse":[{"hooks":[{"command":"block-commit-until-green.sh"}]}]}}';
+  '{"hooks":{"PreToolUse":[{"hooks":[{"command":"node","args":["${CLAUDE_PLUGIN_ROOT}/dist/gate.js","commit"]}]}]}}';
 
 function flatInstallFixture(prefix: string, siblings: readonly string[], manifestSegments: readonly string[]): string {
   const root = mkdtempSync(path.join(tmpdir(), prefix));
@@ -123,8 +123,8 @@ test(
 
 test(
   "pluginRootAbove resolves the real Codex staged runtime layout — hooks/, bin/ and git-hooks/ are flat " +
-    "siblings under the runtime root with no plugin/ wrapper, and its own hooks.json (install-codex.sh:521, " +
-    "copied from codex/hooks/hooks.json) is what verifies it (bootstrap/install-codex.sh:514-531, finding A)",
+    "siblings under the runtime root with no plugin/ wrapper, and its own hooks.json (install-codex.sh:524, " +
+    "copied from codex/hooks/hooks.json) is what verifies it (bootstrap/install-codex.sh:518-536, finding A)",
   () => {
     const root = flatInstallFixture("oso-codex-runtime-", ["hooks", "git-hooks"], ["hooks.json"]);
     try {

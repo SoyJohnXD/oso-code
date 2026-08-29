@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5103,
+      "line": 5125,
       "assertion": "assert_equals \"an unread payload outranks a lexed push in the same line, so the boundary refuses that line as one it could not read rather than as a push off the run branch\" \\\n  \"unreadable\" \"$prod_unread_refusal\""
     }
   ],

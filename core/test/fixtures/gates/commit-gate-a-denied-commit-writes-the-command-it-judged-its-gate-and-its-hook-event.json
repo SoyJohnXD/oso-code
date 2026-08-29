@@ -3,22 +3,22 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5652,
+      "line": 5674,
       "assertion": "assert_logged \"a denied commit writes the command it judged\" \\\n  '\"event\":\"commit-denied\",\"command\":\"git commit -m x\",\"session\":\"'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5654,
+      "line": 5676,
       "assertion": "assert_logged \"every logged event carries the schema version\" '\"schema\":2'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5655,
+      "line": 5677,
       "assertion": "assert_logged \"a deny names the gate script that fired\" \\\n  '\"gate\":\"block-commit-until-green.sh\"'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5657,
+      "line": 5679,
       "assertion": "assert_logged \"a deny names the hook event it fired on\" '\"hook_event\":\"PreToolUse\"'"
     }
   ],

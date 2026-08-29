@@ -1,9 +1,9 @@
 {
   "name": "planprompt gate: the native approval phrase with no pending Oso plan stays invisible",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1584, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'Implement the plan.')\"" },
-    { "file": "tests/hooks-test.sh", "line": 1586, "assertion": "assert_after_hook \"the native approval phrase with no pending Oso plan stays invisible\" \\\n  [ \"$hook_stdout\" = '{}' ]" },
-    { "file": "tests/hooks-test.sh", "line": 1588, "assertion": "assert_equals \"a no-pending native approval writes no state\" \\\n  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"" }
+    { "file": "tests/hooks-test.sh", "line": 1607, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'Implement the plan.')\"" },
+    { "file": "tests/hooks-test.sh", "line": 1609, "assertion": "assert_after_hook \"the native approval phrase with no pending Oso plan stays invisible\" \\\n  [ \"$hook_stdout\" = '{}' ]" },
+    { "file": "tests/hooks-test.sh", "line": 1611, "assertion": "assert_equals \"a no-pending native approval writes no state\" \\\n  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"" }
   ],
   "gate": "planprompt",
   "argv": [],

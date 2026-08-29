@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6203,
+      "line": 6225,
       "assertion": "  run_drift_hook"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6209,
+      "line": 6231,
       "assertion": "  assert_equals \"a stale install names both versions and the update, never the highest-sorting tag\" \\\n    \"|0.17.0|0.19.0|claude plugin marketplace update oso-code|claude plugin update oso-code@oso-code\" \\\n    \"$drift_named\""
     }
   ],

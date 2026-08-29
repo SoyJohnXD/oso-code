@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6494,
+      "line": 6516,
       "assertion": "assert_every assert_denies \"marker the gate will not place\" <<'UNPLACEABLE_MARKER_TABLE'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6497,
+      "line": 6519,
       "assertion": "git commit -- --dry-run"
     }
   ],

@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6640,
+      "line": 6662,
       "assertion": "assert_every assert_allows_counted \"payload behind a clustered option\" <<'CLUSTERED_OPTION_TABLE'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6646,
+      "line": 6668,
       "assertion": "bash -cO extglob 'git commit -m x'"
     }
   ],

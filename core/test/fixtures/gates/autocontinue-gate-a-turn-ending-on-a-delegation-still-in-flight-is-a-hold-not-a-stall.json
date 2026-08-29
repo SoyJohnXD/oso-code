@@ -1,9 +1,9 @@
 {
   "name": "autocontinue gate: a turn ending on a delegation still in flight is a hold, not a stall",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 4821, "assertion": "arm_unattended_run\nauto_wait_verdicts=\" $(auto_stop_verdict \"$(auto_stop_input)\")\"\noso-state --session \"$SESSION\" set auto_wait=3 >/dev/null\nauto_holds_before=\"$(auto_events_recorded auto-continue-held)\"\nauto_wait_verdicts=\"$auto_wait_verdicts $(auto_stop_verdict \"$(auto_stop_input \"$SESSION\" true)\")\"\nauto_holds_after=\"$(auto_events_recorded auto-continue-held)\"" },
-    { "file": "tests/hooks-test.sh", "line": 4827, "assertion": "assert_equals \"a turn ending on a delegation still in flight is a hold, not a stall: the stop stands and the push tally is left exactly where it was\" \\\n  \"push stop|pushes=1>journal_bytes=0>\" \"${auto_wait_verdicts# }|$(auto_tally_of)\"" },
-    { "file": "tests/hooks-test.sh", "line": 4829, "assertion": "assert_equals \"the held turn leaves one auto-continue-held line, so a net that held on purpose never reads back as one that never ran\" \\\n  \"1\" \"$((auto_holds_after - auto_holds_before))\"" }
+    { "file": "tests/hooks-test.sh", "line": 4843, "assertion": "arm_unattended_run\nauto_wait_verdicts=\" $(auto_stop_verdict \"$(auto_stop_input)\")\"\noso-state --session \"$SESSION\" set auto_wait=3 >/dev/null\nauto_holds_before=\"$(auto_events_recorded auto-continue-held)\"\nauto_wait_verdicts=\"$auto_wait_verdicts $(auto_stop_verdict \"$(auto_stop_input \"$SESSION\" true)\")\"\nauto_holds_after=\"$(auto_events_recorded auto-continue-held)\"" },
+    { "file": "tests/hooks-test.sh", "line": 4849, "assertion": "assert_equals \"a turn ending on a delegation still in flight is a hold, not a stall: the stop stands and the push tally is left exactly where it was\" \\\n  \"push stop|pushes=1>journal_bytes=0>\" \"${auto_wait_verdicts# }|$(auto_tally_of)\"" },
+    { "file": "tests/hooks-test.sh", "line": 4851, "assertion": "assert_equals \"the held turn leaves one auto-continue-held line, so a net that held on purpose never reads back as one that never ran\" \\\n  \"1\" \"$((auto_holds_after - auto_holds_before))\"" }
   ],
   "gate": "autocontinue",
   "argv": [],

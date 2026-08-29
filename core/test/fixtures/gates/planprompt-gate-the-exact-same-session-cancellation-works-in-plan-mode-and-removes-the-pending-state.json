@@ -1,9 +1,9 @@
 {
   "name": "planprompt gate: the exact same-session cancellation works in Plan Mode and removes the pending state",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1774, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'CANCEL OSO PLAN' \"$CODEX_PROMPT_PLAN_TRANSCRIPT\")\"" },
-    { "file": "tests/hooks-test.sh", "line": 1776, "assertion": "assert_after_hook \"the exact same-session cancellation works in Plan Mode\" \\\n  hook_returned_prompt_context" },
-    { "file": "tests/hooks-test.sh", "line": 1778, "assertion": "assert_equals \"Plan Mode cancellation removes pending state\" \\\n  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"" }
+    { "file": "tests/hooks-test.sh", "line": 1797, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'CANCEL OSO PLAN' \"$CODEX_PROMPT_PLAN_TRANSCRIPT\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 1799, "assertion": "assert_after_hook \"the exact same-session cancellation works in Plan Mode\" \\\n  hook_returned_prompt_context" },
+    { "file": "tests/hooks-test.sh", "line": 1801, "assertion": "assert_equals \"Plan Mode cancellation removes pending state\" \\\n  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"" }
   ],
   "gate": "planprompt",
   "argv": [],

@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5719,
+      "line": 5741,
       "assertion": "OSO_AGENT=1 run_hook cleanup-state.sh '{\"session_id\":\"orphan-real-session\"}'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5720,
+      "line": 5742,
       "assertion": "assert_after_hook \"SessionEnd for the session whose plan_approval_session matches drops its own orphaned pending\" \\\n  [ ! -f \"$orphan_pending_state\" ]"
     }
   ],

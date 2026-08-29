@@ -3,17 +3,17 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5698,
+      "line": 5720,
       "assertion": "( cd \"$ELSEWHERE\" && oso-state --session sessionend-probe set mode=plan verify_green=true >/dev/null )"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5702,
+      "line": 5724,
       "assertion": "run_hook cleanup-state.sh '{\"session_id\":\"sessionend-probe\"}'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5703,
+      "line": 5725,
       "assertion": "assert_after_hook \"session end drops the state of a directory it is not standing in\" \\\n  [ ! -f \"$elsewhere_state\" ]"
     }
   ],

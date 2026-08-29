@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2148,
+      "line": 2171,
       "assertion": "assert_allows \"the edit gate stays off a call naming no session, armed repo or not\" \\\n  block-edits-without-slice.sh \"$unmarked_edit_input\""
     }
   ],

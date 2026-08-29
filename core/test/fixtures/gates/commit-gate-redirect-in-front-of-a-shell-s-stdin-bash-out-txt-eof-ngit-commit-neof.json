@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6557,
+      "line": 6579,
       "assertion": "assert_every assert_denies \"redirect in front of a shell's stdin\" <<'REDIRECT_STDIN_TABLE'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6559,
+      "line": 6581,
       "assertion": "bash >out.txt <<EOF\\ngit commit\\nEOF"
     }
   ],

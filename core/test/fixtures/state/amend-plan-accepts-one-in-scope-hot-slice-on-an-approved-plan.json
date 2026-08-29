@@ -3,27 +3,27 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 1909,
+      "line": 1932,
       "assertion": "if printf '%b' \"$hot_slice\" | oso-state --session \"$SESSION\" amend-plan slice-3 >/dev/null 2>&1; then\n  echo \"ok: an approved plan accepts one explicit in-scope hot slice\"; pass=$((pass + 1))\nelse\n  echo \"FAIL: an approved plan rejected a valid hot slice\"; fail=$((fail + 1))\nfi"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 1914,
+      "line": 1937,
       "assertion": "assert_equals \"a hot slice increments the operational plan revision\" \\\n  1 \"$(oso-state --session \"$SESSION\" get plan_revision)\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 1916,
+      "line": 1939,
       "assertion": "assert_equals \"a hot slice reopens the overall verification flag\" \\\n  false \"$(oso-state --session \"$SESSION\" get verify_green)\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 1918,
+      "line": 1941,
       "assertion": "case \"$(cat \"$first_current_file\")\" in\n  *'## Execution amendment — slice-3'*'Requested-by: operator'*'### Slice 3 — approval regression'*)\n    echo \"ok: the operational plan records the dated in-scope amendment\"; pass=$((pass + 1)) ;;\n  *)\n    echo \"FAIL: the operational plan does not contain the hot slice amendment\"; fail=$((fail + 1)) ;;\nesac"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 1924,
+      "line": 1947,
       "assertion": "assert_equals \"a hot slice never mutates the immutable approved snapshot\" \\\n  \"$approved_snapshot_before_amendment\" \"$(cat \"$first_approved_file\")\""
     }
   ],

@@ -2,7 +2,7 @@ import { accessSync, constants, existsSync, readFileSync, statSync } from "node:
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GateOutcome, GateVerdict, HookEnvelope, PreToolUseVerdict } from "../hosts/envelope.ts";
-import { gateRow, type GateId } from "../routes/routes.ts";
+import { GATE_BUNDLE, gateRow, type GateId } from "../routes/routes.ts";
 import { readStateFile } from "../state/store.ts";
 
 export type GateRequest = Readonly<{ envelope: HookEnvelope; argv: readonly string[] }>;
@@ -118,7 +118,7 @@ export function pluginRootDirectory(): string {
 
 const PLUGIN_ROOT_WRAPPERS: readonly (readonly string[])[] = [[], ["plugin"]];
 const HOOKS_MANIFEST_LOCATIONS: readonly (readonly string[])[] = [["hooks.json"], ["hooks", "hooks.json"]];
-const HOOKS_MANIFEST_FINGERPRINT = "block-commit-until-green.sh";
+const HOOKS_MANIFEST_FINGERPRINT = `/${GATE_BUNDLE}`;
 
 export function pluginRootAbove(moduleDirectory: string): string {
   let candidate = moduleDirectory;

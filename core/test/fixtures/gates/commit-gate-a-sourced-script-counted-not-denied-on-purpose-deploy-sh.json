@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6688,
+      "line": 6710,
       "assertion": "assert_every assert_allows_counted \"a sourced script — counted, not denied, on purpose\" <<'SOURCED_SCRIPT_TABLE'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6690,
+      "line": 6712,
       "assertion": ". deploy.sh"
     }
   ],

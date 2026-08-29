@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2041,
+      "line": 2064,
       "assertion": "if oso-state --session \"$SESSION\" approve-plan \"$identity_split_digest\" >/dev/null 2>&1; then\n  echo \"ok: approve-plan still succeeds for the presenting session after the marker write\"; pass=$((pass + 1))\nelse\n  echo \"FAIL: approve-plan rejected the presenting session after the marker write\"; fail=$((fail + 1))\nfi"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 2046,
+      "line": 2069,
       "assertion": "assert_equals \"the surviving approval identity lets the presenting session's approval land\" \\\n  approved \"$(oso-state --session \"$SESSION\" get plan_approval)\""
     }
   ],

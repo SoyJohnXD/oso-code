@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2100,
+      "line": 2123,
       "assertion": "assert_allows \"non-commit bash is ignored\"      block-commit-until-green.sh \"$(bash_input 'npm test')\""
     }
   ],

@@ -1,9 +1,9 @@
 {
   "name": "stale gate: a value that is not a slug reaches the resume route as the placeholder, never as itself",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 6101, "assertion": "roadmap_state_of 'Not A Slug; rm -rf /'" },
-    { "file": "tests/hooks-test.sh", "line": 6102, "assertion": "run_hook warn-stale-state.sh \"$(stale_session_input)\"" },
-    { "file": "tests/hooks-test.sh", "line": 6103, "assertion": "assert_equals \"a value that is not a slug reaches the resume route as the placeholder, never as itself\" \\\n  \"present\" \"$(if printf '%s' \"$hook_stdout\" | grep -F '/oso-code:roadmap {roadmap}' >/dev/null; then echo present; else echo missing; fi)\"" }
+    { "file": "tests/hooks-test.sh", "line": 6123, "assertion": "roadmap_state_of 'Not A Slug; rm -rf /'" },
+    { "file": "tests/hooks-test.sh", "line": 6124, "assertion": "run_hook warn-stale-state.sh \"$(stale_session_input)\"" },
+    { "file": "tests/hooks-test.sh", "line": 6125, "assertion": "assert_equals \"a value that is not a slug reaches the resume route as the placeholder, never as itself\" \\\n  \"present\" \"$(if printf '%s' \"$hook_stdout\" | grep -F '/oso-code:roadmap {roadmap}' >/dev/null; then echo present; else echo missing; fi)\"" }
   ],
   "gate": "stale",
   "argv": [],

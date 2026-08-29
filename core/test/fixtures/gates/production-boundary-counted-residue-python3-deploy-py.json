@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5106,
+      "line": 5128,
       "assertion": "assert_equals \"an unresolved git option shape, a command word only the shell resolves and an interpreter's deploy payload all pass counted, exactly as the commit rail counts them\" \\\n  \"allow allow allow 3\" \\\n  \"$(prod_verdicts_and_residues_for 'git --super-prefix x/ push origin main' \\\n    'python3 deploy.py' '$DEPLOY --prod')\""
     }
   ],

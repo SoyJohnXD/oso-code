@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 1201,
+      "line": 1224,
       "assertion": "assert_after_hook \"a release-known Codex tool passes the armed catch-all\" \\\n  [ -z \"$hook_stdout\" ]"
     }
   ],

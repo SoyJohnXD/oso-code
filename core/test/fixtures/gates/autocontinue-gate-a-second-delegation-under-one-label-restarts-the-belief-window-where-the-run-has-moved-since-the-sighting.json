@@ -1,8 +1,8 @@
 {
   "name": "autocontinue gate: a second delegation under one label restarts the belief window where the run has moved since the sighting",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 4911, "assertion": "oso-state --session \"$SESSION\" set auto_wait=slice-21 >/dev/null\nauto_second_wait_verdicts=\" $(auto_stop_verdict \"$(auto_stop_input)\")\"\ntouch -t 200001010000 \"$AUTO_WAIT_MARK\"\njournal_milestone 'slice 21 applier reported; the verifier for the same slice is launched'\nauto_second_wait_verdicts=\"$auto_second_wait_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"\ntouch -t 200001010000 \"$AUTO_WAIT_MARK\"\nauto_second_wait_verdicts=\"$auto_second_wait_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"" },
-    { "file": "tests/hooks-test.sh", "line": 4918, "assertion": "assert_equals \"a second delegation under one label is a wait of its own: the belief window restarts where the run has moved since the sighting, and still expires where it has not\" \\\n  \"stop stop push\" \"${auto_second_wait_verdicts# }\"\n" }
+    { "file": "tests/hooks-test.sh", "line": 4933, "assertion": "oso-state --session \"$SESSION\" set auto_wait=slice-21 >/dev/null\nauto_second_wait_verdicts=\" $(auto_stop_verdict \"$(auto_stop_input)\")\"\ntouch -t 200001010000 \"$AUTO_WAIT_MARK\"\njournal_milestone 'slice 21 applier reported; the verifier for the same slice is launched'\nauto_second_wait_verdicts=\"$auto_second_wait_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"\ntouch -t 200001010000 \"$AUTO_WAIT_MARK\"\nauto_second_wait_verdicts=\"$auto_second_wait_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 4940, "assertion": "assert_equals \"a second delegation under one label is a wait of its own: the belief window restarts where the run has moved since the sighting, and still expires where it has not\" \\\n  \"stop stop push\" \"${auto_second_wait_verdicts# }\"\n" }
   ],
   "gate": "autocontinue",
   "argv": [],

@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6347,
+      "line": 6369,
       "assertion": "oso-state --session \"$SESSION\" set mode=plan active_slice=none >/dev/null"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6348,
+      "line": 6370,
       "assertion": "reanchor_uncertain_verdicts=\"$reanchor_uncertain_verdicts $(reanchor_verdict \"$(reanchor_input compact)\")\""
     }
   ],

@@ -1,8 +1,8 @@
 {
   "name": "autocontinue gate: a milestone between pushes resets the count so the net never lets go of a run that is moving",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 4778, "assertion": "arm_unattended_run\nauto_progress_verdicts=\"\"\nfor auto_slice in 1 2 3 4; do\n  auto_progress_verdicts=\"$auto_progress_verdicts $(auto_stop_verdict \"$(auto_stop_input \"$SESSION\" true)\")\"\n  journal_milestone \"the applier landed slice $auto_slice\"\ndone" },
-    { "file": "tests/hooks-test.sh", "line": 4784, "assertion": "assert_equals \"a milestone between pushes resets the count, so the net never lets go of a run that is moving\" \\\n  \"push push push push\" \"${auto_progress_verdicts# }\"" }
+    { "file": "tests/hooks-test.sh", "line": 4800, "assertion": "arm_unattended_run\nauto_progress_verdicts=\"\"\nfor auto_slice in 1 2 3 4; do\n  auto_progress_verdicts=\"$auto_progress_verdicts $(auto_stop_verdict \"$(auto_stop_input \"$SESSION\" true)\")\"\n  journal_milestone \"the applier landed slice $auto_slice\"\ndone" },
+    { "file": "tests/hooks-test.sh", "line": 4806, "assertion": "assert_equals \"a milestone between pushes resets the count, so the net never lets go of a run that is moving\" \\\n  \"push push push push\" \"${auto_progress_verdicts# }\"" }
   ],
   "gate": "autocontinue",
   "argv": [],

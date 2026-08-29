@@ -1,8 +1,8 @@
 {
   "name": "autocontinue gate: a held turn spends none of the net, so the tally it inherits is the tally it leaves",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 4852, "assertion": "oso-state --session \"$SESSION\" set auto_wait=wave-2 >/dev/null\nauto_cap_after_holds=\"\"\nfor _ in 1 2 3; do\n  auto_cap_after_holds=\"$auto_cap_after_holds $(auto_stop_verdict \"$(auto_stop_input)\")\"\ndone\noso-state --session \"$SESSION\" set auto_wait=none >/dev/null\nfor _ in 1 2 3 4; do\n  auto_cap_after_holds=\"$auto_cap_after_holds $(auto_stop_verdict \"$(auto_stop_input)\")\"\ndone" },
-    { "file": "tests/hooks-test.sh", "line": 4861, "assertion": "assert_equals \"held turns spend none of the net: a run that stalls after waiting still gets its three pushes and the plain give-up\" \\\n  \"stop stop stop push push push stop|$AUTO_CAP_MILESTONE>\" \\\n  \"${auto_cap_after_holds# }|$(journal_texts_in \"$AUTO_JOURNAL\")\"" }
+    { "file": "tests/hooks-test.sh", "line": 4874, "assertion": "oso-state --session \"$SESSION\" set auto_wait=wave-2 >/dev/null\nauto_cap_after_holds=\"\"\nfor _ in 1 2 3; do\n  auto_cap_after_holds=\"$auto_cap_after_holds $(auto_stop_verdict \"$(auto_stop_input)\")\"\ndone\noso-state --session \"$SESSION\" set auto_wait=none >/dev/null\nfor _ in 1 2 3 4; do\n  auto_cap_after_holds=\"$auto_cap_after_holds $(auto_stop_verdict \"$(auto_stop_input)\")\"\ndone" },
+    { "file": "tests/hooks-test.sh", "line": 4883, "assertion": "assert_equals \"held turns spend none of the net: a run that stalls after waiting still gets its three pushes and the plain give-up\" \\\n  \"stop stop stop push push push stop|$AUTO_CAP_MILESTONE>\" \\\n  \"${auto_cap_after_holds# }|$(journal_texts_in \"$AUTO_JOURNAL\")\"" }
   ],
   "gate": "autocontinue",
   "argv": [],

@@ -1,7 +1,7 @@
-import { build } from "esbuild";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { bundleText, readTextOrNull } from "./lib/bundle.mjs";
 import { isExecutableRegularFile } from "./lib/executable-file.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -14,27 +14,8 @@ const binMode = 0o755;
 const shebang = "#!/usr/bin/env node\n";
 const modulePackageJson = '{\n  "private": true,\n  "type": "module"\n}\n';
 
-async function freshBundleText() {
-  const result = await build({
-    entryPoints: [entryPoint],
-    bundle: true,
-    platform: "node",
-    format: "esm",
-    write: false,
-  });
-  return result.outputFiles[0].text;
-}
-
-function readTextOrNull(path) {
-  try {
-    return readFileSync(path, "utf8");
-  } catch {
-    return null;
-  }
-}
-
 async function check() {
-  const freshDist = await freshBundleText();
+  const freshDist = await bundleText(entryPoint);
   const freshBin = shebang + freshDist;
   let ok = true;
   if (readTextOrNull(distOutfile) !== freshDist) {
@@ -64,7 +45,7 @@ async function check() {
 }
 
 async function writeBundle() {
-  const fresh = await freshBundleText();
+  const fresh = await bundleText(entryPoint);
   mkdirSync(dirname(distOutfile), { recursive: true });
   writeFileSync(distOutfile, fresh);
   writeFileSync(distPackageJson, modulePackageJson);

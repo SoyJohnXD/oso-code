@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5748,
+      "line": 5770,
       "assertion": "run_hook persist-state-bin.sh ''"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5750,
+      "line": 5772,
       "assertion": "assert_after_hook \"SessionStart persists OSO_STATE_BIN to an executable\" [ -x \"$persisted\" ]"
     }
   ],

@@ -1,8 +1,8 @@
 {
   "name": "autocontinue gate: a run that parks with a delegation still armed leaves no mark for its resumption to inherit",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 4899, "assertion": "oso-state --session \"$SESSION\" set auto_wait=wave-2 >/dev/null\nauto_resumed_verdicts=\" $(auto_stop_verdict \"$(auto_stop_input)\")\"\ntouch -t 200001010000 \"$AUTO_WAIT_MARK\"\noso-state --session \"$SESSION\" set auto=parked >/dev/null\nauto_resumed_verdicts=\"$auto_resumed_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"\nauto_mark_after_park=\"$([ -e \"$AUTO_WAIT_MARK\" ] && printf standing || printf cleared)\"\noso-state --session \"$SESSION\" set auto=running >/dev/null\nauto_resumed_verdicts=\"$auto_resumed_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"" },
-    { "file": "tests/hooks-test.sh", "line": 4907, "assertion": "assert_equals \"a run that parks with a delegation still armed leaves no mark for its resumption to inherit\" \\\n  \"stop stop stop|cleared\" \"${auto_resumed_verdicts# }|$auto_mark_after_park\"" }
+    { "file": "tests/hooks-test.sh", "line": 4921, "assertion": "oso-state --session \"$SESSION\" set auto_wait=wave-2 >/dev/null\nauto_resumed_verdicts=\" $(auto_stop_verdict \"$(auto_stop_input)\")\"\ntouch -t 200001010000 \"$AUTO_WAIT_MARK\"\noso-state --session \"$SESSION\" set auto=parked >/dev/null\nauto_resumed_verdicts=\"$auto_resumed_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"\nauto_mark_after_park=\"$([ -e \"$AUTO_WAIT_MARK\" ] && printf standing || printf cleared)\"\noso-state --session \"$SESSION\" set auto=running >/dev/null\nauto_resumed_verdicts=\"$auto_resumed_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 4929, "assertion": "assert_equals \"a run that parks with a delegation still armed leaves no mark for its resumption to inherit\" \\\n  \"stop stop stop|cleared\" \"${auto_resumed_verdicts# }|$auto_mark_after_park\"" }
   ],
   "gate": "autocontinue",
   "argv": [],

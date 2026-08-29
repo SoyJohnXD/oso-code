@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6262,
+      "line": 6284,
       "assertion": "  assert_drift_silent \"a compaction says nothing a second time\" compact"
     }
   ],

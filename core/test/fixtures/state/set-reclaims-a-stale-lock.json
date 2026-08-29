@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 4539,
+      "line": 4561,
       "assertion": "assert_equals \"stale lock is reclaimed\" yes \"$(oso-state --session \"$SESSION\" get stale_ok)\""
     }
   ],

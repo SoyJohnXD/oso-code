@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6485,
+      "line": 6507,
       "assertion": "assert_every assert_denies \"marker in a value position\" <<'VALUE_POSITION_TABLE'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6491,
+      "line": 6513,
       "assertion": "git -C /repo commit -m --dry-run"
     }
   ],

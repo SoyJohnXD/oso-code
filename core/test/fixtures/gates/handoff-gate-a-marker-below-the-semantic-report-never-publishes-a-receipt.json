@@ -1,9 +1,9 @@
 {
   "name": "handoff gate: a marker below the semantic report never publishes a receipt",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 5271, "assertion": "misplaced_marker_payload=\"$(printf '{\\\"session_id\\\":\\\"%s\\\",\\\"cwd\\\":\\\"%s\\\",\\\"hook_event_name\\\":\\\"SubagentStop\\\",\\\"turn_id\\\":\\\"turn-misplaced-marker\\\",\\\"agent_id\\\":\\\"agent-misplaced-marker\\\",\\\"agent_type\\\":\\\"oso-verifier\\\",\\\"last_assistant_message\\\":\\\"verdict: pass\\\\noso-handoff: v=1 slice=slice-misplaced attempt=1\\\"}' \\\n  \"$SESSION\" \"$HANDOFF_REPO\")\"" },
-    { "file": "tests/hooks-test.sh", "line": 5273, "assertion": "run_hook \"$HANDOFF_HOOK\" \"$misplaced_marker_payload\" 0 \\\n  'final message must begin with one exact oso-handoff marker'" },
-    { "file": "tests/hooks-test.sh", "line": 5280, "assertion": "  \"hook=0:{} wait=1\" \"hook=$misplaced_hook_status wait=$handoff_rc\"\n" }
+    { "file": "tests/hooks-test.sh", "line": 5293, "assertion": "misplaced_marker_payload=\"$(printf '{\\\"session_id\\\":\\\"%s\\\",\\\"cwd\\\":\\\"%s\\\",\\\"hook_event_name\\\":\\\"SubagentStop\\\",\\\"turn_id\\\":\\\"turn-misplaced-marker\\\",\\\"agent_id\\\":\\\"agent-misplaced-marker\\\",\\\"agent_type\\\":\\\"oso-verifier\\\",\\\"last_assistant_message\\\":\\\"verdict: pass\\\\noso-handoff: v=1 slice=slice-misplaced attempt=1\\\"}' \\\n  \"$SESSION\" \"$HANDOFF_REPO\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 5295, "assertion": "run_hook \"$HANDOFF_HOOK\" \"$misplaced_marker_payload\" 0 \\\n  'final message must begin with one exact oso-handoff marker'" },
+    { "file": "tests/hooks-test.sh", "line": 5302, "assertion": "  \"hook=0:{} wait=1\" \"hook=$misplaced_hook_status wait=$handoff_rc\"\n" }
   ],
   "gate": "handoff",
   "argv": [],

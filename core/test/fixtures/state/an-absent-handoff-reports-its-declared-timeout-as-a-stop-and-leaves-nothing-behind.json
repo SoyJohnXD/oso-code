@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5408,
+      "line": 5430,
       "assertion": "assert_equals \"an absent handoff reports its declared timeout as a stop, not any other outcome\" \\\n  \"1\" \"$handoff_rc\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5419,
+      "line": 5441,
       "assertion": "assert_equals \"a timed-out wait leaves no synthetic receipt or watermark\" \\\n  \"$handoff_files_before_timeout\" \"$handoff_files_after_timeout\""
     }
   ],

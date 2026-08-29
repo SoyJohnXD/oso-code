@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5570,
+      "line": 5592,
       "assertion": "assert_equals \"handoff lock acquisition never reclaims an old live lock\" \\\n  \"rc=1 lock=retained\" \\\n  \"rc=$handoff_rc lock=$([ -d \"$lock_dir\" ] && printf retained || printf removed)\""
     }
   ],

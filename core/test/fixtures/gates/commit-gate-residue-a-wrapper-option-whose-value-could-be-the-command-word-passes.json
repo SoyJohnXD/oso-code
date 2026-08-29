@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6605,
+      "line": 6627,
       "assertion": "assert_allows \"residue: a wrapper option whose value could be the command word passes\" \\\n  block-commit-until-green.sh \"$(bash_input 'sudo -u x bash <<EOF\\ngit commit\\nEOF')\""
     }
   ],

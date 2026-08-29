@@ -3,27 +3,27 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 1694,
+      "line": 1717,
       "assertion": "if printf '%s' '### Direct feedback' | oso-state --session \"$SESSION\" amend-plan direct-feedback >/dev/null 2>&1; then\n  echo \"ok: amend-plan accepts a direct amendment while a plan is pending\"; pass=$((pass + 1))\nelse\n  echo \"FAIL: amend-plan rejected a pending amendment\"; fail=$((fail + 1))\nfi"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 1699,
+      "line": 1722,
       "assertion": "assert_equals \"a direct pending amendment leaves approval pending\" pending \\\n  \"$(oso-state --session \"$SESSION\" get plan_approval)\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 1701,
+      "line": 1724,
       "assertion": "assert_equals \"a direct pending amendment increments the operational plan revision\" \\\n  1 \"$(oso-state --session \"$SESSION\" get plan_revision)\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 1703,
+      "line": 1726,
       "assertion": "case \"$(cat \"$first_current_file\")\" in\n  *'## Plan Mode feedback — direct-feedback'*'Requested-by: operator'*'### Direct feedback'*)\n    echo \"ok: the operational plan records the pending amendment\"; pass=$((pass + 1)) ;;\n  *)\n    echo \"FAIL: the operational plan does not contain the pending amendment\"; fail=$((fail + 1)) ;;\nesac"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 1709,
+      "line": 1732,
       "assertion": "assert_equals \"a pending amendment never mutates the immutable presented snapshot\" \\\n  \"$first_plan_document\" \"$(cat \"$first_presented_file\" 2>/dev/null || true)\""
     }
   ],

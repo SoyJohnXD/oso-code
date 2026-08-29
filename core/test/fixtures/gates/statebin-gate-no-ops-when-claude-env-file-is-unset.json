@@ -3,17 +3,17 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5767,
+      "line": 5789,
       "assertion": "unset CLAUDE_ENV_FILE"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5768,
+      "line": 5790,
       "assertion": "run_hook persist-state-bin.sh ''"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5769,
+      "line": 5791,
       "assertion": "assert_after_hook \"SessionStart no-ops when CLAUDE_ENV_FILE is unset\" [ -z \"$hook_stdout\" ]"
     }
   ],

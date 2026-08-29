@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5350,
+      "line": 5372,
       "assertion": "  assert_equals \"a receipt rejects mismatched identity: $wrong_identity\" 1 \"$handoff_rc\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5354,
+      "line": 5376,
       "assertion": "assert_equals \"wrong identity probes never consume the exact receipt\" \\\n  \"rc=0:$identity_receipt\" \"rc=$handoff_rc:$handoff_stdout\""
     }
   ],

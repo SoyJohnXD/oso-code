@@ -32,6 +32,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Node 22, the floor the committed bundles run on
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Claude Code CLI — the host-binary half of the installed-copy smoke
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Installed-copy smoke against the pinned client
+        run: |
+          claude --version
+          claude plugin validate --strict plugin
       - name: Hook regression suite on bash 3.2, which carries neither git nor jq
         run: docker run --rm -e OSO_NIGHTLY -v "$PWD":/repo -w /repo bash:3.2 bash tests/hooks-test.sh
       - name: Verify report reaches its summary — a fixture HOME fails every check but the two install-independent ones, so failed=9
@@ -111,6 +121,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Install Claude Code CLI — the host-binary half of the installed-copy smoke
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Installed-copy smoke against the pinned client
+        shell: bash
+        run: |
+          claude --version
+          claude plugin validate --strict plugin
       - name: Provision jq for the suite
         shell: bash
         run: |
@@ -172,7 +189,7 @@ jobs:
           type verify-bat-report.txt
           findstr /c:"ok:   home dir the Windows client reads" verify-bat-report.txt >nul || exit /b 1
           findstr /b /c:"passed:" verify-bat-report.txt >nul || exit /b 1
-      - name: OpenCode unit suite on Windows, report-only — never fails the run, keeps the fail count visible every night until C3 makes this surface verified (docs/rewrite/ts-core-roadmap.md:255)
+      - name: OpenCode unit suite on Windows, report-only — never fails the run, keeps the fail count visible every night until C3 makes this surface verified (docs/rewrite/ts-core-roadmap.md:279)
         shell: bash
         continue-on-error: true
         run: |

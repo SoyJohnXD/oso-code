@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 1238,
+      "line": 1261,
       "assertion": "assert_after_hook \"a pending belonging to another session does not deny this session's Bash\" \\\n  [ -z \"$hook_stdout\" ]"
     }
   ],

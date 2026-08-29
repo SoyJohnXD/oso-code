@@ -1,9 +1,9 @@
 {
   "name": "stale gate: Codex stale-state guidance uses the discovered plugin route and clears the fixed runtime identity",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 6041, "assertion": "OSO_AGENT=1 run_hook warn-stale-state.sh \"$(stale_session_input)\"" },
-    { "file": "tests/hooks-test.sh", "line": 6042, "assertion": "assert_equals \"Codex stale-state guidance uses the discovered plugin route\" \\\n  \"present\" \"$(if printf '%s' \"$hook_stdout\" | grep -F '$oso-code:plan {change}' >/dev/null; then echo present; else echo missing; fi)\"" },
-    { "file": "tests/hooks-test.sh", "line": 6044, "assertion": "assert_equals \"Codex stale-state guidance clears the fixed runtime identity\" \\\n  \"present\" \"$(if printf '%s' \"$hook_stdout\" | grep -F -- '--session \\\"1\\\" clear' >/dev/null; then echo present; else echo missing; fi)\"" }
+    { "file": "tests/hooks-test.sh", "line": 6063, "assertion": "OSO_AGENT=1 run_hook warn-stale-state.sh \"$(stale_session_input)\"" },
+    { "file": "tests/hooks-test.sh", "line": 6064, "assertion": "assert_equals \"Codex stale-state guidance uses the discovered plugin route\" \\\n  \"present\" \"$(if printf '%s' \"$hook_stdout\" | grep -F '$oso-code:plan {change}' >/dev/null; then echo present; else echo missing; fi)\"" },
+    { "file": "tests/hooks-test.sh", "line": 6066, "assertion": "assert_equals \"Codex stale-state guidance clears the fixed runtime identity\" \\\n  \"present\" \"$(if printf '%s' \"$hook_stdout\" | grep -F -- '--session \\\"1\\\" clear' >/dev/null; then echo present; else echo missing; fi)\"" }
   ],
   "gate": "stale",
   "argv": [],

@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2133,
+      "line": 2156,
       "assertion": "assert_allows \"quick-mode edit is unrestricted\" block-edits-without-slice.sh \"$edit_input\""
     }
   ],

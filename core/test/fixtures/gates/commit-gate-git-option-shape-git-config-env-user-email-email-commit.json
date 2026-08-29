@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6471,
+      "line": 6493,
       "assertion": "assert_every assert_denies \"git option shape\" <<'GIT_OPTION_TABLE'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6475,
+      "line": 6497,
       "assertion": "git --config-env user.email=EMAIL commit"
     }
   ],

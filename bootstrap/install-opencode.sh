@@ -42,6 +42,7 @@ initialize_paths() {
   HOOKS_TARGET="$OPENCODE_CONFIG_HOME/hooks"
   GIT_HOOKS_TARGET="$OPENCODE_CONFIG_HOME/git-hooks"
   STATE_BIN_TARGET="$OPENCODE_CONFIG_HOME/bin"
+  DIST_TARGET="$OPENCODE_CONFIG_HOME/dist"
   ENGRAM_PLUGIN_FILE="$OPENCODE_CONFIG_HOME/plugins/engram.ts"
   SKILLS_SOURCE="$REPO_ROOT/opencode/skills"
   SHARED_SKILLS_SOURCE="$REPO_ROOT/plugin/skills/_shared"
@@ -53,6 +54,7 @@ initialize_paths() {
   GIT_HOOKS_SOURCE="$REPO_ROOT/plugin/git-hooks"
   STATE_BIN_SOURCE="$REPO_ROOT/plugin/bin/oso-state"
   STATE_BIN_PACKAGE_SOURCE="$REPO_ROOT/plugin/bin/package.json"
+  DIST_SOURCE="$REPO_ROOT/plugin/dist"
   GLOBAL_SOURCE="$SCRIPT_DIR/opencode-global.md"
   HASHES_FILE="$SCRIPT_DIR/hook-hashes.txt"
   IMPECCABLE_MOUNT="$HOME/.agents/skills/impeccable"
@@ -259,6 +261,7 @@ begin_transaction() {
   backup_target hooks "$HOOKS_TARGET"
   backup_target git-hooks "$GIT_HOOKS_TARGET"
   backup_target state-bin "$STATE_BIN_TARGET"
+  backup_target dist "$DIST_TARGET"
   backup_target engram-plugin "$ENGRAM_PLUGIN_FILE"
   backup_target impeccable "$IMPECCABLE_MOUNT"
   backup_target impeccable-opt-out "$IMPECCABLE_OPT_OUT_MARKER"
@@ -422,8 +425,19 @@ install_commands() {
   info "installed the mode slash commands into $COMMANDS_TARGET"
 }
 
+published_dist_files() {
+  local expected relative
+  while IFS='  ' read -r expected relative; do
+    case "$expected" in ''|'#'*) continue ;; esac
+    relative="${relative# }"
+    case "$relative" in
+      plugin/dist/*) printf '%s\n' "${relative#plugin/dist/}" ;;
+    esac
+  done < "$HASHES_FILE"
+}
+
 install_plugin() {
-  local stage hooks_stage state_bin_stage module script
+  local stage hooks_stage state_bin_stage dist_stage module script bundle
   mkdir -p "$OPENCODE_CONFIG_HOME"
   stage="$(mktemp -d "$OPENCODE_CONFIG_HOME/.plugin-install.XXXXXX")"
   cp "$PLUGIN_SOURCE/oso-code.ts" "$stage/oso-code.ts"
@@ -450,7 +464,16 @@ EOF
   cp "$STATE_BIN_PACKAGE_SOURCE" "$state_bin_stage/package.json"
   chmod 700 "$state_bin_stage/oso-state"
   replace_tree "$state_bin_stage" "$STATE_BIN_TARGET"
-  info "installed the OpenCode plugin into $PLUGIN_TARGET, the gate tree into $HOOKS_TARGET and oso-state into $STATE_BIN_TARGET"
+
+  dist_stage="$(mktemp -d "$OPENCODE_CONFIG_HOME/.dist-install.XXXXXX")"
+  while IFS= read -r bundle; do
+    [ -n "$bundle" ] || continue
+    cp "$DIST_SOURCE/$bundle" "$dist_stage/$bundle"
+  done <<EOF
+$(published_dist_files)
+EOF
+  replace_tree "$dist_stage" "$DIST_TARGET"
+  info "installed the OpenCode plugin into $PLUGIN_TARGET, the gate tree into $HOOKS_TARGET, oso-state into $STATE_BIN_TARGET and the committed bundles into $DIST_TARGET"
 }
 
 install_git_hook() {

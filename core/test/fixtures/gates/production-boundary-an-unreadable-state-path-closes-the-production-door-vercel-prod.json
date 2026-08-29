@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5144,
+      "line": 5166,
       "assertion": "assert_equals \"a state file the gate cannot read as state closes the production door and nothing else\" \\\n  \"deny allow allow deny allow\" \"$prod_uncertain_verdicts\""
     }
   ],

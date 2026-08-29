@@ -105,7 +105,7 @@ describe(
 describe(
   "core/src/gates/planprompt.ts: native approval refuses a pending snapshot that is readable beyond its owner " +
     "(port of plugin/hooks/approve-plan-token.sh:125-129 over core/src/state/plan.ts:125-142, which the suite " +
-    "exercises at tests/hooks-test.sh:1878-1889 and skips wherever chmod is a no-op)",
+    "exercises at tests/hooks-test.sh:1901-1912 and skips wherever chmod is a no-op)",
   () => {
     test("a non-private pending snapshot cannot be approved", { skip: skipUnlessChmodBites() }, () => {
       const run = judged(

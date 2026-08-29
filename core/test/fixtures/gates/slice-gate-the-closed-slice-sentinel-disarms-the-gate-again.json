@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2128,
+      "line": 2151,
       "assertion": "assert_denies \"the closed-slice sentinel disarms the gate again\" block-edits-without-slice.sh \"$edit_input\""
     }
   ],

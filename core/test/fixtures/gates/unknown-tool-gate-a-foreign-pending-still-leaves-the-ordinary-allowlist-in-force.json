@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 1242,
+      "line": 1265,
       "assertion": "assert_after_hook \"a foreign pending still leaves the ordinary allowlist in force\" \\\n  hook_returned_deny"
     }
   ],

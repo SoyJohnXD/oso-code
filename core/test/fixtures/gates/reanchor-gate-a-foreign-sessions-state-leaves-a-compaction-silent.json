@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6349,
+      "line": 6371,
       "assertion": "arm_compacted_slice"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6350,
+      "line": 6372,
       "assertion": "reanchor_uncertain_verdicts=\"$reanchor_uncertain_verdicts $(reanchor_verdict \"$(reanchor_input compact another-session)\")\""
     }
   ],

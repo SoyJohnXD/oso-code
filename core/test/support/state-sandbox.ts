@@ -44,10 +44,15 @@ export type ObservedEntry =
 
 export type SubjectRun = { exit: number; stdout: string; stderr: string };
 
-const EVENT_LOG = ".local/state/oso-code/events.jsonl";
+const STATE_ROOT = ".local/state/oso-code";
+const EVENT_LOG = `${STATE_ROOT}/events.jsonl`;
+const WORKTREES = `${STATE_ROOT}/worktrees`;
 const PAST_THE_TTL = new Date("2000-01-01T00:00:00Z");
 const OWNER_ONLY_FILE = 0o600;
 const OWNER_ONLY_DIRECTORY = 0o700;
+const SEEDED_COMMIT_FILE = "base.txt";
+const SEEDED_COMMIT_CONTENT = "base\n";
+const WAVE_WORKTREE_INDEX = "1";
 
 function sha256Hex(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -108,6 +113,16 @@ function datedAt(seeded: Exclude<SeededEntry, string>): Date | undefined {
   if (seeded.aged === true) return PAST_THE_TTL;
   if (seeded.kind === "directory" || seeded.agedSeconds === undefined) return undefined;
   return new Date(Date.now() - seeded.agedSeconds * 1000);
+}
+
+export function skipUnlessGitSeedsRepositories(): false | string {
+  const probe = spawnSync("git", ["--version"], { encoding: "utf8" });
+  if (probe.error === undefined && probe.status === 0) return false;
+  return "git is absent here, so a worktree teardown has no registry to read";
+}
+
+function forwardSlashed(value: string): string {
+  return value.replaceAll("\\", "/");
 }
 
 export function withStateSandbox<T>(workspace: string, use: (sandbox: StateSandbox) => T): T {
@@ -184,6 +199,35 @@ export class StateSandbox {
     return { kind: "file", content: readFileSync(target, "utf8") };
   }
 
+  worktreeTreeOf(sessionId: string): string {
+    return path.join(this.home, ...WORKTREES.split("/"), sessionId);
+  }
+
+  seedGitRepository(relativePath: string): string {
+    const repository = path.join(this.home, relativePath);
+    mkdirSync(repository, { recursive: true });
+    this.git(repository, ["init", "-q"]);
+    this.git(repository, ["config", "user.email", "tests@oso-code.invalid"]);
+    this.git(repository, ["config", "user.name", "oso-code tests"]);
+    this.git(repository, ["config", "commit.gpgsign", "false"]);
+    writeFileSync(path.join(repository, SEEDED_COMMIT_FILE), SEEDED_COMMIT_CONTENT);
+    this.git(repository, ["add", SEEDED_COMMIT_FILE]);
+    this.git(repository, ["commit", "-qm", "base"]);
+    return repository;
+  }
+
+  seedWaveWorktree(repository: string, sessionId: string): string {
+    const worktree = path.join(this.worktreeTreeOf(sessionId), WAVE_WORKTREE_INDEX);
+    mkdirSync(path.dirname(worktree), { recursive: true });
+    this.git(repository, ["worktree", "add", "-q", "-b", `oso/parallel/${sessionId}`, worktree]);
+    return worktree;
+  }
+
+  worktreesRegisteredFor(repository: string, sessionId: string): number {
+    const listed = this.git(repository, ["worktree", "list", "--porcelain"], { tolerateFailure: true });
+    return listed.split("\n").filter((line) => forwardSlashed(line).includes(`/worktrees/${sessionId}/`)).length;
+  }
+
   eventLogLines(): string[] {
     const log = this.read(EVENT_LOG);
     if (log.kind !== "file") return [];
@@ -223,6 +267,17 @@ export class StateSandbox {
       XDG_CACHE_HOME: path.join(this.home, ".cache"),
       ...extra,
     };
+  }
+
+  private git(repository: string, argv: readonly string[], options: { tolerateFailure?: boolean } = {}): string {
+    const run = spawnSync("git", ["-C", repository, ...argv], {
+      env: this.subjectEnvironment({}),
+      encoding: "utf8",
+    });
+    if (options.tolerateFailure === true) return run.error === undefined && run.status === 0 ? run.stdout : "";
+    if (run.error !== undefined) throw run.error;
+    if (run.status !== 0) throw new Error(`git ${argv.join(" ")} in ${repository} exited ${run.status}: ${run.stderr}`);
+    return run.stdout;
   }
 
   private gitCommonDirectory(): string {

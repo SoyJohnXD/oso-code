@@ -1,9 +1,9 @@
 {
   "name": "planprompt gate: the exact same-session cancellation works after a mode toggle",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1791, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'CANCEL OSO PLAN')\"" },
-    { "file": "tests/hooks-test.sh", "line": 1793, "assertion": "assert_after_hook \"the exact same-session cancellation works after mode toggle\" \\\n  hook_returned_prompt_context" },
-    { "file": "tests/hooks-test.sh", "line": 1795, "assertion": "assert_equals \"non-plan cancellation removes pending state\" \\\n  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"" }
+    { "file": "tests/hooks-test.sh", "line": 1814, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'CANCEL OSO PLAN')\"" },
+    { "file": "tests/hooks-test.sh", "line": 1816, "assertion": "assert_after_hook \"the exact same-session cancellation works after mode toggle\" \\\n  hook_returned_prompt_context" },
+    { "file": "tests/hooks-test.sh", "line": 1818, "assertion": "assert_equals \"non-plan cancellation removes pending state\" \\\n  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"" }
   ],
   "gate": "planprompt",
   "argv": [],

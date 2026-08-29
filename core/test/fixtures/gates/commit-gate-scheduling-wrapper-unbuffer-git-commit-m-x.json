@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6653,
+      "line": 6675,
       "assertion": "assert_every assert_denies \"scheduling wrapper\" <<'WRAPPER_NAME_TABLE'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6657,
+      "line": 6679,
       "assertion": "unbuffer git commit -m x"
     }
   ],

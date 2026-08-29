@@ -3,17 +3,17 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5714,
+      "line": 5736,
       "assertion": "printf 'mode=plan\\nplan_approval=pending\\nsession=orphan-real-session\\nplan_approval_session=orphan-real-session\\n' \\\n  > \"$orphan_pending_state\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5716,
+      "line": 5738,
       "assertion": "OSO_AGENT=1 run_hook cleanup-state.sh '{\"session_id\":\"unrelated-session\"}'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5717,
+      "line": 5739,
       "assertion": "assert_after_hook \"SessionEnd for an unrelated session leaves another session's pending alone\" \\\n  [ -f \"$orphan_pending_state\" ]"
     }
   ],

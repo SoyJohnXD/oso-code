@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2168,
+      "line": 2191,
       "assertion": "  assert_denies \"the commit gate denies red verify in $commit_mode mode\" \\\n    block-commit-until-green.sh \"$(bash_input 'git commit -m x')\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 2185,
+      "line": 2208,
       "assertion": "        *'debug'*'close step'*) echo \"ok: debug mode's remedy names its own close step\"; pass=$((pass + 1)) ;;"
     }
   ],

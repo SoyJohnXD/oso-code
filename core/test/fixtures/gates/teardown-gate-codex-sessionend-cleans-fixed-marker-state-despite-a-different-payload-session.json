@@ -3,17 +3,17 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5706,
+      "line": 5728,
       "assertion": "( cd \"$ELSEWHERE\" && oso-state --session 1 set mode=plan verify_green=true >/dev/null )"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5709,
+      "line": 5731,
       "assertion": "OSO_AGENT=1 run_hook cleanup-state.sh '{\"session_id\":\"codex-payload-session\"}'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5710,
+      "line": 5732,
       "assertion": "assert_after_hook \"Codex SessionEnd cleans fixed-marker state despite a different payload session\" \\\n  [ ! -f \"$elsewhere_state\" ]"
     }
   ],

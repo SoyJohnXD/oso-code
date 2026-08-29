@@ -3,17 +3,17 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5882,
+      "line": 5904,
       "assertion": "mkdir -p \"$WORKTREES_DIR/wt-unfound/1\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5883,
+      "line": 5905,
       "assertion": "run_hook cleanup-state.sh '{\"session_id\":\"wt-unfound\"}'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 5884,
+      "line": 5906,
       "assertion": "assert_kept \"the worktree of a session with no state file at all is left standing\" \\\n  \"$WORKTREES_DIR/wt-unfound/1\""
     }
   ],

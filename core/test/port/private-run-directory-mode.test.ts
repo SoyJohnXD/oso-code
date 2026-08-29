@@ -48,7 +48,7 @@ function skipUnlessMkdirHonoursOwnerOnlyMode(): false | string {
   if (process.platform !== "win32") return false;
   return (
     "win32 synthesises its own mode bits from FILE_ATTRIBUTE_READONLY and ignores mkdirSync's mode, so a " +
-    "directory created 0o700 here reads back 0o666/0o777 (C2-D9, docs/rewrite/ts-core-roadmap.md:231)"
+    "directory created 0o700 here reads back 0o666/0o777 (C2-D9, docs/rewrite/ts-core-roadmap.md:234)"
   );
 }
 

@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6697,
+      "line": 6719,
       "assertion": "assert_allows \"a git mention with no shell to read it stays clear\" \\\n  block-commit-until-green.sh \"$(bash_input 'echo git commit')\""
     }
   ],

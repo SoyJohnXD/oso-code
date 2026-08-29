@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6660,
+      "line": 6682,
       "assertion": "assert_allows_counted \"residue: a lock file behind flock's option passes\" \\\n  block-commit-until-green.sh \"$(bash_input 'flock -x /tmp/l git commit -m x')\""
     }
   ],

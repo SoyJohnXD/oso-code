@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 5794,
+      "line": 5816,
       "assertion": "assert_logged \"quotes and backslashes are escaped in the event log\" -F '\"event\":\"set:weird=a\\\"b\\\\c\"'"
     }
   ],

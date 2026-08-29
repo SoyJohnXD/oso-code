@@ -157,8 +157,13 @@ done
 prod_gate_matcher_in() {
   awk '
     /"matcher"/ { matcher = $0; sub(/^[^:]*: "/, "", matcher); sub(/",$/, "", matcher) }
-    /block-prod-deploy\.sh/ { print matcher; exit }
+    /proddeploy/ { print matcher; exit }
   ' "$1"
+}
+
+gates_named_in() {
+  sed -n 's|.*/gate\.js", "\([a-z]*\)".*|\1|p;s|.*/gate\.js \([a-z]*\).*|\1|p' \
+    | tr '\n' ' ' | sed 's/ *$//'
 }
 assert_equals "both hosts route the shell tool and deploy-shaped MCP names into the production boundary" \
   'Bash|mcp__.*deploy.*+Bash|mcp__.*deploy.*' \
@@ -166,29 +171,35 @@ assert_equals "both hosts route the shell tool and deploy-shaped MCP names into 
 
 claude_stop_group="$(event_group_in "$hooks_manifest" Stop)"
 assert_equals "the Claude manifest runs exactly the continuation net on Stop" \
-  "auto-continue.sh" \
-  "$(printf '%s\n' "$claude_stop_group" | sed -n 's|.*/hooks/\([^"]*\)".*|\1|p' | tr '\n' ' ' | sed 's/ *$//')"
+  "autocontinue" \
+  "$(printf '%s\n' "$claude_stop_group" | gates_named_in)"
 assert_equals "the Claude Stop handler stays matcherless" \
   "0" "$(printf '%s\n' "$claude_stop_group" | grep -c '"matcher"' || true)"
 assert_equals "the Claude-only continuation net is absent from the Codex manifest" \
-  "0" "$(grep -c 'auto-continue.sh' "$codex_hooks_manifest" || true)"
+  "0" "$(grep -c 'gate\.js autocontinue' "$codex_hooks_manifest" || true)"
 assert_equals "rendering the continuation net leaves the Codex manifest on its published bytes" \
   "$(sed -n 's|^\([0-9a-f]*\)  codex/hooks/hooks.json$|\1|p' "$REPO_ROOT/bootstrap/hook-hashes.txt")" \
   "$({ sha256sum "$codex_hooks_manifest" 2>/dev/null || shasum -a 256 "$codex_hooks_manifest" 2>/dev/null; } | awk '{ print $1 }')"
 
 claude_session_start_group="$(event_group_in "$hooks_manifest" SessionStart)"
 assert_equals "the compaction re-anchor runs last on Claude session-start and nowhere on Codex" \
-  "persist-state-bin.sh warn-stale-state.sh warn-stale-version.sh reanchor-after-compact.sh|0" \
-  "$(printf '%s\n' "$claude_session_start_group" | sed -n 's|.*/hooks/\([^"]*\)".*|\1|p' | tr '\n' ' ' | sed 's/ *$//')|$(grep -c 'reanchor-after-compact.sh' "$codex_hooks_manifest" || true)"
+  "statebin stale version reanchor|0" \
+  "$(printf '%s\n' "$claude_session_start_group" | gates_named_in)|$(grep -c 'gate\.js reanchor' "$codex_hooks_manifest" || true)"
 
 unrunnable=""
-manifest_commands="$(sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' "$hooks_manifest")"
-while IFS= read -r manifest_command; do
-  hook_script="${manifest_command//\\\"/}"
-  hook_script="${hook_script//\$\{CLAUDE_PLUGIN_ROOT\}/$PLUGIN}"
-  [ -x "$hook_script" ] || unrunnable="$unrunnable $hook_script"
-done <<< "$manifest_commands"
-assert_equals "every hooks.json command is an executable script" "" "$unrunnable"
+manifest_bundles="$(sed -n 's/.*"args": \["\([^"]*\)".*/\1/p' "$hooks_manifest")"
+while IFS= read -r manifest_bundle; do
+  [ -n "$manifest_bundle" ] || continue
+  hook_bundle="${manifest_bundle//\$\{CLAUDE_PLUGIN_ROOT\}/$PLUGIN}"
+  [ -r "$hook_bundle" ] || unrunnable="$unrunnable $hook_bundle"
+done <<< "$manifest_bundles"
+assert_equals "every hooks.json handler names a bundle the plugin tree carries" "" "$unrunnable"
+assert_equals "every hooks.json handler runs that bundle through node rather than a shell" \
+  "$(grep -c '"command":' "$hooks_manifest" || true)" \
+  "$(grep -c '"command": "node",$' "$hooks_manifest" || true)"
+assert_equals "the bundle-naming scan read every handler the Claude manifest declares" \
+  "$(grep -c '"command":' "$hooks_manifest" || true)" \
+  "$(printf '%s\n' "$manifest_bundles" | grep -c . || true)"
 
 tracked_text_files_missing_a_final_newline() {
   local eol_row file
@@ -860,13 +871,25 @@ if [ ! -x "$HOOK_RENDERER" ]; then
 else
   RENDER_FIXTURE="$TEST_HOME/render-fixture"
   copy_lint_fixture "$RENDER_FIXTURE"
-  if [ ! -f "$RENDER_FIXTURE/plugin/hooks/hooks.json" ]; then
-    echo "FAIL: manifest-divergence mutation has no Claude manifest"; fail=$((fail + 1))
+  OPENCODE_ROUTE_TABLE="$RENDER_FIXTURE/opencode/hooks/routes.ts"
+  if [ ! -s "$OPENCODE_ROUTE_TABLE" ]; then
+    echo "FAIL: route-table divergence mutation has no opencode route table"; fail=$((fail + 1))
   else
-    printf '\n' >> "$RENDER_FIXTURE/plugin/hooks/hooks.json"
-    assert_renderer_rejects "a committed manifest diverging by one byte fails the render check" \
-      "rendered hooks diverge for claude at" \
-      --repo-root "$RENDER_FIXTURE" --table "$RENDER_FIXTURE/tools/hook-gates.txt" --check
+    RENDERED_OPENCODE_ROUTES="$TEST_HOME/rendered-opencode-routes.ts"
+    "$HOOK_RENDERER" --repo-root "$RENDER_FIXTURE" \
+      --table "$RENDER_FIXTURE/tools/hook-gates.txt" --host opencode > "$RENDERED_OPENCODE_ROUTES" 2>/dev/null || true
+    if [ ! -s "$RENDERED_OPENCODE_ROUTES" ]; then
+      echo "FAIL: the opencode route render produced nothing, so divergence could not be read either way"
+      fail=$((fail + 1))
+    else
+      assert_equals "the committed opencode route table is exactly what the renderer still owning it renders" \
+        identical \
+        "$(cmp -s "$RENDERED_OPENCODE_ROUTES" "$OPENCODE_ROUTE_TABLE" && echo identical || echo divergent)"
+      printf '\n' >> "$OPENCODE_ROUTE_TABLE"
+      assert_equals "a committed opencode route table diverging by one byte is read as divergent" \
+        divergent \
+        "$(cmp -s "$RENDERED_OPENCODE_ROUTES" "$OPENCODE_ROUTE_TABLE" && echo identical || echo divergent)"
+    fi
   fi
 
   INCOMPLETE_TABLE="$TEST_HOME/incomplete-hook-gates.txt"
@@ -883,9 +906,9 @@ else
     "tool for gate \`edits\` has no mapping for opencode" \
     --repo-root "$REPO_ROOT" --table "$MISSING_OPENCODE_TABLE" --check
 
-  assert_equals "the render check covers every host manifest, opencode included" \
-    "hooks: 3 manifest(s) check" \
-    "$("$HOOK_RENDERER" --repo-root "$REPO_ROOT" --table "$REPO_ROOT/tools/hook-gates.txt" --check)"
+  assert_equals "the render the bash renderer still owns reaches the opencode route table's last line" \
+    "];" \
+    "$("$HOOK_RENDERER" --repo-root "$REPO_ROOT" --table "$REPO_ROOT/tools/hook-gates.txt" --host opencode | tail -n 1)"
 
   RECOVERY_FIXTURE="$TEST_HOME/recovery-fixture"
   copy_lint_fixture "$RECOVERY_FIXTURE"
@@ -2956,12 +2979,11 @@ CAPABILITY_COLUMN_STATUS="$(awk '
 ' "$REPO_ROOT/tools/hook-gates.txt")"
 assert_equals "every tool row in tools/hook-gates.txt carries a read/write/role class and a yes/no mandated cell" \
   "ok" "$CAPABILITY_COLUMN_STATUS"
-assert_equals "the capability columns leave the committed Claude manifest byte-identical" \
-  identical "$("$HOOK_RENDERER" --host claude --table "$REPO_ROOT/tools/hook-gates.txt" | \
-    cmp -s - "$REPO_ROOT/plugin/hooks/hooks.json" && echo identical || echo divergent)"
-assert_equals "the capability columns leave the committed Codex manifest byte-identical" \
-  identical "$("$HOOK_RENDERER" --host codex --table "$REPO_ROOT/tools/hook-gates.txt" | \
-    cmp -s - "$REPO_ROOT/codex/hooks/hooks.json" && echo identical || echo divergent)"
+assert_equals "the capability columns leave the committed opencode route table byte-identical" \
+  identical "$("$HOOK_RENDERER" --host opencode --table "$REPO_ROOT/tools/hook-gates.txt" | \
+    cmp -s - "$REPO_ROOT/opencode/hooks/routes.ts" && echo identical || echo divergent)"
+assert_equals "the capability columns are read by a render that produced a route table at all" \
+  "0" "$("$HOOK_RENDERER" --host opencode --table "$REPO_ROOT/tools/hook-gates.txt" | wc -c | tr -d ' ' | { read -r bytes; [ "$bytes" -gt 0 ] && echo 0 || echo 1; })"
 
 MCP_DRIFT_FIXTURE_SERVER="$TEST_HOME/mcp-drift-fixture-server.sh"
 cat > "$MCP_DRIFT_FIXTURE_SERVER" <<'EOF'
@@ -9147,7 +9169,7 @@ assert_equals "the rendered user hook manifest is installed" \
 assert_equals "installed hook commands contain no unresolved release token" \
   "0" "$(grep -c '__OSO_HOOKS_DIR__' "$CODEX_HAPPY_HOME/.codex/hooks.json" || true)"
 assert_equals "installed hook commands resolve below the self-contained plugin copy" \
-  "present" "$(grep -F "$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/hooks" "$CODEX_HAPPY_HOME/.codex/hooks.json" >/dev/null && echo present || echo missing)"
+  "present" "$(grep -F "$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/dist" "$CODEX_HAPPY_HOME/.codex/hooks.json" >/dev/null && echo present || echo missing)"
 assert_equals "every installed Codex hook command receives the fixed state marker explicitly" \
   "$(grep -c '"command":' "$CODEX_HAPPY_HOME/.codex/hooks.json" || true)" \
   "$(grep -c '"command": "OSO_AGENT=1 ' "$CODEX_HAPPY_HOME/.codex/hooks.json" || true)"
@@ -9163,13 +9185,14 @@ while IFS='  ' read -r published_digest published_path; do
   case "$published_path" in
     codex/hooks/hooks.json)
       installed_hook_path="$CODEX_HAPPY_HOME/.codex/hooks.json"
-      normalized_hook_digest="$(sed "s|$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/hooks|__OSO_HOOKS_DIR__|g" "$installed_hook_path" 2>/dev/null |
+      normalized_hook_digest="$(sed "s|$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/dist|__OSO_HOOKS_DIR__|g" "$installed_hook_path" 2>/dev/null |
         { sha256sum 2>/dev/null || shasum -a 256 2>/dev/null; })" || normalized_hook_digest=""
       normalized_hook_digest="${normalized_hook_digest%% *}"
       [ "$normalized_hook_digest" = "$published_digest" ] \
         || missing_installed_hook="$missing_installed_hook $published_path"
       continue
       ;;
+    plugin/dist/*) installed_hook_path="$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/dist/${published_path#plugin/dist/}" ;;
     plugin/hooks/*) installed_hook_path="$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/hooks/${published_path#plugin/hooks/}" ;;
     plugin/git-hooks/*) installed_hook_path="$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/git-hooks/${published_path#plugin/git-hooks/}" ;;
     plugin/bin/*) installed_hook_path="$CODEX_HAPPY_HOME/.local/share/oso-code/runtime/bin/${published_path#plugin/bin/}" ;;
@@ -9785,9 +9808,9 @@ assert_equals "a foreign hooks refusal leaves every destination byte-identical" 
 
 CODEX_SUBSTRING_HOOKS_HOME="$TEST_HOME/codex-substring-hooks-home"
 write_codex_install_personal_state "$CODEX_SUBSTRING_HOOKS_HOME"
-substring_runtime="$CODEX_SUBSTRING_HOOKS_HOME/.local/share/oso-code/runtime/hooks"
+substring_runtime="$CODEX_SUBSTRING_HOOKS_HOME/.local/share/oso-code/runtime/dist"
 printf '%s\n' \
-  '{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"foreign-wrapper '"$substring_runtime"'/block-commit-until-green.sh"}]}]}}' \
+  '{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"foreign-wrapper '"$substring_runtime"'/gate.js commit"}]}]}}' \
   > "$CODEX_SUBSTRING_HOOKS_HOME/.codex/hooks.json"
 substring_hooks_before="$(install_file_snapshot "$CODEX_SUBSTRING_HOOKS_HOME")"
 run_codex_install "$CODEX_SUBSTRING_HOOKS_HOME"
@@ -9798,8 +9821,8 @@ assert_equals "substring-only hook ownership leaves every destination byte-ident
 
 CODEX_MIXED_HOOKS_HOME="$TEST_HOME/codex-mixed-hooks-home"
 write_codex_install_personal_state "$CODEX_MIXED_HOOKS_HOME"
-mixed_runtime="$CODEX_MIXED_HOOKS_HOME/.local/share/oso-code/runtime/hooks"
-printf '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"OSO_AGENT=1 \\"%s\\"/block-commit-until-green.sh"},{"type":"prompt","prompt":"operator-owned"}]}]}}\n' \
+mixed_runtime="$CODEX_MIXED_HOOKS_HOME/.local/share/oso-code/runtime/dist"
+printf '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"OSO_AGENT=1 node \\"%s\\"/gate.js commit"},{"type":"prompt","prompt":"operator-owned"}]}]}}\n' \
   "$mixed_runtime" > "$CODEX_MIXED_HOOKS_HOME/.codex/hooks.json"
 mixed_hooks_before="$(install_file_snapshot "$CODEX_MIXED_HOOKS_HOME")"
 run_codex_install "$CODEX_MIXED_HOOKS_HOME"
@@ -10586,7 +10609,7 @@ CODEX_REGEX_WRONG_RUNTIME_ROOT="${CODEX_REGEX_RUNTIME_ROOT/.local/Xlocal}"
 CODEX_REGEX_SHIMS="$TEST_HOME/codex-runtime-regex-shims"
 write_host_contract_codex_shim "$CODEX_REGEX_SHIMS" no no "$HOST_CONTRACT_SUPPORTED_VERSION"
 
-sed "s|__OSO_HOOKS_DIR__|$CODEX_REGEX_WRONG_RUNTIME_ROOT/hooks|g" \
+sed "s|__OSO_HOOKS_DIR__|$CODEX_REGEX_WRONG_RUNTIME_ROOT/dist|g" \
   "$REPO_ROOT/codex/hooks/hooks.json" > "$CODEX_REGEX_HOME/.codex/hooks.json"
 CODEX_REGEX_WRONG_OUTPUT="$(
   HOME="$CODEX_REGEX_HOME" \
@@ -10599,7 +10622,7 @@ assert_equals "a runtime manifest one metacharacter off its real path is reporte
   "1" "$(printf '%s\n' "$CODEX_REGEX_WRONG_OUTPUT" | \
     grep -Ec '^FAIL: published runtime bytes .* got bad:.*codex/hooks/hooks\.json' || true)"
 
-sed "s|__OSO_HOOKS_DIR__|$CODEX_REGEX_RUNTIME_ROOT/hooks|g" \
+sed "s|__OSO_HOOKS_DIR__|$CODEX_REGEX_RUNTIME_ROOT/dist|g" \
   "$REPO_ROOT/codex/hooks/hooks.json" > "$CODEX_REGEX_HOME/.codex/hooks.json"
 CODEX_REGEX_CORRECT_OUTPUT="$(
   HOME="$CODEX_REGEX_HOME" \
@@ -11780,7 +11803,7 @@ process.stdout.write(resolveHookScript(process.argv[2]));
   establish_premise "the completed install published a backup directory to inspect" \
     [ -f "$OPENCODE_INSTALL_BACKUP/manifest" ]
   assert_equals "the install backup manifest records every replaced target" \
-    "13" "$(grep -c $'\t' "$OPENCODE_INSTALL_BACKUP/manifest" || true)"
+    "14" "$(grep -c $'\t' "$OPENCODE_INSTALL_BACKUP/manifest" || true)"
 
   assert_equals "the owner registry records the installer-owned targets" \
     "22" "$(grep -c '^installer	' "$OPENCODE_INSTALL_HOME/.local/state/oso-code/opencode-install-registry" || true)"

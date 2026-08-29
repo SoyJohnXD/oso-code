@@ -424,18 +424,23 @@ check_every_dot_directory_is_repo_owned_or_ignored() {
   done <<< "$(dot_directories_at_the_repository_root)"
 }
 
-check_hook_renders_and_published_hashes_match() {
-  local renderer="$REPO_ROOT/tools/render-hooks-json.sh" report
+OPENCODE_ROUTE_TABLE=opencode/hooks/routes.ts
+
+check_the_opencode_route_table_matches_its_render() {
+  local renderer="$REPO_ROOT/tools/render-hooks-json.sh" rendered committed
   if ! is_executable_regular_file "$renderer"; then
     flag "tools/render-hooks-json.sh is missing or not executable"
     return 0
   fi
-  if ! report="$("$renderer" --repo-root "$REPO_ROOT" --check 2>&1)"; then
-    flag "hook manifests diverge from their table: $(printf '%s' "$report" | tr '\n' ' ')"
+  rendered="$(mktemp "${TMPDIR:-/tmp}/oso-opencode-routes.XXXXXX")"
+  "$renderer" --repo-root "$REPO_ROOT" --host opencode > "$rendered" 2>/dev/null || true
+  committed="$REPO_ROOT/$OPENCODE_ROUTE_TABLE"
+  if [ ! -s "$rendered" ] || [ ! -s "$committed" ]; then
+    flag "the opencode route render or the committed $OPENCODE_ROUTE_TABLE is empty, so this rule compared nothing"
+  elif ! cmp -s "$rendered" "$committed"; then
+    flag "$OPENCODE_ROUTE_TABLE diverges from what tools/render-hooks-json.sh renders out of tools/hook-gates.txt, so the one host the bash renderer still owns is reading a table nothing regenerated"
   fi
-  if ! report="$("$renderer" --repo-root "$REPO_ROOT" --check-hashes 2>&1)"; then
-    flag "published hook hashes do not match their exact source set: $(printf '%s' "$report" | tr '\n' ' ')"
-  fi
+  rm -f "$rendered"
 }
 
 check_parity_docs_agree_on_harness_version() {
@@ -594,7 +599,7 @@ check_executables_carry_no_decision_citations
 check_shell_sources_carry_no_comment_below_their_contract_header
 check_no_shipped_file_carries_the_home_path_of_whoever_runs_this
 check_every_dot_directory_is_repo_owned_or_ignored
-check_hook_renders_and_published_hashes_match
+check_the_opencode_route_table_matches_its_render
 check_parity_docs_agree_on_harness_version
 check_platform_section_inventory_is_matched_or_declared
 check_every_host_wraps_every_skill

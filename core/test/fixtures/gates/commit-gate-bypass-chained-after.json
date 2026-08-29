@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2095,
+      "line": 2118,
       "assertion": "assert_denies \"bypass: chained after &&\"        block-commit-until-green.sh \"$(bash_input 'cd /repo && git commit -m x')\""
     }
   ],

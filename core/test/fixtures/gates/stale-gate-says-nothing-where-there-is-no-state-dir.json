@@ -1,7 +1,7 @@
 {
   "name": "stale gate: SessionStart says nothing where there is no state dir",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 6072, "assertion": "assert_allows \"SessionStart says nothing where there is no state dir\" \\\n  warn-stale-state.sh \"$(stale_session_input)\"" }
+    { "file": "tests/hooks-test.sh", "line": 6094, "assertion": "assert_allows \"SessionStart says nothing where there is no state dir\" \\\n  warn-stale-state.sh \"$(stale_session_input)\"" }
   ],
   "gate": "stale",
   "argv": [],

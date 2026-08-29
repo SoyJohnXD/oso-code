@@ -1,9 +1,9 @@
 {
   "name": "planstop gate: a real Codex 0.146 Plan Stop captures a corrected valid plan even on an active retry",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1552, "assertion": "run_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input default \"$SESSION\" 'Repaso corrected\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->' true \"$CODEX_STOP_PLAN_TRANSCRIPT\")\"\nassert_after_hook \"a real Codex 0.146 Plan Stop can capture a corrected valid plan\" \\" },
-    { "file": "tests/hooks-test.sh", "line": 1555, "assertion": "  [ \"$hook_stdout\" = '{}' ]\nassert_equals \"a corrected active Stop retry publishes pending state\" pending \\" },
-    { "file": "tests/hooks-test.sh", "line": 1557, "assertion": "  \"$(oso-state --session \"$SESSION\" get plan_approval)\"\noso-state --session \"$SESSION\" clear" }
+    { "file": "tests/hooks-test.sh", "line": 1575, "assertion": "run_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input default \"$SESSION\" 'Repaso corrected\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->' true \"$CODEX_STOP_PLAN_TRANSCRIPT\")\"\nassert_after_hook \"a real Codex 0.146 Plan Stop can capture a corrected valid plan\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1578, "assertion": "  [ \"$hook_stdout\" = '{}' ]\nassert_equals \"a corrected active Stop retry publishes pending state\" pending \\" },
+    { "file": "tests/hooks-test.sh", "line": 1580, "assertion": "  \"$(oso-state --session \"$SESSION\" get plan_approval)\"\noso-state --session \"$SESSION\" clear" }
   ],
   "gate": "planstop",
   "argv": [],

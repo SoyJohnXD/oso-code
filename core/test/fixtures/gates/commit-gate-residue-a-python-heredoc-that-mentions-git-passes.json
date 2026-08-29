@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6594,
+      "line": 6616,
       "assertion": "assert_allows \"residue: a python heredoc that mentions git passes\" \\\n  block-commit-until-green.sh \"$(bash_input 'python3 - <<EOF\\nos.system(\\\"git commit\\\")\\nEOF')\""
     }
   ],

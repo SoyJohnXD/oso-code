@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2116,
+      "line": 2139,
       "assertion": "assert_allows \"no false positive: bash -c git status (double-quoted)\" block-commit-until-green.sh \"$(bash_input 'bash -c \\\"git status\\\"')\""
     }
   ],

@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 4691,
+      "line": 4713,
       "assertion": "assert_equals \"a 64-character slug of the admitted charset names its journal verbatim\" \\\n  \"64 ${maximal_change}.log|the longest slug the rule admits>\" \\\n  \"${#maximal_change} $(ls \"$JOURNAL_DIR\" 2>/dev/null || true)|$(journal_texts_in \"$JOURNAL_DIR/${maximal_change}.log\")\""
     }
   ],

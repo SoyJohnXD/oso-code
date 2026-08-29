@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 2098,
+      "line": 2121,
       "assertion": "assert_allows \"no false positive: quoted rg\"    block-commit-until-green.sh \"$(bash_input 'rg \\\"git commit\\\" docs/')\""
     }
   ],

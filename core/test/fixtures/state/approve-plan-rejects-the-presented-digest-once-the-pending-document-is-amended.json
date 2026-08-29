@@ -3,17 +3,17 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 1712,
+      "line": 1735,
       "assertion": "if oso-state --session \"$SESSION\" approve-plan \"$first_plan_digest\" >/dev/null 2>&1; then\n  echo \"FAIL: approve-plan approved a document amended since it was presented\"; fail=$((fail + 1))\nelse\n  echo \"ok: approve-plan rejects the presented digest once the pending document is amended\"; pass=$((pass + 1))\nfi"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 1717,
+      "line": 1740,
       "assertion": "assert_equals \"a rejected stale approval leaves approval pending\" pending \\\n  \"$(oso-state --session \"$SESSION\" get plan_approval)\""
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 1719,
+      "line": 1742,
       "assertion": "assert_equals \"a rejected stale approval does not touch the immutable presented snapshot\" \\\n  \"$first_plan_document\" \"$(cat \"$first_presented_file\" 2>/dev/null || true)\""
     }
   ],

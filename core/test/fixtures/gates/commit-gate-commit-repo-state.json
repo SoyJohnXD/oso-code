@@ -3,7 +3,7 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6906,
+      "line": 6928,
       "assertion": "  rm -f \"$COMMIT_REPO_STATE\""
     }
   ],

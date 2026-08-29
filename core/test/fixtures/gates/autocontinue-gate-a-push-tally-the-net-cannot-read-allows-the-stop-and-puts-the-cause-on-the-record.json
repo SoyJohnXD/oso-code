@@ -1,8 +1,8 @@
 {
   "name": "autocontinue gate: a push tally the net cannot read allows the stop and puts the cause on the record",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 4801, "assertion": "mkdir -p \"${AUTO_JOURNAL%.log}.pushes\"\nauto_degraded_verdicts=\" $(auto_stop_verdict \"$(auto_stop_input)\")\"\nrm -rf \"$JOURNAL_DIR\"\nprintf 'a file stands where the run directory belongs\\n' > \"$JOURNAL_DIR\"" },
-    { "file": "tests/hooks-test.sh", "line": 4808, "assertion": "assert_equals \"a push tally the net can neither read nor write allows the stop and puts the cause on the record\" \\\n  \"stop stop 2\" \\\n  \"${auto_degraded_verdicts# } $((auto_degradations_after - auto_degradations_before))\"" }
+    { "file": "tests/hooks-test.sh", "line": 4823, "assertion": "mkdir -p \"${AUTO_JOURNAL%.log}.pushes\"\nauto_degraded_verdicts=\" $(auto_stop_verdict \"$(auto_stop_input)\")\"\nrm -rf \"$JOURNAL_DIR\"\nprintf 'a file stands where the run directory belongs\\n' > \"$JOURNAL_DIR\"" },
+    { "file": "tests/hooks-test.sh", "line": 4830, "assertion": "assert_equals \"a push tally the net can neither read nor write allows the stop and puts the cause on the record\" \\\n  \"stop stop 2\" \\\n  \"${auto_degraded_verdicts# } $((auto_degradations_after - auto_degradations_before))\"" }
   ],
   "gate": "autocontinue",
   "argv": [],

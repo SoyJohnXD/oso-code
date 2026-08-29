@@ -3,12 +3,12 @@
   "source": [
     {
       "file": "tests/hooks-test.sh",
-      "line": 6524,
+      "line": 6546,
       "assertion": "assert_every assert_denies \"redirect target\" <<'REDIRECT_TABLE'"
     },
     {
       "file": "tests/hooks-test.sh",
-      "line": 6534,
+      "line": 6556,
       "assertion": ">| clobber.txt git commit -m x"
     }
   ],
