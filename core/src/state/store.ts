@@ -52,7 +52,7 @@ const LOCK_RETRY_MS = 50;
 const EVENTS_SCHEMA_VERSION = 2;
 const COMMAND_HEAD_BYTES = 120;
 
-export function sha256Hex(value: string): string {
+export function sha256Hex(value: string | NodeJS.ArrayBufferView): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
@@ -168,6 +168,16 @@ export function isReadableRegularFile(target: string): boolean {
   if (!isRegularNonSymlinkFile(target)) return false;
   try {
     accessSync(target, constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function isExecutableRegularFile(target: string): boolean {
+  if (!isRegularNonSymlinkFile(target)) return false;
+  try {
+    accessSync(target, constants.X_OK);
     return true;
   } catch {
     return false;

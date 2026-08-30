@@ -151,7 +151,7 @@ function asShellWouldCapture(text: string): string {
   return text.replace(/\n+$/, "");
 }
 
-function withUnifiedPathSeparators(text: string): string {
+export function withUnifiedPathSeparators(text: string): string {
   return text.replace(/\\+/g, "/");
 }
 
