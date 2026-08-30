@@ -10,7 +10,9 @@ import {
   type ManifestRow,
   type RestoreOutcome,
 } from "./backup.ts";
+import { ENGRAM_SOURCE_REPO, engramBinaryName, provisionEngramBinary, type EngramProvisionOutcome, type EngramTransport } from "./engram.ts";
 import { readJsonObject, writeJsonFile } from "./json.ts";
+import { SUPPORTED_ENGRAM_VERSION } from "./pins.ts";
 import {
   CLAUDE_MD_BUDGET_BYTES,
   LEGACY_HOOK_COMMAND_PATTERNS,
@@ -28,7 +30,6 @@ import {
 } from "./verify-claude.ts";
 import { isDirectory, isExecutableRegularFile, isReadableRegularFile, isRegularNonSymlinkFile, isoTimestamp, writeFileAtomically } from "../state/store.ts";
 
-const ENGRAM_SOURCE_REPO = "Gentleman-Programming/engram";
 const MARKETPLACE_SOURCE = "SoyJohnXD/oso-code";
 const SUPPORTED_FALLOW_VERSION = "3.14.0";
 const CLAUDE_MD_MARKER_START = "<!-- oso-code:start -->";
@@ -43,10 +44,12 @@ export type ClaudeCommandInput = Readonly<{
   repositoryRoot: string;
   environment: NodeJS.ProcessEnv;
   platform: NodeJS.Platform;
+  architecture: NodeJS.Architecture;
   assumeYes: boolean;
   replaceClaudeMd?: boolean;
   installImpeccable?: boolean;
   installGitHook?: boolean;
+  engramTransport?: EngramTransport;
 }>;
 
 export type ClaudeOutcome = Readonly<{ report: string; exitCode: number }>;
@@ -83,7 +86,7 @@ export function installClaude(input: ClaudeCommandInput): ClaudeOutcome {
   const wiring: WiringEntry[] = [];
 
   wiring.push(wireEngramPlugin(input.environment));
-  wiring.push(detectEngramBinary(input.environment, input.platform));
+  wiring.push(resolveOrProvisionEngram(input));
   wiring.push(wireFallow(input.environment, input.homeDirectory, input.platform));
 
   try {
@@ -441,28 +444,44 @@ function wireEngramPlugin(environment: NodeJS.ProcessEnv): WiringEntry {
   return wiringFail("engram (plugin)", `plugin install failed: ${collapsedOutput(install)} — fix: claude plugin install engram@engram`);
 }
 
-function detectEngramBinary(environment: NodeJS.ProcessEnv, platform: NodeJS.Platform): WiringEntry {
-  const binaryName = platform === "win32" ? "engram.exe" : "engram";
-  const resolved = firstExecutableOnPath(environment, binaryName);
-  if (resolved === undefined) {
+function resolveOrProvisionEngram(input: ClaudeCommandInput): WiringEntry {
+  const binaryName = engramBinaryName(input.platform);
+  const resolved = firstExecutableOnPath(input.environment, binaryName);
+  if (resolved !== undefined) {
+    return engramBinaryRuns(resolved, input.environment)
+      ? wiringOk("engram (binary)", `already installed where Claude Code resolves it: ${resolved}`)
+      : wiringFail(
+          "engram (binary)",
+          `${resolved} does not run — an antivirus may have quarantined it, which upstream documents happening to unsigned prebuilt releases — fix: remove it, then re-run this installer to provision the pinned release, or ${engramManualInstallCommand(input.platform)}`,
+        );
+  }
+  const outcome = provisionEngramBinary({
+    homeDirectory: input.homeDirectory,
+    environment: input.environment,
+    platform: input.platform,
+    architecture: input.architecture,
+    transport: input.engramTransport,
+  });
+  return engramProvisionWiringEntry(outcome, input.platform);
+}
+
+function engramProvisionWiringEntry(outcome: EngramProvisionOutcome, platform: NodeJS.Platform): WiringEntry {
+  if (outcome.kind === "installed-on-path") {
+    return wiringOk("engram (binary)", `installed ${SUPPORTED_ENGRAM_VERSION} at ${outcome.binary}`);
+  }
+  if (outcome.kind === "installed-off-path") {
     return wiringFail(
       "engram (binary)",
-      `no ${binaryName} on the PATH Claude Code reads — this port detects the pinned release but does not fetch it; run bash bootstrap/install.sh once to provision it, or ${engramManualInstallCommand(platform)}`,
+      `installed ${SUPPORTED_ENGRAM_VERSION} at ${outcome.binary}, which is not what a bare \`engram\` resolves to on the PATH Claude Code reads — the plugin spawns that bare name, so its MCP cannot start until ${outcome.installDirectory} is on that PATH ahead of any other engram — fix: add ${outcome.installDirectory} to your PATH (in ~/.profile, say), then restart Claude Code`,
     );
   }
-  if (!engramBinaryRuns(resolved)) {
-    return wiringFail(
-      "engram (binary)",
-      `${resolved} does not run — an antivirus may have quarantined it, which upstream documents happening to unsigned prebuilt releases — fix: remove it, then run bash bootstrap/install.sh to reprovision, or ${engramManualInstallCommand(platform)}`,
-    );
-  }
-  return wiringOk("engram (binary)", `already installed where Claude Code resolves it: ${resolved}`);
+  return wiringFail("engram (binary)", `${outcome.reason} — fix: ${engramManualInstallCommand(platform)}`);
 }
 
 function engramManualInstallCommand(platform: NodeJS.Platform): string {
   return platform === "win32"
-    ? `install engram yourself — go install github.com/${ENGRAM_SOURCE_REPO}/cmd/engram@latest, or unpack the release zip from https://github.com/${ENGRAM_SOURCE_REPO}/releases onto the PATH Claude Code reads`
-    : `install engram yourself — brew install gentleman-programming/tap/engram, or go install github.com/${ENGRAM_SOURCE_REPO}/cmd/engram@latest`;
+    ? `install engram yourself — go install github.com/${ENGRAM_SOURCE_REPO}/cmd/engram@v${SUPPORTED_ENGRAM_VERSION}, or unpack the release zip from https://github.com/${ENGRAM_SOURCE_REPO}/releases/tag/v${SUPPORTED_ENGRAM_VERSION} onto the PATH Claude Code reads`
+    : `install engram yourself — brew install gentleman-programming/tap/engram, or go install github.com/${ENGRAM_SOURCE_REPO}/cmd/engram@v${SUPPORTED_ENGRAM_VERSION}`;
 }
 
 export function wireFallow(environment: NodeJS.ProcessEnv, homeDirectory: string, platform: NodeJS.Platform): WiringEntry {

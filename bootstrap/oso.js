@@ -94,9 +94,9 @@ function isErrnoException(error) {
 }
 
 // core/src/install/claude.ts
-import { spawnSync as spawnSync2 } from "node:child_process";
-import { cpSync as cpSync2, mkdirSync as mkdirSync4, readFileSync as readFileSync5, readdirSync as readdirSync3, rmSync as rmSync4, statSync as statSync4, writeFileSync as writeFileSync3 } from "node:fs";
-import path5 from "node:path";
+import { spawnSync as spawnSync3 } from "node:child_process";
+import { cpSync as cpSync2, mkdirSync as mkdirSync5, readFileSync as readFileSync6, readdirSync as readdirSync3, rmSync as rmSync5, statSync as statSync4, writeFileSync as writeFileSync4 } from "node:fs";
+import path6 from "node:path";
 
 // core/src/install/backup.ts
 import { cpSync, lstatSync as lstatSync2, mkdirSync as mkdirSync2, readdirSync, readFileSync as readFileSync2, rmSync as rmSync2, statSync as statSync2 } from "node:fs";
@@ -189,6 +189,32 @@ function recursiveDiskBlocks(target) {
   return stats.blocks + childBlocks;
 }
 
+// core/src/install/engram.ts
+import { spawnSync as spawnSync2 } from "node:child_process";
+import { mkdirSync as mkdirSync4, mkdtempSync as mkdtempSync2, readFileSync as readFileSync5, renameSync as renameSync2, rmSync as rmSync4, writeFileSync as writeFileSync3 } from "node:fs";
+import { tmpdir as tmpdir2 } from "node:os";
+import path5 from "node:path";
+import { gunzipSync, inflateRawSync } from "node:zlib";
+
+// core/src/install/pins.ts
+var SUPPORTED_ENGRAM_VERSION = "1.20.0";
+
+// core/src/install/trust.ts
+var SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/;
+var ROW_PATTERN = /^(\S+)\s+(.*)$/;
+function parseTrustManifest(text) {
+  return text.split("\n").filter((line) => line !== "" && !line.startsWith("#")).map((line) => {
+    const row = ROW_PATTERN.exec(line);
+    return row === null ? { digest: line, file: "" } : { digest: row[1], file: row[2] };
+  });
+}
+
+// core/src/install/verify-claude.ts
+import { spawnSync } from "node:child_process";
+import { closeSync, lstatSync as lstatSync3, mkdirSync as mkdirSync3, mkdtempSync, openSync, readFileSync as readFileSync4, readSync, readdirSync as readdirSync2, rmSync as rmSync3, statSync as statSync3, writeFileSync as writeFileSync2 } from "node:fs";
+import { tmpdir } from "node:os";
+import path4 from "node:path";
+
 // core/src/install/json.ts
 import { readFileSync as readFileSync3 } from "node:fs";
 import path3 from "node:path";
@@ -220,12 +246,6 @@ function writeJsonFile(file, value) {
   writeFileAtomically(path3.dirname(file), file, `${JSON.stringify(value, null, 2)}
 `, ".oso-json-");
 }
-
-// core/src/install/verify-claude.ts
-import { spawnSync } from "node:child_process";
-import { lstatSync as lstatSync3, mkdirSync as mkdirSync3, mkdtempSync, readFileSync as readFileSync4, readdirSync as readdirSync2, rmSync as rmSync3, statSync as statSync3, writeFileSync as writeFileSync2 } from "node:fs";
-import { tmpdir } from "node:os";
-import path4 from "node:path";
 
 // core/src/install/report.ts
 var OK_PREFIX = "ok:   ";
@@ -448,7 +468,7 @@ function checkEngramBinaryResolves(report2, environment, platform) {
   }
   const binaryName = "engram.exe";
   const resolved = firstExecutableOnPath(environment, binaryName);
-  const state = resolved === void 0 ? `no ${binaryName} on the persisted machine or user PATH` : engramBinaryRuns(resolved) ? "1" : `${resolved} does not run`;
+  const state = resolved === void 0 ? `no ${binaryName} on the persisted machine or user PATH` : engramBinaryRuns(resolved, environment) ? "1" : `${resolved} does not run`;
   report2.check("engram binary the client resolves and runs", "1", state, ENGRAM_BINARY_FIX);
   if (resolved !== void 0) report2.detail(`engram binary: ${resolved}`);
 }
@@ -670,9 +690,34 @@ function firstExecutableOnPath(environment, binaryName) {
   }
   return void 0;
 }
-function engramBinaryRuns(binary) {
-  const result = spawnSync(binary, ["version"], { encoding: "utf8" });
+var ENGRAM_PROBE_TIMEOUT_MS = 1e4;
+var ENGRAM_PROBE_ENVIRONMENT_KEYS = ["PATH", "SystemRoot", "windir"];
+var KERNEL_EXECUTABLE_MAGICS = ["\x7FELF", "MZ", "#!", "\xCF\xFA\xED\xFE", "\xCE\xFA\xED\xFE", "\xCA\xFE\xBA\xBE"];
+var WIDEST_EXECUTABLE_MAGIC_BYTES = Math.max(...KERNEL_EXECUTABLE_MAGICS.map((magic) => magic.length));
+function engramBinaryRuns(binary, environment) {
+  if (!kernelExecutesDirectly(binary)) return false;
+  const result = spawnSync(binary, ["version"], {
+    encoding: "utf8",
+    timeout: ENGRAM_PROBE_TIMEOUT_MS,
+    env: probeEnvironment(environment)
+  });
   return result.error === void 0 && result.status === 0;
+}
+function kernelExecutesDirectly(binary) {
+  if (!isReadableRegularFile(binary)) return false;
+  const leading = Buffer.alloc(WIDEST_EXECUTABLE_MAGIC_BYTES);
+  const handle = openSync(binary, "r");
+  try {
+    readSync(handle, leading);
+  } finally {
+    closeSync(handle);
+  }
+  const opening = leading.toString("latin1");
+  return KERNEL_EXECUTABLE_MAGICS.some((magic) => opening.startsWith(magic));
+}
+function probeEnvironment(environment) {
+  const carried = ENGRAM_PROBE_ENVIRONMENT_KEYS.map((key) => [key, environment[key]]);
+  return Object.fromEntries(carried.filter(([, value]) => value !== void 0));
 }
 function claudeDesktopLocations(homeDirectory, environment) {
   return [
@@ -692,8 +737,278 @@ function errorMessageOf(cause) {
   return collapsed === "" ? "empty" : collapsed;
 }
 
-// core/src/install/claude.ts
+// core/src/install/engram.ts
 var ENGRAM_SOURCE_REPO = "Gentleman-Programming/engram";
+var DOWNLOAD_BOUND_SECONDS = 120;
+var MEBIBYTE = 1024 * 1024;
+var SCRIPT_SIZED_PAYLOAD_FLOOR_BYTES = MEBIBYTE;
+var ARCHIVE_EXPANSION_CEILING_BYTES = 128 * MEBIBYTE;
+var EngramProvisionError = class extends Error {
+  constructor(message, options) {
+    super(message, options);
+    this.name = "EngramProvisionError";
+  }
+};
+function provisionEngramBinary(input) {
+  const installDirectory = path5.join(input.homeDirectory, ".local", "bin");
+  const binaryName = engramBinaryName(input.platform);
+  const transport = input.transport ?? curlOrWgetTransport(input.environment);
+  let placedBinary;
+  try {
+    const content = fetchVerifiedEngramBinary(input.platform, input.architecture, binaryName, transport);
+    placedBinary = placeEngramBinary({ content, installDirectory, binaryName, environment: input.environment });
+  } catch (error) {
+    return { kind: "failed", reason: errorMessageOf(error) };
+  }
+  return firstExecutableOnPath(input.environment, binaryName) === placedBinary ? { kind: "installed-on-path", binary: placedBinary } : { kind: "installed-off-path", binary: placedBinary, installDirectory };
+}
+function engramBinaryName(platform) {
+  return platform === "win32" ? "engram.exe" : "engram";
+}
+function engramReleaseAsset(platform, architecture, version) {
+  const os = engramReleaseOs(platform);
+  const arch = engramReleaseArch(architecture);
+  if (os === void 0 || arch === void 0) return void 0;
+  return os === "windows" ? `engram_${version}_windows_${arch}.zip` : `engram_${version}_${os}_${arch}.tar.gz`;
+}
+function fetchVerifiedEngramBinary(platform, architecture, binaryName, transport) {
+  const asset = engramReleaseAsset(platform, architecture, SUPPORTED_ENGRAM_VERSION);
+  if (asset === void 0) {
+    throw new EngramProvisionError(`engram publishes no official release for ${platform}/${architecture}`);
+  }
+  const releaseBase = `https://github.com/${ENGRAM_SOURCE_REPO}/releases/download/v${SUPPORTED_ENGRAM_VERSION}`;
+  const checksums = downloadOrThrow(transport, `${releaseBase}/checksums.txt`);
+  const archive = downloadOrThrow(transport, `${releaseBase}/${asset}`);
+  verifyEngramChecksum(checksums, archive, asset);
+  return engramBinaryFromArchive(archive, asset, binaryName);
+}
+function downloadOrThrow(transport, url) {
+  try {
+    return transport(url);
+  } catch (cause) {
+    throw new EngramProvisionError(`could not download ${url}: ${errorMessageOf(cause)}`, { cause });
+  }
+}
+function verifyEngramChecksum(checksumsText, archive, asset) {
+  const rows = parseTrustManifest(checksumsText.toString("utf8")).filter((row2) => row2.file === asset);
+  if (rows.length !== 1) {
+    throw new EngramProvisionError(`checksums.txt does not carry exactly one row for ${asset} (found ${rows.length})`);
+  }
+  const [row] = rows;
+  if (!SHA256_HEX_PATTERN.test(row.digest)) {
+    throw new EngramProvisionError(`the published checksum for ${asset} is not a SHA-256 digest`);
+  }
+  if (sha256Hex(archive) !== row.digest) {
+    throw new EngramProvisionError(`${asset} does not match its published SHA-256 checksum, so nothing was installed`);
+  }
+}
+function placeEngramBinary({ content, installDirectory, binaryName, environment }) {
+  if (content.length < SCRIPT_SIZED_PAYLOAD_FLOOR_BYTES) {
+    throw new EngramProvisionError(
+      `the ${binaryName} entry holds ${content.length} bytes, under the ${SCRIPT_SIZED_PAYLOAD_FLOOR_BYTES} bytes below which it is a script or a text file rather than the Go binary this release publishes, so nothing was placed`
+    );
+  }
+  mkdirSync4(installDirectory, { recursive: true });
+  const target = path5.join(installDirectory, binaryName);
+  const pending = path5.join(installDirectory, `.oso-pending-${process.pid}-${binaryName}`);
+  writeFileSync3(pending, content, { mode: 493 });
+  try {
+    if (!engramBinaryRuns(pending, environment)) {
+      throw new EngramProvisionError(
+        `engram ${SUPPORTED_ENGRAM_VERSION} was verified but would not run from ${installDirectory}, so ${target} was left exactly as it was \u2014 an antivirus may have quarantined it, which upstream documents happening to its unsigned prebuilt releases`
+      );
+    }
+    renameSync2(pending, target);
+  } catch (error) {
+    rmSync4(pending, { force: true });
+    throw error;
+  }
+  return target;
+}
+function curlOrWgetTransport(environment) {
+  return (url) => {
+    const scratch = mkdtempSync2(path5.join(tmpdir2(), "oso-engram-download-"));
+    try {
+      const destination = path5.join(scratch, "download");
+      downloadToFile(url, destination, environment);
+      return readFileSync5(destination);
+    } finally {
+      rmSync4(scratch, { recursive: true, force: true });
+    }
+  };
+}
+function downloadToFile(url, destination, environment) {
+  const bound = String(DOWNLOAD_BOUND_SECONDS);
+  const curl = spawnSync2(
+    "curl",
+    ["-fsSL", "--retry", "3", "--retry-delay", "2", "--connect-timeout", bound, "--max-time", bound, "-o", destination, url],
+    { env: environment, encoding: "utf8" }
+  );
+  if (curl.error === void 0) {
+    if (curl.status !== 0) throw new Error(fetcherRefusal("curl", curl));
+    return;
+  }
+  const wget = spawnSync2("wget", ["-nv", "--tries=3", `--timeout=${bound}`, "-O", destination, url], {
+    env: environment,
+    encoding: "utf8"
+  });
+  if (wget.error !== void 0) throw new Error("neither curl nor wget is installed here");
+  if (wget.status !== 0) throw new Error(fetcherRefusal("wget", wget));
+}
+function fetcherRefusal(fetcher, result) {
+  const said = collapsedNewlines(result.stderr).trim();
+  return said === "" ? `${fetcher} exited ${result.status}` : `${fetcher} exited ${result.status}: ${said}`;
+}
+function engramReleaseOs(platform) {
+  if (platform === "linux") return "linux";
+  if (platform === "darwin") return "darwin";
+  if (platform === "win32") return "windows";
+  return void 0;
+}
+function engramReleaseArch(architecture) {
+  if (architecture === "x64") return "amd64";
+  if (architecture === "arm64") return "arm64";
+  return void 0;
+}
+function engramBinaryFromArchive(archive, asset, binaryName) {
+  const entries = asset.endsWith(".zip") ? zipEntries(archive) : tarGzEntries(archive);
+  const named = entries.filter((entry) => path5.posix.basename(entry.name) === binaryName);
+  const [only] = named;
+  if (only === void 0) throw new EngramProvisionError(`${asset} carries no ${binaryName}`);
+  if (named.length > 1) {
+    throw new EngramProvisionError(
+      `${asset} carries ${named.length} entries named ${binaryName} (${named.map((entry) => entry.name).join(", ")}), so which one is the release binary is ambiguous and nothing was installed`
+    );
+  }
+  return only.readContent();
+}
+var TAR_BLOCK_BYTES = 512;
+var TAR_NAME_OFFSET = 0;
+var TAR_NAME_BYTES = 100;
+var TAR_SIZE_OFFSET = 124;
+var TAR_SIZE_BYTES = 12;
+var TAR_TYPEFLAG_OFFSET = 156;
+var TAR_PREFIX_OFFSET = 345;
+var TAR_PREFIX_BYTES = 155;
+var TAR_REGULAR_FILE_TYPEFLAG = 48;
+var TAR_IMPLICIT_REGULAR_FILE_TYPEFLAG = 0;
+function tarGzEntries(archive) {
+  return tarEntries(gunzipSync(archive, { maxOutputLength: ARCHIVE_EXPANSION_CEILING_BYTES }));
+}
+function tarEntries(tar) {
+  const entries = [];
+  let offset = 0;
+  while (offset + TAR_BLOCK_BYTES <= tar.length && !isZeroBlock(tar, offset)) {
+    const name = tarField(tar, offset, TAR_NAME_OFFSET, TAR_NAME_BYTES);
+    const prefix = tarField(tar, offset, TAR_PREFIX_OFFSET, TAR_PREFIX_BYTES);
+    const size = tarDeclaredSize(tar, offset);
+    const contentStart = offset + TAR_BLOCK_BYTES;
+    if (contentStart + size > tar.length) {
+      throw new EngramProvisionError(
+        `a tar header declares ${size} content bytes but the archive holds only ${tar.length - contentStart} past it`
+      );
+    }
+    if (isTarRegularFile(tar[offset + TAR_TYPEFLAG_OFFSET])) {
+      entries.push({
+        name: prefix === "" ? name : `${prefix}/${name}`,
+        readContent: () => Buffer.from(tar.subarray(contentStart, contentStart + size))
+      });
+    }
+    offset = contentStart + roundUpToBlock(size);
+  }
+  return entries;
+}
+function tarDeclaredSize(tar, blockOffset) {
+  const field = tarField(tar, blockOffset, TAR_SIZE_OFFSET, TAR_SIZE_BYTES).trim();
+  const size = field === "" ? 0 : Number.parseInt(field, 8);
+  if (!Number.isSafeInteger(size) || size < 0) {
+    throw new EngramProvisionError(`a tar header declares ${JSON.stringify(field)} as its octal content size, which is no byte count`);
+  }
+  return size;
+}
+function isTarRegularFile(typeflag) {
+  return typeflag === TAR_REGULAR_FILE_TYPEFLAG || typeflag === TAR_IMPLICIT_REGULAR_FILE_TYPEFLAG;
+}
+function tarField(tar, blockOffset, fieldOffset, length) {
+  const field = tar.subarray(blockOffset + fieldOffset, blockOffset + fieldOffset + length);
+  const terminator = field.indexOf(0);
+  return (terminator === -1 ? field : field.subarray(0, terminator)).toString("latin1");
+}
+function isZeroBlock(tar, offset) {
+  return tar.subarray(offset, offset + TAR_BLOCK_BYTES).every((byte) => byte === 0);
+}
+function roundUpToBlock(size) {
+  return Math.ceil(size / TAR_BLOCK_BYTES) * TAR_BLOCK_BYTES;
+}
+var ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE = 101010256;
+var ZIP_END_OF_CENTRAL_DIRECTORY_BYTES = 22;
+var ZIP_TOTAL_ENTRY_COUNT_OFFSET = 10;
+var ZIP_DIRECTORY_START_OFFSET = 16;
+var ZIP_CENTRAL_FILE_HEADER_SIGNATURE = 33639248;
+var ZIP_CENTRAL_FILE_HEADER_BYTES = 46;
+var ZIP_CENTRAL_METHOD_OFFSET = 10;
+var ZIP_CENTRAL_COMPRESSED_SIZE_OFFSET = 20;
+var ZIP_CENTRAL_NAME_LENGTH_OFFSET = 28;
+var ZIP_CENTRAL_EXTRA_LENGTH_OFFSET = 30;
+var ZIP_CENTRAL_COMMENT_LENGTH_OFFSET = 32;
+var ZIP_CENTRAL_LOCAL_HEADER_START_OFFSET = 42;
+var ZIP_LOCAL_FILE_HEADER_SIGNATURE = 67324752;
+var ZIP_LOCAL_FILE_HEADER_BYTES = 30;
+var ZIP_LOCAL_NAME_LENGTH_OFFSET = 26;
+var ZIP_LOCAL_EXTRA_LENGTH_OFFSET = 28;
+var ZIP_STORED_METHOD = 0;
+function zipEntries(zip) {
+  const trailer = findZipEndOfCentralDirectory(zip);
+  const entryCount = zip.readUInt16LE(trailer + ZIP_TOTAL_ENTRY_COUNT_OFFSET);
+  const entries = [];
+  let offset = zip.readUInt32LE(trailer + ZIP_DIRECTORY_START_OFFSET);
+  for (let index = 0; index < entryCount; index += 1) {
+    if (zip.readUInt32LE(offset) !== ZIP_CENTRAL_FILE_HEADER_SIGNATURE) {
+      throw new EngramProvisionError("not a zip archive: central directory entry signature mismatch");
+    }
+    const method = zip.readUInt16LE(offset + ZIP_CENTRAL_METHOD_OFFSET);
+    const compressedSize = zip.readUInt32LE(offset + ZIP_CENTRAL_COMPRESSED_SIZE_OFFSET);
+    const nameLength = zip.readUInt16LE(offset + ZIP_CENTRAL_NAME_LENGTH_OFFSET);
+    const extraLength = zip.readUInt16LE(offset + ZIP_CENTRAL_EXTRA_LENGTH_OFFSET);
+    const commentLength = zip.readUInt16LE(offset + ZIP_CENTRAL_COMMENT_LENGTH_OFFSET);
+    const localHeaderStart = zip.readUInt32LE(offset + ZIP_CENTRAL_LOCAL_HEADER_START_OFFSET);
+    const nameStart = offset + ZIP_CENTRAL_FILE_HEADER_BYTES;
+    entries.push({
+      name: zip.subarray(nameStart, nameStart + nameLength).toString("utf8"),
+      readContent: () => zipEntryContent(zip, localHeaderStart, method, compressedSize)
+    });
+    offset = nameStart + nameLength + extraLength + commentLength;
+  }
+  return entries;
+}
+function zipEntryContent(zip, localHeaderStart, method, compressedSize) {
+  if (zip.readUInt32LE(localHeaderStart) !== ZIP_LOCAL_FILE_HEADER_SIGNATURE) {
+    throw new EngramProvisionError("not a zip archive: local file header signature mismatch");
+  }
+  if (compressedSize > ARCHIVE_EXPANSION_CEILING_BYTES) {
+    throw new EngramProvisionError(
+      `a zip entry declares ${compressedSize} compressed bytes, past the ${ARCHIVE_EXPANSION_CEILING_BYTES}-byte ceiling this installer expands an archive under`
+    );
+  }
+  const nameLength = zip.readUInt16LE(localHeaderStart + ZIP_LOCAL_NAME_LENGTH_OFFSET);
+  const extraLength = zip.readUInt16LE(localHeaderStart + ZIP_LOCAL_EXTRA_LENGTH_OFFSET);
+  const dataStart = localHeaderStart + ZIP_LOCAL_FILE_HEADER_BYTES + nameLength + extraLength;
+  if (dataStart + compressedSize > zip.length) {
+    throw new EngramProvisionError(
+      `a zip entry declares ${compressedSize} compressed bytes but the archive holds only ${zip.length - dataStart} past its local file header`
+    );
+  }
+  const raw = zip.subarray(dataStart, dataStart + compressedSize);
+  return method === ZIP_STORED_METHOD ? Buffer.from(raw) : inflateRawSync(raw, { maxOutputLength: ARCHIVE_EXPANSION_CEILING_BYTES });
+}
+function findZipEndOfCentralDirectory(zip) {
+  for (let offset = zip.length - ZIP_END_OF_CENTRAL_DIRECTORY_BYTES; offset >= 0; offset -= 1) {
+    if (zip.readUInt32LE(offset) === ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE) return offset;
+  }
+  throw new EngramProvisionError("not a zip archive: no end-of-central-directory record");
+}
+
+// core/src/install/claude.ts
 var MARKETPLACE_SOURCE = "SoyJohnXD/oso-code";
 var SUPPORTED_FALLOW_VERSION = "3.14.0";
 var CLAUDE_MD_MARKER_START = "<!-- oso-code:start -->";
@@ -712,9 +1027,9 @@ var ClaudePluginInstallError = class extends Error {
 };
 function installClaude(input) {
   if (!input.assumeYes) return requiresYesOutcome("install");
-  const claudeDir = path5.join(input.homeDirectory, ".claude");
-  const settingsFile = path5.join(claudeDir, "settings.json");
-  const claudeMdFile = path5.join(claudeDir, "CLAUDE.md");
+  const claudeDir = path6.join(input.homeDirectory, ".claude");
+  const settingsFile = path6.join(claudeDir, "settings.json");
+  const claudeMdFile = path6.join(claudeDir, "CLAUDE.md");
   const legacyTargets = legacyArtifactTargets(input.repositoryRoot, claudeDir);
   let tx;
   try {
@@ -730,7 +1045,7 @@ function installClaude(input) {
   const infoLines = [`backup: ${tx.backupRoot}`];
   const wiring = [];
   wiring.push(wireEngramPlugin(input.environment));
-  wiring.push(detectEngramBinary(input.environment, input.platform));
+  wiring.push(resolveOrProvisionEngram(input));
   wiring.push(wireFallow(input.environment, input.homeDirectory, input.platform));
   try {
     wiring.push(installOsoPluginCore(input.environment, input.repositoryRoot));
@@ -776,9 +1091,9 @@ function installClaude(input) {
 }
 function repairClaude(input) {
   if (!input.assumeYes) return requiresYesOutcome("repair");
-  const claudeDir = path5.join(input.homeDirectory, ".claude");
-  const settingsFile = path5.join(claudeDir, "settings.json");
-  const claudeMdFile = path5.join(claudeDir, "CLAUDE.md");
+  const claudeDir = path6.join(input.homeDirectory, ".claude");
+  const settingsFile = path6.join(claudeDir, "settings.json");
+  const claudeMdFile = path6.join(claudeDir, "CLAUDE.md");
   let tx;
   try {
     tx = beginTransaction(backupsRootOf(input.homeDirectory), CLAUDE_REPAIR_BACKUP_FORMAT);
@@ -807,9 +1122,9 @@ function repairClaude(input) {
 }
 function purgeClaude(input) {
   if (!input.assumeYes) return requiresYesOutcome("purge");
-  const claudeDir = path5.join(input.homeDirectory, ".claude");
-  const settingsFile = path5.join(claudeDir, "settings.json");
-  const claudeMdFile = path5.join(claudeDir, "CLAUDE.md");
+  const claudeDir = path6.join(input.homeDirectory, ".claude");
+  const settingsFile = path6.join(claudeDir, "settings.json");
+  const claudeMdFile = path6.join(claudeDir, "CLAUDE.md");
   let tx;
   try {
     tx = beginTransaction(backupsRootOf(input.homeDirectory), CLAUDE_PURGE_BACKUP_FORMAT);
@@ -832,20 +1147,20 @@ function purgeClaude(input) {
     const restore = rollback(tx);
     return fatalOutcome("purge", "could not rewrite CLAUDE.md", error, restore);
   }
-  const mcpRemove = spawnSync2("claude", ["mcp", "remove", "--scope", "user", "fallow"], { env: input.environment, encoding: "utf8" });
+  const mcpRemove = spawnSync3("claude", ["mcp", "remove", "--scope", "user", "fallow"], { env: input.environment, encoding: "utf8" });
   wiring.push(
     mcpRemove.error === void 0 && mcpRemove.status === 0 ? wiringOk("fallow (mcp)", "removed") : wiringFail("fallow (mcp)", `nothing removed, or already absent: ${collapsedOutput(mcpRemove)}`)
   );
   return { report: renderCommandReport("purge", infoLines, wiring), exitCode: 0 };
 }
 function backupsRootOf(homeDirectory) {
-  return path5.join(homeDirectory, ".local", "state", "oso-code", "claude-backups");
+  return path6.join(homeDirectory, ".local", "state", "oso-code", "claude-backups");
 }
 function beginTransaction(backupsRoot, format) {
-  const backupRoot = path5.join(backupsRoot, `install-backup-${compactTimestamp()}-${process.pid}`);
-  const itemsDirectory = path5.join(backupRoot, "items");
-  mkdirSync4(itemsDirectory, { recursive: true });
-  writeFileSync3(path5.join(backupRoot, "format"), `${format}
+  const backupRoot = path6.join(backupsRoot, `install-backup-${compactTimestamp()}-${process.pid}`);
+  const itemsDirectory = path6.join(backupRoot, "items");
+  mkdirSync5(itemsDirectory, { recursive: true });
+  writeFileSync4(path6.join(backupRoot, "format"), `${format}
 `);
   return { backupRoot, itemsDirectory, manifest: [] };
 }
@@ -854,14 +1169,14 @@ function backupTarget(tx, label, target) {
     tx.manifest.push({ status: "absent", label, target });
     return;
   }
-  const destination = path5.join(tx.itemsDirectory, label);
-  mkdirSync4(path5.dirname(destination), { recursive: true });
+  const destination = path6.join(tx.itemsDirectory, label);
+  mkdirSync5(path6.dirname(destination), { recursive: true });
   cpSync2(target, destination, { recursive: true });
   tx.manifest.push({ status: "present", label, target });
 }
 function commitManifest(tx) {
   const text = tx.manifest.map(serializeManifestRow).join("\n");
-  writeFileSync3(path5.join(tx.backupRoot, "manifest"), text === "" ? "" : `${text}
+  writeFileSync4(path6.join(tx.backupRoot, "manifest"), text === "" ? "" : `${text}
 `);
 }
 function rollback(tx) {
@@ -876,28 +1191,28 @@ function compactTimestamp() {
 function pruneInstallBackups(backupsRoot, environment) {
   const budgetKib = installBackupBudgetKib(environment);
   const over = installBackupsOverBudget(installBackupDirsNewestFirst(backupsRoot), budgetKib);
-  for (const backup of over) rmSync4(backup, { recursive: true, force: true });
+  for (const backup of over) rmSync5(backup, { recursive: true, force: true });
   return over;
 }
 function backupClientConfigTargets(homeDirectory, claudeDir) {
-  const targets = [{ label: "claude-json", target: path5.join(homeDirectory, ".claude.json") }];
-  const pluginsDir = path5.join(claudeDir, "plugins");
+  const targets = [{ label: "claude-json", target: path6.join(homeDirectory, ".claude.json") }];
+  const pluginsDir = path6.join(claudeDir, "plugins");
   if (!isDirectory(pluginsDir)) return targets;
   for (const name of readdirSync3(pluginsDir).filter((entry) => entry.endsWith(".json"))) {
-    targets.push({ label: `plugins-json-${name}`, target: path5.join(pluginsDir, name) });
+    targets.push({ label: `plugins-json-${name}`, target: path6.join(pluginsDir, name) });
   }
   return targets;
 }
 function legacyArtifactTargets(repositoryRoot2, claudeDir) {
-  const manifestFile = path5.join(repositoryRoot2, "bootstrap", "gentle-manifest.txt");
-  const content = readFileSync5(manifestFile, "utf8");
-  return manifestEntries(content).map((relative) => ({ label: relative, target: path5.join(claudeDir, relative) }));
+  const manifestFile = path6.join(repositoryRoot2, "bootstrap", "gentle-manifest.txt");
+  const content = readFileSync6(manifestFile, "utf8");
+  return manifestEntries(content).map((relative) => ({ label: relative, target: path6.join(claudeDir, relative) }));
 }
 function removeLegacyArtifacts(targets) {
   let removed = 0;
   for (const { target } of targets) {
     if (!existsAtAll(target)) continue;
-    rmSync4(target, { recursive: true, force: true });
+    rmSync5(target, { recursive: true, force: true });
     removed += 1;
   }
   return { removed };
@@ -984,19 +1299,19 @@ function clearOsoOutputStyle(settingsFile) {
 }
 function mergeGlobalClaudeMd(claudeMdFile, blockBody, options) {
   const shouldMerge = !options.replace && isReadableRegularFile(claudeMdFile);
-  const prefix = shouldMerge ? `${withoutMarkerRegion(readFileSync5(claudeMdFile, "utf8"))}
+  const prefix = shouldMerge ? `${withoutMarkerRegion(readFileSync6(claudeMdFile, "utf8"))}
 ` : "";
   const content = `${prefix}${CLAUDE_MD_MARKER_START}
 ${blockBody}${CLAUDE_MD_MARKER_END}
 `;
-  writeFileAtomically(path5.dirname(claudeMdFile), claudeMdFile, content, ".oso-claude-md-");
+  writeFileAtomically(path6.dirname(claudeMdFile), claudeMdFile, content, ".oso-claude-md-");
 }
 function stripClaudeMdRegion(claudeMdFile) {
   if (!isReadableRegularFile(claudeMdFile)) return false;
-  const content = readFileSync5(claudeMdFile, "utf8");
+  const content = readFileSync6(claudeMdFile, "utf8");
   if (!content.includes(CLAUDE_MD_MARKER_START)) return false;
   const withoutBlock = withoutMarkerRegion(content);
-  writeFileAtomically(path5.dirname(claudeMdFile), claudeMdFile, withoutBlock === "" ? "" : `${withoutBlock}
+  writeFileAtomically(path6.dirname(claudeMdFile), claudeMdFile, withoutBlock === "" ? "" : `${withoutBlock}
 `, ".oso-claude-md-");
   return true;
 }
@@ -1019,46 +1334,59 @@ function withoutMarkerRegion(content) {
   return kept.join("\n");
 }
 function claudeGlobalBody(repositoryRoot2) {
-  return readFileSync5(path5.join(repositoryRoot2, "bootstrap", "claude-global.md"), "utf8");
+  return readFileSync6(path6.join(repositoryRoot2, "bootstrap", "claude-global.md"), "utf8");
 }
 function claudeMdSizeNote(claudeMdFile) {
   const size = statSync4(claudeMdFile, { throwIfNoEntry: false })?.size ?? 0;
   return size > CLAUDE_MD_BUDGET_BYTES ? `CLAUDE.md is still ${size} bytes \u2014 review the non-oso content; every session pays for it` : `CLAUDE.md merged (${size} bytes)`;
 }
 function wireEngramPlugin(environment) {
-  spawnSync2("claude", ["plugin", "marketplace", "add", ENGRAM_SOURCE_REPO], { env: environment, encoding: "utf8" });
-  const install = spawnSync2("claude", ["plugin", "install", "engram@engram"], { env: environment, encoding: "utf8" });
+  spawnSync3("claude", ["plugin", "marketplace", "add", ENGRAM_SOURCE_REPO], { env: environment, encoding: "utf8" });
+  const install = spawnSync3("claude", ["plugin", "install", "engram@engram"], { env: environment, encoding: "utf8" });
   if (install.error === void 0 && install.status === 0) return wiringOk("engram (plugin)", "installed");
   return wiringFail("engram (plugin)", `plugin install failed: ${collapsedOutput(install)} \u2014 fix: claude plugin install engram@engram`);
 }
-function detectEngramBinary(environment, platform) {
-  const binaryName = platform === "win32" ? "engram.exe" : "engram";
-  const resolved = firstExecutableOnPath(environment, binaryName);
-  if (resolved === void 0) {
-    return wiringFail(
+function resolveOrProvisionEngram(input) {
+  const binaryName = engramBinaryName(input.platform);
+  const resolved = firstExecutableOnPath(input.environment, binaryName);
+  if (resolved !== void 0) {
+    return engramBinaryRuns(resolved, input.environment) ? wiringOk("engram (binary)", `already installed where Claude Code resolves it: ${resolved}`) : wiringFail(
       "engram (binary)",
-      `no ${binaryName} on the PATH Claude Code reads \u2014 this port detects the pinned release but does not fetch it; run bash bootstrap/install.sh once to provision it, or ${engramManualInstallCommand(platform)}`
+      `${resolved} does not run \u2014 an antivirus may have quarantined it, which upstream documents happening to unsigned prebuilt releases \u2014 fix: remove it, then re-run this installer to provision the pinned release, or ${engramManualInstallCommand(input.platform)}`
     );
   }
-  if (!engramBinaryRuns(resolved)) {
+  const outcome = provisionEngramBinary({
+    homeDirectory: input.homeDirectory,
+    environment: input.environment,
+    platform: input.platform,
+    architecture: input.architecture,
+    transport: input.engramTransport
+  });
+  return engramProvisionWiringEntry(outcome, input.platform);
+}
+function engramProvisionWiringEntry(outcome, platform) {
+  if (outcome.kind === "installed-on-path") {
+    return wiringOk("engram (binary)", `installed ${SUPPORTED_ENGRAM_VERSION} at ${outcome.binary}`);
+  }
+  if (outcome.kind === "installed-off-path") {
     return wiringFail(
       "engram (binary)",
-      `${resolved} does not run \u2014 an antivirus may have quarantined it, which upstream documents happening to unsigned prebuilt releases \u2014 fix: remove it, then run bash bootstrap/install.sh to reprovision, or ${engramManualInstallCommand(platform)}`
+      `installed ${SUPPORTED_ENGRAM_VERSION} at ${outcome.binary}, which is not what a bare \`engram\` resolves to on the PATH Claude Code reads \u2014 the plugin spawns that bare name, so its MCP cannot start until ${outcome.installDirectory} is on that PATH ahead of any other engram \u2014 fix: add ${outcome.installDirectory} to your PATH (in ~/.profile, say), then restart Claude Code`
     );
   }
-  return wiringOk("engram (binary)", `already installed where Claude Code resolves it: ${resolved}`);
+  return wiringFail("engram (binary)", `${outcome.reason} \u2014 fix: ${engramManualInstallCommand(platform)}`);
 }
 function engramManualInstallCommand(platform) {
-  return platform === "win32" ? `install engram yourself \u2014 go install github.com/${ENGRAM_SOURCE_REPO}/cmd/engram@latest, or unpack the release zip from https://github.com/${ENGRAM_SOURCE_REPO}/releases onto the PATH Claude Code reads` : `install engram yourself \u2014 brew install gentleman-programming/tap/engram, or go install github.com/${ENGRAM_SOURCE_REPO}/cmd/engram@latest`;
+  return platform === "win32" ? `install engram yourself \u2014 go install github.com/${ENGRAM_SOURCE_REPO}/cmd/engram@v${SUPPORTED_ENGRAM_VERSION}, or unpack the release zip from https://github.com/${ENGRAM_SOURCE_REPO}/releases/tag/v${SUPPORTED_ENGRAM_VERSION} onto the PATH Claude Code reads` : `install engram yourself \u2014 brew install gentleman-programming/tap/engram, or go install github.com/${ENGRAM_SOURCE_REPO}/cmd/engram@v${SUPPORTED_ENGRAM_VERSION}`;
 }
 function wireFallow(environment, homeDirectory, platform) {
   const fallowCommand = resolveFallowMcpCommand(environment, homeDirectory, platform) ?? "fallow-mcp";
   const fix = `npm install --global fallow@${SUPPORTED_FALLOW_VERSION}, then claude mcp add --scope user fallow -- ${fallowCommand}`;
-  const npmProbe = spawnSync2("npm", ["--version"], { env: environment, encoding: "utf8" });
+  const npmProbe = spawnSync3("npm", ["--version"], { env: environment, encoding: "utf8" });
   if (npmProbe.error !== void 0) {
     return wiringFail("fallow", `no npm to install the fallow package with \u2014 fix: install Node.js 22 or newer, then ${fix}`);
   }
-  const install = spawnSync2("npm", ["install", "--global", `fallow@${SUPPORTED_FALLOW_VERSION}`], { env: environment, encoding: "utf8" });
+  const install = spawnSync3("npm", ["install", "--global", `fallow@${SUPPORTED_FALLOW_VERSION}`], { env: environment, encoding: "utf8" });
   if (install.error !== void 0 || install.status !== 0) {
     return wiringFail(
       "fallow",
@@ -1068,7 +1396,7 @@ function wireFallow(environment, homeDirectory, platform) {
   return addOrConfirmFallowMcp(environment, fallowCommand);
 }
 function addOrConfirmFallowMcp(environment, fallowCommand) {
-  const add = spawnSync2("claude", ["mcp", "add", "--scope", "user", "fallow", "--", fallowCommand], { env: environment, encoding: "utf8" });
+  const add = spawnSync3("claude", ["mcp", "add", "--scope", "user", "fallow", "--", fallowCommand], { env: environment, encoding: "utf8" });
   if (add.error === void 0 && add.status === 0) return wiringOk("fallow", `wired (user scope): ${fallowCommand}`);
   const wired = fallowWiredCommand(environment);
   if (wired === fallowCommand) return wiringOk("fallow", `already wired: ${fallowCommand}`);
@@ -1081,7 +1409,7 @@ function addOrConfirmFallowMcp(environment, fallowCommand) {
   return wiringFail("fallow", `mcp add failed: ${collapsedOutput(add)} \u2014 fix: claude mcp add --scope user fallow -- ${fallowCommand}`);
 }
 function fallowWiredCommand(environment) {
-  const result = spawnSync2("claude", ["mcp", "get", "fallow"], { env: environment, encoding: "utf8" });
+  const result = spawnSync3("claude", ["mcp", "get", "fallow"], { env: environment, encoding: "utf8" });
   const text = result.error === void 0 ? result.stdout : "";
   const match = /^[ \t]*Command:[ \t]*(.*?)[ \t]*$/m.exec(text);
   return match?.[1] ?? "";
@@ -1090,44 +1418,44 @@ function resolveFallowMcpCommand(environment, homeDirectory, platform) {
   if (platform === "win32") {
     const appdata = environment["APPDATA"];
     if (appdata !== void 0 && appdata !== "") {
-      const prefix = npmGlobalPrefix(environment) ?? path5.join(appdata, "npm");
-      const candidate = path5.join(prefix, "fallow-mcp.cmd");
+      const prefix = npmGlobalPrefix(environment) ?? path6.join(appdata, "npm");
+      const candidate = path6.join(prefix, "fallow-mcp.cmd");
       if (isExecutableRegularFile(candidate)) return candidate;
     }
   }
   const onPath = firstExecutableOnPath(environment, "fallow-mcp");
   if (onPath !== void 0) return onPath;
-  const cargoCandidates = [path5.join(homeDirectory, ".cargo", "bin", "fallow-mcp"), path5.join(homeDirectory, ".cargo", "bin", "fallow-mcp.exe")];
+  const cargoCandidates = [path6.join(homeDirectory, ".cargo", "bin", "fallow-mcp"), path6.join(homeDirectory, ".cargo", "bin", "fallow-mcp.exe")];
   return cargoCandidates.find((candidate) => isExecutableRegularFile(candidate));
 }
 function npmGlobalPrefix(environment) {
-  const result = spawnSync2("npm", ["prefix", "-g"], { env: environment, encoding: "utf8" });
+  const result = spawnSync3("npm", ["prefix", "-g"], { env: environment, encoding: "utf8" });
   if (result.error !== void 0 || result.status !== 0) return void 0;
   const trimmed = result.stdout.trim();
   return trimmed === "" ? void 0 : trimmed.replaceAll("\\", "/");
 }
 function installOsoPluginCore(environment, repositoryRoot2) {
   registerOsoMarketplace(environment, repositoryRoot2);
-  const install = spawnSync2("claude", ["plugin", "install", "oso-code@oso-code"], { env: environment, encoding: "utf8" });
+  const install = spawnSync3("claude", ["plugin", "install", "oso-code@oso-code"], { env: environment, encoding: "utf8" });
   if (install.error !== void 0 || install.status !== 0) throw new ClaudePluginInstallError(collapsedOutput(install));
   return wiringOk("oso-code plugin", "installed");
 }
 function softPluginMaintenance(environment) {
-  spawnSync2("claude", ["plugin", "marketplace", "update", "oso-code"], { env: environment, encoding: "utf8" });
-  spawnSync2("claude", ["plugin", "update", "oso-code@oso-code"], { env: environment, encoding: "utf8" });
+  spawnSync3("claude", ["plugin", "marketplace", "update", "oso-code"], { env: environment, encoding: "utf8" });
+  spawnSync3("claude", ["plugin", "update", "oso-code@oso-code"], { env: environment, encoding: "utf8" });
 }
 function registerOsoMarketplace(environment, repositoryRoot2) {
-  const registry = spawnSync2("claude", ["plugin", "marketplace", "list", "--json"], { env: environment, encoding: "utf8" });
+  const registry = spawnSync3("claude", ["plugin", "marketplace", "list", "--json"], { env: environment, encoding: "utf8" });
   const localPath = registry.error === void 0 ? localMarketplacePath(registry.stdout) : "";
   if (localPath !== "" && !githubMarketplaceIsReachable(environment)) return;
-  const added = spawnSync2("claude", ["plugin", "marketplace", "add", MARKETPLACE_SOURCE], { env: environment, encoding: "utf8" });
+  const added = spawnSync3("claude", ["plugin", "marketplace", "add", MARKETPLACE_SOURCE], { env: environment, encoding: "utf8" });
   if (added.error === void 0 && added.status === 0) return;
   const failure = classifyMarketplaceAddFailure(added.stdout ?? "");
   if (failure === "unreachable") {
-    spawnSync2("claude", ["plugin", "marketplace", "add", repositoryRoot2], { env: environment, encoding: "utf8" });
+    spawnSync3("claude", ["plugin", "marketplace", "add", repositoryRoot2], { env: environment, encoding: "utf8" });
     return;
   }
-  spawnSync2("claude", ["plugin", "marketplace", "update", "oso-code"], { env: environment, encoding: "utf8" });
+  spawnSync3("claude", ["plugin", "marketplace", "update", "oso-code"], { env: environment, encoding: "utf8" });
 }
 function classifyMarketplaceAddFailure(output) {
   if (output.includes("is seed-managed")) return "seed-managed";
@@ -1148,14 +1476,14 @@ function localMarketplacePath(registryJson) {
   }
 }
 function githubMarketplaceIsReachable(environment) {
-  const result = spawnSync2("git", ["ls-remote", "--exit-code", `https://github.com/${MARKETPLACE_SOURCE}.git`, "HEAD"], {
+  const result = spawnSync3("git", ["ls-remote", "--exit-code", `https://github.com/${MARKETPLACE_SOURCE}.git`, "HEAD"], {
     env: { ...environment, GIT_TERMINAL_PROMPT: "0" },
     encoding: "utf8"
   });
   return result.error === void 0 && result.status === 0;
 }
 function migrateContext7(environment) {
-  const listing = spawnSync2("claude", ["mcp", "list"], { env: environment, encoding: "utf8" });
+  const listing = spawnSync3("claude", ["mcp", "list"], { env: environment, encoding: "utf8" });
   const entry = pluginContext7Entry(listing.error === void 0 ? listing.stdout : "");
   if (entry === "") {
     return [
@@ -1173,14 +1501,14 @@ function migrateContext7(environment) {
       )
     ];
   }
-  spawnSync2("claude", ["mcp", "remove", "--scope", "user", "context7"], { env: environment, encoding: "utf8" });
+  spawnSync3("claude", ["mcp", "remove", "--scope", "user", "context7"], { env: environment, encoding: "utf8" });
   return [wiringOk("context7", "ships with the oso-code plugin, registered and connected")];
 }
 function pluginContext7Entry(listing) {
   return listing.split("\n").find((line) => line.includes("context7") && line.includes("plugin:")) ?? "";
 }
 function publishStateBinPath(claudeDir, settingsFile) {
-  const installedPluginsFile = path5.join(claudeDir, "plugins", "installed_plugins.json");
+  const installedPluginsFile = path6.join(claudeDir, "plugins", "installed_plugins.json");
   const installRoot = installRootFromManifest(installedPluginsFile);
   const fix = "fix: claude plugin install oso-code@oso-code, restart Claude Code, then re-run this installer";
   if (installRoot === void 0) {
@@ -1189,7 +1517,7 @@ function publishStateBinPath(claudeDir, settingsFile) {
       `the client records no installed oso-code plugin carrying a runnable bin/oso-state, so there is no absolute path to publish \u2014 ${fix}`
     );
   }
-  const stateBin = path5.join(installRoot, "bin", "oso-state");
+  const stateBin = path6.join(installRoot, "bin", "oso-state");
   if (!isExecutableRegularFile(stateBin)) {
     return wiringFail("oso-state path", `the resolved install path carries no runnable bin/oso-state at ${stateBin} \u2014 ${fix}`);
   }
@@ -1231,45 +1559,45 @@ function gitHooksOwner(repositoryRoot2, environment, gitHooksDir) {
   if (configured !== "" && normalizedPath(configured) !== normalizedPath(gitHooksDir)) return `core.hooksPath=${configured}`;
   const gitDir = gitAbsoluteGitDir(repositoryRoot2, environment);
   if (gitDir === "") return "";
-  const hooksDir = path5.join(gitDir, "hooks");
+  const hooksDir = path6.join(gitDir, "hooks");
   if (!isDirectory(hooksDir)) return "";
-  const hookFile = readdirSync3(hooksDir).find((name) => !name.endsWith(".sample") && isRegularNonSymlinkFile(path5.join(hooksDir, name)));
-  return hookFile === void 0 ? "" : path5.join(hooksDir, hookFile);
+  const hookFile = readdirSync3(hooksDir).find((name) => !name.endsWith(".sample") && isRegularNonSymlinkFile(path6.join(hooksDir, name)));
+  return hookFile === void 0 ? "" : path6.join(hooksDir, hookFile);
 }
 function gitAbsoluteGitDir(repositoryRoot2, environment) {
-  const result = spawnSync2("git", ["-C", repositoryRoot2, "rev-parse", "--absolute-git-dir"], { env: environment, encoding: "utf8" });
+  const result = spawnSync3("git", ["-C", repositoryRoot2, "rev-parse", "--absolute-git-dir"], { env: environment, encoding: "utf8" });
   return result.error === void 0 && result.status === 0 ? result.stdout.replace(/\n+$/, "") : "";
 }
 function wireGitCommitHook(repositoryRoot2, environment) {
-  const gitHooksDir = path5.join(repositoryRoot2, "plugin", "git-hooks");
+  const gitHooksDir = path6.join(repositoryRoot2, "plugin", "git-hooks");
   const owner = gitHooksOwner(repositoryRoot2, environment, gitHooksDir);
   if (owner !== "") {
     return wiringFail(
       "git commit hook",
-      `not wired in ${repositoryRoot2} \u2014 ${owner} already owns this repo's hooks and core.hooksPath would take it out of git's reach; the PreToolUse commit gate still applies here \u2014 fix: to run both, call ${path5.join(gitHooksDir, "pre-commit")} from your own pre-commit`
+      `not wired in ${repositoryRoot2} \u2014 ${owner} already owns this repo's hooks and core.hooksPath would take it out of git's reach; the PreToolUse commit gate still applies here \u2014 fix: to run both, call ${path6.join(gitHooksDir, "pre-commit")} from your own pre-commit`
     );
   }
-  const result = spawnSync2("git", ["-C", repositoryRoot2, "config", "core.hooksPath", gitHooksDir], { env: environment, encoding: "utf8" });
+  const result = spawnSync3("git", ["-C", repositoryRoot2, "config", "core.hooksPath", gitHooksDir], { env: environment, encoding: "utf8" });
   if (result.error === void 0 && result.status === 0) {
     return wiringOk("git commit hook", `core.hooksPath wired in ${repositoryRoot2} \u2014 for another repo: git -C <repo> config core.hooksPath ${gitHooksDir}`);
   }
   return wiringFail("git commit hook", `git config failed: ${collapsedOutput(result)} \u2014 fix: git -C ${repositoryRoot2} config core.hooksPath ${gitHooksDir}`);
 }
 function wireImpeccable(environment, homeDirectory) {
-  rmSync4(impeccableOptOutMarker(homeDirectory), { force: true });
-  spawnSync2("claude", ["plugin", "marketplace", "add", "pbakaus/impeccable"], { env: environment, encoding: "utf8" });
-  const install = spawnSync2("claude", ["plugin", "install", "impeccable@impeccable"], { env: environment, encoding: "utf8" });
+  rmSync5(impeccableOptOutMarker(homeDirectory), { force: true });
+  spawnSync3("claude", ["plugin", "marketplace", "add", "pbakaus/impeccable"], { env: environment, encoding: "utf8" });
+  const install = spawnSync3("claude", ["plugin", "install", "impeccable@impeccable"], { env: environment, encoding: "utf8" });
   if (install.error !== void 0 || install.status !== 0) {
     return wiringFail("impeccable (plugin)", `install failed: ${collapsedOutput(install)} \u2014 fix: claude plugin install impeccable@impeccable`);
   }
-  const listing = spawnSync2("claude", ["plugin", "list"], { env: environment, encoding: "utf8" });
+  const listing = spawnSync3("claude", ["plugin", "list"], { env: environment, encoding: "utf8" });
   const installed = listing.error === void 0 && listing.stdout.includes("impeccable");
   return installed ? wiringOk("impeccable (plugin)", "installed") : wiringFail("impeccable (plugin)", "the install reported success but the client lists no impeccable plugin \u2014 fix: claude plugin install impeccable@impeccable, then restart Claude Code");
 }
 function skipImpeccable(homeDirectory) {
   const marker = impeccableOptOutMarker(homeDirectory);
-  mkdirSync4(path5.dirname(marker), { recursive: true });
-  writeFileSync3(marker, `skipped by --no-impeccable on ${isoTimestamp().slice(0, 10)}
+  mkdirSync5(path6.dirname(marker), { recursive: true });
+  writeFileSync4(marker, `skipped by --no-impeccable on ${isoTimestamp().slice(0, 10)}
 `);
 }
 function wiringOk(component, note) {
@@ -1339,6 +1667,7 @@ function dispatch(argv, repositoryRoot2) {
     repositoryRoot: repositoryRoot2,
     environment: process.env,
     platform: process.platform,
+    architecture: process.arch,
     assumeYes: parsed.assumeYes
   };
   const outcome = parsed.verb === "verify" ? verifyClaude(claudeContext) : parsed.verb === "install" ? installClaude(claudeContext) : parsed.verb === "repair" ? repairClaude(claudeContext) : purgeClaude(claudeContext);

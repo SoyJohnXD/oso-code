@@ -46,6 +46,7 @@ function dispatch(argv: readonly string[], repositoryRoot: string): number {
     repositoryRoot,
     environment: process.env,
     platform: process.platform,
+    architecture: process.arch,
     assumeYes: parsed.assumeYes,
   };
   const outcome =

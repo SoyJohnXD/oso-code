@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { isReadableRegularFile, sha256Hex } from "../state/store.ts";
 
-const HEX_DIGEST_PATTERN = /^[0-9a-f]{64}$/;
+export const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/;
 const ROW_PATTERN = /^(\S+)\s+(.*)$/;
 
 export type TrustRow = Readonly<{ digest: string; file: string }>;
@@ -36,7 +36,7 @@ export function trustDivergences(
 }
 
 function divergenceOf(row: TrustRow, resolveTarget: (relative: string) => string | undefined): TrustDivergence[] {
-  if (!HEX_DIGEST_PATTERN.test(row.digest)) return [{ file: row.file, state: { kind: "malformed-published-hash" } }];
+  if (!SHA256_HEX_PATTERN.test(row.digest)) return [{ file: row.file, state: { kind: "malformed-published-hash" } }];
   const target = resolveTarget(row.file);
   if (target === undefined) return [{ file: row.file, state: { kind: "outside-the-trust-set" } }];
   if (!isReadableRegularFile(target)) return [{ file: row.file, state: { kind: "missing" } }];

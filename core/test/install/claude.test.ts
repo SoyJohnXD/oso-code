@@ -24,6 +24,10 @@ import {
   withoutMarkerRegion,
   type ClaudeCommandInput,
 } from "../../src/install/claude.ts";
+import type { EngramTransport } from "../../src/install/engram.ts";
+import { SUPPORTED_ENGRAM_VERSION } from "../../src/install/pins.ts";
+import { sha256Hex } from "../../src/state/store.ts";
+import { buildTarGzFixture } from "../support/engram-archive-fixture.ts";
 
 const sandbox = mkdtempSync(path.join(tmpdir(), "oso-claude-command-"));
 after(() => rmSync(sandbox, { recursive: true, force: true }));
@@ -99,8 +103,16 @@ function commandInput(overrides: Partial<ClaudeCommandInput> & { homeDirectory: 
   return {
     environment: { PATH: fakeBinDir },
     platform: "linux",
+    architecture: "x64",
     assumeYes: true,
+    engramTransport: unfixturedEngramTransport(),
     ...overrides,
+  };
+}
+
+function unfixturedEngramTransport(): EngramTransport {
+  return (url) => {
+    throw new Error(`stub engram transport: no fixture wired for ${url}`);
   };
 }
 
@@ -314,6 +326,52 @@ describe("ownership table: .mcpServers.<name> is insert-if-missing, mediated thr
     const homeDirectory = freshHome();
     const outcome = installClaude(commandInput({ homeDirectory, repositoryRoot: scratchRepositoryRoot() }));
     assert.match(outcome.report, /fallow: FAILED — no npm/);
+  });
+});
+
+describe("installClaude: the engram row provisions the pinned release when detection finds nothing", () => {
+  test("reports installed once a checksum-matched release is fetched, replacing the old install-by-hand failure", () => {
+    const homeDirectory = freshHome();
+    const installDirectory = path.join(homeDirectory, ".local", "bin");
+    const asset = `engram_${SUPPORTED_ENGRAM_VERSION}_linux_amd64.tar.gz`;
+    const releaseSizedBinary = Buffer.from(`#!${process.execPath}\nprocess.exit(0);\n`.padEnd(2 * 1024 * 1024, " "), "utf8");
+    const archive = buildTarGzFixture([{ name: "engram", content: releaseSizedBinary }]);
+    const digest = sha256Hex(archive);
+    const engramTransport: EngramTransport = (url) => {
+      if (url.endsWith("/checksums.txt")) return Buffer.from(`${digest}  ${asset}\n`, "utf8");
+      if (url.endsWith(`/${asset}`)) return archive;
+      throw new Error(`no fixture wired for ${url}`);
+    };
+
+    const outcome = installClaude(
+      commandInput({
+        homeDirectory,
+        repositoryRoot: scratchRepositoryRoot(),
+        environment: { PATH: `${fakeBinDir}${path.delimiter}${installDirectory}` },
+        engramTransport,
+      }),
+    );
+
+    assert.equal(outcome.exitCode, 0);
+    assert.ok(
+      outcome.report.includes(`engram (binary): OK — installed ${SUPPORTED_ENGRAM_VERSION} at ${path.join(installDirectory, "engram")}`),
+      outcome.report,
+    );
+  });
+
+  test("reports the row as failed, naming the reason, when the fixtured transport cannot reach the release", () => {
+    const homeDirectory = freshHome();
+    const outcome = installClaude(
+      commandInput({
+        homeDirectory,
+        repositoryRoot: scratchRepositoryRoot(),
+        engramTransport: () => {
+          throw new Error("network unreachable");
+        },
+      }),
+    );
+    assert.equal(outcome.exitCode, 0);
+    assert.match(outcome.report, /engram \(binary\): FAILED — could not download .*checksums\.txt/);
   });
 });
 

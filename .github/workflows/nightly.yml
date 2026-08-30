@@ -49,6 +49,10 @@ jobs:
           npm ci --no-audit --no-fund
           cd core
           node --experimental-strip-types --test test/shell/lexer-differential.test.ts
+      - name: Engram release provisioning against the real GitHub release, checksum-verified end to end — the PR gate only exercises the stub transport
+        run: |
+          cd core
+          node --experimental-strip-types --test test/install/engram-nightly.test.ts
       - name: Verify report reaches its summary — a fixture HOME fails every check but the two install-independent ones, so failed=9
         env:
           OSO_VERIFY_SKIP_SLOW: 1
@@ -145,6 +149,12 @@ jobs:
         run: |
           jq --version
           bash tests/hooks-test.sh
+      - name: Engram release provisioning against the real GitHub release, checksum-verified end to end — the PR gate only exercises the stub transport
+        shell: bash
+        run: |
+          npm ci --no-audit --no-fund
+          cd core
+          node --experimental-strip-types --test test/install/engram-nightly.test.ts
       - name: Shell script syntax
         shell: bash
         run: |

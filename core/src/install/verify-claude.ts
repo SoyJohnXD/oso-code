@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { childDirectoryNames } from "./backup.ts";
@@ -231,7 +231,7 @@ export function checkEngramBinaryResolves(report: VerifyReport, environment: Nod
   const state =
     resolved === undefined
       ? `no ${binaryName} on the persisted machine or user PATH`
-      : engramBinaryRuns(resolved)
+      : engramBinaryRuns(resolved, environment)
         ? "1"
         : `${resolved} does not run`;
   report.check("engram binary the client resolves and runs", "1", state, ENGRAM_BINARY_FIX);
@@ -491,9 +491,37 @@ export function firstExecutableOnPath(environment: NodeJS.ProcessEnv, binaryName
   return undefined;
 }
 
-export function engramBinaryRuns(binary: string): boolean {
-  const result = spawnSync(binary, ["version"], { encoding: "utf8" });
+export const ENGRAM_PROBE_TIMEOUT_MS = 10_000;
+export const ENGRAM_PROBE_ENVIRONMENT_KEYS = ["PATH", "SystemRoot", "windir"];
+const KERNEL_EXECUTABLE_MAGICS = ["\x7fELF", "MZ", "#!", "\xcf\xfa\xed\xfe", "\xce\xfa\xed\xfe", "\xca\xfe\xba\xbe"];
+const WIDEST_EXECUTABLE_MAGIC_BYTES = Math.max(...KERNEL_EXECUTABLE_MAGICS.map((magic) => magic.length));
+
+export function engramBinaryRuns(binary: string, environment: NodeJS.ProcessEnv): boolean {
+  if (!kernelExecutesDirectly(binary)) return false;
+  const result = spawnSync(binary, ["version"], {
+    encoding: "utf8",
+    timeout: ENGRAM_PROBE_TIMEOUT_MS,
+    env: probeEnvironment(environment),
+  });
   return result.error === undefined && result.status === 0;
+}
+
+function kernelExecutesDirectly(binary: string): boolean {
+  if (!isReadableRegularFile(binary)) return false;
+  const leading = Buffer.alloc(WIDEST_EXECUTABLE_MAGIC_BYTES);
+  const handle = openSync(binary, "r");
+  try {
+    readSync(handle, leading);
+  } finally {
+    closeSync(handle);
+  }
+  const opening = leading.toString("latin1");
+  return KERNEL_EXECUTABLE_MAGICS.some((magic) => opening.startsWith(magic));
+}
+
+function probeEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const carried = ENGRAM_PROBE_ENVIRONMENT_KEYS.map((key) => [key, environment[key]] as const);
+  return Object.fromEntries(carried.filter(([, value]) => value !== undefined));
 }
 
 function claudeDesktopLocations(homeDirectory: string, environment: NodeJS.ProcessEnv): string[] {

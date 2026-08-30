@@ -1,0 +1,1 @@
+export const SUPPORTED_ENGRAM_VERSION = "1.20.0";

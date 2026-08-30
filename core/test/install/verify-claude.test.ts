@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, test } from "node:test";
@@ -23,6 +23,8 @@ import {
   checkSettingsFreeOfGentleHooks,
   checkWindowsHomeDirectory,
   compareVersionsAscending,
+  engramBinaryRuns,
+  ENGRAM_PROBE_TIMEOUT_MS,
   noteClaudeDesktop,
   normalizedPath,
   verifyClaude,
@@ -410,6 +412,59 @@ describe("checkEngramBinaryResolves", () => {
       linesOf(report).some((line) =>
         line.startsWith(`FAIL: engram binary the client resolves and runs — expected 1, got ${engramExe} does not run`),
       ),
+    );
+  });
+});
+
+describe("engramBinaryRuns: the run probe stands between a downloaded, unsigned binary and this machine", () => {
+  const PLANTED_AMBIENT_SECRET = "planted-by-this-test-and-never-to-reach-the-binary";
+  const PROBE_BOUND_SLACK_MS = 2_000;
+
+  function probeFixture(name: string, content: string): string {
+    const binary = path.join(freshDirectory(), name);
+    writeFileSync(binary, content);
+    chmodSync(binary, 0o755);
+    return binary;
+  }
+
+  test("refuses a zero-byte file that the kernel's own /bin/sh fallback would otherwise certify as exit 0", () => {
+    const binary = probeFixture("engram", "");
+
+    assert.equal(spawnSync(binary, ["version"]).status, 0, "the fallback under test must still certify this file when spawned raw");
+    assert.equal(engramBinaryRuns(binary, {}), false);
+  });
+
+  test("refuses a shebang-less `exit 0` script the same fallback would otherwise certify", () => {
+    const binary = probeFixture("engram", "exit 0\n");
+
+    assert.equal(spawnSync(binary, ["version"]).status, 0, "the fallback under test must still certify this script when spawned raw");
+    assert.equal(engramBinaryRuns(binary, {}), false);
+  });
+
+  test("hands the binary the allowed variables and nothing else the operator's environment carries", () => {
+    const directory = freshDirectory();
+    const seenEnvironment = path.join(directory, "seen-environment.json");
+    const spy = path.join(directory, "engram");
+    writeFileSync(spy, `#!${process.execPath}\nrequire("node:fs").writeFileSync(${JSON.stringify(seenEnvironment)}, JSON.stringify(process.env));\n`);
+    chmodSync(spy, 0o755);
+
+    assert.equal(engramBinaryRuns(spy, { PATH: directory, OSO_AMBIENT_SECRET: PLANTED_AMBIENT_SECRET }), true);
+
+    const seen = JSON.parse(readFileSync(seenEnvironment, "utf8")) as Record<string, string>;
+    assert.deepEqual(Object.keys(seen), ["PATH"]);
+    assert.equal(seen["OSO_AMBIENT_SECRET"], undefined);
+  });
+
+  test("returns inside its own declared bound on a binary that never exits, rather than blocking the installer forever", () => {
+    const binary = probeFixture("engram", "#!/bin/sh\nsleep 3600\n");
+    const startedAt = Date.now();
+
+    assert.equal(engramBinaryRuns(binary, {}), false);
+
+    const elapsed = Date.now() - startedAt;
+    assert.ok(
+      elapsed < ENGRAM_PROBE_TIMEOUT_MS + PROBE_BOUND_SLACK_MS,
+      `the probe took ${elapsed} ms, past its ${ENGRAM_PROBE_TIMEOUT_MS} ms bound plus ${PROBE_BOUND_SLACK_MS} ms of teardown`,
     );
   });
 });
