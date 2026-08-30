@@ -1,0 +1,29 @@
+{
+  "name": "commit gate: a call naming no session is untouched however armed the repository is",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 2154,
+      "assertion": "assert_allows \"the commit gate stays off a call naming no session, armed repo or not\" \\\n  block-commit-until-green.sh \"$unmarked_bash_input\""
+    }
+  ],
+  "gate": "commit",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": "",
+    "events_appended": [
+      {
+        "event": "payload-unparseable",
+        "session": ""
+      }
+    ]
+  }
+}

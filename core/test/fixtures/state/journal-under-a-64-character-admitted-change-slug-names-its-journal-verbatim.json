@@ -1,0 +1,30 @@
+{
+  "name": "journal under a 64-character admitted change slug names its journal verbatim",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 4697,
+      "assertion": "assert_equals \"a 64-character slug of the admitted charset names its journal verbatim\" \\\n  \"64 ${maximal_change}.log|the longest slug the rule admits>\" \\\n  \"${#maximal_change} $(ls \"$JOURNAL_DIR\" 2>/dev/null || true)|$(journal_texts_in \"$JOURNAL_DIR/${maximal_change}.log\")\""
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto_change=w9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "journal",
+    "the longest slug the rule admits"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      ".local/state/oso-code/runs/{repo}/w9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9-9.log": {
+        "journal_texts_in": "the longest slug the rule admits\n"
+      }
+    }
+  }
+}

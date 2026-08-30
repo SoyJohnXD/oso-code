@@ -1,0 +1,28 @@
+{
+  "name": "reanchor gate: a disarmed slice (active_slice=none) leaves a compaction silent",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6353,
+      "assertion": "oso-state --session \"$SESSION\" set mode=plan active_slice=none >/dev/null"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6361,
+      "assertion": "reanchor_uncertain_verdicts=\"$reanchor_uncertain_verdicts $(reanchor_verdict \"$(reanchor_input compact)\")\""
+    }
+  ],
+  "gate": "reanchor",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"SessionStart\",\"source\":\"compact\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

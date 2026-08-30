@@ -1,31 +1,25 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { readFileSync, rmSync } from "node:fs";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
+import {
+  appendJournal,
+  journalFileFor,
+  DELEGATIONS_RETURN_IN_TURN_HOST,
+  PUSHES_WITHOUT_PROGRESS_CAP,
+} from "@oso-code/core";
 import { osoCode } from "../oso-code.ts";
 import { continueUnattendedRun, recordSessionLineage, type ContinuationOutcome } from "./continuation-rail.ts";
-import { deriveRootId } from "./identity.ts";
-import { CAP_MILESTONE, CONTINUATION_ORDER, PUSHES_WITHOUT_PROGRESS_CAP } from "./unattended-run.ts";
+import { seedRailFixture, underRailFixtureHome, type RailFixture } from "../../test-support/rail-fixture.ts";
+import { armStateUnder, underFixtureHome } from "../../test-support/state-fixture.ts";
 import type { HostSessionApi } from "./wave.ts";
 
-const HOOKS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../../plugin/hooks");
-const STATE_BIN = resolve(HOOKS_DIR, "..", "bin", "oso-state");
-process.env.OSO_HOOKS_DIR = HOOKS_DIR;
+const CONTINUATION_ORDER = DELEGATIONS_RETURN_IN_TURN_HOST.order;
+const CAP_MILESTONE = "auto-continue: cap reached after";
 
 const PRODUCTION_DEPLOY = "vercel --prod";
 const RUN_CHANGE = "slice-twelve";
 
 type LooseHooks = Record<string, (input?: unknown, output?: unknown) => unknown>;
-
-interface Fixture {
-  base: string;
-  repo: string;
-  home: string;
-  owner: string;
-}
 
 interface PostedTurns {
   session: HostSessionApi;
@@ -33,44 +27,17 @@ interface PostedTurns {
   sessionIDs: string[];
 }
 
-function makeFixture(): Fixture {
-  const base = mkdtempSync(join(tmpdir(), "oso-continuation-rail-"));
-  const repo = join(base, "repo");
-  const home = join(base, "home");
-  mkdirSync(repo);
-  mkdirSync(home);
-  const init = spawnSync("git", ["init", "-b", "main"], { cwd: repo, encoding: "utf8" });
-  assert.equal(init.status, 0, init.stderr ?? "");
-  return { base, repo, home, owner: deriveRootId(repo) };
+function makeFixture(): RailFixture {
+  return seedRailFixture("oso-continuation-rail");
 }
 
-function runState(fixture: Fixture, args: readonly string[]): string {
-  const result = spawnSync("bash", [STATE_BIN, ...args], {
-    cwd: fixture.repo,
-    encoding: "utf8",
-    env: { ...process.env, HOME: fixture.home },
-  });
-  assert.equal(result.status, 0, result.stderr ?? "");
-  return result.stdout ?? "";
+function armRun(fixture: RailFixture, pairs: readonly string[]): void {
+  armStateUnder(fixture.home, fixture.repo, fixture.owner, [`auto_change=${RUN_CHANGE}`, ...pairs]);
+  underFixtureHome(fixture.home, () => appendJournal(journalFileFor(fixture.repo), "the run opened"));
 }
 
-function armRun(fixture: Fixture, pairs: readonly string[]): void {
-  runState(fixture, ["--session", fixture.owner, "set", `auto_change=${RUN_CHANGE}`, ...pairs]);
-  runState(fixture, ["journal", "the run opened"]);
-}
-
-function journalOf(fixture: Fixture): string {
-  return readFileSync(runState(fixture, ["journal", "--path"]).trim(), "utf8");
-}
-
-async function withFixtureHome<T>(fixture: Fixture, run: () => Promise<T>): Promise<T> {
-  const previous = process.env.HOME;
-  process.env.HOME = fixture.home;
-  try {
-    return await run();
-  } finally {
-    process.env.HOME = previous;
-  }
+function journalOf(fixture: RailFixture): string {
+  return underFixtureHome(fixture.home, () => readFileSync(journalFileFor(fixture.repo), "utf8"));
 }
 
 function postedTurns(holdEachTurn?: Promise<void>): PostedTurns {
@@ -89,8 +56,8 @@ function postedTurns(holdEachTurn?: Promise<void>): PostedTurns {
   return { session, orders, sessionIDs };
 }
 
-function idle(fixture: Fixture, host: PostedTurns, sessionID: string): Promise<ContinuationOutcome> {
-  return withFixtureHome(fixture, () => continueUnattendedRun({
+function idle(fixture: RailFixture, host: PostedTurns, sessionID: string): Promise<ContinuationOutcome> {
+  return underRailFixtureHome(fixture, () => continueUnattendedRun({
     sessionID,
     directory: fixture.repo,
     session: host.session,
@@ -178,29 +145,35 @@ test("a wave child's idle is never mistaken for the run's own turn ending", asyn
   }
 });
 
-test("a held delegation stops the rail short of posting anything", async () => {
+test("a delegation label left armed holds nothing here, because a delegation on this host returned in its own turn", async () => {
   const fixture = makeFixture();
   try {
     armRun(fixture, ["auto=running", "auto_wait=12"]);
     const host = postedTurns();
     const outcome = await idle(fixture, host, "ses-root");
-    assert.deepEqual(outcome, { kind: "held", label: "12", turns: 0 });
-    assert.deepEqual(host.orders, []);
+    assert.equal(outcome.kind, "stood-down");
+    assert.equal(host.orders.length, PUSHES_WITHOUT_PROGRESS_CAP);
+    assert.equal(host.orders[0], CONTINUATION_ORDER);
   } finally {
     rmSync(fixture.base, { recursive: true, force: true });
   }
+});
+
+test("the order this host is handed names the report the launch returned, never a notification it never sends", () => {
+  assert.match(CONTINUATION_ORDER, /read the report the launch itself returned/);
+  assert.doesNotMatch(CONTINUATION_ORDER, /do NOT relaunch it/);
 });
 
 test("a host that hands the plugin no session api leaves the run standing instead of throwing", async () => {
   const fixture = makeFixture();
   try {
     armRun(fixture, ["auto=running"]);
-    const outcome = await withFixtureHome(fixture, () => continueUnattendedRun({
+    const outcome = await underRailFixtureHome(fixture, () => continueUnattendedRun({
       sessionID: "ses-root",
       directory: fixture.repo,
     }));
-    assert.equal(outcome.kind, "stood-down");
-    assert.match(outcome.kind === "stood-down" ? outcome.reason : "", /no session api/);
+    assert.equal(outcome.kind, "failed");
+    assert.match(outcome.kind === "failed" ? outcome.reason : "", /no session api/);
   } finally {
     rmSync(fixture.base, { recursive: true, force: true });
   }
@@ -216,7 +189,7 @@ test("the plugin's own idle event drives the rail, and a denied production deplo
       client: { session: host.session },
     })) as unknown as LooseHooks;
 
-    const denial = await withFixtureHome(fixture, async () => {
+    const denial = await underRailFixtureHome(fixture, async () => {
       try {
         await hooks["tool.execute.before"]!(
           { tool: "bash", sessionID: "ses-root", cwd: fixture.repo },
@@ -229,7 +202,7 @@ test("the plugin's own idle event drives the rail, and a denied production deplo
     });
     assert.match(denial, /a production deploy stays with the operator/);
 
-    await withFixtureHome(fixture, async () => {
+    await underRailFixtureHome(fixture, async () => {
       await hooks.event!({ event: { type: "session.idle", properties: { sessionID: "ses-root" } } });
       await yieldUntilRailReachesItsCap();
     });

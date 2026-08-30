@@ -1,0 +1,23 @@
+{
+  "name": "production boundary: a Bash sibling tool the matcher also reaches is judged by neither half",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5085,
+      "assertion": "assert_equals \"a Bash sibling tool the matcher also reaches is judged by neither half\" \\\n  \"allow\" \"$(prod_gate_verdict \"$(prod_mcp_input BashOutput)\")\""
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"BashOutput\",\"tool_input\":{\"project\":\"acme\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

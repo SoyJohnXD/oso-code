@@ -1,0 +1,33 @@
+{
+  "name": "production boundary: a line past the lexer's bound is production, and spends no residue",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5100,
+      "assertion": "assert_equals \"a line past the lexer's bound is production at this boundary: an unread payload is the one thing a deploy refusal cannot spend a residue on\" \\\n  \"deny 0\" \"$(prod_verdicts_and_residues_for \"$prod_long_command\")\""
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"vercel --prod and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding and echo padding\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "past what the production boundary can read"
+      ]
+    },
+    "stderr": "",
+    "events_appended": [
+      {
+        "event": "prod-deploy-denied",
+        "session": "test-session"
+      }
+    ]
+  }
+}

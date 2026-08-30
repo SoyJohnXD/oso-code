@@ -1,0 +1,27 @@
+{
+  "name": "production boundary: the sibling spelling of that same deploy is denied",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5117,
+      "assertion": "assert_equals \"an xargs replace-string is a KNOWN HOLE rather than a counted residue: { ends the command, vercel comes out a clean word carrying no marker, and the very deploy its sibling spelling is denied for passes allowed AND uncounted\" \\\n  \"deny|allow 0\" \\\n  \"$(prod_verdicts_for 'echo --prod | xargs vercel')|$(prod_verdicts_and_residues_for 'echo --prod | xargs -I{} vercel {}')\""
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"echo --prod | xargs vercel\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\""
+      ]
+    },
+    "stderr": ""
+  }
+}

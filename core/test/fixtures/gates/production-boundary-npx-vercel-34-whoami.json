@@ -1,0 +1,23 @@
+{
+  "name": "production boundary: npx vercel@34 whoami",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5018,
+      "assertion": "assert_equals \"a pinned spec's read-only subcommands stay none of this gate's business\" \\\n  \"allow allow allow allow\" \\\n  \"$(prod_verdicts_for 'npx vercel@latest ls' 'npx vercel@34 whoami' 'npx netlify@17 status' \\\n    'npm exec typescript@5.4 -- tsc --noEmit')\""
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"npx vercel@34 whoami\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

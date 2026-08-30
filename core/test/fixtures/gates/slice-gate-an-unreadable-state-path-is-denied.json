@@ -1,0 +1,29 @@
+{
+  "name": "slice gate: an unreadable state path is denied",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5788,
+      "assertion": "assert_denies \"edit gate denies a state path that is not a readable file\"   block-edits-without-slice.sh \"$edit_input\""
+    }
+  ],
+  "gate": "edits",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": {
+      "kind": "directory"
+    }
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"/tmp/x.ts\",\"old_string\":\"const slice = 1;\",\"new_string\":\"const slice = 2;\",\"replace_all\":false}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\""
+      ]
+    },
+    "stderr": ""
+  }
+}

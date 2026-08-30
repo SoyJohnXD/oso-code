@@ -1,0 +1,28 @@
+{
+  "name": "autocontinue gate: past the cap every stop stands and the trail says so exactly once",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 4779, "assertion": "auto_past_cap_verdict=\"$(auto_stop_verdict \"$(auto_stop_input \"$SESSION\" true)\")\"\nassert_equals \"past the cap every stop stands and the trail says so exactly once\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 4780, "assertion": "assert_equals \"past the cap every stop stands and the trail says so exactly once\" \\\n  \"stop|$AUTO_CAP_MILESTONE>\" \\\n  \"$auto_past_cap_verdict|$(journal_texts_in \"$AUTO_JOURNAL\")\"" }
+  ],
+  "gate": "autocontinue",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n",
+    ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=4\njournal_bytes=102\n",
+    ".local/state/oso-code/runs/{repo}/auto-continuity.log": "2026-08-27T00:00:00Z auto-continue: cap reached after 3 pushes without progress — allowing the stop\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":true}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/runs/{repo}/auto-continuity.log": {
+        "journal_texts_in": "auto-continue: cap reached after 3 pushes without progress — allowing the stop"
+      }
+    },
+    "events_appended": []
+  }
+}

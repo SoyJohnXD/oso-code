@@ -1,0 +1,33 @@
+{
+  "name": "slice gate: the deny names the exact oso-state call that arms a slice",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 2163,
+      "assertion": "assert_denies \"the slice gate denies while no slice is active\" \\\n  block-edits-without-slice.sh \"$edit_input\""
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 2167,
+      "assertion": "    echo \"ok: the slice gate's remedy is the exact oso-state call that arms a slice\"; pass=$((pass + 1)) ;;"
+    }
+  ],
+  "gate": "edits",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"/tmp/x.ts\",\"old_string\":\"const slice = 1;\",\"new_string\":\"const slice = 2;\",\"replace_all\":false}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\"",
+        "oso-state --session test-session set active_slice="
+      ]
+    },
+    "stderr": ""
+  }
+}

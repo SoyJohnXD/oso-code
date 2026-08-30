@@ -1,0 +1,23 @@
+{
+  "name": "teardown gate: an event log inside the retention window is left alone",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 5868, "assertion": "printf '{\"event\":\"current\"}\\n' > \"$events_log\"" },
+    { "file": "tests/hooks-test.sh", "line": 5869, "assertion": "run_hook cleanup-state.sh \"$(printf '{\"session_id\":\"%s\"}' \"$SESSION\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 5870, "assertion": "if [ -z \"$hook_problem\" ] && [ ! -e \"${events_log}.1\" ] && grep -q '\"event\":\"current\"' \"$events_log\"; then" }
+  ],
+  "gate": "teardown",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/events.jsonl": "{\"event\":\"current\"}\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\"}",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      ".local/state/oso-code/events.jsonl": { "contains": ["\"event\":\"current\""] },
+      ".local/state/oso-code/events.jsonl.1": null
+    }
+  }
+}

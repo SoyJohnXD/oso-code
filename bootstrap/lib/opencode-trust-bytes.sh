@@ -5,7 +5,7 @@
 #
 # Sourced, not executed: functions only.
 
-OPENCODE_TRUST_FILE_COUNT=15
+OPENCODE_TRUST_FILE_COUNT=19
 
 opencode_sha256_file() {
   if command -v sha256sum >/dev/null 2>&1; then
@@ -24,7 +24,8 @@ opencode_trust_file_under() {
     return 0
   fi
   case "$relative" in
-    opencode/hooks/routes.ts) printf '%s' "$root/hooks/routes.ts" ;;
+    opencode/dist/oso-code.js) printf '%s' "$root/plugin/oso-code.js" ;;
+    plugin/dist/*) printf '%s' "$root/dist/${relative#plugin/dist/}" ;;
     plugin/hooks/*) printf '%s' "$root/hooks/${relative#plugin/hooks/}" ;;
     plugin/git-hooks/*) printf '%s' "$root/git-hooks/${relative#plugin/git-hooks/}" ;;
     plugin/bin/*) printf '%s' "$root/bin/${relative#plugin/bin/}" ;;

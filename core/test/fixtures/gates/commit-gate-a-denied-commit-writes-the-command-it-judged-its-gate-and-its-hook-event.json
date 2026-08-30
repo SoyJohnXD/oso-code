@@ -1,0 +1,52 @@
+{
+  "name": "commit gate: a denied commit writes the command it judged, its gate and its hook event",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5658,
+      "assertion": "assert_logged \"a denied commit writes the command it judged\" \\\n  '\"event\":\"commit-denied\",\"command\":\"git commit -m x\",\"session\":\"'"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5660,
+      "assertion": "assert_logged \"every logged event carries the schema version\" '\"schema\":2'"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5661,
+      "assertion": "assert_logged \"a deny names the gate script that fired\" \\\n  '\"gate\":\"block-commit-until-green.sh\"'"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5663,
+      "assertion": "assert_logged \"a deny names the hook event it fired on\" '\"hook_event\":\"PreToolUse\"'"
+    }
+  ],
+  "gate": "commit",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\""
+      ]
+    },
+    "stderr": "",
+    "events_appended": [
+      {
+        "event": "commit-denied",
+        "command": "git commit -m x",
+        "session": "test-session",
+        "schema": 2,
+        "gate": "block-commit-until-green.sh",
+        "hook_event": "PreToolUse"
+      }
+    ]
+  }
+}

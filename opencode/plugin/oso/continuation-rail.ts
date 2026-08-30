@@ -1,13 +1,6 @@
-import { publishIdentity } from "./identity.ts";
+import { hostEnvelope, logEvent, runGate } from "@oso-code/core";
+import { callerFor } from "./gates.ts";
 import { recordTrace } from "./trace.ts";
-import {
-  applySighting,
-  decideContinuation,
-  readUnattendedRun,
-  recordContinuationStep,
-  type ContinuationStep,
-  type RunLookup,
-} from "./unattended-run.ts";
 import { messageOf, unwrap, type HostSessionApi } from "./wave.ts";
 
 export interface ContinuationRequest {
@@ -18,8 +11,8 @@ export interface ContinuationRequest {
 }
 
 export type ContinuationOutcome =
-  | { kind: "held"; label: string; turns: number }
-  | { kind: "stood-down"; reason: string; turns: number }
+  | { kind: "stood-down"; turns: number }
+  | { kind: "failed"; reason: string; turns: number }
   | { kind: "not-this-runs-session" }
   | { kind: "already-driving" };
 
@@ -51,30 +44,19 @@ export function continueUnattendedRun(request: ContinuationRequest): Promise<Con
 }
 
 async function postUntilTheRunStops(request: ContinuationRequest): Promise<ContinuationOutcome> {
-  const lookup: RunLookup = {
-    directory: request.directory,
-    owner: publishIdentity(request.directory).OSO_AGENT,
-    sessionID: request.sessionID,
-  };
   let turns = 0;
   for (;;) {
-    let step: ContinuationStep;
+    let order: string | undefined;
     try {
-      step = takeNextStep(lookup);
+      order = nextContinuationOrder(request);
     } catch (error) {
       return standDownTraced(request, `the unattended run could not be read: ${messageOf(error)}`, turns);
     }
-    if (step.kind === "hold") {
-      return { kind: "held", label: step.label, turns };
-    }
-    if (step.kind === "stop") {
-      return { kind: "stood-down", reason: step.reason, turns };
-    }
-    if (step.kind !== "push") {
-      return { kind: "stood-down", reason: step.milestone, turns };
+    if (order === undefined) {
+      return { kind: "stood-down", turns };
     }
     try {
-      await postContinuationTurn(request, step.order);
+      await postContinuationTurn(request, order);
     } catch (error) {
       return standDownTraced(request, `the continuation turn did not land: ${messageOf(error)}`, turns);
     }
@@ -82,12 +64,16 @@ async function postUntilTheRunStops(request: ContinuationRequest): Promise<Conti
   }
 }
 
-function takeNextStep(lookup: RunLookup): ContinuationStep {
-  const reading = readUnattendedRun(lookup);
-  const decision = decideContinuation(reading);
-  applySighting(reading.journalFile, decision.sighting);
-  recordContinuationStep(lookup, reading.journalFile, decision.step);
-  return decision.step;
+function nextContinuationOrder(request: ContinuationRequest): string | undefined {
+  const envelope = hostEnvelope(callerFor(request.directory), {
+    sessionId: request.sessionID,
+    cwd: request.directory,
+  });
+  const run = runGate(["autocontinue"], envelope);
+  for (const event of run.events) {
+    logEvent(event);
+  }
+  return run.verdict.kind === "push" ? run.verdict.reason : undefined;
 }
 
 async function postContinuationTurn(request: ContinuationRequest, order: string): Promise<void> {
@@ -109,5 +95,5 @@ function standDownTraced(request: ContinuationRequest, reason: string, turns: nu
     sessionID: request.sessionID,
     client: request.client,
   });
-  return { kind: "stood-down", reason, turns };
+  return { kind: "failed", reason, turns };
 }

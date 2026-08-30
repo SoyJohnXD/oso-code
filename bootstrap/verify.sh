@@ -82,8 +82,8 @@ else
 fi
 
 if [ -n "$install_root" ]; then
-  hook="$(find "$install_root" -name 'block-commit-until-green.sh' 2>/dev/null | head -1 || true)"
-  if [ -n "$hook" ] && [ -x "$hook" ]; then
+  gate="$(find "$install_root" -path '*/dist/gate.js' 2>/dev/null | head -1 || true)"
+  if [ -n "$gate" ] && [ -f "$gate" ]; then
     out="$(
       {
         hook_home="$(mktemp -d)" \
@@ -93,7 +93,7 @@ if [ -n "$install_root" ]; then
           && mkdir -p "$hook_home/.local/state/oso-code" \
           && printf 'mode=plan\nverify_green=false\n' > "$hook_home/.local/state/oso-code/$state_key.state" \
           && printf '{"session_id":"e2e","cwd":"%s","tool_input":{"command":"git commit -m x"}}' "$hook_home" \
-            | HOME="$hook_home" OSO_AGENT=1 "$hook"
+            | HOME="$hook_home" USERPROFILE="$hook_home" OSO_AGENT=1 node "$gate" commit
       } 2>&1 || true
     )"
     out="${out//$'\n'/ }"

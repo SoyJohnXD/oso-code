@@ -1,0 +1,44 @@
+{
+  "name": "the TTL sweep preserves a locked foreign lane",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5561,
+      "assertion": "assert_equals \"the TTL sweep preserves a locked foreign lane then prunes it on the next unlocked operation\" \\\n  \"locked=preserved next=pruned\" \\\n  \"locked=$foreign_while_locked next=$([ ! -e \"$foreign_watermark\" ] && printf pruned || printf retained)\""
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-foreign-ttl}.watermark": {
+      "kind": "file",
+      "content": "version=1\nattempt=9\n",
+      "aged": true
+    },
+    ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-foreign-ttl}.lock": {
+      "kind": "directory"
+    }
+  },
+  "cwd": "workspace",
+  "argv": [
+    "handoff",
+    "publish",
+    "--slice",
+    "slice-sweeper",
+    "--attempt",
+    "1",
+    "--agent-id",
+    "agent-sweeper",
+    "--agent-type",
+    "oso-applier",
+    "--hook-session",
+    "hook-sweeper"
+  ],
+  "stdin": "oso-handoff: v=1 slice=slice-sweeper attempt=1\nstatus: done",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-foreign-ttl}.watermark": "{present}",
+      ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-foreign-ttl}.lock": "{present}"
+    }
+  }
+}

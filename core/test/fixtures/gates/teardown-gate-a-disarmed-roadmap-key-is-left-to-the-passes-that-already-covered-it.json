@@ -1,0 +1,41 @@
+{
+  "name": "teardown gate: a disarmed roadmap key is left to the passes that already covered it",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5743,
+      "assertion": "printf 'mode=plan\\nsession=roadmap-finished\\n' > \"$roadmap_disarmed_decoy\""
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5744,
+      "assertion": "printf 'mode=plan\\nsession=roadmap-finished\\nroadmap=none\\n' > \"$roadmap_disarmed_state\""
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5745,
+      "assertion": "run_hook cleanup-state.sh '{\"session_id\":\"roadmap-finished\"}'"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5748,
+      "assertion": "assert_after_hook \"a disarmed roadmap key is left to the passes that already covered it\" \\\n  [ -f \"$roadmap_disarmed_state\" ]"
+    }
+  ],
+  "gate": "teardown",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/aa-roadmap-disarmed-decoy.state": "mode=plan\nsession=roadmap-finished\n",
+    ".local/state/oso-code/zz-roadmap-disarmed.state": "mode=plan\nsession=roadmap-finished\nroadmap=none\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"roadmap-finished\"}",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      ".local/state/oso-code/aa-roadmap-disarmed-decoy.state": null,
+      ".local/state/oso-code/zz-roadmap-disarmed.state": "mode=plan\nsession=roadmap-finished\nroadmap=none\n"
+    }
+  }
+}

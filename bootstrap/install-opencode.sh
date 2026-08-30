@@ -42,16 +42,18 @@ initialize_paths() {
   HOOKS_TARGET="$OPENCODE_CONFIG_HOME/hooks"
   GIT_HOOKS_TARGET="$OPENCODE_CONFIG_HOME/git-hooks"
   STATE_BIN_TARGET="$OPENCODE_CONFIG_HOME/bin"
+  DIST_TARGET="$OPENCODE_CONFIG_HOME/dist"
   ENGRAM_PLUGIN_FILE="$OPENCODE_CONFIG_HOME/plugins/engram.ts"
   SKILLS_SOURCE="$REPO_ROOT/opencode/skills"
   SHARED_SKILLS_SOURCE="$REPO_ROOT/plugin/skills/_shared"
   AGENTS_SOURCE="$REPO_ROOT/opencode/agents"
   COMMANDS_SOURCE="$REPO_ROOT/opencode/commands"
-  PLUGIN_SOURCE="$REPO_ROOT/opencode/plugin"
-  HOOKS_SOURCE="$REPO_ROOT/opencode/hooks"
+  PLUGIN_BUNDLE_SOURCE="$REPO_ROOT/opencode/dist/oso-code.js"
   GATES_SOURCE="$REPO_ROOT/plugin/hooks"
   GIT_HOOKS_SOURCE="$REPO_ROOT/plugin/git-hooks"
   STATE_BIN_SOURCE="$REPO_ROOT/plugin/bin/oso-state"
+  STATE_BIN_PACKAGE_SOURCE="$REPO_ROOT/plugin/bin/package.json"
+  DIST_SOURCE="$REPO_ROOT/plugin/dist"
   GLOBAL_SOURCE="$SCRIPT_DIR/opencode-global.md"
   HASHES_FILE="$SCRIPT_DIR/hook-hashes.txt"
   IMPECCABLE_MOUNT="$HOME/.agents/skills/impeccable"
@@ -121,10 +123,8 @@ preflight_payload() {
     fail "the OpenCode agent contracts are missing: $AGENTS_SOURCE"
   [ -d "$COMMANDS_SOURCE" ] ||
     fail "the OpenCode command templates are missing: $COMMANDS_SOURCE"
-  [ -f "$PLUGIN_SOURCE/oso-code.ts" ] ||
-    fail "the OpenCode plugin entry is missing: $PLUGIN_SOURCE/oso-code.ts"
-  [ -f "$HOOKS_SOURCE/routes.ts" ] ||
-    fail "the OpenCode gate route table is missing: $HOOKS_SOURCE/routes.ts"
+  [ -f "$PLUGIN_BUNDLE_SOURCE" ] ||
+    fail "the OpenCode plugin bundle is missing: $PLUGIN_BUNDLE_SOURCE"
   [ -d "$GATES_SOURCE" ] ||
     fail "the shared gate script tree is missing: $GATES_SOURCE"
   [ -f "$GATES_SOURCE/lib.sh" ] ||
@@ -135,6 +135,8 @@ preflight_payload() {
     fail "the shared commit hook is missing: $GIT_HOOKS_SOURCE/pre-commit"
   [ -f "$STATE_BIN_SOURCE" ] ||
     fail "the oso-state binary is missing: $STATE_BIN_SOURCE"
+  [ -f "$STATE_BIN_PACKAGE_SOURCE" ] ||
+    fail "the oso-state module manifest is missing: $STATE_BIN_PACKAGE_SOURCE"
   command -v python3 >/dev/null 2>&1 ||
     fail "python3 is required to render and merge the OpenCode config"
   local wrapper_count=0 agent_count=0 wrapper agent
@@ -256,6 +258,7 @@ begin_transaction() {
   backup_target hooks "$HOOKS_TARGET"
   backup_target git-hooks "$GIT_HOOKS_TARGET"
   backup_target state-bin "$STATE_BIN_TARGET"
+  backup_target dist "$DIST_TARGET"
   backup_target engram-plugin "$ENGRAM_PLUGIN_FILE"
   backup_target impeccable "$IMPECCABLE_MOUNT"
   backup_target impeccable-opt-out "$IMPECCABLE_OPT_OUT_MARKER"
@@ -419,20 +422,25 @@ install_commands() {
   info "installed the mode slash commands into $COMMANDS_TARGET"
 }
 
+published_dist_files() {
+  local expected relative
+  while IFS='  ' read -r expected relative; do
+    case "$expected" in ''|'#'*) continue ;; esac
+    relative="${relative# }"
+    case "$relative" in
+      plugin/dist/*) printf '%s\n' "${relative#plugin/dist/}" ;;
+    esac
+  done < "$HASHES_FILE"
+}
+
 install_plugin() {
-  local stage hooks_stage state_bin_stage module script
+  local stage hooks_stage state_bin_stage dist_stage script bundle
   mkdir -p "$OPENCODE_CONFIG_HOME"
   stage="$(mktemp -d "$OPENCODE_CONFIG_HOME/.plugin-install.XXXXXX")"
-  cp "$PLUGIN_SOURCE/oso-code.ts" "$stage/oso-code.ts"
-  mkdir -p "$stage/oso"
-  for module in "$PLUGIN_SOURCE"/oso/*.ts; do
-    case "$(basename "$module")" in *.test.ts) continue ;; esac
-    cp "$module" "$stage/oso/$(basename "$module")"
-  done
+  cp "$PLUGIN_BUNDLE_SOURCE" "$stage/oso-code.js"
   replace_tree "$stage" "$PLUGIN_TARGET"
 
   hooks_stage="$(mktemp -d "$OPENCODE_CONFIG_HOME/.hooks-install.XXXXXX")"
-  cp "$HOOKS_SOURCE/routes.ts" "$hooks_stage/routes.ts"
   while IFS= read -r script; do
     [ -n "$script" ] || continue
     cp "$GATES_SOURCE/$script" "$hooks_stage/$script"
@@ -444,9 +452,19 @@ EOF
 
   state_bin_stage="$(mktemp -d "$OPENCODE_CONFIG_HOME/.bin-install.XXXXXX")"
   cp "$STATE_BIN_SOURCE" "$state_bin_stage/oso-state"
+  cp "$STATE_BIN_PACKAGE_SOURCE" "$state_bin_stage/package.json"
   chmod 700 "$state_bin_stage/oso-state"
   replace_tree "$state_bin_stage" "$STATE_BIN_TARGET"
-  info "installed the OpenCode plugin into $PLUGIN_TARGET, the gate tree into $HOOKS_TARGET and oso-state into $STATE_BIN_TARGET"
+
+  dist_stage="$(mktemp -d "$OPENCODE_CONFIG_HOME/.dist-install.XXXXXX")"
+  while IFS= read -r bundle; do
+    [ -n "$bundle" ] || continue
+    cp "$DIST_SOURCE/$bundle" "$dist_stage/$bundle"
+  done <<EOF
+$(published_dist_files)
+EOF
+  replace_tree "$dist_stage" "$DIST_TARGET"
+  info "installed the OpenCode plugin into $PLUGIN_TARGET, the gate tree into $HOOKS_TARGET, oso-state into $STATE_BIN_TARGET and the committed bundles into $DIST_TARGET"
 }
 
 install_git_hook() {
@@ -763,7 +781,6 @@ write_owner_registry() {
   printf '%s\t%s\n' "$OWNER_INSTALLER" "$AGENTS_TARGET" >> "$tmp"
   printf '%s\t%s\n' "$OWNER_INSTALLER" "$COMMANDS_TARGET" >> "$tmp"
   printf '%s\t%s\n' "$OWNER_INSTALLER" "$PLUGIN_TARGET" >> "$tmp"
-  printf '%s\t%s\n' "$OWNER_INSTALLER" "$HOOKS_TARGET/routes.ts" >> "$tmp"
   for gate in "$HOOKS_TARGET"/*.sh; do
     [ -f "$gate" ] || continue
     printf '%s\t%s\n' "$OWNER_INSTALLER" "$gate" >> "$tmp"

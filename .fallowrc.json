@@ -1,0 +1,10 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  "entry": [
+    "core/src/bin/gate.ts",
+    "core/src/bin/oso-state.ts",
+    "core/src/bin/precommit.ts",
+    "core/src/index.ts",
+    "opencode/plugin/oso-code.ts"
+  ]
+}

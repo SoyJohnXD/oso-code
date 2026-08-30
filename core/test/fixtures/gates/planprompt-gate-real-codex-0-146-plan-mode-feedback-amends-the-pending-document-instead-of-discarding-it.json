@@ -1,0 +1,48 @@
+{
+  "name": "planprompt gate: real Codex 0.146 Plan Mode feedback amends the pending document instead of discarding it",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 1740, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'revise the second slice' \"$CODEX_PROMPT_PLAN_TRANSCRIPT\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 1742, "assertion": "assert_after_hook \"real Codex 0.146 Plan Mode feedback amends the pending document\" \\\n  hook_returned_prompt_context" },
+    { "file": "tests/hooks-test.sh", "line": 1744, "assertion": "case \"$hook_stdout\" in\n  *'Present the amendment'*) echo \"ok: Case (e) — the guidance asks for the amendment\"; pass=$((pass + 1)) ;;\n  *) echo \"FAIL: Case (e) — the guidance does not name the amendment — got: $hook_stdout\"; fail=$((fail + 1)) ;;\nesac\ncase \"$hook_stdout\" in" },
+    { "file": "tests/hooks-test.sh", "line": 1757, "assertion": "  \"$(oso-state --session \"$SESSION\" get plan_approval)\"\nassert_equals \"Case (a) — an ordinary Plan Mode turn increments plan_revision\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1759, "assertion": "  2 \"$(oso-state --session \"$SESSION\" get plan_revision)\"\nassert_equals \"Case (b) — plan_approval_session survives the amendment unchanged\" \\" }
+  ],
+  "gate": "planprompt",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nplan_approval=pending\nplan_approval_digest=a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc\nplan_approval_session=test-session\nplan_snapshot_file={home}/.local/state/oso-code/plans/{repo}/presented-a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc.md\nplan_current_file={home}/.local/state/oso-code/plans/{repo}/current.md\nplan_revision=0\nsession=test-session\n",
+    ".local/state/oso-code/plans/{repo}/presented-a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc.md": "Repaso de cambios\nFull slice plan: alpha",
+    ".local/state/oso-code/plans/{repo}/current.md": "Repaso de cambios\nFull slice plan: alpha",
+    ".codex/sessions/2026/08/04/prompt-plan.jsonl": "{\"timestamp\":\"2026-08-04T16:36:12.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"test-session\"}}\n{\"timestamp\":\"2026-08-04T16:36:12.013Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"turn_id\":\"turn-plan-prompt\",\"collaboration_mode_kind\":\"plan\"}}\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.codex/sessions/2026/08/04/prompt-plan.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"UserPromptSubmit\",\"turn_id\":\"turn-plan-prompt\",\"prompt\":\"revise the second slice\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"oso-code: this Plan Mode turn amended the pending document instead of discarding it. Present the amendment — what changed and why — not the complete plan, then re-emit the internal approval marker so a fresh capture binds the complete updated document before approval can succeed.\"}}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": {
+        "contains": [
+          "plan_approval=pending",
+          "plan_revision=1"
+        ]
+      },
+      ".local/state/oso-code/plans/{repo}/current.md": {
+        "contains": [
+          "## Plan Mode feedback — plan-mode-feedback",
+          "revise the second slice"
+        ]
+      },
+      ".local/state/oso-code/plans/{repo}/presented-a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc.md": "Repaso de cambios\nFull slice plan: alpha"
+    },
+    "events_appended": [
+      {
+        "event": "plan-amended",
+        "session": "test-session",
+        "command": "plan-mode-feedback"
+      }
+    ]
+  }
+}

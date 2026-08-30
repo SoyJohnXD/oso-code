@@ -1,0 +1,32 @@
+{
+  "name": "commit gate, regression: echo a | git commit -F -",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6448,
+      "assertion": "assert_every assert_denies regression <<'REGRESSION_TABLE'"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6457,
+      "assertion": "echo a | git commit -F -"
+    }
+  ],
+  "gate": "commit",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"echo a | git commit -F -\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\""
+      ]
+    },
+    "stderr": ""
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "handoff gate: a marker without v=1 never publishes a receipt",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 5266, "assertion": "old_marker_payload=\"$(printf '{\\\"session_id\\\":\\\"%s\\\",\\\"cwd\\\":\\\"%s\\\",\\\"hook_event_name\\\":\\\"SubagentStop\\\",\\\"turn_id\\\":\\\"turn-old-marker\\\",\\\"agent_id\\\":\\\"agent-old-marker\\\",\\\"agent_type\\\":\\\"oso-verifier\\\",\\\"last_assistant_message\\\":\\\"oso-handoff: slice=slice-old-marker attempt=1\\\\nverdict: pass\\\"}' \\\n  \"$SESSION\" \"$HANDOFF_REPO\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 5268, "assertion": "run_hook \"$HANDOFF_HOOK\" \"$old_marker_payload\" 0 \\\n  'final message must begin with one exact oso-handoff marker'" },
+    { "file": "tests/hooks-test.sh", "line": 5275, "assertion": "  \"hook=0:{} wait=1\" \"hook=$old_marker_hook_status wait=$handoff_rc\"\n" }
+  ],
+  "gate": "handoff",
+  "argv": [],
+  "env": {},
+  "state_before": {},
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"SubagentStop\",\"turn_id\":\"turn-old-marker\",\"agent_id\":\"agent-old-marker\",\"agent_type\":\"oso-verifier\",\"agent_transcript_path\":\"{home}/agent-old-marker.jsonl\",\"stop_hook_active\":false,\"last_assistant_message\":\"oso-handoff: slice=slice-old-marker attempt=1\\nverdict: pass\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "oso-code: SubagentStop could not publish its handoff: the final message must begin with one exact oso-handoff marker",
+    "state_after": {
+      ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-old-marker}.receipt": null
+    },
+    "events_appended": [
+      {
+        "event": "handoff-publish-failed",
+        "session": "test-session",
+        "command": "oso-verifier"
+      }
+    ]
+  }
+}

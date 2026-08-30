@@ -1,0 +1,37 @@
+{
+  "name": "an event with no detail is a well-formed line too",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5683,
+      "assertion": "assert_logged \"an event with no detail is a well-formed line too\" \\\n  '\"event\":\"integration-red\",\"command\":\"\",\"session\":\"'"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5685,
+      "assertion": "if grep -q '\"gate\"\\|\"hook_event\"' \"$events_log\"; then\n  echo \"FAIL: an event-verb line carries gate or hook_event, which the log schema scopes to denies only\"\n  fail=$((fail + 1))\nelse\n  echo \"ok: event-verb lines keep the unwidened five-field schema-1 shape\"\n  pass=$((pass + 1))\nfi"
+    }
+  ],
+  "env": {},
+  "state_before": {},
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "event",
+    "integration-red"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "events_appended": [
+      {
+        "event": "integration-red",
+        "command": "",
+        "session": "{present}",
+        "gate": null,
+        "hook_event": null
+      }
+    ]
+  }
+}

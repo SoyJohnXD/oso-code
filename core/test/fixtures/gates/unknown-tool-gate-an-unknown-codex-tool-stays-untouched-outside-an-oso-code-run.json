@@ -1,0 +1,24 @@
+{
+  "name": "unknown-tool gate: an unknown Codex tool stays untouched outside an oso-code run",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 1205,
+      "assertion": "assert_after_hook \"an unknown Codex tool stays untouched outside an oso-code run\" \\\n  [ -z \"$hook_stdout\" ]"
+    }
+  ],
+  "gate": "unknown",
+  "argv": [
+    "--allow",
+    "Bash|apply_patch|send_input|resume_agent|close_agent|collaborationspawn_agent|collaborationsend_message|collaborationfollowup_task|collaborationwait_agent|collaborationinterrupt_agent|collaborationlist_agents"
+  ],
+  "env": {},
+  "state_before": {},
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"FutureWriter\",\"tool_input\":{}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

@@ -6,12 +6,17 @@
     "strict": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["plugin/**/*.ts", "hooks/**/*.ts"]
+  "include": [
+    "plugin/**/*.ts",
+    "test-support/**/*.ts"
+  ]
 }

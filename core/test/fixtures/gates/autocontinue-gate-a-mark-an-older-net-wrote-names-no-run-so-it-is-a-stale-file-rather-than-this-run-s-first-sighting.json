@@ -1,0 +1,38 @@
+{
+  "name": "autocontinue gate: a mark an older net wrote names no run, so it is a stale file rather than this run's first sighting",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 4942, "assertion": "oso-state --session \"$SESSION\" set auto_wait=wave-2 >/dev/null\nassert_equals \"a mark an older net wrote names no run, so it is a stale file rather than this run's first sighting\" \\\n  \"stop\" \"$(auto_stop_verdict \"$(auto_stop_input)\")\"\n\nrm -rf \"$STATE_DIR/runs\"\noso-state --session \"$SESSION\" clear >/dev/null 2>&1 || true" },
+    { "file": "tests/hooks-test.sh", "line": 4943, "assertion": "assert_equals \"a mark an older net wrote names no run, so it is a stale file rather than this run's first sighting\" \\\n  \"stop\" \"$(auto_stop_verdict \"$(auto_stop_input)\")\"" }
+  ],
+  "gate": "autocontinue",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\nauto_wait=wave-2\n",
+    ".local/state/oso-code/runs/{repo}/test-session.waiting": {
+      "kind": "file",
+      "content": "wave-2\n",
+      "aged": true
+    }
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/runs/{repo}/test-session.waiting": "run=auto-continuity\nsession=test-session\njournal_bytes=0\nrenewals=0\n"
+    },
+    "events_appended": [
+      {
+        "event": "auto-continue-held",
+        "session": "test-session",
+        "command": "wave-2",
+        "schema": 2,
+        "gate": "auto-continue.sh",
+        "hook_event": "Stop"
+      }
+    ]
+  }
+}

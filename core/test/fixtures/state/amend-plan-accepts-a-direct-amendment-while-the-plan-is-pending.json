@@ -1,0 +1,63 @@
+{
+  "name": "amend-plan accepts a direct amendment while the plan is pending",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 1704,
+      "assertion": "if printf '%s' '### Direct feedback' | oso-state --session \"$SESSION\" amend-plan direct-feedback >/dev/null 2>&1; then\n  echo \"ok: amend-plan accepts a direct amendment while a plan is pending\"; pass=$((pass + 1))\nelse\n  echo \"FAIL: amend-plan rejected a pending amendment\"; fail=$((fail + 1))\nfi"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 1709,
+      "assertion": "assert_equals \"a direct pending amendment leaves approval pending\" pending \\\n  \"$(oso-state --session \"$SESSION\" get plan_approval)\""
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 1711,
+      "assertion": "assert_equals \"a direct pending amendment increments the operational plan revision\" \\\n  1 \"$(oso-state --session \"$SESSION\" get plan_revision)\""
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 1713,
+      "assertion": "case \"$(cat \"$first_current_file\")\" in\n  *'## Plan Mode feedback — direct-feedback'*'Requested-by: operator'*'### Direct feedback'*)\n    echo \"ok: the operational plan records the pending amendment\"; pass=$((pass + 1)) ;;\n  *)\n    echo \"FAIL: the operational plan does not contain the pending amendment\"; fail=$((fail + 1)) ;;\nesac"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 1719,
+      "assertion": "assert_equals \"a pending amendment never mutates the immutable presented snapshot\" \\\n  \"$first_plan_document\" \"$(cat \"$first_presented_file\" 2>/dev/null || true)\""
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nplan_approval=pending\nplan_approval_digest=d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb\nplan_approval_session=test-session\nplan_snapshot_file={home}/.local/state/oso-code/plans/{repo}/presented-d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb.md\nplan_current_file={home}/.local/state/oso-code/plans/{repo}/current.md\nplan_revision=0\nsession=test-session\n",
+    ".local/state/oso-code/plans/{repo}/presented-d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb.md": "Identity split fixture plan",
+    ".local/state/oso-code/plans/{repo}/current.md": "Identity split fixture plan"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "amend-plan",
+    "direct-feedback"
+  ],
+  "stdin": "### Direct feedback",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": {
+        "contains": [
+          "plan_approval=pending",
+          "plan_revision=1"
+        ]
+      },
+      ".local/state/oso-code/plans/{repo}/current.md": {
+        "contains": [
+          "## Plan Mode feedback — direct-feedback",
+          "Requested-by: operator",
+          "### Direct feedback"
+        ]
+      },
+      ".local/state/oso-code/plans/{repo}/presented-d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb.md": "Identity split fixture plan"
+    }
+  }
+}

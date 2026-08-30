@@ -86,6 +86,9 @@ verify_published_hooks() {
   local expected relative actual count=0 seen=$'\n' paths=""
   local required_paths
   required_paths='codex/hooks/hooks.json
+plugin/dist/gate.js
+plugin/dist/precommit.js
+plugin/dist/package.json
 plugin/git-hooks/pre-commit
 plugin/hooks/block-commit-until-green.sh
 plugin/hooks/block-edits-without-slice.sh
@@ -97,6 +100,7 @@ plugin/hooks/warn-stale-state.sh
 plugin/hooks/cleanup-state.sh
 plugin/hooks/block-prod-deploy.sh
 plugin/bin/oso-state
+plugin/bin/package.json
 plugin/hooks/lib.sh
 plugin/hooks/lexer.sh
 plugin/hooks/reanchor-after-compact.sh'
@@ -109,7 +113,7 @@ plugin/hooks/reanchor-after-compact.sh'
     esac
     [ "${#expected}" -eq 64 ] || fail "invalid published SHA-256 for $relative"
     case "$relative" in
-      codex/hooks/hooks.json|plugin/git-hooks/pre-commit|plugin/hooks/*.sh|plugin/bin/oso-state) ;;
+      codex/hooks/hooks.json|plugin/dist/*|plugin/git-hooks/pre-commit|plugin/hooks/*.sh|plugin/bin/oso-state|plugin/bin/package.json) ;;
       *) fail "published hook path is outside the Codex trust set: $relative" ;;
     esac
     case "$seen" in
@@ -125,7 +129,7 @@ plugin/hooks/reanchor-after-compact.sh'
       fail "published hook hash mismatch for $relative (expected $expected, got $actual)"
     count=$((count + 1))
   done < "$HASHES_FILE"
-  [ "$count" -eq 15 ] || fail "published hook manifest must cover exactly 15 Codex trust files (found $count)"
+  [ "$count" -eq 19 ] || fail "published hook manifest must cover exactly 19 Codex trust files (found $count)"
   [ "$paths" = "$required_paths" ] ||
     fail "published hook coverage or order differs from the frozen Codex trust set"
 }
@@ -272,24 +276,24 @@ preflight_hooks_manifest() {
   escaped="${RUNTIME_ROOT//\\/\\\\}"
   escaped="${escaped//&/\\&}"
   escaped="${escaped//|/\\|}"
-  sed "s|__OSO_HOOKS_DIR__|$escaped/hooks|g" "$REPO_ROOT/codex/hooks/hooks.json" > "$expected"
+  sed "s|__OSO_HOOKS_DIR__|$escaped/dist|g" "$REPO_ROOT/codex/hooks/hooks.json" > "$expected"
   if ! cmp -s "$expected" "$HOOKS_TARGET"; then
-    if ! python3 - "$HOOKS_TARGET" "$RUNTIME_ROOT/hooks" <<'PY'
+    if ! python3 - "$HOOKS_TARGET" "$RUNTIME_ROOT/dist" <<'PY'
 import json
 import re
 import sys
 
 manifest, root = sys.argv[1:]
 allowed = {
-    "block-commit-until-green.sh",
-    "block-edits-without-slice.sh",
-    "block-unknown-tool.sh",
-    "publish-subagent-handoff.sh",
-    "capture-plan-approval.sh",
-    "approve-plan-token.sh",
-    "warn-stale-state.sh",
-    "cleanup-state.sh",
-    "block-prod-deploy.sh",
+    "commit",
+    "edits",
+    "unknown",
+    "handoff",
+    "planstop",
+    "planprompt",
+    "stale",
+    "teardown",
+    "proddeploy",
 }
 with open(manifest, encoding="utf-8") as handle:
     data = json.load(handle)
@@ -319,7 +323,7 @@ for event, groups in data["hooks"].items():
             commands.append(handler["command"])
 if not commands:
     raise SystemExit(1)
-prefixes = (f'"{root}"/', f'OSO_AGENT=1 "{root}"/')
+prefixes = (f'node "{root}"/gate.js ', f'OSO_AGENT=1 node "{root}"/gate.js ')
 allow_args = re.compile(r'^ --allow "[A-Za-z0-9_.:|/-]+"$')
 for command in commands:
     prefix = next((item for item in prefixes if command.startswith(item)), None)
@@ -330,7 +334,7 @@ for command in commands:
     if script not in allowed:
         raise SystemExit(1)
     suffix = f" {arguments}" if separator else ""
-    if suffix and (script != "block-unknown-tool.sh" or not allow_args.fullmatch(suffix)):
+    if suffix and (script != "unknown" or not allow_args.fullmatch(suffix)):
         raise SystemExit(1)
 PY
     then
@@ -353,6 +357,8 @@ preflight_release_payload() {
     fail "Codex managed-config renderer is missing"
   [ -f "$SCRIPT_DIR/lib/engram-codex-pointers.sh" ] ||
     fail "Engram Codex pointer normalizer is missing"
+  [ -f "$REPO_ROOT/plugin/bin/package.json" ] ||
+    fail "the oso-state module manifest is missing: $REPO_ROOT/plugin/bin/package.json"
   python3 -m json.tool "$MARKETPLACE_TEMPLATE" >/dev/null ||
     fail "Codex marketplace template is invalid JSON"
   python3 -m json.tool "$REPO_ROOT/codex/.codex-plugin/plugin.json" >/dev/null ||
@@ -505,7 +511,7 @@ render_hook_manifest() {
   escaped="${RUNTIME_ROOT//\\/\\\\}"
   escaped="${escaped//&/\\&}"
   escaped="${escaped//|/\\|}"
-  sed "s|__OSO_HOOKS_DIR__|$escaped/hooks|g" \
+  sed "s|__OSO_HOOKS_DIR__|$escaped/dist|g" \
     "$REPO_ROOT/codex/hooks/hooks.json" > "$target"
 }
 
@@ -514,15 +520,17 @@ install_runtime_hooks() {
   mkdir -p "$(dirname "$RUNTIME_ROOT")" "$CODEX_HOME"
   stage="$(mktemp -d "$(dirname "$RUNTIME_ROOT")/.runtime.XXXXXX")"
   manifest_stage="$(mktemp "$CODEX_HOME/.hooks.XXXXXX")"
-  mkdir -p "$stage/hooks" "$stage/bin" "$stage/git-hooks"
+  mkdir -p "$stage/hooks" "$stage/bin" "$stage/git-hooks" "$stage/dist"
   cp "$REPO_ROOT/codex/hooks/hooks.json" "$stage/hooks.json"
   while IFS='  ' read -r expected relative; do
     case "$expected" in ''|'#'*) continue ;; esac
     relative="${relative# }"
     case "$relative" in
+      plugin/dist/*) cp "$REPO_ROOT/$relative" "$stage/dist/$(basename "$relative")" ;;
       plugin/hooks/*.sh) cp "$REPO_ROOT/$relative" "$stage/hooks/$(basename "$relative")" ;;
       plugin/git-hooks/pre-commit) cp "$REPO_ROOT/$relative" "$stage/git-hooks/pre-commit" ;;
       plugin/bin/oso-state) cp "$REPO_ROOT/$relative" "$stage/bin/oso-state" ;;
+      plugin/bin/package.json) cp "$REPO_ROOT/$relative" "$stage/bin/package.json" ;;
     esac
   done < "$HASHES_FILE"
   chmod 700 "$stage/hooks"/*.sh "$stage/bin/oso-state" "$stage/git-hooks/pre-commit"
@@ -532,9 +540,11 @@ install_runtime_hooks() {
     case "$relative" in opencode/*) continue ;; esac
     actual=""
     case "$relative" in
+      plugin/dist/*) actual="$(sha256_file "$stage/dist/$(basename "$relative")")" ;;
       plugin/hooks/*.sh) actual="$(sha256_file "$stage/hooks/$(basename "$relative")")" ;;
       plugin/git-hooks/pre-commit) actual="$(sha256_file "$stage/git-hooks/pre-commit")" ;;
       plugin/bin/oso-state) actual="$(sha256_file "$stage/bin/oso-state")" ;;
+      plugin/bin/package.json) actual="$(sha256_file "$stage/bin/package.json")" ;;
       codex/hooks/hooks.json) actual="$(sha256_file "$stage/hooks.json")" ;;
     esac
     [ "$actual" = "$expected" ] || fail "staged hook hash mismatch for $relative"

@@ -1,0 +1,40 @@
+{
+  "name": "planstop gate: a real Codex 0.146 Plan Stop captures a corrected valid plan even on an active retry",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 1562, "assertion": "run_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input default \"$SESSION\" 'Repaso corrected\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->' true \"$CODEX_STOP_PLAN_TRANSCRIPT\")\"\nassert_after_hook \"a real Codex 0.146 Plan Stop can capture a corrected valid plan\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1565, "assertion": "  [ \"$hook_stdout\" = '{}' ]\nassert_equals \"a corrected active Stop retry publishes pending state\" pending \\" },
+    { "file": "tests/hooks-test.sh", "line": 1567, "assertion": "  \"$(oso-state --session \"$SESSION\" get plan_approval)\"\noso-state --session \"$SESSION\" clear" }
+  ],
+  "gate": "planstop",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".codex/sessions/2026/08/04/stop-plan.jsonl": "{\"timestamp\":\"2026-08-04T16:36:12.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"test-session\"}}\n{\"timestamp\":\"2026-08-04T16:36:12.013Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"turn_id\":\"turn-plan-stop\",\"collaboration_mode_kind\":\"plan\"}}\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.codex/sessions/2026/08/04/stop-plan.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"Stop\",\"turn_id\":\"turn-plan-stop\",\"stop_hook_active\":true,\"last_assistant_message\":\"Repaso corrected\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": {
+        "contains": [
+          "plan_approval=pending",
+          "plan_approval_digest=65f3577aa439264aa8b3149ed075e7def54cc8a40b9d22f5852032ab46a50e94"
+        ]
+      }
+    },
+    "events_appended": [
+      {
+        "event": "plan-artifact-captured",
+        "session": "test-session",
+        "command": "65f3577aa439264aa8b3149ed075e7def54cc8a40b9d22f5852032ab46a50e94"
+      },
+      {
+        "event": "plan-approval-pending",
+        "session": "test-session"
+      }
+    ]
+  }
+}

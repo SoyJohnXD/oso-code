@@ -1,0 +1,29 @@
+{
+  "name": "stale gate: SessionStart names this repository's own stale state, with the Claude slash route and a session-scoped clear command",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 6032, "assertion": "run_hook warn-stale-state.sh \"$(stale_session_input)\"" },
+    { "file": "tests/hooks-test.sh", "line": 6038, "assertion": "assert_after_hook \"SessionStart names this repository's own stale state, never a foreign repository's and never a worktree\" \\\n  [ \"$named_as_stale\" = \"$(basename \"$REPO_STATE\")\" ]" },
+    { "file": "tests/hooks-test.sh", "line": 6040, "assertion": "assert_equals \"Claude stale-state guidance uses its installed slash route\" \\\n  \"present\" \"$(if printf '%s' \"$hook_stdout\" | grep -F '/oso-code:plan {change}' >/dev/null; then echo present; else echo missing; fi)\"" },
+    { "file": "tests/hooks-test.sh", "line": 6042, "assertion": "assert_equals \"stale-state guidance prints a complete session-scoped clear command\" \\\n  \"present\" \"$(if printf '%s' \"$hook_stdout\" | grep -F -- \"--session \\\\\\\"$SESSION\\\\\\\" clear\" >/dev/null; then echo present; else echo missing; fi)\"" }
+  ],
+  "gate": "stale",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nsession=other-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"hookEventName\":\"SessionStart\"",
+        "{repo}.state) was left by another session",
+        "/oso-code:plan {change}",
+        "--session \\\"test-session\\\" clear"
+      ]
+    },
+    "stderr": ""
+  }
+}

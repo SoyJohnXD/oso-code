@@ -1,12 +1,923 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env node
+// core/src/state/cli.ts
+import { mkdirSync as mkdirSync4, readFileSync as readFileSync4 } from "node:fs";
 
-BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-. "$BIN_DIR/../hooks/lib.sh"
+// core/src/state/handoff.ts
+import { chmodSync, existsSync, mkdirSync as mkdirSync2, readFileSync as readFileSync2, readdirSync, rmSync as rmSync2 } from "node:fs";
+import path2 from "node:path";
 
-usage() {
-  cat >&2 <<'EOF'
-usage: oso-state --session <id> set key=value [key=value ...]
+// core/src/state/store.ts
+import { execFileSync } from "node:child_process";
+import { createHash, randomBytes } from "node:crypto";
+import {
+  accessSync,
+  appendFileSync,
+  constants,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from "node:fs";
+import { homedir } from "node:os";
+import path from "node:path";
+var LockTimeoutError = class extends Error {
+  sessionId;
+  constructor(sessionId) {
+    super(`could not acquire lock for session ${sessionId}`);
+    this.name = "LockTimeoutError";
+    this.sessionId = sessionId;
+  }
+};
+var JournalAppendError = class extends Error {
+  journalFile;
+  constructor(journalFile, options) {
+    super(`cannot append the milestone to ${journalFile}`, options);
+    this.name = "JournalAppendError";
+    this.journalFile = journalFile;
+  }
+};
+var StateFileUnreadableError = class extends Error {
+  stateFile;
+  constructor(stateFile, cause) {
+    super(`cannot read state at ${stateFile}: ${cause}`);
+    this.name = "StateFileUnreadableError";
+    this.stateFile = stateFile;
+  }
+};
+var CHANGE_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
+var NAME_TOKEN_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
+var NAME_TOKEN_MAX_LENGTH = 128;
+var LOCK_STALE_SECONDS = 30;
+var LOCK_MAX_TRIES = 200;
+var LOCK_RETRY_MS = 50;
+var EVENTS_SCHEMA_VERSION = 2;
+var COMMAND_HEAD_BYTES = 120;
+function sha256Hex(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+function stateRootDirectory() {
+  const configured = process.env["OSO_STATE_DIR"];
+  if (configured !== void 0 && configured !== "") return configured;
+  return path.join(homeDirectory(), ".local", "state", "oso-code");
+}
+function stateFileFor(cwd) {
+  const directory = cwd.replace(/\r$/, "");
+  const identity = gitCommonDirectory(directory) || directory;
+  return path.join(stateRootDirectory(), `${sha256Hex(identity)}.state`);
+}
+function repositoryIdFor(stateFile) {
+  return path.basename(stateFile, ".state");
+}
+function journalFileFor(cwd) {
+  const stateFile = stateFileFor(cwd);
+  const repositoryId = repositoryIdFor(stateFile);
+  const autoChange = readValue(stateFile, "auto_change") ?? "";
+  const change = CHANGE_SLUG_PATTERN.test(autoChange) ? autoChange : "run";
+  return path.join(stateRootDirectory(), "runs", repositoryId, `${change}.log`);
+}
+function isNameToken(value) {
+  return value.length >= 1 && value.length <= NAME_TOKEN_MAX_LENGTH && NAME_TOKEN_PATTERN.test(value);
+}
+function stateRecords(content, key) {
+  const prefix = `${key}=`;
+  return content.split("\n").filter((line) => line.startsWith(prefix)).map((line) => line.slice(prefix.length));
+}
+function stateValue(content, key) {
+  return stateRecords(content, key).join("\n");
+}
+function readValue(stateFile, key) {
+  const content = readFileIfPresent(stateFile);
+  if (content === void 0 || stateRecords(content, key).length === 0) return void 0;
+  return stateValue(content, key);
+}
+function readStateFile(stateFile) {
+  try {
+    if (!statSync(stateFile).isFile()) return { kind: "unreadable", cause: `${stateFile} is not a regular file` };
+    return { kind: "ok", content: readFileSync(stateFile, "utf8") };
+  } catch (error) {
+    if (isErrnoException(error) && error.code === "ENOENT") return { kind: "absent" };
+    return { kind: "unreadable", cause: causeOf(error) };
+  }
+}
+function writeStatePairs(stateFile, pairs, sessionId) {
+  const directory = path.dirname(stateFile);
+  const read = readStateFile(stateFile);
+  if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
+  const existing = read.kind === "ok" ? read.content : "";
+  let lines = parseStateLines(existing);
+  for (const pair of [...pairs, `session=${sessionId}`]) {
+    const [key, value] = splitPair(pair);
+    lines = lines.filter((line) => line.key !== key);
+    lines.push({ key, value });
+  }
+  const tempFile = createTempFile(directory, serializeStateLines(lines));
+  renameSync(tempFile, stateFile);
+}
+function writeStateValues(cwd, sessionId, pairs) {
+  const stateFile = stateFileFor(cwd);
+  mkdirSync(stateRootDirectory(), { recursive: true });
+  withLock(stateFile, sessionId, () => {
+    writeStatePairs(stateFile, pairs, sessionId);
+    logEvent({ event: `set:${pairs.join(" ")}`, session: sessionId });
+  });
+}
+function clearStateFile(stateFile) {
+  rmSync(stateFile, { force: true });
+}
+function isSymlink(target) {
+  const stats = lstatOrUndefined(target);
+  return stats !== void 0 && stats.isSymbolicLink();
+}
+function isDirectory(target) {
+  const stats = statOrUndefined(target);
+  return stats !== void 0 && stats.isDirectory();
+}
+function isRegularNonSymlinkFile(target) {
+  const stats = lstatOrUndefined(target);
+  return stats !== void 0 && stats.isFile();
+}
+function isReadableRegularFile(target) {
+  if (!isRegularNonSymlinkFile(target)) return false;
+  try {
+    accessSync(target, constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function isPrivateRegularFile(target) {
+  if (process.platform === "win32") return isReadableRegularFile(target);
+  if (!isReadableRegularFile(target)) return false;
+  return (statSync(target).mode & 511) === 384;
+}
+function secondsSinceModified(target) {
+  const stats = statOrUndefined(target);
+  if (stats === void 0) return void 0;
+  return (Date.now() - stats.mtimeMs) / 1e3;
+}
+function writeFileAtomically(directory, finalPath, content, tempPrefix) {
+  mkdirSync(directory, { recursive: true });
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const candidate = path.join(directory, `${tempPrefix}${randomBytes(3).toString("hex")}`);
+    try {
+      writeFileSync(candidate, content, { flag: "wx", mode: 384 });
+    } catch (error) {
+      if (isErrnoException(error) && error.code === "EEXIST") continue;
+      throw error;
+    }
+    renameSync(candidate, finalPath);
+    return;
+  }
+  throw new Error(`could not create a temp file under ${directory}`);
+}
+function withLock(stateFile, sessionId, run) {
+  const release = acquireLock(stateFile, sessionId);
+  try {
+    return run();
+  } finally {
+    release();
+  }
+}
+function appendJournal(journalFile, text) {
+  try {
+    const line = `${isoTimestamp()} ${text}
+`;
+    withOwnerOnlyUmask(() => {
+      mkdirSync(path.dirname(journalFile), { recursive: true });
+      appendFileSync(journalFile, line);
+    });
+  } catch (error) {
+    throw new JournalAppendError(journalFile, { cause: error });
+  }
+}
+function logEvent(entry) {
+  const line = serializeEvent(entry);
+  const eventsLog = path.join(stateRootDirectory(), "events.jsonl");
+  try {
+    mkdirSync(path.dirname(eventsLog), { recursive: true });
+    withOwnerOnlyUmask(() => appendFileSync(eventsLog, `${line}
+`));
+    return true;
+  } catch {
+    process.stderr.write(`${line}
+`);
+    return false;
+  }
+}
+function homeDirectoryFrom(platform, environment) {
+  if (platform === "win32") {
+    const profile = environment["USERPROFILE"] ?? homedir();
+    if (profile === "") throw new Error("USERPROFILE is not set");
+    return profile;
+  }
+  const home = environment["HOME"];
+  if (home === void 0 || home === "") throw new Error("HOME is not set");
+  return home;
+}
+function homeDirectory() {
+  return homeDirectoryFrom(process.platform, process.env);
+}
+function gitCommonDirectory(cwd) {
+  try {
+    const output = execFileSync("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    });
+    return output.replace(/\n+$/, "");
+  } catch {
+    return "";
+  }
+}
+function readFileIfPresent(file) {
+  const read = readStateFile(file);
+  return read.kind === "ok" ? read.content : void 0;
+}
+function causeOf(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+function parseStateLines(content) {
+  return content.split("\n").filter((line) => line !== "").map((line) => {
+    const [key, value] = splitPair(line);
+    return { key, value };
+  });
+}
+function serializeStateLines(lines) {
+  if (lines.length === 0) return "";
+  return `${lines.map((line) => `${line.key}=${line.value}`).join("\n")}
+`;
+}
+function splitPair(pair) {
+  const eq = pair.indexOf("=");
+  return eq === -1 ? [pair, ""] : [pair.slice(0, eq), pair.slice(eq + 1)];
+}
+function createTempFile(directory, content) {
+  mkdirSync(directory, { recursive: true });
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const candidate = path.join(directory, `.tmp.${randomBytes(4).toString("hex")}`);
+    try {
+      writeFileSync(candidate, content, { flag: "wx", mode: 384 });
+      return candidate;
+    } catch (error) {
+      if (!isErrnoException(error) || error.code !== "EEXIST") throw error;
+    }
+  }
+  throw new Error(`could not create a temp file under ${directory}`);
+}
+function acquireLock(stateFile, sessionId) {
+  const lockDir = `${stateFile}.lock`;
+  let tries = 0;
+  let reclaimed = false;
+  for (; ; ) {
+    try {
+      mkdirSync(lockDir);
+      return () => rmSync(lockDir, { recursive: true, force: true });
+    } catch (error) {
+      if (!isErrnoException(error) || error.code !== "EEXIST") throw error;
+    }
+    if (!reclaimed && lockIsStale(lockDir)) {
+      rmSync(lockDir, { recursive: true, force: true });
+      reclaimed = true;
+      continue;
+    }
+    tries += 1;
+    if (tries > LOCK_MAX_TRIES) throw new LockTimeoutError(sessionId);
+    sleepSync(LOCK_RETRY_MS);
+  }
+}
+function lockIsStale(lockDir) {
+  const stats = statSync(lockDir, { throwIfNoEntry: false });
+  if (stats === void 0) return false;
+  const heldForSeconds = (Date.now() - stats.mtimeMs) / 1e3;
+  return heldForSeconds >= LOCK_STALE_SECONDS;
+}
+function sleepSync(milliseconds) {
+  const signal = new Int32Array(new SharedArrayBuffer(4));
+  Atomics.wait(signal, 0, 0, milliseconds);
+}
+function withOwnerOnlyUmask(run) {
+  const previous = process.umask(63);
+  try {
+    return run();
+  } finally {
+    process.umask(previous);
+  }
+}
+function isoTimestamp() {
+  return (/* @__PURE__ */ new Date()).toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+function lstatOrUndefined(target) {
+  try {
+    return lstatSync(target);
+  } catch {
+    return void 0;
+  }
+}
+function statOrUndefined(target) {
+  try {
+    return statSync(target);
+  } catch {
+    return void 0;
+  }
+}
+function serializeEvent(entry) {
+  const client = path.basename(process.env["CLAUDE_CODE_EXECPATH"] ?? "");
+  const fields = [
+    `"ts":"${jsonEscape(isoTimestamp())}"`,
+    `"event":"${jsonEscape(entry.event)}"`,
+    `"command":"${jsonEscape(commandHead(entry.command ?? ""))}"`,
+    `"session":"${jsonEscape(entry.session)}"`,
+    `"client":"${jsonEscape(client)}"`,
+    `"schema":${EVENTS_SCHEMA_VERSION}`
+  ];
+  if (entry.gate !== void 0 && entry.gate !== "") fields.push(`"gate":"${jsonEscape(entry.gate)}"`);
+  if (entry.hookEvent !== void 0 && entry.hookEvent !== "") fields.push(`"hook_event":"${jsonEscape(entry.hookEvent)}"`);
+  return `{${fields.join(",")}}`;
+}
+function jsonEscape(value) {
+  let out = "";
+  for (const character of value) {
+    out += escapedJsonCharacter(character);
+  }
+  return out;
+}
+function escapedJsonCharacter(character) {
+  switch (character) {
+    case "\\":
+      return "\\\\";
+    case '"':
+      return '\\"';
+    case "\n":
+      return "\\n";
+    case "	":
+      return "\\t";
+    case "\r":
+      return "\\r";
+    case "\b":
+      return "\\b";
+    case "\f":
+      return "\\f";
+    default: {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint >= 1 && codePoint <= 31 ? `\\u${codePoint.toString(16).padStart(4, "0")}` : character;
+    }
+  }
+}
+function commandHead(command) {
+  const buffer = Buffer.from(command, "utf8");
+  if (buffer.length <= COMMAND_HEAD_BYTES) return command;
+  const boundaryByte = buffer[COMMAND_HEAD_BYTES];
+  let end = COMMAND_HEAD_BYTES;
+  if (boundaryByte !== void 0 && (boundaryByte & 192) === 128) {
+    while (end > 0 && ((buffer[end - 1] ?? 0) & 192) === 128) end -= 1;
+    if (end > 0) end -= 1;
+  }
+  return buffer.subarray(0, end).toString("utf8");
+}
+function isErrnoException(error) {
+  return error instanceof Error && "code" in error;
+}
+
+// core/src/state/handoff.ts
+var HandoffFailure = class extends Error {
+};
+var MAX_TIMEOUT_SECONDS = 600;
+var TTL_SECONDS = 86400;
+var LOCK_TIMEOUT_SECONDS = 2;
+var POLL_INTERVAL_MS = 50;
+var OPAQUE_ID_PATTERN = /^[a-zA-Z0-9._:/-]+$/;
+var OPAQUE_ID_MAX_LENGTH = 256;
+var ATTEMPT_PATTERN = /^[1-9][0-9]{0,8}$/;
+var ATTEMPT_VALUE_PATTERN = /^attempt=[1-9][0-9]{0,8}$/;
+var TIMEOUT_PATTERN = /^(0|[1-9][0-9]{0,2})$/;
+var RECEIPT_ARTIFACT_PATTERN = /^([0-9a-f]{64})\.(receipt|consumed|watermark)$/;
+var TEMP_ARTIFACT_PATTERN = /^\.([0-9a-f]{64})\.(receipt|consuming|watermark)\.[a-zA-Z0-9]{6}$/;
+var RECEIPT_KEYS = ["version", "hook_session", "slice", "attempt", "agent_id", "agent_type"];
+var WATERMARK_KEYS = ["version", "attempt"];
+function runHandoffPublish(cwd, coordinates, hookSession) {
+  validateCoordinates(coordinates);
+  if (!isValidOpaqueId(hookSession)) throw new HandoffFailure("invalid hook session id");
+  const paths = handoffPaths(cwd, coordinates.agentId);
+  mkdirSync2(paths.directory, { recursive: true, mode: 448 });
+  protectDirectory(paths.directory);
+  globalSweep(paths.directory);
+  acquireHandoffLock(paths, nowEpochSeconds() + LOCK_TIMEOUT_SECONDS);
+  try {
+    pruneLocked(paths);
+    const newest = newestRecordedAttempt(paths);
+    const attempt = Number(coordinates.attempt);
+    if (attempt < newest) {
+      throw new HandoffFailure(`stale publish for slice ${coordinates.slice}: attempt ${attempt}, newest ${newest}`);
+    }
+    if (attempt === newest) {
+      if (existsSync(paths.receipt) && receiptMatches(paths.receipt, coordinates) && recordsInclude(paths.receipt, `hook_session=${hookSession}`)) {
+        return;
+      }
+      throw new HandoffFailure(`attempt ${attempt} for slice ${coordinates.slice} was already published or consumed`);
+    }
+    const content = receiptContent(hookSession, coordinates);
+    writeFileAtomically(paths.directory, paths.receipt, content, `.${paths.agentKey}.receipt.`);
+    writeWatermark(paths, coordinates.attempt);
+  } finally {
+    releaseHandoffLock(paths);
+  }
+}
+function runHandoffWait(cwd, coordinates, timeoutText) {
+  validateCoordinates(coordinates);
+  if (!isValidTimeoutText(timeoutText)) {
+    throw new HandoffFailure(`timeout must be an integer from 0 to ${MAX_TIMEOUT_SECONDS}`);
+  }
+  const paths = handoffPaths(cwd, coordinates.agentId);
+  mkdirSync2(paths.directory, { recursive: true, mode: 448 });
+  globalSweep(paths.directory);
+  const deadline = nowEpochSeconds() + Number(timeoutText);
+  for (; ; ) {
+    const lockDeadline = Math.min(nowEpochSeconds() + LOCK_TIMEOUT_SECONDS, deadline);
+    acquireHandoffLock(paths, lockDeadline);
+    let receiptText;
+    try {
+      pruneLocked(paths);
+      receiptText = matchingReceiptOrStop(paths, coordinates);
+    } finally {
+      releaseHandoffLock(paths);
+    }
+    if (receiptText !== void 0) return receiptText;
+    if (nowEpochSeconds() >= deadline) {
+      throw new HandoffFailure(
+        `timed out waiting for slice ${coordinates.slice} attempt ${coordinates.attempt} after ${timeoutText}s`
+      );
+    }
+    sleepSync(POLL_INTERVAL_MS);
+  }
+}
+function runHandoffConsume(cwd, coordinates) {
+  validateCoordinates(coordinates);
+  const paths = handoffPaths(cwd, coordinates.agentId);
+  if (!isDirectory(paths.directory)) {
+    throw new HandoffFailure(`no receipt for slice ${coordinates.slice} attempt ${coordinates.attempt}`);
+  }
+  globalSweep(paths.directory);
+  acquireHandoffLock(paths, nowEpochSeconds() + LOCK_TIMEOUT_SECONDS);
+  try {
+    pruneLocked(paths);
+    if (!existsSync(paths.receipt)) {
+      throw new HandoffFailure(`no unconsumed receipt for slice ${coordinates.slice} attempt ${coordinates.attempt}`);
+    }
+    requireMatchingReceipt(paths.receipt, coordinates, "receipt identity does not match the delegated result");
+    const content = readFileSync2(paths.receipt, "utf8");
+    writeWatermark(paths, coordinates.attempt);
+    rmSync2(paths.receipt, { force: true });
+    return content;
+  } finally {
+    releaseHandoffLock(paths);
+  }
+}
+function matchingReceiptOrStop(paths, coordinates) {
+  if (existsSync(paths.receipt)) {
+    requireMatchingReceipt(paths.receipt, coordinates, "receipt identity does not match the awaited delegation");
+    return readFileSync2(paths.receipt, "utf8");
+  }
+  if (existsSync(paths.watermark)) {
+    if (!watermarkIsValid(paths.watermark)) throw new HandoffFailure(`malformed watermark at ${paths.watermark}`);
+    if (attemptOf(paths.watermark) >= Number(coordinates.attempt)) {
+      throw new HandoffFailure(
+        `receipt for slice ${coordinates.slice} attempt ${coordinates.attempt} was already consumed or superseded`
+      );
+    }
+  }
+  return void 0;
+}
+function requireMatchingReceipt(receiptPath, coordinates, identityMessage) {
+  if (!receiptIsValid(receiptPath)) throw new HandoffFailure(`malformed receipt at ${receiptPath}`);
+  const actualAttempt = attemptOf(receiptPath);
+  if (String(actualAttempt) !== coordinates.attempt) {
+    throw new HandoffFailure(
+      `stale or superseding receipt for slice ${coordinates.slice}: expected attempt ${coordinates.attempt}, found ${actualAttempt}`
+    );
+  }
+  if (!receiptMatches(receiptPath, coordinates)) throw new HandoffFailure(identityMessage);
+}
+function validateCoordinates(coordinates) {
+  if (!isNameToken(coordinates.slice)) throw new HandoffFailure("invalid slice id");
+  if (!ATTEMPT_PATTERN.test(coordinates.attempt)) {
+    throw new HandoffFailure("attempt must be an integer from 1 to 999999999");
+  }
+  if (!isValidOpaqueId(coordinates.agentId)) throw new HandoffFailure("invalid agent id");
+  if (!isNameToken(coordinates.agentType)) throw new HandoffFailure("invalid agent type");
+}
+function isValidOpaqueId(value) {
+  return value.length >= 1 && value.length <= OPAQUE_ID_MAX_LENGTH && OPAQUE_ID_PATTERN.test(value);
+}
+function isValidTimeoutText(value) {
+  return TIMEOUT_PATTERN.test(value) && Number(value) <= MAX_TIMEOUT_SECONDS;
+}
+function handoffPaths(cwd, agentId) {
+  const stateFile = stateFileFor(cwd);
+  const agentKey = sha256Hex(agentId);
+  const directory = path2.join(stateRootDirectory(), ".handoffs", repositoryIdFor(stateFile));
+  return {
+    directory,
+    agentId,
+    agentKey,
+    receipt: path2.join(directory, `${agentKey}.receipt`),
+    watermark: path2.join(directory, `${agentKey}.watermark`),
+    lockDir: path2.join(directory, `${agentKey}.lock`)
+  };
+}
+function protectDirectory(directory) {
+  try {
+    chmodSync(directory, 448);
+  } catch (error) {
+    throw new HandoffFailure("cannot protect receipt directory", { cause: error });
+  }
+}
+function nowEpochSeconds() {
+  return Math.floor(Date.now() / 1e3);
+}
+function acquireHandoffLock(paths, deadline) {
+  for (; ; ) {
+    try {
+      mkdirSync2(paths.lockDir);
+      return;
+    } catch (error) {
+      if (!isErrnoException(error) || error.code !== "EEXIST") throw error;
+    }
+    if (nowEpochSeconds() >= deadline) {
+      throw new HandoffFailure(`could not acquire receipt lock for agent ${paths.agentId} before the bound`);
+    }
+    sleepSync(POLL_INTERVAL_MS);
+  }
+}
+function releaseHandoffLock(paths) {
+  rmSync2(paths.lockDir, { recursive: true, force: true });
+}
+function globalSweep(directory) {
+  for (const name of directoryEntries(directory)) {
+    const key = sweepableArtifactKey(name);
+    if (key === void 0) continue;
+    sweepArtifact(path2.join(directory, name), path2.join(directory, `${key}.lock`));
+  }
+}
+function sweepableArtifactKey(name) {
+  return name.match(RECEIPT_ARTIFACT_PATTERN)?.[1] ?? name.match(TEMP_ARTIFACT_PATTERN)?.[1];
+}
+function sweepArtifact(artifactPath, sweepLockDir) {
+  if (!tryAcquireBareLock(sweepLockDir)) return;
+  try {
+    if (!isRegularNonSymlinkFile(artifactPath)) return;
+    const age = secondsSinceModified(artifactPath);
+    if (age === void 0 || age < TTL_SECONDS) return;
+    rmSync2(artifactPath, { force: true });
+  } finally {
+    rmSync2(sweepLockDir, { recursive: true, force: true });
+  }
+}
+function tryAcquireBareLock(lockDir) {
+  try {
+    mkdirSync2(lockDir);
+    return true;
+  } catch (error) {
+    if (isErrnoException(error) && error.code === "EEXIST") return false;
+    throw error;
+  }
+}
+function pruneLocked(paths) {
+  for (const artifact of [paths.receipt, paths.watermark, ...matchingTempArtifacts(paths)]) {
+    if (!existsSync(artifact)) continue;
+    if (!isRegularNonSymlinkFile(artifact)) {
+      throw new HandoffFailure(`handoff artifact is not a regular file at ${artifact}`);
+    }
+    const age = secondsSinceModified(artifact);
+    if (age === void 0) throw new HandoffFailure(`cannot determine receipt age at ${artifact}`);
+    if (age >= TTL_SECONDS) rmSync2(artifact, { force: true });
+  }
+}
+function matchingTempArtifacts(paths) {
+  const prefixes = [`.${paths.agentKey}.receipt.`, `.${paths.agentKey}.consuming.`, `.${paths.agentKey}.watermark.`];
+  return directoryEntries(paths.directory).filter((name) => prefixes.some((prefix) => name.startsWith(prefix))).map((name) => path2.join(paths.directory, name));
+}
+function directoryEntries(directory) {
+  try {
+    return readdirSync(directory);
+  } catch {
+    return [];
+  }
+}
+function newestRecordedAttempt(paths) {
+  let newest = 0;
+  if (existsSync(paths.receipt)) {
+    if (!receiptIsValid(paths.receipt)) throw new HandoffFailure(`malformed receipt at ${paths.receipt}`);
+    newest = Math.max(newest, attemptOf(paths.receipt));
+  }
+  if (existsSync(paths.watermark)) {
+    if (!watermarkIsValid(paths.watermark)) throw new HandoffFailure(`malformed watermark at ${paths.watermark}`);
+    newest = Math.max(newest, attemptOf(paths.watermark));
+  }
+  return newest;
+}
+function writeWatermark(paths, attempt) {
+  if (existsSync(paths.watermark)) {
+    if (!watermarkIsValid(paths.watermark)) throw new HandoffFailure(`malformed watermark at ${paths.watermark}`);
+    const recorded = attemptOf(paths.watermark);
+    const attemptNumber = Number(attempt);
+    if (recorded > attemptNumber) {
+      throw new HandoffFailure(`watermark attempt ${recorded} supersedes receipt attempt ${attemptNumber}`);
+    }
+    if (recorded === attemptNumber) return;
+  }
+  writeFileAtomically(
+    paths.directory,
+    paths.watermark,
+    `version=1
+attempt=${attempt}
+`,
+    `.${paths.agentKey}.watermark.`
+  );
+}
+function receiptContent(hookSession, coordinates) {
+  return `version=1
+hook_session=${hookSession}
+slice=${coordinates.slice}
+attempt=${coordinates.attempt}
+agent_id=${coordinates.agentId}
+agent_type=${coordinates.agentType}
+`;
+}
+function receiptIsValid(receiptPath) {
+  const content = readPrivateFileContent(receiptPath);
+  if (content === void 0 || !isWellFormedRecordFile(content, 6, RECEIPT_KEYS)) return false;
+  return recordsOf(content).some((record) => ATTEMPT_VALUE_PATTERN.test(record));
+}
+function watermarkIsValid(watermarkPath) {
+  const content = readPrivateFileContent(watermarkPath);
+  if (content === void 0 || !isWellFormedRecordFile(content, 2, WATERMARK_KEYS)) return false;
+  return recordsOf(content).some((record) => ATTEMPT_VALUE_PATTERN.test(record));
+}
+function receiptMatches(receiptPath, coordinates) {
+  return receiptIsValid(receiptPath) && recordsInclude(receiptPath, `slice=${coordinates.slice}`) && recordsInclude(receiptPath, `attempt=${coordinates.attempt}`) && recordsInclude(receiptPath, `agent_id=${coordinates.agentId}`) && recordsInclude(receiptPath, `agent_type=${coordinates.agentType}`);
+}
+function attemptOf(filePath) {
+  return Number(readValue(filePath, "attempt"));
+}
+function recordsInclude(filePath, record) {
+  return recordsOf(readPrivateFileContent(filePath) ?? "").includes(record);
+}
+function isWellFormedRecordFile(content, expectedNewlines, keys) {
+  if (newlineCount(content) !== expectedNewlines) return false;
+  const records = recordsOf(content);
+  if (records.some((record) => !keys.some((key) => record.startsWith(`${key}=`)))) return false;
+  if (records.filter((record) => record === "version=1").length !== 1) return false;
+  return keys.filter((key) => key !== "version").every((key) => records.filter((record) => record.startsWith(`${key}=`)).length === 1);
+}
+function newlineCount(content) {
+  return (content.match(/\n/g) ?? []).length;
+}
+function recordsOf(content) {
+  if (content === "") return [];
+  const lines = content.split("\n");
+  if (lines[lines.length - 1] === "") lines.pop();
+  return lines;
+}
+function readPrivateFileContent(target) {
+  if (!isReadableRegularFile(target)) return void 0;
+  return readFileSync2(target, "utf8");
+}
+
+// core/src/state/plan.ts
+import { chmodSync as chmodSync2, existsSync as existsSync2, mkdirSync as mkdirSync3, readFileSync as readFileSync3, renameSync as renameSync2, rmSync as rmSync3 } from "node:fs";
+import path3 from "node:path";
+
+// core/src/state/transitions.ts
+function armPlan() {
+  return { mode: "plan", active_slice: "none", verify_green: "false" };
+}
+
+// core/src/state/plan.ts
+var PlanFailure = class extends Error {
+};
+var PlanApprovalError = class extends Error {
+};
+var PLAN_DIGEST_PATTERN = /^[0-9a-f]{64}$/;
+function isValidPlanDigest(value) {
+  return PLAN_DIGEST_PATTERN.test(value);
+}
+function planPaths(stateFile, digest) {
+  const root = path3.join(stateRootDirectory(), "plans");
+  const dir = path3.join(root, repositoryIdFor(stateFile));
+  return {
+    root,
+    dir,
+    presentedFile: path3.join(dir, `presented-${digest}.md`),
+    approvedFile: path3.join(dir, `approved-${digest}.md`),
+    currentFile: path3.join(dir, "current.md")
+  };
+}
+function ensurePlanDirectory(paths) {
+  requireNonSymlinkDirectory(stateRootDirectory(), "state root");
+  requireNonSymlinkDirectory(paths.root, "plan root");
+  requireNonSymlinkDirectory(paths.dir, "repository plan directory", "repository plan path");
+  chmodSync2(paths.root, 448);
+  chmodSync2(paths.dir, 448);
+}
+function requireNonSymlinkDirectory(target, symlinkLabel, directoryLabel = symlinkLabel) {
+  if (isSymlink(target)) throw new PlanFailure(`${symlinkLabel} is a symlink: ${target}`);
+  mkdirSync3(target, { recursive: true, mode: 448 });
+  if (!isDirectory(target)) throw new PlanFailure(`${directoryLabel} is not a directory: ${target}`);
+}
+function runCapturePlan(cwd, sessionId, digest, document) {
+  if (!isValidPlanDigest(digest)) throw new PlanFailure("capture-plan requires one lowercase SHA-256 digest");
+  const stateFile = stateFileFor(cwd);
+  const paths = planPaths(stateFile, digest);
+  ensurePlanDirectory(paths);
+  if (document.length === 0) throw new PlanFailure("capture-plan requires a non-empty plan document on stdin");
+  return withLock(stateFile, sessionId, () => {
+    if (existsSync2(paths.presentedFile)) {
+      if (!isPrivateRegularFile(paths.presentedFile)) {
+        throw new PlanFailure("presented snapshot is not a private regular file");
+      }
+      if (readFileSync3(paths.presentedFile, "utf8") !== document) {
+        throw new PlanFailure("presented snapshot content disagrees with its approval digest");
+      }
+    } else {
+      writeFileAtomically(paths.dir, paths.presentedFile, document, ".snapshot.");
+    }
+    if (existsSync2(paths.currentFile) && !isPrivateRegularFile(paths.currentFile)) {
+      throw new PlanFailure("current plan is not a private regular file");
+    }
+    writeFileAtomically(paths.dir, paths.currentFile, document, ".current.");
+    const arming = armPlan();
+    writeStatePairs(
+      stateFile,
+      [
+        `mode=${arming.mode}`,
+        `active_slice=${arming.active_slice}`,
+        `verify_green=${arming.verify_green}`,
+        "plan_approval=pending",
+        `plan_approval_digest=${digest}`,
+        `plan_approval_session=${sessionId}`,
+        `plan_snapshot_file=${paths.presentedFile}`,
+        `plan_current_file=${paths.currentFile}`,
+        "plan_revision=0"
+      ],
+      sessionId
+    );
+    logEvent({ event: "plan-artifact-captured", session: sessionId, command: digest });
+    return 0;
+  });
+}
+function runApprovePlan(cwd, sessionId, digest) {
+  if (!isValidPlanDigest(digest)) {
+    throw new PlanApprovalError("approve-plan requires one lowercase SHA-256 digest");
+  }
+  const stateFile = stateFileFor(cwd);
+  mkdirSync3(stateRootDirectory(), { recursive: true });
+  return withLock(stateFile, sessionId, () => {
+    if (!isReadableRegularFile(stateFile)) {
+      throw new PlanApprovalError(`no readable pending plan approval for session ${sessionId}`);
+    }
+    if (readValue(stateFile, "plan_approval_session") !== sessionId) {
+      throw new PlanApprovalError("pending plan approval belongs to another session");
+    }
+    if (readValue(stateFile, "mode") !== "plan") {
+      throw new PlanApprovalError("pending approval is not attached to plan mode state");
+    }
+    if (readValue(stateFile, "plan_approval") !== "pending") {
+      throw new PlanApprovalError("plan approval is not pending");
+    }
+    if (readValue(stateFile, "plan_approval_digest") !== digest) {
+      throw new PlanApprovalError("pending plan digest changed before approval");
+    }
+    const paths = planPaths(stateFile, digest);
+    ensurePlanDirectory(paths);
+    if (readValue(stateFile, "plan_snapshot_file") !== paths.presentedFile) {
+      throw new PlanFailure("pending state does not name the expected presented snapshot");
+    }
+    if (readValue(stateFile, "plan_current_file") !== paths.currentFile) {
+      throw new PlanFailure("pending state does not name the expected current plan");
+    }
+    if (!isPrivateRegularFile(paths.currentFile)) {
+      throw new PlanFailure("current plan is missing or unsafe");
+    }
+    if (isPrivateRegularFile(paths.presentedFile)) {
+      if (!byteIdentical(paths.currentFile, paths.presentedFile)) {
+        throw new PlanFailure("the pending plan changed since it was presented; capture it again before approving");
+      }
+      if (existsSync2(paths.approvedFile)) {
+        if (!isPrivateRegularFile(paths.approvedFile)) {
+          throw new PlanFailure("approved snapshot is not a private regular file");
+        }
+        if (!byteIdentical(paths.presentedFile, paths.approvedFile)) {
+          throw new PlanFailure("approved snapshot content disagrees with the pending document");
+        }
+        rmSync3(paths.presentedFile, { force: true });
+      } else {
+        renameSync2(paths.presentedFile, paths.approvedFile);
+      }
+    } else if (!isPrivateRegularFile(paths.approvedFile)) {
+      throw new PlanFailure("presented plan snapshot is missing");
+    }
+    writeStatePairs(stateFile, ["plan_approval=approved", `plan_snapshot_file=${paths.approvedFile}`], sessionId);
+    logEvent({ event: "plan-approval-approved", session: sessionId });
+    return 0;
+  });
+}
+function runCancelPlan(cwd, sessionId, digest) {
+  if (!isValidPlanDigest(digest)) {
+    throw new PlanApprovalError("cancel-plan requires one lowercase SHA-256 digest");
+  }
+  const stateFile = stateFileFor(cwd);
+  mkdirSync3(stateRootDirectory(), { recursive: true });
+  return withLock(stateFile, sessionId, () => {
+    if (!isReadableRegularFile(stateFile)) {
+      throw new PlanApprovalError(`no readable pending plan approval for session ${sessionId}`);
+    }
+    if (readValue(stateFile, "plan_approval_session") !== sessionId) {
+      throw new PlanApprovalError("pending plan approval belongs to another session");
+    }
+    if (readValue(stateFile, "plan_approval") !== "pending") {
+      throw new PlanApprovalError("plan approval is not pending");
+    }
+    if (readValue(stateFile, "plan_approval_digest") !== digest) {
+      throw new PlanApprovalError("pending plan digest changed before cancellation");
+    }
+    const paths = planPaths(stateFile, digest);
+    if (readValue(stateFile, "plan_snapshot_file") === paths.presentedFile) {
+      rmSync3(paths.presentedFile, { force: true });
+    }
+    if (readValue(stateFile, "plan_current_file") === paths.currentFile) {
+      rmSync3(paths.currentFile, { force: true });
+    }
+    clearStateFile(stateFile);
+    logEvent({ event: "plan-approval-cancelled", session: sessionId });
+    return 0;
+  });
+}
+function runAmendPlan(cwd, sessionId, sliceId, document) {
+  if (!isNameToken(sliceId)) throw new PlanFailure("amend-plan requires a safe slice id");
+  const stateFile = stateFileFor(cwd);
+  mkdirSync3(stateRootDirectory(), { recursive: true });
+  if (document.length === 0) throw new PlanFailure("amend-plan requires a non-empty document on stdin");
+  return withLock(stateFile, sessionId, () => {
+    if (!isReadableRegularFile(stateFile)) {
+      throw new PlanFailure(`no readable plan for session ${sessionId}`);
+    }
+    if (readValue(stateFile, "plan_approval_session") !== sessionId) {
+      throw new PlanFailure("the plan belongs to another session");
+    }
+    if (readValue(stateFile, "mode") !== "plan") {
+      throw new PlanFailure("amendments require active plan execution state");
+    }
+    const amendmentApproval = readValue(stateFile, "plan_approval");
+    const shape = amendmentShapeFor(amendmentApproval);
+    const approvalDigest = readValue(stateFile, "plan_approval_digest") ?? "";
+    if (!isValidPlanDigest(approvalDigest)) throw new PlanFailure("the plan has no valid digest");
+    const paths = planPaths(stateFile, approvalDigest);
+    ensurePlanDirectory(paths);
+    const amendmentSnapshotFile = amendmentApproval === "approved" ? paths.approvedFile : paths.presentedFile;
+    if (readValue(stateFile, "plan_snapshot_file") !== amendmentSnapshotFile) {
+      throw new PlanFailure("plan state does not name its expected immutable snapshot");
+    }
+    if (readValue(stateFile, "plan_current_file") !== paths.currentFile) {
+      throw new PlanFailure("plan state does not name its operational plan");
+    }
+    if (!isPrivateRegularFile(amendmentSnapshotFile)) {
+      throw new PlanFailure("the immutable snapshot is missing or unsafe");
+    }
+    if (!isPrivateRegularFile(paths.currentFile)) {
+      throw new PlanFailure("current plan is missing or unsafe");
+    }
+    const revisionText = readValue(stateFile, "plan_revision") ?? "";
+    if (!/^[0-9]+$/.test(revisionText)) throw new PlanFailure("current plan has no valid revision");
+    const nextRevision = Number(revisionText) + 1;
+    const amended = `${readFileSync3(paths.currentFile, "utf8")}
+
+## ${shape.heading} \u2014 ${sliceId}
+
+- Added-at: ${isoTimestamp()}
+- Requested-by: operator
+- Classification: ${shape.classification}
+
+${document}
+`;
+    writeFileAtomically(paths.dir, paths.currentFile, amended, ".amended.");
+    writeStatePairs(stateFile, [`plan_revision=${nextRevision}`, "verify_green=false"], sessionId);
+    logEvent({ event: "plan-amended", session: sessionId, command: sliceId });
+    return 0;
+  });
+}
+function byteIdentical(leftFile, rightFile) {
+  return readFileSync3(leftFile).equals(readFileSync3(rightFile));
+}
+function amendmentShapeFor(approval) {
+  if (approval === "approved") return { heading: "Execution amendment", classification: "in-scope" };
+  if (approval === "pending") return { heading: "Plan Mode feedback", classification: "feedback" };
+  throw new PlanFailure("amendments require a pending or approved plan");
+}
+
+// core/src/state/cli.ts
+var USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> get key
        oso-state --session <id> show
        oso-state --session <id> clear
@@ -24,702 +935,236 @@ usage: oso-state --session <id> set key=value [key=value ...]
 The SubagentStop hook publishes a provenance receipt, never a verdict. wait is
 bounded and consume is one-shot. Handoff attempts start at 1 and timeout must
 be between 0 and 600 seconds.
-EOF
-  exit 1
+`;
+var UsageError = class extends Error {
+};
+var HANDOFF_SUBACTIONS = ["publish", "wait", "consume"];
+var HANDOFF_FLAGS = {
+  "--slice": "slice",
+  "--attempt": "attempt",
+  "--agent-id": "agentId",
+  "--agent-type": "agentType",
+  "--hook-session": "hookSession",
+  "--timeout": "timeout"
+};
+function main(argv) {
+  try {
+    return dispatch(argv);
+  } catch (error) {
+    return report(error, verbOf(argv));
+  }
+}
+function verbOf(argv) {
+  const first = argv[0];
+  if (first === "journal" || first === "handoff") return first;
+  return argv[2] ?? "";
+}
+function report(error, verb) {
+  if (error instanceof UsageError) {
+    process.stderr.write(USAGE);
+    return 1;
+  }
+  if (error instanceof LockTimeoutError) {
+    process.stderr.write(`oso-state: ${error.message}
+`);
+    return 1;
+  }
+  if (error instanceof JournalAppendError) {
+    process.stderr.write(`oso-state: journal: ${error.message}
+`);
+    return 1;
+  }
+  if (error instanceof StateFileUnreadableError) {
+    process.stderr.write(`oso-state: ${verb}: ${error.message}
+`);
+    return 1;
+  }
+  if (error instanceof PlanApprovalError) {
+    process.stderr.write(`oso-state: ${error.message}
+`);
+    return 1;
+  }
+  if (error instanceof PlanFailure) {
+    process.stderr.write(`oso-state: plan: ${error.message}
+`);
+    return 1;
+  }
+  if (error instanceof HandoffFailure) {
+    process.stderr.write(`oso-state: handoff: ${error.message}
+`);
+    return 1;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  process.stderr.write(`oso-state: ${message}
+`);
+  return 1;
+}
+function dispatch(argv) {
+  const first = argv[0];
+  if (first === "journal") return runJournal(argv.slice(1));
+  if (first === "handoff") return dispatchHandoff(argv.slice(1));
+  if (first !== "--session") throw new UsageError();
+  const sessionId = sanitizeSession(argv[1] ?? "");
+  if (sessionId === "") throw new UsageError();
+  const action = argv[2] ?? "";
+  const remaining = argv.slice(3);
+  switch (action) {
+    case "set":
+      return runSet(sessionId, remaining);
+    case "get":
+      return runGet(remaining);
+    case "show":
+      return runShow();
+    case "clear":
+      return runClear(sessionId);
+    case "event":
+      return runEvent(sessionId, remaining);
+    case "journal":
+      return runJournal(remaining);
+    case "capture-plan":
+      return runCapturePlan2(sessionId, remaining);
+    case "approve-plan":
+      return runApprovePlan2(sessionId, remaining);
+    case "cancel-plan":
+      return runCancelPlan2(sessionId, remaining);
+    case "amend-plan":
+      return runAmendPlan2(sessionId, remaining);
+    case "handoff":
+      return dispatchHandoff(remaining);
+    default:
+      throw new UsageError();
+  }
+}
+function runSet(sessionId, pairs) {
+  if (pairs.length < 1) throw new UsageError();
+  writeStateValues(process.cwd(), sessionId, pairs);
+  return 0;
+}
+function runGet(remaining) {
+  if (remaining.length !== 1) throw new UsageError();
+  const key = remaining[0];
+  const stateFile = stateFileFor(process.cwd());
+  const value = readValue(stateFile, key);
+  if (value !== void 0) process.stdout.write(`${value}
+`);
+  return 0;
+}
+function runShow() {
+  const stateFile = stateFileFor(process.cwd());
+  const read = readStateFile(stateFile);
+  if (read.kind === "absent") {
+    process.stdout.write(`no state at ${stateFile}
+`);
+    return 0;
+  }
+  if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
+  process.stdout.write(read.content);
+  return 0;
+}
+function runClear(sessionId) {
+  const stateFile = stateFileFor(process.cwd());
+  mkdirSync4(stateRootDirectory(), { recursive: true });
+  return withLock(stateFile, sessionId, () => {
+    clearStateFile(stateFile);
+    logEvent({ event: "clear", session: sessionId });
+    return 0;
+  });
+}
+function runEvent(sessionId, remaining) {
+  if (remaining.length < 1 || remaining.length > 2) throw new UsageError();
+  const type = remaining[0];
+  const detail = remaining[1] ?? "";
+  logEvent({ event: type, session: sessionId, command: detail });
+  return 0;
+}
+function runJournal(remaining) {
+  if (remaining.length !== 1) throw new UsageError();
+  const text = remaining[0];
+  if (text === "") throw new UsageError();
+  const journalFile = journalFileFor(process.cwd());
+  if (text === "--path") {
+    process.stdout.write(`${journalFile}
+`);
+    return 0;
+  }
+  appendJournal(journalFile, text);
+  return 0;
+}
+function runCapturePlan2(sessionId, remaining) {
+  if (remaining.length !== 1) throw new UsageError();
+  const digest = remaining[0];
+  return runCapturePlan(process.cwd(), sessionId, digest, readStdin());
+}
+function runApprovePlan2(sessionId, remaining) {
+  if (remaining.length !== 1) throw new UsageError();
+  const digest = remaining[0];
+  return runApprovePlan(process.cwd(), sessionId, digest);
+}
+function runCancelPlan2(sessionId, remaining) {
+  if (remaining.length !== 1) throw new UsageError();
+  const digest = remaining[0];
+  return runCancelPlan(process.cwd(), sessionId, digest);
+}
+function runAmendPlan2(sessionId, remaining) {
+  if (remaining.length !== 1) throw new UsageError();
+  const sliceId = remaining[0];
+  return runAmendPlan(process.cwd(), sessionId, sliceId, readStdin());
+}
+function readStdin() {
+  return readFileSync4(0, "utf8");
+}
+function dispatchHandoff(remaining) {
+  const [subaction, ...rest] = remaining;
+  if (!isHandoffSubaction(subaction)) throw new UsageError();
+  const flags = parseHandoffCoordinates(rest);
+  checkHandoffCoordinateShape(subaction, flags);
+  const coordinates = {
+    slice: flags.slice ?? "",
+    attempt: flags.attempt ?? "",
+    agentId: flags.agentId ?? "",
+    agentType: flags.agentType ?? ""
+  };
+  const cwd = process.cwd();
+  switch (subaction) {
+    case "publish":
+      readStdin();
+      runHandoffPublish(cwd, coordinates, flags.hookSession ?? "");
+      return 0;
+    case "wait":
+      process.stdout.write(runHandoffWait(cwd, coordinates, flags.timeout ?? ""));
+      return 0;
+    case "consume":
+      process.stdout.write(runHandoffConsume(cwd, coordinates));
+      return 0;
+  }
+}
+function isHandoffSubaction(value) {
+  return value !== void 0 && HANDOFF_SUBACTIONS.includes(value);
+}
+function checkHandoffCoordinateShape(subaction, coordinates) {
+  const hasTimeout = coordinates.timeout !== void 0;
+  const hasHookSession = coordinates.hookSession !== void 0;
+  if (subaction === "publish" && hasTimeout) throw new UsageError();
+  if (subaction === "wait" && (!hasTimeout || hasHookSession)) throw new UsageError();
+  if (subaction === "consume" && (hasTimeout || hasHookSession)) throw new UsageError();
+}
+function parseHandoffCoordinates(args) {
+  const coordinates = {};
+  let index = 0;
+  while (index < args.length) {
+    if (index + 1 >= args.length) throw new UsageError();
+    const flag = args[index];
+    const field = HANDOFF_FLAGS[flag];
+    if (field === void 0) throw new UsageError();
+    if (coordinates[field] !== void 0) throw new UsageError();
+    coordinates[field] = args[index + 1];
+    index += 2;
+  }
+  return coordinates;
+}
+function sanitizeSession(raw) {
+  return raw.replace(/[^a-zA-Z0-9-]/g, "");
 }
 
-raw_session_id=""
-session_id=""
-case "${1:-}" in
-  handoff|journal)
-    action="$1"
-    shift
-    ;;
-  *)
-    [ "${1:-}" = "--session" ] || usage
-    raw_session_id="${2:-}"
-    session_id="$(sanitize_session "$raw_session_id")"
-    [ -n "$session_id" ] || usage
-    shift 2
-    action="${1:-}"
-    shift || true
-    ;;
-esac
-
-state_file="$(state_file_for "$PWD")"
-lock_dir="${state_file}.lock"
-lock_stale_seconds=30
-
-lock_is_stale() {
-  local held_for
-  held_for="$(seconds_since_modified "$lock_dir")" || return 1
-  [ "$held_for" -ge "$lock_stale_seconds" ]
-}
-
-acquire_lock() {
-  local tries=0 reclaimed=false
-  until mkdir "$lock_dir" 2>/dev/null; do
-    if [ "$reclaimed" = false ] && lock_is_stale; then
-      rmdir "$lock_dir" 2>/dev/null || true
-      reclaimed=true
-      continue
-    fi
-    tries=$((tries + 1))
-    if [ "$tries" -gt 200 ]; then
-      echo "oso-state: could not acquire lock for session ${session_id}" >&2
-      exit 1
-    fi
-    sleep 0.05
-  done
-  trap 'rmdir "$lock_dir" 2>/dev/null || true' EXIT
-}
-
-publish_state_pairs() {
-  local tmp next pair key
-  tmp="$(mktemp "${OSO_STATE_DIR}/.tmp.XXXXXX")"
-  [ -f "$state_file" ] && cat "$state_file" > "$tmp"
-  for pair in "$@" "session=$session_id"; do
-    key="${pair%%=*}"
-    next="$(mktemp "${OSO_STATE_DIR}/.tmp.XXXXXX")"
-    grep -v "^${key}=" "$tmp" > "$next" || true
-    printf '%s\n' "$pair" >> "$next"
-    mv "$next" "$tmp"
-  done
-  mv "$tmp" "$state_file"
-}
-
-plan_fail() {
-  echo "oso-state: plan: $*" >&2
-  exit 1
-}
-
-plan_digest_valid() {
-  [[ "$1" =~ ^[0-9a-f]{64}$ ]]
-}
-
-plan_slice_valid() {
-  [ "${#1}" -ge 1 ] && [ "${#1}" -le 128 ] &&
-    [[ "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9._:-]*$ ]]
-}
-
-plan_paths() {
-  local digest="$1"
-  plan_repo_id="${state_file##*/}"
-  plan_repo_id="${plan_repo_id%.state}"
-  plan_root="${OSO_STATE_DIR}/plans"
-  plan_dir="${plan_root}/${plan_repo_id}"
-  plan_presented_file="${plan_dir}/presented-${digest}.md"
-  plan_approved_file="${plan_dir}/approved-${digest}.md"
-  plan_current_file="${plan_dir}/current.md"
-}
-
-ensure_plan_dir() {
-  umask 077
-  [ ! -L "$OSO_STATE_DIR" ] || plan_fail "state root is a symlink: ${OSO_STATE_DIR}"
-  mkdir -p "$OSO_STATE_DIR"
-  [ -d "$OSO_STATE_DIR" ] || plan_fail "state root is not a directory: ${OSO_STATE_DIR}"
-  [ ! -L "$plan_root" ] || plan_fail "plan root is a symlink: ${plan_root}"
-  mkdir -p "$plan_root"
-  [ -d "$plan_root" ] || plan_fail "plan root is not a directory: ${plan_root}"
-  [ ! -L "$plan_dir" ] || plan_fail "repository plan directory is a symlink: ${plan_dir}"
-  mkdir -p "$plan_dir"
-  [ -d "$plan_dir" ] || plan_fail "repository plan path is not a directory: ${plan_dir}"
-  chmod 700 "$plan_root" "$plan_dir"
-}
-
-plan_regular_file() {
-  [ -f "$1" ] && [ -r "$1" ] && [ ! -L "$1" ] &&
-    [ "$(find "$1" -prune -type f -perm 0600 -print 2>/dev/null)" = "$1" ]
-}
-
-HANDOFF_MAX_TIMEOUT_SECONDS=600
-HANDOFF_TTL_SECONDS=86400
-HANDOFF_LOCK_TIMEOUT_SECONDS=2
-
-handoff_fail() {
-  echo "oso-state: handoff: $*" >&2
-  return 1
-}
-
-handoff_valid_name() {
-  local value="$1"
-  [ "${#value}" -ge 1 ] && [ "${#value}" -le 128 ] &&
-    [[ "$value" =~ ^[a-zA-Z0-9][a-zA-Z0-9._:-]*$ ]]
-}
-
-handoff_valid_opaque_id() {
-  local value="$1"
-  [ "${#value}" -ge 1 ] && [ "${#value}" -le 256 ] &&
-    [[ "$value" =~ ^[a-zA-Z0-9._:/-]+$ ]]
-}
-
-handoff_valid_attempt() {
-  local value="$1"
-  [[ "$value" =~ ^[1-9][0-9]{0,8}$ ]]
-}
-
-handoff_valid_timeout() {
-  local value="$1"
-  [[ "$value" =~ ^(0|[1-9][0-9]{0,2})$ ]] &&
-    [ "$value" -le "$HANDOFF_MAX_TIMEOUT_SECONDS" ]
-}
-
-handoff_digest_value() {
-  local value="$1" digest
-  digest="$(printf '%s' "$value" |
-    { sha256sum 2>/dev/null || shasum -a 256 2>/dev/null; })" || digest=""
-  digest="${digest%% *}"
-  [ -n "$digest" ] || handoff_fail "cannot digest the agent id (no sha256sum or shasum)"
-  printf '%s' "$digest"
-}
-
-handoff_receipt_valid() {
-  local path="$1" lines unknown
-  [ -f "$path" ] && [ -r "$path" ] && [ ! -L "$path" ] || return 1
-  lines="$(wc -l < "$path" | tr -d '[:space:]')"
-  [ "$lines" = 6 ] || return 1
-  unknown="$(grep -Ev '^(version|hook_session|slice|attempt|agent_id|agent_type)=' "$path" || true)"
-  [ -z "$unknown" ] || return 1
-  [ "$(grep -c '^version=1$' "$path" || true)" = 1 ] || return 1
-  for key in hook_session slice attempt agent_id agent_type; do
-    [ "$(grep -c "^${key}=" "$path" || true)" = 1 ] || return 1
-  done
-  grep -Eq '^attempt=[1-9][0-9]{0,8}$' "$path" || return 1
-}
-
-handoff_watermark_valid() {
-  local path="$1" lines unknown
-  [ -f "$path" ] && [ -r "$path" ] && [ ! -L "$path" ] || return 1
-  lines="$(wc -l < "$path" | tr -d '[:space:]')"
-  [ "$lines" = 2 ] || return 1
-  unknown="$(grep -Ev '^(version|attempt)=' "$path" || true)"
-  [ -z "$unknown" ] || return 1
-  [ "$(grep -c '^version=1$' "$path" || true)" = 1 ] || return 1
-  [ "$(grep -c '^attempt=' "$path" || true)" = 1 ] || return 1
-  grep -Eq '^attempt=[1-9][0-9]{0,8}$' "$path"
-}
-
-handoff_receipt_matches() {
-  local path="$1" expected_slice="$2" expected_attempt="$3"
-  local expected_agent_id="$4" expected_agent_type="$5"
-  handoff_receipt_valid "$path" &&
-    grep -qxF "slice=${expected_slice}" "$path" &&
-    grep -qxF "attempt=${expected_attempt}" "$path" &&
-    grep -qxF "agent_id=${expected_agent_id}" "$path" &&
-    grep -qxF "agent_type=${expected_agent_type}" "$path"
-}
-
-handoff_attempt_from() {
-  state_value "$1" attempt
-}
-
-handoff_lock_acquire() {
-  local now
-  until mkdir "$handoff_lock_dir" 2>/dev/null; do
-    now="$(date +%s)"
-    [ "$now" -lt "$handoff_lock_deadline" ] ||
-      handoff_fail "could not acquire receipt lock for agent ${handoff_agent_id} before the bound"
-    sleep 0.05
-  done
-  handoff_lock_held=true
-}
-
-handoff_lock_release() {
-  if [ "${handoff_lock_held:-false}" = true ]; then
-    rmdir "$handoff_lock_dir" 2>/dev/null || true
-    handoff_lock_held=false
-  fi
-}
-
-handoff_cleanup() {
-  handoff_lock_release
-  [ -z "${handoff_tmp:-}" ] || rm -f "$handoff_tmp"
-  [ -z "${handoff_snapshot:-}" ] || rm -f "$handoff_snapshot"
-}
-
-handoff_parse() {
-  handoff_slice=""
-  handoff_attempt=""
-  handoff_agent_id=""
-  handoff_agent_type=""
-  handoff_hook_session=""
-  handoff_timeout=""
-  while [ $# -gt 0 ]; do
-    [ $# -ge 2 ] || usage
-    case "$1" in
-      --slice) [ -z "$handoff_slice" ] || usage; handoff_slice="$2" ;;
-      --attempt) [ -z "$handoff_attempt" ] || usage; handoff_attempt="$2" ;;
-      --agent-id) [ -z "$handoff_agent_id" ] || usage; handoff_agent_id="$2" ;;
-      --agent-type) [ -z "$handoff_agent_type" ] || usage; handoff_agent_type="$2" ;;
-      --hook-session) [ -z "$handoff_hook_session" ] || usage; handoff_hook_session="$2" ;;
-      --timeout) [ -z "$handoff_timeout" ] || usage; handoff_timeout="$2" ;;
-      *) usage ;;
-    esac
-    shift 2
-  done
-  handoff_valid_name "$handoff_slice" || handoff_fail "invalid slice id"
-  handoff_valid_attempt "$handoff_attempt" || handoff_fail "attempt must be an integer from 1 to 999999999"
-  handoff_valid_opaque_id "$handoff_agent_id" || handoff_fail "invalid agent id"
-  handoff_valid_name "$handoff_agent_type" || handoff_fail "invalid agent type"
-}
-
-handoff_paths() {
-  handoff_repo_id="${state_file##*/}"
-  handoff_repo_id="${handoff_repo_id%.state}"
-  handoff_agent_key="$(handoff_digest_value "$handoff_agent_id")"
-  handoff_dir="${OSO_STATE_DIR}/.handoffs/${handoff_repo_id}"
-  handoff_receipt="${handoff_dir}/${handoff_agent_key}.receipt"
-  handoff_watermark="${handoff_dir}/${handoff_agent_key}.watermark"
-  handoff_lock_dir="${handoff_dir}/${handoff_agent_key}.lock"
-  handoff_lock_held=false
-  handoff_tmp=""
-  handoff_snapshot=""
-}
-
-handoff_global_sweep() {
-  local artifact name key sweep_lock age
-  for artifact in "${handoff_dir}"/* "${handoff_dir}"/.*; do
-    [ -e "$artifact" ] || continue
-    name="${artifact##*/}"
-    key=""
-    if [[ "$name" =~ ^([0-9a-f]{64})\.(receipt|consumed|watermark)$ ]]; then
-      key="${BASH_REMATCH[1]}"
-    elif [[ "$name" =~ ^\.([0-9a-f]{64})\.(receipt|consuming|watermark)\.[a-zA-Z0-9]{6}$ ]]; then
-      key="${BASH_REMATCH[1]}"
-    else
-      continue
-    fi
-    sweep_lock="${handoff_dir}/${key}.lock"
-    (
-      mkdir "$sweep_lock" 2>/dev/null || exit 0
-      trap 'rmdir "$sweep_lock" 2>/dev/null || true' EXIT
-      [ -f "$artifact" ] && [ ! -L "$artifact" ] || exit 0
-      age="$(seconds_since_modified "$artifact")" || exit 0
-      [ "$age" -ge "$HANDOFF_TTL_SECONDS" ] || exit 0
-      rm -f -- "$artifact"
-    )
-  done
-}
-
-handoff_prune_locked() {
-  local artifact age
-  for artifact in "$handoff_receipt" "$handoff_watermark" \
-    "${handoff_dir}/.${handoff_agent_key}.receipt."* \
-    "${handoff_dir}/.${handoff_agent_key}.consuming."* \
-    "${handoff_dir}/.${handoff_agent_key}.watermark."*; do
-    [ -e "$artifact" ] || continue
-    [ -f "$artifact" ] && [ ! -L "$artifact" ] ||
-      handoff_fail "handoff artifact is not a regular file at ${artifact}"
-    age="$(seconds_since_modified "$artifact")" ||
-      handoff_fail "cannot determine receipt age at ${artifact}"
-    if [ "$age" -ge "$HANDOFF_TTL_SECONDS" ]; then
-      rm -f "$artifact"
-    fi
-  done
-}
-
-handoff_write_watermark() {
-  local recorded
-  if [ -e "$handoff_watermark" ]; then
-    handoff_watermark_valid "$handoff_watermark" ||
-      handoff_fail "malformed watermark at ${handoff_watermark}"
-    recorded="$(handoff_attempt_from "$handoff_watermark")"
-    [ "$recorded" -le "$handoff_attempt" ] ||
-      handoff_fail "watermark attempt ${recorded} supersedes receipt attempt ${handoff_attempt}"
-    [ "$recorded" != "$handoff_attempt" ] || return 0
-  fi
-  handoff_tmp="$(mktemp "${handoff_dir}/.${handoff_agent_key}.watermark.XXXXXX")"
-  printf 'version=1\nattempt=%s\n' "$handoff_attempt" > "$handoff_tmp"
-  mv "$handoff_tmp" "$handoff_watermark"
-  handoff_tmp=""
-}
-
-handoff_publish() (
-  handoff_parse "$@"
-  [ -z "$handoff_timeout" ] || usage
-  handoff_valid_opaque_id "$handoff_hook_session" || handoff_fail "invalid hook session id"
-  handoff_paths
-  trap handoff_cleanup EXIT
-  ( umask 077; mkdir -p "$handoff_dir" )
-  chmod 700 "$handoff_dir" 2>/dev/null || handoff_fail "cannot protect receipt directory"
-  handoff_global_sweep
-  cat >/dev/null
-  handoff_lock_deadline="$(($(date +%s) + HANDOFF_LOCK_TIMEOUT_SECONDS))"
-  handoff_lock_acquire
-  handoff_prune_locked
-  newest=0
-  if [ -e "$handoff_receipt" ]; then
-    handoff_receipt_valid "$handoff_receipt" || handoff_fail "malformed receipt at ${handoff_receipt}"
-    existing_attempt="$(handoff_attempt_from "$handoff_receipt")"
-    [ "$existing_attempt" -le "$newest" ] || newest="$existing_attempt"
-  fi
-  if [ -e "$handoff_watermark" ]; then
-    handoff_watermark_valid "$handoff_watermark" || handoff_fail "malformed watermark at ${handoff_watermark}"
-    existing_attempt="$(handoff_attempt_from "$handoff_watermark")"
-    [ "$existing_attempt" -le "$newest" ] || newest="$existing_attempt"
-  fi
-  if [ "$handoff_attempt" -lt "$newest" ]; then
-    handoff_fail "stale publish for slice ${handoff_slice}: attempt ${handoff_attempt}, newest ${newest}"
-  fi
-  if [ "$handoff_attempt" -eq "$newest" ]; then
-    if [ -f "$handoff_receipt" ] &&
-       handoff_receipt_matches "$handoff_receipt" "$handoff_slice" "$handoff_attempt" "$handoff_agent_id" "$handoff_agent_type" &&
-       grep -qxF "hook_session=${handoff_hook_session}" "$handoff_receipt"; then
-      exit 0
-    fi
-    handoff_fail "attempt ${handoff_attempt} for slice ${handoff_slice} was already published or consumed"
-  fi
-
-  handoff_tmp="$(mktemp "${handoff_dir}/.${handoff_agent_key}.receipt.XXXXXX")"
-  {
-    printf 'version=1\n'
-    printf 'hook_session=%s\n' "$handoff_hook_session"
-    printf 'slice=%s\n' "$handoff_slice"
-    printf 'attempt=%s\n' "$handoff_attempt"
-    printf 'agent_id=%s\n' "$handoff_agent_id"
-    printf 'agent_type=%s\n' "$handoff_agent_type"
-  } > "$handoff_tmp"
-  mv "$handoff_tmp" "$handoff_receipt"
-  handoff_tmp=""
-  handoff_write_watermark
-)
-
-handoff_wait() (
-  handoff_parse "$@"
-  [ -n "$handoff_timeout" ] || usage
-  [ -z "$handoff_hook_session" ] || usage
-  handoff_valid_timeout "$handoff_timeout" || handoff_fail "timeout must be an integer from 0 to ${HANDOFF_MAX_TIMEOUT_SECONDS}"
-  handoff_paths
-  trap handoff_cleanup EXIT
-  ( umask 077; mkdir -p "$handoff_dir" )
-  handoff_global_sweep
-  deadline="$(($(date +%s) + handoff_timeout))"
-  while :; do
-    handoff_lock_deadline="$(($(date +%s) + HANDOFF_LOCK_TIMEOUT_SECONDS))"
-    [ "$handoff_lock_deadline" -le "$deadline" ] || handoff_lock_deadline="$deadline"
-    handoff_lock_acquire
-    handoff_prune_locked
-    if [ -e "$handoff_receipt" ]; then
-      handoff_receipt_valid "$handoff_receipt" || handoff_fail "malformed receipt at ${handoff_receipt}"
-      actual_attempt="$(handoff_attempt_from "$handoff_receipt")"
-      [ "$actual_attempt" = "$handoff_attempt" ] ||
-        handoff_fail "stale or superseding receipt for slice ${handoff_slice}: expected attempt ${handoff_attempt}, found ${actual_attempt}"
-      handoff_receipt_matches "$handoff_receipt" "$handoff_slice" "$handoff_attempt" "$handoff_agent_id" "$handoff_agent_type" ||
-        handoff_fail "receipt identity does not match the awaited delegation"
-      cat "$handoff_receipt"
-      exit 0
-    fi
-    if [ -e "$handoff_watermark" ]; then
-      handoff_watermark_valid "$handoff_watermark" || handoff_fail "malformed watermark at ${handoff_watermark}"
-      consumed_attempt="$(handoff_attempt_from "$handoff_watermark")"
-      if [ "$consumed_attempt" -ge "$handoff_attempt" ]; then
-        handoff_fail "receipt for slice ${handoff_slice} attempt ${handoff_attempt} was already consumed or superseded"
-      fi
-    fi
-    handoff_lock_release
-    [ "$(date +%s)" -lt "$deadline" ] ||
-      handoff_fail "timed out waiting for slice ${handoff_slice} attempt ${handoff_attempt} after ${handoff_timeout}s"
-    sleep 0.05
-  done
-)
-
-handoff_consume() (
-  handoff_parse "$@"
-  [ -z "$handoff_timeout" ] || usage
-  [ -z "$handoff_hook_session" ] || usage
-  handoff_paths
-  trap handoff_cleanup EXIT
-  [ -d "$handoff_dir" ] || handoff_fail "no receipt for slice ${handoff_slice} attempt ${handoff_attempt}"
-  handoff_global_sweep
-  handoff_lock_deadline="$(($(date +%s) + HANDOFF_LOCK_TIMEOUT_SECONDS))"
-  handoff_lock_acquire
-  handoff_prune_locked
-  [ -e "$handoff_receipt" ] || handoff_fail "no unconsumed receipt for slice ${handoff_slice} attempt ${handoff_attempt}"
-  handoff_receipt_valid "$handoff_receipt" || handoff_fail "malformed receipt at ${handoff_receipt}"
-  actual_attempt="$(handoff_attempt_from "$handoff_receipt")"
-  [ "$actual_attempt" = "$handoff_attempt" ] ||
-    handoff_fail "stale or superseding receipt for slice ${handoff_slice}: expected attempt ${handoff_attempt}, found ${actual_attempt}"
-  handoff_receipt_matches "$handoff_receipt" "$handoff_slice" "$handoff_attempt" "$handoff_agent_id" "$handoff_agent_type" ||
-    handoff_fail "receipt identity does not match the delegated result"
-  handoff_snapshot="$(mktemp "${handoff_dir}/.${handoff_agent_key}.consuming.XXXXXX")"
-  cat "$handoff_receipt" > "$handoff_snapshot"
-  handoff_write_watermark
-  rm -f -- "$handoff_receipt"
-  handoff_lock_release
-  cat "$handoff_snapshot"
-)
-
-case "$action" in
-  set)
-    [ $# -ge 1 ] || usage
-    mkdir -p "$OSO_STATE_DIR"
-    acquire_lock
-    publish_state_pairs "$@"
-    log_event "set:$*" "$session_id"
-    ;;
-  get)
-    [ $# -eq 1 ] || usage
-    state_value "$state_file" "$1"
-    ;;
-  show)
-    [ -f "$state_file" ] && cat "$state_file" || echo "no state at ${state_file}"
-    ;;
-  clear)
-    mkdir -p "$OSO_STATE_DIR"
-    acquire_lock
-    rm -f "$state_file"
-    log_event clear "$session_id"
-    ;;
-  event)
-    [ $# -ge 1 ] && [ $# -le 2 ] || usage
-    log_event "$1" "$session_id" "${2:-}"
-    ;;
-  journal)
-    [ $# -eq 1 ] || usage
-    [ -n "$1" ] || usage
-    journal_file="$(journal_file_for "$PWD")"
-    if [ "$1" = --path ]; then
-      printf '%s\n' "$journal_file"
-      exit 0
-    fi
-    (
-      umask 077
-      mkdir -p "${journal_file%/*}" &&
-        printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" >> "$journal_file"
-    ) || {
-      echo "oso-state: journal: cannot append the milestone to ${journal_file}" >&2
-      exit 1
-    }
-    ;;
-  capture-plan)
-    [ $# -eq 1 ] || usage
-    approval_digest="$1"
-    plan_digest_valid "$approval_digest" ||
-      plan_fail "capture-plan requires one lowercase SHA-256 digest"
-    plan_paths "$approval_digest"
-    ensure_plan_dir
-    incoming_plan="$(mktemp "${plan_dir}/.incoming.XXXXXX")"
-    cat > "$incoming_plan"
-    [ -s "$incoming_plan" ] || {
-      rm -f "$incoming_plan"
-      plan_fail "capture-plan requires a non-empty plan document on stdin"
-    }
-    chmod 600 "$incoming_plan"
-    acquire_lock
-    if [ -e "$plan_presented_file" ]; then
-      plan_regular_file "$plan_presented_file" || {
-        rm -f "$incoming_plan"
-        plan_fail "presented snapshot is not a private regular file"
-      }
-      cmp -s "$incoming_plan" "$plan_presented_file" || {
-        rm -f "$incoming_plan"
-        plan_fail "presented snapshot content disagrees with its approval digest"
-      }
-    else
-      snapshot_tmp="$(mktemp "${plan_dir}/.snapshot.XXXXXX")"
-      cp "$incoming_plan" "$snapshot_tmp"
-      chmod 600 "$snapshot_tmp"
-      mv "$snapshot_tmp" "$plan_presented_file"
-    fi
-    if [ -e "$plan_current_file" ] && ! plan_regular_file "$plan_current_file"; then
-      rm -f "$incoming_plan"
-      plan_fail "current plan is not a private regular file"
-    fi
-    current_tmp="$(mktemp "${plan_dir}/.current.XXXXXX")"
-    cp "$incoming_plan" "$current_tmp"
-    chmod 600 "$current_tmp"
-    mv "$current_tmp" "$plan_current_file"
-    rm -f "$incoming_plan"
-    publish_state_pairs \
-      mode=plan active_slice=none verify_green=false \
-      plan_approval=pending "plan_approval_digest=${approval_digest}" \
-      "plan_approval_session=${session_id}" \
-      "plan_snapshot_file=${plan_presented_file}" \
-      "plan_current_file=${plan_current_file}" plan_revision=0
-    log_event plan-artifact-captured "$session_id" "$approval_digest"
-    ;;
-  approve-plan)
-    [ $# -eq 1 ] || usage
-    approval_digest="$1"
-    plan_digest_valid "$approval_digest" || {
-      echo "oso-state: approve-plan requires one lowercase SHA-256 digest" >&2
-      exit 1
-    }
-    mkdir -p "$OSO_STATE_DIR"
-    acquire_lock
-    [ -f "$state_file" ] && [ -r "$state_file" ] && [ ! -L "$state_file" ] || {
-      echo "oso-state: no readable pending plan approval for session ${session_id}" >&2
-      exit 1
-    }
-    [ "$(state_value "$state_file" plan_approval_session)" = "$session_id" ] || {
-      echo "oso-state: pending plan approval belongs to another session" >&2
-      exit 1
-    }
-    [ "$(state_value "$state_file" mode)" = plan ] || {
-      echo "oso-state: pending approval is not attached to plan mode state" >&2
-      exit 1
-    }
-    [ "$(state_value "$state_file" plan_approval)" = pending ] || {
-      echo "oso-state: plan approval is not pending" >&2
-      exit 1
-    }
-    [ "$(state_value "$state_file" plan_approval_digest)" = "$approval_digest" ] || {
-      echo "oso-state: pending plan digest changed before approval" >&2
-      exit 1
-    }
-    plan_paths "$approval_digest"
-    ensure_plan_dir
-    [ "$(state_value "$state_file" plan_snapshot_file)" = "$plan_presented_file" ] ||
-      plan_fail "pending state does not name the expected presented snapshot"
-    [ "$(state_value "$state_file" plan_current_file)" = "$plan_current_file" ] ||
-      plan_fail "pending state does not name the expected current plan"
-    plan_regular_file "$plan_current_file" ||
-      plan_fail "current plan is missing or unsafe"
-    if plan_regular_file "$plan_presented_file"; then
-      cmp -s "$plan_current_file" "$plan_presented_file" ||
-        plan_fail "the pending plan changed since it was presented; capture it again before approving"
-      if [ -e "$plan_approved_file" ]; then
-        plan_regular_file "$plan_approved_file" ||
-          plan_fail "approved snapshot is not a private regular file"
-        cmp -s "$plan_presented_file" "$plan_approved_file" ||
-          plan_fail "approved snapshot content disagrees with the pending document"
-        rm -f "$plan_presented_file"
-      else
-        mv "$plan_presented_file" "$plan_approved_file"
-      fi
-    elif ! plan_regular_file "$plan_approved_file"; then
-      plan_fail "presented plan snapshot is missing"
-    fi
-    publish_state_pairs plan_approval=approved \
-      "plan_snapshot_file=${plan_approved_file}"
-    log_event plan-approval-approved "$session_id"
-    ;;
-  cancel-plan)
-    [ $# -eq 1 ] || usage
-    cancellation_digest="$1"
-    plan_digest_valid "$cancellation_digest" || {
-      echo "oso-state: cancel-plan requires one lowercase SHA-256 digest" >&2
-      exit 1
-    }
-    mkdir -p "$OSO_STATE_DIR"
-    acquire_lock
-    [ -f "$state_file" ] && [ -r "$state_file" ] && [ ! -L "$state_file" ] || {
-      echo "oso-state: no readable pending plan approval for session ${session_id}" >&2
-      exit 1
-    }
-    [ "$(state_value "$state_file" plan_approval_session)" = "$session_id" ] || {
-      echo "oso-state: pending plan approval belongs to another session" >&2
-      exit 1
-    }
-    [ "$(state_value "$state_file" plan_approval)" = pending ] || {
-      echo "oso-state: plan approval is not pending" >&2
-      exit 1
-    }
-    [ "$(state_value "$state_file" plan_approval_digest)" = "$cancellation_digest" ] || {
-      echo "oso-state: pending plan digest changed before cancellation" >&2
-      exit 1
-    }
-    plan_paths "$cancellation_digest"
-    if [ "$(state_value "$state_file" plan_snapshot_file)" = "$plan_presented_file" ]; then
-      rm -f "$plan_presented_file"
-    fi
-    if [ "$(state_value "$state_file" plan_current_file)" = "$plan_current_file" ]; then
-      rm -f "$plan_current_file"
-    fi
-    rm -f "$state_file"
-    log_event plan-approval-cancelled "$session_id"
-    ;;
-  amend-plan)
-    [ $# -eq 1 ] || usage
-    amendment_label="$1"
-    plan_slice_valid "$amendment_label" ||
-      plan_fail "amend-plan requires a safe slice id"
-    mkdir -p "$OSO_STATE_DIR"
-    amendment_input="$(mktemp "${OSO_STATE_DIR}/.plan-amendment.XXXXXX")"
-    cat > "$amendment_input"
-    [ -s "$amendment_input" ] || {
-      rm -f "$amendment_input"
-      plan_fail "amend-plan requires a non-empty document on stdin"
-    }
-    acquire_lock
-    [ -f "$state_file" ] && [ -r "$state_file" ] && [ ! -L "$state_file" ] || {
-      rm -f "$amendment_input"
-      plan_fail "no readable plan for session ${session_id}"
-    }
-    [ "$(state_value "$state_file" plan_approval_session)" = "$session_id" ] || {
-      rm -f "$amendment_input"
-      plan_fail "the plan belongs to another session"
-    }
-    [ "$(state_value "$state_file" mode)" = plan ] || {
-      rm -f "$amendment_input"
-      plan_fail "amendments require active plan execution state"
-    }
-    amendment_approval="$(state_value "$state_file" plan_approval)"
-    case "$amendment_approval" in
-      approved) amendment_heading='Execution amendment' amendment_classification=in-scope ;;
-      pending) amendment_heading='Plan Mode feedback' amendment_classification=feedback ;;
-      *)
-        rm -f "$amendment_input"
-        plan_fail "amendments require a pending or approved plan" ;;
-    esac
-    approval_digest="$(state_value "$state_file" plan_approval_digest)"
-    plan_digest_valid "$approval_digest" || {
-      rm -f "$amendment_input"
-      plan_fail "the plan has no valid digest"
-    }
-    plan_paths "$approval_digest"
-    ensure_plan_dir
-    if [ "$amendment_approval" = approved ]; then
-      amendment_snapshot_file="$plan_approved_file"
-    else
-      amendment_snapshot_file="$plan_presented_file"
-    fi
-    [ "$(state_value "$state_file" plan_snapshot_file)" = "$amendment_snapshot_file" ] || {
-      rm -f "$amendment_input"
-      plan_fail "plan state does not name its expected immutable snapshot"
-    }
-    [ "$(state_value "$state_file" plan_current_file)" = "$plan_current_file" ] || {
-      rm -f "$amendment_input"
-      plan_fail "plan state does not name its operational plan"
-    }
-    plan_regular_file "$amendment_snapshot_file" || {
-      rm -f "$amendment_input"
-      plan_fail "the immutable snapshot is missing or unsafe"
-    }
-    plan_regular_file "$plan_current_file" || {
-      rm -f "$amendment_input"
-      plan_fail "current plan is missing or unsafe"
-    }
-    plan_revision="$(state_value "$state_file" plan_revision)"
-    case "$plan_revision" in ''|*[!0-9]*)
-      rm -f "$amendment_input"
-      plan_fail "current plan has no valid revision" ;;
-    esac
-    next_revision=$((plan_revision + 1))
-    amendment_tmp="$(mktemp "${plan_dir}/.amended.XXXXXX")"
-    cat "$plan_current_file" > "$amendment_tmp"
-    printf '\n\n## %s — %s\n\n' "$amendment_heading" "$amendment_label" >> "$amendment_tmp"
-    printf -- '- Added-at: %s\n- Requested-by: operator\n- Classification: %s\n\n' \
-      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$amendment_classification" >> "$amendment_tmp"
-    cat "$amendment_input" >> "$amendment_tmp"
-    printf '\n' >> "$amendment_tmp"
-    chmod 600 "$amendment_tmp"
-    mv "$amendment_tmp" "$plan_current_file"
-    rm -f "$amendment_input"
-    publish_state_pairs "plan_revision=${next_revision}" verify_green=false
-    log_event plan-amended "$session_id" "$amendment_label"
-    ;;
-  handoff)
-    subaction="${1:-}"
-    shift || true
-    case "$subaction" in
-      publish) handoff_publish "$@" ;;
-      wait) handoff_wait "$@" ;;
-      consume) handoff_consume "$@" ;;
-      *) usage ;;
-    esac
-    ;;
-  *)
-    usage
-    ;;
-esac
+// core/src/bin/oso-state.ts
+process.exit(main(process.argv.slice(2)));

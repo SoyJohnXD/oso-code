@@ -1,0 +1,26 @@
+{
+  "name": "get reads back the session that armed the state",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5605,
+      "assertion": "assert_equals \"a write records the session that armed the state\" \\\n  \"$SESSION\" \"$(oso-state --session \"$SESSION\" get session)\""
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=1\nverify_green=false\nrepo_path={cwd}\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "get",
+    "session"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "stdout": "test-session"
+  }
+}

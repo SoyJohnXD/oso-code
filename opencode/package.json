@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test"
+    "test": "node --import ../core/test/support/sandbox-env.mjs --test"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

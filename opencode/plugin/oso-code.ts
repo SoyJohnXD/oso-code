@@ -1,20 +1,18 @@
-import { routes } from "../hooks/routes.ts";
 import { planApprovalTool, planCancelTool, PLAN_APPROVAL_TOOL_ID, PLAN_CANCEL_TOOL_ID } from "./oso/approval.ts";
 import { continueUnattendedRun, recordSessionLineage } from "./oso/continuation-rail.ts";
 import {
   assertGateRoutesCompile,
-  checkHarnessInstalled,
   matchesTool,
-  resolveStateBin,
   routeForGate,
+  routes,
   runAdvisoryGate,
-  runGate,
-  type HarnessInstallStatus,
+  runToolGate,
   type LifecycleGateInput,
   type ToolExecuteInput,
   type ToolExecuteOutput,
 } from "./oso/gates.ts";
 import { commonDirOf, publishIdentity } from "./oso/identity.ts";
+import { stateBinPath } from "./oso/installed-tree.ts";
 import {
   buildStaleAdvice,
   deliverSystemAdvice,
@@ -120,23 +118,6 @@ function armSessionAdvice(sessionID: string, directory: string, client: PluginCl
   );
 }
 
-const HARNESS_NOT_INSTALLED_PREFIX = "oso-code: harness not installed correctly";
-
-function harnessNotInstalledMessage(missing: readonly string[]): string {
-  const detail = missing.length > 0 ? `; missing gate script(s): ${missing.join(", ")}` : "";
-  return `${HARNESS_NOT_INSTALLED_PREFIX}${detail} — reinstall via bootstrap/install-opencode.sh`;
-}
-
-function harnessInstallStatus(client: PluginClient | undefined): HarnessInstallStatus {
-  try {
-    assertGateRoutesCompile(routes);
-    return checkHarnessInstalled(routes);
-  } catch (err) {
-    recordTrace({ origin: "install-check", detail: messageOf(err), severity: "enforcement", client });
-    return { installed: false, missing: [] };
-  }
-}
-
 function markSessionLive(sessionID: string, directory: string, client: PluginClient | undefined): void {
   if (sessionID === "") {
     return;
@@ -162,23 +143,21 @@ export const osoCode = async (
     recordTrace({ origin: "lifecycle.sweep", detail: messageOf(err), severity: "advisory", client });
   }
   registerWorkspaceAdapter({ experimentalWorkspace: pluginInput?.experimental_workspace, client });
-  const installStatus = harnessInstallStatus(client);
+  try {
+    assertGateRoutesCompile(routes);
+  } catch (err) {
+    recordTrace({ origin: "gate-routes", detail: messageOf(err), severity: "enforcement", client });
+  }
 
   return {
     "tool.execute.before": async (input?: unknown, output?: unknown) => {
       const call = input as ToolExecuteInput;
       const result = (output ?? {}) as ToolExecuteOutput;
       for (const route of routes) {
-        if (route.hook !== "tool.execute.before") {
+        if (route.hook !== "tool.execute.before" || !matchesTool(route.matcher, call.tool)) {
           continue;
         }
-        if (!installStatus.installed) {
-          throw new Error(harnessNotInstalledMessage(installStatus.missing));
-        }
-        if (!matchesTool(route.matcher, call.tool)) {
-          continue;
-        }
-        const verdict = runGate(route, call, result);
+        const verdict = runToolGate(route, call, result);
         if (verdict.kind !== "allow") {
           throw new Error(verdict.message);
         }
@@ -193,7 +172,7 @@ export const osoCode = async (
         target.env = {
           ...(target.env ?? {}),
           ...identity,
-          OSO_STATE_BIN: resolveStateBin(),
+          OSO_STATE_BIN: stateBinPath(),
         };
         return target;
       } catch (err) {

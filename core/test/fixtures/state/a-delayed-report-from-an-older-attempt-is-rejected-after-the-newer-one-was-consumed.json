@@ -1,0 +1,38 @@
+{
+  "name": "a delayed report from an older attempt is rejected after the newer one was consumed",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5337,
+      "assertion": "assert_equals \"a delayed report from an older attempt is rejected after the newer one was consumed\" \\\n  1 \"$handoff_rc\""
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5542,
+      "assertion": "assert_equals \"TTL cleanup prunes old receipts, watermarks and orphaned atomic temps\" \\\n  \"publish=pruned-replaced aged-wait=1 receipt=absent\" \\\n  \"publish=$ttl_publish_cleanup aged-wait=$handoff_rc receipt=$([ -e \"$ttl_receipt\" ] && printf present || printf absent)\""
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-stale}.watermark": "version=1\nattempt=2\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "handoff",
+    "publish",
+    "--slice",
+    "slice-stale",
+    "--attempt",
+    "1",
+    "--agent-id",
+    "agent-stale",
+    "--agent-type",
+    "oso-applier",
+    "--hook-session",
+    "hook-old"
+  ],
+  "stdin": "oso-handoff: v=1 slice=slice-stale attempt=1\nstatus: done",
+  "expect": {
+    "exit": 1
+  }
+}

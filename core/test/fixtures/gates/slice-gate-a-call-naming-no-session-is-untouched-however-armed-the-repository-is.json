@@ -1,0 +1,29 @@
+{
+  "name": "slice gate: a call naming no session is untouched however armed the repository is",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 2158,
+      "assertion": "assert_allows \"the edit gate stays off a call naming no session, armed repo or not\" \\\n  block-edits-without-slice.sh \"$unmarked_edit_input\""
+    }
+  ],
+  "gate": "edits",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"/tmp/x.ts\",\"old_string\":\"a\",\"new_string\":\"b\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": "",
+    "events_appended": [
+      {
+        "event": "payload-unparseable",
+        "session": ""
+      }
+    ]
+  }
+}

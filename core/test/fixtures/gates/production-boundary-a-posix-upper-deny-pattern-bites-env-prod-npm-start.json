@@ -1,0 +1,28 @@
+{
+  "name": "production boundary: a POSIX [:upper:] deny pattern bites — ENV=PROD npm start",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5092,
+      "assertion": "assert_equals \"this repository's own deny patterns bite while the run is in flight, and only where they match\" \\\n  \"deny deny allow|allow deny\" \\\n  \"$prod_pattern_verdicts|$(prod_verdicts_for 'npm run deploy:prod' 'vercel --prod')\""
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n",
+    ".local/state/oso-code/deploy-deny/{repo}.patterns": "ENV=[[:upper:]]+\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ENV=PROD npm start\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\""
+      ]
+    },
+    "stderr": ""
+  }
+}

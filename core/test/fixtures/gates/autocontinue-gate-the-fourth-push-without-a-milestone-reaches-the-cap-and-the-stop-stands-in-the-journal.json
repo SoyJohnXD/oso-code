@@ -1,0 +1,32 @@
+{
+  "name": "autocontinue gate: the fourth push without a milestone reaches the cap and the stop stands in the journal",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 4770, "assertion": "AUTO_CAP_MILESTONE='auto-continue: cap reached after 3 pushes without progress — allowing the stop'\narm_unattended_run\nauto_cap_verdicts=\" $(auto_stop_verdict \"$(auto_stop_input)\")\"\nfor _ in 1 2 3; do\n  auto_cap_verdicts=\"$auto_cap_verdicts $(auto_stop_verdict \"$(auto_stop_input \"$SESSION\" true)\")\"\ndone" },
+    { "file": "tests/hooks-test.sh", "line": 4776, "assertion": "assert_equals \"three pushes without a milestone between them exhaust the net, and the fourth stop stands in the journal\" \\\n  \"push push push stop|$AUTO_CAP_MILESTONE>\" \\\n  \"${auto_cap_verdicts# }|$(journal_texts_in \"$AUTO_JOURNAL\")\"" }
+  ],
+  "gate": "autocontinue",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n",
+    ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=3\njournal_bytes=0\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":true}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/runs/{repo}/auto-continuity.log": {
+        "journal_texts_in": "auto-continue: cap reached after 3 pushes without progress — allowing the stop"
+      },
+      ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": {
+        "contains": [
+          "pushes=4"
+        ]
+      }
+    },
+    "events_appended": []
+  }
+}

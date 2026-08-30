@@ -1,0 +1,40 @@
+{
+  "name": "a marker-scoped set overwrites ownership and leaves the approval identity",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 2046,
+      "assertion": "assert_equals \"a marker-scoped model write overwrites ownership, not approval\" \\\n  1 \"$(oso-state --session \"$SESSION\" get session)\""
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 2048,
+      "assertion": "assert_equals \"the approval identity survives the marker-scoped write\" \\\n  \"$SESSION\" \"$(oso-state --session \"$SESSION\" get plan_approval_session)\""
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nplan_approval=pending\nplan_approval_digest=d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb\nplan_approval_session=test-session\nplan_snapshot_file={home}/.local/state/oso-code/plans/{repo}/presented-d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb.md\nplan_current_file={home}/.local/state/oso-code/plans/{repo}/current.md\nplan_revision=0\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "1",
+    "set",
+    "mode=plan",
+    "active_slice=none",
+    "verify_green=false"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": {
+        "contains": [
+          "session=1",
+          "plan_approval_session=test-session"
+        ]
+      }
+    }
+  }
+}

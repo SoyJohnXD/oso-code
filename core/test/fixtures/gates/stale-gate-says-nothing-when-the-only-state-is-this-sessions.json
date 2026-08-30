@@ -1,0 +1,19 @@
+{
+  "name": "stale gate: SessionStart says nothing when the only state is this session's",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 6074, "assertion": "assert_allows \"SessionStart says nothing when the only state is this session's\" \\\n  warn-stale-state.sh \"$(stale_session_input)\"" }
+  ],
+  "gate": "stale",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

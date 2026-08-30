@@ -1,0 +1,27 @@
+{
+  "name": "production boundary: npm install --prod vercel@34",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5014,
+      "assertion": "assert_equals \"a package install that merely names a deploy CLI is denied with the deploy it cannot be told apart from, because a runner subcommand grammar this gate does not model is the only thing that could tell them apart\" \\\n  \"deny deny deny deny\" \\\n  \"$(prod_verdicts_for 'npm install vercel@34 --prod' 'npm install --prod vercel@34' \\\n    'npm install vercel --prod' 'npm install --prod vercel')\""
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"npm install --prod vercel@34\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\""
+      ]
+    },
+    "stderr": ""
+  }
+}

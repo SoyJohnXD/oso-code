@@ -1,0 +1,27 @@
+{
+  "name": "production boundary: an unread payload outranks a lexed push in the same line",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5109,
+      "assertion": "assert_equals \"an unread payload outranks a lexed push in the same line, so the boundary refuses that line as one it could not read rather than as a push off the run branch\" \\\n  \"unreadable\" \"$prod_unread_refusal\""
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"env --unknown-option git push origin main\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "past what the production boundary can read"
+      ]
+    },
+    "stderr": ""
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "name": "planstop gate: a marker-only message with no transcript attestation blocks Stop and writes no approval state",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 1469, "assertion": "  'Repaso\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->'; do" },
+    { "file": "tests/hooks-test.sh", "line": 1472, "assertion": "    hook_returned_block\n  assert_equals \"a rejected Stop marker writes no approval state\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1508, "assertion": "    absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"\ndone" },
+    { "file": "tests/hooks-test.sh", "line": 1514, "assertion": "marker_reason_position_count=\"$hook_stdout\"\n\nrun_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input plan \"$SESSION\" \"$PLAN_MARKER\")\"" }
+  ],
+  "gate": "planstop",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".codex/sessions/2026/08/04/stop-plan.jsonl": "{\"timestamp\":\"2026-08-04T16:36:12.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"test-session\"}}\n{\"timestamp\":\"2026-08-04T16:36:12.013Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"turn_id\":\"turn-plan-stop\",\"collaboration_mode_kind\":\"plan\"}}\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":null,\"cwd\":\"{cwd}\",\"permission_mode\":\"plan\",\"hook_event_name\":\"Stop\",\"turn_id\":\"turn-plan-stop\",\"stop_hook_active\":false,\"last_assistant_message\":\"<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{\"decision\":\"block\",\"reason\":\"oso-code: a marker-only response requires Plan Mode for this turn to be attested from the transcript, and none was available.\"}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": null
+    },
+    "events_appended": [
+      {
+        "event": "plan-approval-capture-blocked",
+        "session": "test-session",
+        "command": "",
+        "gate": "capture-plan-approval.sh",
+        "hook_event": "Stop"
+      }
+    ]
+  }
+}

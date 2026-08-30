@@ -1,0 +1,28 @@
+{
+  "name": "journal under an uppercase change slug falls back to the run journal",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 4686,
+      "assertion": "assert_equals \"an over-length or out-of-charset change slug journals under the fallback, never under itself\" \\\n  \"run.log|the slug ran past 64 characters>the slug shouted>the slug carried a space>\" \\\n  \"$(ls \"$JOURNAL_DIR\" 2>/dev/null || true)|$(journal_texts_in \"$JOURNAL_DIR/run.log\")\""
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto_change=Wave-2\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "journal",
+    "the slug shouted"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      ".local/state/oso-code/runs/{repo}/run.log": { "journal_texts_in": "the slug shouted\n" }
+    }
+  }
+}

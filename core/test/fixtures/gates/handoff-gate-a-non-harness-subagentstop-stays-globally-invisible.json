@@ -1,0 +1,22 @@
+{
+  "name": "handoff gate: a non-harness SubagentStop stays globally invisible",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 5258, "assertion": "ignored_payload=\"$(printf '{\\\"session_id\\\":\\\"%s\\\",\\\"cwd\\\":\\\"%s\\\",\\\"hook_event_name\\\":\\\"SubagentStop\\\",\\\"turn_id\\\":\\\"turn-ignored\\\",\\\"agent_id\\\":\\\"agent-ignored\\\",\\\"agent_type\\\":\\\"explorer\\\",\\\"agent_transcript_path\\\":\\\"%s\\\",\\\"stop_hook_active\\\":false,\\\"last_assistant_message\\\":\\\"ordinary exploration report\\\"}' \\\n  \"$SESSION\" \"$IGNORED_HANDOFF_REPO\" \"$TEST_HOME/agent-ignored.jsonl\")\"\nrun_hook \"$HANDOFF_HOOK\" \"$ignored_payload\"" },
+    { "file": "tests/hooks-test.sh", "line": 5262, "assertion": "assert_equals \"a non-harness SubagentStop stays globally invisible\" \\\n  \"rc=0 stdout={} stderr= events=$events_before_ignored\" \\\n  \"rc=$hook_rc stdout=$hook_stdout stderr=$hook_stderr events=$events_after_ignored\"" }
+  ],
+  "gate": "handoff",
+  "argv": [],
+  "env": {},
+  "state_before": {},
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"SubagentStop\",\"turn_id\":\"turn-ignored\",\"agent_id\":\"agent-ignored\",\"agent_type\":\"explorer\",\"agent_transcript_path\":\"{home}/agent-ignored.jsonl\",\"stop_hook_active\":false,\"last_assistant_message\":\"ordinary exploration report\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "events_appended": [],
+    "state_after": {
+      ".local/state/oso-code/.handoffs": null
+    }
+  }
+}

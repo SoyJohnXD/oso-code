@@ -1,0 +1,48 @@
+{
+  "name": "planstop gate: a marker-only Stop reconstructs the exact-turn native Plan item and records pending approval",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 1477, "assertion": "marker_only_plan='Transcript plan heading\\nTranscript plan body'\nmarker_only_plan_document=\"$(printf 'Transcript plan heading\\nTranscript plan body')\"\nmarker_only_digest=\"$(sha256_text \"${marker_only_plan}\\\\n${PLAN_MARKER}\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 1480, "assertion": "run_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input default \"$SESSION\" \"$PLAN_MARKER\" false \"$CODEX_STOP_MARKER_PLAN_TRANSCRIPT\")\"\nassert_after_hook \"marker-only Stop reconstructs the exact-turn native Plan item and records pending approval\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1483, "assertion": "  [ \"$hook_stdout\" = '{}' ]\nassert_equals \"marker-only Stop records pending approval\" pending \\" },
+    { "file": "tests/hooks-test.sh", "line": 1485, "assertion": "  \"$(oso-state --session \"$SESSION\" get plan_approval)\"\nassert_equals \"marker-only Stop binds digest to the Plan item plus marker\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1487, "assertion": "  \"$marker_only_digest\" \"$(oso-state --session \"$SESSION\" get plan_approval_digest)\"\nassert_equals \"marker-only Stop records the presenting session\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1491, "assertion": "marker_only_current_file=\"$REPO_PLAN_DIR/current.md\"\nassert_equals \"marker-only Stop snapshots the exact native Plan item\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1493, "assertion": "  \"$marker_only_plan_document\" \"$(cat \"$marker_only_presented_file\" 2>/dev/null || true)\"\nassert_equals \"marker-only Stop publishes the Plan item as current.md\" \\" }
+  ],
+  "gate": "planstop",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".codex/sessions/2026/08/04/stop-marker-plan.jsonl": "{\"timestamp\":\"2026-08-04T16:36:12.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"test-session\"}}\n{\"timestamp\":\"2026-08-04T16:36:12.013Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"turn_id\":\"turn-plan-stop\",\"collaboration_mode_kind\":\"plan\"}}\n{\"timestamp\":\"2026-08-04T16:36:12.021Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"item_completed\",\"thread_id\":\"test-session\",\"turn_id\":\"turn-plan-stop\",\"item\":{\"type\":\"Plan\",\"id\":\"turn-plan-stop-plan\",\"text\":\"Transcript plan heading\\nTranscript plan body\"}}}\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.codex/sessions/2026/08/04/stop-marker-plan.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"Stop\",\"turn_id\":\"turn-plan-stop\",\"stop_hook_active\":false,\"last_assistant_message\":\"<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": {
+        "contains": [
+          "plan_approval=pending",
+          "plan_approval_digest=b7f91b593f15ebb93a93a943ad043fe78490d173acf27a62847584dca7efe249",
+          "plan_approval_session=test-session",
+          "session=test-session"
+        ]
+      },
+      ".local/state/oso-code/plans/{repo}/presented-b7f91b593f15ebb93a93a943ad043fe78490d173acf27a62847584dca7efe249.md": "Transcript plan heading\nTranscript plan body",
+      ".local/state/oso-code/plans/{repo}/current.md": "Transcript plan heading\nTranscript plan body"
+    },
+    "events_appended": [
+      {
+        "event": "plan-artifact-captured",
+        "session": "test-session",
+        "command": "b7f91b593f15ebb93a93a943ad043fe78490d173acf27a62847584dca7efe249"
+      },
+      {
+        "event": "plan-approval-pending",
+        "session": "test-session"
+      }
+    ]
+  }
+}

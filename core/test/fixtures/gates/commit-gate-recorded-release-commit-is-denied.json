@@ -1,0 +1,27 @@
+{
+  "name": "commit gate: recorded release commit is denied",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 2112,
+      "assertion": "assert_denies \"recorded release commit is denied\" block-commit-until-green.sh \"$(bash_input 'git add -A && git commit -m \\\"feat(harness): one-step Windows installer, hybrid MCP wiring, identity voice, didactic walkthrough (v0.10.0)\\\" && git log --oneline -1 && git status --porcelain | wc -l')\""
+    }
+  ],
+  "gate": "commit",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git add -A && git commit -m \\\"feat(harness): one-step Windows installer, hybrid MCP wiring, identity voice, didactic walkthrough (v0.10.0)\\\" && git log --oneline -1 && git status --porcelain | wc -l\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\""
+      ]
+    },
+    "stderr": ""
+  }
+}

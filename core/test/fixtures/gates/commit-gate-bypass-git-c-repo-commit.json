@@ -1,0 +1,27 @@
+{
+  "name": "commit gate: bypass: git -C <repo> commit",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 2103,
+      "assertion": "assert_denies \"bypass: git -C <repo> commit\"    block-commit-until-green.sh \"$(bash_input 'git -C /repo commit -m x')\""
+    }
+  ],
+  "gate": "commit",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git -C /repo commit -m x\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\""
+      ]
+    },
+    "stderr": ""
+  }
+}

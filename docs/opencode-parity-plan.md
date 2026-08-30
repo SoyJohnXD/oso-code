@@ -416,7 +416,7 @@ Full source: engram #2913 surface map. Condensed traps the slices must respect:
   verify-opencode.sh sigue 14/0 con smoke aislado, YAML parsea (ruby), y la
   simulación de mutación (un wrapper borrado de un repo copia) da rc≠0 y
   nombra "expected exactly 8 OpenCode skill wrappers (found 7)". Entregas:
-  `.github/workflows/ci.yml` — nuevo step ubuntu "OpenCode verify report
+  `.github/workflows/nightly.yml` — nuevo step ubuntu "OpenCode verify report
   reaches its summary" (env OSO_VERIFY_SKIP_SMOKE=1; `cd opencode && npm ci`
   primero porque node_modules está gitignored y sin deps el bar TS falla;
   HOME=$(mktemp -d) bash bootstrap/verify-opencode.sh → report → grep

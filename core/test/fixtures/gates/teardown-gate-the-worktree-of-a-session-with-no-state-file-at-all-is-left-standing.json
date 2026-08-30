@@ -1,0 +1,36 @@
+{
+  "name": "teardown gate: the worktree of a session with no state file at all is left standing",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5888,
+      "assertion": "mkdir -p \"$WORKTREES_DIR/wt-unfound/1\""
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5889,
+      "assertion": "run_hook cleanup-state.sh '{\"session_id\":\"wt-unfound\"}'"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5890,
+      "assertion": "assert_kept \"the worktree of a session with no state file at all is left standing\" \\\n  \"$WORKTREES_DIR/wt-unfound/1\""
+    }
+  ],
+  "gate": "teardown",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/worktrees/wt-unfound/1": {
+      "kind": "directory"
+    }
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"wt-unfound\"}",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      ".local/state/oso-code/worktrees/wt-unfound/1": "{present}"
+    }
+  }
+}

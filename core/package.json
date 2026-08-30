@@ -1,0 +1,14 @@
+{
+  "name": "@oso-code/core",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --import ./test/support/sandbox-env.mjs scripts/check-test-discovery.mjs"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "name": "commit gate: the deny in quick mode names that mode's own path to green",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 2178,
+      "assertion": "  assert_denies \"the commit gate denies red verify in $commit_mode mode\" \\\n    block-commit-until-green.sh \"$(bash_input 'git commit -m x')\""
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 2189,
+      "assertion": "        *'quick'*'close step'*) echo \"ok: quick mode's remedy names its own close step\"; pass=$((pass + 1)) ;;"
+    }
+  ],
+  "gate": "commit",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=quick\nactive_slice=none\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\"",
+        "the session verify is not green",
+        "quick mode's close step"
+      ]
+    },
+    "stderr": ""
+  }
+}

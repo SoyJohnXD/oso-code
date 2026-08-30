@@ -1,0 +1,35 @@
+{
+  "name": "cancel-plan rejects a stale document digest and leaves pending state byte-identical",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 1821,
+      "assertion": "if oso-state --session \"$SESSION\" cancel-plan \"$stale_digest\" >/dev/null 2>&1; then\n  echo \"FAIL: cancel-plan accepted a stale document digest\"; fail=$((fail + 1))\nelse\n  echo \"ok: cancel-plan rejects a stale document digest\"; pass=$((pass + 1))\nfi"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 1826,
+      "assertion": "assert_equals \"a stale cancellation CAS leaves pending state byte-identical\" \\\n  \"$pending_snapshot\" \"$(approval_state_snapshot)\""
+    }
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nplan_approval=pending\nplan_approval_digest=d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb\nplan_approval_session=test-session\nplan_snapshot_file={home}/.local/state/oso-code/plans/{repo}/presented-d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb.md\nplan_current_file={home}/.local/state/oso-code/plans/{repo}/current.md\nplan_revision=0\nsession=test-session\n",
+    ".local/state/oso-code/plans/{repo}/presented-d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb.md": "Identity split fixture plan",
+    ".local/state/oso-code/plans/{repo}/current.md": "Identity split fixture plan"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "cancel-plan",
+    "0000000000000000000000000000000000000000000000000000000000000000"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 1,
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nplan_approval=pending\nplan_approval_digest=d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb\nplan_approval_session=test-session\nplan_snapshot_file={home}/.local/state/oso-code/plans/{repo}/presented-d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb.md\nplan_current_file={home}/.local/state/oso-code/plans/{repo}/current.md\nplan_revision=0\nsession=test-session\n"
+    }
+  }
+}

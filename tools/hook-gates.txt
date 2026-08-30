@@ -1,10 +1,10 @@
 # The gates, once, for every host the harness runs on. tools/render-hooks-json.sh
 # turns this table into each host's manifest: hooks.json for Claude and Codex,
 # and a TypeScript route table (opencode/hooks/routes.ts) for opencode, whose
-# gates are a TS shim rather than subprocess hooks. tests/plugin-lint.sh's
-# check_hook_renders_and_published_hashes_match fails when a committed manifest is
-# not what it renders. Nothing here is written twice: the matcher a host spells
-# for a gate is a cell in this file and nowhere else.
+# gates are a TS shim rather than subprocess hooks. core/src/routes/render.ts renders
+# them now, and this table is read by bootstrap/verify-codex.sh and
+# core/test/structure/routes-match-hook-gates.test.ts. Nothing here is written twice:
+# the matcher a host spells for a gate is a cell in this file and nowhere else.
 #
 # Four record kinds, each labelled by its first field. `host`, `gate` and `tool`
 # each end in ONE CELL PER HOST in the order the `host` rows appear; `recovery`

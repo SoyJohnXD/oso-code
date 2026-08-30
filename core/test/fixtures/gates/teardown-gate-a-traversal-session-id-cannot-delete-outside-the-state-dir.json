@@ -1,0 +1,22 @@
+{
+  "name": "teardown gate: a traversal session id cannot delete outside the state dir",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 5698, "assertion": "touch \"$HOME/canary\"" },
+    { "file": "tests/hooks-test.sh", "line": 5699, "assertion": "run_hook cleanup-state.sh '{\"session_id\":\"../../canary\"}'" },
+    { "file": "tests/hooks-test.sh", "line": 5700, "assertion": "assert_after_hook \"traversal session id cannot delete outside state dir\" [ -f \"$HOME/canary\" ]" }
+  ],
+  "gate": "teardown",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    "canary": "canary\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"../../canary\"}",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      "canary": "canary\n"
+    }
+  }
+}

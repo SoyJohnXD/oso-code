@@ -1,0 +1,35 @@
+{
+  "name": "autocontinue gate: a turn ending on a delegation still in flight is a hold, not a stall",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 4827, "assertion": "arm_unattended_run\nauto_wait_verdicts=\" $(auto_stop_verdict \"$(auto_stop_input)\")\"\noso-state --session \"$SESSION\" set auto_wait=3 >/dev/null\nauto_holds_before=\"$(auto_events_recorded auto-continue-held)\"\nauto_wait_verdicts=\"$auto_wait_verdicts $(auto_stop_verdict \"$(auto_stop_input \"$SESSION\" true)\")\"\nauto_holds_after=\"$(auto_events_recorded auto-continue-held)\"" },
+    { "file": "tests/hooks-test.sh", "line": 4833, "assertion": "assert_equals \"a turn ending on a delegation still in flight is a hold, not a stall: the stop stands and the push tally is left exactly where it was\" \\\n  \"push stop|pushes=1>journal_bytes=0>\" \"${auto_wait_verdicts# }|$(auto_tally_of)\"" },
+    { "file": "tests/hooks-test.sh", "line": 4835, "assertion": "assert_equals \"the held turn leaves one auto-continue-held line, so a net that held on purpose never reads back as one that never ran\" \\\n  \"1\" \"$((auto_holds_after - auto_holds_before))\"" }
+  ],
+  "gate": "autocontinue",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\nauto_wait=3\n",
+    ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=1\njournal_bytes=0\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":true}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=1\njournal_bytes=0\n"
+    },
+    "events_appended": [
+      {
+        "event": "auto-continue-held",
+        "session": "test-session",
+        "command": "3",
+        "schema": 2,
+        "gate": "auto-continue.sh",
+        "hook_event": "Stop"
+      }
+    ]
+  }
+}

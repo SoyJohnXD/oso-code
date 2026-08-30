@@ -1,0 +1,35 @@
+{
+  "name": "autocontinue gate: a held turn spends none of the net, so the tally it inherits is the tally it leaves",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 4858, "assertion": "oso-state --session \"$SESSION\" set auto_wait=wave-2 >/dev/null\nauto_cap_after_holds=\"\"\nfor _ in 1 2 3; do\n  auto_cap_after_holds=\"$auto_cap_after_holds $(auto_stop_verdict \"$(auto_stop_input)\")\"\ndone\noso-state --session \"$SESSION\" set auto_wait=none >/dev/null\nfor _ in 1 2 3 4; do\n  auto_cap_after_holds=\"$auto_cap_after_holds $(auto_stop_verdict \"$(auto_stop_input)\")\"\ndone" },
+    { "file": "tests/hooks-test.sh", "line": 4867, "assertion": "assert_equals \"held turns spend none of the net: a run that stalls after waiting still gets its three pushes and the plain give-up\" \\\n  \"stop stop stop push push push stop|$AUTO_CAP_MILESTONE>\" \\\n  \"${auto_cap_after_holds# }|$(journal_texts_in \"$AUTO_JOURNAL\")\"" }
+  ],
+  "gate": "autocontinue",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\nauto_wait=wave-2\n",
+    ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=2\njournal_bytes=0\n",
+    ".local/state/oso-code/runs/{repo}/test-session.waiting": "run=auto-continuity\nsession=test-session\njournal_bytes=0\nrenewals=0\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=2\njournal_bytes=0\n"
+    },
+    "events_appended": [
+      {
+        "event": "auto-continue-held",
+        "session": "test-session",
+        "command": "wave-2",
+        "schema": 2,
+        "gate": "auto-continue.sh",
+        "hook_event": "Stop"
+      }
+    ]
+  }
+}

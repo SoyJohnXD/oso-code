@@ -1,9 +1,15 @@
-import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import type { OpenCodeGateRoute } from "../../hooks/routes.ts";
+import {
+  hostEnvelope,
+  logEvent,
+  openCodeRoutes,
+  runGate,
+  type GateVerdict,
+  type HookCaller,
+  type HookEnvelope,
+  type OpenCodeRoute,
+} from "@oso-code/core";
 import { publishIdentity } from "./identity.ts";
+import { stateBinPath } from "./installed-tree.ts";
 import { messageOf } from "./wave.ts";
 
 export interface ToolExecuteInput {
@@ -30,59 +36,50 @@ export type AdvisoryOutcome =
   | { kind: "silent" }
   | { kind: "failed"; detail: string };
 
-export type GateVerdictKind = "deny" | "allow" | "block";
+type HostToolVerdictKind = "deny" | "allow" | "block";
 
-export interface GateVerdict {
-  kind: GateVerdictKind;
+export interface HostToolVerdict {
+  kind: HostToolVerdictKind;
   message: string;
 }
 
-export interface RunGateOptions {
-  hooksDir?: string;
-  timeoutMs?: number;
-}
+export const routes: readonly OpenCodeRoute[] = openCodeRoutes();
 
-export const GATE_TIMEOUT_MS = 10_000;
-
-export const denyVerdict = (message: string): GateVerdict => ({
+const denyVerdict = (message: string): HostToolVerdict => ({
   kind: "deny",
   message,
 });
 
-export const blockVerdict = (message: string): GateVerdict => ({
+const blockVerdict = (message: string): HostToolVerdict => ({
   kind: "block",
   message,
 });
 
-const allowVerdict: GateVerdict = { kind: "allow", message: "" };
+const allowVerdict: HostToolVerdict = { kind: "allow", message: "" };
 
-export function composeEnvelope(
-  input: ToolExecuteInput,
-  output: ToolExecuteOutput,
-): Record<string, string> {
-  const args = output.args ?? {};
-  const envelope: Record<string, string> = {
-    command: commandLineFor(args),
-    session_id: input.sessionID ?? "",
-    cwd: input.cwd ?? process.cwd(),
-    tool_name: input.tool,
-  };
-  const filePath = args.filePath;
-  if (typeof filePath === "string" && filePath !== "") {
-    envelope.file_path = filePath;
-  }
-  return envelope;
+export function callerFor(directory: string): HookCaller {
+  return { host: "opencode", agentSession: publishIdentity(directory).OSO_AGENT, stateBin: stateBinPath() };
 }
 
-export function composeLifecycleEnvelope(input: LifecycleGateInput): Record<string, string> {
-  const envelope: Record<string, string> = {
-    session_id: input.sessionID,
+export function composeEnvelope(input: ToolExecuteInput, output: ToolExecuteOutput): HookEnvelope {
+  const cwd = input.cwd ?? process.cwd();
+  const args = output.args ?? {};
+  const filePath = args.filePath;
+  return hostEnvelope(callerFor(cwd), {
+    sessionId: input.sessionID ?? "",
+    cwd,
+    toolName: input.tool,
+    commandLine: commandLineFor(args),
+    filePath: typeof filePath === "string" ? filePath : "",
+  });
+}
+
+export function composeLifecycleEnvelope(input: LifecycleGateInput): HookEnvelope {
+  return hostEnvelope(callerFor(input.directory), {
+    sessionId: input.sessionID,
     cwd: input.directory,
-  };
-  if (input.moment !== "end") {
-    envelope.source = input.moment;
-  }
-  return envelope;
+    source: input.moment === "end" ? "" : input.moment,
+  });
 }
 
 function commandLineFor(args: Record<string, unknown>): string {
@@ -101,8 +98,8 @@ export function matchesTool(matcher: string, tool: string): boolean {
   return routeMatcher(matcher).test(tool);
 }
 
-export function assertGateRoutesCompile(routes: readonly OpenCodeGateRoute[]): void {
-  for (const route of routes) {
+export function assertGateRoutesCompile(gateRoutes: readonly OpenCodeRoute[]): void {
+  for (const route of gateRoutes) {
     routeMatcher(route.matcher);
   }
 }
@@ -118,200 +115,65 @@ function routeMatcher(matcher: string): RegExp {
   }
 }
 
-export function resolveHookScript(
-  script: string,
-  hooksDir?: string,
-): string {
-  if (hooksDir !== undefined && hooksDir !== "") {
-    return join(hooksDir, script);
-  }
-  const explicit = process.env.OSO_HOOKS_DIR;
-  if (explicit !== undefined && explicit !== "") {
-    return join(explicit, script);
-  }
-  const installedHooksDir = dirname(fileURLToPath(import.meta.url));
-  return resolve(installedHooksDir, "../../hooks", script);
+export function routeForGate(
+  gateRoutes: readonly OpenCodeRoute[],
+  gate: string,
+): OpenCodeRoute | undefined {
+  return gateRoutes.find((route) => route.gate === gate);
 }
 
-export function resolveStateBin(hooksDir?: string): string {
-  const dir = resolveHookScript("", hooksDir);
-  return resolve(dir, "..", "bin", "oso-state");
+function argvFor(route: OpenCodeRoute): string[] {
+  return route.allow.length > 0 ? [route.gate, "--allow", route.allow.join("|")] : [route.gate];
 }
 
-function gateEnvironment(directory: string, resolvedScript: string): NodeJS.ProcessEnv {
-  return {
-    ...process.env,
-    OSO_AGENT: publishIdentity(directory).OSO_AGENT,
-    OSO_HOST: "opencode",
-    OSO_STATE_BIN: resolveStateBin(dirname(resolvedScript)),
-  };
-}
-
-type GateRun =
-  | { kind: "ran"; status: number; stdout: string; stderr: string }
+type GateJudgement =
+  | { kind: "judged"; verdict: GateVerdict; stderr: string }
   | { kind: "unusable"; detail: string };
 
-interface GateInvocation {
-  script: string;
-  allow: readonly string[];
-  envelope: Record<string, string>;
-  cwd: string;
-  env: NodeJS.ProcessEnv;
-  timeoutMs: number;
+function judge(route: OpenCodeRoute, envelope: HookEnvelope): GateJudgement {
+  try {
+    const run = runGate(argvFor(route), envelope);
+    for (const event of run.events) {
+      logEvent(event);
+    }
+    return { kind: "judged", verdict: run.verdict, stderr: run.stderr };
+  } catch (err) {
+    return { kind: "unusable", detail: `the ${route.gate} gate could not run: ${messageOf(err)}` };
+  }
 }
 
-function invokeGate(invocation: GateInvocation): GateRun {
-  const { script, envelope, cwd, env, timeoutMs } = invocation;
-  const args = [script];
-  if (invocation.allow.length > 0) {
-    args.push("--allow", invocation.allow.join("|"));
-  }
-  const result = spawnSync("bash", args, {
-    input: JSON.stringify(envelope),
-    encoding: "utf8",
-    timeout: timeoutMs,
-    cwd,
-    env,
-  });
-  if (result.signal !== null) {
-    return { kind: "unusable", detail: `gate timed out or was killed: ${script}` };
-  }
-  if ((result.error as NodeJS.ErrnoException | undefined)?.code === "EPIPE") {
-    return { kind: "unusable", detail: `gate exited before reading its envelope: ${script}` };
-  }
-  if (result.error !== undefined) {
-    return { kind: "unusable", detail: `gate failed to start: ${result.error.message}` };
-  }
-  return { kind: "ran", status: result.status ?? -1, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
+function failureDetail(gate: string, stderr: string): string {
+  const reported = stderr.trim();
+  return reported !== "" ? reported : `oso-code: gate ${gate} failed unexpectedly and reported no cause`;
 }
 
-export function runGate(
-  route: OpenCodeGateRoute,
+export function runToolGate(
+  route: OpenCodeRoute,
   input: ToolExecuteInput,
   output: ToolExecuteOutput,
-  options: RunGateOptions = {},
-): GateVerdict {
-  const script = resolveHookScript(route.script, options.hooksDir);
-  if (!existsSync(script)) {
-    return blockVerdict(`oso-code: gate script not found: ${script}`);
+): HostToolVerdict {
+  const judged = judge(route, composeEnvelope(input, output));
+  if (judged.kind === "unusable") {
+    return blockVerdict(`oso-code: ${judged.detail}`);
   }
-  const callDirectory = input.cwd ?? process.cwd();
-  const run = invokeGate({
-    script,
-    allow: route.allow,
-    envelope: composeEnvelope(input, output),
-    cwd: callDirectory,
-    env: gateEnvironment(callDirectory, script),
-    timeoutMs: options.timeoutMs ?? GATE_TIMEOUT_MS,
-  });
-  if (run.kind === "unusable") {
-    return blockVerdict(`oso-code: ${run.detail}`);
+  if (judged.verdict.kind === "deny") {
+    return denyVerdict(judged.verdict.message);
   }
-  return translateGateResult(run.status, run.stdout, run.stderr, script);
+  if (judged.verdict.kind === "gateError") {
+    return blockVerdict(failureDetail(route.gate, judged.stderr));
+  }
+  return allowVerdict;
 }
 
-export function runAdvisoryGate(
-  route: OpenCodeGateRoute,
-  input: LifecycleGateInput,
-  options: RunGateOptions = {},
-): AdvisoryOutcome {
-  const script = resolveHookScript(route.script, options.hooksDir);
-  if (!existsSync(script)) {
-    return { kind: "failed", detail: `gate script not found: ${script}` };
+export function runAdvisoryGate(route: OpenCodeRoute, input: LifecycleGateInput): AdvisoryOutcome {
+  const judged = judge(route, composeLifecycleEnvelope(input));
+  if (judged.kind === "unusable") {
+    return { kind: "failed", detail: judged.detail };
   }
-  const run = invokeGate({
-    script,
-    allow: route.allow,
-    envelope: composeLifecycleEnvelope(input),
-    cwd: input.directory,
-    env: gateEnvironment(input.directory, script),
-    timeoutMs: options.timeoutMs ?? GATE_TIMEOUT_MS,
-  });
-  if (run.kind === "unusable") {
-    return { kind: "failed", detail: run.detail };
+  if (judged.verdict.kind === "gateError") {
+    return { kind: "failed", detail: failureDetail(route.gate, judged.stderr) };
   }
-  if (run.status !== 0) {
-    const stderr = run.stderr.trim();
-    return { kind: "failed", detail: stderr !== "" ? stderr : `gate ${script} exited ${run.status}` };
-  }
-  const context = additionalContextOf(run.stdout);
-  return context === null ? { kind: "silent" } : { kind: "context", text: context };
-}
-
-export function routeForGate(
-  routes: readonly OpenCodeGateRoute[],
-  gate: string,
-): OpenCodeGateRoute | undefined {
-  return routes.find((route) => route.gate === gate);
-}
-
-function translateGateResult(
-  status: number,
-  stdout: string,
-  stderr: string,
-  script: string,
-): GateVerdict {
-  if (status === 0) {
-    const decision = denyDecision(stdout);
-    if (decision !== null) {
-      return denyVerdict(decision);
-    }
-    return allowVerdict;
-  }
-  const message = stderr.trim() !== ""
-    ? stderr.trim()
-    : `oso-code: gate ${script} failed unexpectedly (exit ${status})`;
-  return blockVerdict(message);
-}
-
-export interface HarnessInstallStatus {
-  installed: boolean;
-  missing: readonly string[];
-}
-
-export function checkHarnessInstalled(
-  routes: readonly OpenCodeGateRoute[],
-  options: RunGateOptions = {},
-): HarnessInstallStatus {
-  const scripts = new Set(routes.map((route) => resolveHookScript(route.script, options.hooksDir)));
-  const missing = [...scripts].filter((script) => !existsSync(script));
-  return { installed: missing.length === 0, missing };
-}
-
-function hookSpecificOutput(stdout: string): Record<string, unknown> | null {
-  const trimmed = stdout.trim();
-  if (trimmed === "") {
-    return null;
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch {
-    return null;
-  }
-  if (typeof parsed !== "object" || parsed === null) {
-    return null;
-  }
-  const hookOutput = (parsed as { hookSpecificOutput?: unknown }).hookSpecificOutput;
-  if (typeof hookOutput !== "object" || hookOutput === null) {
-    return null;
-  }
-  return hookOutput as Record<string, unknown>;
-}
-
-function denyDecision(stdout: string): string | null {
-  const hookOutput = hookSpecificOutput(stdout);
-  if (hookOutput === null || hookOutput.permissionDecision !== "deny") {
-    return null;
-  }
-  const reason = hookOutput.permissionDecisionReason;
-  if (typeof reason === "string" && reason !== "") {
-    return reason;
-  }
-  return "oso-code: tool denied by gate";
-}
-
-function additionalContextOf(stdout: string): string | null {
-  const context = hookSpecificOutput(stdout)?.additionalContext;
-  return typeof context === "string" && context !== "" ? context : null;
+  return judged.verdict.kind === "context"
+    ? { kind: "context", text: judged.verdict.additionalContext }
+    : { kind: "silent" };
 }

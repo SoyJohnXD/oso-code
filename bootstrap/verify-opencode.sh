@@ -297,27 +297,14 @@ opencode_command_status() {
 }
 
 opencode_plugin_status() {
-  local module rel source_count=0 installed_count=0 test_count=0 divergent=""
-  cmp -s "$REPO_ROOT/opencode/plugin/oso-code.ts" "$LOCAL_FIXTURE_CONFIG_HOME/plugin/oso-code.ts" \
+  local module source_count=0
+  cmp -s "$REPO_ROOT/opencode/dist/oso-code.js" "$LOCAL_FIXTURE_CONFIG_HOME/plugin/oso-code.js" \
     || { printf entry-divergent; return; }
-  for module in "$REPO_ROOT"/opencode/plugin/oso/*.ts; do
-    case "$(basename "$module")" in *.test.ts) continue ;; esac
+  for module in "$LOCAL_FIXTURE_CONFIG_HOME"/plugin/*.ts "$LOCAL_FIXTURE_CONFIG_HOME"/plugin/oso; do
+    [ -e "$module" ] || continue
     source_count=$((source_count + 1))
-    rel="$(basename "$module")"
-    cmp -s "$module" "$LOCAL_FIXTURE_CONFIG_HOME/plugin/oso/$rel" || divergent="$divergent $rel"
   done
-  for module in "$LOCAL_FIXTURE_CONFIG_HOME"/plugin/oso/*.ts; do
-    [ -f "$module" ] || continue
-    case "$(basename "$module")" in
-      *.test.ts) test_count=$((test_count + 1)) ;;
-      *) installed_count=$((installed_count + 1)) ;;
-    esac
-  done
-  [ "$source_count" -eq "$installed_count" ] || { printf 'count:%s!=%s' "$source_count" "$installed_count"; return; }
-  [ "$test_count" -eq 0 ] || { printf 'tests-installed:%s' "$test_count"; return; }
-  [ -z "$divergent" ] || { printf 'divergent:%s' "$divergent"; return; }
-  cmp -s "$REPO_ROOT/opencode/hooks/routes.ts" "$LOCAL_FIXTURE_CONFIG_HOME/hooks/routes.ts" \
-    || { printf routes-divergent; return; }
+  [ "$source_count" -eq 0 ] || { printf 'unbundled-sources:%s' "$source_count"; return; }
   printf exact
 }
 
@@ -361,7 +348,6 @@ opencode_registry_status() {
     "$LOCAL_FIXTURE_CONFIG_HOME/agent" \
     "$LOCAL_FIXTURE_CONFIG_HOME/command" \
     "$LOCAL_FIXTURE_CONFIG_HOME/plugin" \
-    "$LOCAL_FIXTURE_CONFIG_HOME/hooks/routes.ts" \
     "$LOCAL_FIXTURE_CONFIG_HOME/bin/oso-state" \
     "$LOCAL_FIXTURE_CONFIG_HOME/git-hooks/pre-commit" \
     "$LOCAL_FIXTURE_CONFIG_HOME"/hooks/*.sh; do
@@ -403,7 +389,6 @@ run_shell_syntax() {
     "$REPO_ROOT"/plugin/hooks/*.sh \
     "$REPO_ROOT"/tests/*.sh \
     "$REPO_ROOT"/tests/fixtures/*.sh \
-    "$REPO_ROOT/plugin/bin/oso-state" \
     "$REPO_ROOT/plugin/git-hooks/pre-commit"; do
     [ -f "$file" ] || continue
     bash -n "$file" >/dev/null 2>&1 || bad="$bad $(basename "$file")"

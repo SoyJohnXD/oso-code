@@ -1,0 +1,44 @@
+{
+  "name": "unknown-tool gate: the pending session's own Bash call is denied with the pending message",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 1257,
+      "assertion": "assert_after_hook \"the pending session's own Bash call is still denied while its plan is pending\" \\\n  hook_returned_deny"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 1261,
+      "assertion": "    echo \"ok: the scoped pending denial keeps the existing pending message\"; pass=$((pass + 1)) ;;"
+    }
+  ],
+  "gate": "unknown",
+  "argv": [
+    "--allow",
+    "Bash|apply_patch|send_input|resume_agent|close_agent|collaborationspawn_agent|collaborationsend_message|collaborationfollowup_task|collaborationwait_agent|collaborationinterrupt_agent|collaborationlist_agents"
+  ],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nplan_approval=pending\nplan_approval_session=pending-owner-session\nsession=pending-owner-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"pending-owner-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "plan approval is pending. Use Codex native",
+        "approval, or send exactly CANCEL OSO PLAN to abandon it, before using local tools."
+      ]
+    },
+    "stderr": "",
+    "events_appended": [
+      {
+        "event": "plan-approval-pending-denied",
+        "session": "pending-owner-session",
+        "gate": "block-unknown-tool.sh",
+        "hook_event": "PreToolUse"
+      }
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "production boundary: an unmarked repository deploys untouched — git push origin main",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5138,
+      "assertion": "assert_equals \"a parked run, a finished one, an attended session, an unmarked repository and a foreign session all deploy untouched\" \\\n  \"allow allow allow allow allow allow allow allow allow\" \"${prod_settled_verdicts# }\""
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {},
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push origin main\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

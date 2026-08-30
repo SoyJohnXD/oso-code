@@ -1,17 +1,21 @@
 # SHA-256 hashes published with the release for the Codex hook trust boundary,
-# plus the opencode route table an executable gate tree now depends on.
+# plus the committed opencode plugin bundle that host loads.
 # Format: <64 lowercase hex><two spaces><path relative to the repo root>
 #
 # Coverage and order are verified, not inferred from this file: the rendered
-# Codex manifest, the git commit boundary, every Codex-wired handler in
-# hook-gates.txt (deduplicated in table order), the handoff handler's oso-state
-# dependency, the shared lib.sh and lexer.sh dependencies, then the rendered
-# opencode route table. A handler the table wires on Claude alone is excluded,
-# because nothing on Codex installs it. An installer reads these expected
-# hashes and compares installed bytes; it must never replace them with hashes
-# it calculated.
-0a0af89bcfc8f2cac58a5f68292018bcae06760aab1426da1e27cc11d42596ce  codex/hooks/hooks.json
-2c5aa0fe342350c72e8ff4225ccaeec2cca4fdc1b9d297dd547704134313e2bb  plugin/git-hooks/pre-commit
+# Codex manifest, the committed gate and pre-commit bundles with the module
+# marker beside them, the git commit boundary, every Codex-wired handler in
+# core/src/routes/routes.ts (deduplicated in table order), the handoff
+# handler's oso-state dependency, the shared lib.sh and lexer.sh dependencies,
+# then the committed opencode plugin bundle. A handler the table wires on Claude
+# alone is excluded, because nothing on Codex installs it. An installer reads
+# these expected hashes and compares installed bytes; it must never replace
+# them with hashes it calculated.
+851ffba1e606ad5ea0d2b6bdcf684c562080c3ea1e2520c8a97bb0e49f0927f9  codex/hooks/hooks.json
+517d4d7dc5265c997dde95989677ec3efc7f4f11fc6b4cd86f36ee892ff3367b  plugin/dist/gate.js
+2dd188139f4480782bba72083a0dc4413f160a16a3d37692bc49b9b0b438795a  plugin/dist/precommit.js
+609158e6c5fbc237939fa3ddf7faab80ab690bdc0c8d584414a885130103c4e8  plugin/dist/package.json
+3aaa67c6df371430b5ec708eb9f7314104998fde2507d25a02a3c419435e30dc  plugin/git-hooks/pre-commit
 ec9474d1a88bdaeb41ce171da62ae9a00280693097462dce9f3f2d3af343da6a  plugin/hooks/block-commit-until-green.sh
 71a62354ab8073e834c4c2633df5cfd1655f26b0c3cd552d92051e8646077f82  plugin/hooks/block-edits-without-slice.sh
 b66d37f8f8b0e67e70b83f595720cc1980c7cc7524df1d0f41d55e3b43f9c49b  plugin/hooks/block-unknown-tool.sh
@@ -21,8 +25,9 @@ fb2b8f0c51fc7e090ed51bfce8b70393a380012b23b98f0e9245883f3ea32cb7  plugin/hooks/c
 2011057b43b6e438c5007a97805e0599eab92ab6f5a5bc7b88fa75b74cd77c93  plugin/hooks/warn-stale-state.sh
 2fa2b0b8d9431dcf49cc39efaf216515e4ac8f15fcc2e460384977ccc1a73f1f  plugin/hooks/cleanup-state.sh
 db4216aae259e4a50c17e6753c9b8f9651d43ed33fd70310f393768701a9bf0a  plugin/hooks/block-prod-deploy.sh
-5d47859e57e39757d4be20ada63401e9d03c4c3c5b266ffc1bf3ca41f49c5181  plugin/bin/oso-state
+74b2ca93f6133e355b2b624e7b716c88762578c1710e4a17be9be7015a54f2a2  plugin/bin/oso-state
+609158e6c5fbc237939fa3ddf7faab80ab690bdc0c8d584414a885130103c4e8  plugin/bin/package.json
 214ad5e41b9c1d42a4a5a7eeb3dd0c27809ec089a43fc7241ce42e21960fb40f  plugin/hooks/lib.sh
 3b9821683e46e56ca2f3aff703d2f3ecbfa042f57be0ac8a3aa5d36a1166a5ff  plugin/hooks/lexer.sh
 4fae3fb38808ea6ea401f6a2a28c5cac914e8db88554d03d477e1424ac9b80a8  plugin/hooks/reanchor-after-compact.sh
-7e5a32f9f43117f0c882d04f181755ff13cef3463c087b578f4ef0f1792b149b  opencode/hooks/routes.ts
+8b21831cf5de8fa0f571f9ee604a794f37bab199e2590471dee1364d4bcc5b1d  opencode/dist/oso-code.js

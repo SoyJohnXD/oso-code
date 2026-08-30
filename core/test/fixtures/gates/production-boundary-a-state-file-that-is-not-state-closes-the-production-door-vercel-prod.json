@@ -1,0 +1,27 @@
+{
+  "name": "production boundary: a state file that is not state closes the production door — vercel --prod",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5150,
+      "assertion": "assert_equals \"a state file the gate cannot read as state closes the production door and nothing else\" \\\n  \"deny allow allow deny allow\" \"$prod_uncertain_verdicts\""
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "this file is not state at all\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"vercel --prod\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\""
+      ]
+    },
+    "stderr": ""
+  }
+}

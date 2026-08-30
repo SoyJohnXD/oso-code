@@ -1,0 +1,25 @@
+{
+  "name": "teardown gate: an aged event log rotates to .1 and the next append starts a fresh one",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 5856, "assertion": "printf '{\"event\":\"aged\"}\\n' > \"$events_log\"" },
+    { "file": "tests/hooks-test.sh", "line": 5857, "assertion": "touch -t 200001010000 \"$events_log\"" },
+    { "file": "tests/hooks-test.sh", "line": 5869, "assertion": "run_hook cleanup-state.sh \"$(printf '{\"session_id\":\"%s\"}' \"$SESSION\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 5860, "assertion": "if [ -z \"$hook_problem\" ] && grep -q '\"event\":\"aged\"' \"${events_log}.1\" 2>/dev/null &&" },
+    { "file": "tests/hooks-test.sh", "line": 5861, "assertion": "   ! grep -q '\"event\":\"aged\"' \"$events_log\" 2>/dev/null; then" }
+  ],
+  "gate": "teardown",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/events.jsonl": { "kind": "file", "content": "{\"event\":\"aged\"}\n", "aged": true }
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\"}",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      ".local/state/oso-code/events.jsonl.1": { "contains": ["\"event\":\"aged\""] },
+      ".local/state/oso-code/events.jsonl": null
+    }
+  }
+}

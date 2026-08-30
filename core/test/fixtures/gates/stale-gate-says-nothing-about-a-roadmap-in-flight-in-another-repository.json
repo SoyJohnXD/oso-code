@@ -1,0 +1,20 @@
+{
+  "name": "stale gate: SessionStart says nothing about a roadmap in flight in another repository",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 6126, "assertion": "printf 'mode=plan\\nsession=other-session\\nroadmap=auth-hardening\\n' > \"$STATE_DIR/other-roadmap.state\"" },
+    { "file": "tests/hooks-test.sh", "line": 6127, "assertion": "assert_allows \"SessionStart says nothing about a roadmap in flight in another repository\" \\\n  warn-stale-state.sh \"$(stale_session_input)\"" }
+  ],
+  "gate": "stale",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/other-roadmap.state": "mode=plan\nsession=other-session\nroadmap=auth-hardening\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "name": "planstop gate: a marker-only Stop with a Plan item that carries the marker itself blocks Stop and writes no approval state",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 1496, "assertion": "oso-state --session \"$SESSION\" clear\n\nfor marker_only_bad_transcript in \\\n  \"$CODEX_STOP_NO_PLAN_TRANSCRIPT\" \\\n  \"$CODEX_STOP_FOREIGN_PLAN_TRANSCRIPT\" \\\n  \"$CODEX_STOP_DUPLICATE_PLAN_TRANSCRIPT\" \\\n  \"$CODEX_STOP_EMPTY_PLAN_TRANSCRIPT\"; do\n  run_hook \"$PLAN_STOP_HOOK\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1504, "assertion": "    \"$(codex_stop_input default \"$SESSION\" \"$PLAN_MARKER\" false \"$marker_only_bad_transcript\")\"\n  assert_after_hook \"marker-only Stop rejects missing, foreign, duplicate or empty native Plan items\" \\" },
+    { "file": "tests/hooks-test.sh", "line": 1506, "assertion": "    hook_returned_block\n  assert_equals \"a rejected marker-only Plan item writes no approval state\" \\" }
+  ],
+  "gate": "planstop",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".codex/sessions/2026/08/04/stop-self-marker-plan.jsonl": "{\"timestamp\":\"2026-08-04T16:36:12.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"test-session\"}}\n{\"timestamp\":\"2026-08-04T16:36:12.013Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"turn_id\":\"turn-plan-stop\",\"collaboration_mode_kind\":\"plan\"}}\n{\"timestamp\":\"2026-08-04T16:36:12.021Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"item_completed\",\"thread_id\":\"test-session\",\"turn_id\":\"turn-plan-stop\",\"item\":{\"type\":\"Plan\",\"id\":\"turn-plan-stop-plan\",\"text\":\"Plan text\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\"}}}\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.codex/sessions/2026/08/04/stop-self-marker-plan.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"Stop\",\"turn_id\":\"turn-plan-stop\",\"stop_hook_active\":false,\"last_assistant_message\":\"<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{\"decision\":\"block\",\"reason\":\"oso-code: the transcript's Plan item text must not itself carry an approval marker.\"}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": null
+    },
+    "events_appended": [
+      {
+        "event": "plan-approval-capture-blocked",
+        "session": "test-session",
+        "command": "",
+        "gate": "capture-plan-approval.sh",
+        "hook_event": "Stop"
+      }
+    ]
+  }
+}

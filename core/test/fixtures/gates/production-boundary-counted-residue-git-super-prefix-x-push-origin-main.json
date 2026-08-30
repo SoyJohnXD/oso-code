@@ -1,0 +1,28 @@
+{
+  "name": "production boundary, counted residue: git --super-prefix x/ push origin main",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 5112,
+      "assertion": "assert_equals \"an unresolved git option shape, a command word only the shell resolves and an interpreter's deploy payload all pass counted, exactly as the commit rail counts them\" \\\n  \"allow allow allow 3\" \\\n  \"$(prod_verdicts_and_residues_for 'git --super-prefix x/ push origin main' \\\n    'python3 deploy.py' '$DEPLOY --prod')\""
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git --super-prefix x/ push origin main\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": "",
+    "events_appended": [
+      {
+        "event": "residue-allowed"
+      }
+    ]
+  }
+}

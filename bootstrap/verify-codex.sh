@@ -196,10 +196,14 @@ installed_trust_status() {
       codex/hooks/hooks.json)
         installed="$HOOKS_FILE"
         if [ -f "$installed" ]; then
-          actual="$(sed "s|$escaped_runtime/hooks|__OSO_HOOKS_DIR__|g" "$installed" | sha256_stream)"
+          actual="$(sed "s|$escaped_runtime/dist|__OSO_HOOKS_DIR__|g" "$installed" | sha256_stream)"
         else
           actual=""
         fi
+        ;;
+      plugin/dist/*)
+        installed="$RUNTIME_ROOT/dist/${relative#plugin/dist/}"
+        actual="$(sha256_file "$installed")"
         ;;
       plugin/hooks/*)
         installed="$RUNTIME_ROOT/hooks/${relative#plugin/hooks/}"

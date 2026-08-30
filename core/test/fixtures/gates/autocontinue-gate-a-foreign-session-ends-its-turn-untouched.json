@@ -1,0 +1,21 @@
+{
+  "name": "autocontinue gate: a foreign session ends its turn untouched",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 4750, "assertion": "arm_unattended_run\nauto_settled_verdicts=\"$auto_settled_verdicts $(auto_stop_verdict \"$(auto_stop_input another-session)\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 4752, "assertion": "assert_equals \"a parked run, a finished one, an unmarked repository and a foreign session all end their turn untouched\" \\\n  \"stop stop stop stop\" \"${auto_settled_verdicts# }\"" }
+  ],
+  "gate": "autocontinue",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"another-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "events_appended": []
+  }
+}

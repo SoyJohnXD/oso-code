@@ -1,0 +1,35 @@
+{
+  "name": "planprompt gate: the exact same-session cancellation works in Plan Mode and removes the pending state",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 1784, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'CANCEL OSO PLAN' \"$CODEX_PROMPT_PLAN_TRANSCRIPT\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 1786, "assertion": "assert_after_hook \"the exact same-session cancellation works in Plan Mode\" \\\n  hook_returned_prompt_context" },
+    { "file": "tests/hooks-test.sh", "line": 1788, "assertion": "assert_equals \"Plan Mode cancellation removes pending state\" \\\n  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"" }
+  ],
+  "gate": "planprompt",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nplan_approval=pending\nplan_approval_digest=a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc\nplan_approval_session=test-session\nplan_snapshot_file={home}/.local/state/oso-code/plans/{repo}/presented-a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc.md\nplan_current_file={home}/.local/state/oso-code/plans/{repo}/current.md\nplan_revision=0\nsession=test-session\n",
+    ".local/state/oso-code/plans/{repo}/presented-a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc.md": "Repaso de cambios\nFull slice plan: alpha",
+    ".local/state/oso-code/plans/{repo}/current.md": "Repaso de cambios\nFull slice plan: alpha",
+    ".codex/sessions/2026/08/04/prompt-plan.jsonl": "{\"timestamp\":\"2026-08-04T16:36:12.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"test-session\"}}\n{\"timestamp\":\"2026-08-04T16:36:12.013Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"turn_id\":\"turn-plan-prompt\",\"collaboration_mode_kind\":\"plan\"}}\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.codex/sessions/2026/08/04/prompt-plan.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"UserPromptSubmit\",\"turn_id\":\"turn-plan-prompt\",\"prompt\":\"CANCEL OSO PLAN\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"oso-code: CANCEL OSO PLAN accepted for the exact pending document. Its runtime state was cleared; do not execute that plan.\"}}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": null,
+      ".local/state/oso-code/plans/{repo}/presented-a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc.md": null,
+      ".local/state/oso-code/plans/{repo}/current.md": null
+    },
+    "events_appended": [
+      {
+        "event": "plan-approval-cancelled",
+        "session": "test-session"
+      }
+    ]
+  }
+}

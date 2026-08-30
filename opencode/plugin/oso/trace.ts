@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { logEvent } from "@oso-code/core";
 
 export type TraceSeverity = "enforcement" | "advisory";
 export type TraceSinkName = "state" | "log" | "toast";
@@ -17,8 +17,6 @@ export interface TraceSinkResult {
 }
 
 export const TRACE_SINK_ORDER: readonly TraceSinkName[] = ["state", "log", "toast"];
-
-const STATE_TRACE_TIMEOUT_MS = 5_000;
 
 export function recordTrace(input: TraceInput): TraceSinkResult[] {
   const severity = input.severity ?? "advisory";
@@ -45,12 +43,7 @@ function tryStateSink(origin: string, detail: string, sessionID: string | undefi
     return false;
   }
   try {
-    const bin = process.env.OSO_STATE_BIN ?? "oso-state";
-    const result = spawnSync(bin, ["--session", sessionID, "event", origin, detail], {
-      encoding: "utf8",
-      timeout: STATE_TRACE_TIMEOUT_MS,
-    });
-    return result.error === undefined && result.status === 0;
+    return logEvent({ event: origin, session: sessionID, command: detail });
   } catch {
     return false;
   }

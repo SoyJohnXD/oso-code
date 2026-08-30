@@ -1,0 +1,27 @@
+{
+  "name": "production boundary: pnpm dlx vercel --target production",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 4994,
+      "assertion": "assert_equals \"every built-in production shape is denied while the run is in flight\" \\\n  \"deny deny deny deny deny deny\" \\\n  \"$(prod_verdicts_for 'vercel --prod' 'vercel deploy --prod --yes' 'npx vercel --prod' \\\n    'pnpm dlx vercel --target production' 'netlify deploy --prod' 'firebase deploy')\""
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"pnpm dlx vercel --target production\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\""
+      ]
+    },
+    "stderr": ""
+  }
+}

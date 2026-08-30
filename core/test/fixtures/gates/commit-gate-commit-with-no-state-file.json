@@ -1,0 +1,21 @@
+{
+  "name": "commit gate: commit with no state file",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 2093,
+      "assertion": "assert_allows \"commit with no state file\"  block-commit-until-green.sh \"$(bash_input 'git commit -m x')\""
+    }
+  ],
+  "gate": "commit",
+  "argv": [],
+  "env": {},
+  "state_before": {},
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "name": "planprompt gate: a different session cannot cancel the pending document",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 1777, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default other-session 'CANCEL OSO PLAN')\"" },
+    { "file": "tests/hooks-test.sh", "line": 1779, "assertion": "assert_after_hook \"a different session cannot cancel the pending document\" \\\n  hook_returned_block" },
+    { "file": "tests/hooks-test.sh", "line": 1781, "assertion": "assert_equals \"a wrong-session cancellation does not erase pending state\" \\\n  \"$cancel_pending_snapshot\" \"$(approval_state_snapshot)\"" }
+  ],
+  "gate": "planprompt",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nplan_approval=pending\nplan_approval_digest=a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc\nplan_approval_session=test-session\nplan_snapshot_file={home}/.local/state/oso-code/plans/{repo}/presented-a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc.md\nplan_current_file={home}/.local/state/oso-code/plans/{repo}/current.md\nplan_revision=0\nsession=test-session\n",
+    ".local/state/oso-code/plans/{repo}/presented-a58ab4a249c56588a8bc6f00bb63e784ab355a30e0d9be3ceecff433bfec0ddc.md": "Repaso de cambios\nFull slice plan: alpha",
+    ".local/state/oso-code/plans/{repo}/current.md": "Repaso de cambios\nFull slice plan: alpha"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"other-session\",\"transcript_path\":null,\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"UserPromptSubmit\",\"turn_id\":\"turn-plan-prompt\",\"prompt\":\"CANCEL OSO PLAN\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{\"decision\":\"block\",\"reason\":\"oso-code: this plan-control prompt does not belong to the session that presented the pending plan.\"}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": {
+        "contains": [
+          "plan_approval=pending"
+        ]
+      }
+    },
+    "events_appended": []
+  }
+}

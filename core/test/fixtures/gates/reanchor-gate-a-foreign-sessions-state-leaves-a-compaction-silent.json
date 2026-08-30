@@ -1,0 +1,28 @@
+{
+  "name": "reanchor gate: a foreign session's state leaves a compaction silent",
+  "source": [
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6355,
+      "assertion": "arm_compacted_slice"
+    },
+    {
+      "file": "tests/hooks-test.sh",
+      "line": 6356,
+      "assertion": "reanchor_uncertain_verdicts=\"$reanchor_uncertain_verdicts $(reanchor_verdict \"$(reanchor_input compact another-session)\")\""
+    }
+  ],
+  "gate": "reanchor",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=3\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"another-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"SessionStart\",\"source\":\"compact\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

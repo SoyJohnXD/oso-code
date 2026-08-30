@@ -1,0 +1,43 @@
+{
+  "name": "autocontinue gate: a second delegation under one label restarts the belief window where the run has moved since the sighting",
+  "source": [
+    { "file": "tests/hooks-test.sh", "line": 4917, "assertion": "oso-state --session \"$SESSION\" set auto_wait=slice-21 >/dev/null\nauto_second_wait_verdicts=\" $(auto_stop_verdict \"$(auto_stop_input)\")\"\ntouch -t 200001010000 \"$AUTO_WAIT_MARK\"\njournal_milestone 'slice 21 applier reported; the verifier for the same slice is launched'\nauto_second_wait_verdicts=\"$auto_second_wait_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"\ntouch -t 200001010000 \"$AUTO_WAIT_MARK\"\nauto_second_wait_verdicts=\"$auto_second_wait_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"" },
+    { "file": "tests/hooks-test.sh", "line": 4924, "assertion": "assert_equals \"a second delegation under one label is a wait of its own: the belief window restarts where the run has moved since the sighting, and still expires where it has not\" \\\n  \"stop stop push\" \"${auto_second_wait_verdicts# }\"\n" }
+  ],
+  "gate": "autocontinue",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\nauto_wait=slice-21\n",
+    ".local/state/oso-code/runs/{repo}/auto-continuity.log": "2026-08-27T00:00:00Z slice 21 applier reported; the verifier for the same slice is launched\n",
+    ".local/state/oso-code/runs/{repo}/test-session.waiting": {
+      "kind": "file",
+      "content": "run=auto-continuity\nsession=test-session\njournal_bytes=0\nrenewals=0\n",
+      "aged": true
+    }
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/runs/{repo}/test-session.waiting": {
+        "contains": [
+          "renewals=1"
+        ]
+      }
+    },
+    "events_appended": [
+      {
+        "event": "auto-continue-held",
+        "session": "test-session",
+        "command": "slice-21",
+        "schema": 2,
+        "gate": "auto-continue.sh",
+        "hook_event": "Stop"
+      }
+    ]
+  }
+}
