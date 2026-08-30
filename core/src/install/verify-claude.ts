@@ -231,7 +231,7 @@ export function checkEngramBinaryResolves(report: VerifyReport, environment: Nod
   const state =
     resolved === undefined
       ? `no ${binaryName} on the persisted machine or user PATH`
-      : engramBinaryRuns(resolved, environment)
+      : engramBinaryRuns(platform, resolved, environment)
         ? "1"
         : `${resolved} does not run`;
   report.check("engram binary the client resolves and runs", "1", state, ENGRAM_BINARY_FIX);
@@ -407,11 +407,12 @@ function runOsoStateProbe(stateBin: string, environment: NodeJS.ProcessEnv): str
   const probeHome = mkdtempSync(path.join(tmpdir(), "oso-verify-probe-"));
   try {
     const env = { ...environment, HOME: probeHome, USERPROFILE: probeHome, OSO_STATE_BIN: stateBin };
-    const setResult = spawnSync(stateBin, ["--session", "verify-probe", "set", "mode=probe"], { env, encoding: "utf8" });
+    const runStateScript = (...args: string[]) => spawnSync(process.execPath, [stateBin, ...args], { env, encoding: "utf8" });
+    const setResult = runStateScript("--session", "verify-probe", "set", "mode=probe");
     if (setResult.error !== undefined || setResult.status !== 0) return collapsedNewlines(errorOutputOf(setResult));
-    const getResult = spawnSync(stateBin, ["--session", "verify-probe", "get", "mode"], { env, encoding: "utf8" });
+    const getResult = runStateScript("--session", "verify-probe", "get", "mode");
     if (getResult.error !== undefined || getResult.status !== 0) return collapsedNewlines(errorOutputOf(getResult));
-    spawnSync(stateBin, ["--session", "verify-probe", "clear"], { env, encoding: "utf8" });
+    runStateScript("--session", "verify-probe", "clear");
     return collapsedNewlines(getResult.stdout);
   } finally {
     rmSync(probeHome, { recursive: true, force: true });
@@ -493,11 +494,14 @@ export function firstExecutableOnPath(environment: NodeJS.ProcessEnv, binaryName
 
 export const ENGRAM_PROBE_TIMEOUT_MS = 10_000;
 export const ENGRAM_PROBE_ENVIRONMENT_KEYS = ["PATH", "SystemRoot", "windir"];
-const KERNEL_EXECUTABLE_MAGICS = ["\x7fELF", "MZ", "#!", "\xcf\xfa\xed\xfe", "\xce\xfa\xed\xfe", "\xca\xfe\xba\xbe"];
-const WIDEST_EXECUTABLE_MAGIC_BYTES = Math.max(...KERNEL_EXECUTABLE_MAGICS.map((magic) => magic.length));
+const POSIX_KERNEL_EXECUTABLE_MAGICS = ["\x7fELF", "#!", "\xcf\xfa\xed\xfe", "\xce\xfa\xed\xfe", "\xca\xfe\xba\xbe"];
+const WIN32_KERNEL_EXECUTABLE_MAGICS = ["MZ"];
+const WIDEST_EXECUTABLE_MAGIC_BYTES = Math.max(
+  ...[...POSIX_KERNEL_EXECUTABLE_MAGICS, ...WIN32_KERNEL_EXECUTABLE_MAGICS].map((magic) => magic.length),
+);
 
-export function engramBinaryRuns(binary: string, environment: NodeJS.ProcessEnv): boolean {
-  if (!kernelExecutesDirectly(binary)) return false;
+export function engramBinaryRuns(platform: NodeJS.Platform, binary: string, environment: NodeJS.ProcessEnv): boolean {
+  if (!kernelExecutesDirectly(platform, binary)) return false;
   const result = spawnSync(binary, ["version"], {
     encoding: "utf8",
     timeout: ENGRAM_PROBE_TIMEOUT_MS,
@@ -506,7 +510,7 @@ export function engramBinaryRuns(binary: string, environment: NodeJS.ProcessEnv)
   return result.error === undefined && result.status === 0;
 }
 
-function kernelExecutesDirectly(binary: string): boolean {
+export function kernelExecutesDirectly(platform: NodeJS.Platform, binary: string): boolean {
   if (!isReadableRegularFile(binary)) return false;
   const leading = Buffer.alloc(WIDEST_EXECUTABLE_MAGIC_BYTES);
   const handle = openSync(binary, "r");
@@ -516,7 +520,8 @@ function kernelExecutesDirectly(binary: string): boolean {
     closeSync(handle);
   }
   const opening = leading.toString("latin1");
-  return KERNEL_EXECUTABLE_MAGICS.some((magic) => opening.startsWith(magic));
+  const magicsThisKernelStarts = platform === "win32" ? WIN32_KERNEL_EXECUTABLE_MAGICS : POSIX_KERNEL_EXECUTABLE_MAGICS;
+  return magicsThisKernelStarts.some((magic) => opening.startsWith(magic));
 }
 
 function probeEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

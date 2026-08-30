@@ -44,7 +44,7 @@ export function provisionEngramBinary(input: ProvisionEngramInput): EngramProvis
   let placedBinary: string;
   try {
     const content = fetchVerifiedEngramBinary(input.platform, input.architecture, binaryName, transport);
-    placedBinary = placeEngramBinary({ content, installDirectory, binaryName, environment: input.environment });
+    placedBinary = placeEngramBinary({ content, installDirectory, binaryName, environment: input.environment, platform: input.platform });
   } catch (error) {
     return { kind: "failed", reason: errorMessageOf(error) };
   }
@@ -108,9 +108,10 @@ type EngramPlacement = Readonly<{
   installDirectory: string;
   binaryName: string;
   environment: NodeJS.ProcessEnv;
+  platform: NodeJS.Platform;
 }>;
 
-function placeEngramBinary({ content, installDirectory, binaryName, environment }: EngramPlacement): string {
+function placeEngramBinary({ content, installDirectory, binaryName, environment, platform }: EngramPlacement): string {
   if (content.length < SCRIPT_SIZED_PAYLOAD_FLOOR_BYTES) {
     throw new EngramProvisionError(
       `the ${binaryName} entry holds ${content.length} bytes, under the ${SCRIPT_SIZED_PAYLOAD_FLOOR_BYTES} bytes below which it is a script or a text file rather than the Go binary this release publishes, so nothing was placed`,
@@ -121,7 +122,7 @@ function placeEngramBinary({ content, installDirectory, binaryName, environment 
   const pending = path.join(installDirectory, `.oso-pending-${process.pid}-${binaryName}`);
   writeFileSync(pending, content, { mode: 0o755 });
   try {
-    if (!engramBinaryRuns(pending, environment)) {
+    if (!engramBinaryRuns(platform, pending, environment)) {
       throw new EngramProvisionError(
         `engram ${SUPPORTED_ENGRAM_VERSION} was verified but would not run from ${installDirectory}, so ${target} was left exactly as it was — an antivirus may have quarantined it, which upstream documents happening to its unsigned prebuilt releases`,
       );

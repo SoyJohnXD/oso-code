@@ -448,7 +448,7 @@ function resolveOrProvisionEngram(input: ClaudeCommandInput): WiringEntry {
   const binaryName = engramBinaryName(input.platform);
   const resolved = firstExecutableOnPath(input.environment, binaryName);
   if (resolved !== undefined) {
-    return engramBinaryRuns(resolved, input.environment)
+    return engramBinaryRuns(input.platform, resolved, input.environment)
       ? wiringOk("engram (binary)", `already installed where Claude Code resolves it: ${resolved}`)
       : wiringFail(
           "engram (binary)",

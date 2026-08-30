@@ -468,7 +468,7 @@ function checkEngramBinaryResolves(report2, environment, platform) {
   }
   const binaryName = "engram.exe";
   const resolved = firstExecutableOnPath(environment, binaryName);
-  const state = resolved === void 0 ? `no ${binaryName} on the persisted machine or user PATH` : engramBinaryRuns(resolved, environment) ? "1" : `${resolved} does not run`;
+  const state = resolved === void 0 ? `no ${binaryName} on the persisted machine or user PATH` : engramBinaryRuns(platform, resolved, environment) ? "1" : `${resolved} does not run`;
   report2.check("engram binary the client resolves and runs", "1", state, ENGRAM_BINARY_FIX);
   if (resolved !== void 0) report2.detail(`engram binary: ${resolved}`);
 }
@@ -619,11 +619,12 @@ function runOsoStateProbe(stateBin, environment) {
   const probeHome = mkdtempSync(path4.join(tmpdir(), "oso-verify-probe-"));
   try {
     const env = { ...environment, HOME: probeHome, USERPROFILE: probeHome, OSO_STATE_BIN: stateBin };
-    const setResult = spawnSync(stateBin, ["--session", "verify-probe", "set", "mode=probe"], { env, encoding: "utf8" });
+    const runStateScript = (...args) => spawnSync(process.execPath, [stateBin, ...args], { env, encoding: "utf8" });
+    const setResult = runStateScript("--session", "verify-probe", "set", "mode=probe");
     if (setResult.error !== void 0 || setResult.status !== 0) return collapsedNewlines(errorOutputOf(setResult));
-    const getResult = spawnSync(stateBin, ["--session", "verify-probe", "get", "mode"], { env, encoding: "utf8" });
+    const getResult = runStateScript("--session", "verify-probe", "get", "mode");
     if (getResult.error !== void 0 || getResult.status !== 0) return collapsedNewlines(errorOutputOf(getResult));
-    spawnSync(stateBin, ["--session", "verify-probe", "clear"], { env, encoding: "utf8" });
+    runStateScript("--session", "verify-probe", "clear");
     return collapsedNewlines(getResult.stdout);
   } finally {
     rmSync3(probeHome, { recursive: true, force: true });
@@ -692,10 +693,13 @@ function firstExecutableOnPath(environment, binaryName) {
 }
 var ENGRAM_PROBE_TIMEOUT_MS = 1e4;
 var ENGRAM_PROBE_ENVIRONMENT_KEYS = ["PATH", "SystemRoot", "windir"];
-var KERNEL_EXECUTABLE_MAGICS = ["\x7FELF", "MZ", "#!", "\xCF\xFA\xED\xFE", "\xCE\xFA\xED\xFE", "\xCA\xFE\xBA\xBE"];
-var WIDEST_EXECUTABLE_MAGIC_BYTES = Math.max(...KERNEL_EXECUTABLE_MAGICS.map((magic) => magic.length));
-function engramBinaryRuns(binary, environment) {
-  if (!kernelExecutesDirectly(binary)) return false;
+var POSIX_KERNEL_EXECUTABLE_MAGICS = ["\x7FELF", "#!", "\xCF\xFA\xED\xFE", "\xCE\xFA\xED\xFE", "\xCA\xFE\xBA\xBE"];
+var WIN32_KERNEL_EXECUTABLE_MAGICS = ["MZ"];
+var WIDEST_EXECUTABLE_MAGIC_BYTES = Math.max(
+  ...[...POSIX_KERNEL_EXECUTABLE_MAGICS, ...WIN32_KERNEL_EXECUTABLE_MAGICS].map((magic) => magic.length)
+);
+function engramBinaryRuns(platform, binary, environment) {
+  if (!kernelExecutesDirectly(platform, binary)) return false;
   const result = spawnSync(binary, ["version"], {
     encoding: "utf8",
     timeout: ENGRAM_PROBE_TIMEOUT_MS,
@@ -703,7 +707,7 @@ function engramBinaryRuns(binary, environment) {
   });
   return result.error === void 0 && result.status === 0;
 }
-function kernelExecutesDirectly(binary) {
+function kernelExecutesDirectly(platform, binary) {
   if (!isReadableRegularFile(binary)) return false;
   const leading = Buffer.alloc(WIDEST_EXECUTABLE_MAGIC_BYTES);
   const handle = openSync(binary, "r");
@@ -713,7 +717,8 @@ function kernelExecutesDirectly(binary) {
     closeSync(handle);
   }
   const opening = leading.toString("latin1");
-  return KERNEL_EXECUTABLE_MAGICS.some((magic) => opening.startsWith(magic));
+  const magicsThisKernelStarts = platform === "win32" ? WIN32_KERNEL_EXECUTABLE_MAGICS : POSIX_KERNEL_EXECUTABLE_MAGICS;
+  return magicsThisKernelStarts.some((magic) => opening.startsWith(magic));
 }
 function probeEnvironment(environment) {
   const carried = ENGRAM_PROBE_ENVIRONMENT_KEYS.map((key) => [key, environment[key]]);
@@ -756,7 +761,7 @@ function provisionEngramBinary(input) {
   let placedBinary;
   try {
     const content = fetchVerifiedEngramBinary(input.platform, input.architecture, binaryName, transport);
-    placedBinary = placeEngramBinary({ content, installDirectory, binaryName, environment: input.environment });
+    placedBinary = placeEngramBinary({ content, installDirectory, binaryName, environment: input.environment, platform: input.platform });
   } catch (error) {
     return { kind: "failed", reason: errorMessageOf(error) };
   }
@@ -802,7 +807,7 @@ function verifyEngramChecksum(checksumsText, archive, asset) {
     throw new EngramProvisionError(`${asset} does not match its published SHA-256 checksum, so nothing was installed`);
   }
 }
-function placeEngramBinary({ content, installDirectory, binaryName, environment }) {
+function placeEngramBinary({ content, installDirectory, binaryName, environment, platform }) {
   if (content.length < SCRIPT_SIZED_PAYLOAD_FLOOR_BYTES) {
     throw new EngramProvisionError(
       `the ${binaryName} entry holds ${content.length} bytes, under the ${SCRIPT_SIZED_PAYLOAD_FLOOR_BYTES} bytes below which it is a script or a text file rather than the Go binary this release publishes, so nothing was placed`
@@ -813,7 +818,7 @@ function placeEngramBinary({ content, installDirectory, binaryName, environment 
   const pending = path5.join(installDirectory, `.oso-pending-${process.pid}-${binaryName}`);
   writeFileSync3(pending, content, { mode: 493 });
   try {
-    if (!engramBinaryRuns(pending, environment)) {
+    if (!engramBinaryRuns(platform, pending, environment)) {
       throw new EngramProvisionError(
         `engram ${SUPPORTED_ENGRAM_VERSION} was verified but would not run from ${installDirectory}, so ${target} was left exactly as it was \u2014 an antivirus may have quarantined it, which upstream documents happening to its unsigned prebuilt releases`
       );
@@ -1350,7 +1355,7 @@ function resolveOrProvisionEngram(input) {
   const binaryName = engramBinaryName(input.platform);
   const resolved = firstExecutableOnPath(input.environment, binaryName);
   if (resolved !== void 0) {
-    return engramBinaryRuns(resolved, input.environment) ? wiringOk("engram (binary)", `already installed where Claude Code resolves it: ${resolved}`) : wiringFail(
+    return engramBinaryRuns(input.platform, resolved, input.environment) ? wiringOk("engram (binary)", `already installed where Claude Code resolves it: ${resolved}`) : wiringFail(
       "engram (binary)",
       `${resolved} does not run \u2014 an antivirus may have quarantined it, which upstream documents happening to unsigned prebuilt releases \u2014 fix: remove it, then re-run this installer to provision the pinned release, or ${engramManualInstallCommand(input.platform)}`
     );

@@ -25,11 +25,13 @@ import {
   compareVersionsAscending,
   engramBinaryRuns,
   ENGRAM_PROBE_TIMEOUT_MS,
+  kernelExecutesDirectly,
   noteClaudeDesktop,
   normalizedPath,
   verifyClaude,
 } from "../../src/install/verify-claude.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
+import { skipUnlessKernelRunsScriptFixtures } from "../support/win32-skip-guards.ts";
 
 const sandbox = mkdtempSync(path.join(tmpdir(), "oso-verify-claude-"));
 after(() => rmSync(sandbox, { recursive: true, force: true }));
@@ -389,22 +391,26 @@ describe("checkEngramBinaryResolves", () => {
     );
   });
 
-  test("passes and details the resolved path on win32 when the injected PATH's engram.exe runs", () => {
-    const pathDirectory = freshDirectory();
-    const engramExe = path.join(pathDirectory, "engram.exe");
-    writeFileSync(engramExe, "#!/bin/sh\nexit 0\n");
-    chmodSync(engramExe, 0o755);
-    const report = new VerifyReport();
-    checkEngramBinaryResolves(report, { PATH: pathDirectory }, "win32");
-    const lines = linesOf(report);
-    assert.ok(lines.includes("ok:   engram binary the client resolves and runs (1)"));
-    assert.ok(lines.includes(`      engram binary: ${engramExe}`));
-  });
+  test(
+    "passes and details the resolved path on win32 when the injected PATH's engram.exe runs",
+    { skip: skipUnlessKernelRunsScriptFixtures() },
+    () => {
+      const pathDirectory = freshDirectory();
+      const engramExe = path.join(pathDirectory, "engram.exe");
+      writeFileSync(engramExe, "MZ\nexit 0\n");
+      chmodSync(engramExe, 0o755);
+      const report = new VerifyReport();
+      checkEngramBinaryResolves(report, { PATH: pathDirectory }, "win32");
+      const lines = linesOf(report);
+      assert.ok(lines.includes("ok:   engram binary the client resolves and runs (1)"));
+      assert.ok(lines.includes(`      engram binary: ${engramExe}`));
+    },
+  );
 
   test("fails naming the resolved-but-not-running binary on win32", () => {
     const pathDirectory = freshDirectory();
     const engramExe = path.join(pathDirectory, "engram.exe");
-    writeFileSync(engramExe, "#!/bin/sh\nexit 1\n");
+    writeFileSync(engramExe, "MZ\nexit 1\n");
     chmodSync(engramExe, 0o755);
     const report = new VerifyReport();
     checkEngramBinaryResolves(report, { PATH: pathDirectory }, "win32");
@@ -416,58 +422,88 @@ describe("checkEngramBinaryResolves", () => {
   });
 });
 
-describe("engramBinaryRuns: the run probe stands between a downloaded, unsigned binary and this machine", () => {
-  const PLANTED_AMBIENT_SECRET = "planted-by-this-test-and-never-to-reach-the-binary";
-  const PROBE_BOUND_SLACK_MS = 2_000;
-
-  function probeFixture(name: string, content: string): string {
-    const binary = path.join(freshDirectory(), name);
-    writeFileSync(binary, content);
-    chmodSync(binary, 0o755);
-    return binary;
-  }
-
-  test("refuses a zero-byte file that the kernel's own /bin/sh fallback would otherwise certify as exit 0", () => {
-    const binary = probeFixture("engram", "");
-
-    assert.equal(spawnSync(binary, ["version"]).status, 0, "the fallback under test must still certify this file when spawned raw");
-    assert.equal(engramBinaryRuns(binary, {}), false);
+describe("kernelExecutesDirectly: what a named kernel starts without an interpreter named for it", () => {
+  test("this host's own node binary reads as directly executable, so the magic set the probe consults here is not one that refuses every program", () => {
+    assert.equal(kernelExecutesDirectly(process.platform, process.execPath), true);
   });
 
-  test("refuses a shebang-less `exit 0` script the same fallback would otherwise certify", () => {
-    const binary = probeFixture("engram", "exit 0\n");
+  test("a #! script is a program the POSIX kernel starts and none at all under win32, whose kernel starts PE images alone", () => {
+    const script = path.join(freshDirectory(), "engram");
+    writeFileSync(script, "#!/bin/sh\nexit 0\n");
 
-    assert.equal(spawnSync(binary, ["version"]).status, 0, "the fallback under test must still certify this script when spawned raw");
-    assert.equal(engramBinaryRuns(binary, {}), false);
+    assert.equal(kernelExecutesDirectly("linux", script), true);
+    assert.equal(kernelExecutesDirectly("win32", script), false);
   });
 
-  test("hands the binary the allowed variables and nothing else the operator's environment carries", () => {
-    const directory = freshDirectory();
-    const seenEnvironment = path.join(directory, "seen-environment.json");
-    const spy = path.join(directory, "engram");
-    writeFileSync(spy, `#!${process.execPath}\nrequire("node:fs").writeFileSync(${JSON.stringify(seenEnvironment)}, JSON.stringify(process.env));\n`);
-    chmodSync(spy, 0o755);
+  test("a PE image is a program under win32 and none under linux, whose published engram asset is ELF and whose binfmt_misc registration is host configuration rather than a kernel contract", () => {
+    const image = path.join(freshDirectory(), "engram.exe");
+    writeFileSync(image, Buffer.from("MZ\u0090\u0000\u0003", "latin1"));
 
-    assert.equal(engramBinaryRuns(spy, { PATH: directory, OSO_AMBIENT_SECRET: PLANTED_AMBIENT_SECRET }), true);
-
-    const seen = JSON.parse(readFileSync(seenEnvironment, "utf8")) as Record<string, string>;
-    assert.deepEqual(Object.keys(seen), ["PATH"]);
-    assert.equal(seen["OSO_AMBIENT_SECRET"], undefined);
-  });
-
-  test("returns inside its own declared bound on a binary that never exits, rather than blocking the installer forever", () => {
-    const binary = probeFixture("engram", "#!/bin/sh\nsleep 3600\n");
-    const startedAt = Date.now();
-
-    assert.equal(engramBinaryRuns(binary, {}), false);
-
-    const elapsed = Date.now() - startedAt;
-    assert.ok(
-      elapsed < ENGRAM_PROBE_TIMEOUT_MS + PROBE_BOUND_SLACK_MS,
-      `the probe took ${elapsed} ms, past its ${ENGRAM_PROBE_TIMEOUT_MS} ms bound plus ${PROBE_BOUND_SLACK_MS} ms of teardown`,
-    );
+    assert.equal(kernelExecutesDirectly("win32", image), true);
+    assert.equal(kernelExecutesDirectly("linux", image), false);
   });
 });
+
+describe(
+  "engramBinaryRuns: the run probe stands between a downloaded, unsigned binary and this machine",
+  { skip: skipUnlessKernelRunsScriptFixtures() },
+  () => {
+    const PLANTED_AMBIENT_SECRET = "planted-by-this-test-and-never-to-reach-the-binary";
+    const PROBE_BOUND_SLACK_MS = 2_000;
+
+    function probeFixture(name: string, content: string): string {
+      const binary = path.join(freshDirectory(), name);
+      writeFileSync(binary, content);
+      chmodSync(binary, 0o755);
+      return binary;
+    }
+
+    test("refuses a zero-byte file that the kernel's own /bin/sh fallback would otherwise certify as exit 0", () => {
+      const binary = probeFixture("engram", "");
+
+      assert.equal(spawnSync(binary, ["version"]).status, 0, "the fallback under test must still certify this file when spawned raw");
+      assert.equal(engramBinaryRuns(process.platform, binary, {}), false);
+    });
+
+    test("refuses a shebang-less `exit 0` script the same fallback would otherwise certify", () => {
+      const binary = probeFixture("engram", "exit 0\n");
+
+      assert.equal(spawnSync(binary, ["version"]).status, 0, "the fallback under test must still certify this script when spawned raw");
+      assert.equal(engramBinaryRuns(process.platform, binary, {}), false);
+    });
+
+    test("hands the binary the allowed variables and nothing else the operator's environment carries", () => {
+      const directory = freshDirectory();
+      const seenEnvironment = path.join(directory, "seen-environment.json");
+      const spy = path.join(directory, "engram");
+      writeFileSync(spy, `#!${process.execPath}\nrequire("node:fs").writeFileSync(${JSON.stringify(seenEnvironment)}, JSON.stringify(process.env));\n`);
+      chmodSync(spy, 0o755);
+
+      assert.equal(engramBinaryRuns(process.platform, spy, { PATH: directory, OSO_AMBIENT_SECRET: PLANTED_AMBIENT_SECRET }), true);
+
+      const seen = JSON.parse(readFileSync(seenEnvironment, "utf8")) as Record<string, string>;
+      assert.deepEqual(Object.keys(seen), ["PATH"]);
+      assert.equal(seen["OSO_AMBIENT_SECRET"], undefined);
+    });
+
+    test("returns inside its own declared bound on a binary that never exits, rather than blocking the installer forever", () => {
+      const binary = probeFixture("engram", "#!/bin/sh\nsleep 3600\n");
+      const startedAt = Date.now();
+
+      assert.equal(engramBinaryRuns(process.platform, binary, {}), false);
+
+      const elapsed = Date.now() - startedAt;
+      assert.ok(
+        elapsed >= ENGRAM_PROBE_TIMEOUT_MS,
+        `the probe answered in ${elapsed} ms, short of the ${ENGRAM_PROBE_TIMEOUT_MS} ms bound it claims to wait — it refused this fixture before spawning it, so the bound is untested`,
+      );
+      assert.ok(
+        elapsed < ENGRAM_PROBE_TIMEOUT_MS + PROBE_BOUND_SLACK_MS,
+        `the probe took ${elapsed} ms, past its ${ENGRAM_PROBE_TIMEOUT_MS} ms bound plus ${PROBE_BOUND_SLACK_MS} ms of teardown`,
+      );
+    });
+  },
+);
 
 describe("checkGitBashPath", () => {
   test("notes when settings.json publishes no CLAUDE_CODE_GIT_BASH_PATH", () => {

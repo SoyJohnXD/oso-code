@@ -21,12 +21,20 @@ import {
   tarOctalSizeField,
   type ArchiveFixtureEntry,
 } from "../support/engram-archive-fixture.ts";
+import { skipUnlessKernelRunsScriptFixtures } from "../support/win32-skip-guards.ts";
 
 const sandbox = mkdtempSync(path.join(tmpdir(), "oso-engram-"));
 after(() => rmSync(sandbox, { recursive: true, force: true }));
 
 const RELEASE_SIZED_BYTES = 2 * 1024 * 1024;
+const PLACEMENT_NEEDS_A_RUNNABLE_FIXTURE = skipUnlessKernelRunsScriptFixtures();
+const THE_KERNEL_STARTS_THE_FIXTURE = PLACEMENT_NEEDS_A_RUNNABLE_FIXTURE === false;
+const PLACEMENT_UNPROVED_ON_WIN32_UNTIL_S5_ACTIVATES_NIGHTLY =
+  PLACEMENT_NEEDS_A_RUNNABLE_FIXTURE === false
+    ? false
+    : `${PLACEMENT_NEEDS_A_RUNNABLE_FIXTURE} — and the rename-and-report step this case asserts stays UNPROVED on win32 meanwhile: core/test/install/engram-nightly.test.ts is configured at .github/workflows/nightly.yml:152-157 on windows-latest but has never executed, because that step carries no if: and follows a Hook regression suite that is red there, which skips every step after it. C3-S5 activates it; absent that it stays dark until C3-S6 greens that suite`;
 const RUNNABLE_BINARY = releaseSized(`#!${process.execPath}\nprocess.exit(0);\n`);
+const RUNNABLE_PE_SHAPED_BINARY = releaseSized("MZ\nexit 0\n");
 
 function releaseSized(source: string): Buffer {
   return Buffer.from(source.padEnd(RELEASE_SIZED_BYTES, " "), "utf8");
@@ -78,7 +86,7 @@ describe("engramBinaryName", () => {
 });
 
 describe("provisionEngramBinary: checksum-verified download, extraction and placement", () => {
-  test("places a checksum-matched tar.gz binary, executable and on PATH", () => {
+  test("places a checksum-matched tar.gz binary, executable and on PATH", { skip: PLACEMENT_NEEDS_A_RUNNABLE_FIXTURE }, () => {
     const homeDirectory = freshHome();
     const asset = `engram_${SUPPORTED_ENGRAM_VERSION}_linux_amd64.tar.gz`;
     const archive = buildTarGzFixture([{ name: "engram", content: RUNNABLE_BINARY }]);
@@ -97,7 +105,7 @@ describe("provisionEngramBinary: checksum-verified download, extraction and plac
     assert.equal(isExecutableRegularFile(path.join(installDirectory, "engram")), true);
   });
 
-  test("reports installed-off-path when the install directory is not on PATH, without failing the placement", () => {
+  test("reports installed-off-path when the install directory is not on PATH, without failing the placement", { skip: PLACEMENT_NEEDS_A_RUNNABLE_FIXTURE }, () => {
     const homeDirectory = freshHome();
     const asset = `engram_${SUPPORTED_ENGRAM_VERSION}_linux_amd64.tar.gz`;
     const archive = buildTarGzFixture([{ name: "engram", content: RUNNABLE_BINARY }]);
@@ -116,7 +124,7 @@ describe("provisionEngramBinary: checksum-verified download, extraction and plac
     assert.equal(existsSync(path.join(installDirectory, "engram")), true);
   });
 
-  test("names the binary this call placed, never the different engram that already answers to the bare name earlier on PATH", () => {
+  test("names the binary this call placed, never the different engram that already answers to the bare name earlier on PATH", { skip: PLACEMENT_NEEDS_A_RUNNABLE_FIXTURE }, () => {
     const homeDirectory = freshHome();
     const incumbentDirectory = path.join(homeDirectory, "incumbent");
     mkdirSync(incumbentDirectory, { recursive: true });
@@ -137,10 +145,10 @@ describe("provisionEngramBinary: checksum-verified download, extraction and plac
     assert.deepEqual(outcome, { kind: "installed-off-path", binary: path.join(installDirectory, "engram"), installDirectory });
   });
 
-  test("places a checksum-matched zip binary (stored, no compression) for windows", () => {
+  test("places a checksum-matched zip binary (stored, no compression) for windows", { skip: PLACEMENT_NEEDS_A_RUNNABLE_FIXTURE }, () => {
     const homeDirectory = freshHome();
     const asset = `engram_${SUPPORTED_ENGRAM_VERSION}_windows_amd64.zip`;
-    const archive = buildZipFixture([{ name: "engram.exe", content: RUNNABLE_BINARY }]);
+    const archive = buildZipFixture([{ name: "engram.exe", content: RUNNABLE_PE_SHAPED_BINARY }]);
     const transport = fixtureTransport(asset, archive, checksumsText([{ digest: sha256Hex(archive), file: asset }]));
     const installDirectory = path.join(homeDirectory, ".local", "bin");
 
@@ -155,10 +163,10 @@ describe("provisionEngramBinary: checksum-verified download, extraction and plac
     assert.deepEqual(outcome, { kind: "installed-on-path", binary: path.join(installDirectory, "engram.exe") });
   });
 
-  test("places a checksum-matched zip binary compressed with deflate", () => {
+  test("places a checksum-matched zip binary compressed with deflate", { skip: PLACEMENT_NEEDS_A_RUNNABLE_FIXTURE }, () => {
     const homeDirectory = freshHome();
     const asset = `engram_${SUPPORTED_ENGRAM_VERSION}_windows_amd64.zip`;
-    const archive = buildZipFixture([{ name: "engram.exe", content: RUNNABLE_BINARY, deflate: true }]);
+    const archive = buildZipFixture([{ name: "engram.exe", content: RUNNABLE_PE_SHAPED_BINARY, deflate: true }]);
     const transport = fixtureTransport(asset, archive, checksumsText([{ digest: sha256Hex(archive), file: asset }]));
     const installDirectory = path.join(homeDirectory, ".local", "bin");
 
@@ -171,7 +179,7 @@ describe("provisionEngramBinary: checksum-verified download, extraction and plac
     });
 
     assert.deepEqual(outcome, { kind: "installed-on-path", binary: path.join(installDirectory, "engram.exe") });
-    assert.deepEqual(readFileSync(path.join(installDirectory, "engram.exe")), RUNNABLE_BINARY);
+    assert.deepEqual(readFileSync(path.join(installDirectory, "engram.exe")), RUNNABLE_PE_SHAPED_BINARY);
   });
 
   test("a platform/arch this release never published fails before any transport call", () => {
@@ -198,6 +206,10 @@ describe("provisionEngramBinary: checksum-verified download, extraction and plac
   });
 
   describe("checksum verification proves the mismatch case red, by construction — no bytes are ever placed on a mismatch", () => {
+    function checksumMismatchOf(asset: string): EngramProvisionOutcome {
+      return { kind: "failed", reason: `${asset} does not match its published SHA-256 checksum, so nothing was installed` };
+    }
+
     test("a tampered archive against its published checksum fails, and places nothing on disk", () => {
       const homeDirectory = freshHome();
       const asset = `engram_${SUPPORTED_ENGRAM_VERSION}_linux_amd64.tar.gz`;
@@ -209,10 +221,7 @@ describe("provisionEngramBinary: checksum-verified download, extraction and plac
 
       const outcome = provisionEngramBinary({ homeDirectory, environment: { PATH: installDirectory }, platform: "linux", architecture: "x64", transport });
 
-      assert.deepEqual(outcome, {
-        kind: "failed",
-        reason: `${asset} does not match its published SHA-256 checksum, so nothing was installed`,
-      });
+      assert.deepEqual(outcome, checksumMismatchOf(asset));
       assert.equal(existsSync(installDirectory), false, "a mismatched download must place no directory, let alone a binary");
     });
 
@@ -224,7 +233,9 @@ describe("provisionEngramBinary: checksum-verified download, extraction and plac
       const installDirectory = path.join(homeDirectory, ".local", "bin");
 
       const outcome = provisionEngramBinary({ homeDirectory, environment: { PATH: installDirectory }, platform: "linux", architecture: "x64", transport });
-      assert.equal(outcome.kind, "installed-on-path");
+
+      assert.notDeepEqual(outcome, checksumMismatchOf(asset), "the same bytes under their own digest must not reach the mismatch the case above asserts");
+      if (THE_KERNEL_STARTS_THE_FIXTURE) assert.equal(outcome.kind, "installed-on-path");
     });
 
     test("zero matching rows in checksums.txt fails without downloading a byte to compare", () => {
@@ -294,6 +305,8 @@ describe("provisionEngramBinary: checksum-verified download, extraction and plac
 describe("provisionEngramBinary: what a degenerate or hostile archive may not do to this machine", () => {
   const BOMB_UNCOMPRESSED_BYTES = 129 * 1024 * 1024;
   const OVER_DECLARED_BYTES = 99_999;
+  const BUFFER_CEILING_REFUSAL = /Cannot create a Buffer larger than/;
+  const DECLARED_SIZE_CEILING_REFUSAL = /past the \d+-byte ceiling this installer expands an archive under/;
   const TAR_ASSET = `engram_${SUPPORTED_ENGRAM_VERSION}_linux_amd64.tar.gz`;
   const ZIP_ASSET = `engram_${SUPPORTED_ENGRAM_VERSION}_windows_amd64.zip`;
 
@@ -318,7 +331,7 @@ describe("provisionEngramBinary: what a degenerate or hostile archive may not do
 
     const reason = failureReason(provisionFrom(homeDirectory, TAR_ASSET, archive));
 
-    assert.match(reason, /Cannot create a Buffer larger than/);
+    assert.match(reason, BUFFER_CEILING_REFUSAL);
     assert.ok(
       BOMB_UNCOMPRESSED_BYTES / archive.length > 100,
       `${archive.length} archive byte(s) expanding to ${BOMB_UNCOMPRESSED_BYTES} is the ratio under test`,
@@ -330,7 +343,7 @@ describe("provisionEngramBinary: what a degenerate or hostile archive may not do
     const homeDirectory = freshHome();
     const archive = buildZipFixture([{ name: "engram.exe", content: Buffer.alloc(BOMB_UNCOMPRESSED_BYTES) }]);
 
-    assert.match(failureReason(provisionFrom(homeDirectory, ZIP_ASSET, archive)), /past the \d+-byte ceiling this installer expands an archive under/);
+    assert.match(failureReason(provisionFrom(homeDirectory, ZIP_ASSET, archive)), DECLARED_SIZE_CEILING_REFUSAL);
     assert.equal(existsSync(path.join(homeDirectory, ".local", "bin")), false);
   });
 
@@ -338,7 +351,7 @@ describe("provisionEngramBinary: what a degenerate or hostile archive may not do
     const homeDirectory = freshHome();
     const archive = buildZipFixture([{ name: "engram.exe", content: Buffer.alloc(BOMB_UNCOMPRESSED_BYTES), deflate: true }]);
 
-    assert.match(failureReason(provisionFrom(homeDirectory, ZIP_ASSET, archive)), /Cannot create a Buffer larger than/);
+    assert.match(failureReason(provisionFrom(homeDirectory, ZIP_ASSET, archive)), BUFFER_CEILING_REFUSAL);
     assert.equal(existsSync(path.join(homeDirectory, ".local", "bin")), false);
   });
 
@@ -346,7 +359,12 @@ describe("provisionEngramBinary: what a degenerate or hostile archive may not do
     const homeDirectory = freshHome();
     const archive = buildTarGzFixture([{ name: "engram", content: RUNNABLE_BINARY }]);
 
-    assert.equal(provisionFrom(homeDirectory, TAR_ASSET, archive).kind, "installed-on-path");
+    const outcome = provisionFrom(homeDirectory, TAR_ASSET, archive);
+
+    const refusalReasonIfAny = outcome.kind === "failed" ? outcome.reason : "";
+    assert.doesNotMatch(refusalReasonIfAny, BUFFER_CEILING_REFUSAL);
+    assert.doesNotMatch(refusalReasonIfAny, DECLARED_SIZE_CEILING_REFUSAL);
+    if (THE_KERNEL_STARTS_THE_FIXTURE) assert.equal(outcome.kind, "installed-on-path");
   });
 
   test("a pre-existing binary survives a failed provision, rather than being replaced and then deleted", () => {
@@ -363,16 +381,20 @@ describe("provisionEngramBinary: what a degenerate or hostile archive may not do
     assert.deepEqual(readdirSync(installDirectory), ["engram"]);
   });
 
-  test("a rename that cannot land leaves no pending file behind in the install directory", () => {
-    const homeDirectory = freshHome();
-    const installDirectory = path.join(homeDirectory, ".local", "bin");
-    mkdirSync(path.join(installDirectory, "engram", "occupied"), { recursive: true });
-    const archive = buildTarGzFixture([{ name: "engram", content: RUNNABLE_BINARY }]);
+  test(
+    "a rename that cannot land, reached only once the run probe has passed the placed bytes, leaves no pending file behind in the install directory",
+    { skip: PLACEMENT_UNPROVED_ON_WIN32_UNTIL_S5_ACTIVATES_NIGHTLY },
+    () => {
+      const homeDirectory = freshHome();
+      const installDirectory = path.join(homeDirectory, ".local", "bin");
+      mkdirSync(path.join(installDirectory, "engram", "occupied"), { recursive: true });
+      const archive = buildTarGzFixture([{ name: "engram", content: RUNNABLE_BINARY }]);
 
-    failureReason(provisionFrom(homeDirectory, TAR_ASSET, archive));
+      failureReason(provisionFrom(homeDirectory, TAR_ASSET, archive));
 
-    assert.deepEqual(readdirSync(installDirectory), ["engram"]);
-  });
+      assert.deepEqual(readdirSync(installDirectory), ["engram"]);
+    },
+  );
 
   test("a negative octal size field is refused as no byte count, rather than yielding a zero-byte binary", () => {
     const homeDirectory = freshHome();

@@ -16,7 +16,9 @@ import {
   restoreBackupManifest,
   serializeManifestRow,
 } from "../../src/install/backup.ts";
+import { provedSomething } from "../support/proved.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
+import { skipUnlessDiskBlocksAreAllocated, WIN32_DIRECTORY_ENTRY_MARGIN_KIB } from "../support/win32-skip-guards.ts";
 
 const sandbox = mkdtempSync(path.join(tmpdir(), "oso-backup-"));
 after(() => rmSync(sandbox, { recursive: true, force: true }));
@@ -61,7 +63,7 @@ describe("installBackupBudgetKib", () => {
   });
 });
 
-describe("backupSizeKib", () => {
+describe("backupSizeKib", { skip: skipUnlessDiskBlocksAreAllocated() }, () => {
   test("agrees with du -sk's block accounting on a small fixture", () => {
     const directory = path.join(sandbox, "sized");
     mkdirSync(path.join(directory, "items"), { recursive: true });
@@ -136,7 +138,26 @@ describe("installBackupDeclares and installBackupsDeclaring", () => {
   });
 });
 
+provedSomething(
+  `backupSizeKib sizes a real tree above the ${WIN32_DIRECTORY_ENTRY_MARGIN_KIB} KiB margin the retention cases below hold over win32's measured directory-entry delta`,
+  backupSizeKib(treeA) > WIN32_DIRECTORY_ENTRY_MARGIN_KIB,
+  `backupSizeKib reports ${backupSizeKib(treeA)} KiB for ${treeA}, so the retention cases below compare sizes no platform actually measured`,
+);
+
 describe("installBackupsOverBudget", () => {
+  test(
+    `reaches the same retention decision on either side of the ${WIN32_DIRECTORY_ENTRY_MARGIN_KIB} KiB margin held over win32's ` +
+      "measured directory-entry delta, which is what the du -sk oracle above proves on POSIX and no platform proves on win32",
+    () => {
+      const newestFirst = [treeA, treeB, treeC];
+      const keepingTheNewestAlone = backupSizeKib(treeA) + WIN32_DIRECTORY_ENTRY_MARGIN_KIB;
+      const keepingTwo = backupSizeKib(treeA) + backupSizeKib(treeB) + WIN32_DIRECTORY_ENTRY_MARGIN_KIB;
+
+      assert.deepEqual(installBackupsOverBudget(newestFirst, keepingTheNewestAlone), [treeB, treeC]);
+      assert.deepEqual(installBackupsOverBudget(newestFirst, keepingTwo), [treeC]);
+    },
+  );
+
   test("always keeps the newest snapshot even if it alone exceeds the budget", () => {
     const over = installBackupsOverBudget(["only"], 10, () => 999);
     assert.deepEqual(over, []);
