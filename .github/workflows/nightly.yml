@@ -44,6 +44,11 @@ jobs:
           claude plugin validate --strict plugin
       - name: Hook regression suite on bash 3.2, which carries neither git nor jq
         run: docker run --rm -e OSO_NIGHTLY -v "$PWD":/repo -w /repo bash:3.2 bash tests/hooks-test.sh
+      - name: Lexer differential re-read from the real shell, where drift between bash and the committed corpus reds this build
+        run: |
+          npm ci --no-audit --no-fund
+          cd core
+          node --experimental-strip-types --test test/shell/lexer-differential.test.ts
       - name: Verify report reaches its summary — a fixture HOME fails every check but the two install-independent ones, so failed=9
         env:
           OSO_VERIFY_SKIP_SLOW: 1

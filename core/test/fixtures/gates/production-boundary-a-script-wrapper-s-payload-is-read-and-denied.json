@@ -1,5 +1,5 @@
 {
-  "name": "production boundary, PINNED HOLE: an ssh wrapper passes allowed AND uncounted",
+  "name": "production boundary: a script wrapper's -c payload is read, so the deploy inside it is denied",
   "source": [
     {
       "file": "tests/hooks-test.sh",
@@ -14,11 +14,23 @@
     ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
   },
   "cwd": "workspace",
-  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ssh build-host 'vercel --prod'\",\"description\":\"regression case\"}}",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"script -qc 'vercel --prod' /dev/null\",\"description\":\"regression case\"}}",
   "expect": {
     "exit": 0,
-    "stdout": "",
+    "stdout": {
+      "contains": [
+        "so a production deploy stays with the operator"
+      ]
+    },
     "stderr": "",
-    "events_appended": []
+    "events_appended": [
+      {
+        "event": "prod-deploy-denied",
+        "command": "script -qc 'vercel --prod' /dev/null",
+        "session": "test-session",
+        "gate": "block-prod-deploy.sh",
+        "hook_event": "PreToolUse"
+      }
+    ]
   }
 }

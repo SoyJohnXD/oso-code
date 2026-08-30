@@ -369,6 +369,193 @@ Seven children, in order. Every child is a PLAN-mode change arriving with its in
   - **A slice of its own, NOT folded into S6.** S6 is an atomic DELETION contract; mixing behaviour changes into it makes a red there unattributable between the deletion and the divergence fix, and S6 is already C3's largest and most coupled slice. A separate slice earns its own failing-check gate and its own verifier.
   - **The bar this slice carries**, inherited from C2's security lane rather than invented: each closure ships a differential against the real shell showing the port matches what the shell EXECUTES, and **the report states its corpus** — what was generated, how many, which construct classes were included and excluded. A clean result that does not report its corpus is not evidence. Both directions are proved: the spellings that were passing now deny, and the spellings that were already denying still do.
   - Splitting the class — closing the three new ones and leaving `C2-D17`'s two — was **rejected by the operator**: it is the instance-not-class failure this roadmap has now named fifteen times, and the two that would remain are the oldest rather than the least severe.
+  - **C3-D7 amended 2026-08-30 (DELEGATED — operator's delegate, Fable 9eab15, C3-S5b's verifier round). The class is a `$` sigil before a QUOTING FORM, and bash(1) QUOTING lists two of those, not one.** Beside `$'…'` (ANSI-C) stands `$"…"` (locale-specific translation), and measured against the real shell under `set -x`, `vercel $"--prod"`, `vercel $'--prod'` and `vercel "--prod"` produce the identical argv. The locale spelling was reaching the production-deploy rail, the commit rail and the run-branch rail as a token beginning with `$` that no comparison matched — allowed, zero events, and it survived inside the `script`/`ssh`/`tmux` wrappers this slice closed. It is **pre-existing and identical at slice start**, so no slice introduced it; it is closed with the five because closing five members of a class and leaving the sixth is the instance-not-class failure the bullet above already refused. The rest of the class is measured and needs no closure: `$\`, `$\'`, `$\"` and a `$` before a space are the spellings where the shell KEEPS the sigil, and the lexer already reads them that way; `` $` `` is command substitution, whose word no gate can compute, and stays excluded by construction.
+    **C3-D7 amended again 2026-08-30 (DELEGATED — operator's delegate, Fable 9eab15, C3-S5b's second verifier round). The residual this round replaces was WRONG and is struck: the locale form now DENIES UNREAD.** That text claimed the under-deny "needs the operator to have installed a catalog … a hole the operator opens deliberately". Measured, that is false. A catalog built with `msgfmt` from a two-line `.po`, then `TEXTDOMAINDIR=./loc TEXTDOMAIN=t LANGUAGE=en_US` in front of the command, makes bash run `vercel --prod` from the source text `vercel $"harmless"` — the real shell traces `+ : --prod` — while the shipped gate returned ALLOW-UNCOUNTED with zero events. Every step of that is a command an agent may run under the rails, so no operator need be involved, and a security assertion on an unmeasured contract is not one this plan makes twice. **The closure**: any `$"…"` span makes the command UNREADABLE and the gate denies unread, because the word bash builds there depends on `TEXTDOMAIN`, `TEXTDOMAINDIR`, `LANGUAGE` and a compiled `.mo` that no gate can see at judge time. That is the condition the lexer already denies unread for wherever an option hides the payload — a privilege wrapper with an option, an `xargs` null separator, a `script` invocation with no command flag, a session-creating form with a quoted payload — and the same mechanism carries it, with no second one invented. **The cost is declared, not discovered**: this REVERSES part of the previous round's over-count narrowing. `vercel $"deploy"`, `vercel $"--target" $"preview"`, `git $"push" origin main` and `git $"push" origin $"main"` now deny unread at the production boundary instead of passing uncounted, and `git $"status"` and `git $"log" --oneline` are counted as residue on the commit rail instead of passing uncounted; the tests that pinned those two shapes are rewritten to the measured verdicts rather than kept. The blast radius is bounded to the posture where fail-closed is intended: the production rail denies only while `auto=running` marks an unattended run, and the commit rail only counts.
+    **C3-D7's class swept a second time, same round — every word carrying a command the shell runs LATER.** `trap` and `coproc` were live under-denies at slice start (measured: gate ALLOW-UNCOUNTED with zero events while bash ran the payload), and sweeping the class rather than the two instances found four more of the same shape: `mapfile -C` / `readarray -C` / `compgen -C`, whose callback bash evaluates while it reads; `alias name=…` followed by a use on a later line of the same call, which runs once `shopt -s expand_aliases` is on the same line; `fc`, which replays a history no gate can read and executes its `-e` editor argument; and `BASH_ENV=`, which names a file bash sources before a non-interactive `-c`. All six are closed with the two mechanisms already built — read the payload as a nested command, or mark it unread. **`complete -C` moves to the closed list, correcting this round's own record**: `core/src/shell/lexer.ts:28` carries it in `CALLBACK_FLAG_READERS` beside `mapfile`/`readarray`/`compgen`, and `:392-395` routes its option value through the same `deferOptionValueAsACommand` the other three use — the callback-flag closure already answered it, it was never a seventh member left open, and the record calling it "named rather than closed" was wrong, measured directly against the shipped bundle (`complete -C 'vercel --prod' mycmd` denies `prod-deploy-denied` on the current tree, allowed zero-events at slice start). One carries a command string and was measured NOT to run it non-interactively, so it stays named rather than closed: `bind -x` — the word gate's own output is the ground for that (below), not an assumption. `ENV=` was measured for the same shape and does NOT run for `sh -c`, `bash --posix -c` or `bash -c`, so it is left alone — closing it would have denied `ENV=prod npm start`, a shape a ported parity fixture pins.
+    **The full reach, stated before any count.** 453 distinct command lines were driven through both gate bundles on both rails by a scratch-directory driver (loading `plugin/dist/gate.js` at `c4ccc2a` and at the current tree, spawned once per line per rail per bundle, state seeded per call — `auto=running\nsession=<id>` for the production rail, `mode=plan\nverify_green=false\nsession=<id>` for the commit rail — verdicts read from `permissionDecision` on stdout and the `events.jsonl` line each call appends). 399 of those are the committed lexer-differential fixture's own probes (`core/test/fixtures/shell/lexer-differential.json`, 399 entries, all distinct); 394 of them begin with the inert verb `:` outright and the other 5 open with a reserved word, a subshell group, or the negation `!` still wrapping `:` as the effective command word, so **none of the 399 can move a gate verdict by construction** — measured, not asserted: driving all 399 through both rails on both bundles (798 checks) changed 0 verdicts. That corpus proves lexer-argv fidelity against the real shell; it proves nothing about gate verdicts, because it never spells a production, push or commit verb at the position the gate reads. **The everyday list is what the reach actually is**, and it exists nowhere else in the tree, so it is recorded here in full — 54 lines built to cover each closure's mechanism:
+
+    - *locale span making the command unread* (8): `vercel $"deploy"`, `vercel $"--target" $"preview"`, `git $"push" origin main`, `git $"push" origin $"main"`, `git $"status"`, `git $"log" --oneline`, `echo $"a b"`, `npm $"publish"`
+    - *the ANSI-C decode reaching the rail's own denial* (7): `git $'push' origin main`, `git $'push' origin oso-run/child`, `git $'commit' -m x`, `git $'status'`, `git $'log' --oneline`, `vercel $'--prod'`, `vercel $'--target' $'production'`
+    - *a wrapper option hiding the payload* (12): `script -qc 'vercel --prod' /dev/null`, `script -qc 'npm test' /dev/null`, `script -q /dev/null`, `script -a out.txt`, `ssh build-host 'vercel --prod'`, `ssh -p 22 host 'npm test'`, `ssh -i key host npm test`, `ssh -N -L 8080:localhost:80 host`, `tmux new-session -d 'vercel --prod'`, `tmux new-session -d 'npm run dev'`, `tmux -L sock new-session -d 'npm test'`, `tmux new-session -s pane npm test`
+    - *a callback flag* (6): `complete -C 'vercel --prod' mycmd`, `complete -C vercel-deploy mycmd`, `mapfile -C 'vercel --prod' -c 1 arr`, `readarray -C 'git push' -c 1 arr`, `compgen -C 'vercel --prod' -- x`, `bind -x 'vercel --prod'`
+    - *trap / coproc / fc / alias / BASH_ENV* (11): `trap 'vercel --prod' EXIT`, `trap 'git commit -m x' EXIT`, `coproc vercel --prod`, `coproc git push origin main`, `fc -l`, `fc -e vim -1`, `alias ll='ls -l'`, `alias deploy='vercel --prod'`, `BASH_ENV=./x.sh bash -c :`, `BASH_ENV=./x.sh bash -c 'vercel --prod'`, `ENV=prod npm start`
+    - *the xargs separator* (4): `echo a | xargs -I{} echo {}`, `echo vercel --prod | xargs -I{} {}`, `echo a | xargs -0 vercel --prod`, `find . -print0 | xargs -0 -I{} vercel --prod {}`
+    - *control, unaffected verbs* (6): `npm test`, `git status`, `git commit -m x`, `vercel --prod`, `git push origin main`, `git push origin oso-run/child`
+
+    **The widening, re-derived from the driver's own output — not the 43/31 a prior citation gave, and not restated from it.** Against the everyday list (the differential corpus contributes zero, as shown above), the production rail changed 41 verdicts and the commit rail changed 30, grouped by mechanism:
+
+    **production rail**
+
+    | Mechanism | Line | Old → New |
+    |---|---|---|
+    | locale span making the command unread | `vercel $"deploy"` | allow → prod-deploy-denied |
+    | locale span making the command unread | `vercel $"--target" $"preview"` | allow → prod-deploy-denied |
+    | locale span making the command unread | `git $"push" origin main` | counted → prod-deploy-denied |
+    | locale span making the command unread | `git $"push" origin $"main"` | counted → prod-deploy-denied |
+    | locale span making the command unread | `git $"status"` | counted → prod-deploy-denied |
+    | locale span making the command unread | `git $"log" --oneline` | counted → prod-deploy-denied |
+    | locale span making the command unread | `echo $"a b"` | allow → prod-deploy-denied |
+    | locale span making the command unread | `npm $"publish"` | allow → prod-deploy-denied |
+    | the ANSI-C decode reaching the rail's own denial | `git $'push' origin main` | counted → run-branch-push-denied |
+    | the ANSI-C decode reaching the rail's own denial | `vercel $'--prod'` | allow → prod-deploy-denied |
+    | the ANSI-C decode reaching the rail's own denial | `vercel $'--target' $'production'` | allow → prod-deploy-denied |
+    | a wrapper option hiding the payload | `script -qc 'vercel --prod' /dev/null` | allow → prod-deploy-denied |
+    | a wrapper option hiding the payload | `script -qc 'npm test' /dev/null` | allow → prod-deploy-denied |
+    | a wrapper option hiding the payload | `script -q /dev/null` | allow → prod-deploy-denied |
+    | a wrapper option hiding the payload | `script -a out.txt` | allow → prod-deploy-denied |
+    | a wrapper option hiding the payload | `ssh build-host 'vercel --prod'` | allow → prod-deploy-denied |
+    | a wrapper option hiding the payload | `ssh -p 22 host 'npm test'` | allow → prod-deploy-denied |
+    | a wrapper option hiding the payload | `ssh -i key host npm test` | allow → prod-deploy-denied |
+    | a wrapper option hiding the payload | `ssh -N -L 8080:localhost:80 host` | allow → prod-deploy-denied |
+    | a wrapper option hiding the payload | `tmux new-session -d 'vercel --prod'` | allow → prod-deploy-denied |
+    | a wrapper option hiding the payload | `tmux new-session -d 'npm run dev'` | allow → prod-deploy-denied |
+    | a wrapper option hiding the payload | `tmux -L sock new-session -d 'npm test'` | allow → prod-deploy-denied |
+    | a wrapper option hiding the payload | `tmux new-session -s pane npm test` | allow → prod-deploy-denied |
+    | a callback flag | `complete -C 'vercel --prod' mycmd` | allow → prod-deploy-denied |
+    | a callback flag | `mapfile -C 'vercel --prod' -c 1 arr` | allow → prod-deploy-denied |
+    | a callback flag | `readarray -C 'git push' -c 1 arr` | allow → run-branch-push-denied |
+    | a callback flag | `compgen -C 'vercel --prod' -- x` | allow → prod-deploy-denied |
+    | trap / coproc / fc / alias / BASH_ENV | `trap 'vercel --prod' EXIT` | allow → prod-deploy-denied |
+    | trap / coproc / fc / alias / BASH_ENV | `coproc vercel --prod` | allow → prod-deploy-denied |
+    | trap / coproc / fc / alias / BASH_ENV | `coproc git push origin main` | allow → run-branch-push-denied |
+    | trap / coproc / fc / alias / BASH_ENV | `fc -l` | allow → prod-deploy-denied |
+    | trap / coproc / fc / alias / BASH_ENV | `fc -e vim -1` | allow → prod-deploy-denied |
+    | trap / coproc / fc / alias / BASH_ENV | `alias ll='ls -l'` | allow → prod-deploy-denied |
+    | trap / coproc / fc / alias / BASH_ENV | `alias deploy='vercel --prod'` | allow → prod-deploy-denied |
+    | trap / coproc / fc / alias / BASH_ENV | `BASH_ENV=./x.sh bash -c :` | allow → prod-deploy-denied |
+    | the xargs separator | `echo a \| xargs -I{} echo {}` | allow → prod-deploy-denied |
+    | the xargs separator | `echo vercel --prod \| xargs -I{} {}` | allow → prod-deploy-denied |
+    | narrowings | `git $'push' origin oso-run/child` | counted → allow |
+    | narrowings | `git $'commit' -m x` | counted → allow |
+    | narrowings | `git $'status'` | counted → allow |
+    | narrowings | `git $'log' --oneline` | counted → allow |
+
+    **commit rail**
+
+    | Mechanism | Line | Old → New |
+    |---|---|---|
+    | locale span making the command unread | `vercel $"deploy"` | allow → counted |
+    | locale span making the command unread | `vercel $"--target" $"preview"` | allow → counted |
+    | locale span making the command unread | `echo $"a b"` | allow → counted |
+    | locale span making the command unread | `npm $"publish"` | allow → counted |
+    | the ANSI-C decode reaching the rail's own denial | `git $'commit' -m x` | counted → commit-denied |
+    | a wrapper option hiding the payload | `script -qc 'vercel --prod' /dev/null` | allow → counted |
+    | a wrapper option hiding the payload | `script -qc 'npm test' /dev/null` | allow → counted |
+    | a wrapper option hiding the payload | `script -q /dev/null` | allow → counted |
+    | a wrapper option hiding the payload | `script -a out.txt` | allow → counted |
+    | a wrapper option hiding the payload | `ssh -p 22 host 'npm test'` | allow → counted |
+    | a wrapper option hiding the payload | `ssh -i key host npm test` | allow → counted |
+    | a wrapper option hiding the payload | `ssh -N -L 8080:localhost:80 host` | allow → counted |
+    | a wrapper option hiding the payload | `tmux new-session -d 'vercel --prod'` | allow → counted |
+    | a wrapper option hiding the payload | `tmux new-session -d 'npm run dev'` | allow → counted |
+    | a wrapper option hiding the payload | `tmux -L sock new-session -d 'npm test'` | allow → counted |
+    | a wrapper option hiding the payload | `tmux new-session -s pane npm test` | allow → counted |
+    | trap / coproc / fc / alias / BASH_ENV | `trap 'git commit -m x' EXIT` | allow → commit-denied |
+    | trap / coproc / fc / alias / BASH_ENV | `fc -l` | allow → counted |
+    | trap / coproc / fc / alias / BASH_ENV | `fc -e vim -1` | allow → counted |
+    | trap / coproc / fc / alias / BASH_ENV | `alias ll='ls -l'` | allow → counted |
+    | trap / coproc / fc / alias / BASH_ENV | `alias deploy='vercel --prod'` | allow → counted |
+    | trap / coproc / fc / alias / BASH_ENV | `BASH_ENV=./x.sh bash -c :` | allow → counted |
+    | trap / coproc / fc / alias / BASH_ENV | `BASH_ENV=./x.sh bash -c 'vercel --prod'` | allow → counted |
+    | the xargs separator | `echo a \| xargs -I{} echo {}` | allow → counted |
+    | the xargs separator | `echo vercel --prod \| xargs -I{} {}` | allow → counted |
+    | the xargs separator | `find . -print0 \| xargs -0 -I{} vercel --prod {}` | allow → counted |
+    | narrowings | `git $'push' origin main` | counted → allow |
+    | narrowings | `git $'push' origin oso-run/child` | counted → allow |
+    | narrowings | `git $'status'` | counted → allow |
+    | narrowings | `git $'log' --oneline` | counted → allow |
+
+    **Which shapes deny unread, which reach the rail's own denial, and which only count — replacing the false blanket claim that all fifteen are benign, all deny unread, and none is a deploy.** On the production rail, a denial's own message says which mechanism produced it: `"...past what the production boundary can read..."` marks a genuine **deny unread** (the boundary never resolved a command at all); any other deny message means the payload WAS resolved and **reaches the rail's own denial** on its merits — `prod-deploy-denied` for a resolved deploy, `run-branch-push-denied` for a resolved push off the run branch. Measured over the current tree's over-deny rows:
+
+    - **deny unread** (24): `vercel $"deploy"`, `vercel $"--target" $"preview"`, `git $"push" origin main`, `git $"push" origin $"main"`, `git $"status"`, `git $"log" --oneline`, `echo $"a b"`, `npm $"publish"`, `script -qc 'npm test' /dev/null`, `script -q /dev/null`, `script -a out.txt`, `ssh -p 22 host 'npm test'`, `ssh -i key host npm test`, `ssh -N -L 8080:localhost:80 host`, `tmux new-session -d 'npm run dev'`, `tmux -L sock new-session -d 'npm test'`, `tmux new-session -s pane npm test`, `fc -l`, `fc -e vim -1`, `alias ll='ls -l'`, `alias deploy='vercel --prod'`, `BASH_ENV=./x.sh bash -c :`, `echo a | xargs -I{} echo {}`, `echo vercel --prod | xargs -I{} {}`
+    - **reaches the rail's own denial** (18): `git $'push' origin main` → `run-branch-push-denied`, `vercel $'--prod'` → `prod-deploy-denied`, `vercel $'--target' $'production'` → `prod-deploy-denied`, `script -qc 'vercel --prod' /dev/null` → `prod-deploy-denied`, `ssh build-host 'vercel --prod'` → `prod-deploy-denied`, `tmux new-session -d 'vercel --prod'` → `prod-deploy-denied`, `complete -C 'vercel --prod' mycmd` → `prod-deploy-denied`, `mapfile -C 'vercel --prod' -c 1 arr` → `prod-deploy-denied`, `readarray -C 'git push' -c 1 arr` → `run-branch-push-denied`, `compgen -C 'vercel --prod' -- x` → `prod-deploy-denied`, `trap 'vercel --prod' EXIT` → `prod-deploy-denied`, `coproc vercel --prod` → `prod-deploy-denied`, `coproc git push origin main` → `run-branch-push-denied`, `BASH_ENV=./x.sh bash -c 'vercel --prod'` → `prod-deploy-denied`, `echo a | xargs -0 vercel --prod` → `prod-deploy-denied`, `find . -print0 | xargs -0 -I{} vercel --prod {}` → `prod-deploy-denied`, `vercel --prod` → `prod-deploy-denied`, `git push origin main` → `run-branch-push-denied`
+    - **commit rail rows say "counted, never denied"** — the commit gate maps both `unread` and `residue` verdicts onto the same `residue-allowed` event; only a fully-decoded, gated git verb (`commit`, `commit-tree`, `update-ref`, `filter-branch`, `replace`, `fast-import`) reaches `commit-denied` on that rail. Deploy CLIs and unresolved pushes are never denied there — they are counted.
+
+    ### over-deny, accepted, bounded to the armed run
+
+    Decision 25b accepted this wider cost as measured. Every shape the driver measured as denied or counted on the current tree, its verdict, its rail, and the remedy the deny itself emits (the run's own session id is `oso-state`'s `--session` argument, elided below since it is per-session, not per-shape):
+
+    | Line | Rail | Verdict | Remedy / status |
+    |---|---|---|---|
+    | `vercel $"deploy"` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `vercel $"--target" $"preview"` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `git $"push" origin main` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `git $"push" origin $"main"` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `git $"status"` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `git $"log" --oneline` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `echo $"a b"` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `npm $"publish"` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `git $'push' origin main` | production | run-branch-push-denied | push denied: push the run's own `oso-run/*` branch, or take the run back and push yourself |
+    | `vercel $'--prod'` | production | prod-deploy-denied | deploy denied: take the run back and deploy yourself, or deploy after the run closes at its PR |
+    | `vercel $'--target' $'production'` | production | prod-deploy-denied | deploy denied: take the run back and deploy yourself, or deploy after the run closes at its PR |
+    | `script -qc 'vercel --prod' /dev/null` | production | prod-deploy-denied | deploy denied: take the run back and deploy yourself, or deploy after the run closes at its PR |
+    | `script -qc 'npm test' /dev/null` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `script -q /dev/null` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `script -a out.txt` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `ssh build-host 'vercel --prod'` | production | prod-deploy-denied | deploy denied: take the run back and deploy yourself, or deploy after the run closes at its PR |
+    | `ssh -p 22 host 'npm test'` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `ssh -i key host npm test` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `ssh -N -L 8080:localhost:80 host` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `tmux new-session -d 'vercel --prod'` | production | prod-deploy-denied | deploy denied: take the run back and deploy yourself, or deploy after the run closes at its PR |
+    | `tmux new-session -d 'npm run dev'` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `tmux -L sock new-session -d 'npm test'` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `tmux new-session -s pane npm test` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `complete -C 'vercel --prod' mycmd` | production | prod-deploy-denied | deploy denied: take the run back and deploy yourself, or deploy after the run closes at its PR |
+    | `mapfile -C 'vercel --prod' -c 1 arr` | production | prod-deploy-denied | deploy denied: take the run back and deploy yourself, or deploy after the run closes at its PR |
+    | `readarray -C 'git push' -c 1 arr` | production | run-branch-push-denied | push denied: push the run's own `oso-run/*` branch, or take the run back and push yourself |
+    | `compgen -C 'vercel --prod' -- x` | production | prod-deploy-denied | deploy denied: take the run back and deploy yourself, or deploy after the run closes at its PR |
+    | `trap 'vercel --prod' EXIT` | production | prod-deploy-denied | deploy denied: take the run back and deploy yourself, or deploy after the run closes at its PR |
+    | `coproc vercel --prod` | production | prod-deploy-denied | deploy denied: take the run back and deploy yourself, or deploy after the run closes at its PR |
+    | `coproc git push origin main` | production | run-branch-push-denied | push denied: push the run's own `oso-run/*` branch, or take the run back and push yourself |
+    | `fc -l` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `fc -e vim -1` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `alias ll='ls -l'` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `alias deploy='vercel --prod'` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `BASH_ENV=./x.sh bash -c :` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `BASH_ENV=./x.sh bash -c 'vercel --prod'` | production | prod-deploy-denied | deploy denied: take the run back and deploy yourself, or deploy after the run closes at its PR |
+    | `echo a \| xargs -I{} echo {}` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `echo vercel --prod \| xargs -I{} {}` | production | prod-deploy-denied | deny unread: take the run back, or rewrite the line in a form the boundary reads |
+    | `echo a \| xargs -0 vercel --prod` | production | prod-deploy-denied | deploy denied: take the run back and deploy yourself, or deploy after the run closes at its PR |
+    | `find . -print0 \| xargs -0 -I{} vercel --prod {}` | production | prod-deploy-denied | deploy denied: take the run back and deploy yourself, or deploy after the run closes at its PR |
+    | `vercel --prod` | production | prod-deploy-denied | deploy denied: take the run back and deploy yourself, or deploy after the run closes at its PR |
+    | `git push origin main` | production | run-branch-push-denied | push denied: push the run's own `oso-run/*` branch, or take the run back and push yourself |
+    | `vercel $"deploy"` | commit | counted | counted, never denied |
+    | `vercel $"--target" $"preview"` | commit | counted | counted, never denied |
+    | `git $"push" origin main` | commit | counted | counted, never denied |
+    | `git $"push" origin $"main"` | commit | counted | counted, never denied |
+    | `git $"status"` | commit | counted | counted, never denied |
+    | `git $"log" --oneline` | commit | counted | counted, never denied |
+    | `echo $"a b"` | commit | counted | counted, never denied |
+    | `npm $"publish"` | commit | counted | counted, never denied |
+    | `git $'commit' -m x` | commit | commit-denied | commit denied: resume plan mode's apply → verify loop, then retry the commit |
+    | `script -qc 'vercel --prod' /dev/null` | commit | counted | counted, never denied |
+    | `script -qc 'npm test' /dev/null` | commit | counted | counted, never denied |
+    | `script -q /dev/null` | commit | counted | counted, never denied |
+    | `script -a out.txt` | commit | counted | counted, never denied |
+    | `ssh -p 22 host 'npm test'` | commit | counted | counted, never denied |
+    | `ssh -i key host npm test` | commit | counted | counted, never denied |
+    | `ssh -N -L 8080:localhost:80 host` | commit | counted | counted, never denied |
+    | `tmux new-session -d 'vercel --prod'` | commit | counted | counted, never denied |
+    | `tmux new-session -d 'npm run dev'` | commit | counted | counted, never denied |
+    | `tmux -L sock new-session -d 'npm test'` | commit | counted | counted, never denied |
+    | `tmux new-session -s pane npm test` | commit | counted | counted, never denied |
+    | `trap 'git commit -m x' EXIT` | commit | commit-denied | commit denied: resume plan mode's apply → verify loop, then retry the commit |
+    | `fc -l` | commit | counted | counted, never denied |
+    | `fc -e vim -1` | commit | counted | counted, never denied |
+    | `alias ll='ls -l'` | commit | counted | counted, never denied |
+    | `alias deploy='vercel --prod'` | commit | counted | counted, never denied |
+    | `BASH_ENV=./x.sh bash -c :` | commit | counted | counted, never denied |
+    | `BASH_ENV=./x.sh bash -c 'vercel --prod'` | commit | counted | counted, never denied |
+    | `echo a \| xargs -I{} echo {}` | commit | counted | counted, never denied |
+    | `echo vercel --prod \| xargs -I{} {}` | commit | counted | counted, never denied |
+    | `echo a \| xargs -0 vercel --prod` | commit | counted | counted, never denied |
+    | `find . -print0 \| xargs -0 -I{} vercel --prod {}` | commit | counted | counted, never denied |
+    | `git commit -m x` | commit | commit-denied | commit denied: resume plan mode's apply → verify loop, then retry the commit |
+
+    The option-only forms carry no command at all (`script -q /dev/null`, `script -a out.txt`, `ssh -N -L 8080:localhost:80 host`, `fc -l`, `fc -e vim -1`, `alias ll='ls -l'`, `BASH_ENV=./x.sh bash -c :`) and the remainder carry a readable command behind an option (`script -qc 'vercel --prod' /dev/null`, `ssh build-host 'vercel --prod'`, `tmux new-session -d 'vercel --prod'`, `complete -C 'vercel --prod' mycmd`, `mapfile -C 'vercel --prod' -c 1 arr`, `compgen -C 'vercel --prod' -- x`, `trap 'vercel --prod' EXIT`, `coproc vercel --prod`, `BASH_ENV=./x.sh bash -c 'vercel --prod'`, `echo a | xargs -0 vercel --prod`, `find . -print0 | xargs -0 -I{} vercel --prod {}`) — both shapes deny unread or count today, with no distinction between them.
+
+    **Residual queued for the operator's presence phase, not the sweep** — it is a behaviour change on the security path, so it is not this round's to take: whether an option grammar distinguishing value-taking options from flags should let a readable command behind an option (the second class above) be READ and judged on its own merits rather than denied unread, narrowing `script -qc '…'`, `ssh host '…'`, `tmux new-session -d '…'`, `complete -C '…'`, `mapfile -C '…'`, `compgen -C '…'`, `trap '…'` and `coproc …` to their actual verdict instead of a blanket unread deny. If ever taken, it needs its own differential and both-directions proof — the shapes that were denying unread must still deny once genuinely unreadable, and the shapes now proven benign must allow.
+    **The NEITHER state is closed by a gate, not by a promise.** The corpus asserted that no probe spells an excluded construct, but nothing forced a construct into corpus-or-exclusion, and that gap is what hid the sixth bypass and both of this round's blockers. The committed corpus now records bash's own vocabulary — `compgen -k` and `compgen -b`, 22 reserved words and 61 builtins — and two new tests fail when a construct sits in neither state: every one of the 83 words the shell reads specially must be answered by the lexer, by the list of words that run no command of their own, or by the list whose command only an interactive shell runs; and every construct the vocabulary calls exercised must be spelled by a probe while every excluded one must be spelled by none. Run against the lexer as it stood at slice start, the word gate names exactly `coproc, alias, compgen, complete, fc, mapfile, readarray, trap, {, }` — all ten, `complete` included, closed by this slice's sweep. **Run against the current tree** (`node --experimental-strip-types`, `shellWordsInNoStanding` from `core/test/support/shell-constructs.ts` against `SHELL_WORDS_THIS_LEXER_READS` and the fixture's 83-word vocabulary), **the word gate's own output is empty — `(none)`** — every one of the 83 is answered. `bind` was never among the ten the gate named at slice start: it carries its own standing from `SHELL_WORDS_WHOSE_COMMAND_ONLY_AN_INTERACTIVE_SHELL_RUNS` (`core/test/support/shell-constructs.ts:74-77`, `bind` and `history`), unchanged by this slice, so `bind -x` stays named on that ground and not because the sweep left it unfinished. Arithmetic expansion is now named in the exclusion list in its own right rather than caught incidentally by the command-substitution spelling, so the stated exclusions are what a reader auditing them will find.
 
 **Proposed slices, SEVEN after C3-D7.** S1 EXPAND shared modules (backup/transaction, toml, json, trust, report) + `oso verify` for Claude; S2 EXPAND Claude install/repair/purge; S3 EXPAND Codex (TOML region parity fixtures from the awk cases); S4 EXPAND OpenCode; **S5b LEXER — close the five divergences per C3-D7, with the real shell as the oracle and its corpus stated**; S5 MIGRATE wrappers + nightly real installs; S6 CONTRACT delete bootstrap bodies, `bootstrap/lib/*` and `tests/hooks-test.sh`; the two bash bars (`tests/opencode-behavior-bar.sh`, `tests/opencode-contract-bar.sh`) are NOT touched here — C4 ports and then deletes them. Depends-on chain S1 → S2/S3/S4 (parallel) → S5 → S6, with **S5b depending on nothing and landing before S6**, since it touches `core/src/shell/` alone and S6's deletion must not be the slice that also changes behaviour.
 - Exit: `bootstrap/` ≤ 400 lines of shell/ps1; `core/src/install` ≤ 2,500 lines; nightly real installs green on ubuntu, macos, windows for Claude and Codex, and ubuntu + windows for OpenCode (Windows OpenCode leaves "UNVERIFIED" here).

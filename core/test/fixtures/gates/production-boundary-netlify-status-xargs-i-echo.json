@@ -1,5 +1,5 @@
 {
-  "name": "production boundary: netlify status | xargs -I{} echo {}",
+  "name": "production boundary: netlify status | xargs -I{} echo {} reads like every other xargs option and is denied unread",
   "source": [
     {
       "file": "tests/hooks-test.sh",
@@ -17,7 +17,20 @@
   "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"netlify status | xargs -I{} echo {}\",\"description\":\"regression case\"}}",
   "expect": {
     "exit": 0,
-    "stdout": "",
-    "stderr": ""
+    "stdout": {
+      "contains": [
+        "past what the production boundary can read"
+      ]
+    },
+    "stderr": "",
+    "events_appended": [
+      {
+        "event": "prod-deploy-denied",
+        "command": "netlify status | xargs -I{} echo {}",
+        "session": "test-session",
+        "gate": "block-prod-deploy.sh",
+        "hook_event": "PreToolUse"
+      }
+    ]
   }
 }

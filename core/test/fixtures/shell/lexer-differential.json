@@ -1,0 +1,5388 @@
+{
+  "oracle": "bash, running the : builtin under set -x, which parses and expands but runs nothing",
+  "vocabulary": {
+    "reservedWords": [
+      "!",
+      "[[",
+      "]]",
+      "case",
+      "coproc",
+      "do",
+      "done",
+      "elif",
+      "else",
+      "esac",
+      "fi",
+      "for",
+      "function",
+      "if",
+      "in",
+      "select",
+      "then",
+      "time",
+      "until",
+      "while",
+      "{",
+      "}"
+    ],
+    "builtins": [
+      ".",
+      ":",
+      "[",
+      "alias",
+      "bg",
+      "bind",
+      "break",
+      "builtin",
+      "caller",
+      "cd",
+      "command",
+      "compgen",
+      "complete",
+      "compopt",
+      "continue",
+      "declare",
+      "dirs",
+      "disown",
+      "echo",
+      "enable",
+      "eval",
+      "exec",
+      "exit",
+      "export",
+      "false",
+      "fc",
+      "fg",
+      "getopts",
+      "hash",
+      "help",
+      "history",
+      "jobs",
+      "kill",
+      "let",
+      "local",
+      "logout",
+      "mapfile",
+      "popd",
+      "printf",
+      "pushd",
+      "pwd",
+      "read",
+      "readarray",
+      "readonly",
+      "return",
+      "set",
+      "shift",
+      "shopt",
+      "source",
+      "suspend",
+      "test",
+      "times",
+      "trap",
+      "true",
+      "type",
+      "typeset",
+      "ulimit",
+      "umask",
+      "unalias",
+      "unset",
+      "wait"
+    ]
+  },
+  "excluded": [
+    "command substitution, which the oracle would have to execute to measure it",
+    "arithmetic expansion, whose value the shell computes instead of reading it from the line",
+    "an arithmetic command, whose words the shell evaluates instead of running them",
+    "process substitution, which the oracle would have to execute to measure it",
+    "parameter expansion, named or special, whose argv depends on runtime state no gate can have",
+    "locale-specific translation, whose word the shell reads from a catalog and an environment no gate can have",
+    "brace expansion, whose argv depends on a comma this corpus never spells",
+    "tilde expansion and pathname globbing, whose argv depends on the filesystem",
+    "a conditional expression, whose bracket is the character pathname globbing is already excluded for",
+    "pipelines, traced from separate processes in no fixed order, and the || an always-succeeding verb never reaches",
+    "background commands, whose trace the shell writes from a process of their own",
+    "a co-process, which the shell runs asynchronously and traces from a process of its own",
+    "file-descriptor-prefixed redirection, a divergence of its own outside these five",
+    "a here-string or here-document, whose text the shell hands the command on stdin and not in the argv this corpus compares",
+    "an assignment in front of the command, which the shell traces on a line of its own rather than as a word of the command",
+    "a compound command whose branches and iterations the shell picks at run time, so no one trace shows every command it may run",
+    "a function definition, whose body the shell traces only when the function is called",
+    "the time reserved word, whose report bash writes to the stream that carries the trace",
+    "a backslash before an ordinary character inside double quotes, a divergence of its own outside these five",
+    "bytes above U+007F, which bash writes raw under a locale this corpus does not fix"
+  ],
+  "argvProbes": [
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\\\'",
+      "commands": [
+        [
+          ":",
+          "\\"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\\\y'",
+      "commands": [
+        [
+          ":",
+          "x\\y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\\\'",
+      "commands": [
+        [
+          ":",
+          "x\\"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\\\y'",
+      "commands": [
+        [
+          ":",
+          "xx\\y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\\\'y",
+      "commands": [
+        [
+          ":",
+          "\\y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\\\y'y",
+      "commands": [
+        [
+          ":",
+          "x\\yy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\\\' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "\\",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\\\y' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x\\y",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\\\'\"b\"",
+      "commands": [
+        [
+          ":",
+          "a\\b"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\\\y'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax\\yb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\''",
+      "commands": [
+        [
+          ":",
+          "'"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\'y'",
+      "commands": [
+        [
+          ":",
+          "x'y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\''",
+      "commands": [
+        [
+          ":",
+          "x'"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\'y'",
+      "commands": [
+        [
+          ":",
+          "xx'y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\''y",
+      "commands": [
+        [
+          ":",
+          "'y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\'y'y",
+      "commands": [
+        [
+          ":",
+          "x'yy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\'' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "'",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\'y' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x'y",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\''\"b\"",
+      "commands": [
+        [
+          ":",
+          "a'b"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\'y'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax'yb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\\"'",
+      "commands": [
+        [
+          ":",
+          "\""
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\\"y'",
+      "commands": [
+        [
+          ":",
+          "x\"y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\\"'",
+      "commands": [
+        [
+          ":",
+          "x\""
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\\"y'",
+      "commands": [
+        [
+          ":",
+          "xx\"y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\\"'y",
+      "commands": [
+        [
+          ":",
+          "\"y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\\"y'y",
+      "commands": [
+        [
+          ":",
+          "x\"yy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\\"' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "\"",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\\"y' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x\"y",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\\"'\"b\"",
+      "commands": [
+        [
+          ":",
+          "a\"b"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\\"y'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax\"yb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\?'",
+      "commands": [
+        [
+          ":",
+          "?"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\?y'",
+      "commands": [
+        [
+          ":",
+          "x?y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\?'",
+      "commands": [
+        [
+          ":",
+          "x?"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\?y'",
+      "commands": [
+        [
+          ":",
+          "xx?y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\?'y",
+      "commands": [
+        [
+          ":",
+          "?y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\?y'y",
+      "commands": [
+        [
+          ":",
+          "x?yy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\?' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "?",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\?y' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x?y",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\?'\"b\"",
+      "commands": [
+        [
+          ":",
+          "a?b"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\?y'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax?yb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\x41'",
+      "commands": [
+        [
+          ":",
+          "A"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\x41y'",
+      "commands": [
+        [
+          ":",
+          "xAy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\x41'",
+      "commands": [
+        [
+          ":",
+          "xA"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\x41y'",
+      "commands": [
+        [
+          ":",
+          "xxAy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\x41'y",
+      "commands": [
+        [
+          ":",
+          "Ay"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\x41y'y",
+      "commands": [
+        [
+          ":",
+          "xAyy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\x41' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "A",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\x41y' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "xAy",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\x41'\"b\"",
+      "commands": [
+        [
+          ":",
+          "aAb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\x41y'\"b\"",
+      "commands": [
+        [
+          ":",
+          "axAyb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\x7e'",
+      "commands": [
+        [
+          ":",
+          "~"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\x7ey'",
+      "commands": [
+        [
+          ":",
+          "x~y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\x7e'",
+      "commands": [
+        [
+          ":",
+          "x~"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\x7ey'",
+      "commands": [
+        [
+          ":",
+          "xx~y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\x7e'y",
+      "commands": [
+        [
+          ":",
+          "~y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\x7ey'y",
+      "commands": [
+        [
+          ":",
+          "x~yy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\x7e' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "~",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\x7ey' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x~y",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\x7e'\"b\"",
+      "commands": [
+        [
+          ":",
+          "a~b"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\x7ey'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax~yb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\x2d'",
+      "commands": [
+        [
+          ":",
+          "-"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\x2dy'",
+      "commands": [
+        [
+          ":",
+          "x-y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\x2d'",
+      "commands": [
+        [
+          ":",
+          "x-"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\x2dy'",
+      "commands": [
+        [
+          ":",
+          "xx-y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\x2d'y",
+      "commands": [
+        [
+          ":",
+          "-y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\x2dy'y",
+      "commands": [
+        [
+          ":",
+          "x-yy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\x2d' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "-",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\x2dy' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x-y",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\x2d'\"b\"",
+      "commands": [
+        [
+          ":",
+          "a-b"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\x2dy'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax-yb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\x2D'",
+      "commands": [
+        [
+          ":",
+          "-"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\x2Dy'",
+      "commands": [
+        [
+          ":",
+          "x-y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\x2D'",
+      "commands": [
+        [
+          ":",
+          "x-"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\x2Dy'",
+      "commands": [
+        [
+          ":",
+          "xx-y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\x2D'y",
+      "commands": [
+        [
+          ":",
+          "-y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\x2Dy'y",
+      "commands": [
+        [
+          ":",
+          "x-yy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\x2D' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "-",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\x2Dy' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x-y",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\x2D'\"b\"",
+      "commands": [
+        [
+          ":",
+          "a-b"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\x2Dy'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax-yb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\101'",
+      "commands": [
+        [
+          ":",
+          "A"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\101y'",
+      "commands": [
+        [
+          ":",
+          "xAy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\101'",
+      "commands": [
+        [
+          ":",
+          "xA"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\101y'",
+      "commands": [
+        [
+          ":",
+          "xxAy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\101'y",
+      "commands": [
+        [
+          ":",
+          "Ay"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\101y'y",
+      "commands": [
+        [
+          ":",
+          "xAyy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\101' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "A",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\101y' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "xAy",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\101'\"b\"",
+      "commands": [
+        [
+          ":",
+          "aAb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\101y'\"b\"",
+      "commands": [
+        [
+          ":",
+          "axAyb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\176'",
+      "commands": [
+        [
+          ":",
+          "~"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\176y'",
+      "commands": [
+        [
+          ":",
+          "x~y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\176'",
+      "commands": [
+        [
+          ":",
+          "x~"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\176y'",
+      "commands": [
+        [
+          ":",
+          "xx~y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\176'y",
+      "commands": [
+        [
+          ":",
+          "~y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\176y'y",
+      "commands": [
+        [
+          ":",
+          "x~yy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\176' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "~",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\176y' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x~y",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\176'\"b\"",
+      "commands": [
+        [
+          ":",
+          "a~b"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\176y'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax~yb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\55'",
+      "commands": [
+        [
+          ":",
+          "-"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\55y'",
+      "commands": [
+        [
+          ":",
+          "x-y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\55'",
+      "commands": [
+        [
+          ":",
+          "x-"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\55y'",
+      "commands": [
+        [
+          ":",
+          "xx-y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\55'y",
+      "commands": [
+        [
+          ":",
+          "-y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\55y'y",
+      "commands": [
+        [
+          ":",
+          "x-yy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\55' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "-",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\55y' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x-y",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\55'\"b\"",
+      "commands": [
+        [
+          ":",
+          "a-b"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\55y'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax-yb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\1013'",
+      "commands": [
+        [
+          ":",
+          "A3"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\1013y'",
+      "commands": [
+        [
+          ":",
+          "xA3y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\1013'",
+      "commands": [
+        [
+          ":",
+          "xA3"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\1013y'",
+      "commands": [
+        [
+          ":",
+          "xxA3y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\1013'y",
+      "commands": [
+        [
+          ":",
+          "A3y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\1013y'y",
+      "commands": [
+        [
+          ":",
+          "xA3yy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\1013' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "A3",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\1013y' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "xA3y",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\1013'\"b\"",
+      "commands": [
+        [
+          ":",
+          "aA3b"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\1013y'\"b\"",
+      "commands": [
+        [
+          ":",
+          "axA3yb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\u0041'",
+      "commands": [
+        [
+          ":",
+          "A"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\u0041y'",
+      "commands": [
+        [
+          ":",
+          "xAy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\u0041'",
+      "commands": [
+        [
+          ":",
+          "xA"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\u0041y'",
+      "commands": [
+        [
+          ":",
+          "xxAy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\u0041'y",
+      "commands": [
+        [
+          ":",
+          "Ay"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\u0041y'y",
+      "commands": [
+        [
+          ":",
+          "xAyy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\u0041' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "A",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\u0041y' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "xAy",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\u0041'\"b\"",
+      "commands": [
+        [
+          ":",
+          "aAb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\u0041y'\"b\"",
+      "commands": [
+        [
+          ":",
+          "axAyb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\u41'",
+      "commands": [
+        [
+          ":",
+          "A"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\u41y'",
+      "commands": [
+        [
+          ":",
+          "xAy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\u41'",
+      "commands": [
+        [
+          ":",
+          "xA"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\u41y'",
+      "commands": [
+        [
+          ":",
+          "xxAy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\u41'y",
+      "commands": [
+        [
+          ":",
+          "Ay"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\u41y'y",
+      "commands": [
+        [
+          ":",
+          "xAyy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\u41' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "A",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\u41y' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "xAy",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\u41'\"b\"",
+      "commands": [
+        [
+          ":",
+          "aAb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\u41y'\"b\"",
+      "commands": [
+        [
+          ":",
+          "axAyb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\u002d'",
+      "commands": [
+        [
+          ":",
+          "-"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\u002dy'",
+      "commands": [
+        [
+          ":",
+          "x-y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\u002d'",
+      "commands": [
+        [
+          ":",
+          "x-"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\u002dy'",
+      "commands": [
+        [
+          ":",
+          "xx-y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\u002d'y",
+      "commands": [
+        [
+          ":",
+          "-y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\u002dy'y",
+      "commands": [
+        [
+          ":",
+          "x-yy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\u002d' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "-",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\u002dy' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x-y",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\u002d'\"b\"",
+      "commands": [
+        [
+          ":",
+          "a-b"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\u002dy'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax-yb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\U00000041'",
+      "commands": [
+        [
+          ":",
+          "A"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\U00000041y'",
+      "commands": [
+        [
+          ":",
+          "xAy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\U00000041'",
+      "commands": [
+        [
+          ":",
+          "xA"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\U00000041y'",
+      "commands": [
+        [
+          ":",
+          "xxAy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\U00000041'y",
+      "commands": [
+        [
+          ":",
+          "Ay"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\U00000041y'y",
+      "commands": [
+        [
+          ":",
+          "xAyy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\U00000041' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "A",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\U00000041y' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "xAy",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\U00000041'\"b\"",
+      "commands": [
+        [
+          ":",
+          "aAb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\U00000041y'\"b\"",
+      "commands": [
+        [
+          ":",
+          "axAyb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\U0000002d'",
+      "commands": [
+        [
+          ":",
+          "-"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\U0000002dy'",
+      "commands": [
+        [
+          ":",
+          "x-y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\U0000002d'",
+      "commands": [
+        [
+          ":",
+          "x-"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\U0000002dy'",
+      "commands": [
+        [
+          ":",
+          "xx-y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\U0000002d'y",
+      "commands": [
+        [
+          ":",
+          "-y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\U0000002dy'y",
+      "commands": [
+        [
+          ":",
+          "x-yy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\U0000002d' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "-",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\U0000002dy' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x-y",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\U0000002d'\"b\"",
+      "commands": [
+        [
+          ":",
+          "a-b"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\U0000002dy'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax-yb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\q'",
+      "commands": [
+        [
+          ":",
+          "\\q"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\qy'",
+      "commands": [
+        [
+          ":",
+          "x\\qy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\q'",
+      "commands": [
+        [
+          ":",
+          "x\\q"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\qy'",
+      "commands": [
+        [
+          ":",
+          "xx\\qy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\q'y",
+      "commands": [
+        [
+          ":",
+          "\\qy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\qy'y",
+      "commands": [
+        [
+          ":",
+          "x\\qyy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\q' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "\\q",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\qy' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x\\qy",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\q'\"b\"",
+      "commands": [
+        [
+          ":",
+          "a\\qb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\qy'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax\\qyb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\-'",
+      "commands": [
+        [
+          ":",
+          "\\-"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\-y'",
+      "commands": [
+        [
+          ":",
+          "x\\-y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\-'",
+      "commands": [
+        [
+          ":",
+          "x\\-"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\-y'",
+      "commands": [
+        [
+          ":",
+          "xx\\-y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\-'y",
+      "commands": [
+        [
+          ":",
+          "\\-y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\-y'y",
+      "commands": [
+        [
+          ":",
+          "x\\-yy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\-' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "\\-",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\-y' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x\\-y",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\-'\"b\"",
+      "commands": [
+        [
+          ":",
+          "a\\-b"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\-y'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax\\-yb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\8'",
+      "commands": [
+        [
+          ":",
+          "\\8"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\8y'",
+      "commands": [
+        [
+          ":",
+          "x\\8y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\8'",
+      "commands": [
+        [
+          ":",
+          "x\\8"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\8y'",
+      "commands": [
+        [
+          ":",
+          "xx\\8y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\8'y",
+      "commands": [
+        [
+          ":",
+          "\\8y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\8y'y",
+      "commands": [
+        [
+          ":",
+          "x\\8yy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\8' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "\\8",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\8y' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x\\8y",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\8'\"b\"",
+      "commands": [
+        [
+          ":",
+          "a\\8b"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\8y'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax\\8yb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\9'",
+      "commands": [
+        [
+          ":",
+          "\\9"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\9y'",
+      "commands": [
+        [
+          ":",
+          "x\\9y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\9'",
+      "commands": [
+        [
+          ":",
+          "x\\9"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\9y'",
+      "commands": [
+        [
+          ":",
+          "xx\\9y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\9'y",
+      "commands": [
+        [
+          ":",
+          "\\9y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\9y'y",
+      "commands": [
+        [
+          ":",
+          "x\\9yy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\9' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "\\9",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\9y' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x\\9y",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\9'\"b\"",
+      "commands": [
+        [
+          ":",
+          "a\\9b"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\9y'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax\\9yb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\z'",
+      "commands": [
+        [
+          ":",
+          "\\z"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\zy'",
+      "commands": [
+        [
+          ":",
+          "x\\zy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\z'",
+      "commands": [
+        [
+          ":",
+          "x\\z"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\zy'",
+      "commands": [
+        [
+          ":",
+          "xx\\zy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\z'y",
+      "commands": [
+        [
+          ":",
+          "\\zy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\zy'y",
+      "commands": [
+        [
+          ":",
+          "x\\zyy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\z' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "\\z",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\zy' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x\\zy",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\z'\"b\"",
+      "commands": [
+        [
+          ":",
+          "a\\zb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\zy'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax\\zyb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\.'",
+      "commands": [
+        [
+          ":",
+          "\\."
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\.y'",
+      "commands": [
+        [
+          ":",
+          "x\\.y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\.'",
+      "commands": [
+        [
+          ":",
+          "x\\."
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\.y'",
+      "commands": [
+        [
+          ":",
+          "xx\\.y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\.'y",
+      "commands": [
+        [
+          ":",
+          "\\.y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\.y'y",
+      "commands": [
+        [
+          ":",
+          "x\\.yy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\.' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "\\.",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\.y' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x\\.y",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\.'\"b\"",
+      "commands": [
+        [
+          ":",
+          "a\\.b"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\.y'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax\\.yb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\/'",
+      "commands": [
+        [
+          ":",
+          "\\/"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\/y'",
+      "commands": [
+        [
+          ":",
+          "x\\/y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\/'",
+      "commands": [
+        [
+          ":",
+          "x\\/"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\/y'",
+      "commands": [
+        [
+          ":",
+          "xx\\/y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\/'y",
+      "commands": [
+        [
+          ":",
+          "\\/y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\/y'y",
+      "commands": [
+        [
+          ":",
+          "x\\/yy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\/' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "\\/",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\/y' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x\\/y",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\/'\"b\"",
+      "commands": [
+        [
+          ":",
+          "a\\/b"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\/y'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax\\/yb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\x'",
+      "commands": [
+        [
+          ":",
+          "\\x"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\xy'",
+      "commands": [
+        [
+          ":",
+          "x\\xy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\x'",
+      "commands": [
+        [
+          ":",
+          "x\\x"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\xy'",
+      "commands": [
+        [
+          ":",
+          "xx\\xy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\x'y",
+      "commands": [
+        [
+          ":",
+          "\\xy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\xy'y",
+      "commands": [
+        [
+          ":",
+          "x\\xyy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\x' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "\\x",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\xy' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x\\xy",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\x'\"b\"",
+      "commands": [
+        [
+          ":",
+          "a\\xb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\xy'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax\\xyb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\xzz'",
+      "commands": [
+        [
+          ":",
+          "\\xzz"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\xzzy'",
+      "commands": [
+        [
+          ":",
+          "x\\xzzy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\xzz'",
+      "commands": [
+        [
+          ":",
+          "x\\xzz"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\xzzy'",
+      "commands": [
+        [
+          ":",
+          "xx\\xzzy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\xzz'y",
+      "commands": [
+        [
+          ":",
+          "\\xzzy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\xzzy'y",
+      "commands": [
+        [
+          ":",
+          "x\\xzzyy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\xzz' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "\\xzz",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\xzzy' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x\\xzzy",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\xzz'\"b\"",
+      "commands": [
+        [
+          ":",
+          "a\\xzzb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\xzzy'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax\\xzzyb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\u'",
+      "commands": [
+        [
+          ":",
+          "\\u"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\uy'",
+      "commands": [
+        [
+          ":",
+          "x\\uy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\u'",
+      "commands": [
+        [
+          ":",
+          "x\\u"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\uy'",
+      "commands": [
+        [
+          ":",
+          "xx\\uy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\u'y",
+      "commands": [
+        [
+          ":",
+          "\\uy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\uy'y",
+      "commands": [
+        [
+          ":",
+          "x\\uyy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\u' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "\\u",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\uy' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x\\uy",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\u'\"b\"",
+      "commands": [
+        [
+          ":",
+          "a\\ub"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\uy'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax\\uyb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\uzz'",
+      "commands": [
+        [
+          ":",
+          "\\uzz"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\uzzy'",
+      "commands": [
+        [
+          ":",
+          "x\\uzzy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\uzz'",
+      "commands": [
+        [
+          ":",
+          "x\\uzz"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\uzzy'",
+      "commands": [
+        [
+          ":",
+          "xx\\uzzy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\uzz'y",
+      "commands": [
+        [
+          ":",
+          "\\uzzy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\uzzy'y",
+      "commands": [
+        [
+          ":",
+          "x\\uzzyy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\uzz' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "\\uzz",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\uzzy' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x\\uzzy",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\uzz'\"b\"",
+      "commands": [
+        [
+          ":",
+          "a\\uzzb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\uzzy'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax\\uzzyb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\U'",
+      "commands": [
+        [
+          ":",
+          "\\U"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\Uy'",
+      "commands": [
+        [
+          ":",
+          "x\\Uy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\U'",
+      "commands": [
+        [
+          ":",
+          "x\\U"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\Uy'",
+      "commands": [
+        [
+          ":",
+          "xx\\Uy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\U'y",
+      "commands": [
+        [
+          ":",
+          "\\Uy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\Uy'y",
+      "commands": [
+        [
+          ":",
+          "x\\Uyy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\U' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "\\U",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\Uy' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x\\Uy",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\U'\"b\"",
+      "commands": [
+        [
+          ":",
+          "a\\Ub"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\Uy'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax\\Uyb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\Uzz'",
+      "commands": [
+        [
+          ":",
+          "\\Uzz"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\Uzzy'",
+      "commands": [
+        [
+          ":",
+          "x\\Uzzy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\Uzz'",
+      "commands": [
+        [
+          ":",
+          "x\\Uzz"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\Uzzy'",
+      "commands": [
+        [
+          ":",
+          "xx\\Uzzy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\Uzz'y",
+      "commands": [
+        [
+          ":",
+          "\\Uzzy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\Uzzy'y",
+      "commands": [
+        [
+          ":",
+          "x\\Uzzyy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\Uzz' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "\\Uzz",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\Uzzy' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x\\Uzzy",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\Uzz'\"b\"",
+      "commands": [
+        [
+          ":",
+          "a\\Uzzb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\Uzzy'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ax\\Uzzyb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\0'",
+      "commands": [
+        [
+          ":",
+          ""
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\0y'",
+      "commands": [
+        [
+          ":",
+          "x"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\0'",
+      "commands": [
+        [
+          ":",
+          "x"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\0y'",
+      "commands": [
+        [
+          ":",
+          "xx"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\0'y",
+      "commands": [
+        [
+          ":",
+          "y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\0y'y",
+      "commands": [
+        [
+          ":",
+          "xy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\0' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\0y' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\0'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ab"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\0y'\"b\"",
+      "commands": [
+        [
+          ":",
+          "axb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\x00'",
+      "commands": [
+        [
+          ":",
+          ""
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\x00y'",
+      "commands": [
+        [
+          ":",
+          "x"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\x00'",
+      "commands": [
+        [
+          ":",
+          "x"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\x00y'",
+      "commands": [
+        [
+          ":",
+          "xx"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\x00'y",
+      "commands": [
+        [
+          ":",
+          "y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\x00y'y",
+      "commands": [
+        [
+          ":",
+          "xy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\x00' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\x00y' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\x00'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ab"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\x00y'\"b\"",
+      "commands": [
+        [
+          ":",
+          "axb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\u0000'",
+      "commands": [
+        [
+          ":",
+          ""
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\u0000y'",
+      "commands": [
+        [
+          ":",
+          "x"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\u0000'",
+      "commands": [
+        [
+          ":",
+          "x"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\u0000y'",
+      "commands": [
+        [
+          ":",
+          "xx"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\u0000'y",
+      "commands": [
+        [
+          ":",
+          "y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\u0000y'y",
+      "commands": [
+        [
+          ":",
+          "xy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\u0000' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\u0000y' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\u0000'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ab"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\u0000y'\"b\"",
+      "commands": [
+        [
+          ":",
+          "axb"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone",
+      "line": ": $'\\U00000000'",
+      "commands": [
+        [
+          ":",
+          ""
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, alone and between neighbours",
+      "line": ": $'x\\U00000000y'",
+      "commands": [
+        [
+          ":",
+          "x"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal",
+      "line": ": x$'\\U00000000'",
+      "commands": [
+        [
+          ":",
+          "x"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, behind a literal and between neighbours",
+      "line": ": x$'x\\U00000000y'",
+      "commands": [
+        [
+          ":",
+          "xx"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal",
+      "line": ": $'\\U00000000'y",
+      "commands": [
+        [
+          ":",
+          "y"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, in front of a literal and between neighbours",
+      "line": ": $'x\\U00000000y'y",
+      "commands": [
+        [
+          ":",
+          "xy"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones",
+      "line": ": pre $'\\U00000000' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, as one word beside two plain ones and between neighbours",
+      "line": ": pre $'x\\U00000000y' post",
+      "commands": [
+        [
+          ":",
+          "pre",
+          "x",
+          "post"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms",
+      "line": ": 'a'$'\\U00000000'\"b\"",
+      "commands": [
+        [
+          ":",
+          "ab"
+        ]
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to printable text, concatenated across all three quoting forms and between neighbours",
+      "line": ": 'a'$'x\\U00000000y'\"b\"",
+      "commands": [
+        [
+          ":",
+          "axb"
+        ]
+      ]
+    },
+    {
+      "construct": "quoting forms composed into one word",
+      "line": ": a'b'\"c\"d",
+      "commands": [
+        [
+          ":",
+          "abcd"
+        ]
+      ]
+    },
+    {
+      "construct": "quoting forms composed into one word",
+      "line": ": ''",
+      "commands": [
+        [
+          ":",
+          ""
+        ]
+      ]
+    },
+    {
+      "construct": "quoting forms composed into one word",
+      "line": ": 'a b'",
+      "commands": [
+        [
+          ":",
+          "a b"
+        ]
+      ]
+    },
+    {
+      "construct": "quoting forms composed into one word",
+      "line": ": \"a b\"",
+      "commands": [
+        [
+          ":",
+          "a b"
+        ]
+      ]
+    },
+    {
+      "construct": "quoting forms composed into one word",
+      "line": ": a\\ b",
+      "commands": [
+        [
+          ":",
+          "a b"
+        ]
+      ]
+    },
+    {
+      "construct": "quoting forms composed into one word",
+      "line": ": \\a\\b",
+      "commands": [
+        [
+          ":",
+          "ab"
+        ]
+      ]
+    },
+    {
+      "construct": "quoting forms composed into one word",
+      "line": ": \"a\"$'b'c",
+      "commands": [
+        [
+          ":",
+          "abc"
+        ]
+      ]
+    },
+    {
+      "construct": "quoting forms composed into one word",
+      "line": ": x''y",
+      "commands": [
+        [
+          ":",
+          "xy"
+        ]
+      ]
+    },
+    {
+      "construct": "quoting forms composed into one word",
+      "line": ": $''",
+      "commands": [
+        [
+          ":",
+          ""
+        ]
+      ]
+    },
+    {
+      "construct": "quoting forms composed into one word",
+      "line": ": a$''b",
+      "commands": [
+        [
+          ":",
+          "ab"
+        ]
+      ]
+    },
+    {
+      "construct": "quoting forms composed into one word",
+      "line": ": '--prod'",
+      "commands": [
+        [
+          ":",
+          "--prod"
+        ]
+      ]
+    },
+    {
+      "construct": "quoting forms composed into one word",
+      "line": ": \"--prod\"",
+      "commands": [
+        [
+          ":",
+          "--prod"
+        ]
+      ]
+    },
+    {
+      "construct": "a brace that is no reserved word",
+      "line": ": -I{} k",
+      "commands": [
+        [
+          ":",
+          "-I{}",
+          "k"
+        ]
+      ]
+    },
+    {
+      "construct": "a brace that is no reserved word",
+      "line": ": {} l",
+      "commands": [
+        [
+          ":",
+          "{}",
+          "l"
+        ]
+      ]
+    },
+    {
+      "construct": "a brace that is no reserved word",
+      "line": ": a{b c}d",
+      "commands": [
+        [
+          ":",
+          "a{b",
+          "c}d"
+        ]
+      ]
+    },
+    {
+      "construct": "a brace that is no reserved word",
+      "line": ": {e f}",
+      "commands": [
+        [
+          ":",
+          "{e",
+          "f}"
+        ]
+      ]
+    },
+    {
+      "construct": "a brace that is no reserved word",
+      "line": ": }g h{",
+      "commands": [
+        [
+          ":",
+          "}g",
+          "h{"
+        ]
+      ]
+    },
+    {
+      "construct": "a brace that is no reserved word",
+      "line": ": } x",
+      "commands": [
+        [
+          ":",
+          "}",
+          "x"
+        ]
+      ]
+    },
+    {
+      "construct": "a brace that is no reserved word",
+      "line": ": { x",
+      "commands": [
+        [
+          ":",
+          "{",
+          "x"
+        ]
+      ]
+    },
+    {
+      "construct": "a brace that is no reserved word",
+      "line": ": x{ }y",
+      "commands": [
+        [
+          ":",
+          "x{",
+          "}y"
+        ]
+      ]
+    },
+    {
+      "construct": "a brace that is no reserved word",
+      "line": ": vercel{} --prod",
+      "commands": [
+        [
+          ":",
+          "vercel{}",
+          "--prod"
+        ]
+      ]
+    },
+    {
+      "construct": "a brace group, where the brace is a reserved word",
+      "line": "{ : g h ; }",
+      "commands": [
+        [
+          ":",
+          "g",
+          "h"
+        ]
+      ]
+    },
+    {
+      "construct": "a brace group, where the brace is a reserved word",
+      "line": "{ : i ; } ; : j",
+      "commands": [
+        [
+          ":",
+          "i"
+        ],
+        [
+          ":",
+          "j"
+        ]
+      ]
+    },
+    {
+      "construct": "a subshell group, whose commands the shell runs in a child",
+      "line": "( : k ) ; : l",
+      "commands": [
+        [
+          ":",
+          "k"
+        ],
+        [
+          ":",
+          "l"
+        ]
+      ]
+    },
+    {
+      "construct": "a subshell group, whose commands the shell runs in a child",
+      "line": "( : m ; : n )",
+      "commands": [
+        [
+          ":",
+          "m"
+        ],
+        [
+          ":",
+          "n"
+        ]
+      ]
+    },
+    {
+      "construct": "the negation reserved word in front of a command",
+      "line": "! : o",
+      "commands": [
+        [
+          ":",
+          "o"
+        ]
+      ]
+    },
+    {
+      "construct": "the negation reserved word in front of a command",
+      "line": ": p ; ! : q",
+      "commands": [
+        [
+          ":",
+          "p"
+        ],
+        [
+          ":",
+          "q"
+        ]
+      ]
+    },
+    {
+      "construct": "operators the shell traces in a fixed order",
+      "line": ": a ; : b",
+      "commands": [
+        [
+          ":",
+          "a"
+        ],
+        [
+          ":",
+          "b"
+        ]
+      ]
+    },
+    {
+      "construct": "operators the shell traces in a fixed order",
+      "line": ": c && : d",
+      "commands": [
+        [
+          ":",
+          "c"
+        ],
+        [
+          ":",
+          "d"
+        ]
+      ]
+    },
+    {
+      "construct": "operators the shell traces in a fixed order",
+      "line": ": e\n: f",
+      "commands": [
+        [
+          ":",
+          "e"
+        ],
+        [
+          ":",
+          "f"
+        ]
+      ]
+    },
+    {
+      "construct": "operators the shell traces in a fixed order",
+      "line": ": g ;\n: h",
+      "commands": [
+        [
+          ":",
+          "g"
+        ],
+        [
+          ":",
+          "h"
+        ]
+      ]
+    },
+    {
+      "construct": "comments and redirections, which are no words of the command",
+      "line": ": a # b",
+      "commands": [
+        [
+          ":",
+          "a"
+        ]
+      ]
+    },
+    {
+      "construct": "comments and redirections, which are no words of the command",
+      "line": ": a >/dev/null",
+      "commands": [
+        [
+          ":",
+          "a"
+        ]
+      ]
+    },
+    {
+      "construct": "comments and redirections, which are no words of the command",
+      "line": ": a > /dev/null",
+      "commands": [
+        [
+          ":",
+          "a"
+        ]
+      ]
+    },
+    {
+      "construct": "comments and redirections, which are no words of the command",
+      "line": ": a </dev/null",
+      "commands": [
+        [
+          ":",
+          "a"
+        ]
+      ]
+    },
+    {
+      "construct": "comments and redirections, which are no words of the command",
+      "line": ": >/dev/null a",
+      "commands": [
+        [
+          ":",
+          "a"
+        ]
+      ]
+    },
+    {
+      "construct": "a dollar-quote the shell does not read as ANSI-C",
+      "line": ": \"$'--prod'\"",
+      "commands": [
+        [
+          ":",
+          "$'--prod'"
+        ]
+      ]
+    },
+    {
+      "construct": "a dollar-quote the shell does not read as ANSI-C",
+      "line": ": \"$'commit'\"",
+      "commands": [
+        [
+          ":",
+          "$'commit'"
+        ]
+      ]
+    },
+    {
+      "construct": "a dollar-quote the shell does not read as ANSI-C",
+      "line": ": \"x$'y'\"",
+      "commands": [
+        [
+          ":",
+          "x$'y'"
+        ]
+      ]
+    },
+    {
+      "construct": "a dollar-quote the shell does not read as ANSI-C",
+      "line": ": \\$'\\x41'",
+      "commands": [
+        [
+          ":",
+          "$\\x41"
+        ]
+      ]
+    },
+    {
+      "construct": "a dollar-quote the shell does not read as ANSI-C",
+      "line": ": \\$'--prod'",
+      "commands": [
+        [
+          ":",
+          "$--prod"
+        ]
+      ]
+    },
+    {
+      "construct": "a dollar-quote the shell does not read as ANSI-C",
+      "line": ": \\$'commit'",
+      "commands": [
+        [
+          ":",
+          "$commit"
+        ]
+      ]
+    },
+    {
+      "construct": "a dollar sigil the shell leaves literal, because no quoting form follows it",
+      "line": ": \"$\"--prod\"\"",
+      "commands": [
+        [
+          ":",
+          "$--prod"
+        ]
+      ]
+    },
+    {
+      "construct": "a dollar sigil the shell leaves literal, because no quoting form follows it",
+      "line": ": \\$\"--prod\"",
+      "commands": [
+        [
+          ":",
+          "$--prod"
+        ]
+      ]
+    },
+    {
+      "construct": "a dollar sigil the shell leaves literal, because no quoting form follows it",
+      "line": ": \\$\"commit\"",
+      "commands": [
+        [
+          ":",
+          "$commit"
+        ]
+      ]
+    },
+    {
+      "construct": "a dollar sigil the shell leaves literal, because no quoting form follows it",
+      "line": ": $\\\"--prod\\\"",
+      "commands": [
+        [
+          ":",
+          "$\"--prod\""
+        ]
+      ]
+    },
+    {
+      "construct": "a dollar sigil the shell leaves literal, because no quoting form follows it",
+      "line": ": $\\'--prod\\'",
+      "commands": [
+        [
+          ":",
+          "$'--prod'"
+        ]
+      ]
+    },
+    {
+      "construct": "a dollar sigil the shell leaves literal, because no quoting form follows it",
+      "line": ": $\\--prod",
+      "commands": [
+        [
+          ":",
+          "$--prod"
+        ]
+      ]
+    },
+    {
+      "construct": "a dollar sigil the shell leaves literal, because no quoting form follows it",
+      "line": ": $ \"--prod\"",
+      "commands": [
+        [
+          ":",
+          "$",
+          "--prod"
+        ]
+      ]
+    },
+    {
+      "construct": "the divergence spellings and the siblings they mimic",
+      "line": ": vercel $'--prod'",
+      "commands": [
+        [
+          ":",
+          "vercel",
+          "--prod"
+        ]
+      ]
+    },
+    {
+      "construct": "the divergence spellings and the siblings they mimic",
+      "line": ": vercel --prod",
+      "commands": [
+        [
+          ":",
+          "vercel",
+          "--prod"
+        ]
+      ]
+    },
+    {
+      "construct": "the divergence spellings and the siblings they mimic",
+      "line": ": vercel $'--pro'$'d'",
+      "commands": [
+        [
+          ":",
+          "vercel",
+          "--prod"
+        ]
+      ]
+    },
+    {
+      "construct": "the divergence spellings and the siblings they mimic",
+      "line": ": vercel $'\\x2d\\x2dprod'",
+      "commands": [
+        [
+          ":",
+          "vercel",
+          "--prod"
+        ]
+      ]
+    },
+    {
+      "construct": "the divergence spellings and the siblings they mimic",
+      "line": ": git $'commit' -m x",
+      "commands": [
+        [
+          ":",
+          "git",
+          "commit",
+          "-m",
+          "x"
+        ]
+      ]
+    },
+    {
+      "construct": "the divergence spellings and the siblings they mimic",
+      "line": ": git commit -m x",
+      "commands": [
+        [
+          ":",
+          "git",
+          "commit",
+          "-m",
+          "x"
+        ]
+      ]
+    },
+    {
+      "construct": "the divergence spellings and the siblings they mimic",
+      "line": ": git $'\\x70\\x75\\x73\\x68' origin main",
+      "commands": [
+        [
+          ":",
+          "git",
+          "push",
+          "origin",
+          "main"
+        ]
+      ]
+    },
+    {
+      "construct": "the divergence spellings and the siblings they mimic",
+      "line": ": git $'push' origin main",
+      "commands": [
+        [
+          ":",
+          "git",
+          "push",
+          "origin",
+          "main"
+        ]
+      ]
+    },
+    {
+      "construct": "the divergence spellings and the siblings they mimic",
+      "line": ": git push origin main",
+      "commands": [
+        [
+          ":",
+          "git",
+          "push",
+          "origin",
+          "main"
+        ]
+      ]
+    },
+    {
+      "construct": "the divergence spellings and the siblings they mimic",
+      "line": ": vercel $'--target' $'production'",
+      "commands": [
+        [
+          ":",
+          "vercel",
+          "--target",
+          "production"
+        ]
+      ]
+    }
+  ],
+  "equivalences": [
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\ny'",
+      "literal": ": 'x\ny'",
+      "trace": [
+        "+ : $'x\\ny'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\ny'",
+      "literal": ": x'x\ny'",
+      "trace": [
+        "+ : $'xx\\ny'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\ny'y",
+      "literal": ": 'x\ny'y",
+      "trace": [
+        "+ : $'x\\nyy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\ny' post",
+      "literal": ": pre 'x\ny' post",
+      "trace": [
+        "+ : pre $'x\\ny' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\ny'\"b\"",
+      "literal": ": 'a''x\ny'\"b\"",
+      "trace": [
+        "+ : $'ax\\nyb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\ty'",
+      "literal": ": 'x\ty'",
+      "trace": [
+        "+ : $'x\\ty'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\ty'",
+      "literal": ": x'x\ty'",
+      "trace": [
+        "+ : $'xx\\ty'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\ty'y",
+      "literal": ": 'x\ty'y",
+      "trace": [
+        "+ : $'x\\tyy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\ty' post",
+      "literal": ": pre 'x\ty' post",
+      "trace": [
+        "+ : pre $'x\\ty' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\ty'\"b\"",
+      "literal": ": 'a''x\ty'\"b\"",
+      "trace": [
+        "+ : $'ax\\tyb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\ry'",
+      "literal": ": 'x\ry'",
+      "trace": [
+        "+ : $'x\\ry'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\ry'",
+      "literal": ": x'x\ry'",
+      "trace": [
+        "+ : $'xx\\ry'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\ry'y",
+      "literal": ": 'x\ry'y",
+      "trace": [
+        "+ : $'x\\ryy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\ry' post",
+      "literal": ": pre 'x\ry' post",
+      "trace": [
+        "+ : pre $'x\\ry' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\ry'\"b\"",
+      "literal": ": 'a''x\ry'\"b\"",
+      "trace": [
+        "+ : $'ax\\ryb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\ay'",
+      "literal": ": 'x\u0007y'",
+      "trace": [
+        "+ : $'x\\ay'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\ay'",
+      "literal": ": x'x\u0007y'",
+      "trace": [
+        "+ : $'xx\\ay'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\ay'y",
+      "literal": ": 'x\u0007y'y",
+      "trace": [
+        "+ : $'x\\ayy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\ay' post",
+      "literal": ": pre 'x\u0007y' post",
+      "trace": [
+        "+ : pre $'x\\ay' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\ay'\"b\"",
+      "literal": ": 'a''x\u0007y'\"b\"",
+      "trace": [
+        "+ : $'ax\\ayb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\by'",
+      "literal": ": 'x\by'",
+      "trace": [
+        "+ : $'x\\by'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\by'",
+      "literal": ": x'x\by'",
+      "trace": [
+        "+ : $'xx\\by'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\by'y",
+      "literal": ": 'x\by'y",
+      "trace": [
+        "+ : $'x\\byy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\by' post",
+      "literal": ": pre 'x\by' post",
+      "trace": [
+        "+ : pre $'x\\by' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\by'\"b\"",
+      "literal": ": 'a''x\by'\"b\"",
+      "trace": [
+        "+ : $'ax\\byb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\ey'",
+      "literal": ": 'x\u001by'",
+      "trace": [
+        "+ : $'x\\Ey'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\ey'",
+      "literal": ": x'x\u001by'",
+      "trace": [
+        "+ : $'xx\\Ey'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\ey'y",
+      "literal": ": 'x\u001by'y",
+      "trace": [
+        "+ : $'x\\Eyy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\ey' post",
+      "literal": ": pre 'x\u001by' post",
+      "trace": [
+        "+ : pre $'x\\Ey' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\ey'\"b\"",
+      "literal": ": 'a''x\u001by'\"b\"",
+      "trace": [
+        "+ : $'ax\\Eyb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\Ey'",
+      "literal": ": 'x\u001by'",
+      "trace": [
+        "+ : $'x\\Ey'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\Ey'",
+      "literal": ": x'x\u001by'",
+      "trace": [
+        "+ : $'xx\\Ey'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\Ey'y",
+      "literal": ": 'x\u001by'y",
+      "trace": [
+        "+ : $'x\\Eyy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\Ey' post",
+      "literal": ": pre 'x\u001by' post",
+      "trace": [
+        "+ : pre $'x\\Ey' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\Ey'\"b\"",
+      "literal": ": 'a''x\u001by'\"b\"",
+      "trace": [
+        "+ : $'ax\\Eyb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\fy'",
+      "literal": ": 'x\fy'",
+      "trace": [
+        "+ : $'x\\fy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\fy'",
+      "literal": ": x'x\fy'",
+      "trace": [
+        "+ : $'xx\\fy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\fy'y",
+      "literal": ": 'x\fy'y",
+      "trace": [
+        "+ : $'x\\fyy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\fy' post",
+      "literal": ": pre 'x\fy' post",
+      "trace": [
+        "+ : pre $'x\\fy' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\fy'\"b\"",
+      "literal": ": 'a''x\fy'\"b\"",
+      "trace": [
+        "+ : $'ax\\fyb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\vy'",
+      "literal": ": 'x\u000by'",
+      "trace": [
+        "+ : $'x\\vy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\vy'",
+      "literal": ": x'x\u000by'",
+      "trace": [
+        "+ : $'xx\\vy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\vy'y",
+      "literal": ": 'x\u000by'y",
+      "trace": [
+        "+ : $'x\\vyy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\vy' post",
+      "literal": ": pre 'x\u000by' post",
+      "trace": [
+        "+ : pre $'x\\vy' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\vy'\"b\"",
+      "literal": ": 'a''x\u000by'\"b\"",
+      "trace": [
+        "+ : $'ax\\vyb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\x01y'",
+      "literal": ": 'x\u0001y'",
+      "trace": [
+        "+ : $'x\\001y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\x01y'",
+      "literal": ": x'x\u0001y'",
+      "trace": [
+        "+ : $'xx\\001y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\x01y'y",
+      "literal": ": 'x\u0001y'y",
+      "trace": [
+        "+ : $'x\\001yy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\x01y' post",
+      "literal": ": pre 'x\u0001y' post",
+      "trace": [
+        "+ : pre $'x\\001y' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\x01y'\"b\"",
+      "literal": ": 'a''x\u0001y'\"b\"",
+      "trace": [
+        "+ : $'ax\\001yb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\x1by'",
+      "literal": ": 'x\u001by'",
+      "trace": [
+        "+ : $'x\\Ey'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\x1by'",
+      "literal": ": x'x\u001by'",
+      "trace": [
+        "+ : $'xx\\Ey'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\x1by'y",
+      "literal": ": 'x\u001by'y",
+      "trace": [
+        "+ : $'x\\Eyy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\x1by' post",
+      "literal": ": pre 'x\u001by' post",
+      "trace": [
+        "+ : pre $'x\\Ey' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\x1by'\"b\"",
+      "literal": ": 'a''x\u001by'\"b\"",
+      "trace": [
+        "+ : $'ax\\Eyb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\x7fy'",
+      "literal": ": 'xy'",
+      "trace": [
+        "+ : $'x\\177y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\x7fy'",
+      "literal": ": x'xy'",
+      "trace": [
+        "+ : $'xx\\177y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\x7fy'y",
+      "literal": ": 'xy'y",
+      "trace": [
+        "+ : $'x\\177yy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\x7fy' post",
+      "literal": ": pre 'xy' post",
+      "trace": [
+        "+ : pre $'x\\177y' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\x7fy'\"b\"",
+      "literal": ": 'a''xy'\"b\"",
+      "trace": [
+        "+ : $'ax\\177yb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\001y'",
+      "literal": ": 'x\u0001y'",
+      "trace": [
+        "+ : $'x\\001y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\001y'",
+      "literal": ": x'x\u0001y'",
+      "trace": [
+        "+ : $'xx\\001y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\001y'y",
+      "literal": ": 'x\u0001y'y",
+      "trace": [
+        "+ : $'x\\001yy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\001y' post",
+      "literal": ": pre 'x\u0001y' post",
+      "trace": [
+        "+ : pre $'x\\001y' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\001y'\"b\"",
+      "literal": ": 'a''x\u0001y'\"b\"",
+      "trace": [
+        "+ : $'ax\\001yb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\033y'",
+      "literal": ": 'x\u001by'",
+      "trace": [
+        "+ : $'x\\Ey'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\033y'",
+      "literal": ": x'x\u001by'",
+      "trace": [
+        "+ : $'xx\\Ey'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\033y'y",
+      "literal": ": 'x\u001by'y",
+      "trace": [
+        "+ : $'x\\Eyy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\033y' post",
+      "literal": ": pre 'x\u001by' post",
+      "trace": [
+        "+ : pre $'x\\Ey' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\033y'\"b\"",
+      "literal": ": 'a''x\u001by'\"b\"",
+      "trace": [
+        "+ : $'ax\\Eyb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\177y'",
+      "literal": ": 'xy'",
+      "trace": [
+        "+ : $'x\\177y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\177y'",
+      "literal": ": x'xy'",
+      "trace": [
+        "+ : $'xx\\177y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\177y'y",
+      "literal": ": 'xy'y",
+      "trace": [
+        "+ : $'x\\177yy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\177y' post",
+      "literal": ": pre 'xy' post",
+      "trace": [
+        "+ : pre $'x\\177y' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\177y'\"b\"",
+      "literal": ": 'a''xy'\"b\"",
+      "trace": [
+        "+ : $'ax\\177yb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\cAy'",
+      "literal": ": 'x\u0001y'",
+      "trace": [
+        "+ : $'x\\001y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\cAy'",
+      "literal": ": x'x\u0001y'",
+      "trace": [
+        "+ : $'xx\\001y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\cAy'y",
+      "literal": ": 'x\u0001y'y",
+      "trace": [
+        "+ : $'x\\001yy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\cAy' post",
+      "literal": ": pre 'x\u0001y' post",
+      "trace": [
+        "+ : pre $'x\\001y' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\cAy'\"b\"",
+      "literal": ": 'a''x\u0001y'\"b\"",
+      "trace": [
+        "+ : $'ax\\001yb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\cay'",
+      "literal": ": 'x\u0001y'",
+      "trace": [
+        "+ : $'x\\001y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\cay'",
+      "literal": ": x'x\u0001y'",
+      "trace": [
+        "+ : $'xx\\001y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\cay'y",
+      "literal": ": 'x\u0001y'y",
+      "trace": [
+        "+ : $'x\\001yy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\cay' post",
+      "literal": ": pre 'x\u0001y' post",
+      "trace": [
+        "+ : pre $'x\\001y' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\cay'\"b\"",
+      "literal": ": 'a''x\u0001y'\"b\"",
+      "trace": [
+        "+ : $'ax\\001yb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\c?y'",
+      "literal": ": 'xy'",
+      "trace": [
+        "+ : $'x\\177y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\c?y'",
+      "literal": ": x'xy'",
+      "trace": [
+        "+ : $'xx\\177y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\c?y'y",
+      "literal": ": 'xy'y",
+      "trace": [
+        "+ : $'x\\177yy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\c?y' post",
+      "literal": ": pre 'xy' post",
+      "trace": [
+        "+ : pre $'x\\177y' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\c?y'\"b\"",
+      "literal": ": 'a''xy'\"b\"",
+      "trace": [
+        "+ : $'ax\\177yb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\c[y'",
+      "literal": ": 'x\u001by'",
+      "trace": [
+        "+ : $'x\\Ey'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\c[y'",
+      "literal": ": x'x\u001by'",
+      "trace": [
+        "+ : $'xx\\Ey'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\c[y'y",
+      "literal": ": 'x\u001by'y",
+      "trace": [
+        "+ : $'x\\Eyy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\c[y' post",
+      "literal": ": pre 'x\u001by' post",
+      "trace": [
+        "+ : pre $'x\\Ey' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\c[y'\"b\"",
+      "literal": ": 'a''x\u001by'\"b\"",
+      "trace": [
+        "+ : $'ax\\Eyb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\c]y'",
+      "literal": ": 'x\u001dy'",
+      "trace": [
+        "+ : $'x\\035y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\c]y'",
+      "literal": ": x'x\u001dy'",
+      "trace": [
+        "+ : $'xx\\035y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\c]y'y",
+      "literal": ": 'x\u001dy'y",
+      "trace": [
+        "+ : $'x\\035yy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\c]y' post",
+      "literal": ": pre 'x\u001dy' post",
+      "trace": [
+        "+ : pre $'x\\035y' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\c]y'\"b\"",
+      "literal": ": 'a''x\u001dy'\"b\"",
+      "trace": [
+        "+ : $'ax\\035yb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\c^y'",
+      "literal": ": 'x\u001ey'",
+      "trace": [
+        "+ : $'x\\036y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\c^y'",
+      "literal": ": x'x\u001ey'",
+      "trace": [
+        "+ : $'xx\\036y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\c^y'y",
+      "literal": ": 'x\u001ey'y",
+      "trace": [
+        "+ : $'x\\036yy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\c^y' post",
+      "literal": ": pre 'x\u001ey' post",
+      "trace": [
+        "+ : pre $'x\\036y' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\c^y'\"b\"",
+      "literal": ": 'a''x\u001ey'\"b\"",
+      "trace": [
+        "+ : $'ax\\036yb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\c_y'",
+      "literal": ": 'x\u001fy'",
+      "trace": [
+        "+ : $'x\\037y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\c_y'",
+      "literal": ": x'x\u001fy'",
+      "trace": [
+        "+ : $'xx\\037y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\c_y'y",
+      "literal": ": 'x\u001fy'y",
+      "trace": [
+        "+ : $'x\\037yy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\c_y' post",
+      "literal": ": pre 'x\u001fy' post",
+      "trace": [
+        "+ : pre $'x\\037y' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\c_y'\"b\"",
+      "literal": ": 'a''x\u001fy'\"b\"",
+      "trace": [
+        "+ : $'ax\\037yb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\c~y'",
+      "literal": ": 'x\u001ey'",
+      "trace": [
+        "+ : $'x\\036y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\c~y'",
+      "literal": ": x'x\u001ey'",
+      "trace": [
+        "+ : $'xx\\036y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\c~y'y",
+      "literal": ": 'x\u001ey'y",
+      "trace": [
+        "+ : $'x\\036yy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\c~y' post",
+      "literal": ": pre 'x\u001ey' post",
+      "trace": [
+        "+ : pre $'x\\036y' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\c~y'\"b\"",
+      "literal": ": 'a''x\u001ey'\"b\"",
+      "trace": [
+        "+ : $'ax\\036yb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\c!y'",
+      "literal": ": 'x\u0001y'",
+      "trace": [
+        "+ : $'x\\001y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\c!y'",
+      "literal": ": x'x\u0001y'",
+      "trace": [
+        "+ : $'xx\\001y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\c!y'y",
+      "literal": ": 'x\u0001y'y",
+      "trace": [
+        "+ : $'x\\001yy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\c!y' post",
+      "literal": ": pre 'x\u0001y' post",
+      "trace": [
+        "+ : pre $'x\\001y' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\c!y'\"b\"",
+      "literal": ": 'a''x\u0001y'\"b\"",
+      "trace": [
+        "+ : $'ax\\001yb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\c1y'",
+      "literal": ": 'x\u0011y'",
+      "trace": [
+        "+ : $'x\\021y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\c1y'",
+      "literal": ": x'x\u0011y'",
+      "trace": [
+        "+ : $'xx\\021y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\c1y'y",
+      "literal": ": 'x\u0011y'y",
+      "trace": [
+        "+ : $'x\\021yy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\c1y' post",
+      "literal": ": pre 'x\u0011y' post",
+      "trace": [
+        "+ : pre $'x\\021y' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\c1y'\"b\"",
+      "literal": ": 'a''x\u0011y'\"b\"",
+      "trace": [
+        "+ : $'ax\\021yb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\czy'",
+      "literal": ": 'x\u001ay'",
+      "trace": [
+        "+ : $'x\\032y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\czy'",
+      "literal": ": x'x\u001ay'",
+      "trace": [
+        "+ : $'xx\\032y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\czy'y",
+      "literal": ": 'x\u001ay'y",
+      "trace": [
+        "+ : $'x\\032yy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\czy' post",
+      "literal": ": pre 'x\u001ay' post",
+      "trace": [
+        "+ : pre $'x\\032y' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\czy'\"b\"",
+      "literal": ": 'a''x\u001ay'\"b\"",
+      "trace": [
+        "+ : $'ax\\032yb'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, alone",
+      "escaped": ": $'x\\c\\\\y'",
+      "literal": ": 'x\u001cy'",
+      "trace": [
+        "+ : $'x\\034y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, behind a literal",
+      "escaped": ": x$'x\\c\\\\y'",
+      "literal": ": x'x\u001cy'",
+      "trace": [
+        "+ : $'xx\\034y'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, in front of a literal",
+      "escaped": ": $'x\\c\\\\y'y",
+      "literal": ": 'x\u001cy'y",
+      "trace": [
+        "+ : $'x\\034yy'"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, as one word beside two plain ones",
+      "escaped": ": pre $'x\\c\\\\y' post",
+      "literal": ": pre 'x\u001cy' post",
+      "trace": [
+        "+ : pre $'x\\034y' post"
+      ]
+    },
+    {
+      "construct": "an ANSI-C escape decoding to a control character, concatenated across all three quoting forms",
+      "escaped": ": 'a'$'x\\c\\\\y'\"b\"",
+      "literal": ": 'a''x\u001cy'\"b\"",
+      "trace": [
+        "+ : $'ax\\034yb'"
+      ]
+    }
+  ]
+}

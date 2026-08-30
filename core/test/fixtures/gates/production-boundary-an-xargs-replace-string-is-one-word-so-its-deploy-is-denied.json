@@ -1,5 +1,5 @@
 {
-  "name": "production boundary, PINNED HOLE: an xargs replace-string passes allowed AND uncounted",
+  "name": "production boundary: an xargs replace-string is one word, so the deploy its sibling spelling is denied for is denied too",
   "source": [
     {
       "file": "tests/hooks-test.sh",
@@ -17,8 +17,20 @@
   "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"echo --prod | xargs -I{} vercel {}\",\"description\":\"regression case\"}}",
   "expect": {
     "exit": 0,
-    "stdout": "",
+    "stdout": {
+      "contains": [
+        "so a production deploy stays with the operator"
+      ]
+    },
     "stderr": "",
-    "events_appended": []
+    "events_appended": [
+      {
+        "event": "prod-deploy-denied",
+        "command": "echo --prod | xargs -I{} vercel {}",
+        "session": "test-session",
+        "gate": "block-prod-deploy.sh",
+        "hook_event": "PreToolUse"
+      }
+    ]
   }
 }
