@@ -1,5 +1,6 @@
 import type { GateVerdict, HookEnvelope } from "../hosts/envelope.ts";
-import { preToolUseRun, type HookRun } from "../hosts/pretooluse.ts";
+import type { HookRun } from "../hosts/hook-run.ts";
+import { preToolUseRun } from "../hosts/pretooluse.ts";
 import { sessionEndRun } from "../hosts/sessionend.ts";
 import { sessionStartRun } from "../hosts/sessionstart.ts";
 import { stopRun } from "../hosts/stop.ts";
@@ -22,6 +23,8 @@ import { UNKNOWN_TOOL_GATE } from "./unknown.ts";
 import { VERSION_GATE } from "./version.ts";
 
 export type GateRun = HookRun & Readonly<{ verdict: GateVerdict; events: readonly LoggedEvent[] }>;
+
+export const THE_GATE_ENTRY_POINT = "the gate entry point";
 
 const PRE_TOOL_USE_GATES: readonly GateDefinition[] = [
   COMMIT_GATE,
@@ -62,7 +65,7 @@ export function runGate(argv: readonly string[], envelope: HookEnvelope): GateRu
     routed(USER_PROMPT_GATES, name, request, userPromptRun, loudRun) ??
     routed(SUBAGENT_STOP_GATES, name, request, subagentStopRun, loudRun);
 
-  return run ?? gateErrorRun(`the gate entry point (unknown gate '${name ?? ""}')`);
+  return run ?? gateErrorRun(`${THE_GATE_ENTRY_POINT} (unknown gate '${name ?? ""}')`);
 }
 
 function routed<V extends GateVerdict>(
@@ -91,7 +94,7 @@ function runWith<V extends GateVerdict>(
   }
 }
 
-function gateErrorRun(subject: string, cause?: unknown): GateRun {
+export function gateErrorRun(subject: string, cause?: unknown): GateRun {
   const verdict: GateVerdict = { kind: "gateError", subject };
   const run = preToolUseRun(verdict);
   return { ...run, stderr: run.stderr + explainedCause(cause), verdict, events: [] };

@@ -4,13 +4,13 @@ import { runGate } from "../../src/gates/dispatch.ts";
 import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { unresolvedHomeCause, withHookEnvironment } from "../support/gate-fixture.ts";
 import { provedSomething } from "../support/proved.ts";
-import { withStateSandbox } from "../support/state-sandbox.ts";
+import { STATE_FILE, STATE_ROOT_THESE_TESTS_SPELL, withStateSandbox } from "../support/state-sandbox.ts";
 
 const ARMED_RED_STATE = {
-  ".local/state/oso-code/{repo}.state": "mode=plan\nverify_green=false\nsession=test-session\n",
+  [STATE_FILE]: "mode=plan\nverify_green=false\nsession=test-session\n",
 };
 const ARMED_RUN_STATE = {
-  ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n",
+  [STATE_FILE]: "auto=running\nauto_change=auto-continuity\nsession=test-session\n",
 };
 
 const CODEX_TOOL_ENVELOPE =
@@ -30,6 +30,7 @@ const HOME_A_GATE_CANNOT_RESOLVE = "";
 
 const A_PATTERN_GREP_EXITS_TWO_ON = "[abc-prod";
 const A_PCRE_SPELLING_GREP_READS_AS_ERE = "(?:deploy|ship)-prod";
+const A_RANGE_OPENED_BY_THE_BRACKET_ITSELF = "[]-~]uild";
 
 const HOLE_ONE_WRAPPERS: readonly string[] = [
   "script -qc 'vercel --prod' /dev/null",
@@ -121,6 +122,25 @@ describe("core/src/gates/proddeploy.ts: a deny pattern grep exits 2 on denies no
     assert.deepEqual({ exit: run.exit, stdout: run.stdout, stderr: run.stderr }, { exit: 0, stdout: "", stderr: "" });
   });
 
+  test(`${A_RANGE_OPENED_BY_THE_BRACKET_ITSELF} bites the command grep's own range from ] bites`, () => {
+    const run = judge(
+      ["proddeploy"],
+      armedRunDenying(A_RANGE_OPENED_BY_THE_BRACKET_ITSELF),
+      bashEnvelope("npm run build"),
+    );
+    assert.equal(run.exit, 0);
+    assert.match(run.stdout, /"permissionDecision":"deny"/);
+  });
+
+  test(`${A_RANGE_OPENED_BY_THE_BRACKET_ITSELF} spares the command that range spares`, () => {
+    const run = judge(
+      ["proddeploy"],
+      armedRunDenying(A_RANGE_OPENED_BY_THE_BRACKET_ITSELF),
+      bashEnvelope("npm run test"),
+    );
+    assert.deepEqual({ exit: run.exit, stdout: run.stdout, stderr: run.stderr }, { exit: 0, stdout: "", stderr: "" });
+  });
+
   test("a pattern the port does read leaves a command it does not aim at alone", () => {
     const run = judge(["proddeploy"], armedRunDenying("^ship-it"), bashEnvelope("npm run build"));
     assert.deepEqual({ exit: run.exit, stdout: run.stdout, stderr: run.stderr }, { exit: 0, stdout: "", stderr: "" });
@@ -132,7 +152,7 @@ function gateErrorLineTheBashPrints(subject: string): string {
 }
 
 function armedRunDenying(pattern: string): Readonly<Record<string, string>> {
-  return { ...ARMED_RUN_STATE, ".local/state/oso-code/deploy-deny/{repo}.patterns": `${pattern}\n` };
+  return { ...ARMED_RUN_STATE, [`${STATE_ROOT_THESE_TESTS_SPELL}/deploy-deny/{repo}.patterns`]: `${pattern}\n` };
 }
 
 function bashEnvelope(command: string): string {

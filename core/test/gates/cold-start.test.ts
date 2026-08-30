@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { BUNDLE_DIRECTORY, GATE_BUNDLE } from "../../src/routes/routes.ts";
+import { commitEnvelopeFor, spawnAsHookHost } from "../support/hook-invocation.ts";
 import { provedSomething } from "../support/proved.ts";
 import { repositoryRoot, withStateSandbox, type StateSandbox } from "../support/state-sandbox.ts";
 
@@ -13,9 +13,7 @@ const OVERHEAD_BUDGET_BASELINE_MULTIPLE = 1.5;
 const BUNDLE_TREE = path.join(repositoryRoot, "plugin", BUNDLE_DIRECTORY);
 const BUNDLE = path.join(BUNDLE_TREE, GATE_BUNDLE);
 const EMPTY_ESM_MODULE = "export {};\n";
-const COMMIT_ENVELOPE =
-  '{"session_id":"cold-start","cwd":"{cwd}","hook_event_name":"PreToolUse","tool_name":"Bash",' +
-  '"tool_input":{"command":"git commit -m x"}}';
+const COMMIT_ENVELOPE = commitEnvelopeFor("cold-start");
 
 type ColdStart = Readonly<{ status: number | null; stdout: string; stderr: string; elapsed: number }>;
 
@@ -83,19 +81,8 @@ function seedBareNodeBaseline(sandbox: StateSandbox): string {
 
 function timeOneColdStart(sandbox: StateSandbox, script: string): ColdStart {
   const started = performance.now();
-  const result = spawnSync(process.execPath, [script, "commit"], {
-    cwd: sandbox.cwd,
-    input: sandbox.expandJson(COMMIT_ENVELOPE),
-    env: {
-      HOME: sandbox.home,
-      USERPROFILE: sandbox.home,
-      PATH: process.env["PATH"] ?? "",
-      SYSTEMROOT: process.env["SYSTEMROOT"] ?? "",
-    },
-    encoding: "utf8",
-  });
-  if (result.error !== undefined) throw result.error;
-  return { status: result.status, stdout: result.stdout, stderr: result.stderr, elapsed: performance.now() - started };
+  const run = spawnAsHookHost(sandbox, { command: process.execPath, args: [script, "commit"] }, COMMIT_ENVELOPE);
+  return { ...run, elapsed: performance.now() - started };
 }
 
 function meanElapsed(runs: readonly ColdStart[]): number {

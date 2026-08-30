@@ -10,10 +10,10 @@ import {
 } from "./support/parity-fixture.ts";
 import { provedSomething } from "./support/proved.ts";
 import {
+  provedSomeSubjectIsMeasurable,
   skipUnlessSpawnable,
   STATE_SUBJECTS,
   StateSandbox,
-  unmeasurableSubjectsReport,
   withStateSandbox,
   type ObservedEntry,
   type StateSubject,
@@ -32,11 +32,7 @@ test(`all ${fixtures.length} parity fixtures cite an assertion that still stands
   assert.deepEqual(fixtures.flatMap((fixture) => unresolvedCitations(fixture, suiteLines)), []);
 });
 
-provedSomething(
-  `at least one of ${STATE_SUBJECTS.length} configured subject(s) is measurable here`,
-  STATE_SUBJECTS.some((subject) => skipUnlessSpawnable(subject) === false),
-  unmeasurableSubjectsReport(),
-);
+provedSomeSubjectIsMeasurable();
 
 for (const subject of STATE_SUBJECTS) {
   describe(

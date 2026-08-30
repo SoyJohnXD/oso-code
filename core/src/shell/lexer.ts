@@ -347,7 +347,7 @@ class CommandLineLexer {
 
   private takeRedirect(): void {
     this.redirectTargetPending = true;
-    while (">&|".includes(this.rest.slice(0, 1)) && this.rest !== "") {
+    while (this.rest !== "" && ">&|".includes(this.rest.slice(0, 1))) {
       this.rest = this.rest.slice(1);
     }
   }

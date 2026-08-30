@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import path from "node:path";
+import { commitEnvelopeFor } from "../support/hook-invocation.ts";
 import { provedSomething } from "../support/proved.ts";
 import {
   repositoryRoot,
   skipUnlessSpawnable,
+  STATE_FILE,
   withStateSandbox,
   type StateSubject,
 } from "../support/state-sandbox.ts";
@@ -15,15 +17,13 @@ const GATE_ENTRY_POINT: StateSubject = {
 };
 
 const ARMED_RED_STATE = {
-  ".local/state/oso-code/{repo}.state": "mode=plan\nverify_green=false\nsession=test-session\n",
+  [STATE_FILE]: "mode=plan\nverify_green=false\nsession=test-session\n",
 };
 
-const COMMIT_ENVELOPE =
-  '{"session_id":"test-session","cwd":"{cwd}","hook_event_name":"PreToolUse","tool_name":"Bash",' +
-  '"tool_input":{"command":"git commit -m x"}}';
+const COMMIT_ENVELOPE = commitEnvelopeFor("test-session");
 
 const ARMED_RUN_STATE = {
-  ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n",
+  [STATE_FILE]: "auto=running\nauto_change=auto-continuity\nsession=test-session\n",
 };
 
 const PLAN_MARKER = "<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->";

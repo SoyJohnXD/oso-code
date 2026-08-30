@@ -15,10 +15,10 @@ const CITATION_PATTERN = /(?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.-]+\.[A-Za-z0-9]+:\d
 const BARE_BASENAME_PATTERN = /(?<![\w./-])[A-Za-z0-9_.-]+\.[A-Za-z0-9]+:\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*/g;
 const BARE_CONTINUATION_PATTERN = /(?<![\w./-]):\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*/g;
 
-export type Citation = Readonly<{ source: string; sourceLine: number; target: string; spec: string }>;
-export type Resolution = Readonly<{ ok: boolean; resolvedAs?: string }>;
+type Citation = Readonly<{ source: string; sourceLine: number; target: string; spec: string }>;
+type Resolution = Readonly<{ ok: boolean; resolvedAs?: string }>;
 
-export function citationsIn(source: string, text: string): Citation[] {
+function citationsIn(source: string, text: string): Citation[] {
   const citations: Citation[] = [];
   text.split("\n").forEach((lineText, index) => {
     for (const whole of lineText.match(CITATION_PATTERN) ?? []) {
@@ -32,7 +32,7 @@ export function citationsIn(source: string, text: string): Citation[] {
   return citations;
 }
 
-export function resolveCitation(citation: Citation, trackedFiles: ReadonlySet<string>): Resolution {
+function resolveCitation(citation: Citation, trackedFiles: ReadonlySet<string>): Resolution {
   for (const root of SHORTHAND_ROOTS) {
     const candidate = `${root}${citation.target}`;
     if (!trackedFiles.has(candidate)) continue;

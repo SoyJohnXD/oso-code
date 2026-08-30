@@ -63,7 +63,7 @@ function openCodeHookNamed(mechanism: string, gate: string): OpenCodeHook {
   return hook;
 }
 
-export function claudeGateBundle(): string {
+function claudeGateBundle(): string {
   return `${CLAUDE_PLUGIN_ROOT}/${BUNDLE_DIRECTORY}/${GATE_BUNDLE}`;
 }
 

@@ -84,24 +84,36 @@ export function isNameToken(value: string): boolean {
   return value.length >= 1 && value.length <= NAME_TOKEN_MAX_LENGTH && NAME_TOKEN_PATTERN.test(value);
 }
 
-export function readValue(stateFile: string, key: string): string | undefined {
-  const content = readFileIfPresent(stateFile);
-  if (content === undefined) return undefined;
-  for (const line of content.split("\n")) {
-    if (line === "") continue;
-    const [lineKey, value] = splitPair(line);
-    if (lineKey === key) return value;
-  }
-  return undefined;
+export function stateRecords(content: string, key: string): readonly string[] {
+  const prefix = `${key}=`;
+  return content
+    .split("\n")
+    .filter((line) => line.startsWith(prefix))
+    .map((line) => line.slice(prefix.length));
 }
 
-export type StateFileRead =
+export function stateValue(content: string, key: string): string {
+  return stateRecords(content, key).join("\n");
+}
+
+export function stateSays(content: string, key: string, value: string): boolean {
+  return stateRecords(content, key).includes(value);
+}
+
+export function readValue(stateFile: string, key: string): string | undefined {
+  const content = readFileIfPresent(stateFile);
+  if (content === undefined || stateRecords(content, key).length === 0) return undefined;
+  return stateValue(content, key);
+}
+
+type StateFileRead =
   | { kind: "absent" }
   | { kind: "ok"; content: string }
   | { kind: "unreadable"; cause: string };
 
 export function readStateFile(stateFile: string): StateFileRead {
   try {
+    if (!statSync(stateFile).isFile()) return { kind: "unreadable", cause: `${stateFile} is not a regular file` };
     return { kind: "ok", content: readFileSync(stateFile, "utf8") };
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") return { kind: "absent" };
@@ -243,7 +255,7 @@ export function homeDirectoryFrom(platform: NodeJS.Platform, environment: NodeJS
   return home;
 }
 
-export function homeDirectory(): string {
+function homeDirectory(): string {
   return homeDirectoryFrom(process.platform, process.env);
 }
 
@@ -264,7 +276,7 @@ function readFileIfPresent(file: string): string | undefined {
   return read.kind === "ok" ? read.content : undefined;
 }
 
-function causeOf(error: unknown): string {
+export function causeOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 

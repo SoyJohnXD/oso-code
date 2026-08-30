@@ -16,7 +16,7 @@ const UNSCANNED_FILES = new Set(["CHANGELOG.md", "tools/render-hooks-json.sh", T
 const MINIMUM_SCANNED_FILES = 200;
 const MINIMUM_REFERENCES_FOUND = 50;
 
-export type DeadBashReference = Readonly<{ file: string; line: number; name: string; text: string }>;
+type DeadBashReference = Readonly<{ file: string; line: number; name: string; text: string }>;
 
 type ResidueClass = "suite" | "installer" | "shell-library" | "record" | "citation" | "shipped-prose";
 
@@ -45,12 +45,12 @@ const deadBashNames: readonly string[] = [
   BASH_RENDERER,
 ];
 
-export function pathShapedReferencePattern(names: readonly string[]): RegExp {
+function pathShapedReferencePattern(names: readonly string[]): RegExp {
   const alternatives = names.map((name) => name.replaceAll(".", "\\.")).join("|");
   return new RegExp(`/(${alternatives})(?![:.\\w-])`, "g");
 }
 
-export function pathShapedReferencesIn({ file, text }: TrackedFileText, pattern: RegExp): DeadBashReference[] {
+function pathShapedReferencesIn({ file, text }: TrackedFileText, pattern: RegExp): DeadBashReference[] {
   return text.split("\n").flatMap((lineText, index) =>
     [...lineText.matchAll(pattern)].map((match) => ({
       file,

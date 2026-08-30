@@ -6,12 +6,12 @@ function named(environment: NodeJS.ProcessEnv, variable: string): string {
   return value === undefined ? "" : value;
 }
 
-export function spawningHost(environment: NodeJS.ProcessEnv): HostName {
+function spawningHost(environment: NodeJS.ProcessEnv): HostName {
   if (named(environment, "OSO_HOST") === "opencode") return "opencode";
   return named(environment, "OSO_AGENT") === "" ? "claude" : "codex";
 }
 
-export function spawnedCaller(environment: NodeJS.ProcessEnv): HookCaller {
+function spawnedCaller(environment: NodeJS.ProcessEnv): HookCaller {
   return {
     host: spawningHost(environment),
     agentSession: named(environment, "OSO_AGENT"),

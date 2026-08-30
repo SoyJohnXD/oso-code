@@ -1,7 +1,5 @@
 import type { StopVerdict } from "./envelope.ts";
-import type { HookRun } from "./pretooluse.ts";
-
-const NOTHING_TO_SAY = "{}";
+import { NOTHING_TO_SAY, spoken, type HookRun } from "./hook-run.ts";
 
 export function stopRun(verdict: StopVerdict, escalated: boolean): HookRun {
   switch (verdict.kind) {
@@ -20,8 +18,4 @@ function blockEnvelope(reason: string): string {
 
 function endedEnvelope(reason: string): string {
   return JSON.stringify({ continue: false, stopReason: reason, systemMessage: reason });
-}
-
-function spoken(stdout: string): HookRun {
-  return { exit: 0, stdout: `${stdout}\n`, stderr: "" };
 }

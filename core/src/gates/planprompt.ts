@@ -24,6 +24,9 @@ const OUTSIDE_PLAN_MODE =
 const AMENDMENT_REFUSED = "oso-code: the pending document could not be amended; retry the planning message.";
 const UNREADABLE_PENDING_STATE =
   "oso-code: the pending plan state is unreadable; native approval cannot open the execution gate.";
+const UNREADABLE_CONTROL_PAYLOAD =
+  "oso-code: the plan-control prompt arrived in a payload that is not readable JSON, so the pending document " +
+  "it would settle cannot be identified; the gate did not change.";
 const NO_SESSION_IDENTITY = "oso-code: the plan-control prompt has no valid session identity.";
 const NO_REPOSITORY_CONTEXT = "oso-code: the plan-control prompt has no readable repository context.";
 const APPROVAL_STILL_IN_PLAN_MODE =
@@ -70,6 +73,9 @@ function judgePlanprompt({ envelope }: GateRequest): GateOutcome<UserPromptVerdi
   if (invokesThePlanSkill(rawPrompt) && turn.mode !== "plan") return control(OUTSIDE_PLAN_MODE);
 
   const action = controlActionOf(rawPrompt);
+  if (envelope.payloadRead === "unparseable") {
+    return action === undefined ? SILENT : control(UNREADABLE_CONTROL_PAYLOAD);
+  }
   if (action === undefined) return amendPendingPlan(envelope, sessionId, turn);
 
   const stateFile = stateFileFor(envelope.cwd);

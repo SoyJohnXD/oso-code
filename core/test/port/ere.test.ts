@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { ereMatches } from "../../src/shell/ere.ts";
+import { ereReads, type ErePatternReading } from "../../src/shell/ere.ts";
 import { provedSomething } from "../support/proved.ts";
 
 type DialectCase = Readonly<{ pattern: string; command: string; bites: boolean }>;
@@ -8,6 +8,12 @@ type DialectCase = Readonly<{ pattern: string; command: string; bites: boolean }
 type RejectedPattern = Readonly<{ rejected: string; neighbour: string; command: string }>;
 
 type ClassRow = Readonly<{ pattern: string; denies: readonly string[] }>;
+
+type UntranslatablePattern = Readonly<{ pattern: string; command: string }>;
+
+const BITES: ErePatternReading = "matched";
+const SPARES: ErePatternReading = "unmatched";
+const UNTRANSLATABLE: ErePatternReading = "untranslatable";
 
 const POSIX_CLASSES: readonly DialectCase[] = [
   { pattern: "deploy-[[:alpha:]]+-now", command: "deploy-prod-now", bites: true },
@@ -91,6 +97,30 @@ const BRACKET_RULES: readonly DialectCase[] = [
   { pattern: "deploy[a^]prod", command: "deploy^prod", bites: true },
 ];
 
+const A_LEADING_CLOSING_BRACKET: readonly DialectCase[] = [
+  { pattern: "deploy[]]prod", command: "deploy]prod", bites: true },
+  { pattern: "deploy[]]prod", command: "deployaprod", bites: false },
+  { pattern: "deploy[]-]prod", command: "deploy]prod", bites: true },
+  { pattern: "deploy[]-]prod", command: "deploy-prod", bites: true },
+  { pattern: "deploy[]-]prod", command: "deployaprod", bites: false },
+  { pattern: "deploy[]a]prod", command: "deploy]prod", bites: true },
+  { pattern: "deploy[]a]prod", command: "deployaprod", bites: true },
+  { pattern: "deploy[]a]prod", command: "deploy-prod", bites: false },
+  { pattern: "deploy[]-a]prod", command: "deploy]prod", bites: true },
+  { pattern: "deploy[]-a]prod", command: "deploy^prod", bites: true },
+  { pattern: "deploy[]-a]prod", command: "deploy_prod", bites: true },
+  { pattern: "deploy[]-a]prod", command: "deployaprod", bites: true },
+  { pattern: "deploy[]-a]prod", command: "deploy-prod", bites: false },
+  { pattern: "deploy[]-a]prod", command: "deploybprod", bites: false },
+  { pattern: "deploy[]a-c]prod", command: "deploy]prod", bites: true },
+  { pattern: "deploy[]a-c]prod", command: "deploybprod", bites: true },
+  { pattern: "deploy[]a-c]prod", command: "deploy-prod", bites: false },
+  { pattern: "deploy[]a-c]prod", command: "deploy^prod", bites: false },
+  { pattern: "deploy[^]-a]prod", command: "deploy-prod", bites: true },
+  { pattern: "deploy[^]-a]prod", command: "deploy]prod", bites: false },
+  { pattern: "deploy[^]-a]prod", command: "deploy^prod", bites: false },
+];
+
 const INTERVAL_RULES: readonly DialectCase[] = [
   { pattern: "^a{2}$", command: "aa", bites: true },
   { pattern: "^a{2}$", command: "aaa", bites: false },
@@ -140,10 +170,49 @@ const A_LEADING_BRACE_ELSEWHERE: readonly DialectCase[] = [
   { pattern: "{[[:alnum:]]b$", command: "{ab", bites: true },
 ];
 
+const A_RANGE_CROSSING_THE_ASCII_BLOCKS: readonly DialectCase[] = [
+  { pattern: "[!-~]+ --prod", command: "shipit --prod", bites: true },
+  { pattern: "[!-~]+ --prod", command: "  --prod", bites: false },
+  { pattern: "[A-z]+ --prod", command: "shipit --prod", bites: true },
+  { pattern: "[A-z]+ --prod", command: "!!! --prod", bites: false },
+  { pattern: "ship[ -/]*it", command: "ship-it now", bites: true },
+  { pattern: "ship[ -/]*it", command: "shipXit", bites: false },
+  { pattern: "[0-A]x", command: "9x", bites: true },
+  { pattern: "[0-A]x", command: "Bx", bites: false },
+  { pattern: "[:-@]prod", command: "=prod", bites: true },
+  { pattern: "[:-@]prod", command: "aprod", bites: false },
+  { pattern: "[a-a]prod", command: "aprod", bites: true },
+  { pattern: "[a-a]prod", command: "bprod", bites: false },
+  { pattern: "[Z-a]prod", command: "^prod", bites: true },
+  { pattern: "[Z-a]prod", command: "bprod", bites: false },
+  { pattern: "[^ -~]deploy", command: "\tdeploy", bites: true },
+  { pattern: "[^ -~]deploy", command: "xdeploy", bites: false },
+  { pattern: "[[:digit:]!-/]x", command: "-x", bites: true },
+  { pattern: "[[:digit:]!-/]x", command: "zx", bites: false },
+];
+
+const A_QUANTIFIED_ZERO_WIDTH_ESCAPE_BEFORE_A_WORD: readonly DialectCase[] = [
+  { pattern: "\\bdeploy", command: "predeploy", bites: false },
+  { pattern: "\\b?deploy", command: "predeploy", bites: true },
+  { pattern: "\\b*deploy", command: "predeploy", bites: true },
+  { pattern: "\\b+deploy", command: "predeploy", bites: false },
+  { pattern: "\\<deploy", command: "predeploy", bites: false },
+  { pattern: "\\<?deploy", command: "predeploy", bites: true },
+  { pattern: "\\<*deploy", command: "predeploy", bites: true },
+  { pattern: "\\<+deploy", command: "predeploy", bites: false },
+  { pattern: "\\b", command: "{}", bites: false },
+  { pattern: "\\b?", command: "{}", bites: true },
+  { pattern: "\\>", command: "  ", bites: false },
+  { pattern: "\\>*", command: "  ", bites: true },
+  { pattern: "prod\\>ly", command: "prodly", bites: false },
+  { pattern: "prod\\>?ly", command: "prodly", bites: true },
+];
+
 const PATTERNS_GREP_REJECTS: readonly RejectedPattern[] = [
   { rejected: "[abc-prod", neighbour: "[abc]-prod", command: "a-prod" },
   { rejected: "(deploy-prod", neighbour: "(deploy)-prod", command: "deploy-prod" },
   { rejected: "[z-a]-prod", neighbour: "[a-z]-prod", command: "a-prod" },
+  { rejected: "[]-!]x", neighbour: "[]-a]x", command: "^x" },
   { rejected: "deploy-prod\\", neighbour: "deploy-prod", command: "deploy-prod" },
   { rejected: "[[:word:]]-prod", neighbour: "[[:alpha:]]-prod", command: "a-prod" },
   { rejected: "deploy(", neighbour: "deploy\\(", command: "deploy(" },
@@ -153,57 +222,121 @@ const PATTERNS_GREP_REJECTS: readonly RejectedPattern[] = [
   { rejected: "((deploy)", neighbour: "((deploy))", command: "deploy" },
 ];
 
-const ZERO_WIDTH_CLASS_COMMANDS: readonly string[] = ["x{2}y", "a{2}", "ab", "a b", "{2}"];
+const ZERO_WIDTH_CLASS_COMMANDS: readonly string[] = ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "];
 
-const AN_INTERVAL_AFTER_A_ZERO_WIDTH_CONSTRUCT: readonly ClassRow[] = [
-  { pattern: "\\b{2}$", denies: ["a{2}", "{2}"] },
-  { pattern: "\\b{3}$", denies: [] },
-  { pattern: "\\b{1,2}$", denies: [] },
-  { pattern: "\\b{0}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
-  { pattern: "\\b{,2}$", denies: [] },
-  { pattern: "\\b{2,}$", denies: [] },
-  { pattern: "\\B{2}$", denies: [] },
-  { pattern: "\\B{3}$", denies: [] },
-  { pattern: "\\B{1,2}$", denies: [] },
-  { pattern: "\\B{0}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
-  { pattern: "\\B{,2}$", denies: [] },
-  { pattern: "\\B{2,}$", denies: [] },
-  { pattern: "\\<{2}$", denies: ["a{2}", "{2}"] },
+const A_QUANTIFIER_ON_A_ZERO_WIDTH_CONSTRUCT: readonly ClassRow[] = [
+  { pattern: "\\b?$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\b*$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\b+$", denies: ["x{2}y", "ab", "a b"] },
+  { pattern: "\\b{2}$", denies: ["x{2}y", "ab", "a b"] },
+  { pattern: "\\b{3}$", denies: ["x{2}y", "ab", "a b"] },
+  { pattern: "\\b{1,2}$", denies: ["x{2}y", "ab", "a b"] },
+  { pattern: "\\b{0}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\b{,2}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\b{2,}$", denies: ["x{2}y", "ab", "a b"] },
+  { pattern: "\\B?$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\B*$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\B+$", denies: ["a{2}", "{2}", "{}", "  "] },
+  { pattern: "\\B{2}$", denies: ["a{2}", "{2}", "{}", "  "] },
+  { pattern: "\\B{3}$", denies: ["a{2}", "{2}", "{}", "  "] },
+  { pattern: "\\B{1,2}$", denies: ["a{2}", "{2}", "{}", "  "] },
+  { pattern: "\\B{0}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\B{,2}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\B{2,}$", denies: ["a{2}", "{2}", "{}", "  "] },
+  { pattern: "\\<?$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\<*$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\<+$", denies: [] },
+  { pattern: "\\<{2}$", denies: [] },
   { pattern: "\\<{3}$", denies: [] },
   { pattern: "\\<{1,2}$", denies: [] },
-  { pattern: "\\<{0}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
-  { pattern: "\\<{,2}$", denies: [] },
+  { pattern: "\\<{0}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\<{,2}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
   { pattern: "\\<{2,}$", denies: [] },
-  { pattern: "\\>{2}$", denies: [] },
-  { pattern: "\\>{3}$", denies: [] },
-  { pattern: "\\>{1,2}$", denies: [] },
-  { pattern: "\\>{0}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
-  { pattern: "\\>{,2}$", denies: [] },
-  { pattern: "\\>{2,}$", denies: [] },
+  { pattern: "\\>?$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\>*$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\>+$", denies: ["x{2}y", "ab", "a b"] },
+  { pattern: "\\>{2}$", denies: ["x{2}y", "ab", "a b"] },
+  { pattern: "\\>{3}$", denies: ["x{2}y", "ab", "a b"] },
+  { pattern: "\\>{1,2}$", denies: ["x{2}y", "ab", "a b"] },
+  { pattern: "\\>{0}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\>{,2}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\>{2,}$", denies: ["x{2}y", "ab", "a b"] },
+  { pattern: "\\`?$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\`*$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\`+$", denies: [] },
   { pattern: "\\`{2}$", denies: [] },
   { pattern: "\\`{3}$", denies: [] },
   { pattern: "\\`{1,2}$", denies: [] },
-  { pattern: "\\`{0}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
-  { pattern: "\\`{,2}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
+  { pattern: "\\`{0}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\`{,2}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
   { pattern: "\\`{2,}$", denies: [] },
-  { pattern: "\\'{2}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
-  { pattern: "\\'{3}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
-  { pattern: "\\'{1,2}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
-  { pattern: "\\'{0}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
-  { pattern: "\\'{,2}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
-  { pattern: "\\'{2,}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
+  { pattern: "\\'?$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\'*$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\'+$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\'{2}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\'{3}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\'{1,2}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\'{0}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\'{,2}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\'{2,}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "^?$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "^*$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "^+$", denies: [] },
   { pattern: "^{2}$", denies: [] },
   { pattern: "^{3}$", denies: [] },
   { pattern: "^{1,2}$", denies: [] },
-  { pattern: "^{0}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
-  { pattern: "^{,2}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
+  { pattern: "^{0}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "^{,2}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
   { pattern: "^{2,}$", denies: [] },
-  { pattern: "${2}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
-  { pattern: "${3}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
-  { pattern: "${1,2}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
-  { pattern: "${0}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
-  { pattern: "${,2}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
-  { pattern: "${2,}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
+  { pattern: "$?$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "$*$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "$+$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "${2}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "${3}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "${1,2}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "${0}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "${,2}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "${2,}$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\b", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
+  { pattern: "\\b?", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\b*", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\b+", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
+  { pattern: "\\B", denies: ["a{2}", "ab", "{2}", "{}", "  "] },
+  { pattern: "\\B?", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\B*", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\B+", denies: ["a{2}", "ab", "{2}", "{}", "  "] },
+  { pattern: "\\<", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
+  { pattern: "\\<?", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\<*", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\<+", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
+  { pattern: "\\>", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
+  { pattern: "\\>?", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\>*", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\>+", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}"] },
+  { pattern: "\\`", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\`?", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\`*", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\`+", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\'", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\'?", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\'*", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "\\'+", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "^", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "^?", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "^*", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "^+", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "$", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "$?", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "$*", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+  { pattern: "$+", denies: ["x{2}y", "a{2}", "ab", "a b", "{2}", "{}", "  "] },
+];
+
+const PATTERNS_THE_READER_CANNOT_TRANSLATE: readonly UntranslatablePattern[] = [
+  { pattern: "[a-\u00e9]-prod", command: "a-prod" },
+  { pattern: "[^a-\u00e9]-prod", command: "0-prod" },
+  { pattern: "[\u00e9-\u00fc]x", command: "x" },
+  { pattern: "[[=+=]]x", command: "+x" },
+  { pattern: "[[.a.]-z]x", command: "mx" },
 ];
 
 const A_LEADING_BRACE_BEFORE_A_POSIX_CLASS: readonly DialectCase[] = [
@@ -218,10 +351,16 @@ const ERE_DIALECT: Readonly<Record<string, readonly DialectCase[]>> = {
   "a backslash escape ERE never defined is the letter itself, so \\\\d matches a literal d": ESCAPES_ERE_READS_AS_LITERALS,
   "the escapes GNU grep does define read words, spaces, buffers and earlier groups": GNU_ESCAPE_EXTENSIONS,
   "a bracket expression reads ], - and \\\\ by POSIX rules rather than by JavaScript's": BRACKET_RULES,
+  "a ] opening a bracket is its first member, so a - right after it opens a range from ] rather than a literal dash":
+    A_LEADING_CLOSING_BRACKET,
   "an interval is {n}, {n,}, {,m} or {n,m}, and every other brace is a literal brace": INTERVAL_RULES,
   "grep reads one line at a time, so no anchor, dot or negated class crosses a newline": LINE_SCOPED_READING,
   "a PCRE spelling grep accepts is read as the ERE grep reads it, never refused": PCRE_LOOKALIKES_GREP_READS_AS_ERE,
   "a leading brace that begins no interval is the literal brace grep matches": A_LEADING_BRACE_ELSEWHERE,
+  "a bracket range reads by code point under LC_ALL=C, so its endpoints need not share an ASCII block":
+    A_RANGE_CROSSING_THE_ASCII_BLOCKS,
+  "zero repetitions satisfy ? and * on a word-edge escape, while + keeps the assertion mandatory":
+    A_QUANTIFIED_ZERO_WIDTH_ESCAPE_BEFORE_A_WORD,
 };
 
 const dialectCaseCount = Object.values(ERE_DIALECT).reduce((total, cases) => total + cases.length, 0);
@@ -229,13 +368,15 @@ const dialectBites = Object.values(ERE_DIALECT).reduce(
   (total, cases) => total + cases.filter((one) => one.bites).length,
   0,
 );
-const classCaseCount = AN_INTERVAL_AFTER_A_ZERO_WIDTH_CONSTRUCT.length * ZERO_WIDTH_CLASS_COMMANDS.length;
-const classBites = AN_INTERVAL_AFTER_A_ZERO_WIDTH_CONSTRUCT.reduce((total, row) => total + row.denies.length, 0);
+const classCaseCount = A_QUANTIFIER_ON_A_ZERO_WIDTH_CONSTRUCT.length * ZERO_WIDTH_CLASS_COMMANDS.length;
+const classBites = A_QUANTIFIER_ON_A_ZERO_WIDTH_CONSTRUCT.reduce((total, row) => total + row.denies.length, 0);
 
 provedSomething(
-  `${dialectCaseCount} dialect readings, ${classCaseCount} interval-after-a-zero-width readings and ` +
-    `${PATTERNS_GREP_REJECTS.length} rejected patterns are exercised, ${dialectBites + classBites} of which bite`,
-  dialectBites > 0 && classBites > 0 && PATTERNS_GREP_REJECTS.length > 0,
+  `${dialectCaseCount} dialect readings, ${classCaseCount} quantified-zero-width readings, ` +
+    `${PATTERNS_GREP_REJECTS.length} rejected patterns and ${PATTERNS_THE_READER_CANNOT_TRANSLATE.length} ` +
+    `untranslatable patterns are exercised, ${dialectBites + classBites} of which bite`,
+  dialectBites > 0 && classBites > 0 && PATTERNS_GREP_REJECTS.length > 0 &&
+    PATTERNS_THE_READER_CANNOT_TRANSLATE.length > 0,
   "the ERE suite carries no case that bites, so a reader matching nothing at all would pass it clean",
 );
 
@@ -243,23 +384,38 @@ for (const [rule, cases] of Object.entries(ERE_DIALECT)) {
   describe(`core/src/shell/ere.ts: ${rule} (read from plugin/hooks/block-prod-deploy.sh:130)`, () => {
     for (const { pattern, command, bites } of cases) {
       test(`${JSON.stringify(pattern)} ${bites ? "bites" : "spares"} ${JSON.stringify(command)}`, () => {
-        assert.equal(ereMatches(pattern, command), bites);
+        assert.equal(ereReads(pattern, command), bites ? BITES : SPARES);
       });
     }
   });
 }
 
 describe(
-  "core/src/shell/ere.ts: an interval after a zero-width construct is the literal braces GNU demotes it to " +
+  "core/src/shell/ere.ts: a quantifier on a zero-width construct binds to the assertion itself, so ?, *, {0} " +
+    "and {,m} let zero repetitions satisfy it while + and a low-bounded interval keep it mandatory — every row " +
+    "below re-derived from /usr/bin/grep -E 3.12 under LC_ALL=C rather than from the reader it checks " +
     "(read from plugin/hooks/block-prod-deploy.sh:130)",
   () => {
-    for (const { pattern, denies } of AN_INTERVAL_AFTER_A_ZERO_WIDTH_CONSTRUCT) {
+    for (const { pattern, denies } of A_QUANTIFIER_ON_A_ZERO_WIDTH_CONSTRUCT) {
       for (const command of ZERO_WIDTH_CLASS_COMMANDS) {
         const bites = denies.includes(command);
         test(`${JSON.stringify(pattern)} ${bites ? "bites" : "spares"} ${JSON.stringify(command)}`, () => {
-          assert.equal(ereMatches(pattern, command), bites);
+          assert.equal(ereReads(pattern, command), bites ? BITES : SPARES);
         });
       }
+    }
+  },
+);
+
+describe(
+  "core/src/shell/ere.ts: a pattern grep accepts that this reader cannot translate reads as untranslatable, " +
+    "never as one that matches nothing, so the production boundary denies on it instead of opening on a " +
+    "pattern nothing checked — the reading holds even where grep itself would spare the command",
+  () => {
+    for (const { pattern, command } of PATTERNS_THE_READER_CANNOT_TRANSLATE) {
+      test(`${JSON.stringify(pattern)} is untranslatable over ${JSON.stringify(command)}`, () => {
+        assert.equal(ereReads(pattern, command), UNTRANSLATABLE);
+      });
     }
   },
 );
@@ -270,11 +426,11 @@ describe(
   () => {
     for (const { rejected, neighbour, command } of PATTERNS_GREP_REJECTS) {
       test(`${JSON.stringify(rejected)} spares ${JSON.stringify(command)}`, () => {
-        assert.equal(ereMatches(rejected, command), false);
+        assert.equal(ereReads(rejected, command), SPARES);
       });
 
       test(`${JSON.stringify(neighbour)}, which grep accepts, still bites ${JSON.stringify(command)}`, () => {
-        assert.equal(ereMatches(neighbour, command), true);
+        assert.equal(ereReads(neighbour, command), BITES);
       });
     }
   },
@@ -286,7 +442,7 @@ describe(
   () => {
     for (const { pattern, command, bites } of A_LEADING_BRACE_BEFORE_A_POSIX_CLASS) {
       test(`${JSON.stringify(pattern)} spares ${JSON.stringify(command)}, which /usr/bin/grep 3.12 bites`, () => {
-        assert.equal(ereMatches(pattern, command), bites);
+        assert.equal(ereReads(pattern, command), bites ? BITES : SPARES);
       });
     }
   },

@@ -8,7 +8,7 @@ import { runGate } from "../../src/gates/dispatch.ts";
 import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
 import { pathInsensitiveIncludes } from "../support/parity-expectations.ts";
-import { repositoryRoot, withStateSandbox } from "../support/state-sandbox.ts";
+import { repositoryRoot, STATE_FILE, withStateSandbox } from "../support/state-sandbox.ts";
 
 const EXPECTED_PLUGIN_ROOT = path.join(repositoryRoot, "plugin");
 const EXPECTED_STATE_BIN = path.join(EXPECTED_PLUGIN_ROOT, "bin", "oso-state");
@@ -152,7 +152,7 @@ test(
     "(the gap named in the finding: parity fixtures assert only the trailing substring)",
   () => {
     withStateSandbox("workspace", (sandbox) => {
-      sandbox.seed({ ".local/state/oso-code/{repo}.state": "mode=plan\nsession=other-session\n" });
+      sandbox.seed({ [STATE_FILE]: "mode=plan\nsession=other-session\n" });
       const stdin = sandbox.expandJson('{"session_id":"test-session","cwd":"{cwd}"}');
       const run = withHookEnvironment({ HOME: sandbox.home }, () => runGate(["stale"], spawnedEnvelope(stdin, process.env)));
       assert.equal(run.exit, 0);

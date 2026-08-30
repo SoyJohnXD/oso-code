@@ -5,12 +5,16 @@ import { describe, test } from "node:test";
 import { runGate } from "../../src/gates/dispatch.ts";
 import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
-import { skipUnlessGitSeedsRepositories, withStateSandbox, type StateSandbox } from "../support/state-sandbox.ts";
+import {
+  skipUnlessGitSeedsRepositories,
+  STATE_ROOT_THESE_TESTS_SPELL,
+  withStateSandbox,
+  type StateSandbox,
+} from "../support/state-sandbox.ts";
 
 const SESSION = "test-session";
 const WORKTREE_REPO = "worktree-repo";
 const VANISHED_REPO = "vanished-repo";
-const STATE_DIRECTORY = ".local/state/oso-code";
 const BASE_FILE = "base.txt";
 
 describe(
@@ -170,7 +174,7 @@ describe(
 );
 
 function stateFileOf(sessionId: string): string {
-  return `${STATE_DIRECTORY}/${sessionId}.state`;
+  return `${STATE_ROOT_THESE_TESTS_SPELL}/${sessionId}.state`;
 }
 
 function waveState(sessionId: string, repository: string): string {

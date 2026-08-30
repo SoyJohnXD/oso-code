@@ -5,15 +5,18 @@ import { describe, test } from "node:test";
 import { runGate } from "../../src/gates/dispatch.ts";
 import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
-import { withStateSandbox, type StateSandbox } from "../support/state-sandbox.ts";
+import {
+  EVENTS_LOG,
+  STATE_ROOT_THESE_TESTS_SPELL,
+  withStateSandbox,
+  type StateSandbox,
+} from "../support/state-sandbox.ts";
 
-const STATE_ROOT_SEGMENTS = [".local", "state", "oso-code"];
-const EVENTS_LOG = ".local/state/oso-code/events.jsonl";
 const READ_EXECUTE_ONLY_DIRECTORY = 0o555;
 const OWNER_ONLY_DIRECTORY = 0o700;
 
 function stateRootPath(sandbox: StateSandbox): string {
-  return path.join(sandbox.home, ...STATE_ROOT_SEGMENTS);
+  return path.join(sandbox.home, ...STATE_ROOT_THESE_TESTS_SPELL.split("/"));
 }
 
 function skipUnlessChmodDeniesDirectoryWrites(): false | string {

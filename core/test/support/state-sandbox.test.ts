@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import { test } from "node:test";
-import { nativizeRootedPaths, withStateSandbox } from "./state-sandbox.ts";
+import {
+  nativizeRootedPaths,
+  REPOSITORY_PLANS_DIR,
+  STATE_ROOT_THESE_TESTS_SPELL,
+  withStateSandbox,
+} from "./state-sandbox.ts";
 
 const WINDOWS_HOME = "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\oso-test-sandbox-z8i11o\\temp\\oso-state-p4Eo20\\home";
 const POSIX_HOME = "/tmp/oso-state-p4Eo20/home";
@@ -10,8 +15,8 @@ const PLAN_DIGEST = "d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8
 
 function planStateLines(home: string): string {
   return (
-    `plan_snapshot_file=${home}/.local/state/oso-code/plans/${REPO_DIGEST}/presented-${PLAN_DIGEST}.md\n` +
-    `plan_current_file=${home}/.local/state/oso-code/plans/${REPO_DIGEST}/current.md\n`
+    `plan_snapshot_file=${home}/${STATE_ROOT_THESE_TESTS_SPELL}/plans/${REPO_DIGEST}/presented-${PLAN_DIGEST}.md\n` +
+    `plan_current_file=${home}/${STATE_ROOT_THESE_TESTS_SPELL}/plans/${REPO_DIGEST}/current.md\n`
   );
 }
 
@@ -53,7 +58,7 @@ test("a root with no following path segments passes through unchanged", () => {
 
 test("StateSandbox.expand() resolves a {home}-prefixed plan_snapshot_file template to the exact path planPaths() joins on this platform", () => {
   withStateSandbox("workspace", (sandbox) => {
-    const expanded = sandbox.expand(`{home}/.local/state/oso-code/plans/{repo}/presented-${PLAN_DIGEST}.md`);
+    const expanded = sandbox.expand(`{home}/${REPOSITORY_PLANS_DIR}/presented-${PLAN_DIGEST}.md`);
     const producedByPlanPaths = path.join(
       sandbox.home,
       ".local",

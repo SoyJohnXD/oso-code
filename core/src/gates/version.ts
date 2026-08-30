@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { ALLOWED, jsonField, type GateOutcome, type SessionStartVerdict } from "../hosts/envelope.ts";
-import { secondsSinceModified, stateRootDirectory, writeFileAtomically } from "../state/store.ts";
+import { homeDirectoryFrom, secondsSinceModified, stateRootDirectory, writeFileAtomically } from "../state/store.ts";
 import { pluginRootDirectory, type GateDefinition, type GateRequest } from "./preflight.ts";
 
 const RELEASE_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/;
@@ -57,7 +57,8 @@ function repositorySlugOf(repositoryUrl: string): string | undefined {
 }
 
 function marketplaceServesRepository(repositorySlug: string): boolean {
-  const marketplacesFile = path.join(process.env["HOME"] ?? "", ".claude", "plugins", "known_marketplaces.json");
+  const home = homeDirectoryFrom(process.platform, process.env);
+  const marketplacesFile = path.join(home, ".claude", "plugins", "known_marketplaces.json");
   const registrations = readFileOrEmpty(marketplacesFile).replace(/\s/g, "");
   return registrations.includes(`"repo":"${repositorySlug}"`);
 }

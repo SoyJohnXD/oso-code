@@ -81,18 +81,21 @@ function journalFileFor(cwd) {
 function isNameToken(value) {
   return value.length >= 1 && value.length <= NAME_TOKEN_MAX_LENGTH && NAME_TOKEN_PATTERN.test(value);
 }
+function stateRecords(content, key) {
+  const prefix = `${key}=`;
+  return content.split("\n").filter((line) => line.startsWith(prefix)).map((line) => line.slice(prefix.length));
+}
+function stateValue(content, key) {
+  return stateRecords(content, key).join("\n");
+}
 function readValue(stateFile, key) {
   const content = readFileIfPresent(stateFile);
-  if (content === void 0) return void 0;
-  for (const line of content.split("\n")) {
-    if (line === "") continue;
-    const [lineKey, value] = splitPair(line);
-    if (lineKey === key) return value;
-  }
-  return void 0;
+  if (content === void 0 || stateRecords(content, key).length === 0) return void 0;
+  return stateValue(content, key);
 }
 function readStateFile(stateFile) {
   try {
+    if (!statSync(stateFile).isFile()) return { kind: "unreadable", cause: `${stateFile} is not a regular file` };
     return { kind: "ok", content: readFileSync(stateFile, "utf8") };
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") return { kind: "absent" };
@@ -798,14 +801,14 @@ function runApprovePlan(cwd, sessionId, digest) {
       throw new PlanFailure("current plan is missing or unsafe");
     }
     if (isPrivateRegularFile(paths.presentedFile)) {
-      if (readFileSync3(paths.currentFile, "utf8") !== readFileSync3(paths.presentedFile, "utf8")) {
+      if (!byteIdentical(paths.currentFile, paths.presentedFile)) {
         throw new PlanFailure("the pending plan changed since it was presented; capture it again before approving");
       }
       if (existsSync2(paths.approvedFile)) {
         if (!isPrivateRegularFile(paths.approvedFile)) {
           throw new PlanFailure("approved snapshot is not a private regular file");
         }
-        if (readFileSync3(paths.presentedFile, "utf8") !== readFileSync3(paths.approvedFile, "utf8")) {
+        if (!byteIdentical(paths.presentedFile, paths.approvedFile)) {
           throw new PlanFailure("approved snapshot content disagrees with the pending document");
         }
         rmSync3(paths.presentedFile, { force: true });
@@ -903,6 +906,9 @@ ${document}
     logEvent({ event: "plan-amended", session: sessionId, command: sliceId });
     return 0;
   });
+}
+function byteIdentical(leftFile, rightFile) {
+  return readFileSync3(leftFile).equals(readFileSync3(rightFile));
 }
 function amendmentShapeFor(approval) {
   if (approval === "approved") return { heading: "Execution amendment", classification: "in-scope" };

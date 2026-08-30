@@ -1,14 +1,14 @@
 import type { SessionStartVerdict } from "./envelope.ts";
-import { GATE_ERROR_EXIT, gateErrorText, type HookRun } from "./pretooluse.ts";
+import { GATE_ERROR_EXIT, gateErrorText, spoken, UNSPOKEN, type HookRun } from "./hook-run.ts";
 
 const HOOK_EVENT = "SessionStart";
 
 export function sessionStartRun(verdict: SessionStartVerdict): HookRun {
   switch (verdict.kind) {
     case "allow":
-      return { exit: 0, stdout: "", stderr: "" };
+      return UNSPOKEN;
     case "context":
-      return { exit: 0, stdout: `${contextEnvelope(verdict.additionalContext)}\n`, stderr: "" };
+      return spoken(contextEnvelope(verdict.additionalContext));
     case "gateError":
       return { exit: GATE_ERROR_EXIT, stdout: "", stderr: gateErrorText(verdict.subject) };
   }

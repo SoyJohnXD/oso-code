@@ -5,12 +5,15 @@ import { describe, test } from "node:test";
 import { runGate } from "../../src/gates/dispatch.ts";
 import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
-import { withStateSandbox, type StateSandbox } from "../support/state-sandbox.ts";
+import {
+  REPOSITORY_RUNS_DIR,
+  RUNS_DIR,
+  STATE_FILE,
+  STATE_ROOT_THESE_TESTS_SPELL,
+  withStateSandbox,
+  type StateSandbox,
+} from "../support/state-sandbox.ts";
 
-const STATE_ROOT = ".local/state/oso-code";
-const RUN_STATE_FILE = ".local/state/oso-code/{repo}.state";
-const RUNS_DIR = ".local/state/oso-code/runs";
-const REPOSITORY_RUNS_DIR = ".local/state/oso-code/runs/{repo}";
 const OWNER_ONLY_DIRECTORY = 0o700;
 
 const RUN_STATE: Readonly<Record<string, string>> = {
@@ -37,8 +40,8 @@ function modeOf(sandbox: StateSandbox, relativePath: string): number {
 function pushedRunDirectoryModes(autoWait: string): { runs: number; repository: number } {
   return withStateSandbox("workspace", (sandbox) => {
     sandbox.seed({
-      [STATE_ROOT]: { kind: "directory" },
-      [RUN_STATE_FILE]: stateText({ ...RUN_STATE, auto_wait: autoWait }),
+      [STATE_ROOT_THESE_TESTS_SPELL]: { kind: "directory" },
+      [STATE_FILE]: stateText({ ...RUN_STATE, auto_wait: autoWait }),
     });
     withHookEnvironment({ HOME: sandbox.home }, () => runGate(["autocontinue"], spawnedEnvelope(sandbox.expandJson(STOP_PAYLOAD), process.env)));
     return { runs: modeOf(sandbox, RUNS_DIR), repository: modeOf(sandbox, REPOSITORY_RUNS_DIR) };

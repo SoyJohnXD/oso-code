@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import type { GateRun } from "../../src/gates/dispatch.ts";
 import type { HookEnvelope } from "../../src/hosts/envelope.ts";
 import { unresolvedHomeCause, withHookEnvironment } from "../support/gate-fixture.ts";
-import { repositoryRoot, withStateSandbox } from "../support/state-sandbox.ts";
+import { repositoryRoot, STATE_FILE, withStateSandbox } from "../support/state-sandbox.ts";
 
 type IsolatedRunGate = (argv: readonly string[], payload: string) => GateRun;
 
@@ -62,7 +62,7 @@ describe(
         "the anchorless core copy, once the state IS found armed by another session) is loud",
       () => {
         const run = withStateSandbox("workspace", (sandbox) => {
-          sandbox.seed({ ".local/state/oso-code/{repo}.state": "mode=plan\nsession=other-session\n" });
+          sandbox.seed({ [STATE_FILE]: "mode=plan\nsession=other-session\n" });
           const stdin = sandbox.expandJson('{"session_id":"test-session","cwd":"{cwd}"}');
           return withHookEnvironment({ HOME: sandbox.home }, () => anchorlessRunGate(["stale"], stdin));
         });

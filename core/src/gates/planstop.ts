@@ -23,6 +23,9 @@ const EVENT_MESSAGE = '"type":"event_msg"';
 const ITEM_COMPLETED = '"type":"item_completed"';
 const PLAN_ITEM = '"item":{"type":"Plan"';
 
+const UNREADABLE_PAYLOAD =
+  "oso-code: the plan approval marker arrived in a payload that is not readable JSON, so the document it " +
+  "binds cannot be trusted; present the plan again.";
 const NO_SESSION = "oso-code: the plan approval marker arrived without a usable session id.";
 const UNSAFE_SESSION = "oso-code: the plan approval marker arrived with an invalid session id.";
 const NO_WORKING_DIRECTORY = "oso-code: the plan approval marker arrived without a readable working directory.";
@@ -56,6 +59,7 @@ function judgePlanstop({ envelope }: GateRequest): GateOutcome<StopVerdict> {
 
   const rawSessionId = envelope.sessionId;
   const sessionId = sanitizeSession(rawSessionId);
+  if (envelope.payloadRead === "unparseable") return blocked(UNREADABLE_PAYLOAD, sessionId);
   if (sessionId === "") return blocked(NO_SESSION, "");
   if (sessionId !== rawSessionId) return blocked(UNSAFE_SESSION, sessionId);
   if (!isDirectory(envelope.cwd)) return blocked(NO_WORKING_DIRECTORY, sessionId);

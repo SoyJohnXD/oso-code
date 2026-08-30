@@ -1,15 +1,15 @@
 import { untilGreenMessage, verifyIsGreen } from "../gates/commit.ts";
 import { readArmedState, sanitizeSession, unusableStateMessage } from "../gates/preflight.ts";
-import { gateErrorText } from "../hosts/pretooluse.ts";
+import { gateErrorText } from "../hosts/hook-run.ts";
 import { logEvent, stateFileFor, type LoggedEvent } from "../state/store.ts";
 
-export type PreCommitRun = Readonly<{ exit: number; stderr: string; events: readonly LoggedEvent[] }>;
+type PreCommitRun = Readonly<{ exit: number; stderr: string; events: readonly LoggedEvent[] }>;
 
 const COMMIT_PROCEEDS: PreCommitRun = { exit: 0, stderr: "", events: [] };
 const ABORTED_EXIT = 1;
 const HOOK_ERROR_EXIT = 2;
 
-export function preCommitRun(cwd: string, marker: string): PreCommitRun {
+function preCommitRun(cwd: string, marker: string): PreCommitRun {
   const session = sanitizeSession(marker);
   if (session === "") return COMMIT_PROCEEDS;
 
@@ -23,7 +23,7 @@ export function preCommitRun(cwd: string, marker: string): PreCommitRun {
   return aborted(untilGreenMessage(state.content), "commit-denied", session);
 }
 
-export function commitMarkerIn(environment: Readonly<Record<string, string | undefined>>): string {
+function commitMarkerIn(environment: Readonly<Record<string, string | undefined>>): string {
   const named = environment["CLAUDE_CODE_SESSION_ID"];
   if (named !== undefined && named !== "") return named;
   return environment["OSO_AGENT"] ?? "";

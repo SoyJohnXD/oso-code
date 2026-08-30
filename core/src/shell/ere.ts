@@ -1,10 +1,19 @@
 type EreRead = Readonly<{ source: string; after: number }>;
 
-type AtomWidth = "consumesInput" | "assertsALinePosition" | "assertsAWordEdge";
+type AtomWidth = "consumesInput" | "assertsAPosition";
 
 type EreAtom = EreRead & Readonly<{ width: AtomWidth }>;
 
-type EreQuantifier = EreRead & Readonly<{ spelling: "operator" | "interval"; repeatsAtMost: number }>;
+type EreQuantifier = EreRead & Readonly<{ spelling: "operator" | "interval" }>;
+
+export type ErePatternReading = "matched" | "unmatched" | "untranslatable";
+
+const GREP_ITSELF_REJECTS_IT = Symbol("a pattern grep exits 2 on, which therefore matches nothing");
+const THE_READER_CANNOT_TRANSLATE_IT = Symbol("a pattern grep accepts that this reader cannot express");
+
+type Unread = typeof GREP_ITSELF_REJECTS_IT | typeof THE_READER_CANNOT_TRANSLATE_IT;
+
+type Reading<Value> = Value | Unread;
 
 const ALPHABETIC_MEMBERS = "\\p{Alphabetic}";
 const ALPHANUMERIC_MEMBERS = `${ALPHABETIC_MEMBERS}\\p{Nd}`;
@@ -58,15 +67,18 @@ const BACKREFERENCE = /^[1-9]$/;
 const UNESCAPED_IN_JS = /^[A-Za-z0-9]$/;
 const ASCII_DIGIT = /^[0-9]$/;
 const ASCII_LETTER = /^[A-Za-z]$/;
-const RANGE_BLOCKS_EVERY_LOCALE_ORDERS_ALIKE = [ASCII_DIGIT, /^[a-z]$/, /^[A-Z]$/];
 const FIRST_NON_ASCII_CODE_POINT = 0x80;
 const TOP_LEVEL = 0;
-const MATCHES_NOTHING_AS_A_PATTERN_GREP_REJECTS_DOES = false;
 
-export function ereMatches(pattern: string, subject: string): boolean {
+export function ereReads(pattern: string, subject: string): ErePatternReading {
   const expression = compiledEre(pattern);
-  if (expression === undefined) return MATCHES_NOTHING_AS_A_PATTERN_GREP_REJECTS_DOES;
-  return grepLinesOf(subject).some((line) => expression.test(line));
+  if (expression === THE_READER_CANNOT_TRANSLATE_IT) return "untranslatable";
+  if (expression === GREP_ITSELF_REJECTS_IT) return "unmatched";
+  return grepLinesOf(subject).some((line) => expression.test(line)) ? "matched" : "unmatched";
+}
+
+function unread<Value>(reading: Reading<Value>): reading is Unread {
+  return reading === GREP_ITSELF_REJECTS_IT || reading === THE_READER_CANNOT_TRANSLATE_IT;
 }
 
 function grepLinesOf(subject: string): readonly string[] {
@@ -74,28 +86,29 @@ function grepLinesOf(subject: string): readonly string[] {
   return lines.at(-1) === "" ? lines.slice(0, -1) : lines;
 }
 
-function compiledEre(pattern: string): RegExp | undefined {
+function compiledEre(pattern: string): Reading<RegExp> {
   const source = jsSourceOf(pattern);
-  if (source === undefined) return undefined;
+  if (unread(source)) return source;
   try {
     return new RegExp(source, "u");
   } catch {
-    return undefined;
+    return GREP_ITSELF_REJECTS_IT;
   }
 }
 
-function jsSourceOf(pattern: string): string | undefined {
+function jsSourceOf(pattern: string): Reading<string> {
   const read = readAlternation(pattern, 0, TOP_LEVEL);
-  if (read === undefined || read.after !== pattern.length) return undefined;
+  if (unread(read)) return read;
+  if (read.after !== pattern.length) return GREP_ITSELF_REJECTS_IT;
   return read.source;
 }
 
-function readAlternation(pattern: string, from: number, depth: number): EreRead | undefined {
+function readAlternation(pattern: string, from: number, depth: number): Reading<EreRead> {
   let source = "";
   let cursor = from;
   for (;;) {
     const branch = readBranch(pattern, cursor, depth);
-    if (branch === undefined) return undefined;
+    if (unread(branch)) return branch;
     source += branch.source;
     cursor = branch.after;
     if (pattern[cursor] !== "|") return { source, after: cursor };
@@ -104,16 +117,16 @@ function readAlternation(pattern: string, from: number, depth: number): EreRead 
   }
 }
 
-function readBranch(pattern: string, from: number, depth: number): EreRead | undefined {
+function readBranch(pattern: string, from: number, depth: number): Reading<EreRead> {
   let source = "";
   let cursor = from;
   for (;;) {
     const settled = pastQuantifiersWithNothingToRepeat(pattern, cursor, depth);
-    if (settled === undefined) return undefined;
+    if (unread(settled)) return settled;
     cursor = settled;
     if (branchEndsAt(pattern, cursor, depth)) return { source, after: cursor };
     const piece = readPiece(pattern, cursor, depth);
-    if (piece === undefined) return undefined;
+    if (unread(piece)) return piece;
     source += piece.source;
     cursor = piece.after;
   }
@@ -125,12 +138,12 @@ function branchEndsAt(pattern: string, at: number, depth: number): boolean {
   return character === ")" && depth > TOP_LEVEL;
 }
 
-function pastQuantifiersWithNothingToRepeat(pattern: string, from: number, depth: number): number | undefined {
+function pastQuantifiersWithNothingToRepeat(pattern: string, from: number, depth: number): Reading<number> {
   let cursor = from;
   for (;;) {
     const quantifier = readQuantifier(pattern, cursor);
     if (quantifier === undefined) return cursor;
-    if (endsAnEmptyGroup(pattern, quantifier, depth)) return undefined;
+    if (endsAnEmptyGroup(pattern, quantifier, depth)) return GREP_ITSELF_REJECTS_IT;
     cursor = quantifier.after;
   }
 }
@@ -139,44 +152,29 @@ function endsAnEmptyGroup(pattern: string, quantifier: EreQuantifier, depth: num
   return depth > TOP_LEVEL && quantifier.spelling === "operator" && pattern[quantifier.after] === ")";
 }
 
-function readPiece(pattern: string, from: number, depth: number): EreRead | undefined {
+function readPiece(pattern: string, from: number, depth: number): Reading<EreRead> {
   const atom = readAtom(pattern, from, depth);
-  if (atom === undefined) return undefined;
-  if (atom.width === "assertsAWordEdge") return withDemotedQuantifiers(pattern, atom, depth);
+  if (unread(atom)) return atom;
   return withQuantifiers(pattern, atom, depth);
 }
 
-function withQuantifiers(pattern: string, atom: EreAtom, depth: number): EreRead | undefined {
+function withQuantifiers(pattern: string, atom: EreAtom, depth: number): Reading<EreRead> {
   let piece: EreRead = atom;
   for (;;) {
     const quantifier = readQuantifier(pattern, piece.after);
     if (quantifier === undefined) return piece;
-    if (atom.width !== "consumesInput" && endsAnEmptyGroup(pattern, quantifier, depth)) return undefined;
-    piece = { source: `(?:${piece.source})${quantifier.source}`, after: quantifier.after };
-  }
-}
-
-function withDemotedQuantifiers(pattern: string, atom: EreAtom, depth: number): EreRead | undefined {
-  let cursor = atom.after;
-  for (;;) {
-    const quantifier = readQuantifier(pattern, cursor);
-    if (quantifier === undefined) return { source: atom.source, after: cursor };
-    if (endsAnEmptyGroup(pattern, quantifier, depth)) return undefined;
-    if (quantifier.spelling === "operator") {
-      cursor = quantifier.after;
-      continue;
+    if (atom.width === "assertsAPosition" && endsAnEmptyGroup(pattern, quantifier, depth)) {
+      return GREP_ITSELF_REJECTS_IT;
     }
-    if (quantifier.repeatsAtMost === 0) return { source: "", after: quantifier.after };
-    return { source: atom.source, after: cursor + 1 };
+    piece = { source: `(?:${piece.source})${quantifier.source}`, after: quantifier.after };
   }
 }
 
 function readQuantifier(pattern: string, at: number): EreQuantifier | undefined {
   const character = pattern[at];
-  if (character === "*" || character === "+") {
-    return { source: character, after: at + 1, spelling: "operator", repeatsAtMost: Infinity };
+  if (character === "*" || character === "+" || character === "?") {
+    return { source: character, after: at + 1, spelling: "operator" };
   }
-  if (character === "?") return { source: character, after: at + 1, spelling: "operator", repeatsAtMost: 1 };
   const interval = INTERVAL.exec(pattern.slice(at));
   if (interval === null) return undefined;
   const [spelled, low = "", high] = interval;
@@ -185,21 +183,14 @@ function readQuantifier(pattern: string, at: number): EreQuantifier | undefined 
     source: `{${low === "" ? "0" : low}${high ?? ""}}`,
     after: at + spelled.length,
     spelling: "interval",
-    repeatsAtMost: intervalCeiling(low, high),
   };
 }
 
-function intervalCeiling(low: string, high: string | undefined): number {
-  if (high === undefined) return Number(low);
-  const spelledHigh = high.slice(1);
-  return spelledHigh === "" ? Infinity : Number(spelledHigh);
-}
-
-function readAtom(pattern: string, from: number, depth: number): EreAtom | undefined {
+function readAtom(pattern: string, from: number, depth: number): Reading<EreAtom> {
   const character = characterAt(pattern, from);
   if (character === ".") return consuming(ANY_CHARACTER_IN_A_LINE, from + 1);
   if (character === "^" || character === "$") {
-    return { source: character, after: from + 1, width: "assertsALinePosition" };
+    return { source: character, after: from + 1, width: "assertsAPosition" };
   }
   if (character === "[") return asAtom(readBracket(pattern, from), "consumesInput");
   if (character === "(") return asAtom(readGroup(pattern, from, depth), "consumesInput");
@@ -211,78 +202,89 @@ function consuming(source: string, after: number): EreAtom {
   return { source, after, width: "consumesInput" };
 }
 
-function asAtom(read: EreRead | undefined, width: AtomWidth): EreAtom | undefined {
-  return read === undefined ? undefined : { ...read, width };
+function asAtom(read: Reading<EreRead>, width: AtomWidth): Reading<EreAtom> {
+  return unread(read) ? read : { ...read, width };
 }
 
-function readGroup(pattern: string, from: number, depth: number): EreRead | undefined {
+function readGroup(pattern: string, from: number, depth: number): Reading<EreRead> {
   const inner = readAlternation(pattern, from + 1, depth + 1);
-  if (inner === undefined || pattern[inner.after] !== ")") return undefined;
+  if (unread(inner)) return inner;
+  if (pattern[inner.after] !== ")") return GREP_ITSELF_REJECTS_IT;
   return { source: `(${inner.source})`, after: inner.after + 1 };
 }
 
-function readEscape(pattern: string, from: number): EreAtom | undefined {
-  if (from + 1 >= pattern.length) return undefined;
+function readEscape(pattern: string, from: number): Reading<EreAtom> {
+  if (from + 1 >= pattern.length) return GREP_ITSELF_REJECTS_IT;
   const escaped = characterAt(pattern, from + 1);
   const after = from + 1 + escaped.length;
   const wordEdge = GNU_WORD_EDGE_ESCAPES[escaped];
-  if (wordEdge !== undefined) return { source: wordEdge, after, width: "assertsAWordEdge" };
+  if (wordEdge !== undefined) return { source: wordEdge, after, width: "assertsAPosition" };
   const lineAnchor = GNU_LINE_ANCHOR_ESCAPES[escaped];
-  if (lineAnchor !== undefined) return { source: lineAnchor, after, width: "assertsALinePosition" };
+  if (lineAnchor !== undefined) return { source: lineAnchor, after, width: "assertsAPosition" };
   const characterClass = GNU_CLASS_ESCAPES[escaped];
   if (characterClass !== undefined) return consuming(characterClass, after);
   if (BACKREFERENCE.test(escaped)) return consuming(`\\${escaped}`, after);
   return consuming(asJsLiteral(escaped), after);
 }
 
-function readBracket(pattern: string, from: number): EreRead | undefined {
+function readBracket(pattern: string, from: number): Reading<EreRead> {
   const negated = pattern[from + 1] === "^";
-  let cursor = from + (negated ? 2 : 1);
-  let members = "";
-  if (pattern[cursor] === "]") {
-    members += asJsLiteral("]");
-    cursor += 1;
-  }
+  const opens = from + (negated ? 2 : 1);
+  const leading = readAnyLeadingClosingBracket(pattern, opens);
+  if (unread(leading)) return leading;
+  let members = leading.source;
+  let cursor = leading.after;
   for (;;) {
     const character = pattern[cursor];
-    if (character === undefined) return undefined;
+    if (character === undefined) return GREP_ITSELF_REJECTS_IT;
     if (character === "]") return { source: `[${negated ? "^" : ""}${members}]`, after: cursor + 1 };
     const member = readBracketMember(pattern, cursor);
-    if (member === undefined) return undefined;
+    if (unread(member)) return member;
     members += member.source;
     cursor = member.after;
   }
 }
 
-function readBracketMember(pattern: string, from: number): EreRead | undefined {
+function readAnyLeadingClosingBracket(pattern: string, at: number): Reading<EreRead> {
+  if (pattern[at] !== "]") return { source: "", after: at };
+  return readRangeOrCharacter(pattern, at);
+}
+
+function readBracketMember(pattern: string, from: number): Reading<EreRead> {
   if (pattern.startsWith("[:", from)) return readPosixClass(pattern, from);
   if (pattern.startsWith("[.", from)) return readCollatingSymbol(pattern, from);
   if (pattern.startsWith("[=", from)) return readEquivalenceClass(pattern, from);
   return readRangeOrCharacter(pattern, from);
 }
 
-function readPosixClass(pattern: string, from: number): EreRead | undefined {
+function readPosixClass(pattern: string, from: number): Reading<EreRead> {
   const named = POSIX_CLASS_NAME.exec(pattern.slice(from));
-  if (named === null) return undefined;
+  if (named === null) return GREP_ITSELF_REJECTS_IT;
   const members = POSIX_CLASS_MEMBERS[named[1] as string];
-  if (members === undefined) return undefined;
-  return namedMemberEndingAt(members, from + named[0].length, pattern);
+  if (members === undefined) return GREP_ITSELF_REJECTS_IT;
+  const after = from + named[0].length;
+  if (aRangeOpensAt(pattern, after)) return GREP_ITSELF_REJECTS_IT;
+  return { source: members, after };
 }
 
-function readCollatingSymbol(pattern: string, from: number): EreRead | undefined {
+function readCollatingSymbol(pattern: string, from: number): Reading<EreRead> {
   const symbol = characterAt(pattern, from + 2);
   const closing = from + 2 + symbol.length;
-  if (symbol === "" || !pattern.startsWith(".]", closing)) return undefined;
-  return namedMemberEndingAt(asJsLiteral(symbol), closing + 2, pattern);
+  if (symbol === "" || !pattern.startsWith(".]", closing)) return GREP_ITSELF_REJECTS_IT;
+  const after = closing + 2;
+  if (aRangeOpensAt(pattern, after)) return THE_READER_CANNOT_TRANSLATE_IT;
+  return { source: asJsLiteral(symbol), after };
 }
 
-function readEquivalenceClass(pattern: string, from: number): EreRead | undefined {
+function readEquivalenceClass(pattern: string, from: number): Reading<EreRead> {
   const representative = characterAt(pattern, from + 2);
   const closing = from + 2 + representative.length;
-  if (!pattern.startsWith("=]", closing)) return undefined;
+  if (!pattern.startsWith("=]", closing)) return GREP_ITSELF_REJECTS_IT;
+  const after = closing + 2;
+  if (aRangeOpensAt(pattern, after)) return GREP_ITSELF_REJECTS_IT;
   const members = equivalentToInEveryLocale(representative);
-  if (members === undefined) return undefined;
-  return namedMemberEndingAt(members, closing + 2, pattern);
+  if (members === undefined) return THE_READER_CANNOT_TRANSLATE_IT;
+  return { source: members, after };
 }
 
 function equivalentToInEveryLocale(representative: string): string | undefined {
@@ -291,13 +293,11 @@ function equivalentToInEveryLocale(representative: string): string | undefined {
   return asJsLiteral(representative.toLowerCase()) + asJsLiteral(representative.toUpperCase());
 }
 
-function namedMemberEndingAt(members: string, after: number, pattern: string): EreRead | undefined {
-  const next = pattern[after];
-  if (next === "-" && pattern[after + 1] !== "]" && pattern[after + 1] !== undefined) return undefined;
-  return { source: members, after };
+function aRangeOpensAt(pattern: string, at: number): boolean {
+  return pattern[at] === "-" && pattern[at + 1] !== "]" && pattern[at + 1] !== undefined;
 }
 
-function readRangeOrCharacter(pattern: string, from: number): EreRead | undefined {
+function readRangeOrCharacter(pattern: string, from: number): Reading<EreRead> {
   const low = characterAt(pattern, from);
   const dash = from + low.length;
   const highStarts = dash + 1;
@@ -305,15 +305,19 @@ function readRangeOrCharacter(pattern: string, from: number): EreRead | undefine
     return { source: asJsLiteral(low), after: dash };
   }
   const high = characterAt(pattern, highStarts);
-  if (!rangeReadsByCodePoint(low, high)) return undefined;
-  return { source: `${asJsLiteral(low)}-${asJsLiteral(high)}`, after: highStarts + high.length };
+  const range = rangeMembersOf(low, high);
+  if (unread(range)) return range;
+  return { source: range, after: highStarts + high.length };
 }
 
-function rangeReadsByCodePoint(low: string, high: string): boolean {
-  if (low === high) return (low.codePointAt(0) ?? 0) < FIRST_NON_ASCII_CODE_POINT;
-  return RANGE_BLOCKS_EVERY_LOCALE_ORDERS_ALIKE.some(
-    (block) => block.test(low) && block.test(high) && low < high,
-  );
+function rangeMembersOf(low: string, high: string): Reading<string> {
+  const lowest = low.codePointAt(0) ?? 0;
+  const highest = high.codePointAt(0) ?? 0;
+  if (lowest >= FIRST_NON_ASCII_CODE_POINT || highest >= FIRST_NON_ASCII_CODE_POINT) {
+    return THE_READER_CANNOT_TRANSLATE_IT;
+  }
+  if (lowest > highest) return GREP_ITSELF_REJECTS_IT;
+  return `${asJsLiteral(low)}-${asJsLiteral(high)}`;
 }
 
 function characterAt(pattern: string, at: number): string {

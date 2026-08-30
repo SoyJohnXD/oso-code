@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { GateOutcome } from "../hosts/envelope.ts";
 import { ALLOWED } from "../hosts/envelope.ts";
-import { ereMatches } from "../shell/ere.ts";
+import { ereReads } from "../shell/ere.ts";
 import { basenameOf, UNREAD_PAYLOAD_MARKER } from "../shell/lexer.ts";
 import { gitVerb, isGitCall, isResidueCall, type LexedCommand } from "../shell/lexed-command.ts";
 import { lineVerdict, type LexerVerdict } from "../shell/line-verdict.ts";
@@ -22,6 +22,12 @@ import {
 type ProductionJudgement = "production" | "push" | "residue";
 type RunMarker = "unmarked" | "uncertain" | "armed";
 type ProductionBoundary = Readonly<{ runMarker: RunMarker; stateFile: string; session: string }>;
+type BoundaryDenial = Readonly<{ message: string; event: string; detail: string }>;
+
+type DenyPatternReading =
+  | Readonly<{ kind: "noPatternBites" }>
+  | Readonly<{ kind: "aPatternBites" }>
+  | Readonly<{ kind: "aPatternIsUnreadable"; pattern: string }>;
 
 const PRODUCTION_BOUNDARY_SUBJECTS = ["git", "deploy", "vercel", "netlify", "firebase"];
 const DEPLOY_CLIS = new Set(["vercel", "netlify", "firebase"]);
@@ -50,10 +56,19 @@ function judgeProductionBoundary({ envelope }: GateRequest): GateOutcome {
     return denyProductionBoundary(boundary, mcpDeployStaysWithTheOperator(session), envelope.toolName);
   }
   if (envelope.toolName !== "Bash" && envelope.toolName !== "bash") return ALLOWED;
+  return judgeAgainstDenyPatterns(boundary, envelope.commandLine);
+}
 
-  const command = envelope.commandLine;
-  if (!aDenyPatternOfThisRepositoryMatches(stateFile, command)) return judgeCommandLine(boundary, command);
-  return denyProductionBoundary(boundary, thisRepositoryDeniesTheCommand(session), command);
+function judgeAgainstDenyPatterns(boundary: ProductionBoundary, command: string): GateOutcome {
+  const reading = howThisRepositoryReadsTheCommand(boundary.stateFile, command);
+  switch (reading.kind) {
+    case "aPatternBites":
+      return denyProductionBoundary(boundary, thisRepositoryDeniesTheCommand(boundary.session), command);
+    case "aPatternIsUnreadable":
+      return denyUnreadableDenyPattern(boundary, reading.pattern);
+    case "noPatternBites":
+      return judgeCommandLine(boundary, command);
+  }
 }
 
 function judgeCommandLine(boundary: ProductionBoundary, command: string): GateOutcome {
@@ -113,6 +128,15 @@ function theLineIsPastWhatTheBoundaryReads(session: string): string {
   );
 }
 
+function aDenyPatternIsPastWhatTheBoundaryReads(session: string, pattern: string): string {
+  return (
+    "oso-code: an unattended run is in flight, and a deploy-deny pattern of this repository " +
+    `(${pattern}) is past what the production boundary can read, so this command is denied rather than ` +
+    "allowed on a pattern nothing checked. Rewrite that pattern in the POSIX ERE the boundary reads, or " +
+    `${takeTheRunBack(session)} and run it from your own terminal.`
+  );
+}
+
 function theRunPushesItsOwnBranchOnly(session: string): string {
   return (
     "oso-code: an unattended run is in flight, and it pushes its own oso-run/* branch and nothing else. " +
@@ -122,10 +146,22 @@ function theRunPushesItsOwnBranchOnly(session: string): string {
 }
 
 function denyProductionBoundary(boundary: ProductionBoundary, message: string, detail: string): GateOutcome {
+  return deniedUnderTheBoundary(boundary, { message, event: "prod-deploy-denied", detail });
+}
+
+function denyUnreadableDenyPattern(boundary: ProductionBoundary, pattern: string): GateOutcome {
+  return deniedUnderTheBoundary(boundary, {
+    message: aDenyPatternIsPastWhatTheBoundaryReads(boundary.session, pattern),
+    event: "deploy-deny-pattern-untranslatable",
+    detail: pattern,
+  });
+}
+
+function deniedUnderTheBoundary(boundary: ProductionBoundary, denial: BoundaryDenial): GateOutcome {
   if (boundary.runMarker === "uncertain") {
     return deniedForUnusableState("proddeploy", boundary.stateFile, boundary.session);
   }
-  return denied({ gate: "proddeploy", message, event: "prod-deploy-denied", session: boundary.session, detail });
+  return denied({ gate: "proddeploy", session: boundary.session, ...denial });
 }
 
 function judgeProductionLine(
@@ -194,13 +230,19 @@ function readsAsStateRecords(content: string): boolean {
   return content.split("\n").every((line) => STATE_RECORD_LINE.test(line));
 }
 
-function aDenyPatternOfThisRepositoryMatches(stateFile: string, command: string): boolean {
-  const patternsFile = path.join(
-    stateRootDirectory(),
-    "deploy-deny",
-    `${repositoryIdFor(stateFile)}.patterns`,
-  );
-  const read = readStateFile(patternsFile);
-  if (read.kind !== "ok") return false;
-  return read.content.split("\n").some((pattern) => pattern !== "" && ereMatches(pattern, command));
+function howThisRepositoryReadsTheCommand(stateFile: string, command: string): DenyPatternReading {
+  const read = readStateFile(denyPatternsFileOf(stateFile));
+  if (read.kind !== "ok") return { kind: "noPatternBites" };
+  const readings = read.content
+    .split("\n")
+    .filter((pattern) => pattern !== "")
+    .map((pattern) => ({ pattern, reading: ereReads(pattern, command) }));
+  if (readings.some((one) => one.reading === "matched")) return { kind: "aPatternBites" };
+  const unreadable = readings.find((one) => one.reading === "untranslatable");
+  if (unreadable === undefined) return { kind: "noPatternBites" };
+  return { kind: "aPatternIsUnreadable", pattern: unreadable.pattern };
+}
+
+function denyPatternsFileOf(stateFile: string): string {
+  return path.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
 }

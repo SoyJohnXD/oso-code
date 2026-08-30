@@ -6,19 +6,25 @@ import { runGate, type GateRun } from "../../src/gates/dispatch.ts";
 import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { sha256Hex } from "../../src/state/store.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
-import { withStateSandbox, type SeededEntry, type StateSandbox } from "../support/state-sandbox.ts";
+import {
+  makeUnreadable,
+  OWNER_ONLY_FILE,
+  REPOSITORY_PLANS_DIR,
+  skipUnlessChmodMakesFilesUnreadable,
+  STATE_FILE,
+  withStateSandbox,
+  type SeededEntry,
+  type StateSandbox,
+} from "../support/state-sandbox.ts";
 
 const PLAN_MARKER = "<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->";
-const STATE_FILE = ".local/state/oso-code/{repo}.state";
 const WIRE_DOCUMENT = `Repaso\\n${PLAN_MARKER}`;
 const DIGEST = sha256Hex(`Repaso de cambios\\nFull slice plan: alpha\\n${PLAN_MARKER}\\n`);
-const PRESENTED = `.local/state/oso-code/plans/{repo}/presented-${DIGEST}.md`;
-const CURRENT = ".local/state/oso-code/plans/{repo}/current.md";
+const PRESENTED = `${REPOSITORY_PLANS_DIR}/presented-${DIGEST}.md`;
+const CURRENT = `${REPOSITORY_PLANS_DIR}/current.md`;
 const DOCUMENT = "Repaso de cambios\nFull slice plan: alpha";
 
-const UNREADABLE = 0o000;
 const READABLE_BEYOND_ITS_OWNER = 0o644;
-const OWNER_READ_WRITE = 0o600;
 
 const CAPTURE_REFUSED =
   "oso-code: the approval document or its plan artifacts could not be recorded; execution remains blocked.";
@@ -61,15 +67,11 @@ function judged(
 function restoreModes(sandbox: StateSandbox, relativePaths: readonly string[]): void {
   for (const relativePath of relativePaths) {
     try {
-      chmodSync(path.join(sandbox.home, sandbox.expand(relativePath)), OWNER_READ_WRITE);
+      chmodSync(path.join(sandbox.home, sandbox.expand(relativePath)), OWNER_ONLY_FILE);
     } catch {
       continue;
     }
   }
-}
-
-function chmodIn(sandbox: StateSandbox, relativePath: string, mode: number): void {
-  chmodSync(path.join(sandbox.home, sandbox.expand(relativePath)), mode);
 }
 
 describe(
@@ -80,9 +82,9 @@ describe(
     'recorded; execution remains blocked."}, empty stderr, and one plan-approval-capture-blocked event whose ' +
     "command is the capture error — no transcript attestation is needed to reach it",
   () => {
-    test("a state file the rail cannot read denies the Stop", { skip: skipUnlessChmodBites() }, () => {
+    test("a state file the rail cannot read denies the Stop", { skip: skipUnlessChmodMakesFilesUnreadable() }, () => {
       const run = judged("planstop", STOP_PAYLOAD, { [STATE_FILE]: "mode=plan\nsession=test-session\n" }, (sandbox) =>
-        chmodIn(sandbox, STATE_FILE, UNREADABLE),
+        makeUnreadable(sandbox, STATE_FILE),
       );
       assert.deepEqual(
         { exit: run.exit, stdout: run.stdout, stderr: run.stderr },
@@ -113,7 +115,7 @@ describe(
         "planprompt",
         APPROVE_PAYLOAD,
         { [STATE_FILE]: PENDING_STATE, [PRESENTED]: DOCUMENT, [CURRENT]: DOCUMENT },
-        (sandbox) => chmodIn(sandbox, PRESENTED, READABLE_BEYOND_ITS_OWNER),
+        (sandbox) => chmodSync(path.join(sandbox.home, sandbox.expand(PRESENTED)), READABLE_BEYOND_ITS_OWNER),
       );
       assert.equal(run.stdout, `{"decision":"block","reason":"${APPROVAL_REFUSED}"}\n`);
       assert.equal(run.events[0]?.event, "plan-approval-approve-blocked");

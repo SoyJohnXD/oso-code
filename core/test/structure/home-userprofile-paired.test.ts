@@ -27,9 +27,9 @@ const SHELL_EXPORT_HOME_PATTERN = /\bexport\s+HOME=/;
 const SHELL_HOME_NODE_PREFIX_PATTERN = /\bHOME=\S+(?:\s+[A-Za-z_][A-Za-z0-9_]*=\S+)*\s+(?:node|oso-state)\b/;
 const SHELL_USERPROFILE_PAIRED_PATTERN = /\bUSERPROFILE\s*=|\bexport\s+USERPROFILE\b/;
 
-export type UnpairedHomeSite = Readonly<{ file: string; line: number; text: string }>;
+type UnpairedHomeSite = Readonly<{ file: string; line: number; text: string }>;
 
-export function stripStringLiterals(lineText: string): string {
+function stripStringLiterals(lineText: string): string {
   let out = "";
   let quote: string | undefined;
   for (let index = 0; index < lineText.length; index += 1) {
@@ -62,7 +62,7 @@ function windowOf(lines: readonly string[], index: number, before: number, after
   return lines.slice(Math.max(0, index - before), Math.min(lines.length, index + after + 1)).join("\n");
 }
 
-export function unpairedTsHomeSites(file: string, text: string): UnpairedHomeSite[] {
+function unpairedTsHomeSites(file: string, text: string): UnpairedHomeSite[] {
   const lines = text.split("\n");
   const sites: UnpairedHomeSite[] = [];
   lines.forEach((lineText, index) => {
@@ -78,7 +78,7 @@ export function unpairedTsHomeSites(file: string, text: string): UnpairedHomeSit
   return sites;
 }
 
-export function unpairedShellHomeSites(file: string, text: string): UnpairedHomeSite[] {
+function unpairedShellHomeSites(file: string, text: string): UnpairedHomeSite[] {
   const lines = text.split("\n");
   const sites: UnpairedHomeSite[] = [];
   lines.forEach((lineText, index) => {

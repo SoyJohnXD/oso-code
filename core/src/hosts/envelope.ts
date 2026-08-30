@@ -4,8 +4,11 @@ import { MAX_LEXED_INPUT_BYTES } from "../shell/lexer.ts";
 
 export type HookCaller = Readonly<{ host: HostName; agentSession: string; stateBin: string }>;
 
+export type PayloadRead = ParsedPayload["kind"];
+
 export type HookEnvelope = Readonly<{
   caller: HookCaller;
+  payloadRead: PayloadRead;
   sessionId: string;
   cwd: string;
   toolName: string;
@@ -60,6 +63,7 @@ const JSON_SPACE = "[\\t\\n\\v\\f\\r ]";
 const STOP_HOOK_ACTIVE = new RegExp(`"stop_hook_active"${JSON_SPACE}*:${JSON_SPACE}*true`);
 
 const NO_HOOK_FIELD_NAMED: Omit<HookEnvelope, "caller"> = {
+  payloadRead: "json",
   sessionId: "",
   cwd: "",
   toolName: "",
@@ -78,13 +82,23 @@ const NO_HOOK_FIELD_NAMED: Omit<HookEnvelope, "caller"> = {
   stopHookActive: false,
 };
 
+type HookTextFields = Omit<HookEnvelope, "caller" | "payloadRead" | "stopHookActive">;
+
 export function hostEnvelope(caller: HookCaller, named: Partial<Omit<HookEnvelope, "caller">>): HookEnvelope {
-  return { ...NO_HOOK_FIELD_NAMED, ...named, caller };
+  const { payloadRead, stopHookActive, ...text } = { ...NO_HOOK_FIELD_NAMED, ...named };
+  return { ...asHookFieldValues(text), payloadRead, stopHookActive, caller };
 }
 
-export function readEnvelope(payload: string, caller: HookCaller): HookEnvelope {
+function asHookFieldValues(text: HookTextFields): HookTextFields {
+  const read = Object.entries(text).map(([name, value]) => [name, asHookFieldValue(value)]);
+  return Object.fromEntries(read) as HookTextFields;
+}
+
+export function readEnvelope(hookText: string, caller: HookCaller): HookEnvelope {
+  const payload = asCommandSubstitutionCaptures(hookText);
   return {
     caller,
+    payloadRead: parsedPayload(payload).kind,
     sessionId: jsonField(payload, "session_id"),
     cwd: jsonField(payload, "cwd"),
     toolName: jsonField(payload, "tool_name"),
@@ -106,21 +120,56 @@ export function readEnvelope(payload: string, caller: HookCaller): HookEnvelope 
 
 function jsonCommandLine(payload: string): string {
   const escaped = escapedField(payload, "command");
-  if ([...escaped].length > MAX_LEXED_INPUT_BYTES) return escaped;
+  if ([...escaped].length > MAX_LEXED_INPUT_BYTES) return asCommandSubstitutionCaptures(escaped);
   return jsonField(payload, "command");
 }
 
-export function jsonField(payload: string, field: string): string {
-  return withoutCarriageReturns(unescapedJson(escapedField(payload, field)));
+export function jsonField(hookText: string, field: string): string {
+  const payload = asCommandSubstitutionCaptures(hookText);
+  return asHookFieldValue(theFirstStringNamed(payload, field));
+}
+
+function theFirstStringNamed(payload: string, field: string): string {
+  const payloadRead = parsedPayload(payload);
+  if (payloadRead.kind === "unparseable") return unescapedJson(escapedField(payload, field));
+  return firstStringNamedWithin(payloadRead.document, field) ?? "";
+}
+
+type ParsedPayload =
+  | Readonly<{ kind: "json"; document: unknown }>
+  | Readonly<{ kind: "unparseable" }>;
+
+function parsedPayload(payload: string): ParsedPayload {
+  try {
+    return { kind: "json", document: JSON.parse(payload) as unknown };
+  } catch {
+    return { kind: "unparseable" };
+  }
+}
+
+function firstStringNamedWithin(document: unknown, field: string): string | undefined {
+  const unvisited: unknown[] = [document];
+  while (unvisited.length > 0) {
+    const node = unvisited.pop();
+    if (node === null || typeof node !== "object") continue;
+    const named = Array.isArray(node) ? undefined : (node as Record<string, unknown>)[field];
+    if (typeof named === "string") return named;
+    for (const child of Object.values(node).reverse()) unvisited.push(child);
+  }
+  return undefined;
+}
+
+function asHookFieldValue(value: string): string {
+  return asCommandSubstitutionCaptures(withoutCarriageReturns(asCommandSubstitutionCaptures(value)));
 }
 
 export function asCommandSubstitutionCaptures(text: string): string {
-  return text.replace(/\n+$/, "");
+  return text.replaceAll("\0", "").replace(/\n+$/, "");
 }
 
-export function escapedField(payload: string, field: string): string {
+export function escapedField(hookText: string, field: string): string {
   const pattern = new RegExp(`"${field}"${JSON_SPACE}*:${JSON_SPACE}*"((?:[^"\\\\]|\\\\[\\s\\S])*)"`);
-  return pattern.exec(payload)?.[1] ?? "";
+  return pattern.exec(asCommandSubstitutionCaptures(hookText))?.[1] ?? "";
 }
 
 const NAMED_ESCAPES: Readonly<Record<string, string>> = {

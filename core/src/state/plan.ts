@@ -123,14 +123,14 @@ export function runApprovePlan(cwd: string, sessionId: string, digest: string): 
       throw new PlanFailure("current plan is missing or unsafe");
     }
     if (store.isPrivateRegularFile(paths.presentedFile)) {
-      if (readFileSync(paths.currentFile, "utf8") !== readFileSync(paths.presentedFile, "utf8")) {
+      if (!byteIdentical(paths.currentFile, paths.presentedFile)) {
         throw new PlanFailure("the pending plan changed since it was presented; capture it again before approving");
       }
       if (existsSync(paths.approvedFile)) {
         if (!store.isPrivateRegularFile(paths.approvedFile)) {
           throw new PlanFailure("approved snapshot is not a private regular file");
         }
-        if (readFileSync(paths.presentedFile, "utf8") !== readFileSync(paths.approvedFile, "utf8")) {
+        if (!byteIdentical(paths.presentedFile, paths.approvedFile)) {
           throw new PlanFailure("approved snapshot content disagrees with the pending document");
         }
         rmSync(paths.presentedFile, { force: true });
@@ -224,6 +224,10 @@ export function runAmendPlan(cwd: string, sessionId: string, sliceId: string, do
     store.logEvent({ event: "plan-amended", session: sessionId, command: sliceId });
     return 0;
   });
+}
+
+function byteIdentical(leftFile: string, rightFile: string): boolean {
+  return readFileSync(leftFile).equals(readFileSync(rightFile));
 }
 
 function amendmentShapeFor(approval: string | undefined): { heading: string; classification: string } {

@@ -5,6 +5,7 @@ import { provedSomething } from "../support/proved.ts";
 import {
   repositoryRoot,
   skipUnlessSpawnable,
+  STATE_FILE,
   withStateSandbox,
   type StateSubject,
 } from "../support/state-sandbox.ts";
@@ -18,7 +19,6 @@ const PRE_COMMIT_HOOK: StateSubject = {
   ],
 };
 
-const STATE_PATH = ".local/state/oso-code/{repo}.state";
 const SESSION = "test-session";
 const HOST_SESSION = { CLAUDE_CODE_SESSION_ID: SESSION };
 
@@ -38,7 +38,7 @@ describe("the git pre-commit hook's own boundary", { skip: skipUnlessSpawnable(P
 
   test("a terminal naming no session commits untouched (read from tests/hooks-test.sh:6885)", () => {
     const run = withStateSandbox("workspace", (sandbox) => {
-      sandbox.seed({ [STATE_PATH]: `mode=plan\nverify_green=false\nsession=${SESSION}\n` });
+      sandbox.seed({ [STATE_FILE]: `mode=plan\nverify_green=false\nsession=${SESSION}\n` });
       return sandbox.run(PRE_COMMIT_HOOK, []);
     });
     assert.deepEqual(run, { exit: 0, stdout: "", stderr: "" });
@@ -46,7 +46,7 @@ describe("the git pre-commit hook's own boundary", { skip: skipUnlessSpawnable(P
 
   test("the marker a host with no session id sets arms the same gate (read from tests/hooks-test.sh:6896)", () => {
     const run = withStateSandbox("workspace", (sandbox) => {
-      sandbox.seed({ [STATE_PATH]: `mode=plan\nverify_green=false\nsession=${SESSION}\n` });
+      sandbox.seed({ [STATE_FILE]: `mode=plan\nverify_green=false\nsession=${SESSION}\n` });
       return sandbox.run(PRE_COMMIT_HOOK, [], { env: { OSO_AGENT: "codex-probe" } });
     });
     assert.equal(run.exit, 1);
@@ -56,7 +56,7 @@ describe("the git pre-commit hook's own boundary", { skip: skipUnlessSpawnable(P
 
   test("the git layer denies a commit while verify is red (read from tests/hooks-test.sh:6895)", () => {
     const run = withStateSandbox("workspace", (sandbox) => {
-      sandbox.seed({ [STATE_PATH]: `mode=plan\nverify_green=false\nsession=${SESSION}\n` });
+      sandbox.seed({ [STATE_FILE]: `mode=plan\nverify_green=false\nsession=${SESSION}\n` });
       return sandbox.run(PRE_COMMIT_HOOK, [], { env: HOST_SESSION });
     });
     assert.equal(run.exit, 1);
@@ -69,7 +69,7 @@ describe("the git pre-commit hook's own boundary", { skip: skipUnlessSpawnable(P
 
   test("the git layer lets a commit through once verify is green (read from tests/hooks-test.sh:6899)", () => {
     const run = withStateSandbox("workspace", (sandbox) => {
-      sandbox.seed({ [STATE_PATH]: `mode=plan\nverify_green=true\nsession=${SESSION}\n` });
+      sandbox.seed({ [STATE_FILE]: `mode=plan\nverify_green=true\nsession=${SESSION}\n` });
       return sandbox.run(PRE_COMMIT_HOOK, [], { env: HOST_SESSION });
     });
     assert.deepEqual(run, { exit: 0, stdout: "", stderr: "" });
@@ -77,7 +77,7 @@ describe("the git pre-commit hook's own boundary", { skip: skipUnlessSpawnable(P
 
   test("the git layer denies a state path it cannot read (read from tests/hooks-test.sh:6937)", () => {
     const { run, home } = withStateSandbox("workspace", (sandbox) => {
-      sandbox.seed({ [STATE_PATH]: { kind: "directory" } });
+      sandbox.seed({ [STATE_FILE]: { kind: "directory" } });
       return { run: sandbox.run(PRE_COMMIT_HOOK, [], { env: HOST_SESSION }), home: sandbox.home };
     });
     assert.equal(run.exit, 1);
@@ -88,7 +88,7 @@ describe("the git pre-commit hook's own boundary", { skip: skipUnlessSpawnable(P
 
   test("the git layer records its deny as the matcher's event (read from tests/hooks-test.sh:6900)", () => {
     const events = withStateSandbox("workspace", (sandbox) => {
-      sandbox.seed({ [STATE_PATH]: `mode=plan\nverify_green=false\nsession=${SESSION}\n` });
+      sandbox.seed({ [STATE_FILE]: `mode=plan\nverify_green=false\nsession=${SESSION}\n` });
       sandbox.run(PRE_COMMIT_HOOK, [], { env: HOST_SESSION });
       return sandbox.eventLogLines();
     });

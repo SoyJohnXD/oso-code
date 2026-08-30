@@ -3,6 +3,7 @@ import {
   logEvent,
   openCodeRoutes,
   runGate,
+  type GateVerdict,
   type HookCaller,
   type HookEnvelope,
   type OpenCodeRoute,
@@ -35,26 +36,26 @@ export type AdvisoryOutcome =
   | { kind: "silent" }
   | { kind: "failed"; detail: string };
 
-export type GateVerdictKind = "deny" | "allow" | "block";
+type HostToolVerdictKind = "deny" | "allow" | "block";
 
-export interface GateVerdict {
-  kind: GateVerdictKind;
+export interface HostToolVerdict {
+  kind: HostToolVerdictKind;
   message: string;
 }
 
 export const routes: readonly OpenCodeRoute[] = openCodeRoutes();
 
-export const denyVerdict = (message: string): GateVerdict => ({
+const denyVerdict = (message: string): HostToolVerdict => ({
   kind: "deny",
   message,
 });
 
-export const blockVerdict = (message: string): GateVerdict => ({
+const blockVerdict = (message: string): HostToolVerdict => ({
   kind: "block",
   message,
 });
 
-const allowVerdict: GateVerdict = { kind: "allow", message: "" };
+const allowVerdict: HostToolVerdict = { kind: "allow", message: "" };
 
 export function callerFor(directory: string): HookCaller {
   return { host: "opencode", agentSession: publishIdentity(directory).OSO_AGENT, stateBin: stateBinPath() };
@@ -126,7 +127,7 @@ function argvFor(route: OpenCodeRoute): string[] {
 }
 
 type GateJudgement =
-  | { kind: "judged"; verdict: ReturnType<typeof runGate>["verdict"]; stderr: string }
+  | { kind: "judged"; verdict: GateVerdict; stderr: string }
   | { kind: "unusable"; detail: string };
 
 function judge(route: OpenCodeRoute, envelope: HookEnvelope): GateJudgement {
@@ -150,7 +151,7 @@ export function runToolGate(
   route: OpenCodeRoute,
   input: ToolExecuteInput,
   output: ToolExecuteOutput,
-): GateVerdict {
+): HostToolVerdict {
   const judged = judge(route, composeEnvelope(input, output));
   if (judged.kind === "unusable") {
     return blockVerdict(`oso-code: ${judged.detail}`);

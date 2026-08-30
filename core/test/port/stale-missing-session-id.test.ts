@@ -3,9 +3,7 @@ import { test } from "node:test";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
 import { runGate } from "../../src/gates/dispatch.ts";
 import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
-import { withStateSandbox } from "../support/state-sandbox.ts";
-
-const STATE_FILE = ".local/state/oso-code/{repo}.state";
+import { STATE_FILE, withStateSandbox } from "../support/state-sandbox.ts";
 
 test(
   "stale gate: a missing session id never suppresses the advisory, so a foreign session's state still warns " +

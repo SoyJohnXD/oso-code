@@ -13,6 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { provedSomething } from "./proved.ts";
 
 export const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
@@ -44,12 +45,18 @@ export type ObservedEntry =
 
 export type SubjectRun = { exit: number; stdout: string; stderr: string };
 
-const STATE_ROOT = ".local/state/oso-code";
-const EVENT_LOG = `${STATE_ROOT}/events.jsonl`;
-const WORKTREES = `${STATE_ROOT}/worktrees`;
+export const STATE_ROOT_THESE_TESTS_SPELL = ".local/state/oso-code";
+export const STATE_FILE = `${STATE_ROOT_THESE_TESTS_SPELL}/{repo}.state`;
+export const STATE_LOCK = `${STATE_FILE}.lock`;
+export const EVENTS_LOG = `${STATE_ROOT_THESE_TESTS_SPELL}/events.jsonl`;
+export const RUNS_DIR = `${STATE_ROOT_THESE_TESTS_SPELL}/runs`;
+export const REPOSITORY_RUNS_DIR = `${RUNS_DIR}/{repo}`;
+export const REPOSITORY_PLANS_DIR = `${STATE_ROOT_THESE_TESTS_SPELL}/plans/{repo}`;
+const WORKTREES = `${STATE_ROOT_THESE_TESTS_SPELL}/worktrees`;
 const PAST_THE_TTL = new Date("2000-01-01T00:00:00Z");
-const OWNER_ONLY_FILE = 0o600;
+export const OWNER_ONLY_FILE = 0o600;
 const OWNER_ONLY_DIRECTORY = 0o700;
+const UNREADABLE = 0o000;
 const SEEDED_COMMIT_FILE = "base.txt";
 const SEEDED_COMMIT_CONTENT = "base\n";
 const WAVE_WORKTREE_INDEX = "1";
@@ -104,9 +111,17 @@ export function skipUnlessSpawnable(subject: StateSubject): false | string {
   return `${subject.name} cannot be spawned here, so its behaviour cannot be measured on this platform`;
 }
 
-export function unmeasurableSubjectsReport(): string {
+function unmeasurableSubjectsReport(): string {
   const reasons = STATE_SUBJECTS.map((subject) => `${subject.name}: ${skipUnlessSpawnable(subject)}`);
   return `zero of ${STATE_SUBJECTS.length} configured subjects were measurable\n${reasons.join("\n")}`;
+}
+
+export function provedSomeSubjectIsMeasurable(): void {
+  provedSomething(
+    `at least one of ${STATE_SUBJECTS.length} configured subject(s) is measurable here`,
+    STATE_SUBJECTS.some((subject) => skipUnlessSpawnable(subject) === false),
+    unmeasurableSubjectsReport(),
+  );
 }
 
 function datedAt(seeded: Exclude<SeededEntry, string>): Date | undefined {
@@ -119,6 +134,17 @@ export function skipUnlessGitSeedsRepositories(): false | string {
   const probe = spawnSync("git", ["--version"], { encoding: "utf8" });
   if (probe.error === undefined && probe.status === 0) return false;
   return "git is absent here, so a worktree teardown has no registry to read";
+}
+
+export function skipUnlessChmodMakesFilesUnreadable(): false | string {
+  if (process.platform !== "win32") return false;
+  return "win32 ignores the POSIX read bit chmod clears, so a file chmod'd unreadable here still reads back readable";
+}
+
+export function makeUnreadable(sandbox: StateSandbox, relativePath: string): string {
+  const target = path.join(sandbox.home, sandbox.expand(relativePath));
+  chmodSync(target, UNREADABLE);
+  return target;
 }
 
 function forwardSlashed(value: string): string {
@@ -229,7 +255,7 @@ export class StateSandbox {
   }
 
   eventLogLines(): string[] {
-    const log = this.read(EVENT_LOG);
+    const log = this.read(EVENTS_LOG);
     if (log.kind !== "file") return [];
     return log.content.split("\n").filter((line) => line !== "");
   }

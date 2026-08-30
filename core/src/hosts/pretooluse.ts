@@ -1,26 +1,17 @@
 import type { PreToolUseVerdict } from "./envelope.ts";
-
-export type HookRun = Readonly<{ exit: number; stdout: string; stderr: string }>;
+import { GATE_ERROR_EXIT, gateErrorText, spoken, UNSPOKEN, type HookRun } from "./hook-run.ts";
 
 const HOOK_EVENT = "PreToolUse";
-export const GATE_ERROR_EXIT = 2;
 
 export function preToolUseRun(verdict: PreToolUseVerdict): HookRun {
   switch (verdict.kind) {
     case "allow":
-      return { exit: 0, stdout: "", stderr: "" };
+      return UNSPOKEN;
     case "deny":
-      return { exit: 0, stdout: `${denyEnvelope(verdict.message)}\n`, stderr: "" };
+      return spoken(denyEnvelope(verdict.message));
     case "gateError":
       return { exit: GATE_ERROR_EXIT, stdout: "", stderr: gateErrorText(verdict.subject) };
   }
-}
-
-export function gateErrorText(subject: string): string {
-  return (
-    `oso-code: ${subject} failed unexpectedly and blocked this call instead of opening the gate. ` +
-    "No remedy is known for this failure.\n"
-  );
 }
 
 function denyEnvelope(reason: string): string {

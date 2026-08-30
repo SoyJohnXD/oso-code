@@ -1,5 +1,5 @@
 // core/src/gates/autocontinue.ts
-import { mkdirSync as mkdirSync3, statSync as statSync4, writeFileSync as writeFileSync3 } from "node:fs";
+import { mkdirSync as mkdirSync3, statSync as statSync3, writeFileSync as writeFileSync3 } from "node:fs";
 import path4 from "node:path";
 
 // core/src/shell/lexer.ts
@@ -342,7 +342,7 @@ var CommandLineLexer = class _CommandLineLexer {
   }
   takeRedirect() {
     this.redirectTargetPending = true;
-    while (">&|".includes(this.rest.slice(0, 1)) && this.rest !== "") {
+    while (this.rest !== "" && ">&|".includes(this.rest.slice(0, 1))) {
       this.rest = this.rest.slice(1);
     }
   }
@@ -436,6 +436,7 @@ var NO_VERDICT = {
 var JSON_SPACE = "[\\t\\n\\v\\f\\r ]";
 var STOP_HOOK_ACTIVE = new RegExp(`"stop_hook_active"${JSON_SPACE}*:${JSON_SPACE}*true`);
 var NO_HOOK_FIELD_NAMED = {
+  payloadRead: "json",
   sessionId: "",
   cwd: "",
   toolName: "",
@@ -454,17 +455,49 @@ var NO_HOOK_FIELD_NAMED = {
   stopHookActive: false
 };
 function hostEnvelope(caller, named) {
-  return { ...NO_HOOK_FIELD_NAMED, ...named, caller };
+  const { payloadRead, stopHookActive, ...text } = { ...NO_HOOK_FIELD_NAMED, ...named };
+  return { ...asHookFieldValues(text), payloadRead, stopHookActive, caller };
 }
-function jsonField(payload, field) {
-  return withoutCarriageReturns(unescapedJson(escapedField(payload, field)));
+function asHookFieldValues(text) {
+  const read = Object.entries(text).map(([name, value]) => [name, asHookFieldValue(value)]);
+  return Object.fromEntries(read);
+}
+function jsonField(hookText, field) {
+  const payload = asCommandSubstitutionCaptures(hookText);
+  return asHookFieldValue(theFirstStringNamed(payload, field));
+}
+function theFirstStringNamed(payload, field) {
+  const payloadRead = parsedPayload(payload);
+  if (payloadRead.kind === "unparseable") return unescapedJson(escapedField(payload, field));
+  return firstStringNamedWithin(payloadRead.document, field) ?? "";
+}
+function parsedPayload(payload) {
+  try {
+    return { kind: "json", document: JSON.parse(payload) };
+  } catch {
+    return { kind: "unparseable" };
+  }
+}
+function firstStringNamedWithin(document, field) {
+  const unvisited = [document];
+  while (unvisited.length > 0) {
+    const node = unvisited.pop();
+    if (node === null || typeof node !== "object") continue;
+    const named = Array.isArray(node) ? void 0 : node[field];
+    if (typeof named === "string") return named;
+    for (const child of Object.values(node).reverse()) unvisited.push(child);
+  }
+  return void 0;
+}
+function asHookFieldValue(value) {
+  return asCommandSubstitutionCaptures(withoutCarriageReturns(asCommandSubstitutionCaptures(value)));
 }
 function asCommandSubstitutionCaptures(text) {
-  return text.replace(/\n+$/, "");
+  return text.replaceAll("\0", "").replace(/\n+$/, "");
 }
-function escapedField(payload, field) {
+function escapedField(hookText, field) {
   const pattern = new RegExp(`"${field}"${JSON_SPACE}*:${JSON_SPACE}*"((?:[^"\\\\]|\\\\[\\s\\S])*)"`);
-  return pattern.exec(payload)?.[1] ?? "";
+  return pattern.exec(asCommandSubstitutionCaptures(hookText))?.[1] ?? "";
 }
 var NAMED_ESCAPES = {
   n: "\n",
@@ -751,18 +784,24 @@ function journalFileFor(cwd) {
 function isNameToken(value) {
   return value.length >= 1 && value.length <= NAME_TOKEN_MAX_LENGTH && NAME_TOKEN_PATTERN.test(value);
 }
+function stateRecords(content, key) {
+  const prefix = `${key}=`;
+  return content.split("\n").filter((line) => line.startsWith(prefix)).map((line) => line.slice(prefix.length));
+}
+function stateValue(content, key) {
+  return stateRecords(content, key).join("\n");
+}
+function stateSays(content, key, value) {
+  return stateRecords(content, key).includes(value);
+}
 function readValue(stateFile, key) {
   const content = readFileIfPresent(stateFile);
-  if (content === void 0) return void 0;
-  for (const line of content.split("\n")) {
-    if (line === "") continue;
-    const [lineKey, value] = splitPair(line);
-    if (lineKey === key) return value;
-  }
-  return void 0;
+  if (content === void 0 || stateRecords(content, key).length === 0) return void 0;
+  return stateValue(content, key);
 }
 function readStateFile(stateFile) {
   try {
+    if (!statSync(stateFile).isFile()) return { kind: "unreadable", cause: `${stateFile} is not a regular file` };
     return { kind: "ok", content: readFileSync(stateFile, "utf8") };
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") return { kind: "absent" };
@@ -1048,11 +1087,11 @@ function isErrnoException(error) {
 }
 
 // core/src/gates/delegation.ts
-import { mkdirSync as mkdirSync2, rmSync as rmSync2, statSync as statSync3, utimesSync, writeFileSync as writeFileSync2 } from "node:fs";
+import { mkdirSync as mkdirSync2, rmSync as rmSync2, statSync as statSync2, utimesSync, writeFileSync as writeFileSync2 } from "node:fs";
 import path3 from "node:path";
 
 // core/src/gates/preflight.ts
-import { accessSync as accessSync2, constants as constants2, existsSync, readFileSync as readFileSync2, statSync as statSync2 } from "node:fs";
+import { existsSync, readFileSync as readFileSync2 } from "node:fs";
 import path2 from "node:path";
 import { fileURLToPath } from "node:url";
 function sanitizeSession(raw) {
@@ -1066,18 +1105,10 @@ function payloadUnparseable() {
   return { verdict: { kind: "allow" }, events: [{ event: "payload-unparseable", session: "" }] };
 }
 function readArmedState(stateFile) {
-  const stats = statSync2(stateFile, { throwIfNoEntry: false });
-  if (stats === void 0) return { kind: "absent" };
-  if (!stats.isFile() || !isReadable(stateFile)) return { kind: "unusable" };
   const read = readStateFile(stateFile);
-  if (read.kind !== "ok") return { kind: "unusable" };
+  if (read.kind === "absent") return { kind: "absent" };
+  if (read.kind === "unreadable") return { kind: "unusable" };
   return { kind: "readable", content: read.content };
-}
-function stateMatches(content, stateRecord) {
-  return stateRecord.test(content);
-}
-function stateValue(content, key) {
-  return content.split("\n").filter((line) => line.startsWith(`${key}=`)).map((line) => line.slice(key.length + 1)).join("\n");
 }
 function osoStateRemedy(session, verbAndArguments) {
   return `oso-state --session ${session} ${verbAndArguments}`;
@@ -1110,14 +1141,6 @@ function deniedForUnusableState(gate, stateFile, session) {
 }
 function allowedWithResidueCounted(session, command) {
   return { verdict: { kind: "allow" }, events: [{ event: "residue-allowed", session, command }] };
-}
-function isReadable(target) {
-  try {
-    accessSync2(target, constants2.R_OK);
-    return true;
-  } catch {
-    return false;
-  }
 }
 function pluginRootDirectory() {
   const configured = process.env["CLAUDE_PLUGIN_ROOT"];
@@ -1182,7 +1205,7 @@ function waitMarkFileFor(cwd, runSession) {
   return path3.join(stateRootDirectory(), "runs", repository, `${sanitizeSession(runSession)}${MARK_SUFFIX}`);
 }
 function readWaitMark(markFile) {
-  const stats = statSync3(markFile, { throwIfNoEntry: false });
+  const stats = statSync2(markFile, { throwIfNoEntry: false });
   if (stats === void 0 || !stats.isFile()) return void 0;
   const read = readStateFile(markFile);
   if (read.kind !== "ok") return void 0;
@@ -1199,16 +1222,20 @@ function writeWaitMark(markFile, mark) {
   writeFileSync2(markFile, serializedMark(mark), { mode: OWNER_ONLY_FILE });
 }
 function adoptMarkIntoRun(markFile, mark, run) {
-  const clock = statSync3(markFile).mtime;
+  const clock = statSync2(markFile).mtime;
   writeWaitMark(markFile, { ...mark, run });
   utimesSync(markFile, clock, clock);
 }
 function removeWaitMark(markFile) {
   try {
     rmSync2(markFile, { force: true });
-  } catch {
-    return;
+    return void 0;
+  } catch (cause) {
+    return noDirectoryHoldsTheMark(cause) ? void 0 : causeOf(cause);
   }
+}
+function noDirectoryHoldsTheMark(cause) {
+  return isErrnoException(cause) && cause.code === "ENOTDIR";
 }
 function serializedMark(mark) {
   return `run=${mark.run}
@@ -1263,8 +1290,8 @@ function judgeAutocontinue({ envelope }) {
   if (content === void 0) return ALLOWED;
   const markFile = host.sidecarPath(projectDir, sessionId);
   if (stateValue(content, "auto") !== RUN_ARMED) {
-    removeWaitMark(markFile);
-    return ALLOWED;
+    const failure = removeWaitMark(markFile);
+    return failure === void 0 ? ALLOWED : degraded(sessionId, failure);
   }
   const journalFile = journalFileFor(projectDir);
   const position = {
@@ -1278,8 +1305,10 @@ function judgeAutocontinue({ envelope }) {
   };
   const label = stateValue(content, "auto_wait");
   if (!isDelegationLabel(label) || host.delegationsReturnInTurn) {
-    removeWaitMark(markFile);
-    return pushUnlessCapped(position, envelope.stopHookActive, host.order, CAP_MILESTONE);
+    const failure = removeWaitMark(markFile);
+    const pushed = pushUnlessCapped(position, envelope.stopHookActive, host.order, CAP_MILESTONE);
+    if (failure === void 0) return pushed;
+    return { ...pushed, events: [...pushed.events, degradedEvent(sessionId, failure)] };
   }
   const held2 = holdUnlessExpired(position, label);
   if (held2 !== void 0) return held2;
@@ -1308,7 +1337,7 @@ function carryMarkIntoThisRun(position, standing) {
     adoptMarkIntoRun(position.markFile, standing, position.run);
     return void 0;
   } catch (cause) {
-    return degraded(position.sessionId, causeOf2(cause));
+    return degraded(position.sessionId, causeOf(cause));
   }
 }
 function sightedThenHeld(position, label, renewals) {
@@ -1320,7 +1349,7 @@ function sightedThenHeld(position, label, renewals) {
       renewals
     });
   } catch (cause) {
-    return degraded(position.sessionId, causeOf2(cause));
+    return degraded(position.sessionId, causeOf(cause));
   }
   return held(position, label);
 }
@@ -1339,7 +1368,7 @@ function pushUnlessCapped(position, turnAlreadyContinued, order, capMilestone) {
 }
 function pushesWithoutProgress(position, turnAlreadyContinued) {
   const started = turnAlreadyContinued ? 1 : 0;
-  const stats = statSync4(position.tallyFile, { throwIfNoEntry: false });
+  const stats = statSync3(position.tallyFile, { throwIfNoEntry: false });
   if (stats === void 0) return started + 1;
   const read = stats.isFile() ? readStateFile(position.tallyFile) : { kind: "unreadable", cause: "" };
   if (read.kind !== "ok") return degraded(position.sessionId, "the push tally is not a readable file");
@@ -1358,7 +1387,7 @@ function announceCap(position, milestone) {
     appendJournal(journalFileFor(position.projectDir), milestone);
     return [];
   } catch (cause) {
-    return [gateEvent("auto-continue-unjournaled", position.sessionId, causeOf2(cause))];
+    return [gateEvent("auto-continue-unjournaled", position.sessionId, causeOf(cause))];
   }
 }
 function rememberPush(position, pushes, journalBytes) {
@@ -1369,7 +1398,7 @@ journal_bytes=${journalBytes}
 `, { mode: OWNER_ONLY_FILE2 });
     return void 0;
   } catch (cause) {
-    return causeOf2(cause);
+    return causeOf(cause);
   }
 }
 function held(position, label) {
@@ -1386,7 +1415,7 @@ function gateEvent(event, session, detail) {
   return { event, session, command: detail, gate: route.script, hookEvent: route.event };
 }
 function ownRunState(stateFile, sessionId) {
-  const stats = statSync4(stateFile, { throwIfNoEntry: false });
+  const stats = statSync3(stateFile, { throwIfNoEntry: false });
   if (stats === void 0 || !stats.isFile()) return void 0;
   const read = readStateFile(stateFile);
   if (read.kind !== "ok") return void 0;
@@ -1396,30 +1425,34 @@ function tallyFileFor(journalFile) {
   return path4.join(path4.dirname(journalFile), `${path4.basename(journalFile, ".log")}.pushes`);
 }
 function journalBytesIn(journalFile) {
-  const stats = statSync4(journalFile, { throwIfNoEntry: false });
+  const stats = statSync3(journalFile, { throwIfNoEntry: false });
   return stats !== void 0 && stats.isFile() ? stats.size : 0;
 }
-function causeOf2(cause) {
-  return cause instanceof Error ? cause.message : String(cause);
-}
 
-// core/src/hosts/pretooluse.ts
-var HOOK_EVENT = "PreToolUse";
+// core/src/hosts/hook-run.ts
 var GATE_ERROR_EXIT = 2;
-function preToolUseRun(verdict) {
-  switch (verdict.kind) {
-    case "allow":
-      return { exit: 0, stdout: "", stderr: "" };
-    case "deny":
-      return { exit: 0, stdout: `${denyEnvelope(verdict.message)}
+var NOTHING_TO_SAY = "{}";
+var UNSPOKEN = { exit: 0, stdout: "", stderr: "" };
+function spoken(stdout) {
+  return { exit: 0, stdout: `${stdout}
 `, stderr: "" };
-    case "gateError":
-      return { exit: GATE_ERROR_EXIT, stdout: "", stderr: gateErrorText(verdict.subject) };
-  }
 }
 function gateErrorText(subject) {
   return `oso-code: ${subject} failed unexpectedly and blocked this call instead of opening the gate. No remedy is known for this failure.
 `;
+}
+
+// core/src/hosts/pretooluse.ts
+var HOOK_EVENT = "PreToolUse";
+function preToolUseRun(verdict) {
+  switch (verdict.kind) {
+    case "allow":
+      return UNSPOKEN;
+    case "deny":
+      return spoken(denyEnvelope(verdict.message));
+    case "gateError":
+      return { exit: GATE_ERROR_EXIT, stdout: "", stderr: gateErrorText(verdict.subject) };
+  }
 }
 function denyEnvelope(reason) {
   return JSON.stringify({
@@ -1435,7 +1468,7 @@ function denyEnvelope(reason) {
 function sessionEndRun(verdict) {
   switch (verdict.kind) {
     case "noVerdict":
-      return { exit: 0, stdout: "", stderr: "" };
+      return UNSPOKEN;
     case "gateError":
       return { exit: GATE_ERROR_EXIT, stdout: "", stderr: gateErrorText(verdict.subject) };
   }
@@ -1446,10 +1479,9 @@ var HOOK_EVENT2 = "SessionStart";
 function sessionStartRun(verdict) {
   switch (verdict.kind) {
     case "allow":
-      return { exit: 0, stdout: "", stderr: "" };
+      return UNSPOKEN;
     case "context":
-      return { exit: 0, stdout: `${contextEnvelope(verdict.additionalContext)}
-`, stderr: "" };
+      return spoken(contextEnvelope(verdict.additionalContext));
     case "gateError":
       return { exit: GATE_ERROR_EXIT, stdout: "", stderr: gateErrorText(verdict.subject) };
   }
@@ -1464,7 +1496,6 @@ function contextEnvelope(additionalContext) {
 }
 
 // core/src/hosts/stop.ts
-var NOTHING_TO_SAY = "{}";
 function stopRun(verdict, escalated) {
   switch (verdict.kind) {
     case "allow":
@@ -1481,38 +1512,27 @@ function blockEnvelope(reason) {
 function endedEnvelope(reason) {
   return JSON.stringify({ continue: false, stopReason: reason, systemMessage: reason });
 }
-function spoken(stdout) {
-  return { exit: 0, stdout: `${stdout}
-`, stderr: "" };
-}
 
 // core/src/hosts/subagentstop.ts
-var NOTHING_TO_SAY2 = "{}";
 function subagentStopRun(_verdict) {
-  return { exit: 0, stdout: `${NOTHING_TO_SAY2}
-`, stderr: "" };
+  return spoken(NOTHING_TO_SAY);
 }
 
 // core/src/hosts/userprompt.ts
 var HOOK_EVENT3 = "UserPromptSubmit";
-var NOTHING_TO_SAY3 = "{}";
 function userPromptRun(verdict) {
   switch (verdict.kind) {
     case "allow":
-      return spoken2(NOTHING_TO_SAY3);
+      return spoken(NOTHING_TO_SAY);
     case "deny":
-      return spoken2(JSON.stringify({ decision: "block", reason: verdict.message }));
+      return spoken(JSON.stringify({ decision: "block", reason: verdict.message }));
     case "context":
-      return spoken2(
+      return spoken(
         JSON.stringify({
           hookSpecificOutput: { hookEventName: HOOK_EVENT3, additionalContext: verdict.additionalContext }
         })
       );
   }
-}
-function spoken2(stdout) {
-  return { exit: 0, stdout: `${stdout}
-`, stderr: "" };
 }
 
 // core/src/shell/lexed-command.ts
@@ -1616,7 +1636,6 @@ function lineVerdict(commandLine, judge2) {
 }
 
 // core/src/gates/commit.ts
-var VERIFY_GREEN = /^verify_green=true$/m;
 var COMMIT_SUBJECTS = ["git"];
 var GATED_GIT_VERBS = /* @__PURE__ */ new Set([
   "commit",
@@ -1643,7 +1662,7 @@ function untilGreenMessage(stateContent) {
   return `oso-code: the session verify is not green. ${remedy}, then retry the commit.`;
 }
 function verifyIsGreen(stateContent) {
-  return stateMatches(stateContent, VERIFY_GREEN);
+  return stateValue(stateContent, "verify_green") === "true";
 }
 function judgeCommit({ envelope }) {
   const session = hookSessionId(envelope);
@@ -1688,9 +1707,6 @@ function gitCallOnlyReports(command, verb) {
 }
 
 // core/src/gates/edits.ts
-var PLAN_MODE = /^mode=plan$/m;
-var ANY_ACTIVE_SLICE = /^active_slice=./m;
-var CLOSED_SLICE_SENTINEL = /^active_slice=none$/m;
 var EDITS_GATE = {
   gate: "edits",
   errorSubject: "the slice gate",
@@ -1703,7 +1719,7 @@ function judgeEdits({ envelope }) {
   const state = readArmedState(stateFile);
   if (state.kind === "absent") return ALLOWED;
   if (state.kind === "unusable") return deniedForUnusableState("edits", stateFile, session);
-  if (!stateMatches(state.content, PLAN_MODE)) return ALLOWED;
+  if (!stateSays(state.content, "mode", "plan")) return ALLOWED;
   if (aSliceIsActive(state.content)) return ALLOWED;
   const remedy = osoStateRemedy(session, "set active_slice=<n>");
   return denied({
@@ -1715,7 +1731,8 @@ function judgeEdits({ envelope }) {
   });
 }
 function aSliceIsActive(stateContent) {
-  return stateMatches(stateContent, ANY_ACTIVE_SLICE) && !stateMatches(stateContent, CLOSED_SLICE_SENTINEL);
+  const slices = stateRecords(stateContent, "active_slice");
+  return slices.some((slice) => slice !== "") && !slices.includes("none");
 }
 
 // core/src/state/handoff.ts
@@ -1994,7 +2011,7 @@ function published(session, detail) {
 }
 
 // core/src/gates/planprompt.ts
-import { statSync as statSync5 } from "node:fs";
+import { statSync as statSync4 } from "node:fs";
 
 // core/src/hosts/codex-turn.ts
 import { readFileSync as readFileSync4 } from "node:fs";
@@ -2169,14 +2186,14 @@ function runApprovePlan(cwd, sessionId, digest) {
       throw new PlanFailure("current plan is missing or unsafe");
     }
     if (isPrivateRegularFile(paths.presentedFile)) {
-      if (readFileSync5(paths.currentFile, "utf8") !== readFileSync5(paths.presentedFile, "utf8")) {
+      if (!byteIdentical(paths.currentFile, paths.presentedFile)) {
         throw new PlanFailure("the pending plan changed since it was presented; capture it again before approving");
       }
       if (existsSync3(paths.approvedFile)) {
         if (!isPrivateRegularFile(paths.approvedFile)) {
           throw new PlanFailure("approved snapshot is not a private regular file");
         }
-        if (readFileSync5(paths.presentedFile, "utf8") !== readFileSync5(paths.approvedFile, "utf8")) {
+        if (!byteIdentical(paths.presentedFile, paths.approvedFile)) {
           throw new PlanFailure("approved snapshot content disagrees with the pending document");
         }
         rmSync4(paths.presentedFile, { force: true });
@@ -2275,6 +2292,9 @@ ${document}
     return 0;
   });
 }
+function byteIdentical(leftFile, rightFile) {
+  return readFileSync5(leftFile).equals(readFileSync5(rightFile));
+}
 function amendmentShapeFor(approval) {
   if (approval === "approved") return { heading: "Execution amendment", classification: "in-scope" };
   if (approval === "pending") return { heading: "Plan Mode feedback", classification: "feedback" };
@@ -2296,6 +2316,7 @@ var PLAN_DIGEST = /^[0-9a-f]{64}$/;
 var OUTSIDE_PLAN_MODE = "oso-code: $oso-code:plan requires Codex native Plan Mode. Enter /plan (or use Shift+Tab), then invoke $oso-code:plan again.";
 var AMENDMENT_REFUSED = "oso-code: the pending document could not be amended; retry the planning message.";
 var UNREADABLE_PENDING_STATE = "oso-code: the pending plan state is unreadable; native approval cannot open the execution gate.";
+var UNREADABLE_CONTROL_PAYLOAD = "oso-code: the plan-control prompt arrived in a payload that is not readable JSON, so the pending document it would settle cannot be identified; the gate did not change.";
 var NO_SESSION_IDENTITY = "oso-code: the plan-control prompt has no valid session identity.";
 var NO_REPOSITORY_CONTEXT = "oso-code: the plan-control prompt has no readable repository context.";
 var APPROVAL_STILL_IN_PLAN_MODE = "oso-code: native plan approval arrived while Codex still reports Plan Mode; use the native approval control again after the mode transition completes.";
@@ -2320,6 +2341,9 @@ function judgePlanprompt({ envelope }) {
   const turn = resolveCodexTurn(envelope);
   if (invokesThePlanSkill(rawPrompt) && turn.mode !== "plan") return control(OUTSIDE_PLAN_MODE);
   const action = controlActionOf(rawPrompt);
+  if (envelope.payloadRead === "unparseable") {
+    return action === void 0 ? SILENT : control(UNREADABLE_CONTROL_PAYLOAD);
+  }
   if (action === void 0) return amendPendingPlan(envelope, sessionId, turn);
   const stateFile = stateFileFor(envelope.cwd);
   const reachable = controlPromptReaches(envelope, sessionId, action, stateFile);
@@ -2396,7 +2420,7 @@ function controlActionOf(rawPrompt) {
   return void 0;
 }
 function statePresent(stateFile) {
-  return statSync5(stateFile, { throwIfNoEntry: false }) !== void 0;
+  return statSync4(stateFile, { throwIfNoEntry: false }) !== void 0;
 }
 function control(reason) {
   return { verdict: { kind: "deny", message: reason }, events: [] };
@@ -2413,6 +2437,7 @@ var CAPTURE_BLOCKED = "plan-approval-capture-blocked";
 var EVENT_MESSAGE2 = '"type":"event_msg"';
 var ITEM_COMPLETED = '"type":"item_completed"';
 var PLAN_ITEM = '"item":{"type":"Plan"';
+var UNREADABLE_PAYLOAD = "oso-code: the plan approval marker arrived in a payload that is not readable JSON, so the document it binds cannot be trusted; present the plan again.";
 var NO_SESSION = "oso-code: the plan approval marker arrived without a usable session id.";
 var UNSAFE_SESSION = "oso-code: the plan approval marker arrived with an invalid session id.";
 var NO_WORKING_DIRECTORY = "oso-code: the plan approval marker arrived without a readable working directory.";
@@ -2435,6 +2460,7 @@ function judgePlanstop({ envelope }) {
   if (!lastLineOf(message).startsWith(MARKER_PREFIX)) return SILENT2;
   const rawSessionId = envelope.sessionId;
   const sessionId = sanitizeSession(rawSessionId);
+  if (envelope.payloadRead === "unparseable") return blocked(UNREADABLE_PAYLOAD, sessionId);
   if (sessionId === "") return blocked(NO_SESSION, "");
   if (sessionId !== rawSessionId) return blocked(UNSAFE_SESSION, sessionId);
   if (!isDirectory(envelope.cwd)) return blocked(NO_WORKING_DIRECTORY, sessionId);
@@ -2496,6 +2522,8 @@ function captureBlocked(session, detail) {
 import path7 from "node:path";
 
 // core/src/shell/ere.ts
+var GREP_ITSELF_REJECTS_IT = /* @__PURE__ */ Symbol("a pattern grep exits 2 on, which therefore matches nothing");
+var THE_READER_CANNOT_TRANSLATE_IT = /* @__PURE__ */ Symbol("a pattern grep accepts that this reader cannot express");
 var ALPHABETIC_MEMBERS = "\\p{Alphabetic}";
 var ALPHANUMERIC_MEMBERS = `${ALPHABETIC_MEMBERS}\\p{Nd}`;
 var WHITESPACE_MEMBERS = "\\t\\n\\v\\f\\r \\p{Zs}\\u2028\\u2029";
@@ -2542,14 +2570,16 @@ var BACKREFERENCE = /^[1-9]$/;
 var UNESCAPED_IN_JS = /^[A-Za-z0-9]$/;
 var ASCII_DIGIT = /^[0-9]$/;
 var ASCII_LETTER = /^[A-Za-z]$/;
-var RANGE_BLOCKS_EVERY_LOCALE_ORDERS_ALIKE = [ASCII_DIGIT, /^[a-z]$/, /^[A-Z]$/];
 var FIRST_NON_ASCII_CODE_POINT = 128;
 var TOP_LEVEL = 0;
-var MATCHES_NOTHING_AS_A_PATTERN_GREP_REJECTS_DOES = false;
-function ereMatches(pattern, subject) {
+function ereReads(pattern, subject) {
   const expression = compiledEre(pattern);
-  if (expression === void 0) return MATCHES_NOTHING_AS_A_PATTERN_GREP_REJECTS_DOES;
-  return grepLinesOf(subject).some((line) => expression.test(line));
+  if (expression === THE_READER_CANNOT_TRANSLATE_IT) return "untranslatable";
+  if (expression === GREP_ITSELF_REJECTS_IT) return "unmatched";
+  return grepLinesOf(subject).some((line) => expression.test(line)) ? "matched" : "unmatched";
+}
+function unread(reading) {
+  return reading === GREP_ITSELF_REJECTS_IT || reading === THE_READER_CANNOT_TRANSLATE_IT;
 }
 function grepLinesOf(subject) {
   const lines = subject.split("\n");
@@ -2557,16 +2587,17 @@ function grepLinesOf(subject) {
 }
 function compiledEre(pattern) {
   const source = jsSourceOf(pattern);
-  if (source === void 0) return void 0;
+  if (unread(source)) return source;
   try {
     return new RegExp(source, "u");
   } catch {
-    return void 0;
+    return GREP_ITSELF_REJECTS_IT;
   }
 }
 function jsSourceOf(pattern) {
   const read = readAlternation(pattern, 0, TOP_LEVEL);
-  if (read === void 0 || read.after !== pattern.length) return void 0;
+  if (unread(read)) return read;
+  if (read.after !== pattern.length) return GREP_ITSELF_REJECTS_IT;
   return read.source;
 }
 function readAlternation(pattern, from, depth) {
@@ -2574,7 +2605,7 @@ function readAlternation(pattern, from, depth) {
   let cursor = from;
   for (; ; ) {
     const branch = readBranch(pattern, cursor, depth);
-    if (branch === void 0) return void 0;
+    if (unread(branch)) return branch;
     source += branch.source;
     cursor = branch.after;
     if (pattern[cursor] !== "|") return { source, after: cursor };
@@ -2587,11 +2618,11 @@ function readBranch(pattern, from, depth) {
   let cursor = from;
   for (; ; ) {
     const settled = pastQuantifiersWithNothingToRepeat(pattern, cursor, depth);
-    if (settled === void 0) return void 0;
+    if (unread(settled)) return settled;
     cursor = settled;
     if (branchEndsAt(pattern, cursor, depth)) return { source, after: cursor };
     const piece = readPiece(pattern, cursor, depth);
-    if (piece === void 0) return void 0;
+    if (unread(piece)) return piece;
     source += piece.source;
     cursor = piece.after;
   }
@@ -2606,7 +2637,7 @@ function pastQuantifiersWithNothingToRepeat(pattern, from, depth) {
   for (; ; ) {
     const quantifier = readQuantifier(pattern, cursor);
     if (quantifier === void 0) return cursor;
-    if (endsAnEmptyGroup(pattern, quantifier, depth)) return void 0;
+    if (endsAnEmptyGroup(pattern, quantifier, depth)) return GREP_ITSELF_REJECTS_IT;
     cursor = quantifier.after;
   }
 }
@@ -2615,8 +2646,7 @@ function endsAnEmptyGroup(pattern, quantifier, depth) {
 }
 function readPiece(pattern, from, depth) {
   const atom = readAtom(pattern, from, depth);
-  if (atom === void 0) return void 0;
-  if (atom.width === "assertsAWordEdge") return withDemotedQuantifiers(pattern, atom, depth);
+  if (unread(atom)) return atom;
   return withQuantifiers(pattern, atom, depth);
 }
 function withQuantifiers(pattern, atom, depth) {
@@ -2624,30 +2654,17 @@ function withQuantifiers(pattern, atom, depth) {
   for (; ; ) {
     const quantifier = readQuantifier(pattern, piece.after);
     if (quantifier === void 0) return piece;
-    if (atom.width !== "consumesInput" && endsAnEmptyGroup(pattern, quantifier, depth)) return void 0;
-    piece = { source: `(?:${piece.source})${quantifier.source}`, after: quantifier.after };
-  }
-}
-function withDemotedQuantifiers(pattern, atom, depth) {
-  let cursor = atom.after;
-  for (; ; ) {
-    const quantifier = readQuantifier(pattern, cursor);
-    if (quantifier === void 0) return { source: atom.source, after: cursor };
-    if (endsAnEmptyGroup(pattern, quantifier, depth)) return void 0;
-    if (quantifier.spelling === "operator") {
-      cursor = quantifier.after;
-      continue;
+    if (atom.width === "assertsAPosition" && endsAnEmptyGroup(pattern, quantifier, depth)) {
+      return GREP_ITSELF_REJECTS_IT;
     }
-    if (quantifier.repeatsAtMost === 0) return { source: "", after: quantifier.after };
-    return { source: atom.source, after: cursor + 1 };
+    piece = { source: `(?:${piece.source})${quantifier.source}`, after: quantifier.after };
   }
 }
 function readQuantifier(pattern, at) {
   const character = pattern[at];
-  if (character === "*" || character === "+") {
-    return { source: character, after: at + 1, spelling: "operator", repeatsAtMost: Infinity };
+  if (character === "*" || character === "+" || character === "?") {
+    return { source: character, after: at + 1, spelling: "operator" };
   }
-  if (character === "?") return { source: character, after: at + 1, spelling: "operator", repeatsAtMost: 1 };
   const interval = INTERVAL.exec(pattern.slice(at));
   if (interval === null) return void 0;
   const [spelled, low = "", high] = interval;
@@ -2655,20 +2672,14 @@ function readQuantifier(pattern, at) {
   return {
     source: `{${low === "" ? "0" : low}${high ?? ""}}`,
     after: at + spelled.length,
-    spelling: "interval",
-    repeatsAtMost: intervalCeiling(low, high)
+    spelling: "interval"
   };
-}
-function intervalCeiling(low, high) {
-  if (high === void 0) return Number(low);
-  const spelledHigh = high.slice(1);
-  return spelledHigh === "" ? Infinity : Number(spelledHigh);
 }
 function readAtom(pattern, from, depth) {
   const character = characterAt(pattern, from);
   if (character === ".") return consuming(ANY_CHARACTER_IN_A_LINE, from + 1);
   if (character === "^" || character === "$") {
-    return { source: character, after: from + 1, width: "assertsALinePosition" };
+    return { source: character, after: from + 1, width: "assertsAPosition" };
   }
   if (character === "[") return asAtom(readBracket(pattern, from), "consumesInput");
   if (character === "(") return asAtom(readGroup(pattern, from, depth), "consumesInput");
@@ -2679,21 +2690,22 @@ function consuming(source, after) {
   return { source, after, width: "consumesInput" };
 }
 function asAtom(read, width) {
-  return read === void 0 ? void 0 : { ...read, width };
+  return unread(read) ? read : { ...read, width };
 }
 function readGroup(pattern, from, depth) {
   const inner = readAlternation(pattern, from + 1, depth + 1);
-  if (inner === void 0 || pattern[inner.after] !== ")") return void 0;
+  if (unread(inner)) return inner;
+  if (pattern[inner.after] !== ")") return GREP_ITSELF_REJECTS_IT;
   return { source: `(${inner.source})`, after: inner.after + 1 };
 }
 function readEscape(pattern, from) {
-  if (from + 1 >= pattern.length) return void 0;
+  if (from + 1 >= pattern.length) return GREP_ITSELF_REJECTS_IT;
   const escaped = characterAt(pattern, from + 1);
   const after = from + 1 + escaped.length;
   const wordEdge = GNU_WORD_EDGE_ESCAPES[escaped];
-  if (wordEdge !== void 0) return { source: wordEdge, after, width: "assertsAWordEdge" };
+  if (wordEdge !== void 0) return { source: wordEdge, after, width: "assertsAPosition" };
   const lineAnchor = GNU_LINE_ANCHOR_ESCAPES[escaped];
-  if (lineAnchor !== void 0) return { source: lineAnchor, after, width: "assertsALinePosition" };
+  if (lineAnchor !== void 0) return { source: lineAnchor, after, width: "assertsAPosition" };
   const characterClass = GNU_CLASS_ESCAPES[escaped];
   if (characterClass !== void 0) return consuming(characterClass, after);
   if (BACKREFERENCE.test(escaped)) return consuming(`\\${escaped}`, after);
@@ -2701,21 +2713,24 @@ function readEscape(pattern, from) {
 }
 function readBracket(pattern, from) {
   const negated = pattern[from + 1] === "^";
-  let cursor = from + (negated ? 2 : 1);
-  let members = "";
-  if (pattern[cursor] === "]") {
-    members += asJsLiteral("]");
-    cursor += 1;
-  }
+  const opens = from + (negated ? 2 : 1);
+  const leading = readAnyLeadingClosingBracket(pattern, opens);
+  if (unread(leading)) return leading;
+  let members = leading.source;
+  let cursor = leading.after;
   for (; ; ) {
     const character = pattern[cursor];
-    if (character === void 0) return void 0;
+    if (character === void 0) return GREP_ITSELF_REJECTS_IT;
     if (character === "]") return { source: `[${negated ? "^" : ""}${members}]`, after: cursor + 1 };
     const member = readBracketMember(pattern, cursor);
-    if (member === void 0) return void 0;
+    if (unread(member)) return member;
     members += member.source;
     cursor = member.after;
   }
+}
+function readAnyLeadingClosingBracket(pattern, at) {
+  if (pattern[at] !== "]") return { source: "", after: at };
+  return readRangeOrCharacter(pattern, at);
 }
 function readBracketMember(pattern, from) {
   if (pattern.startsWith("[:", from)) return readPosixClass(pattern, from);
@@ -2725,34 +2740,38 @@ function readBracketMember(pattern, from) {
 }
 function readPosixClass(pattern, from) {
   const named = POSIX_CLASS_NAME.exec(pattern.slice(from));
-  if (named === null) return void 0;
+  if (named === null) return GREP_ITSELF_REJECTS_IT;
   const members = POSIX_CLASS_MEMBERS[named[1]];
-  if (members === void 0) return void 0;
-  return namedMemberEndingAt(members, from + named[0].length, pattern);
+  if (members === void 0) return GREP_ITSELF_REJECTS_IT;
+  const after = from + named[0].length;
+  if (aRangeOpensAt(pattern, after)) return GREP_ITSELF_REJECTS_IT;
+  return { source: members, after };
 }
 function readCollatingSymbol(pattern, from) {
   const symbol = characterAt(pattern, from + 2);
   const closing = from + 2 + symbol.length;
-  if (symbol === "" || !pattern.startsWith(".]", closing)) return void 0;
-  return namedMemberEndingAt(asJsLiteral(symbol), closing + 2, pattern);
+  if (symbol === "" || !pattern.startsWith(".]", closing)) return GREP_ITSELF_REJECTS_IT;
+  const after = closing + 2;
+  if (aRangeOpensAt(pattern, after)) return THE_READER_CANNOT_TRANSLATE_IT;
+  return { source: asJsLiteral(symbol), after };
 }
 function readEquivalenceClass(pattern, from) {
   const representative = characterAt(pattern, from + 2);
   const closing = from + 2 + representative.length;
-  if (!pattern.startsWith("=]", closing)) return void 0;
+  if (!pattern.startsWith("=]", closing)) return GREP_ITSELF_REJECTS_IT;
+  const after = closing + 2;
+  if (aRangeOpensAt(pattern, after)) return GREP_ITSELF_REJECTS_IT;
   const members = equivalentToInEveryLocale(representative);
-  if (members === void 0) return void 0;
-  return namedMemberEndingAt(members, closing + 2, pattern);
+  if (members === void 0) return THE_READER_CANNOT_TRANSLATE_IT;
+  return { source: members, after };
 }
 function equivalentToInEveryLocale(representative) {
   if (ASCII_DIGIT.test(representative)) return asJsLiteral(representative);
   if (!ASCII_LETTER.test(representative)) return void 0;
   return asJsLiteral(representative.toLowerCase()) + asJsLiteral(representative.toUpperCase());
 }
-function namedMemberEndingAt(members, after, pattern) {
-  const next = pattern[after];
-  if (next === "-" && pattern[after + 1] !== "]" && pattern[after + 1] !== void 0) return void 0;
-  return { source: members, after };
+function aRangeOpensAt(pattern, at) {
+  return pattern[at] === "-" && pattern[at + 1] !== "]" && pattern[at + 1] !== void 0;
 }
 function readRangeOrCharacter(pattern, from) {
   const low = characterAt(pattern, from);
@@ -2762,14 +2781,18 @@ function readRangeOrCharacter(pattern, from) {
     return { source: asJsLiteral(low), after: dash };
   }
   const high = characterAt(pattern, highStarts);
-  if (!rangeReadsByCodePoint(low, high)) return void 0;
-  return { source: `${asJsLiteral(low)}-${asJsLiteral(high)}`, after: highStarts + high.length };
+  const range = rangeMembersOf(low, high);
+  if (unread(range)) return range;
+  return { source: range, after: highStarts + high.length };
 }
-function rangeReadsByCodePoint(low, high) {
-  if (low === high) return (low.codePointAt(0) ?? 0) < FIRST_NON_ASCII_CODE_POINT;
-  return RANGE_BLOCKS_EVERY_LOCALE_ORDERS_ALIKE.some(
-    (block) => block.test(low) && block.test(high) && low < high
-  );
+function rangeMembersOf(low, high) {
+  const lowest = low.codePointAt(0) ?? 0;
+  const highest = high.codePointAt(0) ?? 0;
+  if (lowest >= FIRST_NON_ASCII_CODE_POINT || highest >= FIRST_NON_ASCII_CODE_POINT) {
+    return THE_READER_CANNOT_TRANSLATE_IT;
+  }
+  if (lowest > highest) return GREP_ITSELF_REJECTS_IT;
+  return `${asJsLiteral(low)}-${asJsLiteral(high)}`;
 }
 function characterAt(pattern, at) {
   const codePoint = pattern.codePointAt(at);
@@ -2804,9 +2827,18 @@ function judgeProductionBoundary({ envelope }) {
     return denyProductionBoundary(boundary, mcpDeployStaysWithTheOperator(session), envelope.toolName);
   }
   if (envelope.toolName !== "Bash" && envelope.toolName !== "bash") return ALLOWED;
-  const command = envelope.commandLine;
-  if (!aDenyPatternOfThisRepositoryMatches(stateFile, command)) return judgeCommandLine(boundary, command);
-  return denyProductionBoundary(boundary, thisRepositoryDeniesTheCommand(session), command);
+  return judgeAgainstDenyPatterns(boundary, envelope.commandLine);
+}
+function judgeAgainstDenyPatterns(boundary, command) {
+  const reading = howThisRepositoryReadsTheCommand(boundary.stateFile, command);
+  switch (reading.kind) {
+    case "aPatternBites":
+      return denyProductionBoundary(boundary, thisRepositoryDeniesTheCommand(boundary.session), command);
+    case "aPatternIsUnreadable":
+      return denyUnreadableDenyPattern(boundary, reading.pattern);
+    case "noPatternBites":
+      return judgeCommandLine(boundary, command);
+  }
 }
 function judgeCommandLine(boundary, command) {
   const { runMarker, session } = boundary;
@@ -2845,14 +2877,27 @@ function deployStaysWithTheOperator(session) {
 function theLineIsPastWhatTheBoundaryReads(session) {
   return `oso-code: an unattended run is in flight, and this command line is past what the production boundary can read, so it is treated as a production deploy. ${takeTheRunBack(session)} and run it from your own terminal, or spell it in lines this boundary can read.`;
 }
+function aDenyPatternIsPastWhatTheBoundaryReads(session, pattern) {
+  return `oso-code: an unattended run is in flight, and a deploy-deny pattern of this repository (${pattern}) is past what the production boundary can read, so this command is denied rather than allowed on a pattern nothing checked. Rewrite that pattern in the POSIX ERE the boundary reads, or ${takeTheRunBack(session)} and run it from your own terminal.`;
+}
 function theRunPushesItsOwnBranchOnly(session) {
   return `oso-code: an unattended run is in flight, and it pushes its own oso-run/* branch and nothing else. Push that branch instead (git push origin oso-run/<name>), or take the run back (${osoStateRemedy(session, TAKE_THE_RUN_BACK)}) and push from your own terminal.`;
 }
 function denyProductionBoundary(boundary, message, detail) {
+  return deniedUnderTheBoundary(boundary, { message, event: "prod-deploy-denied", detail });
+}
+function denyUnreadableDenyPattern(boundary, pattern) {
+  return deniedUnderTheBoundary(boundary, {
+    message: aDenyPatternIsPastWhatTheBoundaryReads(boundary.session, pattern),
+    event: "deploy-deny-pattern-untranslatable",
+    detail: pattern
+  });
+}
+function deniedUnderTheBoundary(boundary, denial) {
   if (boundary.runMarker === "uncertain") {
     return deniedForUnusableState("proddeploy", boundary.stateFile, boundary.session);
   }
-  return denied({ gate: "proddeploy", message, event: "prod-deploy-denied", session: boundary.session, detail });
+  return denied({ gate: "proddeploy", session: boundary.session, ...denial });
 }
 function judgeProductionLine(command, verdict) {
   if (runsAProductionDeploy(command)) return "production";
@@ -2905,15 +2950,17 @@ function runMarkerOf(stateFile, session) {
 function readsAsStateRecords(content) {
   return content.split("\n").every((line) => STATE_RECORD_LINE.test(line));
 }
-function aDenyPatternOfThisRepositoryMatches(stateFile, command) {
-  const patternsFile = path7.join(
-    stateRootDirectory(),
-    "deploy-deny",
-    `${repositoryIdFor(stateFile)}.patterns`
-  );
-  const read = readStateFile(patternsFile);
-  if (read.kind !== "ok") return false;
-  return read.content.split("\n").some((pattern) => pattern !== "" && ereMatches(pattern, command));
+function howThisRepositoryReadsTheCommand(stateFile, command) {
+  const read = readStateFile(denyPatternsFileOf(stateFile));
+  if (read.kind !== "ok") return { kind: "noPatternBites" };
+  const readings = read.content.split("\n").filter((pattern) => pattern !== "").map((pattern) => ({ pattern, reading: ereReads(pattern, command) }));
+  if (readings.some((one) => one.reading === "matched")) return { kind: "aPatternBites" };
+  const unreadable = readings.find((one) => one.reading === "untranslatable");
+  if (unreadable === void 0) return { kind: "noPatternBites" };
+  return { kind: "aPatternIsUnreadable", pattern: unreadable.pattern };
+}
+function denyPatternsFileOf(stateFile) {
+  return path7.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
 }
 
 // core/src/gates/reanchor.ts
@@ -3060,7 +3107,7 @@ function judgeStatebin(_request) {
 
 // core/src/gates/teardown.ts
 import { execFileSync as execFileSync2 } from "node:child_process";
-import { existsSync as existsSync5, readdirSync as readdirSync2, renameSync as renameSync3, rmSync as rmSync5, rmdirSync, statSync as statSync6 } from "node:fs";
+import { existsSync as existsSync5, readdirSync as readdirSync2, renameSync as renameSync3, rmSync as rmSync5, rmdirSync, statSync as statSync5 } from "node:fs";
 import path10 from "node:path";
 var ABANDONED_STATE_DAYS = 7;
 var JOURNAL_KEYED_WAIT_MARK_SUFFIX = ".waiting";
@@ -3174,7 +3221,7 @@ function directoryEntries2(directory) {
   }
 }
 function isFile(target) {
-  const stats = statSync6(target, { throwIfNoEntry: false });
+  const stats = statSync5(target, { throwIfNoEntry: false });
   return stats !== void 0 && stats.isFile();
 }
 function gitWorktreeRemove(repoPath, worktreePath) {
@@ -3196,7 +3243,6 @@ function gitWorktreePrune(repoPath) {
 
 // core/src/gates/unknown.ts
 var TOOL_NAME = /^[A-Za-z0-9_:.-]+$/;
-var PLAN_APPROVAL_PENDING = /^plan_approval=pending$/m;
 var PENDING_APPROVAL_MESSAGE = 'oso-code: plan approval is pending. Use Codex native "Implement the plan." approval, or send exactly CANCEL OSO PLAN to abandon it, before using local tools.';
 var UNKNOWN_TOOL_GATE = {
   gate: "unknown",
@@ -3249,7 +3295,7 @@ function configurationError(cause) {
   };
 }
 function thisSessionsPlanIsPending(stateContent, session) {
-  if (!stateMatches(stateContent, PLAN_APPROVAL_PENDING)) return false;
+  if (!stateSays(stateContent, "plan_approval", "pending")) return false;
   return stateValue(stateContent, "plan_approval_session") === session;
 }
 function allowlistCarries(allowlist, toolName) {
@@ -3303,7 +3349,8 @@ function repositorySlugOf(repositoryUrl) {
   return slug.endsWith(".git") ? slug.slice(0, -4) : slug;
 }
 function marketplaceServesRepository(repositorySlug) {
-  const marketplacesFile = path11.join(process.env["HOME"] ?? "", ".claude", "plugins", "known_marketplaces.json");
+  const home = homeDirectoryFrom(process.platform, process.env);
+  const marketplacesFile = path11.join(home, ".claude", "plugins", "known_marketplaces.json");
   const registrations = readFileOrEmpty(marketplacesFile).replace(/\s/g, "");
   return registrations.includes(`"repo":"${repositorySlug}"`);
 }
@@ -3379,6 +3426,7 @@ function readFileOrEmpty(target) {
 }
 
 // core/src/gates/dispatch.ts
+var THE_GATE_ENTRY_POINT = "the gate entry point";
 var PRE_TOOL_USE_GATES = [
   COMMIT_GATE,
   EDITS_GATE,
@@ -3403,7 +3451,7 @@ function runGate(argv, envelope) {
   const request = { envelope, argv: gateArguments };
   const escalated = envelope.stopHookActive;
   const run = routed(PRE_TOOL_USE_GATES, name, request, preToolUseRun, gateErrorRun) ?? routed(SESSION_START_GATES, name, request, sessionStartRun, loudRun) ?? routed(NO_VERDICT_GATES, name, request, sessionEndRun, loudRun) ?? routed(STOP_GATES, name, request, (verdict) => stopRun(verdict, escalated), loudRun) ?? routed(USER_PROMPT_GATES, name, request, userPromptRun, loudRun) ?? routed(SUBAGENT_STOP_GATES, name, request, subagentStopRun, loudRun);
-  return run ?? gateErrorRun(`the gate entry point (unknown gate '${name ?? ""}')`);
+  return run ?? gateErrorRun(`${THE_GATE_ENTRY_POINT} (unknown gate '${name ?? ""}')`);
 }
 function routed(gates, name, request, transport, onFailure) {
   const gate = gates.find((definition) => definition.gate === name);
@@ -3484,7 +3532,7 @@ function toolNamesFor(host, gate) {
 
 // opencode/plugin/oso/identity.ts
 import { createHash as createHash2 } from "node:crypto";
-import { existsSync as existsSync6, readFileSync as readFileSync7, statSync as statSync7 } from "node:fs";
+import { existsSync as existsSync6, readFileSync as readFileSync7, statSync as statSync6 } from "node:fs";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 function deriveRootId(cwd) {
   const meta = findGitMetadata(cwd);
@@ -3511,7 +3559,7 @@ function findGitMetadata(cwd) {
     if (existsSync6(dotGit)) {
       let isDir = false;
       try {
-        isDir = statSync7(dotGit).isDirectory();
+        isDir = statSync6(dotGit).isDirectory();
       } catch {
         isDir = false;
       }

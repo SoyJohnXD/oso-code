@@ -8,14 +8,11 @@ import {
   osoStateRemedy,
   payloadUnparseable,
   readArmedState,
-  stateMatches,
+  stateRecords,
+  stateSays,
   type GateDefinition,
   type GateRequest,
 } from "./preflight.ts";
-
-const PLAN_MODE = /^mode=plan$/m;
-const ANY_ACTIVE_SLICE = /^active_slice=./m;
-const CLOSED_SLICE_SENTINEL = /^active_slice=none$/m;
 
 export const EDITS_GATE: GateDefinition = {
   gate: "edits",
@@ -32,7 +29,7 @@ function judgeEdits({ envelope }: GateRequest): GateOutcome {
   if (state.kind === "absent") return ALLOWED;
   if (state.kind === "unusable") return deniedForUnusableState("edits", stateFile, session);
 
-  if (!stateMatches(state.content, PLAN_MODE)) return ALLOWED;
+  if (!stateSays(state.content, "mode", "plan")) return ALLOWED;
   if (aSliceIsActive(state.content)) return ALLOWED;
 
   const remedy = osoStateRemedy(session, "set active_slice=<n>");
@@ -46,5 +43,6 @@ function judgeEdits({ envelope }: GateRequest): GateOutcome {
 }
 
 function aSliceIsActive(stateContent: string): boolean {
-  return stateMatches(stateContent, ANY_ACTIVE_SLICE) && !stateMatches(stateContent, CLOSED_SLICE_SENTINEL);
+  const slices = stateRecords(stateContent, "active_slice");
+  return slices.some((slice) => slice !== "") && !slices.includes("none");
 }

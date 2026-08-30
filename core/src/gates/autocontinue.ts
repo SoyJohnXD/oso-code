@@ -4,6 +4,7 @@ import { ALLOWED, type GateOutcome, type StopVerdict } from "../hosts/envelope.t
 import { gateRow, type HostName } from "../routes/routes.ts";
 import {
   appendJournal,
+  causeOf,
   isDirectory,
   journalFileFor,
   readStateFile,
@@ -38,13 +39,13 @@ const RE_ANCHOR_THE_RUN =
   "append every milestone to the run journal with oso-state journal, and park the run per the flow's own rules " +
   "if a decision needs the operator.";
 
-export type ContinuationHost = Readonly<{
+type ContinuationHost = Readonly<{
   order: string;
   delegationsReturnInTurn: boolean;
   sidecarPath: (projectDir: string, runSession: string) => string;
 }>;
 
-export const NOTIFICATION_RESUMED_HOST: ContinuationHost = {
+const NOTIFICATION_RESUMED_HOST: ContinuationHost = {
   order:
     `${RE_ANCHOR_THE_RUN} If a delegation is still in flight, do NOT relaunch it — its completion ` +
     "notification is what resumes the run, so wait for that instead.",
@@ -67,7 +68,7 @@ const CONTINUATION_HOSTS: Readonly<Record<HostName, ContinuationHost>> = {
   opencode: DELEGATIONS_RETURN_IN_TURN_HOST,
 };
 
-export function continuationHostOf(host: HostName): ContinuationHost {
+function continuationHostOf(host: HostName): ContinuationHost {
   return CONTINUATION_HOSTS[host];
 }
 
@@ -107,8 +108,8 @@ function judgeAutocontinue({ envelope }: GateRequest): GateOutcome<StopVerdict> 
 
   const markFile = host.sidecarPath(projectDir, sessionId);
   if (stateValue(content, "auto") !== RUN_ARMED) {
-    removeWaitMark(markFile);
-    return ALLOWED;
+    const failure = removeWaitMark(markFile);
+    return failure === undefined ? ALLOWED : degraded(sessionId, failure);
   }
 
   const journalFile = journalFileFor(projectDir);
@@ -124,8 +125,10 @@ function judgeAutocontinue({ envelope }: GateRequest): GateOutcome<StopVerdict> 
 
   const label = stateValue(content, "auto_wait");
   if (!isDelegationLabel(label) || host.delegationsReturnInTurn) {
-    removeWaitMark(markFile);
-    return pushUnlessCapped(position, envelope.stopHookActive, host.order, CAP_MILESTONE);
+    const failure = removeWaitMark(markFile);
+    const pushed = pushUnlessCapped(position, envelope.stopHookActive, host.order, CAP_MILESTONE);
+    if (failure === undefined) return pushed;
+    return { ...pushed, events: [...pushed.events, degradedEvent(sessionId, failure)] };
   }
 
   const held = holdUnlessExpired(position, label);
@@ -270,8 +273,4 @@ function tallyFileFor(journalFile: string): string {
 function journalBytesIn(journalFile: string): number {
   const stats = statSync(journalFile, { throwIfNoEntry: false });
   return stats !== undefined && stats.isFile() ? stats.size : 0;
-}
-
-function causeOf(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
 }

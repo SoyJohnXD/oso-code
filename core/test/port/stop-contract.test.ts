@@ -4,10 +4,9 @@ import { runGate } from "../../src/gates/dispatch.ts";
 import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
 import { provedSomething } from "../support/proved.ts";
-import { withStateSandbox } from "../support/state-sandbox.ts";
+import { STATE_FILE, withStateSandbox } from "../support/state-sandbox.ts";
 
 const ARMED_RUN = "auto=running\nauto_change=auto-continuity\nsession=test-session\n";
-const STATE_FILE = ".local/state/oso-code/{repo}.state";
 const PLAN_MARKER = "<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->";
 const DENIED_OUTSIDE_PLAN_MODE = "oso-code: the approval document must be presented while Codex is still in Plan Mode.";
 

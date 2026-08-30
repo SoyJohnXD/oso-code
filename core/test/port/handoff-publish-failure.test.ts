@@ -4,10 +4,10 @@ import { runGate, type GateRun } from "../../src/gates/dispatch.ts";
 import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
 import { provedSomething } from "../support/proved.ts";
-import { withStateSandbox, type SeededEntry } from "../support/state-sandbox.ts";
+import { STATE_ROOT_THESE_TESTS_SPELL, withStateSandbox, type SeededEntry } from "../support/state-sandbox.ts";
 
 const REPORT = "oso-handoff: v=1 slice=slice-hook attempt=1\\nverdict: pass";
-const WATERMARK = ".local/state/oso-code/.handoffs/{repo}/{sha256:agent-hook}.watermark";
+const WATERMARK = `${STATE_ROOT_THESE_TESTS_SPELL}/.handoffs/{repo}/{sha256:agent-hook}.watermark`;
 
 type Payload = Readonly<{ session?: string; cwd?: string; agentId?: string; agentType?: string }>;
 

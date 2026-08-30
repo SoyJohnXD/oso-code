@@ -7,11 +7,17 @@ import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { closeSlice, type StatePatch } from "../../src/state/transitions.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
 import { provedSomething } from "../support/proved.ts";
-import { withStateSandbox, type SeededEntry, type StateSandbox } from "../support/state-sandbox.ts";
+import {
+  REPOSITORY_RUNS_DIR,
+  STATE_FILE,
+  withStateSandbox,
+  type SeededEntry,
+  type StateSandbox,
+} from "../support/state-sandbox.ts";
 
-const STATE_FILE = ".local/state/oso-code/{repo}.state";
-const MARK_FILE = ".local/state/oso-code/runs/{repo}/test-session.waiting";
-const CHANGE_KEYED_MARK = ".local/state/oso-code/runs/{repo}/hanko.waiting";
+const MARK_FILE = `${REPOSITORY_RUNS_DIR}/test-session.waiting`;
+const CHANGE_KEYED_MARK = `${REPOSITORY_RUNS_DIR}/hanko.waiting`;
+const FOREIGN_SESSION_MARK = `${REPOSITORY_RUNS_DIR}/another-session.waiting`;
 
 const NINE_MINUTES = 9 * 60;
 const PAST_THE_CEILING = 46 * 60;
@@ -186,7 +192,7 @@ describe(
       const run = judged(
         {
           [STATE_FILE]: stateText({ ...HANKO_RUN, session: "another-session", auto_wait: "wave-2" }),
-          [".local/state/oso-code/runs/{repo}/another-session.waiting"]: {
+          [FOREIGN_SESSION_MARK]: {
             kind: "file",
             content: "run=hanko\nsession=another-session\njournal_bytes=0\nrenewals=0\n",
             agedSeconds: NINE_MINUTES,

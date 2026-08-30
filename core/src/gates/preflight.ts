@@ -1,9 +1,11 @@
-import { accessSync, constants, existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GateOutcome, GateVerdict, HookEnvelope, PreToolUseVerdict } from "../hosts/envelope.ts";
 import { GATE_BUNDLE, gateRow, type GateId } from "../routes/routes.ts";
 import { readStateFile } from "../state/store.ts";
+
+export { stateRecords, stateSays, stateValue } from "../state/store.ts";
 
 export type GateRequest = Readonly<{ envelope: HookEnvelope; argv: readonly string[] }>;
 
@@ -40,24 +42,10 @@ export function payloadUnparseable(): GateOutcome {
 }
 
 export function readArmedState(stateFile: string): ArmedState {
-  const stats = statSync(stateFile, { throwIfNoEntry: false });
-  if (stats === undefined) return { kind: "absent" };
-  if (!stats.isFile() || !isReadable(stateFile)) return { kind: "unusable" };
   const read = readStateFile(stateFile);
-  if (read.kind !== "ok") return { kind: "unusable" };
+  if (read.kind === "absent") return { kind: "absent" };
+  if (read.kind === "unreadable") return { kind: "unusable" };
   return { kind: "readable", content: read.content };
-}
-
-export function stateMatches(content: string, stateRecord: RegExp): boolean {
-  return stateRecord.test(content);
-}
-
-export function stateValue(content: string, key: string): string {
-  return content
-    .split("\n")
-    .filter((line) => line.startsWith(`${key}=`))
-    .map((line) => line.slice(key.length + 1))
-    .join("\n");
 }
 
 export function osoStateRemedy(session: string, verbAndArguments: string): string {
@@ -99,15 +87,6 @@ export function deniedForUnusableState(gate: GateId, stateFile: string, session:
 
 export function allowedWithResidueCounted(session: string, command: string): GateOutcome {
   return { verdict: { kind: "allow" }, events: [{ event: "residue-allowed", session, command }] };
-}
-
-function isReadable(target: string): boolean {
-  try {
-    accessSync(target, constants.R_OK);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 export function pluginRootDirectory(): string {

@@ -1,6 +1,13 @@
 import { mkdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { readStateFile, repositoryIdFor, stateFileFor, stateRootDirectory } from "../state/store.ts";
+import {
+  causeOf,
+  isErrnoException,
+  readStateFile,
+  repositoryIdFor,
+  stateFileFor,
+  stateRootDirectory,
+} from "../state/store.ts";
 import { sanitizeSession, stateValue } from "./preflight.ts";
 
 export const DELEGATION_WAIT_CEILING_MINUTES = 45;
@@ -73,12 +80,17 @@ export function adoptMarkIntoRun(markFile: string, mark: WaitMark, run: string):
   utimesSync(markFile, clock, clock);
 }
 
-export function removeWaitMark(markFile: string): void {
+export function removeWaitMark(markFile: string): string | undefined {
   try {
     rmSync(markFile, { force: true });
-  } catch {
-    return;
+    return undefined;
+  } catch (cause) {
+    return noDirectoryHoldsTheMark(cause) ? undefined : causeOf(cause);
   }
+}
+
+function noDirectoryHoldsTheMark(cause: unknown): boolean {
+  return isErrnoException(cause) && cause.code === "ENOTDIR";
 }
 
 function serializedMark(mark: WaitMark): string {

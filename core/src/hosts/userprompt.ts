@@ -1,8 +1,7 @@
 import type { UserPromptVerdict } from "./envelope.ts";
-import type { HookRun } from "./pretooluse.ts";
+import { NOTHING_TO_SAY, spoken, type HookRun } from "./hook-run.ts";
 
 const HOOK_EVENT = "UserPromptSubmit";
-const NOTHING_TO_SAY = "{}";
 
 export function userPromptRun(verdict: UserPromptVerdict): HookRun {
   switch (verdict.kind) {
@@ -17,8 +16,4 @@ export function userPromptRun(verdict: UserPromptVerdict): HookRun {
         }),
       );
   }
-}
-
-function spoken(stdout: string): HookRun {
-  return { exit: 0, stdout: `${stdout}\n`, stderr: "" };
 }

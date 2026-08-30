@@ -9,7 +9,6 @@ import {
   hookSessionId,
   payloadUnparseable,
   readArmedState,
-  stateMatches,
   stateValue,
   type GateDefinition,
   type GateRequest,
@@ -18,7 +17,6 @@ import { stateFileFor } from "../state/store.ts";
 
 type CommitJudgement = "gated" | "residue";
 
-const VERIFY_GREEN = /^verify_green=true$/m;
 const COMMIT_SUBJECTS = ["git"];
 const GATED_GIT_VERBS = new Set([
   "commit", "commit-tree", "update-ref", "filter-branch", "replace", "fast-import",
@@ -45,7 +43,7 @@ export function untilGreenMessage(stateContent: string): string {
 }
 
 export function verifyIsGreen(stateContent: string): boolean {
-  return stateMatches(stateContent, VERIFY_GREEN);
+  return stateValue(stateContent, "verify_green") === "true";
 }
 
 function judgeCommit({ envelope }: GateRequest): GateOutcome {

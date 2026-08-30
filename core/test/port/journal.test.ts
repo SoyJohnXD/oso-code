@@ -1,22 +1,18 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { provedSomething } from "../support/proved.ts";
 import {
+  provedSomeSubjectIsMeasurable,
+  REPOSITORY_RUNS_DIR,
   skipUnlessSpawnable,
   STATE_SUBJECTS,
-  unmeasurableSubjectsReport,
   withStateSandbox,
 } from "../support/state-sandbox.ts";
 
 const SESSION = "journal-timestamp-port-case";
-const RUN_JOURNAL = ".local/state/oso-code/runs/{repo}/run.log";
+const RUN_JOURNAL = `${REPOSITORY_RUNS_DIR}/run.log`;
 const UTC_TIMESTAMP_MILESTONE_LINE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z the timestamp under test\n$/;
 
-provedSomething(
-  `at least one of ${STATE_SUBJECTS.length} configured subject(s) is measurable here`,
-  STATE_SUBJECTS.some((subject) => skipUnlessSpawnable(subject) === false),
-  unmeasurableSubjectsReport(),
-);
+provedSomeSubjectIsMeasurable();
 
 for (const subject of STATE_SUBJECTS) {
   describe(

@@ -2,9 +2,6 @@
 var JSON_SPACE = "[\\t\\n\\v\\f\\r ]";
 var STOP_HOOK_ACTIVE = new RegExp(`"stop_hook_active"${JSON_SPACE}*:${JSON_SPACE}*true`);
 
-// core/src/gates/preflight.ts
-import { accessSync as accessSync2, constants as constants2, existsSync, readFileSync as readFileSync2, statSync as statSync2 } from "node:fs";
-
 // core/src/routes/routes.ts
 var GATE_BUNDLE = "gate.js";
 
@@ -40,8 +37,16 @@ function stateFileFor(cwd) {
   const identity = gitCommonDirectory(directory) || directory;
   return path.join(stateRootDirectory(), `${sha256Hex(identity)}.state`);
 }
+function stateRecords(content, key) {
+  const prefix = `${key}=`;
+  return content.split("\n").filter((line) => line.startsWith(prefix)).map((line) => line.slice(prefix.length));
+}
+function stateValue(content, key) {
+  return stateRecords(content, key).join("\n");
+}
 function readStateFile(stateFile) {
   try {
+    if (!statSync(stateFile).isFile()) return { kind: "unreadable", cause: `${stateFile} is not a regular file` };
     return { kind: "ok", content: readFileSync(stateFile, "utf8") };
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") return { kind: "absent" };
@@ -163,18 +168,10 @@ function sanitizeSession(raw) {
   return raw.replace(/[^a-zA-Z0-9-]/g, "");
 }
 function readArmedState(stateFile) {
-  const stats = statSync2(stateFile, { throwIfNoEntry: false });
-  if (stats === void 0) return { kind: "absent" };
-  if (!stats.isFile() || !isReadable(stateFile)) return { kind: "unusable" };
   const read = readStateFile(stateFile);
-  if (read.kind !== "ok") return { kind: "unusable" };
+  if (read.kind === "absent") return { kind: "absent" };
+  if (read.kind === "unreadable") return { kind: "unusable" };
   return { kind: "readable", content: read.content };
-}
-function stateMatches(content, stateRecord) {
-  return stateRecord.test(content);
-}
-function stateValue(content, key) {
-  return content.split("\n").filter((line) => line.startsWith(`${key}=`)).map((line) => line.slice(key.length + 1)).join("\n");
 }
 function osoStateRemedy(session, verbAndArguments) {
   return `oso-state --session ${session} ${verbAndArguments}`;
@@ -182,18 +179,9 @@ function osoStateRemedy(session, verbAndArguments) {
 function unusableStateMessage(stateFile, session) {
   return `oso-code: this session is armed but its state file (${stateFile}) cannot be read, so the gate cannot tell whether this call is safe. Remove or repair it (${osoStateRemedy(session, "clear")}), then retry.`;
 }
-function isReadable(target) {
-  try {
-    accessSync2(target, constants2.R_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
 var HOOKS_MANIFEST_FINGERPRINT = `/${GATE_BUNDLE}`;
 
 // core/src/gates/commit.ts
-var VERIFY_GREEN = /^verify_green=true$/m;
 var REMEDY_BY_MODE = {
   plan: "Resume plan mode's apply \u2192 verify loop until the verifier returns pass",
   quick: "Finish quick mode's close step \u2014 run the project's checks to zero warnings",
@@ -205,10 +193,10 @@ function untilGreenMessage(stateContent) {
   return `oso-code: the session verify is not green. ${remedy}, then retry the commit.`;
 }
 function verifyIsGreen(stateContent) {
-  return stateMatches(stateContent, VERIFY_GREEN);
+  return stateValue(stateContent, "verify_green") === "true";
 }
 
-// core/src/hosts/pretooluse.ts
+// core/src/hosts/hook-run.ts
 function gateErrorText(subject) {
   return `oso-code: ${subject} failed unexpectedly and blocked this call instead of opening the gate. No remedy is known for this failure.
 `;
@@ -259,7 +247,3 @@ var run = attemptPreCommit();
 if (run.stderr !== "") process.stderr.write(run.stderr);
 for (const event of run.events) logEvent(event);
 process.exit(run.exit);
-export {
-  commitMarkerIn,
-  preCommitRun
-};

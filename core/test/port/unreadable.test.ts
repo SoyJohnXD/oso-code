@@ -1,38 +1,21 @@
 import assert from "node:assert/strict";
 import { chmodSync } from "node:fs";
-import path from "node:path";
 import { describe, test } from "node:test";
-import { provedSomething } from "../support/proved.ts";
 import {
+  makeUnreadable,
+  OWNER_ONLY_FILE,
+  provedSomeSubjectIsMeasurable,
+  skipUnlessChmodMakesFilesUnreadable,
   skipUnlessSpawnable,
+  STATE_FILE,
   STATE_SUBJECTS,
-  unmeasurableSubjectsReport,
   withStateSandbox,
-  type StateSandbox,
 } from "../support/state-sandbox.ts";
 
 const SESSION = "unreadable-state-port-case";
-const STATE_FILE = ".local/state/oso-code/{repo}.state";
 const PREEXISTING_STATE = "preexisting=1\n";
-const UNREADABLE = 0o000;
-const OWNER_READ_WRITE = 0o600;
 
-function makeUnreadable(sandbox: StateSandbox, relativePath: string): string {
-  const target = path.join(sandbox.home, sandbox.expand(relativePath));
-  chmodSync(target, UNREADABLE);
-  return target;
-}
-
-function skipUnlessChmodMakesFilesUnreadable(): false | string {
-  if (process.platform !== "win32") return false;
-  return "win32 ignores the POSIX read bit chmod clears, so a file chmod'd unreadable here still reads back readable";
-}
-
-provedSomething(
-  `at least one of ${STATE_SUBJECTS.length} configured subject(s) is measurable here`,
-  STATE_SUBJECTS.some((subject) => skipUnlessSpawnable(subject) === false),
-  unmeasurableSubjectsReport(),
-);
+provedSomeSubjectIsMeasurable();
 
 for (const subject of STATE_SUBJECTS) {
   describe(
@@ -47,7 +30,7 @@ for (const subject of STATE_SUBJECTS) {
             sandbox.seed({ [STATE_FILE]: PREEXISTING_STATE });
             const target = makeUnreadable(sandbox, STATE_FILE);
             const run = sandbox.run(subject, ["--session", SESSION, "set", "newkey=2"]);
-            chmodSync(target, OWNER_READ_WRITE);
+            chmodSync(target, OWNER_ONLY_FILE);
             assert.equal(run.exit, 1, `stderr was ${JSON.stringify(run.stderr)}`);
             assert.ok(run.stderr.includes(target), `stderr did not name the unreadable path: ${JSON.stringify(run.stderr)}`);
             assert.deepEqual(sandbox.read(STATE_FILE), { kind: "file", content: PREEXISTING_STATE });
@@ -85,7 +68,7 @@ describe(
           sandbox.seed({ [STATE_FILE]: PREEXISTING_STATE });
           const target = makeUnreadable(sandbox, STATE_FILE);
           const run = sandbox.run(nodeSubject, ["--session", SESSION, "show"]);
-          chmodSync(target, OWNER_READ_WRITE);
+          chmodSync(target, OWNER_ONLY_FILE);
           assert.equal(run.exit, 1, `stderr was ${JSON.stringify(run.stderr)}`);
           assert.equal(run.stdout, "");
           assert.doesNotMatch(run.stderr, /^no state at/);

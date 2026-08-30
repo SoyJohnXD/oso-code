@@ -8,14 +8,13 @@ import {
   payloadUnparseable,
   readArmedState,
   sanitizeSession,
-  stateMatches,
+  stateSays,
   stateValue,
   type GateDefinition,
   type GateRequest,
 } from "./preflight.ts";
 
 const TOOL_NAME = /^[A-Za-z0-9_:.-]+$/;
-const PLAN_APPROVAL_PENDING = /^plan_approval=pending$/m;
 const PENDING_APPROVAL_MESSAGE =
   'oso-code: plan approval is pending. Use Codex native "Implement the plan." approval, ' +
   "or send exactly CANCEL OSO PLAN to abandon it, before using local tools.";
@@ -87,7 +86,7 @@ function configurationError(cause: string): GateOutcome {
 }
 
 function thisSessionsPlanIsPending(stateContent: string, session: string): boolean {
-  if (!stateMatches(stateContent, PLAN_APPROVAL_PENDING)) return false;
+  if (!stateSays(stateContent, "plan_approval", "pending")) return false;
   return stateValue(stateContent, "plan_approval_session") === session;
 }
 
