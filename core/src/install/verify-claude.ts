@@ -23,6 +23,8 @@ const FALLOW_FIX =
 const STATE_BIN_FIX = "bash bootstrap/install.sh publishes the installed plugin's absolute bin/oso-state there, then restart Claude Code";
 const GIT_BASH_FIX =
   "point CLAUDE_CODE_GIT_BASH_PATH at the bash.exe you have (typically C:\\Program Files\\Git\\bin\\bash.exe) — bootstrap\\install.ps1 finds it and hands it to install.sh, which repairs the stored value; then restart Claude Code";
+export const LEGACY_HOOK_COMMAND_PATTERNS = ["check-plan-contract", "clean-code-gate", "skill-registry-refresh", "gentle-ai"];
+export const CLAUDE_MD_BUDGET_BYTES = 8000;
 const HOME_DIR_FIX =
   're-run from PowerShell (bootstrap/install.ps1 sets HOME to %USERPROFILE% for you), or export HOME="$USERPROFILE" in Git Bash and re-run bootstrap/install.sh';
 const ENGRAM_BINARY_FIX =
@@ -93,20 +95,18 @@ export function checkLegacyArtifactsRemoved(report: VerifyReport, repositoryRoot
 }
 
 export function checkSettingsFreeOfGentleHooks(report: VerifyReport, claudeDir: string): void {
-  const legacyHookCommandPatterns = ["check-plan-contract", "clean-code-gate", "skill-registry-refresh", "gentle-ai"];
   const settings = path.join(claudeDir, "settings.json");
-  report.check("settings.json free of gentle hooks", "0", grepCountOrErrorMessage(settings, legacyHookCommandPatterns));
+  report.check("settings.json free of gentle hooks", "0", grepCountOrErrorMessage(settings, LEGACY_HOOK_COMMAND_PATTERNS));
 }
 
 export function checkClaudeMdBudget(report: VerifyReport, claudeDir: string): void {
-  const claudeMdBudgetBytes = 8000;
   const claudeMd = path.join(claudeDir, "CLAUDE.md");
   if (!isReadableRegularFile(claudeMd)) {
     report.check("CLAUDE.md under budget", "1", `unreadable ${claudeMd}`);
     return;
   }
   const byteSize = statSync(claudeMd).size;
-  report.check("CLAUDE.md under budget", "1", byteSize < claudeMdBudgetBytes ? "1" : "0");
+  report.check("CLAUDE.md under budget", "1", byteSize < CLAUDE_MD_BUDGET_BYTES ? "1" : "0");
   report.detail(`CLAUDE.md size: ${byteSize} bytes`);
 }
 
@@ -154,8 +154,12 @@ export function checkHookRegressionSuite(report: VerifyReport, repositoryRoot: s
   report.check("hook regression suite", "pass", result.status === 0 ? "pass" : "fail");
 }
 
+export function impeccableOptOutMarker(homeDirectory: string): string {
+  return path.join(homeDirectory, ".local", "state", "oso-code", "impeccable-opt-out");
+}
+
 export function checkImpeccablePluginInstalled(report: VerifyReport, homeDirectory: string, pluginListing: string): void {
-  const marker = path.join(homeDirectory, ".local", "state", "oso-code", "impeccable-opt-out");
+  const marker = impeccableOptOutMarker(homeDirectory);
   if (isReadableRegularFile(marker)) {
     report.note(
       "impeccable plugin skipped — install.sh ran with --no-impeccable, so the design bar has no plugin half here; re-run install.sh without the flag to wire it",
@@ -276,14 +280,14 @@ function mcpConnected(mcpListing: string, name: string): "1" | "0" {
   return mcpListing.split("\n").some((line) => pattern.test(line) && line.includes("Connected")) ? "1" : "0";
 }
 
-function manifestEntries(content: string): string[] {
+export function manifestEntries(content: string): string[] {
   return content
     .split("\n")
     .map((line) => line.replace(/\r$/, ""))
     .filter((line) => line !== "" && !line.startsWith("#"));
 }
 
-function existsAtAll(target: string): boolean {
+export function existsAtAll(target: string): boolean {
   try {
     lstatSync(target);
     return true;
@@ -312,7 +316,7 @@ function resolveInstallRoot(claudeDir: string): string {
   return highestVersionedCacheDirectory(path.join(claudeDir, "plugins", "cache", "oso-code", "oso-code"));
 }
 
-function installRootFromManifest(installedPluginsFile: string): string | undefined {
+export function installRootFromManifest(installedPluginsFile: string): string | undefined {
   if (!isReadableRegularFile(installedPluginsFile)) return undefined;
   try {
     const parsed = readJsonObject(installedPluginsFile);
@@ -388,7 +392,7 @@ function runInstalledHookProbe(gate: string, environment: NodeJS.ProcessEnv): st
   }
 }
 
-function clientEnvValue(settingsFile: string, key: string): string {
+export function clientEnvValue(settingsFile: string, key: string): string {
   if (!isReadableRegularFile(settingsFile)) return "";
   try {
     const value = readJsonObject(settingsFile)["env"];
@@ -419,7 +423,7 @@ function errorOutputOf(result: { stdout?: string; stderr?: string; error?: Error
   return `${result.stdout ?? ""}${result.stderr ?? ""}`;
 }
 
-function collapsedNewlines(text: string): string {
+export function collapsedNewlines(text: string): string {
   return text.replace(/\n+$/, "").replace(/\n/g, " ");
 }
 
@@ -437,7 +441,7 @@ function impeccableCliRunnable(environment: NodeJS.ProcessEnv): string {
   return result.status === 0 ? "1" : "0";
 }
 
-function gitConfigValue(repositoryRoot: string, key: string, environment: NodeJS.ProcessEnv): string {
+export function gitConfigValue(repositoryRoot: string, key: string, environment: NodeJS.ProcessEnv): string {
   const result = spawnSync("git", ["-C", repositoryRoot, "config", "--get", key], { env: environment, encoding: "utf8" });
   return result.error === undefined && result.status === 0 ? result.stdout.replace(/\n+$/, "") : "";
 }
@@ -478,7 +482,7 @@ function toPosix(value: string): string {
   return value.split(path.sep).join("/");
 }
 
-function firstExecutableOnPath(environment: NodeJS.ProcessEnv, binaryName: string): string | undefined {
+export function firstExecutableOnPath(environment: NodeJS.ProcessEnv, binaryName: string): string | undefined {
   const entries = (environment["PATH"] ?? "").split(path.delimiter).filter((entry) => entry !== "");
   for (const entry of entries) {
     const candidate = path.join(entry, binaryName);
@@ -487,7 +491,7 @@ function firstExecutableOnPath(environment: NodeJS.ProcessEnv, binaryName: strin
   return undefined;
 }
 
-function engramBinaryRuns(binary: string): boolean {
+export function engramBinaryRuns(binary: string): boolean {
   const result = spawnSync(binary, ["version"], { encoding: "utf8" });
   return result.error === undefined && result.status === 0;
 }
@@ -506,7 +510,7 @@ function existsFollowingSymlinks(target: string): boolean {
   return statSync(target, { throwIfNoEntry: false }) !== undefined;
 }
 
-function errorMessageOf(cause: unknown): string {
+export function errorMessageOf(cause: unknown): string {
   const message = cause instanceof Error ? cause.message : String(cause);
   const collapsed = collapsedNewlines(message);
   return collapsed === "" ? "empty" : collapsed;

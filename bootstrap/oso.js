@@ -17,6 +17,7 @@ import {
   writeFileSync
 } from "node:fs";
 import { homedir } from "node:os";
+import path from "node:path";
 function sha256Hex(value) {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -46,6 +47,21 @@ function isExecutableRegularFile(target) {
     return false;
   }
 }
+function writeFileAtomically(directory, finalPath, content, tempPrefix) {
+  mkdirSync(directory, { recursive: true });
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const candidate = path.join(directory, `${tempPrefix}${randomBytes(3).toString("hex")}`);
+    try {
+      writeFileSync(candidate, content, { flag: "wx", mode: 384 });
+    } catch (error) {
+      if (isErrnoException(error) && error.code === "EEXIST") continue;
+      throw error;
+    }
+    renameSync(candidate, finalPath);
+    return;
+  }
+  throw new Error(`could not create a temp file under ${directory}`);
+}
 function homeDirectoryFrom(platform, environment) {
   if (platform === "win32") {
     const profile = environment["USERPROFILE"] ?? homedir();
@@ -55,6 +71,9 @@ function homeDirectoryFrom(platform, environment) {
   const home = environment["HOME"];
   if (home === void 0 || home === "") throw new Error("HOME is not set");
   return home;
+}
+function isoTimestamp() {
+  return (/* @__PURE__ */ new Date()).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 function lstatOrUndefined(target) {
   try {
@@ -74,17 +93,87 @@ function isErrnoException(error) {
   return error instanceof Error && "code" in error;
 }
 
-// core/src/install/verify-claude.ts
-import { spawnSync } from "node:child_process";
-import { lstatSync as lstatSync3, mkdirSync as mkdirSync3, mkdtempSync, readFileSync as readFileSync4, readdirSync as readdirSync2, rmSync as rmSync3, statSync as statSync3, writeFileSync as writeFileSync2 } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
+// core/src/install/claude.ts
+import { spawnSync as spawnSync2 } from "node:child_process";
+import { cpSync as cpSync2, mkdirSync as mkdirSync4, readFileSync as readFileSync5, readdirSync as readdirSync3, rmSync as rmSync4, statSync as statSync4, writeFileSync as writeFileSync3 } from "node:fs";
+import path5 from "node:path";
 
 // core/src/install/backup.ts
 import { cpSync, lstatSync as lstatSync2, mkdirSync as mkdirSync2, readdirSync, readFileSync as readFileSync2, rmSync as rmSync2, statSync as statSync2 } from "node:fs";
+import path2 from "node:path";
+var BACKUP_NAME_PATTERN = /^install-backup-\d{8}-\d{6}-.+$/;
+var DEFAULT_BUDGET_KIB = 307200;
+var BUDGET_ENV_KEY = "OSO_INSTALL_BACKUP_BUDGET_KIB";
 var DISK_BLOCK_SIZE_BYTES = 512;
 var BYTES_PER_KIB = 1024;
 var DISK_BLOCKS_PER_KIB = BYTES_PER_KIB / DISK_BLOCK_SIZE_BYTES;
+function isInstallBackupName(name) {
+  return BACKUP_NAME_PATTERN.test(name);
+}
+function installBackupDirsNewestFirst(root) {
+  return childDirectoryNames(root).filter(isInstallBackupName).map((name) => path2.join(root, name)).sort().reverse();
+}
+function installBackupBudgetKib(environment = process.env) {
+  const configured = environment[BUDGET_ENV_KEY];
+  if (configured === void 0 || configured === "") return DEFAULT_BUDGET_KIB;
+  const parsed = Number(configured);
+  return Number.isFinite(parsed) ? parsed : DEFAULT_BUDGET_KIB;
+}
+function backupSizeKib(directory) {
+  return Math.ceil(recursiveDiskBlocks(directory) / DISK_BLOCKS_PER_KIB);
+}
+function installBackupsOverBudget(newestFirst, budgetKib, sizeOf = backupSizeKib) {
+  let runningKib = 0;
+  let kept = 0;
+  const over = [];
+  for (const backup of newestFirst) {
+    const sizeKib = sizeOf(backup);
+    if (kept === 0 || runningKib + sizeKib <= budgetKib) {
+      runningKib += sizeKib;
+      kept += 1;
+      continue;
+    }
+    over.push(backup);
+  }
+  return over;
+}
+function restoreBackupManifest(manifest, itemsDirectory) {
+  const failedItems = [];
+  for (const row of parseManifestRows(manifest)) {
+    if (row.target === "") continue;
+    if (!removeTarget(row.target) || row.status === "present" && !restoreItem(itemsDirectory, row)) {
+      failedItems.push(row.target);
+    }
+  }
+  return { failedCount: failedItems.length, failedItems };
+}
+function parseManifestRows(manifest) {
+  return manifest.split("\n").filter((line) => line !== "").map(manifestRowOf);
+}
+function serializeManifestRow(row) {
+  return `${row.status}	${row.label}	${row.target}`;
+}
+function manifestRowOf(line) {
+  const [status, label = "", target = ""] = line.split("	");
+  return { status: status === "present" ? "present" : "absent", label, target };
+}
+function removeTarget(target) {
+  try {
+    rmSync2(target, { recursive: true, force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+function restoreItem(itemsDirectory, row) {
+  try {
+    mkdirSync2(path2.dirname(row.target), { recursive: true });
+    cpSync(path2.join(itemsDirectory, row.label), row.target, { recursive: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
 function childDirectoryNames(root) {
   try {
     return readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
@@ -92,9 +181,17 @@ function childDirectoryNames(root) {
     return [];
   }
 }
+function recursiveDiskBlocks(target) {
+  const stats = lstatSync2(target, { throwIfNoEntry: false });
+  if (stats === void 0) return 0;
+  if (!stats.isDirectory()) return stats.blocks;
+  const childBlocks = readdirSync(target).reduce((total, child) => total + recursiveDiskBlocks(path2.join(target, child)), 0);
+  return stats.blocks + childBlocks;
+}
 
 // core/src/install/json.ts
 import { readFileSync as readFileSync3 } from "node:fs";
+import path3 from "node:path";
 var JsonParseError = class extends Error {
   file;
   constructor(file, cause) {
@@ -119,6 +216,16 @@ function readJsonObject(file) {
   }
   return value;
 }
+function writeJsonFile(file, value) {
+  writeFileAtomically(path3.dirname(file), file, `${JSON.stringify(value, null, 2)}
+`, ".oso-json-");
+}
+
+// core/src/install/verify-claude.ts
+import { spawnSync } from "node:child_process";
+import { lstatSync as lstatSync3, mkdirSync as mkdirSync3, mkdtempSync, readFileSync as readFileSync4, readdirSync as readdirSync2, rmSync as rmSync3, statSync as statSync3, writeFileSync as writeFileSync2 } from "node:fs";
+import { tmpdir } from "node:os";
+import path4 from "node:path";
 
 // core/src/install/report.ts
 var OK_PREFIX = "ok:   ";
@@ -165,11 +272,13 @@ var CONTEXT7_FIX = "claude plugin install oso-code@oso-code registers it (it shi
 var FALLOW_FIX = "bash bootstrap/install.sh installs the pinned fallow package from npm and wires a missing entry; an existing one it never touches, so repoint that with claude mcp remove fallow -s user && claude mcp add --scope user fallow -- the command that run names";
 var STATE_BIN_FIX = "bash bootstrap/install.sh publishes the installed plugin's absolute bin/oso-state there, then restart Claude Code";
 var GIT_BASH_FIX = "point CLAUDE_CODE_GIT_BASH_PATH at the bash.exe you have (typically C:\\Program Files\\Git\\bin\\bash.exe) \u2014 bootstrap\\install.ps1 finds it and hands it to install.sh, which repairs the stored value; then restart Claude Code";
+var LEGACY_HOOK_COMMAND_PATTERNS = ["check-plan-contract", "clean-code-gate", "skill-registry-refresh", "gentle-ai"];
+var CLAUDE_MD_BUDGET_BYTES = 8e3;
 var HOME_DIR_FIX = 're-run from PowerShell (bootstrap/install.ps1 sets HOME to %USERPROFILE% for you), or export HOME="$USERPROFILE" in Git Bash and re-run bootstrap/install.sh';
 var ENGRAM_BINARY_FIX = "bash bootstrap/install.sh downloads the pinned engram release into ~/.local/bin and reports it only once it answers; where one is already installed elsewhere, the verdict above says which half is missing \u2014 a directory not on the persisted PATH, which that run's wiring summary names the command to add (a new terminal plus a Claude Code restart is what picks it up), or a copy that does not run, which an antivirus may have quarantined and which that run tells you how to replace";
 function verifyClaude(input) {
   const { homeDirectory, repositoryRoot: repositoryRoot2, environment, platform } = input;
-  const claudeDir = path.join(homeDirectory, ".claude");
+  const claudeDir = path4.join(homeDirectory, ".claude");
   const report2 = new VerifyReport();
   const pluginListing = spawnClaudeStdout(environment, ["plugin", "list"]);
   const mcpListing = spawnClaudeStdout(environment, ["mcp", "list"]);
@@ -200,7 +309,7 @@ function checkMcpConnectivity(report2, mcpListing) {
   report2.check("fallow MCP connected", "1", mcpConnected(mcpListing, "fallow"), FALLOW_FIX);
 }
 function checkLegacyArtifactsRemoved(report2, repositoryRoot2, claudeDir) {
-  const manifest = path.join(repositoryRoot2, "bootstrap", "gentle-manifest.txt");
+  const manifest = path4.join(repositoryRoot2, "bootstrap", "gentle-manifest.txt");
   let content;
   try {
     content = readFileSync4(manifest, "utf8");
@@ -210,26 +319,24 @@ function checkLegacyArtifactsRemoved(report2, repositoryRoot2, claudeDir) {
   }
   let left = 0;
   for (const rel of manifestEntries(content)) {
-    if (!existsAtAll(path.join(claudeDir, rel))) continue;
+    if (!existsAtAll(path4.join(claudeDir, rel))) continue;
     left += 1;
     report2.detail(`still present: ${rel}`);
   }
   report2.check("legacy artifacts removed", "0", String(left));
 }
 function checkSettingsFreeOfGentleHooks(report2, claudeDir) {
-  const legacyHookCommandPatterns = ["check-plan-contract", "clean-code-gate", "skill-registry-refresh", "gentle-ai"];
-  const settings = path.join(claudeDir, "settings.json");
-  report2.check("settings.json free of gentle hooks", "0", grepCountOrErrorMessage(settings, legacyHookCommandPatterns));
+  const settings = path4.join(claudeDir, "settings.json");
+  report2.check("settings.json free of gentle hooks", "0", grepCountOrErrorMessage(settings, LEGACY_HOOK_COMMAND_PATTERNS));
 }
 function checkClaudeMdBudget(report2, claudeDir) {
-  const claudeMdBudgetBytes = 8e3;
-  const claudeMd = path.join(claudeDir, "CLAUDE.md");
+  const claudeMd = path4.join(claudeDir, "CLAUDE.md");
   if (!isReadableRegularFile(claudeMd)) {
     report2.check("CLAUDE.md under budget", "1", `unreadable ${claudeMd}`);
     return;
   }
   const byteSize = statSync3(claudeMd).size;
-  report2.check("CLAUDE.md under budget", "1", byteSize < claudeMdBudgetBytes ? "1" : "0");
+  report2.check("CLAUDE.md under budget", "1", byteSize < CLAUDE_MD_BUDGET_BYTES ? "1" : "0");
   report2.detail(`CLAUDE.md size: ${byteSize} bytes`);
 }
 function checkInstalledHookDeniesRedCommit(report2, claudeDir, environment) {
@@ -251,7 +358,7 @@ function checkInstalledHookDeniesRedCommit(report2, claudeDir, environment) {
   report2.check("installed hook denies red commit (e2e)", "deny", outcome === "" ? "empty" : outcome);
 }
 function checkOsoStateBinRoundTrips(report2, claudeDir, environment) {
-  const settingsFile = path.join(claudeDir, "settings.json");
+  const settingsFile = path4.join(claudeDir, "settings.json");
   const storedStateBin = clientEnvValue(settingsFile, "OSO_STATE_BIN");
   if (storedStateBin === "") {
     report2.check("OSO_STATE_BIN round-trips oso-state (e2e)", "probe", `no OSO_STATE_BIN in ${settingsFile}`, STATE_BIN_FIX);
@@ -266,15 +373,18 @@ function checkHookRegressionSuite(report2, repositoryRoot2, environment) {
     report2.skip("hook regression suite \u2014 OSO_VERIFY_SKIP_SLOW (CI runs the suite as its own step)");
     return;
   }
-  const result = spawnSync("bash", [path.join(repositoryRoot2, "tests", "hooks-test.sh")], {
+  const result = spawnSync("bash", [path4.join(repositoryRoot2, "tests", "hooks-test.sh")], {
     cwd: repositoryRoot2,
     env: environment,
     stdio: "ignore"
   });
   report2.check("hook regression suite", "pass", result.status === 0 ? "pass" : "fail");
 }
+function impeccableOptOutMarker(homeDirectory) {
+  return path4.join(homeDirectory, ".local", "state", "oso-code", "impeccable-opt-out");
+}
 function checkImpeccablePluginInstalled(report2, homeDirectory, pluginListing) {
-  const marker = path.join(homeDirectory, ".local", "state", "oso-code", "impeccable-opt-out");
+  const marker = impeccableOptOutMarker(homeDirectory);
   if (isReadableRegularFile(marker)) {
     report2.note(
       "impeccable plugin skipped \u2014 install.sh ran with --no-impeccable, so the design bar has no plugin half here; re-run install.sh without the flag to wire it"
@@ -291,9 +401,9 @@ function checkImpeccableCliRunnable(report2, environment) {
   report2.check("impeccable CLI runnable via npx", "1", impeccableCliRunnable(environment));
 }
 function checkGitCommitHook(report2, repositoryRoot2, environment) {
-  const gitHook = path.join(repositoryRoot2, "plugin", "git-hooks", "pre-commit");
+  const gitHook = path4.join(repositoryRoot2, "plugin", "git-hooks", "pre-commit");
   const wiredHooksPath = gitConfigValue(repositoryRoot2, "core.hooksPath", environment);
-  if (normalizedPath(wiredHooksPath) === normalizedPath(path.dirname(gitHook))) {
+  if (normalizedPath(wiredHooksPath) === normalizedPath(path4.dirname(gitHook))) {
     report2.check("git commit hook executable at the wired core.hooksPath", "1", isExecutableRegularFile(gitHook) ? "1" : "0");
     return;
   }
@@ -314,7 +424,7 @@ function checkNoCarriageReturnBytes(report2, repositoryRoot2) {
     report2.check("shipped executables carry no CR bytes", "at least one file scanned", "0 files scanned");
     return;
   }
-  const matched = candidates.filter((relative) => containsCarriageReturn(path.join(repositoryRoot2, relative)));
+  const matched = candidates.filter((relative) => containsCarriageReturn(path4.join(repositoryRoot2, relative)));
   report2.check("shipped executables carry no CR bytes", "none", matched.length === 0 ? "none" : `${matched.join(" ")} `);
 }
 function checkWindowsHomeDirectory(report2, environment) {
@@ -343,7 +453,7 @@ function checkEngramBinaryResolves(report2, environment, platform) {
   if (resolved !== void 0) report2.detail(`engram binary: ${resolved}`);
 }
 function checkGitBashPath(report2, claudeDir) {
-  const settingsFile = path.join(claudeDir, "settings.json");
+  const settingsFile = path4.join(claudeDir, "settings.json");
   const storedGitBash = clientEnvValue(settingsFile, "CLAUDE_CODE_GIT_BASH_PATH");
   if (storedGitBash === "") {
     report2.note(
@@ -403,10 +513,10 @@ function grepCountOrErrorMessage(file, patterns) {
   return String(matches);
 }
 function resolveInstallRoot(claudeDir) {
-  const installedPlugins = path.join(claudeDir, "plugins", "installed_plugins.json");
+  const installedPlugins = path4.join(claudeDir, "plugins", "installed_plugins.json");
   const fromManifest = installRootFromManifest(installedPlugins);
   if (fromManifest !== void 0 && isDirectory(fromManifest)) return fromManifest;
-  return highestVersionedCacheDirectory(path.join(claudeDir, "plugins", "cache", "oso-code", "oso-code"));
+  return highestVersionedCacheDirectory(path4.join(claudeDir, "plugins", "cache", "oso-code", "oso-code"));
 }
 function installRootFromManifest(installedPluginsFile) {
   if (!isReadableRegularFile(installedPluginsFile)) return void 0;
@@ -428,7 +538,7 @@ function highestVersionedCacheDirectory(cacheDirectory) {
   const names = childDirectoryNames(cacheDirectory);
   if (names.length === 0) return "";
   const highest = [...names].sort(compareVersionsAscending).at(-1);
-  return highest === void 0 ? "" : path.join(cacheDirectory, highest);
+  return highest === void 0 ? "" : path4.join(cacheDirectory, highest);
 }
 function compareVersionsAscending(a, b) {
   const segmentsOf = (value) => value.split(/(\d+)/).filter((segment) => segment !== "");
@@ -445,21 +555,21 @@ function compareVersionsAscending(a, b) {
   return 0;
 }
 function findGateBundle(installRoot) {
-  const suffix = `${path.sep}dist${path.sep}gate.js`;
+  const suffix = `${path4.sep}dist${path4.sep}gate.js`;
   const found = allFilesUnder(installRoot).find((absolute) => absolute.endsWith(suffix));
   return found;
 }
 function allFilesUnder(directory) {
   if (!isDirectory(directory)) return [];
-  return readdirSync2(directory, { recursive: true }).map((entry) => path.join(directory, entry.toString())).filter((absolute) => isRegularNonSymlinkFile(absolute));
+  return readdirSync2(directory, { recursive: true }).map((entry) => path4.join(directory, entry.toString())).filter((absolute) => isRegularNonSymlinkFile(absolute));
 }
 function runInstalledHookProbe(gate, environment) {
-  const hookHome = mkdtempSync(path.join(tmpdir(), "oso-verify-hook-"));
+  const hookHome = mkdtempSync(path4.join(tmpdir(), "oso-verify-hook-"));
   try {
     const stateKey = sha256Hex(hookHome);
-    const stateDir = path.join(hookHome, ".local", "state", "oso-code");
+    const stateDir = path4.join(hookHome, ".local", "state", "oso-code");
     mkdirSync3(stateDir, { recursive: true });
-    writeFileSync2(path.join(stateDir, `${stateKey}.state`), "mode=plan\nverify_green=false\n");
+    writeFileSync2(path4.join(stateDir, `${stateKey}.state`), "mode=plan\nverify_green=false\n");
     const stdin = JSON.stringify({
       session_id: "e2e",
       cwd: hookHome,
@@ -486,7 +596,7 @@ function clientEnvValue(settingsFile, key) {
   }
 }
 function runOsoStateProbe(stateBin, environment) {
-  const probeHome = mkdtempSync(path.join(tmpdir(), "oso-verify-probe-"));
+  const probeHome = mkdtempSync(path4.join(tmpdir(), "oso-verify-probe-"));
   try {
     const env = { ...environment, HOME: probeHome, USERPROFILE: probeHome, OSO_STATE_BIN: stateBin };
     const setResult = spawnSync(stateBin, ["--session", "verify-probe", "set", "mode=probe"], { env, encoding: "utf8" });
@@ -538,24 +648,24 @@ function normalizedPath(input) {
   return value;
 }
 function filesUnderRelative(repositoryRoot2, ...segments) {
-  const directory = path.join(repositoryRoot2, ...segments);
-  return allFilesUnder(directory).map((absolute) => toPosix(path.relative(repositoryRoot2, absolute)));
+  const directory = path4.join(repositoryRoot2, ...segments);
+  return allFilesUnder(directory).map((absolute) => toPosix(path4.relative(repositoryRoot2, absolute)));
 }
 function directChildrenWithExtension(repositoryRoot2, dir, extension) {
-  const absolute = path.join(repositoryRoot2, dir);
+  const absolute = path4.join(repositoryRoot2, dir);
   if (!isDirectory(absolute)) return [];
-  return readdirSync2(absolute).filter((name) => name.endsWith(extension) && isRegularNonSymlinkFile(path.join(absolute, name))).map((name) => toPosix(path.join(dir, name)));
+  return readdirSync2(absolute).filter((name) => name.endsWith(extension) && isRegularNonSymlinkFile(path4.join(absolute, name))).map((name) => toPosix(path4.join(dir, name)));
 }
 function containsCarriageReturn(file) {
   return readFileSync4(file).includes(13);
 }
 function toPosix(value) {
-  return value.split(path.sep).join("/");
+  return value.split(path4.sep).join("/");
 }
 function firstExecutableOnPath(environment, binaryName) {
-  const entries = (environment["PATH"] ?? "").split(path.delimiter).filter((entry) => entry !== "");
+  const entries = (environment["PATH"] ?? "").split(path4.delimiter).filter((entry) => entry !== "");
   for (const entry of entries) {
-    const candidate = path.join(entry, binaryName);
+    const candidate = path4.join(entry, binaryName);
     if (isExecutableRegularFile(candidate)) return candidate;
   }
   return void 0;
@@ -567,10 +677,10 @@ function engramBinaryRuns(binary) {
 function claudeDesktopLocations(homeDirectory, environment) {
   return [
     "/Applications/Claude.app",
-    path.join(homeDirectory, "Library", "Application Support", "Claude"),
-    path.join(environment["LOCALAPPDATA"] ?? path.join(homeDirectory, "AppData", "Local"), "AnthropicClaude"),
-    path.join(environment["APPDATA"] ?? path.join(homeDirectory, "AppData", "Roaming"), "Claude"),
-    path.join(homeDirectory, ".config", "Claude")
+    path4.join(homeDirectory, "Library", "Application Support", "Claude"),
+    path4.join(environment["LOCALAPPDATA"] ?? path4.join(homeDirectory, "AppData", "Local"), "AnthropicClaude"),
+    path4.join(environment["APPDATA"] ?? path4.join(homeDirectory, "AppData", "Roaming"), "Claude"),
+    path4.join(homeDirectory, ".config", "Claude")
   ];
 }
 function existsFollowingSymlinks(target) {
@@ -582,11 +692,623 @@ function errorMessageOf(cause) {
   return collapsed === "" ? "empty" : collapsed;
 }
 
+// core/src/install/claude.ts
+var ENGRAM_SOURCE_REPO = "Gentleman-Programming/engram";
+var MARKETPLACE_SOURCE = "SoyJohnXD/oso-code";
+var SUPPORTED_FALLOW_VERSION = "3.14.0";
+var CLAUDE_MD_MARKER_START = "<!-- oso-code:start -->";
+var CLAUDE_MD_MARKER_END = "<!-- oso-code:end -->";
+var OUTPUT_STYLE_KNOWN_VALUES = ["Gentleman", "Oso"];
+var CLAUDE_INSTALL_BACKUP_FORMAT = "oso-code-claude-install-v1";
+var CLAUDE_REPAIR_BACKUP_FORMAT = "oso-code-claude-repair-v1";
+var CLAUDE_PURGE_BACKUP_FORMAT = "oso-code-claude-purge-v1";
+var ClaudePluginInstallError = class extends Error {
+  output;
+  constructor(output) {
+    super(`claude plugin install oso-code@oso-code failed: ${output}`);
+    this.name = "ClaudePluginInstallError";
+    this.output = output;
+  }
+};
+function installClaude(input) {
+  if (!input.assumeYes) return requiresYesOutcome("install");
+  const claudeDir = path5.join(input.homeDirectory, ".claude");
+  const settingsFile = path5.join(claudeDir, "settings.json");
+  const claudeMdFile = path5.join(claudeDir, "CLAUDE.md");
+  const legacyTargets = legacyArtifactTargets(input.repositoryRoot, claudeDir);
+  let tx;
+  try {
+    tx = beginTransaction(backupsRootOf(input.homeDirectory), CLAUDE_INSTALL_BACKUP_FORMAT);
+    for (const { label, target } of backupClientConfigTargets(input.homeDirectory, claudeDir)) backupTarget(tx, label, target);
+    backupTarget(tx, "settings", settingsFile);
+    backupTarget(tx, "claude-md", claudeMdFile);
+    for (const { label, target } of legacyTargets) backupTarget(tx, label, target);
+    commitManifest(tx);
+  } catch (error) {
+    return fatalOutcome("install", "could not create the pre-install backup", error);
+  }
+  const infoLines = [`backup: ${tx.backupRoot}`];
+  const wiring = [];
+  wiring.push(wireEngramPlugin(input.environment));
+  wiring.push(detectEngramBinary(input.environment, input.platform));
+  wiring.push(wireFallow(input.environment, input.homeDirectory, input.platform));
+  try {
+    wiring.push(installOsoPluginCore(input.environment, input.repositoryRoot));
+  } catch (error) {
+    const restore = rollback(tx);
+    return fatalOutcome("install", "the oso-code plugin itself failed to install", error, restore);
+  }
+  softPluginMaintenance(input.environment);
+  wiring.push(...migrateContext7(input.environment));
+  wiring.push(publishStateBinPath(claudeDir, settingsFile));
+  const gitBash = publishGitBashPath(input.platform, input.environment, settingsFile);
+  if (gitBash !== void 0) wiring.push(gitBash);
+  if (input.installGitHook ?? true) {
+    wiring.push(wireGitCommitHook(input.repositoryRoot, input.environment));
+  } else {
+    infoLines.push("skipping the git commit hook (--no-git-hook)");
+  }
+  if (input.installImpeccable ?? true) {
+    wiring.push(wireImpeccable(input.environment, input.homeDirectory));
+  } else {
+    skipImpeccable(input.homeDirectory);
+    infoLines.push("skipping impeccable (--no-impeccable)");
+  }
+  try {
+    const legacyOutcome = removeLegacyArtifacts(legacyTargets);
+    infoLines.push(`removed ${legacyOutcome.removed} legacy artifact(s)`);
+  } catch (error) {
+    const restore = rollback(tx);
+    return fatalOutcome("install", "could not remove a legacy artifact", error, restore);
+  }
+  wiring.push(toWiringEntry("legacy settings hooks", removeLegacySettingsEntries(settingsFile)));
+  wiring.push(toWiringEntry("output style", ensureOutputStyle(settingsFile)));
+  try {
+    mergeGlobalClaudeMd(claudeMdFile, claudeGlobalBody(input.repositoryRoot), { replace: input.replaceClaudeMd ?? false });
+    infoLines.push(claudeMdSizeNote(claudeMdFile));
+  } catch (error) {
+    const restore = rollback(tx);
+    return fatalOutcome("install", "could not write CLAUDE.md", error, restore);
+  }
+  const pruned = pruneInstallBackups(backupsRootOf(input.homeDirectory), input.environment);
+  for (const backup of pruned) infoLines.push(`backup retention: removed ${backup}`);
+  return { report: renderCommandReport("install", infoLines, wiring), exitCode: 0 };
+}
+function repairClaude(input) {
+  if (!input.assumeYes) return requiresYesOutcome("repair");
+  const claudeDir = path5.join(input.homeDirectory, ".claude");
+  const settingsFile = path5.join(claudeDir, "settings.json");
+  const claudeMdFile = path5.join(claudeDir, "CLAUDE.md");
+  let tx;
+  try {
+    tx = beginTransaction(backupsRootOf(input.homeDirectory), CLAUDE_REPAIR_BACKUP_FORMAT);
+    backupTarget(tx, "settings", settingsFile);
+    backupTarget(tx, "claude-md", claudeMdFile);
+    commitManifest(tx);
+  } catch (error) {
+    return fatalOutcome("repair", "could not create the pre-repair backup", error);
+  }
+  const infoLines = [`backup: ${tx.backupRoot}`];
+  const wiring = [];
+  wiring.push(publishStateBinPath(claudeDir, settingsFile));
+  const gitBash = publishGitBashPath(input.platform, input.environment, settingsFile);
+  if (gitBash !== void 0) wiring.push(gitBash);
+  wiring.push(toWiringEntry("legacy settings hooks", removeLegacySettingsEntries(settingsFile)));
+  wiring.push(toWiringEntry("output style", ensureOutputStyle(settingsFile)));
+  try {
+    mergeGlobalClaudeMd(claudeMdFile, claudeGlobalBody(input.repositoryRoot), { replace: false });
+    infoLines.push(claudeMdSizeNote(claudeMdFile));
+  } catch (error) {
+    const restore = rollback(tx);
+    return fatalOutcome("repair", "could not rewrite CLAUDE.md", error, restore);
+  }
+  wiring.push(wireFallow(input.environment, input.homeDirectory, input.platform));
+  return { report: renderCommandReport("repair", infoLines, wiring), exitCode: 0 };
+}
+function purgeClaude(input) {
+  if (!input.assumeYes) return requiresYesOutcome("purge");
+  const claudeDir = path5.join(input.homeDirectory, ".claude");
+  const settingsFile = path5.join(claudeDir, "settings.json");
+  const claudeMdFile = path5.join(claudeDir, "CLAUDE.md");
+  let tx;
+  try {
+    tx = beginTransaction(backupsRootOf(input.homeDirectory), CLAUDE_PURGE_BACKUP_FORMAT);
+    backupTarget(tx, "settings", settingsFile);
+    backupTarget(tx, "claude-md", claudeMdFile);
+    commitManifest(tx);
+  } catch (error) {
+    return fatalOutcome("purge", "could not create the pre-purge backup", error);
+  }
+  const infoLines = [`backup: ${tx.backupRoot}`, "no login or installation command was run"];
+  const wiring = [];
+  wiring.push(toWiringEntry("OSO_STATE_BIN", removeClientEnv(settingsFile, "OSO_STATE_BIN")));
+  wiring.push(toWiringEntry("CLAUDE_CODE_GIT_BASH_PATH", removeClientEnv(settingsFile, "CLAUDE_CODE_GIT_BASH_PATH")));
+  wiring.push(toWiringEntry("output style", clearOsoOutputStyle(settingsFile)));
+  infoLines.push("legacy hook entries: remove-only in the ownership table \u2014 nothing recorded as ours to reverse");
+  try {
+    const stripped = stripClaudeMdRegion(claudeMdFile);
+    wiring.push(stripped ? wiringOk("CLAUDE.md region", "removed") : wiringOk("CLAUDE.md region", "nothing to remove"));
+  } catch (error) {
+    const restore = rollback(tx);
+    return fatalOutcome("purge", "could not rewrite CLAUDE.md", error, restore);
+  }
+  const mcpRemove = spawnSync2("claude", ["mcp", "remove", "--scope", "user", "fallow"], { env: input.environment, encoding: "utf8" });
+  wiring.push(
+    mcpRemove.error === void 0 && mcpRemove.status === 0 ? wiringOk("fallow (mcp)", "removed") : wiringFail("fallow (mcp)", `nothing removed, or already absent: ${collapsedOutput(mcpRemove)}`)
+  );
+  return { report: renderCommandReport("purge", infoLines, wiring), exitCode: 0 };
+}
+function backupsRootOf(homeDirectory) {
+  return path5.join(homeDirectory, ".local", "state", "oso-code", "claude-backups");
+}
+function beginTransaction(backupsRoot, format) {
+  const backupRoot = path5.join(backupsRoot, `install-backup-${compactTimestamp()}-${process.pid}`);
+  const itemsDirectory = path5.join(backupRoot, "items");
+  mkdirSync4(itemsDirectory, { recursive: true });
+  writeFileSync3(path5.join(backupRoot, "format"), `${format}
+`);
+  return { backupRoot, itemsDirectory, manifest: [] };
+}
+function backupTarget(tx, label, target) {
+  if (!existsAtAll(target)) {
+    tx.manifest.push({ status: "absent", label, target });
+    return;
+  }
+  const destination = path5.join(tx.itemsDirectory, label);
+  mkdirSync4(path5.dirname(destination), { recursive: true });
+  cpSync2(target, destination, { recursive: true });
+  tx.manifest.push({ status: "present", label, target });
+}
+function commitManifest(tx) {
+  const text = tx.manifest.map(serializeManifestRow).join("\n");
+  writeFileSync3(path5.join(tx.backupRoot, "manifest"), text === "" ? "" : `${text}
+`);
+}
+function rollback(tx) {
+  const text = tx.manifest.map(serializeManifestRow).join("\n");
+  return restoreBackupManifest(text, tx.itemsDirectory);
+}
+function compactTimestamp() {
+  const iso = isoTimestamp();
+  const [datePart = "", timePart = ""] = iso.replace("Z", "").split("T");
+  return `${datePart.replaceAll("-", "")}-${timePart.replaceAll(":", "")}`;
+}
+function pruneInstallBackups(backupsRoot, environment) {
+  const budgetKib = installBackupBudgetKib(environment);
+  const over = installBackupsOverBudget(installBackupDirsNewestFirst(backupsRoot), budgetKib);
+  for (const backup of over) rmSync4(backup, { recursive: true, force: true });
+  return over;
+}
+function backupClientConfigTargets(homeDirectory, claudeDir) {
+  const targets = [{ label: "claude-json", target: path5.join(homeDirectory, ".claude.json") }];
+  const pluginsDir = path5.join(claudeDir, "plugins");
+  if (!isDirectory(pluginsDir)) return targets;
+  for (const name of readdirSync3(pluginsDir).filter((entry) => entry.endsWith(".json"))) {
+    targets.push({ label: `plugins-json-${name}`, target: path5.join(pluginsDir, name) });
+  }
+  return targets;
+}
+function legacyArtifactTargets(repositoryRoot2, claudeDir) {
+  const manifestFile = path5.join(repositoryRoot2, "bootstrap", "gentle-manifest.txt");
+  const content = readFileSync5(manifestFile, "utf8");
+  return manifestEntries(content).map((relative) => ({ label: relative, target: path5.join(claudeDir, relative) }));
+}
+function removeLegacyArtifacts(targets) {
+  let removed = 0;
+  for (const { target } of targets) {
+    if (!existsAtAll(target)) continue;
+    rmSync4(target, { recursive: true, force: true });
+    removed += 1;
+  }
+  return { removed };
+}
+function storeClientEnv(settingsFile, key, value) {
+  const settings = readJsonObject(settingsFile);
+  const env = isPlainRecord(settings["env"]) ? settings["env"] : {};
+  writeJsonFile(settingsFile, { ...settings, env: { ...env, [key]: value } });
+}
+function removeClientEnv(settingsFile, key) {
+  if (!isReadableRegularFile(settingsFile)) return { kind: "unchanged", note: `no settings.json to remove ${key} from` };
+  try {
+    const settings = readJsonObject(settingsFile);
+    const env = settings["env"];
+    if (!isPlainRecord(env) || !(key in env)) return { kind: "unchanged", note: `${key} was not set` };
+    const rest = { ...env };
+    delete rest[key];
+    writeJsonFile(settingsFile, { ...settings, env: rest });
+    return { kind: "written", note: `${key} removed` };
+  } catch (error) {
+    return { kind: "failed", note: `left settings.json as it was \u2014 ${errorMessageOf(error)}` };
+  }
+}
+function removeLegacySettingsEntries(settingsFile) {
+  if (!isReadableRegularFile(settingsFile)) return { kind: "unchanged", note: "no settings.json yet" };
+  try {
+    const settings = readJsonObject(settingsFile);
+    const hooks = settings["hooks"];
+    if (!isPlainRecord(hooks)) return { kind: "unchanged", note: "no .hooks object to clean" };
+    const { filtered, changed } = withoutLegacyHookEntries(hooks);
+    if (!changed) return { kind: "unchanged", note: "no legacy hook entries found" };
+    writeJsonFile(settingsFile, { ...settings, hooks: filtered });
+    return { kind: "written", note: "cleaned legacy hook entries from settings.json" };
+  } catch (error) {
+    return { kind: "failed", note: `left settings.json exactly as it was \u2014 ${errorMessageOf(error)}` };
+  }
+}
+function withoutLegacyHookEntries(hooks) {
+  let changed = false;
+  const filtered = {};
+  for (const [event, entries] of Object.entries(hooks)) {
+    if (!Array.isArray(entries)) {
+      filtered[event] = entries;
+      continue;
+    }
+    const kept = entries.filter((entry) => !isLegacyHookEntry(entry));
+    if (kept.length !== entries.length) changed = true;
+    if (kept.length > 0) filtered[event] = kept;
+    else changed = true;
+  }
+  return { filtered, changed };
+}
+function isLegacyHookEntry(entry) {
+  if (!isPlainRecord(entry) || !Array.isArray(entry["hooks"])) return false;
+  return entry["hooks"].some(
+    (nested) => isPlainRecord(nested) && typeof nested["command"] === "string" && LEGACY_HOOK_COMMAND_PATTERNS.some((pattern) => nested["command"].includes(pattern))
+  );
+}
+function ensureOutputStyle(settingsFile) {
+  try {
+    const settings = isReadableRegularFile(settingsFile) ? readJsonObject(settingsFile) : {};
+    const current = settings["outputStyle"];
+    if (typeof current === "string" && current !== "" && !OUTPUT_STYLE_KNOWN_VALUES.includes(current)) {
+      return { kind: "unchanged", note: `keeping your output style "${current}" \u2014 switch to Oso anytime via /config \u2192 output style` };
+    }
+    writeJsonFile(settingsFile, { ...settings, outputStyle: "Oso" });
+    return { kind: "written", note: "output style set to Oso" };
+  } catch (error) {
+    return { kind: "failed", note: `left your output style as it was \u2014 ${errorMessageOf(error)}` };
+  }
+}
+function clearOsoOutputStyle(settingsFile) {
+  if (!isReadableRegularFile(settingsFile)) return { kind: "unchanged", note: "no settings.json to clear" };
+  try {
+    const settings = readJsonObject(settingsFile);
+    if (settings["outputStyle"] !== "Oso") return { kind: "unchanged", note: "output style is not Oso \u2014 left alone" };
+    const rest = { ...settings };
+    delete rest["outputStyle"];
+    writeJsonFile(settingsFile, rest);
+    return { kind: "written", note: "output style cleared" };
+  } catch (error) {
+    return { kind: "failed", note: `left your output style as it was \u2014 ${errorMessageOf(error)}` };
+  }
+}
+function mergeGlobalClaudeMd(claudeMdFile, blockBody, options) {
+  const shouldMerge = !options.replace && isReadableRegularFile(claudeMdFile);
+  const prefix = shouldMerge ? `${withoutMarkerRegion(readFileSync5(claudeMdFile, "utf8"))}
+` : "";
+  const content = `${prefix}${CLAUDE_MD_MARKER_START}
+${blockBody}${CLAUDE_MD_MARKER_END}
+`;
+  writeFileAtomically(path5.dirname(claudeMdFile), claudeMdFile, content, ".oso-claude-md-");
+}
+function stripClaudeMdRegion(claudeMdFile) {
+  if (!isReadableRegularFile(claudeMdFile)) return false;
+  const content = readFileSync5(claudeMdFile, "utf8");
+  if (!content.includes(CLAUDE_MD_MARKER_START)) return false;
+  const withoutBlock = withoutMarkerRegion(content);
+  writeFileAtomically(path5.dirname(claudeMdFile), claudeMdFile, withoutBlock === "" ? "" : `${withoutBlock}
+`, ".oso-claude-md-");
+  return true;
+}
+function withoutMarkerRegion(content) {
+  const normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const kept = [];
+  let skipping = false;
+  for (const line of normalized.split("\n")) {
+    if (line === CLAUDE_MD_MARKER_START) {
+      skipping = true;
+      continue;
+    }
+    if (line === CLAUDE_MD_MARKER_END) {
+      skipping = false;
+      continue;
+    }
+    if (!skipping) kept.push(line);
+  }
+  while (kept.length > 0 && kept.at(-1) === "") kept.pop();
+  return kept.join("\n");
+}
+function claudeGlobalBody(repositoryRoot2) {
+  return readFileSync5(path5.join(repositoryRoot2, "bootstrap", "claude-global.md"), "utf8");
+}
+function claudeMdSizeNote(claudeMdFile) {
+  const size = statSync4(claudeMdFile, { throwIfNoEntry: false })?.size ?? 0;
+  return size > CLAUDE_MD_BUDGET_BYTES ? `CLAUDE.md is still ${size} bytes \u2014 review the non-oso content; every session pays for it` : `CLAUDE.md merged (${size} bytes)`;
+}
+function wireEngramPlugin(environment) {
+  spawnSync2("claude", ["plugin", "marketplace", "add", ENGRAM_SOURCE_REPO], { env: environment, encoding: "utf8" });
+  const install = spawnSync2("claude", ["plugin", "install", "engram@engram"], { env: environment, encoding: "utf8" });
+  if (install.error === void 0 && install.status === 0) return wiringOk("engram (plugin)", "installed");
+  return wiringFail("engram (plugin)", `plugin install failed: ${collapsedOutput(install)} \u2014 fix: claude plugin install engram@engram`);
+}
+function detectEngramBinary(environment, platform) {
+  const binaryName = platform === "win32" ? "engram.exe" : "engram";
+  const resolved = firstExecutableOnPath(environment, binaryName);
+  if (resolved === void 0) {
+    return wiringFail(
+      "engram (binary)",
+      `no ${binaryName} on the PATH Claude Code reads \u2014 this port detects the pinned release but does not fetch it; run bash bootstrap/install.sh once to provision it, or ${engramManualInstallCommand(platform)}`
+    );
+  }
+  if (!engramBinaryRuns(resolved)) {
+    return wiringFail(
+      "engram (binary)",
+      `${resolved} does not run \u2014 an antivirus may have quarantined it, which upstream documents happening to unsigned prebuilt releases \u2014 fix: remove it, then run bash bootstrap/install.sh to reprovision, or ${engramManualInstallCommand(platform)}`
+    );
+  }
+  return wiringOk("engram (binary)", `already installed where Claude Code resolves it: ${resolved}`);
+}
+function engramManualInstallCommand(platform) {
+  return platform === "win32" ? `install engram yourself \u2014 go install github.com/${ENGRAM_SOURCE_REPO}/cmd/engram@latest, or unpack the release zip from https://github.com/${ENGRAM_SOURCE_REPO}/releases onto the PATH Claude Code reads` : `install engram yourself \u2014 brew install gentleman-programming/tap/engram, or go install github.com/${ENGRAM_SOURCE_REPO}/cmd/engram@latest`;
+}
+function wireFallow(environment, homeDirectory, platform) {
+  const fallowCommand = resolveFallowMcpCommand(environment, homeDirectory, platform) ?? "fallow-mcp";
+  const fix = `npm install --global fallow@${SUPPORTED_FALLOW_VERSION}, then claude mcp add --scope user fallow -- ${fallowCommand}`;
+  const npmProbe = spawnSync2("npm", ["--version"], { env: environment, encoding: "utf8" });
+  if (npmProbe.error !== void 0) {
+    return wiringFail("fallow", `no npm to install the fallow package with \u2014 fix: install Node.js 22 or newer, then ${fix}`);
+  }
+  const install = spawnSync2("npm", ["install", "--global", `fallow@${SUPPORTED_FALLOW_VERSION}`], { env: environment, encoding: "utf8" });
+  if (install.error !== void 0 || install.status !== 0) {
+    return wiringFail(
+      "fallow",
+      `could not install fallow@${SUPPORTED_FALLOW_VERSION}: ${collapsedOutput(install)} \u2014 a fallow already wired here keeps working, at whatever version it is \u2014 fix: ${fix}`
+    );
+  }
+  return addOrConfirmFallowMcp(environment, fallowCommand);
+}
+function addOrConfirmFallowMcp(environment, fallowCommand) {
+  const add = spawnSync2("claude", ["mcp", "add", "--scope", "user", "fallow", "--", fallowCommand], { env: environment, encoding: "utf8" });
+  if (add.error === void 0 && add.status === 0) return wiringOk("fallow", `wired (user scope): ${fallowCommand}`);
+  const wired = fallowWiredCommand(environment);
+  if (wired === fallowCommand) return wiringOk("fallow", `already wired: ${fallowCommand}`);
+  if (wired !== "") {
+    return wiringFail(
+      "fallow",
+      `wired to ${wired}, not the ${fallowCommand} this host resolves \u2014 no re-run of this installer can repoint it \u2014 fix: claude mcp remove fallow -s user && claude mcp add --scope user fallow -- ${fallowCommand}`
+    );
+  }
+  return wiringFail("fallow", `mcp add failed: ${collapsedOutput(add)} \u2014 fix: claude mcp add --scope user fallow -- ${fallowCommand}`);
+}
+function fallowWiredCommand(environment) {
+  const result = spawnSync2("claude", ["mcp", "get", "fallow"], { env: environment, encoding: "utf8" });
+  const text = result.error === void 0 ? result.stdout : "";
+  const match = /^[ \t]*Command:[ \t]*(.*?)[ \t]*$/m.exec(text);
+  return match?.[1] ?? "";
+}
+function resolveFallowMcpCommand(environment, homeDirectory, platform) {
+  if (platform === "win32") {
+    const appdata = environment["APPDATA"];
+    if (appdata !== void 0 && appdata !== "") {
+      const prefix = npmGlobalPrefix(environment) ?? path5.join(appdata, "npm");
+      const candidate = path5.join(prefix, "fallow-mcp.cmd");
+      if (isExecutableRegularFile(candidate)) return candidate;
+    }
+  }
+  const onPath = firstExecutableOnPath(environment, "fallow-mcp");
+  if (onPath !== void 0) return onPath;
+  const cargoCandidates = [path5.join(homeDirectory, ".cargo", "bin", "fallow-mcp"), path5.join(homeDirectory, ".cargo", "bin", "fallow-mcp.exe")];
+  return cargoCandidates.find((candidate) => isExecutableRegularFile(candidate));
+}
+function npmGlobalPrefix(environment) {
+  const result = spawnSync2("npm", ["prefix", "-g"], { env: environment, encoding: "utf8" });
+  if (result.error !== void 0 || result.status !== 0) return void 0;
+  const trimmed = result.stdout.trim();
+  return trimmed === "" ? void 0 : trimmed.replaceAll("\\", "/");
+}
+function installOsoPluginCore(environment, repositoryRoot2) {
+  registerOsoMarketplace(environment, repositoryRoot2);
+  const install = spawnSync2("claude", ["plugin", "install", "oso-code@oso-code"], { env: environment, encoding: "utf8" });
+  if (install.error !== void 0 || install.status !== 0) throw new ClaudePluginInstallError(collapsedOutput(install));
+  return wiringOk("oso-code plugin", "installed");
+}
+function softPluginMaintenance(environment) {
+  spawnSync2("claude", ["plugin", "marketplace", "update", "oso-code"], { env: environment, encoding: "utf8" });
+  spawnSync2("claude", ["plugin", "update", "oso-code@oso-code"], { env: environment, encoding: "utf8" });
+}
+function registerOsoMarketplace(environment, repositoryRoot2) {
+  const registry = spawnSync2("claude", ["plugin", "marketplace", "list", "--json"], { env: environment, encoding: "utf8" });
+  const localPath = registry.error === void 0 ? localMarketplacePath(registry.stdout) : "";
+  if (localPath !== "" && !githubMarketplaceIsReachable(environment)) return;
+  const added = spawnSync2("claude", ["plugin", "marketplace", "add", MARKETPLACE_SOURCE], { env: environment, encoding: "utf8" });
+  if (added.error === void 0 && added.status === 0) return;
+  const failure = classifyMarketplaceAddFailure(added.stdout ?? "");
+  if (failure === "unreachable") {
+    spawnSync2("claude", ["plugin", "marketplace", "add", repositoryRoot2], { env: environment, encoding: "utf8" });
+    return;
+  }
+  spawnSync2("claude", ["plugin", "marketplace", "update", "oso-code"], { env: environment, encoding: "utf8" });
+}
+function classifyMarketplaceAddFailure(output) {
+  if (output.includes("is seed-managed")) return "seed-managed";
+  if (output.includes("blocked by enterprise policy") || output.includes("not in the allowed marketplace list")) return "policy-blocked";
+  if (output.includes("Invalid marketplace source format")) return "invalid-source";
+  if (output.includes("Failed to parse marketplace file") || output.includes("Marketplace file not found")) return "invalid-manifest";
+  if (output.includes("Failed to clone marketplace repository")) return "unreachable";
+  return "unknown";
+}
+function localMarketplacePath(registryJson) {
+  try {
+    const parsed = JSON.parse(registryJson);
+    if (!Array.isArray(parsed)) return "";
+    const match = parsed.find((entry) => isPlainRecord(entry) && entry["name"] === "oso-code" && entry["source"] === "directory");
+    return isPlainRecord(match) && typeof match["path"] === "string" ? match["path"] : "";
+  } catch {
+    return "";
+  }
+}
+function githubMarketplaceIsReachable(environment) {
+  const result = spawnSync2("git", ["ls-remote", "--exit-code", `https://github.com/${MARKETPLACE_SOURCE}.git`, "HEAD"], {
+    env: { ...environment, GIT_TERMINAL_PROMPT: "0" },
+    encoding: "utf8"
+  });
+  return result.error === void 0 && result.status === 0;
+}
+function migrateContext7(environment) {
+  const listing = spawnSync2("claude", ["mcp", "list"], { env: environment, encoding: "utf8" });
+  const entry = pluginContext7Entry(listing.error === void 0 ? listing.stdout : "");
+  if (entry === "") {
+    return [
+      wiringFail(
+        "context7",
+        "the oso-code plugin's context7 server is not registered with the client, so a legacy user-scope entry, if any, was left standing rather than removed \u2014 fix: claude plugin install oso-code@oso-code, restart Claude Code, then re-run this installer"
+      )
+    ];
+  }
+  if (!entry.includes("Connected")) {
+    return [
+      wiringFail(
+        "context7",
+        `the oso-code plugin's context7 is registered but did not answer (${entry}) \u2014 fix: install Node.js (context7 starts through npx), restart Claude Code, then re-run this installer`
+      )
+    ];
+  }
+  spawnSync2("claude", ["mcp", "remove", "--scope", "user", "context7"], { env: environment, encoding: "utf8" });
+  return [wiringOk("context7", "ships with the oso-code plugin, registered and connected")];
+}
+function pluginContext7Entry(listing) {
+  return listing.split("\n").find((line) => line.includes("context7") && line.includes("plugin:")) ?? "";
+}
+function publishStateBinPath(claudeDir, settingsFile) {
+  const installedPluginsFile = path5.join(claudeDir, "plugins", "installed_plugins.json");
+  const installRoot = installRootFromManifest(installedPluginsFile);
+  const fix = "fix: claude plugin install oso-code@oso-code, restart Claude Code, then re-run this installer";
+  if (installRoot === void 0) {
+    return wiringFail(
+      "oso-state path",
+      `the client records no installed oso-code plugin carrying a runnable bin/oso-state, so there is no absolute path to publish \u2014 ${fix}`
+    );
+  }
+  const stateBin = path5.join(installRoot, "bin", "oso-state");
+  if (!isExecutableRegularFile(stateBin)) {
+    return wiringFail("oso-state path", `the resolved install path carries no runnable bin/oso-state at ${stateBin} \u2014 ${fix}`);
+  }
+  try {
+    storeClientEnv(settingsFile, "OSO_STATE_BIN", stateBin);
+    return wiringOk("oso-state path", `every session reads OSO_STATE_BIN=${stateBin}`);
+  } catch (error) {
+    return wiringFail(
+      "oso-state path",
+      `${errorMessageOf(error)} \u2014 fix: add "env": { "OSO_STATE_BIN": "${stateBin}" } to ${settingsFile} by hand, then restart Claude Code`
+    );
+  }
+}
+function publishGitBashPath(platform, environment, settingsFile) {
+  if (platform !== "win32") return void 0;
+  const stored = clientEnvValue(settingsFile, "CLAUDE_CODE_GIT_BASH_PATH");
+  if (isRegularNonSymlinkFile(stored)) return wiringOk("Git Bash path", `left as you set it: ${stored}`);
+  const candidate = environment["CLAUDE_CODE_GIT_BASH_PATH"] ?? "";
+  if (!isRegularNonSymlinkFile(candidate)) {
+    if (stored === "") return void 0;
+    return wiringFail(
+      "Git Bash path",
+      `settings.json points CLAUDE_CODE_GIT_BASH_PATH at ${stored}, which is not there any more, and this run was handed no Git Bash to repair it with \u2014 fix: re-run from PowerShell via bootstrap\\install.ps1, which finds Git Bash and hands it to this installer, or set the key yourself to the bash.exe you have (typically C:\\Program Files\\Git\\bin\\bash.exe)`
+    );
+  }
+  const outcome = stored === "" ? "published" : `repaired from ${stored}`;
+  try {
+    storeClientEnv(settingsFile, "CLAUDE_CODE_GIT_BASH_PATH", candidate);
+    return wiringOk("Git Bash path", `${outcome}: ${candidate}`);
+  } catch (error) {
+    return wiringFail(
+      "Git Bash path",
+      `${errorMessageOf(error)} \u2014 fix: add "env": { "CLAUDE_CODE_GIT_BASH_PATH": "${candidate}" } to ${settingsFile} by hand, then restart Claude Code`
+    );
+  }
+}
+function gitHooksOwner(repositoryRoot2, environment, gitHooksDir) {
+  const configured = gitConfigValue(repositoryRoot2, "core.hooksPath", environment);
+  if (configured !== "" && normalizedPath(configured) !== normalizedPath(gitHooksDir)) return `core.hooksPath=${configured}`;
+  const gitDir = gitAbsoluteGitDir(repositoryRoot2, environment);
+  if (gitDir === "") return "";
+  const hooksDir = path5.join(gitDir, "hooks");
+  if (!isDirectory(hooksDir)) return "";
+  const hookFile = readdirSync3(hooksDir).find((name) => !name.endsWith(".sample") && isRegularNonSymlinkFile(path5.join(hooksDir, name)));
+  return hookFile === void 0 ? "" : path5.join(hooksDir, hookFile);
+}
+function gitAbsoluteGitDir(repositoryRoot2, environment) {
+  const result = spawnSync2("git", ["-C", repositoryRoot2, "rev-parse", "--absolute-git-dir"], { env: environment, encoding: "utf8" });
+  return result.error === void 0 && result.status === 0 ? result.stdout.replace(/\n+$/, "") : "";
+}
+function wireGitCommitHook(repositoryRoot2, environment) {
+  const gitHooksDir = path5.join(repositoryRoot2, "plugin", "git-hooks");
+  const owner = gitHooksOwner(repositoryRoot2, environment, gitHooksDir);
+  if (owner !== "") {
+    return wiringFail(
+      "git commit hook",
+      `not wired in ${repositoryRoot2} \u2014 ${owner} already owns this repo's hooks and core.hooksPath would take it out of git's reach; the PreToolUse commit gate still applies here \u2014 fix: to run both, call ${path5.join(gitHooksDir, "pre-commit")} from your own pre-commit`
+    );
+  }
+  const result = spawnSync2("git", ["-C", repositoryRoot2, "config", "core.hooksPath", gitHooksDir], { env: environment, encoding: "utf8" });
+  if (result.error === void 0 && result.status === 0) {
+    return wiringOk("git commit hook", `core.hooksPath wired in ${repositoryRoot2} \u2014 for another repo: git -C <repo> config core.hooksPath ${gitHooksDir}`);
+  }
+  return wiringFail("git commit hook", `git config failed: ${collapsedOutput(result)} \u2014 fix: git -C ${repositoryRoot2} config core.hooksPath ${gitHooksDir}`);
+}
+function wireImpeccable(environment, homeDirectory) {
+  rmSync4(impeccableOptOutMarker(homeDirectory), { force: true });
+  spawnSync2("claude", ["plugin", "marketplace", "add", "pbakaus/impeccable"], { env: environment, encoding: "utf8" });
+  const install = spawnSync2("claude", ["plugin", "install", "impeccable@impeccable"], { env: environment, encoding: "utf8" });
+  if (install.error !== void 0 || install.status !== 0) {
+    return wiringFail("impeccable (plugin)", `install failed: ${collapsedOutput(install)} \u2014 fix: claude plugin install impeccable@impeccable`);
+  }
+  const listing = spawnSync2("claude", ["plugin", "list"], { env: environment, encoding: "utf8" });
+  const installed = listing.error === void 0 && listing.stdout.includes("impeccable");
+  return installed ? wiringOk("impeccable (plugin)", "installed") : wiringFail("impeccable (plugin)", "the install reported success but the client lists no impeccable plugin \u2014 fix: claude plugin install impeccable@impeccable, then restart Claude Code");
+}
+function skipImpeccable(homeDirectory) {
+  const marker = impeccableOptOutMarker(homeDirectory);
+  mkdirSync4(path5.dirname(marker), { recursive: true });
+  writeFileSync3(marker, `skipped by --no-impeccable on ${isoTimestamp().slice(0, 10)}
+`);
+}
+function wiringOk(component, note) {
+  return { ok: true, component, note };
+}
+function wiringFail(component, note) {
+  return { ok: false, component, note };
+}
+function toWiringEntry(component, outcome) {
+  return outcome.kind === "failed" ? wiringFail(component, outcome.note) : wiringOk(component, outcome.note);
+}
+function collapsedOutput(result) {
+  return collapsedNewlines(`${result.stdout ?? ""}${result.stderr ?? ""}`);
+}
+function renderCommandReport(verb, infoLines, wiring) {
+  const summaryLines = wiring.map((entry) => `  ${entry.component}: ${entry.ok ? "OK" : "FAILED"} \u2014 ${entry.note}`);
+  const failedCount = wiring.filter((entry) => !entry.ok).length;
+  const lines = [`oso ${verb} --host claude`, ...infoLines, "wiring summary:", ...summaryLines, "----", `wired: ${wiring.length - failedCount}, failed: ${failedCount}`];
+  return lines.map((line) => `${line}
+`).join("");
+}
+function requiresYesOutcome(verb) {
+  return { report: `oso ${verb} --host claude requires --yes in this slice \u2014 no interactive confirmation prompt is wired yet
+`, exitCode: 1 };
+}
+function fatalOutcome(verb, summary, error, restore) {
+  const restoreNote = restore === void 0 ? "" : restore.failedCount === 0 ? " \u2014 rolled back to the pre-run snapshot" : ` \u2014 rollback incomplete: ${restore.failedItems.join(", ")} still need restoring by hand`;
+  return { report: `oso ${verb} --host claude: ${summary}: ${errorMessageOf(error)}${restoreNote}
+`, exitCode: 1 };
+}
+function isPlainRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 // core/src/install/cli.ts
 var USAGE = `usage: oso <install|verify|repair|purge> --host <claude|codex|opencode> [--yes]
 
-Only \`oso verify --host claude\` runs real checks in this slice; every other
-verb/host pair is not yet implemented.
+Only the claude host runs real checks/mutations in this slice; every other
+host is not yet implemented.
 `;
 var VERBS = ["install", "verify", "repair", "purge"];
 var HOSTS = ["claude", "codex", "opencode"];
@@ -611,17 +1333,17 @@ function main(argv, repositoryRoot2) {
 }
 function dispatch(argv, repositoryRoot2) {
   const parsed = parseArgv(argv);
-  if (parsed.verb === "verify" && parsed.host === "claude") {
-    const outcome = verifyClaude({
-      homeDirectory: homeDirectoryFrom(process.platform, process.env),
-      repositoryRoot: repositoryRoot2,
-      environment: process.env,
-      platform: process.platform
-    });
-    process.stdout.write(outcome.report);
-    return outcome.exitCode;
-  }
-  throw new VerbNotImplementedError(parsed.verb, parsed.host);
+  if (parsed.host !== "claude") throw new VerbNotImplementedError(parsed.verb, parsed.host);
+  const claudeContext = {
+    homeDirectory: homeDirectoryFrom(process.platform, process.env),
+    repositoryRoot: repositoryRoot2,
+    environment: process.env,
+    platform: process.platform,
+    assumeYes: parsed.assumeYes
+  };
+  const outcome = parsed.verb === "verify" ? verifyClaude(claudeContext) : parsed.verb === "install" ? installClaude(claudeContext) : parsed.verb === "repair" ? repairClaude(claudeContext) : purgeClaude(claudeContext);
+  process.stdout.write(outcome.report);
+  return outcome.exitCode;
 }
 function report(error) {
   if (error instanceof UsageError) {

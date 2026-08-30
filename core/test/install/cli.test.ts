@@ -14,8 +14,8 @@ const cliBundle = path.join(repoRoot, "bootstrap", "oso.js");
 
 const USAGE = `usage: oso <install|verify|repair|purge> --host <claude|codex|opencode> [--yes]
 
-Only \`oso verify --host claude\` runs real checks in this slice; every other
-verb/host pair is not yet implemented.
+Only the claude host runs real checks/mutations in this slice; every other
+host is not yet implemented.
 `;
 
 function runCli(argv: readonly string[]): { status: number | null; stdout: string; stderr: string } {
@@ -87,13 +87,14 @@ describe("oso verify --host claude resolves the repository root the same way fro
 
 describe("verb/host pairs this slice does not implement", () => {
   for (const [verb, host] of [
-    ["install", "claude"],
-    ["repair", "claude"],
-    ["purge", "claude"],
     ["verify", "codex"],
     ["verify", "opencode"],
     ["install", "codex"],
     ["install", "opencode"],
+    ["repair", "codex"],
+    ["repair", "opencode"],
+    ["purge", "codex"],
+    ["purge", "opencode"],
   ] as const) {
     test(`${verb} --host ${host} reports not-yet-implemented rather than pretending success`, () => {
       const result = runCli([verb, "--host", host]);
@@ -103,3 +104,15 @@ describe("verb/host pairs this slice does not implement", () => {
     });
   }
 });
+
+describe("install|repair|purge --host claude without --yes", () => {
+  for (const verb of ["install", "repair", "purge"] as const) {
+    test(`${verb} --host claude reaches the real command (not VerbNotImplementedError) and reports it needs --yes rather than prompting`, () => {
+      const result = runCli([verb, "--host", "claude"]);
+      assert.equal(result.status, 1);
+      assert.equal(result.stdout, `oso ${verb} --host claude requires --yes in this slice — no interactive confirmation prompt is wired yet\n`);
+      assert.equal(result.stderr, "");
+    });
+  }
+});
+

@@ -1,10 +1,11 @@
 import { homeDirectoryFrom } from "../state/store.ts";
+import { installClaude, purgeClaude, repairClaude } from "./claude.ts";
 import { verifyClaude } from "./verify-claude.ts";
 
 const USAGE = `usage: oso <install|verify|repair|purge> --host <claude|codex|opencode> [--yes]
 
-Only \`oso verify --host claude\` runs real checks in this slice; every other
-verb/host pair is not yet implemented.
+Only the claude host runs real checks/mutations in this slice; every other
+host is not yet implemented.
 `;
 
 const VERBS = ["install", "verify", "repair", "purge"] as const;
@@ -38,17 +39,25 @@ export function main(argv: readonly string[], repositoryRoot: string): number {
 
 function dispatch(argv: readonly string[], repositoryRoot: string): number {
   const parsed = parseArgv(argv);
-  if (parsed.verb === "verify" && parsed.host === "claude") {
-    const outcome = verifyClaude({
-      homeDirectory: homeDirectoryFrom(process.platform, process.env),
-      repositoryRoot,
-      environment: process.env,
-      platform: process.platform,
-    });
-    process.stdout.write(outcome.report);
-    return outcome.exitCode;
-  }
-  throw new VerbNotImplementedError(parsed.verb, parsed.host);
+  if (parsed.host !== "claude") throw new VerbNotImplementedError(parsed.verb, parsed.host);
+
+  const claudeContext = {
+    homeDirectory: homeDirectoryFrom(process.platform, process.env),
+    repositoryRoot,
+    environment: process.env,
+    platform: process.platform,
+    assumeYes: parsed.assumeYes,
+  };
+  const outcome =
+    parsed.verb === "verify"
+      ? verifyClaude(claudeContext)
+      : parsed.verb === "install"
+        ? installClaude(claudeContext)
+        : parsed.verb === "repair"
+          ? repairClaude(claudeContext)
+          : purgeClaude(claudeContext);
+  process.stdout.write(outcome.report);
+  return outcome.exitCode;
 }
 
 function report(error: unknown): number {
