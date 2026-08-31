@@ -481,7 +481,7 @@ EOF
       case "$row" in
         "mcp__${server}__"*)
           bare="${row#mcp__${server}__}"
-          printf '%s\n' "$(server_mandated_tools "$server")" | grep -qxF "$bare" ||
+          printf '%s\n' "$(server_mandated_tools "$server")" | grep -xF "$bare" >/dev/null ||
             mismatch="${mismatch:+$mismatch,}$row(yes-row-not-hardcoded)"
           break
           ;;
@@ -497,7 +497,7 @@ mcp_missing_mandated_tools() {
   local server="$1" exposed="$2" name row missing=""
   while IFS= read -r name; do
     [ -n "$name" ] || continue
-    printf '%s\n' "$exposed" | grep -qxF "$name" || continue
+    printf '%s\n' "$exposed" | grep -xF "$name" >/dev/null || continue
     row="mcp__${server}__${name}"
     table_has_codex_tool "$row" || missing="${missing:+$missing,}$row"
   done <<EOF
@@ -511,7 +511,7 @@ mcp_stale_table_rows() {
   while IFS= read -r row; do
     [ -n "$row" ] || continue
     bare="${row#mcp__${server}__}"
-    printf '%s\n' "$exposed" | grep -qxF "$bare" || stale="${stale:+$stale,}$row"
+    printf '%s\n' "$exposed" | grep -xF "$bare" >/dev/null || stale="${stale:+$stale,}$row"
   done <<EOF
 $(table_codex_tools_for_server "$server")
 EOF

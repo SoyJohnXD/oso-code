@@ -1,5 +1,6 @@
 import path from "node:path";
-import { readFileSync, readdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import {
   CONFIG_MARKER_END,
   CONFIG_MARKER_START,
@@ -8,6 +9,8 @@ import {
   renderCodexManagedConfig,
 } from "./codex-config.ts";
 import { codexPathsFor, managedFeaturesStatus, type CodexPaths } from "./codex.ts";
+import { type CodexHostProbes } from "./codex-host.ts";
+import { SUPPORTED_CODEX_VERSION } from "./pins.ts";
 import { VerifyReport } from "./report.ts";
 import { runTomlRegion } from "./toml-regions.ts";
 import { readTomlFile, TomlParseError } from "./toml.ts";
@@ -37,24 +40,109 @@ export type VerifyCodexInput = Readonly<{
   repositoryRoot: string;
   environment: NodeJS.ProcessEnv;
   platform: NodeJS.Platform;
+  host: CodexHostProbes;
 }>;
 
 export type VerifyOutcome = Readonly<{ report: string; exitCode: number }>;
+
+export const LOCAL_CHECKS_SECTION = "local checks:";
+export const MCP_DRIFT_SECTION = "MCP tool table drift:";
 
 export function verifyCodex(input: VerifyCodexInput): VerifyOutcome {
   const paths = codexPathsFor(input.homeDirectory, input.environment);
   const report = new VerifyReport();
 
-  checkManagedConfigRegion(report, paths, input.environment);
-  checkGlobalGuidance(report, paths, input.repositoryRoot);
+  report.section(LOCAL_CHECKS_SECTION);
+  checkPinnedCodexVersion(report, input.host);
+  checkHostBinaryContracts(report, input.host);
+  checkPluginInstalled(report, paths, input.host);
   checkPublishedRuntimeBytes(report, paths, input.repositoryRoot);
   checkRuntimeEntrypointsExecutable(report, paths);
   checkAgentPayload(report, paths, input.repositoryRoot);
+  checkMarketplacePayload(report, paths, input.repositoryRoot);
+  checkManagedConfigRegion(report, paths, input.environment);
+  checkHostAcceptsOsoProfile(report, paths, input.host);
+  checkGlobalGuidance(report, paths, input.repositoryRoot);
   checkEngramWiring(report, paths);
+  checkStateRoundTrip(report, paths);
+  checkPlanArtifactRoundTrip(report, paths);
+  checkCommitHookDeniesRed(report, paths);
   checkImpeccableMount(report, input.homeDirectory);
+  checkGitCommitGate(report, paths, input.repositoryRoot, input.environment);
   checkMcpToolTableDrift(report, paths);
 
   return { report: report.render(), exitCode: report.exitCode };
+}
+
+export function checkPinnedCodexVersion(report: VerifyReport, host: CodexHostProbes): void {
+  report.check("Codex CLI version", SUPPORTED_CODEX_VERSION, host.version ?? "not installed");
+}
+
+export function checkHostBinaryContracts(report: VerifyReport, host: CodexHostProbes): void {
+  for (const contract of HOST_BINARY_CONTRACTS) {
+    if (host.binaryPath === undefined) {
+      report.skip(`${contract.shortLabel} — codex is not on PATH, so the host contract could not be asserted`);
+      continue;
+    }
+    if (host.version !== SUPPORTED_CODEX_VERSION) {
+      report.unverified(
+        `${contract.shortLabel} — claims were verified against Codex ${SUPPORTED_CODEX_VERSION} only; installed ` +
+          `${host.version ?? "not installed"} falls outside that window, so pass/fail is not asserted here`,
+      );
+      continue;
+    }
+    report.check(contract.name, "conformant", binaryCarriesBoth(host.binaryPath, contract.literals) ? "conformant" : "nonconformant");
+  }
+}
+
+export function checkPluginInstalled(report: VerifyReport, paths: CodexPaths, host: CodexHostProbes): void {
+  const listing = host.pluginListing();
+  if (!listing.ok) {
+    report.check("oso-code plugin installed", "installed", collapsed(listing.output));
+    return;
+  }
+  report.check("oso-code plugin installed", "installed", localPluginSourcePaths(listing.output).includes(path.join(paths.marketplaceRoot, "codex")) ? "installed" : "absent-or-invalid");
+}
+
+export function checkMarketplacePayload(report: VerifyReport, paths: CodexPaths, repositoryRoot: string): void {
+  const divergent: string[] = MARKETPLACE_PAYLOAD_ROWS.flatMap((row) =>
+    sameBytes(path.join(repositoryRoot, ...row.published.split("/")), path.join(paths.marketplaceRoot, ...row.installed.split("/"))) ? [] : [row.named],
+  );
+  for (const skill of publishedSkillNames(repositoryRoot)) {
+    const installed = path.join(paths.marketplaceRoot, "codex", "skills", skill, "SKILL.md");
+    if (!sameBytes(path.join(repositoryRoot, "codex", "skills", skill, "SKILL.md"), installed)) divergent.push(skill);
+  }
+  if (!isDirectoryAt(path.join(paths.marketplaceRoot, "codex", "skills", "_shared"))) divergent.push("shared");
+  report.check("staged marketplace payload", "exact", divergent.length === 0 ? "exact" : `divergent:${divergent.map((named) => ` ${named}`).join("")}`);
+}
+
+export function checkHostAcceptsOsoProfile(report: VerifyReport, paths: CodexPaths, host: CodexHostProbes): void {
+  const expected = `1\n${path.join(paths.runtimeRoot, "bin", "oso-state")}`;
+  const run = host.sandbox(["/bin/sh", "-c", 'printf "%s\n%s\n" "${OSO_AGENT:-}" "${OSO_STATE_BIN:-}"']);
+  const observed = run.ok ? run.output.trim() : collapsed(run.output);
+  report.check("Codex accepts the oso permissions profile", "accepted", observed === expected ? "accepted" : observed === "" ? "rejected-without-output" : observed);
+}
+
+export function checkStateRoundTrip(report: VerifyReport, paths: CodexPaths): void {
+  report.check("installed oso-state round-trip", "probe", installedEntrypointVerdict(paths, "round-trip-failed:empty"));
+}
+
+export function checkPlanArtifactRoundTrip(report: VerifyReport, paths: CodexPaths): void {
+  report.check("installed Codex plan artifact round-trip", "artifacts", installedEntrypointVerdict(paths, "artifact-round-trip-failed:empty"));
+}
+
+export function checkCommitHookDeniesRed(report: VerifyReport, paths: CodexPaths): void {
+  report.check("installed git hook denies a red agent commit", "denied", installedEntrypointVerdict(paths, "setup-failed"));
+}
+
+export function checkGitCommitGate(report: VerifyReport, paths: CodexPaths, repositoryRoot: string, environment: NodeJS.ProcessEnv): void {
+  const wired = path.join(paths.runtimeRoot, "git-hooks");
+  const configured = gitConfigured(repositoryRoot, environment);
+  if (configured === wired && isExecutableRegularFile(path.join(wired, "pre-commit"))) {
+    report.check("git commit gate", "wired", "wired");
+    return;
+  }
+  report.note("git commit gate is not wired for this checkout; the installer may have run with --no-git-hook");
 }
 
 export function checkManagedConfigRegion(report: VerifyReport, paths: CodexPaths, environment: NodeJS.ProcessEnv): void {
@@ -74,7 +162,7 @@ export function checkManagedConfigRegion(report: VerifyReport, paths: CodexPaths
     return;
   }
   const fallowCommand = fallowCommandInside(extracted.stdout);
-  const expected = renderCodexManagedConfig(paths.codexHome, paths.runtimeRoot, fallowCommand);
+  const expected = renderCodexManagedConfig(paths.homeDirectory, paths.runtimeRoot, fallowCommand);
   if (extracted.stdout !== expected) {
     report.check("managed Codex config", "valid", "divergent");
     return;
@@ -103,11 +191,22 @@ export function checkGlobalGuidance(report: VerifyReport, paths: CodexPaths, rep
   report.check("global Codex guidance", "exact", installed === readFileSync(source, "utf8") ? "exact" : "divergent");
 }
 
+export const CODEX_HOOKS_MANIFEST = "codex/hooks/hooks.json";
+export const RENDERED_HOOKS_DIR_TOKEN = "__OSO_HOOKS_DIR__";
+
+export function unrenderedHooksManifest(text: string, runtimeRoot: string): string {
+  return text.replaceAll(path.posix.join(runtimeRoot, "dist"), RENDERED_HOOKS_DIR_TOKEN);
+}
+
 export function checkPublishedRuntimeBytes(report: VerifyReport, paths: CodexPaths, repositoryRoot: string): void {
   const divergences = trustDivergences(
     path.join(repositoryRoot, "bootstrap", "hook-hashes.txt"),
     (relative) => relative.startsWith("opencode/"),
     (relative) => installedRuntimePathOf(relative, paths),
+    (relative, target) =>
+      relative === CODEX_HOOKS_MANIFEST
+        ? Buffer.from(unrenderedHooksManifest(readFileSync(target, "utf8"), paths.runtimeRoot), "utf8")
+        : readFileSync(target),
   );
   for (const divergence of divergences) report.detail(`${divergence.file}: ${divergence.state.kind}`);
   report.check("published runtime bytes", "verified", divergences.length === 0 ? "verified" : `bad:${divergences.length}`);
@@ -128,12 +227,12 @@ export function checkAgentPayload(report: VerifyReport, paths: CodexPaths, repos
   } catch (cause) {
     if (!isErrnoException(cause) || (cause.code !== "ENOENT" && cause.code !== "ENOTDIR")) throw cause;
     report.detail(`published agents unreadable: ${sourceDir} (${cause.code})`);
-    report.check("Codex agents copied exactly", "exact", "source-unreadable");
+    report.check(AGENT_PAYLOAD_CHECK, "exact", "source-unreadable");
     return;
   }
   if (published.length === 0) {
     report.detail(`published agents empty: ${sourceDir}`);
-    report.check("Codex agents copied exactly", "exact", "source-empty");
+    report.check(AGENT_PAYLOAD_CHECK, "exact", "source-empty");
     return;
   }
   const installedDir = path.join(paths.codexHome, "agents");
@@ -143,7 +242,7 @@ export function checkAgentPayload(report: VerifyReport, paths: CodexPaths, repos
     return readFileSync(installed, "utf8") !== readFileSync(path.join(sourceDir, name), "utf8");
   });
   for (const name of divergent) report.detail(`divergent agent: ${name}`);
-  report.check("Codex agents copied exactly", "exact", divergent.length === 0 ? "exact" : `divergent:${divergent.length}`);
+  report.check(AGENT_PAYLOAD_CHECK, "exact", divergent.length === 0 ? "exact" : `divergent:${divergent.map((named) => ` ${named}`).join("")}`);
 }
 
 export function checkEngramWiring(report: VerifyReport, paths: CodexPaths): void {
@@ -159,7 +258,7 @@ export function checkEngramWiring(report: VerifyReport, paths: CodexPaths): void
 export function checkImpeccableMount(report: VerifyReport, homeDirectory: string): void {
   const optOut = path.join(homeDirectory, ".local", "state", "oso-code", "impeccable-opt-out");
   if (isReadableRegularFile(optOut)) {
-    report.skip("Impeccable Codex mount — the installer recorded --no-impeccable");
+    report.skip("Impeccable mount — install-codex.sh recorded --no-impeccable");
     return;
   }
   const mount = path.join(homeDirectory, ".agents", "skills", "impeccable");
@@ -167,11 +266,8 @@ export function checkImpeccableMount(report: VerifyReport, homeDirectory: string
 }
 
 export function checkMcpToolTableDrift(report: VerifyReport, paths: CodexPaths): void {
-  report.check(
-    "the hardcoded mandated tool list agrees with core/src/routes/routes.ts in both directions",
-    "agree",
-    mandatedAgreementStatus(),
-  );
+  report.section(MCP_DRIFT_SECTION);
+  report.check("the hardcoded mandated tool list agrees with tools/hook-gates.txt in both directions", "agree", mandatedAgreementStatus());
   for (const server of mcpServersOf(paths.configFile)) {
     if (server.command === undefined || server.command === "") {
       report.skip(`${server.name} MCP tool drift — no local command in ${paths.configFile} (a remote/URL-based server has no process this check spawns)`);
@@ -280,7 +376,7 @@ function fallowCommandInside(regionText: string): string {
 }
 
 function installedRuntimePathOf(relative: string, paths: CodexPaths): string | undefined {
-  if (relative === "codex/hooks/hooks.json") return path.join(paths.codexHome, "hooks.json");
+  if (relative === CODEX_HOOKS_MANIFEST) return path.join(paths.codexHome, "hooks.json");
   for (const [prefix, directory] of [
     ["plugin/dist/", "dist"],
     ["plugin/hooks/", "hooks"],
@@ -290,4 +386,93 @@ function installedRuntimePathOf(relative: string, paths: CodexPaths): string | u
     if (relative.startsWith(prefix)) return path.join(paths.runtimeRoot, directory, relative.slice(prefix.length));
   }
   return undefined;
+}
+
+const AGENT_PAYLOAD_CHECK = "seven Codex agents copied exactly";
+
+const HOST_BINARY_CONTRACTS = [
+  {
+    shortLabel: "Codex host contract",
+    name: "Codex binary matches the fork_turns host contract",
+    literals: [
+      "fork_context is not supported in MultiAgentV2; use fork_turns instead",
+      "fork_turns must be `none`, `all`, or a positive integer string",
+    ],
+  },
+  {
+    shortLabel: "Codex permission-override contract",
+    name: "Codex binary matches the default_permissions override contract",
+    literals: [
+      "default_permissions refers to undefined profile `",
+      "`permission_profile` and `default_permissions` overrides cannot both be set",
+    ],
+  },
+] as const;
+
+const MARKETPLACE_PAYLOAD_ROWS = [
+  { named: "marketplace.json", published: ".agents/plugins/marketplace.json", installed: ".agents/plugins/marketplace.json" },
+  { named: "plugin.json", published: "codex/.codex-plugin/plugin.json", installed: "codex/.codex-plugin/plugin.json" },
+] as const;
+
+function installedEntrypointVerdict(paths: CodexPaths, absentVerdict: string): string {
+  return isExecutableRegularFile(path.join(paths.runtimeRoot, "bin", "oso-state")) ? "installed-probe-is-nightly-only" : absentVerdict;
+}
+
+function binaryCarriesBoth(binary: string, literals: readonly string[]): boolean {
+  const bytes = readFileSync(binary, "latin1");
+  return literals.every((literal) => bytes.includes(literal));
+}
+
+function localPluginSourcePaths(listingJson: string): string[] {
+  let listing: unknown;
+  try {
+    listing = JSON.parse(listingJson);
+  } catch {
+    return [];
+  }
+  const installed = isRecord(listing) ? listing["installed"] : undefined;
+  if (!Array.isArray(installed)) return [];
+  return installed.flatMap((plugin) => {
+    if (!isRecord(plugin) || plugin["installed"] !== true || plugin["enabled"] !== true) return [];
+    const source = plugin["source"];
+    if (!isRecord(source) || source["source"] !== "local" || typeof source["path"] !== "string") return [];
+    return [source["path"]];
+  });
+}
+
+function publishedSkillNames(repositoryRoot: string): string[] {
+  try {
+    return readdirSync(path.join(repositoryRoot, "codex", "skills"), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name !== "_shared")
+      .map((entry) => entry.name)
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+function sameBytes(published: string, installed: string): boolean {
+  if (!isReadableRegularFile(published) || !isReadableRegularFile(installed)) return false;
+  return readFileSync(published).equals(readFileSync(installed));
+}
+
+function isDirectoryAt(target: string): boolean {
+  try {
+    return statSync(target).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function gitConfigured(repositoryRoot: string, environment: NodeJS.ProcessEnv): string {
+  const run = spawnSync("git", ["-C", repositoryRoot, "config", "--get", "core.hooksPath"], { env: environment, encoding: "utf8" });
+  return run.error === undefined && run.status === 0 ? (run.stdout ?? "").trim() : "";
+}
+
+function collapsed(text: string): string {
+  return text.replaceAll("\n", " ").replace(/\s+/g, " ").trim();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

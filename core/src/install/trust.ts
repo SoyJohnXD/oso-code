@@ -25,21 +25,26 @@ export function parseTrustManifest(text: string): TrustRow[] {
     });
 }
 
+export type InstalledBytes = (relative: string, target: string) => Buffer;
+
+const RAW_INSTALLED_BYTES: InstalledBytes = (_relative, target) => readFileSync(target);
+
 export function trustDivergences(
   manifestFile: string,
   isExcluded: (relative: string) => boolean,
   resolveTarget: (relative: string) => string | undefined,
+  bytesOf: InstalledBytes = RAW_INSTALLED_BYTES,
 ): TrustDivergence[] {
   if (!isReadableRegularFile(manifestFile)) return [{ file: manifestFile, state: { kind: "missing-manifest" } }];
   const trusted = parseTrustManifest(readFileSync(manifestFile, "utf8")).filter((row) => !isExcluded(row.file));
-  return trusted.flatMap((row) => divergenceOf(row, resolveTarget));
+  return trusted.flatMap((row) => divergenceOf(row, resolveTarget, bytesOf));
 }
 
-function divergenceOf(row: TrustRow, resolveTarget: (relative: string) => string | undefined): TrustDivergence[] {
+function divergenceOf(row: TrustRow, resolveTarget: (relative: string) => string | undefined, bytesOf: InstalledBytes): TrustDivergence[] {
   if (!SHA256_HEX_PATTERN.test(row.digest)) return [{ file: row.file, state: { kind: "malformed-published-hash" } }];
   const target = resolveTarget(row.file);
   if (target === undefined) return [{ file: row.file, state: { kind: "outside-the-trust-set" } }];
   if (!isReadableRegularFile(target)) return [{ file: row.file, state: { kind: "missing" } }];
-  const actual = sha256Hex(readFileSync(target));
+  const actual = sha256Hex(bytesOf(row.file, target));
   return actual === row.digest ? [] : [{ file: row.file, state: { kind: "mismatch", actual } }];
 }

@@ -21,6 +21,7 @@ import {
   repairCodex,
   type CodexCommandInput,
 } from "../../src/install/codex.ts";
+import { fixtureRepositoryRoot, pinnedHost } from "../support/codex-install-fixture.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
 
 const sandbox = mkdtempSync(path.join(tmpdir(), "oso-codex-install-"));
@@ -33,8 +34,10 @@ const RELATIVE_IMPORT_PATTERN = /from "(\.[^"]*)"/g;
 const THE_CONFIG_TOML_CLOSURE = [
   { file: "core/src/install/backup.ts", nativeJoins: 10 },
   { file: "core/src/install/codex-config.ts", nativeJoins: 0 },
-  { file: "core/src/install/codex.ts", nativeJoins: 12 },
+  { file: "core/src/install/codex-host.ts", nativeJoins: 2 },
+  { file: "core/src/install/codex.ts", nativeJoins: 13 },
   { file: "core/src/install/json.ts", nativeJoins: 0 },
+  { file: "core/src/install/pins.ts", nativeJoins: 0 },
   { file: "core/src/install/report.ts", nativeJoins: 0 },
   { file: "core/src/install/toml-regions.ts", nativeJoins: 0 },
   { file: "core/src/install/toml.ts", nativeJoins: 0 },
@@ -47,7 +50,7 @@ const SITES_REACHING_CONFIG_TOML_BYTES = [
     file: "core/src/install/codex.ts",
     producer: "codexPathsFor",
     expression: 'const codexHome = environment["CODEX_HOME"] ?? path.join(homeDirectory, ".codex");',
-    carries: "the targetHome renderCodexManagedConfig tails with /-separated segments into the workspace_roots values",
+    carries: "the prefix the two engram pointer values below are joined onto, and nothing else since the region re-anchored on homeDirectory",
   },
   {
     file: "core/src/install/codex.ts",
@@ -87,9 +90,10 @@ function fixtureHome(): string {
 function inputFor(home: string, overrides: Partial<CodexCommandInput> = {}): CodexCommandInput {
   return {
     homeDirectory: home,
-    repositoryRoot,
+    repositoryRoot: fixtureRepositoryRoot(),
     environment: { PATH: "", CODEX_HOME: path.join(home, ".codex") },
     platform: "linux",
+    host: pinnedHost(),
     assumeYes: true,
     installGitHook: false,
     ...overrides,

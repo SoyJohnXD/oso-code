@@ -20,6 +20,7 @@ import {
 } from "../../src/install/verify-codex.ts";
 import { TOOL_ROWS } from "../../src/routes/routes.ts";
 import { provedSomething } from "../support/proved.ts";
+import { fixtureRepositoryRoot, pinnedHost } from "../support/codex-install-fixture.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
 
 const sandbox = mkdtempSync(path.join(tmpdir(), "oso-verify-codex-"));
@@ -37,9 +38,10 @@ function fixtureHome(): string {
 function inputFor(home: string): CodexCommandInput {
   return {
     homeDirectory: home,
-    repositoryRoot,
+    repositoryRoot: fixtureRepositoryRoot(),
     environment: { PATH: "", CODEX_HOME: path.join(home, ".codex") },
     platform: "linux",
+    host: pinnedHost(),
     assumeYes: true,
     installGitHook: false,
   };
@@ -184,7 +186,7 @@ describe("oso verify --host codex over a fixture HOME", () => {
     mkdirSync(repositoryWithoutAgents, { recursive: true });
     const report = new VerifyReport();
     checkAgentPayload(report, codexPathsFor(fixtureHome(), {}), repositoryWithoutAgents);
-    assert.match(report.render(), /FAIL: Codex agents copied exactly/);
+    assert.match(report.render(), /FAIL: seven Codex agents copied exactly/);
     assert.equal(report.exitCode, 1);
   });
 
@@ -193,7 +195,7 @@ describe("oso verify --host codex over a fixture HOME", () => {
     mkdirSync(path.join(repositoryWithNoAgentFiles, "codex", "agents"), { recursive: true });
     const report = new VerifyReport();
     checkAgentPayload(report, codexPathsFor(fixtureHome(), {}), repositoryWithNoAgentFiles);
-    assert.match(report.render(), /FAIL: Codex agents copied exactly/);
+    assert.match(report.render(), /FAIL: seven Codex agents copied exactly/);
     assert.equal(report.exitCode, 1);
   });
 
@@ -202,6 +204,6 @@ describe("oso verify --host codex over a fixture HOME", () => {
     assert.equal(installCodex(inputFor(home)).exitCode, 0);
     const outcome = verifyCodex(inputFor(home));
     assert.match(outcome.report, /skip: fallow MCP tool drift/);
-    assert.match(outcome.report, /the hardcoded mandated tool list agrees with core\/src\/routes\/routes\.ts in both directions/);
+    assert.match(outcome.report, /the hardcoded mandated tool list agrees with tools\/hook-gates\.txt in both directions/);
   });
 });

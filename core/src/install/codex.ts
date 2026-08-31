@@ -24,6 +24,8 @@ import {
   renderCodexManagedFeatures,
   resolveFallowMcpCommand,
 } from "./codex-config.ts";
+import { pinnedVersionRefusal, type CodexHostProbes } from "./codex-host.ts";
+import { SUPPORTED_CODEX_VERSION } from "./pins.ts";
 import {
   fatalOutcome,
   renderCommandReport,
@@ -57,17 +59,20 @@ export type CodexCommandInput = Readonly<{
   repositoryRoot: string;
   environment: NodeJS.ProcessEnv;
   platform: NodeJS.Platform;
+  host: CodexHostProbes;
   assumeYes: boolean;
   installImpeccable?: boolean;
   installGitHook?: boolean;
 }>;
 
 export type CodexPaths = Readonly<{
+  homeDirectory: string;
   codexHome: string;
   configFile: string;
   globalFile: string;
   runtimeRoot: string;
   agentsHome: string;
+  marketplaceRoot: string;
   backupsRoot: string;
 }>;
 
@@ -83,11 +88,13 @@ export type ManagedFeaturesStatus = "valid" | "missing" | "malformed" | "diverge
 export function codexPathsFor(homeDirectory: string, environment: NodeJS.ProcessEnv): CodexPaths {
   const codexHome = environment["CODEX_HOME"] ?? path.join(homeDirectory, ".codex");
   return {
+    homeDirectory,
     codexHome,
     configFile: path.join(codexHome, "config.toml"),
     globalFile: path.join(codexHome, "AGENTS.md"),
     runtimeRoot: path.join(homeDirectory, ".local", "share", "oso-code", "runtime"),
     agentsHome: path.join(homeDirectory, ".agents"),
+    marketplaceRoot: path.join(homeDirectory, ".local", "share", "oso-code", "codex-marketplace"),
     backupsRoot: path.join(homeDirectory, ".local", "state", "oso-code", "codex-backups"),
   };
 }
@@ -191,6 +198,8 @@ export function rebuildGlobalGuidance(existingText: string, body: string): strin
 
 export function installCodex(input: CodexCommandInput): CommandOutcome {
   if (!input.assumeYes) return requiresYesOutcome("install", "codex");
+  const unpinned = pinnedVersionOutcome("install", input.host.version);
+  if (unpinned !== undefined) return unpinned;
   const paths = codexPathsFor(input.homeDirectory, input.environment);
 
   const refusal = configRefusalOf(paths.configFile);
@@ -200,10 +209,12 @@ export function installCodex(input: CodexCommandInput): CommandOutcome {
   }
 
   let tx: BackupTransaction;
+  let capturedHooksPath: GitHooksCapture = { captured: false, present: false, value: "" };
   try {
     tx = beginTransaction(paths.backupsRoot, CODEX_INSTALL_BACKUP_FORMAT);
     for (const { label, target } of backupCandidatesOf(paths)) backupTarget(tx, label, target);
     commitManifest(tx);
+    capturedHooksPath = capturedGitHooksPath(input.repositoryRoot, input.environment);
   } catch (error) {
     return fatalOutcome("install", "codex", "could not create the pre-install backup", messageOf(error));
   }
@@ -218,21 +229,24 @@ export function installCodex(input: CodexCommandInput): CommandOutcome {
   );
 
   try {
-    writeManagedConfig(paths, fallow.command);
+    writeManagedConfig(paths, fallow.command, input.host);
     wiring.push(wiringOk("managed config region", paths.configFile));
   } catch (error) {
-    return rolledBack("install", "could not rewrite the managed Codex config region", error, tx);
+    return rolledBack("install", "could not rewrite the managed Codex config region", error, tx, capturedHooksPath, input);
   }
 
   try {
     writeGlobalGuidance(paths, input.repositoryRoot);
     wiring.push(wiringOk("global AGENTS.md region", paths.globalFile));
   } catch (error) {
-    return rolledBack("install", "could not rewrite global AGENTS.md", error, tx);
+    return rolledBack("install", "could not rewrite global AGENTS.md", error, tx, capturedHooksPath, input);
   }
 
-  if (input.installGitHook ?? true) wiring.push(wireGitCommitHook(input.repositoryRoot, paths.runtimeRoot, input.environment));
-  else infoLines.push("skipping the git commit hook (--no-git-hook)");
+  if (input.installGitHook ?? true) {
+    const wired = wireGitCommitHook(input.repositoryRoot, paths.runtimeRoot, input.environment);
+    if (!wired.ok) return rolledBack("install", "could not wire the git commit gate", new Error(wired.note), tx, capturedHooksPath, input);
+    wiring.push(wired);
+  } else infoLines.push("skipping the git commit hook (--no-git-hook)");
   if ((input.installImpeccable ?? true) === false) infoLines.push("skipping impeccable (--no-impeccable)");
 
   for (const backup of pruneInstallBackups(paths.backupsRoot, input.environment)) {
@@ -243,6 +257,8 @@ export function installCodex(input: CodexCommandInput): CommandOutcome {
 
 export function repairCodex(input: CodexCommandInput): CommandOutcome {
   if (!input.assumeYes) return requiresYesOutcome("repair", "codex");
+  const unpinned = pinnedVersionOutcome("repair", input.host.version);
+  if (unpinned !== undefined) return unpinned;
   const paths = codexPathsFor(input.homeDirectory, input.environment);
 
   let tx: BackupTransaction;
@@ -261,17 +277,17 @@ export function repairCodex(input: CodexCommandInput): CommandOutcome {
 
   const fallow = resolveFallowCommandFor(input, paths);
   try {
-    writeManagedConfig(paths, fallow.command);
+    writeManagedConfig(paths, fallow.command, input.host);
     wiring.push(wiringOk("managed config region", paths.configFile));
   } catch (error) {
-    return rolledBack("repair", "could not rewrite the managed Codex config region", error, tx);
+    return rolledBack("repair", "could not rewrite the managed Codex config region", error, tx, NO_HOOKS_CAPTURE, input);
   }
 
   try {
     writeGlobalGuidance(paths, input.repositoryRoot);
     wiring.push(wiringOk("global AGENTS.md region", paths.globalFile));
   } catch (error) {
-    return rolledBack("repair", "could not rewrite global AGENTS.md", error, tx);
+    return rolledBack("repair", "could not rewrite global AGENTS.md", error, tx, NO_HOOKS_CAPTURE, input);
   }
 
   return { report: renderCommandReport("repair", "codex", infoLines, wiring), exitCode: 0 };
@@ -321,10 +337,11 @@ function configRefusalOf(configFile: string): ConfigRefusal | undefined {
   return inspectCodexConfig(readFileSync(configFile, "utf8"), configFile);
 }
 
-function writeManagedConfig(paths: CodexPaths, fallowCommand: string): void {
+function writeManagedConfig(paths: CodexPaths, fallowCommand: string, host: CodexHostProbes): void {
   const existing = isReadableRegularFile(paths.configFile) ? readFileSync(paths.configFile, "utf8") : "";
-  const rebuilt = rebuildManagedConfig(existing, paths.codexHome, paths.runtimeRoot, fallowCommand);
+  const rebuilt = rebuildManagedConfig(existing, paths.homeDirectory, paths.runtimeRoot, fallowCommand);
   mkdirSync(paths.codexHome, { recursive: true });
+  if (!host.acceptsConfig(paths.codexHome, rebuilt)) throw new Error(HOST_REJECTED_CONFIG);
   writeFileSync(paths.configFile, rebuilt, { mode: 0o600 });
 }
 
@@ -357,14 +374,14 @@ function normalizeEngramPointers(paths: CodexPaths): WiringEntry {
 
 function wireGitCommitHook(repositoryRoot: string, runtimeRoot: string, environment: NodeJS.ProcessEnv): WiringEntry {
   const hooksPath = path.join(runtimeRoot, "git-hooks");
-  const run = spawnSync("git", ["-C", repositoryRoot, "config", "core.hooksPath", hooksPath], { env: environment, encoding: "utf8" });
+  const run = spawnSync("git", ["-C", repositoryRoot, "config", "--local", "core.hooksPath", hooksPath], { env: environment, encoding: "utf8" });
   if (run.error !== undefined || run.status !== 0) return wiringFail("git commit hook", `${run.stdout ?? ""}${run.stderr ?? ""}`.trim());
   return wiringOk("git commit hook", `core.hooksPath=${hooksPath}`);
 }
 
 function resolveFallowCommandFor(input: CodexCommandInput, paths: CodexPaths) {
   return resolveFallowMcpCommand(
-    paths.codexHome,
+    paths.homeDirectory,
     input.environment,
     () => npmGlobalPrefix(input.environment),
     (name) => firstExecutableOnPath(input.environment, name),
@@ -388,9 +405,63 @@ function backupCandidatesOf(paths: CodexPaths): readonly Readonly<{ label: strin
   ];
 }
 
-function rolledBack(verb: string, summary: string, error: unknown, tx: BackupTransaction): CommandOutcome {
-  const restore: RestoreOutcome = rollback(tx);
-  return fatalOutcome(verb, "codex", summary, messageOf(error), restoreNoteOf(restore));
+function rolledBack(
+  verb: string,
+  summary: string,
+  error: unknown,
+  tx: BackupTransaction,
+  hooksPath: GitHooksCapture,
+  input: CodexCommandInput,
+): CommandOutcome {
+  const restore = rollback(tx);
+  const hooks = restoreGitHooksPath(hooksPath, input.repositoryRoot, input.environment);
+  return fatalOutcome(verb, "codex", summary, messageOf(error), restoreNoteOf(bothRestored(restore, hooks)));
+}
+
+export const HOST_REJECTED_CONFIG = "Codex rejected the merged config; the original config is unchanged";
+
+type GitHooksCapture = Readonly<{ captured: boolean; present: boolean; value: string }>;
+
+const NO_HOOKS_CAPTURE: GitHooksCapture = { captured: false, present: false, value: "" };
+
+const NOTHING_LEFT_TO_RESTORE: RestoreOutcome = { failedCount: 0, failedItems: [] };
+
+const GIT_CONFIG_UNSET_MATCHED_NOTHING = 5;
+
+function pinnedVersionOutcome(verb: string, found: string | undefined): CommandOutcome | undefined {
+  if (found === SUPPORTED_CODEX_VERSION) return undefined;
+  return fatalOutcome(verb, "codex", "the installed Codex CLI is not the pinned one", pinnedVersionRefusal(found));
+}
+
+function capturedGitHooksPath(repositoryRoot: string, environment: NodeJS.ProcessEnv): GitHooksCapture {
+  const inRepository = gitRun(repositoryRoot, environment, ["rev-parse", "--git-dir"]);
+  if (inRepository.status !== 0) return NO_HOOKS_CAPTURE;
+  const configured = gitRun(repositoryRoot, environment, ["config", "--local", "--get", "core.hooksPath"]);
+  return configured.status === 0
+    ? { captured: true, present: true, value: configured.stdout.trim() }
+    : { captured: true, present: false, value: "" };
+}
+
+function restoreGitHooksPath(capture: GitHooksCapture, repositoryRoot: string, environment: NodeJS.ProcessEnv): RestoreOutcome {
+  if (!capture.captured) return NOTHING_LEFT_TO_RESTORE;
+  const argv = capture.present
+    ? ["config", "--local", "core.hooksPath", capture.value]
+    : ["config", "--local", "--unset-all", "core.hooksPath"];
+  const { status } = gitRun(repositoryRoot, environment, argv);
+  const restored = status === 0 || (!capture.present && status === GIT_CONFIG_UNSET_MATCHED_NOTHING);
+  return restored ? NOTHING_LEFT_TO_RESTORE : { failedCount: 1, failedItems: [`core.hooksPath in ${repositoryRoot}`] };
+}
+
+function bothRestored(transaction: RestoreOutcome, hooks: RestoreOutcome): RestoreOutcome {
+  return {
+    failedCount: transaction.failedCount + hooks.failedCount,
+    failedItems: [...transaction.failedItems, ...hooks.failedItems],
+  };
+}
+
+function gitRun(repositoryRoot: string, environment: NodeJS.ProcessEnv, argv: readonly string[]) {
+  const run = spawnSync("git", ["-C", repositoryRoot, ...argv], { env: environment, encoding: "utf8" });
+  return { status: run.error === undefined ? (run.status ?? 1) : 1, stdout: run.stdout ?? "" };
 }
 
 function stripLineRegion(text: string, start: string, end: string): string | undefined {

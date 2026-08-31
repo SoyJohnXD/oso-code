@@ -7,6 +7,11 @@ export const THE_CONFIG_ORACLE =
   "bootstrap/lib/toml-regions.awk driven by bootstrap/install-codex.sh's own write_config_region assembly, " +
   "with bootstrap/lib/codex-managed-config.sh rendering the body over a fixture CODEX_HOME";
 
+export const THE_HOME_ANCHOR_ORACLE =
+  "bootstrap/install-codex.sh's own initialize_paths deriving CODEX_HOME and RUNTIME_ROOT from a fixture HOME alone, " +
+  "then write_config_region's call render_codex_managed_config \"$HOME\" \"$RUNTIME_ROOT\" (install-codex.sh:788, " +
+  "verify-codex.sh:283) and resolve_fallow_mcp_command \"$HOME\" (install-codex.sh:804) — neither side is handed the anchor";
+
 export type BashRebuild = Readonly<{ status: number; text: string; stderr: string }>;
 
 const PIPELINE = String.raw`
@@ -81,6 +86,41 @@ export function bashRebuiltRegion(
     maxBuffer: 1024 * 1024 * 8,
   });
   if (run.error !== undefined) throw new Error(`bash could not be spawned as the config oracle: ${run.error.message}`);
+  return { status: run.status ?? -1, text: run.stdout, stderr: run.stderr };
+}
+
+const HOME_ANCHORED_REGION = String.raw`
+set -uo pipefail
+repo="$1"; home="$2"; PATH="$3"
+. "$repo/bootstrap/lib/codex-managed-config.sh"
+HOME="$home"
+RUNTIME_ROOT="$HOME/.local/share/oso-code/runtime"
+render_codex_managed_config "$HOME" "$RUNTIME_ROOT"
+`;
+
+const HOME_ANCHORED_FALLOW = String.raw`
+set -uo pipefail
+repo="$1"; home="$2"; PATH="$3"
+. "$repo/bootstrap/lib/codex-managed-config.sh"
+HOME="$home"
+resolve_fallow_mcp_command "$HOME" || printf 'fallow-mcp\n'
+`;
+
+export function bashManagedRegionForHome(homeDirectory: string, pathValue: string): BashRebuild {
+  return runAnchorOracle(HOME_ANCHORED_REGION, "region", homeDirectory, pathValue);
+}
+
+export function bashFallowCommandForHome(homeDirectory: string, pathValue: string): BashRebuild {
+  return runAnchorOracle(HOME_ANCHORED_FALLOW, "fallow", homeDirectory, pathValue);
+}
+
+function runAnchorOracle(script: string, label: string, homeDirectory: string, pathValue: string): BashRebuild {
+  const run = spawnSync("bash", ["-c", script, "oracle", repositoryRoot, homeDirectory, pathValue], {
+    encoding: "utf8",
+    env: { PATH: process.env["PATH"] ?? "" },
+    maxBuffer: 1024 * 1024 * 8,
+  });
+  if (run.error !== undefined) throw new Error(`bash could not be spawned as the ${label} anchor oracle: ${run.error.message}`);
   return { status: run.status ?? -1, text: run.stdout, stderr: run.stderr };
 }
 

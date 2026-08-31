@@ -1,4 +1,5 @@
 import { homeDirectoryFrom } from "../state/store.ts";
+import { codexHostProbes } from "./codex-host.ts";
 import { installClaude, purgeClaude, repairClaude } from "./claude.ts";
 import { installCodex, purgeCodex, repairCodex } from "./codex.ts";
 import { verifyClaude } from "./verify-claude.ts";
@@ -78,7 +79,7 @@ function dispatch(argv: readonly string[], repositoryRoot: string): number {
   const outcome =
     parsed.host === "claude"
       ? runClaude(parsed.verb, { ...context, architecture: process.arch, replaceClaudeMd: parsed.flags.has("--replace-claude-md") })
-      : runCodex(parsed.verb, context);
+      : runCodex(parsed.verb, { ...context, host: codexHostProbes(process.env) });
   process.stdout.write(outcome.report);
   return outcome.exitCode;
 }
