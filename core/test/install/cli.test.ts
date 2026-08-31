@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, describe, test } from "node:test";
+import { FLAGS, FLAGS_PER_HOST, FlagNotOfferedError, parseArgv } from "../../src/install/cli.ts";
 import { hermeticVerifyEnvironment } from "../support/hermetic-verify-environment.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -12,10 +13,15 @@ const repoRoot = path.resolve(here, "..", "..", "..");
 const cliSource = path.join(repoRoot, "core", "src", "bin", "oso.ts");
 const cliBundle = path.join(repoRoot, "bootstrap", "oso.js");
 
-const USAGE = `usage: oso <install|verify|repair|purge> --host <claude|codex|opencode> [--yes]
+const USAGE = `usage: oso <install|verify|repair|purge> --host <claude|codex|opencode> [flags]
 
-Only the claude host runs real checks/mutations in this slice; every other
-host is not yet implemented.
+flags, per host:
+  claude    --yes --replace-claude-md --no-impeccable --no-git-hook
+  codex     --yes --no-impeccable --no-git-hook
+  opencode  --yes --no-impeccable --no-git-hook
+
+A flag offered to a host that does not take it is refused, never ignored.
+The opencode host is not yet implemented.
 `;
 
 function runCli(argv: readonly string[]): { status: number | null; stdout: string; stderr: string } {
@@ -23,7 +29,7 @@ function runCli(argv: readonly string[]): { status: number | null; stdout: strin
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
-describe("oso <verb> --host <host> [--yes] usage", () => {
+describe("oso <verb> --host <host> [flags] usage", () => {
   test("no arguments at all is a usage error", () => {
     const result = runCli([]);
     assert.equal(result.status, 1);
@@ -56,9 +62,51 @@ describe("oso <verb> --host <host> [--yes] usage", () => {
   });
 
   test("--yes is accepted for every verb without changing dispatch", () => {
-    const result = runCli(["purge", "--host", "codex", "--yes"]);
+    const result = runCli(["purge", "--host", "opencode", "--yes"]);
     assert.equal(result.status, 1);
-    assert.equal(result.stderr, "oso: purge --host codex is not yet implemented in this slice\n");
+    assert.equal(result.stderr, "oso: purge --host opencode is not yet implemented in this slice\n");
+  });
+});
+
+describe("Decision 26c's per-host flag table refuses a flag rather than ignoring it", () => {
+  test("every flag the table names is spelled by FLAGS, so the usage text cannot drift from the parser", () => {
+    assert.deepEqual([...FLAGS], ["--yes", "--replace-claude-md", "--no-impeccable", "--no-git-hook"]);
+  });
+
+  test("claude takes all four flags", () => {
+    assert.deepEqual([...FLAGS_PER_HOST.claude], [...FLAGS]);
+  });
+
+  for (const host of ["codex", "opencode"] as const) {
+    test(`${host} takes the same three flags and refuses --replace-claude-md by name`, () => {
+      assert.deepEqual([...FLAGS_PER_HOST[host]], ["--yes", "--no-impeccable", "--no-git-hook"]);
+      assert.throws(
+        () => parseArgv(["install", "--host", host, "--replace-claude-md"]),
+        (error: unknown) =>
+          error instanceof FlagNotOfferedError &&
+          error.flag === "--replace-claude-md" &&
+          error.host === host,
+      );
+    });
+
+    test(`${host} reaches every flag it does take, so the refusal is not a blanket one`, () => {
+      const parsed = parseArgv(["install", "--host", host, "--yes", "--no-impeccable", "--no-git-hook"]);
+      assert.deepEqual([...parsed.flags].sort(), ["--no-git-hook", "--no-impeccable", "--yes"]);
+    });
+  }
+
+  test("a refused flag names the host and the flags that host does take, on stderr, at exit 1", () => {
+    const result = runCli(["install", "--host", "codex", "--replace-claude-md"]);
+    assert.equal(result.status, 1);
+    assert.equal(
+      result.stderr,
+      "oso: --replace-claude-md is not a flag the codex host takes — it takes --yes, --no-impeccable, --no-git-hook\n",
+    );
+    assert.equal(result.stdout, "");
+  });
+
+  test("--replace-claude-md still parses for claude, which is the one host that takes it", () => {
+    assert.ok(parseArgv(["install", "--host", "claude", "--replace-claude-md"]).flags.has("--replace-claude-md"));
   });
 });
 
@@ -87,13 +135,9 @@ describe("oso verify --host claude resolves the repository root the same way fro
 
 describe("verb/host pairs this slice does not implement", () => {
   for (const [verb, host] of [
-    ["verify", "codex"],
     ["verify", "opencode"],
-    ["install", "codex"],
     ["install", "opencode"],
-    ["repair", "codex"],
     ["repair", "opencode"],
-    ["purge", "codex"],
     ["purge", "opencode"],
   ] as const) {
     test(`${verb} --host ${host} reports not-yet-implemented rather than pretending success`, () => {
@@ -105,14 +149,16 @@ describe("verb/host pairs this slice does not implement", () => {
   }
 });
 
-describe("install|repair|purge --host claude without --yes", () => {
-  for (const verb of ["install", "repair", "purge"] as const) {
-    test(`${verb} --host claude reaches the real command (not VerbNotImplementedError) and reports it needs --yes rather than prompting`, () => {
-      const result = runCli([verb, "--host", "claude"]);
-      assert.equal(result.status, 1);
-      assert.equal(result.stdout, `oso ${verb} --host claude requires --yes in this slice — no interactive confirmation prompt is wired yet\n`);
-      assert.equal(result.stderr, "");
-    });
+describe("install|repair|purge without --yes, on each host this slice implements", () => {
+  for (const host of ["claude", "codex"] as const) {
+    for (const verb of ["install", "repair", "purge"] as const) {
+      test(`${verb} --host ${host} reaches the real command (not VerbNotImplementedError) and reports it needs --yes rather than prompting`, () => {
+        const result = runCli([verb, "--host", host]);
+        assert.equal(result.status, 1);
+        assert.equal(result.stdout, `oso ${verb} --host ${host} requires --yes in this slice — no interactive confirmation prompt is wired yet\n`);
+        assert.equal(result.stderr, "");
+      });
+    }
   }
 });
 

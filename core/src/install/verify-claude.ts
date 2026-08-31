@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { closeSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { childDirectoryNames } from "./backup.ts";
+import { childDirectoryNames, existsAtAll } from "./backup.ts";
 import { readJsonObject } from "./json.ts";
 import { VerifyReport } from "./report.ts";
 import {
@@ -285,15 +285,6 @@ export function manifestEntries(content: string): string[] {
     .split("\n")
     .map((line) => line.replace(/\r$/, ""))
     .filter((line) => line !== "" && !line.startsWith("#"));
-}
-
-export function existsAtAll(target: string): boolean {
-  try {
-    lstatSync(target);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function grepCountOrErrorMessage(file: string, patterns: readonly string[]): string {

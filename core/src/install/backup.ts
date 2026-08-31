@@ -1,5 +1,6 @@
-import { cpSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { cpSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { isoTimestamp } from "../state/store.ts";
 
 const BACKUP_NAME_PATTERN = /^install-backup-\d{8}-\d{6}-.+$/;
 const DEFAULT_BUDGET_KIB = 307200;
@@ -65,6 +66,57 @@ export function installBackupsOverBudget(
     over.push(backup);
   }
   return over;
+}
+
+export type BackupTransaction = { readonly backupRoot: string; readonly itemsDirectory: string; readonly manifest: ManifestRow[] };
+
+export function existsAtAll(target: string): boolean {
+  try {
+    lstatSync(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function beginTransaction(backupsRoot: string, format: string): BackupTransaction {
+  const backupRoot = path.join(backupsRoot, `install-backup-${compactTimestamp()}-${process.pid}`);
+  const itemsDirectory = path.join(backupRoot, "items");
+  mkdirSync(itemsDirectory, { recursive: true });
+  writeFileSync(path.join(backupRoot, "format"), `${format}\n`);
+  return { backupRoot, itemsDirectory, manifest: [] };
+}
+
+export function backupTarget(tx: BackupTransaction, label: string, target: string): void {
+  if (!existsAtAll(target)) {
+    tx.manifest.push({ status: "absent", label, target });
+    return;
+  }
+  const destination = path.join(tx.itemsDirectory, label);
+  mkdirSync(path.dirname(destination), { recursive: true });
+  cpSync(target, destination, { recursive: true });
+  tx.manifest.push({ status: "present", label, target });
+}
+
+export function commitManifest(tx: BackupTransaction): void {
+  const text = tx.manifest.map(serializeManifestRow).join("\n");
+  writeFileSync(path.join(tx.backupRoot, "manifest"), text === "" ? "" : `${text}\n`);
+}
+
+export function rollback(tx: BackupTransaction): RestoreOutcome {
+  const text = tx.manifest.map(serializeManifestRow).join("\n");
+  return restoreBackupManifest(text, tx.itemsDirectory);
+}
+
+export function pruneInstallBackups(backupsRoot: string, environment: NodeJS.ProcessEnv): string[] {
+  const over = installBackupsOverBudget(installBackupDirsNewestFirst(backupsRoot), installBackupBudgetKib(environment));
+  for (const backup of over) rmSync(backup, { recursive: true, force: true });
+  return over;
+}
+
+function compactTimestamp(): string {
+  const [datePart = "", timePart = ""] = isoTimestamp().replace("Z", "").split("T");
+  return `${datePart.replaceAll("-", "")}-${timePart.replaceAll(":", "")}`;
 }
 
 export function restoreBackupManifest(manifest: string, itemsDirectory: string): RestoreOutcome {

@@ -1,17 +1,19 @@
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
-  installBackupBudgetKib,
-  installBackupDirsNewestFirst,
-  installBackupsOverBudget,
-  restoreBackupManifest,
-  serializeManifestRow,
-  type ManifestRow,
+  backupTarget,
+  beginTransaction,
+  commitManifest,
+  existsAtAll,
+  pruneInstallBackups,
+  rollback,
+  type BackupTransaction,
   type RestoreOutcome,
 } from "./backup.ts";
 import { ENGRAM_SOURCE_REPO, engramBinaryName, provisionEngramBinary, type EngramProvisionOutcome, type EngramTransport } from "./engram.ts";
 import { readJsonObject, writeJsonFile } from "./json.ts";
+import { fatalOutcome, renderCommandReport, requiresYesOutcome, restoreNoteOf, wiringFail, wiringOk, type WiringEntry } from "./report.ts";
 import { SUPPORTED_ENGRAM_VERSION } from "./pins.ts";
 import {
   CLAUDE_MD_BUDGET_BYTES,
@@ -20,7 +22,6 @@ import {
   collapsedNewlines,
   engramBinaryRuns,
   errorMessageOf,
-  existsAtAll,
   firstExecutableOnPath,
   gitConfigValue,
   impeccableOptOutMarker,
@@ -64,7 +65,7 @@ export class ClaudePluginInstallError extends Error {
 }
 
 export function installClaude(input: ClaudeCommandInput): ClaudeOutcome {
-  if (!input.assumeYes) return requiresYesOutcome("install");
+  if (!input.assumeYes) return requiresYes("install");
   const claudeDir = path.join(input.homeDirectory, ".claude");
   const settingsFile = path.join(claudeDir, "settings.json");
   const claudeMdFile = path.join(claudeDir, "CLAUDE.md");
@@ -79,7 +80,7 @@ export function installClaude(input: ClaudeCommandInput): ClaudeOutcome {
     for (const { label, target } of legacyTargets) backupTarget(tx, label, target);
     commitManifest(tx);
   } catch (error) {
-    return fatalOutcome("install", "could not create the pre-install backup", error);
+    return claudeFatal("install", "could not create the pre-install backup", error);
   }
 
   const infoLines: string[] = [`backup: ${tx.backupRoot}`];
@@ -93,7 +94,7 @@ export function installClaude(input: ClaudeCommandInput): ClaudeOutcome {
     wiring.push(installOsoPluginCore(input.environment, input.repositoryRoot));
   } catch (error) {
     const restore = rollback(tx);
-    return fatalOutcome("install", "the oso-code plugin itself failed to install", error, restore);
+    return claudeFatal("install", "the oso-code plugin itself failed to install", error, restore);
   }
   softPluginMaintenance(input.environment);
   wiring.push(...migrateContext7(input.environment));
@@ -120,7 +121,7 @@ export function installClaude(input: ClaudeCommandInput): ClaudeOutcome {
     infoLines.push(`removed ${legacyOutcome.removed} legacy artifact(s)`);
   } catch (error) {
     const restore = rollback(tx);
-    return fatalOutcome("install", "could not remove a legacy artifact", error, restore);
+    return claudeFatal("install", "could not remove a legacy artifact", error, restore);
   }
 
   wiring.push(toWiringEntry("legacy settings hooks", removeLegacySettingsEntries(settingsFile)));
@@ -131,17 +132,17 @@ export function installClaude(input: ClaudeCommandInput): ClaudeOutcome {
     infoLines.push(claudeMdSizeNote(claudeMdFile));
   } catch (error) {
     const restore = rollback(tx);
-    return fatalOutcome("install", "could not write CLAUDE.md", error, restore);
+    return claudeFatal("install", "could not write CLAUDE.md", error, restore);
   }
 
   const pruned = pruneInstallBackups(backupsRootOf(input.homeDirectory), input.environment);
   for (const backup of pruned) infoLines.push(`backup retention: removed ${backup}`);
 
-  return { report: renderCommandReport("install", infoLines, wiring), exitCode: 0 };
+  return { report: claudeReport("install", infoLines, wiring), exitCode: 0 };
 }
 
 export function repairClaude(input: ClaudeCommandInput): ClaudeOutcome {
-  if (!input.assumeYes) return requiresYesOutcome("repair");
+  if (!input.assumeYes) return requiresYes("repair");
   const claudeDir = path.join(input.homeDirectory, ".claude");
   const settingsFile = path.join(claudeDir, "settings.json");
   const claudeMdFile = path.join(claudeDir, "CLAUDE.md");
@@ -153,7 +154,7 @@ export function repairClaude(input: ClaudeCommandInput): ClaudeOutcome {
     backupTarget(tx, "claude-md", claudeMdFile);
     commitManifest(tx);
   } catch (error) {
-    return fatalOutcome("repair", "could not create the pre-repair backup", error);
+    return claudeFatal("repair", "could not create the pre-repair backup", error);
   }
 
   const infoLines: string[] = [`backup: ${tx.backupRoot}`];
@@ -170,16 +171,16 @@ export function repairClaude(input: ClaudeCommandInput): ClaudeOutcome {
     infoLines.push(claudeMdSizeNote(claudeMdFile));
   } catch (error) {
     const restore = rollback(tx);
-    return fatalOutcome("repair", "could not rewrite CLAUDE.md", error, restore);
+    return claudeFatal("repair", "could not rewrite CLAUDE.md", error, restore);
   }
 
   wiring.push(wireFallow(input.environment, input.homeDirectory, input.platform));
 
-  return { report: renderCommandReport("repair", infoLines, wiring), exitCode: 0 };
+  return { report: claudeReport("repair", infoLines, wiring), exitCode: 0 };
 }
 
 export function purgeClaude(input: ClaudeCommandInput): ClaudeOutcome {
-  if (!input.assumeYes) return requiresYesOutcome("purge");
+  if (!input.assumeYes) return requiresYes("purge");
   const claudeDir = path.join(input.homeDirectory, ".claude");
   const settingsFile = path.join(claudeDir, "settings.json");
   const claudeMdFile = path.join(claudeDir, "CLAUDE.md");
@@ -191,7 +192,7 @@ export function purgeClaude(input: ClaudeCommandInput): ClaudeOutcome {
     backupTarget(tx, "claude-md", claudeMdFile);
     commitManifest(tx);
   } catch (error) {
-    return fatalOutcome("purge", "could not create the pre-purge backup", error);
+    return claudeFatal("purge", "could not create the pre-purge backup", error);
   }
 
   const infoLines: string[] = [`backup: ${tx.backupRoot}`, "no login or installation command was run"];
@@ -207,7 +208,7 @@ export function purgeClaude(input: ClaudeCommandInput): ClaudeOutcome {
     wiring.push(stripped ? wiringOk("CLAUDE.md region", "removed") : wiringOk("CLAUDE.md region", "nothing to remove"));
   } catch (error) {
     const restore = rollback(tx);
-    return fatalOutcome("purge", "could not rewrite CLAUDE.md", error, restore);
+    return claudeFatal("purge", "could not rewrite CLAUDE.md", error, restore);
   }
 
   const mcpRemove = spawnSync("claude", ["mcp", "remove", "--scope", "user", "fallow"], { env: input.environment, encoding: "utf8" });
@@ -217,55 +218,11 @@ export function purgeClaude(input: ClaudeCommandInput): ClaudeOutcome {
       : wiringFail("fallow (mcp)", `nothing removed, or already absent: ${collapsedOutput(mcpRemove)}`),
   );
 
-  return { report: renderCommandReport("purge", infoLines, wiring), exitCode: 0 };
+  return { report: claudeReport("purge", infoLines, wiring), exitCode: 0 };
 }
-
-type BackupTransaction = { readonly backupRoot: string; readonly itemsDirectory: string; readonly manifest: ManifestRow[] };
 
 function backupsRootOf(homeDirectory: string): string {
   return path.join(homeDirectory, ".local", "state", "oso-code", "claude-backups");
-}
-
-function beginTransaction(backupsRoot: string, format: string): BackupTransaction {
-  const backupRoot = path.join(backupsRoot, `install-backup-${compactTimestamp()}-${process.pid}`);
-  const itemsDirectory = path.join(backupRoot, "items");
-  mkdirSync(itemsDirectory, { recursive: true });
-  writeFileSync(path.join(backupRoot, "format"), `${format}\n`);
-  return { backupRoot, itemsDirectory, manifest: [] };
-}
-
-function backupTarget(tx: BackupTransaction, label: string, target: string): void {
-  if (!existsAtAll(target)) {
-    tx.manifest.push({ status: "absent", label, target });
-    return;
-  }
-  const destination = path.join(tx.itemsDirectory, label);
-  mkdirSync(path.dirname(destination), { recursive: true });
-  cpSync(target, destination, { recursive: true });
-  tx.manifest.push({ status: "present", label, target });
-}
-
-function commitManifest(tx: BackupTransaction): void {
-  const text = tx.manifest.map(serializeManifestRow).join("\n");
-  writeFileSync(path.join(tx.backupRoot, "manifest"), text === "" ? "" : `${text}\n`);
-}
-
-function rollback(tx: BackupTransaction): RestoreOutcome {
-  const text = tx.manifest.map(serializeManifestRow).join("\n");
-  return restoreBackupManifest(text, tx.itemsDirectory);
-}
-
-function compactTimestamp(): string {
-  const iso = isoTimestamp();
-  const [datePart = "", timePart = ""] = iso.replace("Z", "").split("T");
-  return `${datePart.replaceAll("-", "")}-${timePart.replaceAll(":", "")}`;
-}
-
-function pruneInstallBackups(backupsRoot: string, environment: NodeJS.ProcessEnv): string[] {
-  const budgetKib = installBackupBudgetKib(environment);
-  const over = installBackupsOverBudget(installBackupDirsNewestFirst(backupsRoot), budgetKib);
-  for (const backup of over) rmSync(backup, { recursive: true, force: true });
-  return over;
 }
 
 type BackupCandidate = Readonly<{ label: string; target: string }>;
@@ -726,16 +683,6 @@ function skipImpeccable(homeDirectory: string): void {
   writeFileSync(marker, `skipped by --no-impeccable on ${isoTimestamp().slice(0, 10)}\n`);
 }
 
-type WiringEntry = Readonly<{ ok: boolean; component: string; note: string }>;
-
-function wiringOk(component: string, note: string): WiringEntry {
-  return { ok: true, component, note };
-}
-
-function wiringFail(component: string, note: string): WiringEntry {
-  return { ok: false, component, note };
-}
-
 function toWiringEntry(component: string, outcome: SettingsWriteOutcome): WiringEntry {
   return outcome.kind === "failed" ? wiringFail(component, outcome.note) : wiringOk(component, outcome.note);
 }
@@ -744,25 +691,16 @@ function collapsedOutput(result: { stdout?: string; stderr?: string }): string {
   return collapsedNewlines(`${result.stdout ?? ""}${result.stderr ?? ""}`);
 }
 
-function renderCommandReport(verb: string, infoLines: readonly string[], wiring: readonly WiringEntry[]): string {
-  const summaryLines = wiring.map((entry) => `  ${entry.component}: ${entry.ok ? "OK" : "FAILED"} — ${entry.note}`);
-  const failedCount = wiring.filter((entry) => !entry.ok).length;
-  const lines = [`oso ${verb} --host claude`, ...infoLines, "wiring summary:", ...summaryLines, "----", `wired: ${wiring.length - failedCount}, failed: ${failedCount}`];
-  return lines.map((line) => `${line}\n`).join("");
+function claudeReport(verb: string, infoLines: readonly string[], wiring: readonly WiringEntry[]): string {
+  return renderCommandReport(verb, "claude", infoLines, wiring);
 }
 
-function requiresYesOutcome(verb: string): ClaudeOutcome {
-  return { report: `oso ${verb} --host claude requires --yes in this slice — no interactive confirmation prompt is wired yet\n`, exitCode: 1 };
+function requiresYes(verb: string): ClaudeOutcome {
+  return requiresYesOutcome(verb, "claude");
 }
 
-function fatalOutcome(verb: string, summary: string, error: unknown, restore?: RestoreOutcome): ClaudeOutcome {
-  const restoreNote =
-    restore === undefined
-      ? ""
-      : restore.failedCount === 0
-        ? " — rolled back to the pre-run snapshot"
-        : ` — rollback incomplete: ${restore.failedItems.join(", ")} still need restoring by hand`;
-  return { report: `oso ${verb} --host claude: ${summary}: ${errorMessageOf(error)}${restoreNote}\n`, exitCode: 1 };
+function claudeFatal(verb: string, summary: string, error: unknown, restore?: RestoreOutcome): ClaudeOutcome {
+  return fatalOutcome(verb, "claude", summary, errorMessageOf(error), restoreNoteOf(restore));
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {

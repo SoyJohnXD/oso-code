@@ -95,11 +95,11 @@ function isErrnoException(error) {
 
 // core/src/install/claude.ts
 import { spawnSync as spawnSync3 } from "node:child_process";
-import { cpSync as cpSync2, mkdirSync as mkdirSync5, readFileSync as readFileSync6, readdirSync as readdirSync3, rmSync as rmSync5, statSync as statSync4, writeFileSync as writeFileSync4 } from "node:fs";
+import { mkdirSync as mkdirSync5, readFileSync as readFileSync7, readdirSync as readdirSync3, rmSync as rmSync5, statSync as statSync4, writeFileSync as writeFileSync5 } from "node:fs";
 import path6 from "node:path";
 
 // core/src/install/backup.ts
-import { cpSync, lstatSync as lstatSync2, mkdirSync as mkdirSync2, readdirSync, readFileSync as readFileSync2, rmSync as rmSync2, statSync as statSync2 } from "node:fs";
+import { cpSync, lstatSync as lstatSync2, mkdirSync as mkdirSync2, readdirSync, readFileSync as readFileSync2, rmSync as rmSync2, statSync as statSync2, writeFileSync as writeFileSync2 } from "node:fs";
 import path2 from "node:path";
 var BACKUP_NAME_PATTERN = /^install-backup-\d{8}-\d{6}-.+$/;
 var DEFAULT_BUDGET_KIB = 307200;
@@ -136,6 +136,50 @@ function installBackupsOverBudget(newestFirst, budgetKib, sizeOf = backupSizeKib
     over.push(backup);
   }
   return over;
+}
+function existsAtAll(target) {
+  try {
+    lstatSync2(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function beginTransaction(backupsRoot, format) {
+  const backupRoot = path2.join(backupsRoot, `install-backup-${compactTimestamp()}-${process.pid}`);
+  const itemsDirectory = path2.join(backupRoot, "items");
+  mkdirSync2(itemsDirectory, { recursive: true });
+  writeFileSync2(path2.join(backupRoot, "format"), `${format}
+`);
+  return { backupRoot, itemsDirectory, manifest: [] };
+}
+function backupTarget(tx, label, target) {
+  if (!existsAtAll(target)) {
+    tx.manifest.push({ status: "absent", label, target });
+    return;
+  }
+  const destination = path2.join(tx.itemsDirectory, label);
+  mkdirSync2(path2.dirname(destination), { recursive: true });
+  cpSync(target, destination, { recursive: true });
+  tx.manifest.push({ status: "present", label, target });
+}
+function commitManifest(tx) {
+  const text = tx.manifest.map(serializeManifestRow).join("\n");
+  writeFileSync2(path2.join(tx.backupRoot, "manifest"), text === "" ? "" : `${text}
+`);
+}
+function rollback(tx) {
+  const text = tx.manifest.map(serializeManifestRow).join("\n");
+  return restoreBackupManifest(text, tx.itemsDirectory);
+}
+function pruneInstallBackups(backupsRoot, environment) {
+  const over = installBackupsOverBudget(installBackupDirsNewestFirst(backupsRoot), installBackupBudgetKib(environment));
+  for (const backup of over) rmSync2(backup, { recursive: true, force: true });
+  return over;
+}
+function compactTimestamp() {
+  const [datePart = "", timePart = ""] = isoTimestamp().replace("Z", "").split("T");
+  return `${datePart.replaceAll("-", "")}-${timePart.replaceAll(":", "")}`;
 }
 function restoreBackupManifest(manifest, itemsDirectory) {
   const failedItems = [];
@@ -191,7 +235,7 @@ function recursiveDiskBlocks(target) {
 
 // core/src/install/engram.ts
 import { spawnSync as spawnSync2 } from "node:child_process";
-import { mkdirSync as mkdirSync4, mkdtempSync as mkdtempSync2, readFileSync as readFileSync5, renameSync as renameSync2, rmSync as rmSync4, writeFileSync as writeFileSync3 } from "node:fs";
+import { mkdirSync as mkdirSync4, mkdtempSync as mkdtempSync2, readFileSync as readFileSync6, renameSync as renameSync2, rmSync as rmSync4, writeFileSync as writeFileSync4 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
 import path5 from "node:path";
 import { gunzipSync, inflateRawSync } from "node:zlib";
@@ -200,6 +244,7 @@ import { gunzipSync, inflateRawSync } from "node:zlib";
 var SUPPORTED_ENGRAM_VERSION = "1.20.0";
 
 // core/src/install/trust.ts
+import { readFileSync as readFileSync3 } from "node:fs";
 var SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/;
 var ROW_PATTERN = /^(\S+)\s+(.*)$/;
 function parseTrustManifest(text) {
@@ -208,15 +253,28 @@ function parseTrustManifest(text) {
     return row === null ? { digest: line, file: "" } : { digest: row[1], file: row[2] };
   });
 }
+function trustDivergences(manifestFile, isExcluded, resolveTarget) {
+  if (!isReadableRegularFile(manifestFile)) return [{ file: manifestFile, state: { kind: "missing-manifest" } }];
+  const trusted = parseTrustManifest(readFileSync3(manifestFile, "utf8")).filter((row) => !isExcluded(row.file));
+  return trusted.flatMap((row) => divergenceOf(row, resolveTarget));
+}
+function divergenceOf(row, resolveTarget) {
+  if (!SHA256_HEX_PATTERN.test(row.digest)) return [{ file: row.file, state: { kind: "malformed-published-hash" } }];
+  const target = resolveTarget(row.file);
+  if (target === void 0) return [{ file: row.file, state: { kind: "outside-the-trust-set" } }];
+  if (!isReadableRegularFile(target)) return [{ file: row.file, state: { kind: "missing" } }];
+  const actual = sha256Hex(readFileSync3(target));
+  return actual === row.digest ? [] : [{ file: row.file, state: { kind: "mismatch", actual } }];
+}
 
 // core/src/install/verify-claude.ts
 import { spawnSync } from "node:child_process";
-import { closeSync, lstatSync as lstatSync3, mkdirSync as mkdirSync3, mkdtempSync, openSync, readFileSync as readFileSync4, readSync, readdirSync as readdirSync2, rmSync as rmSync3, statSync as statSync3, writeFileSync as writeFileSync2 } from "node:fs";
+import { closeSync, mkdirSync as mkdirSync3, mkdtempSync, openSync, readFileSync as readFileSync5, readSync, readdirSync as readdirSync2, rmSync as rmSync3, statSync as statSync3, writeFileSync as writeFileSync3 } from "node:fs";
 import { tmpdir } from "node:os";
 import path4 from "node:path";
 
 // core/src/install/json.ts
-import { readFileSync as readFileSync3 } from "node:fs";
+import { readFileSync as readFileSync4 } from "node:fs";
 import path3 from "node:path";
 var JsonParseError = class extends Error {
   file;
@@ -229,7 +287,7 @@ var JsonParseError = class extends Error {
 function readJsonFile(file) {
   if (!isReadableRegularFile(file)) return void 0;
   try {
-    return JSON.parse(readFileSync3(file, "utf8"));
+    return JSON.parse(readFileSync4(file, "utf8"));
   } catch (cause) {
     throw new JsonParseError(file, cause);
   }
@@ -285,6 +343,41 @@ var VerifyReport = class {
 `).join("");
   }
 };
+function wiringOk(component, note) {
+  return { ok: true, component, note };
+}
+function wiringFail(component, note) {
+  return { ok: false, component, note };
+}
+function renderCommandReport(verb, host, infoLines, wiring) {
+  const summaryLines = wiring.map((entry) => `  ${entry.component}: ${entry.ok ? "OK" : "FAILED"} \u2014 ${entry.note}`);
+  const failedCount = wiring.filter((entry) => !entry.ok).length;
+  const lines = [
+    `oso ${verb} --host ${host}`,
+    ...infoLines,
+    "wiring summary:",
+    ...summaryLines,
+    SUMMARY_RULE,
+    `wired: ${wiring.length - failedCount}, failed: ${failedCount}`
+  ];
+  return lines.map((line) => `${line}
+`).join("");
+}
+function requiresYesOutcome(verb, host) {
+  return {
+    report: `oso ${verb} --host ${host} requires --yes in this slice \u2014 no interactive confirmation prompt is wired yet
+`,
+    exitCode: 1
+  };
+}
+function fatalOutcome(verb, host, summary, detail, restoreNote = "") {
+  return { report: `oso ${verb} --host ${host}: ${summary}: ${detail}${restoreNote}
+`, exitCode: 1 };
+}
+function restoreNoteOf(restore) {
+  if (restore === void 0) return "";
+  return restore.failedCount === 0 ? " \u2014 rolled back to the pre-run snapshot" : ` \u2014 rollback incomplete: ${restore.failedItems.join(", ")} still need restoring by hand`;
+}
 
 // core/src/install/verify-claude.ts
 var ENGRAM_FIX = "bash bootstrap/install.sh installs the engram plugin AND the pinned engram binary its .mcp.json spawns by name; where that binary is installed but the client still cannot start it, either the directory holding it is not on the PATH Claude Code reads or the copy there does not run at all \u2014 that run's wiring summary says which and names the command for it (check 13 below discriminates the two on Windows), and Claude Code has to be restarted after";
@@ -332,7 +425,7 @@ function checkLegacyArtifactsRemoved(report2, repositoryRoot2, claudeDir) {
   const manifest = path4.join(repositoryRoot2, "bootstrap", "gentle-manifest.txt");
   let content;
   try {
-    content = readFileSync4(manifest, "utf8");
+    content = readFileSync5(manifest, "utf8");
   } catch (cause) {
     report2.check("legacy artifacts removed", "0", errorMessageOf(cause));
     return;
@@ -512,18 +605,10 @@ function mcpConnected(mcpListing, name) {
 function manifestEntries(content) {
   return content.split("\n").map((line) => line.replace(/\r$/, "")).filter((line) => line !== "" && !line.startsWith("#"));
 }
-function existsAtAll(target) {
-  try {
-    lstatSync3(target);
-    return true;
-  } catch {
-    return false;
-  }
-}
 function grepCountOrErrorMessage(file, patterns) {
   let content;
   try {
-    content = readFileSync4(file, "utf8");
+    content = readFileSync5(file, "utf8");
   } catch (cause) {
     if (isErrnoException(cause) && cause.code === "ENOENT") return `grep: ${file}: No such file or directory`;
     if (isErrnoException(cause) && cause.code === "EISDIR") return `grep: ${file}: Is a directory`;
@@ -589,7 +674,7 @@ function runInstalledHookProbe(gate, environment) {
     const stateKey = sha256Hex(hookHome);
     const stateDir = path4.join(hookHome, ".local", "state", "oso-code");
     mkdirSync3(stateDir, { recursive: true });
-    writeFileSync2(path4.join(stateDir, `${stateKey}.state`), "mode=plan\nverify_green=false\n");
+    writeFileSync3(path4.join(stateDir, `${stateKey}.state`), "mode=plan\nverify_green=false\n");
     const stdin = JSON.stringify({
       session_id: "e2e",
       cwd: hookHome,
@@ -678,7 +763,7 @@ function directChildrenWithExtension(repositoryRoot2, dir, extension) {
   return readdirSync2(absolute).filter((name) => name.endsWith(extension) && isRegularNonSymlinkFile(path4.join(absolute, name))).map((name) => toPosix(path4.join(dir, name)));
 }
 function containsCarriageReturn(file) {
-  return readFileSync4(file).includes(13);
+  return readFileSync5(file).includes(13);
 }
 function toPosix(value) {
   return value.split(path4.sep).join("/");
@@ -816,7 +901,7 @@ function placeEngramBinary({ content, installDirectory, binaryName, environment,
   mkdirSync4(installDirectory, { recursive: true });
   const target = path5.join(installDirectory, binaryName);
   const pending = path5.join(installDirectory, `.oso-pending-${process.pid}-${binaryName}`);
-  writeFileSync3(pending, content, { mode: 493 });
+  writeFileSync4(pending, content, { mode: 493 });
   try {
     if (!engramBinaryRuns(platform, pending, environment)) {
       throw new EngramProvisionError(
@@ -836,7 +921,7 @@ function curlOrWgetTransport(environment) {
     try {
       const destination = path5.join(scratch, "download");
       downloadToFile(url, destination, environment);
-      return readFileSync5(destination);
+      return readFileSync6(destination);
     } finally {
       rmSync4(scratch, { recursive: true, force: true });
     }
@@ -1031,7 +1116,7 @@ var ClaudePluginInstallError = class extends Error {
   }
 };
 function installClaude(input) {
-  if (!input.assumeYes) return requiresYesOutcome("install");
+  if (!input.assumeYes) return requiresYes("install");
   const claudeDir = path6.join(input.homeDirectory, ".claude");
   const settingsFile = path6.join(claudeDir, "settings.json");
   const claudeMdFile = path6.join(claudeDir, "CLAUDE.md");
@@ -1045,7 +1130,7 @@ function installClaude(input) {
     for (const { label, target } of legacyTargets) backupTarget(tx, label, target);
     commitManifest(tx);
   } catch (error) {
-    return fatalOutcome("install", "could not create the pre-install backup", error);
+    return claudeFatal("install", "could not create the pre-install backup", error);
   }
   const infoLines = [`backup: ${tx.backupRoot}`];
   const wiring = [];
@@ -1056,7 +1141,7 @@ function installClaude(input) {
     wiring.push(installOsoPluginCore(input.environment, input.repositoryRoot));
   } catch (error) {
     const restore = rollback(tx);
-    return fatalOutcome("install", "the oso-code plugin itself failed to install", error, restore);
+    return claudeFatal("install", "the oso-code plugin itself failed to install", error, restore);
   }
   softPluginMaintenance(input.environment);
   wiring.push(...migrateContext7(input.environment));
@@ -1079,7 +1164,7 @@ function installClaude(input) {
     infoLines.push(`removed ${legacyOutcome.removed} legacy artifact(s)`);
   } catch (error) {
     const restore = rollback(tx);
-    return fatalOutcome("install", "could not remove a legacy artifact", error, restore);
+    return claudeFatal("install", "could not remove a legacy artifact", error, restore);
   }
   wiring.push(toWiringEntry("legacy settings hooks", removeLegacySettingsEntries(settingsFile)));
   wiring.push(toWiringEntry("output style", ensureOutputStyle(settingsFile)));
@@ -1088,14 +1173,14 @@ function installClaude(input) {
     infoLines.push(claudeMdSizeNote(claudeMdFile));
   } catch (error) {
     const restore = rollback(tx);
-    return fatalOutcome("install", "could not write CLAUDE.md", error, restore);
+    return claudeFatal("install", "could not write CLAUDE.md", error, restore);
   }
   const pruned = pruneInstallBackups(backupsRootOf(input.homeDirectory), input.environment);
   for (const backup of pruned) infoLines.push(`backup retention: removed ${backup}`);
-  return { report: renderCommandReport("install", infoLines, wiring), exitCode: 0 };
+  return { report: claudeReport("install", infoLines, wiring), exitCode: 0 };
 }
 function repairClaude(input) {
-  if (!input.assumeYes) return requiresYesOutcome("repair");
+  if (!input.assumeYes) return requiresYes("repair");
   const claudeDir = path6.join(input.homeDirectory, ".claude");
   const settingsFile = path6.join(claudeDir, "settings.json");
   const claudeMdFile = path6.join(claudeDir, "CLAUDE.md");
@@ -1106,7 +1191,7 @@ function repairClaude(input) {
     backupTarget(tx, "claude-md", claudeMdFile);
     commitManifest(tx);
   } catch (error) {
-    return fatalOutcome("repair", "could not create the pre-repair backup", error);
+    return claudeFatal("repair", "could not create the pre-repair backup", error);
   }
   const infoLines = [`backup: ${tx.backupRoot}`];
   const wiring = [];
@@ -1120,13 +1205,13 @@ function repairClaude(input) {
     infoLines.push(claudeMdSizeNote(claudeMdFile));
   } catch (error) {
     const restore = rollback(tx);
-    return fatalOutcome("repair", "could not rewrite CLAUDE.md", error, restore);
+    return claudeFatal("repair", "could not rewrite CLAUDE.md", error, restore);
   }
   wiring.push(wireFallow(input.environment, input.homeDirectory, input.platform));
-  return { report: renderCommandReport("repair", infoLines, wiring), exitCode: 0 };
+  return { report: claudeReport("repair", infoLines, wiring), exitCode: 0 };
 }
 function purgeClaude(input) {
-  if (!input.assumeYes) return requiresYesOutcome("purge");
+  if (!input.assumeYes) return requiresYes("purge");
   const claudeDir = path6.join(input.homeDirectory, ".claude");
   const settingsFile = path6.join(claudeDir, "settings.json");
   const claudeMdFile = path6.join(claudeDir, "CLAUDE.md");
@@ -1137,7 +1222,7 @@ function purgeClaude(input) {
     backupTarget(tx, "claude-md", claudeMdFile);
     commitManifest(tx);
   } catch (error) {
-    return fatalOutcome("purge", "could not create the pre-purge backup", error);
+    return claudeFatal("purge", "could not create the pre-purge backup", error);
   }
   const infoLines = [`backup: ${tx.backupRoot}`, "no login or installation command was run"];
   const wiring = [];
@@ -1150,54 +1235,16 @@ function purgeClaude(input) {
     wiring.push(stripped ? wiringOk("CLAUDE.md region", "removed") : wiringOk("CLAUDE.md region", "nothing to remove"));
   } catch (error) {
     const restore = rollback(tx);
-    return fatalOutcome("purge", "could not rewrite CLAUDE.md", error, restore);
+    return claudeFatal("purge", "could not rewrite CLAUDE.md", error, restore);
   }
   const mcpRemove = spawnSync3("claude", ["mcp", "remove", "--scope", "user", "fallow"], { env: input.environment, encoding: "utf8" });
   wiring.push(
     mcpRemove.error === void 0 && mcpRemove.status === 0 ? wiringOk("fallow (mcp)", "removed") : wiringFail("fallow (mcp)", `nothing removed, or already absent: ${collapsedOutput(mcpRemove)}`)
   );
-  return { report: renderCommandReport("purge", infoLines, wiring), exitCode: 0 };
+  return { report: claudeReport("purge", infoLines, wiring), exitCode: 0 };
 }
 function backupsRootOf(homeDirectory) {
   return path6.join(homeDirectory, ".local", "state", "oso-code", "claude-backups");
-}
-function beginTransaction(backupsRoot, format) {
-  const backupRoot = path6.join(backupsRoot, `install-backup-${compactTimestamp()}-${process.pid}`);
-  const itemsDirectory = path6.join(backupRoot, "items");
-  mkdirSync5(itemsDirectory, { recursive: true });
-  writeFileSync4(path6.join(backupRoot, "format"), `${format}
-`);
-  return { backupRoot, itemsDirectory, manifest: [] };
-}
-function backupTarget(tx, label, target) {
-  if (!existsAtAll(target)) {
-    tx.manifest.push({ status: "absent", label, target });
-    return;
-  }
-  const destination = path6.join(tx.itemsDirectory, label);
-  mkdirSync5(path6.dirname(destination), { recursive: true });
-  cpSync2(target, destination, { recursive: true });
-  tx.manifest.push({ status: "present", label, target });
-}
-function commitManifest(tx) {
-  const text = tx.manifest.map(serializeManifestRow).join("\n");
-  writeFileSync4(path6.join(tx.backupRoot, "manifest"), text === "" ? "" : `${text}
-`);
-}
-function rollback(tx) {
-  const text = tx.manifest.map(serializeManifestRow).join("\n");
-  return restoreBackupManifest(text, tx.itemsDirectory);
-}
-function compactTimestamp() {
-  const iso = isoTimestamp();
-  const [datePart = "", timePart = ""] = iso.replace("Z", "").split("T");
-  return `${datePart.replaceAll("-", "")}-${timePart.replaceAll(":", "")}`;
-}
-function pruneInstallBackups(backupsRoot, environment) {
-  const budgetKib = installBackupBudgetKib(environment);
-  const over = installBackupsOverBudget(installBackupDirsNewestFirst(backupsRoot), budgetKib);
-  for (const backup of over) rmSync5(backup, { recursive: true, force: true });
-  return over;
 }
 function backupClientConfigTargets(homeDirectory, claudeDir) {
   const targets = [{ label: "claude-json", target: path6.join(homeDirectory, ".claude.json") }];
@@ -1210,7 +1257,7 @@ function backupClientConfigTargets(homeDirectory, claudeDir) {
 }
 function legacyArtifactTargets(repositoryRoot2, claudeDir) {
   const manifestFile = path6.join(repositoryRoot2, "bootstrap", "gentle-manifest.txt");
-  const content = readFileSync6(manifestFile, "utf8");
+  const content = readFileSync7(manifestFile, "utf8");
   return manifestEntries(content).map((relative) => ({ label: relative, target: path6.join(claudeDir, relative) }));
 }
 function removeLegacyArtifacts(targets) {
@@ -1304,7 +1351,7 @@ function clearOsoOutputStyle(settingsFile) {
 }
 function mergeGlobalClaudeMd(claudeMdFile, blockBody, options) {
   const shouldMerge = !options.replace && isReadableRegularFile(claudeMdFile);
-  const prefix = shouldMerge ? `${withoutMarkerRegion(readFileSync6(claudeMdFile, "utf8"))}
+  const prefix = shouldMerge ? `${withoutMarkerRegion(readFileSync7(claudeMdFile, "utf8"))}
 ` : "";
   const content = `${prefix}${CLAUDE_MD_MARKER_START}
 ${blockBody}${CLAUDE_MD_MARKER_END}
@@ -1313,7 +1360,7 @@ ${blockBody}${CLAUDE_MD_MARKER_END}
 }
 function stripClaudeMdRegion(claudeMdFile) {
   if (!isReadableRegularFile(claudeMdFile)) return false;
-  const content = readFileSync6(claudeMdFile, "utf8");
+  const content = readFileSync7(claudeMdFile, "utf8");
   if (!content.includes(CLAUDE_MD_MARKER_START)) return false;
   const withoutBlock = withoutMarkerRegion(content);
   writeFileAtomically(path6.dirname(claudeMdFile), claudeMdFile, withoutBlock === "" ? "" : `${withoutBlock}
@@ -1339,7 +1386,7 @@ function withoutMarkerRegion(content) {
   return kept.join("\n");
 }
 function claudeGlobalBody(repositoryRoot2) {
-  return readFileSync6(path6.join(repositoryRoot2, "bootstrap", "claude-global.md"), "utf8");
+  return readFileSync7(path6.join(repositoryRoot2, "bootstrap", "claude-global.md"), "utf8");
 }
 function claudeMdSizeNote(claudeMdFile) {
   const size = statSync4(claudeMdFile, { throwIfNoEntry: false })?.size ?? 0;
@@ -1602,14 +1649,8 @@ function wireImpeccable(environment, homeDirectory) {
 function skipImpeccable(homeDirectory) {
   const marker = impeccableOptOutMarker(homeDirectory);
   mkdirSync5(path6.dirname(marker), { recursive: true });
-  writeFileSync4(marker, `skipped by --no-impeccable on ${isoTimestamp().slice(0, 10)}
+  writeFileSync5(marker, `skipped by --no-impeccable on ${isoTimestamp().slice(0, 10)}
 `);
-}
-function wiringOk(component, note) {
-  return { ok: true, component, note };
-}
-function wiringFail(component, note) {
-  return { ok: false, component, note };
 }
 function toWiringEntry(component, outcome) {
   return outcome.kind === "failed" ? wiringFail(component, outcome.note) : wiringOk(component, outcome.note);
@@ -1617,35 +1658,1862 @@ function toWiringEntry(component, outcome) {
 function collapsedOutput(result) {
   return collapsedNewlines(`${result.stdout ?? ""}${result.stderr ?? ""}`);
 }
-function renderCommandReport(verb, infoLines, wiring) {
-  const summaryLines = wiring.map((entry) => `  ${entry.component}: ${entry.ok ? "OK" : "FAILED"} \u2014 ${entry.note}`);
-  const failedCount = wiring.filter((entry) => !entry.ok).length;
-  const lines = [`oso ${verb} --host claude`, ...infoLines, "wiring summary:", ...summaryLines, "----", `wired: ${wiring.length - failedCount}, failed: ${failedCount}`];
-  return lines.map((line) => `${line}
-`).join("");
+function claudeReport(verb, infoLines, wiring) {
+  return renderCommandReport(verb, "claude", infoLines, wiring);
 }
-function requiresYesOutcome(verb) {
-  return { report: `oso ${verb} --host claude requires --yes in this slice \u2014 no interactive confirmation prompt is wired yet
-`, exitCode: 1 };
+function requiresYes(verb) {
+  return requiresYesOutcome(verb, "claude");
 }
-function fatalOutcome(verb, summary, error, restore) {
-  const restoreNote = restore === void 0 ? "" : restore.failedCount === 0 ? " \u2014 rolled back to the pre-run snapshot" : ` \u2014 rollback incomplete: ${restore.failedItems.join(", ")} still need restoring by hand`;
-  return { report: `oso ${verb} --host claude: ${summary}: ${errorMessageOf(error)}${restoreNote}
-`, exitCode: 1 };
+function claudeFatal(verb, summary, error, restore) {
+  return fatalOutcome(verb, "claude", summary, errorMessageOf(error), restoreNoteOf(restore));
 }
 function isPlainRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-// core/src/install/cli.ts
-var USAGE = `usage: oso <install|verify|repair|purge> --host <claude|codex|opencode> [--yes]
+// core/src/install/codex.ts
+import { spawnSync as spawnSync4 } from "node:child_process";
+import { mkdirSync as mkdirSync6, readFileSync as readFileSync9, rmSync as rmSync6, writeFileSync as writeFileSync6 } from "node:fs";
+import path8 from "node:path";
 
-Only the claude host runs real checks/mutations in this slice; every other
-host is not yet implemented.
+// core/src/install/codex-config.ts
+import path7 from "node:path";
+var CONFIG_MARKER_START = "# oso-code:start";
+var CONFIG_MARKER_END = "# oso-code:end";
+var FEATURE_MARKER_START = "# oso-code:features:start";
+var FEATURE_MARKER_END = "# oso-code:features:end";
+var GLOBAL_MARKER_START = "<!-- oso-code:start -->";
+var GLOBAL_MARKER_END = "<!-- oso-code:end -->";
+var MODEL_INSTRUCTIONS_KEY = "model_instructions_file";
+var COMPACT_PROMPT_KEY = "experimental_compact_prompt_file";
+var FALLOW_FALLBACK_COMMAND = "fallow-mcp";
+var DENIED_WORKSPACE_GLOBS = [
+  "**/secrets/*",
+  "**/*.key",
+  "**/*.pem",
+  "**/.env.*.local",
+  "**/.env.local",
+  "**/.env",
+  "**/.env.production",
+  "**/.npmrc",
+  "**/*.p12",
+  "**/*.pfx",
+  "**/*.jks",
+  "**/*.keystore",
+  "**/id_rsa",
+  "**/id_dsa",
+  "**/id_ecdsa",
+  "**/id_ecdsa_sk",
+  "**/id_ed25519",
+  "**/id_ed25519_sk",
+  "**/.ssh/**",
+  "**/.aws/**",
+  "**/.config/gcloud/**",
+  "**/.azure/**",
+  "**/.kube/**"
+];
+function tomlQuote(value) {
+  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+}
+function renderCodexManagedFeatures() {
+  return "hooks = true\nmulti_agent = true\n";
+}
+function renderCodexManagedConfig(targetHome, runtimeRoot, fallowCommand) {
+  const stateBin = tomlQuote(path7.posix.join(runtimeRoot, "bin", "oso-state"));
+  const stateRoot = tomlQuote(path7.posix.join(targetHome, ".local", "state", "oso-code"));
+  const worktreeRoot = tomlQuote(path7.posix.join(targetHome, ".local", "state", "oso-code", "worktrees"));
+  return [
+    'default_permissions = "oso"',
+    "",
+    "[agents]",
+    "max_threads = 4",
+    "max_depth = 2",
+    "job_max_runtime_seconds = 1800",
+    "",
+    "[shell_environment_policy.set]",
+    'OSO_AGENT = "1"',
+    `OSO_STATE_BIN = ${stateBin}`,
+    "",
+    "[permissions.oso]",
+    'extends = ":workspace"',
+    "",
+    'description = "oso-code workspace profile"',
+    "",
+    "[permissions.oso.workspace_roots]",
+    `${stateRoot} = true`,
+    `${worktreeRoot} = true`,
+    "",
+    "[permissions.oso.filesystem]",
+    "glob_scan_max_depth = 6",
+    "",
+    '[permissions.oso.filesystem.":workspace_roots"]',
+    ...DENIED_WORKSPACE_GLOBS.map((glob) => `"${glob}" = "deny"`),
+    '".git/**" = "write"',
+    '".git/config" = "read"',
+    "",
+    "[permissions.oso.network]",
+    "enabled = true",
+    "",
+    "[permissions.oso.network.domains]",
+    '"*" = "allow"',
+    '"169.254.169.254" = "deny"',
+    '"metadata.google.internal" = "deny"',
+    "",
+    "[mcp_servers.context7]",
+    'url = "https://mcp.context7.com/mcp"',
+    "",
+    "[mcp_servers.fallow]",
+    `command = ${tomlQuote(fallowCommand)}`,
+    ""
+  ].join("\n");
+}
+function resolveFallowMcpCommand2(targetHome, environment, npmPrefixOf, firstOnPath) {
+  const appData = environment["APPDATA"] ?? "";
+  if (appData !== "") {
+    const prefix = (npmPrefixOf() ?? path7.posix.join(appData, "npm")).replaceAll("\\", "/");
+    const shim = path7.posix.join(prefix, "fallow-mcp.cmd");
+    if (isExecutableRegularFile(shim)) return { command: shim, resolved: true };
+  }
+  const onPath = firstOnPath(FALLOW_FALLBACK_COMMAND);
+  if (onPath !== void 0 && onPath !== "") return { command: onPath, resolved: true };
+  for (const name of ["fallow-mcp", "fallow-mcp.exe"]) {
+    const cargo = path7.posix.join(targetHome, ".cargo", "bin", name);
+    if (isExecutableRegularFile(cargo)) return { command: cargo, resolved: true };
+  }
+  return { command: FALLOW_FALLBACK_COMMAND, resolved: false };
+}
+
+// core/src/install/toml.ts
+import { readFileSync as readFileSync8 } from "node:fs";
+
+// node_modules/smol-toml/dist/date.js
+var DATE_TIME_RE = /^(\d{4}-\d{2}-\d{2})?[T ]?(?:(\d{2}):\d{2}(?::\d{2}(?:\.\d+)?)?)?(Z|[-+]\d{2}:\d{2})?$/i;
+var TomlDate = class _TomlDate extends Date {
+  #hasDate = false;
+  #hasTime = false;
+  #offset = null;
+  constructor(date) {
+    let hasDate = true;
+    let hasTime = true;
+    let offset = "Z";
+    if (typeof date === "string") {
+      let match = date.match(DATE_TIME_RE);
+      if (match) {
+        if (!match[1]) {
+          hasDate = false;
+          date = `0000-01-01T${date}`;
+        }
+        hasTime = !!match[2];
+        hasTime && date[10] === " " && (date = date.replace(" ", "T"));
+        if (match[2] && +match[2] > 23) {
+          date = "";
+        } else {
+          offset = match[3] || null;
+          date = date.toUpperCase();
+          if (!offset && hasTime)
+            date += "Z";
+        }
+      } else {
+        date = "";
+      }
+    }
+    super(date);
+    if (!isNaN(this.getTime())) {
+      this.#hasDate = hasDate;
+      this.#hasTime = hasTime;
+      this.#offset = offset;
+    }
+  }
+  isDateTime() {
+    return this.#hasDate && this.#hasTime;
+  }
+  isLocal() {
+    return !this.#hasDate || !this.#hasTime || !this.#offset;
+  }
+  isDate() {
+    return this.#hasDate && !this.#hasTime;
+  }
+  isTime() {
+    return this.#hasTime && !this.#hasDate;
+  }
+  isValid() {
+    return this.#hasDate || this.#hasTime;
+  }
+  toISOString() {
+    let iso = super.toISOString();
+    if (this.isDate())
+      return iso.slice(0, 10);
+    if (this.isTime())
+      return iso.slice(11, 23);
+    if (this.#offset === null)
+      return iso.slice(0, -1);
+    if (this.#offset === "Z")
+      return iso;
+    let offset = +this.#offset.slice(1, 3) * 60 + +this.#offset.slice(4, 6);
+    offset = this.#offset[0] === "-" ? offset : -offset;
+    let offsetDate = new Date(this.getTime() - offset * 6e4);
+    return offsetDate.toISOString().slice(0, -1) + this.#offset;
+  }
+  static wrapAsOffsetDateTime(jsDate, offset = "Z") {
+    let date = new _TomlDate(jsDate);
+    date.#offset = offset;
+    return date;
+  }
+  static wrapAsLocalDateTime(jsDate) {
+    let date = new _TomlDate(jsDate);
+    date.#offset = null;
+    return date;
+  }
+  static wrapAsLocalDate(jsDate) {
+    let date = new _TomlDate(jsDate);
+    date.#hasTime = false;
+    date.#offset = null;
+    return date;
+  }
+  static wrapAsLocalTime(jsDate) {
+    let date = new _TomlDate(jsDate);
+    date.#hasDate = false;
+    date.#offset = null;
+    return date;
+  }
+};
+
+// node_modules/smol-toml/dist/error.js
+function getLineColFromPtr(string, ptr) {
+  let lines = string.slice(0, ptr).split(/\r\n|\n|\r/g);
+  return [lines.length, lines.pop().length + 1];
+}
+function makeCodeBlock(string, line, column) {
+  let lines = string.split(/\r\n|\n|\r/g);
+  let codeblock = "";
+  let numberLen = (Math.log10(line + 1) | 0) + 1;
+  for (let i = line - 1; i <= line + 1; i++) {
+    let l = lines[i - 1];
+    if (!l)
+      continue;
+    codeblock += i.toString().padEnd(numberLen, " ");
+    codeblock += ":  ";
+    codeblock += l;
+    codeblock += "\n";
+    if (i === line) {
+      codeblock += " ".repeat(numberLen + column + 2);
+      codeblock += "^\n";
+    }
+  }
+  return codeblock;
+}
+var TomlError = class extends Error {
+  line;
+  column;
+  codeblock;
+  constructor(message, options) {
+    const [line, column] = getLineColFromPtr(options.toml, options.ptr);
+    const codeblock = makeCodeBlock(options.toml, line, column);
+    super(`Invalid TOML document: ${message}
+
+${codeblock}`, options);
+    this.line = line;
+    this.column = column;
+    this.codeblock = codeblock;
+  }
+};
+
+// node_modules/smol-toml/dist/util.js
+function indexOfNewline(str, start = 0) {
+  let idx = str.indexOf("\n", start);
+  if (str.charCodeAt(idx - 1) === 13)
+    idx--;
+  return idx;
+}
+function skipComment(ctx) {
+  for (; ctx.p < ctx.s.length; ctx.p++) {
+    let c = ctx.s.charCodeAt(ctx.p);
+    if (c === 10)
+      break;
+    if (c === 13 && ctx.s.charCodeAt(ctx.p + 1) === 10) {
+      ctx.p++;
+      break;
+    }
+    if (c < 32 && c !== 9 || c === 127) {
+      throw new TomlError("control characters are not allowed in comments", {
+        toml: ctx.s,
+        ptr: ctx.p
+      });
+    }
+  }
+}
+function skipVoid(ctx, banNewLines, banComments) {
+  let c;
+  while (1) {
+    while ((c = ctx.s.charCodeAt(ctx.p)) === 32 || c === 9 || !banNewLines && (c === 10 || c === 13 && ctx.s.charCodeAt(ctx.p + 1) === 10))
+      ctx.p++;
+    if (banComments || c !== 35)
+      break;
+    skipComment(ctx);
+  }
+}
+function skipUntil(ctx, sep, end) {
+  let ptr = ctx.p;
+  if (!end) {
+    ptr = indexOfNewline(ctx.s, ptr);
+    ctx.p = ptr < 0 ? ctx.s.length : ptr;
+    return;
+  }
+  for (; ctx.p < ctx.s.length; ctx.p++) {
+    let c = ctx.s.charCodeAt(ctx.p);
+    if (c === 35) {
+      skipComment(ctx);
+    } else if (c === end || c === sep) {
+      return;
+    }
+  }
+  throw new TomlError("cannot find end of structure", {
+    toml: ctx.s,
+    ptr
+  });
+}
+
+// node_modules/smol-toml/dist/primitive.js
+var INT_REGEX = /^((0x[0-9a-fA-F](_?[0-9a-fA-F])*)|(([+-]|0[ob])?\d(_?\d)*))$/;
+var FLOAT_REGEX = /^[+-]?\d(_?\d)*(\.\d(_?\d)*)?([eE][+-]?\d(_?\d)*)?$/;
+var LEADING_ZERO = /^[+-]?0[0-9_]/;
+function parseString(ctx) {
+  let start = ctx.p;
+  let c = ctx.s.charCodeAt(ctx.p++);
+  let first = c;
+  let isLiteral = c === 39;
+  let isMultiline = c === ctx.s.charCodeAt(ctx.p) && c === ctx.s.charCodeAt(ctx.p + 1);
+  if (isMultiline) {
+    if ((c = ctx.s.charCodeAt(ctx.p += 2)) === 10)
+      ctx.p++;
+    else if (c === 13 && ctx.s.charCodeAt(ctx.p + 1) === 10)
+      ctx.p += 2;
+  }
+  let parsed = "";
+  let sliceStart = ctx.p;
+  let state = 0;
+  for (; ctx.p < ctx.s.length; ctx.p++) {
+    c = ctx.s.charCodeAt(ctx.p);
+    if (isMultiline && (c === 10 || c === 13 && ctx.s.charCodeAt(ctx.p + 1) === 10)) {
+      state = state && 3;
+    } else if (c < 32 && c !== 9 || c === 127) {
+      throw new TomlError("control characters are not allowed in strings", {
+        toml: ctx.s,
+        ptr: ctx.p
+      });
+    } else if ((!state || state === 3) && c === first && (!isMultiline || ctx.s.charCodeAt(ctx.p + 1) === first && ctx.s.charCodeAt(ctx.p + 2) === first)) {
+      if (isMultiline) {
+        if (ctx.s.charCodeAt(ctx.p + 3) === first)
+          ctx.p++;
+        if (ctx.s.charCodeAt(ctx.p + 3) === first)
+          ctx.p++;
+      }
+      if (!state)
+        parsed += ctx.s.slice(sliceStart, ctx.p);
+      ctx.p += isMultiline ? 3 : 1;
+      return parsed;
+    } else if (!state) {
+      if (!isLiteral && c === 92) {
+        parsed += ctx.s.slice(sliceStart, sliceStart = ctx.p);
+        state = 1;
+      }
+    } else if (state === 1) {
+      if (c === 120 || c === 117 || c === 85) {
+        let value = 0;
+        let len = c === 120 ? 2 : c === 117 ? 4 : 8;
+        for (let j = 0; j < len; j++, ctx.p++) {
+          let hex = ctx.s.charCodeAt(ctx.p + 1);
+          let digit = (
+            /* 0-9 */
+            hex >= 48 && hex <= 57 ? hex - 48 : (
+              /* A-F */
+              hex >= 65 && hex <= 70 ? hex - 65 + 10 : (
+                /* a-f */
+                hex >= 97 && hex <= 102 ? hex - 97 + 10 : -1
+              )
+            )
+          );
+          if (digit < 0)
+            throw new TomlError("invalid non-hex character in unicode escape", { toml: ctx.s, ptr: ctx.p + 1 });
+          value = value << 4 | digit;
+        }
+        if (value < 0 || value > 1114111 || value >= 55296 && value <= 57343) {
+          throw new TomlError("invalid unicode escape", { toml: ctx.s, ptr: ctx.p });
+        }
+        parsed += String.fromCodePoint(value);
+        sliceStart = ctx.p + 1;
+        state = 0;
+      } else if (c === 32 || c === 9) {
+        state = 2;
+      } else {
+        if (c === 98)
+          parsed += "\b";
+        else if (c === 116)
+          parsed += "	";
+        else if (c === 110)
+          parsed += "\n";
+        else if (c === 102)
+          parsed += "\f";
+        else if (c === 114)
+          parsed += "\r";
+        else if (c === 101)
+          parsed += "\x1B";
+        else if (c === 34)
+          parsed += '"';
+        else if (c === 92)
+          parsed += "\\";
+        else
+          throw new TomlError("unrecognized escape sequence", { toml: ctx.s, ptr: ctx.p });
+        sliceStart = ctx.p + 1;
+        state = 0;
+      }
+    } else if (c !== 32 && c !== 9) {
+      if (state === 2) {
+        throw new TomlError("invalid escape: only line-ending whitespace may be escaped", {
+          toml: ctx.s,
+          ptr: sliceStart
+        });
+      }
+      state = !isLiteral && c === 92 ? 1 : 0;
+      sliceStart = ctx.p;
+    }
+  }
+  throw new TomlError("unfinished string", { toml: ctx.s, ptr: start });
+}
+function sliceAndTrimEndOf(ctx, start, end) {
+  let value = ctx.s.slice(start, end);
+  let commentIdx = value.indexOf("#");
+  if (commentIdx > 0) {
+    skipComment({ s: value, p: commentIdx, d: 0 });
+    value = value.slice(0, commentIdx);
+  }
+  return value.trimEnd();
+}
+function parseValue(ctx, integersAsBigInt, end) {
+  let ptr = ctx.p;
+  let err = { toml: ctx.s, ptr };
+  skipUntil(ctx, 44, end);
+  let value = sliceAndTrimEndOf(ctx, ptr, ctx.p);
+  if (!value)
+    throw new TomlError("incomplete declaration: value expected", err);
+  if (value === "-inf")
+    return -Infinity;
+  if (value === "inf" || value === "+inf")
+    return Infinity;
+  if (value === "nan" || value === "+nan" || value === "-nan")
+    return NaN;
+  if (value === "-0")
+    return integersAsBigInt ? 0n : 0;
+  let isInt = INT_REGEX.test(value);
+  if (isInt || FLOAT_REGEX.test(value)) {
+    if (LEADING_ZERO.test(value)) {
+      throw new TomlError("leading zeroes are not allowed", err);
+    }
+    value = value.replace(/_/g, "");
+    let numeric = +value;
+    if (isNaN(numeric)) {
+      throw new TomlError("invalid number", err);
+    }
+    if (isInt) {
+      if ((isInt = !Number.isSafeInteger(numeric)) && !integersAsBigInt) {
+        throw new TomlError("integer value cannot be represented losslessly", err);
+      }
+      if (isInt || integersAsBigInt === true)
+        numeric = BigInt(value);
+    }
+    return numeric;
+  }
+  const date = new TomlDate(value);
+  if (!date.isValid())
+    throw new TomlError("invalid value", err);
+  return date;
+}
+
+// node_modules/smol-toml/dist/extract.js
+function extractValue(ctx, end, integersAsBigInt) {
+  let ptr = ctx.p;
+  let c = ctx.s.charCodeAt(ptr);
+  if (c === 91 || c === 123) {
+    if (!ctx.d--) {
+      throw new TomlError("document contains excessively nested structures. aborting.", {
+        toml: ctx.s,
+        ptr
+      });
+    }
+    let value = c === 91 ? parseArray(ctx, integersAsBigInt) : parseInlineTable(ctx, integersAsBigInt);
+    ctx.d++;
+    return value;
+  }
+  if (c === 34 || c === 39) {
+    return parseString(ctx);
+  }
+  if (c === 116) {
+    if (ctx.s.charCodeAt(++ctx.p) !== 114 || ctx.s.charCodeAt(++ctx.p) !== 117 || ctx.s.charCodeAt(++ctx.p) !== 101)
+      throw new TomlError("invalid value", { toml: ctx.s, ptr });
+    ctx.p++;
+    return true;
+  }
+  if (c === 102) {
+    if (ctx.s.charCodeAt(++ctx.p) !== 97 || ctx.s.charCodeAt(++ctx.p) !== 108 || ctx.s.charCodeAt(++ctx.p) !== 115 || ctx.s.charCodeAt(++ctx.p) !== 101)
+      throw new TomlError("invalid value", { toml: ctx.s, ptr });
+    ctx.p++;
+    return false;
+  }
+  return parseValue(ctx, integersAsBigInt, end);
+}
+
+// node_modules/smol-toml/dist/struct.js
+var KEY_PART_RE = /^[a-zA-Z0-9-_]+[ \t]*$/;
+function parseKey(ctx, end = "=") {
+  let start = ctx.p;
+  let dot = start - 1;
+  let parsed = [];
+  let endPtr = ctx.s.indexOf(end, start);
+  if (endPtr < 0) {
+    throw new TomlError("incomplete key-value: cannot find end of key", {
+      toml: ctx.s,
+      ptr: start
+    });
+  }
+  do {
+    let c = ctx.s.charCodeAt(ctx.p = ++dot);
+    if (c !== 32 && c !== 9) {
+      if (c === 34 || c === 39) {
+        if (c === ctx.s.charCodeAt(ctx.p + 1) && c === ctx.s.charCodeAt(ctx.p + 2)) {
+          throw new TomlError("multiline strings are not allowed in keys", {
+            toml: ctx.s,
+            ptr: ctx.p
+          });
+        }
+        let part = parseString(ctx);
+        dot = ctx.s.indexOf(".", ctx.p);
+        let strEnd = ctx.s.slice(ctx.p, dot < 0 || dot > endPtr ? endPtr : dot);
+        let newLine = indexOfNewline(strEnd);
+        if (newLine > -1) {
+          throw new TomlError("newlines are not allowed in keys", {
+            toml: ctx.s,
+            ptr: newLine
+          });
+        }
+        if (strEnd.trimStart()) {
+          throw new TomlError("found extra tokens after the string part", {
+            toml: ctx.s,
+            ptr: ctx.p
+          });
+        }
+        if (endPtr < ctx.p) {
+          endPtr = ctx.s.indexOf(end, ctx.p);
+          if (endPtr < 0) {
+            throw new TomlError("incomplete key-value: cannot find end of key", {
+              toml: ctx.s,
+              ptr: start
+            });
+          }
+        }
+        parsed.push(part);
+      } else {
+        dot = ctx.s.indexOf(".", ctx.p);
+        let part = ctx.s.slice(ctx.p, dot < 0 || dot > endPtr ? endPtr : dot);
+        if (!KEY_PART_RE.test(part)) {
+          throw new TomlError("only letter, numbers, dashes and underscores are allowed in keys", {
+            toml: ctx.s,
+            ptr: ctx.p
+          });
+        }
+        parsed.push(part.trimEnd());
+      }
+    }
+  } while (dot + 1 && dot < endPtr);
+  ctx.p = endPtr + 1;
+  skipVoid(ctx, true, true);
+  return parsed;
+}
+function parseInlineTable(ctx, integersAsBigInt) {
+  let res = {};
+  let seen = /* @__PURE__ */ new Set();
+  let c;
+  ctx.p++;
+  while (ctx.p < ctx.s.length) {
+    skipVoid(ctx);
+    if ((c = ctx.s.charCodeAt(ctx.p)) === 125) {
+      ctx.p++;
+      return res;
+    }
+    let k;
+    let t = res;
+    let hasOwn = false;
+    let p = ctx.p;
+    let key = parseKey(ctx);
+    for (let i = 0; i < key.length; i++) {
+      if (i)
+        t = hasOwn ? t[k] : t[k] = {};
+      k = key[i];
+      if ((hasOwn = Object.hasOwn(t, k)) && (typeof t[k] !== "object" || seen.has(t[k]))) {
+        throw new TomlError("trying to redefine an already defined value", {
+          toml: ctx.s,
+          ptr: p
+        });
+      }
+      if (!hasOwn && k === "__proto__") {
+        Object.defineProperty(t, k, { enumerable: true, configurable: true, writable: true });
+      }
+    }
+    if (hasOwn) {
+      throw new TomlError("trying to redefine an already defined value", {
+        toml: ctx.s,
+        ptr: ctx.p
+      });
+    }
+    let value = extractValue(ctx, 125, integersAsBigInt);
+    seen.add(t[k] = value);
+    skipVoid(ctx);
+    if ((c = ctx.s.charCodeAt(ctx.p++)) === 125) {
+      return res;
+    }
+    if (c !== 44) {
+      throw new TomlError("expected comma or end of structure", { toml: ctx.s, ptr: ctx.p - 1 });
+    }
+  }
+  throw new TomlError("unfinished table encountered", {
+    toml: ctx.s,
+    ptr: ctx.p
+  });
+}
+function parseArray(ctx, integersAsBigInt) {
+  let res = [];
+  let c;
+  ctx.p++;
+  while (ctx.p < ctx.s.length) {
+    skipVoid(ctx);
+    if ((c = ctx.s.charCodeAt(ctx.p)) === 93) {
+      ctx.p++;
+      return res;
+    }
+    res.push(extractValue(ctx, 93, integersAsBigInt));
+    skipVoid(ctx);
+    if ((c = ctx.s.charCodeAt(ctx.p++)) === 93) {
+      return res;
+    }
+    if (c !== 44) {
+      throw new TomlError("expected comma or end of structure", { toml: ctx.s, ptr: ctx.p - 1 });
+    }
+  }
+  throw new TomlError("unfinished array encountered", {
+    toml: ctx.s,
+    ptr: ctx.p
+  });
+}
+
+// node_modules/smol-toml/dist/parse.js
+function peekTable(key, table, meta, type) {
+  let t = table;
+  let m = meta;
+  let k;
+  let hasOwn = false;
+  let state;
+  for (let i = 0; i < key.length; i++) {
+    if (i) {
+      t = hasOwn ? t[k] : t[k] = {};
+      m = (state = m[k]).c;
+      if (type === 0 && (state.t === 1 || state.t === 2)) {
+        return null;
+      }
+      if (state.t === 2) {
+        let l = t.length - 1;
+        t = t[l];
+        m = m[l].c;
+      }
+    }
+    k = key[i];
+    if ((hasOwn = Object.hasOwn(t, k)) && m[k]?.t === 0 && m[k]?.d) {
+      return null;
+    }
+    if (!hasOwn) {
+      if (k === "__proto__") {
+        Object.defineProperty(t, k, { enumerable: true, configurable: true, writable: true });
+        Object.defineProperty(m, k, { enumerable: true, configurable: true, writable: true });
+      }
+      m[k] = {
+        t: i < key.length - 1 && type === 2 ? 3 : type,
+        d: false,
+        i: 0,
+        c: {}
+      };
+    }
+  }
+  state = m[k];
+  if (state.t !== type && !(type === 1 && state.t === 3)) {
+    return null;
+  }
+  if (type === 2) {
+    if (!state.d) {
+      state.d = true;
+      t[k] = [];
+    }
+    t[k].push(t = {});
+    state.c[state.i++] = state = { t: 1, d: false, i: 0, c: {} };
+  }
+  if (state.d) {
+    return null;
+  }
+  state.d = true;
+  if (type === 1) {
+    t = hasOwn ? t[k] : t[k] = {};
+  } else if (type === 0 && hasOwn) {
+    return null;
+  }
+  return [k, t, state.c];
+}
+function parse(toml, { maxDepth = 1e3, integersAsBigInt } = {}) {
+  let ctx = { s: toml, p: 0, d: maxDepth };
+  let res = {};
+  let meta = {};
+  let tmp;
+  let tbl = res;
+  let m = meta;
+  skipVoid(ctx);
+  while (ctx.p < toml.length) {
+    if (toml.charCodeAt(ctx.p) === 91) {
+      let isTableArray = toml.charCodeAt(++ctx.p) === 91;
+      tmp = ctx.p += +isTableArray;
+      let k = parseKey(ctx, "]");
+      if (isTableArray) {
+        if (toml.charCodeAt(ctx.p - 1) !== 93) {
+          throw new TomlError("expected end of table declaration", {
+            toml,
+            ptr: ctx.p - 1
+          });
+        }
+        ctx.p++;
+      }
+      let p = peekTable(
+        k,
+        res,
+        meta,
+        isTableArray ? 2 : 1
+        /* Type.EXPLICIT */
+      );
+      if (!p) {
+        throw new TomlError("trying to redefine an already defined table or value", {
+          toml,
+          ptr: tmp
+        });
+      }
+      m = p[2];
+      tbl = p[1];
+    } else {
+      tmp = ctx.p;
+      let k = parseKey(ctx);
+      let p = peekTable(
+        k,
+        tbl,
+        m,
+        0
+        /* Type.DOTTED */
+      );
+      if (!p) {
+        throw new TomlError("trying to redefine an already defined table or value", {
+          toml,
+          ptr: tmp
+        });
+      }
+      p[1][p[0]] = extractValue(ctx, void 0, integersAsBigInt);
+    }
+    skipVoid(ctx, true);
+    if (ctx.p < toml.length && (tmp = toml.charCodeAt(ctx.p)) !== 10 && tmp !== 13) {
+      throw new TomlError("each key-value declaration must be followed by an end-of-line", {
+        toml,
+        ptr: ctx.p
+      });
+    }
+    skipVoid(ctx);
+  }
+  return res;
+}
+
+// core/src/install/toml.ts
+var TomlParseError = class extends Error {
+  file;
+  constructor(file, cause) {
+    super(`cannot parse TOML at ${file}`, { cause });
+    this.name = "TomlParseError";
+    this.file = file;
+  }
+};
+function parseTomlDocument(text, file) {
+  try {
+    return parse(text);
+  } catch (cause) {
+    if (cause instanceof TomlError) throw new TomlParseError(file, cause);
+    throw cause;
+  }
+}
+function readTomlFile(file) {
+  if (!isReadableRegularFile(file)) return void 0;
+  return parseTomlDocument(readFileSync8(file, "utf8"), file);
+}
+
+// core/src/install/toml-regions.ts
+var POSIX_SPACE = " \\t\\n\\v\\f\\r";
+var TABLE_HEADER = new RegExp(`^[${POSIX_SPACE}]*\\[`);
+var FEATURE_MARKER_COMMENT = new RegExp(`^[${POSIX_SPACE}]*#[${POSIX_SPACE}]*oso-code:features:(start|end)`);
+var TRAILING_COMMENT = new RegExp(`[${POSIX_SPACE}]*#.*`);
+var EVERY_SPACE = new RegExp(`[${POSIX_SPACE}]`, "g");
+var OWNED_FEATURE_KEYS = "hooks|multi_agent";
+var UNKNOWN_ACTION_EXIT = 64;
+var REGION_EXIT = 5;
+var FEATURES_EXIT = 6;
+var POINTER_REGION_EXIT = 10;
+var POINTER_ROW_EXIT = 11;
+var DUPLICATE_TABLE_EXIT = 12;
+var TOML_REGION_ACTIONS = [
+  "strip",
+  "extract",
+  "split",
+  "root-symbols",
+  "features-strip",
+  "features-merge",
+  "engram-pointers",
+  "remove-table"
+];
+function runTomlRegion(text, request) {
+  if (!isTomlRegionAction(request.action)) return outputOf(UNKNOWN_ACTION_EXIT, [], [], []);
+  const records = recordsOf(text);
+  switch (request.action) {
+    case "strip":
+    case "extract":
+      return splitAtMarkers(records, request, request.action);
+    case "split":
+      return splitRootFromSections(records);
+    case "root-symbols":
+      return rootSymbols(records);
+    case "features-strip":
+      return stripFeatureRegion(records, request);
+    case "features-merge":
+      return mergeFeatureRegion(records, request);
+    case "engram-pointers":
+      return moveEngramPointers(records, request);
+    case "remove-table":
+      return removeTable(records, request);
+  }
+}
+function isTomlRegionAction(value) {
+  return TOML_REGION_ACTIONS.includes(value);
+}
+function recordsOf(text) {
+  const records = text.split("\n");
+  if (records[records.length - 1] === "") records.pop();
+  return records;
+}
+function newScanner() {
+  return { stringMode: "", arrayDepth: 0, braceDepth: 0 };
+}
+function atRoot(scanner) {
+  return scanner.stringMode === "" && scanner.arrayDepth === 0 && scanner.braceDepth === 0;
+}
+function scanRoot(scanner, text) {
+  const length = text.length;
+  let cursor = 0;
+  while (cursor < length) {
+    const triple = text.slice(cursor, cursor + 3);
+    if (scanner.stringMode === "multiline-basic") {
+      if (triple === '"""' && !escapedBefore(text, cursor)) {
+        scanner.stringMode = "";
+        cursor += 3;
+      } else cursor += 1;
+      continue;
+    }
+    if (scanner.stringMode === "multiline-literal") {
+      if (triple === "'''") {
+        scanner.stringMode = "";
+        cursor += 3;
+      } else cursor += 1;
+      continue;
+    }
+    const character = text[cursor];
+    if (character === "#") return;
+    if (triple === '"""') {
+      scanner.stringMode = "multiline-basic";
+      cursor += 3;
+      continue;
+    }
+    if (triple === "'''") {
+      scanner.stringMode = "multiline-literal";
+      cursor += 3;
+      continue;
+    }
+    if (character === '"') {
+      cursor = afterBasicString(text, cursor);
+      continue;
+    }
+    if (character === "'") {
+      cursor = afterLiteralString(text, cursor);
+      continue;
+    }
+    if (character === "[") scanner.arrayDepth += 1;
+    else if (character === "]" && scanner.arrayDepth > 0) scanner.arrayDepth -= 1;
+    else if (character === "{") scanner.braceDepth += 1;
+    else if (character === "}" && scanner.braceDepth > 0) scanner.braceDepth -= 1;
+    cursor += 1;
+  }
+}
+function escapedBefore(text, position) {
+  let count = 0;
+  for (let cursor = position - 1; cursor >= 0 && text[cursor] === "\\"; cursor -= 1) count += 1;
+  return count % 2 === 1;
+}
+function afterBasicString(text, openingQuote) {
+  let cursor = openingQuote + 1;
+  while (cursor < text.length) {
+    const character = text[cursor];
+    if (character === "\\") {
+      cursor += 2;
+      continue;
+    }
+    if (character === '"') return cursor + 1;
+    cursor += 1;
+  }
+  return cursor;
+}
+function afterLiteralString(text, openingQuote) {
+  let cursor = openingQuote + 1;
+  while (cursor < text.length && text[cursor] !== "'") cursor += 1;
+  return cursor + 1;
+}
+function compactHeader(text) {
+  return text.replace(TRAILING_COMMENT, "").replace(EVERY_SPACE, "");
+}
+function isFeaturesHeader(text) {
+  return compactHeader(text) === "[features]";
+}
+function isFeaturesShape(text) {
+  const compact = compactHeader(text);
+  return /^\[\[?features(\]|[.]|$)/.test(compact) || /^\[\[?"features"(\]|[.]|$)/.test(compact) || /^\[\[?'features'(\]|[.]|$)/.test(compact);
+}
+function namesKeyAtRoot(text, keys) {
+  const withoutComment = text.replace(TRAILING_COMMENT, "");
+  const bare = new RegExp(`^[${POSIX_SPACE}]*(${keys})[${POSIX_SPACE}]*([.=])`);
+  const quoted = new RegExp(`^[${POSIX_SPACE}]*"(${keys})"[${POSIX_SPACE}]*([.=])`);
+  const literal = new RegExp(`^[${POSIX_SPACE}]*'(${keys})'[${POSIX_SPACE}]*([.=])`);
+  return bare.test(withoutComment) || quoted.test(withoutComment) || literal.test(withoutComment);
+}
+function isPointer(text, key) {
+  return new RegExp(`^${key}[${POSIX_SPACE}]*=`).test(text);
+}
+function isStringPointer(text, key) {
+  return new RegExp(`^${key}[${POSIX_SPACE}]*=[${POSIX_SPACE}]*"[^"]*"[${POSIX_SPACE}]*$`).test(text);
+}
+function pointerValue(text) {
+  return text.replace(new RegExp(`^[^=]*=[${POSIX_SPACE}]*"`), "").replace(new RegExp(`"[${POSIX_SPACE}]*$`), "");
+}
+function outputOf(exitCode, stdout, root, sections) {
+  return { exitCode, stdout: printed(stdout), root: printed(root), sections: printed(sections) };
+}
+function printed(lines) {
+  return lines.map((line) => `${line}
+`).join("");
+}
+function splitAtMarkers(records, request, action) {
+  const scanner = newScanner();
+  const emitted = [];
+  let inside = false;
+  let malformed = false;
+  let seenStart = 0;
+  let seenEnd = 0;
+  for (const record of records) {
+    const rootLine = atRoot(scanner);
+    if (rootLine && record === request.startMarker) {
+      if (inside) malformed = true;
+      inside = true;
+      seenStart += 1;
+      continue;
+    }
+    if (rootLine && record === request.endMarker) {
+      if (!inside) malformed = true;
+      inside = false;
+      seenEnd += 1;
+      continue;
+    }
+    if (action === "strip" ? !inside : inside) emitted.push(record);
+    scanRoot(scanner, record);
+  }
+  const broken = malformed || inside || seenStart !== seenEnd || seenStart > 1 || (request.requireRegion ?? false) && seenStart !== 1;
+  return outputOf(broken ? REGION_EXIT : 0, emitted, [], []);
+}
+function splitRootFromSections(records) {
+  const scanner = newScanner();
+  const root = [];
+  const sections = [];
+  let reachedSections = false;
+  for (const record of records) {
+    if (!reachedSections && atRoot(scanner) && TABLE_HEADER.test(record)) reachedSections = true;
+    if (reachedSections) {
+      sections.push(record);
+      continue;
+    }
+    root.push(record);
+    scanRoot(scanner, record);
+  }
+  return outputOf(0, [], root, sections);
+}
+function rootSymbols(records) {
+  const scanner = newScanner();
+  const emitted = [];
+  let inTableContext = false;
+  for (const record of records) {
+    const rootLine = atRoot(scanner);
+    if (rootLine && TABLE_HEADER.test(record)) {
+      emitted.push(record);
+      inTableContext = true;
+      continue;
+    }
+    if (rootLine && !inTableContext) emitted.push(record);
+    scanRoot(scanner, record);
+  }
+  return outputOf(0, emitted, [], []);
+}
+function scanFeatureRegion(records, request, action) {
+  const scanner = newScanner();
+  const emitted = [];
+  const featureLines = request.featureText === void 0 ? [] : recordsOf(request.featureText);
+  let section = "";
+  let inside = false;
+  let malformed = false;
+  let seenStart = 0;
+  let seenEnd = 0;
+  let tables = 0;
+  let inserted = false;
+  for (const record of records) {
+    const rootLine = atRoot(scanner);
+    if (action === "features-strip" && rootLine && record === request.featureStartMarker) {
+      if (section !== "features" || inside) malformed = true;
+      inside = true;
+      seenStart += 1;
+      continue;
+    }
+    if (action === "features-strip" && rootLine && record === request.featureEndMarker) {
+      if (section !== "features" || !inside) malformed = true;
+      inside = false;
+      seenEnd += 1;
+      continue;
+    }
+    if (action === "features-strip" && rootLine && FEATURE_MARKER_COMMENT.test(record)) {
+      malformed = true;
+      continue;
+    }
+    if (rootLine && TABLE_HEADER.test(record)) {
+      if (isFeaturesHeader(record)) {
+        tables += 1;
+        section = "features";
+        if (action === "features-merge") {
+          emitted.push(record, ...featureLines);
+          inserted = true;
+          continue;
+        }
+      } else {
+        if (isFeaturesShape(record)) malformed = true;
+        section = "other";
+      }
+    } else if (rootLine && section === "" && namesKeyAtRoot(record, "features")) {
+      malformed = true;
+    } else if (rootLine && section === "features" && !inside && namesKeyAtRoot(record, OWNED_FEATURE_KEYS)) {
+      malformed = true;
+    }
+    if (!inside) emitted.push(record);
+    scanRoot(scanner, record);
+  }
+  return { emitted, malformed, inside, seenStart, seenEnd, tables, inserted };
+}
+function stripFeatureRegion(records, request) {
+  const scan = scanFeatureRegion(records, request, "features-strip");
+  const broken = scan.malformed || scan.inside || scan.seenStart !== scan.seenEnd || scan.seenStart > 1 || scan.tables > 1 || scan.seenStart > 0 && scan.tables !== 1;
+  return outputOf(broken ? FEATURES_EXIT : 0, scan.emitted, [], []);
+}
+function mergeFeatureRegion(records, request) {
+  const scan = scanFeatureRegion(records, request, "features-merge");
+  if (scan.malformed || scan.tables > 1) return outputOf(FEATURES_EXIT, scan.emitted, [], []);
+  if (scan.inserted) return outputOf(0, scan.emitted, [], []);
+  const featureLines = request.featureText === void 0 ? [] : recordsOf(request.featureText);
+  const appended = records.length > 0 ? [""] : [];
+  return outputOf(0, [...scan.emitted, ...appended, "[features]", ...featureLines], [], []);
+}
+function removeTable(records, request) {
+  const scanner = newScanner();
+  const emitted = [];
+  let insideTarget = false;
+  let seen = 0;
+  for (const record of records) {
+    const rootLine = atRoot(scanner);
+    if (insideTarget && rootLine && TABLE_HEADER.test(record)) insideTarget = false;
+    if (!insideTarget && rootLine && record === request.targetHeader) {
+      seen += 1;
+      insideTarget = true;
+      scanRoot(scanner, record);
+      continue;
+    }
+    if (!insideTarget) emitted.push(record);
+    scanRoot(scanner, record);
+  }
+  return outputOf(seen > 1 ? DUPLICATE_TABLE_EXIT : 0, emitted, [], []);
+}
+function moveEngramPointers(records, request) {
+  const scanner = newScanner();
+  const modelKey = request.modelKey ?? "";
+  const compactKey = request.compactKey ?? "";
+  const pointerRows = /* @__PURE__ */ new Set();
+  let starts = 0;
+  let ends = 0;
+  let startLine = 0;
+  let endLine = 0;
+  let modelRows = 0;
+  let compactRows = 0;
+  let modelLine = 0;
+  let compactLine = 0;
+  let invalidModel = false;
+  let invalidCompact = false;
+  records.forEach((record, index) => {
+    const number = index + 1;
+    const rootLine = atRoot(scanner);
+    if (rootLine && record === request.startMarker) {
+      starts += 1;
+      startLine = number;
+    }
+    if (rootLine && record === request.endMarker) {
+      ends += 1;
+      endLine = number;
+    }
+    if (rootLine && isPointer(record, modelKey)) {
+      modelRows += 1;
+      modelLine = number;
+      pointerRows.add(number);
+      if (!isStringPointer(record, modelKey) || pointerValue(record) !== request.modelValue) invalidModel = true;
+    }
+    if (rootLine && isPointer(record, compactKey)) {
+      compactRows += 1;
+      compactLine = number;
+      pointerRows.add(number);
+      if (!isStringPointer(record, compactKey) || pointerValue(record) !== request.compactValue) invalidCompact = true;
+    }
+    scanRoot(scanner, record);
+  });
+  if (modelRows !== 1 || compactRows !== 1 || invalidModel || invalidCompact) return outputOf(POINTER_ROW_EXIT, [], [], []);
+  if (starts === 0 && ends === 0 && !(request.requireRegion ?? false)) return outputOf(0, records, [], []);
+  if (starts !== 1 || ends !== 1 || startLine >= endLine) return outputOf(POINTER_REGION_EXIT, [], [], []);
+  if (modelLine < startLine && compactLine < startLine) return outputOf(0, records, [], []);
+  const separatorLine = startLine - 1;
+  const skippedSeparator = separatorLine > 0 && records[separatorLine - 1] === "" ? separatorLine : 0;
+  const emitted = [];
+  records.forEach((record, index) => {
+    const number = index + 1;
+    if (pointerRows.has(number) || number === skippedSeparator) return;
+    if (number === startLine) {
+      emitted.push(`${modelKey} = "${request.modelValue ?? ""}"`, `${compactKey} = "${request.compactValue ?? ""}"`);
+    }
+    emitted.push(record);
+  });
+  return outputOf(0, emitted, [], []);
+}
+
+// core/src/install/codex.ts
+var CODEX_INSTALL_BACKUP_FORMAT = "oso-code-codex-install-v1";
+var CODEX_REPAIR_BACKUP_FORMAT = "oso-code-codex-repair-v1";
+var CODEX_PURGE_BACKUP_FORMAT = "oso-code-codex-purge-v1";
+var OSO_OWNED_CONFIG_PATHS = [
+  ["default_permissions"],
+  ["agents"],
+  ["shell_environment_policy", "set"],
+  ["mcp_servers", "context7"],
+  ["mcp_servers", "fallow"],
+  ["permissions", "oso"]
+];
+function codexPathsFor(homeDirectory, environment) {
+  const codexHome = environment["CODEX_HOME"] ?? path8.join(homeDirectory, ".codex");
+  return {
+    codexHome,
+    configFile: path8.join(codexHome, "config.toml"),
+    globalFile: path8.join(codexHome, "AGENTS.md"),
+    runtimeRoot: path8.join(homeDirectory, ".local", "share", "oso-code", "runtime"),
+    agentsHome: path8.join(homeDirectory, ".agents"),
+    backupsRoot: path8.join(homeDirectory, ".local", "state", "oso-code", "codex-backups")
+  };
+}
+function managedFeaturesStatus(text) {
+  const stripped = runTomlRegion(text, {
+    action: "features-strip",
+    featureStartMarker: FEATURE_MARKER_START,
+    featureEndMarker: FEATURE_MARKER_END
+  });
+  if (stripped.exitCode !== 0) return "malformed";
+  const extracted = runTomlRegion(text, {
+    action: "extract",
+    startMarker: FEATURE_MARKER_START,
+    endMarker: FEATURE_MARKER_END,
+    requireRegion: true
+  });
+  if (extracted.exitCode !== 0) return "missing";
+  return extracted.stdout === renderCodexManagedFeatures() ? "valid" : "divergent";
+}
+function ownedKeyPathsOutsideTheRegion(unmanagedText, file) {
+  const document = parseTomlDocument(unmanagedText, file);
+  return OSO_OWNED_CONFIG_PATHS.filter((keyPath) => holdsKeyPath(document, keyPath)).map((keyPath) => keyPath.join("."));
+}
+function inspectCodexConfig(text, file) {
+  const clean = runTomlRegion(text, { action: "strip", startMarker: CONFIG_MARKER_START, endMarker: CONFIG_MARKER_END });
+  if (clean.exitCode !== 0) return { kind: "malformed-markers" };
+  const features = managedFeaturesStatus(clean.stdout);
+  if (features === "malformed") return { kind: "malformed-features" };
+  if (features === "divergent") return { kind: "divergent-features" };
+  const withoutFeatures = runTomlRegion(clean.stdout, {
+    action: "features-strip",
+    featureStartMarker: FEATURE_MARKER_START,
+    featureEndMarker: FEATURE_MARKER_END
+  });
+  if (withoutFeatures.exitCode !== 0) return { kind: "malformed-features" };
+  try {
+    parseTomlDocument(text, file);
+    const owned = ownedKeyPathsOutsideTheRegion(withoutFeatures.stdout, file);
+    const first = owned[0];
+    if (first !== void 0) return { kind: "owned-key-outside-the-region", keyPath: first };
+  } catch (error) {
+    if (error instanceof TomlParseError) return { kind: "unparseable", detail: error.message };
+    throw error;
+  }
+  return void 0;
+}
+function refusalMessage(refusal) {
+  switch (refusal.kind) {
+    case "malformed-markers":
+      return "Codex config has malformed oso-code markers";
+    case "malformed-features":
+      return "Codex config has conflicting features ownership or malformed oso-code feature markers";
+    case "divergent-features":
+      return "Codex config has a divergent oso-code features region; it must contain only the published hooks and multi_agent values";
+    case "unparseable":
+      return refusal.detail;
+    case "owned-key-outside-the-region":
+      return `Codex config already defines the oso-code-owned key ${refusal.keyPath} outside the managed region`;
+  }
+}
+function rebuildManagedConfig(existingText, targetHome, runtimeRoot, fallowCommand) {
+  const clean = runTomlRegion(existingText, { action: "strip", startMarker: CONFIG_MARKER_START, endMarker: CONFIG_MARKER_END });
+  if (clean.exitCode !== 0) throw new Error(refusalMessage({ kind: "malformed-markers" }));
+  const withoutFeatures = runTomlRegion(clean.stdout, {
+    action: "features-strip",
+    featureStartMarker: FEATURE_MARKER_START,
+    featureEndMarker: FEATURE_MARKER_END
+  });
+  if (withoutFeatures.exitCode !== 0) throw new Error(refusalMessage({ kind: "malformed-features" }));
+  const parts = runTomlRegion(withoutFeatures.stdout, { action: "split" });
+  const featureBlock = `${FEATURE_MARKER_START}
+${renderCodexManagedFeatures()}${FEATURE_MARKER_END}
 `;
+  const merged = runTomlRegion(parts.sections, { action: "features-merge", featureText: featureBlock });
+  if (merged.exitCode !== 0) throw new Error(refusalMessage({ kind: "malformed-features" }));
+  return [
+    withoutTrailingBlankLines(parts.root),
+    parts.root === "" ? "" : "\n",
+    `${CONFIG_MARKER_START}
+`,
+    renderCodexManagedConfig(targetHome, runtimeRoot, fallowCommand),
+    `${CONFIG_MARKER_END}
+`,
+    merged.stdout === "" ? "" : "\n",
+    merged.stdout
+  ].join("");
+}
+function rebuildGlobalGuidance(existingText, body) {
+  const clean = stripLineRegion(existingText, GLOBAL_MARKER_START, GLOBAL_MARKER_END);
+  if (clean === void 0) throw new Error("global AGENTS.md has malformed oso-code markers");
+  return [
+    withoutTrailingBlankLines(clean),
+    clean === "" ? "" : "\n",
+    `${GLOBAL_MARKER_START}
+`,
+    body.endsWith("\n") || body === "" ? body : `${body}
+`,
+    `${GLOBAL_MARKER_END}
+`
+  ].join("");
+}
+function installCodex(input) {
+  if (!input.assumeYes) return requiresYesOutcome("install", "codex");
+  const paths = codexPathsFor(input.homeDirectory, input.environment);
+  const refusal = configRefusalOf(paths.configFile);
+  if (refusal !== void 0) return fatalOutcome("install", "codex", "the Codex config refuses this install", refusalMessage(refusal));
+  if (existsAtAll(paths.globalFile) && !isRegularNonSymlinkFile(paths.globalFile)) {
+    return fatalOutcome("install", "codex", "global AGENTS.md is not a regular file", paths.globalFile);
+  }
+  let tx;
+  try {
+    tx = beginTransaction(paths.backupsRoot, CODEX_INSTALL_BACKUP_FORMAT);
+    for (const { label, target } of backupCandidatesOf(paths)) backupTarget(tx, label, target);
+    commitManifest(tx);
+  } catch (error) {
+    return fatalOutcome("install", "codex", "could not create the pre-install backup", messageOf(error));
+  }
+  const infoLines = [`backup: ${tx.backupRoot}`];
+  const wiring = [];
+  const fallow = resolveFallowCommandFor(input, paths);
+  wiring.push(
+    fallow.resolved ? wiringOk("fallow (mcp)", fallow.command) : wiringFail("fallow (mcp)", "fallow-mcp is not installed; debt-sweep will use its rubric-only fallback")
+  );
+  try {
+    writeManagedConfig(paths, fallow.command);
+    wiring.push(wiringOk("managed config region", paths.configFile));
+  } catch (error) {
+    return rolledBack("install", "could not rewrite the managed Codex config region", error, tx);
+  }
+  try {
+    writeGlobalGuidance(paths, input.repositoryRoot);
+    wiring.push(wiringOk("global AGENTS.md region", paths.globalFile));
+  } catch (error) {
+    return rolledBack("install", "could not rewrite global AGENTS.md", error, tx);
+  }
+  if (input.installGitHook ?? true) wiring.push(wireGitCommitHook2(input.repositoryRoot, paths.runtimeRoot, input.environment));
+  else infoLines.push("skipping the git commit hook (--no-git-hook)");
+  if ((input.installImpeccable ?? true) === false) infoLines.push("skipping impeccable (--no-impeccable)");
+  for (const backup of pruneInstallBackups(paths.backupsRoot, input.environment)) {
+    infoLines.push(`backup retention: removed ${backup}`);
+  }
+  return { report: renderCommandReport("install", "codex", infoLines, wiring), exitCode: 0 };
+}
+function repairCodex(input) {
+  if (!input.assumeYes) return requiresYesOutcome("repair", "codex");
+  const paths = codexPathsFor(input.homeDirectory, input.environment);
+  let tx;
+  try {
+    tx = beginTransaction(paths.backupsRoot, CODEX_REPAIR_BACKUP_FORMAT);
+    backupTarget(tx, "config", paths.configFile);
+    backupTarget(tx, "global", paths.globalFile);
+    commitManifest(tx);
+  } catch (error) {
+    return fatalOutcome("repair", "codex", "could not create the pre-repair backup", messageOf(error));
+  }
+  const infoLines = [`backup: ${tx.backupRoot}`];
+  const wiring = [];
+  wiring.push(normalizeEngramPointers(paths));
+  const fallow = resolveFallowCommandFor(input, paths);
+  try {
+    writeManagedConfig(paths, fallow.command);
+    wiring.push(wiringOk("managed config region", paths.configFile));
+  } catch (error) {
+    return rolledBack("repair", "could not rewrite the managed Codex config region", error, tx);
+  }
+  try {
+    writeGlobalGuidance(paths, input.repositoryRoot);
+    wiring.push(wiringOk("global AGENTS.md region", paths.globalFile));
+  } catch (error) {
+    return rolledBack("repair", "could not rewrite global AGENTS.md", error, tx);
+  }
+  return { report: renderCommandReport("repair", "codex", infoLines, wiring), exitCode: 0 };
+}
+function purgeCodex(input) {
+  if (!input.assumeYes) return requiresYesOutcome("purge", "codex");
+  const paths = codexPathsFor(input.homeDirectory, input.environment);
+  if (paths.codexHome === path8.parse(paths.codexHome).root || input.homeDirectory === path8.parse(input.homeDirectory).root) {
+    return fatalOutcome("purge", "codex", "refusing to purge a filesystem root", paths.codexHome);
+  }
+  let tx;
+  try {
+    tx = beginTransaction(paths.backupsRoot, CODEX_PURGE_BACKUP_FORMAT);
+    backupTarget(tx, "codex-home", paths.codexHome);
+    backupTarget(tx, "agents-home", paths.agentsHome);
+    commitManifest(tx);
+  } catch (error) {
+    return fatalOutcome("purge", "codex", "could not create the pre-purge backup", messageOf(error));
+  }
+  const infoLines = [`backup: ${tx.backupRoot}`, "no login or installation command was run"];
+  const wiring = [];
+  for (const [component, target] of [
+    ["Codex home", paths.codexHome],
+    ["agents home", paths.agentsHome]
+  ]) {
+    if (!existsAtAll(target)) {
+      wiring.push(wiringOk(component, "already absent"));
+      continue;
+    }
+    try {
+      rmSync6(target, { recursive: true, force: true });
+      wiring.push(existsAtAll(target) ? wiringFail(component, `still present: ${target}`) : wiringOk(component, `removed ${target}`));
+    } catch (error) {
+      wiring.push(wiringFail(component, messageOf(error)));
+    }
+  }
+  infoLines.push(`restore with: oso install --host codex --yes, or by hand from ${tx.backupRoot}`);
+  return { report: renderCommandReport("purge", "codex", infoLines, wiring), exitCode: 0 };
+}
+function configRefusalOf(configFile) {
+  if (existsAtAll(configFile) && !isRegularNonSymlinkFile(configFile)) return { kind: "unparseable", detail: `not a regular file: ${configFile}` };
+  if (!isReadableRegularFile(configFile)) return void 0;
+  return inspectCodexConfig(readFileSync9(configFile, "utf8"), configFile);
+}
+function writeManagedConfig(paths, fallowCommand) {
+  const existing = isReadableRegularFile(paths.configFile) ? readFileSync9(paths.configFile, "utf8") : "";
+  const rebuilt = rebuildManagedConfig(existing, paths.codexHome, paths.runtimeRoot, fallowCommand);
+  mkdirSync6(paths.codexHome, { recursive: true });
+  writeFileSync6(paths.configFile, rebuilt, { mode: 384 });
+}
+function writeGlobalGuidance(paths, repositoryRoot2) {
+  const existing = isReadableRegularFile(paths.globalFile) ? readFileSync9(paths.globalFile, "utf8") : "";
+  const body = readFileSync9(path8.join(repositoryRoot2, "bootstrap", "codex-global.md"), "utf8");
+  mkdirSync6(paths.codexHome, { recursive: true });
+  writeFileSync6(paths.globalFile, rebuildGlobalGuidance(existing, body), { mode: 384 });
+}
+function normalizeEngramPointers(paths) {
+  if (!isReadableRegularFile(paths.configFile)) return wiringFail("engram pointers", `no config at ${paths.configFile}`);
+  const text = readFileSync9(paths.configFile, "utf8");
+  const moved = runTomlRegion(text, {
+    action: "engram-pointers",
+    startMarker: CONFIG_MARKER_START,
+    endMarker: CONFIG_MARKER_END,
+    modelKey: MODEL_INSTRUCTIONS_KEY,
+    compactKey: COMPACT_PROMPT_KEY,
+    modelValue: path8.join(paths.codexHome, "engram-instructions.md"),
+    compactValue: path8.join(paths.codexHome, "engram-compact-prompt.md"),
+    requireRegion: true
+  });
+  if (moved.exitCode === 10) return wiringFail("engram pointers", "the Codex config markers are missing or malformed");
+  if (moved.exitCode !== 0) return wiringFail("engram pointers", "Engram's instruction pointers are missing, duplicated, or unexpected");
+  if (moved.stdout === text) return wiringOk("engram pointers", "already normalized");
+  writeFileSync6(paths.configFile, moved.stdout, { mode: 384 });
+  return wiringOk("engram pointers", "moved above the managed region");
+}
+function wireGitCommitHook2(repositoryRoot2, runtimeRoot, environment) {
+  const hooksPath = path8.join(runtimeRoot, "git-hooks");
+  const run = spawnSync4("git", ["-C", repositoryRoot2, "config", "core.hooksPath", hooksPath], { env: environment, encoding: "utf8" });
+  if (run.error !== void 0 || run.status !== 0) return wiringFail("git commit hook", `${run.stdout ?? ""}${run.stderr ?? ""}`.trim());
+  return wiringOk("git commit hook", `core.hooksPath=${hooksPath}`);
+}
+function resolveFallowCommandFor(input, paths) {
+  return resolveFallowMcpCommand2(
+    paths.codexHome,
+    input.environment,
+    () => npmGlobalPrefix2(input.environment),
+    (name) => firstExecutableOnPath(input.environment, name)
+  );
+}
+function npmGlobalPrefix2(environment) {
+  const run = spawnSync4("npm", ["prefix", "-g"], { env: environment, encoding: "utf8" });
+  if (run.error !== void 0 || run.status !== 0) return void 0;
+  const value = run.stdout.trim();
+  return value === "" ? void 0 : value;
+}
+function backupCandidatesOf(paths) {
+  return [
+    { label: "config", target: paths.configFile },
+    { label: "global", target: paths.globalFile },
+    { label: "hooks-manifest", target: path8.join(paths.codexHome, "hooks.json") },
+    { label: "agents", target: path8.join(paths.codexHome, "agents") },
+    { label: "runtime", target: paths.runtimeRoot }
+  ];
+}
+function rolledBack(verb, summary, error, tx) {
+  const restore = rollback(tx);
+  return fatalOutcome(verb, "codex", summary, messageOf(error), restoreNoteOf(restore));
+}
+function stripLineRegion(text, start, end) {
+  const kept = [];
+  let inside = false;
+  let seenStart = 0;
+  let seenEnd = 0;
+  for (const line of text === "" ? [] : text.replace(/\n$/, "").split("\n")) {
+    if (line === start) {
+      if (inside) return void 0;
+      inside = true;
+      seenStart += 1;
+      continue;
+    }
+    if (line === end) {
+      if (!inside) return void 0;
+      inside = false;
+      seenEnd += 1;
+      continue;
+    }
+    if (!inside) kept.push(line);
+  }
+  if (inside || seenStart !== seenEnd || seenStart > 1) return void 0;
+  return kept.length === 0 ? "" : `${kept.join("\n")}
+`;
+}
+var FIELDLESS_LINE = /^[ \t]*$/;
+function withoutTrailingBlankLines(text) {
+  if (text === "") return "";
+  const lines = text.replace(/\n$/, "").split("\n");
+  let last = lines.length;
+  while (last > 0 && FIELDLESS_LINE.test(lines[last - 1] ?? "")) last -= 1;
+  return last === 0 ? "" : `${lines.slice(0, last).join("\n")}
+`;
+}
+function holdsKeyPath(document, keyPath) {
+  let cursor = document;
+  for (const key of keyPath) {
+    if (typeof cursor !== "object" || cursor === null || Array.isArray(cursor)) return false;
+    if (!Object.hasOwn(cursor, key)) return false;
+    cursor = cursor[key];
+  }
+  return true;
+}
+function messageOf(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+// core/src/install/verify-codex.ts
+import path9 from "node:path";
+import { readFileSync as readFileSync10, readdirSync as readdirSync4 } from "node:fs";
+
+// core/src/routes/routes.ts
+var TOOL_ROWS = [
+  { gate: "commit", names: { claude: "Bash", codex: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "Edit", codex: "apply_patch", opencode: "edit" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "MultiEdit", codex: "none", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "Write", codex: "apply_patch", opencode: "write" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "NotebookEdit", codex: "none", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "mcp__fallow__fix_apply", codex: "mcp__fallow__fix_apply", opencode: "fallow_fix_apply" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "none", codex: "none", opencode: "apply_patch" }, capability: "write", mandated: "no" },
+  { gate: "proddeploy", names: { claude: "Bash", codex: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
+  { gate: "handoff", names: { claude: "none", codex: "explorer", opencode: "none" }, capability: "role", mandated: "yes" },
+  { gate: "handoff", names: { claude: "none", codex: "oso-applier", opencode: "none" }, capability: "role", mandated: "yes" },
+  { gate: "handoff", names: { claude: "none", codex: "oso-verifier", opencode: "none" }, capability: "role", mandated: "yes" },
+  { gate: "handoff", names: { claude: "none", codex: "oso-integrator", opencode: "none" }, capability: "role", mandated: "yes" },
+  { gate: "handoff", names: { claude: "none", codex: "oso-doubt-pass", opencode: "none" }, capability: "role", mandated: "yes" },
+  { gate: "handoff", names: { claude: "none", codex: "oso-debt-sweep", opencode: "none" }, capability: "role", mandated: "yes" },
+  { gate: "handoff", names: { claude: "none", codex: "oso-triage", opencode: "none" }, capability: "role", mandated: "yes" },
+  { gate: "handoff", names: { claude: "none", codex: "oso-security-reviewer", opencode: "none" }, capability: "role", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", codex: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "apply_patch", opencode: "apply_patch" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "update_plan", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "request_user_input", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "Agent", opencode: "task" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "collaborationspawn_agent", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "collaborationsend_message", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "collaborationfollowup_task", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "collaborationwait_agent", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "collaborationinterrupt_agent", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "collaborationlist_agents", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "spawn_agent", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "send_input", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "resume_agent", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "close_agent", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "send_message", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "followup_task", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "wait_agent", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "interrupt_agent", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "list_agents", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "wait", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "create_goal", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "get_goal", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "update_goal", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "view_image", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "list_mcp_resources", opencode: "list_mcp_resources" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "list_mcp_resource_templates", opencode: "list_mcp_resource_templates" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "read_mcp_resource", opencode: "read_mcp_resource" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "image_gen__imagegen", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "image_genimagegen", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "web__run", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_search", opencode: "engram_mem_search" }, capability: "read", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_get_observation", opencode: "engram_mem_get_observation" }, capability: "read", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_save", opencode: "engram_mem_save" }, capability: "write", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_update", opencode: "engram_mem_update" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_context", opencode: "engram_mem_context" }, capability: "read", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_session_summary", opencode: "engram_mem_session_summary" }, capability: "write", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_current_project", opencode: "engram_mem_current_project" }, capability: "read", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_save_prompt", opencode: "engram_mem_save_prompt" }, capability: "write", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_judge", opencode: "engram_mem_judge" }, capability: "write", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__context7__resolve-library-id", opencode: "context7_resolve-library-id" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__context7__query-docs", opencode: "context7_query-docs" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__context7__resolve_library_id", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__fallow__find_dupes", opencode: "fallow_find_dupes" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__fallow__get_cleanup_candidates", opencode: "fallow_get_cleanup_candidates" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__fallow__audit", opencode: "fallow_audit" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__fallow__fix_apply", opencode: "fallow_fix_apply" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "edit" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "write" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "read" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "grep" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "glob" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "skill" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "todowrite" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "webfetch" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "websearch" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "question" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "lsp" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "plan_exit" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "oso_plan_approve" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "oso_plan_cancel" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "oso_wave" }, capability: "write", mandated: "no" }
+];
+
+// core/src/install/verify-codex.ts
+var KNOWN_MCP_SERVERS = ["engram", "context7", "fallow"];
+var PROTOCOL_MANDATED_TOOLS = {
+  engram: [
+    "mem_save",
+    "mem_search",
+    "mem_context",
+    "mem_session_summary",
+    "mem_get_observation",
+    "mem_save_prompt",
+    "mem_current_project",
+    "mem_judge"
+  ]
+};
+function verifyCodex(input) {
+  const paths = codexPathsFor(input.homeDirectory, input.environment);
+  const report2 = new VerifyReport();
+  checkManagedConfigRegion(report2, paths, input.environment);
+  checkGlobalGuidance(report2, paths, input.repositoryRoot);
+  checkPublishedRuntimeBytes(report2, paths, input.repositoryRoot);
+  checkRuntimeEntrypointsExecutable(report2, paths);
+  checkAgentPayload(report2, paths, input.repositoryRoot);
+  checkEngramWiring(report2, paths);
+  checkImpeccableMount(report2, input.homeDirectory);
+  checkMcpToolTableDrift(report2, paths);
+  return { report: report2.render(), exitCode: report2.exitCode };
+}
+function checkManagedConfigRegion(report2, paths, environment) {
+  if (!isReadableRegularFile(paths.configFile)) {
+    report2.check("managed Codex config", "valid", "missing");
+    return;
+  }
+  const text = readFileSync10(paths.configFile, "utf8");
+  const extracted = runTomlRegion(text, {
+    action: "extract",
+    startMarker: CONFIG_MARKER_START,
+    endMarker: CONFIG_MARKER_END,
+    requireRegion: true
+  });
+  if (extracted.exitCode !== 0) {
+    report2.check("managed Codex config", "valid", "malformed");
+    return;
+  }
+  const fallowCommand = fallowCommandInside(extracted.stdout);
+  const expected = renderCodexManagedConfig(paths.codexHome, paths.runtimeRoot, fallowCommand);
+  if (extracted.stdout !== expected) {
+    report2.check("managed Codex config", "valid", "divergent");
+    return;
+  }
+  report2.check("managed Codex config", "valid", featuresVerdictOf(managedFeaturesStatus(text)));
+  report2.detail(`fallow MCP command in the managed region: ${fallowCommand}`);
+  report2.detail(`CODEX_HOME read as ${environment["CODEX_HOME"] ?? paths.codexHome}`);
+}
+function checkGlobalGuidance(report2, paths, repositoryRoot2) {
+  if (!isReadableRegularFile(paths.globalFile)) {
+    report2.check("global Codex guidance", "exact", "missing");
+    return;
+  }
+  const installed = regionBetween(readFileSync10(paths.globalFile, "utf8"), GLOBAL_MARKER_START, GLOBAL_MARKER_END);
+  if (installed === void 0) {
+    report2.check("global Codex guidance", "exact", "malformed");
+    return;
+  }
+  const source = path9.join(repositoryRoot2, "bootstrap", "codex-global.md");
+  if (!isReadableRegularFile(source)) {
+    report2.detail(`published guidance unreadable: ${source}`);
+    report2.check("global Codex guidance", "exact", "source-unreadable");
+    return;
+  }
+  report2.check("global Codex guidance", "exact", installed === readFileSync10(source, "utf8") ? "exact" : "divergent");
+}
+function checkPublishedRuntimeBytes(report2, paths, repositoryRoot2) {
+  const divergences = trustDivergences(
+    path9.join(repositoryRoot2, "bootstrap", "hook-hashes.txt"),
+    (relative) => relative.startsWith("opencode/"),
+    (relative) => installedRuntimePathOf(relative, paths)
+  );
+  for (const divergence of divergences) report2.detail(`${divergence.file}: ${divergence.state.kind}`);
+  report2.check("published runtime bytes", "verified", divergences.length === 0 ? "verified" : `bad:${divergences.length}`);
+}
+function checkRuntimeEntrypointsExecutable(report2, paths) {
+  const entrypoints = [path9.join(paths.runtimeRoot, "bin", "oso-state"), path9.join(paths.runtimeRoot, "git-hooks", "pre-commit")];
+  const missing = entrypoints.filter((entrypoint) => !isExecutableRegularFile(entrypoint));
+  for (const entrypoint of missing) report2.detail(`not executable: ${entrypoint}`);
+  report2.check("runtime entrypoints executable", "executable", missing.length === 0 ? "executable" : `not-executable:${missing.length}`);
+}
+function checkAgentPayload(report2, paths, repositoryRoot2) {
+  const sourceDir = path9.join(repositoryRoot2, "codex", "agents");
+  let published;
+  try {
+    published = readdirSync4(sourceDir).filter((name) => name.endsWith(".toml")).sort();
+  } catch (cause) {
+    if (!isErrnoException(cause) || cause.code !== "ENOENT" && cause.code !== "ENOTDIR") throw cause;
+    report2.detail(`published agents unreadable: ${sourceDir} (${cause.code})`);
+    report2.check("Codex agents copied exactly", "exact", "source-unreadable");
+    return;
+  }
+  if (published.length === 0) {
+    report2.detail(`published agents empty: ${sourceDir}`);
+    report2.check("Codex agents copied exactly", "exact", "source-empty");
+    return;
+  }
+  const installedDir = path9.join(paths.codexHome, "agents");
+  const divergent = published.filter((name) => {
+    const installed = path9.join(installedDir, name);
+    if (!isReadableRegularFile(installed)) return true;
+    return readFileSync10(installed, "utf8") !== readFileSync10(path9.join(sourceDir, name), "utf8");
+  });
+  for (const name of divergent) report2.detail(`divergent agent: ${name}`);
+  report2.check("Codex agents copied exactly", "exact", divergent.length === 0 ? "exact" : `divergent:${divergent.length}`);
+}
+function checkEngramWiring(report2, paths) {
+  const instructions = path9.join(paths.codexHome, "engram-instructions.md");
+  const compact = path9.join(paths.codexHome, "engram-compact-prompt.md");
+  const wired = isReadableRegularFile(instructions) && isReadableRegularFile(compact) && mcpServersOf(paths.configFile).some((server) => server.name === "engram");
+  report2.check("Engram Codex integration", "wired", wired ? "wired" : "incomplete");
+}
+function checkImpeccableMount(report2, homeDirectory) {
+  const optOut = path9.join(homeDirectory, ".local", "state", "oso-code", "impeccable-opt-out");
+  if (isReadableRegularFile(optOut)) {
+    report2.skip("Impeccable Codex mount \u2014 the installer recorded --no-impeccable");
+    return;
+  }
+  const mount = path9.join(homeDirectory, ".agents", "skills", "impeccable");
+  report2.check("Impeccable Codex mount", "mounted", isReadableRegularFile(path9.join(mount, "SKILL.md")) ? "mounted" : "missing");
+}
+function checkMcpToolTableDrift(report2, paths) {
+  report2.check(
+    "the hardcoded mandated tool list agrees with core/src/routes/routes.ts in both directions",
+    "agree",
+    mandatedAgreementStatus()
+  );
+  for (const server of mcpServersOf(paths.configFile)) {
+    if (server.command === void 0 || server.command === "") {
+      report2.skip(`${server.name} MCP tool drift \u2014 no local command in ${paths.configFile} (a remote/URL-based server has no process this check spawns)`);
+      continue;
+    }
+    report2.skip(
+      `${server.name} MCP tool drift \u2014 the live tool list is nightly's; no PR-gate check spawns ${server.command} (G4)`
+    );
+  }
+}
+function mandatedAgreementStatus() {
+  const mismatches = [...hardcodedRowsWithNoMandatedRoute(), ...mandatedRoutesNoServerHardcodes()];
+  return mismatches.length === 0 ? "agree" : mismatches.join(",");
+}
+function hardcodedRowsWithNoMandatedRoute(hardcoded = PROTOCOL_MANDATED_TOOLS) {
+  const mismatches = [];
+  for (const server of KNOWN_MCP_SERVERS) {
+    for (const bare of hardcoded[server] ?? []) {
+      const spelled = `mcp__${server}__${bare}`;
+      if (!TOOL_ROWS.some((row) => row.names.codex === spelled && row.mandated === "yes")) {
+        mismatches.push(`${spelled}(hardcoded-not-a-yes-row)`);
+      }
+    }
+  }
+  return mismatches;
+}
+function mandatedRoutesNoServerHardcodes(hardcoded = PROTOCOL_MANDATED_TOOLS) {
+  const mismatches = [];
+  for (const row of TOOL_ROWS) {
+    if (row.mandated !== "yes" || !row.names.codex.startsWith("mcp__")) continue;
+    const server = KNOWN_MCP_SERVERS.find((name) => row.names.codex.startsWith(`mcp__${name}__`));
+    if (server === void 0) continue;
+    const bare = row.names.codex.slice(`mcp__${server}__`.length);
+    if (!(hardcoded[server] ?? []).includes(bare)) mismatches.push(`${row.names.codex}(yes-row-not-hardcoded)`);
+  }
+  return mismatches;
+}
+function mcpServersOf(configFile) {
+  let document;
+  try {
+    document = readTomlFile(configFile);
+  } catch (error) {
+    if (error instanceof TomlParseError) return [];
+    throw error;
+  }
+  const servers = document?.["mcp_servers"];
+  if (typeof servers !== "object" || servers === null || Array.isArray(servers)) return [];
+  return Object.entries(servers).map(([name, value]) => {
+    const entry = typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
+    const command = entry["command"];
+    const args = entry["args"];
+    return {
+      name,
+      command: typeof command === "string" ? command : void 0,
+      args: Array.isArray(args) ? args.filter((item) => typeof item === "string") : []
+    };
+  });
+}
+function regionBetween(text, start, end) {
+  const kept = [];
+  let inside = false;
+  let starts = 0;
+  let ends = 0;
+  for (const line of text === "" ? [] : text.replace(/\n$/, "").split("\n")) {
+    if (line === start) {
+      starts += 1;
+      inside = true;
+      continue;
+    }
+    if (line === end) {
+      ends += 1;
+      inside = false;
+      continue;
+    }
+    if (inside) kept.push(line);
+  }
+  if (starts !== 1 || ends !== 1 || inside) return void 0;
+  return kept.length === 0 ? "" : `${kept.join("\n")}
+`;
+}
+function featuresVerdictOf(status) {
+  switch (status) {
+    case "valid":
+      return "valid";
+    case "missing":
+      return "missing-features";
+    case "malformed":
+      return "malformed-features";
+    case "divergent":
+      return "divergent-features";
+  }
+}
+function fallowCommandInside(regionText) {
+  const row = regionText.split("\n").find((line) => line.startsWith("command = "));
+  if (row === void 0) return "";
+  const quoted = row.slice("command = ".length).trim();
+  return quoted.startsWith('"') && quoted.endsWith('"') ? quoted.slice(1, -1).replaceAll('\\"', '"').replaceAll("\\\\", "\\") : quoted;
+}
+function installedRuntimePathOf(relative, paths) {
+  if (relative === "codex/hooks/hooks.json") return path9.join(paths.codexHome, "hooks.json");
+  for (const [prefix, directory] of [
+    ["plugin/dist/", "dist"],
+    ["plugin/hooks/", "hooks"],
+    ["plugin/git-hooks/", "git-hooks"],
+    ["plugin/bin/", "bin"]
+  ]) {
+    if (relative.startsWith(prefix)) return path9.join(paths.runtimeRoot, directory, relative.slice(prefix.length));
+  }
+  return void 0;
+}
+
+// core/src/install/cli.ts
 var VERBS = ["install", "verify", "repair", "purge"];
 var HOSTS = ["claude", "codex", "opencode"];
+var FLAGS = ["--yes", "--replace-claude-md", "--no-impeccable", "--no-git-hook"];
+var FLAGS_PER_HOST = {
+  claude: ["--yes", "--replace-claude-md", "--no-impeccable", "--no-git-hook"],
+  codex: ["--yes", "--no-impeccable", "--no-git-hook"],
+  opencode: ["--yes", "--no-impeccable", "--no-git-hook"]
+};
+var USAGE = `usage: oso <install|verify|repair|purge> --host <claude|codex|opencode> [flags]
+
+flags, per host:
+${HOSTS.map((host) => `  ${host.padEnd(9)} ${FLAGS_PER_HOST[host].join(" ")}`).join("\n")}
+
+A flag offered to a host that does not take it is refused, never ignored.
+The opencode host is not yet implemented.
+`;
 var UsageError = class extends Error {
+};
+var FlagNotOfferedError = class extends Error {
+  flag;
+  host;
+  constructor(flag, host) {
+    super(`${flag} is not a flag the ${host} host takes \u2014 it takes ${FLAGS_PER_HOST[host].join(", ")}`);
+    this.name = "FlagNotOfferedError";
+    this.flag = flag;
+    this.host = host;
+  }
 };
 var VerbNotImplementedError = class extends Error {
   verb;
@@ -1666,27 +3534,47 @@ function main(argv, repositoryRoot2) {
 }
 function dispatch(argv, repositoryRoot2) {
   const parsed = parseArgv(argv);
-  if (parsed.host !== "claude") throw new VerbNotImplementedError(parsed.verb, parsed.host);
-  const claudeContext = {
+  if (parsed.host === "opencode") throw new VerbNotImplementedError(parsed.verb, parsed.host);
+  const context = {
     homeDirectory: homeDirectoryFrom(process.platform, process.env),
     repositoryRoot: repositoryRoot2,
     environment: process.env,
     platform: process.platform,
-    architecture: process.arch,
-    assumeYes: parsed.assumeYes
+    assumeYes: parsed.flags.has("--yes"),
+    installImpeccable: !parsed.flags.has("--no-impeccable"),
+    installGitHook: !parsed.flags.has("--no-git-hook")
   };
-  const outcome = parsed.verb === "verify" ? verifyClaude(claudeContext) : parsed.verb === "install" ? installClaude(claudeContext) : parsed.verb === "repair" ? repairClaude(claudeContext) : purgeClaude(claudeContext);
+  const outcome = parsed.host === "claude" ? runClaude(parsed.verb, { ...context, architecture: process.arch, replaceClaudeMd: parsed.flags.has("--replace-claude-md") }) : runCodex(parsed.verb, context);
   process.stdout.write(outcome.report);
   return outcome.exitCode;
+}
+function runClaude(verb, context) {
+  switch (verb) {
+    case "verify":
+      return verifyClaude(context);
+    case "install":
+      return installClaude(context);
+    case "repair":
+      return repairClaude(context);
+    case "purge":
+      return purgeClaude(context);
+  }
+}
+function runCodex(verb, context) {
+  switch (verb) {
+    case "verify":
+      return verifyCodex(context);
+    case "install":
+      return installCodex(context);
+    case "repair":
+      return repairCodex(context);
+    case "purge":
+      return purgeCodex(context);
+  }
 }
 function report(error) {
   if (error instanceof UsageError) {
     process.stderr.write(USAGE);
-    return 1;
-  }
-  if (error instanceof VerbNotImplementedError) {
-    process.stderr.write(`oso: ${error.message}
-`);
     return 1;
   }
   const message = error instanceof Error ? error.message : String(error);
@@ -1698,7 +3586,7 @@ function parseArgv(argv) {
   const [verbToken, ...rest] = argv;
   if (!isVerb(verbToken)) throw new UsageError();
   let host;
-  let assumeYes = false;
+  const offered = [];
   for (let index = 0; index < rest.length; index += 1) {
     const token = rest[index];
     if (token === "--host") {
@@ -1706,20 +3594,24 @@ function parseArgv(argv) {
       index += 1;
       continue;
     }
-    if (token === "--yes") {
-      assumeYes = true;
-      continue;
-    }
-    throw new UsageError();
+    if (!isFlag(token)) throw new UsageError();
+    offered.push(token);
   }
   if (!isHost(host)) throw new UsageError();
-  return { verb: verbToken, host, assumeYes };
+  const taken = FLAGS_PER_HOST[host];
+  for (const flag of offered) {
+    if (!taken.includes(flag)) throw new FlagNotOfferedError(flag, host);
+  }
+  return { verb: verbToken, host, flags: new Set(offered) };
 }
 function isVerb(value) {
   return value !== void 0 && VERBS.includes(value);
 }
 function isHost(value) {
   return value !== void 0 && HOSTS.includes(value);
+}
+function isFlag(value) {
+  return value !== void 0 && FLAGS.includes(value);
 }
 
 // core/src/bin/oso.ts
@@ -1738,3 +3630,42 @@ process.exit(main(process.argv.slice(2), repositoryRoot));
 export {
   repositoryRootFrom
 };
+/*! Bundled license information:
+
+smol-toml/dist/date.js:
+smol-toml/dist/error.js:
+smol-toml/dist/util.js:
+smol-toml/dist/primitive.js:
+smol-toml/dist/extract.js:
+smol-toml/dist/struct.js:
+smol-toml/dist/parse.js:
+smol-toml/dist/stringify.js:
+smol-toml/dist/index.js:
+  (*!
+   * Copyright (c) Squirrel Chat et al., All rights reserved.
+   * SPDX-License-Identifier: BSD-3-Clause
+   *
+   * Redistribution and use in source and binary forms, with or without
+   * modification, are permitted provided that the following conditions are met:
+   *
+   * 1. Redistributions of source code must retain the above copyright notice, this
+   *    list of conditions and the following disclaimer.
+   * 2. Redistributions in binary form must reproduce the above copyright notice,
+   *    this list of conditions and the following disclaimer in the
+   *    documentation and/or other materials provided with the distribution.
+   * 3. Neither the name of the copyright holder nor the names of its contributors
+   *    may be used to endorse or promote products derived from this software without
+   *    specific prior written permission.
+   *
+   * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+   * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+   * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+   * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+   * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+   * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+   * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+   * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+   * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+   * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+   *)
+*/

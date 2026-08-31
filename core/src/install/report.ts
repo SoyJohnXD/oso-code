@@ -41,3 +41,47 @@ export class VerifyReport {
     return [...this.lines, SUMMARY_RULE, `passed: ${this.passed}, failed: ${this.failed}`].map((line) => `${line}\n`).join("");
   }
 }
+
+export type CommandOutcome = Readonly<{ report: string; exitCode: number }>;
+
+export type WiringEntry = Readonly<{ ok: boolean; component: string; note: string }>;
+
+export function wiringOk(component: string, note: string): WiringEntry {
+  return { ok: true, component, note };
+}
+
+export function wiringFail(component: string, note: string): WiringEntry {
+  return { ok: false, component, note };
+}
+
+export function renderCommandReport(verb: string, host: string, infoLines: readonly string[], wiring: readonly WiringEntry[]): string {
+  const summaryLines = wiring.map((entry) => `  ${entry.component}: ${entry.ok ? "OK" : "FAILED"} \u2014 ${entry.note}`);
+  const failedCount = wiring.filter((entry) => !entry.ok).length;
+  const lines = [
+    `oso ${verb} --host ${host}`,
+    ...infoLines,
+    "wiring summary:",
+    ...summaryLines,
+    SUMMARY_RULE,
+    `wired: ${wiring.length - failedCount}, failed: ${failedCount}`,
+  ];
+  return lines.map((line) => `${line}\n`).join("");
+}
+
+export function requiresYesOutcome(verb: string, host: string): CommandOutcome {
+  return {
+    report: `oso ${verb} --host ${host} requires --yes in this slice \u2014 no interactive confirmation prompt is wired yet\n`,
+    exitCode: 1,
+  };
+}
+
+export function fatalOutcome(verb: string, host: string, summary: string, detail: string, restoreNote = ""): CommandOutcome {
+  return { report: `oso ${verb} --host ${host}: ${summary}: ${detail}${restoreNote}\n`, exitCode: 1 };
+}
+
+export function restoreNoteOf(restore: Readonly<{ failedCount: number; failedItems: readonly string[] }> | undefined): string {
+  if (restore === undefined) return "";
+  return restore.failedCount === 0
+    ? " \u2014 rolled back to the pre-run snapshot"
+    : ` \u2014 rollback incomplete: ${restore.failedItems.join(", ")} still need restoring by hand`;
+}
