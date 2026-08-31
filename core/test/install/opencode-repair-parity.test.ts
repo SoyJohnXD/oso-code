@@ -19,6 +19,7 @@ import {
   type StagedFixture,
 } from "../support/opencode-fixture.ts";
 import { provedSomething } from "../support/proved.ts";
+import { posixSpelled } from "../support/repository-paths.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
 import { skipUnlessBashRunsTheInstallerPipeline } from "../support/win32-skip-guards.ts";
 
@@ -281,7 +282,7 @@ function shellSources(): string[] {
   return SHELL_SOURCE_DIRECTORIES.flatMap((directory) =>
     readdirSync(path.join(repositoryRoot, directory), { recursive: true, encoding: "utf8" })
       .filter((entry) => entry.endsWith(".sh"))
-      .map((entry) => `${directory}/${entry}`)
+      .map((entry) => `${directory}/${posixSpelled(entry)}`)
       .sort(),
   );
 }

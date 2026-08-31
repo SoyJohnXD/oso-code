@@ -1,16 +1,15 @@
 import assert from "node:assert/strict";
-import path from "node:path";
 import { describe, test } from "node:test";
 import { GATE_ROWS } from "../../src/routes/routes.ts";
 import { provedSomething } from "../support/proved.ts";
-import { repositoryRoot } from "../support/state-sandbox.ts";
+import { posixRepositoryPath } from "../support/repository-paths.ts";
 import { readTrackedText, trackedRepositoryFiles, type TrackedFileText } from "../support/tracked-files.ts";
 
 const SHARED_BASH_LIBRARIES = ["lib.sh", "lexer.sh"];
 const BASH_RENDERER = "render-hooks-json.sh";
 
 const UNSCANNED_PREFIXES = ["docs/", "core/test/fixtures/", "plugin/hooks/"];
-const THIS_CHECK = path.relative(repositoryRoot, import.meta.filename).replaceAll(path.sep, "/");
+const THIS_CHECK = posixRepositoryPath(import.meta.filename);
 const UNSCANNED_FILES = new Set(["CHANGELOG.md", "tools/render-hooks-json.sh", THIS_CHECK]);
 
 const MINIMUM_SCANNED_FILES = 200;

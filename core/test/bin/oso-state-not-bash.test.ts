@@ -5,9 +5,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { provedSomething } from "../support/proved.ts";
+import { posixRepositoryPath } from "../support/repository-paths.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
 
-const selfPath = path.relative(repositoryRoot, fileURLToPath(import.meta.url));
+const selfPath = posixRepositoryPath(fileURLToPath(import.meta.url));
 
 const SCANNABLE_EXTENSIONS = new Set([".sh", ".bash", ".yml", ".yaml", ".ts", ".mjs", ".js"]);
 const SCANNABLE_EXTENSIONLESS_PATHS = new Set(["plugin/bin/oso-state", "plugin/git-hooks/pre-commit"]);

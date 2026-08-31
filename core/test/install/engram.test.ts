@@ -21,6 +21,7 @@ import {
   tarOctalSizeField,
   type ArchiveFixtureEntry,
 } from "../support/engram-archive-fixture.ts";
+import { posixRelativeTo } from "../support/repository-paths.ts";
 import { skipUnlessKernelRunsScriptFixtures } from "../support/win32-skip-guards.ts";
 
 const sandbox = mkdtempSync(path.join(tmpdir(), "oso-engram-"));
@@ -501,8 +502,8 @@ describe("the extractor never uses an archive entry name as a write path", () =>
 
       assert.deepEqual(readdirSync(canaryDirectory), [], `${label} wrote into the canary directory`);
       assert.deepEqual(
-        filesUnder(homeDirectory).map((file) => path.relative(homeDirectory, file)),
-        existsSync(path.join(homeDirectory, ".local", "bin", binaryName)) ? [path.join(".local", "bin", binaryName)] : [],
+        filesUnder(homeDirectory).map((file) => posixRelativeTo(homeDirectory, file)),
+        existsSync(path.join(homeDirectory, ".local", "bin", binaryName)) ? [`.local/bin/${binaryName}`] : [],
       );
     });
   }
