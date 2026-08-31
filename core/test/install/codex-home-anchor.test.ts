@@ -39,6 +39,22 @@ const HOME_SHAPES: readonly HomeShape[] = [
 
 const SHAPES_MOVING_CODEX_HOME = HOME_SHAPES.filter((shape) => shape.codexHome !== undefined);
 
+const A_WIN32_SHAPED_HOME = "C:\\Users\\operator\\home";
+const A_WIN32_SHAPED_CODEX_HOME = path.win32.join(A_WIN32_SHAPED_HOME, ".codex");
+const A_WIN32_SHAPED_REGION = renderCodexManagedConfig(
+  A_WIN32_SHAPED_HOME,
+  path.win32.join(A_WIN32_SHAPED_HOME, ".local", "share", "oso-code", "runtime"),
+  "fallow-mcp",
+);
+
+provedSomething(
+  "the win32-shaped render spells its grant differently from a posix join over the same HOME, so the grant checks read " +
+    "through the separator shape rather than around it",
+  !A_WIN32_SHAPED_REGION.includes(`"${path.posix.join(A_WIN32_SHAPED_HOME, STATE_ROOT_THESE_TESTS_SPELL)}" = true`),
+  `${A_WIN32_SHAPED_REGION} spells its grant exactly as path.posix.join does, so this fixture cannot tell a ` +
+    "separator-blind comparison from a byte-for-byte one and the case below would pass either way",
+);
+
 provedSomething(
   `${HOME_SHAPES.length} fixture HOME shape(s) were installed and then differentialled against ${THE_HOME_ANCHOR_ORACLE}`,
   HOME_SHAPES.length >= 5 && SHAPES_MOVING_CODEX_HOME.length >= 2,
@@ -76,11 +92,19 @@ describe("the managed region is anchored on HOME, the anchor all three bash call
 
   test("the write grant names the state root this suite spells, never one nested under the Codex home", () => {
     const installed = installedFixture(HOME_SHAPES[0] as HomeShape, NO_PATH_AT_ALL);
-    const stateRoot = path.posix.join(installed.home, STATE_ROOT_THESE_TESTS_SPELL);
+    const stateRoot = path.join(installed.home, STATE_ROOT_THESE_TESTS_SPELL);
     const region = regionOf(installed.paths);
-    assert.ok(region.includes(`"${stateRoot}" = true`), region);
-    assert.ok(region.includes(`"${path.posix.join(stateRoot, "worktrees")}" = true`), region);
-    assert.ok(!region.includes(path.posix.join(installed.paths.codexHome, STATE_ROOT_THESE_TESTS_SPELL)), region);
+    assert.ok(grantsWriteTo(region, stateRoot), region);
+    assert.ok(grantsWriteTo(region, path.join(stateRoot, "worktrees")), region);
+    assert.ok(!namesPath(region, path.join(installed.paths.codexHome, STATE_ROOT_THESE_TESTS_SPELL)), region);
+  });
+
+  test("a win32-shaped HOME grants the same anchor, under separators the anchor does not depend on", () => {
+    const stateRoot = path.win32.join(A_WIN32_SHAPED_HOME, STATE_ROOT_THESE_TESTS_SPELL);
+    assert.ok(grantsWriteTo(A_WIN32_SHAPED_REGION, stateRoot), A_WIN32_SHAPED_REGION);
+    assert.ok(grantsWriteTo(A_WIN32_SHAPED_REGION, path.win32.join(stateRoot, "worktrees")), A_WIN32_SHAPED_REGION);
+    const nestedUnderCodexHome = path.win32.join(A_WIN32_SHAPED_CODEX_HOME, STATE_ROOT_THESE_TESTS_SPELL);
+    assert.ok(!namesPath(A_WIN32_SHAPED_REGION, nestedUnderCodexHome), A_WIN32_SHAPED_REGION);
   });
 
   test("the verifier reads its own installer's region back as valid rather than divergent", () => {
@@ -175,6 +199,20 @@ function installedFallowCommandOf(home: string): string {
   const outcome = installCodex(input);
   assert.equal(outcome.exitCode, 0, outcome.report);
   return fallowCommandIn(regionOf(codexPathsFor(home, environment)));
+}
+
+const EVERY_RUN_OF_SEPARATORS = /[\\/]+/g;
+
+function separatorBlind(text: string): string {
+  return text.replace(EVERY_RUN_OF_SEPARATORS, "/");
+}
+
+function grantsWriteTo(regionText: string, root: string): boolean {
+  return separatorBlind(regionText).includes(`"${separatorBlind(root)}" = true`);
+}
+
+function namesPath(regionText: string, somePath: string): boolean {
+  return separatorBlind(regionText).includes(separatorBlind(somePath));
 }
 
 function regionOf(paths: CodexPaths): string {
