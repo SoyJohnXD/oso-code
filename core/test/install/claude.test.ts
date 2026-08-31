@@ -144,8 +144,8 @@ function seedInstalledPlugin(claudeDir: string, homeDirectory: string): string {
   return installRoot;
 }
 
-describe("ownership table: env.OSO_STATE_BIN is set", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
-  test("publishes the resolved bin/oso-state path when the plugin manifest names an executable one", () => {
+describe("ownership table: env.OSO_STATE_BIN is set", () => {
+  test("publishes the resolved bin/oso-state path when the plugin manifest names an executable one", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const homeDirectory = freshHome();
     const claudeDir = path.join(homeDirectory, ".claude");
     const installRoot = seedInstalledPlugin(claudeDir, homeDirectory);
@@ -155,7 +155,7 @@ describe("ownership table: env.OSO_STATE_BIN is set", { skip: STUBS_UNREACHABLE_
     assert.equal(env?.["OSO_STATE_BIN"], path.join(installRoot, "bin", "oso-state"));
   });
 
-  test("reports the row as failed rather than writing a key when no installed plugin manifest resolves", () => {
+  test("reports the row as failed rather than writing a key when no installed plugin manifest resolves", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const homeDirectory = freshHome();
     const claudeDir = path.join(homeDirectory, ".claude");
     const outcome = installClaude(commandInput({ homeDirectory, repositoryRoot: scratchRepositoryRoot() }));
@@ -166,8 +166,8 @@ describe("ownership table: env.OSO_STATE_BIN is set", { skip: STUBS_UNREACHABLE_
   });
 });
 
-describe("ownership table: env.CLAUDE_CODE_GIT_BASH_PATH is set (win32 only)", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
-  test("publishes CLAUDE_CODE_GIT_BASH_PATH from the environment candidate when it resolves on disk", () => {
+describe("ownership table: env.CLAUDE_CODE_GIT_BASH_PATH is set (win32 only)", () => {
+  test("publishes CLAUDE_CODE_GIT_BASH_PATH from the environment candidate when it resolves on disk", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const homeDirectory = freshHome();
     const claudeDir = path.join(homeDirectory, ".claude");
     seedInstalledPlugin(claudeDir, homeDirectory);
@@ -181,7 +181,7 @@ describe("ownership table: env.CLAUDE_CODE_GIT_BASH_PATH is set (win32 only)", {
     assert.equal(env["CLAUDE_CODE_GIT_BASH_PATH"], bashExe);
   });
 
-  test("never touches the key off win32, matching the row's platform guard", () => {
+  test("never touches the key off win32, matching the row's platform guard", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const homeDirectory = freshHome();
     const claudeDir = path.join(homeDirectory, ".claude");
     seedInstalledPlugin(claudeDir, homeDirectory);
@@ -340,8 +340,8 @@ describe("ownership table: .mcpServers.<name> is insert-if-missing, mediated thr
   });
 });
 
-describe("installClaude: the engram row provisions the pinned release when detection finds nothing", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
-  test("reports installed once a checksum-matched release is fetched, replacing the old install-by-hand failure", () => {
+describe("installClaude: the engram row provisions the pinned release when detection finds nothing", () => {
+  test("reports installed once a checksum-matched release is fetched, replacing the old install-by-hand failure", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const homeDirectory = freshHome();
     const installDirectory = path.join(homeDirectory, ".local", "bin");
     const asset = `engram_${SUPPORTED_ENGRAM_VERSION}_linux_amd64.tar.gz`;
@@ -370,7 +370,7 @@ describe("installClaude: the engram row provisions the pinned release when detec
     );
   });
 
-  test("reports the row as failed, naming the reason, when the fixtured transport cannot reach the release", () => {
+  test("reports the row as failed, naming the reason, when the fixtured transport cannot reach the release", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const homeDirectory = freshHome();
     const outcome = installClaude(
       commandInput({
@@ -386,8 +386,8 @@ describe("installClaude: the engram row provisions the pinned release when detec
   });
 });
 
-describe("installClaude: backup/transaction and legacy artifact removal", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
-  test("backs up settings.json, CLAUDE.md and every present legacy artifact before mutating, then removes the legacy ones", () => {
+describe("installClaude: backup/transaction and legacy artifact removal", () => {
+  test("backs up settings.json, CLAUDE.md and every present legacy artifact before mutating, then removes the legacy ones", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const homeDirectory = freshHome();
     const claudeDir = path.join(homeDirectory, ".claude");
     mkdirSync(path.join(claudeDir, "commands"), { recursive: true });
@@ -411,7 +411,7 @@ describe("installClaude: backup/transaction and legacy artifact removal", { skip
     );
   });
 
-  test("rolls back the legacy artifact removal and the settings.json rows already written once the CLAUDE.md body cannot be read, and reports the failure", () => {
+  test("rolls back the legacy artifact removal and the settings.json rows already written once the CLAUDE.md body cannot be read, and reports the failure", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const homeDirectory = freshHome();
     const claudeDir = path.join(homeDirectory, ".claude");
     mkdirSync(path.join(claudeDir, "commands"), { recursive: true });
@@ -436,7 +436,7 @@ describe("installClaude: backup/transaction and legacy artifact removal", { skip
     }
   });
 
-  test("treats the oso-code plugin install itself as fatal and rolls back settings.json to its pre-run content", () => {
+  test("treats the oso-code plugin install itself as fatal and rolls back settings.json to its pre-run content", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const homeDirectory = freshHome();
     const claudeDir = path.join(homeDirectory, ".claude");
     mkdirSync(claudeDir, { recursive: true });
@@ -455,7 +455,7 @@ describe("installClaude: backup/transaction and legacy artifact removal", { skip
     assert.deepEqual(readSettings(claudeDir), { outputStyle: "MyOwnStyle" });
   });
 
-  test("is idempotent on a second run over the same fixture HOME", () => {
+  test("is idempotent on a second run over the same fixture HOME", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const homeDirectory = freshHome();
     const repositoryRoot = scratchRepositoryRoot();
     const first = installClaude(commandInput({ homeDirectory, repositoryRoot }));
@@ -469,8 +469,8 @@ describe("installClaude: backup/transaction and legacy artifact removal", { skip
   });
 });
 
-describe("repairClaude: narrow re-assertion of the ownership table rows", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
-  test("re-asserts settings.json and CLAUDE.md rows without touching legacy artifacts, which install alone owns", () => {
+describe("repairClaude: narrow re-assertion of the ownership table rows", () => {
+  test("re-asserts settings.json and CLAUDE.md rows without touching legacy artifacts, which install alone owns", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const homeDirectory = freshHome();
     const claudeDir = path.join(homeDirectory, ".claude");
     const installRoot = seedInstalledPlugin(claudeDir, homeDirectory);
@@ -493,8 +493,8 @@ describe("repairClaude: narrow re-assertion of the ownership table rows", { skip
   });
 });
 
-describe("purgeClaude: narrow removal of the ownership table rows", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
-  test("removes the env keys it owns, clears an Oso output style, and strips the CLAUDE.md region, backing up first", () => {
+describe("purgeClaude: narrow removal of the ownership table rows", () => {
+  test("removes the env keys it owns, clears an Oso output style, and strips the CLAUDE.md region, backing up first", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const homeDirectory = freshHome();
     const claudeDir = path.join(homeDirectory, ".claude");
     mkdirSync(claudeDir, { recursive: true });
@@ -515,7 +515,7 @@ describe("purgeClaude: narrow removal of the ownership table rows", { skip: STUB
     assert.equal(readdirSync(backupsRoot).length, 1);
   });
 
-  test("leaves a non-Oso output style alone, since purge only reverses what install would have set", () => {
+  test("leaves a non-Oso output style alone, since purge only reverses what install would have set", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const homeDirectory = freshHome();
     const claudeDir = path.join(homeDirectory, ".claude");
     mkdirSync(claudeDir, { recursive: true });
@@ -542,15 +542,15 @@ describe("directly: removeClientEnv and storeClientEnv", () => {
   });
 });
 
-describe("gitHooksOwner / wireGitCommitHook", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
-  test("wires core.hooksPath at the shipped location when nothing else owns it", () => {
+describe("gitHooksOwner / wireGitCommitHook", () => {
+  test("wires core.hooksPath at the shipped location when nothing else owns it", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const repositoryRoot = scratchRepositoryRoot();
     const outcome = wireGitCommitHook(repositoryRoot, { PATH: gitOnlyBinDir });
     assert.equal(outcome.ok, true);
     assert.equal(gitSync(repositoryRoot, ["config", "--get", "core.hooksPath"]).trim(), path.join(repositoryRoot, "plugin", "git-hooks"));
   });
 
-  test("refuses to wire when another tool already owns core.hooksPath", () => {
+  test("refuses to wire when another tool already owns core.hooksPath", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const repositoryRoot = scratchRepositoryRoot();
     const otherHooks = path.join(repositoryRoot, "other-hooks");
     mkdirSync(otherHooks, { recursive: true });

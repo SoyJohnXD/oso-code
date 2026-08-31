@@ -132,6 +132,14 @@ function installBackupBudgetKib(environment = process.env) {
 function backupSizeKib(directory) {
   return Math.ceil(recursiveDiskBlocks(directory) / DISK_BLOCKS_PER_KIB);
 }
+function installBackupDeclares(backup, format, label) {
+  if (!isDirectoryNotSymlink(backup)) return false;
+  if (formatMarkerOf(backup) === format) return true;
+  return manifestRowsOf(backup).some((row) => row.label === label);
+}
+function installBackupsDeclaring(root, format, label) {
+  return installBackupDirsNewestFirst(root).filter((backup) => installBackupDeclares(backup, format, label));
+}
 function installBackupsOverBudget(newestFirst, budgetKib, sizeOf = backupSizeKib) {
   let runningKib = 0;
   let kept = 0;
@@ -228,11 +236,32 @@ function restoreItem(itemsDirectory, row) {
     return false;
   }
 }
+function formatMarkerOf(backup) {
+  return readableLinesOf(path2.join(backup, "format"))[0];
+}
+function manifestRowsOf(backup) {
+  const lines = readableLinesOf(path2.join(backup, "manifest"));
+  return lines.length === 0 ? [] : parseManifestRows(lines.join("\n"));
+}
+function readableLinesOf(file) {
+  try {
+    return readFileSync2(file, "utf8").split("\n");
+  } catch {
+    return [];
+  }
+}
 function childDirectoryNames(root) {
   try {
     return readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
   } catch {
     return [];
+  }
+}
+function isDirectoryNotSymlink(target) {
+  try {
+    return statSync2(target).isDirectory();
+  } catch {
+    return false;
   }
 }
 function recursiveDiskBlocks(target) {
@@ -346,6 +375,10 @@ function requiresYesOutcome(verb, host) {
 `,
     exitCode: 1
   };
+}
+function usageErrorOutcome(verb, host, message) {
+  return { report: `oso ${verb} --host ${host}: ${message}
+`, exitCode: 2 };
 }
 function fatalOutcome(verb, host, summary, detail, restoreNote = "") {
   return { report: `oso ${verb} --host ${host}: ${summary}: ${detail}${restoreNote}
@@ -3261,8 +3294,192 @@ function messageOf(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
-// core/src/install/verify-codex.ts
+// core/src/install/opencode.ts
 import path10 from "node:path";
+
+// core/src/install/opencode-config.ts
+function isPlainObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// core/src/install/opencode.ts
+var OPENCODE_INSTALL_BACKUP_FORMAT = "oso-code-opencode-install-v1";
+var OPENCODE_INSTALL_BACKUP_LABEL = "commands";
+var CONFIG_BACKUP_LABEL = "config";
+var REPAIRABLE_NESTED_PATHS = [["permission"], ["permission", "skill"], ["permission", "task"], ["mcp"]];
+function opencodePathsFor(homeDirectory, environment) {
+  const configHome = path10.join(environment["XDG_CONFIG_HOME"] ?? path10.join(homeDirectory, ".config"), "opencode");
+  const stateRoot = path10.join(homeDirectory, ".local", "state", "oso-code");
+  return {
+    homeDirectory,
+    configHome,
+    configFile: path10.join(configHome, "opencode.json"),
+    globalFile: path10.join(configHome, "AGENTS.md"),
+    stateRoot,
+    backupsRoot: stateRoot
+  };
+}
+function configHomeRefusal(homeDirectory, environment, verb) {
+  const configuredHome = environment["XDG_CONFIG_HOME"];
+  if (configuredHome === void 0 || configuredHome === "" || configuredHome === path10.join(homeDirectory, ".config")) return void 0;
+  return {
+    kind: "usage",
+    message: `XDG_CONFIG_HOME (${configuredHome}) is not the default for HOME (${path10.join(homeDirectory, ".config")}), so this ${verb} would write outside the home it was pointed at; unset it or point both at the same account`
+  };
+}
+function snapshotsHoldingAConfig(backupsRoot) {
+  return installBackupsDeclaring(backupsRoot, OPENCODE_INSTALL_BACKUP_FORMAT, OPENCODE_INSTALL_BACKUP_LABEL).filter(
+    (backup) => isReadableRegularFile(recordedConfigOf(backup))
+  );
+}
+function keysRecordedButMissing(recorded, live) {
+  const restorable = [];
+  for (const nested of [[], ...REPAIRABLE_NESTED_PATHS]) {
+    const recordedAt = objectAt(recorded, nested);
+    const liveAt = objectAt(live, nested);
+    for (const [name, value] of Object.entries(recordedAt)) {
+      if (name in liveAt) continue;
+      if (namesANestedContainer([...nested, name])) continue;
+      restorable.push({ keyPath: [...nested, name].join("."), value });
+    }
+  }
+  return restorable;
+}
+function restoreBlockedBy(live, restorable) {
+  for (const { keyPath } of restorable) {
+    const names = keyPath.split(".");
+    let cursor = live;
+    for (const name of names.slice(0, -1)) {
+      const next = cursor[name];
+      if (next !== void 0 && next !== null && !isPlainObject(next)) return keyPath;
+      cursor = isPlainObject(next) ? next : {};
+    }
+  }
+  return void 0;
+}
+function withRestoredKeys(live, restorable) {
+  for (const { keyPath, value } of restorable) {
+    const names = keyPath.split(".");
+    let target = live;
+    for (const name of names.slice(0, -1)) {
+      const existing = target[name];
+      if (isPlainObject(existing)) {
+        target = existing;
+        continue;
+      }
+      const created = {};
+      target[name] = created;
+      target = created;
+    }
+    target[names.at(-1)] = value;
+  }
+  return live;
+}
+function repairOpenCode(input) {
+  const paths = opencodePathsFor(input.homeDirectory, input.environment);
+  const homeRefusal = configHomeRefusal(input.homeDirectory, input.environment, "repair");
+  if (homeRefusal !== void 0) return usageErrorOutcome("repair", "opencode", homeRefusal.message);
+  if (input.listBackups === true) return backupListingOutcome(paths.backupsRoot);
+  const live = liveConfigOf(paths.configFile);
+  if (live.kind === "unreadable") return fatalOutcome("repair", "opencode", "cannot read the OpenCode config", live.message);
+  const snapshot = resolveSnapshot(paths.backupsRoot, input.backupName);
+  if (snapshot.kind === "unusable") return fatalOutcome("repair", "opencode", "cannot read a recorded config", snapshot.message);
+  const snapshotName = path10.basename(snapshot.directory);
+  const restorable = keysRecordedButMissing(snapshot.recorded, live.document);
+  if (restorable.length === 0) {
+    const settled = `nothing to repair: ${paths.configFile} already holds every key ${snapshotName} recorded`;
+    return snapshotOutcome(snapshotName, [], settled);
+  }
+  const blocked = restoreBlockedBy(live.document, restorable);
+  if (blocked !== void 0) {
+    const detail = `${paths.configFile} holds a non-object where ${blocked} would be written back`;
+    return fatalOutcome("repair", "opencode", "cannot write a recorded key back", detail);
+  }
+  if (!input.assumeYes) return requiresYesOutcome("repair", "opencode");
+  writeJsonFile(paths.configFile, withRestoredKeys(live.document, restorable));
+  const namedKeys = [
+    `these keys are in ${snapshotName} and missing from ${paths.configFile}:`,
+    ...restorable.map(({ keyPath, value }) => `  ${keyPath} = ${JSON.stringify(value)}`),
+    "restart OpenCode to load the repaired config"
+  ];
+  return snapshotOutcome(snapshotName, namedKeys, `returned ${restorable.length} key(s) to ${paths.configFile}`);
+}
+function snapshotOutcome(snapshotName, infoLines, note) {
+  const lines = [`snapshot: ${snapshotName}`, ...infoLines];
+  return { report: renderCommandReport("repair", "opencode", lines, [wiringOk("operator config keys", note)]), exitCode: 0 };
+}
+function backupListingOutcome(backupsRoot) {
+  const snapshots = snapshotsHoldingAConfig(backupsRoot);
+  const listing = snapshots.map((backup) => `${path10.basename(backup)}	${backupSizeKib(backup)} KiB`);
+  const note = snapshots.length === 0 ? `no install-opencode.sh backup under ${backupsRoot} holds a config to repair from` : `${snapshots.length} snapshot(s) under ${backupsRoot}`;
+  return { report: renderCommandReport("repair", "opencode", listing, [wiringOk("install backups holding a config", note)]), exitCode: 0 };
+}
+function liveConfigOf(configFile) {
+  if (!isReadableRegularFile(configFile)) {
+    return { kind: "unreadable", message: `there is no OpenCode config to repair at ${configFile}` };
+  }
+  const document = readableJsonDocument(configFile);
+  if (document === void 0) return { kind: "unreadable", message: `the live OpenCode config is not valid JSON: ${configFile}` };
+  return { kind: "readable", document };
+}
+function resolveSnapshot(backupsRoot, backupName) {
+  const located = backupName === void 0 ? newestSnapshot(backupsRoot) : namedSnapshot(backupsRoot, backupName);
+  if (located.kind === "unusable") return located;
+  const recorded = readableJsonDocument(recordedConfigOf(located.directory));
+  if (recorded === void 0) {
+    return {
+      kind: "unusable",
+      message: `the config recorded in ${located.directory} is not valid JSON, so nothing can be read back from it`
+    };
+  }
+  return { kind: "usable", directory: located.directory, recorded };
+}
+function newestSnapshot(backupsRoot) {
+  const newest = snapshotsHoldingAConfig(backupsRoot)[0];
+  if (newest === void 0) {
+    return { kind: "unusable", message: `no install-opencode.sh backup under ${backupsRoot} holds a config to repair from` };
+  }
+  return { kind: "located", directory: newest };
+}
+function namedSnapshot(backupsRoot, backupName) {
+  if (backupName.includes("/") || backupName === "." || backupName === "..") {
+    return { kind: "unusable", message: `backup name must be a bare directory name: ${backupName}` };
+  }
+  const directory = path10.join(backupsRoot, backupName);
+  if (!installBackupDeclares(directory, OPENCODE_INSTALL_BACKUP_FORMAT, OPENCODE_INSTALL_BACKUP_LABEL)) {
+    return { kind: "unusable", message: `not an install-opencode.sh backup: ${directory}` };
+  }
+  if (!isReadableRegularFile(recordedConfigOf(directory))) {
+    return { kind: "unusable", message: `that backup holds no opencode.json to repair from: ${directory}` };
+  }
+  return { kind: "located", directory };
+}
+function recordedConfigOf(backup) {
+  return path10.join(backup, "items", CONFIG_BACKUP_LABEL);
+}
+function readableJsonDocument(file) {
+  try {
+    const value = readJsonFile(file);
+    return isPlainObject(value) ? value : void 0;
+  } catch (error) {
+    if (error instanceof JsonParseError) return void 0;
+    throw error;
+  }
+}
+function objectAt(document, keyPath) {
+  let cursor = document;
+  for (const name of keyPath) {
+    cursor = isPlainObject(cursor) ? cursor[name] : void 0;
+    if (!isPlainObject(cursor)) return {};
+  }
+  return isPlainObject(cursor) ? cursor : {};
+}
+function namesANestedContainer(keyPath) {
+  return REPAIRABLE_NESTED_PATHS.some((nested) => nested.length === keyPath.length && nested.every((name, index) => name === keyPath[index]));
+}
+
+// core/src/install/verify-codex.ts
+import path11 from "node:path";
 import { spawnSync as spawnSync6 } from "node:child_process";
 import { readFileSync as readFileSync10, readdirSync as readdirSync4, statSync as statSync5 } from "node:fs";
 
@@ -3411,22 +3628,22 @@ function checkPluginInstalled2(report2, paths, host) {
     report2.check("oso-code plugin installed", "installed", collapsed(listing.output));
     return;
   }
-  report2.check("oso-code plugin installed", "installed", localPluginSourcePaths(listing.output).includes(path10.join(paths.marketplaceRoot, "codex")) ? "installed" : "absent-or-invalid");
+  report2.check("oso-code plugin installed", "installed", localPluginSourcePaths(listing.output).includes(path11.join(paths.marketplaceRoot, "codex")) ? "installed" : "absent-or-invalid");
 }
 function checkMarketplacePayload(report2, paths, repositoryRoot2) {
   const divergent = MARKETPLACE_PAYLOAD_ROWS.flatMap(
-    (row) => sameBytes(path10.join(repositoryRoot2, ...row.published.split("/")), path10.join(paths.marketplaceRoot, ...row.installed.split("/"))) ? [] : [row.named]
+    (row) => sameBytes(path11.join(repositoryRoot2, ...row.published.split("/")), path11.join(paths.marketplaceRoot, ...row.installed.split("/"))) ? [] : [row.named]
   );
   for (const skill of publishedSkillNames(repositoryRoot2)) {
-    const installed = path10.join(paths.marketplaceRoot, "codex", "skills", skill, "SKILL.md");
-    if (!sameBytes(path10.join(repositoryRoot2, "codex", "skills", skill, "SKILL.md"), installed)) divergent.push(skill);
+    const installed = path11.join(paths.marketplaceRoot, "codex", "skills", skill, "SKILL.md");
+    if (!sameBytes(path11.join(repositoryRoot2, "codex", "skills", skill, "SKILL.md"), installed)) divergent.push(skill);
   }
-  if (!isDirectoryAt(path10.join(paths.marketplaceRoot, "codex", "skills", "_shared"))) divergent.push("shared");
+  if (!isDirectoryAt(path11.join(paths.marketplaceRoot, "codex", "skills", "_shared"))) divergent.push("shared");
   report2.check("staged marketplace payload", "exact", divergent.length === 0 ? "exact" : `divergent:${divergent.map((named) => ` ${named}`).join("")}`);
 }
 function checkHostAcceptsOsoProfile(report2, paths, host) {
   const expected = `1
-${path10.join(paths.runtimeRoot, "bin", "oso-state")}`;
+${path11.join(paths.runtimeRoot, "bin", "oso-state")}`;
   const run = host.sandbox(["/bin/sh", "-c", 'printf "%s\n%s\n" "${OSO_AGENT:-}" "${OSO_STATE_BIN:-}"']);
   const observed = run.ok ? run.output.trim() : collapsed(run.output);
   report2.check("Codex accepts the oso permissions profile", "accepted", observed === expected ? "accepted" : observed === "" ? "rejected-without-output" : observed);
@@ -3441,9 +3658,9 @@ function checkCommitHookDeniesRed(report2, paths) {
   report2.check("installed git hook denies a red agent commit", "denied", installedEntrypointVerdict(paths, "setup-failed"));
 }
 function checkGitCommitGate(report2, paths, repositoryRoot2, environment) {
-  const wired = path10.join(paths.runtimeRoot, "git-hooks");
+  const wired = path11.join(paths.runtimeRoot, "git-hooks");
   const configured = gitConfigured(repositoryRoot2, environment);
-  if (configured === wired && isExecutableRegularFile(path10.join(wired, "pre-commit"))) {
+  if (configured === wired && isExecutableRegularFile(path11.join(wired, "pre-commit"))) {
     report2.check("git commit gate", "wired", "wired");
     return;
   }
@@ -3485,7 +3702,7 @@ function checkGlobalGuidance(report2, paths, repositoryRoot2) {
     report2.check("global Codex guidance", "exact", "malformed");
     return;
   }
-  const source = path10.join(repositoryRoot2, "bootstrap", "codex-global.md");
+  const source = path11.join(repositoryRoot2, "bootstrap", "codex-global.md");
   if (!isReadableRegularFile(source)) {
     report2.detail(`published guidance unreadable: ${source}`);
     report2.check("global Codex guidance", "exact", "source-unreadable");
@@ -3496,11 +3713,11 @@ function checkGlobalGuidance(report2, paths, repositoryRoot2) {
 var CODEX_HOOKS_MANIFEST = "codex/hooks/hooks.json";
 var RENDERED_HOOKS_DIR_TOKEN = "__OSO_HOOKS_DIR__";
 function unrenderedHooksManifest(text, runtimeRoot) {
-  return text.replaceAll(path10.posix.join(runtimeRoot, "dist"), RENDERED_HOOKS_DIR_TOKEN);
+  return text.replaceAll(path11.posix.join(runtimeRoot, "dist"), RENDERED_HOOKS_DIR_TOKEN);
 }
 function checkPublishedRuntimeBytes(report2, paths, repositoryRoot2) {
   const divergences = trustDivergences(
-    path10.join(repositoryRoot2, "bootstrap", "hook-hashes.txt"),
+    path11.join(repositoryRoot2, "bootstrap", "hook-hashes.txt"),
     (relative) => relative.startsWith("opencode/"),
     (relative) => installedRuntimePathOf(relative, paths),
     (relative, target) => relative === CODEX_HOOKS_MANIFEST ? Buffer.from(unrenderedHooksManifest(readFileSync10(target, "utf8"), paths.runtimeRoot), "utf8") : readFileSync10(target)
@@ -3509,13 +3726,13 @@ function checkPublishedRuntimeBytes(report2, paths, repositoryRoot2) {
   report2.check("published runtime bytes", "verified", divergences.length === 0 ? "verified" : `bad:${divergences.length}`);
 }
 function checkRuntimeEntrypointsExecutable(report2, paths) {
-  const entrypoints = [path10.join(paths.runtimeRoot, "bin", "oso-state"), path10.join(paths.runtimeRoot, "git-hooks", "pre-commit")];
+  const entrypoints = [path11.join(paths.runtimeRoot, "bin", "oso-state"), path11.join(paths.runtimeRoot, "git-hooks", "pre-commit")];
   const missing = entrypoints.filter((entrypoint) => !isExecutableRegularFile(entrypoint));
   for (const entrypoint of missing) report2.detail(`not executable: ${entrypoint}`);
   report2.check("runtime entrypoints executable", "executable", missing.length === 0 ? "executable" : `not-executable:${missing.length}`);
 }
 function checkAgentPayload(report2, paths, repositoryRoot2) {
-  const sourceDir = path10.join(repositoryRoot2, "codex", "agents");
+  const sourceDir = path11.join(repositoryRoot2, "codex", "agents");
   let published;
   try {
     published = readdirSync4(sourceDir).filter((name) => name.endsWith(".toml")).sort();
@@ -3530,29 +3747,29 @@ function checkAgentPayload(report2, paths, repositoryRoot2) {
     report2.check(AGENT_PAYLOAD_CHECK, "exact", "source-empty");
     return;
   }
-  const installedDir = path10.join(paths.codexHome, "agents");
+  const installedDir = path11.join(paths.codexHome, "agents");
   const divergent = published.filter((name) => {
-    const installed = path10.join(installedDir, name);
+    const installed = path11.join(installedDir, name);
     if (!isReadableRegularFile(installed)) return true;
-    return readFileSync10(installed, "utf8") !== readFileSync10(path10.join(sourceDir, name), "utf8");
+    return readFileSync10(installed, "utf8") !== readFileSync10(path11.join(sourceDir, name), "utf8");
   });
   for (const name of divergent) report2.detail(`divergent agent: ${name}`);
   report2.check(AGENT_PAYLOAD_CHECK, "exact", divergent.length === 0 ? "exact" : `divergent:${divergent.map((named) => ` ${named}`).join("")}`);
 }
 function checkEngramWiring(report2, paths) {
-  const instructions = path10.join(paths.codexHome, "engram-instructions.md");
-  const compact = path10.join(paths.codexHome, "engram-compact-prompt.md");
+  const instructions = path11.join(paths.codexHome, "engram-instructions.md");
+  const compact = path11.join(paths.codexHome, "engram-compact-prompt.md");
   const wired = isReadableRegularFile(instructions) && isReadableRegularFile(compact) && mcpServersOf(paths.configFile).some((server) => server.name === "engram");
   report2.check("Engram Codex integration", "wired", wired ? "wired" : "incomplete");
 }
 function checkImpeccableMount(report2, homeDirectory) {
-  const optOut = path10.join(homeDirectory, ".local", "state", "oso-code", "impeccable-opt-out");
+  const optOut = path11.join(homeDirectory, ".local", "state", "oso-code", "impeccable-opt-out");
   if (isReadableRegularFile(optOut)) {
     report2.skip("Impeccable mount \u2014 install-codex.sh recorded --no-impeccable");
     return;
   }
-  const mount = path10.join(homeDirectory, ".agents", "skills", "impeccable");
-  report2.check("Impeccable Codex mount", "mounted", isReadableRegularFile(path10.join(mount, "SKILL.md")) ? "mounted" : "missing");
+  const mount = path11.join(homeDirectory, ".agents", "skills", "impeccable");
+  report2.check("Impeccable Codex mount", "mounted", isReadableRegularFile(path11.join(mount, "SKILL.md")) ? "mounted" : "missing");
 }
 function checkMcpToolTableDrift(report2, paths) {
   report2.section(MCP_DRIFT_SECTION);
@@ -3656,14 +3873,14 @@ function fallowCommandInside(regionText) {
   return quoted.startsWith('"') && quoted.endsWith('"') ? quoted.slice(1, -1).replaceAll('\\"', '"').replaceAll("\\\\", "\\") : quoted;
 }
 function installedRuntimePathOf(relative, paths) {
-  if (relative === CODEX_HOOKS_MANIFEST) return path10.join(paths.codexHome, "hooks.json");
+  if (relative === CODEX_HOOKS_MANIFEST) return path11.join(paths.codexHome, "hooks.json");
   for (const [prefix, directory] of [
     ["plugin/dist/", "dist"],
     ["plugin/hooks/", "hooks"],
     ["plugin/git-hooks/", "git-hooks"],
     ["plugin/bin/", "bin"]
   ]) {
-    if (relative.startsWith(prefix)) return path10.join(paths.runtimeRoot, directory, relative.slice(prefix.length));
+    if (relative.startsWith(prefix)) return path11.join(paths.runtimeRoot, directory, relative.slice(prefix.length));
   }
   return void 0;
 }
@@ -3691,7 +3908,7 @@ var MARKETPLACE_PAYLOAD_ROWS = [
   { named: "plugin.json", published: "codex/.codex-plugin/plugin.json", installed: "codex/.codex-plugin/plugin.json" }
 ];
 function installedEntrypointVerdict(paths, absentVerdict) {
-  return isExecutableRegularFile(path10.join(paths.runtimeRoot, "bin", "oso-state")) ? "installed-probe-is-nightly-only" : absentVerdict;
+  return isExecutableRegularFile(path11.join(paths.runtimeRoot, "bin", "oso-state")) ? "installed-probe-is-nightly-only" : absentVerdict;
 }
 function binaryCarriesBoth(binary, literals) {
   const bytes = readFileSync10(binary, "latin1");
@@ -3715,7 +3932,7 @@ function localPluginSourcePaths(listingJson) {
 }
 function publishedSkillNames(repositoryRoot2) {
   try {
-    return readdirSync4(path10.join(repositoryRoot2, "codex", "skills"), { withFileTypes: true }).filter((entry) => entry.isDirectory() && entry.name !== "_shared").map((entry) => entry.name).sort();
+    return readdirSync4(path11.join(repositoryRoot2, "codex", "skills"), { withFileTypes: true }).filter((entry) => entry.isDirectory() && entry.name !== "_shared").map((entry) => entry.name).sort();
   } catch {
     return [];
   }
@@ -3745,37 +3962,85 @@ function isRecord2(value) {
 // core/src/install/cli.ts
 var VERBS = ["install", "verify", "repair", "purge"];
 var HOSTS = ["claude", "codex", "opencode"];
-var FLAGS = ["--yes", "--replace-claude-md", "--no-impeccable", "--no-git-hook"];
-var FLAGS_PER_HOST = {
-  claude: ["--yes", "--replace-claude-md", "--no-impeccable", "--no-git-hook"],
-  codex: ["--yes", "--no-impeccable", "--no-git-hook"],
-  opencode: ["--yes", "--no-impeccable", "--no-git-hook"]
+var SLICE_BRINGING_THE_REST_OF_OPENCODE = "C3-S4b";
+var YES = { name: "--yes" };
+var LIST = { name: "--list" };
+var NO_IMPECCABLE = { name: "--no-impeccable" };
+var NO_GIT_HOOK = { name: "--no-git-hook" };
+var REPLACE_CLAUDE_MD = { name: "--replace-claude-md" };
+var DRY_RUN = { name: "--dry-run" };
+var KEEP_GENTLE_AI = { name: "--keep-gentle-ai" };
+var RESTORE = { name: "--restore", valueMissingMessage: "--restore requires a backup directory" };
+var NO_ARGUMENTS = { flags: [] };
+var YES_ONLY = { flags: [YES] };
+var ONE_BACKUP_NAME = { name: "<backup>", repeatMessage: "only one backup name may be given" };
+var PURGE_OPENCODE_EXCLUSIONS = [
+  { first: "--restore", second: "--yes", message: "--yes cannot be combined with --restore" },
+  { first: "--dry-run", second: "--yes", message: "--yes cannot be combined with --dry-run" },
+  { first: "--restore", second: "--dry-run", message: "--dry-run cannot be combined with --restore" },
+  { first: "--yes", second: "--dry-run", message: "--dry-run cannot be combined with --yes" },
+  { first: "--restore", second: "--keep-gentle-ai", message: "--keep-gentle-ai cannot be combined with --restore" },
+  { first: "--restore", second: "--restore", message: "--restore may be specified only once" },
+  { first: "--yes", second: "--restore", message: "--yes cannot be combined with --restore" },
+  { first: "--dry-run", second: "--restore", message: "--dry-run cannot be combined with --restore" }
+];
+var FLAGS_PER_HOST_AND_VERB = {
+  claude: {
+    install: { flags: [YES, REPLACE_CLAUDE_MD, NO_IMPECCABLE, NO_GIT_HOOK] },
+    verify: NO_ARGUMENTS,
+    repair: YES_ONLY,
+    purge: YES_ONLY
+  },
+  codex: {
+    install: { flags: [YES, NO_IMPECCABLE, NO_GIT_HOOK] },
+    verify: NO_ARGUMENTS,
+    repair: YES_ONLY,
+    purge: YES_ONLY
+  },
+  opencode: {
+    install: { flags: [YES, NO_IMPECCABLE, NO_GIT_HOOK] },
+    verify: NO_ARGUMENTS,
+    repair: { flags: [YES, LIST], positional: ONE_BACKUP_NAME },
+    purge: { flags: [YES, DRY_RUN, KEEP_GENTLE_AI, RESTORE], exclusions: PURGE_OPENCODE_EXCLUSIONS }
+  }
 };
+var EVERY_DECLARED_FLAG = new Set(
+  HOSTS.flatMap((host) => VERBS.flatMap((verb) => FLAGS_PER_HOST_AND_VERB[host][verb].flags.map((flag) => flag.name)))
+);
 var USAGE = `usage: oso <install|verify|repair|purge> --host <claude|codex|opencode> [flags]
 
-flags, per host:
-${HOSTS.map((host) => `  ${host.padEnd(9)} ${FLAGS_PER_HOST[host].join(" ")}`).join("\n")}
+arguments, per host and verb:
+${HOSTS.flatMap((host) => VERBS.map((verb) => `  ${host.padEnd(9)} ${verb.padEnd(8)} ${argumentSummary(FLAGS_PER_HOST_AND_VERB[host][verb])}`)).join("\n")}
 
-A flag offered to a host that does not take it is refused, never ignored.
-The opencode host is not yet implemented.
+A flag offered to a host and verb that does not take it is refused, never ignored.
 `;
 var UsageError = class extends Error {
 };
 var FlagNotOfferedError = class extends Error {
   flag;
   host;
-  constructor(flag, host) {
-    super(`${flag} is not a flag the ${host} host takes \u2014 it takes ${FLAGS_PER_HOST[host].join(", ")}`);
+  verb;
+  constructor(flag, host, verb) {
+    const taken = FLAGS_PER_HOST_AND_VERB[host][verb].flags.map((spec) => spec.name);
+    const takes = taken.length === 0 ? "no flags at all" : taken.join(", ");
+    super(`${flag} is not a flag the ${host} host takes for ${verb} \u2014 it takes ${takes}`);
     this.name = "FlagNotOfferedError";
     this.flag = flag;
     this.host = host;
+    this.verb = verb;
+  }
+};
+var ArgumentsExcludedError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "ArgumentsExcludedError";
   }
 };
 var VerbNotImplementedError = class extends Error {
   verb;
   host;
-  constructor(verb, host) {
-    super(`${verb} --host ${host} is not yet implemented in this slice`);
+  constructor(verb, host, arrivesIn) {
+    super(`${verb} --host ${host} is not yet implemented in this slice \u2014 ${arrivesIn} brings it`);
     this.name = "VerbNotImplementedError";
     this.verb = verb;
     this.host = host;
@@ -3790,9 +4055,9 @@ function main(argv, repositoryRoot2) {
 }
 function dispatch(argv, repositoryRoot2) {
   const parsed = parseArgv(argv);
-  if (parsed.host === "opencode") throw new VerbNotImplementedError(parsed.verb, parsed.host);
+  const homeDirectory = homeDirectoryFrom(process.platform, process.env);
   const context = {
-    homeDirectory: homeDirectoryFrom(process.platform, process.env),
+    homeDirectory,
     repositoryRoot: repositoryRoot2,
     environment: process.env,
     platform: process.platform,
@@ -3800,9 +4065,19 @@ function dispatch(argv, repositoryRoot2) {
     installImpeccable: !parsed.flags.has("--no-impeccable"),
     installGitHook: !parsed.flags.has("--no-git-hook")
   };
-  const outcome = parsed.host === "claude" ? runClaude(parsed.verb, { ...context, architecture: process.arch, replaceClaudeMd: parsed.flags.has("--replace-claude-md") }) : runCodex(parsed.verb, { ...context, host: codexHostProbes(process.env) });
+  const outcome = runHost(parsed, context);
   process.stdout.write(outcome.report);
   return outcome.exitCode;
+}
+function runHost(parsed, context) {
+  switch (parsed.host) {
+    case "claude":
+      return runClaude(parsed.verb, { ...context, architecture: process.arch, replaceClaudeMd: parsed.flags.has("--replace-claude-md") });
+    case "codex":
+      return runCodex(parsed.verb, { ...context, host: codexHostProbes(process.env) });
+    case "opencode":
+      return runOpenCode(parsed, context);
+  }
 }
 function runClaude(verb, context) {
   switch (verb) {
@@ -3828,6 +4103,16 @@ function runCodex(verb, context) {
       return purgeCodex(context);
   }
 }
+function runOpenCode(parsed, context) {
+  if (parsed.verb !== "repair") throw new VerbNotImplementedError(parsed.verb, "opencode", SLICE_BRINGING_THE_REST_OF_OPENCODE);
+  return repairOpenCode({
+    homeDirectory: context.homeDirectory,
+    environment: context.environment,
+    assumeYes: context.assumeYes,
+    listBackups: parsed.flags.has("--list"),
+    backupName: parsed.positional
+  });
+}
 function report(error) {
   if (error instanceof UsageError) {
     process.stderr.write(USAGE);
@@ -3841,33 +4126,59 @@ function report(error) {
 function parseArgv(argv) {
   const [verbToken, ...rest] = argv;
   if (!isVerb(verbToken)) throw new UsageError();
-  let host;
-  const offered = [];
+  const host = hostIn(rest);
+  const declared = FLAGS_PER_HOST_AND_VERB[host][verbToken];
+  const flags = /* @__PURE__ */ new Set();
+  const values = /* @__PURE__ */ new Map();
+  let positional;
   for (let index = 0; index < rest.length; index += 1) {
     const token = rest[index];
     if (token === "--host") {
-      host = rest[index + 1];
       index += 1;
       continue;
     }
-    if (!isFlag(token)) throw new UsageError();
-    offered.push(token);
+    if (!token.startsWith("-")) {
+      if (declared.positional === void 0) throw new UsageError();
+      if (positional !== void 0) throw new ArgumentsExcludedError(declared.positional.repeatMessage);
+      positional = token;
+      continue;
+    }
+    const spec = declared.flags.find((candidate) => candidate.name === token);
+    if (spec === void 0) {
+      if (EVERY_DECLARED_FLAG.has(token)) throw new FlagNotOfferedError(token, host, verbToken);
+      throw new UsageError();
+    }
+    refuseExcluded(declared, flags, token);
+    if (spec.valueMissingMessage !== void 0) {
+      const value = rest[index + 1];
+      if (value === void 0) throw new ArgumentsExcludedError(spec.valueMissingMessage);
+      values.set(token, value);
+      index += 1;
+    }
+    flags.add(token);
   }
+  return { verb: verbToken, host, flags, values, positional };
+}
+function refuseExcluded(declared, seen, token) {
+  const excluded = (declared.exclusions ?? []).find((rule) => rule.second === token && seen.has(rule.first));
+  if (excluded !== void 0) throw new ArgumentsExcludedError(excluded.message);
+}
+function hostIn(rest) {
+  const at = rest.indexOf("--host");
+  const host = at === -1 ? void 0 : rest[at + 1];
   if (!isHost(host)) throw new UsageError();
-  const taken = FLAGS_PER_HOST[host];
-  for (const flag of offered) {
-    if (!taken.includes(flag)) throw new FlagNotOfferedError(flag, host);
-  }
-  return { verb: verbToken, host, flags: new Set(offered) };
+  return host;
+}
+function argumentSummary(declared) {
+  const flags = declared.flags.map((spec) => spec.valueMissingMessage === void 0 ? spec.name : `${spec.name} <dir>`);
+  const positional = declared.positional === void 0 ? [] : [`[${declared.positional.name}]`];
+  return [...flags, ...positional].join(" ") || "(no arguments)";
 }
 function isVerb(value) {
   return value !== void 0 && VERBS.includes(value);
 }
 function isHost(value) {
   return value !== void 0 && HOSTS.includes(value);
-}
-function isFlag(value) {
-  return value !== void 0 && FLAGS.includes(value);
 }
 
 // core/src/bin/oso.ts

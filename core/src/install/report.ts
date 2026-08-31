@@ -84,6 +84,10 @@ export function requiresYesOutcome(verb: string, host: string): CommandOutcome {
   };
 }
 
+export function usageErrorOutcome(verb: string, host: string, message: string): CommandOutcome {
+  return { report: `oso ${verb} --host ${host}: ${message}\n`, exitCode: 2 };
+}
+
 export function fatalOutcome(verb: string, host: string, summary: string, detail: string, restoreNote = ""): CommandOutcome {
   return { report: `oso ${verb} --host ${host}: ${summary}: ${detail}${restoreNote}\n`, exitCode: 1 };
 }

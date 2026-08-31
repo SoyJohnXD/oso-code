@@ -3,9 +3,9 @@ import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { after } from "node:test";
 import type { CodexHostProbes, HostRun } from "../../src/install/codex-host.ts";
 import { SUPPORTED_CODEX_VERSION } from "../../src/install/pins.ts";
+import { guardRepositoryGitConfig } from "./repository-git-config-guard.ts";
 import { repositoryRoot } from "./state-sandbox.ts";
 
 export const PUBLISHED_FILES_AN_INSTALL_READS = ["bootstrap/codex-global.md"] as const;
@@ -42,21 +42,7 @@ export function fixtureRepositoryRoot(): string {
   return root;
 }
 
-const REAL_REPOSITORY_LOCAL_CONFIG = localGitConfigOf(repositoryRoot);
-
-after(() => {
-  assert.equal(
-    localGitConfigOf(repositoryRoot),
-    REAL_REPOSITORY_LOCAL_CONFIG,
-    `an install drive in this suite rewrote the local git config of the repository under test at ${repositoryRoot}; ` +
-      "every drive must be handed fixtureRepositoryRoot() so a hook-wiring rail can only reach a fixture",
-  );
-});
-
-function localGitConfigOf(root: string): string {
-  const run = gitIn(root, ["config", "--local", "--list"]);
-  return run.status === 0 ? run.stdout : `unreadable:${run.status}`;
-}
+guardRepositoryGitConfig("an install drive in this suite");
 
 function gitIn(root: string, argv: readonly string[]) {
   const run = spawnSync("git", ["-C", root, ...argv], { encoding: "utf8" });

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, describe, test } from "node:test";
-import { FLAGS, FLAGS_PER_HOST, FlagNotOfferedError, parseArgv } from "../../src/install/cli.ts";
+import { ArgumentsExcludedError, FLAGS_PER_HOST_AND_VERB, FlagNotOfferedError, parseArgv } from "../../src/install/cli.ts";
 import { hermeticVerifyEnvironment } from "../support/hermetic-verify-environment.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -15,18 +15,30 @@ const cliBundle = path.join(repoRoot, "bootstrap", "oso.js");
 
 const USAGE = `usage: oso <install|verify|repair|purge> --host <claude|codex|opencode> [flags]
 
-flags, per host:
-  claude    --yes --replace-claude-md --no-impeccable --no-git-hook
-  codex     --yes --no-impeccable --no-git-hook
-  opencode  --yes --no-impeccable --no-git-hook
+arguments, per host and verb:
+  claude    install  --yes --replace-claude-md --no-impeccable --no-git-hook
+  claude    verify   (no arguments)
+  claude    repair   --yes
+  claude    purge    --yes
+  codex     install  --yes --no-impeccable --no-git-hook
+  codex     verify   (no arguments)
+  codex     repair   --yes
+  codex     purge    --yes
+  opencode  install  --yes --no-impeccable --no-git-hook
+  opencode  verify   (no arguments)
+  opencode  repair   --yes --list [<backup>]
+  opencode  purge    --yes --dry-run --keep-gentle-ai --restore <dir>
 
-A flag offered to a host that does not take it is refused, never ignored.
-The opencode host is not yet implemented.
+A flag offered to a host and verb that does not take it is refused, never ignored.
 `;
 
 function runCli(argv: readonly string[]): { status: number | null; stdout: string; stderr: string } {
   const result = spawnSync(process.execPath, ["--experimental-strip-types", cliSource, ...argv], { encoding: "utf8" });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+}
+
+function flagsFor(host: "claude" | "codex" | "opencode", verb: "install" | "verify" | "repair" | "purge"): string[] {
+  return FLAGS_PER_HOST_AND_VERB[host][verb].flags.map((spec) => spec.name);
 }
 
 describe("oso <verb> --host <host> [flags] usage", () => {
@@ -61,52 +73,107 @@ describe("oso <verb> --host <host> [flags] usage", () => {
     assert.equal(result.stderr, USAGE);
   });
 
-  test("--yes is accepted for every verb without changing dispatch", () => {
-    const result = runCli(["purge", "--host", "opencode", "--yes"]);
-    assert.equal(result.status, 1);
-    assert.equal(result.stderr, "oso: purge --host opencode is not yet implemented in this slice\n");
+  test("the usage text is rendered from the table, so a cell that changes cannot leave the text behind", () => {
+    for (const line of ["  opencode  repair   --yes --list [<backup>]", "  claude    verify   (no arguments)"]) {
+      assert.ok(USAGE.includes(line), line);
+    }
   });
 });
 
-describe("Decision 26c's per-host flag table refuses a flag rather than ignoring it", () => {
-  test("every flag the table names is spelled by FLAGS, so the usage text cannot drift from the parser", () => {
-    assert.deepEqual([...FLAGS], ["--yes", "--replace-claude-md", "--no-impeccable", "--no-git-hook"]);
+describe("the flag table is per host AND verb, populated from each bash script's own case block", () => {
+  test("install carries the four flags bootstrap/install.sh takes, and the three its per-host siblings take", () => {
+    assert.deepEqual(flagsFor("claude", "install"), ["--yes", "--replace-claude-md", "--no-impeccable", "--no-git-hook"]);
+    assert.deepEqual(flagsFor("codex", "install"), ["--yes", "--no-impeccable", "--no-git-hook"]);
+    assert.deepEqual(flagsFor("opencode", "install"), ["--yes", "--no-impeccable", "--no-git-hook"]);
   });
 
-  test("claude takes all four flags", () => {
-    assert.deepEqual([...FLAGS_PER_HOST.claude], [...FLAGS]);
+  test("verify takes no arguments on any host, as every bash verifier does", () => {
+    for (const host of ["claude", "codex", "opencode"] as const) assert.deepEqual(flagsFor(host, "verify"), []);
   });
 
-  for (const host of ["codex", "opencode"] as const) {
-    test(`${host} takes the same three flags and refuses --replace-claude-md by name`, () => {
-      assert.deepEqual([...FLAGS_PER_HOST[host]], ["--yes", "--no-impeccable", "--no-git-hook"]);
-      assert.throws(
-        () => parseArgv(["install", "--host", host, "--replace-claude-md"]),
-        (error: unknown) =>
-          error instanceof FlagNotOfferedError &&
-          error.flag === "--replace-claude-md" &&
-          error.host === host,
-      );
-    });
+  test("repair --host opencode carries --list and the one positional backup name bootstrap/repair-opencode.sh takes", () => {
+    assert.deepEqual(flagsFor("opencode", "repair"), ["--yes", "--list"]);
+    assert.equal(FLAGS_PER_HOST_AND_VERB.opencode.repair.positional?.name, "<backup>");
+    assert.equal(parseArgv(["repair", "--host", "opencode", "--yes", "snapshot-name"]).positional, "snapshot-name");
+  });
 
-    test(`${host} reaches every flag it does take, so the refusal is not a blanket one`, () => {
-      const parsed = parseArgv(["install", "--host", host, "--yes", "--no-impeccable", "--no-git-hook"]);
-      assert.deepEqual([...parsed.flags].sort(), ["--no-git-hook", "--no-impeccable", "--yes"]);
-    });
-  }
+  test("purge --host opencode drops none of bootstrap/purge-opencode.sh's flags, and --restore takes its directory", () => {
+    assert.deepEqual(flagsFor("opencode", "purge"), ["--yes", "--dry-run", "--keep-gentle-ai", "--restore"]);
+    assert.equal(parseArgv(["purge", "--host", "opencode", "--restore", "/backups/one"]).values.get("--restore"), "/backups/one");
+  });
 
-  test("a refused flag names the host and the flags that host does take, on stderr, at exit 1", () => {
+  test("a flag a verb does not take is refused by name, naming the verb as well as the host", () => {
+    assert.throws(
+      () => parseArgv(["repair", "--host", "codex", "--no-impeccable"]),
+      (error: unknown) => error instanceof FlagNotOfferedError && error.flag === "--no-impeccable" && error.verb === "repair",
+    );
+  });
+
+  test("--replace-claude-md still parses for the one host and verb that takes it", () => {
+    assert.ok(parseArgv(["install", "--host", "claude", "--replace-claude-md"]).flags.has("--replace-claude-md"));
+    assert.throws(() => parseArgv(["install", "--host", "codex", "--replace-claude-md"]), FlagNotOfferedError);
+  });
+
+  test("a refused flag names the host, the verb and the flags that cell does take, on stderr, at exit 1", () => {
     const result = runCli(["install", "--host", "codex", "--replace-claude-md"]);
     assert.equal(result.status, 1);
     assert.equal(
       result.stderr,
-      "oso: --replace-claude-md is not a flag the codex host takes — it takes --yes, --no-impeccable, --no-git-hook\n",
+      "oso: --replace-claude-md is not a flag the codex host takes for install — it takes --yes, --no-impeccable, --no-git-hook\n",
     );
     assert.equal(result.stdout, "");
   });
 
-  test("--replace-claude-md still parses for claude, which is the one host that takes it", () => {
-    assert.ok(parseArgv(["install", "--host", "claude", "--replace-claude-md"]).flags.has("--replace-claude-md"));
+  test("a positional offered to a verb that declares none is a usage error rather than a silently ignored token", () => {
+    const result = runCli(["purge", "--host", "claude", "some-backup"]);
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr, USAGE);
+  });
+
+  test("a second backup name is refused with the words bootstrap/repair-opencode.sh refuses it with", () => {
+    assert.throws(
+      () => parseArgv(["repair", "--host", "opencode", "one", "two"]),
+      (error: unknown) => error instanceof ArgumentsExcludedError && error.message === "only one backup name may be given",
+    );
+  });
+});
+
+describe("pairwise exclusions are ordered pairs, because bootstrap/purge-opencode.sh guards them from one arm only", () => {
+  for (const [first, second, message] of [
+    ["--restore", "--yes", "--yes cannot be combined with --restore"],
+    ["--dry-run", "--yes", "--yes cannot be combined with --dry-run"],
+    ["--restore", "--dry-run", "--dry-run cannot be combined with --restore"],
+    ["--yes", "--dry-run", "--dry-run cannot be combined with --yes"],
+    ["--restore", "--keep-gentle-ai", "--keep-gentle-ai cannot be combined with --restore"],
+    ["--yes", "--restore", "--yes cannot be combined with --restore"],
+    ["--dry-run", "--restore", "--dry-run cannot be combined with --restore"],
+  ] as const) {
+    test(`${first} then ${second} is refused with "${message}"`, () => {
+      assert.throws(
+        () => parseArgv(["purge", "--host", "opencode", ...withValues(first), ...withValues(second)]),
+        (error: unknown) => error instanceof ArgumentsExcludedError && error.message === message,
+      );
+    });
+  }
+
+  test("--keep-gentle-ai before --restore is ACCEPTED, which is the asymmetry the bash measures and this port keeps", () => {
+    const parsed = parseArgv(["purge", "--host", "opencode", "--keep-gentle-ai", "--restore", "/backups/one"]);
+    assert.deepEqual([...parsed.flags].sort(), ["--keep-gentle-ai", "--restore"]);
+    assert.equal(parsed.values.get("--restore"), "/backups/one");
+  });
+
+  test("--restore twice is refused as a repeat rather than as a pair", () => {
+    assert.throws(
+      () => parseArgv(["purge", "--host", "opencode", "--restore", "/one", "--restore", "/two"]),
+      (error: unknown) => error instanceof ArgumentsExcludedError && error.message === "--restore may be specified only once",
+    );
+  });
+
+  test("--restore with no directory after it is refused with the arity message, not a silent empty value", () => {
+    assert.throws(
+      () => parseArgv(["purge", "--host", "opencode", "--restore"]),
+      (error: unknown) => error instanceof ArgumentsExcludedError && error.message === "--restore requires a backup directory",
+    );
   });
 });
 
@@ -133,23 +200,24 @@ describe("oso verify --host claude resolves the repository root the same way fro
   });
 });
 
-describe("verb/host pairs this slice does not implement", () => {
-  for (const [verb, host] of [
-    ["verify", "opencode"],
-    ["install", "opencode"],
-    ["repair", "opencode"],
-    ["purge", "opencode"],
-  ] as const) {
-    test(`${verb} --host ${host} reports not-yet-implemented rather than pretending success`, () => {
-      const result = runCli([verb, "--host", host]);
+describe("the verbs this half does not bring name the slice that does, rather than refusing bare", () => {
+  for (const verb of ["verify", "install", "purge"] as const) {
+    test(`${verb} --host opencode points the operator at the slice that brings it`, () => {
+      const result = runCli([verb, "--host", "opencode"]);
       assert.equal(result.status, 1);
-      assert.equal(result.stderr, `oso: ${verb} --host ${host} is not yet implemented in this slice\n`);
+      assert.equal(result.stderr, `oso: ${verb} --host opencode is not yet implemented in this slice — C3-S4b brings it\n`);
       assert.equal(result.stdout, "");
     });
   }
+
+  test("repair --host opencode is not among them: it reaches the real command and asks for --yes", () => {
+    const result = runCli(["repair", "--host", "opencode"]);
+    assert.equal(result.status, 1);
+    assert.doesNotMatch(result.stderr, /not yet implemented/);
+  });
 });
 
-describe("install|repair|purge without --yes, on each host this slice implements", () => {
+describe("install|repair|purge without --yes, on each host and verb this slice implements", () => {
   for (const host of ["claude", "codex"] as const) {
     for (const verb of ["install", "repair", "purge"] as const) {
       test(`${verb} --host ${host} reaches the real command (not VerbNotImplementedError) and reports it needs --yes rather than prompting`, () => {
@@ -162,3 +230,6 @@ describe("install|repair|purge without --yes, on each host this slice implements
   }
 });
 
+function withValues(flag: string): string[] {
+  return flag === "--restore" ? [flag, "/backups/one"] : [flag];
+}
