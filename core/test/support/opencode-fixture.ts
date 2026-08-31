@@ -1,9 +1,10 @@
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { OPENCODE_BINARY_NAME } from "../../src/install/opencode-host.ts";
 import { SUPPORTED_OPENCODE_VERSION } from "../../src/install/pins.ts";
 import { guardRepositoryGitConfig } from "./repository-git-config-guard.ts";
+import { posixSpelled } from "./repository-paths.ts";
 import { repositoryRoot } from "./state-sandbox.ts";
 
 export const SHIM_CALL_LOG_KEY = "OSO_OPENCODE_SHIM_CALL_LOG";
@@ -268,4 +269,60 @@ function writeExecutable(file: string, body: string): void {
 
 function outcomeOf(run: SpawnSyncReturns<string>): BashRun {
   return { status: run.status ?? -1, stdout: run.stdout ?? "", stderr: run.stderr ?? "" };
+}
+
+export function bashInstall(
+  home: string,
+  shims: string,
+  root: string,
+  argv: readonly string[],
+  overrides: NodeJS.ProcessEnv = {},
+): BashRun {
+  const installer = path.join(repositoryRoot, "bootstrap", "install-opencode.sh");
+  return runInOpenCodeFixture(home, fixturePathWith(shims), root, ["bash", installer, ...argv], overrides);
+}
+
+export function bashPurge(home: string, shims: string, root: string, argv: readonly string[], overrides: NodeJS.ProcessEnv = {}): BashRun {
+  return runInOpenCodeFixture(home, fixturePathWith(shims), root, ["bash", path.join(repositoryRoot, "bootstrap", "purge-opencode.sh"), ...argv], overrides);
+}
+
+export type TreeEntry =
+  | Readonly<{ relative: string; kind: "directory"; mode: string }>
+  | Readonly<{ relative: string; kind: "file"; mode: string; content: string }>;
+
+export function treeUnder(root: string, skip: (relative: string) => boolean = () => false): TreeEntry[] {
+  if (!existsSync(root)) return [];
+  return entriesUnder(root)
+    .map((absolute) => ({ relative: posixSpelled(absolute.slice(root.length + 1)), absolute }))
+    .filter((entry) => !skip(entry.relative))
+    .sort((one, other) => one.relative.localeCompare(other.relative))
+    .map((entry) => treeEntryAt(entry.relative, entry.absolute));
+}
+
+export function entryWithHomeSpelledOnce(entry: TreeEntry, home: string): TreeEntry {
+  if (entry.kind === "directory") return entry;
+  return { ...entry, content: withHomeSpelledOnce(Buffer.from(entry.content, "base64").toString("utf8"), home) };
+}
+
+function withHomeSpelledOnce(text: string, home: string): string {
+  return text.split(home).join("<home>").split(posixSpelled(home)).join("<home>");
+}
+
+function treeEntryAt(relative: string, absolute: string): TreeEntry {
+  const stats = lstatSync(absolute);
+  const mode = octalSpelled(stats.mode);
+  if (stats.isDirectory()) return { relative, kind: "directory", mode };
+  return { relative, kind: "file", mode, content: readFileSync(absolute).toString("base64") };
+}
+
+function octalSpelled(mode: number): string {
+  return `0${(mode & 0o7777).toString(8).padStart(3, "0")}`;
+}
+
+function entriesUnder(root: string): string[] {
+  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+    const absolute = path.join(root, entry.name);
+    if (entry.isDirectory()) return [absolute, ...entriesUnder(absolute)];
+    return entry.isFile() && statSync(absolute).isFile() ? [absolute] : [];
+  });
 }

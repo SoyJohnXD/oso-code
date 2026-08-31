@@ -1,4 +1,4 @@
-import { cpSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { isoTimestamp } from "../state/store.ts";
 
@@ -83,6 +83,7 @@ export function beginTransaction(backupsRoot: string, format: string): BackupTra
   const backupRoot = path.join(backupsRoot, `install-backup-${compactTimestamp()}-${process.pid}`);
   const itemsDirectory = path.join(backupRoot, "items");
   mkdirSync(itemsDirectory, { recursive: true });
+  chmodSync(backupRoot, 0o700);
   writeFileSync(path.join(backupRoot, "format"), `${format}\n`);
   return { backupRoot, itemsDirectory, manifest: [] };
 }

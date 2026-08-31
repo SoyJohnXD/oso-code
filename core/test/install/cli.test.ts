@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,6 +34,14 @@ A flag offered to a host and verb that does not take it is refused, never ignore
 
 function runCli(argv: readonly string[]): { status: number | null; stdout: string; stderr: string } {
   const result = spawnSync(process.execPath, ["--experimental-strip-types", cliSource, ...argv], { encoding: "utf8" });
+  return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+}
+
+function runCliInAFixtureHome(argv: readonly string[], fixtureHome: string): { status: number | null; stdout: string; stderr: string } {
+  const result = spawnSync(process.execPath, ["--experimental-strip-types", cliSource, ...argv], {
+    encoding: "utf8",
+    env: hermeticVerifyEnvironment(fixtureHome),
+  });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
@@ -200,27 +208,27 @@ describe("oso verify --host claude resolves the repository root the same way fro
   });
 });
 
-describe("the verbs this half does not bring name the slice that does, rather than refusing bare", () => {
-  for (const verb of ["verify", "install", "purge"] as const) {
-    test(`${verb} --host opencode points the operator at the slice that brings it`, () => {
-      const result = runCli([verb, "--host", "opencode"]);
-      assert.equal(result.status, 1);
-      assert.equal(result.stderr, `oso: ${verb} --host opencode is not yet implemented in this slice — C3-S4b brings it\n`);
-      assert.equal(result.stdout, "");
+describe("every verb of every host reaches its own command, so no host answers a verb with a not-implemented refusal", () => {
+  const verbSandbox = mkdtempSync(path.join(tmpdir(), "oso-cli-opencode-"));
+  after(() => rmSync(verbSandbox, { recursive: true, force: true }));
+
+  for (const verb of ["install", "verify", "repair", "purge"] as const) {
+    test(`${verb} --host opencode reaches the real command rather than a slice pointer`, () => {
+      const result = runCliInAFixtureHome([verb, "--host", "opencode"], mkdtempSync(path.join(verbSandbox, "home-")));
+      assert.doesNotMatch(result.stderr, /not yet implemented/);
+      assert.doesNotMatch(result.stdout, /not yet implemented/);
     });
   }
 
-  test("repair --host opencode is not among them: it reaches the real command and asks for --yes", () => {
-    const result = runCli(["repair", "--host", "opencode"]);
-    assert.equal(result.status, 1);
-    assert.doesNotMatch(result.stderr, /not yet implemented/);
+  test("the CLI carries no not-implemented refusal at all, which is what makes the four above unable to pass vacuously", () => {
+    assert.doesNotMatch(readFileSync(path.join(repoRoot, "core", "src", "install", "cli.ts"), "utf8"), /not yet implemented/);
   });
 });
 
 describe("install|repair|purge without --yes, on each host and verb this slice implements", () => {
   for (const host of ["claude", "codex"] as const) {
     for (const verb of ["install", "repair", "purge"] as const) {
-      test(`${verb} --host ${host} reaches the real command (not VerbNotImplementedError) and reports it needs --yes rather than prompting`, () => {
+      test(`${verb} --host ${host} reaches the real command rather than a slice pointer, and reports it needs --yes rather than prompting`, () => {
         const result = runCli([verb, "--host", host]);
         assert.equal(result.status, 1);
         assert.equal(result.stdout, `oso ${verb} --host ${host} requires --yes in this slice — no interactive confirmation prompt is wired yet\n`);

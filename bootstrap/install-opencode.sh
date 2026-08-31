@@ -181,7 +181,7 @@ verify_every_installed_gate_is_published() {
   published="$(published_gate_scripts)"
   for installed in "$HOOKS_TARGET"/*.sh; do
     [ -f "$installed" ] || continue
-    printf '%s\n' "$published" | grep -Fxq -- "${installed##*/}" ||
+    grep -Fxq -- "${installed##*/}" <<<"$published" ||
       unpublished="$unpublished ${installed##*/}"
   done
   [ -z "$unpublished" ] ||

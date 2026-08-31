@@ -3,16 +3,18 @@ import { codexHostProbes } from "./codex-host.ts";
 import { installClaude, purgeClaude, repairClaude } from "./claude.ts";
 import { installCodex, purgeCodex, repairCodex } from "./codex.ts";
 import { repairOpenCode } from "./opencode.ts";
+import { openCodeHostProbes } from "./opencode-host.ts";
+import { installOpenCode } from "./opencode-install.ts";
+import { purgeOpenCode } from "./opencode-purge.ts";
 import { verifyClaude } from "./verify-claude.ts";
 import { verifyCodex } from "./verify-codex.ts";
+import { verifyOpenCode } from "./verify-opencode.ts";
 
 const VERBS = ["install", "verify", "repair", "purge"] as const;
 type Verb = (typeof VERBS)[number];
 
 const HOSTS = ["claude", "codex", "opencode"] as const;
 type Host = (typeof HOSTS)[number];
-
-const SLICE_BRINGING_THE_REST_OF_OPENCODE = "C3-S4b";
 
 export type FlagSpec = Readonly<{ name: string; valueMissingMessage?: string }>;
 export type OrderedExclusion = Readonly<{ first: string; second: string; message: string }>;
@@ -105,17 +107,6 @@ export class ArgumentsExcludedError extends Error {
   }
 }
 
-export class VerbNotImplementedError extends Error {
-  readonly verb: Verb;
-  readonly host: Host;
-  constructor(verb: Verb, host: Host, arrivesIn: string) {
-    super(`${verb} --host ${host} is not yet implemented in this slice — ${arrivesIn} brings it`);
-    this.name = "VerbNotImplementedError";
-    this.verb = verb;
-    this.host = host;
-  }
-}
-
 export type ParsedArgv = Readonly<{
   verb: Verb;
   host: Host;
@@ -197,14 +188,44 @@ function runCodex(verb: Verb, context: Parameters<typeof installCodex>[0]): { re
 }
 
 function runOpenCode(parsed: ParsedArgv, context: CommandContext): { report: string; exitCode: number } {
-  if (parsed.verb !== "repair") throw new VerbNotImplementedError(parsed.verb, "opencode", SLICE_BRINGING_THE_REST_OF_OPENCODE);
-  return repairOpenCode({
-    homeDirectory: context.homeDirectory,
-    environment: context.environment,
-    assumeYes: context.assumeYes,
-    listBackups: parsed.flags.has("--list"),
-    backupName: parsed.positional,
-  });
+  switch (parsed.verb) {
+    case "install":
+      return installOpenCode({
+        homeDirectory: context.homeDirectory,
+        repositoryRoot: context.repositoryRoot,
+        environment: context.environment,
+        platform: context.platform,
+        host: openCodeHostProbes(context.environment),
+        assumeYes: context.assumeYes,
+        installImpeccable: context.installImpeccable,
+        installGitHook: context.installGitHook,
+      });
+    case "verify":
+      return verifyOpenCode({
+        homeDirectory: context.homeDirectory,
+        repositoryRoot: context.repositoryRoot,
+        environment: context.environment,
+        platform: context.platform,
+        host: openCodeHostProbes(context.environment),
+      });
+    case "repair":
+      return repairOpenCode({
+        homeDirectory: context.homeDirectory,
+        environment: context.environment,
+        assumeYes: context.assumeYes,
+        listBackups: parsed.flags.has("--list"),
+        backupName: parsed.positional,
+      });
+    case "purge":
+      return purgeOpenCode({
+        homeDirectory: context.homeDirectory,
+        environment: context.environment,
+        assumeYes: context.assumeYes,
+        dryRun: parsed.flags.has("--dry-run"),
+        keepGentleAi: parsed.flags.has("--keep-gentle-ai"),
+        restoreFrom: parsed.values.get("--restore"),
+      });
+  }
 }
 
 function report(error: unknown): number {

@@ -28,6 +28,7 @@ import { pinnedVersionRefusal, type CodexHostProbes } from "./codex-host.ts";
 import { SUPPORTED_CODEX_VERSION } from "./pins.ts";
 import {
   fatalOutcome,
+  messageOf,
   renderCommandReport,
   requiresYesOutcome,
   restoreNoteOf,
@@ -39,7 +40,7 @@ import {
 import { parseTomlDocument, TomlParseError } from "./toml.ts";
 import { runTomlRegion } from "./toml-regions.ts";
 import { firstExecutableOnPath } from "./verify-claude.ts";
-import { isReadableRegularFile, isRegularNonSymlinkFile } from "../state/store.ts";
+import { isReadableRegularFile, isRegularNonSymlinkFile, withOwnerOnlyUmask } from "../state/store.ts";
 
 const CODEX_INSTALL_BACKUP_FORMAT = "oso-code-codex-install-v1";
 const CODEX_REPAIR_BACKUP_FORMAT = "oso-code-codex-repair-v1";
@@ -197,6 +198,10 @@ export function rebuildGlobalGuidance(existingText: string, body: string): strin
 }
 
 export function installCodex(input: CodexCommandInput): CommandOutcome {
+  return withOwnerOnlyUmask(() => writeCodexInstall(input));
+}
+
+function writeCodexInstall(input: CodexCommandInput): CommandOutcome {
   if (!input.assumeYes) return requiresYesOutcome("install", "codex");
   const unpinned = pinnedVersionOutcome("install", input.host.version);
   if (unpinned !== undefined) return unpinned;
@@ -294,6 +299,10 @@ export function repairCodex(input: CodexCommandInput): CommandOutcome {
 }
 
 export function purgeCodex(input: CodexCommandInput): CommandOutcome {
+  return withOwnerOnlyUmask(() => writeCodexPurge(input));
+}
+
+function writeCodexPurge(input: CodexCommandInput): CommandOutcome {
   if (!input.assumeYes) return requiresYesOutcome("purge", "codex");
   const paths = codexPathsFor(input.homeDirectory, input.environment);
   if (paths.codexHome === path.parse(paths.codexHome).root || input.homeDirectory === path.parse(input.homeDirectory).root) {
@@ -508,6 +517,3 @@ function holdsKeyPath(document: Record<string, unknown>, keyPath: readonly strin
   return true;
 }
 
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}

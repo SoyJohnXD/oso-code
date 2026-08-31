@@ -174,6 +174,11 @@ export function isReadableRegularFile(target: string): boolean {
   }
 }
 
+export function filesHoldTheSameBytes(one: string, other: string): boolean {
+  if (!isReadableRegularFile(one) || !isReadableRegularFile(other)) return false;
+  return readFileSync(one).equals(readFileSync(other));
+}
+
 export function isExecutableRegularFile(target: string): boolean {
   if (!isRegularNonSymlinkFile(target)) return false;
   try {
@@ -360,7 +365,7 @@ export function sleepSync(milliseconds: number): void {
   Atomics.wait(signal, 0, 0, milliseconds);
 }
 
-function withOwnerOnlyUmask<T>(run: () => T): T {
+export function withOwnerOnlyUmask<T>(run: () => T): T {
   const previous = process.umask(0o077);
   try {
     return run();

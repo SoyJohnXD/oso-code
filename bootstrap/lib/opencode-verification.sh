@@ -3,7 +3,7 @@
 FREE_SESSION_MODEL_PATTERN='^opencode/.*-free$'
 
 first_free_model_in() {
-  grep -E "$FREE_SESSION_MODEL_PATTERN" "$1" | head -1
+  grep -m1 -E "$FREE_SESSION_MODEL_PATTERN" "$1"
 }
 
 OPENCODE_PROBE_PREFIX=oso-opencode-probe

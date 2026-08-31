@@ -16,7 +16,7 @@ import { runTomlRegion } from "./toml-regions.ts";
 import { readTomlFile, TomlParseError } from "./toml.ts";
 import { trustDivergences } from "./trust.ts";
 import { TOOL_ROWS } from "../routes/routes.ts";
-import { isErrnoException, isExecutableRegularFile, isReadableRegularFile } from "../state/store.ts";
+import { filesHoldTheSameBytes, isErrnoException, isExecutableRegularFile, isReadableRegularFile } from "../state/store.ts";
 
 export const KNOWN_MCP_SERVERS = ["engram", "context7", "fallow"] as const;
 
@@ -106,11 +106,11 @@ export function checkPluginInstalled(report: VerifyReport, paths: CodexPaths, ho
 
 export function checkMarketplacePayload(report: VerifyReport, paths: CodexPaths, repositoryRoot: string): void {
   const divergent: string[] = MARKETPLACE_PAYLOAD_ROWS.flatMap((row) =>
-    sameBytes(path.join(repositoryRoot, ...row.published.split("/")), path.join(paths.marketplaceRoot, ...row.installed.split("/"))) ? [] : [row.named],
+    filesHoldTheSameBytes(path.join(repositoryRoot, ...row.published.split("/")), path.join(paths.marketplaceRoot, ...row.installed.split("/"))) ? [] : [row.named],
   );
   for (const skill of publishedSkillNames(repositoryRoot)) {
     const installed = path.join(paths.marketplaceRoot, "codex", "skills", skill, "SKILL.md");
-    if (!sameBytes(path.join(repositoryRoot, "codex", "skills", skill, "SKILL.md"), installed)) divergent.push(skill);
+    if (!filesHoldTheSameBytes(path.join(repositoryRoot, "codex", "skills", skill, "SKILL.md"), installed)) divergent.push(skill);
   }
   if (!isDirectoryAt(path.join(paths.marketplaceRoot, "codex", "skills", "_shared"))) divergent.push("shared");
   report.check("staged marketplace payload", "exact", divergent.length === 0 ? "exact" : `divergent:${divergent.map((named) => ` ${named}`).join("")}`);
@@ -449,11 +449,6 @@ function publishedSkillNames(repositoryRoot: string): string[] {
   } catch {
     return [];
   }
-}
-
-function sameBytes(published: string, installed: string): boolean {
-  if (!isReadableRegularFile(published) || !isReadableRegularFile(installed)) return false;
-  return readFileSync(published).equals(readFileSync(installed));
 }
 
 function isDirectoryAt(target: string): boolean {

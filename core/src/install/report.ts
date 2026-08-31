@@ -92,6 +92,10 @@ export function fatalOutcome(verb: string, host: string, summary: string, detail
   return { report: `oso ${verb} --host ${host}: ${summary}: ${detail}${restoreNote}\n`, exitCode: 1 };
 }
 
+export function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export function restoreNoteOf(restore: Readonly<{ failedCount: number; failedItems: readonly string[] }> | undefined): string {
   if (restore === undefined) return "";
   return restore.failedCount === 0
