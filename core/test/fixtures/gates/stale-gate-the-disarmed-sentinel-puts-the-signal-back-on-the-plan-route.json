@@ -1,9 +1,9 @@
 {
   "name": "stale gate: the disarmed roadmap=none sentinel puts the signal back on the plan route it had before",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 6114, "assertion": "roadmap_state_of none" },
-    { "file": "tests/hooks-test.sh", "line": 6115, "assertion": "run_hook warn-stale-state.sh \"$(stale_session_input)\"" },
-    { "file": "tests/hooks-test.sh", "line": 6116, "assertion": "assert_equals \"the disarmed sentinel puts the signal back on the plan route it had before\" \\\n  \"present\" \"$(if printf '%s' \"$hook_stdout\" | grep -F '/oso-code:plan {change}' >/dev/null; then echo present; else echo missing; fi)\"" }
+    { "assertion": "roadmap_state_of none" },
+    { "assertion": "run_hook warn-stale-state.sh \"$(stale_session_input)\"" },
+    { "assertion": "assert_equals \"the disarmed sentinel puts the signal back on the plan route it had before\" \\\n  \"present\" \"$(if printf '%s' \"$hook_stdout\" | grep -F '/oso-code:plan {change}' >/dev/null; then echo present; else echo missing; fi)\"" }
   ],
   "gate": "stale",
   "argv": [],

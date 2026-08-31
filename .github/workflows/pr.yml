@@ -43,10 +43,6 @@ jobs:
         run: |
           cd opencode
           npm test
-      - name: Hook regression suite (ubuntu only — Windows needs the jq provisioning nightly.yml does)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: tests/hooks-test.sh
       - name: Install Claude Code CLI (ubuntu only — feeds the two validate steps below)
         if: runner.os == 'Linux'
         run: npm install -g @anthropic-ai/claude-code

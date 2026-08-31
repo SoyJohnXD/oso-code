@@ -2,8 +2,6 @@
   "name": "production boundary: npx vercel@34 whoami",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5018,
       "assertion": "assert_equals \"a pinned spec's read-only subcommands stay none of this gate's business\" \\\n  \"allow allow allow allow\" \\\n  \"$(prod_verdicts_for 'npx vercel@latest ls' 'npx vercel@34 whoami' 'npx netlify@17 status' \\\n    'npm exec typescript@5.4 -- tsc --noEmit')\""
     }
   ],

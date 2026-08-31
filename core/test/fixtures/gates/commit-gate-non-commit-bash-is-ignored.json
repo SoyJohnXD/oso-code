@@ -2,8 +2,6 @@
   "name": "commit gate: non-commit bash is ignored",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 2110,
       "assertion": "assert_allows \"non-commit bash is ignored\"      block-commit-until-green.sh \"$(bash_input 'npm test')\""
     }
   ],

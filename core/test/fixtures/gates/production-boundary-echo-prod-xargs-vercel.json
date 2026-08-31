@@ -2,8 +2,6 @@
   "name": "production boundary: echo --prod | xargs vercel",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 4998,
       "assertion": "assert_equals \"a deploy whose production flag arrives from stdin is denied rather than read as a preview\" \\\n  \"deny deny deny deny\" \\\n  \"$(prod_verdicts_for 'echo --prod | xargs vercel' 'echo --prod | xargs -n1 vercel' \\\n    'printf %s --prod | xargs -0 vercel' 'echo --prod | xargs netlify deploy')\""
     }
   ],

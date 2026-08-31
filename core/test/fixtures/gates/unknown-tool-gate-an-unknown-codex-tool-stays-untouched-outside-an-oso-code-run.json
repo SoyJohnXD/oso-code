@@ -2,8 +2,6 @@
   "name": "unknown-tool gate: an unknown Codex tool stays untouched outside an oso-code run",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 1205,
       "assertion": "assert_after_hook \"an unknown Codex tool stays untouched outside an oso-code run\" \\\n  [ -z \"$hook_stdout\" ]"
     }
   ],

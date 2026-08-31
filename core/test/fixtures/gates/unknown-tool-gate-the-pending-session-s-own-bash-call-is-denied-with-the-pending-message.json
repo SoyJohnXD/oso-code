@@ -2,13 +2,9 @@
   "name": "unknown-tool gate: the pending session's own Bash call is denied with the pending message",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 1257,
       "assertion": "assert_after_hook \"the pending session's own Bash call is still denied while its plan is pending\" \\\n  hook_returned_deny"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 1261,
       "assertion": "    echo \"ok: the scoped pending denial keeps the existing pending message\"; pass=$((pass + 1)) ;;"
     }
   ],

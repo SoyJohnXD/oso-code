@@ -43,7 +43,7 @@ const EVERY_CALL_SITE_OF_A_SPAWN_SITE: Readonly<Record<string, Readonly<{ driven
   probe_opencode_version: { drivenHere: "bootstrap/install-opencode.sh", outsideThisCorpus: [] },
   opencode_version_of: {
     drivenHere: "bootstrap/verify-opencode.sh",
-    outsideThisCorpus: ["bootstrap/lib/opencode-verification.sh", "tests/hooks-test.sh", "tests/hooks-test.sh"],
+    outsideThisCorpus: ["bootstrap/lib/opencode-verification.sh"],
   },
 };
 

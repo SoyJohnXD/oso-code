@@ -2,8 +2,6 @@
   "name": "commit gate: a line just under the input bound is still read",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6718,
       "assertion": "assert_denies \"a line just under the input bound is still read\" \\\n  block-commit-until-green.sh \"$(bash_input \"$(commit_line_of_length 3000 'aaaaaaaaaaaaaaaa')\")\""
     }
   ],

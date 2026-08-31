@@ -53,7 +53,6 @@ export function verifyClaude(input: VerifyClaudeInput): VerifyOutcome {
   checkClaudeMdBudget(report, claudeDir);
   checkInstalledHookDeniesRedCommit(report, claudeDir, environment);
   checkOsoStateBinRoundTrips(report, claudeDir, environment);
-  checkHookRegressionSuite(report, repositoryRoot, environment);
   checkImpeccablePluginInstalled(report, homeDirectory, pluginListing);
   checkImpeccableCliRunnable(report, environment);
   checkGitCommitHook(report, repositoryRoot, environment);
@@ -139,19 +138,6 @@ export function checkOsoStateBinRoundTrips(report: VerifyReport, claudeDir: stri
   const probe = runOsoStateProbe(storedStateBin, environment);
   report.check("OSO_STATE_BIN round-trips oso-state (e2e)", "probe", probe === "" ? "empty" : probe, STATE_BIN_FIX);
   report.detail(`OSO_STATE_BIN: ${storedStateBin}`);
-}
-
-export function checkHookRegressionSuite(report: VerifyReport, repositoryRoot: string, environment: NodeJS.ProcessEnv): void {
-  if (environment["OSO_VERIFY_SKIP_SLOW"] === "1") {
-    report.skip("hook regression suite — OSO_VERIFY_SKIP_SLOW (CI runs the suite as its own step)");
-    return;
-  }
-  const result = spawnSync("bash", [path.join(repositoryRoot, "tests", "hooks-test.sh")], {
-    cwd: repositoryRoot,
-    env: environment,
-    stdio: "ignore",
-  });
-  report.check("hook regression suite", "pass", result.status === 0 ? "pass" : "fail");
 }
 
 export function impeccableOptOutMarker(homeDirectory: string): string {

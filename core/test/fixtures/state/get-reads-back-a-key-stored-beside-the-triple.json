@@ -2,8 +2,6 @@
   "name": "get reads back a key stored beside the triple",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5593,
       "assertion": "assert_equals \"a key beside the triple is stored and read back\" \\\n  \"$REPO_ROOT\" \"$(oso-state --session \"$SESSION\" get repo_path)\""
     }
   ],

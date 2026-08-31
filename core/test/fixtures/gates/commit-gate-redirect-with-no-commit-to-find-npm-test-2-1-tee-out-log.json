@@ -2,13 +2,9 @@
   "name": "commit gate, redirect with no commit to find: npm test 2>&1 | tee out.log",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6570,
       "assertion": "assert_every assert_allows \"redirect with no commit to find\" <<'REDIRECT_NO_FRICTION_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6572,
       "assertion": "npm test 2>&1 | tee out.log"
     }
   ],

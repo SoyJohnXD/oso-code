@@ -2,13 +2,9 @@
   "name": "commit gate, regression: git commit --amend --no-edit",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6448,
       "assertion": "assert_every assert_denies regression <<'REGRESSION_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6458,
       "assertion": "git commit --amend --no-edit"
     }
   ],

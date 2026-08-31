@@ -2,8 +2,6 @@
   "name": "production boundary: npm install vercel --prod",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5014,
       "assertion": "assert_equals \"a package install that merely names a deploy CLI is denied with the deploy it cannot be told apart from, because a runner subcommand grammar this gate does not model is the only thing that could tell them apart\" \\\n  \"deny deny deny deny\" \\\n  \"$(prod_verdicts_for 'npm install vercel@34 --prod' 'npm install --prod vercel@34' \\\n    'npm install vercel --prod' 'npm install --prod vercel')\""
     }
   ],

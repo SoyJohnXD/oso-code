@@ -2,13 +2,9 @@
   "name": "commit gate, adversarial: if true; then git commit; fi",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6380,
       "assertion": "assert_every assert_denies adversarial <<'ADVERSARIAL_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6381,
       "assertion": "if true; then git commit; fi"
     }
   ],

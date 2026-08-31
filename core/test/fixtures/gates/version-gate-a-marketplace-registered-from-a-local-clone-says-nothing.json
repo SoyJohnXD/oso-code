@@ -2,13 +2,9 @@
   "name": "version gate: a marketplace registered from a local clone says nothing",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6259,
       "assertion": "  write_drift_marketplace_source directory path \"$REPO_ROOT\""
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6260,
       "assertion": "  assert_drift_silent \"a marketplace registered from a local clone says nothing\""
     }
   ],

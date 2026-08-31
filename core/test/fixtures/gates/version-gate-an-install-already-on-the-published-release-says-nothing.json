@@ -2,13 +2,9 @@
   "name": "version gate: an install already on the published release says nothing",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6242,
       "assertion": "  write_drift_manifest 0.19.0"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6243,
       "assertion": "  assert_drift_silent \"an install already on the published release says nothing\""
     }
   ],

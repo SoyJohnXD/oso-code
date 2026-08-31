@@ -2,8 +2,6 @@
   "name": "unknown-tool gate: a release-known Codex tool passes the armed catch-all",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 1211,
       "assertion": "assert_after_hook \"a release-known Codex tool passes the armed catch-all\" \\\n  [ -z \"$hook_stdout\" ]"
     }
   ],

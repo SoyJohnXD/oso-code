@@ -42,8 +42,6 @@ jobs:
         run: |
           claude --version
           claude plugin validate --strict plugin
-      - name: Hook regression suite on bash 3.2, which carries neither git nor jq
-        run: docker run --rm -e OSO_NIGHTLY -v "$PWD":/repo -w /repo bash:3.2 bash tests/hooks-test.sh
       - name: Lexer differential re-read from the real shell, where drift between bash and the committed corpus reds this build
         run: |
           npm ci --no-audit --no-fund
@@ -53,19 +51,6 @@ jobs:
         run: |
           cd core
           node --experimental-strip-types --test test/install/engram-nightly.test.ts
-      - name: Verify report reaches its summary — a fixture HOME fails every check but the two install-independent ones, so failed=9
-        env:
-          OSO_VERIFY_SKIP_SLOW: 1
-        run: |
-          report="$(mktemp)"
-          HOME="$(mktemp -d)" bash bootstrap/verify.sh > "$report" 2>&1 || true
-          cat "$report"
-          grep -q '^passed:' "$report"
-          printf '%s' "$VERIFY_CHECK_NAMES" | LC_ALL=C sort > "$report.pinned"
-          bash tools/verify-check-names.sh "$report" > "$report.reached"
-          diff "$report.pinned" "$report.reached"
-          failed="$(sed -n 's/^passed: [0-9]*, failed: \([0-9]*\)$/\1/p' "$report")"
-          [ "$failed" = "9" ]
       - name: Codex verify report reaches its summary — no codex CLI installed, only the hardcoded mandated tool list agreeing with tools/hook-gates.txt in both directions passes, so failed=14
         env:
           OSO_VERIFY_SKIP_SMOKE: 1
@@ -137,18 +122,6 @@ jobs:
         run: |
           claude --version
           claude plugin validate --strict plugin
-      - name: Provision jq for the suite
-        shell: bash
-        run: |
-          command -v jq >/dev/null 2>&1 || choco install jq --no-progress -y
-          export PATH="/c/ProgramData/chocolatey/bin:$PATH"
-          echo 'C:\ProgramData\chocolatey\bin' >> "$GITHUB_PATH"
-          jq --version
-      - name: Hook regression suite
-        shell: bash
-        run: |
-          jq --version
-          bash tests/hooks-test.sh
       - name: Engram release provisioning against the real GitHub release, checksum-verified end to end — the PR gate only exercises the stub transport
         shell: bash
         run: |
@@ -179,21 +152,6 @@ jobs:
       - name: Bootstrapper (CI-safe mode)
         shell: powershell
         run: .\bootstrap\install.ps1 -CiMode -Yes -ReplaceClaudeMd -NoImpeccable -NoGitHook
-      - name: Verify report reaches its summary
-        shell: bash
-        env:
-          OSO_VERIFY_SKIP_SLOW: 1
-        run: |
-          report="$(mktemp)"
-          HOME="$(mktemp -d)" bash bootstrap/verify.sh > "$report" 2>&1 || true
-          cat "$report"
-          grep -q '^passed:' "$report"
-          printf '%s%s' "$VERIFY_CHECK_NAMES" "$VERIFY_CHECK_NAMES_WINDOWS" |
-            LC_ALL=C sort > "$report.pinned"
-          bash tools/verify-check-names.sh "$report" > "$report.reached"
-          diff "$report.pinned" "$report.reached"
-          failed="$(sed -n 's/^passed: [0-9]*, failed: \([0-9]*\)$/\1/p' "$report")"
-          [ "$failed" = "11" ]
       - name: Windows verifier entry point (verify.bat)
         shell: cmd
         env:

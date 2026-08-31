@@ -2,8 +2,6 @@
   "name": "amend-plan rejects a different session",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 1941,
       "assertion": "if printf '%s' '### Wrong session' | oso-state --session other-session amend-plan slice-4 >/dev/null 2>&1; then\n  echo \"FAIL: amend-plan accepted a different session\"; fail=$((fail + 1))\nelse\n  echo \"ok: amend-plan rejects a different session\"; pass=$((pass + 1))\nfi"
     }
   ],

@@ -2,8 +2,6 @@
   "name": "commit gate: debug-mode commit while verify is red",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 2099,
       "assertion": "assert_denies \"debug-mode commit while verify is red\" block-commit-until-green.sh \"$(bash_input 'git commit -m x')\""
     }
   ],

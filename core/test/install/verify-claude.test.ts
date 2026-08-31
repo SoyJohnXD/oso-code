@@ -11,7 +11,6 @@ import {
   checkEngramBinaryResolves,
   checkGitBashPath,
   checkGitCommitHook,
-  checkHookRegressionSuite,
   checkImpeccableCliRunnable,
   checkImpeccablePluginInstalled,
   checkInstalledHookDeniesRedCommit,
@@ -245,21 +244,6 @@ describe("checkOsoStateBinRoundTrips", () => {
     const lines = linesOf(report);
     assert.ok(lines.includes("ok:   OSO_STATE_BIN round-trips oso-state (e2e) (probe)"));
     assert.ok(lines.includes(`      OSO_STATE_BIN: ${realStateBin}`));
-  });
-});
-
-describe("checkHookRegressionSuite", () => {
-  test("skips with the exact switch line when OSO_VERIFY_SKIP_SLOW=1", () => {
-    const report = new VerifyReport();
-    checkHookRegressionSuite(report, repositoryRoot, { OSO_VERIFY_SKIP_SLOW: "1" });
-    assert.ok(linesOf(report).includes("skip: hook regression suite — OSO_VERIFY_SKIP_SLOW (CI runs the suite as its own step)"));
-  });
-
-  test("fails when the suite script is not there to run", () => {
-    const root = freshDirectory();
-    const report = new VerifyReport();
-    checkHookRegressionSuite(report, root, {});
-    assert.ok(linesOf(report).includes("FAIL: hook regression suite — expected pass, got fail"));
   });
 });
 

@@ -2,8 +2,6 @@
   "name": "commit gate: an expansion inside a resolved git path is still a deny",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6682,
       "assertion": "assert_denies \"an expansion inside a resolved git path is still a deny\" \\\n  block-commit-until-green.sh \"$(bash_input '/opt/${tools}/git commit -m x')\""
     }
   ],

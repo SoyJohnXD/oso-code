@@ -1,9 +1,9 @@
 {
   "name": "planprompt gate: a different session cannot cancel the pending document",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1777, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default other-session 'CANCEL OSO PLAN')\"" },
-    { "file": "tests/hooks-test.sh", "line": 1779, "assertion": "assert_after_hook \"a different session cannot cancel the pending document\" \\\n  hook_returned_block" },
-    { "file": "tests/hooks-test.sh", "line": 1781, "assertion": "assert_equals \"a wrong-session cancellation does not erase pending state\" \\\n  \"$cancel_pending_snapshot\" \"$(approval_state_snapshot)\"" }
+    { "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default other-session 'CANCEL OSO PLAN')\"" },
+    { "assertion": "assert_after_hook \"a different session cannot cancel the pending document\" \\\n  hook_returned_block" },
+    { "assertion": "assert_equals \"a wrong-session cancellation does not erase pending state\" \\\n  \"$cancel_pending_snapshot\" \"$(approval_state_snapshot)\"" }
   ],
   "gate": "planprompt",
   "argv": [],

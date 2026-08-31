@@ -2,8 +2,6 @@
   "name": "commit gate: bypass: eval wraps commit",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 2118,
       "assertion": "assert_denies \"bypass: eval wraps commit\"    block-commit-until-green.sh \"$(bash_input 'eval '\\''git commit -m x'\\''')\""
     }
   ],

@@ -2,8 +2,6 @@
   "name": "commit gate: residue: a chain past the bound hides a commit — allowed on purpose",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6592,
       "assertion": "assert_allows \"residue: a chain past the bound hides a commit — allowed on purpose\" \\\n  block-commit-until-green.sh \"$(bash_input 'bash -c '\\''bash -c \\\"bash -c \\\\\\\"bash -c git commit\\\\\\\"\\\"'\\''')\""
     }
   ],

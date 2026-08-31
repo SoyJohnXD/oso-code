@@ -2,13 +2,9 @@
   "name": "version gate: a machine with no registered marketplace says nothing",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6262,
       "assertion": "  rm -f \"$DRIFT_MARKETPLACES\""
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6263,
       "assertion": "  assert_drift_silent \"a machine with no registered marketplace says nothing\""
     }
   ],

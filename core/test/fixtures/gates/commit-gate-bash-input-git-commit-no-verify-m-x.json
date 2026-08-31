@@ -2,8 +2,6 @@
   "name": "commit gate: $(bash_input 'git commit --no-verify -m x')",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6896,
       "assertion": "    block-commit-until-green.sh \"$(bash_input 'git commit --no-verify -m x')\""
     }
   ],

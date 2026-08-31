@@ -2,13 +2,9 @@
   "name": "commit gate, redirect in front of a shell's stdin: >out.txt bash <<EOF\\ngit commit\\nEOF",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6563,
       "assertion": "assert_every assert_denies \"redirect in front of a shell's stdin\" <<'REDIRECT_STDIN_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6564,
       "assertion": ">out.txt bash <<EOF\\ngit commit\\nEOF"
     }
   ],

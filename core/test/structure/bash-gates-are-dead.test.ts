@@ -6,43 +6,35 @@ import { posixRepositoryPath } from "../support/repository-paths.ts";
 import { readTrackedText, trackedRepositoryFiles, type TrackedFileText } from "../support/tracked-files.ts";
 
 const SHARED_BASH_LIBRARIES = ["lib.sh", "lexer.sh"];
-const BASH_RENDERER = "render-hooks-json.sh";
 
 const UNSCANNED_PREFIXES = ["docs/", "core/test/fixtures/", "plugin/hooks/"];
 const THIS_CHECK = posixRepositoryPath(import.meta.filename);
-const UNSCANNED_FILES = new Set(["CHANGELOG.md", "tools/render-hooks-json.sh", THIS_CHECK]);
+const UNSCANNED_FILES = new Set(["CHANGELOG.md", THIS_CHECK]);
 
 const MINIMUM_SCANNED_FILES = 200;
-const MINIMUM_REFERENCES_FOUND = 50;
+const MINIMUM_REFERENCES_FOUND = 20;
 
 type DeadBashReference = Readonly<{ file: string; line: number; name: string; text: string }>;
 
-type ResidueClass = "suite" | "installer" | "shell-library" | "record" | "citation" | "shipped-prose";
+type ResidueClass = "installer" | "shell-library" | "citation" | "shipped-prose";
 
 type Residue = Readonly<{ residue: ResidueClass; keptBy: string }>;
 
 const RESIDUE_BY_FILE: ReadonlyMap<string, Residue> = new Map([
-  ["tests/hooks-test.sh", { residue: "suite", keptBy: "C2-D25: the suite's own cases, removed with the suite in C3-S6" }],
   ["bootstrap/install-codex.sh", { residue: "installer", keptBy: "C2-D18: staging and trust set of installed-but-dead copies" }],
   ["bootstrap/install-opencode.sh", { residue: "installer", keptBy: "C2-D18: staging of installed-but-dead copies" }],
   ["bootstrap/hook-hashes.txt", { residue: "installer", keptBy: "C2-D19: the published trust data those installers compare against" }],
   ["core/test/structure/published-hook-hashes.test.ts", { residue: "installer", keptBy: "C2-D19: asserts that trust data's coverage and order" }],
   ["tests/plugin-lint.sh", { residue: "shell-library", keptBy: "C2-S6 amended 2026-08-27: sources lexer.sh as a shell library; C4 retires the bar" }],
   ["tests/opencode-behavior-bar.sh", { residue: "shell-library", keptBy: "C2-S6 amended 2026-08-27: sources lib.sh as a shell library; C4 retires the bar" }],
-  ["tools/hook-gates.txt", { residue: "record", keptBy: "C2-D24(1): the table stays this window; its header names the renderer" }],
   ["core/test/gates/internal-failure-transport.test.ts", { residue: "citation", keptBy: "Decision 9: line-free provenance in a case title" }],
   ["core/test/gates/teardown-worktrees.test.ts", { residue: "citation", keptBy: "Decision 9: line-free provenance in a case title" }],
   ["core/test/port/git-call.test.ts", { residue: "citation", keptBy: "Decision 9: line-free provenance in a case title" }],
   ["core/test/port/lexer.test.ts", { residue: "citation", keptBy: "Decision 9: line-free provenance in a case title" }],
-  ["core/test/structure/opencode-routes.test.ts", { residue: "citation", keptBy: "Decision 9: line-free provenance in a case title" }],
   ["plugin/skills/_shared/platform/opencode/plan.md", { residue: "shipped-prose", keptBy: "C2-D24(4): descriptive shipped prose, classified to C5" }],
 ]);
 
-const deadBashNames: readonly string[] = [
-  ...GATE_ROWS.map((row) => row.script),
-  ...SHARED_BASH_LIBRARIES,
-  BASH_RENDERER,
-];
+const deadBashNames: readonly string[] = [...GATE_ROWS.map((row) => row.script), ...SHARED_BASH_LIBRARIES];
 
 function pathShapedReferencePattern(names: readonly string[]): RegExp {
   const alternatives = names.map((name) => name.replaceAll(".", "\\.")).join("|");

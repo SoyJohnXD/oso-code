@@ -1,8 +1,8 @@
 {
   "name": "autocontinue gate: progress renews the belief window a bounded number of times",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 4928, "assertion": "oso-state --session \"$SESSION\" set auto_wait=wave-4 >/dev/null\nauto_renewal_verdicts=\"\"\nfor auto_renewal in 1 2 3 4 5; do\n  auto_renewal_verdicts=\"$auto_renewal_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"\n  touch -t 200001010000 \"$AUTO_WAIT_MARK\"\n  journal_milestone \"the run moved while wave 4 stayed marked in flight ($auto_renewal)\"\ndone" },
-    { "file": "tests/hooks-test.sh", "line": 4935, "assertion": "assert_equals \"progress renews the belief window a bounded number of times, so a mark the run keeps moving under still stops being believed rather than holding the turn open for good\" \\\n  \"stop stop stop stop push\" \"${auto_renewal_verdicts# }\"\n" }
+    { "assertion": "oso-state --session \"$SESSION\" set auto_wait=wave-4 >/dev/null\nauto_renewal_verdicts=\"\"\nfor auto_renewal in 1 2 3 4 5; do\n  auto_renewal_verdicts=\"$auto_renewal_verdicts $(auto_stop_verdict \"$(auto_stop_input)\")\"\n  touch -t 200001010000 \"$AUTO_WAIT_MARK\"\n  journal_milestone \"the run moved while wave 4 stayed marked in flight ($auto_renewal)\"\ndone" },
+    { "assertion": "assert_equals \"progress renews the belief window a bounded number of times, so a mark the run keeps moving under still stops being believed rather than holding the turn open for good\" \\\n  \"stop stop stop stop push\" \"${auto_renewal_verdicts# }\"\n" }
   ],
   "gate": "autocontinue",
   "argv": [],

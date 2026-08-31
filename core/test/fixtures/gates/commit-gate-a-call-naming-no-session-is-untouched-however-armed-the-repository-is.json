@@ -2,8 +2,6 @@
   "name": "commit gate: a call naming no session is untouched however armed the repository is",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 2154,
       "assertion": "assert_allows \"the commit gate stays off a call naming no session, armed repo or not\" \\\n  block-commit-until-green.sh \"$unmarked_bash_input\""
     }
   ],

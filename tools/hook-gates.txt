@@ -1,5 +1,5 @@
-# The gates, once, for every host the harness runs on. tools/render-hooks-json.sh
-# turns this table into each host's manifest: hooks.json for Claude and Codex,
+# The gates, once, for every host the harness runs on. Each host's manifest is
+# rendered from this table's rows: hooks.json for Claude and Codex,
 # and a TypeScript route table (opencode/hooks/routes.ts) for opencode, whose
 # gates are a TS shim rather than subprocess hooks. core/src/routes/render.ts renders
 # them now, and this table is read by bootstrap/verify-codex.sh and
@@ -96,9 +96,9 @@ host  opencode  opencode/hooks/routes.ts  <module-relative>
 # `recovery` row below naming the operator's legitimate next step, or explicitly
 # stating there is none — never a cause the operator has to translate into an
 # action themselves, and never the state write that would disarm the gate it
-# belongs to. tools/render-hooks-json.sh's own parser enforces this the same way
-# it already enforces a matcher or a script's existence: closed, before any
-# render, check or classify mode runs. Stop and UserPromptSubmit gates block
+# belongs to. The bash renderer whose parser closed this rule before every render
+# is deleted, and no check carries it in its place, so it holds by review of this
+# table until one does. Stop and UserPromptSubmit gates block
 # through a different channel (`stop_block`, `control_block`) this rule does not
 # reach yet.
 

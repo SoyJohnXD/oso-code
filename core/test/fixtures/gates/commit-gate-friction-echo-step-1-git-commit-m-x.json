@@ -2,13 +2,9 @@
   "name": "commit gate, friction: echo \\\"step 1; git commit -m x\\\"",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6417,
       "assertion": "assert_every assert_allows friction <<'FRICTION_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6425,
       "assertion": "echo \\\"step 1; git commit -m x\\\""
     }
   ],

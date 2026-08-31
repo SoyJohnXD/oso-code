@@ -2,8 +2,6 @@
   "name": "slice gate: edit with no state file",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 2129,
       "assertion": "assert_allows \"edit with no state file\" block-edits-without-slice.sh \"$edit_input\""
     }
   ],

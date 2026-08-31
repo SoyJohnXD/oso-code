@@ -2,8 +2,6 @@
   "name": "journal with no milestone text is a usage error",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 4659,
       "assertion": "assert_equals \"a journal call with no milestone text is a usage error, never a timestamped empty line\" \\\n  \"1 1 usage unwritten opened\" \\\n  \"$journal_missing_rc $journal_empty_rc $journal_refusal $journal_after_refusal $([ -s \"$JOURNAL_DIR/run.log\" ] && echo opened || echo unopened)\""
     }
   ],

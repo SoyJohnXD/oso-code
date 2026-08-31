@@ -2,13 +2,9 @@
   "name": "reanchor gate: a session start whose source is not a compaction stays silent, however live the run is",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6343,
       "assertion": "for reanchor_start in startup resume clear; do"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6348,
       "assertion": "assert_equals \"every session start that is not a compaction stays silent, however live the run is\" \\\n  \"silent silent silent silent\" \"${reanchor_start_verdicts# }\""
     }
   ],

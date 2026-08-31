@@ -1,9 +1,9 @@
 {
   "name": "planprompt gate: a Codex plan skill invocation outside native Plan Mode is rejected early",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1577, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" '$oso-code:plan repair approval' \"$CODEX_PROMPT_DEFAULT_TRANSCRIPT\")\"" },
-    { "file": "tests/hooks-test.sh", "line": 1579, "assertion": "assert_after_hook \"a Codex plan skill invocation outside native Plan Mode is rejected early\" \\\n  hook_returned_block" },
-    { "file": "tests/hooks-test.sh", "line": 1581, "assertion": "assert_equals \"a rejected Default-mode plan invocation writes no state\" \\\n  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"" }
+    { "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" '$oso-code:plan repair approval' \"$CODEX_PROMPT_DEFAULT_TRANSCRIPT\")\"" },
+    { "assertion": "assert_after_hook \"a Codex plan skill invocation outside native Plan Mode is rejected early\" \\\n  hook_returned_block" },
+    { "assertion": "assert_equals \"a rejected Default-mode plan invocation writes no state\" \\\n  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"" }
   ],
   "gate": "planprompt",
   "argv": [],

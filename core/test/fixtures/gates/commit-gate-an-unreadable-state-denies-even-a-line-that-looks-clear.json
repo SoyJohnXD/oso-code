@@ -2,8 +2,6 @@
   "name": "commit gate: an unreadable state denies even a line that looks clear",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5789,
       "assertion": "assert_denies \"commit gate denies an unreadable state even for a line that looks clear\" \\\n  block-commit-until-green.sh \"$(bash_input 'npm test')\""
     }
   ],

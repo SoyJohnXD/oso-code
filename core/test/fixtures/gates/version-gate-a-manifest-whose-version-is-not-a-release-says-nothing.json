@@ -2,13 +2,9 @@
   "name": "version gate: a manifest whose version is not a release says nothing",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6249,
       "assertion": "  write_drift_manifest unknown"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6250,
       "assertion": "  assert_drift_silent \"a manifest whose version is not a release says nothing\""
     }
   ],

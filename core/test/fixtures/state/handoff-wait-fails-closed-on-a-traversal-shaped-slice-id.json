@@ -2,8 +2,6 @@
   "name": "handoff wait fails closed on a traversal-shaped slice id",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5494,
       "assertion": "assert_equals \"malformed, traversal-shaped, or overlong handoff coordinates fail closed\" \\\n  \"\" \"$invalid_handoffs\""
     }
   ],

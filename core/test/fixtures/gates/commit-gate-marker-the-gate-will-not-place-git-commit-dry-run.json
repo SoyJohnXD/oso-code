@@ -2,13 +2,9 @@
   "name": "commit gate, marker the gate will not place: git commit -- --dry-run",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6500,
       "assertion": "assert_every assert_denies \"marker the gate will not place\" <<'UNPLACEABLE_MARKER_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6503,
       "assertion": "git commit -- --dry-run"
     }
   ],

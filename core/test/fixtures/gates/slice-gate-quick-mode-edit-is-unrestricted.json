@@ -2,8 +2,6 @@
   "name": "slice gate: quick-mode edit is unrestricted",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 2143,
       "assertion": "assert_allows \"quick-mode edit is unrestricted\" block-edits-without-slice.sh \"$edit_input\""
     }
   ],

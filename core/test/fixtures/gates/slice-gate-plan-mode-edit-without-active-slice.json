@@ -2,8 +2,6 @@
   "name": "slice gate: plan-mode edit without active slice",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 2131,
       "assertion": "assert_denies \"plan-mode edit without active slice\" block-edits-without-slice.sh \"$edit_input\""
     }
   ],

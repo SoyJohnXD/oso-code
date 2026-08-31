@@ -2,18 +2,12 @@
   "name": "reanchor gate: a change slug the reader refuses re-anchors on the fallback journal, never on the slug itself",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6335,
       "assertion": "oso-state --session \"$SESSION\" set auto_change=../escape >/dev/null"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6336,
       "assertion": "run_hook reanchor-after-compact.sh \"$(reanchor_input compact)\""
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6337,
       "assertion": "assert_equals \"a change slug the reader refuses re-anchors on the fallback journal, never on the slug itself\" \\\n  \"$JOURNAL_DIR/run.log|\" \\\n  \"$(printf '%s' \"$hook_stdout\" | grep -oF \"$JOURNAL_DIR/run.log\" || true)|$(printf '%s' \"$hook_stdout\" | grep -oF '../escape' || true)\""
     }
   ],

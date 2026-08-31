@@ -1,10 +1,10 @@
 {
   "name": "planstop gate: a document a text-mode jq re-terminated over CRLF content is still captured",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1635, "assertion": "run_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input default \"$SESSION\" \"$doubled_cr_plan\" false \"$CODEX_STOP_PLAN_TRANSCRIPT\")\"\nassert_after_hook \"a document a text-mode jq re-terminated over CRLF content is still captured\" \\" },
-    { "file": "tests/hooks-test.sh", "line": 1638, "assertion": "  [ \"$hook_stdout\" = '{}' ]\nassert_equals \"the snapshot of a doubled-CR document holds the human plan with LF line endings\" \\" },
-    { "file": "tests/hooks-test.sh", "line": 1640, "assertion": "  \"$doubled_cr_plan_document\" \"$(cat \"$doubled_cr_presented_file\" 2>/dev/null || true)\"\nassert_equals \"the operational copy of a doubled-CR document holds that same LF-ended plan\" \\" },
-    { "file": "tests/hooks-test.sh", "line": 1646, "assertion": "  \"$doubled_cr_plan_digest\" \"$(oso-state --session \"$SESSION\" get plan_approval_digest)\"\nestablish_premise \"the doubled-CR fixture leaves no approval pending\" \\" }
+    { "assertion": "run_hook \"$PLAN_STOP_HOOK\" \\\n  \"$(codex_stop_input default \"$SESSION\" \"$doubled_cr_plan\" false \"$CODEX_STOP_PLAN_TRANSCRIPT\")\"\nassert_after_hook \"a document a text-mode jq re-terminated over CRLF content is still captured\" \\" },
+    { "assertion": "  [ \"$hook_stdout\" = '{}' ]\nassert_equals \"the snapshot of a doubled-CR document holds the human plan with LF line endings\" \\" },
+    { "assertion": "  \"$doubled_cr_plan_document\" \"$(cat \"$doubled_cr_presented_file\" 2>/dev/null || true)\"\nassert_equals \"the operational copy of a doubled-CR document holds that same LF-ended plan\" \\" },
+    { "assertion": "  \"$doubled_cr_plan_digest\" \"$(oso-state --session \"$SESSION\" get plan_approval_digest)\"\nestablish_premise \"the doubled-CR fixture leaves no approval pending\" \\" }
   ],
   "gate": "planstop",
   "argv": [],

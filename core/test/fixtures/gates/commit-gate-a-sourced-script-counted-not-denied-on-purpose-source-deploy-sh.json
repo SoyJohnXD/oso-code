@@ -2,13 +2,9 @@
   "name": "commit gate, a sourced script — counted, not denied, on purpose: source deploy.sh",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6694,
       "assertion": "assert_every assert_allows_counted \"a sourced script — counted, not denied, on purpose\" <<'SOURCED_SCRIPT_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6695,
       "assertion": "source deploy.sh"
     }
   ],

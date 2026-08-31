@@ -2,13 +2,9 @@
   "name": "commit gate, adversarial: git update-ref -d refs/heads/main",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6380,
       "assertion": "assert_every assert_denies adversarial <<'ADVERSARIAL_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6411,
       "assertion": "git update-ref -d refs/heads/main"
     }
   ],

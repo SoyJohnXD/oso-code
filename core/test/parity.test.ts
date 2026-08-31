@@ -1,13 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { expectationMismatches, type ObservedRun } from "./support/parity-expectations.ts";
-import {
-  loadParityFixtures,
-  PARITY_FIXTURE_DIRECTORY,
-  readSuiteLines,
-  unresolvedCitations,
-  type ParityFixture,
-} from "./support/parity-fixture.ts";
+import { loadParityFixtures, PARITY_FIXTURE_DIRECTORY, type ParityFixture } from "./support/parity-fixture.ts";
 import { provedSomething } from "./support/proved.ts";
 import {
   provedSomeSubjectIsMeasurable,
@@ -27,16 +21,11 @@ provedSomething(
   `zero parity fixtures loaded from ${PARITY_FIXTURE_DIRECTORY}`,
 );
 
-test(`all ${fixtures.length} parity fixtures cite an assertion that still stands in tests/hooks-test.sh`, () => {
-  const suiteLines = readSuiteLines();
-  assert.deepEqual(fixtures.flatMap((fixture) => unresolvedCitations(fixture, suiteLines)), []);
-});
-
 provedSomeSubjectIsMeasurable();
 
 for (const subject of STATE_SUBJECTS) {
   describe(
-    `${fixtures.length} parity fixtures read from tests/hooks-test.sh, run against ${subject.name}`,
+    `${fixtures.length} parity fixtures, each quoting the assertion it was ported from, run against ${subject.name}`,
     { skip: skipUnlessSpawnable(subject) },
     () => {
       for (const fixture of fixtures) {

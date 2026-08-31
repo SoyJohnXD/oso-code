@@ -440,7 +440,6 @@ function verifyClaude(input) {
   checkClaudeMdBudget(report2, claudeDir);
   checkInstalledHookDeniesRedCommit(report2, claudeDir, environment);
   checkOsoStateBinRoundTrips(report2, claudeDir, environment);
-  checkHookRegressionSuite(report2, repositoryRoot2, environment);
   checkImpeccablePluginInstalled(report2, homeDirectory, pluginListing);
   checkImpeccableCliRunnable(report2, environment);
   checkGitCommitHook(report2, repositoryRoot2, environment);
@@ -518,18 +517,6 @@ function checkOsoStateBinRoundTrips(report2, claudeDir, environment) {
   const probe = runOsoStateProbe(storedStateBin, environment);
   report2.check("OSO_STATE_BIN round-trips oso-state (e2e)", "probe", probe === "" ? "empty" : probe, STATE_BIN_FIX);
   report2.detail(`OSO_STATE_BIN: ${storedStateBin}`);
-}
-function checkHookRegressionSuite(report2, repositoryRoot2, environment) {
-  if (environment["OSO_VERIFY_SKIP_SLOW"] === "1") {
-    report2.skip("hook regression suite \u2014 OSO_VERIFY_SKIP_SLOW (CI runs the suite as its own step)");
-    return;
-  }
-  const result = spawnSync("bash", [path4.join(repositoryRoot2, "tests", "hooks-test.sh")], {
-    cwd: repositoryRoot2,
-    env: environment,
-    stdio: "ignore"
-  });
-  report2.check("hook regression suite", "pass", result.status === 0 ? "pass" : "fail");
 }
 function impeccableOptOutMarker(homeDirectory) {
   return path4.join(homeDirectory, ".local", "state", "oso-code", "impeccable-opt-out");

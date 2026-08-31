@@ -2,8 +2,6 @@
   "name": "commit gate: a payload whose escapes fit the bound is decoded and read",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6725,
       "assertion": "assert_denies \"a payload whose escapes fit the bound is decoded and read\" \\\n  block-commit-until-green.sh \"$(bash_input \"$(commit_line_of_length 3000 '\\\"aaaa')\")\""
     }
   ],

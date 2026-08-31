@@ -2,13 +2,9 @@
   "name": "commit gate, friction: git --info-path commit",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6417,
       "assertion": "assert_every assert_allows friction <<'FRICTION_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6440,
       "assertion": "git --info-path commit"
     }
   ],

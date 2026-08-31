@@ -18,7 +18,7 @@ const VANISHED_REPO = "vanished-repo";
 const BASE_FILE = "base.txt";
 
 describe(
-  "teardown gate: the git-worktree half of plugin/hooks/cleanup-state.sh, ported from tests/hooks-test.sh:5940-6044",
+  "teardown gate: the git-worktree half of plugin/hooks/cleanup-state.sh, ported from the hook regression suite",
   { skip: skipUnlessGitSeedsRepositories() },
   () => {
     test("session end removes the session's worktree tree, deregisters it and leaves an audit line", () => {

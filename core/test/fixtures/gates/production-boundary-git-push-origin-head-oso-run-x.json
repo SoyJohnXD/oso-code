@@ -2,8 +2,6 @@
   "name": "production boundary: git push origin HEAD:oso-run/x",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5072,
       "assertion": "assert_equals \"the run's own branch push is the finish this gate exists to protect\" \\\n  \"allow allow\" \\\n  \"$(prod_verdicts_for 'git push origin oso-run/auto-continuity' 'git push origin HEAD:oso-run/x')\""
     }
   ],

@@ -2,8 +2,6 @@
   "name": "commit gate: residue: a wrapper option in front of git passes",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6613,
       "assertion": "assert_allows \"residue: a wrapper option in front of git passes\" \\\n  block-commit-until-green.sh \"$(bash_input 'sudo -u x git commit')\""
     }
   ],

@@ -2,8 +2,6 @@
   "name": "unknown-tool gate: collaborationsend_message passes the armed runtime catch-all",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 1229,
       "assertion": "  assert_after_hook \"$collaboration_tool passes the armed runtime catch-all\" \\\n    [ -z \"$hook_stdout\" ]"
     }
   ],

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { VerifyReport } from "../../src/install/report.ts";
 
-describe("VerifyReport renders bootstrap/verify.sh's exact grammar", () => {
+describe("VerifyReport renders the verify report grammar the bash verifier established", () => {
   test("a pass line is six-space-padded ok: plus the name and the value in parentheses", () => {
     const report = new VerifyReport();
     report.check("widget installed", "1", "1");

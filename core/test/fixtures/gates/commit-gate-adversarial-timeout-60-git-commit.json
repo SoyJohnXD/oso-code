@@ -2,13 +2,9 @@
   "name": "commit gate, adversarial: timeout 60 git commit",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6380,
       "assertion": "assert_every assert_denies adversarial <<'ADVERSARIAL_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6391,
       "assertion": "timeout 60 git commit"
     }
   ],

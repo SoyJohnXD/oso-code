@@ -1,9 +1,9 @@
 {
   "name": "handoff gate: Codex SubagentStop resolves the fixed OSO_AGENT identity as the receipt's hook session",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 5236, "assertion": "  \"payload-native-uuid-7d1a-4d1e-bf19\" \"$HANDOFF_REPO\" \"$TEST_HOME/agent-fixed-marker.jsonl\")\"\nunset OSO_STATE_BIN\nOSO_AGENT=1 PATH=\"$SYSTEM_PATH_WITHOUT_OSO_STATE\" run_hook \"$HANDOFF_RUNTIME/hooks/publish-subagent-handoff.sh\" \"$fixed_marker_payload\"" },
-    { "file": "tests/hooks-test.sh", "line": 5239, "assertion": "assert_after_hook \"Codex SubagentStop resolves oso-state from its installed runtime when OSO_STATE_BIN is unset\" \\\n  [ \"$hook_stdout\" = '{}' ]" },
-    { "file": "tests/hooks-test.sh", "line": 5242, "assertion": "run_handoff \"\" handoff wait \\\n  --slice slice-fixed-marker --attempt 2 --agent-id agent-fixed-marker \\\n  --agent-type oso-verifier --timeout 0\nassert_equals \"the runtime-fallback hook receipt waits through the fixed OSO_AGENT rail\" \\" }
+    { "assertion": "  \"payload-native-uuid-7d1a-4d1e-bf19\" \"$HANDOFF_REPO\" \"$TEST_HOME/agent-fixed-marker.jsonl\")\"\nunset OSO_STATE_BIN\nOSO_AGENT=1 PATH=\"$SYSTEM_PATH_WITHOUT_OSO_STATE\" run_hook \"$HANDOFF_RUNTIME/hooks/publish-subagent-handoff.sh\" \"$fixed_marker_payload\"" },
+    { "assertion": "assert_after_hook \"Codex SubagentStop resolves oso-state from its installed runtime when OSO_STATE_BIN is unset\" \\\n  [ \"$hook_stdout\" = '{}' ]" },
+    { "assertion": "run_handoff \"\" handoff wait \\\n  --slice slice-fixed-marker --attempt 2 --agent-id agent-fixed-marker \\\n  --agent-type oso-verifier --timeout 0\nassert_equals \"the runtime-fallback hook receipt waits through the fixed OSO_AGENT rail\" \\" }
   ],
   "gate": "handoff",
   "argv": [],

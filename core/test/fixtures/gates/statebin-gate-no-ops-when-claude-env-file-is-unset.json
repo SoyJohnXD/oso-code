@@ -2,18 +2,12 @@
   "name": "statebin gate: no-ops when CLAUDE_ENV_FILE is unset",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5773,
       "assertion": "unset CLAUDE_ENV_FILE"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5774,
       "assertion": "run_hook persist-state-bin.sh ''"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5775,
       "assertion": "assert_after_hook \"SessionStart no-ops when CLAUDE_ENV_FILE is unset\" [ -z \"$hook_stdout\" ]"
     }
   ],

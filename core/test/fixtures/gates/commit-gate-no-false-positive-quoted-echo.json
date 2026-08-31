@@ -2,8 +2,6 @@
   "name": "commit gate: no false positive: quoted echo",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 2121,
       "assertion": "assert_allows \"no false positive: quoted echo\"        block-commit-until-green.sh \"$(bash_input 'echo \\\"git commit\\\"')\""
     }
   ],

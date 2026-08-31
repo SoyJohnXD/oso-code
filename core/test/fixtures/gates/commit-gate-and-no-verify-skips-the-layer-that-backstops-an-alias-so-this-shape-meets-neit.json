@@ -2,8 +2,6 @@
   "name": "commit gate: and --no-verify skips the layer that backstops an alias, so this shape meets neither",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6909,
       "assertion": "  assert_commit_lands \"and --no-verify skips the layer that backstops an alias, so this shape meets neither\" \\\n    \"$aliased_no_verify\""
     }
   ],

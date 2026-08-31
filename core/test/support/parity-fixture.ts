@@ -3,11 +3,8 @@ import path from "node:path";
 import { repositoryRoot, type SeededEntry } from "./state-sandbox.ts";
 
 export const PARITY_FIXTURE_DIRECTORY = path.join(repositoryRoot, "core", "test", "fixtures", "state");
-const PARITY_SOURCE_SUITE = "tests/hooks-test.sh";
 
-export type SuiteCitation = { file: string; line: number; assertion: string };
-
-export type CitingFixture = { name: string; source: readonly SuiteCitation[] };
+export type SuiteCitation = { assertion: string };
 
 export type TextExpectation = string | { contains: readonly string[] };
 
@@ -41,24 +38,6 @@ export function loadParityFixtures(): ParityFixture[] {
     .filter((entry) => entry.endsWith(".json"))
     .sort()
     .map((entry) => readFixture(path.join(PARITY_FIXTURE_DIRECTORY, entry)));
-}
-
-export function readSuiteLines(): string[] {
-  return readFileSync(path.join(repositoryRoot, PARITY_SOURCE_SUITE), "utf8").split("\n");
-}
-
-export function unresolvedCitations(fixture: CitingFixture, suiteLines: readonly string[]): string[] {
-  return fixture.source.flatMap((citation) => {
-    if (citation.file !== PARITY_SOURCE_SUITE) {
-      return [`${fixture.name}: cites ${citation.file}, which is not ${PARITY_SOURCE_SUITE}`];
-    }
-    const cited = citation.assertion.split("\n");
-    const standing = suiteLines.slice(citation.line - 1, citation.line - 1 + cited.length).join("\n");
-    if (standing === citation.assertion) return [];
-    return [
-      `${fixture.name}: ${citation.file}:${citation.line} now reads\n${standing}\nbut the fixture cites\n${citation.assertion}`,
-    ];
-  });
 }
 
 function readFixture(file: string): ParityFixture {

@@ -2,13 +2,9 @@
   "name": "commit gate, friction: grep -n \\\"; git commit\\\" README.md",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6417,
       "assertion": "assert_every assert_allows friction <<'FRICTION_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6420,
       "assertion": "grep -n \\\"; git commit\\\" README.md"
     }
   ],

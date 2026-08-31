@@ -2,8 +2,6 @@
   "name": "production boundary: vercel ls | xargs echo",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5002,
       "assertion": "assert_equals \"a deploy CLI that only feeds xargs is none of that rule's business\" \\\n  \"allow allow allow\" \\\n  \"$(prod_verdicts_for 'vercel ls | xargs echo' 'netlify status | xargs -I{} echo {}' \\\n    'find . -name *.log | xargs rm')\""
     }
   ],
