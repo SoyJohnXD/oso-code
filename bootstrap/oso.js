@@ -425,7 +425,7 @@ var STATE_BIN_FIX = "bash bootstrap/install.sh publishes the installed plugin's 
 var GIT_BASH_FIX = "point CLAUDE_CODE_GIT_BASH_PATH at the bash.exe you have (typically C:\\Program Files\\Git\\bin\\bash.exe) \u2014 bootstrap\\install.ps1 finds it and hands it to install.sh, which repairs the stored value; then restart Claude Code";
 var LEGACY_HOOK_COMMAND_PATTERNS = ["check-plan-contract", "clean-code-gate", "skill-registry-refresh", "gentle-ai"];
 var CLAUDE_MD_BUDGET_BYTES = 8e3;
-var HOME_DIR_FIX = 're-run from PowerShell (bootstrap/install.ps1 sets HOME to %USERPROFILE% for you), or export HOME="$USERPROFILE" in Git Bash and re-run bootstrap/install.sh';
+var HOME_DIR_FIX = 'export HOME="$USERPROFILE" in Git Bash and re-run bootstrap/install.sh';
 var ENGRAM_BINARY_FIX = "bash bootstrap/install.sh downloads the pinned engram release into ~/.local/bin and reports it only once it answers; where one is already installed elsewhere, the verdict above says which half is missing \u2014 a directory not on the persisted PATH, which that run's wiring summary names the command to add (a new terminal plus a Claude Code restart is what picks it up), or a copy that does not run, which an antivirus may have quarantined and which that run tells you how to replace";
 function verifyClaude(input) {
   const { homeDirectory, repositoryRoot: repositoryRoot2, environment, platform } = input;

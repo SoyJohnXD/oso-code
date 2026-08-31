@@ -26,7 +26,7 @@ const GIT_BASH_FIX =
 export const LEGACY_HOOK_COMMAND_PATTERNS = ["check-plan-contract", "clean-code-gate", "skill-registry-refresh", "gentle-ai"];
 export const CLAUDE_MD_BUDGET_BYTES = 8000;
 const HOME_DIR_FIX =
-  're-run from PowerShell (bootstrap/install.ps1 sets HOME to %USERPROFILE% for you), or export HOME="$USERPROFILE" in Git Bash and re-run bootstrap/install.sh';
+  'export HOME="$USERPROFILE" in Git Bash and re-run bootstrap/install.sh';
 const ENGRAM_BINARY_FIX =
   "bash bootstrap/install.sh downloads the pinned engram release into ~/.local/bin and reports it only once it answers; where one is already installed elsewhere, the verdict above says which half is missing — a directory not on the persisted PATH, which that run's wiring summary names the command to add (a new terminal plus a Claude Code restart is what picks it up), or a copy that does not run, which an antivirus may have quarantined and which that run tells you how to replace";
 
