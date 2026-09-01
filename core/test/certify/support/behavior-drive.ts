@@ -33,15 +33,46 @@ export function probeRootSessionId(probeRepository: string): string {
   return sha256Hex(path.join(probeRepository, ".git")).slice(0, 16);
 }
 
+const ARMED_STATE_PAIRS: readonly (readonly [string, string])[] = [
+  ["mode", "plan"],
+  ["auto", "running"],
+];
+
+function stateBinaryOf(fixture: ContractFixture): string {
+  return path.join(configHomeOf(fixture), "bin", "oso-state");
+}
+
 export function armProbeState(fixture: ContractFixture, probeRepository: string): void {
-  const stateBinary = path.join(configHomeOf(fixture), "bin", "oso-state");
+  const pairs = ARMED_STATE_PAIRS.map(([key, value]) => `${key}=${value}`);
   const run = spawnSync(
-    stateBinary,
-    ["--session", probeRootSessionId(probeRepository), "set", "mode=plan", "auto=running"],
+    stateBinaryOf(fixture),
+    ["--session", probeRootSessionId(probeRepository), "set", ...pairs],
     { cwd: probeRepository, env: fixture.environment, encoding: "utf8" },
   );
   if (run.error !== undefined) throw run.error;
-  if (run.status !== 0) throw new Error(`oso-state set mode=plan auto=running exited ${run.status}: ${run.stderr ?? ""}`);
+  if (run.status !== 0) throw new Error(`oso-state set ${pairs.join(" ")} exited ${run.status}: ${run.stderr ?? ""}`);
+}
+
+export type ProbeStateArmed = Readonly<{ kind: "armed" }> | Readonly<{ kind: "not-armed"; reason: string }>;
+
+function probeStateValue(fixture: ContractFixture, probeRepository: string, key: string): string {
+  const run = spawnSync(
+    stateBinaryOf(fixture),
+    ["--session", probeRootSessionId(probeRepository), "get", key],
+    { cwd: probeRepository, env: fixture.environment, encoding: "utf8" },
+  );
+  if (run.error !== undefined || run.status !== 0) return "";
+  return (run.stdout ?? "").trim();
+}
+
+export function probeStateArmedCheck(fixture: ContractFixture, probeRepository: string): ProbeStateArmed {
+  const unread = ARMED_STATE_PAIRS.filter(([key, value]) => probeStateValue(fixture, probeRepository, key) !== value);
+  if (unread.length === 0) return { kind: "armed" };
+  const named = unread.map(([key, value]) => `${key}=${value}`).join(", ");
+  return {
+    kind: "not-armed",
+    reason: `the probe repository's state was not armed (${named} did not read back) when the session was driven`,
+  };
 }
 
 export function probeRepositoryCommitCount(probeRepository: string): string {

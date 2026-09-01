@@ -14,7 +14,7 @@ export function contractBarRow(name: string, run: (t: TestContext) => void | Pro
   test(name, CERTIFY_GUARD, run);
 }
 
-export const BEHAVIOR_BAR_ROWS_PORTED = 3;
+export const BEHAVIOR_BAR_ROWS_PORTED = 11;
 
 let behaviorRegistered = 0;
 
