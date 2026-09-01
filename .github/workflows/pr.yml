@@ -29,7 +29,6 @@ jobs:
         shell: bash
         run: |
           bash -n bootstrap/*.sh
-          bash -n bootstrap/lib/*.sh
           bash -n tools/*.sh
           bash -n plugin/hooks/*.sh
           bash -n plugin/git-hooks/pre-commit

@@ -78,7 +78,7 @@ jobs:
           failed="$(sed -n 's/^passed: [0-9]*, failed: \([0-9]*\)$/\1/p' "$report")"
           [ "$passed" = "16" ]
           [ "$failed" = "0" ]
-      - name: Pinned OpenCode binary the contract and behavior bars introspect
+      - name: Pinned OpenCode binary the certify suites introspect
         run: |
           pin="$(sed -n 's/^export const SUPPORTED_OPENCODE_VERSION = "\(.*\)";$/\1/p' core/src/install/pins.ts)"
           mkdir -p "$RUNNER_TEMP/opencode-pin"
@@ -86,18 +86,6 @@ jobs:
           npm pack "opencode-linux-x64@$pin"
           tar -xf "opencode-linux-x64-$pin.tgz"
           echo "OSO_PINNED_OPENCODE_BIN=$RUNNER_TEMP/opencode-pin/package/bin/opencode" >> "$GITHUB_ENV"
-      - name: OpenCode contract bar against the pinned binary
-        env:
-          OSO_CONTRACT_BAR_OPENCODE_BIN: ${{ env.OSO_PINNED_OPENCODE_BIN }}
-        run: bash tests/opencode-contract-bar.sh
-      - name: OpenCode behavior bar, where a red assertion fails the tree and only its own not-run lane is tolerated
-        env:
-          OSO_BEHAVIOR_BAR_OPENCODE_BIN: ${{ env.OSO_PINNED_OPENCODE_BIN }}
-        run: |
-          status=0
-          bash tests/opencode-behavior-bar.sh || status=$?
-          [ "$status" = 3 ] || exit "$status"
-          echo "::warning::the behavior bar drove no gated tool call this run, so it asserted nothing about the boundaries; every check it did reach was green"
       - name: Certify suites against the pinned OpenCode binary, and Codex only if this runner carries credentials
         env:
           OSO_CERTIFY: 1
@@ -151,7 +139,6 @@ jobs:
         shell: bash
         run: |
           bash -n bootstrap/*.sh
-          bash -n bootstrap/lib/*.sh
           bash -n tools/*.sh
           bash -n plugin/hooks/*.sh
           bash -n plugin/git-hooks/pre-commit

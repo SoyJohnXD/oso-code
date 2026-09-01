@@ -65,7 +65,7 @@ check_executables_carry_no_decision_citations() {
 
 shell_comment_citations() {
   { grep -nE "^[[:space:]]*(#|[Rr][Ee][Mm][[:space:]]|::).*($DECISION_ID_RE)" \
-      "$REPO_ROOT"/bootstrap/*.sh "$REPO_ROOT"/bootstrap/lib/*.sh \
+      "$REPO_ROOT"/bootstrap/*.sh \
       "$REPO_ROOT"/tools/*.sh "$REPO_ROOT"/plugin/hooks/*.sh \
       "$REPO_ROOT/plugin/bin/oso-state" "$REPO_ROOT/plugin/git-hooks/pre-commit" \
       "$REPO_ROOT"/tests/*.sh "$REPO_ROOT"/tests/fixtures/*.sh \
