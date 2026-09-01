@@ -6,6 +6,7 @@ import { readTrackedText, trackedRepositoryFiles, type TrackedFileText } from ".
 const TEST_TREE_PREFIX = "core/test/";
 const SUPPORT_TREE_PREFIX = "core/test/support/";
 const RAW_POINTER_PATTERN = /= "\$\{path\./;
+const MINIMUM_SCANNED_FILES = 70;
 
 type RawPointerSite = Readonly<{ file: string; line: number; text: string }>;
 
@@ -16,6 +17,10 @@ function rawPointerSitesIn({ file, text }: TrackedFileText): RawPointerSite[] {
     .filter((site) => RAW_POINTER_PATTERN.test(site.text));
 }
 
+function meetsScannedFloor(scannedCount: number): boolean {
+  return scannedCount >= MINIMUM_SCANNED_FILES;
+}
+
 const scanned = trackedRepositoryFiles()
   .filter((file) => file.startsWith(TEST_TREE_PREFIX) && file.endsWith(".ts") && !file.startsWith(SUPPORT_TREE_PREFIX))
   .map(readTrackedText);
@@ -23,8 +28,9 @@ const sites = scanned.flatMap(rawPointerSitesIn);
 
 provedSomething(
   `${scanned.length} tracked *.ts file(s) under ${TEST_TREE_PREFIX} outside ${SUPPORT_TREE_PREFIX} were scanned for a native path interpolated raw into a quoted TOML value`,
-  scanned.length > 0,
-  `only ${scanned.length} file(s) were scanned, so a walk that found nothing would report the same empty result as a clean tree`,
+  meetsScannedFloor(scanned.length),
+  `only ${scanned.length} file(s) were scanned, under the ${MINIMUM_SCANNED_FILES} this tree holds, so this check ` +
+    "looked at a tree it did not recognise rather than finding nothing",
 );
 
 describe(
@@ -36,3 +42,9 @@ describe(
     });
   },
 );
+
+describe("meetsScannedFloor, read against an empty walk", () => {
+  test("an empty walk — the shape a broken scan would produce — fails the floor rather than passing it vacuously", () => {
+    assert.equal(meetsScannedFloor(0), false);
+  });
+});
