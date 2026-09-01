@@ -85,10 +85,15 @@ export type SessionModelChoice =
   | Readonly<{ kind: "chosen"; model: string }>
   | Readonly<{ kind: "unresolved"; reason: string }>;
 
-export function chooseSessionModel(binary: string, environment: NodeJS.ProcessEnv): SessionModelChoice {
-  const override = environment["OSO_BEHAVIOR_BAR_MODEL"];
+export function chooseSessionModel(
+  binary: string,
+  environment: NodeJS.ProcessEnv,
+  overrideVar: string = "OSO_BEHAVIOR_BAR_MODEL",
+  boundSeconds: number = BEHAVIOR_BAR_LOAD_BOUND_SECONDS,
+): SessionModelChoice {
+  const override = environment[overrideVar];
   if (override !== undefined && override !== "") return { kind: "chosen", model: override };
-  const run = spawnSync(binary, ["models"], { env: environment, encoding: "utf8", timeout: BEHAVIOR_BAR_LOAD_BOUND_SECONDS * 1000 });
+  const run = spawnSync(binary, ["models"], { env: environment, encoding: "utf8", timeout: boundSeconds * 1000 });
   if (run.error !== undefined || run.signal !== null) {
     return { kind: "unresolved", reason: `opencode models did not complete: ${run.error?.message ?? run.signal}` };
   }
@@ -106,11 +111,12 @@ export function runSessionWithPrompt(
   probeRepository: string,
   model: string,
   prompt: string,
+  boundSeconds: number = BEHAVIOR_BAR_SESSION_BOUND_SECONDS,
 ): SessionRun {
   const run = spawnSync(binary, ["run", "--dir", probeRepository, "-m", model, "--format", "json", prompt], {
     env: environment,
     encoding: "utf8",
-    timeout: BEHAVIOR_BAR_SESSION_BOUND_SECONDS * 1000,
+    timeout: boundSeconds * 1000,
   });
   return { stdout: run.stdout ?? "", stderr: run.stderr ?? "", status: run.status, signal: run.signal, error: run.error };
 }

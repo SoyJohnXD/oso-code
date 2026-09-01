@@ -39,3 +39,16 @@ export function codexSmokeRow(name: string, run: (t: TestContext) => void | Prom
   codexSmokeRegistered += 1;
   test(name, CERTIFY_GUARD, run);
 }
+
+export const WAVE_SMOKE_ROWS_PORTED = 10;
+
+let waveSmokeRegistered = 0;
+
+export function waveSmokeRowsRegistered(): number {
+  return waveSmokeRegistered;
+}
+
+export function waveSmokeRow(name: string, run: (t: TestContext) => void | Promise<void>): void {
+  waveSmokeRegistered += 1;
+  test(name, CERTIFY_GUARD, run);
+}

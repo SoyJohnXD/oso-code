@@ -163,11 +163,16 @@ export class StateSandbox {
 
   constructor(workspace: string) {
     this.root = mkdtempSync(path.join(tmpdir(), "oso-state-"));
-    this.home = path.join(this.root, "home");
-    this.cwd = path.join(this.root, workspace);
-    mkdirSync(this.home, { recursive: true });
-    mkdirSync(this.cwd, { recursive: true });
-    this.repositoryKey = sha256Hex(this.gitCommonDirectory() || this.cwd);
+    try {
+      this.home = path.join(this.root, "home");
+      this.cwd = path.join(this.root, workspace);
+      mkdirSync(this.home, { recursive: true });
+      mkdirSync(this.cwd, { recursive: true });
+      this.repositoryKey = sha256Hex(this.gitCommonDirectory() || this.cwd);
+    } catch (error) {
+      rmSync(this.root, { recursive: true, force: true });
+      throw error;
+    }
   }
 
   expand(text: string): string {
