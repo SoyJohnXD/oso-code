@@ -32,6 +32,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
         id: checkout
       - name: Node 22, the floor the committed bundles run on
         id: node-toolchain
@@ -124,6 +126,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Node 22, the floor install.ps1 enforces
         uses: actions/setup-node@v4
         with:

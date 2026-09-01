@@ -1,0 +1,1579 @@
+{
+  "anchorCommit": "1c85baa",
+  "extractionRules": {
+    "sourceGlobs": [
+      "plugin/skills/**/*.md",
+      "plugin/agents/*.md",
+      "codex/skills/**/SKILL.md",
+      "codex/agents/*.toml",
+      "opencode/skills/**/SKILL.md",
+      "opencode/agents/*.md"
+    ],
+    "axisAPattern": "oso-state(?:\\}\")?[ \\t]*(?:--session[ \\t]+\"[^\"]*\"[ \\t]+)?([a-z][a-z-]*)\\b(?:[ \\t]+([a-z][a-z-]*))?",
+    "axisAHandoffSubverbRule": "handoff subverbs are the case literals of core/src/state/cli.ts's handoff switch, read at extraction time from the commit being processed",
+    "axisBRoleNames": [
+      "oso-applier",
+      "oso-debt-sweep",
+      "oso-doubt-pass",
+      "oso-integrator",
+      "oso-security-reviewer",
+      "oso-triage",
+      "oso-verifier"
+    ],
+    "axisBSkillTokenPattern": "\\/?oso-code:([a-z-]+)",
+    "axisCPattern": "`([A-Z][a-z]+(?: [A-Z][a-z]+){0,2}): ([a-z][A-Za-z0-9/_-]*(?: — [^`\\n]*)?)`",
+    "axisDPattern": "^(#{2,4}) (.+)$"
+  },
+  "files": {
+    "pluginSkills": 54,
+    "pluginAgents": 3,
+    "codexSkills": 9,
+    "codexAgents": 7,
+    "opencodeSkills": 9,
+    "opencodeAgents": 7,
+    "total": 89
+  },
+  "axisA": [
+    {
+      "key": "set",
+      "verb": "set",
+      "subverb": null,
+      "file": "plugin/skills/_shared/bodies/debug.md",
+      "line": 43
+    },
+    {
+      "key": "show",
+      "verb": "show",
+      "subverb": null,
+      "file": "plugin/skills/_shared/bodies/debug.md",
+      "line": 44
+    },
+    {
+      "key": "clear",
+      "verb": "clear",
+      "subverb": null,
+      "file": "plugin/skills/_shared/bodies/debug.md",
+      "line": 45
+    },
+    {
+      "key": "journal",
+      "verb": "journal",
+      "subverb": null,
+      "file": "plugin/skills/_shared/bodies/plan.md",
+      "line": 17
+    },
+    {
+      "key": "event",
+      "verb": "event",
+      "subverb": null,
+      "file": "plugin/skills/_shared/bodies/plan.md",
+      "line": 219
+    },
+    {
+      "key": "amend-plan",
+      "verb": "amend-plan",
+      "subverb": null,
+      "file": "plugin/skills/_shared/platform/codex/plan.md",
+      "line": 27
+    },
+    {
+      "key": "handoff:wait",
+      "verb": "handoff",
+      "subverb": "wait",
+      "file": "plugin/skills/_shared/platform/codex/subagents.md",
+      "line": 31
+    },
+    {
+      "key": "handoff:consume",
+      "verb": "handoff",
+      "subverb": "consume",
+      "file": "plugin/skills/_shared/platform/codex/subagents.md",
+      "line": 31
+    }
+  ],
+  "axisB": [
+    {
+      "key": "role:oso-applier",
+      "kind": "role",
+      "item": "oso-applier",
+      "file": "codex/agents/oso-applier.toml",
+      "line": 1
+    },
+    {
+      "key": "role:oso-debt-sweep",
+      "kind": "role",
+      "item": "oso-debt-sweep",
+      "file": "codex/agents/oso-debt-sweep.toml",
+      "line": 1
+    },
+    {
+      "key": "role:oso-doubt-pass",
+      "kind": "role",
+      "item": "oso-doubt-pass",
+      "file": "codex/agents/oso-doubt-pass.toml",
+      "line": 1
+    },
+    {
+      "key": "role:oso-integrator",
+      "kind": "role",
+      "item": "oso-integrator",
+      "file": "codex/agents/oso-integrator.toml",
+      "line": 1
+    },
+    {
+      "key": "role:oso-security-reviewer",
+      "kind": "role",
+      "item": "oso-security-reviewer",
+      "file": "codex/agents/oso-security-reviewer.toml",
+      "line": 1
+    },
+    {
+      "key": "role:oso-triage",
+      "kind": "role",
+      "item": "oso-triage",
+      "file": "codex/agents/oso-triage.toml",
+      "line": 1
+    },
+    {
+      "key": "role:oso-verifier",
+      "kind": "role",
+      "item": "oso-verifier",
+      "file": "codex/agents/oso-verifier.toml",
+      "line": 1
+    },
+    {
+      "key": "skill:plan",
+      "kind": "skill",
+      "item": "plan",
+      "file": "codex/skills/plan/SKILL.md",
+      "line": 12
+    },
+    {
+      "key": "skill:roadmap",
+      "kind": "skill",
+      "item": "roadmap",
+      "file": "codex/skills/roadmap/SKILL.md",
+      "line": 14
+    },
+    {
+      "key": "skill:triage",
+      "kind": "skill",
+      "item": "triage",
+      "file": "plugin/skills/_shared/bodies/plan.md",
+      "line": 192
+    },
+    {
+      "key": "skill:quality-pass",
+      "kind": "skill",
+      "item": "quality-pass",
+      "file": "plugin/skills/_shared/platform/claude/debug.md",
+      "line": 28
+    },
+    {
+      "key": "skill:debt-sweep",
+      "kind": "skill",
+      "item": "debt-sweep",
+      "file": "plugin/skills/_shared/platform/claude/debug.md",
+      "line": 29
+    },
+    {
+      "key": "skill:security-pass",
+      "kind": "skill",
+      "item": "security-pass",
+      "file": "plugin/skills/_shared/platform/claude/debug.md",
+      "line": 30
+    },
+    {
+      "key": "skill:quick",
+      "kind": "skill",
+      "item": "quick",
+      "file": "plugin/skills/_shared/platform/claude/plan.md",
+      "line": 66
+    },
+    {
+      "key": "skill:debug",
+      "kind": "skill",
+      "item": "debug",
+      "file": "plugin/skills/_shared/platform/claude/plan.md",
+      "line": 67
+    },
+    {
+      "key": "skill:doubt-pass",
+      "kind": "skill",
+      "item": "doubt-pass",
+      "file": "plugin/skills/_shared/platform/claude/plan.md",
+      "line": 68
+    }
+  ],
+  "axisC": [
+    {
+      "key": "Debt Sweep: clean",
+      "token": "Debt Sweep: clean",
+      "file": "opencode/skills/oso-debt-sweep/SKILL.md",
+      "line": 18
+    },
+    {
+      "key": "Debt Sweep: findings",
+      "token": "Debt Sweep: findings",
+      "file": "opencode/skills/oso-debt-sweep/SKILL.md",
+      "line": 18
+    },
+    {
+      "key": "Debt Sweep: blocked",
+      "token": "Debt Sweep: blocked",
+      "file": "opencode/skills/oso-debt-sweep/SKILL.md",
+      "line": 18
+    },
+    {
+      "key": "Conformance: clean",
+      "token": "Conformance: clean",
+      "file": "opencode/skills/oso-debt-sweep/SKILL.md",
+      "line": 18
+    },
+    {
+      "key": "Conformance: findings",
+      "token": "Conformance: findings",
+      "file": "opencode/skills/oso-debt-sweep/SKILL.md",
+      "line": 18
+    },
+    {
+      "key": "Conformance: skipped — no ledger provided",
+      "token": "Conformance: skipped — no ledger provided",
+      "file": "opencode/skills/oso-debt-sweep/SKILL.md",
+      "line": 18
+    },
+    {
+      "key": "Doubt Pass: clean",
+      "token": "Doubt Pass: clean",
+      "file": "opencode/skills/oso-doubt-pass/SKILL.md",
+      "line": 17
+    },
+    {
+      "key": "Doubt Pass: findings",
+      "token": "Doubt Pass: findings",
+      "file": "opencode/skills/oso-doubt-pass/SKILL.md",
+      "line": 17
+    },
+    {
+      "key": "Doubt Pass: blocked",
+      "token": "Doubt Pass: blocked",
+      "file": "opencode/skills/oso-doubt-pass/SKILL.md",
+      "line": 17
+    },
+    {
+      "key": "Triage: attributable",
+      "token": "Triage: attributable",
+      "file": "opencode/skills/oso-triage/SKILL.md",
+      "line": 18
+    },
+    {
+      "key": "Triage: pre-existing",
+      "token": "Triage: pre-existing",
+      "file": "opencode/skills/oso-triage/SKILL.md",
+      "line": 18
+    },
+    {
+      "key": "Triage: skipped — attribution not established",
+      "token": "Triage: skipped — attribution not established",
+      "file": "opencode/skills/oso-triage/SKILL.md",
+      "line": 18
+    },
+    {
+      "key": "Triage: blocked",
+      "token": "Triage: blocked",
+      "file": "opencode/skills/oso-triage/SKILL.md",
+      "line": 18
+    },
+    {
+      "key": "Quality Pass: blocked",
+      "token": "Quality Pass: blocked",
+      "file": "plugin/skills/_shared/bodies/debug.md",
+      "line": 59
+    },
+    {
+      "key": "Quality Pass: passed",
+      "token": "Quality Pass: passed",
+      "file": "plugin/skills/_shared/bodies/debug.md",
+      "line": 59
+    },
+    {
+      "key": "Security Pass: clean",
+      "token": "Security Pass: clean",
+      "file": "plugin/skills/_shared/bodies/debug.md",
+      "line": 65
+    },
+    {
+      "key": "Security Pass: findings",
+      "token": "Security Pass: findings",
+      "file": "plugin/skills/_shared/bodies/debug.md",
+      "line": 65
+    },
+    {
+      "key": "Security Pass: blocked",
+      "token": "Security Pass: blocked",
+      "file": "plugin/skills/_shared/bodies/debug.md",
+      "line": 65
+    },
+    {
+      "key": "Security Pass: fallback",
+      "token": "Security Pass: fallback",
+      "file": "plugin/skills/_shared/bodies/security-pass.md",
+      "line": 36
+    },
+    {
+      "key": "Security Pass: native",
+      "token": "Security Pass: native",
+      "file": "plugin/skills/_shared/platform/claude/security-pass.md",
+      "line": 9
+    },
+    {
+      "key": "Security Pass: native — covered: staged, unstaged, and untracked changes",
+      "token": "Security Pass: native — covered: staged, unstaged, and untracked changes",
+      "file": "plugin/skills/_shared/platform/codex/security-pass.md",
+      "line": 13
+    },
+    {
+      "key": "Security Pass: native — covered: merge base of HEAD and <base-ref> through HEAD, plus staged, unstaged, and untracked changes",
+      "token": "Security Pass: native — covered: merge base of HEAD and <base-ref> through HEAD, plus staged, unstaged, and untracked changes",
+      "file": "plugin/skills/_shared/platform/codex/security-pass.md",
+      "line": 14
+    },
+    {
+      "key": "Security Pass: fallback — covered: staged, unstaged, and untracked changes",
+      "token": "Security Pass: fallback — covered: staged, unstaged, and untracked changes",
+      "file": "plugin/skills/_shared/platform/opencode/security-pass.md",
+      "line": 9
+    },
+    {
+      "key": "Security Pass: fallback — covered: merge base of HEAD and <base-ref> through HEAD, plus staged, unstaged, and untracked changes",
+      "token": "Security Pass: fallback — covered: merge base of HEAD and <base-ref> through HEAD, plus staged, unstaged, and untracked changes",
+      "file": "plugin/skills/_shared/platform/opencode/security-pass.md",
+      "line": 10
+    }
+  ],
+  "axisD": [
+    {
+      "file": "plugin/agents/oso-applier.md",
+      "heading": "Contract",
+      "level": 2,
+      "line": 17
+    },
+    {
+      "file": "plugin/agents/oso-applier.md",
+      "heading": "When you cannot finish",
+      "level": 2,
+      "line": 27
+    },
+    {
+      "file": "plugin/agents/oso-applier.md",
+      "heading": "When you finish",
+      "level": 2,
+      "line": 42
+    },
+    {
+      "file": "plugin/agents/oso-integrator.md",
+      "heading": "Verdict",
+      "level": 2,
+      "line": 17
+    },
+    {
+      "file": "plugin/agents/oso-integrator.md",
+      "heading": "Contract",
+      "level": 2,
+      "line": 25
+    },
+    {
+      "file": "plugin/agents/oso-integrator.md",
+      "heading": "When the merge stops on a conflict",
+      "level": 2,
+      "line": 35
+    },
+    {
+      "file": "plugin/agents/oso-integrator.md",
+      "heading": "When you cannot finish",
+      "level": 2,
+      "line": 45
+    },
+    {
+      "file": "plugin/agents/oso-integrator.md",
+      "heading": "When you finish",
+      "level": 2,
+      "line": 56
+    },
+    {
+      "file": "plugin/agents/oso-verifier.md",
+      "heading": "Contract",
+      "level": 2,
+      "line": 12
+    },
+    {
+      "file": "plugin/agents/oso-verifier.md",
+      "heading": "Verdict",
+      "level": 2,
+      "line": 26
+    },
+    {
+      "file": "plugin/agents/oso-verifier.md",
+      "heading": "One implemented slice",
+      "level": 3,
+      "line": 30
+    },
+    {
+      "file": "plugin/agents/oso-verifier.md",
+      "heading": "One merged wave — the integration gate (ADR-0082)",
+      "level": 3,
+      "line": 46
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/debt-sweep.md",
+      "heading": "Scope",
+      "level": 2,
+      "line": 5
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/debt-sweep.md",
+      "heading": "Prior rounds",
+      "level": 2,
+      "line": 14
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/debt-sweep.md",
+      "heading": "1. Verify",
+      "level": 2,
+      "line": 26
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/debt-sweep.md",
+      "heading": "2. Ledger conformance",
+      "level": 2,
+      "line": 41
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/debt-sweep.md",
+      "heading": "3. Report",
+      "level": 2,
+      "line": 54
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/debug.md",
+      "heading": "0. Resume check (light)",
+      "level": 2,
+      "line": 7
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/debug.md",
+      "heading": "1. Reproduce — before any code",
+      "level": 2,
+      "line": 11
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/debug.md",
+      "heading": "2. Localize + reduce",
+      "level": 2,
+      "line": 17
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/debug.md",
+      "heading": "3. Diagnosis freeze — the triage exit bar",
+      "level": 2,
+      "line": 23
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/debug.md",
+      "heading": "4. Delegated fix — you never write it inline",
+      "level": 2,
+      "line": 38
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/debug.md",
+      "heading": "5. Close",
+      "level": 2,
+      "line": 57
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/debug.md",
+      "heading": "Traps",
+      "level": 2,
+      "line": 70
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/doubt-pass.md",
+      "heading": "Inputs",
+      "level": 2,
+      "line": 5
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/doubt-pass.md",
+      "heading": "Judge",
+      "level": 2,
+      "line": 12
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/doubt-pass.md",
+      "heading": "Report",
+      "level": 2,
+      "line": 18
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/plan.md",
+      "heading": "Ground rules for the whole flow",
+      "level": 2,
+      "line": 5
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/plan.md",
+      "heading": "0. Resume check",
+      "level": 2,
+      "line": 21
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/plan.md",
+      "heading": "1. Intent",
+      "level": 2,
+      "line": 45
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/plan.md",
+      "heading": "2. Surface mapping",
+      "level": 2,
+      "line": 67
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/plan.md",
+      "heading": "3. Decision rounds",
+      "level": 2,
+      "line": 83
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/plan.md",
+      "heading": "4. Slicing",
+      "level": 2,
+      "line": 119
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/plan.md",
+      "heading": "5. Repaso de cambios (change recap) — heads the approval document",
+      "level": 2,
+      "line": 156
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/plan.md",
+      "heading": "6. Execution — one slice or one wave at a time, delegated",
+      "level": 2,
+      "line": 186
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/plan.md",
+      "heading": "Parallel — the wave loop",
+      "level": 3,
+      "line": 213
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/plan.md",
+      "heading": "7. Close — when the user says they are happy",
+      "level": 2,
+      "line": 260
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/quality-pass.md",
+      "heading": "Contract",
+      "level": 2,
+      "line": 5
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/quality-pass.md",
+      "heading": "1. Verify",
+      "level": 2,
+      "line": 10
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/quality-pass.md",
+      "heading": "2. Apply",
+      "level": 2,
+      "line": 16
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/quality-pass.md",
+      "heading": "3. Re-verify",
+      "level": 2,
+      "line": 20
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/quality-pass.md",
+      "heading": "Report",
+      "level": 2,
+      "line": 33
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/quick.md",
+      "heading": "1. Micro-intent (one exchange, not a plan)",
+      "level": 2,
+      "line": 5
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/quick.md",
+      "heading": "2. Substantiality check",
+      "level": 2,
+      "line": 26
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/quick.md",
+      "heading": "3. Iterate",
+      "level": 2,
+      "line": 44
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/quick.md",
+      "heading": "4. Close — when the user says it's done",
+      "level": 2,
+      "line": 61
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/roadmap.md",
+      "heading": "Ground rules for the whole flow",
+      "level": 2,
+      "line": 5
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/roadmap.md",
+      "heading": "1. The queue — planned with the operator",
+      "level": 2,
+      "line": 13
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/roadmap.md",
+      "heading": "2. The autonomy policy",
+      "level": 2,
+      "line": 45
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/roadmap.md",
+      "heading": "3. Approval — once, for the whole roadmap",
+      "level": 2,
+      "line": 77
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/roadmap.md",
+      "heading": "4. The chain",
+      "level": 2,
+      "line": 100
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/roadmap.md",
+      "heading": "5. The presence phase",
+      "level": 2,
+      "line": 129
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/security-pass.md",
+      "heading": "Run the review",
+      "level": 2,
+      "line": 5
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/security-pass.md",
+      "heading": "Fallback acquisition",
+      "level": 3,
+      "line": 12
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/security-pass.md",
+      "heading": "Fallback criteria",
+      "level": 3,
+      "line": 20
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/security-pass.md",
+      "heading": "Report",
+      "level": 2,
+      "line": 34
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/triage.md",
+      "heading": "The one question",
+      "level": 2,
+      "line": 5
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/triage.md",
+      "heading": "Where you stop",
+      "level": 2,
+      "line": 11
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/triage.md",
+      "heading": "Inputs",
+      "level": 2,
+      "line": 15
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/triage.md",
+      "heading": "Establish attribution, read-only",
+      "level": 2,
+      "line": 25
+    },
+    {
+      "file": "plugin/skills/_shared/bodies/triage.md",
+      "heading": "Report",
+      "level": 2,
+      "line": 41
+    },
+    {
+      "file": "plugin/skills/_shared/front-surface.md",
+      "heading": "Trigger",
+      "level": 2,
+      "line": 5
+    },
+    {
+      "file": "plugin/skills/_shared/front-surface.md",
+      "heading": "Integration contract",
+      "level": 2,
+      "line": 13
+    },
+    {
+      "file": "plugin/skills/_shared/front-surface.md",
+      "heading": "Pinned detect gate — the pin recipe",
+      "level": 3,
+      "line": 27
+    },
+    {
+      "file": "plugin/skills/_shared/front-surface.md",
+      "heading": "Audit loop at close — the exit bar",
+      "level": 3,
+      "line": 55
+    },
+    {
+      "file": "plugin/skills/_shared/front-surface.md",
+      "heading": "Absence policy",
+      "level": 3,
+      "line": 64
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/debt-sweep.md",
+      "heading": "Shared-file paths",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/debt-sweep.md",
+      "heading": "Reaching the fallow tools",
+      "level": 2,
+      "line": 7
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/debug.md",
+      "heading": "The delivery contract — anti-swallow",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/debug.md",
+      "heading": "Shared-file paths",
+      "level": 2,
+      "line": 9
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/debug.md",
+      "heading": "The state command",
+      "level": 2,
+      "line": 13
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/debug.md",
+      "heading": "Naming and invoking the harness's own skills",
+      "level": 2,
+      "line": 21
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/debug.md",
+      "heading": "Delegation-wait binding",
+      "level": 2,
+      "line": 34
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/debug.md",
+      "heading": "Front-surface binding",
+      "level": 2,
+      "line": 38
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/debug.md",
+      "heading": "Reporting binding",
+      "level": 2,
+      "line": 42
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/delegation-wait.md",
+      "heading": "Making a launch wait",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/front-surface.md",
+      "heading": "Delegation-wait binding",
+      "level": 2,
+      "line": 12
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/plan.md",
+      "heading": "The delivery contract — anti-swallow",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/plan.md",
+      "heading": "Question rounds",
+      "level": 2,
+      "line": 9
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/plan.md",
+      "heading": "The approval gate",
+      "level": 2,
+      "line": 13
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/plan.md",
+      "heading": "The explorer",
+      "level": 2,
+      "line": 19
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/plan.md",
+      "heading": "Shared-file paths",
+      "level": 2,
+      "line": 23
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/plan.md",
+      "heading": "The state command",
+      "level": 2,
+      "line": 27
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/plan.md",
+      "heading": "The runtime gates, and the two layers of the commit rail",
+      "level": 2,
+      "line": 35
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/plan.md",
+      "heading": "What the unattended marker arms on this host",
+      "level": 2,
+      "line": 46
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/plan.md",
+      "heading": "The worktree root",
+      "level": 2,
+      "line": 56
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/plan.md",
+      "heading": "Naming and invoking the harness's own skills",
+      "level": 2,
+      "line": 60
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/plan.md",
+      "heading": "Delegation-wait binding",
+      "level": 2,
+      "line": 75
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/plan.md",
+      "heading": "Front-surface binding",
+      "level": 2,
+      "line": 79
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/plan.md",
+      "heading": "Reporting binding",
+      "level": 2,
+      "line": 83
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/quality-pass.md",
+      "heading": "Shared-file paths",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/quick.md",
+      "heading": "Shared-file paths",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/quick.md",
+      "heading": "The state command",
+      "level": 2,
+      "line": 7
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/quick.md",
+      "heading": "Naming and invoking the harness's own skills",
+      "level": 2,
+      "line": 15
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/quick.md",
+      "heading": "Delegation-wait binding",
+      "level": 2,
+      "line": 28
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/quick.md",
+      "heading": "Front-surface binding",
+      "level": 2,
+      "line": 32
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/quick.md",
+      "heading": "Reporting binding",
+      "level": 2,
+      "line": 36
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/reporting.md",
+      "heading": "The native card is not the report",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/reporting.md",
+      "heading": "The unattended run — the carve-out, and the record that pays for it",
+      "level": 2,
+      "line": 7
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/roadmap.md",
+      "heading": "The delivery contract — anti-swallow",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/roadmap.md",
+      "heading": "Question rounds",
+      "level": 2,
+      "line": 9
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/roadmap.md",
+      "heading": "The approval gate",
+      "level": 2,
+      "line": 13
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/roadmap.md",
+      "heading": "How far the chain runs unattended",
+      "level": 2,
+      "line": 17
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/roadmap.md",
+      "heading": "Shared-file paths",
+      "level": 2,
+      "line": 23
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/roadmap.md",
+      "heading": "The state command and the worktree root — routed to `plan.md`, not restated here",
+      "level": 2,
+      "line": 27
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/roadmap.md",
+      "heading": "Reporting binding",
+      "level": 2,
+      "line": 37
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/security-pass.md",
+      "heading": "Which reviewer is native, and how to reach it",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/claude/triage.md",
+      "heading": "Naming the harness's own modes and judges",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/debt-sweep.md",
+      "heading": "Shared-file paths",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/debt-sweep.md",
+      "heading": "Reaching the fallow tools",
+      "level": 2,
+      "line": 7
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/debug.md",
+      "heading": "The delivery contract",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/debug.md",
+      "heading": "Making a launch wait",
+      "level": 2,
+      "line": 7
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/debug.md",
+      "heading": "Shared-file paths",
+      "level": 2,
+      "line": 11
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/debug.md",
+      "heading": "The state command",
+      "level": 2,
+      "line": 15
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/debug.md",
+      "heading": "Naming and invoking the harness's own skills",
+      "level": 2,
+      "line": 23
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/debug.md",
+      "heading": "Front-surface binding",
+      "level": 2,
+      "line": 34
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/debug.md",
+      "heading": "Reporting binding",
+      "level": 2,
+      "line": 38
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/plan.md",
+      "heading": "The delivery contract",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/plan.md",
+      "heading": "Question rounds",
+      "level": 2,
+      "line": 7
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/plan.md",
+      "heading": "The approval gate",
+      "level": 2,
+      "line": 11
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/plan.md",
+      "heading": "Codex operational plan and hot slices",
+      "level": 3,
+      "line": 31
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/plan.md",
+      "heading": "Making a launch wait",
+      "level": 2,
+      "line": 43
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/plan.md",
+      "heading": "The explorer",
+      "level": 2,
+      "line": 47
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/plan.md",
+      "heading": "Shared-file paths",
+      "level": 2,
+      "line": 51
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/plan.md",
+      "heading": "The state command",
+      "level": 2,
+      "line": 55
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/plan.md",
+      "heading": "The runtime gates, and the two layers of the commit rail",
+      "level": 2,
+      "line": 63
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/plan.md",
+      "heading": "The worktree root",
+      "level": 2,
+      "line": 67
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/plan.md",
+      "heading": "Naming and invoking the harness's own skills",
+      "level": 2,
+      "line": 71
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/plan.md",
+      "heading": "Front-surface binding",
+      "level": 2,
+      "line": 82
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/plan.md",
+      "heading": "Reporting binding",
+      "level": 2,
+      "line": 86
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/quality-pass.md",
+      "heading": "Shared-file paths",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/quick.md",
+      "heading": "Shared-file paths",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/quick.md",
+      "heading": "The state command",
+      "level": 2,
+      "line": 7
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/quick.md",
+      "heading": "Naming and invoking the harness's own skills",
+      "level": 2,
+      "line": 15
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/quick.md",
+      "heading": "Front-surface binding",
+      "level": 2,
+      "line": 27
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/quick.md",
+      "heading": "Reporting binding",
+      "level": 2,
+      "line": 31
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/reporting.md",
+      "heading": "No card exists here",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/roadmap.md",
+      "heading": "The delivery contract",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/roadmap.md",
+      "heading": "Question rounds",
+      "level": 2,
+      "line": 7
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/roadmap.md",
+      "heading": "The approval gate",
+      "level": 2,
+      "line": 11
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/roadmap.md",
+      "heading": "How far the chain runs unattended — everything except each child's own stop",
+      "level": 2,
+      "line": 15
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/roadmap.md",
+      "heading": "Shared-file paths",
+      "level": 2,
+      "line": 21
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/roadmap.md",
+      "heading": "The state command and the worktree root — routed to `plan.md`, not restated here",
+      "level": 2,
+      "line": 25
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/roadmap.md",
+      "heading": "Reporting binding",
+      "level": 2,
+      "line": 34
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/security-pass.md",
+      "heading": "Which reviewer is native, and how to reach it",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/subagents.md",
+      "heading": "Completion handshake",
+      "level": 2,
+      "line": 23
+    },
+    {
+      "file": "plugin/skills/_shared/platform/codex/triage.md",
+      "heading": "Naming the harness's own modes and judges",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/debt-sweep.md",
+      "heading": "Shared-file paths",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/debt-sweep.md",
+      "heading": "Reaching the fallow tools",
+      "level": 2,
+      "line": 7
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/debug.md",
+      "heading": "The delivery contract",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/debug.md",
+      "heading": "Making a launch wait",
+      "level": 2,
+      "line": 7
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/debug.md",
+      "heading": "Shared-file paths",
+      "level": 2,
+      "line": 11
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/debug.md",
+      "heading": "The state command",
+      "level": 2,
+      "line": 15
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/debug.md",
+      "heading": "Naming and invoking the harness's own skills",
+      "level": 2,
+      "line": 23
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/debug.md",
+      "heading": "Front-surface binding",
+      "level": 2,
+      "line": 34
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/debug.md",
+      "heading": "Reporting binding",
+      "level": 2,
+      "line": 38
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/plan.md",
+      "heading": "The delivery contract",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/plan.md",
+      "heading": "Question rounds",
+      "level": 2,
+      "line": 7
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/plan.md",
+      "heading": "The approval gate",
+      "level": 2,
+      "line": 11
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/plan.md",
+      "heading": "The operational plan, its amendments and the way out",
+      "level": 2,
+      "line": 21
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/plan.md",
+      "heading": "Shared-file paths",
+      "level": 2,
+      "line": 39
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/plan.md",
+      "heading": "The state command",
+      "level": 2,
+      "line": 43
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/plan.md",
+      "heading": "The runtime gates, and the two layers of the commit rail",
+      "level": 2,
+      "line": 51
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/plan.md",
+      "heading": "What the unattended marker arms on this host",
+      "level": 2,
+      "line": 55
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/plan.md",
+      "heading": "The worktree root",
+      "level": 2,
+      "line": 67
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/plan.md",
+      "heading": "Naming and invoking the harness's own skills",
+      "level": 2,
+      "line": 71
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/plan.md",
+      "heading": "Making a launch wait",
+      "level": 2,
+      "line": 83
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/plan.md",
+      "heading": "The explorer",
+      "level": 2,
+      "line": 89
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/plan.md",
+      "heading": "Front-surface binding",
+      "level": 2,
+      "line": 93
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/plan.md",
+      "heading": "Reporting binding",
+      "level": 2,
+      "line": 97
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/quality-pass.md",
+      "heading": "Shared-file paths",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/quick.md",
+      "heading": "The delivery contract",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/quick.md",
+      "heading": "Question rounds",
+      "level": 2,
+      "line": 7
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/quick.md",
+      "heading": "Shared-file paths",
+      "level": 2,
+      "line": 11
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/quick.md",
+      "heading": "The state command",
+      "level": 2,
+      "line": 15
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/quick.md",
+      "heading": "Naming and invoking the harness's own skills",
+      "level": 2,
+      "line": 23
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/quick.md",
+      "heading": "Front-surface binding",
+      "level": 2,
+      "line": 35
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/quick.md",
+      "heading": "Reporting binding",
+      "level": 2,
+      "line": 39
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/reporting.md",
+      "heading": "Native agent files, no card",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/reporting.md",
+      "heading": "The unattended run — no carve-out here, and the record that carries it instead",
+      "level": 2,
+      "line": 7
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/roadmap.md",
+      "heading": "The delivery contract",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/roadmap.md",
+      "heading": "Question rounds",
+      "level": 2,
+      "line": 9
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/roadmap.md",
+      "heading": "The agent every phase runs on",
+      "level": 2,
+      "line": 13
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/roadmap.md",
+      "heading": "The approval gate",
+      "level": 2,
+      "line": 19
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/roadmap.md",
+      "heading": "How far the chain runs unattended — all of it",
+      "level": 2,
+      "line": 25
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/roadmap.md",
+      "heading": "The valve while the chain runs, and a queue that changes after presentation",
+      "level": 2,
+      "line": 31
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/roadmap.md",
+      "heading": "Shared-file paths",
+      "level": 2,
+      "line": 38
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/roadmap.md",
+      "heading": "The state command and the worktree root — with the unattended rails, routed to `plan.md`, not restated here",
+      "level": 2,
+      "line": 42
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/roadmap.md",
+      "heading": "Reporting binding",
+      "level": 2,
+      "line": 52
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/security-pass.md",
+      "heading": "Which reviewer is native, and how to reach it",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/platform/opencode/triage.md",
+      "heading": "Naming the harness's own modes and judges",
+      "level": 2,
+      "line": 3
+    },
+    {
+      "file": "plugin/skills/_shared/reporting.md",
+      "heading": "Milestones",
+      "level": 2,
+      "line": 5
+    },
+    {
+      "file": "plugin/skills/_shared/reporting.md",
+      "heading": "Length bound",
+      "level": 2,
+      "line": 16
+    },
+    {
+      "file": "plugin/skills/_shared/reporting.md",
+      "heading": "Two exceptions to the bound above, and the list is closed",
+      "level": 2,
+      "line": 20
+    },
+    {
+      "file": "plugin/skills/_shared/reporting.md",
+      "heading": "Delivery",
+      "level": 2,
+      "line": 26
+    },
+    {
+      "file": "plugin/skills/_shared/rubric.md",
+      "heading": "Judgment contract — read first, it overrides every rule below",
+      "level": 2,
+      "line": 5
+    },
+    {
+      "file": "plugin/skills/_shared/rubric.md",
+      "heading": "Hard blockers — any one fails the gate; the judgment contract cannot override these",
+      "level": 2,
+      "line": 16
+    },
+    {
+      "file": "plugin/skills/_shared/rubric.md",
+      "heading": "File level — check every touched file",
+      "level": 2,
+      "line": 22
+    },
+    {
+      "file": "plugin/skills/_shared/rubric.md",
+      "heading": "System level — check the change as a whole",
+      "level": 2,
+      "line": 45
+    },
+    {
+      "file": "plugin/skills/_shared/rubric.md",
+      "heading": "Debt markers — none may remain",
+      "level": 2,
+      "line": 54
+    }
+  ],
+  "independentCounts": {
+    "files": {
+      "count": 89,
+      "command": "{ git ls-tree -r --name-only 1c85baa -- plugin/skills | /usr/bin/grep -E '\\.md$'; git ls-tree -r --name-only 1c85baa -- plugin/agents | /usr/bin/grep -E '^plugin/agents/[^/]+\\.md$'; git ls-tree -r --name-only 1c85baa -- codex/skills | /usr/bin/grep -E '(^|/)SKILL\\.md$'; git ls-tree -r --name-only 1c85baa -- codex/agents | /usr/bin/grep -E '^codex/agents/[^/]+\\.toml$'; git ls-tree -r --name-only 1c85baa -- opencode/skills | /usr/bin/grep -E '(^|/)SKILL\\.md$'; git ls-tree -r --name-only 1c85baa -- opencode/agents | /usr/bin/grep -E '^opencode/agents/[^/]+\\.md$'; } | wc -l"
+    },
+    "axisA": {
+      "count": 8,
+      "command": "CORPUS=$(for f in $(git ls-tree -r --name-only 1c85baa -- plugin/skills plugin/agents codex/skills codex/agents opencode/skills opencode/agents); do git show 1c85baa:\"$f\"; done); { for v in set get show clear event journal capture-plan approve-plan cancel-plan amend-plan; do printf %s \"$CORPUS\" | /usr/bin/grep -qE \"oso-state(\\}\\\")?[ \\t]*(--session[ \\t]+\\\"[^\\\"]*\\\"[ \\t]+)?$v\\b\" && echo \"$v\"; done; for s in publish wait consume; do printf %s \"$CORPUS\" | /usr/bin/grep -qE \"oso-state(\\}\\\")?[ \\t]*(--session[ \\t]+\\\"[^\\\"]*\\\"[ \\t]+)?handoff[ \\t]+$s\\b\" && echo \"handoff:$s\"; done; } | wc -l"
+    },
+    "axisB": {
+      "count": 16,
+      "command": "CORPUS=$(for f in $(git ls-tree -r --name-only 1c85baa -- plugin/skills plugin/agents codex/skills codex/agents opencode/skills opencode/agents); do git show 1c85baa:\"$f\"; done); { for r in oso-applier oso-verifier oso-integrator oso-debt-sweep oso-doubt-pass oso-triage oso-security-reviewer; do printf %s \"$CORPUS\" | /usr/bin/grep -qE \"$r\" && echo \"$r\"; done; printf %s \"$CORPUS\" | /usr/bin/grep -oE \"/?oso-code:[a-z-]+\" | /usr/bin/sed -E \"s#^/##\" | LC_ALL=C sort -u; } | wc -l"
+    },
+    "axisC": {
+      "count": 24,
+      "command": "for f in $(git ls-tree -r --name-only 1c85baa -- plugin/skills plugin/agents codex/skills codex/agents opencode/skills opencode/agents); do git show 1c85baa:\"$f\"; done | /usr/bin/grep -oE \"\\`[A-Z][a-z]+( [A-Z][a-z]+){0,2}: [a-z][A-Za-z0-9/_-]*( — [^\\`]*)?\\`\" | LC_ALL=C sort -u | wc -l"
+    },
+    "axisD": {
+      "count": 200,
+      "command": "for f in $(git ls-tree -r --name-only 1c85baa -- plugin/skills plugin/agents codex/skills codex/agents opencode/skills opencode/agents); do git show 1c85baa:\"$f\" | /usr/bin/grep -E \"^#{2,4} \"; done | wc -l"
+    },
+    "validation": "Each independentCounts command is re-executed verbatim at review time and must print its recorded count as its only line of stdout; the suite deliberately never spawns a shell tool itself, so it cannot check this, and a command that reproduces its number for the wrong reason — a pipe bound to only part of it, a filter looser than the rule it claims to check — is a defect this note exists to catch at review time rather than at test time. Re-execution holds three preconditions: it runs under bash (Git Bash on Windows, since these commands use POSIX tools and /usr/bin/grep), from the repository root, and with the anchor commit reachable in that checkout's history. A shallow clone does not satisfy the third: there, git ls-tree fails with \"fatal: Not a valid object name\" and exit 128, which is an unreachable anchor, never a broken witness, and the two must not be read as the same finding."
+  }
+}
