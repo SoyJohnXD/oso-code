@@ -6,6 +6,7 @@ import { posixRepositoryPath } from "../support/repository-paths.ts";
 import { readTrackedText, trackedRepositoryFiles, type TrackedFileText } from "../support/tracked-files.ts";
 
 const SHARED_BASH_LIBRARIES = ["lib.sh", "lexer.sh"];
+const RETIRED_BASH_BARS = ["opencode-contract-bar.sh", "opencode-behavior-bar.sh", "opencode-verification.sh", "verification-fixtures.sh"];
 
 const UNSCANNED_PREFIXES = ["docs/", "core/test/fixtures/", "plugin/hooks/"];
 const THIS_CHECK = posixRepositoryPath(import.meta.filename);
@@ -16,7 +17,7 @@ const MINIMUM_REFERENCES_FOUND = 20;
 
 type DeadBashReference = Readonly<{ file: string; line: number; name: string; text: string }>;
 
-type ResidueClass = "installer" | "shell-library" | "citation" | "shipped-prose";
+type ResidueClass = "installer" | "shell-library" | "citation" | "shipped-prose" | "identifier";
 
 type Residue = Readonly<{ residue: ResidueClass; keptBy: string }>;
 
@@ -29,9 +30,12 @@ const RESIDUE_BY_FILE: ReadonlyMap<string, Residue> = new Map([
   ["core/test/port/git-call.test.ts", { residue: "citation", keptBy: "Decision 9: line-free provenance in a case title" }],
   ["core/test/port/lexer.test.ts", { residue: "citation", keptBy: "Decision 9: line-free provenance in a case title" }],
   ["plugin/skills/_shared/platform/opencode/plan.md", { residue: "shipped-prose", keptBy: "C2-D24(4): descriptive shipped prose, classified to C5" }],
+  ["core/test/certify/opencode-contract-bar.test.ts", { residue: "citation", keptBy: "Decision 9: line-free provenance naming the bash bar this suite ported" }],
+  ["core/test/certify/opencode-behavior-bar.test.ts", { residue: "citation", keptBy: "Decision 9: line-free provenance naming the bash bar this suite ported" }],
+  ["core/test/support/repository-paths.test.ts", { residue: "identifier", keptBy: "C4-S3: a retired path as pure string-transform fixture data, never loaded" }],
 ]);
 
-const deadBashNames: readonly string[] = [...GATE_ROWS.map((row) => row.script), ...SHARED_BASH_LIBRARIES];
+const deadBashNames: readonly string[] = [...GATE_ROWS.map((row) => row.script), ...SHARED_BASH_LIBRARIES, ...RETIRED_BASH_BARS];
 
 function pathShapedReferencePattern(names: readonly string[]): RegExp {
   const alternatives = names.map((name) => name.replaceAll(".", "\\.")).join("|");
