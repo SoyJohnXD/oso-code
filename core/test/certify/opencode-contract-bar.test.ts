@@ -1,13 +1,26 @@
 import assert from "node:assert/strict";
 import { after, before, describe, type TestContext } from "node:test";
+import path from "node:path";
 import { SUPPORTED_OPENCODE_VERSION } from "../../src/install/pins.ts";
 import { provedSomething } from "../support/proved.ts";
 import { CERTIFY } from "./support/certify-guard.ts";
 import { installContractFixture, type ContractFixture } from "./support/contract-fixture.ts";
 import { CONTRACT_BAR_BOUND_SECONDS, invokeContractBar, probeRegistrations, type RegistrationProbe } from "./support/drive.ts";
+import {
+  agentField,
+  agentPermissionField,
+  agentShellExactFormViolations,
+  commandAgentRoute,
+  fieldOf,
+  pluginOrigins,
+  skillLocations,
+  topLevelPermissionField,
+} from "./support/config-fields.ts";
+import { deniedExecutionPowers } from "./support/execution-powers.ts";
 import { notRun } from "./support/not-run.ts";
-import { resolveOpenCodeBinaryProbe, type OpenCodeBinaryProbe } from "./support/opencode-binary.ts";
+import { resolveOpenCodeBinaryProbe, type OpenCodeBinaryProbe, type ResolvedProbe } from "./support/opencode-binary.ts";
 import { CONTRACT_BAR_ROWS_PORTED, contractBarRow, contractBarRowsRegistered } from "./support/row-count.ts";
+import { contractBarSourceAgentMode, contractBarSourceAgentNames, contractBarSourceSkillNames } from "./support/source-roster.ts";
 
 const OVERRIDE_ENV_VAR = "OSO_CONTRACT_BAR_OPENCODE_BIN";
 const SESSION_MODEL_PROVIDER = "opencode";
@@ -15,9 +28,16 @@ const SESSION_MODEL_PROVIDER_LINE = /^opencode\//;
 const WAVE_TOOL_ID = "oso_wave";
 const PLAN_APPROVAL_TOOL_ID = "oso_plan_approve";
 const PLAN_CANCEL_TOOL_ID = "oso_plan_cancel";
+const FIX_APPLY_TOOL_ID = "fallow_fix_apply";
+const GRANT_BOUND_PERMISSION = "ask";
 const WORKSPACE_ADAPTER_TYPE = "oso-code";
+const PLAN_COMMAND = "oso-plan";
+const APPLIER_AGENT_NAME = "oso-applier";
+const DOUBT_PASS_AGENT_NAME = "oso-doubt-pass";
+const AGENT_LIST_ENTRY_PATTERN = /^(\S+) \((?:primary|subagent|all)\)$/;
 
-type ResolvedProbe = Extract<OpenCodeBinaryProbe, { kind: "resolved" }>;
+const SOURCE_AGENT_NAMES = contractBarSourceAgentNames();
+const SOURCE_SKILL_NAMES = contractBarSourceSkillNames();
 
 const probe: OpenCodeBinaryProbe | undefined = CERTIFY
   ? resolveOpenCodeBinaryProbe(process.env[OVERRIDE_ENV_VAR], SUPPORTED_OPENCODE_VERSION, process.env)
@@ -63,15 +83,65 @@ contractBarRow(
   },
 );
 
+type ConfigProbe =
+  | Readonly<{ kind: "parsed"; document: unknown }>
+  | Readonly<{ kind: "failed"; reason: string }>;
+
+type SkillProbe =
+  | Readonly<{ kind: "listed"; locations: ReadonlyMap<string, string> }>
+  | Readonly<{ kind: "failed"; reason: string }>;
+
+function invokeCommandOrFailure(
+  binary: string,
+  environment: NodeJS.ProcessEnv,
+  args: readonly string[],
+): Readonly<{ kind: "failed"; reason: string }> | Readonly<{ kind: "ran"; stdout: string }> {
+  const run = invokeContractBar(binary, environment, args, CONTRACT_BAR_BOUND_SECONDS);
+  const label = `opencode ${args.join(" ")}`;
+  if (run.error !== undefined || run.signal !== null) {
+    return { kind: "failed", reason: `${label} did not complete: ${run.error?.message ?? run.signal}` };
+  }
+  if (run.status !== 0) return { kind: "failed", reason: `${label} exited ${run.status}: ${run.stderr ?? ""}` };
+  return { kind: "ran", stdout: run.stdout ?? "" };
+}
+
+function debugConfigProbe(binary: string, environment: NodeJS.ProcessEnv): ConfigProbe {
+  const invoked = invokeCommandOrFailure(binary, environment, ["debug", "config"]);
+  if (invoked.kind === "failed") return invoked;
+  try {
+    return { kind: "parsed", document: JSON.parse(invoked.stdout) };
+  } catch (error) {
+    return { kind: "failed", reason: `opencode debug config produced unparsable JSON: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+function debugSkillProbe(binary: string, environment: NodeJS.ProcessEnv): SkillProbe {
+  const invoked = invokeCommandOrFailure(binary, environment, ["debug", "skill"]);
+  if (invoked.kind === "failed") return invoked;
+  try {
+    return { kind: "listed", locations: skillLocations(JSON.parse(invoked.stdout)) };
+  } catch (error) {
+    return { kind: "failed", reason: `opencode debug skill produced unparsable JSON: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+function configHomeOf(fixture: ContractFixture): string {
+  return path.join(fixture.sandbox.home, ".config", "opencode");
+}
+
 describe("the contract fixture install and what the real binary reports once it is ready", () => {
   let fixture: ContractFixture | undefined;
   let registrations: RegistrationProbe | undefined;
+  let config: ConfigProbe | undefined;
+  let skills: SkillProbe | undefined;
 
   before(async () => {
     if (probe === undefined || probe.kind !== "resolved" || laneCause !== undefined) return;
     fixture = installContractFixture(probe);
     if (fixture.exitCode !== 0) return;
     registrations = await probeRegistrations(probe.binary, fixture.environment, fixture.sandbox);
+    config = debugConfigProbe(probe.binary, fixture.environment);
+    skills = debugSkillProbe(probe.binary, fixture.environment);
   });
 
   after(() => {
@@ -99,6 +169,24 @@ describe("the contract fixture install and what the real binary reports once it 
       return undefined;
     }
     return registrations;
+  }
+
+  function notRunUnlessConfigParsed(t: TestContext): unknown | undefined {
+    if (notRunUnlessFixtureReady(t, "the fixture's config")) return undefined;
+    if (config === undefined || config.kind === "failed") {
+      notRun(t, config?.kind === "failed" ? config.reason : "opencode debug config was never invoked");
+      return undefined;
+    }
+    return config.document;
+  }
+
+  function notRunUnlessSkillsListed(t: TestContext): ReadonlyMap<string, string> | undefined {
+    if (notRunUnlessFixtureReady(t, "the skill registry")) return undefined;
+    if (skills === undefined || skills.kind === "failed") {
+      notRun(t, skills?.kind === "failed" ? skills.reason : "opencode debug skill was never invoked");
+      return undefined;
+    }
+    return skills.locations;
   }
 
   contractBarRow("contract fixture install", (t) => {
@@ -142,6 +230,147 @@ describe("the contract fixture install and what the real binary reports once it 
       `${WORKSPACE_ADAPTER_TYPE} was not among: ${listed.workspaceAdapterTypes.join(", ")}`,
     );
   });
+
+  contractBarRow("the roster enumerates every installed oso agent", (t) => {
+    if (notRunUnlessFixtureReady(t, "the agent roster")) return;
+    const resolved = resolvedProbeOrThrow();
+    const installed = readyFixtureOrThrow();
+    const run = invokeContractBar(resolved.binary, installed.environment, ["agent", "list"], CONTRACT_BAR_BOUND_SECONDS);
+    if (run.error !== undefined || run.signal !== null) {
+      notRun(t, `opencode agent list did not complete: ${run.error?.message ?? run.signal}`);
+      return;
+    }
+    assert.equal(run.status, 0, run.stderr ?? "");
+    const roster = new Set(
+      (run.stdout ?? "")
+        .split("\n")
+        .map((line) => AGENT_LIST_ENTRY_PATTERN.exec(line)?.[1])
+        .filter((name): name is string => name !== undefined),
+    );
+    const missing = SOURCE_AGENT_NAMES.filter((name) => !roster.has(name));
+    assert.deepEqual(missing, [], `missing from the roster: ${missing.join(", ")}`);
+  });
+
+  for (const name of SOURCE_AGENT_NAMES) {
+    contractBarRow(`the real binary resolves ${name}'s mode from the fixture install`, (t) => {
+      const document = notRunUnlessConfigParsed(t);
+      if (document === undefined) return;
+      const modes = agentField(document, "mode");
+      assert.equal(fieldOf(modes, name) || "unset", contractBarSourceAgentMode(name));
+    });
+  }
+
+  contractBarRow("the real binary resolves no oso agent to a model of its own", (t) => {
+    const document = notRunUnlessConfigParsed(t);
+    if (document === undefined) return;
+    const models = agentField(document, "model");
+    const pinned = SOURCE_AGENT_NAMES.filter((name) => {
+      const model = fieldOf(models, name);
+      return model !== "" && model !== "absent";
+    }).map((name) => `${name}(${fieldOf(models, name)})`);
+    assert.deepEqual(pinned, [], `agents pinned to a model of their own: ${pinned.join(", ")}`);
+  });
+
+  for (const name of SOURCE_AGENT_NAMES) {
+    contractBarRow(`the real binary resolves ${name}'s question rule from the fixture install`, (t) => {
+      const document = notRunUnlessConfigParsed(t);
+      if (document === undefined) return;
+      const rules = agentPermissionField(document, "question");
+      assert.equal(fieldOf(rules, name), "deny");
+    });
+  }
+
+  function expectedShellRule(name: string): string {
+    return name === DOUBT_PASS_AGENT_NAME ? "deny" : "absent";
+  }
+
+  for (const name of SOURCE_AGENT_NAMES) {
+    contractBarRow(`the real binary resolves ${name}'s read and bash rules from the fixture install`, (t) => {
+      const document = notRunUnlessConfigParsed(t);
+      if (document === undefined) return;
+      const reads = agentPermissionField(document, "read");
+      const shells = agentPermissionField(document, "bash");
+      assert.equal(`${fieldOf(reads, name)} ${fieldOf(shells, name)}`, `absent ${expectedShellRule(name)}`);
+    });
+  }
+
+  for (const name of SOURCE_AGENT_NAMES) {
+    contractBarRow(`the real binary resolves ${name}'s ${FIX_APPLY_TOOL_ID} rule from the fixture install`, (t) => {
+      const document = notRunUnlessConfigParsed(t);
+      if (document === undefined) return;
+      const rules = agentPermissionField(document, FIX_APPLY_TOOL_ID);
+      assert.equal(fieldOf(rules, name), name === APPLIER_AGENT_NAME ? "absent" : "deny");
+    });
+  }
+
+  for (const name of SOURCE_AGENT_NAMES) {
+    contractBarRow(`the real binary resolves ${name}'s grant-bound tool rules from the fixture install`, (t) => {
+      const document = notRunUnlessConfigParsed(t);
+      if (document === undefined) return;
+      const approvals = agentPermissionField(document, PLAN_APPROVAL_TOOL_ID);
+      const cancels = agentPermissionField(document, PLAN_CANCEL_TOOL_ID);
+      assert.equal(`${fieldOf(approvals, name)} ${fieldOf(cancels, name)}`, "deny deny");
+    });
+  }
+
+  contractBarRow("the real binary resolves every agent shell allowlist to exact forms", (t) => {
+    const document = notRunUnlessConfigParsed(t);
+    if (document === undefined) return;
+    const violations = agentShellExactFormViolations(document);
+    assert.deepEqual(violations, [], `inexact shell allowlist forms: ${violations.join(", ")}`);
+  });
+
+  contractBarRow(
+    "the real binary routes the plan command to an agent whose ruleset admits the execution phase",
+    (t) => {
+      const document = notRunUnlessConfigParsed(t);
+      if (document === undefined) return;
+      const resolved = resolvedProbeOrThrow();
+      const installed = readyFixtureOrThrow();
+      const route = commandAgentRoute(document, PLAN_COMMAND);
+      const run = invokeContractBar(resolved.binary, installed.environment, ["debug", "agent", route], CONTRACT_BAR_BOUND_SECONDS);
+      if (run.error !== undefined || run.signal !== null) {
+        notRun(t, `opencode debug agent ${route} did not complete: ${run.error?.message ?? run.signal}`);
+        return;
+      }
+      if (run.status !== 0) {
+        assert.fail(`${route} resolves to no agent: ${run.stderr ?? ""}`);
+        return;
+      }
+      const denied = deniedExecutionPowers(JSON.parse(run.stdout ?? ""));
+      assert.deepEqual(denied, [], `${route} denies ${denied.join(", ")}`);
+    },
+  );
+
+  for (const toolId of [PLAN_APPROVAL_TOOL_ID, PLAN_CANCEL_TOOL_ID]) {
+    contractBarRow(`the real binary resolves the ${toolId} permission from the fixture install`, (t) => {
+      const document = notRunUnlessConfigParsed(t);
+      if (document === undefined) return;
+      assert.equal(topLevelPermissionField(document, toolId), GRANT_BOUND_PERMISSION);
+    });
+  }
+
+  contractBarRow(
+    "the real binary discovery list carries the installed plugin's pre-built oso-code.js bundle, not the oso-code.ts source it is compiled from",
+    (t) => {
+      const document = notRunUnlessConfigParsed(t);
+      if (document === undefined) return;
+      const installed = readyFixtureOrThrow();
+      const expected = path.join(configHomeOf(installed), "plugin", "oso-code.js");
+      const origins = pluginOrigins(document);
+      assert.ok(origins.some((origin) => origin.includes(expected)), `${expected} was not among: ${origins.join(", ")}`);
+    },
+  );
+
+  for (const name of SOURCE_SKILL_NAMES) {
+    contractBarRow(`debug skill registers ${name} at its installed location`, (t) => {
+      const locations = notRunUnlessSkillsListed(t);
+      if (locations === undefined) return;
+      const installed = readyFixtureOrThrow();
+      const expected = path.join(configHomeOf(installed), "skill", name, "SKILL.md");
+      assert.equal(fieldOf(locations, name), expected);
+    });
+  }
 });
 
 provedSomething(

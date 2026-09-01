@@ -2,9 +2,7 @@ import path from "node:path";
 import { installOpenCode } from "../../../src/install/opencode-install.ts";
 import { fixtureEnvironmentFor, fixtureShimsIn, writeFixtureEngramShim } from "../../../src/install/verify-opencode.ts";
 import { repositoryRoot, StateSandbox } from "../../support/state-sandbox.ts";
-import type { OpenCodeBinaryProbe } from "./opencode-binary.ts";
-
-type ResolvedProbe = Extract<OpenCodeBinaryProbe, { kind: "resolved" }>;
+import type { ResolvedProbe } from "./opencode-binary.ts";
 
 export type ContractFixture = Readonly<{
   sandbox: StateSandbox;

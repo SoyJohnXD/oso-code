@@ -16,6 +16,8 @@ export type OpenCodeBinaryProbe =
   | Readonly<{ kind: "resolved"; binary: string; version: string; relation: PinRelation }>
   | Readonly<{ kind: "unresolved"; reason: string }>;
 
+export type ResolvedProbe = Extract<OpenCodeBinaryProbe, { kind: "resolved" }>;
+
 function candidateBinary(overrideBinary: string | undefined, environment: NodeJS.ProcessEnv): string | undefined {
   if (overrideBinary !== undefined && overrideBinary !== "") return overrideBinary;
   const onPath = firstExecutableOnPath(environment, OPENCODE_BINARY_NAME);

@@ -1,7 +1,7 @@
 import { test, type TestContext } from "node:test";
 import { CERTIFY_GUARD } from "./certify-guard.ts";
 
-export const CONTRACT_BAR_ROWS_PORTED = 7;
+export const CONTRACT_BAR_ROWS_PORTED = 58;
 
 let registered = 0;
 
