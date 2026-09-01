@@ -1,6 +1,7 @@
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import {
   CONFIG_MARKER_END,
   CONFIG_MARKER_START,
@@ -15,8 +16,15 @@ import { VerifyReport } from "./report.ts";
 import { runTomlRegion } from "./toml-regions.ts";
 import { readTomlFile, TomlParseError } from "./toml.ts";
 import { trustDivergences } from "./trust.ts";
+import { runInstalledHookProbe, runOsoStateProbe } from "./verify-claude.ts";
 import { TOOL_ROWS } from "../routes/routes.ts";
-import { filesHoldTheSameBytes, isErrnoException, isExecutableRegularFile, isReadableRegularFile } from "../state/store.ts";
+import {
+  filesHoldTheSameBytes,
+  isErrnoException,
+  isExecutableRegularFile,
+  isReadableRegularFile,
+  isRegularNonSymlinkFile,
+} from "../state/store.ts";
 
 export const KNOWN_MCP_SERVERS = ["engram", "context7", "fallow"] as const;
 
@@ -64,9 +72,9 @@ export function verifyCodex(input: VerifyCodexInput): VerifyOutcome {
   checkHostAcceptsOsoProfile(report, paths, input.host);
   checkGlobalGuidance(report, paths, input.repositoryRoot);
   checkEngramWiring(report, paths);
-  checkStateRoundTrip(report, paths);
-  checkPlanArtifactRoundTrip(report, paths);
-  checkCommitHookDeniesRed(report, paths);
+  checkStateRoundTrip(report, paths, input.environment);
+  checkPlanArtifactRoundTrip(report, paths, input.environment);
+  checkCommitHookDeniesRed(report, paths, input.environment);
   checkImpeccableMount(report, input.homeDirectory);
   checkGitCommitGate(report, paths, input.repositoryRoot, input.environment);
   checkMcpToolTableDrift(report, paths);
@@ -131,16 +139,21 @@ export function checkHostAcceptsOsoProfile(report: VerifyReport, paths: CodexPat
   report.check("Codex accepts the oso permissions profile", "accepted", observed === expected ? "accepted" : observed === "" ? "rejected-without-output" : observed);
 }
 
-export function checkStateRoundTrip(report: VerifyReport, paths: CodexPaths): void {
-  report.check("installed oso-state round-trip", "probe", installedEntrypointVerdict(paths, "round-trip-failed:empty"));
+export function checkStateRoundTrip(report: VerifyReport, paths: CodexPaths, environment: NodeJS.ProcessEnv): void {
+  const probe = runOsoStateProbe(path.join(paths.runtimeRoot, "bin", "oso-state"), environment);
+  report.check("installed oso-state round-trip", "probe", probe === "" ? "round-trip-failed:empty" : probe);
 }
 
-export function checkPlanArtifactRoundTrip(report: VerifyReport, paths: CodexPaths): void {
-  report.check("installed Codex plan artifact round-trip", "artifacts", installedEntrypointVerdict(paths, "artifact-round-trip-failed:empty"));
+export function checkPlanArtifactRoundTrip(report: VerifyReport, paths: CodexPaths, environment: NodeJS.ProcessEnv): void {
+  const stateBin = path.join(paths.runtimeRoot, "bin", "oso-state");
+  report.check("installed Codex plan artifact round-trip", "artifacts", planArtifactRoundTripVerdict(stateBin, environment));
 }
 
-export function checkCommitHookDeniesRed(report: VerifyReport, paths: CodexPaths): void {
-  report.check("installed git hook denies a red agent commit", "denied", installedEntrypointVerdict(paths, "setup-failed"));
+export function checkCommitHookDeniesRed(report: VerifyReport, paths: CodexPaths, environment: NodeJS.ProcessEnv): void {
+  const gate = path.join(paths.runtimeRoot, "dist", "gate.js");
+  const outcome = runInstalledHookProbe(gate, environment);
+  const verdict = outcome.includes('"permissionDecision":"deny"') ? "denied" : outcome === "" ? "commit-was-allowed" : outcome;
+  report.check("installed git hook denies a red agent commit", "denied", verdict);
 }
 
 export function checkGitCommitGate(report: VerifyReport, paths: CodexPaths, repositoryRoot: string, environment: NodeJS.ProcessEnv): void {
@@ -422,8 +435,59 @@ const MARKETPLACE_PAYLOAD_ROWS = [
   { named: "plugin.json", published: "codex/.codex-plugin/plugin.json", installed: "codex/.codex-plugin/plugin.json" },
 ] as const;
 
-function installedEntrypointVerdict(paths: CodexPaths, absentVerdict: string): string {
-  return isExecutableRegularFile(path.join(paths.runtimeRoot, "bin", "oso-state")) ? "installed-probe-is-nightly-only" : absentVerdict;
+const PLAN_ARTIFACT_PROBE_SESSION = "verify-probe";
+const PLAN_ARTIFACT_PROBE_DIGEST = `${"0".repeat(63)}1`;
+const PLAN_ARTIFACT_PROBE_SLICE = "probe-slice";
+const PLAN_ARTIFACT_PROBE_DOCUMENT = "# Verified plan";
+const PLAN_ARTIFACT_AMENDMENT_DOCUMENT = "### Slice probe";
+const PLAN_ARTIFACT_AMENDMENT_LINE = `## Execution amendment — ${PLAN_ARTIFACT_PROBE_SLICE}`;
+
+function planArtifactRoundTripVerdict(stateBin: string, environment: NodeJS.ProcessEnv): string {
+  const probeHome = mkdtempSync(path.join(tmpdir(), "oso-plan-probe-"));
+  try {
+    const probeRepo = path.join(probeHome, "repo");
+    mkdirSync(probeRepo, { recursive: true });
+    const init = spawnSync("git", ["-C", probeRepo, "init", "-q"], { encoding: "utf8" });
+    if (init.error !== undefined || init.status !== 0) return "git-init-failed";
+
+    const env = { ...environment, HOME: probeHome, USERPROFILE: probeHome };
+    const runStateScript = (input: string | undefined, ...args: string[]) =>
+      spawnSync(process.execPath, [stateBin, "--session", PLAN_ARTIFACT_PROBE_SESSION, ...args], { cwd: probeRepo, input, env, encoding: "utf8" });
+
+    const capture = runStateScript(PLAN_ARTIFACT_PROBE_DOCUMENT, "capture-plan", PLAN_ARTIFACT_PROBE_DIGEST);
+    if (capture.error !== undefined || capture.status !== 0) return "artifact-round-trip-failed:empty";
+    const approve = runStateScript(undefined, "approve-plan", PLAN_ARTIFACT_PROBE_DIGEST);
+    if (approve.error !== undefined || approve.status !== 0) return "artifact-round-trip-failed:empty";
+    const amend = runStateScript(PLAN_ARTIFACT_AMENDMENT_DOCUMENT, "amend-plan", PLAN_ARTIFACT_PROBE_SLICE);
+    if (amend.error !== undefined || amend.status !== 0) return "artifact-round-trip-failed:empty";
+    const show = runStateScript(undefined, "show");
+    if (show.error !== undefined || show.status !== 0) {
+      const failure = collapsed(`${show.stdout ?? ""}${show.stderr ?? ""}`);
+      return `artifact-round-trip-failed:${failure === "" ? "empty" : failure}`;
+    }
+    return planArtifactContractVerdict(show.stdout);
+  } finally {
+    rmSync(probeHome, { recursive: true, force: true });
+  }
+}
+
+function planArtifactContractVerdict(stateOutput: string): string {
+  const snapshot = stateLineValue(stateOutput, "plan_snapshot_file");
+  const current = stateLineValue(stateOutput, "plan_current_file");
+  const matches =
+    stateLineValue(stateOutput, "plan_approval") === "approved" &&
+    stateLineValue(stateOutput, "plan_revision") === "1" &&
+    isRegularNonSymlinkFile(snapshot) &&
+    readFileSync(snapshot, "utf8") === PLAN_ARTIFACT_PROBE_DOCUMENT &&
+    isRegularNonSymlinkFile(current) &&
+    readFileSync(current, "utf8").includes(PLAN_ARTIFACT_AMENDMENT_LINE);
+  return matches ? "artifacts" : "artifact-contract-mismatch";
+}
+
+function stateLineValue(text: string, key: string): string {
+  const prefix = `${key}=`;
+  const line = text.split("\n").find((candidate) => candidate.startsWith(prefix));
+  return line === undefined ? "" : line.slice(prefix.length);
 }
 
 function binaryCarriesBoth(binary: string, literals: readonly string[]): boolean {

@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, test } from "node:test";
 import { CONFIG_MARKER_END, CONFIG_MARKER_START, GLOBAL_MARKER_END, GLOBAL_MARKER_START } from "../../src/install/codex-config.ts";
-import { codexPathsFor, installCodex, type CodexCommandInput } from "../../src/install/codex.ts";
+import { codexPathsFor, installCodex, type CodexCommandInput, type CodexPaths } from "../../src/install/codex.ts";
 import { VerifyReport } from "../../src/install/report.ts";
 import {
   checkAgentPayload,
+  checkCommitHookDeniesRed,
   checkGlobalGuidance,
   checkManagedConfigRegion,
+  checkPlanArtifactRoundTrip,
+  checkStateRoundTrip,
   hardcodedRowsWithNoMandatedRoute,
   KNOWN_MCP_SERVERS,
   mandatedAgreementStatus,
@@ -45,6 +48,19 @@ function inputFor(home: string): CodexCommandInput {
     assumeYes: true,
     installGitHook: false,
   };
+}
+
+function installedRuntimeFixture(paths: CodexPaths): void {
+  mkdirSync(path.join(paths.runtimeRoot, "bin"), { recursive: true });
+  cpSync(path.join(repositoryRoot, "plugin", "bin", "oso-state"), path.join(paths.runtimeRoot, "bin", "oso-state"));
+  chmodSync(path.join(paths.runtimeRoot, "bin", "oso-state"), 0o755);
+  mkdirSync(path.join(paths.runtimeRoot, "dist"), { recursive: true });
+  cpSync(path.join(repositoryRoot, "plugin", "dist", "gate.js"), path.join(paths.runtimeRoot, "dist", "gate.js"));
+}
+
+function silentStateBinFixture(paths: CodexPaths): void {
+  mkdirSync(path.join(paths.runtimeRoot, "bin"), { recursive: true });
+  writeFileSync(path.join(paths.runtimeRoot, "bin", "oso-state"), "#!/usr/bin/env node\n");
 }
 
 const mandatedRows = TOOL_ROWS.filter((row) => row.mandated === "yes" && row.names.codex.startsWith("mcp__"));
@@ -205,5 +221,64 @@ describe("oso verify --host codex over a fixture HOME", () => {
     const outcome = verifyCodex(inputFor(home));
     assert.match(outcome.report, /skip: fallow MCP tool drift/);
     assert.match(outcome.report, /the hardcoded mandated tool list agrees with the routes table in both directions/);
+  });
+});
+
+describe("checkStateRoundTrip drives the installed oso-state binary under a probe HOME, reading no host binary", () => {
+  test("round-trips mode=probe through the installed binary and reports probe (e2e)", () => {
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    installedRuntimeFixture(paths);
+    const report = new VerifyReport();
+    checkStateRoundTrip(report, paths, inputFor(home).environment);
+    assert.match(report.render(), /ok: {3}installed oso-state round-trip \(probe\)/);
+  });
+
+  test("an installed state binary that prints nothing fails the round-trip rather than passing on emptiness", () => {
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    silentStateBinFixture(paths);
+    const report = new VerifyReport();
+    checkStateRoundTrip(report, paths, inputFor(home).environment);
+    assert.match(report.render(), /FAIL: installed oso-state round-trip — expected probe, got round-trip-failed:empty/);
+  });
+});
+
+describe("checkPlanArtifactRoundTrip captures, approves and amends a plan through the installed oso-state binary", () => {
+  test("proves the snapshot and amendment artifacts the CLI writes rather than only that a command exits zero (e2e)", () => {
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    installedRuntimeFixture(paths);
+    const report = new VerifyReport();
+    checkPlanArtifactRoundTrip(report, paths, inputFor(home).environment);
+    assert.match(report.render(), /ok: {3}installed Codex plan artifact round-trip \(artifacts\)/);
+  });
+
+  test("an installed state binary that prints nothing fails the artifact round-trip rather than passing on emptiness", () => {
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    silentStateBinFixture(paths);
+    const report = new VerifyReport();
+    checkPlanArtifactRoundTrip(report, paths, inputFor(home).environment);
+    assert.match(report.render(), /FAIL: installed Codex plan artifact round-trip — expected artifacts, got artifact-contract-mismatch/);
+  });
+});
+
+describe("checkCommitHookDeniesRed drives the installed PreToolUse gate the same way for both hosts, through runInstalledHookProbe", () => {
+  test("denies a red agent commit through the installed gate bundle (e2e)", () => {
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    installedRuntimeFixture(paths);
+    const report = new VerifyReport();
+    checkCommitHookDeniesRed(report, paths, process.env);
+    assert.match(report.render(), /ok: {3}installed git hook denies a red agent commit \(denied\)/);
+  });
+
+  test("a missing gate bundle fails the denial check rather than passing on absence", () => {
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    const report = new VerifyReport();
+    checkCommitHookDeniesRed(report, paths, process.env);
+    assert.doesNotMatch(report.render(), /ok: {3}installed git hook denies a red agent commit/);
   });
 });

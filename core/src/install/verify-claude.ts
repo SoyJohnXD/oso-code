@@ -346,7 +346,7 @@ function allFilesUnder(directory: string): string[] {
     .filter((absolute) => isRegularNonSymlinkFile(absolute));
 }
 
-function runInstalledHookProbe(gate: string, environment: NodeJS.ProcessEnv): string {
+export function runInstalledHookProbe(gate: string, environment: NodeJS.ProcessEnv): string {
   const hookHome = mkdtempSync(path.join(tmpdir(), "oso-verify-hook-"));
   try {
     const stateKey = sha256Hex(hookHome);
@@ -380,7 +380,7 @@ export function clientEnvValue(settingsFile: string, key: string): string {
   }
 }
 
-function runOsoStateProbe(stateBin: string, environment: NodeJS.ProcessEnv): string {
+export function runOsoStateProbe(stateBin: string, environment: NodeJS.ProcessEnv): string {
   const probeHome = mkdtempSync(path.join(tmpdir(), "oso-verify-probe-"));
   try {
     const env = { ...environment, HOME: probeHome, USERPROFILE: probeHome, OSO_STATE_BIN: stateBin };

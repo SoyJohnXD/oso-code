@@ -4377,7 +4377,8 @@ function physicalPathOf(target) {
 // core/src/install/verify-codex.ts
 import path15 from "node:path";
 import { spawnSync as spawnSync8 } from "node:child_process";
-import { readFileSync as readFileSync14, readdirSync as readdirSync5, statSync as statSync5 } from "node:fs";
+import { mkdirSync as mkdirSync9, mkdtempSync as mkdtempSync6, readFileSync as readFileSync14, readdirSync as readdirSync5, rmSync as rmSync11, statSync as statSync5 } from "node:fs";
+import { tmpdir as tmpdir4 } from "node:os";
 
 // core/src/routes/routes.ts
 var TOOL_ROWS = [
@@ -4492,9 +4493,9 @@ function verifyCodex(input) {
   checkHostAcceptsOsoProfile(report2, paths, input.host);
   checkGlobalGuidance(report2, paths, input.repositoryRoot);
   checkEngramWiring(report2, paths);
-  checkStateRoundTrip(report2, paths);
-  checkPlanArtifactRoundTrip(report2, paths);
-  checkCommitHookDeniesRed(report2, paths);
+  checkStateRoundTrip(report2, paths, input.environment);
+  checkPlanArtifactRoundTrip(report2, paths, input.environment);
+  checkCommitHookDeniesRed(report2, paths, input.environment);
   checkImpeccableMount(report2, input.homeDirectory);
   checkGitCommitGate(report2, paths, input.repositoryRoot, input.environment);
   checkMcpToolTableDrift(report2, paths);
@@ -4552,14 +4553,19 @@ ${path15.join(paths.runtimeRoot, "bin", "oso-state")}`;
   const observed = run.ok ? run.output.trim() : collapsed(run.output);
   report2.check("Codex accepts the oso permissions profile", "accepted", observed === expected ? "accepted" : observed === "" ? "rejected-without-output" : observed);
 }
-function checkStateRoundTrip(report2, paths) {
-  report2.check("installed oso-state round-trip", "probe", installedEntrypointVerdict(paths, "round-trip-failed:empty"));
+function checkStateRoundTrip(report2, paths, environment) {
+  const probe = runOsoStateProbe(path15.join(paths.runtimeRoot, "bin", "oso-state"), environment);
+  report2.check("installed oso-state round-trip", "probe", probe === "" ? "round-trip-failed:empty" : probe);
 }
-function checkPlanArtifactRoundTrip(report2, paths) {
-  report2.check("installed Codex plan artifact round-trip", "artifacts", installedEntrypointVerdict(paths, "artifact-round-trip-failed:empty"));
+function checkPlanArtifactRoundTrip(report2, paths, environment) {
+  const stateBin = path15.join(paths.runtimeRoot, "bin", "oso-state");
+  report2.check("installed Codex plan artifact round-trip", "artifacts", planArtifactRoundTripVerdict(stateBin, environment));
 }
-function checkCommitHookDeniesRed(report2, paths) {
-  report2.check("installed git hook denies a red agent commit", "denied", installedEntrypointVerdict(paths, "setup-failed"));
+function checkCommitHookDeniesRed(report2, paths, environment) {
+  const gate = path15.join(paths.runtimeRoot, "dist", "gate.js");
+  const outcome = runInstalledHookProbe(gate, environment);
+  const verdict = outcome.includes('"permissionDecision":"deny"') ? "denied" : outcome === "" ? "commit-was-allowed" : outcome;
+  report2.check("installed git hook denies a red agent commit", "denied", verdict);
 }
 function checkGitCommitGate(report2, paths, repositoryRoot2, environment) {
   const wired = path15.join(paths.runtimeRoot, "git-hooks");
@@ -4811,8 +4817,47 @@ var MARKETPLACE_PAYLOAD_ROWS = [
   { named: "marketplace.json", published: ".agents/plugins/marketplace.json", installed: ".agents/plugins/marketplace.json" },
   { named: "plugin.json", published: "codex/.codex-plugin/plugin.json", installed: "codex/.codex-plugin/plugin.json" }
 ];
-function installedEntrypointVerdict(paths, absentVerdict) {
-  return isExecutableRegularFile(path15.join(paths.runtimeRoot, "bin", "oso-state")) ? "installed-probe-is-nightly-only" : absentVerdict;
+var PLAN_ARTIFACT_PROBE_SESSION = "verify-probe";
+var PLAN_ARTIFACT_PROBE_DIGEST = `${"0".repeat(63)}1`;
+var PLAN_ARTIFACT_PROBE_SLICE = "probe-slice";
+var PLAN_ARTIFACT_PROBE_DOCUMENT = "# Verified plan";
+var PLAN_ARTIFACT_AMENDMENT_DOCUMENT = "### Slice probe";
+var PLAN_ARTIFACT_AMENDMENT_LINE = `## Execution amendment \u2014 ${PLAN_ARTIFACT_PROBE_SLICE}`;
+function planArtifactRoundTripVerdict(stateBin, environment) {
+  const probeHome = mkdtempSync6(path15.join(tmpdir4(), "oso-plan-probe-"));
+  try {
+    const probeRepo = path15.join(probeHome, "repo");
+    mkdirSync9(probeRepo, { recursive: true });
+    const init = spawnSync8("git", ["-C", probeRepo, "init", "-q"], { encoding: "utf8" });
+    if (init.error !== void 0 || init.status !== 0) return "git-init-failed";
+    const env = { ...environment, HOME: probeHome, USERPROFILE: probeHome };
+    const runStateScript = (input, ...args) => spawnSync8(process.execPath, [stateBin, "--session", PLAN_ARTIFACT_PROBE_SESSION, ...args], { cwd: probeRepo, input, env, encoding: "utf8" });
+    const capture = runStateScript(PLAN_ARTIFACT_PROBE_DOCUMENT, "capture-plan", PLAN_ARTIFACT_PROBE_DIGEST);
+    if (capture.error !== void 0 || capture.status !== 0) return "artifact-round-trip-failed:empty";
+    const approve = runStateScript(void 0, "approve-plan", PLAN_ARTIFACT_PROBE_DIGEST);
+    if (approve.error !== void 0 || approve.status !== 0) return "artifact-round-trip-failed:empty";
+    const amend = runStateScript(PLAN_ARTIFACT_AMENDMENT_DOCUMENT, "amend-plan", PLAN_ARTIFACT_PROBE_SLICE);
+    if (amend.error !== void 0 || amend.status !== 0) return "artifact-round-trip-failed:empty";
+    const show = runStateScript(void 0, "show");
+    if (show.error !== void 0 || show.status !== 0) {
+      const failure = collapsed(`${show.stdout ?? ""}${show.stderr ?? ""}`);
+      return `artifact-round-trip-failed:${failure === "" ? "empty" : failure}`;
+    }
+    return planArtifactContractVerdict(show.stdout);
+  } finally {
+    rmSync11(probeHome, { recursive: true, force: true });
+  }
+}
+function planArtifactContractVerdict(stateOutput) {
+  const snapshot = stateLineValue(stateOutput, "plan_snapshot_file");
+  const current = stateLineValue(stateOutput, "plan_current_file");
+  const matches = stateLineValue(stateOutput, "plan_approval") === "approved" && stateLineValue(stateOutput, "plan_revision") === "1" && isRegularNonSymlinkFile(snapshot) && readFileSync14(snapshot, "utf8") === PLAN_ARTIFACT_PROBE_DOCUMENT && isRegularNonSymlinkFile(current) && readFileSync14(current, "utf8").includes(PLAN_ARTIFACT_AMENDMENT_LINE);
+  return matches ? "artifacts" : "artifact-contract-mismatch";
+}
+function stateLineValue(text, key) {
+  const prefix = `${key}=`;
+  const line = text.split("\n").find((candidate) => candidate.startsWith(prefix));
+  return line === void 0 ? "" : line.slice(prefix.length);
 }
 function binaryCarriesBoth(binary, literals) {
   const bytes = readFileSync14(binary, "latin1");
@@ -4861,8 +4906,8 @@ function isRecord2(value) {
 
 // core/src/install/verify-opencode.ts
 import { spawnSync as spawnSync9 } from "node:child_process";
-import { chmodSync as chmodSync3, mkdirSync as mkdirSync9, mkdtempSync as mkdtempSync6, readdirSync as readdirSync6, readFileSync as readFileSync15, rmSync as rmSync11, writeFileSync as writeFileSync9 } from "node:fs";
-import { tmpdir as tmpdir4 } from "node:os";
+import { chmodSync as chmodSync3, mkdirSync as mkdirSync10, mkdtempSync as mkdtempSync7, readdirSync as readdirSync6, readFileSync as readFileSync15, rmSync as rmSync12, writeFileSync as writeFileSync9 } from "node:fs";
+import { tmpdir as tmpdir5 } from "node:os";
 import path16 from "node:path";
 var OPENCODE_NOT_ON_PATH = "opencode-not-on-path";
 var VERSION_ROW_SKIP = "OpenCode CLI version \u2014 opencode is not on PATH, so the installed pin could not be probed";
@@ -4917,7 +4962,7 @@ function verifyOpenCode(input) {
     try {
       checkInstalledTree(report2, input, staged.tree);
     } finally {
-      rmSync11(staged.tree.root, { recursive: true, force: true });
+      rmSync12(staged.tree.root, { recursive: true, force: true });
     }
   }
   checkPluginWorkspaceBar(report2, input);
@@ -4957,12 +5002,12 @@ function checkPinnedOpenCodeVersion(report2, host) {
   }
 }
 function stageOpenCodeFixture(input) {
-  const parent = input.environment["TMPDIR"] ?? tmpdir4();
+  const parent = input.environment["TMPDIR"] ?? tmpdir5();
   if (!isDirectory(parent)) return { kind: "failed", result: TEMPORARY_PARENT_UNAVAILABLE };
-  const root = mkdtempSync6(path16.join(parent, FIXTURE_PREFIX));
+  const root = mkdtempSync7(path16.join(parent, FIXTURE_PREFIX));
   const home = path16.join(root, "home");
   const configHome = path16.join(home, ".config", "opencode");
-  mkdirSync9(configHome, { recursive: true });
+  mkdirSync10(configHome, { recursive: true });
   writeFileSync9(path16.join(configHome, "opencode.json"), `${JSON.stringify(operatorConfigSeed(), null, 2)}
 `);
   writeFileSync9(path16.join(configHome, "AGENTS.md"), operatorGlobalSeed());
@@ -4978,14 +5023,14 @@ function stageOpenCodeFixture(input) {
     installGitHook: false
   });
   if (outcome.exitCode === 0) return { kind: "ready", tree: { root, home, configHome } };
-  rmSync11(root, { recursive: true, force: true });
+  rmSync12(root, { recursive: true, force: true });
   return { kind: "failed", result: `install-failed:${lastReportLine(outcome.report)}` };
 }
 function fixtureShimsIn(root) {
   return path16.join(root, FIXTURE_SHIMS_DIRECTORY);
 }
 function writeFixtureEngramShim(directory) {
-  mkdirSync9(directory, { recursive: true });
+  mkdirSync10(directory, { recursive: true });
   const shim = path16.join(directory, ENGRAM_BINARY_NAME);
   writeFileSync9(shim, FIXTURE_ENGRAM_SHIM);
   chmodSync3(shim, FIXTURE_SHIM_MODE);
@@ -5143,7 +5188,7 @@ function openCodeTrustBytesStatus(publishedHashes, configHome) {
 function openCodeConfigHomeGuardStatus(input, tree) {
   const decoy = path16.join(tree.root, "decoy-config");
   const decoyConfigHome = path16.join(decoy, "opencode");
-  mkdirSync9(decoyConfigHome, { recursive: true });
+  mkdirSync10(decoyConfigHome, { recursive: true });
   writeFileSync9(path16.join(decoyConfigHome, "opencode.json"), `${DECOY_CONFIG_TEXT}
 `);
   const outcome = installOpenCode({
