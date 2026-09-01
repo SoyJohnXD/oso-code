@@ -10,6 +10,7 @@ import {
   GLOBAL_MARKER_END,
   GLOBAL_MARKER_START,
   MODEL_INSTRUCTIONS_KEY,
+  tomlQuote,
 } from "../../src/install/codex-config.ts";
 import { codexPathsFor, installCodex, type CodexCommandInput, type CodexPaths } from "../../src/install/codex.ts";
 import { VerifyReport } from "../../src/install/report.ts";
@@ -124,8 +125,8 @@ function engramConfigFixture(paths: CodexPaths, modelInstructionsValue: string):
   writeFileSync(
     paths.configFile,
     [
-      `${MODEL_INSTRUCTIONS_KEY} = "${modelInstructionsValue}"`,
-      `${COMPACT_PROMPT_KEY} = "${path.join(paths.codexHome, "engram-compact-prompt.md")}"`,
+      `${MODEL_INSTRUCTIONS_KEY} = ${tomlQuote(modelInstructionsValue)}`,
+      `${COMPACT_PROMPT_KEY} = ${tomlQuote(path.join(paths.codexHome, "engram-compact-prompt.md"))}`,
       "",
       "[mcp_servers.engram]",
       'command = "engram"',

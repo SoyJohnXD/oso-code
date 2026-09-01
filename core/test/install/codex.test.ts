@@ -11,6 +11,7 @@ import {
   GLOBAL_MARKER_START,
   MODEL_INSTRUCTIONS_KEY,
   renderCodexManagedConfig,
+  tomlQuote,
 } from "../../src/install/codex-config.ts";
 import {
   codexPathsFor,
@@ -21,6 +22,7 @@ import {
   repairCodex,
   type CodexCommandInput,
 } from "../../src/install/codex.ts";
+import { parseTomlDocument } from "../../src/install/toml.ts";
 import { fixtureRepositoryRoot, pinnedHost } from "../support/codex-install-fixture.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
 
@@ -199,14 +201,35 @@ describe("oso repair --host codex over a fixture HOME", () => {
     const installed = readFileSync(configFile, "utf8");
     writeFileSync(
       configFile,
-      `${installed}\nmodel_instructions_file = "${path.join(codexHome, "engram-instructions.md")}"\n` +
-        `experimental_compact_prompt_file = "${path.join(codexHome, "engram-compact-prompt.md")}"\n`,
+      `${installed}\nmodel_instructions_file = ${tomlQuote(path.join(codexHome, "engram-instructions.md"))}\n` +
+        `experimental_compact_prompt_file = ${tomlQuote(path.join(codexHome, "engram-compact-prompt.md"))}\n`,
     );
     const outcome = repairCodex(inputFor(home));
     assert.equal(outcome.exitCode, 0, outcome.report);
     assert.match(outcome.report, /engram pointers: OK — moved above the managed region/);
     const repaired = readFileSync(configFile, "utf8");
     assert.ok(repaired.indexOf("model_instructions_file") < repaired.indexOf(CONFIG_MARKER_START));
+  });
+
+  test("the moved pointer decodes to the native engram-instructions path, and repairing it again reports already normalized, byte for byte", () => {
+    const home = fixtureHome();
+    const codexHome = path.join(home, ".codex");
+    const configFile = path.join(codexHome, "config.toml");
+    assert.equal(installCodex(inputFor(home)).exitCode, 0);
+    const installed = readFileSync(configFile, "utf8");
+    writeFileSync(
+      configFile,
+      `${installed}\nmodel_instructions_file = ${tomlQuote(path.join(codexHome, "engram-instructions.md"))}\n` +
+        `experimental_compact_prompt_file = ${tomlQuote(path.join(codexHome, "engram-compact-prompt.md"))}\n`,
+    );
+    assert.equal(repairCodex(inputFor(home)).exitCode, 0);
+    const repaired = readFileSync(configFile, "utf8");
+    assert.equal(parseTomlDocument(repaired, configFile)["model_instructions_file"], path.join(codexHome, "engram-instructions.md"));
+
+    const secondPass = repairCodex(inputFor(home));
+    assert.equal(secondPass.exitCode, 0, secondPass.report);
+    assert.match(secondPass.report, /engram pointers: OK — already normalized/);
+    assert.equal(readFileSync(configFile, "utf8"), repaired);
   });
 
   test("it reports a config whose pointers are missing rather than inventing them", () => {

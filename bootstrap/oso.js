@@ -2720,8 +2720,14 @@ function isPointer(text, key) {
 function isStringPointer(text, key) {
   return new RegExp(`^${key}[${POSIX_SPACE}]*=[${POSIX_SPACE}]*"[^"]*"[${POSIX_SPACE}]*$`).test(text);
 }
-function pointerValue(text) {
-  return text.replace(new RegExp(`^[^=]*=[${POSIX_SPACE}]*"`), "").replace(new RegExp(`"[${POSIX_SPACE}]*$`), "");
+function decodedPointerValue(record, key) {
+  try {
+    const value = parseTomlDocument(record, key)[key];
+    return typeof value === "string" ? value : void 0;
+  } catch (error) {
+    if (error instanceof TomlParseError) return void 0;
+    throw error;
+  }
 }
 function outputOf(exitCode, stdout, root, sections) {
   return { exitCode, stdout: printed(stdout), root: printed(root), sections: printed(sections) };
@@ -2903,13 +2909,13 @@ function moveEngramPointers(records, request) {
       modelRows += 1;
       modelLine = number;
       pointerRows.add(number);
-      if (!isStringPointer(record, modelKey) || pointerValue(record) !== request.modelValue) invalidModel = true;
+      if (!isStringPointer(record, modelKey) || decodedPointerValue(record, modelKey) !== request.modelValue) invalidModel = true;
     }
     if (rootLine && isPointer(record, compactKey)) {
       compactRows += 1;
       compactLine = number;
       pointerRows.add(number);
-      if (!isStringPointer(record, compactKey) || pointerValue(record) !== request.compactValue) invalidCompact = true;
+      if (!isStringPointer(record, compactKey) || decodedPointerValue(record, compactKey) !== request.compactValue) invalidCompact = true;
     }
     scanRoot(scanner, record);
   });
@@ -2924,7 +2930,7 @@ function moveEngramPointers(records, request) {
     const number = index + 1;
     if (pointerRows.has(number) || number === skippedSeparator) return;
     if (number === startLine) {
-      emitted.push(`${modelKey} = "${request.modelValue ?? ""}"`, `${compactKey} = "${request.compactValue ?? ""}"`);
+      emitted.push(`${modelKey} = ${tomlQuote(request.modelValue ?? "")}`, `${compactKey} = ${tomlQuote(request.compactValue ?? "")}`);
     }
     emitted.push(record);
   });

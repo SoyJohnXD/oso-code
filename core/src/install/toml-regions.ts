@@ -1,3 +1,6 @@
+import { tomlQuote } from "./codex-config.ts";
+import { parseTomlDocument, TomlParseError } from "./toml.ts";
+
 const POSIX_SPACE = " \\t\\n\\v\\f\\r";
 const TABLE_HEADER = new RegExp(`^[${POSIX_SPACE}]*\\[`);
 const FEATURE_MARKER_COMMENT = new RegExp(`^[${POSIX_SPACE}]*#[${POSIX_SPACE}]*oso-code:features:(start|end)`);
@@ -190,8 +193,14 @@ function isStringPointer(text: string, key: string): boolean {
   return new RegExp(`^${key}[${POSIX_SPACE}]*=[${POSIX_SPACE}]*"[^"]*"[${POSIX_SPACE}]*$`).test(text);
 }
 
-function pointerValue(text: string): string {
-  return text.replace(new RegExp(`^[^=]*=[${POSIX_SPACE}]*"`), "").replace(new RegExp(`"[${POSIX_SPACE}]*$`), "");
+function decodedPointerValue(record: string, key: string): string | undefined {
+  try {
+    const value = parseTomlDocument(record, key)[key];
+    return typeof value === "string" ? value : undefined;
+  } catch (error) {
+    if (error instanceof TomlParseError) return undefined;
+    throw error;
+  }
 }
 
 function outputOf(exitCode: number, stdout: readonly string[], root: readonly string[], sections: readonly string[]): TomlRegionOutput {
@@ -403,13 +412,13 @@ function moveEngramPointers(records: readonly string[], request: TomlRegionReque
       modelRows += 1;
       modelLine = number;
       pointerRows.add(number);
-      if (!isStringPointer(record, modelKey) || pointerValue(record) !== request.modelValue) invalidModel = true;
+      if (!isStringPointer(record, modelKey) || decodedPointerValue(record, modelKey) !== request.modelValue) invalidModel = true;
     }
     if (rootLine && isPointer(record, compactKey)) {
       compactRows += 1;
       compactLine = number;
       pointerRows.add(number);
-      if (!isStringPointer(record, compactKey) || pointerValue(record) !== request.compactValue) invalidCompact = true;
+      if (!isStringPointer(record, compactKey) || decodedPointerValue(record, compactKey) !== request.compactValue) invalidCompact = true;
     }
     scanRoot(scanner, record);
   });
@@ -426,7 +435,7 @@ function moveEngramPointers(records: readonly string[], request: TomlRegionReque
     const number = index + 1;
     if (pointerRows.has(number) || number === skippedSeparator) return;
     if (number === startLine) {
-      emitted.push(`${modelKey} = "${request.modelValue ?? ""}"`, `${compactKey} = "${request.compactValue ?? ""}"`);
+      emitted.push(`${modelKey} = ${tomlQuote(request.modelValue ?? "")}`, `${compactKey} = ${tomlQuote(request.compactValue ?? "")}`);
     }
     emitted.push(record);
   });
