@@ -3901,7 +3901,10 @@ function writeOpenCodeInstall(input) {
   for (const backup of pruneOpenCodeInstallBackups(paths, targets, input.environment)) {
     infoLines.push(`backup retention: removed ${backup}`);
   }
-  infoLines.push(`installed oso-code for OpenCode ${SUPPORTED_OPENCODE_VERSION}`);
+  const hostVersion = input.host.version ?? SUPPORTED_OPENCODE_VERSION;
+  infoLines.push(
+    isAboveTestedVersion(input.host.version, SUPPORTED_OPENCODE_VERSION) ? `installed oso-code for OpenCode ${hostVersion}, verified against ${SUPPORTED_OPENCODE_VERSION}` : `installed oso-code for OpenCode ${hostVersion}`
+  );
   return { report: renderCommandReport("install", "opencode", infoLines, wiring), exitCode: 0 };
 }
 function installRefusal(input, paths, sources) {
