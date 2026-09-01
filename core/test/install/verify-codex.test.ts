@@ -1,17 +1,27 @@
 import assert from "node:assert/strict";
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, test } from "node:test";
-import { CONFIG_MARKER_END, CONFIG_MARKER_START, GLOBAL_MARKER_END, GLOBAL_MARKER_START } from "../../src/install/codex-config.ts";
+import {
+  COMPACT_PROMPT_KEY,
+  CONFIG_MARKER_END,
+  CONFIG_MARKER_START,
+  GLOBAL_MARKER_END,
+  GLOBAL_MARKER_START,
+  MODEL_INSTRUCTIONS_KEY,
+} from "../../src/install/codex-config.ts";
 import { codexPathsFor, installCodex, type CodexCommandInput, type CodexPaths } from "../../src/install/codex.ts";
 import { VerifyReport } from "../../src/install/report.ts";
 import {
   checkAgentPayload,
   checkCommitHookDeniesRed,
+  checkEngramWiring,
   checkGlobalGuidance,
   checkManagedConfigRegion,
+  checkMarketplacePayload,
   checkPlanArtifactRoundTrip,
+  checkPluginInstalled,
   checkStateRoundTrip,
   hardcodedRowsWithNoMandatedRoute,
   KNOWN_MCP_SERVERS,
@@ -25,6 +35,7 @@ import { TOOL_ROWS } from "../../src/routes/routes.ts";
 import { provedSomething } from "../support/proved.ts";
 import { fixtureRepositoryRoot, pinnedHost } from "../support/codex-install-fixture.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
+import { skipUnlessGitRunsShebangHooks } from "../support/win32-skip-guards.ts";
 
 const sandbox = mkdtempSync(path.join(tmpdir(), "oso-verify-codex-"));
 after(() => rmSync(sandbox, { recursive: true, force: true }));
@@ -61,6 +72,70 @@ function installedRuntimeFixture(paths: CodexPaths): void {
 function silentStateBinFixture(paths: CodexPaths): void {
   mkdirSync(path.join(paths.runtimeRoot, "bin"), { recursive: true });
   writeFileSync(path.join(paths.runtimeRoot, "bin", "oso-state"), "#!/usr/bin/env node\n");
+}
+
+function installedGitHookFixture(paths: CodexPaths): void {
+  mkdirSync(path.join(paths.runtimeRoot, "git-hooks"), { recursive: true });
+  cpSync(path.join(repositoryRoot, "plugin", "git-hooks", "pre-commit"), path.join(paths.runtimeRoot, "git-hooks", "pre-commit"));
+  chmodSync(path.join(paths.runtimeRoot, "git-hooks", "pre-commit"), 0o755);
+  mkdirSync(path.join(paths.runtimeRoot, "dist"), { recursive: true });
+  cpSync(path.join(repositoryRoot, "plugin", "dist", "precommit.js"), path.join(paths.runtimeRoot, "dist", "precommit.js"));
+}
+
+const codexPluginManifest = JSON.parse(readFileSync(path.join(repositoryRoot, "codex", ".codex-plugin", "plugin.json"), "utf8")) as {
+  name: string;
+  version: string;
+};
+
+function pluginListingJson(paths: CodexPaths, overrides: Partial<{ version: string }> = {}): string {
+  return JSON.stringify({
+    installed: [
+      {
+        pluginId: `${codexPluginManifest.name}@${codexPluginManifest.name}`,
+        marketplaceName: codexPluginManifest.name,
+        version: overrides.version ?? codexPluginManifest.version,
+        installed: true,
+        enabled: true,
+        source: { source: "local", path: path.join(paths.marketplaceRoot, "codex") },
+      },
+    ],
+  });
+}
+
+function marketplaceSkillNames(): string[] {
+  return readdirSync(path.join(repositoryRoot, "codex", "skills"), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name !== "_shared")
+    .map((entry) => entry.name);
+}
+
+function fullMarketplacePayloadFixture(paths: CodexPaths): void {
+  mkdirSync(path.join(paths.marketplaceRoot, ".agents", "plugins"), { recursive: true });
+  cpSync(path.join(repositoryRoot, ".agents", "plugins", "marketplace.json"), path.join(paths.marketplaceRoot, ".agents", "plugins", "marketplace.json"));
+  mkdirSync(path.join(paths.marketplaceRoot, "codex", ".codex-plugin"), { recursive: true });
+  cpSync(path.join(repositoryRoot, "codex", ".codex-plugin", "plugin.json"), path.join(paths.marketplaceRoot, "codex", ".codex-plugin", "plugin.json"));
+  for (const skill of marketplaceSkillNames()) {
+    mkdirSync(path.join(paths.marketplaceRoot, "codex", "skills", skill), { recursive: true });
+    cpSync(path.join(repositoryRoot, "codex", "skills", skill, "SKILL.md"), path.join(paths.marketplaceRoot, "codex", "skills", skill, "SKILL.md"));
+  }
+  cpSync(path.join(repositoryRoot, "plugin", "skills", "_shared"), path.join(paths.marketplaceRoot, "codex", "skills", "_shared"), { recursive: true });
+}
+
+function engramConfigFixture(paths: CodexPaths, modelInstructionsValue: string): void {
+  writeFileSync(
+    paths.configFile,
+    [
+      `${MODEL_INSTRUCTIONS_KEY} = "${modelInstructionsValue}"`,
+      `${COMPACT_PROMPT_KEY} = "${path.join(paths.codexHome, "engram-compact-prompt.md")}"`,
+      "",
+      "[mcp_servers.engram]",
+      'command = "engram"',
+      'args = ["mcp"]',
+      "",
+      CONFIG_MARKER_START,
+      CONFIG_MARKER_END,
+      "",
+    ].join("\n"),
+  );
 }
 
 const mandatedRows = TOOL_ROWS.filter((row) => row.mandated === "yes" && row.names.codex.startsWith("mcp__"));
@@ -264,21 +339,101 @@ describe("checkPlanArtifactRoundTrip captures, approves and amends a plan throug
   });
 });
 
-describe("checkCommitHookDeniesRed drives the installed PreToolUse gate the same way for both hosts, through runInstalledHookProbe", () => {
-  test("denies a red agent commit through the installed gate bundle (e2e)", () => {
+describe("checkPluginInstalled cross-checks the installed listing against the repository's own Codex plugin manifest", () => {
+  test("an installed listing whose plugin id, marketplace name and version all agree with the manifest passes", () => {
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    const host = pinnedHost({ pluginListing: () => ({ ok: true, output: pluginListingJson(paths) }) });
+    const report = new VerifyReport();
+    checkPluginInstalled(report, paths, repositoryRoot, host);
+    assert.match(report.render(), /ok: {3}oso-code plugin installed \(installed\)/);
+  });
+
+  test("a listing whose version has drifted from the manifest fails, so a stale plugin cache is never a pass", () => {
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    const host = pinnedHost({ pluginListing: () => ({ ok: true, output: pluginListingJson(paths, { version: "0.0.0-stale" }) }) });
+    const report = new VerifyReport();
+    checkPluginInstalled(report, paths, repositoryRoot, host);
+    assert.match(report.render(), /FAIL: oso-code plugin installed — expected installed, got absent-or-invalid/);
+  });
+});
+
+describe("checkMarketplacePayload compares the installed _shared skills tree file against file, reusing filesHoldTheSameBytes", () => {
+  provedSomething(
+    `${marketplaceSkillNames().length} published Codex skill(s) sit alongside plugin/skills/_shared in this repository`,
+    marketplaceSkillNames().length > 0,
+    "codex/skills has no non-_shared skill directory, so the marketplace payload fixture would compare nothing",
+  );
+
+  test("a marketplace root that copies every published file, including the full _shared tree, reports exact", () => {
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    fullMarketplacePayloadFixture(paths);
+    const report = new VerifyReport();
+    checkMarketplacePayload(report, paths, repositoryRoot);
+    assert.match(report.render(), /ok: {3}staged marketplace payload \(exact\)/);
+  });
+
+  test("one edited byte nested inside the installed _shared tree is caught by name, so a present directory is never enough", () => {
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    fullMarketplacePayloadFixture(paths);
+    const nested = path.join(paths.marketplaceRoot, "codex", "skills", "_shared", "rubric.md");
+    writeFileSync(nested, `${readFileSync(nested, "utf8")}\nan edit nobody published\n`);
+    const report = new VerifyReport();
+    checkMarketplacePayload(report, paths, repositoryRoot);
+    assert.match(report.render(), /FAIL: staged marketplace payload — expected exact, got divergent: shared/);
+  });
+});
+
+describe("checkEngramWiring's verdict depends on the pointer values, computed through codex.ts's shared pure normalizer", () => {
+  test("readable instruction files, a wired mcp_servers.engram table and pointers already normalized above the region report wired", () => {
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    mkdirSync(paths.codexHome, { recursive: true });
+    writeFileSync(path.join(paths.codexHome, "engram-instructions.md"), "instructions\n");
+    writeFileSync(path.join(paths.codexHome, "engram-compact-prompt.md"), "compact\n");
+    engramConfigFixture(paths, path.join(paths.codexHome, "engram-instructions.md"));
+    const report = new VerifyReport();
+    checkEngramWiring(report, paths);
+    assert.match(report.render(), /ok: {3}Engram Codex integration \(wired\)/);
+  });
+
+  test("a pointer value drifted from the installed instructions file reports incomplete, though both files and the mcp server are present", () => {
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    mkdirSync(paths.codexHome, { recursive: true });
+    writeFileSync(path.join(paths.codexHome, "engram-instructions.md"), "instructions\n");
+    writeFileSync(path.join(paths.codexHome, "engram-compact-prompt.md"), "compact\n");
+    engramConfigFixture(paths, path.join(paths.codexHome, "stale-engram-instructions.md"));
+    const report = new VerifyReport();
+    checkEngramWiring(report, paths);
+    assert.match(report.render(), /FAIL: Engram Codex integration — expected wired, got incomplete/);
+  });
+});
+
+describe("checkCommitHookDeniesRed drives a real git commit against the installed hook, wired through core.hooksPath", () => {
+  test(
+    "denies a red agent commit end-to-end: HEAD holds and the refusal names the reason the gate matched on (e2e)",
+    { skip: skipUnlessGitRunsShebangHooks() },
+    () => {
+      const home = fixtureHome();
+      const paths = codexPathsFor(home, inputFor(home).environment);
+      installedRuntimeFixture(paths);
+      installedGitHookFixture(paths);
+      const report = new VerifyReport();
+      checkCommitHookDeniesRed(report, paths, process.env);
+      assert.match(report.render(), /ok: {3}installed git hook denies a red agent commit \(denied\)/);
+    },
+  );
+
+  test("a hooksPath that resolves to no installed hook lets the commit through, so the row proves wiring and not only gate logic", () => {
     const home = fixtureHome();
     const paths = codexPathsFor(home, inputFor(home).environment);
     installedRuntimeFixture(paths);
     const report = new VerifyReport();
     checkCommitHookDeniesRed(report, paths, process.env);
-    assert.match(report.render(), /ok: {3}installed git hook denies a red agent commit \(denied\)/);
-  });
-
-  test("a missing gate bundle fails the denial check rather than passing on absence", () => {
-    const home = fixtureHome();
-    const paths = codexPathsFor(home, inputFor(home).environment);
-    const report = new VerifyReport();
-    checkCommitHookDeniesRed(report, paths, process.env);
-    assert.doesNotMatch(report.render(), /ok: {3}installed git hook denies a red agent commit/);
+    assert.match(report.render(), /FAIL: installed git hook denies a red agent commit — expected denied, got commit-was-allowed/);
   });
 });

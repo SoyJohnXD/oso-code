@@ -36,6 +36,12 @@ export function skipUnlessKernelRunsScriptFixtures(): false | string {
   );
 }
 
+export function skipUnlessGitRunsShebangHooks(): false | string {
+  return skipOnWin32(
+    "win32 has neither #! handling nor the /bin/sh fallback an ENOEXEC exec falls back to, so git's own invocation of the installed plugin/git-hooks/pre-commit shebang script is not a program here either — the bash's POSIX hook execution is not a contract of this port on Windows",
+  );
+}
+
 export function skipUnlessPathResolvesExtensionlessNames(): false | string {
   return skipOnWin32(
     "win32 resolves a bare command name through PATHEXT alone and starts PE images alone, so neither an extensionless git symlink nor a #! claude stub on an injected PATH is reachable here",

@@ -60,13 +60,13 @@ const SITES_REACHING_CONFIG_TOML_BYTES = [
   },
   {
     file: "core/src/install/codex.ts",
-    producer: "normalizeEngramPointers",
+    producer: "normalizedEngramPointerConfig",
     expression: 'modelValue: path.join(paths.codexHome, "engram-instructions.md"),',
     carries: MODEL_INSTRUCTIONS_KEY,
   },
   {
     file: "core/src/install/codex.ts",
-    producer: "normalizeEngramPointers",
+    producer: "normalizedEngramPointerConfig",
     expression: 'compactValue: path.join(paths.codexHome, "engram-compact-prompt.md"),',
     carries: COMPACT_PROMPT_KEY,
   },

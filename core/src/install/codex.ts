@@ -38,7 +38,7 @@ import {
   type WiringEntry,
 } from "./report.ts";
 import { parseTomlDocument, TomlParseError } from "./toml.ts";
-import { runTomlRegion } from "./toml-regions.ts";
+import { runTomlRegion, type TomlRegionOutput } from "./toml-regions.ts";
 import { firstExecutableOnPath } from "./verify-claude.ts";
 import { isReadableRegularFile, isRegularNonSymlinkFile, withOwnerOnlyUmask } from "../state/store.ts";
 
@@ -361,10 +361,8 @@ function writeGlobalGuidance(paths: CodexPaths, repositoryRoot: string): void {
   writeFileSync(paths.globalFile, rebuildGlobalGuidance(existing, body), { mode: 0o600 });
 }
 
-function normalizeEngramPointers(paths: CodexPaths): WiringEntry {
-  if (!isReadableRegularFile(paths.configFile)) return wiringFail("engram pointers", `no config at ${paths.configFile}`);
-  const text = readFileSync(paths.configFile, "utf8");
-  const moved = runTomlRegion(text, {
+export function normalizedEngramPointerConfig(paths: CodexPaths, text: string): TomlRegionOutput {
+  return runTomlRegion(text, {
     action: "engram-pointers",
     startMarker: CONFIG_MARKER_START,
     endMarker: CONFIG_MARKER_END,
@@ -374,6 +372,12 @@ function normalizeEngramPointers(paths: CodexPaths): WiringEntry {
     compactValue: path.join(paths.codexHome, "engram-compact-prompt.md"),
     requireRegion: true,
   });
+}
+
+function normalizeEngramPointers(paths: CodexPaths): WiringEntry {
+  if (!isReadableRegularFile(paths.configFile)) return wiringFail("engram pointers", `no config at ${paths.configFile}`);
+  const text = readFileSync(paths.configFile, "utf8");
+  const moved = normalizedEngramPointerConfig(paths, text);
   if (moved.exitCode === 10) return wiringFail("engram pointers", "the Codex config markers are missing or malformed");
   if (moved.exitCode !== 0) return wiringFail("engram pointers", "Engram's instruction pointers are missing, duplicated, or unexpected");
   if (moved.stdout === text) return wiringOk("engram pointers", "already normalized");
