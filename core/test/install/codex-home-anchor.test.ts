@@ -6,6 +6,7 @@ import { after, describe, test } from "node:test";
 import { CONFIG_MARKER_END, CONFIG_MARKER_START, renderCodexManagedConfig } from "../../src/install/codex-config.ts";
 import { codexPathsFor, installCodex, type CodexCommandInput, type CodexPaths } from "../../src/install/codex.ts";
 import { regionBetween, verifyCodex } from "../../src/install/verify-codex.ts";
+import { parseTomlDocument } from "../../src/install/toml.ts";
 import { provedSomething } from "../support/proved.ts";
 import { fixtureRepositoryRoot, pinnedHost } from "../support/codex-install-fixture.ts";
 import { repositoryRoot, STATE_ROOT_THESE_TESTS_SPELL } from "../support/state-sandbox.ts";
@@ -175,9 +176,13 @@ function regionOf(paths: CodexPaths): string {
 }
 
 function fallowCommandIn(regionText: string): string {
-  const row = regionText.split("\n").find((line) => line.startsWith("command = "));
-  assert.ok(row !== undefined, regionText);
-  return row.slice("command = ".length).trim().replace(/^"|"$/g, "");
+  const servers = parseTomlDocument(regionText, "the managed region")["mcp_servers"];
+  assert.ok(servers !== null && typeof servers === "object", regionText);
+  const fallow = (servers as Record<string, unknown>)["fallow"];
+  assert.ok(fallow !== null && typeof fallow === "object", regionText);
+  const command = (fallow as Record<string, unknown>)["command"];
+  assert.equal(typeof command, "string", regionText);
+  return command as string;
 }
 
 function stageExecutable(target: string): void {
