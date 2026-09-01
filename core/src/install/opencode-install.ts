@@ -233,6 +233,7 @@ function writeOpenCodeInstall(input: OpenCodeInstallInput): CommandOutcome {
       ? `installed oso-code for OpenCode ${hostVersion}, verified against ${SUPPORTED_OPENCODE_VERSION}`
       : `installed oso-code for OpenCode ${hostVersion}`,
   );
+  if (input.host.versionNote !== undefined) infoLines.push(input.host.versionNote);
   return { report: renderCommandReport("install", "opencode", infoLines, wiring), exitCode: 0 };
 }
 
@@ -258,7 +259,7 @@ function installRefusal(input: OpenCodeInstallInput, paths: OpenCodePaths, sourc
       "install",
       "opencode",
       "host baseline not met",
-      `upgrade opencode to ${SUPPORTED_OPENCODE_VERSION} or newer and re-run (found ${input.host.version ?? "no opencode on PATH"})`,
+      `upgrade opencode to ${SUPPORTED_OPENCODE_VERSION} or newer and re-run (found ${input.host.version ?? input.host.versionNote ?? "no opencode on PATH"})`,
     );
   }
   return input.assumeYes ? undefined : requiresYesOutcome("install", "opencode");

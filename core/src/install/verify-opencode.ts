@@ -153,12 +153,13 @@ function checkPinnedOpenCodeVersion(report: VerifyReport, host: OpenCodeHostProb
     report.skip(VERSION_ROW_SKIP);
     return;
   }
-  if (!meetsVersionFloor(version, SUPPORTED_OPENCODE_VERSION)) {
+  if (!meetsVersionFloor(host.version, SUPPORTED_OPENCODE_VERSION)) {
     report.check("OpenCode CLI version", `${SUPPORTED_OPENCODE_VERSION} or newer`, version, `npm install --global opencode-ai@${SUPPORTED_OPENCODE_VERSION}`);
     return;
   }
   report.check("OpenCode CLI version", version, version);
-  if (isAboveTestedVersion(version, SUPPORTED_OPENCODE_VERSION)) {
+  if (host.versionNote !== undefined) report.note(host.versionNote);
+  if (isAboveTestedVersion(host.version, SUPPORTED_OPENCODE_VERSION)) {
     report.note(`OpenCode ${version} is newer than the ${SUPPORTED_OPENCODE_VERSION} this release was verified against, so the rows below are asserted against a host nothing here measured`);
   }
 }
@@ -218,7 +219,7 @@ export function fixtureEnvironmentFor(environment: NodeJS.ProcessEnv, home: stri
 }
 
 export function openCodeVersionStatus(host: OpenCodeHostProbes): string {
-  return host.version ?? OPENCODE_NOT_ON_PATH;
+  return host.version ?? host.versionNote ?? OPENCODE_NOT_ON_PATH;
 }
 
 export function openCodeConfigStatus(configFile: string): string {

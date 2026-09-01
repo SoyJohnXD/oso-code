@@ -3,10 +3,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TestContext } from "node:test";
-import { versionFieldOf } from "../../../src/install/opencode-host.ts";
+import { OPENCODE_VERSION_LINE_SHAPE, versionFieldOf } from "../../../src/install/opencode-host.ts";
 import { isAboveTestedVersion, meetsVersionFloor } from "../../../src/install/pins.ts";
 import { isExecutableRegularFile } from "../../../src/state/store.ts";
 import { firstExecutableOnPath } from "../../../src/install/verify-claude.ts";
+import { versionOutcomeOf } from "../../../src/install/version-line.ts";
 import { notRun } from "./not-run.ts";
 
 const OPENCODE_BINARY_NAME = "opencode";
@@ -47,7 +48,9 @@ function measuredVersion(binary: string, environment: NodeJS.ProcessEnv): string
   const probeHome = mkdtempSync(path.join(environment["TMPDIR"] ?? tmpdir(), PROBE_HOME_PREFIX));
   try {
     const run = spawnSync(binary, ["--version"], { env: probeEnvironment(environment, probeHome), encoding: "utf8" });
-    return versionFieldOf(`${run.stdout ?? ""}${run.stderr ?? ""}`);
+    const reading = versionFieldOf(`${run.stdout ?? ""}${run.stderr ?? ""}`);
+    const outcome = versionOutcomeOf(reading, OPENCODE_VERSION_LINE_SHAPE);
+    return outcome.version ?? outcome.note ?? "";
   } finally {
     rmSync(probeHome, { recursive: true, force: true });
   }

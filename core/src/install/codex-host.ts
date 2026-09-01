@@ -3,43 +3,43 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { SUPPORTED_CODEX_VERSION } from "./pins.ts";
 import { firstExecutableOnPath } from "./verify-claude.ts";
+import { versionLineReadingOf, versionOutcomeOf, type VersionLineReading, type VersionOutcome } from "./version-line.ts";
 
 const CODEX_BINARY = "codex";
 const OSO_PERMISSION_PROFILE = "oso";
 const VALIDATION_HOME_PREFIX = ".validate.";
+const CODEX_VERSION_LINE = /^codex-cli\s+(\d+(?:\.\d+)*)\s*$/;
+const CODEX_VERSION_LINE_SHAPE = "codex-cli <version>";
 
 export type HostRun = Readonly<{ ok: boolean; output: string }>;
 
 export type CodexHostProbes = Readonly<{
   version: string | undefined;
+  versionNote?: string;
   binaryPath: string | undefined;
   acceptsConfig: (codexHome: string, configText: string) => boolean;
   sandbox: (argv: readonly string[]) => HostRun;
   pluginListing: () => HostRun;
 }>;
 
-export function pinnedVersionRefusal(found: string | undefined): string {
-  const current = found === undefined || found === "" ? "not installed" : found;
+export function pinnedVersionRefusal(host: CodexHostProbes): string {
+  const current = host.version ?? host.versionNote ?? "not installed";
   return (
     `Codex CLI must already be ${SUPPORTED_CODEX_VERSION} or newer (found ${current}); ` +
     `run: npm install --global @openai/codex@${SUPPORTED_CODEX_VERSION}`
   );
 }
 
-export function versionFieldsOf(versionOutput: string): string {
-  return versionOutput
-    .replace(/\n+$/, "")
-    .split("\n")
-    .map((line) => line.trim().split(/\s+/).at(-1) ?? "")
-    .join("\n")
-    .replace(/\n+$/, "");
+export function versionFieldsOf(versionOutput: string): VersionLineReading {
+  return versionLineReadingOf(versionOutput, CODEX_VERSION_LINE);
 }
 
 export function codexHostProbes(environment: NodeJS.ProcessEnv): CodexHostProbes {
   const binaryPath = firstExecutableOnPath(environment, CODEX_BINARY);
-  const version = binaryPath === undefined ? undefined : probedVersion(environment);
+  const outcome = binaryPath === undefined ? undefined : probedVersion(environment);
   return {
-    version,
+    version: outcome?.version,
+    versionNote: outcome?.note,
     binaryPath,
     acceptsConfig: (codexHome, configText) => sandboxAcceptsConfig(environment, codexHome, configText),
     sandbox: (argv) => hostRun(environment, ["sandbox", "-P", OSO_PERMISSION_PROFILE, "--", ...argv]),
@@ -47,10 +47,10 @@ export function codexHostProbes(environment: NodeJS.ProcessEnv): CodexHostProbes
   };
 }
 
-function probedVersion(environment: NodeJS.ProcessEnv): string | undefined {
+function probedVersion(environment: NodeJS.ProcessEnv): VersionOutcome | undefined {
   const run = spawnSync(CODEX_BINARY, ["--version"], { env: environment, encoding: "utf8" });
   if (run.error !== undefined || run.status !== 0) return undefined;
-  return versionFieldsOf(run.stdout);
+  return versionOutcomeOf(versionFieldsOf(run.stdout), CODEX_VERSION_LINE_SHAPE);
 }
 
 function hostRun(environment: NodeJS.ProcessEnv, argv: readonly string[]): HostRun {

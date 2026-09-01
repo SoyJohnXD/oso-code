@@ -3,24 +3,34 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { firstExecutableOnPath } from "./verify-claude.ts";
+import { versionLineReadingOf, versionOutcomeOf, type VersionLineReading } from "./version-line.ts";
 
 export const OPENCODE_BINARY_NAME = "opencode";
+export const OPENCODE_VERSION_LINE_SHAPE = "a bare dotted version";
 const PROBE_HOME_PREFIX = "oso-opencode-probe.";
 const ANSI_SELECT_GRAPHIC_RENDITION = /\u001b\[[0-9;]*m/g;
 const POSIX_SPACE_CLASS = /[ \t\n\v\f\r]/g;
+const OPENCODE_VERSION_LINE = /^(\d+(?:\.\d+)*)$/;
 
-export type OpenCodeHostProbes = Readonly<{ version: string | undefined }>;
+export type OpenCodeHostProbes = Readonly<{ version: string | undefined; versionNote?: string }>;
 
 export function openCodeHostProbes(environment: NodeJS.ProcessEnv): OpenCodeHostProbes {
   const binaryPath = firstExecutableOnPath(environment, OPENCODE_BINARY_NAME);
-  return { version: binaryPath === undefined ? undefined : probedVersion(environment, binaryPath) };
+  if (binaryPath === undefined) return { version: undefined };
+  const outcome = versionOutcomeOf(probedVersion(environment, binaryPath), OPENCODE_VERSION_LINE_SHAPE);
+  return outcome.note === undefined ? { version: outcome.version } : { version: outcome.version, versionNote: outcome.note };
 }
 
-export function versionFieldOf(probeOutput: string): string {
-  return probeOutput.replace(ANSI_SELECT_GRAPHIC_RENDITION, "").replace(POSIX_SPACE_CLASS, "");
+export function versionFieldOf(probeOutput: string): VersionLineReading {
+  const strippedPerLine = probeOutput
+    .replace(ANSI_SELECT_GRAPHIC_RENDITION, "")
+    .split("\n")
+    .map((line) => line.replace(POSIX_SPACE_CLASS, ""))
+    .join("\n");
+  return versionLineReadingOf(strippedPerLine, OPENCODE_VERSION_LINE);
 }
 
-function probedVersion(environment: NodeJS.ProcessEnv, binaryPath: string): string {
+function probedVersion(environment: NodeJS.ProcessEnv, binaryPath: string): VersionLineReading {
   const probeHome = mkdtempSync(path.join(environment["TMPDIR"] ?? tmpdir(), PROBE_HOME_PREFIX));
   try {
     const run = spawnSync(binaryPath, ["--version"], { env: probeEnvironment(environment, probeHome), encoding: "utf8" });

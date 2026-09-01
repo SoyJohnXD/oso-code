@@ -7,6 +7,8 @@ import { after, describe, test } from "node:test";
 import { HOST_REJECTED_CONFIG, installCodex, repairCodex, type CodexCommandInput } from "../../src/install/codex.ts";
 import { versionFieldsOf } from "../../src/install/codex-host.ts";
 import { SUPPORTED_CODEX_VERSION } from "../../src/install/pins.ts";
+import { VerifyReport } from "../../src/install/report.ts";
+import { checkPinnedCodexVersion } from "../../src/install/verify-codex.ts";
 import { fixtureRepositoryRoot, pinnedHost } from "../support/codex-install-fixture.ts";
 import { provedSomething } from "../support/proved.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
@@ -64,10 +66,29 @@ describe("the pinned Codex version is an input the composition root reads, and a
     assert.equal(existsSync(path.join(home, ".codex", "config.toml")), true);
   });
 
-  test("the version reader folds codex --version to the last field of every line", () => {
-    assert.equal(versionFieldsOf("codex-cli 0.146.0\n"), "0.146.0");
-    assert.equal(versionFieldsOf("codex@0.150.1\n0.150.1\n"), "codex@0.150.1\n0.150.1");
-    assert.equal(versionFieldsOf(""), "");
+  test("a clean codex-cli version line is matched with nothing left to discard", () => {
+    assert.deepEqual(versionFieldsOf("codex-cli 0.146.0\n"), { kind: "matched", version: "0.146.0", discarded: [] });
+  });
+
+  test("a two-line output with no codex-cli-shaped line is unmatched rather than silently joined into a version — the pin this repairs once froze that join in place, and now the shape it looked for is what the row names", () => {
+    assert.deepEqual(versionFieldsOf("codex@0.150.1\n0.150.1\n"), { kind: "unmatched", raw: "codex@0.150.1\n0.150.1\n" });
+  });
+
+  test("empty output is unmatched rather than an empty version", () => {
+    assert.deepEqual(versionFieldsOf(""), { kind: "unmatched", raw: "" });
+  });
+
+  test("a Codex measured behind the mise wrapper's banner meets the floor, so install proceeds and verify reads above-pin", () => {
+    const reading = versionFieldsOf("mise ~/.config/mise/config.toml tools: codex@0.152.0\ncodex-cli 0.152.0\n");
+    assert.equal(reading.kind, "matched");
+    const measured = reading.kind === "matched" ? reading.version : undefined;
+    const home = fixtureHome();
+    assert.equal(installCodex(inputFor(home, { host: pinnedHost({ version: measured }) })).exitCode, 0);
+    const report = new VerifyReport();
+    checkPinnedCodexVersion(report, pinnedHost({ version: measured }));
+    const rendered = report.render();
+    assert.match(rendered, /^ok:\s+Codex CLI version \(0\.152\.0\)/m);
+    assert.match(rendered, /is newer than the 0\.146\.0 this release was verified against/);
   });
 });
 

@@ -203,7 +203,7 @@ export function installCodex(input: CodexCommandInput): CommandOutcome {
 
 function writeCodexInstall(input: CodexCommandInput): CommandOutcome {
   if (!input.assumeYes) return requiresYesOutcome("install", "codex");
-  const unpinned = pinnedVersionOutcome("install", input.host.version);
+  const unpinned = pinnedVersionOutcome("install", input.host);
   if (unpinned !== undefined) return unpinned;
   const paths = codexPathsFor(input.homeDirectory, input.environment);
 
@@ -225,6 +225,7 @@ function writeCodexInstall(input: CodexCommandInput): CommandOutcome {
   }
 
   const infoLines: string[] = [`backup: ${tx.backupRoot}`];
+  if (input.host.versionNote !== undefined) infoLines.push(input.host.versionNote);
   const wiring: WiringEntry[] = [];
   const fallow = resolveFallowCommandFor(input, paths);
   wiring.push(
@@ -262,7 +263,7 @@ function writeCodexInstall(input: CodexCommandInput): CommandOutcome {
 
 export function repairCodex(input: CodexCommandInput): CommandOutcome {
   if (!input.assumeYes) return requiresYesOutcome("repair", "codex");
-  const unpinned = pinnedVersionOutcome("repair", input.host.version);
+  const unpinned = pinnedVersionOutcome("repair", input.host);
   if (unpinned !== undefined) return unpinned;
   const paths = codexPathsFor(input.homeDirectory, input.environment);
 
@@ -277,6 +278,7 @@ export function repairCodex(input: CodexCommandInput): CommandOutcome {
   }
 
   const infoLines: string[] = [`backup: ${tx.backupRoot}`];
+  if (input.host.versionNote !== undefined) infoLines.push(input.host.versionNote);
   const wiring: WiringEntry[] = [];
   wiring.push(normalizeEngramPointers(paths));
 
@@ -441,9 +443,9 @@ const NOTHING_LEFT_TO_RESTORE: RestoreOutcome = { failedCount: 0, failedItems: [
 
 const GIT_CONFIG_UNSET_MATCHED_NOTHING = 5;
 
-function pinnedVersionOutcome(verb: string, found: string | undefined): CommandOutcome | undefined {
-  if (meetsVersionFloor(found, SUPPORTED_CODEX_VERSION)) return undefined;
-  return fatalOutcome(verb, "codex", "the installed Codex CLI is not the pinned one", pinnedVersionRefusal(found));
+function pinnedVersionOutcome(verb: string, host: CodexHostProbes): CommandOutcome | undefined {
+  if (meetsVersionFloor(host.version, SUPPORTED_CODEX_VERSION)) return undefined;
+  return fatalOutcome(verb, "codex", "the installed Codex CLI is not the pinned one", pinnedVersionRefusal(host));
 }
 
 function capturedGitHooksPath(repositoryRoot: string, environment: NodeJS.ProcessEnv): GitHooksCapture {

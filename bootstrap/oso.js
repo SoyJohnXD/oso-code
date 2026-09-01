@@ -861,22 +861,54 @@ function isAboveTestedVersion(found, tested) {
   return compareVersionsAscending(found, tested) > 0;
 }
 
+// core/src/install/version-line.ts
+function versionLineReadingOf(rawOutput, versionLine) {
+  const lines = rawOutput.split("\n").filter((line) => line.trim() !== "");
+  const matchingLines = lines.filter((line) => versionLine.test(line));
+  if (matchingLines.length === 0) return { kind: "unmatched", raw: rawOutput };
+  if (matchingLines.length > 1) return { kind: "ambiguous", matches: matchingLines };
+  const matchedLine = matchingLines[0] ?? "";
+  const captured = versionLine.exec(matchedLine)?.[1];
+  return { kind: "matched", version: captured ?? matchedLine, discarded: lines.filter((line) => line !== matchedLine) };
+}
+function versionOutcomeOf(reading, versionLineShape) {
+  if (reading.kind === "matched") {
+    return { version: reading.version, note: reading.discarded.length === 0 ? void 0 : extraLinesNote(reading.discarded) };
+  }
+  if (reading.kind === "unmatched") return { version: void 0, note: unmatchedNote(versionLineShape, reading.raw) };
+  return { version: void 0, note: ambiguousNote(versionLineShape, reading.matches) };
+}
+function extraLinesNote(discarded) {
+  const first = discarded[0] ?? "";
+  const plural = discarded.length === 1 ? "line" : "lines";
+  return `the probe printed ${discarded.length} extra ${plural} beyond the version; first: ${collapsedNewlines(first)}`;
+}
+function unmatchedNote(versionLineShape, raw) {
+  return `the probe printed no line shaped like ${versionLineShape}; raw output: ${collapsedNewlines(raw)}`;
+}
+function ambiguousNote(versionLineShape, matches) {
+  return `the probe printed ${matches.length} lines shaped like ${versionLineShape} (ambiguous): ${collapsedNewlines(matches.join("\n"))}`;
+}
+
 // core/src/install/codex-host.ts
 var CODEX_BINARY = "codex";
 var OSO_PERMISSION_PROFILE = "oso";
 var VALIDATION_HOME_PREFIX = ".validate.";
-function pinnedVersionRefusal(found) {
-  const current = found === void 0 || found === "" ? "not installed" : found;
+var CODEX_VERSION_LINE = /^codex-cli\s+(\d+(?:\.\d+)*)\s*$/;
+var CODEX_VERSION_LINE_SHAPE = "codex-cli <version>";
+function pinnedVersionRefusal(host) {
+  const current = host.version ?? host.versionNote ?? "not installed";
   return `Codex CLI must already be ${SUPPORTED_CODEX_VERSION} or newer (found ${current}); run: npm install --global @openai/codex@${SUPPORTED_CODEX_VERSION}`;
 }
 function versionFieldsOf(versionOutput) {
-  return versionOutput.replace(/\n+$/, "").split("\n").map((line) => line.trim().split(/\s+/).at(-1) ?? "").join("\n").replace(/\n+$/, "");
+  return versionLineReadingOf(versionOutput, CODEX_VERSION_LINE);
 }
 function codexHostProbes(environment) {
   const binaryPath = firstExecutableOnPath(environment, CODEX_BINARY);
-  const version = binaryPath === void 0 ? void 0 : probedVersion(environment);
+  const outcome = binaryPath === void 0 ? void 0 : probedVersion(environment);
   return {
-    version,
+    version: outcome?.version,
+    versionNote: outcome?.note,
     binaryPath,
     acceptsConfig: (codexHome, configText) => sandboxAcceptsConfig(environment, codexHome, configText),
     sandbox: (argv) => hostRun(environment, ["sandbox", "-P", OSO_PERMISSION_PROFILE, "--", ...argv]),
@@ -886,7 +918,7 @@ function codexHostProbes(environment) {
 function probedVersion(environment) {
   const run = spawnSync2(CODEX_BINARY, ["--version"], { env: environment, encoding: "utf8" });
   if (run.error !== void 0 || run.status !== 0) return void 0;
-  return versionFieldsOf(run.stdout);
+  return versionOutcomeOf(versionFieldsOf(run.stdout), CODEX_VERSION_LINE_SHAPE);
 }
 function hostRun(environment, argv) {
   const run = spawnSync2(CODEX_BINARY, [...argv], { env: environment, encoding: "utf8" });
@@ -3065,7 +3097,7 @@ function installCodex(input) {
 }
 function writeCodexInstall(input) {
   if (!input.assumeYes) return requiresYesOutcome("install", "codex");
-  const unpinned = pinnedVersionOutcome("install", input.host.version);
+  const unpinned = pinnedVersionOutcome("install", input.host);
   if (unpinned !== void 0) return unpinned;
   const paths = codexPathsFor(input.homeDirectory, input.environment);
   const refusal = configRefusalOf(paths.configFile);
@@ -3084,6 +3116,7 @@ function writeCodexInstall(input) {
     return fatalOutcome("install", "codex", "could not create the pre-install backup", messageOf(error));
   }
   const infoLines = [`backup: ${tx.backupRoot}`];
+  if (input.host.versionNote !== void 0) infoLines.push(input.host.versionNote);
   const wiring = [];
   const fallow = resolveFallowCommandFor(input, paths);
   wiring.push(
@@ -3114,7 +3147,7 @@ function writeCodexInstall(input) {
 }
 function repairCodex(input) {
   if (!input.assumeYes) return requiresYesOutcome("repair", "codex");
-  const unpinned = pinnedVersionOutcome("repair", input.host.version);
+  const unpinned = pinnedVersionOutcome("repair", input.host);
   if (unpinned !== void 0) return unpinned;
   const paths = codexPathsFor(input.homeDirectory, input.environment);
   let tx;
@@ -3127,6 +3160,7 @@ function repairCodex(input) {
     return fatalOutcome("repair", "codex", "could not create the pre-repair backup", messageOf(error));
   }
   const infoLines = [`backup: ${tx.backupRoot}`];
+  if (input.host.versionNote !== void 0) infoLines.push(input.host.versionNote);
   const wiring = [];
   wiring.push(normalizeEngramPointers(paths));
   const fallow = resolveFallowCommandFor(input, paths);
@@ -3260,9 +3294,9 @@ var HOST_REJECTED_CONFIG = "Codex rejected the merged config; the original confi
 var NO_HOOKS_CAPTURE = { captured: false, present: false, value: "" };
 var NOTHING_LEFT_TO_RESTORE = { failedCount: 0, failedItems: [] };
 var GIT_CONFIG_UNSET_MATCHED_NOTHING = 5;
-function pinnedVersionOutcome(verb, found) {
-  if (meetsVersionFloor(found, SUPPORTED_CODEX_VERSION)) return void 0;
-  return fatalOutcome(verb, "codex", "the installed Codex CLI is not the pinned one", pinnedVersionRefusal(found));
+function pinnedVersionOutcome(verb, host) {
+  if (meetsVersionFloor(host.version, SUPPORTED_CODEX_VERSION)) return void 0;
+  return fatalOutcome(verb, "codex", "the installed Codex CLI is not the pinned one", pinnedVersionRefusal(host));
 }
 function capturedGitHooksPath(repositoryRoot2, environment) {
   const inRepository = gitRun(repositoryRoot2, environment, ["rev-parse", "--git-dir"]);
@@ -3709,15 +3743,20 @@ import { mkdtempSync as mkdtempSync4, rmSync as rmSync8 } from "node:fs";
 import { tmpdir as tmpdir3 } from "node:os";
 import path11 from "node:path";
 var OPENCODE_BINARY_NAME = "opencode";
+var OPENCODE_VERSION_LINE_SHAPE = "a bare dotted version";
 var PROBE_HOME_PREFIX = "oso-opencode-probe.";
 var ANSI_SELECT_GRAPHIC_RENDITION = /\u001b\[[0-9;]*m/g;
 var POSIX_SPACE_CLASS = /[ \t\n\v\f\r]/g;
+var OPENCODE_VERSION_LINE = /^(\d+(?:\.\d+)*)$/;
 function openCodeHostProbes(environment) {
   const binaryPath = firstExecutableOnPath(environment, OPENCODE_BINARY_NAME);
-  return { version: binaryPath === void 0 ? void 0 : probedVersion2(environment, binaryPath) };
+  if (binaryPath === void 0) return { version: void 0 };
+  const outcome = versionOutcomeOf(probedVersion2(environment, binaryPath), OPENCODE_VERSION_LINE_SHAPE);
+  return outcome.note === void 0 ? { version: outcome.version } : { version: outcome.version, versionNote: outcome.note };
 }
 function versionFieldOf(probeOutput) {
-  return probeOutput.replace(ANSI_SELECT_GRAPHIC_RENDITION, "").replace(POSIX_SPACE_CLASS, "");
+  const strippedPerLine = probeOutput.replace(ANSI_SELECT_GRAPHIC_RENDITION, "").split("\n").map((line) => line.replace(POSIX_SPACE_CLASS, "")).join("\n");
+  return versionLineReadingOf(strippedPerLine, OPENCODE_VERSION_LINE);
 }
 function probedVersion2(environment, binaryPath) {
   const probeHome = mkdtempSync4(path11.join(environment["TMPDIR"] ?? tmpdir3(), PROBE_HOME_PREFIX));
@@ -3914,6 +3953,7 @@ function writeOpenCodeInstall(input) {
   infoLines.push(
     isAboveTestedVersion(input.host.version, SUPPORTED_OPENCODE_VERSION) ? `installed oso-code for OpenCode ${hostVersion}, verified against ${SUPPORTED_OPENCODE_VERSION}` : `installed oso-code for OpenCode ${hostVersion}`
   );
+  if (input.host.versionNote !== void 0) infoLines.push(input.host.versionNote);
   return { report: renderCommandReport("install", "opencode", infoLines, wiring), exitCode: 0 };
 }
 function installRefusal(input, paths, sources) {
@@ -3932,7 +3972,7 @@ function installRefusal(input, paths, sources) {
       "install",
       "opencode",
       "host baseline not met",
-      `upgrade opencode to ${SUPPORTED_OPENCODE_VERSION} or newer and re-run (found ${input.host.version ?? "no opencode on PATH"})`
+      `upgrade opencode to ${SUPPORTED_OPENCODE_VERSION} or newer and re-run (found ${input.host.version ?? input.host.versionNote ?? "no opencode on PATH"})`
     );
   }
   return input.assumeYes ? void 0 : requiresYesOutcome("install", "opencode");
@@ -4511,12 +4551,13 @@ function verifyCodex(input) {
   return { report: report2.render(), exitCode: report2.exitCode };
 }
 function checkPinnedCodexVersion(report2, host) {
-  const found = host.version ?? "not installed";
+  const found = host.version ?? host.versionNote ?? "not installed";
   if (!meetsVersionFloor(host.version, SUPPORTED_CODEX_VERSION)) {
     report2.check("Codex CLI version", `${SUPPORTED_CODEX_VERSION} or newer`, found, `npm install --global @openai/codex@${SUPPORTED_CODEX_VERSION}`);
     return;
   }
   report2.check("Codex CLI version", found, found);
+  if (host.versionNote !== void 0) report2.note(host.versionNote);
   if (isAboveTestedVersion(host.version, SUPPORTED_CODEX_VERSION)) {
     report2.note(`Codex ${found} is newer than the ${SUPPORTED_CODEX_VERSION} this release was verified against, so the host binary contracts below report unverified rather than pass or fail`);
   }
@@ -5079,12 +5120,13 @@ function checkPinnedOpenCodeVersion(report2, host) {
     report2.skip(VERSION_ROW_SKIP);
     return;
   }
-  if (!meetsVersionFloor(version, SUPPORTED_OPENCODE_VERSION)) {
+  if (!meetsVersionFloor(host.version, SUPPORTED_OPENCODE_VERSION)) {
     report2.check("OpenCode CLI version", `${SUPPORTED_OPENCODE_VERSION} or newer`, version, `npm install --global opencode-ai@${SUPPORTED_OPENCODE_VERSION}`);
     return;
   }
   report2.check("OpenCode CLI version", version, version);
-  if (isAboveTestedVersion(version, SUPPORTED_OPENCODE_VERSION)) {
+  if (host.versionNote !== void 0) report2.note(host.versionNote);
+  if (isAboveTestedVersion(host.version, SUPPORTED_OPENCODE_VERSION)) {
     report2.note(`OpenCode ${version} is newer than the ${SUPPORTED_OPENCODE_VERSION} this release was verified against, so the rows below are asserted against a host nothing here measured`);
   }
 }
@@ -5139,7 +5181,7 @@ function fixtureEnvironmentFor(environment, home, root) {
   };
 }
 function openCodeVersionStatus(host) {
-  return host.version ?? OPENCODE_NOT_ON_PATH;
+  return host.version ?? host.versionNote ?? OPENCODE_NOT_ON_PATH;
 }
 function openCodeConfigStatus(configFile) {
   const read = readConfigDocument(configFile);

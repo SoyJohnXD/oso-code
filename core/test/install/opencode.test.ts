@@ -181,14 +181,17 @@ describe("restoreBlockedBy: the one place this port refuses where the bash would
   });
 });
 
-describe("versionFieldOf: opencode_version_of's sed and tr, with no shell in the way", () => {
-  test("strips ANSI colour and every POSIX space, leaving the version alone", () => {
-    assert.equal(versionFieldOf("[32m 1.18.22 [0m\n"), "1.18.22");
-    assert.equal(versionFieldOf("opencode\t1.18.22\r\n"), "opencode1.18.22");
+describe("versionFieldOf: strip ANSI, split into lines, strip every POSIX space per line, then match a bare dotted version", () => {
+  test("strips ANSI colour and per-line POSIX space, leaving a clean bare-dotted-version line matched with nothing to discard", () => {
+    assert.deepEqual(versionFieldOf("[32m 1.18.22 [0m\n"), { kind: "matched", version: "1.18.22", discarded: [] });
   });
 
-  test("leaves a bracket that is not an escape sequence where it is", () => {
-    assert.equal(versionFieldOf("[not-an-escape]1.0.0\n"), "[not-an-escape]1.0.0");
+  test("a label squashed against the version by the per-line space strip stays non-matching and is reported rather than folded into a version", () => {
+    assert.deepEqual(versionFieldOf("opencode\t1.18.22\r\n"), { kind: "unmatched", raw: "opencode1.18.22\n" });
+  });
+
+  test("leaves a bracket that is not an escape sequence where it is, and the resulting line stays non-matching", () => {
+    assert.deepEqual(versionFieldOf("[not-an-escape]1.0.0\n"), { kind: "unmatched", raw: "[not-an-escape]1.0.0\n" });
   });
 });
 
