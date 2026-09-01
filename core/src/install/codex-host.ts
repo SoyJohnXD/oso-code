@@ -21,7 +21,7 @@ export type CodexHostProbes = Readonly<{
 export function pinnedVersionRefusal(found: string | undefined): string {
   const current = found === undefined || found === "" ? "not installed" : found;
   return (
-    `Codex CLI must already be exactly ${SUPPORTED_CODEX_VERSION} (found ${current}); ` +
+    `Codex CLI must already be ${SUPPORTED_CODEX_VERSION} or newer (found ${current}); ` +
     `run: npm install --global @openai/codex@${SUPPORTED_CODEX_VERSION}`
   );
 }

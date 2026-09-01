@@ -10,7 +10,7 @@ import {
 } from "./codex-config.ts";
 import { codexPathsFor, managedFeaturesStatus, type CodexPaths } from "./codex.ts";
 import { type CodexHostProbes } from "./codex-host.ts";
-import { SUPPORTED_CODEX_VERSION } from "./pins.ts";
+import { isAboveTestedVersion, meetsVersionFloor, SUPPORTED_CODEX_VERSION } from "./pins.ts";
 import { VerifyReport } from "./report.ts";
 import { runTomlRegion } from "./toml-regions.ts";
 import { readTomlFile, TomlParseError } from "./toml.ts";
@@ -75,7 +75,15 @@ export function verifyCodex(input: VerifyCodexInput): VerifyOutcome {
 }
 
 export function checkPinnedCodexVersion(report: VerifyReport, host: CodexHostProbes): void {
-  report.check("Codex CLI version", SUPPORTED_CODEX_VERSION, host.version ?? "not installed");
+  const found = host.version ?? "not installed";
+  if (!meetsVersionFloor(host.version, SUPPORTED_CODEX_VERSION)) {
+    report.check("Codex CLI version", `${SUPPORTED_CODEX_VERSION} or newer`, found, `npm install --global @openai/codex@${SUPPORTED_CODEX_VERSION}`);
+    return;
+  }
+  report.check("Codex CLI version", found, found);
+  if (isAboveTestedVersion(host.version, SUPPORTED_CODEX_VERSION)) {
+    report.note(`Codex ${found} is newer than the ${SUPPORTED_CODEX_VERSION} this release was verified against, so the host binary contracts below report unverified rather than pass or fail`);
+  }
 }
 
 export function checkHostBinaryContracts(report: VerifyReport, host: CodexHostProbes): void {

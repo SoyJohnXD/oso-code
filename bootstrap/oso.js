@@ -121,11 +121,6 @@ import { spawnSync as spawnSync2 } from "node:child_process";
 import { mkdtempSync as mkdtempSync2, rmSync as rmSync4, writeFileSync as writeFileSync4 } from "node:fs";
 import path5 from "node:path";
 
-// core/src/install/pins.ts
-var SUPPORTED_ENGRAM_VERSION = "1.20.0";
-var SUPPORTED_CODEX_VERSION = "0.146.0";
-var SUPPORTED_OPENCODE_VERSION = "1.18.22";
-
 // core/src/install/verify-claude.ts
 import { spawnSync } from "node:child_process";
 import { closeSync, mkdirSync as mkdirSync3, mkdtempSync, openSync, readFileSync as readFileSync4, readSync, readdirSync as readdirSync2, rmSync as rmSync3, statSync as statSync3, writeFileSync as writeFileSync3 } from "node:fs";
@@ -852,13 +847,27 @@ function errorMessageOf(cause) {
   return collapsed2 === "" ? "empty" : collapsed2;
 }
 
+// core/src/install/pins.ts
+var SUPPORTED_ENGRAM_VERSION = "1.20.0";
+var SUPPORTED_CODEX_VERSION = "0.146.0";
+var SUPPORTED_OPENCODE_VERSION = "1.18.22";
+var DOTTED_NUMERIC_VERSION = /^\d+(\.\d+)*$/;
+function meetsVersionFloor(found, floor) {
+  if (found === void 0 || !DOTTED_NUMERIC_VERSION.test(found)) return false;
+  return compareVersionsAscending(found, floor) >= 0;
+}
+function isAboveTestedVersion(found, tested) {
+  if (found === void 0 || !DOTTED_NUMERIC_VERSION.test(found)) return false;
+  return compareVersionsAscending(found, tested) > 0;
+}
+
 // core/src/install/codex-host.ts
 var CODEX_BINARY = "codex";
 var OSO_PERMISSION_PROFILE = "oso";
 var VALIDATION_HOME_PREFIX = ".validate.";
 function pinnedVersionRefusal(found) {
   const current = found === void 0 || found === "" ? "not installed" : found;
-  return `Codex CLI must already be exactly ${SUPPORTED_CODEX_VERSION} (found ${current}); run: npm install --global @openai/codex@${SUPPORTED_CODEX_VERSION}`;
+  return `Codex CLI must already be ${SUPPORTED_CODEX_VERSION} or newer (found ${current}); run: npm install --global @openai/codex@${SUPPORTED_CODEX_VERSION}`;
 }
 function versionFieldsOf(versionOutput) {
   return versionOutput.replace(/\n+$/, "").split("\n").map((line) => line.trim().split(/\s+/).at(-1) ?? "").join("\n").replace(/\n+$/, "");
@@ -3243,7 +3252,7 @@ var NO_HOOKS_CAPTURE = { captured: false, present: false, value: "" };
 var NOTHING_LEFT_TO_RESTORE = { failedCount: 0, failedItems: [] };
 var GIT_CONFIG_UNSET_MATCHED_NOTHING = 5;
 function pinnedVersionOutcome(verb, found) {
-  if (found === SUPPORTED_CODEX_VERSION) return void 0;
+  if (meetsVersionFloor(found, SUPPORTED_CODEX_VERSION)) return void 0;
   return fatalOutcome(verb, "codex", "the installed Codex CLI is not the pinned one", pinnedVersionRefusal(found));
 }
 function capturedGitHooksPath(repositoryRoot2, environment) {
@@ -3906,12 +3915,12 @@ function installRefusal(input, paths, sources) {
     if (refusal === void 0) continue;
     return refusal.kind === "usage" ? usageErrorOutcome("install", "opencode", refusal.message) : fatalOutcome("install", "opencode", "the existing OpenCode state refuses this install", refusal.message);
   }
-  if (input.host.version !== SUPPORTED_OPENCODE_VERSION) {
+  if (!meetsVersionFloor(input.host.version, SUPPORTED_OPENCODE_VERSION)) {
     return fatalOutcome(
       "install",
       "opencode",
       "host baseline not met",
-      `upgrade opencode to ${SUPPORTED_OPENCODE_VERSION} and re-run (found ${input.host.version ?? "no opencode on PATH"})`
+      `upgrade opencode to ${SUPPORTED_OPENCODE_VERSION} or newer and re-run (found ${input.host.version ?? "no opencode on PATH"})`
     );
   }
   return input.assumeYes ? void 0 : requiresYesOutcome("install", "opencode");
@@ -4489,7 +4498,15 @@ function verifyCodex(input) {
   return { report: report2.render(), exitCode: report2.exitCode };
 }
 function checkPinnedCodexVersion(report2, host) {
-  report2.check("Codex CLI version", SUPPORTED_CODEX_VERSION, host.version ?? "not installed");
+  const found = host.version ?? "not installed";
+  if (!meetsVersionFloor(host.version, SUPPORTED_CODEX_VERSION)) {
+    report2.check("Codex CLI version", `${SUPPORTED_CODEX_VERSION} or newer`, found, `npm install --global @openai/codex@${SUPPORTED_CODEX_VERSION}`);
+    return;
+  }
+  report2.check("Codex CLI version", found, found);
+  if (isAboveTestedVersion(host.version, SUPPORTED_CODEX_VERSION)) {
+    report2.note(`Codex ${found} is newer than the ${SUPPORTED_CODEX_VERSION} this release was verified against, so the host binary contracts below report unverified rather than pass or fail`);
+  }
 }
 function checkHostBinaryContracts(report2, host) {
   for (const contract of HOST_BINARY_CONTRACTS) {
@@ -4927,7 +4944,14 @@ function checkPinnedOpenCodeVersion(report2, host) {
     report2.skip(VERSION_ROW_SKIP);
     return;
   }
-  report2.check("OpenCode CLI version", SUPPORTED_OPENCODE_VERSION, version);
+  if (!meetsVersionFloor(version, SUPPORTED_OPENCODE_VERSION)) {
+    report2.check("OpenCode CLI version", `${SUPPORTED_OPENCODE_VERSION} or newer`, version, `npm install --global opencode-ai@${SUPPORTED_OPENCODE_VERSION}`);
+    return;
+  }
+  report2.check("OpenCode CLI version", version, version);
+  if (isAboveTestedVersion(version, SUPPORTED_OPENCODE_VERSION)) {
+    report2.note(`OpenCode ${version} is newer than the ${SUPPORTED_OPENCODE_VERSION} this release was verified against, so the rows below are asserted against a host nothing here measured`);
+  }
 }
 function stageOpenCodeFixture(input) {
   const parent = input.environment["TMPDIR"] ?? tmpdir4();

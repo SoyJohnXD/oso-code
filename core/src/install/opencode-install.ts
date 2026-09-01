@@ -33,7 +33,7 @@ import {
   trustDivergenceLine,
   type TrustRootKind,
 } from "./opencode-trust.ts";
-import { SUPPORTED_OPENCODE_VERSION } from "./pins.ts";
+import { meetsVersionFloor, SUPPORTED_OPENCODE_VERSION } from "./pins.ts";
 import {
   fatalOutcome,
   messageOf,
@@ -248,12 +248,12 @@ function installRefusal(input: OpenCodeInstallInput, paths: OpenCodePaths, sourc
       : fatalOutcome("install", "opencode", "the existing OpenCode state refuses this install", refusal.message);
   }
 
-  if (input.host.version !== SUPPORTED_OPENCODE_VERSION) {
+  if (!meetsVersionFloor(input.host.version, SUPPORTED_OPENCODE_VERSION)) {
     return fatalOutcome(
       "install",
       "opencode",
       "host baseline not met",
-      `upgrade opencode to ${SUPPORTED_OPENCODE_VERSION} and re-run (found ${input.host.version ?? "no opencode on PATH"})`,
+      `upgrade opencode to ${SUPPORTED_OPENCODE_VERSION} or newer and re-run (found ${input.host.version ?? "no opencode on PATH"})`,
     );
   }
   return input.assumeYes ? undefined : requiresYesOutcome("install", "opencode");

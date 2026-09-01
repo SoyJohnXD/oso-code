@@ -16,11 +16,12 @@ const sandbox = mkdtempSync(path.join(tmpdir(), "oso-codex-host-"));
 after(() => rmSync(sandbox, { recursive: true, force: true }));
 
 const VERSION_REFUSAL_TEMPLATE =
-  `Codex CLI must already be exactly ${SUPPORTED_CODEX_VERSION} (found \${current:-not installed}); ` +
+  `Codex CLI must already be ${SUPPORTED_CODEX_VERSION} or newer (found \${current:-not installed}); ` +
   `run: npm install --global @openai/codex@${SUPPORTED_CODEX_VERSION}`;
 const SANDBOX_REFUSAL = "Codex rejected the merged config; the original config is unchanged";
 
-const VERSIONS_THE_PIN_REFUSES = ["0.150.1", "0.145.9", "", "codex@0.146.0\n0.146.0"] as const;
+const VERSIONS_THE_PIN_REFUSES = ["0.145.9", "", "codex@0.146.0\n0.146.0"] as const;
+const VERSIONS_THE_FLOOR_ADMITS = ["0.146.0", "0.150.1", "1.0.0"] as const;
 
 const GIT_UNREACHABLE_ON_THE_INJECTED_PATH = skipUnlessPathResolvesExtensionlessNames();
 
@@ -46,6 +47,14 @@ describe("the pinned Codex version is an input the composition root reads, and a
       const outcome = repairCodex(inputFor(fixtureHome(), { host: pinnedHost({ version: reported }) }));
       assert.equal(outcome.exitCode, 1);
       assert.ok(outcome.report.includes(expectedVersionRefusal(reported)), outcome.report);
+    });
+  }
+
+  for (const found of VERSIONS_THE_FLOOR_ADMITS) {
+    test(`the floor admits ${JSON.stringify(found)}, so a host that moved past the tested version no longer blocks an install`, () => {
+      const home = fixtureHome();
+      assert.equal(installCodex(inputFor(home, { host: pinnedHost({ version: found }) })).exitCode, 0);
+      assert.equal(existsSync(path.join(home, ".codex", "config.toml")), true);
     });
   }
 

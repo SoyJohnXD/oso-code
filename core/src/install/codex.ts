@@ -25,7 +25,7 @@ import {
   resolveFallowMcpCommand,
 } from "./codex-config.ts";
 import { pinnedVersionRefusal, type CodexHostProbes } from "./codex-host.ts";
-import { SUPPORTED_CODEX_VERSION } from "./pins.ts";
+import { meetsVersionFloor, SUPPORTED_CODEX_VERSION } from "./pins.ts";
 import {
   fatalOutcome,
   messageOf,
@@ -438,7 +438,7 @@ const NOTHING_LEFT_TO_RESTORE: RestoreOutcome = { failedCount: 0, failedItems: [
 const GIT_CONFIG_UNSET_MATCHED_NOTHING = 5;
 
 function pinnedVersionOutcome(verb: string, found: string | undefined): CommandOutcome | undefined {
-  if (found === SUPPORTED_CODEX_VERSION) return undefined;
+  if (meetsVersionFloor(found, SUPPORTED_CODEX_VERSION)) return undefined;
   return fatalOutcome(verb, "codex", "the installed Codex CLI is not the pinned one", pinnedVersionRefusal(found));
 }
 
