@@ -1,12 +1,20 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { after, test } from "node:test";
 import {
   certifyHostTotals,
+  certifySummaryFor,
   hostDroveZeroRows,
   parseCertifySuiteTap,
   renderCertifySummary,
+  suiteReportsFrom,
   type CertifyHostTotal,
 } from "../../scripts/certify-summary.mjs";
+
+const sandbox = mkdtempSync(path.join(tmpdir(), "oso-certify-summary-"));
+after(() => rmSync(sandbox, { recursive: true, force: true }));
 
 function hostTotalOrThrow(totals: Map<string, CertifyHostTotal>, host: string): CertifyHostTotal {
   const total = totals.get(host);
@@ -69,4 +77,28 @@ test("renderCertifySummary lists every not-run line per host and warns only for 
   assert.match(rendered, /partially-run \(opencode\): 1 not-run of 2 certify row\(s\)\n {4}row two -- not-run: reason two/);
   assert.match(rendered, /::warning::codex drove zero certify rows this run/);
   assert.doesNotMatch(rendered, /::warning::opencode drove zero certify rows this run/);
+});
+
+test("a TAP directory that was never created names itself instead of rendering a blank line (IO seam)", () => {
+  const missing = path.join(sandbox, "never-created");
+  assert.deepEqual(suiteReportsFrom(missing), []);
+  const rendered = certifySummaryFor(missing);
+  assert.match(rendered, /::warning::no certify TAP files were found in/);
+  assert.ok(rendered.includes(missing), rendered);
+});
+
+test("a TAP directory that exists but holds none of the suites' files also names itself, not a blank line (IO seam)", () => {
+  const empty = mkdtempSync(path.join(sandbox, "empty-"));
+  const rendered = certifySummaryFor(empty);
+  assert.match(rendered, /::warning::no certify TAP files were found in/);
+});
+
+test("a suite's TAP that crashed before its row-count line still warns, rather than a zero floor hiding it (IO seam)", () => {
+  const directory = mkdtempSync(path.join(sandbox, "red-floor-"));
+  writeFileSync(path.join(directory, "opencode-contract-bar.tap"), "TAP version 13\nnot ok 1 - the harness crashed before any row ran\n1..1\n");
+  const reports = suiteReportsFrom(directory);
+  assert.equal(reports.length, 1);
+  assert.equal(reports.find((report) => report.suite === "opencode-contract-bar")?.registered, 0);
+  const rendered = certifySummaryFor(directory);
+  assert.match(rendered, /::warning::opencode drove zero certify rows this run/);
 });

@@ -32,7 +32,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        id: checkout
       - name: Node 22, the floor the committed bundles run on
+        id: node-toolchain
         uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -43,6 +45,7 @@ jobs:
           claude --version
           claude plugin validate --strict plugin
       - name: Lexer differential re-read from the real shell, where drift between bash and the committed corpus reds this build
+        id: dependency-install
         run: |
           npm ci --no-audit --no-fund
           cd core
@@ -79,6 +82,8 @@ jobs:
           [ "$passed" = "16" ]
           [ "$failed" = "0" ]
       - name: Pinned OpenCode binary the certify suites introspect
+        id: pinned-opencode-binary
+        if: always() && steps.checkout.outcome == 'success' && steps.node-toolchain.outcome == 'success' && steps.dependency-install.outcome == 'success'
         run: |
           pin="$(sed -n 's/^export const SUPPORTED_OPENCODE_VERSION = "\(.*\)";$/\1/p' core/src/install/pins.ts)"
           mkdir -p "$RUNNER_TEMP/opencode-pin"
@@ -87,6 +92,7 @@ jobs:
           tar -xf "opencode-linux-x64-$pin.tgz"
           echo "OSO_PINNED_OPENCODE_BIN=$RUNNER_TEMP/opencode-pin/package/bin/opencode" >> "$GITHUB_ENV"
       - name: Certify suites against the pinned OpenCode binary, and Codex only if this runner carries credentials
+        if: always() && steps.checkout.outcome == 'success' && steps.node-toolchain.outcome == 'success' && steps.dependency-install.outcome == 'success' && steps.pinned-opencode-binary.outcome == 'success'
         env:
           OSO_CERTIFY: 1
           OSO_CONTRACT_BAR_OPENCODE_BIN: ${{ env.OSO_PINNED_OPENCODE_BIN }}

@@ -472,8 +472,10 @@ function agentRouteOf(commandFile: string): string {
   return routed[0] ?? "";
 }
 
-function treesHoldTheSameBytes(published: string, installed: string): boolean {
+export function treesHoldTheSameBytes(published: string, installed: string): boolean {
+  if (!isDirectory(installed)) return false;
   const publishedFiles = relativeFilesUnder(published);
+  if (publishedFiles.length === 0) return false;
   const installedFiles = relativeFilesUnder(installed);
   if (publishedFiles.length !== installedFiles.length) return false;
   return publishedFiles.every(

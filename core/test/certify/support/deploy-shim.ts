@@ -1,6 +1,7 @@
 import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { firstExecutableOnPath } from "../../../src/install/verify-claude.ts";
+import { isErrnoException } from "../../../src/state/store.ts";
 
 export const DEPLOY_CLI_NAME = "vercel";
 export const DEPLOY_PRODUCTION_FLAG = "--prod";
@@ -34,12 +35,12 @@ export function deployCliShadowedByFixture(environment: NodeJS.ProcessEnv, shims
   };
 }
 
-export function deployCliReached(markerFile: string): "reached" | "untouched" {
+export function deployCliReached(markerFile: string): "reached" | "untouched" | "unreadable" {
   let content: string;
   try {
     content = readFileSync(markerFile, "utf8");
-  } catch {
-    return "untouched";
+  } catch (error) {
+    return isErrnoException(error) && error.code === "ENOENT" ? "untouched" : "unreadable";
   }
   return content.includes(DEPLOY_PRODUCTION_FLAG) ? "reached" : "untouched";
 }

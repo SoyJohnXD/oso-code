@@ -14,13 +14,16 @@ import {
 } from "../../src/install/codex-config.ts";
 import { codexPathsFor, installCodex, type CodexCommandInput, type CodexPaths } from "../../src/install/codex.ts";
 import { VerifyReport } from "../../src/install/report.ts";
+import { TomlParseError } from "../../src/install/toml.ts";
 import {
   checkAgentPayload,
+  checkCodexConfigParses,
   checkCommitHookDeniesRed,
   checkEngramWiring,
   checkGlobalGuidance,
   checkManagedConfigRegion,
   checkMarketplacePayload,
+  checkMcpToolTableDrift,
   checkPlanArtifactRoundTrip,
   checkPluginInstalled,
   checkStateRoundTrip,
@@ -197,11 +200,11 @@ describe("the MCP server inventory is read by parsing config.toml, never by scra
     assert.deepEqual(servers.find((server) => server.name === "engram")?.args, ["mcp"]);
   });
 
-  test("a config the parser cannot read yields no servers rather than a scraped guess", () => {
+  test("a config the parser cannot read throws the parse failure rather than scraping a silent empty result", () => {
     const home = fixtureHome();
     const configFile = path.join(home, ".codex", "config.toml");
     writeFileSync(configFile, "[mcp_servers.engram\ncommand =\n");
-    assert.deepEqual(mcpServersOf(configFile), []);
+    assert.throws(() => mcpServersOf(configFile), TomlParseError);
   });
 
   test("a server header inside a multiline string is no server, which a line scrape would have counted", () => {
@@ -397,7 +400,7 @@ describe("checkEngramWiring's verdict depends on the pointer values, computed th
     writeFileSync(path.join(paths.codexHome, "engram-compact-prompt.md"), "compact\n");
     engramConfigFixture(paths, path.join(paths.codexHome, "engram-instructions.md"));
     const report = new VerifyReport();
-    checkEngramWiring(report, paths);
+    checkEngramWiring(report, paths, true);
     assert.match(report.render(), /ok: {3}Engram Codex integration \(wired\)/);
   });
 
@@ -409,8 +412,57 @@ describe("checkEngramWiring's verdict depends on the pointer values, computed th
     writeFileSync(path.join(paths.codexHome, "engram-compact-prompt.md"), "compact\n");
     engramConfigFixture(paths, path.join(paths.codexHome, "stale-engram-instructions.md"));
     const report = new VerifyReport();
-    checkEngramWiring(report, paths);
+    checkEngramWiring(report, paths, true);
     assert.match(report.render(), /FAIL: Engram Codex integration — expected wired, got incomplete/);
+  });
+});
+
+describe("checkCodexConfigParses gates every full-document config read behind it, so a decoder failure never scrapes a fabricated verdict", () => {
+  test("an unparseable config fails the parses row with the decoder's own message rather than a swallowed pass", () => {
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    mkdirSync(paths.codexHome, { recursive: true });
+    writeFileSync(paths.configFile, "[mcp_servers.engram\ncommand =\n");
+    const report = new VerifyReport();
+    const parses = checkCodexConfigParses(report, paths);
+    assert.equal(parses, false);
+    assert.match(report.render(), /FAIL: Codex config parses — expected parses, got cannot parse TOML at .*config\.toml/);
+  });
+
+  test("a config that parses reports the parses row true and lets the gated rows run", () => {
+    const home = fixtureHome();
+    assert.equal(installCodex(inputFor(home)).exitCode, 0);
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    const report = new VerifyReport();
+    const parses = checkCodexConfigParses(report, paths);
+    assert.equal(parses, true);
+    assert.match(report.render(), /ok: {3}Codex config parses \(parses\)/);
+  });
+
+  test("an unparseable config skips the engram wiring and per-server drift rows instead of faking their verdict (e2e)", () => {
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    mkdirSync(paths.codexHome, { recursive: true });
+    writeFileSync(paths.configFile, "[mcp_servers.engram\ncommand =\n");
+    const outcome = verifyCodex(inputFor(home));
+    assert.match(outcome.report, /FAIL: Codex config parses — expected parses, got cannot parse TOML at .*config\.toml/);
+    assert.match(outcome.report, /skip: Engram Codex integration — .*config\.toml is unparseable/);
+    assert.match(outcome.report, /skip: MCP server inventory — .*config\.toml is unparseable/);
+  });
+
+  test("checkEngramWiring and checkMcpToolTableDrift skip by name rather than calling the parser once the gate has failed", () => {
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    mkdirSync(paths.codexHome, { recursive: true });
+    writeFileSync(paths.configFile, "[mcp_servers.engram\ncommand =\n");
+
+    const engramReport = new VerifyReport();
+    checkEngramWiring(engramReport, paths, false);
+    assert.match(engramReport.render(), /skip: Engram Codex integration —/);
+
+    const driftReport = new VerifyReport();
+    checkMcpToolTableDrift(driftReport, paths, false);
+    assert.match(driftReport.render(), /skip: MCP server inventory —/);
   });
 });
 

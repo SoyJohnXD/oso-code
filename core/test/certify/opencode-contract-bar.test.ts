@@ -175,14 +175,13 @@ describe("the contract fixture install and what the real binary reports once it 
     if (notRunUnlessFixtureReady(t, "the model catalog")) return;
     const resolved = resolvedProbeOrThrow(probe);
     const installed = readyFixtureOrThrow();
-    const run = invokeContractBar(resolved.binary, installed.environment, ["models"], CONTRACT_BAR_BOUND_SECONDS);
-    if (run.error !== undefined || run.signal !== null) {
-      notRun(t, `opencode models did not complete: ${run.error?.message ?? run.signal}`);
+    const invoked = invokeCommandOrFailure(resolved.binary, installed.environment, ["models"]);
+    if (invoked.kind === "failed") {
+      notRun(t, invoked.reason);
       return;
     }
-    assert.equal(run.status, 0, run.stderr ?? "");
-    const offered = (run.stdout ?? "").split("\n").some((line) => SESSION_MODEL_PROVIDER_LINE.test(line));
-    assert.ok(offered, `the host catalog did not offer an opencode/ model:\n${run.stdout ?? ""}`);
+    const offered = invoked.stdout.split("\n").some((line) => SESSION_MODEL_PROVIDER_LINE.test(line));
+    assert.ok(offered, `the host catalog did not offer an opencode/ model:\n${invoked.stdout}`);
   });
 
   const toolRows = [
@@ -212,14 +211,13 @@ describe("the contract fixture install and what the real binary reports once it 
     if (notRunUnlessFixtureReady(t, "the agent roster")) return;
     const resolved = resolvedProbeOrThrow(probe);
     const installed = readyFixtureOrThrow();
-    const run = invokeContractBar(resolved.binary, installed.environment, ["agent", "list"], CONTRACT_BAR_BOUND_SECONDS);
-    if (run.error !== undefined || run.signal !== null) {
-      notRun(t, `opencode agent list did not complete: ${run.error?.message ?? run.signal}`);
+    const invoked = invokeCommandOrFailure(resolved.binary, installed.environment, ["agent", "list"]);
+    if (invoked.kind === "failed") {
+      notRun(t, invoked.reason);
       return;
     }
-    assert.equal(run.status, 0, run.stderr ?? "");
     const roster = new Set(
-      (run.stdout ?? "")
+      invoked.stdout
         .split("\n")
         .map((line) => AGENT_LIST_ENTRY_PATTERN.exec(line)?.[1])
         .filter((name): name is string => name !== undefined),
@@ -305,16 +303,12 @@ describe("the contract fixture install and what the real binary reports once it 
       const resolved = resolvedProbeOrThrow(probe);
       const installed = readyFixtureOrThrow();
       const route = commandAgentRoute(document, PLAN_COMMAND);
-      const run = invokeContractBar(resolved.binary, installed.environment, ["debug", "agent", route], CONTRACT_BAR_BOUND_SECONDS);
-      if (run.error !== undefined || run.signal !== null) {
-        notRun(t, `opencode debug agent ${route} did not complete: ${run.error?.message ?? run.signal}`);
+      const invoked = invokeCommandOrFailure(resolved.binary, installed.environment, ["debug", "agent", route]);
+      if (invoked.kind === "failed") {
+        notRun(t, invoked.reason);
         return;
       }
-      if (run.status !== 0) {
-        assert.fail(`${route} resolves to no agent: ${run.stderr ?? ""}`);
-        return;
-      }
-      const denied = deniedExecutionPowers(JSON.parse(run.stdout ?? ""));
+      const denied = deniedExecutionPowers(JSON.parse(invoked.stdout));
       assert.deepEqual(denied, [], `${route} denies ${denied.join(", ")}`);
     },
   );

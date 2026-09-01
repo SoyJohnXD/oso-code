@@ -4531,6 +4531,7 @@ function verifyCodex(input) {
   const paths = codexPathsFor(input.homeDirectory, input.environment);
   const report2 = new VerifyReport();
   report2.section(LOCAL_CHECKS_SECTION);
+  const configParses = checkCodexConfigParses(report2, paths);
   checkPinnedCodexVersion(report2, input.host);
   checkHostBinaryContracts(report2, input.host);
   checkPluginInstalled2(report2, paths, input.repositoryRoot, input.host);
@@ -4541,14 +4542,29 @@ function verifyCodex(input) {
   checkManagedConfigRegion(report2, paths, input.environment);
   checkHostAcceptsOsoProfile(report2, paths, input.host);
   checkGlobalGuidance(report2, paths, input.repositoryRoot);
-  checkEngramWiring(report2, paths);
+  checkEngramWiring(report2, paths, configParses);
   checkStateRoundTrip(report2, paths, input.environment);
   checkPlanArtifactRoundTrip(report2, paths, input.environment);
   checkCommitHookDeniesRed(report2, paths, input.environment);
   checkImpeccableMount(report2, input.homeDirectory);
   checkGitCommitGate(report2, paths, input.repositoryRoot, input.environment);
-  checkMcpToolTableDrift(report2, paths);
+  checkMcpToolTableDrift(report2, paths, configParses);
   return { report: report2.render(), exitCode: report2.exitCode };
+}
+function checkCodexConfigParses(report2, paths) {
+  if (!isReadableRegularFile(paths.configFile)) {
+    report2.skip(`Codex config parses \u2014 ${paths.configFile} is not present`);
+    return true;
+  }
+  try {
+    parseTomlDocument(readFileSync14(paths.configFile, "utf8"), paths.configFile);
+  } catch (error) {
+    if (!(error instanceof TomlParseError)) throw error;
+    report2.check("Codex config parses", "parses", error.message);
+    return false;
+  }
+  report2.check("Codex config parses", "parses", "parses");
+  return true;
 }
 function checkPinnedCodexVersion(report2, host) {
   const found = host.version ?? host.versionNote ?? "not installed";
@@ -4721,7 +4737,11 @@ function checkAgentPayload(report2, paths, repositoryRoot2) {
   for (const name of divergent) report2.detail(`divergent agent: ${name}`);
   report2.check(AGENT_PAYLOAD_CHECK, "exact", divergent.length === 0 ? "exact" : `divergent:${divergent.map((named) => ` ${named}`).join("")}`);
 }
-function checkEngramWiring(report2, paths) {
+function checkEngramWiring(report2, paths, configParses) {
+  if (!configParses) {
+    report2.skip(`Engram Codex integration \u2014 ${paths.configFile} is unparseable, so the MCP server table could not be read`);
+    return;
+  }
   const instructions = path15.join(paths.codexHome, "engram-instructions.md");
   const compact = path15.join(paths.codexHome, "engram-compact-prompt.md");
   const wired = isReadableRegularFile(instructions) && isReadableRegularFile(compact) && isReadableRegularFile(paths.configFile) && mcpServersOf(paths.configFile).some((server) => server.name === "engram") && engramPointersAreNormalized(paths);
@@ -4741,9 +4761,13 @@ function checkImpeccableMount(report2, homeDirectory) {
   const mount = path15.join(homeDirectory, ".agents", "skills", "impeccable");
   report2.check("Impeccable Codex mount", "mounted", isReadableRegularFile(path15.join(mount, "SKILL.md")) ? "mounted" : "missing");
 }
-function checkMcpToolTableDrift(report2, paths) {
+function checkMcpToolTableDrift(report2, paths, configParses) {
   report2.section(MCP_DRIFT_SECTION);
   report2.check("the hardcoded mandated tool list agrees with the routes table in both directions", "agree", mandatedAgreementStatus());
+  if (!configParses) {
+    report2.skip(`MCP server inventory \u2014 ${paths.configFile} is unparseable, so per-server tool drift could not be checked`);
+    return;
+  }
   for (const server of mcpServersOf(paths.configFile)) {
     if (server.command === void 0 || server.command === "") {
       report2.skip(`${server.name} MCP tool drift \u2014 no local command in ${paths.configFile} (a remote/URL-based server has no process this check spawns)`);
@@ -4782,13 +4806,7 @@ function mandatedRoutesNoServerHardcodes(hardcoded = PROTOCOL_MANDATED_TOOLS) {
   return mismatches;
 }
 function mcpServersOf(configFile) {
-  let document;
-  try {
-    document = readTomlFile(configFile);
-  } catch (error) {
-    if (error instanceof TomlParseError) return [];
-    throw error;
-  }
+  const document = readTomlFile(configFile);
   const servers = document?.["mcp_servers"];
   if (typeof servers !== "object" || servers === null || Array.isArray(servers)) return [];
   return Object.entries(servers).map(([name, value]) => {
@@ -5404,7 +5422,9 @@ function agentRouteOf(commandFile) {
   return routed[0] ?? "";
 }
 function treesHoldTheSameBytes(published, installed) {
+  if (!isDirectory(installed)) return false;
   const publishedFiles = relativeFilesUnder2(published);
+  if (publishedFiles.length === 0) return false;
   const installedFiles = relativeFilesUnder2(installed);
   if (publishedFiles.length !== installedFiles.length) return false;
   return publishedFiles.every(

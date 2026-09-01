@@ -17,6 +17,7 @@ import {
   openCodeTrustBytesStatus,
   shellSourcesUnder,
   stageOpenCodeFixture,
+  treesHoldTheSameBytes,
   verifyOpenCode,
   OPENCODE_LOCAL_CHECK_ROWS,
   type LocalCheckRowKind,
@@ -252,6 +253,28 @@ describe("the rows that drive an installer of their own", () => {
     assert.ok(sources.includes("bootstrap/install.sh"));
     assert.ok(sources.includes("tools/verify-check-names.sh"));
     assert.ok(sources.includes("plugin/git-hooks/pre-commit"));
+  });
+});
+
+describe("treesHoldTheSameBytes cannot report exact having compared zero files", () => {
+  test("two empty trees do not read exact, so an empty roster earns its own verdict rather than a vacuous match", () => {
+    const published = mkdtempSync(path.join(sandbox, "tmp", "tree-empty-published-"));
+    const installed = mkdtempSync(path.join(sandbox, "tmp", "tree-empty-installed-"));
+    assert.equal(treesHoldTheSameBytes(published, installed), false);
+  });
+
+  test("a missing installed directory against a populated source is never exact", () => {
+    const published = mkdtempSync(path.join(sandbox, "tmp", "tree-populated-"));
+    writeFileSync(path.join(published, "a.txt"), "a\n");
+    assert.equal(treesHoldTheSameBytes(published, path.join(published, "does-not-exist")), false);
+  });
+
+  test("two trees carrying the same file at the same relative path read exact", () => {
+    const published = mkdtempSync(path.join(sandbox, "tmp", "tree-matched-published-"));
+    const installed = mkdtempSync(path.join(sandbox, "tmp", "tree-matched-installed-"));
+    writeFileSync(path.join(published, "a.txt"), "a\n");
+    writeFileSync(path.join(installed, "a.txt"), "a\n");
+    assert.equal(treesHoldTheSameBytes(published, installed), true);
   });
 });
 

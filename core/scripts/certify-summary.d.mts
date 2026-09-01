@@ -24,4 +24,6 @@ export const CERTIFY_SUITE_HOSTS: Readonly<Record<string, string>>;
 export function parseCertifySuiteTap(tapText: string): CertifySuiteTap;
 export function certifyHostTotals(suiteReports: readonly CertifySuiteReport[]): Map<string, CertifyHostTotal>;
 export function hostDroveZeroRows(total: CertifyHostTotal): boolean;
-export function renderCertifySummary(suiteReports: readonly CertifySuiteReport[]): string;
+export function renderCertifySummary(suiteReports: readonly CertifySuiteReport[], tapDirectory?: string): string;
+export function suiteReportsFrom(tapDirectory: string): readonly CertifySuiteReport[];
+export function certifySummaryFor(tapDirectory: string): string;

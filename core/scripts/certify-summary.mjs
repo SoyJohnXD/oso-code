@@ -41,10 +41,13 @@ export function certifyHostTotals(suiteReports) {
 }
 
 export function hostDroveZeroRows(total) {
-  return total.registered > 0 && total.notRunCount >= total.registered;
+  return total.notRunCount >= total.registered;
 }
 
-export function renderCertifySummary(suiteReports) {
+export function renderCertifySummary(suiteReports, tapDirectory) {
+  if (suiteReports.length === 0) {
+    return `::warning::no certify TAP files were found in ${tapDirectory ?? "(no directory given)"} — every certify suite is silent\n`;
+  }
   const lines = [];
   for (const { suite, host, registered, notRun } of suiteReports) {
     lines.push(`${suite} (${host}): ${notRun.length} not-run of ${registered} certify row(s)`);
@@ -58,7 +61,7 @@ export function renderCertifySummary(suiteReports) {
   return `${lines.join("\n")}\n`;
 }
 
-function suiteReportsFrom(tapDirectory) {
+export function suiteReportsFrom(tapDirectory) {
   return Object.entries(CERTIFY_SUITE_HOSTS)
     .map(([suite, host]) => ({ suite, host, tapFile: path.join(tapDirectory, `${suite}.tap`) }))
     .filter(({ tapFile }) => existsReadable(tapFile))
@@ -74,13 +77,17 @@ function existsReadable(file) {
   }
 }
 
+export function certifySummaryFor(tapDirectory) {
+  return renderCertifySummary(suiteReportsFrom(tapDirectory), tapDirectory);
+}
+
 function main() {
   const tapDirectory = process.argv[2];
   if (tapDirectory === undefined) {
     process.stderr.write("usage: certify-summary.mjs <tap-directory>\n");
     process.exit(1);
   }
-  process.stdout.write(renderCertifySummary(suiteReportsFrom(tapDirectory)));
+  process.stdout.write(certifySummaryFor(tapDirectory));
 }
 
 if (path.resolve(process.argv[1] ?? "") === path.resolve(new URL(import.meta.url).pathname)) main();

@@ -1,5 +1,6 @@
 import { readdirSync } from "node:fs";
 import path from "node:path";
+import { isErrnoException } from "../../../src/state/store.ts";
 import { isRecord } from "./config-fields.ts";
 
 type SessionPart = Readonly<Record<string, unknown>>;
@@ -43,22 +44,26 @@ export function approvalPromptOutcome(stdout: string, stderr: string, toolId: st
 
 const APPROVED_PLAN_FILE_PATTERN = /^approved-.*\.md$/;
 
-function approvedPlanArtifactCount(fixtureHome: string): number {
+type ApprovedPlanArtifactCount = Readonly<{ kind: "counted"; count: number }> | Readonly<{ kind: "unreadable" }>;
+
+function approvedPlanArtifactCount(fixtureHome: string): ApprovedPlanArtifactCount {
   const plansRoot = path.join(fixtureHome, ".local", "state", "oso-code", "plans");
   let entries: readonly string[];
   try {
     entries = readdirSync(plansRoot, { recursive: true, encoding: "utf8" });
-  } catch {
-    return 0;
+  } catch (error) {
+    if (isErrnoException(error) && error.code === "ENOENT") return { kind: "counted", count: 0 };
+    return { kind: "unreadable" };
   }
-  return entries.filter((entry) => APPROVED_PLAN_FILE_PATTERN.test(path.basename(entry))).length;
+  return { kind: "counted", count: entries.filter((entry) => APPROVED_PLAN_FILE_PATTERN.test(path.basename(entry))).length };
 }
 
-export type ApprovedPlanArtifacts = "none" | `present:${number}`;
+export type ApprovedPlanArtifacts = "none" | `present:${number}` | "unreadable";
 
 export function approvedPlanArtifacts(fixtureHome: string): ApprovedPlanArtifacts {
-  const count = approvedPlanArtifactCount(fixtureHome);
-  return count === 0 ? "none" : `present:${count}`;
+  const counted = approvedPlanArtifactCount(fixtureHome);
+  if (counted.kind === "unreadable") return "unreadable";
+  return counted.count === 0 ? "none" : `present:${counted.count}`;
 }
 
 export type SessionDeliveryOrder = "no-session" | "no-tool-call" | "text-then-tool" | "tool-first";

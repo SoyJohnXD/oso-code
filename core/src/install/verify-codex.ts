@@ -15,7 +15,7 @@ import { readJsonObject } from "./json.ts";
 import { isAboveTestedVersion, meetsVersionFloor, SUPPORTED_CODEX_VERSION } from "./pins.ts";
 import { VerifyReport } from "./report.ts";
 import { runTomlRegion } from "./toml-regions.ts";
-import { readTomlFile, TomlParseError } from "./toml.ts";
+import { parseTomlDocument, readTomlFile, TomlParseError } from "./toml.ts";
 import { trustDivergences } from "./trust.ts";
 import { runOsoStateProbe } from "./verify-claude.ts";
 import { TOOL_ROWS } from "../routes/routes.ts";
@@ -63,6 +63,7 @@ export function verifyCodex(input: VerifyCodexInput): VerifyOutcome {
   const report = new VerifyReport();
 
   report.section(LOCAL_CHECKS_SECTION);
+  const configParses = checkCodexConfigParses(report, paths);
   checkPinnedCodexVersion(report, input.host);
   checkHostBinaryContracts(report, input.host);
   checkPluginInstalled(report, paths, input.repositoryRoot, input.host);
@@ -73,15 +74,31 @@ export function verifyCodex(input: VerifyCodexInput): VerifyOutcome {
   checkManagedConfigRegion(report, paths, input.environment);
   checkHostAcceptsOsoProfile(report, paths, input.host);
   checkGlobalGuidance(report, paths, input.repositoryRoot);
-  checkEngramWiring(report, paths);
+  checkEngramWiring(report, paths, configParses);
   checkStateRoundTrip(report, paths, input.environment);
   checkPlanArtifactRoundTrip(report, paths, input.environment);
   checkCommitHookDeniesRed(report, paths, input.environment);
   checkImpeccableMount(report, input.homeDirectory);
   checkGitCommitGate(report, paths, input.repositoryRoot, input.environment);
-  checkMcpToolTableDrift(report, paths);
+  checkMcpToolTableDrift(report, paths, configParses);
 
   return { report: report.render(), exitCode: report.exitCode };
+}
+
+export function checkCodexConfigParses(report: VerifyReport, paths: CodexPaths): boolean {
+  if (!isReadableRegularFile(paths.configFile)) {
+    report.skip(`Codex config parses — ${paths.configFile} is not present`);
+    return true;
+  }
+  try {
+    parseTomlDocument(readFileSync(paths.configFile, "utf8"), paths.configFile);
+  } catch (error) {
+    if (!(error instanceof TomlParseError)) throw error;
+    report.check("Codex config parses", "parses", error.message);
+    return false;
+  }
+  report.check("Codex config parses", "parses", "parses");
+  return true;
 }
 
 export function checkPinnedCodexVersion(report: VerifyReport, host: CodexHostProbes): void {
@@ -274,7 +291,11 @@ export function checkAgentPayload(report: VerifyReport, paths: CodexPaths, repos
   report.check(AGENT_PAYLOAD_CHECK, "exact", divergent.length === 0 ? "exact" : `divergent:${divergent.map((named) => ` ${named}`).join("")}`);
 }
 
-export function checkEngramWiring(report: VerifyReport, paths: CodexPaths): void {
+export function checkEngramWiring(report: VerifyReport, paths: CodexPaths, configParses: boolean): void {
+  if (!configParses) {
+    report.skip(`Engram Codex integration — ${paths.configFile} is unparseable, so the MCP server table could not be read`);
+    return;
+  }
   const instructions = path.join(paths.codexHome, "engram-instructions.md");
   const compact = path.join(paths.codexHome, "engram-compact-prompt.md");
   const wired =
@@ -302,9 +323,13 @@ export function checkImpeccableMount(report: VerifyReport, homeDirectory: string
   report.check("Impeccable Codex mount", "mounted", isReadableRegularFile(path.join(mount, "SKILL.md")) ? "mounted" : "missing");
 }
 
-export function checkMcpToolTableDrift(report: VerifyReport, paths: CodexPaths): void {
+export function checkMcpToolTableDrift(report: VerifyReport, paths: CodexPaths, configParses: boolean): void {
   report.section(MCP_DRIFT_SECTION);
   report.check("the hardcoded mandated tool list agrees with the routes table in both directions", "agree", mandatedAgreementStatus());
+  if (!configParses) {
+    report.skip(`MCP server inventory — ${paths.configFile} is unparseable, so per-server tool drift could not be checked`);
+    return;
+  }
   for (const server of mcpServersOf(paths.configFile)) {
     if (server.command === undefined || server.command === "") {
       report.skip(`${server.name} MCP tool drift — no local command in ${paths.configFile} (a remote/URL-based server has no process this check spawns)`);
@@ -347,13 +372,7 @@ export function mandatedRoutesNoServerHardcodes(hardcoded = PROTOCOL_MANDATED_TO
 }
 
 export function mcpServersOf(configFile: string): McpServerEntry[] {
-  let document: Record<string, unknown> | undefined;
-  try {
-    document = readTomlFile(configFile);
-  } catch (error) {
-    if (error instanceof TomlParseError) return [];
-    throw error;
-  }
+  const document = readTomlFile(configFile);
   const servers = document?.["mcp_servers"];
   if (typeof servers !== "object" || servers === null || Array.isArray(servers)) return [];
   return Object.entries(servers as Record<string, unknown>).map(([name, value]) => {
