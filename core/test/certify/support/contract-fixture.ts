@@ -11,6 +11,10 @@ export type ContractFixture = Readonly<{
   report: string;
 }>;
 
+export function configHomeOf(fixture: ContractFixture): string {
+  return path.join(fixture.sandbox.home, ".config", "opencode");
+}
+
 export function installContractFixture(probe: ResolvedProbe): ContractFixture {
   const sandbox = new StateSandbox("contract-bar-fixture");
   writeFixtureEngramShim(fixtureShimsIn(sandbox.root));

@@ -13,3 +13,16 @@ export function contractBarRow(name: string, run: (t: TestContext) => void | Pro
   registered += 1;
   test(name, CERTIFY_GUARD, run);
 }
+
+export const BEHAVIOR_BAR_ROWS_PORTED = 3;
+
+let behaviorRegistered = 0;
+
+export function behaviorBarRowsRegistered(): number {
+  return behaviorRegistered;
+}
+
+export function behaviorBarRow(name: string, run: (t: TestContext) => void | Promise<void>): void {
+  behaviorRegistered += 1;
+  test(name, CERTIFY_GUARD, run);
+}

@@ -6,7 +6,7 @@ const DEFAULT_INVOKE_BOUND_SECONDS = 30;
 const DEFAULT_SERVER_BOUND_SECONDS = 120;
 const SERVER_LISTENING_MARKER = "server listening on";
 
-function boundFrom(environment: NodeJS.ProcessEnv, key: string, fallback: number): number {
+export function boundFrom(environment: NodeJS.ProcessEnv, key: string, fallback: number): number {
   const parsed = Number.parseInt(environment[key] ?? "", 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }

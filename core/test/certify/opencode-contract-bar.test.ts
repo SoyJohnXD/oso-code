@@ -4,7 +4,7 @@ import path from "node:path";
 import { SUPPORTED_OPENCODE_VERSION } from "../../src/install/pins.ts";
 import { provedSomething } from "../support/proved.ts";
 import { CERTIFY } from "./support/certify-guard.ts";
-import { installContractFixture, type ContractFixture } from "./support/contract-fixture.ts";
+import { configHomeOf, installContractFixture, type ContractFixture } from "./support/contract-fixture.ts";
 import { CONTRACT_BAR_BOUND_SECONDS, invokeContractBar, probeRegistrations, type RegistrationProbe } from "./support/drive.ts";
 import {
   agentField,
@@ -18,7 +18,13 @@ import {
 } from "./support/config-fields.ts";
 import { deniedExecutionPowers } from "./support/execution-powers.ts";
 import { notRun } from "./support/not-run.ts";
-import { resolveOpenCodeBinaryProbe, type OpenCodeBinaryProbe, type ResolvedProbe } from "./support/opencode-binary.ts";
+import {
+  laneCauseFor,
+  laneNotRun,
+  resolveOpenCodeBinaryProbe,
+  resolvedProbeOrThrow,
+  type OpenCodeBinaryProbe,
+} from "./support/opencode-binary.ts";
 import { CONTRACT_BAR_ROWS_PORTED, contractBarRow, contractBarRowsRegistered } from "./support/row-count.ts";
 import { contractBarSourceAgentMode, contractBarSourceAgentNames, contractBarSourceSkillNames } from "./support/source-roster.ts";
 
@@ -43,32 +49,7 @@ const probe: OpenCodeBinaryProbe | undefined = CERTIFY
   ? resolveOpenCodeBinaryProbe(process.env[OVERRIDE_ENV_VAR], SUPPORTED_OPENCODE_VERSION, process.env)
   : undefined;
 
-function laneCauseOf(resolved: ResolvedProbe): string | undefined {
-  if (resolved.relation !== "below-floor") return undefined;
-  return (
-    `opencode ${resolved.version} at ${resolved.binary} is below the ${SUPPORTED_OPENCODE_VERSION} floor oso install --host ` +
-    "opencode refuses, so this lane cannot certify what the product itself refuses to install"
-  );
-}
-
-const laneCause = probe === undefined ? undefined : probe.kind === "unresolved" ? probe.reason : laneCauseOf(probe);
-
-function laneNotRun(t: TestContext): boolean {
-  if (probe === undefined) {
-    notRun(t, "OSO_CERTIFY is unset, so this row was never driven");
-    return true;
-  }
-  if (laneCause !== undefined) {
-    notRun(t, laneCause);
-    return true;
-  }
-  return false;
-}
-
-function resolvedProbeOrThrow(): ResolvedProbe {
-  if (probe === undefined || probe.kind !== "resolved") throw new Error("unreachable: a resolved probe was expected");
-  return probe;
-}
+const laneCause = laneCauseFor(probe, SUPPORTED_OPENCODE_VERSION);
 
 contractBarRow(
   probe === undefined
@@ -77,8 +58,8 @@ contractBarRow(
       ? `the OpenCode binary this bar introspects measures ${probe.version} against the ${SUPPORTED_OPENCODE_VERSION} pin, relation ${probe.relation}`
       : `the OpenCode binary this bar introspects could not be resolved — ${probe.reason}`,
   (t) => {
-    if (laneNotRun(t)) return;
-    const resolved = resolvedProbeOrThrow();
+    if (laneNotRun(t, probe, laneCause)) return;
+    const resolved = resolvedProbeOrThrow(probe);
     assert.ok(resolved.relation === "at-pin" || resolved.relation === "above-pin");
   },
 );
@@ -125,10 +106,6 @@ function debugSkillProbe(binary: string, environment: NodeJS.ProcessEnv): SkillP
   }
 }
 
-function configHomeOf(fixture: ContractFixture): string {
-  return path.join(fixture.sandbox.home, ".config", "opencode");
-}
-
 describe("the contract fixture install and what the real binary reports once it is ready", () => {
   let fixture: ContractFixture | undefined;
   let registrations: RegistrationProbe | undefined;
@@ -154,7 +131,7 @@ describe("the contract fixture install and what the real binary reports once it 
   }
 
   function notRunUnlessFixtureReady(t: TestContext, gate: string): boolean {
-    if (laneNotRun(t)) return true;
+    if (laneNotRun(t, probe, laneCause)) return true;
     if (fixture === undefined || fixture.exitCode !== 0) {
       notRun(t, `the contract fixture install failed, so ${gate} could not be driven`);
       return true;
@@ -190,13 +167,13 @@ describe("the contract fixture install and what the real binary reports once it 
   }
 
   contractBarRow("contract fixture install", (t) => {
-    if (laneNotRun(t)) return;
+    if (laneNotRun(t, probe, laneCause)) return;
     assert.equal(fixture?.exitCode, 0, fixture?.report ?? "the fixture was never installed");
   });
 
   contractBarRow(`the host catalog offers the ${SESSION_MODEL_PROVIDER} provider the session model comes from`, (t) => {
     if (notRunUnlessFixtureReady(t, "the model catalog")) return;
-    const resolved = resolvedProbeOrThrow();
+    const resolved = resolvedProbeOrThrow(probe);
     const installed = readyFixtureOrThrow();
     const run = invokeContractBar(resolved.binary, installed.environment, ["models"], CONTRACT_BAR_BOUND_SECONDS);
     if (run.error !== undefined || run.signal !== null) {
@@ -233,7 +210,7 @@ describe("the contract fixture install and what the real binary reports once it 
 
   contractBarRow("the roster enumerates every installed oso agent", (t) => {
     if (notRunUnlessFixtureReady(t, "the agent roster")) return;
-    const resolved = resolvedProbeOrThrow();
+    const resolved = resolvedProbeOrThrow(probe);
     const installed = readyFixtureOrThrow();
     const run = invokeContractBar(resolved.binary, installed.environment, ["agent", "list"], CONTRACT_BAR_BOUND_SECONDS);
     if (run.error !== undefined || run.signal !== null) {
@@ -325,7 +302,7 @@ describe("the contract fixture install and what the real binary reports once it 
     (t) => {
       const document = notRunUnlessConfigParsed(t);
       if (document === undefined) return;
-      const resolved = resolvedProbeOrThrow();
+      const resolved = resolvedProbeOrThrow(probe);
       const installed = readyFixtureOrThrow();
       const route = commandAgentRoute(document, PLAN_COMMAND);
       const run = invokeContractBar(resolved.binary, installed.environment, ["debug", "agent", route], CONTRACT_BAR_BOUND_SECONDS);

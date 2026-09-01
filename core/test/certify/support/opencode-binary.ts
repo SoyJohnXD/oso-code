@@ -2,10 +2,12 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import type { TestContext } from "node:test";
 import { versionFieldOf } from "../../../src/install/opencode-host.ts";
 import { isAboveTestedVersion, meetsVersionFloor } from "../../../src/install/pins.ts";
 import { isExecutableRegularFile } from "../../../src/state/store.ts";
 import { firstExecutableOnPath } from "../../../src/install/verify-claude.ts";
+import { notRun } from "./not-run.ts";
 
 const OPENCODE_BINARY_NAME = "opencode";
 const PROBE_HOME_PREFIX = "oso-contract-bar-binary-probe.";
@@ -73,4 +75,34 @@ export function resolveOpenCodeBinaryProbe(
   }
   const version = measuredVersion(candidate, environment);
   return { kind: "resolved", binary: candidate, version, relation: relationOf(version, pin) };
+}
+
+function laneCauseOf(resolved: ResolvedProbe, pin: string): string | undefined {
+  if (resolved.relation !== "below-floor") return undefined;
+  return (
+    `opencode ${resolved.version} at ${resolved.binary} is below the ${pin} floor oso install --host opencode refuses, ` +
+    "so this lane cannot certify what the product itself refuses to install"
+  );
+}
+
+export function laneCauseFor(probe: OpenCodeBinaryProbe | undefined, pin: string): string | undefined {
+  if (probe === undefined) return undefined;
+  return probe.kind === "unresolved" ? probe.reason : laneCauseOf(probe, pin);
+}
+
+export function laneNotRun(t: TestContext, probe: OpenCodeBinaryProbe | undefined, laneCause: string | undefined): boolean {
+  if (probe === undefined) {
+    notRun(t, "OSO_CERTIFY is unset, so this row was never driven");
+    return true;
+  }
+  if (laneCause !== undefined) {
+    notRun(t, laneCause);
+    return true;
+  }
+  return false;
+}
+
+export function resolvedProbeOrThrow(probe: OpenCodeBinaryProbe | undefined): ResolvedProbe {
+  if (probe === undefined || probe.kind !== "resolved") throw new Error("unreachable: a resolved probe was expected");
+  return probe;
 }

@@ -1,8 +1,8 @@
 import { isRecord } from "./config-fields.ts";
 
-export type ExecutionPower = Readonly<{ label: string; permission: string; target: string }>;
+type ExecutionPower = Readonly<{ label: string; permission: string; target: string }>;
 
-export const EXECUTION_PHASE_POWERS: readonly ExecutionPower[] = [
+const EXECUTION_PHASE_POWERS: readonly ExecutionPower[] = [
   { label: "the state command", permission: "bash", target: "oso-state set active_slice=1" },
   { label: "the slice commit", permission: "bash", target: "git commit -m slice" },
   { label: "the slice's own edits", permission: "edit", target: "src/slice.ts" },
