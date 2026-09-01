@@ -98,6 +98,25 @@ jobs:
           bash tests/opencode-behavior-bar.sh || status=$?
           [ "$status" = 3 ] || exit "$status"
           echo "::warning::the behavior bar drove no gated tool call this run, so it asserted nothing about the boundaries; every check it did reach was green"
+      - name: Certify suites against the pinned OpenCode binary, and Codex only if this runner carries credentials
+        env:
+          OSO_CERTIFY: 1
+          OSO_CONTRACT_BAR_OPENCODE_BIN: ${{ env.OSO_PINNED_OPENCODE_BIN }}
+          OSO_BEHAVIOR_BAR_OPENCODE_BIN: ${{ env.OSO_PINNED_OPENCODE_BIN }}
+          OSO_WAVE_SMOKE_OPENCODE_BIN: ${{ env.OSO_PINNED_OPENCODE_BIN }}
+        run: |
+          cd core
+          mkdir -p "$RUNNER_TEMP/certify-tap"
+          overall=0
+          for suite in opencode-contract-bar opencode-behavior-bar opencode-wave-runner-smoke codex-authenticated-smoke; do
+            node --experimental-strip-types --test --test-reporter=tap "test/certify/${suite}.test.ts" \
+              > "$RUNNER_TEMP/certify-tap/${suite}.tap" 2>&1 || overall=1
+            cat "$RUNNER_TEMP/certify-tap/${suite}.tap"
+          done
+          exit "$overall"
+      - name: Certify summary — every not-run line per host, and a warning where a host drove zero rows
+        if: always()
+        run: node core/scripts/certify-summary.mjs "$RUNNER_TEMP/certify-tap"
       - name: Open an issue for this failed run
         if: failure()
         env:
