@@ -95,17 +95,17 @@ describe("the flag table is per host AND verb, populated from each bash script's
     assert.deepEqual(flagsFor("opencode", "install"), ["--yes", "--no-impeccable", "--no-git-hook"]);
   });
 
-  test("verify takes no arguments on any host, as every bash verifier does", () => {
+  test("verify takes no arguments on any host", () => {
     for (const host of ["claude", "codex", "opencode"] as const) assert.deepEqual(flagsFor(host, "verify"), []);
   });
 
-  test("repair --host opencode carries --list and the one positional backup name bootstrap/repair-opencode.sh takes", () => {
+  test("repair --host opencode carries --list and the one positional backup name the repair verb takes", () => {
     assert.deepEqual(flagsFor("opencode", "repair"), ["--yes", "--list"]);
     assert.equal(FLAGS_PER_HOST_AND_VERB.opencode.repair.positional?.name, "<backup>");
     assert.equal(parseArgv(["repair", "--host", "opencode", "--yes", "snapshot-name"]).positional, "snapshot-name");
   });
 
-  test("purge --host opencode drops none of bootstrap/purge-opencode.sh's flags, and --restore takes its directory", () => {
+  test("purge --host opencode carries all four of its flags, and --restore takes its directory", () => {
     assert.deepEqual(flagsFor("opencode", "purge"), ["--yes", "--dry-run", "--keep-gentle-ai", "--restore"]);
     assert.equal(parseArgv(["purge", "--host", "opencode", "--restore", "/backups/one"]).values.get("--restore"), "/backups/one");
   });
@@ -138,7 +138,7 @@ describe("the flag table is per host AND verb, populated from each bash script's
     assert.equal(result.stderr, USAGE);
   });
 
-  test("a second backup name is refused with the words bootstrap/repair-opencode.sh refuses it with", () => {
+  test("a second backup name is refused with the words the repair verb refuses it with", () => {
     assert.throws(
       () => parseArgv(["repair", "--host", "opencode", "one", "two"]),
       (error: unknown) => error instanceof ArgumentsExcludedError && error.message === "only one backup name may be given",
@@ -146,7 +146,7 @@ describe("the flag table is per host AND verb, populated from each bash script's
   });
 });
 
-describe("pairwise exclusions are ordered pairs, because bootstrap/purge-opencode.sh guards them from one arm only", () => {
+describe("pairwise exclusions are ordered pairs, guarded from one arm and not from both", () => {
   for (const [first, second, message] of [
     ["--restore", "--yes", "--yes cannot be combined with --restore"],
     ["--dry-run", "--yes", "--yes cannot be combined with --dry-run"],

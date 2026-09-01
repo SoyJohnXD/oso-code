@@ -8,7 +8,7 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 . "$REPO_ROOT/bootstrap/lib/verification-fixtures.sh"
 . "$REPO_ROOT/bootstrap/lib/opencode-verification.sh"
 
-SUPPORTED_OPENCODE_VERSION="$(sed -n 's/^SUPPORTED_OPENCODE_VERSION=//p' "$REPO_ROOT/bootstrap/install-opencode.sh" | head -1)"
+SUPPORTED_OPENCODE_VERSION="$(sed -n 's/^export const SUPPORTED_OPENCODE_VERSION = "\(.*\)";$/\1/p' "$REPO_ROOT/core/src/install/pins.ts")"
 OSO_CONTRACT_BAR_BOUND_SECONDS="${OSO_CONTRACT_BAR_BOUND_SECONDS:-30}"
 OSO_CONTRACT_BAR_SERVER_BOUND_SECONDS="${OSO_CONTRACT_BAR_SERVER_BOUND_SECONDS:-120}"
 SESSION_MODEL_PROVIDER=opencode

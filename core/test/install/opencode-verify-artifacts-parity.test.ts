@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, test } from "node:test";
 import { opencodePathsFor } from "../../src/install/opencode.ts";
-import { openCodePayloadSources } from "../../src/install/opencode-install.ts";
+import { firstExecutableOnPath } from "../../src/install/verify-claude.ts";
+import { ENGRAM_BINARY_NAME, openCodePayloadSources } from "../../src/install/opencode-install.ts";
 import {
   openCodeAgentStatus,
   openCodeCommandStatus,
@@ -21,23 +22,24 @@ import {
   type LocalCheckRowKind,
 } from "../../src/install/verify-opencode.ts";
 import {
-  bashIsAvailable,
-  bashVerifyRow,
   fixtureEnvironment,
   fixturePathWith,
+  pathWithout,
   stageInstalledFixture,
   type StagedFixture,
 } from "../support/opencode-fixture.ts";
 import { provedSomething } from "../support/proved.ts";
 import { posixSpelled } from "../support/repository-paths.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
-import { skipUnlessBashRunsTheInstallerPipeline } from "../support/win32-skip-guards.ts";
+import { skipUnlessPathResolvesExtensionlessNames } from "../support/win32-skip-guards.ts";
 
 const sandbox = mkdtempSync(path.join(tmpdir(), "oso-opencode-artifacts-"));
 mkdirSync(path.join(sandbox, "tmp"), { recursive: true });
 after(() => rmSync(sandbox, { recursive: true, force: true }));
 
 const THIS_HALF_READS: readonly LocalCheckRowKind[] = ["artifact", "repository"];
+
+const ENGRAM_BINARY_NAMES = [ENGRAM_BINARY_NAME, `${ENGRAM_BINARY_NAME}.exe`, `${ENGRAM_BINARY_NAME}.cmd`] as const;
 
 const PUBLISHED_HASHES = openCodePayloadSources(repositoryRoot).publishedHashes;
 
@@ -140,12 +142,14 @@ const TREE_DAMAGES: readonly TreeDamage[] = [
   },
 ];
 
+const FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH = skipUnlessPathResolvesExtensionlessNames();
+
 provedSomething(
-  `the artifact parity corpus is one fixture HOME staged by bootstrap/install-opencode.sh, read row for row by both implementations over ` +
-    `${COMPARED_ROWS.length} of the ${OPENCODE_LOCAL_CHECK_ROWS.length} rows verify-opencode.sh emits, plus ${TREE_DAMAGES.length} deliberately ` +
-    "damaged copies of that HOME",
+  "the artifact corpus is one fixture HOME staged by oso install --host opencode, read row by row over " +
+    `${COMPARED_ROWS.length} of the ${OPENCODE_LOCAL_CHECK_ROWS.length} rows the local-check table declares, plus ${TREE_DAMAGES.length} ` +
+    "deliberately damaged copies of that HOME, each verdict spelled beside the damage that must produce it",
   COMPARED_ROWS.length > 0 && TREE_DAMAGES.length > 0,
-  "no row and no damage were compared, so a clean result here would report the same as an empty walk",
+  "no row and no damage were read, so a clean result here would report the same as an empty walk",
 );
 
 describe("the rows this half owns are the artifact and repository rows, and the twelve it defers are named individually", () => {
@@ -180,16 +184,8 @@ describe("the rows this half owns are the artifact and repository rows, and the 
   });
 });
 
-describe("every artifact row reads the same verdict through both implementations, over one staged fixture", () => {
-  for (const row of COMPARED_ROWS) {
-    test(`${row.name}: both implementations read the same verdict`, { skip: skipUnlessBash() }, () => {
-      const bash = bashVerifyRow(row.bashRow, fixture(), sandbox, shimmedPath());
-      assert.equal(bash.status, 0, bash.stderr);
-      assert.equal(row.port(fixture()), bash.stdout, `${row.bashRow} disagreed with the port`);
-    });
-  }
-
-  test("the clean fixture reads the passing verdict on every row, so the agreements above are not two matching failures", { skip: skipUnlessBash() }, () => {
+describe("every artifact row reads its passing verdict over one clean staged fixture", () => {
+  test("the clean fixture reads the passing verdict this file spells on every row, in the table's order", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const verdicts = COMPARED_ROWS.map((row) => row.port(fixture()));
     assert.deepEqual(verdicts, ["exact", "exact", "exact", "exact", "present", "installer-owned", "verified"]);
   });
@@ -197,32 +193,25 @@ describe("every artifact row reads the same verdict through both implementations
 
 describe("every verdict each artifact row can reach is shown on a deliberately broken tree, so no guard inside a row is unread", () => {
   for (const damage of TREE_DAMAGES) {
-    test(`a tree with ${damage.label} is reported ${damage.verdict} by both implementations`, { skip: skipUnlessBash() }, () => {
+    test(`a tree with ${damage.label} is reported ${damage.verdict}`, { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
       const damaged = damagedFixture(damage);
-      const bash = bashVerifyRow(damage.bashRow, damaged, damagedRootOf(damage), shimmedPath());
-      assert.equal(bash.status, 0, bash.stderr);
-      assert.ok(bash.stdout.startsWith(damage.verdict), `the bash read ${bash.stdout}`);
-      assert.equal(damage.port(damaged), bash.stdout);
+      assert.ok(damage.port(damaged).startsWith(damage.verdict), `the row read ${damage.port(damaged)}`);
     });
   }
 });
 
-describe("the rows that drive an installer of their own reach the same verdict through both implementations", () => {
-  test("an install pointed outside the named home is refused, read by both", { skip: skipUnlessBash() }, () => {
-    const bashRoot = path.join(sandbox, "guard-bash");
-    mkdirSync(bashRoot, { recursive: true });
-    const bash = bashVerifyRow("opencode_config_home_guard_status", fixture(), bashRoot, shimmedPath());
+describe("the rows that drive an installer of their own", () => {
+  test("an install pointed outside the named home is refused", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const portTree = { root: path.join(sandbox, "guard-port"), home: fixture().home, configHome: fixture().configHome };
     mkdirSync(portTree.root, { recursive: true });
     const port = openCodeConfigHomeGuardStatus(
       { homeDirectory: fixture().home, repositoryRoot, environment: fixtureEnvironment(fixture().home, shimmedPath(), sandbox), platform: process.platform, host: { version: undefined } },
       portTree,
     );
-    assert.equal(bash.stdout, "refused", bash.stderr);
     assert.equal(port, "refused");
   });
 
-  test("the port stages its own fixture install without spawning a host binary, which is what the bash manufactures a shim for", { skip: skipUnlessBash() }, () => {
+  test("the row stages its own fixture install without spawning a host binary, which is what the shim on PATH would answer for", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const staged = stageOpenCodeFixture({
       homeDirectory: fixture().home,
       repositoryRoot,
@@ -234,17 +223,40 @@ describe("the rows that drive an installer of their own reach the same verdict t
     if (staged.kind === "ready") rmSync(staged.tree.root, { recursive: true, force: true });
   });
 
-  test("the shell-syntax row globs the same six directories and the one named file the bash globs", { skip: skipUnlessBash() }, () => {
+  test(
+    "the staging writes the engram shim its own fixture PATH carries, so the Engram row reads present where no engram is installed",
+    { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH },
+    () => {
+      const bare = fixtureEnvironment(fixture().home, pathWithout(ENGRAM_BINARY_NAMES), sandbox);
+      assert.equal(firstExecutableOnPath(bare, ENGRAM_BINARY_NAME), undefined, "this case never controlled the PATH it claims to");
+      const staged = stageOpenCodeFixture({
+        homeDirectory: fixture().home,
+        repositoryRoot,
+        environment: bare,
+        platform: process.platform,
+        host: { version: undefined },
+      });
+      assert.equal(staged.kind, "ready");
+      if (staged.kind !== "ready") return;
+      try {
+        assert.equal(openCodeEngramStatus(staged.tree.configHome), "present");
+      } finally {
+        rmSync(staged.tree.root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test("the shell-syntax row globs the six directories and the one named file, reaching every tracked shell source", () => {
     const sources = shellSourcesUnder(repositoryRoot).map((source) => posixSpelled(source.slice(repositoryRoot.length + 1)));
-    assert.ok(sources.length > 40, `${sources.length} shell source(s) were listed`);
-    assert.ok(sources.includes("bootstrap/install-opencode.sh"));
+    assert.ok(sources.length > 20, `${sources.length} shell source(s) were listed`);
+    assert.ok(sources.includes("bootstrap/install.sh"));
     assert.ok(sources.includes("bootstrap/lib/opencode-verification.sh"));
     assert.ok(sources.includes("plugin/git-hooks/pre-commit"));
   });
 });
 
 describe("verify --host opencode assembles all seventeen rows, and its own report is what names them", () => {
-  test("the report names every row the table declares, in the table's order, and every fixture row passes", { skip: skipUnlessBash() }, () => {
+  test("the report names every row the table declares, in the table's order, and every fixture row passes", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const report = assembledLocalCheckReport();
     assert.deepEqual(rowNamesIn(report), OPENCODE_LOCAL_CHECK_ROWS.map((row) => row.name));
     assert.match(report, /^skip: OpenCode CLI version — opencode is not on PATH/m);
@@ -254,7 +266,7 @@ describe("verify --host opencode assembles all seventeen rows, and its own repor
     assert.deepEqual(failedFixtureRows, [], report);
   });
 
-  test("a row the report emits that the table never declared is caught, not dropped", { skip: skipUnlessBash() }, () => {
+  test("a row the report emits that the table never declared is caught, not dropped", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const undeclared = "a row the table never declared";
     const planted = `${assembledLocalCheckReport()}\nok:   ${undeclared} (planted)`;
     assert.ok(rowNamesIn(planted).includes(undeclared), "the reader dropped an undeclared row instead of surfacing it");
@@ -372,9 +384,3 @@ function shimmedPath(): string {
 }
 
 
-
-function skipUnlessBash(): false | string {
-  const platformSkip = skipUnlessBashRunsTheInstallerPipeline();
-  if (platformSkip !== false) return platformSkip;
-  return bashIsAvailable() ? false : "bash cannot be spawned here, so bootstrap/verify-opencode.sh cannot be sourced as the oracle";
-}

@@ -1,19 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, test } from "node:test";
 import { CONFIG_MARKER_END, CONFIG_MARKER_START, FEATURE_MARKER_END, FEATURE_MARKER_START } from "../../src/install/codex-config.ts";
 import { inspectCodexConfig, OSO_OWNED_CONFIG_PATHS, rebuildManagedConfig } from "../../src/install/codex.ts";
-import {
-  bashIsAvailable,
-  bashRebuiltRegion,
-  bashRefusesOwnedKeyOutsideTheRegion,
-  THE_CONFIG_ORACLE,
-} from "../support/codex-config-oracle.ts";
 import { provedSomething } from "../support/proved.ts";
-import { repositoryRoot } from "../support/state-sandbox.ts";
-import { skipUnlessBashRunsTheInstallerPipeline } from "../support/win32-skip-guards.ts";
 
 const FALLOW_COMMAND = "/usr/bin/fallow-mcp";
 
@@ -57,50 +49,23 @@ const OWNED_KEY_SHAPES: readonly Readonly<{ named: string; text: string; owned: 
 
 provedSomething(
   `${OPERATOR_SHAPES.length} operator config shape(s) and ${OWNED_KEY_SHAPES.length} owned-key shape(s) were driven ` +
-    `through ${THE_CONFIG_ORACLE}`,
+    "through rebuildManagedConfig and inspectCodexConfig over a fixture CODEX_HOME",
   OPERATOR_SHAPES.length >= 8 && OWNED_KEY_SHAPES.filter((shape) => shape.owned).length === OSO_OWNED_CONFIG_PATHS.length,
   `${OPERATOR_SHAPES.length} operator shape(s) and ${OWNED_KEY_SHAPES.filter((shape) => shape.owned).length} of the ` +
     `${OSO_OWNED_CONFIG_PATHS.length} owned key path(s) were exercised, so a clean result would leave a row unmeasured`,
 );
 
 describe("row one: the Codex config.toml managed region, region-rebuild between the exact marker pair", () => {
-  test("the exact marker pair the port rebuilds between is the pair the bash installer and verifier both spell", () => {
-    const installer = readFileSync(path.join(repositoryRoot, "bootstrap", "install-codex.sh"), "utf8");
-    const verifier = readFileSync(path.join(repositoryRoot, "bootstrap", "verify-codex.sh"), "utf8");
-    for (const source of [installer, verifier]) {
-      assert.ok(source.includes(`CONFIG_MARKER_START="${CONFIG_MARKER_START}"`), CONFIG_MARKER_START);
-      assert.ok(source.includes(`CONFIG_MARKER_END="${CONFIG_MARKER_END}"`), CONFIG_MARKER_END);
-      assert.ok(source.includes(`FEATURE_MARKER_START="${FEATURE_MARKER_START}"`), FEATURE_MARKER_START);
-      assert.ok(source.includes(`FEATURE_MARKER_END="${FEATURE_MARKER_END}"`), FEATURE_MARKER_END);
-    }
-  });
-
   for (const { named, text } of OPERATOR_SHAPES) {
-    test(`${named}: the port rebuilds the region byte for byte the way the bash pipeline does`, { skip: skipUnlessBashOracle() }, () => {
-      const oracle = bashRebuiltRegion(path.join(sandbox, "rebuild"), text, codexHome, runtimeRoot, FALLOW_COMMAND);
-      assert.equal(oracle.status, 0, oracle.stderr);
-      assert.equal(rebuildManagedConfig(text, codexHome, runtimeRoot, FALLOW_COMMAND), oracle.text);
+    test(`${named}: the rebuild settles by its second run and leaves every operator byte outside the region alone`, () => {
+      const once = rebuildManagedConfig(text, codexHome, runtimeRoot, FALLOW_COMMAND);
+      const twice = rebuildManagedConfig(once, codexHome, runtimeRoot, FALLOW_COMMAND);
+      assert.equal(rebuildManagedConfig(twice, codexHome, runtimeRoot, FALLOW_COMMAND), twice);
+      for (const line of text.split("\n").filter((candidate) => candidate.trim() !== "")) {
+        assert.ok(once.includes(line), `${JSON.stringify(line)} did not survive the rebuild:\n${once}`);
+      }
     });
   }
-
-  test(
-    "repeated rebuilds track the bash run for run, including the one leading blank line a root-key-less config gains on run two",
-    { skip: skipUnlessBashOracle() },
-    () => {
-      const workspace = path.join(sandbox, "repeat");
-      for (const seed of ["", 'model = "x"\n\n[history]\ny = 1\n']) {
-        let bashText = seed;
-        let portText = seed;
-        for (const run of [1, 2, 3]) {
-          const oracle = bashRebuiltRegion(workspace, bashText, codexHome, runtimeRoot, FALLOW_COMMAND);
-          assert.equal(oracle.status, 0, oracle.stderr);
-          portText = rebuildManagedConfig(portText, codexHome, runtimeRoot, FALLOW_COMMAND);
-          assert.equal(portText, oracle.text, `run ${run} over ${JSON.stringify(seed)}`);
-          bashText = oracle.text;
-        }
-      }
-    },
-  );
 
   test("a config carrying root keys is a fixed point from the first rebuild on, which is the shape an installed host holds", () => {
     const once = rebuildManagedConfig('model = "x"\n\n[history]\ny = 1\n', codexHome, runtimeRoot, FALLOW_COMMAND);
@@ -132,10 +97,8 @@ describe("row one: the Codex config.toml managed region, region-rebuild between 
 
 describe("row two: oso-owned keys outside the region are preserved, validated, and never re-emitted", () => {
   for (const { named, text, owned } of OWNED_KEY_SHAPES) {
-    test(`${named}: the port refuses exactly where the bash preflight refuses`, { skip: skipUnlessBashOracle() }, () => {
-      const bashRefuses = bashRefusesOwnedKeyOutsideTheRegion(path.join(sandbox, "preflight"), text);
+    test(`${named}: the port refuses exactly where this table says it must`, () => {
       const refusal = inspectCodexConfig(text, "config.toml");
-      assert.equal(bashRefuses, owned);
       assert.equal(refusal?.kind === "owned-key-outside-the-region", owned, JSON.stringify(refusal));
     });
   }
@@ -157,9 +120,3 @@ describe("row two: oso-owned keys outside the region are preserved, validated, a
   });
 });
 
-function skipUnlessBashOracle(): false | string {
-  const platformSkip = skipUnlessBashRunsTheInstallerPipeline();
-  if (platformSkip !== false) return platformSkip;
-  if (!bashIsAvailable()) return "bash cannot be spawned here, so the installer's own pipeline cannot be read as the oracle";
-  return false;
-}

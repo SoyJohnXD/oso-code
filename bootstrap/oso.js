@@ -3608,7 +3608,7 @@ function snapshotOutcome(snapshotName, infoLines, note) {
 function backupListingOutcome(backupsRoot) {
   const snapshots = snapshotsHoldingAConfig(backupsRoot);
   const listing = snapshots.map((backup) => `${path10.basename(backup)}	${backupSizeKib(backup)} KiB`);
-  const note = snapshots.length === 0 ? `no install-opencode.sh backup under ${backupsRoot} holds a config to repair from` : `${snapshots.length} snapshot(s) under ${backupsRoot}`;
+  const note = snapshots.length === 0 ? `no OpenCode install backup under ${backupsRoot} holds a config to repair from` : `${snapshots.length} snapshot(s) under ${backupsRoot}`;
   return { report: renderCommandReport("repair", "opencode", listing, [wiringOk("install backups holding a config", note)]), exitCode: 0 };
 }
 function liveConfigOf(configFile) {
@@ -3634,7 +3634,7 @@ function resolveSnapshot(backupsRoot, backupName) {
 function newestSnapshot(backupsRoot) {
   const newest = snapshotsHoldingAConfig(backupsRoot)[0];
   if (newest === void 0) {
-    return { kind: "unusable", message: `no install-opencode.sh backup under ${backupsRoot} holds a config to repair from` };
+    return { kind: "unusable", message: `no OpenCode install backup under ${backupsRoot} holds a config to repair from` };
   }
   return { kind: "located", directory: newest };
 }
@@ -3644,7 +3644,7 @@ function namedSnapshot(backupsRoot, backupName) {
   }
   const directory = path10.join(backupsRoot, backupName);
   if (!installBackupDeclares(directory, OPENCODE_INSTALL_BACKUP_FORMAT, OPENCODE_INSTALL_BACKUP_LABEL)) {
-    return { kind: "unusable", message: `not an install-opencode.sh backup: ${directory}` };
+    return { kind: "unusable", message: `not an OpenCode install backup: ${directory}` };
   }
   if (!isReadableRegularFile(recordedConfigOf(directory))) {
     return { kind: "unusable", message: `that backup holds no opencode.json to repair from: ${directory}` };
@@ -4010,7 +4010,7 @@ function restoreBackedUpEngramPlugin(tx, engramPlugin) {
   cpSync2(recorded, engramPlugin);
 }
 function impeccableEntries(input, targets) {
-  if (input.installImpeccable) return [wiringOk("impeccable", `mount left to bootstrap/lib/mount-impeccable.sh at ${targets.impeccableMount}`)];
+  if (input.installImpeccable) return [wiringOk("impeccable", `not mounted at ${targets.impeccableMount}; no installer in this tree performs the mount`)];
   mkdirSync7(path13.dirname(targets.impeccableOptOut), { recursive: true });
   writeFileSync8(targets.impeccableOptOut, `skipped by --no-impeccable on ${isoTimestamp().slice(0, 10)}
 `);
@@ -4649,7 +4649,7 @@ function checkEngramWiring(report2, paths) {
 function checkImpeccableMount(report2, homeDirectory) {
   const optOut = path15.join(homeDirectory, ".local", "state", "oso-code", "impeccable-opt-out");
   if (isReadableRegularFile(optOut)) {
-    report2.skip("Impeccable mount \u2014 install-codex.sh recorded --no-impeccable");
+    report2.skip("Impeccable mount \u2014 an install recorded --no-impeccable");
     return;
   }
   const mount = path15.join(homeDirectory, ".agents", "skills", "impeccable");
@@ -4657,7 +4657,7 @@ function checkImpeccableMount(report2, homeDirectory) {
 }
 function checkMcpToolTableDrift(report2, paths) {
   report2.section(MCP_DRIFT_SECTION);
-  report2.check("the hardcoded mandated tool list agrees with tools/hook-gates.txt in both directions", "agree", mandatedAgreementStatus());
+  report2.check("the hardcoded mandated tool list agrees with the routes table in both directions", "agree", mandatedAgreementStatus());
   for (const server of mcpServersOf(paths.configFile)) {
     if (server.command === void 0 || server.command === "") {
       report2.skip(`${server.name} MCP tool drift \u2014 no local command in ${paths.configFile} (a remote/URL-based server has no process this check spawns)`);
@@ -4841,7 +4841,7 @@ function isRecord2(value) {
 
 // core/src/install/verify-opencode.ts
 import { spawnSync as spawnSync9 } from "node:child_process";
-import { mkdirSync as mkdirSync9, mkdtempSync as mkdtempSync6, readdirSync as readdirSync6, readFileSync as readFileSync15, rmSync as rmSync11, writeFileSync as writeFileSync9 } from "node:fs";
+import { chmodSync as chmodSync3, mkdirSync as mkdirSync9, mkdtempSync as mkdtempSync6, readdirSync as readdirSync6, readFileSync as readFileSync15, rmSync as rmSync11, writeFileSync as writeFileSync9 } from "node:fs";
 import { tmpdir as tmpdir4 } from "node:os";
 import path16 from "node:path";
 var OPENCODE_NOT_ON_PATH = "opencode-not-on-path";
@@ -4867,6 +4867,20 @@ var SHELL_SYNTAX_SOURCES = [
   { directory: ["tests", "fixtures"], suffix: ".sh" }
 ];
 var SHELL_SYNTAX_EXTRA_SOURCES = [["plugin", "git-hooks", "pre-commit"]];
+var FIXTURE_SHIMS_DIRECTORY = "shims";
+var FIXTURE_SHIM_MODE = 448;
+var FIXTURE_ENGRAM_SHIM = [
+  "#!/bin/sh",
+  'case "$*" in',
+  `  "setup --help") printf 'usage: engram setup [<agent>] (claude-code, opencode, codex, ...)\\n'; exit 0 ;;`,
+  '  "setup opencode")',
+  '    mkdir -p "$HOME/.config/opencode/plugins"',
+  `    printf 'fixture engram plugin\\n' > "$HOME/.config/opencode/plugins/engram.ts"`,
+  "    exit 0 ;;",
+  "  *) exit 64 ;;",
+  "esac",
+  ""
+].join("\n");
 var FIXTURE_PREFIX = "oso-opencode-verify.";
 var TEMPORARY_PARENT_UNAVAILABLE = "temporary-parent-unavailable";
 var DECOY_CONFIG_TEXT = '{"theme":"decoy"}';
@@ -4925,6 +4939,7 @@ function stageOpenCodeFixture(input) {
   writeFileSync9(path16.join(configHome, "opencode.json"), `${JSON.stringify(operatorConfigSeed(), null, 2)}
 `);
   writeFileSync9(path16.join(configHome, "AGENTS.md"), operatorGlobalSeed());
+  writeFixtureEngramShim(fixtureShimsIn(root));
   const outcome = installOpenCode({
     homeDirectory: home,
     repositoryRoot: input.repositoryRoot,
@@ -4939,9 +4954,22 @@ function stageOpenCodeFixture(input) {
   rmSync11(root, { recursive: true, force: true });
   return { kind: "failed", result: `install-failed:${lastReportLine(outcome.report)}` };
 }
+function fixtureShimsIn(root) {
+  return path16.join(root, FIXTURE_SHIMS_DIRECTORY);
+}
+function writeFixtureEngramShim(directory) {
+  mkdirSync9(directory, { recursive: true });
+  const shim = path16.join(directory, ENGRAM_BINARY_NAME);
+  writeFileSync9(shim, FIXTURE_ENGRAM_SHIM);
+  chmodSync3(shim, FIXTURE_SHIM_MODE);
+  return shim;
+}
 function fixtureEnvironmentFor(environment, home, root) {
+  const inherited = environment["PATH"] ?? "";
+  const shims = fixtureShimsIn(root);
   return {
     ...environment,
+    PATH: inherited === "" ? shims : `${shims}${path16.delimiter}${inherited}`,
     HOME: home,
     USERPROFILE: home,
     TMPDIR: path16.join(root, "tmp"),

@@ -59,7 +59,7 @@ const EXECUTABLE_FILE_MODE = 0o700;
 const OWNER_ONLY_MASK = 0o7700;
 const MIGRATED_SESSION_PATTERN = /^ses[A-Za-z0-9]+$/;
 const AGENT_IDENTITY_LENGTH = 16;
-const ENGRAM_BINARY_NAME = "engram";
+export const ENGRAM_BINARY_NAME = "engram";
 const FALLOW_FALLBACK_COMMAND = "fallow-mcp";
 
 export type OpenCodeInstallInput = Readonly<{
@@ -360,7 +360,7 @@ function restoreBackedUpEngramPlugin(tx: BackupTransaction, engramPlugin: string
 }
 
 function impeccableEntries(input: OpenCodeInstallInput, targets: OpenCodeInstallTargets): WiringEntry[] {
-  if (input.installImpeccable) return [wiringOk("impeccable", `mount left to bootstrap/lib/mount-impeccable.sh at ${targets.impeccableMount}`)];
+  if (input.installImpeccable) return [wiringOk("impeccable", `not mounted at ${targets.impeccableMount}; no installer in this tree performs the mount`)];
   mkdirSync(path.dirname(targets.impeccableOptOut), { recursive: true });
   writeFileSync(targets.impeccableOptOut, `skipped by --no-impeccable on ${isoTimestamp().slice(0, 10)}\n`);
   return [wiringOk("impeccable", "skipped by --no-impeccable")];

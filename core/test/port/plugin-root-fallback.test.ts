@@ -124,8 +124,8 @@ test(
 
 test(
   "pluginRootAbove resolves the real Codex staged runtime layout — hooks/, bin/ and git-hooks/ are flat " +
-    "siblings under the runtime root with no plugin/ wrapper, and its own hooks.json (install-codex.sh:524, " +
-    "copied from codex/hooks/hooks.json) is what verifies it (bootstrap/install-codex.sh:518-536, finding A)",
+    "siblings under the runtime root with no plugin/ wrapper, and its own hooks.json (copied from " +
+    "codex/hooks/hooks.json) is what verifies it — read from `bootstrap/install-codex.sh` lines 518-536 at `2bc77ad`, finding A",
   () => {
     const root = flatInstallFixture("oso-codex-runtime-", ["hooks", "git-hooks"], ["hooks.json"]);
     try {

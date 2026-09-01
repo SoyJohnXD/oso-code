@@ -69,8 +69,7 @@ shell_comment_citations() {
       "$REPO_ROOT"/tools/*.sh "$REPO_ROOT"/plugin/hooks/*.sh \
       "$REPO_ROOT/plugin/bin/oso-state" "$REPO_ROOT/plugin/git-hooks/pre-commit" \
       "$REPO_ROOT"/tests/*.sh "$REPO_ROOT"/tests/fixtures/*.sh \
-      "$REPO_ROOT"/bootstrap/*.bat "$REPO_ROOT"/bootstrap/*.ps1 \
-      "$REPO_ROOT"/bootstrap/lib/*.awk 2>&1 || true; } \
+      "$REPO_ROOT"/bootstrap/*.bat "$REPO_ROOT"/bootstrap/*.ps1 2>&1 || true; } \
     | cut -d: -f1,2
 }
 
@@ -98,8 +97,7 @@ collect_opencode_scan_sources() {
   local candidate
   OPENCODE_SCAN_SOURCES=()
   for candidate in "$REPO_ROOT"/tests/*.sh "$REPO_ROOT"/tests/fixtures/*.sh \
-    "$REPO_ROOT"/bootstrap/lib/*.sh "$REPO_ROOT"/bootstrap/verify-*.sh \
-    "$REPO_ROOT"/tools/*.sh; do
+    "$REPO_ROOT"/bootstrap/lib/*.sh "$REPO_ROOT"/tools/*.sh; do
     if [ -r "$candidate" ]; then
       OPENCODE_SCAN_SOURCES+=("$candidate")
     fi
@@ -424,6 +422,8 @@ check_every_dot_directory_is_repo_owned_or_ignored() {
 }
 
 OPENCODE_PLUGIN_BUNDLE=opencode/dist/oso-code.js
+OPENCODE_INSTALLER=core/src/install/opencode-install.ts
+VERSION_PINS=core/src/install/pins.ts
 
 check_the_opencode_plugin_ships_as_one_bundled_file() {
   local bundle="$REPO_ROOT/$OPENCODE_PLUGIN_BUNDLE" source_modules
@@ -434,9 +434,9 @@ check_the_opencode_plugin_ships_as_one_bundled_file() {
   if ! grep -q 'osoCode' "$bundle"; then
     flag "$OPENCODE_PLUGIN_BUNDLE carries no osoCode entry, so whatever it is the host would load nothing from it"
   fi
-  source_modules="$(grep -c 'PLUGIN_SOURCE\|opencode/plugin/oso/' "$REPO_ROOT/bootstrap/install-opencode.sh" || true)"
+  source_modules="$(grep -c 'PLUGIN_SOURCE\|opencode/plugin/oso/' "$REPO_ROOT/$OPENCODE_INSTALLER" || true)"
   if [ "$source_modules" != "0" ]; then
-    flag "bootstrap/install-opencode.sh still names TypeScript plugin sources, so the installed import graph is not the single $OPENCODE_PLUGIN_BUNDLE it must be"
+    flag "$OPENCODE_INSTALLER still names TypeScript plugin sources, so the installed import graph is not the single $OPENCODE_PLUGIN_BUNDLE it must be"
   fi
 }
 
@@ -445,11 +445,11 @@ check_parity_docs_agree_on_harness_version() {
   for host in codex opencode; do
     case "$host" in
       codex)
-        pin="$({ sed -n 's/^SUPPORTED_CODEX_VERSION=//p' "$REPO_ROOT/bootstrap/install-codex.sh" 2>/dev/null || true; })"
+        pin="$({ sed -n 's/^export const SUPPORTED_CODEX_VERSION = "\(.*\)";$/\1/p' "$REPO_ROOT/$VERSION_PINS" 2>/dev/null || true; })"
         pattern='Codex ([0-9]+\.[0-9]+\.[0-9]+)'
         ;;
       opencode)
-        pin="$({ sed -n 's/^SUPPORTED_OPENCODE_VERSION=//p' "$REPO_ROOT/bootstrap/install-opencode.sh" 2>/dev/null || true; })"
+        pin="$({ sed -n 's/^export const SUPPORTED_OPENCODE_VERSION = "\(.*\)";$/\1/p' "$REPO_ROOT/$VERSION_PINS" 2>/dev/null || true; })"
         pattern='OpenCode ([0-9]+\.[0-9]+\.[0-9]+)'
         ;;
     esac
@@ -459,7 +459,7 @@ check_parity_docs_agree_on_harness_version() {
       continue
     fi
     if [ -z "$pin" ]; then
-      flag "no $host harness version pin in bootstrap/install-$host.sh for docs/parity-$host.md to agree with"
+      flag "no $host harness version pin in $VERSION_PINS for docs/parity-$host.md to agree with"
       continue
     fi
     named="$({ grep -oE "$pattern" "$doc" || true; } | LC_ALL=C sort -u)"
@@ -467,7 +467,7 @@ check_parity_docs_agree_on_harness_version() {
       0) flag "docs/parity-$host.md names no harness version to compare against the installer pin $pin" ;;
       1)
         named="${named##* }"
-        [ "$named" = "$pin" ] || flag "docs/parity-$host.md names $named, which disagrees with the $pin pin bootstrap/install-$host.sh states"
+        [ "$named" = "$pin" ] || flag "docs/parity-$host.md names $named, which disagrees with the $pin pin $VERSION_PINS states"
         ;;
       *) flag "docs/parity-$host.md names more than one harness version, so it cannot agree on one" ;;
     esac

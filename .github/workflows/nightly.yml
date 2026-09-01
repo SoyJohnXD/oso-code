@@ -51,14 +51,14 @@ jobs:
         run: |
           cd core
           node --experimental-strip-types --test test/install/engram-nightly.test.ts
-      - name: Codex verify report reaches its summary — no codex CLI installed, only the hardcoded mandated tool list agreeing with tools/hook-gates.txt in both directions passes, so failed=14
+      - name: Codex verify report reaches its summary — no codex CLI installed, only the hardcoded mandated tool list agreeing with the routes table in both directions passes, so failed=14
         env:
           OSO_VERIFY_SKIP_SMOKE: 1
         run: |
           report="$(mktemp)"
           fixture_home="$(mktemp -d)"
           HOME="$fixture_home" CODEX_HOME="$fixture_home/.codex" \
-            bash bootstrap/verify-codex.sh > "$report" 2>&1 || true
+            node bootstrap/oso.js verify --host codex > "$report" 2>&1 || true
           cat "$report"
           grep -q '^passed:' "$report"
           failed="$(sed -n 's/^passed: [0-9]*, failed: \([0-9]*\)$/\1/p' "$report")"
@@ -71,7 +71,7 @@ jobs:
           npm ci --no-audit --no-fund
           cd ..
           report="$(mktemp)"
-          HOME="$(mktemp -d)" bash bootstrap/verify-opencode.sh > "$report" 2>&1 || true
+          HOME="$(mktemp -d)" node bootstrap/oso.js verify --host opencode > "$report" 2>&1 || true
           cat "$report"
           grep -q '^passed:' "$report"
           passed="$(sed -n 's/^passed: \([0-9]*\), failed: [0-9]*$/\1/p' "$report")"
@@ -80,7 +80,7 @@ jobs:
           [ "$failed" = "0" ]
       - name: Pinned OpenCode binary the contract and behavior bars introspect
         run: |
-          pin="$(sed -n 's/^SUPPORTED_OPENCODE_VERSION=//p' bootstrap/install-opencode.sh | head -1)"
+          pin="$(sed -n 's/^export const SUPPORTED_OPENCODE_VERSION = "\(.*\)";$/\1/p' core/src/install/pins.ts)"
           mkdir -p "$RUNNER_TEMP/opencode-pin"
           cd "$RUNNER_TEMP/opencode-pin"
           npm pack "opencode-linux-x64@$pin"

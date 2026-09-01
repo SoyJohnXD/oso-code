@@ -12,16 +12,14 @@ import {
   ownedMcpServers,
   type ConfigDocument,
 } from "../../src/install/opencode-config.ts";
-import { bashIsAvailable, bashRenderedConfig, type BashRender } from "../support/opencode-fixture.ts";
 import { provedSomething } from "../support/proved.ts";
-import { skipUnlessBashRunsTheInstallerPipeline } from "../support/win32-skip-guards.ts";
 
 const sandbox = mkdtempSync(path.join(tmpdir(), "oso-opencode-ownership-"));
 after(() => rmSync(sandbox, { recursive: true, force: true }));
 
-const THE_OWNERSHIP_ORACLE =
-  "bootstrap/install-opencode.sh's own render_config, sourced under a fixture HOME with a fixture " +
-  "operator-preserved-keys sink, driven once per corpus and read back as opencode.json plus its preserved-key ledger";
+const THE_OWNERSHIP_CORPUS =
+  "one operator seed carrying every owned container and one operator key inside each, merged by mergeOpenCodeConfig and " +
+  "read back as the rendered document plus its preserved-key ledger, against the seven rows spelled row by row below";
 
 const OPERATOR_SEED = {
   theme: "operator-theme",
@@ -57,98 +55,63 @@ const PYTHON_FALSY_SERVER_DECLARATIONS: readonly unknown[] = [false, 0, "", null
 const fallowCommand = fixtureFallowCommand();
 
 provedSomething(
-  `the ownership oracle is ${THE_OWNERSHIP_ORACLE}`,
-  fallowCommand !== "",
-  "no fixture fallow-mcp was written, so the bash and the port would not be handed the same MCP command",
+  `the ownership corpus is ${THE_OWNERSHIP_CORPUS}, over ${EXPECTED_PRESERVED_ORDER.length} preserved key(s)`,
+  fallowCommand !== "" && EXPECTED_PRESERVED_ORDER.length === 7,
+  "no fixture fallow-mcp was written, or the preserved ledger is not the seven-key ledger this seed builds",
 );
 
-describe("the seven ownership rows, measured from render_config over a fixture HOME before the port reproduces them", () => {
-  test("row 1 — permission.* is overwritten: the bash turns an operator's question=deny into allow", { skip: skipUnlessBash() }, () => {
-    assert.equal(permissionOf(bashSeeded())["question"], "allow");
+describe("the seven ownership rows, each spelled here and then read back off the merged document", () => {
+  test("row 1 — permission.* is overwritten: an operator's question=deny becomes allow", () => {
     assert.equal(permissionOf(portSeeded())["question"], "allow");
   });
 
-  test("row 2 — permission.skill.<mode> is overwritten: allow becomes deny for every owned mode", { skip: skipUnlessBash() }, () => {
-    for (const document of [bashSeeded(), portSeeded()]) {
-      const skills = plainObject(permissionOf(document)["skill"]);
-      assert.deepEqual(skills, { "operator-skill": "allow", "oso-plan": "deny", "oso-quick": "deny", "oso-debug": "deny", "oso-roadmap": "deny" });
-    }
+  test("row 2 — permission.skill.<mode> is overwritten: allow becomes deny for every owned mode", () => {
+    const skills = plainObject(permissionOf(portSeeded())["skill"]);
+    assert.deepEqual(skills, { "operator-skill": "allow", "oso-plan": "deny", "oso-quick": "deny", "oso-debug": "deny", "oso-roadmap": "deny" });
   });
 
-  test('row 3 — permission.task["*"] is overwritten: deny becomes allow, the operator pattern untouched', { skip: skipUnlessBash() }, () => {
-    for (const document of [bashSeeded(), portSeeded()]) {
-      assert.deepEqual(plainObject(permissionOf(document)["task"]), { "operator-*": "deny", "*": "allow" });
-    }
+  test('row 3 — permission.task["*"] is overwritten: deny becomes allow, the operator pattern untouched', () => {
+    assert.deepEqual(plainObject(permissionOf(portSeeded())["task"]), { "operator-*": "deny", "*": "allow" });
   });
 
-  test("row 4 — mcp.* is insert-if-missing: an operator's own engram declaration survives, context7 and fallow are added", { skip: skipUnlessBash() }, () => {
-    for (const document of [bashSeeded(), portSeeded()]) {
-      const servers = plainObject(document["mcp"]);
-      assert.deepEqual(servers["engram"], OPERATOR_SEED.mcp.engram);
-      assert.deepEqual(servers["context7"], ownedMcpServers(fallowCommand).context7);
-      assert.deepEqual(servers["fallow"], ownedMcpServers(fallowCommand).fallow);
-    }
+  test("row 4 — mcp.* is insert-if-missing: an operator's own engram declaration survives, context7 and fallow are added", () => {
+    const servers = plainObject(portSeeded()["mcp"]);
+    assert.deepEqual(servers["engram"], OPERATOR_SEED.mcp.engram);
+    assert.deepEqual(servers["context7"], ownedMcpServers(fallowCommand).context7);
+    assert.deepEqual(servers["fallow"], ownedMcpServers(fallowCommand).fallow);
   });
 
-  test("row 5 — $schema is insert-if-missing: an operator's own URL survives, an absent one becomes oso's", { skip: skipUnlessBash() }, () => {
-    assert.equal(bashSeeded()["$schema"], OPERATOR_SEED.$schema);
+  test("row 5 — $schema is insert-if-missing: an operator's own URL survives, an absent one becomes oso's", () => {
     assert.equal(portSeeded()["$schema"], OPERATOR_SEED.$schema);
-    assert.equal(bashEmpty()["$schema"], OPENCODE_CONFIG_SCHEMA_URL);
     assert.equal(portOf({})["$schema"], OPENCODE_CONFIG_SCHEMA_URL);
   });
 
-  test("row 6 — plugin is create-if-absent, never re-emitted: a present array passes through, an absent one becomes []", { skip: skipUnlessBash() }, () => {
-    assert.deepEqual(bashSeeded()["plugin"], ["operator-plugin"]);
+  test("row 6 — plugin is create-if-absent, never re-emitted: a present array passes through, an absent one becomes []", () => {
     assert.deepEqual(portSeeded()["plugin"], ["operator-plugin"]);
-    assert.deepEqual(bashEmpty()["plugin"], []);
     assert.deepEqual(portOf({})["plugin"], []);
   });
 
-  test("row 7 — everything else is preserved: the ledger names the same keys in the same order", { skip: skipUnlessBash() }, () => {
-    assert.deepEqual(bashSeededRender().preservedKeys, EXPECTED_PRESERVED_ORDER);
+  test("row 7 — everything else is preserved: the ledger names the same keys in the same order", () => {
     assert.deepEqual([...portSeededMerge().preservedKeys], EXPECTED_PRESERVED_ORDER);
   });
+});
 
-  test("the seventh row is not a policy the port invented: no key outside the seed and the owned sets reaches the document", { skip: skipUnlessBash() }, () => {
-    const preserved = bashSeededRender().preservedKeys;
-    assert.equal(preserved.length, EXPECTED_PRESERVED_ORDER.length, `${preserved.join(", ")} is not the ledger this corpus seeds`);
+describe("the rendered bytes, and the recorded divergence from the escaping the bash renderer used", () => {
+  test("a non-ASCII operator value is emitted as UTF-8 rather than escaped, and parses back to the value the seed carried", () => {
+    const rendered = renderedText(seedCopy());
+    assert.match(rendered, /cañón/);
+    assert.doesNotMatch(rendered, /ca\\u00f1\\u00f3n/);
+    assert.equal((JSON.parse(rendered) as ConfigDocument)["notes"], OPERATOR_SEED.notes);
   });
 });
 
-describe("the rendered bytes, and the one place the port diverges from python by design", () => {
-  test("an ASCII corpus renders byte-identically through both implementations", { skip: skipUnlessBash() }, () => {
-    const asciiSeed = JSON.parse(JSON.stringify(OPERATOR_SEED)) as ConfigDocument;
-    asciiSeed["notes"] = "plain ascii notes";
-    const rendered = bashRenderedConfig(workspaceFor("ascii"), JSON.stringify(asciiSeed), fallowCommand);
-    assert.equal(rendered.status, 0, rendered.stderr);
-    assert.equal(renderedText(asciiSeed), rendered.configText);
-  });
-
-  test("a non-ASCII operator value is the measured divergence: python escapes it, the port emits UTF-8, and both parse the same", { skip: skipUnlessBash() }, () => {
-    const rendered = bashSeededRender();
-    assert.match(rendered.configText, /ca\\u00f1\\u00f3n/);
-    assert.match(renderedText(seedCopy()), /cañón/);
-    assert.deepEqual(JSON.parse(rendered.configText), JSON.parse(renderedText(seedCopy())));
-  });
-
-  test("a port document with one preserved key dropped is caught, so the agreement above is not two empty comparisons", { skip: skipUnlessBash() }, () => {
-    const damaged = portSeeded();
-    delete damaged["theme"];
-    assert.notDeepEqual(JSON.parse(bashSeededRender().configText), damaged);
-  });
-});
-
-describe("the three refusals render_config aborts on rather than writing", () => {
+describe("the three refusals the merge aborts on rather than writing", () => {
   for (const [label, seed, message] of [
     ["a config that is not a JSON object", "[1, 2]", "the existing opencode.json is not a JSON object"],
     ["a non-array plugin", '{"plugin": "nope"}', 'the existing opencode.json holds a non-array "plugin"; fix it and re-run'],
     ["a non-object owned container", '{"permission": []}', 'the existing opencode.json holds a non-object "permission"; fix it and re-run'],
   ] as const) {
-    test(`${label}: the bash aborts with its message and writes nothing, and the port refuses with the same words`, { skip: skipUnlessBash() }, () => {
-      const rendered = bashRenderedConfig(workspaceFor(label), seed, fallowCommand);
-      assert.notEqual(rendered.status, 0);
-      assert.match(rendered.stderr, new RegExp(escapeForPattern(message)));
-      assert.equal(rendered.configText, "");
+    test(`${label}: the merge refuses with the words this table spells, and renders nothing`, () => {
       assert.throws(
         () => mergeOpenCodeConfig(JSON.parse(seed), fallowCommand),
         (error: unknown) => error instanceof OpenCodeConfigRefusal && error.message === message,
@@ -177,15 +140,15 @@ describe("the win32 cell of every owned value, measured rather than reasoned", (
     assert.equal(hostContractViolationOf(mergeOpenCodeConfig(seedCopy(), WIN32_FALLOW_COMMAND).document), undefined);
   });
 
-  test("the port and the bash resolve the same fallow command from the same fixture PATH, so the row inherits the Codex measurement rather than a fresh one", { skip: skipUnlessBash() }, () => {
+  test("the fallow command the resolver returns is the one the merged document declares, so the row inherits the Codex measurement rather than a fresh one", () => {
     const resolution = resolveFallowMcpCommand(path.join(sandbox, "home"), {}, () => undefined, () => fallowCommand);
     assert.equal(resolution.command, fallowCommand);
-    const servers = plainObject(bashSeeded()["mcp"]);
+    const servers = plainObject(portSeeded()["mcp"]);
     assert.deepEqual(plainObject(servers["fallow"])["command"], [fallowCommand]);
   });
 });
 
-describe("the host contract render_config asserts over its own output", () => {
+describe("the host contract the merge asserts over its own output", () => {
   test("the rendered document passes it, and each violation is named rather than reported as one failure", () => {
     const rendered = mergeOpenCodeConfig(seedCopy(), fallowCommand).document;
     assert.equal(hostContractViolationOf(rendered), undefined);
@@ -195,7 +158,7 @@ describe("the host contract render_config asserts over its own output", () => {
     assert.equal(hostContractViolationOf(withMcp(rendered, { operator: [] })), "malformed MCP server: operator");
   });
 
-  test("an owned MCP server declared any value python reads as false is MISSING rather than malformed, since bootstrap/install-opencode.sh:669 asserts truthiness and not a type", () => {
+  test("an owned MCP server declared any value read as false is MISSING rather than malformed, since the contract asserts truthiness and not a type", () => {
     const rendered = mergeOpenCodeConfig(seedCopy(), fallowCommand).document;
     for (const declaration of PYTHON_FALSY_SERVER_DECLARATIONS) {
       assert.equal(
@@ -217,36 +180,6 @@ describe("the host contract render_config asserts over its own output", () => {
     });
   }
 });
-
-function skipUnlessBash(): false | string {
-  const platformSkip = skipUnlessBashRunsTheInstallerPipeline();
-  if (platformSkip !== false) return platformSkip;
-  if (!bashIsAvailable()) return "bash cannot be spawned here, so render_config cannot be driven as the ownership oracle";
-  return false;
-}
-
-let seededRender: BashRender | undefined;
-let emptyRender: BashRender | undefined;
-
-function bashSeededRender(): BashRender {
-  if (seededRender === undefined) {
-    seededRender = bashRenderedConfig(workspaceFor("seeded"), JSON.stringify(OPERATOR_SEED), fallowCommand);
-    assert.equal(seededRender.status, 0, seededRender.stderr);
-  }
-  return seededRender;
-}
-
-function bashSeeded(): ConfigDocument {
-  return JSON.parse(bashSeededRender().configText) as ConfigDocument;
-}
-
-function bashEmpty(): ConfigDocument {
-  if (emptyRender === undefined) {
-    emptyRender = bashRenderedConfig(workspaceFor("empty"), "{}", fallowCommand);
-    assert.equal(emptyRender.status, 0, emptyRender.stderr);
-  }
-  return JSON.parse(emptyRender.configText) as ConfigDocument;
-}
 
 function portSeededMerge() {
   return mergeOpenCodeConfig(seedCopy(), fallowCommand);
@@ -284,16 +217,6 @@ function withMcp(document: ConfigDocument, servers: ConfigDocument): ConfigDocum
 function differingLines(left: string, right: string): string[] {
   const leftLines = left.split("\n");
   return right.split("\n").filter((line, index) => line !== leftLines[index]);
-}
-
-function escapeForPattern(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function workspaceFor(label: string): string {
-  const workspace = path.join(sandbox, label.replaceAll(/[^a-z0-9]+/gi, "-"));
-  mkdirSync(workspace, { recursive: true });
-  return workspace;
 }
 
 function fixtureFallowCommand(): string {

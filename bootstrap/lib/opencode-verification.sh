@@ -145,7 +145,7 @@ install_opencode_fixture() {
   OPENCODE_FIXTURE_PATH="$shims:$(dirname "$OPENCODE_BIN"):$PATH"
   OPENCODE_FIXTURE_CONFIG_HOME="$(opencode_fixture_config_home "$OPENCODE_FIXTURE_HOME")"
   if ! run_in_opencode_fixture "$OPENCODE_FIXTURE_HOME" "$OPENCODE_FIXTURE_PATH" \
-      bash "$source_root/bootstrap/install-opencode.sh" --yes --no-impeccable --no-git-hook \
+      node "$source_root/bootstrap/oso.js" install --host opencode --yes --no-impeccable --no-git-hook \
       > "$OPENCODE_FIXTURE_ROOT/install.log" 2>&1; then
     OPENCODE_FIXTURE_RESULT="install-failed:$(tail -1 "$OPENCODE_FIXTURE_ROOT/install.log" 2>/dev/null | fold_lines)"
     remove_opencode_fixture

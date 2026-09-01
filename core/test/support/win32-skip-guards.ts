@@ -41,10 +41,3 @@ export function skipUnlessPathResolvesExtensionlessNames(): false | string {
     "win32 resolves a bare command name through PATHEXT alone and starts PE images alone, so neither an extensionless git symlink nor a #! claude stub on an injected PATH is reachable here",
   );
 }
-
-export function skipUnlessBashRunsTheInstallerPipeline(): false | string {
-  return skipOnWin32(
-    "the installer's own region pipeline is bash plus awk plus mktemp, and win32 has no POSIX shell of its own to run it as the oracle — " +
-      "the port-only cases beside each guarded one keep the floor on this leg",
-  );
-}

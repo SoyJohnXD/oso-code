@@ -20,26 +20,30 @@ provedSomething(
   `${CODEX_HOOKS_MANIFEST} holds no ${RENDERED_HOOKS_DIR_TOKEN}, so nothing below measures a substitution at all`,
 );
 
-describe("the installed Codex hooks manifest is hashed with the runtime path substituted back, the way verify-codex.sh:190-200 hashes it", () => {
-  test("a correctly installed manifest is verified rather than reported as a mismatch", () => {
-    const paths = installedFixture();
-    const report = new VerifyReport();
-    checkPublishedRuntimeBytes(report, paths, repositoryRoot);
-    assert.ok(!report.render().includes(`${CODEX_HOOKS_MANIFEST}: mismatch`), report.render());
-  });
+describe(
+  "the installed Codex hooks manifest is hashed with the runtime path substituted back, the way the bash hashed it — " +
+    "read from `bootstrap/verify-codex.sh` lines 190-200 at `2bc77ad`",
+  () => {
+    test("a correctly installed manifest is verified rather than reported as a mismatch", () => {
+      const paths = installedFixture();
+      const report = new VerifyReport();
+      checkPublishedRuntimeBytes(report, paths, repositoryRoot);
+      assert.ok(!report.render().includes(`${CODEX_HOOKS_MANIFEST}: mismatch`), report.render());
+    });
 
-  test("a manifest carrying a foreign hooks directory is still a mismatch, so the substitution is not a blanket pass", () => {
-    const paths = installedFixture("/somewhere/else/dist");
-    const report = new VerifyReport();
-    checkPublishedRuntimeBytes(report, paths, repositoryRoot);
-    assert.ok(report.render().includes(`${CODEX_HOOKS_MANIFEST}: mismatch`), report.render());
-  });
+    test("a manifest carrying a foreign hooks directory is still a mismatch, so the substitution is not a blanket pass", () => {
+      const paths = installedFixture("/somewhere/else/dist");
+      const report = new VerifyReport();
+      checkPublishedRuntimeBytes(report, paths, repositoryRoot);
+      assert.ok(report.render().includes(`${CODEX_HOOKS_MANIFEST}: mismatch`), report.render());
+    });
 
-  test("the substitution replaces every occurrence and leaves a manifest that never held the path alone", () => {
-    assert.equal(unrenderedHooksManifest("a /rt/dist b /rt/dist c", "/rt"), `a ${RENDERED_HOOKS_DIR_TOKEN} b ${RENDERED_HOOKS_DIR_TOKEN} c`);
-    assert.equal(unrenderedHooksManifest("nothing to undo", "/rt"), "nothing to undo");
-  });
-});
+    test("the substitution replaces every occurrence and leaves a manifest that never held the path alone", () => {
+      assert.equal(unrenderedHooksManifest("a /rt/dist b /rt/dist c", "/rt"), `a ${RENDERED_HOOKS_DIR_TOKEN} b ${RENDERED_HOOKS_DIR_TOKEN} c`);
+      assert.equal(unrenderedHooksManifest("nothing to undo", "/rt"), "nothing to undo");
+    });
+  },
+);
 
 let fixtureCounter = 0;
 

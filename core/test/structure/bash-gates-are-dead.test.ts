@@ -21,8 +21,6 @@ type ResidueClass = "installer" | "shell-library" | "citation" | "shipped-prose"
 type Residue = Readonly<{ residue: ResidueClass; keptBy: string }>;
 
 const RESIDUE_BY_FILE: ReadonlyMap<string, Residue> = new Map([
-  ["bootstrap/install-codex.sh", { residue: "installer", keptBy: "C2-D18: staging and trust set of installed-but-dead copies" }],
-  ["bootstrap/install-opencode.sh", { residue: "installer", keptBy: "C2-D18: staging of installed-but-dead copies" }],
   ["bootstrap/hook-hashes.txt", { residue: "installer", keptBy: "C2-D19: the published trust data those installers compare against" }],
   ["core/test/structure/published-hook-hashes.test.ts", { residue: "installer", keptBy: "C2-D19: asserts that trust data's coverage and order" }],
   ["tests/plugin-lint.sh", { residue: "shell-library", keptBy: "C2-S6 amended 2026-08-27: sources lexer.sh as a shell library; C4 retires the bar" }],

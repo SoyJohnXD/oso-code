@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { JsonParseError, readJsonFile } from "./json.ts";
@@ -7,6 +7,7 @@ import { isPlainObject, OWNED_PERMISSION_VALUES, OWNED_SKILL_MODES, OWNED_SKILL_
 import { GLOBAL_MARKER_END, GLOBAL_MARKER_START, opencodePathsFor } from "./opencode.ts";
 import type { OpenCodeHostProbes } from "./opencode-host.ts";
 import {
+  ENGRAM_BINARY_NAME,
   EXPECTED_SKILL_WRAPPER_COUNT,
   installOpenCode,
   openCodeInstallTargets,
@@ -73,6 +74,21 @@ const SHELL_SYNTAX_SOURCES: readonly Readonly<{ directory: readonly string[]; su
 ];
 
 const SHELL_SYNTAX_EXTRA_SOURCES: readonly (readonly string[])[] = [["plugin", "git-hooks", "pre-commit"]];
+
+const FIXTURE_SHIMS_DIRECTORY = "shims";
+const FIXTURE_SHIM_MODE = 0o700;
+const FIXTURE_ENGRAM_SHIM = [
+  "#!/bin/sh",
+  'case "$*" in',
+  "  \"setup --help\") printf 'usage: engram setup [<agent>] (claude-code, opencode, codex, ...)\\n'; exit 0 ;;",
+  '  "setup opencode")',
+  '    mkdir -p "$HOME/.config/opencode/plugins"',
+  "    printf 'fixture engram plugin\\n' > \"$HOME/.config/opencode/plugins/engram.ts\"",
+  "    exit 0 ;;",
+  "  *) exit 64 ;;",
+  "esac",
+  "",
+].join("\n");
 
 const FIXTURE_PREFIX = "oso-opencode-verify.";
 const TEMPORARY_PARENT_UNAVAILABLE = "temporary-parent-unavailable";
@@ -149,6 +165,7 @@ export function stageOpenCodeFixture(input: VerifyOpenCodeInput): FixtureStaging
   mkdirSync(configHome, { recursive: true });
   writeFileSync(path.join(configHome, "opencode.json"), `${JSON.stringify(operatorConfigSeed(), null, 2)}\n`);
   writeFileSync(path.join(configHome, "AGENTS.md"), operatorGlobalSeed());
+  writeFixtureEngramShim(fixtureShimsIn(root));
 
   const outcome = installOpenCode({
     homeDirectory: home,
@@ -165,9 +182,24 @@ export function stageOpenCodeFixture(input: VerifyOpenCodeInput): FixtureStaging
   return { kind: "failed", result: `install-failed:${lastReportLine(outcome.report)}` };
 }
 
+export function fixtureShimsIn(root: string): string {
+  return path.join(root, FIXTURE_SHIMS_DIRECTORY);
+}
+
+export function writeFixtureEngramShim(directory: string): string {
+  mkdirSync(directory, { recursive: true });
+  const shim = path.join(directory, ENGRAM_BINARY_NAME);
+  writeFileSync(shim, FIXTURE_ENGRAM_SHIM);
+  chmodSync(shim, FIXTURE_SHIM_MODE);
+  return shim;
+}
+
 export function fixtureEnvironmentFor(environment: NodeJS.ProcessEnv, home: string, root: string): NodeJS.ProcessEnv {
+  const inherited = environment["PATH"] ?? "";
+  const shims = fixtureShimsIn(root);
   return {
     ...environment,
+    PATH: inherited === "" ? shims : `${shims}${path.delimiter}${inherited}`,
     HOME: home,
     USERPROFILE: home,
     TMPDIR: path.join(root, "tmp"),

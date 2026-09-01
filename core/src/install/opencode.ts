@@ -223,7 +223,7 @@ function backupListingOutcome(backupsRoot: string): CommandOutcome {
   const listing = snapshots.map((backup) => `${path.basename(backup)}\t${backupSizeKib(backup)} KiB`);
   const note =
     snapshots.length === 0
-      ? `no install-opencode.sh backup under ${backupsRoot} holds a config to repair from`
+      ? `no OpenCode install backup under ${backupsRoot} holds a config to repair from`
       : `${snapshots.length} snapshot(s) under ${backupsRoot}`;
   return { report: renderCommandReport("repair", "opencode", listing, [wiringOk("install backups holding a config", note)]), exitCode: 0 };
 }
@@ -261,7 +261,7 @@ type LocatedSnapshot = Readonly<{ kind: "located"; directory: string } | { kind:
 function newestSnapshot(backupsRoot: string): LocatedSnapshot {
   const newest = snapshotsHoldingAConfig(backupsRoot)[0];
   if (newest === undefined) {
-    return { kind: "unusable", message: `no install-opencode.sh backup under ${backupsRoot} holds a config to repair from` };
+    return { kind: "unusable", message: `no OpenCode install backup under ${backupsRoot} holds a config to repair from` };
   }
   return { kind: "located", directory: newest };
 }
@@ -272,7 +272,7 @@ function namedSnapshot(backupsRoot: string, backupName: string): LocatedSnapshot
   }
   const directory = path.join(backupsRoot, backupName);
   if (!installBackupDeclares(directory, OPENCODE_INSTALL_BACKUP_FORMAT, OPENCODE_INSTALL_BACKUP_LABEL)) {
-    return { kind: "unusable", message: `not an install-opencode.sh backup: ${directory}` };
+    return { kind: "unusable", message: `not an OpenCode install backup: ${directory}` };
   }
   if (!isReadableRegularFile(recordedConfigOf(directory))) {
     return { kind: "unusable", message: `that backup holds no opencode.json to repair from: ${directory}` };

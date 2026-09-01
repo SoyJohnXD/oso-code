@@ -258,7 +258,7 @@ export function checkEngramWiring(report: VerifyReport, paths: CodexPaths): void
 export function checkImpeccableMount(report: VerifyReport, homeDirectory: string): void {
   const optOut = path.join(homeDirectory, ".local", "state", "oso-code", "impeccable-opt-out");
   if (isReadableRegularFile(optOut)) {
-    report.skip("Impeccable mount — install-codex.sh recorded --no-impeccable");
+    report.skip("Impeccable mount — an install recorded --no-impeccable");
     return;
   }
   const mount = path.join(homeDirectory, ".agents", "skills", "impeccable");
@@ -267,7 +267,7 @@ export function checkImpeccableMount(report: VerifyReport, homeDirectory: string
 
 export function checkMcpToolTableDrift(report: VerifyReport, paths: CodexPaths): void {
   report.section(MCP_DRIFT_SECTION);
-  report.check("the hardcoded mandated tool list agrees with tools/hook-gates.txt in both directions", "agree", mandatedAgreementStatus());
+  report.check("the hardcoded mandated tool list agrees with the routes table in both directions", "agree", mandatedAgreementStatus());
   for (const server of mcpServersOf(paths.configFile)) {
     if (server.command === undefined || server.command === "") {
       report.skip(`${server.name} MCP tool drift — no local command in ${paths.configFile} (a remote/URL-based server has no process this check spawns)`);

@@ -11,9 +11,11 @@ import {
   PROJECT_CONFIGS_KEY,
   type OpenCodePurgeInput,
 } from "../../src/install/opencode-purge.ts";
-import { bashIsAvailable, bashPurge, entryWithHomeSpelledOnce, fixtureEnvironment, fixturePathWith, treeUnder, writeOpenCodeShims, type TreeEntry } from "../support/opencode-fixture.ts";
+import { entryWithHomeSpelledOnce, fixtureEnvironment, fixturePathWith, treeUnder, writeOpenCodeShims, type TreeEntry } from "../support/opencode-fixture.ts";
 import { provedSomething } from "../support/proved.ts";
-import { skipUnlessBashRunsTheInstallerPipeline } from "../support/win32-skip-guards.ts";
+import { skipUnlessMkdirHonoursOwnerOnlyMode } from "../support/win32-skip-guards.ts";
+
+const OWNER_ONLY_MODE_NOT_HONOURED_HERE = skipUnlessMkdirHonoursOwnerOnlyMode();
 
 const sandbox = mkdtempSync(path.join(tmpdir(), "oso-opencode-purge-"));
 after(() => rmSync(sandbox, { recursive: true, force: true }));
@@ -25,107 +27,87 @@ const PURGE_BACKUP_SCAFFOLDING = [".local/state", ".local/state/oso-code", ".loc
 
 const THE_PURGE_CORPUS =
   "one populated fixture HOME — config, state, cache, binary and both gentle-ai homes, plus three project-level opencode.json " +
-  "files outside every target — built twice and purged once by bootstrap/purge-opencode.sh --yes and once by purgeOpenCode, " +
-  "then compared as whole trees BY NAME, KIND AND MODE with each HOME spelled once and the two backup roots' contents excluded, " +
-  "and restored through each implementation's own backup and compared again — the directories that exist only to hold a kept " +
-  "backup are excluded only where the comparison is against the pre-purge tree, never where the two implementations are compared";
+  "files outside every target — built, read as a whole tree BY NAME, KIND AND MODE, purged by purgeOpenCode and read again, " +
+  "then restored from the backup the purge kept and compared against the tree the seed built, with the HOME spelled once and " +
+  "the backup root's contents excluded — the directories that exist only to hold a kept backup are excluded only where the " +
+  "comparison is against the pre-purge tree";
 
 provedSomething(
-  `the purge parity corpus is ${THE_PURGE_CORPUS}, over the ${openCodePurgeTargets("/home/operator", false).length} targets the table names`,
+  `the purge corpus is ${THE_PURGE_CORPUS}, over the ${openCodePurgeTargets("/home/operator", false).length} targets the table names`,
   openCodePurgeTargets("/home/operator", false).length === 6 && openCodePurgeTargets("/home/operator", true).length === 4,
   "the purge target table is not the six-target table --keep-gentle-ai narrows to four, so a purge that removed nothing would compare equal to one that removed everything",
 );
 
-describe("purge --host opencode removes what the bash purge removes, and leaves what it leaves", () => {
-  test("the purged HOMEs are identical file for file once each HOME is spelled once", { skip: skipUnlessBash() }, () => {
-    const both = purgedByBoth();
-    assert.deepEqual(both.port.purged, both.bash.purged);
+describe("purge --host opencode removes every target the table names, and leaves what it promises to leave", () => {
+  test("the purge exits clean and what it leaves is read through kind and mode, never through names alone", { skip: OWNER_ONLY_MODE_NOT_HONOURED_HERE }, () => {
+    const purged = purgedByThePort();
+    assert.equal(purged.status, 0);
     assert.ok(
-      both.bash.purged.some((entry) => entry.kind === "directory") && both.bash.purged.some((entry) => entry.mode === "0700"),
-      "the comparison carried no directory and no owner-only mode, so it is reading names alone again",
+      purged.purged.some((entry) => entry.kind === "directory") && purged.purged.some((entry) => entry.mode === "0700"),
+      "what survived carried no directory and no owner-only mode, so this is reading names alone again",
     );
-    assert.equal(both.bash.status, 0);
-    assert.equal(both.port.status, 0);
   });
 
-  test("both took every seeded FILE with them beside the backup each keeps, leaving only the directories the targets hung from", { skip: skipUnlessBash() }, () => {
-    const both = purgedByBoth();
-    assert.ok(both.bash.seeded.length >= openCodePurgeTargets(both.bash.home, false).length, `${both.bash.seeded.length} entries were seeded`);
-    for (const leg of [both.bash, both.port]) {
-      const survivors = besideTheKeptBackup(leg.purged);
-      assert.ok(survivors.length > 0, "the purge left nothing at all, so 'directories only' below would be vacuous");
-      assert.deepEqual(
-        survivors.filter((entry) => entry.kind === "file"),
-        [],
-        "the purge kept a file it was asked to take",
-      );
-      for (const { label, target } of openCodePurgeTargets(leg.home, false)) {
-        assert.ok(!existsSync(target), `${label} survived the purge at ${target}`);
-      }
+  test("every seeded FILE goes with it beside the backup it keeps, leaving only the directories the targets hung from", () => {
+    const leg = purgedByThePort();
+    assert.ok(leg.seeded.length >= openCodePurgeTargets(leg.home, false).length, `${leg.seeded.length} entries were seeded`);
+    const survivors = besideTheKeptBackup(leg.purged);
+    assert.ok(survivors.length > 0, "the purge left nothing at all, so 'directories only' below would be vacuous");
+    assert.deepEqual(
+      survivors.filter((entry) => entry.kind === "file"),
+      [],
+      "the purge kept a file it was asked to take",
+    );
+    for (const { label, target } of openCodePurgeTargets(leg.home, false)) {
+      assert.ok(!existsSync(target), `${label} survived the purge at ${target}`);
     }
-    assert.notDeepEqual(both.bash.seeded.slice(1), both.bash.seeded);
+    assert.notDeepEqual(leg.seeded.slice(1), leg.seeded);
   });
 
-  test("the three project-level configs are intact in both, which is what the purge promises to preserve", { skip: skipUnlessBash() }, () => {
-    const both = purgedByBoth();
-    for (const leg of [both.bash, both.port]) {
-      for (const declared of projectConfigsIn(leg.environment)) assert.ok(treeUnder(path.dirname(declared)).length === 1, declared);
-    }
+  test("the three project-level configs are intact, which is what the purge promises to preserve", () => {
+    const leg = purgedByThePort();
+    for (const declared of projectConfigsIn(leg.environment)) assert.ok(treeUnder(path.dirname(declared)).length === 1, declared);
   });
 
-  test("each implementation restores its own backup to the tree it started from, beside the backup it keeps", { skip: skipUnlessBash() }, () => {
-    const both = purgedByBoth();
-    const bashRestore = bashPurge(both.bash.home, shims, both.bash.root, ["--restore", backupDirectoryIn(both.bash.home)], both.bash.environment);
-    assert.equal(bashRestore.status, 0, bashRestore.stderr);
-    const portRestore = purgeOpenCode({ ...portInput(both.port.home, both.port.root), restoreFrom: backupDirectoryIn(both.port.home) });
-    assert.equal(portRestore.exitCode, 0, portRestore.report);
-    assert.deepEqual(normalizedTree(both.port.home), normalizedTree(both.bash.home));
-    assert.deepEqual(besideTheKeptBackup(normalizedTree(both.bash.home)), both.bash.seeded);
+  test("the kept backup restores the tree the seed built, beside the backup it goes on keeping", () => {
+    const leg = purgedByThePort();
+    const restore = purgeOpenCode({ ...portInput(leg.home, leg.root), restoreFrom: backupDirectoryIn(leg.home) });
+    assert.equal(restore.exitCode, 0, restore.report);
+    assert.deepEqual(besideTheKeptBackup(normalizedTree(leg.home)), leg.seeded);
   });
 });
 
-describe("--keep-gentle-ai and --dry-run reach the same targets through both implementations", () => {
-  test("--keep-gentle-ai leaves both gentle-ai homes standing in both", { skip: skipUnlessBash() }, () => {
-    const bash = purgedLeg("keep-bash", (leg) => bashPurge(leg.home, shims, leg.root, ["--yes", "--keep-gentle-ai"], leg.environment).status);
+describe("--keep-gentle-ai and --dry-run reach the targets their own tables name", () => {
+  test("--keep-gentle-ai leaves both gentle-ai homes standing", () => {
     const port = purgedLeg("keep-port", (leg) => purgeOpenCode({ ...portInput(leg.home, leg.root), keepGentleAi: true }).exitCode);
-    assert.equal(bash.status, 0);
     assert.equal(port.status, 0);
-    assert.deepEqual(port.purged, bash.purged);
-    assert.ok(bash.purged.some((entry) => entry.relative.startsWith(".gentle-ai/")), "the gentle-ai home was removed by --keep-gentle-ai");
+    assert.ok(port.purged.some((entry) => entry.relative.startsWith(".gentle-ai/")), "the gentle-ai home was removed by --keep-gentle-ai");
   });
 
-  test("--dry-run names every target and removes none, through both", { skip: skipUnlessBash() }, () => {
-    const bash = purgedLeg("dry-bash", (leg) => bashPurge(leg.home, shims, leg.root, ["--dry-run"], leg.environment).status);
+  test("--dry-run names every target and removes none", () => {
     const port = purgedLeg("dry-port", (leg) => purgeOpenCode({ ...portInput(leg.home, leg.root), dryRun: true, assumeYes: false }).exitCode);
-    assert.equal(bash.status, 0);
     assert.equal(port.status, 0);
-    assert.deepEqual(bash.purged, bash.seeded);
     assert.deepEqual(port.purged, port.seeded);
   });
 
-  test("a HOME with nothing installed is reported settled rather than purged, through both", { skip: skipUnlessBash() }, () => {
+  test("a HOME with nothing installed is reported settled rather than purged", () => {
     const root = path.join(sandbox, "already-absent");
     const home = path.join(root, "home");
     mkdirSync(path.join(root, "tmp"), { recursive: true });
     mkdirSync(home, { recursive: true });
     const environment = purgeEnvironment(home, root, seedProjectConfigs(root));
-    const bash = bashPurge(home, shims, root, ["--yes"], environment);
     const port = purgeOpenCode({ ...portInput(home, root), environment });
-    assert.equal(bash.status, 0);
     assert.equal(port.exitCode, 0);
-    assert.match(bash.stdout, /already absent; nothing to purge/);
     assert.match(port.report, /already absent; nothing to purge/);
   });
 });
 
-describe("the guards that refuse before anything is removed, compared by exit through both", () => {
+describe("the guards that refuse before anything is removed, read by exit and by the tree they leave", () => {
   for (const customized of ["XDG_STATE_HOME", "XDG_CACHE_HOME", "XDG_CONFIG_HOME"] as const) {
-    test(`a customized ${customized} is a usage error in both`, { skip: skipUnlessBash() }, () => {
+    test(`a customized ${customized} is a usage error`, () => {
       const leg = seededLeg(`customized-${customized}`);
       const environment = { ...leg.environment, [customized]: path.join(leg.root, "elsewhere") };
-      const bash = bashPurge(leg.home, shims, leg.root, ["--yes"], environment);
       const port = purgeOpenCode({ ...portInput(leg.home, leg.root), environment });
-      assert.equal(bash.status, 2);
       assert.equal(port.exitCode, 2);
       assert.deepEqual(normalizedTree(leg.home), leg.seeded);
     });
@@ -139,21 +121,19 @@ describe("the guards that refuse before anything is removed, compared by exit th
     { named: "a path inside a purge target", value: "inside" },
     { named: "a path that does not exist", value: "missing" },
   ] as const) {
-    test(`a project-config list ${declared.named} is a usage error in both`, { skip: skipUnlessBash() }, () => {
+    test(`a project-config list ${declared.named} is a usage error`, () => {
       const leg = seededLeg(`projects-${declared.value === "" ? "absent" : declared.value}`);
       const environment = { ...leg.environment, [PROJECT_CONFIGS_KEY]: malformedProjectList(leg, declared.value) };
-      const bash = bashPurge(leg.home, shims, leg.root, ["--yes"], environment);
       const port = purgeOpenCode({ ...portInput(leg.home, leg.root), environment });
-      assert.equal(bash.status, 2, bash.stderr);
       assert.equal(port.exitCode, 2, port.report);
       assert.deepEqual(normalizedTree(leg.home), leg.seeded);
     });
   }
 
-  test("a restore refuses to overwrite a target that is back, through both", { skip: skipUnlessBash() }, () => {
-    const both = purgedByBoth();
-    mkdirSync(openCodePurgeTargets(both.port.home, false)[0]?.target as string, { recursive: true });
-    const port = purgeOpenCode({ ...portInput(both.port.home, both.port.root), restoreFrom: backupDirectoryIn(both.port.home) });
+  test("a restore refuses to overwrite a target that is back", () => {
+    const leg = purgedByThePort();
+    mkdirSync(openCodePurgeTargets(leg.home, false)[0]?.target as string, { recursive: true });
+    const port = purgeOpenCode({ ...portInput(leg.home, leg.root), restoreFrom: backupDirectoryIn(leg.home) });
     assert.equal(port.exitCode, 1);
     assert.match(port.report, /refusing to overwrite an existing target/);
   });
@@ -168,15 +148,12 @@ type PurgedLeg = Readonly<{
   status: number;
 }>;
 
-let bothPurges: Readonly<{ bash: PurgedLeg; port: PurgedLeg }> | undefined;
+let thePurge: PurgedLeg | undefined;
 
-function purgedByBoth(): Readonly<{ bash: PurgedLeg; port: PurgedLeg }> {
-  if (bothPurges !== undefined) return bothPurges;
-  bothPurges = {
-    bash: purgedLeg("bash-purge", (leg) => bashPurge(leg.home, shims, leg.root, ["--yes"], leg.environment).status),
-    port: purgedLeg("port-purge", (leg) => purgeOpenCode(portInput(leg.home, leg.root)).exitCode),
-  };
-  return bothPurges;
+function purgedByThePort(): PurgedLeg {
+  if (thePurge !== undefined) return thePurge;
+  thePurge = purgedLeg("port-purge", (leg) => purgeOpenCode(portInput(leg.home, leg.root)).exitCode);
+  return thePurge;
 }
 
 function purgedLeg(name: string, drive: (leg: Readonly<{ home: string; root: string; environment: NodeJS.ProcessEnv }>) => number): PurgedLeg {
@@ -262,8 +239,3 @@ function normalizedTree(home: string): TreeEntry[] {
   return treeUnder(home, (relative) => relative.startsWith(PURGE_BACKUPS_PREFIX)).map((entry) => entryWithHomeSpelledOnce(entry, home));
 }
 
-function skipUnlessBash(): false | string {
-  const platformSkip = skipUnlessBashRunsTheInstallerPipeline();
-  if (platformSkip !== false) return platformSkip;
-  return bashIsAvailable() ? false : "bash cannot be spawned here, so bootstrap/purge-opencode.sh cannot be driven as the oracle";
-}

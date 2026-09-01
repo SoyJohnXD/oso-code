@@ -56,7 +56,7 @@ provedSomething(
   `only ${mandatedRows.length} mandated MCP row(s) were found, so an agreeing verdict would agree about nothing`,
 );
 
-describe("the MCP tool-drift checks read core/src/routes/routes.ts rather than tools/hook-gates.txt", () => {
+describe("the MCP tool-drift checks read core/src/routes/routes.ts, the one table carrying the mandated column", () => {
   test("the hardcoded mandated list and the route table agree in both directions today", () => {
     assert.equal(mandatedAgreementStatus(), "agree");
   });
@@ -204,6 +204,6 @@ describe("oso verify --host codex over a fixture HOME", () => {
     assert.equal(installCodex(inputFor(home)).exitCode, 0);
     const outcome = verifyCodex(inputFor(home));
     assert.match(outcome.report, /skip: fallow MCP tool drift/);
-    assert.match(outcome.report, /the hardcoded mandated tool list agrees with tools\/hook-gates\.txt in both directions/);
+    assert.match(outcome.report, /the hardcoded mandated tool list agrees with the routes table in both directions/);
   });
 });

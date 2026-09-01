@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { describe, test } from "node:test";
 import { runTomlRegion, TOML_REGION_ACTIONS } from "../../src/install/toml-regions.ts";
@@ -7,7 +6,6 @@ import { corpusDocuments, corpusRequests, SHAPES_EXCLUDED_BY_CONSTRUCTION } from
 import {
   THE_ORACLE,
   TOML_REGION_DIFFERENTIAL_FIXTURE,
-  tomlRegionDifferentialFromTheRealAwk,
   type ObservedCase,
   type TomlRegionDifferential,
 } from "../support/toml-region-differential.ts";
@@ -15,7 +13,6 @@ import { provedSomething } from "../support/proved.ts";
 
 const MINIMUM_DOCUMENTS = 40;
 const MINIMUM_CASES = 400;
-const NIGHTLY = process.env["OSO_NIGHTLY"] === "1";
 
 const differential = JSON.parse(readFileSync(TOML_REGION_DIFFERENTIAL_FIXTURE, "utf8")) as TomlRegionDifferential;
 const documents = corpusDocuments();
@@ -70,22 +67,6 @@ describe("the corpus states what it covers and what it leaves out, and holds its
     assert.notDeepEqual(crlf.map((entry) => entry.observed.exitCode), lf.map((entry) => entry.observed.exitCode));
   });
 });
-
-describe("the committed corpus against the awk of the day, which nightly re-runs", () => {
-  test("every recorded split still reads that way", { skip: skipUnlessNightly() }, () => {
-    const observed = tomlRegionDifferentialFromTheRealAwk();
-    assert.deepEqual(observed.cases, differential.cases);
-    assert.deepEqual(observed.excluded, differential.excluded);
-  });
-});
-
-function skipUnlessNightly(): false | string {
-  if (!NIGHTLY) return "the PR gate replays the committed corpus; the real awk is nightly's, under OSO_NIGHTLY=1";
-  if (spawnSync("awk", ["--version"], { encoding: "utf8" }).error !== undefined) {
-    return "awk cannot be spawned here, so the oracle cannot be re-read";
-  }
-  return false;
-}
 
 function readsDifferentlyFromTheAwk(entry: ObservedCase): boolean {
   return JSON.stringify(portOutputOf(entry)) !== JSON.stringify(entry.observed);

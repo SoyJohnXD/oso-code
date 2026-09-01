@@ -15,27 +15,23 @@ import { skipUnlessPathResolvesExtensionlessNames } from "../support/win32-skip-
 const sandbox = mkdtempSync(path.join(tmpdir(), "oso-codex-host-"));
 after(() => rmSync(sandbox, { recursive: true, force: true }));
 
-const INSTALLER = readFileSync(path.join(repositoryRoot, "bootstrap", "install-codex.sh"), "utf8");
-const BASH_PIN = /^SUPPORTED_CODEX_VERSION=(.+)$/m.exec(INSTALLER)?.[1] ?? "";
-const BASH_VERSION_REFUSAL = failSentenceStartingWith("Codex CLI must already be exactly ");
-const BASH_SANDBOX_REFUSAL = failSentenceStartingWith("Codex rejected the merged config");
+const VERSION_REFUSAL_TEMPLATE =
+  `Codex CLI must already be exactly ${SUPPORTED_CODEX_VERSION} (found \${current:-not installed}); ` +
+  `run: npm install --global @openai/codex@${SUPPORTED_CODEX_VERSION}`;
+const SANDBOX_REFUSAL = "Codex rejected the merged config; the original config is unchanged";
 
 const VERSIONS_THE_PIN_REFUSES = ["0.150.1", "0.145.9", "", "codex@0.146.0\n0.146.0"] as const;
 
 const GIT_UNREACHABLE_ON_THE_INJECTED_PATH = skipUnlessPathResolvesExtensionlessNames();
 
 provedSomething(
-  `the refusal sentences below were read out of bootstrap/install-codex.sh rather than retyped here, and ${VERSIONS_THE_PIN_REFUSES.length} rejected version(s) were driven`,
-  BASH_PIN !== "" && BASH_VERSION_REFUSAL.includes("npm install --global") && BASH_SANDBOX_REFUSAL !== "",
-  `pin ${JSON.stringify(BASH_PIN)}, version refusal ${JSON.stringify(BASH_VERSION_REFUSAL)}, sandbox refusal ` +
-    `${JSON.stringify(BASH_SANDBOX_REFUSAL)} — an empty one means the extraction missed and every comparison below is vacuous`,
+  `the two refusal sentences below are spelled here rather than read back from the code under test, and ${VERSIONS_THE_PIN_REFUSES.length} rejected version(s) were driven`,
+  VERSION_REFUSAL_TEMPLATE.includes("npm install --global") && VERSION_REFUSAL_TEMPLATE.includes(SUPPORTED_CODEX_VERSION),
+  `version refusal ${JSON.stringify(VERSION_REFUSAL_TEMPLATE)} names neither the install command nor the pin, so every ` +
+    "comparison below would hold a sentence against itself",
 );
 
 describe("the pinned Codex version is an input the composition root reads, and a mismatch refuses before anything is written", () => {
-  test("core/src/install/pins.ts spells the version bootstrap/install-codex.sh pins", () => {
-    assert.equal(SUPPORTED_CODEX_VERSION, BASH_PIN);
-  });
-
   for (const found of VERSIONS_THE_PIN_REFUSES) {
     const reported = found === "" ? undefined : found;
     test(`install refuses ${JSON.stringify(found === "" ? "no codex at all" : found)} with the sentence the bash fails with`, () => {
@@ -59,14 +55,14 @@ describe("the pinned Codex version is an input the composition root reads, and a
     assert.equal(existsSync(path.join(home, ".codex", "config.toml")), true);
   });
 
-  test("the version reader folds codex --version the way the bash awk does, last field of every line", () => {
+  test("the version reader folds codex --version to the last field of every line", () => {
     assert.equal(versionFieldsOf("codex-cli 0.146.0\n"), "0.146.0");
     assert.equal(versionFieldsOf("codex@0.150.1\n0.150.1\n"), "codex@0.150.1\n0.150.1");
     assert.equal(versionFieldsOf(""), "");
   });
 });
 
-describe("the host's own acceptance of the merged config is the gate bash spawns codex sandbox for", () => {
+describe("the host's own acceptance of the merged config is the gate a candidate must pass before anything is written", () => {
   test("a host that rejects the candidate leaves the operator's config exactly as it was", () => {
     const home = fixtureHome();
     const configFile = path.join(home, ".codex", "config.toml");
@@ -74,12 +70,12 @@ describe("the host's own acceptance of the merged config is the gate bash spawns
     writeFileSync(configFile, operator);
     const outcome = installCodex(inputFor(home, { host: pinnedHost({ acceptsConfig: () => false }) }));
     assert.equal(outcome.exitCode, 1);
-    assert.ok(outcome.report.includes(BASH_SANDBOX_REFUSAL), outcome.report);
+    assert.ok(outcome.report.includes(SANDBOX_REFUSAL), outcome.report);
     assert.equal(readFileSync(configFile, "utf8"), operator);
   });
 
-  test("the port's rejection sentence is the sentence bootstrap/install-codex.sh fails with", () => {
-    assert.equal(HOST_REJECTED_CONFIG, BASH_SANDBOX_REFUSAL);
+  test("the port's rejection sentence is the sentence this suite spells, never one read back from the port", () => {
+    assert.equal(HOST_REJECTED_CONFIG, SANDBOX_REFUSAL);
   });
 
   test("the prober is handed the candidate bytes about to be written, never a token standing in for them", () => {
@@ -137,13 +133,8 @@ describe("a rolled-back install leaves the repository's own core.hooksPath as it
   });
 });
 
-function failSentenceStartingWith(opening: string): string {
-  const line = INSTALLER.split("\n").find((candidate) => candidate.trim().startsWith(`fail "${opening}`)) ?? "";
-  return line.trim().replace(/^fail "/, "").replace(/"$/, "").replaceAll("$SUPPORTED_CODEX_VERSION", BASH_PIN);
-}
-
 function expectedVersionRefusal(found: string | undefined): string {
-  return BASH_VERSION_REFUSAL.replace("${current:-not installed}", found === undefined ? "not installed" : found);
+  return VERSION_REFUSAL_TEMPLATE.replace("${current:-not installed}", found ?? "not installed");
 }
 
 let homeCounter = 0;
