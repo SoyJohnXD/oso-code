@@ -36,6 +36,7 @@ import {
   verifyCodex,
 } from "../../src/install/verify-codex.ts";
 import { TOOL_ROWS } from "../../src/routes/routes.ts";
+import { isReadableRegularFile } from "../../src/state/store.ts";
 import { provedSomething } from "../support/proved.ts";
 import { fixtureRepositoryRoot, pinnedHost } from "../support/codex-install-fixture.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
@@ -118,8 +119,7 @@ function fullMarketplacePayloadFixture(paths: CodexPaths): void {
   mkdirSync(path.join(paths.marketplaceRoot, "codex", ".codex-plugin"), { recursive: true });
   cpSync(path.join(repositoryRoot, "codex", ".codex-plugin", "plugin.json"), path.join(paths.marketplaceRoot, "codex", ".codex-plugin", "plugin.json"));
   for (const skill of marketplaceSkillNames()) {
-    mkdirSync(path.join(paths.marketplaceRoot, "codex", "skills", skill), { recursive: true });
-    cpSync(path.join(repositoryRoot, "codex", "skills", skill, "SKILL.md"), path.join(paths.marketplaceRoot, "codex", "skills", skill, "SKILL.md"));
+    cpSync(path.join(repositoryRoot, "codex", "skills", skill), path.join(paths.marketplaceRoot, "codex", "skills", skill), { recursive: true });
   }
   cpSync(path.join(repositoryRoot, "plugin", "skills", "_shared"), path.join(paths.marketplaceRoot, "codex", "skills", "_shared"), { recursive: true });
 }
@@ -363,7 +363,7 @@ describe("checkPluginInstalled cross-checks the installed listing against the re
   });
 });
 
-describe("checkMarketplacePayload compares the installed _shared skills tree file against file, reusing filesHoldTheSameBytes", () => {
+describe("checkMarketplacePayload compares each installed skill DIRECTORY tree, not its SKILL.md file alone, reusing directoryTreesHoldTheSameBytes", () => {
   provedSomething(
     `${marketplaceSkillNames().length} published Codex skill(s) sit alongside plugin/skills/_shared in this repository`,
     marketplaceSkillNames().length > 0,
@@ -388,6 +388,21 @@ describe("checkMarketplacePayload compares the installed _shared skills tree fil
     const report = new VerifyReport();
     checkMarketplacePayload(report, paths, repositoryRoot);
     assert.match(report.render(), /FAIL: staged marketplace payload — expected exact, got divergent: shared/);
+  });
+
+  test("a skill's references/ file missing from the installed tree fails the row, so comparing SKILL.md alone would have read it as verified", () => {
+    provedSomething(
+      "plan/references/codex.md exists in this repository to be the fixture's missing file",
+      isReadableRegularFile(path.join(repositoryRoot, "codex", "skills", "plan", "references", "codex.md")),
+      "codex/skills/plan/references/codex.md is absent, so this red-first case would delete nothing",
+    );
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    fullMarketplacePayloadFixture(paths);
+    rmSync(path.join(paths.marketplaceRoot, "codex", "skills", "plan", "references", "codex.md"));
+    const report = new VerifyReport();
+    checkMarketplacePayload(report, paths, repositoryRoot);
+    assert.match(report.render(), /FAIL: staged marketplace payload — expected exact, got divergent:.*\bplan\b/);
   });
 });
 

@@ -1,1 +1,24 @@
-[]
+[
+  {
+    "axis": "prose",
+    "item": "your host's gates deny `git commit` while `verify_green` is false and deny file edits while no slice is active",
+    "sourceFile": "plugin/skills/_shared/platform/claude/plan.md",
+    "retired": "they deny `git commit` while `verify_green` is false and deny file edits while no slice is active",
+    "reason": "C5-S1b-1 deleted plugin/skills/_shared/platform/claude/plan.md; the retired clause is a byte-for-byte restatement of plugin/skills/_shared/bodies/plan.md's own runtime-gates bullet, once that bullet's own subject (\"your host's gates\") replaces the platform file's pronoun (\"they\")",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/bodies/plan.md" }
+  },
+  {
+    "axis": "C",
+    "item": "Security Pass: native — covered: staged, unstaged, and untracked changes",
+    "sourceFile": "plugin/skills/_shared/platform/codex/security-pass.md",
+    "reason": "security-pass.md's Codex binding moved to codex/skills/security-pass/references/codex.md, a rendered file outside the six source globs axis C scans; the token survives verbatim there",
+    "home": { "kind": "prose", "ref": "codex/skills/security-pass/references/codex.md" }
+  },
+  {
+    "axis": "C",
+    "item": "Security Pass: native — covered: merge base of HEAD and <base-ref> through HEAD, plus staged, unstaged, and untracked changes",
+    "sourceFile": "plugin/skills/_shared/platform/codex/security-pass.md",
+    "reason": "security-pass.md's Codex binding moved to codex/skills/security-pass/references/codex.md, a rendered file outside the six source globs axis C scans; the token survives verbatim there",
+    "home": { "kind": "prose", "ref": "codex/skills/security-pass/references/codex.md" }
+  }
+]

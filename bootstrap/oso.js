@@ -4612,8 +4612,8 @@ function checkMarketplacePayload(report2, paths, repositoryRoot2) {
     (row) => filesHoldTheSameBytes(path15.join(repositoryRoot2, ...row.published.split("/")), path15.join(paths.marketplaceRoot, ...row.installed.split("/"))) ? [] : [row.named]
   );
   for (const skill of publishedSkillNames(repositoryRoot2)) {
-    const installed = path15.join(paths.marketplaceRoot, "codex", "skills", skill, "SKILL.md");
-    if (!filesHoldTheSameBytes(path15.join(repositoryRoot2, "codex", "skills", skill, "SKILL.md"), installed)) divergent.push(skill);
+    const installed = path15.join(paths.marketplaceRoot, "codex", "skills", skill);
+    if (!directoryTreesHoldTheSameBytes(path15.join(repositoryRoot2, "codex", "skills", skill), installed)) divergent.push(skill);
   }
   if (!directoryTreesHoldTheSameBytes(path15.join(repositoryRoot2, "plugin", "skills", "_shared"), path15.join(paths.marketplaceRoot, "codex", "skills", "_shared"))) {
     divergent.push("shared");

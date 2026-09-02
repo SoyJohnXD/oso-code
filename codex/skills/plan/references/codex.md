@@ -42,7 +42,7 @@ This composes Codex's native approval UI with Oso's local digest and artifact ra
 
 ## Making a launch wait
 
-This host exposes no foreground flag on a launch. Use Codex's wait operation, then the receipt protocol in `subagents.md`: its `--timeout 10` is the common bound, and `handoff consume` is the one-shot precondition for reading that message's verdict. A timeout or identity mismatch blocks this launch; it never falls through to the next step.
+This host exposes no foreground flag on a launch. Use Codex's wait operation, then the receipt protocol in `../_shared/references/codex.md`'s **Completion handshake** section: its `--timeout 10` is the common bound, and `handoff consume` is the one-shot precondition for reading that message's verdict. A timeout or identity mismatch blocks this launch; it never falls through to the next step.
 
 ## The explorer
 
@@ -77,12 +77,12 @@ Installed plugin skills carry Codex's `oso-code:` namespace. Operator-invoked mo
 | the QUICK mode | `oso-code:quick` | the operator invokes `$oso-code:quick` — a mode is never model-invoked |
 | the DEBUG mode | `oso-code:debug` | the operator invokes `$oso-code:debug` — a mode is never model-invoked |
 
-Forked judges and operational agents are the exception to inline reading. READ `subagents.md` beside this file NOW and use its seven-role map, payload rules and completion handshake as binding.
+Forked judges and operational agents are the exception to inline reading. READ `../_shared/references/codex.md`'s **Delegated roles** and **Completion handshake** sections NOW and use their seven-role map, payload rules and completion handshake as binding.
 
 ## Front-surface binding
 
-When `../../front-surface.md`'s trigger fires, READ `front-surface.md` beside this file NOW. It is the single Codex binding for Impeccable's mounted path, all three argument routes, package-version record, agent route and absence remedy; this mode supplies only the PLAN wiring indexed by the neutral matrix.
+When `../_shared/front-surface.md`'s trigger fires, READ `../_shared/references/codex.md`'s **Front-surface binding** section NOW. It is the single Codex binding for Impeccable's mounted path, all three argument routes, package-version record, agent route and absence remedy; this mode supplies only the PLAN wiring indexed by the neutral matrix.
 
 ## Reporting binding
 
-READ `reporting.md` beside this file NOW. It is the single Codex binding for what this host's own UI shows, and does not show, when the milestone contract at `../../reporting.md` fires.
+READ `../_shared/references/codex.md`'s **No card exists here** section NOW. It is the single Codex binding for what this host's own UI shows, and does not show, when the milestone contract at `../_shared/reporting.md` fires.

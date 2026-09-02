@@ -5,5 +5,264 @@
     "disposition": "merged",
     "destinationFile": "plugin/skills/_shared/references/claude.md",
     "destinationHeading": "Front-surface binding"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/debt-sweep.md",
+    "heading": "Shared-file paths",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/debt-sweep/references/codex.md",
+    "destinationHeading": "Shared-file paths"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/debt-sweep.md",
+    "heading": "Reaching the fallow tools",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/debt-sweep/references/codex.md",
+    "destinationHeading": "Reaching the fallow tools"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/debug.md",
+    "heading": "The delivery contract",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/debug/references/codex.md",
+    "destinationHeading": "The delivery contract"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/debug.md",
+    "heading": "Making a launch wait",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/debug/references/codex.md",
+    "destinationHeading": "Making a launch wait"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/debug.md",
+    "heading": "Shared-file paths",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/debug/references/codex.md",
+    "destinationHeading": "Shared-file paths"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/debug.md",
+    "heading": "The state command",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/debug/references/codex.md",
+    "destinationHeading": "The state command"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/debug.md",
+    "heading": "Naming and invoking the harness's own skills",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/debug/references/codex.md",
+    "destinationHeading": "Naming and invoking the harness's own skills"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/debug.md",
+    "heading": "Front-surface binding",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/debug/references/codex.md",
+    "destinationHeading": "Front-surface binding"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/debug.md",
+    "heading": "Reporting binding",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/debug/references/codex.md",
+    "destinationHeading": "Reporting binding"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/plan.md",
+    "heading": "The delivery contract",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/plan/references/codex.md",
+    "destinationHeading": "The delivery contract"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/plan.md",
+    "heading": "Question rounds",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/plan/references/codex.md",
+    "destinationHeading": "Question rounds"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/plan.md",
+    "heading": "The approval gate",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/plan/references/codex.md",
+    "destinationHeading": "The approval gate"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/plan.md",
+    "heading": "Codex operational plan and hot slices",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/plan/references/codex.md",
+    "destinationHeading": "Codex operational plan and hot slices"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/plan.md",
+    "heading": "Making a launch wait",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/plan/references/codex.md",
+    "destinationHeading": "Making a launch wait"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/plan.md",
+    "heading": "The explorer",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/plan/references/codex.md",
+    "destinationHeading": "The explorer"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/plan.md",
+    "heading": "Shared-file paths",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/plan/references/codex.md",
+    "destinationHeading": "Shared-file paths"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/plan.md",
+    "heading": "The state command",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/plan/references/codex.md",
+    "destinationHeading": "The state command"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/plan.md",
+    "heading": "The runtime gates, and the two layers of the commit rail",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/plan/references/codex.md",
+    "destinationHeading": "The runtime gates, and the two layers of the commit rail"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/plan.md",
+    "heading": "The worktree root",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/plan/references/codex.md",
+    "destinationHeading": "The worktree root"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/plan.md",
+    "heading": "Naming and invoking the harness's own skills",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/plan/references/codex.md",
+    "destinationHeading": "Naming and invoking the harness's own skills"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/plan.md",
+    "heading": "Front-surface binding",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/plan/references/codex.md",
+    "destinationHeading": "Front-surface binding"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/plan.md",
+    "heading": "Reporting binding",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/plan/references/codex.md",
+    "destinationHeading": "Reporting binding"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/quality-pass.md",
+    "heading": "Shared-file paths",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/quality-pass/references/codex.md",
+    "destinationHeading": "Shared-file paths"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/quick.md",
+    "heading": "Shared-file paths",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/quick/references/codex.md",
+    "destinationHeading": "Shared-file paths"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/quick.md",
+    "heading": "The state command",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/quick/references/codex.md",
+    "destinationHeading": "The state command"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/quick.md",
+    "heading": "Naming and invoking the harness's own skills",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/quick/references/codex.md",
+    "destinationHeading": "Naming and invoking the harness's own skills"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/quick.md",
+    "heading": "Front-surface binding",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/quick/references/codex.md",
+    "destinationHeading": "Front-surface binding"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/quick.md",
+    "heading": "Reporting binding",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/quick/references/codex.md",
+    "destinationHeading": "Reporting binding"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/roadmap.md",
+    "heading": "The delivery contract",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/roadmap/references/codex.md",
+    "destinationHeading": "The delivery contract"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/roadmap.md",
+    "heading": "Question rounds",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/roadmap/references/codex.md",
+    "destinationHeading": "Question rounds"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/roadmap.md",
+    "heading": "The approval gate",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/roadmap/references/codex.md",
+    "destinationHeading": "The approval gate"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/roadmap.md",
+    "heading": "How far the chain runs unattended — everything except each child's own stop",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/roadmap/references/codex.md",
+    "destinationHeading": "How far the chain runs unattended — everything except each child's own stop"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/roadmap.md",
+    "heading": "Shared-file paths",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/roadmap/references/codex.md",
+    "destinationHeading": "Shared-file paths"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/roadmap.md",
+    "heading": "The state command and the worktree root — routed to `plan.md`, not restated here",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/roadmap/references/codex.md",
+    "destinationHeading": "The state command and the worktree root — routed to `plan.md`, not restated here"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/roadmap.md",
+    "heading": "Reporting binding",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/roadmap/references/codex.md",
+    "destinationHeading": "Reporting binding"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/security-pass.md",
+    "heading": "Which reviewer is native, and how to reach it",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/security-pass/references/codex.md",
+    "destinationHeading": "Which reviewer is native, and how to reach it"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/codex/triage.md",
+    "heading": "Naming the harness's own modes and judges",
+    "disposition": "merged",
+    "destinationFile": "codex/skills/triage/references/codex.md",
+    "destinationHeading": "Naming the harness's own modes and judges"
   }
 ]

@@ -15,8 +15,13 @@ import {
 import { readTrackedText, trackedRepositoryFiles } from "../support/tracked-files.ts";
 
 type Home = Readonly<{ kind: "gate" | "test" | "prose"; ref: string }>;
+type NoneHome = Readonly<{ kind: "none" }>;
 
-type DeclaredDropRow = Readonly<{ axis: "A" | "B" | "C"; item: string; sourceFile: string; reason: string; home: Home }>;
+type AxisABCDropRow = Readonly<{ axis: "A" | "B" | "C"; item: string; sourceFile: string; reason: string; home: Home }>;
+
+type ProseDropRow = Readonly<{ axis: "prose"; item: string; sourceFile: string; retired: string; reason: string; home: Home | NoneHome }>;
+
+type DeclaredDropRow = AxisABCDropRow | ProseDropRow;
 
 type SectionMapRow =
   | Readonly<{ sourceFile: string; heading: string; disposition: "merged"; destinationFile: string; destinationHeading: string }>
@@ -47,6 +52,7 @@ function readJson<T>(file: string): T {
 
 const fixture = readJson<CapabilityInventoryFixture>(FIXTURE_FILE);
 const declaredDrops = readJson<DeclaredDropRow[]>(DECLARED_DROPS_FILE);
+const proseDrops = declaredDrops.filter((row): row is ProseDropRow => row.axis === "prose");
 const sectionMap = readJson<SectionMapRow[]>(SECTION_MAP_FILE);
 
 const currentTrackedFiles = trackedRepositoryFiles();
@@ -79,11 +85,11 @@ function homeResolves(home: Home, itemText: string): boolean {
   return currentTrackedFileSet.has(home.ref) && readTrackedText(home.ref).text.includes(itemText);
 }
 
-function declaredDropFor(axis: DeclaredDropRow["axis"], item: string): DeclaredDropRow | undefined {
-  return declaredDrops.find((row) => row.axis === axis && row.item === item);
+function declaredDropFor(axis: AxisABCDropRow["axis"], item: string): AxisABCDropRow | undefined {
+  return declaredDrops.find((row): row is AxisABCDropRow => row.axis === axis && row.item === item);
 }
 
-function floorFor(axis: DeclaredDropRow["axis"], fixtureCount: number): number {
+function floorFor(axis: AxisABCDropRow["axis"], fixtureCount: number): number {
   return fixtureCount - declaredDrops.filter((row) => row.axis === axis).length;
 }
 
@@ -205,6 +211,29 @@ describe("axis C — every anchor backticked verdict token survives the current 
   }
 });
 
+function proseHomeResolves(home: Home | NoneHome, itemText: string): boolean {
+  return home.kind === "none" || homeResolves(home, itemText);
+}
+
+describe("axis prose — a RULE retired from a prose file survives verbatim in its declared home, or is a counted, reasoned drop", () => {
+  provedSomething(
+    `${proseDrops.length} prose-axis row(s) are on record in declared-drops.json`,
+    proseDrops.length > 0,
+    "declared-drops.json carries no prose-axis row, so this axis would prove nothing yet",
+  );
+
+  for (const [index, row] of proseDrops.entries()) {
+    test(`declared-drops.json's prose row ${index} (${row.sourceFile}) resolves to its home`, () => {
+      assert.ok(
+        proseHomeResolves(row.home, row.item),
+        row.home.kind === "none"
+          ? `row ${index}: a none-home prose row still failed to resolve`
+          : `row ${index}: home ${row.home.kind}:${row.home.ref} does not carry "${row.item}" verbatim`,
+      );
+    });
+  }
+});
+
 const anchorHeadingCounts = new Map<string, number>();
 const anchorOriginsByHeading = new Map<string, string[]>();
 for (const item of fixture.axisD) {
@@ -262,13 +291,21 @@ describe("axis D — KEPT absorbs min(anchor, current) occurrences of each headi
   }
 });
 
-describe("every declared-drop row carries the axis/item/sourceFile/reason/home schema", () => {
+describe("every declared-drop row carries the axis/item/sourceFile/reason/home schema its axis requires", () => {
   declaredDrops.forEach((row, index) => {
     test(`declared-drops.json[${index}] carries a well-formed row`, () => {
-      assert.ok(row.axis === "A" || row.axis === "B" || row.axis === "C", `row ${index}: axis "${String(row.axis)}" is not A, B, or C`);
+      assert.ok(
+        row.axis === "A" || row.axis === "B" || row.axis === "C" || row.axis === "prose",
+        `row ${index}: axis "${String(row.axis)}" is not A, B, C, or prose`,
+      );
       assert.ok(typeof row.item === "string" && row.item !== "", `row ${index}: item is not a non-empty string`);
       assert.ok(typeof row.sourceFile === "string" && row.sourceFile !== "", `row ${index}: sourceFile is not a non-empty string`);
       assert.ok(typeof row.reason === "string" && row.reason !== "", `row ${index}: reason is not a non-empty string`);
+      if (row.axis === "prose") {
+        assert.ok(typeof row.retired === "string" && row.retired !== "", `row ${index}: retired is not a non-empty string`);
+        assertProseHomeShape(row.home, `declared-drops.json[${index}]`);
+        return;
+      }
       assertHomeShape(row.home, `declared-drops.json[${index}]`);
     });
   });
@@ -297,6 +334,12 @@ function assertHomeShape(home: unknown, context: string): asserts home is Home {
   const ref = (home as { ref?: unknown }).ref;
   assert.ok(kind === "gate" || kind === "test" || kind === "prose", `${context}: home.kind "${String(kind)}" is not gate, test, or prose`);
   assert.ok(typeof ref === "string" && ref !== "", `${context}: home.ref is not a non-empty string`);
+}
+
+function assertProseHomeShape(home: unknown, context: string): asserts home is Home | NoneHome {
+  assert.ok(typeof home === "object" && home !== null, `${context}: home is not an object`);
+  if ((home as { kind?: unknown }).kind === "none") return;
+  assertHomeShape(home, context);
 }
 
 describe("homeResolves", () => {

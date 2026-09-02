@@ -1,6 +1,6 @@
 import { OPENCODE_PERMISSION_ORDER, type AgentRole, type HostName, type SkillHost, type SkillStub } from "./routes.ts";
 
-export { agentHosts, AGENT_ROLES, SKILL_STUBS } from "./routes.ts";
+export { agentHosts, AGENT_ROLES, SHARED_REFERENCE_HOSTS, SKILL_STUBS } from "./routes.ts";
 export type { AgentRole, HostName, SkillHost, SkillStub } from "./routes.ts";
 
 export function agentBodyPath(role: AgentRole, host: HostName): string {
@@ -19,6 +19,26 @@ export function agentOutputPath(role: AgentRole, host: HostName): string {
 
 export function skillOutputPath(stub: SkillStub, host: SkillHost): string {
   return host === "codex" ? `codex/skills/${stub.id}/SKILL.md` : `opencode/skills/oso-${stub.id}/SKILL.md`;
+}
+
+export function skillReferencePath(stub: SkillStub, host: SkillHost): string {
+  return `core/src/prose/skills/${stub.id}/references/${host}.md`;
+}
+
+export function skillReferenceOutputPath(stub: SkillStub, host: SkillHost): string {
+  return host === "codex" ? `codex/skills/${stub.id}/references/codex.md` : `opencode/skills/oso-${stub.id}/references/opencode.md`;
+}
+
+export function sharedReferencePath(host: SkillHost): string {
+  return `core/src/prose/shared/${host}.md`;
+}
+
+export function sharedReferenceOutputPath(host: SkillHost): string {
+  return `plugin/skills/_shared/references/${host}.md`;
+}
+
+export function renderReference(body: string): string {
+  return body;
 }
 
 export function renderAgent(role: AgentRole, host: HostName, body: string): string {

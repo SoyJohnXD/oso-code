@@ -9,7 +9,7 @@ argument-hint: "[optional base ref for a branch range, e.g. main]"
 This judge's instructions live in two files. READ BOTH NOW, in this order, and follow them as binding — as if their text stood here. Both paths resolve against the directory holding this file:
 
 1. `../_shared/bodies/security-pass.md` — the judgment itself: the two paths, the fallback acquisition, the fallback criteria, the report shape, the verdict vocabulary. It is the same on every host this harness runs on.
-2. `../_shared/platform/codex/security-pass.md` — what the judgment leaves to the host: which reviewer is native here, and how this context reaches it.
+2. `references/codex.md` — what the judgment leaves to the host: which reviewer is native here, and how this context reaches it.
 
 Where the neutral body defers to "your host", the platform file is the answer, and it is the only answer — never improvise a spelling the platform file does not give.
 

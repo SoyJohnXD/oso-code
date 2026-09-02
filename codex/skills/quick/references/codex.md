@@ -1,12 +1,4 @@
-# Debug mode — Codex
-
-## The delivery contract
-
-No swallow is known on this host, and this port has not probed for one. So the discipline stands unchanged rather than relaxed: operator-facing content — the triage report, the diagnosis presentation — ENDS the turn as plain text, with any tool call in a LATER turn. An extra turn is the cheap side of that bet; content the operator never sees is the expensive one.
-
-## Making a launch wait
-
-This host exposes no foreground flag on a launch. Use Codex's wait operation, then the receipt protocol in `subagents.md`: its `--timeout 10` is the common bound, and `handoff consume` is the one-shot precondition for reading that message's verdict. A timeout or identity mismatch blocks this launch; it never falls through to the next step.
+# Quick mode — Codex
 
 ## Shared-file paths
 
@@ -27,14 +19,15 @@ Installed plugin skills carry Codex's `oso-code:` namespace. Operator-invoked mo
 | The body says | Here it is | Reached by |
 | --- | --- | --- |
 | the PLAN mode | `oso-code:plan` | the operator invokes `$oso-code:plan` — a mode is never model-invoked |
+| the DEBUG mode | `oso-code:debug` | the operator invokes `$oso-code:debug` — a mode is never model-invoked |
 | the quality-pass judge | `oso-code:quality-pass` | read its installed `SKILL.md` and run it inline, the way it runs on every host |
 
-Forked judges and operational agents are the exception to inline reading. READ `subagents.md` beside this file NOW and use its role map, payload rules and completion handshake as binding.
+Forked judges and operational agents are the exception to inline reading. READ `../_shared/references/codex.md`'s **Delegated roles** and **Completion handshake** sections NOW and use them as binding. Quick has no separate wait section, so the common receipt protocol applies directly to every launch whose result the flow consumes.
 
 ## Front-surface binding
 
-When `../../front-surface.md`'s trigger fires, READ `front-surface.md` beside this file NOW. It is the single Codex binding for Impeccable's mounted path, all three argument routes, package-version record, agent route and absence remedy. This mode supplies only the DEBUG wiring indexed by the neutral matrix, which still invokes none of the three arguments.
+When `../_shared/front-surface.md`'s trigger fires, READ `../_shared/references/codex.md`'s **Front-surface binding** section NOW. It is the single Codex binding for Impeccable's mounted path, all three argument routes, package-version record, agent route and absence remedy; this mode supplies only the QUICK wiring indexed by the neutral matrix.
 
 ## Reporting binding
 
-READ `reporting.md` beside this file NOW. It is the single Codex binding for what this host's own UI shows, and does not show, when the milestone contract at `../../reporting.md` fires.
+READ `../_shared/references/codex.md`'s **No card exists here** section NOW. It is the single Codex binding for what this host's own UI shows, and does not show, when the milestone contract at `../_shared/reporting.md` fires.

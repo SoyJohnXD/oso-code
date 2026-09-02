@@ -25,13 +25,31 @@ function skillArtifact(prose, stub, host) {
   return artifactOf(prose.skillOutputPath(stub, host), prose.renderSkill(stub, host, body));
 }
 
+function skillReferenceArtifacts(prose) {
+  return prose.SKILL_STUBS.flatMap((stub) => stub.referenceHosts.map((host) => skillReferenceArtifact(prose, stub, host)));
+}
+
+function skillReferenceArtifact(prose, stub, host) {
+  const body = readFileSync(join(repoRoot, prose.skillReferencePath(stub, host)), "utf8");
+  return artifactOf(prose.skillReferenceOutputPath(stub, host), prose.renderReference(body));
+}
+
+function sharedReferenceArtifacts(prose) {
+  return prose.SHARED_REFERENCE_HOSTS.map((host) => sharedReferenceArtifact(prose, host));
+}
+
+function sharedReferenceArtifact(prose, host) {
+  const body = readFileSync(join(repoRoot, prose.sharedReferencePath(host)), "utf8");
+  return artifactOf(prose.sharedReferenceOutputPath(host), prose.renderReference(body));
+}
+
 function artifactOf(name, text) {
   return { path: join(repoRoot, name), name, text };
 }
 
 async function freshArtifacts() {
   const prose = await importBundled(renderModule);
-  return [...agentArtifacts(prose), ...skillArtifacts(prose)];
+  return [...agentArtifacts(prose), ...skillArtifacts(prose), ...skillReferenceArtifacts(prose), ...sharedReferenceArtifacts(prose)];
 }
 
 async function check() {

@@ -4,14 +4,20 @@ import path from "node:path";
 import { describe, test } from "node:test";
 import {
   AGENT_ROLES,
+  SHARED_REFERENCE_HOSTS,
   SKILL_STUBS,
   agentBodyPath,
   agentHosts,
   agentOutputPath,
   renderAgent,
+  renderReference,
   renderSkill,
+  sharedReferenceOutputPath,
+  sharedReferencePath,
   skillBodyPath,
   skillOutputPath,
+  skillReferenceOutputPath,
+  skillReferencePath,
   type SkillHost,
 } from "../../src/prose/render.ts";
 import { provedSomething } from "../support/proved.ts";
@@ -49,6 +55,30 @@ describe("every rendered skill wrapper equals a fresh, deterministic render of i
         assert.equal(renderSkill(stub, host, body), committed);
       });
     }
+  }
+});
+
+describe("every rendered skill reference equals a fresh, deterministic render of its source", () => {
+  for (const stub of SKILL_STUBS) {
+    for (const host of stub.referenceHosts) {
+      test(`${stub.id}'s ${host} reference renders the committed bytes, twice, identically`, () => {
+        const body = readRepoText(skillReferencePath(stub, host));
+        const committed = readRepoText(skillReferenceOutputPath(stub, host));
+        assert.equal(renderReference(body), committed);
+        assert.equal(renderReference(body), committed);
+      });
+    }
+  }
+});
+
+describe("every rendered shared-layer reference equals a fresh, deterministic render of its source", () => {
+  for (const host of SHARED_REFERENCE_HOSTS) {
+    test(`the shared layer's ${host} reference renders the committed bytes, twice, identically`, () => {
+      const body = readRepoText(sharedReferencePath(host));
+      const committed = readRepoText(sharedReferenceOutputPath(host));
+      assert.equal(renderReference(body), committed);
+      assert.equal(renderReference(body), committed);
+    });
   }
 });
 
