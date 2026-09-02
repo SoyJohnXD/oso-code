@@ -169,5 +169,13 @@
     "retired": "because a stop the flow INTENDED may never read `auto=running` on disk: a host's unattended rails carry a run that reads running back into motion, and what they owe this one is the end of the turn.",
     "reason": "roadmap.md's chain-blocked bullet restated plan.md's ground-rules park-marker rationale (why a still-'running' marker is unsafe on disk and what a host's rails do with each reading); C5-S2b retired the restatement and pointed roadmap.md at unattended.md, where the rationale already lives verbatim from the gather above",
     "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Otherwise, two labeled sections, never merged — a conformance gap must never hide inside the debt list, nor a debt finding inside conformance.",
+    "sourceFile": "core/src/prose/skills/debt-sweep/opencode.md",
+    "retired": "It ends on exactly one of: `Debt Sweep: clean` — report it as the pass; `Debt Sweep: findings` — route the list to the applier for the fix; `Debt Sweep: blocked` — resolve what the payload names missing and invoke the judge again fresh; `Conformance: clean` — report it; `Conformance: findings` — route each gap to the decision it violates; `Conformance: skipped — no ledger provided` — report the skip, never pass on it.",
+    "reason": "the OpenCode preface said the judge ends on exactly one of six verdicts; bodies/debt-sweep.md:54-73 requires a whole-report blocked branch or else two labeled sections never merged, one debt verdict and one conformance verdict. C5-S2d reconciled the preface to the body it binds under Decision 64 — the rule was corrected, not lost, and survives verbatim at its home",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/bodies/debt-sweep.md" }
   }
 ]
