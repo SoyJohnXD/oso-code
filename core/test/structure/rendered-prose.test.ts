@@ -42,12 +42,11 @@ describe("every rendered agent file equals a fresh, deterministic render of its 
   for (const role of AGENT_ROLES) {
     for (const host of agentHosts(role)) {
       test(`${role.id} on ${host} renders the committed bytes, twice, identically`, () => {
-        const sharedBody = readRepoTextOrNull(agentSharedBodyPath(role));
-        const hostFile = readRepoTextOrNull(agentBodyPath(role, host));
-        const [body, delta] = sharedBody === null ? [hostFile, null] : [sharedBody, hostFile];
+        const sharedBody = readRepoText(agentSharedBodyPath(role));
+        const delta = readRepoTextOrNull(agentBodyPath(role, host));
         const committed = readRepoText(agentOutputPath(role, host));
-        assert.equal(renderAgent(role, host, body as string, delta), committed);
-        assert.equal(renderAgent(role, host, body as string, delta), committed);
+        assert.equal(renderAgent(role, host, sharedBody, delta), committed);
+        assert.equal(renderAgent(role, host, sharedBody, delta), committed);
       });
     }
   }
