@@ -1,1 +1,9 @@
-[]
+[
+  {
+    "sourceFile": "plugin/skills/_shared/platform/claude/front-surface.md",
+    "heading": "Delegation-wait binding",
+    "disposition": "merged",
+    "destinationFile": "plugin/skills/_shared/references/claude.md",
+    "destinationHeading": "Front-surface binding"
+  }
+]

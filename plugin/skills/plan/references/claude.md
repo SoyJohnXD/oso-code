@@ -4,7 +4,7 @@
 
 The Claude Code TUI drops assistant text that precedes a tool call in the same turn. So operator-facing content — the intent presentation, the surface-map presentation, any narrative the operator must read — must END the turn as plain text, with the tool call (`AskUserQuestion`, `ExitPlanMode`) in a LATER turn. Context a question round needs travels INSIDE the `AskUserQuestion` fields (question text, option descriptions), never as prose before the call.
 
-One exception stands and `reporting.md` beside this file states it whole rather than this section restating it: while this repository's state carries `auto=running`, the run is UNATTENDED and its milestone text rides the stream instead of ending the turn, journaled full-text in its place, with the park and the final report still ending it. Nothing here changes for a run with no such marker — and phases 1–5 always run with the operator, so no exception reaches this file's own gates.
+One exception stands and `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **The unattended run — the carve-out, and the record that pays for it** section states it whole rather than this section restating it: while this repository's state carries `auto=running`, the run is UNATTENDED and its milestone text rides the stream instead of ending the turn, journaled full-text in its place, with the park and the final report still ending it. Nothing here changes for a run with no such marker — and phases 1–5 always run with the operator, so no exception reaches this file's own gates.
 
 ## Question rounds
 
@@ -14,7 +14,7 @@ The tool is `AskUserQuestion`, and one round holds 4 questions maximum — its p
 
 `ExitPlanMode` is the single approval gate, and the plan document §5 builds is its `plan` argument — repaso-first, full-detail-after. Its native approval UI is what renders that document, and the operator's approval there is what starts execution. On approval, exit Plan Mode.
 
-Where this change is running as a child of the ROADMAP mode's chain, this gate is not its to reach: `roadmap.md` beside this file states what stands in its place — the one approval that mode's §3 took, and the plain-text delivery §5's document rides instead of the `plan` argument above. Read it there before phase 1, and present no gate the roadmap already passed.
+Where this change is running as a child of the ROADMAP mode's chain, this gate is not its to reach: `${CLAUDE_SKILL_DIR}/../roadmap/references/claude.md` states what stands in its place — the one approval that mode's §3 took, and the plain-text delivery §5's document rides instead of the `plan` argument above. Read it there before phase 1, and present no gate the roadmap already passed.
 
 ## The explorer
 
@@ -34,7 +34,7 @@ so `oso-state set mode=plan active_slice=<n> verify_green=false` is run as `"${O
 
 ## The runtime gates, and the two layers of the commit rail
 
-The gates are this plugin's own hooks: they deny `git commit` while `verify_green` is false and deny file edits while no slice is active. The `pre-commit` hook arms on `CLAUDE_CODE_SESSION_ID`, which the client puts in every process the Bash tool starts and no operator's own terminal carries — so an operator committing in this repo themselves never meets it.
+The gates are this plugin's own hooks. The `pre-commit` hook arms on `CLAUDE_CODE_SESSION_ID`, which the client puts in every process the Bash tool starts and no operator's own terminal carries — so an operator committing in this repo themselves never meets it.
 
 The commit rail has two layers and the wave loop's green window (§6) exists because neither can see which worktree a commit comes from:
 
@@ -47,7 +47,7 @@ The teardown §6 arms `repo_path` for is the `SessionEnd` hook, which runs `git 
 
 Three of this plugin's hooks read the `auto` marker the AUTO disposition writes, and they are what "unattended" costs and buys here:
 
-- `auto-continue.sh` — the `Stop` net. It reads `auto=running` and pushes the run on when a turn ends without parking or closing it, capped at a fixed number of pushes that moved the journal nowhere. `reporting.md` beside this file owns the delivery carve-out this net stands behind.
+- `auto-continue.sh` — the `Stop` net. It reads `auto=running` and pushes the run on when a turn ends without parking or closing it, capped at a fixed number of pushes that moved the journal nowhere. `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **The unattended run — the carve-out, and the record that pays for it** section owns the delivery carve-out this net stands behind.
 - `reanchor-after-compact.sh` — `SessionStart` with `source=compact`. A compaction takes the window and not the position: this hook hands the fresh context the three places the position actually lives — the `oso/index` row's `NEXT:` line, `oso-state show`, and the run journal. How much window the client holds before compacting is the `autoCompactWindow` setting, which the harness can ask for and never guarantee, so this re-anchor is the floor under an unattended run rather than the window being one.
 - `block-prod-deploy.sh` — a `PreToolUse` rail armed only while the marker is running: a production deploy, and a push off the run's own branch, are denied to a run nobody is watching. Taking the run back (`auto=done`) is what disarms it.
 
@@ -74,12 +74,12 @@ The three delegates the body names — `oso-applier`, `oso-verifier`, `oso-integ
 
 ## Delegation-wait binding
 
-READ `delegation-wait.md` beside this file NOW. It is the single Claude Code binding for how a delegation's report arrives on this host and for the marker every delegation arms. Here that rule reaches §6's applier, verifier and integrator, §2's exploration subagents, the integration gate's verifier, a red slice's relaunched applier and §7's debt-cleanup applier. N delegations in one message all end the same turn and each returns its own notification; the wave loop reads every report before anything moves.
+READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Making a launch wait** section NOW. It is the single Claude Code binding for how a delegation's report arrives on this host and for the marker every delegation arms. Here that rule reaches §6's applier, verifier and integrator, §2's exploration subagents, the integration gate's verifier, a red slice's relaunched applier and §7's debt-cleanup applier.
 
 ## Front-surface binding
 
-When `../../front-surface.md`'s trigger fires, READ `front-surface.md` beside this file NOW. It is the single Claude Code binding for Impeccable's invocation, package-version record, agent route and absence remedy; this mode supplies only the PLAN wiring indexed by the neutral matrix.
+When `${CLAUDE_SKILL_DIR}/../_shared/front-surface.md`'s trigger fires, READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Front-surface binding** section NOW. It is the single Claude Code binding for Impeccable's invocation, package-version record, agent route and absence remedy; this mode supplies only the PLAN wiring indexed by the neutral matrix.
 
 ## Reporting binding
 
-READ `reporting.md` beside this file NOW. It is the single Claude Code binding for what this host's own UI shows, and does not show, when the milestone contract at `../../reporting.md` fires.
+READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md` NOW. Its **The native card is not the report** and **The unattended run** sections are the single Claude Code binding for what this host's own UI shows, and does not show, when the milestone contract at `${CLAUDE_SKILL_DIR}/../_shared/reporting.md` fires.

@@ -474,80 +474,6 @@ check_parity_docs_agree_on_harness_version() {
   done
 }
 
-concern_named_before_its_host_qualifier() {
-  sed 's/ — .*//' | tr -d '`' \
-    | sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/[[:punct:]]*$//' \
-    | tr '[:upper:]' '[:lower:]'
-}
-
-overlay_section_concerns() {
-  local overlay="$1"
-  [ -f "$overlay" ] || return 0
-  { sed -n 's/^## //p' "$overlay" || true; } | concern_named_before_its_host_qualifier
-}
-
-declared_opencode_section_divergences() {
-  local doc="$REPO_ROOT/docs/parity-opencode.md" rows row overlay concern
-  [ -f "$doc" ] || return 0
-  rows="$({ sed -n '/^## Section inventory divergences$/,/^## /p' "$doc" \
-    | grep '^| ' | grep -vE '^\|[[:space:]]*(Overlay|-)' || true; })"
-  while IFS= read -r row; do
-    overlay="$(cut -d'|' -f2 <<< "$row" | tr -d '` ')"
-    concern="$(cut -d'|' -f3 <<< "$row" | concern_named_before_its_host_qualifier)"
-    [ -n "$overlay" ] && [ -n "$concern" ] || continue
-    printf '%s\t%s\n' "$overlay" "$concern"
-  done <<< "$rows"
-}
-
-concern_is_declared() {
-  local declared="$1" overlay="$2" concern="$3"
-  grep -qxF "$(printf '%s\t%s' "$overlay" "$concern")" <<< "$declared"
-}
-
-check_platform_section_inventory_is_matched_or_declared() {
-  local overlays="$PLUGIN_ROOT/skills/_shared/platform"
-  local absent_overlay='no counterpart file'
-  local declared reference file overlay concern carried reference_concerns
-
-  declared="$(declared_opencode_section_divergences)"
-
-  for reference in claude codex; do
-    for file in "$overlays/$reference"/*.md; do
-      [ -f "$file" ] || continue
-      overlay="$(basename "$file")"
-      if [ ! -f "$overlays/opencode/$overlay" ]; then
-        concern_is_declared "$declared" "$overlay" "$absent_overlay" \
-          || flag "skills/_shared/platform/opencode carries no $overlay, which platform/$reference does, and docs/parity-opencode.md declares no host-justified divergence for it"
-        continue
-      fi
-      carried="$(overlay_section_concerns "$overlays/opencode/$overlay")"
-      while IFS= read -r concern; do
-        [ -n "$concern" ] || continue
-        if ! grep -qxF "$concern" <<< "$carried" \
-          && ! concern_is_declared "$declared" "$overlay" "$concern"; then
-          flag "skills/_shared/platform/opencode/$overlay drops the '$concern' section platform/$reference/$overlay carries, and docs/parity-opencode.md declares no host-justified divergence for it"
-        fi
-      done <<< "$(overlay_section_concerns "$file")"
-    done
-  done
-
-  while IFS=$'\t' read -r overlay concern; do
-    [ -n "$overlay" ] || continue
-    if [ "$concern" = "$absent_overlay" ]; then
-      [ ! -f "$overlays/opencode/$overlay" ] \
-        || flag "docs/parity-opencode.md declares $overlay absent from platform/opencode, which carries it"
-      continue
-    fi
-    if grep -qxF "$concern" <<< "$(overlay_section_concerns "$overlays/opencode/$overlay")"; then
-      flag "docs/parity-opencode.md declares '$concern' a divergence in $overlay, a section platform/opencode carries — a divergence is declared for what this host answers elsewhere, never for what it answers in place"
-      continue
-    fi
-    reference_concerns="$({ overlay_section_concerns "$overlays/claude/$overlay"; overlay_section_concerns "$overlays/codex/$overlay"; })"
-    grep -qxF "$concern" <<< "$reference_concerns" \
-      || flag "docs/parity-opencode.md declares '$concern' a divergence in $overlay, a section neither platform/claude nor platform/codex carries"
-  done <<< "$declared"
-}
-
 check_every_host_wraps_every_skill() {
   local skill host wrapper
   for skill in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
@@ -598,7 +524,6 @@ check_no_shipped_file_carries_the_home_path_of_whoever_runs_this
 check_every_dot_directory_is_repo_owned_or_ignored
 check_the_opencode_plugin_ships_as_one_bundled_file
 check_parity_docs_agree_on_harness_version
-check_platform_section_inventory_is_matched_or_declared
 check_every_host_wraps_every_skill
 check_the_verdict_grammar_has_one_implementation
 check_no_verification_script_invokes_opencode_directly
@@ -607,4 +532,4 @@ if [ "$violations" -gt 0 ]; then
   echo "lint: $violations violation(s) in $PLUGIN_ROOT"
   exit 1
 fi
-echo "lint: clean — twelve rules"
+echo "lint: clean — eleven rules"

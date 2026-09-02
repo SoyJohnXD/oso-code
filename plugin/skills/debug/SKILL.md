@@ -10,6 +10,6 @@ disable-model-invocation: true
 This mode's instructions live in two files. READ BOTH NOW, in this order, and follow them as binding — as if their text stood here:
 
 1. `${CLAUDE_SKILL_DIR}/../_shared/bodies/debug.md` — the flow itself: reproduce-first triage, the diagnosis freeze, the delegated fix, the close. It is the same on every host this harness runs on.
-2. `${CLAUDE_SKILL_DIR}/../_shared/platform/claude/debug.md` — what the flow leaves to the host: the tools it calls, the paths it interpolates, the delivery rule this TUI imposes, the state command the gates read.
+2. `${CLAUDE_SKILL_DIR}/references/claude.md` — what the flow leaves to the host: the tools it calls, the paths it interpolates, the delivery rule this TUI imposes, the state command the gates read.
 
 Where the neutral body defers to "your host", the platform file is the answer, and it is the only answer — never improvise a spelling the platform file does not give.

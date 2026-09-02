@@ -13,6 +13,6 @@ model: opus
 This judge's instructions live in two files. READ BOTH NOW, in this order, and follow them as binding — as if their text stood here:
 
 1. `${CLAUDE_SKILL_DIR}/../_shared/bodies/security-pass.md` — the judgment itself: the two paths, the fallback acquisition, the fallback criteria, the report shape, the verdict vocabulary. It is the same on every host this harness runs on.
-2. `${CLAUDE_SKILL_DIR}/../_shared/platform/claude/security-pass.md` — what the judgment leaves to the host: which reviewer is native here, and how this fork reaches it.
+2. `${CLAUDE_SKILL_DIR}/references/claude.md` — what the judgment leaves to the host: which reviewer is native here, and how this fork reaches it.
 
 Where the neutral body defers to "your host", the platform file is the answer, and it is the only answer — never improvise a spelling the platform file does not give.
