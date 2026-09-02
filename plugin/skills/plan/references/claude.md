@@ -51,7 +51,7 @@ Three of this plugin's hooks read the `auto` marker the AUTO disposition writes,
 - `reanchor-after-compact.sh` — `SessionStart` with `source=compact`. A compaction takes the window and not the position: this hook hands the fresh context the three places the position actually lives — the `oso/index` row's `NEXT:` line, `oso-state show`, and the run journal. How much window the client holds before compacting is the `autoCompactWindow` setting, which the harness can ask for and never guarantee, so this re-anchor is the floor under an unattended run rather than the window being one.
 - `block-prod-deploy.sh` — a `PreToolUse` rail armed only while the marker is running: a production deploy, and a push off the run's own branch, are denied to a run nobody is watching. Taking the run back (`auto=done`) is what disarms it.
 
-The marker is the flow's to write, never a hook's: `oso-state set auto=running auto_change=<change-slug>`, `auto=parked`, `auto=done`, exactly where the neutral body's own ground rules put each flip.
+The marker is the flow's to write, never a hook's: `oso-state set auto=running auto_change=<change-slug>`, `auto=parked`, `auto=done`, exactly where `${CLAUDE_SKILL_DIR}/../_shared/unattended.md` puts each flip.
 
 ## The worktree root
 

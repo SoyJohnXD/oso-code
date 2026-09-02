@@ -41,5 +41,133 @@
     "sourceFile": "plugin/skills/_shared/platform/codex/plan.md",
     "reason": "the anchor's own citation, plugin/skills/_shared/platform/codex/plan.md, already moved to a rendered file outside the six source globs; oso-state amend-plan's last surviving scanned occurrence was plugin/skills/_shared/platform/opencode/plan.md, itself now moved to opencode/skills/oso-plan/references/opencode.md, also outside the six source globs axis A scans; the spelling survives verbatim there",
     "home": { "kind": "prose", "ref": "opencode/skills/oso-plan/references/opencode.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "The AUTO disposition's own marker is the one thing written BESIDE the `mode`/`active_slice`/`verify_green` triple instead of over it: a write naming the marker alone leaves all three keys exactly as they stood, which is why the bullet below spells it alone wherever it arms or flips it.",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "The AUTO disposition's own marker is the one thing written BESIDE that triple instead of over it: a write naming the marker alone leaves all three keys exactly as they stood, which is why the bullet below spells it alone wherever it arms or flips it.",
+    "reason": "C5-S2b gathered the ground-rules runtime-gates bullet's trailing AUTO-marker clause out of plan.md into unattended.md, the AUTO/park/ceiling material's new home; the non-AUTO gates mechanism that opened the same bullet stayed in plan.md and now points at unattended.md instead of restating the clause",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "AUTO is a DISPOSITION of the run — never an invocation argument, never a fifth mode — armed as the second question of the execution-mode round §4 asks, or by explicit operator instruction at any point this flow reaches, mid-execution included (\"sigue en auto, voy a salir\"), and disarmed the same way",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "AUTO is a DISPOSITION of the run — never an invocation argument, never a fifth mode — armed as the second question of the execution-mode round §4 asks, or by explicit operator instruction at any point this flow reaches, mid-execution included (\"sigue en auto, voy a salir\"), and disarmed the same way",
+    "reason": "C5-S2b gathered plan.md's ground-rules AUTO-disposition definition (arm/disarm, its marker, the journal, compaction recovery, resume, the reused autonomy policy, operator-message handling, the roadmap-substitution rule) out of the bullet that opened with the roadmap-child rule; that opening rule is not AUTO-specific and stayed in plan.md",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "The TWO substitutions with which a run under its own AUTO reads the set-aside routine `bodies/plan.md`'s policy bullet describes, and there is no third: what a child queues for that mode's §5, this run queues for its OWN final report",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "The TWO substitutions a run under its own AUTO reads this bullet with, and there is no third: what a child queues for that mode's §5, this run queues for its OWN final report",
+    "reason": "C5-S2b gathered plan.md's ground-rules PARK definition out of the bullet that also defines SET ASIDE for a roadmap child; the SET-ASIDE half is not AUTO-specific and stayed in plan.md",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "AUTO's CEILING is how far a run reaches without another person, and it is contract rather than improvisation",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "AUTO's CEILING is how far a run reaches without another person, and it is contract rather than improvisation",
+    "reason": "C5-S2b moved plan.md's ground-rules CEILING bullet whole into unattended.md",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "**Ceiling — asked at the FIRST AUTO OR ROADMAP ARMING in this project** and never in the round §0 asks for Behavior: the STAGING ROUTE",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "**Ceiling — asked at the FIRST AUTO OR ROADMAP ARMING in this project** and never in the round above",
+    "reason": "C5-S2b moved plan.md's §0 Ceiling bullet (the second of the two oso/preferences field groups) whole into unattended.md",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "A ceiling field updates through a natural-language request from the operator, applied with `mem_update` — merge, never overwrite — and confirmed, no ceremony.",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "and a ceiling field updates exactly like a behavior one.",
+    "reason": "C5-S2b split plan.md §0's natural-language-updates bullet: the general mem_update mechanism stayed, and the ceiling-specific clause moved to unattended.md",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "NORMAL is the default and the recommendation: AUTO buys nothing for an operator who is sitting here, and the one about to leave is the one who takes it.",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "NORMAL is the default and the recommendation: AUTO buys nothing for an operator who is sitting here, and the one about to leave is the one who takes it.",
+    "reason": "C5-S2b split plan.md §4's execution-disposition bullet: the question's own placement and its two options stayed, and AUTO's default/recommendation/no-re-ask rule moved to unattended.md",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "An answer of AUTO is RECORDED here and ARMED at §5: this phase writes no runtime state at all",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "An answer of AUTO is RECORDED here and ARMED at §5: this phase writes no runtime state at all",
+    "reason": "C5-S2b split plan.md §4's record-the-answers bullet: the general recording instruction and the approval-gate sentence stayed, and the AUTO-recording/ceiling-reach clause moved to unattended.md",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "The `NEXT:` line also carries `AUTO` beside the position while that change runs under the AUTO disposition, written and dropped with the flip that arms or disarms it (e.g. `NEXT: plan2-purga slice 3/6 AUTO → then roadmap Plan 3`).",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "plus `AUTO` beside the position while that change runs under the AUTO disposition, written and dropped with the flip that arms or disarms it (e.g. `NEXT: plan2-purga slice 3/6 AUTO → then roadmap Plan 3`).",
+    "reason": "C5-S2b split plan.md §5's index-format-standard NEXT: line bullet: the general line contents stayed, and the AUTO annotation moved to unattended.md with a lead-in bridging the extracted fragment into a standalone sentence",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "plus `auto=running auto_change=<change-slug>` in that same write where §4's disposition answer was AUTO, which is where that answer stops being a ledger line and starts being a marker.",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "plus `auto=running auto_change=<change-slug>` in that same write where §4's disposition answer was AUTO, which is where that answer stops being a ledger line and starts being a marker.",
+    "reason": "C5-S2b moved plan.md §5's marker-write-and-branch-cut sentences (the two lines following the base oso-state initialize command) whole into unattended.md; the base command itself and its read-back confirmation stayed in plan.md",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Under AUTO the slice's commit lands on the `oso-run/<change>` branch §5 cut, the branch that close pushes whole.",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "under AUTO it lands on the `oso-run/<change>` branch §5 cut, the branch that close pushes whole.",
+    "reason": "C5-S2b split plan.md §6 step 4's commit bullet: the general commit-not-push rule stayed, and the AUTO-branch clause moved to unattended.md",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "A run whose operator flipped AUTO owes them one report at its END, and owes it whichever end the run reached",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "A run whose operator flipped AUTO owes them one report at its END, and owes it whichever end the run reached",
+    "reason": "C5-S2b moved plan.md §7's AUTO-report-obligation paragraph whole into unattended.md",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "At this close the two are SEQUENCED and the order is the whole of whether that report is read",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "At this close the two are SEQUENCED and the order is the whole of whether that report is read",
+    "reason": "C5-S2b moved plan.md §7's AUTO disarm-sequencing paragraph whole into unattended.md",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Under an UNATTENDED run PUSH and PR are the FINISH instead — the thing the plan approval that armed it chartered",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "Under an UNATTENDED run they are the FINISH instead — the thing the plan approval that armed it chartered",
+    "reason": "C5-S2b split plan.md §7 step 8: the general PUSH/PR-needs-the-operator rule and the closing PR-body sentence stayed, and the AUTO finish clause moved to unattended.md with its pronoun resolved to its noun antecedent for a standalone sentence",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "a host whose delivery contract carves an unattended run out of its turn-ending rule reads that marker to know this run is one, and whatever rails that host arms while nobody is watching arm on the same value",
+    "sourceFile": "plugin/skills/_shared/bodies/roadmap.md",
+    "retired": "Unlike the key above it arms what a host has: a delivery contract that carves an unattended run out of its turn-ending rule reads it, the host's own unattended rails arm on it, and the platform file names them.",
+    "reason": "roadmap.md's child-arming bullet restated plan.md's ground-rules sentence about a host's delivery contract reading the AUTO marker and its rails arming on it; C5-S2b retired the restatement (one rule, one home) and pointed roadmap.md at unattended.md, where that sentence already lives verbatim from the gather above",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "That marker is what tells a park from a stall ON DISK rather than by inference: a run parked at a question reads `auto=parked` and a run that simply stopped mid-milestone still reads `auto=running`, so a host's unattended rails carry the second on and let the first rest.",
+    "sourceFile": "plugin/skills/_shared/bodies/roadmap.md",
+    "retired": "because a stop the flow INTENDED may never read `auto=running` on disk: a host's unattended rails carry a run that reads running back into motion, and what they owe this one is the end of the turn.",
+    "reason": "roadmap.md's chain-blocked bullet restated plan.md's ground-rules park-marker rationale (why a still-'running' marker is unsafe on disk and what a host's rails do with each reading); C5-S2b retired the restatement and pointed roadmap.md at unattended.md, where the rationale already lives verbatim from the gather above",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
   }
 ]

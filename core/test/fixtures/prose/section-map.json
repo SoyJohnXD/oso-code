@@ -558,5 +558,12 @@
     "disposition": "merged",
     "destinationFile": "opencode/skills/oso-triage/references/opencode.md",
     "destinationHeading": "Naming the harness's own modes and judges"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "heading": "Parallel — the wave loop",
+    "disposition": "merged",
+    "destinationFile": "plugin/skills/_shared/parallel.md",
+    "destinationHeading": "Parallel — the wave loop"
   }
 ]
