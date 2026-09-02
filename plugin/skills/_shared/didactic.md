@@ -1,6 +1,6 @@
 # Didactic register
 
-Shared definition of the **didactic** register for the skills that invoke it — the PLAN mode (teaching moments and didactic-depth responses) and the QUICK mode (teaching moments and didactic-depth responses). Referenced by path so there is one definition, never a copy.
+Shared definition of the **didactic** register for the skills that invoke it — PLAN and QUICK, at their teaching moments and didactic-depth responses.
 
 A response is didactic when it makes these moves:
 
