@@ -28,13 +28,28 @@ bounded and consume is one-shot. Handoff attempts start at 1 and timeout must
 be between 0 and 600 seconds.
 `;
 
-test("the TypeScript CLI's usage text equals the bash's (read from 8c54fd8:plugin/bin/oso-state:7-29)", () => {
-  const result = spawnSync(
-    process.execPath,
-    ["--experimental-strip-types", cliSource],
-    { encoding: "utf8" },
-  );
-  assert.equal(result.status, 1);
-  assert.equal(result.stderr, BASH_USAGE);
-  assert.equal(result.stdout, "");
-});
+const CLOSE_SLICE_LINE = "       oso-state --session <id> close-slice <n>\n";
+const DENY_PATTERN_LINE = "       oso-state --session <id> deny-pattern add <pattern>\n";
+
+const TS_USAGE = BASH_USAGE.replace(
+  "       oso-state --session <id> clear\n",
+  `       oso-state --session <id> clear\n${CLOSE_SLICE_LINE}`,
+).replace(
+  "       oso-state --session <id> amend-plan <slice-id>\n",
+  `       oso-state --session <id> amend-plan <slice-id>\n${DENY_PATTERN_LINE}`,
+);
+
+test(
+  "the TypeScript CLI's usage text equals the bash's (read from 8c54fd8:plugin/bin/oso-state:7-29) " +
+    "plus exactly the two verbs G6 adds, close-slice and deny-pattern add",
+  () => {
+    const result = spawnSync(
+      process.execPath,
+      ["--experimental-strip-types", cliSource],
+      { encoding: "utf8" },
+    );
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr, TS_USAGE);
+    assert.equal(result.stdout, "");
+  },
+);

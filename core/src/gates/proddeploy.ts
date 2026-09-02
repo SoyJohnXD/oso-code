@@ -1,11 +1,10 @@
-import path from "node:path";
 import type { GateOutcome } from "../hosts/envelope.ts";
 import { ALLOWED } from "../hosts/envelope.ts";
 import { ereReads } from "../shell/ere.ts";
 import { basenameOf, UNREAD_PAYLOAD_MARKER } from "../shell/lexer.ts";
 import { gitVerb, isGitCall, isResidueCall, type LexedCommand } from "../shell/lexed-command.ts";
 import { lineVerdict, type LexerVerdict } from "../shell/line-verdict.ts";
-import { readStateFile, repositoryIdFor, stateFileFor, stateRootDirectory } from "../state/store.ts";
+import { denyPatternsFileFor, readStateFile, stateFileFor } from "../state/store.ts";
 import {
   allowedWithResidueCounted,
   denied,
@@ -231,7 +230,7 @@ function readsAsStateRecords(content: string): boolean {
 }
 
 function howThisRepositoryReadsTheCommand(stateFile: string, command: string): DenyPatternReading {
-  const read = readStateFile(denyPatternsFileOf(stateFile));
+  const read = readStateFile(denyPatternsFileFor(stateFile));
   if (read.kind !== "ok") return { kind: "noPatternBites" };
   const readings = read.content
     .split("\n")
@@ -241,8 +240,4 @@ function howThisRepositoryReadsTheCommand(stateFile: string, command: string): D
   const unreadable = readings.find((one) => one.reading === "untranslatable");
   if (unreadable === undefined) return { kind: "noPatternBites" };
   return { kind: "aPatternIsUnreadable", pattern: unreadable.pattern };
-}
-
-function denyPatternsFileOf(stateFile: string): string {
-  return path.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
 }

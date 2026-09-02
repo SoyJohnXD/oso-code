@@ -1038,6 +1038,9 @@ function journalFileFor(cwd) {
   const change = CHANGE_SLUG_PATTERN.test(autoChange) ? autoChange : "run";
   return path.join(stateRootDirectory(), "runs", repositoryId, `${change}.log`);
 }
+function denyPatternsFileFor(stateFile) {
+  return path.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
+}
 function isNameToken(value) {
   return value.length >= 1 && value.length <= NAME_TOKEN_MAX_LENGTH && NAME_TOKEN_PATTERN.test(value);
 }
@@ -2775,9 +2778,6 @@ function captureBlocked(session, detail) {
   return { event: CAPTURE_BLOCKED, session, command: detail, gate: route.script, hookEvent: route.event };
 }
 
-// core/src/gates/proddeploy.ts
-import path7 from "node:path";
-
 // core/src/shell/ere.ts
 var GREP_ITSELF_REJECTS_IT = /* @__PURE__ */ Symbol("a pattern grep exits 2 on, which therefore matches nothing");
 var THE_READER_CANNOT_TRANSLATE_IT = /* @__PURE__ */ Symbol("a pattern grep accepts that this reader cannot express");
@@ -3208,16 +3208,13 @@ function readsAsStateRecords(content) {
   return content.split("\n").every((line) => STATE_RECORD_LINE.test(line));
 }
 function howThisRepositoryReadsTheCommand(stateFile, command) {
-  const read = readStateFile(denyPatternsFileOf(stateFile));
+  const read = readStateFile(denyPatternsFileFor(stateFile));
   if (read.kind !== "ok") return { kind: "noPatternBites" };
   const readings = read.content.split("\n").filter((pattern) => pattern !== "").map((pattern) => ({ pattern, reading: ereReads(pattern, command) }));
   if (readings.some((one) => one.reading === "matched")) return { kind: "aPatternBites" };
   const unreadable = readings.find((one) => one.reading === "untranslatable");
   if (unreadable === void 0) return { kind: "noPatternBites" };
   return { kind: "aPatternIsUnreadable", pattern: unreadable.pattern };
-}
-function denyPatternsFileOf(stateFile) {
-  return path7.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
 }
 
 // core/src/gates/reanchor.ts
@@ -3276,7 +3273,7 @@ function reanchorContext(journalFile, unattendedRun) {
 
 // core/src/gates/stale.ts
 import { existsSync as existsSync4 } from "node:fs";
-import path8 from "node:path";
+import path7 from "node:path";
 var ROADMAP_DISARMED_SENTINEL = "none";
 var RUN_ARMED2 = "running";
 var ROADMAP_PLACEHOLDER = "{roadmap}";
@@ -3319,7 +3316,7 @@ function staleStateContext(caller, stateFile, content, sessionId) {
   const skillPrefix = skillPrefixFor(caller.host);
   const stateBin = quoted(stateBinPath(caller));
   const clearCommand = `${stateBin} --session ${quoted(sessionId)} clear`;
-  const leftByAnother = `oso-code: this repository's own runtime state (${path8.basename(stateFile)}) was left by another session, and its flags arm this session's gates too`;
+  const leftByAnother = `oso-code: this repository's own runtime state (${path7.basename(stateFile)}) was left by another session, and its flags arm this session's gates too`;
   const roadmapValue = stateValue(content, "roadmap");
   const roadmapInFlight = roadmapValue === ROADMAP_DISARMED_SENTINEL ? "" : roadmapValue;
   if (roadmapInFlight === "") {
@@ -3335,7 +3332,7 @@ function skillPrefixFor(host) {
 }
 function stateBinPath(caller) {
   if (caller.stateBin !== "") return caller.stateBin;
-  return path8.join(pluginRootDirectory(), "bin", "oso-state");
+  return path7.join(pluginRootDirectory(), "bin", "oso-state");
 }
 function contentOf(stateFile) {
   const read = readStateFile(stateFile);
@@ -3347,7 +3344,7 @@ function quoted(value) {
 
 // core/src/gates/statebin.ts
 import { appendFileSync as appendFileSync2 } from "node:fs";
-import path9 from "node:path";
+import path8 from "node:path";
 var STATEBIN_GATE = {
   gate: "statebin",
   errorSubject: "the state-bin gate",
@@ -3356,7 +3353,7 @@ var STATEBIN_GATE = {
 function judgeStatebin(_request) {
   const envFile = process.env["CLAUDE_ENV_FILE"];
   if (envFile === void 0 || envFile === "") return NO_VERDICT;
-  const stateBin = path9.join(pluginRootDirectory(), "bin", "oso-state");
+  const stateBin = path8.join(pluginRootDirectory(), "bin", "oso-state");
   appendFileSync2(envFile, `export OSO_STATE_BIN=${stateBin}
 `);
   return NO_VERDICT;
@@ -3365,7 +3362,7 @@ function judgeStatebin(_request) {
 // core/src/gates/teardown.ts
 import { execFileSync as execFileSync2 } from "node:child_process";
 import { existsSync as existsSync5, readdirSync as readdirSync2, renameSync as renameSync3, rmSync as rmSync5, rmdirSync, statSync as statSync5 } from "node:fs";
-import path10 from "node:path";
+import path9 from "node:path";
 var ABANDONED_STATE_DAYS = 7;
 var JOURNAL_KEYED_WAIT_MARK_SUFFIX = ".waiting";
 var EVENTS_LOG_RETENTION_DAYS = 30;
@@ -3393,7 +3390,7 @@ function stateArmedBy(sessionId) {
 }
 function removeWorktreesOf(sessionId, stateFile) {
   if (sessionId === "") return;
-  const sessionWorktrees = path10.join(stateRootDirectory(), "worktrees", sessionId);
+  const sessionWorktrees = path9.join(stateRootDirectory(), "worktrees", sessionId);
   if (!isDirectory(sessionWorktrees)) return;
   if (stateFile === void 0) return;
   const repoPath = stateValueOf(stateFile, "repo_path");
@@ -3441,7 +3438,7 @@ function clearRoadmapInFlightOf(sessionId) {
   }
 }
 function rotateAgedEventsLog() {
-  const eventsLog = path10.join(stateRootDirectory(), "events.jsonl");
+  const eventsLog = path9.join(stateRootDirectory(), "events.jsonl");
   if (!olderThanDays(eventsLog, EVENTS_LOG_RETENTION_DAYS)) return;
   renameSync3(eventsLog, `${eventsLog}.1`);
 }
@@ -3465,10 +3462,10 @@ function stateValueOf(stateFile, key) {
   return read.kind === "ok" ? stateValue(read.content, key) : "";
 }
 function stateFilesSorted() {
-  return directoryEntries2(stateRootDirectory()).filter((name) => name.endsWith(".state")).sort().map((name) => path10.join(stateRootDirectory(), name)).filter((target) => isFile(target));
+  return directoryEntries2(stateRootDirectory()).filter((name) => name.endsWith(".state")).sort().map((name) => path9.join(stateRootDirectory(), name)).filter((target) => isFile(target));
 }
 function subdirectoriesSorted(directory) {
-  return directoryEntries2(directory).sort().map((name) => path10.join(directory, name)).filter((target) => isDirectory(target));
+  return directoryEntries2(directory).sort().map((name) => path9.join(directory, name)).filter((target) => isDirectory(target));
 }
 function directoryEntries2(directory) {
   try {
@@ -3565,7 +3562,7 @@ function allowlistHost(host) {
 // core/src/gates/version.ts
 import { execFileSync as execFileSync3 } from "node:child_process";
 import { readFileSync as readFileSync6 } from "node:fs";
-import path11 from "node:path";
+import path10 from "node:path";
 var RELEASE_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/;
 var GITHUB_URL_PREFIX = "https://github.com/";
 var FETCH_CONNECT_SECONDS = 2;
@@ -3593,10 +3590,10 @@ function judgeVersion({ envelope }) {
   return { verdict: { kind: "context", additionalContext: context }, events: [] };
 }
 function pluginManifestFile() {
-  return path11.join(pluginRootDirectory(), ".claude-plugin", "plugin.json");
+  return path10.join(pluginRootDirectory(), ".claude-plugin", "plugin.json");
 }
 function publishedReleaseCacheFile() {
-  return path11.join(stateRootDirectory(), "published-release");
+  return path10.join(stateRootDirectory(), "published-release");
 }
 function repositorySlugOf(repositoryUrl) {
   if (!repositoryUrl.startsWith(GITHUB_URL_PREFIX) || repositoryUrl.length === GITHUB_URL_PREFIX.length) {
@@ -3607,7 +3604,7 @@ function repositorySlugOf(repositoryUrl) {
 }
 function marketplaceServesRepository(repositorySlug) {
   const home = homeDirectoryFrom(process.platform, process.env);
-  const marketplacesFile = path11.join(home, ".claude", "plugins", "known_marketplaces.json");
+  const marketplacesFile = path10.join(home, ".claude", "plugins", "known_marketplaces.json");
   const registrations = readFileOrEmpty(marketplacesFile).replace(/\s/g, "");
   return registrations.includes(`"repo":"${repositorySlug}"`);
 }
@@ -3626,7 +3623,7 @@ function cachedPublishedRelease(cacheFile) {
 function refreshPublishedReleaseCache(cacheFile, repositorySlug) {
   try {
     writeFileAtomically(
-      path11.dirname(cacheFile),
+      path10.dirname(cacheFile),
       cacheFile,
       fetchedHighestReleaseVersion(repositorySlug),
       ".published-release."
@@ -3856,8 +3853,8 @@ function worktreeGitDir(dotGit, baseDir) {
   if (raw === "") {
     return null;
   }
-  const path12 = isAbsolute(raw) ? raw : join(baseDir, raw);
-  return resolve(path12);
+  const path11 = isAbsolute(raw) ? raw : join(baseDir, raw);
+  return resolve(path11);
 }
 function stripWorktreesSuffix(gitDir) {
   const marker = `${sep}worktrees${sep}`;
@@ -4464,9 +4461,9 @@ var MARKER_SUFFIX = ".json";
 function markerPath(commonDir, sessionId) {
   return join2(commonDir, `${MARKER_PREFIX2}${sessionId}${MARKER_SUFFIX}`);
 }
-function readMarkerFile(path12) {
+function readMarkerFile(path11) {
   try {
-    return normalizeMarker(JSON.parse(readFileSync8(path12, "utf8")));
+    return normalizeMarker(JSON.parse(readFileSync8(path11, "utf8")));
   } catch {
     return null;
   }
@@ -4528,8 +4525,8 @@ function listStale(commonDir) {
     if (isLive(marker)) {
       continue;
     }
-    for (const path12 of marker.worktrees) {
-      orphans.push({ path: path12, sessionId: marker.sessionId });
+    for (const path11 of marker.worktrees) {
+      orphans.push({ path: path11, sessionId: marker.sessionId });
     }
   }
   return orphans;
@@ -4593,11 +4590,11 @@ function sweepStale(commonDir, options = {}) {
       continue;
     }
     let tornDown = true;
-    for (const path12 of marker.worktrees) {
-      if (removeWorktree(commonDir, path12, git)) {
-        reaped.push(path12);
+    for (const path11 of marker.worktrees) {
+      if (removeWorktree(commonDir, path11, git)) {
+        reaped.push(path11);
       } else {
-        left.push(path12);
+        left.push(path11);
         tornDown = false;
       }
     }
@@ -4607,9 +4604,9 @@ function sweepStale(commonDir, options = {}) {
   }
   return { reaped, left };
 }
-function removeWorktree(commonDir, path12, git) {
+function removeWorktree(commonDir, path11, git) {
   const cwd = dirname3(commonDir);
-  if (!runGit(git, ["worktree", "remove", path12], cwd)) {
+  if (!runGit(git, ["worktree", "remove", path11], cwd)) {
     return false;
   }
   runGit(git, ["worktree", "prune"], cwd);

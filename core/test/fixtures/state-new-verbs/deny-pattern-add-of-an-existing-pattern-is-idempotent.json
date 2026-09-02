@@ -1,0 +1,18 @@
+{
+  "name": "deny-pattern add of an existing pattern reports it already present and does not duplicate the line",
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/deploy-deny/{repo}.patterns": "npm run build\n"
+  },
+  "cwd": "workspace",
+  "argv": ["--session", "test-session", "deny-pattern", "add", "npm run build"],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "stdout": { "contains": ["already present"] },
+    "state_after": {
+      ".local/state/oso-code/deploy-deny/{repo}.patterns": "npm run build\n"
+    },
+    "events_appended": []
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "close-slice refuses and leaves the state byte-identical when active_slice does not match the given n",
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=5\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "argv": ["--session", "test-session", "close-slice", "6"],
+  "stdin": "",
+  "expect": {
+    "exit": 1,
+    "stderr": { "contains": ["close-slice 6 refused", "active_slice is 5"] },
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=5\nverify_green=false\nsession=test-session\n"
+    },
+    "events_appended": []
+  }
+}

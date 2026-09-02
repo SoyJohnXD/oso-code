@@ -45,7 +45,7 @@ const THE_CONFIG_TOML_CLOSURE = [
   { file: "core/src/install/toml.ts", nativeJoins: 0 },
   { file: "core/src/install/verify-claude.ts", nativeJoins: 29 },
   { file: "core/src/install/version-line.ts", nativeJoins: 0 },
-  { file: "core/src/state/store.ts", nativeJoins: 6 },
+  { file: "core/src/state/store.ts", nativeJoins: 7 },
 ] as const;
 
 const SITES_REACHING_CONFIG_TOML_BYTES = [

@@ -1,5 +1,288 @@
 // core/src/state/cli.ts
 import { mkdirSync as mkdirSync4, readFileSync as readFileSync4 } from "node:fs";
+import path4 from "node:path";
+
+// core/src/shell/ere.ts
+var GREP_ITSELF_REJECTS_IT = /* @__PURE__ */ Symbol("a pattern grep exits 2 on, which therefore matches nothing");
+var THE_READER_CANNOT_TRANSLATE_IT = /* @__PURE__ */ Symbol("a pattern grep accepts that this reader cannot express");
+var ALPHABETIC_MEMBERS = "\\p{Alphabetic}";
+var ALPHANUMERIC_MEMBERS = `${ALPHABETIC_MEMBERS}\\p{Nd}`;
+var WHITESPACE_MEMBERS = "\\t\\n\\v\\f\\r \\p{Zs}\\u2028\\u2029";
+var WORD_MEMBERS = `_${ALPHANUMERIC_MEMBERS}`;
+var NO_BREAK_SPACE = "\\u00a0";
+var POSIX_CLASS_MEMBERS = {
+  alpha: ALPHABETIC_MEMBERS,
+  digit: "0-9",
+  alnum: ALPHANUMERIC_MEMBERS,
+  upper: "\\p{Uppercase}",
+  lower: "\\p{Lowercase}",
+  space: WHITESPACE_MEMBERS,
+  blank: "\\t \\p{Zs}",
+  punct: `\\p{P}\\p{S}\\p{M}${NO_BREAK_SPACE}`,
+  print: "\\p{L}\\p{M}\\p{N}\\p{P}\\p{S}\\p{Zs}",
+  graph: `\\p{L}\\p{M}\\p{N}\\p{P}\\p{S}${NO_BREAK_SPACE}`,
+  cntrl: "\\p{Cc}\\u2028\\u2029",
+  xdigit: "0-9A-Fa-f"
+};
+var ON_A_WORD = `(?=[${WORD_MEMBERS}])`;
+var OFF_A_WORD = `(?![${WORD_MEMBERS}])`;
+var AFTER_A_WORD = `(?<=[${WORD_MEMBERS}])`;
+var BEFORE_A_WORD = `(?<![${WORD_MEMBERS}])`;
+var GNU_CLASS_ESCAPES = {
+  w: `[${WORD_MEMBERS}]`,
+  W: `[^${WORD_MEMBERS}]`,
+  s: `[${WHITESPACE_MEMBERS}]`,
+  S: `[^${WHITESPACE_MEMBERS}]`
+};
+var GNU_WORD_EDGE_ESCAPES = {
+  b: `(?:${AFTER_A_WORD}${OFF_A_WORD}|${BEFORE_A_WORD}${ON_A_WORD})`,
+  B: `(?:${AFTER_A_WORD}${ON_A_WORD}|${BEFORE_A_WORD}${OFF_A_WORD})`,
+  "<": `${BEFORE_A_WORD}${ON_A_WORD}`,
+  ">": `${AFTER_A_WORD}${OFF_A_WORD}`
+};
+var GNU_LINE_ANCHOR_ESCAPES = {
+  "`": "^",
+  "'": "$"
+};
+var ANY_CHARACTER_IN_A_LINE = "[^\\n]";
+var INTERVAL = /^\{(\d*)(,\d*)?\}/;
+var POSIX_CLASS_NAME = /^\[:([A-Za-z]+):\]/;
+var BACKREFERENCE = /^[1-9]$/;
+var UNESCAPED_IN_JS = /^[A-Za-z0-9]$/;
+var ASCII_DIGIT = /^[0-9]$/;
+var ASCII_LETTER = /^[A-Za-z]$/;
+var FIRST_NON_ASCII_CODE_POINT = 128;
+var TOP_LEVEL = 0;
+function ereReads(pattern, subject) {
+  const expression = compiledEre(pattern);
+  if (expression === THE_READER_CANNOT_TRANSLATE_IT) return "untranslatable";
+  if (expression === GREP_ITSELF_REJECTS_IT) return "unmatched";
+  return grepLinesOf(subject).some((line) => expression.test(line)) ? "matched" : "unmatched";
+}
+function unread(reading) {
+  return reading === GREP_ITSELF_REJECTS_IT || reading === THE_READER_CANNOT_TRANSLATE_IT;
+}
+function grepLinesOf(subject) {
+  const lines = subject.split("\n");
+  return lines.at(-1) === "" ? lines.slice(0, -1) : lines;
+}
+function compiledEre(pattern) {
+  const source = jsSourceOf(pattern);
+  if (unread(source)) return source;
+  try {
+    return new RegExp(source, "u");
+  } catch {
+    return GREP_ITSELF_REJECTS_IT;
+  }
+}
+function jsSourceOf(pattern) {
+  const read = readAlternation(pattern, 0, TOP_LEVEL);
+  if (unread(read)) return read;
+  if (read.after !== pattern.length) return GREP_ITSELF_REJECTS_IT;
+  return read.source;
+}
+function readAlternation(pattern, from, depth) {
+  let source = "";
+  let cursor = from;
+  for (; ; ) {
+    const branch = readBranch(pattern, cursor, depth);
+    if (unread(branch)) return branch;
+    source += branch.source;
+    cursor = branch.after;
+    if (pattern[cursor] !== "|") return { source, after: cursor };
+    source += "|";
+    cursor += 1;
+  }
+}
+function readBranch(pattern, from, depth) {
+  let source = "";
+  let cursor = from;
+  for (; ; ) {
+    const settled = pastQuantifiersWithNothingToRepeat(pattern, cursor, depth);
+    if (unread(settled)) return settled;
+    cursor = settled;
+    if (branchEndsAt(pattern, cursor, depth)) return { source, after: cursor };
+    const piece = readPiece(pattern, cursor, depth);
+    if (unread(piece)) return piece;
+    source += piece.source;
+    cursor = piece.after;
+  }
+}
+function branchEndsAt(pattern, at, depth) {
+  const character = pattern[at];
+  if (character === void 0 || character === "|") return true;
+  return character === ")" && depth > TOP_LEVEL;
+}
+function pastQuantifiersWithNothingToRepeat(pattern, from, depth) {
+  let cursor = from;
+  for (; ; ) {
+    const quantifier = readQuantifier(pattern, cursor);
+    if (quantifier === void 0) return cursor;
+    if (endsAnEmptyGroup(pattern, quantifier, depth)) return GREP_ITSELF_REJECTS_IT;
+    cursor = quantifier.after;
+  }
+}
+function endsAnEmptyGroup(pattern, quantifier, depth) {
+  return depth > TOP_LEVEL && quantifier.spelling === "operator" && pattern[quantifier.after] === ")";
+}
+function readPiece(pattern, from, depth) {
+  const atom = readAtom(pattern, from, depth);
+  if (unread(atom)) return atom;
+  return withQuantifiers(pattern, atom, depth);
+}
+function withQuantifiers(pattern, atom, depth) {
+  let piece = atom;
+  for (; ; ) {
+    const quantifier = readQuantifier(pattern, piece.after);
+    if (quantifier === void 0) return piece;
+    if (atom.width === "assertsAPosition" && endsAnEmptyGroup(pattern, quantifier, depth)) {
+      return GREP_ITSELF_REJECTS_IT;
+    }
+    piece = { source: `(?:${piece.source})${quantifier.source}`, after: quantifier.after };
+  }
+}
+function readQuantifier(pattern, at) {
+  const character = pattern[at];
+  if (character === "*" || character === "+" || character === "?") {
+    return { source: character, after: at + 1, spelling: "operator" };
+  }
+  const interval = INTERVAL.exec(pattern.slice(at));
+  if (interval === null) return void 0;
+  const [spelled, low = "", high] = interval;
+  if (low === "" && high === void 0) return void 0;
+  return {
+    source: `{${low === "" ? "0" : low}${high ?? ""}}`,
+    after: at + spelled.length,
+    spelling: "interval"
+  };
+}
+function readAtom(pattern, from, depth) {
+  const character = characterAt(pattern, from);
+  if (character === ".") return consuming(ANY_CHARACTER_IN_A_LINE, from + 1);
+  if (character === "^" || character === "$") {
+    return { source: character, after: from + 1, width: "assertsAPosition" };
+  }
+  if (character === "[") return asAtom(readBracket(pattern, from), "consumesInput");
+  if (character === "(") return asAtom(readGroup(pattern, from, depth), "consumesInput");
+  if (character === "\\") return readEscape(pattern, from);
+  return consuming(asJsLiteral(character), from + character.length);
+}
+function consuming(source, after) {
+  return { source, after, width: "consumesInput" };
+}
+function asAtom(read, width) {
+  return unread(read) ? read : { ...read, width };
+}
+function readGroup(pattern, from, depth) {
+  const inner = readAlternation(pattern, from + 1, depth + 1);
+  if (unread(inner)) return inner;
+  if (pattern[inner.after] !== ")") return GREP_ITSELF_REJECTS_IT;
+  return { source: `(${inner.source})`, after: inner.after + 1 };
+}
+function readEscape(pattern, from) {
+  if (from + 1 >= pattern.length) return GREP_ITSELF_REJECTS_IT;
+  const escaped = characterAt(pattern, from + 1);
+  const after = from + 1 + escaped.length;
+  const wordEdge = GNU_WORD_EDGE_ESCAPES[escaped];
+  if (wordEdge !== void 0) return { source: wordEdge, after, width: "assertsAPosition" };
+  const lineAnchor = GNU_LINE_ANCHOR_ESCAPES[escaped];
+  if (lineAnchor !== void 0) return { source: lineAnchor, after, width: "assertsAPosition" };
+  const characterClass = GNU_CLASS_ESCAPES[escaped];
+  if (characterClass !== void 0) return consuming(characterClass, after);
+  if (BACKREFERENCE.test(escaped)) return consuming(`\\${escaped}`, after);
+  return consuming(asJsLiteral(escaped), after);
+}
+function readBracket(pattern, from) {
+  const negated = pattern[from + 1] === "^";
+  const opens = from + (negated ? 2 : 1);
+  const leading = readAnyLeadingClosingBracket(pattern, opens);
+  if (unread(leading)) return leading;
+  let members = leading.source;
+  let cursor = leading.after;
+  for (; ; ) {
+    const character = pattern[cursor];
+    if (character === void 0) return GREP_ITSELF_REJECTS_IT;
+    if (character === "]") return { source: `[${negated ? "^" : ""}${members}]`, after: cursor + 1 };
+    const member = readBracketMember(pattern, cursor);
+    if (unread(member)) return member;
+    members += member.source;
+    cursor = member.after;
+  }
+}
+function readAnyLeadingClosingBracket(pattern, at) {
+  if (pattern[at] !== "]") return { source: "", after: at };
+  return readRangeOrCharacter(pattern, at);
+}
+function readBracketMember(pattern, from) {
+  if (pattern.startsWith("[:", from)) return readPosixClass(pattern, from);
+  if (pattern.startsWith("[.", from)) return readCollatingSymbol(pattern, from);
+  if (pattern.startsWith("[=", from)) return readEquivalenceClass(pattern, from);
+  return readRangeOrCharacter(pattern, from);
+}
+function readPosixClass(pattern, from) {
+  const named = POSIX_CLASS_NAME.exec(pattern.slice(from));
+  if (named === null) return GREP_ITSELF_REJECTS_IT;
+  const members = POSIX_CLASS_MEMBERS[named[1]];
+  if (members === void 0) return GREP_ITSELF_REJECTS_IT;
+  const after = from + named[0].length;
+  if (aRangeOpensAt(pattern, after)) return GREP_ITSELF_REJECTS_IT;
+  return { source: members, after };
+}
+function readCollatingSymbol(pattern, from) {
+  const symbol = characterAt(pattern, from + 2);
+  const closing = from + 2 + symbol.length;
+  if (symbol === "" || !pattern.startsWith(".]", closing)) return GREP_ITSELF_REJECTS_IT;
+  const after = closing + 2;
+  if (aRangeOpensAt(pattern, after)) return THE_READER_CANNOT_TRANSLATE_IT;
+  return { source: asJsLiteral(symbol), after };
+}
+function readEquivalenceClass(pattern, from) {
+  const representative = characterAt(pattern, from + 2);
+  const closing = from + 2 + representative.length;
+  if (!pattern.startsWith("=]", closing)) return GREP_ITSELF_REJECTS_IT;
+  const after = closing + 2;
+  if (aRangeOpensAt(pattern, after)) return GREP_ITSELF_REJECTS_IT;
+  const members = equivalentToInEveryLocale(representative);
+  if (members === void 0) return THE_READER_CANNOT_TRANSLATE_IT;
+  return { source: members, after };
+}
+function equivalentToInEveryLocale(representative) {
+  if (ASCII_DIGIT.test(representative)) return asJsLiteral(representative);
+  if (!ASCII_LETTER.test(representative)) return void 0;
+  return asJsLiteral(representative.toLowerCase()) + asJsLiteral(representative.toUpperCase());
+}
+function aRangeOpensAt(pattern, at) {
+  return pattern[at] === "-" && pattern[at + 1] !== "]" && pattern[at + 1] !== void 0;
+}
+function readRangeOrCharacter(pattern, from) {
+  const low = characterAt(pattern, from);
+  const dash = from + low.length;
+  const highStarts = dash + 1;
+  if (pattern[dash] !== "-" || highStarts >= pattern.length || pattern[highStarts] === "]") {
+    return { source: asJsLiteral(low), after: dash };
+  }
+  const high = characterAt(pattern, highStarts);
+  const range = rangeMembersOf(low, high);
+  if (unread(range)) return range;
+  return { source: range, after: highStarts + high.length };
+}
+function rangeMembersOf(low, high) {
+  const lowest = low.codePointAt(0) ?? 0;
+  const highest = high.codePointAt(0) ?? 0;
+  if (lowest >= FIRST_NON_ASCII_CODE_POINT || highest >= FIRST_NON_ASCII_CODE_POINT) {
+    return THE_READER_CANNOT_TRANSLATE_IT;
+  }
+  if (lowest > highest) return GREP_ITSELF_REJECTS_IT;
+  return `${asJsLiteral(low)}-${asJsLiteral(high)}`;
+}
+function characterAt(pattern, at) {
+  const codePoint = pattern.codePointAt(at);
+  return codePoint === void 0 ? "" : String.fromCodePoint(codePoint);
+}
+function asJsLiteral(character) {
+  if (UNESCAPED_IN_JS.test(character)) return character;
+  return `\\u{${(character.codePointAt(0) ?? 0).toString(16)}}`;
+}
 
 // core/src/state/handoff.ts
 import { chmodSync, existsSync, mkdirSync as mkdirSync2, readFileSync as readFileSync2, readdirSync, rmSync as rmSync2 } from "node:fs";
@@ -76,6 +359,9 @@ function journalFileFor(cwd) {
   const autoChange = readValue(stateFile, "auto_change") ?? "";
   const change = CHANGE_SLUG_PATTERN.test(autoChange) ? autoChange : "run";
   return path.join(stateRootDirectory(), "runs", repositoryId, `${change}.log`);
+}
+function denyPatternsFileFor(stateFile) {
+  return path.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
 }
 function isNameToken(value) {
   return value.length >= 1 && value.length <= NAME_TOKEN_MAX_LENGTH && NAME_TOKEN_PATTERN.test(value);
@@ -689,6 +975,9 @@ import { chmodSync as chmodSync2, existsSync as existsSync2, mkdirSync as mkdirS
 import path3 from "node:path";
 
 // core/src/state/transitions.ts
+function closeSlice() {
+  return { active_slice: "none", verify_green: "true", auto_wait: "none" };
+}
 function armPlan() {
   return { mode: "plan", active_slice: "none", verify_green: "false" };
 }
@@ -920,11 +1209,13 @@ var USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> get key
        oso-state --session <id> show
        oso-state --session <id> clear
+       oso-state --session <id> close-slice <n>
        oso-state --session <id> event <type> [detail]
        oso-state --session <id> capture-plan <sha256>
        oso-state --session <id> approve-plan <sha256>
        oso-state --session <id> cancel-plan <sha256>
        oso-state --session <id> amend-plan <slice-id>
+       oso-state --session <id> deny-pattern add <pattern>
        oso-state journal <text>
        oso-state journal --path
        oso-state handoff publish --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --hook-session <id>
@@ -936,6 +1227,10 @@ bounded and consume is one-shot. Handoff attempts start at 1 and timeout must
 be between 0 and 600 seconds.
 `;
 var UsageError = class extends Error {
+};
+var CloseSliceRefusedError = class extends Error {
+};
+var DenyPatternRefusedError = class extends Error {
 };
 var HANDOFF_SUBACTIONS = ["publish", "wait", "consume"];
 var HANDOFF_FLAGS = {
@@ -961,6 +1256,16 @@ function verbOf(argv) {
 function report(error, verb) {
   if (error instanceof UsageError) {
     process.stderr.write(USAGE);
+    return 1;
+  }
+  if (error instanceof CloseSliceRefusedError) {
+    process.stderr.write(`oso-state: ${error.message}
+`);
+    return 1;
+  }
+  if (error instanceof DenyPatternRefusedError) {
+    process.stderr.write(`oso-state: ${error.message}
+`);
     return 1;
   }
   if (error instanceof LockTimeoutError) {
@@ -1016,6 +1321,8 @@ function dispatch(argv) {
       return runShow();
     case "clear":
       return runClear(sessionId);
+    case "close-slice":
+      return runCloseSlice(sessionId, remaining);
     case "event":
       return runEvent(sessionId, remaining);
     case "journal":
@@ -1028,6 +1335,8 @@ function dispatch(argv) {
       return runCancelPlan2(sessionId, remaining);
     case "amend-plan":
       return runAmendPlan2(sessionId, remaining);
+    case "deny-pattern":
+      return runDenyPattern(sessionId, remaining);
     case "handoff":
       return dispatchHandoff(remaining);
     default:
@@ -1066,6 +1375,57 @@ function runClear(sessionId) {
   return withLock(stateFile, sessionId, () => {
     clearStateFile(stateFile);
     logEvent({ event: "clear", session: sessionId });
+    return 0;
+  });
+}
+function runCloseSlice(sessionId, remaining) {
+  if (remaining.length !== 1) throw new UsageError();
+  const sliceId = remaining[0];
+  const stateFile = stateFileFor(process.cwd());
+  mkdirSync4(stateRootDirectory(), { recursive: true });
+  return withLock(stateFile, sessionId, () => {
+    const activeSlice = readValue(stateFile, "active_slice") ?? "none";
+    if (activeSlice !== sliceId) {
+      throw new CloseSliceRefusedError(
+        `close-slice ${sliceId} refused: active_slice is ${activeSlice}, not ${sliceId}`
+      );
+    }
+    const patch = closeSlice();
+    writeStatePairs(
+      stateFile,
+      Object.entries(patch).map(([key, value]) => `${key}=${value}`),
+      sessionId
+    );
+    logEvent({ event: "close-slice", session: sessionId, command: sliceId });
+    return 0;
+  });
+}
+function runDenyPattern(sessionId, remaining) {
+  if (remaining.length !== 2 || remaining[0] !== "add") throw new UsageError();
+  const pattern = remaining[1];
+  if (ereReads(pattern, "") === "untranslatable") {
+    throw new DenyPatternRefusedError(
+      `deny-pattern add refused: this pattern is past what the production boundary can read: ${pattern}`
+    );
+  }
+  const stateFile = stateFileFor(process.cwd());
+  const patternsFile = denyPatternsFileFor(stateFile);
+  mkdirSync4(stateRootDirectory(), { recursive: true });
+  return withLock(stateFile, sessionId, () => {
+    const read = readStateFile(patternsFile);
+    if (read.kind === "unreadable") throw new StateFileUnreadableError(patternsFile, read.cause);
+    const existing = read.kind === "ok" ? read.content.split("\n").filter((line) => line !== "") : [];
+    if (existing.includes(pattern)) {
+      process.stdout.write(`oso-state: deny-pattern already present in ${patternsFile}
+`);
+      return 0;
+    }
+    const content = [...existing, pattern].map((line) => `${line}
+`).join("");
+    writeFileAtomically(path4.dirname(patternsFile), patternsFile, content, ".patterns.");
+    logEvent({ event: "deny-pattern-add", session: sessionId, command: pattern });
+    process.stdout.write(`oso-state: wrote ${patternsFile}
+`);
     return 0;
   });
 }

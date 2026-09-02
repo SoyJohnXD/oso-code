@@ -80,6 +80,10 @@ export function journalFileFor(cwd: string): string {
   return path.join(stateRootDirectory(), "runs", repositoryId, `${change}.log`);
 }
 
+export function denyPatternsFileFor(stateFile: string): string {
+  return path.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
+}
+
 export function isNameToken(value: string): boolean {
   return value.length >= 1 && value.length <= NAME_TOKEN_MAX_LENGTH && NAME_TOKEN_PATTERN.test(value);
 }
