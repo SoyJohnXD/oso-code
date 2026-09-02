@@ -65,6 +65,13 @@ const TREE_DAMAGES: readonly TreeDamage[] = [
     port: (tree) => openCodeSkillStatus(repositoryRoot, tree.configHome),
   },
   {
+    label: "one skill wrapper's references/ directory removed, its SKILL.md left untouched",
+    verdict: "divergent: oso-plan",
+    bashRow: "opencode_skill_status",
+    apply: (tree) => rmSync(path.join(tree.configHome, "skill", "oso-plan", "references"), { recursive: true, force: true }),
+    port: (tree) => openCodeSkillStatus(repositoryRoot, tree.configHome),
+  },
+  {
     label: "the shared skill bodies removed",
     verdict: "missing-shared-bodies",
     bashRow: "opencode_skill_status",

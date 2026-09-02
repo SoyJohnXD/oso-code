@@ -20,5 +20,26 @@
     "sourceFile": "plugin/skills/_shared/platform/codex/security-pass.md",
     "reason": "security-pass.md's Codex binding moved to codex/skills/security-pass/references/codex.md, a rendered file outside the six source globs axis C scans; the token survives verbatim there",
     "home": { "kind": "prose", "ref": "codex/skills/security-pass/references/codex.md" }
+  },
+  {
+    "axis": "C",
+    "item": "Security Pass: fallback — covered: staged, unstaged, and untracked changes",
+    "sourceFile": "plugin/skills/_shared/platform/opencode/security-pass.md",
+    "reason": "security-pass.md's OpenCode binding moved to opencode/skills/oso-security-pass/references/opencode.md, a rendered file outside the six source globs axis C scans; the token survives verbatim there",
+    "home": { "kind": "prose", "ref": "opencode/skills/oso-security-pass/references/opencode.md" }
+  },
+  {
+    "axis": "C",
+    "item": "Security Pass: fallback — covered: merge base of HEAD and <base-ref> through HEAD, plus staged, unstaged, and untracked changes",
+    "sourceFile": "plugin/skills/_shared/platform/opencode/security-pass.md",
+    "reason": "security-pass.md's OpenCode binding moved to opencode/skills/oso-security-pass/references/opencode.md, a rendered file outside the six source globs axis C scans; the token survives verbatim there",
+    "home": { "kind": "prose", "ref": "opencode/skills/oso-security-pass/references/opencode.md" }
+  },
+  {
+    "axis": "A",
+    "item": "amend-plan",
+    "sourceFile": "plugin/skills/_shared/platform/codex/plan.md",
+    "reason": "the anchor's own citation, plugin/skills/_shared/platform/codex/plan.md, already moved to a rendered file outside the six source globs; oso-state amend-plan's last surviving scanned occurrence was plugin/skills/_shared/platform/opencode/plan.md, itself now moved to opencode/skills/oso-plan/references/opencode.md, also outside the six source globs axis A scans; the spelling survives verbatim there",
+    "home": { "kind": "prose", "ref": "opencode/skills/oso-plan/references/opencode.md" }
   }
 ]

@@ -6,7 +6,7 @@ No swallow is known on this host, and this port has not probed for one. So the d
 
 ## Making a launch wait
 
-No launch on this host outlives the turn that made it: the `task` tool is SYNCHRONOUS — the call blocks until the child turn completes and the child's own final message comes back in-band (D5) — and there is no wait operation and no handoff receipt rail beside it, so that returned message is the whole of the handoff. Read it before any step that depends on it; the delegated fix this flow launches is exactly such a step. A launch that errors, times out or returns an empty verdict BLOCKS this flow and never falls through, and `auto_wait` is never armed here because nothing this flow launches reports in a later turn — `plan.md` beside this file states the same rule for the run that reads that marker.
+No launch on this host outlives the turn that made it: the `task` tool is SYNCHRONOUS — the call blocks until the child turn completes and the child's own final message comes back in-band (D5) — and there is no wait operation and no handoff receipt rail beside it, so that returned message is the whole of the handoff. Read it before any step that depends on it; the delegated fix this flow launches is exactly such a step. A launch that errors, times out or returns an empty verdict BLOCKS this flow and never falls through, and `auto_wait` is never armed here because nothing this flow launches reports in a later turn — `../../oso-plan/references/opencode.md` states the same rule for the run that reads that marker.
 
 ## Shared-file paths
 
@@ -33,8 +33,8 @@ Forked judges and operational agents are the exception to inline reading: launch
 
 ## Front-surface binding
 
-When `../../front-surface.md`'s trigger fires, READ `front-surface.md` beside this file NOW. It is the single OpenCode binding for Impeccable's mounted path, all three argument routes, package-version record, agent route and absence remedy. This mode supplies only the DEBUG wiring indexed by the neutral matrix, which still invokes none of the three arguments.
+When `../_shared/front-surface.md`'s trigger fires, READ `../_shared/references/opencode.md`'s **Front-surface binding** section NOW. It is the single OpenCode binding for Impeccable's mounted path, all three argument routes, package-version record, agent route and absence remedy. This mode supplies only the DEBUG wiring indexed by the neutral matrix, which still invokes none of the three arguments.
 
 ## Reporting binding
 
-READ `reporting.md` beside this file NOW. It is the single OpenCode binding for what this host's own UI shows, and does not show, when the milestone contract at `../../reporting.md` fires.
+READ `../_shared/references/opencode.md`'s **Native agent files, no card** and **The unattended run — no carve-out here, and the record that carries it instead** sections NOW. It is the single OpenCode binding for what this host's own UI shows, and does not show, when the milestone contract at `../_shared/reporting.md` fires.

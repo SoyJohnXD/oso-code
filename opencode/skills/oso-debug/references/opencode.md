@@ -1,12 +1,12 @@
-# Quick mode — OpenCode
+# Debug mode — OpenCode
 
 ## The delivery contract
 
-The adapter makes no claim about whether OpenCode preserves operator-facing text before a same-turn tool call, and the harness depends on no such behavior. It applies the conservative host-independent policy: operator-facing content ENDS the turn as plain text, with any tool call in a LATER turn. An extra turn is the cheap side of that boundary; content the operator never sees is the expensive one.
+No swallow is known on this host, and this port has not probed for one. So the discipline stands unchanged rather than relaxed: operator-facing content — the triage report, the diagnosis presentation — ENDS the turn as plain text, with any tool call in a LATER turn. An extra turn is the cheap side of that bet; content the operator never sees is the expensive one.
 
-## Question rounds
+## Making a launch wait
 
-The tool is `question`, and it is available only when the operator is watching the TUI: headless sessions deny `question` by default (ADR-0151 part 5). Its schema accepts several questions in one call — the operator navigates between them before submitting all answers — so a round holds 3 questions at a time, the way ADR-0097 spells. A fourth question starts the next round; it never rides an invalid call and never gets dropped.
+No launch on this host outlives the turn that made it: the `task` tool is SYNCHRONOUS — the call blocks until the child turn completes and the child's own final message comes back in-band (D5) — and there is no wait operation and no handoff receipt rail beside it, so that returned message is the whole of the handoff. Read it before any step that depends on it; the delegated fix this flow launches is exactly such a step. A launch that errors, times out or returns an empty verdict BLOCKS this flow and never falls through, and `auto_wait` is never armed here because nothing this flow launches reports in a later turn — `../../oso-plan/references/opencode.md` states the same rule for the run that reads that marker.
 
 ## Shared-file paths
 
@@ -27,15 +27,14 @@ Installed plugin skills carry NO namespace on this host: every skill auto-regist
 | The body says | Here it is | Reached by |
 | --- | --- | --- |
 | the PLAN mode | `/oso-plan` | the operator invokes `/oso-plan` — a mode is never model-invoked |
-| the DEBUG mode | `/oso-debug` | the operator invokes `/oso-debug` — a mode is never model-invoked |
 | the quality-pass judge | `/oso-quality-pass` | read its installed `SKILL.md` and run it inline, the way it runs on every host |
 
-Forked judges and operational agents are the exception to inline reading. This host's `task` tool is SYNCHRONOUS — its call blocks until the child turn completes and the verdict is in-band (plan §3 trap 5, D5). There is no wait operation and no handoff receipt rail on this host (D5); a launch that errors, times out, or returns an empty verdict blocks the flow and never falls through. Launch the judge adapters by their `opencode/agents/` contracts, passing SKILL PATH and ARGUMENTS in the payload (D10).
+Forked judges and operational agents are the exception to inline reading: launch them by their `opencode/agents/` contracts, passing SKILL PATH and ARGUMENTS in the payload (D10), under the wait rule above.
 
 ## Front-surface binding
 
-When `../../front-surface.md`'s trigger fires, READ `front-surface.md` beside this file NOW. It is the single OpenCode binding for Impeccable's mounted path, all three argument routes, package-version record, agent route and absence remedy; this mode supplies only the QUICK wiring indexed by the neutral matrix.
+When `../_shared/front-surface.md`'s trigger fires, READ `../_shared/references/opencode.md`'s **Front-surface binding** section NOW. It is the single OpenCode binding for Impeccable's mounted path, all three argument routes, package-version record, agent route and absence remedy. This mode supplies only the DEBUG wiring indexed by the neutral matrix, which still invokes none of the three arguments.
 
 ## Reporting binding
 
-READ `reporting.md` beside this file NOW. It is the single OpenCode binding for what this host's own UI shows, and does not show, when the milestone contract at `../../reporting.md` fires.
+READ `../_shared/references/opencode.md`'s **Native agent files, no card** and **The unattended run — no carve-out here, and the record that carries it instead** sections NOW. It is the single OpenCode binding for what this host's own UI shows, and does not show, when the milestone contract at `../_shared/reporting.md` fires.

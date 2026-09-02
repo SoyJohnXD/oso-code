@@ -264,5 +264,299 @@
     "disposition": "merged",
     "destinationFile": "codex/skills/triage/references/codex.md",
     "destinationHeading": "Naming the harness's own modes and judges"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/debt-sweep.md",
+    "heading": "Shared-file paths",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-debt-sweep/references/opencode.md",
+    "destinationHeading": "Shared-file paths"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/debt-sweep.md",
+    "heading": "Reaching the fallow tools",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-debt-sweep/references/opencode.md",
+    "destinationHeading": "Reaching the fallow tools"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/debug.md",
+    "heading": "The delivery contract",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-debug/references/opencode.md",
+    "destinationHeading": "The delivery contract"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/debug.md",
+    "heading": "Making a launch wait",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-debug/references/opencode.md",
+    "destinationHeading": "Making a launch wait"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/debug.md",
+    "heading": "Shared-file paths",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-debug/references/opencode.md",
+    "destinationHeading": "Shared-file paths"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/debug.md",
+    "heading": "The state command",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-debug/references/opencode.md",
+    "destinationHeading": "The state command"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/debug.md",
+    "heading": "Naming and invoking the harness's own skills",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-debug/references/opencode.md",
+    "destinationHeading": "Naming and invoking the harness's own skills"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/debug.md",
+    "heading": "Front-surface binding",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-debug/references/opencode.md",
+    "destinationHeading": "Front-surface binding"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/debug.md",
+    "heading": "Reporting binding",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-debug/references/opencode.md",
+    "destinationHeading": "Reporting binding"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/plan.md",
+    "heading": "The delivery contract",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-plan/references/opencode.md",
+    "destinationHeading": "The delivery contract"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/plan.md",
+    "heading": "Question rounds",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-plan/references/opencode.md",
+    "destinationHeading": "Question rounds"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/plan.md",
+    "heading": "The approval gate",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-plan/references/opencode.md",
+    "destinationHeading": "The approval gate"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/plan.md",
+    "heading": "The operational plan, its amendments and the way out",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-plan/references/opencode.md",
+    "destinationHeading": "The operational plan, its amendments and the way out"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/plan.md",
+    "heading": "Shared-file paths",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-plan/references/opencode.md",
+    "destinationHeading": "Shared-file paths"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/plan.md",
+    "heading": "The state command",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-plan/references/opencode.md",
+    "destinationHeading": "The state command"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/plan.md",
+    "heading": "The runtime gates, and the two layers of the commit rail",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-plan/references/opencode.md",
+    "destinationHeading": "The runtime gates, and the two layers of the commit rail"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/plan.md",
+    "heading": "What the unattended marker arms on this host",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-plan/references/opencode.md",
+    "destinationHeading": "What the unattended marker arms on this host"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/plan.md",
+    "heading": "The worktree root",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-plan/references/opencode.md",
+    "destinationHeading": "The worktree root"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/plan.md",
+    "heading": "Naming and invoking the harness's own skills",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-plan/references/opencode.md",
+    "destinationHeading": "Naming and invoking the harness's own skills"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/plan.md",
+    "heading": "Making a launch wait",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-plan/references/opencode.md",
+    "destinationHeading": "Making a launch wait"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/plan.md",
+    "heading": "The explorer",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-plan/references/opencode.md",
+    "destinationHeading": "The explorer"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/plan.md",
+    "heading": "Front-surface binding",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-plan/references/opencode.md",
+    "destinationHeading": "Front-surface binding"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/plan.md",
+    "heading": "Reporting binding",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-plan/references/opencode.md",
+    "destinationHeading": "Reporting binding"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/quality-pass.md",
+    "heading": "Shared-file paths",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-quality-pass/references/opencode.md",
+    "destinationHeading": "Shared-file paths"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/quick.md",
+    "heading": "The delivery contract",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-quick/references/opencode.md",
+    "destinationHeading": "The delivery contract"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/quick.md",
+    "heading": "Question rounds",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-quick/references/opencode.md",
+    "destinationHeading": "Question rounds"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/quick.md",
+    "heading": "Shared-file paths",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-quick/references/opencode.md",
+    "destinationHeading": "Shared-file paths"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/quick.md",
+    "heading": "The state command",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-quick/references/opencode.md",
+    "destinationHeading": "The state command"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/quick.md",
+    "heading": "Naming and invoking the harness's own skills",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-quick/references/opencode.md",
+    "destinationHeading": "Naming and invoking the harness's own skills"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/quick.md",
+    "heading": "Front-surface binding",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-quick/references/opencode.md",
+    "destinationHeading": "Front-surface binding"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/quick.md",
+    "heading": "Reporting binding",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-quick/references/opencode.md",
+    "destinationHeading": "Reporting binding"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/roadmap.md",
+    "heading": "The delivery contract",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-roadmap/references/opencode.md",
+    "destinationHeading": "The delivery contract"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/roadmap.md",
+    "heading": "Question rounds",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-roadmap/references/opencode.md",
+    "destinationHeading": "Question rounds"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/roadmap.md",
+    "heading": "The agent every phase runs on",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-roadmap/references/opencode.md",
+    "destinationHeading": "The agent every phase runs on"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/roadmap.md",
+    "heading": "The approval gate",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-roadmap/references/opencode.md",
+    "destinationHeading": "The approval gate"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/roadmap.md",
+    "heading": "How far the chain runs unattended — all of it",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-roadmap/references/opencode.md",
+    "destinationHeading": "How far the chain runs unattended — all of it"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/roadmap.md",
+    "heading": "The valve while the chain runs, and a queue that changes after presentation",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-roadmap/references/opencode.md",
+    "destinationHeading": "The valve while the chain runs, and a queue that changes after presentation"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/roadmap.md",
+    "heading": "Shared-file paths",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-roadmap/references/opencode.md",
+    "destinationHeading": "Shared-file paths"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/roadmap.md",
+    "heading": "The state command and the worktree root — with the unattended rails, routed to `plan.md`, not restated here",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-roadmap/references/opencode.md",
+    "destinationHeading": "The state command and the worktree root — with the unattended rails, routed to `plan.md`, not restated here"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/roadmap.md",
+    "heading": "Reporting binding",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-roadmap/references/opencode.md",
+    "destinationHeading": "Reporting binding"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/security-pass.md",
+    "heading": "Which reviewer is native, and how to reach it",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-security-pass/references/opencode.md",
+    "destinationHeading": "Which reviewer is native, and how to reach it"
+  },
+  {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/triage.md",
+    "heading": "Naming the harness's own modes and judges",
+    "disposition": "merged",
+    "destinationFile": "opencode/skills/oso-triage/references/opencode.md",
+    "destinationHeading": "Naming the harness's own modes and judges"
   }
 ]

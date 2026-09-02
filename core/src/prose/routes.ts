@@ -102,7 +102,7 @@ export type SkillStub = Readonly<{
   referenceHosts: readonly SkillHost[];
 }>;
 
-export const SHARED_REFERENCE_HOSTS: readonly SkillHost[] = ["codex"];
+export const SHARED_REFERENCE_HOSTS: readonly SkillHost[] = ["codex", "opencode"];
 
 export const SKILL_STUBS: readonly SkillStub[] = [
   {
@@ -110,14 +110,14 @@ export const SKILL_STUBS: readonly SkillStub[] = [
     description: { codex: "Whole-change judge after functionality is confirmed, on two axes — code debt (dead code, duplication, over-documentation, rubric violations) and ledger conformance (the assembled change against the frozen decisions that shaped it). Reports both with evidence in separate sections — it never edits anything; fixes are applied by a separate applier. Use when a plan-mode change is complete, or when the user asks to sweep a branch or recent work for debt.", opencode: "Whole-change judge after functionality is confirmed, on two axes — code debt (dead code, duplication, over-documentation, rubric violations) and ledger conformance (the assembled change against the frozen decisions that shaped it). Reports both with evidence in separate sections — it never edits anything; fixes are applied by a separate applier. Use when a plan-mode change is complete, or when the user asks to sweep a branch or recent work for debt." },
     argumentHint: { codex: "[base ref, e.g. main] [+ frozen ledger: bare decisions + scope] [+ on re-invocation: every prior finding with its bare disposition]", opencode: "[base ref, e.g. main] [+ frozen ledger: bare decisions + scope] [+ on re-invocation: every prior finding with its bare disposition]" },
     disableModelInvocation: false,
-    referenceHosts: ["codex"],
+    referenceHosts: ["codex", "opencode"],
   },
   {
     id: "debug",
     description: { codex: "Debugging and error-recovery mode for something that broke. Triages reproduce-first — reproduce, localize, reduce — then delegates the fix and a regression test through the apply/verify loop with a zero-warnings bar. Use when a bug, crash, or failing behavior needs diagnosis; also the landing point when a plan or quick ask turns out to be a bug.", opencode: "Debugging and error-recovery mode for something that broke. Triages reproduce-first — reproduce, localize, reduce — then delegates the fix and a regression test through the apply/verify loop with a zero-warnings bar. Use when a bug, crash, or failing behavior needs diagnosis; also the landing point when a plan or quick ask turns out to be a bug." },
     argumentHint: { codex: "[what broke]", opencode: "[what is broken]" },
     disableModelInvocation: true,
-    referenceHosts: ["codex"],
+    referenceHosts: ["codex", "opencode"],
   },
   {
     id: "doubt-pass",
@@ -131,41 +131,41 @@ export const SKILL_STUBS: readonly SkillStub[] = [
     description: { codex: "Deep mode for substantial changes. Plans in four phases — intent, surface mapping, decision rounds, slicing — inside Plan Mode, closes with a Repaso-headed approval document, then executes slice by slice with an apply/verify loop and a zero-warnings bar. Use for features, refactors, or any change that needs architecture or contract decisions.", opencode: "Deep mode for substantial changes. Plans in four phases — intent, surface mapping, decision rounds, slicing — with nothing written before execution, closes with a Repaso-headed approval document, then executes slice by slice with an apply/verify loop and a zero-warnings bar. Use for features, refactors, or any change that needs architecture or contract decisions." },
     argumentHint: { codex: "[change-name or what to build]", opencode: "[change-name or what to build]" },
     disableModelInvocation: true,
-    referenceHosts: ["codex"],
+    referenceHosts: ["codex", "opencode"],
   },
   {
     id: "quality-pass",
     description: { codex: "Readability-only cleanup of touched code after functionality is confirmed. Verifies against the clean-code checklist, fixes what fails, and re-verifies — never changes behavior. Use when a change is functionally done, when the user asks for cleanup or a quality pass, or as the closing step of quick and debug modes.", opencode: "Readability-only cleanup of touched code after functionality is confirmed. Verifies against the clean-code checklist, fixes what fails, and re-verifies — never changes behavior. Use when a change is functionally done, when the user asks for cleanup or a quality pass, or as the closing step of quick and debug modes." },
     argumentHint: null,
     disableModelInvocation: false,
-    referenceHosts: ["codex"],
+    referenceHosts: ["codex", "opencode"],
   },
   {
     id: "quick",
     description: { codex: "Fast iteration mode for small, easily verifiable changes. Runs a one-exchange micro-intent, iterates with visible results, and closes with a quality pass. Use for visual tweaks, small fixes, and adjustments that fit in a handful of files.", opencode: "Fast iteration mode for small, easily verifiable changes. Runs a one-exchange micro-intent, iterates with visible results, and closes with a quality pass. Use for visual tweaks, small fixes, and adjustments that fit in a handful of files." },
     argumentHint: { codex: "[what to change]", opencode: "[what to change or fix]" },
     disableModelInvocation: true,
-    referenceHosts: ["codex"],
+    referenceHosts: ["codex", "opencode"],
   },
   {
     id: "roadmap",
     description: { codex: "Auto mode for a queue of changes. Plans the whole queue with the operator — the children in order, the decisions that hold across all of them, and the policy that answers what surfaces later — takes one approval for the lot, then plans, executes and closes each child, sets aside any child that hits a decision only the operator can take, and chains the next. Use when several substantial changes are known up front and the operator wants to decide once.", opencode: "Auto mode for a queue of changes. Plans the whole queue with the operator — the children in order, the decisions that hold across all of them, and the policy that answers what surfaces later — takes one approval for the lot, then plans, executes and closes each child, sets aside any child that hits a decision only the operator can take, and chains the next. Use when several substantial changes are known up front and the operator wants to decide once." },
     argumentHint: { codex: "[roadmap name or the changes to queue]", opencode: "[roadmap name or the changes to queue]" },
     disableModelInvocation: true,
-    referenceHosts: ["codex"],
+    referenceHosts: ["codex", "opencode"],
   },
   {
     id: "security-pass",
     description: { codex: "Fresh-context security reviewer of a change that has not shipped yet. Launched by the plan, quick, and debug orchestrators on operator acceptance before a commit, a push, or a PR, when the change touched auth, payments, or data-model surfaces. Runs the host's native review path inside its dedicated subagent over the invocation's selected scope. It judges only — never edits, never commits, never asks back.", opencode: "Fresh-context security reviewer of a change that has not shipped yet. Launched by the plan, quick, and debug orchestrators on operator acceptance before a commit, a push, or a PR, when the change touched auth, payments, or data-model surfaces. Runs the host's review path inside its dedicated agent over the invocation's selected scope. It judges only — never edits, never commits, never asks back." },
     argumentHint: { codex: "[optional base ref for a branch range, e.g. main]", opencode: "[optional base ref for a branch range, e.g. main]" },
     disableModelInvocation: false,
-    referenceHosts: ["codex"],
+    referenceHosts: ["codex", "opencode"],
   },
   {
     id: "triage",
     description: { codex: "Attribution judge for a check that went red inside a plan wave. Launched by the plan orchestrator's wave loop when the integration gate or a mid-wave check fails on something no slice's diff plainly explains — an orchestrator instrument, never a general debugging entry point. Answers ONE question from read-only git evidence — does this breakage belong to the wave under execution, or does it predate WAVE START, the commit that wave's worktrees were cut from. It judges only — never edits, never fixes, never commits, never asks back; the fix is the operator's call and the debug mode is where they take it.", opencode: "Attribution judge for a check that went red inside a plan wave. Launched by the plan orchestrator's wave loop when the integration gate or a mid-wave check fails on something no slice's diff plainly explains — an orchestrator instrument, never a general debugging entry point. Answers ONE question from read-only git evidence — does this breakage belong to the wave under execution, or does it predate WAVE START, the commit that wave's worktrees were cut from. It judges only — never edits, never fixes, never commits, never asks back; the fix is the operator's call and the debug mode is where they take it." },
     argumentHint: { codex: "[failing check + its evidence verbatim] [+ the wave's slices] [+ WAVE START]", opencode: "[failing check + its evidence verbatim] [+ the wave's slices] [+ WAVE START]" },
     disableModelInvocation: false,
-    referenceHosts: ["codex"],
+    referenceHosts: ["codex", "opencode"],
   },
 ];

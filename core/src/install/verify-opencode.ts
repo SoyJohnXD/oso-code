@@ -293,11 +293,10 @@ export function openCodeOperatorGlobalStatus(globalFile: string, seedText: strin
 export function openCodeSkillStatus(repositoryRoot: string, configHome: string): string {
   const sources = openCodePayloadSources(repositoryRoot);
   const wrappers = osoPrefixedNames(sources.skills).filter((name) => isReadableRegularFile(path.join(sources.skills, name, "SKILL.md")));
-  const divergent = wrappers.filter((name) => !filesHoldTheSameBytes(path.join(sources.skills, name, "SKILL.md"), path.join(configHome, "skill", name, "SKILL.md")));
+  const divergent = wrappers.filter((name) => !treesHoldTheSameBytes(path.join(sources.skills, name), path.join(configHome, "skill", name)));
   if (wrappers.length !== EXPECTED_SKILL_WRAPPER_COUNT) return `wrapper-count:${wrappers.length}`;
   if (divergent.length > 0) return namedList("divergent", divergent);
   if (!isDirectory(path.join(configHome, "skill", "_shared", "bodies"))) return "missing-shared-bodies";
-  if (!isDirectory(path.join(configHome, "skill", "_shared", "platform", "opencode"))) return "missing-platform";
   return treesHoldTheSameBytes(sources.sharedSkills, path.join(configHome, "skill", "_shared")) ? "exact" : "shared-differs";
 }
 
