@@ -12,4 +12,4 @@ This mode's instructions live in two files. READ BOTH NOW, in this order, and fo
 1. `../_shared/bodies/quick.md` — the flow itself: the micro-intent, the substantiality check, the iteration rules, the close. It is the same on every host this harness runs on.
 2. `references/opencode.md` — what the flow leaves to the host: the delivery contract it speaks under, the question rounds it asks in, the tools it calls, the paths it resolves, the state command, and the installed runtime gates.
 
-Where the neutral body defers to "your host", the platform file is the answer, and it is the only answer — never improvise a spelling the platform file does not give.
+Where the neutral body defers to "your host", the reference file beside this one is the answer, and it is the only answer — never improvise a spelling it does not give.

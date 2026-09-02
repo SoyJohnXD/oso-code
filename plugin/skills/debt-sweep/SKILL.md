@@ -15,4 +15,4 @@ This judge's instructions live in two files. READ BOTH NOW, in this order, and f
 1. `${CLAUDE_SKILL_DIR}/../_shared/bodies/debt-sweep.md` — the judgment itself: the scope rule, the two axes, the finding shape, the verdict vocabulary. It is the same on every host this harness runs on.
 2. `${CLAUDE_SKILL_DIR}/references/claude.md` — what the judgment leaves to the host: the paths it interpolates, and the route to the fallow tools.
 
-Where the neutral body defers to "your host", the platform file is the answer, and it is the only answer — never improvise a spelling the platform file does not give.
+Where the neutral body defers to "your host", the reference file beside this one is the answer, and it is the only answer — never improvise a spelling it does not give.

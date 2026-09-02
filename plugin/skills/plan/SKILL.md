@@ -7,13 +7,13 @@ disable-model-invocation: true
 
 # Plan mode
 
-Guided flow for substantial changes. The human decides; you guide, present options with tradeoffs, and never assume. Read your platform's own reference file beside this one (`references/<host>.md`) now, before phase 0 — it is what this flow leaves to the host: the tools it calls, the paths it interpolates, the approval gate, the delivery rule the host imposes. Wherever this flow says "your host" or "the platform file", that file is the answer.
+Guided flow for substantial changes. The human decides; you guide, present options with tradeoffs, and never assume. Read your platform's own reference file beside this one (`references/<host>.md`) now, before phase 0 — it is what this flow leaves to the host: the tools it calls, the paths it interpolates, the approval gate, the delivery rule the host imposes. Wherever this flow says "your host", that file is the answer.
 
 ## Ground rules for the whole flow
 
-- Phases 1–5, through §5's delivered approval document, run inside Plan Mode — read-only, nothing before §6 writes code. Enter it before phase 1, stay through delivery. A ROADMAP child's own re-entry into Plan Mode is the host's call, not this rule's — its platform file has the answer, read before phase 1.
-- Question rounds: 2–4 options with tradeoffs, your recommendation first with why, and whether it is current standard practice — verify a library, framework, or well-trodden pattern against context7 before recommending. Round size and the asking tool are the platform file's.
-- Operator-facing content — the intent, the surface map, any narrative the operator must read — is delivered under the platform file's delivery contract. A question round's own context travels in its fields, never as prose the round carries for it.
+- Phases 1–5, through §5's delivered approval document, run inside Plan Mode — read-only, nothing before §6 writes code. Enter it before phase 1, stay through delivery. A ROADMAP child's own re-entry into Plan Mode is the host's call, not this rule's — its reference file has the answer, read before phase 1.
+- Question rounds: 2–4 options with tradeoffs, your recommendation first with why, and whether it is current standard practice — verify a library, framework, or well-trodden pattern against context7 before recommending. Round size and the asking tool are the reference file's.
+- Operator-facing content — the intent, the surface map, any narrative the operator must read — is delivered under the reference file's delivery contract. A question round's own context travels in its fields, never as prose the round carries for it.
 - If phase 1 shows the change is actually small, offer QUICK; if it is actually a bug, offer DEBUG. The user decides either way.
 - `mem_search` returns 300-char previews — always call `mem_get_observation(id)` for full content. Engram content and titles are written in English; Oso narrates them in Spanish on request. Applies to every save below.
 - The commit gate refuses `git commit` while `verify_green` is false; the edits gate refuses a file edit while `mode=plan` and no slice is active. Keep the triple (`mode`, `active_slice`, `verify_green`) honest with `oso-state` — it can set a key but never delete one, so a slice CLOSES by writing `active_slice=none`, never by leaving its number behind.
@@ -54,11 +54,11 @@ Iterate until the user approves the intent. Do not advance without approval.
 
 Turn the approved intent into a map of what the change actually touches, built from evidence, not a checklist.
 
-1. Launch up to 3 exploration subagents in parallel (your host's explorer, named in the platform file), each with a focus derived from the intent, to discover modules, contracts and their consumers, shared state, jobs, data flows.
+1. Launch up to 3 exploration subagents in parallel (your host's explorer, named in the reference file), each with a focus derived from the intent, to discover modules, contracts and their consumers, shared state, jobs, data flows.
 2. Generate the surface list from what they return — never recited from a fixed list.
 3. Audit the map against the INVARIANT CORE (§3: Contracts, Architecture, Errors, Verification, Reuse) — each lens covered by a surface, marked N/A with a reason, or revealing a surface exploration missed. Derive further categories straight from the surfaces, each citing its motivating evidence: infra → rollback, cost, observability; front surfaces (`_shared/front-surface.md`'s trigger) → accessibility, responsive, state, and its design-bar absence policy when Impeccable isn't installed; data-touching → data model, migrations, source of truth; auth/payments → security; user-facing → UX behavior.
 4. Generate the question battery from the map — every question cites the code evidence that motivates it and the consequence of not deciding it.
-5. Prioritize blocking-decisions-first, feeding Decision rounds at the platform file's per-round cap.
+5. Prioritize blocking-decisions-first, feeding Decision rounds at the reference file's per-round cap.
 6. Audit the map again against the four rules the rubric (`_shared/rubric.md`) puts outside its own judgment contract — the three Hard blockers and the inline-comment debt class. A repo convention in tension with one of these is a battery QUESTION like any other, ranked in with its consequence, answered by the operator and recorded — never softened as "the project's own convention."
 
 Fallback: if exploration surfaces nothing clear, fall back to the INVARIANT CORE as the question generator — a template question beats silence, though only the evidence citation is waived.
@@ -142,7 +142,7 @@ Fixed shape, three sections, written in the operator's language and at their exp
 2. **Decisiones del ledger que lo moldean** — the frozen decisions that shaped this design, and why they matter.
 3. **Cómo va a funcionar** — how the pieces connect once the change is live.
 
-No confirmation loop and no question round — the repaso is read, not interrogated. There is exactly ONE approval gate, named by the platform file: hand it the plan built repaso-first, full-detail-after. A material change after presentation invalidates approval: re-present the complete repaso-first plan and pass the gate again. That approval is what starts execution. On approval, cross the platform file's execution boundary and save:
+No confirmation loop and no question round — the repaso is read, not interrogated. There is exactly ONE approval gate, named by the reference file: hand it the plan built repaso-first, full-detail-after. A material change after presentation invalidates approval: re-present the complete repaso-first plan and pass the gate again. That approval is what starts execution. On approval, cross the reference file's execution boundary and save:
 
 `mem_save(title: "oso/{change}/plan — {human description}", topic_key: "oso/{change}/plan", type: "architecture", capture_prompt: false, content: slices with [ ] marks, grouped into their waves, + current position)`
 
@@ -158,7 +158,7 @@ The ledger's execution mode (§4) picks the path: SEQUENTIAL is steps 1–4, onc
 
 **Three coordinates, and every launch below names one by its own name.** CHANGE BASE is §3's Verification-row ref — unmoving for the whole change, what the close's two judges (§7) diff against. WAVE START is the commit a wave's worktrees are cut from. Wave 1's is the CHANGE BASE when no wave 0 ran, wave 0's own landing commit when it did. Every later wave's is the commit the previous wave's integrator produces on a clean merge — a conflict or a red integration gate lands no such commit, so no next wave arms until this one does. SLICE START is what the ACTIVE slice's own novelty is judged against: under SEQUENTIAL it is `HEAD`, since nothing else commits to the main checkout while that slice is active; under PARALLEL a worktree holds nothing before its own cut, so SLICE START is the same WAVE START it was cut from. `oso-code:triage` compares a red check against WAVE START, never CHANGE BASE — a breakage an earlier wave already landed is background the wave in flight never introduced.
 
-Both delegations below are launches you READ before you move: an unwaited applier sends verify to code nobody wrote, an unwaited verifier lets step 4 write `verify_green=true` over a verdict nobody read. How your host delivers that report is the platform file's to state.
+Both delegations below are launches you READ before you move: an unwaited applier sends verify to code nobody wrote, an unwaited verifier lets step 4 write `verify_green=true` over a verdict nobody read. How your host delivers that report is the reference file's to state.
 
 For the active slice:
 

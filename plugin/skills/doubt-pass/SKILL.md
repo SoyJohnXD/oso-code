@@ -14,4 +14,4 @@ This judge's instructions live in one file, and it is binding. READ IT NOW and f
 
 - `${CLAUDE_SKILL_DIR}/../_shared/bodies/doubt-pass.md` — the judgment itself: the input contract, the attack, the verdict vocabulary. It is the same on every host this harness runs on.
 
-This judge leaves nothing to the host — it names no tool and interpolates no path — so there is no platform file beside it.
+This judge leaves nothing to the host — it names no tool and interpolates no path — so there is no reference file beside it.

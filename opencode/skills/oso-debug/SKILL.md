@@ -19,4 +19,4 @@ This mode's instructions live in two files. READ BOTH NOW, in this order, and fo
 1. `../_shared/bodies/debug.md` — the flow itself: reproduce-first triage, the diagnosis freeze, the delegated fix, the close. It is the same on every host this harness runs on.
 2. `references/opencode.md` — what the flow leaves to the host: the delivery contract it speaks under, the tools it calls, the paths it resolves, the wait rule its delegated fix runs under, the state command, and the installed runtime gates.
 
-Where the neutral body defers to "your host", the platform file is the answer, and it is the only answer — never improvise a spelling the platform file does not give.
+Where the neutral body defers to "your host", the reference file beside this one is the answer, and it is the only answer — never improvise a spelling it does not give.

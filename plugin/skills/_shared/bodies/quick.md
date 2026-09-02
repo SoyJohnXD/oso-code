@@ -60,7 +60,7 @@ State belongs to the repository and outlives this session: if the operator walks
 
 ## 4. Close — when the user says it's done
 
-Every judge invoked below (quality-pass, and security-pass when offered) and every delegation launched from an accepted finding reports under the milestone contract at `_shared/reporting.md` — the single source for what each moment states and how long it may run, delivered under the platform file's delivery contract like everything else here.
+Every judge invoked below (quality-pass, and security-pass when offered) and every delegation launched from an accepted finding reports under the milestone contract at `_shared/reporting.md` — the single source for what each moment states and how long it may run, delivered under the reference file's delivery contract like everything else here.
 
 1. Invoke the quality-pass judge on the touched code. On `Quality Pass: blocked` (ADR-0114), present the findings it could not resolve to the operator with options and tradeoffs, apply the operator's decision the same way its own Apply step does, and re-run the judge until it returns `Quality Pass: passed`.
 2. Zero warnings: the project's own checks — discovered from the project — must be clean before declaring done. When the change touched front surface, the pinned design detector joins these checks, run on the touched surfaces under the detect-gate contract in `_shared/front-surface.md`: the pin is resolved by that file's recipe when the front work starts, and both numerals land in the close's session summary (step 5). A detector that cannot run for environment reasons, or a pin that cannot be resolved at all, is named as skipped there rather than silently dropped.

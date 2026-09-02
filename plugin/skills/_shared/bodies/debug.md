@@ -2,7 +2,7 @@
 
 Guided flow for "something broke" — stop-the-line: while the bug is open, no feature work rides along, and the fix scope stays minimal.
 
-Operator-facing content — triage reports, the diagnosis presentation — is delivered under your host's delivery contract, stated in the platform file. The PLAN mode runs under the same one.
+Operator-facing content — triage reports, the diagnosis presentation — is delivered under your host's delivery contract, stated in the reference file. The PLAN mode runs under the same one.
 
 ## 0. Resume check (light)
 
@@ -37,14 +37,14 @@ Save ONCE per ADR-0039: `mem_save(title: "oso/{bug}/diagnosis — {human descrip
 
 ## 4. Delegated fix — you never write it inline
 
-Every arm below, every launch of the applier or verifier, every verdict read, and every judge invoked at the close reports under the milestone contract at `_shared/reporting.md` — the single source for what each moment states and how long it may run, delivered under the platform file's delivery contract like the triage report and diagnosis presentation already are.
+Every arm below, every launch of the applier or verifier, every verdict read, and every judge invoked at the close reports under the milestone contract at `_shared/reporting.md` — the single source for what each moment states and how long it may run, delivered under the reference file's delivery contract like the triage report and diagnosis presentation already are.
 
 Arm the state — the whole triple goes in every write because `oso-state` can set a key but never delete one: a stale green or a slice left armed by an abandoned flow is overwritten here, never inherited.
 `oso-state set mode=debug active_slice=fix verify_green=false`
 Read it back with `oso-state show` and confirm the three keys came back as written — a write that silently failed leaves the commit gate open with no other signal, so stop and tell the operator instead of delegating.
 State belongs to the repository and outlives this session: if the operator walks away from this bug mid-flow, run `oso-state clear`, or the stale green rides over whatever unrelated work follows in that repository.
 
-Then run the apply/verify loop (mechanics mirror the PLAN mode §6's sequential path). Both launches below are delegations you READ before you move: no step advances on a report nobody has read. A launch whose result you have not read is a step you have not run — it sends step 2 to verify a fix nobody wrote yet, and lets the close's green (§5 step 4) land over a verdict nobody read. HOW your host delivers that report — inside the same turn, or as a later notification that re-enters the conversation — is the platform file's to state, and a host that delivers one no way at all is a host this loop does not run on.
+Then run the apply/verify loop (mechanics mirror the PLAN mode §6's sequential path). Both launches below are delegations you READ before you move: no step advances on a report nobody has read. A launch whose result you have not read is a step you have not run — it sends step 2 to verify a fix nobody wrote yet, and lets the close's green (§5 step 4) land over a verdict nobody read. HOW your host delivers that report — inside the same turn, or as a later notification that re-enters the conversation — is the reference file's to state, and a host that delivers one no way at all is a host this loop does not run on.
 
 1. **Apply (subagent)** — launch the `oso-applier` agent with the diagnosis packaged as a ledger: root cause, repro evidence, fix decision, the named regression test, the project conventions, the zero-warnings commands, the rubric path `_shared/rubric.md`, and the two coordinates its contract reads in either mode — the main checkout as the WORKTREE PATH, since this flow cuts none, and `HEAD` as the BASE REF, which is the pending working-tree diff this flow has always judged: nothing is committed while it runs (§5 step 5), so HEAD is the tree as it stood before the fix.
    - When the FIX touches front surface (per the shared trigger at `_shared/front-surface.md`), the packaged ledger additionally carries the project's `DESIGN.md`/`PRODUCT.md` as conventions and the filesystem paths to the installed Impeccable skill's `SKILL.md` and its `reference/` playbook directory, which the applier READS as design reference. **Absence policy (ADR-0046):** if Impeccable is not installed, follow the absence policy in `_shared/front-surface.md`; debug records the gap in the diagnosis notes.
