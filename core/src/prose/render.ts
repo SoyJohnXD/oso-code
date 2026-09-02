@@ -3,6 +3,10 @@ import { OPENCODE_PERMISSION_ORDER, type AgentRole, type HostName, type SkillHos
 export { agentHosts, AGENT_ROLES, SHARED_REFERENCE_HOSTS, SKILL_STUBS } from "./routes.ts";
 export type { AgentRole, HostName, SkillHost, SkillStub } from "./routes.ts";
 
+export function agentSharedBodyPath(role: AgentRole): string {
+  return `core/src/prose/agents/${role.id}/body.md`;
+}
+
 export function agentBodyPath(role: AgentRole, host: HostName): string {
   return `core/src/prose/agents/${role.id}/${host}.md`;
 }
@@ -41,7 +45,8 @@ export function renderReference(body: string): string {
   return body;
 }
 
-export function renderAgent(role: AgentRole, host: HostName, body: string): string {
+export function renderAgent(role: AgentRole, host: HostName, sharedBody: string, delta: string | null): string {
+  const body = delta === null ? sharedBody : `${sharedBody}\n${delta}`;
   if (host === "claude") return renderClaudeAgent(role, body);
   if (host === "codex") return renderCodexAgent(role, body);
   return renderOpenCodeAgent(role, body);

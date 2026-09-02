@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
 import {
@@ -9,6 +9,7 @@ import {
   agentBodyPath,
   agentHosts,
   agentOutputPath,
+  agentSharedBodyPath,
   renderAgent,
   renderReference,
   renderSkill,
@@ -29,6 +30,11 @@ function readRepoText(file: string): string {
   return readFileSync(path.join(repositoryRoot, file), "utf8");
 }
 
+function readRepoTextOrNull(file: string): string | null {
+  const absolute = path.join(repositoryRoot, file);
+  return existsSync(absolute) ? readFileSync(absolute, "utf8") : null;
+}
+
 provedSomething("core/src/prose/routes.ts names at least one agent role", AGENT_ROLES.length > 0, "AGENT_ROLES is empty, so this suite compared nothing");
 provedSomething("core/src/prose/routes.ts names at least one skill stub", SKILL_STUBS.length > 0, "SKILL_STUBS is empty, so this suite compared nothing");
 
@@ -36,10 +42,12 @@ describe("every rendered agent file equals a fresh, deterministic render of its 
   for (const role of AGENT_ROLES) {
     for (const host of agentHosts(role)) {
       test(`${role.id} on ${host} renders the committed bytes, twice, identically`, () => {
-        const body = readRepoText(agentBodyPath(role, host));
+        const sharedBody = readRepoTextOrNull(agentSharedBodyPath(role));
+        const hostFile = readRepoTextOrNull(agentBodyPath(role, host));
+        const [body, delta] = sharedBody === null ? [hostFile, null] : [sharedBody, hostFile];
         const committed = readRepoText(agentOutputPath(role, host));
-        assert.equal(renderAgent(role, host, body), committed);
-        assert.equal(renderAgent(role, host, body), committed);
+        assert.equal(renderAgent(role, host, body as string, delta), committed);
+        assert.equal(renderAgent(role, host, body as string, delta), committed);
       });
     }
   }

@@ -12,8 +12,10 @@ function agentArtifacts(prose) {
 }
 
 function agentArtifact(prose, role, host) {
-  const body = readFileSync(join(repoRoot, prose.agentBodyPath(role, host)), "utf8");
-  return artifactOf(prose.agentOutputPath(role, host), prose.renderAgent(role, host, body));
+  const sharedBody = readTextOrNull(join(repoRoot, prose.agentSharedBodyPath(role)));
+  const hostFile = readTextOrNull(join(repoRoot, prose.agentBodyPath(role, host)));
+  const [body, delta] = sharedBody === null ? [hostFile, null] : [sharedBody, hostFile];
+  return artifactOf(prose.agentOutputPath(role, host), prose.renderAgent(role, host, body, delta));
 }
 
 function skillArtifacts(prose) {
