@@ -2,19 +2,19 @@
 
 ## The delivery contract — anti-swallow
 
-The Claude Code TUI drops assistant text that precedes a tool call in the same turn. So operator-facing content — the intent presentation, the surface-map presentation, any narrative the operator must read — must END the turn as plain text, with the tool call (`AskUserQuestion`, `ExitPlanMode`) in a LATER turn. Context a question round needs travels INSIDE the `AskUserQuestion` fields (question text, option descriptions), never as prose before the call.
+The Claude Code TUI drops assistant text that precedes a tool call in the same turn. Operator-facing content — the intent presentation, the surface-map presentation, any narrative the operator must read — must END the turn as plain text, with the tool call (`AskUserQuestion`, `ExitPlanMode`) in a LATER turn. Context a question round needs travels INSIDE the `AskUserQuestion` fields, never as prose before the call.
 
-One exception stands and `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **The unattended run — the carve-out, and the record that pays for it** section states it whole rather than this section restating it: while this repository's state carries `auto=running`, the run is UNATTENDED and its milestone text rides the stream instead of ending the turn, journaled full-text in its place, with the park and the final report still ending it. Nothing here changes for a run with no such marker — and phases 1–5 always run with the operator, so no exception reaches this file's own gates.
+One exception stands, and `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **The unattended run** section states it whole: while this repository's state carries `auto=running`, a milestone rides the stream instead of ending the turn, journaled full-text in its place — the park and the final report still end it.
 
 ## Question rounds
 
-The tool is `AskUserQuestion`, and one round holds 4 questions maximum — its platform cap. §2 step 5 feeds Decision rounds at that same number.
+The tool is `AskUserQuestion`, and one round holds 4 questions maximum — its platform cap.
 
 ## The approval gate
 
-`ExitPlanMode` is the single approval gate, and the plan document §5 builds is its `plan` argument — repaso-first, full-detail-after. Its native approval UI is what renders that document, and the operator's approval there is what starts execution. On approval, exit Plan Mode.
+`ExitPlanMode` is the single approval gate, and the plan document §5 builds is its `plan` argument — repaso-first, full-detail-after. The operator's approval there is what starts execution; on approval, exit Plan Mode.
 
-Where this change is running as a child of the ROADMAP mode's chain, this gate is not its to reach: `${CLAUDE_SKILL_DIR}/../roadmap/references/claude.md` states what stands in its place — the one approval that mode's §3 took, and the plain-text delivery §5's document rides instead of the `plan` argument above. Read it there before phase 1, and present no gate the roadmap already passed.
+Where this change runs as a child of the ROADMAP mode's chain, this gate is not its to reach: `${CLAUDE_SKILL_DIR}/../roadmap/references/claude.md` states what stands in its place — that mode's own one approval, and the plain-text delivery §5's document rides instead of the `plan` argument above.
 
 ## The explorer
 
@@ -22,46 +22,37 @@ Where this change is running as a child of the ROADMAP mode's chain, this gate i
 
 ## Shared-file paths
 
-Wherever the neutral body names a file as `_shared/<file>.md`, it is spelled `${CLAUDE_SKILL_DIR}/../_shared/<file>.md` here. That interpolation resolves to an absolute path, which is what the applier and verifier payloads need — they are handed the rubric as a path they open themselves.
+Wherever the flow names a file as `_shared/<file>.md`, it is spelled `${CLAUDE_SKILL_DIR}/../_shared/<file>.md` here, resolved to an absolute path — what applier and verifier payloads need, since they open the rubric themselves.
 
 ## The state command
 
-Every `oso-state <verb> …` the neutral body instructs runs as:
+Every `oso-state <verb> …` the flow instructs runs as:
 
 `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" <verb> …`
 
-so `oso-state set mode=plan active_slice=<n> verify_green=false` is run as `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" set mode=plan active_slice=<n> verify_green=false`, and `oso-state show`, `oso-state clear` and `oso-state event <verb> "<value>"` take the same prefix. The state itself is the repository's, not the session's — the session id is what the audit trail records each line under and what the teardown reads back — and a write spelled without it does not run at all.
+The state is the repository's, not the session's — the session id is audit metadata only, and a write spelled without it does not run at all.
 
 ## The runtime gates, and the two layers of the commit rail
 
-The gates are this plugin's own hooks. The `pre-commit` hook arms on `CLAUDE_CODE_SESSION_ID`, which the client puts in every process the Bash tool starts and no operator's own terminal carries — so an operator committing in this repo themselves never meets it.
-
-The commit rail has two layers and the wave loop's green window (§6) exists because neither can see which worktree a commit comes from:
-
-- the git `pre-commit` hook, because `core.hooksPath` is an absolute path every linked worktree inherits and the state it reads is the repository's, not the tree it fired in;
-- the `PreToolUse` matcher, because it reads the command line and nothing else.
-
-The teardown §6 arms `repo_path` for is the `SessionEnd` hook, which runs `git worktree remove` and `git worktree prune` in the repo named there.
+The commit and edits gates named in the ground rules are this plugin's own hooks, armed on `CLAUDE_CODE_SESSION_ID` — a value the client puts in every Bash-tool process and no operator terminal carries, so an operator committing here themselves never meets them. The commit rail has two layers (the git `pre-commit` hook and the `PreToolUse` matcher) because neither alone can see which worktree a commit comes from — the reason `_shared/parallel.md`'s wave loop opens a green window. The `SessionEnd` teardown reads `repo_path`, armed at §6, to run `git worktree remove`/`prune` in the named repo.
 
 ## What the unattended marker arms on this host
 
-Three of this plugin's hooks read the `auto` marker the AUTO disposition writes, and they are what "unattended" costs and buys here:
+Three of this plugin's hooks read the `auto` marker the AUTO disposition writes:
 
-- `auto-continue.sh` — the `Stop` net. It reads `auto=running` and pushes the run on when a turn ends without parking or closing it, capped at a fixed number of pushes that moved the journal nowhere. `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **The unattended run — the carve-out, and the record that pays for it** section owns the delivery carve-out this net stands behind.
-- `reanchor-after-compact.sh` — `SessionStart` with `source=compact`. A compaction takes the window and not the position: this hook hands the fresh context the three places the position actually lives — the `oso/index` row's `NEXT:` line, `oso-state show`, and the run journal. How much window the client holds before compacting is the `autoCompactWindow` setting, which the harness can ask for and never guarantee, so this re-anchor is the floor under an unattended run rather than the window being one.
-- `block-prod-deploy.sh` — a `PreToolUse` rail armed only while the marker is running: a production deploy, and a push off the run's own branch, are denied to a run nobody is watching. Taking the run back (`auto=done`) is what disarms it.
+- `auto-continue.sh` — the `Stop` net: reads `auto=running` and pushes the run on when a turn ends without parking or closing it, capped at a fixed number of pushes that moved the journal nowhere.
+- `reanchor-after-compact.sh` — `SessionStart` with `source=compact`: hands the fresh context the three places the position lives — the `oso/index` row's `NEXT:` line, `oso-state show`, and the run journal.
+- `block-prod-deploy.sh` — a `PreToolUse` rail armed only while the marker is running: a production deploy, and a push off the run's own branch, are denied. Taking the run back (`auto=done`) disarms it.
 
-The marker is the flow's to write, never a hook's: `oso-state set auto=running auto_change=<change-slug>`, `auto=parked`, `auto=done`, exactly where `${CLAUDE_SKILL_DIR}/../_shared/unattended.md` puts each flip.
+The marker is the flow's to write, never a hook's, exactly where `${CLAUDE_SKILL_DIR}/../_shared/unattended.md` puts each flip.
 
 ## The worktree root
 
-`<worktree root>` in §6 is `~/.local/state/oso-code/worktrees/<sanitized session>`, where sanitized is `${CLAUDE_CODE_SESSION_ID}` with everything outside `a-zA-Z0-9-` stripped — which is what the hooks do to it before they look, so a path spelled any other way is a path the teardown never finds.
+`<worktree root>` in §6 is `~/.local/state/oso-code/worktrees/<sanitized session>` — `${CLAUDE_CODE_SESSION_ID}` with everything outside `a-zA-Z0-9-` stripped, exactly as the hooks do before they look.
 
 ## Naming and invoking the harness's own skills
 
-The neutral body names each one by role; here they carry the plugin prefix, and each is reached through the Skill tool:
-
-| The body says | Here it is | Reached by |
+| The flow says | Here it is | Reached by |
 | --- | --- | --- |
 | the QUICK mode | `oso-code:quick` | the operator invokes it — a mode is never model-invoked |
 | the DEBUG mode | `oso-code:debug` | the operator invokes it — a mode is never model-invoked |
@@ -70,16 +61,16 @@ The neutral body names each one by role; here they carry the plugin prefix, and 
 | the triage judge | `oso-code:triage` | the Skill tool; its frontmatter is what forks it |
 | the security-pass judge | `oso-code:security-pass` | the Skill tool; its frontmatter is what forks it |
 
-The three delegates the body names — `oso-applier`, `oso-verifier`, `oso-integrator` — are agents, not skills: reach them with the Agent tool, under the wait rule below. An applier has no Skill tool of its own, which is why §6 step 2 hands it Impeccable's files as PATHS to read rather than a skill to invoke.
+The three delegates the flow names — `oso-applier`, `oso-verifier`, `oso-integrator` — are agents, reached with the Agent tool under the wait rule below. An applier has no Skill tool of its own, which is why §6 step 2 hands it Impeccable's files as PATHS to read rather than a skill to invoke.
 
 ## Delegation-wait binding
 
-READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Making a launch wait** section NOW. It is the single Claude Code binding for how a delegation's report arrives on this host and for the marker every delegation arms. Here that rule reaches §6's applier, verifier and integrator, §2's exploration subagents, the integration gate's verifier, a red slice's relaunched applier and §7's debt-cleanup applier.
+READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Making a launch wait** section NOW, read ALWAYS by this flow. It is the single Claude Code binding for how a delegation's report arrives on this host and for the marker every delegation arms — reaching §6's applier, verifier and integrator, §2's exploration subagents, the integration gate's verifier, a red slice's relaunched applier, and §7's debt-cleanup applier.
 
 ## Front-surface binding
 
-When `${CLAUDE_SKILL_DIR}/../_shared/front-surface.md`'s trigger fires, READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Front-surface binding** section NOW. It is the single Claude Code binding for Impeccable's invocation, package-version record, agent route and absence remedy; this mode supplies only the PLAN wiring indexed by the neutral matrix.
+When `${CLAUDE_SKILL_DIR}/../_shared/front-surface.md`'s trigger fires, READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Front-surface binding** section NOW. It is the single Claude Code binding for Impeccable's invocation, package-version record, agent route and absence remedy.
 
 ## Reporting binding
 
-READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md` NOW. Its **The native card is not the report** and **The unattended run** sections are the single Claude Code binding for what this host's own UI shows, and does not show, when the milestone contract at `${CLAUDE_SKILL_DIR}/../_shared/reporting.md` fires.
+READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md` NOW, read ALWAYS by this flow. Its **The native card is not the report** and **The unattended run** sections are the single Claude Code binding for what this host's own UI shows, and does not show, when the milestone contract at `${CLAUDE_SKILL_DIR}/../_shared/reporting.md` fires.

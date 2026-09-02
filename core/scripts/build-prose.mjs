@@ -23,7 +23,8 @@ function skillArtifacts(prose) {
 
 function skillArtifact(prose, stub, host) {
   const body = readFileSync(join(repoRoot, prose.skillBodyPath(stub, host)), "utf8");
-  return artifactOf(prose.skillOutputPath(stub, host), prose.renderSkill(stub, host, body));
+  const flow = stub.flowFromClaudeSkill ? readFileSync(join(repoRoot, prose.skillFlowPath(stub)), "utf8") : null;
+  return artifactOf(prose.skillOutputPath(stub, host), prose.renderSkill(stub, host, body, flow));
 }
 
 function skillReferenceArtifacts(prose) {

@@ -126,7 +126,7 @@ describe("resolveCitation", () => {
   });
 
   test("resolves a shorthand citation against a shared skill body", () => {
-    const citation: Citation = { source: "synthetic", sourceLine: 0, target: "bodies/plan.md", spec: "19" };
+    const citation: Citation = { source: "synthetic", sourceLine: 0, target: "bodies/debug.md", spec: "19" };
     assert.equal(resolveCitation(citation, trackedFileSet).ok, true);
   });
 });

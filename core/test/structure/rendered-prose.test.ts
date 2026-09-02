@@ -16,6 +16,7 @@ import {
   sharedReferenceOutputPath,
   sharedReferencePath,
   skillBodyPath,
+  skillFlowPath,
   skillOutputPath,
   skillReferenceOutputPath,
   skillReferencePath,
@@ -57,9 +58,10 @@ describe("every rendered skill wrapper equals a fresh, deterministic render of i
     for (const host of SKILL_HOSTS) {
       test(`${stub.id} on ${host} renders the committed bytes, twice, identically`, () => {
         const body = readRepoText(skillBodyPath(stub, host));
+        const flow = stub.flowFromClaudeSkill ? readRepoText(skillFlowPath(stub)) : null;
         const committed = readRepoText(skillOutputPath(stub, host));
-        assert.equal(renderSkill(stub, host, body), committed);
-        assert.equal(renderSkill(stub, host, body), committed);
+        assert.equal(renderSkill(stub, host, body, flow), committed);
+        assert.equal(renderSkill(stub, host, body, flow), committed);
       });
     }
   }

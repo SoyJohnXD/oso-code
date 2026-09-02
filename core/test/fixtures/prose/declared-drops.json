@@ -1,11 +1,11 @@
 [
   {
     "axis": "prose",
-    "item": "your host's gates deny `git commit` while `verify_green` is false and deny file edits while no slice is active",
+    "item": "The commit gate refuses `git commit` while `verify_green` is false; the edits gate refuses a file edit while `mode=plan` and no slice is active.",
     "sourceFile": "plugin/skills/_shared/platform/claude/plan.md",
     "retired": "they deny `git commit` while `verify_green` is false and deny file edits while no slice is active",
-    "reason": "C5-S1b-1 deleted plugin/skills/_shared/platform/claude/plan.md; the retired clause is a byte-for-byte restatement of plugin/skills/_shared/bodies/plan.md's own runtime-gates bullet, once that bullet's own subject (\"your host's gates\") replaces the platform file's pronoun (\"they\")",
-    "home": { "kind": "prose", "ref": "plugin/skills/_shared/bodies/plan.md" }
+    "reason": "C5-S1b-1 deleted plugin/skills/_shared/platform/claude/plan.md; the retired clause was a byte-for-byte restatement of plugin/skills/_shared/bodies/plan.md's own runtime-gates bullet, once that bullet's own subject (\"your host's gates\") replaced the platform file's pronoun (\"they\"). C5-S2c then deleted bodies/plan.md itself, folding its ground rules into plugin/skills/plan/SKILL.md and rewording the bullet to name each gate directly; the item is updated to that surviving wording and the home follows it",
+    "home": { "kind": "prose", "ref": "plugin/skills/plan/SKILL.md" }
   },
   {
     "axis": "C",
@@ -60,7 +60,7 @@
   },
   {
     "axis": "prose",
-    "item": "The TWO substitutions with which a run under its own AUTO reads the set-aside routine `bodies/plan.md`'s policy bullet describes, and there is no third: what a child queues for that mode's §5, this run queues for its OWN final report",
+    "item": "The TWO substitutions with which a run under its own AUTO reads the set-aside routine `plan/SKILL.md`'s ground rules describe, and there is no third: what a child queues for that mode's §5, this run queues for its OWN final report",
     "sourceFile": "plugin/skills/_shared/bodies/plan.md",
     "retired": "The TWO substitutions a run under its own AUTO reads this bullet with, and there is no third: what a child queues for that mode's §5, this run queues for its OWN final report",
     "reason": "C5-S2b gathered plan.md's ground-rules PARK definition out of the bullet that also defines SET ASIDE for a roadmap child; the SET-ASIDE half is not AUTO-specific and stayed in plan.md",

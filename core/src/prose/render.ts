@@ -25,6 +25,10 @@ export function skillOutputPath(stub: SkillStub, host: SkillHost): string {
   return host === "codex" ? `codex/skills/${stub.id}/SKILL.md` : `opencode/skills/oso-${stub.id}/SKILL.md`;
 }
 
+export function skillFlowPath(stub: SkillStub): string {
+  return `plugin/skills/${stub.id}/SKILL.md`;
+}
+
 export function skillReferencePath(stub: SkillStub, host: SkillHost): string {
   return `core/src/prose/skills/${stub.id}/references/${host}.md`;
 }
@@ -52,12 +56,22 @@ export function renderAgent(role: AgentRole, host: HostName, sharedBody: string,
   return renderOpenCodeAgent(role, body);
 }
 
-export function renderSkill(stub: SkillStub, host: SkillHost, body: string): string {
+export function renderSkill(stub: SkillStub, host: SkillHost, body: string, flow: string | null): string {
   const name = host === "codex" ? stub.id : `oso-${stub.id}`;
   const lines = [`name: ${name}`, `description: "${stub.description[host]}"`];
   if (stub.argumentHint !== null) lines.push(`argument-hint: "${stub.argumentHint[host]}"`);
   if (stub.disableModelInvocation) lines.push("disable-model-invocation: true");
-  return `${frontMatterBlock(lines)}\n\n${body}`;
+  const sections = flow === null ? body : `${body}\n\n${flowBody(flow)}`;
+  return `${frontMatterBlock(lines)}\n\n${sections}`;
+}
+
+function flowBody(flowSkillFile: string): string {
+  const lines = flowSkillFile.split("\n");
+  const closingDelimiter = lines.indexOf("---", 1);
+  return lines
+    .slice(closingDelimiter + 1)
+    .join("\n")
+    .replace(/^\n+/, "");
 }
 
 function renderClaudeAgent(role: AgentRole, body: string): string {
