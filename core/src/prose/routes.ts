@@ -120,7 +120,7 @@ export const SKILL_STUBS: readonly SkillStub[] = [
     argumentHint: { codex: "[what broke]", opencode: "[what is broken]" },
     disableModelInvocation: true,
     referenceHosts: ["codex", "opencode"],
-    flowFromClaudeSkill: false,
+    flowFromClaudeSkill: true,
   },
   {
     id: "doubt-pass",
@@ -152,7 +152,7 @@ export const SKILL_STUBS: readonly SkillStub[] = [
     argumentHint: { codex: "[what to change]", opencode: "[what to change or fix]" },
     disableModelInvocation: true,
     referenceHosts: ["codex", "opencode"],
-    flowFromClaudeSkill: false,
+    flowFromClaudeSkill: true,
   },
   {
     id: "roadmap",

@@ -8,9 +8,9 @@ const SCANNED_PREFIXES = ["plugin/", "codex/", "opencode/", "core/src/prose/"];
 const SCANNED_EXTENSIONS = new Set([".md", ".toml"]);
 const BANNED_SPELLINGS = ["platform file"];
 
-const FILES_SCANNED_FLOOR = 147;
+const FILES_SCANNED_FLOOR = 145;
 const FILES_SCANNED_FLOOR_DERIVATION =
-  "git ls-files under plugin/, codex/, opencode/, core/src/prose/ filtered to *.md/*.toml at C5-S3: 37 + 24 + 28 + 58 = 147";
+  "git ls-files under plugin/, codex/, opencode/, core/src/prose/ filtered to *.md/*.toml at C5-S3 (quick.md, debug.md moved into their wrappers): 35 + 24 + 28 + 58 = 145";
 
 const scannedFiles = trackedRepositoryFiles().filter(
   (file) => SCANNED_PREFIXES.some((prefix) => file.startsWith(prefix)) && SCANNED_EXTENSIONS.has(path.extname(file)),
