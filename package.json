@@ -8,10 +8,10 @@
     "@types/node": "26.3.0"
   },
   "scripts": {
-    "build": "node core/scripts/build-oso-state.mjs && node core/scripts/build-gates.mjs && node core/scripts/build-oso.mjs",
+    "build": "node core/scripts/build-oso-state.mjs && node core/scripts/build-gates.mjs && node core/scripts/build-prose.mjs && node core/scripts/build-oso.mjs",
     "test": "npm run test --workspace=core",
     "typecheck": "tsc -p tsconfig.json",
-    "check": "node core/scripts/build-oso-state.mjs --check && node core/scripts/build-gates.mjs --check && node core/scripts/build-oso.mjs --check",
+    "check": "node core/scripts/build-oso-state.mjs --check && node core/scripts/build-gates.mjs --check && node core/scripts/build-prose.mjs --check && node core/scripts/build-oso.mjs --check",
     "lexer-differential": "node --experimental-strip-types core/scripts/generate-lexer-differential.mjs"
   }
 }
