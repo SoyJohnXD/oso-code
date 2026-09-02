@@ -160,7 +160,7 @@ export const SKILL_STUBS: readonly SkillStub[] = [
     argumentHint: { codex: "[roadmap name or the changes to queue]", opencode: "[roadmap name or the changes to queue]" },
     disableModelInvocation: true,
     referenceHosts: ["codex", "opencode"],
-    flowFromClaudeSkill: false,
+    flowFromClaudeSkill: true,
   },
   {
     id: "security-pass",

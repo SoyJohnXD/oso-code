@@ -44,18 +44,18 @@
   },
   {
     "axis": "prose",
-    "item": "The AUTO disposition's own marker is the one thing written BESIDE the `mode`/`active_slice`/`verify_green` triple instead of over it: a write naming the marker alone leaves all three keys exactly as they stood, which is why the bullet below spells it alone wherever it arms or flips it.",
+    "item": "The AUTO marker is written BESIDE the `mode`/`active_slice`/`verify_green` triple, never over it: a write naming the marker alone leaves all three keys exactly as they stood, and every write below spells it that way.",
     "sourceFile": "plugin/skills/_shared/bodies/plan.md",
     "retired": "The AUTO disposition's own marker is the one thing written BESIDE that triple instead of over it: a write naming the marker alone leaves all three keys exactly as they stood, which is why the bullet below spells it alone wherever it arms or flips it.",
-    "reason": "C5-S2b gathered the ground-rules runtime-gates bullet's trailing AUTO-marker clause out of plan.md into unattended.md, the AUTO/park/ceiling material's new home; the non-AUTO gates mechanism that opened the same bullet stayed in plan.md and now points at unattended.md instead of restating the clause",
+    "reason": "C5-S2b gathered the ground-rules runtime-gates bullet's trailing AUTO-marker clause out of plan.md into unattended.md, the AUTO/park/ceiling material's new home; the non-AUTO gates mechanism that opened the same bullet stayed in plan.md and now points at unattended.md instead of restating the clause. C5-S2d then cut unattended.md itself to operative content, rewording this bullet; the item is updated to the surviving wording, same home",
     "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
   },
   {
     "axis": "prose",
-    "item": "AUTO is a DISPOSITION of the run — never an invocation argument, never a fifth mode — armed as the second question of the execution-mode round §4 asks, or by explicit operator instruction at any point this flow reaches, mid-execution included (\"sigue en auto, voy a salir\"), and disarmed the same way",
+    "item": "AUTO is a DISPOSITION of the run — never an invocation argument, never a fifth mode. It arms as the second question of the execution-mode round §4 asks, or by explicit operator instruction at any point this flow reaches, mid-execution included (\"sigue en auto, voy a salir\"), and disarms the same way.",
     "sourceFile": "plugin/skills/_shared/bodies/plan.md",
     "retired": "AUTO is a DISPOSITION of the run — never an invocation argument, never a fifth mode — armed as the second question of the execution-mode round §4 asks, or by explicit operator instruction at any point this flow reaches, mid-execution included (\"sigue en auto, voy a salir\"), and disarmed the same way",
-    "reason": "C5-S2b gathered plan.md's ground-rules AUTO-disposition definition (arm/disarm, its marker, the journal, compaction recovery, resume, the reused autonomy policy, operator-message handling, the roadmap-substitution rule) out of the bullet that opened with the roadmap-child rule; that opening rule is not AUTO-specific and stayed in plan.md",
+    "reason": "C5-S2b gathered plan.md's ground-rules AUTO-disposition definition (arm/disarm, its marker, the journal, compaction recovery, resume, the reused autonomy policy, operator-message handling, the roadmap-substitution rule) out of the bullet that opened with the roadmap-child rule; that opening rule is not AUTO-specific and stayed in plan.md. C5-S2d then cut unattended.md itself to operative content, splitting this into two sentences; the item is updated to the surviving wording, same home",
     "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
   },
   {
