@@ -25,7 +25,7 @@ This binds the platform-shaped edges of `../front-surface.md`; it does not resta
 
 ## The native card is not the report
 
-Launching a delegation, or forking a judge, draws this client's own native subagent card — a UI element the harness cannot suppress, showing only that something ran, with no role name, assignment, tree, or verdict. The milestone text `../reporting.md` requires is never skipped because a card is on screen and never folded into its caption: it is delivered exactly as every other operator-facing content on this host, ending the turn as plain text with the tool call in a later turn — except under the carve-out below.
+Launching a delegation, or forking a judge, draws this client's own native subagent card — a UI element the harness cannot suppress, showing only that something ran, with no role name, assignment, tree, or verdict. The milestone text `../reporting.md` requires is never skipped because a card is on screen and never folded into its caption: it is delivered exactly as every other operator-facing content on this host — except under the carve-out below.
 
 ## The unattended run — the carve-out, and the record that pays for it
 

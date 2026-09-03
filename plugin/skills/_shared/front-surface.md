@@ -22,6 +22,8 @@ When the trigger fires, the design bar — powered by the Impeccable plugin — 
 | Audit loop at close | §7 step 4 — runs after the sweep has met §7 step 3's exit bar on both axes, and before verify_green | §4 step 3 — runs after the project's checks are clean and before the commit gate unlocks | none — §4 step 2 makes detect the design gate instead |
 | Absence policy | §2 step 3 — the gap goes in the ledger | §3 "Absence policy" — the gap goes in the close's session summary | §4 step 1 — the gap goes in the diagnosis notes |
 
+Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.
+
 Three of those rows rest on text that IS shared: the pin recipe, the audit exit bar and the absence policy below are this file's own, and they bind every mode that reaches them.
 
 ### Pinned detect gate — the pin recipe

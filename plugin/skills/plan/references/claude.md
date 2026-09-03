@@ -4,7 +4,7 @@
 
 The Claude Code TUI drops assistant text that precedes a tool call in the same turn. Operator-facing content — the intent presentation, the surface-map presentation, any narrative the operator must read — must END the turn as plain text, with the tool call (`AskUserQuestion`, `ExitPlanMode`) in a LATER turn. Context a question round needs travels INSIDE the `AskUserQuestion` fields, never as prose before the call.
 
-One exception stands, and `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **The unattended run** section states it whole: while this repository's state carries `auto=running`, a milestone rides the stream instead of ending the turn, journaled full-text in its place — the park and the final report still end it.
+One exception stands, and `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **The unattended run** section states it whole: the park and the final report still end the turn regardless.
 
 ## Question rounds
 

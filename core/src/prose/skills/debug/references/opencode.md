@@ -16,8 +16,6 @@ Wherever the neutral body names a file as `_shared/<file>.md`, it is spelled `..
 
 `OSO_STATE_BIN` reaches every tool subprocess on this host through the installed plugin's `shell.env` hook — which fires per shell invocation and whose `output.env` values ARE present in the tool process environment. So `oso-state` is spelled `"${OSO_STATE_BIN:-oso-state}"` here.
 
-What the state is keyed by is settled and is host-neutral: the state file is the REPOSITORY's, resolved from the directory the command runs in.
-
 This host publishes the ROOT session id through `shell.env` for tool subprocesses (D13); that value is what `OSO_AGENT` carries, and it is never exported into the server process itself. Spell every state call as `"${OSO_STATE_BIN:-oso-state}" --session "${OSO_AGENT}" <verb> …`.
 
 ## Naming and invoking the harness's own skills
@@ -33,7 +31,7 @@ Forked judges and operational agents are the exception to inline reading: launch
 
 ## Front-surface binding
 
-When `../_shared/front-surface.md`'s trigger fires, READ `../_shared/references/opencode.md`'s **Front-surface binding** section NOW. It is the single OpenCode binding for Impeccable's mounted path, all three argument routes, package-version record, agent route and absence remedy. This mode supplies only the DEBUG wiring indexed by the neutral matrix, which still invokes none of the three arguments.
+When `../_shared/front-surface.md`'s trigger fires, READ `../_shared/references/opencode.md`'s **Front-surface binding** section NOW. It is the single OpenCode binding for Impeccable's mounted path, all three argument routes, package-version record, agent route and absence remedy. This mode supplies only the DEBUG wiring, which still invokes none of the three arguments.
 
 ## Reporting binding
 

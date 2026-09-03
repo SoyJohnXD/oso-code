@@ -31,7 +31,7 @@ READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Making a launch w
 
 ## Front-surface binding
 
-When `${CLAUDE_SKILL_DIR}/../_shared/front-surface.md`'s trigger fires, READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Front-surface binding** section NOW. It is the single Claude Code binding for Impeccable's invocation, package-version record, agent route and absence remedy; this mode supplies only the QUICK wiring indexed by the neutral matrix.
+When `${CLAUDE_SKILL_DIR}/../_shared/front-surface.md`'s trigger fires, READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Front-surface binding** section NOW. It is the single Claude Code binding for Impeccable's invocation, package-version record, agent route and absence remedy; this mode supplies only the QUICK wiring.
 
 ## Reporting binding
 

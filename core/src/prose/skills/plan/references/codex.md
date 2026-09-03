@@ -56,8 +56,6 @@ Wherever the neutral body names a file as `_shared/<file>.md`, it is spelled `..
 
 `OSO_STATE_BIN` reaches every tool subprocess on this host through the installer's `shell_environment_policy.set` entry, so `oso-state` is spelled `"${OSO_STATE_BIN:-oso-state}"` here.
 
-What the state is keyed by is settled and is host-neutral: the state file is the REPOSITORY's, resolved from the directory the command runs in, so nothing about the identity waits on this host.
-
 This host publishes the fixed marker `OSO_AGENT=1` through `shell_environment_policy.set` for tool subprocesses and as an explicit environment prefix on every installed user-hook command. Spell every state call as `"${OSO_STATE_BIN:-oso-state}" --session "${OSO_AGENT}" <verb> …`. Codex does not expose its hook session id to the model, and runtime state is intentionally shared by repository, so this marker is audit metadata and the common value the `session` key — the OWNERSHIP identity — carries for model-issued state writes, the edit/commit readers, teardown and the git hook; never a claim that Codex supplied a hidden session id. Handoff hooks keep the real payload session where same-session isolation is their contract. Plan approval keeps a second, separate key for the same reason: `plan_approval_session` is written only by `capture-plan` under the real session Stop observed, and `approve-plan`, `cancel-plan` and `amend-plan` compare against it rather than `session`, so a later `session`-overwriting write under the shared marker can never unbind a still-pending approval from the session that presented it.
 
 ## The runtime gates, and the two layers of the commit rail
@@ -81,7 +79,7 @@ Forked judges and operational agents are the exception to inline reading. READ `
 
 ## Front-surface binding
 
-When `../_shared/front-surface.md`'s trigger fires, READ `../_shared/references/codex.md`'s **Front-surface binding** section NOW. It is the single Codex binding for Impeccable's mounted path, all three argument routes, package-version record, agent route and absence remedy; this mode supplies only the PLAN wiring indexed by the neutral matrix.
+When `../_shared/front-surface.md`'s trigger fires, READ `../_shared/references/codex.md`'s **Front-surface binding** section NOW. It is the single Codex binding for Impeccable's mounted path, all three argument routes, package-version record, agent route and absence remedy; this mode supplies only the PLAN wiring.
 
 ## Reporting binding
 

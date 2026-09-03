@@ -4,7 +4,7 @@
 
 The Claude Code TUI drops assistant text that precedes a tool call in the same turn. So operator-facing content — the triage report, the diagnosis presentation, any narrative the operator must read — must END the turn as plain text, with the tool call in a LATER turn.
 
-One exception stands and `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **The unattended run — the carve-out, and the record that pays for it** section states it whole rather than this section restating it: while this repository's state carries `auto=running`, the run is UNATTENDED and its milestone text rides the stream instead of ending the turn, journaled full-text in its place. This mode arms no such marker of its own — a fix run reaches its operator at the diagnosis either way — so the exception reads inert here unless a run that armed it is what this flow was invoked from.
+One exception stands and `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **The unattended run — the carve-out, and the record that pays for it** section states it whole rather than this section restating it. This mode arms no such marker of its own — a fix run reaches its operator at the diagnosis either way — so the exception reads inert here unless a run that armed it is what this flow was invoked from.
 
 ## Shared-file paths
 
@@ -37,7 +37,7 @@ READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Making a launch w
 
 ## Front-surface binding
 
-When `${CLAUDE_SKILL_DIR}/../_shared/front-surface.md`'s trigger fires, READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Front-surface binding** section NOW. It is the single Claude Code binding for Impeccable's invocation, package-version record, agent route and absence remedy. This mode supplies only the DEBUG wiring indexed by the neutral matrix, which still invokes none of the three arguments.
+When `${CLAUDE_SKILL_DIR}/../_shared/front-surface.md`'s trigger fires, READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Front-surface binding** section NOW. It is the single Claude Code binding for Impeccable's invocation, package-version record, agent route and absence remedy. This mode supplies only the DEBUG wiring, which still invokes none of the three arguments.
 
 ## Reporting binding
 

@@ -217,5 +217,181 @@
     "retired": "| the quality-pass judge | `/oso-quality-pass` | read its installed `SKILL.md` and run it inline, the way it runs on every host |",
     "reason": "C5-S5d-1 read the plan skill's own SKILL.md whole and found no mention of quality-pass anywhere in it — the judges plan/SKILL.md actually names are doubt-pass, debt-sweep, triage and security-pass; quality-pass is quick's and debug's own close-time judge. The row was copy-paste debt carried into plan's OpenCode naming table from a sibling skill's template rather than content this flow's own binding needs; the mapping it names still stands, unchanged, in the sibling skills that do invoke that judge",
     "home": { "kind": "prose", "ref": "opencode/skills/oso-debug/references/opencode.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
+    "sourceFile": "core/src/prose/shared/codex.md",
+    "retired": "\"ending the turn as plain text, with any tool call in a later turn\" (the no-card paragraph's default-delivery clause) and \"a milestone still ends the turn exactly as above, with\" (the same paragraph's no-carve-out consequence clause)",
+    "reason": "Both clauses restated reporting.md:28's default delivery rule inside this host's own visibility-layer paragraph — once as the plain default, once as the consequence of taking neither Claude Code's carve-out nor OpenCode's rail; the rule now lives once at reporting.md and this binding keeps only what is genuinely Codex-specific (no card, no carve-out, no rail, nothing here to carry the run past the marker)",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
+    "sourceFile": "core/src/prose/shared/opencode.md",
+    "retired": "line 20: \"ending the turn as plain text, with any tool call in a later turn\"; line 24: \"A milestone ENDS THE TURN here exactly as every other operator-facing content does, under the delivery contract `../../oso-plan/references/opencode.md` states — and\"",
+    "reason": "Line 20 restated reporting.md:28's default clause after the native-agent-files paragraph, the same template codex.md and claude.md carry. Line 24's cut restated the same default as the consequence of this host taking no carve-out; the line's own rationale (\"ending the turn at every milestone stops a run nobody is there to continue\") and its continuation-rail mechanics stayed, since neither restates reporting.md and both are genuinely this host's own",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
+    "sourceFile": "core/src/prose/skills/plan/references/opencode.md",
+    "retired": "\"each ends the turn as plain text under the delivery contract at the top of this file\" and \"A milestone ends the turn here too — this host gets no carve-out from that contract —\"",
+    "reason": "Both clauses restated the same no-carve-out default (already reporting.md:28's rule, and this file's own top-of-file delivery-contract line) around the PARK/FINAL REPORT terminal steps; the disarm-sequencing detail and the continuation-rail mechanics that follow, genuinely host-specific, stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
+    "sourceFile": "core/src/prose/skills/roadmap/references/opencode.md",
+    "retired": "\"a child's close report ends the turn and the next child's arming follows in the next one\"",
+    "reason": "Restated the same default-delivery consequence the very next sentence already draws out (\"That costs the chain a turn per child\"); the branch-selection fact (no carve-out on this host) and the continuation-rail mechanics that follow are host-specific and stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
+    "sourceFile": "plugin/skills/_shared/references/claude.md",
+    "retired": "line 28 only: \"ending the turn as plain text with the tool call in a later turn —\"",
+    "reason": "Line 28 restated reporting.md:28's default clause after the native-card paragraph, the same template codex.md and opencode.md carry. Line 32 was read and left untouched: it is this host's OWN required statement of its carve-out — reporting.md:30 asks the carving host's own file to state \"which deliveries still end the turn\" — and its \"stalls with nobody there to say continue\" clause is this file's own rationale, not a restatement of :28, so neither of line 32's two matches is a duplicate copy",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
+    "sourceFile": "plugin/skills/debug/references/claude.md",
+    "retired": "\"while this repository's state carries `auto=running`, the run is UNATTENDED and its milestone text rides the stream instead of ending the turn, journaled full-text in its place\"",
+    "reason": "This flow explicitly says `_shared/references/claude.md`'s carve-out section \"states it whole rather than this section restating it\" and then restated a capsule of it anyway; the capsule is cut, the pointer and this mode's own inert-exception reasoning (a fix run reaches its operator at the diagnosis either way) stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
+    "sourceFile": "plugin/skills/plan/references/claude.md",
+    "retired": "\"while this repository's state carries `auto=running`, a milestone rides the stream instead of ending the turn, journaled full-text in its place —\"",
+    "reason": "Same restated capsule as debug's, cut for the same reason; kept the flow-specific mapping of which of THIS flow's own deliveries survive the carve-out (the park and the final report), since that mapping is stated nowhere else",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
+    "sourceFile": "plugin/skills/roadmap/references/claude.md",
+    "retired": "\"while this repository's state carries `auto=running`, a milestone rides the stream instead of ending the turn, journaled full-text in its place —\"",
+    "reason": "Same restated capsule as debug's and plan's, cut for the same reason; kept this flow's own mapping of which deliveries survive the carve-out (§5's three stopping moments)",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "State belongs to the repository and outlives this session",
+    "sourceFile": "core/src/prose/skills/debug/references/codex.md",
+    "retired": "What the state is keyed by is settled and is host-neutral: the state file is the REPOSITORY's, resolved from the directory the command runs in.",
+    "reason": "The ownership half already lives at debug/SKILL.md:52 (\"State belongs to the repository and outlives this session\"). DEBUG never cuts a worktree or runs a PARALLEL wave — debug/SKILL.md carries zero \"worktree\"/\"wave\" mentions — so the resolved-from-cwd detail answers no question this flow's reader has; dropped rather than appended, per the PARALLEL-wave load-bearing test",
+    "home": { "kind": "prose", "ref": "plugin/skills/debug/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "State belongs to the repository and outlives this session",
+    "sourceFile": "core/src/prose/skills/debug/references/opencode.md",
+    "retired": "What the state is keyed by is settled and is host-neutral: the state file is the REPOSITORY's, resolved from the directory the command runs in.",
+    "reason": "Same as the Codex sibling row: debug/SKILL.md:52 already carries ownership, and DEBUG never runs a worktree or a PARALLEL wave, so the resolution clause is surplus here and was dropped",
+    "home": { "kind": "prose", "ref": "plugin/skills/debug/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "The state belongs to the repository and outlives the session",
+    "sourceFile": "core/src/prose/skills/plan/references/codex.md",
+    "retired": "What the state is keyed by is settled and is host-neutral: the state file is the REPOSITORY's, resolved from the directory the command runs in, so nothing about the identity waits on this host.",
+    "reason": "The ownership half already lives at plan/SKILL.md:20. PLAN is the one flow that cuts worktrees and runs PARALLEL waves (§6): a worktree's own commands launch from a different directory than the main checkout, so the resolved-from-cwd fact is load-bearing there — it is what lets a worktree see the change's one state file with no path argument. Appended once to plan/SKILL.md:20 rather than repeated per host",
+    "home": { "kind": "prose", "ref": "plugin/skills/plan/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "The state belongs to the repository and outlives the session",
+    "sourceFile": "core/src/prose/skills/plan/references/opencode.md",
+    "retired": "What the state is keyed by is settled and is host-neutral: the state file is the REPOSITORY's, resolved from the directory the command runs in.",
+    "reason": "Same as the Codex sibling row: plan/SKILL.md:20 now carries both the ownership half and the appended resolution clause, load-bearing here because PLAN is the one flow with PARALLEL worktrees",
+    "home": { "kind": "prose", "ref": "plugin/skills/plan/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "State belongs to the repository and outlives this session",
+    "sourceFile": "core/src/prose/skills/quick/references/codex.md",
+    "retired": "What the state is keyed by is settled and is host-neutral: the state file is the REPOSITORY's, resolved from the directory the command runs in.",
+    "reason": "The ownership half already lives at quick/SKILL.md:56 (\"State belongs to the repository and outlives this session\"). QUICK never cuts a worktree or runs a PARALLEL wave — quick/SKILL.md carries zero \"worktree\"/\"wave\" mentions — so the resolution clause is surplus once ownership is stated and was dropped rather than appended",
+    "home": { "kind": "prose", "ref": "plugin/skills/quick/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "State belongs to the repository and outlives this session",
+    "sourceFile": "core/src/prose/skills/quick/references/opencode.md",
+    "retired": "What the state is keyed by is settled and is host-neutral: the state file is the REPOSITORY's, resolved from the directory the command runs in.",
+    "reason": "Same as the Codex sibling row: quick/SKILL.md:56 already carries ownership, and QUICK never runs a worktree or a PARALLEL wave, so the resolution clause is surplus here and was dropped",
+    "home": { "kind": "prose", "ref": "plugin/skills/quick/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "core/src/prose/skills/debug/references/codex.md",
+    "retired": "\" indexed by the neutral matrix\" (from \"this mode supplies only the DEBUG wiring indexed by the neutral matrix\")",
+    "reason": "front-surface.md's own matrix now states beside itself that each mode supplies only its own column; naming the matrix again per mode restated that pointer instead of using it. The DEBUG/PLAN/QUICK wiring fact and the argument-count/host-binding detail beside it, genuinely per-mode, stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "core/src/prose/skills/debug/references/opencode.md",
+    "retired": "\" indexed by the neutral matrix\" (from \"this mode supplies only the DEBUG wiring indexed by the neutral matrix\")",
+    "reason": "front-surface.md's own matrix now states beside itself that each mode supplies only its own column; naming the matrix again per mode restated that pointer instead of using it. The DEBUG/PLAN/QUICK wiring fact and the argument-count/host-binding detail beside it, genuinely per-mode, stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "core/src/prose/skills/plan/references/codex.md",
+    "retired": "\" indexed by the neutral matrix\" (from \"this mode supplies only the PLAN wiring indexed by the neutral matrix\")",
+    "reason": "front-surface.md's own matrix now states beside itself that each mode supplies only its own column; naming the matrix again per mode restated that pointer instead of using it. The DEBUG/PLAN/QUICK wiring fact and the argument-count/host-binding detail beside it, genuinely per-mode, stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "core/src/prose/skills/plan/references/opencode.md",
+    "retired": "\" indexed by the neutral matrix\" (from \"this mode supplies only the PLAN wiring indexed by the neutral matrix\")",
+    "reason": "front-surface.md's own matrix now states beside itself that each mode supplies only its own column; naming the matrix again per mode restated that pointer instead of using it. The DEBUG/PLAN/QUICK wiring fact and the argument-count/host-binding detail beside it, genuinely per-mode, stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "core/src/prose/skills/quick/references/codex.md",
+    "retired": "\" indexed by the neutral matrix\" (from \"this mode supplies only the QUICK wiring indexed by the neutral matrix\")",
+    "reason": "front-surface.md's own matrix now states beside itself that each mode supplies only its own column; naming the matrix again per mode restated that pointer instead of using it. The DEBUG/PLAN/QUICK wiring fact and the argument-count/host-binding detail beside it, genuinely per-mode, stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "core/src/prose/skills/quick/references/opencode.md",
+    "retired": "\" indexed by the neutral matrix\" (from \"this mode supplies only the QUICK wiring indexed by the neutral matrix\")",
+    "reason": "front-surface.md's own matrix now states beside itself that each mode supplies only its own column; naming the matrix again per mode restated that pointer instead of using it. The DEBUG/PLAN/QUICK wiring fact and the argument-count/host-binding detail beside it, genuinely per-mode, stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "plugin/skills/debug/references/claude.md",
+    "retired": "\" indexed by the neutral matrix\" (from \"this mode supplies only the DEBUG wiring indexed by the neutral matrix\")",
+    "reason": "front-surface.md's own matrix now states beside itself that each mode supplies only its own column; naming the matrix again per mode restated that pointer instead of using it. The DEBUG/PLAN/QUICK wiring fact and the argument-count/host-binding detail beside it, genuinely per-mode, stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "plugin/skills/quick/references/claude.md",
+    "retired": "\" indexed by the neutral matrix\" (from \"this mode supplies only the QUICK wiring indexed by the neutral matrix\")",
+    "reason": "front-surface.md's own matrix now states beside itself that each mode supplies only its own column; naming the matrix again per mode restated that pointer instead of using it. The DEBUG/PLAN/QUICK wiring fact and the argument-count/host-binding detail beside it, genuinely per-mode, stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
   }
 ]

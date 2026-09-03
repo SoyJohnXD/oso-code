@@ -4,7 +4,7 @@
 
 The Claude Code TUI drops assistant text that precedes a tool call in the same turn. Operator-facing content — the queue as it is planned, the approval document, the presence phase — must END the turn as plain text, with the tool call in a LATER turn. Context a question round needs travels INSIDE the `AskUserQuestion` fields, never as prose before the call.
 
-One exception stands, and `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **The unattended run** section states it whole: while this repository's state carries `auto=running`, a milestone rides the stream instead of ending the turn, journaled full-text in its place — §5's three stopping moments still end it.
+One exception stands, and `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **The unattended run** section states it whole: §5's three stopping moments still end the turn regardless.
 
 ## Question rounds
 
