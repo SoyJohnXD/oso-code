@@ -8,9 +8,20 @@ import { readTrackedText, trackedRepositoryFiles, type TrackedFileText } from ".
 
 const SCANNED_PREFIXES = ["core/src/", "core/scripts/", "core/test/", "opencode/plugin/"];
 const SCANNED_EXTENSIONS = new Set([".ts", ".mts", ".cts", ".js", ".mjs", ".cjs"]);
-const MINIMUM_SCANNED_FILES = 100;
+const SHELL_DIRECT_CHILD_GLOBS: readonly { dir: string; ext: string }[] = [
+  { dir: "bootstrap", ext: ".sh" },
+  { dir: "bootstrap", ext: ".bat" },
+  { dir: "bootstrap", ext: ".ps1" },
+  { dir: "tools", ext: ".sh" },
+  { dir: "plugin/hooks", ext: ".sh" },
+  { dir: "tests", ext: ".sh" },
+  { dir: "tests/fixtures", ext: ".sh" },
+];
+const SHELL_EXACT_FILES = new Set(["plugin/bin/oso-state", "plugin/git-hooks/pre-commit"]);
+const MINIMUM_SCANNED_FILES = 120;
 
 const COMMENT_OPENING_PATTERN = /\/\/|^[ \t]*\*/;
+const SHELL_COMMENT_OPENING_PATTERN = /^[ \t]*(#|[Rr][Ee][Mm][ \t]|::)/;
 const DECISION_ID_PATTERN =
   /ADR-[0-9]{4}|docs\/decisions\/[0-9]{4}|[^A-Za-z0-9+]0[01][0-9][0-9](?:[^A-Za-z0-9]|$)|[^A-Za-z0-9][ABDS][0-9]+(?:[^A-Za-z0-9]|$)/;
 
@@ -33,17 +44,31 @@ const PLANTED_LOOKALIKES = [
 
 type DecisionCitation = Readonly<{ file: string; line: number; text: string }>;
 
+function isDirectChild(file: string, dir: string): boolean {
+  return file.startsWith(`${dir}/`) && !file.slice(dir.length + 1).includes("/");
+}
+
+function isShellSource(file: string): boolean {
+  return SHELL_EXACT_FILES.has(file) || SHELL_DIRECT_CHILD_GLOBS.some(({ dir, ext }) => isDirectChild(file, dir) && file.endsWith(ext));
+}
+
+function commentOpeningPatternFor(file: string): RegExp {
+  return isShellSource(file) ? SHELL_COMMENT_OPENING_PATTERN : COMMENT_OPENING_PATTERN;
+}
+
 function decisionCitationsIn({ file, text }: TrackedFileText): DecisionCitation[] {
+  const opening = commentOpeningPatternFor(file);
   return text.split("\n").flatMap((lineText, index) => {
-    const opening = lineText.match(COMMENT_OPENING_PATTERN);
-    if (opening?.index === undefined) return [];
-    if (!DECISION_ID_PATTERN.test(lineText.slice(opening.index))) return [];
+    const match = lineText.match(opening);
+    if (match?.index === undefined) return [];
+    if (!DECISION_ID_PATTERN.test(lineText.slice(match.index))) return [];
     return [{ file, line: index + 1, text: lineText.trim() }];
   });
 }
 
 function isScanned(file: string): boolean {
-  return SCANNED_PREFIXES.some((prefix) => file.startsWith(prefix)) && SCANNED_EXTENSIONS.has(path.extname(file));
+  const isTypeScriptSource = SCANNED_PREFIXES.some((prefix) => file.startsWith(prefix)) && SCANNED_EXTENSIONS.has(path.extname(file));
+  return isTypeScriptSource || isShellSource(file);
 }
 
 function citationsInPlantedFile(lines: readonly string[]): DecisionCitation[] {
@@ -61,19 +86,21 @@ const scannedFiles = trackedRepositoryFiles().filter(isScanned);
 const citationsFound = scannedFiles.map(readTrackedText).flatMap(decisionCitationsIn);
 
 provedSomething(
-  `${scannedFiles.length} tracked TypeScript and JavaScript file(s) under ${SCANNED_PREFIXES.join(", ")} were ` +
-    "read for a decision citation in a comment",
+  `${scannedFiles.length} tracked TypeScript, JavaScript and shipped shell/batch/PowerShell file(s) under ` +
+    `${SCANNED_PREFIXES.join(", ")} and plugin/'s shipped executables were read for a decision citation in a comment`,
   scannedFiles.length >= MINIMUM_SCANNED_FILES,
   `only ${scannedFiles.length} file(s) were read, under the ${MINIMUM_SCANNED_FILES} these directories hold, so ` +
     "this check looked at a tree it did not recognise rather than finding nothing",
 );
 
 describe(
-  "tests/plugin-lint.sh reaches opencode/plugin/*.ts and opencode/plugin/oso/*.ts only, so this check carries " +
-    "the same two comment shapes and the same decision-id spelling across core/src, core/scripts, core/test and " +
-    "every depth of opencode/plugin — a citation scanner rather than a comment scanner, because separating a " +
-    "comment from a `//` inside the string and regex literals core/src/shell/lexer.ts carries needs a tokeniser " +
-    "this check does not have, and the zero-inline-comment rule stays the operator's, held in review",
+  "tests/plugin-lint.sh's check_executables_carry_no_decision_citations reached opencode/plugin/*.ts, " +
+    "opencode/plugin/oso/*.ts and plugin/'s shipped shell, batch and PowerShell executables; this check carries " +
+    "the same comment shapes and the same decision-id spelling across core/src, core/scripts, core/test, every " +
+    "depth of opencode/plugin, and that same shell corpus — a citation scanner rather than a comment scanner, " +
+    "because separating a comment from a `//` inside the string and regex literals core/src/shell/lexer.ts " +
+    "carries needs a tokeniser this check does not have, and the zero-inline-comment rule stays the operator's, " +
+    "held in review",
   () => {
     test("no comment cites a decision id", () => {
       assert.deepEqual(
