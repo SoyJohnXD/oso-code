@@ -16,7 +16,7 @@ Wherever the neutral body names a file as `_shared/<file>.md`, it is spelled `..
 
 `OSO_STATE_BIN` reaches every tool subprocess on this host through the installer's `shell_environment_policy.set` entry, so `oso-state` is spelled `"${OSO_STATE_BIN:-oso-state}"` here.
 
-What the state is keyed by is settled and is host-neutral: the state file is the REPOSITORY's (ADR-0095), resolved from the directory the command runs in.
+What the state is keyed by is settled and is host-neutral: the state file is the REPOSITORY's, resolved from the directory the command runs in.
 
 The installer publishes the fixed marker `OSO_AGENT=1` through `shell_environment_policy.set` for tool subprocesses and as an explicit prefix on user-hook commands. Spell every state call as `"${OSO_STATE_BIN:-oso-state}" --session "${OSO_AGENT}" <verb> …`. The installed user hooks and git hook read the same marker; until the operator has reviewed and trusted the user hooks through `/hooks`, report that the local-function layer is installed but not trusted.
 

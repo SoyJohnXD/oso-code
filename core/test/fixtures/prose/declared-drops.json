@@ -201,5 +201,13 @@
     "retired": "It ends on exactly one of: `Triage: attributable` — report the slice, file and hunk; `Triage: pre-existing` — report the evidence; `Triage: skipped — attribution not established` — report what would settle it; `Triage: blocked` — resolve what the payload names missing and invoke the judge again fresh.",
     "reason": "the OpenCode preface restated triage's four-verdict grammar. C5-S4 moves bodies/triage.md into plugin/skills/triage/SKILL.md, rendered directly beneath this same preface, so the restatement duplicates a grammar the flow now states itself; Decision 64 condition 8 retires the paragraph — one rule, one home — with all four verdict tokens surviving byte-identical in the flow for axis C, and the item above verbatim at its new home",
     "home": { "kind": "prose", "ref": "plugin/skills/triage/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "ADR-0117 called this lane Codex-specific because Claude Code carries no operational plan artifact to amend; this host now carries one, so the lane holds here for the same reason it holds there.",
+    "sourceFile": "core/src/prose/skills/plan/references/opencode.md",
+    "retired": "ADR-0117 called this lane Codex-specific because Claude Code carries no operational plan artifact to amend; this host now carries one, so the lane holds here for the same reason it holds there.",
+    "reason": "C5-S5a strips every ADR id from runtime prose under Decision 69 (G10 is tree-wide, no host-binding exemption). This sentence carried no rule of its own past the paragraph already stated above it — it only recounted that ADR-0117 once scoped the harness-discovered-correction lane to Codex and explained why it now also holds on OpenCode; that current applicability is already established earlier in this same file, where OpenCode's own `approved-<approval digest>.md` and `current.md` operational-plan artifacts are described. Retired as version history rather than rephrased, since removing only the id would leave a dangling, ungrounded claim",
+    "home": { "kind": "none" }
   }
 ]

@@ -6,7 +6,7 @@ Host binding for the shared concerns that bind no single wrapper: Codex's delega
 
 Codex gives every delegated harness step a custom role. The role is selected when the subagent is spawned; the role name, not a summary of its job, is the contract boundary.
 
-Every launch that selects an explicit `agent_type` starts with fresh context: set `fork_turns="none"`. The call is `codex.multi_agent.spawn` in its v2 shape, which also names the child through `task_name`; ADR-0105 records that host contract. An omitted `fork_turns` is a full-history fork, and ADR-0102 forbids combining one with an explicit custom or built-in role because a full-history fork inherits the parent's agent type. The payload must therefore carry every path, ref, assignment, skill route, handoff field and decision the selected role needs.
+Every launch that selects an explicit `agent_type` starts with fresh context: set `fork_turns="none"`. The call is `codex.multi_agent.spawn` in its v2 shape, which also names the child through `task_name`. An omitted `fork_turns` is a full-history fork, and combining one with an explicit custom or built-in role is forbidden because a full-history fork inherits the parent's agent type. The payload must therefore carry every path, ref, assignment, skill route, handoff field and decision the selected role needs.
 
 | The neutral body delegates | Custom role |
 | --- | --- |

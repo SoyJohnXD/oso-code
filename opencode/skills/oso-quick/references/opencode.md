@@ -6,7 +6,7 @@ The adapter makes no claim about whether OpenCode preserves operator-facing text
 
 ## Question rounds
 
-The tool is `question`, and it is available only when the operator is watching the TUI: headless sessions deny `question` by default (ADR-0151 part 5). Its schema accepts several questions in one call — the operator navigates between them before submitting all answers — so a round holds 3 questions at a time, the way ADR-0097 spells. A fourth question starts the next round; it never rides an invalid call and never gets dropped.
+The tool is `question`, and it is available only when the operator is watching the TUI: headless sessions deny `question` by default. Its schema accepts several questions in one call — the operator navigates between them before submitting all answers — so a round holds 3 questions at a time. A fourth question starts the next round; it never rides an invalid call and never gets dropped.
 
 ## Shared-file paths
 
@@ -14,9 +14,9 @@ Wherever the neutral body names a file as `_shared/<file>.md`, it is spelled `..
 
 ## The state command
 
-`OSO_STATE_BIN` reaches every tool subprocess on this host through the installed plugin's `shell.env` hook — which fires per shell invocation and whose `output.env` values ARE present in the tool process environment (ADR-0151 part 4, verified). So `oso-state` is spelled `"${OSO_STATE_BIN:-oso-state}"` here.
+`OSO_STATE_BIN` reaches every tool subprocess on this host through the installed plugin's `shell.env` hook — which fires per shell invocation and whose `output.env` values ARE present in the tool process environment. So `oso-state` is spelled `"${OSO_STATE_BIN:-oso-state}"` here.
 
-What the state is keyed by is settled and is host-neutral: the state file is the REPOSITORY's (ADR-0095), resolved from the directory the command runs in.
+What the state is keyed by is settled and is host-neutral: the state file is the REPOSITORY's, resolved from the directory the command runs in.
 
 This host publishes the ROOT session id through `shell.env` for tool subprocesses (D13); that value is what `OSO_AGENT` carries, and it is never exported into the server process itself. Spell every state call as `"${OSO_STATE_BIN:-oso-state}" --session "${OSO_AGENT}" <verb> …`.
 

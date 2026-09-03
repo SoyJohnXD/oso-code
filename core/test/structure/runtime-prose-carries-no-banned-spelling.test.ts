@@ -6,7 +6,8 @@ import { readTrackedText, trackedRepositoryFiles } from "../support/tracked-file
 
 const SCANNED_PREFIXES = ["plugin/", "codex/", "opencode/", "core/src/prose/"];
 const SCANNED_EXTENSIONS = new Set([".md", ".toml"]);
-const BANNED_SPELLINGS = ["platform file"];
+
+const BANNED_SPELLINGS: readonly RegExp[] = [/platform file/g, /ADR-\d{4}/g];
 
 const FILES_SCANNED_FLOOR = 140;
 const FILES_SCANNED_FLOOR_DERIVATION =
@@ -25,7 +26,9 @@ provedSomething(
 const hits = scannedFiles.map(readTrackedText).flatMap(({ file, text }) =>
   text
     .split("\n")
-    .flatMap((line, index) => BANNED_SPELLINGS.filter((pattern) => line.includes(pattern)).map((pattern) => `${file}:${index + 1}: "${pattern}"`)),
+    .flatMap((line, index) =>
+      BANNED_SPELLINGS.flatMap((pattern) => [...line.matchAll(pattern)].map((match) => `${file}:${index + 1}: "${match[0]}"`)),
+    ),
 );
 
 describe("runtime prose carries no banned spelling — a dead term left behind reads as live", () => {

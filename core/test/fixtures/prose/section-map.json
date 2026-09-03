@@ -565,5 +565,12 @@
     "disposition": "merged",
     "destinationFile": "plugin/skills/_shared/parallel.md",
     "destinationHeading": "Parallel — the wave loop"
+  },
+  {
+    "sourceFile": "plugin/agents/oso-verifier.md",
+    "heading": "One merged wave — the integration gate (ADR-0082)",
+    "disposition": "merged",
+    "destinationFile": "plugin/agents/oso-verifier.md",
+    "destinationHeading": "One merged wave — the integration gate"
   }
 ]

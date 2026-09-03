@@ -8,7 +8,7 @@ This host carves NO unattended run out of that rule, so the second of the two br
 
 ## Question rounds
 
-The tool is `question`, and §1 plans the queue with the operator at 3 per round — the cap `../../oso-plan/references/opencode.md` spells for a decision round, and the cap §4's first-arming round for the `oso/preferences` ceiling fields runs inside as well. A fourth question starts the next round; it never rides an invalid call and never gets dropped. It reaches the operator only while they are watching the TUI, because a headless session denies `question` by default (ADR-0151 part 5) — no loss to this mode, whose one exchange with them is §1 through §3 and who is in it.
+The tool is `question`, and §1 plans the queue with the operator at 3 per round — the cap `../../oso-plan/references/opencode.md` spells for a decision round, and the cap §4's first-arming round for the `oso/preferences` ceiling fields runs inside as well. A fourth question starts the next round; it never rides an invalid call and never gets dropped. It reaches the operator only while they are watching the TUI, because a headless session denies `question` by default — no loss to this mode, whose one exchange with them is §1 through §3 and who is in it.
 
 ## The agent every phase runs on
 
