@@ -27,8 +27,10 @@ const CEILINGS = [
   {
     label: "core/test",
     prefix: "core/test/",
-    maximumLines: 18500,
-    derivation: `8,432 (measured at C3-S1) + 0.9 × ${REMAINING_BASH_SURFACE} + 2,888 (C4 certify, measured) + 1,000 (C5 structure) = 18,486`,
+    maximumLines: 19000,
+    derivation:
+      "18,252 (measured at C5-S5b-1) + 7.0 × 84 (four plugin-lint rules remaining, ratio measured at S5b-1: " +
+      "343 / 49) = 18,840 → 19,000",
   },
 ] as const;
 
