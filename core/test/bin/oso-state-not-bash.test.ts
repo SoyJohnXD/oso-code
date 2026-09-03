@@ -7,6 +7,7 @@ import { test } from "node:test";
 import { provedSomething } from "../support/proved.ts";
 import { posixRepositoryPath } from "../support/repository-paths.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
+import { subtractDeletedPaths } from "../support/tracked-files.ts";
 
 const selfPath = posixRepositoryPath(fileURLToPath(import.meta.url));
 
@@ -51,10 +52,14 @@ function bashTreatmentLineNumbers(content: string): number[] {
     .map((logicalLine) => logicalLine.startLineNumber);
 }
 
-function trackedRepositoryFiles(): string[] {
-  return execFileSync("git", ["ls-files"], { cwd: repositoryRoot, encoding: "utf8" })
+function gitLsFiles(...args: readonly string[]): string[] {
+  return execFileSync("git", ["ls-files", ...args], { cwd: repositoryRoot, encoding: "utf8" })
     .split("\n")
     .filter((relativePath) => relativePath !== "");
+}
+
+function trackedRepositoryFiles(): string[] {
+  return subtractDeletedPaths(gitLsFiles(), gitLsFiles("--deleted"));
 }
 
 function bashTreatmentViolations(relativePath: string): string[] {

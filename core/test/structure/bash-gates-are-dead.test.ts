@@ -24,7 +24,6 @@ type Residue = Readonly<{ residue: ResidueClass; keptBy: string }>;
 const RESIDUE_BY_FILE: ReadonlyMap<string, Residue> = new Map([
   ["bootstrap/hook-hashes.txt", { residue: "installer", keptBy: "C2-D19: the published trust data those installers compare against" }],
   ["core/test/structure/published-hook-hashes.test.ts", { residue: "installer", keptBy: "C2-D19: asserts that trust data's coverage and order" }],
-  ["tests/plugin-lint.sh", { residue: "shell-library", keptBy: "C3-D8(2ii): sources lexer.sh as a shell library, confirmed live independently of the two bars C4-S3 retired" }],
   ["core/test/gates/internal-failure-transport.test.ts", { residue: "citation", keptBy: "Decision 9: line-free provenance in a case title" }],
   ["core/test/gates/teardown-worktrees.test.ts", { residue: "citation", keptBy: "Decision 9: line-free provenance in a case title" }],
   ["core/test/port/git-call.test.ts", { residue: "citation", keptBy: "Decision 9: line-free provenance in a case title" }],

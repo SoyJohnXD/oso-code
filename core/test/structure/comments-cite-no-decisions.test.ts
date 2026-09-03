@@ -94,11 +94,9 @@ provedSomething(
 );
 
 describe(
-  "tests/plugin-lint.sh's check_executables_carry_no_decision_citations reached opencode/plugin/*.ts, " +
-    "opencode/plugin/oso/*.ts and plugin/'s shipped shell, batch and PowerShell executables; this check carries " +
-    "the same comment shapes and the same decision-id spelling across core/src, core/scripts, core/test, every " +
-    "depth of opencode/plugin, and that same shell corpus — a citation scanner rather than a comment scanner, " +
-    "because separating a comment from a `//` inside the string and regex literals core/src/shell/lexer.ts " +
+  "no comment across core/src, core/scripts, core/test, every depth of opencode/plugin, and plugin/'s shipped " +
+    "shell, batch and PowerShell executables cites a decision id — a citation scanner rather than a comment " +
+    "scanner, because separating a comment from a `//` inside the string and regex literals core/src/shell/lexer.ts " +
     "carries needs a tokeniser this check does not have, and the zero-inline-comment rule stays the operator's, " +
     "held in review",
   () => {

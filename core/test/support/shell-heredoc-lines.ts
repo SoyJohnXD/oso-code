@@ -29,3 +29,26 @@ export function linesOutsideHeredocBodies(text: string): SourceLine[] {
   });
   return kept;
 }
+
+export function linesFoldingHeredocBodiesIntoTheirOpener(text: string): SourceLine[] {
+  const pending: HeredocOpener[] = [];
+  const kept: SourceLine[] = [];
+  let openerNumber = 0;
+  let unit = "";
+  text.split("\n").forEach((line, index) => {
+    if (pending.length === 0) {
+      openerNumber = index + 1;
+      unit = line;
+      pending.push(...heredocOpenersOn(line));
+      if (pending.length === 0) kept.push({ number: openerNumber, text: unit });
+      return;
+    }
+    const opener = pending[0] as HeredocOpener;
+    unit += `\n${line}`;
+    const probe = opener.stripsTabs ? line.replace(/^\t+/, "") : line;
+    if (probe === opener.delimiter) pending.shift();
+    if (pending.length === 0) kept.push({ number: openerNumber, text: unit });
+  });
+  if (pending.length > 0) kept.push({ number: openerNumber, text: unit });
+  return kept;
+}

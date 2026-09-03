@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { basenameOf, lexShellCommands, type LexRecord } from "../../src/shell/lexer.ts";
 import { provedSomething } from "../support/proved.ts";
-import { linesOutsideHeredocBodies } from "../support/shell-heredoc-lines.ts";
+import { linesFoldingHeredocBodiesIntoTheirOpener } from "../support/shell-heredoc-lines.ts";
 import { readTrackedText, trackedRepositoryFiles, type TrackedFileText } from "../support/tracked-files.ts";
 
 const DIRECT_CHILD_GLOBS: readonly { dir: string; ext: string }[] = [
@@ -13,8 +13,8 @@ const DIRECT_CHILD_GLOBS: readonly { dir: string; ext: string }[] = [
 ];
 const MINIMUM_SCANNED_FILES = 2;
 const MINIMUM_SCANNED_FILES_DERIVATION =
-  "tests/*.sh, tests/fixtures/*.sh, bootstrap/lib/*.sh and tools/*.sh, measured at C5-S5b: 3 " +
-  "(tests/plugin-lint.sh, tests/fixtures/crashing-hook.sh, tools/verify-check-names.sh — bootstrap/lib holds none)";
+  "tests/*.sh, tests/fixtures/*.sh, bootstrap/lib/*.sh and tools/*.sh, measured at C5-S5c: 2 " +
+  "(tests/fixtures/crashing-hook.sh, tools/verify-check-names.sh — tests/*.sh and bootstrap/lib now hold none)";
 const OPENCODE_MENTION = /opencode/i;
 const CONTINUATION = /\\[ \t]*$/;
 const STRIPPABLE_SUFFIX = /_(bin|binary|exe|path|cmd|cli)$/i;
@@ -33,7 +33,7 @@ function logicalUnitsIn({ file, text }: TrackedFileText): LogicalUnit[] {
   const units: LogicalUnit[] = [];
   let startLine = 0;
   let joined = "";
-  for (const { number, text: lineText } of linesOutsideHeredocBodies(text)) {
+  for (const { number, text: lineText } of linesFoldingHeredocBodiesIntoTheirOpener(text)) {
     if (startLine === 0) startLine = number;
     const continuation = lineText.match(CONTINUATION);
     joined += continuation ? lineText.slice(0, continuation.index) : lineText;
@@ -106,9 +106,8 @@ const sites = scannedFiles
 describe(
   "no verification script under tests/, tests/fixtures/, bootstrap/lib/ or tools/ makes the opencode binary its " +
     "own command word — passing it as an argument to a runner that pins HOME, TMPDIR and every XDG directory is " +
-    "the only sanctioned shape; a heredoc body fed as stdin to a directly-invoked opencode sits outside this " +
-    "port's reach, since the heredoc-body skip this check shares with the contract-header check drops that text " +
-    "rather than folding it back into the command it belongs to, and no site in this corpus exercises that shape",
+    "the only sanctioned shape; unlike the contract-header check's heredoc-body skip, this check folds a heredoc " +
+    "body back into the command it belongs to, so a heredoc fed as stdin to a directly-invoked opencode is read",
   () => {
     test("no scanned logical command line invokes opencode directly", () => {
       assert.deepEqual(sites, [], sites.join("\n"));
