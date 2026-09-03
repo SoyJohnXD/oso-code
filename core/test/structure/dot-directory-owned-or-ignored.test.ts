@@ -7,10 +7,11 @@ import { provedSomething } from "../support/proved.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
 
 const REPO_OWNED_DOT_DIRECTORIES = new Set([".git", ".github", ".claude-plugin", ".codex-plugin", ".agents"]);
-const MINIMUM_DOT_DIRECTORIES = 5;
+const MINIMUM_DOT_DIRECTORIES = 3;
 const MINIMUM_DOT_DIRECTORIES_DERIVATION =
-  "readdirSync(repositoryRoot) dot-entries, measured at C5-S5b: .agents, .atl, .claude, .claude-plugin, .fallow, " +
-  ".git, .github — 7";
+  "the dot-directories this REPOSITORY guarantees, not the ones a machine happens to hold: .agents, .claude-plugin " +
+  "and .github each carry tracked files — 3. .git is excluded because a git worktree carries it as a FILE, and " +
+  ".atl, .claude and .fallow are local tool directories present on a developer checkout and absent from CI";
 
 function dotDirectoriesAtRepositoryRoot(): string[] {
   return readdirSync(repositoryRoot)
