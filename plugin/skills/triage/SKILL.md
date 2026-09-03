@@ -57,6 +57,6 @@ Open with the attribution in one sentence, and the evidence under it: the comman
 - `Triage: attributable` — the wave under execution caused it: name the slice, the file and the hunk, and the asserted behavior it moved.
 - `Triage: pre-existing` — it predates WAVE START: name the evidence that the wave never reaches the asserted behavior, and the commit that last touched it.
 - `Triage: skipped — attribution not established` — read-only evidence did not settle it: say what you ran, what it showed, and the one thing that would settle it. Never a guess dressed as a verdict, and never the pre-existing verdict as a default.
-- `Triage: blocked` — the assignment never reached you whole: your Codex role's payload carried no skill wrapper path, no ARGUMENTS, or both. Name exactly which was absent; never locate or infer it yourself.
+- `Triage: blocked` — the assignment never reached you whole: the payload that launched you carried no skill wrapper path, no ARGUMENTS, or both. Name exactly which was absent; never locate or infer it yourself.
 
 Save nothing to engram — the orchestrator owns persistence. Your final message is data for the orchestrator, not prose for a user.

@@ -65,7 +65,7 @@ export function renderSkill(stub: SkillStub, host: SkillHost, body: string, flow
   return `${frontMatterBlock(lines)}\n\n${sections}`;
 }
 
-function flowBody(flowSkillFile: string): string {
+export function flowBody(flowSkillFile: string): string {
   const lines = flowSkillFile.split("\n");
   const closingDelimiter = lines.indexOf("---", 1);
   return lines

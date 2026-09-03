@@ -28,7 +28,7 @@ Installed plugin skills carry NO namespace on this host: every skill auto-regist
 | the DEBUG mode | `/oso-debug` | the operator invokes `/oso-debug` — a mode is never model-invoked |
 | the quality-pass judge | `/oso-quality-pass` | read its installed `SKILL.md` and run it inline, the way it runs on every host |
 
-Forked judges and operational agents are the exception to inline reading. This host's `task` tool is SYNCHRONOUS — its call blocks until the child turn completes and the verdict is in-band (plan §3 trap 5, D5). There is no wait operation and no handoff receipt rail on this host (D5); a launch that errors, times out, or returns an empty verdict blocks the flow and never falls through. Launch the judge adapters by their `opencode/agents/` contracts, passing SKILL PATH and ARGUMENTS in the payload (D10).
+Forked judges and operational agents are the exception to inline reading. This host's `task` tool is SYNCHRONOUS — its call blocks until the child turn completes and the verdict is in-band (D5). There is no wait operation and no handoff receipt rail on this host (D5); a launch that errors, times out, or returns an empty verdict blocks the flow and never falls through. Launch the judge adapters by their `opencode/agents/` contracts, passing SKILL PATH and ARGUMENTS in the payload (D10).
 
 ## Front-surface binding
 
