@@ -176,6 +176,30 @@
     "sourceFile": "core/src/prose/skills/debt-sweep/opencode.md",
     "retired": "It ends on exactly one of: `Debt Sweep: clean` — report it as the pass; `Debt Sweep: findings` — route the list to the applier for the fix; `Debt Sweep: blocked` — resolve what the payload names missing and invoke the judge again fresh; `Conformance: clean` — report it; `Conformance: findings` — route each gap to the decision it violates; `Conformance: skipped — no ledger provided` — report the skip, never pass on it.",
     "reason": "the OpenCode preface said the judge ends on exactly one of six verdicts; bodies/debt-sweep.md:54-73 requires a whole-report blocked branch or else two labeled sections never merged, one debt verdict and one conformance verdict. C5-S2d reconciled the preface to the body it binds under Decision 64 — the rule was corrected, not lost, and survives verbatim at its home",
-    "home": { "kind": "prose", "ref": "plugin/skills/_shared/bodies/debt-sweep.md" }
+    "home": { "kind": "prose", "ref": "plugin/skills/debt-sweep/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Otherwise, two labeled sections, never merged — a conformance gap must never hide inside the debt list, nor a debt finding inside conformance.",
+    "sourceFile": "core/src/prose/skills/debt-sweep/opencode.md",
+    "retired": "If the assignment never arrived whole it ends on `Debt Sweep: blocked` — resolve what the payload names missing and invoke the judge again fresh. Otherwise it ends on one debt verdict and one conformance verdict, never merged: `Debt Sweep: clean` — report it as the pass; `Debt Sweep: findings` — route the list to the applier for the fix. The conformance verdict is `Conformance: clean` — report it; `Conformance: findings` — route each gap to the decision it violates; or `Conformance: skipped — no ledger provided` — report the skip, never pass on it.",
+    "reason": "the OpenCode preface restated debt-sweep's two-axis verdict grammar; C5-S4 moves the body into plugin/skills/debt-sweep/SKILL.md, rendered directly beneath this preface, so the restatement duplicates a grammar the flow now states itself, and Decision 64's condition 8 ends it — one rule, one home, with the six verdict tokens surviving in the flow for C5-D5 axis C.",
+    "home": { "kind": "prose", "ref": "plugin/skills/debt-sweep/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "A finding without its consequence is not a finding — drop it.",
+    "sourceFile": "core/src/prose/skills/doubt-pass/opencode.md",
+    "retired": "It ends on exactly one of: `Doubt Pass: clean` — report it and the freeze proceeds; `Doubt Pass: findings` — report each finding verbatim for reconciliation; `Doubt Pass: blocked` — resolve what the payload names missing and invoke the judge again fresh.",
+    "reason": "the OpenCode preface restated doubt-pass's three-verdict grammar. C5-S4 moves bodies/doubt-pass.md into plugin/skills/doubt-pass/SKILL.md, rendered directly beneath this same preface, so the restatement duplicates a grammar the flow now states itself; Decision 64 condition 8 retires the paragraph — one rule, one home — with all three verdict tokens surviving byte-identical in the flow for axis C, and the item above verbatim at its new home",
+    "home": { "kind": "prose", "ref": "plugin/skills/doubt-pass/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Never a guess dressed as a verdict, and never the pre-existing verdict as a default.",
+    "sourceFile": "core/src/prose/skills/triage/opencode.md",
+    "retired": "It ends on exactly one of: `Triage: attributable` — report the slice, file and hunk; `Triage: pre-existing` — report the evidence; `Triage: skipped — attribution not established` — report what would settle it; `Triage: blocked` — resolve what the payload names missing and invoke the judge again fresh.",
+    "reason": "the OpenCode preface restated triage's four-verdict grammar. C5-S4 moves bodies/triage.md into plugin/skills/triage/SKILL.md, rendered directly beneath this same preface, so the restatement duplicates a grammar the flow now states itself; Decision 64 condition 8 retires the paragraph — one rule, one home — with all four verdict tokens surviving byte-identical in the flow for axis C, and the item above verbatim at its new home",
+    "home": { "kind": "prose", "ref": "plugin/skills/triage/SKILL.md" }
   }
 ]

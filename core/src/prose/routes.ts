@@ -112,7 +112,7 @@ export const SKILL_STUBS: readonly SkillStub[] = [
     argumentHint: { codex: "[base ref, e.g. main] [+ frozen ledger: bare decisions + scope] [+ on re-invocation: every prior finding with its bare disposition]", opencode: "[base ref, e.g. main] [+ frozen ledger: bare decisions + scope] [+ on re-invocation: every prior finding with its bare disposition]" },
     disableModelInvocation: false,
     referenceHosts: ["codex", "opencode"],
-    flowFromClaudeSkill: false,
+    flowFromClaudeSkill: true,
   },
   {
     id: "debug",
@@ -128,7 +128,7 @@ export const SKILL_STUBS: readonly SkillStub[] = [
     argumentHint: { codex: "[intent + surface map + bare decisions]", opencode: "[intent + surface map + bare decisions]" },
     disableModelInvocation: false,
     referenceHosts: [],
-    flowFromClaudeSkill: false,
+    flowFromClaudeSkill: true,
   },
   {
     id: "plan",
@@ -144,7 +144,7 @@ export const SKILL_STUBS: readonly SkillStub[] = [
     argumentHint: null,
     disableModelInvocation: false,
     referenceHosts: ["codex", "opencode"],
-    flowFromClaudeSkill: false,
+    flowFromClaudeSkill: true,
   },
   {
     id: "quick",
@@ -168,7 +168,7 @@ export const SKILL_STUBS: readonly SkillStub[] = [
     argumentHint: { codex: "[optional base ref for a branch range, e.g. main]", opencode: "[optional base ref for a branch range, e.g. main]" },
     disableModelInvocation: false,
     referenceHosts: ["codex", "opencode"],
-    flowFromClaudeSkill: false,
+    flowFromClaudeSkill: true,
   },
   {
     id: "triage",
@@ -176,6 +176,6 @@ export const SKILL_STUBS: readonly SkillStub[] = [
     argumentHint: { codex: "[failing check + its evidence verbatim] [+ the wave's slices] [+ WAVE START]", opencode: "[failing check + its evidence verbatim] [+ the wave's slices] [+ WAVE START]" },
     disableModelInvocation: false,
     referenceHosts: ["codex", "opencode"],
-    flowFromClaudeSkill: false,
+    flowFromClaudeSkill: true,
   },
 ];

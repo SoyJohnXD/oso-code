@@ -5,9 +5,39 @@ description: Readability-only cleanup of touched code after functionality is con
 
 # Quality pass
 
-This pass's instructions live in two files. READ BOTH NOW, in this order, and follow them as binding — as if their text stood here:
+Align finished, working code with the team's quality bar. Scope: code touched in this session only — never untouched files. Read your platform's own reference file beside this one (`references/<host>.md`) now — it is what this flow leaves to the host: the paths it interpolates. Wherever this flow says "your host", that file is the answer.
 
-1. `${CLAUDE_SKILL_DIR}/../_shared/bodies/quality-pass.md` — the pass itself: the contract, verify, apply, re-verify, and the verdict vocabulary. It is the same on every host this harness runs on.
-2. `${CLAUDE_SKILL_DIR}/references/claude.md` — what the pass leaves to the host: the paths it interpolates.
+## Contract
 
-Where the neutral body defers to "your host", the reference file beside this one is the answer, and it is the only answer — never improvise a spelling it does not give.
+- Fix readability, semantics, and pattern violations. Never change behavior, add features, or "improve" logic.
+- If a real functional bug surfaces, report it — do not fix it inside the quality pass.
+
+## 1. Verify
+
+Read the shared rubric at `_shared/rubric.md` and check every touched file against its **Hard blockers**, **File level**, **System level**, and **Debt markers** sections. System level applies whenever the session touched more than one file or the change interacts with existing helpers or patterns. The **Judgment contract** governs how all of them are applied.
+
+Then run the project's own bar: the checks the diagnosis froze when in debug mode — its zero-warnings commands, plus the two resolved Impeccable numerals it recorded on a front-surface fix — or discovered from the project otherwise — lint, types, affected tests, build, or whatever the project defines. Zero warnings.
+
+## 2. Apply
+
+Fix every finding from the verify step with the smallest edit that resolves it — no refactors beyond the finding.
+
+## 3. Re-verify
+
+Re-run the checklist and the project checks on the files you edited.
+
+A second run is the point — do not skip it on a hunch nothing moved:
+
+| Trap | Reality |
+| --- | --- |
+| 'the first run already passed and my edits were tiny' | The first run predates your edits — only a run after them proves they hold. |
+| 'I only touched naming/comments, nothing can break' | A rename can break a reference or a test — verify, do not assume. |
+| 're-running the checks is redundant ceremony' | The re-run is the proof the fixes are clean, not ceremony. |
+| 'no checks exist here' | Say what you searched — scripts, Makefile, CI — before concluding none exist. |
+
+## Report
+
+End with exactly one of:
+
+- `Quality Pass: passed` — plus a one-line list of what was cleaned.
+- `Quality Pass: blocked` — plus the findings you could not resolve and why.
