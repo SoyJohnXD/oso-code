@@ -76,7 +76,6 @@ Installed plugin skills carry NO namespace on this host: every skill auto-regist
 | --- | --- | --- |
 | the QUICK mode | `/oso-quick` | the operator invokes `/oso-quick` — a mode is never model-invoked |
 | the DEBUG mode | `/oso-debug` | the operator invokes `/oso-debug` — a mode is never model-invoked |
-| the quality-pass judge | `/oso-quality-pass` | read its installed `SKILL.md` and run it inline, the way it runs on every host |
 
 Forked judges and operational agents are the exception to inline reading: launch them by their `opencode/agents/` contracts, passing SKILL PATH and ARGUMENTS in the payload (D10), under the wait rule below.
 

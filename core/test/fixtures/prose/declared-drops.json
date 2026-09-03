@@ -209,5 +209,13 @@
     "retired": "ADR-0117 called this lane Codex-specific because Claude Code carries no operational plan artifact to amend; this host now carries one, so the lane holds here for the same reason it holds there.",
     "reason": "C5-S5a strips every ADR id from runtime prose under Decision 69 (G10 is tree-wide, no host-binding exemption). This sentence carried no rule of its own past the paragraph already stated above it — it only recounted that ADR-0117 once scoped the harness-discovered-correction lane to Codex and explained why it now also holds on OpenCode; that current applicability is already established earlier in this same file, where OpenCode's own `approved-<approval digest>.md` and `current.md` operational-plan artifacts are described. Retired as version history rather than rephrased, since removing only the id would leave a dangling, ungrounded claim",
     "home": { "kind": "none" }
+  },
+  {
+    "axis": "prose",
+    "item": "| the quality-pass judge | `/oso-quality-pass` | read its installed `SKILL.md` and run it inline, the way it runs on every host |",
+    "sourceFile": "core/src/prose/skills/plan/references/opencode.md",
+    "retired": "| the quality-pass judge | `/oso-quality-pass` | read its installed `SKILL.md` and run it inline, the way it runs on every host |",
+    "reason": "C5-S5d-1 read the plan skill's own SKILL.md whole and found no mention of quality-pass anywhere in it — the judges plan/SKILL.md actually names are doubt-pass, debt-sweep, triage and security-pass; quality-pass is quick's and debug's own close-time judge. The row was copy-paste debt carried into plan's OpenCode naming table from a sibling skill's template rather than content this flow's own binding needs; the mapping it names still stands, unchanged, in the sibling skills that do invoke that judge",
+    "home": { "kind": "prose", "ref": "opencode/skills/oso-debug/references/opencode.md" }
   }
 ]
