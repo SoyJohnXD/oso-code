@@ -3878,7 +3878,7 @@ function payloadRefusal(sources) {
   const missing = [
     { present: isReadableRegularFile(sources.global), message: `the OpenCode global guidance is missing: ${sources.global}` },
     { present: isDirectory(sources.skills), message: `the OpenCode skill wrappers are missing: ${sources.skills}` },
-    { present: isDirectory(sources.sharedSkills), message: `the shared skill bodies are missing: ${sources.sharedSkills}` },
+    { present: isDirectory(sources.sharedSkills), message: `the shared skill directory is missing: ${sources.sharedSkills}` },
     { present: isDirectory(sources.agents), message: `the OpenCode agent contracts are missing: ${sources.agents}` },
     { present: isDirectory(sources.commands), message: `the OpenCode command templates are missing: ${sources.commands}` },
     { present: isReadableRegularFile(sources.pluginBundle), message: `the OpenCode plugin bundle is missing: ${sources.pluginBundle}` },
@@ -5121,7 +5121,7 @@ function checkInstalledTree(report2, input, tree) {
   const globalFile = path16.join(tree.configHome, "AGENTS.md");
   report2.check("OpenCode config contract", "valid", openCodeConfigStatus(configFile));
   report2.check("operator config keys survive an install", "preserved", openCodeOperatorKeysStatus(configFile));
-  report2.check("nine skill wrappers and shared bodies installed", "exact", openCodeSkillStatus(input.repositoryRoot, tree.configHome));
+  report2.check("nine skill wrappers and the shared skill directory installed", "exact", openCodeSkillStatus(input.repositoryRoot, tree.configHome));
   report2.check("agent contracts installed", "exact", openCodeAgentStatus(input.repositoryRoot, tree.configHome));
   report2.check("mode commands installed and routed", "exact", openCodeCommandStatus(input.repositoryRoot, tree.configHome));
   report2.check("plugin entry, modules and routes installed", "exact", openCodePluginStatus(input.repositoryRoot, tree.configHome));
@@ -5273,7 +5273,6 @@ function openCodeSkillStatus(repositoryRoot2, configHome) {
   const divergent = wrappers.filter((name) => !treesHoldTheSameBytes(path16.join(sources.skills, name), path16.join(configHome, "skill", name)));
   if (wrappers.length !== EXPECTED_SKILL_WRAPPER_COUNT) return `wrapper-count:${wrappers.length}`;
   if (divergent.length > 0) return namedList("divergent", divergent);
-  if (!isDirectory(path16.join(configHome, "skill", "_shared", "bodies"))) return "missing-shared-bodies";
   return treesHoldTheSameBytes(sources.sharedSkills, path16.join(configHome, "skill", "_shared")) ? "exact" : "shared-differs";
 }
 function openCodeAgentStatus(repositoryRoot2, configHome) {

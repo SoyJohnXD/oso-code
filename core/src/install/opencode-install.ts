@@ -145,7 +145,7 @@ export function payloadRefusal(sources: OpenCodePayloadSources): string | undefi
   const missing = [
     { present: isReadableRegularFile(sources.global), message: `the OpenCode global guidance is missing: ${sources.global}` },
     { present: isDirectory(sources.skills), message: `the OpenCode skill wrappers are missing: ${sources.skills}` },
-    { present: isDirectory(sources.sharedSkills), message: `the shared skill bodies are missing: ${sources.sharedSkills}` },
+    { present: isDirectory(sources.sharedSkills), message: `the shared skill directory is missing: ${sources.sharedSkills}` },
     { present: isDirectory(sources.agents), message: `the OpenCode agent contracts are missing: ${sources.agents}` },
     { present: isDirectory(sources.commands), message: `the OpenCode command templates are missing: ${sources.commands}` },
     { present: isReadableRegularFile(sources.pluginBundle), message: `the OpenCode plugin bundle is missing: ${sources.pluginBundle}` },

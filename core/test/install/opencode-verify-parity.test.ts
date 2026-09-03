@@ -137,7 +137,7 @@ describe("the local-check rows this half owns are named, and every other row is 
     assert.deepEqual(compared, COMPARED_ROWS.map((row) => row.name));
     assert.deepEqual(deferred, [
       "isolated fixture install",
-      "nine skill wrappers and shared bodies installed",
+      "nine skill wrappers and the shared skill directory installed",
       "agent contracts installed",
       "mode commands installed and routed",
       "plugin entry, modules and routes installed",

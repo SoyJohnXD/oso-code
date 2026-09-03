@@ -45,7 +45,7 @@ const ENGRAM_BINARY_NAMES = [ENGRAM_BINARY_NAME, `${ENGRAM_BINARY_NAME}.exe`, `$
 const PUBLISHED_HASHES = openCodePayloadSources(repositoryRoot).publishedHashes;
 
 const COMPARED_ROWS = [
-  { name: "nine skill wrappers and shared bodies installed", bashRow: "opencode_skill_status", port: (tree: StagedFixture) => openCodeSkillStatus(repositoryRoot, tree.configHome) },
+  { name: "nine skill wrappers and the shared skill directory installed", bashRow: "opencode_skill_status", port: (tree: StagedFixture) => openCodeSkillStatus(repositoryRoot, tree.configHome) },
   { name: "agent contracts installed", bashRow: "opencode_agent_status", port: (tree: StagedFixture) => openCodeAgentStatus(repositoryRoot, tree.configHome) },
   { name: "mode commands installed and routed", bashRow: "opencode_command_status", port: (tree: StagedFixture) => openCodeCommandStatus(repositoryRoot, tree.configHome) },
   { name: "plugin entry, modules and routes installed", bashRow: "opencode_plugin_status", port: (tree: StagedFixture) => openCodePluginStatus(repositoryRoot, tree.configHome) },
@@ -72,17 +72,17 @@ const TREE_DAMAGES: readonly TreeDamage[] = [
     port: (tree) => openCodeSkillStatus(repositoryRoot, tree.configHome),
   },
   {
-    label: "the shared skill bodies removed",
-    verdict: "missing-shared-bodies",
+    label: "the shared skill references/ directory removed",
+    verdict: "shared-differs",
     bashRow: "opencode_skill_status",
-    apply: (tree) => rmSync(path.join(tree.configHome, "skill", "_shared", "bodies"), { recursive: true, force: true }),
+    apply: (tree) => rmSync(path.join(tree.configHome, "skill", "_shared", "references"), { recursive: true, force: true }),
     port: (tree) => openCodeSkillStatus(repositoryRoot, tree.configHome),
   },
   {
-    label: "one shared skill body edited",
+    label: "one shared skill file edited",
     verdict: "shared-differs",
     bashRow: "opencode_skill_status",
-    apply: (tree) => appendToFirstSharedBody(tree),
+    apply: (tree) => appendToFirstSharedFile(tree),
     port: (tree) => openCodeSkillStatus(repositoryRoot, tree.configHome),
   },
   {
@@ -165,7 +165,7 @@ describe("the rows this half owns are the artifact and repository rows, and the 
     const owned = OPENCODE_LOCAL_CHECK_ROWS.filter((row) => THIS_HALF_READS.includes(row.kind)).map((row) => row.name);
     assert.deepEqual(owned, [
       "isolated fixture install",
-      "nine skill wrappers and shared bodies installed",
+      "nine skill wrappers and the shared skill directory installed",
       "agent contracts installed",
       "mode commands installed and routed",
       "plugin entry, modules and routes installed",
@@ -370,13 +370,13 @@ function dropRegistryRow(tree: StagedFixture, target: string): void {
   writeFileSync(registry, kept.join("\n"));
 }
 
-function appendToFirstSharedBody(tree: StagedFixture): void {
-  const body = path.join(tree.configHome, "skill", "_shared", "bodies", firstSharedBodyName());
-  writeFileSync(body, `${readFileSync(body, "utf8")}an edit the published body does not carry\n`);
+function appendToFirstSharedFile(tree: StagedFixture): void {
+  const shared = path.join(tree.configHome, "skill", "_shared", firstSharedFileName());
+  writeFileSync(shared, `${readFileSync(shared, "utf8")}an edit the published file does not carry\n`);
 }
 
-function firstSharedBodyName(): string {
-  return sortedNamesIn(path.join(repositoryRoot, "plugin", "skills", "_shared", "bodies"))[0] as string;
+function firstSharedFileName(): string {
+  return sortedNamesIn(path.join(repositoryRoot, "plugin", "skills", "_shared")).filter((name) => name.endsWith(".md"))[0] as string;
 }
 
 function firstAgentName(): string {

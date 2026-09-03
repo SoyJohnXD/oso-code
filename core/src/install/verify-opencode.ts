@@ -49,7 +49,7 @@ export const OPENCODE_LOCAL_CHECK_ROWS: readonly LocalCheckRow[] = [
   { name: "isolated fixture install", kind: "artifact" },
   { name: "OpenCode config contract", kind: "config" },
   { name: "operator config keys survive an install", kind: "config" },
-  { name: "nine skill wrappers and shared bodies installed", kind: "artifact" },
+  { name: "nine skill wrappers and the shared skill directory installed", kind: "artifact" },
   { name: "agent contracts installed", kind: "artifact" },
   { name: "mode commands installed and routed", kind: "artifact" },
   { name: "plugin entry, modules and routes installed", kind: "artifact" },
@@ -135,7 +135,7 @@ function checkInstalledTree(report: VerifyReport, input: VerifyOpenCodeInput, tr
   const globalFile = path.join(tree.configHome, "AGENTS.md");
   report.check("OpenCode config contract", "valid", openCodeConfigStatus(configFile));
   report.check("operator config keys survive an install", "preserved", openCodeOperatorKeysStatus(configFile));
-  report.check("nine skill wrappers and shared bodies installed", "exact", openCodeSkillStatus(input.repositoryRoot, tree.configHome));
+  report.check("nine skill wrappers and the shared skill directory installed", "exact", openCodeSkillStatus(input.repositoryRoot, tree.configHome));
   report.check("agent contracts installed", "exact", openCodeAgentStatus(input.repositoryRoot, tree.configHome));
   report.check("mode commands installed and routed", "exact", openCodeCommandStatus(input.repositoryRoot, tree.configHome));
   report.check("plugin entry, modules and routes installed", "exact", openCodePluginStatus(input.repositoryRoot, tree.configHome));
@@ -296,7 +296,6 @@ export function openCodeSkillStatus(repositoryRoot: string, configHome: string):
   const divergent = wrappers.filter((name) => !treesHoldTheSameBytes(path.join(sources.skills, name), path.join(configHome, "skill", name)));
   if (wrappers.length !== EXPECTED_SKILL_WRAPPER_COUNT) return `wrapper-count:${wrappers.length}`;
   if (divergent.length > 0) return namedList("divergent", divergent);
-  if (!isDirectory(path.join(configHome, "skill", "_shared", "bodies"))) return "missing-shared-bodies";
   return treesHoldTheSameBytes(sources.sharedSkills, path.join(configHome, "skill", "_shared")) ? "exact" : "shared-differs";
 }
 
