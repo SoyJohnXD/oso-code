@@ -1,7 +1,4 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import { describe, test } from "node:test";
 import { SKILL_STUBS, flowBody, skillFlowPath, skillOutputPath } from "../../src/prose/render.ts";
 import { provedSomething } from "../support/proved.ts";
@@ -127,40 +124,23 @@ function wordTokenSentence(wordCount: number): string {
   return `${Array.from({ length: wordCount }, (_, index) => `w${index + 1}`).join(" ")}.`;
 }
 
-function sentenceWordCountsInPlantedFile(sentence: string): SentenceWordCount[] {
-  const directory = mkdtempSync(path.join(tmpdir(), "oso-planted-sentence-cap-"));
-  try {
-    const planted = path.join(directory, "planted.md");
-    writeFileSync(planted, `# Planted cap fixture — a heading, never a sentence\n\n${sentence}\n`);
-    return sentenceWordCountsIn(planted, readFileSync(planted, "utf8"));
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
-  }
+const PLANTED_FILE = "planted.md";
+
+function plantedCapFixture(wordCount: number): string {
+  return `# Planted cap fixture — a heading, never a sentence\n\n${wordTokenSentence(wordCount)}\n`;
 }
 
-describe("sentenceWordCountsIn, read over a planted file this repository does not ship", () => {
+describe("sentenceWordCountsIn, read over planted markdown this repository does not ship", () => {
   test("a planted 61-token sentence (`w1 w2 … w61.`) counts 61 words, over the cap", () => {
-    const [counted] = sentenceWordCountsInPlantedFile(wordTokenSentence(61));
+    const [counted] = sentenceWordCountsIn(PLANTED_FILE, plantedCapFixture(61));
     assert.equal(counted?.words, 61);
   });
 
   test("a planted 60-token sentence (`w1 w2 … w60.`) counts 60 words, exactly at the cap and passing", () => {
-    const [counted] = sentenceWordCountsInPlantedFile(wordTokenSentence(60));
+    const [counted] = sentenceWordCountsIn(PLANTED_FILE, plantedCapFixture(60));
     assert.equal(counted?.words, 60);
   });
 });
-
-function tableRowPlantedFile(cellWordCount: number): SentenceWordCount[] {
-  const directory = mkdtempSync(path.join(tmpdir(), "oso-planted-sentence-cap-table-"));
-  try {
-    const planted = path.join(directory, "planted.md");
-    const cell = wordTokenSentence(cellWordCount).slice(0, -1);
-    writeFileSync(planted, `# Planted table fixture — a table row, a run of its own\n\n| Col |\n|---|\n| ${cell} |\n`);
-    return sentenceWordCountsIn(planted, readFileSync(planted, "utf8"));
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
-  }
-}
 
 describe("sentencesIn, read directly over a run its own SENTENCE_END never matches", () => {
   test("a run with no closing `.`/`!`/`?` is still returned whole, as its own trailing sentence", () => {
@@ -171,28 +151,20 @@ describe("sentencesIn, read directly over a run its own SENTENCE_END never match
 
 describe("sentenceWordCountsIn, read over a planted markdown table this repository does not ship", () => {
   test("a 73-token table row is counted as one run of its own — 75 words with its two cell pipes — and lands over the cap", () => {
-    const overCap = tableRowPlantedFile(73).filter((counted) => counted.words > SENTENCE_CAP);
+    const cell = wordTokenSentence(73).slice(0, -1);
+    const planted = `# Planted table fixture — a table row, a run of its own\n\n| Col |\n|---|\n| ${cell} |\n`;
+    const overCap = sentenceWordCountsIn(PLANTED_FILE, planted).filter((counted) => counted.words > SENTENCE_CAP);
     assert.deepEqual(overCap.map((counted) => counted.words), [75]);
   });
 });
-
-function listItemPlantedFile(wordCount: number): SentenceWordCount[] {
-  const directory = mkdtempSync(path.join(tmpdir(), "oso-planted-sentence-cap-list-"));
-  try {
-    const planted = path.join(directory, "planted.md");
-    writeFileSync(planted, `# Planted list fixture — a bullet, never a bare paragraph\n\n- ${wordTokenSentence(wordCount)}\n`);
-    return sentenceWordCountsIn(planted, readFileSync(planted, "utf8"));
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
-  }
-}
 
 describe("sentenceWordCountsIn, read over a planted bullet list item this repository does not ship", () => {
   test(
     "a planted 60-word bullet (`- w1 w2 … w60.`) counts 60 words with its leading marker stripped, passing at " +
       "the cap; left unstripped, `-` would count as the sentence's 61st word and fail it",
     () => {
-      const [counted] = listItemPlantedFile(60);
+      const planted = `# Planted list fixture — a bullet, never a bare paragraph\n\n- ${wordTokenSentence(60)}\n`;
+      const [counted] = sentenceWordCountsIn(PLANTED_FILE, planted);
       assert.equal(counted?.words, 60);
       assert.equal(wordCountOf(`- ${wordTokenSentence(60)}`), 61);
     },

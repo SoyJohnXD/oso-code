@@ -28,7 +28,7 @@ const CEILINGS = [
     label: "core/test",
     prefix: "core/test/",
     maximumLines: 19000,
-    derivation: "18,960 (measured at C5's close) → 19,000",
+    derivation: "18,932 (measured at C5's close) → 19,000",
   },
 ] as const;
 
