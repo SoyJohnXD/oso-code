@@ -32,10 +32,91 @@ const A_PATTERN_GREP_EXITS_TWO_ON = "[abc-prod";
 const A_PCRE_SPELLING_GREP_READS_AS_ERE = "(?:deploy|ship)-prod";
 const A_RANGE_OPENED_BY_THE_BRACKET_ITSELF = "[]-~]uild";
 
-const HOLE_ONE_WRAPPERS: readonly string[] = [
+const WRAPPERS_CARRYING_A_QUOTED_DEPLOY: readonly string[] = [
   "script -qc 'vercel --prod' /dev/null",
   "ssh build-host 'vercel --prod'",
   "tmux new-session -d 'vercel --prod'",
+];
+
+const WRAPPERS_WHOSE_OPTION_HIDES_THE_PAYLOAD: readonly string[] = [
+  "ssh -p 22 build-host 'vercel --prod'",
+  "tmux -L sock new-session -d 'vercel --prod'",
+  "tmux new-session -s pane vercel --prod",
+];
+
+const WRAPPERS_CARRYING_NO_DEPLOY: readonly string[] = [
+  "ssh build-host 'npm run build'",
+  "ssh build-host npm run build",
+  "ssh build-host",
+  "tmux new-session 'npm test'",
+  "tmux ls",
+  "script -c 'npm test' /dev/null",
+];
+
+const DOLLAR_QUOTED_PRODUCTION_DEPLOYS: readonly string[] = [
+  "vercel $'--prod'",
+  'vercel $"--prod"',
+  'vercel $"--pro"$"d"',
+  'vercel $\'--pro\'$"d"',
+  'vercel $"--target" $"production"',
+  'script -qc \'vercel $"--prod"\' /dev/null',
+  'ssh build-host \'vercel $"--prod"\'',
+  'tmux new-session -d \'vercel $"--prod"\'',
+];
+
+const DOLLAR_QUOTED_COMMITS: readonly string[] = [
+  "git $'commit' -m x",
+  'git $"commit" -m x',
+  'git $"com"$\'mit\' -m x',
+  'ssh build-host \'git $"commit" -m x\'',
+];
+
+const DOLLAR_QUOTED_PUSHES_OFF_THE_RUN_BRANCH: readonly string[] = [
+  "git $'push' origin main",
+];
+
+const DOLLAR_SPELLINGS_THE_BOUNDARY_STILL_ALLOWS: readonly string[] = [
+  'vercel "$"--prod""',
+  'vercel \\$"--prod"',
+  "vercel \\$'--prod'",
+];
+
+const DOLLAR_SPELLINGS_THE_COMMIT_RAIL_STILL_ALLOWS: readonly string[] = [
+  "git $'status'",
+];
+
+const LOCALE_SPELLINGS_THE_BOUNDARY_DENIES_UNREAD: readonly string[] = [
+  'vercel $"deploy"',
+  'vercel $"--target" $"preview"',
+  'git $"push" origin main',
+  'git $"push" origin $"main"',
+];
+
+const LOCALE_SPELLINGS_THE_COMMIT_RAIL_COUNTS_AS_RESIDUE: readonly string[] = [
+  'git $"status"',
+  'git $"log" --oneline',
+];
+
+const CARRIERS_OF_A_COMMAND_THE_SHELL_RUNS_LATER: readonly string[] = [
+  "trap 'vercel --prod' EXIT",
+  "coproc vercel --prod",
+  "coproc NAME { vercel --prod ; }",
+  "mapfile -C 'vercel --prod' -c 1 rows",
+  "compgen -C 'vercel --prod' foo",
+];
+
+const CARRIERS_WHOSE_PAYLOAD_IS_PAST_READING: readonly string[] = [
+  "alias deploy='vercel --prod'",
+  "fc -s",
+  "BASH_ENV=./boot.sh bash -c :",
+];
+
+const CARRIERS_HOLDING_NO_COMMAND_AT_ALL: readonly string[] = [
+  "trap - EXIT",
+  "trap -l",
+  "coproc npm test",
+  "mapfile -t rows",
+  "alias",
 ];
 
 provedSomething(
@@ -76,20 +157,127 @@ describe("core/src/gates/dispatch.ts: port tests read from the gate scripts, nev
   });
 });
 
-describe("core/src/gates/proddeploy.ts: PINNED HOLE — a command-string-carrying wrapper reaches no deploy CLI", () => {
-  for (const command of HOLE_ONE_WRAPPERS) {
-    test(`${command} passes the production boundary allowed and uncounted (read from plugin/hooks/block-prod-deploy.sh:41-54)`, () => {
+describe("core/src/gates/proddeploy.ts: a command-string-carrying wrapper's payload reaches the deploy CLI", () => {
+  for (const command of WRAPPERS_CARRYING_A_QUOTED_DEPLOY) {
+    test(`${command} is denied at the production boundary rather than passed uncounted`, () => {
+      const run = judge(["proddeploy"], ARMED_RUN_STATE, bashEnvelope(command));
+      assert.equal(run.exit, 0);
+      assert.match(run.stdout, /"permissionDecision":"deny"/);
+      assert.match(run.stdout, /a production deploy stays with the operator/);
+    });
+  }
+
+  test("the same payload unquoted is denied too, because the operand after the host is the command ssh runs", () => {
+    const run = judge(["proddeploy"], ARMED_RUN_STATE, bashEnvelope("ssh build-host vercel --prod"));
+    assert.match(run.stdout, /"permissionDecision":"deny"/);
+  });
+
+  for (const command of WRAPPERS_WHOSE_OPTION_HIDES_THE_PAYLOAD) {
+    test(`${command} is denied unread, the rule sudo -u somebody git commit already carried`, () => {
+      const run = judge(["proddeploy"], ARMED_RUN_STATE, bashEnvelope(command));
+      assert.match(run.stdout, /"permissionDecision":"deny"/);
+      assert.match(run.stdout, /past what the production boundary can read/);
+    });
+  }
+
+  for (const command of WRAPPERS_CARRYING_NO_DEPLOY) {
+    test(`${command} still passes the production boundary allowed and uncounted`, () => {
+      const run = judge(["proddeploy"], ARMED_RUN_STATE, bashEnvelope(command));
+      assert.deepEqual({ exit: run.exit, stdout: run.stdout, stderr: run.stderr }, { exit: 0, stdout: "", stderr: "" });
+      assert.deepEqual(run.events, []);
+    });
+  }
+});
+
+describe("core/src/gates: a dollar-quoted word reaches the rail the word the shell builds reaches", () => {
+  for (const command of DOLLAR_QUOTED_PRODUCTION_DEPLOYS) {
+    test(`${command} is denied at the production boundary`, () => {
+      const run = judge(["proddeploy"], ARMED_RUN_STATE, bashEnvelope(command));
+      assert.match(run.stdout, /"permissionDecision":"deny"/);
+      assert.match(run.stdout, /a production deploy stays with the operator/);
+      assert.deepEqual(run.events.map((logged) => logged.event), ["prod-deploy-denied"]);
+    });
+  }
+
+  for (const command of DOLLAR_QUOTED_COMMITS) {
+    test(`${command} is denied until the session verify is green`, () => {
+      const run = judge(["commit"], ARMED_RED_STATE, bashEnvelope(command));
+      assert.match(run.stdout, /"permissionDecision":"deny"/);
+      assert.match(run.stdout, /the session verify is not green/);
+      assert.deepEqual(run.events.map((logged) => logged.event), ["commit-denied"]);
+    });
+  }
+
+  for (const command of DOLLAR_QUOTED_PUSHES_OFF_THE_RUN_BRANCH) {
+    test(`${command} is denied as a push off the run branch`, () => {
+      const run = judge(["proddeploy"], ARMED_RUN_STATE, bashEnvelope(command));
+      assert.match(run.stdout, /"permissionDecision":"deny"/);
+      assert.match(run.stdout, /pushes its own oso-run\/\* branch and nothing else/);
+      assert.deepEqual(run.events.map((logged) => logged.event), ["run-branch-push-denied"]);
+    });
+  }
+
+  for (const command of DOLLAR_SPELLINGS_THE_BOUNDARY_STILL_ALLOWS) {
+    test(`${command} still passes the production boundary allowed and uncounted`, () => {
       const run = judge(["proddeploy"], ARMED_RUN_STATE, bashEnvelope(command));
       assert.deepEqual({ exit: run.exit, stdout: run.stdout, stderr: run.stderr }, { exit: 0, stdout: "", stderr: "" });
       assert.deepEqual(run.events, []);
     });
   }
 
-  test("the same payload unquoted still reaches no deploy CLI, because the command word is the wrapper (read from plugin/hooks/block-prod-deploy.sh:48-51)", () => {
-    const run = judge(["proddeploy"], ARMED_RUN_STATE, bashEnvelope("ssh build-host vercel --prod"));
-    assert.deepEqual({ exit: run.exit, stdout: run.stdout, stderr: run.stderr }, { exit: 0, stdout: "", stderr: "" });
-    assert.deepEqual(run.events, []);
-  });
+  for (const command of DOLLAR_SPELLINGS_THE_COMMIT_RAIL_STILL_ALLOWS) {
+    test(`${command} still passes the commit rail allowed and uncounted`, () => {
+      const run = judge(["commit"], ARMED_RED_STATE, bashEnvelope(command));
+      assert.deepEqual({ exit: run.exit, stdout: run.stdout, stderr: run.stderr }, { exit: 0, stdout: "", stderr: "" });
+      assert.deepEqual(run.events, []);
+    });
+  }
+});
+
+describe("core/src/gates: a locale-translated span is past reading, because a catalog picks the word", () => {
+  for (const command of LOCALE_SPELLINGS_THE_BOUNDARY_DENIES_UNREAD) {
+    test(`${command} is denied unread at the production boundary`, () => {
+      const run = judge(["proddeploy"], ARMED_RUN_STATE, bashEnvelope(command));
+      assert.match(run.stdout, /"permissionDecision":"deny"/);
+      assert.match(run.stdout, /past what the production boundary can read/);
+      assert.deepEqual(run.events.map((logged) => logged.event), ["prod-deploy-denied"]);
+    });
+  }
+
+  for (const command of LOCALE_SPELLINGS_THE_COMMIT_RAIL_COUNTS_AS_RESIDUE) {
+    test(`${command} passes the commit rail counted as residue rather than uncounted`, () => {
+      const run = judge(["commit"], ARMED_RED_STATE, bashEnvelope(command));
+      assert.deepEqual({ exit: run.exit, stdout: run.stdout, stderr: run.stderr }, { exit: 0, stdout: "", stderr: "" });
+      assert.deepEqual(run.events.map((logged) => logged.event), ["residue-allowed"]);
+    });
+  }
+});
+
+describe("core/src/gates/proddeploy.ts: a word carrying a command the shell runs later reaches the rail", () => {
+  for (const command of CARRIERS_OF_A_COMMAND_THE_SHELL_RUNS_LATER) {
+    test(`${command} is denied at the production boundary`, () => {
+      const run = judge(["proddeploy"], ARMED_RUN_STATE, bashEnvelope(command));
+      assert.match(run.stdout, /"permissionDecision":"deny"/);
+      assert.match(run.stdout, /a production deploy stays with the operator/);
+      assert.deepEqual(run.events.map((logged) => logged.event), ["prod-deploy-denied"]);
+    });
+  }
+
+  for (const command of CARRIERS_WHOSE_PAYLOAD_IS_PAST_READING) {
+    test(`${command} is denied unread, because its command is nowhere on this line`, () => {
+      const run = judge(["proddeploy"], ARMED_RUN_STATE, bashEnvelope(command));
+      assert.match(run.stdout, /"permissionDecision":"deny"/);
+      assert.match(run.stdout, /past what the production boundary can read/);
+    });
+  }
+
+  for (const command of CARRIERS_HOLDING_NO_COMMAND_AT_ALL) {
+    test(`${command} still passes the production boundary allowed and uncounted`, () => {
+      const run = judge(["proddeploy"], ARMED_RUN_STATE, bashEnvelope(command));
+      assert.deepEqual({ exit: run.exit, stdout: run.stdout, stderr: run.stderr }, { exit: 0, stdout: "", stderr: "" });
+      assert.deepEqual(run.events, []);
+    });
+  }
 });
 
 describe("core/src/gates/proddeploy.ts: a deny pattern grep exits 2 on denies nothing, as the bash gate's own grep does", () => {

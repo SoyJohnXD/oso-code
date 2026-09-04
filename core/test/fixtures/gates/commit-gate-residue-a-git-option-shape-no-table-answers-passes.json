@@ -2,8 +2,6 @@
   "name": "commit gate: residue: a git option shape no table answers passes",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6604,
       "assertion": "assert_allows \"residue: a git option shape no table answers passes\" \\\n  block-commit-until-green.sh \"$(bash_input 'git --super-prefix p/ commit -m x')\""
     }
   ],

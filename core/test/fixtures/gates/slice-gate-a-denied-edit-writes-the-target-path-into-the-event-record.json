@@ -2,8 +2,6 @@
   "name": "slice gate: a denied edit writes the target path into the event record",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5651,
       "assertion": "assert_logged \"a denied edit writes the target path into the event record\" \\\n  '\"event\":\"edit-denied\",\"command\":\"/tmp/x.ts\",\"session\":\"'"
     }
   ],

@@ -2,8 +2,6 @@
   "name": "the TTL sweep prunes an unlocked foreign lane on the next operation",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5561,
       "assertion": "assert_equals \"the TTL sweep preserves a locked foreign lane then prunes it on the next unlocked operation\" \\\n  \"locked=preserved next=pruned\" \\\n  \"locked=$foreign_while_locked next=$([ ! -e \"$foreign_watermark\" ] && printf pruned || printf retained)\""
     }
   ],

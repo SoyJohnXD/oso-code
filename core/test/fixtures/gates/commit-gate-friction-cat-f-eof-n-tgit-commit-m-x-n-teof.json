@@ -2,13 +2,9 @@
   "name": "commit gate, friction: cat > f <<-'EOF'\\n\\tgit commit -m x\\n\\tEOF",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6417,
       "assertion": "assert_every assert_allows friction <<'FRICTION_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6419,
       "assertion": "cat > f <<-'EOF'\\n\\tgit commit -m x\\n\\tEOF"
     }
   ],

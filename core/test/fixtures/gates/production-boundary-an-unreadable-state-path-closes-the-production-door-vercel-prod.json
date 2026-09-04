@@ -2,8 +2,6 @@
   "name": "production boundary: an unreadable state path closes the production door — vercel --prod",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5150,
       "assertion": "assert_equals \"a state file the gate cannot read as state closes the production door and nothing else\" \\\n  \"deny allow allow deny allow\" \"$prod_uncertain_verdicts\""
     }
   ],

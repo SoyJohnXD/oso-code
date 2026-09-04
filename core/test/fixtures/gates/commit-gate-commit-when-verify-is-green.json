@@ -2,8 +2,6 @@
   "name": "commit gate: commit when verify is green",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 2097,
       "assertion": "assert_allows \"commit when verify is green\" block-commit-until-green.sh \"$(bash_input 'git commit -m x')\""
     }
   ],

@@ -2,13 +2,9 @@
   "name": "commit gate, marker in a value position: git commit -m -h",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6491,
       "assertion": "assert_every assert_denies \"marker in a value position\" <<'VALUE_POSITION_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6493,
       "assertion": "git commit -m -h"
     }
   ],

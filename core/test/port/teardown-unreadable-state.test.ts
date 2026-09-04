@@ -7,10 +7,10 @@ import { withHookEnvironment } from "../support/gate-fixture.ts";
 import {
   makeUnreadable,
   OWNER_ONLY_FILE,
-  skipUnlessChmodMakesFilesUnreadable,
   STATE_ROOT_THESE_TESTS_SPELL,
   withStateSandbox,
 } from "../support/state-sandbox.ts";
+import { skipUnlessChmodMakesFilesUnreadable } from "../support/win32-skip-guards.ts";
 
 const ABANDONED_STATE = `${STATE_ROOT_THESE_TESTS_SPELL}/abandoned-unreadable.state`;
 

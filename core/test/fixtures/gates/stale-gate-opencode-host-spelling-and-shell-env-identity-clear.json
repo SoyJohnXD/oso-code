@@ -1,9 +1,9 @@
 {
   "name": "stale gate: OpenCode stale-state guidance uses its own registered slash command and clears the identity its own shell.env published",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 6053, "assertion": "OSO_HOST=opencode OSO_AGENT=aa11bb22cc33dd44 run_hook warn-stale-state.sh \"$(stale_session_input)\"" },
-    { "file": "tests/hooks-test.sh", "line": 6054, "assertion": "assert_equals \"OpenCode stale-state guidance uses its own registered slash command\" \\\n  \"present\" \"$(if printf '%s' \"$hook_stdout\" | grep -F '/oso-plan {change}' >/dev/null; then echo present; else echo missing; fi)\"" },
-    { "file": "tests/hooks-test.sh", "line": 6058, "assertion": "assert_equals \"OpenCode stale-state guidance clears the identity its own shell.env published\" \\\n  \"present\" \"$(if printf '%s' \"$hook_stdout\" | grep -F -- '--session \\\"aa11bb22cc33dd44\\\" clear' >/dev/null; then echo present; else echo missing; fi)\"" }
+    { "assertion": "OSO_HOST=opencode OSO_AGENT=aa11bb22cc33dd44 run_hook warn-stale-state.sh \"$(stale_session_input)\"" },
+    { "assertion": "assert_equals \"OpenCode stale-state guidance uses its own registered slash command\" \\\n  \"present\" \"$(if printf '%s' \"$hook_stdout\" | grep -F '/oso-plan {change}' >/dev/null; then echo present; else echo missing; fi)\"" },
+    { "assertion": "assert_equals \"OpenCode stale-state guidance clears the identity its own shell.env published\" \\\n  \"present\" \"$(if printf '%s' \"$hook_stdout\" | grep -F -- '--session \\\"aa11bb22cc33dd44\\\" clear' >/dev/null; then echo present; else echo missing; fi)\"" }
   ],
   "gate": "stale",
   "argv": [],

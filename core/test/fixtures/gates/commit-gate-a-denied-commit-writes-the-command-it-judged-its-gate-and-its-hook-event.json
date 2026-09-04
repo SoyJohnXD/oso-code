@@ -2,23 +2,15 @@
   "name": "commit gate: a denied commit writes the command it judged, its gate and its hook event",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5658,
       "assertion": "assert_logged \"a denied commit writes the command it judged\" \\\n  '\"event\":\"commit-denied\",\"command\":\"git commit -m x\",\"session\":\"'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5660,
       "assertion": "assert_logged \"every logged event carries the schema version\" '\"schema\":2'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5661,
       "assertion": "assert_logged \"a deny names the gate script that fired\" \\\n  '\"gate\":\"block-commit-until-green.sh\"'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5663,
       "assertion": "assert_logged \"a deny names the hook event it fired on\" '\"hook_event\":\"PreToolUse\"'"
     }
   ],

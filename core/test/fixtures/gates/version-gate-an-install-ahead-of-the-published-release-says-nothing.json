@@ -2,13 +2,9 @@
   "name": "version gate: an install ahead of the published release says nothing",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6245,
       "assertion": "  write_drift_manifest 0.20.0"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6246,
       "assertion": "  assert_drift_silent \"an install ahead of the published release says nothing\""
     }
   ],

@@ -2,8 +2,6 @@
   "name": "commit gate: a login-shell cluster is counted even with no git in it",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6656,
       "assertion": "assert_allows_counted \"a login-shell cluster is counted even with no git in it\" \\\n  block-commit-until-green.sh \"$(bash_input 'bash -lc \\\"npm test\\\"')\""
     }
   ],

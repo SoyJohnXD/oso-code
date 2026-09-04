@@ -11,20 +11,13 @@ import {
   withStateSandbox,
   type StateSandbox,
 } from "../support/state-sandbox.ts";
+import { skipUnlessChmodDeniesDirectoryWrites } from "../support/win32-skip-guards.ts";
 
 const READ_EXECUTE_ONLY_DIRECTORY = 0o555;
 const OWNER_ONLY_DIRECTORY = 0o700;
 
 function stateRootPath(sandbox: StateSandbox): string {
   return path.join(sandbox.home, ...STATE_ROOT_THESE_TESTS_SPELL.split("/"));
-}
-
-function skipUnlessChmodDeniesDirectoryWrites(): false | string {
-  if (process.platform !== "win32") return false;
-  return (
-    "win32 ignores the POSIX write bit chmod clears on a directory, so a directory chmod'd 555 here still " +
-    "accepts a rename into it"
-  );
 }
 
 describe(

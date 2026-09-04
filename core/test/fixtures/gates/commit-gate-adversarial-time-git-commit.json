@@ -2,13 +2,9 @@
   "name": "commit gate, adversarial: time git commit",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6380,
       "assertion": "assert_every assert_denies adversarial <<'ADVERSARIAL_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6389,
       "assertion": "time git commit"
     }
   ],

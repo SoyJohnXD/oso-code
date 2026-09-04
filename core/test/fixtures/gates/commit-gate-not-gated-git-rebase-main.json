@@ -2,13 +2,9 @@
   "name": "commit gate, not gated: git rebase main",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6521,
       "assertion": "assert_every assert_allows \"not gated\" <<'NOT_GATED_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6524,
       "assertion": "git rebase main"
     }
   ],

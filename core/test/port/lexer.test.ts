@@ -167,36 +167,226 @@ const LEXER_CASES: readonly LexerCase[] = [
   },
 ];
 
-const PINNED_HOLE_CASES: readonly LexerCase[] = [
+const CLOSED_DIVERGENCE_CASES: readonly LexerCase[] = [
   {
-    reads: "script -qc, whose payload no token's basename answers",
-    readFrom: "tests/hooks-test.sh:795",
+    reads: "script's -c payload, whose command no token's basename answered",
+    readFrom: "plugin/hooks/lexer.sh:121-144, extended to script",
     line: "script -qc 'vercel --prod' /dev/null",
-    records: [">script", ".-qc", ".vercel --prod", "./dev/null"],
+    records: [">script", ".-qc", ".vercel --prod", "./dev/null", UNREAD_PAYLOAD_MARKER, ">vercel", ".--prod"],
   },
   {
-    reads: "ssh, whose payload no token's basename answers",
-    readFrom: "tests/hooks-test.sh:795",
+    reads: "the operands ssh hands the remote shell after the host",
+    readFrom: "plugin/hooks/lexer.sh:112-115, the shape eval's payload already had",
     line: "ssh build-host 'vercel --prod'",
-    records: [">ssh", ".build-host", ".vercel --prod"],
+    records: [">ssh", ".build-host", ".vercel --prod", ">vercel", ".--prod"],
   },
   {
-    reads: "tmux new-session, whose payload no token's basename answers",
-    readFrom: "tests/hooks-test.sh:795",
+    reads: "the same operands unquoted, which ssh joins into one remote command line",
+    readFrom: "plugin/hooks/lexer.sh:112-115, the shape eval's payload already had",
+    line: "ssh build-host vercel --prod",
+    records: [">ssh", ".build-host", ".vercel", ".--prod", ">vercel", ".--prod"],
+  },
+  {
+    reads: "tmux's shell-command operand, with the option in front of it left unresolved",
+    readFrom: "plugin/hooks/lexer.sh:86-102, the rule wrapper prefixes already carried",
     line: "tmux new-session -d 'vercel --prod'",
-    records: [">tmux", ".new-session", ".-d", ".vercel --prod"],
+    records: [
+      ">tmux", ".new-session", ".-d", ".vercel --prod", UNREAD_PAYLOAD_MARKER, ">vercel", ".--prod",
+    ],
   },
   {
-    reads: "an xargs replace-string, whose brace ends the command and leaves a clean word",
-    readFrom: "tests/hooks-test.sh:5140",
+    reads: "an xargs replace-string as one word, so the line no longer splits at the brace",
+    readFrom: "plugin/hooks/lexer.sh:32,52",
     line: "echo --prod | xargs -I{} vercel {}",
-    records: [">echo", ".--prod", ">vercel"],
+    records: [">echo", ".--prod", ">vercel", ".{}", `<${UNREAD_PAYLOAD_MARKER}`, UNREAD_PAYLOAD_MARKER],
+  },
+  {
+    reads: "an ANSI-C quoted option as the option the shell hands the deploy CLI",
+    readFrom: "bash(1) QUOTING: ANSI-C Quoting",
+    line: "vercel $'--prod'",
+    records: [">vercel", ".--prod"],
+  },
+  {
+    reads: "an ANSI-C quoted git verb as that verb",
+    readFrom: "bash(1) QUOTING: ANSI-C Quoting",
+    line: "git $'commit' -m x",
+    records: [">git", ".commit", ".-m", ".x"],
+  },
+  {
+    reads: "an ANSI-C quoted git verb spelled in hex as that verb",
+    readFrom: "bash(1) QUOTING: ANSI-C Quoting",
+    line: "git $'\\x70\\x75\\x73\\x68' origin main",
+    records: [">git", ".push", ".origin", ".main"],
+  },
+  {
+    reads: "a locale-translated option as the untranslated option, and the span itself as unread",
+    readFrom: "bash(1) QUOTING: Locale-Specific Translation",
+    line: 'vercel $"--prod"',
+    records: [">vercel", ".--prod", UNREAD_PAYLOAD_MARKER],
+  },
+  {
+    reads: "a locale-translated git verb the same way",
+    readFrom: "bash(1) QUOTING: Locale-Specific Translation",
+    line: 'git $"commit" -m x',
+    records: [">git", ".commit", ".-m", ".x", UNREAD_PAYLOAD_MARKER],
+  },
+  {
+    reads: "a locale-translated git verb inside a wrapper's payload the same way too",
+    readFrom: "bash(1) QUOTING: Locale-Specific Translation",
+    line: 'ssh build-host \'git $"push" origin main\'',
+    records: [
+      ">ssh", ".build-host", '.git $"push" origin main', ">git", ".push", ".origin", ".main",
+      UNREAD_PAYLOAD_MARKER,
+    ],
+  },
+  {
+    reads: "the two dollar-quoting forms concatenated as the one word the shell builds from them",
+    readFrom: "bash(1) QUOTING: ANSI-C Quoting and Locale-Specific Translation",
+    line: 'vercel $\'--pro\'$"d"',
+    records: [">vercel", ".--prod", UNREAD_PAYLOAD_MARKER],
+  },
+  {
+    reads: "a trap's action as the command the shell runs when the signal fires",
+    readFrom: "bash(1) SHELL BUILTIN COMMANDS: trap",
+    line: "trap 'vercel --prod' EXIT",
+    records: [">trap", ".vercel --prod", ".EXIT", ">vercel", ".--prod"],
+  },
+  {
+    reads: "a co-process as the command the shell runs asynchronously",
+    readFrom: "bash(1) SHELL GRAMMAR: Coprocesses",
+    line: "coproc vercel --prod",
+    records: [">vercel", ".--prod"],
+  },
+  {
+    reads: "a named co-process's compound command as the commands inside it",
+    readFrom: "bash(1) SHELL GRAMMAR: Coprocesses",
+    line: "coproc NAME { vercel --prod ; }",
+    records: [">NAME", ">vercel", ".--prod"],
+  },
+  {
+    reads: "a mapfile callback as the command the shell runs per batch of lines",
+    readFrom: "bash(1) SHELL BUILTIN COMMANDS: mapfile -C",
+    line: "mapfile -C 'vercel --prod' -c 1 rows",
+    records: [">mapfile", ".-C", ".vercel --prod", ".-c", ".1", ".rows", ">vercel", ".--prod"],
+  },
+  {
+    reads: "a completion callback as the command the shell runs to complete the word",
+    readFrom: "bash(1) SHELL BUILTIN COMMANDS: compgen -C",
+    line: "compgen -C 'vercel --prod' foo",
+    records: [">compgen", ".-C", ".vercel --prod", ".foo", ">vercel", ".--prod"],
+  },
+  {
+    reads: "an alias definition as a payload no later line of this command can resolve",
+    readFrom: "bash(1) ALIASES",
+    line: "alias deploy='vercel --prod'",
+    records: [">alias", ".deploy=vercel --prod", UNREAD_PAYLOAD_MARKER],
+  },
+  {
+    reads: "fc as a payload it replays from a history no gate can read",
+    readFrom: "bash(1) SHELL BUILTIN COMMANDS: fc",
+    line: "fc -s",
+    records: [">fc", ".-s", UNREAD_PAYLOAD_MARKER],
+  },
+  {
+    reads: "BASH_ENV as a file the shell sources before the command, which the gate cannot read",
+    readFrom: "bash(1) INVOCATION: Invoked non-interactively",
+    line: "BASH_ENV=./boot.sh bash -c :",
+    records: [">bash", ".-c", ".:", UNREAD_PAYLOAD_MARKER, ">:"],
   },
 ];
 
+const KEPT_SHAPES: readonly LexerCase[] = [
+  {
+    reads: "a brace group as the end of one command and the start of the next",
+    readFrom: "plugin/hooks/lexer.sh:52",
+    line: "{ git commit ; }",
+    records: [">git", ".commit"],
+  },
+  {
+    reads: "a brace group behind a reserved word as the same",
+    readFrom: "plugin/hooks/lexer.sh:52,371-384",
+    line: "time { git commit ; }",
+    records: [">git", ".commit"],
+  },
+  {
+    reads: "a brace inside a word as an ordinary character",
+    readFrom: "bash(1) SHELL GRAMMAR: Compound Commands",
+    line: "vercel deploy{a}b",
+    records: [">vercel", ".deploy{a}b"],
+  },
+  {
+    reads: "a lone brace in argument position as an ordinary word",
+    readFrom: "bash(1) SHELL GRAMMAR: Compound Commands",
+    line: "echo { }",
+    records: [">echo", ".{", ".}"],
+  },
+  {
+    reads: "a dollar-quote inside double quotes as the literal text it is",
+    readFrom: "bash(1) QUOTING: ANSI-C Quoting",
+    line: "vercel \"$'--prod'\"",
+    records: [">vercel", ".$'--prod'"],
+  },
+  {
+    reads: "an escaped dollar in front of a quote as a literal dollar",
+    readFrom: "bash(1) QUOTING",
+    line: "vercel \\$'--prod'",
+    records: [">vercel", ".$--prod"],
+  },
+  {
+    reads: "a dollar inside double quotes as a literal dollar, translating nothing",
+    readFrom: "bash(1) QUOTING: Locale-Specific Translation",
+    line: 'vercel "$"--prod""',
+    records: [">vercel", ".$--prod"],
+  },
+  {
+    reads: "an escaped dollar in front of a double quote as a literal dollar too",
+    readFrom: "bash(1) QUOTING",
+    line: 'vercel \\$"--prod"',
+    records: [">vercel", ".$--prod"],
+  },
+  {
+    reads: "a trap that resets rather than sets one as no nested command",
+    readFrom: "bash(1) SHELL BUILTIN COMMANDS: trap",
+    line: "trap - EXIT",
+    records: [">trap", ".-", ".EXIT"],
+  },
+  {
+    reads: "a trap that only lists signals as no nested command",
+    readFrom: "bash(1) SHELL BUILTIN COMMANDS: trap",
+    line: "trap -l",
+    records: [">trap", ".-l"],
+  },
+  {
+    reads: "a mapfile with no callback as no nested command",
+    readFrom: "bash(1) SHELL BUILTIN COMMANDS: mapfile",
+    line: "mapfile -t rows",
+    records: [">mapfile", ".-t", ".rows"],
+  },
+  {
+    reads: "an alias that only prints as no unread payload",
+    readFrom: "bash(1) ALIASES",
+    line: "alias",
+    records: [">alias"],
+  },
+  {
+    reads: "a wrapper carrying no command at all as no nested command",
+    readFrom: "plugin/hooks/lexer.sh:146-159",
+    line: "ssh build-host",
+    records: [">ssh", ".build-host"],
+  },
+  {
+    reads: "a multiplexer subcommand that runs nothing as no nested command",
+    readFrom: "plugin/hooks/lexer.sh:146-159",
+    line: "tmux ls",
+    records: [">tmux", ".ls"],
+  },
+];
+
+const ALL_CASES = [...LEXER_CASES, ...CLOSED_DIVERGENCE_CASES, ...KEPT_SHAPES];
+
 provedSomething(
-  `at least one of ${LEXER_CASES.length + PINNED_HOLE_CASES.length} lexer port cases is exercised`,
-  LEXER_CASES.length + PINNED_HOLE_CASES.length > 0,
+  `at least one of ${ALL_CASES.length} lexer port cases is exercised`,
+  ALL_CASES.length > 0,
   "the lexer port suite carries no case, so it proved nothing about plugin/hooks/lexer.sh",
 );
 
@@ -208,21 +398,20 @@ describe("core/src/shell/lexer.ts: port tests read from plugin/hooks/lexer.sh, n
   }
 });
 
-describe("core/src/shell/lexer.ts: the two PINNED HOLES, ported record for record and kept as holes", () => {
-  for (const { reads, readFrom, line, records } of PINNED_HOLE_CASES) {
-    test(`it still cannot see the payload inside ${reads} (pinned at ${readFrom})`, () => {
+describe("core/src/shell/lexer.ts: the five divergences and the locale sibling of their class, closed where the shell executes", () => {
+  for (const { reads, readFrom, line, records } of CLOSED_DIVERGENCE_CASES) {
+    test(`it now reads ${reads} (read from ${readFrom})`, () => {
       assert.deepEqual(rendered(lexShellCommands(line)), records);
     });
   }
+});
 
-  test("the same wrapper with its payload unquoted leaves the verb a token of its own (pinned at tests/hooks-test.sh:802)", () => {
-    assert.deepEqual(rendered(lexShellCommands("ssh build-host vercel --prod")), [
-      ">ssh",
-      ".build-host",
-      ".vercel",
-      ".--prod",
-    ]);
-  });
+describe("core/src/shell/lexer.ts: the shapes those closures must leave where they were", () => {
+  for (const { reads, readFrom, line, records } of KEPT_SHAPES) {
+    test(`it still reads ${reads} (read from ${readFrom})`, () => {
+      assert.deepEqual(rendered(lexShellCommands(line)), records);
+    });
+  }
 });
 
 function rendered(records: readonly LexRecord[]): string[] {

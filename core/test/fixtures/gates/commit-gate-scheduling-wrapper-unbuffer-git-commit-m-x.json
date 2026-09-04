@@ -2,13 +2,9 @@
   "name": "commit gate, scheduling wrapper: unbuffer git commit -m x",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6659,
       "assertion": "assert_every assert_denies \"scheduling wrapper\" <<'WRAPPER_NAME_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6663,
       "assertion": "unbuffer git commit -m x"
     }
   ],

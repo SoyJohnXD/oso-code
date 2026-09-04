@@ -1,9 +1,9 @@
 {
   "name": "planprompt gate: cancellation with no pending document is blocked and manufactures no state",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1801, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'CANCEL OSO PLAN')\"" },
-    { "file": "tests/hooks-test.sh", "line": 1793, "assertion": "assert_after_hook \"cancellation with no pending document is blocked\" \\\n  hook_returned_block" },
-    { "file": "tests/hooks-test.sh", "line": 1795, "assertion": "assert_equals \"a no-pending cancellation does not manufacture state\" \\\n  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"" }
+    { "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'CANCEL OSO PLAN')\"" },
+    { "assertion": "assert_after_hook \"cancellation with no pending document is blocked\" \\\n  hook_returned_block" },
+    { "assertion": "assert_equals \"a no-pending cancellation does not manufacture state\" \\\n  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"" }
   ],
   "gate": "planprompt",
   "argv": [],

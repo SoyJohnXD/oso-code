@@ -32,7 +32,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+        id: checkout
       - name: Node 22, the floor the committed bundles run on
+        id: node-toolchain
         uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -42,29 +46,25 @@ jobs:
         run: |
           claude --version
           claude plugin validate --strict plugin
-      - name: Hook regression suite on bash 3.2, which carries neither git nor jq
-        run: docker run --rm -e OSO_NIGHTLY -v "$PWD":/repo -w /repo bash:3.2 bash tests/hooks-test.sh
-      - name: Verify report reaches its summary — a fixture HOME fails every check but the two install-independent ones, so failed=9
-        env:
-          OSO_VERIFY_SKIP_SLOW: 1
+      - name: Dependencies installed — the certify lane's own prerequisite, never the lexer differential's
+        id: dependency-install
+        run: npm ci --no-audit --no-fund
+      - name: Lexer differential re-read from the real shell, where drift between bash and the committed corpus reds this build, on its own step so its red never shadows the certify lane
         run: |
-          report="$(mktemp)"
-          HOME="$(mktemp -d)" bash bootstrap/verify.sh > "$report" 2>&1 || true
-          cat "$report"
-          grep -q '^passed:' "$report"
-          printf '%s' "$VERIFY_CHECK_NAMES" | LC_ALL=C sort > "$report.pinned"
-          bash tools/verify-check-names.sh "$report" > "$report.reached"
-          diff "$report.pinned" "$report.reached"
-          failed="$(sed -n 's/^passed: [0-9]*, failed: \([0-9]*\)$/\1/p' "$report")"
-          [ "$failed" = "9" ]
-      - name: Codex verify report reaches its summary — no codex CLI installed, only the hardcoded mandated tool list agreeing with tools/hook-gates.txt in both directions passes, so failed=14
+          cd core
+          node --experimental-strip-types --test test/shell/lexer-differential.test.ts
+      - name: Engram release provisioning against the real GitHub release, checksum-verified end to end — the PR gate only exercises the stub transport
+        run: |
+          cd core
+          node --experimental-strip-types --test test/install/engram-nightly.test.ts
+      - name: Codex verify report reaches its summary — no codex CLI installed, only the hardcoded mandated tool list agreeing with the routes table in both directions passes, so failed=14
         env:
           OSO_VERIFY_SKIP_SMOKE: 1
         run: |
           report="$(mktemp)"
           fixture_home="$(mktemp -d)"
           HOME="$fixture_home" CODEX_HOME="$fixture_home/.codex" \
-            bash bootstrap/verify-codex.sh > "$report" 2>&1 || true
+            node bootstrap/oso.js verify --host codex > "$report" 2>&1 || true
           cat "$report"
           grep -q '^passed:' "$report"
           failed="$(sed -n 's/^passed: [0-9]*, failed: \([0-9]*\)$/\1/p' "$report")"
@@ -77,33 +77,43 @@ jobs:
           npm ci --no-audit --no-fund
           cd ..
           report="$(mktemp)"
-          HOME="$(mktemp -d)" bash bootstrap/verify-opencode.sh > "$report" 2>&1 || true
+          HOME="$(mktemp -d)" node bootstrap/oso.js verify --host opencode > "$report" 2>&1 || true
           cat "$report"
           grep -q '^passed:' "$report"
           passed="$(sed -n 's/^passed: \([0-9]*\), failed: [0-9]*$/\1/p' "$report")"
           failed="$(sed -n 's/^passed: [0-9]*, failed: \([0-9]*\)$/\1/p' "$report")"
           [ "$passed" = "16" ]
           [ "$failed" = "0" ]
-      - name: Pinned OpenCode binary the contract and behavior bars introspect
+      - name: Pinned OpenCode binary the certify suites introspect
+        id: pinned-opencode-binary
+        if: always() && steps.checkout.outcome == 'success' && steps.node-toolchain.outcome == 'success' && steps.dependency-install.outcome == 'success'
         run: |
-          pin="$(sed -n 's/^SUPPORTED_OPENCODE_VERSION=//p' bootstrap/install-opencode.sh | head -1)"
+          pin="$(sed -n 's/^export const SUPPORTED_OPENCODE_VERSION = "\(.*\)";$/\1/p' core/src/install/pins.ts)"
           mkdir -p "$RUNNER_TEMP/opencode-pin"
           cd "$RUNNER_TEMP/opencode-pin"
           npm pack "opencode-linux-x64@$pin"
           tar -xf "opencode-linux-x64-$pin.tgz"
           echo "OSO_PINNED_OPENCODE_BIN=$RUNNER_TEMP/opencode-pin/package/bin/opencode" >> "$GITHUB_ENV"
-      - name: OpenCode contract bar against the pinned binary
+      - name: Certify suites against the pinned OpenCode binary, and Codex only if this runner carries credentials
+        if: always() && steps.checkout.outcome == 'success' && steps.node-toolchain.outcome == 'success' && steps.dependency-install.outcome == 'success' && steps.pinned-opencode-binary.outcome == 'success'
         env:
+          OSO_CERTIFY: 1
           OSO_CONTRACT_BAR_OPENCODE_BIN: ${{ env.OSO_PINNED_OPENCODE_BIN }}
-        run: bash tests/opencode-contract-bar.sh
-      - name: OpenCode behavior bar, where a red assertion fails the tree and only its own not-run lane is tolerated
-        env:
           OSO_BEHAVIOR_BAR_OPENCODE_BIN: ${{ env.OSO_PINNED_OPENCODE_BIN }}
+          OSO_WAVE_SMOKE_OPENCODE_BIN: ${{ env.OSO_PINNED_OPENCODE_BIN }}
         run: |
-          status=0
-          bash tests/opencode-behavior-bar.sh || status=$?
-          [ "$status" = 3 ] || exit "$status"
-          echo "::warning::the behavior bar drove no gated tool call this run, so it asserted nothing about the boundaries; every check it did reach was green"
+          cd core
+          mkdir -p "$RUNNER_TEMP/certify-tap"
+          overall=0
+          for suite in opencode-contract-bar opencode-behavior-bar opencode-wave-runner-smoke codex-authenticated-smoke; do
+            node --experimental-strip-types --test --test-reporter=tap "test/certify/${suite}.test.ts" \
+              > "$RUNNER_TEMP/certify-tap/${suite}.tap" 2>&1 || overall=1
+            cat "$RUNNER_TEMP/certify-tap/${suite}.tap"
+          done
+          exit "$overall"
+      - name: Certify summary — every not-run line per host, and a warning where a host drove zero rows
+        if: always()
+        run: node core/scripts/certify-summary.mjs "$RUNNER_TEMP/certify-tap"
       - name: Open an issue for this failed run
         if: failure()
         env:
@@ -117,6 +127,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Node 22, the floor install.ps1 enforces
         uses: actions/setup-node@v4
         with:
@@ -128,27 +140,20 @@ jobs:
         run: |
           claude --version
           claude plugin validate --strict plugin
-      - name: Provision jq for the suite
+      - name: Engram release provisioning against the real GitHub release, checksum-verified end to end — the PR gate only exercises the stub transport
         shell: bash
         run: |
-          command -v jq >/dev/null 2>&1 || choco install jq --no-progress -y
-          export PATH="/c/ProgramData/chocolatey/bin:$PATH"
-          echo 'C:\ProgramData\chocolatey\bin' >> "$GITHUB_PATH"
-          jq --version
-      - name: Hook regression suite
-        shell: bash
-        run: |
-          jq --version
-          bash tests/hooks-test.sh
+          npm ci --no-audit --no-fund
+          cd core
+          node --experimental-strip-types --test test/install/engram-nightly.test.ts
       - name: Shell script syntax
         shell: bash
         run: |
           bash -n bootstrap/*.sh
-          bash -n bootstrap/lib/*.sh
           bash -n tools/*.sh
           bash -n plugin/hooks/*.sh
           bash -n plugin/git-hooks/pre-commit
-          bash -n tests/*.sh tests/fixtures/*.sh
+          bash -n tests/fixtures/*.sh
       - name: PowerShell script syntax
         shell: powershell
         run: |
@@ -164,21 +169,6 @@ jobs:
       - name: Bootstrapper (CI-safe mode)
         shell: powershell
         run: .\bootstrap\install.ps1 -CiMode -Yes -ReplaceClaudeMd -NoImpeccable -NoGitHook
-      - name: Verify report reaches its summary
-        shell: bash
-        env:
-          OSO_VERIFY_SKIP_SLOW: 1
-        run: |
-          report="$(mktemp)"
-          HOME="$(mktemp -d)" bash bootstrap/verify.sh > "$report" 2>&1 || true
-          cat "$report"
-          grep -q '^passed:' "$report"
-          printf '%s%s' "$VERIFY_CHECK_NAMES" "$VERIFY_CHECK_NAMES_WINDOWS" |
-            LC_ALL=C sort > "$report.pinned"
-          bash tools/verify-check-names.sh "$report" > "$report.reached"
-          diff "$report.pinned" "$report.reached"
-          failed="$(sed -n 's/^passed: [0-9]*, failed: \([0-9]*\)$/\1/p' "$report")"
-          [ "$failed" = "11" ]
       - name: Windows verifier entry point (verify.bat)
         shell: cmd
         env:

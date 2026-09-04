@@ -2,8 +2,6 @@
   "name": "a set escapes quotes and backslashes in the event log",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5800,
       "assertion": "assert_logged \"quotes and backslashes are escaped in the event log\" -F '\"event\":\"set:weird=a\\\"b\\\\c\"'"
     }
   ],

@@ -2,8 +2,6 @@
   "name": "commit gate: no false positive: bash -c git status",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 2120,
       "assertion": "assert_allows \"no false positive: bash -c git status\" block-commit-until-green.sh \"$(bash_input 'bash -c '\\''git status'\\''')\""
     }
   ],

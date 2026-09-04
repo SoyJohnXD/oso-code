@@ -2,8 +2,6 @@
   "name": "commit gate: bypass: piped into xargs git commit",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 2119,
       "assertion": "assert_denies \"bypass: piped into xargs git commit\" block-commit-until-green.sh \"$(bash_input 'git diff --name-only | xargs git commit -m x')\""
     }
   ],

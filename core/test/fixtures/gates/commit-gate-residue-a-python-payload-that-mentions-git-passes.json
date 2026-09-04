@@ -2,8 +2,6 @@
   "name": "commit gate: residue: a python payload that mentions git passes",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6583,
       "assertion": "assert_allows \"residue: a python payload that mentions git passes\" \\\n  block-commit-until-green.sh \"$(bash_input 'python3 -c \\\"import os; os.system('\\''git commit'\\'')\\\"')\""
     }
   ],

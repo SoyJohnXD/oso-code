@@ -2,8 +2,6 @@
   "name": "commit gate: bypass: git -C <repo> commit",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 2103,
       "assertion": "assert_denies \"bypass: git -C <repo> commit\"    block-commit-until-green.sh \"$(bash_input 'git -C /repo commit -m x')\""
     }
   ],

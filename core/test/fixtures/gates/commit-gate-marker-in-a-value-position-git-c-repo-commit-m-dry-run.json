@@ -2,13 +2,9 @@
   "name": "commit gate, marker in a value position: git -C /repo commit -m --dry-run",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6491,
       "assertion": "assert_every assert_denies \"marker in a value position\" <<'VALUE_POSITION_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6497,
       "assertion": "git -C /repo commit -m --dry-run"
     }
   ],

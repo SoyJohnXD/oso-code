@@ -1,7 +1,7 @@
 {
   "name": "stale gate: SessionStart says nothing when the only state is this session's",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 6074, "assertion": "assert_allows \"SessionStart says nothing when the only state is this session's\" \\\n  warn-stale-state.sh \"$(stale_session_input)\"" }
+    { "assertion": "assert_allows \"SessionStart says nothing when the only state is this session's\" \\\n  warn-stale-state.sh \"$(stale_session_input)\"" }
   ],
   "gate": "stale",
   "argv": [],

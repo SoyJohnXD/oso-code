@@ -2,8 +2,6 @@
   "name": "set reclaims a stale lock",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 4545,
       "assertion": "assert_equals \"stale lock is reclaimed\" yes \"$(oso-state --session \"$SESSION\" get stale_ok)\""
     }
   ],

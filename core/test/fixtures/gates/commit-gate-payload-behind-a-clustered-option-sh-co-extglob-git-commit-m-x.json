@@ -2,13 +2,9 @@
   "name": "commit gate, payload behind a clustered option: sh -cO extglob \\\"git commit -m x\\\"",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6646,
       "assertion": "assert_every assert_allows_counted \"payload behind a clustered option\" <<'CLUSTERED_OPTION_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6651,
       "assertion": "sh -cO extglob \\\"git commit -m x\\\""
     }
   ],

@@ -2,18 +2,12 @@
   "name": "journal keeps a milestone past the event cap byte-intact",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 4566,
       "assertion": "assert_equals \"the journaled milestone runs past the event log's 120-byte command head\" \\\n  \"past\" \"$([ \"${#journaled_text}\" -gt 200 ] && echo past || echo short)\""
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 4568,
       "assertion": "assert_equals \"a milestone longer than the event cap is journaled byte-intact, never truncated\" \\\n  \"$long_milestone\" \"$journaled_text\""
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 4603,
       "assertion": "assert_equals \"a directory git cannot name journals under the same fallback its state file takes\" \\\n  \"no repository names this directory>\" \\\n  \"$(journal_texts_in \"$STATE_DIR/runs/$(state_key_of \"$JOURNAL_PLAIN\")/run.log\")\""
     }
   ],

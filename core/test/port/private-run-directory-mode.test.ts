@@ -13,6 +13,7 @@ import {
   withStateSandbox,
   type StateSandbox,
 } from "../support/state-sandbox.ts";
+import { skipUnlessMkdirHonoursOwnerOnlyMode } from "../support/win32-skip-guards.ts";
 
 const OWNER_ONLY_DIRECTORY = 0o700;
 
@@ -46,14 +47,6 @@ function pushedRunDirectoryModes(autoWait: string): { runs: number; repository: 
     withHookEnvironment({ HOME: sandbox.home }, () => runGate(["autocontinue"], spawnedEnvelope(sandbox.expandJson(STOP_PAYLOAD), process.env)));
     return { runs: modeOf(sandbox, RUNS_DIR), repository: modeOf(sandbox, REPOSITORY_RUNS_DIR) };
   });
-}
-
-function skipUnlessMkdirHonoursOwnerOnlyMode(): false | string {
-  if (process.platform !== "win32") return false;
-  return (
-    "win32 synthesises its own mode bits from FILE_ATTRIBUTE_READONLY and ignores mkdirSync's mode, so a " +
-    "directory created 0o700 here reads back 0o666/0o777 (C2-D9, docs/rewrite/ts-core-roadmap.md:234)"
-  );
 }
 
 describe(

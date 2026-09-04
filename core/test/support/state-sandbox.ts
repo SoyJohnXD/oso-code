@@ -136,11 +136,6 @@ export function skipUnlessGitSeedsRepositories(): false | string {
   return "git is absent here, so a worktree teardown has no registry to read";
 }
 
-export function skipUnlessChmodMakesFilesUnreadable(): false | string {
-  if (process.platform !== "win32") return false;
-  return "win32 ignores the POSIX read bit chmod clears, so a file chmod'd unreadable here still reads back readable";
-}
-
 export function makeUnreadable(sandbox: StateSandbox, relativePath: string): string {
   const target = path.join(sandbox.home, sandbox.expand(relativePath));
   chmodSync(target, UNREADABLE);
@@ -168,11 +163,16 @@ export class StateSandbox {
 
   constructor(workspace: string) {
     this.root = mkdtempSync(path.join(tmpdir(), "oso-state-"));
-    this.home = path.join(this.root, "home");
-    this.cwd = path.join(this.root, workspace);
-    mkdirSync(this.home, { recursive: true });
-    mkdirSync(this.cwd, { recursive: true });
-    this.repositoryKey = sha256Hex(this.gitCommonDirectory() || this.cwd);
+    try {
+      this.home = path.join(this.root, "home");
+      this.cwd = path.join(this.root, workspace);
+      mkdirSync(this.home, { recursive: true });
+      mkdirSync(this.cwd, { recursive: true });
+      this.repositoryKey = sha256Hex(this.gitCommonDirectory() || this.cwd);
+    } catch (error) {
+      rmSync(this.root, { recursive: true, force: true });
+      throw error;
+    }
   }
 
   expand(text: string): string {

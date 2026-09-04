@@ -1,0 +1,21 @@
+{
+  "name": "close-slice on the happy path writes exactly the three keys closeSlice() names and logs one event",
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=5\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "argv": ["--session", "test-session", "close-slice", "5"],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": {
+        "contains": ["active_slice=none", "verify_green=true", "auto_wait=none", "session=test-session"]
+      }
+    },
+    "events_appended": [
+      { "event": "close-slice", "command": "5", "session": "{present}" }
+    ]
+  }
+}

@@ -52,7 +52,7 @@ const LOCK_RETRY_MS = 50;
 const EVENTS_SCHEMA_VERSION = 2;
 const COMMAND_HEAD_BYTES = 120;
 
-export function sha256Hex(value: string): string {
+export function sha256Hex(value: string | NodeJS.ArrayBufferView): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
@@ -78,6 +78,10 @@ export function journalFileFor(cwd: string): string {
   const autoChange = readValue(stateFile, "auto_change") ?? "";
   const change = CHANGE_SLUG_PATTERN.test(autoChange) ? autoChange : "run";
   return path.join(stateRootDirectory(), "runs", repositoryId, `${change}.log`);
+}
+
+export function denyPatternsFileFor(stateFile: string): string {
+  return path.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
 }
 
 export function isNameToken(value: string): boolean {
@@ -168,6 +172,21 @@ export function isReadableRegularFile(target: string): boolean {
   if (!isRegularNonSymlinkFile(target)) return false;
   try {
     accessSync(target, constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function filesHoldTheSameBytes(one: string, other: string): boolean {
+  if (!isReadableRegularFile(one) || !isReadableRegularFile(other)) return false;
+  return readFileSync(one).equals(readFileSync(other));
+}
+
+export function isExecutableRegularFile(target: string): boolean {
+  if (!isRegularNonSymlinkFile(target)) return false;
+  try {
+    accessSync(target, constants.X_OK);
     return true;
   } catch {
     return false;
@@ -350,7 +369,7 @@ export function sleepSync(milliseconds: number): void {
   Atomics.wait(signal, 0, 0, milliseconds);
 }
 
-function withOwnerOnlyUmask<T>(run: () => T): T {
+export function withOwnerOnlyUmask<T>(run: () => T): T {
   const previous = process.umask(0o077);
   try {
     return run();

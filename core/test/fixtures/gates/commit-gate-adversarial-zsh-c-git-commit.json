@@ -2,13 +2,9 @@
   "name": "commit gate, adversarial: zsh -c \\\"git commit\\\"",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6380,
       "assertion": "assert_every assert_denies adversarial <<'ADVERSARIAL_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6400,
       "assertion": "zsh -c \\\"git commit\\\""
     }
   ],

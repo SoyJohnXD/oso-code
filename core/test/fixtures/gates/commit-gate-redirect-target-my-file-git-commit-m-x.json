@@ -2,13 +2,9 @@
   "name": "commit gate, redirect target: >\\\"my file\\\" git commit -m x",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6530,
       "assertion": "assert_every assert_denies \"redirect target\" <<'REDIRECT_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6545,
       "assertion": ">\\\"my file\\\" git commit -m x"
     }
   ],

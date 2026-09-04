@@ -1,0 +1,3 @@
+Codex agent roles cannot set a working directory. Run every command explicitly in the handed WORKTREE PATH and inspect `git -C <worktree path> diff <the named ref>`. Never substitute the current process directory.
+
+`HANDOFF SLICE` and `HANDOFF ATTEMPT` are not on the closed list above: they ride beside the assignment as the transport envelope this paragraph answers. When the assignment carries them, put `oso-handoff: v=1 slice=<ID> attempt=<N>` as the first line of the final message, substituting the exact values. It is a transport envelope outside the report shape above; the report follows unchanged and its terminal line stays last. Never put a verdict in the envelope.

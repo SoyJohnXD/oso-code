@@ -2,18 +2,12 @@
   "name": "unknown-tool gate: an unknown Codex tool is denied while oso-code state is armed",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 1235,
       "assertion": "assert_after_hook \"an unknown Codex tool is denied while oso-code state is armed\" \\\n  hook_returned_deny"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 1237,
       "assertion": "assert_after_hook \"the Codex catch-all's deny names Codex's own allowlist\" \\\n  hook_deny_names_allowlist_host Codex"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5644,
       "assertion": "assert_logged \"a denied tool call writes the tool name into the event record\" \\\n  '\"event\":\"unknown-tool-denied\",\"command\":\"FutureWriter\",\"session\":\"'"
     }
   ],

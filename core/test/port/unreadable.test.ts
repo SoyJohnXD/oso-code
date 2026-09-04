@@ -5,12 +5,12 @@ import {
   makeUnreadable,
   OWNER_ONLY_FILE,
   provedSomeSubjectIsMeasurable,
-  skipUnlessChmodMakesFilesUnreadable,
   skipUnlessSpawnable,
   STATE_FILE,
   STATE_SUBJECTS,
   withStateSandbox,
 } from "../support/state-sandbox.ts";
+import { skipUnlessChmodMakesFilesUnreadable } from "../support/win32-skip-guards.ts";
 
 const SESSION = "unreadable-state-port-case";
 const PREEXISTING_STATE = "preexisting=1\n";

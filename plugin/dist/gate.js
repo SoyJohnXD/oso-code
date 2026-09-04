@@ -117,7 +117,10 @@ var UNREAD_PAYLOAD_MARKER = "!unread-payload";
 var MAX_PAYLOAD_DEPTH = 3;
 var SPECIAL_CHARACTERS = "'\"\\$`#;&|(){}<> 	\n";
 var QUOTED_SPECIAL_CHARACTERS = '"\\$`';
+var WORD_DELIMITERS = " 	\n;&|()<>";
 var UNREAD_PAYLOAD = { kind: "unreadPayload" };
+var COPROCESS_WORD = "coproc";
+var COPROCESS_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 var PREFIX_WORDS = /* @__PURE__ */ new Set([
   "env",
   "command",
@@ -152,9 +155,53 @@ var PREFIX_WORDS = /* @__PURE__ */ new Set([
   "esac",
   "select",
   "function",
-  "!"
+  "!",
+  COPROCESS_WORD
 ]);
 var SHELL_INTERPRETERS = /* @__PURE__ */ new Set(["bash", "sh", "dash", "zsh", "ksh"]);
+var COMMAND_FLAG_READERS = /* @__PURE__ */ new Set([...SHELL_INTERPRETERS, "script"]);
+var SHELL_COMMAND_FLAG = "c";
+var CALLBACK_FLAG = "C";
+var CALLBACK_FLAG_READERS = /* @__PURE__ */ new Set(["mapfile", "readarray", "compgen", "complete"]);
+var TMUX_SUBCOMMANDS_RUNNING_A_COMMAND = /* @__PURE__ */ new Set([
+  "new-session",
+  "new",
+  "new-window",
+  "neww",
+  "split-window",
+  "splitw",
+  "respawn-pane",
+  "respawnp",
+  "respawn-window",
+  "respawnw",
+  "run-shell",
+  "run"
+]);
+var SOURCING_BUILTINS = /* @__PURE__ */ new Set(["source", "."]);
+var EVAL_WORD = "eval";
+var REMOTE_SHELL_WORD = "ssh";
+var TERMINAL_MULTIPLEXER_WORD = "tmux";
+var TRAP_WORD = "trap";
+var TRAP_ARGUMENTS_LEAVING_NO_ACTION = /* @__PURE__ */ new Set(["-l", "-p", "-"]);
+var END_OF_OPTIONS = "--";
+var ALIAS_WORD = "alias";
+var HISTORY_REPLAYING_WORD = "fc";
+var ALIAS_DEFINITION = /^[^-=][^=]*=/;
+var ASSIGNMENT_NAMING_A_FILE_THE_SHELL_SOURCES = /^BASH_ENV=/;
+var SHELL_WORDS_THIS_LEXER_READS = /* @__PURE__ */ new Set([
+  ...PREFIX_WORDS,
+  ...COMMAND_FLAG_READERS,
+  ...CALLBACK_FLAG_READERS,
+  ...SOURCING_BUILTINS,
+  EVAL_WORD,
+  REMOTE_SHELL_WORD,
+  TERMINAL_MULTIPLEXER_WORD,
+  TRAP_WORD,
+  ALIAS_WORD,
+  HISTORY_REPLAYING_WORD,
+  "{",
+  "}"
+]);
 function lexShellCommands(commandLine) {
   return new CommandLineLexer(commandLine, 0).lex();
 }
@@ -164,6 +211,23 @@ function basenameOf(word) {
 }
 function isShellInterpreter(word) {
   return SHELL_INTERPRETERS.has(basenameOf(word));
+}
+function readsACommandFlag(word) {
+  return COMMAND_FLAG_READERS.has(basenameOf(word));
+}
+function readsACallbackFlag(word) {
+  return CALLBACK_FLAG_READERS.has(basenameOf(word));
+}
+function definesAnAlias(word) {
+  return ALIAS_DEFINITION.test(word);
+}
+function namesAFileTheShellSources(assignment) {
+  return ASSIGNMENT_NAMING_A_FILE_THE_SHELL_SOURCES.test(assignment);
+}
+function withoutACoprocessName(words) {
+  const trailing = words.at(-1);
+  if (trailing === void 0 || words.at(-2) !== COPROCESS_WORD) return words;
+  return COPROCESS_NAME.test(trailing) ? words.slice(0, -1) : words;
 }
 function isCommandPrefixWord(word) {
   if (/^[A-Za-z_][\s\S]*=/.test(word)) return true;
@@ -175,7 +239,7 @@ function completesItsWordsFromStdin(word) {
   return basenameOf(word) === "xargs";
 }
 function isSourcingBuiltin(word) {
-  return word === "source" || word === ".";
+  return SOURCING_BUILTINS.has(word);
 }
 function withSpacesForNewlines(text) {
   return text.replaceAll("\n", " ");
@@ -184,6 +248,96 @@ function leadingRunWithout(text, stoppers) {
   let length = 0;
   while (length < text.length && !stoppers.includes(text[length])) length += 1;
   return text.slice(0, length);
+}
+var ANSI_C_NAMED_ESCAPES = {
+  a: "\x07",
+  b: "\b",
+  e: "\x1B",
+  E: "\x1B",
+  f: "\f",
+  n: "\n",
+  r: "\r",
+  t: "	",
+  v: "\v",
+  "\\": "\\",
+  "'": "'",
+  '"': '"',
+  "?": "?"
+};
+var ANSI_C_HEX_ESCAPE_WIDTHS = { x: 2, u: 4, U: 8 };
+var OCTAL_ESCAPE_WIDTH = 3;
+var OCTAL_DIGIT = /^[0-7]$/;
+var HEX_DIGIT = /^[0-9A-Fa-f]$/;
+var OCTAL_ESCAPE_MASK = 255;
+var CONTROL_ESCAPE_MASK = 31;
+var DELETE_CODE_POINT = 127;
+var HIGHEST_CODE_POINT = 1114111;
+var STRING_TERMINATOR = "\0";
+function ansiCQuoted(body) {
+  const decoded = ansiCDecoded(body);
+  const terminator = decoded.text.indexOf(STRING_TERMINATOR);
+  return terminator === -1 ? decoded : { text: decoded.text.slice(0, terminator), length: decoded.length };
+}
+function ansiCDecoded(body) {
+  let text = "";
+  let at = 0;
+  while (at < body.length) {
+    const character = body[at];
+    if (character === "'") return { text, length: at + 1 };
+    if (character !== "\\") {
+      text += character;
+      at += 1;
+      continue;
+    }
+    const escape = ansiCEscapeAt(body, at + 1);
+    text += escape.text;
+    at += 1 + escape.length;
+  }
+  return { text, length: at };
+}
+function ansiCEscapeAt(body, at) {
+  const marker = body[at];
+  if (marker === void 0) return { text: "\\", length: 0 };
+  const named2 = ANSI_C_NAMED_ESCAPES[marker];
+  if (named2 !== void 0) return { text: named2, length: 1 };
+  if (OCTAL_DIGIT.test(marker)) return octalEscape(body.slice(at));
+  const decoded = markedEscape(marker, body.slice(at + 1));
+  if (decoded === void 0) return { text: `\\${marker}`, length: 1 };
+  return { text: decoded.text, length: 1 + decoded.length };
+}
+function markedEscape(marker, rest) {
+  if (marker === "c") return controlEscape(rest);
+  const hexWidth = ANSI_C_HEX_ESCAPE_WIDTHS[marker];
+  return hexWidth === void 0 ? void 0 : hexEscape(rest, hexWidth);
+}
+function octalEscape(digitsAndRest) {
+  const digits = leadingRunOf(digitsAndRest, OCTAL_DIGIT, OCTAL_ESCAPE_WIDTH);
+  return { text: String.fromCharCode(parseInt(digits, 8) & OCTAL_ESCAPE_MASK), length: digits.length };
+}
+function hexEscape(rest, width) {
+  const digits = leadingRunOf(rest, HEX_DIGIT, width);
+  if (digits === "") return void 0;
+  const code = parseInt(digits, 16);
+  if (code > HIGHEST_CODE_POINT) return void 0;
+  return { text: String.fromCodePoint(code), length: digits.length };
+}
+function controlEscape(rest) {
+  if (rest === "") return void 0;
+  const spelledAsAnEscape = rest.startsWith("\\\\");
+  const controlled = spelledAsAnEscape ? "\\" : rest[0];
+  const length = spelledAsAnEscape ? 2 : 1;
+  if (controlled === "?") return { text: String.fromCharCode(DELETE_CODE_POINT), length };
+  return { text: String.fromCharCode(controlled.toUpperCase().charCodeAt(0) & CONTROL_ESCAPE_MASK), length };
+}
+function leadingRunOf(text, digit, width) {
+  let length = 0;
+  while (length < width && length < text.length && digit.test(text[length])) length += 1;
+  return text.slice(0, length);
+}
+function splitAtTheFirstOperand(words) {
+  const at = words.findIndex((word) => !word.startsWith("-"));
+  if (at === -1) return void 0;
+  return { operand: words[at], rest: words.slice(at + 1), behindAnOption: at > 0 };
 }
 var CommandLineLexer = class _CommandLineLexer {
   rest;
@@ -237,7 +391,11 @@ var CommandLineLexer = class _CommandLineLexer {
         return;
       case "$":
         this.tokenOpen = true;
-        this.takeExpansion();
+        this.takeDollar();
+        return;
+      case "{":
+      case "}":
+        this.takeBrace(character);
         return;
       case "`":
         this.tokenOpen = true;
@@ -275,6 +433,19 @@ var CommandLineLexer = class _CommandLineLexer {
         this.endCommand();
     }
   }
+  takeBrace(brace) {
+    if (this.braceStandsAsAReservedWord()) {
+      this.endCommand();
+      return;
+    }
+    this.token += brace;
+    this.tokenOpen = true;
+  }
+  braceStandsAsAReservedWord() {
+    if (this.tokenOpen || this.rest === "") return false;
+    if (!withoutACoprocessName(this.commandTokens).every(isCommandPrefixWord)) return false;
+    return WORD_DELIMITERS.includes(this.rest.slice(0, 1));
+  }
   endToken() {
     if (this.tokenOpen && this.redirectTargetPending) {
       this.redirectTargetPending = false;
@@ -310,6 +481,7 @@ var CommandLineLexer = class _CommandLineLexer {
       }
       prefixWord = leading;
       if (completesItsWordsFromStdin(prefixWord)) stdinCompletesTheWords = true;
+      if (namesAFileTheShellSources(prefixWord)) this.markUnread();
       this.commandTokens = this.commandTokens.slice(1);
     }
   }
@@ -320,22 +492,86 @@ var CommandLineLexer = class _CommandLineLexer {
       this.markUnread();
       return;
     }
-    if (basenameOf(leading) === "eval") {
+    const wrapper = basenameOf(leading);
+    if (wrapper === EVAL_WORD) {
       this.deferNestedCommands(this.commandTokens.slice(1).join(" "));
       return;
     }
-    if (isShellInterpreter(leading)) this.deferInterpreterPayload();
+    if (wrapper === REMOTE_SHELL_WORD) {
+      this.deferRemoteShellPayload();
+      return;
+    }
+    if (wrapper === TERMINAL_MULTIPLEXER_WORD) {
+      this.deferTmuxPayload();
+      return;
+    }
+    if (wrapper === TRAP_WORD) {
+      this.deferTrapAction();
+      return;
+    }
+    if (wrapper === ALIAS_WORD) {
+      if (this.commandTokens.slice(1).some(definesAnAlias)) this.markUnread();
+      return;
+    }
+    if (wrapper === HISTORY_REPLAYING_WORD) {
+      this.markUnread();
+      return;
+    }
+    if (readsACallbackFlag(leading)) {
+      this.deferOptionValueAsACommand(CALLBACK_FLAG);
+      return;
+    }
+    if (readsACommandFlag(leading)) this.deferInterpreterPayload();
+  }
+  deferTrapAction() {
+    let optionsEnded = false;
+    for (const argument of this.commandTokens.slice(1)) {
+      if (optionsEnded || !argument.startsWith("-")) {
+        this.deferNestedCommands(argument);
+        return;
+      }
+      if (TRAP_ARGUMENTS_LEAVING_NO_ACTION.has(argument)) return;
+      if (argument !== END_OF_OPTIONS) {
+        this.markUnread();
+        return;
+      }
+      optionsEnded = true;
+    }
+  }
+  deferRemoteShellPayload() {
+    const host = splitAtTheFirstOperand(this.commandTokens.slice(1));
+    if (host === void 0) return;
+    this.deferOperandPayload(host.rest, host.behindAnOption);
+  }
+  deferTmuxPayload() {
+    const subcommand = splitAtTheFirstOperand(this.commandTokens.slice(1));
+    if (subcommand === void 0) return;
+    if (!TMUX_SUBCOMMANDS_RUNNING_A_COMMAND.has(subcommand.operand)) {
+      if (subcommand.behindAnOption) this.markUnread();
+      return;
+    }
+    this.deferOperandPayload(subcommand.rest, false);
+  }
+  deferOperandPayload(words, selectorUnresolved) {
+    const payload = splitAtTheFirstOperand(words);
+    if (payload === void 0) return;
+    if (selectorUnresolved || payload.behindAnOption) this.markUnread();
+    this.deferNestedCommands([payload.operand, ...payload.rest].join(" "));
   }
   deferInterpreterPayload() {
+    this.deferOptionValueAsACommand(SHELL_COMMAND_FLAG);
+    if (this.nested.length === 0) this.markUnread();
+  }
+  deferOptionValueAsACommand(commandFlag) {
     let commandFlagSeen = false;
     let valuePosition = false;
     for (const argument of this.commandTokens.slice(1)) {
       if (argument.startsWith("--")) {
         valuePosition = true;
-      } else if (argument === "-c") {
+      } else if (argument === `-${commandFlag}`) {
         commandFlagSeen = true;
         valuePosition = false;
-      } else if (argument.startsWith("-") && argument.slice(1).includes("c")) {
+      } else if (argument.startsWith("-") && argument.slice(1).includes(commandFlag)) {
         commandFlagSeen = true;
         valuePosition = true;
       } else if (argument.startsWith("-")) {
@@ -346,7 +582,6 @@ var CommandLineLexer = class _CommandLineLexer {
         return;
       }
     }
-    if (this.nested.length === 0) this.markUnread();
   }
   deferNestedCommands(payload) {
     if (payload === "") return;
@@ -404,6 +639,28 @@ var CommandLineLexer = class _CommandLineLexer {
         this.takeBacktick();
       }
     }
+  }
+  takeDollar() {
+    if (this.rest.startsWith("'")) {
+      this.rest = this.rest.slice(1);
+      this.takeAnsiCQuoted();
+      return;
+    }
+    if (this.rest.startsWith('"')) {
+      this.rest = this.rest.slice(1);
+      this.takeLocaleTranslated();
+      return;
+    }
+    this.takeExpansion();
+  }
+  takeLocaleTranslated() {
+    this.markUnread();
+    this.takeDoubleQuoted();
+  }
+  takeAnsiCQuoted() {
+    const quoted2 = ansiCQuoted(this.rest);
+    this.token += quoted2.text;
+    this.rest = this.rest.slice(quoted2.length);
   }
   takeExpansion() {
     if (this.rest.startsWith("(")) {
@@ -810,6 +1067,9 @@ function journalFileFor(cwd) {
   const autoChange = readValue(stateFile, "auto_change") ?? "";
   const change = CHANGE_SLUG_PATTERN.test(autoChange) ? autoChange : "run";
   return path.join(stateRootDirectory(), "runs", repositoryId, `${change}.log`);
+}
+function denyPatternsFileFor(stateFile) {
+  return path.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
 }
 function isNameToken(value) {
   return value.length >= 1 && value.length <= NAME_TOKEN_MAX_LENGTH && NAME_TOKEN_PATTERN.test(value);
@@ -2434,9 +2694,6 @@ function captureBlocked(session, detail) {
   return { event: CAPTURE_BLOCKED, session, command: detail, gate: route.script, hookEvent: route.event };
 }
 
-// core/src/gates/proddeploy.ts
-import path7 from "node:path";
-
 // core/src/shell/ere.ts
 var GREP_ITSELF_REJECTS_IT = /* @__PURE__ */ Symbol("a pattern grep exits 2 on, which therefore matches nothing");
 var THE_READER_CANNOT_TRANSLATE_IT = /* @__PURE__ */ Symbol("a pattern grep accepts that this reader cannot express");
@@ -2867,16 +3124,13 @@ function readsAsStateRecords(content) {
   return content.split("\n").every((line) => STATE_RECORD_LINE.test(line));
 }
 function howThisRepositoryReadsTheCommand(stateFile, command) {
-  const read = readStateFile(denyPatternsFileOf(stateFile));
+  const read = readStateFile(denyPatternsFileFor(stateFile));
   if (read.kind !== "ok") return { kind: "noPatternBites" };
   const readings = read.content.split("\n").filter((pattern) => pattern !== "").map((pattern) => ({ pattern, reading: ereReads(pattern, command) }));
   if (readings.some((one) => one.reading === "matched")) return { kind: "aPatternBites" };
   const unreadable = readings.find((one) => one.reading === "untranslatable");
   if (unreadable === void 0) return { kind: "noPatternBites" };
   return { kind: "aPatternIsUnreadable", pattern: unreadable.pattern };
-}
-function denyPatternsFileOf(stateFile) {
-  return path7.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
 }
 
 // core/src/gates/reanchor.ts
@@ -2935,7 +3189,7 @@ function reanchorContext(journalFile, unattendedRun) {
 
 // core/src/gates/stale.ts
 import { existsSync as existsSync4 } from "node:fs";
-import path8 from "node:path";
+import path7 from "node:path";
 var ROADMAP_DISARMED_SENTINEL = "none";
 var RUN_ARMED2 = "running";
 var ROADMAP_PLACEHOLDER = "{roadmap}";
@@ -2978,7 +3232,7 @@ function staleStateContext(caller, stateFile, content, sessionId) {
   const skillPrefix = skillPrefixFor(caller.host);
   const stateBin = quoted(stateBinPath(caller));
   const clearCommand = `${stateBin} --session ${quoted(sessionId)} clear`;
-  const leftByAnother = `oso-code: this repository's own runtime state (${path8.basename(stateFile)}) was left by another session, and its flags arm this session's gates too`;
+  const leftByAnother = `oso-code: this repository's own runtime state (${path7.basename(stateFile)}) was left by another session, and its flags arm this session's gates too`;
   const roadmapValue = stateValue(content, "roadmap");
   const roadmapInFlight = roadmapValue === ROADMAP_DISARMED_SENTINEL ? "" : roadmapValue;
   if (roadmapInFlight === "") {
@@ -2994,7 +3248,7 @@ function skillPrefixFor(host) {
 }
 function stateBinPath(caller) {
   if (caller.stateBin !== "") return caller.stateBin;
-  return path8.join(pluginRootDirectory(), "bin", "oso-state");
+  return path7.join(pluginRootDirectory(), "bin", "oso-state");
 }
 function contentOf(stateFile) {
   const read = readStateFile(stateFile);
@@ -3006,7 +3260,7 @@ function quoted(value) {
 
 // core/src/gates/statebin.ts
 import { appendFileSync as appendFileSync2 } from "node:fs";
-import path9 from "node:path";
+import path8 from "node:path";
 var STATEBIN_GATE = {
   gate: "statebin",
   errorSubject: "the state-bin gate",
@@ -3015,7 +3269,7 @@ var STATEBIN_GATE = {
 function judgeStatebin(_request) {
   const envFile = process.env["CLAUDE_ENV_FILE"];
   if (envFile === void 0 || envFile === "") return NO_VERDICT;
-  const stateBin = path9.join(pluginRootDirectory(), "bin", "oso-state");
+  const stateBin = path8.join(pluginRootDirectory(), "bin", "oso-state");
   appendFileSync2(envFile, `export OSO_STATE_BIN=${stateBin}
 `);
   return NO_VERDICT;
@@ -3024,7 +3278,7 @@ function judgeStatebin(_request) {
 // core/src/gates/teardown.ts
 import { execFileSync as execFileSync2 } from "node:child_process";
 import { existsSync as existsSync5, readdirSync as readdirSync2, renameSync as renameSync3, rmSync as rmSync5, rmdirSync, statSync as statSync5 } from "node:fs";
-import path10 from "node:path";
+import path9 from "node:path";
 var ABANDONED_STATE_DAYS = 7;
 var JOURNAL_KEYED_WAIT_MARK_SUFFIX = ".waiting";
 var EVENTS_LOG_RETENTION_DAYS = 30;
@@ -3052,7 +3306,7 @@ function stateArmedBy(sessionId) {
 }
 function removeWorktreesOf(sessionId, stateFile) {
   if (sessionId === "") return;
-  const sessionWorktrees = path10.join(stateRootDirectory(), "worktrees", sessionId);
+  const sessionWorktrees = path9.join(stateRootDirectory(), "worktrees", sessionId);
   if (!isDirectory(sessionWorktrees)) return;
   if (stateFile === void 0) return;
   const repoPath = stateValueOf(stateFile, "repo_path");
@@ -3100,7 +3354,7 @@ function clearRoadmapInFlightOf(sessionId) {
   }
 }
 function rotateAgedEventsLog() {
-  const eventsLog = path10.join(stateRootDirectory(), "events.jsonl");
+  const eventsLog = path9.join(stateRootDirectory(), "events.jsonl");
   if (!olderThanDays(eventsLog, EVENTS_LOG_RETENTION_DAYS)) return;
   renameSync3(eventsLog, `${eventsLog}.1`);
 }
@@ -3124,10 +3378,10 @@ function stateValueOf(stateFile, key) {
   return read.kind === "ok" ? stateValue(read.content, key) : "";
 }
 function stateFilesSorted() {
-  return directoryEntries2(stateRootDirectory()).filter((name) => name.endsWith(".state")).sort().map((name) => path10.join(stateRootDirectory(), name)).filter((target) => isFile(target));
+  return directoryEntries2(stateRootDirectory()).filter((name) => name.endsWith(".state")).sort().map((name) => path9.join(stateRootDirectory(), name)).filter((target) => isFile(target));
 }
 function subdirectoriesSorted(directory) {
-  return directoryEntries2(directory).sort().map((name) => path10.join(directory, name)).filter((target) => isDirectory(target));
+  return directoryEntries2(directory).sort().map((name) => path9.join(directory, name)).filter((target) => isDirectory(target));
 }
 function directoryEntries2(directory) {
   try {
@@ -3224,7 +3478,7 @@ function allowlistHost(host) {
 // core/src/gates/version.ts
 import { execFileSync as execFileSync3 } from "node:child_process";
 import { readFileSync as readFileSync6 } from "node:fs";
-import path11 from "node:path";
+import path10 from "node:path";
 var RELEASE_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/;
 var GITHUB_URL_PREFIX = "https://github.com/";
 var FETCH_CONNECT_SECONDS = 2;
@@ -3252,10 +3506,10 @@ function judgeVersion({ envelope }) {
   return { verdict: { kind: "context", additionalContext: context }, events: [] };
 }
 function pluginManifestFile() {
-  return path11.join(pluginRootDirectory(), ".claude-plugin", "plugin.json");
+  return path10.join(pluginRootDirectory(), ".claude-plugin", "plugin.json");
 }
 function publishedReleaseCacheFile() {
-  return path11.join(stateRootDirectory(), "published-release");
+  return path10.join(stateRootDirectory(), "published-release");
 }
 function repositorySlugOf(repositoryUrl) {
   if (!repositoryUrl.startsWith(GITHUB_URL_PREFIX) || repositoryUrl.length === GITHUB_URL_PREFIX.length) {
@@ -3266,7 +3520,7 @@ function repositorySlugOf(repositoryUrl) {
 }
 function marketplaceServesRepository(repositorySlug) {
   const home = homeDirectoryFrom(process.platform, process.env);
-  const marketplacesFile = path11.join(home, ".claude", "plugins", "known_marketplaces.json");
+  const marketplacesFile = path10.join(home, ".claude", "plugins", "known_marketplaces.json");
   const registrations = readFileOrEmpty(marketplacesFile).replace(/\s/g, "");
   return registrations.includes(`"repo":"${repositorySlug}"`);
 }
@@ -3285,7 +3539,7 @@ function cachedPublishedRelease(cacheFile) {
 function refreshPublishedReleaseCache(cacheFile, repositorySlug) {
   try {
     writeFileAtomically(
-      path11.dirname(cacheFile),
+      path10.dirname(cacheFile),
       cacheFile,
       fetchedHighestReleaseVersion(repositorySlug),
       ".published-release."

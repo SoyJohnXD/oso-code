@@ -2,13 +2,9 @@
   "name": "commit gate, friction: git commit --dry-run",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6417,
       "assertion": "assert_every assert_allows friction <<'FRICTION_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6427,
       "assertion": "git commit --dry-run"
     }
   ],

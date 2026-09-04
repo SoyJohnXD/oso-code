@@ -2,8 +2,6 @@
   "name": "commit gate: a payload in a value position is still read as commands",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6626,
       "assertion": "assert_denies \"a payload in a value position is still read as commands\" \\\n  block-commit-until-green.sh \"$(bash_input 'bash -c -x \\\"git commit -m x\\\"')\""
     }
   ],

@@ -1,17 +1,22 @@
 import { mkdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { ereReads } from "../shell/ere.ts";
 import * as handoff from "./handoff.ts";
 import * as plan from "./plan.ts";
 import * as store from "./store.ts";
+import * as transitions from "./transitions.ts";
 
 const USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> get key
        oso-state --session <id> show
        oso-state --session <id> clear
+       oso-state --session <id> close-slice <n>
        oso-state --session <id> event <type> [detail]
        oso-state --session <id> capture-plan <sha256>
        oso-state --session <id> approve-plan <sha256>
        oso-state --session <id> cancel-plan <sha256>
        oso-state --session <id> amend-plan <slice-id>
+       oso-state --session <id> deny-pattern add <pattern>
        oso-state journal <text>
        oso-state journal --path
        oso-state handoff publish --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --hook-session <id>
@@ -24,6 +29,15 @@ be between 0 and 600 seconds.
 `;
 
 class UsageError extends Error {}
+
+class RefusedError extends Error {
+  readonly verb: string;
+
+  constructor(verb: string, reason: string) {
+    super(reason);
+    this.verb = verb;
+  }
+}
 
 const HANDOFF_SUBACTIONS = ["publish", "wait", "consume"] as const;
 type HandoffSubaction = (typeof HANDOFF_SUBACTIONS)[number];
@@ -56,6 +70,10 @@ function verbOf(argv: readonly string[]): string {
 function report(error: unknown, verb: string): number {
   if (error instanceof UsageError) {
     process.stderr.write(USAGE);
+    return 1;
+  }
+  if (error instanceof RefusedError) {
+    process.stderr.write(`oso-state: ${error.verb} refused: ${error.message}\n`);
     return 1;
   }
   if (error instanceof store.LockTimeoutError) {
@@ -107,6 +125,8 @@ function dispatch(argv: readonly string[]): number {
       return runShow();
     case "clear":
       return runClear(sessionId);
+    case "close-slice":
+      return runCloseSlice(sessionId, remaining);
     case "event":
       return runEvent(sessionId, remaining);
     case "journal":
@@ -119,6 +139,8 @@ function dispatch(argv: readonly string[]): number {
       return runCancelPlan(sessionId, remaining);
     case "amend-plan":
       return runAmendPlan(sessionId, remaining);
+    case "deny-pattern":
+      return runDenyPattern(sessionId, remaining);
     case "handoff":
       return dispatchHandoff(remaining);
     default:
@@ -159,6 +181,52 @@ function runClear(sessionId: string): number {
   return store.withLock(stateFile, sessionId, () => {
     store.clearStateFile(stateFile);
     store.logEvent({ event: "clear", session: sessionId });
+    return 0;
+  });
+}
+
+function runCloseSlice(sessionId: string, remaining: readonly string[]): number {
+  if (remaining.length !== 1) throw new UsageError();
+  const sliceId = remaining[0] as string;
+  const stateFile = store.stateFileFor(process.cwd());
+  mkdirSync(store.stateRootDirectory(), { recursive: true });
+  return store.withLock(stateFile, sessionId, () => {
+    const activeSlice = store.readValue(stateFile, "active_slice") ?? "none";
+    if (activeSlice !== sliceId) {
+      throw new RefusedError(`close-slice ${sliceId}`, `active_slice is ${activeSlice}, not ${sliceId}`);
+    }
+    const patch = transitions.closeSlice();
+    store.writeStatePairs(
+      stateFile,
+      Object.entries(patch).map(([key, value]) => `${key}=${value}`),
+      sessionId,
+    );
+    store.logEvent({ event: "close-slice", session: sessionId, command: sliceId });
+    return 0;
+  });
+}
+
+function runDenyPattern(sessionId: string, remaining: readonly string[]): number {
+  if (remaining.length !== 2 || remaining[0] !== "add") throw new UsageError();
+  const pattern = remaining[1] as string;
+  if (ereReads(pattern, "") === "untranslatable") {
+    throw new RefusedError("deny-pattern add", `this pattern is past what the production boundary can read: ${pattern}`);
+  }
+  const stateFile = store.stateFileFor(process.cwd());
+  const patternsFile = store.denyPatternsFileFor(stateFile);
+  mkdirSync(store.stateRootDirectory(), { recursive: true });
+  return store.withLock(stateFile, sessionId, () => {
+    const read = store.readStateFile(patternsFile);
+    if (read.kind === "unreadable") throw new store.StateFileUnreadableError(patternsFile, read.cause);
+    const existing = read.kind === "ok" ? read.content.split("\n").filter((line) => line !== "") : [];
+    if (existing.includes(pattern)) {
+      process.stdout.write(`oso-state: deny-pattern already present in ${patternsFile}\n`);
+      return 0;
+    }
+    const content = [...existing, pattern].map((line) => `${line}\n`).join("");
+    store.writeFileAtomically(path.dirname(patternsFile), patternsFile, content, ".patterns.");
+    store.logEvent({ event: "deny-pattern-add", session: sessionId, command: pattern });
+    process.stdout.write(`oso-state: wrote ${patternsFile}\n`);
     return 0;
   });
 }

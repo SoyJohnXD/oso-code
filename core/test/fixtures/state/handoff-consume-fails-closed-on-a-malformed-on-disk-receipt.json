@@ -2,8 +2,6 @@
   "name": "handoff consume fails closed on a malformed on-disk receipt",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5512,
       "assertion": "assert_equals \"a malformed on-disk receipt fails closed at both read edges\" \\\n  \"path=present wait=1 consume=1\" \\\n  \"path=$([ -f \"$corrupt_receipt\" ] && printf present || printf missing) wait=$corrupt_wait_rc consume=$handoff_rc\""
     }
   ],

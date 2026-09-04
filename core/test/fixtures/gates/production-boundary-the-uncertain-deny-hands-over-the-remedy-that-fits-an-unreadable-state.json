@@ -2,8 +2,6 @@
   "name": "production boundary: the uncertain deny hands over the remedy that fits an unreadable state",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5156,
       "assertion": "assert_equals \"the uncertain deny hands over the remedy that fits an unreadable state, not the one that needs a readable marker\" \\\n  \"repair\" \"$prod_uncertain_remedy\""
     }
   ],

@@ -1,9 +1,9 @@
 {
   "name": "planprompt gate: an ordinary prompt outside the harness stays invisible",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1570, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'ordinary question outside oso-code')\"" },
-    { "file": "tests/hooks-test.sh", "line": 1572, "assertion": "assert_after_hook \"an ordinary prompt outside the harness stays invisible\" \\\n  [ \"$hook_stdout\" = '{}' ]" },
-    { "file": "tests/hooks-test.sh", "line": 1574, "assertion": "assert_equals \"an ordinary prompt outside the harness writes no state\" \\\n  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"" }
+    { "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'ordinary question outside oso-code')\"" },
+    { "assertion": "assert_after_hook \"an ordinary prompt outside the harness stays invisible\" \\\n  [ \"$hook_stdout\" = '{}' ]" },
+    { "assertion": "assert_equals \"an ordinary prompt outside the harness writes no state\" \\\n  absent \"$([ ! -e \"$REPO_STATE\" ] && printf absent || printf present)\"" }
   ],
   "gate": "planprompt",
   "argv": [],

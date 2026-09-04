@@ -2,13 +2,9 @@
   "name": "commit gate: an unreadable state path is denied and recorded",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5787,
       "assertion": "assert_denies \"commit gate denies a state path that is not a readable file\" block-commit-until-green.sh \"$(bash_input 'git commit -m x')\""
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5792,
       "assertion": "assert_logged \"an unreadable state file is recorded\" '\"event\":\"state-unreadable\"'"
     }
   ],

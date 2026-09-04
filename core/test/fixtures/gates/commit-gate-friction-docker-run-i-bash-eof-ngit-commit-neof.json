@@ -2,13 +2,9 @@
   "name": "commit gate, friction: docker run -i bash <<EOF\\ngit commit\\nEOF",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6417,
       "assertion": "assert_every assert_allows friction <<'FRICTION_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6441,
       "assertion": "docker run -i bash <<EOF\\ngit commit\\nEOF"
     }
   ],

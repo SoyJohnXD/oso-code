@@ -2,8 +2,6 @@
   "name": "production boundary: a POSIX [:space:] deny pattern bites — make release-prod",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5092,
       "assertion": "assert_equals \"this repository's own deny patterns bite while the run is in flight, and only where they match\" \\\n  \"deny deny allow|allow deny\" \\\n  \"$prod_pattern_verdicts|$(prod_verdicts_for 'npm run deploy:prod' 'vercel --prod')\""
     }
   ],

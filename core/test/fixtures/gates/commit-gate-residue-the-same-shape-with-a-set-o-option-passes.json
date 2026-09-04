@@ -2,8 +2,6 @@
   "name": "commit gate: residue: the same shape with a set -o option passes",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6621,
       "assertion": "assert_allows \"residue: the same shape with a set -o option passes\" \\\n  block-commit-until-green.sh \"$(bash_input 'bash -c -o pipefail \\\"git commit -m x\\\"')\""
     }
   ],

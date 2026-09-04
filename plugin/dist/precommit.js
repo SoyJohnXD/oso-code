@@ -1,3 +1,67 @@
+// core/src/shell/lexer.ts
+var COPROCESS_WORD = "coproc";
+var PREFIX_WORDS = /* @__PURE__ */ new Set([
+  "env",
+  "command",
+  "builtin",
+  "exec",
+  "nice",
+  "nohup",
+  "time",
+  "timeout",
+  "stdbuf",
+  "sudo",
+  "doas",
+  "setsid",
+  "xargs",
+  "flock",
+  "ionice",
+  "chrt",
+  "taskset",
+  "unbuffer",
+  "then",
+  "else",
+  "elif",
+  "do",
+  "done",
+  "fi",
+  "in",
+  "until",
+  "while",
+  "if",
+  "for",
+  "case",
+  "esac",
+  "select",
+  "function",
+  "!",
+  COPROCESS_WORD
+]);
+var SHELL_INTERPRETERS = /* @__PURE__ */ new Set(["bash", "sh", "dash", "zsh", "ksh"]);
+var COMMAND_FLAG_READERS = /* @__PURE__ */ new Set([...SHELL_INTERPRETERS, "script"]);
+var CALLBACK_FLAG_READERS = /* @__PURE__ */ new Set(["mapfile", "readarray", "compgen", "complete"]);
+var SOURCING_BUILTINS = /* @__PURE__ */ new Set(["source", "."]);
+var EVAL_WORD = "eval";
+var REMOTE_SHELL_WORD = "ssh";
+var TERMINAL_MULTIPLEXER_WORD = "tmux";
+var TRAP_WORD = "trap";
+var ALIAS_WORD = "alias";
+var HISTORY_REPLAYING_WORD = "fc";
+var SHELL_WORDS_THIS_LEXER_READS = /* @__PURE__ */ new Set([
+  ...PREFIX_WORDS,
+  ...COMMAND_FLAG_READERS,
+  ...CALLBACK_FLAG_READERS,
+  ...SOURCING_BUILTINS,
+  EVAL_WORD,
+  REMOTE_SHELL_WORD,
+  TERMINAL_MULTIPLEXER_WORD,
+  TRAP_WORD,
+  ALIAS_WORD,
+  HISTORY_REPLAYING_WORD,
+  "{",
+  "}"
+]);
+
 // core/src/hosts/envelope.ts
 var JSON_SPACE = "[\\t\\n\\v\\f\\r ]";
 var STOP_HOOK_ACTIVE = new RegExp(`"stop_hook_active"${JSON_SPACE}*:${JSON_SPACE}*true`);

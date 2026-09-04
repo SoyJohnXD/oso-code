@@ -2,13 +2,9 @@
   "name": "reanchor gate: a state path that is a directory, not a file, leaves a compaction silent",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6360,
       "assertion": "mkdir -p \"$REPO_STATE\""
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6361,
       "assertion": "reanchor_uncertain_verdicts=\"$reanchor_uncertain_verdicts $(reanchor_verdict \"$(reanchor_input compact)\")\""
     }
   ],

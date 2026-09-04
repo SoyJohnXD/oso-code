@@ -2,8 +2,6 @@
   "name": "slice gate: a call naming no session is untouched however armed the repository is",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 2158,
       "assertion": "assert_allows \"the edit gate stays off a call naming no session, armed repo or not\" \\\n  block-edits-without-slice.sh \"$unmarked_edit_input\""
     }
   ],

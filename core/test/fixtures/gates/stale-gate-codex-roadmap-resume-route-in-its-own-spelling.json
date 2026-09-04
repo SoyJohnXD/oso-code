@@ -1,8 +1,8 @@
 {
   "name": "stale gate: Codex gets the roadmap resume route in its own invocation spelling",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 6097, "assertion": "OSO_AGENT=1 run_hook warn-stale-state.sh \"$(stale_session_input)\"" },
-    { "file": "tests/hooks-test.sh", "line": 6098, "assertion": "assert_equals \"Codex gets the roadmap resume route in its own invocation spelling\" \\\n  \"present\" \"$(if printf '%s' \"$hook_stdout\" | grep -F '$oso-code:roadmap auth-hardening' >/dev/null; then echo present; else echo missing; fi)\"" }
+    { "assertion": "OSO_AGENT=1 run_hook warn-stale-state.sh \"$(stale_session_input)\"" },
+    { "assertion": "assert_equals \"Codex gets the roadmap resume route in its own invocation spelling\" \\\n  \"present\" \"$(if printf '%s' \"$hook_stdout\" | grep -F '$oso-code:roadmap auth-hardening' >/dev/null; then echo present; else echo missing; fi)\"" }
   ],
   "gate": "stale",
   "argv": [],

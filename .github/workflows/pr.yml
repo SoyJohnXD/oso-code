@@ -14,6 +14,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -29,24 +31,16 @@ jobs:
         shell: bash
         run: |
           bash -n bootstrap/*.sh
-          bash -n bootstrap/lib/*.sh
           bash -n tools/*.sh
           bash -n plugin/hooks/*.sh
           bash -n plugin/git-hooks/pre-commit
-          bash -n tests/*.sh tests/fixtures/*.sh
-      - name: Plugin linter
-        shell: bash
-        run: bash tests/plugin-lint.sh
+          bash -n tests/fixtures/*.sh
       - name: OpenCode unit suite (ubuntu only — Windows bring-up is C3's, tracked in docs/rewrite/ts-core-roadmap.md)
         if: runner.os == 'Linux'
         shell: bash
         run: |
           cd opencode
           npm test
-      - name: Hook regression suite (ubuntu only — Windows needs the jq provisioning nightly.yml does)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: tests/hooks-test.sh
       - name: Install Claude Code CLI (ubuntu only — feeds the two validate steps below)
         if: runner.os == 'Linux'
         run: npm install -g @anthropic-ai/claude-code

@@ -2,8 +2,6 @@
   "name": "commit gate: a git mention with no shell to read it stays clear",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6703,
       "assertion": "assert_allows \"a git mention with no shell to read it stays clear\" \\\n  block-commit-until-green.sh \"$(bash_input 'echo git commit')\""
     }
   ],

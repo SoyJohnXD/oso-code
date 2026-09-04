@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { bundleText, importBundled, readTextOrNull } from "./lib/bundle.mjs";
+import { bundleText, checkFreshArtifacts, importBundled, runBuildCli, writeArtifacts } from "./lib/bundle.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const renderModule = join(repoRoot, "core", "src", "routes", "render.ts");
@@ -67,24 +67,11 @@ async function freshArtifacts() {
 }
 
 async function check() {
-  let stale = 0;
-  for (const artifact of await freshArtifacts()) {
-    if (readTextOrNull(artifact.path) === artifact.text) continue;
-    process.stderr.write(`gates: ${artifact.name} is stale against core/src — run npm run build\n`);
-    stale += 1;
-  }
-  process.exitCode = stale === 0 ? 0 : 1;
+  checkFreshArtifacts("gates", "core/src", await freshArtifacts());
 }
 
 async function write() {
-  for (const artifact of await freshArtifacts()) {
-    mkdirSync(dirname(artifact.path), { recursive: true });
-    writeFileSync(artifact.path, artifact.text);
-  }
+  writeArtifacts(await freshArtifacts());
 }
 
-if (process.argv.includes("--check")) {
-  await check();
-} else {
-  await write();
-}
+await runBuildCli({ check, write });

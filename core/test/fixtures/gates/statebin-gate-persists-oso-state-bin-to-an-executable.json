@@ -2,13 +2,9 @@
   "name": "statebin gate: SessionStart persists OSO_STATE_BIN to an executable",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5774,
       "assertion": "run_hook persist-state-bin.sh ''"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5756,
       "assertion": "assert_after_hook \"SessionStart persists OSO_STATE_BIN to an executable\" [ -x \"$persisted\" ]"
     }
   ],

@@ -7,10 +7,10 @@ import { withHookEnvironment } from "../support/gate-fixture.ts";
 import {
   makeUnreadable,
   OWNER_ONLY_FILE,
-  skipUnlessChmodMakesFilesUnreadable,
   STATE_FILE,
   withStateSandbox,
 } from "../support/state-sandbox.ts";
+import { skipUnlessChmodMakesFilesUnreadable } from "../support/win32-skip-guards.ts";
 
 test(
   "stale gate: an unreadable state file reads the same as a foreign session's, so it still warns " +

@@ -2,13 +2,9 @@
   "name": "commit gate, redirect with no commit to find: git tag -m x v1 >log",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6570,
       "assertion": "assert_every assert_allows \"redirect with no commit to find\" <<'REDIRECT_NO_FRICTION_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6576,
       "assertion": "git tag -m x v1 >log"
     }
   ],

@@ -2,13 +2,9 @@
   "name": "version gate: a plugin root with no readable manifest says nothing",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6252,
       "assertion": "  rm -f \"$DRIFT_MANIFEST\""
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6253,
       "assertion": "  assert_drift_silent \"a plugin root with no readable manifest says nothing\""
     }
   ],

@@ -2,13 +2,9 @@
   "name": "commit gate, not gated: git cherry-pick abc123",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6521,
       "assertion": "assert_every assert_allows \"not gated\" <<'NOT_GATED_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6525,
       "assertion": "git cherry-pick abc123"
     }
   ],

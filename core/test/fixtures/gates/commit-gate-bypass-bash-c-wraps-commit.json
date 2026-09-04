@@ -2,8 +2,6 @@
   "name": "commit gate: bypass: bash -c wraps commit",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 2116,
       "assertion": "assert_denies \"bypass: bash -c wraps commit\" block-commit-until-green.sh \"$(bash_input 'bash -c '\\''git commit -m x'\\''')\""
     }
   ],

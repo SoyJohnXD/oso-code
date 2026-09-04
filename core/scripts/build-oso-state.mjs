@@ -1,7 +1,7 @@
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { bundleText, readTextOrNull } from "./lib/bundle.mjs";
+import { bundleText, readTextOrNull, runBuildCli } from "./lib/bundle.mjs";
 import { isExecutableRegularFile } from "./lib/executable-file.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -55,8 +55,4 @@ async function writeBundle() {
   writeFileSync(binPackageJson, modulePackageJson);
 }
 
-if (process.argv.includes("--check")) {
-  await check();
-} else {
-  await writeBundle();
-}
+await runBuildCli({ check, write: writeBundle });

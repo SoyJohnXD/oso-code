@@ -2,8 +2,6 @@
   "name": "capture-plan records the presenting session as the approval identity",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 2042,
       "assertion": "assert_equals \"capture-plan records the presenting session as the approval identity\" \\\n  \"$SESSION\" \"$(oso-state --session \"$SESSION\" get plan_approval_session)\""
     }
   ],

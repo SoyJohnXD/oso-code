@@ -1,0 +1,16 @@
+{
+  "name": "deny-pattern add refuses an untranslatable pattern at add time, naming the reason, and writes nothing",
+  "env": {},
+  "state_before": {},
+  "cwd": "workspace",
+  "argv": ["--session", "test-session", "deny-pattern", "add", "[a-é]uild"],
+  "stdin": "",
+  "expect": {
+    "exit": 1,
+    "stderr": { "contains": ["deny-pattern add refused: this pattern is past what the production boundary can read: [a-é]uild"] },
+    "state_after": {
+      ".local/state/oso-code/deploy-deny/{repo}.patterns": null
+    },
+    "events_appended": []
+  }
+}

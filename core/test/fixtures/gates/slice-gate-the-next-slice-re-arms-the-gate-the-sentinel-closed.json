@@ -2,8 +2,6 @@
   "name": "slice gate: the next slice re-arms the gate the sentinel closed",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 2140,
       "assertion": "assert_allows \"the next slice re-arms the gate the sentinel closed\" block-edits-without-slice.sh \"$edit_input\""
     }
   ],

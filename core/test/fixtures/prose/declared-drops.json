@@ -1,0 +1,589 @@
+[
+  {
+    "axis": "prose",
+    "item": "The commit gate refuses `git commit` while `verify_green` is false; the edits gate refuses a file edit while `mode=plan` and no slice is active.",
+    "sourceFile": "plugin/skills/_shared/platform/claude/plan.md",
+    "retired": "they deny `git commit` while `verify_green` is false and deny file edits while no slice is active",
+    "reason": "C5-S1b-1 deleted plugin/skills/_shared/platform/claude/plan.md; the retired clause was a byte-for-byte restatement of plugin/skills/_shared/bodies/plan.md's own runtime-gates bullet, once that bullet's own subject (\"your host's gates\") replaced the platform file's pronoun (\"they\"). C5-S2c then deleted bodies/plan.md itself, folding its ground rules into plugin/skills/plan/SKILL.md and rewording the bullet to name each gate directly; the item is updated to that surviving wording and the home follows it",
+    "home": { "kind": "prose", "ref": "plugin/skills/plan/SKILL.md" }
+  },
+  {
+    "axis": "C",
+    "item": "Security Pass: native — covered: staged, unstaged, and untracked changes",
+    "sourceFile": "plugin/skills/_shared/platform/codex/security-pass.md",
+    "reason": "security-pass.md's Codex binding moved to codex/skills/security-pass/references/codex.md, a rendered file outside the six source globs axis C scans; the token survives verbatim there",
+    "home": { "kind": "prose", "ref": "codex/skills/security-pass/references/codex.md" }
+  },
+  {
+    "axis": "C",
+    "item": "Security Pass: native — covered: merge base of HEAD and <base-ref> through HEAD, plus staged, unstaged, and untracked changes",
+    "sourceFile": "plugin/skills/_shared/platform/codex/security-pass.md",
+    "reason": "security-pass.md's Codex binding moved to codex/skills/security-pass/references/codex.md, a rendered file outside the six source globs axis C scans; the token survives verbatim there",
+    "home": { "kind": "prose", "ref": "codex/skills/security-pass/references/codex.md" }
+  },
+  {
+    "axis": "C",
+    "item": "Security Pass: fallback — covered: staged, unstaged, and untracked changes",
+    "sourceFile": "plugin/skills/_shared/platform/opencode/security-pass.md",
+    "reason": "security-pass.md's OpenCode binding moved to opencode/skills/oso-security-pass/references/opencode.md, a rendered file outside the six source globs axis C scans; the token survives verbatim there",
+    "home": { "kind": "prose", "ref": "opencode/skills/oso-security-pass/references/opencode.md" }
+  },
+  {
+    "axis": "C",
+    "item": "Security Pass: fallback — covered: merge base of HEAD and <base-ref> through HEAD, plus staged, unstaged, and untracked changes",
+    "sourceFile": "plugin/skills/_shared/platform/opencode/security-pass.md",
+    "reason": "security-pass.md's OpenCode binding moved to opencode/skills/oso-security-pass/references/opencode.md, a rendered file outside the six source globs axis C scans; the token survives verbatim there",
+    "home": { "kind": "prose", "ref": "opencode/skills/oso-security-pass/references/opencode.md" }
+  },
+  {
+    "axis": "A",
+    "item": "amend-plan",
+    "sourceFile": "plugin/skills/_shared/platform/codex/plan.md",
+    "reason": "the anchor's own citation, plugin/skills/_shared/platform/codex/plan.md, already moved to a rendered file outside the six source globs; oso-state amend-plan's last surviving scanned occurrence was plugin/skills/_shared/platform/opencode/plan.md, itself now moved to opencode/skills/oso-plan/references/opencode.md, also outside the six source globs axis A scans; the spelling survives verbatim there",
+    "home": { "kind": "prose", "ref": "opencode/skills/oso-plan/references/opencode.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "The AUTO marker is written BESIDE the `mode`/`active_slice`/`verify_green` triple, never over it: a write naming the marker alone leaves all three keys exactly as they stood, and every write below spells it that way.",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "The AUTO disposition's own marker is the one thing written BESIDE that triple instead of over it: a write naming the marker alone leaves all three keys exactly as they stood, which is why the bullet below spells it alone wherever it arms or flips it.",
+    "reason": "C5-S2b gathered the ground-rules runtime-gates bullet's trailing AUTO-marker clause out of plan.md into unattended.md, the AUTO/park/ceiling material's new home; the non-AUTO gates mechanism that opened the same bullet stayed in plan.md and now points at unattended.md instead of restating the clause. C5-S2d then cut unattended.md itself to operative content, rewording this bullet; the item is updated to the surviving wording, same home",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "AUTO is a DISPOSITION of the run — never an invocation argument, never a fifth mode. It arms as the second question of the execution-mode round §4 asks, or by explicit operator instruction at any point this flow reaches, mid-execution included (\"sigue en auto, voy a salir\"), and disarms the same way.",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "AUTO is a DISPOSITION of the run — never an invocation argument, never a fifth mode — armed as the second question of the execution-mode round §4 asks, or by explicit operator instruction at any point this flow reaches, mid-execution included (\"sigue en auto, voy a salir\"), and disarmed the same way",
+    "reason": "C5-S2b gathered plan.md's ground-rules AUTO-disposition definition (arm/disarm, its marker, the journal, compaction recovery, resume, the reused autonomy policy, operator-message handling, the roadmap-substitution rule) out of the bullet that opened with the roadmap-child rule; that opening rule is not AUTO-specific and stayed in plan.md. C5-S2d then cut unattended.md itself to operative content, splitting this into two sentences; the item is updated to the surviving wording, same home",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "The TWO substitutions with which a run under its own AUTO reads the set-aside routine `plan/SKILL.md`'s ground rules describe, and there is no third: what a child queues for that mode's §5, this run queues for its OWN final report",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "The TWO substitutions a run under its own AUTO reads this bullet with, and there is no third: what a child queues for that mode's §5, this run queues for its OWN final report",
+    "reason": "C5-S2b gathered plan.md's ground-rules PARK definition out of the bullet that also defines SET ASIDE for a roadmap child; the SET-ASIDE half is not AUTO-specific and stayed in plan.md",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "AUTO's CEILING is how far a run reaches without another person, and it is contract rather than improvisation",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "AUTO's CEILING is how far a run reaches without another person, and it is contract rather than improvisation",
+    "reason": "C5-S2b moved plan.md's ground-rules CEILING bullet whole into unattended.md",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "**Ceiling — asked at the FIRST AUTO OR ROADMAP ARMING in this project** and never in the round §0 asks for Behavior: the STAGING ROUTE",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "**Ceiling — asked at the FIRST AUTO OR ROADMAP ARMING in this project** and never in the round above",
+    "reason": "C5-S2b moved plan.md's §0 Ceiling bullet (the second of the two oso/preferences field groups) whole into unattended.md",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "A ceiling field updates through a natural-language request from the operator, applied with `mem_update` — merge, never overwrite — and confirmed, no ceremony.",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "and a ceiling field updates exactly like a behavior one.",
+    "reason": "C5-S2b split plan.md §0's natural-language-updates bullet: the general mem_update mechanism stayed, and the ceiling-specific clause moved to unattended.md",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "NORMAL is the default and the recommendation: AUTO buys nothing for an operator who is sitting here, and the one about to leave is the one who takes it.",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "NORMAL is the default and the recommendation: AUTO buys nothing for an operator who is sitting here, and the one about to leave is the one who takes it.",
+    "reason": "C5-S2b split plan.md §4's execution-disposition bullet: the question's own placement and its two options stayed, and AUTO's default/recommendation/no-re-ask rule moved to unattended.md",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "An answer of AUTO is RECORDED here and ARMED at §5: this phase writes no runtime state at all",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "An answer of AUTO is RECORDED here and ARMED at §5: this phase writes no runtime state at all",
+    "reason": "C5-S2b split plan.md §4's record-the-answers bullet: the general recording instruction and the approval-gate sentence stayed, and the AUTO-recording/ceiling-reach clause moved to unattended.md",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "The `NEXT:` line also carries `AUTO` beside the position while that change runs under the AUTO disposition, written and dropped with the flip that arms or disarms it (e.g. `NEXT: plan2-purga slice 3/6 AUTO → then roadmap Plan 3`).",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "plus `AUTO` beside the position while that change runs under the AUTO disposition, written and dropped with the flip that arms or disarms it (e.g. `NEXT: plan2-purga slice 3/6 AUTO → then roadmap Plan 3`).",
+    "reason": "C5-S2b split plan.md §5's index-format-standard NEXT: line bullet: the general line contents stayed, and the AUTO annotation moved to unattended.md with a lead-in bridging the extracted fragment into a standalone sentence",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "plus `auto=running auto_change=<change-slug>` in that same write where §4's disposition answer was AUTO, which is where that answer stops being a ledger line and starts being a marker.",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "plus `auto=running auto_change=<change-slug>` in that same write where §4's disposition answer was AUTO, which is where that answer stops being a ledger line and starts being a marker.",
+    "reason": "C5-S2b moved plan.md §5's marker-write-and-branch-cut sentences (the two lines following the base oso-state initialize command) whole into unattended.md; the base command itself and its read-back confirmation stayed in plan.md",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Under AUTO the slice's commit lands on the `oso-run/<change>` branch §5 cut, the branch that close pushes whole.",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "under AUTO it lands on the `oso-run/<change>` branch §5 cut, the branch that close pushes whole.",
+    "reason": "C5-S2b split plan.md §6 step 4's commit bullet: the general commit-not-push rule stayed, and the AUTO-branch clause moved to unattended.md",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "A run whose operator flipped AUTO owes them one report at its END, and owes it whichever end the run reached",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "A run whose operator flipped AUTO owes them one report at its END, and owes it whichever end the run reached",
+    "reason": "C5-S2b moved plan.md §7's AUTO-report-obligation paragraph whole into unattended.md",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "At this close the two are SEQUENCED and the order is the whole of whether that report is read",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "At this close the two are SEQUENCED and the order is the whole of whether that report is read",
+    "reason": "C5-S2b moved plan.md §7's AUTO disarm-sequencing paragraph whole into unattended.md",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Under an UNATTENDED run PUSH and PR are the FINISH instead — the thing the plan approval that armed it chartered",
+    "sourceFile": "plugin/skills/_shared/bodies/plan.md",
+    "retired": "Under an UNATTENDED run they are the FINISH instead — the thing the plan approval that armed it chartered",
+    "reason": "C5-S2b split plan.md §7 step 8: the general PUSH/PR-needs-the-operator rule and the closing PR-body sentence stayed, and the AUTO finish clause moved to unattended.md with its pronoun resolved to its noun antecedent for a standalone sentence",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "a host whose delivery contract carves an unattended run out of its turn-ending rule reads that marker to know this run is one, and whatever rails that host arms while nobody is watching arm on the same value",
+    "sourceFile": "plugin/skills/_shared/bodies/roadmap.md",
+    "retired": "Unlike the key above it arms what a host has: a delivery contract that carves an unattended run out of its turn-ending rule reads it, the host's own unattended rails arm on it, and the platform file names them.",
+    "reason": "roadmap.md's child-arming bullet restated plan.md's ground-rules sentence about a host's delivery contract reading the AUTO marker and its rails arming on it; C5-S2b retired the restatement (one rule, one home) and pointed roadmap.md at unattended.md, where that sentence already lives verbatim from the gather above",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "That marker is what tells a park from a stall ON DISK rather than by inference: a run parked at a question reads `auto=parked` and a run that simply stopped mid-milestone still reads `auto=running`, so a host's unattended rails carry the second on and let the first rest.",
+    "sourceFile": "plugin/skills/_shared/bodies/roadmap.md",
+    "retired": "because a stop the flow INTENDED may never read `auto=running` on disk: a host's unattended rails carry a run that reads running back into motion, and what they owe this one is the end of the turn.",
+    "reason": "roadmap.md's chain-blocked bullet restated plan.md's ground-rules park-marker rationale (why a still-'running' marker is unsafe on disk and what a host's rails do with each reading); C5-S2b retired the restatement and pointed roadmap.md at unattended.md, where the rationale already lives verbatim from the gather above",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/unattended.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Otherwise, two labeled sections, never merged — a conformance gap must never hide inside the debt list, nor a debt finding inside conformance.",
+    "sourceFile": "core/src/prose/skills/debt-sweep/opencode.md",
+    "retired": "It ends on exactly one of: `Debt Sweep: clean` — report it as the pass; `Debt Sweep: findings` — route the list to the applier for the fix; `Debt Sweep: blocked` — resolve what the payload names missing and invoke the judge again fresh; `Conformance: clean` — report it; `Conformance: findings` — route each gap to the decision it violates; `Conformance: skipped — no ledger provided` — report the skip, never pass on it.",
+    "reason": "the OpenCode preface said the judge ends on exactly one of six verdicts; bodies/debt-sweep.md:54-73 requires a whole-report blocked branch or else two labeled sections never merged, one debt verdict and one conformance verdict. C5-S2d reconciled the preface to the body it binds under Decision 64 — the rule was corrected, not lost, and survives verbatim at its home",
+    "home": { "kind": "prose", "ref": "plugin/skills/debt-sweep/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Otherwise, two labeled sections, never merged — a conformance gap must never hide inside the debt list, nor a debt finding inside conformance.",
+    "sourceFile": "core/src/prose/skills/debt-sweep/opencode.md",
+    "retired": "If the assignment never arrived whole it ends on `Debt Sweep: blocked` — resolve what the payload names missing and invoke the judge again fresh. Otherwise it ends on one debt verdict and one conformance verdict, never merged: `Debt Sweep: clean` — report it as the pass; `Debt Sweep: findings` — route the list to the applier for the fix. The conformance verdict is `Conformance: clean` — report it; `Conformance: findings` — route each gap to the decision it violates; or `Conformance: skipped — no ledger provided` — report the skip, never pass on it.",
+    "reason": "the OpenCode preface restated debt-sweep's two-axis verdict grammar; C5-S4 moves the body into plugin/skills/debt-sweep/SKILL.md, rendered directly beneath this preface, so the restatement duplicates a grammar the flow now states itself, and Decision 64's condition 8 ends it — one rule, one home, with the six verdict tokens surviving in the flow for C5-D5 axis C.",
+    "home": { "kind": "prose", "ref": "plugin/skills/debt-sweep/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "A finding without its consequence is not a finding — drop it.",
+    "sourceFile": "core/src/prose/skills/doubt-pass/opencode.md",
+    "retired": "It ends on exactly one of: `Doubt Pass: clean` — report it and the freeze proceeds; `Doubt Pass: findings` — report each finding verbatim for reconciliation; `Doubt Pass: blocked` — resolve what the payload names missing and invoke the judge again fresh.",
+    "reason": "the OpenCode preface restated doubt-pass's three-verdict grammar. C5-S4 moves bodies/doubt-pass.md into plugin/skills/doubt-pass/SKILL.md, rendered directly beneath this same preface, so the restatement duplicates a grammar the flow now states itself; Decision 64 condition 8 retires the paragraph — one rule, one home — with all three verdict tokens surviving byte-identical in the flow for axis C, and the item above verbatim at its new home",
+    "home": { "kind": "prose", "ref": "plugin/skills/doubt-pass/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Never a guess dressed as a verdict, and never the pre-existing verdict as a default.",
+    "sourceFile": "core/src/prose/skills/triage/opencode.md",
+    "retired": "It ends on exactly one of: `Triage: attributable` — report the slice, file and hunk; `Triage: pre-existing` — report the evidence; `Triage: skipped — attribution not established` — report what would settle it; `Triage: blocked` — resolve what the payload names missing and invoke the judge again fresh.",
+    "reason": "the OpenCode preface restated triage's four-verdict grammar. C5-S4 moves bodies/triage.md into plugin/skills/triage/SKILL.md, rendered directly beneath this same preface, so the restatement duplicates a grammar the flow now states itself; Decision 64 condition 8 retires the paragraph — one rule, one home — with all four verdict tokens surviving byte-identical in the flow for axis C, and the item above verbatim at its new home",
+    "home": { "kind": "prose", "ref": "plugin/skills/triage/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "ADR-0117 called this lane Codex-specific because Claude Code carries no operational plan artifact to amend; this host now carries one, so the lane holds here for the same reason it holds there.",
+    "sourceFile": "core/src/prose/skills/plan/references/opencode.md",
+    "retired": "ADR-0117 called this lane Codex-specific because Claude Code carries no operational plan artifact to amend; this host now carries one, so the lane holds here for the same reason it holds there.",
+    "reason": "C5-S5a strips every ADR id from runtime prose under Decision 69 (G10 is tree-wide, no host-binding exemption). This sentence carried no rule of its own past the paragraph already stated above it — it only recounted that ADR-0117 once scoped the harness-discovered-correction lane to Codex and explained why it now also holds on OpenCode; that current applicability is already established earlier in this same file, where OpenCode's own `approved-<approval digest>.md` and `current.md` operational-plan artifacts are described. Retired as version history rather than rephrased, since removing only the id would leave a dangling, ungrounded claim",
+    "home": { "kind": "none" }
+  },
+  {
+    "axis": "prose",
+    "item": "| the quality-pass judge | `/oso-quality-pass` | read its installed `SKILL.md` and run it inline, the way it runs on every host |",
+    "sourceFile": "core/src/prose/skills/plan/references/opencode.md",
+    "retired": "| the quality-pass judge | `/oso-quality-pass` | read its installed `SKILL.md` and run it inline, the way it runs on every host |",
+    "reason": "C5-S5d-1 read the plan skill's own SKILL.md whole and found no mention of quality-pass anywhere in it — the judges plan/SKILL.md actually names are doubt-pass, debt-sweep, triage and security-pass; quality-pass is quick's and debug's own close-time judge. The row was copy-paste debt carried into plan's OpenCode naming table from a sibling skill's template rather than content this flow's own binding needs; the mapping it names still stands, unchanged, in the sibling skills that do invoke that judge",
+    "home": { "kind": "prose", "ref": "opencode/skills/oso-debug/references/opencode.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
+    "sourceFile": "core/src/prose/shared/codex.md",
+    "retired": "\"ending the turn as plain text, with any tool call in a later turn\" (the no-card paragraph's default-delivery clause) and \"a milestone still ends the turn exactly as above, with\" (the same paragraph's no-carve-out consequence clause)",
+    "reason": "Both clauses restated reporting.md:28's default delivery rule inside this host's own visibility-layer paragraph — once as the plain default, once as the consequence of taking neither Claude Code's carve-out nor OpenCode's rail; the rule now lives once at reporting.md and this binding keeps only what is genuinely Codex-specific (no card, no carve-out, no rail, nothing here to carry the run past the marker)",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
+    "sourceFile": "core/src/prose/shared/opencode.md",
+    "retired": "line 20: \"ending the turn as plain text, with any tool call in a later turn\"; line 24: \"A milestone ENDS THE TURN here exactly as every other operator-facing content does, under the delivery contract `../../oso-plan/references/opencode.md` states — and\"",
+    "reason": "Line 20 restated reporting.md:28's default clause after the native-agent-files paragraph, the same template codex.md and claude.md carry. Line 24's cut restated the same default as the consequence of this host taking no carve-out; the line's own rationale (\"ending the turn at every milestone stops a run nobody is there to continue\") and its continuation-rail mechanics stayed, since neither restates reporting.md and both are genuinely this host's own",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
+    "sourceFile": "core/src/prose/skills/plan/references/opencode.md",
+    "retired": "\"each ends the turn as plain text under the delivery contract at the top of this file\" and \"A milestone ends the turn here too — this host gets no carve-out from that contract —\"",
+    "reason": "Both clauses restated the same no-carve-out default (already reporting.md:28's rule, and this file's own top-of-file delivery-contract line) around the PARK/FINAL REPORT terminal steps; the disarm-sequencing detail and the continuation-rail mechanics that follow, genuinely host-specific, stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
+    "sourceFile": "core/src/prose/skills/roadmap/references/opencode.md",
+    "retired": "\"a child's close report ends the turn and the next child's arming follows in the next one\"",
+    "reason": "Restated the same default-delivery consequence the very next sentence already draws out (\"That costs the chain a turn per child\"); the branch-selection fact (no carve-out on this host) and the continuation-rail mechanics that follow are host-specific and stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
+    "sourceFile": "plugin/skills/_shared/references/claude.md",
+    "retired": "line 28 only: \"ending the turn as plain text with the tool call in a later turn —\"",
+    "reason": "Line 28 restated reporting.md:28's default clause after the native-card paragraph, the same template codex.md and opencode.md carry. Line 32 was read and left untouched: it is this host's OWN required statement of its carve-out — reporting.md:30 asks the carving host's own file to state \"which deliveries still end the turn\" — and its \"stalls with nobody there to say continue\" clause is this file's own rationale, not a restatement of :28, so neither of line 32's two matches is a duplicate copy",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
+    "sourceFile": "plugin/skills/debug/references/claude.md",
+    "retired": "\"while this repository's state carries `auto=running`, the run is UNATTENDED and its milestone text rides the stream instead of ending the turn, journaled full-text in its place\"",
+    "reason": "This flow explicitly says `_shared/references/claude.md`'s carve-out section \"states it whole rather than this section restating it\" and then restated a capsule of it anyway; the capsule is cut, the pointer and this mode's own inert-exception reasoning (a fix run reaches its operator at the diagnosis either way) stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
+    "sourceFile": "plugin/skills/plan/references/claude.md",
+    "retired": "\"while this repository's state carries `auto=running`, a milestone rides the stream instead of ending the turn, journaled full-text in its place —\"",
+    "reason": "Same restated capsule as debug's, cut for the same reason; kept the flow-specific mapping of which of THIS flow's own deliveries survive the carve-out (the park and the final report), since that mapping is stated nowhere else",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
+    "sourceFile": "plugin/skills/roadmap/references/claude.md",
+    "retired": "\"while this repository's state carries `auto=running`, a milestone rides the stream instead of ending the turn, journaled full-text in its place —\"",
+    "reason": "Same restated capsule as debug's and plan's, cut for the same reason; kept this flow's own mapping of which deliveries survive the carve-out (§5's three stopping moments)",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "State belongs to the repository and outlives this session",
+    "sourceFile": "core/src/prose/skills/debug/references/codex.md",
+    "retired": "What the state is keyed by is settled and is host-neutral: the state file is the REPOSITORY's, resolved from the directory the command runs in.",
+    "reason": "The ownership half already lives at debug/SKILL.md:52 (\"State belongs to the repository and outlives this session\"). DEBUG never cuts a worktree or runs a PARALLEL wave — debug/SKILL.md:56 says so directly (\"since this flow cuts none\"), and its one \"worktree\" mention names the WORKTREE PATH coordinate rather than describing a cut one, and it carries zero \"wave\" mentions — so the resolved-from-cwd detail answers no question this flow's reader has; dropped rather than appended, per the PARALLEL-wave load-bearing test",
+    "home": { "kind": "prose", "ref": "plugin/skills/debug/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "State belongs to the repository and outlives this session",
+    "sourceFile": "core/src/prose/skills/debug/references/opencode.md",
+    "retired": "What the state is keyed by is settled and is host-neutral: the state file is the REPOSITORY's, resolved from the directory the command runs in.",
+    "reason": "Same as the Codex sibling row: debug/SKILL.md:52 already carries ownership, and DEBUG never runs a worktree or a PARALLEL wave, so the resolution clause is surplus here and was dropped",
+    "home": { "kind": "prose", "ref": "plugin/skills/debug/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "The state belongs to the repository and outlives the session",
+    "sourceFile": "core/src/prose/skills/plan/references/codex.md",
+    "retired": "What the state is keyed by is settled and is host-neutral: the state file is the REPOSITORY's, resolved from the directory the command runs in, so nothing about the identity waits on this host.",
+    "reason": "The ownership half already lives at plan/SKILL.md:20. PLAN is the one flow that cuts worktrees and runs PARALLEL waves (§6): a worktree's own commands launch from a different directory than the main checkout, so the resolved-from-cwd fact is load-bearing there — it is what lets a worktree see the change's one state file with no path argument. Appended once to plan/SKILL.md:20 rather than repeated per host",
+    "home": { "kind": "prose", "ref": "plugin/skills/plan/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "The state belongs to the repository and outlives the session",
+    "sourceFile": "core/src/prose/skills/plan/references/opencode.md",
+    "retired": "What the state is keyed by is settled and is host-neutral: the state file is the REPOSITORY's, resolved from the directory the command runs in.",
+    "reason": "Same as the Codex sibling row: plan/SKILL.md:20 now carries both the ownership half and the appended resolution clause, load-bearing here because PLAN is the one flow with PARALLEL worktrees",
+    "home": { "kind": "prose", "ref": "plugin/skills/plan/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "State belongs to the repository and outlives this session",
+    "sourceFile": "core/src/prose/skills/quick/references/codex.md",
+    "retired": "What the state is keyed by is settled and is host-neutral: the state file is the REPOSITORY's, resolved from the directory the command runs in.",
+    "reason": "The ownership half already lives at quick/SKILL.md:56 (\"State belongs to the repository and outlives this session\"). QUICK never cuts a worktree or runs a PARALLEL wave — quick/SKILL.md carries zero \"worktree\"/\"wave\" mentions — so the resolution clause is surplus once ownership is stated and was dropped rather than appended",
+    "home": { "kind": "prose", "ref": "plugin/skills/quick/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "State belongs to the repository and outlives this session",
+    "sourceFile": "core/src/prose/skills/quick/references/opencode.md",
+    "retired": "What the state is keyed by is settled and is host-neutral: the state file is the REPOSITORY's, resolved from the directory the command runs in.",
+    "reason": "Same as the Codex sibling row: quick/SKILL.md:56 already carries ownership, and QUICK never runs a worktree or a PARALLEL wave, so the resolution clause is surplus here and was dropped",
+    "home": { "kind": "prose", "ref": "plugin/skills/quick/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "core/src/prose/skills/debug/references/codex.md",
+    "retired": "\" indexed by the neutral matrix\" (from \"this mode supplies only the DEBUG wiring indexed by the neutral matrix\")",
+    "reason": "front-surface.md's own matrix now states beside itself that each mode supplies only its own column; naming the matrix again per mode restated that pointer instead of using it. The DEBUG/PLAN/QUICK wiring fact and the argument-count/host-binding detail beside it, genuinely per-mode, stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "core/src/prose/skills/debug/references/opencode.md",
+    "retired": "\" indexed by the neutral matrix\" (from \"this mode supplies only the DEBUG wiring indexed by the neutral matrix\")",
+    "reason": "front-surface.md's own matrix now states beside itself that each mode supplies only its own column; naming the matrix again per mode restated that pointer instead of using it. The DEBUG/PLAN/QUICK wiring fact and the argument-count/host-binding detail beside it, genuinely per-mode, stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "core/src/prose/skills/plan/references/codex.md",
+    "retired": "\" indexed by the neutral matrix\" (from \"this mode supplies only the PLAN wiring indexed by the neutral matrix\")",
+    "reason": "front-surface.md's own matrix now states beside itself that each mode supplies only its own column; naming the matrix again per mode restated that pointer instead of using it. The DEBUG/PLAN/QUICK wiring fact and the argument-count/host-binding detail beside it, genuinely per-mode, stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "core/src/prose/skills/plan/references/opencode.md",
+    "retired": "\" indexed by the neutral matrix\" (from \"this mode supplies only the PLAN wiring indexed by the neutral matrix\")",
+    "reason": "front-surface.md's own matrix now states beside itself that each mode supplies only its own column; naming the matrix again per mode restated that pointer instead of using it. The DEBUG/PLAN/QUICK wiring fact and the argument-count/host-binding detail beside it, genuinely per-mode, stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "core/src/prose/skills/quick/references/codex.md",
+    "retired": "\" indexed by the neutral matrix\" (from \"this mode supplies only the QUICK wiring indexed by the neutral matrix\")",
+    "reason": "front-surface.md's own matrix now states beside itself that each mode supplies only its own column; naming the matrix again per mode restated that pointer instead of using it. The DEBUG/PLAN/QUICK wiring fact and the argument-count/host-binding detail beside it, genuinely per-mode, stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "core/src/prose/skills/quick/references/opencode.md",
+    "retired": "\" indexed by the neutral matrix\" (from \"this mode supplies only the QUICK wiring indexed by the neutral matrix\")",
+    "reason": "front-surface.md's own matrix now states beside itself that each mode supplies only its own column; naming the matrix again per mode restated that pointer instead of using it. The DEBUG/PLAN/QUICK wiring fact and the argument-count/host-binding detail beside it, genuinely per-mode, stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "plugin/skills/debug/references/claude.md",
+    "retired": "\" indexed by the neutral matrix\" (from \"this mode supplies only the DEBUG wiring indexed by the neutral matrix\")",
+    "reason": "front-surface.md's own matrix now states beside itself that each mode supplies only its own column; naming the matrix again per mode restated that pointer instead of using it. The DEBUG/PLAN/QUICK wiring fact and the argument-count/host-binding detail beside it, genuinely per-mode, stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "plugin/skills/plan/references/claude.md",
+    "retired": "\"; this mode supplies only the PLAN wiring indexed by the neutral matrix.\" — the WHOLE trailing clause, not just \" indexed by the neutral matrix\" as every sibling row dropped",
+    "reason": "front-surface.md's own matrix now states beside itself that each mode supplies only its own column, which absorbs the \"indexed by the neutral matrix\" pointer the same way it does for every sibling row. But unlike DEBUG's and QUICK's Claude bindings (rows above, which keep \"this mode supplies only the DEBUG/QUICK wiring\" as their own sentence) and unlike PLAN's own Codex and OpenCode bindings (which still carry \"this mode supplies only the PLAN wiring\" verbatim), this file's Front-surface binding section states no PLAN-wiring fact at all — a larger retirement than its siblings'. This row records the pointer-restatement half honestly; the wiring-fact loss has no declared home and this row does not claim to restore it",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "plugin/skills/quick/references/claude.md",
+    "retired": "\" indexed by the neutral matrix\" (from \"this mode supplies only the QUICK wiring indexed by the neutral matrix\")",
+    "reason": "front-surface.md's own matrix now states beside itself that each mode supplies only its own column; naming the matrix again per mode restated that pointer instead of using it. The DEBUG/PLAN/QUICK wiring fact and the argument-count/host-binding detail beside it, genuinely per-mode, stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "The `triage` judge compares a red check against WAVE START, never CHANGE BASE — a breakage an earlier wave already landed is background the wave in flight never introduced.",
+    "sourceFile": "plugin/skills/plan/SKILL.md",
+    "retired": "`oso-code:triage` compares a red check against WAVE START, never CHANGE BASE — a breakage an earlier wave already landed is background the wave in flight never introduced.",
+    "reason": "C5's close (G10 finding A1) found the shared flow body naming Claude's own skill spelling for the triage judge — `_shared/parallel.md` already invokes the same judge by the host-neutral name ('INVOKE the triage judge'), so plan/SKILL.md's own coordinate-naming paragraph is reworded the same way. Each host's own binding already carries its own spelling: Claude's plan/references/claude.md:61 already reads 'the triage judge | `oso-code:triage`'; Codex's shared codex.md Delegated-roles table already reads 'triage | `oso-triage`' — a custom-role spawn, not the `$oso-code:` skill-namespace form, since Codex routes judges as custom roles, never as skills, so this is a correction to that predicted spelling; OpenCode's generic 'Native agent files' description already covers every judge, triage included, by its `opencode/agents/<role.id>.md` filename with no separate table needed. No binding required an addition",
+    "home": { "kind": "prose", "ref": "plugin/skills/plan/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "run inside the host's read-only planning mode where it has one, as the reference file beside this one spells it — nothing before §6 writes code.",
+    "sourceFile": "plugin/skills/plan/SKILL.md",
+    "retired": "Phases 1–5, through §5's delivered approval document, run inside Plan Mode — read-only, nothing before §6 writes code. Enter it before phase 1, stay through delivery. A ROADMAP child's own re-entry into Plan Mode is the host's call, not this rule's — its reference file has the answer, read before phase 1.",
+    "reason": "C5's close (G10 finding A2) found OpenCode's own binding (plan/references/opencode.md:13, source core/src/prose/skills/plan/references/opencode.md) contradicting 'Plan Mode' as a universal mechanism: phases 1-5 run on OpenCode's `build` agent, which is not a distinct read-only mode. The RULE stays (nothing before §6 writes code); the mechanism name is replaced with a host-neutral clause pointing at each host's own reference file. 'Plan Mode' survives nowhere else in the flow body — only the frontmatter's own Claude-only description (line 3, outside flowBody() per render.ts) still names it, which is Claude's private metadata, never rendered for another host",
+    "home": { "kind": "prose", "ref": "plugin/skills/plan/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Every skill file that reaches one of them points here rather than restating it.",
+    "sourceFile": "plugin/skills/_shared/references/claude.md",
+    "retired": "Every skill file that reaches one of them points here rather than restating it.",
+    "reason": "meta text, restated in three files — plugin/skills/_shared/references/claude.md, core/src/prose/shared/codex.md and core/src/prose/shared/opencode.md all opened with this identical sentence about the three binding files' own role (Decision 73, C5's close finding B item 1). It is not a rule any flow states, so no flow file can serve as its home, and no host-neutral shared file (front-surface.md, reporting.md, rubric.md, didactic.md, unattended.md, parallel.md) states it either — searched and none found. Retired at all three sites rather than given an invented home",
+    "home": { "kind": "none" }
+  },
+  {
+    "axis": "prose",
+    "item": "Every skill file that reaches one of them points here rather than restating it.",
+    "sourceFile": "core/src/prose/shared/codex.md",
+    "retired": "Every skill file that reaches one of them points here rather than restating it.",
+    "reason": "meta text, restated in three files — see the claude.md sibling row for the full search; this is the Codex source's own copy of the same sentence, rendered to plugin/skills/_shared/references/codex.md",
+    "home": { "kind": "none" }
+  },
+  {
+    "axis": "prose",
+    "item": "Every skill file that reaches one of them points here rather than restating it.",
+    "sourceFile": "core/src/prose/shared/opencode.md",
+    "retired": "Every skill file that reaches one of them points here rather than restating it.",
+    "reason": "meta text, restated in three files — see the claude.md sibling row for the full search; this is the OpenCode source's own copy of the same sentence, rendered to plugin/skills/_shared/references/opencode.md",
+    "home": { "kind": "none" }
+  },
+  {
+    "axis": "prose",
+    "item": "Four things live here and nowhere else",
+    "sourceFile": "plugin/skills/_shared/references/claude.md",
+    "retired": "This binds the platform-shaped edges of `../front-surface.md`; it does not restate that file's trigger, pin recipe, audit exit bar or absence policy.",
+    "reason": "Decision 73 (C5's close finding B item 2): this sentence restated front-surface.md's own opening declaration that the trigger, pin recipe, audit exit bar and absence policy live there and nowhere else. Retired from all three shared-layer binding files; the rule survives once at its own home",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Four things live here and nowhere else",
+    "sourceFile": "core/src/prose/shared/codex.md",
+    "retired": "This binds the platform-shaped edges of `../front-surface.md`; it does not restate that file's trigger, pin recipe, audit exit bar or absence policy.",
+    "reason": "Decision 73 (C5's close finding B item 2), same restatement retired from the Codex source, rendered to plugin/skills/_shared/references/codex.md — see the claude.md sibling row",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Four things live here and nowhere else",
+    "sourceFile": "core/src/prose/shared/opencode.md",
+    "retired": "This binds the platform-shaped edges of `../front-surface.md`; it does not restate that file's trigger, pin recipe, audit exit bar or absence policy.",
+    "reason": "Decision 73 (C5's close finding B item 2), same restatement retired from the OpenCode source, rendered to plugin/skills/_shared/references/opencode.md — see the claude.md sibling row",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "This is the single source for the policy; the modes point here.",
+    "sourceFile": "plugin/skills/_shared/references/claude.md",
+    "retired": "continue without the design bar, and record the gap where the invoking mode requires",
+    "reason": "Decision 73 (C5's close finding B item 3): the absence-remedy bullet's trailing clause restated front-surface.md's own Absence policy section, which already says it is the single source and the modes point here. Only the trailing clause was cut; Claude's own two-step `/plugin` remedy before it, genuinely host-specific, stayed. Claude's copy of this clause carried an extra comma before \"and\" that Codex's and OpenCode's did not — a punctuation-level divergence, immaterial to the retirement",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "This is the single source for the policy; the modes point here.",
+    "sourceFile": "core/src/prose/shared/codex.md",
+    "retired": "continue without the design bar and record the gap where the invoking mode requires",
+    "reason": "Decision 73 (C5's close finding B item 3), same restatement retired from the Codex source, rendered to plugin/skills/_shared/references/codex.md; the `node bootstrap/oso.js install --host codex` remedy and the never-repeat-Claude's-commands / never-use-a-discovered-cache-path clauses around it, genuinely host-specific, stayed — see the claude.md sibling row",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "This is the single source for the policy; the modes point here.",
+    "sourceFile": "core/src/prose/shared/opencode.md",
+    "retired": "continue without the design bar and record the gap where the invoking mode requires",
+    "reason": "Decision 73 (C5's close finding B item 3), same restatement retired from the OpenCode source, rendered to plugin/skills/_shared/references/opencode.md; the `node bootstrap/oso.js install --host opencode` remedy and the never-use-a-discovered-cache-path clause around it, genuinely host-specific, stayed — see the claude.md sibling row",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "it is resolved from the npm channel by this recipe, the single source for it",
+    "sourceFile": "plugin/skills/_shared/references/claude.md",
+    "retired": "; the npm CLI numeral comes from the neutral pin recipe.",
+    "reason": "Decision 73 (C5's close finding B item 4): the numeral-record bullet's trailing pointer restated front-surface.md's own pin-recipe declaration that the npm CLI numeral is resolved from the npm channel by that recipe, the single source for it. Only the pointer was cut; the numeral SOURCE before it (`claude plugin list`), genuinely host-specific, stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "it is resolved from the npm channel by this recipe, the single source for it",
+    "sourceFile": "core/src/prose/shared/codex.md",
+    "retired": "; the npm CLI numeral still comes from the neutral pin recipe.",
+    "reason": "Decision 73 (C5's close finding B item 4), same restatement retired from the Codex source, rendered to plugin/skills/_shared/references/codex.md; the numeral SOURCE before it (the mounted `SKILL.md`'s `version:` field), genuinely host-specific, stayed — see the claude.md sibling row",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "it is resolved from the npm channel by this recipe, the single source for it",
+    "sourceFile": "core/src/prose/shared/opencode.md",
+    "retired": "; the npm CLI numeral still comes from the neutral pin recipe.",
+    "reason": "Decision 73 (C5's close finding B item 4), same restatement retired from the OpenCode source, rendered to plugin/skills/_shared/references/opencode.md; the numeral SOURCE before it (the mounted `SKILL.md`'s `version:` field), genuinely host-specific, stayed — see the claude.md sibling row",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "deny-pattern add <pattern>",
+    "sourceFile": "plugin/skills/_shared/unattended.md",
+    "retired": "Write it through SHELL, this flow's own hands, creating that directory with `mkdir -p` before the append, since no `oso-state` command writes that file or makes the directory it sits in.",
+    "reason": "C5-D2 finding C1: core/src/state/cli.ts's `deny-pattern` branch (runDenyPattern) now writes the patterns file and creates its directory (mkdirSync around :220), which the retired sentence claimed no `oso-state` command did. Reworded to name the verb directly: `oso-state deny-pattern add <pattern>` creates the directory and appends one pattern",
+    "home": { "kind": "prose", "ref": "core/src/state/cli.ts" }
+  },
+  {
+    "axis": "prose",
+    "item": "never discover a default branch",
+    "sourceFile": "plugin/skills/debt-sweep/SKILL.md",
+    "retired": "Otherwise: diff against the repository's default branch, plus uncommitted changes.",
+    "reason": "C5-D2 finding C3: debt-sweep's own default-branch fallback contradicted security-pass/SKILL.md:28's rule ('never discover a default branch, never assume a remote exists'). Ruled that security-pass's rule wins on correctness, not consistency — a guessed default branch audits the wrong diff — so debt-sweep's Scope section now falls back to the uncommitted-changes-only scope its 'uncommitted changes' clause already computed on the base-ref-given branch, with no branch-guessing at all",
+    "home": { "kind": "prose", "ref": "plugin/skills/security-pass/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "`HEAD` is the BASE REF",
+    "sourceFile": "plugin/skills/debug/SKILL.md",
+    "retired": "with no base ref in its ARGUMENTS, since debug tracks no branch model, which drops the sweep onto its own Scope rule",
+    "reason": "C5-D2 finding C3: debug's own close-time debt-sweep invocation (§5 step 1) passed no base ref, relying on debt-sweep's now-removed default-branch fallback. Reworded to pass `HEAD` explicitly — the same BASE REF coordinate §4 step 1 already establishes for this flow's own applier/verifier launches — which keeps the sweep on its own base-ref Scope rule rather than guessing one",
+    "home": { "kind": "prose", "ref": "plugin/skills/debug/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "plugin/skills/debug/references/claude.md",
+    "retired": "This mode supplies only the DEBUG wiring, which still invokes none of the three arguments.",
+    "reason": "C5's close ran a three-way diff instrument across every skill's host bindings and found this sentence byte-identical across all three of debug's — S5e's own regex matched only \" indexed by the neutral matrix\", and this clause never carried that string, so the enumeration missed the clause the string used to sit inside. It restates exactly what front-surface.md's own column rule already forbids restating, and DEBUG's column is already spelled there in full: the Design-docs check row (\"never runs `init` or `document`\") and the Audit loop row (\"none — §4 step 2 makes detect the design gate instead\") between them cover all three arguments the sentence claims none of are invoked. Cut outright rather than shortened, the same way plan's own Claude binding already lost its wiring-fact sentence entirely rather than keeping one",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "core/src/prose/skills/debug/references/codex.md",
+    "retired": "This mode supplies only the DEBUG wiring, which still invokes none of the three arguments.",
+    "reason": "Same restatement retired from the Codex source, rendered to codex/skills/debug/references/codex.md — see the claude.md sibling row for the full finding",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "core/src/prose/skills/debug/references/opencode.md",
+    "retired": "This mode supplies only the DEBUG wiring, which still invokes none of the three arguments.",
+    "reason": "Same restatement retired from the OpenCode source, rendered to opencode/skills/oso-debug/references/opencode.md — see the claude.md sibling row for the full finding",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "The WORKTREE ROOT is your host's and the reference file spells it — a path spelled any other way is a path the teardown never finds.",
+    "sourceFile": "plugin/skills/roadmap/references/claude.md",
+    "retired": "- **The worktree root** — `<worktree root>`, the SECOND place §4's bar reads before every arming, is the path that file's own **The worktree root** section spells.",
+    "reason": "C5's close ran a three-way diff instrument across every skill's host bindings and found this bullet byte-identical across all three of roadmap's. `_shared/parallel.md`'s own \"Cut one worktree per slice\" paragraph already states the same path FACT — the worktree root is the host's own and the reference file spells it — so the home pre-existed and nothing new was authored there; the bullet was cut rather than reworded, since a reworded pointer repeated verbatim in all three bindings would only recreate the same identical triple. But the retired bullet was a ROUTE, not this fact: it told the reader WHERE §4's `<worktree root>` is actually spelled, `plan/references/<host>.md`'s own **The worktree root** section, and parallel.md states the fact without pointing there. The close's confirming re-judge (fix round 2, finding 1) found no binding routed to that section anymore and ruled the route restored — one bullet per host, each naming what that host's own worktree-root path actually is (the session-sanitized path here) so the three sentences differ and the identical triple this row records is never recreated. The local \"§4 reaches for N host spellings\" sentence and its \"READ … sections\" close are adjusted again, now to the three spellings (state command, worktree root, unattended rails) present. `plan`'s own three per-host `## The worktree root` sections, which spell the actual per-host path, are untouched — they are genuinely host-specific and were never part of this retirement",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/parallel.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "The WORKTREE ROOT is your host's and the reference file spells it — a path spelled any other way is a path the teardown never finds.",
+    "sourceFile": "core/src/prose/skills/roadmap/references/codex.md",
+    "retired": "- **The worktree root** — `<worktree root>`, the SECOND place §4's bar reads before every arming, is the path that file's own **The worktree root** section spells.",
+    "reason": "Same bullet retired from the Codex source, rendered to codex/skills/roadmap/references/codex.md — see the claude.md sibling row for the full finding. Codex's own list had only this bullet beside the state command (Codex chains rather than running unattended, so it never carried an unattended-rails bullet), so removing it left one spelling instead of two, and the local intro/close sentences were reworded to the singular. Fix round 2's finding 1 restored the route as its own bullet, naming Codex's per-agent worktree-root path, and the local sentences are adjusted back to two spellings (state command, worktree root)",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/parallel.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "The WORKTREE ROOT is your host's and the reference file spells it — a path spelled any other way is a path the teardown never finds.",
+    "sourceFile": "core/src/prose/skills/roadmap/references/opencode.md",
+    "retired": "- **The worktree root** — `<worktree root>`, the SECOND place §4's bar reads before every arming, is the path that file's own **The worktree root** section spells.",
+    "reason": "Same bullet retired from the OpenCode source, rendered to opencode/skills/oso-roadmap/references/opencode.md — see the claude.md sibling row for the full finding. Fix round 2's finding 1 restored the route as its own bullet, naming OpenCode's workspace-API worktree-root path, and the local sentences are adjusted back to three spellings (state command, worktree root, unattended rails)",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/parallel.md" }
+  }
+]

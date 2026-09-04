@@ -2,8 +2,6 @@
   "name": "unknown-tool gate: a foreign pending still leaves the ordinary allowlist in force",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 1252,
       "assertion": "assert_after_hook \"a foreign pending still leaves the ordinary allowlist in force\" \\\n  hook_returned_deny"
     }
   ],

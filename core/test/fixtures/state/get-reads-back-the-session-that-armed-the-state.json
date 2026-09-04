@@ -2,8 +2,6 @@
   "name": "get reads back the session that armed the state",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5605,
       "assertion": "assert_equals \"a write records the session that armed the state\" \\\n  \"$SESSION\" \"$(oso-state --session \"$SESSION\" get session)\""
     }
   ],

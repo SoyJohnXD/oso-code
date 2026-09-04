@@ -2,13 +2,9 @@
   "name": "commit gate, git option shape: git --exec-path=/usr/lib/git-core commit",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6477,
       "assertion": "assert_every assert_denies \"git option shape\" <<'GIT_OPTION_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6483,
       "assertion": "git --exec-path=/usr/lib/git-core commit"
     }
   ],

@@ -2,8 +2,6 @@
   "name": "production boundary: a parked run deploys untouched — git push origin main",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5138,
       "assertion": "assert_equals \"a parked run, a finished one, an attended session, an unmarked repository and a foreign session all deploy untouched\" \\\n  \"allow allow allow allow allow allow allow allow allow\" \"${prod_settled_verdicts# }\""
     }
   ],

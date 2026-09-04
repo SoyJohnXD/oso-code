@@ -7,7 +7,6 @@ import {
   observeGate,
   type GateFixture,
 } from "../support/gate-fixture.ts";
-import { readSuiteLines, unresolvedCitations } from "../support/parity-fixture.ts";
 import { provedSomething } from "../support/proved.ts";
 import { withStateSandbox } from "../support/state-sandbox.ts";
 
@@ -29,12 +28,7 @@ provedSomething(
   `the gate fixtures cover ${gatesCovered.join(", ")} rather than every ported gate`,
 );
 
-test(`all ${fixtures.length} gate fixtures cite an assertion that still stands in tests/hooks-test.sh`, () => {
-  const suiteLines = readSuiteLines();
-  assert.deepEqual(fixtures.flatMap((fixture) => unresolvedCitations(fixture, suiteLines)), []);
-});
-
-describe(`${fixtures.length} gate parity fixtures read from tests/hooks-test.sh`, () => {
+describe(`${fixtures.length} gate parity fixtures, each quoting the assertion it was ported from`, () => {
   for (const fixture of fixtures) {
     test(fixture.name, () => {
       assert.deepEqual(mismatchesOf(fixture), []);

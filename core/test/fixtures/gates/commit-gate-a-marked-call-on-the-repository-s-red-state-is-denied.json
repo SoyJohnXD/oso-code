@@ -2,8 +2,6 @@
   "name": "commit gate: a marked call on the repository's red state is denied",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 2152,
       "assertion": "assert_denies \"the commit gate denies a marked call on the repo's red state\" \\\n  block-commit-until-green.sh \"$(bash_input 'git commit -m x')\""
     }
   ],

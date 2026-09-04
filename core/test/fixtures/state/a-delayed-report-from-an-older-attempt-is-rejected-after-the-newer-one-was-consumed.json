@@ -2,13 +2,9 @@
   "name": "a delayed report from an older attempt is rejected after the newer one was consumed",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5337,
       "assertion": "assert_equals \"a delayed report from an older attempt is rejected after the newer one was consumed\" \\\n  1 \"$handoff_rc\""
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5542,
       "assertion": "assert_equals \"TTL cleanup prunes old receipts, watermarks and orphaned atomic temps\" \\\n  \"publish=pruned-replaced aged-wait=1 receipt=absent\" \\\n  \"publish=$ttl_publish_cleanup aged-wait=$handoff_rc receipt=$([ -e \"$ttl_receipt\" ] && printf present || printf absent)\""
     }
   ],

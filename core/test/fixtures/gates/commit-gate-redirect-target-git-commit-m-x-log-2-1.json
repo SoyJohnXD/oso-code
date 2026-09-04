@@ -2,13 +2,9 @@
   "name": "commit gate, redirect target: git commit -m x >>log 2>&1",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6530,
       "assertion": "assert_every assert_denies \"redirect target\" <<'REDIRECT_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6558,
       "assertion": "git commit -m x >>log 2>&1"
     }
   ],

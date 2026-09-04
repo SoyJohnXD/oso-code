@@ -2,8 +2,6 @@
   "name": "unknown-tool gate: the OpenCode host names its own allowlist in the deny",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 1237,
       "assertion": "assert_after_hook \"the Codex catch-all's deny names Codex's own allowlist\" \\\n  hook_deny_names_allowlist_host Codex"
     }
   ],

@@ -2,13 +2,9 @@
   "name": "commit gate, adversarial: bash -c \\\"git commit -m 'fix retrieval bug'\\\"",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6380,
       "assertion": "assert_every assert_denies adversarial <<'ADVERSARIAL_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6404,
       "assertion": "bash -c \\\"git commit -m 'fix retrieval bug'\\\""
     }
   ],

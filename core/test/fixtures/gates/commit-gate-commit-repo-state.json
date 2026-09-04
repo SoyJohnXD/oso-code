@@ -2,8 +2,6 @@
   "name": "commit gate: $COMMIT_REPO_STATE",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6912,
       "assertion": "  rm -f \"$COMMIT_REPO_STATE\""
     }
   ],

@@ -2,13 +2,9 @@
   "name": "commit gate, regression: git -c user.name=x -c user.email=y commit -m z",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6448,
       "assertion": "assert_every assert_denies regression <<'REGRESSION_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6460,
       "assertion": "git -c user.name=x -c user.email=y commit -m z"
     }
   ],

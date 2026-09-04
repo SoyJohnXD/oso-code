@@ -2,13 +2,9 @@
   "name": "commit gate, adversarial: git replace abc123 def456",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6380,
       "assertion": "assert_every assert_denies adversarial <<'ADVERSARIAL_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6413,
       "assertion": "git replace abc123 def456"
     }
   ],

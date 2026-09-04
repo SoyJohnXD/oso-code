@@ -2,13 +2,9 @@
   "name": "commit gate, git option shape: git -c a.b=c --attr-source HEAD commit -m x",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6477,
       "assertion": "assert_every assert_denies \"git option shape\" <<'GIT_OPTION_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6482,
       "assertion": "git -c a.b=c --attr-source HEAD commit -m x"
     }
   ],

@@ -2,13 +2,9 @@
   "name": "reanchor gate: no state at all leaves a compaction silent",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6377,
       "assertion": "oso-state --session \"$SESSION\" clear"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6352,
       "assertion": "reanchor_uncertain_verdicts=\" $(reanchor_verdict \"$(reanchor_input compact)\")\""
     }
   ],

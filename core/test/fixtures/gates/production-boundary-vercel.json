@@ -2,8 +2,6 @@
   "name": "production boundary: vercel",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5006,
       "assertion": "assert_equals \"the preview and staging shapes of the same CLIs keep passing\" \\\n  \"allow allow allow allow\" \\\n  \"$(prod_verdicts_for vercel 'vercel deploy' 'vercel deploy --target=staging' 'netlify deploy')\""
     }
   ],

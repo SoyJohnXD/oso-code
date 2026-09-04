@@ -10,12 +10,12 @@ import {
   makeUnreadable,
   OWNER_ONLY_FILE,
   REPOSITORY_PLANS_DIR,
-  skipUnlessChmodMakesFilesUnreadable,
   STATE_FILE,
   withStateSandbox,
   type SeededEntry,
   type StateSandbox,
 } from "../support/state-sandbox.ts";
+import { skipUnlessChmodChangesFileMode, skipUnlessChmodMakesFilesUnreadable } from "../support/win32-skip-guards.ts";
 
 const PLAN_MARKER = "<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->";
 const WIRE_DOCUMENT = `Repaso\\n${PLAN_MARKER}`;
@@ -43,11 +43,6 @@ const PENDING_STATE =
   `plan_approval_digest=${DIGEST}\nplan_approval_session=test-session\n` +
   `plan_snapshot_file={home}/${PRESENTED}\nplan_current_file={home}/${CURRENT}\n` +
   "plan_revision=0\nsession=test-session\n";
-
-function skipUnlessChmodBites(): false | string {
-  if (process.platform !== "win32") return false;
-  return "win32 synthesises its own mode bits, so a file chmod'd here reads back with the mode it already had";
-}
 
 function judged(
   gate: string,
@@ -107,10 +102,10 @@ describe(
 
 describe(
   "core/src/gates/planprompt.ts: native approval refuses a pending snapshot that is readable beyond its owner " +
-    "(port of plugin/hooks/approve-plan-token.sh:125-129 over core/src/state/plan.ts:125-142, which the suite " +
-    "exercises at tests/hooks-test.sh:1908-1919 and skips wherever chmod is a no-op)",
+    "(port of plugin/hooks/approve-plan-token.sh:125-129 over core/src/state/plan.ts:125-142, which the hook " +
+    "regression suite exercised and skipped wherever chmod is a no-op)",
   () => {
-    test("a non-private pending snapshot cannot be approved", { skip: skipUnlessChmodBites() }, () => {
+    test("a non-private pending snapshot cannot be approved", { skip: skipUnlessChmodChangesFileMode() }, () => {
       const run = judged(
         "planprompt",
         APPROVE_PAYLOAD,

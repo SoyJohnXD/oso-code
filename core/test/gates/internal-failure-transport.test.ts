@@ -45,7 +45,7 @@ describe(
   "core/src/gates/dispatch.ts: every lifecycle gate's internal failure is LOUD — SessionStart, SessionEnd, " +
     "Stop, UserPromptSubmit and SubagentStop alike " +
     "(exit 1, cause on stderr, no stdout, no event) per DECISION 7 of the S2 fix round 3 ledger " +
-    "(docs/rewrite/ts-core-roadmap.md:107-121, G5's carve-out table amended to read INTERNAL FAILURE " +
+    "(docs/rewrite/ts-core-roadmap.md:121-135, G5's carve-out table amended to read INTERNAL FAILURE " +
     "BEHAVIOUR). MEASURED directly against the real bash (env -u HOME plugin/hooks/<hook>.sh): every " +
     "lifecycle hook that sources lib.sh dies at lib.sh:260 with 'HOME: unbound variable', a LOUD, exit-1, " +
     "uniform failure for warn-stale-state.sh, warn-stale-version.sh, reanchor-after-compact.sh and " +

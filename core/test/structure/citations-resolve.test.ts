@@ -78,12 +78,31 @@ function isScanned(file: string): boolean {
   );
 }
 
+const OWN_REFERENCE_PATTERN = /oso-code:([A-Za-z0-9_-]+)/g;
+const OWN_REFERENCE_NAMES_FLOOR = 5;
+const OWN_REFERENCE_NAMES_DERIVATION =
+  "8 distinct oso-code:<name> self-references under plugin/, measured at C5-S5b: debt-sweep, debug, doubt-pass, " +
+  "plan, quality-pass, quick, security-pass, triage";
+
+function ownReferencedNames(files: readonly string[]): string[] {
+  const names = new Set<string>();
+  for (const file of files.filter((candidate) => candidate.startsWith("plugin/"))) {
+    for (const match of readTrackedText(file).text.matchAll(OWN_REFERENCE_PATTERN)) names.add(match[1] as string);
+  }
+  return [...names].sort();
+}
+
+function ownReferenceResolves(name: string, trackedFiles: ReadonlySet<string>): boolean {
+  return trackedFiles.has(`plugin/skills/${name}/SKILL.md`) || trackedFiles.has(`plugin/agents/${name}.md`);
+}
+
 const trackedFiles = trackedRepositoryFiles();
 const trackedFileSet = new Set(trackedFiles);
 const scannedFiles = trackedFiles.filter(isScanned);
 const scannedFileTexts = scannedFiles.map(readTrackedText);
 const citationsFound = scannedFileTexts.flatMap(({ file, text }) => citationsIn(file, text));
 const bareCitationTotal = scannedFileTexts.reduce((total, { text }) => total + bareCitationCount(text), 0);
+const ownReferenceNames = ownReferencedNames(trackedFiles);
 
 provedSomething(
   `at least one <repo-file>:<line> citation was found across ${scannedFiles.length} scanned file(s)`,
@@ -97,6 +116,23 @@ provedSomething(
   bareCitationTotal > 0,
   "zero bare citations were found, so this check's narrowed name no longer needs the disclaimer",
 );
+
+provedSomething(
+  `${ownReferenceNames.length} distinct oso-code:<name> self-reference(s) were found under plugin/`,
+  ownReferenceNames.length >= OWN_REFERENCE_NAMES_FLOOR,
+  `only ${ownReferenceNames.length} name(s) were found, under the ${OWN_REFERENCE_NAMES_FLOOR}-name floor (${OWN_REFERENCE_NAMES_DERIVATION})`,
+);
+
+describe("every oso-code:<name> self-reference under plugin/ names a skill or an agent that exists", () => {
+  for (const name of ownReferenceNames) {
+    test(`oso-code:${name} resolves to plugin/skills/${name}/SKILL.md or plugin/agents/${name}.md`, () => {
+      assert.ok(
+        ownReferenceResolves(name, trackedFileSet),
+        `oso-code:${name} is referenced but plugin/skills/${name}/SKILL.md and plugin/agents/${name}.md are both absent`,
+      );
+    });
+  }
+});
 
 describe(
   "every full `path:line` citation under core/, docs/rewrite/, tests/, bootstrap/ and CHANGELOG.md that this " +
@@ -125,8 +161,8 @@ describe("resolveCitation", () => {
     assert.equal(resolveCitation(citation, trackedFileSet).ok, false);
   });
 
-  test("resolves a shorthand citation against a shared skill body", () => {
-    const citation: Citation = { source: "synthetic", sourceLine: 0, target: "bodies/plan.md", spec: "19" };
+  test("resolves a shorthand citation against a shared file under _shared/", () => {
+    const citation: Citation = { source: "synthetic", sourceLine: 0, target: "reporting.md", spec: "19" };
     assert.equal(resolveCitation(citation, trackedFileSet).ok, true);
   });
 });

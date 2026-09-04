@@ -2,13 +2,9 @@
   "name": "commit gate, scheduling wrapper: chrt -f 10 git commit -m x",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6659,
       "assertion": "assert_every assert_denies \"scheduling wrapper\" <<'WRAPPER_NAME_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6661,
       "assertion": "chrt -f 10 git commit -m x"
     }
   ],

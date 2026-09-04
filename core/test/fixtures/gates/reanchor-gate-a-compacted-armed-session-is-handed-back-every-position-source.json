@@ -2,18 +2,12 @@
   "name": "reanchor gate: a compacted session with an armed slice is handed back every position source, as session-start context, for an attended run",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6325,
       "assertion": "run_hook reanchor-after-compact.sh \"$(reanchor_input compact)\""
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6311,
       "assertion": "assert_equals \"a compacted session is handed back every position source that outlived its window\" \\\n  \"\" \"$reanchor_position_unnamed\""
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6317,
       "assertion": "assert_equals \"the re-anchor reaches the model as session-start context, never as bare stdout\" \\\n  \"present\" \"$reanchor_context_envelope\""
     }
   ],

@@ -2,8 +2,6 @@
   "name": "handoff wait prunes an aged receipt and reports it consumed or superseded",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5542,
       "assertion": "assert_equals \"TTL cleanup prunes old receipts, watermarks and orphaned atomic temps\" \\\n  \"publish=pruned-replaced aged-wait=1 receipt=absent\" \\\n  \"publish=$ttl_publish_cleanup aged-wait=$handoff_rc receipt=$([ -e \"$ttl_receipt\" ] && printf present || printf absent)\""
     }
   ],

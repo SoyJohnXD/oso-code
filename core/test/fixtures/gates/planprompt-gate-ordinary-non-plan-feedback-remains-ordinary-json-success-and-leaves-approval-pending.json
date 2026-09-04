@@ -1,9 +1,9 @@
 {
   "name": "planprompt gate: ordinary non-plan feedback remains ordinary JSON success and leaves approval pending",
   "source": [
-    { "file": "tests/hooks-test.sh", "line": 1732, "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'please explain one risk first' \"$CODEX_PROMPT_DEFAULT_TRANSCRIPT\")\"" },
-    { "file": "tests/hooks-test.sh", "line": 1734, "assertion": "assert_after_hook \"ordinary non-plan feedback remains ordinary JSON success\" \\\n  [ \"$hook_stdout\" = '{}' ]" },
-    { "file": "tests/hooks-test.sh", "line": 1736, "assertion": "assert_equals \"ordinary non-plan feedback leaves approval pending\" pending \\\n  \"$(oso-state --session \"$SESSION\" get plan_approval)\"" }
+    { "assertion": "run_hook \"$PLAN_PROMPT_HOOK\" \\\n  \"$(codex_prompt_input default \"$SESSION\" 'please explain one risk first' \"$CODEX_PROMPT_DEFAULT_TRANSCRIPT\")\"" },
+    { "assertion": "assert_after_hook \"ordinary non-plan feedback remains ordinary JSON success\" \\\n  [ \"$hook_stdout\" = '{}' ]" },
+    { "assertion": "assert_equals \"ordinary non-plan feedback leaves approval pending\" pending \\\n  \"$(oso-state --session \"$SESSION\" get plan_approval)\"" }
   ],
   "gate": "planprompt",
   "argv": [],

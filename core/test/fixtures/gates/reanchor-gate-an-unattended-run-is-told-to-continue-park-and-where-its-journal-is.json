@@ -2,18 +2,12 @@
   "name": "reanchor gate: an unattended run is told to keep going, to park what needs the operator, and where its own journal is",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6324,
       "assertion": "oso-state --session \"$SESSION\" set auto=running auto_change=auto-continuity >/dev/null"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6336,
       "assertion": "run_hook reanchor-after-compact.sh \"$(reanchor_input compact)\""
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6332,
       "assertion": "assert_equals \"an unattended run is told to keep going, to park what needs the operator, and where its own journal is\" \\\n  \"|$REANCHOR_CONTINUE_ORDER|park|$AUTO_JOURNAL\" \"$reanchor_unattended_read\""
     }
   ],

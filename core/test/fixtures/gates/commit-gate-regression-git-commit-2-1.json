@@ -2,13 +2,9 @@
   "name": "commit gate, regression: git commit 2>&1",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6448,
       "assertion": "assert_every assert_denies regression <<'REGRESSION_TABLE'"
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 6465,
       "assertion": "git commit 2>&1"
     }
   ],

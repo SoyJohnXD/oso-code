@@ -2,13 +2,9 @@
   "name": "handoff wait rejects a foreign agent id and leaves the exact receipt",
   "source": [
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5356,
       "assertion": "  assert_equals \"a receipt rejects mismatched identity: $wrong_identity\" 1 \"$handoff_rc\""
     },
     {
-      "file": "tests/hooks-test.sh",
-      "line": 5360,
       "assertion": "assert_equals \"wrong identity probes never consume the exact receipt\" \\\n  \"rc=0:$identity_receipt\" \"rc=$handoff_rc:$handoff_stdout\""
     }
   ],
