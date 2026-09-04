@@ -1,5 +1,6 @@
 import { build } from "esbuild";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 export async function bundleText(entryPoint, external = []) {
   const result = await build({
@@ -23,5 +24,30 @@ export function readTextOrNull(path) {
     return readFileSync(path, "utf8");
   } catch {
     return null;
+  }
+}
+
+export function checkFreshArtifacts(component, against, artifacts) {
+  let stale = 0;
+  for (const artifact of artifacts) {
+    if (readTextOrNull(artifact.path) === artifact.text) continue;
+    process.stderr.write(`${component}: ${artifact.name} is stale against ${against} — run npm run build\n`);
+    stale += 1;
+  }
+  process.exitCode = stale === 0 ? 0 : 1;
+}
+
+export function writeArtifacts(artifacts) {
+  for (const artifact of artifacts) {
+    mkdirSync(dirname(artifact.path), { recursive: true });
+    writeFileSync(artifact.path, artifact.text);
+  }
+}
+
+export async function runBuildCli({ check, write }) {
+  if (process.argv.includes("--check")) {
+    await check();
+  } else {
+    await write();
   }
 }

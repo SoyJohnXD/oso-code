@@ -13,10 +13,26 @@ const FLOW_FILES_FLOOR_DERIVATION =
   "the 9 plugin/skills/<skill>/SKILL.md flows core/src/prose/routes.ts's SKILL_STUBS names, plus the 2 shared bodies " +
   "C5-D2 names by hand: _shared/unattended.md, _shared/parallel.md";
 
+const NAMESPACE_RED_COMMIT = "58dd6cb";
+const NAMESPACE_PATTERN = /oso-code:/g;
+const PLAN_MODE_PATTERN = /\bPlan Mode\b/g;
+
 const flowFiles = [...SKILL_STUBS.map((stub) => skillFlowPath(stub)), ...SHARED_FLOW_FILES];
 
+function patternHits(pattern: RegExp, file: string, rawFlowText: string): string[] {
+  return [...flowBody(rawFlowText).matchAll(pattern)].map((match) => `${file}: "${match[0]}"`);
+}
+
 function hostNameHits(file: string, rawFlowText: string): string[] {
-  return [...flowBody(rawFlowText).matchAll(HOST_NAME_PATTERN)].map((match) => `${file}: "${match[0]}"`);
+  return patternHits(HOST_NAME_PATTERN, file, rawFlowText);
+}
+
+function namespaceHits(file: string, rawFlowText: string): string[] {
+  return patternHits(NAMESPACE_PATTERN, file, rawFlowText);
+}
+
+function planModeHits(file: string, rawFlowText: string): string[] {
+  return patternHits(PLAN_MODE_PATTERN, file, rawFlowText);
 }
 
 provedSomething(
@@ -33,6 +49,30 @@ describe("a flow body names no host — the reference file is where a host name 
 
   test("GREEN on the tracked tree: no flow body carries a host name", () => {
     const hits = flowFiles.flatMap((file) => hostNameHits(file, readTrackedText(file).text));
+    assert.deepEqual(hits, [], hits.join("\n"));
+  });
+});
+
+describe("a flow body names no host-varying namespace — a host binding may rename `oso-code:`, the flow itself never spells it", () => {
+  test(`RED at ${NAMESPACE_RED_COMMIT}: plan's own blob still carries the \`oso-code:\` namespace`, () => {
+    const hits = flowFiles.flatMap((file) => namespaceHits(file, readTextAtCommit(NAMESPACE_RED_COMMIT, file)));
+    assert.equal(hits.length, 1, hits.join("\n"));
+  });
+
+  test("GREEN on the tracked tree: no flow body carries the `oso-code:` namespace", () => {
+    const hits = flowFiles.flatMap((file) => namespaceHits(file, readTrackedText(file).text));
+    assert.deepEqual(hits, [], hits.join("\n"));
+  });
+});
+
+describe("a flow body names no host-varying capability term — a host binding may rename its own native mode, the flow itself never spells `Plan Mode`", () => {
+  test(`RED at ${NAMESPACE_RED_COMMIT}: plan's own blob still carries \`Plan Mode\``, () => {
+    const hits = flowFiles.flatMap((file) => planModeHits(file, readTextAtCommit(NAMESPACE_RED_COMMIT, file)));
+    assert.equal(hits.length, 2, hits.join("\n"));
+  });
+
+  test("GREEN on the tracked tree: no flow body carries `Plan Mode`", () => {
+    const hits = flowFiles.flatMap((file) => planModeHits(file, readTrackedText(file).text));
     assert.deepEqual(hits, [], hits.join("\n"));
   });
 });

@@ -46,10 +46,11 @@ jobs:
         run: |
           claude --version
           claude plugin validate --strict plugin
-      - name: Lexer differential re-read from the real shell, where drift between bash and the committed corpus reds this build
+      - name: Dependencies installed — the certify lane's own prerequisite, never the lexer differential's
         id: dependency-install
+        run: npm ci --no-audit --no-fund
+      - name: Lexer differential re-read from the real shell, where drift between bash and the committed corpus reds this build, on its own step so its red never shadows the certify lane
         run: |
-          npm ci --no-audit --no-fund
           cd core
           node --experimental-strip-types --test test/shell/lexer-differential.test.ts
       - name: Engram release provisioning against the real GitHub release, checksum-verified end to end — the PR gate only exercises the stub transport
@@ -152,7 +153,7 @@ jobs:
           bash -n tools/*.sh
           bash -n plugin/hooks/*.sh
           bash -n plugin/git-hooks/pre-commit
-          bash -n tests/*.sh tests/fixtures/*.sh
+          bash -n tests/fixtures/*.sh
       - name: PowerShell script syntax
         shell: powershell
         run: |

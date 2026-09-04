@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { provedSomething } from "../support/proved.ts";
+import { isDirectChild } from "../support/repository-paths.ts";
 import { readTrackedText, trackedRepositoryFiles, type TrackedFileText } from "../support/tracked-files.ts";
 
 const SCANNED_PREFIXES = ["core/src/", "core/scripts/", "core/test/", "opencode/plugin/"];
@@ -43,10 +44,6 @@ const PLANTED_LOOKALIKES = [
 ];
 
 type DecisionCitation = Readonly<{ file: string; line: number; text: string }>;
-
-function isDirectChild(file: string, dir: string): boolean {
-  return file.startsWith(`${dir}/`) && !file.slice(dir.length + 1).includes("/");
-}
 
 function isShellSource(file: string): boolean {
   return SHELL_EXACT_FILES.has(file) || SHELL_DIRECT_CHILD_GLOBS.some(({ dir, ext }) => isDirectChild(file, dir) && file.endsWith(ext));

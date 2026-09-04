@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { basenameOf, lexShellCommands, type LexRecord } from "../../src/shell/lexer.ts";
 import { provedSomething } from "../support/proved.ts";
+import { isDirectChild } from "../support/repository-paths.ts";
 import { linesFoldingHeredocBodiesIntoTheirOpener } from "../support/shell-heredoc-lines.ts";
 import { readTrackedText, trackedRepositoryFiles, type TrackedFileText } from "../support/tracked-files.ts";
 
@@ -20,10 +21,6 @@ const CONTINUATION = /\\[ \t]*$/;
 const STRIPPABLE_SUFFIX = /_(bin|binary|exe|path|cmd|cli)$/i;
 
 type LogicalUnit = Readonly<{ file: string; startLine: number; text: string }>;
-
-function isDirectChild(file: string, dir: string): boolean {
-  return file.startsWith(`${dir}/`) && !file.slice(dir.length + 1).includes("/");
-}
 
 function isScanned(file: string): boolean {
   return DIRECT_CHILD_GLOBS.some(({ dir, ext }) => isDirectChild(file, dir) && file.endsWith(ext));

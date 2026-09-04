@@ -56,13 +56,12 @@ export function renderAgent(role: AgentRole, host: HostName, sharedBody: string,
   return renderOpenCodeAgent(role, body);
 }
 
-export function renderSkill(stub: SkillStub, host: SkillHost, body: string, flow: string | null): string {
+export function renderSkill(stub: SkillStub, host: SkillHost, body: string, flow: string): string {
   const name = host === "codex" ? stub.id : `oso-${stub.id}`;
   const lines = [`name: ${name}`, `description: "${stub.description[host]}"`];
   if (stub.argumentHint !== null) lines.push(`argument-hint: "${stub.argumentHint[host]}"`);
   if (stub.disableModelInvocation) lines.push("disable-model-invocation: true");
-  const sections = flow === null ? body : `${body}\n\n${flowBody(flow)}`;
-  return `${frontMatterBlock(lines)}\n\n${sections}`;
+  return `${frontMatterBlock(lines)}\n\n${body}\n\n${flowBody(flow)}`;
 }
 
 export function flowBody(flowSkillFile: string): string {

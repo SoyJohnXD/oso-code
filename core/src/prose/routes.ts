@@ -100,7 +100,6 @@ export type SkillStub = Readonly<{
   argumentHint: Readonly<Record<SkillHost, string>> | null;
   disableModelInvocation: boolean;
   referenceHosts: readonly SkillHost[];
-  flowFromClaudeSkill: boolean;
 }>;
 
 export const SHARED_REFERENCE_HOSTS: readonly SkillHost[] = ["codex", "opencode"];
@@ -112,7 +111,6 @@ export const SKILL_STUBS: readonly SkillStub[] = [
     argumentHint: { codex: "[base ref, e.g. main] [+ frozen ledger: bare decisions + scope] [+ on re-invocation: every prior finding with its bare disposition]", opencode: "[base ref, e.g. main] [+ frozen ledger: bare decisions + scope] [+ on re-invocation: every prior finding with its bare disposition]" },
     disableModelInvocation: false,
     referenceHosts: ["codex", "opencode"],
-    flowFromClaudeSkill: true,
   },
   {
     id: "debug",
@@ -120,7 +118,6 @@ export const SKILL_STUBS: readonly SkillStub[] = [
     argumentHint: { codex: "[what broke]", opencode: "[what is broken]" },
     disableModelInvocation: true,
     referenceHosts: ["codex", "opencode"],
-    flowFromClaudeSkill: true,
   },
   {
     id: "doubt-pass",
@@ -128,7 +125,6 @@ export const SKILL_STUBS: readonly SkillStub[] = [
     argumentHint: { codex: "[intent + surface map + bare decisions]", opencode: "[intent + surface map + bare decisions]" },
     disableModelInvocation: false,
     referenceHosts: [],
-    flowFromClaudeSkill: true,
   },
   {
     id: "plan",
@@ -136,7 +132,6 @@ export const SKILL_STUBS: readonly SkillStub[] = [
     argumentHint: { codex: "[change-name or what to build]", opencode: "[change-name or what to build]" },
     disableModelInvocation: true,
     referenceHosts: ["codex", "opencode"],
-    flowFromClaudeSkill: true,
   },
   {
     id: "quality-pass",
@@ -144,7 +139,6 @@ export const SKILL_STUBS: readonly SkillStub[] = [
     argumentHint: null,
     disableModelInvocation: false,
     referenceHosts: ["codex", "opencode"],
-    flowFromClaudeSkill: true,
   },
   {
     id: "quick",
@@ -152,7 +146,6 @@ export const SKILL_STUBS: readonly SkillStub[] = [
     argumentHint: { codex: "[what to change]", opencode: "[what to change or fix]" },
     disableModelInvocation: true,
     referenceHosts: ["codex", "opencode"],
-    flowFromClaudeSkill: true,
   },
   {
     id: "roadmap",
@@ -160,7 +153,6 @@ export const SKILL_STUBS: readonly SkillStub[] = [
     argumentHint: { codex: "[roadmap name or the changes to queue]", opencode: "[roadmap name or the changes to queue]" },
     disableModelInvocation: true,
     referenceHosts: ["codex", "opencode"],
-    flowFromClaudeSkill: true,
   },
   {
     id: "security-pass",
@@ -168,7 +160,6 @@ export const SKILL_STUBS: readonly SkillStub[] = [
     argumentHint: { codex: "[optional base ref for a branch range, e.g. main]", opencode: "[optional base ref for a branch range, e.g. main]" },
     disableModelInvocation: false,
     referenceHosts: ["codex", "opencode"],
-    flowFromClaudeSkill: true,
   },
   {
     id: "triage",
@@ -176,6 +167,5 @@ export const SKILL_STUBS: readonly SkillStub[] = [
     argumentHint: { codex: "[failing check + its evidence verbatim] [+ the wave's slices] [+ WAVE START]", opencode: "[failing check + its evidence verbatim] [+ the wave's slices] [+ WAVE START]" },
     disableModelInvocation: false,
     referenceHosts: ["codex", "opencode"],
-    flowFromClaudeSkill: true,
   },
 ];

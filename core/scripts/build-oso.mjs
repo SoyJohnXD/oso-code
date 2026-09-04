@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { bundleText, readTextOrNull } from "./lib/bundle.mjs";
+import { bundleText, readTextOrNull, runBuildCli } from "./lib/bundle.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const entryPoint = join(repoRoot, "core", "src", "bin", "oso.ts");
@@ -30,8 +30,4 @@ async function writeBundle() {
   writeFileSync(outfilePackageJson, modulePackageJson);
 }
 
-if (process.argv.includes("--check")) {
-  await check();
-} else {
-  await writeBundle();
-}
+await runBuildCli({ check, write: writeBundle });

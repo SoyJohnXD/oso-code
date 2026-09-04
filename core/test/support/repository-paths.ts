@@ -12,3 +12,7 @@ export function posixRelativeTo(root: string, target: string): string {
 export function posixRepositoryPath(target: string): string {
   return posixRelativeTo(repositoryRoot, target);
 }
+
+export function isDirectChild(file: string, dir: string): boolean {
+  return file.startsWith(`${dir}/`) && !file.slice(dir.length + 1).includes("/");
+}

@@ -28,7 +28,7 @@ const CEILINGS = [
     label: "core/test",
     prefix: "core/test/",
     maximumLines: 19000,
-    derivation: "18,606 (measured at C5-S5c, tests/plugin-lint.sh deleted and all eleven rules ported) → 19,000",
+    derivation: "18,847 (measured at C5's close) → 19,000",
   },
 ] as const;
 

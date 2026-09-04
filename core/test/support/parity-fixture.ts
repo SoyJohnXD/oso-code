@@ -22,9 +22,8 @@ export type FixtureExpectation = {
   events_appended?: readonly EventExpectation[];
 };
 
-export type ParityFixture = {
+export type RunnableFixture = {
   name: string;
-  source: readonly SuiteCitation[];
   env: Readonly<Record<string, string>>;
   state_before: Readonly<Record<string, SeededEntry>>;
   cwd: string;
@@ -33,11 +32,19 @@ export type ParityFixture = {
   expect: FixtureExpectation;
 };
 
-export function loadParityFixtures(): ParityFixture[] {
-  return readdirSync(PARITY_FIXTURE_DIRECTORY)
+export type ParityFixture = RunnableFixture & {
+  source: readonly SuiteCitation[];
+};
+
+export function loadFixturesFrom<T>(directory: string, parse: (file: string) => T): T[] {
+  return readdirSync(directory)
     .filter((entry) => entry.endsWith(".json"))
     .sort()
-    .map((entry) => readFixture(path.join(PARITY_FIXTURE_DIRECTORY, entry)));
+    .map((entry) => parse(path.join(directory, entry)));
+}
+
+export function loadParityFixtures(): ParityFixture[] {
+  return loadFixturesFrom(PARITY_FIXTURE_DIRECTORY, readFixture);
 }
 
 function readFixture(file: string): ParityFixture {

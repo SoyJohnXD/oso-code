@@ -30,9 +30,14 @@ be between 0 and 600 seconds.
 
 class UsageError extends Error {}
 
-class CloseSliceRefusedError extends Error {}
+class RefusedError extends Error {
+  readonly verb: string;
 
-class DenyPatternRefusedError extends Error {}
+  constructor(verb: string, reason: string) {
+    super(reason);
+    this.verb = verb;
+  }
+}
 
 const HANDOFF_SUBACTIONS = ["publish", "wait", "consume"] as const;
 type HandoffSubaction = (typeof HANDOFF_SUBACTIONS)[number];
@@ -67,12 +72,8 @@ function report(error: unknown, verb: string): number {
     process.stderr.write(USAGE);
     return 1;
   }
-  if (error instanceof CloseSliceRefusedError) {
-    process.stderr.write(`oso-state: ${error.message}\n`);
-    return 1;
-  }
-  if (error instanceof DenyPatternRefusedError) {
-    process.stderr.write(`oso-state: ${error.message}\n`);
+  if (error instanceof RefusedError) {
+    process.stderr.write(`oso-state: ${error.verb} refused: ${error.message}\n`);
     return 1;
   }
   if (error instanceof store.LockTimeoutError) {
@@ -192,9 +193,7 @@ function runCloseSlice(sessionId: string, remaining: readonly string[]): number 
   return store.withLock(stateFile, sessionId, () => {
     const activeSlice = store.readValue(stateFile, "active_slice") ?? "none";
     if (activeSlice !== sliceId) {
-      throw new CloseSliceRefusedError(
-        `close-slice ${sliceId} refused: active_slice is ${activeSlice}, not ${sliceId}`,
-      );
+      throw new RefusedError(`close-slice ${sliceId}`, `active_slice is ${activeSlice}, not ${sliceId}`);
     }
     const patch = transitions.closeSlice();
     store.writeStatePairs(
@@ -211,9 +210,7 @@ function runDenyPattern(sessionId: string, remaining: readonly string[]): number
   if (remaining.length !== 2 || remaining[0] !== "add") throw new UsageError();
   const pattern = remaining[1] as string;
   if (ereReads(pattern, "") === "untranslatable") {
-    throw new DenyPatternRefusedError(
-      `deny-pattern add refused: this pattern is past what the production boundary can read: ${pattern}`,
-    );
+    throw new RefusedError("deny-pattern add", `this pattern is past what the production boundary can read: ${pattern}`);
   }
   const stateFile = store.stateFileFor(process.cwd());
   const patternsFile = store.denyPatternsFileFor(stateFile);

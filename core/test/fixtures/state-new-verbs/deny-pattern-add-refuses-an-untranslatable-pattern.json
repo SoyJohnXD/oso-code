@@ -7,7 +7,7 @@
   "stdin": "",
   "expect": {
     "exit": 1,
-    "stderr": { "contains": ["deny-pattern add refused", "past what the production boundary can read", "[a-é]uild"] },
+    "stderr": { "contains": ["deny-pattern add refused: this pattern is past what the production boundary can read: [a-é]uild"] },
     "state_after": {
       ".local/state/oso-code/deploy-deny/{repo}.patterns": null
     },

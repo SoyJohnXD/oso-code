@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { provedSomething } from "../support/proved.ts";
+import { isDirectChild } from "../support/repository-paths.ts";
 import { linesOutsideHeredocBodies, type SourceLine } from "../support/shell-heredoc-lines.ts";
 import { readTrackedText, trackedRepositoryFiles, type TrackedFileText } from "../support/tracked-files.ts";
 
@@ -21,10 +22,6 @@ const COMMENT_LINE = /^[ \t]*#/;
 const SHEBANG_LINE = /^#!/;
 
 type CommentSite = Readonly<{ file: string; line: number }>;
-
-function isDirectChild(file: string, dir: string): boolean {
-  return file.startsWith(`${dir}/`) && !file.slice(dir.length + 1).includes("/");
-}
 
 function isShellSource(file: string): boolean {
   return EXACT_FILES.has(file) || DIRECT_CHILD_GLOBS.some(({ dir, ext }) => isDirectChild(file, dir) && file.endsWith(ext));

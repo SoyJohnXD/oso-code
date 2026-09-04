@@ -20,12 +20,9 @@ import {
   skillOutputPath,
   skillReferenceOutputPath,
   skillReferencePath,
-  type SkillHost,
 } from "../../src/prose/render.ts";
 import { provedSomething } from "../support/proved.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
-
-const SKILL_HOSTS: readonly SkillHost[] = ["codex", "opencode"];
 
 function readRepoText(file: string): string {
   return readFileSync(path.join(repositoryRoot, file), "utf8");
@@ -55,10 +52,10 @@ describe("every rendered agent file equals a fresh, deterministic render of its 
 
 describe("every rendered skill wrapper equals a fresh, deterministic render of its stub", () => {
   for (const stub of SKILL_STUBS) {
-    for (const host of SKILL_HOSTS) {
+    for (const host of SHARED_REFERENCE_HOSTS) {
       test(`${stub.id} on ${host} renders the committed bytes, twice, identically`, () => {
         const body = readRepoText(skillBodyPath(stub, host));
-        const flow = stub.flowFromClaudeSkill ? readRepoText(skillFlowPath(stub)) : null;
+        const flow = readRepoText(skillFlowPath(stub));
         const committed = readRepoText(skillOutputPath(stub, host));
         assert.equal(renderSkill(stub, host, body, flow), committed);
         assert.equal(renderSkill(stub, host, body, flow), committed);

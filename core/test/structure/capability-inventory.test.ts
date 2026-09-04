@@ -144,10 +144,10 @@ provedSomething(
 describe("axis A — every anchor `oso-state` spelling survives the current tree or is declared dropped, and every surviving spelling resolves to a live CLI verb", () => {
   const floor = floorFor("A", fixture.axisA.length);
 
-  test(`the current tree carries at least ${floor} oso-state spelling(s), axis A's floor`, () => {
+  test(`the current tree carries at least ${floor} distinct oso-state spelling(s), axis A's floor`, () => {
     assert.ok(
-      currentStateSpellings.length >= floor,
-      `the current tree carries ${currentStateSpellings.length} oso-state spelling(s), under axis A's ${floor}-item floor`,
+      currentStateKeys.size >= floor,
+      `the current tree carries ${currentStateKeys.size} distinct oso-state spelling(s), under axis A's ${floor}-item floor`,
     );
   });
 
@@ -174,10 +174,10 @@ describe("axis A — every anchor `oso-state` spelling survives the current tree
 describe("axis B — every anchor role-name or `oso-code:<skill>` invocation survives the current tree or is declared dropped", () => {
   const floor = floorFor("B", fixture.axisB.length);
 
-  test(`the current tree carries at least ${floor} invocation(s), axis B's floor`, () => {
+  test(`the current tree carries at least ${floor} distinct invocation(s), axis B's floor`, () => {
     assert.ok(
-      currentInvocations.length >= floor,
-      `the current tree carries ${currentInvocations.length} invocation(s), under axis B's ${floor}-item floor`,
+      currentInvocationKeys.size >= floor,
+      `the current tree carries ${currentInvocationKeys.size} distinct invocation(s), under axis B's ${floor}-item floor`,
     );
   });
 
@@ -194,10 +194,10 @@ describe("axis B — every anchor role-name or `oso-code:<skill>` invocation sur
 describe("axis C — every anchor backticked verdict token survives the current tree VERBATIM or is declared dropped", () => {
   const floor = floorFor("C", fixture.axisC.length);
 
-  test(`the current tree carries at least ${floor} verdict token(s), axis C's floor`, () => {
+  test(`the current tree carries at least ${floor} distinct verdict token(s), axis C's floor`, () => {
     assert.ok(
-      currentVerdictTokens.length >= floor,
-      `the current tree carries ${currentVerdictTokens.length} verdict token(s), under axis C's ${floor}-item floor`,
+      currentVerdictKeys.size >= floor,
+      `the current tree carries ${currentVerdictKeys.size} distinct verdict token(s), under axis C's ${floor}-item floor`,
     );
   });
 

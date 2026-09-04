@@ -1,22 +1,14 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { runGate } from "../../src/gates/dispatch.ts";
 import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
+import { mismatchesRunning } from "../support/fixture-runner.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
-import { expectationMismatches, type ObservedRun } from "../support/parity-expectations.ts";
-import type { FixtureExpectation } from "../support/parity-fixture.ts";
+import { loadFixturesFrom, type RunnableFixture } from "../support/parity-fixture.ts";
 import { provedSomething } from "../support/proved.ts";
-import {
-  repositoryRoot,
-  STATE_FILE,
-  withStateSandbox,
-  type ObservedEntry,
-  type SeededEntry,
-  type StateSandbox,
-  type StateSubject,
-} from "../support/state-sandbox.ts";
+import { repositoryRoot, STATE_FILE, withStateSandbox, type StateSubject } from "../support/state-sandbox.ts";
 
 const FIXTURE_DIRECTORY = path.join(repositoryRoot, "core", "test", "fixtures", "state-new-verbs");
 
@@ -29,21 +21,8 @@ const CLI_SUBJECT: StateSubject = {
 
 const ARMED_STATE = "auto=running\nauto_change=rewrite-prose\nsession=test-session\n";
 
-type NewVerbFixture = {
-  name: string;
-  env: Readonly<Record<string, string>>;
-  state_before: Readonly<Record<string, SeededEntry>>;
-  cwd: string;
-  argv: readonly string[];
-  stdin: string;
-  expect: FixtureExpectation;
-};
-
-function loadFixtures(): NewVerbFixture[] {
-  return readdirSync(FIXTURE_DIRECTORY)
-    .filter((entry) => entry.endsWith(".json"))
-    .sort()
-    .map((entry) => JSON.parse(readFileSync(path.join(FIXTURE_DIRECTORY, entry), "utf8")) as NewVerbFixture);
+function loadFixtures(): RunnableFixture[] {
+  return loadFixturesFrom(FIXTURE_DIRECTORY, (file) => JSON.parse(readFileSync(file, "utf8")) as RunnableFixture);
 }
 
 const fixtures = loadFixtures();
@@ -60,30 +39,11 @@ describe(
   () => {
     for (const fixture of fixtures) {
       test(fixture.name, () => {
-        assert.deepEqual(mismatchesOf(fixture), []);
+        assert.deepEqual(mismatchesRunning(CLI_SUBJECT, fixture), []);
       });
     }
   },
 );
-
-function mismatchesOf(fixture: NewVerbFixture): string[] {
-  return withStateSandbox(fixture.cwd, (sandbox) => {
-    sandbox.seed(fixture.state_before);
-    const eventsBefore = sandbox.eventLogLines().length;
-    const run = sandbox.run(CLI_SUBJECT, fixture.argv, { stdin: fixture.stdin, env: fixture.env });
-    const observed: ObservedRun = {
-      ...run,
-      entries: entriesTheExpectationNames(sandbox, fixture),
-      eventsAppended: sandbox.eventLogLines().slice(eventsBefore),
-    };
-    return expectationMismatches(fixture.expect, observed, (text) => sandbox.expand(text));
-  });
-}
-
-function entriesTheExpectationNames(sandbox: StateSandbox, fixture: NewVerbFixture): Map<string, ObservedEntry> {
-  const named = Object.keys(fixture.expect.state_after ?? {});
-  return new Map(named.map((entryPath) => [entryPath, sandbox.read(entryPath)]));
-}
 
 function payloadRunning(command: string): string {
   return JSON.stringify({
