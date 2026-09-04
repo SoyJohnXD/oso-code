@@ -7,13 +7,16 @@ import { GLOBAL_MARKER_END, GLOBAL_MARKER_START } from "../../src/install/openco
 import type { ConfigDocument } from "../../src/install/opencode-config.ts";
 import { OPENCODE_BINARY_NAME, openCodeHostProbes } from "../../src/install/opencode-host.ts";
 import { SUPPORTED_OPENCODE_VERSION } from "../../src/install/pins.ts";
+import { readProfileRoles } from "../../src/install/profile.ts";
 import { firstExecutableOnPath } from "../../src/install/verify-claude.ts";
 import {
+  installedAgentModelLine,
   openCodeConfigStatus,
   openCodeGlobalStatus,
   openCodeOperatorGlobalStatus,
   openCodeOperatorKeysStatus,
   openCodeVersionStatus,
+  profiledAgentModelLine,
   OPENCODE_LOCAL_CHECK_ROWS,
   OPENCODE_NOT_ON_PATH,
   operatorConfigSeed,
@@ -44,6 +47,7 @@ const COMPARED_ROWS = [
   { name: "OpenCode CLI version" },
   { name: "OpenCode config contract" },
   { name: "operator config keys survive an install" },
+  { name: "agent model keys from the profile" },
   { name: "global guidance installed" },
   { name: "operator global prose survives an install" },
 ] as const;
@@ -116,6 +120,13 @@ const OPERATOR_PROSE_DAMAGE: FixtureDamage = {
   global: (content) => content.replace("# Personal OpenCode rules", "# Something else entirely"),
 };
 
+const PLANTED_AGENT_MODEL = "oso-verify/a-model-no-profile-named";
+
+const PLANTED_AGENT_MODEL_DAMAGE: FixtureDamage = {
+  label: "an agent model key no profile named",
+  config: (document) => void (document["agent"] = { "oso-applier": { model: PLANTED_AGENT_MODEL } }),
+};
+
 const THE_VERIFY_CORPUS =
   "one fixture HOME staged by oso install --host opencode over a seeded operator config and AGENTS.md, then damaged one " +
   "way at a time and read row by row through core/src/install/verify-opencode.ts's own status functions, each verdict " +
@@ -139,6 +150,7 @@ describe("the local-check rows this half owns are named, and every other row is 
       "isolated fixture install",
       "nine skill wrappers and the shared skill directory installed",
       "agent contracts installed",
+      "MCP surface closed on every installed agent",
       "mode commands installed and routed",
       "plugin entry, modules and routes installed",
       "Engram plugin file installed",
@@ -204,6 +216,19 @@ describe("every verdict each row can reach is shown on a deliberately broken sub
   test("a global file whose operator prose was rewritten above the region is reported rewritten", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const damaged = damagedFixture(OPERATOR_PROSE_DAMAGE);
     assert.equal(openCodeOperatorGlobalStatus(damaged.globalFile, operatorGlobalSeed()), "rewritten");
+  });
+
+  test("a config carrying an agent model key no profile named is read apart from the line the profile spells", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
+    const damaged = damagedFixture(PLANTED_AGENT_MODEL_DAMAGE);
+    assert.equal(installedAgentModelLine(damaged.configFile), `oso-applier=${PLANTED_AGENT_MODEL}`);
+    assert.notEqual(installedAgentModelLine(damaged.configFile), profiledAgentModelLine(damaged.configFile, repositoryRoot));
+  });
+});
+
+describe("the agent model row reads the installed keys against the ones this machine's profile spells", () => {
+  test("a fixture staged where no profile names a role carries no agent model key, and the row reads both sides the same", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
+    assert.deepEqual(readProfileRoles(repositoryRoot), {});
+    assert.equal(installedAgentModelLine(fixture().configFile), profiledAgentModelLine(fixture().configFile, repositoryRoot));
   });
 });
 

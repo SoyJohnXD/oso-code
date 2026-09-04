@@ -1,19 +1,19 @@
 import path from "node:path";
-import { profileFileFor, readStateFile, StateFileUnreadableError, stateFileFor, writeFileAtomically } from "../state/store.ts";
+import { profileFileFor, readStateFile, StateFileUnreadableError, stateFileFor, stateValue, writeFileAtomically } from "../state/store.ts";
 import type { CommandOutcome } from "./report.ts";
 
 const ROLES = ["applier", "verifier", "judges"] as const;
 const TIERS = ["default", "strong"] as const;
 const PROFILE_NAMES = ["normal", "strong", "custom"] as const;
 
-type Role = (typeof ROLES)[number];
-type Tier = (typeof TIERS)[number];
+export type Role = (typeof ROLES)[number];
+export type Tier = (typeof TIERS)[number];
 type ProfileName = (typeof PROFILE_NAMES)[number];
 type PresetName = Exclude<ProfileName, "custom">;
 
-type RoleChoice = Readonly<{ tier: Tier; model: string | undefined }>;
+export type RoleChoice = Readonly<{ tier: Tier; model: string | undefined }>;
 type RolesOfProfile = Readonly<Record<Role, RoleChoice>>;
-type PartialRoles = Partial<Record<Role, RoleChoice>>;
+export type RoleChoices = Partial<Record<Role, RoleChoice>>;
 type Profile = Readonly<{ name: ProfileName; roles: RolesOfProfile }>;
 
 const ON_DEFAULT: RoleChoice = { tier: "default", model: undefined };
@@ -49,8 +49,26 @@ export function setProfile(workingDirectory: string, name: string, roleTokens: r
   return { report: `oso profile set ${profile.name}\n${mirror}\n${content}`, exitCode: 0 };
 }
 
+export function readProfileRoles(workingDirectory: string): RoleChoices {
+  const mirror = mirrorFileFor(workingDirectory);
+  const read = readStateFile(mirror);
+  if (read.kind === "unreadable") throw new StateFileUnreadableError(mirror, read.cause);
+  return read.kind === "absent" ? {} : roleChoicesOfMirror(read.content);
+}
+
 function mirrorFileFor(workingDirectory: string): string {
   return profileFileFor(stateFileFor(workingDirectory));
+}
+
+function roleChoicesOfMirror(content: string): RoleChoices {
+  const chosen: RoleChoices = {};
+  for (const role of ROLES) {
+    const tier = stateValue(content, tierRecord(role));
+    if (!isTier(tier)) continue;
+    const named = stateValue(content, modelRecord(role));
+    chosen[role] = { tier, model: named === "" ? undefined : named };
+  }
+  return chosen;
 }
 
 function profileFrom(name: string, roleTokens: readonly string[]): Profile {
@@ -60,7 +78,7 @@ function profileFrom(name: string, roleTokens: readonly string[]): Profile {
   return { name, roles: presetRoles(name, chosen) };
 }
 
-function presetRoles(name: PresetName, chosen: PartialRoles): RolesOfProfile {
+function presetRoles(name: PresetName, chosen: RoleChoices): RolesOfProfile {
   const roleNamed = ROLES.find((role) => chosen[role] !== undefined);
   if (roleNamed !== undefined) {
     throw new ProfileRefusedError(`${roleFlag(roleNamed)} names a role only "set custom" takes — the ${name} preset names its own`);
@@ -68,7 +86,7 @@ function presetRoles(name: PresetName, chosen: PartialRoles): RolesOfProfile {
   return PRESETS[name];
 }
 
-function customRoles(chosen: PartialRoles): RolesOfProfile {
+function customRoles(chosen: RoleChoices): RolesOfProfile {
   const { applier, verifier, judges } = chosen;
   if (applier === undefined) throw missingRole("applier");
   if (verifier === undefined) throw missingRole("verifier");
@@ -88,8 +106,8 @@ function missingRole(role: Role): ProfileRefusedError {
   return new ProfileRefusedError(`a custom profile names every role — ${roleFlag(role)} <tier>[:<model>] is missing`);
 }
 
-function roleChoicesFrom(tokens: readonly string[]): PartialRoles {
-  const chosen: PartialRoles = {};
+function roleChoicesFrom(tokens: readonly string[]): RoleChoices {
+  const chosen: RoleChoices = {};
   for (let index = 0; index < tokens.length; index += 2) {
     const flag = tokens[index] as string;
     const role = roleOf(flag);
@@ -130,8 +148,16 @@ function mirrorContentOf(profile: Profile): string {
 }
 
 function roleLines(role: Role, choice: RoleChoice): readonly string[] {
-  const tier = `${role}.tier=${choice.tier}`;
-  return choice.model === undefined ? [tier] : [tier, `${role}.model=${choice.model}`];
+  const tier = `${tierRecord(role)}=${choice.tier}`;
+  return choice.model === undefined ? [tier] : [tier, `${modelRecord(role)}=${choice.model}`];
+}
+
+function tierRecord(role: Role): string {
+  return `${role}.tier`;
+}
+
+function modelRecord(role: Role): string {
+  return `${role}.model`;
 }
 
 function isProfileName(value: string): value is ProfileName {

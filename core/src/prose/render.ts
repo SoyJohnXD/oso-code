@@ -1,3 +1,4 @@
+import { mcpServerWildcard, OWNED_MCP_NAMES } from "../install/opencode-config.ts";
 import { OPENCODE_PERMISSION_ORDER, type AgentRole, type HostName, type SkillHost, type SkillStub } from "./routes.ts";
 
 export { agentHosts, AGENT_ROLES, SHARED_REFERENCE_HOSTS, SKILL_STUBS } from "./routes.ts";
@@ -96,7 +97,14 @@ function renderCodexAgent(role: AgentRole, body: string): string {
 function renderOpenCodeAgent(role: AgentRole, body: string): string {
   const spec = role.opencode;
   const denies = OPENCODE_PERMISSION_ORDER.filter((key) => spec.denies.includes(key));
-  const lines = [`description: "${spec.description}"`, "mode: subagent", "hidden: true", "permission:", ...denies.map((key) => `  ${key}: deny`)];
+  const closedServers = OWNED_MCP_NAMES.filter((server) => !spec.mcpServersTheClaudeTwinLists.includes(server)).map(mcpServerWildcard);
+  const lines = [
+    `description: "${spec.description}"`,
+    "mode: subagent",
+    "hidden: true",
+    "permission:",
+    ...[...denies, ...closedServers].map((key) => `  ${key}: deny`),
+  ];
   return `${frontMatterBlock(lines)}\n\n${body}`;
 }
 

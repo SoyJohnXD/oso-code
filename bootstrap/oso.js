@@ -3434,13 +3434,23 @@ var OWNED_PERMISSION_VALUES = {
   oso_plan_cancel: "ask"
 };
 var OWNED_MCP_NAMES = ["context7", "engram", "fallow"];
+function mcpServerWildcard(server) {
+  return `${server}_*`;
+}
 var SCHEMA_KEY = "$schema";
 var PLUGIN_KEY = "plugin";
 var PERMISSION_KEY = "permission";
 var MCP_KEY = "mcp";
 var SKILL_KEY = "skill";
 var TASK_KEY = "task";
+var AGENT_KEY = "agent";
 var NEVER_PRESERVED_KEYS = [PERMISSION_KEY, MCP_KEY, PLUGIN_KEY];
+var OPENCODE_SESSION_MODEL_FIELDS = { default: "small_model", strong: "model" };
+var OPENCODE_AGENTS_PER_PROFILE_ROLE = {
+  applier: ["oso-applier"],
+  verifier: ["oso-verifier"],
+  judges: ["oso-debt-sweep", "oso-doubt-pass", "oso-security-reviewer", "oso-triage"]
+};
 var OpenCodeConfigRefusal = class extends Error {
   reason;
   constructor(reason) {
@@ -3449,6 +3459,22 @@ var OpenCodeConfigRefusal = class extends Error {
     this.reason = reason;
   }
 };
+function openCodeAgentModels(existing, profileRoles) {
+  const document = isPlainObject(existing) ? existing : {};
+  const models = {};
+  for (const [role, agents] of Object.entries(OPENCODE_AGENTS_PER_PROFILE_ROLE)) {
+    const choice = profileRoles[role];
+    if (choice === void 0) continue;
+    const named = choice.model ?? sessionModelNamed(document, OPENCODE_SESSION_MODEL_FIELDS[choice.tier]);
+    if (named === void 0) continue;
+    for (const agent of agents) models[agent] = named;
+  }
+  return models;
+}
+function sessionModelNamed(document, field) {
+  const named = document[field];
+  return typeof named === "string" && named !== "" ? named : void 0;
+}
 function ownedMcpServers(fallowCommand) {
   return {
     context7: { type: "remote", url: CONTEXT7_MCP_URL, enabled: true },
@@ -3456,9 +3482,12 @@ function ownedMcpServers(fallowCommand) {
     fallow: { type: "local", command: [fallowCommand], enabled: true, environment: {} }
   };
 }
-function mergeOpenCodeConfig(existing, fallowCommand) {
+function mergeOpenCodeConfig(existing, fallowCommand, profileRoles = {}) {
   const document = parsedConfigObject(existing);
-  const preservedKeys = Object.keys(document).filter((key) => !NEVER_PRESERVED_KEYS.includes(key));
+  const agentModels = openCodeAgentModels(document, profileRoles);
+  const profileNamesAModel = Object.keys(agentModels).length > 0;
+  const ownedContainers = profileNamesAModel ? [...NEVER_PRESERVED_KEYS, AGENT_KEY] : NEVER_PRESERVED_KEYS;
+  const preservedKeys = Object.keys(document).filter((key) => !ownedContainers.includes(key));
   insertIfMissing(document, SCHEMA_KEY, OPENCODE_CONFIG_SCHEMA_URL);
   createPluginArrayIfAbsent(document);
   const permission = ownedContainer(document, PERMISSION_KEY);
@@ -3482,7 +3511,15 @@ function mergeOpenCodeConfig(existing, fallowCommand) {
     ...Object.keys(servers).filter((name) => !(name in owned)).map((name) => `${MCP_KEY}.${name}`)
   );
   for (const [name, declaration] of Object.entries(owned)) insertIfMissing(servers, name, declaration);
-  return { document, preservedKeys };
+  if (profileNamesAModel) mergeAgentModels(document, preservedKeys, agentModels);
+  return { document, preservedKeys, agentModels };
+}
+function mergeAgentModels(document, preservedKeys, agentModels) {
+  const agents = ownedContainer(document, AGENT_KEY);
+  preservedKeys.push(
+    ...Object.keys(agents).filter((name) => !(name in agentModels)).map((name) => `${AGENT_KEY}.${name}`)
+  );
+  for (const [name, model] of Object.entries(agentModels)) ownedContainer(agents, name)["model"] = model;
 }
 function hostContractViolationOf(document) {
   if (!isPlainObject(document)) return "the rendered config is not a JSON object";
@@ -3834,7 +3871,7 @@ function probeEnvironment2(environment, probeHome) {
 // core/src/install/opencode-install.ts
 import { chmodSync as chmodSync2, cpSync as cpSync2, lstatSync as lstatSync3, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync5, readdirSync as readdirSync4, readFileSync as readFileSync12, renameSync as renameSync3, rmSync as rmSync9, writeFileSync as writeFileSync8 } from "node:fs";
 import { spawnSync as spawnSync7 } from "node:child_process";
-import path13 from "node:path";
+import path14 from "node:path";
 
 // core/src/install/opencode-trust.ts
 import { readFileSync as readFileSync11 } from "node:fs";
@@ -3879,6 +3916,147 @@ function isCodexTrustFile(published) {
   return published.startsWith(CODEX_TRUST_PREFIX);
 }
 
+// core/src/install/profile.ts
+import path13 from "node:path";
+var ROLES = ["applier", "verifier", "judges"];
+var TIERS = ["default", "strong"];
+var PROFILE_NAMES = ["normal", "strong", "custom"];
+var ON_DEFAULT = { tier: "default", model: void 0 };
+var ON_STRONG = { tier: "strong", model: void 0 };
+var PRESETS = {
+  normal: { applier: ON_DEFAULT, verifier: ON_DEFAULT, judges: ON_STRONG },
+  strong: { applier: ON_STRONG, verifier: ON_STRONG, judges: ON_STRONG }
+};
+var TIER_RANK = { default: 0, strong: 1 };
+var ProfileRefusedError = class extends Error {
+  constructor(reason) {
+    super(`profile set refused: ${reason}`);
+    this.name = "ProfileRefusedError";
+  }
+};
+function showProfile(workingDirectory) {
+  const mirror = mirrorFileFor(workingDirectory);
+  const read = readStateFile(mirror);
+  if (read.kind === "unreadable") throw new StateFileUnreadableError(mirror, read.cause);
+  if (read.kind === "absent") return { report: `oso profile show
+no profile at ${mirror} \u2014 every role runs on its host's session model
+`, exitCode: 0 };
+  return { report: `oso profile show
+${mirror}
+${read.content}`, exitCode: 0 };
+}
+function setProfile(workingDirectory, name, roleTokens) {
+  const profile = profileFrom(name, roleTokens);
+  const mirror = mirrorFileFor(workingDirectory);
+  const content = mirrorContentOf(profile);
+  writeFileAtomically(path13.dirname(mirror), mirror, content, ".profile.");
+  return { report: `oso profile set ${profile.name}
+${mirror}
+${content}`, exitCode: 0 };
+}
+function readProfileRoles(workingDirectory) {
+  const mirror = mirrorFileFor(workingDirectory);
+  const read = readStateFile(mirror);
+  if (read.kind === "unreadable") throw new StateFileUnreadableError(mirror, read.cause);
+  return read.kind === "absent" ? {} : roleChoicesOfMirror(read.content);
+}
+function mirrorFileFor(workingDirectory) {
+  return profileFileFor(stateFileFor(workingDirectory));
+}
+function roleChoicesOfMirror(content) {
+  const chosen = {};
+  for (const role of ROLES) {
+    const tier = stateValue(content, tierRecord(role));
+    if (!isTier(tier)) continue;
+    const named = stateValue(content, modelRecord(role));
+    chosen[role] = { tier, model: named === "" ? void 0 : named };
+  }
+  return chosen;
+}
+function profileFrom(name, roleTokens) {
+  if (!isProfileName(name)) throw new ProfileRefusedError(`${name} is not a profile name \u2014 the names are ${PROFILE_NAMES.join(", ")}`);
+  const chosen = roleChoicesFrom(roleTokens);
+  if (name === "custom") return { name, roles: customRoles(chosen) };
+  return { name, roles: presetRoles(name, chosen) };
+}
+function presetRoles(name, chosen) {
+  const roleNamed = ROLES.find((role) => chosen[role] !== void 0);
+  if (roleNamed !== void 0) {
+    throw new ProfileRefusedError(`${roleFlag(roleNamed)} names a role only "set custom" takes \u2014 the ${name} preset names its own`);
+  }
+  return PRESETS[name];
+}
+function customRoles(chosen) {
+  const { applier, verifier, judges } = chosen;
+  if (applier === void 0) throw missingRole("applier");
+  if (verifier === void 0) throw missingRole("verifier");
+  if (judges === void 0) throw missingRole("judges");
+  refuseVerifierBelowApplier(applier, verifier);
+  return { applier, verifier, judges };
+}
+function refuseVerifierBelowApplier(applier, verifier) {
+  if (TIER_RANK[verifier.tier] >= TIER_RANK[applier.tier]) return;
+  throw new ProfileRefusedError(
+    `the verifier tier ${verifier.tier} is below the applier tier ${applier.tier} \u2014 ${roleFlag("verifier")} ${applier.tier} would have passed`
+  );
+}
+function missingRole(role) {
+  return new ProfileRefusedError(`a custom profile names every role \u2014 ${roleFlag(role)} <tier>[:<model>] is missing`);
+}
+function roleChoicesFrom(tokens) {
+  const chosen = {};
+  for (let index = 0; index < tokens.length; index += 2) {
+    const flag = tokens[index];
+    const role = roleOf(flag);
+    if (chosen[role] !== void 0) throw new ProfileRefusedError(`${flag} may be given only once`);
+    chosen[role] = roleChoiceFrom(flag, tokens[index + 1]);
+  }
+  return chosen;
+}
+function roleOf(flag) {
+  const role = ROLES.find((candidate) => flag === roleFlag(candidate));
+  if (role === void 0) throw new ProfileRefusedError(`${flag} names no role \u2014 the roles are ${ROLES.map(roleFlag).join(", ")}`);
+  return role;
+}
+function roleChoiceFrom(flag, value) {
+  if (value === void 0) throw new ProfileRefusedError(`${flag} takes <tier>[:<model>] and was given nothing`);
+  const colon = value.indexOf(":");
+  const tier = colon === -1 ? value : value.slice(0, colon);
+  const model = colon === -1 ? void 0 : value.slice(colon + 1);
+  if (!isTier(tier)) throw new ProfileRefusedError(`${flag} ${value} names no tier \u2014 the tiers are ${TIERS.join(", ")}`);
+  if (model === "") throw new ProfileRefusedError(`${flag} ${value} names no model after its colon \u2014 ${flag} ${tier} would have passed`);
+  return { tier, model };
+}
+function roleFlag(role) {
+  return `--${role}`;
+}
+function mirrorContentOf(profile) {
+  const lines = [
+    `model_profile=${profile.name}`,
+    ...ROLES.flatMap((role) => roleLines(role, profile.roles[role])),
+    "codex=pinned by host contract",
+    "unattended.doom_loop=ask"
+  ];
+  return lines.map((line) => `${line}
+`).join("");
+}
+function roleLines(role, choice) {
+  const tier = `${tierRecord(role)}=${choice.tier}`;
+  return choice.model === void 0 ? [tier] : [tier, `${modelRecord(role)}=${choice.model}`];
+}
+function tierRecord(role) {
+  return `${role}.tier`;
+}
+function modelRecord(role) {
+  return `${role}.model`;
+}
+function isProfileName(value) {
+  return PROFILE_NAMES.includes(value);
+}
+function isTier(value) {
+  return TIERS.includes(value);
+}
+
 // core/src/install/opencode-install.ts
 var OWNER_INSTALLER = "installer";
 var OWNER_OPERATOR = "operator";
@@ -3893,36 +4071,36 @@ var ENGRAM_BINARY_NAME = "engram";
 var FALLOW_FALLBACK_COMMAND2 = "fallow-mcp";
 function openCodeInstallTargets(paths) {
   return {
-    skills: path13.join(paths.configHome, "skill"),
-    agents: path13.join(paths.configHome, "agent"),
-    commands: path13.join(paths.configHome, "command"),
-    plugin: path13.join(paths.configHome, "plugin"),
-    hooks: path13.join(paths.configHome, "hooks"),
-    gitHooks: path13.join(paths.configHome, "git-hooks"),
-    stateBin: path13.join(paths.configHome, "bin"),
-    dist: path13.join(paths.configHome, "dist"),
-    engramPlugin: path13.join(paths.configHome, "plugins", "engram.ts"),
-    impeccableMount: path13.join(paths.homeDirectory, ".agents", "skills", "impeccable"),
-    impeccableOptOut: path13.join(paths.stateRoot, "impeccable-opt-out"),
-    ownerRegistry: path13.join(paths.stateRoot, "opencode-install-registry"),
-    restoreExercisedMarker: path13.join(paths.stateRoot, ".install-restore-verified-opencode"),
-    planArtifactRoot: path13.join(paths.stateRoot, "plans")
+    skills: path14.join(paths.configHome, "skill"),
+    agents: path14.join(paths.configHome, "agent"),
+    commands: path14.join(paths.configHome, "command"),
+    plugin: path14.join(paths.configHome, "plugin"),
+    hooks: path14.join(paths.configHome, "hooks"),
+    gitHooks: path14.join(paths.configHome, "git-hooks"),
+    stateBin: path14.join(paths.configHome, "bin"),
+    dist: path14.join(paths.configHome, "dist"),
+    engramPlugin: path14.join(paths.configHome, "plugins", "engram.ts"),
+    impeccableMount: path14.join(paths.homeDirectory, ".agents", "skills", "impeccable"),
+    impeccableOptOut: path14.join(paths.stateRoot, "impeccable-opt-out"),
+    ownerRegistry: path14.join(paths.stateRoot, "opencode-install-registry"),
+    restoreExercisedMarker: path14.join(paths.stateRoot, ".install-restore-verified-opencode"),
+    planArtifactRoot: path14.join(paths.stateRoot, "plans")
   };
 }
 function openCodePayloadSources(repositoryRoot2) {
   return {
-    skills: path13.join(repositoryRoot2, "opencode", "skills"),
-    sharedSkills: path13.join(repositoryRoot2, "plugin", "skills", "_shared"),
-    agents: path13.join(repositoryRoot2, "opencode", "agents"),
-    commands: path13.join(repositoryRoot2, "opencode", "commands"),
-    pluginBundle: path13.join(repositoryRoot2, "opencode", "dist", "oso-code.js"),
-    gates: path13.join(repositoryRoot2, "plugin", "hooks"),
-    gitHook: path13.join(repositoryRoot2, "plugin", "git-hooks", "pre-commit"),
-    stateBin: path13.join(repositoryRoot2, "plugin", "bin", "oso-state"),
-    stateBinPackage: path13.join(repositoryRoot2, "plugin", "bin", "package.json"),
-    dist: path13.join(repositoryRoot2, "plugin", "dist"),
-    global: path13.join(repositoryRoot2, "bootstrap", "opencode-global.md"),
-    publishedHashes: path13.join(repositoryRoot2, "bootstrap", "hook-hashes.txt")
+    skills: path14.join(repositoryRoot2, "opencode", "skills"),
+    sharedSkills: path14.join(repositoryRoot2, "plugin", "skills", "_shared"),
+    agents: path14.join(repositoryRoot2, "opencode", "agents"),
+    commands: path14.join(repositoryRoot2, "opencode", "commands"),
+    pluginBundle: path14.join(repositoryRoot2, "opencode", "dist", "oso-code.js"),
+    gates: path14.join(repositoryRoot2, "plugin", "hooks"),
+    gitHook: path14.join(repositoryRoot2, "plugin", "git-hooks", "pre-commit"),
+    stateBin: path14.join(repositoryRoot2, "plugin", "bin", "oso-state"),
+    stateBinPackage: path14.join(repositoryRoot2, "plugin", "bin", "package.json"),
+    dist: path14.join(repositoryRoot2, "plugin", "dist"),
+    global: path14.join(repositoryRoot2, "bootstrap", "opencode-global.md"),
+    publishedHashes: path14.join(repositoryRoot2, "bootstrap", "hook-hashes.txt")
   };
 }
 function payloadRefusal(sources) {
@@ -3934,8 +4112,8 @@ function payloadRefusal(sources) {
     { present: isDirectory(sources.commands), message: `the OpenCode command templates are missing: ${sources.commands}` },
     { present: isReadableRegularFile(sources.pluginBundle), message: `the OpenCode plugin bundle is missing: ${sources.pluginBundle}` },
     { present: isDirectory(sources.gates), message: `the shared gate script tree is missing: ${sources.gates}` },
-    { present: isReadableRegularFile(path13.join(sources.gates, "lib.sh")), message: `the shared gate library is missing: ${path13.join(sources.gates, "lib.sh")}` },
-    { present: isReadableRegularFile(path13.join(sources.gates, "lexer.sh")), message: `the shared gate lexer is missing: ${path13.join(sources.gates, "lexer.sh")}` },
+    { present: isReadableRegularFile(path14.join(sources.gates, "lib.sh")), message: `the shared gate library is missing: ${path14.join(sources.gates, "lib.sh")}` },
+    { present: isReadableRegularFile(path14.join(sources.gates, "lexer.sh")), message: `the shared gate lexer is missing: ${path14.join(sources.gates, "lexer.sh")}` },
     { present: isReadableRegularFile(sources.gitHook), message: `the shared commit hook is missing: ${sources.gitHook}` },
     { present: isReadableRegularFile(sources.stateBin), message: `the oso-state binary is missing: ${sources.stateBin}` },
     { present: isReadableRegularFile(sources.stateBinPackage), message: `the oso-state module manifest is missing: ${sources.stateBinPackage}` }
@@ -3960,7 +4138,7 @@ function trustBytesRefusal(publishedHashes, rootKind, root) {
 }
 function unpublishedInstalledGates(publishedHashes, hooksTarget) {
   const published = new Set(publishedGateScriptNames(publishedHashes));
-  return directoryEntryNames(hooksTarget).filter((name) => name.endsWith(".sh") && isReadableRegularFile(path13.join(hooksTarget, name))).filter((name) => !published.has(name));
+  return directoryEntryNames(hooksTarget).filter((name) => name.endsWith(".sh") && isReadableRegularFile(path14.join(hooksTarget, name))).filter((name) => !published.has(name));
 }
 function installOpenCode(input) {
   return withOwnerOnlyUmask(() => writeOpenCodeInstall(input));
@@ -4048,33 +4226,33 @@ function backupCandidatesOf2(paths, targets) {
 }
 function installPayloadTrees(paths, targets, sources) {
   replaceTree(paths.configHome, targets.skills, (stage) => {
-    for (const wrapper of osoPrefixedEntryNames(sources.skills)) cpSync2(path13.join(sources.skills, wrapper), path13.join(stage, wrapper), { recursive: true });
-    cpSync2(sources.sharedSkills, path13.join(stage, "_shared"), { recursive: true });
+    for (const wrapper of osoPrefixedEntryNames(sources.skills)) cpSync2(path14.join(sources.skills, wrapper), path14.join(stage, wrapper), { recursive: true });
+    cpSync2(sources.sharedSkills, path14.join(stage, "_shared"), { recursive: true });
   });
   replaceTree(paths.configHome, targets.agents, (stage) => {
-    for (const agent of agentContractNames(sources.agents)) cpSync2(path13.join(sources.agents, agent), path13.join(stage, agent));
+    for (const agent of agentContractNames(sources.agents)) cpSync2(path14.join(sources.agents, agent), path14.join(stage, agent));
   });
   replaceTree(paths.configHome, targets.commands, (stage) => {
-    for (const command of modeCommandNames(sources.commands)) cpSync2(path13.join(sources.commands, command), path13.join(stage, command));
+    for (const command of modeCommandNames(sources.commands)) cpSync2(path14.join(sources.commands, command), path14.join(stage, command));
   });
-  replaceTree(paths.configHome, targets.plugin, (stage) => cpSync2(sources.pluginBundle, path13.join(stage, "oso-code.js")));
+  replaceTree(paths.configHome, targets.plugin, (stage) => cpSync2(sources.pluginBundle, path14.join(stage, "oso-code.js")));
   replaceTree(paths.configHome, targets.hooks, (stage) => {
     for (const script of publishedGateScriptNames(sources.publishedHashes)) {
-      cpSync2(path13.join(sources.gates, script), path13.join(stage, script));
-      chmodSync2(path13.join(stage, script), EXECUTABLE_FILE_MODE);
+      cpSync2(path14.join(sources.gates, script), path14.join(stage, script));
+      chmodSync2(path14.join(stage, script), EXECUTABLE_FILE_MODE);
     }
   });
   replaceTree(paths.configHome, targets.stateBin, (stage) => {
-    cpSync2(sources.stateBin, path13.join(stage, "oso-state"));
-    cpSync2(sources.stateBinPackage, path13.join(stage, "package.json"));
-    chmodSync2(path13.join(stage, "oso-state"), EXECUTABLE_FILE_MODE);
+    cpSync2(sources.stateBin, path14.join(stage, "oso-state"));
+    cpSync2(sources.stateBinPackage, path14.join(stage, "package.json"));
+    chmodSync2(path14.join(stage, "oso-state"), EXECUTABLE_FILE_MODE);
   });
   replaceTree(paths.configHome, targets.dist, (stage) => {
-    for (const bundle of publishedDistFileNames(sources.publishedHashes)) cpSync2(path13.join(sources.dist, bundle), path13.join(stage, bundle));
+    for (const bundle of publishedDistFileNames(sources.publishedHashes)) cpSync2(path14.join(sources.dist, bundle), path14.join(stage, bundle));
   });
   replaceTree(paths.configHome, targets.gitHooks, (stage) => {
-    cpSync2(sources.gitHook, path13.join(stage, "pre-commit"));
-    chmodSync2(path13.join(stage, "pre-commit"), EXECUTABLE_FILE_MODE);
+    cpSync2(sources.gitHook, path14.join(stage, "pre-commit"));
+    chmodSync2(path14.join(stage, "pre-commit"), EXECUTABLE_FILE_MODE);
   });
 }
 function publishedGateBytesEntry(publishedHashes, configHome, hooksTarget) {
@@ -4090,17 +4268,22 @@ function publishedGateBytesEntry(publishedHashes, configHome, hooksTarget) {
 }
 function renderOpenCodeConfig(input, paths, tx) {
   const fallow = resolveFallowMcpCommand(input.environment, input.homeDirectory, input.platform) ?? FALLOW_FALLBACK_COMMAND2;
-  const merged = mergeOpenCodeConfig(recordedConfigDocument(tx), fallow);
+  const merged = mergeOpenCodeConfig(recordedConfigDocument(tx), fallow, readProfileRoles(input.repositoryRoot));
   const violation = hostContractViolationOf(merged.document);
   if (violation !== void 0) throw new Error(`the rendered config violates the host contract: ${violation}`);
   writeJsonFile(paths.configFile, merged.document);
   chmodSync2(paths.configFile, PRIVATE_FILE_MODE);
   writeFileSync8(preservedKeysFileOf(tx), merged.preservedKeys.map((key) => `${key}
 `).join(""));
-  return wiringOk("opencode.json", `preserved ${merged.preservedKeys.length} operator key(s)`);
+  return wiringOk("opencode.json", `preserved ${merged.preservedKeys.length} operator key(s), ${agentModelNote(merged.agentModels)}`);
+}
+function agentModelNote(agentModels) {
+  const named = Object.keys(agentModels).length;
+  if (named === 0) return "no profile model to write, so every agent runs on the host session model";
+  return `wrote ${named} agent model key(s) from the profile`;
 }
 function recordedConfigDocument(tx) {
-  return readJsonFile(path13.join(tx.itemsDirectory, "config"));
+  return readJsonFile(path14.join(tx.itemsDirectory, "config"));
 }
 function wireEngram(environment, engramPlugin, tx) {
   if (firstExecutableOnPath(environment, ENGRAM_BINARY_NAME) === void 0) {
@@ -4116,20 +4299,20 @@ function wireEngram(environment, engramPlugin, tx) {
   return wiringFail("engram", "engram setup opencode failed; the operator's prior Engram plugin was restored from the backup snapshot");
 }
 function restoreBackedUpEngramPlugin(tx, engramPlugin) {
-  const recorded = path13.join(tx.itemsDirectory, "engram-plugin");
+  const recorded = path14.join(tx.itemsDirectory, "engram-plugin");
   if (!isReadableRegularFile(recorded)) return;
-  mkdirSync7(path13.dirname(engramPlugin), { recursive: true });
+  mkdirSync7(path14.dirname(engramPlugin), { recursive: true });
   cpSync2(recorded, engramPlugin);
 }
 function impeccableEntries(input, targets) {
   if (input.installImpeccable) return [wiringOk("impeccable", `not mounted at ${targets.impeccableMount}; no installer in this tree performs the mount`)];
-  mkdirSync7(path13.dirname(targets.impeccableOptOut), { recursive: true });
+  mkdirSync7(path14.dirname(targets.impeccableOptOut), { recursive: true });
   writeFileSync8(targets.impeccableOptOut, `skipped by --no-impeccable on ${isoTimestamp().slice(0, 10)}
 `);
   return [wiringOk("impeccable", "skipped by --no-impeccable")];
 }
 function gitHookEntries(input, targets) {
-  const preCommit = path13.join(targets.gitHooks, "pre-commit");
+  const preCommit = path14.join(targets.gitHooks, "pre-commit");
   if (!input.installGitHook) return [wiringOk("git commit hook", `skipped by --no-git-hook; the hook is installed at ${preCommit}`)];
   const owner = gitHooksOwner(input.repositoryRoot, input.environment, targets.gitHooks);
   if (owner !== "") {
@@ -4156,9 +4339,9 @@ function writeOwnerRegistry(paths, targets, tx) {
     ownedBy(OWNER_INSTALLER, targets.agents),
     ownedBy(OWNER_INSTALLER, targets.commands),
     ownedBy(OWNER_INSTALLER, targets.plugin),
-    ...directoryEntryNames(targets.hooks).filter((name) => name.endsWith(".sh")).map((name) => ownedBy(OWNER_INSTALLER, path13.join(targets.hooks, name))),
-    ownedBy(OWNER_INSTALLER, path13.join(targets.stateBin, "oso-state")),
-    ownedBy(OWNER_INSTALLER, path13.join(targets.gitHooks, "pre-commit"))
+    ...directoryEntryNames(targets.hooks).filter((name) => name.endsWith(".sh")).map((name) => ownedBy(OWNER_INSTALLER, path14.join(targets.hooks, name))),
+    ownedBy(OWNER_INSTALLER, path14.join(targets.stateBin, "oso-state")),
+    ownedBy(OWNER_INSTALLER, path14.join(targets.gitHooks, "pre-commit"))
   ];
   mkdirSync7(paths.stateRoot, { recursive: true });
   writeFileSync8(targets.ownerRegistry, rows.map((row) => `${row}
@@ -4173,7 +4356,7 @@ function preservedKeysOf(tx) {
   return readFileSync12(file, "utf8").split("\n").filter((key) => key !== "");
 }
 function preservedKeysFileOf(tx) {
-  return path13.join(tx.backupRoot, PRESERVED_KEYS_FILE);
+  return path14.join(tx.backupRoot, PRESERVED_KEYS_FILE);
 }
 function pruneOpenCodeInstallBackups(paths, targets, environment) {
   if (!isReadableRegularFile(targets.restoreExercisedMarker)) return [];
@@ -4185,7 +4368,7 @@ function pruneOpenCodeInstallBackups(paths, targets, environment) {
 function migrateOpenCodeState(paths, targets, tx) {
   const migrated = [];
   for (const stateFile of stateFilesUnder(paths.stateRoot)) {
-    const repository = path13.basename(stateFile, ".state");
+    const repository = path14.basename(stateFile, ".state");
     let backedUp = false;
     const backUpOnce = () => {
       if (backedUp) return;
@@ -4207,11 +4390,11 @@ function migrateRenamedIdentity(stateFile, repository, backUpOnce) {
   if (stateValue(readFileSync12(stateFile, "utf8"), "plan_approval_session") !== "") {
     rewriteStateKeys(stateFile, [`plan_approval_session=${agent}`]);
   }
-  return [`migrated the renamed identity in ${path13.basename(stateFile)}: session ${session} is now ${agent}`];
+  return [`migrated the renamed identity in ${path14.basename(stateFile)}: session ${session} is now ${agent}`];
 }
 function migrateRelocatedApproval(stateFile, repository, planArtifactRoot, backUpOnce) {
   if (stateValue(readFileSync12(stateFile, "utf8"), "plan_approval") !== "") return [];
-  const planDirectory = path13.join(planArtifactRoot, repository);
+  const planDirectory = path14.join(planArtifactRoot, repository);
   const approved = directoryEntryNames(planDirectory).find((name) => name.startsWith("approved-") && name.endsWith(".md"));
   if (approved === void 0) return [];
   const planDigest = approved.slice("approved-".length, -".md".length);
@@ -4220,31 +4403,31 @@ function migrateRelocatedApproval(stateFile, repository, planArtifactRoot, backU
     "plan_approval=approved",
     `plan_approval_digest=${planDigest}`,
     `plan_approval_session=${repository.slice(0, AGENT_IDENTITY_LENGTH)}`,
-    `plan_snapshot_file=${path13.join(planDirectory, approved)}`,
-    `plan_current_file=${path13.join(planDirectory, "current.md")}`,
+    `plan_snapshot_file=${path14.join(planDirectory, approved)}`,
+    `plan_current_file=${path14.join(planDirectory, "current.md")}`,
     "plan_revision=0"
   ]);
-  return [`migrated the relocated plan approval into ${path13.basename(stateFile)}: ${planDigest}`];
+  return [`migrated the relocated plan approval into ${path14.basename(stateFile)}: ${planDigest}`];
 }
 function rewriteStateKeys(stateFile, pairs) {
   for (const pair of pairs) {
     const key = pair.slice(0, pair.indexOf("="));
     const kept = readFileSync12(stateFile, "utf8").split("\n").filter((line) => line !== "" && !line.startsWith(`${key}=`));
-    const staged = path13.join(path13.dirname(stateFile), `.state-migration-${path13.basename(stateFile)}`);
+    const staged = path14.join(path14.dirname(stateFile), `.state-migration-${path14.basename(stateFile)}`);
     writeFileSync8(staged, [...kept, pair].map((line) => `${line}
 `).join(""), { mode: PRIVATE_FILE_MODE });
     renameSync3(staged, stateFile);
   }
 }
 function stateFilesUnder(stateRoot) {
-  return directoryEntryNames(stateRoot).filter((name) => name.endsWith(".state")).map((name) => path13.join(stateRoot, name)).filter(isReadableRegularFile);
+  return directoryEntryNames(stateRoot).filter((name) => name.endsWith(".state")).map((name) => path14.join(stateRoot, name)).filter(isReadableRegularFile);
 }
 function replaceTree(stageParent, target, fill) {
   mkdirSync7(stageParent, { recursive: true });
-  const stage = mkdtempSync5(path13.join(stageParent, ".oso-install-stage-"));
+  const stage = mkdtempSync5(path14.join(stageParent, ".oso-install-stage-"));
   fill(stage);
   narrowToOwnerOnly(stage);
-  mkdirSync7(path13.dirname(target), { recursive: true });
+  mkdirSync7(path14.dirname(target), { recursive: true });
   rmSync9(target, { recursive: true, force: true });
   renameSync3(stage, target);
 }
@@ -4253,10 +4436,10 @@ function narrowToOwnerOnly(target) {
   if (stats.isSymbolicLink()) return;
   chmodSync2(target, stats.mode & OWNER_ONLY_MASK);
   if (!stats.isDirectory()) return;
-  for (const name of readdirSync4(target)) narrowToOwnerOnly(path13.join(target, name));
+  for (const name of readdirSync4(target)) narrowToOwnerOnly(path14.join(target, name));
 }
 function skillWrapperNames(skillsSource) {
-  return osoPrefixedEntryNames(skillsSource).filter((name) => isReadableRegularFile(path13.join(skillsSource, name, "SKILL.md")));
+  return osoPrefixedEntryNames(skillsSource).filter((name) => isReadableRegularFile(path14.join(skillsSource, name, "SKILL.md")));
 }
 function agentContractNames(agentsSource) {
   return osoPrefixedMarkdownNames(agentsSource);
@@ -4265,7 +4448,7 @@ function modeCommandNames(commandsSource) {
   return osoPrefixedMarkdownNames(commandsSource);
 }
 function osoPrefixedMarkdownNames(directory) {
-  return osoPrefixedEntryNames(directory).filter((name) => name.endsWith(".md") && isReadableRegularFile(path13.join(directory, name)));
+  return osoPrefixedEntryNames(directory).filter((name) => name.endsWith(".md") && isReadableRegularFile(path14.join(directory, name)));
 }
 function osoPrefixedEntryNames(directory) {
   return directoryEntryNames(directory).filter((name) => name.startsWith("oso-"));
@@ -4280,7 +4463,7 @@ function directoryEntryNames(directory) {
 
 // core/src/install/opencode-purge.ts
 import { mkdirSync as mkdirSync8, readFileSync as readFileSync13, realpathSync, rmSync as rmSync10 } from "node:fs";
-import path14 from "node:path";
+import path15 from "node:path";
 var OPENCODE_PURGE_BACKUP_FORMAT = "oso-code-opencode-purge-v1";
 var PROJECT_CONFIGS_KEY = "OSO_OPENCODE_PROJECT_CONFIGS";
 var REQUIRED_PROJECT_CONFIG_COUNT = 3;
@@ -4289,23 +4472,23 @@ var UNSAFE_PATH_SEGMENTS = ["/../", "/./"];
 var UNSAFE_PATH_CHARACTERS = /[\n\r\t]/;
 function openCodePurgeTargets(homeDirectory2, keepGentleAi) {
   const all = [
-    { label: "config-home", target: path14.join(homeDirectory2, ".config", "opencode") },
-    { label: "state-home", target: path14.join(homeDirectory2, ".local", "share", "opencode") },
-    { label: "cache-home", target: path14.join(homeDirectory2, ".cache", "opencode") },
-    { label: "bin", target: path14.join(homeDirectory2, ".opencode", "bin", "opencode") },
-    { label: "gentle-ai-home", target: path14.join(homeDirectory2, ".gentle-ai") },
-    { label: "gentle-ai-bin", target: path14.join(homeDirectory2, ".local", "bin", "gentle-ai") }
+    { label: "config-home", target: path15.join(homeDirectory2, ".config", "opencode") },
+    { label: "state-home", target: path15.join(homeDirectory2, ".local", "share", "opencode") },
+    { label: "cache-home", target: path15.join(homeDirectory2, ".cache", "opencode") },
+    { label: "bin", target: path15.join(homeDirectory2, ".opencode", "bin", "opencode") },
+    { label: "gentle-ai-home", target: path15.join(homeDirectory2, ".gentle-ai") },
+    { label: "gentle-ai-bin", target: path15.join(homeDirectory2, ".local", "bin", "gentle-ai") }
   ];
   return keepGentleAi ? all.filter((row) => !GENTLE_AI_LABELS.includes(row.label)) : all;
 }
 function purgeBackupParentOf(homeDirectory2) {
-  return path14.join(homeDirectory2, ".local", "state", "oso-code", "purge-backups");
+  return path15.join(homeDirectory2, ".local", "state", "oso-code", "purge-backups");
 }
 function customizedHomeRefusal(homeDirectory2, environment) {
   const rows = [
-    { key: "XDG_CONFIG_HOME", expected: path14.join(homeDirectory2, ".config"), named: "config home" },
-    { key: "XDG_STATE_HOME", expected: path14.join(homeDirectory2, ".local", "state"), named: "state home" },
-    { key: "XDG_CACHE_HOME", expected: path14.join(homeDirectory2, ".cache"), named: "cache home" }
+    { key: "XDG_CONFIG_HOME", expected: path15.join(homeDirectory2, ".config"), named: "config home" },
+    { key: "XDG_STATE_HOME", expected: path15.join(homeDirectory2, ".local", "state"), named: "state home" },
+    { key: "XDG_CACHE_HOME", expected: path15.join(homeDirectory2, ".cache"), named: "cache home" }
   ];
   const customized = rows.find((row) => (environment[row.key] ?? "") !== "" && environment[row.key] !== row.expected);
   if (customized === void 0) return void 0;
@@ -4314,13 +4497,13 @@ function customizedHomeRefusal(homeDirectory2, environment) {
 function unsafeTargetRefusal(homeDirectory2, targets) {
   const homePhysical = physicalPathOf(homeDirectory2);
   if (homePhysical === void 0) return `HOME does not resolve to a physical path: ${homeDirectory2}`;
-  if (homePhysical === path14.parse(homePhysical).root) return `refusing to operate with HOME=${homeDirectory2}`;
+  if (homePhysical === path15.parse(homePhysical).root) return `refusing to operate with HOME=${homeDirectory2}`;
   for (const { label, target } of targets) {
-    if (!path14.isAbsolute(target)) return `${label} must be an absolute path: ${target}`;
+    if (!path15.isAbsolute(target)) return `${label} must be an absolute path: ${target}`;
     if (!pathIsClean(target)) return `unsafe ${label} path: ${target}`;
     if (!isBelow(target, homeDirectory2)) return `${label} must remain below HOME: ${target}`;
     if (!existsAtAll(target) || isSymlink(target)) continue;
-    const parentPhysical = physicalPathOf(path14.dirname(target));
+    const parentPhysical = physicalPathOf(path15.dirname(target));
     if (parentPhysical === void 0) return `${label} does not resolve to a physical path: ${target}`;
     if (parentPhysical !== homePhysical && !isBelow(parentPhysical, homePhysical)) return `${label} resolves outside HOME: ${target}`;
   }
@@ -4343,7 +4526,7 @@ function projectConfigsRefusal(environment, targets) {
   }
   if (new Set(declared).size !== declared.length) return "the three project-level opencode.json paths must be distinct";
   for (const declaredPath of declared) {
-    if (!path14.isAbsolute(declaredPath)) return `project-level opencode.json must be an absolute path: ${declaredPath}`;
+    if (!path15.isAbsolute(declaredPath)) return `project-level opencode.json must be an absolute path: ${declaredPath}`;
     if (!pathIsClean(declaredPath)) return `unsafe project-level opencode.json path: ${declaredPath}`;
     if (!existsAtAll(declaredPath)) return `project-level opencode.json does not exist: ${declaredPath}`;
     const inside = targets.find(({ target }) => declaredPath === target || isBelow(declaredPath, target));
@@ -4375,7 +4558,7 @@ function dryRunOutcome(input, targets, backupParent) {
     ...targets.map(({ label, target }) => `  ${label}: ${target}`),
     "project-level opencode.json files to report:",
     ...projectConfigsIn(input.environment).map((declared) => `  ${declared}`),
-    `backup would be created at: ${path14.join(backupParent, "purge-<timestamp>")}`
+    `backup would be created at: ${path15.join(backupParent, "purge-<timestamp>")}`
   ];
   return { report: renderCommandReport("purge", "opencode", infoLines, [wiringOk("dry run", "no target was read for removal")]), exitCode: 0 };
 }
@@ -4423,8 +4606,8 @@ function restoreOpenCodePurge(backupDirectory, homeDirectory2) {
   if (occupied !== void 0) {
     return fatalOutcome("purge", "opencode", "refusing to overwrite an existing target", `${occupied.label}: ${occupied.target}`);
   }
-  for (const row of readable.rows) mkdirSync8(path14.dirname(row.target), { recursive: true });
-  const restored = restoreBackupManifest(readable.rows.map(serializeManifestRow).join("\n"), path14.join(backupDirectory, "items"));
+  for (const row of readable.rows) mkdirSync8(path15.dirname(row.target), { recursive: true });
+  const restored = restoreBackupManifest(readable.rows.map(serializeManifestRow).join("\n"), path15.join(backupDirectory, "items"));
   const wiring = readable.rows.map(
     (row) => restored.failedItems.includes(row.target) ? wiringFail(row.label, `could not restore ${row.target}`) : wiringOk(row.label, row.target)
   );
@@ -4435,16 +4618,16 @@ function restoreOpenCodePurge(backupDirectory, homeDirectory2) {
   return { report: renderCommandReport("purge", "opencode", infoLines, wiring), exitCode: restored.failedCount === 0 ? 0 : 1 };
 }
 function readablePurgeBackup(backupDirectory, homeDirectory2) {
-  if (!path14.isAbsolute(backupDirectory)) return { kind: "unusable", message: "backup path must be absolute" };
+  if (!path15.isAbsolute(backupDirectory)) return { kind: "unusable", message: "backup path must be absolute" };
   if (!existsAtAll(backupDirectory) || isSymlink(backupDirectory)) {
     return { kind: "unusable", message: `backup is not a directory: ${backupDirectory}` };
   }
-  const marker = path14.join(backupDirectory, "format");
+  const marker = path15.join(backupDirectory, "format");
   const format = isReadableRegularFile(marker) ? readFileSync13(marker, "utf8").trim() : "";
   if (format !== OPENCODE_PURGE_BACKUP_FORMAT) {
     return { kind: "unusable", message: `unsupported or missing backup format: ${backupDirectory} (expected ${OPENCODE_PURGE_BACKUP_FORMAT})` };
   }
-  const manifest = path14.join(backupDirectory, "manifest");
+  const manifest = path15.join(backupDirectory, "manifest");
   if (!isReadableRegularFile(manifest)) return { kind: "unusable", message: `backup contains no target records: ${backupDirectory}` };
   const rows = parseManifestRows(readFileSync13(manifest, "utf8"));
   if (rows.length === 0) return { kind: "unusable", message: `backup contains no target records: ${backupDirectory}` };
@@ -4458,13 +4641,13 @@ function expectedTargetFor(label, homeDirectory2) {
   return openCodePurgeTargets(homeDirectory2, false).find((row) => row.label === label)?.target;
 }
 function pathIsClean(target) {
-  if (target === path14.parse(target).root) return false;
+  if (target === path15.parse(target).root) return false;
   if (UNSAFE_PATH_CHARACTERS.test(target)) return false;
   if (target.endsWith("/..") || target.endsWith("/.")) return false;
   return !UNSAFE_PATH_SEGMENTS.some((segment) => target.includes(segment));
 }
 function isBelow(candidate, ancestor) {
-  return candidate.startsWith(ancestor.endsWith(path14.sep) ? ancestor : `${ancestor}${path14.sep}`);
+  return candidate.startsWith(ancestor.endsWith(path15.sep) ? ancestor : `${ancestor}${path15.sep}`);
 }
 function physicalPathOf(target) {
   try {
@@ -4472,125 +4655,6 @@ function physicalPathOf(target) {
   } catch {
     return void 0;
   }
-}
-
-// core/src/install/profile.ts
-import path15 from "node:path";
-var ROLES = ["applier", "verifier", "judges"];
-var TIERS = ["default", "strong"];
-var PROFILE_NAMES = ["normal", "strong", "custom"];
-var ON_DEFAULT = { tier: "default", model: void 0 };
-var ON_STRONG = { tier: "strong", model: void 0 };
-var PRESETS = {
-  normal: { applier: ON_DEFAULT, verifier: ON_DEFAULT, judges: ON_STRONG },
-  strong: { applier: ON_STRONG, verifier: ON_STRONG, judges: ON_STRONG }
-};
-var TIER_RANK = { default: 0, strong: 1 };
-var ProfileRefusedError = class extends Error {
-  constructor(reason) {
-    super(`profile set refused: ${reason}`);
-    this.name = "ProfileRefusedError";
-  }
-};
-function showProfile(workingDirectory) {
-  const mirror = mirrorFileFor(workingDirectory);
-  const read = readStateFile(mirror);
-  if (read.kind === "unreadable") throw new StateFileUnreadableError(mirror, read.cause);
-  if (read.kind === "absent") return { report: `oso profile show
-no profile at ${mirror} \u2014 every role runs on its host's session model
-`, exitCode: 0 };
-  return { report: `oso profile show
-${mirror}
-${read.content}`, exitCode: 0 };
-}
-function setProfile(workingDirectory, name, roleTokens) {
-  const profile = profileFrom(name, roleTokens);
-  const mirror = mirrorFileFor(workingDirectory);
-  const content = mirrorContentOf(profile);
-  writeFileAtomically(path15.dirname(mirror), mirror, content, ".profile.");
-  return { report: `oso profile set ${profile.name}
-${mirror}
-${content}`, exitCode: 0 };
-}
-function mirrorFileFor(workingDirectory) {
-  return profileFileFor(stateFileFor(workingDirectory));
-}
-function profileFrom(name, roleTokens) {
-  if (!isProfileName(name)) throw new ProfileRefusedError(`${name} is not a profile name \u2014 the names are ${PROFILE_NAMES.join(", ")}`);
-  const chosen = roleChoicesFrom(roleTokens);
-  if (name === "custom") return { name, roles: customRoles(chosen) };
-  return { name, roles: presetRoles(name, chosen) };
-}
-function presetRoles(name, chosen) {
-  const roleNamed = ROLES.find((role) => chosen[role] !== void 0);
-  if (roleNamed !== void 0) {
-    throw new ProfileRefusedError(`${roleFlag(roleNamed)} names a role only "set custom" takes \u2014 the ${name} preset names its own`);
-  }
-  return PRESETS[name];
-}
-function customRoles(chosen) {
-  const { applier, verifier, judges } = chosen;
-  if (applier === void 0) throw missingRole("applier");
-  if (verifier === void 0) throw missingRole("verifier");
-  if (judges === void 0) throw missingRole("judges");
-  refuseVerifierBelowApplier(applier, verifier);
-  return { applier, verifier, judges };
-}
-function refuseVerifierBelowApplier(applier, verifier) {
-  if (TIER_RANK[verifier.tier] >= TIER_RANK[applier.tier]) return;
-  throw new ProfileRefusedError(
-    `the verifier tier ${verifier.tier} is below the applier tier ${applier.tier} \u2014 ${roleFlag("verifier")} ${applier.tier} would have passed`
-  );
-}
-function missingRole(role) {
-  return new ProfileRefusedError(`a custom profile names every role \u2014 ${roleFlag(role)} <tier>[:<model>] is missing`);
-}
-function roleChoicesFrom(tokens) {
-  const chosen = {};
-  for (let index = 0; index < tokens.length; index += 2) {
-    const flag = tokens[index];
-    const role = roleOf(flag);
-    if (chosen[role] !== void 0) throw new ProfileRefusedError(`${flag} may be given only once`);
-    chosen[role] = roleChoiceFrom(flag, tokens[index + 1]);
-  }
-  return chosen;
-}
-function roleOf(flag) {
-  const role = ROLES.find((candidate) => flag === roleFlag(candidate));
-  if (role === void 0) throw new ProfileRefusedError(`${flag} names no role \u2014 the roles are ${ROLES.map(roleFlag).join(", ")}`);
-  return role;
-}
-function roleChoiceFrom(flag, value) {
-  if (value === void 0) throw new ProfileRefusedError(`${flag} takes <tier>[:<model>] and was given nothing`);
-  const colon = value.indexOf(":");
-  const tier = colon === -1 ? value : value.slice(0, colon);
-  const model = colon === -1 ? void 0 : value.slice(colon + 1);
-  if (!isTier(tier)) throw new ProfileRefusedError(`${flag} ${value} names no tier \u2014 the tiers are ${TIERS.join(", ")}`);
-  if (model === "") throw new ProfileRefusedError(`${flag} ${value} names no model after its colon \u2014 ${flag} ${tier} would have passed`);
-  return { tier, model };
-}
-function roleFlag(role) {
-  return `--${role}`;
-}
-function mirrorContentOf(profile) {
-  const lines = [
-    `model_profile=${profile.name}`,
-    ...ROLES.flatMap((role) => roleLines(role, profile.roles[role])),
-    "codex=pinned by host contract",
-    "unattended.doom_loop=ask"
-  ];
-  return lines.map((line) => `${line}
-`).join("");
-}
-function roleLines(role, choice) {
-  const tier = `${role}.tier=${choice.tier}`;
-  return choice.model === void 0 ? [tier] : [tier, `${role}.model=${choice.model}`];
-}
-function isProfileName(value) {
-  return PROFILE_NAMES.includes(value);
-}
-function isTier(value) {
-  return TIERS.includes(value);
 }
 
 // core/src/install/verify-codex.ts
@@ -5225,12 +5289,62 @@ import { spawnSync as spawnSync9 } from "node:child_process";
 import { chmodSync as chmodSync3, mkdirSync as mkdirSync10, mkdtempSync as mkdtempSync7, readdirSync as readdirSync6, readFileSync as readFileSync15, rmSync as rmSync12, writeFileSync as writeFileSync10 } from "node:fs";
 import { tmpdir as tmpdir5 } from "node:os";
 import path17 from "node:path";
+
+// core/src/prose/routes.ts
+var AGENT_ROLES = [
+  {
+    id: "oso-applier",
+    claude: { description: "Implements exactly one oso-code assignment \u2014 a plan slice, a debt cleanup, judge findings, or a diagnosis packaged as a ledger. Launched by the /plan, /quick and /debug orchestrators \u2014 not for direct use.", model: "sonnet", tools: ["Read", "Edit", "Write", "NotebookEdit", "Glob", "Grep", "Bash", "mcp__plugin_oso-code_context7__resolve-library-id", "mcp__plugin_oso-code_context7__query-docs"] },
+    codex: { description: "Implements exactly one oso-code assignment: a plan slice, debt cleanup, accepted judge findings, or a diagnosis packaged as a ledger. Launched by the plan, quick, and debug orchestrators; not for direct use.", model: "gpt-5.5", reasoningEffort: "xhigh", sandboxMode: "workspace-write" },
+    opencode: { description: "Implements exactly one oso-code assignment: a plan slice, debt cleanup, accepted judge findings, or a diagnosis packaged as a ledger. Launched by the plan, quick, and debug orchestrators; not for direct use.", denies: ["task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: ["context7"] }
+  },
+  {
+    id: "oso-verifier",
+    claude: { description: "Independently verifies one implemented slice \u2014 or one merged wave at its integration gate \u2014 against its criteria and the project's zero-warnings bar. Judges only \u2014 never edits files. Launched by the /plan and /debug orchestrators after each apply.", model: "sonnet", tools: ["Read", "Glob", "Grep", "Bash"] },
+    codex: { description: "Independently verifies one implemented slice or one merged wave against its criteria and the project's zero-warning bar. Judges only and never edits source files.", model: "gpt-5.5", reasoningEffort: "xhigh", sandboxMode: "workspace-write" },
+    opencode: { description: "Independently verifies one implemented slice or one merged wave against its criteria and the project's zero-warning bar. Judges only and never edits source files.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
+  },
+  {
+    id: "oso-integrator",
+    claude: { description: "Merges one wave of green, committed slice branches into the main checkout, then tears down their worktrees and deletes those branches. Never resolves a conflict, never judges. Launched by the /plan orchestrator \u2014 not for direct use.", model: "sonnet", tools: ["Read", "Bash"] },
+    codex: { description: "Merges one wave of green committed slice branches into the main checkout, then removes their worktrees and deletes their branches. Never resolves conflicts and never judges.", model: "gpt-5.5", reasoningEffort: "xhigh", sandboxMode: "danger-full-access" },
+    opencode: { description: "Merges one wave of green committed slice branches into the main checkout, then removes their worktrees and deletes their branches. Never resolves conflicts and never judges.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
+  },
+  {
+    id: "oso-debt-sweep",
+    claude: null,
+    codex: { description: "Fresh-context Codex role for the debt-sweep skill: judges code debt and frozen-ledger conformance separately and never edits.", model: "gpt-5.5", reasoningEffort: "xhigh", sandboxMode: "workspace-write" },
+    opencode: { description: "Fresh-context judge for the debt-sweep skill: judges code debt and frozen-ledger conformance separately and never edits.", denies: ["edit", "fallow_fix_apply", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: ["fallow"] }
+  },
+  {
+    id: "oso-doubt-pass",
+    claude: null,
+    codex: { description: "Fresh-context Codex role for doubt-pass: attacks a candidate ledger using only intent, surface map, and bare decisions, and never edits.", model: "gpt-5.5", reasoningEffort: "xhigh", sandboxMode: "read-only" },
+    opencode: { description: "Fresh-context judge for the doubt-pass skill: attacks a candidate ledger using only intent, surface map, and bare decisions, and never edits.", denies: ["glob", "grep", "edit", "bash", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
+  },
+  {
+    id: "oso-security-reviewer",
+    claude: null,
+    codex: { description: "Fresh-context Codex role for security-pass: reviews the supplied change surface as a judge and never edits, commits, or asks back.", model: "gpt-5.5", reasoningEffort: "xhigh", sandboxMode: "danger-full-access" },
+    opencode: { description: "Fresh-context judge for the security-pass skill: reviews the supplied change surface as a judge and never edits, commits, or asks back.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
+  },
+  {
+    id: "oso-triage",
+    claude: null,
+    codex: { description: "Fresh-context Codex role for triage: establishes read-only attribution for one red plan-wave check and never diagnoses or fixes beyond it.", model: "gpt-5.5", reasoningEffort: "xhigh", sandboxMode: "workspace-write" },
+    opencode: { description: "Fresh-context judge for the triage skill: establishes read-only attribution for one red plan-wave check and never diagnoses or fixes beyond it.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
+  }
+];
+
+// core/src/install/verify-opencode.ts
 var OPENCODE_NOT_ON_PATH = "opencode-not-on-path";
 var VERSION_ROW_SKIP = "OpenCode CLI version \u2014 opencode is not on PATH, so the installed pin could not be probed";
 var LOCAL_CHECKS_SECTION2 = "local checks:";
 var FIXTURE_ROWS_SKIP = "the fixture-based artifact checks \u2014 the isolated install could not complete";
 var OPERATOR_CONFIG_PROBE = {
   theme: "oso-verify-operator-theme",
+  sessionModel: "oso-verify/operator-session-model",
+  sessionSmallModel: "oso-verify/operator-session-small-model",
   permissionKey: "read",
   permissionVerdict: "allow",
   mcpServerName: "oso-verify-operator-server",
@@ -5262,6 +5376,10 @@ var FIXTURE_ENGRAM_SHIM = [
   "esac",
   ""
 ].join("\n");
+var EVERY_AGENT_ON_THE_HOST_SESSION_MODEL = "none, so every agent runs on the host session model";
+var FRONT_MATTER_DELIMITER = "---";
+var PERMISSION_BLOCK_HEADING = "permission:";
+var PERMISSION_VERDICT_LINE = /^ {2}(\S+): (\S+)$/;
 var FIXTURE_PREFIX = "oso-opencode-verify.";
 var TEMPORARY_PARENT_UNAVAILABLE = "temporary-parent-unavailable";
 var DECOY_CONFIG_TEXT = '{"theme":"decoy"}';
@@ -5291,8 +5409,10 @@ function checkInstalledTree(report2, input, tree) {
   const globalFile = path17.join(tree.configHome, "AGENTS.md");
   report2.check("OpenCode config contract", "valid", openCodeConfigStatus(configFile));
   report2.check("operator config keys survive an install", "preserved", openCodeOperatorKeysStatus(configFile));
+  report2.check("agent model keys from the profile", profiledAgentModelLine(configFile, input.repositoryRoot), installedAgentModelLine(configFile));
   report2.check("nine skill wrappers and the shared skill directory installed", "exact", openCodeSkillStatus(input.repositoryRoot, tree.configHome));
   report2.check("agent contracts installed", "exact", openCodeAgentStatus(input.repositoryRoot, tree.configHome));
+  report2.check("MCP surface closed on every installed agent", "closed", openCodeAgentMcpSurfaceStatus(tree.configHome));
   report2.check("mode commands installed and routed", "exact", openCodeCommandStatus(input.repositoryRoot, tree.configHome));
   report2.check("plugin entry, modules and routes installed", "exact", openCodePluginStatus(input.repositoryRoot, tree.configHome));
   report2.check("Engram plugin file installed", "present", openCodeEngramStatus(tree.configHome));
@@ -5393,6 +5513,8 @@ function openCodeConfigStatus(configFile) {
 function operatorConfigSeed() {
   return {
     theme: OPERATOR_CONFIG_PROBE.theme,
+    model: OPERATOR_CONFIG_PROBE.sessionModel,
+    small_model: OPERATOR_CONFIG_PROBE.sessionSmallModel,
     permission: { [OPERATOR_CONFIG_PROBE.permissionKey]: OPERATOR_CONFIG_PROBE.permissionVerdict },
     mcp: {
       [OPERATOR_CONFIG_PROBE.mcpServerName]: {
@@ -5410,6 +5532,8 @@ function openCodeOperatorKeysStatus(configFile) {
   if (read.kind === "unparseable" || !isPlainObject(read.value)) return "dropped";
   const document = read.value;
   if (document["theme"] !== OPERATOR_CONFIG_PROBE.theme) return "dropped";
+  if (document["model"] !== OPERATOR_CONFIG_PROBE.sessionModel) return "dropped";
+  if (document["small_model"] !== OPERATOR_CONFIG_PROBE.sessionSmallModel) return "dropped";
   const permission = isPlainObject(document["permission"]) ? document["permission"] : {};
   if (permission[OPERATOR_CONFIG_PROBE.permissionKey] !== OPERATOR_CONFIG_PROBE.permissionVerdict) return "dropped";
   const servers = isPlainObject(document["mcp"]) ? document["mcp"] : {};
@@ -5417,6 +5541,25 @@ function openCodeOperatorKeysStatus(configFile) {
   if (!isPlainObject(server)) return "dropped";
   if (JSON.stringify(server["command"]) !== JSON.stringify(OPERATOR_CONFIG_PROBE.mcpServerCommand)) return "dropped";
   return "preserved";
+}
+function profiledAgentModelLine(configFile, repositoryRoot2) {
+  const read = readConfigDocument(configFile);
+  return agentModelLine(openCodeAgentModels(read.kind === "parsed" ? read.value : {}, readProfileRoles(repositoryRoot2)));
+}
+function installedAgentModelLine(configFile) {
+  const read = readConfigDocument(configFile);
+  if (read.kind !== "parsed" || !isPlainObject(read.value)) return EVERY_AGENT_ON_THE_HOST_SESSION_MODEL;
+  const agents = isPlainObject(read.value["agent"]) ? read.value["agent"] : {};
+  const installed = {};
+  for (const [name, spec] of Object.entries(agents)) {
+    const model = isPlainObject(spec) ? spec["model"] : void 0;
+    if (typeof model === "string") installed[name] = model;
+  }
+  return agentModelLine(installed);
+}
+function agentModelLine(agentModels) {
+  const named = Object.keys(agentModels).sort();
+  return named.length === 0 ? EVERY_AGENT_ON_THE_HOST_SESSION_MODEL : named.map((agent) => `${agent}=${agentModels[agent]}`).join(" ");
 }
 function operatorGlobalSeed() {
   return `# Personal OpenCode rules
@@ -5452,6 +5595,42 @@ function openCodeAgentStatus(repositoryRoot2, configHome) {
   const divergent = published.filter((name) => !filesHoldTheSameBytes(path17.join(sources.agents, name), path17.join(configHome, "agent", name)));
   if (published.length !== installed.length) return `count:${published.length}!=${installed.length}`;
   return divergent.length === 0 ? "exact" : namedList("divergent", divergent);
+}
+function openCodeAgentMcpSurfaceStatus(configHome) {
+  const installedAgents = path17.join(configHome, "agent");
+  const contracts = osoPrefixedMarkdownNames2(installedAgents);
+  if (contracts.length !== AGENT_ROLES.length) return `count:${contracts.length}!=${AGENT_ROLES.length}`;
+  const reachable = contracts.flatMap((name) => reachableServersOf(path17.join(installedAgents, name), name));
+  return reachable.length === 0 ? "closed" : namedList("open", reachable);
+}
+function reachableServersOf(agentContract, name) {
+  const role = AGENT_ROLES.find((candidate) => `${candidate.id}.md` === name);
+  if (role === void 0) return [`${name}:names-no-role`];
+  const denied = deniedPermissionKeysOf(readFileSync15(agentContract, "utf8"));
+  return OWNED_MCP_NAMES.filter(
+    (server) => !role.opencode.mcpServersTheClaudeTwinLists.includes(server) && !denied.has(mcpServerWildcard(server))
+  ).map((server) => `${name}:${mcpServerWildcard(server)}`);
+}
+function deniedPermissionKeysOf(agentContract) {
+  const denied = /* @__PURE__ */ new Set();
+  let insideThePermissionBlock = false;
+  for (const line of frontMatterLinesOf(agentContract)) {
+    if (line === PERMISSION_BLOCK_HEADING) {
+      insideThePermissionBlock = true;
+      continue;
+    }
+    if (!insideThePermissionBlock) continue;
+    const verdict = PERMISSION_VERDICT_LINE.exec(line);
+    if (verdict === null) break;
+    if (verdict[2] === "deny") denied.add(verdict[1]);
+  }
+  return denied;
+}
+function frontMatterLinesOf(agentContract) {
+  const lines = agentContract.split("\n");
+  if (lines[0] !== FRONT_MATTER_DELIMITER) return [];
+  const closing = lines.indexOf(FRONT_MATTER_DELIMITER, 1);
+  return closing === -1 ? [] : lines.slice(1, closing);
 }
 function openCodeCommandStatus(repositoryRoot2, configHome) {
   const sources = openCodePayloadSources(repositoryRoot2);

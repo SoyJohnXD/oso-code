@@ -3,7 +3,17 @@ import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, w
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { JsonParseError, readJsonFile } from "./json.ts";
-import { isPlainObject, OWNED_PERMISSION_VALUES, OWNED_SKILL_MODES, OWNED_SKILL_VERDICT, type ConfigDocument } from "./opencode-config.ts";
+import {
+  isPlainObject,
+  mcpServerWildcard,
+  openCodeAgentModels,
+  OWNED_MCP_NAMES,
+  OWNED_PERMISSION_VALUES,
+  OWNED_SKILL_MODES,
+  OWNED_SKILL_VERDICT,
+  type AgentModels,
+  type ConfigDocument,
+} from "./opencode-config.ts";
 import { GLOBAL_MARKER_END, GLOBAL_MARKER_START, opencodePathsFor } from "./opencode.ts";
 import type { OpenCodeHostProbes } from "./opencode-host.ts";
 import {
@@ -16,7 +26,9 @@ import {
 } from "./opencode-install.ts";
 import { openCodeTrustReading, OPENCODE_TRUST_FILE_COUNT, trustDivergenceLine } from "./opencode-trust.ts";
 import { isAboveTestedVersion, meetsVersionFloor, SUPPORTED_OPENCODE_VERSION } from "./pins.ts";
+import { readProfileRoles } from "./profile.ts";
 import { VerifyReport, type CommandOutcome } from "./report.ts";
+import { AGENT_ROLES } from "../prose/routes.ts";
 import { filesHoldTheSameBytes, isDirectory, isReadableRegularFile } from "../state/store.ts";
 
 export const OPENCODE_NOT_ON_PATH = "opencode-not-on-path";
@@ -29,6 +41,8 @@ export const FIXTURE_ROWS_SKIP = "the fixture-based artifact checks — the isol
 
 export const OPERATOR_CONFIG_PROBE = {
   theme: "oso-verify-operator-theme",
+  sessionModel: "oso-verify/operator-session-model",
+  sessionSmallModel: "oso-verify/operator-session-small-model",
   permissionKey: "read",
   permissionVerdict: "allow",
   mcpServerName: "oso-verify-operator-server",
@@ -49,8 +63,10 @@ export const OPENCODE_LOCAL_CHECK_ROWS: readonly LocalCheckRow[] = [
   { name: "isolated fixture install", kind: "artifact" },
   { name: "OpenCode config contract", kind: "config" },
   { name: "operator config keys survive an install", kind: "config" },
+  { name: "agent model keys from the profile", kind: "config" },
   { name: "nine skill wrappers and the shared skill directory installed", kind: "artifact" },
   { name: "agent contracts installed", kind: "artifact" },
+  { name: "MCP surface closed on every installed agent", kind: "artifact" },
   { name: "mode commands installed and routed", kind: "artifact" },
   { name: "plugin entry, modules and routes installed", kind: "artifact" },
   { name: "Engram plugin file installed", kind: "artifact" },
@@ -89,6 +105,12 @@ const FIXTURE_ENGRAM_SHIM = [
   "esac",
   "",
 ].join("\n");
+
+const EVERY_AGENT_ON_THE_HOST_SESSION_MODEL = "none, so every agent runs on the host session model";
+
+const FRONT_MATTER_DELIMITER = "---";
+const PERMISSION_BLOCK_HEADING = "permission:";
+const PERMISSION_VERDICT_LINE = /^ {2}(\S+): (\S+)$/;
 
 const FIXTURE_PREFIX = "oso-opencode-verify.";
 const TEMPORARY_PARENT_UNAVAILABLE = "temporary-parent-unavailable";
@@ -135,8 +157,10 @@ function checkInstalledTree(report: VerifyReport, input: VerifyOpenCodeInput, tr
   const globalFile = path.join(tree.configHome, "AGENTS.md");
   report.check("OpenCode config contract", "valid", openCodeConfigStatus(configFile));
   report.check("operator config keys survive an install", "preserved", openCodeOperatorKeysStatus(configFile));
+  report.check("agent model keys from the profile", profiledAgentModelLine(configFile, input.repositoryRoot), installedAgentModelLine(configFile));
   report.check("nine skill wrappers and the shared skill directory installed", "exact", openCodeSkillStatus(input.repositoryRoot, tree.configHome));
   report.check("agent contracts installed", "exact", openCodeAgentStatus(input.repositoryRoot, tree.configHome));
+  report.check("MCP surface closed on every installed agent", "closed", openCodeAgentMcpSurfaceStatus(tree.configHome));
   report.check("mode commands installed and routed", "exact", openCodeCommandStatus(input.repositoryRoot, tree.configHome));
   report.check("plugin entry, modules and routes installed", "exact", openCodePluginStatus(input.repositoryRoot, tree.configHome));
   report.check("Engram plugin file installed", "present", openCodeEngramStatus(tree.configHome));
@@ -245,6 +269,8 @@ export function openCodeConfigStatus(configFile: string): string {
 export function operatorConfigSeed(): ConfigDocument {
   return {
     theme: OPERATOR_CONFIG_PROBE.theme,
+    model: OPERATOR_CONFIG_PROBE.sessionModel,
+    small_model: OPERATOR_CONFIG_PROBE.sessionSmallModel,
     permission: { [OPERATOR_CONFIG_PROBE.permissionKey]: OPERATOR_CONFIG_PROBE.permissionVerdict },
     mcp: {
       [OPERATOR_CONFIG_PROBE.mcpServerName]: {
@@ -263,6 +289,8 @@ export function openCodeOperatorKeysStatus(configFile: string): string {
   if (read.kind === "unparseable" || !isPlainObject(read.value)) return "dropped";
   const document = read.value;
   if (document["theme"] !== OPERATOR_CONFIG_PROBE.theme) return "dropped";
+  if (document["model"] !== OPERATOR_CONFIG_PROBE.sessionModel) return "dropped";
+  if (document["small_model"] !== OPERATOR_CONFIG_PROBE.sessionSmallModel) return "dropped";
   const permission = isPlainObject(document["permission"]) ? document["permission"] : {};
   if (permission[OPERATOR_CONFIG_PROBE.permissionKey] !== OPERATOR_CONFIG_PROBE.permissionVerdict) return "dropped";
   const servers = isPlainObject(document["mcp"]) ? document["mcp"] : {};
@@ -270,6 +298,28 @@ export function openCodeOperatorKeysStatus(configFile: string): string {
   if (!isPlainObject(server)) return "dropped";
   if (JSON.stringify(server["command"]) !== JSON.stringify(OPERATOR_CONFIG_PROBE.mcpServerCommand)) return "dropped";
   return "preserved";
+}
+
+export function profiledAgentModelLine(configFile: string, repositoryRoot: string): string {
+  const read = readConfigDocument(configFile);
+  return agentModelLine(openCodeAgentModels(read.kind === "parsed" ? read.value : {}, readProfileRoles(repositoryRoot)));
+}
+
+export function installedAgentModelLine(configFile: string): string {
+  const read = readConfigDocument(configFile);
+  if (read.kind !== "parsed" || !isPlainObject(read.value)) return EVERY_AGENT_ON_THE_HOST_SESSION_MODEL;
+  const agents = isPlainObject(read.value["agent"]) ? read.value["agent"] : {};
+  const installed: Record<string, string> = {};
+  for (const [name, spec] of Object.entries(agents)) {
+    const model = isPlainObject(spec) ? spec["model"] : undefined;
+    if (typeof model === "string") installed[name] = model;
+  }
+  return agentModelLine(installed);
+}
+
+function agentModelLine(agentModels: AgentModels): string {
+  const named = Object.keys(agentModels).sort();
+  return named.length === 0 ? EVERY_AGENT_ON_THE_HOST_SESSION_MODEL : named.map((agent) => `${agent}=${agentModels[agent]}`).join(" ");
 }
 
 export function operatorGlobalSeed(): string {
@@ -306,6 +356,46 @@ export function openCodeAgentStatus(repositoryRoot: string, configHome: string):
   const divergent = published.filter((name) => !filesHoldTheSameBytes(path.join(sources.agents, name), path.join(configHome, "agent", name)));
   if (published.length !== installed.length) return `count:${published.length}!=${installed.length}`;
   return divergent.length === 0 ? "exact" : namedList("divergent", divergent);
+}
+
+export function openCodeAgentMcpSurfaceStatus(configHome: string): string {
+  const installedAgents = path.join(configHome, "agent");
+  const contracts = osoPrefixedMarkdownNames(installedAgents);
+  if (contracts.length !== AGENT_ROLES.length) return `count:${contracts.length}!=${AGENT_ROLES.length}`;
+  const reachable = contracts.flatMap((name) => reachableServersOf(path.join(installedAgents, name), name));
+  return reachable.length === 0 ? "closed" : namedList("open", reachable);
+}
+
+function reachableServersOf(agentContract: string, name: string): string[] {
+  const role = AGENT_ROLES.find((candidate) => `${candidate.id}.md` === name);
+  if (role === undefined) return [`${name}:names-no-role`];
+  const denied = deniedPermissionKeysOf(readFileSync(agentContract, "utf8"));
+  return OWNED_MCP_NAMES.filter(
+    (server) => !role.opencode.mcpServersTheClaudeTwinLists.includes(server) && !denied.has(mcpServerWildcard(server)),
+  ).map((server) => `${name}:${mcpServerWildcard(server)}`);
+}
+
+function deniedPermissionKeysOf(agentContract: string): ReadonlySet<string> {
+  const denied = new Set<string>();
+  let insideThePermissionBlock = false;
+  for (const line of frontMatterLinesOf(agentContract)) {
+    if (line === PERMISSION_BLOCK_HEADING) {
+      insideThePermissionBlock = true;
+      continue;
+    }
+    if (!insideThePermissionBlock) continue;
+    const verdict = PERMISSION_VERDICT_LINE.exec(line);
+    if (verdict === null) break;
+    if (verdict[2] === "deny") denied.add(verdict[1] as string);
+  }
+  return denied;
+}
+
+function frontMatterLinesOf(agentContract: string): readonly string[] {
+  const lines = agentContract.split("\n");
+  if (lines[0] !== FRONT_MATTER_DELIMITER) return [];
+  const closing = lines.indexOf(FRONT_MATTER_DELIMITER, 1);
+  return closing === -1 ? [] : lines.slice(1, closing);
 }
 
 export function openCodeCommandStatus(repositoryRoot: string, configHome: string): string {

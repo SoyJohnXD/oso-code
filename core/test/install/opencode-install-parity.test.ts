@@ -27,7 +27,7 @@ const sandbox = mkdtempSync(path.join(tmpdir(), "oso-opencode-install-"));
 after(() => rmSync(sandbox, { recursive: true, force: true }));
 
 const BACKUP_STAMP = /install-backup-\d{8}-\d{6}-\d+/g;
-const PRESERVED_OPERATOR_KEYS = ["theme", "permission.read", "mcp.oso-verify-operator-server"];
+const PRESERVED_OPERATOR_KEYS = ["theme", "model", "small_model", "permission.read", "mcp.oso-verify-operator-server"];
 
 const THE_INSTALL_CORPUS =
   "one seeded operator config and AGENTS.md in a fixture HOME, installed once by installOpenCode and then read back as a " +
@@ -55,7 +55,7 @@ describe("install --host opencode leaves the tree its seed and the published has
     assert.ok(installed.tree.some((entry) => entry.mode === "0700"));
   });
 
-  test("the operator keys preserved are the three the seed declares, in the seed's own order", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
+  test("the operator keys preserved are the five the seed declares, in the seed's own order", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     assert.deepEqual(installedByThePort().preservedKeys, PRESERVED_OPERATOR_KEYS);
   });
 

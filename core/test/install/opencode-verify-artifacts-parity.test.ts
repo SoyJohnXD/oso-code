@@ -6,7 +6,9 @@ import { after, describe, test } from "node:test";
 import { opencodePathsFor } from "../../src/install/opencode.ts";
 import { firstExecutableOnPath } from "../../src/install/verify-claude.ts";
 import { ENGRAM_BINARY_NAME, openCodePayloadSources } from "../../src/install/opencode-install.ts";
+import { mcpServerWildcard } from "../../src/install/opencode-config.ts";
 import {
+  openCodeAgentMcpSurfaceStatus,
   openCodeAgentStatus,
   openCodeCommandStatus,
   openCodeConfigHomeGuardStatus,
@@ -47,6 +49,7 @@ const PUBLISHED_HASHES = openCodePayloadSources(repositoryRoot).publishedHashes;
 const COMPARED_ROWS = [
   { name: "nine skill wrappers and the shared skill directory installed", bashRow: "opencode_skill_status", port: (tree: StagedFixture) => openCodeSkillStatus(repositoryRoot, tree.configHome) },
   { name: "agent contracts installed", bashRow: "opencode_agent_status", port: (tree: StagedFixture) => openCodeAgentStatus(repositoryRoot, tree.configHome) },
+  { name: "MCP surface closed on every installed agent", port: (tree: StagedFixture) => openCodeAgentMcpSurfaceStatus(tree.configHome) },
   { name: "mode commands installed and routed", bashRow: "opencode_command_status", port: (tree: StagedFixture) => openCodeCommandStatus(repositoryRoot, tree.configHome) },
   { name: "plugin entry, modules and routes installed", bashRow: "opencode_plugin_status", port: (tree: StagedFixture) => openCodePluginStatus(repositoryRoot, tree.configHome) },
   { name: "Engram plugin file installed", bashRow: "opencode_engram_status", port: (tree: StagedFixture) => openCodeEngramStatus(tree.configHome) },
@@ -54,7 +57,7 @@ const COMPARED_ROWS = [
   { name: "published gate bytes as installed", bashRow: "opencode_trust_bytes_status", port: (tree: StagedFixture) => openCodeTrustBytesStatus(PUBLISHED_HASHES, tree.configHome) },
 ] as const;
 
-type TreeDamage = Readonly<{ label: string; verdict: string; bashRow: string; apply: (tree: StagedFixture) => void; port: (tree: StagedFixture) => string }>;
+type TreeDamage = Readonly<{ label: string; verdict: string; bashRow?: string; apply: (tree: StagedFixture) => void; port: (tree: StagedFixture) => string }>;
 
 const TREE_DAMAGES: readonly TreeDamage[] = [
   {
@@ -98,6 +101,18 @@ const TREE_DAMAGES: readonly TreeDamage[] = [
     bashRow: "opencode_agent_status",
     apply: (tree) => writeFileSync(path.join(tree.configHome, "agent", firstAgentName()), "rewritten\n"),
     port: (tree) => openCodeAgentStatus(repositoryRoot, tree.configHome),
+  },
+  {
+    label: "one installed agent block letting the engram server back through",
+    verdict: "open: oso-verifier.md:engram_*",
+    apply: (tree) => withoutEngramDeny(path.join(tree.configHome, "agent", "oso-verifier.md")),
+    port: (tree) => openCodeAgentMcpSurfaceStatus(tree.configHome),
+  },
+  {
+    label: "one installed agent contract deleted, leaving the MCP surface unreadable on a short tree",
+    verdict: "count:",
+    apply: (tree) => rmSync(path.join(tree.configHome, "agent", firstAgentName()), { force: true }),
+    port: (tree) => openCodeAgentMcpSurfaceStatus(tree.configHome),
   },
   {
     label: "one installed mode command rewritten",
@@ -160,13 +175,14 @@ provedSomething(
   "no row and no damage were read, so a clean result here would report the same as an empty walk",
 );
 
-describe("the rows this half owns are the artifact and repository rows, and the twelve it defers are named individually", () => {
-  test("the artifact and repository rows are exactly the twelve C3-S4 deferred", () => {
+describe("the rows this half owns are the artifact and repository rows, and the ones it defers are named individually", () => {
+  test("the artifact and repository rows are exactly the twelve C3-S4 deferred and the MCP surface row that joined them", () => {
     const owned = OPENCODE_LOCAL_CHECK_ROWS.filter((row) => THIS_HALF_READS.includes(row.kind)).map((row) => row.name);
     assert.deepEqual(owned, [
       "isolated fixture install",
       "nine skill wrappers and the shared skill directory installed",
       "agent contracts installed",
+      "MCP surface closed on every installed agent",
       "mode commands installed and routed",
       "plugin entry, modules and routes installed",
       "Engram plugin file installed",
@@ -195,7 +211,7 @@ describe("the rows this half owns are the artifact and repository rows, and the 
 describe("every artifact row reads its passing verdict over one clean staged fixture", () => {
   test("the clean fixture reads the passing verdict this file spells on every row, in the table's order", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const verdicts = COMPARED_ROWS.map((row) => row.port(fixture()));
-    assert.deepEqual(verdicts, ["exact", "exact", "exact", "exact", "present", "installer-owned", "verified"]);
+    assert.deepEqual(verdicts, ["exact", "exact", "closed", "exact", "exact", "present", "installer-owned", "verified"]);
   });
 });
 
@@ -381,6 +397,14 @@ function firstSharedFileName(): string {
 
 function firstAgentName(): string {
   return sortedNamesIn(path.join(repositoryRoot, "opencode", "agents")).filter((name) => name.startsWith("oso-") && name.endsWith(".md"))[0] as string;
+}
+
+function withoutEngramDeny(agentContract: string): void {
+  const reopened = readFileSync(agentContract, "utf8")
+    .split("\n")
+    .filter((line) => line.trim() !== `${mcpServerWildcard("engram")}: deny`)
+    .join("\n");
+  writeFileSync(agentContract, reopened);
 }
 
 function sortedNamesIn(directory: string): string[] {

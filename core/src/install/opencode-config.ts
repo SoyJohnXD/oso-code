@@ -1,3 +1,5 @@
+import type { Role, RoleChoices, Tier } from "./profile.ts";
+
 export const OPENCODE_CONFIG_SCHEMA_URL = "https://opencode.ai/config.json";
 export const CONTEXT7_MCP_URL = "https://mcp.context7.com/mcp";
 
@@ -17,13 +19,26 @@ export const OWNED_PERMISSION_VALUES = {
 export const OWNED_MCP_NAMES = ["context7", "engram", "fallow"] as const;
 export type OwnedMcpName = (typeof OWNED_MCP_NAMES)[number];
 
+export function mcpServerWildcard(server: OwnedMcpName): string {
+  return `${server}_*`;
+}
+
 const SCHEMA_KEY = "$schema";
 const PLUGIN_KEY = "plugin";
 const PERMISSION_KEY = "permission";
 const MCP_KEY = "mcp";
 const SKILL_KEY = "skill";
 const TASK_KEY = "task";
+const AGENT_KEY = "agent";
 const NEVER_PRESERVED_KEYS: readonly string[] = [PERMISSION_KEY, MCP_KEY, PLUGIN_KEY];
+
+const OPENCODE_SESSION_MODEL_FIELDS: Readonly<Record<Tier, string>> = { default: "small_model", strong: "model" };
+
+export const OPENCODE_AGENTS_PER_PROFILE_ROLE: Readonly<Record<Role, readonly string[]>> = {
+  applier: ["oso-applier"],
+  verifier: ["oso-verifier"],
+  judges: ["oso-debt-sweep", "oso-doubt-pass", "oso-security-reviewer", "oso-triage"],
+};
 
 export type ConfigDocument = Record<string, unknown>;
 
@@ -41,7 +56,27 @@ export class OpenCodeConfigRefusal extends Error {
   }
 }
 
-export type MergedOpenCodeConfig = Readonly<{ document: ConfigDocument; preservedKeys: readonly string[] }>;
+export type AgentModels = Readonly<Record<string, string>>;
+
+export type MergedOpenCodeConfig = Readonly<{ document: ConfigDocument; preservedKeys: readonly string[]; agentModels: AgentModels }>;
+
+export function openCodeAgentModels(existing: unknown, profileRoles: RoleChoices): AgentModels {
+  const document = isPlainObject(existing) ? existing : {};
+  const models: Record<string, string> = {};
+  for (const [role, agents] of Object.entries(OPENCODE_AGENTS_PER_PROFILE_ROLE) as readonly [Role, readonly string[]][]) {
+    const choice = profileRoles[role];
+    if (choice === undefined) continue;
+    const named = choice.model ?? sessionModelNamed(document, OPENCODE_SESSION_MODEL_FIELDS[choice.tier]);
+    if (named === undefined) continue;
+    for (const agent of agents) models[agent] = named;
+  }
+  return models;
+}
+
+function sessionModelNamed(document: ConfigDocument, field: string): string | undefined {
+  const named = document[field];
+  return typeof named === "string" && named !== "" ? named : undefined;
+}
 
 export function ownedMcpServers(fallowCommand: string): Readonly<Record<OwnedMcpName, ConfigDocument>> {
   return {
@@ -51,9 +86,12 @@ export function ownedMcpServers(fallowCommand: string): Readonly<Record<OwnedMcp
   };
 }
 
-export function mergeOpenCodeConfig(existing: unknown, fallowCommand: string): MergedOpenCodeConfig {
+export function mergeOpenCodeConfig(existing: unknown, fallowCommand: string, profileRoles: RoleChoices = {}): MergedOpenCodeConfig {
   const document = parsedConfigObject(existing);
-  const preservedKeys = Object.keys(document).filter((key) => !NEVER_PRESERVED_KEYS.includes(key));
+  const agentModels = openCodeAgentModels(document, profileRoles);
+  const profileNamesAModel = Object.keys(agentModels).length > 0;
+  const ownedContainers = profileNamesAModel ? [...NEVER_PRESERVED_KEYS, AGENT_KEY] : NEVER_PRESERVED_KEYS;
+  const preservedKeys = Object.keys(document).filter((key) => !ownedContainers.includes(key));
 
   insertIfMissing(document, SCHEMA_KEY, OPENCODE_CONFIG_SCHEMA_URL);
   createPluginArrayIfAbsent(document);
@@ -92,7 +130,19 @@ export function mergeOpenCodeConfig(existing: unknown, fallowCommand: string): M
   );
   for (const [name, declaration] of Object.entries(owned)) insertIfMissing(servers, name, declaration);
 
-  return { document, preservedKeys };
+  if (profileNamesAModel) mergeAgentModels(document, preservedKeys, agentModels);
+
+  return { document, preservedKeys, agentModels };
+}
+
+function mergeAgentModels(document: ConfigDocument, preservedKeys: string[], agentModels: AgentModels): void {
+  const agents = ownedContainer(document, AGENT_KEY);
+  preservedKeys.push(
+    ...Object.keys(agents)
+      .filter((name) => !(name in agentModels))
+      .map((name) => `${AGENT_KEY}.${name}`),
+  );
+  for (const [name, model] of Object.entries(agentModels)) ownedContainer(agents, name)["model"] = model;
 }
 
 export function hostContractViolationOf(document: unknown): string | undefined {
