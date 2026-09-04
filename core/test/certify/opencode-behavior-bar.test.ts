@@ -31,6 +31,7 @@ import { notRun } from "./support/not-run.ts";
 import { laneCauseFor, laneNotRun, resolveOpenCodeBinaryProbe, type OpenCodeBinaryProbe } from "./support/opencode-binary.ts";
 import {
   countHostPluginLoadErrors,
+  type HostPluginLoadReading,
   pluginEntryPathIn,
   readPluginEntry,
   writePluginEntry,
@@ -68,7 +69,7 @@ describe("driving a real OpenCode session against the behavior-bar fixture", () 
   let modelChoice: SessionModelChoice | undefined;
   let approvalSession: SessionRun | undefined;
   let sameTurnSession: SessionRun | undefined;
-  let missingExportLoadErrorCount: number | undefined;
+  let missingExportLoadReading: HostPluginLoadReading | undefined;
   let gateArmFailureReason: string | undefined;
   let gateSession: SessionRun | undefined;
   let gateSessionReport: GatedCallReport | undefined;
@@ -78,7 +79,7 @@ describe("driving a real OpenCode session against the behavior-bar fixture", () 
   let deployArmFailureReason: string | undefined;
   let deploySession: SessionRun | undefined;
   let deploySessionReport: GatedCallReport | undefined;
-  let registersNothingLoadErrorCount: number | undefined;
+  let registersNothingLoadReading: HostPluginLoadReading | undefined;
   let registersNothingArmFailureReason: string | undefined;
   let registersNothingSession: SessionRun | undefined;
   let registersNothingSessionReport: GatedCallReport | undefined;
@@ -94,7 +95,7 @@ describe("driving a real OpenCode session against the behavior-bar fixture", () 
 
     try {
       writePluginEntry(pluginEntry, PLUGIN_ENTRY_WITHOUT_A_FUNCTION_EXPORT);
-      missingExportLoadErrorCount = countHostPluginLoadErrors(probe.binary, fixture.environment, BEHAVIOR_BAR_LOAD_BOUND_SECONDS);
+      missingExportLoadReading = countHostPluginLoadErrors(probe.binary, fixture.environment, BEHAVIOR_BAR_LOAD_BOUND_SECONDS);
     } finally {
       writePluginEntry(pluginEntry, installedPluginEntry);
     }
@@ -151,7 +152,7 @@ describe("driving a real OpenCode session against the behavior-bar fixture", () 
 
     try {
       writePluginEntry(pluginEntry, PLUGIN_ENTRY_THAT_REGISTERS_NOTHING);
-      registersNothingLoadErrorCount = countHostPluginLoadErrors(probe.binary, fixture.environment, BEHAVIOR_BAR_LOAD_BOUND_SECONDS);
+      registersNothingLoadReading = countHostPluginLoadErrors(probe.binary, fixture.environment, BEHAVIOR_BAR_LOAD_BOUND_SECONDS);
       try {
         armProbeState(fixture, probeRepository);
         const registersNothingArmed = probeStateArmedCheck(fixture, probeRepository);
@@ -190,11 +191,6 @@ describe("driving a real OpenCode session against the behavior-bar fixture", () 
     return sameTurnSession;
   }
 
-  function missingExportLoadErrorCountOrThrow(): number {
-    if (missingExportLoadErrorCount === undefined) throw new Error("unreachable: a missing-export host log count was expected");
-    return missingExportLoadErrorCount;
-  }
-
   function gateSessionOrThrow(): SessionRun {
     if (gateSession === undefined) throw new Error("unreachable: an armed commit-gate session run was expected");
     return gateSession;
@@ -225,11 +221,6 @@ describe("driving a real OpenCode session against the behavior-bar fixture", () 
     return registersNothingSessionReport;
   }
 
-  function registersNothingLoadErrorCountOrThrow(): number {
-    if (registersNothingLoadErrorCount === undefined) throw new Error("unreachable: an inert-plugin host log count was expected");
-    return registersNothingLoadErrorCount;
-  }
-
   function deployCliMarkerOrThrow(): string {
     if (deployCliMarker === undefined) throw new Error("unreachable: a deploy-CLI marker path was expected");
     return deployCliMarker;
@@ -254,6 +245,16 @@ describe("driving a real OpenCode session against the behavior-bar fixture", () 
       return true;
     }
     return false;
+  }
+
+  function notRunUnlessHostLogRead(t: TestContext, gate: string, reading: HostPluginLoadReading | undefined): number | undefined {
+    if (notRunUnlessFixtureReady(t, gate)) return undefined;
+    if (reading === undefined) throw new Error(`unreachable: a host log reading for ${gate} was expected`);
+    if (reading.kind === "unread") {
+      notRun(t, reading.reason);
+      return undefined;
+    }
+    return reading.count;
   }
 
   function notRunUnlessSessionModelChosen(t: TestContext, gate: string): string | undefined {
@@ -382,8 +383,8 @@ describe("driving a real OpenCode session against the behavior-bar fixture", () 
   });
 
   behaviorBarRow("a plugin entry with no function export is named in the host log", (t) => {
-    if (notRunUnlessFixtureReady(t, "the missing-export plugin-load check")) return;
-    const count = missingExportLoadErrorCountOrThrow();
+    const count = notRunUnlessHostLogRead(t, "the missing-export plugin-load check", missingExportLoadReading);
+    if (count === undefined) return;
     assert.ok(count > 0, `expected the host log to name a "failed to load plugin" line for the missing-export entry, found ${count}`);
   });
 
@@ -424,8 +425,9 @@ describe("driving a real OpenCode session against the behavior-bar fixture", () 
   });
 
   behaviorBarRow("a plugin that loads and registers nothing leaves the host log silent", (t) => {
-    if (notRunUnlessFixtureReady(t, "the registers-nothing plugin-load check")) return;
-    assert.equal(registersNothingLoadErrorCountOrThrow(), 0);
+    const count = notRunUnlessHostLogRead(t, "the registers-nothing plugin-load check", registersNothingLoadReading);
+    if (count === undefined) return;
+    assert.equal(count, 0);
   });
 
   behaviorBarRow("the observable effect catches a plugin that loads and registers nothing", (t) => {

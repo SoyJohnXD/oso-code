@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
+import { firstLineContaining } from "../support/line-locate.ts";
 import { provedSomething } from "../support/proved.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
 import { readTrackedText, trackedRepositoryFiles } from "../support/tracked-files.ts";
@@ -27,11 +28,6 @@ function rightmostAlternationOnLine(line: string): string | undefined {
   const matches = [...line.matchAll(ALTERNATION_PATTERN)];
   const last = matches.at(-1);
   return last === undefined ? undefined : last[0];
-}
-
-function firstLineContaining(text: string, needle: string): number | undefined {
-  const index = text.split("\n").findIndex((line) => line.includes(needle));
-  return index === -1 ? undefined : index + 1;
 }
 
 const trackedFiles = trackedRepositoryFiles();

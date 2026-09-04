@@ -48,6 +48,9 @@ function measuredVersion(binary: string, environment: NodeJS.ProcessEnv): string
   const probeHome = mkdtempSync(path.join(environment["TMPDIR"] ?? tmpdir(), PROBE_HOME_PREFIX));
   try {
     const run = spawnSync(binary, ["--version"], { env: probeEnvironment(environment, probeHome), encoding: "utf8" });
+    if (run.error !== undefined || run.status !== 0) {
+      return `${binary} --version did not complete: ${run.error?.message ?? run.signal ?? `exit ${run.status}`}`;
+    }
     const reading = versionFieldOf(`${run.stdout ?? ""}${run.stderr ?? ""}`);
     const outcome = versionOutcomeOf(reading, OPENCODE_VERSION_LINE_SHAPE);
     return outcome.version ?? outcome.note ?? "";

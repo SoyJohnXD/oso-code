@@ -10,6 +10,7 @@ import { readTrackedText } from "../support/tracked-files.ts";
 const SENTENCE_CAP = 60;
 const HEADING_LINE = /^#{1,6}\s/;
 const LIST_ITEM_LINE = /^\s*(?:[-*+]|\d+\.)\s+/;
+const TABLE_LINE = /^\s*\|/;
 const SENTENCE_END = /[.!?](?:\*\*|`|\)|")*(?=\s|$)/g;
 
 const SHARED_FLOW_FILES = ["plugin/skills/_shared/unattended.md", "plugin/skills/_shared/parallel.md"];
@@ -28,7 +29,8 @@ const FILES_FLOOR_DERIVATION =
 
 const SENTENCES_FLOOR = 2000;
 const SENTENCES_FLOOR_DERIVATION =
-  "well under the 2,628 sentences this walk counts across the 29 bound files at this writing, so a later, " +
+  "well under the 2,895 sentences this walk counts across the 29 bound files at this writing (2,718 from " +
+  "paragraphs and bullets plus the 177 the 117 table lines contribute as runs of their own), so a later, " +
   "legitimate prose edit never has to chase this number — only a walk that segments nothing should fail it";
 
 function runsIn(text: string): string[] {
@@ -45,6 +47,11 @@ function runsIn(text: string): string[] {
     }
     if (HEADING_LINE.test(line)) {
       flushParagraph();
+      continue;
+    }
+    if (TABLE_LINE.test(line)) {
+      flushParagraph();
+      runs.push(line.trim());
       continue;
     }
     const listMarker = line.match(LIST_ITEM_LINE);
@@ -67,6 +74,8 @@ function sentencesIn(run: string): string[] {
     sentences.push(run.slice(start, end).trim());
     start = end;
   }
+  const remainder = run.slice(start).trim();
+  if (remainder !== "") sentences.push(remainder);
   return sentences;
 }
 
@@ -101,7 +110,8 @@ provedSomething(
 describe(
   "no sentence bound by Decision 62 — a flow, its two shared bodies, or their rendered wrappers — runs past 60 " +
     "words; a bullet's leading marker is syntax stripped before the count, exactly as a heading's `#` is, and is " +
-    "never itself counted as a word",
+    "never itself counted as a word; a markdown table row is a run of its own, never joined to the lines around " +
+    "it, so a table's collapsed word count never misfires against this cap",
   () => {
     test("zero sentences exceed the cap; a sentence sitting exactly at 60 passes", () => {
       assert.deepEqual(
@@ -138,4 +148,53 @@ describe("sentenceWordCountsIn, read over a planted file this repository does no
     const [counted] = sentenceWordCountsInPlantedFile(wordTokenSentence(60));
     assert.equal(counted?.words, 60);
   });
+});
+
+function tableRowPlantedFile(cellWordCount: number): SentenceWordCount[] {
+  const directory = mkdtempSync(path.join(tmpdir(), "oso-planted-sentence-cap-table-"));
+  try {
+    const planted = path.join(directory, "planted.md");
+    const cell = wordTokenSentence(cellWordCount).slice(0, -1);
+    writeFileSync(planted, `# Planted table fixture — a table row, a run of its own\n\n| Col |\n|---|\n| ${cell} |\n`);
+    return sentenceWordCountsIn(planted, readFileSync(planted, "utf8"));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+describe("sentencesIn, read directly over a run its own SENTENCE_END never matches", () => {
+  test("a run with no closing `.`/`!`/`?` is still returned whole, as its own trailing sentence", () => {
+    const unterminated = wordTokenSentence(61).slice(0, -1);
+    assert.deepEqual(sentencesIn(unterminated), [unterminated]);
+  });
+});
+
+describe("sentenceWordCountsIn, read over a planted markdown table this repository does not ship", () => {
+  test("a 73-token table row is counted as one run of its own — 75 words with its two cell pipes — and lands over the cap", () => {
+    const overCap = tableRowPlantedFile(73).filter((counted) => counted.words > SENTENCE_CAP);
+    assert.deepEqual(overCap.map((counted) => counted.words), [75]);
+  });
+});
+
+function listItemPlantedFile(wordCount: number): SentenceWordCount[] {
+  const directory = mkdtempSync(path.join(tmpdir(), "oso-planted-sentence-cap-list-"));
+  try {
+    const planted = path.join(directory, "planted.md");
+    writeFileSync(planted, `# Planted list fixture — a bullet, never a bare paragraph\n\n- ${wordTokenSentence(wordCount)}\n`);
+    return sentenceWordCountsIn(planted, readFileSync(planted, "utf8"));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+describe("sentenceWordCountsIn, read over a planted bullet list item this repository does not ship", () => {
+  test(
+    "a planted 60-word bullet (`- w1 w2 … w60.`) counts 60 words with its leading marker stripped, passing at " +
+      "the cap; left unstripped, `-` would count as the sentence's 61st word and fail it",
+    () => {
+      const [counted] = listItemPlantedFile(60);
+      assert.equal(counted?.words, 60);
+      assert.equal(wordCountOf(`- ${wordTokenSentence(60)}`), 61);
+    },
+  );
 });

@@ -47,12 +47,26 @@ const triples: Triple[] = [
 const TRIPLES_FLOOR = 9;
 const TRIPLES_FLOOR_DERIVATION = "the 8 SKILL_STUBS entries carrying all three host references, plus the shared layer's own triple";
 
+const CLAUDE_SENTENCES_FLOOR = 100;
+const CLAUDE_SENTENCES_FLOOR_DERIVATION =
+  "well under the 120 Claude-side sentences this walk segments across the nine triples at this writing, so a " +
+  "later, legitimate prose edit never has to chase this number — only a walk that segments nothing, leaving " +
+  "`found` vacuously empty no matter what the three bindings say, should fail it";
+
 const found = triples.flatMap(identicalAcrossTriple);
+const claudeSentenceCount = triples.reduce((total, triple) => total + sentencesOf(readTrackedText(triple.claude).text).length, 0);
 
 provedSomething(
   `${triples.length} skill-or-shared reference triple(s) (claude/codex/opencode) were diffed for an identical sentence`,
   triples.length >= TRIPLES_FLOOR,
   `only ${triples.length} triple(s) were found, under the ${TRIPLES_FLOOR} this repository names (${TRIPLES_FLOOR_DERIVATION})`,
+);
+
+provedSomething(
+  `${claudeSentenceCount} Claude-side sentence(s) were segmented across those triples for the identical-sentence diff to compare`,
+  claudeSentenceCount >= CLAUDE_SENTENCES_FLOOR,
+  `only ${claudeSentenceCount} Claude-side sentence(s) were segmented, under the ${CLAUDE_SENTENCES_FLOOR}-sentence ` +
+    `floor (${CLAUDE_SENTENCES_FLOOR_DERIVATION})`,
 );
 
 describe(

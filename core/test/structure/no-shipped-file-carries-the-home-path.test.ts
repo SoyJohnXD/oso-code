@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
+import { firstLineContaining } from "../support/line-locate.ts";
 import { provedSomething } from "../support/proved.ts";
 import { readTrackedText, trackedRepositoryFiles } from "../support/tracked-files.ts";
 import { homeDirectoryFrom } from "../../src/state/store.ts";
@@ -7,11 +8,6 @@ import { homeDirectoryFrom } from "../../src/state/store.ts";
 const MINIMUM_TRACKED_FILES = 1000;
 const MINIMUM_TRACKED_FILES_DERIVATION =
   "git ls-files --cached --others --exclude-standard, repo-wide, measured at C5-S5b-2: 1,199";
-
-function firstLineCarrying(text: string, needle: string): number | undefined {
-  const index = text.split("\n").findIndex((line) => line.includes(needle));
-  return index === -1 ? undefined : index + 1;
-}
 
 const trackedFiles = trackedRepositoryFiles();
 function homeDirectoryOrUnset(): string | undefined {
@@ -40,7 +36,7 @@ provedSomething(
 
 const carriers = homeNamesADirectory
   ? trackedFiles.flatMap((file) => {
-      const line = firstLineCarrying(readTrackedText(file).text, home as string);
+      const line = firstLineContaining(readTrackedText(file).text, home as string);
       return line === undefined ? [] : [`${file}:${line}`];
     })
   : [];

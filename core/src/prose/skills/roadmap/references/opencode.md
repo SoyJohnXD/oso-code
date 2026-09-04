@@ -39,14 +39,15 @@ With the chain unattended, these two are what an operator has when a child derai
 
 Wherever the neutral body names a file as `_shared/<file>.md`, it is spelled `../_shared/<file>.md` here, resolved against the directory holding the `SKILL.md` you were routed through — the resolution rule OpenCode states for every relative path a skill writes. Expand it to an absolute path before putting it in a payload another context reads.
 
-## The state command and the unattended rails — routed to `plan.md`, not restated here
+## The state command, the worktree root and the unattended rails — routed to `plan.md`, not restated here
 
-§4 reaches for two host spellings, and both are already written in `../../oso-plan/references/opencode.md`, where the child itself reads them. This file ROUTES to them and restates neither, so one spelling per host cannot drift into two:
+§4 reaches for three host spellings, and all three are already written in `../../oso-plan/references/opencode.md`, where the child itself reads them. This file ROUTES to them and restates none, so one spelling per host cannot drift into two:
 
 - **The state command** — every `oso-state <verb> …` §4 instructs, its `set roadmap={roadmap}`, its `set roadmap=none` and the `show` that reads either back included, runs under the binary and the identity that file's own **The state command** section spells. Spelled bare, without them, the command exits on its usage message and writes nothing at all, so following this route is not optional.
+- **The worktree root** — `<worktree root>`, the SECOND place §4's bar reads before every arming, is the workspace-API path that file's own **The worktree root** section spells.
 - **The unattended rails** — the three rails §4's `auto=running` arms on this host, named one by one in that file's own **What the unattended marker arms on this host** section: the continuation rail that posts the chain on, the re-anchor rail after a compaction, and the production boundary that stands while the marker does. The middle one is the survivability floor §4 asks this file for: it hands the fresh context the `oso/index` row's `NEXT:` line, `oso-state show` and the run journal, which is exactly where the chain's position is written down.
 
-READ both sections there before §4 arms its first child.
+READ all three sections there before §4 arms its first child.
 
 ## Reporting binding
 
