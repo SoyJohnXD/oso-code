@@ -84,6 +84,10 @@ export function denyPatternsFileFor(stateFile: string): string {
   return path.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
 }
 
+export function profileFileFor(stateFile: string): string {
+  return path.join(stateRootDirectory(), "profiles", `${repositoryIdFor(stateFile)}.profile`);
+}
+
 export function isNameToken(value: string): boolean {
   return value.length >= 1 && value.length <= NAME_TOKEN_MAX_LENGTH && NAME_TOKEN_PATTERN.test(value);
 }

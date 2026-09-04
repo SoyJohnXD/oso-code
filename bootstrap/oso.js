@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // core/src/state/store.ts
+import { execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import {
   accessSync,
@@ -18,8 +19,32 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+var StateFileUnreadableError = class extends Error {
+  stateFile;
+  constructor(stateFile, cause) {
+    super(`cannot read state at ${stateFile}: ${cause}`);
+    this.name = "StateFileUnreadableError";
+    this.stateFile = stateFile;
+  }
+};
 function sha256Hex(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+function stateRootDirectory() {
+  const configured = process.env["OSO_STATE_DIR"];
+  if (configured !== void 0 && configured !== "") return configured;
+  return path.join(homeDirectory(), ".local", "state", "oso-code");
+}
+function stateFileFor(cwd) {
+  const directory = cwd.replace(/\r$/, "");
+  const identity = gitCommonDirectory(directory) || directory;
+  return path.join(stateRootDirectory(), `${sha256Hex(identity)}.state`);
+}
+function repositoryIdFor(stateFile) {
+  return path.basename(stateFile, ".state");
+}
+function profileFileFor(stateFile) {
+  return path.join(stateRootDirectory(), "profiles", `${repositoryIdFor(stateFile)}.profile`);
 }
 function stateRecords(content, key) {
   const prefix = `${key}=`;
@@ -27,6 +52,15 @@ function stateRecords(content, key) {
 }
 function stateValue(content, key) {
   return stateRecords(content, key).join("\n");
+}
+function readStateFile(stateFile) {
+  try {
+    if (!statSync(stateFile).isFile()) return { kind: "unreadable", cause: `${stateFile} is not a regular file` };
+    return { kind: "ok", content: readFileSync(stateFile, "utf8") };
+  } catch (error) {
+    if (isErrnoException(error) && error.code === "ENOENT") return { kind: "absent" };
+    return { kind: "unreadable", cause: causeOf(error) };
+  }
 }
 function isSymlink(target) {
   const stats = lstatOrUndefined(target);
@@ -86,6 +120,23 @@ function homeDirectoryFrom(platform, environment) {
   const home = environment["HOME"];
   if (home === void 0 || home === "") throw new Error("HOME is not set");
   return home;
+}
+function homeDirectory() {
+  return homeDirectoryFrom(process.platform, process.env);
+}
+function gitCommonDirectory(cwd) {
+  try {
+    const output = execFileSync("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    });
+    return output.replace(/\n+$/, "");
+  } catch {
+    return "";
+  }
+}
+function causeOf(error) {
+  return error instanceof Error ? error.message : String(error);
 }
 function withOwnerOnlyUmask(run) {
   const previous = process.umask(63);
@@ -423,8 +474,8 @@ var CLAUDE_MD_BUDGET_BYTES = 8e3;
 var HOME_DIR_FIX = 'export HOME="$USERPROFILE" in Git Bash and re-run bootstrap/install.sh';
 var ENGRAM_BINARY_FIX = "bash bootstrap/install.sh downloads the pinned engram release into ~/.local/bin and reports it only once it answers; where one is already installed elsewhere, the verdict above says which half is missing \u2014 a directory not on the persisted PATH, which that run's wiring summary names the command to add (a new terminal plus a Claude Code restart is what picks it up), or a copy that does not run, which an antivirus may have quarantined and which that run tells you how to replace";
 function verifyClaude(input) {
-  const { homeDirectory, repositoryRoot: repositoryRoot2, environment, platform } = input;
-  const claudeDir = path4.join(homeDirectory, ".claude");
+  const { homeDirectory: homeDirectory2, repositoryRoot: repositoryRoot2, environment, platform } = input;
+  const claudeDir = path4.join(homeDirectory2, ".claude");
   const report2 = new VerifyReport();
   const pluginListing = spawnClaudeStdout(environment, ["plugin", "list"]);
   const mcpListing = spawnClaudeStdout(environment, ["mcp", "list"]);
@@ -435,14 +486,14 @@ function verifyClaude(input) {
   checkClaudeMdBudget(report2, claudeDir);
   checkInstalledHookDeniesRedCommit(report2, claudeDir, environment);
   checkOsoStateBinRoundTrips(report2, claudeDir, environment);
-  checkImpeccablePluginInstalled(report2, homeDirectory, pluginListing);
+  checkImpeccablePluginInstalled(report2, homeDirectory2, pluginListing);
   checkImpeccableCliRunnable(report2, environment);
   checkGitCommitHook(report2, repositoryRoot2, environment);
   checkNoCarriageReturnBytes(report2, repositoryRoot2);
   checkWindowsHomeDirectory(report2, environment);
   checkEngramBinaryResolves(report2, environment, platform);
   checkGitBashPath(report2, claudeDir);
-  noteClaudeDesktop(report2, homeDirectory, environment);
+  noteClaudeDesktop(report2, homeDirectory2, environment);
   return { report: report2.render(), exitCode: report2.exitCode };
 }
 function checkPluginInstalled(report2, pluginListing) {
@@ -513,11 +564,11 @@ function checkOsoStateBinRoundTrips(report2, claudeDir, environment) {
   report2.check("OSO_STATE_BIN round-trips oso-state (e2e)", "probe", probe === "" ? "empty" : probe, STATE_BIN_FIX);
   report2.detail(`OSO_STATE_BIN: ${storedStateBin}`);
 }
-function impeccableOptOutMarker(homeDirectory) {
-  return path4.join(homeDirectory, ".local", "state", "oso-code", "impeccable-opt-out");
+function impeccableOptOutMarker(homeDirectory2) {
+  return path4.join(homeDirectory2, ".local", "state", "oso-code", "impeccable-opt-out");
 }
-function checkImpeccablePluginInstalled(report2, homeDirectory, pluginListing) {
-  const marker = impeccableOptOutMarker(homeDirectory);
+function checkImpeccablePluginInstalled(report2, homeDirectory2, pluginListing) {
+  const marker = impeccableOptOutMarker(homeDirectory2);
   if (isReadableRegularFile(marker)) {
     report2.note(
       "impeccable plugin skipped \u2014 install.sh ran with --no-impeccable, so the design bar has no plugin half here; re-run install.sh without the flag to wire it"
@@ -598,8 +649,8 @@ function checkGitBashPath(report2, claudeDir) {
   report2.check("Git Bash path the client spawns hooks with", "1", resolves ? "1" : `${storedGitBash} is not there any more`, GIT_BASH_FIX);
   if (resolves) report2.detail(`Git Bash: ${storedGitBash}`);
 }
-function noteClaudeDesktop(report2, homeDirectory, environment) {
-  const locations = claudeDesktopLocations(homeDirectory, environment);
+function noteClaudeDesktop(report2, homeDirectory2, environment) {
+  const locations = claudeDesktopLocations(homeDirectory2, environment);
   const installed = locations.find(existsFollowingSymlinks);
   if (installed === void 0) {
     report2.note(
@@ -829,13 +880,13 @@ function probeEnvironment(environment) {
   const carried = ENGRAM_PROBE_ENVIRONMENT_KEYS.map((key) => [key, environment[key]]);
   return Object.fromEntries(carried.filter(([, value]) => value !== void 0));
 }
-function claudeDesktopLocations(homeDirectory, environment) {
+function claudeDesktopLocations(homeDirectory2, environment) {
   return [
     "/Applications/Claude.app",
-    path4.join(homeDirectory, "Library", "Application Support", "Claude"),
-    path4.join(environment["LOCALAPPDATA"] ?? path4.join(homeDirectory, "AppData", "Local"), "AnthropicClaude"),
-    path4.join(environment["APPDATA"] ?? path4.join(homeDirectory, "AppData", "Roaming"), "Claude"),
-    path4.join(homeDirectory, ".config", "Claude")
+    path4.join(homeDirectory2, "Library", "Application Support", "Claude"),
+    path4.join(environment["LOCALAPPDATA"] ?? path4.join(homeDirectory2, "AppData", "Local"), "AnthropicClaude"),
+    path4.join(environment["APPDATA"] ?? path4.join(homeDirectory2, "AppData", "Roaming"), "Claude"),
+    path4.join(homeDirectory2, ".config", "Claude")
   ];
 }
 function existsFollowingSymlinks(target) {
@@ -1392,11 +1443,11 @@ function purgeClaude(input) {
   );
   return { report: claudeReport("purge", infoLines, wiring), exitCode: 0 };
 }
-function backupsRootOf(homeDirectory) {
-  return path7.join(homeDirectory, ".local", "state", "oso-code", "claude-backups");
+function backupsRootOf(homeDirectory2) {
+  return path7.join(homeDirectory2, ".local", "state", "oso-code", "claude-backups");
 }
-function backupClientConfigTargets(homeDirectory, claudeDir) {
-  const targets = [{ label: "claude-json", target: path7.join(homeDirectory, ".claude.json") }];
+function backupClientConfigTargets(homeDirectory2, claudeDir) {
+  const targets = [{ label: "claude-json", target: path7.join(homeDirectory2, ".claude.json") }];
   const pluginsDir = path7.join(claudeDir, "plugins");
   if (!isDirectory(pluginsDir)) return targets;
   for (const name of readdirSync3(pluginsDir).filter((entry) => entry.endsWith(".json"))) {
@@ -1580,8 +1631,8 @@ function engramProvisionWiringEntry(outcome, platform) {
 function engramManualInstallCommand(platform) {
   return platform === "win32" ? `install engram yourself \u2014 go install github.com/${ENGRAM_SOURCE_REPO}/cmd/engram@v${SUPPORTED_ENGRAM_VERSION}, or unpack the release zip from https://github.com/${ENGRAM_SOURCE_REPO}/releases/tag/v${SUPPORTED_ENGRAM_VERSION} onto the PATH Claude Code reads` : `install engram yourself \u2014 brew install gentleman-programming/tap/engram, or go install github.com/${ENGRAM_SOURCE_REPO}/cmd/engram@v${SUPPORTED_ENGRAM_VERSION}`;
 }
-function wireFallow(environment, homeDirectory, platform) {
-  const fallowCommand = resolveFallowMcpCommand(environment, homeDirectory, platform) ?? "fallow-mcp";
+function wireFallow(environment, homeDirectory2, platform) {
+  const fallowCommand = resolveFallowMcpCommand(environment, homeDirectory2, platform) ?? "fallow-mcp";
   const fix = `npm install --global fallow@${SUPPORTED_FALLOW_VERSION}, then claude mcp add --scope user fallow -- ${fallowCommand}`;
   const npmProbe = spawnSync4("npm", ["--version"], { env: environment, encoding: "utf8" });
   if (npmProbe.error !== void 0) {
@@ -1615,7 +1666,7 @@ function fallowWiredCommand(environment) {
   const match = /^[ \t]*Command:[ \t]*(.*?)[ \t]*$/m.exec(text);
   return match?.[1] ?? "";
 }
-function resolveFallowMcpCommand(environment, homeDirectory, platform) {
+function resolveFallowMcpCommand(environment, homeDirectory2, platform) {
   if (platform === "win32") {
     const appdata = environment["APPDATA"];
     if (appdata !== void 0 && appdata !== "") {
@@ -1626,7 +1677,7 @@ function resolveFallowMcpCommand(environment, homeDirectory, platform) {
   }
   const onPath2 = firstExecutableOnPath(environment, "fallow-mcp");
   if (onPath2 !== void 0) return onPath2;
-  const cargoCandidates = [path7.join(homeDirectory, ".cargo", "bin", "fallow-mcp"), path7.join(homeDirectory, ".cargo", "bin", "fallow-mcp.exe")];
+  const cargoCandidates = [path7.join(homeDirectory2, ".cargo", "bin", "fallow-mcp"), path7.join(homeDirectory2, ".cargo", "bin", "fallow-mcp.exe")];
   return cargoCandidates.find((candidate) => isExecutableRegularFile(candidate));
 }
 function npmGlobalPrefix(environment) {
@@ -1784,8 +1835,8 @@ function wireGitCommitHook(repositoryRoot2, environment) {
   }
   return wiringFail("git commit hook", `git config failed: ${collapsedOutput(result)} \u2014 fix: git -C ${repositoryRoot2} config core.hooksPath ${gitHooksDir}`);
 }
-function wireImpeccable(environment, homeDirectory) {
-  rmSync6(impeccableOptOutMarker(homeDirectory), { force: true });
+function wireImpeccable(environment, homeDirectory2) {
+  rmSync6(impeccableOptOutMarker(homeDirectory2), { force: true });
   spawnSync4("claude", ["plugin", "marketplace", "add", "pbakaus/impeccable"], { env: environment, encoding: "utf8" });
   const install = spawnSync4("claude", ["plugin", "install", "impeccable@impeccable"], { env: environment, encoding: "utf8" });
   if (install.error !== void 0 || install.status !== 0) {
@@ -1795,8 +1846,8 @@ function wireImpeccable(environment, homeDirectory) {
   const installed = listing.error === void 0 && listing.stdout.includes("impeccable");
   return installed ? wiringOk("impeccable (plugin)", "installed") : wiringFail("impeccable (plugin)", "the install reported success but the client lists no impeccable plugin \u2014 fix: claude plugin install impeccable@impeccable, then restart Claude Code");
 }
-function skipImpeccable(homeDirectory) {
-  const marker = impeccableOptOutMarker(homeDirectory);
+function skipImpeccable(homeDirectory2) {
+  const marker = impeccableOptOutMarker(homeDirectory2);
   mkdirSync5(path7.dirname(marker), { recursive: true });
   writeFileSync6(marker, `skipped by --no-impeccable on ${isoTimestamp().slice(0, 10)}
 `);
@@ -2981,17 +3032,17 @@ var OSO_OWNED_CONFIG_PATHS = [
   ["mcp_servers", "fallow"],
   ["permissions", "oso"]
 ];
-function codexPathsFor(homeDirectory, environment) {
-  const codexHome = environment["CODEX_HOME"] ?? path9.join(homeDirectory, ".codex");
+function codexPathsFor(homeDirectory2, environment) {
+  const codexHome = environment["CODEX_HOME"] ?? path9.join(homeDirectory2, ".codex");
   return {
-    homeDirectory,
+    homeDirectory: homeDirectory2,
     codexHome,
     configFile: path9.join(codexHome, "config.toml"),
     globalFile: path9.join(codexHome, "AGENTS.md"),
-    runtimeRoot: path9.join(homeDirectory, ".local", "share", "oso-code", "runtime"),
-    agentsHome: path9.join(homeDirectory, ".agents"),
-    marketplaceRoot: path9.join(homeDirectory, ".local", "share", "oso-code", "codex-marketplace"),
-    backupsRoot: path9.join(homeDirectory, ".local", "state", "oso-code", "codex-backups")
+    runtimeRoot: path9.join(homeDirectory2, ".local", "share", "oso-code", "runtime"),
+    agentsHome: path9.join(homeDirectory2, ".agents"),
+    marketplaceRoot: path9.join(homeDirectory2, ".local", "share", "oso-code", "codex-marketplace"),
+    backupsRoot: path9.join(homeDirectory2, ".local", "state", "oso-code", "codex-backups")
   };
 }
 function managedFeaturesStatus(text) {
@@ -3504,11 +3555,11 @@ var GLOBAL_MARKER_START2 = "<!-- oso-code:start -->";
 var GLOBAL_MARKER_END2 = "<!-- oso-code:end -->";
 var AWK_BLANK_LINE = /^[ \t]*$/;
 var REPAIRABLE_NESTED_PATHS = [["permission"], ["permission", "skill"], ["permission", "task"], ["mcp"]];
-function opencodePathsFor(homeDirectory, environment) {
-  const configHome = path10.join(environment["XDG_CONFIG_HOME"] ?? path10.join(homeDirectory, ".config"), "opencode");
-  const stateRoot = path10.join(homeDirectory, ".local", "state", "oso-code");
+function opencodePathsFor(homeDirectory2, environment) {
+  const configHome = path10.join(environment["XDG_CONFIG_HOME"] ?? path10.join(homeDirectory2, ".config"), "opencode");
+  const stateRoot = path10.join(homeDirectory2, ".local", "state", "oso-code");
   return {
-    homeDirectory,
+    homeDirectory: homeDirectory2,
     configHome,
     configFile: path10.join(configHome, "opencode.json"),
     globalFile: path10.join(configHome, "AGENTS.md"),
@@ -3516,12 +3567,12 @@ function opencodePathsFor(homeDirectory, environment) {
     backupsRoot: stateRoot
   };
 }
-function configHomeRefusal(homeDirectory, environment, verb) {
+function configHomeRefusal(homeDirectory2, environment, verb) {
   const configuredHome = environment["XDG_CONFIG_HOME"];
-  if (configuredHome === void 0 || configuredHome === "" || configuredHome === path10.join(homeDirectory, ".config")) return void 0;
+  if (configuredHome === void 0 || configuredHome === "" || configuredHome === path10.join(homeDirectory2, ".config")) return void 0;
   return {
     kind: "usage",
-    message: `XDG_CONFIG_HOME (${configuredHome}) is not the default for HOME (${path10.join(homeDirectory, ".config")}), so this ${verb} would write outside the home it was pointed at; unset it or point both at the same account`
+    message: `XDG_CONFIG_HOME (${configuredHome}) is not the default for HOME (${path10.join(homeDirectory2, ".config")}), so this ${verb} would write outside the home it was pointed at; unset it or point both at the same account`
   };
 }
 function configFileRefusal(configFile) {
@@ -4236,38 +4287,38 @@ var REQUIRED_PROJECT_CONFIG_COUNT = 3;
 var GENTLE_AI_LABELS = ["gentle-ai-home", "gentle-ai-bin"];
 var UNSAFE_PATH_SEGMENTS = ["/../", "/./"];
 var UNSAFE_PATH_CHARACTERS = /[\n\r\t]/;
-function openCodePurgeTargets(homeDirectory, keepGentleAi) {
+function openCodePurgeTargets(homeDirectory2, keepGentleAi) {
   const all = [
-    { label: "config-home", target: path14.join(homeDirectory, ".config", "opencode") },
-    { label: "state-home", target: path14.join(homeDirectory, ".local", "share", "opencode") },
-    { label: "cache-home", target: path14.join(homeDirectory, ".cache", "opencode") },
-    { label: "bin", target: path14.join(homeDirectory, ".opencode", "bin", "opencode") },
-    { label: "gentle-ai-home", target: path14.join(homeDirectory, ".gentle-ai") },
-    { label: "gentle-ai-bin", target: path14.join(homeDirectory, ".local", "bin", "gentle-ai") }
+    { label: "config-home", target: path14.join(homeDirectory2, ".config", "opencode") },
+    { label: "state-home", target: path14.join(homeDirectory2, ".local", "share", "opencode") },
+    { label: "cache-home", target: path14.join(homeDirectory2, ".cache", "opencode") },
+    { label: "bin", target: path14.join(homeDirectory2, ".opencode", "bin", "opencode") },
+    { label: "gentle-ai-home", target: path14.join(homeDirectory2, ".gentle-ai") },
+    { label: "gentle-ai-bin", target: path14.join(homeDirectory2, ".local", "bin", "gentle-ai") }
   ];
   return keepGentleAi ? all.filter((row) => !GENTLE_AI_LABELS.includes(row.label)) : all;
 }
-function purgeBackupParentOf(homeDirectory) {
-  return path14.join(homeDirectory, ".local", "state", "oso-code", "purge-backups");
+function purgeBackupParentOf(homeDirectory2) {
+  return path14.join(homeDirectory2, ".local", "state", "oso-code", "purge-backups");
 }
-function customizedHomeRefusal(homeDirectory, environment) {
+function customizedHomeRefusal(homeDirectory2, environment) {
   const rows = [
-    { key: "XDG_CONFIG_HOME", expected: path14.join(homeDirectory, ".config"), named: "config home" },
-    { key: "XDG_STATE_HOME", expected: path14.join(homeDirectory, ".local", "state"), named: "state home" },
-    { key: "XDG_CACHE_HOME", expected: path14.join(homeDirectory, ".cache"), named: "cache home" }
+    { key: "XDG_CONFIG_HOME", expected: path14.join(homeDirectory2, ".config"), named: "config home" },
+    { key: "XDG_STATE_HOME", expected: path14.join(homeDirectory2, ".local", "state"), named: "state home" },
+    { key: "XDG_CACHE_HOME", expected: path14.join(homeDirectory2, ".cache"), named: "cache home" }
   ];
   const customized = rows.find((row) => (environment[row.key] ?? "") !== "" && environment[row.key] !== row.expected);
   if (customized === void 0) return void 0;
   return `${customized.key} is not the default (${customized.expected}); a customized opencode ${customized.named} is missed by this wipe`;
 }
-function unsafeTargetRefusal(homeDirectory, targets) {
-  const homePhysical = physicalPathOf(homeDirectory);
-  if (homePhysical === void 0) return `HOME does not resolve to a physical path: ${homeDirectory}`;
-  if (homePhysical === path14.parse(homePhysical).root) return `refusing to operate with HOME=${homeDirectory}`;
+function unsafeTargetRefusal(homeDirectory2, targets) {
+  const homePhysical = physicalPathOf(homeDirectory2);
+  if (homePhysical === void 0) return `HOME does not resolve to a physical path: ${homeDirectory2}`;
+  if (homePhysical === path14.parse(homePhysical).root) return `refusing to operate with HOME=${homeDirectory2}`;
   for (const { label, target } of targets) {
     if (!path14.isAbsolute(target)) return `${label} must be an absolute path: ${target}`;
     if (!pathIsClean(target)) return `unsafe ${label} path: ${target}`;
-    if (!isBelow(target, homeDirectory)) return `${label} must remain below HOME: ${target}`;
+    if (!isBelow(target, homeDirectory2)) return `${label} must remain below HOME: ${target}`;
     if (!existsAtAll(target) || isSymlink(target)) continue;
     const parentPhysical = physicalPathOf(path14.dirname(target));
     if (parentPhysical === void 0) return `${label} does not resolve to a physical path: ${target}`;
@@ -4365,8 +4416,8 @@ function removalEntry(label, target) {
   }
   return existsAtAll(target) ? wiringFail(label, `purge target was not removed: ${target}`) : wiringOk(label, `removed ${target}`);
 }
-function restoreOpenCodePurge(backupDirectory, homeDirectory) {
-  const readable = readablePurgeBackup(backupDirectory, homeDirectory);
+function restoreOpenCodePurge(backupDirectory, homeDirectory2) {
+  const readable = readablePurgeBackup(backupDirectory, homeDirectory2);
   if (readable.kind === "unusable") return fatalOutcome("purge", "opencode", "cannot restore from this backup", readable.message);
   const occupied = readable.rows.find((row) => existsAtAll(row.target));
   if (occupied !== void 0) {
@@ -4383,7 +4434,7 @@ function restoreOpenCodePurge(backupDirectory, homeDirectory) {
   ];
   return { report: renderCommandReport("purge", "opencode", infoLines, wiring), exitCode: restored.failedCount === 0 ? 0 : 1 };
 }
-function readablePurgeBackup(backupDirectory, homeDirectory) {
+function readablePurgeBackup(backupDirectory, homeDirectory2) {
   if (!path14.isAbsolute(backupDirectory)) return { kind: "unusable", message: "backup path must be absolute" };
   if (!existsAtAll(backupDirectory) || isSymlink(backupDirectory)) {
     return { kind: "unusable", message: `backup is not a directory: ${backupDirectory}` };
@@ -4397,14 +4448,14 @@ function readablePurgeBackup(backupDirectory, homeDirectory) {
   if (!isReadableRegularFile(manifest)) return { kind: "unusable", message: `backup contains no target records: ${backupDirectory}` };
   const rows = parseManifestRows(readFileSync13(manifest, "utf8"));
   if (rows.length === 0) return { kind: "unusable", message: `backup contains no target records: ${backupDirectory}` };
-  const unknown = rows.find((row) => expectedTargetFor(row.label, homeDirectory) === void 0);
+  const unknown = rows.find((row) => expectedTargetFor(row.label, homeDirectory2) === void 0);
   if (unknown !== void 0) return { kind: "unusable", message: `unknown backup target label: ${unknown.label}` };
-  const foreign = rows.find((row) => row.target !== expectedTargetFor(row.label, homeDirectory));
+  const foreign = rows.find((row) => row.target !== expectedTargetFor(row.label, homeDirectory2));
   if (foreign !== void 0) return { kind: "unusable", message: `backup target does not match this HOME: ${foreign.label}` };
   return { kind: "usable", rows };
 }
-function expectedTargetFor(label, homeDirectory) {
-  return openCodePurgeTargets(homeDirectory, false).find((row) => row.label === label)?.target;
+function expectedTargetFor(label, homeDirectory2) {
+  return openCodePurgeTargets(homeDirectory2, false).find((row) => row.label === label)?.target;
 }
 function pathIsClean(target) {
   if (target === path14.parse(target).root) return false;
@@ -4423,8 +4474,127 @@ function physicalPathOf(target) {
   }
 }
 
-// core/src/install/verify-codex.ts
+// core/src/install/profile.ts
 import path15 from "node:path";
+var ROLES = ["applier", "verifier", "judges"];
+var TIERS = ["default", "strong"];
+var PROFILE_NAMES = ["normal", "strong", "custom"];
+var ON_DEFAULT = { tier: "default", model: void 0 };
+var ON_STRONG = { tier: "strong", model: void 0 };
+var PRESETS = {
+  normal: { applier: ON_DEFAULT, verifier: ON_DEFAULT, judges: ON_STRONG },
+  strong: { applier: ON_STRONG, verifier: ON_STRONG, judges: ON_STRONG }
+};
+var TIER_RANK = { default: 0, strong: 1 };
+var ProfileRefusedError = class extends Error {
+  constructor(reason) {
+    super(`profile set refused: ${reason}`);
+    this.name = "ProfileRefusedError";
+  }
+};
+function showProfile(workingDirectory) {
+  const mirror = mirrorFileFor(workingDirectory);
+  const read = readStateFile(mirror);
+  if (read.kind === "unreadable") throw new StateFileUnreadableError(mirror, read.cause);
+  if (read.kind === "absent") return { report: `oso profile show
+no profile at ${mirror} \u2014 every role runs on its host's session model
+`, exitCode: 0 };
+  return { report: `oso profile show
+${mirror}
+${read.content}`, exitCode: 0 };
+}
+function setProfile(workingDirectory, name, roleTokens) {
+  const profile = profileFrom(name, roleTokens);
+  const mirror = mirrorFileFor(workingDirectory);
+  const content = mirrorContentOf(profile);
+  writeFileAtomically(path15.dirname(mirror), mirror, content, ".profile.");
+  return { report: `oso profile set ${profile.name}
+${mirror}
+${content}`, exitCode: 0 };
+}
+function mirrorFileFor(workingDirectory) {
+  return profileFileFor(stateFileFor(workingDirectory));
+}
+function profileFrom(name, roleTokens) {
+  if (!isProfileName(name)) throw new ProfileRefusedError(`${name} is not a profile name \u2014 the names are ${PROFILE_NAMES.join(", ")}`);
+  const chosen = roleChoicesFrom(roleTokens);
+  if (name === "custom") return { name, roles: customRoles(chosen) };
+  return { name, roles: presetRoles(name, chosen) };
+}
+function presetRoles(name, chosen) {
+  const roleNamed = ROLES.find((role) => chosen[role] !== void 0);
+  if (roleNamed !== void 0) {
+    throw new ProfileRefusedError(`${roleFlag(roleNamed)} names a role only "set custom" takes \u2014 the ${name} preset names its own`);
+  }
+  return PRESETS[name];
+}
+function customRoles(chosen) {
+  const { applier, verifier, judges } = chosen;
+  if (applier === void 0) throw missingRole("applier");
+  if (verifier === void 0) throw missingRole("verifier");
+  if (judges === void 0) throw missingRole("judges");
+  refuseVerifierBelowApplier(applier, verifier);
+  return { applier, verifier, judges };
+}
+function refuseVerifierBelowApplier(applier, verifier) {
+  if (TIER_RANK[verifier.tier] >= TIER_RANK[applier.tier]) return;
+  throw new ProfileRefusedError(
+    `the verifier tier ${verifier.tier} is below the applier tier ${applier.tier} \u2014 ${roleFlag("verifier")} ${applier.tier} would have passed`
+  );
+}
+function missingRole(role) {
+  return new ProfileRefusedError(`a custom profile names every role \u2014 ${roleFlag(role)} <tier>[:<model>] is missing`);
+}
+function roleChoicesFrom(tokens) {
+  const chosen = {};
+  for (let index = 0; index < tokens.length; index += 2) {
+    const flag = tokens[index];
+    const role = roleOf(flag);
+    if (chosen[role] !== void 0) throw new ProfileRefusedError(`${flag} may be given only once`);
+    chosen[role] = roleChoiceFrom(flag, tokens[index + 1]);
+  }
+  return chosen;
+}
+function roleOf(flag) {
+  const role = ROLES.find((candidate) => flag === roleFlag(candidate));
+  if (role === void 0) throw new ProfileRefusedError(`${flag} names no role \u2014 the roles are ${ROLES.map(roleFlag).join(", ")}`);
+  return role;
+}
+function roleChoiceFrom(flag, value) {
+  if (value === void 0) throw new ProfileRefusedError(`${flag} takes <tier>[:<model>] and was given nothing`);
+  const colon = value.indexOf(":");
+  const tier = colon === -1 ? value : value.slice(0, colon);
+  const model = colon === -1 ? void 0 : value.slice(colon + 1);
+  if (!isTier(tier)) throw new ProfileRefusedError(`${flag} ${value} names no tier \u2014 the tiers are ${TIERS.join(", ")}`);
+  if (model === "") throw new ProfileRefusedError(`${flag} ${value} names no model after its colon \u2014 ${flag} ${tier} would have passed`);
+  return { tier, model };
+}
+function roleFlag(role) {
+  return `--${role}`;
+}
+function mirrorContentOf(profile) {
+  const lines = [
+    `model_profile=${profile.name}`,
+    ...ROLES.flatMap((role) => roleLines(role, profile.roles[role])),
+    "codex=pinned by host contract",
+    "unattended.doom_loop=ask"
+  ];
+  return lines.map((line) => `${line}
+`).join("");
+}
+function roleLines(role, choice) {
+  const tier = `${role}.tier=${choice.tier}`;
+  return choice.model === void 0 ? [tier] : [tier, `${role}.model=${choice.model}`];
+}
+function isProfileName(value) {
+  return PROFILE_NAMES.includes(value);
+}
+function isTier(value) {
+  return TIERS.includes(value);
+}
+
+// core/src/install/verify-codex.ts
+import path16 from "node:path";
 import { spawnSync as spawnSync8 } from "node:child_process";
 import { mkdirSync as mkdirSync9, mkdtempSync as mkdtempSync6, readFileSync as readFileSync14, readdirSync as readdirSync5, rmSync as rmSync11, writeFileSync as writeFileSync9 } from "node:fs";
 import { tmpdir as tmpdir4 } from "node:os";
@@ -4605,43 +4775,43 @@ function checkPluginInstalled2(report2, paths, repositoryRoot2, host) {
     return;
   }
   const sourcePaths = localPluginSourcePaths(listing.output, manifest);
-  report2.check("oso-code plugin installed", "installed", sourcePaths.includes(path15.join(paths.marketplaceRoot, "codex")) ? "installed" : "absent-or-invalid");
+  report2.check("oso-code plugin installed", "installed", sourcePaths.includes(path16.join(paths.marketplaceRoot, "codex")) ? "installed" : "absent-or-invalid");
 }
 function checkMarketplacePayload(report2, paths, repositoryRoot2) {
   const divergent = MARKETPLACE_PAYLOAD_ROWS.flatMap(
-    (row) => filesHoldTheSameBytes(path15.join(repositoryRoot2, ...row.published.split("/")), path15.join(paths.marketplaceRoot, ...row.installed.split("/"))) ? [] : [row.named]
+    (row) => filesHoldTheSameBytes(path16.join(repositoryRoot2, ...row.published.split("/")), path16.join(paths.marketplaceRoot, ...row.installed.split("/"))) ? [] : [row.named]
   );
   for (const skill of publishedSkillNames(repositoryRoot2)) {
-    const installed = path15.join(paths.marketplaceRoot, "codex", "skills", skill);
-    if (!directoryTreesHoldTheSameBytes(path15.join(repositoryRoot2, "codex", "skills", skill), installed)) divergent.push(skill);
+    const installed = path16.join(paths.marketplaceRoot, "codex", "skills", skill);
+    if (!directoryTreesHoldTheSameBytes(path16.join(repositoryRoot2, "codex", "skills", skill), installed)) divergent.push(skill);
   }
-  if (!directoryTreesHoldTheSameBytes(path15.join(repositoryRoot2, "plugin", "skills", "_shared"), path15.join(paths.marketplaceRoot, "codex", "skills", "_shared"))) {
+  if (!directoryTreesHoldTheSameBytes(path16.join(repositoryRoot2, "plugin", "skills", "_shared"), path16.join(paths.marketplaceRoot, "codex", "skills", "_shared"))) {
     divergent.push("shared");
   }
   report2.check("staged marketplace payload", "exact", divergent.length === 0 ? "exact" : `divergent:${divergent.map((named) => ` ${named}`).join("")}`);
 }
 function checkHostAcceptsOsoProfile(report2, paths, host) {
   const expected = `1
-${path15.join(paths.runtimeRoot, "bin", "oso-state")}`;
+${path16.join(paths.runtimeRoot, "bin", "oso-state")}`;
   const run = host.sandbox(["/bin/sh", "-c", 'printf "%s\n%s\n" "${OSO_AGENT:-}" "${OSO_STATE_BIN:-}"']);
   const observed = run.ok ? run.output.trim() : collapsed(run.output);
   report2.check("Codex accepts the oso permissions profile", "accepted", observed === expected ? "accepted" : observed === "" ? "rejected-without-output" : observed);
 }
 function checkStateRoundTrip(report2, paths, environment) {
-  const probe = runOsoStateProbe(path15.join(paths.runtimeRoot, "bin", "oso-state"), environment);
+  const probe = runOsoStateProbe(path16.join(paths.runtimeRoot, "bin", "oso-state"), environment);
   report2.check("installed oso-state round-trip", "probe", probe === "" ? "round-trip-failed:empty" : probe);
 }
 function checkPlanArtifactRoundTrip(report2, paths, environment) {
-  const stateBin = path15.join(paths.runtimeRoot, "bin", "oso-state");
+  const stateBin = path16.join(paths.runtimeRoot, "bin", "oso-state");
   report2.check("installed Codex plan artifact round-trip", "artifacts", planArtifactRoundTripVerdict(stateBin, environment));
 }
 function checkCommitHookDeniesRed(report2, paths, environment) {
   report2.check("installed git hook denies a red agent commit", "denied", commitHookRedVerdict(paths, environment));
 }
 function checkGitCommitGate(report2, paths, repositoryRoot2, environment) {
-  const wired = path15.join(paths.runtimeRoot, "git-hooks");
+  const wired = path16.join(paths.runtimeRoot, "git-hooks");
   const configured = gitConfigured(repositoryRoot2, environment);
-  if (configured === wired && isExecutableRegularFile(path15.join(wired, "pre-commit"))) {
+  if (configured === wired && isExecutableRegularFile(path16.join(wired, "pre-commit"))) {
     report2.check("git commit gate", "wired", "wired");
     return;
   }
@@ -4683,7 +4853,7 @@ function checkGlobalGuidance(report2, paths, repositoryRoot2) {
     report2.check("global Codex guidance", "exact", "malformed");
     return;
   }
-  const source = path15.join(repositoryRoot2, "bootstrap", "codex-global.md");
+  const source = path16.join(repositoryRoot2, "bootstrap", "codex-global.md");
   if (!isReadableRegularFile(source)) {
     report2.detail(`published guidance unreadable: ${source}`);
     report2.check("global Codex guidance", "exact", "source-unreadable");
@@ -4694,11 +4864,11 @@ function checkGlobalGuidance(report2, paths, repositoryRoot2) {
 var CODEX_HOOKS_MANIFEST = "codex/hooks/hooks.json";
 var RENDERED_HOOKS_DIR_TOKEN = "__OSO_HOOKS_DIR__";
 function unrenderedHooksManifest(text, runtimeRoot) {
-  return text.replaceAll(path15.posix.join(runtimeRoot, "dist"), RENDERED_HOOKS_DIR_TOKEN);
+  return text.replaceAll(path16.posix.join(runtimeRoot, "dist"), RENDERED_HOOKS_DIR_TOKEN);
 }
 function checkPublishedRuntimeBytes(report2, paths, repositoryRoot2) {
   const divergences = trustDivergences(
-    path15.join(repositoryRoot2, "bootstrap", "hook-hashes.txt"),
+    path16.join(repositoryRoot2, "bootstrap", "hook-hashes.txt"),
     (relative) => relative.startsWith("opencode/"),
     (relative) => installedRuntimePathOf(relative, paths),
     (relative, target) => relative === CODEX_HOOKS_MANIFEST ? Buffer.from(unrenderedHooksManifest(readFileSync14(target, "utf8"), paths.runtimeRoot), "utf8") : readFileSync14(target)
@@ -4707,13 +4877,13 @@ function checkPublishedRuntimeBytes(report2, paths, repositoryRoot2) {
   report2.check("published runtime bytes", "verified", divergences.length === 0 ? "verified" : `bad:${divergences.length}`);
 }
 function checkRuntimeEntrypointsExecutable(report2, paths) {
-  const entrypoints = [path15.join(paths.runtimeRoot, "bin", "oso-state"), path15.join(paths.runtimeRoot, "git-hooks", "pre-commit")];
+  const entrypoints = [path16.join(paths.runtimeRoot, "bin", "oso-state"), path16.join(paths.runtimeRoot, "git-hooks", "pre-commit")];
   const missing = entrypoints.filter((entrypoint) => !isExecutableRegularFile(entrypoint));
   for (const entrypoint of missing) report2.detail(`not executable: ${entrypoint}`);
   report2.check("runtime entrypoints executable", "executable", missing.length === 0 ? "executable" : `not-executable:${missing.length}`);
 }
 function checkAgentPayload(report2, paths, repositoryRoot2) {
-  const sourceDir = path15.join(repositoryRoot2, "codex", "agents");
+  const sourceDir = path16.join(repositoryRoot2, "codex", "agents");
   let published;
   try {
     published = readdirSync5(sourceDir).filter((name) => name.endsWith(".toml")).sort();
@@ -4728,11 +4898,11 @@ function checkAgentPayload(report2, paths, repositoryRoot2) {
     report2.check(AGENT_PAYLOAD_CHECK, "exact", "source-empty");
     return;
   }
-  const installedDir = path15.join(paths.codexHome, "agents");
+  const installedDir = path16.join(paths.codexHome, "agents");
   const divergent = published.filter((name) => {
-    const installed = path15.join(installedDir, name);
+    const installed = path16.join(installedDir, name);
     if (!isReadableRegularFile(installed)) return true;
-    return readFileSync14(installed, "utf8") !== readFileSync14(path15.join(sourceDir, name), "utf8");
+    return readFileSync14(installed, "utf8") !== readFileSync14(path16.join(sourceDir, name), "utf8");
   });
   for (const name of divergent) report2.detail(`divergent agent: ${name}`);
   report2.check(AGENT_PAYLOAD_CHECK, "exact", divergent.length === 0 ? "exact" : `divergent:${divergent.map((named) => ` ${named}`).join("")}`);
@@ -4742,8 +4912,8 @@ function checkEngramWiring(report2, paths, configParses) {
     report2.skip(`Engram Codex integration \u2014 ${paths.configFile} is unparseable, so the MCP server table could not be read`);
     return;
   }
-  const instructions = path15.join(paths.codexHome, "engram-instructions.md");
-  const compact = path15.join(paths.codexHome, "engram-compact-prompt.md");
+  const instructions = path16.join(paths.codexHome, "engram-instructions.md");
+  const compact = path16.join(paths.codexHome, "engram-compact-prompt.md");
   const wired = isReadableRegularFile(instructions) && isReadableRegularFile(compact) && isReadableRegularFile(paths.configFile) && mcpServersOf(paths.configFile).some((server) => server.name === "engram") && engramPointersAreNormalized(paths);
   report2.check("Engram Codex integration", "wired", wired ? "wired" : "incomplete");
 }
@@ -4752,14 +4922,14 @@ function engramPointersAreNormalized(paths) {
   const normalized = normalizedEngramPointerConfig(paths, text);
   return normalized.exitCode === 0 && normalized.stdout === text;
 }
-function checkImpeccableMount(report2, homeDirectory) {
-  const optOut = path15.join(homeDirectory, ".local", "state", "oso-code", "impeccable-opt-out");
+function checkImpeccableMount(report2, homeDirectory2) {
+  const optOut = path16.join(homeDirectory2, ".local", "state", "oso-code", "impeccable-opt-out");
   if (isReadableRegularFile(optOut)) {
     report2.skip("Impeccable mount \u2014 an install recorded --no-impeccable");
     return;
   }
-  const mount = path15.join(homeDirectory, ".agents", "skills", "impeccable");
-  report2.check("Impeccable Codex mount", "mounted", isReadableRegularFile(path15.join(mount, "SKILL.md")) ? "mounted" : "missing");
+  const mount = path16.join(homeDirectory2, ".agents", "skills", "impeccable");
+  report2.check("Impeccable Codex mount", "mounted", isReadableRegularFile(path16.join(mount, "SKILL.md")) ? "mounted" : "missing");
 }
 function checkMcpToolTableDrift(report2, paths, configParses) {
   report2.section(MCP_DRIFT_SECTION);
@@ -4861,14 +5031,14 @@ function fallowCommandInside(regionText) {
   return quoted.startsWith('"') && quoted.endsWith('"') ? quoted.slice(1, -1).replaceAll('\\"', '"').replaceAll("\\\\", "\\") : quoted;
 }
 function installedRuntimePathOf(relative, paths) {
-  if (relative === CODEX_HOOKS_MANIFEST) return path15.join(paths.codexHome, "hooks.json");
+  if (relative === CODEX_HOOKS_MANIFEST) return path16.join(paths.codexHome, "hooks.json");
   for (const [prefix, directory] of [
     ["plugin/dist/", "dist"],
     ["plugin/hooks/", "hooks"],
     ["plugin/git-hooks/", "git-hooks"],
     ["plugin/bin/", "bin"]
   ]) {
-    if (relative.startsWith(prefix)) return path15.join(paths.runtimeRoot, directory, relative.slice(prefix.length));
+    if (relative.startsWith(prefix)) return path16.join(paths.runtimeRoot, directory, relative.slice(prefix.length));
   }
   return void 0;
 }
@@ -4898,12 +5068,12 @@ var MARKETPLACE_PAYLOAD_ROWS = [
 var COMMIT_HOOK_PROBE_SESSION = "1";
 var COMMIT_HOOK_DENIAL_PHRASE = "oso-code: the session verify is not green.";
 function commitHookRedVerdict(paths, environment) {
-  const probeHome = mkdtempSync6(path15.join(tmpdir4(), "oso-commit-hook-probe-"));
+  const probeHome = mkdtempSync6(path16.join(tmpdir4(), "oso-commit-hook-probe-"));
   try {
-    const probeRepo = path15.join(probeHome, "repo");
+    const probeRepo = path16.join(probeHome, "repo");
     mkdirSync9(probeRepo, { recursive: true });
     if (spawnSync8("git", ["-C", probeRepo, "init", "-q"], { encoding: "utf8" }).status !== 0) return "git-init-failed";
-    writeFileSync9(path15.join(probeRepo, "baseline.txt"), "baseline\n");
+    writeFileSync9(path16.join(probeRepo, "baseline.txt"), "baseline\n");
     if (spawnSync8("git", ["-C", probeRepo, "add", "baseline.txt"], { encoding: "utf8" }).status !== 0) return "setup-failed";
     const baseline = spawnSync8(
       "git",
@@ -4915,13 +5085,13 @@ function commitHookRedVerdict(paths, environment) {
     const env = { ...environment, HOME: probeHome, USERPROFILE: probeHome };
     const armed = spawnSync8(
       process.execPath,
-      [path15.join(paths.runtimeRoot, "bin", "oso-state"), "--session", COMMIT_HOOK_PROBE_SESSION, "set", "mode=quick", "active_slice=none", "verify_green=false"],
+      [path16.join(paths.runtimeRoot, "bin", "oso-state"), "--session", COMMIT_HOOK_PROBE_SESSION, "set", "mode=quick", "active_slice=none", "verify_green=false"],
       { cwd: probeRepo, env, encoding: "utf8" }
     );
     if (armed.error !== void 0 || armed.status !== 0) return "setup-failed";
-    const wired = spawnSync8("git", ["-C", probeRepo, "config", "core.hooksPath", path15.join(paths.runtimeRoot, "git-hooks")], { encoding: "utf8" });
+    const wired = spawnSync8("git", ["-C", probeRepo, "config", "core.hooksPath", path16.join(paths.runtimeRoot, "git-hooks")], { encoding: "utf8" });
     if (wired.status !== 0) return "setup-failed";
-    writeFileSync9(path15.join(probeRepo, "pending.txt"), "pending\n");
+    writeFileSync9(path16.join(probeRepo, "pending.txt"), "pending\n");
     if (spawnSync8("git", ["-C", probeRepo, "add", "pending.txt"], { encoding: "utf8" }).status !== 0) return "setup-failed";
     const attempt = spawnSync8(
       "git",
@@ -4947,9 +5117,9 @@ var PLAN_ARTIFACT_PROBE_DOCUMENT = "# Verified plan";
 var PLAN_ARTIFACT_AMENDMENT_DOCUMENT = "### Slice probe";
 var PLAN_ARTIFACT_AMENDMENT_LINE = `## Execution amendment \u2014 ${PLAN_ARTIFACT_PROBE_SLICE}`;
 function planArtifactRoundTripVerdict(stateBin, environment) {
-  const probeHome = mkdtempSync6(path15.join(tmpdir4(), "oso-plan-probe-"));
+  const probeHome = mkdtempSync6(path16.join(tmpdir4(), "oso-plan-probe-"));
   try {
-    const probeRepo = path15.join(probeHome, "repo");
+    const probeRepo = path16.join(probeHome, "repo");
     mkdirSync9(probeRepo, { recursive: true });
     const init = spawnSync8("git", ["-C", probeRepo, "init", "-q"], { encoding: "utf8" });
     if (init.error !== void 0 || init.status !== 0) return "git-init-failed";
@@ -4989,7 +5159,7 @@ function binaryCarriesBoth(binary, literals) {
 function codexPluginManifestOf(repositoryRoot2) {
   let document;
   try {
-    document = readJsonObject(path15.join(repositoryRoot2, "codex", ".codex-plugin", "plugin.json"));
+    document = readJsonObject(path16.join(repositoryRoot2, "codex", ".codex-plugin", "plugin.json"));
   } catch {
     return void 0;
   }
@@ -5020,7 +5190,7 @@ function localPluginSourcePaths(listingJson, manifest) {
 }
 function publishedSkillNames(repositoryRoot2) {
   try {
-    return readdirSync5(path15.join(repositoryRoot2, "codex", "skills"), { withFileTypes: true }).filter((entry) => entry.isDirectory() && entry.name !== "_shared").map((entry) => entry.name).sort();
+    return readdirSync5(path16.join(repositoryRoot2, "codex", "skills"), { withFileTypes: true }).filter((entry) => entry.isDirectory() && entry.name !== "_shared").map((entry) => entry.name).sort();
   } catch {
     return [];
   }
@@ -5032,12 +5202,12 @@ function directoryTreesHoldTheSameBytes(source, installed) {
   const installedFiles = relativeFilesUnder(installed);
   if (sourceFiles.length !== installedFiles.length) return false;
   return sourceFiles.every(
-    (relative) => installedFiles.includes(relative) && filesHoldTheSameBytes(path15.join(source, relative), path15.join(installed, relative))
+    (relative) => installedFiles.includes(relative) && filesHoldTheSameBytes(path16.join(source, relative), path16.join(installed, relative))
   );
 }
 function relativeFilesUnder(directory) {
   if (!isDirectory(directory)) return [];
-  return readdirSync5(directory, { recursive: true }).map((entry) => entry.toString()).filter((relative) => isRegularNonSymlinkFile(path15.join(directory, relative))).sort();
+  return readdirSync5(directory, { recursive: true }).map((entry) => entry.toString()).filter((relative) => isRegularNonSymlinkFile(path16.join(directory, relative))).sort();
 }
 function gitConfigured(repositoryRoot2, environment) {
   const run = spawnSync8("git", ["-C", repositoryRoot2, "config", "--get", "core.hooksPath"], { env: environment, encoding: "utf8" });
@@ -5054,7 +5224,7 @@ function isRecord2(value) {
 import { spawnSync as spawnSync9 } from "node:child_process";
 import { chmodSync as chmodSync3, mkdirSync as mkdirSync10, mkdtempSync as mkdtempSync7, readdirSync as readdirSync6, readFileSync as readFileSync15, rmSync as rmSync12, writeFileSync as writeFileSync10 } from "node:fs";
 import { tmpdir as tmpdir5 } from "node:os";
-import path16 from "node:path";
+import path17 from "node:path";
 var OPENCODE_NOT_ON_PATH = "opencode-not-on-path";
 var VERSION_ROW_SKIP = "OpenCode CLI version \u2014 opencode is not on PATH, so the installed pin could not be probed";
 var LOCAL_CHECKS_SECTION2 = "local checks:";
@@ -5117,8 +5287,8 @@ function verifyOpenCode(input) {
 }
 function checkInstalledTree(report2, input, tree) {
   const sources = openCodePayloadSources(input.repositoryRoot);
-  const configFile = path16.join(tree.configHome, "opencode.json");
-  const globalFile = path16.join(tree.configHome, "AGENTS.md");
+  const configFile = path17.join(tree.configHome, "opencode.json");
+  const globalFile = path17.join(tree.configHome, "AGENTS.md");
   report2.check("OpenCode config contract", "valid", openCodeConfigStatus(configFile));
   report2.check("operator config keys survive an install", "preserved", openCodeOperatorKeysStatus(configFile));
   report2.check("nine skill wrappers and the shared skill directory installed", "exact", openCodeSkillStatus(input.repositoryRoot, tree.configHome));
@@ -5151,13 +5321,13 @@ function checkPinnedOpenCodeVersion(report2, host) {
 function stageOpenCodeFixture(input) {
   const parent = input.environment["TMPDIR"] ?? tmpdir5();
   if (!isDirectory(parent)) return { kind: "failed", result: TEMPORARY_PARENT_UNAVAILABLE };
-  const root = mkdtempSync7(path16.join(parent, FIXTURE_PREFIX));
-  const home = path16.join(root, "home");
-  const configHome = path16.join(home, ".config", "opencode");
+  const root = mkdtempSync7(path17.join(parent, FIXTURE_PREFIX));
+  const home = path17.join(root, "home");
+  const configHome = path17.join(home, ".config", "opencode");
   mkdirSync10(configHome, { recursive: true });
-  writeFileSync10(path16.join(configHome, "opencode.json"), `${JSON.stringify(operatorConfigSeed(), null, 2)}
+  writeFileSync10(path17.join(configHome, "opencode.json"), `${JSON.stringify(operatorConfigSeed(), null, 2)}
 `);
-  writeFileSync10(path16.join(configHome, "AGENTS.md"), operatorGlobalSeed());
+  writeFileSync10(path17.join(configHome, "AGENTS.md"), operatorGlobalSeed());
   writeFixtureEngramShim(fixtureShimsIn(root));
   const outcome = installOpenCode({
     homeDirectory: home,
@@ -5174,11 +5344,11 @@ function stageOpenCodeFixture(input) {
   return { kind: "failed", result: `install-failed:${lastReportLine(outcome.report)}` };
 }
 function fixtureShimsIn(root) {
-  return path16.join(root, FIXTURE_SHIMS_DIRECTORY);
+  return path17.join(root, FIXTURE_SHIMS_DIRECTORY);
 }
 function writeFixtureEngramShim(directory) {
   mkdirSync10(directory, { recursive: true });
-  const shim = path16.join(directory, ENGRAM_BINARY_NAME);
+  const shim = path17.join(directory, ENGRAM_BINARY_NAME);
   writeFileSync10(shim, FIXTURE_ENGRAM_SHIM);
   chmodSync3(shim, FIXTURE_SHIM_MODE);
   return shim;
@@ -5188,14 +5358,14 @@ function fixtureEnvironmentFor(environment, home, root) {
   const shims = fixtureShimsIn(root);
   return {
     ...environment,
-    PATH: inherited === "" ? shims : `${shims}${path16.delimiter}${inherited}`,
+    PATH: inherited === "" ? shims : `${shims}${path17.delimiter}${inherited}`,
     HOME: home,
     USERPROFILE: home,
-    TMPDIR: path16.join(root, "tmp"),
-    XDG_CONFIG_HOME: path16.join(home, ".config"),
-    XDG_STATE_HOME: path16.join(home, ".local", "state"),
-    XDG_CACHE_HOME: path16.join(home, ".cache"),
-    XDG_DATA_HOME: path16.join(home, ".local", "share")
+    TMPDIR: path17.join(root, "tmp"),
+    XDG_CONFIG_HOME: path17.join(home, ".config"),
+    XDG_STATE_HOME: path17.join(home, ".local", "state"),
+    XDG_CACHE_HOME: path17.join(home, ".cache"),
+    XDG_DATA_HOME: path17.join(home, ".local", "share")
   };
 }
 function openCodeVersionStatus(host) {
@@ -5269,43 +5439,43 @@ function openCodeOperatorGlobalStatus(globalFile, seedText) {
 }
 function openCodeSkillStatus(repositoryRoot2, configHome) {
   const sources = openCodePayloadSources(repositoryRoot2);
-  const wrappers = osoPrefixedNames(sources.skills).filter((name) => isReadableRegularFile(path16.join(sources.skills, name, "SKILL.md")));
-  const divergent = wrappers.filter((name) => !treesHoldTheSameBytes(path16.join(sources.skills, name), path16.join(configHome, "skill", name)));
+  const wrappers = osoPrefixedNames(sources.skills).filter((name) => isReadableRegularFile(path17.join(sources.skills, name, "SKILL.md")));
+  const divergent = wrappers.filter((name) => !treesHoldTheSameBytes(path17.join(sources.skills, name), path17.join(configHome, "skill", name)));
   if (wrappers.length !== EXPECTED_SKILL_WRAPPER_COUNT) return `wrapper-count:${wrappers.length}`;
   if (divergent.length > 0) return namedList("divergent", divergent);
-  return treesHoldTheSameBytes(sources.sharedSkills, path16.join(configHome, "skill", "_shared")) ? "exact" : "shared-differs";
+  return treesHoldTheSameBytes(sources.sharedSkills, path17.join(configHome, "skill", "_shared")) ? "exact" : "shared-differs";
 }
 function openCodeAgentStatus(repositoryRoot2, configHome) {
   const sources = openCodePayloadSources(repositoryRoot2);
   const published = osoPrefixedMarkdownNames2(sources.agents);
-  const installed = osoPrefixedMarkdownNames2(path16.join(configHome, "agent"));
-  const divergent = published.filter((name) => !filesHoldTheSameBytes(path16.join(sources.agents, name), path16.join(configHome, "agent", name)));
+  const installed = osoPrefixedMarkdownNames2(path17.join(configHome, "agent"));
+  const divergent = published.filter((name) => !filesHoldTheSameBytes(path17.join(sources.agents, name), path17.join(configHome, "agent", name)));
   if (published.length !== installed.length) return `count:${published.length}!=${installed.length}`;
   return divergent.length === 0 ? "exact" : namedList("divergent", divergent);
 }
 function openCodeCommandStatus(repositoryRoot2, configHome) {
   const sources = openCodePayloadSources(repositoryRoot2);
   const published = osoPrefixedMarkdownNames2(sources.commands);
-  const divergent = published.filter((name) => !filesHoldTheSameBytes(path16.join(sources.commands, name), path16.join(configHome, "command", name)));
+  const divergent = published.filter((name) => !filesHoldTheSameBytes(path17.join(sources.commands, name), path17.join(configHome, "command", name)));
   if (published.length !== EXPECTED_MODE_COMMAND_COUNT) return `count:${published.length}`;
   if (divergent.length > 0) return namedList("divergent", divergent);
   for (const mode of OWNED_SKILL_MODES) {
-    const route = agentRouteOf(path16.join(configHome, "command", `${mode}.md`));
+    const route = agentRouteOf(path17.join(configHome, "command", `${mode}.md`));
     if (route !== MODE_COMMAND_AGENT_ROUTE) return `route:${mode}=${route === "" ? "empty" : route}`;
   }
   return "exact";
 }
 function openCodePluginStatus(repositoryRoot2, configHome) {
   const sources = openCodePayloadSources(repositoryRoot2);
-  if (!filesHoldTheSameBytes(sources.pluginBundle, path16.join(configHome, "plugin", "oso-code.js"))) return "entry-divergent";
-  const unbundled = directoryEntryNames2(path16.join(configHome, "plugin")).filter((name) => name.endsWith(".ts") || name === "oso");
+  if (!filesHoldTheSameBytes(sources.pluginBundle, path17.join(configHome, "plugin", "oso-code.js"))) return "entry-divergent";
+  const unbundled = directoryEntryNames2(path17.join(configHome, "plugin")).filter((name) => name.endsWith(".ts") || name === "oso");
   return unbundled.length === 0 ? "exact" : `unbundled-sources:${unbundled.length}`;
 }
 function openCodeEngramStatus(configHome) {
-  return isReadableRegularFile(path16.join(configHome, "plugins", "engram.ts")) ? "present" : "missing";
+  return isReadableRegularFile(path17.join(configHome, "plugins", "engram.ts")) ? "present" : "missing";
 }
 function openCodeRegistryStatus(home, configHome) {
-  const paths = opencodePathsFor(home, { XDG_CONFIG_HOME: path16.dirname(configHome) });
+  const paths = opencodePathsFor(home, { XDG_CONFIG_HOME: path17.dirname(configHome) });
   const targets = openCodeInstallTargets(paths);
   if (!isReadableRegularFile(targets.ownerRegistry)) return "missing";
   const owned = new Set(
@@ -5318,9 +5488,9 @@ function openCodeRegistryStatus(home, configHome) {
     targets.agents,
     targets.commands,
     targets.plugin,
-    path16.join(targets.stateBin, "oso-state"),
-    path16.join(targets.gitHooks, "pre-commit"),
-    ...directoryEntryNames2(targets.hooks).filter((name) => name.endsWith(".sh")).map((name) => path16.join(targets.hooks, name))
+    path17.join(targets.stateBin, "oso-state"),
+    path17.join(targets.gitHooks, "pre-commit"),
+    ...directoryEntryNames2(targets.hooks).filter((name) => name.endsWith(".sh")).map((name) => path17.join(targets.hooks, name))
   ];
   const missing = expected.filter((target) => installedTargetExists(target) && !owned.has(target)).map((target) => relativeToHome(target, home));
   return missing.length === 0 ? "installer-owned" : namedList("missing", missing);
@@ -5331,10 +5501,10 @@ function openCodeTrustBytesStatus(publishedHashes, configHome) {
   return reading.filesRead === OPENCODE_TRUST_FILE_COUNT ? "verified" : `covers:${reading.filesRead}`;
 }
 function openCodeConfigHomeGuardStatus(input, tree) {
-  const decoy = path16.join(tree.root, "decoy-config");
-  const decoyConfigHome = path16.join(decoy, "opencode");
+  const decoy = path17.join(tree.root, "decoy-config");
+  const decoyConfigHome = path17.join(decoy, "opencode");
   mkdirSync10(decoyConfigHome, { recursive: true });
-  writeFileSync10(path16.join(decoyConfigHome, "opencode.json"), `${DECOY_CONFIG_TEXT}
+  writeFileSync10(path17.join(decoyConfigHome, "opencode.json"), `${DECOY_CONFIG_TEXT}
 `);
   const outcome = installOpenCode({
     homeDirectory: tree.home,
@@ -5347,13 +5517,13 @@ function openCodeConfigHomeGuardStatus(input, tree) {
     installGitHook: false
   });
   if (outcome.exitCode !== 2) return `exit:${outcome.exitCode}`;
-  if (readFileSync15(path16.join(decoyConfigHome, "opencode.json"), "utf8").trim() !== DECOY_CONFIG_TEXT) return "overwrote-the-decoy-config";
+  if (readFileSync15(path17.join(decoyConfigHome, "opencode.json"), "utf8").trim() !== DECOY_CONFIG_TEXT) return "overwrote-the-decoy-config";
   const entries = directoryEntryNames2(decoyConfigHome).length;
   return entries === 1 ? "refused" : `wrote-into-the-decoy:${entries}`;
 }
 function checkPluginWorkspaceBar(report2, input) {
-  const workspace = path16.join(input.repositoryRoot, "opencode");
-  if (!isReadableRegularFile(path16.join(workspace, "package.json")) || !onPath(input.environment, "npx")) {
+  const workspace = path17.join(input.repositoryRoot, "opencode");
+  if (!isReadableRegularFile(path17.join(workspace, "package.json")) || !onPath(input.environment, "npx")) {
     report2.skip("OpenCode plugin typecheck \u2014 npx or opencode/package.json is not available");
   } else {
     report2.check("OpenCode plugin typecheck", "clean", ranCleanly("npx", ["tsc", "--noEmit"], workspace, input.environment) ? "clean" : "fail");
@@ -5365,15 +5535,15 @@ function checkPluginWorkspaceBar(report2, input) {
   report2.check("OpenCode plugin test suite", "pass", ranCleanly("node", ["--test"], workspace, input.environment) ? "pass" : "fail");
 }
 function checkRepositoryShellSyntax(report2, input) {
-  const unparseable = shellSourcesUnder(input.repositoryRoot).filter((source) => !ranCleanly("bash", ["-n", source], input.repositoryRoot, input.environment)).map((source) => path16.basename(source));
+  const unparseable = shellSourcesUnder(input.repositoryRoot).filter((source) => !ranCleanly("bash", ["-n", source], input.repositoryRoot, input.environment)).map((source) => path17.basename(source));
   report2.check("repository shell syntax", "clean", unparseable.length === 0 ? "clean" : namedList("bad", unparseable));
 }
 function shellSourcesUnder(repositoryRoot2) {
   const globbed = SHELL_SYNTAX_SOURCES.flatMap((source) => {
-    const directory = path16.join(repositoryRoot2, ...source.directory);
-    return directoryEntryNames2(directory).filter((name) => name.endsWith(source.suffix)).map((name) => path16.join(directory, name));
+    const directory = path17.join(repositoryRoot2, ...source.directory);
+    return directoryEntryNames2(directory).filter((name) => name.endsWith(source.suffix)).map((name) => path17.join(directory, name));
   });
-  const named = SHELL_SYNTAX_EXTRA_SOURCES.map((segments) => path16.join(repositoryRoot2, ...segments));
+  const named = SHELL_SYNTAX_EXTRA_SOURCES.map((segments) => path17.join(repositoryRoot2, ...segments));
   return [...globbed, ...named].filter(isReadableRegularFile);
 }
 function readConfigDocument(configFile) {
@@ -5426,18 +5596,18 @@ function treesHoldTheSameBytes(published, installed) {
   const installedFiles = relativeFilesUnder2(installed);
   if (publishedFiles.length !== installedFiles.length) return false;
   return publishedFiles.every(
-    (relative, index) => relative === installedFiles[index] && filesHoldTheSameBytes(path16.join(published, relative), path16.join(installed, relative))
+    (relative, index) => relative === installedFiles[index] && filesHoldTheSameBytes(path17.join(published, relative), path17.join(installed, relative))
   );
 }
 function relativeFilesUnder2(directory) {
   if (!isDirectory(directory)) return [];
-  return readdirSync6(directory, { recursive: true }).map((entry) => entry.toString()).filter((relative) => isReadableRegularFile(path16.join(directory, relative))).sort();
+  return readdirSync6(directory, { recursive: true }).map((entry) => entry.toString()).filter((relative) => isReadableRegularFile(path17.join(directory, relative))).sort();
 }
 function installedTargetExists(target) {
   return isReadableRegularFile(target) || isDirectory(target);
 }
 function relativeToHome(target, home) {
-  return target.startsWith(`${home}${path16.sep}`) ? target.slice(home.length + 1) : target;
+  return target.startsWith(`${home}${path17.sep}`) ? target.slice(home.length + 1) : target;
 }
 function directoryEntryNames2(directory) {
   try {
@@ -5450,7 +5620,7 @@ function osoPrefixedNames(directory) {
   return directoryEntryNames2(directory).filter((name) => name.startsWith("oso-"));
 }
 function osoPrefixedMarkdownNames2(directory) {
-  return osoPrefixedNames(directory).filter((name) => name.endsWith(".md") && isReadableRegularFile(path16.join(directory, name)));
+  return osoPrefixedNames(directory).filter((name) => name.endsWith(".md") && isReadableRegularFile(path17.join(directory, name)));
 }
 function namedList(verdict, names) {
   return `${verdict}:${names.map((name) => ` ${name}`).join("")}`;
@@ -5517,12 +5687,15 @@ var FLAGS_PER_HOST_AND_VERB = {
 var EVERY_DECLARED_FLAG = new Set(
   HOSTS.flatMap((host) => VERBS.flatMap((verb) => FLAGS_PER_HOST_AND_VERB[host][verb].flags.map((flag) => flag.name)))
 );
+var PROFILE_VERB = "profile";
 var USAGE = `usage: oso <install|verify|repair|purge> --host <claude|codex|opencode> [flags]
+       oso ${PROFILE_VERB} show | set <normal|strong|custom> [--applier|--verifier|--judges <default|strong>[:<model>]]
 
 arguments, per host and verb:
 ${HOSTS.flatMap((host) => VERBS.map((verb) => `  ${host.padEnd(9)} ${verb.padEnd(8)} ${argumentSummary(FLAGS_PER_HOST_AND_VERB[host][verb])}`)).join("\n")}
 
 A flag offered to a host and verb that does not take it is refused, never ignored.
+The ${PROFILE_VERB} verb takes no --host: one profile spans every host, and only a custom names its roles.
 `;
 var UsageError = class extends Error {
 };
@@ -5554,10 +5727,21 @@ function main(argv, repositoryRoot2) {
   }
 }
 function dispatch(argv, repositoryRoot2) {
+  const outcome = argv[0] === PROFILE_VERB ? runProfile(argv.slice(1), process.cwd()) : runHostVerb(argv, repositoryRoot2);
+  process.stdout.write(outcome.report);
+  return outcome.exitCode;
+}
+function runProfile(argv, workingDirectory) {
+  const [subverb, name, ...roleTokens] = argv;
+  if (subverb === "show" && argv.length === 1) return showProfile(workingDirectory);
+  if (subverb === "set" && name !== void 0) return setProfile(workingDirectory, name, roleTokens);
+  throw new UsageError();
+}
+function runHostVerb(argv, repositoryRoot2) {
   const parsed = parseArgv(argv);
-  const homeDirectory = homeDirectoryFrom(process.platform, process.env);
+  const homeDirectory2 = homeDirectoryFrom(process.platform, process.env);
   const context = {
-    homeDirectory,
+    homeDirectory: homeDirectory2,
     repositoryRoot: repositoryRoot2,
     environment: process.env,
     platform: process.platform,
@@ -5565,9 +5749,7 @@ function dispatch(argv, repositoryRoot2) {
     installImpeccable: !parsed.flags.has("--no-impeccable"),
     installGitHook: !parsed.flags.has("--no-git-hook")
   };
-  const outcome = runHost(parsed, context);
-  process.stdout.write(outcome.report);
-  return outcome.exitCode;
+  return runHost(parsed, context);
 }
 function runHost(parsed, context) {
   switch (parsed.host) {
