@@ -287,7 +287,7 @@
     "item": "State belongs to the repository and outlives this session",
     "sourceFile": "core/src/prose/skills/debug/references/codex.md",
     "retired": "What the state is keyed by is settled and is host-neutral: the state file is the REPOSITORY's, resolved from the directory the command runs in.",
-    "reason": "The ownership half already lives at debug/SKILL.md:52 (\"State belongs to the repository and outlives this session\"). DEBUG never cuts a worktree or runs a PARALLEL wave — debug/SKILL.md carries zero \"worktree\"/\"wave\" mentions — so the resolved-from-cwd detail answers no question this flow's reader has; dropped rather than appended, per the PARALLEL-wave load-bearing test",
+    "reason": "The ownership half already lives at debug/SKILL.md:52 (\"State belongs to the repository and outlives this session\"). DEBUG never cuts a worktree or runs a PARALLEL wave — debug/SKILL.md:56 says so directly (\"since this flow cuts none\"), and its one \"worktree\" mention names the WORKTREE PATH coordinate rather than describing a cut one, and it carries zero \"wave\" mentions — so the resolved-from-cwd detail answers no question this flow's reader has; dropped rather than appended, per the PARALLEL-wave load-bearing test",
     "home": { "kind": "prose", "ref": "plugin/skills/debug/SKILL.md" }
   },
   {
@@ -389,9 +389,201 @@
   {
     "axis": "prose",
     "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "plugin/skills/plan/references/claude.md",
+    "retired": "\"; this mode supplies only the PLAN wiring indexed by the neutral matrix.\" — the WHOLE trailing clause, not just \" indexed by the neutral matrix\" as every sibling row dropped",
+    "reason": "front-surface.md's own matrix now states beside itself that each mode supplies only its own column, which absorbs the \"indexed by the neutral matrix\" pointer the same way it does for every sibling row. But unlike DEBUG's and QUICK's Claude bindings (rows above, which keep \"this mode supplies only the DEBUG/QUICK wiring\" as their own sentence) and unlike PLAN's own Codex and OpenCode bindings (which still carry \"this mode supplies only the PLAN wiring\" verbatim), this file's Front-surface binding section states no PLAN-wiring fact at all — a larger retirement than its siblings'. This row records the pointer-restatement half honestly; the wiring-fact loss has no declared home and this row does not claim to restore it",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
     "sourceFile": "plugin/skills/quick/references/claude.md",
     "retired": "\" indexed by the neutral matrix\" (from \"this mode supplies only the QUICK wiring indexed by the neutral matrix\")",
     "reason": "front-surface.md's own matrix now states beside itself that each mode supplies only its own column; naming the matrix again per mode restated that pointer instead of using it. The DEBUG/PLAN/QUICK wiring fact and the argument-count/host-binding detail beside it, genuinely per-mode, stayed",
     "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "The `triage` judge compares a red check against WAVE START, never CHANGE BASE — a breakage an earlier wave already landed is background the wave in flight never introduced.",
+    "sourceFile": "plugin/skills/plan/SKILL.md",
+    "retired": "`oso-code:triage` compares a red check against WAVE START, never CHANGE BASE — a breakage an earlier wave already landed is background the wave in flight never introduced.",
+    "reason": "C5's close (G10 finding A1) found the shared flow body naming Claude's own skill spelling for the triage judge — `_shared/parallel.md` already invokes the same judge by the host-neutral name ('INVOKE the triage judge'), so plan/SKILL.md's own coordinate-naming paragraph is reworded the same way. Each host's own binding already carries its own spelling: Claude's plan/references/claude.md:61 already reads 'the triage judge | `oso-code:triage`'; Codex's shared codex.md Delegated-roles table already reads 'triage | `oso-triage`' — a custom-role spawn, not the `$oso-code:` skill-namespace form, since Codex routes judges as custom roles, never as skills, so this is a correction to that predicted spelling; OpenCode's generic 'Native agent files' description already covers every judge, triage included, by its `opencode/agents/<role.id>.md` filename with no separate table needed. No binding required an addition",
+    "home": { "kind": "prose", "ref": "plugin/skills/plan/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "run inside the host's read-only planning mode where it has one, as the reference file beside this one spells it — nothing before §6 writes code.",
+    "sourceFile": "plugin/skills/plan/SKILL.md",
+    "retired": "Phases 1–5, through §5's delivered approval document, run inside Plan Mode — read-only, nothing before §6 writes code. Enter it before phase 1, stay through delivery. A ROADMAP child's own re-entry into Plan Mode is the host's call, not this rule's — its reference file has the answer, read before phase 1.",
+    "reason": "C5's close (G10 finding A2) found OpenCode's own binding (plan/references/opencode.md:13, source core/src/prose/skills/plan/references/opencode.md) contradicting 'Plan Mode' as a universal mechanism: phases 1-5 run on OpenCode's `build` agent, which is not a distinct read-only mode. The RULE stays (nothing before §6 writes code); the mechanism name is replaced with a host-neutral clause pointing at each host's own reference file. 'Plan Mode' survives nowhere else in the flow body — only the frontmatter's own Claude-only description (line 3, outside flowBody() per render.ts) still names it, which is Claude's private metadata, never rendered for another host",
+    "home": { "kind": "prose", "ref": "plugin/skills/plan/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Every skill file that reaches one of them points here rather than restating it.",
+    "sourceFile": "plugin/skills/_shared/references/claude.md",
+    "retired": "Every skill file that reaches one of them points here rather than restating it.",
+    "reason": "meta text, restated in three files — plugin/skills/_shared/references/claude.md, core/src/prose/shared/codex.md and core/src/prose/shared/opencode.md all opened with this identical sentence about the three binding files' own role (Decision 73, C5's close finding B item 1). It is not a rule any flow states, so no flow file can serve as its home, and no host-neutral shared file (front-surface.md, reporting.md, rubric.md, didactic.md, unattended.md, parallel.md) states it either — searched and none found. Retired at all three sites rather than given an invented home",
+    "home": { "kind": "none" }
+  },
+  {
+    "axis": "prose",
+    "item": "Every skill file that reaches one of them points here rather than restating it.",
+    "sourceFile": "core/src/prose/shared/codex.md",
+    "retired": "Every skill file that reaches one of them points here rather than restating it.",
+    "reason": "meta text, restated in three files — see the claude.md sibling row for the full search; this is the Codex source's own copy of the same sentence, rendered to plugin/skills/_shared/references/codex.md",
+    "home": { "kind": "none" }
+  },
+  {
+    "axis": "prose",
+    "item": "Every skill file that reaches one of them points here rather than restating it.",
+    "sourceFile": "core/src/prose/shared/opencode.md",
+    "retired": "Every skill file that reaches one of them points here rather than restating it.",
+    "reason": "meta text, restated in three files — see the claude.md sibling row for the full search; this is the OpenCode source's own copy of the same sentence, rendered to plugin/skills/_shared/references/opencode.md",
+    "home": { "kind": "none" }
+  },
+  {
+    "axis": "prose",
+    "item": "Four things live here and nowhere else",
+    "sourceFile": "plugin/skills/_shared/references/claude.md",
+    "retired": "This binds the platform-shaped edges of `../front-surface.md`; it does not restate that file's trigger, pin recipe, audit exit bar or absence policy.",
+    "reason": "Decision 73 (C5's close finding B item 2): this sentence restated front-surface.md's own opening declaration that the trigger, pin recipe, audit exit bar and absence policy live there and nowhere else. Retired from all three shared-layer binding files; the rule survives once at its own home",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Four things live here and nowhere else",
+    "sourceFile": "core/src/prose/shared/codex.md",
+    "retired": "This binds the platform-shaped edges of `../front-surface.md`; it does not restate that file's trigger, pin recipe, audit exit bar or absence policy.",
+    "reason": "Decision 73 (C5's close finding B item 2), same restatement retired from the Codex source, rendered to plugin/skills/_shared/references/codex.md — see the claude.md sibling row",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Four things live here and nowhere else",
+    "sourceFile": "core/src/prose/shared/opencode.md",
+    "retired": "This binds the platform-shaped edges of `../front-surface.md`; it does not restate that file's trigger, pin recipe, audit exit bar or absence policy.",
+    "reason": "Decision 73 (C5's close finding B item 2), same restatement retired from the OpenCode source, rendered to plugin/skills/_shared/references/opencode.md — see the claude.md sibling row",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "This is the single source for the policy; the modes point here.",
+    "sourceFile": "plugin/skills/_shared/references/claude.md",
+    "retired": "continue without the design bar, and record the gap where the invoking mode requires",
+    "reason": "Decision 73 (C5's close finding B item 3): the absence-remedy bullet's trailing clause restated front-surface.md's own Absence policy section, which already says it is the single source and the modes point here. Only the trailing clause was cut; Claude's own two-step `/plugin` remedy before it, genuinely host-specific, stayed. Claude's copy of this clause carried an extra comma before \"and\" that Codex's and OpenCode's did not — a punctuation-level divergence, immaterial to the retirement",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "This is the single source for the policy; the modes point here.",
+    "sourceFile": "core/src/prose/shared/codex.md",
+    "retired": "continue without the design bar and record the gap where the invoking mode requires",
+    "reason": "Decision 73 (C5's close finding B item 3), same restatement retired from the Codex source, rendered to plugin/skills/_shared/references/codex.md; the `node bootstrap/oso.js install --host codex` remedy and the never-repeat-Claude's-commands / never-use-a-discovered-cache-path clauses around it, genuinely host-specific, stayed — see the claude.md sibling row",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "This is the single source for the policy; the modes point here.",
+    "sourceFile": "core/src/prose/shared/opencode.md",
+    "retired": "continue without the design bar and record the gap where the invoking mode requires",
+    "reason": "Decision 73 (C5's close finding B item 3), same restatement retired from the OpenCode source, rendered to plugin/skills/_shared/references/opencode.md; the `node bootstrap/oso.js install --host opencode` remedy and the never-use-a-discovered-cache-path clause around it, genuinely host-specific, stayed — see the claude.md sibling row",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "it is resolved from the npm channel by this recipe, the single source for it",
+    "sourceFile": "plugin/skills/_shared/references/claude.md",
+    "retired": "; the npm CLI numeral comes from the neutral pin recipe.",
+    "reason": "Decision 73 (C5's close finding B item 4): the numeral-record bullet's trailing pointer restated front-surface.md's own pin-recipe declaration that the npm CLI numeral is resolved from the npm channel by that recipe, the single source for it. Only the pointer was cut; the numeral SOURCE before it (`claude plugin list`), genuinely host-specific, stayed",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "it is resolved from the npm channel by this recipe, the single source for it",
+    "sourceFile": "core/src/prose/shared/codex.md",
+    "retired": "; the npm CLI numeral still comes from the neutral pin recipe.",
+    "reason": "Decision 73 (C5's close finding B item 4), same restatement retired from the Codex source, rendered to plugin/skills/_shared/references/codex.md; the numeral SOURCE before it (the mounted `SKILL.md`'s `version:` field), genuinely host-specific, stayed — see the claude.md sibling row",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "it is resolved from the npm channel by this recipe, the single source for it",
+    "sourceFile": "core/src/prose/shared/opencode.md",
+    "retired": "; the npm CLI numeral still comes from the neutral pin recipe.",
+    "reason": "Decision 73 (C5's close finding B item 4), same restatement retired from the OpenCode source, rendered to plugin/skills/_shared/references/opencode.md; the numeral SOURCE before it (the mounted `SKILL.md`'s `version:` field), genuinely host-specific, stayed — see the claude.md sibling row",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "deny-pattern add <pattern>",
+    "sourceFile": "plugin/skills/_shared/unattended.md",
+    "retired": "Write it through SHELL, this flow's own hands, creating that directory with `mkdir -p` before the append, since no `oso-state` command writes that file or makes the directory it sits in.",
+    "reason": "C5-D2 finding C1: core/src/state/cli.ts's `deny-pattern` branch (runDenyPattern) now writes the patterns file and creates its directory (mkdirSync around :220), which the retired sentence claimed no `oso-state` command did. Reworded to name the verb directly: `oso-state deny-pattern add <pattern>` creates the directory and appends one pattern",
+    "home": { "kind": "prose", "ref": "core/src/state/cli.ts" }
+  },
+  {
+    "axis": "prose",
+    "item": "never discover a default branch",
+    "sourceFile": "plugin/skills/debt-sweep/SKILL.md",
+    "retired": "Otherwise: diff against the repository's default branch, plus uncommitted changes.",
+    "reason": "C5-D2 finding C3: debt-sweep's own default-branch fallback contradicted security-pass/SKILL.md:28's rule ('never discover a default branch, never assume a remote exists'). Ruled that security-pass's rule wins on correctness, not consistency — a guessed default branch audits the wrong diff — so debt-sweep's Scope section now falls back to the uncommitted-changes-only scope its 'uncommitted changes' clause already computed on the base-ref-given branch, with no branch-guessing at all",
+    "home": { "kind": "prose", "ref": "plugin/skills/security-pass/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "`HEAD` is the BASE REF",
+    "sourceFile": "plugin/skills/debug/SKILL.md",
+    "retired": "with no base ref in its ARGUMENTS, since debug tracks no branch model, which drops the sweep onto its own Scope rule",
+    "reason": "C5-D2 finding C3: debug's own close-time debt-sweep invocation (§5 step 1) passed no base ref, relying on debt-sweep's now-removed default-branch fallback. Reworded to pass `HEAD` explicitly — the same BASE REF coordinate §4 step 1 already establishes for this flow's own applier/verifier launches — which keeps the sweep on its own base-ref Scope rule rather than guessing one",
+    "home": { "kind": "prose", "ref": "plugin/skills/debug/SKILL.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "plugin/skills/debug/references/claude.md",
+    "retired": "This mode supplies only the DEBUG wiring, which still invokes none of the three arguments.",
+    "reason": "C5's close ran a three-way diff instrument across every skill's host bindings and found this sentence byte-identical across all three of debug's — S5e's own regex matched only \" indexed by the neutral matrix\", and this clause never carried that string, so the enumeration missed the clause the string used to sit inside. It restates exactly what front-surface.md's own column rule already forbids restating, and DEBUG's column is already spelled there in full: the Design-docs check row (\"never runs `init` or `document`\") and the Audit loop row (\"none — §4 step 2 makes detect the design gate instead\") between them cover all three arguments the sentence claims none of are invoked. Cut outright rather than shortened, the same way plan's own Claude binding already lost its wiring-fact sentence entirely rather than keeping one",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "core/src/prose/skills/debug/references/codex.md",
+    "retired": "This mode supplies only the DEBUG wiring, which still invokes none of the three arguments.",
+    "reason": "Same restatement retired from the Codex source, rendered to codex/skills/debug/references/codex.md — see the claude.md sibling row for the full finding",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "Each mode supplies only its own column of that table — never another mode's, and never a restatement of what its own pointer already names.",
+    "sourceFile": "core/src/prose/skills/debug/references/opencode.md",
+    "retired": "This mode supplies only the DEBUG wiring, which still invokes none of the three arguments.",
+    "reason": "Same restatement retired from the OpenCode source, rendered to opencode/skills/oso-debug/references/opencode.md — see the claude.md sibling row for the full finding",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/front-surface.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "The WORKTREE ROOT is your host's and the reference file spells it — a path spelled any other way is a path the teardown never finds.",
+    "sourceFile": "plugin/skills/roadmap/references/claude.md",
+    "retired": "- **The worktree root** — `<worktree root>`, the SECOND place §4's bar reads before every arming, is the path that file's own **The worktree root** section spells.",
+    "reason": "C5's close ran a three-way diff instrument across every skill's host bindings and found this bullet byte-identical across all three of roadmap's. `_shared/parallel.md`'s own \"Cut one worktree per slice\" paragraph already states the same path fact — the worktree root is the host's own and the reference file spells it — so the home pre-existed and nothing new was authored there; the bullet is cut rather than reworded, since a reworded pointer repeated verbatim in all three bindings would only recreate the same identical triple. The local \"§4 reaches for N host spellings\" sentence and its \"READ … sections\" close are adjusted in this file to the two spellings (state command, unattended rails) that remain. `plan`'s own three per-host `## The worktree root` sections, which spell the actual per-host path, are untouched — they are genuinely host-specific and were never part of this retirement",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/parallel.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "The WORKTREE ROOT is your host's and the reference file spells it — a path spelled any other way is a path the teardown never finds.",
+    "sourceFile": "core/src/prose/skills/roadmap/references/codex.md",
+    "retired": "- **The worktree root** — `<worktree root>`, the SECOND place §4's bar reads before every arming, is the path that file's own **The worktree root** section spells.",
+    "reason": "Same bullet retired from the Codex source, rendered to codex/skills/roadmap/references/codex.md — see the claude.md sibling row for the full finding. Codex's own list had only this bullet beside the state command (Codex chains rather than running unattended, so it never carried an unattended-rails bullet), so removing it leaves one spelling instead of two, and the local intro/close sentences are reworded to the singular",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/parallel.md" }
+  },
+  {
+    "axis": "prose",
+    "item": "The WORKTREE ROOT is your host's and the reference file spells it — a path spelled any other way is a path the teardown never finds.",
+    "sourceFile": "core/src/prose/skills/roadmap/references/opencode.md",
+    "retired": "- **The worktree root** — `<worktree root>`, the SECOND place §4's bar reads before every arming, is the path that file's own **The worktree root** section spells.",
+    "reason": "Same bullet retired from the OpenCode source, rendered to opencode/skills/oso-roadmap/references/opencode.md — see the claude.md sibling row for the full finding",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/parallel.md" }
   }
 ]

@@ -31,7 +31,7 @@ Forked judges and operational agents are the exception to inline reading: launch
 
 ## Front-surface binding
 
-When `../_shared/front-surface.md`'s trigger fires, READ `../_shared/references/opencode.md`'s **Front-surface binding** section NOW. It is the single OpenCode binding for Impeccable's mounted path, all three argument routes, package-version record, agent route and absence remedy. This mode supplies only the DEBUG wiring, which still invokes none of the three arguments.
+When `../_shared/front-surface.md`'s trigger fires, READ `../_shared/references/opencode.md`'s **Front-surface binding** section NOW. It is the single OpenCode binding for Impeccable's mounted path, all three argument routes, package-version record, agent route and absence remedy.
 
 ## Reporting binding
 

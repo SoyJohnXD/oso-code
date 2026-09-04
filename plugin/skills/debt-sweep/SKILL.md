@@ -17,7 +17,7 @@ Final quality judge over a whole change. Functionality is already confirmed — 
 Determine the changed files:
 
 - If a base ref was given: `git diff --name-only <base>...HEAD` plus uncommitted changes.
-- Otherwise: diff against the repository's default branch, plus uncommitted changes.
+- Otherwise: uncommitted changes — staged, unstaged, and untracked — are the whole scope.
 
 Only these files are in scope. Never touch anything else.
 

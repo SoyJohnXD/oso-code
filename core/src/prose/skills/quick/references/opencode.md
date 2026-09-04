@@ -6,7 +6,7 @@ The adapter makes no claim about whether OpenCode preserves operator-facing text
 
 ## Question rounds
 
-The tool is `question`, and it is available only when the operator is watching the TUI: headless sessions deny `question` by default. Its schema accepts several questions in one call — the operator navigates between them before submitting all answers — so a round holds 3 questions at a time. A fourth question starts the next round; it never rides an invalid call and never gets dropped.
+The tool is `question`, and it is available only when the operator is watching the TUI: headless sessions deny `question` by default. Its schema accepts several questions in one call — the operator navigates between them before submitting all answers — so the tool holds up to 3 questions at a time. This flow's own round rides inside that capacity asking exactly one, per §1's `ask exactly one question`; it never rides an invalid call and never gets dropped.
 
 ## Shared-file paths
 

@@ -11,7 +11,7 @@
     "heading": "The state command and the worktree root — routed to `plan.md`, not restated here",
     "disposition": "merged",
     "destinationFile": "plugin/skills/roadmap/references/claude.md",
-    "destinationHeading": "The state command and the worktree root — with the unattended rails, routed to `plan.md`, not restated here"
+    "destinationHeading": "The state command and the unattended rails — routed to `plan.md`, not restated here"
   },
   {
     "sourceFile": "plugin/skills/_shared/platform/codex/debt-sweep.md",
@@ -249,7 +249,7 @@
     "heading": "The state command and the worktree root — routed to `plan.md`, not restated here",
     "disposition": "merged",
     "destinationFile": "codex/skills/roadmap/references/codex.md",
-    "destinationHeading": "The state command and the worktree root — routed to `plan.md`, not restated here"
+    "destinationHeading": "The state command — routed to `plan.md`, not restated here"
   },
   {
     "sourceFile": "plugin/skills/_shared/platform/codex/roadmap.md",
@@ -543,7 +543,7 @@
     "heading": "The state command and the worktree root — with the unattended rails, routed to `plan.md`, not restated here",
     "disposition": "merged",
     "destinationFile": "opencode/skills/oso-roadmap/references/opencode.md",
-    "destinationHeading": "The state command and the worktree root — with the unattended rails, routed to `plan.md`, not restated here"
+    "destinationHeading": "The state command and the unattended rails — routed to `plan.md`, not restated here"
   },
   {
     "sourceFile": "plugin/skills/_shared/platform/opencode/roadmap.md",

@@ -19,9 +19,9 @@ The neutral body names each one by role; here they carry the plugin prefix, and 
 | The body says | Here it is | Reached by |
 | --- | --- | --- |
 | the PLAN mode | `/oso-code:plan` | the operator invokes it — a mode is never model-invoked |
-| the DEBUG mode | `oso-code:debug` | the operator invokes it — a mode is never model-invoked |
-| the quality-pass judge | `oso-code:quality-pass` | the Skill tool |
-| the security-pass judge | `oso-code:security-pass` | the Skill tool; its frontmatter is what forks it |
+| the DEBUG mode | `/oso-code:debug` | the operator invokes it — a mode is never model-invoked |
+| the quality-pass judge | `/oso-code:quality-pass` | the Skill tool |
+| the security-pass judge | `/oso-code:security-pass` | the Skill tool; its frontmatter is what forks it |
 
 The delegate the close names — `oso-applier` — is an agent, not a skill: reach it with the Agent tool, under the wait rule below.
 

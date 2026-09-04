@@ -1,6 +1,6 @@
 # Shared layer — Claude Code
 
-Host binding for the shared concerns no single wrapper binds: how a delegation's report arrives on this host, `../front-surface.md`'s wiring, and `../reporting.md`'s delivery. Every skill file that reaches one of them points here rather than restating it.
+Host binding for the shared concerns no single wrapper binds: how a delegation's report arrives on this host, `../front-surface.md`'s wiring, and `../reporting.md`'s delivery.
 
 ## Making a launch wait
 
@@ -14,14 +14,12 @@ This governs every launch made through the Agent tool.
 
 ## Front-surface binding
 
-This binds the platform-shaped edges of `../front-surface.md`; it does not restate that file's trigger, pin recipe, audit exit bar or absence policy.
-
 - The mode labels are `/plan`, `/quick` and `/debug`.
 - Invoke the installed `impeccable:impeccable` skill through the Skill tool, passing `init`, `document` or `audit <touched surfaces>` as the explicit argument.
 - The filesystem payload to an applier uses the installed Impeccable skill's `SKILL.md` and `reference/` playbook directory — read, never invoked.
-- Record the independent installed-plugin numeral from `claude plugin list`; the npm CLI numeral comes from the neutral pin recipe.
+- Record the independent installed-plugin numeral from `claude plugin list`.
 - Route design findings to the `oso-applier` agent through the Agent tool in fresh context, under the **Making a launch wait** rule above.
-- When Impeccable is absent, give the two-step remedy `/plugin marketplace add pbakaus/impeccable` then `/plugin install impeccable@impeccable`, continue without the design bar, and record the gap where the invoking mode requires.
+- When Impeccable is absent, give the two-step remedy `/plugin marketplace add pbakaus/impeccable` then `/plugin install impeccable@impeccable`.
 
 ## The native card is not the report
 

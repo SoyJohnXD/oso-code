@@ -1,6 +1,6 @@
 # Didactic register
 
-Shared definition of the **didactic** register for the skills that invoke it — PLAN and QUICK, at their teaching moments and didactic-depth responses.
+Shared definition of the **didactic** register for the skills that invoke it — PLAN, QUICK and DEBUG, at their teaching moments and didactic-depth responses.
 
 A response is didactic when it makes these moves:
 
