@@ -27,7 +27,7 @@ The delegate the close names — `oso-applier` — is an agent, not a skill: rea
 
 ## Delegation-wait binding
 
-READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Making a launch wait** section NOW. It is the single Claude Code binding for how a delegation's report arrives on this host and for the marker every delegation arms. Here that rule reaches the one launch this mode makes: the close's applier.
+READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Making a launch wait** section NOW. It is the single Claude Code binding for how a delegation's report arrives on this host and for the marker every delegation arms. Here that rule reaches the one launch this mode makes: the close's applier. Its **The model a launch carries** section binds the `model` parameter that launch passes, and is read in the same breath.
 
 ## Front-surface binding
 

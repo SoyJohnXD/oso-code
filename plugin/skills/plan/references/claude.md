@@ -61,11 +61,11 @@ The marker is the flow's to write, never a hook's, exactly where `${CLAUDE_SKILL
 | the triage judge | `oso-code:triage` | the Skill tool; its frontmatter is what forks it |
 | the security-pass judge | `oso-code:security-pass` | the Skill tool; its frontmatter is what forks it |
 
-The three delegates the flow names — `oso-applier`, `oso-verifier`, `oso-integrator` — are agents, reached with the Agent tool under the wait rule below. An applier has no Skill tool of its own, which is why §6 step 2 hands it Impeccable's files as PATHS to read rather than a skill to invoke.
+The three delegates the flow names — `oso-applier`, `oso-verifier`, `oso-integrator` — are agents, reached with the Agent tool under the wait rule below, each launch carrying that tool's own `model` parameter. An applier has no Skill tool of its own, which is why §6 step 2 hands it Impeccable's files as PATHS to read rather than a skill to invoke.
 
 ## Delegation-wait binding
 
-READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Making a launch wait** section NOW, read ALWAYS by this flow. It is the single Claude Code binding for how a delegation's report arrives on this host and for the marker every delegation arms — reaching §6's applier, verifier and integrator, §2's exploration subagents, the integration gate's verifier, a red slice's relaunched applier, and §7's debt-cleanup applier.
+READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Making a launch wait** section NOW, read ALWAYS by this flow. It is the single Claude Code binding for how a delegation's report arrives on this host and for the marker every delegation arms — reaching §6's applier, verifier and integrator, §2's exploration subagents, the integration gate's verifier, a red slice's relaunched applier, and §7's debt-cleanup applier. Its **The model a launch carries** section binds what that `model` parameter is set to, and is read in the same breath.
 
 ## Front-surface binding
 
