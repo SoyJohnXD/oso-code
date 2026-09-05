@@ -229,15 +229,21 @@ export class StateSandbox {
     return path.join(this.home, ...WORKTREES.split("/"), sessionId);
   }
 
-  seedGitRepository(relativePath: string): string {
+  seedGitRepository(relativePath: string, committed: Readonly<Record<string, string>> = {}): string {
     const repository = path.join(this.home, relativePath);
     mkdirSync(repository, { recursive: true });
     this.git(repository, ["init", "-q"]);
     this.git(repository, ["config", "user.email", "tests@oso-code.invalid"]);
     this.git(repository, ["config", "user.name", "oso-code tests"]);
     this.git(repository, ["config", "commit.gpgsign", "false"]);
+    this.git(repository, ["config", "diff.mnemonicPrefix", "true"]);
     writeFileSync(path.join(repository, SEEDED_COMMIT_FILE), SEEDED_COMMIT_CONTENT);
-    this.git(repository, ["add", SEEDED_COMMIT_FILE]);
+    for (const [committedPath, content] of Object.entries(committed)) {
+      const target = path.join(repository, committedPath);
+      mkdirSync(path.dirname(target), { recursive: true });
+      writeFileSync(target, content);
+    }
+    this.git(repository, ["add", "-A"]);
     this.git(repository, ["commit", "-qm", "base"]);
     return repository;
   }
@@ -263,12 +269,12 @@ export class StateSandbox {
   run(
     subject: StateSubject,
     argv: readonly string[],
-    options: { stdin?: string; env?: Readonly<Record<string, string>> } = {},
+    options: { stdin?: string; env?: Readonly<Record<string, string>>; cwd?: string } = {},
   ): SubjectRun {
     const [command, ...leading] = subject.command;
     if (command === undefined) throw new Error(`subject ${subject.name} names no command`);
     const result = spawnSync(command, [...leading, ...argv.map((argument) => this.expand(argument))], {
-      cwd: this.cwd,
+      cwd: options.cwd ?? this.cwd,
       input: options.stdin ?? "",
       env: this.subjectEnvironment(options.env ?? {}),
       encoding: "utf8",

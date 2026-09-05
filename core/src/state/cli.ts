@@ -1,5 +1,8 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { abstractionScanReport } from "../scan/abstraction-scan.ts";
+import { ScanFailure } from "../scan/changed-lines.ts";
+import { commentScanReport } from "../scan/comment-scan.ts";
 import { ereReads } from "../shell/ere.ts";
 import * as handoff from "./handoff.ts";
 import * as plan from "./plan.ts";
@@ -22,10 +25,17 @@ const USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state handoff publish --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --hook-session <id>
        oso-state handoff wait --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --timeout <seconds>
        oso-state handoff consume --slice <id> --attempt <n> --agent-id <id> --agent-type <type>
+       oso-state scan comments <ref>
+       oso-state scan abstractions <ref>
 
 The SubagentStop hook publishes a provenance receipt, never a verdict. wait is
 bounded and consume is one-shot. Handoff attempts start at 1 and timeout must
 be between 0 and 600 seconds.
+
+scan reads the working directory's own repository, reports every hit on stdout
+and exits 0 whether or not it found any. comments flags the inline comments the
+diff since <ref> adds; abstractions flags the exports it adds that fewer than
+two use sites reach.
 `;
 
 class UsageError extends Error {}
@@ -63,7 +73,7 @@ export function main(argv: readonly string[]): number {
 
 function verbOf(argv: readonly string[]): string {
   const first = argv[0];
-  if (first === "journal" || first === "handoff") return first;
+  if (first === "journal" || first === "handoff" || first === "scan") return first;
   return argv[2] ?? "";
 }
 
@@ -100,6 +110,10 @@ function report(error: unknown, verb: string): number {
     process.stderr.write(`oso-state: handoff: ${error.message}\n`);
     return 1;
   }
+  if (error instanceof ScanFailure) {
+    process.stderr.write(`oso-state: scan: ${error.message}\n`);
+    return 1;
+  }
   const message = error instanceof Error ? error.message : String(error);
   process.stderr.write(`oso-state: ${message}\n`);
   return 1;
@@ -109,6 +123,7 @@ function dispatch(argv: readonly string[]): number {
   const first = argv[0];
   if (first === "journal") return runJournal(argv.slice(1));
   if (first === "handoff") return dispatchHandoff(argv.slice(1));
+  if (first === "scan") return dispatchScan(argv.slice(1));
   if (first !== "--session") throw new UsageError();
 
   const sessionId = sanitizeSession(argv[1] ?? "");
@@ -143,9 +158,24 @@ function dispatch(argv: readonly string[]): number {
       return runDenyPattern(sessionId, remaining);
     case "handoff":
       return dispatchHandoff(remaining);
+    case "scan":
+      return dispatchScan(remaining);
     default:
       throw new UsageError();
   }
+}
+
+function dispatchScan(remaining: readonly string[]): number {
+  const [subject, ref, ...rest] = remaining;
+  if (rest.length > 0 || ref === undefined || ref === "") throw new UsageError();
+  if (subject === "comments") return writeScan(commentScanReport(process.cwd(), ref));
+  if (subject === "abstractions") return writeScan(abstractionScanReport(process.cwd(), ref));
+  throw new UsageError();
+}
+
+function writeScan(report: string): number {
+  process.stdout.write(report);
+  return 0;
 }
 
 function runSet(sessionId: string, pairs: readonly string[]): number {

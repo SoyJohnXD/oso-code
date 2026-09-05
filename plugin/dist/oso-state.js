@@ -1,6 +1,470 @@
 // core/src/state/cli.ts
-import { mkdirSync as mkdirSync4, readFileSync as readFileSync4 } from "node:fs";
-import path4 from "node:path";
+import { mkdirSync as mkdirSync4, readFileSync as readFileSync5 } from "node:fs";
+import path6 from "node:path";
+
+// core/src/scan/changed-lines.ts
+import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+var ScanFailure = class extends Error {
+};
+var MAX_GIT_OUTPUT_BYTES = 64 * 1024 * 1024;
+var HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
+var DIFF_SOURCE_PREFIX = "--- ";
+var DIFF_TARGET_PREFIX = "+++ ";
+var DIFF_SOURCE_PATH_PREFIX = "a/";
+var DIFF_TARGET_PATH_PREFIX = "b/";
+var NO_SUCH_FILE = "/dev/null";
+var NUL_BYTE = 0;
+function changedFilesSince(cwd, ref) {
+  const diffed = addedLinesByFile(diffOf(cwd, ref));
+  const untracked = pathsListedBy(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]);
+  const files = [];
+  const unreadable = [];
+  for (const file of [.../* @__PURE__ */ new Set([...diffed.keys(), ...untracked])].sort()) {
+    const text = worktreeTextOf(cwd, file);
+    if (text === void 0) unreadable.push(file);
+    else files.push({ file, text, addedLines: diffed.get(file) ?? everyLineOf(text) });
+  }
+  return { files, unreadable };
+}
+function trackedAndUntrackedFiles(cwd) {
+  const paths = pathsListedBy(cwd, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]);
+  return [...new Set(paths)].sort().flatMap((file) => {
+    const text = worktreeTextOf(cwd, file);
+    return text === void 0 ? [] : [{ file, text }];
+  });
+}
+function everyLineOf(text) {
+  return new Set(text.split("\n").map((_line, index) => index + 1));
+}
+function worktreeTextOf(cwd, file) {
+  const content = readBufferOrNothing(path.resolve(cwd, file));
+  if (content === void 0 || content.includes(NUL_BYTE)) return void 0;
+  return content.toString("utf8");
+}
+function readBufferOrNothing(target) {
+  try {
+    return readFileSync(target);
+  } catch {
+    return void 0;
+  }
+}
+function diffOf(cwd, ref) {
+  return gitOutput(cwd, [
+    "-c",
+    "core.quotePath=false",
+    "diff",
+    "-U0",
+    "--no-color",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--no-renames",
+    `--src-prefix=${DIFF_SOURCE_PATH_PREFIX}`,
+    `--dst-prefix=${DIFF_TARGET_PATH_PREFIX}`,
+    ref,
+    "--"
+  ]);
+}
+function pathsListedBy(cwd, argv) {
+  return gitOutput(cwd, argv).split("\0").filter((entry) => entry !== "");
+}
+function gitOutput(cwd, argv) {
+  const run = spawnSync("git", [...argv], { cwd, encoding: "utf8", maxBuffer: MAX_GIT_OUTPUT_BYTES });
+  if (run.error !== void 0) throw new ScanFailure(`git ${argv.join(" ")} could not run in ${cwd}: ${run.error.message}`);
+  if (run.status !== 0) {
+    throw new ScanFailure(`git ${argv.join(" ")} exited ${run.status} in ${cwd}: ${run.stderr.trim()}`);
+  }
+  return run.stdout;
+}
+function addedLinesByFile(diff) {
+  const byFile = /* @__PURE__ */ new Map();
+  let target;
+  let nextLine = 0;
+  let previousLine = "";
+  for (const line of diff.split("\n")) {
+    const isTargetHeader = line.startsWith(DIFF_TARGET_PREFIX) && previousLine.startsWith(DIFF_SOURCE_PREFIX);
+    previousLine = line;
+    if (isTargetHeader) {
+      target = targetLinesIn(byFile, line.slice(DIFF_TARGET_PREFIX.length));
+      continue;
+    }
+    const hunk = HUNK_HEADER.exec(line);
+    if (hunk !== null) {
+      nextLine = Number(hunk[1]);
+      continue;
+    }
+    if (target === void 0 || !line.startsWith("+")) continue;
+    target.add(nextLine);
+    nextLine += 1;
+  }
+  return byFile;
+}
+function targetLinesIn(byFile, rawTarget) {
+  if (rawTarget === NO_SUCH_FILE) return void 0;
+  const file = diffTargetPath(rawTarget);
+  const existing = byFile.get(file);
+  if (existing !== void 0) return existing;
+  const lines = /* @__PURE__ */ new Set();
+  byFile.set(file, lines);
+  return lines;
+}
+function diffTargetPath(rawTarget) {
+  if (!rawTarget.startsWith(DIFF_TARGET_PATH_PREFIX)) {
+    throw new ScanFailure(`git diff named a target this scan cannot read as a path: ${DIFF_TARGET_PREFIX}${rawTarget}`);
+  }
+  return rawTarget.slice(DIFF_TARGET_PATH_PREFIX.length);
+}
+
+// core/src/scan/languages.ts
+import path2 from "node:path";
+var LANGUAGE_BY_EXTENSION = {
+  ".ts": "typescript",
+  ".mts": "typescript",
+  ".cts": "typescript",
+  ".js": "javascript",
+  ".mjs": "javascript",
+  ".cjs": "javascript",
+  ".py": "python",
+  ".rs": "rust",
+  ".sh": "shell",
+  ".bash": "shell"
+};
+var COMMENT_SCAN_LANGUAGES = [...new Set(Object.values(LANGUAGE_BY_EXTENSION))];
+var REFERENCE_COUNT_LANGUAGES = ["typescript", "javascript"];
+function languageOf(file) {
+  return LANGUAGE_BY_EXTENSION[path2.posix.extname(file)];
+}
+function partitionByLanguage(files, accepted) {
+  const read = [];
+  const unread2 = [];
+  for (const candidate of files) {
+    const language = languageOf(candidate.file);
+    if (language === void 0 || !accepted.includes(language)) unread2.push(candidate.file);
+    else read.push({ ...candidate, language });
+  }
+  const present = new Set(read.map((candidate) => candidate.language));
+  return { read, unread: unread2, languages: COMMENT_SCAN_LANGUAGES.filter((language) => present.has(language)) };
+}
+
+// core/src/scan/scan-report.ts
+function renderScan(hits, coverage) {
+  const cited = hits.map(({ file, line, note }) => `${file}:${line}: ${note}
+`).join("");
+  return `${cited}${headlineOf(hits.length)}; ${coverage}
+`;
+}
+function readingClause(readFiles, languages) {
+  if (readFiles === 0) return "read no changed file";
+  return `read ${readFiles} changed file(s) as ${languages.join(", ")}`;
+}
+function unreadClause(unread2) {
+  if (unread2.length === 0) return "every changed file was read";
+  return `${unread2.length} changed file(s) were not read: ${unread2.join(", ")}`;
+}
+function headlineOf(count) {
+  if (count === 0) return "no hit";
+  return count === 1 ? "1 hit" : `${count} hits`;
+}
+
+// core/src/scan/abstraction-scan.ts
+var USE_SITES_AN_EXPORT_MUST_REACH = 2;
+var EXPORTED_VALUE_DECLARATION = /^\s*export\s+(?:default\s+)?(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?(?:function\s*\*?|const|let|var|class|enum)\s+([A-Za-z_$][\w$]*)/;
+var MODULE_STATEMENT_OPENING = /^\s*(?:import\b|export\s*[*{])/;
+var MODULE_SPECIFIER = /\bfrom\s*["'][^"']*["']|^\s*import\s*["'][^"']*["']|;\s*$/;
+function abstractionScanReport(cwd, ref) {
+  const tree = changedFilesSince(cwd, ref);
+  const changed = partitionByLanguage(tree.files, REFERENCE_COUNT_LANGUAGES);
+  const project = partitionByLanguage(trackedAndUntrackedFiles(cwd), REFERENCE_COUNT_LANGUAGES);
+  const useSiteLines = project.read.flatMap(useSiteLinesOf);
+  const hits = changed.read.flatMap(exportsAddedIn).flatMap((exported) => thinlyUsedHitFor(exported, useSiteLines));
+  const notRead = [...changed.unread, ...tree.unreadable].sort();
+  const coverage = `${readingClause(changed.read.length, changed.languages)}, counting use sites across ${project.read.length} project file(s) and reading no type or interface declaration; ${unreadClause(notRead)}`;
+  return renderScan(hits, coverage);
+}
+function exportsAddedIn({ file, text, addedLines }) {
+  return text.split("\n").flatMap((lineText, index) => {
+    const declared = EXPORTED_VALUE_DECLARATION.exec(lineText);
+    if (declared === null || !addedLines.has(index + 1)) return [];
+    return [{ file, line: index + 1, name: declared[1] }];
+  });
+}
+function thinlyUsedHitFor(exported, useSiteLines) {
+  const uses = useSiteCountOf(exported, useSiteLines);
+  if (uses >= USE_SITES_AN_EXPORT_MUST_REACH) return [];
+  const note = `${exported.name} is exported with ${uses} use site${uses === 1 ? "" : "s"} outside its declaration`;
+  return [{ file: exported.file, line: exported.line, note }];
+}
+function useSiteCountOf({ file, line, name }, useSiteLines) {
+  const mentions = new RegExp(`(?<![\\w$])${name.replaceAll("$", "\\$")}(?![\\w$])`, "g");
+  return useSiteLines.filter((candidate) => candidate.file !== file || candidate.line !== line).reduce((total, candidate) => total + [...candidate.text.matchAll(mentions)].length, 0);
+}
+function useSiteLinesOf({ file, text }) {
+  const lines = [];
+  let insideModuleStatement = false;
+  for (const [index, lineText] of text.split("\n").entries()) {
+    if (insideModuleStatement || MODULE_STATEMENT_OPENING.test(lineText)) {
+      insideModuleStatement = !MODULE_SPECIFIER.test(lineText);
+      continue;
+    }
+    lines.push({ file, line: index + 1, text: lineText });
+  }
+  return lines;
+}
+
+// core/src/scan/comment-openings.ts
+var CODE = { kind: "code" };
+var LICENSE_MARKER = /\b(?:Copyright|SPDX-License-Identifier|Licensed under)\b/;
+var OPERAND_EXPECTING_KEYWORD = /(?:^|[^\w$])(?:return|typeof|instanceof|in|of|new|delete|do|else|void|throw|yield|await|case)$/;
+var CLOSES_AN_OPERAND = /[\w$)\]]$/;
+var RUST_RAW_STRING = /^b?r(#*)"/;
+var PYTHON_TRIPLE_QUOTES = ['"""', "'''"];
+var SHELL_WORD_BOUNDARY = /* @__PURE__ */ new Set([" ", "	", ";", "&", "|", "(", "`"]);
+function commentOpeningsIn(language, text) {
+  const lines = text.split("\n");
+  const marked = licenseHeaderMarked(openingsOf(language, lines), lines);
+  return marked.map(({ line, form, text: openingText }) => ({ line, form, text: openingText }));
+}
+function openingsOf(language, lines) {
+  const shebang = shebangOpeningOf(lines);
+  const firstLine = shebang.length + 1;
+  const readsHashComments = language === "python" || language === "shell";
+  const body = readsHashComments ? hashOpenings(lines, firstLine, language) : slashOpenings(lines, firstLine, language);
+  return [...shebang, ...body];
+}
+function shebangOpeningOf(lines) {
+  const first = lines[0];
+  if (first === void 0 || !first.startsWith("#!")) return [];
+  return [{ line: 1, endLine: 1, startsLine: true, form: "shebang", text: first.trim() }];
+}
+function slashOpenings(lines, firstLine, language) {
+  const nestsBlocks = language === "rust";
+  const openings = [];
+  let carry = CODE;
+  for (let number = firstLine; number <= lines.length; number += 1) {
+    const line = lines[number - 1];
+    const resumption = resumeCarry(carry, line, number, nestsBlocks);
+    if (resumption.state === "carried") {
+      carry = resumption.carry;
+      continue;
+    }
+    openings.push(...resumption.closed);
+    carry = CODE;
+    let index = resumption.at;
+    while (index < line.length) {
+      const rest = line.slice(index);
+      const lineComment = slashLineCommentFormOf(rest, language);
+      if (lineComment !== void 0) {
+        openings.push(openingAt(number, index, line, lineComment));
+        break;
+      }
+      if (rest.startsWith("/*")) {
+        const block = openedBlockAt(number, index, line, blockCommentFormOf(rest, language));
+        const progress = advanceBlock(line, index + 2, 1, nestsBlocks);
+        if (progress.state === "open") {
+          carry = { ...block, depth: progress.depth };
+          break;
+        }
+        openings.push(closedBlockOpening(block, number));
+        index = progress.at;
+        continue;
+      }
+      const quoted = quotedRunOpenedAt(rest, language);
+      if (quoted !== void 0) {
+        const closed = advanceQuoted(line, index + quoted.width, quoted.terminator, quoted.escaped);
+        if (closed === void 0) {
+          carry = { kind: "quoted", terminator: quoted.terminator, escaped: quoted.escaped };
+          break;
+        }
+        index = closed;
+        continue;
+      }
+      index += skippedWidthOf(line, index, language);
+    }
+  }
+  return openings;
+}
+function hashOpenings(lines, firstLine, language) {
+  const openings = [];
+  let carry = CODE;
+  for (let number = firstLine; number <= lines.length; number += 1) {
+    const line = lines[number - 1];
+    const resumption = resumeCarry(carry, line, number, false);
+    if (resumption.state === "carried") {
+      carry = resumption.carry;
+      continue;
+    }
+    carry = CODE;
+    let index = resumption.at;
+    while (index < line.length) {
+      const rest = line.slice(index);
+      if (language === "shell" && rest.startsWith("\\")) {
+        index += 2;
+        continue;
+      }
+      const quoted = quotedRunOpenedAt(rest, language);
+      if (quoted !== void 0) {
+        const closed = advanceQuoted(line, index + quoted.width, quoted.terminator, quoted.escaped);
+        if (closed === void 0) {
+          carry = { kind: "quoted", terminator: quoted.terminator, escaped: quoted.escaped };
+          break;
+        }
+        index = closed;
+        continue;
+      }
+      if (rest.startsWith("#") && (language === "python" || opensShellWord(line, index))) {
+        openings.push(openingAt(number, index, line, "inline"));
+        break;
+      }
+      index += 1;
+    }
+  }
+  return openings;
+}
+function resumeCarry(carry, line, number, nestsBlocks) {
+  if (carry.kind === "code") return { state: "resumed", at: 0, closed: [] };
+  if (carry.kind === "quoted") {
+    const closed = advanceQuoted(line, 0, carry.terminator, carry.escaped);
+    return closed === void 0 ? { state: "carried", carry } : { state: "resumed", at: closed, closed: [] };
+  }
+  const progress = advanceBlock(line, 0, carry.depth, nestsBlocks);
+  if (progress.state === "open") return { state: "carried", carry: { ...carry, depth: progress.depth } };
+  return { state: "resumed", at: progress.at, closed: [closedBlockOpening(carry, number)] };
+}
+function closedBlockOpening({ openedAt, startsLine, form, text }, endLine) {
+  return { line: openedAt, endLine, startsLine, form, text };
+}
+function advanceBlock(line, from, depth, nestsBlocks) {
+  let index = from;
+  let open = depth;
+  while (index < line.length) {
+    if (line.startsWith("*/", index)) {
+      open -= 1;
+      index += 2;
+      if (open <= 0) return { state: "closed", at: index };
+      continue;
+    }
+    if (nestsBlocks && line.startsWith("/*", index)) {
+      open += 1;
+      index += 2;
+      continue;
+    }
+    index += 1;
+  }
+  return { state: "open", depth: open };
+}
+function advanceQuoted(line, from, terminator, escaped) {
+  let index = from;
+  while (index < line.length) {
+    if (escaped && line[index] === "\\") {
+      index += 2;
+      continue;
+    }
+    if (line.startsWith(terminator, index)) return index + terminator.length;
+    index += 1;
+  }
+  return void 0;
+}
+function quotedRunOpenedAt(rest, language) {
+  if (language === "rust") return rustQuotedRunAt(rest);
+  if (language === "python") return pythonQuotedRunAt(rest);
+  if (language === "shell") return shellQuotedRunAt(rest);
+  return scriptQuotedRunAt(rest);
+}
+function rustQuotedRunAt(rest) {
+  const raw = RUST_RAW_STRING.exec(rest);
+  if (raw !== null) return { width: raw[0].length, terminator: `"${raw[1]}`, escaped: false };
+  return rest.startsWith('"') ? { width: 1, terminator: '"', escaped: true } : void 0;
+}
+function pythonQuotedRunAt(rest) {
+  const triple = PYTHON_TRIPLE_QUOTES.find((quotes) => rest.startsWith(quotes));
+  if (triple !== void 0) return { width: triple.length, terminator: triple, escaped: true };
+  return singleCharacterQuotedRunAt(rest, ['"', "'"], true);
+}
+function shellQuotedRunAt(rest) {
+  if (rest.startsWith("'")) return { width: 1, terminator: "'", escaped: false };
+  return singleCharacterQuotedRunAt(rest, ['"'], true);
+}
+function scriptQuotedRunAt(rest) {
+  return singleCharacterQuotedRunAt(rest, ['"', "'", "`"], true);
+}
+function singleCharacterQuotedRunAt(rest, quotes, escaped) {
+  const quote = quotes.find((candidate) => rest.startsWith(candidate));
+  return quote === void 0 ? void 0 : { width: 1, terminator: quote, escaped };
+}
+function skippedWidthOf(line, index, language) {
+  if (language === "rust" && line[index] === "'") return rustTickWidthAt(line, index);
+  if (line[index] !== "/" || !opensRegexAt(line, index)) return 1;
+  const closed = advanceQuoted(line, index + 1, "/", true);
+  return closed === void 0 ? 1 : closed - index;
+}
+function rustTickWidthAt(line, index) {
+  if (line[index + 1] === "\\") {
+    const closed = advanceQuoted(line, index + 1, "'", true);
+    return closed === void 0 ? 1 : closed - index;
+  }
+  return line[index + 2] === "'" ? 3 : 1;
+}
+function opensRegexAt(line, index) {
+  const before = line.slice(0, index).trimEnd();
+  if (before === "") return true;
+  if (OPERAND_EXPECTING_KEYWORD.test(before)) return true;
+  return !CLOSES_AN_OPERAND.test(before);
+}
+function opensShellWord(line, index) {
+  if (index === 0) return true;
+  return SHELL_WORD_BOUNDARY.has(line[index - 1]);
+}
+function slashLineCommentFormOf(rest, language) {
+  if (!rest.startsWith("//")) return void 0;
+  if (language !== "rust") return "inline";
+  return rest.startsWith("///") || rest.startsWith("//!") ? "doc" : "inline";
+}
+function blockCommentFormOf(rest, language) {
+  if (rest.startsWith("/**")) return "doc";
+  return language === "rust" && rest.startsWith("/*!") ? "doc" : "inline";
+}
+function openedBlockAt(line, column, text, form) {
+  return { kind: "block", depth: 1, openedAt: line, startsLine: opensLine(text, column), form, text: text.trim() };
+}
+function openingAt(line, column, text, form) {
+  return { line, endLine: line, startsLine: opensLine(text, column), form, text: text.trim() };
+}
+function opensLine(line, column) {
+  return line.slice(0, column).trim() === "";
+}
+function licenseHeaderMarked(openings, lines) {
+  const headerEnd = headerEndLineOf(openings, lines);
+  if (headerEnd === 0 || !LICENSE_MARKER.test(lines.slice(0, headerEnd).join("\n"))) return [...openings];
+  return openings.map(
+    (opening) => opening.form === "inline" && opening.line <= headerEnd ? { ...opening, form: "license" } : opening
+  );
+}
+function headerEndLineOf(openings, lines) {
+  const covered = /* @__PURE__ */ new Set();
+  for (const opening of openings) {
+    if (!opening.startsLine) continue;
+    for (let line = opening.line; line <= opening.endLine; line += 1) covered.add(line);
+  }
+  let end = 0;
+  for (let number = 1; number <= lines.length; number += 1) {
+    if (lines[number - 1].trim() !== "" && !covered.has(number)) return end;
+    end = number;
+  }
+  return end;
+}
+
+// core/src/scan/comment-scan.ts
+function commentScanReport(cwd, ref) {
+  const changed = changedFilesSince(cwd, ref);
+  const { read, unread: unread2, languages } = partitionByLanguage(changed.files, COMMENT_SCAN_LANGUAGES);
+  const hits = read.flatMap(inlineCommentsAddedIn);
+  const notRead = [...unread2, ...changed.unreadable].sort();
+  return renderScan(hits, `${readingClause(read.length, languages)}; ${unreadClause(notRead)}`);
+}
+function inlineCommentsAddedIn({ file, text, addedLines, language }) {
+  return commentOpeningsIn(language, text).filter((opening) => opening.form === "inline" && addedLines.has(opening.line)).map((opening) => ({ file, line: opening.line, note: opening.text }));
+}
 
 // core/src/shell/ere.ts
 var GREP_ITSELF_REJECTS_IT = /* @__PURE__ */ Symbol("a pattern grep exits 2 on, which therefore matches nothing");
@@ -285,8 +749,8 @@ function asJsLiteral(character) {
 }
 
 // core/src/state/handoff.ts
-import { chmodSync, existsSync, mkdirSync as mkdirSync2, readFileSync as readFileSync2, readdirSync, rmSync as rmSync2 } from "node:fs";
-import path2 from "node:path";
+import { chmodSync, existsSync, mkdirSync as mkdirSync2, readFileSync as readFileSync3, readdirSync, rmSync as rmSync2 } from "node:fs";
+import path4 from "node:path";
 
 // core/src/state/store.ts
 import { execFileSync } from "node:child_process";
@@ -297,14 +761,14 @@ import {
   constants,
   lstatSync,
   mkdirSync,
-  readFileSync,
+  readFileSync as readFileSync2,
   renameSync,
   rmSync,
   statSync,
   writeFileSync
 } from "node:fs";
 import { homedir } from "node:os";
-import path from "node:path";
+import path3 from "node:path";
 var LockTimeoutError = class extends Error {
   sessionId;
   constructor(sessionId) {
@@ -343,27 +807,27 @@ function sha256Hex(value) {
 function stateRootDirectory() {
   const configured = process.env["OSO_STATE_DIR"];
   if (configured !== void 0 && configured !== "") return configured;
-  return path.join(homeDirectory(), ".local", "state", "oso-code");
+  return path3.join(homeDirectory(), ".local", "state", "oso-code");
 }
 function repositoryIdentityFor(cwd) {
   const directory = cwd.replace(/\r$/, "");
   return gitCommonDirectory(directory) || directory;
 }
 function stateFileFor(cwd) {
-  return path.join(stateRootDirectory(), `${sha256Hex(repositoryIdentityFor(cwd))}.state`);
+  return path3.join(stateRootDirectory(), `${sha256Hex(repositoryIdentityFor(cwd))}.state`);
 }
 function repositoryIdFor(stateFile) {
-  return path.basename(stateFile, ".state");
+  return path3.basename(stateFile, ".state");
 }
 function journalFileFor(cwd) {
   const stateFile = stateFileFor(cwd);
   const repositoryId = repositoryIdFor(stateFile);
   const autoChange = readValue(stateFile, "auto_change") ?? "";
   const change = CHANGE_SLUG_PATTERN.test(autoChange) ? autoChange : "run";
-  return path.join(stateRootDirectory(), "runs", repositoryId, `${change}.log`);
+  return path3.join(stateRootDirectory(), "runs", repositoryId, `${change}.log`);
 }
 function denyPatternsFileFor(stateFile) {
-  return path.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
+  return path3.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
 }
 var MODEL_TOKEN_SHAPE = `1 to ${TOKEN_MAX_LENGTH} characters of letters, digits and / : . - _ @`;
 function isNameToken(value) {
@@ -384,14 +848,14 @@ function readValue(stateFile, key) {
 function readStateFile(stateFile) {
   try {
     if (!statSync(stateFile).isFile()) return { kind: "unreadable", cause: `${stateFile} is not a regular file` };
-    return { kind: "ok", content: readFileSync(stateFile, "utf8") };
+    return { kind: "ok", content: readFileSync2(stateFile, "utf8") };
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") return { kind: "absent" };
     return { kind: "unreadable", cause: causeOf(error) };
   }
 }
 function writeStatePairs(stateFile, pairs, sessionId) {
-  const directory = path.dirname(stateFile);
+  const directory = path3.dirname(stateFile);
   const read = readStateFile(stateFile);
   if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
   const existing = read.kind === "ok" ? read.content : "";
@@ -449,7 +913,7 @@ function secondsSinceModified(target) {
 function writeFileAtomically(directory, finalPath, content, tempPrefix) {
   mkdirSync(directory, { recursive: true });
   for (let attempt = 0; attempt < 10; attempt += 1) {
-    const candidate = path.join(directory, `${tempPrefix}${randomBytes(3).toString("hex")}`);
+    const candidate = path3.join(directory, `${tempPrefix}${randomBytes(3).toString("hex")}`);
     try {
       writeFileSync(candidate, content, { flag: "wx", mode: 384 });
     } catch (error) {
@@ -474,7 +938,7 @@ function appendJournal(journalFile, text) {
     const line = `${isoTimestamp()} ${text}
 `;
     withOwnerOnlyUmask(() => {
-      mkdirSync(path.dirname(journalFile), { recursive: true });
+      mkdirSync(path3.dirname(journalFile), { recursive: true });
       appendFileSync(journalFile, line);
     });
   } catch (error) {
@@ -483,9 +947,9 @@ function appendJournal(journalFile, text) {
 }
 function logEvent(entry) {
   const line = serializeEvent(entry);
-  const eventsLog = path.join(stateRootDirectory(), "events.jsonl");
+  const eventsLog = path3.join(stateRootDirectory(), "events.jsonl");
   try {
-    mkdirSync(path.dirname(eventsLog), { recursive: true });
+    mkdirSync(path3.dirname(eventsLog), { recursive: true });
     withOwnerOnlyUmask(() => appendFileSync(eventsLog, `${line}
 `));
     return true;
@@ -544,7 +1008,7 @@ function splitPair(pair) {
 function createTempFile(directory, content) {
   mkdirSync(directory, { recursive: true });
   for (let attempt = 0; attempt < 10; attempt += 1) {
-    const candidate = path.join(directory, `.tmp.${randomBytes(4).toString("hex")}`);
+    const candidate = path3.join(directory, `.tmp.${randomBytes(4).toString("hex")}`);
     try {
       writeFileSync(candidate, content, { flag: "wx", mode: 384 });
       return candidate;
@@ -611,7 +1075,7 @@ function statOrUndefined(target) {
   }
 }
 function serializeEvent(entry) {
-  const client = path.basename(process.env["CLAUDE_CODE_EXECPATH"] ?? "");
+  const client = path3.basename(process.env["CLAUDE_CODE_EXECPATH"] ?? "");
   const fields = [
     `"ts":"${jsonEscape(isoTimestamp())}"`,
     `"event":"${jsonEscape(entry.event)}"`,
@@ -754,7 +1218,7 @@ function runHandoffConsume(cwd, coordinates) {
       throw new HandoffFailure(`no unconsumed receipt for slice ${coordinates.slice} attempt ${coordinates.attempt}`);
     }
     requireMatchingReceipt(paths.receipt, coordinates, "receipt identity does not match the delegated result");
-    const content = readFileSync2(paths.receipt, "utf8");
+    const content = readFileSync3(paths.receipt, "utf8");
     writeWatermark(paths, coordinates.attempt);
     rmSync2(paths.receipt, { force: true });
     return content;
@@ -765,7 +1229,7 @@ function runHandoffConsume(cwd, coordinates) {
 function matchingReceiptOrStop(paths, coordinates) {
   if (existsSync(paths.receipt)) {
     requireMatchingReceipt(paths.receipt, coordinates, "receipt identity does not match the awaited delegation");
-    return readFileSync2(paths.receipt, "utf8");
+    return readFileSync3(paths.receipt, "utf8");
   }
   if (existsSync(paths.watermark)) {
     if (!watermarkIsValid(paths.watermark)) throw new HandoffFailure(`malformed watermark at ${paths.watermark}`);
@@ -804,14 +1268,14 @@ function isValidTimeoutText(value) {
 function handoffPaths(cwd, agentId) {
   const stateFile = stateFileFor(cwd);
   const agentKey = sha256Hex(agentId);
-  const directory = path2.join(stateRootDirectory(), ".handoffs", repositoryIdFor(stateFile));
+  const directory = path4.join(stateRootDirectory(), ".handoffs", repositoryIdFor(stateFile));
   return {
     directory,
     agentId,
     agentKey,
-    receipt: path2.join(directory, `${agentKey}.receipt`),
-    watermark: path2.join(directory, `${agentKey}.watermark`),
-    lockDir: path2.join(directory, `${agentKey}.lock`)
+    receipt: path4.join(directory, `${agentKey}.receipt`),
+    watermark: path4.join(directory, `${agentKey}.watermark`),
+    lockDir: path4.join(directory, `${agentKey}.lock`)
   };
 }
 function protectDirectory(directory) {
@@ -845,7 +1309,7 @@ function globalSweep(directory) {
   for (const name of directoryEntries(directory)) {
     const key = sweepableArtifactKey(name);
     if (key === void 0) continue;
-    sweepArtifact(path2.join(directory, name), path2.join(directory, `${key}.lock`));
+    sweepArtifact(path4.join(directory, name), path4.join(directory, `${key}.lock`));
   }
 }
 function sweepableArtifactKey(name) {
@@ -884,7 +1348,7 @@ function pruneLocked(paths) {
 }
 function matchingTempArtifacts(paths) {
   const prefixes = [`.${paths.agentKey}.receipt.`, `.${paths.agentKey}.consuming.`, `.${paths.agentKey}.watermark.`];
-  return directoryEntries(paths.directory).filter((name) => prefixes.some((prefix) => name.startsWith(prefix))).map((name) => path2.join(paths.directory, name));
+  return directoryEntries(paths.directory).filter((name) => prefixes.some((prefix) => name.startsWith(prefix))).map((name) => path4.join(paths.directory, name));
 }
 function directoryEntries(directory) {
   try {
@@ -970,12 +1434,12 @@ function recordsOf(content) {
 }
 function readPrivateFileContent(target) {
   if (!isReadableRegularFile(target)) return void 0;
-  return readFileSync2(target, "utf8");
+  return readFileSync3(target, "utf8");
 }
 
 // core/src/state/plan.ts
-import { chmodSync as chmodSync2, existsSync as existsSync2, mkdirSync as mkdirSync3, readFileSync as readFileSync3, renameSync as renameSync2, rmSync as rmSync3 } from "node:fs";
-import path3 from "node:path";
+import { chmodSync as chmodSync2, existsSync as existsSync2, mkdirSync as mkdirSync3, readFileSync as readFileSync4, renameSync as renameSync2, rmSync as rmSync3 } from "node:fs";
+import path5 from "node:path";
 
 // core/src/state/transitions.ts
 function closeSlice() {
@@ -995,14 +1459,14 @@ function isValidPlanDigest(value) {
   return PLAN_DIGEST_PATTERN.test(value);
 }
 function planPaths(stateFile, digest) {
-  const root = path3.join(stateRootDirectory(), "plans");
-  const dir = path3.join(root, repositoryIdFor(stateFile));
+  const root = path5.join(stateRootDirectory(), "plans");
+  const dir = path5.join(root, repositoryIdFor(stateFile));
   return {
     root,
     dir,
-    presentedFile: path3.join(dir, `presented-${digest}.md`),
-    approvedFile: path3.join(dir, `approved-${digest}.md`),
-    currentFile: path3.join(dir, "current.md")
+    presentedFile: path5.join(dir, `presented-${digest}.md`),
+    approvedFile: path5.join(dir, `approved-${digest}.md`),
+    currentFile: path5.join(dir, "current.md")
   };
 }
 function ensurePlanDirectory(paths) {
@@ -1028,7 +1492,7 @@ function runCapturePlan(cwd, sessionId, digest, document) {
       if (!isPrivateRegularFile(paths.presentedFile)) {
         throw new PlanFailure("presented snapshot is not a private regular file");
       }
-      if (readFileSync3(paths.presentedFile, "utf8") !== document) {
+      if (readFileSync4(paths.presentedFile, "utf8") !== document) {
         throw new PlanFailure("presented snapshot content disagrees with its approval digest");
       }
     } else {
@@ -1182,7 +1646,7 @@ function runAmendPlan(cwd, sessionId, sliceId, document) {
     const revisionText = readValue(stateFile, "plan_revision") ?? "";
     if (!/^[0-9]+$/.test(revisionText)) throw new PlanFailure("current plan has no valid revision");
     const nextRevision = Number(revisionText) + 1;
-    const amended = `${readFileSync3(paths.currentFile, "utf8")}
+    const amended = `${readFileSync4(paths.currentFile, "utf8")}
 
 ## ${shape.heading} \u2014 ${sliceId}
 
@@ -1199,7 +1663,7 @@ ${document}
   });
 }
 function byteIdentical(leftFile, rightFile) {
-  return readFileSync3(leftFile).equals(readFileSync3(rightFile));
+  return readFileSync4(leftFile).equals(readFileSync4(rightFile));
 }
 function amendmentShapeFor(approval) {
   if (approval === "approved") return { heading: "Execution amendment", classification: "in-scope" };
@@ -1224,10 +1688,17 @@ var USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state handoff publish --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --hook-session <id>
        oso-state handoff wait --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --timeout <seconds>
        oso-state handoff consume --slice <id> --attempt <n> --agent-id <id> --agent-type <type>
+       oso-state scan comments <ref>
+       oso-state scan abstractions <ref>
 
 The SubagentStop hook publishes a provenance receipt, never a verdict. wait is
 bounded and consume is one-shot. Handoff attempts start at 1 and timeout must
 be between 0 and 600 seconds.
+
+scan reads the working directory's own repository, reports every hit on stdout
+and exits 0 whether or not it found any. comments flags the inline comments the
+diff since <ref> adds; abstractions flags the exports it adds that fewer than
+two use sites reach.
 `;
 var UsageError = class extends Error {
 };
@@ -1256,7 +1727,7 @@ function main(argv) {
 }
 function verbOf(argv) {
   const first = argv[0];
-  if (first === "journal" || first === "handoff") return first;
+  if (first === "journal" || first === "handoff" || first === "scan") return first;
   return argv[2] ?? "";
 }
 function report(error, verb) {
@@ -1299,6 +1770,11 @@ function report(error, verb) {
 `);
     return 1;
   }
+  if (error instanceof ScanFailure) {
+    process.stderr.write(`oso-state: scan: ${error.message}
+`);
+    return 1;
+  }
   const message = error instanceof Error ? error.message : String(error);
   process.stderr.write(`oso-state: ${message}
 `);
@@ -1308,6 +1784,7 @@ function dispatch(argv) {
   const first = argv[0];
   if (first === "journal") return runJournal(argv.slice(1));
   if (first === "handoff") return dispatchHandoff(argv.slice(1));
+  if (first === "scan") return dispatchScan(argv.slice(1));
   if (first !== "--session") throw new UsageError();
   const sessionId = sanitizeSession(argv[1] ?? "");
   if (sessionId === "") throw new UsageError();
@@ -1340,9 +1817,22 @@ function dispatch(argv) {
       return runDenyPattern(sessionId, remaining);
     case "handoff":
       return dispatchHandoff(remaining);
+    case "scan":
+      return dispatchScan(remaining);
     default:
       throw new UsageError();
   }
+}
+function dispatchScan(remaining) {
+  const [subject, ref, ...rest] = remaining;
+  if (rest.length > 0 || ref === void 0 || ref === "") throw new UsageError();
+  if (subject === "comments") return writeScan(commentScanReport(process.cwd(), ref));
+  if (subject === "abstractions") return writeScan(abstractionScanReport(process.cwd(), ref));
+  throw new UsageError();
+}
+function writeScan(report2) {
+  process.stdout.write(report2);
+  return 0;
 }
 function runSet(sessionId, pairs) {
   if (pairs.length < 1) throw new UsageError();
@@ -1419,7 +1909,7 @@ function runDenyPattern(sessionId, remaining) {
     }
     const content = [...existing, pattern].map((line) => `${line}
 `).join("");
-    writeFileAtomically(path4.dirname(patternsFile), patternsFile, content, ".patterns.");
+    writeFileAtomically(path6.dirname(patternsFile), patternsFile, content, ".patterns.");
     logEvent({ event: "deny-pattern-add", session: sessionId, command: pattern });
     process.stdout.write(`oso-state: wrote ${patternsFile}
 `);
@@ -1467,7 +1957,7 @@ function runAmendPlan2(sessionId, remaining) {
   return runAmendPlan(process.cwd(), sessionId, sliceId, readStdin());
 }
 function readStdin() {
-  return readFileSync4(0, "utf8");
+  return readFileSync5(0, "utf8");
 }
 function dispatchHandoff(remaining) {
   const [subaction, ...rest] = remaining;

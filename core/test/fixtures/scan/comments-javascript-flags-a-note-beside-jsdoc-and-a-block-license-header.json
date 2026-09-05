@@ -1,0 +1,32 @@
+{
+  "name": "javascript — a decision citation in a new untracked file is flagged, while the shebang, a block-comment license header, JSDoc and a `//` inside a template literal are not",
+  "verb": "comments",
+  "language": "javascript",
+  "committed": {},
+  "worktree": {
+    "bin/probe.js": [
+      "#!/usr/bin/env node",
+      "/*",
+      " * Copyright 2026 Osoria",
+      " */",
+      "",
+      "const template = `a // b`;",
+      "",
+      "/**",
+      " * Retries until the cap the wire protocol fixes, which no signature states.",
+      " */",
+      "export function retryProbe() {",
+      "  return `${template}${MAX_RETRIES}`;",
+      "}",
+      "",
+      "// D22: retries cap at 3",
+      "export const MAX_RETRIES = 3;"
+    ]
+  },
+  "expect": {
+    "hits": [
+      "bin/probe.js:15: // D22: retries cap at 3"
+    ],
+    "summary": "1 hit; read 1 changed file(s) as javascript; every changed file was read"
+  }
+}

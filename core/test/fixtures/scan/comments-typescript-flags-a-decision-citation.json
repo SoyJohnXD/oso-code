@@ -1,0 +1,36 @@
+{
+  "name": "typescript — a decision citation added to a tracked file is flagged, while the shebang, the license header, JSDoc, a `//` inside a string and a `//` inside a regex literal are not",
+  "verb": "comments",
+  "language": "typescript",
+  "committed": {
+    "src/retries.ts": [
+      "export const MAX_RETRIES = 3;"
+    ]
+  },
+  "worktree": {
+    "src/retries.ts": [
+      "#!/usr/bin/env node",
+      "// Copyright 2026 Osoria",
+      "// Licensed under Apache-2.0",
+      "",
+      "const DOCS_URL = \"https://oso.example/retries\";",
+      "const COMMENT_OPENING = /\\/\\//;",
+      "",
+      "/**",
+      " * Retries a probe until the cap, which the wire protocol fixes and no type states.",
+      " */",
+      "export function retryProbe(): string {",
+      "  return DOCS_URL.replace(COMMENT_OPENING, String(MAX_RETRIES));",
+      "}",
+      "",
+      "// D22: retries cap at 3",
+      "export const MAX_RETRIES = 3;"
+    ]
+  },
+  "expect": {
+    "hits": [
+      "src/retries.ts:15: // D22: retries cap at 3"
+    ],
+    "summary": "1 hit; read 1 changed file(s) as typescript; every changed file was read"
+  }
+}

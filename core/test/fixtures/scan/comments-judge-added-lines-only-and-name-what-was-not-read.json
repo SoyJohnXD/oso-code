@@ -1,0 +1,29 @@
+{
+  "name": "comments — a comment the diff did not write is not a hit, and a changed file in an extension the scan does not read is named rather than counted as clean",
+  "verb": "comments",
+  "language": "typescript",
+  "committed": {
+    "src/kept.ts": [
+      "// a note this slice did not write",
+      "export const KEPT = 1;"
+    ],
+    "docs/notes.md": [
+      "# notes"
+    ]
+  },
+  "worktree": {
+    "src/kept.ts": [
+      "// a note this slice did not write",
+      "export const KEPT = 1;",
+      "export const ADDED = KEPT + 1;"
+    ],
+    "docs/notes.md": [
+      "# notes",
+      "a second line the scan cannot read"
+    ]
+  },
+  "expect": {
+    "hits": [],
+    "summary": "no hit; read 1 changed file(s) as typescript; 1 changed file(s) were not read: docs/notes.md"
+  }
+}

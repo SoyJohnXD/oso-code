@@ -1,0 +1,31 @@
+{
+  "name": "rust — a decision citation is flagged, while an inner and an outer doc comment, the license header, a `//` inside a raw string and a lifetime tick are not",
+  "verb": "comments",
+  "language": "rust",
+  "committed": {},
+  "worktree": {
+    "src/retry.rs": [
+      "// Copyright 2026 Osoria",
+      "// SPDX-License-Identifier: Apache-2.0",
+      "",
+      "//! The retry probe, whose cap the wire protocol fixes.",
+      "",
+      "/// Retries until the cap, which no signature states.",
+      "pub fn retry_probe() -> u32 {",
+      "    let raw = r#\"// not a comment\"#;",
+      "    let label: &'static str = \"retry\";",
+      "    let _ = (raw, label);",
+      "    MAX_RETRIES",
+      "}",
+      "",
+      "// D22: retries cap at 3",
+      "pub const MAX_RETRIES: u32 = 3;"
+    ]
+  },
+  "expect": {
+    "hits": [
+      "src/retry.rs:14: // D22: retries cap at 3"
+    ],
+    "summary": "1 hit; read 1 changed file(s) as rust; every changed file was read"
+  }
+}
