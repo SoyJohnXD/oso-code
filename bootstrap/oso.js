@@ -3572,7 +3572,10 @@ function mergeOpenCodeConfig(existing, fallowCommand, profileRoles = {}) {
   const editRules = ownedContainer(permission, EDIT_KEY);
   const harnessTrees = HARNESS_OWNED_TREES_NO_AGENT_MAY_EDIT;
   preservedKeys.push(...foreignKeysOf(editRules, [PERMISSION_KEY, EDIT_KEY], (pattern) => harnessTrees.includes(pattern)));
-  for (const harnessTree of HARNESS_OWNED_TREES_NO_AGENT_MAY_EDIT) editRules[harnessTree] = HARNESS_OWNED_TREE_EDIT_VERDICT;
+  for (const harnessTree of HARNESS_OWNED_TREES_NO_AGENT_MAY_EDIT) {
+    delete editRules[harnessTree];
+    editRules[harnessTree] = HARNESS_OWNED_TREE_EDIT_VERDICT;
+  }
   Object.assign(permission, OWNED_PERMISSION_VALUES);
   const servers = ownedContainer(document, MCP_KEY);
   const owned = ownedMcpServers(fallowCommand);

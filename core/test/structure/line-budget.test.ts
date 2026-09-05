@@ -27,10 +27,10 @@ const CEILINGS = [
   {
     label: "core/test",
     prefix: "core/test/",
-    maximumLines: 21000,
+    maximumLines: 23500,
     derivation:
-      "18,996 (measured at measured-harness C0-S1, by this test's own listing) + 2,000 (measured-harness C0-S2…C5 test " +
-      "surface, sized against S1's 62 lines per test file: C0 250, C1 550, C2 650, C3 150, C4 350, C5 50) = 20,996",
+      "20,832 (measured at C1's arming, by this test's own listing) + 6 × 380 (C1's five slices and its close, at C0's " +
+      "measured mean of 380 lines per commit: 64 / 236 / 488 / 196 / 916) = 23,112",
   },
 ] as const;
 

@@ -58,6 +58,10 @@ export function resolvedVerdictOf(debugged: unknown, permission: string, resourc
   return typeof action === "string" ? action : "absent";
 }
 
+export function editControlPostureOf(debugged: unknown, resources: readonly string[]): readonly string[] {
+  return resources.map((resource) => `${resource} ${resolvedVerdictOf(debugged, "edit", resource)}`);
+}
+
 export function fieldOf(values: ReadonlyMap<string, string>, name: string): string {
   return values.get(name) ?? "absent";
 }

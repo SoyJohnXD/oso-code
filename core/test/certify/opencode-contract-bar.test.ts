@@ -5,6 +5,7 @@ import {
   EDIT_RULES_THE_HOST_RESOLVES_BY_LAST_MATCH,
   HARNESS_EXTERNAL_DIRECTORIES,
   HARNESS_EXTERNAL_DIRECTORY_VERDICT,
+  HARNESS_OWNED_TREE_EDIT_VERDICT,
   HARNESS_OWNED_TREES_NO_AGENT_MAY_EDIT,
 } from "../../src/install/opencode-config.ts";
 import { SUPPORTED_OPENCODE_VERSION } from "../../src/install/pins.ts";
@@ -18,6 +19,7 @@ import {
   agentPermissionVerdicts,
   agentShellExactFormViolations,
   commandAgentRoute,
+  editControlPostureOf,
   isRecord,
   externalDirectoryRules,
   externalDirectoryVerdict,
@@ -499,6 +501,40 @@ describe("the contract fixture install and what the real binary reports once it 
     });
   }
 });
+
+const AN_OPERATOR_EDIT_BLOCK_ORDERED_BEFORE_THE_HARNESS = {
+  permission: { edit: { "**/.local/state/oso-code/**": "ask", "*": "allow" } },
+};
+
+const A_HOME_RELATIVE_PROBE_UNDER_EACH_HARNESS_TREE: Readonly<Record<string, readonly string[]>> = {
+  "**/.config/opencode/skill/**": [".config", "opencode", "skill", "oso-plan", "SKILL.md"],
+  "**/.local/state/oso-code/**": [".local", "state", "oso-code", "wave.state"],
+};
+
+contractBarRow(
+  `the real binary resolves the harness's own trees to ${HARNESS_OWNED_TREE_EDIT_VERDICT} for ${CONFIG_LEVEL_EDIT_AGENT_NAME} over a config whose operator allow was written before them`,
+  (t) => {
+    if (laneNotRun(t, probe, laneCause)) return;
+    assert.deepEqual(Object.keys(A_HOME_RELATIVE_PROBE_UNDER_EACH_HARNESS_TREE), [...HARNESS_OWNED_TREES_NO_AGENT_MAY_EDIT]);
+    const resolved = resolvedProbeOrThrow(probe);
+    const seeded = installContractFixture(resolved, AN_OPERATOR_EDIT_BLOCK_ORDERED_BEFORE_THE_HARNESS);
+    try {
+      assert.equal(seeded.exitCode, 0, seeded.report);
+      const invoked = invokeCommandOrFailure(resolved.binary, seeded.environment, ["debug", "agent", CONFIG_LEVEL_EDIT_AGENT_NAME]);
+      if (invoked.kind === "failed") {
+        notRun(t, invoked.reason);
+        return;
+      }
+      const probes = Object.values(A_HOME_RELATIVE_PROBE_UNDER_EACH_HARNESS_TREE).map((leaf) => path.join(seeded.sandbox.home, ...leaf));
+      assert.deepEqual(
+        editControlPostureOf(JSON.parse(invoked.stdout), probes),
+        probes.map((probed) => `${probed} ${HARNESS_OWNED_TREE_EDIT_VERDICT}`),
+      );
+    } finally {
+      seeded.sandbox.dispose();
+    }
+  },
+);
 
 provedSomething(
   `at least ${CONTRACT_BAR_ROWS_PORTED} row(s) of tests/opencode-contract-bar.sh were registered in this file`,

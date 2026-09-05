@@ -1,8 +1,11 @@
 import path from "node:path";
+import type { ConfigDocument } from "../../../src/install/opencode-config.ts";
 import { installOpenCode } from "../../../src/install/opencode-install.ts";
 import { fixtureEnvironmentFor, fixtureShimsIn, writeFixtureEngramShim } from "../../../src/install/verify-opencode.ts";
 import { repositoryRoot, StateSandbox } from "../../support/state-sandbox.ts";
 import type { ResolvedProbe } from "./opencode-binary.ts";
+
+const CONFIG_FILE_UNDER_HOME = ".config/opencode/opencode.json";
 
 export type ContractFixture = Readonly<{
   sandbox: StateSandbox;
@@ -15,8 +18,9 @@ export function configHomeOf(fixture: ContractFixture): string {
   return path.join(fixture.sandbox.home, ".config", "opencode");
 }
 
-export function installContractFixture(probe: ResolvedProbe): ContractFixture {
+export function installContractFixture(probe: ResolvedProbe, operatorConfig?: ConfigDocument): ContractFixture {
   const sandbox = new StateSandbox("contract-bar-fixture");
+  if (operatorConfig !== undefined) sandbox.seed({ [CONFIG_FILE_UNDER_HOME]: `${JSON.stringify(operatorConfig, null, 2)}\n` });
   writeFixtureEngramShim(fixtureShimsIn(sandbox.root));
   const environment = fixtureEnvironmentFor(
     { ...process.env, PATH: `${path.dirname(probe.binary)}${path.delimiter}${process.env["PATH"] ?? ""}` },
