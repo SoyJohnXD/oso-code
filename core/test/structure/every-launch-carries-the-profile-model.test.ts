@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { flowBody } from "../../src/prose/render.ts";
+import {
+  delegateSentencesIn,
+  flowProseAmong,
+  sentencesLineByLine,
+  type DelegateSentence,
+  FLOW_PROSE_ROOT,
+  HOST_BINDING_DIRECTORY,
+} from "../support/flow-launches.ts";
 import { readTextAtCommit, sourceFilesAtCommit } from "../support/prose-inventory.ts";
-import { sentencesOf } from "../support/prose-sentences.ts";
 import { provedSomething } from "../support/proved.ts";
 import { readTrackedText, trackedRepositoryFiles } from "../support/tracked-files.ts";
 
@@ -11,10 +18,7 @@ const RED_COMMIT = "eee0898";
 const MODEL_CLAUSE = "the model the profile names for its role";
 const NAMING_CLAUSE = "named in the Launching milestone";
 
-const FLOW_PROSE_ROOT = "plugin/skills/";
-const HOST_BINDING_DIRECTORY = "references";
 const CLAUDE_BINDING_LEAF = `${HOST_BINDING_DIRECTORY}/claude.md`;
-const DELEGATE_ROLE = /oso-applier|oso-verifier|oso-integrator/;
 
 const MODEL_SECTION_HEADING = "The model a launch carries";
 const MODEL_PARAMETER = "`model` parameter";
@@ -45,24 +49,6 @@ const NAMES_A_DELEGATE_BUT_LAUNCHES_NONE: readonly StatedNonLaunch[] = [
   },
 ];
 
-type DelegateSentence = Readonly<{ file: string; sentence: string; sentenceAndFollowOn: string }>;
-
-function flowProseAmong(files: readonly string[]): string[] {
-  return files.filter((file) => file.startsWith(FLOW_PROSE_ROOT) && file.endsWith(".md") && !file.includes(`/${HOST_BINDING_DIRECTORY}/`)).sort();
-}
-
-function sentencesLineByLine(rawFlowText: string): string[][] {
-  return flowBody(rawFlowText).split("\n").map(sentencesOf);
-}
-
-function delegateSentencesIn(file: string, rawFlowText: string): DelegateSentence[] {
-  return sentencesLineByLine(rawFlowText).flatMap((sentences) =>
-    sentences
-      .map((sentence, index) => ({ file, sentence, sentenceAndFollowOn: `${sentence} ${sentences[index + 1] ?? ""}` }))
-      .filter(({ sentence }) => DELEGATE_ROLE.test(sentence)),
-  );
-}
-
 function statedNonLaunch(sentence: string): StatedNonLaunch | undefined {
   return NAMES_A_DELEGATE_BUT_LAUNCHES_NONE.find(({ fragment }) => sentence.includes(fragment));
 }
@@ -73,7 +59,7 @@ function launchEnumerations(delegateSentences: readonly DelegateSentence[]): Del
 
 function withoutClause(launches: readonly DelegateSentence[], clause: string): string[] {
   return launches
-    .filter(({ sentenceAndFollowOn }) => !sentenceAndFollowOn.includes(clause))
+    .filter(({ sentence, followOn }) => !`${sentence} ${followOn}`.includes(clause))
     .map(({ file, sentence }) => `${file}: ${sentence}`);
 }
 
