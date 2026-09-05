@@ -5,6 +5,8 @@ import path from "node:path";
 import { after, describe, test } from "node:test";
 import { resolveFallowMcpCommand } from "../../src/install/codex-config.ts";
 import {
+  HARNESS_EXTERNAL_DIRECTORIES,
+  HARNESS_EXTERNAL_DIRECTORY_VERDICT,
   hostContractViolationOf,
   mergeOpenCodeConfig,
   OpenCodeConfigRefusal,
@@ -19,7 +21,7 @@ after(() => rmSync(sandbox, { recursive: true, force: true }));
 
 const THE_OWNERSHIP_CORPUS =
   "one operator seed carrying every owned container and one operator key inside each, merged by mergeOpenCodeConfig and " +
-  "read back as the rendered document plus its preserved-key ledger, against the seven rows spelled row by row below";
+  "read back as the rendered document plus its preserved-key ledger, against the eight rows spelled row by row below";
 
 const OPERATOR_SEED = {
   theme: "operator-theme",
@@ -31,6 +33,7 @@ const OPERATOR_SEED = {
     question: "deny",
     skill: { "operator-skill": "allow", "oso-plan": "allow" },
     task: { "operator-*": "deny", "*": "deny" },
+    external_directory: { "~/operator-tree/**": "allow", "~/.config/opencode/**": "ask" },
   },
   mcp: {
     "operator-server": { type: "local", command: ["operator-cli"], enabled: true, environment: {} },
@@ -45,6 +48,8 @@ const EXPECTED_PRESERVED_ORDER = [
   "permission.read",
   "permission.skill.operator-skill",
   "permission.task.operator-*",
+  "permission.external_directory.~/operator-tree/**",
+  "permission.external_directory.~/.config/opencode/**",
   "mcp.operator-server",
 ];
 
@@ -56,11 +61,11 @@ const fallowCommand = fixtureFallowCommand();
 
 provedSomething(
   `the ownership corpus is ${THE_OWNERSHIP_CORPUS}, over ${EXPECTED_PRESERVED_ORDER.length} preserved key(s)`,
-  fallowCommand !== "" && EXPECTED_PRESERVED_ORDER.length === 7,
-  "no fixture fallow-mcp was written, or the preserved ledger is not the seven-key ledger this seed builds",
+  fallowCommand !== "" && EXPECTED_PRESERVED_ORDER.length === 9,
+  "no fixture fallow-mcp was written, or the preserved ledger is not the eight-key ledger this seed builds",
 );
 
-describe("the seven ownership rows, each spelled here and then read back off the merged document", () => {
+describe("the eight ownership rows, each spelled here and then read back off the merged document", () => {
   test("row 1 — permission.* is overwritten: an operator's question=deny becomes allow", () => {
     assert.equal(permissionOf(portSeeded())["question"], "allow");
   });
@@ -91,7 +96,15 @@ describe("the seven ownership rows, each spelled here and then read back off the
     assert.deepEqual(portOf({})["plugin"], []);
   });
 
-  test("row 7 — everything else is preserved: the ledger names the same keys in the same order", () => {
+  test("row 7 — permission.external_directory.<harness path> is overwritten to allow, and the config home the harness stopped granting stays the operator's own ask", () => {
+    assert.deepEqual(plainObject(permissionOf(portSeeded())["external_directory"]), {
+      "~/operator-tree/**": "allow",
+      "~/.config/opencode/**": "ask",
+      ...Object.fromEntries(HARNESS_EXTERNAL_DIRECTORIES.map((directory) => [directory, HARNESS_EXTERNAL_DIRECTORY_VERDICT])),
+    });
+  });
+
+  test("row 8 — everything else is preserved: the ledger names the same keys in the same order", () => {
     assert.deepEqual([...portSeededMerge().preservedKeys], EXPECTED_PRESERVED_ORDER);
   });
 });

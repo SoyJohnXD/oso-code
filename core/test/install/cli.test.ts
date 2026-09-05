@@ -14,6 +14,7 @@ const cliSource = path.join(repoRoot, "core", "src", "bin", "oso.ts");
 const cliBundle = path.join(repoRoot, "bootstrap", "oso.js");
 
 const USAGE = `usage: oso <install|verify|repair|purge> --host <claude|codex|opencode> [flags]
+       oso profile show | set <normal|strong|custom> [--applier|--verifier|--judges <default|strong>[:<model>]]
 
 arguments, per host and verb:
   claude    install  --yes --replace-claude-md --no-impeccable --no-git-hook
@@ -30,6 +31,7 @@ arguments, per host and verb:
   opencode  purge    --yes --dry-run --keep-gentle-ai --restore <dir>
 
 A flag offered to a host and verb that does not take it is refused, never ignored.
+The profile verb takes no --host: one profile spans every host, and only a custom names its roles.
 `;
 
 function runCli(argv: readonly string[]): { status: number | null; stdout: string; stderr: string } {

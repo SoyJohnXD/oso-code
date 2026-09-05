@@ -1,3 +1,5 @@
+import { hostPatternMatches } from "../../../src/install/opencode-config.ts";
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -19,21 +21,77 @@ export function agentField(config: unknown, field: string): ReadonlyMap<string, 
 export function agentPermissionField(config: unknown, key: string): ReadonlyMap<string, string> {
   const values = new Map<string, string>();
   for (const [name, spec] of Object.entries(agentSection(config))) {
-    const permission = isRecord(spec) ? spec["permission"] : undefined;
-    const rule = isRecord(permission) ? permission[key] : undefined;
-    values.set(name, typeof rule === "string" ? rule : isRecord(rule) ? "allowlist" : "absent");
+    values.set(name, verdictOf(permissionRulesOf(spec).find(([ruleKey]) => ruleKey === key)));
   }
   return values;
+}
+
+export function agentPermissionVerdicts(config: unknown, toolId: string): ReadonlyMap<string, string> {
+  const verdicts = new Map<string, string>();
+  for (const [name, spec] of Object.entries(agentSection(config))) {
+    const covering = permissionRulesOf(spec).filter(([ruleKey]) => hostPatternMatches(ruleKey, toolId));
+    verdicts.set(name, verdictOf(covering.at(-1)));
+  }
+  return verdicts;
+}
+
+function permissionRulesOf(agentSpec: unknown): readonly (readonly [string, unknown])[] {
+  const permission = isRecord(agentSpec) ? agentSpec["permission"] : undefined;
+  return isRecord(permission) ? Object.entries(permission) : [];
+}
+
+function verdictOf(rule: readonly [string, unknown] | undefined): string {
+  const value = rule?.[1];
+  return typeof value === "string" ? value : isRecord(value) ? "allowlist" : "absent";
+}
+
+export function resolvedPermissionRules(debugged: unknown): readonly Record<string, unknown>[] {
+  const rules = isRecord(debugged) ? debugged["permission"] : undefined;
+  return Array.isArray(rules) ? rules.filter(isRecord) : [];
+}
+
+export function resolvedVerdictOf(debugged: unknown, permission: string, resource: string): string {
+  const covering = resolvedPermissionRules(debugged).filter(
+    (rule) => rule["permission"] === permission && typeof rule["pattern"] === "string" && hostPatternMatches(rule["pattern"], resource),
+  );
+  const action = covering.at(-1)?.["action"];
+  return typeof action === "string" ? action : "absent";
 }
 
 export function fieldOf(values: ReadonlyMap<string, string>, name: string): string {
   return values.get(name) ?? "absent";
 }
 
-export function topLevelPermissionField(config: unknown, key: string): string {
+function permissionSection(config: unknown): Record<string, unknown> {
   const permission = isRecord(config) ? config["permission"] : undefined;
-  const value = isRecord(permission) ? permission[key] : undefined;
+  return isRecord(permission) ? permission : {};
+}
+
+export function topLevelPermissionField(config: unknown, key: string): string {
+  const value = permissionSection(config)[key];
   return typeof value === "string" ? value : "absent";
+}
+
+export function externalDirectoryRules(config: unknown): ReadonlyMap<string, string> {
+  const rules = new Map<string, string>();
+  const block = permissionSection(config)["external_directory"];
+  if (!isRecord(block)) return rules;
+  for (const [pattern, verdict] of Object.entries(block)) rules.set(pattern, verdictOf([pattern, verdict]));
+  return rules;
+}
+
+export function externalDirectoryVerdict(config: unknown, homeDirectory: string, externalPath: string): string {
+  const covering = [...externalDirectoryRules(config)].filter(([pattern]) =>
+    hostPatternMatches(homeExpanded(pattern, homeDirectory), externalPath),
+  );
+  return verdictOf(covering.at(-1));
+}
+
+const HOME_RELATIVE_PREFIX = "~/";
+
+function homeExpanded(pattern: string, homeDirectory: string): string {
+  if (!pattern.startsWith(HOME_RELATIVE_PREFIX)) return pattern;
+  return `${homeDirectory}/${pattern.slice(HOME_RELATIVE_PREFIX.length)}`;
 }
 
 export function commandAgentRoute(config: unknown, commandName: string): string {

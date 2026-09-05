@@ -31,9 +31,14 @@ export function approvalToolAttempted(streamText: string, toolId: string): boole
   return sessionParts(streamText).some((part) => part["type"] === "tool" && part["tool"] === toolId);
 }
 
+const PERMISSION_REQUEST_LINE = /permission requested: (\S+)/g;
+
+export function permissionsRequestedIn(stdout: string, stderr: string): readonly string[] {
+  return [...`${stdout}\n${stderr}`.matchAll(PERMISSION_REQUEST_LINE)].map((asked) => asked[1] as string);
+}
+
 export function approvalPromptAsked(stdout: string, stderr: string, toolId: string): boolean {
-  const marker = `permission requested: ${toolId}`;
-  return stdout.includes(marker) || stderr.includes(marker);
+  return permissionsRequestedIn(stdout, stderr).includes(toolId);
 }
 
 export type ApprovalPromptOutcome = "asked" | "not-asked";

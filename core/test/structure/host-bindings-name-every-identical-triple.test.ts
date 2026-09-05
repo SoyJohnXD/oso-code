@@ -1,25 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { SKILL_STUBS, sharedReferencePath, skillReferencePath } from "../../src/prose/render.ts";
+import { sentencesOf } from "../support/prose-sentences.ts";
 import { provedSomething } from "../support/proved.ts";
 import { readTrackedText } from "../support/tracked-files.ts";
-
-const HEADING_LINE = /^#{1,6}\s/;
 
 type Triple = Readonly<{ group: string; claude: string; codex: string; opencode: string }>;
 
 type IdenticalSentence = Readonly<{ group: string; sentence: string }>;
-
-function sentencesOf(text: string): string[] {
-  const prose = text
-    .split("\n")
-    .filter((line) => !HEADING_LINE.test(line))
-    .join(" ");
-  return prose
-    .split(/(?<=[.!?])\s+/)
-    .map((sentence) => sentence.trim())
-    .filter((sentence) => sentence !== "");
-}
 
 function identicalAcrossTriple({ group, claude, codex, opencode }: Triple): IdenticalSentence[] {
   const codexSentences = new Set(sentencesOf(readTrackedText(codex).text));

@@ -2,10 +2,12 @@ import { homeDirectoryFrom } from "../state/store.ts";
 import { codexHostProbes } from "./codex-host.ts";
 import { installClaude, purgeClaude, repairClaude } from "./claude.ts";
 import { installCodex, purgeCodex, repairCodex } from "./codex.ts";
-import { repairOpenCode } from "./opencode.ts";
+import { opencodePathsFor, repairOpenCode } from "./opencode.ts";
 import { openCodeHostProbes } from "./opencode-host.ts";
 import { installOpenCode } from "./opencode-install.ts";
 import { purgeOpenCode } from "./opencode-purge.ts";
+import { setProfile, showProfile } from "./profile.ts";
+import type { CommandOutcome } from "./report.ts";
 import { verifyClaude } from "./verify-claude.ts";
 import { verifyCodex } from "./verify-codex.ts";
 import { verifyOpenCode } from "./verify-opencode.ts";
@@ -75,12 +77,16 @@ const EVERY_DECLARED_FLAG: ReadonlySet<string> = new Set(
   HOSTS.flatMap((host) => VERBS.flatMap((verb) => FLAGS_PER_HOST_AND_VERB[host][verb].flags.map((flag) => flag.name))),
 );
 
+const PROFILE_VERB = "profile";
+
 const USAGE = `usage: oso <install|verify|repair|purge> --host <claude|codex|opencode> [flags]
+       oso ${PROFILE_VERB} show | set <normal|strong|custom> [--applier|--verifier|--judges <default|strong>[:<model>]]
 
 arguments, per host and verb:
 ${HOSTS.flatMap((host) => VERBS.map((verb) => `  ${host.padEnd(9)} ${verb.padEnd(8)} ${argumentSummary(FLAGS_PER_HOST_AND_VERB[host][verb])}`)).join("\n")}
 
 A flag offered to a host and verb that does not take it is refused, never ignored.
+The ${PROFILE_VERB} verb takes no --host: one profile spans every host, and only a custom names its roles.
 `;
 
 class UsageError extends Error {}
@@ -124,25 +130,44 @@ export function main(argv: readonly string[], repositoryRoot: string): number {
 }
 
 function dispatch(argv: readonly string[], repositoryRoot: string): number {
+  const workingDirectory = process.cwd();
+  const outcome =
+    argv[0] === PROFILE_VERB ? runProfile(argv.slice(1), workingDirectory) : runHostVerb(argv, repositoryRoot, workingDirectory);
+  process.stdout.write(outcome.report);
+  return outcome.exitCode;
+}
+
+function runProfile(argv: readonly string[], workingDirectory: string): CommandOutcome {
+  const [subverb, name, ...roleTokens] = argv;
+  if (subverb === "show" && argv.length === 1) return showProfile(workingDirectory, renderedOpenCodeConfigFile());
+  if (subverb === "set" && name !== undefined) return setProfile(workingDirectory, name, roleTokens);
+  throw new UsageError();
+}
+
+function renderedOpenCodeConfigFile(): string {
+  return opencodePathsFor(homeDirectoryFrom(process.platform, process.env), process.env).configFile;
+}
+
+function runHostVerb(argv: readonly string[], repositoryRoot: string, workingDirectory: string): CommandOutcome {
   const parsed = parseArgv(argv);
   const homeDirectory = homeDirectoryFrom(process.platform, process.env);
   const context = {
     homeDirectory,
     repositoryRoot,
+    workingDirectory,
     environment: process.env,
     platform: process.platform,
     assumeYes: parsed.flags.has("--yes"),
     installImpeccable: !parsed.flags.has("--no-impeccable"),
     installGitHook: !parsed.flags.has("--no-git-hook"),
   };
-  const outcome = runHost(parsed, context);
-  process.stdout.write(outcome.report);
-  return outcome.exitCode;
+  return runHost(parsed, context);
 }
 
 type CommandContext = Readonly<{
   homeDirectory: string;
   repositoryRoot: string;
+  workingDirectory: string;
   environment: NodeJS.ProcessEnv;
   platform: NodeJS.Platform;
   assumeYes: boolean;
@@ -193,6 +218,7 @@ function runOpenCode(parsed: ParsedArgv, context: CommandContext): { report: str
       return installOpenCode({
         homeDirectory: context.homeDirectory,
         repositoryRoot: context.repositoryRoot,
+        workingDirectory: context.workingDirectory,
         environment: context.environment,
         platform: context.platform,
         host: openCodeHostProbes(context.environment),
@@ -204,6 +230,7 @@ function runOpenCode(parsed: ParsedArgv, context: CommandContext): { report: str
       return verifyOpenCode({
         homeDirectory: context.homeDirectory,
         repositoryRoot: context.repositoryRoot,
+        workingDirectory: context.workingDirectory,
         environment: context.environment,
         platform: context.platform,
         host: openCodeHostProbes(context.environment),

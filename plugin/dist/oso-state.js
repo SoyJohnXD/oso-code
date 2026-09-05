@@ -331,7 +331,7 @@ var StateFileUnreadableError = class extends Error {
 };
 var CHANGE_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 var NAME_TOKEN_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
-var NAME_TOKEN_MAX_LENGTH = 128;
+var TOKEN_MAX_LENGTH = 128;
 var LOCK_STALE_SECONDS = 30;
 var LOCK_MAX_TRIES = 200;
 var LOCK_RETRY_MS = 50;
@@ -345,10 +345,12 @@ function stateRootDirectory() {
   if (configured !== void 0 && configured !== "") return configured;
   return path.join(homeDirectory(), ".local", "state", "oso-code");
 }
-function stateFileFor(cwd) {
+function repositoryIdentityFor(cwd) {
   const directory = cwd.replace(/\r$/, "");
-  const identity = gitCommonDirectory(directory) || directory;
-  return path.join(stateRootDirectory(), `${sha256Hex(identity)}.state`);
+  return gitCommonDirectory(directory) || directory;
+}
+function stateFileFor(cwd) {
+  return path.join(stateRootDirectory(), `${sha256Hex(repositoryIdentityFor(cwd))}.state`);
 }
 function repositoryIdFor(stateFile) {
   return path.basename(stateFile, ".state");
@@ -363,8 +365,9 @@ function journalFileFor(cwd) {
 function denyPatternsFileFor(stateFile) {
   return path.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
 }
+var MODEL_TOKEN_SHAPE = `1 to ${TOKEN_MAX_LENGTH} characters of letters, digits and / : . - _ @`;
 function isNameToken(value) {
-  return value.length >= 1 && value.length <= NAME_TOKEN_MAX_LENGTH && NAME_TOKEN_PATTERN.test(value);
+  return value.length >= 1 && value.length <= TOKEN_MAX_LENGTH && NAME_TOKEN_PATTERN.test(value);
 }
 function stateRecords(content, key) {
   const prefix = `${key}=`;
