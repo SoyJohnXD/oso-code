@@ -2296,6 +2296,12 @@ function runCapturePlan(cwd, sessionId, digest, document) {
   const paths = planPaths(stateFile, digest);
   ensurePlanDirectory(paths);
   if (document.length === 0) throw new PlanFailure("capture-plan requires a non-empty plan document on stdin");
+  const uncheckedSlice = firstSliceNamingNoCheck(document);
+  if (uncheckedSlice !== void 0) {
+    throw new PlanFailure(
+      `capture-plan requires slice ${uncheckedSlice} to name ${VERIFY_CHECK_TOKENS.join(" or ")} on its Verify line`
+    );
+  }
   return withLock(stateFile, sessionId, () => {
     if (existsSync3(paths.presentedFile)) {
       if (!isPrivateRegularFile(paths.presentedFile)) {
@@ -2478,6 +2484,31 @@ function amendmentShapeFor(approval) {
   if (approval === "approved") return { heading: "Execution amendment", classification: "in-scope" };
   if (approval === "pending") return { heading: "Plan Mode feedback", classification: "feedback" };
   throw new PlanFailure("amendments require a pending or approved plan");
+}
+var VERIFY_CHECK_TOKENS = ["failing-check:", "Verify-exception:"];
+var THE_FIELD_ONLY_A_SLICE_BLOCK_CARRIES = "Depends-on";
+var MARKDOWN_LIST_OR_HEADING = /^[\s>]*(?:#{1,6}\s+)?(?:[-*+]\s+|\d+[.)]\s+)?(?:\[[ xX]\]\s+)?/;
+var MARKDOWN_EMPHASIS = /^[*_]{1,3}/;
+var SLICE_LABEL = /^(S\d+|Slice\s+\d+)(?:\s+[A-Z]{2,})*(?:\s*\([^)]*\))?\s*[—–:-]/;
+function firstSliceNamingNoCheck(document) {
+  return sliceBlocksIn(document).find(({ text }) => !namesAVerifyCheck(text))?.label;
+}
+function sliceBlocksIn(document) {
+  const opened = [];
+  for (const line of document.split("\n")) {
+    const label = sliceLabelOpening(line);
+    if (label !== void 0) opened.push({ label, lines: [line] });
+    else opened.at(-1)?.lines.push(line);
+  }
+  return opened.map(({ label, lines }) => ({ label, text: lines.join("\n") })).filter(({ text }) => text.includes(THE_FIELD_ONLY_A_SLICE_BLOCK_CARRIES));
+}
+function sliceLabelOpening(line) {
+  const undecorated = line.replace(MARKDOWN_LIST_OR_HEADING, "").replace(MARKDOWN_EMPHASIS, "");
+  return SLICE_LABEL.exec(undecorated)?.[1];
+}
+function namesAVerifyCheck(blockText) {
+  const lowered = blockText.toLowerCase();
+  return VERIFY_CHECK_TOKENS.some((token) => lowered.includes(token.toLowerCase()));
 }
 
 // core/src/gates/planrail.ts
