@@ -21,6 +21,10 @@ const PROBE_ARTIFACT = "probe.txt";
 const PROBE_WORKTREE_BRANCH = "oso/prompt-free-posture-probe";
 const SKILL_HEAD_RECORDS = 2;
 
+const THE_END_STATE_READING =
+  "the end-state reading of prompt-free: one headless turn reaching the two paths C0-D5(a) allows and the harness state root the " +
+  "shell tool reaches as an advisory argument path, and every permission line the host printed while it ran";
+
 const probe: OpenCodeBinaryProbe | undefined = CERTIFY
   ? resolveOpenCodeBinaryProbe(process.env[OVERRIDE_ENV_VAR], SUPPORTED_OPENCODE_VERSION, process.env)
   : undefined;
@@ -40,7 +44,7 @@ function postureProbePathsIn(fixture: ContractFixture, worktree: string): Postur
   };
 }
 
-function oneTurnAcrossTheHarnessPaths(paths: PostureProbePaths): string {
+function oneTurnAcrossTheProbedPaths(paths: PostureProbePaths): string {
   return (
     `head -${SKILL_HEAD_RECORDS} ${paths.skillFile} > ${paths.artifact} && ` +
     `${paths.stateBinary} --session ${PROBE_SESSION_ID} show >> ${paths.artifact}`
@@ -57,7 +61,7 @@ function addWorktree(repository: string, worktree: string): boolean {
   return added.error === undefined && added.status === 0;
 }
 
-describe("the end-state reading of prompt-free: one headless turn reaching the three harness paths C0-D5(a) allows, and every permission line the host printed while it ran", () => {
+describe(THE_END_STATE_READING, () => {
   let fixture: ContractFixture | undefined;
   let paths: PostureProbePaths | undefined;
   let setupFailureReason: string | undefined;
@@ -83,7 +87,7 @@ describe("the end-state reading of prompt-free: one headless turn reaching the t
     paths = postureProbePathsIn(fixture, worktree);
     modelChoice = chooseSessionModel(probe.binary, fixture.environment);
     if (modelChoice.kind !== "chosen") return;
-    session = runProbeSession(probe.binary, fixture.environment, repository, modelChoice.model, oneTurnAcrossTheHarnessPaths(paths));
+    session = runProbeSession(probe.binary, fixture.environment, repository, modelChoice.model, oneTurnAcrossTheProbedPaths(paths));
   });
 
   after(() => {

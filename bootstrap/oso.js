@@ -27,6 +27,8 @@ var StateFileUnreadableError = class extends Error {
     this.stateFile = stateFile;
   }
 };
+var MODEL_TOKEN_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9/:._@-]*$/;
+var TOKEN_MAX_LENGTH = 128;
 function sha256Hex(value) {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -35,16 +37,22 @@ function stateRootDirectory() {
   if (configured !== void 0 && configured !== "") return configured;
   return path.join(homeDirectory(), ".local", "state", "oso-code");
 }
-function stateFileFor(cwd) {
+function repositoryIdentityFor(cwd) {
   const directory = cwd.replace(/\r$/, "");
-  const identity = gitCommonDirectory(directory) || directory;
-  return path.join(stateRootDirectory(), `${sha256Hex(identity)}.state`);
+  return gitCommonDirectory(directory) || directory;
+}
+function stateFileFor(cwd) {
+  return path.join(stateRootDirectory(), `${sha256Hex(repositoryIdentityFor(cwd))}.state`);
 }
 function repositoryIdFor(stateFile) {
   return path.basename(stateFile, ".state");
 }
 function profileFileFor(stateFile) {
   return path.join(stateRootDirectory(), "profiles", `${repositoryIdFor(stateFile)}.profile`);
+}
+var MODEL_TOKEN_SHAPE = `1 to ${TOKEN_MAX_LENGTH} characters of letters, digits and / : . - _ @`;
+function isModelToken(value) {
+  return value.length >= 1 && value.length <= TOKEN_MAX_LENGTH && MODEL_TOKEN_PATTERN.test(value);
 }
 function stateRecords(content, key) {
   const prefix = `${key}=`;
@@ -3426,12 +3434,41 @@ var OWNED_SKILL_MODES = ["oso-plan", "oso-quick", "oso-debug", "oso-roadmap"];
 var OWNED_SKILL_VERDICT = "deny";
 var OWNED_TASK_PATTERN = "*";
 var OWNED_TASK_VERDICT = "allow";
-var HARNESS_EXTERNAL_DIRECTORIES = [
-  "~/.config/opencode/**",
-  "~/.local/state/oso-code/**",
-  "~/.local/share/opencode/worktree/**"
-];
+var HARNESS_EXTERNAL_DIRECTORIES = ["~/.config/opencode/skill/**", "~/.local/share/opencode/worktree/**"];
 var HARNESS_EXTERNAL_DIRECTORY_VERDICT = "allow";
+var HARNESS_OWNED_TREES_NO_AGENT_MAY_EDIT = ["**/.config/opencode/skill/**", "**/.local/state/oso-code/**"];
+var HARNESS_OWNED_TREE_EDIT_VERDICT = "deny";
+var HOST_SURFACES_NO_HARNESS_GRANT_MAY_REACH = [
+  "~/.config/opencode/plugin",
+  "~/.config/opencode/plugins",
+  "~/.config/opencode/bin",
+  "~/.config/opencode/hooks",
+  "~/.config/opencode/git-hooks",
+  "~/.config/opencode/opencode.json",
+  "~/.local/state/oso-code",
+  "**/.opencode/plugin",
+  "**/.opencode/plugins"
+];
+var REACHES_THE_EDIT_CONTROL_BOUNDS = [
+  { pattern: "~/.config/opencode/skill/**", surface: "**/.opencode/plugin" },
+  { pattern: "~/.config/opencode/skill/**", surface: "**/.opencode/plugins" },
+  { pattern: "~/.local/share/opencode/worktree/**", surface: "**/.opencode/plugin" },
+  { pattern: "~/.local/share/opencode/worktree/**", surface: "**/.opencode/plugins" }
+];
+var EDIT_RULES_THE_HOST_RESOLVES_BY_LAST_MATCH = [
+  { pattern: "*", verdict: "allow" },
+  { pattern: ".config/opencode/**", verdict: "deny" },
+  { pattern: "**/.config/opencode/**", verdict: "deny" },
+  { pattern: ".opencode/**", verdict: "deny" },
+  { pattern: "**/.opencode/**", verdict: "deny" },
+  { pattern: ".git/**", verdict: "deny" },
+  { pattern: "**/.git/**", verdict: "deny" },
+  { pattern: ".local/state/oso-code/**", verdict: "deny" },
+  { pattern: "**/.local/state/oso-code/**", verdict: "deny" }
+];
+var EDIT_CONTROL_BOUNDING_A_REACH = `edit denied on ${EDIT_RULES_THE_HOST_RESOLVES_BY_LAST_MATCH.filter(
+  (rule) => rule.verdict === "deny"
+).map((rule) => rule.pattern).join(" ")}`;
 var OWNED_PERMISSION_VALUES = {
   question: "allow",
   plan_enter: "allow",
@@ -3450,9 +3487,16 @@ var MCP_KEY = "mcp";
 var SKILL_KEY = "skill";
 var TASK_KEY = "task";
 var EXTERNAL_DIRECTORY_KEY = "external_directory";
+var EDIT_KEY = "edit";
 var DOOM_LOOP_KEY = "doom_loop";
 var HOST_PROMPT_VERDICT = "ask";
 var AGENT_KEY = "agent";
+var PATH_SEPARATOR = "/";
+var SURFACE_AT_ANY_DEPTH_PREFIX = "**/";
+var READS_THE_HARNESS_GRANTS_LEAVE_ASKING = [
+  { named: "~/.config/opencode/** beyond skill/", probedAt: "~/.config/opencode/plugin" },
+  { named: "~/.local/state/oso-code/**", probedAt: "~/.local/state/oso-code" }
+];
 var NEVER_PRESERVED_KEYS = [PERMISSION_KEY, MCP_KEY, PLUGIN_KEY];
 var OPENCODE_SESSION_MODEL_FIELDS = { default: "small_model", strong: "model" };
 var OPENCODE_AGENTS_PER_PROFILE_ROLE = {
@@ -3460,6 +3504,8 @@ var OPENCODE_AGENTS_PER_PROFILE_ROLE = {
   verifier: ["oso-verifier"],
   judges: ["oso-debt-sweep", "oso-doubt-pass", "oso-security-reviewer", "oso-triage"]
 };
+var OPENCODE_AGENTS_THE_PROFILE_DRIVES = Object.values(OPENCODE_AGENTS_PER_PROFILE_ROLE).flat();
+var EVERY_AGENT_ON_THE_HOST_SESSION_MODEL = "every agent runs on the host session model";
 var OpenCodeConfigRefusal = class extends Error {
   reason;
   constructor(reason) {
@@ -3480,6 +3526,17 @@ function openCodeAgentModels(existing, profileRoles) {
   }
   return models;
 }
+function installedAgentModels(existing) {
+  const document = isPlainObject(existing) ? existing : {};
+  const agents = isPlainObject(document[AGENT_KEY]) ? document[AGENT_KEY] : {};
+  const installed = {};
+  for (const agent of OPENCODE_AGENTS_THE_PROFILE_DRIVES) {
+    const spec = agents[agent];
+    const model = isPlainObject(spec) ? spec["model"] : void 0;
+    if (typeof model === "string") installed[agent] = model;
+  }
+  return installed;
+}
 function sessionModelNamed(document, field) {
   const named = document[field];
   return typeof named === "string" && named !== "" ? named : void 0;
@@ -3496,50 +3553,143 @@ function mergeOpenCodeConfig(existing, fallowCommand, profileRoles = {}) {
   const agentModels = openCodeAgentModels(document, profileRoles);
   const profileNamesAModel = Object.keys(agentModels).length > 0;
   const ownedContainers = profileNamesAModel ? [...NEVER_PRESERVED_KEYS, AGENT_KEY] : NEVER_PRESERVED_KEYS;
-  const preservedKeys = Object.keys(document).filter((key) => !ownedContainers.includes(key));
+  const preservedKeys = [...foreignKeysOf(document, [], (key) => ownedContainers.includes(key))];
   insertIfMissing(document, SCHEMA_KEY, OPENCODE_CONFIG_SCHEMA_URL);
   createPluginArrayIfAbsent(document);
   const permission = ownedContainer(document, PERMISSION_KEY);
-  preservedKeys.push(
-    ...Object.keys(permission).filter((name) => !(name in OWNED_PERMISSION_VALUES) && ![SKILL_KEY, TASK_KEY, EXTERNAL_DIRECTORY_KEY].includes(name)).map((name) => `${PERMISSION_KEY}.${name}`)
-  );
+  const ownedPermissionContainers = [SKILL_KEY, TASK_KEY, EXTERNAL_DIRECTORY_KEY, EDIT_KEY];
+  preservedKeys.push(...foreignKeysOf(permission, [PERMISSION_KEY], (name) => name in OWNED_PERMISSION_VALUES || ownedPermissionContainers.includes(name)));
   const skills = ownedContainer(permission, SKILL_KEY);
-  preservedKeys.push(
-    ...Object.keys(skills).filter((name) => !OWNED_SKILL_MODES.includes(name)).map((name) => `${PERMISSION_KEY}.${SKILL_KEY}.${name}`)
-  );
+  preservedKeys.push(...foreignKeysOf(skills, [PERMISSION_KEY, SKILL_KEY], (name) => OWNED_SKILL_MODES.includes(name)));
   for (const mode of OWNED_SKILL_MODES) skills[mode] = OWNED_SKILL_VERDICT;
   const delegations = ownedContainer(permission, TASK_KEY);
-  preservedKeys.push(
-    ...Object.keys(delegations).filter((pattern) => pattern !== OWNED_TASK_PATTERN).map((pattern) => `${PERMISSION_KEY}.${TASK_KEY}.${pattern}`)
-  );
+  preservedKeys.push(...foreignKeysOf(delegations, [PERMISSION_KEY, TASK_KEY], (pattern) => pattern === OWNED_TASK_PATTERN));
   delegations[OWNED_TASK_PATTERN] = OWNED_TASK_VERDICT;
   const externalDirectories = ownedContainer(permission, EXTERNAL_DIRECTORY_KEY);
-  preservedKeys.push(
-    ...Object.keys(externalDirectories).filter((pattern) => !HARNESS_EXTERNAL_DIRECTORIES.includes(pattern)).map((pattern) => `${PERMISSION_KEY}.${EXTERNAL_DIRECTORY_KEY}.${pattern}`)
-  );
+  const harnessDirectories = HARNESS_EXTERNAL_DIRECTORIES;
+  preservedKeys.push(...foreignKeysOf(externalDirectories, [PERMISSION_KEY, EXTERNAL_DIRECTORY_KEY], (pattern) => harnessDirectories.includes(pattern)));
   for (const harnessDirectory of HARNESS_EXTERNAL_DIRECTORIES) externalDirectories[harnessDirectory] = HARNESS_EXTERNAL_DIRECTORY_VERDICT;
+  const editRules = ownedContainer(permission, EDIT_KEY);
+  const harnessTrees = HARNESS_OWNED_TREES_NO_AGENT_MAY_EDIT;
+  preservedKeys.push(...foreignKeysOf(editRules, [PERMISSION_KEY, EDIT_KEY], (pattern) => harnessTrees.includes(pattern)));
+  for (const harnessTree of HARNESS_OWNED_TREES_NO_AGENT_MAY_EDIT) editRules[harnessTree] = HARNESS_OWNED_TREE_EDIT_VERDICT;
   Object.assign(permission, OWNED_PERMISSION_VALUES);
   const servers = ownedContainer(document, MCP_KEY);
   const owned = ownedMcpServers(fallowCommand);
-  preservedKeys.push(
-    ...Object.keys(servers).filter((name) => !(name in owned)).map((name) => `${MCP_KEY}.${name}`)
-  );
+  preservedKeys.push(...foreignKeysOf(servers, [MCP_KEY], (name) => name in owned));
   for (const [name, declaration] of Object.entries(owned)) insertIfMissing(servers, name, declaration);
   if (profileNamesAModel) mergeAgentModels(document, preservedKeys, agentModels);
   return { document, preservedKeys, agentModels };
 }
+function foreignKeysOf(container, containerPath, isInstallerOwned) {
+  return Object.keys(container).filter((name) => !isInstallerOwned(name)).map((name) => [...containerPath, name].join("."));
+}
 function mergeAgentModels(document, preservedKeys, agentModels) {
   const agents = ownedContainer(document, AGENT_KEY);
-  preservedKeys.push(
-    ...Object.keys(agents).filter((name) => !(name in agentModels)).map((name) => `${AGENT_KEY}.${name}`)
-  );
+  preservedKeys.push(...foreignKeysOf(agents, [AGENT_KEY], (name) => name in agentModels));
   for (const [name, model] of Object.entries(agentModels)) ownedContainer(agents, name)["model"] = model;
+}
+function hostSurfacesReachedBy(patterns) {
+  return patterns.flatMap(
+    (pattern) => HOST_SURFACES_NO_HARNESS_GRANT_MAY_REACH.filter((surface) => grantReachesSurface(pattern, surface)).map((surface) => ({
+      pattern,
+      surface
+    }))
+  );
+}
+var SURFACES_THE_EDIT_CONTROL_DENIES = [
+  ...new Set(
+    EDIT_RULES_THE_HOST_RESOLVES_BY_LAST_MATCH.filter((rule) => rule.verdict === "deny").map(
+      (rule) => literalHeadOf(withoutAnyDepthPrefix(rule.pattern))
+    )
+  )
+];
+function editControlDenies(surface) {
+  return trailingPathsOf(withoutAnyDepthPrefix(surface)).some(
+    (trailing) => SURFACES_THE_EDIT_CONTROL_DENIES.some((denied) => isAtOrUnder(trailing, denied))
+  );
+}
+function withoutAnyDepthPrefix(named) {
+  return named.startsWith(SURFACE_AT_ANY_DEPTH_PREFIX) ? named.slice(SURFACE_AT_ANY_DEPTH_PREFIX.length) : named;
+}
+function literalHeadOf(pattern) {
+  const wildcard = pattern.indexOf("*");
+  const head = wildcard === -1 ? pattern : pattern.slice(0, wildcard);
+  return head.endsWith(PATH_SEPARATOR) ? head.slice(0, -PATH_SEPARATOR.length) : head;
+}
+var EVERY_WILDCARD_RUN = /\*+/g;
+var A_SEGMENT_EVERY_WILDCARD_ADMITS = "any";
+var THE_SINGLE_CHARACTER_WILDCARD = /\?/g;
+var A_CHARACTER_THE_SINGLE_WILDCARD_ADMITS = "a";
+var AT_OR_UNDER_SUFFIX = "/**";
+var PATTERN_METACHARACTERS = /[.+^${}()|[\]\\]/g;
+var TRAILING_ARGUMENT_WILDCARD = " .*";
+var TRAILING_ARGUMENT_MADE_OPTIONAL = "( .*)?";
+function grantReachesSurface(grant, surface) {
+  return witnessesBetween(grant, surface).some(
+    (witness) => hostPatternMatches(grant, witness) && surfaceCovers(surface, witness)
+  );
+}
+function witnessesBetween(grant, surface) {
+  const underTheGrant = withWildcardsConcreted(grant);
+  if (!surface.startsWith(SURFACE_AT_ANY_DEPTH_PREFIX)) return [underTheGrant, surface];
+  return [underTheGrant, [underTheGrant, withoutAnyDepthPrefix(surface)].join(PATH_SEPARATOR)];
+}
+function withWildcardsConcreted(pattern) {
+  return pattern.replace(EVERY_WILDCARD_RUN, A_SEGMENT_EVERY_WILDCARD_ADMITS).replace(THE_SINGLE_CHARACTER_WILDCARD, A_CHARACTER_THE_SINGLE_WILDCARD_ADMITS);
+}
+function surfaceCovers(surface, witness) {
+  return hostPatternMatches(surface, witness) || hostPatternMatches(`${surface}${AT_OR_UNDER_SUFFIX}`, witness);
+}
+function hostPatternMatches(pattern, resource) {
+  const escaped = pattern.replace(PATTERN_METACHARACTERS, "\\$&").replaceAll("*", ".*").replaceAll("?", ".");
+  const expression = escaped.endsWith(TRAILING_ARGUMENT_WILDCARD) ? `${escaped.slice(0, -TRAILING_ARGUMENT_WILDCARD.length)}${TRAILING_ARGUMENT_MADE_OPTIONAL}` : escaped;
+  return new RegExp(`^${expression}$`, "s").test(resource);
+}
+function trailingPathsOf(candidate) {
+  const segments = candidate.split(PATH_SEPARATOR);
+  return segments.map((_, index) => segments.slice(index).join(PATH_SEPARATOR));
+}
+function isAtOrUnder(candidate, ancestor) {
+  return ancestor === "" || candidate === ancestor || candidate.startsWith(`${ancestor}${PATH_SEPARATOR}`);
+}
+function externalDirectoryGrantsIn(config) {
+  const permission = isPlainObject(config) && isPlainObject(config[PERMISSION_KEY]) ? config[PERMISSION_KEY] : {};
+  const rules = isPlainObject(permission[EXTERNAL_DIRECTORY_KEY]) ? permission[EXTERNAL_DIRECTORY_KEY] : {};
+  return Object.entries(rules).filter(([, verdict]) => verdict === HARNESS_EXTERNAL_DIRECTORY_VERDICT).map(([pattern]) => pattern);
+}
+var HOST_PERMISSION_VERDICTS = ["allow", "ask", "deny"];
+function harnessGrantPostureOf(externalDirectories) {
+  const ownedRows = HARNESS_EXTERNAL_DIRECTORIES.map((harnessDirectory) => externalDirectories[harnessDirectory]);
+  if (ownedRows.some((verdict) => verdict !== void 0 && !isHostVerdict(verdict))) return "malformed";
+  const widened = Object.entries(externalDirectories).some(
+    ([pattern, verdict]) => verdict === HARNESS_EXTERNAL_DIRECTORY_VERDICT && widensAHarnessGrant(pattern)
+  );
+  if (widened) return "malformed";
+  return ownedRows.every((verdict) => verdict === HARNESS_EXTERNAL_DIRECTORY_VERDICT) ? "as installed" : "narrowed by the operator";
+}
+function isHostVerdict(verdict) {
+  return typeof verdict === "string" && HOST_PERMISSION_VERDICTS.includes(verdict);
+}
+function widensAHarnessGrant(pattern) {
+  return HARNESS_EXTERNAL_DIRECTORIES.some(
+    (harnessDirectory) => hostPatternMatches(pattern, withWildcardsConcreted(harnessDirectory)) && !hostPatternMatches(harnessDirectory, withWildcardsConcreted(pattern))
+  );
 }
 function remainingPromptsOf(config) {
   const permission = isPlainObject(config) && isPlainObject(config[PERMISSION_KEY]) ? config[PERMISSION_KEY] : {};
   const spelled = Object.entries(permission).flatMap(([key, rule]) => promptsOfRule(key, rule));
   const unspelledDoomLoop = DOOM_LOOP_KEY in permission ? [] : [DOOM_LOOP_KEY];
-  return [...spelled, ...unspelledDoomLoop].sort();
+  return [...spelled, ...unspelledDoomLoop, ...readsBeyondTheHarnessGrants(permission)].sort();
+}
+function readsBeyondTheHarnessGrants(permission) {
+  const rules = isPlainObject(permission[EXTERNAL_DIRECTORY_KEY]) ? Object.entries(permission[EXTERNAL_DIRECTORY_KEY]) : [];
+  return READS_THE_HARNESS_GRANTS_LEAVE_ASKING.filter(
+    (read) => lastVerdictCovering(rules, read.probedAt) !== HARNESS_EXTERNAL_DIRECTORY_VERDICT
+  ).map((read) => `${EXTERNAL_DIRECTORY_KEY} ${read.named}`);
+}
+function lastVerdictCovering(rules, probedAt) {
+  return rules.filter(([pattern]) => isAtOrUnder(probedAt, literalHeadOf(pattern))).at(-1)?.[1];
 }
 function promptsOfRule(key, rule) {
   if (rule === HOST_PROMPT_VERDICT) return [key];
@@ -3946,10 +4096,7 @@ import path13 from "node:path";
 var ROLES = ["applier", "verifier", "judges"];
 var TIERS = ["default", "strong"];
 var PROFILE_NAMES = ["normal", "strong", "custom"];
-var OPENCODE_PROMPTS_HEADING = "prompts that remain on OpenCode, read from";
-var PROMPT_INDENT = "  ";
-var NO_PROMPT_REMAINS = "none";
-var UNDER_TODAYS_PROMPTS = "every prompt this host asks today still stops an unattended run";
+var BLOCK_INDENT = "  ";
 var ON_DEFAULT = { tier: "default", model: void 0 };
 var ON_STRONG = { tier: "strong", model: void 0 };
 var PRESETS = {
@@ -3957,69 +4104,152 @@ var PRESETS = {
   strong: { applier: ON_STRONG, verifier: ON_STRONG, judges: ON_STRONG }
 };
 var TIER_RANK = { default: 0, strong: 1 };
+var FORKED_JUDGES_FLOOR = "strong";
 var ProfileRefusedError = class extends Error {
   constructor(reason) {
     super(`profile set refused: ${reason}`);
     this.name = "ProfileRefusedError";
   }
 };
-function showProfile(workingDirectory, openCodeConfigFile) {
-  const mirror = mirrorFileFor(workingDirectory);
-  const read = readStateFile(mirror);
-  if (read.kind === "unreadable") throw new StateFileUnreadableError(mirror, read.cause);
-  const chosen = read.kind === "absent" ? `no profile at ${mirror} \u2014 every role runs on its host's session model
-` : `${mirror}
-${read.content}`;
-  return { report: `oso profile show
-${chosen}${openCodePromptSection(openCodeConfigFile)}`, exitCode: 0 };
-}
-function openCodePromptSection(configFile) {
-  const reading = openCodePromptsRemaining(configFile);
-  const heading = `${OPENCODE_PROMPTS_HEADING} ${configFile}:
-`;
-  if (reading.kind === "unread") return `${heading}${PROMPT_INDENT}${reading.reason}
-`;
-  if (reading.prompts.length === 0) return `${heading}${PROMPT_INDENT}${NO_PROMPT_REMAINS}
-`;
-  return `${heading}${reading.prompts.map((prompt) => `${PROMPT_INDENT}${prompt}
-`).join("")}`;
-}
-function openCodePromptsRemaining(configFile) {
-  if (!isReadableRegularFile(configFile)) return { kind: "unread", reason: `no readable OpenCode config, so ${UNDER_TODAYS_PROMPTS}` };
-  try {
-    return { kind: "read", prompts: remainingPromptsOf(readJsonFile(configFile)) };
-  } catch (error) {
-    if (!(error instanceof JsonParseError)) throw error;
-    return { kind: "unread", reason: `${error.message}, so ${UNDER_TODAYS_PROMPTS}` };
+var ProfileMirrorRefusedError = class extends Error {
+  constructor(mirror, reason) {
+    super(`the profile mirror at ${mirror} is refused: ${reason}`);
+    this.name = "ProfileMirrorRefusedError";
   }
+};
+function showProfile(workingDirectory, openCodeConfigFile) {
+  const profile = readProfile(workingDirectory);
+  const config = openCodeConfigReading(openCodeConfigFile);
+  const sections = [
+    mirrorSection(profile),
+    keyedToLine(profile.mirror),
+    unrankableModelSection(profileRolesOf(profile)),
+    openCodeAgentModelSection(openCodeConfigFile, config, profile),
+    openCodePromptSection(openCodeConfigFile, config)
+  ];
+  return { report: `oso profile show
+${sections.join("")}`, exitCode: 0 };
 }
 function setProfile(workingDirectory, name, roleTokens) {
   const profile = profileFrom(name, roleTokens);
-  const mirror = mirrorFileFor(workingDirectory);
+  const mirror = mirrorFor(workingDirectory);
   const content = mirrorContentOf(profile);
-  writeFileAtomically(path13.dirname(mirror), mirror, content, ".profile.");
+  writeFileAtomically(path13.dirname(mirror.file), mirror.file, content, ".profile.");
   return { report: `oso profile set ${profile.name}
-${mirror}
-${content}`, exitCode: 0 };
+${mirror.file}
+${content}${keyedToLine(mirror)}`, exitCode: 0 };
 }
-function readProfileRoles(workingDirectory) {
-  const mirror = mirrorFileFor(workingDirectory);
-  const read = readStateFile(mirror);
-  if (read.kind === "unreadable") throw new StateFileUnreadableError(mirror, read.cause);
-  return read.kind === "absent" ? {} : roleChoicesOfMirror(read.content);
+function readProfile(workingDirectory) {
+  const mirror = mirrorFor(workingDirectory);
+  const read = readStateFile(mirror.file);
+  if (read.kind === "unreadable") throw new StateFileUnreadableError(mirror.file, read.cause);
+  if (read.kind === "absent") return { kind: "unmirrored", mirror };
+  return { kind: "mirrored", mirror, content: read.content, roles: roleChoicesOfMirror(mirror.file, read.content) };
 }
-function mirrorFileFor(workingDirectory) {
-  return profileFileFor(stateFileFor(workingDirectory));
+function profileRolesOf(reading) {
+  return reading.kind === "mirrored" ? reading.roles : {};
 }
-function roleChoicesOfMirror(content) {
+function mirrorFor(workingDirectory) {
+  const stateFile = stateFileFor(workingDirectory);
+  return { file: profileFileFor(stateFile), repository: repositoryIdentityFor(workingDirectory), digest: repositoryIdFor(stateFile) };
+}
+function mirrorSection(profile) {
+  if (profile.kind === "unmirrored") return `no profile at ${profile.mirror.file} \u2014 every role runs on its host's session model
+`;
+  return `${profile.mirror.file}
+${profile.content}`;
+}
+function keyedToLine(mirror) {
+  return `this profile is per repository, keyed to ${mirror.repository} (digest ${mirror.digest})
+`;
+}
+function modelOverridesTheTierCannotRank(roles) {
+  return ROLES.flatMap((role) => {
+    const choice = roles[role];
+    return choice?.model === void 0 ? [] : [`${role}: ${choice.tier} declared \u2014 model ${choice.model} overrides the tier's session field; the harness cannot rank it`];
+  });
+}
+function unrankableModelSection(roles) {
+  return modelOverridesTheTierCannotRank(roles).map((declared) => `${declared}
+`).join("");
+}
+function openCodeAgentModelSection(configFile, config, profile) {
+  const heading = `agent model keys the installed OpenCode config carries, read from ${configFile}:
+`;
+  if (config.kind === "unread") return `${heading}${BLOCK_INDENT}${config.cause}, so no agent model key was read
+`;
+  const lines = agentModelMarkings(config.document, profile);
+  return `${heading}${lines.map((line) => `${BLOCK_INDENT}${line}
+`).join("")}`;
+}
+function agentModelMarkings(document, profile) {
+  const installed = installedAgentModels(document);
+  if (profile.kind === "unmirrored") {
+    const read = OPENCODE_AGENTS_THE_PROFILE_DRIVES.map((agent) => `${agent} \u2014 installed: ${installed[agent] ?? "none"}`);
+    return [...read, "no profile for this repository \u2014 set one with `oso profile set normal|strong|custom \u2026` from this directory"];
+  }
+  const mirrored = openCodeAgentModels(document, profile.roles);
+  return OPENCODE_AGENTS_THE_PROFILE_DRIVES.map((agent) => markedAgainstTheMirror(agent, installed[agent], mirrored[agent]));
+}
+var AN_INSTALL_FROM_THIS_DIRECTORY = "run oso install --host opencode from this directory";
+function markedAgainstTheMirror(agent, installed, mirrored) {
+  if (installed === void 0) return `${agent} \u2014 absent \u2014 ${AN_INSTALL_FROM_THIS_DIRECTORY} to apply`;
+  if (installed === mirrored) return `${agent}=${installed} \u2014 matches this mirror`;
+  return `${agent}=${installed} \u2014 differs \u2014 set from another repository or by hand; ${AN_INSTALL_FROM_THIS_DIRECTORY} to apply this mirror`;
+}
+function openCodePromptSection(configFile, config) {
+  const heading = `prompts that remain on OpenCode, read from ${configFile}:
+`;
+  if (config.kind === "unread") return `${heading}${BLOCK_INDENT}${config.cause}, so every prompt this host asks today still stops an unattended run
+`;
+  const prompts = remainingPromptsOf(config.document);
+  if (prompts.length === 0) return `${heading}${BLOCK_INDENT}none
+`;
+  return `${heading}${prompts.map((prompt) => `${BLOCK_INDENT}${prompt}
+`).join("")}`;
+}
+function openCodeConfigReading(configFile) {
+  if (!isReadableRegularFile(configFile)) return { kind: "unread", cause: "no readable OpenCode config" };
+  try {
+    return { kind: "read", document: readJsonFile(configFile) };
+  } catch (error) {
+    if (!(error instanceof JsonParseError)) throw error;
+    return { kind: "unread", cause: error.message };
+  }
+}
+function roleChoicesOfMirror(mirror, content) {
   const chosen = {};
   for (const role of ROLES) {
-    const tier = stateValue(content, tierRecord(role));
-    if (!isTier(tier)) continue;
-    const named = stateValue(content, modelRecord(role));
-    chosen[role] = { tier, model: named === "" ? void 0 : named };
+    chosen[role] = { tier: tierOfMirror(mirror, content, role), model: modelOfMirror(mirror, content, role) };
+  }
+  const breach = tierFloorBreachOf(chosen);
+  if (breach !== void 0) {
+    throw new ProfileMirrorRefusedError(mirror, `${breach.reason} \u2014 ${tierRecord(breach.role)}=${breach.floor} would have passed`);
   }
   return chosen;
+}
+function tierOfMirror(mirror, content, role) {
+  const key = tierRecord(role);
+  const records = stateRecords(content, key);
+  if (records.length !== 1) throw soleRecordRefusal(mirror, key, records.length);
+  const declared = records[0];
+  if (!isTier(declared)) throw new ProfileMirrorRefusedError(mirror, `${key}=${declared} names no tier \u2014 the tiers are ${TIERS.join(", ")}`);
+  return declared;
+}
+function modelOfMirror(mirror, content, role) {
+  const key = modelRecord(role);
+  const records = stateRecords(content, key);
+  if (records.length === 0) return void 0;
+  if (records.length > 1) throw soleRecordRefusal(mirror, key, records.length);
+  const declared = records[0];
+  if (!isModelToken(declared)) {
+    throw new ProfileMirrorRefusedError(mirror, `${key}=${JSON.stringify(declared)} names no model \u2014 ${MODEL_TOKEN_SHAPE} would have passed`);
+  }
+  return declared;
+}
+function soleRecordRefusal(mirror, key, records) {
+  const found = records === 0 ? `${key} names no record` : `${key} names ${records} records`;
+  return new ProfileMirrorRefusedError(mirror, `${found} \u2014 exactly one ${key}= record would have passed`);
 }
 function profileFrom(name, roleTokens) {
   if (!isProfileName(name)) throw new ProfileRefusedError(`${name} is not a profile name \u2014 the names are ${PROFILE_NAMES.join(", ")}`);
@@ -4039,14 +4269,25 @@ function customRoles(chosen) {
   if (applier === void 0) throw missingRole("applier");
   if (verifier === void 0) throw missingRole("verifier");
   if (judges === void 0) throw missingRole("judges");
-  refuseVerifierBelowApplier(applier, verifier);
+  const breach = tierFloorBreachOf(chosen);
+  if (breach !== void 0) {
+    throw new ProfileRefusedError(`${breach.reason} \u2014 ${roleFlag(breach.role)} ${breach.floor} would have passed`);
+  }
   return { applier, verifier, judges };
 }
-function refuseVerifierBelowApplier(applier, verifier) {
-  if (TIER_RANK[verifier.tier] >= TIER_RANK[applier.tier]) return;
-  throw new ProfileRefusedError(
-    `the verifier tier ${verifier.tier} is below the applier tier ${applier.tier} \u2014 ${roleFlag("verifier")} ${applier.tier} would have passed`
-  );
+function tierFloorBreachOf(chosen) {
+  const { applier, verifier, judges } = chosen;
+  if (applier !== void 0 && verifier !== void 0 && TIER_RANK[verifier.tier] < TIER_RANK[applier.tier]) {
+    return { reason: `the verifier tier ${verifier.tier} is below the applier tier ${applier.tier}`, role: "verifier", floor: applier.tier };
+  }
+  if (judges !== void 0 && TIER_RANK[judges.tier] < TIER_RANK[FORKED_JUDGES_FLOOR]) {
+    return {
+      reason: `the judges tier ${judges.tier} is below the ${FORKED_JUDGES_FLOOR} tier the forked judges hold`,
+      role: "judges",
+      floor: FORKED_JUDGES_FLOOR
+    };
+  }
+  return void 0;
 }
 function missingRole(role) {
   return new ProfileRefusedError(`a custom profile names every role \u2014 ${roleFlag(role)} <tier>[:<model>] is missing`);
@@ -4073,6 +4314,9 @@ function roleChoiceFrom(flag, value) {
   const model = colon === -1 ? void 0 : value.slice(colon + 1);
   if (!isTier(tier)) throw new ProfileRefusedError(`${flag} ${value} names no tier \u2014 the tiers are ${TIERS.join(", ")}`);
   if (model === "") throw new ProfileRefusedError(`${flag} ${value} names no model after its colon \u2014 ${flag} ${tier} would have passed`);
+  if (model !== void 0 && !isModelToken(model)) {
+    throw new ProfileRefusedError(`${flag} ${tier}:${JSON.stringify(model)} names no model \u2014 ${MODEL_TOKEN_SHAPE} would have passed`);
+  }
   return { tier, model };
 }
 function roleFlag(role) {
@@ -4316,19 +4560,23 @@ function publishedGateBytesEntry(publishedHashes, configHome, hooksTarget) {
 }
 function renderOpenCodeConfig(input, paths, tx) {
   const fallow = resolveFallowMcpCommand(input.environment, input.homeDirectory, input.platform) ?? FALLOW_FALLBACK_COMMAND2;
-  const merged = mergeOpenCodeConfig(recordedConfigDocument(tx), fallow, readProfileRoles(input.repositoryRoot));
+  const profile = readProfile(input.workingDirectory);
+  const merged = mergeOpenCodeConfig(recordedConfigDocument(tx), fallow, profileRolesOf(profile));
   const violation = hostContractViolationOf(merged.document);
   if (violation !== void 0) throw new Error(`the rendered config violates the host contract: ${violation}`);
   writeJsonFile(paths.configFile, merged.document);
   chmodSync2(paths.configFile, PRIVATE_FILE_MODE);
   writeFileSync8(preservedKeysFileOf(tx), merged.preservedKeys.map((key) => `${key}
 `).join(""));
-  return wiringOk("opencode.json", `preserved ${merged.preservedKeys.length} operator key(s), ${agentModelNote(merged.agentModels)}`);
+  return wiringOk("opencode.json", `preserved ${merged.preservedKeys.length} operator key(s), ${agentModelNote(profile, merged.agentModels)}`);
 }
-function agentModelNote(agentModels) {
+function agentModelNote(profile, agentModels) {
+  if (profile.kind === "unmirrored") {
+    return `no profile mirror at ${profile.mirror.file}, so ${EVERY_AGENT_ON_THE_HOST_SESSION_MODEL}`;
+  }
   const named = Object.keys(agentModels).length;
-  if (named === 0) return "no profile model to write, so every agent runs on the host session model";
-  return `wrote ${named} agent model key(s) from the profile`;
+  if (named === 0) return `${profile.mirror.file} names no model, so ${EVERY_AGENT_ON_THE_HOST_SESSION_MODEL}`;
+  return `wrote ${named} agent model key(s) from ${profile.mirror.file}`;
 }
 function recordedConfigDocument(tx) {
   return readJsonFile(path14.join(tx.itemsDirectory, "config"));
@@ -5389,6 +5637,7 @@ var OPENCODE_NOT_ON_PATH = "opencode-not-on-path";
 var VERSION_ROW_SKIP = "OpenCode CLI version \u2014 opencode is not on PATH, so the installed pin could not be probed";
 var LOCAL_CHECKS_SECTION2 = "local checks:";
 var FIXTURE_ROWS_SKIP = "the fixture-based artifact checks \u2014 the isolated install could not complete";
+var REACHABLE_BEYOND_THE_TWINS_LIST = "reachable beyond the twin's list:";
 var OPERATOR_CONFIG_PROBE = {
   theme: "oso-verify-operator-theme",
   sessionModel: "oso-verify/operator-session-model",
@@ -5396,11 +5645,15 @@ var OPERATOR_CONFIG_PROBE = {
   permissionKey: "read",
   permissionVerdict: "allow",
   mcpServerName: "oso-verify-operator-server",
-  mcpServerCommand: ["operator-cli"]
+  mcpServerCommand: ["operator-cli"],
+  agentName: "oso-verify-operator-agent",
+  agentModel: "oso-verify/operator-pinned-model"
 };
 var OPERATOR_GLOBAL_PROSE = "oso-verify operator prose the installer must not touch";
 var EXPECTED_MODE_COMMAND_COUNT = 4;
 var MODE_COMMAND_AGENT_ROUTE = "build";
+var HARNESS_EXTERNAL_DIRECTORY_REACH_ROW = "harness external directories reach no auto-executed host surface the edit control leaves open";
+var INSTALLED_EXTERNAL_DIRECTORY_REACH_ROW = "the installed config's own external directory grants reach no auto-executed host surface the edit control leaves open";
 var SHELL_SYNTAX_SOURCES = [
   { directory: ["bootstrap"], suffix: ".sh" },
   { directory: ["bootstrap", "lib"], suffix: ".sh" },
@@ -5424,9 +5677,12 @@ var FIXTURE_ENGRAM_SHIM = [
   "esac",
   ""
 ].join("\n");
-var EVERY_AGENT_ON_THE_HOST_SESSION_MODEL = "none, so every agent runs on the host session model";
+var NO_AGENT_MODEL_KEY_NAMED = `none, so ${EVERY_AGENT_ON_THE_HOST_SESSION_MODEL}`;
+var NO_CONFIG_THIS_ROW_CAN_READ = "the installed config could not be read, so no agent model key was taken from it";
+var NO_PROFILE_MIRROR_FOR_THIS_REPOSITORY = "no profile mirror for this repository";
 var FRONT_MATTER_DELIMITER = "---";
 var PERMISSION_BLOCK_HEADING = "permission:";
+var SHARED_SKILL_DIRECTORY = "_shared";
 var PERMISSION_VERDICT_LINE = /^ {2}(\S+): (\S+)$/;
 var FIXTURE_PREFIX = "oso-opencode-verify.";
 var TEMPORARY_PARENT_UNAVAILABLE = "temporary-parent-unavailable";
@@ -5435,6 +5691,11 @@ function verifyOpenCode(input) {
   const report2 = new VerifyReport();
   report2.section(LOCAL_CHECKS_SECTION2);
   checkPinnedOpenCodeVersion(report2, input.host);
+  report2.check(
+    HARNESS_EXTERNAL_DIRECTORY_REACH_ROW,
+    externalDirectoryReachTheEditControlBounds(HARNESS_EXTERNAL_DIRECTORIES),
+    harnessExternalDirectoryReach(HARNESS_EXTERNAL_DIRECTORIES)
+  );
   const staged = stageOpenCodeFixture(input);
   if (staged.kind === "failed") {
     report2.check("isolated fixture install", "ready", staged.result);
@@ -5456,11 +5717,22 @@ function checkInstalledTree(report2, input, tree) {
   const configFile = path17.join(tree.configHome, "opencode.json");
   const globalFile = path17.join(tree.configHome, "AGENTS.md");
   report2.check("OpenCode config contract", "valid", openCodeConfigStatus(configFile));
+  report2.check(
+    INSTALLED_EXTERNAL_DIRECTORY_REACH_ROW,
+    externalDirectoryReachTheEditControlBounds(installedExternalDirectoryGrants(configFile)),
+    installedExternalDirectoryReach(configFile)
+  );
   report2.check("operator config keys survive an install", "preserved", openCodeOperatorKeysStatus(configFile));
-  report2.check("agent model keys from the profile", profiledAgentModelLine(configFile, input.repositoryRoot), installedAgentModelLine(configFile));
+  report2.check(
+    "agent model keys from the profile",
+    profiledAgentModelLine(configFile, input.workingDirectory),
+    installedAgentModelLine(configFile, input.workingDirectory)
+  );
+  for (const declared of modelsTheTierCannotRankIn(input.workingDirectory)) report2.note(declared);
   report2.check("nine skill wrappers and the shared skill directory installed", "exact", openCodeSkillStatus(input.repositoryRoot, tree.configHome));
   report2.check("agent contracts installed", "exact", openCodeAgentStatus(input.repositoryRoot, tree.configHome));
-  report2.check("MCP surface closed on every installed agent", "closed", openCodeAgentMcpSurfaceStatus(tree.configHome));
+  report2.check("owned MCP servers closed on every installed agent", "closed", openCodeAgentMcpSurfaceStatus(tree.configHome));
+  noteServersBeyondTheOwnedSet(report2, configFile, tree.configHome);
   report2.check("mode commands installed and routed", "exact", openCodeCommandStatus(input.repositoryRoot, tree.configHome));
   report2.check("plugin entry, modules and routes installed", "exact", openCodePluginStatus(input.repositoryRoot, tree.configHome));
   report2.check("Engram plugin file installed", "present", openCodeEngramStatus(tree.configHome));
@@ -5469,6 +5741,36 @@ function checkInstalledTree(report2, input, tree) {
   report2.check("installer-owned targets recorded", "installer-owned", openCodeRegistryStatus(tree.home, tree.configHome));
   report2.check("published gate bytes as installed", "verified", openCodeTrustBytesStatus(sources.publishedHashes, tree.configHome));
   report2.check("an install outside the named home is refused", "refused", openCodeConfigHomeGuardStatus(input, tree));
+}
+function harnessExternalDirectoryReach(patterns) {
+  return reachReading(patterns, hostSurfacesReachedBy(patterns));
+}
+function externalDirectoryReachTheEditControlBounds(patterns) {
+  return reachReading(
+    patterns,
+    REACHES_THE_EDIT_CONTROL_BOUNDS.filter(({ pattern }) => patterns.includes(pattern))
+  );
+}
+function reachReading(patterns, covered) {
+  if (covered.length === 0) return patterns.join(" ");
+  const reaches = namedList("reaches", covered.map(({ pattern, surface }) => `${pattern} covers ${surface}`));
+  const bounded = covered.every(({ surface }) => editControlDenies(surface));
+  return bounded ? `${reaches}; ${EDIT_CONTROL_BOUNDING_A_REACH}` : reaches;
+}
+function installedExternalDirectoryReach(configFile) {
+  return harnessExternalDirectoryReach(installedExternalDirectoryGrants(configFile));
+}
+function installedExternalDirectoryGrants(configFile) {
+  return externalDirectoryGrantsIn(readableConfigDocument(configFile));
+}
+function modelsTheTierCannotRankIn(workingDirectory) {
+  const reading = profileForTheRow(workingDirectory);
+  return reading.kind === "refused" ? [] : modelOverridesTheTierCannotRank(profileRolesOf(reading.profile));
+}
+function noteServersBeyondTheOwnedSet(report2, configFile, configHome) {
+  const reachable = openCodeServersReachableBeyondTheOwnedSet(configFile, configHome);
+  if (reachable.length === 0) return;
+  report2.note(`${REACHABLE_BEYOND_THE_TWINS_LIST} ${reachable.join(", ")}`);
 }
 function checkPinnedOpenCodeVersion(report2, host) {
   const version = openCodeVersionStatus(host);
@@ -5500,6 +5802,7 @@ function stageOpenCodeFixture(input) {
   const outcome = installOpenCode({
     homeDirectory: home,
     repositoryRoot: input.repositoryRoot,
+    workingDirectory: input.workingDirectory,
     environment: fixtureEnvironmentFor(input.environment, home, root),
     platform: input.platform,
     host: { version: SUPPORTED_OPENCODE_VERSION },
@@ -5557,10 +5860,8 @@ function openCodeConfigStatus(configFile) {
     if (permission[grantBoundTool] !== OWNED_PERMISSION_VALUES[grantBoundTool]) return "malformed";
   }
   const externalDirectories = isPlainObject(permission["external_directory"]) ? permission["external_directory"] : {};
-  if (HARNESS_EXTERNAL_DIRECTORIES.some((harnessDirectory) => externalDirectories[harnessDirectory] !== HARNESS_EXTERNAL_DIRECTORY_VERDICT)) {
-    return "malformed";
-  }
-  return "valid";
+  const posture = harnessGrantPostureOf(externalDirectories);
+  return posture === "as installed" ? "valid" : posture;
 }
 function operatorConfigSeed() {
   return {
@@ -5575,7 +5876,8 @@ function operatorConfigSeed() {
         enabled: true,
         environment: {}
       }
-    }
+    },
+    agent: { [OPERATOR_CONFIG_PROBE.agentName]: { model: OPERATOR_CONFIG_PROBE.agentModel } }
   };
 }
 function openCodeOperatorKeysStatus(configFile) {
@@ -5592,26 +5894,47 @@ function openCodeOperatorKeysStatus(configFile) {
   const server = servers[OPERATOR_CONFIG_PROBE.mcpServerName];
   if (!isPlainObject(server)) return "dropped";
   if (JSON.stringify(server["command"]) !== JSON.stringify(OPERATOR_CONFIG_PROBE.mcpServerCommand)) return "dropped";
+  const agents = isPlainObject(document["agent"]) ? document["agent"] : {};
+  const operatorAgent = agents[OPERATOR_CONFIG_PROBE.agentName];
+  if (!isPlainObject(operatorAgent) || operatorAgent["model"] !== OPERATOR_CONFIG_PROBE.agentModel) return "dropped";
   return "preserved";
 }
-function profiledAgentModelLine(configFile, repositoryRoot2) {
-  const read = readConfigDocument(configFile);
-  return agentModelLine(openCodeAgentModels(read.kind === "parsed" ? read.value : {}, readProfileRoles(repositoryRoot2)));
-}
-function installedAgentModelLine(configFile) {
-  const read = readConfigDocument(configFile);
-  if (read.kind !== "parsed" || !isPlainObject(read.value)) return EVERY_AGENT_ON_THE_HOST_SESSION_MODEL;
-  const agents = isPlainObject(read.value["agent"]) ? read.value["agent"] : {};
-  const installed = {};
-  for (const [name, spec] of Object.entries(agents)) {
-    const model = isPlainObject(spec) ? spec["model"] : void 0;
-    if (typeof model === "string") installed[name] = model;
+function profileForTheRow(workingDirectory) {
+  try {
+    return { kind: "read", profile: readProfile(workingDirectory) };
+  } catch (error) {
+    if (!(error instanceof ProfileMirrorRefusedError)) throw error;
+    return { kind: "refused", reason: error.message };
   }
-  return agentModelLine(installed);
+}
+function profiledAgentModelLine(configFile, workingDirectory) {
+  const reading = profileForTheRow(workingDirectory);
+  if (reading.kind === "refused") return reading.reason;
+  if (reading.profile.kind === "unmirrored") return unmirroredAgentModelLine(installedLineOf(configFile));
+  const document = readableConfigDocument(configFile);
+  if (document === void 0) return "an installed config this row can read";
+  return agentModelLine(openCodeAgentModels(document, reading.profile.roles));
+}
+function installedAgentModelLine(configFile, workingDirectory) {
+  const reading = profileForTheRow(workingDirectory);
+  if (reading.kind === "read" && reading.profile.kind === "unmirrored") return unmirroredAgentModelLine(installedLineOf(configFile));
+  return installedLineOf(configFile);
+}
+function unmirroredAgentModelLine(installedLine) {
+  return `${NO_PROFILE_MIRROR_FOR_THIS_REPOSITORY}; the installed config carries: ${installedLine}`;
+}
+function installedLineOf(configFile) {
+  const document = readableConfigDocument(configFile);
+  if (document === void 0) return NO_CONFIG_THIS_ROW_CAN_READ;
+  return agentModelLine(installedAgentModels(document));
+}
+function readableConfigDocument(configFile) {
+  const read = readConfigDocument(configFile);
+  return read.kind === "parsed" && isPlainObject(read.value) ? read.value : void 0;
 }
 function agentModelLine(agentModels) {
   const named = Object.keys(agentModels).sort();
-  return named.length === 0 ? EVERY_AGENT_ON_THE_HOST_SESSION_MODEL : named.map((agent) => `${agent}=${agentModels[agent]}`).join(" ");
+  return named.length === 0 ? NO_AGENT_MODEL_KEY_NAMED : named.map((agent) => `${agent}=${agentModels[agent]}`).join(" ");
 }
 function operatorGlobalSeed() {
   return `# Personal OpenCode rules
@@ -5638,7 +5961,12 @@ function openCodeSkillStatus(repositoryRoot2, configHome) {
   const divergent = wrappers.filter((name) => !treesHoldTheSameBytes(path17.join(sources.skills, name), path17.join(configHome, "skill", name)));
   if (wrappers.length !== EXPECTED_SKILL_WRAPPER_COUNT) return `wrapper-count:${wrappers.length}`;
   if (divergent.length > 0) return namedList("divergent", divergent);
-  return treesHoldTheSameBytes(sources.sharedSkills, path17.join(configHome, "skill", "_shared")) ? "exact" : "shared-differs";
+  const unpublished = installedSkillsBeyond(path17.join(configHome, "skill"), wrappers);
+  if (unpublished.length > 0) return namedList("unknown", unpublished);
+  return treesHoldTheSameBytes(sources.sharedSkills, path17.join(configHome, "skill", SHARED_SKILL_DIRECTORY)) ? "exact" : "shared-differs";
+}
+function installedSkillsBeyond(installedSkills, published) {
+  return directoryEntryNames2(installedSkills).filter((name) => name !== SHARED_SKILL_DIRECTORY && !published.includes(name));
 }
 function openCodeAgentStatus(repositoryRoot2, configHome) {
   const sources = openCodePayloadSources(repositoryRoot2);
@@ -5654,6 +5982,22 @@ function openCodeAgentMcpSurfaceStatus(configHome) {
   if (contracts.length !== AGENT_ROLES.length) return `count:${contracts.length}!=${AGENT_ROLES.length}`;
   const reachable = contracts.flatMap((name) => reachableServersOf(path17.join(installedAgents, name), name));
   return reachable.length === 0 ? "closed" : namedList("open", reachable);
+}
+function openCodeServersReachableBeyondTheOwnedSet(configFile, configHome) {
+  const ownedServers = OWNED_MCP_NAMES;
+  const denials = agentPermissionDenialsIn(configHome);
+  return declaredMcpServerNames(configFile).filter((server) => !ownedServers.includes(server)).map(mcpServerWildcard).map((wildcard) => ({ wildcard, agents: denials.filter((denied) => !denied.has(wildcard)).length })).filter((reachable) => reachable.agents > 0).map((reachable) => `${reachable.wildcard} (${reachable.agents} of ${denials.length} agents)`);
+}
+function declaredMcpServerNames(configFile) {
+  const document = readableConfigDocument(configFile);
+  const servers = document === void 0 ? void 0 : document["mcp"];
+  return isPlainObject(servers) ? Object.keys(servers) : [];
+}
+function agentPermissionDenialsIn(configHome) {
+  const installedAgents = path17.join(configHome, "agent");
+  return osoPrefixedMarkdownNames2(installedAgents).map(
+    (name) => deniedPermissionKeysOf(readFileSync15(path17.join(installedAgents, name), "utf8"))
+  );
 }
 function reachableServersOf(agentContract, name) {
   const role = AGENT_ROLES.find((candidate) => `${candidate.id}.md` === name);
@@ -5673,7 +6017,7 @@ function deniedPermissionKeysOf(agentContract) {
     }
     if (!insideThePermissionBlock) continue;
     const verdict = PERMISSION_VERDICT_LINE.exec(line);
-    if (verdict === null) break;
+    if (verdict === null) continue;
     if (verdict[2] === "deny") denied.add(verdict[1]);
   }
   return denied;
@@ -5740,6 +6084,7 @@ function openCodeConfigHomeGuardStatus(input, tree) {
   const outcome = installOpenCode({
     homeDirectory: tree.home,
     repositoryRoot: input.repositoryRoot,
+    workingDirectory: input.workingDirectory,
     environment: { ...fixtureEnvironmentFor(input.environment, tree.home, tree.root), XDG_CONFIG_HOME: decoy },
     platform: input.platform,
     host: { version: SUPPORTED_OPENCODE_VERSION },
@@ -5958,7 +6303,8 @@ function main(argv, repositoryRoot2) {
   }
 }
 function dispatch(argv, repositoryRoot2) {
-  const outcome = argv[0] === PROFILE_VERB ? runProfile(argv.slice(1), process.cwd()) : runHostVerb(argv, repositoryRoot2);
+  const workingDirectory = process.cwd();
+  const outcome = argv[0] === PROFILE_VERB ? runProfile(argv.slice(1), workingDirectory) : runHostVerb(argv, repositoryRoot2, workingDirectory);
   process.stdout.write(outcome.report);
   return outcome.exitCode;
 }
@@ -5971,12 +6317,13 @@ function runProfile(argv, workingDirectory) {
 function renderedOpenCodeConfigFile() {
   return opencodePathsFor(homeDirectoryFrom(process.platform, process.env), process.env).configFile;
 }
-function runHostVerb(argv, repositoryRoot2) {
+function runHostVerb(argv, repositoryRoot2, workingDirectory) {
   const parsed = parseArgv(argv);
   const homeDirectory2 = homeDirectoryFrom(process.platform, process.env);
   const context = {
     homeDirectory: homeDirectory2,
     repositoryRoot: repositoryRoot2,
+    workingDirectory,
     environment: process.env,
     platform: process.platform,
     assumeYes: parsed.flags.has("--yes"),
@@ -6025,6 +6372,7 @@ function runOpenCode(parsed, context) {
       return installOpenCode({
         homeDirectory: context.homeDirectory,
         repositoryRoot: context.repositoryRoot,
+        workingDirectory: context.workingDirectory,
         environment: context.environment,
         platform: context.platform,
         host: openCodeHostProbes(context.environment),
@@ -6036,6 +6384,7 @@ function runOpenCode(parsed, context) {
       return verifyOpenCode({
         homeDirectory: context.homeDirectory,
         repositoryRoot: context.repositoryRoot,
+        workingDirectory: context.workingDirectory,
         environment: context.environment,
         platform: context.platform,
         host: openCodeHostProbes(context.environment)

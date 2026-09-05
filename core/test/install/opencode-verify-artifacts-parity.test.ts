@@ -49,7 +49,7 @@ const PUBLISHED_HASHES = openCodePayloadSources(repositoryRoot).publishedHashes;
 const COMPARED_ROWS = [
   { name: "nine skill wrappers and the shared skill directory installed", bashRow: "opencode_skill_status", port: (tree: StagedFixture) => openCodeSkillStatus(repositoryRoot, tree.configHome) },
   { name: "agent contracts installed", bashRow: "opencode_agent_status", port: (tree: StagedFixture) => openCodeAgentStatus(repositoryRoot, tree.configHome) },
-  { name: "MCP surface closed on every installed agent", port: (tree: StagedFixture) => openCodeAgentMcpSurfaceStatus(tree.configHome) },
+  { name: "owned MCP servers closed on every installed agent", port: (tree: StagedFixture) => openCodeAgentMcpSurfaceStatus(tree.configHome) },
   { name: "mode commands installed and routed", bashRow: "opencode_command_status", port: (tree: StagedFixture) => openCodeCommandStatus(repositoryRoot, tree.configHome) },
   { name: "plugin entry, modules and routes installed", bashRow: "opencode_plugin_status", port: (tree: StagedFixture) => openCodePluginStatus(repositoryRoot, tree.configHome) },
   { name: "Engram plugin file installed", bashRow: "opencode_engram_status", port: (tree: StagedFixture) => openCodeEngramStatus(tree.configHome) },
@@ -72,6 +72,18 @@ const TREE_DAMAGES: readonly TreeDamage[] = [
     verdict: "divergent: oso-plan",
     bashRow: "opencode_skill_status",
     apply: (tree) => rmSync(path.join(tree.configHome, "skill", "oso-plan", "references"), { recursive: true, force: true }),
+    port: (tree) => openCodeSkillStatus(repositoryRoot, tree.configHome),
+  },
+  {
+    label: "a skill directory nothing published planted beside the nine wrappers",
+    verdict: "unknown: oso-not-published",
+    apply: (tree) => plantSkillDirectory(tree, "oso-not-published"),
+    port: (tree) => openCodeSkillStatus(repositoryRoot, tree.configHome),
+  },
+  {
+    label: "a skill directory planted under a name the oso- prefix does not carry",
+    verdict: "unknown: a-skill-the-operator-never-installed",
+    apply: (tree) => plantSkillDirectory(tree, "a-skill-the-operator-never-installed"),
     port: (tree) => openCodeSkillStatus(repositoryRoot, tree.configHome),
   },
   {
@@ -182,7 +194,7 @@ describe("the rows this half owns are the artifact and repository rows, and the 
       "isolated fixture install",
       "nine skill wrappers and the shared skill directory installed",
       "agent contracts installed",
-      "MCP surface closed on every installed agent",
+      "owned MCP servers closed on every installed agent",
       "mode commands installed and routed",
       "plugin entry, modules and routes installed",
       "Engram plugin file installed",
@@ -229,7 +241,7 @@ describe("the rows that drive an installer of their own", () => {
     const portTree = { root: path.join(sandbox, "guard-port"), home: fixture().home, configHome: fixture().configHome };
     mkdirSync(portTree.root, { recursive: true });
     const port = openCodeConfigHomeGuardStatus(
-      { homeDirectory: fixture().home, repositoryRoot, environment: fixtureEnvironment(fixture().home, shimmedPath(), sandbox), platform: process.platform, host: { version: undefined } },
+      { homeDirectory: fixture().home, repositoryRoot, workingDirectory: repositoryRoot, environment: fixtureEnvironment(fixture().home, shimmedPath(), sandbox), platform: process.platform, host: { version: undefined } },
       portTree,
     );
     assert.equal(port, "refused");
@@ -239,6 +251,7 @@ describe("the rows that drive an installer of their own", () => {
     const staged = stageOpenCodeFixture({
       homeDirectory: fixture().home,
       repositoryRoot,
+      workingDirectory: repositoryRoot,
       environment: fixtureEnvironment(fixture().home, shimmedPath(), sandbox),
       platform: process.platform,
       host: { version: undefined },
@@ -256,6 +269,7 @@ describe("the rows that drive an installer of their own", () => {
       const staged = stageOpenCodeFixture({
         homeDirectory: fixture().home,
         repositoryRoot,
+        workingDirectory: repositoryRoot,
         environment: bare,
         platform: process.platform,
         host: { version: undefined },
@@ -301,7 +315,7 @@ describe("treesHoldTheSameBytes cannot report exact having compared zero files",
   });
 });
 
-describe("verify --host opencode assembles all seventeen rows, and its own report is what names them", () => {
+describe("verify --host opencode assembles all eighteen rows, and its own report is what names them", () => {
   test("the report names every row the table declares, in the table's order, and every fixture row passes", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const report = assembledLocalCheckReport();
     assert.deepEqual(rowNamesIn(report), OPENCODE_LOCAL_CHECK_ROWS.map((row) => row.name));
@@ -326,6 +340,7 @@ function assembledLocalCheckReport(): string {
   assembledReport ??= verifyOpenCode({
     homeDirectory: fixture().home,
     repositoryRoot,
+    workingDirectory: repositoryRoot,
     environment: fixtureEnvironment(fixture().home, shimmedPath(), sandbox),
     platform: process.platform,
     host: { version: undefined },
@@ -384,6 +399,12 @@ function dropRegistryRow(tree: StagedFixture, target: string): void {
     .split("\n")
     .filter((row) => !row.endsWith(`\t${target}`));
   writeFileSync(registry, kept.join("\n"));
+}
+
+function plantSkillDirectory(tree: StagedFixture, name: string): void {
+  const planted = path.join(tree.configHome, "skill", name);
+  mkdirSync(planted, { recursive: true });
+  writeFileSync(path.join(planted, "SKILL.md"), "---\nname: a skill the installer never wrote\n---\n");
 }
 
 function appendToFirstSharedFile(tree: StagedFixture): void {

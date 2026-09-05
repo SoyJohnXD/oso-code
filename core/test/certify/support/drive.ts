@@ -18,13 +18,21 @@ export const CONTRACT_BAR_SERVER_BOUND_SECONDS = boundFrom(
   DEFAULT_SERVER_BOUND_SECONDS,
 );
 
-export function invokeContractBar(
-  binary: string,
-  environment: NodeJS.ProcessEnv,
-  args: readonly string[],
-  boundSeconds: number,
-): SpawnSyncReturns<string> {
-  return spawnSync(binary, args, { env: environment, encoding: "utf8", timeout: boundSeconds * 1000 });
+export type ContractBarInvocation = Readonly<{
+  binary: string;
+  environment: NodeJS.ProcessEnv;
+  args: readonly string[];
+  boundSeconds: number;
+  projectDirectory?: string;
+}>;
+
+export function invokeContractBar(invocation: ContractBarInvocation): SpawnSyncReturns<string> {
+  return spawnSync(invocation.binary, invocation.args, {
+    env: invocation.environment,
+    cwd: invocation.projectDirectory,
+    encoding: "utf8",
+    timeout: invocation.boundSeconds * 1000,
+  });
 }
 
 export type RegistrationProbe =

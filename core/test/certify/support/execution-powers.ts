@@ -1,39 +1,60 @@
-import { isRecord } from "./config-fields.ts";
+import { CONTRACT_BAR_BOUND_SECONDS, invokeContractBar } from "./drive.ts";
 
-type ExecutionPower = Readonly<{ label: string; permission: string; target: string }>;
+export type AgentToolDrive = Readonly<{
+  binary: string;
+  environment: NodeJS.ProcessEnv;
+  projectDirectory: string;
+  agent: string;
+}>;
+
+export type ToolCall = Readonly<{ tool: string; params: Readonly<Record<string, string>> }>;
+
+export type HostToolOutcome =
+  | Readonly<{ kind: "refused" }>
+  | Readonly<{ kind: "executed" }>
+  | Readonly<{ kind: "undriven"; reason: string }>;
+
+type ExecutionPower = Readonly<{ label: string; call: ToolCall }>;
+
+const PROBE_FILE_CONTENT = "written by the contract bar\n";
+
+export function writeCall(filePath: string): ToolCall {
+  return { tool: "write", params: { filePath, content: PROBE_FILE_CONTENT } };
+}
+
+function bashCall(command: string): ToolCall {
+  return { tool: "bash", params: { command, description: "contract bar execution power" } };
+}
 
 const EXECUTION_PHASE_POWERS: readonly ExecutionPower[] = [
-  { label: "the state command", permission: "bash", target: "oso-state set active_slice=1" },
-  { label: "the slice commit", permission: "bash", target: "git commit -m slice" },
-  { label: "the slice's own edits", permission: "edit", target: "src/slice.ts" },
+  { label: "the state command", call: bashCall("oso-state set active_slice=1") },
+  { label: "the slice commit", call: bashCall("git commit -m slice") },
+  { label: "the slice's own edits", call: writeCall("src/slice.ts") },
 ];
 
-const REGEXP_SPECIAL = /[.*+?^${}()|[\]\\]/;
+const HOST_REFUSAL_PHRASES = ["prevents you from using this specific tool call", "is disabled for agent"] as const;
 
-function globToRegExp(pattern: string): RegExp {
-  const source = Array.from(pattern)
-    .map((char) => (char === "*" ? ".*" : char === "?" ? "." : REGEXP_SPECIAL.test(char) ? `\\${char}` : char))
-    .join("");
-  return new RegExp(`^${source}$`);
-}
-
-function resolvedAction(rules: readonly Record<string, unknown>[], permission: string, target: string): string {
-  let action = "unruled";
-  for (const rule of rules) {
-    const rulePermission = rule["permission"];
-    if (rulePermission !== permission && rulePermission !== "*") continue;
-    const pattern = typeof rule["pattern"] === "string" ? rule["pattern"] : "*";
-    if (!globToRegExp(pattern).test(target)) continue;
-    const ruleAction = rule["action"];
-    if (typeof ruleAction === "string") action = ruleAction;
+export function hostOutcomeOfToolCall(drive: AgentToolDrive, call: ToolCall): HostToolOutcome {
+  const args = ["debug", "agent", drive.agent, "--tool", call.tool, "--params", JSON.stringify(call.params)];
+  const run = invokeContractBar({
+    binary: drive.binary,
+    environment: drive.environment,
+    projectDirectory: drive.projectDirectory,
+    args,
+    boundSeconds: CONTRACT_BAR_BOUND_SECONDS,
+  });
+  const label = `opencode ${args.join(" ")}`;
+  if (run.error !== undefined || run.signal !== null) {
+    return { kind: "undriven", reason: `${label} did not complete: ${run.error?.message ?? run.signal}` };
   }
-  return action;
+  const streams = `${run.stdout ?? ""}${run.stderr ?? ""}`;
+  if (HOST_REFUSAL_PHRASES.some((phrase) => streams.includes(phrase))) return { kind: "refused" };
+  if (run.status !== 0) return { kind: "undriven", reason: `${label} exited ${run.status} without refusing it: ${streams}` };
+  return { kind: "executed" };
 }
 
-export function deniedExecutionPowers(agentDebug: unknown): readonly string[] {
-  const permission = isRecord(agentDebug) ? agentDebug["permission"] : undefined;
-  const rules = Array.isArray(permission) ? permission.filter(isRecord) : [];
-  return EXECUTION_PHASE_POWERS.filter((power) => resolvedAction(rules, power.permission, power.target) !== "allow").map(
-    (power) => power.label,
-  );
+export function executionPowersTheHostWithheld(drive: AgentToolDrive): readonly string[] {
+  return EXECUTION_PHASE_POWERS.map((power) => ({ power, outcome: hostOutcomeOfToolCall(drive, power.call) }))
+    .filter(({ outcome }) => outcome.kind !== "executed")
+    .map(({ power, outcome }) => `${power.label} ${outcome.kind === "undriven" ? outcome.reason : outcome.kind}`);
 }

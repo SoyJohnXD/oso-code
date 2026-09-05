@@ -13,7 +13,7 @@ import {
 } from "./backup.ts";
 import { gitHooksOwner, resolveFallowMcpCommand } from "./claude.ts";
 import { readJsonFile, writeJsonFile } from "./json.ts";
-import { hostContractViolationOf, mergeOpenCodeConfig, type AgentModels } from "./opencode-config.ts";
+import { EVERY_AGENT_ON_THE_HOST_SESSION_MODEL, hostContractViolationOf, mergeOpenCodeConfig, type AgentModels } from "./opencode-config.ts";
 import type { OpenCodeHostProbes } from "./opencode-host.ts";
 import {
   configFileRefusal,
@@ -34,7 +34,7 @@ import {
   type TrustRootKind,
 } from "./opencode-trust.ts";
 import { isAboveTestedVersion, meetsVersionFloor, SUPPORTED_OPENCODE_VERSION } from "./pins.ts";
-import { readProfileRoles } from "./profile.ts";
+import { profileRolesOf, readProfile, type ProfileReading } from "./profile.ts";
 import {
   fatalOutcome,
   messageOf,
@@ -66,6 +66,7 @@ const FALLOW_FALLBACK_COMMAND = "fallow-mcp";
 export type OpenCodeInstallInput = Readonly<{
   homeDirectory: string;
   repositoryRoot: string;
+  workingDirectory: string;
   environment: NodeJS.ProcessEnv;
   platform: NodeJS.Platform;
   host: OpenCodeHostProbes;
@@ -332,19 +333,23 @@ function publishedGateBytesEntry(publishedHashes: string, configHome: string, ho
 
 function renderOpenCodeConfig(input: OpenCodeInstallInput, paths: OpenCodePaths, tx: BackupTransaction): WiringEntry {
   const fallow = resolveFallowMcpCommand(input.environment, input.homeDirectory, input.platform) ?? FALLOW_FALLBACK_COMMAND;
-  const merged = mergeOpenCodeConfig(recordedConfigDocument(tx), fallow, readProfileRoles(input.repositoryRoot));
+  const profile = readProfile(input.workingDirectory);
+  const merged = mergeOpenCodeConfig(recordedConfigDocument(tx), fallow, profileRolesOf(profile));
   const violation = hostContractViolationOf(merged.document);
   if (violation !== undefined) throw new Error(`the rendered config violates the host contract: ${violation}`);
   writeJsonFile(paths.configFile, merged.document);
   chmodSync(paths.configFile, PRIVATE_FILE_MODE);
   writeFileSync(preservedKeysFileOf(tx), merged.preservedKeys.map((key) => `${key}\n`).join(""));
-  return wiringOk("opencode.json", `preserved ${merged.preservedKeys.length} operator key(s), ${agentModelNote(merged.agentModels)}`);
+  return wiringOk("opencode.json", `preserved ${merged.preservedKeys.length} operator key(s), ${agentModelNote(profile, merged.agentModels)}`);
 }
 
-function agentModelNote(agentModels: AgentModels): string {
+function agentModelNote(profile: ProfileReading, agentModels: AgentModels): string {
+  if (profile.kind === "unmirrored") {
+    return `no profile mirror at ${profile.mirror.file}, so ${EVERY_AGENT_ON_THE_HOST_SESSION_MODEL}`;
+  }
   const named = Object.keys(agentModels).length;
-  if (named === 0) return "no profile model to write, so every agent runs on the host session model";
-  return `wrote ${named} agent model key(s) from the profile`;
+  if (named === 0) return `${profile.mirror.file} names no model, so ${EVERY_AGENT_ON_THE_HOST_SESSION_MODEL}`;
+  return `wrote ${named} agent model key(s) from ${profile.mirror.file}`;
 }
 
 function recordedConfigDocument(tx: BackupTransaction): unknown {

@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { after, before, describe, type TestContext } from "node:test";
 import path from "node:path";
-import { HARNESS_EXTERNAL_DIRECTORIES, HARNESS_EXTERNAL_DIRECTORY_VERDICT } from "../../src/install/opencode-config.ts";
+import {
+  EDIT_RULES_THE_HOST_RESOLVES_BY_LAST_MATCH,
+  HARNESS_EXTERNAL_DIRECTORIES,
+  HARNESS_EXTERNAL_DIRECTORY_VERDICT,
+  HARNESS_OWNED_TREES_NO_AGENT_MAY_EDIT,
+} from "../../src/install/opencode-config.ts";
 import { SUPPORTED_OPENCODE_VERSION } from "../../src/install/pins.ts";
 import { provedSomething } from "../support/proved.ts";
 import { CERTIFY } from "./support/certify-guard.ts";
@@ -13,14 +18,17 @@ import {
   agentPermissionVerdicts,
   agentShellExactFormViolations,
   commandAgentRoute,
+  isRecord,
   externalDirectoryRules,
   externalDirectoryVerdict,
   fieldOf,
   pluginOrigins,
+  resolvedPermissionRules,
+  resolvedVerdictOf,
   skillLocations,
   topLevelPermissionField,
 } from "./support/config-fields.ts";
-import { deniedExecutionPowers } from "./support/execution-powers.ts";
+import { executionPowersTheHostWithheld, hostOutcomeOfToolCall, writeCall } from "./support/execution-powers.ts";
 import { notRun } from "./support/not-run.ts";
 import {
   laneCauseFor,
@@ -43,6 +51,37 @@ const GRANT_BOUND_PERMISSION = "ask";
 const WORKSPACE_ADAPTER_TYPE = "oso-code";
 const PLAN_COMMAND = "oso-plan";
 const DOUBT_PASS_AGENT_NAME = "oso-doubt-pass";
+const BOUNDED_EDIT_AGENT_NAME = "oso-applier";
+const CONFIG_LEVEL_EDIT_AGENT_NAME = "build";
+const EDIT_PERMISSION = "edit";
+const EXTERNAL_DIRECTORY_PERMISSION = "external_directory";
+const A_PROMPT_NO_HARNESS_GRANT_CLOSES = "ask";
+const EDIT_PROBE_REPOSITORY = "edit-verdict-repo";
+const CONFIG_LEVEL_EDIT_PROBE_REPOSITORY = "config-level-edit-verdict-repo";
+const EXECUTION_PROBE_REPOSITORY = "execution-power-repo";
+
+type EditProbe = Readonly<{ filePath: string; outcome: "refused" | "executed" }>;
+
+const EDIT_PROBES: readonly EditProbe[] = [
+  { filePath: ".opencode/plugin/x.ts", outcome: "refused" },
+  { filePath: "sub/.opencode/x.ts", outcome: "refused" },
+  { filePath: ".git/hooks/pre-commit", outcome: "refused" },
+  { filePath: ".git/config", outcome: "refused" },
+  { filePath: ".git/worktrees/wt/config", outcome: "refused" },
+  { filePath: ".git/modules/sub/config", outcome: "refused" },
+  { filePath: ".githooks/pre-commit", outcome: "executed" },
+  { filePath: "/home/op/.config/opencode/plugin/p.ts", outcome: "refused" },
+  { filePath: ".local/state/oso-code/wave.state", outcome: "refused" },
+  { filePath: "/home/op/.local/state/oso-code/wave.state", outcome: "refused" },
+  { filePath: "src/index.ts", outcome: "executed" },
+];
+
+function configLevelEditProbes(configHome: string): readonly EditProbe[] {
+  return [
+    { filePath: path.join(configHome, "skill", "_shared", "rubric.md"), outcome: "refused" },
+    { filePath: "src/index.ts", outcome: "executed" },
+  ];
+}
 const AGENT_LIST_ENTRY_PATTERN = /^(\S+) \((?:primary|subagent|all)\)$/;
 
 const SOURCE_AGENT_NAMES = contractBarSourceAgentNames();
@@ -82,7 +121,7 @@ function invokeCommandOrFailure(
   environment: NodeJS.ProcessEnv,
   args: readonly string[],
 ): Readonly<{ kind: "failed"; reason: string }> | Readonly<{ kind: "ran"; stdout: string }> {
-  const run = invokeContractBar(binary, environment, args, CONTRACT_BAR_BOUND_SECONDS);
+  const run = invokeContractBar({ binary, environment, args, boundSeconds: CONTRACT_BAR_BOUND_SECONDS });
   const label = `opencode ${args.join(" ")}`;
   if (run.error !== undefined || run.signal !== null) {
     return { kind: "failed", reason: `${label} did not complete: ${run.error?.message ?? run.signal}` };
@@ -301,20 +340,95 @@ describe("the contract fixture install and what the real binary reports once it 
   });
 
   contractBarRow(
-    "the real binary routes the plan command to an agent whose ruleset admits the execution phase",
+    "the real binary routes the plan command to an agent it lets run every power of the execution phase",
     (t) => {
       const document = notRunUnlessConfigParsed(t);
       if (document === undefined) return;
       const resolved = resolvedProbeOrThrow(probe);
       const installed = readyFixtureOrThrow();
       const route = commandAgentRoute(document, PLAN_COMMAND);
-      const invoked = invokeCommandOrFailure(resolved.binary, installed.environment, ["debug", "agent", route]);
-      if (invoked.kind === "failed") {
-        notRun(t, invoked.reason);
-        return;
-      }
-      const denied = deniedExecutionPowers(JSON.parse(invoked.stdout));
-      assert.deepEqual(denied, [], `${route} denies ${denied.join(", ")}`);
+      const withheld = executionPowersTheHostWithheld({
+        binary: resolved.binary,
+        environment: installed.environment,
+        projectDirectory: installed.sandbox.seedGitRepository(EXECUTION_PROBE_REPOSITORY),
+        agent: route,
+      });
+      assert.deepEqual(withheld, [], `${route} withheld ${withheld.join(", ")}`);
+    },
+  );
+
+  contractBarRow("the real binary resolves every agent's edit verdict, the six as a scalar deny and the applier as a pattern object", (t) => {
+    const document = notRunUnlessConfigParsed(t);
+    if (document === undefined) return;
+    const rules = agentPermissionField(document, EDIT_PERMISSION);
+    const resolved = SOURCE_AGENT_NAMES.map((name) => `${name}=${fieldOf(rules, name)}`);
+    assert.deepEqual(
+      resolved,
+      SOURCE_AGENT_NAMES.map((name) => `${name}=${name === BOUNDED_EDIT_AGENT_NAME ? "allowlist" : "deny"}`),
+      resolved.join(" "),
+    );
+  });
+
+  contractBarRow(
+    `the real binary resolves ${BOUNDED_EDIT_AGENT_NAME}'s edit rules as the config-level denies every agent inherits followed by the order the render wrote`,
+    (t) => {
+      const debugged = notRunUnlessAgentDebugged(t, BOUNDED_EDIT_AGENT_NAME);
+      if (debugged === undefined) return;
+      const edits = resolvedPermissionRules(debugged)
+        .filter((rule) => rule["permission"] === EDIT_PERMISSION)
+        .map((rule) => rule["pattern"]);
+      assert.deepEqual(edits, [...HARNESS_OWNED_TREES_NO_AGENT_MAY_EDIT, ...EDIT_RULES_THE_HOST_RESOLVES_BY_LAST_MATCH.map((rule) => rule.pattern)]);
+    },
+  );
+
+  contractBarRow(
+    `the real binary refuses ${BOUNDED_EDIT_AGENT_NAME} the write tool on the resources the host derives for the denied surfaces`,
+    (t) => {
+      if (notRunUnlessFixtureReady(t, `${BOUNDED_EDIT_AGENT_NAME}'s edit verdicts`)) return;
+      const resolved = resolvedProbeOrThrow(probe);
+      const installed = readyFixtureOrThrow();
+      const drive = {
+        binary: resolved.binary,
+        environment: installed.environment,
+        projectDirectory: installed.sandbox.seedGitRepository(EDIT_PROBE_REPOSITORY),
+        agent: BOUNDED_EDIT_AGENT_NAME,
+      };
+      const measured = EDIT_PROBES.map((edit) => `${edit.filePath} ${hostOutcomeOfToolCall(drive, writeCall(edit.filePath)).kind}`);
+      assert.deepEqual(
+        measured,
+        EDIT_PROBES.map((edit) => `${edit.filePath} ${edit.outcome}`),
+      );
+    },
+  );
+
+  contractBarRow(
+    `the real binary refuses ${CONFIG_LEVEL_EDIT_AGENT_NAME} the write tool on the harness's own trees and leaves the project where it was`,
+    (t) => {
+      if (notRunUnlessFixtureReady(t, `${CONFIG_LEVEL_EDIT_AGENT_NAME}'s edit verdicts`)) return;
+      const resolved = resolvedProbeOrThrow(probe);
+      const installed = readyFixtureOrThrow();
+      const drive = {
+        binary: resolved.binary,
+        environment: installed.environment,
+        projectDirectory: installed.sandbox.seedGitRepository(CONFIG_LEVEL_EDIT_PROBE_REPOSITORY),
+        agent: CONFIG_LEVEL_EDIT_AGENT_NAME,
+      };
+      const probes = configLevelEditProbes(configHomeOf(installed));
+      const measured = probes.map((edit) => `${edit.filePath} ${hostOutcomeOfToolCall(drive, writeCall(edit.filePath)).kind}`);
+      assert.deepEqual(
+        measured,
+        probes.map((edit) => `${edit.filePath} ${edit.outcome}`),
+      );
+    },
+  );
+
+  contractBarRow(
+    `the real binary still asks ${CONFIG_LEVEL_EDIT_AGENT_NAME} for a host surface no harness grant covers, so the config-level denies widened nothing`,
+    (t) => {
+      const debugged = notRunUnlessAgentDebugged(t, CONFIG_LEVEL_EDIT_AGENT_NAME);
+      if (debugged === undefined) return;
+      const ungranted = path.join(configHomeOf(readyFixtureOrThrow()), "plugins", "engram.ts");
+      assert.equal(resolvedVerdictOf(debugged, EXTERNAL_DIRECTORY_PERMISSION, ungranted), A_PROMPT_NO_HARNESS_GRANT_CLOSES);
     },
   );
 
@@ -326,16 +440,27 @@ describe("the contract fixture install and what the real binary reports once it 
     });
   }
 
+  function notRunUnlessAgentDebugged(t: TestContext, name: string): Record<string, unknown> | undefined {
+    if (notRunUnlessFixtureReady(t, `${name}'s resolved ruleset`)) return undefined;
+    const resolved = resolvedProbeOrThrow(probe);
+    const invoked = invokeCommandOrFailure(resolved.binary, readyFixtureOrThrow().environment, ["debug", "agent", name]);
+    if (invoked.kind === "failed") {
+      notRun(t, invoked.reason);
+      return undefined;
+    }
+    const debugged: unknown = JSON.parse(invoked.stdout);
+    return isRecord(debugged) ? debugged : undefined;
+  }
+
   function harnessPathsUnder(home: string): readonly HarnessPath[] {
     return [
       { role: "an installed skill wrapper", location: path.join(home, ".config", "opencode", "skill", "oso-plan", "SKILL.md") },
-      { role: "the harness event log", location: path.join(home, ".local", "state", "oso-code", "events.jsonl") },
       { role: "an artifact in a host worktree", location: path.join(home, ".local", "share", "opencode", "worktree", "wave", "1", "note.txt") },
     ];
   }
 
   contractBarRow(
-    "the real binary allows the harness's own three paths through an external_directory block that opens nothing else",
+    "the real binary allows the harness's own two paths through an external_directory block that opens nothing else",
     (t) => {
       const document = notRunUnlessConfigParsed(t);
       if (document === undefined) return;

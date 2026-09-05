@@ -45,7 +45,8 @@ export class StateFileUnreadableError extends Error {
 
 export const CHANGE_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const NAME_TOKEN_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
-const NAME_TOKEN_MAX_LENGTH = 128;
+const MODEL_TOKEN_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9/:._@-]*$/;
+const TOKEN_MAX_LENGTH = 128;
 const LOCK_STALE_SECONDS = 30;
 const LOCK_MAX_TRIES = 200;
 const LOCK_RETRY_MS = 50;
@@ -62,10 +63,13 @@ export function stateRootDirectory(): string {
   return path.join(homeDirectory(), ".local", "state", "oso-code");
 }
 
-export function stateFileFor(cwd: string): string {
+export function repositoryIdentityFor(cwd: string): string {
   const directory = cwd.replace(/\r$/, "");
-  const identity = gitCommonDirectory(directory) || directory;
-  return path.join(stateRootDirectory(), `${sha256Hex(identity)}.state`);
+  return gitCommonDirectory(directory) || directory;
+}
+
+export function stateFileFor(cwd: string): string {
+  return path.join(stateRootDirectory(), `${sha256Hex(repositoryIdentityFor(cwd))}.state`);
 }
 
 export function repositoryIdFor(stateFile: string): string {
@@ -88,8 +92,14 @@ export function profileFileFor(stateFile: string): string {
   return path.join(stateRootDirectory(), "profiles", `${repositoryIdFor(stateFile)}.profile`);
 }
 
+export const MODEL_TOKEN_SHAPE = `1 to ${TOKEN_MAX_LENGTH} characters of letters, digits and / : . - _ @`;
+
 export function isNameToken(value: string): boolean {
-  return value.length >= 1 && value.length <= NAME_TOKEN_MAX_LENGTH && NAME_TOKEN_PATTERN.test(value);
+  return value.length >= 1 && value.length <= TOKEN_MAX_LENGTH && NAME_TOKEN_PATTERN.test(value);
+}
+
+export function isModelToken(value: string): boolean {
+  return value.length >= 1 && value.length <= TOKEN_MAX_LENGTH && MODEL_TOKEN_PATTERN.test(value);
 }
 
 export function stateRecords(content: string, key: string): readonly string[] {

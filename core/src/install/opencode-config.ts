@@ -8,12 +8,52 @@ export const OWNED_SKILL_VERDICT = "deny";
 export const OWNED_TASK_PATTERN = "*";
 export const OWNED_TASK_VERDICT = "allow";
 
-export const HARNESS_EXTERNAL_DIRECTORIES = [
-  "~/.config/opencode/**",
-  "~/.local/state/oso-code/**",
-  "~/.local/share/opencode/worktree/**",
-] as const;
+export const HARNESS_EXTERNAL_DIRECTORIES = ["~/.config/opencode/skill/**", "~/.local/share/opencode/worktree/**"] as const;
 export const HARNESS_EXTERNAL_DIRECTORY_VERDICT = "allow";
+
+export const HARNESS_OWNED_TREES_NO_AGENT_MAY_EDIT = ["**/.config/opencode/skill/**", "**/.local/state/oso-code/**"] as const;
+export const HARNESS_OWNED_TREE_EDIT_VERDICT = "deny";
+
+export const HOST_SURFACES_NO_HARNESS_GRANT_MAY_REACH = [
+  "~/.config/opencode/plugin",
+  "~/.config/opencode/plugins",
+  "~/.config/opencode/bin",
+  "~/.config/opencode/hooks",
+  "~/.config/opencode/git-hooks",
+  "~/.config/opencode/opencode.json",
+  "~/.local/state/oso-code",
+  "**/.opencode/plugin",
+  "**/.opencode/plugins",
+] as const;
+
+export type ReachedSurface = Readonly<{ pattern: string; surface: string }>;
+
+export const REACHES_THE_EDIT_CONTROL_BOUNDS: readonly ReachedSurface[] = [
+  { pattern: "~/.config/opencode/skill/**", surface: "**/.opencode/plugin" },
+  { pattern: "~/.config/opencode/skill/**", surface: "**/.opencode/plugins" },
+  { pattern: "~/.local/share/opencode/worktree/**", surface: "**/.opencode/plugin" },
+  { pattern: "~/.local/share/opencode/worktree/**", surface: "**/.opencode/plugins" },
+];
+
+export type EditRule = Readonly<{ pattern: string; verdict: "allow" | "deny" }>;
+
+export const EDIT_RULES_THE_HOST_RESOLVES_BY_LAST_MATCH: readonly EditRule[] = [
+  { pattern: "*", verdict: "allow" },
+  { pattern: ".config/opencode/**", verdict: "deny" },
+  { pattern: "**/.config/opencode/**", verdict: "deny" },
+  { pattern: ".opencode/**", verdict: "deny" },
+  { pattern: "**/.opencode/**", verdict: "deny" },
+  { pattern: ".git/**", verdict: "deny" },
+  { pattern: "**/.git/**", verdict: "deny" },
+  { pattern: ".local/state/oso-code/**", verdict: "deny" },
+  { pattern: "**/.local/state/oso-code/**", verdict: "deny" },
+];
+
+export const EDIT_CONTROL_BOUNDING_A_REACH = `edit denied on ${EDIT_RULES_THE_HOST_RESOLVES_BY_LAST_MATCH.filter(
+  (rule) => rule.verdict === "deny",
+)
+  .map((rule) => rule.pattern)
+  .join(" ")}`;
 
 export const OWNED_PERMISSION_VALUES = {
   question: "allow",
@@ -26,7 +66,7 @@ export const OWNED_PERMISSION_VALUES = {
 export const OWNED_MCP_NAMES = ["context7", "engram", "fallow"] as const;
 export type OwnedMcpName = (typeof OWNED_MCP_NAMES)[number];
 
-export function mcpServerWildcard(server: OwnedMcpName): string {
+export function mcpServerWildcard(server: string): string {
   return `${server}_*`;
 }
 
@@ -37,18 +77,30 @@ const MCP_KEY = "mcp";
 const SKILL_KEY = "skill";
 const TASK_KEY = "task";
 const EXTERNAL_DIRECTORY_KEY = "external_directory";
+const EDIT_KEY = "edit";
 const DOOM_LOOP_KEY = "doom_loop";
 const HOST_PROMPT_VERDICT = "ask";
 const AGENT_KEY = "agent";
+const PATH_SEPARATOR = "/";
+const SURFACE_AT_ANY_DEPTH_PREFIX = "**/";
+
+const READS_THE_HARNESS_GRANTS_LEAVE_ASKING: readonly Readonly<{ named: string; probedAt: string }>[] = [
+  { named: "~/.config/opencode/** beyond skill/", probedAt: "~/.config/opencode/plugin" },
+  { named: "~/.local/state/oso-code/**", probedAt: "~/.local/state/oso-code" },
+];
 const NEVER_PRESERVED_KEYS: readonly string[] = [PERMISSION_KEY, MCP_KEY, PLUGIN_KEY];
 
 const OPENCODE_SESSION_MODEL_FIELDS: Readonly<Record<Tier, string>> = { default: "small_model", strong: "model" };
 
-export const OPENCODE_AGENTS_PER_PROFILE_ROLE: Readonly<Record<Role, readonly string[]>> = {
+const OPENCODE_AGENTS_PER_PROFILE_ROLE: Readonly<Record<Role, readonly string[]>> = {
   applier: ["oso-applier"],
   verifier: ["oso-verifier"],
   judges: ["oso-debt-sweep", "oso-doubt-pass", "oso-security-reviewer", "oso-triage"],
 };
+
+export const OPENCODE_AGENTS_THE_PROFILE_DRIVES: readonly string[] = Object.values(OPENCODE_AGENTS_PER_PROFILE_ROLE).flat();
+
+export const EVERY_AGENT_ON_THE_HOST_SESSION_MODEL = "every agent runs on the host session model";
 
 export type ConfigDocument = Record<string, unknown>;
 
@@ -83,6 +135,18 @@ export function openCodeAgentModels(existing: unknown, profileRoles: RoleChoices
   return models;
 }
 
+export function installedAgentModels(existing: unknown): AgentModels {
+  const document = isPlainObject(existing) ? existing : {};
+  const agents = isPlainObject(document[AGENT_KEY]) ? document[AGENT_KEY] : {};
+  const installed: Record<string, string> = {};
+  for (const agent of OPENCODE_AGENTS_THE_PROFILE_DRIVES) {
+    const spec = agents[agent];
+    const model = isPlainObject(spec) ? spec["model"] : undefined;
+    if (typeof model === "string") installed[agent] = model;
+  }
+  return installed;
+}
+
 function sessionModelNamed(document: ConfigDocument, field: string): string | undefined {
   const named = document[field];
   return typeof named === "string" && named !== "" ? named : undefined;
@@ -101,51 +165,38 @@ export function mergeOpenCodeConfig(existing: unknown, fallowCommand: string, pr
   const agentModels = openCodeAgentModels(document, profileRoles);
   const profileNamesAModel = Object.keys(agentModels).length > 0;
   const ownedContainers = profileNamesAModel ? [...NEVER_PRESERVED_KEYS, AGENT_KEY] : NEVER_PRESERVED_KEYS;
-  const preservedKeys = Object.keys(document).filter((key) => !ownedContainers.includes(key));
+  const preservedKeys = [...foreignKeysOf(document, [], (key) => ownedContainers.includes(key))];
 
   insertIfMissing(document, SCHEMA_KEY, OPENCODE_CONFIG_SCHEMA_URL);
   createPluginArrayIfAbsent(document);
 
   const permission = ownedContainer(document, PERMISSION_KEY);
-  preservedKeys.push(
-    ...Object.keys(permission)
-      .filter((name) => !(name in OWNED_PERMISSION_VALUES) && ![SKILL_KEY, TASK_KEY, EXTERNAL_DIRECTORY_KEY].includes(name))
-      .map((name) => `${PERMISSION_KEY}.${name}`),
-  );
+  const ownedPermissionContainers: readonly string[] = [SKILL_KEY, TASK_KEY, EXTERNAL_DIRECTORY_KEY, EDIT_KEY];
+  preservedKeys.push(...foreignKeysOf(permission, [PERMISSION_KEY], (name) => name in OWNED_PERMISSION_VALUES || ownedPermissionContainers.includes(name)));
 
   const skills = ownedContainer(permission, SKILL_KEY);
-  preservedKeys.push(
-    ...Object.keys(skills)
-      .filter((name) => !(OWNED_SKILL_MODES as readonly string[]).includes(name))
-      .map((name) => `${PERMISSION_KEY}.${SKILL_KEY}.${name}`),
-  );
+  preservedKeys.push(...foreignKeysOf(skills, [PERMISSION_KEY, SKILL_KEY], (name) => (OWNED_SKILL_MODES as readonly string[]).includes(name)));
   for (const mode of OWNED_SKILL_MODES) skills[mode] = OWNED_SKILL_VERDICT;
 
   const delegations = ownedContainer(permission, TASK_KEY);
-  preservedKeys.push(
-    ...Object.keys(delegations)
-      .filter((pattern) => pattern !== OWNED_TASK_PATTERN)
-      .map((pattern) => `${PERMISSION_KEY}.${TASK_KEY}.${pattern}`),
-  );
+  preservedKeys.push(...foreignKeysOf(delegations, [PERMISSION_KEY, TASK_KEY], (pattern) => pattern === OWNED_TASK_PATTERN));
   delegations[OWNED_TASK_PATTERN] = OWNED_TASK_VERDICT;
 
   const externalDirectories = ownedContainer(permission, EXTERNAL_DIRECTORY_KEY);
-  preservedKeys.push(
-    ...Object.keys(externalDirectories)
-      .filter((pattern) => !(HARNESS_EXTERNAL_DIRECTORIES as readonly string[]).includes(pattern))
-      .map((pattern) => `${PERMISSION_KEY}.${EXTERNAL_DIRECTORY_KEY}.${pattern}`),
-  );
+  const harnessDirectories = HARNESS_EXTERNAL_DIRECTORIES as readonly string[];
+  preservedKeys.push(...foreignKeysOf(externalDirectories, [PERMISSION_KEY, EXTERNAL_DIRECTORY_KEY], (pattern) => harnessDirectories.includes(pattern)));
   for (const harnessDirectory of HARNESS_EXTERNAL_DIRECTORIES) externalDirectories[harnessDirectory] = HARNESS_EXTERNAL_DIRECTORY_VERDICT;
+
+  const editRules = ownedContainer(permission, EDIT_KEY);
+  const harnessTrees = HARNESS_OWNED_TREES_NO_AGENT_MAY_EDIT as readonly string[];
+  preservedKeys.push(...foreignKeysOf(editRules, [PERMISSION_KEY, EDIT_KEY], (pattern) => harnessTrees.includes(pattern)));
+  for (const harnessTree of HARNESS_OWNED_TREES_NO_AGENT_MAY_EDIT) editRules[harnessTree] = HARNESS_OWNED_TREE_EDIT_VERDICT;
 
   Object.assign(permission, OWNED_PERMISSION_VALUES);
 
   const servers = ownedContainer(document, MCP_KEY);
   const owned = ownedMcpServers(fallowCommand);
-  preservedKeys.push(
-    ...Object.keys(servers)
-      .filter((name) => !(name in owned))
-      .map((name) => `${MCP_KEY}.${name}`),
-  );
+  preservedKeys.push(...foreignKeysOf(servers, [MCP_KEY], (name) => name in owned));
   for (const [name, declaration] of Object.entries(owned)) insertIfMissing(servers, name, declaration);
 
   if (profileNamesAModel) mergeAgentModels(document, preservedKeys, agentModels);
@@ -153,21 +204,148 @@ export function mergeOpenCodeConfig(existing: unknown, fallowCommand: string, pr
   return { document, preservedKeys, agentModels };
 }
 
+function foreignKeysOf(container: ConfigDocument, containerPath: readonly string[], isInstallerOwned: (name: string) => boolean): readonly string[] {
+  return Object.keys(container)
+    .filter((name) => !isInstallerOwned(name))
+    .map((name) => [...containerPath, name].join("."));
+}
+
 function mergeAgentModels(document: ConfigDocument, preservedKeys: string[], agentModels: AgentModels): void {
   const agents = ownedContainer(document, AGENT_KEY);
-  preservedKeys.push(
-    ...Object.keys(agents)
-      .filter((name) => !(name in agentModels))
-      .map((name) => `${AGENT_KEY}.${name}`),
-  );
+  preservedKeys.push(...foreignKeysOf(agents, [AGENT_KEY], (name) => name in agentModels));
   for (const [name, model] of Object.entries(agentModels)) ownedContainer(agents, name)["model"] = model;
+}
+
+export function hostSurfacesReachedBy(patterns: readonly string[]): readonly ReachedSurface[] {
+  return patterns.flatMap((pattern) =>
+    HOST_SURFACES_NO_HARNESS_GRANT_MAY_REACH.filter((surface) => grantReachesSurface(pattern, surface)).map((surface) => ({
+      pattern,
+      surface,
+    })),
+  );
+}
+
+const SURFACES_THE_EDIT_CONTROL_DENIES = [
+  ...new Set(
+    EDIT_RULES_THE_HOST_RESOLVES_BY_LAST_MATCH.filter((rule) => rule.verdict === "deny").map((rule) =>
+      literalHeadOf(withoutAnyDepthPrefix(rule.pattern)),
+    ),
+  ),
+];
+
+export function editControlDenies(surface: string): boolean {
+  return trailingPathsOf(withoutAnyDepthPrefix(surface)).some((trailing) =>
+    SURFACES_THE_EDIT_CONTROL_DENIES.some((denied) => isAtOrUnder(trailing, denied)),
+  );
+}
+
+function withoutAnyDepthPrefix(named: string): string {
+  return named.startsWith(SURFACE_AT_ANY_DEPTH_PREFIX) ? named.slice(SURFACE_AT_ANY_DEPTH_PREFIX.length) : named;
+}
+
+function literalHeadOf(pattern: string): string {
+  const wildcard = pattern.indexOf("*");
+  const head = wildcard === -1 ? pattern : pattern.slice(0, wildcard);
+  return head.endsWith(PATH_SEPARATOR) ? head.slice(0, -PATH_SEPARATOR.length) : head;
+}
+
+const EVERY_WILDCARD_RUN = /\*+/g;
+const A_SEGMENT_EVERY_WILDCARD_ADMITS = "any";
+const THE_SINGLE_CHARACTER_WILDCARD = /\?/g;
+const A_CHARACTER_THE_SINGLE_WILDCARD_ADMITS = "a";
+const AT_OR_UNDER_SUFFIX = "/**";
+const PATTERN_METACHARACTERS = /[.+^${}()|[\]\\]/g;
+const TRAILING_ARGUMENT_WILDCARD = " .*";
+const TRAILING_ARGUMENT_MADE_OPTIONAL = "( .*)?";
+
+function grantReachesSurface(grant: string, surface: string): boolean {
+  return witnessesBetween(grant, surface).some(
+    (witness) => hostPatternMatches(grant, witness) && surfaceCovers(surface, witness),
+  );
+}
+
+function witnessesBetween(grant: string, surface: string): readonly string[] {
+  const underTheGrant = withWildcardsConcreted(grant);
+  if (!surface.startsWith(SURFACE_AT_ANY_DEPTH_PREFIX)) return [underTheGrant, surface];
+  return [underTheGrant, [underTheGrant, withoutAnyDepthPrefix(surface)].join(PATH_SEPARATOR)];
+}
+
+function withWildcardsConcreted(pattern: string): string {
+  return pattern
+    .replace(EVERY_WILDCARD_RUN, A_SEGMENT_EVERY_WILDCARD_ADMITS)
+    .replace(THE_SINGLE_CHARACTER_WILDCARD, A_CHARACTER_THE_SINGLE_WILDCARD_ADMITS);
+}
+
+function surfaceCovers(surface: string, witness: string): boolean {
+  return hostPatternMatches(surface, witness) || hostPatternMatches(`${surface}${AT_OR_UNDER_SUFFIX}`, witness);
+}
+
+export function hostPatternMatches(pattern: string, resource: string): boolean {
+  const escaped = pattern.replace(PATTERN_METACHARACTERS, "\\$&").replaceAll("*", ".*").replaceAll("?", ".");
+  const expression = escaped.endsWith(TRAILING_ARGUMENT_WILDCARD)
+    ? `${escaped.slice(0, -TRAILING_ARGUMENT_WILDCARD.length)}${TRAILING_ARGUMENT_MADE_OPTIONAL}`
+    : escaped;
+  return new RegExp(`^${expression}$`, "s").test(resource);
+}
+
+function trailingPathsOf(candidate: string): readonly string[] {
+  const segments = candidate.split(PATH_SEPARATOR);
+  return segments.map((_, index) => segments.slice(index).join(PATH_SEPARATOR));
+}
+
+function isAtOrUnder(candidate: string, ancestor: string): boolean {
+  return ancestor === "" || candidate === ancestor || candidate.startsWith(`${ancestor}${PATH_SEPARATOR}`);
+}
+
+export function externalDirectoryGrantsIn(config: unknown): readonly string[] {
+  const permission = isPlainObject(config) && isPlainObject(config[PERMISSION_KEY]) ? config[PERMISSION_KEY] : {};
+  const rules = isPlainObject(permission[EXTERNAL_DIRECTORY_KEY]) ? permission[EXTERNAL_DIRECTORY_KEY] : {};
+  return Object.entries(rules)
+    .filter(([, verdict]) => verdict === HARNESS_EXTERNAL_DIRECTORY_VERDICT)
+    .map(([pattern]) => pattern);
+}
+
+export type HarnessGrantPosture = "as installed" | "narrowed by the operator" | "malformed";
+
+const HOST_PERMISSION_VERDICTS: readonly string[] = ["allow", "ask", "deny"];
+
+export function harnessGrantPostureOf(externalDirectories: ConfigDocument): HarnessGrantPosture {
+  const ownedRows = HARNESS_EXTERNAL_DIRECTORIES.map((harnessDirectory) => externalDirectories[harnessDirectory]);
+  if (ownedRows.some((verdict) => verdict !== undefined && !isHostVerdict(verdict))) return "malformed";
+  const widened = Object.entries(externalDirectories).some(
+    ([pattern, verdict]) => verdict === HARNESS_EXTERNAL_DIRECTORY_VERDICT && widensAHarnessGrant(pattern),
+  );
+  if (widened) return "malformed";
+  return ownedRows.every((verdict) => verdict === HARNESS_EXTERNAL_DIRECTORY_VERDICT) ? "as installed" : "narrowed by the operator";
+}
+
+function isHostVerdict(verdict: unknown): boolean {
+  return typeof verdict === "string" && HOST_PERMISSION_VERDICTS.includes(verdict);
+}
+
+function widensAHarnessGrant(pattern: string): boolean {
+  return HARNESS_EXTERNAL_DIRECTORIES.some(
+    (harnessDirectory) =>
+      hostPatternMatches(pattern, withWildcardsConcreted(harnessDirectory)) && !hostPatternMatches(harnessDirectory, withWildcardsConcreted(pattern)),
+  );
 }
 
 export function remainingPromptsOf(config: unknown): readonly string[] {
   const permission = isPlainObject(config) && isPlainObject(config[PERMISSION_KEY]) ? config[PERMISSION_KEY] : {};
   const spelled = Object.entries(permission).flatMap(([key, rule]) => promptsOfRule(key, rule));
   const unspelledDoomLoop = DOOM_LOOP_KEY in permission ? [] : [DOOM_LOOP_KEY];
-  return [...spelled, ...unspelledDoomLoop].sort();
+  return [...spelled, ...unspelledDoomLoop, ...readsBeyondTheHarnessGrants(permission)].sort();
+}
+
+function readsBeyondTheHarnessGrants(permission: ConfigDocument): readonly string[] {
+  const rules = isPlainObject(permission[EXTERNAL_DIRECTORY_KEY]) ? Object.entries(permission[EXTERNAL_DIRECTORY_KEY]) : [];
+  return READS_THE_HARNESS_GRANTS_LEAVE_ASKING.filter(
+    (read) => lastVerdictCovering(rules, read.probedAt) !== HARNESS_EXTERNAL_DIRECTORY_VERDICT,
+  ).map((read) => `${EXTERNAL_DIRECTORY_KEY} ${read.named}`);
+}
+
+function lastVerdictCovering(rules: readonly (readonly [string, unknown])[], probedAt: string): unknown {
+  return rules.filter(([pattern]) => isAtOrUnder(probedAt, literalHeadOf(pattern))).at(-1)?.[1];
 }
 
 function promptsOfRule(key: string, rule: unknown): readonly string[] {

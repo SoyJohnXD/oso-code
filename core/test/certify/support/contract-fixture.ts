@@ -26,6 +26,7 @@ export function installContractFixture(probe: ResolvedProbe): ContractFixture {
   const outcome = installOpenCode({
     homeDirectory: sandbox.home,
     repositoryRoot,
+    workingDirectory: sandbox.cwd,
     environment,
     platform: process.platform,
     host: { version: probe.version },

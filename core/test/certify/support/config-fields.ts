@@ -1,3 +1,5 @@
+import { hostPatternMatches } from "../../../src/install/opencode-config.ts";
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -27,7 +29,7 @@ export function agentPermissionField(config: unknown, key: string): ReadonlyMap<
 export function agentPermissionVerdicts(config: unknown, toolId: string): ReadonlyMap<string, string> {
   const verdicts = new Map<string, string>();
   for (const [name, spec] of Object.entries(agentSection(config))) {
-    const covering = permissionRulesOf(spec).filter(([ruleKey]) => ruleKeyMatches(toolId, ruleKey));
+    const covering = permissionRulesOf(spec).filter(([ruleKey]) => hostPatternMatches(ruleKey, toolId));
     verdicts.set(name, verdictOf(covering.at(-1)));
   }
   return verdicts;
@@ -43,15 +45,17 @@ function verdictOf(rule: readonly [string, unknown] | undefined): string {
   return typeof value === "string" ? value : isRecord(value) ? "allowlist" : "absent";
 }
 
-const RULE_KEY_METACHARACTERS = /[.+^${}()|[\]\\]/g;
-const TRAILING_ARGUMENT_WILDCARD = " .*";
+export function resolvedPermissionRules(debugged: unknown): readonly Record<string, unknown>[] {
+  const rules = isRecord(debugged) ? debugged["permission"] : undefined;
+  return Array.isArray(rules) ? rules.filter(isRecord) : [];
+}
 
-function ruleKeyMatches(toolId: string, ruleKey: string): boolean {
-  const escaped = ruleKey.replace(RULE_KEY_METACHARACTERS, "\\$&").replaceAll("*", ".*").replaceAll("?", ".");
-  const expression = escaped.endsWith(TRAILING_ARGUMENT_WILDCARD)
-    ? `${escaped.slice(0, -TRAILING_ARGUMENT_WILDCARD.length)}( .*)?`
-    : escaped;
-  return new RegExp(`^${expression}$`, "s").test(toolId);
+export function resolvedVerdictOf(debugged: unknown, permission: string, resource: string): string {
+  const covering = resolvedPermissionRules(debugged).filter(
+    (rule) => rule["permission"] === permission && typeof rule["pattern"] === "string" && hostPatternMatches(rule["pattern"], resource),
+  );
+  const action = covering.at(-1)?.["action"];
+  return typeof action === "string" ? action : "absent";
 }
 
 export function fieldOf(values: ReadonlyMap<string, string>, name: string): string {
@@ -78,7 +82,7 @@ export function externalDirectoryRules(config: unknown): ReadonlyMap<string, str
 
 export function externalDirectoryVerdict(config: unknown, homeDirectory: string, externalPath: string): string {
   const covering = [...externalDirectoryRules(config)].filter(([pattern]) =>
-    ruleKeyMatches(externalPath, homeExpanded(pattern, homeDirectory)),
+    hostPatternMatches(homeExpanded(pattern, homeDirectory), externalPath),
   );
   return verdictOf(covering.at(-1));
 }

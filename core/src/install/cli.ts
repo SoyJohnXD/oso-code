@@ -130,7 +130,9 @@ export function main(argv: readonly string[], repositoryRoot: string): number {
 }
 
 function dispatch(argv: readonly string[], repositoryRoot: string): number {
-  const outcome = argv[0] === PROFILE_VERB ? runProfile(argv.slice(1), process.cwd()) : runHostVerb(argv, repositoryRoot);
+  const workingDirectory = process.cwd();
+  const outcome =
+    argv[0] === PROFILE_VERB ? runProfile(argv.slice(1), workingDirectory) : runHostVerb(argv, repositoryRoot, workingDirectory);
   process.stdout.write(outcome.report);
   return outcome.exitCode;
 }
@@ -146,12 +148,13 @@ function renderedOpenCodeConfigFile(): string {
   return opencodePathsFor(homeDirectoryFrom(process.platform, process.env), process.env).configFile;
 }
 
-function runHostVerb(argv: readonly string[], repositoryRoot: string): CommandOutcome {
+function runHostVerb(argv: readonly string[], repositoryRoot: string, workingDirectory: string): CommandOutcome {
   const parsed = parseArgv(argv);
   const homeDirectory = homeDirectoryFrom(process.platform, process.env);
   const context = {
     homeDirectory,
     repositoryRoot,
+    workingDirectory,
     environment: process.env,
     platform: process.platform,
     assumeYes: parsed.flags.has("--yes"),
@@ -164,6 +167,7 @@ function runHostVerb(argv: readonly string[], repositoryRoot: string): CommandOu
 type CommandContext = Readonly<{
   homeDirectory: string;
   repositoryRoot: string;
+  workingDirectory: string;
   environment: NodeJS.ProcessEnv;
   platform: NodeJS.Platform;
   assumeYes: boolean;
@@ -214,6 +218,7 @@ function runOpenCode(parsed: ParsedArgv, context: CommandContext): { report: str
       return installOpenCode({
         homeDirectory: context.homeDirectory,
         repositoryRoot: context.repositoryRoot,
+        workingDirectory: context.workingDirectory,
         environment: context.environment,
         platform: context.platform,
         host: openCodeHostProbes(context.environment),
@@ -225,6 +230,7 @@ function runOpenCode(parsed: ParsedArgv, context: CommandContext): { report: str
       return verifyOpenCode({
         homeDirectory: context.homeDirectory,
         repositoryRoot: context.repositoryRoot,
+        workingDirectory: context.workingDirectory,
         environment: context.environment,
         platform: context.platform,
         host: openCodeHostProbes(context.environment),

@@ -86,6 +86,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+var TOKEN_MAX_LENGTH = 128;
 var EVENTS_SCHEMA_VERSION = 2;
 var COMMAND_HEAD_BYTES = 120;
 function sha256Hex(value) {
@@ -96,11 +97,14 @@ function stateRootDirectory() {
   if (configured !== void 0 && configured !== "") return configured;
   return path.join(homeDirectory(), ".local", "state", "oso-code");
 }
-function stateFileFor(cwd) {
+function repositoryIdentityFor(cwd) {
   const directory = cwd.replace(/\r$/, "");
-  const identity = gitCommonDirectory(directory) || directory;
-  return path.join(stateRootDirectory(), `${sha256Hex(identity)}.state`);
+  return gitCommonDirectory(directory) || directory;
 }
+function stateFileFor(cwd) {
+  return path.join(stateRootDirectory(), `${sha256Hex(repositoryIdentityFor(cwd))}.state`);
+}
+var MODEL_TOKEN_SHAPE = `1 to ${TOKEN_MAX_LENGTH} characters of letters, digits and / : . - _ @`;
 function stateRecords(content, key) {
   const prefix = `${key}=`;
   return content.split("\n").filter((line) => line.startsWith(prefix)).map((line) => line.slice(prefix.length));

@@ -31,10 +31,11 @@ Resuming into execution re-arms runtime state first: `oso-state set mode=plan ac
 
 Worktrees outlive the session that cut them: run `git -C <main checkout> worktree list` and report every worktree of this change still standing, each naming the slice its branch (`oso/<change>/<slice>`) holds. What becomes of them is the operator's; §7 clears them at close.
 
-Read `oso/preferences` (one record per project — `mem_search` already filters by cwd). Self-heal a retired field, or a legacy `scope: personal` copy, via `mem_update`, then apply silently. Two field groups, asked at different moments:
+Read `oso/preferences` (one record per project — `mem_search` already filters by cwd). Self-heal a retired field, or a legacy `scope: personal` copy, via `mem_update`, then apply silently. Three field groups, two of them asked at different moments:
 
 - **Behavior**, asked at the FIRST plan in this project (no record yet): one round of two questions — **explanation depth** (concise/standard/didactic) and **adaptive teaching** (auto-detect/always/off).
 - **Ceiling**, asked at the first AUTO or ROADMAP arming and never in the round above — `_shared/unattended.md`'s, read ALWAYS by this flow.
+- **Model profile**, never asked in any round: `model_profile` — `normal`, `strong`, or a `custom` naming a tier per role — read silently for the launches below, changed only by the operator's own natural-language update or `oso profile set`.
 
 Save once: `mem_save(title: "oso/preferences — this project's operator record", topic_key: "oso/preferences", type: "preference", capture_prompt: false, content: the values + date)`. Later updates — including a natural-language request from the operator — go through `mem_update` (merge, never overwrite), confirmed with no ceremony.
 

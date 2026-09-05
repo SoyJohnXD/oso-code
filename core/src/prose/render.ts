@@ -1,5 +1,12 @@
-import { mcpServerWildcard, OWNED_MCP_NAMES } from "../install/opencode-config.ts";
-import { OPENCODE_PERMISSION_ORDER, type AgentRole, type HostName, type SkillHost, type SkillStub } from "./routes.ts";
+import { EDIT_RULES_THE_HOST_RESOLVES_BY_LAST_MATCH, mcpServerWildcard, OWNED_MCP_NAMES } from "../install/opencode-config.ts";
+import {
+  OPENCODE_PERMISSION_ORDER,
+  type AgentRole,
+  type HostName,
+  type OpenCodeAgentSpec,
+  type SkillHost,
+  type SkillStub,
+} from "./routes.ts";
 
 export { agentHosts, AGENT_ROLES, SHARED_REFERENCE_HOSTS, SKILL_STUBS } from "./routes.ts";
 export type { AgentRole, HostName, SkillHost, SkillStub } from "./routes.ts";
@@ -104,8 +111,14 @@ function renderOpenCodeAgent(role: AgentRole, body: string): string {
     "hidden: true",
     "permission:",
     ...[...denies, ...closedServers].map((key) => `  ${key}: deny`),
+    ...boundedEditLines(spec),
   ];
   return `${frontMatterBlock(lines)}\n\n${body}`;
+}
+
+function boundedEditLines(spec: OpenCodeAgentSpec): readonly string[] {
+  if (spec.denies.includes("edit")) return [];
+  return ["  edit:", ...EDIT_RULES_THE_HOST_RESOLVES_BY_LAST_MATCH.map((rule) => `    "${rule.pattern}": ${rule.verdict}`)];
 }
 
 function frontMatterBlock(lines: readonly string[]): string {

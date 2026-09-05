@@ -49,6 +49,7 @@ const EXPECTED_PRESERVED_ORDER = [
   "permission.skill.operator-skill",
   "permission.task.operator-*",
   "permission.external_directory.~/operator-tree/**",
+  "permission.external_directory.~/.config/opencode/**",
   "mcp.operator-server",
 ];
 
@@ -60,7 +61,7 @@ const fallowCommand = fixtureFallowCommand();
 
 provedSomething(
   `the ownership corpus is ${THE_OWNERSHIP_CORPUS}, over ${EXPECTED_PRESERVED_ORDER.length} preserved key(s)`,
-  fallowCommand !== "" && EXPECTED_PRESERVED_ORDER.length === 8,
+  fallowCommand !== "" && EXPECTED_PRESERVED_ORDER.length === 9,
   "no fixture fallow-mcp was written, or the preserved ledger is not the eight-key ledger this seed builds",
 );
 
@@ -95,9 +96,10 @@ describe("the eight ownership rows, each spelled here and then read back off the
     assert.deepEqual(portOf({})["plugin"], []);
   });
 
-  test("row 7 — permission.external_directory.<harness path> is overwritten to allow, and no path outside the three is added", () => {
+  test("row 7 — permission.external_directory.<harness path> is overwritten to allow, and the config home the harness stopped granting stays the operator's own ask", () => {
     assert.deepEqual(plainObject(permissionOf(portSeeded())["external_directory"]), {
       "~/operator-tree/**": "allow",
+      "~/.config/opencode/**": "ask",
       ...Object.fromEntries(HARNESS_EXTERNAL_DIRECTORIES.map((directory) => [directory, HARNESS_EXTERNAL_DIRECTORY_VERDICT])),
     });
   });

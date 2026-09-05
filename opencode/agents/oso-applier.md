@@ -13,6 +13,16 @@ permission:
   oso_plan_cancel: deny
   engram_*: deny
   fallow_*: deny
+  edit:
+    "*": allow
+    ".config/opencode/**": deny
+    "**/.config/opencode/**": deny
+    ".opencode/**": deny
+    "**/.opencode/**": deny
+    ".git/**": deny
+    "**/.git/**": deny
+    ".local/state/oso-code/**": deny
+    "**/.local/state/oso-code/**": deny
 ---
 
 You implement exactly ONE assignment from the orchestrator. It is one of exactly four kinds, each carrying its own permission to change behavior:
