@@ -3426,6 +3426,12 @@ var OWNED_SKILL_MODES = ["oso-plan", "oso-quick", "oso-debug", "oso-roadmap"];
 var OWNED_SKILL_VERDICT = "deny";
 var OWNED_TASK_PATTERN = "*";
 var OWNED_TASK_VERDICT = "allow";
+var HARNESS_EXTERNAL_DIRECTORIES = [
+  "~/.config/opencode/**",
+  "~/.local/state/oso-code/**",
+  "~/.local/share/opencode/worktree/**"
+];
+var HARNESS_EXTERNAL_DIRECTORY_VERDICT = "allow";
 var OWNED_PERMISSION_VALUES = {
   question: "allow",
   plan_enter: "allow",
@@ -3443,6 +3449,9 @@ var PERMISSION_KEY = "permission";
 var MCP_KEY = "mcp";
 var SKILL_KEY = "skill";
 var TASK_KEY = "task";
+var EXTERNAL_DIRECTORY_KEY = "external_directory";
+var DOOM_LOOP_KEY = "doom_loop";
+var HOST_PROMPT_VERDICT = "ask";
 var AGENT_KEY = "agent";
 var NEVER_PRESERVED_KEYS = [PERMISSION_KEY, MCP_KEY, PLUGIN_KEY];
 var OPENCODE_SESSION_MODEL_FIELDS = { default: "small_model", strong: "model" };
@@ -3492,7 +3501,7 @@ function mergeOpenCodeConfig(existing, fallowCommand, profileRoles = {}) {
   createPluginArrayIfAbsent(document);
   const permission = ownedContainer(document, PERMISSION_KEY);
   preservedKeys.push(
-    ...Object.keys(permission).filter((name) => !(name in OWNED_PERMISSION_VALUES) && name !== SKILL_KEY && name !== TASK_KEY).map((name) => `${PERMISSION_KEY}.${name}`)
+    ...Object.keys(permission).filter((name) => !(name in OWNED_PERMISSION_VALUES) && ![SKILL_KEY, TASK_KEY, EXTERNAL_DIRECTORY_KEY].includes(name)).map((name) => `${PERMISSION_KEY}.${name}`)
   );
   const skills = ownedContainer(permission, SKILL_KEY);
   preservedKeys.push(
@@ -3504,6 +3513,11 @@ function mergeOpenCodeConfig(existing, fallowCommand, profileRoles = {}) {
     ...Object.keys(delegations).filter((pattern) => pattern !== OWNED_TASK_PATTERN).map((pattern) => `${PERMISSION_KEY}.${TASK_KEY}.${pattern}`)
   );
   delegations[OWNED_TASK_PATTERN] = OWNED_TASK_VERDICT;
+  const externalDirectories = ownedContainer(permission, EXTERNAL_DIRECTORY_KEY);
+  preservedKeys.push(
+    ...Object.keys(externalDirectories).filter((pattern) => !HARNESS_EXTERNAL_DIRECTORIES.includes(pattern)).map((pattern) => `${PERMISSION_KEY}.${EXTERNAL_DIRECTORY_KEY}.${pattern}`)
+  );
+  for (const harnessDirectory of HARNESS_EXTERNAL_DIRECTORIES) externalDirectories[harnessDirectory] = HARNESS_EXTERNAL_DIRECTORY_VERDICT;
   Object.assign(permission, OWNED_PERMISSION_VALUES);
   const servers = ownedContainer(document, MCP_KEY);
   const owned = ownedMcpServers(fallowCommand);
@@ -3520,6 +3534,17 @@ function mergeAgentModels(document, preservedKeys, agentModels) {
     ...Object.keys(agents).filter((name) => !(name in agentModels)).map((name) => `${AGENT_KEY}.${name}`)
   );
   for (const [name, model] of Object.entries(agentModels)) ownedContainer(agents, name)["model"] = model;
+}
+function remainingPromptsOf(config) {
+  const permission = isPlainObject(config) && isPlainObject(config[PERMISSION_KEY]) ? config[PERMISSION_KEY] : {};
+  const spelled = Object.entries(permission).flatMap(([key, rule]) => promptsOfRule(key, rule));
+  const unspelledDoomLoop = DOOM_LOOP_KEY in permission ? [] : [DOOM_LOOP_KEY];
+  return [...spelled, ...unspelledDoomLoop].sort();
+}
+function promptsOfRule(key, rule) {
+  if (rule === HOST_PROMPT_VERDICT) return [key];
+  if (!isPlainObject(rule)) return [];
+  return Object.entries(rule).filter(([, verdict]) => verdict === HOST_PROMPT_VERDICT).map(([pattern]) => `${key} ${pattern}`);
 }
 function hostContractViolationOf(document) {
   if (!isPlainObject(document)) return "the rendered config is not a JSON object";
@@ -3921,6 +3946,10 @@ import path13 from "node:path";
 var ROLES = ["applier", "verifier", "judges"];
 var TIERS = ["default", "strong"];
 var PROFILE_NAMES = ["normal", "strong", "custom"];
+var OPENCODE_PROMPTS_HEADING = "prompts that remain on OpenCode, read from";
+var PROMPT_INDENT = "  ";
+var NO_PROMPT_REMAINS = "none";
+var UNDER_TODAYS_PROMPTS = "every prompt this host asks today still stops an unattended run";
 var ON_DEFAULT = { tier: "default", model: void 0 };
 var ON_STRONG = { tier: "strong", model: void 0 };
 var PRESETS = {
@@ -3934,16 +3963,35 @@ var ProfileRefusedError = class extends Error {
     this.name = "ProfileRefusedError";
   }
 };
-function showProfile(workingDirectory) {
+function showProfile(workingDirectory, openCodeConfigFile) {
   const mirror = mirrorFileFor(workingDirectory);
   const read = readStateFile(mirror);
   if (read.kind === "unreadable") throw new StateFileUnreadableError(mirror, read.cause);
-  if (read.kind === "absent") return { report: `oso profile show
-no profile at ${mirror} \u2014 every role runs on its host's session model
-`, exitCode: 0 };
+  const chosen = read.kind === "absent" ? `no profile at ${mirror} \u2014 every role runs on its host's session model
+` : `${mirror}
+${read.content}`;
   return { report: `oso profile show
-${mirror}
-${read.content}`, exitCode: 0 };
+${chosen}${openCodePromptSection(openCodeConfigFile)}`, exitCode: 0 };
+}
+function openCodePromptSection(configFile) {
+  const reading = openCodePromptsRemaining(configFile);
+  const heading = `${OPENCODE_PROMPTS_HEADING} ${configFile}:
+`;
+  if (reading.kind === "unread") return `${heading}${PROMPT_INDENT}${reading.reason}
+`;
+  if (reading.prompts.length === 0) return `${heading}${PROMPT_INDENT}${NO_PROMPT_REMAINS}
+`;
+  return `${heading}${reading.prompts.map((prompt) => `${PROMPT_INDENT}${prompt}
+`).join("")}`;
+}
+function openCodePromptsRemaining(configFile) {
+  if (!isReadableRegularFile(configFile)) return { kind: "unread", reason: `no readable OpenCode config, so ${UNDER_TODAYS_PROMPTS}` };
+  try {
+    return { kind: "read", prompts: remainingPromptsOf(readJsonFile(configFile)) };
+  } catch (error) {
+    if (!(error instanceof JsonParseError)) throw error;
+    return { kind: "unread", reason: `${error.message}, so ${UNDER_TODAYS_PROMPTS}` };
+  }
 }
 function setProfile(workingDirectory, name, roleTokens) {
   const profile = profileFrom(name, roleTokens);
@@ -5508,6 +5556,10 @@ function openCodeConfigStatus(configFile) {
   for (const grantBoundTool of ["oso_plan_approve", "oso_plan_cancel"]) {
     if (permission[grantBoundTool] !== OWNED_PERMISSION_VALUES[grantBoundTool]) return "malformed";
   }
+  const externalDirectories = isPlainObject(permission["external_directory"]) ? permission["external_directory"] : {};
+  if (HARNESS_EXTERNAL_DIRECTORIES.some((harnessDirectory) => externalDirectories[harnessDirectory] !== HARNESS_EXTERNAL_DIRECTORY_VERDICT)) {
+    return "malformed";
+  }
   return "valid";
 }
 function operatorConfigSeed() {
@@ -5912,9 +5964,12 @@ function dispatch(argv, repositoryRoot2) {
 }
 function runProfile(argv, workingDirectory) {
   const [subverb, name, ...roleTokens] = argv;
-  if (subverb === "show" && argv.length === 1) return showProfile(workingDirectory);
+  if (subverb === "show" && argv.length === 1) return showProfile(workingDirectory, renderedOpenCodeConfigFile());
   if (subverb === "set" && name !== void 0) return setProfile(workingDirectory, name, roleTokens);
   throw new UsageError();
+}
+function renderedOpenCodeConfigFile() {
+  return opencodePathsFor(homeDirectoryFrom(process.platform, process.env), process.env).configFile;
 }
 function runHostVerb(argv, repositoryRoot2) {
   const parsed = parseArgv(argv);

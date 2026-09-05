@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, test } from "node:test";
 import { GLOBAL_MARKER_END, GLOBAL_MARKER_START } from "../../src/install/opencode.ts";
-import type { ConfigDocument } from "../../src/install/opencode-config.ts";
+import { HARNESS_EXTERNAL_DIRECTORIES, type ConfigDocument } from "../../src/install/opencode-config.ts";
 import { OPENCODE_BINARY_NAME, openCodeHostProbes } from "../../src/install/opencode-host.ts";
 import { SUPPORTED_OPENCODE_VERSION } from "../../src/install/pins.ts";
-import { readProfileRoles } from "../../src/install/profile.ts";
+import { readProfileRoles, setProfile } from "../../src/install/profile.ts";
 import { firstExecutableOnPath } from "../../src/install/verify-claude.ts";
 import {
   installedAgentModelLine,
@@ -24,6 +24,7 @@ import {
   OPERATOR_CONFIG_PROBE,
   type LocalCheckRowKind,
 } from "../../src/install/verify-opencode.ts";
+import { withHookEnvironment } from "../support/gate-fixture.ts";
 import {
   fixtureEnvironment,
   fixturePathWith,
@@ -63,6 +64,14 @@ const CONFIG_CONTRACT_DAMAGES: readonly FixtureDamage[] = [
   {
     label: "a server declaring env where the contract spells environment",
     config: (document) => void (containerIn(document, "mcp")["oso-verify-damaged"] = { type: "local", command: ["operator-cli"], env: {} }),
+  },
+  ...HARNESS_EXTERNAL_DIRECTORIES.map((directory) => ({
+    label: `the harness external directory ${directory} put back to a prompt`,
+    config: (document: ConfigDocument) => void (containerIn(document, "permission", "external_directory")[directory] = "ask"),
+  })),
+  {
+    label: "the harness external directories dropped whole",
+    config: (document: ConfigDocument) => void delete containerIn(document, "permission")["external_directory"],
   },
 ];
 
@@ -221,14 +230,25 @@ describe("every verdict each row can reach is shown on a deliberately broken sub
   test("a config carrying an agent model key no profile named is read apart from the line the profile spells", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const damaged = damagedFixture(PLANTED_AGENT_MODEL_DAMAGE);
     assert.equal(installedAgentModelLine(damaged.configFile), `oso-applier=${PLANTED_AGENT_MODEL}`);
-    assert.notEqual(installedAgentModelLine(damaged.configFile), profiledAgentModelLine(damaged.configFile, repositoryRoot));
+    underStateRoot(rootNoProfileNames(), () => {
+      assert.notEqual(installedAgentModelLine(damaged.configFile), profiledAgentModelLine(damaged.configFile, repositoryRoot));
+    });
   });
 });
 
-describe("the agent model row reads the installed keys against the ones this machine's profile spells", () => {
+describe("the agent model row reads the installed keys against a profile mirror, under a state root this fixture owns rather than whichever one the machine running it carries", () => {
   test("a fixture staged where no profile names a role carries no agent model key, and the row reads both sides the same", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
-    assert.deepEqual(readProfileRoles(repositoryRoot), {});
-    assert.equal(installedAgentModelLine(fixture().configFile), profiledAgentModelLine(fixture().configFile, repositoryRoot));
+    underStateRoot(rootNoProfileNames(), () => {
+      assert.deepEqual(readProfileRoles(repositoryRoot), {});
+      assert.equal(installedAgentModelLine(fixture().configFile), profiledAgentModelLine(fixture().configFile, repositoryRoot));
+    });
+  });
+
+  test("a mirror naming this repository in a root of its own is read back and parts the profiled side from the installed one, so the reading above is an absent mirror and not an unread call", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
+    underStateRoot(rootWhereAProfileNamesThisRepository(), () => {
+      assert.deepEqual(Object.keys(readProfileRoles(repositoryRoot)).sort(), ["applier", "judges", "verifier"]);
+      assert.notEqual(installedAgentModelLine(fixture().configFile), profiledAgentModelLine(fixture().configFile, repositoryRoot));
+    });
   });
 });
 
@@ -298,6 +318,20 @@ function damagedFixture(damage: FixtureDamage): StagedFixture {
   writeFileSync(fresh.globalFile, damage.global === undefined ? globalContent : damage.global(globalContent));
   damagedFixtures.set(damage.label, fresh);
   return fresh;
+}
+
+function underStateRoot<T>(stateRoot: string, read: () => T): T {
+  return withHookEnvironment({ OSO_STATE_DIR: stateRoot }, read);
+}
+
+function rootNoProfileNames(): string {
+  return path.join(sandbox, "state-no-profile-names");
+}
+
+function rootWhereAProfileNamesThisRepository(): string {
+  const stateRoot = path.join(sandbox, "state-a-profile-names-this-repository");
+  underStateRoot(stateRoot, () => setProfile(repositoryRoot, "strong", []));
+  return stateRoot;
 }
 
 function containerIn(document: ConfigDocument, ...names: readonly string[]): ConfigDocument {

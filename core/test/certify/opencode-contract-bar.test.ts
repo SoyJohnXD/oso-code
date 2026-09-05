@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, type TestContext } from "node:test";
 import path from "node:path";
+import { HARNESS_EXTERNAL_DIRECTORIES, HARNESS_EXTERNAL_DIRECTORY_VERDICT } from "../../src/install/opencode-config.ts";
 import { SUPPORTED_OPENCODE_VERSION } from "../../src/install/pins.ts";
 import { provedSomething } from "../support/proved.ts";
 import { CERTIFY } from "./support/certify-guard.ts";
@@ -9,8 +10,11 @@ import { CONTRACT_BAR_BOUND_SECONDS, invokeContractBar, probeRegistrations, type
 import {
   agentField,
   agentPermissionField,
+  agentPermissionVerdicts,
   agentShellExactFormViolations,
   commandAgentRoute,
+  externalDirectoryRules,
+  externalDirectoryVerdict,
   fieldOf,
   pluginOrigins,
   skillLocations,
@@ -38,7 +42,6 @@ const FIX_APPLY_TOOL_ID = "fallow_fix_apply";
 const GRANT_BOUND_PERMISSION = "ask";
 const WORKSPACE_ADAPTER_TYPE = "oso-code";
 const PLAN_COMMAND = "oso-plan";
-const APPLIER_AGENT_NAME = "oso-applier";
 const DOUBT_PASS_AGENT_NAME = "oso-doubt-pass";
 const AGENT_LIST_ENTRY_PATTERN = /^(\S+) \((?:primary|subagent|all)\)$/;
 
@@ -67,6 +70,8 @@ contractBarRow(
 type ConfigProbe =
   | Readonly<{ kind: "parsed"; document: unknown }>
   | Readonly<{ kind: "failed"; reason: string }>;
+
+type HarnessPath = Readonly<{ role: string; location: string }>;
 
 type SkillProbe =
   | Readonly<{ kind: "listed"; locations: ReadonlyMap<string, string> }>
@@ -270,11 +275,11 @@ describe("the contract fixture install and what the real binary reports once it 
   }
 
   for (const name of SOURCE_AGENT_NAMES) {
-    contractBarRow(`the real binary resolves ${name}'s ${FIX_APPLY_TOOL_ID} rule from the fixture install`, (t) => {
+    contractBarRow(`the real binary leaves ${name} no ${FIX_APPLY_TOOL_ID}, whichever rule key its own block spells`, (t) => {
       const document = notRunUnlessConfigParsed(t);
       if (document === undefined) return;
-      const rules = agentPermissionField(document, FIX_APPLY_TOOL_ID);
-      assert.equal(fieldOf(rules, name), name === APPLIER_AGENT_NAME ? "absent" : "deny");
+      const verdicts = agentPermissionVerdicts(document, FIX_APPLY_TOOL_ID);
+      assert.equal(fieldOf(verdicts, name), "deny");
     });
   }
 
@@ -320,6 +325,32 @@ describe("the contract fixture install and what the real binary reports once it 
       assert.equal(topLevelPermissionField(document, toolId), GRANT_BOUND_PERMISSION);
     });
   }
+
+  function harnessPathsUnder(home: string): readonly HarnessPath[] {
+    return [
+      { role: "an installed skill wrapper", location: path.join(home, ".config", "opencode", "skill", "oso-plan", "SKILL.md") },
+      { role: "the harness event log", location: path.join(home, ".local", "state", "oso-code", "events.jsonl") },
+      { role: "an artifact in a host worktree", location: path.join(home, ".local", "share", "opencode", "worktree", "wave", "1", "note.txt") },
+    ];
+  }
+
+  contractBarRow(
+    "the real binary allows the harness's own three paths through an external_directory block that opens nothing else",
+    (t) => {
+      const document = notRunUnlessConfigParsed(t);
+      if (document === undefined) return;
+      const home = readyFixtureOrThrow().sandbox.home;
+      assert.deepEqual(
+        [...externalDirectoryRules(document)].map(([pattern, verdict]) => `${pattern} ${verdict}`).sort(),
+        HARNESS_EXTERNAL_DIRECTORIES.map((pattern) => `${pattern} ${HARNESS_EXTERNAL_DIRECTORY_VERDICT}`).sort(),
+      );
+      const unallowed = harnessPathsUnder(home)
+        .map((harness) => ({ ...harness, verdict: externalDirectoryVerdict(document, home, harness.location) }))
+        .filter(({ verdict }) => verdict !== HARNESS_EXTERNAL_DIRECTORY_VERDICT)
+        .map(({ role, location, verdict }) => `${role} (${location}) reads ${verdict}`);
+      assert.deepEqual(unallowed, []);
+    },
+  );
 
   contractBarRow(
     "the real binary discovery list carries the installed plugin's pre-built oso-code.js bundle, not the oso-code.ts source it is compiled from",

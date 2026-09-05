@@ -1,5 +1,7 @@
 import path from "node:path";
-import { profileFileFor, readStateFile, StateFileUnreadableError, stateFileFor, stateValue, writeFileAtomically } from "../state/store.ts";
+import { isReadableRegularFile, profileFileFor, readStateFile, StateFileUnreadableError, stateFileFor, stateValue, writeFileAtomically } from "../state/store.ts";
+import { JsonParseError, readJsonFile } from "./json.ts";
+import { remainingPromptsOf } from "./opencode-config.ts";
 import type { CommandOutcome } from "./report.ts";
 
 const ROLES = ["applier", "verifier", "judges"] as const;
@@ -15,6 +17,13 @@ export type RoleChoice = Readonly<{ tier: Tier; model: string | undefined }>;
 type RolesOfProfile = Readonly<Record<Role, RoleChoice>>;
 export type RoleChoices = Partial<Record<Role, RoleChoice>>;
 type Profile = Readonly<{ name: ProfileName; roles: RolesOfProfile }>;
+
+const OPENCODE_PROMPTS_HEADING = "prompts that remain on OpenCode, read from";
+const PROMPT_INDENT = "  ";
+const NO_PROMPT_REMAINS = "none";
+const UNDER_TODAYS_PROMPTS = "every prompt this host asks today still stops an unattended run";
+
+type PromptReading = Readonly<{ kind: "read"; prompts: readonly string[] } | { kind: "unread"; reason: string }>;
 
 const ON_DEFAULT: RoleChoice = { tier: "default", model: undefined };
 const ON_STRONG: RoleChoice = { tier: "strong", model: undefined };
@@ -33,12 +42,31 @@ class ProfileRefusedError extends Error {
   }
 }
 
-export function showProfile(workingDirectory: string): CommandOutcome {
+export function showProfile(workingDirectory: string, openCodeConfigFile: string): CommandOutcome {
   const mirror = mirrorFileFor(workingDirectory);
   const read = readStateFile(mirror);
   if (read.kind === "unreadable") throw new StateFileUnreadableError(mirror, read.cause);
-  if (read.kind === "absent") return { report: `oso profile show\nno profile at ${mirror} — every role runs on its host's session model\n`, exitCode: 0 };
-  return { report: `oso profile show\n${mirror}\n${read.content}`, exitCode: 0 };
+  const chosen =
+    read.kind === "absent" ? `no profile at ${mirror} — every role runs on its host's session model\n` : `${mirror}\n${read.content}`;
+  return { report: `oso profile show\n${chosen}${openCodePromptSection(openCodeConfigFile)}`, exitCode: 0 };
+}
+
+function openCodePromptSection(configFile: string): string {
+  const reading = openCodePromptsRemaining(configFile);
+  const heading = `${OPENCODE_PROMPTS_HEADING} ${configFile}:\n`;
+  if (reading.kind === "unread") return `${heading}${PROMPT_INDENT}${reading.reason}\n`;
+  if (reading.prompts.length === 0) return `${heading}${PROMPT_INDENT}${NO_PROMPT_REMAINS}\n`;
+  return `${heading}${reading.prompts.map((prompt) => `${PROMPT_INDENT}${prompt}\n`).join("")}`;
+}
+
+function openCodePromptsRemaining(configFile: string): PromptReading {
+  if (!isReadableRegularFile(configFile)) return { kind: "unread", reason: `no readable OpenCode config, so ${UNDER_TODAYS_PROMPTS}` };
+  try {
+    return { kind: "read", prompts: remainingPromptsOf(readJsonFile(configFile)) };
+  } catch (error) {
+    if (!(error instanceof JsonParseError)) throw error;
+    return { kind: "unread", reason: `${error.message}, so ${UNDER_TODAYS_PROMPTS}` };
+  }
 }
 
 export function setProfile(workingDirectory: string, name: string, roleTokens: readonly string[]): CommandOutcome {

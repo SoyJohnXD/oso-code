@@ -8,6 +8,13 @@ export const OWNED_SKILL_VERDICT = "deny";
 export const OWNED_TASK_PATTERN = "*";
 export const OWNED_TASK_VERDICT = "allow";
 
+export const HARNESS_EXTERNAL_DIRECTORIES = [
+  "~/.config/opencode/**",
+  "~/.local/state/oso-code/**",
+  "~/.local/share/opencode/worktree/**",
+] as const;
+export const HARNESS_EXTERNAL_DIRECTORY_VERDICT = "allow";
+
 export const OWNED_PERMISSION_VALUES = {
   question: "allow",
   plan_enter: "allow",
@@ -29,6 +36,9 @@ const PERMISSION_KEY = "permission";
 const MCP_KEY = "mcp";
 const SKILL_KEY = "skill";
 const TASK_KEY = "task";
+const EXTERNAL_DIRECTORY_KEY = "external_directory";
+const DOOM_LOOP_KEY = "doom_loop";
+const HOST_PROMPT_VERDICT = "ask";
 const AGENT_KEY = "agent";
 const NEVER_PRESERVED_KEYS: readonly string[] = [PERMISSION_KEY, MCP_KEY, PLUGIN_KEY];
 
@@ -99,7 +109,7 @@ export function mergeOpenCodeConfig(existing: unknown, fallowCommand: string, pr
   const permission = ownedContainer(document, PERMISSION_KEY);
   preservedKeys.push(
     ...Object.keys(permission)
-      .filter((name) => !(name in OWNED_PERMISSION_VALUES) && name !== SKILL_KEY && name !== TASK_KEY)
+      .filter((name) => !(name in OWNED_PERMISSION_VALUES) && ![SKILL_KEY, TASK_KEY, EXTERNAL_DIRECTORY_KEY].includes(name))
       .map((name) => `${PERMISSION_KEY}.${name}`),
   );
 
@@ -118,6 +128,14 @@ export function mergeOpenCodeConfig(existing: unknown, fallowCommand: string, pr
       .map((pattern) => `${PERMISSION_KEY}.${TASK_KEY}.${pattern}`),
   );
   delegations[OWNED_TASK_PATTERN] = OWNED_TASK_VERDICT;
+
+  const externalDirectories = ownedContainer(permission, EXTERNAL_DIRECTORY_KEY);
+  preservedKeys.push(
+    ...Object.keys(externalDirectories)
+      .filter((pattern) => !(HARNESS_EXTERNAL_DIRECTORIES as readonly string[]).includes(pattern))
+      .map((pattern) => `${PERMISSION_KEY}.${EXTERNAL_DIRECTORY_KEY}.${pattern}`),
+  );
+  for (const harnessDirectory of HARNESS_EXTERNAL_DIRECTORIES) externalDirectories[harnessDirectory] = HARNESS_EXTERNAL_DIRECTORY_VERDICT;
 
   Object.assign(permission, OWNED_PERMISSION_VALUES);
 
@@ -143,6 +161,21 @@ function mergeAgentModels(document: ConfigDocument, preservedKeys: string[], age
       .map((name) => `${AGENT_KEY}.${name}`),
   );
   for (const [name, model] of Object.entries(agentModels)) ownedContainer(agents, name)["model"] = model;
+}
+
+export function remainingPromptsOf(config: unknown): readonly string[] {
+  const permission = isPlainObject(config) && isPlainObject(config[PERMISSION_KEY]) ? config[PERMISSION_KEY] : {};
+  const spelled = Object.entries(permission).flatMap(([key, rule]) => promptsOfRule(key, rule));
+  const unspelledDoomLoop = DOOM_LOOP_KEY in permission ? [] : [DOOM_LOOP_KEY];
+  return [...spelled, ...unspelledDoomLoop].sort();
+}
+
+function promptsOfRule(key: string, rule: unknown): readonly string[] {
+  if (rule === HOST_PROMPT_VERDICT) return [key];
+  if (!isPlainObject(rule)) return [];
+  return Object.entries(rule)
+    .filter(([, verdict]) => verdict === HOST_PROMPT_VERDICT)
+    .map(([pattern]) => `${key} ${pattern}`);
 }
 
 export function hostContractViolationOf(document: unknown): string | undefined {

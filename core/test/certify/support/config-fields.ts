@@ -19,21 +19,75 @@ export function agentField(config: unknown, field: string): ReadonlyMap<string, 
 export function agentPermissionField(config: unknown, key: string): ReadonlyMap<string, string> {
   const values = new Map<string, string>();
   for (const [name, spec] of Object.entries(agentSection(config))) {
-    const permission = isRecord(spec) ? spec["permission"] : undefined;
-    const rule = isRecord(permission) ? permission[key] : undefined;
-    values.set(name, typeof rule === "string" ? rule : isRecord(rule) ? "allowlist" : "absent");
+    values.set(name, verdictOf(permissionRulesOf(spec).find(([ruleKey]) => ruleKey === key)));
   }
   return values;
+}
+
+export function agentPermissionVerdicts(config: unknown, toolId: string): ReadonlyMap<string, string> {
+  const verdicts = new Map<string, string>();
+  for (const [name, spec] of Object.entries(agentSection(config))) {
+    const covering = permissionRulesOf(spec).filter(([ruleKey]) => ruleKeyMatches(toolId, ruleKey));
+    verdicts.set(name, verdictOf(covering.at(-1)));
+  }
+  return verdicts;
+}
+
+function permissionRulesOf(agentSpec: unknown): readonly (readonly [string, unknown])[] {
+  const permission = isRecord(agentSpec) ? agentSpec["permission"] : undefined;
+  return isRecord(permission) ? Object.entries(permission) : [];
+}
+
+function verdictOf(rule: readonly [string, unknown] | undefined): string {
+  const value = rule?.[1];
+  return typeof value === "string" ? value : isRecord(value) ? "allowlist" : "absent";
+}
+
+const RULE_KEY_METACHARACTERS = /[.+^${}()|[\]\\]/g;
+const TRAILING_ARGUMENT_WILDCARD = " .*";
+
+function ruleKeyMatches(toolId: string, ruleKey: string): boolean {
+  const escaped = ruleKey.replace(RULE_KEY_METACHARACTERS, "\\$&").replaceAll("*", ".*").replaceAll("?", ".");
+  const expression = escaped.endsWith(TRAILING_ARGUMENT_WILDCARD)
+    ? `${escaped.slice(0, -TRAILING_ARGUMENT_WILDCARD.length)}( .*)?`
+    : escaped;
+  return new RegExp(`^${expression}$`, "s").test(toolId);
 }
 
 export function fieldOf(values: ReadonlyMap<string, string>, name: string): string {
   return values.get(name) ?? "absent";
 }
 
-export function topLevelPermissionField(config: unknown, key: string): string {
+function permissionSection(config: unknown): Record<string, unknown> {
   const permission = isRecord(config) ? config["permission"] : undefined;
-  const value = isRecord(permission) ? permission[key] : undefined;
+  return isRecord(permission) ? permission : {};
+}
+
+export function topLevelPermissionField(config: unknown, key: string): string {
+  const value = permissionSection(config)[key];
   return typeof value === "string" ? value : "absent";
+}
+
+export function externalDirectoryRules(config: unknown): ReadonlyMap<string, string> {
+  const rules = new Map<string, string>();
+  const block = permissionSection(config)["external_directory"];
+  if (!isRecord(block)) return rules;
+  for (const [pattern, verdict] of Object.entries(block)) rules.set(pattern, verdictOf([pattern, verdict]));
+  return rules;
+}
+
+export function externalDirectoryVerdict(config: unknown, homeDirectory: string, externalPath: string): string {
+  const covering = [...externalDirectoryRules(config)].filter(([pattern]) =>
+    ruleKeyMatches(externalPath, homeExpanded(pattern, homeDirectory)),
+  );
+  return verdictOf(covering.at(-1));
+}
+
+const HOME_RELATIVE_PREFIX = "~/";
+
+function homeExpanded(pattern: string, homeDirectory: string): string {
+  if (!pattern.startsWith(HOME_RELATIVE_PREFIX)) return pattern;
+  return `${homeDirectory}/${pattern.slice(HOME_RELATIVE_PREFIX.length)}`;
 }
 
 export function commandAgentRoute(config: unknown, commandName: string): string {

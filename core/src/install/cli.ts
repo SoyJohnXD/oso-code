@@ -2,7 +2,7 @@ import { homeDirectoryFrom } from "../state/store.ts";
 import { codexHostProbes } from "./codex-host.ts";
 import { installClaude, purgeClaude, repairClaude } from "./claude.ts";
 import { installCodex, purgeCodex, repairCodex } from "./codex.ts";
-import { repairOpenCode } from "./opencode.ts";
+import { opencodePathsFor, repairOpenCode } from "./opencode.ts";
 import { openCodeHostProbes } from "./opencode-host.ts";
 import { installOpenCode } from "./opencode-install.ts";
 import { purgeOpenCode } from "./opencode-purge.ts";
@@ -137,9 +137,13 @@ function dispatch(argv: readonly string[], repositoryRoot: string): number {
 
 function runProfile(argv: readonly string[], workingDirectory: string): CommandOutcome {
   const [subverb, name, ...roleTokens] = argv;
-  if (subverb === "show" && argv.length === 1) return showProfile(workingDirectory);
+  if (subverb === "show" && argv.length === 1) return showProfile(workingDirectory, renderedOpenCodeConfigFile());
   if (subverb === "set" && name !== undefined) return setProfile(workingDirectory, name, roleTokens);
   throw new UsageError();
+}
+
+function renderedOpenCodeConfigFile(): string {
+  return opencodePathsFor(homeDirectoryFrom(process.platform, process.env), process.env).configFile;
 }
 
 function runHostVerb(argv: readonly string[], repositoryRoot: string): CommandOutcome {

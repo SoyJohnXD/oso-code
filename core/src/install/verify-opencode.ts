@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { JsonParseError, readJsonFile } from "./json.ts";
 import {
+  HARNESS_EXTERNAL_DIRECTORIES,
+  HARNESS_EXTERNAL_DIRECTORY_VERDICT,
   isPlainObject,
   mcpServerWildcard,
   openCodeAgentModels,
@@ -262,6 +264,10 @@ export function openCodeConfigStatus(configFile: string): string {
   if (OWNED_SKILL_MODES.some((mode) => skills[mode] !== OWNED_SKILL_VERDICT)) return "malformed";
   for (const grantBoundTool of ["oso_plan_approve", "oso_plan_cancel"] as const) {
     if (permission[grantBoundTool] !== OWNED_PERMISSION_VALUES[grantBoundTool]) return "malformed";
+  }
+  const externalDirectories = isPlainObject(permission["external_directory"]) ? permission["external_directory"] : {};
+  if (HARNESS_EXTERNAL_DIRECTORIES.some((harnessDirectory) => externalDirectories[harnessDirectory] !== HARNESS_EXTERNAL_DIRECTORY_VERDICT)) {
+    return "malformed";
   }
   return "valid";
 }
