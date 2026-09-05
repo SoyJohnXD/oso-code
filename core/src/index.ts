@@ -6,6 +6,7 @@ export {
   type HookCaller,
   type HookEnvelope,
 } from "./hosts/envelope.ts";
+export { APPLIER_PROOF_HEADER } from "./prose/applier-proof.ts";
 export { openCodeRoutes, type OpenCodeRoute } from "./routes/render.ts";
 export { PlanApprovalError, PlanFailure, runApprovePlan, runCapturePlan } from "./state/plan.ts";
 export {

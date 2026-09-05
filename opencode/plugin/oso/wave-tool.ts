@@ -28,6 +28,11 @@ export function waveTool(session: HostSessionApi | undefined): PluginTool {
             worktree: { type: "string", description: "Absolute path of the git worktree the child runs inside." },
             agent: { type: "string", enum: ["applier", "verifier"], description: "Which oso-code agent the child runs as." },
             prompt: { type: "string", description: "The full assignment the child receives as its first and only turn." },
+            applier_proof: {
+              type: "string",
+              description: "The applier's proof block for the slice this child verifies, verbatim and alone —"
+                + " a verifier child's field, which an applier child offered it comes back blocked for.",
+            },
           },
           required: ["worktree", "agent", "prompt"],
         },
@@ -67,7 +72,7 @@ function parseLaunches(args: unknown): WaveChildLaunch[] {
 
 function parseLaunch(child: unknown, index: number): WaveChildLaunch {
   const record = (typeof child === "object" && child !== null ? child : {}) as Record<string, unknown>;
-  const { worktree, agent, prompt } = record;
+  const { worktree, agent, prompt, applier_proof: applierProof } = record;
   if (typeof worktree !== "string" || worktree === "") {
     throw new Error(`oso_wave child ${index} needs a worktree path, not ${JSON.stringify(worktree)}`);
   }
@@ -77,7 +82,10 @@ function parseLaunch(child: unknown, index: number): WaveChildLaunch {
   if (typeof prompt !== "string" || prompt === "") {
     throw new Error(`oso_wave child ${index} needs a prompt`);
   }
-  return { worktree, agent, prompt };
+  if (applierProof !== undefined && (typeof applierProof !== "string" || applierProof === "")) {
+    throw new Error(`oso_wave child ${index} needs applier_proof as the applier's proof block, not ${JSON.stringify(applierProof)}`);
+  }
+  return { worktree, agent, prompt, applierProof };
 }
 
 function isWaveAgent(value: unknown): value is WaveAgent {

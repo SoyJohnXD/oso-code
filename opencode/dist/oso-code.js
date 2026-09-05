@@ -3744,6 +3744,9 @@ function explainedCause(cause) {
 `;
 }
 
+// core/src/prose/applier-proof.ts
+var APPLIER_PROOF_HEADER = "=== applier_proof ===";
+
 // core/src/routes/render.ts
 var UNKNOWN_TOOL_MATCHER = ".*";
 var DEPLOY_SHAPED_TOOL_NAMES = {
@@ -4044,7 +4047,7 @@ var HOST_AGENT = {
   verifier: "oso-verifier"
 };
 async function pinChildSession(launch, projectCommonDir, request) {
-  const rejection = worktreeRejection(launch.worktree, projectCommonDir);
+  const rejection = proofRejection(launch) ?? worktreeRejection(launch.worktree, projectCommonDir);
   if (rejection !== void 0) {
     return { state: "unpinnable", launch, reason: rejection };
   }
@@ -4068,6 +4071,12 @@ async function pinChildSession(launch, projectCommonDir, request) {
   } catch (error) {
     return { state: "unpinnable", launch, reason: `the child session could not be created: ${messageOf(error)}` };
   }
+}
+function proofRejection({ agent, applierProof }) {
+  if (agent === "verifier" || applierProof === void 0) {
+    return void 0;
+  }
+  return "applier_proof reaches a verifier child only, and this child runs as an applier";
 }
 function worktreeRejection(worktree, projectCommonDir) {
   if (!isAbsolute2(worktree)) {
@@ -4098,7 +4107,7 @@ async function collectChildReport(child, request) {
         sessionID: child.sessionID,
         directory: child.launch.worktree,
         hostAgent: HOST_AGENT[child.launch.agent],
-        prompt: child.launch.prompt
+        prompt: promptOf(child.launch)
       }),
       request.timeoutMs
     );
@@ -4121,6 +4130,12 @@ async function collectChildReport(child, request) {
       reason: unstopped === void 0 ? failure : `${failure}; ${unstopped}`
     };
   }
+}
+function promptOf({ prompt, applierProof }) {
+  return applierProof === void 0 ? prompt : `${prompt}
+
+${APPLIER_PROOF_HEADER}
+${applierProof}`;
 }
 var ABORT_BOUND_MS = 1e4;
 async function stopChild(sessionID, directory, transport) {
@@ -4644,7 +4659,11 @@ function waveTool(session) {
           properties: {
             worktree: { type: "string", description: "Absolute path of the git worktree the child runs inside." },
             agent: { type: "string", enum: ["applier", "verifier"], description: "Which oso-code agent the child runs as." },
-            prompt: { type: "string", description: "The full assignment the child receives as its first and only turn." }
+            prompt: { type: "string", description: "The full assignment the child receives as its first and only turn." },
+            applier_proof: {
+              type: "string",
+              description: "The applier's proof block for the slice this child verifies, verbatim and alone \u2014 a verifier child's field, which an applier child offered it comes back blocked for."
+            }
           },
           required: ["worktree", "agent", "prompt"]
         }
@@ -4682,7 +4701,7 @@ function parseLaunches(args) {
 }
 function parseLaunch(child, index) {
   const record = typeof child === "object" && child !== null ? child : {};
-  const { worktree, agent, prompt } = record;
+  const { worktree, agent, prompt, applier_proof: applierProof } = record;
   if (typeof worktree !== "string" || worktree === "") {
     throw new Error(`oso_wave child ${index} needs a worktree path, not ${JSON.stringify(worktree)}`);
   }
@@ -4692,7 +4711,10 @@ function parseLaunch(child, index) {
   if (typeof prompt !== "string" || prompt === "") {
     throw new Error(`oso_wave child ${index} needs a prompt`);
   }
-  return { worktree, agent, prompt };
+  if (applierProof !== void 0 && (typeof applierProof !== "string" || applierProof === "")) {
+    throw new Error(`oso_wave child ${index} needs applier_proof as the applier's proof block, not ${JSON.stringify(applierProof)}`);
+  }
+  return { worktree, agent, prompt, applierProof };
 }
 function isWaveAgent(value) {
   return value === "applier" || value === "verifier";

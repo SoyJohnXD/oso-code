@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
+import { APPLIER_PROOF_HEADER } from "../../src/prose/applier-proof.ts";
 import { AGENT_ROLES, agentHosts, agentOutputPath, agentSharedBodyPath } from "../../src/prose/render.ts";
 import { readTextAtCommit } from "../support/prose-inventory.ts";
 import { provedSomething } from "../support/proved.ts";
@@ -13,7 +14,7 @@ const REPORT_FIELDS_BY_ROLE_ID: Readonly<Record<string, readonly string[]>> = {
 };
 
 const PAYLOAD_FIELDS_BY_ROLE_ID: Readonly<Record<string, readonly string[]>> = {
-  "oso-verifier": ["applier_proof"],
+  "oso-verifier": ["applier_proof", APPLIER_PROOF_HEADER],
 };
 
 const REPORT_BLOCK_OPENING = /^(?:status|verdict): /;

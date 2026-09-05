@@ -1,4 +1,5 @@
 import { isAbsolute } from "node:path";
+import { APPLIER_PROOF_HEADER } from "@oso-code/core";
 import { commonDirOf, roleOf } from "./identity.ts";
 import { parseAgentVerdict, type ParsedAgentVerdict } from "./verdict.ts";
 
@@ -8,6 +9,7 @@ export interface WaveChildLaunch {
   worktree: string;
   agent: WaveAgent;
   prompt: string;
+  applierProof?: string;
 }
 
 export interface WaveChildReported {
@@ -72,7 +74,7 @@ async function pinChildSession(
   projectCommonDir: string,
   request: WaveRequest,
 ): Promise<PinnedChild> {
-  const rejection = worktreeRejection(launch.worktree, projectCommonDir);
+  const rejection = proofRejection(launch) ?? worktreeRejection(launch.worktree, projectCommonDir);
   if (rejection !== undefined) {
     return { state: "unpinnable", launch, reason: rejection };
   }
@@ -96,6 +98,13 @@ async function pinChildSession(
   } catch (error) {
     return { state: "unpinnable", launch, reason: `the child session could not be created: ${messageOf(error)}` };
   }
+}
+
+function proofRejection({ agent, applierProof }: WaveChildLaunch): string | undefined {
+  if (agent === "verifier" || applierProof === undefined) {
+    return undefined;
+  }
+  return "applier_proof reaches a verifier child only, and this child runs as an applier";
 }
 
 function worktreeRejection(worktree: string, projectCommonDir: string): string | undefined {
@@ -128,7 +137,7 @@ async function collectChildReport(child: PinnedChild, request: WaveRequest): Pro
         sessionID: child.sessionID,
         directory: child.launch.worktree,
         hostAgent: HOST_AGENT[child.launch.agent],
-        prompt: child.launch.prompt,
+        prompt: promptOf(child.launch),
       }),
       request.timeoutMs,
     );
@@ -151,6 +160,10 @@ async function collectChildReport(child: PinnedChild, request: WaveRequest): Pro
       reason: unstopped === undefined ? failure : `${failure}; ${unstopped}`,
     };
   }
+}
+
+function promptOf({ prompt, applierProof }: WaveChildLaunch): string {
+  return applierProof === undefined ? prompt : `${prompt}\n\n${APPLIER_PROOF_HEADER}\n${applierProof}`;
 }
 
 const ABORT_BOUND_MS = 10_000;
