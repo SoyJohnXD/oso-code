@@ -19,7 +19,7 @@ export const COMMENT_SCAN_LANGUAGES: readonly ScanLanguage[] = [...new Set(Objec
 
 export const REFERENCE_COUNT_LANGUAGES: readonly ScanLanguage[] = ["typescript", "javascript"];
 
-export function languageOf(file: string): ScanLanguage | undefined {
+function languageOf(file: string): ScanLanguage | undefined {
   return LANGUAGE_BY_EXTENSION[path.posix.extname(file)];
 }
 

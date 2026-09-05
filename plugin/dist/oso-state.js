@@ -269,17 +269,12 @@ function slashOpenings(lines, firstLine, language) {
         index = progress.at;
         continue;
       }
-      const quoted = quotedRunOpenedAt(rest, language);
-      if (quoted !== void 0) {
-        const closed = advanceQuoted(line, index + quoted.width, quoted.terminator, quoted.escaped);
-        if (closed === void 0) {
-          carry = { kind: "quoted", terminator: quoted.terminator, escaped: quoted.escaped };
-          break;
-        }
-        index = closed;
-        continue;
+      const quoted = skipQuotedRun(line, index, language);
+      if (quoted?.state === "carried") {
+        carry = quoted.carry;
+        break;
       }
-      index += skippedWidthOf(line, index, language);
+      index = quoted?.at ?? index + skippedWidthOf(line, index, language);
     }
   }
   return openings;
@@ -302,14 +297,13 @@ function hashOpenings(lines, firstLine, language) {
         index += 2;
         continue;
       }
-      const quoted = quotedRunOpenedAt(rest, language);
+      const quoted = skipQuotedRun(line, index, language);
+      if (quoted?.state === "carried") {
+        carry = quoted.carry;
+        break;
+      }
       if (quoted !== void 0) {
-        const closed = advanceQuoted(line, index + quoted.width, quoted.terminator, quoted.escaped);
-        if (closed === void 0) {
-          carry = { kind: "quoted", terminator: quoted.terminator, escaped: quoted.escaped };
-          break;
-        }
-        index = closed;
+        index = quoted.at;
         continue;
       }
       if (rest.startsWith("#") && (language === "python" || opensShellWord(line, index))) {
@@ -352,6 +346,14 @@ function advanceBlock(line, from, depth, nestsBlocks) {
     index += 1;
   }
   return { state: "open", depth: open };
+}
+function skipQuotedRun(line, index, language) {
+  const run = quotedRunOpenedAt(line.slice(index), language);
+  if (run === void 0) return void 0;
+  const { width, terminator, escaped } = run;
+  const closed = advanceQuoted(line, index + width, terminator, escaped);
+  if (closed === void 0) return { state: "carried", carry: { kind: "quoted", terminator, escaped } };
+  return { state: "skipped", at: closed };
 }
 function advanceQuoted(line, from, terminator, escaped) {
   let index = from;

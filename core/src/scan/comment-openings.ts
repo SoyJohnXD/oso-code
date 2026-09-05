@@ -18,6 +18,8 @@ type BlockProgress = Readonly<{ state: "closed"; at: number } | { state: "open";
 
 type QuotedRun = Readonly<{ width: number; terminator: string; escaped: boolean }>;
 
+type QuotedSkip = Readonly<{ state: "skipped"; at: number } | { state: "carried"; carry: Carry }>;
+
 const CODE: Carry = { kind: "code" };
 const LICENSE_MARKER = /\b(?:Copyright|SPDX-License-Identifier|Licensed under)\b/;
 const OPERAND_EXPECTING_KEYWORD =
@@ -79,17 +81,12 @@ function slashOpenings(lines: readonly string[], firstLine: number, language: Sc
         index = progress.at;
         continue;
       }
-      const quoted = quotedRunOpenedAt(rest, language);
-      if (quoted !== undefined) {
-        const closed = advanceQuoted(line, index + quoted.width, quoted.terminator, quoted.escaped);
-        if (closed === undefined) {
-          carry = { kind: "quoted", terminator: quoted.terminator, escaped: quoted.escaped };
-          break;
-        }
-        index = closed;
-        continue;
+      const quoted = skipQuotedRun(line, index, language);
+      if (quoted?.state === "carried") {
+        carry = quoted.carry;
+        break;
       }
-      index += skippedWidthOf(line, index, language);
+      index = quoted?.at ?? index + skippedWidthOf(line, index, language);
     }
   }
   return openings;
@@ -113,14 +110,13 @@ function hashOpenings(lines: readonly string[], firstLine: number, language: Sca
         index += 2;
         continue;
       }
-      const quoted = quotedRunOpenedAt(rest, language);
+      const quoted = skipQuotedRun(line, index, language);
+      if (quoted?.state === "carried") {
+        carry = quoted.carry;
+        break;
+      }
       if (quoted !== undefined) {
-        const closed = advanceQuoted(line, index + quoted.width, quoted.terminator, quoted.escaped);
-        if (closed === undefined) {
-          carry = { kind: "quoted", terminator: quoted.terminator, escaped: quoted.escaped };
-          break;
-        }
-        index = closed;
+        index = quoted.at;
         continue;
       }
       if (rest.startsWith("#") && (language === "python" || opensShellWord(line, index))) {
@@ -166,6 +162,15 @@ function advanceBlock(line: string, from: number, depth: number, nestsBlocks: bo
     index += 1;
   }
   return { state: "open", depth: open };
+}
+
+function skipQuotedRun(line: string, index: number, language: ScanLanguage): QuotedSkip | undefined {
+  const run = quotedRunOpenedAt(line.slice(index), language);
+  if (run === undefined) return undefined;
+  const { width, terminator, escaped } = run;
+  const closed = advanceQuoted(line, index + width, terminator, escaped);
+  if (closed === undefined) return { state: "carried", carry: { kind: "quoted", terminator, escaped } };
+  return { state: "skipped", at: closed };
 }
 
 function advanceQuoted(line: string, from: number, terminator: string, escaped: boolean): number | undefined {
