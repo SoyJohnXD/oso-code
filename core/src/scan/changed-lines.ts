@@ -22,6 +22,9 @@ const DIFF_SOURCE_PATH_PREFIX = "a/";
 const DIFF_TARGET_PATH_PREFIX = "b/";
 const NO_SUCH_FILE = "/dev/null";
 const NUL_BYTE = 0;
+const EMPTY_GIT_CONFIG = "/dev/null";
+const GIT_FILTER_CONFIG_PATTERN = "^filter\\..*\\.(clean|process)$";
+const GIT_FILTER_CONFIG_KEY = /^filter\.(.+)\.(?:clean|process)$/;
 
 export function changedFilesSince(cwd: string, ref: string): ChangedTree {
   const repositoryRoot = repositoryRootOf(cwd);
@@ -137,12 +140,51 @@ function pathsListedBy(cwd: string, argv: readonly string[]): string[] {
 }
 
 function gitOutput(cwd: string, argv: readonly string[]): string {
-  const run = spawnSync("git", [...argv], { cwd, encoding: "utf8", maxBuffer: MAX_GIT_OUTPUT_BYTES });
+  const config = runGit(cwd, ["-c", "core.fsmonitor=false", "config", "--includes", "--name-only", "--get-regexp", GIT_FILTER_CONFIG_PATTERN]);
+  if (config.error !== undefined) {
+    throw new ScanFailure(`git config could not run in ${cwd}: ${config.error.message}`);
+  }
+  if (config.status !== 0 && config.status !== 1) {
+    throw new ScanFailure(`git config exited ${config.status} in ${cwd}: ${config.stderr.trim()}`);
+  }
+  const drivers = new Set<string>();
+  for (const key of config.stdout.split("\n").filter((entry) => entry !== "")) {
+    const match = GIT_FILTER_CONFIG_KEY.exec(key);
+    if (match === null) throw new ScanFailure(`git filter configuration cannot be safely isolated: ${key}`);
+    drivers.add(match[1] as string);
+  }
+  const filterOptions = [...drivers].flatMap((driver) => [
+    "-c",
+    `filter.${driver}.clean=`,
+    "-c",
+    `filter.${driver}.process=`,
+    "-c",
+    `filter.${driver}.required=false`,
+  ]);
+  const run = runGit(cwd, ["-c", "core.fsmonitor=false", ...filterOptions, ...argv]);
   if (run.error !== undefined) throw new ScanFailure(`git ${argv.join(" ")} could not run in ${cwd}: ${run.error.message}`);
   if (run.status !== 0) {
     throw new ScanFailure(`git ${argv.join(" ")} exited ${run.status} in ${cwd}: ${run.stderr.trim()}`);
   }
   return run.stdout;
+}
+
+function runGit(cwd: string, argv: readonly string[]) {
+  const environment = { ...process.env };
+  for (const name of Object.keys(environment)) {
+    if (name.startsWith("GIT_")) delete environment[name];
+  }
+  environment.GIT_CONFIG_GLOBAL = EMPTY_GIT_CONFIG;
+  environment.GIT_CONFIG_SYSTEM = EMPTY_GIT_CONFIG;
+  environment.GIT_CONFIG_NOSYSTEM = "1";
+  environment.GIT_NO_LAZY_FETCH = "1";
+  environment.GIT_ALLOW_PROTOCOL = "";
+  return spawnSync("git", [...argv], {
+    cwd,
+    encoding: "utf8",
+    env: environment,
+    maxBuffer: MAX_GIT_OUTPUT_BYTES,
+  });
 }
 
 function addedLinesByFile(diff: string, diffPaths: ReadonlySet<string>): Map<string, Set<number>> {

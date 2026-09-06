@@ -17,6 +17,9 @@ var DIFF_SOURCE_PATH_PREFIX = "a/";
 var DIFF_TARGET_PATH_PREFIX = "b/";
 var NO_SUCH_FILE = "/dev/null";
 var NUL_BYTE = 0;
+var EMPTY_GIT_CONFIG = "/dev/null";
+var GIT_FILTER_CONFIG_PATTERN = "^filter\\..*\\.(clean|process)$";
+var GIT_FILTER_CONFIG_KEY = /^filter\.(.+)\.(?:clean|process)$/;
 function changedFilesSince(cwd, ref) {
   const repositoryRoot = repositoryRootOf(cwd);
   const resolvedTree = resolveTree(cwd, ref);
@@ -114,12 +117,50 @@ function pathsListedBy(cwd, argv) {
   return gitOutput(cwd, argv).split("\0").filter((entry) => entry !== "");
 }
 function gitOutput(cwd, argv) {
-  const run = spawnSync("git", [...argv], { cwd, encoding: "utf8", maxBuffer: MAX_GIT_OUTPUT_BYTES });
+  const config = runGit(cwd, ["-c", "core.fsmonitor=false", "config", "--includes", "--name-only", "--get-regexp", GIT_FILTER_CONFIG_PATTERN]);
+  if (config.error !== void 0) {
+    throw new ScanFailure(`git config could not run in ${cwd}: ${config.error.message}`);
+  }
+  if (config.status !== 0 && config.status !== 1) {
+    throw new ScanFailure(`git config exited ${config.status} in ${cwd}: ${config.stderr.trim()}`);
+  }
+  const drivers = /* @__PURE__ */ new Set();
+  for (const key of config.stdout.split("\n").filter((entry) => entry !== "")) {
+    const match = GIT_FILTER_CONFIG_KEY.exec(key);
+    if (match === null) throw new ScanFailure(`git filter configuration cannot be safely isolated: ${key}`);
+    drivers.add(match[1]);
+  }
+  const filterOptions = [...drivers].flatMap((driver) => [
+    "-c",
+    `filter.${driver}.clean=`,
+    "-c",
+    `filter.${driver}.process=`,
+    "-c",
+    `filter.${driver}.required=false`
+  ]);
+  const run = runGit(cwd, ["-c", "core.fsmonitor=false", ...filterOptions, ...argv]);
   if (run.error !== void 0) throw new ScanFailure(`git ${argv.join(" ")} could not run in ${cwd}: ${run.error.message}`);
   if (run.status !== 0) {
     throw new ScanFailure(`git ${argv.join(" ")} exited ${run.status} in ${cwd}: ${run.stderr.trim()}`);
   }
   return run.stdout;
+}
+function runGit(cwd, argv) {
+  const environment = { ...process.env };
+  for (const name of Object.keys(environment)) {
+    if (name.startsWith("GIT_")) delete environment[name];
+  }
+  environment.GIT_CONFIG_GLOBAL = EMPTY_GIT_CONFIG;
+  environment.GIT_CONFIG_SYSTEM = EMPTY_GIT_CONFIG;
+  environment.GIT_CONFIG_NOSYSTEM = "1";
+  environment.GIT_NO_LAZY_FETCH = "1";
+  environment.GIT_ALLOW_PROTOCOL = "";
+  return spawnSync("git", [...argv], {
+    cwd,
+    encoding: "utf8",
+    env: environment,
+    maxBuffer: MAX_GIT_OUTPUT_BYTES
+  });
 }
 function addedLinesByFile(diff, diffPaths) {
   const byFile = /* @__PURE__ */ new Map();

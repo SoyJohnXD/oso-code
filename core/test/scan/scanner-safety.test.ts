@@ -4,8 +4,15 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, unl
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { abstractionScanReport } from "../../src/scan/abstraction-scan.ts";
 import { commentScanReport } from "../../src/scan/comment-scan.ts";
+
+const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+const SHIPPED_COMMENT_SCANNERS = [
+  path.join(PROJECT_ROOT, "plugin", "dist", "oso-state.js"),
+  path.join(PROJECT_ROOT, "plugin", "bin", "oso-state"),
+];
 
 function withRepository(run: (repository: string) => void): void {
   const repository = mkdtempSync(path.join(tmpdir(), "oso-scanner-safety-"));
@@ -56,6 +63,33 @@ describe("scanner input and filesystem boundaries", () => {
 
       assert.match(report, /added\.ts:1: \/\/ added/);
       assert.equal(existsSync(marker), false);
+    });
+  });
+
+  test("does not execute repository filters or filesystem monitor helpers", () => {
+    withRepository((repository) => {
+      writeFileSync(path.join(repository, "base.ts"), "export const base = 1;\n");
+      commit(repository, "base");
+      const marker = path.join(repository, "project-code-ran");
+      const helper = path.join(repository, "project-helper.sh");
+      writeFileSync(helper, "#!/bin/sh\nprintf executed > project-code-ran\ncat\n");
+      chmodSync(helper, 0o755);
+      git(repository, ["config", "filter.synthetic.clean", helper]);
+      git(repository, ["config", "filter.synthetic.process", helper]);
+      git(repository, ["config", "filter.synthetic.required", "true"]);
+      git(repository, ["config", "core.fsmonitor", helper]);
+      writeFileSync(path.join(repository, ".gitattributes"), "*.ts filter=synthetic\n");
+      writeFileSync(path.join(repository, "added.ts"), "// added\n");
+
+      assert.doesNotThrow(() => commentScanReport(repository, "HEAD"));
+      assert.equal(existsSync(marker), false);
+      assert.doesNotThrow(() => abstractionScanReport(repository, "HEAD"));
+      assert.equal(existsSync(marker), false);
+
+      for (const scanner of SHIPPED_COMMENT_SCANNERS) {
+        assert.doesNotThrow(() => execFileSync(process.execPath, [scanner, "scan", "comments", "HEAD"], { cwd: repository, encoding: "utf8" }));
+        assert.equal(existsSync(marker), false);
+      }
     });
   });
 
