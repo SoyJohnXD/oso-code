@@ -38,6 +38,14 @@ describe(
       assert.ok(report.render().includes(`${CODEX_HOOKS_MANIFEST}: mismatch`), report.render());
     });
 
+    test("a manifest path with a literal quote and backslash is verified when JSON holds both escaped", () => {
+      const runtimeRoot = '/runtime-"quoted\\literal';
+      const paths = { ...installedFixture(path.posix.join(runtimeRoot, "dist")), runtimeRoot };
+      const report = new VerifyReport();
+      checkPublishedRuntimeBytes(report, paths, repositoryRoot);
+      assert.ok(!report.render().includes(`${CODEX_HOOKS_MANIFEST}: mismatch`), report.render());
+    });
+
     test("the substitution replaces every occurrence and leaves a manifest that never held the path alone", () => {
       assert.equal(unrenderedHooksManifest("a /rt/dist b /rt/dist c", "/rt"), `a ${RENDERED_HOOKS_DIR_TOKEN} b ${RENDERED_HOOKS_DIR_TOKEN} c`);
       assert.equal(unrenderedHooksManifest("nothing to undo", "/rt"), "nothing to undo");
@@ -54,6 +62,6 @@ function installedFixture(renderedDirectory?: string): ReturnType<typeof codexPa
   const paths = codexPathsFor(home, environment);
   mkdirSync(paths.codexHome, { recursive: true });
   const dist = renderedDirectory ?? path.posix.join(paths.runtimeRoot, "dist");
-  writeFileSync(path.join(paths.codexHome, "hooks.json"), PUBLISHED_MANIFEST.replaceAll(RENDERED_HOOKS_DIR_TOKEN, dist));
+  writeFileSync(path.join(paths.codexHome, "hooks.json"), PUBLISHED_MANIFEST.replaceAll(RENDERED_HOOKS_DIR_TOKEN, JSON.stringify(dist).slice(1, -1)));
   return paths;
 }

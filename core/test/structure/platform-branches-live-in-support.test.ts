@@ -18,6 +18,11 @@ const BRANCHED_BESIDE_THE_GUARD_MODULE = [
     justification:
       "the expected message a gate emits for a missing home directory, which names USERPROFILE on win32 and HOME elsewhere — an oracle the port must match on both legs, never a case skipped on one",
   },
+  {
+    file: "core/test/support/codex-install-fixture.ts",
+    justification:
+      "the Codex writer fixture keeps its literal quote and backslash witness on POSIX while naming a filesystem-valid home on win32; the same writer oracle runs on both legs without a skip",
+  },
 ] as const;
 
 const EXEMPT_FILES = [GUARD_MODULE, ...BRANCHED_BESIDE_THE_GUARD_MODULE.map((entry) => entry.file)];

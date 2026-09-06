@@ -24,7 +24,7 @@ import {
   type CodexCommandInput,
 } from "../../src/install/codex.ts";
 import { parseTomlDocument } from "../../src/install/toml.ts";
-import { fixtureRepositoryRoot, pinnedHost } from "../support/codex-install-fixture.ts";
+import { CODEX_WRITER_HOME_SEGMENT, fixtureRepositoryRoot, pinnedHost } from "../support/codex-install-fixture.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
 
 const sandbox = mkdtempSync(path.join(tmpdir(), "oso-codex-install-"));
@@ -152,15 +152,19 @@ describe("oso install --host codex over a fixture HOME", () => {
   });
 
   test("it escapes a native runtime path before writing the JSON hooks manifest", () => {
-    const home = path.join(sandbox, 'home-"quoted\\runtime');
+    const home = path.join(sandbox, CODEX_WRITER_HOME_SEGMENT);
     mkdirSync(path.join(home, ".codex"), { recursive: true });
     const outcome = installCodex(inputFor(home, { installImpeccable: false }));
     assert.equal(outcome.exitCode, 0, outcome.report);
     const paths = codexPathsFor(home, inputFor(home).environment);
-    const manifest = JSON.parse(readFileSync(paths.hooksManifest, "utf8")) as { hooks: unknown };
+    const runtimeHooksDirectory = path.posix.join(paths.runtimeRoot, "dist");
+    const manifestText = readFileSync(paths.hooksManifest, "utf8");
+    const escapedRuntimeHooksDirectory = runtimeHooksDirectory.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+    assert.ok(manifestText.includes(escapedRuntimeHooksDirectory));
+    const manifest = JSON.parse(manifestText) as { hooks: unknown };
     assert.ok(manifest.hooks);
     const commands = Object.values(manifest.hooks as Record<string, Array<{ hooks: Array<{ command: string }> }>>).flatMap((groups) => groups.flatMap((group) => group.hooks.map((hook) => hook.command)));
-    assert.ok(commands.length > 0 && commands.every((command) => command.includes(path.posix.join(paths.runtimeRoot, "dist"))));
+    assert.ok(commands.length > 0 && commands.every((command) => command.includes(runtimeHooksDirectory)));
   });
 
   test("updating replaces stale owned generations and preserves unrelated state", () => {
@@ -286,6 +290,24 @@ describe("oso install --host codex over a fixture HOME", () => {
     assert.match(outcome.report, /Engram marketplace cache/);
     assert.equal(readFileSync(path.join(cache, "operator-sentinel"), "utf8"), "preserve this unrecognized cache\n");
     assert.equal(existsSync(paths.configFile), false);
+  });
+
+  test("a Git cache whose configured worktree is foreign remains refused", () => {
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    const cache = path.join(paths.codexHome, ".tmp", "marketplaces", "engram");
+    mkdirSync(cache, { recursive: true });
+    assert.equal(gitIn(cache, ["init", "-q"]).status, 0);
+    const foreignWorktree = path.join(home, "foreign-worktree");
+    mkdirSync(foreignWorktree);
+    assert.equal(gitIn(cache, ["config", "core.worktree", foreignWorktree]).status, 0);
+    const outcome = installCodex(inputFor(home, {
+      environment: { PATH: process.env["PATH"] ?? "", CODEX_HOME: paths.codexHome },
+      installImpeccable: false,
+    }));
+    assert.equal(outcome.exitCode, 1, outcome.report);
+    assert.match(outcome.report, /not an exact Git checkout/);
+    assert.equal(existsSync(cache), true);
   });
 
   test("dirty unregistered caches never execute local or environment Git filters", () => {

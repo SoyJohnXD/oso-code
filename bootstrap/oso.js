@@ -3771,7 +3771,7 @@ function validateStaleEngramMarketplace(cache, environment) {
     return result.status === 0 ? result.stdout.trim() : void 0;
   };
   const root = gitText(["rev-parse", "--show-toplevel"]);
-  if (root !== path10.resolve(cache)) return `refusing to remove an unregistered Engram marketplace cache that is not an exact Git checkout: ${cache}`;
+  if (root?.replaceAll(path10.sep, "/") !== path10.resolve(cache).replaceAll(path10.sep, "/")) return `refusing to remove an unregistered Engram marketplace cache that is not an exact Git checkout: ${cache}`;
   if (gitText(["remote"]) !== "origin") return `refusing to remove an Engram marketplace cache with unexpected Git remotes: ${cache}`;
   if (gitText(["remote", "get-url", "--all", "origin"]) !== `https://github.com/${ENGRAM_SOURCE_REPO}.git`) return `refusing to remove an Engram marketplace cache from an unknown origin: ${cache}`;
   const head = gitText(["rev-parse", "HEAD"]);

@@ -30,6 +30,8 @@ const PUBLISHED_DIRECTORIES_AN_INSTALL_READS = [
 
 const NO_CODEX_ON_THIS_MACHINE: HostRun = { ok: false, output: "codex: command not found" };
 
+export const CODEX_WRITER_HOME_SEGMENT = process.platform === "win32" ? "home-runtime" : 'home-"quoted\\runtime';
+
 export function pinnedHost(overrides: Partial<CodexHostProbes> = {}): CodexHostProbes {
   return {
     version: SUPPORTED_CODEX_VERSION,
