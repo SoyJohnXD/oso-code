@@ -15,7 +15,7 @@ import {
 
 const PROJECT_DIRECTORY = "project";
 const BASE_REF = "HEAD";
-const FAILING_CHECK_FIXTURE = "comments-typescript-flags-a-decision-citation.json";
+const FAILING_CHECK_FIXTURE = "comments-license-marker-only-exempts-own-comment.json";
 const UNRESOLVABLE_REF = "no-such-ref-in-this-project";
 
 const CLI_SUBJECT: StateSubject = {

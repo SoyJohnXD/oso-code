@@ -4,9 +4,25 @@ export type CommentForm = "inline" | "doc" | "shebang" | "license";
 
 export type CommentOpening = Readonly<{ line: number; form: CommentForm; text: string }>;
 
-type RawOpening = Readonly<{ line: number; endLine: number; startsLine: boolean; form: CommentForm; text: string }>;
+type RawOpening = Readonly<{
+  line: number;
+  endLine: number;
+  startColumn: number;
+  endColumn: number;
+  startsLine: boolean;
+  form: CommentForm;
+  text: string;
+}>;
 
-type OpenBlock = Readonly<{ kind: "block"; depth: number; openedAt: number; startsLine: boolean; form: CommentForm; text: string }>;
+type OpenBlock = Readonly<{
+  kind: "block";
+  depth: number;
+  openedAt: number;
+  startColumn: number;
+  startsLine: boolean;
+  form: CommentForm;
+  text: string;
+}>;
 
 type Carry = Readonly<{ kind: "code" }> | OpenBlock | Readonly<{ kind: "quoted"; terminator: string; escaped: boolean }>;
 
@@ -46,7 +62,7 @@ function openingsOf(language: ScanLanguage, lines: readonly string[]): RawOpenin
 function shebangOpeningOf(lines: readonly string[]): RawOpening[] {
   const first = lines[0];
   if (first === undefined || !first.startsWith("#!")) return [];
-  return [{ line: 1, endLine: 1, startsLine: true, form: "shebang", text: first.trim() }];
+  return [{ line: 1, endLine: 1, startColumn: 0, endColumn: first.length, startsLine: true, form: "shebang", text: first.trim() }];
 }
 
 function slashOpenings(lines: readonly string[], firstLine: number, language: ScanLanguage): RawOpening[] {
@@ -77,7 +93,7 @@ function slashOpenings(lines: readonly string[], firstLine: number, language: Sc
           carry = { ...block, depth: progress.depth };
           break;
         }
-        openings.push(closedBlockOpening(block, number));
+        openings.push(closedBlockOpening(block, number, progress.at));
         index = progress.at;
         continue;
       }
@@ -137,11 +153,11 @@ function resumeCarry(carry: Carry, line: string, number: number, nestsBlocks: bo
   }
   const progress = advanceBlock(line, 0, carry.depth, nestsBlocks);
   if (progress.state === "open") return { state: "carried", carry: { ...carry, depth: progress.depth } };
-  return { state: "resumed", at: progress.at, closed: [closedBlockOpening(carry, number)] };
+  return { state: "resumed", at: progress.at, closed: [closedBlockOpening(carry, number, progress.at)] };
 }
 
-function closedBlockOpening({ openedAt, startsLine, form, text }: OpenBlock, endLine: number): RawOpening {
-  return { line: openedAt, endLine, startsLine, form, text };
+function closedBlockOpening({ openedAt, startColumn, startsLine, form, text }: OpenBlock, endLine: number, endColumn: number): RawOpening {
+  return { line: openedAt, endLine, startColumn, endColumn, startsLine, form, text };
 }
 
 function advanceBlock(line: string, from: number, depth: number, nestsBlocks: boolean): BlockProgress {
@@ -258,11 +274,19 @@ function blockCommentFormOf(rest: string, language: ScanLanguage): CommentForm {
 }
 
 function openedBlockAt(line: number, column: number, text: string, form: CommentForm): OpenBlock {
-  return { kind: "block", depth: 1, openedAt: line, startsLine: opensLine(text, column), form, text: text.trim() };
+  return { kind: "block", depth: 1, openedAt: line, startColumn: column, startsLine: opensLine(text, column), form, text: text.trim() };
 }
 
 function openingAt(line: number, column: number, text: string, form: CommentForm): RawOpening {
-  return { line, endLine: line, startsLine: opensLine(text, column), form, text: text.trim() };
+  return {
+    line,
+    endLine: line,
+    startColumn: column,
+    endColumn: text.length,
+    startsLine: opensLine(text, column),
+    form,
+    text: text.trim(),
+  };
 }
 
 function opensLine(line: string, column: number): boolean {
@@ -272,9 +296,17 @@ function opensLine(line: string, column: number): boolean {
 function licenseHeaderMarked(openings: readonly RawOpening[], lines: readonly string[]): RawOpening[] {
   const headerEnd = headerEndLineOf(openings, lines);
   if (headerEnd === 0 || !LICENSE_MARKER.test(lines.slice(0, headerEnd).join("\n"))) return [...openings];
-  return openings.map((opening) =>
-    opening.form === "inline" && opening.line <= headerEnd ? { ...opening, form: "license" } : opening,
-  );
+  return openings.map((opening) => {
+    if (opening.form !== "inline" || opening.line > headerEnd) return opening;
+    const commentLines = lines.slice(opening.line - 1, opening.endLine);
+    const firstLine = commentLines[0] as string;
+    const lastLine = commentLines.at(-1) as string;
+    const commentText =
+      opening.line === opening.endLine
+        ? firstLine.slice(opening.startColumn, opening.endColumn)
+        : [firstLine.slice(opening.startColumn), ...commentLines.slice(1, -1), lastLine.slice(0, opening.endColumn)].join("\n");
+    return LICENSE_MARKER.test(commentText) ? { ...opening, form: "license" } : opening;
+  });
 }
 
 function headerEndLineOf(openings: readonly RawOpening[], lines: readonly string[]): number {

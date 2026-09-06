@@ -1,0 +1,53 @@
+{
+  "name": "supported languages — a license marker exempts only its own comment, including a multiline block",
+  "verb": "comments",
+  "language": "mixed",
+  "committed": {},
+  "worktree": {
+    "src/adjacent.js": [
+      "/*",
+      " * Copyright 2026 Example",
+      " */",
+      "",
+      "/* D22: retries cap at 3 */",
+      "const retries = 3;"
+    ],
+    "src/adjacent.rs": [
+      "// Copyright 2026 Example",
+      "// D22: retries cap at 3",
+      "const RETRIES: u32 = 3;"
+    ],
+    "src/adjacent.ts": [
+      "// Copyright 2026 Example",
+      "// D22: retries cap at 3",
+      "const retries = 3;"
+    ],
+    "src/same-line.js": [
+      "/* D22: retries cap at 3 */ /* Copyright 2026 Example */",
+      "const retries = 3;"
+    ],
+    "tools/adjacent.py": [
+      "#!/usr/bin/env python3",
+      "# Copyright 2026 Example",
+      "# D22: retries cap at 3",
+      "retries = 3"
+    ],
+    "tools/adjacent.sh": [
+      "#!/usr/bin/env bash",
+      "# Copyright 2026 Example",
+      "# D22: retries cap at 3",
+      "retries=3"
+    ]
+  },
+  "expect": {
+    "hits": [
+      "src/adjacent.js:5: /* D22: retries cap at 3 */",
+      "src/adjacent.rs:2: // D22: retries cap at 3",
+      "src/adjacent.ts:2: // D22: retries cap at 3",
+      "src/same-line.js:1: /* D22: retries cap at 3 */ /* Copyright 2026 Example */",
+      "tools/adjacent.py:3: # D22: retries cap at 3",
+      "tools/adjacent.sh:3: # D22: retries cap at 3"
+    ],
+    "summary": "6 hits; read 6 changed file(s) as typescript, javascript, python, rust, shell; every changed file was read"
+  }
+}

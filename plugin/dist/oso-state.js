@@ -345,7 +345,7 @@ function openingsOf(language, lines) {
 function shebangOpeningOf(lines) {
   const first = lines[0];
   if (first === void 0 || !first.startsWith("#!")) return [];
-  return [{ line: 1, endLine: 1, startsLine: true, form: "shebang", text: first.trim() }];
+  return [{ line: 1, endLine: 1, startColumn: 0, endColumn: first.length, startsLine: true, form: "shebang", text: first.trim() }];
 }
 function slashOpenings(lines, firstLine, language) {
   const nestsBlocks = language === "rust";
@@ -375,7 +375,7 @@ function slashOpenings(lines, firstLine, language) {
           carry = { ...block, depth: progress.depth };
           break;
         }
-        openings.push(closedBlockOpening(block, number));
+        openings.push(closedBlockOpening(block, number, progress.at));
         index = progress.at;
         continue;
       }
@@ -433,10 +433,10 @@ function resumeCarry(carry, line, number, nestsBlocks) {
   }
   const progress = advanceBlock(line, 0, carry.depth, nestsBlocks);
   if (progress.state === "open") return { state: "carried", carry: { ...carry, depth: progress.depth } };
-  return { state: "resumed", at: progress.at, closed: [closedBlockOpening(carry, number)] };
+  return { state: "resumed", at: progress.at, closed: [closedBlockOpening(carry, number, progress.at)] };
 }
-function closedBlockOpening({ openedAt, startsLine, form, text }, endLine) {
-  return { line: openedAt, endLine, startsLine, form, text };
+function closedBlockOpening({ openedAt, startColumn, startsLine, form, text }, endLine, endColumn) {
+  return { line: openedAt, endLine, startColumn, endColumn, startsLine, form, text };
 }
 function advanceBlock(line, from, depth, nestsBlocks) {
   let index = from;
@@ -537,10 +537,18 @@ function blockCommentFormOf(rest, language) {
   return language === "rust" && rest.startsWith("/*!") ? "doc" : "inline";
 }
 function openedBlockAt(line, column, text, form) {
-  return { kind: "block", depth: 1, openedAt: line, startsLine: opensLine(text, column), form, text: text.trim() };
+  return { kind: "block", depth: 1, openedAt: line, startColumn: column, startsLine: opensLine(text, column), form, text: text.trim() };
 }
 function openingAt(line, column, text, form) {
-  return { line, endLine: line, startsLine: opensLine(text, column), form, text: text.trim() };
+  return {
+    line,
+    endLine: line,
+    startColumn: column,
+    endColumn: text.length,
+    startsLine: opensLine(text, column),
+    form,
+    text: text.trim()
+  };
 }
 function opensLine(line, column) {
   return line.slice(0, column).trim() === "";
@@ -548,9 +556,14 @@ function opensLine(line, column) {
 function licenseHeaderMarked(openings, lines) {
   const headerEnd = headerEndLineOf(openings, lines);
   if (headerEnd === 0 || !LICENSE_MARKER.test(lines.slice(0, headerEnd).join("\n"))) return [...openings];
-  return openings.map(
-    (opening) => opening.form === "inline" && opening.line <= headerEnd ? { ...opening, form: "license" } : opening
-  );
+  return openings.map((opening) => {
+    if (opening.form !== "inline" || opening.line > headerEnd) return opening;
+    const commentLines = lines.slice(opening.line - 1, opening.endLine);
+    const firstLine = commentLines[0];
+    const lastLine = commentLines.at(-1);
+    const commentText = opening.line === opening.endLine ? firstLine.slice(opening.startColumn, opening.endColumn) : [firstLine.slice(opening.startColumn), ...commentLines.slice(1, -1), lastLine.slice(0, opening.endColumn)].join("\n");
+    return LICENSE_MARKER.test(commentText) ? { ...opening, form: "license" } : opening;
+  });
 }
 function headerEndLineOf(openings, lines) {
   const covered = /* @__PURE__ */ new Set();
