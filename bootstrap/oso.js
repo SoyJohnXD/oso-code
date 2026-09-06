@@ -1896,7 +1896,7 @@ function isPlainRecord(value) {
 
 // core/src/install/codex.ts
 import { spawnSync as spawnSync5 } from "node:child_process";
-import { chmodSync as chmodSync2, cpSync as cpSync2, mkdirSync as mkdirSync6, mkdtempSync as mkdtempSync4, readFileSync as readFileSync10, readdirSync as readdirSync5, renameSync as renameSync3, rmSync as rmSync7, writeFileSync as writeFileSync7 } from "node:fs";
+import { chmodSync as chmodSync2, cpSync as cpSync2, mkdirSync as mkdirSync6, mkdtempSync as mkdtempSync4, readFileSync as readFileSync10, readdirSync as readdirSync5, realpathSync, renameSync as renameSync3, rmSync as rmSync7, writeFileSync as writeFileSync7 } from "node:fs";
 import path10 from "node:path";
 
 // core/src/install/codex-config.ts
@@ -3771,7 +3771,7 @@ function validateStaleEngramMarketplace(cache, environment) {
     return result.status === 0 ? result.stdout.trim() : void 0;
   };
   const root = gitText(["rev-parse", "--show-toplevel"]);
-  if (root?.replaceAll(path10.sep, "/") !== path10.resolve(cache).replaceAll(path10.sep, "/")) return `refusing to remove an unregistered Engram marketplace cache that is not an exact Git checkout: ${cache}`;
+  if (root === void 0 || !isDirectoryNotSymlink(root) || realpathSync.native(root) !== realpathSync.native(cache)) return `refusing to remove an unregistered Engram marketplace cache that is not an exact Git checkout: ${cache}`;
   if (gitText(["remote"]) !== "origin") return `refusing to remove an Engram marketplace cache with unexpected Git remotes: ${cache}`;
   if (gitText(["remote", "get-url", "--all", "origin"]) !== `https://github.com/${ENGRAM_SOURCE_REPO}.git`) return `refusing to remove an Engram marketplace cache from an unknown origin: ${cache}`;
   const head = gitText(["rev-parse", "HEAD"]);
@@ -5460,7 +5460,7 @@ function directoryEntryNames(directory) {
 }
 
 // core/src/install/opencode-purge.ts
-import { mkdirSync as mkdirSync8, readFileSync as readFileSync14, realpathSync, rmSync as rmSync10 } from "node:fs";
+import { mkdirSync as mkdirSync8, readFileSync as readFileSync14, realpathSync as realpathSync2, rmSync as rmSync10 } from "node:fs";
 import path16 from "node:path";
 var OPENCODE_PURGE_BACKUP_FORMAT = "oso-code-opencode-purge-v1";
 var PROJECT_CONFIGS_KEY = "OSO_OPENCODE_PROJECT_CONFIGS";
@@ -5649,7 +5649,7 @@ function isBelow(candidate, ancestor) {
 }
 function physicalPathOf(target) {
   try {
-    return realpathSync(target);
+    return realpathSync2(target);
   } catch {
     return void 0;
   }

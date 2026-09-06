@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   backupTarget,
@@ -641,7 +641,7 @@ function validateStaleEngramMarketplace(cache: string, environment: NodeJS.Proce
     return result.status === 0 ? result.stdout.trim() : undefined;
   };
   const root = gitText(["rev-parse", "--show-toplevel"]);
-  if (root?.replaceAll(path.sep, "/") !== path.resolve(cache).replaceAll(path.sep, "/")) return `refusing to remove an unregistered Engram marketplace cache that is not an exact Git checkout: ${cache}`;
+  if (root === undefined || !isDirectoryNotSymlink(root) || realpathSync.native(root) !== realpathSync.native(cache)) return `refusing to remove an unregistered Engram marketplace cache that is not an exact Git checkout: ${cache}`;
   if (gitText(["remote"]) !== "origin") return `refusing to remove an Engram marketplace cache with unexpected Git remotes: ${cache}`;
   if (gitText(["remote", "get-url", "--all", "origin"]) !== `https://github.com/${ENGRAM_SOURCE_REPO}.git`) return `refusing to remove an Engram marketplace cache from an unknown origin: ${cache}`;
   const head = gitText(["rev-parse", "HEAD"]);

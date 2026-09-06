@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, test } from "node:test";
@@ -39,7 +39,7 @@ const THE_CONFIG_TOML_CLOSURE = [
   { file: "core/src/install/codex-config.ts", nativeJoins: 0 },
   { file: "core/src/install/codex-host.ts", nativeJoins: 2 },
   { file: "core/src/install/codex-payload.ts", nativeJoins: 15 },
-  { file: "core/src/install/codex.ts", nativeJoins: 54 },
+  { file: "core/src/install/codex.ts", nativeJoins: 53 },
   { file: "core/src/install/engram.ts", nativeJoins: 5 },
   { file: "core/src/install/json.ts", nativeJoins: 0 },
   { file: "core/src/install/pins.ts", nativeJoins: 0 },
@@ -301,6 +301,9 @@ describe("oso install --host codex over a fixture HOME", () => {
     const foreignWorktree = path.join(home, "foreign-worktree");
     mkdirSync(foreignWorktree);
     assert.equal(gitIn(cache, ["config", "core.worktree", foreignWorktree]).status, 0);
+    const cacheIdentity = statSync(cache, { bigint: true });
+    const foreignIdentity = statSync(foreignWorktree, { bigint: true });
+    assert.notDeepEqual([foreignIdentity.dev, foreignIdentity.ino], [cacheIdentity.dev, cacheIdentity.ino]);
     const outcome = installCodex(inputFor(home, {
       environment: { PATH: process.env["PATH"] ?? "", CODEX_HOME: paths.codexHome },
       installImpeccable: false,
@@ -418,15 +421,11 @@ describe("oso install --host codex over a fixture HOME", () => {
     assert.equal(gitIn(cache, ["remote", "add", "origin", "https://github.com/Gentleman-Programming/engram.git"]).status, 0);
     assert.equal(gitIn(cache, ["update-ref", "refs/remotes/origin/main", "HEAD"]).status, 0);
     assert.equal(gitIn(cache, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"]).status, 0);
-    const safeEnvironment = { ...environment, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", GIT_NO_LAZY_FETCH: "1", GIT_ALLOW_PROTOCOL: "" };
-    const filterConfigProbe = spawnSync("git", ["-c", "core.fsmonitor=false", "config", "--includes", "--name-only", "--get-regexp", "^filter\\..*\\.(clean|process)$"], { env: safeEnvironment, cwd: cache, encoding: "utf8" });
-    const rootProbe = spawnSync("git", ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-C", cache, "rev-parse", "--show-toplevel"], { env: safeEnvironment, encoding: "utf8" });
-    console.log("CODEX-CI1 native checkout probe", JSON.stringify({
-      platform: process.platform, cache, resolvedCache: path.resolve(cache), realCache: realpathSync(cache),
-      filterConfig: { status: filterConfigProbe.status, stdout: filterConfigProbe.stdout, stderr: filterConfigProbe.stderr, error: filterConfigProbe.error?.message },
-      root: { status: rootProbe.status, stdout: rootProbe.stdout, stderr: rootProbe.stderr, error: rootProbe.error?.message },
-      realRoot: rootProbe.status === 0 && existsSync(rootProbe.stdout.trim()) ? realpathSync(rootProbe.stdout.trim()) : null,
-    }));
+    const gitRoot = gitIn(cache, ["rev-parse", "--show-toplevel"]);
+    assert.equal(gitRoot.status, 0, gitRoot.stderr);
+    const cacheIdentity = statSync(cache, { bigint: true });
+    const rootIdentity = statSync(gitRoot.stdout.trim(), { bigint: true });
+    assert.deepEqual([rootIdentity.dev, rootIdentity.ino], [cacheIdentity.dev, cacheIdentity.ino]);
     const outcome = installCodex(
       inputFor(home, {
         environment,
