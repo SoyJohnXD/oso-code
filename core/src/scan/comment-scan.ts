@@ -9,7 +9,7 @@ export function commentScanReport(cwd: string, ref: string): string {
   const changed = changedFilesSince(cwd, ref);
   const { read, unread, languages } = partitionByLanguage(changed.files, COMMENT_SCAN_LANGUAGES);
   const hits = read.flatMap(inlineCommentsAddedIn);
-  const notRead = [...unread, ...changed.unreadable].sort();
+  const notRead = [...unread, ...changed.unreadable];
   return renderScan(hits, `${readingClause(read.length, languages)}; ${unreadClause(notRead)}`);
 }
 

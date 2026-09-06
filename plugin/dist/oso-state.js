@@ -4,7 +4,7 @@ import path6 from "node:path";
 
 // core/src/scan/changed-lines.ts
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 var ScanFailure = class extends Error {
 };
@@ -17,41 +17,83 @@ var DIFF_TARGET_PATH_PREFIX = "b/";
 var NO_SUCH_FILE = "/dev/null";
 var NUL_BYTE = 0;
 function changedFilesSince(cwd, ref) {
-  const diffed = addedLinesByFile(diffOf(cwd, ref));
-  const untracked = pathsListedBy(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]);
-  const files = [];
-  const unreadable = [];
-  for (const file of [.../* @__PURE__ */ new Set([...diffed.keys(), ...untracked])].sort()) {
-    const text = worktreeTextOf(cwd, file);
-    if (text === void 0) unreadable.push(file);
-    else files.push({ file, text, addedLines: diffed.get(file) ?? everyLineOf(text) });
-  }
-  return { files, unreadable };
+  const repositoryRoot = repositoryRootOf(cwd);
+  const resolvedTree = resolveTree(cwd, ref);
+  const diffPaths = new Set(pathsListedBy(repositoryRoot, diffArguments(resolvedTree, ["--name-only", "-z"])));
+  const diffed = addedLinesByFile(diffOf(repositoryRoot, resolvedTree), diffPaths);
+  const untracked = pathsListedBy(repositoryRoot, ["ls-files", "--others", "--exclude-standard", "-z"]);
+  const tree = readTree(repositoryRoot, [.../* @__PURE__ */ new Set([...diffPaths, ...diffed.keys(), ...untracked])].sort());
+  return {
+    files: tree.files.map(({ file, text }) => ({ file, text, addedLines: diffed.get(file) ?? everyLineOf(text) })),
+    unreadable: tree.unreadable
+  };
 }
 function trackedAndUntrackedFiles(cwd) {
-  const paths = pathsListedBy(cwd, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]);
-  return [...new Set(paths)].sort().flatMap((file) => {
-    const text = worktreeTextOf(cwd, file);
-    return text === void 0 ? [] : [{ file, text }];
-  });
+  const repositoryRoot = repositoryRootOf(cwd);
+  const paths = pathsListedBy(repositoryRoot, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]);
+  return readTree(repositoryRoot, [...new Set(paths)].sort());
 }
 function everyLineOf(text) {
   return new Set(text.split("\n").map((_line, index) => index + 1));
 }
-function worktreeTextOf(cwd, file) {
-  const content = readBufferOrNothing(path.resolve(cwd, file));
-  if (content === void 0 || content.includes(NUL_BYTE)) return void 0;
-  return content.toString("utf8");
+function readTree(repositoryRoot, paths) {
+  const files = [];
+  const unreadable = [];
+  for (const file of paths) {
+    const result = worktreeTextOf(repositoryRoot, file);
+    if (result.kind === "unreadable") unreadable.push(result.failure);
+    else files.push({ file, text: result.text });
+  }
+  return { files, unreadable };
 }
-function readBufferOrNothing(target) {
+function worktreeTextOf(repositoryRoot, file) {
   try {
-    return readFileSync(target);
-  } catch {
-    return void 0;
+    const target = confinedRegularFile(repositoryRoot, file);
+    const content = readFileSync(target);
+    if (content.includes(NUL_BYTE)) return { kind: "unreadable", failure: { file, cause: "binary content contains NUL byte" } };
+    return { kind: "read", text: content.toString("utf8") };
+  } catch (error) {
+    return { kind: "unreadable", failure: { file, cause: causeOf(error) } };
   }
 }
-function diffOf(cwd, ref) {
-  return gitOutput(cwd, [
+function confinedRegularFile(repositoryRoot, file) {
+  const target = path.resolve(repositoryRoot, file);
+  const relative = path.relative(repositoryRoot, target);
+  if (relative === "" || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error(`path escapes repository root: ${file}`);
+  }
+  const segments = relative.split(path.sep);
+  let current = repositoryRoot;
+  for (const [index, segment] of segments.entries()) {
+    current = path.join(current, segment);
+    const stats = lstatSync(current);
+    if (stats.isSymbolicLink()) throw new Error(`path uses a symbolic link: ${path.relative(repositoryRoot, current)}`);
+    if (index < segments.length - 1 && !stats.isDirectory()) {
+      throw new Error(`path ancestor is not a directory: ${path.relative(repositoryRoot, current)}`);
+    }
+    if (index === segments.length - 1 && !stats.isFile()) throw new Error(`path is not a regular file: ${file}`);
+  }
+  return target;
+}
+function repositoryRootOf(cwd) {
+  const root = gitOutput(cwd, ["rev-parse", "--show-toplevel"]).trim();
+  try {
+    return realpathSync(root);
+  } catch (error) {
+    throw new ScanFailure(`repository root ${root} could not be read: ${causeOf(error)}`);
+  }
+}
+function resolveTree(cwd, ref) {
+  if (ref.startsWith("-")) throw new ScanFailure(`scan ref cannot start with '-': ${ref}`);
+  const resolved = gitOutput(cwd, ["rev-parse", "--verify", "--end-of-options", `${ref}^{tree}`]).trim();
+  if (!/^[0-9a-f]+$/.test(resolved)) throw new ScanFailure(`scan ref did not resolve to one tree object: ${ref}`);
+  return resolved;
+}
+function diffOf(cwd, tree) {
+  return gitOutput(cwd, diffArguments(tree));
+}
+function diffArguments(tree, options = []) {
+  return [
     "-c",
     "core.quotePath=false",
     "diff",
@@ -60,11 +102,12 @@ function diffOf(cwd, ref) {
     "--no-ext-diff",
     "--no-textconv",
     "--no-renames",
+    ...options,
     `--src-prefix=${DIFF_SOURCE_PATH_PREFIX}`,
     `--dst-prefix=${DIFF_TARGET_PATH_PREFIX}`,
-    ref,
+    tree,
     "--"
-  ]);
+  ];
 }
 function pathsListedBy(cwd, argv) {
   return gitOutput(cwd, argv).split("\0").filter((entry) => entry !== "");
@@ -77,32 +120,49 @@ function gitOutput(cwd, argv) {
   }
   return run.stdout;
 }
-function addedLinesByFile(diff) {
+function addedLinesByFile(diff, diffPaths) {
   const byFile = /* @__PURE__ */ new Map();
   let target;
   let nextLine = 0;
-  let previousLine = "";
+  let inHunk = false;
+  let sourceHeader;
   for (const line of diff.split("\n")) {
-    const isTargetHeader = line.startsWith(DIFF_TARGET_PREFIX) && previousLine.startsWith(DIFF_SOURCE_PREFIX);
-    previousLine = line;
-    if (isTargetHeader) {
-      target = targetLinesIn(byFile, line.slice(DIFF_TARGET_PREFIX.length));
+    if (line.startsWith("diff --git ")) {
+      inHunk = false;
+      sourceHeader = void 0;
+      target = void 0;
       continue;
     }
+    if (!inHunk && line.startsWith(DIFF_SOURCE_PREFIX)) {
+      sourceHeader = line.slice(DIFF_SOURCE_PREFIX.length);
+      continue;
+    }
+    if (!inHunk && sourceHeader !== void 0 && line.startsWith(DIFF_TARGET_PREFIX)) {
+      target = targetLinesIn(byFile, line.slice(DIFF_TARGET_PREFIX.length), diffPaths);
+      sourceHeader = void 0;
+      continue;
+    }
+    sourceHeader = void 0;
     const hunk = HUNK_HEADER.exec(line);
     if (hunk !== null) {
+      inHunk = true;
       nextLine = Number(hunk[1]);
       continue;
     }
-    if (target === void 0 || !line.startsWith("+")) continue;
-    target.add(nextLine);
-    nextLine += 1;
+    if (!inHunk) continue;
+    if (line.startsWith("+")) {
+      target?.add(nextLine);
+      nextLine += 1;
+    } else if (line.startsWith(" ")) {
+      nextLine += 1;
+    }
   }
   return byFile;
 }
-function targetLinesIn(byFile, rawTarget) {
+function targetLinesIn(byFile, rawTarget, diffPaths) {
   if (rawTarget === NO_SUCH_FILE) return void 0;
   const file = diffTargetPath(rawTarget);
+  if (!diffPaths.has(file)) throw new ScanFailure(`git diff target is absent from its path inventory: ${file}`);
   const existing = byFile.get(file);
   if (existing !== void 0) return existing;
   const lines = /* @__PURE__ */ new Set();
@@ -114,6 +174,13 @@ function diffTargetPath(rawTarget) {
     throw new ScanFailure(`git diff named a target this scan cannot read as a path: ${DIFF_TARGET_PREFIX}${rawTarget}`);
   }
   return rawTarget.slice(DIFF_TARGET_PATH_PREFIX.length);
+}
+function causeOf(error) {
+  if (error instanceof Error) {
+    const code = "code" in error && typeof error.code === "string" ? `${error.code}: ` : "";
+    return `${code}${error.message}`;
+  }
+  return String(error);
 }
 
 // core/src/scan/languages.ts
@@ -158,9 +225,17 @@ function readingClause(readFiles, languages) {
   if (readFiles === 0) return "read no changed file";
   return `read ${readFiles} changed file(s) as ${languages.join(", ")}`;
 }
-function unreadClause(unread2) {
+function unreadClause(unread2, subject = "changed file") {
   if (unread2.length === 0) return "every changed file was read";
-  return `${unread2.length} changed file(s) were not read: ${unread2.join(", ")}`;
+  const paths = [...unread2].sort(compareUnreadEntries).map(unreadPath);
+  return `${unread2.length} ${subject}(s) were not read: ${paths.join(", ")}`;
+}
+function compareUnreadEntries(left, right) {
+  return unreadPath(left).localeCompare(unreadPath(right));
+}
+function unreadPath(unread2) {
+  if (typeof unread2 === "string") return unread2;
+  return `${unread2.file} (${unread2.cause})`;
 }
 function headlineOf(count) {
   if (count === 0) return "no hit";
@@ -195,13 +270,14 @@ var MODULE_SPECIFIER = /\bfrom\s*["'][^"']*["']|^\s*import\s*["'][^"']*["']|;\s*
 function abstractionScanReport(cwd, ref) {
   const tree = changedFilesSince(cwd, ref);
   const changed = partitionByLanguage(tree.files, REFERENCE_COUNT_LANGUAGES);
-  const project = partitionByLanguage(trackedAndUntrackedFiles(cwd), REFERENCE_COUNT_LANGUAGES);
+  const projectTree = trackedAndUntrackedFiles(cwd);
+  const project = partitionByLanguage(projectTree.files, REFERENCE_COUNT_LANGUAGES);
   const sourceFiles = project.read.filter((candidate) => !isGeneratedBundle(candidate.file));
   const generatedBundles = project.read.filter((candidate) => isGeneratedBundle(candidate.file));
   const useSiteLines = sourceFiles.flatMap(useSiteLinesOf);
   const hits = changed.read.flatMap(exportsAddedIn).flatMap((exported) => thinlyUsedHitFor(exported, useSiteLines));
-  const notRead = [...changed.unread, ...tree.unreadable].sort();
-  const coverage = `${readingClause(changed.read.length, changed.languages)}, counting use sites across ${sourceFiles.length} project file(s) and reading no type or interface declaration; ${unreadClause(notRead)}${generatedBundleClause(generatedBundles)}`;
+  const changedNotRead = [...changed.unread, ...tree.unreadable];
+  const coverage = `${readingClause(changed.read.length, changed.languages)}, counting use sites across ${sourceFiles.length} project file(s) and reading no type or interface declaration; ${unreadClause(changedNotRead)}${projectTree.unreadable.length === 0 ? "" : `; ${unreadClause(projectTree.unreadable, "project file")}`}${generatedBundleClause(generatedBundles)}`;
   return renderScan(hits, coverage);
 }
 function isGeneratedBundle(file) {
@@ -490,7 +566,7 @@ function commentScanReport(cwd, ref) {
   const changed = changedFilesSince(cwd, ref);
   const { read, unread: unread2, languages } = partitionByLanguage(changed.files, COMMENT_SCAN_LANGUAGES);
   const hits = read.flatMap(inlineCommentsAddedIn);
-  const notRead = [...unread2, ...changed.unreadable].sort();
+  const notRead = [...unread2, ...changed.unreadable];
   return renderScan(hits, `${readingClause(read.length, languages)}; ${unreadClause(notRead)}`);
 }
 function inlineCommentsAddedIn({ file, text, addedLines, language }) {
@@ -790,7 +866,7 @@ import {
   accessSync,
   appendFileSync,
   constants,
-  lstatSync,
+  lstatSync as lstatSync2,
   mkdirSync,
   readFileSync as readFileSync2,
   renameSync,
@@ -882,7 +958,7 @@ function readStateFile(stateFile) {
     return { kind: "ok", content: readFileSync2(stateFile, "utf8") };
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") return { kind: "absent" };
-    return { kind: "unreadable", cause: causeOf(error) };
+    return { kind: "unreadable", cause: causeOf2(error) };
   }
 }
 function writeStatePairs(stateFile, pairs, sessionId) {
@@ -1018,7 +1094,7 @@ function readFileIfPresent(file) {
   const read = readStateFile(file);
   return read.kind === "ok" ? read.content : void 0;
 }
-function causeOf(error) {
+function causeOf2(error) {
   return error instanceof Error ? error.message : String(error);
 }
 function parseStateLines(content) {
@@ -1093,7 +1169,7 @@ function isoTimestamp() {
 }
 function lstatOrUndefined(target) {
   try {
-    return lstatSync(target);
+    return lstatSync2(target);
   } catch {
     return void 0;
   }

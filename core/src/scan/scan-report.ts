@@ -1,4 +1,5 @@
 import type { ScanLanguage } from "./languages.ts";
+import type { ReadFailure } from "./changed-lines.ts";
 
 export type ScanHit = Readonly<{ file: string; line: number; note: string }>;
 
@@ -12,9 +13,19 @@ export function readingClause(readFiles: number, languages: readonly ScanLanguag
   return `read ${readFiles} changed file(s) as ${languages.join(", ")}`;
 }
 
-export function unreadClause(unread: readonly string[]): string {
+export function unreadClause(unread: readonly (string | ReadFailure)[], subject = "changed file"): string {
   if (unread.length === 0) return "every changed file was read";
-  return `${unread.length} changed file(s) were not read: ${unread.join(", ")}`;
+  const paths = [...unread].sort(compareUnreadEntries).map(unreadPath);
+  return `${unread.length} ${subject}(s) were not read: ${paths.join(", ")}`;
+}
+
+function compareUnreadEntries(left: string | ReadFailure, right: string | ReadFailure): number {
+  return unreadPath(left).localeCompare(unreadPath(right));
+}
+
+function unreadPath(unread: string | ReadFailure): string {
+  if (typeof unread === "string") return unread;
+  return `${unread.file} (${unread.cause})`;
 }
 
 function headlineOf(count: number): string {

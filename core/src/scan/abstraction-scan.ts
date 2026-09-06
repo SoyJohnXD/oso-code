@@ -16,15 +16,18 @@ const MODULE_SPECIFIER = /\bfrom\s*["'][^"']*["']|^\s*import\s*["'][^"']*["']|;\
 export function abstractionScanReport(cwd: string, ref: string): string {
   const tree = changedFilesSince(cwd, ref);
   const changed = partitionByLanguage(tree.files, REFERENCE_COUNT_LANGUAGES);
-  const project = partitionByLanguage(trackedAndUntrackedFiles(cwd), REFERENCE_COUNT_LANGUAGES);
+  const projectTree = trackedAndUntrackedFiles(cwd);
+  const project = partitionByLanguage(projectTree.files, REFERENCE_COUNT_LANGUAGES);
   const sourceFiles = project.read.filter((candidate) => !isGeneratedBundle(candidate.file));
   const generatedBundles = project.read.filter((candidate) => isGeneratedBundle(candidate.file));
   const useSiteLines = sourceFiles.flatMap(useSiteLinesOf);
   const hits = changed.read.flatMap(exportsAddedIn).flatMap((exported) => thinlyUsedHitFor(exported, useSiteLines));
-  const notRead = [...changed.unread, ...tree.unreadable].sort();
+  const changedNotRead = [...changed.unread, ...tree.unreadable];
   const coverage =
     `${readingClause(changed.read.length, changed.languages)}, counting use sites across ${sourceFiles.length} ` +
-    `project file(s) and reading no type or interface declaration; ${unreadClause(notRead)}${generatedBundleClause(generatedBundles)}`;
+    `project file(s) and reading no type or interface declaration; ${unreadClause(changedNotRead)}` +
+    `${projectTree.unreadable.length === 0 ? "" : `; ${unreadClause(projectTree.unreadable, "project file")}`}` +
+    `${generatedBundleClause(generatedBundles)}`;
   return renderScan(hits, coverage);
 }
 
