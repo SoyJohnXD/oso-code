@@ -15,8 +15,8 @@ proof:
     green: <the same entry only — that same command run again once the implementation exists>
 scan:
   - cmd: <`oso-state scan comments <SLICE START>`, and on a TypeScript or JavaScript project `oso-state scan abstractions <SLICE START>`>  exit: <code>  hits: <every hit you left, each with the one reason it stands — the rest you fixed before reporting; `unavailable — <what the shell returned>` where the host carries no `oso-state`>
-findings: <one line per finding the payload carried — its file:line, then `fixed` and the extra sites of that pattern you swept, or `skipped` and the reason; omitted when the assignment carried no findings>
 decisions_used: <the ledger entries you relied on, each by the id the payload's decision block spells>
+findings: <one line per finding the payload carried — its file:line, then `fixed` and the extra sites of that pattern you swept, or `skipped` and the reason; omitted when the assignment carried no findings>
 self_check: <verify commands you ran and their results — `skipped: parallel` when the payload said so>
 ```
 
@@ -40,8 +40,8 @@ proof:
 scan:
   - cmd: oso-state scan comments 4f21a0c  exit: 0  hits: none
   - cmd: oso-state scan abstractions 4f21a0c  exit: 0  hits: 1 — `publishOptions` is exported for one caller, kept because the ledger's D14 names it as the shared shape D15 will reuse
-findings: none — the assignment carried none
 decisions_used: D14 — the slice id is validated before any write
+findings: none — the assignment carried none
 self_check: npm test 812 pass / 0 fail; npm run typecheck clean; npm run build clean
 ```
 

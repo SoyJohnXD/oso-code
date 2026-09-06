@@ -14,11 +14,14 @@ const DECISION_BLOCK = "DECISION BLOCK";
 const COPIED_BY_ID = "BY ID";
 const RED_EXCEPTION = "red: exception";
 const APPLIER_PROOF = "applier_proof";
+const PROOF_BLOCK = "proof:";
+const SCAN_BLOCK = "scan:";
+const DECISIONS_USED_BLOCK = "decisions_used:";
 const REFUTED_CLAIM = "refuted claim";
 
 const PAYLOAD_TOKENS_BY_ROLE: Readonly<Record<string, readonly string[]>> = {
   [APPLIER]: [DECISION_BLOCK, COPIED_BY_ID, RED_EXCEPTION],
-  [VERIFIER]: [DECISION_BLOCK, APPLIER_PROOF, REFUTED_CLAIM],
+  [VERIFIER]: [DECISION_BLOCK, APPLIER_PROOF, PROOF_BLOCK, SCAN_BLOCK, DECISIONS_USED_BLOCK, REFUTED_CLAIM],
 };
 
 const INDENTED_LINE = /^\s+\S/;
@@ -239,7 +242,7 @@ describe(
 );
 
 describe(
-  "a slice payload names the decision block copied by id, the applier's proof block on the way to the verifier, the " +
+  "a slice payload names the decision block copied by id, the applier's three-block proof package on the way to the verifier, the " +
     "Verify line's exception in the red leg's place, and the route a refuted claim takes",
   () => {
     test(`RED at ${RED_COMMIT}: not one of the ${redCallSites.length} call sites spells a single field of the payload it hands out`, () => {

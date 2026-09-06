@@ -14,11 +14,13 @@ const REPORT_FIELDS_BY_ROLE_ID: Readonly<Record<string, readonly string[]>> = {
 };
 
 const PAYLOAD_FIELDS_BY_ROLE_ID: Readonly<Record<string, readonly string[]>> = {
-  "oso-verifier": ["applier_proof", APPLIER_PROOF_HEADER],
+  "oso-verifier": ["applier_proof", APPLIER_PROOF_HEADER, "proof:", "scan:", "decisions_used:"],
 };
 
 const REPORT_BLOCK_OPENING = /^(?:status|verdict): /;
 const FENCE_LINE = /^\s*```/;
+const APPLIER_REPORT_FIELDS = ["proof:", "scan:", "decisions_used:"] as const;
+const verifierContract = readTrackedText("core/src/prose/agents/oso-verifier/body.md").text;
 
 type BoundContract = Readonly<{
   roleId: string;
@@ -160,6 +162,17 @@ describe("each proof-bearing block spells its report fields inside the block a d
       assert.deepEqual(absent, [], `a proof-bearing block in ${block.file} never spells ${absent.join(", ")}`);
     });
   }
+});
+
+describe("the verifier handoff header carries only the three applier report blocks", () => {
+  test("the shared header lists proof, scan, and decisions_used in order and no other report fields", () => {
+    const handoff = verifierContract.match(/```\n=== applier_proof ===\n([\s\S]*?)\n```/)?.[1] ?? "";
+    assert.deepEqual(
+      handoff.split("\n").filter((line) => APPLIER_REPORT_FIELDS.some((field) => line === field)),
+      [...APPLIER_REPORT_FIELDS],
+    );
+    assert.doesNotMatch(handoff, /^(?:status|files|findings|self_check):/m);
+  });
 });
 
 describe(`the schema reaches every call site the routing table names, and reached none of them at ${RED_COMMIT}`, () => {

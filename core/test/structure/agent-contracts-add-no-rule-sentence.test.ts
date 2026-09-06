@@ -5,6 +5,7 @@ import { provedSomething } from "../support/proved.ts";
 import { readTrackedText, trackedRepositoryFiles } from "../support/tracked-files.ts";
 
 const AGENT_PROSE_ROOT = "core/src/prose/agents/";
+const VERIFIER_CONTRACT = `${AGENT_PROSE_ROOT}oso-verifier/body.md`;
 const SENTENCE_CAP = 60;
 const FENCE_LINE = /^\s*```/;
 
@@ -70,6 +71,8 @@ const FILES_FLOOR_DERIVATION =
   "the seven agent roles' shared bodies and the host deltas beside them — every tracked markdown file under " +
   `${AGENT_PROSE_ROOT}, which is the same set ${Object.keys(RULE_SENTENCE_CEILINGS).length} ceilings are recorded for`;
 
+const verifierContract = readTrackedText(VERIFIER_CONTRACT).text;
+
 provedSomething(
   `${agentProseFiles.length} agent prose file(s) were walked for the rule sentences they carry`,
   agentProseFiles.length >= FILES_FLOOR,
@@ -115,6 +118,27 @@ describe(`no rule sentence in an agent contract runs past ${SENTENCE_CAP} words`
   test(`zero of the ${agentSentences.length} sentences exceed the cap; a sentence sitting exactly at ${SENTENCE_CAP} passes`, () => {
     const oversized = agentSentences.filter((counted) => counted.words > SENTENCE_CAP);
     assert.deepEqual(oversized, [], oversized.map((counted) => `${counted.file}: ${counted.words} words: ${counted.sentence}`).join("\n"));
+  });
+});
+
+describe("the verifier's empirical scan and decisions checks stay in their existing gates", () => {
+  test("gate 7 and its worked verdict name the shared comment scanner", () => {
+    const gate7 = verifierContract.match(/^7\. (.+)$/m)?.[1] ?? "";
+    assert.match(gate7, /oso-state scan comments <ref>/);
+    assert.match(verifierContract, /cmd: oso-state scan comments 4f21a0c/);
+    assert.doesNotMatch(gate7, /whatever shape covers/);
+    assert.doesNotMatch(verifierContract, /rg -c \"\^\[\+\]\[ \]\*\(\/\|#\)\"/);
+  });
+
+  test("gate 8 checks every decisions_used id against the supplied decision block", () => {
+    const gate8 = verifierContract.match(/^8\. (.+)$/m)?.[1] ?? "";
+    assert.match(gate8, /decisions_used/);
+    assert.match(gate8, /every .* id .* supplied decision block/);
+    assert.match(gate8, /absent id as a finding/);
+  });
+
+  test("the decisions check remains within the nine numbered contract gates", () => {
+    assert.equal([...verifierContract.matchAll(/^\d+\. /gm)].length, 9);
   });
 });
 

@@ -30,8 +30,8 @@ export function waveTool(session: HostSessionApi | undefined): PluginTool {
             prompt: { type: "string", description: "The full assignment the child receives as its first and only turn." },
             applier_proof: {
               type: "string",
-              description: "The applier's proof block for the slice this child verifies, verbatim and alone —"
-                + " a verifier child's field, which an applier child offered it comes back blocked for.",
+              description: "The applier's proof, scan, and decisions_used report blocks for the slice this child verifies,"
+                + " verbatim and alone — a verifier child's field, which an applier child offered it comes back blocked for.",
             },
           },
           required: ["worktree", "agent", "prompt"],
@@ -83,7 +83,7 @@ function parseLaunch(child: unknown, index: number): WaveChildLaunch {
     throw new Error(`oso_wave child ${index} needs a prompt`);
   }
   if (applierProof !== undefined && (typeof applierProof !== "string" || applierProof === "")) {
-    throw new Error(`oso_wave child ${index} needs applier_proof as the applier's proof block, not ${JSON.stringify(applierProof)}`);
+    throw new Error(`oso_wave child ${index} needs applier_proof as the applier's three report blocks, not ${JSON.stringify(applierProof)}`);
   }
   return { worktree, agent, prompt, applierProof };
 }

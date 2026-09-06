@@ -151,13 +151,17 @@ test("an applier and a verifier each run in a session pinned to their own worktr
   });
 });
 
-test("the verifier child's prompt carries the proof block under one header and no other line of the applier's report", async () => {
+test("the verifier child's prompt carries the three-block package under one header and no other line of the applier's report", async () => {
   await withWavePair(async (pair) => {
     const proofBlock = [
       "proof:",
       "  - criterion: the verifier child is handed the block",
       "    probe: read the prompt the wave sent that child",
       "    observed: the block arrived under one header",
+      "scan:",
+      "  - cmd: oso-state scan comments SLICE_START  exit: 0  hits: none",
+      "decisions_used:",
+      "  - C1-D4",
     ].join("\n");
     const applierReport = ["status: done", "files: wave.ts — the seam", proofBlock, "findings: none — the assignment carried none"].join("\n");
     const { transport, log } = recordingTransport(async ({ hostAgent }) =>

@@ -90,9 +90,16 @@ test("oso_wave declares the children the model must name and the two agents it a
   assert.match(tool.description, /worktree/);
 });
 
-test("oso_wave hands applier_proof to a verifier child under one header and blocks an applier child that names it", async () => {
+test("oso_wave hands the three applier_proof blocks to a verifier child under one header and blocks an applier child that names it", async () => {
   await withToolFixture(async (fixture) => {
-    const proofBlock = "proof:\n  - criterion: the field reaches a verifier child only";
+    const proofBlock = [
+      "proof:",
+      "  - criterion: the field reaches a verifier child only",
+      "scan:",
+      "  - cmd: oso-state scan comments SLICE_START  exit: 0  hits: none",
+      "decisions_used:",
+      "  - C1-D4",
+    ].join("\n");
     const { session, turns } = replyingSessionApi(() => "verdict: pass\n");
     const result = await waveTool(session).execute(
       {
@@ -178,7 +185,7 @@ test("oso_wave refuses a call the model shaped wrongly", async () => {
   );
   await assert.rejects(
     () => tool.execute({ children: [{ worktree: "/wt/a", agent: "verifier", prompt: "p", applier_proof: 7 }] }, call),
-    /needs applier_proof as the applier's proof block/,
+    /needs applier_proof as the applier's three report blocks/,
   );
 });
 
