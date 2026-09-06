@@ -247,23 +247,45 @@ const THE_FIELD_ONLY_A_SLICE_BLOCK_CARRIES = "Depends-on";
 const MARKDOWN_LIST_OR_HEADING = /^[\s>]*(?:#{1,6}\s+)?(?:[-*+]\s+|\d+[.)]\s+)?(?:\[[ xX]\]\s+)?/;
 const MARKDOWN_EMPHASIS = /^[*_]{1,3}/;
 const SLICE_LABEL = /^(S\d+|Slice\s+\d+)(?:\s+[A-Z]{2,})*(?:\s*\([^)]*\))?\s*[—–:-]/;
+const MARKDOWN_HEADING = /^[\s>]*(#{1,6})\s+/;
 
 type SliceBlock = Readonly<{ label: string; text: string }>;
+type OpenSlice = { label: string; boundaryLevel: number; lines: string[] };
 
 function firstSliceNamingNoCheck(document: string): string | undefined {
   return sliceBlocksIn(document).find(({ text }) => !namesAVerifyCheck(text))?.label;
 }
 
 function sliceBlocksIn(document: string): SliceBlock[] {
-  const opened: { label: string; lines: string[] }[] = [];
+  const opened: OpenSlice[] = [];
+  let current: OpenSlice | undefined;
+  let currentHeadingLevel: number | undefined;
   for (const line of document.split("\n")) {
     const label = sliceLabelOpening(line);
-    if (label !== undefined) opened.push({ label, lines: [line] });
-    else opened.at(-1)?.lines.push(line);
+    if (label !== undefined) {
+      const headingLevel = headingLevelOf(line);
+      current = {
+        label,
+        boundaryLevel: headingLevel ?? currentHeadingLevel ?? 6,
+        lines: [line],
+      };
+      opened.push(current);
+      if (headingLevel !== undefined) currentHeadingLevel = headingLevel;
+      continue;
+    }
+    const headingLevel = headingLevelOf(line);
+    if (current !== undefined && headingLevel !== undefined && headingLevel <= current.boundaryLevel) current = undefined;
+    current?.lines.push(line);
+    if (headingLevel !== undefined) currentHeadingLevel = headingLevel;
   }
   return opened
     .map(({ label, lines }) => ({ label, text: lines.join("\n") }))
     .filter(({ text }) => text.includes(THE_FIELD_ONLY_A_SLICE_BLOCK_CARRIES));
+}
+
+function headingLevelOf(line: string): number | undefined {
+  const heading = MARKDOWN_HEADING.exec(line);
+  return heading === null ? undefined : heading[1]?.length;
 }
 
 function sliceLabelOpening(line: string): string | undefined {

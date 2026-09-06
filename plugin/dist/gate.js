@@ -896,7 +896,24 @@ function withoutCarriageReturns(value) {
 }
 
 // core/src/routes/routes.ts
+var BUNDLE_DIRECTORY = "dist";
 var GATE_BUNDLE = "gate.js";
+var PRECOMMIT_BUNDLE = "precommit.js";
+var OPENCODE_PLUGIN_BUNDLE = "opencode/dist/oso-code.js";
+var PLUGIN_BUNDLE_DIRECTORY = `plugin/${BUNDLE_DIRECTORY}`;
+var PLUGIN_BINARY_DIRECTORY = "plugin/bin";
+var BOOTSTRAP_DIRECTORY = "bootstrap";
+var PLUGIN_STATE_BUNDLE = `${PLUGIN_BUNDLE_DIRECTORY}/oso-state.js`;
+var PLUGIN_STATE_EXECUTABLE = `${PLUGIN_BINARY_DIRECTORY}/oso-state`;
+var BOOTSTRAP_BUNDLE = `${BOOTSTRAP_DIRECTORY}/oso.js`;
+var GENERATED_BUNDLES = [
+  PLUGIN_STATE_BUNDLE,
+  `${PLUGIN_BUNDLE_DIRECTORY}/${GATE_BUNDLE}`,
+  `${PLUGIN_BUNDLE_DIRECTORY}/${PRECOMMIT_BUNDLE}`,
+  PLUGIN_STATE_EXECUTABLE,
+  BOOTSTRAP_BUNDLE,
+  OPENCODE_PLUGIN_BUNDLE
+];
 var GATE_ROWS = [
   {
     gate: "commit",
@@ -2490,17 +2507,37 @@ var THE_FIELD_ONLY_A_SLICE_BLOCK_CARRIES = "Depends-on";
 var MARKDOWN_LIST_OR_HEADING = /^[\s>]*(?:#{1,6}\s+)?(?:[-*+]\s+|\d+[.)]\s+)?(?:\[[ xX]\]\s+)?/;
 var MARKDOWN_EMPHASIS = /^[*_]{1,3}/;
 var SLICE_LABEL = /^(S\d+|Slice\s+\d+)(?:\s+[A-Z]{2,})*(?:\s*\([^)]*\))?\s*[—–:-]/;
+var MARKDOWN_HEADING = /^[\s>]*(#{1,6})\s+/;
 function firstSliceNamingNoCheck(document) {
   return sliceBlocksIn(document).find(({ text }) => !namesAVerifyCheck(text))?.label;
 }
 function sliceBlocksIn(document) {
   const opened = [];
+  let current;
+  let currentHeadingLevel;
   for (const line of document.split("\n")) {
     const label = sliceLabelOpening(line);
-    if (label !== void 0) opened.push({ label, lines: [line] });
-    else opened.at(-1)?.lines.push(line);
+    if (label !== void 0) {
+      const headingLevel2 = headingLevelOf(line);
+      current = {
+        label,
+        boundaryLevel: headingLevel2 ?? currentHeadingLevel ?? 6,
+        lines: [line]
+      };
+      opened.push(current);
+      if (headingLevel2 !== void 0) currentHeadingLevel = headingLevel2;
+      continue;
+    }
+    const headingLevel = headingLevelOf(line);
+    if (current !== void 0 && headingLevel !== void 0 && headingLevel <= current.boundaryLevel) current = void 0;
+    current?.lines.push(line);
+    if (headingLevel !== void 0) currentHeadingLevel = headingLevel;
   }
   return opened.map(({ label, lines }) => ({ label, text: lines.join("\n") })).filter(({ text }) => text.includes(THE_FIELD_ONLY_A_SLICE_BLOCK_CARRIES));
+}
+function headingLevelOf(line) {
+  const heading = MARKDOWN_HEADING.exec(line);
+  return heading === null ? void 0 : heading[1]?.length;
 }
 function sliceLabelOpening(line) {
   const undecorated = line.replace(MARKDOWN_LIST_OR_HEADING, "").replace(MARKDOWN_EMPHASIS, "");

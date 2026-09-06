@@ -168,6 +168,26 @@ function headlineOf(count) {
   return count === 1 ? "1 hit" : `${count} hits`;
 }
 
+// core/src/routes/routes.ts
+var BUNDLE_DIRECTORY = "dist";
+var GATE_BUNDLE = "gate.js";
+var PRECOMMIT_BUNDLE = "precommit.js";
+var OPENCODE_PLUGIN_BUNDLE = "opencode/dist/oso-code.js";
+var PLUGIN_BUNDLE_DIRECTORY = `plugin/${BUNDLE_DIRECTORY}`;
+var PLUGIN_BINARY_DIRECTORY = "plugin/bin";
+var BOOTSTRAP_DIRECTORY = "bootstrap";
+var PLUGIN_STATE_BUNDLE = `${PLUGIN_BUNDLE_DIRECTORY}/oso-state.js`;
+var PLUGIN_STATE_EXECUTABLE = `${PLUGIN_BINARY_DIRECTORY}/oso-state`;
+var BOOTSTRAP_BUNDLE = `${BOOTSTRAP_DIRECTORY}/oso.js`;
+var GENERATED_BUNDLES = [
+  PLUGIN_STATE_BUNDLE,
+  `${PLUGIN_BUNDLE_DIRECTORY}/${GATE_BUNDLE}`,
+  `${PLUGIN_BUNDLE_DIRECTORY}/${PRECOMMIT_BUNDLE}`,
+  PLUGIN_STATE_EXECUTABLE,
+  BOOTSTRAP_BUNDLE,
+  OPENCODE_PLUGIN_BUNDLE
+];
+
 // core/src/scan/abstraction-scan.ts
 var USE_SITES_AN_EXPORT_MUST_REACH = 2;
 var EXPORTED_VALUE_DECLARATION = /^\s*export\s+(?:default\s+)?(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?(?:function\s*\*?|const|let|var|class|enum)\s+([A-Za-z_$][\w$]*)/;
@@ -177,11 +197,20 @@ function abstractionScanReport(cwd, ref) {
   const tree = changedFilesSince(cwd, ref);
   const changed = partitionByLanguage(tree.files, REFERENCE_COUNT_LANGUAGES);
   const project = partitionByLanguage(trackedAndUntrackedFiles(cwd), REFERENCE_COUNT_LANGUAGES);
-  const useSiteLines = project.read.flatMap(useSiteLinesOf);
+  const sourceFiles = project.read.filter((candidate) => !isGeneratedBundle(candidate.file));
+  const generatedBundles = project.read.filter((candidate) => isGeneratedBundle(candidate.file));
+  const useSiteLines = sourceFiles.flatMap(useSiteLinesOf);
   const hits = changed.read.flatMap(exportsAddedIn).flatMap((exported) => thinlyUsedHitFor(exported, useSiteLines));
   const notRead = [...changed.unread, ...tree.unreadable].sort();
-  const coverage = `${readingClause(changed.read.length, changed.languages)}, counting use sites across ${project.read.length} project file(s) and reading no type or interface declaration; ${unreadClause(notRead)}`;
+  const coverage = `${readingClause(changed.read.length, changed.languages)}, counting use sites across ${sourceFiles.length} project file(s) and reading no type or interface declaration; ${unreadClause(notRead)}${generatedBundleClause(generatedBundles)}`;
   return renderScan(hits, coverage);
+}
+function isGeneratedBundle(file) {
+  return GENERATED_BUNDLES.includes(file);
+}
+function generatedBundleClause(generatedBundles) {
+  if (generatedBundles.length === 0) return "";
+  return `; ${generatedBundles.length} generated bundle(s) were not counted: ${generatedBundles.map(({ file }) => file).join(", ")}`;
 }
 function exportsAddedIn({ file, text, addedLines }) {
   return text.split("\n").flatMap((lineText, index) => {
@@ -1684,17 +1713,37 @@ var THE_FIELD_ONLY_A_SLICE_BLOCK_CARRIES = "Depends-on";
 var MARKDOWN_LIST_OR_HEADING = /^[\s>]*(?:#{1,6}\s+)?(?:[-*+]\s+|\d+[.)]\s+)?(?:\[[ xX]\]\s+)?/;
 var MARKDOWN_EMPHASIS = /^[*_]{1,3}/;
 var SLICE_LABEL = /^(S\d+|Slice\s+\d+)(?:\s+[A-Z]{2,})*(?:\s*\([^)]*\))?\s*[—–:-]/;
+var MARKDOWN_HEADING = /^[\s>]*(#{1,6})\s+/;
 function firstSliceNamingNoCheck(document) {
   return sliceBlocksIn(document).find(({ text }) => !namesAVerifyCheck(text))?.label;
 }
 function sliceBlocksIn(document) {
   const opened = [];
+  let current;
+  let currentHeadingLevel;
   for (const line of document.split("\n")) {
     const label = sliceLabelOpening(line);
-    if (label !== void 0) opened.push({ label, lines: [line] });
-    else opened.at(-1)?.lines.push(line);
+    if (label !== void 0) {
+      const headingLevel2 = headingLevelOf(line);
+      current = {
+        label,
+        boundaryLevel: headingLevel2 ?? currentHeadingLevel ?? 6,
+        lines: [line]
+      };
+      opened.push(current);
+      if (headingLevel2 !== void 0) currentHeadingLevel = headingLevel2;
+      continue;
+    }
+    const headingLevel = headingLevelOf(line);
+    if (current !== void 0 && headingLevel !== void 0 && headingLevel <= current.boundaryLevel) current = void 0;
+    current?.lines.push(line);
+    if (headingLevel !== void 0) currentHeadingLevel = headingLevel;
   }
   return opened.map(({ label, lines }) => ({ label, text: lines.join("\n") })).filter(({ text }) => text.includes(THE_FIELD_ONLY_A_SLICE_BLOCK_CARRIES));
+}
+function headingLevelOf(line) {
+  const heading = MARKDOWN_HEADING.exec(line);
+  return heading === null ? void 0 : heading[1]?.length;
 }
 function sliceLabelOpening(line) {
   const undecorated = line.replace(MARKDOWN_LIST_OR_HEADING, "").replace(MARKDOWN_EMPHASIS, "");

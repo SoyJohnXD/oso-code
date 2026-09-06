@@ -6,30 +6,38 @@ import { bundleText, checkFreshArtifacts, importBundled, runBuildCli, writeArtif
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const renderModule = join(repoRoot, "core", "src", "routes", "render.ts");
+const routesModule = join(repoRoot, "core/src/routes/routes.ts");
 const hashFile = join(repoRoot, "bootstrap", "hook-hashes.txt");
 const publishedRow = /^([0-9a-f]{64})( {2})(\S.*)$/;
 
 const OPENCODE_HOST_PACKAGE = "@opencode-ai/plugin";
 
-function bundlesOf(render) {
+function bundlesOf(render, routes) {
   const spawned = [
     { source: "gate.ts", bundle: render.GATE_BUNDLE },
     { source: "precommit.ts", bundle: render.PRECOMMIT_BUNDLE },
   ].map(({ source, bundle }) => ({
     entryPoint: join(repoRoot, "core", "src", "bin", source),
-    path: join(repoRoot, "plugin", render.BUNDLE_DIRECTORY, bundle),
-    name: `plugin/${render.BUNDLE_DIRECTORY}/${bundle}`,
+    path: join(repoRoot, generatedBundlePath(routes, bundle)),
+    name: generatedBundlePath(routes, bundle),
     external: [],
   }));
+  const opencodeBundle = generatedBundlePath(routes, render.OPENCODE_PLUGIN_BUNDLE);
   return [
     ...spawned,
     {
       entryPoint: join(repoRoot, ...render.OPENCODE_PLUGIN_ENTRY.split("/")),
-      path: join(repoRoot, ...render.OPENCODE_PLUGIN_BUNDLE.split("/")),
-      name: render.OPENCODE_PLUGIN_BUNDLE,
+      path: join(repoRoot, opencodeBundle),
+      name: opencodeBundle,
       external: [OPENCODE_HOST_PACKAGE],
     },
   ];
+}
+
+function generatedBundlePath(routes, bundle) {
+  const path = routes.GENERATED_BUNDLES.find((candidate) => candidate === bundle || candidate.endsWith(`/${bundle}`));
+  if (path === undefined) throw new Error(`routes.ts does not name generated bundle ${bundle}`);
+  return path;
 }
 
 function manifestsOf(render) {
@@ -55,8 +63,9 @@ function redigestedHashFile(writtenSoFar) {
 
 async function freshArtifacts() {
   const render = await importBundled(renderModule);
+  const routes = await importBundled(routesModule);
   const built = await Promise.all(
-    bundlesOf(render).map(async ({ entryPoint, path, name, external }) => ({
+    bundlesOf(render, routes).map(async ({ entryPoint, path, name, external }) => ({
       path,
       name,
       text: await bundleText(entryPoint, external),

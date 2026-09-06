@@ -1,6 +1,7 @@
 import { changedFilesSince, trackedAndUntrackedFiles, type ChangedFile, type SourceFile } from "./changed-lines.ts";
 import { partitionByLanguage, REFERENCE_COUNT_LANGUAGES } from "./languages.ts";
 import { readingClause, renderScan, unreadClause, type ScanHit } from "./scan-report.ts";
+import { GENERATED_BUNDLES } from "../routes/routes.ts";
 
 type ExportedName = Readonly<{ file: string; line: number; name: string }>;
 
@@ -16,13 +17,26 @@ export function abstractionScanReport(cwd: string, ref: string): string {
   const tree = changedFilesSince(cwd, ref);
   const changed = partitionByLanguage(tree.files, REFERENCE_COUNT_LANGUAGES);
   const project = partitionByLanguage(trackedAndUntrackedFiles(cwd), REFERENCE_COUNT_LANGUAGES);
-  const useSiteLines = project.read.flatMap(useSiteLinesOf);
+  const sourceFiles = project.read.filter((candidate) => !isGeneratedBundle(candidate.file));
+  const generatedBundles = project.read.filter((candidate) => isGeneratedBundle(candidate.file));
+  const useSiteLines = sourceFiles.flatMap(useSiteLinesOf);
   const hits = changed.read.flatMap(exportsAddedIn).flatMap((exported) => thinlyUsedHitFor(exported, useSiteLines));
   const notRead = [...changed.unread, ...tree.unreadable].sort();
   const coverage =
-    `${readingClause(changed.read.length, changed.languages)}, counting use sites across ${project.read.length} ` +
-    `project file(s) and reading no type or interface declaration; ${unreadClause(notRead)}`;
+    `${readingClause(changed.read.length, changed.languages)}, counting use sites across ${sourceFiles.length} ` +
+    `project file(s) and reading no type or interface declaration; ${unreadClause(notRead)}${generatedBundleClause(generatedBundles)}`;
   return renderScan(hits, coverage);
+}
+
+function isGeneratedBundle(file: string): boolean {
+  return GENERATED_BUNDLES.includes(file);
+}
+
+function generatedBundleClause(generatedBundles: readonly SourceFile[]): string {
+  if (generatedBundles.length === 0) return "";
+  return `; ${generatedBundles.length} generated bundle(s) were not counted: ${generatedBundles
+    .map(({ file }) => file)
+    .join(", ")}`;
 }
 
 function exportsAddedIn({ file, text, addedLines }: ChangedFile): ExportedName[] {

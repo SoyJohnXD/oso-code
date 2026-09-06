@@ -1,12 +1,14 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { bundleText, readTextOrNull, runBuildCli } from "./lib/bundle.mjs";
+import { bundleText, importBundled, readTextOrNull, runBuildCli } from "./lib/bundle.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const entryPoint = join(repoRoot, "core", "src", "bin", "oso.ts");
-const outfile = join(repoRoot, "bootstrap", "oso.js");
-const outfilePackageJson = join(repoRoot, "bootstrap", "package.json");
+const entryPoint = join(repoRoot, "core/src/bin/oso.ts");
+const routesModule = join(repoRoot, "core/src/routes/routes.ts");
+const { BOOTSTRAP_BUNDLE, BOOTSTRAP_DIRECTORY, MODULE_MANIFEST } = await importBundled(routesModule);
+const outfile = join(repoRoot, BOOTSTRAP_BUNDLE);
+const outfilePackageJson = join(repoRoot, BOOTSTRAP_DIRECTORY, MODULE_MANIFEST);
 const modulePackageJson = '{\n  "private": true,\n  "type": "module"\n}\n';
 
 async function check() {

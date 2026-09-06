@@ -35,6 +35,17 @@ const EVERY_SLICE_NAMES_ITS_CHECK = planDocument("every-slice-names-its-check");
 const AN_EXPAND_CONTRACT_SLICE_NAMES_NO_CHECK = planDocument("an-expand-contract-slice-that-names-no-check");
 const A_RECAP_THAT_WRITES_NO_SLICE_BLOCK = planDocument("a-recap-that-writes-no-slice-block");
 const THE_ONE_LINE_DOCUMENT_THE_PARITY_FIXTURES_CAPTURE = "Repaso de cambios\nFull slice plan: alpha\n";
+const A_BAR_LINE_BELOW_THE_LAST_SLICE = planDocument("a-bar-line-below-the-last-slice-names-the-token");
+const THE_LAST_SLICE_NAMES_ITS_OWN_CHECK = planDocument("the-last-slice-below-the-same-bar-line-names-its-check");
+const THE_BAR_LINE_BOTH_TWINS_END_WITH = "The bar re-runs each slice's failing-check: line after the merge.";
+const THE_LAST_SLICE_VERIFY_LINE = "  Verify: ";
+
+function lineNumbersThatDiffer(left: string, right: string): number[] {
+  const rightLines = right.split("\n");
+  return left.split("\n").flatMap((line, index) => (line === rightLines[index] ? [] : [index + 1]));
+}
+
+const theOnlyLineTheTwinsDisagreeOn = lineNumbersThatDiffer(A_BAR_LINE_BELOW_THE_LAST_SLICE, THE_LAST_SLICE_NAMES_ITS_OWN_CHECK);
 
 provedSomething(
   "the refused document names both tokens in its other slices, so a document-wide search for either would have captured it",
@@ -58,6 +69,27 @@ provedSomething(
     "that talks about slices rather than one that never mentions any",
   A_RECAP_THAT_WRITES_NO_SLICE_BLOCK.includes("- S1 —"),
   "the recap fixture names no slice at all, so it proves nothing about a mention that is not a slice block",
+);
+
+provedSomething(
+  "both twins end on a bar line that names failing-check: below their last slice, so a block running to the end of " +
+    "the document would read the token there",
+  [A_BAR_LINE_BELOW_THE_LAST_SLICE, THE_LAST_SLICE_NAMES_ITS_OWN_CHECK].every((document) =>
+    document.trimEnd().endsWith(THE_BAR_LINE_BOTH_TWINS_END_WITH),
+  ),
+  `one of the two twins does not end on ${THE_BAR_LINE_BOTH_TWINS_END_WITH}, so neither of them measures what a slice ` +
+    "block reads below the slices",
+);
+
+provedSomething(
+  "the twins differ on exactly one line and it is the last slice's Verify line, so the capture answers to that line " +
+    "and to nothing else in the document",
+  theOnlyLineTheTwinsDisagreeOn.length === 1 &&
+    A_BAR_LINE_BELOW_THE_LAST_SLICE.split("\n")[(theOnlyLineTheTwinsDisagreeOn[0] as number) - 1]?.startsWith(
+      THE_LAST_SLICE_VERIFY_LINE,
+    ) === true,
+  `the twins disagree on ${theOnlyLineTheTwinsDisagreeOn.length} line(s) (${theOnlyLineTheTwinsDisagreeOn.join(", ")}), ` +
+    "so whatever separates their verdicts is not the last slice's Verify line alone",
 );
 
 function captured(sandbox: StateSandbox, document: string): number {
@@ -150,6 +182,28 @@ describe(
       withStateSandbox("workspace", (sandbox) => {
         assert.equal(captured(sandbox, THE_ONE_LINE_DOCUMENT_THE_PARITY_FIXTURES_CAPTURE), 0);
         assert.equal(currentPlanOf(sandbox), THE_ONE_LINE_DOCUMENT_THE_PARITY_FIXTURES_CAPTURE);
+      });
+    });
+  },
+);
+
+describe(
+  "core/src/state/plan.ts: the last slice's block ends at the next heading like every other slice's, so the tokens " +
+    "written below the slices belong to the section that carries them and satisfy no slice",
+  () => {
+    test("the bar line naming failing-check: below the last slice leaves that slice refused by its own name", () => {
+      withStateSandbox("workspace", (sandbox) => {
+        assert.throws(
+          () => captured(sandbox, A_BAR_LINE_BELOW_THE_LAST_SLICE),
+          (thrown: unknown) => thrown instanceof PlanFailure && thrown.message === THE_REFUSAL_SLICE_TWO_EARNS,
+        );
+      });
+    });
+
+    test("the twin whose last slice names its own check, under that same bar line, is captured", () => {
+      withStateSandbox("workspace", (sandbox) => {
+        assert.equal(captured(sandbox, THE_LAST_SLICE_NAMES_ITS_OWN_CHECK), 0);
+        assert.equal(currentPlanOf(sandbox), THE_LAST_SLICE_NAMES_ITS_OWN_CHECK);
       });
     });
   },

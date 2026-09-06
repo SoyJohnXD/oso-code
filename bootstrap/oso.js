@@ -4963,6 +4963,24 @@ import { mkdirSync as mkdirSync9, mkdtempSync as mkdtempSync6, readFileSync as r
 import { tmpdir as tmpdir4 } from "node:os";
 
 // core/src/routes/routes.ts
+var BUNDLE_DIRECTORY = "dist";
+var GATE_BUNDLE = "gate.js";
+var PRECOMMIT_BUNDLE = "precommit.js";
+var OPENCODE_PLUGIN_BUNDLE = "opencode/dist/oso-code.js";
+var PLUGIN_BUNDLE_DIRECTORY = `plugin/${BUNDLE_DIRECTORY}`;
+var PLUGIN_BINARY_DIRECTORY = "plugin/bin";
+var BOOTSTRAP_DIRECTORY = "bootstrap";
+var PLUGIN_STATE_BUNDLE = `${PLUGIN_BUNDLE_DIRECTORY}/oso-state.js`;
+var PLUGIN_STATE_EXECUTABLE = `${PLUGIN_BINARY_DIRECTORY}/oso-state`;
+var BOOTSTRAP_BUNDLE = `${BOOTSTRAP_DIRECTORY}/oso.js`;
+var GENERATED_BUNDLES = [
+  PLUGIN_STATE_BUNDLE,
+  `${PLUGIN_BUNDLE_DIRECTORY}/${GATE_BUNDLE}`,
+  `${PLUGIN_BUNDLE_DIRECTORY}/${PRECOMMIT_BUNDLE}`,
+  PLUGIN_STATE_EXECUTABLE,
+  BOOTSTRAP_BUNDLE,
+  OPENCODE_PLUGIN_BUNDLE
+];
 var TOOL_ROWS = [
   { gate: "commit", names: { claude: "Bash", codex: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "Edit", codex: "apply_patch", opencode: "edit" }, capability: "write", mandated: "no" },

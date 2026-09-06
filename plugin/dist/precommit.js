@@ -67,7 +67,24 @@ var JSON_SPACE = "[\\t\\n\\v\\f\\r ]";
 var STOP_HOOK_ACTIVE = new RegExp(`"stop_hook_active"${JSON_SPACE}*:${JSON_SPACE}*true`);
 
 // core/src/routes/routes.ts
+var BUNDLE_DIRECTORY = "dist";
 var GATE_BUNDLE = "gate.js";
+var PRECOMMIT_BUNDLE = "precommit.js";
+var OPENCODE_PLUGIN_BUNDLE = "opencode/dist/oso-code.js";
+var PLUGIN_BUNDLE_DIRECTORY = `plugin/${BUNDLE_DIRECTORY}`;
+var PLUGIN_BINARY_DIRECTORY = "plugin/bin";
+var BOOTSTRAP_DIRECTORY = "bootstrap";
+var PLUGIN_STATE_BUNDLE = `${PLUGIN_BUNDLE_DIRECTORY}/oso-state.js`;
+var PLUGIN_STATE_EXECUTABLE = `${PLUGIN_BINARY_DIRECTORY}/oso-state`;
+var BOOTSTRAP_BUNDLE = `${BOOTSTRAP_DIRECTORY}/oso.js`;
+var GENERATED_BUNDLES = [
+  PLUGIN_STATE_BUNDLE,
+  `${PLUGIN_BUNDLE_DIRECTORY}/${GATE_BUNDLE}`,
+  `${PLUGIN_BUNDLE_DIRECTORY}/${PRECOMMIT_BUNDLE}`,
+  PLUGIN_STATE_EXECUTABLE,
+  BOOTSTRAP_BUNDLE,
+  OPENCODE_PLUGIN_BUNDLE
+];
 
 // core/src/state/store.ts
 import { execFileSync } from "node:child_process";
