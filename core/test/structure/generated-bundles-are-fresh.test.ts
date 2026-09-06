@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, test } from "node:test";
@@ -23,7 +24,7 @@ function runFreshnessCheck(target: string, expected: string, actual: string) {
 
 describe("registered generated outputs require exact regeneration", () => {
   test("fresh bytes pass the shared artifact check", () => {
-    const directory = mkdtempSync(path.join("/tmp", "oso-generated-fresh-"));
+    const directory = mkdtempSync(path.join(tmpdir(), "oso-generated-fresh-"));
     try {
       const target = path.join(directory, "registered-output.js");
       const result = runFreshnessCheck(target, "builder output\n", "builder output\n");
@@ -35,7 +36,7 @@ describe("registered generated outputs require exact regeneration", () => {
   });
 
   test("a manually changed byte fails the shared artifact check", () => {
-    const directory = mkdtempSync(path.join("/tmp", "oso-generated-stale-"));
+    const directory = mkdtempSync(path.join(tmpdir(), "oso-generated-stale-"));
     try {
       const target = path.join(directory, "registered-output.js");
       const result = runFreshnessCheck(target, "builder output\n", "builder output\nmanual edit\n");
