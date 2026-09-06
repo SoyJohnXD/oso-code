@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, test } from "node:test";
@@ -37,12 +38,15 @@ const THE_CONFIG_TOML_CLOSURE = [
   { file: "core/src/install/backup.ts", nativeJoins: 10 },
   { file: "core/src/install/codex-config.ts", nativeJoins: 0 },
   { file: "core/src/install/codex-host.ts", nativeJoins: 2 },
-  { file: "core/src/install/codex.ts", nativeJoins: 13 },
+  { file: "core/src/install/codex-payload.ts", nativeJoins: 15 },
+  { file: "core/src/install/codex.ts", nativeJoins: 54 },
+  { file: "core/src/install/engram.ts", nativeJoins: 5 },
   { file: "core/src/install/json.ts", nativeJoins: 0 },
   { file: "core/src/install/pins.ts", nativeJoins: 0 },
   { file: "core/src/install/report.ts", nativeJoins: 0 },
   { file: "core/src/install/toml-regions.ts", nativeJoins: 0 },
   { file: "core/src/install/toml.ts", nativeJoins: 0 },
+  { file: "core/src/install/trust.ts", nativeJoins: 0 },
   { file: "core/src/install/verify-claude.ts", nativeJoins: 29 },
   { file: "core/src/install/version-line.ts", nativeJoins: 0 },
   { file: "core/src/state/store.ts", nativeJoins: 8 },
@@ -122,6 +126,373 @@ describe("oso install --host codex over a fixture HOME", () => {
     assert.equal(managedFeaturesStatus(config), "valid");
   });
 
+  test("it deploys the published marketplace, runtime hooks, and seven agents", () => {
+    const home = fixtureHome();
+    const environment = inputFor(home).environment;
+    const paths = codexPathsFor(home, environment);
+    const outcome = installCodex(inputFor(home, { installImpeccable: false }));
+    assert.equal(outcome.exitCode, 0, outcome.report);
+    assert.equal(readFileSync(path.join(paths.marketplaceRoot, ".agents", "plugins", "marketplace.json"), "utf8"), readFileSync(path.join(fixtureRepositoryRoot(), ".agents", "plugins", "marketplace.json"), "utf8"));
+    assert.equal(readFileSync(paths.hooksManifest, "utf8").includes("__OSO_HOOKS_DIR__"), false);
+    assert.equal(readFileSync(path.join(paths.runtimeRoot, "bin", "oso-state"), "utf8"), readFileSync(path.join(fixtureRepositoryRoot(), "plugin", "bin", "oso-state"), "utf8"));
+    assert.deepEqual(readdirSync(path.join(paths.codexHome, "agents")).sort(), readdirSync(path.join(fixtureRepositoryRoot(), "codex", "agents")).sort());
+    assert.equal(existsSync(path.join(paths.runtimeRoot, "git-hooks", "pre-commit")), true);
+  });
+
+  test("it refuses a published skill wrapper whose required SKILL.md entrypoint is missing before staging", () => {
+    const home = fixtureHome();
+    const repository = path.join(sandbox, `incomplete-payload-${homeCounter}`);
+    cpSync(fixtureRepositoryRoot(), repository, { recursive: true });
+    const missing = path.join(repository, "codex", "skills", "quick", "SKILL.md");
+    rmSync(missing);
+    const outcome = installCodex(inputFor(home, { repositoryRoot: repository, installImpeccable: false }));
+    assert.equal(outcome.exitCode, 1, outcome.report);
+    assert.match(outcome.report, new RegExp(`Codex skill wrapper is missing or invalid: ${escapeRegExp(missing)}`));
+    assert.equal(existsSync(path.join(codexPathsFor(home, inputFor(home).environment).marketplaceRoot, "codex", "skills", "quick", "SKILL.md")), false);
+  });
+
+  test("it escapes a native runtime path before writing the JSON hooks manifest", () => {
+    const home = path.join(sandbox, 'home-"quoted\\runtime');
+    mkdirSync(path.join(home, ".codex"), { recursive: true });
+    const outcome = installCodex(inputFor(home, { installImpeccable: false }));
+    assert.equal(outcome.exitCode, 0, outcome.report);
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    const manifest = JSON.parse(readFileSync(paths.hooksManifest, "utf8")) as { hooks: unknown };
+    assert.ok(manifest.hooks);
+    const commands = Object.values(manifest.hooks as Record<string, Array<{ hooks: Array<{ command: string }> }>>).flatMap((groups) => groups.flatMap((group) => group.hooks.map((hook) => hook.command)));
+    assert.ok(commands.length > 0 && commands.every((command) => command.includes(path.posix.join(paths.runtimeRoot, "dist"))));
+  });
+
+  test("updating replaces stale owned generations and preserves unrelated state", () => {
+    const home = fixtureHome();
+    const environment = inputFor(home).environment;
+    const paths = codexPathsFor(home, environment);
+    const configFile = paths.configFile;
+    const operatorConfig = '# operator sentinel\nmodel = "operator"\n';
+    writeFileSync(configFile, operatorConfig);
+    mkdirSync(path.join(paths.codexHome, "agents"), { recursive: true });
+    writeFileSync(path.join(paths.codexHome, "agents", "oso-applier.toml"), "stale generation\n");
+    writeFileSync(path.join(paths.codexHome, "agents", "operator.toml"), "operator agent\n");
+    mkdirSync(path.join(paths.codexHome, "plugins", "cache", "operator"), { recursive: true });
+    writeFileSync(path.join(paths.codexHome, "plugins", "cache", "operator", "keep.txt"), "keep plugin\n");
+    mkdirSync(path.join(home, ".engram"), { recursive: true });
+    writeFileSync(path.join(home, ".engram", "memory.db"), "operator memory\n");
+
+    const outcome = installCodex(inputFor(home, { installImpeccable: false }));
+    assert.equal(outcome.exitCode, 0, outcome.report);
+    assert.equal(readFileSync(configFile, "utf8").includes('# operator sentinel\nmodel = "operator"'), true);
+    assert.equal(readFileSync(path.join(paths.codexHome, "agents", "oso-applier.toml"), "utf8"), readFileSync(path.join(fixtureRepositoryRoot(), "codex", "agents", "oso-applier.toml"), "utf8"));
+    assert.equal(readFileSync(path.join(paths.codexHome, "agents", "operator.toml"), "utf8"), "operator agent\n");
+    assert.equal(readFileSync(path.join(paths.codexHome, "plugins", "cache", "operator", "keep.txt"), "utf8"), "keep plugin\n");
+    assert.equal(readFileSync(path.join(home, ".engram", "memory.db"), "utf8"), "operator memory\n");
+  });
+
+  test("a native-style Engram rewrite leaves feature ownership valid and a second install succeeds", () => {
+    const home = fixtureHome();
+    const first = installCodex(inputFor(home, { installImpeccable: false }));
+    assert.equal(first.exitCode, 0, first.report);
+    const configFile = codexPathsFor(home, inputFor(home).environment).configFile;
+    assert.equal(managedFeaturesStatus(readFileSync(configFile, "utf8")), "valid");
+    const second = installCodex(inputFor(home, { installImpeccable: false }));
+    assert.equal(second.exitCode, 0, second.report);
+    assert.equal(managedFeaturesStatus(readFileSync(configFile, "utf8")), "valid");
+  });
+
+  test("Engram setup preserves operator environment and timeout leaves", () => {
+    const home = fixtureHome();
+    const configFile = codexPathsFor(home, inputFor(home).environment).configFile;
+    writeFileSync(
+      configFile,
+      '[mcp_servers.engram]\ncommand = "operator-engram"\nargs = ["operator"]\nenv = { ENGRAM_DATA_DIR = "operator-memory", OPERATOR_FLAG = "keep" }\nstartup_timeout_sec = 45\n',
+    );
+    const outcome = installCodex(inputFor(home, { installImpeccable: false }));
+    assert.equal(outcome.exitCode, 0, outcome.report);
+    const document = parseTomlDocument(readFileSync(configFile, "utf8"), configFile);
+    const engram = (document["mcp_servers"] as Record<string, unknown>)["engram"] as Record<string, unknown>;
+    assert.deepEqual(engram["env"], { ENGRAM_DATA_DIR: "operator-memory", OPERATOR_FLAG: "keep" });
+    assert.equal(engram["startup_timeout_sec"], 45);
+  });
+
+  test("Engram setup preserves nested operator environment leaves", () => {
+    const home = fixtureHome();
+    const configFile = codexPathsFor(home, inputFor(home).environment).configFile;
+    writeFileSync(
+      configFile,
+      '[mcp_servers.engram]\ncommand = "operator-engram"\nargs = ["operator"]\nstartup_timeout_sec = 45\n\n[mcp_servers.engram.env]\nENGRAM_DATA_DIR = "operator-memory"\nOPERATOR_FLAG = "keep"\n',
+    );
+    const outcome = installCodex(inputFor(home, { installImpeccable: false }));
+    assert.equal(outcome.exitCode, 0, outcome.report);
+    const document = parseTomlDocument(readFileSync(configFile, "utf8"), configFile);
+    const engram = (document["mcp_servers"] as Record<string, unknown>)["engram"] as Record<string, unknown>;
+    assert.deepEqual(engram["env"], { ENGRAM_DATA_DIR: "operator-memory", OPERATOR_FLAG: "keep" });
+    assert.equal(engram["startup_timeout_sec"], 45);
+  });
+
+  test("pointer ownership preserves multiline, literal, nested, spaced, and duplicate decoys", () => {
+    const home = fixtureHome();
+    const configFile = codexPathsFor(home, inputFor(home).environment).configFile;
+    const decoy = [
+      'notes = """',
+      'model_instructions_file = "keep basic"',
+      'experimental_compact_prompt_file = "keep basic compact"',
+      '"""',
+      "literal_notes = '''",
+      "model_instructions_file = 'keep literal'",
+      "experimental_compact_prompt_file = 'keep literal compact'",
+      "'''",
+      "[operator]",
+      'model_instructions_file = "keep nested"',
+      'experimental_compact_prompt_file = "keep nested compact"',
+      "",
+    ].join("\n");
+    writeFileSync(configFile, decoy);
+    const installed = installCodex(inputFor(home, { installImpeccable: false }));
+    assert.equal(installed.exitCode, 0, installed.report);
+    const preserved = readFileSync(configFile, "utf8");
+    assert.match(preserved, /keep basic compact/);
+    assert.match(preserved, /keep literal compact/);
+    assert.match(preserved, /keep nested compact/);
+
+    const foreignHome = fixtureHome();
+    const foreignFile = codexPathsFor(foreignHome, inputFor(foreignHome).environment).configFile;
+    const foreign = 'model_instructions_file    = "personal.md"\n';
+    writeFileSync(foreignFile, foreign);
+    const refused = installCodex(inputFor(foreignHome, { installImpeccable: false }));
+    assert.equal(refused.exitCode, 1, refused.report);
+    assert.equal(readFileSync(foreignFile, "utf8"), foreign);
+
+    const duplicateHome = fixtureHome();
+    const duplicateFile = codexPathsFor(duplicateHome, inputFor(duplicateHome).environment).configFile;
+    const duplicate = 'model_instructions_file = "one.md"\nmodel_instructions_file = "two.md"\n';
+    writeFileSync(duplicateFile, duplicate);
+    const duplicateRefused = installCodex(inputFor(duplicateHome, { installImpeccable: false }));
+    assert.equal(duplicateRefused.exitCode, 1, duplicateRefused.report);
+    assert.equal(readFileSync(duplicateFile, "utf8"), duplicate);
+  });
+
+  test("an unknown unregistered Engram cache is preserved and refuses before mutation", () => {
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    const cache = path.join(paths.codexHome, ".tmp", "marketplaces", "engram");
+    mkdirSync(cache, { recursive: true });
+    writeFileSync(path.join(cache, "operator-sentinel"), "preserve this unrecognized cache\n");
+    const outcome = installCodex(
+      inputFor(home, {
+        environment: { PATH: process.env["PATH"] ?? "", CODEX_HOME: paths.codexHome },
+        installImpeccable: false,
+      }),
+    );
+    assert.equal(outcome.exitCode, 1, outcome.report);
+    assert.match(outcome.report, /Engram marketplace cache/);
+    assert.equal(readFileSync(path.join(cache, "operator-sentinel"), "utf8"), "preserve this unrecognized cache\n");
+    assert.equal(existsSync(paths.configFile), false);
+  });
+
+  test("dirty unregistered caches never execute local or environment Git filters", () => {
+    for (const mode of ["local-filter", "environment-filter"] as const) {
+      const home = fixtureHome();
+      const environment = {
+        PATH: process.env["PATH"] ?? "",
+        HOME: home,
+        USERPROFILE: home,
+        CODEX_HOME: path.join(home, ".codex"),
+        XDG_CONFIG_HOME: path.join(home, ".config"),
+        XDG_CACHE_HOME: path.join(home, ".cache"),
+        XDG_DATA_HOME: path.join(home, ".data"),
+        XDG_STATE_HOME: path.join(home, ".state"),
+        GIT_CONFIG_NOSYSTEM: "1",
+      };
+      const cache = path.join(environment.CODEX_HOME, ".tmp", "marketplaces", "engram");
+      mkdirSync(cache, { recursive: true });
+      writeFileSync(path.join(cache, "witness.txt"), "original\n");
+      assert.equal(gitIn(cache, ["init", "-q"]).status, 0);
+      assert.equal(gitIn(cache, ["config", "user.email", "oso-test@example.invalid"]).status, 0);
+      assert.equal(gitIn(cache, ["config", "user.name", "Oso test"]).status, 0);
+      assert.equal(gitIn(cache, ["add", "witness.txt"]).status, 0);
+      assert.equal(gitIn(cache, ["commit", "-qm", "baseline"]).status, 0);
+      assert.equal(gitIn(cache, ["remote", "add", "origin", "https://github.com/Gentleman-Programming/engram.git"]).status, 0);
+      assert.equal(gitIn(cache, ["update-ref", "refs/remotes/origin/main", "HEAD"]).status, 0);
+      assert.equal(gitIn(cache, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"]).status, 0);
+      mkdirSync(path.join(cache, ".git", "info"), { recursive: true });
+      writeFileSync(path.join(cache, ".git", "info", "attributes"), "*.txt filter=witness\n");
+      const marker = path.join(home, "executed-marker");
+      const helper = `touch '${marker}'; cat`;
+      if (mode === "local-filter") assert.equal(gitIn(cache, ["config", "filter.witness.clean", helper]).status, 0);
+      else Object.assign(environment, { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "filter.witness.clean", GIT_CONFIG_VALUE_0: helper });
+      writeFileSync(path.join(cache, "witness.txt"), "mutated!\n");
+
+      const outcome = installCodex(inputFor(home, { environment, installImpeccable: false }));
+      assert.equal(outcome.exitCode, 1, outcome.report);
+      assert.match(outcome.report, /modified unregistered Engram marketplace cache/);
+      assert.equal(existsSync(marker), false, `${mode} Git filter executed before refusal`);
+    }
+  });
+
+  test("a cache gitlink is refused before a nested repository filter can execute", () => {
+    const home = fixtureHome();
+    const environment = {
+      PATH: process.env["PATH"] ?? "",
+      HOME: home,
+      USERPROFILE: home,
+      CODEX_HOME: path.join(home, ".codex"),
+      XDG_CONFIG_HOME: path.join(home, ".config"),
+      XDG_CACHE_HOME: path.join(home, ".cache"),
+      XDG_DATA_HOME: path.join(home, ".data"),
+      XDG_STATE_HOME: path.join(home, ".state"),
+      GIT_CONFIG_NOSYSTEM: "1",
+    };
+    const cache = path.join(environment.CODEX_HOME, ".tmp", "marketplaces", "engram");
+    mkdirSync(path.join(cache, ".agents", "plugins"), { recursive: true });
+    mkdirSync(path.join(cache, "plugin", "codex", ".codex-plugin"), { recursive: true });
+    writeFileSync(path.join(cache, ".agents", "plugins", "marketplace.json"), JSON.stringify({ name: "engram", plugins: [{ name: "engram", source: { source: "local", path: "./plugin/codex" } }] }));
+    writeFileSync(path.join(cache, "plugin", "codex", ".codex-plugin", "plugin.json"), '{"name":"engram"}\n');
+    writeFileSync(path.join(cache, "witness.txt"), "original\n");
+    assert.equal(gitIn(cache, ["init", "-q"], environment).status, 0);
+    assert.equal(gitIn(cache, ["config", "user.email", "oso-test@example.invalid"], environment).status, 0);
+    assert.equal(gitIn(cache, ["config", "user.name", "Oso test"], environment).status, 0);
+    assert.equal(gitIn(cache, ["add", "."], environment).status, 0);
+    assert.equal(gitIn(cache, ["commit", "-qm", "parent"], environment).status, 0);
+    const nested = path.join(cache, "nested");
+    mkdirSync(nested);
+    writeFileSync(path.join(nested, "witness.txt"), "original\n");
+    assert.equal(gitIn(nested, ["init", "-q"], environment).status, 0);
+    assert.equal(gitIn(nested, ["config", "user.email", "oso-test@example.invalid"], environment).status, 0);
+    assert.equal(gitIn(nested, ["config", "user.name", "Oso test"], environment).status, 0);
+    assert.equal(gitIn(nested, ["add", "."], environment).status, 0);
+    assert.equal(gitIn(nested, ["commit", "-qm", "nested"], environment).status, 0);
+    assert.equal(gitIn(cache, ["add", "nested"], environment).status, 0);
+    assert.equal(gitIn(cache, ["commit", "-qm", "gitlink"], environment).status, 0);
+    assert.equal(gitIn(cache, ["remote", "add", "origin", "https://github.com/Gentleman-Programming/engram.git"], environment).status, 0);
+    assert.equal(gitIn(cache, ["update-ref", "refs/remotes/origin/main", "HEAD"], environment).status, 0);
+    assert.equal(gitIn(cache, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"], environment).status, 0);
+    const marker = path.join(home, "nested-filter-executed");
+    writeFileSync(path.join(nested, ".git", "info", "attributes"), "*.txt filter=nestedwitness\n");
+    assert.equal(gitIn(nested, ["config", "filter.nestedwitness.clean", `touch '${marker}'; cat`], environment).status, 0);
+    writeFileSync(path.join(nested, "witness.txt"), "mutated!\n");
+    const outcome = installCodex(inputFor(home, { environment, installImpeccable: false }));
+    assert.equal(outcome.exitCode, 1, outcome.report);
+    assert.match(outcome.report, /nested Git checkout/);
+    assert.equal(existsSync(marker), false);
+    assert.equal(existsSync(cache), true);
+  });
+
+  test("an exact clean unregistered Engram cache is removed before setup and registration", () => {
+    const home = fixtureHome();
+    const environment = { PATH: process.env["PATH"] ?? "", CODEX_HOME: path.join(home, ".codex") };
+    const paths = codexPathsFor(home, environment);
+    const cache = path.join(paths.codexHome, ".tmp", "marketplaces", "engram");
+    mkdirSync(path.join(cache, ".agents", "plugins"), { recursive: true });
+    mkdirSync(path.join(cache, "plugin", "codex", ".codex-plugin"), { recursive: true });
+    writeFileSync(
+      path.join(cache, ".agents", "plugins", "marketplace.json"),
+      JSON.stringify({ name: "engram", plugins: [{ name: "engram", source: { source: "local", path: "./plugin/codex" } }] }) + "\n",
+    );
+    writeFileSync(path.join(cache, "plugin", "codex", ".codex-plugin", "plugin.json"), JSON.stringify({ name: "engram" }) + "\n");
+    assert.equal(gitIn(cache, ["init", "-q"]).status, 0);
+    assert.equal(gitIn(cache, ["config", "user.email", "oso-test@example.invalid"]).status, 0);
+    assert.equal(gitIn(cache, ["config", "user.name", "Oso test"]).status, 0);
+    assert.equal(gitIn(cache, ["add", "."]).status, 0);
+    assert.equal(gitIn(cache, ["commit", "-qm", "fixture"]).status, 0);
+    assert.equal(gitIn(cache, ["remote", "add", "origin", "https://github.com/Gentleman-Programming/engram.git"]).status, 0);
+    assert.equal(gitIn(cache, ["update-ref", "refs/remotes/origin/main", "HEAD"]).status, 0);
+    assert.equal(gitIn(cache, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"]).status, 0);
+    const outcome = installCodex(
+      inputFor(home, {
+        environment,
+        installImpeccable: false,
+        host: pinnedHost({ marketplaceRemove: () => {
+          rmSync(cache, { recursive: true, force: true });
+          return { ok: true, output: "removed", stderr: "" };
+        } }),
+      }),
+    );
+    assert.equal(outcome.exitCode, 0, outcome.report);
+    assert.equal(existsSync(cache), false);
+    assert.match(readFileSync(paths.configFile, "utf8"), /\[plugins\."engram@engram"\]/);
+  });
+
+  test("a successful Engram command with a failed plugin side effect rolls back instead of claiming integration", () => {
+    const home = fixtureHome();
+    const configFile = codexPathsFor(home, inputFor(home).environment).configFile;
+    const before = 'model = "operator"\n';
+    writeFileSync(configFile, before);
+    const outcome = installCodex(
+      inputFor(home, {
+        installImpeccable: false,
+        host: pinnedHost({
+          setupEngram: () => ({ ok: true, output: "engram setup codex", stderr: "warning: codex plugin add failed (non-fatal)" }),
+        }),
+      }),
+    );
+    assert.equal(outcome.exitCode, 1, outcome.report);
+    assert.match(outcome.report, /plugin registration|setup codex reported incomplete/);
+    assert.equal(readFileSync(configFile, "utf8"), before);
+  });
+
+  test("a registration failure rolls back config and every staged owned target", () => {
+    const home = fixtureHome();
+    const environment = inputFor(home).environment;
+    const paths = codexPathsFor(home, environment);
+    const configFile = paths.configFile;
+    const globalFile = paths.globalFile;
+    writeFileSync(configFile, 'model = "operator"\n');
+    writeFileSync(globalFile, "operator guidance\n");
+    mkdirSync(path.join(paths.codexHome, "agents"), { recursive: true });
+    writeFileSync(path.join(paths.codexHome, "agents", "operator.toml"), "operator agent\n");
+    mkdirSync(path.join(paths.marketplaceRoot, "codex"), { recursive: true });
+    writeFileSync(path.join(paths.marketplaceRoot, "codex", "stale.txt"), "stale marketplace\n");
+    mkdirSync(paths.runtimeRoot, { recursive: true });
+    writeFileSync(path.join(paths.runtimeRoot, "stale.txt"), "stale runtime\n");
+    const original = {
+      config: readFileSync(configFile, "utf8"),
+      global: readFileSync(globalFile, "utf8"),
+      agents: readFileSync(path.join(paths.codexHome, "agents", "operator.toml"), "utf8"),
+      marketplace: readFileSync(path.join(paths.marketplaceRoot, "codex", "stale.txt"), "utf8"),
+      runtime: readFileSync(path.join(paths.runtimeRoot, "stale.txt"), "utf8"),
+    };
+    const outcome = installCodex(
+      inputFor(home, {
+        installImpeccable: false,
+        host: pinnedHost({
+          pluginAdd: () => ({ ok: false, output: "plugin registration failed" }),
+        }),
+      }),
+    );
+    assert.equal(outcome.exitCode, 1, outcome.report);
+    assert.match(outcome.report, /rolled back to the pre-run snapshot/);
+    assert.equal(readFileSync(configFile, "utf8"), original.config);
+    assert.equal(readFileSync(globalFile, "utf8"), original.global);
+    assert.equal(readFileSync(path.join(paths.codexHome, "agents", "operator.toml"), "utf8"), original.agents);
+    assert.equal(readFileSync(path.join(paths.marketplaceRoot, "codex", "stale.txt"), "utf8"), original.marketplace);
+    assert.equal(readFileSync(path.join(paths.runtimeRoot, "stale.txt"), "utf8"), original.runtime);
+  });
+
+  test("the default Impeccable path registers the pinned plugin and mounts its published skill", () => {
+    const home = fixtureHome();
+    const calls: string[] = [];
+    const host = pinnedHost({
+      marketplaceAdd: (source, ref) => {
+        calls.push(`marketplace:${source}:${ref ?? ""}`);
+        return {
+          ok: true,
+          output: JSON.stringify({
+            marketplaceName: source === "pbakaus/impeccable" ? "impeccable" : "oso-code",
+            installedRoot: source === "pbakaus/impeccable" ? path.join(fixtureRepositoryRoot(), "impeccable-source") : source,
+          }),
+        };
+      },
+      pluginAdd: (pluginId) => {
+        calls.push(`plugin:${pluginId}`);
+        return { ok: true, output: JSON.stringify({ pluginId }) };
+      },
+    });
+    const outcome = installCodex(inputFor(home, { host }));
+    assert.equal(outcome.exitCode, 0, outcome.report);
+    assert.equal(readFileSync(path.join(home, ".agents", "skills", "impeccable", "SKILL.md"), "utf8").includes("version: 4.0.2"), true);
+    assert.ok(calls.some((call) => call.includes("marketplace:pbakaus/impeccable:skill-v4.0.2")), calls.join("\n"));
+    assert.ok(calls.includes("plugin:impeccable@impeccable"), calls.join("\n"));
+  });
+
   test("it preserves an operator's existing config byte for byte outside the region", () => {
     const home = fixtureHome();
     const configFile = path.join(home, ".codex", "config.toml");
@@ -129,7 +500,7 @@ describe("oso install --host codex over a fixture HOME", () => {
     writeFileSync(configFile, operator);
     assert.equal(installCodex(inputFor(home)).exitCode, 0);
     const rewritten = readFileSync(configFile, "utf8");
-    assert.ok(rewritten.startsWith('# keep this comment\nmodel = "gpt-5"\n'));
+    assert.ok(rewritten.includes('# keep this comment\nmodel = "gpt-5"\n'));
     assert.ok(rewritten.includes('[history]\npersistence = "save-all"\n'));
   });
 
@@ -199,7 +570,7 @@ describe("oso repair --host codex over a fixture HOME", () => {
     const codexHome = path.join(home, ".codex");
     const configFile = path.join(codexHome, "config.toml");
     assert.equal(installCodex(inputFor(home)).exitCode, 0);
-    const installed = readFileSync(configFile, "utf8");
+    const installed = withoutEngramPointers(readFileSync(configFile, "utf8"));
     writeFileSync(
       configFile,
       `${installed}\nmodel_instructions_file = ${tomlQuote(path.join(codexHome, "engram-instructions.md"))}\n` +
@@ -217,7 +588,7 @@ describe("oso repair --host codex over a fixture HOME", () => {
     const codexHome = path.join(home, ".codex");
     const configFile = path.join(codexHome, "config.toml");
     assert.equal(installCodex(inputFor(home)).exitCode, 0);
-    const installed = readFileSync(configFile, "utf8");
+    const installed = withoutEngramPointers(readFileSync(configFile, "utf8"));
     writeFileSync(
       configFile,
       `${installed}\nmodel_instructions_file = ${tomlQuote(path.join(codexHome, "engram-instructions.md"))}\n` +
@@ -236,6 +607,8 @@ describe("oso repair --host codex over a fixture HOME", () => {
   test("it reports a config whose pointers are missing rather than inventing them", () => {
     const home = fixtureHome();
     assert.equal(installCodex(inputFor(home)).exitCode, 0);
+    const configFile = path.join(home, ".codex", "config.toml");
+    writeFileSync(configFile, withoutEngramPointers(readFileSync(configFile, "utf8")));
     const outcome = repairCodex(inputFor(home));
     assert.match(outcome.report, /engram pointers: FAILED/);
   });
@@ -352,8 +725,19 @@ function existsInHome(home: string, relative: string): boolean {
   }
 }
 
+function withoutEngramPointers(text: string): string {
+  return text
+    .split("\n")
+    .filter((line) => !line.startsWith(`${MODEL_INSTRUCTIONS_KEY} =`) && !line.startsWith(`${COMPACT_PROMPT_KEY} =`))
+    .join("\n");
+}
+
 function sourceOf(repoRelativePath: string): string {
   return readFileSync(path.join(repositoryRoot, ...repoRelativePath.split("/")), "utf8");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function importClosureOf(roots: readonly string[]): string[] {
@@ -376,6 +760,11 @@ function countNativeJoinsIn(source: string): number {
 
 function nativeJoinCountOf(repoRelativePath: string): number {
   return countNativeJoinsIn(sourceOf(repoRelativePath));
+}
+
+function gitIn(root: string, argv: readonly string[], environment?: NodeJS.ProcessEnv) {
+  const run = spawnSync("git", ["-C", root, ...argv], { env: environment, encoding: "utf8" });
+  return { status: run.error === undefined ? (run.status ?? 1) : 1, stdout: run.stdout ?? "", stderr: run.stderr ?? "" };
 }
 
 function bodyLinesOf(source: string, functionName: string): string[] {

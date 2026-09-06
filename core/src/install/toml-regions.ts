@@ -46,6 +46,7 @@ export type TomlRegionRequest = Readonly<{
 export type TomlRegionOutput = Readonly<{ exitCode: number; stdout: string; root: string; sections: string }>;
 
 export function runTomlRegion(text: string, request: TomlRegionRequest): TomlRegionOutput {
+  if (request.action === "features-normalize") return normalizeFeatureRegion(recordsOf(text), request);
   if (!isTomlRegionAction(request.action)) return outputOf(UNKNOWN_ACTION_EXIT, [], [], []);
   const records = recordsOf(text);
   switch (request.action) {
@@ -75,6 +76,50 @@ export function recordsOf(text: string): string[] {
   const records = text.split("\n");
   if (records[records.length - 1] === "") records.pop();
   return records;
+}
+
+export function mergeEngramLeaves(text: string, leaves: Record<string, unknown>, file: string): string {
+  const records = recordsOf(text);
+  const compactTarget = "[mcp_servers.engram]";
+  const emitted: string[] = [];
+  const scanner = newScanner();
+  let inBase = false;
+  let skippingNested = false;
+  let skippingValue = false;
+  let found = false;
+  let inserted = false;
+  for (const record of records) {
+    const rootLine = atRoot(scanner);
+    const table = rootLine && TABLE_HEADER.test(record) ? compactHeader(record) : undefined;
+    if (table !== undefined) {
+      if (inBase && !inserted) {
+        emitted.push(...Object.entries(leaves).map(([key, value]) => `${key} = ${renderTomlValue(value)}`));
+        inserted = true;
+      }
+      skippingValue = false;
+      const nestedKey = table.startsWith(`${compactTarget.slice(0, -1)}.`) ? table.slice(compactTarget.length, -1).replace(/^\./, "").split(".")[0] ?? "" : "";
+      skippingNested = nestedKey !== "" && Object.hasOwn(leaves, nestedKey);
+      inBase = table === compactTarget;
+      found ||= inBase;
+      if (!skippingNested) emitted.push(record);
+      scanRoot(scanner, record);
+      continue;
+    }
+    if (skippingNested) {
+      scanRoot(scanner, record);
+      continue;
+    }
+    if (inBase && !skippingValue && rootLine) {
+      const key = Object.keys(leaves).find((candidate) => tomlKeyAssignment(record, candidate));
+      if (key !== undefined) skippingValue = true;
+    }
+    if (!skippingValue) emitted.push(record);
+    scanRoot(scanner, record);
+    if (skippingValue && atRoot(scanner)) skippingValue = false;
+  }
+  if (!found) throw new Error(`Engram setup cannot preserve operator leaves without a standalone ${compactTarget} table in ${file}`);
+  if (!inserted) emitted.push(...Object.entries(leaves).map(([key, value]) => `${key} = ${renderTomlValue(value)}`));
+  return printed(emitted);
 }
 
 type RootScanner = { stringMode: "" | "multiline-basic" | "multiline-literal"; arrayDepth: number; braceDepth: number };
@@ -164,6 +209,19 @@ function compactHeader(text: string): string {
   return text.replace(TRAILING_COMMENT, "").replace(EVERY_SPACE, "");
 }
 
+function tomlKeyAssignment(text: string, key: string): boolean {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^[${POSIX_SPACE}]*(?:${escaped}|"${escaped}"|'${escaped}')[${POSIX_SPACE}]*=`).test(text);
+}
+
+function renderTomlValue(value: unknown): string {
+  if (typeof value === "string") return tomlQuote(value);
+  if (typeof value === "boolean" || typeof value === "number" || typeof value === "bigint") return String(value);
+  if (Array.isArray(value)) return `[${value.map(renderTomlValue).join(", ")}]`;
+  if (typeof value === "object" && value !== null) return `{ ${Object.entries(value).map(([key, item]) => `${tomlQuote(key)} = ${renderTomlValue(item)}`).join(", ")} }`;
+  throw new Error("Engram setup returned an unsupported operator TOML value");
+}
+
 function isFeaturesHeader(text: string): boolean {
   return compactHeader(text) === "[features]";
 }
@@ -190,7 +248,7 @@ function isPointer(text: string, key: string): boolean {
 }
 
 function isStringPointer(text: string, key: string): boolean {
-  return new RegExp(`^${key}[${POSIX_SPACE}]*=[${POSIX_SPACE}]*"[^"]*"[${POSIX_SPACE}]*$`).test(text);
+  return new RegExp(`^${key}[${POSIX_SPACE}]*=[${POSIX_SPACE}]*"(?:\\\\.|[^"\\\\])*"[${POSIX_SPACE}]*$`).test(text);
 }
 
 function decodedPointerValue(record: string, key: string): string | undefined {
@@ -278,6 +336,7 @@ type FeatureSection = "" | "features" | "other";
 
 type FeatureScan = Readonly<{
   emitted: string[];
+  movedRows: string[];
   malformed: boolean;
   inside: boolean;
   seenStart: number;
@@ -286,10 +345,12 @@ type FeatureScan = Readonly<{
   inserted: boolean;
 }>;
 
-function scanFeatureRegion(records: readonly string[], request: TomlRegionRequest, action: "features-strip" | "features-merge"): FeatureScan {
+function scanFeatureRegion(records: readonly string[], request: TomlRegionRequest, action: "features-strip" | "features-merge" | "features-normalize"): FeatureScan {
   const scanner = newScanner();
   const emitted: string[] = [];
+  const movedRows: string[] = [];
   const featureLines = request.featureText === undefined ? [] : recordsOf(request.featureText);
+  const normalizing = action === "features-normalize";
   let section: FeatureSection = "";
   let inside = false;
   let malformed = false;
@@ -300,16 +361,20 @@ function scanFeatureRegion(records: readonly string[], request: TomlRegionReques
 
   for (const record of records) {
     const rootLine = atRoot(scanner);
-    if (action === "features-strip" && rootLine && record === request.featureStartMarker) {
+    if (rootLine && record === request.featureStartMarker && (action === "features-strip" || normalizing)) {
       if (section !== "features" || inside) malformed = true;
       inside = true;
       seenStart += 1;
+      if (normalizing) emitted.push(record);
       continue;
     }
-    if (action === "features-strip" && rootLine && record === request.featureEndMarker) {
-      if (section !== "features" || !inside) malformed = true;
+    if (rootLine && record === request.featureEndMarker && (action === "features-strip" || normalizing)) {
+      if ((!normalizing && section !== "features") || !inside) malformed = true;
       inside = false;
       seenEnd += 1;
+      if (normalizing) {
+        emitted.push(...recordsOf(request.featureText ?? ""), record, ...trimmedMovedRows(movedRows, emitted));
+      }
       continue;
     }
     if (action === "features-strip" && rootLine && FEATURE_MARKER_COMMENT.test(record)) {
@@ -334,10 +399,35 @@ function scanFeatureRegion(records: readonly string[], request: TomlRegionReques
     } else if (rootLine && section === "features" && !inside && namesKeyAtRoot(record, OWNED_FEATURE_KEYS)) {
       malformed = true;
     }
-    if (!inside) emitted.push(record);
+    if (inside && normalizing && section === "other") movedRows.push(record);
+    else if (!inside) emitted.push(record);
     scanRoot(scanner, record);
   }
-  return { emitted, malformed, inside, seenStart, seenEnd, tables, inserted };
+  if (normalizing && inside && seenStart === 1 && seenEnd === 0 && movedRows.length > 0) {
+    emitted.push(...recordsOf(request.featureText ?? ""), request.featureEndMarker as string, ...trimmedMovedRows(movedRows, emitted));
+    inside = false;
+    seenEnd = 1;
+  }
+  return { emitted, movedRows, malformed, inside, seenStart, seenEnd, tables, inserted };
+}
+
+function normalizeFeatureRegion(records: readonly string[], request: TomlRegionRequest): TomlRegionOutput {
+  const scan = scanFeatureRegion(records, request, "features-normalize");
+  const broken = scan.malformed || scan.inside || scan.seenStart !== 1 || scan.seenEnd !== 1 || scan.tables !== 1;
+  return outputOf(broken ? FEATURES_EXIT : 0, scan.emitted, [], []);
+}
+
+function trimmedMovedRows(rows: readonly string[], emitted: readonly string[]): string[] {
+  const trimmed = trimBlankRecords(rows);
+  return trimmed.length === 0 ? [] : emitted[emitted.length - 1] === "" ? trimmed : ["", ...trimmed];
+}
+
+function trimBlankRecords(rows: readonly string[]): string[] {
+  const start = rows.findIndex((row) => row.trim() !== "");
+  if (start < 0) return [];
+  let end = rows.length - 1;
+  while (rows[end]?.trim() === "") end -= 1;
+  return rows.slice(start, end + 1);
 }
 
 function stripFeatureRegion(records: readonly string[], request: TomlRegionRequest): TomlRegionOutput {
@@ -396,17 +486,27 @@ function moveEngramPointers(records: readonly string[], request: TomlRegionReque
   let compactLine = 0;
   let invalidModel = false;
   let invalidCompact = false;
+  let inTable = false;
+  let afterRegion = false;
 
   records.forEach((record, index) => {
     const number = index + 1;
-    const rootLine = atRoot(scanner);
-    if (rootLine && record === request.startMarker) {
+    const lexicalRoot = atRoot(scanner);
+    if (lexicalRoot && TABLE_HEADER.test(record)) {
+      inTable = true;
+      scanRoot(scanner, record);
+      return;
+    }
+    const afterPointer = afterRegion && ((isPointer(record, modelKey) && decodedPointerValue(record, modelKey) === request.modelValue) || (isPointer(record, compactKey) && decodedPointerValue(record, compactKey) === request.compactValue));
+    const rootLine = lexicalRoot && (!inTable || afterPointer);
+    if (lexicalRoot && record === request.startMarker) {
       starts += 1;
       startLine = number;
     }
-    if (rootLine && record === request.endMarker) {
+    if (lexicalRoot && record === request.endMarker) {
       ends += 1;
       endLine = number;
+      afterRegion = true;
     }
     if (rootLine && isPointer(record, modelKey)) {
       modelRows += 1;

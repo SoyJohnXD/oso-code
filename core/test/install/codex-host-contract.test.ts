@@ -1,17 +1,16 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, test } from "node:test";
-import { HOST_REJECTED_CONFIG, installCodex, repairCodex, type CodexCommandInput } from "../../src/install/codex.ts";
+import { codexPathsFor, HOST_REJECTED_CONFIG, installCodex, repairCodex, type CodexCommandInput } from "../../src/install/codex.ts";
 import { versionFieldsOf } from "../../src/install/codex-host.ts";
 import { SUPPORTED_CODEX_VERSION } from "../../src/install/pins.ts";
 import { VerifyReport } from "../../src/install/report.ts";
 import { checkPinnedCodexVersion } from "../../src/install/verify-codex.ts";
 import { fixtureRepositoryRoot, pinnedHost } from "../support/codex-install-fixture.ts";
 import { provedSomething } from "../support/proved.ts";
-import { repositoryRoot } from "../support/state-sandbox.ts";
 import { skipUnlessPathResolvesExtensionlessNames } from "../support/win32-skip-guards.ts";
 
 const sandbox = mkdtempSync(path.join(tmpdir(), "oso-codex-host-"));
@@ -122,7 +121,10 @@ describe("the host's own acceptance of the merged config is the gate a candidate
       }),
     );
     assert.equal(outcome.exitCode, 0, outcome.report);
-    assert.deepEqual(offered, [readFileSync(path.join(home, ".codex", "config.toml"), "utf8")]);
+    const finalConfig = readFileSync(path.join(home, ".codex", "config.toml"), "utf8");
+    assert.ok(offered.length >= 1);
+    assert.equal(offered[offered.length - 1], finalConfig);
+    assert.ok(finalConfig.includes("[mcp_servers.engram]"));
   });
 });
 
@@ -149,10 +151,77 @@ describe("a rolled-back install leaves the repository's own core.hooksPath as it
     assert.match(hooksPathOf(repository) ?? "", /git-hooks$/);
   });
 
+  test("migrates the exact published checkout hook to the self-contained runtime", { skip: GIT_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
+    const repository = gitFixtureRepository(undefined);
+    const legacyHooks = path.join(repository, "plugin", "git-hooks");
+    const legacyHook = path.join(legacyHooks, "pre-commit");
+    chmodSync(legacyHook, 0o700);
+    assert.equal(gitIn(repository, ["config", "--local", "core.hooksPath", legacyHooks]).status, 0);
+    const home = fixtureHome();
+    const environment = gitReachableEnvironment();
+    const outcome = installCodex(inputFor(home, { repositoryRoot: repository, environment, installGitHook: true }));
+    assert.equal(outcome.exitCode, 0, outcome.report);
+    assert.match(outcome.report, /git commit hook: OK/);
+    assert.equal(hooksPathOf(repository), path.join(codexPathsFor(home, environment).runtimeRoot, "git-hooks"));
+    assert.equal(readFileSync(legacyHook, "utf8"), readFileSync(path.join(fixtureRepositoryRoot(), "plugin", "git-hooks", "pre-commit"), "utf8"));
+  });
+
+  test("refuses a relative checkout hook path even when it resolves to the published directory", { skip: GIT_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
+    const repository = gitFixtureRepository(undefined);
+    const legacyHooks = path.join(repository, "plugin", "git-hooks");
+    assert.equal(gitIn(repository, ["config", "--local", "core.hooksPath", "plugin/git-hooks"]).status, 0);
+    const outcome = installCodex(inputFor(fixtureHome(), { repositoryRoot: repository, environment: gitReachableEnvironment(), installGitHook: true }));
+    assert.equal(outcome.exitCode, 1, outcome.report);
+    assert.match(outcome.report, /core\.hooksPath=plugin\/git-hooks.*already owns this checkout's hooks/);
+    assert.equal(hooksPathOf(repository), "plugin/git-hooks");
+    assert.equal(readFileSync(path.join(legacyHooks, "pre-commit"), "utf8"), readFileSync(path.join(fixtureRepositoryRoot(), "plugin", "git-hooks", "pre-commit"), "utf8"));
+  });
+
+  test("refuses a lookalike checkout hook directory with an extra operator file", { skip: GIT_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
+    const repository = gitFixtureRepository(undefined);
+    const legacyHooks = path.join(repository, "plugin", "git-hooks");
+    writeFileSync(path.join(legacyHooks, "operator-hook"), "#!/bin/sh\nexit 0\n", { mode: 0o700 });
+    assert.equal(gitIn(repository, ["config", "--local", "core.hooksPath", legacyHooks]).status, 0);
+    const outcome = installCodex(inputFor(fixtureHome(), { repositoryRoot: repository, environment: gitReachableEnvironment(), installGitHook: true }));
+    assert.equal(outcome.exitCode, 1, outcome.report);
+    assert.match(outcome.report, /already owns this checkout's hooks/);
+    assert.equal(hooksPathOf(repository), legacyHooks);
+  });
+
+  test("a failure after exact checkout-hook migration restores the captured legacy path", { skip: GIT_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
+    const repository = gitFixtureRepository(undefined);
+    const legacyHooks = path.join(repository, "plugin", "git-hooks");
+    assert.equal(gitIn(repository, ["config", "--local", "core.hooksPath", legacyHooks]).status, 0);
+    const outcome = installCodex(
+      inputFor(fixtureHome(), {
+        repositoryRoot: repository,
+        environment: gitReachableEnvironment(),
+        installGitHook: true,
+        host: pinnedHost({ pluginAdd: () => ({ ok: false, output: "plugin registration failed" }) }),
+      }),
+    );
+    assert.equal(outcome.exitCode, 1, outcome.report);
+    assert.match(outcome.report, /rolled back to the pre-run snapshot/);
+    assert.equal(hooksPathOf(repository), legacyHooks);
+  });
+
+  test("an Oso hooksPath leaves unrelated default hooks untouched on update", { skip: GIT_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
+    const repository = gitFixtureRepository(undefined);
+    const home = fixtureHome();
+    const environment = gitReachableEnvironment();
+    const paths = codexPathsFor(home, environment);
+    const unrelated = path.join(repository, ".git", "hooks", "pre-push");
+    writeFileSync(unrelated, "#!/bin/sh\nexit 0\n");
+    assert.equal(gitIn(repository, ["config", "--local", "core.hooksPath", path.join(paths.runtimeRoot, "git-hooks")]).status, 0);
+    const outcome = installCodex(inputFor(home, { repositoryRoot: repository, environment, installGitHook: true }));
+    assert.equal(outcome.exitCode, 0, outcome.report);
+    assert.equal(readFileSync(unrelated, "utf8"), "#!/bin/sh\nexit 0\n");
+  });
+
   test("a git commit gate that cannot be wired rolls the install back rather than reporting a wiring row and exiting 0", { skip: GIT_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const notARepository = path.join(sandbox, `bare-${(repositoryCounter += 1)}`);
-    mkdirSync(path.join(notARepository, "bootstrap"), { recursive: true });
-    writeFileSync(path.join(notARepository, "bootstrap", "codex-global.md"), readFileSync(path.join(repositoryRoot, "bootstrap", "codex-global.md")));
+    mkdirSync(notARepository, { recursive: true });
+    copyCodexPayload(notARepository);
     const home = fixtureHome();
     const outcome = installCodex(
       inputFor(home, { repositoryRoot: notARepository, environment: gitReachableEnvironment(), installGitHook: true }),
@@ -160,6 +229,34 @@ describe("a rolled-back install leaves the repository's own core.hooksPath as it
     assert.equal(outcome.exitCode, 1, outcome.report);
     assert.match(outcome.report, /could not wire the git commit gate/, outcome.report);
     assert.match(outcome.report, /rolled back to the pre-run snapshot/, outcome.report);
+  });
+
+  test("a symlinked foreign hook is treated as an owner and survives the refused install", { skip: GIT_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
+    const repository = gitFixtureRepository(undefined);
+    const hook = path.join(repository, ".git", "hooks", "pre-commit");
+    const target = path.join(repository, "operator-pre-commit");
+    writeFileSync(target, "#!/bin/sh\nexit 0\n");
+    symlinkSync(target, hook);
+    const outcome = installCodex(
+      inputFor(fixtureHome(), { repositoryRoot: repository, environment: gitReachableEnvironment(), installGitHook: true }),
+    );
+    assert.equal(outcome.exitCode, 1, outcome.report);
+    assert.match(outcome.report, /already owns this checkout's hooks/, outcome.report);
+    assert.equal(readFileSync(target, "utf8"), "#!/bin/sh\nexit 0\n");
+  });
+
+  test("an effective global core.hooksPath is preserved and blocks the installer", { skip: GIT_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
+    const repository = gitFixtureRepository(undefined);
+    const globalConfig = path.join(sandbox, `global-${(repositoryCounter += 1)}.gitconfig`);
+    const foreignHooks = path.join(sandbox, `global-hooks-${repositoryCounter}`);
+    mkdirSync(foreignHooks, { recursive: true });
+    writeFileSync(globalConfig, `[core]\n\thooksPath = ${foreignHooks}\n`);
+    const environment = { ...gitReachableEnvironment(), GIT_CONFIG_GLOBAL: globalConfig };
+    const outcome = installCodex(inputFor(fixtureHome(), { repositoryRoot: repository, environment, installGitHook: true }));
+    assert.equal(outcome.exitCode, 1, outcome.report);
+    assert.match(outcome.report, /core\.hooksPath=/, outcome.report);
+    assert.ok(outcome.report.includes(foreignHooks), outcome.report);
+    assert.equal(readFileSync(globalConfig, "utf8"), `[core]\n\thooksPath = ${foreignHooks}\n`);
   });
 });
 
@@ -199,10 +296,16 @@ function gitFixtureRepository(hooksPath: string | undefined): string {
   repositoryCounter += 1;
   const root = path.join(sandbox, `repo-${repositoryCounter}`);
   mkdirSync(path.join(root, "bootstrap"), { recursive: true });
-  writeFileSync(path.join(root, "bootstrap", "codex-global.md"), readFileSync(path.join(repositoryRoot, "bootstrap", "codex-global.md")));
+  copyCodexPayload(root);
   assert.equal(gitIn(root, ["init", "-q"]).status, 0);
   if (hooksPath !== undefined) assert.equal(gitIn(root, ["config", "--local", "core.hooksPath", hooksPath]).status, 0);
   return root;
+}
+
+function copyCodexPayload(root: string): void {
+  for (const relative of [".agents", "bootstrap", "codex", "plugin"]) {
+    cpSync(path.join(fixtureRepositoryRoot(), relative), path.join(root, relative), { recursive: true });
+  }
 }
 
 function hooksPathOf(root: string): string | undefined {

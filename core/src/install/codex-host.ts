@@ -11,7 +11,12 @@ const VALIDATION_HOME_PREFIX = ".validate.";
 const CODEX_VERSION_LINE = /^codex-cli\s+(\d+(?:\.\d+)*)\s*$/;
 const CODEX_VERSION_LINE_SHAPE = "codex-cli <version>";
 
-export type HostRun = Readonly<{ ok: boolean; output: string }>;
+export type HostRun = Readonly<{
+  ok: boolean;
+  output: string;
+  stdout?: string;
+  stderr?: string;
+}>;
 
 export type CodexHostProbes = Readonly<{
   version: string | undefined;
@@ -20,6 +25,11 @@ export type CodexHostProbes = Readonly<{
   acceptsConfig: (codexHome: string, configText: string) => boolean;
   sandbox: (argv: readonly string[]) => HostRun;
   pluginListing: () => HostRun;
+  marketplaceListing: () => HostRun;
+  marketplaceRemove: (marketplaceName: string) => HostRun;
+  marketplaceAdd: (source: string, ref?: string) => HostRun;
+  pluginAdd: (pluginId: string) => HostRun;
+  setupEngram: (homeDirectory: string, codexHome: string) => HostRun;
 }>;
 
 export function pinnedVersionRefusal(host: CodexHostProbes): string {
@@ -44,6 +54,12 @@ export function codexHostProbes(environment: NodeJS.ProcessEnv): CodexHostProbes
     acceptsConfig: (codexHome, configText) => sandboxAcceptsConfig(environment, codexHome, configText),
     sandbox: (argv) => hostRun(environment, ["sandbox", "-P", OSO_PERMISSION_PROFILE, "--", ...argv]),
     pluginListing: () => hostRun(environment, ["plugin", "list", "--json"]),
+    marketplaceListing: () => hostRun(environment, ["plugin", "marketplace", "list", "--json"]),
+    marketplaceRemove: (marketplaceName) => hostRun(environment, ["plugin", "marketplace", "remove", marketplaceName, "--json"]),
+    marketplaceAdd: (source, ref) =>
+      hostRun(environment, ["plugin", "marketplace", "add", source, ...(ref === undefined ? [] : ["--ref", ref]), "--json"]),
+    pluginAdd: (pluginId) => hostRun(environment, ["plugin", "add", pluginId, "--json"]),
+    setupEngram: (_homeDirectory, _codexHome) => commandRun(environment, "engram", ["setup", "codex"]),
   };
 }
 
@@ -54,9 +70,15 @@ function probedVersion(environment: NodeJS.ProcessEnv): VersionOutcome | undefin
 }
 
 function hostRun(environment: NodeJS.ProcessEnv, argv: readonly string[]): HostRun {
-  const run = spawnSync(CODEX_BINARY, [...argv], { env: environment, encoding: "utf8" });
-  if (run.error !== undefined) return { ok: false, output: run.error.message };
-  return { ok: run.status === 0, output: `${run.stdout ?? ""}${run.stderr ?? ""}`.trim() };
+  return commandRun(environment, CODEX_BINARY, argv);
+}
+
+function commandRun(environment: NodeJS.ProcessEnv, command: string, argv: readonly string[]): HostRun {
+  const run = spawnSync(command, [...argv], { env: environment, encoding: "utf8" });
+  if (run.error !== undefined) return { ok: false, output: run.error.message, stderr: run.error.message };
+  const stdout = run.stdout ?? "";
+  const stderr = run.stderr ?? "";
+  return { ok: run.status === 0, output: `${stdout}${stderr}`.trim(), stdout, stderr };
 }
 
 function sandboxAcceptsConfig(environment: NodeJS.ProcessEnv, codexHome: string, configText: string): boolean {

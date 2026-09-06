@@ -5,6 +5,7 @@ import path from "node:path";
 import { after, describe, test } from "node:test";
 import * as tomlModule from "../../src/install/toml.ts";
 import { parseTomlDocument, readTomlFile, TomlParseError } from "../../src/install/toml.ts";
+import { mergeEngramLeaves } from "../../src/install/toml-regions.ts";
 
 const sandbox = mkdtempSync(path.join(tmpdir(), "oso-toml-"));
 after(() => rmSync(sandbox, { recursive: true, force: true }));
@@ -40,4 +41,13 @@ describe("readTomlFile", () => {
     writeFileSync(file, 'model = "oso-code"\n');
     assert.deepEqual(readTomlFile(file), { model: "oso-code" });
   });
+});
+
+test("mergeEngramLeaves keeps nested and multiline values while replacing owned leaves", () => {
+  const text = '[mcp_servers.engram]\ncommand = "operator"\nenv = { NOTE = "keep" }\n\n[mcp_servers.engram.env]\nMESSAGE = """keep\nvalue"""\n';
+  const merged = mergeEngramLeaves(text, { command: "engram", args: ["mcp", "--tools=agent"] }, "config.toml");
+  assert.match(merged, /^command = "engram"$/m);
+  assert.match(merged, /^args = \["mcp", "--tools=agent"\]$/m);
+  assert.match(merged, /env = \{ NOTE = "keep" \}/);
+  assert.match(merged, /MESSAGE = """keep\nvalue"""/);
 });

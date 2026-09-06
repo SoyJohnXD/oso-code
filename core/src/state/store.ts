@@ -177,6 +177,11 @@ export function isDirectory(target: string): boolean {
   return stats !== undefined && stats.isDirectory();
 }
 
+export function isDirectoryNotSymlink(target: string): boolean {
+  const stats = lstatOrUndefined(target);
+  return stats !== undefined && stats.isDirectory();
+}
+
 export function isRegularNonSymlinkFile(target: string): boolean {
   const stats = lstatOrUndefined(target);
   return stats !== undefined && stats.isFile();

@@ -69,12 +69,14 @@ Then restart Claude Code.
 
 ### Codex
 
-The Codex path requires git, Node.js/npm, and the Codex CLI already installed at the exact verified floor — `0.146.0`, never `@latest`. The installer no longer installs or upgrades that CLI itself: it refuses to run against any other installed version, naming `npm install --global @openai/codex@0.146.0` as the command to run first, because an in-place CLI upgrade run ahead of its own transaction is a mutation nothing in that transaction could later roll back (ADR-0125). Once the pin holds, it transactionally installs the plugin, rendered user hooks, seven agent roles, bounded `config.toml` ownership blocks, MCP wiring, git gate, and the Impeccable skill mounted at a pinned Git tag. It preserves personal `[projects.*]` configuration and unrelated keys in shared tables such as `[features]`, and backs up every artifact it replaces. Reinstall also composes Engram's root instruction pointers with Oso's region and repairs only an exact clean official Engram marketplace cache that Codex left unregistered; modified, symlinked or unknown cache state is preserved and refused (ADR-0102).
+The Codex path requires git, Node.js/npm, and the Codex CLI already installed at or above the supported floor — `0.146.0`, never `@latest`. The installer no longer installs or upgrades that CLI itself: it refuses a missing or older CLI and names `npm install --global @openai/codex@0.146.0` for that case, while accepting newer versions without downgrading them (ADR-0125). The current certification measurements target `0.146.0`; a newer accepted CLI is reported as above-pin where the verifier has a version-specific contract. Once the floor check passes, the installer transactionally installs the plugin, rendered user hooks, seven agent roles, bounded `config.toml` ownership blocks, MCP wiring, git gate, and the Impeccable skill mounted at a pinned Git tag. It preserves personal `[projects.*]` configuration and unrelated keys in shared tables such as `[features]`, and backs up every artifact it replaces. Reinstall also composes Engram's root instruction pointers with Oso's region and repairs only an exact clean official Engram marketplace cache that Codex left unregistered; modified, symlinked or unknown cache state is preserved and refused (ADR-0102).
 
 Every run's own `install-backup-*` snapshot under `~/.local/state/oso-code` — separate from the one-time purge/restore below — records what it replaced in a manifest; `core.hooksPath` is the one thing no snapshot ever captures, since that value only ever lived in the installing run's own memory. Retention prunes these snapshots by total size on every run, always keeping the newest one (ADR-0124).
 
 ```bash
-npm install --global @openai/codex@0.146.0   # only if not already at this exact version
+codex --version                         # must report 0.146.0 or newer
+# If it is missing or older, install the supported floor before continuing:
+npm install --global @openai/codex@0.146.0
 node bootstrap/oso.js install --host codex --yes
 codex login                       # first install only; skip when already authenticated
 # Start a new Codex thread, open /hooks, and review/trust the installed hooks.
