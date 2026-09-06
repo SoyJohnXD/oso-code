@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, test } from "node:test";
@@ -418,6 +418,15 @@ describe("oso install --host codex over a fixture HOME", () => {
     assert.equal(gitIn(cache, ["remote", "add", "origin", "https://github.com/Gentleman-Programming/engram.git"]).status, 0);
     assert.equal(gitIn(cache, ["update-ref", "refs/remotes/origin/main", "HEAD"]).status, 0);
     assert.equal(gitIn(cache, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"]).status, 0);
+    const safeEnvironment = { ...environment, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", GIT_NO_LAZY_FETCH: "1", GIT_ALLOW_PROTOCOL: "" };
+    const filterConfigProbe = spawnSync("git", ["-c", "core.fsmonitor=false", "config", "--includes", "--name-only", "--get-regexp", "^filter\\..*\\.(clean|process)$"], { env: safeEnvironment, cwd: cache, encoding: "utf8" });
+    const rootProbe = spawnSync("git", ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-C", cache, "rev-parse", "--show-toplevel"], { env: safeEnvironment, encoding: "utf8" });
+    console.log("CODEX-CI1 native checkout probe", JSON.stringify({
+      platform: process.platform, cache, resolvedCache: path.resolve(cache), realCache: realpathSync(cache),
+      filterConfig: { status: filterConfigProbe.status, stdout: filterConfigProbe.stdout, stderr: filterConfigProbe.stderr, error: filterConfigProbe.error?.message },
+      root: { status: rootProbe.status, stdout: rootProbe.stdout, stderr: rootProbe.stderr, error: rootProbe.error?.message },
+      realRoot: rootProbe.status === 0 && existsSync(rootProbe.stdout.trim()) ? realpathSync(rootProbe.stdout.trim()) : null,
+    }));
     const outcome = installCodex(
       inputFor(home, {
         environment,
