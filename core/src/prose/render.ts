@@ -93,8 +93,8 @@ function renderCodexAgent(role: AgentRole, body: string): string {
   const lines = [
     `name = "${role.id}"`,
     `description = "${spec.description}"`,
-    `model = "${spec.model}"`,
-    `model_reasoning_effort = "${spec.reasoningEffort}"`,
+    ...(spec.model === undefined ? [] : [`model = "${spec.model}"`]),
+    ...(spec.reasoningEffort === undefined ? [] : [`model_reasoning_effort = "${spec.reasoningEffort}"`]),
     `sandbox_mode = "${spec.sandboxMode}"`,
     `developer_instructions = """`,
   ].join("\n");

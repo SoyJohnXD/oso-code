@@ -5028,7 +5028,7 @@ function mirrorContentOf(profile) {
   const lines = [
     `model_profile=${profile.name}`,
     ...ROLES.flatMap((role) => roleLines(role, profile.roles[role])),
-    "codex=pinned by host contract",
+    "codex=launch policy: default gpt-5.6-luna/max; escalation gpt-5.6-terra/high",
     "unattended.doom_loop=ask"
   ];
   return lines.map((line) => `${line}
@@ -6314,13 +6314,13 @@ var AGENT_ROLES = [
   {
     id: "oso-applier",
     claude: { description: "Implements exactly one oso-code assignment \u2014 a plan slice, a debt cleanup, judge findings, or a diagnosis packaged as a ledger. Launched by the /plan, /quick and /debug orchestrators \u2014 not for direct use.", model: "sonnet", tools: ["Read", "Edit", "Write", "NotebookEdit", "Glob", "Grep", "Bash", "mcp__plugin_oso-code_context7__resolve-library-id", "mcp__plugin_oso-code_context7__query-docs"] },
-    codex: { description: "Implements exactly one oso-code assignment: a plan slice, debt cleanup, accepted judge findings, or a diagnosis packaged as a ledger. Launched by the plan, quick, and debug orchestrators; not for direct use.", model: "gpt-5.5", reasoningEffort: "xhigh", sandboxMode: "workspace-write" },
+    codex: { description: "Implements exactly one oso-code assignment: a plan slice, debt cleanup, accepted judge findings, or a diagnosis packaged as a ledger. Launched by the plan, quick, and debug orchestrators; not for direct use.", sandboxMode: "workspace-write" },
     opencode: { description: "Implements exactly one oso-code assignment: a plan slice, debt cleanup, accepted judge findings, or a diagnosis packaged as a ledger. Launched by the plan, quick, and debug orchestrators; not for direct use.", denies: ["task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: ["context7"] }
   },
   {
     id: "oso-verifier",
     claude: { description: "Independently verifies one implemented slice \u2014 or one merged wave at its integration gate \u2014 against its criteria and the project's zero-warnings bar. Judges only \u2014 never edits files. Launched by the /plan and /debug orchestrators after each apply.", model: "sonnet", tools: ["Read", "Glob", "Grep", "Bash"] },
-    codex: { description: "Independently verifies one implemented slice or one merged wave against its criteria and the project's zero-warning bar. Judges only and never edits source files.", model: "gpt-5.5", reasoningEffort: "xhigh", sandboxMode: "workspace-write" },
+    codex: { description: "Independently verifies one implemented slice or one merged wave against its criteria and the project's zero-warning bar. Judges only and never edits source files.", sandboxMode: "workspace-write" },
     opencode: { description: "Independently verifies one implemented slice or one merged wave against its criteria and the project's zero-warning bar. Judges only and never edits source files.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
   },
   {
@@ -6332,7 +6332,7 @@ var AGENT_ROLES = [
   {
     id: "oso-debt-sweep",
     claude: null,
-    codex: { description: "Fresh-context Codex role for the debt-sweep skill: judges code debt and frozen-ledger conformance separately and never edits.", model: "gpt-5.5", reasoningEffort: "xhigh", sandboxMode: "workspace-write" },
+    codex: { description: "Fresh-context Codex role for the debt-sweep skill: judges code debt and frozen-ledger conformance separately and never edits.", model: "gpt-6-astra", reasoningEffort: "low", sandboxMode: "workspace-write" },
     opencode: { description: "Fresh-context judge for the debt-sweep skill: judges code debt and frozen-ledger conformance separately and never edits.", denies: ["edit", "fallow_fix_apply", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: ["fallow"] }
   },
   {
@@ -6344,7 +6344,7 @@ var AGENT_ROLES = [
   {
     id: "oso-security-reviewer",
     claude: null,
-    codex: { description: "Fresh-context Codex role for security-pass: reviews the supplied change surface as a judge and never edits, commits, or asks back.", model: "gpt-5.5", reasoningEffort: "xhigh", sandboxMode: "danger-full-access" },
+    codex: { description: "Fresh-context Codex role for security-pass: reviews the supplied change surface as a judge and never edits, commits, or asks back.", model: "gpt-6-astra", reasoningEffort: "low", sandboxMode: "danger-full-access" },
     opencode: { description: "Fresh-context judge for the security-pass skill: reviews the supplied change surface as a judge and never edits, commits, or asks back.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
   },
   {

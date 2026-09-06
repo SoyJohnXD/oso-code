@@ -293,7 +293,7 @@ function mirrorContentOf(profile: Profile): string {
   const lines = [
     `model_profile=${profile.name}`,
     ...ROLES.flatMap((role) => roleLines(role, profile.roles[role])),
-    "codex=pinned by host contract",
+    "codex=launch policy: default gpt-5.6-luna/max; escalation gpt-5.6-terra/high",
     "unattended.doom_loop=ask",
   ];
   return lines.map((line) => `${line}\n`).join("");

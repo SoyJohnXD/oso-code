@@ -92,7 +92,7 @@ const STRONG_MIRROR = `model_profile=strong
 applier.tier=strong
 verifier.tier=strong
 judges.tier=strong
-codex=pinned by host contract
+codex=launch policy: default gpt-5.6-luna/max; escalation gpt-5.6-terra/high
 unattended.doom_loop=ask
 `;
 
@@ -166,7 +166,7 @@ function promptSection(home: string, ...lines: readonly string[]): string {
 after(() => rmSync(sandbox, { recursive: true, force: true }));
 
 describe("oso profile mirrors the record beside the deny patterns and holds the verifier at or above the applier", () => {
-  test("set strong writes every role at the strong tier, the codex pin and the doom-loop posture, keyed by the repository digest", () => {
+  test("set strong writes every role at the strong tier, the Codex launch policy and the doom-loop posture, keyed by the repository digest", () => {
     assert.equal(runProfile("set", "strong").status, 0);
     assert.equal(readFileSync(mirror, "utf8"), STRONG_MIRROR);
   });
@@ -358,7 +358,7 @@ describe("a model override is a token of its own — wider than a name token, an
     assert.equal(set.status, 0);
     assert.equal(
       readFileSync(mirror, "utf8"),
-      `${CUSTOM_STRONG_JUDGES}judges.model=${OPERATOR_MODEL}\ncodex=pinned by host contract\nunattended.doom_loop=ask\n`,
+      `${CUSTOM_STRONG_JUDGES}judges.model=${OPERATOR_MODEL}\ncodex=launch policy: default gpt-5.6-luna/max; escalation gpt-5.6-terra/high\nunattended.doom_loop=ask\n`,
     );
     const roles = withHookEnvironment({ OSO_STATE_DIR: stateDirectory }, () => profileRolesOf(readProfile(project)));
     assert.equal(roles.judges?.model, OPERATOR_MODEL);
