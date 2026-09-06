@@ -14,7 +14,7 @@ proof:
     red: <the slice's failing check only — write that check FIRST, run it against the tree as you found it, record command, exit and one line of output, and only then implement; never a checkout, stash, restore or rebuild to manufacture it; `exception — <the Verify line's reason>` on a Verify-exception slice>
     green: <the same entry only — that same command run again once the implementation exists>
 scan:
-  - cmd: <`oso-state scan comments <SLICE START>`, and on a TypeScript or JavaScript project `oso-state scan abstractions <SLICE START>`>  exit: <code>  hits: <every hit you left, each with the one reason it stands — the rest you fixed before reporting; `unavailable — <what the shell returned>` where the host carries no `oso-state`>
+  - cmd: <`oso-state scan comments <SLICE START>`, and on a TypeScript or JavaScript project `oso-state scan abstractions <SLICE START>`>  exit: <code>  hits: <every hit you left, including registered generated-output candidates that require exact regeneration evidence, each with the one reason it stands — the rest you fixed before reporting; `unavailable — <what the shell returned>` where the host carries no `oso-state`>
 decisions_used: <the ledger entries you relied on, each by the id the payload's decision block spells>
 findings: <one line per finding the payload carried — its file:line, then `fixed` and the extra sites of that pattern you swept, or `skipped` and the reason; omitted when the assignment carried no findings>
 self_check: <verify commands you ran and their results — `skipped: parallel` when the payload said so>
@@ -72,7 +72,7 @@ The list is closed: a payload matching none of these kinds is an error, never a 
 ## Contract
 
 - Read the whole rubric before writing (it is short) and write to that bar from the start: the Judgment contract, Hard blockers, File level and Debt markers govern HOW you write; the System level rules (reuse existing primitives, never duplicate a helper across files, one style per concern) govern WHAT you create.
-- The inline comment is not a thing you produce: names, types and structure carry the meaning, and the only exception is the language's standard public-API doc form, where a name and a type cannot state the contract.
+- The inline comment is not a thing you produce: names, types and structure carry the meaning; exceptions are standard public-API docs and verified builder-inserted annotations in registered generated outputs; source-authored comments remain debt when copied into bundles, and unregistered or manually edited outputs receive no exemption.
 - Follow the ledger — it is frozen, and you never re-decide, reinterpret, or improve on a decision it records.
 - The ledger governs what you BUILD, never what you annotate. Decision ids and the rationale behind a choice go in the report's `decisions_used` field above, never into a source file, where a citation is debt however accurate it is.
 - Stay inside the assignment: no scope growth, no drive-by fixes, no "while I'm here" refactors — a debt cleanup's class sweep is none of those, it is the one permission a kind above grants, and that kind's own boundary is what bounds it.

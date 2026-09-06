@@ -217,9 +217,14 @@ function partitionByLanguage(files, accepted) {
 
 // core/src/scan/scan-report.ts
 function renderScan(hits, coverage) {
-  const cited = hits.map(({ file, line, note }) => `${file}:${line}: ${note}
-`).join("");
-  return `${cited}${headlineOf(hits.length)}; ${coverage}
+  const cited = hits.map(({ file, line, note, category }) => {
+    const label = category === "registered-generated-output-candidate" ? "[registered generated-output candidate] " : "";
+    return `${file}:${line}: ${label}${note}
+`;
+  }).join("");
+  const candidates = hits.filter(({ category }) => category === "registered-generated-output-candidate").length;
+  const candidateEvidence = candidates === 0 ? "" : `; ${candidates} registered generated-output candidate${candidates === 1 ? "" : "s"} require exact regeneration evidence`;
+  return `${cited}${headlineOf(hits.length)}${candidateEvidence}; ${coverage}
 `;
 }
 function readingClause(readFiles, languages) {
@@ -571,7 +576,8 @@ function commentScanReport(cwd, ref) {
   return renderScan(hits, `${readingClause(read.length, languages)}; ${unreadClause(notRead)}`);
 }
 function inlineCommentsAddedIn({ file, text, addedLines, language }) {
-  return commentOpeningsIn(language, text).filter((opening) => opening.form === "inline" && addedLines.has(opening.line)).map((opening) => ({ file, line: opening.line, note: opening.text }));
+  const category = GENERATED_BUNDLES.includes(file) ? "registered-generated-output-candidate" : void 0;
+  return commentOpeningsIn(language, text).filter((opening) => opening.form === "inline" && addedLines.has(opening.line)).map((opening) => ({ file, line: opening.line, note: opening.text, ...category === void 0 ? {} : { category } }));
 }
 
 // core/src/shell/ere.ts

@@ -1,11 +1,26 @@
 import type { ScanLanguage } from "./languages.ts";
 import type { ReadFailure } from "./changed-lines.ts";
 
-export type ScanHit = Readonly<{ file: string; line: number; note: string }>;
+export type ScanHit = Readonly<{
+  file: string;
+  line: number;
+  note: string;
+  category?: "registered-generated-output-candidate";
+}>;
 
 export function renderScan(hits: readonly ScanHit[], coverage: string): string {
-  const cited = hits.map(({ file, line, note }) => `${file}:${line}: ${note}\n`).join("");
-  return `${cited}${headlineOf(hits.length)}; ${coverage}\n`;
+  const cited = hits
+    .map(({ file, line, note, category }) => {
+      const label = category === "registered-generated-output-candidate" ? "[registered generated-output candidate] " : "";
+      return `${file}:${line}: ${label}${note}\n`;
+    })
+    .join("");
+  const candidates = hits.filter(({ category }) => category === "registered-generated-output-candidate").length;
+  const candidateEvidence =
+    candidates === 0
+      ? ""
+      : `; ${candidates} registered generated-output candidate${candidates === 1 ? "" : "s"} require exact regeneration evidence`;
+  return `${cited}${headlineOf(hits.length)}${candidateEvidence}; ${coverage}\n`;
 }
 
 export function readingClause(readFiles: number, languages: readonly ScanLanguage[]): string {
