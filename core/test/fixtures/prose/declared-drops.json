@@ -223,64 +223,64 @@
     "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
     "sourceFile": "core/src/prose/shared/codex.md",
     "retired": "\"ending the turn as plain text, with any tool call in a later turn\" (the no-card paragraph's default-delivery clause) and \"a milestone still ends the turn exactly as above, with\" (the same paragraph's no-carve-out consequence clause)",
-    "reason": "Both clauses restated reporting.md:28's default delivery rule inside this host's own visibility-layer paragraph — once as the plain default, once as the consequence of taking neither Claude Code's carve-out nor OpenCode's rail; the rule now lives once at reporting.md and this binding keeps only what is genuinely Codex-specific (no card, no carve-out, no rail, nothing here to carry the run past the marker)",
-    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+    "reason": "S0 retires the host-neutral mandatory-turn rule rather than preserving it as a contradictory home; Codex's host binding now states routine same-turn delivery while retaining genuine human gates, and Claude's unchanged host binding remains independently covered by its own regression",
+    "home": { "kind": "none" }
   },
   {
     "axis": "prose",
     "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
     "sourceFile": "core/src/prose/shared/opencode.md",
     "retired": "line 20: \"ending the turn as plain text, with any tool call in a later turn\"; line 24: \"A milestone ENDS THE TURN here exactly as every other operator-facing content does, under the delivery contract `../../oso-plan/references/opencode.md` states — and\"",
-    "reason": "Line 20 restated reporting.md:28's default clause after the native-agent-files paragraph, the same template codex.md and claude.md carry. Line 24's cut restated the same default as the consequence of this host taking no carve-out; the line's own rationale (\"ending the turn at every milestone stops a run nobody is there to continue\") and its continuation-rail mechanics stayed, since neither restates reporting.md and both are genuinely this host's own",
-    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+    "reason": "S0 retires the host-neutral mandatory-turn rule instead of carrying a conflicting default into OpenCode; routine same-turn delivery and the genuine human boundaries now live in each host binding, while the continuation rail remains described separately",
+    "home": { "kind": "none" }
   },
   {
     "axis": "prose",
     "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
     "sourceFile": "core/src/prose/skills/plan/references/opencode.md",
     "retired": "\"each ends the turn as plain text under the delivery contract at the top of this file\" and \"A milestone ends the turn here too — this host gets no carve-out from that contract —\"",
-    "reason": "Both clauses restated the same no-carve-out default (already reporting.md:28's rule, and this file's own top-of-file delivery-contract line) around the PARK/FINAL REPORT terminal steps; the disarm-sequencing detail and the continuation-rail mechanics that follow, genuinely host-specific, stayed",
-    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+    "reason": "S0 retires the host-neutral mandatory-turn default around PARK/FINAL REPORT; OpenCode's genuine approval, visibility and completion boundaries remain in the host reference, and the continuation-rail mechanics remain host-specific",
+    "home": { "kind": "none" }
   },
   {
     "axis": "prose",
     "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
     "sourceFile": "core/src/prose/skills/roadmap/references/opencode.md",
     "retired": "\"a child's close report ends the turn and the next child's arming follows in the next one\"",
-    "reason": "Restated the same default-delivery consequence the very next sentence already draws out (\"That costs the chain a turn per child\"); the branch-selection fact (no carve-out on this host) and the continuation-rail mechanics that follow are host-specific and stayed",
-    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+    "reason": "S0 replaces the old per-child turn-ending consequence with routine same-turn delivery; the continuation rail remains a later-turn bound, and child approval, blocker and completion boundaries remain explicit",
+    "home": { "kind": "none" }
   },
   {
     "axis": "prose",
     "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
     "sourceFile": "plugin/skills/_shared/references/claude.md",
     "retired": "line 28 only: \"ending the turn as plain text with the tool call in a later turn —\"",
-    "reason": "Line 28 restated reporting.md:28's default clause after the native-card paragraph, the same template codex.md and opencode.md carry. Line 32 was read and left untouched: it is this host's OWN required statement of its carve-out — reporting.md:30 asks the carving host's own file to state \"which deliveries still end the turn\" — and its \"stalls with nobody there to say continue\" clause is this file's own rationale, not a restatement of :28, so neither of line 32's two matches is a duplicate copy",
-    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+    "reason": "S0 retires the host-neutral default from the shared reporting contract; Claude's own reference still states its unchanged TUI delivery rule and unattended carve-out, so no contradictory neutral home is retained",
+    "home": { "kind": "none" }
   },
   {
     "axis": "prose",
     "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
     "sourceFile": "plugin/skills/debug/references/claude.md",
     "retired": "\"while this repository's state carries `auto=running`, the run is UNATTENDED and its milestone text rides the stream instead of ending the turn, journaled full-text in its place\"",
-    "reason": "This flow explicitly says `_shared/references/claude.md`'s carve-out section \"states it whole rather than this section restating it\" and then restated a capsule of it anyway; the capsule is cut, the pointer and this mode's own inert-exception reasoning (a fix run reaches its operator at the diagnosis either way) stayed",
-    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+    "reason": "S0 retires the removed host-neutral capsule without adding a conflicting shared default; the debug flow still points to Claude's unchanged host-specific carve-out and preserves its diagnosis boundary",
+    "home": { "kind": "none" }
   },
   {
     "axis": "prose",
     "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
     "sourceFile": "plugin/skills/plan/references/claude.md",
     "retired": "\"while this repository's state carries `auto=running`, a milestone rides the stream instead of ending the turn, journaled full-text in its place —\"",
-    "reason": "Same restated capsule as debug's, cut for the same reason; kept the flow-specific mapping of which of THIS flow's own deliveries survive the carve-out (the park and the final report), since that mapping is stated nowhere else",
-    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+    "reason": "S0 retires the removed host-neutral capsule without adding a conflicting shared default; the plan flow keeps its own mapping of which deliveries survive Claude's unchanged carve-out (the park and final report)",
+    "home": { "kind": "none" }
   },
   {
     "axis": "prose",
     "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
     "sourceFile": "plugin/skills/roadmap/references/claude.md",
     "retired": "\"while this repository's state carries `auto=running`, a milestone rides the stream instead of ending the turn, journaled full-text in its place —\"",
-    "reason": "Same restated capsule as debug's and plan's, cut for the same reason; kept this flow's own mapping of which deliveries survive the carve-out (§5's three stopping moments)",
-    "home": { "kind": "prose", "ref": "plugin/skills/_shared/reporting.md" }
+    "reason": "S0 retires the removed host-neutral capsule without adding a conflicting shared default; the roadmap flow keeps its own mapping of which deliveries survive Claude's unchanged carve-out (§5's three stopping moments)",
+    "home": { "kind": "none" }
   },
   {
     "axis": "prose",

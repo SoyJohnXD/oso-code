@@ -21,16 +21,14 @@ const CEILINGS = [
   {
     label: "core/src",
     prefix: "core/src/",
-    maximumLines: 14500,
-    derivation: `7,138 (measured at C3-S1) + ${REMAINING_BASH_SURFACE} + 200 (C4-D2's pins, C5's render stub) = 14,189`,
+    maximumLines: 17500,
+    derivation: "14,499 (measured) + 1,800 (C2) + 1,100 (AUTO) = 17,399",
   },
   {
     label: "core/test",
     prefix: "core/test/",
-    maximumLines: 23500,
-    derivation:
-      "20,832 (measured at C1's arming, by this test's own listing) + 6 × 380 (C1's five slices and its close, at C0's " +
-      "measured mean of 380 lines per commit: 64 / 236 / 488 / 196 / 916) = 23,112",
+    maximumLines: 27500,
+    derivation: "23,088 (measured) + 10 × 380 (nine slices + close) + 550 (C3–C5) = 27,438",
   },
 ] as const;
 

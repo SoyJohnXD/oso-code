@@ -2,7 +2,7 @@
 
 ## The delivery contract
 
-The adapter makes no claim about whether Codex preserves operator-facing text before a same-turn tool call, and the harness depends on no such behavior. It applies the conservative host-independent policy: operator-facing content ENDS the turn as plain text, with any tool call in a LATER turn. An extra turn is the cheap side of that boundary; content the operator never sees is the expensive one.
+Routine informational milestones may continue in the same turn with the tool call that advances the flow. Questions, permission requests, operator-dependent blockers and completion remain turn boundaries. Native approvals remain genuine operator grants and exact-document gates; the complete §5 document remains a turn-ending plain-text response for Codex's native approval rail, whose marker stays the final logical line.
 
 ## Question rounds
 

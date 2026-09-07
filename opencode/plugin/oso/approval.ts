@@ -9,7 +9,9 @@ export const PLAN_CANCEL_TOOL_ID = "oso_plan_cancel";
 export function planApprovalTool(): PluginTool {
   return {
     description: "The approval gate for the oso-code plan mode's phases 1 through 5. Deliver the complete phase-5"
-      + " document as turn-ending plain text first, then call this tool in a later turn carrying those exact bytes."
+      + " document as operator-visible plain text first, then call this tool in the same turn when this host"
+      + " establishes that the complete document is visible, carrying those exact bytes; if visibility cannot be"
+      + " established, present the document and wait for a later turn."
       + " The operator's answer to the authorization prompt this raises IS the approval: a grant records the"
       + " approved plan and opens the amendment lane against it, and a refusal comes back as an error approving"
       + " nothing — the presentation captured before the prompt stays on disk unpromoted, so this repository is"

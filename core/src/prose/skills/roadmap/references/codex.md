@@ -2,7 +2,7 @@
 
 ## The delivery contract
 
-The adapter makes no claim about whether Codex preserves operator-facing text before a same-turn tool call, and the harness depends on no such behavior. It applies the conservative host-independent policy: operator-facing content — the queue as it is planned, the approval document, the presence phase, every milestone report the chain makes — ENDS the turn as plain text, with any tool call in a LATER turn.
+Routine informational milestones may continue in the same turn with the tool call that advances the flow. Questions, permission requests, operator-dependent blockers and completion remain turn boundaries. Native approvals remain genuine operator grants and exact-document gates. The queue's complete approval document still ends the planning turn for Codex's native approval rail; its exact native prompt and marker remain unchanged.
 
 ## Question rounds
 

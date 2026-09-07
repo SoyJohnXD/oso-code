@@ -80,7 +80,7 @@ Exit: every surface has a battery question or an explicit N/A, and every core le
 
 ## 3. Decision rounds
 
-Goal: after this phase, execution needs zero assumptions. The Surface mapping battery is the source of questions here; the table below is an audit floor, never a generator. Present the surface map and its audited N/As as a turn-ending message before the first round — there is still no separate approval gate for the map itself.
+Goal: after this phase, execution needs zero assumptions. The Surface mapping battery is the source of questions here; the table below is an audit floor, never a generator. Present the surface map and its audited N/As under the reference file's delivery contract before the first round — there is still no separate approval gate for the map itself.
 
 Run rounds until every core lens and every derived category is decided or explicitly marked N/A with a reason:
 

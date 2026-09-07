@@ -553,6 +553,13 @@
     "destinationHeading": "Reporting binding"
   },
   {
+    "sourceFile": "plugin/skills/_shared/platform/opencode/reporting.md",
+    "heading": "The unattended run — no carve-out here, and the record that carries it instead",
+    "disposition": "merged",
+    "destinationFile": "plugin/skills/_shared/references/opencode.md",
+    "destinationHeading": "The unattended run — routine continuity and the record that carries it"
+  },
+  {
     "sourceFile": "plugin/skills/_shared/platform/opencode/security-pass.md",
     "heading": "Which reviewer is native, and how to reach it",
     "disposition": "merged",
