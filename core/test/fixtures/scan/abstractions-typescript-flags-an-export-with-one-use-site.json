@@ -1,0 +1,40 @@
+{
+  "name": "typescript abstractions — an added export used at one site is flagged, an added export used at two sites is not, an added type is not read at all, and a changed Python file is named rather than counted",
+  "verb": "abstractions",
+  "language": "typescript",
+  "committed": {},
+  "worktree": {
+    "src/added.ts": [
+      "export function widelyUsed(): number {",
+      "  return 1;",
+      "}",
+      "",
+      "export function usedOnce(): number {",
+      "  return 2;",
+      "}",
+      "",
+      "export type Unread = string;"
+    ],
+    "src/first-caller.ts": [
+      "import { usedOnce, widelyUsed } from \"./added.ts\";",
+      "",
+      "const firstTotal = widelyUsed() + usedOnce();",
+      "",
+      "process.stdout.write(String(firstTotal));"
+    ],
+    "src/second-caller.ts": [
+      "import { widelyUsed } from \"./added.ts\";",
+      "",
+      "process.stdout.write(String(widelyUsed()));"
+    ],
+    "src/tool.py": [
+      "print(\"not a language the reference count reads\")"
+    ]
+  },
+  "expect": {
+    "hits": [
+      "src/added.ts:5: usedOnce is exported with 1 use site outside its declaration"
+    ],
+    "summary": "1 hit; read 3 changed file(s) as typescript, counting use sites across 3 project file(s) and reading no type or interface declaration; 1 changed file(s) were not read: src/tool.py"
+  }
+}

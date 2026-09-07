@@ -3,7 +3,27 @@ import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, w
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { JsonParseError, readJsonFile } from "./json.ts";
-import { isPlainObject, OWNED_PERMISSION_VALUES, OWNED_SKILL_MODES, OWNED_SKILL_VERDICT, type ConfigDocument } from "./opencode-config.ts";
+import {
+  EDIT_CONTROL_BOUNDING_A_REACH,
+  editControlDenies,
+  EVERY_AGENT_ON_THE_HOST_SESSION_MODEL,
+  HARNESS_EXTERNAL_DIRECTORIES,
+  externalDirectoryGrantsIn,
+  harnessGrantPostureOf,
+  hostSurfacesReachedBy,
+  installedAgentModels,
+  isPlainObject,
+  mcpServerWildcard,
+  openCodeAgentModels,
+  OWNED_MCP_NAMES,
+  OWNED_PERMISSION_VALUES,
+  OWNED_SKILL_MODES,
+  OWNED_SKILL_VERDICT,
+  REACHES_THE_EDIT_CONTROL_BOUNDS,
+  type AgentModels,
+  type ConfigDocument,
+  type ReachedSurface,
+} from "./opencode-config.ts";
 import { GLOBAL_MARKER_END, GLOBAL_MARKER_START, opencodePathsFor } from "./opencode.ts";
 import type { OpenCodeHostProbes } from "./opencode-host.ts";
 import {
@@ -16,7 +36,9 @@ import {
 } from "./opencode-install.ts";
 import { openCodeTrustReading, OPENCODE_TRUST_FILE_COUNT, trustDivergenceLine } from "./opencode-trust.ts";
 import { isAboveTestedVersion, meetsVersionFloor, SUPPORTED_OPENCODE_VERSION } from "./pins.ts";
+import { modelOverridesTheTierCannotRank, ProfileMirrorRefusedError, profileRolesOf, readProfile, type ProfileReading } from "./profile.ts";
 import { VerifyReport, type CommandOutcome } from "./report.ts";
+import { AGENT_ROLES } from "../prose/routes.ts";
 import { filesHoldTheSameBytes, isDirectory, isReadableRegularFile } from "../state/store.ts";
 
 export const OPENCODE_NOT_ON_PATH = "opencode-not-on-path";
@@ -27,12 +49,18 @@ export const LOCAL_CHECKS_SECTION = "local checks:";
 
 export const FIXTURE_ROWS_SKIP = "the fixture-based artifact checks — the isolated install could not complete";
 
+const REACHABLE_BEYOND_THE_TWINS_LIST = "reachable beyond the twin's list:";
+
 export const OPERATOR_CONFIG_PROBE = {
   theme: "oso-verify-operator-theme",
+  sessionModel: "oso-verify/operator-session-model",
+  sessionSmallModel: "oso-verify/operator-session-small-model",
   permissionKey: "read",
   permissionVerdict: "allow",
   mcpServerName: "oso-verify-operator-server",
   mcpServerCommand: ["operator-cli"],
+  agentName: "oso-verify-operator-agent",
+  agentModel: "oso-verify/operator-pinned-model",
 } as const;
 
 export const OPERATOR_GLOBAL_PROSE = "oso-verify operator prose the installer must not touch";
@@ -44,13 +72,22 @@ export type LocalCheckRowKind = "host" | "config" | "artifact" | "repository";
 
 export type LocalCheckRow = Readonly<{ name: string; kind: LocalCheckRowKind }>;
 
+export const HARNESS_EXTERNAL_DIRECTORY_REACH_ROW =
+  "harness external directories reach no auto-executed host surface the edit control leaves open";
+export const INSTALLED_EXTERNAL_DIRECTORY_REACH_ROW =
+  "the installed config's own external directory grants reach no auto-executed host surface the edit control leaves open";
+
 export const OPENCODE_LOCAL_CHECK_ROWS: readonly LocalCheckRow[] = [
   { name: "OpenCode CLI version", kind: "host" },
+  { name: HARNESS_EXTERNAL_DIRECTORY_REACH_ROW, kind: "config" },
   { name: "isolated fixture install", kind: "artifact" },
   { name: "OpenCode config contract", kind: "config" },
+  { name: INSTALLED_EXTERNAL_DIRECTORY_REACH_ROW, kind: "config" },
   { name: "operator config keys survive an install", kind: "config" },
+  { name: "agent model keys from the profile", kind: "config" },
   { name: "nine skill wrappers and the shared skill directory installed", kind: "artifact" },
   { name: "agent contracts installed", kind: "artifact" },
+  { name: "owned MCP servers closed on every installed agent", kind: "artifact" },
   { name: "mode commands installed and routed", kind: "artifact" },
   { name: "plugin entry, modules and routes installed", kind: "artifact" },
   { name: "Engram plugin file installed", kind: "artifact" },
@@ -90,6 +127,15 @@ const FIXTURE_ENGRAM_SHIM = [
   "",
 ].join("\n");
 
+export const NO_AGENT_MODEL_KEY_NAMED = `none, so ${EVERY_AGENT_ON_THE_HOST_SESSION_MODEL}`;
+export const NO_CONFIG_THIS_ROW_CAN_READ = "the installed config could not be read, so no agent model key was taken from it";
+export const NO_PROFILE_MIRROR_FOR_THIS_REPOSITORY = "no profile mirror for this repository";
+
+const FRONT_MATTER_DELIMITER = "---";
+const PERMISSION_BLOCK_HEADING = "permission:";
+const SHARED_SKILL_DIRECTORY = "_shared";
+const PERMISSION_VERDICT_LINE = /^ {2}(\S+): (\S+)$/;
+
 const FIXTURE_PREFIX = "oso-opencode-verify.";
 const TEMPORARY_PARENT_UNAVAILABLE = "temporary-parent-unavailable";
 const DECOY_CONFIG_TEXT = '{"theme":"decoy"}';
@@ -97,6 +143,7 @@ const DECOY_CONFIG_TEXT = '{"theme":"decoy"}';
 export type VerifyOpenCodeInput = Readonly<{
   homeDirectory: string;
   repositoryRoot: string;
+  workingDirectory: string;
   environment: NodeJS.ProcessEnv;
   platform: NodeJS.Platform;
   host: OpenCodeHostProbes;
@@ -110,6 +157,11 @@ export function verifyOpenCode(input: VerifyOpenCodeInput): CommandOutcome {
   const report = new VerifyReport();
   report.section(LOCAL_CHECKS_SECTION);
   checkPinnedOpenCodeVersion(report, input.host);
+  report.check(
+    HARNESS_EXTERNAL_DIRECTORY_REACH_ROW,
+    externalDirectoryReachTheEditControlBounds(HARNESS_EXTERNAL_DIRECTORIES),
+    harnessExternalDirectoryReach(HARNESS_EXTERNAL_DIRECTORIES),
+  );
 
   const staged = stageOpenCodeFixture(input);
   if (staged.kind === "failed") {
@@ -134,9 +186,22 @@ function checkInstalledTree(report: VerifyReport, input: VerifyOpenCodeInput, tr
   const configFile = path.join(tree.configHome, "opencode.json");
   const globalFile = path.join(tree.configHome, "AGENTS.md");
   report.check("OpenCode config contract", "valid", openCodeConfigStatus(configFile));
+  report.check(
+    INSTALLED_EXTERNAL_DIRECTORY_REACH_ROW,
+    externalDirectoryReachTheEditControlBounds(installedExternalDirectoryGrants(configFile)),
+    installedExternalDirectoryReach(configFile),
+  );
   report.check("operator config keys survive an install", "preserved", openCodeOperatorKeysStatus(configFile));
+  report.check(
+    "agent model keys from the profile",
+    profiledAgentModelLine(configFile, input.workingDirectory),
+    installedAgentModelLine(configFile, input.workingDirectory),
+  );
+  for (const declared of modelsTheTierCannotRankIn(input.workingDirectory)) report.note(declared);
   report.check("nine skill wrappers and the shared skill directory installed", "exact", openCodeSkillStatus(input.repositoryRoot, tree.configHome));
   report.check("agent contracts installed", "exact", openCodeAgentStatus(input.repositoryRoot, tree.configHome));
+  report.check("owned MCP servers closed on every installed agent", "closed", openCodeAgentMcpSurfaceStatus(tree.configHome));
+  noteServersBeyondTheOwnedSet(report, configFile, tree.configHome);
   report.check("mode commands installed and routed", "exact", openCodeCommandStatus(input.repositoryRoot, tree.configHome));
   report.check("plugin entry, modules and routes installed", "exact", openCodePluginStatus(input.repositoryRoot, tree.configHome));
   report.check("Engram plugin file installed", "present", openCodeEngramStatus(tree.configHome));
@@ -145,6 +210,43 @@ function checkInstalledTree(report: VerifyReport, input: VerifyOpenCodeInput, tr
   report.check("installer-owned targets recorded", "installer-owned", openCodeRegistryStatus(tree.home, tree.configHome));
   report.check("published gate bytes as installed", "verified", openCodeTrustBytesStatus(sources.publishedHashes, tree.configHome));
   report.check("an install outside the named home is refused", "refused", openCodeConfigHomeGuardStatus(input, tree));
+}
+
+export function harnessExternalDirectoryReach(patterns: readonly string[]): string {
+  return reachReading(patterns, hostSurfacesReachedBy(patterns));
+}
+
+export function externalDirectoryReachTheEditControlBounds(patterns: readonly string[]): string {
+  return reachReading(
+    patterns,
+    REACHES_THE_EDIT_CONTROL_BOUNDS.filter(({ pattern }) => patterns.includes(pattern)),
+  );
+}
+
+function reachReading(patterns: readonly string[], covered: readonly ReachedSurface[]): string {
+  if (covered.length === 0) return patterns.join(" ");
+  const reaches = namedList("reaches", covered.map(({ pattern, surface }) => `${pattern} covers ${surface}`));
+  const bounded = covered.every(({ surface }) => editControlDenies(surface));
+  return bounded ? `${reaches}; ${EDIT_CONTROL_BOUNDING_A_REACH}` : reaches;
+}
+
+export function installedExternalDirectoryReach(configFile: string): string {
+  return harnessExternalDirectoryReach(installedExternalDirectoryGrants(configFile));
+}
+
+function installedExternalDirectoryGrants(configFile: string): readonly string[] {
+  return externalDirectoryGrantsIn(readableConfigDocument(configFile));
+}
+
+export function modelsTheTierCannotRankIn(workingDirectory: string): readonly string[] {
+  const reading = profileForTheRow(workingDirectory);
+  return reading.kind === "refused" ? [] : modelOverridesTheTierCannotRank(profileRolesOf(reading.profile));
+}
+
+function noteServersBeyondTheOwnedSet(report: VerifyReport, configFile: string, configHome: string): void {
+  const reachable = openCodeServersReachableBeyondTheOwnedSet(configFile, configHome);
+  if (reachable.length === 0) return;
+  report.note(`${REACHABLE_BEYOND_THE_TWINS_LIST} ${reachable.join(", ")}`);
 }
 
 function checkPinnedOpenCodeVersion(report: VerifyReport, host: OpenCodeHostProbes): void {
@@ -178,6 +280,7 @@ export function stageOpenCodeFixture(input: VerifyOpenCodeInput): FixtureStaging
   const outcome = installOpenCode({
     homeDirectory: home,
     repositoryRoot: input.repositoryRoot,
+    workingDirectory: input.workingDirectory,
     environment: fixtureEnvironmentFor(input.environment, home, root),
     platform: input.platform,
     host: { version: SUPPORTED_OPENCODE_VERSION },
@@ -239,12 +342,16 @@ export function openCodeConfigStatus(configFile: string): string {
   for (const grantBoundTool of ["oso_plan_approve", "oso_plan_cancel"] as const) {
     if (permission[grantBoundTool] !== OWNED_PERMISSION_VALUES[grantBoundTool]) return "malformed";
   }
-  return "valid";
+  const externalDirectories = isPlainObject(permission["external_directory"]) ? permission["external_directory"] : {};
+  const posture = harnessGrantPostureOf(externalDirectories);
+  return posture === "as installed" ? "valid" : posture;
 }
 
 export function operatorConfigSeed(): ConfigDocument {
   return {
     theme: OPERATOR_CONFIG_PROBE.theme,
+    model: OPERATOR_CONFIG_PROBE.sessionModel,
+    small_model: OPERATOR_CONFIG_PROBE.sessionSmallModel,
     permission: { [OPERATOR_CONFIG_PROBE.permissionKey]: OPERATOR_CONFIG_PROBE.permissionVerdict },
     mcp: {
       [OPERATOR_CONFIG_PROBE.mcpServerName]: {
@@ -254,6 +361,7 @@ export function operatorConfigSeed(): ConfigDocument {
         environment: {},
       },
     },
+    agent: { [OPERATOR_CONFIG_PROBE.agentName]: { model: OPERATOR_CONFIG_PROBE.agentModel } },
   };
 }
 
@@ -263,13 +371,64 @@ export function openCodeOperatorKeysStatus(configFile: string): string {
   if (read.kind === "unparseable" || !isPlainObject(read.value)) return "dropped";
   const document = read.value;
   if (document["theme"] !== OPERATOR_CONFIG_PROBE.theme) return "dropped";
+  if (document["model"] !== OPERATOR_CONFIG_PROBE.sessionModel) return "dropped";
+  if (document["small_model"] !== OPERATOR_CONFIG_PROBE.sessionSmallModel) return "dropped";
   const permission = isPlainObject(document["permission"]) ? document["permission"] : {};
   if (permission[OPERATOR_CONFIG_PROBE.permissionKey] !== OPERATOR_CONFIG_PROBE.permissionVerdict) return "dropped";
   const servers = isPlainObject(document["mcp"]) ? document["mcp"] : {};
   const server = servers[OPERATOR_CONFIG_PROBE.mcpServerName];
   if (!isPlainObject(server)) return "dropped";
   if (JSON.stringify(server["command"]) !== JSON.stringify(OPERATOR_CONFIG_PROBE.mcpServerCommand)) return "dropped";
+  const agents = isPlainObject(document["agent"]) ? document["agent"] : {};
+  const operatorAgent = agents[OPERATOR_CONFIG_PROBE.agentName];
+  if (!isPlainObject(operatorAgent) || operatorAgent["model"] !== OPERATOR_CONFIG_PROBE.agentModel) return "dropped";
   return "preserved";
+}
+
+type ProfileRowReading = Readonly<{ kind: "read"; profile: ProfileReading } | { kind: "refused"; reason: string }>;
+
+function profileForTheRow(workingDirectory: string): ProfileRowReading {
+  try {
+    return { kind: "read", profile: readProfile(workingDirectory) };
+  } catch (error) {
+    if (!(error instanceof ProfileMirrorRefusedError)) throw error;
+    return { kind: "refused", reason: error.message };
+  }
+}
+
+export function profiledAgentModelLine(configFile: string, workingDirectory: string): string {
+  const reading = profileForTheRow(workingDirectory);
+  if (reading.kind === "refused") return reading.reason;
+  if (reading.profile.kind === "unmirrored") return unmirroredAgentModelLine(installedLineOf(configFile));
+  const document = readableConfigDocument(configFile);
+  if (document === undefined) return "an installed config this row can read";
+  return agentModelLine(openCodeAgentModels(document, reading.profile.roles));
+}
+
+export function installedAgentModelLine(configFile: string, workingDirectory: string): string {
+  const reading = profileForTheRow(workingDirectory);
+  if (reading.kind === "read" && reading.profile.kind === "unmirrored") return unmirroredAgentModelLine(installedLineOf(configFile));
+  return installedLineOf(configFile);
+}
+
+export function unmirroredAgentModelLine(installedLine: string): string {
+  return `${NO_PROFILE_MIRROR_FOR_THIS_REPOSITORY}; the installed config carries: ${installedLine}`;
+}
+
+function installedLineOf(configFile: string): string {
+  const document = readableConfigDocument(configFile);
+  if (document === undefined) return NO_CONFIG_THIS_ROW_CAN_READ;
+  return agentModelLine(installedAgentModels(document));
+}
+
+function readableConfigDocument(configFile: string): ConfigDocument | undefined {
+  const read = readConfigDocument(configFile);
+  return read.kind === "parsed" && isPlainObject(read.value) ? read.value : undefined;
+}
+
+function agentModelLine(agentModels: AgentModels): string {
+  const named = Object.keys(agentModels).sort();
+  return named.length === 0 ? NO_AGENT_MODEL_KEY_NAMED : named.map((agent) => `${agent}=${agentModels[agent]}`).join(" ");
 }
 
 export function operatorGlobalSeed(): string {
@@ -296,7 +455,13 @@ export function openCodeSkillStatus(repositoryRoot: string, configHome: string):
   const divergent = wrappers.filter((name) => !treesHoldTheSameBytes(path.join(sources.skills, name), path.join(configHome, "skill", name)));
   if (wrappers.length !== EXPECTED_SKILL_WRAPPER_COUNT) return `wrapper-count:${wrappers.length}`;
   if (divergent.length > 0) return namedList("divergent", divergent);
-  return treesHoldTheSameBytes(sources.sharedSkills, path.join(configHome, "skill", "_shared")) ? "exact" : "shared-differs";
+  const unpublished = installedSkillsBeyond(path.join(configHome, "skill"), wrappers);
+  if (unpublished.length > 0) return namedList("unknown", unpublished);
+  return treesHoldTheSameBytes(sources.sharedSkills, path.join(configHome, "skill", SHARED_SKILL_DIRECTORY)) ? "exact" : "shared-differs";
+}
+
+function installedSkillsBeyond(installedSkills: string, published: readonly string[]): readonly string[] {
+  return directoryEntryNames(installedSkills).filter((name) => name !== SHARED_SKILL_DIRECTORY && !published.includes(name));
 }
 
 export function openCodeAgentStatus(repositoryRoot: string, configHome: string): string {
@@ -306,6 +471,70 @@ export function openCodeAgentStatus(repositoryRoot: string, configHome: string):
   const divergent = published.filter((name) => !filesHoldTheSameBytes(path.join(sources.agents, name), path.join(configHome, "agent", name)));
   if (published.length !== installed.length) return `count:${published.length}!=${installed.length}`;
   return divergent.length === 0 ? "exact" : namedList("divergent", divergent);
+}
+
+export function openCodeAgentMcpSurfaceStatus(configHome: string): string {
+  const installedAgents = path.join(configHome, "agent");
+  const contracts = osoPrefixedMarkdownNames(installedAgents);
+  if (contracts.length !== AGENT_ROLES.length) return `count:${contracts.length}!=${AGENT_ROLES.length}`;
+  const reachable = contracts.flatMap((name) => reachableServersOf(path.join(installedAgents, name), name));
+  return reachable.length === 0 ? "closed" : namedList("open", reachable);
+}
+
+export function openCodeServersReachableBeyondTheOwnedSet(configFile: string, configHome: string): readonly string[] {
+  const ownedServers: readonly string[] = OWNED_MCP_NAMES;
+  const denials = agentPermissionDenialsIn(configHome);
+  return declaredMcpServerNames(configFile)
+    .filter((server) => !ownedServers.includes(server))
+    .map(mcpServerWildcard)
+    .map((wildcard) => ({ wildcard, agents: denials.filter((denied) => !denied.has(wildcard)).length }))
+    .filter((reachable) => reachable.agents > 0)
+    .map((reachable) => `${reachable.wildcard} (${reachable.agents} of ${denials.length} agents)`);
+}
+
+function declaredMcpServerNames(configFile: string): readonly string[] {
+  const document = readableConfigDocument(configFile);
+  const servers = document === undefined ? undefined : document["mcp"];
+  return isPlainObject(servers) ? Object.keys(servers) : [];
+}
+
+function agentPermissionDenialsIn(configHome: string): readonly ReadonlySet<string>[] {
+  const installedAgents = path.join(configHome, "agent");
+  return osoPrefixedMarkdownNames(installedAgents).map((name) =>
+    deniedPermissionKeysOf(readFileSync(path.join(installedAgents, name), "utf8")),
+  );
+}
+
+function reachableServersOf(agentContract: string, name: string): string[] {
+  const role = AGENT_ROLES.find((candidate) => `${candidate.id}.md` === name);
+  if (role === undefined) return [`${name}:names-no-role`];
+  const denied = deniedPermissionKeysOf(readFileSync(agentContract, "utf8"));
+  return OWNED_MCP_NAMES.filter(
+    (server) => !role.opencode.mcpServersTheClaudeTwinLists.includes(server) && !denied.has(mcpServerWildcard(server)),
+  ).map((server) => `${name}:${mcpServerWildcard(server)}`);
+}
+
+function deniedPermissionKeysOf(agentContract: string): ReadonlySet<string> {
+  const denied = new Set<string>();
+  let insideThePermissionBlock = false;
+  for (const line of frontMatterLinesOf(agentContract)) {
+    if (line === PERMISSION_BLOCK_HEADING) {
+      insideThePermissionBlock = true;
+      continue;
+    }
+    if (!insideThePermissionBlock) continue;
+    const verdict = PERMISSION_VERDICT_LINE.exec(line);
+    if (verdict === null) continue;
+    if (verdict[2] === "deny") denied.add(verdict[1] as string);
+  }
+  return denied;
+}
+
+function frontMatterLinesOf(agentContract: string): readonly string[] {
+  const lines = agentContract.split("\n");
+  if (lines[0] !== FRONT_MATTER_DELIMITER) return [];
+  const closing = lines.indexOf(FRONT_MATTER_DELIMITER, 1);
+  return closing === -1 ? [] : lines.slice(1, closing);
 }
 
 export function openCodeCommandStatus(repositoryRoot: string, configHome: string): string {
@@ -374,6 +603,7 @@ export function openCodeConfigHomeGuardStatus(input: VerifyOpenCodeInput, tree: 
   const outcome = installOpenCode({
     homeDirectory: tree.home,
     repositoryRoot: input.repositoryRoot,
+    workingDirectory: input.workingDirectory,
     environment: { ...fixtureEnvironmentFor(input.environment, tree.home, tree.root), XDG_CONFIG_HOME: decoy },
     platform: input.platform,
     host: { version: SUPPORTED_OPENCODE_VERSION },

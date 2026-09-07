@@ -1,14 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { SKILL_STUBS, flowBody, skillFlowPath, skillOutputPath } from "../../src/prose/render.ts";
+import { sentenceWordCountsIn, sentencesIn, wordCountOf } from "../support/prose-sentences.ts";
 import { provedSomething } from "../support/proved.ts";
 import { readTrackedText } from "../support/tracked-files.ts";
 
 const SENTENCE_CAP = 60;
-const HEADING_LINE = /^#{1,6}\s/;
-const LIST_ITEM_LINE = /^\s*(?:[-*+]|\d+\.)\s+/;
-const TABLE_LINE = /^\s*\|/;
-const SENTENCE_END = /[.!?](?:\*\*|`|\)|")*(?=\s|$)/g;
 
 const SHARED_FLOW_FILES = ["plugin/skills/_shared/unattended.md", "plugin/skills/_shared/parallel.md"];
 
@@ -30,65 +27,7 @@ const SENTENCES_FLOOR_DERIVATION =
   "paragraphs and bullets plus the 177 the 117 table lines contribute as runs of their own), so a later, " +
   "legitimate prose edit never has to chase this number — only a walk that segments nothing should fail it";
 
-function runsIn(text: string): string[] {
-  const runs: string[] = [];
-  let paragraph: string[] = [];
-  const flushParagraph = () => {
-    if (paragraph.length > 0) runs.push(paragraph.join(" "));
-    paragraph = [];
-  };
-  for (const line of text.split("\n")) {
-    if (line.trim() === "") {
-      flushParagraph();
-      continue;
-    }
-    if (HEADING_LINE.test(line)) {
-      flushParagraph();
-      continue;
-    }
-    if (TABLE_LINE.test(line)) {
-      flushParagraph();
-      runs.push(line.trim());
-      continue;
-    }
-    const listMarker = line.match(LIST_ITEM_LINE);
-    if (listMarker !== null) {
-      flushParagraph();
-      runs.push(line.slice(listMarker[0].length).trim());
-      continue;
-    }
-    paragraph.push(line.trim());
-  }
-  flushParagraph();
-  return runs;
-}
-
-function sentencesIn(run: string): string[] {
-  const sentences: string[] = [];
-  let start = 0;
-  for (const match of run.matchAll(SENTENCE_END)) {
-    const end = (match.index ?? 0) + match[0].length;
-    sentences.push(run.slice(start, end).trim());
-    start = end;
-  }
-  const remainder = run.slice(start).trim();
-  if (remainder !== "") sentences.push(remainder);
-  return sentences;
-}
-
-function wordCountOf(sentence: string): number {
-  return sentence.split(/\s+/).filter((token) => token !== "").length;
-}
-
-type SentenceWordCount = Readonly<{ file: string; words: number; sentence: string }>;
-
-function sentenceWordCountsIn(file: string, text: string): SentenceWordCount[] {
-  return runsIn(flowBody(text)).flatMap((run) =>
-    sentencesIn(run).map((sentence) => ({ file, words: wordCountOf(sentence), sentence })),
-  );
-}
-
-const boundSentenceCounts = boundFiles.flatMap((file) => sentenceWordCountsIn(file, readTrackedText(file).text));
+const boundSentenceCounts = boundFiles.flatMap((file) => sentenceWordCountsIn(file, flowBody(readTrackedText(file).text)));
 const oversized = boundSentenceCounts.filter((item) => item.words > SENTENCE_CAP);
 
 provedSomething(

@@ -4,7 +4,6 @@ mode: subagent
 hidden: true
 permission:
   edit: deny
-  fallow_fix_apply: deny
   task: deny
   question: deny
   todowrite: deny
@@ -13,6 +12,9 @@ permission:
   oso_wave: deny
   oso_plan_approve: deny
   oso_plan_cancel: deny
+  context7_*: deny
+  engram_*: deny
+  fallow_*: deny
 ---
 
 You are the fresh-context subagent that executes this host's installed Triage skill. The assignment payload must carry the absolute path to that skill's `SKILL.md` and the complete skill ARGUMENTS; if either field is absent, report blocked instead of locating or inferring it. Read that wrapper completely, then read every neutral file and this host's reference file it binds, in the stated order. The installed wrapper and bound files are authoritative; do not substitute a caller summary or improvise host routing.

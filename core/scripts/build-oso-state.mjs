@@ -1,15 +1,23 @@
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { bundleText, readTextOrNull, runBuildCli } from "./lib/bundle.mjs";
+import { bundleText, importBundled, readTextOrNull, runBuildCli } from "./lib/bundle.mjs";
 import { isExecutableRegularFile } from "./lib/executable-file.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const entryPoint = join(repoRoot, "core", "src", "bin", "oso-state.ts");
-const distOutfile = join(repoRoot, "plugin", "dist", "oso-state.js");
-const distPackageJson = join(repoRoot, "plugin", "dist", "package.json");
-const binOutfile = join(repoRoot, "plugin", "bin", "oso-state");
-const binPackageJson = join(repoRoot, "plugin", "bin", "package.json");
+const entryPoint = join(repoRoot, "core/src/bin/oso-state.ts");
+const routesModule = join(repoRoot, "core/src/routes/routes.ts");
+const {
+  MODULE_MANIFEST,
+  PLUGIN_BUNDLE_DIRECTORY,
+  PLUGIN_BINARY_DIRECTORY,
+  PLUGIN_STATE_BUNDLE,
+  PLUGIN_STATE_EXECUTABLE,
+} = await importBundled(routesModule);
+const distOutfile = join(repoRoot, PLUGIN_STATE_BUNDLE);
+const distPackageJson = join(repoRoot, PLUGIN_BUNDLE_DIRECTORY, MODULE_MANIFEST);
+const binOutfile = join(repoRoot, PLUGIN_STATE_EXECUTABLE);
+const binPackageJson = join(repoRoot, PLUGIN_BINARY_DIRECTORY, MODULE_MANIFEST);
 const binMode = 0o755;
 const shebang = "#!/usr/bin/env node\n";
 const modulePackageJson = '{\n  "private": true,\n  "type": "module"\n}\n';

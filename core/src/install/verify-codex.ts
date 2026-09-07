@@ -11,8 +11,21 @@ import {
 } from "./codex-config.ts";
 import { codexPathsFor, managedFeaturesStatus, normalizedEngramPointerConfig, type CodexPaths } from "./codex.ts";
 import { type CodexHostProbes } from "./codex-host.ts";
+import {
+  CODEX_HOOKS_MANIFEST,
+  CODEX_IMPECCABLE_REFERENCES,
+  CODEX_MARKETPLACE_PAYLOAD_ROWS,
+  codexAgentInventory,
+  codexPayloadRefusal,
+  codexPayloadSources,
+  codexRuntimeTargetOf,
+  codexSkillInventory,
+  frontmatterField,
+  isRecord,
+} from "./codex-payload.ts";
+export { CODEX_HOOKS_MANIFEST } from "./codex-payload.ts";
 import { readJsonObject } from "./json.ts";
-import { isAboveTestedVersion, meetsVersionFloor, SUPPORTED_CODEX_VERSION } from "./pins.ts";
+import { isAboveTestedVersion, meetsVersionFloor, SUPPORTED_CODEX_VERSION, SUPPORTED_IMPECCABLE_VERSION } from "./pins.ts";
 import { VerifyReport } from "./report.ts";
 import { runTomlRegion } from "./toml-regions.ts";
 import { parseTomlDocument, readTomlFile, TomlParseError } from "./toml.ts";
@@ -21,8 +34,8 @@ import { runOsoStateProbe } from "./verify-claude.ts";
 import { TOOL_ROWS } from "../routes/routes.ts";
 import {
   filesHoldTheSameBytes,
+  isDirectoryNotSymlink,
   isDirectory,
-  isErrnoException,
   isExecutableRegularFile,
   isReadableRegularFile,
   isRegularNonSymlinkFile,
@@ -134,7 +147,7 @@ export function checkHostBinaryContracts(report: VerifyReport, host: CodexHostPr
 export function checkPluginInstalled(report: VerifyReport, paths: CodexPaths, repositoryRoot: string, host: CodexHostProbes): void {
   const listing = host.pluginListing();
   if (!listing.ok) {
-    report.check("oso-code plugin installed", "installed", collapsed(listing.output));
+    report.check("oso-code plugin installed", "installed", collapsed(hostOutput(listing)));
     return;
   }
   const manifest = codexPluginManifestOf(repositoryRoot);
@@ -142,15 +155,23 @@ export function checkPluginInstalled(report: VerifyReport, paths: CodexPaths, re
     report.check("oso-code plugin installed", "installed", "plugin-manifest-unreadable");
     return;
   }
-  const sourcePaths = localPluginSourcePaths(listing.output, manifest);
+  const sourcePaths = localPluginSourcePaths(hostStdout(listing), manifest);
   report.check("oso-code plugin installed", "installed", sourcePaths.includes(path.join(paths.marketplaceRoot, "codex")) ? "installed" : "absent-or-invalid");
 }
 
 export function checkMarketplacePayload(report: VerifyReport, paths: CodexPaths, repositoryRoot: string): void {
-  const divergent: string[] = MARKETPLACE_PAYLOAD_ROWS.flatMap((row) =>
+  const sources = codexPayloadSources(repositoryRoot);
+  const payloadRefusal = codexPayloadRefusal(sources);
+  if (payloadRefusal !== undefined) {
+    report.detail(payloadRefusal);
+    report.check("staged marketplace payload", "exact", "source-incomplete");
+    return;
+  }
+  const skillInventory = codexSkillInventory(sources);
+  const divergent: string[] = CODEX_MARKETPLACE_PAYLOAD_ROWS.flatMap((row) =>
     filesHoldTheSameBytes(path.join(repositoryRoot, ...row.published.split("/")), path.join(paths.marketplaceRoot, ...row.installed.split("/"))) ? [] : [row.named],
   );
-  for (const skill of publishedSkillNames(repositoryRoot)) {
+  for (const skill of skillInventory.names) {
     const installed = path.join(paths.marketplaceRoot, "codex", "skills", skill);
     if (!directoryTreesHoldTheSameBytes(path.join(repositoryRoot, "codex", "skills", skill), installed)) divergent.push(skill);
   }
@@ -163,7 +184,7 @@ export function checkMarketplacePayload(report: VerifyReport, paths: CodexPaths,
 export function checkHostAcceptsOsoProfile(report: VerifyReport, paths: CodexPaths, host: CodexHostProbes): void {
   const expected = `1\n${path.join(paths.runtimeRoot, "bin", "oso-state")}`;
   const run = host.sandbox(["/bin/sh", "-c", 'printf "%s\n%s\n" "${OSO_AGENT:-}" "${OSO_STATE_BIN:-}"']);
-  const observed = run.ok ? run.output.trim() : collapsed(run.output);
+  const observed = run.ok ? hostStdout(run).trim() : collapsed(hostOutput(run));
   report.check("Codex accepts the oso permissions profile", "accepted", observed === expected ? "accepted" : observed === "" ? "rejected-without-output" : observed);
 }
 
@@ -237,18 +258,19 @@ export function checkGlobalGuidance(report: VerifyReport, paths: CodexPaths, rep
   report.check("global Codex guidance", "exact", installed === readFileSync(source, "utf8") ? "exact" : "divergent");
 }
 
-export const CODEX_HOOKS_MANIFEST = "codex/hooks/hooks.json";
 export const RENDERED_HOOKS_DIR_TOKEN = "__OSO_HOOKS_DIR__";
 
 export function unrenderedHooksManifest(text: string, runtimeRoot: string): string {
-  return text.replaceAll(path.posix.join(runtimeRoot, "dist"), RENDERED_HOOKS_DIR_TOKEN);
+  const renderedPath = JSON.stringify(path.posix.join(runtimeRoot, "dist"));
+  if (renderedPath.length < 2) return text;
+  return text.replaceAll(renderedPath.slice(1, -1), RENDERED_HOOKS_DIR_TOKEN);
 }
 
 export function checkPublishedRuntimeBytes(report: VerifyReport, paths: CodexPaths, repositoryRoot: string): void {
   const divergences = trustDivergences(
     path.join(repositoryRoot, "bootstrap", "hook-hashes.txt"),
     (relative) => relative.startsWith("opencode/"),
-    (relative) => installedRuntimePathOf(relative, paths),
+    (relative) => codexRuntimeTargetOf(relative, paths.runtimeRoot, paths.codexHome),
     (relative, target) =>
       relative === CODEX_HOOKS_MANIFEST
         ? Buffer.from(unrenderedHooksManifest(readFileSync(target, "utf8"), paths.runtimeRoot), "utf8")
@@ -267,15 +289,13 @@ export function checkRuntimeEntrypointsExecutable(report: VerifyReport, paths: C
 
 export function checkAgentPayload(report: VerifyReport, paths: CodexPaths, repositoryRoot: string): void {
   const sourceDir = path.join(repositoryRoot, "codex", "agents");
-  let published: string[];
-  try {
-    published = readdirSync(sourceDir).filter((name) => name.endsWith(".toml")).sort();
-  } catch (cause) {
-    if (!isErrnoException(cause) || (cause.code !== "ENOENT" && cause.code !== "ENOTDIR")) throw cause;
-    report.detail(`published agents unreadable: ${sourceDir} (${cause.code})`);
+  const agentInventory = codexAgentInventory(codexPayloadSources(repositoryRoot));
+  if (agentInventory.error !== undefined) {
+    report.detail(`published agents unreadable: ${sourceDir} (${agentInventory.error})`);
     report.check(AGENT_PAYLOAD_CHECK, "exact", "source-unreadable");
     return;
   }
+  const published = agentInventory.names;
   if (published.length === 0) {
     report.detail(`published agents empty: ${sourceDir}`);
     report.check(AGENT_PAYLOAD_CHECK, "exact", "source-empty");
@@ -314,13 +334,28 @@ function engramPointersAreNormalized(paths: CodexPaths): boolean {
 }
 
 export function checkImpeccableMount(report: VerifyReport, homeDirectory: string): void {
-  const optOut = path.join(homeDirectory, ".local", "state", "oso-code", "impeccable-opt-out");
+  const optOut = codexPathsFor(homeDirectory, {}).impeccableOptOut;
   if (isReadableRegularFile(optOut)) {
     report.skip("Impeccable mount — an install recorded --no-impeccable");
     return;
   }
-  const mount = path.join(homeDirectory, ".agents", "skills", "impeccable");
-  report.check("Impeccable Codex mount", "mounted", isReadableRegularFile(path.join(mount, "SKILL.md")) ? "mounted" : "missing");
+  const mount = codexPathsFor(homeDirectory, {}).impeccableMount;
+  const missing: string[] = isDirectoryNotSymlink(mount) ? [] : [mount];
+  const skill = path.join(mount, "SKILL.md");
+  if (!isReadableRegularFile(skill)) {
+    missing.push(skill);
+  } else {
+    const text = readFileSync(skill, "utf8");
+    if (frontmatterField(text, "name") !== "impeccable" || frontmatterField(text, "version") !== SUPPORTED_IMPECCABLE_VERSION) {
+      missing.push(`${skill} (name/version)`);
+    }
+  }
+  for (const reference of CODEX_IMPECCABLE_REFERENCES) {
+    const target = path.join(mount, "reference", reference);
+    if (!isReadableRegularFile(target)) missing.push(target);
+  }
+  for (const target of missing) report.detail(`Impeccable mount missing or unusable: ${target}`);
+  report.check("Impeccable Codex mount", "mounted", missing.length === 0 ? "mounted" : "missing");
 }
 
 export function checkMcpToolTableDrift(report: VerifyReport, paths: CodexPaths, configParses: boolean): void {
@@ -431,19 +466,6 @@ function fallowCommandInside(regionText: string): string {
     : quoted;
 }
 
-function installedRuntimePathOf(relative: string, paths: CodexPaths): string | undefined {
-  if (relative === CODEX_HOOKS_MANIFEST) return path.join(paths.codexHome, "hooks.json");
-  for (const [prefix, directory] of [
-    ["plugin/dist/", "dist"],
-    ["plugin/hooks/", "hooks"],
-    ["plugin/git-hooks/", "git-hooks"],
-    ["plugin/bin/", "bin"],
-  ] as const) {
-    if (relative.startsWith(prefix)) return path.join(paths.runtimeRoot, directory, relative.slice(prefix.length));
-  }
-  return undefined;
-}
-
 const AGENT_PAYLOAD_CHECK = "seven Codex agents copied exactly";
 
 const HOST_BINARY_CONTRACTS = [
@@ -463,11 +485,6 @@ const HOST_BINARY_CONTRACTS = [
       "`permission_profile` and `default_permissions` overrides cannot both be set",
     ],
   },
-] as const;
-
-const MARKETPLACE_PAYLOAD_ROWS = [
-  { named: "marketplace.json", published: ".agents/plugins/marketplace.json", installed: ".agents/plugins/marketplace.json" },
-  { named: "plugin.json", published: "codex/.codex-plugin/plugin.json", installed: "codex/.codex-plugin/plugin.json" },
 ] as const;
 
 const COMMIT_HOOK_PROBE_SESSION = "1";
@@ -619,17 +636,6 @@ function localPluginSourcePaths(listingJson: string, manifest: CodexPluginManife
   });
 }
 
-function publishedSkillNames(repositoryRoot: string): string[] {
-  try {
-    return readdirSync(path.join(repositoryRoot, "codex", "skills"), { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && entry.name !== "_shared")
-      .map((entry) => entry.name)
-      .sort();
-  } catch {
-    return [];
-  }
-}
-
 function directoryTreesHoldTheSameBytes(source: string, installed: string): boolean {
   if (!isDirectory(installed)) return false;
   const sourceFiles = relativeFilesUnder(source);
@@ -658,6 +664,11 @@ function collapsed(text: string): string {
   return text.replaceAll("\n", " ").replace(/\s+/g, " ").trim();
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function hostStdout(run: Readonly<{ output: string; stdout?: string }>): string {
+  return run.stdout ?? run.output;
+}
+
+function hostOutput(run: Readonly<{ output: string; stdout?: string; stderr?: string }>): string {
+  if (run.stdout !== undefined || run.stderr !== undefined) return `${run.stdout ?? ""}${run.stderr ?? ""}`;
+  return run.output;
 }

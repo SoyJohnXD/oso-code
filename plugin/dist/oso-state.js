@@ -1,6 +1,637 @@
 // core/src/state/cli.ts
-import { mkdirSync as mkdirSync4, readFileSync as readFileSync4 } from "node:fs";
-import path4 from "node:path";
+import { mkdirSync as mkdirSync4, readFileSync as readFileSync5 } from "node:fs";
+import path6 from "node:path";
+
+// core/src/scan/changed-lines.ts
+import { spawnSync } from "node:child_process";
+import { lstatSync, readFileSync, realpathSync } from "node:fs";
+import path from "node:path";
+var ScanFailure = class extends Error {
+};
+var MAX_GIT_OUTPUT_BYTES = 64 * 1024 * 1024;
+var HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
+var DIFF_SOURCE_PREFIX = "--- ";
+var DIFF_TARGET_PREFIX = "+++ ";
+var DIFF_SOURCE_PATH_PREFIX = "a/";
+var DIFF_TARGET_PATH_PREFIX = "b/";
+var NO_SUCH_FILE = "/dev/null";
+var NUL_BYTE = 0;
+var EMPTY_GIT_CONFIG = "/dev/null";
+var GIT_FILTER_CONFIG_PATTERN = "^filter\\..*\\.(clean|process)$";
+var GIT_FILTER_CONFIG_KEY = /^filter\.(.+)\.(?:clean|process)$/;
+function changedFilesSince(cwd, ref) {
+  const repositoryRoot = repositoryRootOf(cwd);
+  const resolvedTree = resolveTree(cwd, ref);
+  const diffPaths = new Set(pathsListedBy(repositoryRoot, diffArguments(resolvedTree, ["--name-only", "-z"])));
+  const diffed = addedLinesByFile(diffOf(repositoryRoot, resolvedTree), diffPaths);
+  const untracked = pathsListedBy(repositoryRoot, ["ls-files", "--others", "--exclude-standard", "-z"]);
+  const tree = readTree(repositoryRoot, [.../* @__PURE__ */ new Set([...diffPaths, ...diffed.keys(), ...untracked])].sort());
+  return {
+    files: tree.files.map(({ file, text }) => ({ file, text, addedLines: diffed.get(file) ?? everyLineOf(text) })),
+    unreadable: tree.unreadable
+  };
+}
+function trackedAndUntrackedFiles(cwd) {
+  const repositoryRoot = repositoryRootOf(cwd);
+  const paths = pathsListedBy(repositoryRoot, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]);
+  return readTree(repositoryRoot, [...new Set(paths)].sort());
+}
+function everyLineOf(text) {
+  return new Set(text.split("\n").map((_line, index) => index + 1));
+}
+function readTree(repositoryRoot, paths) {
+  const files = [];
+  const unreadable = [];
+  for (const file of paths) {
+    const result = worktreeTextOf(repositoryRoot, file);
+    if (result.kind === "unreadable") unreadable.push(result.failure);
+    else files.push({ file, text: result.text });
+  }
+  return { files, unreadable };
+}
+function worktreeTextOf(repositoryRoot, file) {
+  try {
+    const target = confinedRegularFile(repositoryRoot, file);
+    const content = readFileSync(target);
+    if (content.includes(NUL_BYTE)) return { kind: "unreadable", failure: { file, cause: "binary content contains NUL byte" } };
+    return { kind: "read", text: content.toString("utf8") };
+  } catch (error) {
+    return { kind: "unreadable", failure: { file, cause: causeOf(error) } };
+  }
+}
+function confinedRegularFile(repositoryRoot, file) {
+  const target = path.resolve(repositoryRoot, file);
+  const relative = path.relative(repositoryRoot, target);
+  if (relative === "" || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error(`path escapes repository root: ${file}`);
+  }
+  const segments = relative.split(path.sep);
+  let current = repositoryRoot;
+  for (const [index, segment] of segments.entries()) {
+    current = path.join(current, segment);
+    const stats = lstatSync(current);
+    if (stats.isSymbolicLink()) throw new Error(`path uses a symbolic link: ${path.relative(repositoryRoot, current)}`);
+    if (index < segments.length - 1 && !stats.isDirectory()) {
+      throw new Error(`path ancestor is not a directory: ${path.relative(repositoryRoot, current)}`);
+    }
+    if (index === segments.length - 1 && !stats.isFile()) throw new Error(`path is not a regular file: ${file}`);
+  }
+  return target;
+}
+function repositoryRootOf(cwd) {
+  const root = gitOutput(cwd, ["rev-parse", "--show-toplevel"]).trim();
+  try {
+    return realpathSync(root);
+  } catch (error) {
+    throw new ScanFailure(`repository root ${root} could not be read: ${causeOf(error)}`);
+  }
+}
+function resolveTree(cwd, ref) {
+  if (ref.startsWith("-")) throw new ScanFailure(`scan ref cannot start with '-': ${ref}`);
+  const resolved = gitOutput(cwd, ["rev-parse", "--verify", "--end-of-options", `${ref}^{tree}`]).trim();
+  if (!/^[0-9a-f]+$/.test(resolved)) throw new ScanFailure(`scan ref did not resolve to one tree object: ${ref}`);
+  return resolved;
+}
+function diffOf(cwd, tree) {
+  return gitOutput(cwd, diffArguments(tree));
+}
+function diffArguments(tree, options = []) {
+  return [
+    "-c",
+    "core.quotePath=false",
+    "diff",
+    "-U0",
+    "--no-color",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--no-renames",
+    ...options,
+    `--src-prefix=${DIFF_SOURCE_PATH_PREFIX}`,
+    `--dst-prefix=${DIFF_TARGET_PATH_PREFIX}`,
+    tree,
+    "--"
+  ];
+}
+function pathsListedBy(cwd, argv) {
+  return gitOutput(cwd, argv).split("\0").filter((entry) => entry !== "");
+}
+function gitOutput(cwd, argv) {
+  const config = runGit(cwd, ["-c", "core.fsmonitor=false", "config", "--includes", "--name-only", "--get-regexp", GIT_FILTER_CONFIG_PATTERN]);
+  if (config.error !== void 0) {
+    throw new ScanFailure(`git config could not run in ${cwd}: ${config.error.message}`);
+  }
+  if (config.status !== 0 && config.status !== 1) {
+    throw new ScanFailure(`git config exited ${config.status} in ${cwd}: ${config.stderr.trim()}`);
+  }
+  const drivers = /* @__PURE__ */ new Set();
+  for (const key of config.stdout.split("\n").filter((entry) => entry !== "")) {
+    const match = GIT_FILTER_CONFIG_KEY.exec(key);
+    if (match === null) throw new ScanFailure(`git filter configuration cannot be safely isolated: ${key}`);
+    drivers.add(match[1]);
+  }
+  const filterOptions = [...drivers].flatMap((driver) => [
+    "-c",
+    `filter.${driver}.clean=`,
+    "-c",
+    `filter.${driver}.process=`,
+    "-c",
+    `filter.${driver}.required=false`
+  ]);
+  const run = runGit(cwd, ["-c", "core.fsmonitor=false", ...filterOptions, ...argv]);
+  if (run.error !== void 0) throw new ScanFailure(`git ${argv.join(" ")} could not run in ${cwd}: ${run.error.message}`);
+  if (run.status !== 0) {
+    throw new ScanFailure(`git ${argv.join(" ")} exited ${run.status} in ${cwd}: ${run.stderr.trim()}`);
+  }
+  return run.stdout;
+}
+function runGit(cwd, argv) {
+  const environment = { ...process.env };
+  for (const name of Object.keys(environment)) {
+    if (name.startsWith("GIT_")) delete environment[name];
+  }
+  environment.GIT_CONFIG_GLOBAL = EMPTY_GIT_CONFIG;
+  environment.GIT_CONFIG_SYSTEM = EMPTY_GIT_CONFIG;
+  environment.GIT_CONFIG_NOSYSTEM = "1";
+  environment.GIT_NO_LAZY_FETCH = "1";
+  environment.GIT_ALLOW_PROTOCOL = "";
+  return spawnSync("git", [...argv], {
+    cwd,
+    encoding: "utf8",
+    env: environment,
+    maxBuffer: MAX_GIT_OUTPUT_BYTES
+  });
+}
+function addedLinesByFile(diff, diffPaths) {
+  const byFile = /* @__PURE__ */ new Map();
+  let target;
+  let nextLine = 0;
+  let inHunk = false;
+  let sourceHeader;
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("diff --git ")) {
+      inHunk = false;
+      sourceHeader = void 0;
+      target = void 0;
+      continue;
+    }
+    if (!inHunk && line.startsWith(DIFF_SOURCE_PREFIX)) {
+      sourceHeader = line.slice(DIFF_SOURCE_PREFIX.length);
+      continue;
+    }
+    if (!inHunk && sourceHeader !== void 0 && line.startsWith(DIFF_TARGET_PREFIX)) {
+      target = targetLinesIn(byFile, line.slice(DIFF_TARGET_PREFIX.length), diffPaths);
+      sourceHeader = void 0;
+      continue;
+    }
+    sourceHeader = void 0;
+    const hunk = HUNK_HEADER.exec(line);
+    if (hunk !== null) {
+      inHunk = true;
+      nextLine = Number(hunk[1]);
+      continue;
+    }
+    if (!inHunk) continue;
+    if (line.startsWith("+")) {
+      target?.add(nextLine);
+      nextLine += 1;
+    } else if (line.startsWith(" ")) {
+      nextLine += 1;
+    }
+  }
+  return byFile;
+}
+function targetLinesIn(byFile, rawTarget, diffPaths) {
+  if (rawTarget === NO_SUCH_FILE) return void 0;
+  const file = diffTargetPath(rawTarget);
+  if (!diffPaths.has(file)) throw new ScanFailure(`git diff target is absent from its path inventory: ${file}`);
+  const existing = byFile.get(file);
+  if (existing !== void 0) return existing;
+  const lines = /* @__PURE__ */ new Set();
+  byFile.set(file, lines);
+  return lines;
+}
+function diffTargetPath(rawTarget) {
+  if (!rawTarget.startsWith(DIFF_TARGET_PATH_PREFIX)) {
+    throw new ScanFailure(`git diff named a target this scan cannot read as a path: ${DIFF_TARGET_PREFIX}${rawTarget}`);
+  }
+  return rawTarget.slice(DIFF_TARGET_PATH_PREFIX.length);
+}
+function causeOf(error) {
+  if (error instanceof Error) {
+    const code = "code" in error && typeof error.code === "string" ? `${error.code}: ` : "";
+    return `${code}${error.message}`;
+  }
+  return String(error);
+}
+
+// core/src/scan/languages.ts
+import path2 from "node:path";
+var LANGUAGE_BY_EXTENSION = {
+  ".ts": "typescript",
+  ".mts": "typescript",
+  ".cts": "typescript",
+  ".js": "javascript",
+  ".mjs": "javascript",
+  ".cjs": "javascript",
+  ".py": "python",
+  ".rs": "rust",
+  ".sh": "shell",
+  ".bash": "shell"
+};
+var COMMENT_SCAN_LANGUAGES = [...new Set(Object.values(LANGUAGE_BY_EXTENSION))];
+var REFERENCE_COUNT_LANGUAGES = ["typescript", "javascript"];
+function languageOf(file) {
+  return LANGUAGE_BY_EXTENSION[path2.posix.extname(file)];
+}
+function partitionByLanguage(files, accepted) {
+  const read = [];
+  const unread2 = [];
+  for (const candidate of files) {
+    const language = languageOf(candidate.file);
+    if (language === void 0 || !accepted.includes(language)) unread2.push(candidate.file);
+    else read.push({ ...candidate, language });
+  }
+  const present = new Set(read.map((candidate) => candidate.language));
+  return { read, unread: unread2, languages: COMMENT_SCAN_LANGUAGES.filter((language) => present.has(language)) };
+}
+
+// core/src/scan/scan-report.ts
+function renderScan(hits, coverage) {
+  const cited = hits.map(({ file, line, note, category }) => {
+    const label = category === "registered-generated-output-candidate" ? "[registered generated-output candidate] " : "";
+    return `${file}:${line}: ${label}${note}
+`;
+  }).join("");
+  const candidates = hits.filter(({ category }) => category === "registered-generated-output-candidate").length;
+  const candidateEvidence = candidates === 0 ? "" : `; ${candidates} registered generated-output candidate${candidates === 1 ? "" : "s"} require exact regeneration evidence`;
+  return `${cited}${headlineOf(hits.length)}${candidateEvidence}; ${coverage}
+`;
+}
+function readingClause(readFiles, languages) {
+  if (readFiles === 0) return "read no changed file";
+  return `read ${readFiles} changed file(s) as ${languages.join(", ")}`;
+}
+function unreadClause(unread2, subject = "changed file") {
+  if (unread2.length === 0) return "every changed file was read";
+  const paths = [...unread2].sort(compareUnreadEntries).map(unreadPath);
+  return `${unread2.length} ${subject}(s) were not read: ${paths.join(", ")}`;
+}
+function compareUnreadEntries(left, right) {
+  return unreadPath(left).localeCompare(unreadPath(right));
+}
+function unreadPath(unread2) {
+  if (typeof unread2 === "string") return unread2;
+  return `${unread2.file} (${unread2.cause})`;
+}
+function headlineOf(count) {
+  if (count === 0) return "no hit";
+  return count === 1 ? "1 hit" : `${count} hits`;
+}
+
+// core/src/routes/routes.ts
+var BUNDLE_DIRECTORY = "dist";
+var GATE_BUNDLE = "gate.js";
+var PRECOMMIT_BUNDLE = "precommit.js";
+var OPENCODE_PLUGIN_BUNDLE = "opencode/dist/oso-code.js";
+var PLUGIN_BUNDLE_DIRECTORY = `plugin/${BUNDLE_DIRECTORY}`;
+var PLUGIN_BINARY_DIRECTORY = "plugin/bin";
+var BOOTSTRAP_DIRECTORY = "bootstrap";
+var PLUGIN_STATE_BUNDLE = `${PLUGIN_BUNDLE_DIRECTORY}/oso-state.js`;
+var PLUGIN_STATE_EXECUTABLE = `${PLUGIN_BINARY_DIRECTORY}/oso-state`;
+var BOOTSTRAP_BUNDLE = `${BOOTSTRAP_DIRECTORY}/oso.js`;
+var GENERATED_BUNDLES = [
+  PLUGIN_STATE_BUNDLE,
+  `${PLUGIN_BUNDLE_DIRECTORY}/${GATE_BUNDLE}`,
+  `${PLUGIN_BUNDLE_DIRECTORY}/${PRECOMMIT_BUNDLE}`,
+  PLUGIN_STATE_EXECUTABLE,
+  BOOTSTRAP_BUNDLE,
+  OPENCODE_PLUGIN_BUNDLE
+];
+
+// core/src/scan/abstraction-scan.ts
+var USE_SITES_AN_EXPORT_MUST_REACH = 2;
+var EXPORTED_VALUE_DECLARATION = /^\s*export\s+(?:default\s+)?(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?(?:function\s*\*?|const|let|var|class|enum)\s+([A-Za-z_$][\w$]*)/;
+var MODULE_STATEMENT_OPENING = /^\s*(?:import\b|export\s*[*{])/;
+var MODULE_SPECIFIER = /\bfrom\s*["'][^"']*["']|^\s*import\s*["'][^"']*["']|;\s*$/;
+function abstractionScanReport(cwd, ref) {
+  const tree = changedFilesSince(cwd, ref);
+  const changed = partitionByLanguage(tree.files, REFERENCE_COUNT_LANGUAGES);
+  const projectTree = trackedAndUntrackedFiles(cwd);
+  const project = partitionByLanguage(projectTree.files, REFERENCE_COUNT_LANGUAGES);
+  const sourceFiles = project.read.filter((candidate) => !isGeneratedBundle(candidate.file));
+  const generatedBundles = project.read.filter((candidate) => isGeneratedBundle(candidate.file));
+  const useSiteLines = sourceFiles.flatMap(useSiteLinesOf);
+  const hits = changed.read.flatMap(exportsAddedIn).flatMap((exported) => thinlyUsedHitFor(exported, useSiteLines));
+  const changedNotRead = [...changed.unread, ...tree.unreadable];
+  const coverage = `${readingClause(changed.read.length, changed.languages)}, counting use sites across ${sourceFiles.length} project file(s) and reading no type or interface declaration; ${unreadClause(changedNotRead)}${projectTree.unreadable.length === 0 ? "" : `; ${unreadClause(projectTree.unreadable, "project file")}`}${generatedBundleClause(generatedBundles)}`;
+  return renderScan(hits, coverage);
+}
+function isGeneratedBundle(file) {
+  return GENERATED_BUNDLES.includes(file);
+}
+function generatedBundleClause(generatedBundles) {
+  if (generatedBundles.length === 0) return "";
+  return `; ${generatedBundles.length} generated bundle(s) were not counted: ${generatedBundles.map(({ file }) => file).join(", ")}`;
+}
+function exportsAddedIn({ file, text, addedLines }) {
+  return text.split("\n").flatMap((lineText, index) => {
+    const declared = EXPORTED_VALUE_DECLARATION.exec(lineText);
+    if (declared === null || !addedLines.has(index + 1)) return [];
+    return [{ file, line: index + 1, name: declared[1] }];
+  });
+}
+function thinlyUsedHitFor(exported, useSiteLines) {
+  const uses = useSiteCountOf(exported, useSiteLines);
+  if (uses >= USE_SITES_AN_EXPORT_MUST_REACH) return [];
+  const note = `${exported.name} is exported with ${uses} use site${uses === 1 ? "" : "s"} outside its declaration`;
+  return [{ file: exported.file, line: exported.line, note }];
+}
+function useSiteCountOf({ file, line, name }, useSiteLines) {
+  const mentions = new RegExp(`(?<![\\w$])${name.replaceAll("$", "\\$")}(?![\\w$])`, "g");
+  return useSiteLines.filter((candidate) => candidate.file !== file || candidate.line !== line).reduce((total, candidate) => total + [...candidate.text.matchAll(mentions)].length, 0);
+}
+function useSiteLinesOf({ file, text }) {
+  const lines = [];
+  let insideModuleStatement = false;
+  for (const [index, lineText] of text.split("\n").entries()) {
+    if (insideModuleStatement || MODULE_STATEMENT_OPENING.test(lineText)) {
+      insideModuleStatement = !MODULE_SPECIFIER.test(lineText);
+      continue;
+    }
+    lines.push({ file, line: index + 1, text: lineText });
+  }
+  return lines;
+}
+
+// core/src/scan/comment-openings.ts
+var CODE = { kind: "code" };
+var LICENSE_MARKER = /\b(?:Copyright|SPDX-License-Identifier|Licensed under)\b/;
+var OPERAND_EXPECTING_KEYWORD = /(?:^|[^\w$])(?:return|typeof|instanceof|in|of|new|delete|do|else|void|throw|yield|await|case)$/;
+var CLOSES_AN_OPERAND = /[\w$)\]]$/;
+var RUST_RAW_STRING = /^b?r(#*)"/;
+var PYTHON_TRIPLE_QUOTES = ['"""', "'''"];
+var SHELL_WORD_BOUNDARY = /* @__PURE__ */ new Set([" ", "	", ";", "&", "|", "(", "`"]);
+function commentOpeningsIn(language, text) {
+  const lines = text.split("\n");
+  const marked = licenseHeaderMarked(openingsOf(language, lines), lines);
+  return marked.map(({ line, form, text: openingText }) => ({ line, form, text: openingText }));
+}
+function openingsOf(language, lines) {
+  const shebang = shebangOpeningOf(lines);
+  const firstLine = shebang.length + 1;
+  const readsHashComments = language === "python" || language === "shell";
+  const body = readsHashComments ? hashOpenings(lines, firstLine, language) : slashOpenings(lines, firstLine, language);
+  return [...shebang, ...body];
+}
+function shebangOpeningOf(lines) {
+  const first = lines[0];
+  if (first === void 0 || !first.startsWith("#!")) return [];
+  return [{ line: 1, endLine: 1, startColumn: 0, endColumn: first.length, startsLine: true, form: "shebang", text: first.trim() }];
+}
+function slashOpenings(lines, firstLine, language) {
+  const nestsBlocks = language === "rust";
+  const openings = [];
+  let carry = CODE;
+  for (let number = firstLine; number <= lines.length; number += 1) {
+    const line = lines[number - 1];
+    const resumption = resumeCarry(carry, line, number, nestsBlocks);
+    if (resumption.state === "carried") {
+      carry = resumption.carry;
+      continue;
+    }
+    openings.push(...resumption.closed);
+    carry = CODE;
+    let index = resumption.at;
+    while (index < line.length) {
+      const rest = line.slice(index);
+      const lineComment = slashLineCommentFormOf(rest, language);
+      if (lineComment !== void 0) {
+        openings.push(openingAt(number, index, line, lineComment));
+        break;
+      }
+      if (rest.startsWith("/*")) {
+        const block = openedBlockAt(number, index, line, blockCommentFormOf(rest, language));
+        const progress = advanceBlock(line, index + 2, 1, nestsBlocks);
+        if (progress.state === "open") {
+          carry = { ...block, depth: progress.depth };
+          break;
+        }
+        openings.push(closedBlockOpening(block, number, progress.at));
+        index = progress.at;
+        continue;
+      }
+      const quoted = skipQuotedRun(line, index, language);
+      if (quoted?.state === "carried") {
+        carry = quoted.carry;
+        break;
+      }
+      index = quoted?.at ?? index + skippedWidthOf(line, index, language);
+    }
+  }
+  return openings;
+}
+function hashOpenings(lines, firstLine, language) {
+  const openings = [];
+  let carry = CODE;
+  for (let number = firstLine; number <= lines.length; number += 1) {
+    const line = lines[number - 1];
+    const resumption = resumeCarry(carry, line, number, false);
+    if (resumption.state === "carried") {
+      carry = resumption.carry;
+      continue;
+    }
+    carry = CODE;
+    let index = resumption.at;
+    while (index < line.length) {
+      const rest = line.slice(index);
+      if (language === "shell" && rest.startsWith("\\")) {
+        index += 2;
+        continue;
+      }
+      const quoted = skipQuotedRun(line, index, language);
+      if (quoted?.state === "carried") {
+        carry = quoted.carry;
+        break;
+      }
+      if (quoted !== void 0) {
+        index = quoted.at;
+        continue;
+      }
+      if (rest.startsWith("#") && (language === "python" || opensShellWord(line, index))) {
+        openings.push(openingAt(number, index, line, "inline"));
+        break;
+      }
+      index += 1;
+    }
+  }
+  return openings;
+}
+function resumeCarry(carry, line, number, nestsBlocks) {
+  if (carry.kind === "code") return { state: "resumed", at: 0, closed: [] };
+  if (carry.kind === "quoted") {
+    const closed = advanceQuoted(line, 0, carry.terminator, carry.escaped);
+    return closed === void 0 ? { state: "carried", carry } : { state: "resumed", at: closed, closed: [] };
+  }
+  const progress = advanceBlock(line, 0, carry.depth, nestsBlocks);
+  if (progress.state === "open") return { state: "carried", carry: { ...carry, depth: progress.depth } };
+  return { state: "resumed", at: progress.at, closed: [closedBlockOpening(carry, number, progress.at)] };
+}
+function closedBlockOpening({ openedAt, startColumn, startsLine, form, text }, endLine, endColumn) {
+  return { line: openedAt, endLine, startColumn, endColumn, startsLine, form, text };
+}
+function advanceBlock(line, from, depth, nestsBlocks) {
+  let index = from;
+  let open = depth;
+  while (index < line.length) {
+    if (line.startsWith("*/", index)) {
+      open -= 1;
+      index += 2;
+      if (open <= 0) return { state: "closed", at: index };
+      continue;
+    }
+    if (nestsBlocks && line.startsWith("/*", index)) {
+      open += 1;
+      index += 2;
+      continue;
+    }
+    index += 1;
+  }
+  return { state: "open", depth: open };
+}
+function skipQuotedRun(line, index, language) {
+  const run = quotedRunOpenedAt(line.slice(index), language);
+  if (run === void 0) return void 0;
+  const { width, terminator, escaped } = run;
+  const closed = advanceQuoted(line, index + width, terminator, escaped);
+  if (closed === void 0) return { state: "carried", carry: { kind: "quoted", terminator, escaped } };
+  return { state: "skipped", at: closed };
+}
+function advanceQuoted(line, from, terminator, escaped) {
+  let index = from;
+  while (index < line.length) {
+    if (escaped && line[index] === "\\") {
+      index += 2;
+      continue;
+    }
+    if (line.startsWith(terminator, index)) return index + terminator.length;
+    index += 1;
+  }
+  return void 0;
+}
+function quotedRunOpenedAt(rest, language) {
+  if (language === "rust") return rustQuotedRunAt(rest);
+  if (language === "python") return pythonQuotedRunAt(rest);
+  if (language === "shell") return shellQuotedRunAt(rest);
+  return scriptQuotedRunAt(rest);
+}
+function rustQuotedRunAt(rest) {
+  const raw = RUST_RAW_STRING.exec(rest);
+  if (raw !== null) return { width: raw[0].length, terminator: `"${raw[1]}`, escaped: false };
+  return rest.startsWith('"') ? { width: 1, terminator: '"', escaped: true } : void 0;
+}
+function pythonQuotedRunAt(rest) {
+  const triple = PYTHON_TRIPLE_QUOTES.find((quotes) => rest.startsWith(quotes));
+  if (triple !== void 0) return { width: triple.length, terminator: triple, escaped: true };
+  return singleCharacterQuotedRunAt(rest, ['"', "'"], true);
+}
+function shellQuotedRunAt(rest) {
+  if (rest.startsWith("'")) return { width: 1, terminator: "'", escaped: false };
+  return singleCharacterQuotedRunAt(rest, ['"'], true);
+}
+function scriptQuotedRunAt(rest) {
+  return singleCharacterQuotedRunAt(rest, ['"', "'", "`"], true);
+}
+function singleCharacterQuotedRunAt(rest, quotes, escaped) {
+  const quote = quotes.find((candidate) => rest.startsWith(candidate));
+  return quote === void 0 ? void 0 : { width: 1, terminator: quote, escaped };
+}
+function skippedWidthOf(line, index, language) {
+  if (language === "rust" && line[index] === "'") return rustTickWidthAt(line, index);
+  if (line[index] !== "/" || !opensRegexAt(line, index)) return 1;
+  const closed = advanceQuoted(line, index + 1, "/", true);
+  return closed === void 0 ? 1 : closed - index;
+}
+function rustTickWidthAt(line, index) {
+  if (line[index + 1] === "\\") {
+    const closed = advanceQuoted(line, index + 1, "'", true);
+    return closed === void 0 ? 1 : closed - index;
+  }
+  return line[index + 2] === "'" ? 3 : 1;
+}
+function opensRegexAt(line, index) {
+  const before = line.slice(0, index).trimEnd();
+  if (before === "") return true;
+  if (OPERAND_EXPECTING_KEYWORD.test(before)) return true;
+  return !CLOSES_AN_OPERAND.test(before);
+}
+function opensShellWord(line, index) {
+  if (index === 0) return true;
+  return SHELL_WORD_BOUNDARY.has(line[index - 1]);
+}
+function slashLineCommentFormOf(rest, language) {
+  if (!rest.startsWith("//")) return void 0;
+  if (language !== "rust") return "inline";
+  return rest.startsWith("///") || rest.startsWith("//!") ? "doc" : "inline";
+}
+function blockCommentFormOf(rest, language) {
+  if (rest.startsWith("/**")) return "doc";
+  return language === "rust" && rest.startsWith("/*!") ? "doc" : "inline";
+}
+function openedBlockAt(line, column, text, form) {
+  return { kind: "block", depth: 1, openedAt: line, startColumn: column, startsLine: opensLine(text, column), form, text: text.trim() };
+}
+function openingAt(line, column, text, form) {
+  return {
+    line,
+    endLine: line,
+    startColumn: column,
+    endColumn: text.length,
+    startsLine: opensLine(text, column),
+    form,
+    text: text.trim()
+  };
+}
+function opensLine(line, column) {
+  return line.slice(0, column).trim() === "";
+}
+function licenseHeaderMarked(openings, lines) {
+  const headerEnd = headerEndLineOf(openings, lines);
+  if (headerEnd === 0 || !LICENSE_MARKER.test(lines.slice(0, headerEnd).join("\n"))) return [...openings];
+  return openings.map((opening) => {
+    if (opening.form !== "inline" || opening.line > headerEnd) return opening;
+    const commentLines = lines.slice(opening.line - 1, opening.endLine);
+    const firstLine = commentLines[0];
+    const lastLine = commentLines.at(-1);
+    const commentText = opening.line === opening.endLine ? firstLine.slice(opening.startColumn, opening.endColumn) : [firstLine.slice(opening.startColumn), ...commentLines.slice(1, -1), lastLine.slice(0, opening.endColumn)].join("\n");
+    return LICENSE_MARKER.test(commentText) ? { ...opening, form: "license" } : opening;
+  });
+}
+function headerEndLineOf(openings, lines) {
+  const covered = /* @__PURE__ */ new Set();
+  for (const opening of openings) {
+    if (!opening.startsLine) continue;
+    for (let line = opening.line; line <= opening.endLine; line += 1) covered.add(line);
+  }
+  let end = 0;
+  for (let number = 1; number <= lines.length; number += 1) {
+    if (lines[number - 1].trim() !== "" && !covered.has(number)) return end;
+    end = number;
+  }
+  return end;
+}
+
+// core/src/scan/comment-scan.ts
+function commentScanReport(cwd, ref) {
+  const changed = changedFilesSince(cwd, ref);
+  const { read, unread: unread2, languages } = partitionByLanguage(changed.files, COMMENT_SCAN_LANGUAGES);
+  const hits = read.flatMap(inlineCommentsAddedIn);
+  const notRead = [...unread2, ...changed.unreadable];
+  return renderScan(hits, `${readingClause(read.length, languages)}; ${unreadClause(notRead)}`);
+}
+function inlineCommentsAddedIn({ file, text, addedLines, language }) {
+  const category = GENERATED_BUNDLES.includes(file) ? "registered-generated-output-candidate" : void 0;
+  return commentOpeningsIn(language, text).filter((opening) => opening.form === "inline" && addedLines.has(opening.line)).map((opening) => ({ file, line: opening.line, note: opening.text, ...category === void 0 ? {} : { category } }));
+}
 
 // core/src/shell/ere.ts
 var GREP_ITSELF_REJECTS_IT = /* @__PURE__ */ Symbol("a pattern grep exits 2 on, which therefore matches nothing");
@@ -285,8 +916,8 @@ function asJsLiteral(character) {
 }
 
 // core/src/state/handoff.ts
-import { chmodSync, existsSync, mkdirSync as mkdirSync2, readFileSync as readFileSync2, readdirSync, rmSync as rmSync2 } from "node:fs";
-import path2 from "node:path";
+import { chmodSync, existsSync, mkdirSync as mkdirSync2, readFileSync as readFileSync3, readdirSync, rmSync as rmSync2 } from "node:fs";
+import path4 from "node:path";
 
 // core/src/state/store.ts
 import { execFileSync } from "node:child_process";
@@ -295,16 +926,16 @@ import {
   accessSync,
   appendFileSync,
   constants,
-  lstatSync,
+  lstatSync as lstatSync2,
   mkdirSync,
-  readFileSync,
+  readFileSync as readFileSync2,
   renameSync,
   rmSync,
   statSync,
   writeFileSync
 } from "node:fs";
 import { homedir } from "node:os";
-import path from "node:path";
+import path3 from "node:path";
 var LockTimeoutError = class extends Error {
   sessionId;
   constructor(sessionId) {
@@ -331,7 +962,7 @@ var StateFileUnreadableError = class extends Error {
 };
 var CHANGE_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 var NAME_TOKEN_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
-var NAME_TOKEN_MAX_LENGTH = 128;
+var TOKEN_MAX_LENGTH = 128;
 var LOCK_STALE_SECONDS = 30;
 var LOCK_MAX_TRIES = 200;
 var LOCK_RETRY_MS = 50;
@@ -343,28 +974,31 @@ function sha256Hex(value) {
 function stateRootDirectory() {
   const configured = process.env["OSO_STATE_DIR"];
   if (configured !== void 0 && configured !== "") return configured;
-  return path.join(homeDirectory(), ".local", "state", "oso-code");
+  return path3.join(homeDirectory(), ".local", "state", "oso-code");
+}
+function repositoryIdentityFor(cwd) {
+  const directory = cwd.replace(/\r$/, "");
+  return gitCommonDirectory(directory) || directory;
 }
 function stateFileFor(cwd) {
-  const directory = cwd.replace(/\r$/, "");
-  const identity = gitCommonDirectory(directory) || directory;
-  return path.join(stateRootDirectory(), `${sha256Hex(identity)}.state`);
+  return path3.join(stateRootDirectory(), `${sha256Hex(repositoryIdentityFor(cwd))}.state`);
 }
 function repositoryIdFor(stateFile) {
-  return path.basename(stateFile, ".state");
+  return path3.basename(stateFile, ".state");
 }
 function journalFileFor(cwd) {
   const stateFile = stateFileFor(cwd);
   const repositoryId = repositoryIdFor(stateFile);
   const autoChange = readValue(stateFile, "auto_change") ?? "";
   const change = CHANGE_SLUG_PATTERN.test(autoChange) ? autoChange : "run";
-  return path.join(stateRootDirectory(), "runs", repositoryId, `${change}.log`);
+  return path3.join(stateRootDirectory(), "runs", repositoryId, `${change}.log`);
 }
 function denyPatternsFileFor(stateFile) {
-  return path.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
+  return path3.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
 }
+var MODEL_TOKEN_SHAPE = `1 to ${TOKEN_MAX_LENGTH} characters of letters, digits and / : . - _ @`;
 function isNameToken(value) {
-  return value.length >= 1 && value.length <= NAME_TOKEN_MAX_LENGTH && NAME_TOKEN_PATTERN.test(value);
+  return value.length >= 1 && value.length <= TOKEN_MAX_LENGTH && NAME_TOKEN_PATTERN.test(value);
 }
 function stateRecords(content, key) {
   const prefix = `${key}=`;
@@ -381,14 +1015,14 @@ function readValue(stateFile, key) {
 function readStateFile(stateFile) {
   try {
     if (!statSync(stateFile).isFile()) return { kind: "unreadable", cause: `${stateFile} is not a regular file` };
-    return { kind: "ok", content: readFileSync(stateFile, "utf8") };
+    return { kind: "ok", content: readFileSync2(stateFile, "utf8") };
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") return { kind: "absent" };
-    return { kind: "unreadable", cause: causeOf(error) };
+    return { kind: "unreadable", cause: causeOf2(error) };
   }
 }
 function writeStatePairs(stateFile, pairs, sessionId) {
-  const directory = path.dirname(stateFile);
+  const directory = path3.dirname(stateFile);
   const read = readStateFile(stateFile);
   if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
   const existing = read.kind === "ok" ? read.content : "";
@@ -446,7 +1080,7 @@ function secondsSinceModified(target) {
 function writeFileAtomically(directory, finalPath, content, tempPrefix) {
   mkdirSync(directory, { recursive: true });
   for (let attempt = 0; attempt < 10; attempt += 1) {
-    const candidate = path.join(directory, `${tempPrefix}${randomBytes(3).toString("hex")}`);
+    const candidate = path3.join(directory, `${tempPrefix}${randomBytes(3).toString("hex")}`);
     try {
       writeFileSync(candidate, content, { flag: "wx", mode: 384 });
     } catch (error) {
@@ -471,7 +1105,7 @@ function appendJournal(journalFile, text) {
     const line = `${isoTimestamp()} ${text}
 `;
     withOwnerOnlyUmask(() => {
-      mkdirSync(path.dirname(journalFile), { recursive: true });
+      mkdirSync(path3.dirname(journalFile), { recursive: true });
       appendFileSync(journalFile, line);
     });
   } catch (error) {
@@ -480,9 +1114,9 @@ function appendJournal(journalFile, text) {
 }
 function logEvent(entry) {
   const line = serializeEvent(entry);
-  const eventsLog = path.join(stateRootDirectory(), "events.jsonl");
+  const eventsLog = path3.join(stateRootDirectory(), "events.jsonl");
   try {
-    mkdirSync(path.dirname(eventsLog), { recursive: true });
+    mkdirSync(path3.dirname(eventsLog), { recursive: true });
     withOwnerOnlyUmask(() => appendFileSync(eventsLog, `${line}
 `));
     return true;
@@ -520,7 +1154,7 @@ function readFileIfPresent(file) {
   const read = readStateFile(file);
   return read.kind === "ok" ? read.content : void 0;
 }
-function causeOf(error) {
+function causeOf2(error) {
   return error instanceof Error ? error.message : String(error);
 }
 function parseStateLines(content) {
@@ -541,7 +1175,7 @@ function splitPair(pair) {
 function createTempFile(directory, content) {
   mkdirSync(directory, { recursive: true });
   for (let attempt = 0; attempt < 10; attempt += 1) {
-    const candidate = path.join(directory, `.tmp.${randomBytes(4).toString("hex")}`);
+    const candidate = path3.join(directory, `.tmp.${randomBytes(4).toString("hex")}`);
     try {
       writeFileSync(candidate, content, { flag: "wx", mode: 384 });
       return candidate;
@@ -595,7 +1229,7 @@ function isoTimestamp() {
 }
 function lstatOrUndefined(target) {
   try {
-    return lstatSync(target);
+    return lstatSync2(target);
   } catch {
     return void 0;
   }
@@ -608,7 +1242,7 @@ function statOrUndefined(target) {
   }
 }
 function serializeEvent(entry) {
-  const client = path.basename(process.env["CLAUDE_CODE_EXECPATH"] ?? "");
+  const client = path3.basename(process.env["CLAUDE_CODE_EXECPATH"] ?? "");
   const fields = [
     `"ts":"${jsonEscape(isoTimestamp())}"`,
     `"event":"${jsonEscape(entry.event)}"`,
@@ -751,7 +1385,7 @@ function runHandoffConsume(cwd, coordinates) {
       throw new HandoffFailure(`no unconsumed receipt for slice ${coordinates.slice} attempt ${coordinates.attempt}`);
     }
     requireMatchingReceipt(paths.receipt, coordinates, "receipt identity does not match the delegated result");
-    const content = readFileSync2(paths.receipt, "utf8");
+    const content = readFileSync3(paths.receipt, "utf8");
     writeWatermark(paths, coordinates.attempt);
     rmSync2(paths.receipt, { force: true });
     return content;
@@ -762,7 +1396,7 @@ function runHandoffConsume(cwd, coordinates) {
 function matchingReceiptOrStop(paths, coordinates) {
   if (existsSync(paths.receipt)) {
     requireMatchingReceipt(paths.receipt, coordinates, "receipt identity does not match the awaited delegation");
-    return readFileSync2(paths.receipt, "utf8");
+    return readFileSync3(paths.receipt, "utf8");
   }
   if (existsSync(paths.watermark)) {
     if (!watermarkIsValid(paths.watermark)) throw new HandoffFailure(`malformed watermark at ${paths.watermark}`);
@@ -801,14 +1435,14 @@ function isValidTimeoutText(value) {
 function handoffPaths(cwd, agentId) {
   const stateFile = stateFileFor(cwd);
   const agentKey = sha256Hex(agentId);
-  const directory = path2.join(stateRootDirectory(), ".handoffs", repositoryIdFor(stateFile));
+  const directory = path4.join(stateRootDirectory(), ".handoffs", repositoryIdFor(stateFile));
   return {
     directory,
     agentId,
     agentKey,
-    receipt: path2.join(directory, `${agentKey}.receipt`),
-    watermark: path2.join(directory, `${agentKey}.watermark`),
-    lockDir: path2.join(directory, `${agentKey}.lock`)
+    receipt: path4.join(directory, `${agentKey}.receipt`),
+    watermark: path4.join(directory, `${agentKey}.watermark`),
+    lockDir: path4.join(directory, `${agentKey}.lock`)
   };
 }
 function protectDirectory(directory) {
@@ -842,7 +1476,7 @@ function globalSweep(directory) {
   for (const name of directoryEntries(directory)) {
     const key = sweepableArtifactKey(name);
     if (key === void 0) continue;
-    sweepArtifact(path2.join(directory, name), path2.join(directory, `${key}.lock`));
+    sweepArtifact(path4.join(directory, name), path4.join(directory, `${key}.lock`));
   }
 }
 function sweepableArtifactKey(name) {
@@ -881,7 +1515,7 @@ function pruneLocked(paths) {
 }
 function matchingTempArtifacts(paths) {
   const prefixes = [`.${paths.agentKey}.receipt.`, `.${paths.agentKey}.consuming.`, `.${paths.agentKey}.watermark.`];
-  return directoryEntries(paths.directory).filter((name) => prefixes.some((prefix) => name.startsWith(prefix))).map((name) => path2.join(paths.directory, name));
+  return directoryEntries(paths.directory).filter((name) => prefixes.some((prefix) => name.startsWith(prefix))).map((name) => path4.join(paths.directory, name));
 }
 function directoryEntries(directory) {
   try {
@@ -967,12 +1601,12 @@ function recordsOf(content) {
 }
 function readPrivateFileContent(target) {
   if (!isReadableRegularFile(target)) return void 0;
-  return readFileSync2(target, "utf8");
+  return readFileSync3(target, "utf8");
 }
 
 // core/src/state/plan.ts
-import { chmodSync as chmodSync2, existsSync as existsSync2, mkdirSync as mkdirSync3, readFileSync as readFileSync3, renameSync as renameSync2, rmSync as rmSync3 } from "node:fs";
-import path3 from "node:path";
+import { chmodSync as chmodSync2, existsSync as existsSync2, mkdirSync as mkdirSync3, readFileSync as readFileSync4, renameSync as renameSync2, rmSync as rmSync3 } from "node:fs";
+import path5 from "node:path";
 
 // core/src/state/transitions.ts
 function closeSlice() {
@@ -992,14 +1626,14 @@ function isValidPlanDigest(value) {
   return PLAN_DIGEST_PATTERN.test(value);
 }
 function planPaths(stateFile, digest) {
-  const root = path3.join(stateRootDirectory(), "plans");
-  const dir = path3.join(root, repositoryIdFor(stateFile));
+  const root = path5.join(stateRootDirectory(), "plans");
+  const dir = path5.join(root, repositoryIdFor(stateFile));
   return {
     root,
     dir,
-    presentedFile: path3.join(dir, `presented-${digest}.md`),
-    approvedFile: path3.join(dir, `approved-${digest}.md`),
-    currentFile: path3.join(dir, "current.md")
+    presentedFile: path5.join(dir, `presented-${digest}.md`),
+    approvedFile: path5.join(dir, `approved-${digest}.md`),
+    currentFile: path5.join(dir, "current.md")
   };
 }
 function ensurePlanDirectory(paths) {
@@ -1020,12 +1654,18 @@ function runCapturePlan(cwd, sessionId, digest, document) {
   const paths = planPaths(stateFile, digest);
   ensurePlanDirectory(paths);
   if (document.length === 0) throw new PlanFailure("capture-plan requires a non-empty plan document on stdin");
+  const uncheckedSlice = firstSliceNamingNoCheck(document);
+  if (uncheckedSlice !== void 0) {
+    throw new PlanFailure(
+      `capture-plan requires slice ${uncheckedSlice} to name ${VERIFY_CHECK_TOKENS.join(" or ")} on its Verify line`
+    );
+  }
   return withLock(stateFile, sessionId, () => {
     if (existsSync2(paths.presentedFile)) {
       if (!isPrivateRegularFile(paths.presentedFile)) {
         throw new PlanFailure("presented snapshot is not a private regular file");
       }
-      if (readFileSync3(paths.presentedFile, "utf8") !== document) {
+      if (readFileSync4(paths.presentedFile, "utf8") !== document) {
         throw new PlanFailure("presented snapshot content disagrees with its approval digest");
       }
     } else {
@@ -1179,7 +1819,7 @@ function runAmendPlan(cwd, sessionId, sliceId, document) {
     const revisionText = readValue(stateFile, "plan_revision") ?? "";
     if (!/^[0-9]+$/.test(revisionText)) throw new PlanFailure("current plan has no valid revision");
     const nextRevision = Number(revisionText) + 1;
-    const amended = `${readFileSync3(paths.currentFile, "utf8")}
+    const amended = `${readFileSync4(paths.currentFile, "utf8")}
 
 ## ${shape.heading} \u2014 ${sliceId}
 
@@ -1196,12 +1836,57 @@ ${document}
   });
 }
 function byteIdentical(leftFile, rightFile) {
-  return readFileSync3(leftFile).equals(readFileSync3(rightFile));
+  return readFileSync4(leftFile).equals(readFileSync4(rightFile));
 }
 function amendmentShapeFor(approval) {
   if (approval === "approved") return { heading: "Execution amendment", classification: "in-scope" };
   if (approval === "pending") return { heading: "Plan Mode feedback", classification: "feedback" };
   throw new PlanFailure("amendments require a pending or approved plan");
+}
+var VERIFY_CHECK_TOKENS = ["failing-check:", "Verify-exception:"];
+var THE_FIELD_ONLY_A_SLICE_BLOCK_CARRIES = "Depends-on";
+var MARKDOWN_LIST_OR_HEADING = /^[\s>]*(?:#{1,6}\s+)?(?:[-*+]\s+|\d+[.)]\s+)?(?:\[[ xX]\]\s+)?/;
+var MARKDOWN_EMPHASIS = /^[*_]{1,3}/;
+var SLICE_LABEL = /^(S\d+|Slice\s+\d+)(?:\s+[A-Z]{2,})*(?:\s*\([^)]*\))?\s*[—–:-]/;
+var MARKDOWN_HEADING = /^[\s>]*(#{1,6})\s+/;
+function firstSliceNamingNoCheck(document) {
+  return sliceBlocksIn(document).find(({ text }) => !namesAVerifyCheck(text))?.label;
+}
+function sliceBlocksIn(document) {
+  const opened = [];
+  let current;
+  let currentHeadingLevel;
+  for (const line of document.split("\n")) {
+    const label = sliceLabelOpening(line);
+    if (label !== void 0) {
+      const headingLevel2 = headingLevelOf(line);
+      current = {
+        label,
+        boundaryLevel: headingLevel2 ?? currentHeadingLevel ?? 6,
+        lines: [line]
+      };
+      opened.push(current);
+      if (headingLevel2 !== void 0) currentHeadingLevel = headingLevel2;
+      continue;
+    }
+    const headingLevel = headingLevelOf(line);
+    if (current !== void 0 && headingLevel !== void 0 && headingLevel <= current.boundaryLevel) current = void 0;
+    current?.lines.push(line);
+    if (headingLevel !== void 0) currentHeadingLevel = headingLevel;
+  }
+  return opened.map(({ label, lines }) => ({ label, text: lines.join("\n") })).filter(({ text }) => text.includes(THE_FIELD_ONLY_A_SLICE_BLOCK_CARRIES));
+}
+function headingLevelOf(line) {
+  const heading = MARKDOWN_HEADING.exec(line);
+  return heading === null ? void 0 : heading[1]?.length;
+}
+function sliceLabelOpening(line) {
+  const undecorated = line.replace(MARKDOWN_LIST_OR_HEADING, "").replace(MARKDOWN_EMPHASIS, "");
+  return SLICE_LABEL.exec(undecorated)?.[1];
+}
+function namesAVerifyCheck(blockText) {
+  const lowered = blockText.toLowerCase();
+  return VERIFY_CHECK_TOKENS.some((token) => lowered.includes(token.toLowerCase()));
 }
 
 // core/src/state/cli.ts
@@ -1221,10 +1906,17 @@ var USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state handoff publish --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --hook-session <id>
        oso-state handoff wait --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --timeout <seconds>
        oso-state handoff consume --slice <id> --attempt <n> --agent-id <id> --agent-type <type>
+       oso-state scan comments <ref>
+       oso-state scan abstractions <ref>
 
 The SubagentStop hook publishes a provenance receipt, never a verdict. wait is
 bounded and consume is one-shot. Handoff attempts start at 1 and timeout must
 be between 0 and 600 seconds.
+
+scan reads the working directory's own repository, reports every hit on stdout
+and exits 0 whether or not it found any. comments flags the inline comments the
+diff since <ref> adds; abstractions flags the exports it adds that fewer than
+two use sites reach.
 `;
 var UsageError = class extends Error {
 };
@@ -1253,7 +1945,7 @@ function main(argv) {
 }
 function verbOf(argv) {
   const first = argv[0];
-  if (first === "journal" || first === "handoff") return first;
+  if (first === "journal" || first === "handoff" || first === "scan") return first;
   return argv[2] ?? "";
 }
 function report(error, verb) {
@@ -1296,6 +1988,11 @@ function report(error, verb) {
 `);
     return 1;
   }
+  if (error instanceof ScanFailure) {
+    process.stderr.write(`oso-state: scan: ${error.message}
+`);
+    return 1;
+  }
   const message = error instanceof Error ? error.message : String(error);
   process.stderr.write(`oso-state: ${message}
 `);
@@ -1305,6 +2002,7 @@ function dispatch(argv) {
   const first = argv[0];
   if (first === "journal") return runJournal(argv.slice(1));
   if (first === "handoff") return dispatchHandoff(argv.slice(1));
+  if (first === "scan") return dispatchScan(argv.slice(1));
   if (first !== "--session") throw new UsageError();
   const sessionId = sanitizeSession(argv[1] ?? "");
   if (sessionId === "") throw new UsageError();
@@ -1337,9 +2035,22 @@ function dispatch(argv) {
       return runDenyPattern(sessionId, remaining);
     case "handoff":
       return dispatchHandoff(remaining);
+    case "scan":
+      return dispatchScan(remaining);
     default:
       throw new UsageError();
   }
+}
+function dispatchScan(remaining) {
+  const [subject, ref, ...rest] = remaining;
+  if (rest.length > 0 || ref === void 0 || ref === "") throw new UsageError();
+  if (subject === "comments") return writeScan(commentScanReport(process.cwd(), ref));
+  if (subject === "abstractions") return writeScan(abstractionScanReport(process.cwd(), ref));
+  throw new UsageError();
+}
+function writeScan(report2) {
+  process.stdout.write(report2);
+  return 0;
 }
 function runSet(sessionId, pairs) {
   if (pairs.length < 1) throw new UsageError();
@@ -1416,7 +2127,7 @@ function runDenyPattern(sessionId, remaining) {
     }
     const content = [...existing, pattern].map((line) => `${line}
 `).join("");
-    writeFileAtomically(path4.dirname(patternsFile), patternsFile, content, ".patterns.");
+    writeFileAtomically(path6.dirname(patternsFile), patternsFile, content, ".patterns.");
     logEvent({ event: "deny-pattern-add", session: sessionId, command: pattern });
     process.stdout.write(`oso-state: wrote ${patternsFile}
 `);
@@ -1464,7 +2175,7 @@ function runAmendPlan2(sessionId, remaining) {
   return runAmendPlan(process.cwd(), sessionId, sliceId, readStdin());
 }
 function readStdin() {
-  return readFileSync4(0, "utf8");
+  return readFileSync5(0, "utf8");
 }
 function dispatchHandoff(remaining) {
   const [subaction, ...rest] = remaining;

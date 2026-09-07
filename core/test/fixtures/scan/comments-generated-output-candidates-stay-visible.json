@@ -1,0 +1,39 @@
+{
+  "name": "typescript — source comments remain hits when copied into a registered bundle, builder annotations are visible candidates, and unregistered generated-looking output stays debt",
+  "verb": "comments",
+  "language": "typescript",
+  "committed": {
+    "plugin/dist/oso-state.js": [
+      "// core/src/source.ts",
+      "export const SOURCE = 1;"
+    ],
+    "src/source.ts": [
+      "export const SOURCE = 1;"
+    ]
+  },
+  "worktree": {
+    "dist/generated.js": [
+      "// unregistered generated-looking output",
+      "export const GENERATED = 1;"
+    ],
+    "plugin/dist/oso-state.js": [
+      "// core/src/source.ts",
+      "// source-authored debt",
+      "export const SOURCE = 1;",
+      "/* builder annotation */"
+    ],
+    "src/source.ts": [
+      "// source-authored debt",
+      "export const SOURCE = 1;"
+    ]
+  },
+  "expect": {
+    "hits": [
+      "dist/generated.js:1: // unregistered generated-looking output",
+      "plugin/dist/oso-state.js:2: [registered generated-output candidate] // source-authored debt",
+      "plugin/dist/oso-state.js:4: [registered generated-output candidate] /* builder annotation */",
+      "src/source.ts:1: // source-authored debt"
+    ],
+    "summary": "4 hits; 2 registered generated-output candidates require exact regeneration evidence; read 3 changed file(s) as typescript, javascript; every changed file was read"
+  }
+}

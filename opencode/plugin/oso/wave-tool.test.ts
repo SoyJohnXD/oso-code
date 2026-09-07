@@ -52,9 +52,11 @@ function replyingSessionApi(replyOf: (directory: string) => string): {
   session: HostSessionApi;
   directories: { created: string[]; prompted: string[] };
   agents: string[];
+  turns: Array<{ directory: string; prompt: string }>;
 } {
   const directories = { created: [] as string[], prompted: [] as string[] };
   const agents: string[] = [];
+  const turns: Array<{ directory: string; prompt: string }> = [];
   const openDirectories = new Map<string, string>();
   const session: HostSessionApi = {
     create: async (options) => {
@@ -64,22 +66,57 @@ function replyingSessionApi(replyOf: (directory: string) => string): {
       return { data: { id, directory: options.query.directory } };
     },
     prompt: async (options) => {
+      const directory = openDirectories.get(options.path.id) ?? "";
       directories.prompted.push(options.query?.directory ?? "the wave sent no directory");
       agents.push(options.body.agent ?? "the wave sent no agent");
-      return { data: { parts: [{ type: "text", text: replyOf(openDirectories.get(options.path.id) ?? "") }] } };
+      turns.push({ directory, prompt: options.body.parts.map((part) => part.text).join("\n") });
+      return { data: { parts: [{ type: "text", text: replyOf(directory) }] } };
     },
     abort: async () => ({ data: true }),
   };
-  return { session, directories, agents };
+  return { session, directories, agents, turns };
 }
 
 test("oso_wave declares the children the model must name and the two agents it accepts", () => {
   const tool = waveTool(undefined);
-  const children = tool.args.children as { type: string; items: { required: string[]; properties: Record<string, { enum?: string[] }> } };
+  const children = tool.args.children as {
+    type: string;
+    items: { required: string[]; properties: Record<string, { type?: string; enum?: string[] }> };
+  };
   assert.equal(children.type, "array");
   assert.deepEqual(children.items.required, ["worktree", "agent", "prompt"]);
   assert.deepEqual(children.items.properties.agent?.enum, ["applier", "verifier"]);
+  assert.equal(children.items.properties.applier_proof?.type, "string");
   assert.match(tool.description, /worktree/);
+});
+
+test("oso_wave hands the three applier_proof blocks to a verifier child under one header and blocks an applier child that names it", async () => {
+  await withToolFixture(async (fixture) => {
+    const proofBlock = [
+      "proof:",
+      "  - criterion: the field reaches a verifier child only",
+      "scan:",
+      "  - cmd: oso-state scan comments SLICE_START  exit: 0  hits: none",
+      "decisions_used:",
+      "  - C1-D4",
+    ].join("\n");
+    const { session, turns } = replyingSessionApi(() => "verdict: pass\n");
+    const result = await waveTool(session).execute(
+      {
+        children: [
+          { worktree: fixture.applierWorktree, agent: "applier", prompt: "build the slice", applier_proof: proofBlock },
+          { worktree: fixture.verifierWorktree, agent: "verifier", prompt: "verify the slice", applier_proof: proofBlock },
+        ],
+      },
+      { sessionID: "ses-root", directory: fixture.repoDir },
+    );
+
+    assert.deepEqual(turns, [
+      { directory: fixture.verifierWorktree, prompt: `verify the slice\n\n=== applier_proof ===\n${proofBlock}` },
+    ]);
+    assert.deepEqual(result.metadata, { children: 2, blocked: 1 });
+    assert.match(result.output, /\(applier\) — blocked: .*applier_proof/);
+  });
 });
 
 test("oso_wave runs both children in their own worktrees and reads each verdict in band", async () => {
@@ -145,6 +182,10 @@ test("oso_wave refuses a call the model shaped wrongly", async () => {
   await assert.rejects(
     () => tool.execute({ children: [{ worktree: "/wt/a", agent: "applier" }] }, call),
     /needs a prompt/,
+  );
+  await assert.rejects(
+    () => tool.execute({ children: [{ worktree: "/wt/a", agent: "verifier", prompt: "p", applier_proof: 7 }] }, call),
+    /needs applier_proof as the applier's three report blocks/,
   );
 });
 

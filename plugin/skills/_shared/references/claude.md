@@ -12,6 +12,12 @@ The `Agent` tool always launches in the BACKGROUND and returns at once, with the
 
 This governs every launch made through the Agent tool.
 
+## The model a launch carries
+
+The `Agent` tool takes a `model` parameter per launch, and it is what overrides the launched agent's own frontmatter for that one launch. Pass what the operator record's profile holds for the role being launched, spelled in this host's own aliases: a `default` tier is `sonnet` here and a `strong` tier is `opus`, while a role the profile names a model of its own for passes that name as written instead.
+
+A record carrying no profile, or a profile leaving the launched role unnamed, passes no `model` at all and leaves the agent's frontmatter standing — the behaviour every launch had before a profile existed. The Launching milestone that `../reporting.md` requires names whichever of the two the launch ran on, and never a model nobody chose.
+
 ## Front-surface binding
 
 - The mode labels are `/plan`, `/quick` and `/debug`.

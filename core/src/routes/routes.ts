@@ -3,6 +3,22 @@ export const GATE_BUNDLE = "gate.js";
 export const PRECOMMIT_BUNDLE = "precommit.js";
 export const OPENCODE_PLUGIN_ENTRY = "opencode/plugin/oso-code.ts";
 export const OPENCODE_PLUGIN_BUNDLE = "opencode/dist/oso-code.js";
+export const PLUGIN_BUNDLE_DIRECTORY = `plugin/${BUNDLE_DIRECTORY}`;
+export const PLUGIN_BINARY_DIRECTORY = "plugin/bin";
+export const BOOTSTRAP_DIRECTORY = "bootstrap";
+export const MODULE_MANIFEST = "package.json";
+export const PLUGIN_STATE_BUNDLE = `${PLUGIN_BUNDLE_DIRECTORY}/oso-state.js`;
+export const PLUGIN_STATE_EXECUTABLE = `${PLUGIN_BINARY_DIRECTORY}/oso-state`;
+export const BOOTSTRAP_BUNDLE = `${BOOTSTRAP_DIRECTORY}/oso.js`;
+
+export const GENERATED_BUNDLES: readonly string[] = [
+  PLUGIN_STATE_BUNDLE,
+  `${PLUGIN_BUNDLE_DIRECTORY}/${GATE_BUNDLE}`,
+  `${PLUGIN_BUNDLE_DIRECTORY}/${PRECOMMIT_BUNDLE}`,
+  PLUGIN_STATE_EXECUTABLE,
+  BOOTSTRAP_BUNDLE,
+  OPENCODE_PLUGIN_BUNDLE,
+];
 
 export type HostName = "claude" | "codex" | "opencode";
 

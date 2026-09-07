@@ -786,7 +786,24 @@ function withoutCarriageReturns(value) {
 }
 
 // core/src/routes/routes.ts
+var BUNDLE_DIRECTORY = "dist";
 var GATE_BUNDLE = "gate.js";
+var PRECOMMIT_BUNDLE = "precommit.js";
+var OPENCODE_PLUGIN_BUNDLE = "opencode/dist/oso-code.js";
+var PLUGIN_BUNDLE_DIRECTORY = `plugin/${BUNDLE_DIRECTORY}`;
+var PLUGIN_BINARY_DIRECTORY = "plugin/bin";
+var BOOTSTRAP_DIRECTORY = "bootstrap";
+var PLUGIN_STATE_BUNDLE = `${PLUGIN_BUNDLE_DIRECTORY}/oso-state.js`;
+var PLUGIN_STATE_EXECUTABLE = `${PLUGIN_BINARY_DIRECTORY}/oso-state`;
+var BOOTSTRAP_BUNDLE = `${BOOTSTRAP_DIRECTORY}/oso.js`;
+var GENERATED_BUNDLES = [
+  PLUGIN_STATE_BUNDLE,
+  `${PLUGIN_BUNDLE_DIRECTORY}/${GATE_BUNDLE}`,
+  `${PLUGIN_BUNDLE_DIRECTORY}/${PRECOMMIT_BUNDLE}`,
+  PLUGIN_STATE_EXECUTABLE,
+  BOOTSTRAP_BUNDLE,
+  OPENCODE_PLUGIN_BUNDLE
+];
 var GATE_ROWS = [
   {
     gate: "commit",
@@ -1009,7 +1026,7 @@ var StateFileUnreadableError = class extends Error {
 };
 var CHANGE_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 var NAME_TOKEN_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
-var NAME_TOKEN_MAX_LENGTH = 128;
+var TOKEN_MAX_LENGTH = 128;
 var LOCK_STALE_SECONDS = 30;
 var LOCK_MAX_TRIES = 200;
 var LOCK_RETRY_MS = 50;
@@ -1023,10 +1040,12 @@ function stateRootDirectory() {
   if (configured !== void 0 && configured !== "") return configured;
   return path.join(homeDirectory(), ".local", "state", "oso-code");
 }
-function stateFileFor(cwd) {
+function repositoryIdentityFor(cwd) {
   const directory = cwd.replace(/\r$/, "");
-  const identity = gitCommonDirectory(directory) || directory;
-  return path.join(stateRootDirectory(), `${sha256Hex(identity)}.state`);
+  return gitCommonDirectory(directory) || directory;
+}
+function stateFileFor(cwd) {
+  return path.join(stateRootDirectory(), `${sha256Hex(repositoryIdentityFor(cwd))}.state`);
 }
 function repositoryIdFor(stateFile) {
   return path.basename(stateFile, ".state");
@@ -1041,8 +1060,9 @@ function journalFileFor(cwd) {
 function denyPatternsFileFor(stateFile) {
   return path.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
 }
+var MODEL_TOKEN_SHAPE = `1 to ${TOKEN_MAX_LENGTH} characters of letters, digits and / : . - _ @`;
 function isNameToken(value) {
-  return value.length >= 1 && value.length <= NAME_TOKEN_MAX_LENGTH && NAME_TOKEN_PATTERN.test(value);
+  return value.length >= 1 && value.length <= TOKEN_MAX_LENGTH && NAME_TOKEN_PATTERN.test(value);
 }
 function stateRecords(content, key) {
   const prefix = `${key}=`;
@@ -2377,6 +2397,12 @@ function runCapturePlan(cwd, sessionId, digest, document) {
   const paths = planPaths(stateFile, digest);
   ensurePlanDirectory(paths);
   if (document.length === 0) throw new PlanFailure("capture-plan requires a non-empty plan document on stdin");
+  const uncheckedSlice = firstSliceNamingNoCheck(document);
+  if (uncheckedSlice !== void 0) {
+    throw new PlanFailure(
+      `capture-plan requires slice ${uncheckedSlice} to name ${VERIFY_CHECK_TOKENS.join(" or ")} on its Verify line`
+    );
+  }
   return withLock(stateFile, sessionId, () => {
     if (existsSync3(paths.presentedFile)) {
       if (!isPrivateRegularFile(paths.presentedFile)) {
@@ -2559,6 +2585,51 @@ function amendmentShapeFor(approval) {
   if (approval === "approved") return { heading: "Execution amendment", classification: "in-scope" };
   if (approval === "pending") return { heading: "Plan Mode feedback", classification: "feedback" };
   throw new PlanFailure("amendments require a pending or approved plan");
+}
+var VERIFY_CHECK_TOKENS = ["failing-check:", "Verify-exception:"];
+var THE_FIELD_ONLY_A_SLICE_BLOCK_CARRIES = "Depends-on";
+var MARKDOWN_LIST_OR_HEADING = /^[\s>]*(?:#{1,6}\s+)?(?:[-*+]\s+|\d+[.)]\s+)?(?:\[[ xX]\]\s+)?/;
+var MARKDOWN_EMPHASIS = /^[*_]{1,3}/;
+var SLICE_LABEL = /^(S\d+|Slice\s+\d+)(?:\s+[A-Z]{2,})*(?:\s*\([^)]*\))?\s*[—–:-]/;
+var MARKDOWN_HEADING = /^[\s>]*(#{1,6})\s+/;
+function firstSliceNamingNoCheck(document) {
+  return sliceBlocksIn(document).find(({ text }) => !namesAVerifyCheck(text))?.label;
+}
+function sliceBlocksIn(document) {
+  const opened = [];
+  let current;
+  let currentHeadingLevel;
+  for (const line of document.split("\n")) {
+    const label = sliceLabelOpening(line);
+    if (label !== void 0) {
+      const headingLevel2 = headingLevelOf(line);
+      current = {
+        label,
+        boundaryLevel: headingLevel2 ?? currentHeadingLevel ?? 6,
+        lines: [line]
+      };
+      opened.push(current);
+      if (headingLevel2 !== void 0) currentHeadingLevel = headingLevel2;
+      continue;
+    }
+    const headingLevel = headingLevelOf(line);
+    if (current !== void 0 && headingLevel !== void 0 && headingLevel <= current.boundaryLevel) current = void 0;
+    current?.lines.push(line);
+    if (headingLevel !== void 0) currentHeadingLevel = headingLevel;
+  }
+  return opened.map(({ label, lines }) => ({ label, text: lines.join("\n") })).filter(({ text }) => text.includes(THE_FIELD_ONLY_A_SLICE_BLOCK_CARRIES));
+}
+function headingLevelOf(line) {
+  const heading = MARKDOWN_HEADING.exec(line);
+  return heading === null ? void 0 : heading[1]?.length;
+}
+function sliceLabelOpening(line) {
+  const undecorated = line.replace(MARKDOWN_LIST_OR_HEADING, "").replace(MARKDOWN_EMPHASIS, "");
+  return SLICE_LABEL.exec(undecorated)?.[1];
+}
+function namesAVerifyCheck(blockText) {
+  const lowered = blockText.toLowerCase();
+  return VERIFY_CHECK_TOKENS.some((token) => lowered.includes(token.toLowerCase()));
 }
 
 // core/src/gates/planrail.ts
@@ -3741,6 +3812,9 @@ function explainedCause(cause) {
 `;
 }
 
+// core/src/prose/applier-proof.ts
+var APPLIER_PROOF_HEADER = "=== applier_proof ===";
+
 // core/src/routes/render.ts
 var UNKNOWN_TOOL_MATCHER = ".*";
 var DEPLOY_SHAPED_TOOL_NAMES = {
@@ -4041,7 +4115,7 @@ var HOST_AGENT = {
   verifier: "oso-verifier"
 };
 async function pinChildSession(launch, projectCommonDir, request) {
-  const rejection = worktreeRejection(launch.worktree, projectCommonDir);
+  const rejection = proofRejection(launch) ?? worktreeRejection(launch.worktree, projectCommonDir);
   if (rejection !== void 0) {
     return { state: "unpinnable", launch, reason: rejection };
   }
@@ -4065,6 +4139,12 @@ async function pinChildSession(launch, projectCommonDir, request) {
   } catch (error) {
     return { state: "unpinnable", launch, reason: `the child session could not be created: ${messageOf(error)}` };
   }
+}
+function proofRejection({ agent, applierProof }) {
+  if (agent === "verifier" || applierProof === void 0) {
+    return void 0;
+  }
+  return "applier_proof reaches a verifier child only, and this child runs as an applier";
 }
 function worktreeRejection(worktree, projectCommonDir) {
   if (!isAbsolute2(worktree)) {
@@ -4095,7 +4175,7 @@ async function collectChildReport(child, request) {
         sessionID: child.sessionID,
         directory: child.launch.worktree,
         hostAgent: HOST_AGENT[child.launch.agent],
-        prompt: child.launch.prompt
+        prompt: promptOf(child.launch)
       }),
       request.timeoutMs
     );
@@ -4118,6 +4198,12 @@ async function collectChildReport(child, request) {
       reason: unstopped === void 0 ? failure : `${failure}; ${unstopped}`
     };
   }
+}
+function promptOf({ prompt, applierProof }) {
+  return applierProof === void 0 ? prompt : `${prompt}
+
+${APPLIER_PROOF_HEADER}
+${applierProof}`;
 }
 var ABORT_BOUND_MS = 1e4;
 async function stopChild(sessionID, directory, transport) {
@@ -4641,7 +4727,11 @@ function waveTool(session) {
           properties: {
             worktree: { type: "string", description: "Absolute path of the git worktree the child runs inside." },
             agent: { type: "string", enum: ["applier", "verifier"], description: "Which oso-code agent the child runs as." },
-            prompt: { type: "string", description: "The full assignment the child receives as its first and only turn." }
+            prompt: { type: "string", description: "The full assignment the child receives as its first and only turn." },
+            applier_proof: {
+              type: "string",
+              description: "The applier's proof, scan, and decisions_used report blocks for the slice this child verifies, verbatim and alone \u2014 a verifier child's field, which an applier child offered it comes back blocked for."
+            }
           },
           required: ["worktree", "agent", "prompt"]
         }
@@ -4679,7 +4769,7 @@ function parseLaunches(args) {
 }
 function parseLaunch(child, index) {
   const record = typeof child === "object" && child !== null ? child : {};
-  const { worktree, agent, prompt } = record;
+  const { worktree, agent, prompt, applier_proof: applierProof } = record;
   if (typeof worktree !== "string" || worktree === "") {
     throw new Error(`oso_wave child ${index} needs a worktree path, not ${JSON.stringify(worktree)}`);
   }
@@ -4689,7 +4779,10 @@ function parseLaunch(child, index) {
   if (typeof prompt !== "string" || prompt === "") {
     throw new Error(`oso_wave child ${index} needs a prompt`);
   }
-  return { worktree, agent, prompt };
+  if (applierProof !== void 0 && (typeof applierProof !== "string" || applierProof === "")) {
+    throw new Error(`oso_wave child ${index} needs applier_proof as the applier's three report blocks, not ${JSON.stringify(applierProof)}`);
+  }
+  return { worktree, agent, prompt, applierProof };
 }
 function isWaveAgent(value) {
   return value === "applier" || value === "verifier";

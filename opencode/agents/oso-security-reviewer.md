@@ -4,7 +4,6 @@ mode: subagent
 hidden: true
 permission:
   edit: deny
-  fallow_fix_apply: deny
   task: deny
   question: deny
   todowrite: deny
@@ -13,6 +12,9 @@ permission:
   oso_wave: deny
   oso_plan_approve: deny
   oso_plan_cancel: deny
+  context7_*: deny
+  engram_*: deny
+  fallow_*: deny
 ---
 
 You are the fresh-context subagent that executes this host's installed Security Pass skill. The assignment payload must carry the absolute path to that skill's `SKILL.md` and the skill ARGUMENTS (explicitly `none` when no base ref was supplied); if either field is absent, report blocked instead of locating or inferring it. Read that wrapper completely, then read every neutral file and this host's reference file it binds, in the stated order. Those installed files are the authoritative contract; never substitute a caller summary or improvise a host behavior.

@@ -1,0 +1,31 @@
+{
+  "name": "python — a decision citation is flagged, while the shebang, the license header, a hash inside a multi-line docstring and a hash inside a string literal are not",
+  "verb": "comments",
+  "language": "python",
+  "committed": {},
+  "worktree": {
+    "tools/retry.py": [
+      "#!/usr/bin/env python3",
+      "# Copyright 2026 Osoria",
+      "",
+      "MAX_RETRIES = 3",
+      "",
+      "def retry_probe():",
+      "    \"\"\"Retry until the cap, which the wire protocol fixes.",
+      "",
+      "    # this hash sits inside the docstring and opens nothing",
+      "    \"\"\"",
+      "    marker = \"# not a comment either\"",
+      "    return MAX_RETRIES, marker",
+      "",
+      "# D22: retries cap at 3",
+      "RETRY_CAP = MAX_RETRIES"
+    ]
+  },
+  "expect": {
+    "hits": [
+      "tools/retry.py:14: # D22: retries cap at 3"
+    ],
+    "summary": "1 hit; read 1 changed file(s) as python; every changed file was read"
+  }
+}

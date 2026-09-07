@@ -30,18 +30,31 @@ be between 0 and 600 seconds.
 
 const CLOSE_SLICE_LINE = "       oso-state --session <id> close-slice <n>\n";
 const DENY_PATTERN_LINE = "       oso-state --session <id> deny-pattern add <pattern>\n";
+const SCAN_LINES =
+  "       oso-state scan comments <ref>\n" + "       oso-state scan abstractions <ref>\n";
+const SCAN_PARAGRAPH =
+  "\nscan reads the working directory's own repository, reports every hit on stdout\n" +
+  "and exits 0 whether or not it found any. comments flags the inline comments the\n" +
+  "diff since <ref> adds; abstractions flags the exports it adds that fewer than\n" +
+  "two use sites reach.\n";
 
 const TS_USAGE = BASH_USAGE.replace(
   "       oso-state --session <id> clear\n",
   `       oso-state --session <id> clear\n${CLOSE_SLICE_LINE}`,
-).replace(
-  "       oso-state --session <id> amend-plan <slice-id>\n",
-  `       oso-state --session <id> amend-plan <slice-id>\n${DENY_PATTERN_LINE}`,
-);
+)
+  .replace(
+    "       oso-state --session <id> amend-plan <slice-id>\n",
+    `       oso-state --session <id> amend-plan <slice-id>\n${DENY_PATTERN_LINE}`,
+  )
+  .replace(
+    "--agent-type <type>\n\nThe SubagentStop hook",
+    `--agent-type <type>\n${SCAN_LINES}\nThe SubagentStop hook`,
+  )
+  .replace("be between 0 and 600 seconds.\n", `be between 0 and 600 seconds.\n${SCAN_PARAGRAPH}`);
 
 test(
   "the TypeScript CLI's usage text equals the bash's (read from 8c54fd8:plugin/bin/oso-state:7-29) " +
-    "plus exactly the two verbs G6 adds, close-slice and deny-pattern add",
+    "plus exactly the two verbs G6 adds, close-slice and deny-pattern add, and the scan verb C1-D3 adds",
   () => {
     const result = spawnSync(
       process.execPath,

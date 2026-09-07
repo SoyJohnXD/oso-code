@@ -1,0 +1,28 @@
+{
+  "name": "shell — a decision citation is flagged, while the shebang, the license header, a positional-count expansion, a hash inside a single-quoted word and a hash mid-word are not",
+  "verb": "comments",
+  "language": "shell",
+  "committed": {},
+  "worktree": {
+    "tools/retry.sh": [
+      "#!/usr/bin/env bash",
+      "# Copyright 2026 Osoria",
+      "",
+      "set -euo pipefail",
+      "",
+      "max_retries=3",
+      "printf '%s\\n' \"$#\"",
+      "printf '%s\\n' '# not a comment'",
+      "id=abc#def",
+      "",
+      "# D22: retries cap at 3",
+      "printf '%s\\n' \"$max_retries $id\""
+    ]
+  },
+  "expect": {
+    "hits": [
+      "tools/retry.sh:11: # D22: retries cap at 3"
+    ],
+    "summary": "1 hit; read 1 changed file(s) as shell; every changed file was read"
+  }
+}

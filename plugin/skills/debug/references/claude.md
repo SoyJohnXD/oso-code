@@ -33,7 +33,7 @@ The two delegates the body names — `oso-applier`, `oso-verifier` — are agent
 
 ## Delegation-wait binding
 
-READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Making a launch wait** section NOW. It is the single Claude Code binding for how a delegation's report arrives on this host and for the marker every delegation arms. Here that rule reaches §4's applier and verifier, and §5's debt-cleanup applier.
+READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Making a launch wait** section NOW. It is the single Claude Code binding for how a delegation's report arrives on this host and for the marker every delegation arms. Here that rule reaches §4's applier and verifier, and §5's debt-cleanup applier. Its **The model a launch carries** section binds the `model` parameter each of those launches passes, and is read in the same breath.
 
 ## Front-surface binding
 

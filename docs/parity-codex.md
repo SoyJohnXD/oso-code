@@ -6,6 +6,14 @@ Certification record for the Codex host, filled in by `core/test/certify/codex-a
 
 Codex 0.146.0 — `SUPPORTED_CODEX_VERSION` in `core/src/install/pins.ts`, the version the smoke's own pin-relation row resolves the installed binary against.
 
+## Installer deployment
+
+`oso install --host codex --yes` stages the published marketplace and plugin manifest under `~/.local/share/oso-code/codex-marketplace`, copies the trust-listed runtime and seven agent contracts into the Codex home, and registers the local marketplace and `oso-code@oso-code` through `codex plugin marketplace add` and `codex plugin add`. Re-running the install replaces the owned payload while preserving operator config, agents, plugins, skills and Engram memory; every owned target is included in the install backup used for rollback.
+
+The install runs `engram setup codex` and verifies the resulting MCP server and instruction files. Impeccable is registered from `pbakaus/impeccable` at `skill-v4.0.2` and its published Codex skill, references and frontmatter are checked before the home mount is replaced. `--no-impeccable` records an explicit opt-out for verification.
+
+The disposable host probes recorded for this slice drove the measured CLI (version 0.153.2) through marketplace add, plugin add/list and Engram setup successfully with empty stderr in a writable isolated state root. The same binary's `sandbox -P oso /bin/true` probe remains unavailable on this host because its bubblewrap synthetic-mount lock is read-only; no installer or verifier result treats that boundary as live host acceptance.
+
 ## What the suite measured
 
 | Row | What it reports | Divergence from `run_authenticated_smoke` |

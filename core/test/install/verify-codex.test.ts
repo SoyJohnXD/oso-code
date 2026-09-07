@@ -21,6 +21,7 @@ import {
   checkCommitHookDeniesRed,
   checkEngramWiring,
   checkGlobalGuidance,
+  checkImpeccableMount,
   checkManagedConfigRegion,
   checkMarketplacePayload,
   checkMcpToolTableDrift,
@@ -262,6 +263,16 @@ describe("oso verify --host codex over a fixture HOME", () => {
     const edited = new VerifyReport();
     checkGlobalGuidance(edited, paths, repositoryRoot);
     assert.match(edited.render(), /FAIL: global Codex guidance/);
+  });
+
+  test("the Impeccable verifier requires the pinned skill metadata and usable references", () => {
+    const home = fixtureHome();
+    assert.equal(installCodex(inputFor(home)).exitCode, 0);
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    rmSync(path.join(paths.impeccableMount, "reference", "audit.md"));
+    const report = new VerifyReport();
+    checkImpeccableMount(report, home);
+    assert.match(report.render(), /FAIL: Impeccable Codex mount — expected mounted, got missing/);
   });
 
   test("an empty installed region against an unpublished source fails, so two absences never agree", () => {

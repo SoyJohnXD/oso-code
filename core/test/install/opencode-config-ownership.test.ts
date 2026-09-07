@@ -5,7 +5,12 @@ import path from "node:path";
 import { after, describe, test } from "node:test";
 import { resolveFallowMcpCommand } from "../../src/install/codex-config.ts";
 import {
+  HARNESS_EXTERNAL_DIRECTORIES,
+  HARNESS_EXTERNAL_DIRECTORY_VERDICT,
+  HARNESS_OWNED_TREE_EDIT_VERDICT,
+  HARNESS_OWNED_TREES_NO_AGENT_MAY_EDIT,
   hostContractViolationOf,
+  hostPatternMatches,
   mergeOpenCodeConfig,
   OpenCodeConfigRefusal,
   OPENCODE_CONFIG_SCHEMA_URL,
@@ -19,7 +24,7 @@ after(() => rmSync(sandbox, { recursive: true, force: true }));
 
 const THE_OWNERSHIP_CORPUS =
   "one operator seed carrying every owned container and one operator key inside each, merged by mergeOpenCodeConfig and " +
-  "read back as the rendered document plus its preserved-key ledger, against the seven rows spelled row by row below";
+  "read back as the rendered document plus its preserved-key ledger, against the eight rows spelled row by row below";
 
 const OPERATOR_SEED = {
   theme: "operator-theme",
@@ -31,6 +36,7 @@ const OPERATOR_SEED = {
     question: "deny",
     skill: { "operator-skill": "allow", "oso-plan": "allow" },
     task: { "operator-*": "deny", "*": "deny" },
+    external_directory: { "~/operator-tree/**": "allow", "~/.config/opencode/**": "ask" },
   },
   mcp: {
     "operator-server": { type: "local", command: ["operator-cli"], enabled: true, environment: {} },
@@ -45,6 +51,8 @@ const EXPECTED_PRESERVED_ORDER = [
   "permission.read",
   "permission.skill.operator-skill",
   "permission.task.operator-*",
+  "permission.external_directory.~/operator-tree/**",
+  "permission.external_directory.~/.config/opencode/**",
   "mcp.operator-server",
 ];
 
@@ -56,11 +64,11 @@ const fallowCommand = fixtureFallowCommand();
 
 provedSomething(
   `the ownership corpus is ${THE_OWNERSHIP_CORPUS}, over ${EXPECTED_PRESERVED_ORDER.length} preserved key(s)`,
-  fallowCommand !== "" && EXPECTED_PRESERVED_ORDER.length === 7,
-  "no fixture fallow-mcp was written, or the preserved ledger is not the seven-key ledger this seed builds",
+  fallowCommand !== "" && EXPECTED_PRESERVED_ORDER.length === 9,
+  "no fixture fallow-mcp was written, or the preserved ledger is not the eight-key ledger this seed builds",
 );
 
-describe("the seven ownership rows, each spelled here and then read back off the merged document", () => {
+describe("the eight ownership rows, each spelled here and then read back off the merged document", () => {
   test("row 1 — permission.* is overwritten: an operator's question=deny becomes allow", () => {
     assert.equal(permissionOf(portSeeded())["question"], "allow");
   });
@@ -91,8 +99,70 @@ describe("the seven ownership rows, each spelled here and then read back off the
     assert.deepEqual(portOf({})["plugin"], []);
   });
 
-  test("row 7 — everything else is preserved: the ledger names the same keys in the same order", () => {
+  test("row 7 — permission.external_directory.<harness path> is overwritten to allow, and the config home the harness stopped granting stays the operator's own ask", () => {
+    assert.deepEqual(plainObject(permissionOf(portSeeded())["external_directory"]), {
+      "~/operator-tree/**": "allow",
+      "~/.config/opencode/**": "ask",
+      ...Object.fromEntries(HARNESS_EXTERNAL_DIRECTORIES.map((directory) => [directory, HARNESS_EXTERNAL_DIRECTORY_VERDICT])),
+    });
+  });
+
+  test("row 8 — everything else is preserved: the ledger names the same keys in the same order", () => {
     assert.deepEqual([...portSeededMerge().preservedKeys], EXPECTED_PRESERVED_ORDER);
+  });
+});
+
+const AN_OPERATOR_EDIT_BLOCK_ORDERED_BEFORE_THE_HARNESS = {
+  permission: {
+    edit: {
+      "**/.local/state/oso-code/**": "ask",
+      "operator-tree/**": "deny",
+      "*": "allow",
+    },
+  },
+} as const;
+
+const OPERATOR_EDIT_RULES_THE_MERGE_LEAVES_WHERE_THEY_WERE = [
+  ["operator-tree/**", "deny"],
+  ["*", "allow"],
+];
+
+const HARNESS_TREE_PROBES: readonly Readonly<{ tree: string; resource: string }>[] = [
+  { tree: "**/.config/opencode/skill/**", resource: "/home/operator/.config/opencode/skill/oso-plan/SKILL.md" },
+  { tree: "**/.local/state/oso-code/**", resource: "/home/operator/.local/state/oso-code/wave.state" },
+];
+
+provedSomething(
+  `the edit-ordering seed probes all ${HARNESS_OWNED_TREES_NO_AGENT_MAY_EDIT.length} harness tree(s) through a broader operator allow written before them`,
+  everyHarnessTreeIsProbedUnderAnEarlierOperatorAllow(),
+  "the seed no longer places a harness tree ahead of an operator allow that covers every probe, so the rows below would pass with no ordering left to correct",
+);
+
+describe("the edit-control posture the host resolves last, over a config whose operator allow was written first", () => {
+  test("the harness denies are the last keys of permission.edit, whatever position the operator had spelled them at", () => {
+    const patterns = Object.keys(editRulesOf(portOf(editOrderedSeedCopy())));
+    assert.deepEqual(patterns.slice(-HARNESS_OWNED_TREES_NO_AGENT_MAY_EDIT.length), [...HARNESS_OWNED_TREES_NO_AGENT_MAY_EDIT]);
+  });
+
+  test("the last matching rule the host resolves denies every harness tree, so the operator's broader allow no longer wins", () => {
+    const rules = Object.entries(editRulesOf(portOf(editOrderedSeedCopy())));
+    assert.deepEqual(
+      HARNESS_TREE_PROBES.map(({ resource }) => `${resource} ${lastVerdictCovering(rules, resource)}`),
+      HARNESS_TREE_PROBES.map(({ resource }) => `${resource} ${HARNESS_OWNED_TREE_EDIT_VERDICT}`),
+    );
+  });
+
+  test("the operator's own edit rules keep their order and their verdicts, and the ledger preserves each of them", () => {
+    const merged = mergeOpenCodeConfig(editOrderedSeedCopy(), fallowCommand);
+    const harnessTrees: readonly string[] = HARNESS_OWNED_TREES_NO_AGENT_MAY_EDIT;
+    assert.deepEqual(
+      Object.entries(editRulesOf(merged.document)).filter(([pattern]) => !harnessTrees.includes(pattern)),
+      OPERATOR_EDIT_RULES_THE_MERGE_LEAVES_WHERE_THEY_WERE,
+    );
+    assert.deepEqual(
+      merged.preservedKeys.filter((key) => key.startsWith("permission.edit.")),
+      OPERATOR_EDIT_RULES_THE_MERGE_LEAVES_WHERE_THEY_WERE.map(([pattern]) => `permission.edit.${pattern}`),
+    );
   });
 });
 
@@ -199,6 +269,29 @@ function renderedText(existing: ConfigDocument, command: string = fallowCommand)
 
 function seedCopy(): ConfigDocument {
   return JSON.parse(JSON.stringify(OPERATOR_SEED)) as ConfigDocument;
+}
+
+function editOrderedSeedCopy(): ConfigDocument {
+  return JSON.parse(JSON.stringify(AN_OPERATOR_EDIT_BLOCK_ORDERED_BEFORE_THE_HARNESS)) as ConfigDocument;
+}
+
+function editRulesOf(document: ConfigDocument): ConfigDocument {
+  return plainObject(permissionOf(document)["edit"]);
+}
+
+function lastVerdictCovering(rules: readonly (readonly [string, unknown])[], resource: string): unknown {
+  return rules.filter(([pattern]) => hostPatternMatches(pattern, resource)).at(-1)?.[1];
+}
+
+function everyHarnessTreeIsProbedUnderAnEarlierOperatorAllow(): boolean {
+  const seeded = Object.keys(AN_OPERATOR_EDIT_BLOCK_ORDERED_BEFORE_THE_HARNESS.permission.edit);
+  const harnessTrees: readonly string[] = HARNESS_OWNED_TREES_NO_AGENT_MAY_EDIT;
+  const broadenedAt = seeded.indexOf("*");
+  return (
+    HARNESS_OWNED_TREES_NO_AGENT_MAY_EDIT.every((tree) => HARNESS_TREE_PROBES.some((probe) => probe.tree === tree)) &&
+    HARNESS_TREE_PROBES.every(({ resource }) => hostPatternMatches("*", resource)) &&
+    seeded.some((pattern, index) => harnessTrees.includes(pattern) && index < broadenedAt)
+  );
 }
 
 function permissionOf(document: ConfigDocument): ConfigDocument {

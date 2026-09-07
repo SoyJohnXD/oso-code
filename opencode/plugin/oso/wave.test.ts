@@ -115,6 +115,12 @@ function resultFor(results: readonly WaveChildResult[], worktree: string): WaveC
   return found;
 }
 
+function promptSentTo(log: TransportLog, worktree: string): string {
+  const sent = log.prompted.find((entry) => entry.directory === worktree);
+  assert.ok(sent, `no prompt was sent to ${worktree}`);
+  return sent.prompt;
+}
+
 test("an applier and a verifier each run in a session pinned to their own worktree", async () => {
   await withWavePair(async (pair) => {
     const { transport, log } = recordingTransport(async ({ hostAgent }) =>
@@ -142,6 +148,64 @@ test("an applier and a verifier each run in a session pinned to their own worktr
     const verifier = resultFor(results, pair.verifierWorktree);
     assert.equal(verifier.outcome === "reported" && verifier.verdict.verdict, "pass");
     assert.equal(verifier.outcome === "reported" && verifier.raw, "verdict: pass\n");
+  });
+});
+
+test("the verifier child's prompt carries the three-block package under one header and no other line of the applier's report", async () => {
+  await withWavePair(async (pair) => {
+    const proofBlock = [
+      "proof:",
+      "  - criterion: the verifier child is handed the block",
+      "    probe: read the prompt the wave sent that child",
+      "    observed: the block arrived under one header",
+      "scan:",
+      "  - cmd: oso-state scan comments SLICE_START  exit: 0  hits: none",
+      "decisions_used:",
+      "  - C1-D4",
+    ].join("\n");
+    const applierReport = ["status: done", "files: wave.ts — the seam", proofBlock, "findings: none — the assignment carried none"].join("\n");
+    const { transport, log } = recordingTransport(async ({ hostAgent }) =>
+      hostAgent === "oso-applier" ? applierReport : "verdict: pass\n");
+
+    await runWave({
+      launches: [
+        { worktree: pair.applierWorktree, agent: "applier", prompt: "build slice a" },
+        { worktree: pair.verifierWorktree, agent: "verifier", prompt: "verify slice a", applierProof: proofBlock },
+      ],
+      transport,
+      projectDirectory: pair.repoDir,
+      parentSessionID: "ses-root",
+      timeoutMs: 5_000,
+    });
+
+    const verifierPrompt = promptSentTo(log, pair.verifierWorktree);
+    assert.equal(verifierPrompt, `verify slice a\n\n=== applier_proof ===\n${proofBlock}`);
+    assert.deepEqual(applierReport.split("\n").filter((line) => verifierPrompt.includes(line)), proofBlock.split("\n"));
+    assert.equal(promptSentTo(log, pair.applierWorktree), "build slice a");
+  });
+});
+
+test("an applier child handed applier_proof is blocked by the field's name before its session opens, and its verifier sibling still reports", async () => {
+  await withWavePair(async (pair) => {
+    const proofBlock = "proof:\n  - criterion: the field reaches a verifier child only";
+    const { transport, log } = recordingTransport(async () => "verdict: pass\n");
+    const results = await runWave({
+      launches: [
+        { worktree: pair.applierWorktree, agent: "applier", prompt: "build slice a", applierProof: proofBlock },
+        { worktree: pair.verifierWorktree, agent: "verifier", prompt: "verify slice a", applierProof: proofBlock },
+      ],
+      transport,
+      projectDirectory: pair.repoDir,
+      parentSessionID: "ses-root",
+      timeoutMs: 5_000,
+    });
+
+    const refused = resultFor(results, pair.applierWorktree);
+    assert.equal(refused.outcome, "blocked");
+    assert.match(refused.outcome === "blocked" ? refused.reason : "", /applier_proof/);
+    assert.deepEqual(log.created.map((entry) => entry.directory), [pair.verifierWorktree]);
+    assert.deepEqual(log.prompted.map((entry) => entry.directory), [pair.verifierWorktree]);
+    assert.equal(resultFor(results, pair.verifierWorktree).outcome, "reported");
   });
 });
 

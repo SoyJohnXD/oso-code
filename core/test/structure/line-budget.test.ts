@@ -27,8 +27,10 @@ const CEILINGS = [
   {
     label: "core/test",
     prefix: "core/test/",
-    maximumLines: 19000,
-    derivation: "18,932 (measured at C5's close) → 19,000",
+    maximumLines: 23500,
+    derivation:
+      "20,832 (measured at C1's arming, by this test's own listing) + 6 × 380 (C1's five slices and its close, at C0's " +
+      "measured mean of 380 lines per commit: 64 / 236 / 488 / 196 / 916) = 23,112",
   },
 ] as const;
 

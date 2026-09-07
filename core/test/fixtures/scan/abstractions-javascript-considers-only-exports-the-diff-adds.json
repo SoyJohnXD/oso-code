@@ -1,0 +1,34 @@
+{
+  "name": "javascript abstractions — the export the diff adds is flagged at one use site while the equally single-use export the diff left untouched is not considered",
+  "verb": "abstractions",
+  "language": "javascript",
+  "committed": {
+    "lib/old.js": [
+      "export function oldSingleUse() {",
+      "  return 1;",
+      "}"
+    ]
+  },
+  "worktree": {
+    "lib/old.js": [
+      "export function oldSingleUse() {",
+      "  return 1;",
+      "}",
+      "",
+      "export function newSingleUse() {",
+      "  return 2;",
+      "}"
+    ],
+    "lib/main.js": [
+      "import { newSingleUse, oldSingleUse } from \"./old.js\";",
+      "",
+      "process.stdout.write(String(oldSingleUse() + newSingleUse()));"
+    ]
+  },
+  "expect": {
+    "hits": [
+      "lib/old.js:5: newSingleUse is exported with 1 use site outside its declaration"
+    ],
+    "summary": "1 hit; read 2 changed file(s) as javascript, counting use sites across 2 project file(s) and reading no type or interface declaration; every changed file was read"
+  }
+}
