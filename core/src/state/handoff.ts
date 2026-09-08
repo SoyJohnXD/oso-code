@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, opendirSync, readFileSync, readdirSync, realpathSync, rmSync, type Dirent, type Stats } from "node:fs";
 import path from "node:path";
-import { CODEX_UUID_PATTERN, readBoundedRegularFile, readCodexSessionMetadata, requireMetadataTime } from "../hosts/codex-session-metadata.ts";
+import { CODEX_METADATA_READINESS_MS, CODEX_UUID_PATTERN, readBoundedRegularFile, readCodexSessionMetadata, requireMetadataTime } from "../hosts/codex-session-metadata.ts";
 import * as store from "./store.ts";
 
 export class HandoffFailure extends Error {}
@@ -34,8 +34,7 @@ export function runHandoffResolveCodex(cwd: string, coordinates: Omit<HandoffCoo
   if (!CODEX_UUID_PATTERN.test(parentId)) throw new HandoffFailure("resolve-codex requires a valid current CODEX_THREAD_ID");
   validateCoordinates({ ...coordinates, agentId: parentId });
   if (!/^\/root(?:\/[a-zA-Z0-9_-]+)+$/.test(coordinates.agentPath)) throw new HandoffFailure("invalid canonical Codex agent path");
-  const readinessMs = 10000;
-  const deadline = performance.now() + readinessMs;
+  const deadline = performance.now() + CODEX_METADATA_READINESS_MS;
   try {
     const repository = nativeRepositoryIdentity(cwd, deadline);
     const directory = path.join(store.stateRootDirectory(), ".handoffs", store.sha256Hex(repository.receiptIdentity));
@@ -402,7 +401,7 @@ function readPrivateFileContent(target: string): string | undefined {
   return readFileSync(target, "utf8");
 }
 
-function nativeRepositoryIdentity(cwd: string, deadline: number): { receiptIdentity: string; commonDirectory: string } {
+export function nativeRepositoryIdentity(cwd: string, deadline: number): { receiptIdentity: string; commonDirectory: string } {
   requireMetadataTime(deadline);
   if (!path.isAbsolute(cwd)) throw new HandoffFailure(`native workspace is not absolute: ${cwd}`);
   const common = execFileSync("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"], {

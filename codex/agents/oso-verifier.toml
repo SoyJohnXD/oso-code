@@ -110,3 +110,6 @@ For scratch verification, follow the owned lifecycle and reviewed recipe boundar
 `HANDOFF SLICE` and `HANDOFF ATTEMPT` ride beside the closed assignment fields as transport: when present, begin the final message with `oso-handoff: v=1 slice=<ID> attempt=<N>`, substituting their exact values.
 Keep this envelope outside the unchanged report shape, with no verdict in the envelope and the report's terminal line last.
 """
+
+[mcp_servers.engram]
+enabled = false

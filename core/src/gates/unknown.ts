@@ -1,6 +1,11 @@
-import type { GateOutcome } from "../hosts/envelope.ts";
+import type { GateOutcome, HookEnvelope } from "../hosts/envelope.ts";
 import { ALLOWED } from "../hosts/envelope.ts";
+import { CODEX_METADATA_READINESS_MS, readCodexSessionMetadata } from "../hosts/codex-session-metadata.ts";
 import type { HostName } from "../routes/routes.ts";
+import { TOOL_ROWS } from "../routes/routes.ts";
+import { nativeRepositoryIdentity } from "../state/handoff.ts";
+import { basenameOf } from "../shell/lexer.ts";
+import { lineVerdict } from "../shell/line-verdict.ts";
 import { stateFileFor } from "../state/store.ts";
 import {
   denied,
@@ -29,6 +34,9 @@ function judgeUnknownTool({ envelope, argv }: GateRequest): GateOutcome {
   const configured = readAllowlist(argv);
   if (configured.kind === "misconfigured") return configurationError(configured.cause);
   const allowlist = configured.allowlist;
+
+  const memoryDenial = codexMemoryDenial(envelope);
+  if (memoryDenial !== undefined) return memoryDenial;
 
   const session = sanitizeSession(envelope.sessionId);
   if (session === "") return payloadUnparseable();
@@ -60,6 +68,41 @@ function judgeUnknownTool({ envelope, argv }: GateRequest): GateOutcome {
     session,
     detail: toolName,
   });
+}
+
+function codexMemoryDenial(envelope: HookEnvelope): GateOutcome | undefined {
+  if (envelope.caller.host !== "codex") return undefined;
+  const tool = envelope.toolName;
+  const reads = ["mcp__engram__mem_context", "mcp__engram__mem_search", "mcp__engram__mem_get_observation"];
+  if (reads.includes(tool)) return undefined;
+  const memoryTool = tool.startsWith("mcp__engram__");
+  const cliVerdict = lineVerdict(envelope.commandLine, (command, verdict) => {
+    const executable = basenameOf(command.tokens[0] ?? "");
+    if (executable !== "engram" && executable !== "engram.exe") return verdict;
+    return ["search", "context", "help", "--help", "-h", "version", "--version", "-v"].includes(command.tokens[1] ?? "") ? verdict : "memory";
+  }, true);
+  if (!memoryTool && cliVerdict === "clear") return undefined;
+  const known = !memoryTool || TOOL_ROWS.some((row) => row.names.codex === tool);
+  const cause = known ? unattestedCodexRoot(envelope) : "unknown Engram method";
+  if (cause === undefined) return undefined;
+  return denied({
+    gate: "unknown", session: envelope.sessionId, event: "memory-write-denied", detail: tool,
+    message: `oso-code: semantic memory mutations require native ROOT attestation: ${cause}.`,
+  });
+}
+
+function unattestedCodexRoot(envelope: HookEnvelope): string | undefined {
+  try {
+    if (envelope.payloadRead !== "json" || envelope.sessionId === "" || envelope.transcriptPath === "") return "missing native hook identity";
+    const deadline = performance.now() + CODEX_METADATA_READINESS_MS;
+    const native = readCodexSessionMetadata(envelope.transcriptPath, deadline);
+    const rootEntrypoint = native.source === "cli" || native.source === "exec";
+    if (native.id !== envelope.sessionId || !rootEntrypoint || native.parentThreadId !== undefined || native.agentPath !== undefined || native.agentRole !== undefined || native.threadSpawn !== undefined) return "child, missing, or contradictory native lineage";
+    if (nativeRepositoryIdentity(native.cwd, deadline).commonDirectory !== nativeRepositoryIdentity(envelope.cwd, deadline).commonDirectory) return "native repository mismatch";
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
 }
 
 type AllowlistRead =

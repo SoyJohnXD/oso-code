@@ -39,8 +39,7 @@ const THE_CONFIG_TOML_CLOSURE = [
   { file: "core/src/install/codex-config.ts", nativeJoins: 0 },
   { file: "core/src/install/codex-host.ts", nativeJoins: 2 },
   { file: "core/src/install/codex-payload.ts", nativeJoins: 15 },
-  { file: "core/src/install/codex.ts", nativeJoins: 53 },
-  { file: "core/src/install/engram.ts", nativeJoins: 5 },
+  { file: "core/src/install/codex.ts", nativeJoins: 47 },
   { file: "core/src/install/json.ts", nativeJoins: 0 },
   { file: "core/src/install/pins.ts", nativeJoins: 0 },
   { file: "core/src/install/report.ts", nativeJoins: 0 },
@@ -191,7 +190,7 @@ describe("oso install --host codex over a fixture HOME", () => {
     assert.equal(readFileSync(path.join(home, ".engram", "memory.db"), "utf8"), "operator memory\n");
   });
 
-  test("a native-style Engram rewrite leaves feature ownership valid and a second install succeeds", () => {
+  test("direct Engram normalization leaves feature ownership valid and a second install succeeds", () => {
     const home = fixtureHome();
     const first = installCodex(inputFor(home, { installImpeccable: false }));
     assert.equal(first.exitCode, 0, first.report);
@@ -202,7 +201,7 @@ describe("oso install --host codex over a fixture HOME", () => {
     assert.equal(managedFeaturesStatus(readFileSync(configFile, "utf8")), "valid");
   });
 
-  test("Engram setup preserves operator environment and timeout leaves", () => {
+  test("direct Engram normalization preserves operator environment and timeout leaves", () => {
     const home = fixtureHome();
     const configFile = codexPathsFor(home, inputFor(home).environment).configFile;
     writeFileSync(
@@ -217,7 +216,7 @@ describe("oso install --host codex over a fixture HOME", () => {
     assert.equal(engram["startup_timeout_sec"], 45);
   });
 
-  test("Engram setup preserves nested operator environment leaves", () => {
+  test("direct Engram normalization preserves nested operator environment leaves", () => {
     const home = fixtureHome();
     const configFile = codexPathsFor(home, inputFor(home).environment).configFile;
     writeFileSync(
@@ -274,7 +273,7 @@ describe("oso install --host codex over a fixture HOME", () => {
     assert.equal(readFileSync(duplicateFile, "utf8"), duplicate);
   });
 
-  test("an unknown unregistered Engram cache is preserved and refuses before mutation", () => {
+  test("an unknown inactive Engram cache is preserved without blocking installation", () => {
     const home = fixtureHome();
     const paths = codexPathsFor(home, inputFor(home).environment);
     const cache = path.join(paths.codexHome, ".tmp", "marketplaces", "engram");
@@ -286,13 +285,12 @@ describe("oso install --host codex over a fixture HOME", () => {
         installImpeccable: false,
       }),
     );
-    assert.equal(outcome.exitCode, 1, outcome.report);
-    assert.match(outcome.report, /Engram marketplace cache/);
+    assert.equal(outcome.exitCode, 0, outcome.report);
     assert.equal(readFileSync(path.join(cache, "operator-sentinel"), "utf8"), "preserve this unrecognized cache\n");
-    assert.equal(existsSync(paths.configFile), false);
+    assert.equal(existsSync(paths.configFile), true);
   });
 
-  test("a Git cache whose configured worktree is foreign remains refused", () => {
+  test("an inactive Git cache whose configured worktree is foreign remains untouched", () => {
     const home = fixtureHome();
     const paths = codexPathsFor(home, inputFor(home).environment);
     const cache = path.join(paths.codexHome, ".tmp", "marketplaces", "engram");
@@ -308,8 +306,7 @@ describe("oso install --host codex over a fixture HOME", () => {
       environment: { PATH: process.env["PATH"] ?? "", CODEX_HOME: paths.codexHome },
       installImpeccable: false,
     }));
-    assert.equal(outcome.exitCode, 1, outcome.report);
-    assert.match(outcome.report, /not an exact Git checkout/);
+    assert.equal(outcome.exitCode, 0, outcome.report);
     assert.equal(existsSync(cache), true);
   });
 
@@ -347,13 +344,12 @@ describe("oso install --host codex over a fixture HOME", () => {
       writeFileSync(path.join(cache, "witness.txt"), "mutated!\n");
 
       const outcome = installCodex(inputFor(home, { environment, installImpeccable: false }));
-      assert.equal(outcome.exitCode, 1, outcome.report);
-      assert.match(outcome.report, /modified unregistered Engram marketplace cache/);
+      assert.equal(outcome.exitCode, 0, outcome.report);
       assert.equal(existsSync(marker), false, `${mode} Git filter executed before refusal`);
     }
   });
 
-  test("a cache gitlink is refused before a nested repository filter can execute", () => {
+  test("an inactive cache gitlink remains untouched and its nested filter never executes", () => {
     const home = fixtureHome();
     const environment = {
       PATH: process.env["PATH"] ?? "",
@@ -395,13 +391,12 @@ describe("oso install --host codex over a fixture HOME", () => {
     assert.equal(gitIn(nested, ["config", "filter.nestedwitness.clean", `touch '${marker}'; cat`], environment).status, 0);
     writeFileSync(path.join(nested, "witness.txt"), "mutated!\n");
     const outcome = installCodex(inputFor(home, { environment, installImpeccable: false }));
-    assert.equal(outcome.exitCode, 1, outcome.report);
-    assert.match(outcome.report, /nested Git checkout/);
+    assert.equal(outcome.exitCode, 0, outcome.report);
     assert.equal(existsSync(marker), false);
     assert.equal(existsSync(cache), true);
   });
 
-  test("an exact clean unregistered Engram cache is removed before setup and registration", () => {
+  test("an exact clean inactive Engram cache is preserved without invoking removal", () => {
     const home = fixtureHome();
     const environment = { PATH: process.env["PATH"] ?? "", CODEX_HOME: path.join(home, ".codex") };
     const paths = codexPathsFor(home, environment);
@@ -437,26 +432,24 @@ describe("oso install --host codex over a fixture HOME", () => {
       }),
     );
     assert.equal(outcome.exitCode, 0, outcome.report);
-    assert.equal(existsSync(cache), false);
+    assert.equal(existsSync(cache), true);
     assert.match(readFileSync(paths.configFile, "utf8"), /\[plugins\."engram@engram"\]/);
   });
 
-  test("a successful Engram command with a failed plugin side effect rolls back instead of claiming integration", () => {
+  test("the obsolete Engram setup path is not invoked", () => {
     const home = fixtureHome();
     const configFile = codexPathsFor(home, inputFor(home).environment).configFile;
     const before = 'model = "operator"\n';
     writeFileSync(configFile, before);
+    const host = { ...pinnedHost(), setupEngram: () => { throw new Error("obsolete Engram setup invoked"); } };
     const outcome = installCodex(
       inputFor(home, {
         installImpeccable: false,
-        host: pinnedHost({
-          setupEngram: () => ({ ok: true, output: "engram setup codex", stderr: "warning: codex plugin add failed (non-fatal)" }),
-        }),
+        host,
       }),
     );
-    assert.equal(outcome.exitCode, 1, outcome.report);
-    assert.match(outcome.report, /plugin registration|setup codex reported incomplete/);
-    assert.equal(readFileSync(configFile, "utf8"), before);
+    assert.equal(outcome.exitCode, 0, outcome.report);
+    assert.ok(readFileSync(configFile, "utf8").includes(before));
   });
 
   test("a registration failure rolls back config and every staged owned target", () => {
@@ -595,7 +588,7 @@ describe("oso repair --host codex over a fixture HOME", () => {
     assert.match(outcome.report, /requires --yes/);
   });
 
-  test("it moves engram's root pointers above the managed region and says so", () => {
+  test("it removes recognized legacy Engram root pointers", () => {
     const home = fixtureHome();
     const codexHome = path.join(home, ".codex");
     const configFile = path.join(codexHome, "config.toml");
@@ -603,17 +596,16 @@ describe("oso repair --host codex over a fixture HOME", () => {
     const installed = withoutEngramPointers(readFileSync(configFile, "utf8"));
     writeFileSync(
       configFile,
-      `${installed}\nmodel_instructions_file = ${tomlQuote(path.join(codexHome, "engram-instructions.md"))}\n` +
-        `experimental_compact_prompt_file = ${tomlQuote(path.join(codexHome, "engram-compact-prompt.md"))}\n`,
+      `model_instructions_file = ${tomlQuote(path.join(codexHome, "engram-instructions.md"))}\n` +
+        `experimental_compact_prompt_file = ${tomlQuote(path.join(codexHome, "engram-compact-prompt.md"))}\n${installed}`,
     );
     const outcome = repairCodex(inputFor(home));
     assert.equal(outcome.exitCode, 0, outcome.report);
-    assert.match(outcome.report, /engram pointers: OK — moved above the managed region/);
     const repaired = readFileSync(configFile, "utf8");
-    assert.ok(repaired.indexOf("model_instructions_file") < repaired.indexOf(CONFIG_MARKER_START));
+    assert.equal(parseTomlDocument(repaired, configFile)["model_instructions_file"], undefined);
   });
 
-  test("the moved pointer decodes to the native engram-instructions path, and repairing it again reports already normalized, byte for byte", () => {
+  test("legacy pointers are removed and a second repair is byte-idempotent", () => {
     const home = fixtureHome();
     const codexHome = path.join(home, ".codex");
     const configFile = path.join(codexHome, "config.toml");
@@ -621,26 +613,25 @@ describe("oso repair --host codex over a fixture HOME", () => {
     const installed = withoutEngramPointers(readFileSync(configFile, "utf8"));
     writeFileSync(
       configFile,
-      `${installed}\nmodel_instructions_file = ${tomlQuote(path.join(codexHome, "engram-instructions.md"))}\n` +
-        `experimental_compact_prompt_file = ${tomlQuote(path.join(codexHome, "engram-compact-prompt.md"))}\n`,
+      `model_instructions_file = ${tomlQuote(path.join(codexHome, "engram-instructions.md"))}\n` +
+        `experimental_compact_prompt_file = ${tomlQuote(path.join(codexHome, "engram-compact-prompt.md"))}\n${installed}`,
     );
     assert.equal(repairCodex(inputFor(home)).exitCode, 0);
     const repaired = readFileSync(configFile, "utf8");
-    assert.equal(parseTomlDocument(repaired, configFile)["model_instructions_file"], path.join(codexHome, "engram-instructions.md"));
+    assert.equal(parseTomlDocument(repaired, configFile)["model_instructions_file"], undefined);
 
     const secondPass = repairCodex(inputFor(home));
     assert.equal(secondPass.exitCode, 0, secondPass.report);
-    assert.match(secondPass.report, /engram pointers: OK — already normalized/);
     assert.equal(readFileSync(configFile, "utf8"), repaired);
   });
 
-  test("it reports a config whose pointers are missing rather than inventing them", () => {
+  test("it accepts native defaults without inventing pointers", () => {
     const home = fixtureHome();
     assert.equal(installCodex(inputFor(home)).exitCode, 0);
     const configFile = path.join(home, ".codex", "config.toml");
     writeFileSync(configFile, withoutEngramPointers(readFileSync(configFile, "utf8")));
     const outcome = repairCodex(inputFor(home));
-    assert.match(outcome.report, /engram pointers: FAILED/);
+    assert.equal(outcome.exitCode, 0, outcome.report);
   });
 });
 

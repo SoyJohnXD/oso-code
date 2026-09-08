@@ -20,6 +20,18 @@ Every launch that selects an explicit `agent_type` starts with fresh context: se
 
 Surface exploration is separate from those seven files: use Codex's built-in `explorer` role. It inherits the parent Plan Mode's read-only permission and must not be duplicated as an eighth custom TOML.
 
+## Essential memory
+
+This binding controls the neutral flows' semantic-memory operations on Codex. Engram remains direct standard storage and retrieval; native base instructions and compaction stay intact. Only the parent writes semantic state. Custom roles disable the Engram server; a built-in or unknown child may only use the known context, search and get-observation reads exposed by the gate.
+
+Persist the approved bare ledger once before dependent action, with dated amendments for material changes. Keep durable preferences and non-obvious root causes or reusable discoveries under stable topic keys. Upsert the existing record rather than duplicating it; routine reads, retries and hypotheses need no save. Never automatically capture prompts, subagent reports or raw logs, or require a Key Learnings section.
+
+Keep all six milestones and full operational evidence in the local journal and artifacts. After a closed slice or real blocker or park, read back the durable local transition before publishing one compact checkpoint. Include approval digest, base and head, slice position, verified source and environment fingerprints, evidence references, pending findings and NEXT. The index changes only active-change or status and points to the detailed plan; it does not duplicate slice position.
+
+Local immutable approval, `current.md`, Git and runtime evidence remain authorization truth. Engram is semantic recovery. Before arming after resume or compaction, reconcile those local records with the saved ledger and checkpoint. A missing persist or disagreement is explicit incomplete recovery, never green. After local verification, repair a stale checkpoint with a dated superseding update; do not rewrite approval or delete history.
+
+An unchanged compaction repeats no writes. A real handover or close persists unreconciled progress once, rather than duplicating a checkpoint into phase and session summaries. Material decisions still persist before action; there is no global call quota. Static delivery and fixture side effects do not prove model cadence or effective native child isolation.
+
 ## Model and effort policy
 
 Codex custom agent files take precedence over explicit spawn values when they declare `model` or `model_reasoning_effort`. The applier and verifier files deliberately omit both fields, so this binding selects `model="gpt-5.6-luna"` with `reasoning_effort="max"` by default. For a delicate or highly specialized assignment, select `model="gpt-5.6-terra"` with `reasoning_effort="high"`; an escalated applier requires its independent verifier to use the same Terra/high tier. An explicit later operator chat choice supersedes these defaults when the host can honor it, but the verifier never runs below its applier's selected tier. Before each launch, announce the exact `model` and `reasoning_effort` selected. If Codex does not expose the requested selection or actual values, report the capability as unavailable and stop without fallback or a duplicate launch; static role configuration and documentation do not prove an authenticated model launch.

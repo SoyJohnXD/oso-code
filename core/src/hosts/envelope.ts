@@ -99,16 +99,16 @@ export function readEnvelope(hookText: string, caller: HookCaller): HookEnvelope
   return {
     caller,
     payloadRead: parsedPayload(payload).kind,
-    sessionId: jsonField(payload, "session_id"),
-    cwd: jsonField(payload, "cwd"),
+    sessionId: hookIdentityField(payload, caller, "session_id"),
+    cwd: hookIdentityField(payload, caller, "cwd"),
     toolName: jsonField(payload, "tool_name"),
     filePath: jsonField(payload, "file_path"),
-    commandLine: jsonCommandLine(payload),
+    commandLine: jsonCommandLine(payload, caller),
     source: jsonField(payload, "source"),
     agentId: jsonField(payload, "agent_id"),
     agentType: jsonField(payload, "agent_type"),
     permissionMode: jsonField(payload, "permission_mode"),
-    transcriptPath: jsonField(payload, "transcript_path"),
+    transcriptPath: hookIdentityField(payload, caller, "transcript_path"),
     turnId: jsonField(payload, "turn_id"),
     lastAssistantMessage: jsonField(payload, "last_assistant_message"),
     escapedLastAssistantMessage: escapedField(payload, "last_assistant_message"),
@@ -118,10 +118,19 @@ export function readEnvelope(hookText: string, caller: HookCaller): HookEnvelope
   };
 }
 
-function jsonCommandLine(payload: string): string {
-  const escaped = escapedField(payload, "command");
+function hookIdentityField(payload: string, caller: HookCaller, field: string): string {
+  if (caller.host !== "codex") return jsonField(payload, field);
+  const parsed = parsedPayload(payload);
+  if (parsed.kind !== "json" || parsed.document === null || typeof parsed.document !== "object" || Array.isArray(parsed.document)) return "";
+  const value = (parsed.document as Record<string, unknown>)[field];
+  return typeof value === "string" ? value : "";
+}
+
+function jsonCommandLine(payload: string, caller: HookCaller): string {
+  const field = caller.host === "codex" && jsonField(payload, "cmd") !== "" ? "cmd" : "command";
+  const escaped = escapedField(payload, field);
   if ([...escaped].length > MAX_LEXED_INPUT_BYTES) return asCommandSubstitutionCaptures(escaped);
-  return jsonField(payload, "command");
+  return jsonField(payload, field);
 }
 
 export function jsonField(hookText: string, field: string): string {

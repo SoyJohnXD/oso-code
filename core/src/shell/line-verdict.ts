@@ -11,11 +11,12 @@ type LineJudge<GateVerdicts extends string> = (
 export function lineVerdict<GateVerdicts extends string>(
   commandLine: string,
   judge: LineJudge<GateVerdicts>,
+  unreadExpandedExecutables = false,
 ): GateVerdicts | LexerVerdict {
   let verdict: GateVerdicts | LexerVerdict = "clear";
   let tokens: string[] = [];
   let stdin = "";
-  for (const record of lexShellCommands(commandLine)) {
+  for (const record of lexShellCommands(commandLine, unreadExpandedExecutables)) {
     switch (record.kind) {
       case "unreadPayload":
         if (verdict === "clear") verdict = "unread";

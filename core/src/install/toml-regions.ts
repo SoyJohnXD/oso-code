@@ -41,6 +41,7 @@ export type TomlRegionRequest = Readonly<{
   modelValue?: string;
   compactValue?: string;
   targetHeader?: string;
+  removePointers?: boolean;
 }>;
 
 export type TomlRegionOutput = Readonly<{ exitCode: number; stdout: string; root: string; sections: string }>;
@@ -78,9 +79,8 @@ export function recordsOf(text: string): string[] {
   return records;
 }
 
-export function mergeEngramLeaves(text: string, leaves: Record<string, unknown>, file: string): string {
+export function mergeEngramLeaves(text: string, leaves: Record<string, unknown>, file: string, target = "[mcp_servers.engram]"): string {
   const records = recordsOf(text);
-  const compactTarget = "[mcp_servers.engram]";
   const emitted: string[] = [];
   const scanner = newScanner();
   let inBase = false;
@@ -97,9 +97,9 @@ export function mergeEngramLeaves(text: string, leaves: Record<string, unknown>,
         inserted = true;
       }
       skippingValue = false;
-      const nestedKey = table.startsWith(`${compactTarget.slice(0, -1)}.`) ? table.slice(compactTarget.length, -1).replace(/^\./, "").split(".")[0] ?? "" : "";
+      const nestedKey = table.startsWith(`${target.slice(0, -1)}.`) ? table.slice(target.length, -1).replace(/^\./, "").split(".")[0] ?? "" : "";
       skippingNested = nestedKey !== "" && Object.hasOwn(leaves, nestedKey);
-      inBase = table === compactTarget;
+      inBase = table === target;
       found ||= inBase;
       if (!skippingNested) emitted.push(record);
       scanRoot(scanner, record);
@@ -117,7 +117,7 @@ export function mergeEngramLeaves(text: string, leaves: Record<string, unknown>,
     scanRoot(scanner, record);
     if (skippingValue && atRoot(scanner)) skippingValue = false;
   }
-  if (!found) throw new Error(`Engram setup cannot preserve operator leaves without a standalone ${compactTarget} table in ${file}`);
+  if (!found) throw new Error(`Cannot preserve operator leaves without a standalone ${target} table in ${file}`);
   if (!inserted) emitted.push(...Object.entries(leaves).map(([key, value]) => `${key} = ${renderTomlValue(value)}`));
   return printed(emitted);
 }
@@ -244,11 +244,7 @@ function namesKeyAtRoot(text: string, keys: string): boolean {
 }
 
 function isPointer(text: string, key: string): boolean {
-  return new RegExp(`^${key}[${POSIX_SPACE}]*=`).test(text);
-}
-
-function isStringPointer(text: string, key: string): boolean {
-  return new RegExp(`^${key}[${POSIX_SPACE}]*=[${POSIX_SPACE}]*"(?:\\\\.|[^"\\\\])*"[${POSIX_SPACE}]*$`).test(text);
+  return tomlKeyAssignment(text, key);
 }
 
 function decodedPointerValue(record: string, key: string): string | undefined {
@@ -512,17 +508,21 @@ function moveEngramPointers(records: readonly string[], request: TomlRegionReque
       modelRows += 1;
       modelLine = number;
       pointerRows.add(number);
-      if (!isStringPointer(record, modelKey) || decodedPointerValue(record, modelKey) !== request.modelValue) invalidModel = true;
+      if (decodedPointerValue(record, modelKey) !== request.modelValue) invalidModel = true;
     }
     if (rootLine && isPointer(record, compactKey)) {
       compactRows += 1;
       compactLine = number;
       pointerRows.add(number);
-      if (!isStringPointer(record, compactKey) || decodedPointerValue(record, compactKey) !== request.compactValue) invalidCompact = true;
+      if (decodedPointerValue(record, compactKey) !== request.compactValue) invalidCompact = true;
     }
     scanRoot(scanner, record);
   });
 
+  if (request.removePointers) {
+    if (modelRows > 1 || compactRows > 1 || invalidModel || invalidCompact) return outputOf(POINTER_ROW_EXIT, [], [], []);
+    return outputOf(0, records.filter((_, index) => !pointerRows.has(index + 1)), [], []);
+  }
   if (modelRows !== 1 || compactRows !== 1 || invalidModel || invalidCompact) return outputOf(POINTER_ROW_EXIT, [], [], []);
   if (starts === 0 && ends === 0 && !(request.requireRegion ?? false)) return outputOf(0, records, [], []);
   if (starts !== 1 || ends !== 1 || startLine >= endLine) return outputOf(POINTER_REGION_EXIT, [], [], []);

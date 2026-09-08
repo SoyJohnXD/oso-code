@@ -980,8 +980,7 @@ function codexHostProbes(environment) {
     marketplaceListing: () => hostRun(environment, ["plugin", "marketplace", "list", "--json"]),
     marketplaceRemove: (marketplaceName) => hostRun(environment, ["plugin", "marketplace", "remove", marketplaceName, "--json"]),
     marketplaceAdd: (source, ref) => hostRun(environment, ["plugin", "marketplace", "add", source, ...ref === void 0 ? [] : ["--ref", ref], "--json"]),
-    pluginAdd: (pluginId) => hostRun(environment, ["plugin", "add", pluginId, "--json"]),
-    setupEngram: (_homeDirectory, _codexHome) => commandRun(environment, "engram", ["setup", "codex"])
+    pluginAdd: (pluginId) => hostRun(environment, ["plugin", "add", pluginId, "--json"])
   };
 }
 function probedVersion(environment) {
@@ -1896,7 +1895,7 @@ function isPlainRecord(value) {
 
 // core/src/install/codex.ts
 import { spawnSync as spawnSync5 } from "node:child_process";
-import { chmodSync as chmodSync2, cpSync as cpSync2, mkdirSync as mkdirSync6, mkdtempSync as mkdtempSync4, readFileSync as readFileSync10, readdirSync as readdirSync5, realpathSync, renameSync as renameSync3, rmSync as rmSync7, writeFileSync as writeFileSync7 } from "node:fs";
+import { chmodSync as chmodSync2, cpSync as cpSync2, mkdirSync as mkdirSync6, mkdtempSync as mkdtempSync4, readFileSync as readFileSync10, readdirSync as readdirSync5, renameSync as renameSync3, rmSync as rmSync7, writeFileSync as writeFileSync7 } from "node:fs";
 import path10 from "node:path";
 
 // core/src/install/codex-config.ts
@@ -2858,9 +2857,8 @@ function recordsOf(text) {
   if (records[records.length - 1] === "") records.pop();
   return records;
 }
-function mergeEngramLeaves(text, leaves, file) {
+function mergeEngramLeaves(text, leaves, file, target = "[mcp_servers.engram]") {
   const records = recordsOf(text);
-  const compactTarget = "[mcp_servers.engram]";
   const emitted = [];
   const scanner = newScanner();
   let inBase = false;
@@ -2877,9 +2875,9 @@ function mergeEngramLeaves(text, leaves, file) {
         inserted = true;
       }
       skippingValue = false;
-      const nestedKey = table.startsWith(`${compactTarget.slice(0, -1)}.`) ? table.slice(compactTarget.length, -1).replace(/^\./, "").split(".")[0] ?? "" : "";
+      const nestedKey = table.startsWith(`${target.slice(0, -1)}.`) ? table.slice(target.length, -1).replace(/^\./, "").split(".")[0] ?? "" : "";
       skippingNested = nestedKey !== "" && Object.hasOwn(leaves, nestedKey);
-      inBase = table === compactTarget;
+      inBase = table === target;
       found ||= inBase;
       if (!skippingNested) emitted.push(record);
       scanRoot(scanner, record);
@@ -2897,7 +2895,7 @@ function mergeEngramLeaves(text, leaves, file) {
     scanRoot(scanner, record);
     if (skippingValue && atRoot(scanner)) skippingValue = false;
   }
-  if (!found) throw new Error(`Engram setup cannot preserve operator leaves without a standalone ${compactTarget} table in ${file}`);
+  if (!found) throw new Error(`Cannot preserve operator leaves without a standalone ${target} table in ${file}`);
   if (!inserted) emitted.push(...Object.entries(leaves).map(([key, value]) => `${key} = ${renderTomlValue(value)}`));
   return printed(emitted);
 }
@@ -3005,10 +3003,7 @@ function namesKeyAtRoot(text, keys) {
   return bare.test(withoutComment) || quoted.test(withoutComment) || literal.test(withoutComment);
 }
 function isPointer(text, key) {
-  return new RegExp(`^${key}[${POSIX_SPACE}]*=`).test(text);
-}
-function isStringPointer(text, key) {
-  return new RegExp(`^${key}[${POSIX_SPACE}]*=[${POSIX_SPACE}]*"(?:\\\\.|[^"\\\\])*"[${POSIX_SPACE}]*$`).test(text);
+  return tomlKeyAssignment(text, key);
 }
 function decodedPointerValue(record, key) {
   try {
@@ -3237,16 +3232,20 @@ function moveEngramPointers(records, request) {
       modelRows += 1;
       modelLine = number;
       pointerRows.add(number);
-      if (!isStringPointer(record, modelKey) || decodedPointerValue(record, modelKey) !== request.modelValue) invalidModel = true;
+      if (decodedPointerValue(record, modelKey) !== request.modelValue) invalidModel = true;
     }
     if (rootLine && isPointer(record, compactKey)) {
       compactRows += 1;
       compactLine = number;
       pointerRows.add(number);
-      if (!isStringPointer(record, compactKey) || decodedPointerValue(record, compactKey) !== request.compactValue) invalidCompact = true;
+      if (decodedPointerValue(record, compactKey) !== request.compactValue) invalidCompact = true;
     }
     scanRoot(scanner, record);
   });
+  if (request.removePointers) {
+    if (modelRows > 1 || compactRows > 1 || invalidModel || invalidCompact) return outputOf(POINTER_ROW_EXIT, [], [], []);
+    return outputOf(0, records.filter((_, index) => !pointerRows.has(index + 1)), [], []);
+  }
   if (modelRows !== 1 || compactRows !== 1 || invalidModel || invalidCompact) return outputOf(POINTER_ROW_EXIT, [], [], []);
   if (starts === 0 && ends === 0 && !(request.requireRegion ?? false)) return outputOf(0, records, [], []);
   if (starts !== 1 || ends !== 1 || startLine >= endLine) return outputOf(POINTER_REGION_EXIT, [], [], []);
@@ -3401,21 +3400,8 @@ function writeCodexInstall(input) {
   if (unpinned !== void 0) return unpinned;
   const paths = codexPathsFor(input.homeDirectory, input.environment);
   const sources = codexPayloadSources(input.repositoryRoot);
-  const refusal = configRefusalOf(paths.configFile);
-  if (refusal !== void 0) return fatalOutcome("install", "codex", "the Codex config refuses this install", refusalMessage(refusal));
-  if (existsAtAll(paths.globalFile) && !isRegularNonSymlinkFile(paths.globalFile)) {
-    return fatalOutcome("install", "codex", "global AGENTS.md is not a regular file", paths.globalFile);
-  }
-  const pointerRefusal = engramPointerRefusal(paths);
-  if (pointerRefusal !== void 0) return fatalOutcome("install", "codex", "the existing Engram pointers refuse this install", pointerRefusal);
-  const payloadRefusal2 = codexPayloadRefusal(sources) ?? publishedTrustRefusal(input.repositoryRoot, sources);
-  if (payloadRefusal2 !== void 0) return fatalOutcome("install", "codex", "the Codex install payload is incomplete", payloadRefusal2);
-  const targetRefusal = codexTargetRefusal(paths);
-  if (targetRefusal !== void 0) return fatalOutcome("install", "codex", "an owned Codex target refuses this install", targetRefusal);
-  const hooksRefusal = hooksManifestRefusal(paths, sources);
-  if (hooksRefusal !== void 0) return fatalOutcome("install", "codex", "the existing Codex hooks manifest refuses this install", hooksRefusal);
-  const staleEngramRefusal = staleEngramMarketplaceRefusal(input.host, paths, input.environment);
-  if (staleEngramRefusal !== void 0) return fatalOutcome("install", "codex", "the existing Engram marketplace cache refuses this install", staleEngramRefusal);
+  const refusal = codexWriteRefusal("install", paths, input.repositoryRoot);
+  if (refusal !== void 0) return refusal;
   let tx;
   let capturedHooksPath = { captured: false, present: false, value: "" };
   try {
@@ -3446,6 +3432,7 @@ function writeCodexInstall(input) {
   try {
     writeManagedConfig(paths, fallow.command, input.host);
     wiring.push(wiringOk("managed config region", paths.configFile));
+    wiring.push(wiringOk("engram", "direct standard MCP; native base and compaction; automatic capture disabled"));
   } catch (error) {
     return rolledBack("install", "could not rewrite the managed Codex config region", error, tx, capturedHooksPath, input);
   }
@@ -3454,12 +3441,6 @@ function writeCodexInstall(input) {
     wiring.push(wiringOk("global AGENTS.md region", paths.globalFile));
   } catch (error) {
     return rolledBack("install", "could not rewrite global AGENTS.md", error, tx, capturedHooksPath, input);
-  }
-  try {
-    repairStaleEngramMarketplace(input.host, paths);
-    wiring.push(wiringOk("engram", wireEngram(input, paths)));
-  } catch (error) {
-    return rolledBack("install", "could not wire Engram for Codex", error, tx, capturedHooksPath, input);
   }
   try {
     wiring.push(wiringOk("Codex plugin registration", wireOsoPlugin(input.host, paths)));
@@ -3494,15 +3475,20 @@ function writeCodexInstall(input) {
   return { report: renderCommandReport("install", "codex", infoLines, wiring), exitCode: 0 };
 }
 function repairCodex(input) {
+  return withOwnerOnlyUmask(() => writeCodexRepair(input));
+}
+function writeCodexRepair(input) {
   if (!input.assumeYes) return requiresYesOutcome("repair", "codex");
   const unpinned = pinnedVersionOutcome("repair", input.host);
   if (unpinned !== void 0) return unpinned;
   const paths = codexPathsFor(input.homeDirectory, input.environment);
+  const sources = codexPayloadSources(input.repositoryRoot);
+  const refusal = codexWriteRefusal("repair", paths, input.repositoryRoot);
+  if (refusal !== void 0) return refusal;
   let tx;
   try {
     tx = beginTransaction(paths.backupsRoot, CODEX_REPAIR_BACKUP_FORMAT);
-    backupTarget(tx, "config", paths.configFile);
-    backupTarget(tx, "global", paths.globalFile);
+    for (const { label, target } of payloadBackupCandidatesOf(paths)) backupTarget(tx, label, target);
     commitManifest(tx);
   } catch (error) {
     return fatalOutcome("repair", "codex", "could not create the pre-repair backup", messageOf(error));
@@ -3510,8 +3496,17 @@ function repairCodex(input) {
   const infoLines = [`backup: ${tx.backupRoot}`];
   if (input.host.versionNote !== void 0) infoLines.push(input.host.versionNote);
   const wiring = [];
-  wiring.push(normalizeEngramPointers(paths));
   const fallow = resolveFallowCommandFor(input, paths);
+  try {
+    stageMarketplace(paths, sources);
+    stageRuntime(paths, sources, input.repositoryRoot);
+    stageAgents(paths, sources);
+    wiring.push(wiringOk("published marketplace", paths.marketplaceRoot));
+    wiring.push(wiringOk("published runtime", paths.runtimeRoot));
+    wiring.push(wiringOk("Codex agents", paths.agentsTarget));
+  } catch (error) {
+    return rolledBack("repair", "could not stage the published Codex payload", error, tx, NO_HOOKS_CAPTURE, input);
+  }
   try {
     writeManagedConfig(paths, fallow.command, input.host);
     wiring.push(wiringOk("managed config region", paths.configFile));
@@ -3523,6 +3518,11 @@ function repairCodex(input) {
     wiring.push(wiringOk("global AGENTS.md region", paths.globalFile));
   } catch (error) {
     return rolledBack("repair", "could not rewrite global AGENTS.md", error, tx, NO_HOOKS_CAPTURE, input);
+  }
+  try {
+    wiring.push(wiringOk("Codex plugin registration", wireOsoPlugin(input.host, paths)));
+  } catch (error) {
+    return rolledBack("repair", "could not register the oso-code Codex plugin", error, tx, NO_HOOKS_CAPTURE, input);
   }
   return { report: renderCommandReport("repair", "codex", infoLines, wiring), exitCode: 0 };
 }
@@ -3564,6 +3564,23 @@ function writeCodexPurge(input) {
   infoLines.push(`restore with: oso install --host codex --yes, or by hand from ${tx.backupRoot}`);
   return { report: renderCommandReport("purge", "codex", infoLines, wiring), exitCode: 0 };
 }
+function codexWriteRefusal(verb, paths, repositoryRoot2) {
+  const sources = codexPayloadSources(repositoryRoot2);
+  const refusal = configRefusalOf(paths.configFile);
+  if (refusal !== void 0) return fatalOutcome(verb, "codex", `the Codex config refuses this ${verb}`, refusalMessage(refusal));
+  if (existsAtAll(paths.globalFile) && !isRegularNonSymlinkFile(paths.globalFile)) {
+    return fatalOutcome(verb, "codex", "global AGENTS.md is not a regular file", paths.globalFile);
+  }
+  const pointerRefusal = engramPointerRefusal(paths);
+  if (pointerRefusal !== void 0) return fatalOutcome(verb, "codex", `the existing Engram pointers refuse this ${verb}`, pointerRefusal);
+  const payloadRefusal2 = codexPayloadRefusal(sources) ?? publishedTrustRefusal(repositoryRoot2, sources);
+  if (payloadRefusal2 !== void 0) return fatalOutcome(verb, "codex", `the Codex ${verb} payload is incomplete`, payloadRefusal2);
+  const targets = verb === "repair" ? payloadBackupCandidatesOf(paths) : backupCandidatesOf(paths);
+  const symlink = targets.map(({ target }) => target).find((target) => isSymlink(target));
+  if (symlink !== void 0) return fatalOutcome(verb, "codex", `an owned Codex target refuses this ${verb}`, `refusing to replace symlinked target ${symlink}`);
+  const hooksRefusal = hooksManifestRefusal(paths, sources);
+  return hooksRefusal === void 0 ? void 0 : fatalOutcome(verb, "codex", `the existing Codex hooks manifest refuses this ${verb}`, hooksRefusal);
+}
 function configRefusalOf(configFile) {
   if (existsAtAll(configFile) && !isRegularNonSymlinkFile(configFile)) return { kind: "unparseable", detail: `not a regular file: ${configFile}` };
   return isReadableRegularFile(configFile) ? inspectCodexConfig(readFileSync10(configFile, "utf8"), configFile) : void 0;
@@ -3575,10 +3592,6 @@ function publishedTrustRefusal(repositoryRoot2, sources) {
     (relative) => path10.join(repositoryRoot2, ...relative.split("/"))
   );
   return divergent.length === 0 ? void 0 : `published runtime trust bytes diverge: ${divergent.map((item) => `${item.file}:${item.state.kind}`).join(", ")}`;
-}
-function codexTargetRefusal(paths) {
-  const symlink = backupCandidatesOf(paths).map(({ target }) => target).find((target) => isSymlink(target));
-  return symlink === void 0 ? void 0 : `refusing to replace symlinked target ${symlink}`;
 }
 function hooksManifestRefusal(paths, sources) {
   if (!existsAtAll(paths.hooksManifest)) return void 0;
@@ -3694,6 +3707,7 @@ function writeManagedConfig(paths, fallowCommand, host) {
   mkdirSync6(paths.codexHome, { recursive: true });
   if (!host.acceptsConfig(paths.codexHome, rebuilt)) throw new Error(HOST_REJECTED_CONFIG);
   writeFileSync7(paths.configFile, rebuilt, { mode: 384 });
+  finalizeHostWrittenConfig(paths, host, void 0);
 }
 function writeGlobalGuidance(paths, repositoryRoot2) {
   const existing = isReadableRegularFile(paths.globalFile) ? readFileSync10(paths.globalFile, "utf8") : "";
@@ -3716,6 +3730,13 @@ function finalizeHostWrittenConfig(paths, host, operatorLeaves) {
   const pointers = normalizedEngramPointerConfig(paths, candidate);
   if (pointers.exitCode !== 0) throw new Error("Engram's instruction pointers are missing, duplicated, or unexpected");
   candidate = pointers.stdout;
+  const document = parseTomlDocument(candidate, paths.configFile);
+  const servers = document["mcp_servers"];
+  if (!isRecord2(servers) || !isRecord2(servers["engram"])) candidate += "\n[mcp_servers.engram]\n";
+  candidate = mergeEngramLeaves(candidate, { command: "engram", args: ["mcp", "--tools=agent"] }, paths.configFile);
+  const plugins = document["plugins"];
+  if (!isRecord2(plugins) || !isRecord2(plugins["engram@engram"])) candidate += '\n[plugins."engram@engram"]\n';
+  candidate = mergeEngramLeaves(candidate, { enabled: false }, paths.configFile, '[plugins."engram@engram"]');
   const refusal = inspectCodexConfig(candidate, paths.configFile);
   if (refusal !== void 0) throw new Error(refusalMessage(refusal));
   if (managedFeaturesStatus(candidate) !== "valid") throw new Error(refusalMessage({ kind: "malformed-features" }));
@@ -3729,151 +3750,14 @@ function engramOperatorLeaves(configFile) {
   const leaves = Object.fromEntries(Object.entries(engram).filter(([key]) => key !== "command" && key !== "args"));
   return Object.keys(leaves).length === 0 ? void 0 : leaves;
 }
-function staleEngramMarketplaceRefusal(host, paths, environment) {
-  const registered = engramMarketplaceIsRegistered(host);
-  if (registered.error !== void 0) return registered.error;
-  if (registered.value || !existsAtAll(engramMarketplaceCache(paths))) return void 0;
-  return validateStaleEngramMarketplace(engramMarketplaceCache(paths), environment);
-}
-function repairStaleEngramMarketplace(host, paths) {
-  const cache = engramMarketplaceCache(paths);
-  if (!existsAtAll(cache)) return;
-  const registered = engramMarketplaceIsRegistered(host);
-  if (registered.error !== void 0) throw new Error(registered.error);
-  if (registered.value) return;
-  const removal = host.marketplaceRemove("engram");
-  if (!removal.ok) throw new Error(`could not remove the clean unregistered Engram marketplace cache: ${hostFailure(removal)}`);
-  if (existsAtAll(cache)) throw new Error(`Codex did not remove the unregistered Engram marketplace cache: ${cache}`);
-}
-function engramMarketplaceCache(paths) {
-  return path10.join(paths.codexHome, ".tmp", "marketplaces", "engram");
-}
-function engramMarketplaceIsRegistered(host) {
-  const listing = host.marketplaceListing();
-  if (!listing.ok) return { value: false, error: `could not inspect registered Codex marketplaces before Engram setup: ${hostFailure(listing)}` };
-  try {
-    const document = hostJson(listing, "Codex marketplace inventory");
-    if (!Array.isArray(document["marketplaces"])) return { value: false, error: "Codex returned malformed marketplace inventory JSON: marketplaces is not an array" };
-    return { value: document["marketplaces"].some((row) => isRecord2(row) && row["name"] === "engram") };
-  } catch (error) {
-    return { value: false, error: `Codex returned malformed marketplace inventory JSON: ${messageOf(error)}` };
-  }
-}
-function validateStaleEngramMarketplace(cache, environment) {
-  if (isSymlink(cache)) return `refusing to remove symlinked unregistered Engram marketplace cache: ${cache}`;
-  if (!isDirectoryNotSymlink(cache)) return `unregistered Engram marketplace cache is not a directory: ${cache}`;
-  const gitDirectory = path10.join(cache, ".git");
-  if (!isDirectoryNotSymlink(gitDirectory)) return `refusing to inspect an untrusted Engram marketplace cache without a real .git directory: ${cache}`;
-  const gitConfig = path10.join(gitDirectory, "config");
-  if (!isReadableRegularFile(gitConfig)) return `refusing to inspect an Engram marketplace cache without a readable Git config: ${gitConfig}`;
-  const gitText = (argv) => {
-    const result = safeCacheGit(cache, environment, argv);
-    return result.status === 0 ? result.stdout.trim() : void 0;
-  };
-  const root = gitText(["rev-parse", "--show-toplevel"]);
-  if (root === void 0 || !isDirectoryNotSymlink(root) || realpathSync.native(root) !== realpathSync.native(cache)) return `refusing to remove an unregistered Engram marketplace cache that is not an exact Git checkout: ${cache}`;
-  if (gitText(["remote"]) !== "origin") return `refusing to remove an Engram marketplace cache with unexpected Git remotes: ${cache}`;
-  if (gitText(["remote", "get-url", "--all", "origin"]) !== `https://github.com/${ENGRAM_SOURCE_REPO}.git`) return `refusing to remove an Engram marketplace cache from an unknown origin: ${cache}`;
-  const head = gitText(["rev-parse", "HEAD"]);
-  const headRef = gitText(["symbolic-ref", "-q", "refs/remotes/origin/HEAD"]);
-  if (head === void 0 || headRef === void 0 || !/^refs\/remotes\/origin\/[A-Za-z0-9_.-]+$/.test(headRef)) {
-    return `refusing to remove an Engram marketplace cache with local or unverified commits: ${cache}`;
-  }
-  if (gitText(["rev-parse", headRef]) !== head) return `refusing to remove an Engram marketplace cache with local or unverified commits: ${cache}`;
-  const preflight = cachePristineRefusal(cache, environment);
-  if (preflight !== void 0) return preflight;
-  const status = safeCacheGit(cache, environment, ["status", "--porcelain", "--untracked-files=all"]);
-  if (status.status !== 0 || status.stdout.trim() !== "") return `refusing to remove a modified unregistered Engram marketplace cache: ${cache}`;
-  const marketplaceFile = path10.join(cache, ".agents", "plugins", "marketplace.json");
-  const pluginFile = path10.join(cache, "plugin", "codex", ".codex-plugin", "plugin.json");
-  if (!isReadableRegularFile(marketplaceFile) || !isReadableRegularFile(pluginFile)) return `unregistered Engram marketplace cache has no trusted manifests: ${cache}`;
-  try {
-    const marketplace = readJsonObject(marketplaceFile);
-    const plugins = marketplace["plugins"];
-    const plugin = Array.isArray(plugins) && plugins.length === 1 ? plugins[0] : void 0;
-    const source = isRecord2(plugin) ? plugin["source"] : void 0;
-    if (marketplace["name"] !== "engram" || !isRecord2(plugin) || plugin["name"] !== "engram" || !isRecord2(source) || source["source"] !== "local" || source["path"] !== "./plugin/codex") {
-      return `unregistered Engram marketplace cache has unexpected manifests: ${cache}`;
-    }
-    const pluginManifest = readJsonObject(pluginFile);
-    if (pluginManifest["name"] !== "engram") return `unregistered Engram marketplace cache has an unexpected plugin manifest: ${pluginFile}`;
-  } catch (error) {
-    return `unregistered Engram marketplace cache has invalid manifests: ${messageOf(error)}`;
-  }
-  return void 0;
-}
-function cachePristineRefusal(cache, environment) {
-  const tree = safeCacheGit(cache, environment, ["ls-tree", "-r", "-z", "--full-tree", "HEAD"]);
-  if (tree.status !== 0) return `refusing to inspect an unregistered Engram marketplace cache tree: ${cache}`;
-  if (tree.stdout.split("\0").some((row) => row.startsWith("160000 commit "))) return `refusing to inspect an Engram marketplace cache containing a nested Git checkout: ${cache}`;
-  const index = safeCacheGit(cache, environment, ["ls-files", "--stage", "-z"]);
-  if (index.status !== 0 || index.stdout.split("\0").some((row) => row.startsWith("160000 "))) return `refusing to inspect an unregistered Engram marketplace cache containing a nested Git checkout: ${cache}`;
-  const flags = safeCacheGit(cache, environment, ["ls-files", "-v", "-z"]);
-  if (flags.status !== 0 || flags.stdout.split("\0").some((row) => row !== "" && row[0] !== "H")) return `refusing to remove an Engram marketplace cache with non-pristine index flags: ${cache}`;
-  const extras = safeCacheGit(cache, environment, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"]);
-  if (extras.status !== 0 || extras.stdout !== "") return `refusing to remove an Engram marketplace cache with untracked or ignored files: ${cache}`;
-  return void 0;
-}
-function safeCacheGit(cache, environment, argv) {
-  const safeEnvironment = cacheGitEnvironment(environment);
-  const filterConfig = spawnSync5(
-    "git",
-    ["-c", "core.fsmonitor=false", "config", "--includes", "--name-only", "--get-regexp", "^filter\\..*\\.(clean|process)$"],
-    { env: safeEnvironment, cwd: cache, encoding: "utf8" }
-  );
-  if (filterConfig.error !== void 0 || filterConfig.status !== 0 && filterConfig.status !== 1) return { status: 1, stdout: "" };
-  const drivers = (filterConfig.stdout ?? "").split("\n").filter((entry) => entry !== "").map((key) => /^filter\.(.+)\.(?:clean|process)$/.exec(key)?.[1]);
-  if (drivers.some((driver) => driver === void 0)) return { status: 1, stdout: "" };
-  const filterOptions = [...new Set(drivers)].flatMap((driver) => [
-    "-c",
-    `filter.${driver}.clean=`,
-    "-c",
-    `filter.${driver}.process=`,
-    "-c",
-    `filter.${driver}.required=false`
-  ]);
-  const run = spawnSync5(
-    "git",
-    ["-c", "core.fsmonitor=false", ...filterOptions, "-c", "core.hooksPath=/dev/null", "-C", cache, ...argv],
-    { env: safeEnvironment, encoding: "utf8" }
-  );
-  return { status: run.error === void 0 ? run.status ?? 1 : 1, stdout: run.stdout ?? "" };
-}
-function cacheGitEnvironment(environment) {
-  const safe = Object.fromEntries(Object.entries(environment).filter(([name]) => !name.startsWith("GIT_")));
-  Object.assign(safe, { GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", GIT_NO_LAZY_FETCH: "1", GIT_ALLOW_PROTOCOL: "" });
-  return safe;
-}
-function wireEngram(input, paths) {
-  const operatorLeaves = engramOperatorLeaves(paths.configFile);
-  const setup = input.host.setupEngram(paths.homeDirectory, paths.codexHome);
-  if (!setup.ok) throw new Error(`engram setup codex failed: ${hostFailure(setup)}`);
-  if ((setup.stderr ?? "").match(/codex plugin add failed|plugin .* not found/i) !== null) {
-    throw new Error(`engram setup codex reported incomplete plugin registration: ${collapsedHostOutput(setup)}`);
-  }
-  finalizeHostWrittenConfig(paths, input.host, operatorLeaves);
-  const missingDocument = ["engram-instructions.md", "engram-compact-prompt.md"].map((name) => path10.join(paths.codexHome, name)).find((file) => !isReadableRegularFile(file));
-  if (missingDocument !== void 0) throw new Error(`Engram did not publish ${missingDocument}`);
-  const document = parseTomlDocument(readFileSync10(paths.configFile, "utf8"), paths.configFile);
-  const engram = isRecord2(document["mcp_servers"]) ? document["mcp_servers"]["engram"] : void 0;
-  const args = isRecord2(engram) ? engram["args"] : void 0;
-  const engramMarketplace = isRecord2(document["marketplaces"]) ? document["marketplaces"]["engram"] : void 0;
-  const engramPlugin = isRecord2(document["plugins"]) ? document["plugins"]["engram@engram"] : void 0;
-  const failed = [
-    [isRecord2(engram) && typeof engram["command"] === "string", "Engram setup did not register [mcp_servers.engram]"],
-    [Array.isArray(args) && args.some((value) => value === "mcp") && args.some((value) => value === "--tools=agent"), "Engram setup registered an unexpected MCP command"],
-    [isRecord2(engramMarketplace) && engramMarketplace["source_type"] === "git" && engramMarketplace["source"] === `https://github.com/${ENGRAM_SOURCE_REPO}.git` && engramMarketplace["ref"] === "main", "Engram setup did not register the official engram marketplace"],
-    [isRecord2(engramPlugin) && engramPlugin["enabled"] === true, "Engram setup did not register the engram@engram plugin"]
-  ].find(([valid]) => !valid);
-  if (failed !== void 0) throw new Error(String(failed[1]));
-  return appendHostWarning("wired through engram setup codex", setup);
-}
 function wireOsoPlugin(host, paths) {
+  const operatorLeaves = engramOperatorLeaves(paths.configFile);
   const registration = registerCodexPlugin(host, paths.marketplaceRoot, void 0, CODEX_PLUGIN_ID, CODEX_MARKETPLACE_NAME, paths.marketplaceRoot);
-  finalizeHostWrittenConfig(paths, host, void 0);
+  finalizeHostWrittenConfig(paths, host, operatorLeaves);
   return appendHostWarning(`registered ${CODEX_PLUGIN_ID}`, registration.marketplace, registration.plugin);
 }
 function wireImpeccable2(host, paths) {
+  const operatorLeaves = engramOperatorLeaves(paths.configFile);
   const registration = registerCodexPlugin(host, "pbakaus/impeccable", `skill-v${SUPPORTED_IMPECCABLE_VERSION}`, "impeccable@impeccable", "impeccable");
   const installedRoot = registration.installedRoot;
   const publishedSkill = path10.join(installedRoot, ".agents", "skills", "impeccable");
@@ -3893,7 +3777,7 @@ function wireImpeccable2(host, paths) {
     copyDirectoryContents(publishedSkill, stage);
   });
   rmSync7(paths.impeccableOptOut, { force: true });
-  finalizeHostWrittenConfig(paths, host, void 0);
+  finalizeHostWrittenConfig(paths, host, operatorLeaves);
   return appendHostWarning(`mounted ${paths.impeccableMount} from ${installedRoot}`, registration.marketplace, registration.plugin);
 }
 function registerCodexPlugin(host, source, ref, pluginId, marketplaceName, expectedRoot) {
@@ -3946,7 +3830,8 @@ function normalizedEngramPointerConfig(paths, text) {
     compactKey: COMPACT_PROMPT_KEY,
     modelValue: path10.join(paths.codexHome, "engram-instructions.md"),
     compactValue: path10.join(paths.codexHome, "engram-compact-prompt.md"),
-    requireRegion: true
+    requireRegion: true,
+    removePointers: true
   });
 }
 function engramPointerRefusal(paths) {
@@ -3961,16 +3846,6 @@ function engramPointerRefusal(paths) {
     if (Object.hasOwn(document, key) && document[key] !== expected) return `root ${key} points to an unrelated value; refusing to replace ${paths.configFile}`;
   }
   return void 0;
-}
-function normalizeEngramPointers(paths) {
-  if (!isReadableRegularFile(paths.configFile)) return wiringFail("engram pointers", `no config at ${paths.configFile}`);
-  const text = readFileSync10(paths.configFile, "utf8");
-  const moved = normalizedEngramPointerConfig(paths, text);
-  if (moved.exitCode === 10) return wiringFail("engram pointers", "the Codex config markers are missing or malformed");
-  if (moved.exitCode !== 0) return wiringFail("engram pointers", "Engram's instruction pointers are missing, duplicated, or unexpected");
-  if (moved.stdout === text) return wiringOk("engram pointers", "already normalized");
-  writeFileSync7(paths.configFile, moved.stdout, { mode: 384 });
-  return wiringOk("engram pointers", "moved above the managed region");
 }
 function wireGitCommitHook2(repositoryRoot2, runtimeRoot, environment) {
   const hooksPath = path10.join(runtimeRoot, "git-hooks");
@@ -4029,18 +3904,23 @@ function npmGlobalPrefix2(environment) {
 }
 function backupCandidatesOf(paths) {
   return [
+    ...payloadBackupCandidatesOf(paths),
+    { label: "engram-marketplace", target: path10.join(paths.codexHome, ".tmp", "marketplaces", "engram") },
+    { label: "engram-instructions", target: path10.join(paths.codexHome, "engram-instructions.md") },
+    { label: "engram-compact", target: path10.join(paths.codexHome, "engram-compact-prompt.md") },
+    { label: "impeccable", target: paths.impeccableMount },
+    { label: "impeccable-opt-out", target: paths.impeccableOptOut }
+  ];
+}
+function payloadBackupCandidatesOf(paths) {
+  return [
     { label: "config", target: paths.configFile },
     { label: "global", target: paths.globalFile },
     { label: "hooks-manifest", target: paths.hooksManifest },
     { label: "agents", target: paths.agentsTarget },
     { label: "runtime", target: paths.runtimeRoot },
     { label: "marketplace", target: paths.marketplaceRoot },
-    { label: "plugins", target: path10.join(paths.codexHome, "plugins") },
-    { label: "engram-marketplace", target: path10.join(paths.codexHome, ".tmp", "marketplaces", "engram") },
-    { label: "engram-instructions", target: path10.join(paths.codexHome, "engram-instructions.md") },
-    { label: "engram-compact", target: path10.join(paths.codexHome, "engram-compact-prompt.md") },
-    { label: "impeccable", target: paths.impeccableMount },
-    { label: "impeccable-opt-out", target: paths.impeccableOptOut }
+    { label: "plugins", target: path10.join(paths.codexHome, "plugins") }
   ];
 }
 function rolledBack(verb, summary, error, tx, hooksPath, input) {
@@ -5160,7 +5040,7 @@ function writeOpenCodeInstall(input) {
     wiring.push(publishedGateBytesEntry(sources.publishedHashes, paths.configHome, targets.hooks));
     mergeGlobalAgents(paths.globalFile, readFileSync13(sources.global, "utf8"));
     wiring.push(wiringOk("global AGENTS.md region", paths.globalFile));
-    wiring.push(wireEngram2(input.environment, targets.engramPlugin, tx));
+    wiring.push(wireEngram(input.environment, targets.engramPlugin, tx));
     wiring.push(renderOpenCodeConfig(input, paths, tx));
     wiring.push(...impeccableEntries(input, targets));
     writeOwnerRegistry(paths, targets, tx);
@@ -5283,7 +5163,7 @@ function agentModelNote(profile, agentModels) {
 function recordedConfigDocument(tx) {
   return readJsonFile(path15.join(tx.itemsDirectory, "config"));
 }
-function wireEngram2(environment, engramPlugin, tx) {
+function wireEngram(environment, engramPlugin, tx) {
   if (firstExecutableOnPath(environment, ENGRAM_BINARY_NAME) === void 0) {
     return wiringOk("engram", "engram is not on PATH; the operator's prior Engram wiring stays as backed up");
   }
@@ -5460,7 +5340,7 @@ function directoryEntryNames(directory) {
 }
 
 // core/src/install/opencode-purge.ts
-import { mkdirSync as mkdirSync8, readFileSync as readFileSync14, realpathSync as realpathSync2, rmSync as rmSync10 } from "node:fs";
+import { mkdirSync as mkdirSync8, readFileSync as readFileSync14, realpathSync, rmSync as rmSync10 } from "node:fs";
 import path16 from "node:path";
 var OPENCODE_PURGE_BACKUP_FORMAT = "oso-code-opencode-purge-v1";
 var PROJECT_CONFIGS_KEY = "OSO_OPENCODE_PROJECT_CONFIGS";
@@ -5649,7 +5529,7 @@ function isBelow(candidate, ancestor) {
 }
 function physicalPathOf(target) {
   try {
-    return realpathSync2(target);
+    return realpathSync(target);
   } catch {
     return void 0;
   }
@@ -6001,10 +5881,15 @@ function checkEngramWiring(report2, paths, configParses) {
     report2.skip(`Engram Codex integration \u2014 ${paths.configFile} is unparseable, so the MCP server table could not be read`);
     return;
   }
-  const instructions = path17.join(paths.codexHome, "engram-instructions.md");
-  const compact = path17.join(paths.codexHome, "engram-compact-prompt.md");
-  const wired = isReadableRegularFile(instructions) && isReadableRegularFile(compact) && isReadableRegularFile(paths.configFile) && mcpServersOf(paths.configFile).some((server) => server.name === "engram") && engramPointersAreNormalized(paths);
-  report2.check("Engram Codex integration", "wired", wired ? "wired" : "incomplete");
+  const document = readTomlFile(paths.configFile);
+  const servers = document?.["mcp_servers"];
+  const engram = isRecord2(servers) ? servers["engram"] : void 0;
+  const wired = isRecord2(engram) && engram["command"] === "engram" && JSON.stringify(engram["args"]) === JSON.stringify(["mcp", "--tools=agent"]) && engram["enabled"] !== false;
+  report2.check("Engram direct MCP configuration", "wired", wired ? "wired" : "incomplete");
+  const plugins = document?.["plugins"];
+  const capture = isRecord2(plugins) ? plugins["engram@engram"] : void 0;
+  const managed = isRecord2(capture) && capture["enabled"] === false && engramPointersAreNormalized(paths);
+  report2.check("managed essential-memory configuration", "configured", managed ? "configured" : "conflicting-or-incomplete");
 }
 function engramPointersAreNormalized(paths) {
   const text = readFileSync15(paths.configFile, "utf8");

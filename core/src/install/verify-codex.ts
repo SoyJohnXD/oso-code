@@ -316,15 +316,16 @@ export function checkEngramWiring(report: VerifyReport, paths: CodexPaths, confi
     report.skip(`Engram Codex integration — ${paths.configFile} is unparseable, so the MCP server table could not be read`);
     return;
   }
-  const instructions = path.join(paths.codexHome, "engram-instructions.md");
-  const compact = path.join(paths.codexHome, "engram-compact-prompt.md");
-  const wired =
-    isReadableRegularFile(instructions) &&
-    isReadableRegularFile(compact) &&
-    isReadableRegularFile(paths.configFile) &&
-    mcpServersOf(paths.configFile).some((server) => server.name === "engram") &&
-    engramPointersAreNormalized(paths);
-  report.check("Engram Codex integration", "wired", wired ? "wired" : "incomplete");
+  const document = readTomlFile(paths.configFile);
+  const servers = document?.["mcp_servers"];
+  const engram = isRecord(servers) ? servers["engram"] : undefined;
+  const wired = isRecord(engram) && engram["command"] === "engram" &&
+    JSON.stringify(engram["args"]) === JSON.stringify(["mcp", "--tools=agent"]) && engram["enabled"] !== false;
+  report.check("Engram direct MCP configuration", "wired", wired ? "wired" : "incomplete");
+  const plugins = document?.["plugins"];
+  const capture = isRecord(plugins) ? plugins["engram@engram"] : undefined;
+  const managed = isRecord(capture) && capture["enabled"] === false && engramPointersAreNormalized(paths);
+  report.check("managed essential-memory configuration", "configured", managed ? "configured" : "conflicting-or-incomplete");
 }
 
 function engramPointersAreNormalized(paths: CodexPaths): boolean {

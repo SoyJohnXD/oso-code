@@ -29,7 +29,6 @@ export type CodexHostProbes = Readonly<{
   marketplaceRemove: (marketplaceName: string) => HostRun;
   marketplaceAdd: (source: string, ref?: string) => HostRun;
   pluginAdd: (pluginId: string) => HostRun;
-  setupEngram: (homeDirectory: string, codexHome: string) => HostRun;
 }>;
 
 export function pinnedVersionRefusal(host: CodexHostProbes): string {
@@ -59,7 +58,6 @@ export function codexHostProbes(environment: NodeJS.ProcessEnv): CodexHostProbes
     marketplaceAdd: (source, ref) =>
       hostRun(environment, ["plugin", "marketplace", "add", source, ...(ref === undefined ? [] : ["--ref", ref]), "--json"]),
     pluginAdd: (pluginId) => hostRun(environment, ["plugin", "add", pluginId, "--json"]),
-    setupEngram: (_homeDirectory, _codexHome) => commandRun(environment, "engram", ["setup", "codex"]),
   };
 }
 

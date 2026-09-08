@@ -98,7 +98,7 @@ function renderCodexAgent(role: AgentRole, body: string): string {
     `sandbox_mode = "${spec.sandboxMode}"`,
     `developer_instructions = """`,
   ].join("\n");
-  return `${lines}\n${body}"""\n`;
+  return `${lines}\n${body}"""\n\n[mcp_servers.engram]\nenabled = false\n`;
 }
 
 function renderOpenCodeAgent(role: AgentRole, body: string): string {

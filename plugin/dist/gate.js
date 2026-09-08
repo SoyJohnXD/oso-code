@@ -204,8 +204,8 @@ var SHELL_WORDS_THIS_LEXER_READS = /* @__PURE__ */ new Set([
   "{",
   "}"
 ]);
-function lexShellCommands(commandLine) {
-  return new CommandLineLexer(commandLine, 0).lex();
+function lexShellCommands(commandLine, unreadExpandedExecutables = false) {
+  return new CommandLineLexer(commandLine, 0, unreadExpandedExecutables).lex();
 }
 function basenameOf(word) {
   const lastSlash = word.lastIndexOf("/");
@@ -344,8 +344,11 @@ function splitAtTheFirstOperand(words) {
 var CommandLineLexer = class _CommandLineLexer {
   rest;
   depth;
+  unreadExpandedExecutables;
   token = "";
   tokenOpen = false;
+  tokenHasExpansion = false;
+  tokenAssignment = "pending";
   redirectTargetPending = false;
   herestringPending = false;
   pendingHeredocs = [];
@@ -353,10 +356,11 @@ var CommandLineLexer = class _CommandLineLexer {
   unreadStdin = "";
   commandTokens = [];
   records = [];
-  constructor(commandLine, depth) {
+  constructor(commandLine, depth, unreadExpandedExecutables) {
     this.rest = `${commandLine}
 `;
     this.depth = depth;
+    this.unreadExpandedExecutables = unreadExpandedExecutables;
   }
   lex() {
     if (Buffer.byteLength(this.rest, "utf8") > MAX_LEXED_INPUT_BYTES) return [UNREAD_PAYLOAD];
@@ -370,6 +374,7 @@ var CommandLineLexer = class _CommandLineLexer {
     const ordinary = leadingRunWithout(this.rest, SPECIAL_CHARACTERS);
     if (ordinary !== "") {
       this.token += ordinary;
+      if (this.tokenAssignment === "pending" && /^[A-Za-z_][A-Za-z_0-9]*\+?=/.test(this.token)) this.tokenAssignment = "assignment";
       this.tokenOpen = true;
       this.rest = this.rest.slice(ordinary.length);
       return;
@@ -379,6 +384,7 @@ var CommandLineLexer = class _CommandLineLexer {
     this.takeSpecial(character);
   }
   takeSpecial(character) {
+    if (this.tokenAssignment === "pending" && "'\"$`\\{}#".includes(character) && !(character === "\\" && this.rest.startsWith("\n"))) this.tokenAssignment = "word";
     switch (character) {
       case "'":
         this.tokenOpen = true;
@@ -452,6 +458,7 @@ var CommandLineLexer = class _CommandLineLexer {
     if (this.tokenOpen && this.redirectTargetPending) {
       this.redirectTargetPending = false;
     } else if (this.tokenOpen) {
+      if (this.unreadExpandedExecutables && this.tokenHasExpansion && this.tokenAssignment !== "assignment" && withoutACoprocessName(this.commandTokens).every(isCommandPrefixWord)) this.markUnread();
       this.commandTokens.push(this.token);
       if (this.herestringPending) {
         this.herestringPending = false;
@@ -460,6 +467,8 @@ var CommandLineLexer = class _CommandLineLexer {
     }
     this.token = "";
     this.tokenOpen = false;
+    this.tokenHasExpansion = false;
+    this.tokenAssignment = "pending";
   }
   endCommand() {
     this.endToken();
@@ -591,7 +600,7 @@ var CommandLineLexer = class _CommandLineLexer {
       this.markUnread();
       return;
     }
-    this.nested.push(...new _CommandLineLexer(payload, this.depth + 1).lex());
+    this.nested.push(...new _CommandLineLexer(payload, this.depth + 1, this.unreadExpandedExecutables).lex());
   }
   markUnread() {
     this.nested.push(UNREAD_PAYLOAD);
@@ -665,6 +674,7 @@ var CommandLineLexer = class _CommandLineLexer {
     this.rest = this.rest.slice(quoted2.length);
   }
   takeExpansion() {
+    if (/^[({A-Za-z_0-9@*#?$!\-]/.test(this.rest)) this.tokenHasExpansion = true;
     if (this.rest.startsWith("(")) {
       this.token += "$";
       this.rest = this.rest.slice(1);
@@ -700,6 +710,7 @@ var CommandLineLexer = class _CommandLineLexer {
     return body;
   }
   takeBacktick() {
+    this.tokenHasExpansion = true;
     const span = this.spanBefore("`");
     this.token += "$";
     this.rest = this.rest.slice(span.length + 1);
@@ -808,16 +819,16 @@ function readEnvelope(hookText, caller) {
   return {
     caller,
     payloadRead: parsedPayload(payload).kind,
-    sessionId: jsonField(payload, "session_id"),
-    cwd: jsonField(payload, "cwd"),
+    sessionId: hookIdentityField(payload, caller, "session_id"),
+    cwd: hookIdentityField(payload, caller, "cwd"),
     toolName: jsonField(payload, "tool_name"),
     filePath: jsonField(payload, "file_path"),
-    commandLine: jsonCommandLine(payload),
+    commandLine: jsonCommandLine(payload, caller),
     source: jsonField(payload, "source"),
     agentId: jsonField(payload, "agent_id"),
     agentType: jsonField(payload, "agent_type"),
     permissionMode: jsonField(payload, "permission_mode"),
-    transcriptPath: jsonField(payload, "transcript_path"),
+    transcriptPath: hookIdentityField(payload, caller, "transcript_path"),
     turnId: jsonField(payload, "turn_id"),
     lastAssistantMessage: jsonField(payload, "last_assistant_message"),
     escapedLastAssistantMessage: escapedField(payload, "last_assistant_message"),
@@ -826,10 +837,18 @@ function readEnvelope(hookText, caller) {
     stopHookActive: STOP_HOOK_ACTIVE.test(payload)
   };
 }
-function jsonCommandLine(payload) {
-  const escaped = escapedField(payload, "command");
+function hookIdentityField(payload, caller, field) {
+  if (caller.host !== "codex") return jsonField(payload, field);
+  const parsed = parsedPayload(payload);
+  if (parsed.kind !== "json" || parsed.document === null || typeof parsed.document !== "object" || Array.isArray(parsed.document)) return "";
+  const value = parsed.document[field];
+  return typeof value === "string" ? value : "";
+}
+function jsonCommandLine(payload, caller) {
+  const field = caller.host === "codex" && jsonField(payload, "cmd") !== "" ? "cmd" : "command";
+  const escaped = escapedField(payload, field);
   if ([...escaped].length > MAX_LEXED_INPUT_BYTES) return asCommandSubstitutionCaptures(escaped);
-  return jsonField(payload, "command");
+  return jsonField(payload, field);
 }
 function jsonField(hookText, field) {
   const payload = asCommandSubstitutionCaptures(hookText);
@@ -1008,6 +1027,88 @@ var GATE_ROWS = [
     wiring: { claude: "wired", codex: "none", opencode: "wired" },
     mechanism: { claude: "subprocess", codex: "none", opencode: "event" }
   }
+];
+var TOOL_ROWS = [
+  { gate: "commit", names: { claude: "Bash", codex: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "Edit", codex: "apply_patch", opencode: "edit" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "MultiEdit", codex: "none", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "Write", codex: "apply_patch", opencode: "write" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "NotebookEdit", codex: "none", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "mcp__fallow__fix_apply", codex: "mcp__fallow__fix_apply", opencode: "fallow_fix_apply" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "none", codex: "none", opencode: "apply_patch" }, capability: "write", mandated: "no" },
+  { gate: "proddeploy", names: { claude: "Bash", codex: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
+  { gate: "handoff", names: { claude: "none", codex: "explorer", opencode: "none" }, capability: "role", mandated: "yes" },
+  { gate: "handoff", names: { claude: "none", codex: "oso-applier", opencode: "none" }, capability: "role", mandated: "yes" },
+  { gate: "handoff", names: { claude: "none", codex: "oso-verifier", opencode: "none" }, capability: "role", mandated: "yes" },
+  { gate: "handoff", names: { claude: "none", codex: "oso-integrator", opencode: "none" }, capability: "role", mandated: "yes" },
+  { gate: "handoff", names: { claude: "none", codex: "oso-doubt-pass", opencode: "none" }, capability: "role", mandated: "yes" },
+  { gate: "handoff", names: { claude: "none", codex: "oso-debt-sweep", opencode: "none" }, capability: "role", mandated: "yes" },
+  { gate: "handoff", names: { claude: "none", codex: "oso-triage", opencode: "none" }, capability: "role", mandated: "yes" },
+  { gate: "handoff", names: { claude: "none", codex: "oso-security-reviewer", opencode: "none" }, capability: "role", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", codex: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "apply_patch", opencode: "apply_patch" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "update_plan", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "request_user_input", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "Agent", opencode: "task" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "collaborationspawn_agent", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "collaborationsend_message", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "collaborationfollowup_task", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "collaborationwait_agent", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "collaborationinterrupt_agent", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "collaborationlist_agents", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "spawn_agent", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "send_input", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "resume_agent", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "close_agent", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "send_message", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "followup_task", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "wait_agent", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "interrupt_agent", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "list_agents", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "wait", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "create_goal", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "get_goal", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "update_goal", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "view_image", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "list_mcp_resources", opencode: "list_mcp_resources" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "list_mcp_resource_templates", opencode: "list_mcp_resource_templates" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "read_mcp_resource", opencode: "read_mcp_resource" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "image_gen__imagegen", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "image_genimagegen", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "web__run", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "webrun", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_search", opencode: "engram_mem_search" }, capability: "read", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_get_observation", opencode: "engram_mem_get_observation" }, capability: "read", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_save", opencode: "engram_mem_save" }, capability: "write", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_update", opencode: "engram_mem_update" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_context", opencode: "engram_mem_context" }, capability: "read", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_session_summary", opencode: "engram_mem_session_summary" }, capability: "write", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_current_project", opencode: "engram_mem_current_project" }, capability: "read", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_save_prompt", opencode: "engram_mem_save_prompt" }, capability: "write", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_judge", opencode: "engram_mem_judge" }, capability: "write", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__context7__resolve-library-id", opencode: "context7_resolve-library-id" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__context7__query-docs", opencode: "context7_query-docs" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__context7__query_docs", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__context7__resolve_library_id", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__fallow__find_dupes", opencode: "fallow_find_dupes" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__fallow__get_cleanup_candidates", opencode: "fallow_get_cleanup_candidates" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__fallow__audit", opencode: "fallow_audit" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__fallow__fix_apply", opencode: "fallow_fix_apply" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "edit" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "write" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "read" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "grep" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "glob" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "skill" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "todowrite" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "webfetch" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "websearch" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "question" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "lsp" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "plan_exit" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "oso_plan_approve" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "oso_plan_cancel" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "oso_wave" }, capability: "write", mandated: "no" }
 ];
 function gateRow(gate) {
   const found = GATE_ROWS.find((row) => row.gate === gate);
@@ -1808,11 +1909,11 @@ function mentionsASubject(text, subjects) {
 }
 
 // core/src/shell/line-verdict.ts
-function lineVerdict(commandLine, judge) {
+function lineVerdict(commandLine, judge, unreadExpandedExecutables = false) {
   let verdict = "clear";
   let tokens = [];
   let stdin = "";
-  for (const record of lexShellCommands(commandLine)) {
+  for (const record of lexShellCommands(commandLine, unreadExpandedExecutables)) {
     switch (record.kind) {
       case "unreadPayload":
         if (verdict === "clear") verdict = "unread";
@@ -1934,11 +2035,111 @@ function aSliceIsActive(stateContent) {
 }
 
 // core/src/state/handoff.ts
-import { chmodSync, existsSync as existsSync2, lstatSync as lstatSync2, mkdirSync as mkdirSync4, opendirSync, readFileSync as readFileSync3, readdirSync, realpathSync, rmSync as rmSync3 } from "node:fs";
+import { execFileSync as execFileSync2 } from "node:child_process";
+import { chmodSync, existsSync as existsSync2, lstatSync as lstatSync3, mkdirSync as mkdirSync4, opendirSync, readFileSync as readFileSync3, readdirSync, realpathSync, rmSync as rmSync3 } from "node:fs";
 import path5 from "node:path";
 
 // core/src/hosts/codex-session-metadata.ts
+import { closeSync, constants as constants2, fstatSync, lstatSync as lstatSync2, openSync, readSync } from "node:fs";
+var CodexMetadataFailure = class extends Error {
+};
+var CODEX_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+var CODEX_METADATA_READINESS_MS = 1e4;
 var MAX_FIRST_RECORD_BYTES = 1024 * 1024;
+function readCodexSessionMetadata(file, deadline) {
+  const { text } = readBoundedRegularFile({ file, deadline, maxBytes: MAX_FIRST_RECORD_BYTES, firstRecord: true });
+  let record;
+  try {
+    record = JSON.parse(text);
+  } catch (error) {
+    throw new CodexMetadataFailure(`invalid first session record at ${file}`, { cause: error });
+  }
+  if (!isObject(record) || record["type"] !== "session_meta" || !isObject(record["payload"])) {
+    throw new CodexMetadataFailure(`missing first session_meta record at ${file}`);
+  }
+  const payload = record["payload"];
+  const id = requiredString(payload, "id");
+  if (!CODEX_UUID_PATTERN.test(id)) throw new CodexMetadataFailure(`invalid native session UUID at ${file}`);
+  const source = payload["source"];
+  const threadSpawn = nativeThreadSpawn(source);
+  return {
+    id,
+    cwd: requiredString(payload, "cwd"),
+    source,
+    threadSpawn,
+    parentThreadId: agreeingField(payload, threadSpawn, "parent_thread_id"),
+    agentPath: agreeingField(payload, threadSpawn, "agent_path"),
+    agentRole: agreeingField(payload, threadSpawn, "agent_role")
+  };
+}
+function readBoundedRegularFile(options) {
+  const { file, deadline } = options;
+  requireMetadataTime(deadline);
+  const before = lstatSync2(file);
+  if (!before.isFile() || before.isSymbolicLink()) throw new CodexMetadataFailure(`not a regular non-symlink file: ${file}`);
+  const fd = openSync(file, constants2.O_RDONLY | constants2.O_NOFOLLOW | constants2.O_NONBLOCK);
+  try {
+    const opened = fstatSync(fd);
+    requireSameFile(before, opened, file);
+    const text = boundedText(fd, options);
+    requireMetadataTime(deadline);
+    requireSameFile(opened, fstatSync(fd), file);
+    requireSameFile(opened, lstatSync2(file), file);
+    return { text, stat: opened };
+  } finally {
+    closeSync(fd);
+  }
+}
+function requireMetadataTime(deadline) {
+  if (performance.now() >= deadline) throw new CodexMetadataFailure("Codex metadata readiness exceeded 10 seconds");
+}
+function boundedText(fd, options) {
+  const chunks = [];
+  let total = 0;
+  while (total <= options.maxBytes) {
+    requireMetadataTime(options.deadline);
+    const chunk = Buffer.alloc(Math.min(4096, options.maxBytes + 1 - total));
+    const count = readSync(fd, chunk, 0, chunk.length, null);
+    if (count === 0) {
+      if (options.firstRecord) throw new CodexMetadataFailure(`unterminated first record at ${options.file}`);
+      return Buffer.concat(chunks).toString("utf8");
+    }
+    const newline = options.firstRecord ? chunk.subarray(0, count).indexOf(10) : -1;
+    const used = newline === -1 ? count : newline + 1;
+    total += used;
+    if (total > options.maxBytes) break;
+    chunks.push(chunk.subarray(0, used));
+    if (newline !== -1) return Buffer.concat(chunks).toString("utf8");
+  }
+  throw new CodexMetadataFailure(`file record exceeds ${options.maxBytes} bytes: ${options.file}`);
+}
+function requireSameFile(before, after, file) {
+  if (!after.isFile() || before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs) {
+    throw new CodexMetadataFailure(`file identity changed while reading ${file}`);
+  }
+}
+function isObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function nativeThreadSpawn(source) {
+  if (!isObject(source) || !("subagent" in source)) return void 0;
+  const subagent = source["subagent"];
+  if (!isObject(subagent) || !isObject(subagent["thread_spawn"])) {
+    throw new CodexMetadataFailure("unrecognized native subagent provenance");
+  }
+  return subagent["thread_spawn"];
+}
+function requiredString(record, key) {
+  const value = record[key];
+  if (typeof value !== "string" || value === "") throw new CodexMetadataFailure(`missing or invalid native ${key}`);
+  return value;
+}
+function agreeingField(direct, nested, key) {
+  const outer = key in direct ? requiredString(direct, key) : void 0;
+  const inner = nested !== void 0 && key in nested ? requiredString(nested, key) : void 0;
+  if (outer !== void 0 && inner !== void 0 && outer !== inner) throw new CodexMetadataFailure(`contradictory native ${key}`);
+  return outer ?? inner;
+}
 
 // core/src/state/handoff.ts
 var HandoffFailure = class extends Error {
@@ -2163,6 +2364,19 @@ function recordsOf(content) {
 function readPrivateFileContent(target) {
   if (!isReadableRegularFile(target)) return void 0;
   return readFileSync3(target, "utf8");
+}
+function nativeRepositoryIdentity(cwd, deadline) {
+  requireMetadataTime(deadline);
+  if (!path5.isAbsolute(cwd)) throw new HandoffFailure(`native workspace is not absolute: ${cwd}`);
+  const common = execFileSync2("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: Math.max(1, Math.ceil(deadline - performance.now())),
+    maxBuffer: 65536,
+    env: { ...process.env, GIT_DIR: void 0, GIT_WORK_TREE: void 0, GIT_COMMON_DIR: void 0 }
+  }).trimEnd();
+  if (!path5.isAbsolute(common)) throw new HandoffFailure(`unknown native repository identity for ${cwd}`);
+  return { receiptIdentity: common, commonDirectory: realpathSync(common) };
 }
 
 // core/src/gates/handoff.ts
@@ -3354,7 +3568,7 @@ function judgeStatebin(_request) {
 }
 
 // core/src/gates/teardown.ts
-import { execFileSync as execFileSync2 } from "node:child_process";
+import { execFileSync as execFileSync3 } from "node:child_process";
 import { existsSync as existsSync5, readdirSync as readdirSync2, renameSync as renameSync3, rmSync as rmSync5, rmdirSync, statSync as statSync5 } from "node:fs";
 import path9 from "node:path";
 var ABANDONED_STATE_DAYS = 7;
@@ -3474,7 +3688,7 @@ function isFile(target) {
 }
 function gitWorktreeRemove(repoPath, worktreePath) {
   try {
-    execFileSync2("git", ["-C", repoPath, "worktree", "remove", worktreePath], { stdio: "ignore" });
+    execFileSync3("git", ["-C", repoPath, "worktree", "remove", worktreePath], { stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -3482,7 +3696,7 @@ function gitWorktreeRemove(repoPath, worktreePath) {
 }
 function gitWorktreePrune(repoPath) {
   try {
-    execFileSync2("git", ["-C", repoPath, "worktree", "prune"], { stdio: "ignore" });
+    execFileSync3("git", ["-C", repoPath, "worktree", "prune"], { stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -3501,6 +3715,8 @@ function judgeUnknownTool({ envelope, argv }) {
   const configured = readAllowlist(argv);
   if (configured.kind === "misconfigured") return configurationError(configured.cause);
   const allowlist = configured.allowlist;
+  const memoryDenial = codexMemoryDenial(envelope);
+  if (memoryDenial !== void 0) return memoryDenial;
   const session = sanitizeSession(envelope.sessionId);
   if (session === "") return payloadUnparseable();
   const stateFile = stateFileFor(envelope.cwd);
@@ -3524,6 +3740,42 @@ function judgeUnknownTool({ envelope, argv }) {
     session,
     detail: toolName
   });
+}
+function codexMemoryDenial(envelope) {
+  if (envelope.caller.host !== "codex") return void 0;
+  const tool = envelope.toolName;
+  const reads = ["mcp__engram__mem_context", "mcp__engram__mem_search", "mcp__engram__mem_get_observation"];
+  if (reads.includes(tool)) return void 0;
+  const memoryTool = tool.startsWith("mcp__engram__");
+  const cliVerdict = lineVerdict(envelope.commandLine, (command, verdict) => {
+    const executable = basenameOf(command.tokens[0] ?? "");
+    if (executable !== "engram" && executable !== "engram.exe") return verdict;
+    return ["search", "context", "help", "--help", "-h", "version", "--version", "-v"].includes(command.tokens[1] ?? "") ? verdict : "memory";
+  }, true);
+  if (!memoryTool && cliVerdict === "clear") return void 0;
+  const known = !memoryTool || TOOL_ROWS.some((row) => row.names.codex === tool);
+  const cause = known ? unattestedCodexRoot(envelope) : "unknown Engram method";
+  if (cause === void 0) return void 0;
+  return denied({
+    gate: "unknown",
+    session: envelope.sessionId,
+    event: "memory-write-denied",
+    detail: tool,
+    message: `oso-code: semantic memory mutations require native ROOT attestation: ${cause}.`
+  });
+}
+function unattestedCodexRoot(envelope) {
+  try {
+    if (envelope.payloadRead !== "json" || envelope.sessionId === "" || envelope.transcriptPath === "") return "missing native hook identity";
+    const deadline = performance.now() + CODEX_METADATA_READINESS_MS;
+    const native = readCodexSessionMetadata(envelope.transcriptPath, deadline);
+    const rootEntrypoint = native.source === "cli" || native.source === "exec";
+    if (native.id !== envelope.sessionId || !rootEntrypoint || native.parentThreadId !== void 0 || native.agentPath !== void 0 || native.agentRole !== void 0 || native.threadSpawn !== void 0) return "child, missing, or contradictory native lineage";
+    if (nativeRepositoryIdentity(native.cwd, deadline).commonDirectory !== nativeRepositoryIdentity(envelope.cwd, deadline).commonDirectory) return "native repository mismatch";
+    return void 0;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
 }
 function readAllowlist(argv) {
   if (argv[0] !== "--allow" || argv.length !== 2) {
@@ -3554,7 +3806,7 @@ function allowlistHost(host) {
 }
 
 // core/src/gates/version.ts
-import { execFileSync as execFileSync3 } from "node:child_process";
+import { execFileSync as execFileSync4 } from "node:child_process";
 import { readFileSync as readFileSync6 } from "node:fs";
 import path10 from "node:path";
 var RELEASE_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/;
@@ -3631,7 +3883,7 @@ function fetchedHighestReleaseVersion(repositorySlug) {
 }
 function gitUploadPackAdvertisement(repositorySlug) {
   try {
-    return execFileSync3(
+    return execFileSync4(
       "curl",
       [
         "-fsS",

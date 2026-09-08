@@ -417,17 +417,15 @@ describe("checkMarketplacePayload compares each installed skill DIRECTORY tree, 
   });
 });
 
-describe("checkEngramWiring's verdict depends on the pointer values, computed through codex.ts's shared pure normalizer", () => {
-  test("readable instruction files, a wired mcp_servers.engram table and pointers already normalized above the region report wired", () => {
+describe("checkEngramWiring separates direct MCP wiring from managed policy migration", () => {
+  test("native defaults and disabled capture report configured without upstream instruction files", () => {
     const home = fixtureHome();
     const paths = codexPathsFor(home, inputFor(home).environment);
     mkdirSync(paths.codexHome, { recursive: true });
-    writeFileSync(path.join(paths.codexHome, "engram-instructions.md"), "instructions\n");
-    writeFileSync(path.join(paths.codexHome, "engram-compact-prompt.md"), "compact\n");
-    engramConfigFixture(paths, path.join(paths.codexHome, "engram-instructions.md"));
+    writeFileSync(paths.configFile, '[mcp_servers.engram]\ncommand = "engram"\nargs = ["mcp", "--tools=agent"]\n[plugins."engram@engram"]\nenabled = false\n');
     const report = new VerifyReport();
     checkEngramWiring(report, paths, true);
-    assert.match(report.render(), /ok: {3}Engram Codex integration \(wired\)/);
+    assert.match(report.render(), /ok: {3}managed essential-memory configuration \(configured\)/);
   });
 
   test("a pointer value drifted from the installed instructions file reports incomplete, though both files and the mcp server are present", () => {
@@ -439,7 +437,7 @@ describe("checkEngramWiring's verdict depends on the pointer values, computed th
     engramConfigFixture(paths, path.join(paths.codexHome, "stale-engram-instructions.md"));
     const report = new VerifyReport();
     checkEngramWiring(report, paths, true);
-    assert.match(report.render(), /FAIL: Engram Codex integration — expected wired, got incomplete/);
+    assert.match(report.render(), /FAIL: managed essential-memory configuration — expected configured, got conflicting-or-incomplete/);
   });
 });
 

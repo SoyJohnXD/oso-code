@@ -13,6 +13,7 @@ export type CodexSessionMetadata = Readonly<{
 }>;
 
 export const CODEX_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+export const CODEX_METADATA_READINESS_MS = 10000;
 const MAX_FIRST_RECORD_BYTES = 1024 * 1024;
 
 export function readCodexSessionMetadata(file: string, deadline: number): CodexSessionMetadata {

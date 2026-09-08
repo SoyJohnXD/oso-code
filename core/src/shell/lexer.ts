@@ -48,8 +48,8 @@ export const SHELL_WORDS_THIS_LEXER_READS: ReadonlySet<string> = new Set([
   HISTORY_REPLAYING_WORD, "{", "}",
 ]);
 
-export function lexShellCommands(commandLine: string): readonly LexRecord[] {
-  return new CommandLineLexer(commandLine, 0).lex();
+export function lexShellCommands(commandLine: string, unreadExpandedExecutables = false): readonly LexRecord[] {
+  return new CommandLineLexer(commandLine, 0, unreadExpandedExecutables).lex();
 }
 
 export function basenameOf(word: string): string {
@@ -206,8 +206,11 @@ type PendingHeredoc = { readonly delimiter: string; readonly stripsTabs: boolean
 class CommandLineLexer {
   private rest: string;
   private readonly depth: number;
+  private readonly unreadExpandedExecutables: boolean;
   private token = "";
   private tokenOpen = false;
+  private tokenHasExpansion = false;
+  private tokenAssignment: "pending" | "assignment" | "word" = "pending";
   private redirectTargetPending = false;
   private herestringPending = false;
   private pendingHeredocs: PendingHeredoc[] = [];
@@ -216,9 +219,10 @@ class CommandLineLexer {
   private commandTokens: string[] = [];
   private readonly records: LexRecord[] = [];
 
-  constructor(commandLine: string, depth: number) {
+  constructor(commandLine: string, depth: number, unreadExpandedExecutables: boolean) {
     this.rest = `${commandLine}\n`;
     this.depth = depth;
+    this.unreadExpandedExecutables = unreadExpandedExecutables;
   }
 
   lex(): readonly LexRecord[] {
@@ -234,6 +238,7 @@ class CommandLineLexer {
     const ordinary = leadingRunWithout(this.rest, SPECIAL_CHARACTERS);
     if (ordinary !== "") {
       this.token += ordinary;
+      if (this.tokenAssignment === "pending" && /^[A-Za-z_][A-Za-z_0-9]*\+?=/.test(this.token)) this.tokenAssignment = "assignment";
       this.tokenOpen = true;
       this.rest = this.rest.slice(ordinary.length);
       return;
@@ -244,6 +249,7 @@ class CommandLineLexer {
   }
 
   private takeSpecial(character: string): void {
+    if (this.tokenAssignment === "pending" && "'\"$`\\{}#".includes(character) && !(character === "\\" && this.rest.startsWith("\n"))) this.tokenAssignment = "word";
     switch (character) {
       case "'":
         this.tokenOpen = true;
@@ -320,6 +326,7 @@ class CommandLineLexer {
     if (this.tokenOpen && this.redirectTargetPending) {
       this.redirectTargetPending = false;
     } else if (this.tokenOpen) {
+      if (this.unreadExpandedExecutables && this.tokenHasExpansion && this.tokenAssignment !== "assignment" && withoutACoprocessName(this.commandTokens).every(isCommandPrefixWord)) this.markUnread();
       this.commandTokens.push(this.token);
       if (this.herestringPending) {
         this.herestringPending = false;
@@ -328,6 +335,8 @@ class CommandLineLexer {
     }
     this.token = "";
     this.tokenOpen = false;
+    this.tokenHasExpansion = false;
+    this.tokenAssignment = "pending";
   }
 
   private endCommand(): void {
@@ -469,7 +478,7 @@ class CommandLineLexer {
       this.markUnread();
       return;
     }
-    this.nested.push(...new CommandLineLexer(payload, this.depth + 1).lex());
+    this.nested.push(...new CommandLineLexer(payload, this.depth + 1, this.unreadExpandedExecutables).lex());
   }
 
   private markUnread(): void {
@@ -554,6 +563,7 @@ class CommandLineLexer {
   }
 
   private takeExpansion(): void {
+    if (/^[({A-Za-z_0-9@*#?$!\-]/.test(this.rest)) this.tokenHasExpansion = true;
     if (this.rest.startsWith("(")) {
       this.token += "$";
       this.rest = this.rest.slice(1);
@@ -591,6 +601,7 @@ class CommandLineLexer {
   }
 
   private takeBacktick(): void {
+    this.tokenHasExpansion = true;
     const span = this.spanBefore("`");
     this.token += "$";
     this.rest = this.rest.slice(span.length + 1);

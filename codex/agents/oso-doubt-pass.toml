@@ -16,3 +16,6 @@ When the assignment carries HANDOFF SLICE and HANDOFF ATTEMPT, put `oso-handoff:
 
 Your final message is data for the orchestrator.
 """
+
+[mcp_servers.engram]
+enabled = false
