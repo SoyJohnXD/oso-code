@@ -109,6 +109,16 @@ Close in the caller's `finally` before reporting success; a passed command leave
 
 Timeouts are bounded to 3600 seconds; combined raw output is capped at 16 MiB per attempt, with overflow terminating the command and retaining incomplete evidence. Explicit lifecycle operations expire only this owner's closed raw logs after seven days while keeping compact identity, commands, exits, source/dependency/exclusion inventory, verdict and cleanup evidence. Recovery requires the exact owner and inactive tracked identities/session, never age or process names; a violated recipe, missing identity or uncertain cleanup blocks allocations and success for operator reconciliation. Active or foreign siblings, the source worktree and shared caches are never purge targets.
 
+## Readiness and freshness
+
+A slice is ready for verification when its own handshake is consumed and its owned handles are reconciled under **Completion handshake** and **Correction and quiescence** above. A ready, isolated and quiescent slice may be verified while unrelated wave work is still in flight, inside the wave's existing dependency and isolation barriers and never in place of them. Reserve an actually free verifier slot before starting that verification; a completed agent's status is not proof that capacity was released.
+
+Default to one heavy suite or scratch materialization at a time. Concurrent checks require proven port, cache, output and environment isolation for every runner involved. Unproven isolation, uncertain capacity or an unavailable capability takes the existing sequential no-export route above once quiescence is proven, never a reduced check.
+
+Bind every report to the exact baseline and head commits, the pending and untracked content judged, the dependency and generated inputs read, and the effective nonsecret verification environment, inside the existing evidence entries rather than a new field. Establish that binding before the checks, after the checks and again before the commit window, no-export runs included. Later drift in a bound input invalidates the affected evidence and requires a fresh check before green or commit.
+
+Every source writer and owned process of the slice has ended before a serialized green or commit window opens. The full bar still runs on the actual assembled tree at the integration gate; earlier slice greens never stand in for it.
+
 ## Strict closure
 
 This policy governs Codex plan, roadmap, quick and debug closure and their debt-sweep judges. It replaces the neutral severity-band exit, settled-tag immunity and optional or skipped conformance rules, not the rubric or the mode's other gates.

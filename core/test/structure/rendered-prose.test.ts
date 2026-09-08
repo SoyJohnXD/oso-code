@@ -204,3 +204,75 @@ describe("Codex strict closure rendered contract", () => {
     }
   });
 });
+
+const READINESS_SECTION = "## Readiness and freshness";
+
+describe("readiness-driven Codex verification delivers instructions, not native scheduling", () => {
+  for (const owner of [sharedReferencePath("codex"), sharedReferenceOutputPath("codex")]) {
+    test(`${owner} carries independent readiness and freshness obligations`, () => {
+      const policy = readRepoText(owner);
+      for (const obligation of [
+        /A ready, isolated and quiescent slice may be verified while unrelated wave work is still in flight/,
+        /inside the wave's existing dependency and isolation barriers and never in place of them/,
+        /Reserve an actually free verifier slot/,
+        /a completed agent's status is not proof that capacity was released/,
+        /Default to one heavy suite or scratch materialization at a time/,
+        /proven port, cache, output and environment isolation/,
+        /existing sequential no-export route above once quiescence is proven, never a reduced check/,
+        /the exact baseline and head commits/,
+        /pending and untracked content judged/,
+        /dependency and generated inputs read/,
+        /effective nonsecret verification environment/,
+        /inside the existing evidence entries rather than a new field/,
+        /before the checks, after the checks and again before the commit window, no-export runs included/,
+        /Later drift in a bound input invalidates the affected evidence/,
+        /Every source writer and owned process of the slice has ended before a serialized green or commit window opens/,
+        /the actual assembled tree at the integration gate; earlier slice greens never stand in for it/,
+      ]) assert.match(policy, obligation);
+    });
+  }
+
+  test("the readiness policy is owned once and reaches no other host", () => {
+    const authored = readRepoText(sharedReferencePath("codex"));
+    const start = authored.indexOf(`${READINESS_SECTION}\n`);
+    const end = authored.indexOf("\n## ", start + 1);
+    assert.ok(start >= 0 && end > start);
+    assert.equal(authored.split(`${READINESS_SECTION}\n`).length - 1, 1);
+    const policy = authored.slice(start, end);
+    assert.ok(readRepoText(sharedReferenceOutputPath("codex")).includes(policy));
+    assert.equal(readRepoText(sharedReferenceOutputPath("opencode")).includes(policy), false);
+    assert.doesNotMatch(readRepoText(sharedReferencePath("opencode")), new RegExp(READINESS_SECTION, "m"));
+  });
+
+  test("oso-verifier's actual native instructions route to the readiness owner and declare no report shape of their own", () => {
+    const file = "codex/agents/oso-verifier.toml";
+    const instructions = parseTomlDocument(readRepoText(file), file)["developer_instructions"];
+    assert.equal(typeof instructions, "string");
+    const route = (instructions as string).match(/`([^`]+)#readiness-and-freshness`/);
+    assert.equal(route?.[1], sharedReferenceOutputPath("codex"));
+    assert.match(readRepoText(route![1]!), new RegExp(`^${READINESS_SECTION}$`, "m"));
+    assert.match(instructions as string, /existing `evidence:` entries/);
+    assert.doesNotMatch(readRepoText("core/src/prose/agents/oso-verifier/codex.md"), /^```/m);
+  });
+
+  test("the shared wave loop gates readiness on a host binding and leaves its launch-order default intact", () => {
+    const wave = readRepoText("plugin/skills/_shared/parallel.md");
+    assert.ok(wave.includes("**Launch the appliers — N of them, read before anything moves, in ONE message.**"));
+    assert.ok(wave.includes("These go in one message too, unless the concurrency answer below says this project's bar cannot be run N times at once."));
+    const readiness = wave.split("\n\n").filter((paragraph) => paragraph.startsWith("**Readiness,"));
+    assert.equal(readiness.length, 1);
+    const [paragraph] = readiness as [string];
+    assert.doesNotMatch(paragraph, /\bClaude(?: Code)?\b|\bCodex\b|\bOpenCode\b/);
+    assert.match(paragraph, /A reference file that states no such route reads this paragraph as inapplicable, and the default above stands unchanged for it/);
+    assert.match(paragraph, /A verification opens only against a slot actually free, never one a finished agent is assumed to have released/);
+  });
+
+  test("only the Codex plan binding opts that wave loop in", () => {
+    const binding = readRepoText("core/src/prose/skills/plan/references/codex.md");
+    assert.match(binding, /`\.\.\/_shared\/parallel\.md`'s readiness paragraph is opted in HERE/);
+    assert.match(binding, /\*\*Readiness and freshness\*\* section NOW/);
+    assert.equal(readRepoText("codex/skills/plan/references/codex.md"), renderReference(binding));
+    assert.doesNotMatch(readRepoText("core/src/prose/skills/plan/references/opencode.md"), /readiness/i);
+    assert.doesNotMatch(readRepoText("plugin/skills/plan/references/claude.md"), /readiness/i);
+  });
+});
