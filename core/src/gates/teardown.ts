@@ -1,14 +1,21 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, renameSync, rmSync, rmdirSync, statSync } from "node:fs";
 import path from "node:path";
-import { NO_VERDICT, type GateOutcome, type NoVerdictVerdict } from "../hosts/envelope.ts";
+import { CODEX_UUID_PATTERN } from "../hosts/codex-session-metadata.ts";
+import { NO_VERDICT, type GateOutcome, type HookEnvelope, type NoVerdictVerdict } from "../hosts/envelope.ts";
 import {
   isDirectory,
+  isRegularNonSymlinkFile,
   journalFileFor,
+  LockTimeoutError,
   logEvent,
   readStateFile,
   secondsSinceModified,
   stateRootDirectory,
+  stateFileFor,
+  stateRecords,
+  StateFileUnreadableError,
+  withLock,
 } from "../state/store.ts";
 import { hookSessionId, sanitizeSession, stateValue, type GateDefinition, type GateRequest } from "./preflight.ts";
 
@@ -24,6 +31,19 @@ export const TEARDOWN_GATE: GateDefinition<NoVerdictVerdict> = {
 };
 
 function judgeTeardown({ envelope }: GateRequest): GateOutcome<NoVerdictVerdict> {
+  if (envelope.caller.host === "codex") {
+    const stateFile = stateFileFor(envelope.cwd);
+    if (!codexOwnsState(stateFile, envelope)) return NO_VERDICT;
+    try {
+      withLock(stateFile, envelope.sessionId, () => {
+        if (codexOwnsState(stateFile, envelope)) rmSync(stateFile, { force: true });
+      }, "retain-existing");
+    } catch (error) {
+      if (!(error instanceof LockTimeoutError)) throw error;
+      return { verdict: { kind: "noVerdict" }, events: [{ event: "teardown-lock-retained", session: envelope.sessionId }] };
+    }
+    return NO_VERDICT;
+  }
   const sessionId = hookSessionId(envelope);
   const ownState = stateArmedBy(sessionId);
   removeWorktreesOf(sessionId, ownState);
@@ -34,6 +54,20 @@ function judgeTeardown({ envelope }: GateRequest): GateOutcome<NoVerdictVerdict>
   rotateAgedEventsLog();
   pruneAbandonedState(sessionId, ownState);
   return NO_VERDICT;
+}
+
+function codexOwnsState(stateFile: string, envelope: HookEnvelope): boolean {
+  if (envelope.cwd === "" || envelope.payloadRead !== "json" || !CODEX_UUID_PATTERN.test(envelope.sessionId)) return false;
+  if (!isRegularNonSymlinkFile(stateFile)) return false;
+  const read = readStateFile(stateFile);
+  if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
+  if (read.kind !== "ok") return false;
+  const owners = stateRecords(read.content, "plan_approval_session");
+  if (owners.length === 0 || owners.some((owner) => owner !== envelope.sessionId)) return false;
+  const sessions = stateRecords(read.content, "session");
+  return new Set(sessions).size <= 1 && sessions.every((session) =>
+    session === "" || session === envelope.sessionId || session === envelope.caller.agentSession,
+  );
 }
 
 function stateArmedBy(sessionId: string): string | undefined {

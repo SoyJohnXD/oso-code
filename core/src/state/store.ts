@@ -240,8 +240,8 @@ export function writeFileAtomically(directory: string, finalPath: string, conten
   throw new Error(`could not create a temp file under ${directory}`);
 }
 
-export function withLock<T>(stateFile: string, sessionId: string, run: () => T): T {
-  const release = acquireLock(stateFile, sessionId);
+export function withLock<T>(stateFile: string, sessionId: string, run: () => T, acquisition: "retry" | "retain-existing" = "retry"): T {
+  const release = acquireLock(stateFile, sessionId, acquisition);
   try {
     return run();
   } finally {
@@ -354,7 +354,7 @@ function createTempFile(directory: string, content: string): string {
   throw new Error(`could not create a temp file under ${directory}`);
 }
 
-function acquireLock(stateFile: string, sessionId: string): () => void {
+function acquireLock(stateFile: string, sessionId: string, acquisition: "retry" | "retain-existing"): () => void {
   const lockDir = `${stateFile}.lock`;
   let tries = 0;
   let reclaimed = false;
@@ -365,6 +365,7 @@ function acquireLock(stateFile: string, sessionId: string): () => void {
     } catch (error) {
       if (!isErrnoException(error) || error.code !== "EEXIST") throw error;
     }
+    if (acquisition === "retain-existing") throw new LockTimeoutError(sessionId);
     if (!reclaimed && lockIsStale(lockDir)) {
       rmSync(lockDir, { recursive: true, force: true });
       reclaimed = true;

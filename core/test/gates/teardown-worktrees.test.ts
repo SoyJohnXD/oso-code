@@ -144,7 +144,7 @@ describe(
         });
         assert.equal(sandbox.worktreesRegisteredFor(repository, "orphan-wt-owner"), 1);
 
-        runTeardown(sandbox, "orphan-wt-real", { OSO_AGENT: "1" });
+        runTeardown(sandbox, "orphan-wt-real", { OSO_AGENT: "1", OSO_HOST: "opencode" });
 
         assert.equal(existsSync(path.join(sandbox.home, stateFileOf("orphan-wt-owner"))), false);
         assert.equal(existsSync(sandbox.worktreeTreeOf("orphan-wt-owner")), false);
@@ -190,4 +190,3 @@ function runTeardown(sandbox: StateSandbox, sessionId: string, env: Readonly<Rec
 function loggedEvent(sandbox: StateSandbox, event: string): boolean {
   return sandbox.eventLogLines().some((line) => line.includes(`"event":"${event}"`));
 }
-

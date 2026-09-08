@@ -1,5 +1,5 @@
 {
-  "name": "teardown gate: Codex SessionEnd cleans fixed-marker state despite a different payload session",
+  "name": "teardown gate: Codex SessionEnd retains fixed-marker state without native ownership",
   "source": [
     {
       "assertion": "( cd \"$ELSEWHERE\" && oso-state --session 1 set mode=plan verify_green=true >/dev/null )"
@@ -24,7 +24,7 @@
   "expect": {
     "exit": 0,
     "state_after": {
-      ".local/state/oso-code/{sha256:elsewhere-repo}.state": null
+      ".local/state/oso-code/{sha256:elsewhere-repo}.state": "mode=plan\nverify_green=true\nsession=1\n"
     }
   }
 }

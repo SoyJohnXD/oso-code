@@ -1311,8 +1311,8 @@ function writeFileAtomically(directory, finalPath, content, tempPrefix) {
   }
   throw new Error(`could not create a temp file under ${directory}`);
 }
-function withLock(stateFile, sessionId, run2) {
-  const release = acquireLock(stateFile, sessionId);
+function withLock(stateFile, sessionId, run2, acquisition = "retry") {
+  const release = acquireLock(stateFile, sessionId, acquisition);
   try {
     return run2();
   } finally {
@@ -1404,7 +1404,7 @@ function createTempFile(directory, content) {
   }
   throw new Error(`could not create a temp file under ${directory}`);
 }
-function acquireLock(stateFile, sessionId) {
+function acquireLock(stateFile, sessionId, acquisition) {
   const lockDir = `${stateFile}.lock`;
   let tries = 0;
   let reclaimed = false;
@@ -1415,6 +1415,7 @@ function acquireLock(stateFile, sessionId) {
     } catch (error) {
       if (!isErrnoException(error) || error.code !== "EEXIST") throw error;
     }
+    if (acquisition === "retain-existing") throw new LockTimeoutError(sessionId);
     if (!reclaimed && lockIsStale(lockDir)) {
       rmSync(lockDir, { recursive: true, force: true });
       reclaimed = true;
@@ -3902,6 +3903,19 @@ var TEARDOWN_GATE = {
   judge: judgeTeardown
 };
 function judgeTeardown({ envelope }) {
+  if (envelope.caller.host === "codex") {
+    const stateFile = stateFileFor(envelope.cwd);
+    if (!codexOwnsState(stateFile, envelope)) return NO_VERDICT;
+    try {
+      withLock(stateFile, envelope.sessionId, () => {
+        if (codexOwnsState(stateFile, envelope)) rmSync5(stateFile, { force: true });
+      }, "retain-existing");
+    } catch (error) {
+      if (!(error instanceof LockTimeoutError)) throw error;
+      return { verdict: { kind: "noVerdict" }, events: [{ event: "teardown-lock-retained", session: envelope.sessionId }] };
+    }
+    return NO_VERDICT;
+  }
   const sessionId = hookSessionId(envelope);
   const ownState = stateArmedBy(sessionId);
   removeWorktreesOf(sessionId, ownState);
@@ -3912,6 +3926,19 @@ function judgeTeardown({ envelope }) {
   rotateAgedEventsLog();
   pruneAbandonedState(sessionId, ownState);
   return NO_VERDICT;
+}
+function codexOwnsState(stateFile, envelope) {
+  if (envelope.cwd === "" || envelope.payloadRead !== "json" || !CODEX_UUID_PATTERN.test(envelope.sessionId)) return false;
+  if (!isRegularNonSymlinkFile(stateFile)) return false;
+  const read = readStateFile(stateFile);
+  if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
+  if (read.kind !== "ok") return false;
+  const owners = stateRecords(read.content, "plan_approval_session");
+  if (owners.length === 0 || owners.some((owner) => owner !== envelope.sessionId)) return false;
+  const sessions = stateRecords(read.content, "session");
+  return new Set(sessions).size <= 1 && sessions.every(
+    (session) => session === "" || session === envelope.sessionId || session === envelope.caller.agentSession
+  );
 }
 function stateArmedBy(sessionId) {
   if (sessionId === "") return void 0;

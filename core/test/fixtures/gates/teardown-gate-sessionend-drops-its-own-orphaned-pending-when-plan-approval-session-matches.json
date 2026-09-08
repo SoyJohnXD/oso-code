@@ -11,7 +11,8 @@
   "gate": "teardown",
   "argv": [],
   "env": {
-    "OSO_AGENT": "1"
+    "OSO_AGENT": "1",
+    "OSO_HOST": "opencode"
   },
   "state_before": {
     ".local/state/oso-code/orphan-pending.state": "mode=plan\nplan_approval=pending\nsession=orphan-real-session\nplan_approval_session=orphan-real-session\n"
