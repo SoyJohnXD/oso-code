@@ -11,15 +11,15 @@
     "axis": "C",
     "item": "Security Pass: native — covered: staged, unstaged, and untracked changes",
     "sourceFile": "plugin/skills/_shared/platform/codex/security-pass.md",
-    "reason": "security-pass.md's Codex binding moved to codex/skills/security-pass/references/codex.md, a rendered file outside the six source globs axis C scans; the token survives verbatim there",
-    "home": { "kind": "prose", "ref": "codex/skills/security-pass/references/codex.md" }
+    "reason": "Codex now judges directly in a read-only role; the native covered-scope header is replaced by a direct header, with both routes pinned by the rendered contract regression",
+    "home": { "kind": "test", "ref": "core/test/structure/codex-model-policy.test.ts" }
   },
   {
     "axis": "C",
     "item": "Security Pass: native — covered: merge base of HEAD and <base-ref> through HEAD, plus staged, unstaged, and untracked changes",
     "sourceFile": "plugin/skills/_shared/platform/codex/security-pass.md",
-    "reason": "security-pass.md's Codex binding moved to codex/skills/security-pass/references/codex.md, a rendered file outside the six source globs axis C scans; the token survives verbatim there",
-    "home": { "kind": "prose", "ref": "codex/skills/security-pass/references/codex.md" }
+    "reason": "Codex now judges directly in a read-only role; the native covered-scope header is replaced by a direct header, with both routes pinned by the rendered contract regression",
+    "home": { "kind": "test", "ref": "core/test/structure/codex-model-policy.test.ts" }
   },
   {
     "axis": "C",

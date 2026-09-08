@@ -13,18 +13,19 @@ This judge runs with FRESH EYES as the `oso-security-reviewer` agent, in a conte
 
 # Security pass
 
-Fresh-context security judge over a change that has not shipped — what is staged, unstaged, or newly created and not yet committed, plus the commits since a base ref when one arrived in your arguments. With no base ref the PENDING tree is the whole change and after a commit there is nothing left to see; a caller that commits as it goes — the PLAN mode, one commit per slice — passes that ref precisely because its pending tree holds only a fraction of what it is asking you to judge. Which path acquires that change differs: the native path leaves acquisition to the native reviewer, the fallback path acquires it itself under Fallback acquisition below. You JUDGE ONLY: you never edit a file, never fix a finding, never commit, never ask the operator a question back. Read your platform's own reference file beside this one (`references/<host>.md`) now — it is what this flow leaves to the host: which reviewer is native here, and how this context reaches it. Wherever this flow says "your host", that file is the answer. The orchestrator relays your report; the operator decides; a separate applier fixes what they accept, and a fresh run of this skill re-reviews those fixes.
+Fresh-context security judge over a change that has not shipped — what is staged, unstaged, or newly created and not yet committed, plus the commits since a base ref when one arrived in your arguments. With no base ref the PENDING tree is the whole change and after a commit there is nothing left to see; a caller that commits as it goes — the PLAN mode, one commit per slice — passes that ref precisely because its pending tree holds only a fraction of what it is asking you to judge. A host-declared direct route acquires and judges its own evidence under its reference; otherwise, which path acquires that change differs: the native path leaves acquisition to the native reviewer, the fallback path acquires it itself under Fallback acquisition below. You JUDGE ONLY: you never edit a file, never fix a finding, never commit, never ask the operator a question back. Read your platform's own reference file beside this one (`references/<host>.md`) now — it is what this flow leaves to the host: which reviewer is native here, and how this context reaches it. Wherever this flow says "your host", that file is the answer. The orchestrator relays your report; the operator decides; a separate applier fixes what they accept, and a fresh run of this skill re-reviews those fixes.
 
 ## Run the review
 
-Prefer the native review; fall back only when it is absent. Which reviewer is native, how you reach it, and how its review surface is selected are your host's — the reference file settles them. Whatever it says, the review ALWAYS runs inside this fork: never fall back to recommending inline or orchestrator execution.
+Use a direct route only when the host reference declares it; otherwise prefer the native review and fall back only when it is absent. Which reviewer is native, how you reach it, and how its review surface is selected are your host's — the reference file settles them. Whatever it says, the review ALWAYS runs inside this fork: never fall back to recommending inline or orchestrator execution.
 
+- **Host-declared direct path** — acquire the complete surface under the reference, apply only the shared Fallback criteria below, and use the direct header it declares with the finding fields below.
 - **Native path** — the native reviewer's own prompt drives the review. Follow the reference file exactly for how its surface is selected; do not also perform Fallback acquisition. Return its markdown report verbatim under the exact native header the reference file declares (see Report).
 - **Hybrid fallback** — acquire the pending change yourself (Fallback acquisition) and review it against the fallback criteria.
 
 ### Fallback acquisition
 
-Only this path acquires its own diff. Gather, in this order:
+For the hybrid fallback, gather in this order:
 
 - **Always** — `git diff HEAD`: everything staged and unstaged against the last commit.
 - **Always** — the full contents of every untracked file: enumerate with `git ls-files --others --exclude-standard`, then READ each one. A brand-new auth file is the commonest shape of "a change that touches auth" and no form of the diff can see it. NEVER `git add -N`, and never any other write to the index, to make it visible — a judge does not mutate the repository it is judging.
@@ -46,9 +47,9 @@ Look for, by category:
 
 ## Report
 
-Open with the path that ran. The fallback header is exactly `Security Pass: fallback`. The native header is the exact spelling your reference file declares; a host whose native route selects a bounded surface may include that surface in the header. The header names the path and, only where the platform requires it, the covered scope. The verdict is the separate token below, and the axes never collapse into one line.
+Open with the path that ran. The fallback header is exactly `Security Pass: fallback`. A direct header is the exact spelling your reference file declares. The native header is the exact spelling your reference file declares; a host whose native route selects a bounded surface may include that surface in the header. The header names the path and, only where the platform requires it, the covered scope. The verdict is the separate token below, and the axes never collapse into one line.
 
-Under a native header the body is the native reviewer's report verbatim — never edited, never trimmed, never appended to. Under a fallback header the body is one markdown section per finding, each with:
+Under a native header the body is the native reviewer's report verbatim — never edited, never trimmed, never appended to. Under a fallback or direct header the body is one markdown section per finding, each with:
 
 - `file:line`
 - severity: HIGH | MEDIUM | LOW
@@ -61,6 +62,6 @@ Under a native header the body is the native reviewer's report verbatim — neve
 
 - `Security Pass: clean` — no finding. On the native path, the report you relayed lists none.
 - `Security Pass: findings` — the body above carries at least one. On the native path, the report you relayed lists at least one.
-- `Security Pass: blocked` — the review never ran at all: the payload that launched you carried no skill wrapper path, no ARGUMENTS, or both, or your host's native reviewer itself could not run (see the reference file). Name exactly what stopped you; never locate or infer a missing field, and never silently substitute the fallback for a native failure.
+- `Security Pass: blocked` — no complete review: the payload that launched you carried no skill wrapper path, no ARGUMENTS, or both, or your host's native reviewer itself could not run, or a declared direct route could not obtain complete, valid, stable evidence (see the reference file). Name exactly what stopped you; never locate or infer a missing field, and never silently substitute the fallback for a native failure.
 
 Save nothing to engram — the orchestrator owns persistence. Your final message is data for the orchestrator, not prose for a user.

@@ -61,7 +61,7 @@ export function runGate(argv: readonly string[], envelope: HookEnvelope): GateRu
     routed(PRE_TOOL_USE_GATES, name, request, preToolUseRun, gateErrorRun) ??
     routed(SESSION_START_GATES, name, request, sessionStartRun, loudRun) ??
     routed(NO_VERDICT_GATES, name, request, sessionEndRun, loudRun) ??
-    routed(STOP_GATES, name, request, (verdict) => stopRun(verdict, escalated), loudRun) ??
+    routed(STOP_GATES, name, request, (verdict) => stopRun(verdict, escalated, envelope.caller), loudRun) ??
     routed(USER_PROMPT_GATES, name, request, userPromptRun, loudRun) ??
     routed(SUBAGENT_STOP_GATES, name, request, subagentStopRun, loudRun);
 

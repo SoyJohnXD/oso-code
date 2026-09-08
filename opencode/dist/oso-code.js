@@ -1776,11 +1776,13 @@ function contextEnvelope(additionalContext) {
 }
 
 // core/src/hosts/stop.ts
-function stopRun(verdict, escalated) {
+function stopRun(verdict, escalated, caller) {
   switch (verdict.kind) {
     case "allow":
       return spoken(NOTHING_TO_SAY);
     case "push":
+      if (caller.host === "codex") return { exit: GATE_ERROR_EXIT, stdout: "", stderr: `${verdict.reason}
+` };
       return spoken(JSON.stringify({ shouldContinue: true, decision: "block", reason: verdict.reason }));
     case "deny":
       return spoken(escalated ? endedEnvelope(verdict.message) : blockEnvelope(verdict.message));
@@ -3775,7 +3777,7 @@ function runGate(argv, envelope) {
   const [name, ...gateArguments] = argv;
   const request = { envelope, argv: gateArguments };
   const escalated = envelope.stopHookActive;
-  const run = routed(PRE_TOOL_USE_GATES, name, request, preToolUseRun, gateErrorRun) ?? routed(SESSION_START_GATES, name, request, sessionStartRun, loudRun) ?? routed(NO_VERDICT_GATES, name, request, sessionEndRun, loudRun) ?? routed(STOP_GATES, name, request, (verdict) => stopRun(verdict, escalated), loudRun) ?? routed(USER_PROMPT_GATES, name, request, userPromptRun, loudRun) ?? routed(SUBAGENT_STOP_GATES, name, request, subagentStopRun, loudRun);
+  const run = routed(PRE_TOOL_USE_GATES, name, request, preToolUseRun, gateErrorRun) ?? routed(SESSION_START_GATES, name, request, sessionStartRun, loudRun) ?? routed(NO_VERDICT_GATES, name, request, sessionEndRun, loudRun) ?? routed(STOP_GATES, name, request, (verdict) => stopRun(verdict, escalated, envelope.caller), loudRun) ?? routed(USER_PROMPT_GATES, name, request, userPromptRun, loudRun) ?? routed(SUBAGENT_STOP_GATES, name, request, subagentStopRun, loudRun);
   return run ?? gateErrorRun(`${THE_GATE_ENTRY_POINT} (unknown gate '${name ?? ""}')`);
 }
 function routed(gates, name, request, transport, onFailure) {

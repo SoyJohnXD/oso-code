@@ -6344,7 +6344,7 @@ var AGENT_ROLES = [
   {
     id: "oso-security-reviewer",
     claude: null,
-    codex: { description: "Fresh-context Codex role for security-pass: reviews the supplied change surface as a judge and never edits, commits, or asks back.", model: "gpt-6-astra", reasoningEffort: "low", sandboxMode: "danger-full-access" },
+    codex: { description: "Fresh-context Codex role for security-pass: reviews the supplied change surface as a judge and never edits, commits, or asks back.", model: "gpt-6-astra", reasoningEffort: "low", sandboxMode: "read-only" },
     opencode: { description: "Fresh-context judge for the security-pass skill: reviews the supplied change surface as a judge and never edits, commits, or asks back.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
   },
   {

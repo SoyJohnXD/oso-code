@@ -27,4 +27,10 @@ Eight rows measure five more facts than the bash's three named checks, none of t
 
 ## What was and was not driven
 
-Row 1's pin-relation probe has been driven against a real, pinned binary check. Everything from row 2 on has never been driven anywhere: no machine in reach carries Codex credentials, and CI leaves the smoke's full-access opt-in, `OSO_CERTIFY_ALLOW_CODEX_FULL_ACCESS_SMOKE`, default-closed by design, because the row spawns a Codex agent with `--sandbox danger-full-access` under the operator's own credentials. Every authenticated row therefore reports not-run in the nightly build, which is correct rather than a gap this record owes a fix for.
+Row 1's pin-relation probe has been driven against a real, pinned binary check. The integrator rows remain not-run in this suite because CI leaves the smoke's full-access opt-in, `OSO_CERTIFY_ALLOW_CODEX_FULL_ACCESS_SMOKE`, default-closed by design: that lane spawns a Codex agent with `--sandbox danger-full-access` under the operator's own credentials. Every such authenticated row therefore reports not-run in the nightly build, which is correct rather than a gap this record owes a fix for.
+
+## Stop continuation lane
+
+`core/test/certify/codex-stop-continuation.test.ts` adds one separately gated `codex exec` row for the measured Stop transport. It requires both `OSO_CERTIFY=1` and `OSO_CERTIFY_ALLOW_CODEX_STOP_PROBE=1`, copies only `auth.json` into a temporary Codex home, installs one temporary Stop hook, runs with `--sandbox read-only`, and removes the temporary tree in a `finally` block. The process is bounded to 180 seconds and the validator requires exactly two Stop observations; no Codex plugins, agents, or interactive TUI state are copied. The installed TUI remains an explicit not-run row.
+
+The unit lane always runs without credentials and rejects a missing hook, a first response without its continuation, a missing second Stop, malformed JSONL, nonzero exit, or timeout. A prior isolated probe of CLI release 0.153.2 measured `PROBE_FIRST`, then `PROBE_CONTINUED_7f43`, with exactly two Stop observations (`stop_hook_active=false` then `true`) and no second user input. That probe measured `codex exec` only; it is not evidence about the installed TUI.

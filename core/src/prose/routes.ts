@@ -89,7 +89,7 @@ export const AGENT_ROLES: readonly AgentRole[] = [
   {
     id: "oso-security-reviewer",
     claude: null,
-    codex: { description: "Fresh-context Codex role for security-pass: reviews the supplied change surface as a judge and never edits, commits, or asks back.", model: "gpt-6-astra", reasoningEffort: "low", sandboxMode: "danger-full-access" },
+    codex: { description: "Fresh-context Codex role for security-pass: reviews the supplied change surface as a judge and never edits, commits, or asks back.", model: "gpt-6-astra", reasoningEffort: "low", sandboxMode: "read-only" },
     opencode: { description: "Fresh-context judge for the security-pass skill: reviews the supplied change surface as a judge and never edits, commits, or asks back.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] },
   },
   {
@@ -162,7 +162,7 @@ export const SKILL_STUBS: readonly SkillStub[] = [
   },
   {
     id: "security-pass",
-    description: { codex: "Fresh-context security reviewer of a change that has not shipped yet. Launched by the plan, quick, and debug orchestrators on operator acceptance before a commit, a push, or a PR, when the change touched auth, payments, or data-model surfaces. Runs the host's native review path inside its dedicated subagent over the invocation's selected scope. It judges only — never edits, never commits, never asks back.", opencode: "Fresh-context security reviewer of a change that has not shipped yet. Launched by the plan, quick, and debug orchestrators on operator acceptance before a commit, a push, or a PR, when the change touched auth, payments, or data-model surfaces. Runs the host's review path inside its dedicated agent over the invocation's selected scope. It judges only — never edits, never commits, never asks back." },
+    description: { codex: "Fresh-context security reviewer of a change that has not shipped yet. Launched by the plan, quick, and debug orchestrators on operator acceptance before a commit, a push, or a PR, when the change touched auth, payments, or data-model surfaces. Directly acquires and judges the invocation's complete change surface inside its read-only subagent. It judges only — never edits, never commits, never asks back.", opencode: "Fresh-context security reviewer of a change that has not shipped yet. Launched by the plan, quick, and debug orchestrators on operator acceptance before a commit, a push, or a PR, when the change touched auth, payments, or data-model surfaces. Runs the host's review path inside its dedicated agent over the invocation's selected scope. It judges only — never edits, never commits, never asks back." },
     argumentHint: { codex: "[optional base ref for a branch range, e.g. main]", opencode: "[optional base ref for a branch range, e.g. main]" },
     disableModelInvocation: false,
     referenceHosts: ["codex", "opencode"],
