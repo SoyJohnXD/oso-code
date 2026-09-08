@@ -2,7 +2,7 @@
 
 ## The delivery contract
 
-Routine informational milestones may continue in the same turn with the tool call that advances the flow. Questions, permission requests, operator-dependent blockers and completion remain turn boundaries. Native approvals remain genuine operator grants and exact-document gates; the complete §5 document may precede `oso_plan_approve` in the same turn only after this host establishes that the operator can see it, otherwise present it and wait rather than treating missing visibility as approval.
+Follow the shared host [delivery contract](../_shared/references/opencode.md#the-delivery-contract). The complete §5 document may precede `oso_plan_approve` in the same turn only after this host establishes that the operator can see it, otherwise present it and wait rather than treating missing visibility as approval.
 
 ## Question rounds
 
@@ -60,7 +60,7 @@ Three rails read the `auto` marker the AUTO disposition writes, and they are wha
 
 The marker is the flow's to write, never a rail's: `"${OSO_STATE_BIN:-oso-state}" --session "${OSO_AGENT}" set auto=running auto_change=<change-slug>`, then `auto=parked` and `auto=done`, exactly where `../_shared/unattended.md` puts each flip. No rail writes any of the three, and nothing here arms a run past an approval — under plain AUTO phases 1–5 run with the operator and the grant above is crossed before the marker exists (D26).
 
-**The terminal steps are the neutral body's own** (§7 step 8) and this host changes only what carries them: the FINISH is `git -C <main checkout> push -u origin oso-run/<change>` followed by the PR through `gh pr create` in a bash call, and the run branch is the only one the production boundary lets that push name. The PARK and the FINAL REPORT are deliveries under the delivery contract at the top of this file, with the disarm (`auto=done`) sequenced as the tool call BEFORE the report's text. This host gets no carve-out from that contract, and the continuation rail is what carries the run across each of those turn ends. It costs the turn bound nothing, because every milestone is also appended with `oso-state journal`: the journal grows, and journal growth is exactly what resets the count of posted turns that moved it nowhere.
+**The terminal steps are the neutral body's own** (§7 step 8) and this host changes only what carries them: the FINISH is `git -C <main checkout> push -u origin oso-run/<change>` followed by the PR through `gh pr create` in a bash call, and the run branch is the only one the production boundary lets that push name. For journal, continuation and park/final-report sequencing, follow `../_shared/references/opencode.md`'s **The unattended run** section.
 
 ## The worktree root
 

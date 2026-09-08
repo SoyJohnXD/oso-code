@@ -2,7 +2,7 @@
 
 ## The delivery contract
 
-Routine informational milestones may continue in the same turn with the tool call that advances the flow. Questions, permission requests, operator-dependent blockers and completion remain turn boundaries. Native approvals remain genuine operator grants and exact-document gates. The queue's complete approval document still ends the planning turn for Codex's native approval rail; its exact native prompt and marker remain unchanged.
+Follow the shared host [delivery contract](../_shared/references/codex.md#the-delivery-contract). The queue's complete approval document still ends the planning turn for Codex's native approval rail; its exact native prompt and marker remain unchanged.
 
 ## Question rounds
 
@@ -17,6 +17,10 @@ There is no roadmap-shaped gate on this host. §3's one document — §1's queue
 This host CHAINS the roadmap; it does not run it unattended. Every child is planned, executed and closed in order — or set aside where a queued decision leaves it, the way the neutral body's §3 and §4 describe — and the next one follows without the operator arranging it, but each child still stops at the plan approval this host's rail enforces, and that rail passes only on the byte-exact operator prompt `../../plan/references/codex.md` spells. No model may produce that prompt on the operator's behalf: a harness that types its own approval has approved nothing. So §3's one approval covers the roadmap, and each child asks the operator for both actions of the pass above — the re-entry into native Plan Mode that lets its document be presented, then the approval that releases it.
 
 That is a DEGRADATION against the flow the neutral body describes, not a local variant of it, and it ships recorded rather than hidden: `docs/parity-codex.md` carries the row, with the mitigation beside the boundary it cannot remove. What this host still gives is everything either side of that stop — one planning exchange, one global ledger, the autonomy policy answering what surfaces mid-child and queuing for the end what it cannot, the queue advancing on its own, and the presence phase at the end. What it does not give is walking away.
+
+## Closure policy
+
+READ `../_shared/references/codex.md`'s **Strict closure** section NOW. It governs this host's debt/scope payloads, independent confirmation, correction freshness and exit policy in place of the neutral defaults.
 
 ## Shared-file paths
 

@@ -103,3 +103,43 @@ describe("the renderer holds no per-role special case", () => {
     }
   });
 });
+describe("Codex strict closure rendered contract", () => {
+  test("all close bindings select the shared strict policy without changing other hosts", () => {
+    for (const mode of ["plan", "roadmap", "quick", "debug", "debt-sweep"]) {
+      const binding = readRepoText(`core/src/prose/skills/${mode}/references/codex.md`);
+      assert.match(binding, /Strict closure/);
+      assert.equal(readRepoText(`codex/skills/${mode}/references/codex.md`), renderReference(binding));
+      assert.doesNotMatch(readRepoText(`core/src/prose/skills/${mode}/references/opencode.md`), /Strict closure/);
+    }
+  });
+
+  test("closure routes resolve to one rendered owner without leaking into other hosts", () => {
+    const owner = "plugin/skills/_shared/references/codex.md";
+    const closure = readRepoText(owner);
+    assert.equal(closure, renderReference(readRepoText("core/src/prose/shared/codex.md")));
+    assert.equal(closure.split("## Strict closure\n").length - 1, 1);
+    for (const mode of ["plan", "roadmap", "quick", "debug", "debt-sweep"]) {
+      const skill = readRepoText(`codex/skills/${mode}/SKILL.md`);
+      assert.ok(skill.includes("`references/codex.md`"));
+      const binding = readRepoText(`codex/skills/${mode}/references/codex.md`);
+      const route = binding.match(/`([^`]+)`'s \*\*Strict closure\*\*/);
+      assert.ok(route?.[1], `${mode} has no shared closure route`);
+      const target = path.posix.normalize(path.posix.join(`plugin/skills/${mode}`, route[1]));
+      assert.equal(target, owner);
+      assert.equal(binding.split("## Strict closure\n").length - 1, 0);
+      assert.doesNotMatch(readRepoText(`plugin/skills/${mode}/references/claude.md`), /Strict closure/);
+      assert.doesNotMatch(readRepoText(`opencode/skills/oso-${mode}/references/opencode.md`), /Strict closure/);
+    }
+  });
+
+  test("closure rendering preserves each mode's existing frontmatter field", () => {
+    for (const mode of ["plan", "roadmap", "quick", "debug", "debt-sweep"]) {
+      const source = readRepoText(`plugin/skills/${mode}/SKILL.md`).split("---")[1];
+      const rendered = readRepoText(`codex/skills/${mode}/SKILL.md`).split("---")[1];
+      assert.ok(source, `${mode} source frontmatter is missing`);
+      assert.ok(rendered, `${mode} rendered frontmatter is missing`);
+      const preservedField = /^disable-model-invocation:.*$/m;
+      assert.equal(rendered.match(preservedField)?.[0], source.match(preservedField)?.[0]);
+    }
+  });
+});

@@ -23,6 +23,8 @@ Guided flow for "something broke" — stop-the-line: while the bug is open, no f
 
 Operator-facing content — triage reports, the diagnosis presentation — is delivered under that delivery contract. The PLAN mode runs under the same one.
 
+The host's closure policy takes precedence over the default debt/scope invocation, prior-finding dispositions and exit rules below when its reference declares one. Otherwise these defaults remain unchanged.
+
 ## 0. Resume check (light)
 
 Before starting over, `mem_search(query: "oso/{bug}/diagnosis")` for an existing diagnosis that matches the symptom — engram gotcha: previews are 300 chars, `mem_get_observation(id)` for full content. Read this project's own `oso/preferences` record (`mem_search` → `mem_get_observation` — one per project) and apply its depth, teaching and `model_profile` values SILENTLY — debug never re-asks.

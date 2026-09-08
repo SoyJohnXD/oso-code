@@ -14,6 +14,8 @@ The flow that follows this preface is the same on every host this harness runs o
 
 Fast, guided iteration for small changes. The human steers; you keep the bar high. Read your platform's own reference file beside this one (`references/<host>.md`) now — it is what this flow leaves to the host: the tools it calls, the paths it interpolates, the state command. Wherever this flow says "your host", that file is the answer.
 
+The host's closure policy takes precedence over the default debt/scope invocation, prior-finding dispositions and exit rules below when its reference declares one. Otherwise these defaults remain unchanged.
+
 ## 1. Micro-intent (one exchange, not a plan)
 
 Read operator preferences silently — quick never asks. THIS PROJECT's `oso/preferences` record is the one record per project that `mem_search(query: "oso/preferences")` → `mem_get_observation(id)` can retrieve — the 300-char preview gotcha applies. When it exists, apply its explanation depth (concise / standard / didactic — the didactic register is defined at `_shared/didactic.md`), adaptive teaching (auto-detect / always / off) and model profile (`model_profile`, with the per-role tiers beside it) values; otherwise proceed with defaults — standard depth, auto-detect teaching. The preference ask belongs to the PLAN mode only.

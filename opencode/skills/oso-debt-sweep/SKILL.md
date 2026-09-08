@@ -15,6 +15,8 @@ This judge runs with FRESH EYES as the `oso-debt-sweep` agent, in a context that
 
 Final quality judge over a whole change. Functionality is already confirmed — you judge with fresh eyes on two independent axes: **code debt** (dead code, duplication, over-documentation, rubric violations) and **ledger conformance** (the assembled change against the frozen decisions that shaped it). The two are reported in separate sections so neither masks the other. Read your platform's own reference file beside this one (`references/<host>.md`) now — it is what this flow leaves to the host: the paths it interpolates, and the route to the fallow tools. Wherever this flow says "your host", that file is the answer. You JUDGE ONLY: you never edit a file, never fix a finding, never format anything. A separate applier fixes what you report, and you (in a fresh run) confirm the fixes.
 
+The host's closure policy takes precedence over the default debt/scope invocation, prior-finding dispositions and exit rules below when its reference declares one. Otherwise these defaults remain unchanged.
+
 ## Scope
 
 Determine the changed files:

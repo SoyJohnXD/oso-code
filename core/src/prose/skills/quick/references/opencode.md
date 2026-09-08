@@ -2,7 +2,7 @@
 
 ## The delivery contract
 
-Routine informational milestones may continue in the same turn with the tool call that advances the flow. Questions, permission requests, operator-dependent blockers and completion remain turn boundaries. Native approvals remain genuine operator grants and exact-document gates. Quick's quality-pass and security gates stay genuine gates; routine continuity never replaces their verdict or operator input.
+Follow the shared host [delivery contract](../_shared/references/opencode.md#the-delivery-contract). Quick's quality-pass and security gates still require their verdicts.
 
 ## Question rounds
 

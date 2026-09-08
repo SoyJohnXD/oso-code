@@ -2,9 +2,9 @@
 
 ## The delivery contract
 
-Routine informational milestones may continue in the same turn with the tool call that advances the flow. Questions, permission requests, operator-dependent blockers and completion remain turn boundaries. Native approvals remain genuine operator grants and exact-document gates; the complete queue document may precede `oso_plan_approve` in the same turn only after this host establishes that the operator can see it, otherwise present it and wait rather than treating missing visibility as approval.
+Follow the shared host [delivery contract](../_shared/references/opencode.md#the-delivery-contract). The complete queue document may precede `oso_plan_approve` in the same turn only after this host establishes that the operator can see it, otherwise present it and wait rather than treating missing visibility as approval.
 
-Routine milestones do not need an additional unattended carve-out on this host: the host-bound delivery contract permits them to share the turn with the next tool call. A park or final report still hands the run back, and the existing continuation rail `../../oso-plan/references/opencode.md` remains responsible for any later turn; every milestone is also appended full-text with `oso-state journal`, and that growth is what keeps the rail's turn bound from reading a chain in motion as a run that went nowhere.
+For the continuation rail, journal and run handback, read `../_shared/references/opencode.md`'s **The unattended run** section.
 
 ## Question rounds
 

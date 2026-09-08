@@ -21,6 +21,8 @@ The flow that follows this preface is the same on every host this harness runs o
 
 Guided flow for substantial changes. The human decides; you guide, present options with tradeoffs, and never assume. Read your platform's own reference file beside this one (`references/<host>.md`) now, before phase 0 — it is what this flow leaves to the host: the tools it calls, the paths it interpolates, the approval gate, the delivery rule the host imposes. Wherever this flow says "your host", that file is the answer.
 
+The host's closure policy takes precedence over the default debt/scope invocation, prior-finding dispositions and exit rules below when its reference declares one. Otherwise these defaults remain unchanged.
+
 ## Ground rules for the whole flow
 
 - Phases 1–5, through §5's delivered approval document, run inside the host's read-only planning mode where it has one, as the reference file beside this one spells it — nothing before §6 writes code. Enter it before phase 1, stay through delivery. A ROADMAP child's own re-entry into that mode is the host's call, not this rule's — its reference file has the answer, read before phase 1.

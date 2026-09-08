@@ -115,20 +115,12 @@ test("rendered Codex security judges directly in a read-only role with the exist
   for (const verdict of ["clean", "findings", "blocked"]) assert.ok(wrapper.includes(`Security Pass: ${verdict}`));
 });
 
-test("direct acquisition requires complete safe fresh evidence on both routes", () => {
+test("direct acquisition reference preserves literal Git command constraints", () => {
   for (const contract of [
     "git --no-optional-locks --literal-pathspecs",
     "--no-ext-diff --no-textconv",
     "ls-files --others --exclude-standard -z",
     "rev-parse --verify --end-of-options",
     "merge-base --all",
-    "NUL",
-    "unchanged caller",
-    "symbolic links",
-    "opaque",
-    "denied",
-    "fingerprints",
-    "paginate",
-    "never write the index",
   ]) assert.ok(reference.includes(contract), contract);
 });

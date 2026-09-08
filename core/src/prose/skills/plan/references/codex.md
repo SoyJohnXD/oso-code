@@ -2,7 +2,7 @@
 
 ## The delivery contract
 
-Routine informational milestones may continue in the same turn with the tool call that advances the flow. Questions, permission requests, operator-dependent blockers and completion remain turn boundaries. Native approvals remain genuine operator grants and exact-document gates; the complete §5 document remains a turn-ending plain-text response for Codex's native approval rail, whose marker stays the final logical line.
+Follow the shared host [delivery contract](../_shared/references/codex.md#the-delivery-contract). The complete §5 document remains a turn-ending plain-text response for Codex's native approval rail, whose marker stays the final logical line.
 
 ## Question rounds
 
@@ -47,6 +47,10 @@ This host exposes no foreground flag on a launch. Use Codex's wait operation, th
 ## The explorer
 
 Use Codex's built-in `explorer` role for §2 step 1. It inherits the parent Plan Mode's read-only permission, so it can map the surface without becoming an eighth oso-code role. Launch up to three with disjoint evidence targets from the intent, exactly as the neutral body requires.
+
+## Closure policy
+
+READ `../_shared/references/codex.md`'s **Strict closure** section NOW. It governs this host's debt/scope payloads, independent confirmation, correction freshness and exit policy in place of the neutral defaults.
 
 ## Shared-file paths
 

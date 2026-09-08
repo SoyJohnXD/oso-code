@@ -42,6 +42,22 @@ After spawning, retain the unique agent id Codex returns, use Codex's wait opera
 
 The MESSAGE is always the verdict. The receipt proves only that the matching `SubagentStop` observed a complete message and that this caller consumed it once. Never derive pass, fail, blocked, done, clean or findings from the file, and never continue from a receipt when the returned message says otherwise.
 
+## Strict closure
+
+This policy governs Codex plan, roadmap, quick and debug closure and their debt-sweep judges. It replaces the neutral severity-band exit, settled-tag immunity and optional or skipped conformance rules, not the rubric or the mode's other gates.
+
+Require zero introduced or aggravated scoped debt, including nits, and clean exact-scope conformance. Only `Debt Sweep: clean` together with `Conformance: clean` permits the debt/scope gate to pass. An open nit, unconfirmed fix, missing or extra scope, or missing or skipped conformance blocks green and close. Pre-existing untouched debt remains outside the rubric's change boundary.
+
+Plan and roadmap supply the bare frozen ledger and scope, including approved amendments, with the existing CHANGE BASE. Quick and debug must invoke a fresh final `oso-debt-sweep` judge. Their ARGUMENTS carry CLOSURE BASIS = approved micro-intent or diagnosis plus scope, with the existing base coordinate and complete changed-file scope, including staged, unstaged and untracked changes. Quick uses the pending tree; debug retains `HEAD` on every invocation. Never invent a ledger for either mode. A missing closure basis blocks the judge with `Debt Sweep: blocked`; it never falls through to a skipped conformance axis. Quick stays inline, without a plan or slices, and retains its inline quality pass.
+
+The judge checks the supplied basis for unimplemented, contradicts-decision, scope-creep and partial gaps, using the existing conformance report and file evidence. For quick/debug, label that separate section **Scope conformance** and interpret decision references as approved intent or diagnosis items. Every changed item must trace to the supplied scope and every required item must be implemented. Preserve the full rubric, severity tiers, evidence and separate debt and conformance verdicts.
+
+On every confirming invocation, pass all prior findings with bare dispositions, the same base and the current approved basis and scope. The fresh judge must independently recheck each original finding claimed `fixed` against the current tree and report the original file:line with observed resolution evidence or keep it open. Neither `operator-dismissed` nor `accepted-residual` hides debt or a scope gap that still exists; report its evidence and keep the gate red.
+
+Route debt fixes through the existing cleanup assignment and conformance fixes through the mode's approved implementation path; quick implements inline. Unanswered scope or contract questions stop for the operator, never authorize extra work. Every source correction invalidates affected green flags and checks, including changes from quality, design or security review. Re-arm the mode's existing red state before editing, then require post-fix verification and a fresh debt/conformance confirmation on the corrected tree before green or close. Rerun affected independent verification and other judges as well as the zero-warnings bar.
+
+Keep existing loop caps and round counts. Never reset a counter by changing the finding's tag, reopening a loop or routing its remainder elsewhere. At a cap, stop red for the operator's explicit further-round grant or approved follow-up work; a residual waiver never authorizes green or close. Roadmap may set the child aside under its approved policy, never mark that child successfully closed. This gate adds no milestone and replaces none of the six reporting milestones.
+
 ## Front-surface binding
 
 - The mode labels are the bare `plan`, `quick` and `debug` skills.
@@ -55,4 +71,8 @@ The MESSAGE is always the verdict. The receipt proves only that the matching `Su
 
 ## No card exists here
 
-This host draws no card for a spawned role or a waited-on handoff: the **Delegated roles** and **Completion handshake** sections above are transport, invisible to the operator unless the milestone text itself says what happened. The contract at `../reporting.md` is therefore this host's WHOLE visibility layer, not a complement to a native affordance. Routine informational milestones may continue in the same turn with the tool call that advances the flow; questions, permission requests, operator-dependent blockers and completion remain turn boundaries. Native approvals remain genuine operator grants and exact-document gates. Claude Code's unattended carve-out and OpenCode's continuation rail do not change those Codex boundaries, and this host has no runtime rail that fabricates a later approval or operator decision.
+This host draws no card for a spawned role or a waited-on handoff: the **Delegated roles** and **Completion handshake** sections above are transport, invisible to the operator unless the milestone text itself says what happened. The contract at `../reporting.md` is therefore this host's WHOLE visibility layer, not a complement to a native affordance.
+
+## The delivery contract
+
+Routine informational milestones may continue in the same turn with the tool call that advances the flow; questions, permission requests, operator-dependent blockers and completion remain turn boundaries. Native approvals remain genuine operator grants and exact-document gates. Claude Code's unattended carve-out and OpenCode's continuation rail do not change those Codex boundaries, and this host has no runtime rail that fabricates a later approval or operator decision.
