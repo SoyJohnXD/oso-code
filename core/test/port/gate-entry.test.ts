@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { runGate } from "../../src/gates/dispatch.ts";
 import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
+import { TOOL_ROWS } from "../../src/routes/routes.ts";
 import { unresolvedHomeCause, withHookEnvironment } from "../support/gate-fixture.ts";
 import { provedSomething } from "../support/proved.ts";
 import { STATE_FILE, STATE_ROOT_THESE_TESTS_SPELL, withStateSandbox } from "../support/state-sandbox.ts";
@@ -15,6 +16,51 @@ const ARMED_RUN_STATE = {
 
 const CODEX_TOOL_ENVELOPE =
   '{"session_id":"test-session","cwd":"{cwd}","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{}}';
+
+describe("Codex exact read-only aliases preserve the gate boundaries", () => {
+  const allowlist = TOOL_ROWS.filter((row) => row.gate === "unknown" && row.names.codex !== "none")
+    .map((row) => row.names.codex).join("|");
+  const pending = { [STATE_FILE]: `${ARMED_RED_STATE[STATE_FILE]}plan_approval=pending\nplan_approval_session=test-session\n` };
+
+  for (const tool of ["webrun", "web__run", "mcp__context7__query_docs", "mcp__context7__query-docs"]) {
+    test(`${tool} is an exact Codex read route and passes the armed gate`, () => {
+      assert.ok(TOOL_ROWS.some((row) => row.names.codex === tool && row.gate === "unknown" && row.capability === "read"));
+      const run = judge(["unknown", "--allow", allowlist], ARMED_RED_STATE, CODEX_TOOL_ENVELOPE.replace('"Bash"', JSON.stringify(tool)));
+      assert.deepEqual({ exit: run.exit, stdout: run.stdout, stderr: run.stderr }, { exit: 0, stdout: "", stderr: "" });
+    });
+
+    test(`${tool} cannot bypass pending approval`, () => {
+      const run = judge(["unknown", "--allow", allowlist], pending, CODEX_TOOL_ENVELOPE.replace('"Bash"', JSON.stringify(tool)));
+      assert.match(run.stdout, /plan approval is pending/);
+    });
+  }
+
+  for (const tool of ["web_run", "webrun_extra", "mcp__context7__query_docs_extra", "mcp__context7__write", "functions.exec", "exec"]) {
+    test(`${tool} remains outside the exact allowlist`, () => {
+      const run = judge(["unknown", "--allow", allowlist], ARMED_RED_STATE, CODEX_TOOL_ENVELOPE.replace('"Bash"', JSON.stringify(tool)));
+      assert.match(run.stdout, /not in this release/);
+    });
+  }
+
+  for (const command of ["git commit -m x", "sh -c 'git commit -m x'"]) {
+    test(`${command} remains denied while red and while approval is pending`, () => {
+      assert.match(judge(["commit"], ARMED_RED_STATE, bashEnvelope(command)).stdout, /"permissionDecision":"deny"/);
+      assert.match(judge(["unknown", "--allow", allowlist], pending, bashEnvelope(command)).stdout, /plan approval is pending/);
+    });
+  }
+
+  for (const command of ["vercel --prod", "sh -c 'vercel --prod'"]) {
+    test(`${command} remains denied during an unattended run`, () => {
+      assert.match(judge(["proddeploy"], ARMED_RUN_STATE, bashEnvelope(command)).stdout, /"permissionDecision":"deny"/);
+    });
+  }
+
+  test("source edits still require an active slice", () => {
+    const envelope = CODEX_TOOL_ENVELOPE.replace('"Bash"', '"apply_patch"');
+    assert.match(judge(["edits"], ARMED_RED_STATE, envelope).stdout, /no slice is active/);
+    assert.match(judge(["unknown", "--allow", allowlist], pending, envelope).stdout, /plan approval is pending/);
+  });
+});
 
 const MISCONFIGURED_ALLOWLISTS: readonly (readonly [string, readonly string[], string])[] = [
   ["no argument at all", [], "missing allowlist"],

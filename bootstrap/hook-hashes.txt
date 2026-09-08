@@ -11,7 +11,7 @@
 # alone is excluded, because nothing on Codex installs it. An installer reads
 # these expected hashes and compares installed bytes; it must never replace
 # them with hashes it calculated.
-851ffba1e606ad5ea0d2b6bdcf684c562080c3ea1e2520c8a97bb0e49f0927f9  codex/hooks/hooks.json
+d35e32a534ab376269db893e2d05189eae46664c9baf59b76d1b2f50c92224d4  codex/hooks/hooks.json
 1e566c13a502a41d83312b16c5f6c871d91d408c6870730c0f86339bd5cfa6ef  plugin/dist/gate.js
 ddd27c6f6f99e52233ce74eaa2120bde148bbbf83ccfeda06815798c09a28876  plugin/dist/precommit.js
 609158e6c5fbc237939fa3ddf7faab80ab690bdc0c8d584414a885130103c4e8  plugin/dist/package.json
@@ -30,4 +30,4 @@ db4216aae259e4a50c17e6753c9b8f9651d43ed33fd70310f393768701a9bf0a  plugin/hooks/b
 214ad5e41b9c1d42a4a5a7eeb3dd0c27809ec089a43fc7241ce42e21960fb40f  plugin/hooks/lib.sh
 3b9821683e46e56ca2f3aff703d2f3ecbfa042f57be0ac8a3aa5d36a1166a5ff  plugin/hooks/lexer.sh
 4fae3fb38808ea6ea401f6a2a28c5cac914e8db88554d03d477e1424ac9b80a8  plugin/hooks/reanchor-after-compact.sh
-4b641e3e82cdbb3343f45392ccf2e17bd472f6bd9be6db43ed038d5463c9f51b  opencode/dist/oso-code.js
+7a19ad493cb03a6bd2ee4f52939ab0b79e001cc76cddab8813e92b1733bceb5b  opencode/dist/oso-code.js
