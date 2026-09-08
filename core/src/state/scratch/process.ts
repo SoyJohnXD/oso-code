@@ -19,7 +19,7 @@ export function processIdentity(pid: number): ProcessIdentity | undefined {
   try {
     stat = readFileSync(`/proc/${pid}/stat`, "utf8");
   } catch (error) {
-    if (isErrnoException(error) && error.code === "ENOENT") return undefined;
+    if (isErrnoException(error) && (error.code === "ENOENT" || error.code === "ESRCH")) return undefined;
     throw error;
   }
   const fields = stat.slice(stat.lastIndexOf(")") + 2).trim().split(/\s+/);

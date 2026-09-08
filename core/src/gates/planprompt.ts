@@ -1,4 +1,5 @@
 import { statSync } from "node:fs";
+import { CodexPresentationFailure, resolveCodexPresentation } from "../hosts/codex-presentation.ts";
 import { resolveCodexTurn, type CodexTurn } from "../hosts/codex-turn.ts";
 import {
   asCommandSubstitutionCaptures,
@@ -6,9 +7,9 @@ import {
   type HookEnvelope,
   type UserPromptVerdict,
 } from "../hosts/envelope.ts";
-import { runAmendPlan, runApprovePlan, runCancelPlan } from "../state/plan.ts";
+import { matchesPlanPresentation, readPlanForReplacement, runAmendPlan, runApprovePlan, runCancelPlan } from "../state/plan.ts";
 import { isDirectory, isReadableRegularFile, readValue, stateFileFor, type LoggedEvent } from "../state/store.ts";
-import { isPlanRailFailure } from "./planrail.ts";
+import { isPlanRailFailure, nativePlanFailureCode } from "./planrail.ts";
 import { sanitizeSession, type GateDefinition, type GateRequest } from "./preflight.ts";
 
 const APPROVAL_PROMPT = "Implement the plan.";
@@ -45,9 +46,13 @@ const NOTHING_PENDING =
 const NO_VALID_DIGEST = "oso-code: the pending plan has no valid document digest; present it again before approving.";
 
 const AMENDMENT_GUIDANCE =
+  "oso-code: this Plan Mode turn amended the pending document instead of discarding it. Present a COMPLETE replacement proposed_plan, including all unchanged sections and the feedback, then re-emit the internal approval marker for fresh capture.";
+const LEGACY_AMENDMENT_GUIDANCE =
   "oso-code: this Plan Mode turn amended the pending document instead of discarding it. Present the amendment — " +
   "what changed and why — not the complete plan, then re-emit the internal approval marker so a fresh capture " +
   "binds the complete updated document before approval can succeed.";
+const LEGACY_REFRESH = "oso-code: this preserved plan needs a compatibility refresh before native approval. Enter native Plan Mode (/plan or Shift+Tab); the next Plan interaction will supply the complete preserved document for replacement. No manual file, token or digest handling is needed.";
+const NOT_RECORDED = "oso-code: the latest plan was not recorded [latest-presentation-unavailable]; execution remains blocked. Present a complete replacement proposed_plan in native Plan Mode.";
 const APPROVAL_GRANTED =
   "oso-code: Codex native plan approval matched the exact pending document. The technical approval gate is open; " +
   "continue with the saved operational plan.";
@@ -68,7 +73,15 @@ export const PLANPROMPT_GATE: GateDefinition<UserPromptVerdict> = {
 function judgePlanprompt({ envelope }: GateRequest): GateOutcome<UserPromptVerdict> {
   const rawPrompt = envelope.escapedPrompt;
   const sessionId = sanitizeSession(envelope.sessionId);
-  const turn = resolveCodexTurn(envelope);
+  let turn: CodexTurn;
+  try {
+    turn = resolveCodexTurn(envelope);
+  } catch (cause) {
+    if (!(cause instanceof CodexPresentationFailure)) throw cause;
+    if (controlActionOf(rawPrompt) === undefined && !invokesThePlanSkill(rawPrompt)) return SILENT;
+    if (!statePresent(stateFileFor(envelope.cwd)) && !invokesThePlanSkill(rawPrompt)) return SILENT;
+    return nativeFailure(cause, sessionId, "turn");
+  }
 
   if (invokesThePlanSkill(rawPrompt) && turn.mode !== "plan") return control(OUTSIDE_PLAN_MODE);
 
@@ -88,6 +101,10 @@ function judgePlanprompt({ envelope }: GateRequest): GateOutcome<UserPromptVerdi
 
   if (readValue(stateFile, "plan_approval_session") !== sessionId) return control(FOREIGN_CONTROL_PROMPT);
   if (readValue(stateFile, "plan_approval") !== PENDING) return control(NOTHING_PENDING);
+  if (action === "approve" && envelope.caller.host === "codex") {
+    if (readValue(stateFile, "plan_presentation_status") === "failed") return control(NOT_RECORDED);
+    if (readValue(stateFile, "plan_presentation_version") !== "1") return control(LEGACY_REFRESH);
+  }
   const digest = readValue(stateFile, "plan_approval_digest") ?? "";
   if (!PLAN_DIGEST.test(digest)) return control(NO_VALID_DIGEST);
 
@@ -109,15 +126,21 @@ function amendPendingPlan(
   if (!PLAN_DIGEST.test(readValue(stateFile, "plan_approval_digest") ?? "")) return SILENT;
 
   try {
+    if (envelope.caller.host === "codex" && (readValue(stateFile, "plan_presentation_version") !== "1" || readValue(stateFile, "plan_presentation_status") === "failed")) {
+      if (readValue(stateFile, "plan_presentation_status") === "failed" && readValue(stateFile, "plan_current_file") === undefined) return { verdict: { kind: "context", additionalContext: AMENDMENT_GUIDANCE }, events: [] };
+      return { verdict: { kind: "context", additionalContext: `${AMENDMENT_GUIDANCE}\n\nPreserved document:\n${readPlanForReplacement(envelope.cwd, sessionId)}` }, events: [] };
+    }
     runAmendPlan(envelope.cwd, sessionId, FEEDBACK_AMENDMENT_LABEL, asCommandSubstitutionCaptures(envelope.prompt));
+    if (envelope.caller.host === "codex") return { verdict: { kind: "context", additionalContext: `${AMENDMENT_GUIDANCE}\n\nPreserved document:\n${readPlanForReplacement(envelope.cwd, sessionId)}` }, events: [] };
   } catch (cause) {
+    if (envelope.caller.host === "codex") return nativeFailure(cause, sessionId, "amend");
     if (!isPlanRailFailure(cause)) throw cause;
     return {
       verdict: { kind: "deny", message: AMENDMENT_REFUSED },
       events: [refusal("plan-approval-amend-blocked", sessionId, cause.message)],
     };
   }
-  return { verdict: { kind: "context", additionalContext: AMENDMENT_GUIDANCE }, events: [] };
+  return { verdict: { kind: "context", additionalContext: LEGACY_AMENDMENT_GUIDANCE }, events: [] };
 }
 
 function settlePendingPlan(
@@ -127,9 +150,10 @@ function settlePendingPlan(
   digest: string,
 ): GateOutcome<UserPromptVerdict> {
   try {
-    if (action === "approve") runApprovePlan(envelope.cwd, sessionId, digest);
+    if (action === "approve") runApprovePlan(envelope.cwd, sessionId, digest, envelope.caller.host === "codex" ? () => resolveCodexPresentation(envelope, true) : undefined);
     else runCancelPlan(envelope.cwd, sessionId, digest);
   } catch (cause) {
+    if (envelope.caller.host === "codex") return nativeFailure(cause, sessionId, action);
     if (!isPlanRailFailure(cause)) throw cause;
     return {
       verdict: {
@@ -158,6 +182,15 @@ function controlPromptReaches(
   if (!ownIdentity || !isDirectory(envelope.cwd)) return SILENT;
   if (!statePresent(stateFile)) return SILENT;
   if (!isReadableRegularFile(stateFile)) return control(UNREADABLE_PENDING_STATE);
+  if (envelope.caller.host === "codex" && readValue(stateFile, "mode") === "plan" && readValue(stateFile, "plan_approval") === "approved" && readValue(stateFile, "plan_approval_session") === sessionId && readValue(stateFile, "plan_presentation_version") === "1") {
+    try {
+      const latest = resolveCodexPresentation(envelope, true);
+      if (!matchesPlanPresentation(stateFile, latest.binding)) return control(NOT_RECORDED);
+    } catch (cause) {
+      if (!(cause instanceof CodexPresentationFailure)) throw cause;
+      return nativeFailure(cause, sessionId, action);
+    }
+  }
   if (readValue(stateFile, "plan_approval") !== PENDING) return SILENT;
   return undefined;
 }
@@ -166,6 +199,14 @@ function modeRefusalFor(action: ControlAction, turn: CodexTurn): string | undefi
   if (action === "cancel") return turn.mode === "unknown" ? CANCELLATION_UNATTESTED : undefined;
   if (turn.mode === "default") return undefined;
   return turn.mode === "plan" ? APPROVAL_STILL_IN_PLAN_MODE : APPROVAL_UNATTESTED;
+}
+
+function nativeFailure(cause: unknown, sessionId: string, action: string): GateOutcome<UserPromptVerdict> {
+  const code = nativePlanFailureCode(cause);
+  return {
+    verdict: { kind: "deny", message: `oso-code: the ${action} request was refused [${code}]; execution remains blocked. Present a complete replacement proposed_plan in native Plan Mode after repairing the reported fault.` },
+    events: [refusal(`plan-approval-${action}-blocked`, sessionId, code)],
+  };
 }
 
 function invokesThePlanSkill(rawPrompt: string): boolean {

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { processIdentity } from "../../src/state/scratch/process.ts";
+import { assertQuiescent, identityIsLive, processIdentity, sessionMembers } from "../../src/state/scratch/process.ts";
 import { skipUnlessKernelRunsScriptFixtures } from "../support/win32-skip-guards.ts";
 import { stateFileFor, writeStatePairs } from "../../src/state/store.ts";
 
@@ -88,7 +88,8 @@ test("scratch capacity distinguishes unavailable inodes, counts reservations, an
   recipe.headroomBytes = 12000;
   writeFileSync(recipeFile, JSON.stringify(recipe));
   assert.match(String(injected(root, source, second, capacity).stderr), /capacity refused/);
-  assert.equal(invoke(["close", "--id", String(first.stdout).trim(), ...owner]).status, 0);
+  const closed = invoke(["close", "--id", String(first.stdout).trim(), ...owner]);
+  assert.equal(closed.status, 0, String(closed.stderr) + String(closed.stdout));
   assert.match(String(injected(root, source, second, "fs.statfsSync=()=>({bavail:999999999999n,bsize:1n,files:0n,ffree:0n})").stderr), /unavailable/);
   for (const code of ["ENOSPC", "EDQUOT"]) {
     const result = injected(root, source, second, `fs.copyFileSync=()=>{throw Object.assign(new Error('${code} copy stopped'),{code:'${code}'})}`);
@@ -100,7 +101,59 @@ test("scratch capacity distinguishes unavailable inodes, counts reservations, an
   assert.ok(entries.every((entry) => entry.state === "closed" && !existsSync(path.join(entry.root, "payload"))));
 }));
 
+test("scratch close tolerates native proc-stat disappearance while retaining other read failures", () => fixture((root, source, invoke) => {
+  const id = created(invoke);
+  const disappearance = `
+    import {spawn} from 'node:child_process';
+    import assert from 'node:assert/strict';
+    const child = spawn(process.execPath, ['-e', 'process.stdin.resume()'], {stdio:['pipe','ignore','ignore']});
+    const joined = new Promise((resolve, reject) => {child.on('close', resolve); child.on('error', reject)});
+    let descriptor;
+    try {
+      descriptor = fs.openSync('/proc/' + child.pid + '/stat', 'r');
+      child.stdin.end();
+      assert.equal(await joined, 0);
+      assert.throws(() => fs.readFileSync(descriptor, 'utf8'), {code:'ESRCH', syscall:'read'});
+      const read = fs.readFileSync;
+      const entries = fs.readdirSync;
+      fs.readdirSync = (location, ...args) => location === '/proc' ? [...entries(location, ...args), String(child.pid)] : entries(location, ...args);
+      fs.readFileSync = (location, ...args) => location === '/proc/' + child.pid + '/stat' ? read(descriptor, ...args) : read(location, ...args);
+      process.on('exit', () => fs.closeSync(descriptor));
+    } catch (error) {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+      await joined;
+      if (descriptor !== undefined) fs.closeSync(descriptor);
+      throw error;
+    }
+  `;
+  for (const code of ["EACCES", "EPERM", "EIO"]) {
+    const result = injected(root, source, ["close", "--id", id, ...owner], `
+      const read = fs.readFileSync;
+      fs.readFileSync = (location, ...args) => {
+        if (location === '/proc/' + process.pid + '/stat') throw Object.assign(new Error('${code} proc-stat refused'), {code:'${code}'});
+        return read(location, ...args);
+      };
+    `);
+    assert.equal(result.status, 1, String(result.stderr) + String(result.stdout));
+    assert.match(String(result.stderr), new RegExp(`${code} proc-stat refused`));
+    assert.equal(record(root, id).state, "ready");
+    assert.equal(existsSync(path.join(record(root, id).root, "payload")), true);
+  }
+  const result = injected(root, source, ["close", "--id", id, ...owner], disappearance);
+  assert.equal(result.status, 0, String(result.stderr) + String(result.stdout));
+  assert.equal(record(root, id).state, "closed");
+  assert.equal(existsSync(path.join(record(root, id).root, "payload")), false);
+}));
+
 test("scratch stale admission recovery requires exact inactive identity and owner", () => fixture((root, _source, invoke) => {
+  const current = processIdentity(process.pid)!;
+  assert.equal(identityIsLive(current), true);
+  assert.ok(sessionMembers(current).some((member) => member.pid === current.pid));
+  assert.throws(() => assertQuiescent(current), /group\/session remains active/);
+  assert.throws(() => identityIsLive({ ...current, start: `${current.start}0` }), /identity changed/);
+  assert.throws(() => identityIsLive({ ...current, boot: "foreign-boot" }), /identity changed/);
+  assert.throws(() => identityIsLive({ ...current, group: current.group + 1 }), /escaped its reviewed group\/session/);
+  assert.throws(() => identityIsLive({ ...current, session: current.session + 1 }), /escaped its reviewed group\/session/);
   const id = created(invoke);
   const entry = record(root, id);
   const lock = path.join(root, "state/verification/.admission");

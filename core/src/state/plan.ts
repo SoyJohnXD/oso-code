@@ -3,9 +3,57 @@ import path from "node:path";
 import * as store from "./store.ts";
 import * as transitions from "./transitions.ts";
 
-export class PlanFailure extends Error {}
+export class PlanFailure extends Error {
+  readonly code: string | undefined;
+  constructor(message: string, options?: ErrorOptions & { code?: string }) {
+    super(message, options);
+    this.code = options?.code;
+  }
+}
 
-export class PlanApprovalError extends Error {}
+export class PlanApprovalError extends PlanFailure {}
+
+export type PlanPresentationBinding = Readonly<{ version: 1; turnId: string; messageId: string; contentDigest: string }>;
+type NativePlanApproval = Readonly<{ binding: PlanPresentationBinding; document: string }>;
+
+export function matchesPlanPresentation(stateFile: string, binding: PlanPresentationBinding): boolean {
+  return store.readValue(stateFile, "plan_presentation_version") === String(binding.version)
+    && store.readValue(stateFile, "plan_presentation_turn") === binding.turnId
+    && store.readValue(stateFile, "plan_presentation_message") === binding.messageId
+    && store.readValue(stateFile, "plan_presentation_content_digest") === binding.contentDigest;
+}
+
+export class PlanVerifyFailure extends PlanFailure {
+  readonly slice: string;
+  constructor(slice: string) {
+    super(`capture-plan requires slice ${slice} to name failing-check: or Verify-exception: on its Verify line`, { code: "missing-slice-verify" });
+    this.slice = slice;
+  }
+}
+
+export function runRejectPlanPresentation(cwd: string, sessionId: string, fingerprint: string): void {
+  const stateFile = store.stateFileFor(cwd);
+  mkdirSync(store.stateRootDirectory(), { recursive: true });
+  store.withLock(stateFile, sessionId, () => {
+    store.writeStatePairs(stateFile, [
+      "mode=plan", "active_slice=", "verify_green=false", "plan_approval=pending",
+      `plan_approval_session=${sessionId}`, "plan_presentation_status=failed",
+      `plan_approval_digest=${store.readValue(stateFile, "plan_approval_digest") ?? fingerprint}`,
+    ], sessionId);
+  });
+}
+
+export function readPlanForReplacement(cwd: string, sessionId: string): string {
+  const stateFile = store.stateFileFor(cwd);
+  return store.withLock(stateFile, sessionId, () => {
+    if (store.readValue(stateFile, "plan_approval_session") !== sessionId || store.readValue(stateFile, "plan_approval") !== "pending") throw new PlanFailure("replacement requires an own pending plan", { code: "replacement-not-pending" });
+    const digest = store.readValue(stateFile, "plan_approval_digest") ?? "";
+    if (!isValidPlanDigest(digest)) throw new PlanFailure("replacement requires a valid pending digest", { code: "invalid-pending-digest" });
+    const paths = planPaths(stateFile, digest);
+    if (store.readValue(stateFile, "plan_current_file") !== paths.currentFile || !store.isPrivateRegularFile(paths.currentFile)) throw new PlanFailure("preserved plan is missing or unsafe", { code: "preserved-plan-unsafe" });
+    return readFileSync(paths.currentFile, "utf8");
+  });
+}
 
 const PLAN_DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 
@@ -42,12 +90,12 @@ function ensurePlanDirectory(paths: PlanPaths): void {
 }
 
 function requireNonSymlinkDirectory(target: string, symlinkLabel: string, directoryLabel: string = symlinkLabel): void {
-  if (store.isSymlink(target)) throw new PlanFailure(`${symlinkLabel} is a symlink: ${target}`);
+  if (store.isSymlink(target)) throw new PlanFailure(`${symlinkLabel} is a symlink: ${target}`, { code: "plan-directory-symlink" });
   mkdirSync(target, { recursive: true, mode: 0o700 });
-  if (!store.isDirectory(target)) throw new PlanFailure(`${directoryLabel} is not a directory: ${target}`);
+  if (!store.isDirectory(target)) throw new PlanFailure(`${directoryLabel} is not a directory: ${target}`, { code: "plan-directory-invalid" });
 }
 
-export function runCapturePlan(cwd: string, sessionId: string, digest: string, document: string): number {
+export function runCapturePlan(cwd: string, sessionId: string, digest: string, document: string, binding?: PlanPresentationBinding): number {
   if (!isValidPlanDigest(digest)) throw new PlanFailure("capture-plan requires one lowercase SHA-256 digest");
   const stateFile = store.stateFileFor(cwd);
   const paths = planPaths(stateFile, digest);
@@ -55,23 +103,24 @@ export function runCapturePlan(cwd: string, sessionId: string, digest: string, d
   if (document.length === 0) throw new PlanFailure("capture-plan requires a non-empty plan document on stdin");
   const uncheckedSlice = firstSliceNamingNoCheck(document);
   if (uncheckedSlice !== undefined) {
-    throw new PlanFailure(
-      `capture-plan requires slice ${uncheckedSlice} to name ${VERIFY_CHECK_TOKENS.join(" or ")} on its Verify line`,
-    );
+    throw new PlanVerifyFailure(uncheckedSlice);
   }
   return store.withLock(stateFile, sessionId, () => {
+    if (binding !== undefined) {
+      store.writeStatePairs(stateFile, ["mode=plan", "plan_approval=pending", "plan_presentation_status=failed", `plan_approval_session=${sessionId}`], sessionId);
+    }
     if (existsSync(paths.presentedFile)) {
       if (!store.isPrivateRegularFile(paths.presentedFile)) {
-        throw new PlanFailure("presented snapshot is not a private regular file");
+        throw new PlanFailure("presented snapshot is not a private regular file", { code: "presented-snapshot-unsafe" });
       }
       if (readFileSync(paths.presentedFile, "utf8") !== document) {
-        throw new PlanFailure("presented snapshot content disagrees with its approval digest");
+        throw new PlanFailure("presented snapshot content disagrees with its approval digest", { code: "presented-snapshot-digest-mismatch" });
       }
     } else {
       store.writeFileAtomically(paths.dir, paths.presentedFile, document, ".snapshot.");
     }
     if (existsSync(paths.currentFile) && !store.isPrivateRegularFile(paths.currentFile)) {
-      throw new PlanFailure("current plan is not a private regular file");
+      throw new PlanFailure("current plan is not a private regular file", { code: "current-plan-unsafe" });
     }
     store.writeFileAtomically(paths.dir, paths.currentFile, document, ".current.");
     const arming = transitions.armPlan();
@@ -87,6 +136,13 @@ export function runCapturePlan(cwd: string, sessionId: string, digest: string, d
         `plan_snapshot_file=${paths.presentedFile}`,
         `plan_current_file=${paths.currentFile}`,
         "plan_revision=0",
+        ...(binding === undefined && store.readValue(stateFile, "plan_presentation_version") === undefined ? [] : [
+          `plan_presentation_version=${binding?.version ?? ""}`,
+          `plan_presentation_turn=${binding?.turnId ?? ""}`,
+          `plan_presentation_message=${binding?.messageId ?? ""}`,
+          `plan_presentation_content_digest=${binding?.contentDigest ?? ""}`,
+          `plan_presentation_status=${binding === undefined ? "" : "captured"}`,
+        ]),
       ],
       sessionId,
     );
@@ -95,56 +151,65 @@ export function runCapturePlan(cwd: string, sessionId: string, digest: string, d
   });
 }
 
-export function runApprovePlan(cwd: string, sessionId: string, digest: string): number {
+export function runApprovePlan(cwd: string, sessionId: string, digest: string, nativePresentation?: () => NativePlanApproval): number {
   if (!isValidPlanDigest(digest)) {
-    throw new PlanApprovalError("approve-plan requires one lowercase SHA-256 digest");
+    throw new PlanApprovalError("approve-plan requires one lowercase SHA-256 digest", { code: "invalid-approval-digest" });
   }
   const stateFile = store.stateFileFor(cwd);
   mkdirSync(store.stateRootDirectory(), { recursive: true });
   return store.withLock(stateFile, sessionId, () => {
     if (!store.isReadableRegularFile(stateFile)) {
-      throw new PlanApprovalError(`no readable pending plan approval for session ${sessionId}`);
+      throw new PlanApprovalError(`no readable pending plan approval for session ${sessionId}`, { code: "pending-state-unreadable" });
     }
     if (store.readValue(stateFile, "plan_approval_session") !== sessionId) {
-      throw new PlanApprovalError("pending plan approval belongs to another session");
+      throw new PlanApprovalError("pending plan approval belongs to another session", { code: "foreign-approval-session" });
     }
     if (store.readValue(stateFile, "mode") !== "plan") {
-      throw new PlanApprovalError("pending approval is not attached to plan mode state");
+      throw new PlanApprovalError("pending approval is not attached to plan mode state", { code: "approval-not-plan-mode" });
     }
     if (store.readValue(stateFile, "plan_approval") !== "pending") {
-      throw new PlanApprovalError("plan approval is not pending");
+      throw new PlanApprovalError("plan approval is not pending", { code: "approval-not-pending" });
     }
     if (store.readValue(stateFile, "plan_approval_digest") !== digest) {
-      throw new PlanApprovalError("pending plan digest changed before approval");
+      throw new PlanApprovalError("pending plan digest changed before approval", { code: "approval-digest-changed" });
+    }
+    let native: NativePlanApproval | undefined;
+    if (nativePresentation !== undefined) {
+      if (store.readValue(stateFile, "plan_presentation_status") !== "captured" || store.readValue(stateFile, "plan_presentation_version") !== "1") throw new PlanApprovalError("native presentation requires replacement capture", { code: "replacement-required" });
+      native = nativePresentation();
+      if (!matchesPlanPresentation(stateFile, native.binding)) throw new PlanApprovalError("a newer native presentation superseded the pending document", { code: "superseded-presentation" });
     }
     const paths = planPaths(stateFile, digest);
     ensurePlanDirectory(paths);
     if (store.readValue(stateFile, "plan_snapshot_file") !== paths.presentedFile) {
-      throw new PlanFailure("pending state does not name the expected presented snapshot");
+      throw new PlanFailure("pending state does not name the expected presented snapshot", { code: "presented-snapshot-binding-mismatch" });
     }
     if (store.readValue(stateFile, "plan_current_file") !== paths.currentFile) {
-      throw new PlanFailure("pending state does not name the expected current plan");
+      throw new PlanFailure("pending state does not name the expected current plan", { code: "current-plan-binding-mismatch" });
     }
     if (!store.isPrivateRegularFile(paths.currentFile)) {
-      throw new PlanFailure("current plan is missing or unsafe");
+      throw new PlanFailure("current plan is missing or unsafe", { code: "current-plan-unsafe" });
     }
+    if (native !== undefined && readFileSync(paths.currentFile, "utf8") !== native.document) throw new PlanApprovalError("native presentation differs from the pending document", { code: "pending-document-mismatch" });
     if (store.isPrivateRegularFile(paths.presentedFile)) {
       if (!byteIdentical(paths.currentFile, paths.presentedFile)) {
-        throw new PlanFailure("the pending plan changed since it was presented; capture it again before approving");
+        throw new PlanFailure("the pending plan changed since it was presented; capture it again before approving", { code: "presented-document-mismatch" });
       }
       if (existsSync(paths.approvedFile)) {
         if (!store.isPrivateRegularFile(paths.approvedFile)) {
-          throw new PlanFailure("approved snapshot is not a private regular file");
+          throw new PlanFailure("approved snapshot is not a private regular file", { code: "approved-snapshot-unsafe" });
         }
         if (!byteIdentical(paths.presentedFile, paths.approvedFile)) {
-          throw new PlanFailure("approved snapshot content disagrees with the pending document");
+          throw new PlanFailure("approved snapshot content disagrees with the pending document", { code: "approved-document-mismatch" });
         }
         rmSync(paths.presentedFile, { force: true });
       } else {
         renameSync(paths.presentedFile, paths.approvedFile);
       }
     } else if (!store.isPrivateRegularFile(paths.approvedFile)) {
-      throw new PlanFailure("presented plan snapshot is missing");
+      throw new PlanFailure("presented plan snapshot is missing", { code: "presented-snapshot-missing" });
+    } else if (!byteIdentical(paths.currentFile, paths.approvedFile)) {
+      throw new PlanFailure("current plan differs from the partially published approved snapshot", { code: "partial-publication-mismatch" });
     }
     store.writeStatePairs(stateFile, ["plan_approval=approved", `plan_snapshot_file=${paths.approvedFile}`], sessionId);
     store.logEvent({ event: "plan-approval-approved", session: sessionId });
@@ -154,22 +219,22 @@ export function runApprovePlan(cwd: string, sessionId: string, digest: string): 
 
 export function runCancelPlan(cwd: string, sessionId: string, digest: string): number {
   if (!isValidPlanDigest(digest)) {
-    throw new PlanApprovalError("cancel-plan requires one lowercase SHA-256 digest");
+    throw new PlanApprovalError("cancel-plan requires one lowercase SHA-256 digest", { code: "invalid-cancellation-digest" });
   }
   const stateFile = store.stateFileFor(cwd);
   mkdirSync(store.stateRootDirectory(), { recursive: true });
   return store.withLock(stateFile, sessionId, () => {
     if (!store.isReadableRegularFile(stateFile)) {
-      throw new PlanApprovalError(`no readable pending plan approval for session ${sessionId}`);
+      throw new PlanApprovalError(`no readable pending plan approval for session ${sessionId}`, { code: "pending-state-unreadable" });
     }
     if (store.readValue(stateFile, "plan_approval_session") !== sessionId) {
-      throw new PlanApprovalError("pending plan approval belongs to another session");
+      throw new PlanApprovalError("pending plan approval belongs to another session", { code: "foreign-approval-session" });
     }
     if (store.readValue(stateFile, "plan_approval") !== "pending") {
-      throw new PlanApprovalError("plan approval is not pending");
+      throw new PlanApprovalError("plan approval is not pending", { code: "approval-not-pending" });
     }
     if (store.readValue(stateFile, "plan_approval_digest") !== digest) {
-      throw new PlanApprovalError("pending plan digest changed before cancellation");
+      throw new PlanApprovalError("pending plan digest changed before cancellation", { code: "cancellation-digest-changed" });
     }
     const paths = planPaths(stateFile, digest);
     if (store.readValue(stateFile, "plan_snapshot_file") === paths.presentedFile) {
@@ -185,41 +250,41 @@ export function runCancelPlan(cwd: string, sessionId: string, digest: string): n
 }
 
 export function runAmendPlan(cwd: string, sessionId: string, sliceId: string, document: string): number {
-  if (!store.isNameToken(sliceId)) throw new PlanFailure("amend-plan requires a safe slice id");
+  if (!store.isNameToken(sliceId)) throw new PlanFailure("amend-plan requires a safe slice id", { code: "invalid-amendment-slice" });
   const stateFile = store.stateFileFor(cwd);
   mkdirSync(store.stateRootDirectory(), { recursive: true });
-  if (document.length === 0) throw new PlanFailure("amend-plan requires a non-empty document on stdin");
+  if (document.length === 0) throw new PlanFailure("amend-plan requires a non-empty document on stdin", { code: "empty-amendment" });
   return store.withLock(stateFile, sessionId, () => {
     if (!store.isReadableRegularFile(stateFile)) {
-      throw new PlanFailure(`no readable plan for session ${sessionId}`);
+      throw new PlanFailure(`no readable plan for session ${sessionId}`, { code: "plan-state-unreadable" });
     }
     if (store.readValue(stateFile, "plan_approval_session") !== sessionId) {
-      throw new PlanFailure("the plan belongs to another session");
+      throw new PlanFailure("the plan belongs to another session", { code: "foreign-plan-session" });
     }
     if (store.readValue(stateFile, "mode") !== "plan") {
-      throw new PlanFailure("amendments require active plan execution state");
+      throw new PlanFailure("amendments require active plan execution state", { code: "amendment-not-plan-mode" });
     }
     const amendmentApproval = store.readValue(stateFile, "plan_approval");
     const shape = amendmentShapeFor(amendmentApproval);
     const approvalDigest = store.readValue(stateFile, "plan_approval_digest") ?? "";
-    if (!isValidPlanDigest(approvalDigest)) throw new PlanFailure("the plan has no valid digest");
+    if (!isValidPlanDigest(approvalDigest)) throw new PlanFailure("the plan has no valid digest", { code: "invalid-plan-digest" });
     const paths = planPaths(stateFile, approvalDigest);
     ensurePlanDirectory(paths);
     const amendmentSnapshotFile = amendmentApproval === "approved" ? paths.approvedFile : paths.presentedFile;
     if (store.readValue(stateFile, "plan_snapshot_file") !== amendmentSnapshotFile) {
-      throw new PlanFailure("plan state does not name its expected immutable snapshot");
+      throw new PlanFailure("plan state does not name its expected immutable snapshot", { code: "immutable-snapshot-binding-mismatch" });
     }
     if (store.readValue(stateFile, "plan_current_file") !== paths.currentFile) {
-      throw new PlanFailure("plan state does not name its operational plan");
+      throw new PlanFailure("plan state does not name its operational plan", { code: "current-plan-binding-mismatch" });
     }
     if (!store.isPrivateRegularFile(amendmentSnapshotFile)) {
-      throw new PlanFailure("the immutable snapshot is missing or unsafe");
+      throw new PlanFailure("the immutable snapshot is missing or unsafe", { code: "immutable-snapshot-unsafe" });
     }
     if (!store.isPrivateRegularFile(paths.currentFile)) {
-      throw new PlanFailure("current plan is missing or unsafe");
+      throw new PlanFailure("current plan is missing or unsafe", { code: "current-plan-unsafe" });
     }
     const revisionText = store.readValue(stateFile, "plan_revision") ?? "";
-    if (!/^[0-9]+$/.test(revisionText)) throw new PlanFailure("current plan has no valid revision");
+    if (!/^[0-9]+$/.test(revisionText)) throw new PlanFailure("current plan has no valid revision", { code: "invalid-plan-revision" });
     const nextRevision = Number(revisionText) + 1;
     const amended =
       `${readFileSync(paths.currentFile, "utf8")}\n\n## ${shape.heading} — ${sliceId}\n\n` +
@@ -239,7 +304,7 @@ function byteIdentical(leftFile: string, rightFile: string): boolean {
 function amendmentShapeFor(approval: string | undefined): { heading: string; classification: string } {
   if (approval === "approved") return { heading: "Execution amendment", classification: "in-scope" };
   if (approval === "pending") return { heading: "Plan Mode feedback", classification: "feedback" };
-  throw new PlanFailure("amendments require a pending or approved plan");
+  throw new PlanFailure("amendments require a pending or approved plan", { code: "amendment-not-active" });
 }
 
 const VERIFY_CHECK_TOKENS = ["failing-check:", "Verify-exception:"] as const;

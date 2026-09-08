@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { isReadableRegularFile } from "../state/store.ts";
 import { jsonField, type HookEnvelope } from "./envelope.ts";
+import { isTask, readCodexTranscript } from "./codex-presentation.ts";
 
 export type CodexTurnMode = "plan" | "default" | "unknown";
 export type CodexTurnSource = "transcript" | "permission_mode" | "unavailable";
@@ -25,6 +26,16 @@ const PERMISSION_MODES: Readonly<Record<string, CodexTurnMode>> = {
 const ATTESTABLE_MODES: Readonly<Record<string, CodexTurnMode>> = { plan: "plan", default: "default" };
 
 export function resolveCodexTurn(envelope: HookEnvelope): CodexTurn {
+  if (envelope.caller.host === "codex" && envelope.transcriptPath !== "") {
+    const records = readCodexTranscript(envelope);
+    const tasks = records.filter(isTask);
+    const candidates = tasks.filter((task) => task.payload["turn_id"] === envelope.turnId);
+    const task = candidates[0];
+    if (candidates.length !== 1 || task !== tasks.at(-1)) return UNATTESTED;
+    const kind = task?.payload["collaboration_mode_kind"];
+    const mode = typeof kind === "string" ? ATTESTABLE_MODES[kind] : undefined;
+    return mode === undefined ? UNATTESTED : { mode, source: "transcript" };
+  }
   const attested = attestedFromTranscript(envelope);
   if (attested !== undefined) return attested;
   return { mode: PERMISSION_MODES[envelope.permissionMode] ?? "unknown", source: sourceFor(envelope.permissionMode) };

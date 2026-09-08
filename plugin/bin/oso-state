@@ -2034,9 +2034,50 @@ function armPlan() {
 
 // core/src/state/plan.ts
 var PlanFailure = class extends Error {
+  code;
+  constructor(message, options) {
+    super(message, options);
+    this.code = options?.code;
+  }
 };
-var PlanApprovalError = class extends Error {
+var PlanApprovalError = class extends PlanFailure {
 };
+function matchesPlanPresentation(stateFile, binding) {
+  return readValue(stateFile, "plan_presentation_version") === String(binding.version) && readValue(stateFile, "plan_presentation_turn") === binding.turnId && readValue(stateFile, "plan_presentation_message") === binding.messageId && readValue(stateFile, "plan_presentation_content_digest") === binding.contentDigest;
+}
+var PlanVerifyFailure = class extends PlanFailure {
+  slice;
+  constructor(slice) {
+    super(`capture-plan requires slice ${slice} to name failing-check: or Verify-exception: on its Verify line`, { code: "missing-slice-verify" });
+    this.slice = slice;
+  }
+};
+function runRejectPlanPresentation(cwd, sessionId, fingerprint) {
+  const stateFile = stateFileFor(cwd);
+  mkdirSync3(stateRootDirectory(), { recursive: true });
+  withLock(stateFile, sessionId, () => {
+    writeStatePairs(stateFile, [
+      "mode=plan",
+      "active_slice=",
+      "verify_green=false",
+      "plan_approval=pending",
+      `plan_approval_session=${sessionId}`,
+      "plan_presentation_status=failed",
+      `plan_approval_digest=${readValue(stateFile, "plan_approval_digest") ?? fingerprint}`
+    ], sessionId);
+  });
+}
+function readPlanForReplacement(cwd, sessionId) {
+  const stateFile = stateFileFor(cwd);
+  return withLock(stateFile, sessionId, () => {
+    if (readValue(stateFile, "plan_approval_session") !== sessionId || readValue(stateFile, "plan_approval") !== "pending") throw new PlanFailure("replacement requires an own pending plan", { code: "replacement-not-pending" });
+    const digest = readValue(stateFile, "plan_approval_digest") ?? "";
+    if (!isValidPlanDigest(digest)) throw new PlanFailure("replacement requires a valid pending digest", { code: "invalid-pending-digest" });
+    const paths = planPaths(stateFile, digest);
+    if (readValue(stateFile, "plan_current_file") !== paths.currentFile || !isPrivateRegularFile(paths.currentFile)) throw new PlanFailure("preserved plan is missing or unsafe", { code: "preserved-plan-unsafe" });
+    return readFileSync4(paths.currentFile, "utf8");
+  });
+}
 var PLAN_DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 function isValidPlanDigest(value) {
   return PLAN_DIGEST_PATTERN.test(value);
@@ -2060,11 +2101,11 @@ function ensurePlanDirectory(paths) {
   chmodSync2(paths.dir, 448);
 }
 function requireNonSymlinkDirectory(target, symlinkLabel, directoryLabel = symlinkLabel) {
-  if (isSymlink(target)) throw new PlanFailure(`${symlinkLabel} is a symlink: ${target}`);
+  if (isSymlink(target)) throw new PlanFailure(`${symlinkLabel} is a symlink: ${target}`, { code: "plan-directory-symlink" });
   mkdirSync3(target, { recursive: true, mode: 448 });
-  if (!isDirectory(target)) throw new PlanFailure(`${directoryLabel} is not a directory: ${target}`);
+  if (!isDirectory(target)) throw new PlanFailure(`${directoryLabel} is not a directory: ${target}`, { code: "plan-directory-invalid" });
 }
-function runCapturePlan(cwd, sessionId, digest, document) {
+function runCapturePlan(cwd, sessionId, digest, document, binding) {
   if (!isValidPlanDigest(digest)) throw new PlanFailure("capture-plan requires one lowercase SHA-256 digest");
   const stateFile = stateFileFor(cwd);
   const paths = planPaths(stateFile, digest);
@@ -2072,23 +2113,24 @@ function runCapturePlan(cwd, sessionId, digest, document) {
   if (document.length === 0) throw new PlanFailure("capture-plan requires a non-empty plan document on stdin");
   const uncheckedSlice = firstSliceNamingNoCheck(document);
   if (uncheckedSlice !== void 0) {
-    throw new PlanFailure(
-      `capture-plan requires slice ${uncheckedSlice} to name ${VERIFY_CHECK_TOKENS.join(" or ")} on its Verify line`
-    );
+    throw new PlanVerifyFailure(uncheckedSlice);
   }
   return withLock(stateFile, sessionId, () => {
+    if (binding !== void 0) {
+      writeStatePairs(stateFile, ["mode=plan", "plan_approval=pending", "plan_presentation_status=failed", `plan_approval_session=${sessionId}`], sessionId);
+    }
     if (existsSync2(paths.presentedFile)) {
       if (!isPrivateRegularFile(paths.presentedFile)) {
-        throw new PlanFailure("presented snapshot is not a private regular file");
+        throw new PlanFailure("presented snapshot is not a private regular file", { code: "presented-snapshot-unsafe" });
       }
       if (readFileSync4(paths.presentedFile, "utf8") !== document) {
-        throw new PlanFailure("presented snapshot content disagrees with its approval digest");
+        throw new PlanFailure("presented snapshot content disagrees with its approval digest", { code: "presented-snapshot-digest-mismatch" });
       }
     } else {
       writeFileAtomically(paths.dir, paths.presentedFile, document, ".snapshot.");
     }
     if (existsSync2(paths.currentFile) && !isPrivateRegularFile(paths.currentFile)) {
-      throw new PlanFailure("current plan is not a private regular file");
+      throw new PlanFailure("current plan is not a private regular file", { code: "current-plan-unsafe" });
     }
     writeFileAtomically(paths.dir, paths.currentFile, document, ".current.");
     const arming = armPlan();
@@ -2103,7 +2145,14 @@ function runCapturePlan(cwd, sessionId, digest, document) {
         `plan_approval_session=${sessionId}`,
         `plan_snapshot_file=${paths.presentedFile}`,
         `plan_current_file=${paths.currentFile}`,
-        "plan_revision=0"
+        "plan_revision=0",
+        ...binding === void 0 && readValue(stateFile, "plan_presentation_version") === void 0 ? [] : [
+          `plan_presentation_version=${binding?.version ?? ""}`,
+          `plan_presentation_turn=${binding?.turnId ?? ""}`,
+          `plan_presentation_message=${binding?.messageId ?? ""}`,
+          `plan_presentation_content_digest=${binding?.contentDigest ?? ""}`,
+          `plan_presentation_status=${binding === void 0 ? "" : "captured"}`
+        ]
       ],
       sessionId
     );
@@ -2111,56 +2160,65 @@ function runCapturePlan(cwd, sessionId, digest, document) {
     return 0;
   });
 }
-function runApprovePlan(cwd, sessionId, digest) {
+function runApprovePlan(cwd, sessionId, digest, nativePresentation) {
   if (!isValidPlanDigest(digest)) {
-    throw new PlanApprovalError("approve-plan requires one lowercase SHA-256 digest");
+    throw new PlanApprovalError("approve-plan requires one lowercase SHA-256 digest", { code: "invalid-approval-digest" });
   }
   const stateFile = stateFileFor(cwd);
   mkdirSync3(stateRootDirectory(), { recursive: true });
   return withLock(stateFile, sessionId, () => {
     if (!isReadableRegularFile(stateFile)) {
-      throw new PlanApprovalError(`no readable pending plan approval for session ${sessionId}`);
+      throw new PlanApprovalError(`no readable pending plan approval for session ${sessionId}`, { code: "pending-state-unreadable" });
     }
     if (readValue(stateFile, "plan_approval_session") !== sessionId) {
-      throw new PlanApprovalError("pending plan approval belongs to another session");
+      throw new PlanApprovalError("pending plan approval belongs to another session", { code: "foreign-approval-session" });
     }
     if (readValue(stateFile, "mode") !== "plan") {
-      throw new PlanApprovalError("pending approval is not attached to plan mode state");
+      throw new PlanApprovalError("pending approval is not attached to plan mode state", { code: "approval-not-plan-mode" });
     }
     if (readValue(stateFile, "plan_approval") !== "pending") {
-      throw new PlanApprovalError("plan approval is not pending");
+      throw new PlanApprovalError("plan approval is not pending", { code: "approval-not-pending" });
     }
     if (readValue(stateFile, "plan_approval_digest") !== digest) {
-      throw new PlanApprovalError("pending plan digest changed before approval");
+      throw new PlanApprovalError("pending plan digest changed before approval", { code: "approval-digest-changed" });
+    }
+    let native;
+    if (nativePresentation !== void 0) {
+      if (readValue(stateFile, "plan_presentation_status") !== "captured" || readValue(stateFile, "plan_presentation_version") !== "1") throw new PlanApprovalError("native presentation requires replacement capture", { code: "replacement-required" });
+      native = nativePresentation();
+      if (!matchesPlanPresentation(stateFile, native.binding)) throw new PlanApprovalError("a newer native presentation superseded the pending document", { code: "superseded-presentation" });
     }
     const paths = planPaths(stateFile, digest);
     ensurePlanDirectory(paths);
     if (readValue(stateFile, "plan_snapshot_file") !== paths.presentedFile) {
-      throw new PlanFailure("pending state does not name the expected presented snapshot");
+      throw new PlanFailure("pending state does not name the expected presented snapshot", { code: "presented-snapshot-binding-mismatch" });
     }
     if (readValue(stateFile, "plan_current_file") !== paths.currentFile) {
-      throw new PlanFailure("pending state does not name the expected current plan");
+      throw new PlanFailure("pending state does not name the expected current plan", { code: "current-plan-binding-mismatch" });
     }
     if (!isPrivateRegularFile(paths.currentFile)) {
-      throw new PlanFailure("current plan is missing or unsafe");
+      throw new PlanFailure("current plan is missing or unsafe", { code: "current-plan-unsafe" });
     }
+    if (native !== void 0 && readFileSync4(paths.currentFile, "utf8") !== native.document) throw new PlanApprovalError("native presentation differs from the pending document", { code: "pending-document-mismatch" });
     if (isPrivateRegularFile(paths.presentedFile)) {
       if (!byteIdentical(paths.currentFile, paths.presentedFile)) {
-        throw new PlanFailure("the pending plan changed since it was presented; capture it again before approving");
+        throw new PlanFailure("the pending plan changed since it was presented; capture it again before approving", { code: "presented-document-mismatch" });
       }
       if (existsSync2(paths.approvedFile)) {
         if (!isPrivateRegularFile(paths.approvedFile)) {
-          throw new PlanFailure("approved snapshot is not a private regular file");
+          throw new PlanFailure("approved snapshot is not a private regular file", { code: "approved-snapshot-unsafe" });
         }
         if (!byteIdentical(paths.presentedFile, paths.approvedFile)) {
-          throw new PlanFailure("approved snapshot content disagrees with the pending document");
+          throw new PlanFailure("approved snapshot content disagrees with the pending document", { code: "approved-document-mismatch" });
         }
         rmSync3(paths.presentedFile, { force: true });
       } else {
         renameSync2(paths.presentedFile, paths.approvedFile);
       }
     } else if (!isPrivateRegularFile(paths.approvedFile)) {
-      throw new PlanFailure("presented plan snapshot is missing");
+      throw new PlanFailure("presented plan snapshot is missing", { code: "presented-snapshot-missing" });
+    } else if (!byteIdentical(paths.currentFile, paths.approvedFile)) {
+      throw new PlanFailure("current plan differs from the partially published approved snapshot", { code: "partial-publication-mismatch" });
     }
     writeStatePairs(stateFile, ["plan_approval=approved", `plan_snapshot_file=${paths.approvedFile}`], sessionId);
     logEvent({ event: "plan-approval-approved", session: sessionId });
@@ -2169,22 +2227,22 @@ function runApprovePlan(cwd, sessionId, digest) {
 }
 function runCancelPlan(cwd, sessionId, digest) {
   if (!isValidPlanDigest(digest)) {
-    throw new PlanApprovalError("cancel-plan requires one lowercase SHA-256 digest");
+    throw new PlanApprovalError("cancel-plan requires one lowercase SHA-256 digest", { code: "invalid-cancellation-digest" });
   }
   const stateFile = stateFileFor(cwd);
   mkdirSync3(stateRootDirectory(), { recursive: true });
   return withLock(stateFile, sessionId, () => {
     if (!isReadableRegularFile(stateFile)) {
-      throw new PlanApprovalError(`no readable pending plan approval for session ${sessionId}`);
+      throw new PlanApprovalError(`no readable pending plan approval for session ${sessionId}`, { code: "pending-state-unreadable" });
     }
     if (readValue(stateFile, "plan_approval_session") !== sessionId) {
-      throw new PlanApprovalError("pending plan approval belongs to another session");
+      throw new PlanApprovalError("pending plan approval belongs to another session", { code: "foreign-approval-session" });
     }
     if (readValue(stateFile, "plan_approval") !== "pending") {
-      throw new PlanApprovalError("plan approval is not pending");
+      throw new PlanApprovalError("plan approval is not pending", { code: "approval-not-pending" });
     }
     if (readValue(stateFile, "plan_approval_digest") !== digest) {
-      throw new PlanApprovalError("pending plan digest changed before cancellation");
+      throw new PlanApprovalError("pending plan digest changed before cancellation", { code: "cancellation-digest-changed" });
     }
     const paths = planPaths(stateFile, digest);
     if (readValue(stateFile, "plan_snapshot_file") === paths.presentedFile) {
@@ -2199,41 +2257,41 @@ function runCancelPlan(cwd, sessionId, digest) {
   });
 }
 function runAmendPlan(cwd, sessionId, sliceId, document) {
-  if (!isNameToken(sliceId)) throw new PlanFailure("amend-plan requires a safe slice id");
+  if (!isNameToken(sliceId)) throw new PlanFailure("amend-plan requires a safe slice id", { code: "invalid-amendment-slice" });
   const stateFile = stateFileFor(cwd);
   mkdirSync3(stateRootDirectory(), { recursive: true });
-  if (document.length === 0) throw new PlanFailure("amend-plan requires a non-empty document on stdin");
+  if (document.length === 0) throw new PlanFailure("amend-plan requires a non-empty document on stdin", { code: "empty-amendment" });
   return withLock(stateFile, sessionId, () => {
     if (!isReadableRegularFile(stateFile)) {
-      throw new PlanFailure(`no readable plan for session ${sessionId}`);
+      throw new PlanFailure(`no readable plan for session ${sessionId}`, { code: "plan-state-unreadable" });
     }
     if (readValue(stateFile, "plan_approval_session") !== sessionId) {
-      throw new PlanFailure("the plan belongs to another session");
+      throw new PlanFailure("the plan belongs to another session", { code: "foreign-plan-session" });
     }
     if (readValue(stateFile, "mode") !== "plan") {
-      throw new PlanFailure("amendments require active plan execution state");
+      throw new PlanFailure("amendments require active plan execution state", { code: "amendment-not-plan-mode" });
     }
     const amendmentApproval = readValue(stateFile, "plan_approval");
     const shape = amendmentShapeFor(amendmentApproval);
     const approvalDigest = readValue(stateFile, "plan_approval_digest") ?? "";
-    if (!isValidPlanDigest(approvalDigest)) throw new PlanFailure("the plan has no valid digest");
+    if (!isValidPlanDigest(approvalDigest)) throw new PlanFailure("the plan has no valid digest", { code: "invalid-plan-digest" });
     const paths = planPaths(stateFile, approvalDigest);
     ensurePlanDirectory(paths);
     const amendmentSnapshotFile = amendmentApproval === "approved" ? paths.approvedFile : paths.presentedFile;
     if (readValue(stateFile, "plan_snapshot_file") !== amendmentSnapshotFile) {
-      throw new PlanFailure("plan state does not name its expected immutable snapshot");
+      throw new PlanFailure("plan state does not name its expected immutable snapshot", { code: "immutable-snapshot-binding-mismatch" });
     }
     if (readValue(stateFile, "plan_current_file") !== paths.currentFile) {
-      throw new PlanFailure("plan state does not name its operational plan");
+      throw new PlanFailure("plan state does not name its operational plan", { code: "current-plan-binding-mismatch" });
     }
     if (!isPrivateRegularFile(amendmentSnapshotFile)) {
-      throw new PlanFailure("the immutable snapshot is missing or unsafe");
+      throw new PlanFailure("the immutable snapshot is missing or unsafe", { code: "immutable-snapshot-unsafe" });
     }
     if (!isPrivateRegularFile(paths.currentFile)) {
-      throw new PlanFailure("current plan is missing or unsafe");
+      throw new PlanFailure("current plan is missing or unsafe", { code: "current-plan-unsafe" });
     }
     const revisionText = readValue(stateFile, "plan_revision") ?? "";
-    if (!/^[0-9]+$/.test(revisionText)) throw new PlanFailure("current plan has no valid revision");
+    if (!/^[0-9]+$/.test(revisionText)) throw new PlanFailure("current plan has no valid revision", { code: "invalid-plan-revision" });
     const nextRevision = Number(revisionText) + 1;
     const amended = `${readFileSync4(paths.currentFile, "utf8")}
 
@@ -2257,7 +2315,7 @@ function byteIdentical(leftFile, rightFile) {
 function amendmentShapeFor(approval) {
   if (approval === "approved") return { heading: "Execution amendment", classification: "in-scope" };
   if (approval === "pending") return { heading: "Plan Mode feedback", classification: "feedback" };
-  throw new PlanFailure("amendments require a pending or approved plan");
+  throw new PlanFailure("amendments require a pending or approved plan", { code: "amendment-not-active" });
 }
 var VERIFY_CHECK_TOKENS = ["failing-check:", "Verify-exception:"];
 var THE_FIELD_ONLY_A_SLICE_BLOCK_CARRIES = "Depends-on";
@@ -3145,11 +3203,38 @@ var NO_HOOK_FIELD_NAMED = {
 };
 function hostEnvelope(caller, named) {
   const { payloadRead, stopHookActive, ...text } = { ...NO_HOOK_FIELD_NAMED, ...named };
-  return { ...asHookFieldValues(text), payloadRead, stopHookActive, caller };
+  return { ...caller.host === "codex" ? text : asHookFieldValues(text), payloadRead, stopHookActive, caller };
 }
 function asHookFieldValues(text) {
   const read = Object.entries(text).map(([name, value]) => [name, asHookFieldValue(value)]);
   return Object.fromEntries(read);
+}
+function topLevelEscapedField(payload, field) {
+  const raw = topLevelRawField(payload, field);
+  return raw.startsWith('"') && raw.endsWith('"') ? raw.slice(1, -1) : "";
+}
+function topLevelRawField(payload, field) {
+  if (parsedPayload(payload).kind !== "json") return "";
+  const tokens = [...payload.matchAll(/"(?:[^"\\]|\\[\s\S])*"|[{}\[\]:,]|[^\s{}\[\]:,]+/g)];
+  let depth = 0;
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index];
+    const text = token?.[0];
+    if (depth === 1 && text?.startsWith('"') && tokens[index + 1]?.[0] === ":" && JSON.parse(text) === field) {
+      const start = tokens[index + 2];
+      if (start === void 0) return "";
+      if (start[0] !== "{" && start[0] !== "[") return start[0];
+      let nested = 0;
+      for (const value of tokens.slice(index + 2)) {
+        if (value[0] === "{" || value[0] === "[") nested++;
+        if (value[0] === "}" || value[0] === "]") nested--;
+        if (nested === 0) return payload.slice(start.index, value.index + value[0].length);
+      }
+    }
+    if (text === "{" || text === "[") depth++;
+    if (text === "}" || text === "]") depth--;
+  }
+  return "";
 }
 function jsonField(hookText, field) {
   const payload = asCommandSubstitutionCaptures(hookText);
@@ -3811,6 +3896,156 @@ function published(session, detail) {
 // core/src/gates/planprompt.ts
 import { statSync as statSync4 } from "node:fs";
 
+// core/src/hosts/codex-presentation.ts
+var PLAN_MARKER = "<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->";
+var PLAN_MARKER_PREFIX = "<!-- oso-plan-approval:";
+var MAX_TRANSCRIPT_BYTES = 64 * 1024 * 1024;
+var CodexPresentationFailure = class extends PlanFailure {
+  code;
+  constructor(code, cause) {
+    super(`oso-code: plan not recorded [${code}]. Present one complete replacement proposed_plan with the final approval marker.`, { cause });
+    this.code = code;
+  }
+};
+function readCodexTranscript(envelope) {
+  try {
+    const deadline = performance.now() + CODEX_METADATA_READINESS_MS;
+    const metadata = readCodexSessionMetadata(envelope.transcriptPath, deadline);
+    if (metadata.id !== envelope.sessionId || metadata.cwd !== envelope.cwd) throw new CodexPresentationFailure("foreign-session");
+    const { text } = readBoundedRegularFile({ file: envelope.transcriptPath, deadline, maxBytes: MAX_TRANSCRIPT_BYTES, firstRecord: false });
+    if (!text.endsWith("\n")) throw new CodexPresentationFailure("truncated-transcript");
+    const records = text.slice(0, -1).split("\n").map((wire) => {
+      const record = JSON.parse(wire);
+      if (!isRecord(record) || typeof record["type"] !== "string" || !isRecord(record["payload"])) throw new CodexPresentationFailure("malformed-record");
+      return { type: record["type"], payload: record["payload"], wire };
+    });
+    const meta = records[0];
+    if (meta?.type !== "session_meta" || meta.payload["id"] !== metadata.id || "session_id" in meta.payload && meta.payload["session_id"] !== metadata.id) throw new CodexPresentationFailure("foreign-session");
+    return records;
+  } catch (cause) {
+    if (cause instanceof CodexPresentationFailure) throw cause;
+    if (!(cause instanceof CodexMetadataFailure) && !(cause instanceof SyntaxError) && !isErrnoException(cause)) throw cause;
+    throw new CodexPresentationFailure("unreadable-transcript", cause);
+  }
+}
+function resolveCodexPresentation(envelope, precedingApproval = false) {
+  const { segment, turnId } = presentationSegment(readCodexTranscript(envelope), envelope.turnId, precedingApproval);
+  const { final, raw, visible, plans, messageId } = finalPair(segment, envelope.sessionId, turnId);
+  if (!precedingApproval && visible !== envelope.lastAssistantMessage && (visible.endsWith("\n") || `${visible}
+` !== envelope.lastAssistantMessage)) throw new CodexPresentationFailure("stop-final-mismatch");
+  const rawText = textContent(raw.payload["content"], "output_text");
+  const document = pairedDocument({ visible, rawText, plans, sessionId: envelope.sessionId, turnId, envelope, precedingApproval });
+  if (!precedingApproval && JSON.parse(`"${envelope.escapedLastAssistantMessage}"`) !== envelope.lastAssistantMessage) throw new CodexPresentationFailure("stop-wire-mismatch");
+  const contentDigest = sha256Hex(JSON.stringify([
+    topLevelRawField(topLevelRawField(raw.wire, "payload"), "content"),
+    topLevelRawField(topLevelRawField(topLevelRawField(final.wire, "payload"), "item"), "content"),
+    ...plans.map((plan) => topLevelEscapedField(topLevelRawField(topLevelRawField(plan.wire, "payload"), "item"), "text"))
+  ]));
+  return { ...document, binding: { version: 1, turnId, messageId, contentDigest } };
+}
+function presentationSegment(records, currentTurn, precedingApproval) {
+  const boundaries = records.flatMap((record, index) => isTask(record) && record.payload["turn_id"] === currentTurn ? [index] : []);
+  if (boundaries.length !== 1) throw new CodexPresentationFailure("unattested-turn");
+  const boundary = boundaries[0];
+  if (records.slice(boundary + 1).some(isTask)) throw new CodexPresentationFailure("stale-turn");
+  let start = boundary;
+  let end = records.length;
+  if (precedingApproval) {
+    end = boundary;
+    const tasks = records.slice(0, end).flatMap((record, index) => isTask(record) ? [index] : []);
+    const presentations = tasks.filter((index, position) => {
+      const taskEnd = tasks[position + 1] ?? boundary;
+      return records[index]?.payload["collaboration_mode_kind"] === "plan" || records.slice(index + 1, taskEnd).some((record) => isPlan(record) || isFinal(record) && textContent(record.payload["item"]["content"], "Text").includes(PLAN_MARKER_PREFIX));
+    });
+    start = presentations.at(-1) ?? -1;
+    end = tasks.find((index) => index > start) ?? boundary;
+  }
+  const task = records[start];
+  if (task === void 0 || task.payload["collaboration_mode_kind"] !== "plan") throw new CodexPresentationFailure("not-plan-presentation");
+  const turnId = task.payload["turn_id"];
+  if (typeof turnId !== "string" || !isNameToken(turnId)) throw new CodexPresentationFailure("unattested-turn");
+  return { segment: records.slice(start + 1, end), turnId };
+}
+function finalPair(segment, sessionId, turnId) {
+  if (segment.some((record) => record.type === "event_msg" && isRecord(record.payload["item"]) && record.payload["item"]["type"] === "AgentMessage" && record.payload["item"]["phase"] === void 0)) throw new CodexPresentationFailure("incomplete-final");
+  const finals = segment.flatMap((record, index) => isFinal(record) ? [index] : []);
+  const finalIndex = finals.at(-1);
+  if (finalIndex === void 0) throw new CodexPresentationFailure("missing-final");
+  const previousFinal = finals.at(-2) ?? -1;
+  const final = segment[finalIndex];
+  const item = final.payload["item"];
+  const messageId = item["id"];
+  if (typeof messageId !== "string" || !isNameToken(messageId) || finals.some((index) => index !== finalIndex && (segment[index]?.payload["item"])["id"] === messageId)) throw new CodexPresentationFailure("ambiguous-final");
+  requireOwner(final, sessionId, turnId);
+  const visible = textContent(item["content"], "Text");
+  const rawCandidates = segment.filter((record) => record.type === "response_item" && record.payload["role"] === "assistant" && record.payload["id"] === messageId);
+  if (rawCandidates.length !== 1) throw new CodexPresentationFailure("missing-or-duplicate-raw");
+  const raw = rawCandidates[0];
+  if (segment.indexOf(raw) <= finalIndex || raw.payload["type"] !== "message" || raw.payload["phase"] !== "final_answer") throw new CodexPresentationFailure("unpaired-raw");
+  if (segment.slice(finalIndex + 1).some(isPlan)) throw new CodexPresentationFailure("incomplete-newer-plan");
+  if (segment.slice(finalIndex + 1).some((record) => record.type === "response_item" && record.payload["role"] === "assistant" && record.payload["phase"] === "final_answer" && record !== raw)) throw new CodexPresentationFailure("unpaired-newer-final");
+  const plans = segment.slice(previousFinal + 1, finalIndex).filter(isPlan);
+  return { final, raw, visible, plans, messageId };
+}
+function pairedDocument(input) {
+  const { visible, rawText, plans } = input;
+  const blocks = [...rawText.matchAll(/<proposed_plan>([\s\S]*?)<\/proposed_plan>/g)];
+  if (blocks.length === 0) {
+    if (plans.length !== 0 || rawText.includes("<proposed_plan") || rawText !== visible) throw new CodexPresentationFailure("unpaired-plan");
+    const document2 = withoutMarker(visible);
+    if (document2 === "") throw new CodexPresentationFailure("empty-plan");
+    const wire2 = input.precedingApproval ? JSON.stringify(visible).slice(1, -1) : input.envelope.escapedLastAssistantMessage;
+    return { document: document2, digest: sha256Hex(wire2) };
+  }
+  if (blocks.length !== 1 || plans.length !== 1 || rawText.split("<proposed_plan>").length !== 2 || rawText.split("</proposed_plan>").length !== 2) throw new CodexPresentationFailure("ambiguous-plan");
+  const plan = plans[0];
+  requireOwner(plan, input.sessionId, input.turnId);
+  const planItem = plan.payload["item"];
+  if (typeof planItem["id"] !== "string" || !isNameToken(planItem["id"])) throw new CodexPresentationFailure("missing-plan-id");
+  const document = planItem["text"];
+  if (typeof document !== "string" || document === "") throw new CodexPresentationFailure("empty-plan");
+  if (document.includes(PLAN_MARKER_PREFIX) || blocks[0]?.[1] !== `
+${document}`) throw new CodexPresentationFailure("plan-body-mismatch");
+  withoutMarker(rawText);
+  const split = visible === PLAN_MARKER || visible === `${PLAN_MARKER}
+`;
+  if (!split && visible !== rawText) throw new CodexPresentationFailure("raw-final-mismatch");
+  if (split && rawText !== `<proposed_plan>
+${document}</proposed_plan>
+${visible}`) throw new CodexPresentationFailure("split-framing-mismatch");
+  const wire = input.precedingApproval ? JSON.stringify(visible).slice(1, -1) : input.envelope.escapedLastAssistantMessage;
+  const rawItem = topLevelRawField(topLevelRawField(plan.wire, "payload"), "item");
+  const digestInput = split ? `${topLevelEscapedField(rawItem, "text")}\\n${wire}` : wire;
+  return { document, digest: sha256Hex(digestInput) };
+}
+function withoutMarker(text) {
+  const ended = text.endsWith("\n") ? text.slice(0, -1) : text;
+  if (!ended.endsWith(`
+${PLAN_MARKER}`) || ended.split(PLAN_MARKER_PREFIX).length !== 2) throw new CodexPresentationFailure("marker-placement");
+  return ended.slice(0, -PLAN_MARKER.length - 1);
+}
+function isTask(record) {
+  return record.type === "event_msg" && record.payload["type"] === "task_started";
+}
+function isFinal(record) {
+  const item = record.payload["item"];
+  return record.type === "event_msg" && record.payload["type"] === "item_completed" && isRecord(item) && item["type"] === "AgentMessage" && item["phase"] === "final_answer";
+}
+function isPlan(record) {
+  const item = record.payload["item"];
+  return record.type === "event_msg" && isRecord(item) && item["type"] === "Plan";
+}
+function requireOwner(record, sessionId, turnId) {
+  if (record.payload["type"] !== "item_completed" || record.payload["thread_id"] !== sessionId || record.payload["turn_id"] !== turnId) throw new CodexPresentationFailure("foreign-presentation");
+}
+function textContent(content, type) {
+  if (!Array.isArray(content) || content.length !== 1 || !isRecord(content[0]) || content[0]["type"] !== type || typeof content[0]["text"] !== "string") throw new CodexPresentationFailure("malformed-content");
+  return content[0]["text"];
+}
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 // core/src/hosts/codex-turn.ts
 import { readFileSync as readFileSync6 } from "node:fs";
 var UNATTESTED = { mode: "unknown", source: "unavailable" };
@@ -3827,6 +4062,16 @@ var PERMISSION_MODES = {
 };
 var ATTESTABLE_MODES = { plan: "plan", default: "default" };
 function resolveCodexTurn(envelope) {
+  if (envelope.caller.host === "codex" && envelope.transcriptPath !== "") {
+    const records = readCodexTranscript(envelope);
+    const tasks = records.filter(isTask);
+    const candidates = tasks.filter((task2) => task2.payload["turn_id"] === envelope.turnId);
+    const task = candidates[0];
+    if (candidates.length !== 1 || task !== tasks.at(-1)) return UNATTESTED;
+    const kind = task?.payload["collaboration_mode_kind"];
+    const mode = typeof kind === "string" ? ATTESTABLE_MODES[kind] : void 0;
+    return mode === void 0 ? UNATTESTED : { mode, source: "transcript" };
+  }
   const attested = attestedFromTranscript(envelope);
   if (attested !== void 0) return attested;
   return { mode: PERMISSION_MODES[envelope.permissionMode] ?? "unknown", source: sourceFor(envelope.permissionMode) };
@@ -3872,6 +4117,13 @@ function transcriptLines(transcriptPath) {
 function isPlanRailFailure(cause) {
   return cause instanceof PlanFailure || cause instanceof PlanApprovalError || cause instanceof StateFileUnreadableError || cause instanceof LockTimeoutError;
 }
+function nativePlanFailureCode(cause) {
+  if (cause instanceof PlanFailure && cause.code !== void 0) return cause.code;
+  if (cause instanceof LockTimeoutError) return "state-lock-timeout";
+  if (cause instanceof StateFileUnreadableError) return "state-file-unreadable";
+  if (isErrnoException(cause) && ["EACCES", "EPERM", "ENOENT", "EEXIST", "ENOTDIR", "EISDIR", "ENOSPC", "EROFS", "EIO", "EMFILE", "ENFILE", "ELOOP"].includes(cause.code ?? "")) return `storage-${cause.code?.toLowerCase()}`;
+  throw cause;
+}
 
 // core/src/gates/planprompt.ts
 var APPROVAL_PROMPT = "Implement the plan.";
@@ -3893,7 +4145,10 @@ var NO_PENDING_PLAN = "oso-code: no pending plan approval exists for this reposi
 var FOREIGN_CONTROL_PROMPT = "oso-code: this plan-control prompt does not belong to the session that presented the pending plan.";
 var NOTHING_PENDING = "oso-code: no pending plan approval exists; present the complete plan again before approving or cancelling it.";
 var NO_VALID_DIGEST = "oso-code: the pending plan has no valid document digest; present it again before approving.";
-var AMENDMENT_GUIDANCE = "oso-code: this Plan Mode turn amended the pending document instead of discarding it. Present the amendment \u2014 what changed and why \u2014 not the complete plan, then re-emit the internal approval marker so a fresh capture binds the complete updated document before approval can succeed.";
+var AMENDMENT_GUIDANCE = "oso-code: this Plan Mode turn amended the pending document instead of discarding it. Present a COMPLETE replacement proposed_plan, including all unchanged sections and the feedback, then re-emit the internal approval marker for fresh capture.";
+var LEGACY_AMENDMENT_GUIDANCE = "oso-code: this Plan Mode turn amended the pending document instead of discarding it. Present the amendment \u2014 what changed and why \u2014 not the complete plan, then re-emit the internal approval marker so a fresh capture binds the complete updated document before approval can succeed.";
+var LEGACY_REFRESH = "oso-code: this preserved plan needs a compatibility refresh before native approval. Enter native Plan Mode (/plan or Shift+Tab); the next Plan interaction will supply the complete preserved document for replacement. No manual file, token or digest handling is needed.";
+var NOT_RECORDED = "oso-code: the latest plan was not recorded [latest-presentation-unavailable]; execution remains blocked. Present a complete replacement proposed_plan in native Plan Mode.";
 var APPROVAL_GRANTED = "oso-code: Codex native plan approval matched the exact pending document. The technical approval gate is open; continue with the saved operational plan.";
 var CANCELLATION_ACCEPTED = "oso-code: CANCEL OSO PLAN accepted for the exact pending document. Its runtime state was cleared; do not execute that plan.";
 var SILENT = { verdict: { kind: "allow" }, events: [] };
@@ -3905,7 +4160,15 @@ var PLANPROMPT_GATE = {
 function judgePlanprompt({ envelope }) {
   const rawPrompt = envelope.escapedPrompt;
   const sessionId = sanitizeSession(envelope.sessionId);
-  const turn = resolveCodexTurn(envelope);
+  let turn;
+  try {
+    turn = resolveCodexTurn(envelope);
+  } catch (cause) {
+    if (!(cause instanceof CodexPresentationFailure)) throw cause;
+    if (controlActionOf(rawPrompt) === void 0 && !invokesThePlanSkill(rawPrompt)) return SILENT;
+    if (!statePresent(stateFileFor(envelope.cwd)) && !invokesThePlanSkill(rawPrompt)) return SILENT;
+    return nativeFailure(cause, sessionId, "turn");
+  }
   if (invokesThePlanSkill(rawPrompt) && turn.mode !== "plan") return control(OUTSIDE_PLAN_MODE);
   const action = controlActionOf(rawPrompt);
   if (envelope.payloadRead === "unparseable") {
@@ -3920,6 +4183,10 @@ function judgePlanprompt({ envelope }) {
   if (!isReadableRegularFile(stateFile)) return control(NO_PENDING_PLAN);
   if (readValue(stateFile, "plan_approval_session") !== sessionId) return control(FOREIGN_CONTROL_PROMPT);
   if (readValue(stateFile, "plan_approval") !== PENDING) return control(NOTHING_PENDING);
+  if (action === "approve" && envelope.caller.host === "codex") {
+    if (readValue(stateFile, "plan_presentation_status") === "failed") return control(NOT_RECORDED);
+    if (readValue(stateFile, "plan_presentation_version") !== "1") return control(LEGACY_REFRESH);
+  }
   const digest = readValue(stateFile, "plan_approval_digest") ?? "";
   if (!PLAN_DIGEST.test(digest)) return control(NO_VALID_DIGEST);
   return settlePendingPlan(envelope, sessionId, action, digest);
@@ -3933,21 +4200,34 @@ function amendPendingPlan(envelope, sessionId, turn) {
   if (readValue(stateFile, "plan_approval") !== PENDING) return SILENT;
   if (!PLAN_DIGEST.test(readValue(stateFile, "plan_approval_digest") ?? "")) return SILENT;
   try {
+    if (envelope.caller.host === "codex" && (readValue(stateFile, "plan_presentation_version") !== "1" || readValue(stateFile, "plan_presentation_status") === "failed")) {
+      if (readValue(stateFile, "plan_presentation_status") === "failed" && readValue(stateFile, "plan_current_file") === void 0) return { verdict: { kind: "context", additionalContext: AMENDMENT_GUIDANCE }, events: [] };
+      return { verdict: { kind: "context", additionalContext: `${AMENDMENT_GUIDANCE}
+
+Preserved document:
+${readPlanForReplacement(envelope.cwd, sessionId)}` }, events: [] };
+    }
     runAmendPlan(envelope.cwd, sessionId, FEEDBACK_AMENDMENT_LABEL, asCommandSubstitutionCaptures(envelope.prompt));
+    if (envelope.caller.host === "codex") return { verdict: { kind: "context", additionalContext: `${AMENDMENT_GUIDANCE}
+
+Preserved document:
+${readPlanForReplacement(envelope.cwd, sessionId)}` }, events: [] };
   } catch (cause) {
+    if (envelope.caller.host === "codex") return nativeFailure(cause, sessionId, "amend");
     if (!isPlanRailFailure(cause)) throw cause;
     return {
       verdict: { kind: "deny", message: AMENDMENT_REFUSED },
       events: [refusal("plan-approval-amend-blocked", sessionId, cause.message)]
     };
   }
-  return { verdict: { kind: "context", additionalContext: AMENDMENT_GUIDANCE }, events: [] };
+  return { verdict: { kind: "context", additionalContext: LEGACY_AMENDMENT_GUIDANCE }, events: [] };
 }
 function settlePendingPlan(envelope, sessionId, action, digest) {
   try {
-    if (action === "approve") runApprovePlan(envelope.cwd, sessionId, digest);
+    if (action === "approve") runApprovePlan(envelope.cwd, sessionId, digest, envelope.caller.host === "codex" ? () => resolveCodexPresentation(envelope, true) : void 0);
     else runCancelPlan(envelope.cwd, sessionId, digest);
   } catch (cause) {
+    if (envelope.caller.host === "codex") return nativeFailure(cause, sessionId, action);
     if (!isPlanRailFailure(cause)) throw cause;
     return {
       verdict: {
@@ -3970,6 +4250,15 @@ function controlPromptReaches(envelope, sessionId, action, stateFile) {
   if (!ownIdentity || !isDirectory(envelope.cwd)) return SILENT;
   if (!statePresent(stateFile)) return SILENT;
   if (!isReadableRegularFile(stateFile)) return control(UNREADABLE_PENDING_STATE);
+  if (envelope.caller.host === "codex" && readValue(stateFile, "mode") === "plan" && readValue(stateFile, "plan_approval") === "approved" && readValue(stateFile, "plan_approval_session") === sessionId && readValue(stateFile, "plan_presentation_version") === "1") {
+    try {
+      const latest = resolveCodexPresentation(envelope, true);
+      if (!matchesPlanPresentation(stateFile, latest.binding)) return control(NOT_RECORDED);
+    } catch (cause) {
+      if (!(cause instanceof CodexPresentationFailure)) throw cause;
+      return nativeFailure(cause, sessionId, action);
+    }
+  }
   if (readValue(stateFile, "plan_approval") !== PENDING) return SILENT;
   return void 0;
 }
@@ -3977,6 +4266,13 @@ function modeRefusalFor(action, turn) {
   if (action === "cancel") return turn.mode === "unknown" ? CANCELLATION_UNATTESTED : void 0;
   if (turn.mode === "default") return void 0;
   return turn.mode === "plan" ? APPROVAL_STILL_IN_PLAN_MODE : APPROVAL_UNATTESTED;
+}
+function nativeFailure(cause, sessionId, action) {
+  const code = nativePlanFailureCode(cause);
+  return {
+    verdict: { kind: "deny", message: `oso-code: the ${action} request was refused [${code}]; execution remains blocked. Present a complete replacement proposed_plan in native Plan Mode after repairing the reported fault.` },
+    events: [refusal(`plan-approval-${action}-blocked`, sessionId, code)]
+  };
 }
 function invokesThePlanSkill(rawPrompt) {
   return rawPrompt === PLAN_INVOCATION || rawPrompt.startsWith(`${PLAN_INVOCATION} `);
@@ -3997,10 +4293,9 @@ function refusal(event, session, detail) {
 }
 
 // core/src/gates/planstop.ts
-var PLAN_MARKER = "<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->";
-var MARKER_PREFIX = "<!-- oso-plan-approval:";
 var ESCAPED_NEWLINE = "\\n";
 var CAPTURE_BLOCKED = "plan-approval-capture-blocked";
+var MAX_DIAGNOSTIC_SLICE_LENGTH = 80;
 var EVENT_MESSAGE2 = '"type":"event_msg"';
 var ITEM_COMPLETED = '"type":"item_completed"';
 var PLAN_ITEM = '"item":{"type":"Plan"';
@@ -4023,8 +4318,9 @@ var PLANSTOP_GATE = {
   judge: judgePlanstop
 };
 function judgePlanstop({ envelope }) {
+  if (envelope.caller.host === "codex") return captureNativePresentation(envelope);
   const message = asCommandSubstitutionCaptures(envelope.lastAssistantMessage);
-  if (!lastLineOf(message).startsWith(MARKER_PREFIX)) return SILENT2;
+  if (!lastLineOf(message).startsWith(PLAN_MARKER_PREFIX)) return SILENT2;
   const rawSessionId = envelope.sessionId;
   const sessionId = sanitizeSession(rawSessionId);
   if (envelope.payloadRead === "unparseable") return blocked(UNREADABLE_PAYLOAD, sessionId);
@@ -4045,6 +4341,31 @@ function judgePlanstop({ envelope }) {
   }
   return { verdict: { kind: "allow" }, events: [{ event: "plan-approval-pending", session: sessionId }] };
 }
+function captureNativePresentation(envelope) {
+  if (!envelope.lastAssistantMessage.includes(PLAN_MARKER_PREFIX)) {
+    const state = stateFileFor(envelope.cwd);
+    if (readValue(state, "mode") !== "plan" || readValue(state, "plan_approval_session") !== envelope.sessionId || resolveCodexTurn(envelope).mode === "default") return SILENT2;
+  }
+  const session = sanitizeSession(envelope.sessionId);
+  if (session === "" || session !== envelope.sessionId || !isDirectory(envelope.cwd)) return blocked(NO_SESSION, session);
+  try {
+    const presentation = resolveCodexPresentation(envelope);
+    runCapturePlan(envelope.cwd, session, presentation.digest, presentation.document, presentation.binding);
+    return { verdict: { kind: "allow" }, events: [{ event: "plan-approval-pending", session }] };
+  } catch (cause) {
+    const code = nativePlanFailureCode(cause);
+    const detail = cause instanceof PlanVerifyFailure ? ` Slice ${cause.slice.slice(0, MAX_DIAGNOSTIC_SLICE_LENGTH)} must name failing-check: or Verify-exception: on its Verify line.` : "";
+    try {
+      runRejectPlanPresentation(envelope.cwd, session, sha256Hex(envelope.escapedLastAssistantMessage));
+    } catch (failure) {
+      const failureCode = nativePlanFailureCode(failure);
+      return blocked(`oso-code: plan not recorded [${code}]; failure state unavailable [${failureCode}]. Stop and repair storage before planning again.`, session, `${code}:${failureCode}`);
+    }
+    const reason = `oso-code: plan not recorded [${code}].${detail} Present one complete replacement proposed_plan with the final approval marker.`;
+    if (!(cause instanceof CodexPresentationFailure || cause instanceof PlanVerifyFailure) || code === "unreadable-transcript" || code === "foreign-session" || code === "unattested-turn") return blocked(`oso-code: plan not recorded [${code}]; stop and repair storage or native identity before planning again. Do not retry automatically.`, session, code);
+    return blocked(reason, session, code);
+  }
+}
 function planItemDocument(envelope, turn, rawMessage) {
   if (turn.source !== "transcript" || envelope.turnId === "" || envelope.transcriptPath === "") return NO_ATTESTATION;
   const items = transcriptLinesMatching(envelope.transcriptPath, [
@@ -4061,13 +4382,13 @@ function planItemDocument(envelope, turn, rawMessage) {
   const rawPlanDocument = escapedField(item, "text");
   const planDocument = asCommandSubstitutionCaptures(unescapedJson(rawPlanDocument));
   if (planDocument === "") return EMPTY_PLAN_ITEM;
-  if (planDocument.split("\n").some((line) => line.startsWith(MARKER_PREFIX))) return SELF_MARKING_PLAN_ITEM;
+  if (planDocument.split("\n").some((line) => line.startsWith(PLAN_MARKER_PREFIX))) return SELF_MARKING_PLAN_ITEM;
   return { digestInput: `${rawPlanDocument}${ESCAPED_NEWLINE}${rawMessage}`, planDocument };
 }
 function markerIsTheWholeEnding(message, rawMessage) {
   const rawEndsWithMarker = rawMessage.endsWith(PLAN_MARKER) || rawMessage.endsWith(`${PLAN_MARKER}${ESCAPED_NEWLINE}`);
   const lines = message.split("\n");
-  return rawEndsWithMarker && lines.filter((line) => line.startsWith(MARKER_PREFIX)).length === 1 && lines.filter((line) => line === PLAN_MARKER).length === 1;
+  return rawEndsWithMarker && lines.filter((line) => line.startsWith(PLAN_MARKER_PREFIX)).length === 1 && lines.filter((line) => line === PLAN_MARKER).length === 1;
 }
 function withoutTrailingMarker(message) {
   const trailer = `
@@ -5031,7 +5352,7 @@ function processIdentity(pid) {
   try {
     stat = readFileSync10(`/proc/${pid}/stat`, "utf8");
   } catch (error) {
-    if (isErrnoException(error) && error.code === "ENOENT") return void 0;
+    if (isErrnoException(error) && (error.code === "ENOENT" || error.code === "ESRCH")) return void 0;
     throw error;
   }
   const fields = stat.slice(stat.lastIndexOf(")") + 2).trim().split(/\s+/);

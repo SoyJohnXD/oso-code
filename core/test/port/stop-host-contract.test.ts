@@ -9,7 +9,16 @@ const RUNNING_STATE = "auto=running\nauto_change=auto-continuity\nsession=test-s
 const STOP_PAYLOAD =
   '{"session_id":"test-session","cwd":"{cwd}","hook_event_name":"Stop","stop_hook_active":false}';
 const PLAN_MARKER = "<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->";
-const PLANSTOP_REASON = "oso-code: the approval document must be presented while Codex is still in Plan Mode.";
+const PLANSTOP_REASON = "oso-code: plan not recorded [missing-slice-verify]. Slice S1 must name failing-check: or Verify-exception: on its Verify line. Present one complete replacement proposed_plan with the final approval marker.";
+const PLAN_SESSION = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+const PLAN_DOCUMENT = "## S1 — change\n- Depends-on: none\n- Verify: tests pass";
+const PLAN_MESSAGE = `${PLAN_DOCUMENT}\n${PLAN_MARKER}`;
+const PLAN_TRANSCRIPT = [
+  { type: "session_meta", payload: { id: PLAN_SESSION, cwd: "{cwd}", source: "cli" } },
+  { type: "event_msg", payload: { type: "task_started", turn_id: "plan-turn", collaboration_mode_kind: "plan" } },
+  { type: "event_msg", payload: { type: "item_completed", thread_id: PLAN_SESSION, turn_id: "plan-turn", item: { type: "AgentMessage", id: "final", phase: "final_answer", content: [{ type: "Text", text: PLAN_MESSAGE }] } } },
+  { type: "response_item", payload: { type: "message", role: "assistant", id: "final", phase: "final_answer", content: [{ type: "output_text", text: PLAN_MESSAGE }] } },
+].map((record) => JSON.stringify(record)).join("\n") + "\n";
 
 function runStop(
   host: "claude" | "codex" | "opencode",
@@ -51,20 +60,16 @@ describe("Codex Stop transport keeps pushes native while preserving shared Stop 
   });
 
   test("Codex plan approval denial keeps the block JSON response", () => {
-    const payload =
-      '{"session_id":"test-session","cwd":"{cwd}","permission_mode":"default","hook_event_name":"Stop",' +
-      `"stop_hook_active":false,"last_assistant_message":"Repaso\\n${PLAN_MARKER}"}`;
-    const run = runStop("codex", "planstop", {}, payload);
+    const payload = JSON.stringify({ session_id: PLAN_SESSION, cwd: "{cwd}", transcript_path: "{home}/plan.jsonl", turn_id: "plan-turn", stop_hook_active: false, last_assistant_message: PLAN_MESSAGE });
+    const run = runStop("codex", "planstop", { "plan.jsonl": PLAN_TRANSCRIPT }, payload);
     assert.deepEqual(JSON.parse(run.stdout), { decision: "block", reason: PLANSTOP_REASON });
     assert.equal(run.exit, 0);
     assert.equal(run.stderr, "");
   });
 
   test("Codex active plan approval denial keeps the ended-turn JSON response", () => {
-    const payload =
-      '{"session_id":"test-session","cwd":"{cwd}","permission_mode":"default","hook_event_name":"Stop",' +
-      `"stop_hook_active":true,"last_assistant_message":"Repaso\\n${PLAN_MARKER}"}`;
-    const run = runStop("codex", "planstop", {}, payload);
+    const payload = JSON.stringify({ session_id: PLAN_SESSION, cwd: "{cwd}", transcript_path: "{home}/plan.jsonl", turn_id: "plan-turn", stop_hook_active: true, last_assistant_message: PLAN_MESSAGE });
+    const run = runStop("codex", "planstop", { "plan.jsonl": PLAN_TRANSCRIPT }, payload);
     assert.deepEqual(JSON.parse(run.stdout), {
       continue: false,
       stopReason: PLANSTOP_REASON,

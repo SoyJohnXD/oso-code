@@ -1,4 +1,5 @@
 import { resolveCodexTurn, transcriptLinesMatching, type CodexTurn } from "../hosts/codex-turn.ts";
+import { CodexPresentationFailure, PLAN_MARKER, PLAN_MARKER_PREFIX as MARKER_PREFIX, resolveCodexPresentation } from "../hosts/codex-presentation.ts";
 import {
   asCommandSubstitutionCaptures,
   escapedField,
@@ -9,16 +10,15 @@ import {
   type StopVerdict,
 } from "../hosts/envelope.ts";
 import { gateRow } from "../routes/routes.ts";
-import { runCapturePlan } from "../state/plan.ts";
-import { isDirectory, sha256Hex, type LoggedEvent } from "../state/store.ts";
-import { isPlanRailFailure } from "./planrail.ts";
+import { PlanVerifyFailure, runCapturePlan, runRejectPlanPresentation } from "../state/plan.ts";
+import { isDirectory, readValue, sha256Hex, stateFileFor, type LoggedEvent } from "../state/store.ts";
+import { isPlanRailFailure, nativePlanFailureCode } from "./planrail.ts";
 import { sanitizeSession, type GateDefinition, type GateRequest } from "./preflight.ts";
 
-const PLAN_MARKER = "<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->";
-const MARKER_PREFIX = "<!-- oso-plan-approval:";
 const ESCAPED_NEWLINE = "\\n";
 
 const CAPTURE_BLOCKED = "plan-approval-capture-blocked";
+const MAX_DIAGNOSTIC_SLICE_LENGTH = 80;
 const EVENT_MESSAGE = '"type":"event_msg"';
 const ITEM_COMPLETED = '"type":"item_completed"';
 const PLAN_ITEM = '"item":{"type":"Plan"';
@@ -54,6 +54,7 @@ export const PLANSTOP_GATE: GateDefinition<StopVerdict> = {
 type ApprovalDocument = Readonly<{ digestInput: string; planDocument: string }>;
 
 function judgePlanstop({ envelope }: GateRequest): GateOutcome<StopVerdict> {
+  if (envelope.caller.host === "codex") return captureNativePresentation(envelope);
   const message = asCommandSubstitutionCaptures(envelope.lastAssistantMessage);
   if (!lastLineOf(message).startsWith(MARKER_PREFIX)) return SILENT;
 
@@ -83,6 +84,32 @@ function judgePlanstop({ envelope }: GateRequest): GateOutcome<StopVerdict> {
     return blocked(CAPTURE_REFUSED, sessionId, cause.message);
   }
   return { verdict: { kind: "allow" }, events: [{ event: "plan-approval-pending", session: sessionId }] };
+}
+
+function captureNativePresentation(envelope: HookEnvelope): GateOutcome<StopVerdict> {
+  if (!envelope.lastAssistantMessage.includes(MARKER_PREFIX)) {
+    const state = stateFileFor(envelope.cwd);
+    if (readValue(state, "mode") !== "plan" || readValue(state, "plan_approval_session") !== envelope.sessionId || resolveCodexTurn(envelope).mode === "default") return SILENT;
+  }
+  const session = sanitizeSession(envelope.sessionId);
+  if (session === "" || session !== envelope.sessionId || !isDirectory(envelope.cwd)) return blocked(NO_SESSION, session);
+  try {
+    const presentation = resolveCodexPresentation(envelope);
+    runCapturePlan(envelope.cwd, session, presentation.digest, presentation.document, presentation.binding);
+    return { verdict: { kind: "allow" }, events: [{ event: "plan-approval-pending", session }] };
+  } catch (cause) {
+    const code = nativePlanFailureCode(cause);
+    const detail = cause instanceof PlanVerifyFailure ? ` Slice ${cause.slice.slice(0, MAX_DIAGNOSTIC_SLICE_LENGTH)} must name failing-check: or Verify-exception: on its Verify line.` : "";
+    try {
+      runRejectPlanPresentation(envelope.cwd, session, sha256Hex(envelope.escapedLastAssistantMessage));
+    } catch (failure) {
+      const failureCode = nativePlanFailureCode(failure);
+      return blocked(`oso-code: plan not recorded [${code}]; failure state unavailable [${failureCode}]. Stop and repair storage before planning again.`, session, `${code}:${failureCode}`);
+    }
+    const reason = `oso-code: plan not recorded [${code}].${detail} Present one complete replacement proposed_plan with the final approval marker.`;
+    if (!(cause instanceof CodexPresentationFailure || cause instanceof PlanVerifyFailure) || code === "unreadable-transcript" || code === "foreign-session" || code === "unattested-turn") return blocked(`oso-code: plan not recorded [${code}]; stop and repair storage or native identity before planning again. Do not retry automatically.`, session, code);
+    return blocked(reason, session, code);
+  }
 }
 
 function planItemDocument(envelope: HookEnvelope, turn: CodexTurn, rawMessage: string): ApprovalDocument | string {

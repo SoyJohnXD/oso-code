@@ -86,7 +86,7 @@ type HookTextFields = Omit<HookEnvelope, "caller" | "payloadRead" | "stopHookAct
 
 export function hostEnvelope(caller: HookCaller, named: Partial<Omit<HookEnvelope, "caller">>): HookEnvelope {
   const { payloadRead, stopHookActive, ...text } = { ...NO_HOOK_FIELD_NAMED, ...named };
-  return { ...asHookFieldValues(text), payloadRead, stopHookActive, caller };
+  return { ...(caller.host === "codex" ? text : asHookFieldValues(text)), payloadRead, stopHookActive, caller };
 }
 
 function asHookFieldValues(text: HookTextFields): HookTextFields {
@@ -107,15 +107,44 @@ export function readEnvelope(hookText: string, caller: HookCaller): HookEnvelope
     source: jsonField(payload, "source"),
     agentId: jsonField(payload, "agent_id"),
     agentType: jsonField(payload, "agent_type"),
-    permissionMode: jsonField(payload, "permission_mode"),
+    permissionMode: hookIdentityField(payload, caller, "permission_mode"),
     transcriptPath: hookIdentityField(payload, caller, "transcript_path"),
-    turnId: jsonField(payload, "turn_id"),
-    lastAssistantMessage: jsonField(payload, "last_assistant_message"),
-    escapedLastAssistantMessage: escapedField(payload, "last_assistant_message"),
-    prompt: jsonField(payload, "prompt"),
-    escapedPrompt: escapedField(payload, "prompt"),
-    stopHookActive: STOP_HOOK_ACTIVE.test(payload),
+    turnId: hookIdentityField(payload, caller, "turn_id"),
+    lastAssistantMessage: hookIdentityField(payload, caller, "last_assistant_message"),
+    escapedLastAssistantMessage: caller.host === "codex" ? topLevelEscapedField(payload, "last_assistant_message") : escapedField(payload, "last_assistant_message"),
+    prompt: hookIdentityField(payload, caller, "prompt"),
+    escapedPrompt: caller.host === "codex" ? topLevelEscapedField(payload, "prompt") : escapedField(payload, "prompt"),
+    stopHookActive: caller.host === "codex" ? topLevelRawField(payload, "stop_hook_active") === "true" : STOP_HOOK_ACTIVE.test(payload),
   };
+}
+
+export function topLevelEscapedField(payload: string, field: string): string {
+  const raw = topLevelRawField(payload, field);
+  return raw.startsWith('"') && raw.endsWith('"') ? raw.slice(1, -1) : "";
+}
+
+export function topLevelRawField(payload: string, field: string): string {
+  if (parsedPayload(payload).kind !== "json") return "";
+  const tokens = [...payload.matchAll(/"(?:[^"\\]|\\[\s\S])*"|[{}\[\]:,]|[^\s{}\[\]:,]+/g)];
+  let depth = 0;
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index];
+    const text = token?.[0];
+    if (depth === 1 && text?.startsWith('"') && tokens[index + 1]?.[0] === ":" && JSON.parse(text) === field) {
+      const start = tokens[index + 2];
+      if (start === undefined) return "";
+      if (start[0] !== "{" && start[0] !== "[") return start[0];
+      let nested = 0;
+      for (const value of tokens.slice(index + 2)) {
+        if (value[0] === "{" || value[0] === "[") nested++;
+        if (value[0] === "}" || value[0] === "]") nested--;
+        if (nested === 0) return payload.slice(start.index, value.index + value[0].length);
+      }
+    }
+    if (text === "{" || text === "[") depth++;
+    if (text === "}" || text === "]") depth--;
+  }
+  return "";
 }
 
 function hookIdentityField(payload: string, caller: HookCaller, field: string): string {

@@ -1,6 +1,6 @@
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, type Stats } from "node:fs";
 
-class CodexMetadataFailure extends Error {}
+export class CodexMetadataFailure extends Error {}
 
 export type CodexSessionMetadata = Readonly<{
   id: string;
