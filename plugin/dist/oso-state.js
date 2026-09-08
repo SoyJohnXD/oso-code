@@ -1014,8 +1014,110 @@ function asJsLiteral(character) {
 }
 
 // core/src/state/handoff.ts
-import { chmodSync, existsSync, mkdirSync as mkdirSync2, readFileSync as readFileSync3, readdirSync, rmSync as rmSync2 } from "node:fs";
+import { execFileSync as execFileSync2 } from "node:child_process";
+import { chmodSync, existsSync, lstatSync as lstatSync4, mkdirSync as mkdirSync2, opendirSync, readFileSync as readFileSync3, readdirSync, realpathSync as realpathSync2, rmSync as rmSync2 } from "node:fs";
 import path4 from "node:path";
+
+// core/src/hosts/codex-session-metadata.ts
+import { closeSync, constants, fstatSync, lstatSync as lstatSync2, openSync, readSync } from "node:fs";
+var CodexMetadataFailure = class extends Error {
+};
+var CODEX_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+var MAX_FIRST_RECORD_BYTES = 1024 * 1024;
+function readCodexSessionMetadata(file, deadline) {
+  const { text } = readBoundedRegularFile({ file, deadline, maxBytes: MAX_FIRST_RECORD_BYTES, firstRecord: true });
+  let record;
+  try {
+    record = JSON.parse(text);
+  } catch (error) {
+    throw new CodexMetadataFailure(`invalid first session record at ${file}`, { cause: error });
+  }
+  if (!isObject(record) || record["type"] !== "session_meta" || !isObject(record["payload"])) {
+    throw new CodexMetadataFailure(`missing first session_meta record at ${file}`);
+  }
+  const payload = record["payload"];
+  const id = requiredString(payload, "id");
+  if (!CODEX_UUID_PATTERN.test(id)) throw new CodexMetadataFailure(`invalid native session UUID at ${file}`);
+  const source = payload["source"];
+  const threadSpawn = nativeThreadSpawn(source);
+  return {
+    id,
+    cwd: requiredString(payload, "cwd"),
+    source,
+    threadSpawn,
+    parentThreadId: agreeingField(payload, threadSpawn, "parent_thread_id"),
+    agentPath: agreeingField(payload, threadSpawn, "agent_path"),
+    agentRole: agreeingField(payload, threadSpawn, "agent_role")
+  };
+}
+function readBoundedRegularFile(options) {
+  const { file, deadline } = options;
+  requireMetadataTime(deadline);
+  const before = lstatSync2(file);
+  if (!before.isFile() || before.isSymbolicLink()) throw new CodexMetadataFailure(`not a regular non-symlink file: ${file}`);
+  const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const opened = fstatSync(fd);
+    requireSameFile(before, opened, file);
+    const text = boundedText(fd, options);
+    requireMetadataTime(deadline);
+    requireSameFile(opened, fstatSync(fd), file);
+    requireSameFile(opened, lstatSync2(file), file);
+    return { text, stat: opened };
+  } finally {
+    closeSync(fd);
+  }
+}
+function requireMetadataTime(deadline) {
+  if (performance.now() >= deadline) throw new CodexMetadataFailure("Codex metadata readiness exceeded 10 seconds");
+}
+function boundedText(fd, options) {
+  const chunks = [];
+  let total = 0;
+  while (total <= options.maxBytes) {
+    requireMetadataTime(options.deadline);
+    const chunk = Buffer.alloc(Math.min(4096, options.maxBytes + 1 - total));
+    const count = readSync(fd, chunk, 0, chunk.length, null);
+    if (count === 0) {
+      if (options.firstRecord) throw new CodexMetadataFailure(`unterminated first record at ${options.file}`);
+      return Buffer.concat(chunks).toString("utf8");
+    }
+    const newline = options.firstRecord ? chunk.subarray(0, count).indexOf(10) : -1;
+    const used = newline === -1 ? count : newline + 1;
+    total += used;
+    if (total > options.maxBytes) break;
+    chunks.push(chunk.subarray(0, used));
+    if (newline !== -1) return Buffer.concat(chunks).toString("utf8");
+  }
+  throw new CodexMetadataFailure(`file record exceeds ${options.maxBytes} bytes: ${options.file}`);
+}
+function requireSameFile(before, after, file) {
+  if (!after.isFile() || before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs) {
+    throw new CodexMetadataFailure(`file identity changed while reading ${file}`);
+  }
+}
+function isObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function nativeThreadSpawn(source) {
+  if (!isObject(source) || !("subagent" in source)) return void 0;
+  const subagent = source["subagent"];
+  if (!isObject(subagent) || !isObject(subagent["thread_spawn"])) {
+    throw new CodexMetadataFailure("unrecognized native subagent provenance");
+  }
+  return subagent["thread_spawn"];
+}
+function requiredString(record, key) {
+  const value = record[key];
+  if (typeof value !== "string" || value === "") throw new CodexMetadataFailure(`missing or invalid native ${key}`);
+  return value;
+}
+function agreeingField(direct, nested, key) {
+  const outer = key in direct ? requiredString(direct, key) : void 0;
+  const inner = nested !== void 0 && key in nested ? requiredString(nested, key) : void 0;
+  if (outer !== void 0 && inner !== void 0 && outer !== inner) throw new CodexMetadataFailure(`contradictory native ${key}`);
+  return outer ?? inner;
+}
 
 // core/src/state/store.ts
 import { execFileSync } from "node:child_process";
@@ -1023,8 +1125,8 @@ import { createHash, randomBytes } from "node:crypto";
 import {
   accessSync,
   appendFileSync,
-  constants,
-  lstatSync as lstatSync2,
+  constants as constants2,
+  lstatSync as lstatSync3,
   mkdirSync,
   readFileSync as readFileSync2,
   renameSync,
@@ -1162,7 +1264,7 @@ function isRegularNonSymlinkFile(target) {
 function isReadableRegularFile(target) {
   if (!isRegularNonSymlinkFile(target)) return false;
   try {
-    accessSync(target, constants.R_OK);
+    accessSync(target, constants2.R_OK);
     return true;
   } catch {
     return false;
@@ -1330,7 +1432,7 @@ function isoTimestamp() {
 }
 function lstatOrUndefined(target) {
   try {
-    return lstatSync2(target);
+    return lstatSync3(target);
   } catch {
     return void 0;
   }
@@ -1416,6 +1518,40 @@ var RECEIPT_ARTIFACT_PATTERN = /^([0-9a-f]{64})\.(receipt|consumed|watermark)$/;
 var TEMP_ARTIFACT_PATTERN = /^\.([0-9a-f]{64})\.(receipt|consuming|watermark)\.[a-zA-Z0-9]{6}$/;
 var RECEIPT_KEYS = ["version", "hook_session", "slice", "attempt", "agent_id", "agent_type"];
 var WATERMARK_KEYS = ["version", "attempt"];
+function runHandoffResolveCodex(cwd, coordinates) {
+  const parentId = process.env["CODEX_THREAD_ID"] ?? "";
+  if (!CODEX_UUID_PATTERN.test(parentId)) throw new HandoffFailure("resolve-codex requires a valid current CODEX_THREAD_ID");
+  validateCoordinates({ ...coordinates, agentId: parentId });
+  if (!/^\/root(?:\/[a-zA-Z0-9_-]+)+$/.test(coordinates.agentPath)) throw new HandoffFailure("invalid canonical Codex agent path");
+  const readinessMs = 1e4;
+  const deadline = performance.now() + readinessMs;
+  try {
+    const repository = nativeRepositoryIdentity(cwd, deadline);
+    const directory = path4.join(stateRootDirectory(), ".handoffs", sha256Hex(repository.receiptIdentity));
+    const candidates = codexReceiptCandidates(directory, coordinates, deadline);
+    const codexHome = process.env["CODEX_HOME"] || path4.join(homeDirectoryFrom(process.platform, process.env), ".codex");
+    const matches = /* @__PURE__ */ new Set();
+    for (const rollout of rolloutPaths(path4.join(codexHome, "sessions"), deadline)) {
+      const metadata = readCodexSessionMetadata(rollout, deadline);
+      if (!candidates.has(metadata.id)) continue;
+      if (metadata.parentThreadId !== parentId || metadata.agentPath !== coordinates.agentPath || metadata.agentRole !== coordinates.agentType) continue;
+      if (metadata.id === parentId || nativeRepositoryIdentity(metadata.cwd, deadline).commonDirectory !== repository.commonDirectory) continue;
+      if (matches.has(metadata.id)) throw new HandoffFailure(`ambiguous native rollouts for ${metadata.id}`);
+      matches.add(metadata.id);
+    }
+    if (matches.size !== 1) throw new HandoffFailure(`expected exactly one current Codex receipt match, found ${matches.size}`);
+    const id = [...matches][0];
+    const receipt = candidates.get(id);
+    if (readCurrentCodexReceipt(directory, `${sha256Hex(id)}.receipt`, coordinates, deadline) !== receipt) {
+      throw new HandoffFailure("Codex receipt changed during resolution");
+    }
+    requireMetadataTime(deadline);
+    return id;
+  } catch (error) {
+    if (error instanceof HandoffFailure) throw error;
+    throw new HandoffFailure(`cannot resolve Codex handoff: ${causeOf2(error)}`, { cause: error });
+  }
+}
 function runHandoffPublish(cwd, coordinates, hookSession) {
   validateCoordinates(coordinates);
   if (!isValidOpaqueId(hookSession)) throw new HandoffFailure("invalid hook session id");
@@ -1703,6 +1839,102 @@ function recordsOf(content) {
 function readPrivateFileContent(target) {
   if (!isReadableRegularFile(target)) return void 0;
   return readFileSync3(target, "utf8");
+}
+function nativeRepositoryIdentity(cwd, deadline) {
+  requireMetadataTime(deadline);
+  if (!path4.isAbsolute(cwd)) throw new HandoffFailure(`native workspace is not absolute: ${cwd}`);
+  const common = execFileSync2("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: Math.max(1, Math.ceil(deadline - performance.now())),
+    maxBuffer: 65536,
+    env: { ...process.env, GIT_DIR: void 0, GIT_WORK_TREE: void 0, GIT_COMMON_DIR: void 0 }
+  }).trimEnd();
+  if (!path4.isAbsolute(common)) throw new HandoffFailure(`unknown native repository identity for ${cwd}`);
+  return { receiptIdentity: common, commonDirectory: realpathSync2(common) };
+}
+function codexReceiptCandidates(directory, coordinates, deadline) {
+  const candidates = /* @__PURE__ */ new Map();
+  const maxCandidates = 128;
+  for (const file of boundedDirectoryFiles(directory, deadline, false)) {
+    const name = path4.basename(file);
+    if (!/^[0-9a-f]{64}\.receipt$/.test(name)) continue;
+    const content = readCurrentCodexReceipt(directory, name, coordinates, deadline);
+    if (content === void 0) continue;
+    const agentId = recordValue(content, "agent_id");
+    candidates.set(agentId, content);
+    if (candidates.size > maxCandidates) throw new HandoffFailure(`more than ${maxCandidates} matching Codex receipts`);
+  }
+  return candidates;
+}
+function readCurrentCodexReceipt(directory, name, coordinates, deadline) {
+  const file = path4.join(directory, name);
+  const { text, stat } = readBoundedRegularFile({ file, deadline, maxBytes: 4096, firstRecord: false });
+  if (!isWellFormedRecordFile(text, 6, RECEIPT_KEYS) || !ATTEMPT_PATTERN.test(recordValue(text, "attempt"))) {
+    throw new HandoffFailure(`malformed receipt at ${file}`);
+  }
+  if (recordValue(text, "slice") !== coordinates.slice || recordValue(text, "attempt") !== coordinates.attempt || recordValue(text, "agent_type") !== coordinates.agentType) return void 0;
+  const agentId = recordValue(text, "agent_id");
+  if (!CODEX_UUID_PATTERN.test(agentId)) return void 0;
+  if (!isValidOpaqueId(recordValue(text, "hook_session")) || name !== `${sha256Hex(agentId)}.receipt`) throw new HandoffFailure(`invalid Codex receipt identity at ${file}`);
+  if (Date.now() - stat.mtimeMs >= TTL_SECONDS * 1e3) return void 0;
+  const watermark = path4.join(directory, `${sha256Hex(agentId)}.watermark`);
+  const recorded = readBoundedRegularFile({ file: watermark, deadline, maxBytes: 4096, firstRecord: false });
+  if (!isWellFormedRecordFile(recorded.text, 2, WATERMARK_KEYS) || !ATTEMPT_PATTERN.test(recordValue(recorded.text, "attempt"))) throw new HandoffFailure(`malformed watermark at ${watermark}`);
+  if (Date.now() - recorded.stat.mtimeMs >= TTL_SECONDS * 1e3 || recordValue(recorded.text, "attempt") !== coordinates.attempt) return void 0;
+  return text;
+}
+function recordValue(content, key) {
+  return recordsOf(content).find((record) => record.startsWith(`${key}=`))?.slice(key.length + 1) ?? "";
+}
+function* rolloutPaths(directory, deadline) {
+  for (const file of boundedDirectoryFiles(directory, deadline, true)) {
+    if (/^rollout-.*\.jsonl$/.test(path4.basename(file))) yield file;
+  }
+}
+var MAX_CODEX_PATHS = 1e4;
+function* boundedDirectoryFiles(directory, deadline, recursive) {
+  const pending = [directory];
+  let enumerated = 0;
+  while (pending.length > 0) {
+    requireMetadataTime(deadline);
+    const current = pending.pop();
+    const before = lstatSync4(current);
+    if (!before.isDirectory() || before.isSymbolicLink()) throw new HandoffFailure(`not a non-symlink directory: ${current}`);
+    const entries = readPinnedDirectory({ directory: current, before, deadline, remainingPaths: MAX_CODEX_PATHS - enumerated });
+    enumerated += entries.length;
+    for (const entry of entries) {
+      const file = path4.join(current, entry.name);
+      if (entry.isDirectory() && recursive) pending.push(file);
+      else if (!entry.isDirectory()) yield file;
+    }
+    const after = lstatSync4(current);
+    if (before.dev !== after.dev || before.ino !== after.ino || after.isSymbolicLink()) throw new HandoffFailure(`Codex directory changed while reading ${current}`);
+  }
+}
+function readPinnedDirectory({ directory, before, deadline, remainingPaths }) {
+  const callerDirectory = process.cwd();
+  try {
+    process.chdir(directory);
+    const pinned = lstatSync4(".");
+    if (!pinned.isDirectory() || before.dev !== pinned.dev || before.ino !== pinned.ino) {
+      throw new HandoffFailure(`Codex directory changed before opening ${directory}`);
+    }
+    const opened = opendirSync(".");
+    try {
+      const entries = [];
+      for (let entry = opened.readSync(); entry !== null; entry = opened.readSync()) {
+        requireMetadataTime(deadline);
+        if (entries.length >= remainingPaths) throw new HandoffFailure(`more than ${MAX_CODEX_PATHS} enumerated Codex paths`);
+        entries.push(entry);
+      }
+      return entries;
+    } finally {
+      opened.closeSync();
+    }
+  } finally {
+    process.chdir(callerDirectory);
+  }
 }
 
 // core/src/state/plan.ts
@@ -1993,7 +2225,7 @@ function namesAVerifyCheck(blockText) {
 // core/src/state/scratch/lifecycle.ts
 import { spawn, spawnSync as spawnSync2 } from "node:child_process";
 import { randomBytes as randomBytes2 } from "node:crypto";
-import { appendFileSync as appendFileSync3, existsSync as existsSync7, lstatSync as lstatSync5, mkdirSync as mkdirSync7, readdirSync as readdirSync5, readFileSync as readFileSync11, rmdirSync as rmdirSync2, rmSync as rmSync6, writeFileSync as writeFileSync4 } from "node:fs";
+import { appendFileSync as appendFileSync3, existsSync as existsSync7, lstatSync as lstatSync7, mkdirSync as mkdirSync7, readdirSync as readdirSync5, readFileSync as readFileSync11, rmdirSync as rmdirSync2, rmSync as rmSync6, writeFileSync as writeFileSync4 } from "node:fs";
 import path15 from "node:path";
 
 // core/src/hosts/hook-run.ts
@@ -4059,7 +4291,7 @@ function judgeStatebin(_request) {
 }
 
 // core/src/gates/teardown.ts
-import { execFileSync as execFileSync2 } from "node:child_process";
+import { execFileSync as execFileSync3 } from "node:child_process";
 import { existsSync as existsSync5, readdirSync as readdirSync2, renameSync as renameSync3, rmSync as rmSync5, rmdirSync, statSync as statSync5 } from "node:fs";
 import path11 from "node:path";
 var ABANDONED_STATE_DAYS = 7;
@@ -4179,7 +4411,7 @@ function isFile(target) {
 }
 function gitWorktreeRemove(repoPath, worktreePath) {
   try {
-    execFileSync2("git", ["-C", repoPath, "worktree", "remove", worktreePath], { stdio: "ignore" });
+    execFileSync3("git", ["-C", repoPath, "worktree", "remove", worktreePath], { stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -4187,7 +4419,7 @@ function gitWorktreeRemove(repoPath, worktreePath) {
 }
 function gitWorktreePrune(repoPath) {
   try {
-    execFileSync2("git", ["-C", repoPath, "worktree", "prune"], { stdio: "ignore" });
+    execFileSync3("git", ["-C", repoPath, "worktree", "prune"], { stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -4259,7 +4491,7 @@ function allowlistHost(host) {
 }
 
 // core/src/gates/version.ts
-import { execFileSync as execFileSync3 } from "node:child_process";
+import { execFileSync as execFileSync4 } from "node:child_process";
 import { readFileSync as readFileSync7 } from "node:fs";
 import path12 from "node:path";
 var RELEASE_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/;
@@ -4336,7 +4568,7 @@ function fetchedHighestReleaseVersion(repositorySlug) {
 }
 function gitUploadPackAdvertisement(repositorySlug) {
   try {
-    return execFileSync3(
+    return execFileSync4(
       "curl",
       [
         "-fsS",
@@ -4441,7 +4673,7 @@ function explainedCause(cause) {
 }
 
 // core/src/state/scratch/materialization.ts
-import { copyFileSync, lstatSync as lstatSync3, mkdirSync as mkdirSync6, readdirSync as readdirSync3, readFileSync as readFileSync8, realpathSync as realpathSync2, statfsSync } from "node:fs";
+import { copyFileSync, lstatSync as lstatSync5, mkdirSync as mkdirSync6, readdirSync as readdirSync3, readFileSync as readFileSync8, realpathSync as realpathSync3, statfsSync } from "node:fs";
 import path13 from "node:path";
 function readRecipe(sourceRoot, recipePath) {
   const file = safeRelativePath(sourceRoot, recipePath);
@@ -4476,7 +4708,7 @@ function inventoryFor(sourceRoot, recipe) {
     seen.add(name.toLowerCase());
     const source = safeRelativePath(sourceRoot, name);
     assertCanonicalPath(source);
-    const stat = lstatSync3(source);
+    const stat = lstatSync5(source);
     if (!stat.isFile() && !stat.isDirectory()) throw new Error(`scratch links and special files refused: ${name}`);
     if (stat.isFile() && stat.nlink !== 1) throw new Error(`scratch source hardlink refused: ${name}`);
     inventory.push({
@@ -4518,7 +4750,7 @@ function assertCanonicalPath(target) {
   let cursor = path13.parse(absolute).root;
   for (const component of absolute.slice(cursor.length).split(path13.sep)) {
     cursor = path13.join(cursor, component);
-    if (lstatSync3(cursor).isSymbolicLink() || realpathSync2(cursor) !== cursor) {
+    if (lstatSync5(cursor).isSymbolicLink() || realpathSync3(cursor) !== cursor) {
       throw new Error(`scratch link/reparse/junction/case alias refused: ${cursor}`);
     }
   }
@@ -4536,7 +4768,7 @@ function sensitivePath(name) {
 }
 
 // core/src/state/scratch/recipe.ts
-import { existsSync as existsSync6, lstatSync as lstatSync4, readFileSync as readFileSync9, realpathSync as realpathSync3 } from "node:fs";
+import { existsSync as existsSync6, lstatSync as lstatSync6, readFileSync as readFileSync9, realpathSync as realpathSync4 } from "node:fs";
 import path14 from "node:path";
 function reviewCommand(sourceRoot, recipe, argv) {
   if (argv[0] === "npm") {
@@ -4595,18 +4827,18 @@ function reviewNpmCommand(sourceRoot, recipe, argv) {
 function runtimeInventory(recipe) {
   const node = runtimeFile(process.execPath);
   if (recipe.cacheRouting === "node-only") return { node };
-  const npm = runtimeFile(realpathSync3(path14.join(path14.dirname(process.execPath), "npm")));
+  const npm = runtimeFile(realpathSync4(path14.join(path14.dirname(process.execPath), "npm")));
   if (path14.basename(npm.path) !== "npm-cli.js") throw new Error("scratch requires the Node installation's npm CLI, not a shim");
   const npmRoot = path14.resolve(npm.path, "../..");
   const builtin = path14.join(npmRoot, "npmrc");
   if (existsSync6(builtin) && readFileSync9(builtin, "utf8").split(/\r?\n/).some((line) => line.trim() !== "" && !/^\s*[#;]/.test(line) && !/^\s*(?:prefix|globalconfig)\s*=/.test(line))) {
     throw new Error("scratch npm builtin settings are unreviewed; use no-export");
   }
-  return { node, npm, shell: runtimeFile(realpathSync3("/bin/sh")), npmPackage: runtimeFile(path14.join(npmRoot, "package.json")) };
+  return { node, npm, shell: runtimeFile(realpathSync4("/bin/sh")), npmPackage: runtimeFile(path14.join(npmRoot, "package.json")) };
 }
 function runtimeFile(file) {
   assertCanonicalPath(file);
-  if (!lstatSync4(file).isFile()) throw new Error(`scratch runtime is not a regular file: ${file}`);
+  if (!lstatSync6(file).isFile()) throw new Error(`scratch runtime is not a regular file: ${file}`);
   return { path: file, digest: sha256Hex(readFileSync9(file)) };
 }
 function commandRuntime(argv, runtime) {
@@ -4651,12 +4883,12 @@ function prepareEnvironment(payload, recipe, runtime) {
 }
 
 // core/src/state/scratch/process.ts
-import { readdirSync as readdirSync4, readFileSync as readFileSync10, realpathSync as realpathSync4 } from "node:fs";
+import { readdirSync as readdirSync4, readFileSync as readFileSync10, realpathSync as realpathSync5 } from "node:fs";
 function requireScratchRuntime() {
   if (process.platform !== "linux" || process.getuid === void 0) {
     throw new Error("scratch requires Linux process/proc/path capabilities; use the no-export route");
   }
-  if (processIdentity(process.pid) === void 0 || realpathSync4("/proc/self") !== `/proc/${process.pid}`) {
+  if (processIdentity(process.pid) === void 0 || realpathSync5("/proc/self") !== `/proc/${process.pid}`) {
     throw new Error("scratch process identity capability unavailable");
   }
   sessionMembers(processIdentity(process.pid));
@@ -4790,7 +5022,7 @@ function verificationDirectory(action) {
   assertCanonicalPath(existing);
   mkdirSync7(stateRoot, { recursive: true, mode: 448 });
   assertCanonicalPath(stateRoot);
-  const stateStat = lstatSync5(stateRoot);
+  const stateStat = lstatSync7(stateRoot);
   if (stateStat.uid !== process.getuid() || (stateStat.mode & 18) !== 0) throw new Error("scratch state root is not exclusively writable by its owner");
   mkdirSync7(directory, { recursive: true, mode: 448 });
   assertPrivateDirectory(directory);
@@ -4817,14 +5049,14 @@ function recoverAdmission(directory, flags) {
   const lock = path15.join(directory, ".admission");
   if (!existsSync7(lock)) return;
   assertPrivateDirectory(lock);
-  const original = lstatSync5(lock);
+  const original = lstatSync7(lock);
   const ownerFile = path15.join(lock, "owner.json");
   assertCanonicalPath(ownerFile);
   const admission = JSON.parse(readFileSync11(ownerFile, "utf8"));
   if (admission.owner !== sha256Hex(flags["--owner"] ?? "") || identityIsLive(admission.process)) throw new Error("scratch admission owner is foreign or active");
   const reconciliation = path15.join(lock, "recovery");
   mkdirSync7(reconciliation, { mode: 448 });
-  const current = lstatSync5(lock);
+  const current = lstatSync7(lock);
   if (current.dev !== original.dev || current.ino !== original.ino) {
     rmdirSync2(reconciliation);
     throw new Error("scratch admission changed during recovery");
@@ -5130,14 +5362,14 @@ function assertDeletionTree(root) {
   assertCanonicalPath(root);
   for (const name of readdirSync5(root)) {
     const target = path15.join(root, name);
-    const stat = lstatSync5(target);
+    const stat = lstatSync7(target);
     if (stat.isSymbolicLink() || !stat.isFile() && !stat.isDirectory() || stat.isFile() && stat.nlink !== 1) throw new Error(`scratch cleanup link/special-file uncertainty: ${target}`);
     if (stat.isDirectory()) assertDeletionTree(target);
   }
 }
 function assertPrivateDirectory(root) {
   assertCanonicalPath(root);
-  const stat = lstatSync5(root);
+  const stat = lstatSync7(root);
   if (!stat.isDirectory() || stat.uid !== process.getuid() || (stat.mode & 511) !== 448) throw new Error(`scratch private owned directory required: ${root}`);
 }
 function ownedRecord(directory, flags) {
@@ -5156,7 +5388,7 @@ function readRecord(directory, id) {
   assertPrivateDirectory(root);
   const file = path15.join(root, "record.json");
   assertCanonicalPath(file);
-  const stat = lstatSync5(file);
+  const stat = lstatSync7(file);
   if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid() || (stat.mode & 511) !== 384) throw new Error("scratch metadata ownership is uncertain");
   const record = JSON.parse(readFileSync11(file, "utf8"));
   if (record.version !== 1 || record.id !== id || record.root !== root || record.uid !== process.getuid() || !["preparing", "ready", "starting", "running", "blocked", "closed"].includes(record.state)) throw new Error("scratch metadata identity/state mismatch");
@@ -5177,7 +5409,7 @@ function expireClosedLogs(records, flags) {
     const log = path15.join(record.root, "raw.log");
     if (!existsSync7(log)) continue;
     assertCanonicalPath(log);
-    const stat = lstatSync5(log);
+    const stat = lstatSync7(log);
     if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid() || (stat.mode & 511) !== 384) throw new Error("scratch closed raw log ownership uncertain");
     rmSync6(log);
   }
@@ -5200,6 +5432,7 @@ var USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state handoff publish --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --hook-session <id>
        oso-state handoff wait --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --timeout <seconds>
        oso-state handoff consume --slice <id> --attempt <n> --agent-id <id> --agent-type <type>
+       oso-state handoff resolve-codex --agent-path <canonical> --slice <id> --attempt <n> --agent-type <role>
        oso-state scan comments <ref>
        oso-state scan abstractions <ref>
 
@@ -5221,11 +5454,12 @@ var RefusedError = class extends Error {
     this.verb = verb;
   }
 };
-var HANDOFF_SUBACTIONS = ["publish", "wait", "consume"];
+var HANDOFF_SUBACTIONS = ["publish", "wait", "consume", "resolve-codex"];
 var HANDOFF_FLAGS = {
   "--slice": "slice",
   "--attempt": "attempt",
   "--agent-id": "agentId",
+  "--agent-path": "agentPath",
   "--agent-type": "agentType",
   "--hook-session": "hookSession",
   "--timeout": "timeout"
@@ -5488,6 +5722,9 @@ function dispatchHandoff(remaining) {
   };
   const cwd = process.cwd();
   switch (subaction) {
+    case "resolve-codex":
+      process.stdout.write(runHandoffResolveCodex(cwd, { ...coordinates, agentPath: flags.agentPath ?? "" }) + "\n");
+      return 0;
     case "publish":
       readStdin();
       runHandoffPublish(cwd, coordinates, flags.hookSession ?? "");
@@ -5504,6 +5741,11 @@ function isHandoffSubaction(value) {
   return value !== void 0 && HANDOFF_SUBACTIONS.includes(value);
 }
 function checkHandoffCoordinateShape(subaction, coordinates) {
+  if (subaction === "resolve-codex") {
+    if (coordinates.agentPath === void 0 || coordinates.agentId !== void 0 || coordinates.timeout !== void 0 || coordinates.hookSession !== void 0) throw new UsageError();
+    return;
+  }
+  if (coordinates.agentPath !== void 0) throw new UsageError();
   const hasTimeout = coordinates.timeout !== void 0;
   const hasHookSession = coordinates.hookSession !== void 0;
   if (subaction === "publish" && hasTimeout) throw new UsageError();

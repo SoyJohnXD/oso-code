@@ -42,7 +42,7 @@ This composes Codex's native approval UI with Oso's local digest and artifact ra
 
 ## Making a launch wait
 
-This host exposes no foreground flag on a launch. Use Codex's wait operation, then the receipt protocol in `../_shared/references/codex.md`'s **Completion handshake** section: its `--timeout 10` is the common bound, and `handoff consume` is the one-shot precondition for reading that message's verdict. A timeout or identity mismatch blocks this launch; it never falls through to the next step.
+This host exposes no foreground flag on a launch. Follow `../_shared/references/codex.md`'s **Completion handshake** and **Correction and quiescence** sections: current native final, exact UUID resolution, successful receipt wait and consume precede verdict interpretation. Their reuse and owned-handle requirements override neutral relaunch defaults without resetting loop caps.
 
 ## The explorer
 

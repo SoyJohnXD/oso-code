@@ -82,6 +82,7 @@ function receiptMatches(item: Readonly<Record<string, unknown>>, agentId: string
   return (
     receipt !== undefined &&
     receipt["slice"] === expected.slice &&
+    receipt["attempt"] === expected.attempt &&
     receipt["agent_id"] === agentId &&
     receipt["agent_type"] === expected.agentType
   );
@@ -90,7 +91,7 @@ function receiptMatches(item: Readonly<Record<string, unknown>>, agentId: string
 function completedSuccessfully(item: Readonly<Record<string, unknown>>): boolean {
   if (item["status"] !== "completed") return false;
   const exitCode = item["exit_code"];
-  return exitCode === undefined || exitCode === null || exitCode === 0;
+  return exitCode === 0;
 }
 
 function spawnedAgentIdsIn(item: Readonly<Record<string, unknown>>): readonly string[] {
@@ -124,12 +125,13 @@ export function integratorHandoffConsumed(jsonlOutput: string, expected: Handoff
     const command = item["command"];
     if (typeof command !== "string") continue;
     const invocation = firstHandoffInvocation(command, expected);
-    if (invocation === undefined || !receiptMatches(item, invocation.agentId, expected)) continue;
-    (invocation.verb === "wait" ? waitedAgentIds : consumedAgentIds).add(invocation.agentId);
+    if (invocation === undefined || !spawnedAgentIds.has(invocation.agentId) || !receiptMatches(item, invocation.agentId, expected)) continue;
+    if (invocation.verb === "wait") waitedAgentIds.add(invocation.agentId);
+    else if (waitedAgentIds.delete(invocation.agentId)) consumedAgentIds.add(invocation.agentId);
   }
 
   for (const agentId of spawnedAgentIds) {
-    if (waitedAgentIds.has(agentId) && consumedAgentIds.has(agentId)) return true;
+    if (consumedAgentIds.has(agentId)) return true;
   }
   return false;
 }

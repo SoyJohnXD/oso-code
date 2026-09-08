@@ -88,6 +88,23 @@ describe("every rendered shared-layer reference equals a fresh, deterministic re
   }
 });
 
+test("Codex alone delivers the identity and corrective-quiescence binding; this is not native behavior evidence", () => {
+  const binding = readRepoText(sharedReferencePath("codex"));
+  const start = binding.indexOf("## Completion handshake\n");
+  const end = binding.indexOf("## Owned verification scratch\n", start);
+  assert.ok(start >= 0 && end > start);
+  const policy = binding.slice(start, end);
+  const rendered = readRepoText(sharedReferenceOutputPath("codex"));
+  assert.ok(rendered.includes(policy));
+  assert.ok(policy.includes("## Correction and quiescence\n"));
+  assert.equal(readRepoText(sharedReferenceOutputPath("opencode")).includes(policy), false);
+  for (const mode of ["plan", "debug"]) {
+    const reference = readRepoText(`codex/skills/${mode}/references/codex.md`);
+    assert.ok(reference.includes("**Completion handshake** and **Correction and quiescence**"));
+    assert.ok(reference.includes("../_shared/references/codex.md"));
+  }
+});
+
 describe("plugin/agents/ never gains a fourth file", () => {
   test("exactly three roles carry a claude spec", () => {
     const claudeRoles = AGENT_ROLES.filter((role) => role.claude !== null);

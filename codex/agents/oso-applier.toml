@@ -85,7 +85,7 @@ The list is closed: a payload matching none of these kinds is an error, never a 
 
 Your final message is data for the orchestrator, never prose for the operator.
 
-Codex agent roles cannot set a working directory, so explicitly scope every shell command and every edit to the slice's handed path.
+Scope every command and edit to the handed worktree using native hookable foreground tools, track all owned exec/process/service handles through completion before final, and block on unknown lineage after interruption or compaction.
 
 Reach context7 through the listed tools under their server-prefixed Codex names.
 

@@ -1,5 +1,7 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { chmodSync, existsSync, lstatSync, mkdirSync, opendirSync, readFileSync, readdirSync, realpathSync, rmSync, type Dirent, type Stats } from "node:fs";
 import path from "node:path";
+import { CODEX_UUID_PATTERN, readBoundedRegularFile, readCodexSessionMetadata, requireMetadataTime } from "../hosts/codex-session-metadata.ts";
 import * as store from "./store.ts";
 
 export class HandoffFailure extends Error {}
@@ -26,6 +28,41 @@ const RECEIPT_ARTIFACT_PATTERN = /^([0-9a-f]{64})\.(receipt|consumed|watermark)$
 const TEMP_ARTIFACT_PATTERN = /^\.([0-9a-f]{64})\.(receipt|consuming|watermark)\.[a-zA-Z0-9]{6}$/;
 const RECEIPT_KEYS = ["version", "hook_session", "slice", "attempt", "agent_id", "agent_type"] as const;
 const WATERMARK_KEYS = ["version", "attempt"] as const;
+
+export function runHandoffResolveCodex(cwd: string, coordinates: Omit<HandoffCoordinates, "agentId"> & { agentPath: string }): string {
+  const parentId = process.env["CODEX_THREAD_ID"] ?? "";
+  if (!CODEX_UUID_PATTERN.test(parentId)) throw new HandoffFailure("resolve-codex requires a valid current CODEX_THREAD_ID");
+  validateCoordinates({ ...coordinates, agentId: parentId });
+  if (!/^\/root(?:\/[a-zA-Z0-9_-]+)+$/.test(coordinates.agentPath)) throw new HandoffFailure("invalid canonical Codex agent path");
+  const readinessMs = 10000;
+  const deadline = performance.now() + readinessMs;
+  try {
+    const repository = nativeRepositoryIdentity(cwd, deadline);
+    const directory = path.join(store.stateRootDirectory(), ".handoffs", store.sha256Hex(repository.receiptIdentity));
+    const candidates = codexReceiptCandidates(directory, coordinates, deadline);
+    const codexHome = process.env["CODEX_HOME"] || path.join(store.homeDirectoryFrom(process.platform, process.env), ".codex");
+    const matches = new Set<string>();
+    for (const rollout of rolloutPaths(path.join(codexHome, "sessions"), deadline)) {
+      const metadata = readCodexSessionMetadata(rollout, deadline);
+      if (!candidates.has(metadata.id)) continue;
+      if (metadata.parentThreadId !== parentId || metadata.agentPath !== coordinates.agentPath || metadata.agentRole !== coordinates.agentType) continue;
+      if (metadata.id === parentId || nativeRepositoryIdentity(metadata.cwd, deadline).commonDirectory !== repository.commonDirectory) continue;
+      if (matches.has(metadata.id)) throw new HandoffFailure(`ambiguous native rollouts for ${metadata.id}`);
+      matches.add(metadata.id);
+    }
+    if (matches.size !== 1) throw new HandoffFailure(`expected exactly one current Codex receipt match, found ${matches.size}`);
+    const id = [...matches][0] as string;
+    const receipt = candidates.get(id) as string;
+    if (readCurrentCodexReceipt(directory, `${store.sha256Hex(id)}.receipt`, coordinates, deadline) !== receipt) {
+      throw new HandoffFailure("Codex receipt changed during resolution");
+    }
+    requireMetadataTime(deadline);
+    return id;
+  } catch (error) {
+    if (error instanceof HandoffFailure) throw error;
+    throw new HandoffFailure(`cannot resolve Codex handoff: ${store.causeOf(error)}`, { cause: error });
+  }
+}
 
 export function runHandoffPublish(cwd: string, coordinates: HandoffCoordinates, hookSession: string): void {
   validateCoordinates(coordinates);
@@ -363,4 +400,103 @@ function recordsOf(content: string): string[] {
 function readPrivateFileContent(target: string): string | undefined {
   if (!store.isReadableRegularFile(target)) return undefined;
   return readFileSync(target, "utf8");
+}
+
+function nativeRepositoryIdentity(cwd: string, deadline: number): { receiptIdentity: string; commonDirectory: string } {
+  requireMetadataTime(deadline);
+  if (!path.isAbsolute(cwd)) throw new HandoffFailure(`native workspace is not absolute: ${cwd}`);
+  const common = execFileSync("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"], {
+    encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: Math.max(1, Math.ceil(deadline - performance.now())), maxBuffer: 65536,
+    env: { ...process.env, GIT_DIR: undefined, GIT_WORK_TREE: undefined, GIT_COMMON_DIR: undefined },
+  }).trimEnd();
+  if (!path.isAbsolute(common)) throw new HandoffFailure(`unknown native repository identity for ${cwd}`);
+  return { receiptIdentity: common, commonDirectory: realpathSync(common) };
+}
+
+function codexReceiptCandidates(directory: string, coordinates: Omit<HandoffCoordinates, "agentId">, deadline: number): Map<string, string> {
+  const candidates = new Map<string, string>();
+  const maxCandidates = 128;
+  for (const file of boundedDirectoryFiles(directory, deadline, false)) {
+    const name = path.basename(file);
+    if (!/^[0-9a-f]{64}\.receipt$/.test(name)) continue;
+    const content = readCurrentCodexReceipt(directory, name, coordinates, deadline);
+    if (content === undefined) continue;
+    const agentId = recordValue(content, "agent_id");
+    candidates.set(agentId, content);
+    if (candidates.size > maxCandidates) throw new HandoffFailure(`more than ${maxCandidates} matching Codex receipts`);
+  }
+  return candidates;
+}
+
+function readCurrentCodexReceipt(directory: string, name: string, coordinates: Omit<HandoffCoordinates, "agentId">, deadline: number): string | undefined {
+  const file = path.join(directory, name);
+  const { text, stat } = readBoundedRegularFile({ file, deadline, maxBytes: 4096, firstRecord: false });
+  if (!isWellFormedRecordFile(text, 6, RECEIPT_KEYS) || !ATTEMPT_PATTERN.test(recordValue(text, "attempt"))) {
+    throw new HandoffFailure(`malformed receipt at ${file}`);
+  }
+  if (recordValue(text, "slice") !== coordinates.slice || recordValue(text, "attempt") !== coordinates.attempt || recordValue(text, "agent_type") !== coordinates.agentType) return undefined;
+  const agentId = recordValue(text, "agent_id");
+  if (!CODEX_UUID_PATTERN.test(agentId)) return undefined;
+  if (!isValidOpaqueId(recordValue(text, "hook_session")) || name !== `${store.sha256Hex(agentId)}.receipt`) throw new HandoffFailure(`invalid Codex receipt identity at ${file}`);
+  if (Date.now() - stat.mtimeMs >= TTL_SECONDS * 1000) return undefined;
+  const watermark = path.join(directory, `${store.sha256Hex(agentId)}.watermark`);
+  const recorded = readBoundedRegularFile({ file: watermark, deadline, maxBytes: 4096, firstRecord: false });
+  if (!isWellFormedRecordFile(recorded.text, 2, WATERMARK_KEYS) || !ATTEMPT_PATTERN.test(recordValue(recorded.text, "attempt"))) throw new HandoffFailure(`malformed watermark at ${watermark}`);
+  if (Date.now() - recorded.stat.mtimeMs >= TTL_SECONDS * 1000 || recordValue(recorded.text, "attempt") !== coordinates.attempt) return undefined;
+  return text;
+}
+
+function recordValue(content: string, key: string): string {
+  return recordsOf(content).find((record) => record.startsWith(`${key}=`))?.slice(key.length + 1) ?? "";
+}
+
+function* rolloutPaths(directory: string, deadline: number): Generator<string> {
+  for (const file of boundedDirectoryFiles(directory, deadline, true)) {
+    if (/^rollout-.*\.jsonl$/.test(path.basename(file))) yield file;
+  }
+}
+
+const MAX_CODEX_PATHS = 10000;
+
+function* boundedDirectoryFiles(directory: string, deadline: number, recursive: boolean): Generator<string> {
+  const pending = [directory];
+  let enumerated = 0;
+  while (pending.length > 0) {
+    requireMetadataTime(deadline);
+    const current = pending.pop() as string;
+    const before = lstatSync(current);
+    if (!before.isDirectory() || before.isSymbolicLink()) throw new HandoffFailure(`not a non-symlink directory: ${current}`);
+    const entries = readPinnedDirectory({ directory: current, before, deadline, remainingPaths: MAX_CODEX_PATHS - enumerated });
+    enumerated += entries.length;
+    for (const entry of entries) {
+      const file = path.join(current, entry.name);
+      if (entry.isDirectory() && recursive) pending.push(file);
+      else if (!entry.isDirectory()) yield file;
+    }
+    const after = lstatSync(current);
+    if (before.dev !== after.dev || before.ino !== after.ino || after.isSymbolicLink()) throw new HandoffFailure(`Codex directory changed while reading ${current}`);
+  }
+}
+
+function readPinnedDirectory({ directory, before, deadline, remainingPaths }: {
+  directory: string; before: Stats; deadline: number; remainingPaths: number;
+}): Dirent[] {
+  const callerDirectory = process.cwd();
+  try {
+    process.chdir(directory);
+    const pinned = lstatSync(".");
+    if (!pinned.isDirectory() || before.dev !== pinned.dev || before.ino !== pinned.ino) {
+      throw new HandoffFailure(`Codex directory changed before opening ${directory}`);
+    }
+    const opened = opendirSync(".");
+    try {
+      const entries: Dirent[] = [];
+      for (let entry = opened.readSync(); entry !== null; entry = opened.readSync()) {
+        requireMetadataTime(deadline);
+        if (entries.length >= remainingPaths) throw new HandoffFailure(`more than ${MAX_CODEX_PATHS} enumerated Codex paths`);
+        entries.push(entry);
+      }
+      return entries;
+    } finally { opened.closeSync(); }
+  } finally { process.chdir(callerDirectory); }
 }

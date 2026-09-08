@@ -30,6 +30,7 @@ be between 0 and 600 seconds.
 
 const CLOSE_SLICE_LINE = "       oso-state --session <id> close-slice <n>\n";
 const DENY_PATTERN_LINE = "       oso-state --session <id> deny-pattern add <pattern>\n";
+const RESOLVE_CODEX_LINE = "       oso-state handoff resolve-codex --agent-path <canonical> --slice <id> --attempt <n> --agent-type <role>\n";
 const SCAN_LINES =
   "       oso-state scan comments <ref>\n" + "       oso-state scan abstractions <ref>\n";
 const SCAN_PARAGRAPH =
@@ -48,13 +49,13 @@ const TS_USAGE = BASH_USAGE.replace(
   )
   .replace(
     "--agent-type <type>\n\nThe SubagentStop hook",
-    `--agent-type <type>\n${SCAN_LINES}\nThe SubagentStop hook`,
+    `--agent-type <type>\n${RESOLVE_CODEX_LINE}${SCAN_LINES}\nThe SubagentStop hook`,
   )
   .replace("be between 0 and 600 seconds.\n", `be between 0 and 600 seconds.\n${SCAN_PARAGRAPH}`);
 
 test(
   "the TypeScript CLI's usage text equals the bash's (read from 8c54fd8:plugin/bin/oso-state:7-29) " +
-    "plus exactly the two verbs G6 adds, close-slice and deny-pattern add, and the scan verb C1-D3 adds",
+    "plus close-slice, deny-pattern add, scan and native Codex handoff resolution",
   () => {
     const result = spawnSync(
       process.execPath,

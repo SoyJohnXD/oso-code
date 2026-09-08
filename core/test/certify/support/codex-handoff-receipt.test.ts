@@ -68,3 +68,23 @@ test("reports not consumed when the consume receipt is malformed — missing the
 test("reports not consumed for an empty stream", () => {
   assert.equal(integratorHandoffConsumed("", EXPECTATION), false);
 });
+
+test("refuses a receipt from another attempt despite matching command coordinates", () => {
+  const s = stream(spawnEvent([AGENT_ID]), commandEvent(waitCommand(AGENT_ID), receiptStdout({ attempt: "2" })), commandEvent(consumeCommand(AGENT_ID), receiptStdout({ attempt: "2" })));
+  assert.equal(integratorHandoffConsumed(s, EXPECTATION), false);
+});
+
+test("refuses consume before successful wait and wait before spawn", () => {
+  const wait = commandEvent(waitCommand(AGENT_ID), receiptStdout());
+  const consume = commandEvent(consumeCommand(AGENT_ID), receiptStdout());
+  assert.equal(integratorHandoffConsumed(stream(spawnEvent([AGENT_ID]), consume, wait), EXPECTATION), false);
+  assert.equal(integratorHandoffConsumed(stream(wait, spawnEvent([AGENT_ID]), consume), EXPECTATION), false);
+});
+
+test("requires an explicit successful wait exit before consume", () => {
+  for (const exit of [1, null, undefined]) {
+    const wait = JSON.parse(commandEvent(waitCommand(AGENT_ID), receiptStdout()));
+    wait.item.exit_code = exit;
+    assert.equal(integratorHandoffConsumed(stream(spawnEvent([AGENT_ID]), JSON.stringify(wait), commandEvent(consumeCommand(AGENT_ID), receiptStdout())), EXPECTATION), false);
+  }
+});

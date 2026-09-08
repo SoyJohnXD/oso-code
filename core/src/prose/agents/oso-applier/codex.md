@@ -1,4 +1,4 @@
-Codex agent roles cannot set a working directory, so explicitly scope every shell command and every edit to the slice's handed path.
+Scope every command and edit to the handed worktree using native hookable foreground tools, track all owned exec/process/service handles through completion before final, and block on unknown lineage after interruption or compaction.
 
 Reach context7 through the listed tools under their server-prefixed Codex names.
 

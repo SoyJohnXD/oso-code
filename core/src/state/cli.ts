@@ -26,6 +26,7 @@ const USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state handoff publish --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --hook-session <id>
        oso-state handoff wait --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --timeout <seconds>
        oso-state handoff consume --slice <id> --attempt <n> --agent-id <id> --agent-type <type>
+       oso-state handoff resolve-codex --agent-path <canonical> --slice <id> --attempt <n> --agent-type <role>
        oso-state scan comments <ref>
        oso-state scan abstractions <ref>
 
@@ -50,13 +51,14 @@ class RefusedError extends Error {
   }
 }
 
-const HANDOFF_SUBACTIONS = ["publish", "wait", "consume"] as const;
+const HANDOFF_SUBACTIONS = ["publish", "wait", "consume", "resolve-codex"] as const;
 type HandoffSubaction = (typeof HANDOFF_SUBACTIONS)[number];
 
 const HANDOFF_FLAGS = {
   "--slice": "slice",
   "--attempt": "attempt",
   "--agent-id": "agentId",
+  "--agent-path": "agentPath",
   "--agent-type": "agentType",
   "--hook-session": "hookSession",
   "--timeout": "timeout",
@@ -329,6 +331,9 @@ function dispatchHandoff(remaining: readonly string[]): number {
   };
   const cwd = process.cwd();
   switch (subaction) {
+    case "resolve-codex":
+      process.stdout.write(handoff.runHandoffResolveCodex(cwd, { ...coordinates, agentPath: flags.agentPath ?? "" }) + "\n");
+      return 0;
     case "publish":
       readStdin();
       handoff.runHandoffPublish(cwd, coordinates, flags.hookSession ?? "");
@@ -347,6 +352,11 @@ function isHandoffSubaction(value: string | undefined): value is HandoffSubactio
 }
 
 function checkHandoffCoordinateShape(subaction: HandoffSubaction, coordinates: HandoffCoordinates): void {
+  if (subaction === "resolve-codex") {
+    if (coordinates.agentPath === undefined || coordinates.agentId !== undefined || coordinates.timeout !== undefined || coordinates.hookSession !== undefined) throw new UsageError();
+    return;
+  }
+  if (coordinates.agentPath !== undefined) throw new UsageError();
   const hasTimeout = coordinates.timeout !== undefined;
   const hasHookSession = coordinates.hookSession !== undefined;
   if (subaction === "publish" && hasTimeout) throw new UsageError();

@@ -1934,8 +1934,13 @@ function aSliceIsActive(stateContent) {
 }
 
 // core/src/state/handoff.ts
-import { chmodSync, existsSync as existsSync2, mkdirSync as mkdirSync4, readFileSync as readFileSync3, readdirSync, rmSync as rmSync3 } from "node:fs";
+import { chmodSync, existsSync as existsSync2, lstatSync as lstatSync2, mkdirSync as mkdirSync4, opendirSync, readFileSync as readFileSync3, readdirSync, realpathSync, rmSync as rmSync3 } from "node:fs";
 import path5 from "node:path";
+
+// core/src/hosts/codex-session-metadata.ts
+var MAX_FIRST_RECORD_BYTES = 1024 * 1024;
+
+// core/src/state/handoff.ts
 var HandoffFailure = class extends Error {
 };
 var TTL_SECONDS = 86400;
