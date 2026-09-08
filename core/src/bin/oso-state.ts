@@ -1,3 +1,3 @@
-import { main } from "../state/cli.ts";
+import { supervisedMain } from "../state/cli.ts";
 
-process.exit(main(process.argv.slice(2)));
+supervisedMain(process.argv.slice(2)).then((exit) => { process.exitCode = exit; });

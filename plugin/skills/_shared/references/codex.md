@@ -42,6 +42,43 @@ After spawning, retain the unique agent id Codex returns, use Codex's wait opera
 
 The MESSAGE is always the verdict. The receipt proves only that the matching `SubagentStop` observed a complete message and that this caller consumed it once. Never derive pass, fail, blocked, done, clean or findings from the file, and never continue from a receipt when the returned message says otherwise.
 
+## Owned verification scratch
+
+Use `oso-state scratch create/run/close/recover` for reviewed Linux foreground checks that need an independent export, not a hand-built archive or a copy into a shared cache. This is process-group lifecycle discipline, not an OS sandbox or containment for arbitrary daemons. The complete test suite and native certification use the existing no-export sequential route: scratch lifecycle tests start their own sessions, so nesting them would violate supervision. Unsupported platforms, tools, lifecycle/install scripts and uncertain capacity also retain that route; a refusal never waives a prescribed check.
+
+The caller reviews the complete transitive command/input/dependency/cache inventory before declaring `foreground: true`. Source files are copied independently; list exclusions explicitly, including secrets, `.git`, dependency workspace links and `node_modules/.bin`. Symlinks, case aliases, hardlinked source files and special files are refused rather than followed. Declare full build-output headroom; admission also reserves logical input bytes, parent-directory inodes, concurrent attempts, 2 GiB and 100000 free inodes. Unknown capacity is a refusal, including unavailable Btrfs inode reporting.
+
+A recipe is a source-relative JSON file with this shape; replace the executable and headroom with reviewed project values:
+
+```json
+{
+  "version": 1,
+  "foreground": true,
+  "cacheRouting": "node-only",
+  "source": ["check.mjs"],
+  "dependencies": [],
+  "exclusions": [".git", ".env", "node_modules/.bin"],
+  "headroomBytes": 1048576,
+  "headroomInodes": 100,
+  "commands": [{"purpose": "check", "argv": ["/usr/bin/node", "check.mjs"]}]
+}
+```
+
+`node-only` accepts the current Node executable plus one inventoried script, with supported built-in imports and no opaque/dynamic process nesting. For this repository's exact `npm run build`, `npm run check` or `npm run typecheck`, use `cacheRouting: "node-npm"`, literal argv such as `["npm", "run", "build"]`, and `tools: ["node", "npm", "sh", "esbuild"]` for build/check or `["node", "npm", "sh", "typescript"]` for typecheck. Inventory the relevant builder sources and their imported modules, manifests, configurations, generated inputs, and installed platform dependencies; exclude unsupported links rather than copying all of `node_modules`. Npm's Node CLI and shell are inventoried external runtimes, used read-only; esbuild's pipe-bound service and TypeScript's platform executable remain in the owned session. Missing dependencies fail the check; scratch never installs them or substitutes filtered tests.
+
+Run creation from the source worktree, with a private random owner token of 24–128 URL-safe characters and the run/assignment/role coordinates. `--attempt` identifies this verification attempt, not the handoff receipt attempt; the persisted scratch ordinal increments independently across recreated materializations. Keep the opaque ID returned by create and the owner token for cleanup, never a caller-supplied deletion path:
+
+```text
+oso-state scratch create --owner <token> --run <run> --assignment <slice> --role verifier --attempt <verification-attempt> --recipe <relative-json>
+oso-state scratch run --id <id> --owner <token> --purpose check --timeout 60 -- /usr/bin/node check.mjs
+oso-state scratch close --id <id> --owner <token>
+oso-state scratch recover --id <id> --owner <token>
+```
+
+Close in the caller's `finally` before reporting success; a passed command leaves its payload ready for the remaining reviewed checks, while failure/cancel/timeout closes it after quiescence. Run applies the source repository's current pending/edit/commit/production gates to the exact literal inner argv even when called from the payload. Actual HOME, CODEX_HOME, XDG homes, temporary directories and npm config/cache are private payload paths; unsafe inherited runtime settings are refused, and unlisted environment variables are not inherited.
+
+Timeouts are bounded to 3600 seconds; combined raw output is capped at 16 MiB per attempt, with overflow terminating the command and retaining incomplete evidence. Explicit lifecycle operations expire only this owner's closed raw logs after seven days while keeping compact identity, commands, exits, source/dependency/exclusion inventory, verdict and cleanup evidence. Recovery requires the exact owner and inactive tracked identities/session, never age or process names; a violated recipe, missing identity or uncertain cleanup blocks allocations and success for operator reconciliation. Active or foreign siblings, the source worktree and shared caches are never purge targets.
+
 ## Strict closure
 
 This policy governs Codex plan, roadmap, quick and debug closure and their debt-sweep judges. It replaces the neutral severity-band exit, settled-tag immunity and optional or skipped conformance rules, not the rubric or the mode's other gates.

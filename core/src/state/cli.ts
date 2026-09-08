@@ -7,6 +7,7 @@ import { ereReads } from "../shell/ere.ts";
 import * as handoff from "./handoff.ts";
 import * as plan from "./plan.ts";
 import * as store from "./store.ts";
+import { scratchMain } from "./scratch/lifecycle.ts";
 import * as transitions from "./transitions.ts";
 
 const USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
@@ -69,6 +70,11 @@ export function main(argv: readonly string[]): number {
   } catch (error) {
     return report(error, verbOf(argv));
   }
+}
+
+export async function supervisedMain(argv: readonly string[]): Promise<number> {
+  if (argv[0] === "scratch") return await scratchMain(argv.slice(1));
+  return main(argv);
 }
 
 function verbOf(argv: readonly string[]): string {

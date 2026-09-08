@@ -1,3 +1,6 @@
-Codex agent roles cannot set a working directory. Run every command explicitly in the handed WORKTREE PATH and inspect `git -C <worktree path> diff <the named ref>`. Never substitute the current process directory.
+Codex roles cannot set a working directory: scope every command to the handed WORKTREE PATH, inspect `git -C <worktree path> diff <the named ref>`, and never substitute the current process directory.
 
-`HANDOFF SLICE` and `HANDOFF ATTEMPT` are not on the closed list above: they ride beside the assignment as the transport envelope this paragraph answers. When the assignment carries them, put `oso-handoff: v=1 slice=<ID> attempt=<N>` as the first line of the final message, substituting the exact values. It is a transport envelope outside the report shape above; the report follows unchanged and its terminal line stays last. Never put a verdict in the envelope.
+For scratch verification, follow the owned lifecycle and reviewed recipe boundary in `plugin/skills/_shared/references/codex.md#owned-verification-scratch`; unsupported routes retain no-export verification, never an ad hoc archive, shared-cache reuse or skipped check.
+
+`HANDOFF SLICE` and `HANDOFF ATTEMPT` ride beside the closed assignment fields as transport: when present, begin the final message with `oso-handoff: v=1 slice=<ID> attempt=<N>`, substituting their exact values.
+Keep this envelope outside the unchanged report shape, with no verdict in the envelope and the report's terminal line last.
