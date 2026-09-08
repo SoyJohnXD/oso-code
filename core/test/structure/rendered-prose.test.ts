@@ -43,6 +43,40 @@ function readRepoTextOrNull(file: string): string | null {
   return existsSync(absolute) ? readFileSync(absolute, "utf8") : null;
 }
 
+describe("prospective Codex command authoring delivers instructions, not native certification", () => {
+  for (const owner of [sharedReferencePath("codex"), sharedReferenceOutputPath("codex")]) {
+    test(`${owner} carries independent command-authoring obligations`, () => {
+      const policy = readRepoText(owner);
+      for (const obligation of [
+        /native hookable `apply_patch` for source edits/,
+        /short, literal, foreground invocations of existing checks/,
+        /separate from source edits/,
+        /explicit WORKTREE PATH/,
+        /whole invocation.*UTF-8.*lexer-owned LF/,
+        /3072 bytes.*3071 raw bytes/,
+        /unread.*not evidence of an observed deploy/,
+        /Avoid shell-embedded editing programs.*unsupported wrapper-option introspection/,
+        /Native tools, short commands and existing checks.*not blanket authorization/,
+        /rejection.*stop for diagnosis/,
+        /Never split, encode, create wrappers or scripts, retry through alternative tools, or change AUTO or permissions/,
+      ]) assert.match(policy, obligation);
+    });
+  }
+
+  for (const role of ["oso-applier", "oso-verifier"]) {
+    test(`${role}'s actual native instructions require the shared owner before commands`, () => {
+      const file = `codex/agents/${role}.toml`;
+      const instructions = parseTomlDocument(readRepoText(file), file)["developer_instructions"];
+      assert.equal(typeof instructions, "string");
+      assert.match(instructions as string, /Before (?:editing or )?running commands, read and follow/);
+      const route = (instructions as string).match(/`([^`]+)#command-authoring`/);
+      assert.equal(route?.[1], sharedReferenceOutputPath("codex"));
+      assert.match(readRepoText(route![1]!), /^## Command authoring$/m);
+      assert.match(instructions as string, /owned.*handles.*completion/);
+    });
+  }
+});
+
 provedSomething("core/src/prose/routes.ts names at least one agent role", AGENT_ROLES.length > 0, "AGENT_ROLES is empty, so this suite compared nothing");
 provedSomething("core/src/prose/routes.ts names at least one skill stub", SKILL_STUBS.length > 0, "SKILL_STUBS is empty, so this suite compared nothing");
 

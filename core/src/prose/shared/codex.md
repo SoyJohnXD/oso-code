@@ -64,6 +64,14 @@ Before launching source work, refuse background, detached or opaque-lineage comm
 
 Executable receipt and metadata tests establish identity, bounds and replay refusal. Structural prose tests establish delivery only; model correction reuse and unsafe-replacement refusal require the separately budgeted native certification, not sentence presence.
 
+## Command authoring
+
+Use native hookable `apply_patch` for source edits. Run short, literal, foreground invocations of existing checks, separate from source edits, with the explicit WORKTREE PATH and the owned-handle completion discipline above. Avoid shell-embedded editing programs and unsupported wrapper-option introspection such as `command -v node`.
+
+The production lexer bounds the whole invocation in UTF-8, including its lexer-owned LF: 3072 bytes permits at most 3071 raw bytes. Shorter syntax can still be unread; unread is not evidence of an observed deploy, though the conservative gate still refuses it. Native tools, short commands and existing checks are not blanket authorization; all existing gates and assignment permissions still apply.
+
+On rejection, stop for diagnosis with the exact invocation and denial evidence. Never split, encode, create wrappers or scripts, retry through alternative tools, or change AUTO or permissions to get the rejected operation through. Missing original bytes leave incident-specific length attribution unproven.
+
 ## Owned verification scratch
 
 Use `oso-state scratch create/run/close/recover` for reviewed Linux foreground checks that need an independent export, not a hand-built archive or a copy into a shared cache. This is process-group lifecycle discipline, not an OS sandbox or containment for arbitrary daemons. The complete test suite and native certification use the existing no-export sequential route: scratch lifecycle tests start their own sessions, so nesting them would violate supervision. Unsupported platforms, tools, lifecycle/install scripts and uncertain capacity also retain that route; a refusal never waives a prescribed check.

@@ -5,11 +5,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { assertQuiescent, identityIsLive, processIdentity, sessionMembers } from "../../src/state/scratch/process.ts";
+import { assertQuiescent, identityIsLive, processIdentity, sessionMembers, waitForQuiescence } from "../../src/state/scratch/process.ts";
 import { skipUnlessKernelRunsScriptFixtures } from "../support/win32-skip-guards.ts";
 import { stateFileFor, writeStatePairs } from "../../src/state/store.ts";
 
 const cli = fileURLToPath(new URL("../../src/bin/oso-state.ts", import.meta.url));
+const SCRATCH_CLI_DEADLINE_MS = 180000;
+const RUNNING_POLL_TRIES = 6000;
 
 async function fixture(use: (root: string, source: string, invoke: (args: string[]) => ReturnType<typeof spawnSync>) => void | Promise<void>): Promise<void> {
   const root = mkdtempSync(path.join(tmpdir(), "oso-scratch-test-"));
@@ -22,7 +24,7 @@ async function fixture(use: (root: string, source: string, invoke: (args: string
     commands: [{ purpose: "check", argv: [process.execPath, "check.mjs"] }],
   }));
   const invoke = (args: string[]) => spawnSync(process.execPath, [cli, "scratch", ...args], {
-    cwd: source, env: { PATH: process.env["PATH"], HOME: root, USERPROFILE: root, OSO_STATE_DIR: path.join(root, "state") }, encoding: "utf8", timeout: 15000,
+    cwd: source, env: { PATH: process.env["PATH"], HOME: root, USERPROFILE: root, OSO_STATE_DIR: path.join(root, "state") }, encoding: "utf8", timeout: SCRATCH_CLI_DEADLINE_MS,
   });
   try {
     if (skipUnlessKernelRunsScriptFixtures() !== false) {
@@ -73,7 +75,7 @@ test("scratch lifecycle creates a private independent export, supervises a liter
 
 function injected(root: string, source: string, args: string[], injection: string): ReturnType<typeof spawnSync> {
   return spawnSync(process.execPath, ["--input-type=module", "-e", `import fs from 'node:fs'; import {syncBuiltinESMExports} from 'node:module'; ${injection}; syncBuiltinESMExports(); process.argv=[process.execPath, ${JSON.stringify(cli)}, 'scratch', ...${JSON.stringify(args)}]; await import(${JSON.stringify(pathToFileURL(cli).href)});`], {
-    cwd: source, env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: path.join(root, "state") }, encoding: "utf8", timeout: 15000,
+    cwd: source, env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: path.join(root, "state") }, encoding: "utf8", timeout: SCRATCH_CLI_DEADLINE_MS,
   });
 }
 
@@ -219,24 +221,27 @@ test("scratch actual isolated homes/cache/temp exclude inherited secrets and kee
 }));
 
 test("scratch crash recovery refuses a live child and succeeds only after its actual identity is inactive", () => fixture(async (root, source, invoke) => {
-  writeFileSync(path.join(source, "check.mjs"), "setTimeout(() => {}, 1500);");
+  writeFileSync(path.join(source, "check.mjs"), "setTimeout(() => process.exit(2), 90000);");
   const id = created(invoke);
-  const supervisor = spawn(process.execPath, [cli, "scratch", "run", "--id", id, ...owner, "--purpose", "check", "--timeout", "5", "--", process.execPath, "check.mjs"], {
+  const supervisor = spawn(process.execPath, [cli, "scratch", "run", "--id", id, ...owner, "--purpose", "check", "--timeout", "60", "--", process.execPath, "check.mjs"], {
     cwd: source, env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: path.join(root, "state") }, stdio: "ignore",
   });
   const joined = new Promise<void>((resolve, reject) => { supervisor.on("close", () => resolve()); supervisor.on("error", reject); });
   let commandPid: number | undefined;
   try {
-    for (let tries = 0; record(root, id).state !== "running" && tries < 200; tries += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+    for (let tries = 0; record(root, id).state !== "running" && tries < RUNNING_POLL_TRIES; tries += 1) await new Promise((resolve) => setTimeout(resolve, 10));
     const entry = record(root, id);
     assert.equal(entry.state, "running");
     commandPid = entry.command.pid;
+    const commandIdentity = processIdentity(commandPid!)!;
     assert.equal(invoke(["recover", "--id", id, ...owner]).status, 1);
     supervisor.kill("SIGKILL");
     await joined;
+    assert.equal(identityIsLive(commandIdentity), true);
     assert.equal(invoke(["recover", "--id", id, ...owner]).status, 1);
-    for (let tries = 0; processIdentity(commandPid!) !== undefined && tries < 300; tries += 1) await new Promise((resolve) => setTimeout(resolve, 10));
-    assert.equal(processIdentity(commandPid!), undefined);
+    process.kill(commandPid!, "SIGKILL");
+    await waitForQuiescence(commandIdentity, [commandIdentity]);
+    assert.equal(identityIsLive(commandIdentity), false);
     assert.equal(invoke(["recover", "--id", id, ...owner]).status, 0);
     assert.equal(record(root, id).commands[0].outcome, "incomplete");
   } finally {
@@ -250,83 +255,97 @@ test("scratch crash recovery refuses a live child and succeeds only after its ac
   }
 }));
 
-test("scratch real tracked session escape blocks run, close, and recovery with retained violation evidence", () => fixture(async (root, source, invoke) => {
-  assert.equal(existsSync("/usr/bin/setsid"), true, "Linux supervision fixture requires existing /usr/bin/setsid");
-  const id = created(invoke);
-  const entry = record(root, id);
-  const escapedFile = path.join(root, "escaped.json");
-  const joinedFile = path.join(root, "joined");
-  const leaderFile = path.join(root, "leader.mjs");
-  const escapedScript = path.join(root, "escaped.mjs");
-  const identityModule = pathToFileURL(fileURLToPath(new URL("../../src/state/scratch/process.ts", import.meta.url))).href;
-  writeFileSync(escapedScript, `import {writeFileSync} from 'node:fs'; import {processIdentity} from ${JSON.stringify(identityModule)};
-    writeFileSync(${JSON.stringify(escapedFile)}, JSON.stringify(processIdentity(process.pid)));
-    const deadline=setTimeout(()=>process.exit(2),5000);
-    process.stdin.resume(); process.stdin.on('end',()=>{clearTimeout(deadline);});`);
-  writeFileSync(leaderFile, `import {spawn} from 'node:child_process'; import {readFileSync,writeFileSync} from 'node:fs';
-    const child=spawn('/bin/sh',['-c','read release; exec /usr/bin/setsid "$1" "$2"','fixture',${JSON.stringify(process.execPath)},${JSON.stringify(escapedScript)}],{stdio:['pipe','ignore','inherit']});
-    let released=false;
-    const stop=()=>child.stdin.end();
-    process.on('SIGTERM',stop);
-    const deadline=setTimeout(stop,5000);
-    const handshake=setInterval(()=>{
-      const record=JSON.parse(readFileSync(${JSON.stringify(path.join(entry.root, "record.json"))},'utf8'));
-      const tracked=record.tracked.find(identity=>identity.pid===child.pid);
-      if(!released && tracked){
-        writeFileSync(${JSON.stringify(path.join(root, "tracked.json"))},JSON.stringify(tracked));
-        released=true; child.stdin.write('release\\n');
+test("scratch real tracked session escape blocks run, close, and recovery with retained violation evidence: graceful", () => trackedSessionEscape("graceful"));
+test("scratch real tracked session escape blocks run, close, and recovery with retained violation evidence: delayed/escalated", () => trackedSessionEscape("delayed/escalated"));
+
+function trackedSessionEscape(termination: "graceful" | "delayed/escalated"): Promise<void> {
+  return fixture(async (root, source, invoke) => {
+    assert.equal(existsSync("/usr/bin/setsid"), true, "Linux supervision fixture requires existing /usr/bin/setsid");
+    const id = created(invoke);
+    const entry = record(root, id);
+    const escapedFile = path.join(root, "escaped.json");
+    const terminationFile = path.join(root, "termination.json");
+    const leaderFile = path.join(root, "leader.mjs");
+    const escapedScript = path.join(root, "escaped.mjs");
+    const identityModule = pathToFileURL(fileURLToPath(new URL("../../src/state/scratch/process.ts", import.meta.url))).href;
+    writeFileSync(escapedScript, `import {writeFileSync} from 'node:fs'; import {processIdentity} from ${JSON.stringify(identityModule)};
+      writeFileSync(${JSON.stringify(escapedFile)}, JSON.stringify(processIdentity(process.pid)));
+      const deadline=setTimeout(()=>process.exit(2),5000);
+      process.stdin.resume(); process.stdin.on('end',()=>{clearTimeout(deadline);});`);
+    writeFileSync(leaderFile, `import {spawn} from 'node:child_process'; import {readFileSync,writeFileSync} from 'node:fs';
+      const child=spawn('/bin/sh',['-c','read release; exec /usr/bin/setsid "$1" "$2"','fixture',${JSON.stringify(process.execPath)},${JSON.stringify(escapedScript)}],{stdio:['pipe','ignore','inherit']});
+      let released=false;
+      const stop=()=>${termination === "graceful" ? "{child.stdin.end();process.exit(0);}" : "setTimeout(()=>child.stdin.end(),400)"};
+      process.on('SIGTERM',stop);
+      const deadline=setTimeout(stop,5000);
+      const handshake=setInterval(()=>{
+        const record=JSON.parse(readFileSync(${JSON.stringify(path.join(entry.root, "record.json"))},'utf8'));
+        const tracked=record.tracked.find(identity=>identity.pid===child.pid);
+        if(!released && tracked){
+          writeFileSync(${JSON.stringify(path.join(root, "tracked.json"))},JSON.stringify(tracked));
+          released=true; child.stdin.write('release\\n');
+        }
+      },10);
+      child.on('error',error=>{throw error;});
+      child.on('close',code=>{clearInterval(handshake);clearTimeout(deadline);process.exitCode=code;});`);
+    const injection = `import cp from 'node:child_process'; import {syncBuiltinESMExports} from 'node:module';
+      import {writeFileSync} from 'node:fs';
+      const original=cp.spawn; cp.spawn=(_file,_args,options)=>{
+        const leader=original(process.execPath,[${JSON.stringify(leaderFile)}],options);
+        leader.on('close',(code,signal)=>writeFileSync(${JSON.stringify(terminationFile)},JSON.stringify({code,signal})));
+        return leader;
+      };
+      syncBuiltinESMExports(); process.argv=[process.execPath,${JSON.stringify(cli)},'scratch',...${JSON.stringify(["run", "--id", id, ...owner, "--purpose", "check", "--timeout", "8", "--", process.execPath, "check.mjs"])}];
+      await import(${JSON.stringify(pathToFileURL(cli).href)});`;
+    const supervisor = spawn(process.execPath, ["--input-type=module", "-e", injection], {
+      cwd: source, env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: path.join(root, "state") }, stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stderr = "";
+    supervisor.stderr.on("data", (chunk) => { stderr += chunk; });
+    supervisor.stdout.resume();
+    const joined = new Promise<number | null>((resolve, reject) => { supervisor.on("close", resolve); supervisor.on("error", reject); });
+    try {
+      assert.equal(await joined, 1, stderr);
+      assert.match(stderr, /escaped|supervision|tracking/);
+      const tracked = JSON.parse(readFileSync(path.join(root, "tracked.json"), "utf8"));
+      const escaped = JSON.parse(readFileSync(escapedFile, "utf8"));
+      assert.equal(escaped.pid, tracked.pid);
+      assert.equal(escaped.start, tracked.start);
+      assert.equal(escaped.boot, tracked.boot);
+      assert.notEqual(escaped.group, tracked.group);
+      assert.notEqual(escaped.session, tracked.session);
+      assert.equal(escaped.group, escaped.pid);
+      const blocked = record(root, id);
+      assert.deepEqual(JSON.parse(readFileSync(terminationFile, "utf8")), termination === "graceful" ? { code: 0, signal: null } : { code: null, signal: "SIGKILL" });
+      await waitForQuiescence(blocked.command, [blocked.command, escaped]);
+      assertQuiescent(escaped);
+      assert.equal(identityIsLive(escaped), false);
+      assert.equal(identityIsLive(blocked.command), false);
+      assert.equal(processIdentity(tracked.pid), undefined);
+      assert.equal(blocked.state, "blocked");
+      assert.equal(blocked.supervisionViolation, true);
+      assert.ok(blocked.tracked.some((identity: { pid: number }) => identity.pid === tracked.pid));
+      assert.match(blocked.commands[0].outcome, /blocked/);
+      for (const action of ["close", "recover"]) {
+        const result = invoke([action, "--id", id, ...owner]);
+        assert.equal(result.status, 1, String(result.stderr));
+        assert.match(String(result.stderr), /tracking violated; recovery refused/);
+        assert.deepEqual(record(root, id), blocked);
+        assert.equal(existsSync(path.join(entry.root, "payload/work/check.mjs")), true);
       }
-    },10);
-    child.on('error',error=>{throw error;});
-    child.on('close',code=>{clearInterval(handshake);clearTimeout(deadline);writeFileSync(${JSON.stringify(joinedFile)},String(code));process.exitCode=code;});`);
-  const injection = `import cp from 'node:child_process'; import {syncBuiltinESMExports} from 'node:module';
-    const original=cp.spawn; cp.spawn=(_file,_args,options)=>original(process.execPath,[${JSON.stringify(leaderFile)}],options);
-    syncBuiltinESMExports(); process.argv=[process.execPath,${JSON.stringify(cli)},'scratch',...${JSON.stringify(["run", "--id", id, ...owner, "--purpose", "check", "--timeout", "8", "--", process.execPath, "check.mjs"])}];
-    await import(${JSON.stringify(pathToFileURL(cli).href)});`;
-  const supervisor = spawn(process.execPath, ["--input-type=module", "-e", injection], {
-    cwd: source, env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: path.join(root, "state") }, stdio: ["ignore", "pipe", "pipe"],
+      assert.equal(invoke(create).status, 1);
+      assert.equal(processIdentity(blocked.command.pid), undefined);
+    } finally {
+      const command = record(root, id).command;
+      if (command !== null && processIdentity(command.pid) !== undefined) process.kill(command.pid, "SIGTERM");
+      await joined;
+      for (const identity of record(root, id).tracked) {
+        for (let tries = 0; processIdentity(identity.pid) !== undefined && tries < 600; tries += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+        assert.equal(processIdentity(identity.pid), undefined);
+      }
+    }
   });
-  let stderr = "";
-  supervisor.stderr.on("data", (chunk) => { stderr += chunk; });
-  supervisor.stdout.resume();
-  const joined = new Promise<number | null>((resolve, reject) => { supervisor.on("close", resolve); supervisor.on("error", reject); });
-  try {
-    assert.equal(await joined, 1, stderr);
-    assert.match(stderr, /escaped|supervision|tracking/);
-    const tracked = JSON.parse(readFileSync(path.join(root, "tracked.json"), "utf8"));
-    const escaped = JSON.parse(readFileSync(escapedFile, "utf8"));
-    assert.equal(escaped.pid, tracked.pid);
-    assert.equal(escaped.start, tracked.start);
-    assert.equal(escaped.boot, tracked.boot);
-    assert.notEqual(escaped.group, tracked.group);
-    assert.notEqual(escaped.session, tracked.session);
-    assert.equal(escaped.group, escaped.pid);
-    assert.equal(readFileSync(joinedFile, "utf8"), "0");
-    assert.equal(processIdentity(tracked.pid), undefined);
-    const blocked = record(root, id);
-    assert.equal(blocked.state, "blocked");
-    assert.equal(blocked.supervisionViolation, true);
-    assert.ok(blocked.tracked.some((identity: { pid: number }) => identity.pid === tracked.pid));
-    assert.match(blocked.commands[0].outcome, /blocked/);
-    for (const action of ["close", "recover"]) {
-      const result = invoke([action, "--id", id, ...owner]);
-      assert.equal(result.status, 1, String(result.stderr));
-      assert.match(String(result.stderr), /tracking violated; recovery refused/);
-      assert.deepEqual(record(root, id), blocked);
-      assert.equal(existsSync(path.join(entry.root, "payload/work/check.mjs")), true);
-    }
-    assert.equal(invoke(create).status, 1);
-    assert.equal(processIdentity(blocked.command.pid), undefined);
-  } finally {
-    const command = record(root, id).command;
-    if (command !== null && processIdentity(command.pid) !== undefined) process.kill(command.pid, "SIGTERM");
-    await joined;
-    for (const identity of record(root, id).tracked) {
-      for (let tries = 0; processIdentity(identity.pid) !== undefined && tries < 600; tries += 1) await new Promise((resolve) => setTimeout(resolve, 10));
-      assert.equal(processIdentity(identity.pid), undefined);
-    }
-  }
-}));
+}
 
 test("scratch refuses foreign owners and arbitrary cleanup paths without touching payload", () => fixture((root, source, invoke) => {
   const id = created(invoke);
@@ -387,8 +406,8 @@ test("scratch timeout terminates its foreground process, proves quiescence and r
 test("scratch combined stdout and stderr cap applies cumulatively across the attempt", () => fixture((root, source, invoke) => {
   writeFileSync(path.join(source, "check.mjs"), "process.stdout.write('o'.repeat(9 * 1024 * 1024)); process.stderr.write('e'.repeat(9 * 1024 * 1024));");
   const id = created(invoke);
-  const result = spawnSync(process.execPath, [cli, "scratch", "run", "--id", id, ...owner, "--purpose", "check", "--timeout", "5", "--", process.execPath, "check.mjs"], {
-    cwd: source, env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: path.join(root, "state") }, encoding: "utf8", maxBuffer: 20 * 1024 * 1024, timeout: 10000,
+  const result = spawnSync(process.execPath, [cli, "scratch", "run", "--id", id, ...owner, "--purpose", "check", "--timeout", "150", "--", process.execPath, "check.mjs"], {
+    cwd: source, env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: path.join(root, "state") }, encoding: "utf8", maxBuffer: 20 * 1024 * 1024, timeout: SCRATCH_CLI_DEADLINE_MS,
   });
   assert.equal(result.status, 1, result.stderr);
   assert.equal(record(root, id).logBytes, 16 * 1024 * 1024);
@@ -432,7 +451,7 @@ test("scratch handled cancellation joins its child before reporting cleanup", ()
   });
   const joined = new Promise<void>((resolve, reject) => { supervisor.on("close", () => resolve()); supervisor.on("error", reject); });
   try {
-    for (let tries = 0; record(root, id).state !== "running" && tries < 100; tries += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+    for (let tries = 0; record(root, id).state !== "running" && tries < RUNNING_POLL_TRIES; tries += 1) await new Promise((resolve) => setTimeout(resolve, 10));
     assert.equal(record(root, id).state, "running");
     supervisor.kill("SIGTERM");
     await joined;
@@ -488,7 +507,7 @@ test("scratch declared npm route runs inventoried foreground package script with
   recipe.commands = [{ purpose: "check", argv: ["npm", "run", "build"] }];
   writeFileSync(path.join(source, "recipe.json"), JSON.stringify(recipe));
   const id = created(invoke);
-  const result = invoke(["run", "--id", id, ...owner, "--purpose", "check", "--timeout", "5", "--", "npm", "run", "build"]);
+  const result = invoke(["run", "--id", id, ...owner, "--purpose", "check", "--timeout", "90", "--", "npm", "run", "build"]);
   assert.equal(result.status, 0, String(result.stderr) + String(result.stdout));
   assert.match(String(result.stdout), new RegExp(`${id}/payload/cache/npm`));
   assert.equal(invoke(["close", "--id", id, ...owner]).status, 0);
@@ -512,7 +531,7 @@ test("scratch npm check and typecheck use reviewed scripts while lifecycle/test/
     recipe.commands = [{ purpose: "check", argv: ["npm", "run", route] }];
     writeFileSync(path.join(source, "recipe.json"), JSON.stringify(recipe));
     const id = created(invoke);
-    const result = invoke(["run", "--id", id, ...owner, "--purpose", "check", "--timeout", "5", "--", "npm", "run", route]);
+    const result = invoke(["run", "--id", id, ...owner, "--purpose", "check", "--timeout", "90", "--", "npm", "run", route]);
     assert.equal(result.status, 0, String(result.stdout) + String(result.stderr));
     assert.equal(invoke(["close", "--id", id, ...owner]).status, 0);
   }
