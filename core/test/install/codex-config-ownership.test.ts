@@ -3,11 +3,19 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, test } from "node:test";
-import { CONFIG_MARKER_END, CONFIG_MARKER_START, FEATURE_MARKER_END, FEATURE_MARKER_START } from "../../src/install/codex-config.ts";
-import { inspectCodexConfig, OSO_OWNED_CONFIG_PATHS, rebuildManagedConfig } from "../../src/install/codex.ts";
+import {
+  CONFIG_MARKER_END,
+  CONFIG_MARKER_START,
+  FEATURE_MARKER_END,
+  FEATURE_MARKER_START,
+  renderCodexManagedConfig,
+} from "../../src/install/codex-config.ts";
+import { inspectCodexConfig, operatorAgentsNotice, OSO_OWNED_CONFIG_PATHS, rebuildManagedConfig } from "../../src/install/codex.ts";
 import { provedSomething } from "../support/proved.ts";
 
 const FALLOW_COMMAND = "/usr/bin/fallow-mcp";
+const OPERATOR_AGENTS_CONFIG =
+  '[agents]\nmax_threads = 6\njob_max_runtime_seconds = 900\n\n[agents.reviewer]\ndescription = "an operator role"\n';
 
 const sandbox = mkdtempSync(path.join(tmpdir(), "oso-codex-ownership-"));
 after(() => rmSync(sandbox, { recursive: true, force: true }));
@@ -37,7 +45,7 @@ const OPERATOR_SHAPES: readonly Readonly<{ named: string; text: string }>[] = [
 
 const OWNED_KEY_SHAPES: readonly Readonly<{ named: string; text: string; owned: boolean }>[] = [
   { named: "default_permissions at root outside the region", text: 'default_permissions = "oso"\n\n[history]\nx = 1\n', owned: true },
-  { named: "[agents] outside the region", text: "[agents]\nmax_threads = 4\n", owned: true },
+  { named: "[agents] outside the region, which Codex owns and oso-code no longer writes", text: "[agents]\nmax_threads = 4\n", owned: false },
   { named: "[shell_environment_policy.set] outside the region", text: '[shell_environment_policy.set]\nOSO_AGENT = "1"\n', owned: true },
   { named: "[mcp_servers.context7] outside the region", text: '[mcp_servers.context7]\nurl = "https://example.invalid"\n', owned: true },
   { named: "[mcp_servers.fallow] outside the region", text: '[mcp_servers.fallow]\ncommand = "x"\n', owned: true },
@@ -117,6 +125,40 @@ describe("row two: oso-owned keys outside the region are preserved, validated, a
     const operator = "# keep me\nkey = 'literal \\ value'\n\n[history]\nx = 1\n";
     const rebuilt = rebuildManagedConfig(operator, codexHome, runtimeRoot, FALLOW_COMMAND);
     assert.ok(rebuilt.includes("# keep me\nkey = 'literal \\ value'\n"));
+  });
+});
+
+describe("row three: Codex owns its own subagent threads, so the managed region names none of their settings", () => {
+  for (const released of ["[agents]", "max_threads", "max_depth", "job_max_runtime_seconds"]) {
+    test(`the rendered managed region writes no ${released}, and the unrelated glob_scan_max_depth is no false positive`, () => {
+      const lines = renderCodexManagedConfig(codexHome, runtimeRoot, FALLOW_COMMAND).split("\n");
+      assert.deepEqual(lines.filter((line) => line === released || line.startsWith(`${released} =`)), []);
+    });
+  }
+
+  test("an operator [agents] outside the region admits the install rather than refusing it", () => {
+    assert.equal(inspectCodexConfig(OPERATOR_AGENTS_CONFIG, "config.toml"), undefined);
+  });
+
+  test("an operator [agents] survives the rebuild byte for byte", () => {
+    const rebuilt = rebuildManagedConfig(OPERATOR_AGENTS_CONFIG, codexHome, runtimeRoot, FALLOW_COMMAND);
+    assert.ok(rebuilt.includes("[agents]\nmax_threads = 6\njob_max_runtime_seconds = 900\n"));
+  });
+
+  test("the operator's own agent settings are named with their values, nested roles included", () => {
+    assert.equal(
+      operatorAgentsNotice(OPERATOR_AGENTS_CONFIG, "config.toml"),
+      `Codex [agents] is the operator's own: max_threads = 6, job_max_runtime_seconds = 900, reviewer.description = "an operator role"`,
+    );
+  });
+
+  test("a config naming no [agents] names nothing, so the report stays silent instead of inventing a default", () => {
+    assert.equal(operatorAgentsNotice('model = "gpt-5"\n\n[history]\nx = 1\n', "config.toml"), undefined);
+  });
+
+  test("the region oso-code writes is never named as the operator's own", () => {
+    const rebuilt = rebuildManagedConfig("", codexHome, runtimeRoot, FALLOW_COMMAND);
+    assert.equal(operatorAgentsNotice(rebuilt, "config.toml"), undefined);
   });
 });
 

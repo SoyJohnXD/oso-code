@@ -69,14 +69,26 @@ Then restart Claude Code.
 
 ### Codex
 
-The Codex path requires git, Node.js/npm, and the Codex CLI already installed at or above the supported floor — `0.146.0`, never `@latest`. The installer no longer installs or upgrades that CLI itself: it refuses a missing or older CLI and names `npm install --global @openai/codex@0.146.0` for that case, while accepting newer versions without downgrading them (ADR-0125). The current certification measurements target `0.146.0`; a newer accepted CLI is reported as above-pin where the verifier has a version-specific contract. Once the floor check passes, the installer transactionally installs the plugin, rendered user hooks, seven agent roles, bounded `config.toml` ownership blocks, MCP wiring, git gate, and the Impeccable skill mounted at a pinned Git tag. It preserves personal `[projects.*]` configuration and unrelated keys in shared tables such as `[features]`, and backs up every artifact it replaces. Reinstall also composes Engram's root instruction pointers with Oso's region and repairs only an exact clean official Engram marketplace cache that Codex left unregistered; modified, symlinked or unknown cache state is preserved and refused (ADR-0102).
+The Codex path requires git, Node.js/npm, and the Codex CLI already installed at or above the supported floor — `0.153.2`, never `@latest`. The installer no longer installs or upgrades that CLI itself: it refuses a missing or older CLI and names `npm install --global @openai/codex@0.153.2` for that case, while accepting newer versions without downgrading them (ADR-0125). The current certification measurements target `0.153.2`; a newer accepted CLI is reported as above-pin where the verifier has a version-specific contract. Once the floor check passes, the installer transactionally installs the plugin, rendered user hooks, seven agent roles, bounded `config.toml` ownership blocks, MCP wiring, git gate, and the Impeccable skill mounted at a pinned Git tag. It preserves personal `[projects.*]` configuration and unrelated keys in shared tables such as `[features]`, and backs up every artifact it replaces. Reinstall also composes Engram's root instruction pointers with Oso's region and repairs only an exact clean official Engram marketplace cache that Codex left unregistered; modified, symlinked or unknown cache state is preserved and refused (ADR-0102).
 
 Every run's own `install-backup-*` snapshot under `~/.local/state/oso-code` — separate from the one-time purge/restore below — records what it replaced in a manifest; `core.hooksPath` is the one thing no snapshot ever captures, since that value only ever lived in the installing run's own memory. Retention prunes these snapshots by total size on every run, always keeping the newest one (ADR-0124).
 
+To return the installed runtime to the release it replaced, use that snapshot. The install report's first line names the directory (`backup: …`), and the newest one is otherwise the last entry under `~/.local/state/oso-code/codex-backups`. Its `manifest` is one tab-separated `status<TAB>label<TAB>target` row per owned artifact, and `items/<label>` holds the bytes that target held before the run. `present` means restore those bytes over the target; `absent` means the run created the target and rolling back removes it. Stop Codex first, and roll back the whole snapshot rather than one label if the release moved more than the runtime:
+
 ```bash
-codex --version                         # must report 0.146.0 or newer
+backup="$HOME/.local/state/oso-code/codex-backups/install-backup-YYYYMMDD-HHMMSS-PID"
+cat "$backup/manifest"                       # read it before touching anything
+rm -rf "$HOME/.local/share/oso-code/runtime" # the `runtime` row's target
+cp -a "$backup/items/runtime" "$HOME/.local/share/oso-code/runtime"
+node bootstrap/oso.js verify --host codex
+```
+
+A rolled-back runtime is older than the checkout that installed it, so `verify` is expected to report the divergence: check out the matching release before re-running the installer, rather than reinstalling from a newer tree onto restored bytes. Nothing outside the manifest's targets is part of this route — the operator's own `config.toml` keys, `[agents]` included, are never in it, because the installer does not own them.
+
+```bash
+codex --version                         # must report 0.153.2 or newer
 # If it is missing or older, install the supported floor before continuing:
-npm install --global @openai/codex@0.146.0
+npm install --global @openai/codex@0.153.2
 node bootstrap/oso.js install --host codex --yes
 codex login                       # first install only; skip when already authenticated
 # Start a new Codex thread, open /hooks, and review/trust the installed hooks.

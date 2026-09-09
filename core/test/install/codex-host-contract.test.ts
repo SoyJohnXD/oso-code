@@ -21,8 +21,8 @@ const VERSION_REFUSAL_TEMPLATE =
   `run: npm install --global @openai/codex@${SUPPORTED_CODEX_VERSION}`;
 const SANDBOX_REFUSAL = "Codex rejected the merged config; the original config is unchanged";
 
-const VERSIONS_THE_PIN_REFUSES = ["0.145.9", "", "codex@0.146.0\n0.146.0"] as const;
-const VERSIONS_THE_FLOOR_ADMITS = ["0.146.0", "0.150.1", "1.0.0"] as const;
+const VERSIONS_THE_PIN_REFUSES = ["0.153.1", "", "codex@0.153.2\n0.153.2"] as const;
+const VERSIONS_THE_FLOOR_ADMITS = [SUPPORTED_CODEX_VERSION, "0.160.1", "1.0.0"] as const;
 
 const GIT_UNREACHABLE_ON_THE_INJECTED_PATH = skipUnlessPathResolvesExtensionlessNames();
 
@@ -78,7 +78,7 @@ describe("the pinned Codex version is an input the composition root reads, and a
   });
 
   test("a Codex measured behind the mise wrapper's banner meets the floor, so install proceeds and verify reads above-pin", () => {
-    const reading = versionFieldsOf("mise ~/.config/mise/config.toml tools: codex@0.152.0\ncodex-cli 0.152.0\n");
+    const reading = versionFieldsOf("mise ~/.config/mise/config.toml tools: codex@0.153.4\ncodex-cli 0.153.4\n");
     assert.equal(reading.kind, "matched");
     const measured = reading.kind === "matched" ? reading.version : undefined;
     const home = fixtureHome();
@@ -86,8 +86,8 @@ describe("the pinned Codex version is an input the composition root reads, and a
     const report = new VerifyReport();
     checkPinnedCodexVersion(report, pinnedHost({ version: measured }));
     const rendered = report.render();
-    assert.match(rendered, /^ok:\s+Codex CLI version \(0\.152\.0\)/m);
-    assert.match(rendered, /is newer than the 0\.146\.0 this release was verified against/);
+    assert.match(rendered, /^ok:\s+Codex CLI version \(0\.153\.4\)/m);
+    assert.ok(rendered.includes(`is newer than the ${SUPPORTED_CODEX_VERSION} this release was verified against`), rendered);
   });
 });
 

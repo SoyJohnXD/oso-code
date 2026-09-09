@@ -9,7 +9,7 @@ import {
   GLOBAL_MARKER_START,
   renderCodexManagedConfig,
 } from "./codex-config.ts";
-import { codexPathsFor, managedFeaturesStatus, normalizedEngramPointerConfig, type CodexPaths } from "./codex.ts";
+import { codexPathsFor, managedFeaturesStatus, normalizedEngramPointerConfig, operatorAgentsNotice, type CodexPaths } from "./codex.ts";
 import { type CodexHostProbes } from "./codex-host.ts";
 import {
   CODEX_HOOKS_MANIFEST,
@@ -85,6 +85,7 @@ export function verifyCodex(input: VerifyCodexInput): VerifyOutcome {
   checkAgentPayload(report, paths, input.repositoryRoot);
   checkMarketplacePayload(report, paths, input.repositoryRoot);
   checkManagedConfigRegion(report, paths, input.environment);
+  checkOperatorAgentSettings(report, paths, configParses);
   checkHostAcceptsOsoProfile(report, paths, input.host);
   checkGlobalGuidance(report, paths, input.repositoryRoot);
   checkEngramWiring(report, paths, configParses);
@@ -309,6 +310,12 @@ export function checkAgentPayload(report: VerifyReport, paths: CodexPaths, repos
   });
   for (const name of divergent) report.detail(`divergent agent: ${name}`);
   report.check(AGENT_PAYLOAD_CHECK, "exact", divergent.length === 0 ? "exact" : `divergent:${divergent.map((named) => ` ${named}`).join("")}`);
+}
+
+export function checkOperatorAgentSettings(report: VerifyReport, paths: CodexPaths, configParses: boolean): void {
+  if (!configParses || !isReadableRegularFile(paths.configFile)) return;
+  const notice = operatorAgentsNotice(readFileSync(paths.configFile, "utf8"), paths.configFile);
+  if (notice !== undefined) report.note(notice);
 }
 
 export function checkEngramWiring(report: VerifyReport, paths: CodexPaths, configParses: boolean): void {

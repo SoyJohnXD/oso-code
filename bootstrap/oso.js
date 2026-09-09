@@ -912,7 +912,7 @@ function errorMessageOf(cause) {
 
 // core/src/install/pins.ts
 var SUPPORTED_ENGRAM_VERSION = "1.20.0";
-var SUPPORTED_CODEX_VERSION = "0.146.0";
+var SUPPORTED_CODEX_VERSION = "0.153.2";
 var SUPPORTED_IMPECCABLE_VERSION = "4.0.2";
 var SUPPORTED_OPENCODE_VERSION = "1.18.22";
 var DOTTED_NUMERIC_VERSION = /^\d+(\.\d+)*$/;
@@ -1944,11 +1944,6 @@ function renderCodexManagedConfig(targetHome, runtimeRoot, fallowCommand) {
   const worktreeRoot = tomlQuote(path8.posix.join(targetHome, ".local", "state", "oso-code", "worktrees"));
   return [
     'default_permissions = "oso"',
-    "",
-    "[agents]",
-    "max_threads = 4",
-    "max_depth = 2",
-    "job_max_runtime_seconds = 1800",
     "",
     "[shell_environment_policy.set]",
     'OSO_AGENT = "1"',
@@ -3265,7 +3260,6 @@ var CODEX_REPAIR_BACKUP_FORMAT = "oso-code-codex-repair-v1";
 var CODEX_PURGE_BACKUP_FORMAT = "oso-code-codex-purge-v1";
 var OSO_OWNED_CONFIG_PATHS = [
   ["default_permissions"],
-  ["agents"],
   ["shell_environment_policy", "set"],
   ["mcp_servers", "context7"],
   ["mcp_servers", "fallow"],
@@ -3307,6 +3301,19 @@ function managedFeaturesStatus(text) {
 function ownedKeyPathsOutsideTheRegion(unmanagedText, file) {
   const document = parseTomlDocument(unmanagedText, file);
   return OSO_OWNED_CONFIG_PATHS.filter((keyPath) => holdsKeyPath(document, keyPath)).map((keyPath) => keyPath.join("."));
+}
+function operatorAgentsNotice(text, file) {
+  const outsideTheRegion = runTomlRegion(text, { action: "strip", startMarker: CONFIG_MARKER_START, endMarker: CONFIG_MARKER_END });
+  if (outsideTheRegion.exitCode !== 0) return void 0;
+  const agents = parseTomlDocument(outsideTheRegion.stdout, file)["agents"];
+  const settings = isRecord2(agents) ? settingLinesOf("", agents) : [];
+  return settings.length === 0 ? void 0 : `Codex [agents] is the operator's own: ${settings.join(", ")}`;
+}
+function settingLinesOf(prefix, table) {
+  return Object.entries(table).flatMap(([key, value]) => {
+    const name = prefix === "" ? key : `${prefix}.${key}`;
+    return isRecord2(value) ? settingLinesOf(name, value) : `${name} = ${JSON.stringify(value)}`;
+  });
 }
 function inspectCodexConfig(text, file) {
   const clean = runTomlRegion(text, { action: "strip", startMarker: CONFIG_MARKER_START, endMarker: CONFIG_MARKER_END });
@@ -3409,6 +3416,8 @@ function writeCodexInstall(input) {
   }
   const infoLines = [`backup: ${tx.backupRoot}`];
   if (input.host.versionNote !== void 0) infoLines.push(input.host.versionNote);
+  const agentsNotice = isReadableRegularFile(paths.configFile) ? operatorAgentsNotice(readFileSync10(paths.configFile, "utf8"), paths.configFile) : void 0;
+  if (agentsNotice !== void 0) infoLines.push(agentsNotice);
   const wiring = [];
   const fallow = resolveFallowCommandFor(input, paths);
   wiring.push(
@@ -5671,6 +5680,7 @@ function verifyCodex(input) {
   checkAgentPayload(report2, paths, input.repositoryRoot);
   checkMarketplacePayload(report2, paths, input.repositoryRoot);
   checkManagedConfigRegion(report2, paths, input.environment);
+  checkOperatorAgentSettings(report2, paths, configParses);
   checkHostAcceptsOsoProfile(report2, paths, input.host);
   checkGlobalGuidance(report2, paths, input.repositoryRoot);
   checkEngramWiring(report2, paths, configParses);
@@ -5874,6 +5884,11 @@ function checkAgentPayload(report2, paths, repositoryRoot2) {
   });
   for (const name of divergent) report2.detail(`divergent agent: ${name}`);
   report2.check(AGENT_PAYLOAD_CHECK, "exact", divergent.length === 0 ? "exact" : `divergent:${divergent.map((named) => ` ${named}`).join("")}`);
+}
+function checkOperatorAgentSettings(report2, paths, configParses) {
+  if (!configParses || !isReadableRegularFile(paths.configFile)) return;
+  const notice = operatorAgentsNotice(readFileSync15(paths.configFile, "utf8"), paths.configFile);
+  if (notice !== void 0) report2.note(notice);
 }
 function checkEngramWiring(report2, paths, configParses) {
   if (!configParses) {

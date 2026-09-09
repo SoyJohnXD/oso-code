@@ -54,11 +54,6 @@ export function renderCodexManagedConfig(targetHome: string, runtimeRoot: string
   return [
     'default_permissions = "oso"',
     "",
-    "[agents]",
-    "max_threads = 4",
-    "max_depth = 2",
-    "job_max_runtime_seconds = 1800",
-    "",
     "[shell_environment_policy.set]",
     'OSO_AGENT = "1"',
     `OSO_STATE_BIN = ${stateBin}`,

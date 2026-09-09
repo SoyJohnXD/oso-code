@@ -494,7 +494,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -510,7 +510,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -525,7 +525,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n"
       }
     },
     {
@@ -536,7 +536,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n[history]\n[mcp_servers.engram]\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n[history]\n[mcp_servers.engram]\n",
         "root": "",
         "sections": ""
       }
@@ -551,7 +551,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
         "root": "",
         "sections": ""
       }
@@ -565,7 +565,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -618,7 +618,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n",
         "root": "",
         "sections": ""
       }
@@ -648,7 +648,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -664,7 +664,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -679,7 +679,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "# oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n"
       }
     },
     {
@@ -690,7 +690,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n",
+        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n",
         "root": "",
         "sections": ""
       }
@@ -705,7 +705,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -719,7 +719,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -772,7 +772,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -802,7 +802,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -818,7 +818,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -833,7 +833,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "# oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n"
       }
     },
     {
@@ -844,7 +844,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n[history]\n[mcp_servers.engram]\n",
+        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n[history]\n[mcp_servers.engram]\n",
         "root": "",
         "sections": ""
       }
@@ -859,7 +859,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
+        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
         "root": "",
         "sections": ""
       }
@@ -873,7 +873,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -926,7 +926,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n",
+        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n",
         "root": "",
         "sections": ""
       }
@@ -956,7 +956,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -972,7 +972,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -987,7 +987,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n"
       }
     },
     {
@@ -998,7 +998,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n",
         "root": "",
         "sections": ""
       }
@@ -1013,7 +1013,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -1027,7 +1027,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -1080,7 +1080,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -1110,7 +1110,7 @@
       },
       "observed": {
         "exitCode": 5,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -1126,7 +1126,7 @@
       },
       "observed": {
         "exitCode": 5,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -1141,7 +1141,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n"
       }
     },
     {
@@ -1152,7 +1152,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n[agents]\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n[shell_environment_policy.set]\n",
         "root": "",
         "sections": ""
       }
@@ -1167,7 +1167,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -1181,7 +1181,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -1234,7 +1234,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -1264,7 +1264,7 @@
       },
       "observed": {
         "exitCode": 5,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -1280,7 +1280,7 @@
       },
       "observed": {
         "exitCode": 5,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -1295,7 +1295,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n"
       }
     },
     {
@@ -1306,7 +1306,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n",
         "root": "",
         "sections": ""
       }
@@ -1321,7 +1321,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -1335,7 +1335,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -1388,7 +1388,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -1403,7 +1403,7 @@
       },
       "observed": {
         "exitCode": 5,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -1449,7 +1449,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n"
       }
     },
     {
@@ -1460,7 +1460,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\ndefault_permissions = \"oso\"\n\n[agents]\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n",
         "root": "",
         "sections": ""
       }
@@ -1475,7 +1475,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -1489,7 +1489,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -1542,7 +1542,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -1572,7 +1572,7 @@
       },
       "observed": {
         "exitCode": 5,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -1588,7 +1588,7 @@
       },
       "observed": {
         "exitCode": 5,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -1603,7 +1603,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "# oso-code:start\n# oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n"
       }
     },
     {
@@ -1614,7 +1614,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:start\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n",
+        "stdout": "# oso-code:start\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n",
         "root": "",
         "sections": ""
       }
@@ -1629,7 +1629,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:start\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "# oso-code:start\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -1643,7 +1643,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:start\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "# oso-code:start\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -1696,7 +1696,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:start\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "# oso-code:start\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -1711,7 +1711,7 @@
       },
       "observed": {
         "exitCode": 5,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -1757,7 +1757,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "# oso-code:end\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:start\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:start\n"
       }
     },
     {
@@ -1768,7 +1768,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:end\ndefault_permissions = \"oso\"\n\n[agents]\n",
+        "stdout": "# oso-code:end\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n",
         "root": "",
         "sections": ""
       }
@@ -1783,7 +1783,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:end\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:start\n",
+        "stdout": "# oso-code:end\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:start\n",
         "root": "",
         "sections": ""
       }
@@ -1797,7 +1797,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:end\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:start\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "# oso-code:end\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:start\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -1850,7 +1850,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:end\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:start\n",
+        "stdout": "# oso-code:end\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:start\n",
         "root": "",
         "sections": ""
       }
@@ -2188,7 +2188,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -2204,7 +2204,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -2219,7 +2219,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "notice = \"\"\"\n# oso-code:start\nan escaped \\\"\"\" does not close it\n\"\"\"\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n"
       }
     },
     {
@@ -2230,7 +2230,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "notice = \"\"\"\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n",
+        "stdout": "notice = \"\"\"\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n",
         "root": "",
         "sections": ""
       }
@@ -2245,7 +2245,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "notice = \"\"\"\n# oso-code:start\nan escaped \\\"\"\" does not close it\n\"\"\"\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "notice = \"\"\"\n# oso-code:start\nan escaped \\\"\"\" does not close it\n\"\"\"\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -2259,7 +2259,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "notice = \"\"\"\n# oso-code:start\nan escaped \\\"\"\" does not close it\n\"\"\"\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "notice = \"\"\"\n# oso-code:start\nan escaped \\\"\"\" does not close it\n\"\"\"\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -2312,7 +2312,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "notice = \"\"\"\n# oso-code:start\nan escaped \\\"\"\" does not close it\n\"\"\"\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "notice = \"\"\"\n# oso-code:start\nan escaped \\\"\"\" does not close it\n\"\"\"\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -2650,7 +2650,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -2666,7 +2666,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -2681,7 +2681,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "server = { args = [\n# oso-code:start\n  \"--flag\",\n] }\n# oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n"
       }
     },
     {
@@ -2692,7 +2692,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "server = { args = [\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n",
+        "stdout": "server = { args = [\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n",
         "root": "",
         "sections": ""
       }
@@ -2707,7 +2707,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "server = { args = [\n# oso-code:start\n  \"--flag\",\n] }\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "server = { args = [\n# oso-code:start\n  \"--flag\",\n] }\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -2721,7 +2721,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "server = { args = [\n# oso-code:start\n  \"--flag\",\n] }\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "server = { args = [\n# oso-code:start\n  \"--flag\",\n] }\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -2774,7 +2774,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "server = { args = [\n# oso-code:start\n  \"--flag\",\n] }\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "server = { args = [\n# oso-code:start\n  \"--flag\",\n] }\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -2804,7 +2804,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -2820,7 +2820,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -2835,7 +2835,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "pattern = '['\n# oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n"
       }
     },
     {
@@ -2846,7 +2846,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "pattern = '['\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n[history]\n[mcp_servers.engram]\n",
+        "stdout": "pattern = '['\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n[history]\n[mcp_servers.engram]\n",
         "root": "",
         "sections": ""
       }
@@ -2861,7 +2861,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "pattern = '['\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
+        "stdout": "pattern = '['\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
         "root": "",
         "sections": ""
       }
@@ -2875,7 +2875,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "pattern = '['\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "pattern = '['\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -2928,7 +2928,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "pattern = '['\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n",
+        "stdout": "pattern = '['\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n",
         "root": "",
         "sections": ""
       }
@@ -2958,7 +2958,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -2974,7 +2974,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -2989,7 +2989,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "pattern = \"say \\\"[\\\" once\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n"
       }
     },
     {
@@ -3000,7 +3000,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "pattern = \"say \\\"[\\\" once\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n",
+        "stdout": "pattern = \"say \\\"[\\\" once\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n",
         "root": "",
         "sections": ""
       }
@@ -3015,7 +3015,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "pattern = \"say \\\"[\\\" once\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "pattern = \"say \\\"[\\\" once\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -3029,7 +3029,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "pattern = \"say \\\"[\\\" once\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "pattern = \"say \\\"[\\\" once\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -3082,7 +3082,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "pattern = \"say \\\"[\\\" once\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "pattern = \"say \\\"[\\\" once\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -3112,7 +3112,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -3128,7 +3128,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -3143,7 +3143,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "# a [ left open in prose\n# oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n"
       }
     },
     {
@@ -3154,7 +3154,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# a [ left open in prose\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n[history]\n[mcp_servers.engram]\n",
+        "stdout": "# a [ left open in prose\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n[history]\n[mcp_servers.engram]\n",
         "root": "",
         "sections": ""
       }
@@ -3169,7 +3169,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# a [ left open in prose\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
+        "stdout": "# a [ left open in prose\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
         "root": "",
         "sections": ""
       }
@@ -3183,7 +3183,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# a [ left open in prose\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "# a [ left open in prose\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -3236,7 +3236,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# a [ left open in prose\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n",
+        "stdout": "# a [ left open in prose\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n",
         "root": "",
         "sections": ""
       }
@@ -3266,7 +3266,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -3282,7 +3282,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -3297,7 +3297,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "]\n}\n# oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n"
       }
     },
     {
@@ -3308,7 +3308,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "]\n}\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n",
+        "stdout": "]\n}\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n",
         "root": "",
         "sections": ""
       }
@@ -3323,7 +3323,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "]\n}\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "]\n}\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -3337,7 +3337,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "]\n}\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "]\n}\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -3390,7 +3390,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "]\n}\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "]\n}\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -3405,7 +3405,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "[a[\nb = 1\n[c]\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
+        "stdout": "[a[\nb = 1\n[c]\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
         "root": "",
         "sections": ""
       }
@@ -3451,7 +3451,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "",
-        "sections": "[a[\nb = 1\n[c]\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n"
+        "sections": "[a[\nb = 1\n[c]\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n"
       }
     },
     {
@@ -3462,7 +3462,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "[a[\n[c]\n[agents]\n[history]\n[mcp_servers.engram]\n",
+        "stdout": "[a[\n[c]\n[shell_environment_policy.set]\n[history]\n[mcp_servers.engram]\n",
         "root": "",
         "sections": ""
       }
@@ -3477,7 +3477,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "[a[\nb = 1\n[c]\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
+        "stdout": "[a[\nb = 1\n[c]\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
         "root": "",
         "sections": ""
       }
@@ -3491,7 +3491,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "[a[\nb = 1\n[c]\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "[a[\nb = 1\n[c]\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -3544,7 +3544,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "[a[\nb = 1\n[c]\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
+        "stdout": "[a[\nb = 1\n[c]\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
         "root": "",
         "sections": ""
       }
@@ -3574,7 +3574,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -3590,7 +3590,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -3605,7 +3605,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "   # leading spaces before an operator comment\n\t\n\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\n\t   \n   # trailing spaces after it\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\t   \n   # trailing spaces after it\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n"
       }
     },
     {
@@ -3616,7 +3616,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "   # leading spaces before an operator comment\n\t\n\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n[history]\n[mcp_servers.engram]\n",
+        "stdout": "   # leading spaces before an operator comment\n\t\n\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n[history]\n[mcp_servers.engram]\n",
         "root": "",
         "sections": ""
       }
@@ -3631,7 +3631,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "   # leading spaces before an operator comment\n\t\n\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\t   \n   # trailing spaces after it\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
+        "stdout": "   # leading spaces before an operator comment\n\t\n\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\t   \n   # trailing spaces after it\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
         "root": "",
         "sections": ""
       }
@@ -3645,7 +3645,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "   # leading spaces before an operator comment\n\t\n\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\t   \n   # trailing spaces after it\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "   # leading spaces before an operator comment\n\t\n\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\t   \n   # trailing spaces after it\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -3698,7 +3698,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "   # leading spaces before an operator comment\n\t\n\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\t   \n   # trailing spaces after it\n\n[history]\npersistence = \"save-all\"\n\n",
+        "stdout": "   # leading spaces before an operator comment\n\t\n\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\t   \n   # trailing spaces after it\n\n[history]\npersistence = \"save-all\"\n\n",
         "root": "",
         "sections": ""
       }
@@ -3713,7 +3713,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:start \ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\t\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
+        "stdout": "# oso-code:start \ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\t\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
         "root": "",
         "sections": ""
       }
@@ -3759,7 +3759,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "# oso-code:start \ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\t\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\t\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n"
       }
     },
     {
@@ -3770,7 +3770,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:start \ndefault_permissions = \"oso\"\n\n[agents]\n[history]\n[mcp_servers.engram]\n",
+        "stdout": "# oso-code:start \ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n[history]\n[mcp_servers.engram]\n",
         "root": "",
         "sections": ""
       }
@@ -3785,7 +3785,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:start \ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\t\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
+        "stdout": "# oso-code:start \ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\t\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
         "root": "",
         "sections": ""
       }
@@ -3799,7 +3799,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:start \ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\t\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "# oso-code:start \ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\t\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -3852,7 +3852,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:start \ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\t\n\n[history]\npersistence = \"save-all\"\n\n",
+        "stdout": "# oso-code:start \ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\t\n\n[history]\npersistence = \"save-all\"\n\n",
         "root": "",
         "sections": ""
       }
@@ -3867,7 +3867,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": " # oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n # oso-code:end\n",
+        "stdout": " # oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n # oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -3913,7 +3913,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": " # oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n # oso-code:end\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n # oso-code:end\n"
       }
     },
     {
@@ -3924,7 +3924,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": " # oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n",
+        "stdout": " # oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n",
         "root": "",
         "sections": ""
       }
@@ -3939,7 +3939,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": " # oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n # oso-code:end\n",
+        "stdout": " # oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n # oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -3953,7 +3953,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": " # oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n # oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": " # oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n # oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -4006,7 +4006,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": " # oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n # oso-code:end\n",
+        "stdout": " # oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n # oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -4036,7 +4036,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -4052,7 +4052,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -4067,7 +4067,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\n[history]\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n[history]\n"
       }
     },
     {
@@ -4078,7 +4078,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n[history]\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n[history]\n",
         "root": "",
         "sections": ""
       }
@@ -4093,7 +4093,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n[history]\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n[history]\n",
         "root": "",
         "sections": ""
       }
@@ -4107,7 +4107,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n[history]\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n[history]\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -4160,7 +4160,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n[history]\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n[history]\n",
         "root": "",
         "sections": ""
       }
@@ -4175,7 +4175,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\r\nmodel = \"gpt-5\"\r\n\r\napproval_policy = 'on-request'\r\n\r\n# oso-code:start\r\ndefault_permissions = \"oso\"\r\n\r\n[agents]\r\nmax_threads = 4\r\n# oso-code:end\r\n\r\n[history]\r\npersistence = \"save-all\"\r\n\r\n[mcp_servers.engram]\r\ncommand = \"engram\"\r\n",
+        "stdout": "# an operator comment nobody owns\r\nmodel = \"gpt-5\"\r\n\r\napproval_policy = 'on-request'\r\n\r\n# oso-code:start\r\ndefault_permissions = \"oso\"\r\n\r\n[shell_environment_policy.set]\r\nOSO_AGENT = \"1\"\r\n# oso-code:end\r\n\r\n[history]\r\npersistence = \"save-all\"\r\n\r\n[mcp_servers.engram]\r\ncommand = \"engram\"\r\n",
         "root": "",
         "sections": ""
       }
@@ -4221,7 +4221,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "# an operator comment nobody owns\r\nmodel = \"gpt-5\"\r\n\r\napproval_policy = 'on-request'\r\n\r\n# oso-code:start\r\ndefault_permissions = \"oso\"\r\n\r\n",
-        "sections": "[agents]\r\nmax_threads = 4\r\n# oso-code:end\r\n\r\n[history]\r\npersistence = \"save-all\"\r\n\r\n[mcp_servers.engram]\r\ncommand = \"engram\"\r\n"
+        "sections": "[shell_environment_policy.set]\r\nOSO_AGENT = \"1\"\r\n# oso-code:end\r\n\r\n[history]\r\npersistence = \"save-all\"\r\n\r\n[mcp_servers.engram]\r\ncommand = \"engram\"\r\n"
       }
     },
     {
@@ -4232,7 +4232,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\r\nmodel = \"gpt-5\"\r\n\r\napproval_policy = 'on-request'\r\n\r\n# oso-code:start\r\ndefault_permissions = \"oso\"\r\n\r\n[agents]\r\n[history]\r\n[mcp_servers.engram]\r\n",
+        "stdout": "# an operator comment nobody owns\r\nmodel = \"gpt-5\"\r\n\r\napproval_policy = 'on-request'\r\n\r\n# oso-code:start\r\ndefault_permissions = \"oso\"\r\n\r\n[shell_environment_policy.set]\r\n[history]\r\n[mcp_servers.engram]\r\n",
         "root": "",
         "sections": ""
       }
@@ -4247,7 +4247,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\r\nmodel = \"gpt-5\"\r\n\r\napproval_policy = 'on-request'\r\n\r\n# oso-code:start\r\ndefault_permissions = \"oso\"\r\n\r\n[agents]\r\nmax_threads = 4\r\n# oso-code:end\r\n\r\n[history]\r\npersistence = \"save-all\"\r\n\r\n[mcp_servers.engram]\r\ncommand = \"engram\"\r\n",
+        "stdout": "# an operator comment nobody owns\r\nmodel = \"gpt-5\"\r\n\r\napproval_policy = 'on-request'\r\n\r\n# oso-code:start\r\ndefault_permissions = \"oso\"\r\n\r\n[shell_environment_policy.set]\r\nOSO_AGENT = \"1\"\r\n# oso-code:end\r\n\r\n[history]\r\npersistence = \"save-all\"\r\n\r\n[mcp_servers.engram]\r\ncommand = \"engram\"\r\n",
         "root": "",
         "sections": ""
       }
@@ -4261,7 +4261,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\r\nmodel = \"gpt-5\"\r\n\r\napproval_policy = 'on-request'\r\n\r\n# oso-code:start\r\ndefault_permissions = \"oso\"\r\n\r\n[agents]\r\nmax_threads = 4\r\n# oso-code:end\r\n\r\n[history]\r\npersistence = \"save-all\"\r\n\r\n[mcp_servers.engram]\r\ncommand = \"engram\"\r\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "# an operator comment nobody owns\r\nmodel = \"gpt-5\"\r\n\r\napproval_policy = 'on-request'\r\n\r\n# oso-code:start\r\ndefault_permissions = \"oso\"\r\n\r\n[shell_environment_policy.set]\r\nOSO_AGENT = \"1\"\r\n# oso-code:end\r\n\r\n[history]\r\npersistence = \"save-all\"\r\n\r\n[mcp_servers.engram]\r\ncommand = \"engram\"\r\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -4314,7 +4314,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\r\nmodel = \"gpt-5\"\r\n\r\napproval_policy = 'on-request'\r\n\r\n# oso-code:start\r\ndefault_permissions = \"oso\"\r\n\r\n[agents]\r\nmax_threads = 4\r\n# oso-code:end\r\n\r\n[history]\r\npersistence = \"save-all\"\r\n\r\n[mcp_servers.engram]\r\ncommand = \"engram\"\r\n",
+        "stdout": "# an operator comment nobody owns\r\nmodel = \"gpt-5\"\r\n\r\napproval_policy = 'on-request'\r\n\r\n# oso-code:start\r\ndefault_permissions = \"oso\"\r\n\r\n[shell_environment_policy.set]\r\nOSO_AGENT = \"1\"\r\n# oso-code:end\r\n\r\n[history]\r\npersistence = \"save-all\"\r\n\r\n[mcp_servers.engram]\r\ncommand = \"engram\"\r\n",
         "root": "",
         "sections": ""
       }
@@ -4498,7 +4498,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -4514,7 +4514,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -4529,7 +4529,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "x = \"a\rb\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n"
       }
     },
     {
@@ -4540,7 +4540,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "x = \"a\rb\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n",
+        "stdout": "x = \"a\rb\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n",
         "root": "",
         "sections": ""
       }
@@ -4555,7 +4555,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "x = \"a\rb\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "x = \"a\rb\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -4569,7 +4569,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "x = \"a\rb\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "x = \"a\rb\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -4622,7 +4622,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "x = \"a\rb\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "x = \"a\rb\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -6808,7 +6808,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -6824,7 +6824,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -6839,7 +6839,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n"
       }
     },
     {
@@ -6850,7 +6850,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n[history]\n[mcp_servers.engram]\n",
+        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n[history]\n[mcp_servers.engram]\n",
         "root": "",
         "sections": ""
       }
@@ -6865,7 +6865,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
+        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
         "root": "",
         "sections": ""
       }
@@ -6879,7 +6879,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -6898,7 +6898,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
+        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
         "root": "",
         "sections": ""
       }
@@ -6918,7 +6918,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
+        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
         "root": "",
         "sections": ""
       }
@@ -6932,7 +6932,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n",
+        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[history]\npersistence = \"save-all\"\n\n",
         "root": "",
         "sections": ""
       }
@@ -6962,7 +6962,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -6978,7 +6978,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -6993,7 +6993,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\n\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n"
       }
     },
     {
@@ -7004,7 +7004,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n[history]\n[mcp_servers.engram]\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n[history]\n[mcp_servers.engram]\n",
         "root": "",
         "sections": ""
       }
@@ -7019,7 +7019,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
         "root": "",
         "sections": ""
       }
@@ -7033,7 +7033,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -7052,7 +7052,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
         "root": "",
         "sections": ""
       }
@@ -7072,7 +7072,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n\n[history]\npersistence = \"save-all\"\n\n[mcp_servers.engram]\ncommand = \"engram\"\n",
         "root": "",
         "sections": ""
       }
@@ -7086,7 +7086,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n\n[history]\npersistence = \"save-all\"\n\n",
+        "stdout": "# an operator comment nobody owns\nmodel = \"gpt-5\"\n\napproval_policy = 'on-request'\n\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n\n[history]\npersistence = \"save-all\"\n\n",
         "root": "",
         "sections": ""
       }
@@ -7116,7 +7116,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -7132,7 +7132,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -7147,7 +7147,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "# oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n"
       }
     },
     {
@@ -7158,7 +7158,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n",
+        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n",
         "root": "",
         "sections": ""
       }
@@ -7173,7 +7173,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n",
+        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n",
         "root": "",
         "sections": ""
       }
@@ -7187,7 +7187,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -7206,7 +7206,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -7226,7 +7226,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -7240,7 +7240,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n",
+        "stdout": "# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n",
         "root": "",
         "sections": ""
       }
@@ -7424,7 +7424,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -7440,7 +7440,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -7455,7 +7455,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "model_instructions_file = \"/somewhere/else.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n"
       }
     },
     {
@@ -7466,7 +7466,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "model_instructions_file = \"/somewhere/else.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n",
+        "stdout": "model_instructions_file = \"/somewhere/else.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n",
         "root": "",
         "sections": ""
       }
@@ -7481,7 +7481,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "model_instructions_file = \"/somewhere/else.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "model_instructions_file = \"/somewhere/else.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -7495,7 +7495,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "model_instructions_file = \"/somewhere/else.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "model_instructions_file = \"/somewhere/else.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -7548,7 +7548,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "model_instructions_file = \"/somewhere/else.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "model_instructions_file = \"/somewhere/else.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -7578,7 +7578,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -7594,7 +7594,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -7609,7 +7609,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "model_instructions_file = /home/probe/.codex/engram-instructions.md\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n"
       }
     },
     {
@@ -7620,7 +7620,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "model_instructions_file = /home/probe/.codex/engram-instructions.md\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n",
+        "stdout": "model_instructions_file = /home/probe/.codex/engram-instructions.md\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n",
         "root": "",
         "sections": ""
       }
@@ -7635,7 +7635,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "model_instructions_file = /home/probe/.codex/engram-instructions.md\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "model_instructions_file = /home/probe/.codex/engram-instructions.md\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -7649,7 +7649,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "model_instructions_file = /home/probe/.codex/engram-instructions.md\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "model_instructions_file = /home/probe/.codex/engram-instructions.md\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -7702,7 +7702,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "model_instructions_file = /home/probe/.codex/engram-instructions.md\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "model_instructions_file = /home/probe/.codex/engram-instructions.md\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -7732,7 +7732,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -7748,7 +7748,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -7763,7 +7763,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n"
       }
     },
     {
@@ -7774,7 +7774,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n",
+        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n",
         "root": "",
         "sections": ""
       }
@@ -7789,7 +7789,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -7803,7 +7803,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -7856,7 +7856,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "model_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -7886,7 +7886,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -7902,7 +7902,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "default_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n",
+        "stdout": "default_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n",
         "root": "",
         "sections": ""
       }
@@ -7917,7 +7917,7 @@
         "exitCode": 0,
         "stdout": "",
         "root": "rows = [\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\n]\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n",
-        "sections": "[agents]\nmax_threads = 4\n# oso-code:end\n"
+        "sections": "[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n"
       }
     },
     {
@@ -7928,7 +7928,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "rows = [\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\n",
+        "stdout": "rows = [\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\n",
         "root": "",
         "sections": ""
       }
@@ -7943,7 +7943,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "rows = [\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\n]\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "rows = [\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\n]\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -7957,7 +7957,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "rows = [\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\n]\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
+        "stdout": "rows = [\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\n]\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n\n[features]\nhooks = true\nmulti_agent = true\n",
         "root": "",
         "sections": ""
       }
@@ -7976,7 +7976,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "rows = [\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\n]\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "rows = [\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\n]\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -7996,7 +7996,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "rows = [\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\n]\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "rows = [\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\n]\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }
@@ -8010,7 +8010,7 @@
       },
       "observed": {
         "exitCode": 0,
-        "stdout": "rows = [\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\n]\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[agents]\nmax_threads = 4\n# oso-code:end\n",
+        "stdout": "rows = [\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\n]\nmodel_instructions_file = \"/home/probe/.codex/engram-instructions.md\"\nexperimental_compact_prompt_file = \"/home/probe/.codex/engram-compact-prompt.md\"\n# oso-code:start\ndefault_permissions = \"oso\"\n\n[shell_environment_policy.set]\nOSO_AGENT = \"1\"\n# oso-code:end\n",
         "root": "",
         "sections": ""
       }

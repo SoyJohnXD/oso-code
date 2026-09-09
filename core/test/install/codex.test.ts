@@ -125,6 +125,17 @@ describe("oso install --host codex over a fixture HOME", () => {
     assert.equal(managedFeaturesStatus(config), "valid");
   });
 
+  test("it installs over an operator [agents] and names that block with its values in the report", () => {
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    mkdirSync(paths.codexHome, { recursive: true });
+    writeFileSync(paths.configFile, '[agents]\nmax_threads = 6\njob_max_runtime_seconds = 900\n');
+    const outcome = installCodex(inputFor(home));
+    assert.equal(outcome.exitCode, 0, outcome.report);
+    assert.match(outcome.report, /Codex \[agents\] is the operator's own: max_threads = 6, job_max_runtime_seconds = 900/);
+    assert.ok(readFileSync(paths.configFile, "utf8").includes("[agents]\nmax_threads = 6\njob_max_runtime_seconds = 900\n"));
+  });
+
   test("it deploys the published marketplace, runtime hooks, and seven agents", () => {
     const home = fixtureHome();
     const environment = inputFor(home).environment;

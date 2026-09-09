@@ -31,7 +31,7 @@ export const SHAPES_EXCLUDED_BY_CONSTRUCTION: readonly Readonly<{ named: string;
   },
 ];
 
-const MANAGED_BODY = ['default_permissions = "oso"', "", "[agents]", "max_threads = 4"];
+const MANAGED_BODY = ['default_permissions = "oso"', "", "[shell_environment_policy.set]", 'OSO_AGENT = "1"'];
 
 const REGION = [CONFIG_MARKER_START, ...MANAGED_BODY, CONFIG_MARKER_END];
 

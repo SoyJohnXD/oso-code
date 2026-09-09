@@ -48,10 +48,6 @@ This composes Codex's native approval UI with Oso's local digest and artifact ra
 
 This host exposes no foreground flag on a launch. Follow `../_shared/references/codex.md`'s **Completion handshake** and **Correction and quiescence** sections: current native final, exact UUID resolution, successful receipt wait and consume precede verdict interpretation. Their reuse and owned-handle requirements override neutral relaunch defaults without resetting loop caps.
 
-## The wave's readiness route
-
-`../_shared/parallel.md`'s readiness paragraph is opted in HERE for this host: READ `../_shared/references/codex.md`'s **Readiness and freshness** section NOW and follow it for every wave verification, slot reservation and freshness rebinding. That loop's dependency and isolation barriers, batching cap, all-green barrier, serialized green window and integration gate stay exactly as it writes them.
-
 ## The explorer
 
 Use Codex's built-in `explorer` role for §2 step 1. It inherits the parent Plan Mode's read-only permission, so it can map the surface without becoming an eighth oso-code role. Launch up to three with disjoint evidence targets from the intent, exactly as the neutral body requires.

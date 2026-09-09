@@ -215,8 +215,6 @@ describe("readiness-driven Codex verification delivers instructions, not native 
   testCodexOwnerObligations("readiness and freshness", [
     /A ready, isolated and quiescent slice may be verified while unrelated wave work is still in flight/,
     /inside the wave's existing dependency and isolation barriers and never in place of them/,
-    /Reserve an actually free verifier slot/,
-    /a completed agent's status is not proof that capacity was released/,
     /Default to one heavy suite or scratch materialization at a time/,
     /proven port, cache, output and environment isolation/,
     /existing sequential no-export route above once quiescence is proven, never a reduced check/,
@@ -263,12 +261,28 @@ describe("readiness-driven Codex verification delivers instructions, not native 
     assert.match(paragraph, /A verification opens only against a slot actually free, never one a finished agent is assumed to have released/);
   });
 
-  test("only the Codex plan binding opts that wave loop in", () => {
+  test("no host opts that wave loop in, so its slot rule binds nobody and every host keeps the unconditional default", () => {
     const binding = readRepoText("core/src/prose/skills/plan/references/codex.md");
-    assert.match(binding, /`\.\.\/_shared\/parallel\.md`'s readiness paragraph is opted in HERE/);
-    assert.match(binding, /\*\*Readiness and freshness\*\* section NOW/);
+    assert.doesNotMatch(binding, /`\.\.\/_shared\/parallel\.md`'s readiness paragraph is opted in HERE/);
     assert.equal(readRepoText("codex/skills/plan/references/codex.md"), renderReference(binding));
-    assert.doesNotMatch(readRepoText("core/src/prose/skills/plan/references/opencode.md"), /readiness/i);
-    assert.doesNotMatch(readRepoText("plugin/skills/plan/references/claude.md"), /readiness/i);
+    for (const opter of ["core/src/prose/skills/plan/references/opencode.md", "plugin/skills/plan/references/claude.md"]) {
+      assert.doesNotMatch(readRepoText(opter), /readiness/i);
+    }
   });
+});
+
+describe("Codex rations no child-agent capacity of its own", () => {
+  const RETIRED = [
+    /Reserve an actually free verifier slot/,
+    /a completed agent's status is not proof that capacity was released/,
+    /slot reservation/i,
+    /uncertain capacity or an unavailable capability/,
+  ];
+
+  for (const owner of [sharedReferencePath("codex"), sharedReferenceOutputPath("codex"), "codex/agents/oso-verifier.toml", "core/src/prose/agents/oso-verifier/codex.md"]) {
+    test(`${owner} rations no verifier slot and parks on no exhausted child capacity`, () => {
+      const policy = readRepoText(owner);
+      for (const retired of RETIRED) assert.doesNotMatch(policy, retired);
+    });
+  }
 });

@@ -25,6 +25,7 @@ import {
   checkManagedConfigRegion,
   checkMarketplacePayload,
   checkMcpToolTableDrift,
+  checkOperatorAgentSettings,
   checkPlanArtifactRoundTrip,
   checkPluginInstalled,
   checkStateRoundTrip,
@@ -236,10 +237,29 @@ describe("oso verify --host codex over a fixture HOME", () => {
     const home = fixtureHome();
     assert.equal(installCodex(inputFor(home)).exitCode, 0);
     const paths = codexPathsFor(home, inputFor(home).environment);
-    writeFileSync(paths.configFile, readFileSync(paths.configFile, "utf8").replace("max_threads = 4", "max_threads = 8"));
+    writeFileSync(paths.configFile, readFileSync(paths.configFile, "utf8").replace("glob_scan_max_depth = 6", "glob_scan_max_depth = 7"));
     const report = new VerifyReport();
     checkManagedConfigRegion(report, paths, inputFor(home).environment);
     assert.match(report.render(), /FAIL: managed Codex config — expected valid, got divergent/);
+  });
+
+  test("an operator [agents] is named with its values as a note, and adds no failure", () => {
+    const home = fixtureHome();
+    assert.equal(installCodex(inputFor(home)).exitCode, 0);
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    writeFileSync(paths.configFile, `[agents]\nmax_threads = 6\n\n${readFileSync(paths.configFile, "utf8")}`);
+    const report = new VerifyReport();
+    checkOperatorAgentSettings(report, paths, true);
+    assert.match(report.render(), /note: Codex \[agents\] is the operator's own: max_threads = 6/);
+    assert.equal(report.exitCode, 0);
+  });
+
+  test("a home whose config names no [agents] adds no note at all", () => {
+    const home = fixtureHome();
+    assert.equal(installCodex(inputFor(home)).exitCode, 0);
+    const report = new VerifyReport();
+    checkOperatorAgentSettings(report, codexPathsFor(home, inputFor(home).environment), true);
+    assert.doesNotMatch(report.render(), /\[agents\]/);
   });
 
   test("a doubled marker reads as malformed rather than as divergent", () => {

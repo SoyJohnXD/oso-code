@@ -4,7 +4,7 @@ Certification record for the Codex host, filled in by `core/test/certify/codex-a
 
 ## The pin
 
-Codex 0.146.0 — `SUPPORTED_CODEX_VERSION` in `core/src/install/pins.ts`, the version the smoke's own pin-relation row resolves the installed binary against.
+Codex 0.153.2 — `SUPPORTED_CODEX_VERSION` in `core/src/install/pins.ts`, the version the smoke's own pin-relation row resolves the installed binary against.
 
 ## Installer deployment
 
@@ -18,7 +18,7 @@ The disposable host probes recorded for this slice drove the measured CLI (versi
 
 | Row | What it reports | Divergence from `run_authenticated_smoke` |
 |---|---|---|
-| 1 | the installed Codex binary's relation to the 0.146.0 pin | new — the bash smoke carried no pin-relation check of its own |
+| 1 | the installed Codex binary's relation to the 0.153.2 pin | new — the bash smoke carried no pin-relation check of its own |
 | 2 | Codex authentication is a precondition the smoke reproduces before any exec is attempted | matches the bash's `Codex authentication` check by name |
 | 3–7 | the spawned `oso-integrator` agent's handoff consumed, the integrated file's content, the ancestor check, the branch-gone check, the worktree-gone check | the bash's single `authenticated integrator smoke` check folded these five facts into one pass/fail; the port decomposes it into five independent rows, so the two do not correspond one row to one check |
 | 8 | the integrator smoke fixture's temporary tree is removed, on both the success and the failure path | matches the bash's `integrator smoke fixture cleanup` check by name |

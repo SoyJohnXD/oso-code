@@ -64,7 +64,6 @@ const CODEX_PURGE_BACKUP_FORMAT = "oso-code-codex-purge-v1";
 
 export const OSO_OWNED_CONFIG_PATHS = [
   ["default_permissions"],
-  ["agents"],
   ["shell_environment_policy", "set"],
   ["mcp_servers", "context7"],
   ["mcp_servers", "fallow"],
@@ -144,6 +143,21 @@ export function managedFeaturesStatus(text: string): ManagedFeaturesStatus {
 export function ownedKeyPathsOutsideTheRegion(unmanagedText: string, file: string): string[] {
   const document = parseTomlDocument(unmanagedText, file);
   return OSO_OWNED_CONFIG_PATHS.filter((keyPath) => holdsKeyPath(document, keyPath)).map((keyPath) => keyPath.join("."));
+}
+
+export function operatorAgentsNotice(text: string, file: string): string | undefined {
+  const outsideTheRegion = runTomlRegion(text, { action: "strip", startMarker: CONFIG_MARKER_START, endMarker: CONFIG_MARKER_END });
+  if (outsideTheRegion.exitCode !== 0) return undefined;
+  const agents = parseTomlDocument(outsideTheRegion.stdout, file)["agents"];
+  const settings = isRecord(agents) ? settingLinesOf("", agents) : [];
+  return settings.length === 0 ? undefined : `Codex [agents] is the operator's own: ${settings.join(", ")}`;
+}
+
+function settingLinesOf(prefix: string, table: Record<string, unknown>): string[] {
+  return Object.entries(table).flatMap(([key, value]) => {
+    const name = prefix === "" ? key : `${prefix}.${key}`;
+    return isRecord(value) ? settingLinesOf(name, value) : `${name} = ${JSON.stringify(value)}`;
+  });
 }
 
 export function inspectCodexConfig(text: string, file: string): ConfigRefusal | undefined {
@@ -248,6 +262,10 @@ function writeCodexInstall(input: CodexCommandInput): CommandOutcome {
 
   const infoLines: string[] = [`backup: ${tx.backupRoot}`];
   if (input.host.versionNote !== undefined) infoLines.push(input.host.versionNote);
+  const agentsNotice = isReadableRegularFile(paths.configFile)
+    ? operatorAgentsNotice(readFileSync(paths.configFile, "utf8"), paths.configFile)
+    : undefined;
+  if (agentsNotice !== undefined) infoLines.push(agentsNotice);
   const wiring: WiringEntry[] = [];
   const fallow = resolveFallowCommandFor(input, paths);
   wiring.push(
