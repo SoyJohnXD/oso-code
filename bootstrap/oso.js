@@ -977,8 +977,6 @@ function codexHostProbes(environment) {
     acceptsConfig: (codexHome, configText) => sandboxAcceptsConfig(environment, codexHome, configText),
     sandbox: (argv) => hostRun(environment, ["sandbox", "-P", OSO_PERMISSION_PROFILE, "--", ...argv]),
     pluginListing: () => hostRun(environment, ["plugin", "list", "--json"]),
-    marketplaceListing: () => hostRun(environment, ["plugin", "marketplace", "list", "--json"]),
-    marketplaceRemove: (marketplaceName) => hostRun(environment, ["plugin", "marketplace", "remove", marketplaceName, "--json"]),
     marketplaceAdd: (source, ref) => hostRun(environment, ["plugin", "marketplace", "add", source, ...ref === void 0 ? [] : ["--ref", ref], "--json"]),
     pluginAdd: (pluginId) => hostRun(environment, ["plugin", "add", pluginId, "--json"])
   };
@@ -3002,9 +3000,6 @@ function namesKeyAtRoot(text, keys) {
   const literal = new RegExp(`^[${POSIX_SPACE}]*'(${keys})'[${POSIX_SPACE}]*([.=])`);
   return bare.test(withoutComment) || quoted.test(withoutComment) || literal.test(withoutComment);
 }
-function isPointer(text, key) {
-  return tomlKeyAssignment(text, key);
-}
 function decodedPointerValue(record, key) {
   try {
     const value = parseTomlDocument(record, key)[key];
@@ -3217,7 +3212,7 @@ function moveEngramPointers(records, request) {
       scanRoot(scanner, record);
       return;
     }
-    const afterPointer = afterRegion && (isPointer(record, modelKey) && decodedPointerValue(record, modelKey) === request.modelValue || isPointer(record, compactKey) && decodedPointerValue(record, compactKey) === request.compactValue);
+    const afterPointer = afterRegion && (tomlKeyAssignment(record, modelKey) && decodedPointerValue(record, modelKey) === request.modelValue || tomlKeyAssignment(record, compactKey) && decodedPointerValue(record, compactKey) === request.compactValue);
     const rootLine = lexicalRoot && (!inTable || afterPointer);
     if (lexicalRoot && record === request.startMarker) {
       starts += 1;
@@ -3228,13 +3223,13 @@ function moveEngramPointers(records, request) {
       endLine = number;
       afterRegion = true;
     }
-    if (rootLine && isPointer(record, modelKey)) {
+    if (rootLine && tomlKeyAssignment(record, modelKey)) {
       modelRows += 1;
       modelLine = number;
       pointerRows.add(number);
       if (decodedPointerValue(record, modelKey) !== request.modelValue) invalidModel = true;
     }
-    if (rootLine && isPointer(record, compactKey)) {
+    if (rootLine && tomlKeyAssignment(record, compactKey)) {
       compactRows += 1;
       compactLine = number;
       pointerRows.add(number);
@@ -3730,18 +3725,20 @@ function finalizeHostWrittenConfig(paths, host, operatorLeaves) {
   const pointers = normalizedEngramPointerConfig(paths, candidate);
   if (pointers.exitCode !== 0) throw new Error("Engram's instruction pointers are missing, duplicated, or unexpected");
   candidate = pointers.stdout;
-  const document = parseTomlDocument(candidate, paths.configFile);
-  const servers = document["mcp_servers"];
-  if (!isRecord2(servers) || !isRecord2(servers["engram"])) candidate += "\n[mcp_servers.engram]\n";
-  candidate = mergeEngramLeaves(candidate, { command: "engram", args: ["mcp", "--tools=agent"] }, paths.configFile);
-  const plugins = document["plugins"];
-  if (!isRecord2(plugins) || !isRecord2(plugins["engram@engram"])) candidate += '\n[plugins."engram@engram"]\n';
-  candidate = mergeEngramLeaves(candidate, { enabled: false }, paths.configFile, '[plugins."engram@engram"]');
+  candidate = ensureEngramTable(candidate, paths.configFile, { header: "[mcp_servers.engram]", keyPath: ["mcp_servers", "engram"], leaves: { command: "engram", args: ["mcp", "--tools=agent"] } });
+  candidate = ensureEngramTable(candidate, paths.configFile, { header: '[plugins."engram@engram"]', keyPath: ["plugins", "engram@engram"], leaves: { enabled: false } });
   const refusal = inspectCodexConfig(candidate, paths.configFile);
   if (refusal !== void 0) throw new Error(refusalMessage(refusal));
   if (managedFeaturesStatus(candidate) !== "valid") throw new Error(refusalMessage({ kind: "malformed-features" }));
   if (!host.acceptsConfig(paths.codexHome, candidate)) throw new Error(HOST_REJECTED_CONFIG);
   if (candidate !== original) writeFileSync7(paths.configFile, candidate, { mode: 384 });
+}
+function ensureEngramTable(text, file, table) {
+  const parent = parseTomlDocument(text, file)[table.keyPath[0]];
+  const declared = isRecord2(parent) && isRecord2(parent[table.keyPath[1]]);
+  return mergeEngramLeaves(declared ? text : `${text}
+${table.header}
+`, table.leaves, file, table.header);
 }
 function engramOperatorLeaves(configFile) {
   const document = parseTomlDocument(readFileSync10(configFile, "utf8"), configFile);

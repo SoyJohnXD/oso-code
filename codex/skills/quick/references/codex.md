@@ -2,7 +2,7 @@
 
 ## The delivery contract
 
-Follow the shared host [delivery contract](../_shared/references/codex.md#the-delivery-contract). Quick's quality-pass and security gates still require their verdicts.
+READ `../_shared/references/codex.md`'s **The delivery contract** section NOW. Quick's quality-pass and security gates still require their verdicts.
 
 ## Closure policy
 

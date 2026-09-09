@@ -1,4 +1,4 @@
-This host installs that skill as `triage`, with the payload path ending in `triage/SKILL.md`. This host's Debug skill is named `debug`.
+This host installs that skill as `triage`, with the payload path ending in `triage/SKILL.md`; before acting as a delegated child, read and follow `plugin/skills/_shared/references/codex.md#essential-memory` from the handed worktree. This host's Debug skill is named `debug`.
 
 The sandbox grants write access solely so the one failing check can be re-run — that access is never permission to edit a source file.
 

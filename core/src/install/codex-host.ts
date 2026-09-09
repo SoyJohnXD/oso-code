@@ -25,8 +25,6 @@ export type CodexHostProbes = Readonly<{
   acceptsConfig: (codexHome: string, configText: string) => boolean;
   sandbox: (argv: readonly string[]) => HostRun;
   pluginListing: () => HostRun;
-  marketplaceListing: () => HostRun;
-  marketplaceRemove: (marketplaceName: string) => HostRun;
   marketplaceAdd: (source: string, ref?: string) => HostRun;
   pluginAdd: (pluginId: string) => HostRun;
 }>;
@@ -53,8 +51,6 @@ export function codexHostProbes(environment: NodeJS.ProcessEnv): CodexHostProbes
     acceptsConfig: (codexHome, configText) => sandboxAcceptsConfig(environment, codexHome, configText),
     sandbox: (argv) => hostRun(environment, ["sandbox", "-P", OSO_PERMISSION_PROFILE, "--", ...argv]),
     pluginListing: () => hostRun(environment, ["plugin", "list", "--json"]),
-    marketplaceListing: () => hostRun(environment, ["plugin", "marketplace", "list", "--json"]),
-    marketplaceRemove: (marketplaceName) => hostRun(environment, ["plugin", "marketplace", "remove", marketplaceName, "--json"]),
     marketplaceAdd: (source, ref) =>
       hostRun(environment, ["plugin", "marketplace", "add", source, ...(ref === undefined ? [] : ["--ref", ref]), "--json"]),
     pluginAdd: (pluginId) => hostRun(environment, ["plugin", "add", pluginId, "--json"]),

@@ -1,6 +1,6 @@
 import { PlanFailure, type PlanPresentationBinding } from "../state/plan.ts";
 import { isErrnoException, isNameToken, sha256Hex } from "../state/store.ts";
-import { CODEX_METADATA_READINESS_MS, CodexMetadataFailure, readBoundedRegularFile, readCodexSessionMetadata } from "./codex-session-metadata.ts";
+import { CODEX_METADATA_READINESS_MS, CodexMetadataFailure, isRecord, readBoundedRegularFile, readCodexSessionMetadata } from "./codex-session-metadata.ts";
 import { topLevelEscapedField, topLevelRawField, type HookEnvelope } from "./envelope.ts";
 
 export const PLAN_MARKER = "<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->";
@@ -39,7 +39,7 @@ export function readCodexTranscript(envelope: HookEnvelope): NativeRecord[] {
   }
 }
 
-export function resolveCodexPresentation(envelope: HookEnvelope, precedingApproval = false): CodexPresentation {
+export function resolveCodexPresentation(envelope: HookEnvelope, { precedingApproval = false }: Readonly<{ precedingApproval?: boolean }> = {}): CodexPresentation {
   const { segment, turnId } = presentationSegment(readCodexTranscript(envelope), envelope.turnId, precedingApproval);
   const { final, raw, visible, plans, messageId } = finalPair(segment, envelope.sessionId, turnId);
   if (!precedingApproval && visible !== envelope.lastAssistantMessage && (visible.endsWith("\n") || `${visible}\n` !== envelope.lastAssistantMessage)) throw new CodexPresentationFailure("stop-final-mismatch");
@@ -102,12 +102,12 @@ function finalPair(segment: NativeRecord[], sessionId: string, turnId: string) {
 
 function pairedDocument(input: Readonly<{ visible: string; rawText: string; plans: NativeRecord[]; sessionId: string; turnId: string; envelope: HookEnvelope; precedingApproval: boolean }>): Pick<CodexPresentation, "digest" | "document"> {
   const { visible, rawText, plans } = input;
+  const wire = input.precedingApproval ? JSON.stringify(visible).slice(1, -1) : input.envelope.escapedLastAssistantMessage;
   const blocks = [...rawText.matchAll(/<proposed_plan>([\s\S]*?)<\/proposed_plan>/g)];
   if (blocks.length === 0) {
     if (plans.length !== 0 || rawText.includes("<proposed_plan") || rawText !== visible) throw new CodexPresentationFailure("unpaired-plan");
     const document = withoutMarker(visible);
     if (document === "") throw new CodexPresentationFailure("empty-plan");
-    const wire = input.precedingApproval ? JSON.stringify(visible).slice(1, -1) : input.envelope.escapedLastAssistantMessage;
     return { document, digest: sha256Hex(wire) };
   }
   if (blocks.length !== 1 || plans.length !== 1 || rawText.split("<proposed_plan>").length !== 2 || rawText.split("</proposed_plan>").length !== 2) throw new CodexPresentationFailure("ambiguous-plan");
@@ -118,20 +118,23 @@ function pairedDocument(input: Readonly<{ visible: string; rawText: string; plan
   const document = planItem["text"];
   if (typeof document !== "string" || document === "") throw new CodexPresentationFailure("empty-plan");
   if (document.includes(PLAN_MARKER_PREFIX) || blocks[0]?.[1] !== `\n${document}`) throw new CodexPresentationFailure("plan-body-mismatch");
-  withoutMarker(rawText);
+  requireMarkerPlacement(rawText);
   const split = visible === PLAN_MARKER || visible === `${PLAN_MARKER}\n`;
   if (!split && visible !== rawText) throw new CodexPresentationFailure("raw-final-mismatch");
   if (split && rawText !== `<proposed_plan>\n${document}</proposed_plan>\n${visible}`) throw new CodexPresentationFailure("split-framing-mismatch");
-  const wire = input.precedingApproval ? JSON.stringify(visible).slice(1, -1) : input.envelope.escapedLastAssistantMessage;
   const rawItem = topLevelRawField(topLevelRawField(plan.wire, "payload"), "item");
   const digestInput = split ? `${topLevelEscapedField(rawItem, "text")}\\n${wire}` : wire;
   return { document, digest: sha256Hex(digestInput) };
 }
 
 function withoutMarker(text: string): string {
+  return requireMarkerPlacement(text).slice(0, -PLAN_MARKER.length - 1);
+}
+
+function requireMarkerPlacement(text: string): string {
   const ended = text.endsWith("\n") ? text.slice(0, -1) : text;
   if (!ended.endsWith(`\n${PLAN_MARKER}`) || ended.split(PLAN_MARKER_PREFIX).length !== 2) throw new CodexPresentationFailure("marker-placement");
-  return ended.slice(0, -PLAN_MARKER.length - 1);
+  return ended;
 }
 
 export function isTask(record: NativeRecord): boolean {
@@ -155,8 +158,4 @@ function requireOwner(record: NativeRecord, sessionId: string, turnId: string): 
 function textContent(content: unknown, type: string): string {
   if (!Array.isArray(content) || content.length !== 1 || !isRecord(content[0]) || content[0]["type"] !== type || typeof content[0]["text"] !== "string") throw new CodexPresentationFailure("malformed-content");
   return content[0]["text"];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

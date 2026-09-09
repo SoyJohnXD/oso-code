@@ -24,7 +24,7 @@ export function readCodexSessionMetadata(file: string, deadline: number): CodexS
   } catch (error) {
     throw new CodexMetadataFailure(`invalid first session record at ${file}`, { cause: error });
   }
-  if (!isObject(record) || record["type"] !== "session_meta" || !isObject(record["payload"])) {
+  if (!isRecord(record) || record["type"] !== "session_meta" || !isRecord(record["payload"])) {
     throw new CodexMetadataFailure(`missing first session_meta record at ${file}`);
   }
   const payload = record["payload"];
@@ -90,14 +90,14 @@ function requireSameFile(before: Stats, after: Stats, file: string): void {
   }
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function nativeThreadSpawn(source: unknown): Readonly<Record<string, unknown>> | undefined {
-  if (!isObject(source) || !("subagent" in source)) return undefined;
+  if (!isRecord(source) || !("subagent" in source)) return undefined;
   const subagent = source["subagent"];
-  if (!isObject(subagent) || !isObject(subagent["thread_spawn"])) {
+  if (!isRecord(subagent) || !isRecord(subagent["thread_spawn"])) {
     throw new CodexMetadataFailure("unrecognized native subagent provenance");
   }
   return subagent["thread_spawn"];

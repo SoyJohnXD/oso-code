@@ -204,8 +204,8 @@ var SHELL_WORDS_THIS_LEXER_READS = /* @__PURE__ */ new Set([
   "{",
   "}"
 ]);
-function lexShellCommands(commandLine, unreadExpandedExecutables = false) {
-  return new CommandLineLexer(commandLine, 0, unreadExpandedExecutables).lex();
+function lexShellCommands(commandLine, { unreadExpandedExecutables = false } = {}) {
+  return new CommandLineLexer(commandLine, 0, { unreadExpandedExecutables }).lex();
 }
 function basenameOf(word) {
   const lastSlash = word.lastIndexOf("/");
@@ -356,7 +356,7 @@ var CommandLineLexer = class _CommandLineLexer {
   unreadStdin = "";
   commandTokens = [];
   records = [];
-  constructor(commandLine, depth, unreadExpandedExecutables) {
+  constructor(commandLine, depth, { unreadExpandedExecutables }) {
     this.rest = `${commandLine}
 `;
     this.depth = depth;
@@ -600,7 +600,7 @@ var CommandLineLexer = class _CommandLineLexer {
       this.markUnread();
       return;
     }
-    this.nested.push(...new _CommandLineLexer(payload, this.depth + 1, this.unreadExpandedExecutables).lex());
+    this.nested.push(...new _CommandLineLexer(payload, this.depth + 1, { unreadExpandedExecutables: this.unreadExpandedExecutables }).lex());
   }
   markUnread() {
     this.nested.push(UNREAD_PAYLOAD);
@@ -846,23 +846,27 @@ function topLevelRawField(payload, field) {
   const tokens = [...payload.matchAll(/"(?:[^"\\]|\\[\s\S])*"|[{}\[\]:,]|[^\s{}\[\]:,]+/g)];
   let depth = 0;
   for (let index = 0; index < tokens.length; index++) {
-    const token = tokens[index];
-    const text = token?.[0];
+    const text = tokens[index]?.[0];
     if (depth === 1 && text?.startsWith('"') && tokens[index + 1]?.[0] === ":" && JSON.parse(text) === field) {
-      const start = tokens[index + 2];
-      if (start === void 0) return "";
-      if (start[0] !== "{" && start[0] !== "[") return start[0];
-      let nested = 0;
-      for (const value of tokens.slice(index + 2)) {
-        if (value[0] === "{" || value[0] === "[") nested++;
-        if (value[0] === "}" || value[0] === "]") nested--;
-        if (nested === 0) return payload.slice(start.index, value.index + value[0].length);
-      }
+      const raw = rawValueOf(payload, tokens.slice(index + 2));
+      if (raw !== void 0) return raw;
     }
     if (text === "{" || text === "[") depth++;
     if (text === "}" || text === "]") depth--;
   }
   return "";
+}
+function rawValueOf(payload, valueTokens) {
+  const start = valueTokens[0];
+  if (start === void 0) return "";
+  if (start[0] !== "{" && start[0] !== "[") return start[0];
+  let nested = 0;
+  for (const token of valueTokens) {
+    if (token[0] === "{" || token[0] === "[") nested++;
+    if (token[0] === "}" || token[0] === "]") nested--;
+    if (nested === 0) return payload.slice(start.index, token.index + token[0].length);
+  }
+  return void 0;
 }
 function hookIdentityField(payload, caller, field) {
   if (caller.host !== "codex") return jsonField(payload, field);
@@ -1937,11 +1941,11 @@ function mentionsASubject(text, subjects) {
 }
 
 // core/src/shell/line-verdict.ts
-function lineVerdict(commandLine, judge, unreadExpandedExecutables = false) {
+function lineVerdict(commandLine, judge, { unreadExpandedExecutables = false } = {}) {
   let verdict = "clear";
   let tokens = [];
   let stdin = "";
-  for (const record of lexShellCommands(commandLine, unreadExpandedExecutables)) {
+  for (const record of lexShellCommands(commandLine, { unreadExpandedExecutables })) {
     switch (record.kind) {
       case "unreadPayload":
         if (verdict === "clear") verdict = "unread";
@@ -2082,7 +2086,7 @@ function readCodexSessionMetadata(file, deadline) {
   } catch (error) {
     throw new CodexMetadataFailure(`invalid first session record at ${file}`, { cause: error });
   }
-  if (!isObject(record) || record["type"] !== "session_meta" || !isObject(record["payload"])) {
+  if (!isRecord(record) || record["type"] !== "session_meta" || !isRecord(record["payload"])) {
     throw new CodexMetadataFailure(`missing first session_meta record at ${file}`);
   }
   const payload = record["payload"];
@@ -2146,13 +2150,13 @@ function requireSameFile(before, after, file) {
     throw new CodexMetadataFailure(`file identity changed while reading ${file}`);
   }
 }
-function isObject(value) {
+function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function nativeThreadSpawn(source) {
-  if (!isObject(source) || !("subagent" in source)) return void 0;
+  if (!isRecord(source) || !("subagent" in source)) return void 0;
   const subagent = source["subagent"];
-  if (!isObject(subagent) || !isObject(subagent["thread_spawn"])) {
+  if (!isRecord(subagent) || !isRecord(subagent["thread_spawn"])) {
     throw new CodexMetadataFailure("unrecognized native subagent provenance");
   }
   return subagent["thread_spawn"];
@@ -2406,6 +2410,10 @@ function nativeRepositoryIdentity(cwd, deadline) {
   if (!path5.isAbsolute(common)) throw new HandoffFailure(`unknown native repository identity for ${cwd}`);
   return { receiptIdentity: common, commonDirectory: realpathSync(common) };
 }
+function isNativeResolutionFault(error) {
+  const gitExitedNonZero = error instanceof Error && "status" in error;
+  return error instanceof CodexMetadataFailure || error instanceof HandoffFailure || isErrnoException(error) || gitExitedNonZero;
+}
 
 // core/src/gates/handoff.ts
 var MARKER_LINE = /^oso-handoff:/;
@@ -2602,18 +2610,11 @@ function runApprovePlan(cwd, sessionId, digest, nativePresentation) {
   const stateFile = stateFileFor(cwd);
   mkdirSync5(stateRootDirectory(), { recursive: true });
   return withLock(stateFile, sessionId, () => {
-    if (!isReadableRegularFile(stateFile)) {
-      throw new PlanApprovalError(`no readable pending plan approval for session ${sessionId}`, { code: "pending-state-unreadable" });
-    }
-    if (readValue(stateFile, "plan_approval_session") !== sessionId) {
-      throw new PlanApprovalError("pending plan approval belongs to another session", { code: "foreign-approval-session" });
-    }
+    requireOwnApprovalState(stateFile, sessionId);
     if (readValue(stateFile, "mode") !== "plan") {
       throw new PlanApprovalError("pending approval is not attached to plan mode state", { code: "approval-not-plan-mode" });
     }
-    if (readValue(stateFile, "plan_approval") !== "pending") {
-      throw new PlanApprovalError("plan approval is not pending", { code: "approval-not-pending" });
-    }
+    requirePendingApproval(stateFile);
     if (readValue(stateFile, "plan_approval_digest") !== digest) {
       throw new PlanApprovalError("pending plan digest changed before approval", { code: "approval-digest-changed" });
     }
@@ -2652,7 +2653,7 @@ function runApprovePlan(cwd, sessionId, digest, nativePresentation) {
       }
     } else if (!isPrivateRegularFile(paths.approvedFile)) {
       throw new PlanFailure("presented plan snapshot is missing", { code: "presented-snapshot-missing" });
-    } else if (!byteIdentical(paths.currentFile, paths.approvedFile)) {
+    } else if (native !== void 0 && !byteIdentical(paths.currentFile, paths.approvedFile)) {
       throw new PlanFailure("current plan differs from the partially published approved snapshot", { code: "partial-publication-mismatch" });
     }
     writeStatePairs(stateFile, ["plan_approval=approved", `plan_snapshot_file=${paths.approvedFile}`], sessionId);
@@ -2667,15 +2668,8 @@ function runCancelPlan(cwd, sessionId, digest) {
   const stateFile = stateFileFor(cwd);
   mkdirSync5(stateRootDirectory(), { recursive: true });
   return withLock(stateFile, sessionId, () => {
-    if (!isReadableRegularFile(stateFile)) {
-      throw new PlanApprovalError(`no readable pending plan approval for session ${sessionId}`, { code: "pending-state-unreadable" });
-    }
-    if (readValue(stateFile, "plan_approval_session") !== sessionId) {
-      throw new PlanApprovalError("pending plan approval belongs to another session", { code: "foreign-approval-session" });
-    }
-    if (readValue(stateFile, "plan_approval") !== "pending") {
-      throw new PlanApprovalError("plan approval is not pending", { code: "approval-not-pending" });
-    }
+    requireOwnApprovalState(stateFile, sessionId);
+    requirePendingApproval(stateFile);
     if (readValue(stateFile, "plan_approval_digest") !== digest) {
       throw new PlanApprovalError("pending plan digest changed before cancellation", { code: "cancellation-digest-changed" });
     }
@@ -2743,6 +2737,19 @@ ${document}
     logEvent({ event: "plan-amended", session: sessionId, command: sliceId });
     return 0;
   });
+}
+function requireOwnApprovalState(stateFile, sessionId) {
+  if (!isReadableRegularFile(stateFile)) {
+    throw new PlanApprovalError(`no readable pending plan approval for session ${sessionId}`, { code: "pending-state-unreadable" });
+  }
+  if (readValue(stateFile, "plan_approval_session") !== sessionId) {
+    throw new PlanApprovalError("pending plan approval belongs to another session", { code: "foreign-approval-session" });
+  }
+}
+function requirePendingApproval(stateFile) {
+  if (readValue(stateFile, "plan_approval") !== "pending") {
+    throw new PlanApprovalError("plan approval is not pending", { code: "approval-not-pending" });
+  }
 }
 function byteIdentical(leftFile, rightFile) {
   return readFileSync4(leftFile).equals(readFileSync4(rightFile));
@@ -2830,7 +2837,7 @@ function readCodexTranscript(envelope) {
     throw new CodexPresentationFailure("unreadable-transcript", cause);
   }
 }
-function resolveCodexPresentation(envelope, precedingApproval = false) {
+function resolveCodexPresentation(envelope, { precedingApproval = false } = {}) {
   const { segment, turnId } = presentationSegment(readCodexTranscript(envelope), envelope.turnId, precedingApproval);
   const { final, raw, visible, plans, messageId } = finalPair(segment, envelope.sessionId, turnId);
   if (!precedingApproval && visible !== envelope.lastAssistantMessage && (visible.endsWith("\n") || `${visible}
@@ -2891,13 +2898,13 @@ function finalPair(segment, sessionId, turnId) {
 }
 function pairedDocument(input) {
   const { visible, rawText, plans } = input;
+  const wire = input.precedingApproval ? JSON.stringify(visible).slice(1, -1) : input.envelope.escapedLastAssistantMessage;
   const blocks = [...rawText.matchAll(/<proposed_plan>([\s\S]*?)<\/proposed_plan>/g)];
   if (blocks.length === 0) {
     if (plans.length !== 0 || rawText.includes("<proposed_plan") || rawText !== visible) throw new CodexPresentationFailure("unpaired-plan");
     const document2 = withoutMarker(visible);
     if (document2 === "") throw new CodexPresentationFailure("empty-plan");
-    const wire2 = input.precedingApproval ? JSON.stringify(visible).slice(1, -1) : input.envelope.escapedLastAssistantMessage;
-    return { document: document2, digest: sha256Hex(wire2) };
+    return { document: document2, digest: sha256Hex(wire) };
   }
   if (blocks.length !== 1 || plans.length !== 1 || rawText.split("<proposed_plan>").length !== 2 || rawText.split("</proposed_plan>").length !== 2) throw new CodexPresentationFailure("ambiguous-plan");
   const plan = plans[0];
@@ -2908,23 +2915,25 @@ function pairedDocument(input) {
   if (typeof document !== "string" || document === "") throw new CodexPresentationFailure("empty-plan");
   if (document.includes(PLAN_MARKER_PREFIX) || blocks[0]?.[1] !== `
 ${document}`) throw new CodexPresentationFailure("plan-body-mismatch");
-  withoutMarker(rawText);
+  requireMarkerPlacement(rawText);
   const split = visible === PLAN_MARKER || visible === `${PLAN_MARKER}
 `;
   if (!split && visible !== rawText) throw new CodexPresentationFailure("raw-final-mismatch");
   if (split && rawText !== `<proposed_plan>
 ${document}</proposed_plan>
 ${visible}`) throw new CodexPresentationFailure("split-framing-mismatch");
-  const wire = input.precedingApproval ? JSON.stringify(visible).slice(1, -1) : input.envelope.escapedLastAssistantMessage;
   const rawItem = topLevelRawField(topLevelRawField(plan.wire, "payload"), "item");
   const digestInput = split ? `${topLevelEscapedField(rawItem, "text")}\\n${wire}` : wire;
   return { document, digest: sha256Hex(digestInput) };
 }
 function withoutMarker(text) {
+  return requireMarkerPlacement(text).slice(0, -PLAN_MARKER.length - 1);
+}
+function requireMarkerPlacement(text) {
   const ended = text.endsWith("\n") ? text.slice(0, -1) : text;
   if (!ended.endsWith(`
 ${PLAN_MARKER}`) || ended.split(PLAN_MARKER_PREFIX).length !== 2) throw new CodexPresentationFailure("marker-placement");
-  return ended.slice(0, -PLAN_MARKER.length - 1);
+  return ended;
 }
 function isTask(record) {
   return record.type === "event_msg" && record.payload["type"] === "task_started";
@@ -2943,9 +2952,6 @@ function requireOwner(record, sessionId, turnId) {
 function textContent(content, type) {
   if (!Array.isArray(content) || content.length !== 1 || !isRecord(content[0]) || content[0]["type"] !== type || typeof content[0]["text"] !== "string") throw new CodexPresentationFailure("malformed-content");
   return content[0]["text"];
-}
-function isRecord(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 // core/src/hosts/codex-turn.ts
@@ -3102,18 +3108,13 @@ function amendPendingPlan(envelope, sessionId, turn) {
   if (readValue(stateFile, "plan_approval") !== PENDING) return SILENT;
   if (!PLAN_DIGEST.test(readValue(stateFile, "plan_approval_digest") ?? "")) return SILENT;
   try {
-    if (envelope.caller.host === "codex" && (readValue(stateFile, "plan_presentation_version") !== "1" || readValue(stateFile, "plan_presentation_status") === "failed")) {
-      if (readValue(stateFile, "plan_presentation_status") === "failed" && readValue(stateFile, "plan_current_file") === void 0) return { verdict: { kind: "context", additionalContext: AMENDMENT_GUIDANCE }, events: [] };
-      return { verdict: { kind: "context", additionalContext: `${AMENDMENT_GUIDANCE}
-
-Preserved document:
-${readPlanForReplacement(envelope.cwd, sessionId)}` }, events: [] };
+    const presentationFailed = readValue(stateFile, "plan_presentation_status") === "failed";
+    if (envelope.caller.host === "codex" && (readValue(stateFile, "plan_presentation_version") !== "1" || presentationFailed)) {
+      if (presentationFailed && readValue(stateFile, "plan_current_file") === void 0) return { verdict: { kind: "context", additionalContext: AMENDMENT_GUIDANCE }, events: [] };
+      return amendmentWithPreservedDocument(envelope.cwd, sessionId);
     }
     runAmendPlan(envelope.cwd, sessionId, FEEDBACK_AMENDMENT_LABEL, asCommandSubstitutionCaptures(envelope.prompt));
-    if (envelope.caller.host === "codex") return { verdict: { kind: "context", additionalContext: `${AMENDMENT_GUIDANCE}
-
-Preserved document:
-${readPlanForReplacement(envelope.cwd, sessionId)}` }, events: [] };
+    if (envelope.caller.host === "codex") return amendmentWithPreservedDocument(envelope.cwd, sessionId);
   } catch (cause) {
     if (envelope.caller.host === "codex") return nativeFailure(cause, sessionId, "amend");
     if (!isPlanRailFailure(cause)) throw cause;
@@ -3124,9 +3125,16 @@ ${readPlanForReplacement(envelope.cwd, sessionId)}` }, events: [] };
   }
   return { verdict: { kind: "context", additionalContext: LEGACY_AMENDMENT_GUIDANCE }, events: [] };
 }
+function amendmentWithPreservedDocument(cwd, sessionId) {
+  const guidance = `${AMENDMENT_GUIDANCE}
+
+Preserved document:
+${readPlanForReplacement(cwd, sessionId)}`;
+  return { verdict: { kind: "context", additionalContext: guidance }, events: [] };
+}
 function settlePendingPlan(envelope, sessionId, action, digest) {
   try {
-    if (action === "approve") runApprovePlan(envelope.cwd, sessionId, digest, envelope.caller.host === "codex" ? () => resolveCodexPresentation(envelope, true) : void 0);
+    if (action === "approve") runApprovePlan(envelope.cwd, sessionId, digest, envelope.caller.host === "codex" ? () => resolveCodexPresentation(envelope, { precedingApproval: true }) : void 0);
     else runCancelPlan(envelope.cwd, sessionId, digest);
   } catch (cause) {
     if (envelope.caller.host === "codex") return nativeFailure(cause, sessionId, action);
@@ -3154,7 +3162,7 @@ function controlPromptReaches(envelope, sessionId, action, stateFile) {
   if (!isReadableRegularFile(stateFile)) return control(UNREADABLE_PENDING_STATE);
   if (envelope.caller.host === "codex" && readValue(stateFile, "mode") === "plan" && readValue(stateFile, "plan_approval") === "approved" && readValue(stateFile, "plan_approval_session") === sessionId && readValue(stateFile, "plan_presentation_version") === "1") {
     try {
-      const latest = resolveCodexPresentation(envelope, true);
+      const latest = resolveCodexPresentation(envelope, { precedingApproval: true });
       if (!matchesPlanPresentation(stateFile, latest.binding)) return control(NOT_RECORDED);
     } catch (cause) {
       if (!(cause instanceof CodexPresentationFailure)) throw cause;
@@ -3903,19 +3911,7 @@ var TEARDOWN_GATE = {
   judge: judgeTeardown
 };
 function judgeTeardown({ envelope }) {
-  if (envelope.caller.host === "codex") {
-    const stateFile = stateFileFor(envelope.cwd);
-    if (!codexOwnsState(stateFile, envelope)) return NO_VERDICT;
-    try {
-      withLock(stateFile, envelope.sessionId, () => {
-        if (codexOwnsState(stateFile, envelope)) rmSync5(stateFile, { force: true });
-      }, "retain-existing");
-    } catch (error) {
-      if (!(error instanceof LockTimeoutError)) throw error;
-      return { verdict: { kind: "noVerdict" }, events: [{ event: "teardown-lock-retained", session: envelope.sessionId }] };
-    }
-    return NO_VERDICT;
-  }
+  if (envelope.caller.host === "codex") return codexTeardown(envelope);
   const sessionId = hookSessionId(envelope);
   const ownState = stateArmedBy(sessionId);
   removeWorktreesOf(sessionId, ownState);
@@ -3925,6 +3921,19 @@ function judgeTeardown({ envelope }) {
   clearRoadmapInFlightOf(sessionId);
   rotateAgedEventsLog();
   pruneAbandonedState(sessionId, ownState);
+  return NO_VERDICT;
+}
+function codexTeardown(envelope) {
+  const stateFile = stateFileFor(envelope.cwd);
+  if (!codexOwnsState(stateFile, envelope)) return NO_VERDICT;
+  try {
+    withLock(stateFile, envelope.sessionId, () => {
+      if (codexOwnsState(stateFile, envelope)) rmSync5(stateFile, { force: true });
+    }, "retain-existing");
+  } catch (error) {
+    if (!(error instanceof LockTimeoutError)) throw error;
+    return { verdict: { kind: "noVerdict" }, events: [{ event: "teardown-lock-retained", session: envelope.sessionId }] };
+  }
   return NO_VERDICT;
 }
 function codexOwnsState(stateFile, envelope) {
@@ -4099,7 +4108,7 @@ function codexMemoryDenial(envelope) {
     const executable = basenameOf(command.tokens[0] ?? "");
     if (executable !== "engram" && executable !== "engram.exe") return verdict;
     return ["search", "context", "help", "--help", "-h", "version", "--version", "-v"].includes(command.tokens[1] ?? "") ? verdict : "memory";
-  }, true);
+  }, { unreadExpandedExecutables: true });
   if (!memoryTool && cliVerdict === "clear") return void 0;
   const known = !memoryTool || TOOL_ROWS.some((row) => row.names.codex === tool);
   const cause = known ? unattestedCodexRoot(envelope) : "unknown Engram method";
@@ -4122,7 +4131,8 @@ function unattestedCodexRoot(envelope) {
     if (nativeRepositoryIdentity(native.cwd, deadline).commonDirectory !== nativeRepositoryIdentity(envelope.cwd, deadline).commonDirectory) return "native repository mismatch";
     return void 0;
   } catch (error) {
-    return error instanceof Error ? error.message : String(error);
+    if (!isNativeResolutionFault(error)) throw error;
+    return causeOf(error);
   }
 }
 function readAllowlist(argv) {

@@ -38,8 +38,6 @@ export function pinnedHost(overrides: Partial<CodexHostProbes> = {}): CodexHostP
     acceptsConfig: () => true,
     sandbox: () => NO_CODEX_ON_THIS_MACHINE,
     pluginListing: () => NO_CODEX_ON_THIS_MACHINE,
-    marketplaceListing: () => ({ ok: true, output: JSON.stringify({ marketplaces: [] }) }),
-    marketplaceRemove: () => ({ ok: true, output: JSON.stringify({ removed: true }) }),
     marketplaceAdd: (source) => ({
       ok: true,
       output: JSON.stringify({

@@ -175,16 +175,20 @@ test("feedback calls for a complete replacement and cancellation clears outstand
 });
 
 test("partial approved snapshot publication never skips current parity", () => {
-  scenario(({ records, stop, sandbox, approve, approval }) => {
+  scenario(({ records, stop, transcript, sandbox, approve, approval }) => {
     records.push(...presentation("first", valid));
     stop();
     const state = stateFileFor(sandbox.cwd);
     const presented = readValue(state, "plan_snapshot_file") as string;
-    renameSync(presented, presented.replace("presented-", "approved-"));
-    writeFileSync(readValue(state, "plan_current_file") as string, "changed\n");
-    assert.throws(() => runApprovePlan(sandbox.cwd, session, readValue(state, "plan_approval_digest") as string), /partially published/);
+    const published = presented.replace("presented-", "approved-");
+    renameSync(presented, published);
+    writeFileSync(published, "changed\n");
     records.push(started(approvalTurn, "default"));
-    assert.equal(approve().verdict.kind, "deny");
+    const refused = approve();
+    assert.equal(refused.verdict.kind, "deny");
+    assert.match(refused.stdout, /partial-publication-mismatch/);
+    const envelope = readEnvelope(JSON.stringify({ session_id: session, cwd: sandbox.cwd, transcript_path: transcript, turn_id: approvalTurn }), caller);
+    assert.throws(() => runApprovePlan(sandbox.cwd, session, readValue(state, "plan_approval_digest") as string, () => resolveCodexPresentation(envelope, { precedingApproval: true })), /partially published/);
     assert.equal(approval(), "pending");
   });
 });
@@ -290,7 +294,7 @@ test("native pairing validation runs under the existing approval lock", () => {
     const envelope = readEnvelope(JSON.stringify({ session_id: session, cwd: sandbox.cwd, transcript_path: transcript, turn_id: approvalTurn }), caller);
     assert.equal(runApprovePlan(sandbox.cwd, session, readValue(state, "plan_approval_digest") as string, () => {
       assert.equal(existsSync(`${state}.lock`), true);
-      return resolveCodexPresentation(envelope, true);
+      return resolveCodexPresentation(envelope, { precedingApproval: true });
     }), 0);
     assert.equal(existsSync(`${state}.lock`), false);
   });

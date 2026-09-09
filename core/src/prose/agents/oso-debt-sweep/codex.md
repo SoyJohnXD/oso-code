@@ -1,4 +1,4 @@
-This host installs that skill as `debt-sweep`, with the payload path ending in `debt-sweep/SKILL.md`.
+This host installs that skill as `debt-sweep`, with the payload path ending in `debt-sweep/SKILL.md`; before acting as a delegated child, read and follow `plugin/skills/_shared/references/codex.md#essential-memory` from the handed worktree.
 
 The sandbox grants write access solely so the project's zero-warnings bar can run — that access is never permission to edit a source file.
 

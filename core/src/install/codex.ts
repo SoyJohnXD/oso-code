@@ -596,18 +596,19 @@ function finalizeHostWrittenConfig(paths: CodexPaths, host: CodexHostProbes, ope
   const pointers = normalizedEngramPointerConfig(paths, candidate);
   if (pointers.exitCode !== 0) throw new Error("Engram's instruction pointers are missing, duplicated, or unexpected");
   candidate = pointers.stdout;
-  const document = parseTomlDocument(candidate, paths.configFile);
-  const servers = document["mcp_servers"];
-  if (!isRecord(servers) || !isRecord(servers["engram"])) candidate += '\n[mcp_servers.engram]\n';
-  candidate = mergeEngramLeaves(candidate, { command: "engram", args: ["mcp", "--tools=agent"] }, paths.configFile);
-  const plugins = document["plugins"];
-  if (!isRecord(plugins) || !isRecord(plugins["engram@engram"])) candidate += '\n[plugins."engram@engram"]\n';
-  candidate = mergeEngramLeaves(candidate, { enabled: false }, paths.configFile, '[plugins."engram@engram"]');
+  candidate = ensureEngramTable(candidate, paths.configFile, { header: "[mcp_servers.engram]", keyPath: ["mcp_servers", "engram"], leaves: { command: "engram", args: ["mcp", "--tools=agent"] } });
+  candidate = ensureEngramTable(candidate, paths.configFile, { header: '[plugins."engram@engram"]', keyPath: ["plugins", "engram@engram"], leaves: { enabled: false } });
   const refusal = inspectCodexConfig(candidate, paths.configFile);
   if (refusal !== undefined) throw new Error(refusalMessage(refusal));
   if (managedFeaturesStatus(candidate) !== "valid") throw new Error(refusalMessage({ kind: "malformed-features" }));
   if (!host.acceptsConfig(paths.codexHome, candidate)) throw new Error(HOST_REJECTED_CONFIG);
   if (candidate !== original) writeFileSync(paths.configFile, candidate, { mode: 0o600 });
+}
+
+function ensureEngramTable(text: string, file: string, table: Readonly<{ header: string; keyPath: readonly [string, string]; leaves: Record<string, unknown> }>): string {
+  const parent = parseTomlDocument(text, file)[table.keyPath[0]];
+  const declared = isRecord(parent) && isRecord(parent[table.keyPath[1]]);
+  return mergeEngramLeaves(declared ? text : `${text}\n${table.header}\n`, table.leaves, file, table.header);
 }
 
 function engramOperatorLeaves(configFile: string): Record<string, unknown> | undefined {

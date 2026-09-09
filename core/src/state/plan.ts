@@ -158,18 +158,11 @@ export function runApprovePlan(cwd: string, sessionId: string, digest: string, n
   const stateFile = store.stateFileFor(cwd);
   mkdirSync(store.stateRootDirectory(), { recursive: true });
   return store.withLock(stateFile, sessionId, () => {
-    if (!store.isReadableRegularFile(stateFile)) {
-      throw new PlanApprovalError(`no readable pending plan approval for session ${sessionId}`, { code: "pending-state-unreadable" });
-    }
-    if (store.readValue(stateFile, "plan_approval_session") !== sessionId) {
-      throw new PlanApprovalError("pending plan approval belongs to another session", { code: "foreign-approval-session" });
-    }
+    requireOwnApprovalState(stateFile, sessionId);
     if (store.readValue(stateFile, "mode") !== "plan") {
       throw new PlanApprovalError("pending approval is not attached to plan mode state", { code: "approval-not-plan-mode" });
     }
-    if (store.readValue(stateFile, "plan_approval") !== "pending") {
-      throw new PlanApprovalError("plan approval is not pending", { code: "approval-not-pending" });
-    }
+    requirePendingApproval(stateFile);
     if (store.readValue(stateFile, "plan_approval_digest") !== digest) {
       throw new PlanApprovalError("pending plan digest changed before approval", { code: "approval-digest-changed" });
     }
@@ -208,7 +201,7 @@ export function runApprovePlan(cwd: string, sessionId: string, digest: string, n
       }
     } else if (!store.isPrivateRegularFile(paths.approvedFile)) {
       throw new PlanFailure("presented plan snapshot is missing", { code: "presented-snapshot-missing" });
-    } else if (!byteIdentical(paths.currentFile, paths.approvedFile)) {
+    } else if (native !== undefined && !byteIdentical(paths.currentFile, paths.approvedFile)) {
       throw new PlanFailure("current plan differs from the partially published approved snapshot", { code: "partial-publication-mismatch" });
     }
     store.writeStatePairs(stateFile, ["plan_approval=approved", `plan_snapshot_file=${paths.approvedFile}`], sessionId);
@@ -224,15 +217,8 @@ export function runCancelPlan(cwd: string, sessionId: string, digest: string): n
   const stateFile = store.stateFileFor(cwd);
   mkdirSync(store.stateRootDirectory(), { recursive: true });
   return store.withLock(stateFile, sessionId, () => {
-    if (!store.isReadableRegularFile(stateFile)) {
-      throw new PlanApprovalError(`no readable pending plan approval for session ${sessionId}`, { code: "pending-state-unreadable" });
-    }
-    if (store.readValue(stateFile, "plan_approval_session") !== sessionId) {
-      throw new PlanApprovalError("pending plan approval belongs to another session", { code: "foreign-approval-session" });
-    }
-    if (store.readValue(stateFile, "plan_approval") !== "pending") {
-      throw new PlanApprovalError("plan approval is not pending", { code: "approval-not-pending" });
-    }
+    requireOwnApprovalState(stateFile, sessionId);
+    requirePendingApproval(stateFile);
     if (store.readValue(stateFile, "plan_approval_digest") !== digest) {
       throw new PlanApprovalError("pending plan digest changed before cancellation", { code: "cancellation-digest-changed" });
     }
@@ -295,6 +281,21 @@ export function runAmendPlan(cwd: string, sessionId: string, sliceId: string, do
     store.logEvent({ event: "plan-amended", session: sessionId, command: sliceId });
     return 0;
   });
+}
+
+function requireOwnApprovalState(stateFile: string, sessionId: string): void {
+  if (!store.isReadableRegularFile(stateFile)) {
+    throw new PlanApprovalError(`no readable pending plan approval for session ${sessionId}`, { code: "pending-state-unreadable" });
+  }
+  if (store.readValue(stateFile, "plan_approval_session") !== sessionId) {
+    throw new PlanApprovalError("pending plan approval belongs to another session", { code: "foreign-approval-session" });
+  }
+}
+
+function requirePendingApproval(stateFile: string): void {
+  if (store.readValue(stateFile, "plan_approval") !== "pending") {
+    throw new PlanApprovalError("plan approval is not pending", { code: "approval-not-pending" });
+  }
 }
 
 function byteIdentical(leftFile: string, rightFile: string): boolean {

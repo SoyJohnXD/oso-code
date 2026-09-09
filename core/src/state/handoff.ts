@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, opendirSync, readFileSync, readdirSync, realpathSync, rmSync, type Dirent, type Stats } from "node:fs";
 import path from "node:path";
-import { CODEX_METADATA_READINESS_MS, CODEX_UUID_PATTERN, readBoundedRegularFile, readCodexSessionMetadata, requireMetadataTime } from "../hosts/codex-session-metadata.ts";
+import { CODEX_METADATA_READINESS_MS, CODEX_UUID_PATTERN, CodexMetadataFailure, readBoundedRegularFile, readCodexSessionMetadata, requireMetadataTime } from "../hosts/codex-session-metadata.ts";
 import * as store from "./store.ts";
 
 export class HandoffFailure extends Error {}
@@ -59,6 +59,7 @@ export function runHandoffResolveCodex(cwd: string, coordinates: Omit<HandoffCoo
     return id;
   } catch (error) {
     if (error instanceof HandoffFailure) throw error;
+    if (!isNativeResolutionFault(error)) throw error;
     throw new HandoffFailure(`cannot resolve Codex handoff: ${store.causeOf(error)}`, { cause: error });
   }
 }
@@ -412,10 +413,15 @@ export function nativeRepositoryIdentity(cwd: string, deadline: number): { recei
   return { receiptIdentity: common, commonDirectory: realpathSync(common) };
 }
 
+export function isNativeResolutionFault(error: unknown): boolean {
+  const gitExitedNonZero = error instanceof Error && "status" in error;
+  return error instanceof CodexMetadataFailure || error instanceof HandoffFailure || store.isErrnoException(error) || gitExitedNonZero;
+}
+
 function codexReceiptCandidates(directory: string, coordinates: Omit<HandoffCoordinates, "agentId">, deadline: number): Map<string, string> {
   const candidates = new Map<string, string>();
   const maxCandidates = 128;
-  for (const file of boundedDirectoryFiles(directory, deadline, false)) {
+  for (const file of boundedDirectoryFiles({ directory, deadline, recursive: false })) {
     const name = path.basename(file);
     if (!/^[0-9a-f]{64}\.receipt$/.test(name)) continue;
     const content = readCurrentCodexReceipt(directory, name, coordinates, deadline);
@@ -450,14 +456,16 @@ function recordValue(content: string, key: string): string {
 }
 
 function* rolloutPaths(directory: string, deadline: number): Generator<string> {
-  for (const file of boundedDirectoryFiles(directory, deadline, true)) {
+  for (const file of boundedDirectoryFiles({ directory, deadline, recursive: true })) {
     if (/^rollout-.*\.jsonl$/.test(path.basename(file))) yield file;
   }
 }
 
 const MAX_CODEX_PATHS = 10000;
 
-function* boundedDirectoryFiles(directory: string, deadline: number, recursive: boolean): Generator<string> {
+function* boundedDirectoryFiles({ directory, deadline, recursive }: Readonly<{
+  directory: string; deadline: number; recursive: boolean;
+}>): Generator<string> {
   const pending = [directory];
   let enumerated = 0;
   while (pending.length > 0) {
@@ -477,9 +485,9 @@ function* boundedDirectoryFiles(directory: string, deadline: number, recursive: 
   }
 }
 
-function readPinnedDirectory({ directory, before, deadline, remainingPaths }: {
+function readPinnedDirectory({ directory, before, deadline, remainingPaths }: Readonly<{
   directory: string; before: Stats; deadline: number; remainingPaths: number;
-}): Dirent[] {
+}>): Dirent[] {
   const callerDirectory = process.cwd();
   try {
     process.chdir(directory);

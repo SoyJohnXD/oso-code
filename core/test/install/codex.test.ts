@@ -421,14 +421,15 @@ describe("oso install --host codex over a fixture HOME", () => {
     const cacheIdentity = statSync(cache, { bigint: true });
     const rootIdentity = statSync(gitRoot.stdout.trim(), { bigint: true });
     assert.deepEqual([rootIdentity.dev, rootIdentity.ino], [cacheIdentity.dev, cacheIdentity.ino]);
+    const host = { ...pinnedHost(), marketplaceRemove: () => {
+      rmSync(cache, { recursive: true, force: true });
+      return { ok: true, output: "removed", stderr: "" };
+    } };
     const outcome = installCodex(
       inputFor(home, {
         environment,
         installImpeccable: false,
-        host: pinnedHost({ marketplaceRemove: () => {
-          rmSync(cache, { recursive: true, force: true });
-          return { ok: true, output: "removed", stderr: "" };
-        } }),
+        host,
       }),
     );
     assert.equal(outcome.exitCode, 0, outcome.report);

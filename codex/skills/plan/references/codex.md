@@ -2,7 +2,7 @@
 
 ## The delivery contract
 
-Follow the shared host [delivery contract](../_shared/references/codex.md#the-delivery-contract). The complete §5 document remains a turn-ending plain-text response for Codex's native approval rail, whose marker stays the final logical line.
+READ `../_shared/references/codex.md`'s **The delivery contract** section NOW. The complete §5 document remains a turn-ending plain-text response for Codex's native approval rail, whose marker stays the final logical line.
 
 ## Question rounds
 

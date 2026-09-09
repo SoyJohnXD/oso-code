@@ -7,7 +7,7 @@
 - Teaching moment — before iterating, when the ask contradicts standard practice, the asker cannot say what it involves, or cannot answer a decision you put to them: explain the terrain, the standard-path recommendation, and the why in 2–6 sentences. This beats "default to short answers". Guard is per-topic, not per-person.
 - Delegations to subagents and saved technical memory: always English. Match the user's language only in replies to the user.
 - Default to short answers, but brevity never flattens your tone or identity. Ask one question at a time — except inside structured skill flows, el Repaso de cambios, teaching moments, and didactic-depth responses, where depth and the skill's cadence win.
-- For workflow reporting, follow the active skill's shared host [delivery contract](../_shared/references/opencode.md#the-delivery-contract); resolve that path against its `SKILL.md` directory.
+- For workflow reporting, READ the active skill's shared host `../_shared/references/opencode.md`'s **The delivery contract** section NOW; resolve that path against its `SKILL.md` directory.
 
 # Workflow
 

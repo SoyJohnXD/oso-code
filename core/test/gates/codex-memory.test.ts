@@ -105,14 +105,16 @@ test("the native exec entrypoint is a root only with matching hook identity and 
   }
 });
 
+const LINEAGE_PAYLOADS = {
+  child: { id, cwd: root, source: { subagent: { thread_spawn: { parent_thread_id: id } } } },
+  missing: { id, cwd: root },
+  contradictory: { id, cwd: root, source: "cli", parent_thread_id: id },
+  root: { id, cwd: root, source: "cli" },
+};
+
 for (const lineage of ["child", "missing", "contradictory"] as const) {
   test(`unread direct and wrapped command/cmd memory writes deny ${lineage} callers`, () => {
-    const payload = {
-      child: { id, cwd: root, source: { subagent: { thread_spawn: { parent_thread_id: id } } } },
-      missing: { id, cwd: root },
-      contradictory: { id, cwd: root, source: "cli", parent_thread_id: id },
-    }[lineage];
-    writeFileSync(transcript, `${JSON.stringify({ type: "session_meta", payload })}\n`);
+    writeFileSync(transcript, `${JSON.stringify({ type: "session_meta", payload: LINEAGE_PAYLOADS[lineage] })}\n`);
     const padding = "x".repeat(MAX_LEXED_INPUT_BYTES + 1);
     const commands = [
       `engram save title ${padding}`,
@@ -142,13 +144,7 @@ test("unread shell payloads keep attested ROOT and unrelated host behavior", () 
 
 for (const lineage of ["child", "missing", "contradictory", "root"] as const) {
   test(`expanded executable command/cmd routes require attestation for ${lineage}`, () => {
-    const payload = {
-      child: { id, cwd: root, source: { subagent: { thread_spawn: { parent_thread_id: id } } } },
-      missing: { id, cwd: root },
-      contradictory: { id, cwd: root, source: "cli", parent_thread_id: id },
-      root: { id, cwd: root, source: "cli" },
-    }[lineage];
-    writeFileSync(transcript, `${JSON.stringify({ type: "session_meta", payload })}\n`);
+    writeFileSync(transcript, `${JSON.stringify({ type: "session_meta", payload: LINEAGE_PAYLOADS[lineage] })}\n`);
     for (const field of ["command", "cmd"]) {
       for (const command of [
         'e=engram; $e save title body',
@@ -197,7 +193,7 @@ test("expanded executable uncertainty is opt-in and does not change default lexe
     { kind: "argument", word: "title" },
     { kind: "argument", word: "body" },
   ]);
-  assert.deepEqual(lexShellCommands(command, true), [...lexShellCommands(command), { kind: "unreadPayload" }]);
+  assert.deepEqual(lexShellCommands(command, { unreadExpandedExecutables: true }), [...lexShellCommands(command), { kind: "unreadPayload" }]);
 });
 
 for (const executable of [
@@ -209,7 +205,7 @@ for (const executable of [
     const commandLine = `${executable} save title body`;
     const envelope = hostEnvelope({ host: "codex", agentSession: "1", stateBin: "" }, { cwd: root, toolName: "exec_command", commandLine });
     assert.equal(runGate(["unknown", "--allow", "exec_command"], envelope).verdict.kind, "deny");
-    assert.ok(lexShellCommands(commandLine, true).some((record) => record.kind === "unreadPayload"));
+    assert.ok(lexShellCommands(commandLine, { unreadExpandedExecutables: true }).some((record) => record.kind === "unreadPayload"));
     assert.ok(!lexShellCommands(commandLine).some((record) => record.kind === "unreadPayload"));
   });
 }
@@ -222,6 +218,6 @@ for (const assignment of [
     const commandLine = `${assignment} printf ok`;
     const envelope = hostEnvelope({ host: "codex", agentSession: "1", stateBin: "" }, { cwd: root, toolName: "exec_command", commandLine });
     assert.equal(runGate(["unknown", "--allow", "exec_command"], envelope).verdict.kind, "allow");
-    assert.ok(!lexShellCommands(commandLine, true).some((record) => record.kind === "unreadPayload"));
+    assert.ok(!lexShellCommands(commandLine, { unreadExpandedExecutables: true }).some((record) => record.kind === "unreadPayload"));
   });
 }

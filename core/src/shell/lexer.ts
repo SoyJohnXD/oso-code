@@ -48,8 +48,11 @@ export const SHELL_WORDS_THIS_LEXER_READS: ReadonlySet<string> = new Set([
   HISTORY_REPLAYING_WORD, "{", "}",
 ]);
 
-export function lexShellCommands(commandLine: string, unreadExpandedExecutables = false): readonly LexRecord[] {
-  return new CommandLineLexer(commandLine, 0, unreadExpandedExecutables).lex();
+export function lexShellCommands(
+  commandLine: string,
+  { unreadExpandedExecutables = false }: Readonly<{ unreadExpandedExecutables?: boolean }> = {},
+): readonly LexRecord[] {
+  return new CommandLineLexer(commandLine, 0, { unreadExpandedExecutables }).lex();
 }
 
 export function basenameOf(word: string): string {
@@ -219,7 +222,7 @@ class CommandLineLexer {
   private commandTokens: string[] = [];
   private readonly records: LexRecord[] = [];
 
-  constructor(commandLine: string, depth: number, unreadExpandedExecutables: boolean) {
+  constructor(commandLine: string, depth: number, { unreadExpandedExecutables }: Readonly<{ unreadExpandedExecutables: boolean }>) {
     this.rest = `${commandLine}\n`;
     this.depth = depth;
     this.unreadExpandedExecutables = unreadExpandedExecutables;
@@ -478,7 +481,7 @@ class CommandLineLexer {
       this.markUnread();
       return;
     }
-    this.nested.push(...new CommandLineLexer(payload, this.depth + 1, this.unreadExpandedExecutables).lex());
+    this.nested.push(...new CommandLineLexer(payload, this.depth + 1, { unreadExpandedExecutables: this.unreadExpandedExecutables }).lex());
   }
 
   private markUnread(): void {

@@ -31,6 +31,10 @@ A record carrying no profile, or a profile leaving the launched role unnamed, pa
 
 Launching a delegation, or forking a judge, draws this client's own native subagent card — a UI element the harness cannot suppress, showing only that something ran, with no role name, assignment, tree, or verdict. The milestone text `../reporting.md` requires is never skipped because a card is on screen and never folded into its caption: it is delivered exactly as every other operator-facing content on this host — except under the carve-out below.
 
+## The delivery contract
+
+This TUI drops assistant text that precedes a tool call in the same turn, so every operator-facing delivery on this host follows one rule: it ends the turn as plain text, never precedes a tool call in the same turn, and whatever tool call comes next opens a later turn. The carve-out below is the one exception, and it names what it covers.
+
 ## The unattended run — the carve-out, and the record that pays for it
 
 An UNATTENDED RUN is this repository's runtime state carrying `auto=running` for this session. While it stands, operator-facing MILESTONE text does NOT end the turn — it rides the stream as the work happens, with the next tool call in the same turn — because ending the turn at every milestone stalls with nobody there to say "continue." Everything else this host delivers — a question round, a plan document, an approval gate — still ends the turn; none of them belongs to a run nobody is watching.

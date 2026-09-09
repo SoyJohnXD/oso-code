@@ -255,8 +255,8 @@
     "item": "it ends the turn as plain text, never precedes a tool call in the same turn",
     "sourceFile": "plugin/skills/_shared/references/claude.md",
     "retired": "line 28 only: \"ending the turn as plain text with the tool call in a later turn —\"",
-    "reason": "S0 retires the host-neutral default from the shared reporting contract; Claude's own reference still states its unchanged TUI delivery rule and unattended carve-out, so no contradictory neutral home is retained",
-    "home": { "kind": "none" }
+    "reason": "S0 retires the host-neutral default from the shared reporting contract, which now defers delivery to each host's own reference; Claude's states this host's rule under `The delivery contract`, above the unattended carve-out that excepts it, so the rule's home is that host binding rather than a contradictory neutral one",
+    "home": { "kind": "prose", "ref": "plugin/skills/_shared/references/claude.md" }
   },
   {
     "axis": "prose",

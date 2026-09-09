@@ -66,7 +66,7 @@ const HANDOFF_FLAGS = {
 type HandoffField = (typeof HANDOFF_FLAGS)[keyof typeof HANDOFF_FLAGS];
 type HandoffCoordinates = Partial<Record<HandoffField, string>>;
 
-export function main(argv: readonly string[]): number {
+function main(argv: readonly string[]): number {
   try {
     return dispatch(argv);
   } catch (error) {

@@ -2,7 +2,7 @@
 
 ## The delivery contract
 
-Follow the shared host [delivery contract](../_shared/references/codex.md#the-delivery-contract). The triage report and diagnosis presentation must surface the evidence needed for the operator's decision.
+READ `../_shared/references/codex.md`'s **The delivery contract** section NOW. The triage report and diagnosis presentation must surface the evidence needed for the operator's decision.
 
 ## Making a launch wait
 

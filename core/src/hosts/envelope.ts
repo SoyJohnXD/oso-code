@@ -128,23 +128,28 @@ export function topLevelRawField(payload: string, field: string): string {
   const tokens = [...payload.matchAll(/"(?:[^"\\]|\\[\s\S])*"|[{}\[\]:,]|[^\s{}\[\]:,]+/g)];
   let depth = 0;
   for (let index = 0; index < tokens.length; index++) {
-    const token = tokens[index];
-    const text = token?.[0];
+    const text = tokens[index]?.[0];
     if (depth === 1 && text?.startsWith('"') && tokens[index + 1]?.[0] === ":" && JSON.parse(text) === field) {
-      const start = tokens[index + 2];
-      if (start === undefined) return "";
-      if (start[0] !== "{" && start[0] !== "[") return start[0];
-      let nested = 0;
-      for (const value of tokens.slice(index + 2)) {
-        if (value[0] === "{" || value[0] === "[") nested++;
-        if (value[0] === "}" || value[0] === "]") nested--;
-        if (nested === 0) return payload.slice(start.index, value.index + value[0].length);
-      }
+      const raw = rawValueOf(payload, tokens.slice(index + 2));
+      if (raw !== undefined) return raw;
     }
     if (text === "{" || text === "[") depth++;
     if (text === "}" || text === "]") depth--;
   }
   return "";
+}
+
+function rawValueOf(payload: string, valueTokens: readonly RegExpExecArray[]): string | undefined {
+  const start = valueTokens[0];
+  if (start === undefined) return "";
+  if (start[0] !== "{" && start[0] !== "[") return start[0];
+  let nested = 0;
+  for (const token of valueTokens) {
+    if (token[0] === "{" || token[0] === "[") nested++;
+    if (token[0] === "}" || token[0] === "]") nested--;
+    if (nested === 0) return payload.slice(start.index, token.index + token[0].length);
+  }
+  return undefined;
 }
 
 function hookIdentityField(payload: string, caller: HookCaller, field: string): string {

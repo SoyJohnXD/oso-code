@@ -243,10 +243,6 @@ function namesKeyAtRoot(text: string, keys: string): boolean {
   return bare.test(withoutComment) || quoted.test(withoutComment) || literal.test(withoutComment);
 }
 
-function isPointer(text: string, key: string): boolean {
-  return tomlKeyAssignment(text, key);
-}
-
 function decodedPointerValue(record: string, key: string): string | undefined {
   try {
     const value = parseTomlDocument(record, key)[key];
@@ -493,7 +489,7 @@ function moveEngramPointers(records: readonly string[], request: TomlRegionReque
       scanRoot(scanner, record);
       return;
     }
-    const afterPointer = afterRegion && ((isPointer(record, modelKey) && decodedPointerValue(record, modelKey) === request.modelValue) || (isPointer(record, compactKey) && decodedPointerValue(record, compactKey) === request.compactValue));
+    const afterPointer = afterRegion && ((tomlKeyAssignment(record, modelKey) && decodedPointerValue(record, modelKey) === request.modelValue) || (tomlKeyAssignment(record, compactKey) && decodedPointerValue(record, compactKey) === request.compactValue));
     const rootLine = lexicalRoot && (!inTable || afterPointer);
     if (lexicalRoot && record === request.startMarker) {
       starts += 1;
@@ -504,13 +500,13 @@ function moveEngramPointers(records: readonly string[], request: TomlRegionReque
       endLine = number;
       afterRegion = true;
     }
-    if (rootLine && isPointer(record, modelKey)) {
+    if (rootLine && tomlKeyAssignment(record, modelKey)) {
       modelRows += 1;
       modelLine = number;
       pointerRows.add(number);
       if (decodedPointerValue(record, modelKey) !== request.modelValue) invalidModel = true;
     }
-    if (rootLine && isPointer(record, compactKey)) {
+    if (rootLine && tomlKeyAssignment(record, compactKey)) {
       compactRows += 1;
       compactLine = number;
       pointerRows.add(number);

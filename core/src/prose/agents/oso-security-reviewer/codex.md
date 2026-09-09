@@ -1,4 +1,4 @@
-This host installs that skill as `security-pass`, with the payload path ending in `security-pass/SKILL.md`.
+This host installs that skill as `security-pass`, with the payload path ending in `security-pass/SKILL.md`; before acting as a delegated child, read and follow `plugin/skills/_shared/references/codex.md#essential-memory` from the handed worktree.
 
 Acquire and judge the evidence yourself using the direct route in the Codex reference, within this role's read-only sandbox. Never launch another reviewer, relocate authentication, or broaden permissions; unavailable evidence blocks the review.
 

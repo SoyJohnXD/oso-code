@@ -31,19 +31,7 @@ export const TEARDOWN_GATE: GateDefinition<NoVerdictVerdict> = {
 };
 
 function judgeTeardown({ envelope }: GateRequest): GateOutcome<NoVerdictVerdict> {
-  if (envelope.caller.host === "codex") {
-    const stateFile = stateFileFor(envelope.cwd);
-    if (!codexOwnsState(stateFile, envelope)) return NO_VERDICT;
-    try {
-      withLock(stateFile, envelope.sessionId, () => {
-        if (codexOwnsState(stateFile, envelope)) rmSync(stateFile, { force: true });
-      }, "retain-existing");
-    } catch (error) {
-      if (!(error instanceof LockTimeoutError)) throw error;
-      return { verdict: { kind: "noVerdict" }, events: [{ event: "teardown-lock-retained", session: envelope.sessionId }] };
-    }
-    return NO_VERDICT;
-  }
+  if (envelope.caller.host === "codex") return codexTeardown(envelope);
   const sessionId = hookSessionId(envelope);
   const ownState = stateArmedBy(sessionId);
   removeWorktreesOf(sessionId, ownState);
@@ -53,6 +41,20 @@ function judgeTeardown({ envelope }: GateRequest): GateOutcome<NoVerdictVerdict>
   clearRoadmapInFlightOf(sessionId);
   rotateAgedEventsLog();
   pruneAbandonedState(sessionId, ownState);
+  return NO_VERDICT;
+}
+
+function codexTeardown(envelope: HookEnvelope): GateOutcome<NoVerdictVerdict> {
+  const stateFile = stateFileFor(envelope.cwd);
+  if (!codexOwnsState(stateFile, envelope)) return NO_VERDICT;
+  try {
+    withLock(stateFile, envelope.sessionId, () => {
+      if (codexOwnsState(stateFile, envelope)) rmSync(stateFile, { force: true });
+    }, "retain-existing");
+  } catch (error) {
+    if (!(error instanceof LockTimeoutError)) throw error;
+    return { verdict: { kind: "noVerdict" }, events: [{ event: "teardown-lock-retained", session: envelope.sessionId }] };
+  }
   return NO_VERDICT;
 }
 

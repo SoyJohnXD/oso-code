@@ -22,7 +22,7 @@ describe("routine delivery routes to the rendered host policy", () => {
         ...MODES.map((mode) => `core/src/prose/skills/${mode}/references/${host}.md`),
         `bootstrap/${host}-global.md`,
       ]) {
-        const route = textOf(file).match(/\[[^\]]+\]\(([^)]+)#the-delivery-contract\)/);
+        const route = textOf(file).match(/READ (?:the active skill's shared host )?`([^`]+)`'s \*\*The delivery contract\*\* section NOW/);
         assert.ok(route?.[1], `${file} has no delivery policy route`);
         assert.equal(path.posix.normalize(path.posix.join("plugin/skills/plan", route[1])), owner);
       }

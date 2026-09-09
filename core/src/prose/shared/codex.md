@@ -22,7 +22,7 @@ Surface exploration is separate from those seven files: use Codex's built-in `ex
 
 ## Essential memory
 
-This binding controls the neutral flows' semantic-memory operations on Codex. Engram remains direct standard storage and retrieval; native base instructions and compaction stay intact. Only the parent writes semantic state. Custom roles disable the Engram server; a built-in or unknown child may only use the known context, search and get-observation reads exposed by the gate.
+This binding controls the neutral flows' semantic-memory operations on Codex. Only the parent may persist semantic memory through standard Engram MCP; native base instructions and compaction stay intact. A child must not write semantic memory through shell or CLI, including indirect wrappers, interpreters, executable substitutions, or direct storage writes. Custom roles disable the Engram server; a built-in or unknown child may use only the known read-only context, search, and get-observation MCP reads exposed by the gate.
 
 Persist the approved bare ledger once before dependent action, with dated amendments for material changes. Keep durable preferences and non-obvious root causes or reusable discoveries under stable topic keys. Upsert the existing record rather than duplicating it; routine reads, retries and hypotheses need no save. Never automatically capture prompts, subagent reports or raw logs, or require a Key Learnings section.
 

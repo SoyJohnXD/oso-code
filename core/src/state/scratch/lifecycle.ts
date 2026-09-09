@@ -22,6 +22,8 @@ type ScratchRecord = {
 };
 
 type ScratchFlags = Readonly<Record<string, string>>;
+type ScratchCoordinates = Pick<ScratchRecord, "owner" | "run" | "assignment" | "role" | "attempt">;
+type ScratchReservation = ScratchRecord["reservation"];
 const maxLogBytes = 16 * 1024 * 1024;
 
 export async function scratchMain(argv: readonly string[]): Promise<number> {
@@ -43,7 +45,7 @@ export async function scratchMain(argv: readonly string[]): Promise<number> {
     withAdmission(directory, flags, () => {
       const record = ownedRecord(directory, flags);
       if (record.state === "preparing" && identityIsLive(record.supervisor)) throw new Error("scratch materialization owner remains active");
-      closeScratch(record, action === "recover");
+      closeScratch(record, { recovery: action === "recover" });
       expireClosedLogs(recordsIn(directory), flags);
     });
     return 0;
@@ -65,6 +67,10 @@ function scratchArguments(argv: readonly string[]): { flags: ScratchFlags; comma
     index += 2;
   }
   return { flags, command: argv.slice(index + 1) };
+}
+
+function ownerToken(flags: ScratchFlags): string {
+  return sha256Hex(flags["--owner"] ?? "");
 }
 
 function verificationDirectory(action: string | undefined): string {
@@ -94,7 +100,7 @@ function withAdmission<T>(directory: string, flags: ScratchFlags, operation: () 
     throw error;
   }
   try {
-    writeFileSync(path.join(lock, "owner.json"), JSON.stringify({ owner: sha256Hex(flags["--owner"] ?? ""), process: processIdentity(process.pid) }), { flag: "wx", mode: 0o600 });
+    writeFileSync(path.join(lock, "owner.json"), JSON.stringify({ owner: ownerToken(flags), process: processIdentity(process.pid) }), { flag: "wx", mode: 0o600 });
     return operation();
   } finally {
     assertPrivateDirectory(lock);
@@ -111,7 +117,7 @@ function recoverAdmission(directory: string, flags: ScratchFlags): void {
   const ownerFile = path.join(lock, "owner.json");
   assertCanonicalPath(ownerFile);
   const admission = JSON.parse(readFileSync(ownerFile, "utf8")) as { owner: string; process: ProcessIdentity };
-  if (admission.owner !== sha256Hex(flags["--owner"] ?? "") || identityIsLive(admission.process)) throw new Error("scratch admission owner is foreign or active");
+  if (admission.owner !== ownerToken(flags) || identityIsLive(admission.process)) throw new Error("scratch admission owner is foreign or active");
   const reconciliation = path.join(lock, "recovery");
   mkdirSync(reconciliation, { mode: 0o700 });
   const current = lstatSync(lock);
@@ -140,55 +146,25 @@ function createScratch(directory: string, flags: ScratchFlags): string {
     const repository = repositoryIdentityFor(sourceRoot);
     const sameAttempt = previous.filter((record) => record.repository === repository && record.run === coordinates.run && record.assignment === coordinates.assignment && record.role === coordinates.role && record.attempt === coordinates.attempt);
     if (sameAttempt.some((record) => record.state !== "closed")) throw new Error("scratch verification attempt already has a live materialization");
-    const parents = new Set<string>();
-    for (const entry of inventory) {
-      let parent = path.dirname(entry.name);
-      while (parent !== ".") { parents.add(parent); parent = path.dirname(parent); }
-    }
-    const reservation = { bytes: inventory.reduce((sum, entry) => sum + entry.bytes, recipe.headroomBytes + maxLogBytes), inodes: new Set([...inventory.map((entry) => entry.name), ...parents]).size + recipe.headroomInodes + 32 };
-    const reserved = previous.filter((record) => record.state !== "closed").reduce((sum, record) => ({ bytes: sum.bytes + record.reservation.bytes, inodes: sum.inodes + record.reservation.inodes }), { bytes: 0, inodes: 0 });
-    if (![reservation.bytes, reservation.inodes, reserved.bytes, reserved.inodes].every(Number.isSafeInteger)) throw new Error("scratch capacity estimate exceeds exact accounting range");
-    admitCapacity(directory, reservation, reserved);
-    const id = randomBytes(16).toString("hex");
-    const root = path.join(directory, id);
-    mkdirSync(root, { mode: 0o700 });
-    const payload = path.join(root, "payload");
-    const record: ScratchRecord = { version: 1, id, root, sourceRoot, repository, sourceRef: sourceRef(sourceRoot), sourceDigest: sha256Hex(JSON.stringify({ recipe, inventory })),
-      ...coordinates, ordinal: sameAttempt.reduce((max, entry) => Math.max(max, entry.ordinal), 0) + 1, uid: process.getuid!(), recipe, runtime, inventory,
-      environment: prepareEnvironment(payload, recipe, runtime), reservation, commands: [], logBytes: 0, state: "preparing", supervisor: processIdentity(process.pid)!, command: null, tracked: [], supervisionViolation: false,
-      cleanup: "pending", verdict: "incomplete", closedAt: null };
-    saveRecord(record);
-    try {
-      mkdirSync(path.join(payload, "work"), { recursive: true, mode: 0o700 });
-      for (const home of ["home", "codex", "config", "cache", "data", "state", "tmp", "bin", "cache/npm"]) mkdirSync(path.join(payload, home), { recursive: true, mode: 0o700 });
-      if (recipe.cacheRouting === "node-npm") {
-        const quote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
-        writeFileSync(path.join(payload, "bin", "tsc"), `#!${runtime.shell!.path}\nexec ${quote(runtime.node.path)} ${quote(path.join(payload, "work/node_modules/typescript/bin/tsc"))} "$@"\n`, { mode: 0o700 });
-        writeFileSync(path.join(payload, "bin", "npm-shell"), `#!${runtime.shell!.path}\nPATH=${quote(record.environment["PATH"]!)}\nexport PATH\nexec ${quote(runtime.shell!.path)} "$@"\n`, { mode: 0o700 });
-      }
-      copyInventory(sourceRoot, path.join(payload, "work"), inventory);
-      if (sha256Hex(JSON.stringify({ recipe, inventory: inventoryFor(sourceRoot, recipe) })) !== record.sourceDigest) throw new Error("scratch source changed during materialization");
-      record.state = "ready";
-      saveRecord(record);
-      return id;
-    } catch (error) {
-      record.verdict = causeOf(error);
-      closeScratch(record, false);
-      throw error;
-    }
+    const reservation = capacityReservation(recipe, inventory);
+    admitReservation(directory, previous, reservation);
+    return materializePayload(prepareRecord({
+      directory, sourceRoot, repository, coordinates, recipe, runtime, inventory, reservation,
+      ordinal: sameAttempt.reduce((max, entry) => Math.max(max, entry.ordinal), 0) + 1,
+    }));
   });
 }
 
-function createCoordinates(flags: ScratchFlags): Pick<ScratchRecord, "owner" | "run" | "assignment" | "role" | "attempt"> {
-  const owner = flags["--owner"] ?? "";
-  if (!/^[A-Za-z0-9_-]{24,128}$/.test(owner)) throw new Error("scratch requires a private owner token of 24 to 128 characters");
+function createCoordinates(flags: ScratchFlags): ScratchCoordinates {
+  const rawOwner = flags["--owner"] ?? "";
+  if (!/^[A-Za-z0-9_-]{24,128}$/.test(rawOwner)) throw new Error("scratch requires a private owner token of 24 to 128 characters");
   const run = flags["--run"] ?? "";
   const assignment = flags["--assignment"] ?? "";
   const role = flags["--role"] ?? "";
   if (![run, assignment, role].every((value) => /^[A-Za-z0-9_-]{1,128}$/.test(value))) throw new Error("scratch requires run/assignment/role coordinates");
   const attempt = Number(flags["--attempt"]);
   if (!Number.isSafeInteger(attempt) || attempt < 1) throw new Error("scratch verification attempt must be a positive integer");
-  return { owner: sha256Hex(owner), run, assignment, role, attempt };
+  return { owner: ownerToken(flags), run, assignment, role, attempt };
 }
 
 function sourceRef(sourceRoot: string): string {
@@ -211,6 +187,63 @@ function checkSourceCommand(sourceRoot: string, run: string, recipe: ScratchReci
   if (lexShellCommands(commandLine).some((record) => record.kind === "unreadPayload")) throw new Error("scratch opaque wrapper refused");
   if (!recipe.commands.some((command) => JSON.stringify(command.argv) === JSON.stringify(argv))) throw new Error("scratch argv is not an explicitly reviewed recipe command");
   reviewCommand(sourceRoot, recipe, argv);
+}
+
+function capacityReservation(recipe: ScratchRecipe, inventory: readonly InventoryEntry[]): ScratchReservation {
+  const parents = new Set<string>();
+  for (const entry of inventory) {
+    let parent = path.dirname(entry.name);
+    while (parent !== ".") { parents.add(parent); parent = path.dirname(parent); }
+  }
+  return {
+    bytes: inventory.reduce((sum, entry) => sum + entry.bytes, recipe.headroomBytes + maxLogBytes),
+    inodes: new Set([...inventory.map((entry) => entry.name), ...parents]).size + recipe.headroomInodes + 32,
+  };
+}
+
+function admitReservation(directory: string, previous: readonly ScratchRecord[], reservation: ScratchReservation): void {
+  const reserved = previous.filter((record) => record.state !== "closed").reduce((sum, record) => ({ bytes: sum.bytes + record.reservation.bytes, inodes: sum.inodes + record.reservation.inodes }), { bytes: 0, inodes: 0 });
+  if (![reservation.bytes, reservation.inodes, reserved.bytes, reserved.inodes].every(Number.isSafeInteger)) throw new Error("scratch capacity estimate exceeds exact accounting range");
+  admitCapacity(directory, reservation, reserved);
+}
+
+function prepareRecord(allocation: Readonly<{
+  directory: string; sourceRoot: string; repository: string; coordinates: ScratchCoordinates; ordinal: number;
+  recipe: ScratchRecipe; runtime: RuntimeInventory; inventory: readonly InventoryEntry[]; reservation: ScratchReservation;
+}>): ScratchRecord {
+  const { sourceRoot, recipe, runtime, inventory } = allocation;
+  const id = randomBytes(16).toString("hex");
+  const root = path.join(allocation.directory, id);
+  mkdirSync(root, { mode: 0o700 });
+  const record: ScratchRecord = { version: 1, id, root, sourceRoot, repository: allocation.repository, sourceRef: sourceRef(sourceRoot), sourceDigest: sha256Hex(JSON.stringify({ recipe, inventory })),
+    ...allocation.coordinates, ordinal: allocation.ordinal, uid: process.getuid!(), recipe, runtime, inventory,
+    environment: prepareEnvironment(path.join(root, "payload"), recipe, runtime), reservation: allocation.reservation, commands: [], logBytes: 0, state: "preparing", supervisor: processIdentity(process.pid)!, command: null, tracked: [], supervisionViolation: false,
+    cleanup: "pending", verdict: "incomplete", closedAt: null };
+  saveRecord(record);
+  return record;
+}
+
+function materializePayload(record: ScratchRecord): string {
+  const { sourceRoot, recipe, runtime, inventory } = record;
+  const payload = path.join(record.root, "payload");
+  try {
+    mkdirSync(path.join(payload, "work"), { recursive: true, mode: 0o700 });
+    for (const payloadDirectory of ["home", "codex", "config", "cache", "data", "state", "tmp", "bin", "cache/npm"]) mkdirSync(path.join(payload, payloadDirectory), { recursive: true, mode: 0o700 });
+    if (recipe.cacheRouting === "node-npm") {
+      const quote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
+      writeFileSync(path.join(payload, "bin", "tsc"), `#!${runtime.shell!.path}\nexec ${quote(runtime.node.path)} ${quote(path.join(payload, "work/node_modules/typescript/bin/tsc"))} "$@"\n`, { mode: 0o700 });
+      writeFileSync(path.join(payload, "bin", "npm-shell"), `#!${runtime.shell!.path}\nPATH=${quote(record.environment["PATH"]!)}\nexport PATH\nexec ${quote(runtime.shell!.path)} "$@"\n`, { mode: 0o700 });
+    }
+    copyInventory(sourceRoot, path.join(payload, "work"), inventory);
+    if (sha256Hex(JSON.stringify({ recipe, inventory: inventoryFor(sourceRoot, recipe) })) !== record.sourceDigest) throw new Error("scratch source changed during materialization");
+    record.state = "ready";
+    saveRecord(record);
+    return record.id;
+  } catch (error) {
+    record.verdict = causeOf(error);
+    closeScratch(record, { recovery: false });
+    throw error;
+  }
 }
 
 async function runScratch(directory: string, flags: ScratchFlags, argv: readonly string[]): Promise<number> {
@@ -267,14 +300,7 @@ async function supervise(record: ScratchRecord, argv: readonly string[], timeout
   process.on("SIGTERM", interrupted);
   const collect = (chunk: Buffer): void => {
     try {
-      const remaining = maxLogBytes - record.logBytes;
-      const kept = chunk.subarray(0, remaining);
-      if (kept.length !== 0) {
-        appendFileSync(path.join(record.root, "raw.log"), kept, { mode: 0o600 });
-        record.logBytes += kept.length;
-        process.stdout.write(kept);
-      }
-      if (chunk.length > remaining) terminate("combined log overflow; incomplete");
+      if (appendBoundedLog(record, chunk) === "overflow") terminate("combined log overflow; incomplete");
     } catch (error) { failure = error; terminate("log write failure"); }
   };
   child.stdout.on("data", collect);
@@ -289,13 +315,7 @@ async function supervise(record: ScratchRecord, argv: readonly string[], timeout
     saveRecord(record);
     trackingTimer = setInterval(() => {
       try {
-        for (const tracked of record.tracked) identityIsLive(tracked);
-        const newlySeen = sessionMembers(record.command!).filter((member) => !record.tracked.some((tracked) => tracked.pid === member.pid && tracked.start === member.start));
-        if (newlySeen.some((member) => member.group !== record.command!.group || member.session !== record.command!.session)) throw new Error("scratch reviewed process group/session was violated");
-        if (newlySeen.length !== 0) {
-          record.tracked.push(...newlySeen);
-          saveRecord(record);
-        }
+        trackNewSessionMembers(record);
       } catch (error) {
         record.supervisionViolation = true;
         failure = error;
@@ -317,7 +337,7 @@ async function supervise(record: ScratchRecord, argv: readonly string[], timeout
     record.command = null;
     record.state = "ready";
     saveRecord(record);
-    if (exit !== 0 || stopped !== "") closeScratch(record, false);
+    if (exit !== 0 || stopped !== "") closeScratch(record, { recovery: false });
     return exit === 0 && stopped === "" ? 0 : 1;
   } catch (error) {
     record.state = "blocked";
@@ -347,7 +367,28 @@ async function supervise(record: ScratchRecord, argv: readonly string[], timeout
   }
 }
 
-function closeScratch(record: ScratchRecord, recovery: boolean): void {
+function appendBoundedLog(record: ScratchRecord, chunk: Buffer): "kept" | "overflow" {
+  const remaining = maxLogBytes - record.logBytes;
+  const kept = chunk.subarray(0, remaining);
+  if (kept.length !== 0) {
+    appendFileSync(path.join(record.root, "raw.log"), kept, { mode: 0o600 });
+    record.logBytes += kept.length;
+    process.stdout.write(kept);
+  }
+  return chunk.length > remaining ? "overflow" : "kept";
+}
+
+function trackNewSessionMembers(record: ScratchRecord): void {
+  for (const tracked of record.tracked) identityIsLive(tracked);
+  const newlySeen = sessionMembers(record.command!).filter((member) => !record.tracked.some((tracked) => tracked.pid === member.pid && tracked.start === member.start));
+  if (newlySeen.some((member) => member.group !== record.command!.group || member.session !== record.command!.session)) throw new Error("scratch reviewed process group/session was violated");
+  if (newlySeen.length !== 0) {
+    record.tracked.push(...newlySeen);
+    saveRecord(record);
+  }
+}
+
+function closeScratch(record: ScratchRecord, { recovery }: Readonly<{ recovery: boolean }>): void {
   if (record.state === "closed") return;
   if (record.state === "starting") throw new Error("scratch spawn identity uncertain; cleanup refused");
   if (record.supervisionViolation) throw new Error("scratch reviewed recipe/process tracking violated; recovery refused");
@@ -397,7 +438,7 @@ function ownedRecord(directory: string, flags: ScratchFlags): ScratchRecord {
   const id = flags["--id"] ?? "";
   if (!/^[a-f0-9]{32}$/.test(id)) throw new Error("scratch cleanup/run requires a registered opaque ID, never a path");
   const record = readRecord(directory, id);
-  if (record.owner !== sha256Hex(flags["--owner"] ?? "")) throw new Error("scratch foreign owner refused");
+  if (record.owner !== ownerToken(flags)) throw new Error("scratch foreign owner refused");
   return record;
 }
 
@@ -431,7 +472,7 @@ function saveRecord(record: ScratchRecord): void {
 function expireClosedLogs(records: readonly ScratchRecord[], flags: ScratchFlags): void {
   const retentionMs = 7 * 24 * 60 * 60 * 1000;
   for (const record of records) {
-    if (record.owner !== sha256Hex(flags["--owner"] ?? "") || record.state !== "closed" || record.closedAt === null || !Number.isFinite(Date.parse(record.closedAt)) || Date.now() - Date.parse(record.closedAt) < retentionMs) continue;
+    if (record.owner !== ownerToken(flags) || record.state !== "closed" || record.closedAt === null || !Number.isFinite(Date.parse(record.closedAt)) || Date.now() - Date.parse(record.closedAt) < retentionMs) continue;
     const log = path.join(record.root, "raw.log");
     if (!existsSync(log)) continue;
     assertCanonicalPath(log);

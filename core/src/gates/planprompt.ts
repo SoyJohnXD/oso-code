@@ -126,12 +126,13 @@ function amendPendingPlan(
   if (!PLAN_DIGEST.test(readValue(stateFile, "plan_approval_digest") ?? "")) return SILENT;
 
   try {
-    if (envelope.caller.host === "codex" && (readValue(stateFile, "plan_presentation_version") !== "1" || readValue(stateFile, "plan_presentation_status") === "failed")) {
-      if (readValue(stateFile, "plan_presentation_status") === "failed" && readValue(stateFile, "plan_current_file") === undefined) return { verdict: { kind: "context", additionalContext: AMENDMENT_GUIDANCE }, events: [] };
-      return { verdict: { kind: "context", additionalContext: `${AMENDMENT_GUIDANCE}\n\nPreserved document:\n${readPlanForReplacement(envelope.cwd, sessionId)}` }, events: [] };
+    const presentationFailed = readValue(stateFile, "plan_presentation_status") === "failed";
+    if (envelope.caller.host === "codex" && (readValue(stateFile, "plan_presentation_version") !== "1" || presentationFailed)) {
+      if (presentationFailed && readValue(stateFile, "plan_current_file") === undefined) return { verdict: { kind: "context", additionalContext: AMENDMENT_GUIDANCE }, events: [] };
+      return amendmentWithPreservedDocument(envelope.cwd, sessionId);
     }
     runAmendPlan(envelope.cwd, sessionId, FEEDBACK_AMENDMENT_LABEL, asCommandSubstitutionCaptures(envelope.prompt));
-    if (envelope.caller.host === "codex") return { verdict: { kind: "context", additionalContext: `${AMENDMENT_GUIDANCE}\n\nPreserved document:\n${readPlanForReplacement(envelope.cwd, sessionId)}` }, events: [] };
+    if (envelope.caller.host === "codex") return amendmentWithPreservedDocument(envelope.cwd, sessionId);
   } catch (cause) {
     if (envelope.caller.host === "codex") return nativeFailure(cause, sessionId, "amend");
     if (!isPlanRailFailure(cause)) throw cause;
@@ -143,6 +144,11 @@ function amendPendingPlan(
   return { verdict: { kind: "context", additionalContext: LEGACY_AMENDMENT_GUIDANCE }, events: [] };
 }
 
+function amendmentWithPreservedDocument(cwd: string, sessionId: string): GateOutcome<UserPromptVerdict> {
+  const guidance = `${AMENDMENT_GUIDANCE}\n\nPreserved document:\n${readPlanForReplacement(cwd, sessionId)}`;
+  return { verdict: { kind: "context", additionalContext: guidance }, events: [] };
+}
+
 function settlePendingPlan(
   envelope: HookEnvelope,
   sessionId: string,
@@ -150,7 +156,7 @@ function settlePendingPlan(
   digest: string,
 ): GateOutcome<UserPromptVerdict> {
   try {
-    if (action === "approve") runApprovePlan(envelope.cwd, sessionId, digest, envelope.caller.host === "codex" ? () => resolveCodexPresentation(envelope, true) : undefined);
+    if (action === "approve") runApprovePlan(envelope.cwd, sessionId, digest, envelope.caller.host === "codex" ? () => resolveCodexPresentation(envelope, { precedingApproval: true }) : undefined);
     else runCancelPlan(envelope.cwd, sessionId, digest);
   } catch (cause) {
     if (envelope.caller.host === "codex") return nativeFailure(cause, sessionId, action);
@@ -184,7 +190,7 @@ function controlPromptReaches(
   if (!isReadableRegularFile(stateFile)) return control(UNREADABLE_PENDING_STATE);
   if (envelope.caller.host === "codex" && readValue(stateFile, "mode") === "plan" && readValue(stateFile, "plan_approval") === "approved" && readValue(stateFile, "plan_approval_session") === sessionId && readValue(stateFile, "plan_presentation_version") === "1") {
     try {
-      const latest = resolveCodexPresentation(envelope, true);
+      const latest = resolveCodexPresentation(envelope, { precedingApproval: true });
       if (!matchesPlanPresentation(stateFile, latest.binding)) return control(NOT_RECORDED);
     } catch (cause) {
       if (!(cause instanceof CodexPresentationFailure)) throw cause;

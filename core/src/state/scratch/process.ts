@@ -7,10 +7,11 @@ export function requireScratchRuntime(): void {
   if (process.platform !== "linux" || process.getuid === undefined) {
     throw new Error("scratch requires Linux process/proc/path capabilities; use the no-export route");
   }
-  if (processIdentity(process.pid) === undefined || realpathSync("/proc/self") !== `/proc/${process.pid}`) {
+  const identity = processIdentity(process.pid);
+  if (identity === undefined || realpathSync("/proc/self") !== `/proc/${process.pid}`) {
     throw new Error("scratch process identity capability unavailable");
   }
-  sessionMembers(processIdentity(process.pid)!);
+  sessionMembers(identity);
 }
 
 export function processIdentity(pid: number): ProcessIdentity | undefined {

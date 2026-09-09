@@ -2,7 +2,7 @@
 
 ## The delivery contract
 
-Follow the shared host [delivery contract](../_shared/references/opencode.md#the-delivery-contract). The complete §5 document may precede `oso_plan_approve` in the same turn only after this host establishes that the operator can see it, otherwise present it and wait rather than treating missing visibility as approval.
+READ `../_shared/references/opencode.md`'s **The delivery contract** section NOW. The complete §5 document may precede `oso_plan_approve` in the same turn only after this host establishes that the operator can see it, otherwise present it and wait rather than treating missing visibility as approval.
 
 ## Question rounds
 

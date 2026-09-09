@@ -3,10 +3,10 @@ import { ALLOWED } from "../hosts/envelope.ts";
 import { CODEX_METADATA_READINESS_MS, readCodexSessionMetadata } from "../hosts/codex-session-metadata.ts";
 import type { HostName } from "../routes/routes.ts";
 import { TOOL_ROWS } from "../routes/routes.ts";
-import { nativeRepositoryIdentity } from "../state/handoff.ts";
+import { isNativeResolutionFault, nativeRepositoryIdentity } from "../state/handoff.ts";
 import { basenameOf } from "../shell/lexer.ts";
 import { lineVerdict } from "../shell/line-verdict.ts";
-import { stateFileFor } from "../state/store.ts";
+import { causeOf, stateFileFor } from "../state/store.ts";
 import {
   denied,
   deniedForUnusableState,
@@ -80,7 +80,7 @@ function codexMemoryDenial(envelope: HookEnvelope): GateOutcome | undefined {
     const executable = basenameOf(command.tokens[0] ?? "");
     if (executable !== "engram" && executable !== "engram.exe") return verdict;
     return ["search", "context", "help", "--help", "-h", "version", "--version", "-v"].includes(command.tokens[1] ?? "") ? verdict : "memory";
-  }, true);
+  }, { unreadExpandedExecutables: true });
   if (!memoryTool && cliVerdict === "clear") return undefined;
   const known = !memoryTool || TOOL_ROWS.some((row) => row.names.codex === tool);
   const cause = known ? unattestedCodexRoot(envelope) : "unknown Engram method";
@@ -101,7 +101,8 @@ function unattestedCodexRoot(envelope: HookEnvelope): string | undefined {
     if (nativeRepositoryIdentity(native.cwd, deadline).commonDirectory !== nativeRepositoryIdentity(envelope.cwd, deadline).commonDirectory) return "native repository mismatch";
     return undefined;
   } catch (error) {
-    return error instanceof Error ? error.message : String(error);
+    if (!isNativeResolutionFault(error)) throw error;
+    return causeOf(error);
   }
 }
 

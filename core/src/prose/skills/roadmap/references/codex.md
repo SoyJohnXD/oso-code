@@ -2,7 +2,7 @@
 
 ## The delivery contract
 
-Follow the shared host [delivery contract](../_shared/references/codex.md#the-delivery-contract). The queue's complete approval document still ends the planning turn for Codex's native approval rail; its exact native prompt and marker remain unchanged.
+READ `../_shared/references/codex.md`'s **The delivery contract** section NOW. The queue's complete approval document still ends the planning turn for Codex's native approval rail; its exact native prompt and marker remain unchanged.
 
 ## Question rounds
 

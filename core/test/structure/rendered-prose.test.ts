@@ -43,25 +43,29 @@ function readRepoTextOrNull(file: string): string | null {
   return existsSync(absolute) ? readFileSync(absolute, "utf8") : null;
 }
 
-describe("prospective Codex command authoring delivers instructions, not native certification", () => {
+function testCodexOwnerObligations(concern: string, obligations: readonly RegExp[]): void {
   for (const owner of [sharedReferencePath("codex"), sharedReferenceOutputPath("codex")]) {
-    test(`${owner} carries independent command-authoring obligations`, () => {
+    test(`${owner} carries independent ${concern} obligations`, () => {
       const policy = readRepoText(owner);
-      for (const obligation of [
-        /native hookable `apply_patch` for source edits/,
-        /short, literal, foreground invocations of existing checks/,
-        /separate from source edits/,
-        /explicit WORKTREE PATH/,
-        /whole invocation.*UTF-8.*lexer-owned LF/,
-        /3072 bytes.*3071 raw bytes/,
-        /unread.*not evidence of an observed deploy/,
-        /Avoid shell-embedded editing programs.*unsupported wrapper-option introspection/,
-        /Native tools, short commands and existing checks.*not blanket authorization/,
-        /rejection.*stop for diagnosis/,
-        /Never split, encode, create wrappers or scripts, retry through alternative tools, or change AUTO or permissions/,
-      ]) assert.match(policy, obligation);
+      for (const obligation of obligations) assert.match(policy, obligation);
     });
   }
+}
+
+describe("prospective Codex command authoring delivers instructions, not native certification", () => {
+  testCodexOwnerObligations("command-authoring", [
+    /native hookable `apply_patch` for source edits/,
+    /short, literal, foreground invocations of existing checks/,
+    /separate from source edits/,
+    /explicit WORKTREE PATH/,
+    /whole invocation.*UTF-8.*lexer-owned LF/,
+    /3072 bytes.*3071 raw bytes/,
+    /unread.*not evidence of an observed deploy/,
+    /Avoid shell-embedded editing programs.*unsupported wrapper-option introspection/,
+    /Native tools, short commands and existing checks.*not blanket authorization/,
+    /rejection.*stop for diagnosis/,
+    /Never split, encode, create wrappers or scripts, retry through alternative tools, or change AUTO or permissions/,
+  ]);
 
   for (const role of ["oso-applier", "oso-verifier"]) {
     test(`${role}'s actual native instructions require the shared owner before commands`, () => {
@@ -208,29 +212,24 @@ describe("Codex strict closure rendered contract", () => {
 const READINESS_SECTION = "## Readiness and freshness";
 
 describe("readiness-driven Codex verification delivers instructions, not native scheduling", () => {
-  for (const owner of [sharedReferencePath("codex"), sharedReferenceOutputPath("codex")]) {
-    test(`${owner} carries independent readiness and freshness obligations`, () => {
-      const policy = readRepoText(owner);
-      for (const obligation of [
-        /A ready, isolated and quiescent slice may be verified while unrelated wave work is still in flight/,
-        /inside the wave's existing dependency and isolation barriers and never in place of them/,
-        /Reserve an actually free verifier slot/,
-        /a completed agent's status is not proof that capacity was released/,
-        /Default to one heavy suite or scratch materialization at a time/,
-        /proven port, cache, output and environment isolation/,
-        /existing sequential no-export route above once quiescence is proven, never a reduced check/,
-        /the exact baseline and head commits/,
-        /pending and untracked content judged/,
-        /dependency and generated inputs read/,
-        /effective nonsecret verification environment/,
-        /inside the existing evidence entries rather than a new field/,
-        /before the checks, after the checks and again before the commit window, no-export runs included/,
-        /Later drift in a bound input invalidates the affected evidence/,
-        /Every source writer and owned process of the slice has ended before a serialized green or commit window opens/,
-        /the actual assembled tree at the integration gate; earlier slice greens never stand in for it/,
-      ]) assert.match(policy, obligation);
-    });
-  }
+  testCodexOwnerObligations("readiness and freshness", [
+    /A ready, isolated and quiescent slice may be verified while unrelated wave work is still in flight/,
+    /inside the wave's existing dependency and isolation barriers and never in place of them/,
+    /Reserve an actually free verifier slot/,
+    /a completed agent's status is not proof that capacity was released/,
+    /Default to one heavy suite or scratch materialization at a time/,
+    /proven port, cache, output and environment isolation/,
+    /existing sequential no-export route above once quiescence is proven, never a reduced check/,
+    /the exact baseline and head commits/,
+    /pending and untracked content judged/,
+    /dependency and generated inputs read/,
+    /effective nonsecret verification environment/,
+    /inside the existing evidence entries rather than a new field/,
+    /before the checks, after the checks and again before the commit window, no-export runs included/,
+    /Later drift in a bound input invalidates the affected evidence/,
+    /Every source writer and owned process of the slice has ended before a serialized green or commit window opens/,
+    /the actual assembled tree at the integration gate; earlier slice greens never stand in for it/,
+  ]);
 
   test("the readiness policy is owned once and reaches no other host", () => {
     const authored = readRepoText(sharedReferencePath("codex"));
