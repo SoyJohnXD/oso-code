@@ -112,6 +112,17 @@ const LINEAGE_PAYLOADS = {
   root: { id, cwd: root, source: "cli" },
 };
 
+test("native patch data is not executable shell or an Engram operation", () => {
+  const patch = `*** Begin Patch\n*** Add File: fixture.ts\n+const example = 'engram save title body';\n+${"x".repeat(MAX_LEXED_INPUT_BYTES)}\n*** End Patch`;
+  for (const lineage of ["child", "missing", "contradictory"] as const) {
+    writeFileSync(transcript, `${JSON.stringify({ type: "session_meta", payload: LINEAGE_PAYLOADS[lineage] })}\n`);
+    for (const tool of ["apply_patch", "exec_command", "mcp__engram__mem_save"]) {
+      const envelope = readEnvelope(JSON.stringify({ session_id: id, cwd: root, transcript_path: transcript, tool_name: tool, tool_input: { command: patch } }), { host: "codex", agentSession: "1", stateBin: "" });
+      assert.equal(runGate(["unknown", "--allow", tool], envelope).verdict.kind, tool === "apply_patch" ? "allow" : "deny", `${lineage}: ${tool}`);
+    }
+  }
+});
+
 for (const lineage of ["child", "missing", "contradictory"] as const) {
   test(`unread direct and wrapped command/cmd memory writes deny ${lineage} callers`, () => {
     writeFileSync(transcript, `${JSON.stringify({ type: "session_meta", payload: LINEAGE_PAYLOADS[lineage] })}\n`);

@@ -4097,6 +4097,7 @@ function judgeUnknownTool({ envelope, argv }) {
 function codexMemoryDenial(envelope) {
   if (envelope.caller.host !== "codex") return void 0;
   const tool = envelope.toolName;
+  if (tool === "apply_patch") return void 0;
   const reads = ["mcp__engram__mem_context", "mcp__engram__mem_search", "mcp__engram__mem_get_observation"];
   if (reads.includes(tool)) return void 0;
   const memoryTool = tool.startsWith("mcp__engram__");

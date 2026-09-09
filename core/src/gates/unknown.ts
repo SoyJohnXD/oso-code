@@ -73,6 +73,7 @@ function judgeUnknownTool({ envelope, argv }: GateRequest): GateOutcome {
 function codexMemoryDenial(envelope: HookEnvelope): GateOutcome | undefined {
   if (envelope.caller.host !== "codex") return undefined;
   const tool = envelope.toolName;
+  if (tool === "apply_patch") return undefined;
   const reads = ["mcp__engram__mem_context", "mcp__engram__mem_search", "mcp__engram__mem_get_observation"];
   if (reads.includes(tool)) return undefined;
   const memoryTool = tool.startsWith("mcp__engram__");
