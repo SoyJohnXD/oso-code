@@ -39,6 +39,8 @@ const DENIED_WORKSPACE_GLOBS = [
 
 export type FallowResolution = Readonly<{ command: string; resolved: boolean }>;
 
+export type OsoPermissionProfile = Readonly<{ rootKeys: string; tables: string }>;
+
 export function tomlQuote(value: string): string {
   return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 }
@@ -47,41 +49,12 @@ export function renderCodexManagedFeatures(): string {
   return "hooks = true\nmulti_agent = true\n";
 }
 
-export function renderCodexManagedConfig(targetHome: string, runtimeRoot: string, fallowCommand: string): string {
+export function renderCodexManagedConfig(runtimeRoot: string, fallowCommand: string): string {
   const stateBin = tomlQuote(path.posix.join(runtimeRoot, "bin", "oso-state"));
-  const stateRoot = tomlQuote(path.posix.join(targetHome, ".local", "state", "oso-code"));
-  const worktreeRoot = tomlQuote(path.posix.join(targetHome, ".local", "state", "oso-code", "worktrees"));
   return [
-    'default_permissions = "oso"',
-    "",
     "[shell_environment_policy.set]",
     'OSO_AGENT = "1"',
     `OSO_STATE_BIN = ${stateBin}`,
-    "",
-    "[permissions.oso]",
-    'extends = ":workspace"',
-    "",
-    'description = "oso-code workspace profile"',
-    "",
-    "[permissions.oso.workspace_roots]",
-    `${stateRoot} = true`,
-    `${worktreeRoot} = true`,
-    "",
-    "[permissions.oso.filesystem]",
-    "glob_scan_max_depth = 6",
-    "",
-    '[permissions.oso.filesystem.":workspace_roots"]',
-    ...DENIED_WORKSPACE_GLOBS.map((glob) => `"${glob}" = "deny"`),
-    '".git/**" = "write"',
-    '".git/config" = "read"',
-    "",
-    "[permissions.oso.network]",
-    "enabled = true",
-    "",
-    "[permissions.oso.network.domains]",
-    '"*" = "allow"',
-    '"169.254.169.254" = "deny"',
-    '"metadata.google.internal" = "deny"',
     "",
     "[mcp_servers.context7]",
     'url = "https://mcp.context7.com/mcp"',
@@ -90,6 +63,41 @@ export function renderCodexManagedConfig(targetHome: string, runtimeRoot: string
     `command = ${tomlQuote(fallowCommand)}`,
     "",
   ].join("\n");
+}
+
+export function renderOsoPermissionProfile(targetHome: string): OsoPermissionProfile {
+  const stateRoot = tomlQuote(path.posix.join(targetHome, ".local", "state", "oso-code"));
+  const worktreeRoot = tomlQuote(path.posix.join(targetHome, ".local", "state", "oso-code", "worktrees"));
+  return {
+    rootKeys: 'default_permissions = "oso"\n',
+    tables: [
+      "[permissions.oso]",
+      'extends = ":workspace"',
+      "",
+      'description = "oso-code workspace profile"',
+      "",
+      "[permissions.oso.workspace_roots]",
+      `${stateRoot} = true`,
+      `${worktreeRoot} = true`,
+      "",
+      "[permissions.oso.filesystem]",
+      "glob_scan_max_depth = 6",
+      "",
+      '[permissions.oso.filesystem.":workspace_roots"]',
+      ...DENIED_WORKSPACE_GLOBS.map((glob) => `"${glob}" = "deny"`),
+      '".git/**" = "write"',
+      '".git/config" = "read"',
+      "",
+      "[permissions.oso.network]",
+      "enabled = true",
+      "",
+      "[permissions.oso.network.domains]",
+      '"*" = "allow"',
+      '"169.254.169.254" = "deny"',
+      '"metadata.google.internal" = "deny"',
+      "",
+    ].join("\n"),
+  };
 }
 
 export function resolveFallowMcpCommand(

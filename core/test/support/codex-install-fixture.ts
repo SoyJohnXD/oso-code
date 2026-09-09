@@ -4,10 +4,45 @@ import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { after } from "node:test";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { CONFIG_MARKER_END, CONFIG_MARKER_START } from "../../src/install/codex-config.ts";
 import type { CodexHostProbes, HostRun } from "../../src/install/codex-host.ts";
 import { SUPPORTED_CODEX_VERSION } from "../../src/install/pins.ts";
 import { guardRepositoryGitConfig } from "./repository-git-config-guard.ts";
 import { repositoryRoot } from "./state-sandbox.ts";
+
+export const RELEASED_PERMISSION_KEYS = ["default_permissions", "[permissions.oso]"];
+
+export const PREVIOUS_RELEASE_CONFIG = [
+  CONFIG_MARKER_START,
+  'default_permissions = "oso"',
+  'model = "gpt-6-astra"',
+  'model_reasoning_effort = "xhigh"',
+  'service_tier = "default"',
+  "",
+  "[shell_environment_policy.set]",
+  'OSO_AGENT = "1"',
+  "",
+  "[permissions.oso]",
+  'extends = ":workspace"',
+  "",
+  "[permissions.oso.workspace_roots]",
+  '"/somewhere/the/operator/kept" = true',
+  "",
+  '[permissions.oso.filesystem.":workspace_roots"]',
+  '"**/.env" = "deny"',
+  "",
+  "[mcp_servers.fallow]",
+  'command = "/usr/bin/fallow-mcp"',
+  CONFIG_MARKER_END,
+  "",
+  "[history]",
+  'persistence = "save-all"',
+  "",
+].join("\n");
+
+export function insideTheManagedRegion(text: string): string {
+  return text.split(CONFIG_MARKER_START)[1]?.split(CONFIG_MARKER_END)[0] ?? "";
+}
 
 const PUBLISHED_FILES_AN_INSTALL_READS = [
   "bootstrap/codex-global.md",

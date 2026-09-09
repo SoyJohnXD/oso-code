@@ -22,7 +22,9 @@ import {
   MODEL_INSTRUCTIONS_KEY,
   renderCodexManagedConfig,
   renderCodexManagedFeatures,
+  renderOsoPermissionProfile,
   resolveFallowMcpCommand,
+  type OsoPermissionProfile,
 } from "./codex-config.ts";
 import {
   CODEX_HOOKS_MANIFEST,
@@ -53,7 +55,7 @@ import {
   type WiringEntry,
 } from "./report.ts";
 import { parseTomlDocument, TomlParseError } from "./toml.ts";
-import { mergeEngramLeaves, runTomlRegion, type TomlRegionOutput } from "./toml-regions.ts";
+import { mergeEngramLeaves, recordsOf, runTomlRegion, type TomlRegionOutput } from "./toml-regions.ts";
 import { trustDivergences } from "./trust.ts";
 import { firstExecutableOnPath } from "./verify-claude.ts";
 import { filesHoldTheSameBytes, isDirectoryNotSymlink, isExecutableRegularFile, isReadableRegularFile, isRegularNonSymlinkFile, isSymlink, isoTimestamp, withOwnerOnlyUmask } from "../state/store.ts";
@@ -63,12 +65,18 @@ const CODEX_REPAIR_BACKUP_FORMAT = "oso-code-codex-repair-v1";
 const CODEX_PURGE_BACKUP_FORMAT = "oso-code-codex-purge-v1";
 
 export const OSO_OWNED_CONFIG_PATHS = [
-  ["default_permissions"],
   ["shell_environment_policy", "set"],
   ["mcp_servers", "context7"],
   ["mcp_servers", "fallow"],
-  ["permissions", "oso"],
 ] as const;
+
+export type ManagedConfigRebuild = Readonly<{
+  existingText: string;
+  configFile: string;
+  targetHome: string;
+  runtimeRoot: string;
+  fallowCommand: string;
+}>;
 
 export type CodexCommandInput = Readonly<{
   homeDirectory: string;
@@ -153,6 +161,33 @@ export function operatorAgentsNotice(text: string, file: string): string | undef
   return settings.length === 0 ? undefined : `Codex [agents] is the operator's own: ${settings.join(", ")}`;
 }
 
+export function operatorPermissionsNotice(text: string, file: string): string | undefined {
+  const outsideTheRegion = runTomlRegion(text, { action: "strip", startMarker: CONFIG_MARKER_START, endMarker: CONFIG_MARKER_END });
+  if (outsideTheRegion.exitCode !== 0) return undefined;
+  const settings = permissionSettingsOf(outsideTheRegion.stdout, file);
+  return settings.length === 0 ? undefined : `Codex permissions are the operator's own: ${settings.join(", ")}`;
+}
+
+export function codexPermissionsNotice(text: string, file: string): string {
+  const alreadyTheirs = operatorPermissionsNotice(text, file);
+  if (alreadyTheirs !== undefined) return alreadyTheirs;
+  const region = runTomlRegion(text, { action: "extract", startMarker: CONFIG_MARKER_START, endMarker: CONFIG_MARKER_END });
+  const stillInside = region.exitCode === 0 ? permissionSettingsOf(region.stdout, file) : [];
+  return stillInside.length === 0
+    ? "Codex permissions are seeded once outside the managed region, and no later install rewrites that choice"
+    : `Codex permissions move out of the managed region and stay the operator's own: ${stillInside.join(", ")}`;
+}
+
+function permissionSettingsOf(text: string, file: string): string[] {
+  const document = parseTomlDocument(text, file);
+  const chosen = document["default_permissions"];
+  const profiles = document["permissions"];
+  return [
+    ...(chosen === undefined ? [] : [`default_permissions = ${JSON.stringify(chosen)}`]),
+    ...(isRecord(profiles) ? Object.keys(profiles).map((name) => `[permissions.${name}]`) : []),
+  ];
+}
+
 function settingLinesOf(prefix: string, table: Record<string, unknown>): string[] {
   return Object.entries(table).flatMap(([key, value]) => {
     const name = prefix === "" ? key : `${prefix}.${key}`;
@@ -199,7 +234,30 @@ export function refusalMessage(refusal: ConfigRefusal): string {
   }
 }
 
-export function rebuildManagedConfig(existingText: string, targetHome: string, runtimeRoot: string, fallowCommand: string): string {
+export function rebuildManagedConfig(rebuild: ManagedConfigRebuild): string {
+  const managed = renderCodexManagedConfig(rebuild.runtimeRoot, rebuild.fallowCommand);
+  const outside = operatorTextOutsideTheRegion(rebuild.existingText);
+  const parts = runTomlRegion(outside, { action: "split" });
+  const lifted = liftedOutOfTheRegion(rebuild, managed);
+  const seeded = seededWhereNothingDeclaresPermissions(rebuild.targetHome, [outside, lifted.root, lifted.sections]);
+  const root = blocksJoined([parts.root, lifted.root, seeded.rootKeys]);
+  const sections = withMergedFeatureRegion(blocksJoined([parts.sections, lifted.sections, seeded.tables]));
+  return [
+    root,
+    root === "" ? "" : "\n",
+    `${CONFIG_MARKER_START}\n`,
+    managed,
+    `${CONFIG_MARKER_END}\n`,
+    sections === "" ? "" : "\n",
+    sections,
+  ].join("");
+}
+
+type OperatorTextSplit = Readonly<{ root: string; sections: string }>;
+
+const NOTHING_SEEDED: OsoPermissionProfile = { rootKeys: "", tables: "" };
+
+function operatorTextOutsideTheRegion(existingText: string): string {
   const clean = runTomlRegion(existingText, { action: "strip", startMarker: CONFIG_MARKER_START, endMarker: CONFIG_MARKER_END });
   if (clean.exitCode !== 0) throw new Error(refusalMessage({ kind: "malformed-markers" }));
   const withoutFeatures = runTomlRegion(clean.stdout, {
@@ -208,19 +266,57 @@ export function rebuildManagedConfig(existingText: string, targetHome: string, r
     featureEndMarker: FEATURE_MARKER_END,
   });
   if (withoutFeatures.exitCode !== 0) throw new Error(refusalMessage({ kind: "malformed-features" }));
-  const parts = runTomlRegion(withoutFeatures.stdout, { action: "split" });
+  return withoutFeatures.stdout;
+}
+
+function liftedOutOfTheRegion(rebuild: ManagedConfigRebuild, managed: string): OperatorTextSplit {
+  const region = runTomlRegion(rebuild.existingText, { action: "extract", startMarker: CONFIG_MARKER_START, endMarker: CONFIG_MARKER_END });
+  if (region.exitCode !== 0) throw new Error(refusalMessage({ kind: "malformed-markers" }));
+  const operatorText = tableHeadersOf(managed).reduce((text, header) => {
+    const removed = runTomlRegion(text, { action: "remove-table", targetHeader: header });
+    if (removed.exitCode !== 0) throw new Error(`the managed region in ${rebuild.configFile} declares ${header} more than once`);
+    return removed.stdout;
+  }, region.stdout);
+  const parts = runTomlRegion(operatorText, { action: "split" });
+  return { root: parts.root, sections: parts.sections };
+}
+
+function seededWhereNothingDeclaresPermissions(targetHome: string, texts: readonly string[]): OsoPermissionProfile {
+  return texts.some(declaresPermissions) ? NOTHING_SEEDED : renderOsoPermissionProfile(targetHome);
+}
+
+function declaresPermissions(text: string): boolean {
+  return rootSymbolLinesOf(text)
+    .flatMap(decodedSymbol)
+    .some((symbol) => Object.hasOwn(symbol, "default_permissions") || Object.hasOwn(symbol, "permissions"));
+}
+
+function tableHeadersOf(text: string): string[] {
+  return rootSymbolLinesOf(text).filter((line) => line.startsWith("["));
+}
+
+function rootSymbolLinesOf(text: string): string[] {
+  return recordsOf(runTomlRegion(text, { action: "root-symbols" }).stdout);
+}
+
+function decodedSymbol(line: string): Record<string, unknown>[] {
+  try {
+    return [parseTomlDocument(line, line)];
+  } catch (error) {
+    if (error instanceof TomlParseError) return [];
+    throw error;
+  }
+}
+
+function withMergedFeatureRegion(sections: string): string {
   const featureBlock = `${FEATURE_MARKER_START}\n${renderCodexManagedFeatures()}${FEATURE_MARKER_END}\n`;
-  const merged = runTomlRegion(parts.sections, { action: "features-merge", featureText: featureBlock });
+  const merged = runTomlRegion(sections, { action: "features-merge", featureText: featureBlock });
   if (merged.exitCode !== 0) throw new Error(refusalMessage({ kind: "malformed-features" }));
-  return [
-    withoutTrailingBlankLines(parts.root),
-    parts.root === "" ? "" : "\n",
-    `${CONFIG_MARKER_START}\n`,
-    renderCodexManagedConfig(targetHome, runtimeRoot, fallowCommand),
-    `${CONFIG_MARKER_END}\n`,
-    merged.stdout === "" ? "" : "\n",
-    merged.stdout,
-  ].join("");
+  return merged.stdout;
+}
+
+function blocksJoined(blocks: readonly string[]): string {
+  return blocks.map(withoutTrailingBlankLines).filter((block) => block !== "").join("\n");
 }
 
 export function rebuildGlobalGuidance(existingText: string, body: string): string {
@@ -262,10 +358,10 @@ function writeCodexInstall(input: CodexCommandInput): CommandOutcome {
 
   const infoLines: string[] = [`backup: ${tx.backupRoot}`];
   if (input.host.versionNote !== undefined) infoLines.push(input.host.versionNote);
-  const agentsNotice = isReadableRegularFile(paths.configFile)
-    ? operatorAgentsNotice(readFileSync(paths.configFile, "utf8"), paths.configFile)
-    : undefined;
+  const configBeforeTheInstall = isReadableRegularFile(paths.configFile) ? readFileSync(paths.configFile, "utf8") : "";
+  const agentsNotice = operatorAgentsNotice(configBeforeTheInstall, paths.configFile);
   if (agentsNotice !== undefined) infoLines.push(agentsNotice);
+  infoLines.push(codexPermissionsNotice(configBeforeTheInstall, paths.configFile));
   const wiring: WiringEntry[] = [];
   const fallow = resolveFallowCommandFor(input, paths);
   wiring.push(
@@ -584,8 +680,13 @@ function renderHooksManifest(source: string, runtimeRoot: string): string {
 }
 
 function writeManagedConfig(paths: CodexPaths, fallowCommand: string, host: CodexHostProbes): void {
-  const existing = isReadableRegularFile(paths.configFile) ? readFileSync(paths.configFile, "utf8") : "";
-  const rebuilt = rebuildManagedConfig(existing, paths.homeDirectory, paths.runtimeRoot, fallowCommand);
+  const rebuilt = rebuildManagedConfig({
+    existingText: isReadableRegularFile(paths.configFile) ? readFileSync(paths.configFile, "utf8") : "",
+    configFile: paths.configFile,
+    targetHome: paths.homeDirectory,
+    runtimeRoot: paths.runtimeRoot,
+    fallowCommand,
+  });
   mkdirSync(paths.codexHome, { recursive: true });
   if (!host.acceptsConfig(paths.codexHome, rebuilt)) throw new Error(HOST_REJECTED_CONFIG);
   writeFileSync(paths.configFile, rebuilt, { mode: 0o600 });

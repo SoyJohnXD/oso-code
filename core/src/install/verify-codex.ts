@@ -9,7 +9,14 @@ import {
   GLOBAL_MARKER_START,
   renderCodexManagedConfig,
 } from "./codex-config.ts";
-import { codexPathsFor, managedFeaturesStatus, normalizedEngramPointerConfig, operatorAgentsNotice, type CodexPaths } from "./codex.ts";
+import {
+  codexPathsFor,
+  managedFeaturesStatus,
+  normalizedEngramPointerConfig,
+  operatorAgentsNotice,
+  operatorPermissionsNotice,
+  type CodexPaths,
+} from "./codex.ts";
 import { type CodexHostProbes } from "./codex-host.ts";
 import {
   CODEX_HOOKS_MANIFEST,
@@ -86,6 +93,7 @@ export function verifyCodex(input: VerifyCodexInput): VerifyOutcome {
   checkMarketplacePayload(report, paths, input.repositoryRoot);
   checkManagedConfigRegion(report, paths, input.environment);
   checkOperatorAgentSettings(report, paths, configParses);
+  checkOperatorPermissionSettings(report, paths, configParses);
   checkHostAcceptsOsoProfile(report, paths, input.host);
   checkGlobalGuidance(report, paths, input.repositoryRoot);
   checkEngramWiring(report, paths, configParses);
@@ -230,7 +238,7 @@ export function checkManagedConfigRegion(report: VerifyReport, paths: CodexPaths
     return;
   }
   const fallowCommand = fallowCommandInside(extracted.stdout);
-  const expected = renderCodexManagedConfig(paths.homeDirectory, paths.runtimeRoot, fallowCommand);
+  const expected = renderCodexManagedConfig(paths.runtimeRoot, fallowCommand);
   if (extracted.stdout !== expected) {
     report.check("managed Codex config", "valid", "divergent");
     return;
@@ -315,6 +323,12 @@ export function checkAgentPayload(report: VerifyReport, paths: CodexPaths, repos
 export function checkOperatorAgentSettings(report: VerifyReport, paths: CodexPaths, configParses: boolean): void {
   if (!configParses || !isReadableRegularFile(paths.configFile)) return;
   const notice = operatorAgentsNotice(readFileSync(paths.configFile, "utf8"), paths.configFile);
+  if (notice !== undefined) report.note(notice);
+}
+
+export function checkOperatorPermissionSettings(report: VerifyReport, paths: CodexPaths, configParses: boolean): void {
+  if (!configParses || !isReadableRegularFile(paths.configFile)) return;
+  const notice = operatorPermissionsNotice(readFileSync(paths.configFile, "utf8"), paths.configFile);
   if (notice !== undefined) report.note(notice);
 }
 

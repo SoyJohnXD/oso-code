@@ -12,6 +12,7 @@ import {
   GLOBAL_MARKER_START,
   MODEL_INSTRUCTIONS_KEY,
   renderCodexManagedConfig,
+  renderOsoPermissionProfile,
   tomlQuote,
 } from "../../src/install/codex-config.ts";
 import {
@@ -24,7 +25,13 @@ import {
   type CodexCommandInput,
 } from "../../src/install/codex.ts";
 import { parseTomlDocument } from "../../src/install/toml.ts";
-import { CODEX_WRITER_HOME_SEGMENT, fixtureRepositoryRoot, pinnedHost } from "../support/codex-install-fixture.ts";
+import {
+  CODEX_WRITER_HOME_SEGMENT,
+  fixtureRepositoryRoot,
+  insideTheManagedRegion,
+  pinnedHost,
+  PREVIOUS_RELEASE_CONFIG,
+} from "../support/codex-install-fixture.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
 
 const sandbox = mkdtempSync(path.join(tmpdir(), "oso-codex-install-"));
@@ -542,12 +549,62 @@ describe("oso install --host codex over a fixture HOME", () => {
   test("it refuses an oso-owned key already living outside the region, and leaves that config unwritten", () => {
     const home = fixtureHome();
     const configFile = path.join(home, ".codex", "config.toml");
-    const hostile = '[permissions.oso]\nextends = ":workspace"\n';
+    const hostile = '[shell_environment_policy.set]\nOSO_AGENT = "1"\n';
     writeFileSync(configFile, hostile);
     const outcome = installCodex(inputFor(home));
     assert.equal(outcome.exitCode, 1);
-    assert.match(outcome.report, /oso-code-owned key permissions\.oso outside the managed region/);
+    assert.match(outcome.report, /oso-code-owned key shell_environment_policy\.set outside the managed region/);
     assert.equal(readFileSync(configFile, "utf8"), hostile);
+  });
+
+  test("a first install seeds a ready-to-use permission default outside the region and says so", () => {
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    const outcome = installCodex(inputFor(home, { installImpeccable: false }));
+    assert.equal(outcome.exitCode, 0, outcome.report);
+    assert.match(outcome.report, /Codex permissions are seeded once outside the managed region/);
+    const installed = readFileSync(paths.configFile, "utf8");
+    const document = parseTomlDocument(installed, paths.configFile);
+    const profile = (document["permissions"] as Record<string, Record<string, unknown>>)["oso"] as Record<string, unknown>;
+    assert.equal(document["default_permissions"], "oso");
+    assert.deepEqual(Object.keys(profile["workspace_roots"] as object), [
+      `${home}/.local/state/oso-code`,
+      `${home}/.local/state/oso-code/worktrees`,
+    ]);
+    assert.equal(insideTheManagedRegion(installed).includes("permissions"), false);
+  });
+
+  test("a second install over an operator-edited profile leaves it byte for byte and names it as theirs", () => {
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    assert.equal(installCodex(inputFor(home, { installImpeccable: false })).exitCode, 0);
+    const edited = readFileSync(paths.configFile, "utf8")
+      .replace('default_permissions = "oso"', 'default_permissions = "mine"')
+      .replace("[permissions.oso]", "[permissions.mine]");
+    writeFileSync(paths.configFile, edited);
+    const second = installCodex(inputFor(home, { installImpeccable: false }));
+    assert.equal(second.exitCode, 0, second.report);
+    assert.match(second.report, /Codex permissions are the operator's own: default_permissions = "mine", \[permissions\.mine\]/);
+    assert.equal(readFileSync(paths.configFile, "utf8"), edited);
+  });
+
+  test("an upgrade lifts the previous release's permissions out of the region, values and model choice intact", () => {
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    writeFileSync(paths.configFile, PREVIOUS_RELEASE_CONFIG);
+    const outcome = installCodex(inputFor(home, { installImpeccable: false }));
+    assert.equal(outcome.exitCode, 0, outcome.report);
+    assert.match(outcome.report, /Codex permissions move out of the managed region and stay the operator's own/);
+    const installed = readFileSync(paths.configFile, "utf8");
+    const document = parseTomlDocument(installed, paths.configFile);
+    const profile = (document["permissions"] as Record<string, Record<string, unknown>>)["oso"] as Record<string, unknown>;
+    assert.equal(document["default_permissions"], "oso");
+    assert.deepEqual(profile["workspace_roots"], { "/somewhere/the/operator/kept": true });
+    assert.deepEqual(
+      [document["model"], document["model_reasoning_effort"], document["service_tier"]],
+      ["gpt-6-astra", "xhigh", "default"],
+    );
+    assert.equal(insideTheManagedRegion(installed).includes("permissions"), false);
   });
 
   test("it refuses a config with malformed markers rather than rewriting it", () => {
@@ -680,15 +737,17 @@ describe(
     `${THE_CONFIG_TOML_CLOSURE.length} file(s) of the closure that can — the row's whole win32 surface`,
   () => {
     test("the rendered body is byte-identical for the same two path strings whatever platform renders it", () => {
-      const posix = renderCodexManagedConfig("/home/x/.codex", "/home/x/rt", "/usr/bin/fallow-mcp");
-      const again = renderCodexManagedConfig("/home/x/.codex", "/home/x/rt", "/usr/bin/fallow-mcp");
+      const posix = renderCodexManagedConfig("/home/x/rt", "/usr/bin/fallow-mcp");
+      const again = renderCodexManagedConfig("/home/x/rt", "/usr/bin/fallow-mcp");
       assert.equal(posix, again);
       assert.ok(posix.includes('OSO_STATE_BIN = "/home/x/rt/bin/oso-state"'));
     });
 
     test("a native win32-shaped home renders its separators back verbatim, backslash-escaped by the TOML quoter", () => {
-      const rendered = renderCodexManagedConfig("C:\\Users\\x\\.codex", "C:\\Users\\x\\rt", "fallow-mcp.cmd");
+      const rendered = renderCodexManagedConfig("C:\\Users\\x\\rt", "fallow-mcp.cmd");
       assert.ok(rendered.includes('OSO_STATE_BIN = "C:\\\\Users\\\\x\\\\rt/bin/oso-state"'));
+      const profile = renderOsoPermissionProfile("C:\\Users\\x");
+      assert.ok(profile.tables.includes('"C:\\\\Users\\\\x/.local/state/oso-code" = true'));
     });
 
     test("the config.toml render closure is exactly the files recorded here, so no site hides in a file this walk never opens", () => {

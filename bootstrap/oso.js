@@ -1938,41 +1938,12 @@ function tomlQuote(value) {
 function renderCodexManagedFeatures() {
   return "hooks = true\nmulti_agent = true\n";
 }
-function renderCodexManagedConfig(targetHome, runtimeRoot, fallowCommand) {
+function renderCodexManagedConfig(runtimeRoot, fallowCommand) {
   const stateBin = tomlQuote(path8.posix.join(runtimeRoot, "bin", "oso-state"));
-  const stateRoot = tomlQuote(path8.posix.join(targetHome, ".local", "state", "oso-code"));
-  const worktreeRoot = tomlQuote(path8.posix.join(targetHome, ".local", "state", "oso-code", "worktrees"));
   return [
-    'default_permissions = "oso"',
-    "",
     "[shell_environment_policy.set]",
     'OSO_AGENT = "1"',
     `OSO_STATE_BIN = ${stateBin}`,
-    "",
-    "[permissions.oso]",
-    'extends = ":workspace"',
-    "",
-    'description = "oso-code workspace profile"',
-    "",
-    "[permissions.oso.workspace_roots]",
-    `${stateRoot} = true`,
-    `${worktreeRoot} = true`,
-    "",
-    "[permissions.oso.filesystem]",
-    "glob_scan_max_depth = 6",
-    "",
-    '[permissions.oso.filesystem.":workspace_roots"]',
-    ...DENIED_WORKSPACE_GLOBS.map((glob) => `"${glob}" = "deny"`),
-    '".git/**" = "write"',
-    '".git/config" = "read"',
-    "",
-    "[permissions.oso.network]",
-    "enabled = true",
-    "",
-    "[permissions.oso.network.domains]",
-    '"*" = "allow"',
-    '"169.254.169.254" = "deny"',
-    '"metadata.google.internal" = "deny"',
     "",
     "[mcp_servers.context7]",
     'url = "https://mcp.context7.com/mcp"',
@@ -1981,6 +1952,40 @@ function renderCodexManagedConfig(targetHome, runtimeRoot, fallowCommand) {
     `command = ${tomlQuote(fallowCommand)}`,
     ""
   ].join("\n");
+}
+function renderOsoPermissionProfile(targetHome) {
+  const stateRoot = tomlQuote(path8.posix.join(targetHome, ".local", "state", "oso-code"));
+  const worktreeRoot = tomlQuote(path8.posix.join(targetHome, ".local", "state", "oso-code", "worktrees"));
+  return {
+    rootKeys: 'default_permissions = "oso"\n',
+    tables: [
+      "[permissions.oso]",
+      'extends = ":workspace"',
+      "",
+      'description = "oso-code workspace profile"',
+      "",
+      "[permissions.oso.workspace_roots]",
+      `${stateRoot} = true`,
+      `${worktreeRoot} = true`,
+      "",
+      "[permissions.oso.filesystem]",
+      "glob_scan_max_depth = 6",
+      "",
+      '[permissions.oso.filesystem.":workspace_roots"]',
+      ...DENIED_WORKSPACE_GLOBS.map((glob) => `"${glob}" = "deny"`),
+      '".git/**" = "write"',
+      '".git/config" = "read"',
+      "",
+      "[permissions.oso.network]",
+      "enabled = true",
+      "",
+      "[permissions.oso.network.domains]",
+      '"*" = "allow"',
+      '"169.254.169.254" = "deny"',
+      '"metadata.google.internal" = "deny"',
+      ""
+    ].join("\n")
+  };
 }
 function resolveFallowMcpCommand2(targetHome, environment, npmPrefixOf, firstOnPath) {
   const appData = environment["APPDATA"] ?? "";
@@ -3259,11 +3264,9 @@ var CODEX_INSTALL_BACKUP_FORMAT = "oso-code-codex-install-v1";
 var CODEX_REPAIR_BACKUP_FORMAT = "oso-code-codex-repair-v1";
 var CODEX_PURGE_BACKUP_FORMAT = "oso-code-codex-purge-v1";
 var OSO_OWNED_CONFIG_PATHS = [
-  ["default_permissions"],
   ["shell_environment_policy", "set"],
   ["mcp_servers", "context7"],
-  ["mcp_servers", "fallow"],
-  ["permissions", "oso"]
+  ["mcp_servers", "fallow"]
 ];
 function codexPathsFor(homeDirectory2, environment) {
   const codexHome = environment["CODEX_HOME"] ?? path10.join(homeDirectory2, ".codex");
@@ -3309,6 +3312,28 @@ function operatorAgentsNotice(text, file) {
   const settings = isRecord2(agents) ? settingLinesOf("", agents) : [];
   return settings.length === 0 ? void 0 : `Codex [agents] is the operator's own: ${settings.join(", ")}`;
 }
+function operatorPermissionsNotice(text, file) {
+  const outsideTheRegion = runTomlRegion(text, { action: "strip", startMarker: CONFIG_MARKER_START, endMarker: CONFIG_MARKER_END });
+  if (outsideTheRegion.exitCode !== 0) return void 0;
+  const settings = permissionSettingsOf(outsideTheRegion.stdout, file);
+  return settings.length === 0 ? void 0 : `Codex permissions are the operator's own: ${settings.join(", ")}`;
+}
+function codexPermissionsNotice(text, file) {
+  const alreadyTheirs = operatorPermissionsNotice(text, file);
+  if (alreadyTheirs !== void 0) return alreadyTheirs;
+  const region = runTomlRegion(text, { action: "extract", startMarker: CONFIG_MARKER_START, endMarker: CONFIG_MARKER_END });
+  const stillInside = region.exitCode === 0 ? permissionSettingsOf(region.stdout, file) : [];
+  return stillInside.length === 0 ? "Codex permissions are seeded once outside the managed region, and no later install rewrites that choice" : `Codex permissions move out of the managed region and stay the operator's own: ${stillInside.join(", ")}`;
+}
+function permissionSettingsOf(text, file) {
+  const document = parseTomlDocument(text, file);
+  const chosen = document["default_permissions"];
+  const profiles = document["permissions"];
+  return [
+    ...chosen === void 0 ? [] : [`default_permissions = ${JSON.stringify(chosen)}`],
+    ...isRecord2(profiles) ? Object.keys(profiles).map((name) => `[permissions.${name}]`) : []
+  ];
+}
 function settingLinesOf(prefix, table) {
   return Object.entries(table).flatMap(([key, value]) => {
     const name = prefix === "" ? key : `${prefix}.${key}`;
@@ -3352,7 +3377,28 @@ function refusalMessage(refusal) {
       return `Codex config already defines the oso-code-owned key ${refusal.keyPath} outside the managed region`;
   }
 }
-function rebuildManagedConfig(existingText, targetHome, runtimeRoot, fallowCommand) {
+function rebuildManagedConfig(rebuild) {
+  const managed = renderCodexManagedConfig(rebuild.runtimeRoot, rebuild.fallowCommand);
+  const outside = operatorTextOutsideTheRegion(rebuild.existingText);
+  const parts = runTomlRegion(outside, { action: "split" });
+  const lifted = liftedOutOfTheRegion(rebuild, managed);
+  const seeded = seededWhereNothingDeclaresPermissions(rebuild.targetHome, [outside, lifted.root, lifted.sections]);
+  const root = blocksJoined([parts.root, lifted.root, seeded.rootKeys]);
+  const sections = withMergedFeatureRegion(blocksJoined([parts.sections, lifted.sections, seeded.tables]));
+  return [
+    root,
+    root === "" ? "" : "\n",
+    `${CONFIG_MARKER_START}
+`,
+    managed,
+    `${CONFIG_MARKER_END}
+`,
+    sections === "" ? "" : "\n",
+    sections
+  ].join("");
+}
+var NOTHING_SEEDED = { rootKeys: "", tables: "" };
+function operatorTextOutsideTheRegion(existingText) {
   const clean = runTomlRegion(existingText, { action: "strip", startMarker: CONFIG_MARKER_START, endMarker: CONFIG_MARKER_END });
   if (clean.exitCode !== 0) throw new Error(refusalMessage({ kind: "malformed-markers" }));
   const withoutFeatures = runTomlRegion(clean.stdout, {
@@ -3361,23 +3407,49 @@ function rebuildManagedConfig(existingText, targetHome, runtimeRoot, fallowComma
     featureEndMarker: FEATURE_MARKER_END
   });
   if (withoutFeatures.exitCode !== 0) throw new Error(refusalMessage({ kind: "malformed-features" }));
-  const parts = runTomlRegion(withoutFeatures.stdout, { action: "split" });
+  return withoutFeatures.stdout;
+}
+function liftedOutOfTheRegion(rebuild, managed) {
+  const region = runTomlRegion(rebuild.existingText, { action: "extract", startMarker: CONFIG_MARKER_START, endMarker: CONFIG_MARKER_END });
+  if (region.exitCode !== 0) throw new Error(refusalMessage({ kind: "malformed-markers" }));
+  const operatorText = tableHeadersOf(managed).reduce((text, header) => {
+    const removed = runTomlRegion(text, { action: "remove-table", targetHeader: header });
+    if (removed.exitCode !== 0) throw new Error(`the managed region in ${rebuild.configFile} declares ${header} more than once`);
+    return removed.stdout;
+  }, region.stdout);
+  const parts = runTomlRegion(operatorText, { action: "split" });
+  return { root: parts.root, sections: parts.sections };
+}
+function seededWhereNothingDeclaresPermissions(targetHome, texts) {
+  return texts.some(declaresPermissions) ? NOTHING_SEEDED : renderOsoPermissionProfile(targetHome);
+}
+function declaresPermissions(text) {
+  return rootSymbolLinesOf(text).flatMap(decodedSymbol).some((symbol) => Object.hasOwn(symbol, "default_permissions") || Object.hasOwn(symbol, "permissions"));
+}
+function tableHeadersOf(text) {
+  return rootSymbolLinesOf(text).filter((line) => line.startsWith("["));
+}
+function rootSymbolLinesOf(text) {
+  return recordsOf(runTomlRegion(text, { action: "root-symbols" }).stdout);
+}
+function decodedSymbol(line) {
+  try {
+    return [parseTomlDocument(line, line)];
+  } catch (error) {
+    if (error instanceof TomlParseError) return [];
+    throw error;
+  }
+}
+function withMergedFeatureRegion(sections) {
   const featureBlock = `${FEATURE_MARKER_START}
 ${renderCodexManagedFeatures()}${FEATURE_MARKER_END}
 `;
-  const merged = runTomlRegion(parts.sections, { action: "features-merge", featureText: featureBlock });
+  const merged = runTomlRegion(sections, { action: "features-merge", featureText: featureBlock });
   if (merged.exitCode !== 0) throw new Error(refusalMessage({ kind: "malformed-features" }));
-  return [
-    withoutTrailingBlankLines(parts.root),
-    parts.root === "" ? "" : "\n",
-    `${CONFIG_MARKER_START}
-`,
-    renderCodexManagedConfig(targetHome, runtimeRoot, fallowCommand),
-    `${CONFIG_MARKER_END}
-`,
-    merged.stdout === "" ? "" : "\n",
-    merged.stdout
-  ].join("");
+  return merged.stdout;
+}
+function blocksJoined(blocks) {
+  return blocks.map(withoutTrailingBlankLines).filter((block) => block !== "").join("\n");
 }
 function rebuildGlobalGuidance(existingText, body) {
   const clean = stripLineRegion(existingText, GLOBAL_MARKER_START, GLOBAL_MARKER_END);
@@ -3416,8 +3488,10 @@ function writeCodexInstall(input) {
   }
   const infoLines = [`backup: ${tx.backupRoot}`];
   if (input.host.versionNote !== void 0) infoLines.push(input.host.versionNote);
-  const agentsNotice = isReadableRegularFile(paths.configFile) ? operatorAgentsNotice(readFileSync10(paths.configFile, "utf8"), paths.configFile) : void 0;
+  const configBeforeTheInstall = isReadableRegularFile(paths.configFile) ? readFileSync10(paths.configFile, "utf8") : "";
+  const agentsNotice = operatorAgentsNotice(configBeforeTheInstall, paths.configFile);
   if (agentsNotice !== void 0) infoLines.push(agentsNotice);
+  infoLines.push(codexPermissionsNotice(configBeforeTheInstall, paths.configFile));
   const wiring = [];
   const fallow = resolveFallowCommandFor(input, paths);
   wiring.push(
@@ -3706,8 +3780,13 @@ function renderHooksManifest(source, runtimeRoot) {
   return source.replaceAll("__OSO_HOOKS_DIR__", renderedPath.slice(1, -1));
 }
 function writeManagedConfig(paths, fallowCommand, host) {
-  const existing = isReadableRegularFile(paths.configFile) ? readFileSync10(paths.configFile, "utf8") : "";
-  const rebuilt = rebuildManagedConfig(existing, paths.homeDirectory, paths.runtimeRoot, fallowCommand);
+  const rebuilt = rebuildManagedConfig({
+    existingText: isReadableRegularFile(paths.configFile) ? readFileSync10(paths.configFile, "utf8") : "",
+    configFile: paths.configFile,
+    targetHome: paths.homeDirectory,
+    runtimeRoot: paths.runtimeRoot,
+    fallowCommand
+  });
   mkdirSync6(paths.codexHome, { recursive: true });
   if (!host.acceptsConfig(paths.codexHome, rebuilt)) throw new Error(HOST_REJECTED_CONFIG);
   writeFileSync7(paths.configFile, rebuilt, { mode: 384 });
@@ -5681,6 +5760,7 @@ function verifyCodex(input) {
   checkMarketplacePayload(report2, paths, input.repositoryRoot);
   checkManagedConfigRegion(report2, paths, input.environment);
   checkOperatorAgentSettings(report2, paths, configParses);
+  checkOperatorPermissionSettings(report2, paths, configParses);
   checkHostAcceptsOsoProfile(report2, paths, input.host);
   checkGlobalGuidance(report2, paths, input.repositoryRoot);
   checkEngramWiring(report2, paths, configParses);
@@ -5813,7 +5893,7 @@ function checkManagedConfigRegion(report2, paths, environment) {
     return;
   }
   const fallowCommand = fallowCommandInside(extracted.stdout);
-  const expected = renderCodexManagedConfig(paths.homeDirectory, paths.runtimeRoot, fallowCommand);
+  const expected = renderCodexManagedConfig(paths.runtimeRoot, fallowCommand);
   if (extracted.stdout !== expected) {
     report2.check("managed Codex config", "valid", "divergent");
     return;
@@ -5888,6 +5968,11 @@ function checkAgentPayload(report2, paths, repositoryRoot2) {
 function checkOperatorAgentSettings(report2, paths, configParses) {
   if (!configParses || !isReadableRegularFile(paths.configFile)) return;
   const notice = operatorAgentsNotice(readFileSync15(paths.configFile, "utf8"), paths.configFile);
+  if (notice !== void 0) report2.note(notice);
+}
+function checkOperatorPermissionSettings(report2, paths, configParses) {
+  if (!configParses || !isReadableRegularFile(paths.configFile)) return;
+  const notice = operatorPermissionsNotice(readFileSync15(paths.configFile, "utf8"), paths.configFile);
   if (notice !== void 0) report2.note(notice);
 }
 function checkEngramWiring(report2, paths, configParses) {

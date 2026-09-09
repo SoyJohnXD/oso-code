@@ -26,6 +26,7 @@ import {
   checkMarketplacePayload,
   checkMcpToolTableDrift,
   checkOperatorAgentSettings,
+  checkOperatorPermissionSettings,
   checkPlanArtifactRoundTrip,
   checkPluginInstalled,
   checkStateRoundTrip,
@@ -237,10 +238,20 @@ describe("oso verify --host codex over a fixture HOME", () => {
     const home = fixtureHome();
     assert.equal(installCodex(inputFor(home)).exitCode, 0);
     const paths = codexPathsFor(home, inputFor(home).environment);
-    writeFileSync(paths.configFile, readFileSync(paths.configFile, "utf8").replace("glob_scan_max_depth = 6", "glob_scan_max_depth = 7"));
+    writeFileSync(paths.configFile, readFileSync(paths.configFile, "utf8").replace('OSO_AGENT = "1"', 'OSO_AGENT = "2"'));
     const report = new VerifyReport();
     checkManagedConfigRegion(report, paths, inputFor(home).environment);
     assert.match(report.render(), /FAIL: managed Codex config — expected valid, got divergent/);
+  });
+
+  test("an edited byte in the seeded profile is the operator's own, so the region check stays valid", () => {
+    const home = fixtureHome();
+    assert.equal(installCodex(inputFor(home)).exitCode, 0);
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    writeFileSync(paths.configFile, readFileSync(paths.configFile, "utf8").replace("glob_scan_max_depth = 6", "glob_scan_max_depth = 7"));
+    const report = new VerifyReport();
+    checkManagedConfigRegion(report, paths, inputFor(home).environment);
+    assert.match(report.render(), /^ok: {3}managed Codex config \(valid\)$/m);
   });
 
   test("an operator [agents] is named with its values as a note, and adds no failure", () => {
@@ -260,6 +271,25 @@ describe("oso verify --host codex over a fixture HOME", () => {
     const report = new VerifyReport();
     checkOperatorAgentSettings(report, codexPathsFor(home, inputFor(home).environment), true);
     assert.doesNotMatch(report.render(), /\[agents\]/);
+  });
+
+  test("the seeded permission profile is reported as the operator's own, never as a check that could fail", () => {
+    const home = fixtureHome();
+    assert.equal(installCodex(inputFor(home)).exitCode, 0);
+    const report = new VerifyReport();
+    checkOperatorPermissionSettings(report, codexPathsFor(home, inputFor(home).environment), true);
+    assert.match(report.render(), /note: Codex permissions are the operator's own: default_permissions = "oso", \[permissions\.oso\]/);
+    assert.equal(report.exitCode, 0);
+  });
+
+  test("a home whose config declares no permissions at all adds no note, so a deleted profile is never re-imposed", () => {
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    mkdirSync(paths.codexHome, { recursive: true });
+    writeFileSync(paths.configFile, 'model = "gpt-5"\n\n[history]\nx = 1\n');
+    const report = new VerifyReport();
+    checkOperatorPermissionSettings(report, paths, true);
+    assert.doesNotMatch(report.render(), /Codex permissions/);
   });
 
   test("a doubled marker reads as malformed rather than as divergent", () => {

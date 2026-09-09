@@ -15,8 +15,8 @@ const CEILINGS = [
   {
     label: "core/test/install",
     prefix: "core/test/install/",
-    maximumLines: 8000,
-    derivation: `1,639 (measured at C3-S1) + 0.9 × ${REMAINING_BASH_SURFACE} = 7,805`,
+    maximumLines: 8500,
+    derivation: "7,994 (measured at S7's arming, by this test's own listing) + 380 (one commit, at C0's measured mean) = 8,374",
   },
   {
     label: "core/src",

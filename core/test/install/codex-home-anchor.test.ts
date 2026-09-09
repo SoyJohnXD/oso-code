@@ -3,8 +3,9 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, test } from "node:test";
-import { CONFIG_MARKER_END, CONFIG_MARKER_START, renderCodexManagedConfig } from "../../src/install/codex-config.ts";
+import { CONFIG_MARKER_END, CONFIG_MARKER_START, renderOsoPermissionProfile } from "../../src/install/codex-config.ts";
 import { codexPathsFor, installCodex, type CodexCommandInput, type CodexPaths } from "../../src/install/codex.ts";
+import { runTomlRegion } from "../../src/install/toml-regions.ts";
 import { regionBetween, verifyCodex } from "../../src/install/verify-codex.ts";
 import { parseTomlDocument } from "../../src/install/toml.ts";
 import { provedSomething } from "../support/proved.ts";
@@ -34,17 +35,13 @@ const SHAPES_MOVING_CODEX_HOME = HOME_SHAPES.filter((shape) => shape.codexHome !
 
 const A_WIN32_SHAPED_HOME = "C:\\Users\\operator\\home";
 const A_WIN32_SHAPED_CODEX_HOME = path.win32.join(A_WIN32_SHAPED_HOME, ".codex");
-const A_WIN32_SHAPED_REGION = renderCodexManagedConfig(
-  A_WIN32_SHAPED_HOME,
-  path.win32.join(A_WIN32_SHAPED_HOME, ".local", "share", "oso-code", "runtime"),
-  "fallow-mcp",
-);
+const A_WIN32_SHAPED_PROFILE = renderOsoPermissionProfile(A_WIN32_SHAPED_HOME).tables;
 
 provedSomething(
   "the win32-shaped render spells its grant differently from a posix join over the same HOME, so the grant checks read " +
     "through the separator shape rather than around it",
-  !A_WIN32_SHAPED_REGION.includes(`"${path.posix.join(A_WIN32_SHAPED_HOME, STATE_ROOT_THESE_TESTS_SPELL)}" = true`),
-  `${A_WIN32_SHAPED_REGION} spells its grant exactly as path.posix.join does, so this fixture cannot tell a ` +
+  !A_WIN32_SHAPED_PROFILE.includes(`"${path.posix.join(A_WIN32_SHAPED_HOME, STATE_ROOT_THESE_TESTS_SPELL)}" = true`),
+  `${A_WIN32_SHAPED_PROFILE} spells its grant exactly as path.posix.join does, so this fixture cannot tell a ` +
     "separator-blind comparison from a byte-for-byte one and the case below would pass either way",
 );
 
@@ -55,39 +52,42 @@ provedSomething(
     "CODEX_HOME holds the two anchors equal by construction and cannot tell them apart at all",
 );
 
-describe("the managed region is anchored on HOME, never on the Codex home the operator may move", () => {
+describe("the seeded permission profile is anchored on HOME, never on the Codex home the operator may move", () => {
   for (const shape of HOME_SHAPES) {
-    test(`${shape.named}: the region grants the state root under HOME and names no root under the Codex home`, () => {
+    test(`${shape.named}: the profile grants the state root under HOME and names no root under the Codex home`, () => {
       const installed = installedFixture(shape, NO_PATH_AT_ALL);
-      const region = regionOf(installed.paths);
-      assert.ok(grantsWriteTo(region, path.join(installed.home, STATE_ROOT_THESE_TESTS_SPELL)), region);
-      assert.ok(!namesPath(region, path.join(installed.paths.codexHome, STATE_ROOT_THESE_TESTS_SPELL)), region);
+      const profile = seededProfileOf(installed.paths);
+      assert.ok(grantsWriteTo(profile, path.join(installed.home, STATE_ROOT_THESE_TESTS_SPELL)), profile);
+      assert.ok(!namesPath(profile, path.join(installed.paths.codexHome, STATE_ROOT_THESE_TESTS_SPELL)), profile);
     });
   }
 
-  test("moving CODEX_HOME moves the file the region lives in and leaves the region itself byte for byte the same", () => {
+  test("moving CODEX_HOME moves the file both blocks live in and leaves each of them byte for byte the same", () => {
     const home = stagedHome("one-home-many-codex-homes");
-    const regions = [undefined, path.join(home, "elsewhere", "codex"), path.join(`${home}-detached`, "codex")].map((codexHome) =>
-      regionOf(installedInto(home, codexHome, NO_PATH_AT_ALL).paths),
+    const installs = [undefined, path.join(home, "elsewhere", "codex"), path.join(`${home}-detached`, "codex")].map(
+      (codexHome) => installedInto(home, codexHome, NO_PATH_AT_ALL).paths,
     );
+    const regions = installs.map(regionOf);
+    const profiles = installs.map(seededProfileOf);
     assert.equal(new Set(regions).size, 1, regions.join("\n----\n"));
+    assert.equal(new Set(profiles).size, 1, profiles.join("\n----\n"));
   });
 
   test("the write grant names the state root this suite spells, never one nested under the Codex home", () => {
     const installed = installedFixture(HOME_SHAPES[0] as HomeShape, NO_PATH_AT_ALL);
     const stateRoot = path.join(installed.home, STATE_ROOT_THESE_TESTS_SPELL);
-    const region = regionOf(installed.paths);
-    assert.ok(grantsWriteTo(region, stateRoot), region);
-    assert.ok(grantsWriteTo(region, path.join(stateRoot, "worktrees")), region);
-    assert.ok(!namesPath(region, path.join(installed.paths.codexHome, STATE_ROOT_THESE_TESTS_SPELL)), region);
+    const profile = seededProfileOf(installed.paths);
+    assert.ok(grantsWriteTo(profile, stateRoot), profile);
+    assert.ok(grantsWriteTo(profile, path.join(stateRoot, "worktrees")), profile);
+    assert.ok(!namesPath(profile, path.join(installed.paths.codexHome, STATE_ROOT_THESE_TESTS_SPELL)), profile);
   });
 
   test("a win32-shaped HOME grants the same anchor, under separators the anchor does not depend on", () => {
     const stateRoot = path.win32.join(A_WIN32_SHAPED_HOME, STATE_ROOT_THESE_TESTS_SPELL);
-    assert.ok(grantsWriteTo(A_WIN32_SHAPED_REGION, stateRoot), A_WIN32_SHAPED_REGION);
-    assert.ok(grantsWriteTo(A_WIN32_SHAPED_REGION, path.win32.join(stateRoot, "worktrees")), A_WIN32_SHAPED_REGION);
+    assert.ok(grantsWriteTo(A_WIN32_SHAPED_PROFILE, stateRoot), A_WIN32_SHAPED_PROFILE);
+    assert.ok(grantsWriteTo(A_WIN32_SHAPED_PROFILE, path.win32.join(stateRoot, "worktrees")), A_WIN32_SHAPED_PROFILE);
     const nestedUnderCodexHome = path.win32.join(A_WIN32_SHAPED_CODEX_HOME, STATE_ROOT_THESE_TESTS_SPELL);
-    assert.ok(!namesPath(A_WIN32_SHAPED_REGION, nestedUnderCodexHome), A_WIN32_SHAPED_REGION);
+    assert.ok(!namesPath(A_WIN32_SHAPED_PROFILE, nestedUnderCodexHome), A_WIN32_SHAPED_PROFILE);
   });
 
   test("the verifier reads its own installer's region back as valid rather than divergent", () => {
@@ -167,6 +167,16 @@ function grantsWriteTo(regionText: string, root: string): boolean {
 
 function namesPath(regionText: string, somePath: string): boolean {
   return separatorBlind(regionText).includes(separatorBlind(somePath));
+}
+
+function seededProfileOf(paths: CodexPaths): string {
+  const outside = runTomlRegion(readFileSync(paths.configFile, "utf8"), {
+    action: "strip",
+    startMarker: CONFIG_MARKER_START,
+    endMarker: CONFIG_MARKER_END,
+  });
+  assert.equal(outside.exitCode, 0, `no single managed region in ${paths.configFile}`);
+  return outside.stdout;
 }
 
 function regionOf(paths: CodexPaths): string {

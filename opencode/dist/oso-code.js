@@ -1115,6 +1115,16 @@ var StateFileUnreadableError = class extends Error {
     this.stateFile = stateFile;
   }
 };
+var StateRootUnwritableError = class extends Error {
+  directory;
+  constructor(directory, cause) {
+    super(
+      `cannot write the oso-code state directory ${directory}: ${cause}. The gates read what it holds and treat an unwritten state as no armed session, so arming here would leave them unable to see their own state. Grant the directory to the active permission mode \u2014 add it to that profile's workspace roots, launch with --add-dir ${directory}, or pick a mode that can write \u2014 then arm again.`
+    );
+    this.name = "StateRootUnwritableError";
+    this.directory = directory;
+  }
+};
 var CHANGE_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 var NAME_TOKEN_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
 var TOKEN_MAX_LENGTH = 128;
@@ -1195,11 +1205,20 @@ function writeStatePairs(stateFile, pairs, sessionId) {
 }
 function writeStateValues(cwd, sessionId, pairs) {
   const stateFile = stateFileFor(cwd);
-  mkdirSync(stateRootDirectory(), { recursive: true });
+  requireWritableStateRoot();
   withLock(stateFile, sessionId, () => {
     writeStatePairs(stateFile, pairs, sessionId);
     logEvent({ event: `set:${pairs.join(" ")}`, session: sessionId });
   });
+}
+function requireWritableStateRoot() {
+  const directory = stateRootDirectory();
+  try {
+    mkdirSync(directory, { recursive: true });
+    accessSync(directory, constants.W_OK | constants.X_OK);
+  } catch (error) {
+    throw new StateRootUnwritableError(directory, causeOf(error));
+  }
 }
 function clearStateFile(stateFile) {
   rmSync(stateFile, { force: true });

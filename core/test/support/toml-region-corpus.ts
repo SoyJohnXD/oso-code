@@ -31,7 +31,7 @@ export const SHAPES_EXCLUDED_BY_CONSTRUCTION: readonly Readonly<{ named: string;
   },
 ];
 
-const MANAGED_BODY = ['default_permissions = "oso"', "", "[shell_environment_policy.set]", 'OSO_AGENT = "1"'];
+const MANAGED_BODY = ["[shell_environment_policy.set]", 'OSO_AGENT = "1"', "", "[mcp_servers.context7]", 'url = "https://mcp.context7.com/mcp"'];
 
 const REGION = [CONFIG_MARKER_START, ...MANAGED_BODY, CONFIG_MARKER_END];
 

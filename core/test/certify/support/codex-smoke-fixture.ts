@@ -2,7 +2,12 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { codexPathsFor } from "../../../src/install/codex.ts";
-import { renderCodexManagedConfig, renderCodexManagedFeatures, resolveFallowMcpCommand } from "../../../src/install/codex-config.ts";
+import {
+  renderCodexManagedConfig,
+  renderCodexManagedFeatures,
+  renderOsoPermissionProfile,
+  resolveFallowMcpCommand,
+} from "../../../src/install/codex-config.ts";
 import { firstExecutableOnPath } from "../../../src/install/verify-claude.ts";
 import { homeDirectoryFrom, isDirectory, isReadableRegularFile } from "../../../src/state/store.ts";
 
@@ -129,7 +134,9 @@ function populateSmokeCodexHome(
       () => npmGlobalPrefixOf(environment),
       (name) => firstExecutableOnPath(environment, name),
     );
-    const configText = `${renderCodexManagedConfig(smokeCodexHome, realPaths.runtimeRoot, fallow.command)}\n[features]\n${renderCodexManagedFeatures()}`;
+    const profile = renderOsoPermissionProfile(smokeCodexHome);
+    const configText =
+      `${profile.rootKeys}\n${renderCodexManagedConfig(realPaths.runtimeRoot, fallow.command)}\n${profile.tables}\n[features]\n${renderCodexManagedFeatures()}`;
     writeFileSync(path.join(smokeCodexHome, "config.toml"), configText);
     chmodSync(path.join(smokeCodexHome, "config.toml"), 0o600);
   } catch {
