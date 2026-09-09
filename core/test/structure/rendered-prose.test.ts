@@ -25,11 +25,11 @@ import { provedSomething } from "../support/proved.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
 import { parseTomlDocument } from "../../src/install/toml.ts";
 
-test("all seven native custom roles disable Engram without replacing their instructions", () => {
+test("all seven native custom roles declare a valid disabled Engram transport without replacing their instructions", () => {
   assert.equal(AGENT_ROLES.length, 7);
   for (const role of AGENT_ROLES) {
     const rendered = parseTomlDocument(renderAgent(role, "codex", "body\n", null), role.id);
-    assert.deepEqual(rendered["mcp_servers"], { engram: { enabled: false } });
+    assert.deepEqual(rendered["mcp_servers"], { engram: { command: "engram", args: ["mcp", "--tools=agent"], enabled: false } });
     assert.equal(rendered["developer_instructions"], "body\n");
   }
 });

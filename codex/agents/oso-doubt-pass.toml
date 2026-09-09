@@ -18,4 +18,6 @@ Your final message is data for the orchestrator.
 """
 
 [mcp_servers.engram]
+command = "engram"
+args = ["mcp", "--tools=agent"]
 enabled = false

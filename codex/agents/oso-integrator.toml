@@ -68,4 +68,6 @@ When the assignment carries HANDOFF SLICE and HANDOFF ATTEMPT, put `oso-handoff:
 """
 
 [mcp_servers.engram]
+command = "engram"
+args = ["mcp", "--tools=agent"]
 enabled = false
