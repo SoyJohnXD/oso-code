@@ -47,7 +47,7 @@ const LEXER_CASES: readonly LexerCase[] = [
     reads: "a herestring as more commands",
     readFrom: "plugin/hooks/lexer.sh:280-284,66-69",
     line: 'newgrp <<< "git commit"',
-    records: [">newgrp", ".git commit", ">git", ".commit"],
+    records: [">newgrp", ">git", ".commit"],
   },
   {
     reads: "a heredoc a shell owns as code",

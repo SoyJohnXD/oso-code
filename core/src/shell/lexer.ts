@@ -220,6 +220,9 @@ class CommandLineLexer {
   private nested: LexRecord[] = [];
   private unreadStdin = "";
   private commandTokens: string[] = [];
+  private commandExpansions: boolean[] = [];
+  private herestrings: string[] = [];
+  private hashLoop: "read" | "hash" | undefined;
   private readonly records: LexRecord[] = [];
 
   constructor(commandLine: string, depth: number, { unreadExpandedExecutables }: Readonly<{ unreadExpandedExecutables: boolean }>) {
@@ -328,13 +331,12 @@ class CommandLineLexer {
   private endToken(): void {
     if (this.tokenOpen && this.redirectTargetPending) {
       this.redirectTargetPending = false;
+    } else if (this.tokenOpen && this.herestringPending) {
+      this.herestringPending = false;
+      this.herestrings.push(this.token);
     } else if (this.tokenOpen) {
-      if (this.unreadExpandedExecutables && this.tokenHasExpansion && this.tokenAssignment !== "assignment" && withoutACoprocessName(this.commandTokens).every(isCommandPrefixWord)) this.markUnread();
       this.commandTokens.push(this.token);
-      if (this.herestringPending) {
-        this.herestringPending = false;
-        this.deferNestedCommands(this.token);
-      }
+      this.commandExpansions.push(this.tokenHasExpansion && this.tokenAssignment !== "assignment");
     }
     this.token = "";
     this.tokenOpen = false;
@@ -344,10 +346,24 @@ class CommandLineLexer {
 
   private endCommand(): void {
     this.endToken();
+    const words = this.commandTokens;
+    const closesHashLoop = this.hashLoop === "hash" && words.length === 1 && words[0] === "done";
+    if (words.join(" ") === "while IFS= read -r file" && !this.commandExpansions.some(Boolean)) this.hashLoop = "read";
+    else if (this.hashLoop === "read" && words.length === 3 && words[0] === "do" && words[1] === "sha256sum" && words[2] === "$file" && !this.commandExpansions[1]) this.hashLoop = "hash";
+    else if (words.length > 0) this.hashLoop = undefined;
     this.stripCommandPrefixes();
+    for (const payload of this.herestrings) {
+      if (basenameOf(this.commandTokens[0] ?? "") === "sha256sum" || closesHashLoop) continue;
+      this.deferNestedCommands(payload);
+      if (!isShellInterpreter(this.commandTokens[0] ?? "") && basenameOf(this.commandTokens[0] ?? "") !== "newgrp") this.markUnread();
+    }
+    if (this.herestringPending) this.markUnread();
     this.deferPayloadCommands();
     this.emitCommand();
     this.commandTokens = [];
+    this.commandExpansions = [];
+    this.herestrings = [];
+    this.herestringPending = false;
     this.nested = [];
     this.unreadStdin = "";
     this.redirectTargetPending = false;
@@ -356,18 +372,39 @@ class CommandLineLexer {
   private stripCommandPrefixes(): void {
     let prefixWord = "";
     let stdinCompletesTheWords = false;
-    while (this.commandTokens.length > 0) {
-      const leading = this.commandTokens[0] as string;
+    let at = 0;
+    while (at < this.commandTokens.length) {
+      const leading = this.commandTokens[at] as string;
+      if (this.unreadExpandedExecutables && this.commandExpansions[at]) this.markUnread();
       if (!isCommandPrefixWord(leading)) {
         if (prefixWord.startsWith("-")) this.markUnread();
         if (stdinCompletesTheWords) this.unreadStdin += UNREAD_PAYLOAD_MARKER;
-        return;
+        break;
+      }
+      if (basenameOf(leading) === "env") {
+        at += 1;
+        while (this.commandTokens[at]?.startsWith("-")) {
+          const option = this.commandTokens[at] as string;
+          at += 1;
+          if (option === END_OF_OPTIONS) break;
+          const name = option.startsWith("--unset=") ? option.slice("--unset=".length) : this.commandTokens[at];
+          if (!["-u", "--unset"].includes(option) && !option.startsWith("--unset=")) {
+            this.markUnread();
+            break;
+          }
+          if (name === undefined || !/^[A-Za-z_][A-Za-z_0-9]*$/.test(name)) this.markUnread();
+          if (!option.startsWith("--unset=")) at += 1;
+        }
+        prefixWord = leading;
+        continue;
       }
       prefixWord = leading;
       if (completesItsWordsFromStdin(prefixWord)) stdinCompletesTheWords = true;
       if (namesAFileTheShellSources(prefixWord)) this.markUnread();
-      this.commandTokens = this.commandTokens.slice(1);
+      at += 1;
     }
+    this.commandTokens = this.commandTokens.slice(at);
+    this.commandExpansions = this.commandExpansions.slice(at);
   }
 
   private deferPayloadCommands(): void {
@@ -574,9 +611,17 @@ class CommandLineLexer {
       return;
     }
     if (this.rest.startsWith("{")) {
-      const span = this.spanBefore("}");
-      this.token += `$${span}}`;
-      this.rest = this.rest.slice(span.length + 1);
+      this.token += "${";
+      this.rest = this.rest.slice(1);
+      while (this.rest !== "") {
+        const character = this.rest.slice(0, 1);
+        this.rest = this.rest.slice(1);
+        if (character === "$") this.takeExpansion();
+        else if (character === "`") this.takeBacktick();
+        else if (character === "\\") this.takeEscape();
+        else this.token += character;
+        if (character === "}") return;
+      }
       return;
     }
     this.token += "$";

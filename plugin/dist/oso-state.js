@@ -449,6 +449,8 @@ var TOOL_ROWS = [
   { gate: "unknown", names: { claude: "none", codex: "image_genimagegen", opencode: "none" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "web__run", opencode: "none" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "webrun", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "clockcurr_time", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "clock__curr_time", opencode: "none" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_search", opencode: "engram_mem_search" }, capability: "read", mandated: "yes" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_get_observation", opencode: "engram_mem_get_observation" }, capability: "read", mandated: "yes" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_save", opencode: "engram_mem_save" }, capability: "write", mandated: "yes" },
@@ -2727,6 +2729,9 @@ var CommandLineLexer = class _CommandLineLexer {
   nested = [];
   unreadStdin = "";
   commandTokens = [];
+  commandExpansions = [];
+  herestrings = [];
+  hashLoop;
   records = [];
   constructor(commandLine, depth, { unreadExpandedExecutables }) {
     this.rest = `${commandLine}
@@ -2829,13 +2834,12 @@ var CommandLineLexer = class _CommandLineLexer {
   endToken() {
     if (this.tokenOpen && this.redirectTargetPending) {
       this.redirectTargetPending = false;
+    } else if (this.tokenOpen && this.herestringPending) {
+      this.herestringPending = false;
+      this.herestrings.push(this.token);
     } else if (this.tokenOpen) {
-      if (this.unreadExpandedExecutables && this.tokenHasExpansion && this.tokenAssignment !== "assignment" && withoutACoprocessName(this.commandTokens).every(isCommandPrefixWord)) this.markUnread();
       this.commandTokens.push(this.token);
-      if (this.herestringPending) {
-        this.herestringPending = false;
-        this.deferNestedCommands(this.token);
-      }
+      this.commandExpansions.push(this.tokenHasExpansion && this.tokenAssignment !== "assignment");
     }
     this.token = "";
     this.tokenOpen = false;
@@ -2844,10 +2848,24 @@ var CommandLineLexer = class _CommandLineLexer {
   }
   endCommand() {
     this.endToken();
+    const words = this.commandTokens;
+    const closesHashLoop = this.hashLoop === "hash" && words.length === 1 && words[0] === "done";
+    if (words.join(" ") === "while IFS= read -r file" && !this.commandExpansions.some(Boolean)) this.hashLoop = "read";
+    else if (this.hashLoop === "read" && words.length === 3 && words[0] === "do" && words[1] === "sha256sum" && words[2] === "$file" && !this.commandExpansions[1]) this.hashLoop = "hash";
+    else if (words.length > 0) this.hashLoop = void 0;
     this.stripCommandPrefixes();
+    for (const payload of this.herestrings) {
+      if (basenameOf(this.commandTokens[0] ?? "") === "sha256sum" || closesHashLoop) continue;
+      this.deferNestedCommands(payload);
+      if (!isShellInterpreter(this.commandTokens[0] ?? "") && basenameOf(this.commandTokens[0] ?? "") !== "newgrp") this.markUnread();
+    }
+    if (this.herestringPending) this.markUnread();
     this.deferPayloadCommands();
     this.emitCommand();
     this.commandTokens = [];
+    this.commandExpansions = [];
+    this.herestrings = [];
+    this.herestringPending = false;
     this.nested = [];
     this.unreadStdin = "";
     this.redirectTargetPending = false;
@@ -2855,18 +2873,39 @@ var CommandLineLexer = class _CommandLineLexer {
   stripCommandPrefixes() {
     let prefixWord = "";
     let stdinCompletesTheWords = false;
-    while (this.commandTokens.length > 0) {
-      const leading = this.commandTokens[0];
+    let at = 0;
+    while (at < this.commandTokens.length) {
+      const leading = this.commandTokens[at];
+      if (this.unreadExpandedExecutables && this.commandExpansions[at]) this.markUnread();
       if (!isCommandPrefixWord(leading)) {
         if (prefixWord.startsWith("-")) this.markUnread();
         if (stdinCompletesTheWords) this.unreadStdin += UNREAD_PAYLOAD_MARKER;
-        return;
+        break;
+      }
+      if (basenameOf(leading) === "env") {
+        at += 1;
+        while (this.commandTokens[at]?.startsWith("-")) {
+          const option = this.commandTokens[at];
+          at += 1;
+          if (option === END_OF_OPTIONS) break;
+          const name = option.startsWith("--unset=") ? option.slice("--unset=".length) : this.commandTokens[at];
+          if (!["-u", "--unset"].includes(option) && !option.startsWith("--unset=")) {
+            this.markUnread();
+            break;
+          }
+          if (name === void 0 || !/^[A-Za-z_][A-Za-z_0-9]*$/.test(name)) this.markUnread();
+          if (!option.startsWith("--unset=")) at += 1;
+        }
+        prefixWord = leading;
+        continue;
       }
       prefixWord = leading;
       if (completesItsWordsFromStdin(prefixWord)) stdinCompletesTheWords = true;
       if (namesAFileTheShellSources(prefixWord)) this.markUnread();
-      this.commandTokens = this.commandTokens.slice(1);
+      at += 1;
     }
+    this.commandTokens = this.commandTokens.slice(at);
+    this.commandExpansions = this.commandExpansions.slice(at);
   }
   deferPayloadCommands() {
     const leading = this.commandTokens[0];
@@ -3054,9 +3093,17 @@ var CommandLineLexer = class _CommandLineLexer {
       return;
     }
     if (this.rest.startsWith("{")) {
-      const span = this.spanBefore("}");
-      this.token += `$${span}}`;
-      this.rest = this.rest.slice(span.length + 1);
+      this.token += "${";
+      this.rest = this.rest.slice(1);
+      while (this.rest !== "") {
+        const character = this.rest.slice(0, 1);
+        this.rest = this.rest.slice(1);
+        if (character === "$") this.takeExpansion();
+        else if (character === "`") this.takeBacktick();
+        else if (character === "\\") this.takeEscape();
+        else this.token += character;
+        if (character === "}") return;
+      }
       return;
     }
     this.token += "$";
@@ -4934,9 +4981,9 @@ function codexMemoryDenial(envelope) {
   return denied({
     gate: "unknown",
     session: envelope.sessionId,
-    event: "memory-write-denied",
+    event: !memoryTool && cliVerdict === "unread" ? "shell-effects-unestablished" : "memory-write-denied",
     detail: tool,
-    message: `oso-code: semantic memory mutations require native ROOT attestation: ${cause}.`
+    message: !memoryTool && cliVerdict === "unread" ? `oso-code: shell effects could not be established; native ROOT attestation is required: ${cause}.` : `oso-code: semantic memory mutations require native ROOT attestation: ${cause}.`
   });
 }
 function unattestedCodexRoot(envelope) {

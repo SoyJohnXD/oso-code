@@ -87,8 +87,10 @@ function codexMemoryDenial(envelope: HookEnvelope): GateOutcome | undefined {
   const cause = known ? unattestedCodexRoot(envelope) : "unknown Engram method";
   if (cause === undefined) return undefined;
   return denied({
-    gate: "unknown", session: envelope.sessionId, event: "memory-write-denied", detail: tool,
-    message: `oso-code: semantic memory mutations require native ROOT attestation: ${cause}.`,
+    gate: "unknown", session: envelope.sessionId, event: !memoryTool && cliVerdict === "unread" ? "shell-effects-unestablished" : "memory-write-denied", detail: tool,
+    message: !memoryTool && cliVerdict === "unread"
+      ? `oso-code: shell effects could not be established; native ROOT attestation is required: ${cause}.`
+      : `oso-code: semantic memory mutations require native ROOT attestation: ${cause}.`,
   });
 }
 

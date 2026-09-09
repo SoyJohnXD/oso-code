@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { runGate } from "../../src/gates/dispatch.ts";
+import { readEnvelope } from "../../src/hosts/envelope.ts";
 import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { TOOL_ROWS } from "../../src/routes/routes.ts";
 import { unresolvedHomeCause, withHookEnvironment } from "../support/gate-fixture.ts";
@@ -17,12 +18,30 @@ const ARMED_RUN_STATE = {
 const CODEX_TOOL_ENVELOPE =
   '{"session_id":"test-session","cwd":"{cwd}","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{}}';
 
+for (const host of ["codex", "claude", "opencode"] as const) {
+  test(`${host} retains commit and deploy controls through env unset and here-strings`, () => {
+    for (const [gate, state, commands] of [
+      ["commit", ARMED_RED_STATE, ["env -u FORCE_COLOR git commit -m x", "env --unset=A sh -c 'git commit -m x'", 'newgrp <<< "git commit -m x"']],
+      ["proddeploy", ARMED_RUN_STATE, ["env -u FORCE_COLOR vercel --prod", "env --unset A sh -c 'vercel --prod'", 'bash <<< "vercel --prod"']],
+    ] as const) {
+      for (const command of commands) {
+        withStateSandbox("workspace", (sandbox) => {
+          sandbox.seed(state);
+          const envelope = readEnvelope(sandbox.expandJson(bashEnvelope(command)), { host, agentSession: "test-session", stateBin: "" });
+          const result = withHookEnvironment({ HOME: sandbox.home }, () => runGate([gate], envelope));
+          assert.equal(result.verdict.kind, "deny", `${host}: ${command}`);
+        });
+      }
+    }
+  });
+}
+
 describe("Codex exact read-only aliases preserve the gate boundaries", () => {
   const allowlist = TOOL_ROWS.filter((row) => row.gate === "unknown" && row.names.codex !== "none")
     .map((row) => row.names.codex).join("|");
   const pending = { [STATE_FILE]: `${ARMED_RED_STATE[STATE_FILE]}plan_approval=pending\nplan_approval_session=test-session\n` };
 
-  for (const tool of ["webrun", "web__run", "mcp__context7__query_docs", "mcp__context7__query-docs"]) {
+  for (const tool of ["webrun", "web__run", "clockcurr_time", "clock__curr_time", "mcp__context7__query_docs", "mcp__context7__query-docs"]) {
     test(`${tool} is an exact Codex read route and passes the armed gate`, () => {
       assert.ok(TOOL_ROWS.some((row) => row.names.codex === tool && row.gate === "unknown" && row.capability === "read"));
       const run = judge(["unknown", "--allow", allowlist], ARMED_RED_STATE, CODEX_TOOL_ENVELOPE.replace('"Bash"', JSON.stringify(tool)));
@@ -35,7 +54,7 @@ describe("Codex exact read-only aliases preserve the gate boundaries", () => {
     });
   }
 
-  for (const tool of ["web_run", "webrun_extra", "mcp__context7__query_docs_extra", "mcp__context7__write", "functions.exec", "exec"]) {
+  for (const tool of ["web_run", "webrun_extra", "clock_curr_time", "clockcurr_time_extra", "clock__sleep", "mcp__context7__query_docs_extra", "mcp__context7__write", "functions.exec", "exec"]) {
     test(`${tool} remains outside the exact allowlist`, () => {
       const run = judge(["unknown", "--allow", allowlist], ARMED_RED_STATE, CODEX_TOOL_ENVELOPE.replace('"Bash"', JSON.stringify(tool)));
       assert.match(run.stdout, /not in this release/);

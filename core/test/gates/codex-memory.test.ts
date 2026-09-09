@@ -112,6 +112,71 @@ const LINEAGE_PAYLOADS = {
   root: { id, cwd: root, source: "cli" },
 };
 
+test("known verification commands keep data separate from executable shell", () => {
+  for (const commandLine of [
+    "env -u FORCE_COLOR pnpm e2e",
+    "env --unset FORCE_COLOR pnpm e2e",
+    "env --unset=FORCE_COLOR pnpm e2e",
+    "command /usr/bin/env -u A --unset B --unset=C -- FLAG=1 pnpm e2e",
+    "env -u A env -u B pnpm e2e",
+    'while IFS= read -r file; do sha256sum "$file"; done <<< "$changed"',
+    'sha256sum <<< "engram save title body"',
+    'env -u A /usr/bin/sha256sum <<< "$changed"',
+    'env -u A pnpm "$argument"',
+    'sha256sum <<< "$(printf harmless)"',
+    'sha256sum <<< "${changed:-$(printf harmless)}"',
+  ]) {
+    const envelope = hostEnvelope({ host: "codex", agentSession: "1", stateBin: "" }, { sessionId: id, cwd: root, toolName: "exec_command", commandLine });
+    assert.equal(runGate(["unknown", "--allow", "exec_command"], envelope).verdict.kind, "allow", commandLine);
+  }
+});
+
+test("unsupported env grammar and executable here-string consumers remain restricted", () => {
+  for (const commandLine of [
+    'env -u A "$exe" save title body',
+    'env --unset A "${exe}" save title body',
+    'env --unset=A "$exe" save title body',
+    'env -u', 'env --unset', 'env --unset= pnpm e2e',
+    'env --unknown pnpm e2e', 'env -u "$name" pnpm e2e',
+    'env -u A engram save title body',
+    'env -u A xargs engram save title body',
+    'env -u A pnpm "$(engram save title body)"',
+    'env -u A pnpm `engram save title body`',
+    'sha256sum <<< "${changed:-$(engram save title body)}"',
+    'sha256sum <<< "${changed:-`engram save title body`}"',
+    'unknown <<< "$changed"', 'bash <<< "$changed"',
+    'eval <<< "$changed"', 'source <<< "$changed"',
+    'while IFS= read -r file; do "$file"; done <<< "$changed"',
+    'while IFS= read -r file; do unknown "$file"; done <<< "$changed"',
+    'while IFS= read -r file; do eval "$file"; done <<< "$changed"',
+    'while IFS= read -r file; do sha256sum "$file"; unknown "$file"; done <<< "$changed"',
+    'while IFS= read -r file; do sha256sum "$file"; done <<< "$(engram save title body)"',
+    `sha256sum <<< "${"x".repeat(MAX_LEXED_INPUT_BYTES)}"`,
+    'sha256sum <<< "$(echo $(echo $(echo $(echo safe))))"',
+    'while IFS= read -r file; do bash -c "$file"; done <<< "$changed"',
+    'while IFS= read -r file; do source "$file"; done <<< "$changed"',
+    'for file in "$changed"; do sha256sum "$file"; done <<< "$changed"',
+  ]) {
+    const envelope = hostEnvelope({ host: "codex", agentSession: "1", stateBin: "" }, { sessionId: id, cwd: root, toolName: "exec_command", commandLine });
+    assert.equal(runGate(["unknown", "--allow", "exec_command"], envelope).verdict.kind, "deny", commandLine);
+  }
+});
+
+test("memory diagnostics distinguish observed mutation from unestablished shell effects", () => {
+  for (const toolName of ["exec_command", "Bash", "view_image"]) {
+    for (const [commandLine, message] of [
+      ['unknown <<< "$changed"', /shell effects could not be established/],
+      ['engram save title body; unknown <<< "$changed"', /semantic memory mutations/],
+      ['unknown <<< "$changed"; engram save title body', /semantic memory mutations/],
+    ] as const) {
+      const envelope = hostEnvelope({ host: "codex", agentSession: "1", stateBin: "" }, { sessionId: id, cwd: root, toolName, commandLine });
+      const { verdict } = runGate(["unknown", "--allow", toolName], envelope);
+      assert.equal(verdict.kind, "deny");
+      if (verdict.kind === "deny") assert.match(verdict.message, message);
+    }
+  }
+});
+
 test("native patch data is not executable shell or an Engram operation", () => {
   const patch = `*** Begin Patch\n*** Add File: fixture.ts\n+const example = 'engram save title body';\n+${"x".repeat(MAX_LEXED_INPUT_BYTES)}\n*** End Patch`;
   for (const lineage of ["child", "missing", "contradictory"] as const) {

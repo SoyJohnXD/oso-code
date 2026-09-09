@@ -205,6 +205,8 @@ export const TOOL_ROWS: readonly ToolRow[] = [
   { gate: "unknown", names: { claude: "none", codex: "image_genimagegen", opencode: "none" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "web__run", opencode: "none" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "webrun", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "clockcurr_time", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "clock__curr_time", opencode: "none" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_search", opencode: "engram_mem_search" }, capability: "read", mandated: "yes" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_get_observation", opencode: "engram_mem_get_observation" }, capability: "read", mandated: "yes" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_save", opencode: "engram_mem_save" }, capability: "write", mandated: "yes" },
