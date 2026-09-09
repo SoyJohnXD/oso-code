@@ -4612,7 +4612,7 @@ import { isAbsolute as isAbsolute2 } from "node:path";
 
 // opencode/plugin/oso/verdict.ts
 var STATUS_LINE = /^\s*status\s*:\s*(done|blocked)\s*$/i;
-var VERDICT_LINE = /^\s*verdict\s*:\s*(pass|fail)\s*$/i;
+var VERDICT_LINE = /^\s*verdict\s*:\s*(pass|fail|blocked)\s*$/i;
 function parseAgentVerdict(text) {
   const parsed = { matched: false };
   for (const line of text.split(/\r?\n/)) {

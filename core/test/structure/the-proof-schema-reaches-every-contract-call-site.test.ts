@@ -17,10 +17,58 @@ const PAYLOAD_FIELDS_BY_ROLE_ID: Readonly<Record<string, readonly string[]>> = {
   "oso-verifier": ["applier_proof", APPLIER_PROOF_HEADER, "proof:", "scan:", "decisions_used:"],
 };
 
-const REPORT_BLOCK_OPENING = /^(?:status|verdict): /;
+const REPORT_BLOCK_OPENING = /^(?:status|verdict|reason|evidence):(?: |$)/;
 const FENCE_LINE = /^\s*```/;
 const APPLIER_REPORT_FIELDS = ["proof:", "scan:", "decisions_used:"] as const;
 const verifierContract = readTrackedText("core/src/prose/agents/oso-verifier/body.md").text;
+
+function exampleEvidenceGaps(example: string): string[] {
+  const gaps: string[] = [];
+  for (let gate = 1; gate <= 9; gate += 1) {
+    if (!new RegExp(`gate ${gate}: (?:held|broken) — \\S`).test(example)) gaps.push(`gate ${gate}`);
+  }
+  const commands = example.split("\n").filter((entry) => entry.includes("cmd:"));
+  if (commands.length === 0) gaps.push("command evidence");
+  for (const line of commands) {
+    if (!/result: \S/.test(line)) gaps.push("empty result");
+    if (!/output: complete/.test(line)) gaps.push("incomplete output");
+    if (!/warnings: (?:absent|present|indeterminate)/.test(line)) gaps.push("warning evidence");
+  }
+  if (!/inspection: \S.*property: \S.*observed: \S/.test(example)) gaps.push("inspection evidence");
+  if (!/freshness: \S.*before: \S.*after: \S/.test(example)) gaps.push("freshness evidence");
+  const verdicts = example.match(/^verdict: (?:pass|fail|blocked)$/gm) ?? [];
+  if (verdicts.length !== 1 || !example.trimEnd().endsWith(verdicts[0] ?? "")) gaps.push("terminal verdict");
+  if (/verdict: pass/.test(example) && /warnings: (?:present|indeterminate)|output: incomplete|freshness: stale/.test(example)) gaps.push("false green");
+  return gaps;
+}
+
+describe("the documented verifier example supplies concrete evidence", () => {
+  const example = verifierContract.match(/#### A worked verdict\n\n```\n([\s\S]*?)\n```/)?.[1] ?? "";
+
+  test("the complete example answers every gate with command, inspection and freshness evidence", () => {
+    assert.deepEqual(exampleEvidenceGaps(example), []);
+  });
+
+  test("empty labels, omitted gates, warnings and stale evidence cannot demonstrate a pass", () => {
+    assert.ok(exampleEvidenceGaps(example.replace(/result: [^\n]+/, "result: ")).includes("empty result"));
+    assert.ok(exampleEvidenceGaps(example.replace(/.*gate 2:.*\n/, "")).includes("gate 2"));
+    const passing = example.replace("verdict: fail", "verdict: pass");
+    assert.ok(exampleEvidenceGaps(passing.replace("warnings: absent", "warnings: present")).includes("false green"));
+    assert.ok(exampleEvidenceGaps(passing.replace("warnings: absent", "warnings: indeterminate")).includes("false green"));
+    assert.ok(exampleEvidenceGaps(passing.replace("output: complete", "output: incomplete")).includes("false green"));
+    assert.ok(exampleEvidenceGaps(passing.replace("freshness: base/head", "freshness: stale base/head")).includes("false green"));
+    assert.ok(exampleEvidenceGaps(example.replace(/.*inspection:.*\n/g, "")).includes("inspection evidence"));
+    assert.ok(exampleEvidenceGaps(example.replace(/.*cmd:.*\n/g, "")).includes("command evidence"));
+    assert.ok(exampleEvidenceGaps(`${example}\nverdict: pass`).includes("terminal verdict"));
+  });
+
+  test("reordering evidence entries preserves the complete example", () => {
+    const lines = example.split("\n");
+    const commands = lines.filter((line) => line.includes("cmd:")).reverse();
+    const reordered = lines.map((line) => line.includes("cmd:") ? commands.shift()! : line).join("\n");
+    assert.deepEqual(exampleEvidenceGaps(reordered), []);
+  });
+});
 
 type BoundContract = Readonly<{
   roleId: string;
@@ -109,7 +157,7 @@ const CALL_SITES_FLOOR_DERIVATION =
 
 const DECLARED_BLOCKS_FLOOR = 4;
 const DECLARED_BLOCKS_FLOOR_DERIVATION =
-  "every fenced block in the two shared bodies whose first line opens `status: ` or `verdict: ` — the applier's done " +
+  "every fenced report block in the two shared bodies — the applier's done " +
   "report and the blocked report beside it, the verifier's slice and wave verdicts, and the worked example each shows";
 
 provedSomething(
@@ -185,6 +233,13 @@ describe(`the schema reaches every call site the routing table names, and reache
     test(`GREEN on the tracked tree: ${file} spells every one of ${tokens.join(", ")}`, () => {
       const absent = missingTokens(readTrackedText(file).text, tokens);
       assert.deepEqual(absent, [], `${file} never spells ${absent.join(", ")}`);
+    });
+  }
+
+  for (const file of boundContracts.find((contract) => contract.roleId === "oso-verifier")!.callSites) {
+    test(`${file} delivers the complete worked verdict`, () => {
+      const example = readTrackedText(file).text.match(/#### A worked verdict\n\n```\n([\s\S]*?)\n```/)?.[1] ?? "";
+      assert.deepEqual(exampleEvidenceGaps(example), []);
     });
   }
 });

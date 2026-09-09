@@ -220,13 +220,10 @@ describe("readiness-driven Codex verification delivers instructions, not native 
     /Default to one heavy suite or scratch materialization at a time/,
     /proven port, cache, output and environment isolation/,
     /existing sequential no-export route above once quiescence is proven, never a reduced check/,
-    /the exact baseline and head commits/,
-    /pending and untracked content judged/,
-    /dependency and generated inputs read/,
-    /effective nonsecret verification environment/,
-    /inside the existing evidence entries rather than a new field/,
-    /before the checks, after the checks and again before the commit window, no-export runs included/,
-    /Later drift in a bound input invalidates the affected evidence/,
+    /shared verifier contract's \*\*Evidence and acceptance\*\* freshness binding/,
+    /no-export runs included/,
+    /Reconcile that binding again before the commit window/,
+    /affected evidence must be current before green or commit/,
     /Every source writer and owned process of the slice has ended before a serialized green or commit window opens/,
     /the actual assembled tree at the integration gate; earlier slice greens never stand in for it/,
   ]);
@@ -250,7 +247,7 @@ describe("readiness-driven Codex verification delivers instructions, not native 
     const route = (instructions as string).match(/`([^`]+)#readiness-and-freshness`/);
     assert.equal(route?.[1], sharedReferenceOutputPath("codex"));
     assert.match(readRepoText(route![1]!), new RegExp(`^${READINESS_SECTION}$`, "m"));
-    assert.match(instructions as string, /existing `evidence:` entries/);
+    assert.match(instructions as string, /evidence:\n[\s\S]*freshness:/);
     assert.doesNotMatch(readRepoText("core/src/prose/agents/oso-verifier/codex.md"), /^```/m);
   });
 

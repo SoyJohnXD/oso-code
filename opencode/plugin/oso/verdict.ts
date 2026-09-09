@@ -1,5 +1,5 @@
 export type AgentStatus = "done" | "blocked";
-export type AgentVerdictValue = "pass" | "fail";
+export type AgentVerdictValue = "pass" | "fail" | "blocked";
 
 export interface ParsedAgentVerdict {
   status?: AgentStatus;
@@ -8,7 +8,7 @@ export interface ParsedAgentVerdict {
 }
 
 const STATUS_LINE = /^\s*status\s*:\s*(done|blocked)\s*$/i;
-const VERDICT_LINE = /^\s*verdict\s*:\s*(pass|fail)\s*$/i;
+const VERDICT_LINE = /^\s*verdict\s*:\s*(pass|fail|blocked)\s*$/i;
 
 export function parseAgentVerdict(text: string): ParsedAgentVerdict {
   const parsed: ParsedAgentVerdict = { matched: false };

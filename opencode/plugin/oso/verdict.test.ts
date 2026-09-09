@@ -26,6 +26,11 @@ test("parses a verifier fail verdict", () => {
   assert.equal(parsed.matched, true);
 });
 
+test("parses a verifier blocked verdict after its evidence without requiring an applier status", () => {
+  const report = "reason: required database unavailable\nevidence:\n  - cmd: npm test  exit: 1  result: connection refused  output: complete  warnings: absent\nverdict: blocked\n";
+  assert.deepEqual(parseAgentVerdict(report), { matched: true, verdict: "blocked" });
+});
+
 test("parses both lines when present", () => {
   const parsed = parseAgentVerdict("status: blocked\nverdict: fail\n");
   assert.equal(parsed.status, "blocked");

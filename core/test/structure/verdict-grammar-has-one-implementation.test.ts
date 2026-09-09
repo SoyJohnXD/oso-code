@@ -9,7 +9,7 @@ import { readTrackedText, trackedRepositoryFiles } from "../support/tracked-file
 
 const VERDICT_GRAMMAR_OWNER = "opencode/plugin/oso/verdict.ts";
 const CANONICAL_SEARCH_ROOTS = ["plugin", "codex", "bootstrap", "tests", "tools", "opencode/plugin", "opencode/hooks"];
-const ALTERNATION_PATTERN = /\([a-z]+\|[a-z]+\)/g;
+const ALTERNATION_PATTERN = /\([a-z]+(?:\|[a-z]+)+\)/g;
 
 const MINIMUM_ALTERNATIONS = 2;
 const MINIMUM_ALTERNATIONS_DERIVATION =
