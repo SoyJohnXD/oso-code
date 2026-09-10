@@ -24,7 +24,12 @@ const TOOL_NAME = /^[A-Za-z0-9_:.-]+$/;
 const PENDING_APPROVAL_MESSAGE =
   'oso-code: plan approval is pending. Use Codex native "Implement the plan." approval, ' +
   "or send exactly CANCEL OSO PLAN to abandon it, before using local tools.";
-const LINEAGE_OF_ANYONE_BUT_THE_ROOT = "child, missing, or contradictory native lineage";
+type AttestationFault = Readonly<{ kind: "lineage" | "unattested"; cause: string }>;
+
+const LINEAGE_OF_ANYONE_BUT_THE_ROOT: AttestationFault = {
+  kind: "lineage",
+  cause: "child, missing, or contradictory native lineage",
+};
 
 type MemoryRefusal = Readonly<{ event: string; message: string }>;
 
@@ -88,47 +93,51 @@ function codexMemoryDenial(envelope: HookEnvelope): GateOutcome | undefined {
   }, { unreadExpandedExecutables: true });
   if (!memoryTool && cliVerdict === "clear") return undefined;
   const known = !memoryTool || TOOL_ROWS.some((row) => row.names.codex === tool);
-  const cause = known ? unattestedCodexRoot(envelope) : "unknown Engram method";
-  if (cause === undefined) return undefined;
+  const fault = known ? unattestedCodexRoot(envelope) : unattested("unknown Engram method");
+  if (fault === undefined) return undefined;
   const shellEffectsAreUnread = !memoryTool && cliVerdict === "unread";
-  const refusal = memoryRefusal(cause, shellEffectsAreUnread);
+  const refusal = memoryRefusal(fault, shellEffectsAreUnread);
   return denied({ gate: "unknown", session: envelope.sessionId, detail: tool, ...refusal });
 }
 
-function memoryRefusal(cause: string, shellEffectsAreUnread: boolean): MemoryRefusal {
+function unattested(cause: string): AttestationFault {
+  return { kind: "unattested", cause };
+}
+
+function memoryRefusal(fault: AttestationFault, shellEffectsAreUnread: boolean): MemoryRefusal {
   if (shellEffectsAreUnread) {
     return {
       event: "shell-effects-unestablished",
-      message: `oso-code: shell effects could not be established; native ROOT attestation is required: ${cause}.`,
+      message: `oso-code: shell effects could not be established; native ROOT attestation is required: ${fault.cause}.`,
     };
   }
-  if (cause === LINEAGE_OF_ANYONE_BUT_THE_ROOT) {
+  if (fault.kind === "lineage") {
     return {
       event: "memory-write-belongs-to-root",
       message:
-        `oso-code: semantic memory belongs to the root session, and this call carries ${cause}, ` +
+        `oso-code: semantic memory belongs to the root session, and this call carries ${fault.cause}, ` +
         "so it is not yours to persist. Continue your slice and hand the observation to the parent " +
         "in your report; the parent persists it. This refusal ends the write, never your work.",
     };
   }
   return {
     event: "memory-write-denied",
-    message: `oso-code: semantic memory mutations require native ROOT attestation: ${cause}.`,
+    message: `oso-code: semantic memory mutations require native ROOT attestation: ${fault.cause}.`,
   };
 }
 
-function unattestedCodexRoot(envelope: HookEnvelope): string | undefined {
+function unattestedCodexRoot(envelope: HookEnvelope): AttestationFault | undefined {
   try {
-    if (envelope.payloadRead !== "json" || envelope.sessionId === "" || envelope.transcriptPath === "") return "missing native hook identity";
+    if (envelope.payloadRead !== "json" || envelope.sessionId === "" || envelope.transcriptPath === "") return unattested("missing native hook identity");
     const deadline = performance.now() + CODEX_METADATA_READINESS_MS;
     const native = readCodexSessionMetadata(envelope.transcriptPath, deadline);
     const rootEntrypoint = native.source === "cli" || native.source === "exec";
     if (native.id !== envelope.sessionId || !rootEntrypoint || native.parentThreadId !== undefined || native.agentPath !== undefined || native.agentRole !== undefined || native.threadSpawn !== undefined) return LINEAGE_OF_ANYONE_BUT_THE_ROOT;
-    if (nativeRepositoryIdentity(native.cwd, deadline) !== nativeRepositoryIdentity(envelope.cwd, deadline)) return "native repository mismatch";
+    if (nativeRepositoryIdentity(native.cwd, deadline) !== nativeRepositoryIdentity(envelope.cwd, deadline)) return unattested("native repository mismatch");
     return undefined;
   } catch (error) {
     if (!isNativeResolutionFault(error)) throw error;
-    return causeOf(error);
+    return unattested(causeOf(error));
   }
 }
 

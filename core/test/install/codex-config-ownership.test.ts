@@ -247,5 +247,12 @@ describe("row four: Codex permissions belong to the operator — seeded once, mi
     assert.equal(operatorPermissionsNotice(seeded, configFile), codexPermissionsNotice(seeded, configFile));
     assert.equal(operatorPermissionsNotice(PREVIOUS_RELEASE_CONFIG, configFile), undefined);
   });
+
+  test("a permissions declaration no root line decodes on its own is named rather than read as none", () => {
+    assert.match(
+      codexPermissionsNotice('permissions = [\n  "workspace-write",\n]\n', configFile),
+      /1 config root line\(s\) the permissions scan cannot decode on their own, so what they declare stays unread, starting at: permissions = \[$/,
+    );
+  });
 });
 

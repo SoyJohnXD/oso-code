@@ -113,7 +113,10 @@ function repositoryIdFor(stateFile) {
   return path.basename(stateFile, ".state");
 }
 function profileFileFor(stateFile) {
-  return path.join(stateRootDirectory(), "profiles", `${repositoryIdFor(stateFile)}.profile`);
+  return profileFileKeyedBy(repositoryIdFor(stateFile));
+}
+function profileFileKeyedBy(repositoryId) {
+  return path.join(stateRootDirectory(), "profiles", `${repositoryId}.profile`);
 }
 var MODEL_TOKEN_SHAPE = `1 to ${TOKEN_MAX_LENGTH} characters of letters, digits and / : . - _ @`;
 function isModelToken(value) {
@@ -3404,6 +3407,12 @@ function operatorPermissionsNotice(text, file) {
   return settings.length === 0 ? void 0 : `Codex permissions are the operator's own: ${settings.join(", ")}`;
 }
 function codexPermissionsNotice(text, file) {
+  const ownership = permissionsOwnershipNotice(text, file);
+  const undecodable = undecodableRootLines(text);
+  if (undecodable.length === 0) return ownership;
+  return `${ownership}; ${undecodable.length} config root line(s) the permissions scan cannot decode on their own, so what they declare stays unread, starting at: ${undecodable[0]}`;
+}
+function permissionsOwnershipNotice(text, file) {
   const alreadyTheirs = operatorPermissionsNotice(text, file);
   if (alreadyTheirs !== void 0) return alreadyTheirs;
   const region = runTomlRegion(text, { action: "extract", startMarker: CONFIG_MARKER_START, endMarker: CONFIG_MARKER_END });
@@ -3509,7 +3518,15 @@ function seededWhereNothingDeclaresPermissions(targetHome, texts) {
   return texts.some(declaresPermissions) ? NOTHING_SEEDED : renderOsoPermissionProfile(targetHome);
 }
 function declaresPermissions(text) {
-  return rootSymbolLinesOf(text).flatMap(decodedSymbol).some((symbol) => Object.hasOwn(symbol, "default_permissions") || Object.hasOwn(symbol, "permissions"));
+  return rootSymbolLinesOf(text).some(declaresAPermissionKey);
+}
+function declaresAPermissionKey(line) {
+  const symbol = decodedSymbol(line);
+  if (symbol === void 0) return false;
+  return Object.hasOwn(symbol, "default_permissions") || Object.hasOwn(symbol, "permissions");
+}
+function undecodableRootLines(text) {
+  return rootSymbolLinesOf(text).filter((line) => decodedSymbol(line) === void 0);
 }
 function tableHeadersOf(text) {
   return rootSymbolLinesOf(text).filter((line) => line.startsWith("["));
@@ -3519,9 +3536,9 @@ function rootSymbolLinesOf(text) {
 }
 function decodedSymbol(line) {
   try {
-    return [parseTomlDocument(line, line)];
+    return parseTomlDocument(line, line);
   } catch (error) {
-    if (error instanceof TomlParseError) return [];
+    if (error instanceof TomlParseError) return void 0;
     throw error;
   }
 }

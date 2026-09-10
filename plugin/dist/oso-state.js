@@ -1352,13 +1352,21 @@ function repositoryIdFor(stateFile) {
 }
 function journalFileFor(cwd) {
   const stateFile = stateFileFor(cwd);
-  const repositoryId = repositoryIdFor(stateFile);
   const autoChange = readValue(stateFile, "auto_change") ?? "";
   const change = CHANGE_SLUG_PATTERN.test(autoChange) ? autoChange : "run";
-  return path3.join(stateRootDirectory(), "runs", repositoryId, `${change}.log`);
+  return path3.join(runsDirectoryKeyedBy(repositoryIdFor(stateFile)), `${change}.log`);
+}
+function runsDirectoryKeyedBy(repositoryId) {
+  return path3.join(stateRootDirectory(), "runs", repositoryId);
 }
 function denyPatternsFileFor(stateFile) {
-  return path3.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
+  return denyPatternsFileKeyedBy(repositoryIdFor(stateFile));
+}
+function denyPatternsFileKeyedBy(repositoryId) {
+  return path3.join(stateRootDirectory(), "deploy-deny", `${repositoryId}.patterns`);
+}
+function profileFileKeyedBy(repositoryId) {
+  return path3.join(stateRootDirectory(), "profiles", `${repositoryId}.profile`);
 }
 var MODEL_TOKEN_SHAPE = `1 to ${TOKEN_MAX_LENGTH} characters of letters, digits and / : . - _ @`;
 function isNameToken(value) {
@@ -1906,8 +1914,11 @@ function isValidOpaqueId(value) {
 function isValidTimeoutText(value) {
   return TIMEOUT_PATTERN.test(value) && Number(value) <= MAX_TIMEOUT_SECONDS;
 }
+function receiptDirectoryKeyedBy(repositoryId) {
+  return path4.join(stateRootDirectory(), ".handoffs", repositoryId);
+}
 function receiptDirectoryFor(cwd) {
-  return path4.join(stateRootDirectory(), ".handoffs", repositoryIdFor(stateFileFor(cwd)));
+  return receiptDirectoryKeyedBy(repositoryIdFor(stateFileFor(cwd)));
 }
 function handoffPaths(cwd, agentId) {
   const agentKey = sha256Hex(agentId);
@@ -1959,13 +1970,13 @@ function globalSweep(directory) {
 function sweepableArtifactKey(name) {
   return name.match(RECEIPT_ARTIFACT_PATTERN)?.[1] ?? name.match(TEMP_ARTIFACT_PATTERN)?.[1];
 }
-function sweepArtifact(artifactPath2, sweepLockDir) {
+function sweepArtifact(artifactPath, sweepLockDir) {
   if (!tryAcquireBareLock(sweepLockDir)) return;
   try {
-    if (!isRegularNonSymlinkFile(artifactPath2)) return;
-    const age = secondsSinceModified(artifactPath2);
+    if (!isRegularNonSymlinkFile(artifactPath)) return;
+    const age = secondsSinceModified(artifactPath);
     if (age === void 0 || age < TTL_SECONDS) return;
-    rmSync2(artifactPath2, { force: true });
+    rmSync2(artifactPath, { force: true });
   } finally {
     rmSync2(sweepLockDir, { recursive: true, force: true });
   }
@@ -2176,134 +2187,12 @@ function readPinnedDirectory({ directory, before, deadline, remainingPaths }) {
 }
 
 // core/src/state/migration.ts
-import { appendFileSync as appendFileSync2, existsSync as existsSync2, mkdirSync as mkdirSync3, readFileSync as readFileSync4, readdirSync as readdirSync2, renameSync as renameSync2, rmSync as rmSync3 } from "node:fs";
-import path5 from "node:path";
-var TaskStateMigrationError = class extends Error {
-  constructor(message, options) {
-    super(message, options);
-    this.name = "TaskStateMigrationError";
-  }
-};
-var PLANS_TREE = "plans";
-var KEYED_FILES = ["deploy-deny/{key}.patterns", "profiles/{key}.profile"];
-var KEYED_TREES = ["runs", PLANS_TREE, ".handoffs"];
-var RESUME_TRIGGERING_STATE_FILE = "{key}.state";
-var PLAN_PATH_KEYS = ["plan_snapshot_file", "plan_current_file"];
-var JOURNAL_SUFFIX = ".log";
-function migrateInferredTaskState(cwd, session) {
-  const task = taskIdentityFor(cwd);
-  if (task.kind !== "declared") return;
-  const left = stateLeftAtTheInferredIdentity(cwd, task);
-  if (left === void 0) return;
-  withLock(left.stateFile, session, () => {
-    if (readStateFile(left.stateFile).kind === "absent") return;
-    if (readStateFile(task.stateFile).kind !== "absent") {
-      throw new TaskStateMigrationError(twoIdentitiesHoldState(cwd, left, task));
-    }
-    carryEverythingKeyedBy(left.identity, task, session);
-  });
-}
-function carryEverythingKeyedBy(inferred, task, session) {
-  const inferredKey = sha256Hex(inferred);
-  const declaredKey = sha256Hex(task.identity);
-  const carried = plannedCarries(inferredKey, declaredKey);
-  const colliding = carried.filter((artifact) => artifact.onCollision === "refuse" && existsSync2(artifact.to));
-  if (colliding.length > 0) throw new TaskStateMigrationError(artifactsCollide(inferred, task.identity, colliding));
-  try {
-    for (const artifact of carried) carryOne(artifact, inferred);
-    for (const tree of KEYED_TREES) rmSync3(treeOf(tree, inferredKey), { recursive: true, force: true });
-    carryStateFileLastSoAnInterruptionResumes(inferredKey, declaredKey);
-  } catch (error) {
-    if (error instanceof TaskStateMigrationError) throw error;
-    throw new TaskStateMigrationError(carryStoppedPartway(inferred, task.identity, causeOf2(error)), { cause: error });
-  }
-  logEvent({ event: "identity-migrated", session, command: `${inferred} -> ${task.identity}` });
-}
-function plannedCarries(from, to) {
-  const files = KEYED_FILES.map((template) => ({
-    from: artifactPath(template, from),
-    to: artifactPath(template, to),
-    onCollision: "refuse"
-  }));
-  return [...files, ...KEYED_TREES.flatMap((tree) => treeCarries(tree, from, to))].filter(
-    (artifact) => existsSync2(artifact.from)
-  );
-}
-function treeCarries(tree, from, to) {
-  const source = treeOf(tree, from);
-  const destination = treeOf(tree, to);
-  return entryNamesOf(source).map((name) => ({
-    from: path5.join(source, name),
-    to: path5.join(destination, name),
-    onCollision: name.endsWith(JOURNAL_SUFFIX) ? "concatenate" : "refuse"
-  }));
-}
-function carryOne(artifact, inferred) {
-  mkdirSync3(path5.dirname(artifact.to), { recursive: true, mode: 448 });
-  if (artifact.onCollision === "concatenate" && existsSync2(artifact.to)) {
-    withOwnerOnlyUmask(() => appendFileSync2(artifact.to, journalLinesCarriedFrom(artifact.from, inferred)));
-    rmSync3(artifact.from, { force: true });
-    return;
-  }
-  renameSync2(artifact.from, artifact.to);
-}
-function carryStateFileLastSoAnInterruptionResumes(inferredKey, declaredKey) {
-  const legacyStateFile = artifactPath(RESUME_TRIGGERING_STATE_FILE, inferredKey);
-  retargetCarriedPlanPaths(legacyStateFile, inferredKey, declaredKey);
-  renameSync2(legacyStateFile, artifactPath(RESUME_TRIGGERING_STATE_FILE, declaredKey));
-}
-function retargetCarriedPlanPaths(stateFile, inferredKey, declaredKey) {
-  const read = readStateFile(stateFile);
-  if (read.kind !== "ok") throw new StateFileUnreadableError(stateFile, readFailureCause(read));
-  const planDirectory = treeOf(PLANS_TREE, inferredKey);
-  const carriedPlanDirectory = treeOf(PLANS_TREE, declaredKey);
-  const retargeted = read.content.split("\n").map((line) => planLineRebasedOn(line, planDirectory, carriedPlanDirectory)).join("\n");
-  if (retargeted !== read.content) writeFileAtomically(path5.dirname(stateFile), stateFile, retargeted, ".retarget.");
-}
-function planLineRebasedOn(line, planDirectory, carriedPlanDirectory) {
-  const key = PLAN_PATH_KEYS.find((named) => line.startsWith(`${named}=`));
-  if (key === void 0) return line;
-  const recorded = line.slice(key.length + 1);
-  if (path5.dirname(recorded) !== planDirectory) return line;
-  return `${key}=${path5.join(carriedPlanDirectory, path5.basename(recorded))}`;
-}
-function journalLinesCarriedFrom(journal, inferred) {
-  return readFileSync4(journal, "utf8").split("\n").filter((line) => line !== "").map((line) => `${line} [carried from ${inferred}]
-`).join("");
-}
-function twoIdentitiesHoldState(cwd, left, task) {
-  return `two task identities hold state for ${cwd}, and this harness never merges them: a merged state can open a red repository's commit gate on a neighbour's green. Keep the one this task should use, remove the other, then run again.
-${whatItHolds(task.identity, task.stateFile)}${whatItHolds(left.identity, left.stateFile)}`;
-}
-function whatItHolds(identity, stateFile) {
-  const read = readStateFile(stateFile);
-  const held2 = read.kind === "ok" ? read.content.split("\n").filter((line) => line !== "") : [`this file cannot be read: ${readFailureCause(read)}`];
-  return [`  ${identity} (${stateFile})`, ...held2.map((line) => `    ${line}`), ""].join("\n");
-}
-function readFailureCause(read) {
-  return read.kind === "unreadable" ? read.cause : "it is absent";
-}
-function artifactsCollide(inferred, identity, colliding) {
-  return `the state of ${inferred} cannot be carried to ${identity}: ${colliding.length} artifact(s) already stand under the declared identity, and each of them is keyed to one agent or one plan, so choosing between the two would be a guess. Remove whichever is spent, then run again.
-` + colliding.map((artifact) => `  ${artifact.to}
-`).join("");
-}
-function carryStoppedPartway(inferred, identity, cause) {
-  return `the state of ${inferred} stopped partway on its way to ${identity}: ${cause}. Nothing was dropped and the state still answers at ${inferred}, so the gates keep denying rather than allowing on state they no longer read. Clear whatever blocked the carry and the next oso-state run finishes it.`;
-}
-function treeOf(tree, key) {
-  return artifactPath(`${tree}/{key}`, key);
-}
-function artifactPath(template, key) {
-  return path5.join(stateRootDirectory(), ...template.replace("{key}", key).split("/"));
-}
-function entryNamesOf(directory) {
-  return isDirectory(directory) ? readdirSync2(directory) : [];
-}
+import { appendFileSync as appendFileSync2, existsSync as existsSync3, mkdirSync as mkdirSync4, readFileSync as readFileSync5, readdirSync as readdirSync2, renameSync as renameSync3, rmSync as rmSync4 } from "node:fs";
+import path6 from "node:path";
 
 // core/src/state/plan.ts
-import { chmodSync as chmodSync2, existsSync as existsSync3, mkdirSync as mkdirSync4, readFileSync as readFileSync5, renameSync as renameSync3, rmSync as rmSync4 } from "node:fs";
-import path6 from "node:path";
+import { chmodSync as chmodSync2, existsSync as existsSync2, mkdirSync as mkdirSync3, readFileSync as readFileSync4, renameSync as renameSync2, rmSync as rmSync3 } from "node:fs";
+import path5 from "node:path";
 
 // core/src/state/transitions.ts
 function closeSlice() {
@@ -2335,7 +2224,7 @@ var PlanVerifyFailure = class extends PlanFailure {
 };
 function runRejectPlanPresentation(cwd, sessionId, fingerprint) {
   const stateFile = stateFileFor(cwd);
-  mkdirSync4(stateRootDirectory(), { recursive: true });
+  mkdirSync3(stateRootDirectory(), { recursive: true });
   withLock(stateFile, sessionId, () => {
     writeStatePairs(stateFile, [
       "mode=plan",
@@ -2356,22 +2245,28 @@ function readPlanForReplacement(cwd, sessionId) {
     if (!isValidPlanDigest(digest)) throw new PlanFailure("replacement requires a valid pending digest", { code: "invalid-pending-digest" });
     const paths = planPaths(stateFile, digest);
     if (readValue(stateFile, "plan_current_file") !== paths.currentFile || !isPrivateRegularFile(paths.currentFile)) throw new PlanFailure("preserved plan is missing or unsafe", { code: "preserved-plan-unsafe" });
-    return readFileSync5(paths.currentFile, "utf8");
+    return readFileSync4(paths.currentFile, "utf8");
   });
 }
 var PLAN_DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 function isValidPlanDigest(value) {
   return PLAN_DIGEST_PATTERN.test(value);
 }
+function planRootDirectory() {
+  return path5.join(stateRootDirectory(), "plans");
+}
+function planDirectoryKeyedBy(repositoryId) {
+  return path5.join(planRootDirectory(), repositoryId);
+}
 function planPaths(stateFile, digest) {
-  const root = path6.join(stateRootDirectory(), "plans");
-  const dir = path6.join(root, repositoryIdFor(stateFile));
+  const root = planRootDirectory();
+  const dir = planDirectoryKeyedBy(repositoryIdFor(stateFile));
   return {
     root,
     dir,
-    presentedFile: path6.join(dir, `presented-${digest}.md`),
-    approvedFile: path6.join(dir, `approved-${digest}.md`),
-    currentFile: path6.join(dir, "current.md")
+    presentedFile: path5.join(dir, `presented-${digest}.md`),
+    approvedFile: path5.join(dir, `approved-${digest}.md`),
+    currentFile: path5.join(dir, "current.md")
   };
 }
 function ensurePlanDirectory(paths) {
@@ -2383,7 +2278,7 @@ function ensurePlanDirectory(paths) {
 }
 function requireNonSymlinkDirectory(target, symlinkLabel, directoryLabel = symlinkLabel) {
   if (isSymlink(target)) throw new PlanFailure(`${symlinkLabel} is a symlink: ${target}`, { code: "plan-directory-symlink" });
-  mkdirSync4(target, { recursive: true, mode: 448 });
+  mkdirSync3(target, { recursive: true, mode: 448 });
   if (!isDirectory(target)) throw new PlanFailure(`${directoryLabel} is not a directory: ${target}`, { code: "plan-directory-invalid" });
 }
 function runCapturePlan(cwd, sessionId, digest, document, binding) {
@@ -2400,17 +2295,17 @@ function runCapturePlan(cwd, sessionId, digest, document, binding) {
     if (binding !== void 0) {
       writeStatePairs(stateFile, ["mode=plan", "plan_approval=pending", "plan_presentation_status=failed", `plan_approval_session=${sessionId}`], sessionId);
     }
-    if (existsSync3(paths.presentedFile)) {
+    if (existsSync2(paths.presentedFile)) {
       if (!isPrivateRegularFile(paths.presentedFile)) {
         throw new PlanFailure("presented snapshot is not a private regular file", { code: "presented-snapshot-unsafe" });
       }
-      if (readFileSync5(paths.presentedFile, "utf8") !== document) {
+      if (readFileSync4(paths.presentedFile, "utf8") !== document) {
         throw new PlanFailure("presented snapshot content disagrees with its approval digest", { code: "presented-snapshot-digest-mismatch" });
       }
     } else {
       writeFileAtomically(paths.dir, paths.presentedFile, document, ".snapshot.");
     }
-    if (existsSync3(paths.currentFile) && !isPrivateRegularFile(paths.currentFile)) {
+    if (existsSync2(paths.currentFile) && !isPrivateRegularFile(paths.currentFile)) {
       throw new PlanFailure("current plan is not a private regular file", { code: "current-plan-unsafe" });
     }
     writeFileAtomically(paths.dir, paths.currentFile, document, ".current.");
@@ -2446,7 +2341,7 @@ function runApprovePlan(cwd, sessionId, digest, nativePresentation) {
     throw new PlanApprovalError("approve-plan requires one lowercase SHA-256 digest", { code: "invalid-approval-digest" });
   }
   const stateFile = stateFileFor(cwd);
-  mkdirSync4(stateRootDirectory(), { recursive: true });
+  mkdirSync3(stateRootDirectory(), { recursive: true });
   return withLock(stateFile, sessionId, () => {
     requireOwnApprovalState(stateFile, sessionId);
     if (readValue(stateFile, "mode") !== "plan") {
@@ -2473,21 +2368,21 @@ function runApprovePlan(cwd, sessionId, digest, nativePresentation) {
     if (!isPrivateRegularFile(paths.currentFile)) {
       throw new PlanFailure("current plan is missing or unsafe", { code: "current-plan-unsafe" });
     }
-    if (native !== void 0 && readFileSync5(paths.currentFile, "utf8") !== native.document) throw new PlanApprovalError("native presentation differs from the pending document", { code: "pending-document-mismatch" });
+    if (native !== void 0 && readFileSync4(paths.currentFile, "utf8") !== native.document) throw new PlanApprovalError("native presentation differs from the pending document", { code: "pending-document-mismatch" });
     if (isPrivateRegularFile(paths.presentedFile)) {
       if (!byteIdentical(paths.currentFile, paths.presentedFile)) {
         throw new PlanFailure("the pending plan changed since it was presented; capture it again before approving", { code: "presented-document-mismatch" });
       }
-      if (existsSync3(paths.approvedFile)) {
+      if (existsSync2(paths.approvedFile)) {
         if (!isPrivateRegularFile(paths.approvedFile)) {
           throw new PlanFailure("approved snapshot is not a private regular file", { code: "approved-snapshot-unsafe" });
         }
         if (!byteIdentical(paths.presentedFile, paths.approvedFile)) {
           throw new PlanFailure("approved snapshot content disagrees with the pending document", { code: "approved-document-mismatch" });
         }
-        rmSync4(paths.presentedFile, { force: true });
+        rmSync3(paths.presentedFile, { force: true });
       } else {
-        renameSync3(paths.presentedFile, paths.approvedFile);
+        renameSync2(paths.presentedFile, paths.approvedFile);
       }
     } else if (!isPrivateRegularFile(paths.approvedFile)) {
       throw new PlanFailure("presented plan snapshot is missing", { code: "presented-snapshot-missing" });
@@ -2504,7 +2399,7 @@ function runCancelPlan(cwd, sessionId, digest) {
     throw new PlanApprovalError("cancel-plan requires one lowercase SHA-256 digest", { code: "invalid-cancellation-digest" });
   }
   const stateFile = stateFileFor(cwd);
-  mkdirSync4(stateRootDirectory(), { recursive: true });
+  mkdirSync3(stateRootDirectory(), { recursive: true });
   return withLock(stateFile, sessionId, () => {
     requireOwnApprovalState(stateFile, sessionId);
     requirePendingApproval(stateFile);
@@ -2513,10 +2408,10 @@ function runCancelPlan(cwd, sessionId, digest) {
     }
     const paths = planPaths(stateFile, digest);
     if (readValue(stateFile, "plan_snapshot_file") === paths.presentedFile) {
-      rmSync4(paths.presentedFile, { force: true });
+      rmSync3(paths.presentedFile, { force: true });
     }
     if (readValue(stateFile, "plan_current_file") === paths.currentFile) {
-      rmSync4(paths.currentFile, { force: true });
+      rmSync3(paths.currentFile, { force: true });
     }
     clearStateFile(stateFile);
     logEvent({ event: "plan-approval-cancelled", session: sessionId });
@@ -2526,7 +2421,7 @@ function runCancelPlan(cwd, sessionId, digest) {
 function runAmendPlan(cwd, sessionId, sliceId, document) {
   if (!isNameToken(sliceId)) throw new PlanFailure("amend-plan requires a safe slice id", { code: "invalid-amendment-slice" });
   const stateFile = stateFileFor(cwd);
-  mkdirSync4(stateRootDirectory(), { recursive: true });
+  mkdirSync3(stateRootDirectory(), { recursive: true });
   if (document.length === 0) throw new PlanFailure("amend-plan requires a non-empty document on stdin", { code: "empty-amendment" });
   return withLock(stateFile, sessionId, () => {
     if (!isReadableRegularFile(stateFile)) {
@@ -2560,7 +2455,7 @@ function runAmendPlan(cwd, sessionId, sliceId, document) {
     const revisionText = readValue(stateFile, "plan_revision") ?? "";
     if (!/^[0-9]+$/.test(revisionText)) throw new PlanFailure("current plan has no valid revision", { code: "invalid-plan-revision" });
     const nextRevision = Number(revisionText) + 1;
-    const amended = `${readFileSync5(paths.currentFile, "utf8")}
+    const amended = `${readFileSync4(paths.currentFile, "utf8")}
 
 ## ${shape.heading} \u2014 ${sliceId}
 
@@ -2590,7 +2485,7 @@ function requirePendingApproval(stateFile) {
   }
 }
 function byteIdentical(leftFile, rightFile) {
-  return readFileSync5(leftFile).equals(readFileSync5(rightFile));
+  return readFileSync4(leftFile).equals(readFileSync4(rightFile));
 }
 function amendmentShapeFor(approval) {
   if (approval === "approved") return { heading: "Execution amendment", classification: "in-scope" };
@@ -2641,6 +2536,131 @@ function sliceLabelOpening(line) {
 function namesAVerifyCheck(blockText) {
   const lowered = blockText.toLowerCase();
   return VERIFY_CHECK_TOKENS.some((token) => lowered.includes(token.toLowerCase()));
+}
+
+// core/src/state/migration.ts
+var TaskStateMigrationError = class extends Error {
+  constructor(message, options) {
+    super(message, options);
+    this.name = "TaskStateMigrationError";
+  }
+};
+var KEYED_FILES = [denyPatternsFileKeyedBy, profileFileKeyedBy];
+var KEYED_TREES = [
+  runsDirectoryKeyedBy,
+  planDirectoryKeyedBy,
+  receiptDirectoryKeyedBy
+];
+var PLAN_PATH_KEYS = ["plan_snapshot_file", "plan_current_file"];
+var JOURNAL_SUFFIX = ".log";
+function migrateInferredTaskState(cwd, session) {
+  const task = taskIdentityFor(cwd);
+  if (task.kind !== "declared") return;
+  const left = stateLeftAtTheInferredIdentity(cwd, task);
+  if (left === void 0) return;
+  withLock(left.stateFile, session, () => {
+    if (readStateFile(left.stateFile).kind === "absent") return;
+    if (readStateFile(task.stateFile).kind !== "absent") {
+      throw new TaskStateMigrationError(twoIdentitiesHoldState(cwd, left, task));
+    }
+    carryEverythingKeyedBy(keyedIdentity(left), keyedIdentity(task), session);
+  });
+}
+function keyedIdentity({ identity, stateFile }) {
+  return { identity, key: sha256Hex(identity), stateFile };
+}
+function carryEverythingKeyedBy(inferred, declared, session) {
+  const carried = plannedCarries(inferred.key, declared.key);
+  const colliding = carried.filter((artifact) => artifact.onCollision === "refuse" && existsSync3(artifact.to));
+  if (colliding.length > 0) {
+    throw new TaskStateMigrationError(artifactsCollide(inferred.identity, declared.identity, colliding));
+  }
+  try {
+    for (const artifact of carried) carryOne(artifact, inferred.identity);
+    for (const treeKeyedBy of KEYED_TREES) rmSync4(treeKeyedBy(inferred.key), { recursive: true, force: true });
+    carryStateFileLastSoAnInterruptionResumes(inferred, declared);
+  } catch (error) {
+    if (error instanceof TaskStateMigrationError) throw error;
+    throw new TaskStateMigrationError(carryStoppedPartway(inferred.identity, declared.identity, causeOf2(error)), {
+      cause: error
+    });
+  }
+  logEvent({ event: "identity-migrated", session, command: `${inferred.identity} -> ${declared.identity}` });
+}
+function plannedCarries(from, to) {
+  const files = KEYED_FILES.map((fileKeyedBy) => ({
+    from: fileKeyedBy(from),
+    to: fileKeyedBy(to),
+    onCollision: "refuse"
+  }));
+  return [...files, ...KEYED_TREES.flatMap((treeKeyedBy) => treeCarries(treeKeyedBy, from, to))].filter(
+    (artifact) => existsSync3(artifact.from)
+  );
+}
+function treeCarries(treeKeyedBy, from, to) {
+  const source = treeKeyedBy(from);
+  const destination = treeKeyedBy(to);
+  return entryNamesOf(source).map((name) => ({
+    from: path6.join(source, name),
+    to: path6.join(destination, name),
+    onCollision: name.endsWith(JOURNAL_SUFFIX) ? "concatenate" : "refuse"
+  }));
+}
+function carryOne(artifact, inferred) {
+  mkdirSync4(path6.dirname(artifact.to), { recursive: true, mode: 448 });
+  if (artifact.onCollision === "concatenate" && existsSync3(artifact.to)) {
+    withOwnerOnlyUmask(() => appendFileSync2(artifact.to, journalLinesCarriedFrom(artifact.from, inferred)));
+    rmSync4(artifact.from, { force: true });
+    return;
+  }
+  renameSync3(artifact.from, artifact.to);
+}
+function carryStateFileLastSoAnInterruptionResumes(inferred, declared) {
+  retargetCarriedPlanPaths(inferred, declared);
+  renameSync3(inferred.stateFile, declared.stateFile);
+}
+function retargetCarriedPlanPaths(inferred, declared) {
+  const { stateFile } = inferred;
+  const read = readStateFile(stateFile);
+  if (read.kind !== "ok") throw new StateFileUnreadableError(stateFile, readFailureCause(read));
+  const planDirectory = planDirectoryKeyedBy(inferred.key);
+  const carriedPlanDirectory = planDirectoryKeyedBy(declared.key);
+  const retargeted = read.content.split("\n").map((line) => planLineRebasedOn(line, planDirectory, carriedPlanDirectory)).join("\n");
+  if (retargeted !== read.content) writeFileAtomically(path6.dirname(stateFile), stateFile, retargeted, ".retarget.");
+}
+function planLineRebasedOn(line, planDirectory, carriedPlanDirectory) {
+  const key = PLAN_PATH_KEYS.find((named) => line.startsWith(`${named}=`));
+  if (key === void 0) return line;
+  const recorded = line.slice(key.length + 1);
+  if (path6.dirname(recorded) !== planDirectory) return line;
+  return `${key}=${path6.join(carriedPlanDirectory, path6.basename(recorded))}`;
+}
+function journalLinesCarriedFrom(journal, inferred) {
+  return readFileSync5(journal, "utf8").split("\n").filter((line) => line !== "").map((line) => `${line} [carried from ${inferred}]
+`).join("");
+}
+function twoIdentitiesHoldState(cwd, left, task) {
+  return `two task identities hold state for ${cwd}, and this harness never merges them: a merged state can open a red repository's commit gate on a neighbour's green. Keep the one this task should use, remove the other, then run again.
+${whatItHolds(task.identity, task.stateFile)}${whatItHolds(left.identity, left.stateFile)}`;
+}
+function whatItHolds(identity, stateFile) {
+  const read = readStateFile(stateFile);
+  const held2 = read.kind === "ok" ? read.content.split("\n").filter((line) => line !== "") : [`this file cannot be read: ${readFailureCause(read)}`];
+  return [`  ${identity} (${stateFile})`, ...held2.map((line) => `    ${line}`), ""].join("\n");
+}
+function readFailureCause(read) {
+  return read.kind === "unreadable" ? read.cause : "it is absent";
+}
+function artifactsCollide(inferred, identity, colliding) {
+  return `the state of ${inferred} cannot be carried to ${identity}: ${colliding.length} artifact(s) already stand under the declared identity, and each of them is keyed to one agent or one plan, so choosing between the two would be a guess. Remove whichever is spent, then run again.
+` + colliding.map((artifact) => `  ${artifact.to}
+`).join("");
+}
+function carryStoppedPartway(inferred, identity, cause) {
+  return `the state of ${inferred} stopped partway on its way to ${identity}: ${cause}. Nothing was dropped and the state still answers at ${inferred}, so the gates keep denying rather than allowing on state they no longer read. Clear whatever blocked the carry and the next oso-state run finishes it.`;
+}
+function entryNamesOf(directory) {
+  return isDirectory(directory) ? readdirSync2(directory) : [];
 }
 
 // core/src/state/scratch/lifecycle.ts
@@ -2770,11 +2790,14 @@ var QUOTED_SPECIAL_CHARACTERS = '"\\$`';
 var WORD_DELIMITERS = " 	\n;&|()<>";
 var UNREAD_PAYLOAD = { kind: "unreadPayload" };
 var COPROCESS_WORD = "coproc";
-var COPROCESS_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+var SHELL_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+var ENVIRONMENT_WORD = "env";
+var UNSET_OPTIONS = /* @__PURE__ */ new Set(["-u", "--unset"]);
+var INLINE_UNSET_OPTION = "--unset=";
 var LOOKUP_BUILTIN = "command";
 var LOOKUP_FLAGS_RUNNING_NOTHING = /* @__PURE__ */ new Set(["-v", "-V"]);
 var PREFIX_WORDS = /* @__PURE__ */ new Set([
-  "env",
+  ENVIRONMENT_WORD,
   LOOKUP_BUILTIN,
   "builtin",
   "exec",
@@ -2840,6 +2863,10 @@ var ALIAS_WORD = "alias";
 var HISTORY_REPLAYING_WORD = "fc";
 var ALIAS_DEFINITION = /^[^-=][^=]*=/;
 var ASSIGNMENT_NAMING_A_FILE_THE_SHELL_SOURCES = /^BASH_ENV=/;
+var HASHING_TOOL = "sha256sum";
+var HASH_LOOP_HEAD = "while IFS= read -r file";
+var HASH_LOOP_STEP = ["do", HASHING_TOOL, "$file"];
+var HASH_LOOP_END = "done";
 var SHELL_WORDS_THIS_LEXER_READS = /* @__PURE__ */ new Set([
   ...PREFIX_WORDS,
   ...COMMAND_FLAG_READERS,
@@ -2879,7 +2906,14 @@ function namesAFileTheShellSources(assignment) {
 function withoutACoprocessName(words) {
   const trailing = words.at(-1);
   if (trailing === void 0 || words.at(-2) !== COPROCESS_WORD) return words;
-  return COPROCESS_NAME.test(trailing) ? words.slice(0, -1) : words;
+  return SHELL_NAME.test(trailing) ? words.slice(0, -1) : words;
+}
+function namesAnEnvironmentVariable(word) {
+  return word !== void 0 && SHELL_NAME.test(word);
+}
+function spellsTheHashingStep(words) {
+  if (words.length !== HASH_LOOP_STEP.length) return false;
+  return HASH_LOOP_STEP.every((spelling, at) => words[at]?.word === spelling) && words[1]?.expanded !== true;
 }
 function isCommandPrefixWord(word) {
   if (/^[A-Za-z_][\s\S]*=/.test(word)) return true;
@@ -3007,8 +3041,7 @@ var CommandLineLexer = class _CommandLineLexer {
   pendingHeredocs = [];
   nested = [];
   unreadStdin = "";
-  commandTokens = [];
-  commandExpansions = [];
+  commandWords = [];
   herestrings = [];
   hashLoop;
   records = [];
@@ -3107,7 +3140,7 @@ var CommandLineLexer = class _CommandLineLexer {
   }
   braceStandsAsAReservedWord() {
     if (this.tokenOpen || this.rest === "") return false;
-    if (!withoutACoprocessName(this.commandTokens).every(isCommandPrefixWord)) return false;
+    if (!withoutACoprocessName(this.words()).every(isCommandPrefixWord)) return false;
     return WORD_DELIMITERS.includes(this.rest.slice(0, 1));
   }
   endToken() {
@@ -3117,32 +3150,50 @@ var CommandLineLexer = class _CommandLineLexer {
       this.herestringPending = false;
       this.herestrings.push(this.token);
     } else if (this.tokenOpen) {
-      this.commandTokens.push(this.token);
-      this.commandExpansions.push(this.tokenHasExpansion && this.tokenAssignment !== "assignment");
+      this.commandWords.push({ word: this.token, expanded: this.tokenHasExpansion && this.tokenAssignment !== "assignment" });
     }
     this.token = "";
     this.tokenOpen = false;
     this.tokenHasExpansion = false;
     this.tokenAssignment = "pending";
   }
+  words() {
+    return this.commandWords.map(({ word }) => word);
+  }
+  argumentWords() {
+    return this.words().slice(1);
+  }
   endCommand() {
     this.endToken();
-    const words = this.commandTokens;
-    const closesHashLoop = this.hashLoop === "hash" && words.length === 1 && words[0] === "done";
-    if (words.join(" ") === "while IFS= read -r file" && !this.commandExpansions.some(Boolean)) this.hashLoop = "read";
-    else if (this.hashLoop === "read" && words.length === 3 && words[0] === "do" && words[1] === "sha256sum" && words[2] === "$file" && !this.commandExpansions[1]) this.hashLoop = "hash";
-    else if (words.length > 0) this.hashLoop = void 0;
+    const closesHashLoop = this.trackHashLoop();
     this.stripCommandPrefixes();
-    for (const payload of this.herestrings) {
-      if (basenameOf(this.commandTokens[0] ?? "") === "sha256sum" || closesHashLoop) continue;
-      this.deferNestedCommands(payload);
-      if (!isShellInterpreter(this.commandTokens[0] ?? "") && basenameOf(this.commandTokens[0] ?? "") !== "newgrp") this.markUnread();
-    }
-    if (this.herestringPending) this.markUnread();
+    this.resolveHereStrings(closesHashLoop);
     this.deferPayloadCommands();
     this.emitCommand();
-    this.commandTokens = [];
-    this.commandExpansions = [];
+    this.resetCommand();
+  }
+  trackHashLoop() {
+    const words = this.commandWords;
+    const closesTheLoop = this.hashLoop === "hash" && words.length === 1 && words[0]?.word === HASH_LOOP_END;
+    if (this.words().join(" ") === HASH_LOOP_HEAD && !words.some(({ expanded }) => expanded)) this.hashLoop = "read";
+    else if (this.hashLoop === "read" && spellsTheHashingStep(words)) this.hashLoop = "hash";
+    else if (words.length > 0) this.hashLoop = void 0;
+    return closesTheLoop;
+  }
+  resolveHereStrings(closesHashLoop) {
+    const leading = this.commandWords[0]?.word ?? "";
+    const payloadIsOnlyHashed = closesHashLoop || basenameOf(leading) === HASHING_TOOL;
+    const payloadRunsAsCommands = isShellInterpreter(leading) || basenameOf(leading) === "newgrp";
+    if (!payloadIsOnlyHashed) {
+      for (const payload of this.herestrings) {
+        this.deferNestedCommands(payload);
+        if (!payloadRunsAsCommands) this.markUnread();
+      }
+    }
+    if (this.herestringPending) this.markUnread();
+  }
+  resetCommand() {
+    this.commandWords = [];
     this.herestrings = [];
     this.herestringPending = false;
     this.nested = [];
@@ -3153,42 +3204,47 @@ var CommandLineLexer = class _CommandLineLexer {
     let prefixWord = "";
     let stdinCompletesTheWords = false;
     let at = 0;
-    while (at < this.commandTokens.length) {
-      const leading = this.commandTokens[at];
-      if (this.unreadExpandedExecutables && this.commandExpansions[at]) this.markUnread();
-      if (looksUpAWordInsteadOfRunningIt(leading, this.commandTokens[at + 1])) break;
+    while (at < this.commandWords.length) {
+      const { word: leading, expanded } = this.commandWords[at];
+      if (this.unreadExpandedExecutables && expanded) this.markUnread();
+      if (looksUpAWordInsteadOfRunningIt(leading, this.commandWords[at + 1]?.word)) break;
       if (!isCommandPrefixWord(leading)) {
         if (prefixWord.startsWith("-")) this.markUnread();
         if (stdinCompletesTheWords) this.unreadStdin += UNREAD_PAYLOAD_MARKER;
         break;
       }
-      if (basenameOf(leading) === "env") {
-        at += 1;
-        while (this.commandTokens[at]?.startsWith("-")) {
-          const option = this.commandTokens[at];
-          at += 1;
-          if (option === END_OF_OPTIONS) break;
-          const name = option.startsWith("--unset=") ? option.slice("--unset=".length) : this.commandTokens[at];
-          if (!["-u", "--unset"].includes(option) && !option.startsWith("--unset=")) {
-            this.markUnread();
-            break;
-          }
-          if (name === void 0 || !/^[A-Za-z_][A-Za-z_0-9]*$/.test(name)) this.markUnread();
-          if (!option.startsWith("--unset=")) at += 1;
-        }
-        prefixWord = leading;
+      prefixWord = leading;
+      if (basenameOf(leading) === ENVIRONMENT_WORD) {
+        at = this.cursorPastEnvOptions(at + 1);
         continue;
       }
-      prefixWord = leading;
       if (completesItsWordsFromStdin(prefixWord)) stdinCompletesTheWords = true;
       if (namesAFileTheShellSources(prefixWord)) this.markUnread();
       at += 1;
     }
-    this.commandTokens = this.commandTokens.slice(at);
-    this.commandExpansions = this.commandExpansions.slice(at);
+    this.commandWords = this.commandWords.slice(at);
+  }
+  cursorPastEnvOptions(from) {
+    let at = from;
+    while (this.commandWords[at]?.word.startsWith("-") === true) {
+      const option = this.commandWords[at].word;
+      at += 1;
+      if (option === END_OF_OPTIONS) return at;
+      if (option.startsWith(INLINE_UNSET_OPTION)) {
+        if (!namesAnEnvironmentVariable(option.slice(INLINE_UNSET_OPTION.length))) this.markUnread();
+        continue;
+      }
+      if (!UNSET_OPTIONS.has(option)) {
+        this.markUnread();
+        return at;
+      }
+      if (!namesAnEnvironmentVariable(this.commandWords[at]?.word)) this.markUnread();
+      at += 1;
+    }
+    return at;
   }
   deferPayloadCommands() {
-    const leading = this.commandTokens[0];
+    const leading = this.commandWords[0]?.word;
     if (leading === void 0) return;
     if (isSourcingBuiltin(leading)) {
       this.markUnread();
@@ -3196,7 +3252,7 @@ var CommandLineLexer = class _CommandLineLexer {
     }
     const wrapper = basenameOf(leading);
     if (wrapper === EVAL_WORD) {
-      this.deferNestedCommands(this.commandTokens.slice(1).join(" "));
+      this.deferNestedCommands(this.argumentWords().join(" "));
       return;
     }
     if (wrapper === REMOTE_SHELL_WORD) {
@@ -3212,7 +3268,7 @@ var CommandLineLexer = class _CommandLineLexer {
       return;
     }
     if (wrapper === ALIAS_WORD) {
-      if (this.commandTokens.slice(1).some(definesAnAlias)) this.markUnread();
+      if (this.argumentWords().some(definesAnAlias)) this.markUnread();
       return;
     }
     if (wrapper === HISTORY_REPLAYING_WORD) {
@@ -3227,7 +3283,7 @@ var CommandLineLexer = class _CommandLineLexer {
   }
   deferTrapAction() {
     let optionsEnded = false;
-    for (const argument of this.commandTokens.slice(1)) {
+    for (const argument of this.argumentWords()) {
       if (optionsEnded || !argument.startsWith("-")) {
         this.deferNestedCommands(argument);
         return;
@@ -3241,12 +3297,12 @@ var CommandLineLexer = class _CommandLineLexer {
     }
   }
   deferRemoteShellPayload() {
-    const host = splitAtTheFirstOperand(this.commandTokens.slice(1));
+    const host = splitAtTheFirstOperand(this.argumentWords());
     if (host === void 0) return;
     this.deferOperandPayload(host.rest, host.behindAnOption);
   }
   deferTmuxPayload() {
-    const subcommand = splitAtTheFirstOperand(this.commandTokens.slice(1));
+    const subcommand = splitAtTheFirstOperand(this.argumentWords());
     if (subcommand === void 0) return;
     if (!TMUX_SUBCOMMANDS_RUNNING_A_COMMAND.has(subcommand.operand)) {
       if (subcommand.behindAnOption) this.markUnread();
@@ -3267,7 +3323,7 @@ var CommandLineLexer = class _CommandLineLexer {
   deferOptionValueAsACommand(commandFlag) {
     let commandFlagSeen = false;
     let valuePosition = false;
-    for (const argument of this.commandTokens.slice(1)) {
+    for (const argument of this.argumentWords()) {
       if (argument.startsWith("--")) {
         valuePosition = true;
       } else if (argument === `-${commandFlag}`) {
@@ -3297,7 +3353,7 @@ var CommandLineLexer = class _CommandLineLexer {
     this.nested.push(UNREAD_PAYLOAD);
   }
   emitCommand() {
-    this.commandTokens.forEach((word, index) => {
+    this.commandWords.forEach(({ word }, index) => {
       this.records.push(
         index === 0 ? { kind: "commandWord", word: withSpacesForNewlines(word) } : { kind: "argument", word: withSpacesForNewlines(word) }
       );
@@ -3467,7 +3523,7 @@ var CommandLineLexer = class _CommandLineLexer {
     while (this.pendingHeredocs.length > 0) {
       const heredoc = this.pendingHeredocs.shift();
       const body = this.takeHeredocBody(heredoc);
-      if (isShellInterpreter(this.commandTokens[0] ?? "")) this.deferNestedCommands(body);
+      if (isShellInterpreter(this.commandWords[0]?.word ?? "")) this.deferNestedCommands(body);
       else this.unreadStdin += body;
     }
   }
@@ -3781,7 +3837,7 @@ function isCount(value) {
 }
 function waitMarkFileFor(cwd, runSession) {
   const repository = repositoryIdFor(stateFileFor(cwd));
-  return path8.join(stateRootDirectory(), "runs", repository, `${sanitizeSession(runSession)}${MARK_SUFFIX}`);
+  return path8.join(runsDirectoryKeyedBy(repository), `${sanitizeSession(runSession)}${MARK_SUFFIX}`);
 }
 function readWaitMark(markFile) {
   const stats = statSync2(markFile, { throwIfNoEntry: false });
@@ -4253,14 +4309,15 @@ function delegationNamedBy(envelope, markerLineCount) {
   return { slice: named[1], attempt: named[2], agentId: envelope.agentId };
 }
 function publishFailed(refusal2) {
+  const unrecorded = recordTheFinish(refusal2);
   return {
     verdict: NO_VERDICT.verdict,
     events: [{ event: "handoff-publish-failed", session: refusal2.session, command: refusal2.envelope.agentType }],
     stderr: `oso-code: SubagentStop could not publish its handoff: ${refusal2.reason}
-${recordOfTheFinish(refusal2)}`
+${unrecorded}`
   };
 }
-function recordOfTheFinish({ envelope, delegation, reason }) {
+function recordTheFinish({ envelope, delegation, reason }) {
   if (delegation === void 0 || !isDirectory(envelope.cwd)) return "";
   try {
     runHandoffRecordUnpublished(envelope.cwd, delegation, reason);
@@ -4758,8 +4815,8 @@ function captureNativePresentation(envelope) {
       const failureCode = nativePlanFailureCode(failure);
       return blocked(`oso-code: plan not recorded [${code}]; failure state unavailable [${failureCode}]. Stop and repair storage before planning again.`, session, `${code}:${failureCode}`);
     }
-    const reason = `oso-code: plan not recorded [${code}].${detail} ${laneOutOfThePlanRail(envelope.cwd, session)}`;
     if (!(cause instanceof CodexPresentationFailure || cause instanceof PlanVerifyFailure) || code === "unreadable-transcript" || code === "foreign-session" || code === "unattested-turn") return blocked(`oso-code: plan not recorded [${code}]; stop and repair storage or native identity before planning again. Do not retry automatically.`, session, code);
+    const reason = `oso-code: plan not recorded [${code}].${detail} ${laneOutOfThePlanRail(envelope.cwd, session)}`;
     return blocked(reason, session, code);
   }
 }
@@ -5267,7 +5324,10 @@ function gitWorktreePrune(repoPath) {
 // core/src/gates/unknown.ts
 var TOOL_NAME = /^[A-Za-z0-9_:.-]+$/;
 var PENDING_APPROVAL_MESSAGE = 'oso-code: plan approval is pending. Use Codex native "Implement the plan." approval, or send exactly CANCEL OSO PLAN to abandon it, before using local tools.';
-var LINEAGE_OF_ANYONE_BUT_THE_ROOT = "child, missing, or contradictory native lineage";
+var LINEAGE_OF_ANYONE_BUT_THE_ROOT = {
+  kind: "lineage",
+  cause: "child, missing, or contradictory native lineage"
+};
 var UNKNOWN_TOOL_GATE = {
   gate: "unknown",
   errorSubject: "the unknown-tool gate",
@@ -5317,42 +5377,45 @@ function codexMemoryDenial(envelope) {
   }, { unreadExpandedExecutables: true });
   if (!memoryTool && cliVerdict === "clear") return void 0;
   const known = !memoryTool || TOOL_ROWS.some((row) => row.names.codex === tool);
-  const cause = known ? unattestedCodexRoot(envelope) : "unknown Engram method";
-  if (cause === void 0) return void 0;
+  const fault = known ? unattestedCodexRoot(envelope) : unattested("unknown Engram method");
+  if (fault === void 0) return void 0;
   const shellEffectsAreUnread = !memoryTool && cliVerdict === "unread";
-  const refusal2 = memoryRefusal(cause, shellEffectsAreUnread);
+  const refusal2 = memoryRefusal(fault, shellEffectsAreUnread);
   return denied({ gate: "unknown", session: envelope.sessionId, detail: tool, ...refusal2 });
 }
-function memoryRefusal(cause, shellEffectsAreUnread) {
+function unattested(cause) {
+  return { kind: "unattested", cause };
+}
+function memoryRefusal(fault, shellEffectsAreUnread) {
   if (shellEffectsAreUnread) {
     return {
       event: "shell-effects-unestablished",
-      message: `oso-code: shell effects could not be established; native ROOT attestation is required: ${cause}.`
+      message: `oso-code: shell effects could not be established; native ROOT attestation is required: ${fault.cause}.`
     };
   }
-  if (cause === LINEAGE_OF_ANYONE_BUT_THE_ROOT) {
+  if (fault.kind === "lineage") {
     return {
       event: "memory-write-belongs-to-root",
-      message: `oso-code: semantic memory belongs to the root session, and this call carries ${cause}, so it is not yours to persist. Continue your slice and hand the observation to the parent in your report; the parent persists it. This refusal ends the write, never your work.`
+      message: `oso-code: semantic memory belongs to the root session, and this call carries ${fault.cause}, so it is not yours to persist. Continue your slice and hand the observation to the parent in your report; the parent persists it. This refusal ends the write, never your work.`
     };
   }
   return {
     event: "memory-write-denied",
-    message: `oso-code: semantic memory mutations require native ROOT attestation: ${cause}.`
+    message: `oso-code: semantic memory mutations require native ROOT attestation: ${fault.cause}.`
   };
 }
 function unattestedCodexRoot(envelope) {
   try {
-    if (envelope.payloadRead !== "json" || envelope.sessionId === "" || envelope.transcriptPath === "") return "missing native hook identity";
+    if (envelope.payloadRead !== "json" || envelope.sessionId === "" || envelope.transcriptPath === "") return unattested("missing native hook identity");
     const deadline = performance.now() + CODEX_METADATA_READINESS_MS;
     const native = readCodexSessionMetadata(envelope.transcriptPath, deadline);
     const rootEntrypoint = native.source === "cli" || native.source === "exec";
     if (native.id !== envelope.sessionId || !rootEntrypoint || native.parentThreadId !== void 0 || native.agentPath !== void 0 || native.agentRole !== void 0 || native.threadSpawn !== void 0) return LINEAGE_OF_ANYONE_BUT_THE_ROOT;
-    if (nativeRepositoryIdentity(native.cwd, deadline) !== nativeRepositoryIdentity(envelope.cwd, deadline)) return "native repository mismatch";
+    if (nativeRepositoryIdentity(native.cwd, deadline) !== nativeRepositoryIdentity(envelope.cwd, deadline)) return unattested("native repository mismatch");
     return void 0;
   } catch (error) {
     if (!isNativeResolutionFault(error)) throw error;
-    return causeOf2(error);
+    return unattested(causeOf2(error));
   }
 }
 function readAllowlist(argv) {

@@ -58,14 +58,15 @@ function delegationNamedBy(envelope: HookEnvelope, markerLineCount: number): Fin
 }
 
 function publishFailed(refusal: Refusal): GateOutcome<SubagentStopVerdict> {
+  const unrecorded = recordTheFinish(refusal);
   return {
     verdict: NO_VERDICT.verdict,
     events: [{ event: "handoff-publish-failed", session: refusal.session, command: refusal.envelope.agentType }],
-    stderr: `oso-code: SubagentStop could not publish its handoff: ${refusal.reason}\n${recordOfTheFinish(refusal)}`,
+    stderr: `oso-code: SubagentStop could not publish its handoff: ${refusal.reason}\n${unrecorded}`,
   };
 }
 
-function recordOfTheFinish({ envelope, delegation, reason }: Refusal): string {
+function recordTheFinish({ envelope, delegation, reason }: Refusal): string {
   if (delegation === undefined || !isDirectory(envelope.cwd)) return "";
   try {
     runHandoffRecordUnpublished(envelope.cwd, delegation, reason);

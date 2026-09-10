@@ -241,8 +241,12 @@ type HandoffPaths = {
   lockDir: string;
 };
 
+export function receiptDirectoryKeyedBy(repositoryId: string): string {
+  return path.join(store.stateRootDirectory(), ".handoffs", repositoryId);
+}
+
 function receiptDirectoryFor(cwd: string): string {
-  return path.join(store.stateRootDirectory(), ".handoffs", store.repositoryIdFor(store.stateFileFor(cwd)));
+  return receiptDirectoryKeyedBy(store.repositoryIdFor(store.stateFileFor(cwd)));
 }
 
 function handoffPaths(cwd: string, agentId: string): HandoffPaths {

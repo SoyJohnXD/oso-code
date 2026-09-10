@@ -106,8 +106,8 @@ function captureNativePresentation(envelope: HookEnvelope): GateOutcome<StopVerd
       const failureCode = nativePlanFailureCode(failure);
       return blocked(`oso-code: plan not recorded [${code}]; failure state unavailable [${failureCode}]. Stop and repair storage before planning again.`, session, `${code}:${failureCode}`);
     }
-    const reason = `oso-code: plan not recorded [${code}].${detail} ${laneOutOfThePlanRail(envelope.cwd, session)}`;
     if (!(cause instanceof CodexPresentationFailure || cause instanceof PlanVerifyFailure) || code === "unreadable-transcript" || code === "foreign-session" || code === "unattested-turn") return blocked(`oso-code: plan not recorded [${code}]; stop and repair storage or native identity before planning again. Do not retry automatically.`, session, code);
+    const reason = `oso-code: plan not recorded [${code}].${detail} ${laneOutOfThePlanRail(envelope.cwd, session)}`;
     return blocked(reason, session, code);
   }
 }

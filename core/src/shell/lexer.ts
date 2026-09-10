@@ -14,11 +14,14 @@ const WORD_DELIMITERS = " \t\n;&|()<>";
 const UNREAD_PAYLOAD: LexRecord = { kind: "unreadPayload" };
 
 const COPROCESS_WORD = "coproc";
-const COPROCESS_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const SHELL_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const ENVIRONMENT_WORD = "env";
+const UNSET_OPTIONS = new Set(["-u", "--unset"]);
+const INLINE_UNSET_OPTION = "--unset=";
 const LOOKUP_BUILTIN = "command";
 const LOOKUP_FLAGS_RUNNING_NOTHING = new Set(["-v", "-V"]);
 const PREFIX_WORDS = new Set([
-  "env", LOOKUP_BUILTIN, "builtin", "exec", "nice", "nohup", "time", "timeout", "stdbuf",
+  ENVIRONMENT_WORD, LOOKUP_BUILTIN, "builtin", "exec", "nice", "nohup", "time", "timeout", "stdbuf",
   "sudo", "doas", "setsid", "xargs", "flock", "ionice", "chrt", "taskset", "unbuffer",
   "then", "else", "elif", "do", "done", "fi", "in", "until", "while", "if", "for",
   "case", "esac", "select", "function", "!", COPROCESS_WORD,
@@ -43,6 +46,10 @@ const ALIAS_WORD = "alias";
 const HISTORY_REPLAYING_WORD = "fc";
 const ALIAS_DEFINITION = /^[^-=][^=]*=/;
 const ASSIGNMENT_NAMING_A_FILE_THE_SHELL_SOURCES = /^BASH_ENV=/;
+const HASHING_TOOL = "sha256sum";
+const HASH_LOOP_HEAD = "while IFS= read -r file";
+const HASH_LOOP_STEP = ["do", HASHING_TOOL, "$file"] as const;
+const HASH_LOOP_END = "done";
 
 export const SHELL_WORDS_THIS_LEXER_READS: ReadonlySet<string> = new Set([
   ...PREFIX_WORDS, ...COMMAND_FLAG_READERS, ...CALLBACK_FLAG_READERS, ...SOURCING_BUILTINS,
@@ -85,7 +92,16 @@ function namesAFileTheShellSources(assignment: string): boolean {
 function withoutACoprocessName(words: readonly string[]): readonly string[] {
   const trailing = words.at(-1);
   if (trailing === undefined || words.at(-2) !== COPROCESS_WORD) return words;
-  return COPROCESS_NAME.test(trailing) ? words.slice(0, -1) : words;
+  return SHELL_NAME.test(trailing) ? words.slice(0, -1) : words;
+}
+
+function namesAnEnvironmentVariable(word: string | undefined): boolean {
+  return word !== undefined && SHELL_NAME.test(word);
+}
+
+function spellsTheHashingStep(words: readonly CommandWord[]): boolean {
+  if (words.length !== HASH_LOOP_STEP.length) return false;
+  return HASH_LOOP_STEP.every((spelling, at) => words[at]?.word === spelling) && words[1]?.expanded !== true;
 }
 
 function isCommandPrefixWord(word: string): boolean {
@@ -212,6 +228,8 @@ function splitAtTheFirstOperand(words: readonly string[]): OperandSplit | undefi
 
 type PendingHeredoc = { readonly delimiter: string; readonly stripsTabs: boolean };
 
+type CommandWord = Readonly<{ word: string; expanded: boolean }>;
+
 class CommandLineLexer {
   private rest: string;
   private readonly depth: number;
@@ -225,8 +243,7 @@ class CommandLineLexer {
   private pendingHeredocs: PendingHeredoc[] = [];
   private nested: LexRecord[] = [];
   private unreadStdin = "";
-  private commandTokens: string[] = [];
-  private commandExpansions: boolean[] = [];
+  private commandWords: CommandWord[] = [];
   private herestrings: string[] = [];
   private hashLoop: "read" | "hash" | undefined;
   private readonly records: LexRecord[] = [];
@@ -330,7 +347,7 @@ class CommandLineLexer {
 
   private braceStandsAsAReservedWord(): boolean {
     if (this.tokenOpen || this.rest === "") return false;
-    if (!withoutACoprocessName(this.commandTokens).every(isCommandPrefixWord)) return false;
+    if (!withoutACoprocessName(this.words()).every(isCommandPrefixWord)) return false;
     return WORD_DELIMITERS.includes(this.rest.slice(0, 1));
   }
 
@@ -341,8 +358,7 @@ class CommandLineLexer {
       this.herestringPending = false;
       this.herestrings.push(this.token);
     } else if (this.tokenOpen) {
-      this.commandTokens.push(this.token);
-      this.commandExpansions.push(this.tokenHasExpansion && this.tokenAssignment !== "assignment");
+      this.commandWords.push({ word: this.token, expanded: this.tokenHasExpansion && this.tokenAssignment !== "assignment" });
     }
     this.token = "";
     this.tokenOpen = false;
@@ -350,24 +366,48 @@ class CommandLineLexer {
     this.tokenAssignment = "pending";
   }
 
+  private words(): readonly string[] {
+    return this.commandWords.map(({ word }) => word);
+  }
+
+  private argumentWords(): readonly string[] {
+    return this.words().slice(1);
+  }
+
   private endCommand(): void {
     this.endToken();
-    const words = this.commandTokens;
-    const closesHashLoop = this.hashLoop === "hash" && words.length === 1 && words[0] === "done";
-    if (words.join(" ") === "while IFS= read -r file" && !this.commandExpansions.some(Boolean)) this.hashLoop = "read";
-    else if (this.hashLoop === "read" && words.length === 3 && words[0] === "do" && words[1] === "sha256sum" && words[2] === "$file" && !this.commandExpansions[1]) this.hashLoop = "hash";
-    else if (words.length > 0) this.hashLoop = undefined;
+    const closesHashLoop = this.trackHashLoop();
     this.stripCommandPrefixes();
-    for (const payload of this.herestrings) {
-      if (basenameOf(this.commandTokens[0] ?? "") === "sha256sum" || closesHashLoop) continue;
-      this.deferNestedCommands(payload);
-      if (!isShellInterpreter(this.commandTokens[0] ?? "") && basenameOf(this.commandTokens[0] ?? "") !== "newgrp") this.markUnread();
-    }
-    if (this.herestringPending) this.markUnread();
+    this.resolveHereStrings(closesHashLoop);
     this.deferPayloadCommands();
     this.emitCommand();
-    this.commandTokens = [];
-    this.commandExpansions = [];
+    this.resetCommand();
+  }
+
+  private trackHashLoop(): boolean {
+    const words = this.commandWords;
+    const closesTheLoop = this.hashLoop === "hash" && words.length === 1 && words[0]?.word === HASH_LOOP_END;
+    if (this.words().join(" ") === HASH_LOOP_HEAD && !words.some(({ expanded }) => expanded)) this.hashLoop = "read";
+    else if (this.hashLoop === "read" && spellsTheHashingStep(words)) this.hashLoop = "hash";
+    else if (words.length > 0) this.hashLoop = undefined;
+    return closesTheLoop;
+  }
+
+  private resolveHereStrings(closesHashLoop: boolean): void {
+    const leading = this.commandWords[0]?.word ?? "";
+    const payloadIsOnlyHashed = closesHashLoop || basenameOf(leading) === HASHING_TOOL;
+    const payloadRunsAsCommands = isShellInterpreter(leading) || basenameOf(leading) === "newgrp";
+    if (!payloadIsOnlyHashed) {
+      for (const payload of this.herestrings) {
+        this.deferNestedCommands(payload);
+        if (!payloadRunsAsCommands) this.markUnread();
+      }
+    }
+    if (this.herestringPending) this.markUnread();
+  }
+
+  private resetCommand(): void {
+    this.commandWords = [];
     this.herestrings = [];
     this.herestringPending = false;
     this.nested = [];
@@ -379,43 +419,49 @@ class CommandLineLexer {
     let prefixWord = "";
     let stdinCompletesTheWords = false;
     let at = 0;
-    while (at < this.commandTokens.length) {
-      const leading = this.commandTokens[at] as string;
-      if (this.unreadExpandedExecutables && this.commandExpansions[at]) this.markUnread();
-      if (looksUpAWordInsteadOfRunningIt(leading, this.commandTokens[at + 1])) break;
+    while (at < this.commandWords.length) {
+      const { word: leading, expanded } = this.commandWords[at] as CommandWord;
+      if (this.unreadExpandedExecutables && expanded) this.markUnread();
+      if (looksUpAWordInsteadOfRunningIt(leading, this.commandWords[at + 1]?.word)) break;
       if (!isCommandPrefixWord(leading)) {
         if (prefixWord.startsWith("-")) this.markUnread();
         if (stdinCompletesTheWords) this.unreadStdin += UNREAD_PAYLOAD_MARKER;
         break;
       }
-      if (basenameOf(leading) === "env") {
-        at += 1;
-        while (this.commandTokens[at]?.startsWith("-")) {
-          const option = this.commandTokens[at] as string;
-          at += 1;
-          if (option === END_OF_OPTIONS) break;
-          const name = option.startsWith("--unset=") ? option.slice("--unset=".length) : this.commandTokens[at];
-          if (!["-u", "--unset"].includes(option) && !option.startsWith("--unset=")) {
-            this.markUnread();
-            break;
-          }
-          if (name === undefined || !/^[A-Za-z_][A-Za-z_0-9]*$/.test(name)) this.markUnread();
-          if (!option.startsWith("--unset=")) at += 1;
-        }
-        prefixWord = leading;
+      prefixWord = leading;
+      if (basenameOf(leading) === ENVIRONMENT_WORD) {
+        at = this.cursorPastEnvOptions(at + 1);
         continue;
       }
-      prefixWord = leading;
       if (completesItsWordsFromStdin(prefixWord)) stdinCompletesTheWords = true;
       if (namesAFileTheShellSources(prefixWord)) this.markUnread();
       at += 1;
     }
-    this.commandTokens = this.commandTokens.slice(at);
-    this.commandExpansions = this.commandExpansions.slice(at);
+    this.commandWords = this.commandWords.slice(at);
+  }
+
+  private cursorPastEnvOptions(from: number): number {
+    let at = from;
+    while (this.commandWords[at]?.word.startsWith("-") === true) {
+      const option = (this.commandWords[at] as CommandWord).word;
+      at += 1;
+      if (option === END_OF_OPTIONS) return at;
+      if (option.startsWith(INLINE_UNSET_OPTION)) {
+        if (!namesAnEnvironmentVariable(option.slice(INLINE_UNSET_OPTION.length))) this.markUnread();
+        continue;
+      }
+      if (!UNSET_OPTIONS.has(option)) {
+        this.markUnread();
+        return at;
+      }
+      if (!namesAnEnvironmentVariable(this.commandWords[at]?.word)) this.markUnread();
+      at += 1;
+    }
+    return at;
   }
 
   private deferPayloadCommands(): void {
-    const leading = this.commandTokens[0];
+    const leading = this.commandWords[0]?.word;
     if (leading === undefined) return;
     if (isSourcingBuiltin(leading)) {
       this.markUnread();
@@ -423,7 +469,7 @@ class CommandLineLexer {
     }
     const wrapper = basenameOf(leading);
     if (wrapper === EVAL_WORD) {
-      this.deferNestedCommands(this.commandTokens.slice(1).join(" "));
+      this.deferNestedCommands(this.argumentWords().join(" "));
       return;
     }
     if (wrapper === REMOTE_SHELL_WORD) {
@@ -439,7 +485,7 @@ class CommandLineLexer {
       return;
     }
     if (wrapper === ALIAS_WORD) {
-      if (this.commandTokens.slice(1).some(definesAnAlias)) this.markUnread();
+      if (this.argumentWords().some(definesAnAlias)) this.markUnread();
       return;
     }
     if (wrapper === HISTORY_REPLAYING_WORD) {
@@ -455,7 +501,7 @@ class CommandLineLexer {
 
   private deferTrapAction(): void {
     let optionsEnded = false;
-    for (const argument of this.commandTokens.slice(1)) {
+    for (const argument of this.argumentWords()) {
       if (optionsEnded || !argument.startsWith("-")) {
         this.deferNestedCommands(argument);
         return;
@@ -470,13 +516,13 @@ class CommandLineLexer {
   }
 
   private deferRemoteShellPayload(): void {
-    const host = splitAtTheFirstOperand(this.commandTokens.slice(1));
+    const host = splitAtTheFirstOperand(this.argumentWords());
     if (host === undefined) return;
     this.deferOperandPayload(host.rest, host.behindAnOption);
   }
 
   private deferTmuxPayload(): void {
-    const subcommand = splitAtTheFirstOperand(this.commandTokens.slice(1));
+    const subcommand = splitAtTheFirstOperand(this.argumentWords());
     if (subcommand === undefined) return;
     if (!TMUX_SUBCOMMANDS_RUNNING_A_COMMAND.has(subcommand.operand)) {
       if (subcommand.behindAnOption) this.markUnread();
@@ -500,7 +546,7 @@ class CommandLineLexer {
   private deferOptionValueAsACommand(commandFlag: string): void {
     let commandFlagSeen = false;
     let valuePosition = false;
-    for (const argument of this.commandTokens.slice(1)) {
+    for (const argument of this.argumentWords()) {
       if (argument.startsWith("--")) {
         valuePosition = true;
       } else if (argument === `-${commandFlag}`) {
@@ -533,7 +579,7 @@ class CommandLineLexer {
   }
 
   private emitCommand(): void {
-    this.commandTokens.forEach((word, index) => {
+    this.commandWords.forEach(({ word }, index) => {
       this.records.push(
         index === 0
           ? { kind: "commandWord", word: withSpacesForNewlines(word) }
@@ -719,7 +765,7 @@ class CommandLineLexer {
     while (this.pendingHeredocs.length > 0) {
       const heredoc = this.pendingHeredocs.shift() as PendingHeredoc;
       const body = this.takeHeredocBody(heredoc);
-      if (isShellInterpreter(this.commandTokens[0] ?? "")) this.deferNestedCommands(body);
+      if (isShellInterpreter(this.commandWords[0]?.word ?? "")) this.deferNestedCommands(body);
       else this.unreadStdin += body;
     }
   }

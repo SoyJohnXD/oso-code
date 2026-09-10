@@ -1,8 +1,9 @@
 // core/src/shell/lexer.ts
 var COPROCESS_WORD = "coproc";
+var ENVIRONMENT_WORD = "env";
 var LOOKUP_BUILTIN = "command";
 var PREFIX_WORDS = /* @__PURE__ */ new Set([
-  "env",
+  ENVIRONMENT_WORD,
   LOOKUP_BUILTIN,
   "builtin",
   "exec",

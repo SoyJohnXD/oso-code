@@ -170,6 +170,16 @@ export function operatorPermissionsNotice(text: string, file: string): string | 
 }
 
 export function codexPermissionsNotice(text: string, file: string): string {
+  const ownership = permissionsOwnershipNotice(text, file);
+  const undecodable = undecodableRootLines(text);
+  if (undecodable.length === 0) return ownership;
+  return (
+    `${ownership}; ${undecodable.length} config root line(s) the permissions scan cannot decode on their own, ` +
+    `so what they declare stays unread, starting at: ${undecodable[0]}`
+  );
+}
+
+function permissionsOwnershipNotice(text: string, file: string): string {
   const alreadyTheirs = operatorPermissionsNotice(text, file);
   if (alreadyTheirs !== undefined) return alreadyTheirs;
   const region = runTomlRegion(text, { action: "extract", startMarker: CONFIG_MARKER_START, endMarker: CONFIG_MARKER_END });
@@ -287,9 +297,17 @@ function seededWhereNothingDeclaresPermissions(targetHome: string, texts: readon
 }
 
 function declaresPermissions(text: string): boolean {
-  return rootSymbolLinesOf(text)
-    .flatMap(decodedSymbol)
-    .some((symbol) => Object.hasOwn(symbol, "default_permissions") || Object.hasOwn(symbol, "permissions"));
+  return rootSymbolLinesOf(text).some(declaresAPermissionKey);
+}
+
+function declaresAPermissionKey(line: string): boolean {
+  const symbol = decodedSymbol(line);
+  if (symbol === undefined) return false;
+  return Object.hasOwn(symbol, "default_permissions") || Object.hasOwn(symbol, "permissions");
+}
+
+function undecodableRootLines(text: string): readonly string[] {
+  return rootSymbolLinesOf(text).filter((line) => decodedSymbol(line) === undefined);
 }
 
 function tableHeadersOf(text: string): string[] {
@@ -300,11 +318,11 @@ function rootSymbolLinesOf(text: string): string[] {
   return recordsOf(runTomlRegion(text, { action: "root-symbols" }).stdout);
 }
 
-function decodedSymbol(line: string): Record<string, unknown>[] {
+function decodedSymbol(line: string): Record<string, unknown> | undefined {
   try {
-    return [parseTomlDocument(line, line)];
+    return parseTomlDocument(line, line);
   } catch (error) {
-    if (error instanceof TomlParseError) return [];
+    if (error instanceof TomlParseError) return undefined;
     throw error;
   }
 }

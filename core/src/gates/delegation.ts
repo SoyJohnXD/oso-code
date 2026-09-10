@@ -5,8 +5,8 @@ import {
   isErrnoException,
   readStateFile,
   repositoryIdFor,
+  runsDirectoryKeyedBy,
   stateFileFor,
-  stateRootDirectory,
 } from "../state/store.ts";
 import { sanitizeSession, stateValue } from "./preflight.ts";
 
@@ -43,7 +43,7 @@ export function isCount(value: string): boolean {
 
 export function waitMarkFileFor(cwd: string, runSession: string): string {
   const repository = repositoryIdFor(stateFileFor(cwd));
-  return path.join(stateRootDirectory(), "runs", repository, `${sanitizeSession(runSession)}${MARK_SUFFIX}`);
+  return path.join(runsDirectoryKeyedBy(repository), `${sanitizeSession(runSession)}${MARK_SUFFIX}`);
 }
 
 export type WaitMark = Readonly<{

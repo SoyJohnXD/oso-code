@@ -60,7 +60,7 @@ export class StateRootUnwritableError extends Error {
 
 export const TASK_ROOT_VARIABLE = "OSO_TASK_ROOT";
 
-export class TaskIdentityUnknownError extends Error {
+class TaskIdentityUnknownError extends Error {
   readonly cwd: string;
   constructor(cwd: string, cause: string) {
     super(
@@ -130,13 +130,13 @@ function gitAnsweredIdentity(stateRoot: string, directory: string, rootThatDoesN
   return { kind: "unknown", cwd: directory, cause: `${answered.cause}${uncovered}`, inferredIdentity: directory };
 }
 
-export function requireTaskIdentity(cwd: string): NamedTaskIdentity {
+function requireTaskIdentity(cwd: string): NamedTaskIdentity {
   const task = taskIdentityFor(cwd);
   if (task.kind === "unknown") throw new TaskIdentityUnknownError(task.cwd, task.cause);
   return task;
 }
 
-export function inferredIdentityFor(cwd: string): string {
+function inferredIdentityFor(cwd: string): string {
   const directory = withoutTrailingReturn(cwd);
   const answered = gitCommonDirectory(directory);
   return answered.kind === "answered" ? answered.commonDirectory : directory;
@@ -192,18 +192,29 @@ export function repositoryIdFor(stateFile: string): string {
 
 export function journalFileFor(cwd: string): string {
   const stateFile = stateFileFor(cwd);
-  const repositoryId = repositoryIdFor(stateFile);
   const autoChange = readValue(stateFile, "auto_change") ?? "";
   const change = CHANGE_SLUG_PATTERN.test(autoChange) ? autoChange : "run";
-  return path.join(stateRootDirectory(), "runs", repositoryId, `${change}.log`);
+  return path.join(runsDirectoryKeyedBy(repositoryIdFor(stateFile)), `${change}.log`);
+}
+
+export function runsDirectoryKeyedBy(repositoryId: string): string {
+  return path.join(stateRootDirectory(), "runs", repositoryId);
 }
 
 export function denyPatternsFileFor(stateFile: string): string {
-  return path.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
+  return denyPatternsFileKeyedBy(repositoryIdFor(stateFile));
+}
+
+export function denyPatternsFileKeyedBy(repositoryId: string): string {
+  return path.join(stateRootDirectory(), "deploy-deny", `${repositoryId}.patterns`);
 }
 
 export function profileFileFor(stateFile: string): string {
-  return path.join(stateRootDirectory(), "profiles", `${repositoryIdFor(stateFile)}.profile`);
+  return profileFileKeyedBy(repositoryIdFor(stateFile));
+}
+
+export function profileFileKeyedBy(repositoryId: string): string {
+  return path.join(stateRootDirectory(), "profiles", `${repositoryId}.profile`);
 }
 
 export const MODEL_TOKEN_SHAPE = `1 to ${TOKEN_MAX_LENGTH} characters of letters, digits and / : . - _ @`;

@@ -69,9 +69,17 @@ type PlanPaths = {
   currentFile: string;
 };
 
+function planRootDirectory(): string {
+  return path.join(store.stateRootDirectory(), "plans");
+}
+
+export function planDirectoryKeyedBy(repositoryId: string): string {
+  return path.join(planRootDirectory(), repositoryId);
+}
+
 function planPaths(stateFile: string, digest: string): PlanPaths {
-  const root = path.join(store.stateRootDirectory(), "plans");
-  const dir = path.join(root, store.repositoryIdFor(stateFile));
+  const root = planRootDirectory();
+  const dir = planDirectoryKeyedBy(store.repositoryIdFor(stateFile));
   return {
     root,
     dir,

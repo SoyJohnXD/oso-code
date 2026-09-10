@@ -11,11 +11,14 @@ var QUOTED_SPECIAL_CHARACTERS = '"\\$`';
 var WORD_DELIMITERS = " 	\n;&|()<>";
 var UNREAD_PAYLOAD = { kind: "unreadPayload" };
 var COPROCESS_WORD = "coproc";
-var COPROCESS_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+var SHELL_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+var ENVIRONMENT_WORD = "env";
+var UNSET_OPTIONS = /* @__PURE__ */ new Set(["-u", "--unset"]);
+var INLINE_UNSET_OPTION = "--unset=";
 var LOOKUP_BUILTIN = "command";
 var LOOKUP_FLAGS_RUNNING_NOTHING = /* @__PURE__ */ new Set(["-v", "-V"]);
 var PREFIX_WORDS = /* @__PURE__ */ new Set([
-  "env",
+  ENVIRONMENT_WORD,
   LOOKUP_BUILTIN,
   "builtin",
   "exec",
@@ -81,6 +84,10 @@ var ALIAS_WORD = "alias";
 var HISTORY_REPLAYING_WORD = "fc";
 var ALIAS_DEFINITION = /^[^-=][^=]*=/;
 var ASSIGNMENT_NAMING_A_FILE_THE_SHELL_SOURCES = /^BASH_ENV=/;
+var HASHING_TOOL = "sha256sum";
+var HASH_LOOP_HEAD = "while IFS= read -r file";
+var HASH_LOOP_STEP = ["do", HASHING_TOOL, "$file"];
+var HASH_LOOP_END = "done";
 var SHELL_WORDS_THIS_LEXER_READS = /* @__PURE__ */ new Set([
   ...PREFIX_WORDS,
   ...COMMAND_FLAG_READERS,
@@ -120,7 +127,14 @@ function namesAFileTheShellSources(assignment) {
 function withoutACoprocessName(words) {
   const trailing = words.at(-1);
   if (trailing === void 0 || words.at(-2) !== COPROCESS_WORD) return words;
-  return COPROCESS_NAME.test(trailing) ? words.slice(0, -1) : words;
+  return SHELL_NAME.test(trailing) ? words.slice(0, -1) : words;
+}
+function namesAnEnvironmentVariable(word) {
+  return word !== void 0 && SHELL_NAME.test(word);
+}
+function spellsTheHashingStep(words) {
+  if (words.length !== HASH_LOOP_STEP.length) return false;
+  return HASH_LOOP_STEP.every((spelling, at) => words[at]?.word === spelling) && words[1]?.expanded !== true;
 }
 function isCommandPrefixWord(word) {
   if (/^[A-Za-z_][\s\S]*=/.test(word)) return true;
@@ -248,8 +262,7 @@ var CommandLineLexer = class _CommandLineLexer {
   pendingHeredocs = [];
   nested = [];
   unreadStdin = "";
-  commandTokens = [];
-  commandExpansions = [];
+  commandWords = [];
   herestrings = [];
   hashLoop;
   records = [];
@@ -348,7 +361,7 @@ var CommandLineLexer = class _CommandLineLexer {
   }
   braceStandsAsAReservedWord() {
     if (this.tokenOpen || this.rest === "") return false;
-    if (!withoutACoprocessName(this.commandTokens).every(isCommandPrefixWord)) return false;
+    if (!withoutACoprocessName(this.words()).every(isCommandPrefixWord)) return false;
     return WORD_DELIMITERS.includes(this.rest.slice(0, 1));
   }
   endToken() {
@@ -358,32 +371,50 @@ var CommandLineLexer = class _CommandLineLexer {
       this.herestringPending = false;
       this.herestrings.push(this.token);
     } else if (this.tokenOpen) {
-      this.commandTokens.push(this.token);
-      this.commandExpansions.push(this.tokenHasExpansion && this.tokenAssignment !== "assignment");
+      this.commandWords.push({ word: this.token, expanded: this.tokenHasExpansion && this.tokenAssignment !== "assignment" });
     }
     this.token = "";
     this.tokenOpen = false;
     this.tokenHasExpansion = false;
     this.tokenAssignment = "pending";
   }
+  words() {
+    return this.commandWords.map(({ word }) => word);
+  }
+  argumentWords() {
+    return this.words().slice(1);
+  }
   endCommand() {
     this.endToken();
-    const words = this.commandTokens;
-    const closesHashLoop = this.hashLoop === "hash" && words.length === 1 && words[0] === "done";
-    if (words.join(" ") === "while IFS= read -r file" && !this.commandExpansions.some(Boolean)) this.hashLoop = "read";
-    else if (this.hashLoop === "read" && words.length === 3 && words[0] === "do" && words[1] === "sha256sum" && words[2] === "$file" && !this.commandExpansions[1]) this.hashLoop = "hash";
-    else if (words.length > 0) this.hashLoop = void 0;
+    const closesHashLoop = this.trackHashLoop();
     this.stripCommandPrefixes();
-    for (const payload of this.herestrings) {
-      if (basenameOf(this.commandTokens[0] ?? "") === "sha256sum" || closesHashLoop) continue;
-      this.deferNestedCommands(payload);
-      if (!isShellInterpreter(this.commandTokens[0] ?? "") && basenameOf(this.commandTokens[0] ?? "") !== "newgrp") this.markUnread();
-    }
-    if (this.herestringPending) this.markUnread();
+    this.resolveHereStrings(closesHashLoop);
     this.deferPayloadCommands();
     this.emitCommand();
-    this.commandTokens = [];
-    this.commandExpansions = [];
+    this.resetCommand();
+  }
+  trackHashLoop() {
+    const words = this.commandWords;
+    const closesTheLoop = this.hashLoop === "hash" && words.length === 1 && words[0]?.word === HASH_LOOP_END;
+    if (this.words().join(" ") === HASH_LOOP_HEAD && !words.some(({ expanded }) => expanded)) this.hashLoop = "read";
+    else if (this.hashLoop === "read" && spellsTheHashingStep(words)) this.hashLoop = "hash";
+    else if (words.length > 0) this.hashLoop = void 0;
+    return closesTheLoop;
+  }
+  resolveHereStrings(closesHashLoop) {
+    const leading = this.commandWords[0]?.word ?? "";
+    const payloadIsOnlyHashed = closesHashLoop || basenameOf(leading) === HASHING_TOOL;
+    const payloadRunsAsCommands = isShellInterpreter(leading) || basenameOf(leading) === "newgrp";
+    if (!payloadIsOnlyHashed) {
+      for (const payload of this.herestrings) {
+        this.deferNestedCommands(payload);
+        if (!payloadRunsAsCommands) this.markUnread();
+      }
+    }
+    if (this.herestringPending) this.markUnread();
+  }
+  resetCommand() {
+    this.commandWords = [];
     this.herestrings = [];
     this.herestringPending = false;
     this.nested = [];
@@ -394,42 +425,47 @@ var CommandLineLexer = class _CommandLineLexer {
     let prefixWord = "";
     let stdinCompletesTheWords = false;
     let at = 0;
-    while (at < this.commandTokens.length) {
-      const leading = this.commandTokens[at];
-      if (this.unreadExpandedExecutables && this.commandExpansions[at]) this.markUnread();
-      if (looksUpAWordInsteadOfRunningIt(leading, this.commandTokens[at + 1])) break;
+    while (at < this.commandWords.length) {
+      const { word: leading, expanded } = this.commandWords[at];
+      if (this.unreadExpandedExecutables && expanded) this.markUnread();
+      if (looksUpAWordInsteadOfRunningIt(leading, this.commandWords[at + 1]?.word)) break;
       if (!isCommandPrefixWord(leading)) {
         if (prefixWord.startsWith("-")) this.markUnread();
         if (stdinCompletesTheWords) this.unreadStdin += UNREAD_PAYLOAD_MARKER;
         break;
       }
-      if (basenameOf(leading) === "env") {
-        at += 1;
-        while (this.commandTokens[at]?.startsWith("-")) {
-          const option = this.commandTokens[at];
-          at += 1;
-          if (option === END_OF_OPTIONS) break;
-          const name = option.startsWith("--unset=") ? option.slice("--unset=".length) : this.commandTokens[at];
-          if (!["-u", "--unset"].includes(option) && !option.startsWith("--unset=")) {
-            this.markUnread();
-            break;
-          }
-          if (name === void 0 || !/^[A-Za-z_][A-Za-z_0-9]*$/.test(name)) this.markUnread();
-          if (!option.startsWith("--unset=")) at += 1;
-        }
-        prefixWord = leading;
+      prefixWord = leading;
+      if (basenameOf(leading) === ENVIRONMENT_WORD) {
+        at = this.cursorPastEnvOptions(at + 1);
         continue;
       }
-      prefixWord = leading;
       if (completesItsWordsFromStdin(prefixWord)) stdinCompletesTheWords = true;
       if (namesAFileTheShellSources(prefixWord)) this.markUnread();
       at += 1;
     }
-    this.commandTokens = this.commandTokens.slice(at);
-    this.commandExpansions = this.commandExpansions.slice(at);
+    this.commandWords = this.commandWords.slice(at);
+  }
+  cursorPastEnvOptions(from) {
+    let at = from;
+    while (this.commandWords[at]?.word.startsWith("-") === true) {
+      const option = this.commandWords[at].word;
+      at += 1;
+      if (option === END_OF_OPTIONS) return at;
+      if (option.startsWith(INLINE_UNSET_OPTION)) {
+        if (!namesAnEnvironmentVariable(option.slice(INLINE_UNSET_OPTION.length))) this.markUnread();
+        continue;
+      }
+      if (!UNSET_OPTIONS.has(option)) {
+        this.markUnread();
+        return at;
+      }
+      if (!namesAnEnvironmentVariable(this.commandWords[at]?.word)) this.markUnread();
+      at += 1;
+    }
+    return at;
   }
   deferPayloadCommands() {
-    const leading = this.commandTokens[0];
+    const leading = this.commandWords[0]?.word;
     if (leading === void 0) return;
     if (isSourcingBuiltin(leading)) {
       this.markUnread();
@@ -437,7 +473,7 @@ var CommandLineLexer = class _CommandLineLexer {
     }
     const wrapper = basenameOf(leading);
     if (wrapper === EVAL_WORD) {
-      this.deferNestedCommands(this.commandTokens.slice(1).join(" "));
+      this.deferNestedCommands(this.argumentWords().join(" "));
       return;
     }
     if (wrapper === REMOTE_SHELL_WORD) {
@@ -453,7 +489,7 @@ var CommandLineLexer = class _CommandLineLexer {
       return;
     }
     if (wrapper === ALIAS_WORD) {
-      if (this.commandTokens.slice(1).some(definesAnAlias)) this.markUnread();
+      if (this.argumentWords().some(definesAnAlias)) this.markUnread();
       return;
     }
     if (wrapper === HISTORY_REPLAYING_WORD) {
@@ -468,7 +504,7 @@ var CommandLineLexer = class _CommandLineLexer {
   }
   deferTrapAction() {
     let optionsEnded = false;
-    for (const argument of this.commandTokens.slice(1)) {
+    for (const argument of this.argumentWords()) {
       if (optionsEnded || !argument.startsWith("-")) {
         this.deferNestedCommands(argument);
         return;
@@ -482,12 +518,12 @@ var CommandLineLexer = class _CommandLineLexer {
     }
   }
   deferRemoteShellPayload() {
-    const host = splitAtTheFirstOperand(this.commandTokens.slice(1));
+    const host = splitAtTheFirstOperand(this.argumentWords());
     if (host === void 0) return;
     this.deferOperandPayload(host.rest, host.behindAnOption);
   }
   deferTmuxPayload() {
-    const subcommand = splitAtTheFirstOperand(this.commandTokens.slice(1));
+    const subcommand = splitAtTheFirstOperand(this.argumentWords());
     if (subcommand === void 0) return;
     if (!TMUX_SUBCOMMANDS_RUNNING_A_COMMAND.has(subcommand.operand)) {
       if (subcommand.behindAnOption) this.markUnread();
@@ -508,7 +544,7 @@ var CommandLineLexer = class _CommandLineLexer {
   deferOptionValueAsACommand(commandFlag) {
     let commandFlagSeen = false;
     let valuePosition = false;
-    for (const argument of this.commandTokens.slice(1)) {
+    for (const argument of this.argumentWords()) {
       if (argument.startsWith("--")) {
         valuePosition = true;
       } else if (argument === `-${commandFlag}`) {
@@ -538,7 +574,7 @@ var CommandLineLexer = class _CommandLineLexer {
     this.nested.push(UNREAD_PAYLOAD);
   }
   emitCommand() {
-    this.commandTokens.forEach((word, index) => {
+    this.commandWords.forEach(({ word }, index) => {
       this.records.push(
         index === 0 ? { kind: "commandWord", word: withSpacesForNewlines(word) } : { kind: "argument", word: withSpacesForNewlines(word) }
       );
@@ -708,7 +744,7 @@ var CommandLineLexer = class _CommandLineLexer {
     while (this.pendingHeredocs.length > 0) {
       const heredoc = this.pendingHeredocs.shift();
       const body = this.takeHeredocBody(heredoc);
-      if (isShellInterpreter(this.commandTokens[0] ?? "")) this.deferNestedCommands(body);
+      if (isShellInterpreter(this.commandWords[0]?.word ?? "")) this.deferNestedCommands(body);
       else this.unreadStdin += body;
     }
   }
@@ -1239,13 +1275,18 @@ function repositoryIdFor(stateFile) {
 }
 function journalFileFor(cwd) {
   const stateFile = stateFileFor(cwd);
-  const repositoryId = repositoryIdFor(stateFile);
   const autoChange = readValue(stateFile, "auto_change") ?? "";
   const change = CHANGE_SLUG_PATTERN.test(autoChange) ? autoChange : "run";
-  return path.join(stateRootDirectory(), "runs", repositoryId, `${change}.log`);
+  return path.join(runsDirectoryKeyedBy(repositoryIdFor(stateFile)), `${change}.log`);
+}
+function runsDirectoryKeyedBy(repositoryId) {
+  return path.join(stateRootDirectory(), "runs", repositoryId);
 }
 function denyPatternsFileFor(stateFile) {
-  return path.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
+  return denyPatternsFileKeyedBy(repositoryIdFor(stateFile));
+}
+function denyPatternsFileKeyedBy(repositoryId) {
+  return path.join(stateRootDirectory(), "deploy-deny", `${repositoryId}.patterns`);
 }
 var MODEL_TOKEN_SHAPE = `1 to ${TOKEN_MAX_LENGTH} characters of letters, digits and / : . - _ @`;
 function isNameToken(value) {
@@ -1729,7 +1770,7 @@ function isCount(value) {
 }
 function waitMarkFileFor(cwd, runSession) {
   const repository = repositoryIdFor(stateFileFor(cwd));
-  return path3.join(stateRootDirectory(), "runs", repository, `${sanitizeSession(runSession)}${MARK_SUFFIX}`);
+  return path3.join(runsDirectoryKeyedBy(repository), `${sanitizeSession(runSession)}${MARK_SUFFIX}`);
 }
 function readWaitMark(markFile) {
   const stats = statSync2(markFile, { throwIfNoEntry: false });
@@ -2452,8 +2493,11 @@ function validateDelegation(delegation) {
 function isValidOpaqueId(value) {
   return value.length >= 1 && value.length <= OPAQUE_ID_MAX_LENGTH && OPAQUE_ID_PATTERN.test(value);
 }
+function receiptDirectoryKeyedBy(repositoryId) {
+  return path5.join(stateRootDirectory(), ".handoffs", repositoryId);
+}
 function receiptDirectoryFor(cwd) {
-  return path5.join(stateRootDirectory(), ".handoffs", repositoryIdFor(stateFileFor(cwd)));
+  return receiptDirectoryKeyedBy(repositoryIdFor(stateFileFor(cwd)));
 }
 function handoffPaths(cwd, agentId) {
   const agentKey = sha256Hex(agentId);
@@ -2677,14 +2721,15 @@ function delegationNamedBy(envelope, markerLineCount) {
   return { slice: named[1], attempt: named[2], agentId: envelope.agentId };
 }
 function publishFailed(refusal2) {
+  const unrecorded = recordTheFinish(refusal2);
   return {
     verdict: NO_VERDICT.verdict,
     events: [{ event: "handoff-publish-failed", session: refusal2.session, command: refusal2.envelope.agentType }],
     stderr: `oso-code: SubagentStop could not publish its handoff: ${refusal2.reason}
-${recordOfTheFinish(refusal2)}`
+${unrecorded}`
   };
 }
-function recordOfTheFinish({ envelope, delegation, reason }) {
+function recordTheFinish({ envelope, delegation, reason }) {
   if (delegation === void 0 || !isDirectory(envelope.cwd)) return "";
   try {
     runHandoffRecordUnpublished(envelope.cwd, delegation, reason);
@@ -2760,9 +2805,15 @@ var PLAN_DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 function isValidPlanDigest(value) {
   return PLAN_DIGEST_PATTERN.test(value);
 }
+function planRootDirectory() {
+  return path6.join(stateRootDirectory(), "plans");
+}
+function planDirectoryKeyedBy(repositoryId) {
+  return path6.join(planRootDirectory(), repositoryId);
+}
 function planPaths(stateFile, digest) {
-  const root = path6.join(stateRootDirectory(), "plans");
-  const dir = path6.join(root, repositoryIdFor(stateFile));
+  const root = planRootDirectory();
+  const dir = planDirectoryKeyedBy(repositoryIdFor(stateFile));
   return {
     root,
     dir,
@@ -3521,8 +3572,8 @@ function captureNativePresentation(envelope) {
       const failureCode = nativePlanFailureCode(failure);
       return blocked(`oso-code: plan not recorded [${code}]; failure state unavailable [${failureCode}]. Stop and repair storage before planning again.`, session, `${code}:${failureCode}`);
     }
-    const reason = `oso-code: plan not recorded [${code}].${detail} ${laneOutOfThePlanRail(envelope.cwd, session)}`;
     if (!(cause instanceof CodexPresentationFailure || cause instanceof PlanVerifyFailure) || code === "unreadable-transcript" || code === "foreign-session" || code === "unattested-turn") return blocked(`oso-code: plan not recorded [${code}]; stop and repair storage or native identity before planning again. Do not retry automatically.`, session, code);
+    const reason = `oso-code: plan not recorded [${code}].${detail} ${laneOutOfThePlanRail(envelope.cwd, session)}`;
     return blocked(reason, session, code);
   }
 }
@@ -4312,7 +4363,10 @@ function gitWorktreePrune(repoPath) {
 // core/src/gates/unknown.ts
 var TOOL_NAME = /^[A-Za-z0-9_:.-]+$/;
 var PENDING_APPROVAL_MESSAGE = 'oso-code: plan approval is pending. Use Codex native "Implement the plan." approval, or send exactly CANCEL OSO PLAN to abandon it, before using local tools.';
-var LINEAGE_OF_ANYONE_BUT_THE_ROOT = "child, missing, or contradictory native lineage";
+var LINEAGE_OF_ANYONE_BUT_THE_ROOT = {
+  kind: "lineage",
+  cause: "child, missing, or contradictory native lineage"
+};
 var UNKNOWN_TOOL_GATE = {
   gate: "unknown",
   errorSubject: "the unknown-tool gate",
@@ -4362,42 +4416,45 @@ function codexMemoryDenial(envelope) {
   }, { unreadExpandedExecutables: true });
   if (!memoryTool && cliVerdict === "clear") return void 0;
   const known = !memoryTool || TOOL_ROWS.some((row) => row.names.codex === tool);
-  const cause = known ? unattestedCodexRoot(envelope) : "unknown Engram method";
-  if (cause === void 0) return void 0;
+  const fault = known ? unattestedCodexRoot(envelope) : unattested("unknown Engram method");
+  if (fault === void 0) return void 0;
   const shellEffectsAreUnread = !memoryTool && cliVerdict === "unread";
-  const refusal2 = memoryRefusal(cause, shellEffectsAreUnread);
+  const refusal2 = memoryRefusal(fault, shellEffectsAreUnread);
   return denied({ gate: "unknown", session: envelope.sessionId, detail: tool, ...refusal2 });
 }
-function memoryRefusal(cause, shellEffectsAreUnread) {
+function unattested(cause) {
+  return { kind: "unattested", cause };
+}
+function memoryRefusal(fault, shellEffectsAreUnread) {
   if (shellEffectsAreUnread) {
     return {
       event: "shell-effects-unestablished",
-      message: `oso-code: shell effects could not be established; native ROOT attestation is required: ${cause}.`
+      message: `oso-code: shell effects could not be established; native ROOT attestation is required: ${fault.cause}.`
     };
   }
-  if (cause === LINEAGE_OF_ANYONE_BUT_THE_ROOT) {
+  if (fault.kind === "lineage") {
     return {
       event: "memory-write-belongs-to-root",
-      message: `oso-code: semantic memory belongs to the root session, and this call carries ${cause}, so it is not yours to persist. Continue your slice and hand the observation to the parent in your report; the parent persists it. This refusal ends the write, never your work.`
+      message: `oso-code: semantic memory belongs to the root session, and this call carries ${fault.cause}, so it is not yours to persist. Continue your slice and hand the observation to the parent in your report; the parent persists it. This refusal ends the write, never your work.`
     };
   }
   return {
     event: "memory-write-denied",
-    message: `oso-code: semantic memory mutations require native ROOT attestation: ${cause}.`
+    message: `oso-code: semantic memory mutations require native ROOT attestation: ${fault.cause}.`
   };
 }
 function unattestedCodexRoot(envelope) {
   try {
-    if (envelope.payloadRead !== "json" || envelope.sessionId === "" || envelope.transcriptPath === "") return "missing native hook identity";
+    if (envelope.payloadRead !== "json" || envelope.sessionId === "" || envelope.transcriptPath === "") return unattested("missing native hook identity");
     const deadline = performance.now() + CODEX_METADATA_READINESS_MS;
     const native = readCodexSessionMetadata(envelope.transcriptPath, deadline);
     const rootEntrypoint = native.source === "cli" || native.source === "exec";
     if (native.id !== envelope.sessionId || !rootEntrypoint || native.parentThreadId !== void 0 || native.agentPath !== void 0 || native.agentRole !== void 0 || native.threadSpawn !== void 0) return LINEAGE_OF_ANYONE_BUT_THE_ROOT;
-    if (nativeRepositoryIdentity(native.cwd, deadline) !== nativeRepositoryIdentity(envelope.cwd, deadline)) return "native repository mismatch";
+    if (nativeRepositoryIdentity(native.cwd, deadline) !== nativeRepositoryIdentity(envelope.cwd, deadline)) return unattested("native repository mismatch");
     return void 0;
   } catch (error) {
     if (!isNativeResolutionFault(error)) throw error;
-    return causeOf(error);
+    return unattested(causeOf(error));
   }
 }
 function readAllowlist(argv) {

@@ -1,14 +1,18 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
+import { receiptDirectoryKeyedBy } from "./handoff.ts";
+import { planDirectoryKeyedBy } from "./plan.ts";
 import {
   causeOf,
+  denyPatternsFileKeyedBy,
   isDirectory,
   logEvent,
+  profileFileKeyedBy,
   readStateFile,
+  runsDirectoryKeyedBy,
   sha256Hex,
   StateFileUnreadableError,
   stateLeftAtTheInferredIdentity,
-  stateRootDirectory,
   taskIdentityFor,
   withLock,
   withOwnerOnlyUmask,
@@ -18,7 +22,7 @@ import {
   type StateFileRead,
 } from "./store.ts";
 
-export class TaskStateMigrationError extends Error {
+class TaskStateMigrationError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
     this.name = "TaskStateMigrationError";
@@ -29,10 +33,16 @@ type ArtifactCollision = "refuse" | "concatenate";
 
 type CarriedArtifact = Readonly<{ from: string; to: string; onCollision: ArtifactCollision }>;
 
-const PLANS_TREE = "plans";
-const KEYED_FILES = ["deploy-deny/{key}.patterns", "profiles/{key}.profile"] as const;
-const KEYED_TREES = ["runs", PLANS_TREE, ".handoffs"] as const;
-const RESUME_TRIGGERING_STATE_FILE = "{key}.state";
+type ArtifactKeyedByRepository = (repositoryId: string) => string;
+
+type CarriedIdentity = Readonly<{ identity: string; key: string; stateFile: string }>;
+
+const KEYED_FILES: readonly ArtifactKeyedByRepository[] = [denyPatternsFileKeyedBy, profileFileKeyedBy];
+const KEYED_TREES: readonly ArtifactKeyedByRepository[] = [
+  runsDirectoryKeyedBy,
+  planDirectoryKeyedBy,
+  receiptDirectoryKeyedBy,
+];
 const PLAN_PATH_KEYS = ["plan_snapshot_file", "plan_current_file"] as const;
 const JOURNAL_SUFFIX = ".log";
 
@@ -46,41 +56,47 @@ export function migrateInferredTaskState(cwd: string, session: string): void {
     if (readStateFile(task.stateFile).kind !== "absent") {
       throw new TaskStateMigrationError(twoIdentitiesHoldState(cwd, left, task));
     }
-    carryEverythingKeyedBy(left.identity, task, session);
+    carryEverythingKeyedBy(keyedIdentity(left), keyedIdentity(task), session);
   });
 }
 
-function carryEverythingKeyedBy(inferred: string, task: NamedTaskIdentity, session: string): void {
-  const inferredKey = sha256Hex(inferred);
-  const declaredKey = sha256Hex(task.identity);
-  const carried = plannedCarries(inferredKey, declaredKey);
+function keyedIdentity({ identity, stateFile }: Readonly<{ identity: string; stateFile: string }>): CarriedIdentity {
+  return { identity, key: sha256Hex(identity), stateFile };
+}
+
+function carryEverythingKeyedBy(inferred: CarriedIdentity, declared: CarriedIdentity, session: string): void {
+  const carried = plannedCarries(inferred.key, declared.key);
   const colliding = carried.filter((artifact) => artifact.onCollision === "refuse" && existsSync(artifact.to));
-  if (colliding.length > 0) throw new TaskStateMigrationError(artifactsCollide(inferred, task.identity, colliding));
+  if (colliding.length > 0) {
+    throw new TaskStateMigrationError(artifactsCollide(inferred.identity, declared.identity, colliding));
+  }
   try {
-    for (const artifact of carried) carryOne(artifact, inferred);
-    for (const tree of KEYED_TREES) rmSync(treeOf(tree, inferredKey), { recursive: true, force: true });
-    carryStateFileLastSoAnInterruptionResumes(inferredKey, declaredKey);
+    for (const artifact of carried) carryOne(artifact, inferred.identity);
+    for (const treeKeyedBy of KEYED_TREES) rmSync(treeKeyedBy(inferred.key), { recursive: true, force: true });
+    carryStateFileLastSoAnInterruptionResumes(inferred, declared);
   } catch (error) {
     if (error instanceof TaskStateMigrationError) throw error;
-    throw new TaskStateMigrationError(carryStoppedPartway(inferred, task.identity, causeOf(error)), { cause: error });
+    throw new TaskStateMigrationError(carryStoppedPartway(inferred.identity, declared.identity, causeOf(error)), {
+      cause: error,
+    });
   }
-  logEvent({ event: "identity-migrated", session, command: `${inferred} -> ${task.identity}` });
+  logEvent({ event: "identity-migrated", session, command: `${inferred.identity} -> ${declared.identity}` });
 }
 
 function plannedCarries(from: string, to: string): readonly CarriedArtifact[] {
-  const files = KEYED_FILES.map((template) => ({
-    from: artifactPath(template, from),
-    to: artifactPath(template, to),
+  const files = KEYED_FILES.map((fileKeyedBy) => ({
+    from: fileKeyedBy(from),
+    to: fileKeyedBy(to),
     onCollision: "refuse" as const,
   }));
-  return [...files, ...KEYED_TREES.flatMap((tree) => treeCarries(tree, from, to))].filter((artifact) =>
+  return [...files, ...KEYED_TREES.flatMap((treeKeyedBy) => treeCarries(treeKeyedBy, from, to))].filter((artifact) =>
     existsSync(artifact.from),
   );
 }
 
-function treeCarries(tree: string, from: string, to: string): CarriedArtifact[] {
-  const source = treeOf(tree, from);
-  const destination = treeOf(tree, to);
+function treeCarries(treeKeyedBy: ArtifactKeyedByRepository, from: string, to: string): CarriedArtifact[] {
+  const source = treeKeyedBy(from);
+  const destination = treeKeyedBy(to);
   return entryNamesOf(source).map((name) => ({
     from: path.join(source, name),
     to: path.join(destination, name),
@@ -98,17 +114,17 @@ function carryOne(artifact: CarriedArtifact, inferred: string): void {
   renameSync(artifact.from, artifact.to);
 }
 
-function carryStateFileLastSoAnInterruptionResumes(inferredKey: string, declaredKey: string): void {
-  const legacyStateFile = artifactPath(RESUME_TRIGGERING_STATE_FILE, inferredKey);
-  retargetCarriedPlanPaths(legacyStateFile, inferredKey, declaredKey);
-  renameSync(legacyStateFile, artifactPath(RESUME_TRIGGERING_STATE_FILE, declaredKey));
+function carryStateFileLastSoAnInterruptionResumes(inferred: CarriedIdentity, declared: CarriedIdentity): void {
+  retargetCarriedPlanPaths(inferred, declared);
+  renameSync(inferred.stateFile, declared.stateFile);
 }
 
-function retargetCarriedPlanPaths(stateFile: string, inferredKey: string, declaredKey: string): void {
+function retargetCarriedPlanPaths(inferred: CarriedIdentity, declared: CarriedIdentity): void {
+  const { stateFile } = inferred;
   const read = readStateFile(stateFile);
   if (read.kind !== "ok") throw new StateFileUnreadableError(stateFile, readFailureCause(read));
-  const planDirectory = treeOf(PLANS_TREE, inferredKey);
-  const carriedPlanDirectory = treeOf(PLANS_TREE, declaredKey);
+  const planDirectory = planDirectoryKeyedBy(inferred.key);
+  const carriedPlanDirectory = planDirectoryKeyedBy(declared.key);
   const retargeted = read.content
     .split("\n")
     .map((line) => planLineRebasedOn(line, planDirectory, carriedPlanDirectory))
@@ -168,14 +184,6 @@ function carryStoppedPartway(inferred: string, identity: string, cause: string):
     `state still answers at ${inferred}, so the gates keep denying rather than allowing on state they no longer ` +
     `read. Clear whatever blocked the carry and the next oso-state run finishes it.`
   );
-}
-
-function treeOf(tree: string, key: string): string {
-  return artifactPath(`${tree}/{key}`, key);
-}
-
-function artifactPath(template: string, key: string): string {
-  return path.join(stateRootDirectory(), ...template.replace("{key}", key).split("/"));
 }
 
 function entryNamesOf(directory: string): string[] {

@@ -28,7 +28,7 @@ export type ArmedState =
   | Readonly<{ kind: "moved"; left: InferredState; task: TaskIdentity }>
   | Readonly<{ kind: "readable"; stateFile: string; content: string }>;
 
-export type MovedIdentity = Extract<ArmedState, { kind: "moved" }>;
+type MovedIdentity = Extract<ArmedState, { kind: "moved" }>;
 
 export type StandingState = Extract<ArmedState, { stateFile: string }>;
 
