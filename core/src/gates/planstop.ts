@@ -12,7 +12,7 @@ import {
 import { gateRow } from "../routes/routes.ts";
 import { PlanVerifyFailure, runCapturePlan, runRejectPlanPresentation } from "../state/plan.ts";
 import { isDirectory, readValue, sha256Hex, type LoggedEvent } from "../state/store.ts";
-import { isPlanRailFailure, nativePlanFailureCode } from "./planrail.ts";
+import { isPlanRailFailure, laneOutOfThePlanRail, nativePlanFailureCode } from "./planrail.ts";
 import { sanitizeSession, stateFileIfNamed, type GateDefinition, type GateRequest } from "./preflight.ts";
 
 const ESCAPED_NEWLINE = "\\n";
@@ -106,7 +106,7 @@ function captureNativePresentation(envelope: HookEnvelope): GateOutcome<StopVerd
       const failureCode = nativePlanFailureCode(failure);
       return blocked(`oso-code: plan not recorded [${code}]; failure state unavailable [${failureCode}]. Stop and repair storage before planning again.`, session, `${code}:${failureCode}`);
     }
-    const reason = `oso-code: plan not recorded [${code}].${detail} Present one complete replacement proposed_plan with the final approval marker.`;
+    const reason = `oso-code: plan not recorded [${code}].${detail} ${laneOutOfThePlanRail(envelope.cwd, session)}`;
     if (!(cause instanceof CodexPresentationFailure || cause instanceof PlanVerifyFailure) || code === "unreadable-transcript" || code === "foreign-session" || code === "unattested-turn") return blocked(`oso-code: plan not recorded [${code}]; stop and repair storage or native identity before planning again. Do not retry automatically.`, session, code);
     return blocked(reason, session, code);
   }

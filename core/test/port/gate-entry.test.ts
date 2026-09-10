@@ -3,7 +3,8 @@ import { describe, test } from "node:test";
 import { runGate } from "../../src/gates/dispatch.ts";
 import { readEnvelope } from "../../src/hosts/envelope.ts";
 import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
-import { TOOL_ROWS } from "../../src/routes/routes.ts";
+import { allowlistFor } from "../../src/routes/render.ts";
+import { CODEX_NAMES_SPELLED_TWO_WAYS, codexSpellingsOf, TOOL_ROWS } from "../../src/routes/routes.ts";
 import { unresolvedHomeCause, withHookEnvironment } from "../support/gate-fixture.ts";
 import { provedSomething } from "../support/proved.ts";
 import { STATE_FILE, STATE_ROOT_THESE_TESTS_SPELL, withStateSandbox } from "../support/state-sandbox.ts";
@@ -17,6 +18,14 @@ const ARMED_RUN_STATE = {
 
 const CODEX_TOOL_ENVELOPE =
   '{"session_id":"test-session","cwd":"{cwd}","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{}}';
+
+const MEASURED_NATIVE_TOOLS: readonly string[] = [
+  "mcp__engram__mem_capture_passive",
+  "webrun",
+  "mcp__context7__query_docs",
+  "clockcurr_time",
+  "request_user_input_async",
+];
 
 for (const host of ["codex", "claude", "opencode"] as const) {
   test(`${host} retains commit and deploy controls through env unset and here-strings`, () => {
@@ -37,13 +46,28 @@ for (const host of ["codex", "claude", "opencode"] as const) {
 }
 
 describe("Codex exact read-only aliases preserve the gate boundaries", () => {
-  const allowlist = TOOL_ROWS.filter((row) => row.gate === "unknown" && row.names.codex !== "none")
-    .map((row) => row.names.codex).join("|");
+  const allowlist = allowlistFor("codex");
   const pending = { [STATE_FILE]: `${ARMED_RED_STATE[STATE_FILE]}plan_approval=pending\nplan_approval_session=test-session\n` };
 
-  for (const tool of ["webrun", "web__run", "clockcurr_time", "clock__curr_time", "mcp__context7__query_docs", "mcp__context7__query-docs"]) {
+  test("the rendered Codex allowlist is one readAllowlist accepts, carrying every measured native tool as a concrete row", () => {
+    const named = allowlist.split("|");
+    assert.deepEqual(MEASURED_NATIVE_TOOLS.filter((tool) => !named.includes(tool)), []);
+    const run = judge(["unknown", "--allow", allowlist], ARMED_RED_STATE, CODEX_TOOL_ENVELOPE.replace('"Bash"', '"webrun"'));
+    assert.deepEqual({ exit: run.exit, stdout: run.stdout, stderr: run.stderr }, { exit: 0, stdout: "", stderr: "" });
+  });
+
+  test("every native name this release spells two ways reaches the allowlist as both concrete spellings", () => {
+    const named = allowlist.split("|");
+    for (const canonical of CODEX_NAMES_SPELLED_TWO_WAYS) {
+      const spellings = codexSpellingsOf(canonical);
+      assert.equal(spellings.length, 2, canonical);
+      assert.deepEqual(spellings.filter((spelling) => !named.includes(spelling)), [], canonical);
+    }
+  });
+
+  for (const tool of ["webrun", "web__run", "clockcurr_time", "clock__curr_time", "mcp__context7__query_docs", "mcp__context7__query-docs", "request_user_input_async"]) {
     test(`${tool} is an exact Codex read route and passes the armed gate`, () => {
-      assert.ok(TOOL_ROWS.some((row) => row.names.codex === tool && row.gate === "unknown" && row.capability === "read"));
+      assert.ok(TOOL_ROWS.some((row) => codexSpellingsOf(row.names.codex).includes(tool) && row.gate === "unknown" && row.capability === "read"));
       const run = judge(["unknown", "--allow", allowlist], ARMED_RED_STATE, CODEX_TOOL_ENVELOPE.replace('"Bash"', JSON.stringify(tool)));
       assert.deepEqual({ exit: run.exit, stdout: run.stdout, stderr: run.stderr }, { exit: 0, stdout: "", stderr: "" });
     });

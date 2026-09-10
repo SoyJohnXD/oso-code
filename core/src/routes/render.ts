@@ -1,5 +1,7 @@
 import {
   BUNDLE_DIRECTORY,
+  CODEX_NAMES_SPELLED_TWO_WAYS,
+  codexSpellingsOf,
   GATE_BUNDLE,
   GATE_ROWS,
   HOST_ROWS,
@@ -136,7 +138,7 @@ function matcherFor(host: HostName, row: GateRow): string {
   return named;
 }
 
-function allowlistFor(host: ManifestHost): string {
+export function allowlistFor(host: ManifestHost): string {
   return toolNamesFor(host, "unknown").join("|");
 }
 
@@ -144,8 +146,11 @@ function toolNamesFor(host: HostName, gate: string): string[] {
   const named: string[] = [];
   for (const row of TOOL_ROWS) {
     const name = row.names[host];
-    if (row.gate !== gate || name === "none" || named.includes(name)) continue;
-    named.push(name);
+    if (row.gate !== gate || name === "none") continue;
+    const spelt = host === "codex" && CODEX_NAMES_SPELLED_TWO_WAYS.includes(name) ? codexSpellingsOf(name) : [name];
+    for (const spelling of spelt) {
+      if (!named.includes(spelling)) named.push(spelling);
+    }
   }
   return named;
 }

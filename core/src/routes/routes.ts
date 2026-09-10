@@ -156,6 +156,24 @@ export const RECOVERY_ROWS: readonly RecoveryRow[] = [
   { gate: "proddeploy", route: "take the run back (`oso-state --session <id> set auto=done`) and run the command from your own terminal — this gate arms only while THIS session's unattended run is still in flight." },
 ];
 
+const MCP_TOOL_PREFIX = "mcp__";
+const NATIVE_NAME_SEPARATOR = "__";
+
+export const CODEX_NAMES_SPELLED_TWO_WAYS: readonly string[] = [
+  "image_gen__imagegen",
+  "web__run",
+  "clock__curr_time",
+  "mcp__context7__resolve-library-id",
+  "mcp__context7__query-docs",
+];
+
+export function codexSpellingsOf(canonical: string): readonly string[] {
+  const alternate = canonical.startsWith(MCP_TOOL_PREFIX)
+    ? canonical.replaceAll("-", "_")
+    : canonical.replace(NATIVE_NAME_SEPARATOR, "");
+  return alternate === canonical ? [canonical] : [canonical, alternate];
+}
+
 export const TOOL_ROWS: readonly ToolRow[] = [
   { gate: "commit", names: { claude: "Bash", codex: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "Edit", codex: "apply_patch", opencode: "edit" }, capability: "write", mandated: "no" },
@@ -177,6 +195,7 @@ export const TOOL_ROWS: readonly ToolRow[] = [
   { gate: "unknown", names: { claude: "none", codex: "apply_patch", opencode: "apply_patch" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "update_plan", opencode: "none" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "request_user_input", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "request_user_input_async", opencode: "none" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "Agent", opencode: "task" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "collaborationspawn_agent", opencode: "none" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "collaborationsend_message", opencode: "none" }, capability: "write", mandated: "no" },
@@ -202,15 +221,13 @@ export const TOOL_ROWS: readonly ToolRow[] = [
   { gate: "unknown", names: { claude: "none", codex: "list_mcp_resource_templates", opencode: "list_mcp_resource_templates" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "read_mcp_resource", opencode: "read_mcp_resource" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "image_gen__imagegen", opencode: "none" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "image_genimagegen", opencode: "none" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "web__run", opencode: "none" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "webrun", opencode: "none" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "clockcurr_time", opencode: "none" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "clock__curr_time", opencode: "none" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_search", opencode: "engram_mem_search" }, capability: "read", mandated: "yes" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_get_observation", opencode: "engram_mem_get_observation" }, capability: "read", mandated: "yes" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_save", opencode: "engram_mem_save" }, capability: "write", mandated: "yes" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_update", opencode: "engram_mem_update" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_capture_passive", opencode: "none" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_context", opencode: "engram_mem_context" }, capability: "read", mandated: "yes" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_session_summary", opencode: "engram_mem_session_summary" }, capability: "write", mandated: "yes" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_current_project", opencode: "engram_mem_current_project" }, capability: "read", mandated: "yes" },
@@ -218,8 +235,6 @@ export const TOOL_ROWS: readonly ToolRow[] = [
   { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_judge", opencode: "engram_mem_judge" }, capability: "write", mandated: "yes" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__context7__resolve-library-id", opencode: "context7_resolve-library-id" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__context7__query-docs", opencode: "context7_query-docs" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "mcp__context7__query_docs", opencode: "none" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "mcp__context7__resolve_library_id", opencode: "none" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__fallow__find_dupes", opencode: "fallow_find_dupes" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__fallow__get_cleanup_candidates", opencode: "fallow_get_cleanup_candidates" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__fallow__audit", opencode: "fallow_audit" }, capability: "read", mandated: "no" },

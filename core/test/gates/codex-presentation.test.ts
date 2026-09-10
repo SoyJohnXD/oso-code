@@ -481,3 +481,20 @@ function installedGate(fixture: PresentationFixture, name: string, input: object
   assert.equal(result.stderr, "");
   return result;
 }
+
+const LANE_BY_APPROVAL: readonly (readonly [string, string, RegExp])[] = [
+  ["pending", "a plan still awaiting approval", /COMPLETE replacement proposed_plan/],
+  ["approved", "a plan already executing", /amend-plan/],
+];
+
+for (const [approval, reads, lane] of LANE_BY_APPROVAL) {
+  test(`a refused plan control under ${reads} names the lane that reopens execution from there`, () => {
+    withStateSandbox("workspace", (sandbox) => withHookEnvironment(sandbox.hookEnvironment(), () => {
+      writeStatePairs(stateFileFor(sandbox.cwd), ["mode=plan", `plan_approval=${approval}`, `plan_approval_session=${session}`], session);
+      const envelope = readEnvelope(JSON.stringify({ session_id: session, cwd: sandbox.cwd, transcript_path: path.join(sandbox.cwd, "absent.jsonl"), turn_id: approvalTurn, prompt: "Implement the plan." }), caller);
+      const { verdict } = runGate(["planprompt"], envelope);
+      assert.equal(verdict.kind, "deny");
+      if (verdict.kind === "deny") assert.match(verdict.message, lane);
+    }));
+  });
+}

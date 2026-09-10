@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { runGate, type GateRun } from "../../src/gates/dispatch.ts";
 import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
+import { HandoffFailure, runHandoffRecordUnpublished, runHandoffWait } from "../../src/state/handoff.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
 import { provedSomething } from "../support/proved.ts";
-import { STATE_ROOT_THESE_TESTS_SPELL, withStateSandbox, type SeededEntry } from "../support/state-sandbox.ts";
+import { STATE_ROOT_THESE_TESTS_SPELL, withStateSandbox, type SeededEntry, type StateSandbox } from "../support/state-sandbox.ts";
 
 const REPORT = "oso-handoff: v=1 slice=slice-hook attempt=1\\nverdict: pass";
-const WATERMARK = `${STATE_ROOT_THESE_TESTS_SPELL}/.handoffs/{repo}/{sha256:agent-hook}.watermark`;
+const HANDOFF_DIRECTORY = `${STATE_ROOT_THESE_TESTS_SPELL}/.handoffs/{repo}`;
+const WATERMARK = `${HANDOFF_DIRECTORY}/{sha256:agent-hook}.watermark`;
 
 type Payload = Readonly<{ session?: string; cwd?: string; agentId?: string; agentType?: string }>;
 
@@ -75,3 +77,53 @@ describe(
     });
   },
 );
+
+function refusedWait(sandbox: StateSandbox, agentId: string): string {
+  try {
+    runHandoffWait(sandbox.cwd, { slice: "slice-hook", attempt: "1", agentId, agentType: "oso-verifier" }, "0");
+  } catch (cause) {
+    if (cause instanceof HandoffFailure) return cause.message;
+    throw cause;
+  }
+  return "the wait returned a receipt nobody published";
+}
+
+describe("core/src/state/handoff.ts: a receipt that could not be published is a finished child, never a child that never ran", () => {
+  test("the parent's wait names the finished child and the publish cause, where an unlaunched child only times out", () => {
+    const [finished, neverRan] = withStateSandbox("workspace", (sandbox) =>
+      withHookEnvironment(sandbox.hookEnvironment(), () => {
+        runGate(["handoff"], spawnedEnvelope(sandbox.expandJson(payloadFor({ session: "" })), process.env));
+        return [refusedWait(sandbox, "agent-hook"), refusedWait(sandbox, "agent-nobody-launched")];
+      }),
+    );
+    assert.match(finished, /finished slice slice-hook attempt 1/);
+    assert.match(finished, /missing session_id/);
+    assert.equal(neverRan, "timed out waiting for slice slice-hook attempt 1 after 0s");
+    assert.notEqual(finished, neverRan);
+  });
+
+  test("the record refuses a delegation or a cause it cannot spell, rather than writing one the wait would misread", () => {
+    const named = { slice: "slice-hook", attempt: "1", agentId: "agent-hook" };
+    withStateSandbox("workspace", (sandbox) =>
+      withHookEnvironment(sandbox.hookEnvironment(), () => {
+        for (const unspellable of [
+          { delegation: { ...named, slice: "not a slice" }, refusal: "missing session_id" },
+          { delegation: { ...named, attempt: "0" }, refusal: "missing session_id" },
+          { delegation: { ...named, agentId: "" }, refusal: "missing session_id" },
+          { delegation: named, refusal: "two\nlines" },
+          { delegation: named, refusal: "" },
+        ]) {
+          assert.throws(() => runHandoffRecordUnpublished(sandbox.cwd, unspellable.delegation, unspellable.refusal), HandoffFailure);
+        }
+        assert.equal(refusedWait(sandbox, "agent-hook"), "timed out waiting for slice slice-hook attempt 1 after 0s");
+      }),
+    );
+  });
+
+  test("a record the gate cannot write is named on stderr, and the SubagentStop still lets the session end", () => {
+    const run = published({ session: "" }, { [HANDOFF_DIRECTORY]: "a file where the receipt directory belongs\n" });
+    assert.deepEqual({ exit: run.exit, stdout: run.stdout }, { exit: 0, stdout: "{}\n" });
+    assert.match(run.stderr, /could not publish its handoff: missing session_id\n/);
+    assert.match(run.stderr, /could not record that its child finished/);
+  });
+});

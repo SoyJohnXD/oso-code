@@ -5,12 +5,9 @@ import * as store from "./store.ts";
 
 export class HandoffFailure extends Error {}
 
-export type HandoffCoordinates = {
-  slice: string;
-  attempt: string;
-  agentId: string;
-  agentType: string;
-};
+export type FinishedDelegation = Readonly<{ slice: string; attempt: string; agentId: string }>;
+
+export type HandoffCoordinates = FinishedDelegation & Readonly<{ agentType: string }>;
 
 const MAX_TIMEOUT_SECONDS = 600;
 const TTL_SECONDS = 86400;
@@ -23,10 +20,12 @@ const ATTEMPT_PATTERN = /^[1-9][0-9]{0,8}$/;
 const ATTEMPT_VALUE_PATTERN = /^attempt=[1-9][0-9]{0,8}$/;
 const TIMEOUT_PATTERN = /^(0|[1-9][0-9]{0,2})$/;
 
-const RECEIPT_ARTIFACT_PATTERN = /^([0-9a-f]{64})\.(receipt|consumed|watermark)$/;
-const TEMP_ARTIFACT_PATTERN = /^\.([0-9a-f]{64})\.(receipt|consuming|watermark)\.[a-zA-Z0-9]{6}$/;
+const RECEIPT_ARTIFACT_PATTERN = /^([0-9a-f]{64})\.(receipt|consumed|watermark|unpublished)$/;
+const TEMP_ARTIFACT_PATTERN = /^\.([0-9a-f]{64})\.(receipt|consuming|watermark|unpublished)\.[a-zA-Z0-9]{6}$/;
 const RECEIPT_KEYS = ["version", "hook_session", "slice", "attempt", "agent_id", "agent_type"] as const;
 const WATERMARK_KEYS = ["version", "attempt"] as const;
+const UNPUBLISHED_KEYS = ["version", "slice", "attempt", "reason"] as const;
+const REFUSAL_PATTERN = /^[ -~]{1,200}$/;
 
 export function runHandoffResolveCodex(cwd: string, coordinates: Omit<HandoffCoordinates, "agentId"> & { agentPath: string }): string {
   const parentId = process.env["CODEX_THREAD_ID"] ?? "";
@@ -91,6 +90,22 @@ export function runHandoffPublish(cwd: string, coordinates: HandoffCoordinates, 
     const content = receiptContent(hookSession, coordinates);
     store.writeFileAtomically(paths.directory, paths.receipt, content, `.${paths.agentKey}.receipt.`);
     writeWatermark(paths, coordinates.attempt);
+    rmSync(paths.unpublished, { force: true });
+  } finally {
+    releaseHandoffLock(paths);
+  }
+}
+
+export function runHandoffRecordUnpublished(cwd: string, delegation: FinishedDelegation, refusal: string): void {
+  validateDelegation(delegation);
+  if (!REFUSAL_PATTERN.test(refusal)) throw new HandoffFailure("a publish refusal must be one printable line");
+  const paths = handoffPaths(cwd, delegation.agentId);
+  mkdirSync(paths.directory, { recursive: true, mode: 0o700 });
+  protectDirectory(paths.directory);
+  acquireHandoffLock(paths, nowEpochSeconds() + LOCK_TIMEOUT_SECONDS);
+  try {
+    const content = `version=1\nslice=${delegation.slice}\nattempt=${delegation.attempt}\nreason=${refusal}\n`;
+    store.writeFileAtomically(paths.directory, paths.unpublished, content, `.${paths.agentKey}.unpublished.`);
   } finally {
     releaseHandoffLock(paths);
   }
@@ -161,7 +176,27 @@ function matchingReceiptOrStop(paths: HandoffPaths, coordinates: HandoffCoordina
       );
     }
   }
+  const refusal = unpublishedRefusalOf(paths, coordinates);
+  if (refusal !== undefined) {
+    throw new HandoffFailure(
+      `agent ${coordinates.agentId} finished slice ${coordinates.slice} attempt ${coordinates.attempt}, but its ` +
+        `SubagentStop could not publish the receipt: ${refusal}. Read that agent's own final message for the ` +
+        "verdict it produced; relaunching it would repeat work it has already done.",
+    );
+  }
   return undefined;
+}
+
+function unpublishedRefusalOf(paths: HandoffPaths, delegation: FinishedDelegation): string | undefined {
+  const content = readPrivateFileContent(paths.unpublished);
+  if (content === undefined) return undefined;
+  if (!isWellFormedRecordFile(content, UNPUBLISHED_KEYS.length, UNPUBLISHED_KEYS)) {
+    throw new HandoffFailure(`malformed unpublished record at ${paths.unpublished}`);
+  }
+  if (recordValue(content, "slice") !== delegation.slice || recordValue(content, "attempt") !== delegation.attempt) {
+    return undefined;
+  }
+  return recordValue(content, "reason");
 }
 
 function requireMatchingReceipt(receiptPath: string, coordinates: HandoffCoordinates, identityMessage: string): void {
@@ -176,12 +211,16 @@ function requireMatchingReceipt(receiptPath: string, coordinates: HandoffCoordin
 }
 
 function validateCoordinates(coordinates: HandoffCoordinates): void {
-  if (!store.isNameToken(coordinates.slice)) throw new HandoffFailure("invalid slice id");
-  if (!ATTEMPT_PATTERN.test(coordinates.attempt)) {
+  validateDelegation(coordinates);
+  if (!store.isNameToken(coordinates.agentType)) throw new HandoffFailure("invalid agent type");
+}
+
+function validateDelegation(delegation: FinishedDelegation): void {
+  if (!store.isNameToken(delegation.slice)) throw new HandoffFailure("invalid slice id");
+  if (!ATTEMPT_PATTERN.test(delegation.attempt)) {
     throw new HandoffFailure("attempt must be an integer from 1 to 999999999");
   }
-  if (!isValidOpaqueId(coordinates.agentId)) throw new HandoffFailure("invalid agent id");
-  if (!store.isNameToken(coordinates.agentType)) throw new HandoffFailure("invalid agent type");
+  if (!isValidOpaqueId(delegation.agentId)) throw new HandoffFailure("invalid agent id");
 }
 
 function isValidOpaqueId(value: string): boolean {
@@ -198,6 +237,7 @@ type HandoffPaths = {
   agentKey: string;
   receipt: string;
   watermark: string;
+  unpublished: string;
   lockDir: string;
 };
 
@@ -214,6 +254,7 @@ function handoffPaths(cwd: string, agentId: string): HandoffPaths {
     agentKey,
     receipt: path.join(directory, `${agentKey}.receipt`),
     watermark: path.join(directory, `${agentKey}.watermark`),
+    unpublished: path.join(directory, `${agentKey}.unpublished`),
     lockDir: path.join(directory, `${agentKey}.lock`),
   };
 }
@@ -284,7 +325,7 @@ function tryAcquireBareLock(lockDir: string): boolean {
 }
 
 function pruneLocked(paths: HandoffPaths): void {
-  for (const artifact of [paths.receipt, paths.watermark, ...matchingTempArtifacts(paths)]) {
+  for (const artifact of [paths.receipt, paths.watermark, paths.unpublished, ...matchingTempArtifacts(paths)]) {
     if (!existsSync(artifact)) continue;
     if (!store.isRegularNonSymlinkFile(artifact)) {
       throw new HandoffFailure(`handoff artifact is not a regular file at ${artifact}`);
@@ -296,7 +337,7 @@ function pruneLocked(paths: HandoffPaths): void {
 }
 
 function matchingTempArtifacts(paths: HandoffPaths): string[] {
-  const prefixes = [`.${paths.agentKey}.receipt.`, `.${paths.agentKey}.consuming.`, `.${paths.agentKey}.watermark.`];
+  const prefixes = [`.${paths.agentKey}.receipt.`, `.${paths.agentKey}.consuming.`, `.${paths.agentKey}.watermark.`, `.${paths.agentKey}.unpublished.`];
   return directoryEntries(paths.directory)
     .filter((name) => prefixes.some((prefix) => name.startsWith(prefix)))
     .map((name) => path.join(paths.directory, name));

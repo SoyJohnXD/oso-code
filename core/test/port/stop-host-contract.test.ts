@@ -9,7 +9,11 @@ const RUNNING_STATE = "auto=running\nauto_change=auto-continuity\nsession=test-s
 const STOP_PAYLOAD =
   '{"session_id":"test-session","cwd":"{cwd}","hook_event_name":"Stop","stop_hook_active":false}';
 const PLAN_MARKER = "<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->";
-const PLANSTOP_REASON = "oso-code: plan not recorded [missing-slice-verify]. Slice S1 must name failing-check: or Verify-exception: on its Verify line. Present one complete replacement proposed_plan with the final approval marker.";
+const PLANSTOP_REASON =
+  "oso-code: plan not recorded [missing-slice-verify]. Slice S1 must name failing-check: or Verify-exception: " +
+  "on its Verify line. No approved plan is executing here, so a fresh capture is what binds the document: " +
+  "present one COMPLETE replacement proposed_plan in native Plan Mode, carrying every unchanged section, then " +
+  "the internal approval marker.";
 const PLAN_SESSION = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 const PLAN_DOCUMENT = "## S1 — change\n- Depends-on: none\n- Verify: tests pass";
 const PLAN_MESSAGE = `${PLAN_DOCUMENT}\n${PLAN_MARKER}`;

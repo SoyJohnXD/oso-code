@@ -990,6 +990,19 @@ var GATE_ROWS = [
     mechanism: { claude: "subprocess", codex: "none", opencode: "event" }
   }
 ];
+var MCP_TOOL_PREFIX = "mcp__";
+var NATIVE_NAME_SEPARATOR = "__";
+var CODEX_NAMES_SPELLED_TWO_WAYS = [
+  "image_gen__imagegen",
+  "web__run",
+  "clock__curr_time",
+  "mcp__context7__resolve-library-id",
+  "mcp__context7__query-docs"
+];
+function codexSpellingsOf(canonical) {
+  const alternate = canonical.startsWith(MCP_TOOL_PREFIX) ? canonical.replaceAll("-", "_") : canonical.replace(NATIVE_NAME_SEPARATOR, "");
+  return alternate === canonical ? [canonical] : [canonical, alternate];
+}
 var TOOL_ROWS = [
   { gate: "commit", names: { claude: "Bash", codex: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "Edit", codex: "apply_patch", opencode: "edit" }, capability: "write", mandated: "no" },
@@ -1011,6 +1024,7 @@ var TOOL_ROWS = [
   { gate: "unknown", names: { claude: "none", codex: "apply_patch", opencode: "apply_patch" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "update_plan", opencode: "none" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "request_user_input", opencode: "none" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "request_user_input_async", opencode: "none" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "Agent", opencode: "task" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "collaborationspawn_agent", opencode: "none" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "collaborationsend_message", opencode: "none" }, capability: "write", mandated: "no" },
@@ -1036,15 +1050,13 @@ var TOOL_ROWS = [
   { gate: "unknown", names: { claude: "none", codex: "list_mcp_resource_templates", opencode: "list_mcp_resource_templates" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "read_mcp_resource", opencode: "read_mcp_resource" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "image_gen__imagegen", opencode: "none" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "image_genimagegen", opencode: "none" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "web__run", opencode: "none" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "webrun", opencode: "none" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "clockcurr_time", opencode: "none" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "clock__curr_time", opencode: "none" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_search", opencode: "engram_mem_search" }, capability: "read", mandated: "yes" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_get_observation", opencode: "engram_mem_get_observation" }, capability: "read", mandated: "yes" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_save", opencode: "engram_mem_save" }, capability: "write", mandated: "yes" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_update", opencode: "engram_mem_update" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_capture_passive", opencode: "none" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_context", opencode: "engram_mem_context" }, capability: "read", mandated: "yes" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_session_summary", opencode: "engram_mem_session_summary" }, capability: "write", mandated: "yes" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_current_project", opencode: "engram_mem_current_project" }, capability: "read", mandated: "yes" },
@@ -1052,8 +1064,6 @@ var TOOL_ROWS = [
   { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_judge", opencode: "engram_mem_judge" }, capability: "write", mandated: "yes" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__context7__resolve-library-id", opencode: "context7_resolve-library-id" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__context7__query-docs", opencode: "context7_query-docs" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "mcp__context7__query_docs", opencode: "none" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "mcp__context7__resolve_library_id", opencode: "none" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__fallow__find_dupes", opencode: "fallow_find_dupes" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__fallow__get_cleanup_candidates", opencode: "fallow_get_cleanup_candidates" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", codex: "mcp__fallow__audit", opencode: "fallow_audit" }, capability: "read", mandated: "no" },
@@ -2375,10 +2385,11 @@ var OPAQUE_ID_PATTERN = /^[a-zA-Z0-9._:/-]+$/;
 var OPAQUE_ID_MAX_LENGTH = 256;
 var ATTEMPT_PATTERN = /^[1-9][0-9]{0,8}$/;
 var ATTEMPT_VALUE_PATTERN = /^attempt=[1-9][0-9]{0,8}$/;
-var RECEIPT_ARTIFACT_PATTERN = /^([0-9a-f]{64})\.(receipt|consumed|watermark)$/;
-var TEMP_ARTIFACT_PATTERN = /^\.([0-9a-f]{64})\.(receipt|consuming|watermark)\.[a-zA-Z0-9]{6}$/;
+var RECEIPT_ARTIFACT_PATTERN = /^([0-9a-f]{64})\.(receipt|consumed|watermark|unpublished)$/;
+var TEMP_ARTIFACT_PATTERN = /^\.([0-9a-f]{64})\.(receipt|consuming|watermark|unpublished)\.[a-zA-Z0-9]{6}$/;
 var RECEIPT_KEYS = ["version", "hook_session", "slice", "attempt", "agent_id", "agent_type"];
 var WATERMARK_KEYS = ["version", "attempt"];
+var REFUSAL_PATTERN = /^[ -~]{1,200}$/;
 function runHandoffPublish(cwd, coordinates, hookSession) {
   validateCoordinates(coordinates);
   if (!isValidOpaqueId(hookSession)) throw new HandoffFailure("invalid hook session id");
@@ -2403,17 +2414,39 @@ function runHandoffPublish(cwd, coordinates, hookSession) {
     const content = receiptContent(hookSession, coordinates);
     writeFileAtomically(paths.directory, paths.receipt, content, `.${paths.agentKey}.receipt.`);
     writeWatermark(paths, coordinates.attempt);
+    rmSync3(paths.unpublished, { force: true });
+  } finally {
+    releaseHandoffLock(paths);
+  }
+}
+function runHandoffRecordUnpublished(cwd, delegation, refusal2) {
+  validateDelegation(delegation);
+  if (!REFUSAL_PATTERN.test(refusal2)) throw new HandoffFailure("a publish refusal must be one printable line");
+  const paths = handoffPaths(cwd, delegation.agentId);
+  mkdirSync4(paths.directory, { recursive: true, mode: 448 });
+  protectDirectory(paths.directory);
+  acquireHandoffLock(paths, nowEpochSeconds2() + LOCK_TIMEOUT_SECONDS);
+  try {
+    const content = `version=1
+slice=${delegation.slice}
+attempt=${delegation.attempt}
+reason=${refusal2}
+`;
+    writeFileAtomically(paths.directory, paths.unpublished, content, `.${paths.agentKey}.unpublished.`);
   } finally {
     releaseHandoffLock(paths);
   }
 }
 function validateCoordinates(coordinates) {
-  if (!isNameToken(coordinates.slice)) throw new HandoffFailure("invalid slice id");
-  if (!ATTEMPT_PATTERN.test(coordinates.attempt)) {
+  validateDelegation(coordinates);
+  if (!isNameToken(coordinates.agentType)) throw new HandoffFailure("invalid agent type");
+}
+function validateDelegation(delegation) {
+  if (!isNameToken(delegation.slice)) throw new HandoffFailure("invalid slice id");
+  if (!ATTEMPT_PATTERN.test(delegation.attempt)) {
     throw new HandoffFailure("attempt must be an integer from 1 to 999999999");
   }
-  if (!isValidOpaqueId(coordinates.agentId)) throw new HandoffFailure("invalid agent id");
-  if (!isNameToken(coordinates.agentType)) throw new HandoffFailure("invalid agent type");
+  if (!isValidOpaqueId(delegation.agentId)) throw new HandoffFailure("invalid agent id");
 }
 function isValidOpaqueId(value) {
   return value.length >= 1 && value.length <= OPAQUE_ID_MAX_LENGTH && OPAQUE_ID_PATTERN.test(value);
@@ -2430,6 +2463,7 @@ function handoffPaths(cwd, agentId) {
     agentKey,
     receipt: path5.join(directory, `${agentKey}.receipt`),
     watermark: path5.join(directory, `${agentKey}.watermark`),
+    unpublished: path5.join(directory, `${agentKey}.unpublished`),
     lockDir: path5.join(directory, `${agentKey}.lock`)
   };
 }
@@ -2491,7 +2525,7 @@ function tryAcquireBareLock(lockDir) {
   }
 }
 function pruneLocked(paths) {
-  for (const artifact of [paths.receipt, paths.watermark, ...matchingTempArtifacts(paths)]) {
+  for (const artifact of [paths.receipt, paths.watermark, paths.unpublished, ...matchingTempArtifacts(paths)]) {
     if (!existsSync2(artifact)) continue;
     if (!isRegularNonSymlinkFile(artifact)) {
       throw new HandoffFailure(`handoff artifact is not a regular file at ${artifact}`);
@@ -2502,7 +2536,7 @@ function pruneLocked(paths) {
   }
 }
 function matchingTempArtifacts(paths) {
-  const prefixes = [`.${paths.agentKey}.receipt.`, `.${paths.agentKey}.consuming.`, `.${paths.agentKey}.watermark.`];
+  const prefixes = [`.${paths.agentKey}.receipt.`, `.${paths.agentKey}.consuming.`, `.${paths.agentKey}.watermark.`, `.${paths.agentKey}.unpublished.`];
   return directoryEntries(paths.directory).filter((name) => prefixes.some((prefix) => name.startsWith(prefix))).map((name) => path5.join(paths.directory, name));
 }
 function directoryEntries(directory) {
@@ -2616,36 +2650,48 @@ function judgeHandoff({ envelope }) {
   const message = envelope.lastAssistantMessage;
   const markerLines = message.split("\n").filter((line) => MARKER_LINE.test(line));
   if (markerLines.length === 0) return NO_VERDICT;
-  const sessionId = hookSessionId(envelope);
+  const delegation = delegationNamedBy(envelope, markerLines.length);
+  const session = hookSessionId(envelope);
   const agentType = envelope.agentType;
-  if (sessionId === "") return publishFailed("missing session_id", "", agentType);
-  if (!isDirectory(envelope.cwd)) return publishFailed("missing or unreadable cwd", sessionId, agentType);
-  if (envelope.agentId === "") return publishFailed("missing agent_id", sessionId, agentType);
-  if (agentType === "") return publishFailed("missing agent_type", sessionId, "");
-  const named = MARKER.exec(message.split("\n")[0] ?? "");
-  if (markerLines.length !== 1 || named === null) {
-    return publishFailed(MALFORMED_MARKER, sessionId, agentType);
-  }
-  const slice = named[1];
-  const attempt = named[2];
+  const refused = (reason) => publishFailed({ envelope, delegation, reason, session });
+  if (session === "") return refused("missing session_id");
+  if (!isDirectory(envelope.cwd)) return refused("missing or unreadable cwd");
+  if (envelope.agentId === "") return refused("missing agent_id");
+  if (agentType === "") return refused("missing agent_type");
+  if (delegation === void 0) return refused(MALFORMED_MARKER);
   try {
-    runHandoffPublish(envelope.cwd, { slice, attempt, agentId: envelope.agentId, agentType }, sessionId);
+    runHandoffPublish(envelope.cwd, { ...delegation, agentType }, session);
   } catch (cause) {
     if (!(cause instanceof HandoffFailure)) throw cause;
-    return publishFailed("oso-state rejected the receipt", sessionId, agentType);
+    return refused("oso-state rejected the receipt");
   }
   return {
     verdict: NO_VERDICT.verdict,
-    events: [published(sessionId, `${agentType}:${slice}:${attempt}`)]
+    events: [published(session, `${agentType}:${delegation.slice}:${delegation.attempt}`)]
   };
 }
-function publishFailed(reason, session, agentType) {
+function delegationNamedBy(envelope, markerLineCount) {
+  const named = MARKER.exec(envelope.lastAssistantMessage.split("\n")[0] ?? "");
+  if (markerLineCount !== 1 || named === null || envelope.agentId === "") return void 0;
+  return { slice: named[1], attempt: named[2], agentId: envelope.agentId };
+}
+function publishFailed(refusal2) {
   return {
     verdict: NO_VERDICT.verdict,
-    events: [{ event: "handoff-publish-failed", session, command: agentType }],
-    stderr: `oso-code: SubagentStop could not publish its handoff: ${reason}
-`
+    events: [{ event: "handoff-publish-failed", session: refusal2.session, command: refusal2.envelope.agentType }],
+    stderr: `oso-code: SubagentStop could not publish its handoff: ${refusal2.reason}
+${recordOfTheFinish(refusal2)}`
   };
+}
+function recordOfTheFinish({ envelope, delegation, reason }) {
+  if (delegation === void 0 || !isDirectory(envelope.cwd)) return "";
+  try {
+    runHandoffRecordUnpublished(envelope.cwd, delegation, reason);
+    return "";
+  } catch (cause) {
+    return `oso-code: SubagentStop could not record that its child finished either: ${causeOf(cause)}
+`;
+  }
 }
 function published(session, detail) {
   return { event: "handoff-published", session, command: detail };
@@ -3210,6 +3256,14 @@ function transcriptLines(transcriptPath) {
 }
 
 // core/src/gates/planrail.ts
+var EXECUTION_AMENDMENT_LANE = "An approved plan is already executing here, so its `current.md` is what changes, not the approval: pipe the complete slice block to `oso-state --session <id> amend-plan <slice-id>` \u2014 on the operator's own request for a hot slice, or on one operator confirmation of a cited correction to a slice that has not started. Only a change to frozen intent, scope or a ledger decision returns to native Plan Mode for a COMPLETE replacement proposed_plan.";
+var FRESH_CAPTURE_LANE = "No approved plan is executing here, so a fresh capture is what binds the document: present one COMPLETE replacement proposed_plan in native Plan Mode, carrying every unchanged section, then the internal approval marker.";
+function laneOutOfThePlanRail(cwd, sessionId) {
+  const stateFile = stateFileIfNamed(cwd);
+  if (stateFile === void 0) return FRESH_CAPTURE_LANE;
+  const owned = readValue(stateFile, "plan_approval_session") === sessionId;
+  return owned && readValue(stateFile, "plan_approval") === "approved" ? EXECUTION_AMENDMENT_LANE : FRESH_CAPTURE_LANE;
+}
 function isPlanRailFailure(cause) {
   return cause instanceof PlanFailure || cause instanceof PlanApprovalError || cause instanceof StateFileUnreadableError || cause instanceof LockTimeoutError;
 }
@@ -3241,10 +3295,9 @@ var NO_PENDING_PLAN = "oso-code: no pending plan approval exists for this reposi
 var FOREIGN_CONTROL_PROMPT = "oso-code: this plan-control prompt does not belong to the session that presented the pending plan.";
 var NOTHING_PENDING = "oso-code: no pending plan approval exists; present the complete plan again before approving or cancelling it.";
 var NO_VALID_DIGEST = "oso-code: the pending plan has no valid document digest; present it again before approving.";
-var AMENDMENT_GUIDANCE = "oso-code: this Plan Mode turn amended the pending document instead of discarding it. Present a COMPLETE replacement proposed_plan, including all unchanged sections and the feedback, then re-emit the internal approval marker for fresh capture.";
+var AMENDED_NOT_DISCARDED = "oso-code: this Plan Mode turn amended the pending document instead of discarding it.";
 var LEGACY_AMENDMENT_GUIDANCE = "oso-code: this Plan Mode turn amended the pending document instead of discarding it. Present the amendment \u2014 what changed and why \u2014 not the complete plan, then re-emit the internal approval marker so a fresh capture binds the complete updated document before approval can succeed.";
 var LEGACY_REFRESH = "oso-code: this preserved plan needs a compatibility refresh before native approval. Enter native Plan Mode (/plan or Shift+Tab); the next Plan interaction will supply the complete preserved document for replacement. No manual file, token or digest handling is needed.";
-var NOT_RECORDED = "oso-code: the latest plan was not recorded [latest-presentation-unavailable]; execution remains blocked. Present a complete replacement proposed_plan in native Plan Mode.";
 var APPROVAL_GRANTED = "oso-code: Codex native plan approval matched the exact pending document. The technical approval gate is open; continue with the saved operational plan.";
 var CANCELLATION_ACCEPTED = "oso-code: CANCEL OSO PLAN accepted for the exact pending document. Its runtime state was cleared; do not execute that plan.";
 var SILENT = { verdict: { kind: "allow" }, events: [] };
@@ -3253,6 +3306,12 @@ var PLANPROMPT_GATE = {
   errorSubject: "the plan-approval token gate",
   judge: judgePlanprompt
 };
+function amendmentGuidance(cwd, sessionId) {
+  return `${AMENDED_NOT_DISCARDED} ${laneOutOfThePlanRail(cwd, sessionId)}`;
+}
+function notRecorded(cwd, sessionId) {
+  return "oso-code: the latest plan was not recorded [latest-presentation-unavailable]; execution remains blocked. " + laneOutOfThePlanRail(cwd, sessionId);
+}
 function judgePlanprompt({ envelope }) {
   const rawPrompt = envelope.escapedPrompt;
   const sessionId = sanitizeSession(envelope.sessionId);
@@ -3263,7 +3322,7 @@ function judgePlanprompt({ envelope }) {
     if (!(cause instanceof CodexPresentationFailure)) throw cause;
     if (controlActionOf(rawPrompt) === void 0 && !invokesThePlanSkill(rawPrompt)) return SILENT;
     if (!statePresent(stateFileIfNamed(envelope.cwd)) && !invokesThePlanSkill(rawPrompt)) return SILENT;
-    return nativeFailure(cause, sessionId, "turn");
+    return nativeFailure({ cause, cwd: envelope.cwd, sessionId, action: "turn" });
   }
   if (invokesThePlanSkill(rawPrompt) && turn.mode !== "plan") return control(OUTSIDE_PLAN_MODE);
   const action = controlActionOf(rawPrompt);
@@ -3281,7 +3340,7 @@ function judgePlanprompt({ envelope }) {
   if (readValue(stateFile, "plan_approval_session") !== sessionId) return control(FOREIGN_CONTROL_PROMPT);
   if (readValue(stateFile, "plan_approval") !== PENDING) return control(NOTHING_PENDING);
   if (action === "approve" && envelope.caller.host === "codex") {
-    if (readValue(stateFile, "plan_presentation_status") === "failed") return control(NOT_RECORDED);
+    if (readValue(stateFile, "plan_presentation_status") === "failed") return control(notRecorded(envelope.cwd, sessionId));
     if (readValue(stateFile, "plan_presentation_version") !== "1") return control(LEGACY_REFRESH);
   }
   const digest = readValue(stateFile, "plan_approval_digest") ?? "";
@@ -3299,13 +3358,13 @@ function amendPendingPlan(envelope, sessionId, turn) {
   try {
     const presentationFailed = readValue(stateFile, "plan_presentation_status") === "failed";
     if (envelope.caller.host === "codex" && (readValue(stateFile, "plan_presentation_version") !== "1" || presentationFailed)) {
-      if (presentationFailed && readValue(stateFile, "plan_current_file") === void 0) return { verdict: { kind: "context", additionalContext: AMENDMENT_GUIDANCE }, events: [] };
+      if (presentationFailed && readValue(stateFile, "plan_current_file") === void 0) return { verdict: { kind: "context", additionalContext: amendmentGuidance(envelope.cwd, sessionId) }, events: [] };
       return amendmentWithPreservedDocument(envelope.cwd, sessionId);
     }
     runAmendPlan(envelope.cwd, sessionId, FEEDBACK_AMENDMENT_LABEL, asCommandSubstitutionCaptures(envelope.prompt));
     if (envelope.caller.host === "codex") return amendmentWithPreservedDocument(envelope.cwd, sessionId);
   } catch (cause) {
-    if (envelope.caller.host === "codex") return nativeFailure(cause, sessionId, "amend");
+    if (envelope.caller.host === "codex") return nativeFailure({ cause, cwd: envelope.cwd, sessionId, action: "amend" });
     if (!isPlanRailFailure(cause)) throw cause;
     return {
       verdict: { kind: "deny", message: AMENDMENT_REFUSED },
@@ -3315,7 +3374,7 @@ function amendPendingPlan(envelope, sessionId, turn) {
   return { verdict: { kind: "context", additionalContext: LEGACY_AMENDMENT_GUIDANCE }, events: [] };
 }
 function amendmentWithPreservedDocument(cwd, sessionId) {
-  const guidance = `${AMENDMENT_GUIDANCE}
+  const guidance = `${amendmentGuidance(cwd, sessionId)}
 
 Preserved document:
 ${readPlanForReplacement(cwd, sessionId)}`;
@@ -3326,7 +3385,7 @@ function settlePendingPlan(envelope, sessionId, action, digest) {
     if (action === "approve") runApprovePlan(envelope.cwd, sessionId, digest, envelope.caller.host === "codex" ? () => resolveCodexPresentation(envelope, { precedingApproval: true }) : void 0);
     else runCancelPlan(envelope.cwd, sessionId, digest);
   } catch (cause) {
-    if (envelope.caller.host === "codex") return nativeFailure(cause, sessionId, action);
+    if (envelope.caller.host === "codex") return nativeFailure({ cause, cwd: envelope.cwd, sessionId, action });
     if (!isPlanRailFailure(cause)) throw cause;
     return {
       verdict: {
@@ -3352,10 +3411,10 @@ function controlPromptReaches(envelope, sessionId, action, stateFile) {
   if (envelope.caller.host === "codex" && readValue(stateFile, "mode") === "plan" && readValue(stateFile, "plan_approval") === "approved" && readValue(stateFile, "plan_approval_session") === sessionId && readValue(stateFile, "plan_presentation_version") === "1") {
     try {
       const latest = resolveCodexPresentation(envelope, { precedingApproval: true });
-      if (!matchesPlanPresentation(stateFile, latest.binding)) return control(NOT_RECORDED);
+      if (!matchesPlanPresentation(stateFile, latest.binding)) return control(notRecorded(envelope.cwd, sessionId));
     } catch (cause) {
       if (!(cause instanceof CodexPresentationFailure)) throw cause;
-      return nativeFailure(cause, sessionId, action);
+      return nativeFailure({ cause, cwd: envelope.cwd, sessionId, action });
     }
   }
   if (readValue(stateFile, "plan_approval") !== PENDING) return SILENT;
@@ -3366,10 +3425,11 @@ function modeRefusalFor(action, turn) {
   if (turn.mode === "default") return void 0;
   return turn.mode === "plan" ? APPROVAL_STILL_IN_PLAN_MODE : APPROVAL_UNATTESTED;
 }
-function nativeFailure(cause, sessionId, action) {
+function nativeFailure({ cause, cwd, sessionId, action }) {
   const code = nativePlanFailureCode(cause);
+  const blocked2 = `oso-code: the ${action} request was refused [${code}]; execution remains blocked, and the fault it names is repaired first.`;
   return {
-    verdict: { kind: "deny", message: `oso-code: the ${action} request was refused [${code}]; execution remains blocked. Present a complete replacement proposed_plan in native Plan Mode after repairing the reported fault.` },
+    verdict: { kind: "deny", message: `${blocked2} ${laneOutOfThePlanRail(cwd, sessionId)}` },
     events: [refusal(`plan-approval-${action}-blocked`, sessionId, code)]
   };
 }
@@ -3460,7 +3520,7 @@ function captureNativePresentation(envelope) {
       const failureCode = nativePlanFailureCode(failure);
       return blocked(`oso-code: plan not recorded [${code}]; failure state unavailable [${failureCode}]. Stop and repair storage before planning again.`, session, `${code}:${failureCode}`);
     }
-    const reason = `oso-code: plan not recorded [${code}].${detail} Present one complete replacement proposed_plan with the final approval marker.`;
+    const reason = `oso-code: plan not recorded [${code}].${detail} ${laneOutOfThePlanRail(envelope.cwd, session)}`;
     if (!(cause instanceof CodexPresentationFailure || cause instanceof PlanVerifyFailure) || code === "unreadable-transcript" || code === "foreign-session" || code === "unattested-turn") return blocked(`oso-code: plan not recorded [${code}]; stop and repair storage or native identity before planning again. Do not retry automatically.`, session, code);
     return blocked(reason, session, code);
   }
@@ -4583,8 +4643,11 @@ function toolNamesFor(host, gate) {
   const named = [];
   for (const row of TOOL_ROWS) {
     const name = row.names[host];
-    if (row.gate !== gate || name === "none" || named.includes(name)) continue;
-    named.push(name);
+    if (row.gate !== gate || name === "none") continue;
+    const spelt = host === "codex" && CODEX_NAMES_SPELLED_TWO_WAYS.includes(name) ? codexSpellingsOf(name) : [name];
+    for (const spelling of spelt) {
+      if (!named.includes(spelling)) named.push(spelling);
+    }
   }
   return named;
 }

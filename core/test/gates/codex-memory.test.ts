@@ -42,7 +42,7 @@ test("child, missing and contradictory native callers cannot mutate through dire
       const envelope = readEnvelope(JSON.stringify({ session_id: id, cwd: root, transcript_path: transcript, tool_name: "exec_command", tool_input: { command } }), caller);
       assert.equal(runGate(["unknown", "--allow", "exec_command"], envelope).verdict.kind, "deny", command);
     }
-    for (const tool of ["mem_context", "mem_search", "mem_get_observation", "mem_save", "mem_update", "mem_session_summary", "mem_save_prompt", "mem_judge", "mem_new_method", "mem_current_project"]) {
+    for (const tool of ["mem_context", "mem_search", "mem_get_observation", "mem_save", "mem_update", "mem_session_summary", "mem_save_prompt", "mem_judge", "mem_new_method", "mem_current_project", "mem_capture_passive"]) {
       const name = `mcp__engram__${tool}`;
       const envelope = readEnvelope(JSON.stringify({ session_id: id, cwd: root, transcript_path: transcript, tool_name: name, tool_input: { session_id: "forged", transcript_path: "forged" } }), caller);
       assert.equal(runGate(["unknown", "--allow", name], envelope).verdict.kind, ["mem_context", "mem_search", "mem_get_observation"].includes(tool) ? "allow" : "deny", tool);
@@ -138,6 +138,18 @@ test("a refusal past lineage keeps its own diagnosis, and the attested root keep
   assert.equal(verdict.kind, "deny");
   if (verdict.kind === "deny") assert.match(verdict.message, /require native ROOT attestation: unknown Engram method/);
   assert.deepEqual(events.map((logged) => logged.event), ["memory-write-denied"]);
+});
+
+test("mem_capture_passive saves each learning as an observation, so the root persists it and a child is told to hand it up", () => {
+  const caller = { host: "codex" as const, agentSession: "1", stateBin: "" };
+  const envelope = hostEnvelope(caller, { sessionId: id, cwd: root, transcriptPath: transcript, toolName: "mcp__engram__mem_capture_passive" });
+  writeFileSync(transcript, `${JSON.stringify({ type: "session_meta", payload: LINEAGE_PAYLOADS.root })}\n`);
+  assert.equal(runGate(["unknown", "--allow", envelope.toolName], envelope).verdict.kind, "allow");
+  writeFileSync(transcript, `${JSON.stringify({ type: "session_meta", payload: LINEAGE_PAYLOADS.child })}\n`);
+  const { verdict, events } = runGate(["unknown", "--allow", envelope.toolName], envelope);
+  assert.equal(verdict.kind, "deny");
+  if (verdict.kind === "deny") assert.match(verdict.message, /not yours to persist/);
+  assert.deepEqual(events.map((logged) => logged.event), ["memory-write-belongs-to-root"]);
 });
 
 test("known verification commands keep data separate from executable shell", () => {

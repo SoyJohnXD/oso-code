@@ -1,6 +1,6 @@
-import { NO_VERDICT, type GateOutcome, type SubagentStopVerdict } from "../hosts/envelope.ts";
-import { HandoffFailure, runHandoffPublish } from "../state/handoff.ts";
-import { isDirectory, type LoggedEvent } from "../state/store.ts";
+import { NO_VERDICT, type GateOutcome, type HookEnvelope, type SubagentStopVerdict } from "../hosts/envelope.ts";
+import { HandoffFailure, runHandoffPublish, runHandoffRecordUnpublished, type FinishedDelegation } from "../state/handoff.ts";
+import { causeOf, isDirectory, type LoggedEvent } from "../state/store.ts";
 import { hookSessionId, type GateDefinition, type GateRequest } from "./preflight.ts";
 
 const MARKER_LINE = /^oso-handoff:/;
@@ -15,44 +15,64 @@ export const HANDOFF_GATE: GateDefinition<SubagentStopVerdict> = {
   judge: judgeHandoff,
 };
 
+type Refusal = Readonly<{
+  envelope: HookEnvelope;
+  delegation: FinishedDelegation | undefined;
+  reason: string;
+  session: string;
+}>;
+
 function judgeHandoff({ envelope }: GateRequest): GateOutcome<SubagentStopVerdict> {
   const message = envelope.lastAssistantMessage;
   const markerLines = message.split("\n").filter((line) => MARKER_LINE.test(line));
   if (markerLines.length === 0) return NO_VERDICT;
 
-  const sessionId = hookSessionId(envelope);
+  const delegation = delegationNamedBy(envelope, markerLines.length);
+  const session = hookSessionId(envelope);
   const agentType = envelope.agentType;
-  if (sessionId === "") return publishFailed("missing session_id", "", agentType);
-  if (!isDirectory(envelope.cwd)) return publishFailed("missing or unreadable cwd", sessionId, agentType);
-  if (envelope.agentId === "") return publishFailed("missing agent_id", sessionId, agentType);
-  if (agentType === "") return publishFailed("missing agent_type", sessionId, "");
+  const refused = (reason: string) => publishFailed({ envelope, delegation, reason, session });
 
-  const named = MARKER.exec(message.split("\n")[0] ?? "");
-  if (markerLines.length !== 1 || named === null) {
-    return publishFailed(MALFORMED_MARKER, sessionId, agentType);
-  }
+  if (session === "") return refused("missing session_id");
+  if (!isDirectory(envelope.cwd)) return refused("missing or unreadable cwd");
+  if (envelope.agentId === "") return refused("missing agent_id");
+  if (agentType === "") return refused("missing agent_type");
+  if (delegation === undefined) return refused(MALFORMED_MARKER);
 
-  const slice = named[1] as string;
-  const attempt = named[2] as string;
   try {
-    runHandoffPublish(envelope.cwd, { slice, attempt, agentId: envelope.agentId, agentType }, sessionId);
+    runHandoffPublish(envelope.cwd, { ...delegation, agentType }, session);
   } catch (cause) {
     if (!(cause instanceof HandoffFailure)) throw cause;
-    return publishFailed("oso-state rejected the receipt", sessionId, agentType);
+    return refused("oso-state rejected the receipt");
   }
 
   return {
     verdict: NO_VERDICT.verdict,
-    events: [published(sessionId, `${agentType}:${slice}:${attempt}`)],
+    events: [published(session, `${agentType}:${delegation.slice}:${delegation.attempt}`)],
   };
 }
 
-function publishFailed(reason: string, session: string, agentType: string): GateOutcome<SubagentStopVerdict> {
+function delegationNamedBy(envelope: HookEnvelope, markerLineCount: number): FinishedDelegation | undefined {
+  const named = MARKER.exec(envelope.lastAssistantMessage.split("\n")[0] ?? "");
+  if (markerLineCount !== 1 || named === null || envelope.agentId === "") return undefined;
+  return { slice: named[1] as string, attempt: named[2] as string, agentId: envelope.agentId };
+}
+
+function publishFailed(refusal: Refusal): GateOutcome<SubagentStopVerdict> {
   return {
     verdict: NO_VERDICT.verdict,
-    events: [{ event: "handoff-publish-failed", session, command: agentType }],
-    stderr: `oso-code: SubagentStop could not publish its handoff: ${reason}\n`,
+    events: [{ event: "handoff-publish-failed", session: refusal.session, command: refusal.envelope.agentType }],
+    stderr: `oso-code: SubagentStop could not publish its handoff: ${refusal.reason}\n${recordOfTheFinish(refusal)}`,
   };
+}
+
+function recordOfTheFinish({ envelope, delegation, reason }: Refusal): string {
+  if (delegation === undefined || !isDirectory(envelope.cwd)) return "";
+  try {
+    runHandoffRecordUnpublished(envelope.cwd, delegation, reason);
+    return "";
+  } catch (cause) {
+    return `oso-code: SubagentStop could not record that its child finished either: ${causeOf(cause)}\n`;
+  }
 }
 
 function published(session: string, detail: string): LoggedEvent {
