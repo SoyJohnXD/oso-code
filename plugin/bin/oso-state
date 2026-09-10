@@ -6572,10 +6572,11 @@ function dispatch(argv) {
   const first = argv[0];
   if (first === "scan") return dispatchScan(argv.slice(1));
   const sessionId = first === "--session" ? sanitizeSession2(argv[1] ?? "") : "";
+  const wellFormed = first === "journal" || first === "handoff" || first === "--session" && sessionId !== "";
+  if (!wellFormed) throw new UsageError();
   migrateInferredTaskState(process.cwd(), sessionId);
   if (first === "journal") return runJournal(argv.slice(1));
   if (first === "handoff") return dispatchHandoff(argv.slice(1));
-  if (first !== "--session" || sessionId === "") throw new UsageError();
   const action = argv[2] ?? "";
   const remaining = argv.slice(3);
   switch (action) {

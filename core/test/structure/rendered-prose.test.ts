@@ -316,7 +316,7 @@ describe("freshness compares the inputs the bar never rewrites, so an index-byte
 
 const STAGED_WITNESS_OBLIGATIONS: readonly RegExp[] = [
   /the staged inventory `ls-files --stage -z` reports as mode\/OID\/stage per path/,
-  /`ls-files -v -z` reports for those same paths, which `--stage` never shows: an `assume-unchanged` or `skip-worktree` bit/,
+  /Those entry flags are what `--stage` never shows: an `assume-unchanged` or `skip-worktree` bit/,
   /never write the index, including intent-to-add/,
   /Require a quiescent tree and identical fingerprints; drift or inability to establish completeness blocks, never silently retries against a different tree/,
   /The git index's raw bytes are never a cause on their own/,

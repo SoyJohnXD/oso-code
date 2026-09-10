@@ -361,6 +361,19 @@ test("racing oso-state processes carry the state once, leaking no filesystem err
     assert.equal(migrationsRecorded(tree), 1);
   }));
 
+test("a malformed --session invocation is refused before any artifact carries, leaving every keyed family where it was", () =>
+  withTree((tree) => {
+    const legacy = armLegacyTaskHoldingEveryArtifact(tree);
+    const at = { cwd: tree.nested, env: { OSO_TASK_ROOT: tree.declaredRoot } };
+    const malformed = tree.run(["--session", "***", "show"], at);
+    assert.equal(malformed.exit, 1);
+    assert.match(malformed.stderr, /^usage: oso-state/);
+    for (const family of CARRIED_FAMILIES) assert.deepEqual(keysUnder(tree, family), [digest(legacy)], family);
+    assert.equal(existsSync(path.join(tree.stateRoot, `${digest(legacy)}.state`)), true);
+    assert.equal(existsSync(path.join(tree.stateRoot, `${digest(tree.declaredRoot)}.state`)), false);
+    assert.doesNotMatch(readFileSync(path.join(tree.stateRoot, "events.jsonl"), "utf8"), /identity-migrated/);
+  }));
+
 test("a pending plan survives the carry, so approve-plan still exits 0 under the declared identity", () =>
   withTree((tree) => {
     const declared = { OSO_TASK_ROOT: tree.declaredRoot };
