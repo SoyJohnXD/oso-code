@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, test } from "node:test";
 import {
   AGENT_ROLES,
+  type AgentRole,
   SHARED_REFERENCE_HOSTS,
   SKILL_STUBS,
   agentBodyPath,
@@ -41,6 +42,10 @@ function readRepoText(file: string): string {
 function readRepoTextOrNull(file: string): string | null {
   const absolute = path.join(repositoryRoot, file);
   return existsSync(absolute) ? readFileSync(absolute, "utf8") : null;
+}
+
+function shippedArtifactsOf(role: AgentRole): string[] {
+  return [agentSharedBodyPath(role), ...agentHosts(role).map((host) => agentOutputPath(role, host))];
 }
 
 function testCodexOwnerObligations(concern: string, obligations: readonly RegExp[]): void {
@@ -279,6 +284,36 @@ describe("readiness-driven Codex verification delivers instructions, not native 
   });
 });
 
+const FRESHNESS_EVIDENCE_LINE = /^ *- freshness: (.+?)  before: (.+?)  after: (.+)$/gm;
+const VERIFIER_FRESHNESS_LINES = 3;
+
+const FRESHNESS_OBLIGATIONS: readonly RegExp[] = [
+  /Bind evidence before and after checks to base, pending and staged content, dependencies and effective nonsecret environment; drift invalidates affected checks/,
+  /Generated outputs are no freshness input — the bar regenerates them/,
+  /the git index's raw bytes are never a cause on their own/,
+  /An incidental index change is neither automatically a code change nor automatically ignorable: establish its effect on those inputs/,
+];
+
+describe("freshness compares the inputs the bar never rewrites, so an index-byte change alone refutes no check", () => {
+  const verifier = AGENT_ROLES.find((role) => role.id === "oso-verifier")!;
+
+  for (const artifact of shippedArtifactsOf(verifier)) {
+    test(`${artifact} binds the effective inputs, excludes generated outputs and rules the index bytes out as a cause`, () => {
+      const shipped = readRepoText(artifact);
+      for (const obligation of FRESHNESS_OBLIGATIONS) assert.match(shipped, obligation);
+      const bound = [...shipped.matchAll(FRESHNESS_EVIDENCE_LINE)];
+      assert.equal(
+        bound.length,
+        VERIFIER_FRESHNESS_LINES,
+        `${artifact} carries ${bound.length} freshness line(s) in freshness/before/after order, not the ${VERIFIER_FRESHNESS_LINES} its two verdict shapes and worked verdict carry`,
+      );
+      for (const [line, identities = ""] of bound) {
+        assert.doesNotMatch(identities, /generated/i, `${line} still binds a generated identity the bar rewrites beneath it`);
+      }
+    });
+  }
+});
+
 describe("Codex rations no child-agent capacity of its own", () => {
   const RETIRED = [
     /Reserve an actually free verifier slot/,
@@ -296,30 +331,32 @@ describe("Codex rations no child-agent capacity of its own", () => {
 });
 
 const UNKNOWN_FIELD_REPORT_NAME = "unknown_fields:";
+const REPORT_LINE_NAMING_THE_FIELD = new RegExp(`^${UNKNOWN_FIELD_REPORT_NAME}`, "gm");
+const REPORT_SHAPE_DECLARATION = new RegExp(`^${UNKNOWN_FIELD_REPORT_NAME} <`, "m");
 
-type ClosedPayloadRule = Readonly<{ continues: RegExp; aborts: RegExp; declaresTheFieldInItsReportShape: boolean }>;
+type ClosedPayloadRule = Readonly<{ continues: RegExp; aborts: RegExp; reportLinesNamingTheField: number }>;
 
 const SKILL_EXECUTOR_RULE: ClosedPayloadRule = {
   continues: /name a field beyond those two under `unknown_fields:` rather than stopping for it/,
   aborts: /if either field is absent, empty or renamed, report blocked before any work/,
-  declaresTheFieldInItsReportShape: false,
+  reportLinesNamingTheField: 0,
 };
 
 const CLOSED_PAYLOAD_RULES: Readonly<Record<string, ClosedPayloadRule>> = {
   "oso-applier": {
     continues: /a field no kind declares is not one of those and never stops you — name it under `unknown_fields:` and work past it/,
     aborts: /a field a kind declares that arrives missing, empty or renamed, so report blocked before any work/,
-    declaresTheFieldInItsReportShape: true,
+    reportLinesNamingTheField: 2,
   },
   "oso-verifier": {
     continues: /A field this contract does not declare is named under `unknown_fields:` and verified past, never a refusal on its name alone/,
     aborts: /a field it does declare that arrives missing, empty or renamed is `blocked` before any check runs/,
-    declaresTheFieldInItsReportShape: true,
+    reportLinesNamingTheField: 3,
   },
   "oso-integrator": {
     continues: /a field this contract does not declare stops nothing and rides in the report under `unknown_fields:`/,
     aborts: /`status: blocked` — the payload does not match what git actually holds, or a field it declares above is missing, empty or renamed, which stops you before the first merge/,
-    declaresTheFieldInItsReportShape: true,
+    reportLinesNamingTheField: 2,
   },
   "oso-triage": SKILL_EXECUTOR_RULE,
   "oso-security-reviewer": SKILL_EXECUTOR_RULE,
@@ -334,7 +371,7 @@ describe("an undeclared payload field costs the parent one named line; a declare
 
   for (const role of AGENT_ROLES) {
     const rule = CLOSED_PAYLOAD_RULES[role.id];
-    for (const artifact of [agentSharedBodyPath(role), ...agentHosts(role).map((host) => agentOutputPath(role, host))]) {
+    for (const artifact of shippedArtifactsOf(role)) {
       test(`${artifact} names an undeclared field and works past it, and stops on a declared one missing, empty or renamed`, () => {
         assert.ok(rule !== undefined, `${role.id} carries no recorded closed-payload rule`);
         const shipped = readRepoText(artifact);
@@ -343,7 +380,13 @@ describe("an undeclared payload field costs the parent one named line; a declare
         assert.ok(continued.includes(UNKNOWN_FIELD_REPORT_NAME), `${artifact} never names an undeclared field and works past it`);
         assert.ok(aborted.includes("blocked"), `${artifact} never refuses a declared field that arrives missing, empty or renamed`);
         assert.ok(!aborted.includes(UNKNOWN_FIELD_REPORT_NAME), `${artifact} spells both outcomes with one name a parent cannot tell apart`);
-        if (rule.declaresTheFieldInItsReportShape) assert.match(shipped, /^unknown_fields: </m);
+        const reportLines = shipped.match(REPORT_LINE_NAMING_THE_FIELD) ?? [];
+        assert.equal(
+          reportLines.length,
+          rule.reportLinesNamingTheField,
+          `${artifact} names ${UNKNOWN_FIELD_REPORT_NAME} on ${reportLines.length} report line(s), not the ${rule.reportLinesNamingTheField} its report shapes and worked reports carry`,
+        );
+        if (rule.reportLinesNamingTheField > 0) assert.match(shipped, REPORT_SHAPE_DECLARATION);
       });
     }
   }

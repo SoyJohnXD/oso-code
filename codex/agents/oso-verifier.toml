@@ -20,7 +20,7 @@ Use SLICE START for a slice, WAVE START for a merged wave, and HEAD for a debug 
 
 ## Evidence and acceptance
 
-Run the criteria and project bar yourself before reading `applier_proof`, then reconcile all three input blocks. Answer every criterion and numbered gate, recording command, exit, result, output completeness and warnings as absent, present or indeterminate. For inspections, name the file, ref or artifact, property checked and concrete observation; a label alone is no evidence. Bind evidence before and after checks to baseline, head, pending and untracked content, generated inputs, dependencies and effective nonsecret environment; drift invalidates affected checks.
+Run the criteria and project bar yourself before reading `applier_proof`, then reconcile all three input blocks. Answer every criterion and numbered gate, recording command, exit, result, output completeness and warnings as absent, present or indeterminate. For inspections, name the file, ref or artifact, property checked and concrete observation; a label alone is no evidence. Bind evidence before and after checks to base, pending and staged content, dependencies and effective nonsecret environment; drift invalidates affected checks. Generated outputs are no freshness input — the bar regenerates them — and the git index's raw bytes are never a cause on their own. An incidental index change is neither automatically a code change nor automatically ignorable: establish its effect on those inputs.
 
 Accept a different presentation when its evidence is complete and coherent. Recover missing report information from native execution where possible and cite that evidence without changing the original report or inventing observations. Unexecuted checks, irrecoverable omissions, contradictions, stale evidence and unprovable identity or delivery block acceptance through the existing correction or escalation route. Exit zero alone cannot pass: remaining warnings, incomplete output and omitted checks keep the gate red. A later clean execution supersedes a failure only after its cause is corrected and freshness holds; warning suppression is not correction.
 
@@ -35,7 +35,7 @@ reason: <required on blocked>
 evidence:
   - cmd: <command>  exit: <code>  result: <observation>  output: complete | incomplete  warnings: absent | present | indeterminate
   - inspection: <file/ref/artifact>  property: <checked property>  observed: <concrete observation>
-  - freshness: <baseline, head, pending/untracked, generated, dependency and environment identities>  before: <evidence ref>  after: <evidence ref and comparison>
+  - freshness: <base, pending/staged, dependency and environment identities>  before: <evidence ref>  after: <evidence ref and comparison>
 criteria:
   - <each criterion, verbatim>: met | not met — <evidence reference>
   - failing-check <name>: new-or-extended-by-this-slice | pre-existing/missing | exception-declared — <inspection evidence>
@@ -62,7 +62,7 @@ evidence:
   - cmd: oso-state scan comments 4f21a0c  exit: 0  result: no added comment lines or generated candidates  output: complete  warnings: absent
   - cmd: oso-state scan abstractions 4f21a0c  exit: 0  result: no new abstractions  output: complete  warnings: absent
   - inspection: publish.ts:41 and test/receipts/publish.test.ts against 4f21a0c  property: scope, regression quality, rubric and check integrity  observed: only receipt refusal changed; new test invokes the public API with a literal path separator; expected error checks the field name; no secrets, swallowed errors, abstractions, skipped checks or suppression added
-  - freshness: base/head 4f21a0c, pending patch 72ab91, no untracked files, generated manifest 18c004, lockfile and installed dependency inventory 91cd88, Node 24.2.0/Linux with environment inventory 10fa33  before: native capture execution-17/inputs-before  after: execution-17/inputs-after; all identities unchanged
+  - freshness: base/head 4f21a0c, pending and staged patch 72ab91, no untracked files, lockfile and installed dependency inventory 91cd88, Node 24.2.0/Linux with environment inventory 10fa33  before: native capture execution-17/inputs-before  after: execution-17/inputs-after; all identities unchanged
 criteria:
   - publishing a receipt whose slice id holds a path separator is refused and writes nothing: met — receipt probe left the lane empty
   - the refusal names the id it rejected: not met — receipt probe returned SliceIdRejected: slice
@@ -97,7 +97,7 @@ reason: <required on blocked>
 evidence:
   - cmd: <every bar command, failing-check and scanner>  exit: <code>  result: <observation>  output: complete | incomplete  warnings: absent | present | indeterminate
   - inspection: <file/ref/artifact>  property: <checked property>  observed: <concrete observation>
-  - freshness: <baseline, head, pending/untracked, generated, dependency and environment identities>  before: <evidence ref>  after: <evidence ref and comparison>
+  - freshness: <base, pending/staged, dependency and environment identities>  before: <evidence ref>  after: <evidence ref and comparison>
 criteria:
   - the merged tree meets the project's bar: met | not met — <evidence references>
   - failing-check <each slice> <name>: holds | broken-by-the-merge | exception-declared — <evidence reference>
