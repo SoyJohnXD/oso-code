@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // core/src/state/cli.ts
 import { mkdirSync as mkdirSync8, readFileSync as readFileSync12 } from "node:fs";
-import path16 from "node:path";
+import path15 from "node:path";
 
 // core/src/scan/changed-lines.ts
 import { spawnSync } from "node:child_process";
@@ -1263,7 +1263,7 @@ var LOCK_STALE_SECONDS = 30;
 var LOCK_MAX_TRIES = 200;
 var LOCK_RETRY_MS = 50;
 var EVENTS_SCHEMA_VERSION = 2;
-var COMMAND_HEAD_BYTES = 120;
+var BYTES_A_GATE_CAN_READ = 3072;
 function sha256Hex(value) {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -1552,14 +1552,17 @@ function statOrUndefined(target) {
 }
 function serializeEvent(entry) {
   const client = path3.basename(process.env["CLAUDE_CODE_EXECPATH"] ?? "");
+  const command = entry.command ?? "";
+  const recorded = commandHead(command);
   const fields = [
     `"ts":"${jsonEscape(isoTimestamp())}"`,
     `"event":"${jsonEscape(entry.event)}"`,
-    `"command":"${jsonEscape(commandHead(entry.command ?? ""))}"`,
+    `"command":"${jsonEscape(recorded)}"`,
     `"session":"${jsonEscape(entry.session)}"`,
     `"client":"${jsonEscape(client)}"`,
     `"schema":${EVENTS_SCHEMA_VERSION}`
   ];
+  if (recorded !== command) fields.push(`"command_bytes":${Buffer.byteLength(command, "utf8")}`);
   if (entry.gate !== void 0 && entry.gate !== "") fields.push(`"gate":"${jsonEscape(entry.gate)}"`);
   if (entry.hookEvent !== void 0 && entry.hookEvent !== "") fields.push(`"hook_event":"${jsonEscape(entry.hookEvent)}"`);
   return `{${fields.join(",")}}`;
@@ -1595,9 +1598,9 @@ function escapedJsonCharacter(character) {
 }
 function commandHead(command) {
   const buffer = Buffer.from(command, "utf8");
-  if (buffer.length <= COMMAND_HEAD_BYTES) return command;
-  const boundaryByte = buffer[COMMAND_HEAD_BYTES];
-  let end = COMMAND_HEAD_BYTES;
+  if (buffer.length <= BYTES_A_GATE_CAN_READ) return command;
+  const boundaryByte = buffer[BYTES_A_GATE_CAN_READ];
+  let end = BYTES_A_GATE_CAN_READ;
   if (boundaryByte !== void 0 && (boundaryByte & 192) === 128) {
     while (end > 0 && ((buffer[end - 1] ?? 0) & 192) === 128) end -= 1;
     if (end > 0) end -= 1;
@@ -2393,7 +2396,7 @@ function namesAVerifyCheck(blockText) {
 import { spawn, spawnSync as spawnSync2 } from "node:child_process";
 import { randomBytes as randomBytes2 } from "node:crypto";
 import { appendFileSync as appendFileSync3, existsSync as existsSync7, lstatSync as lstatSync7, mkdirSync as mkdirSync7, readdirSync as readdirSync5, readFileSync as readFileSync11, rmdirSync as rmdirSync2, rmSync as rmSync6, writeFileSync as writeFileSync4 } from "node:fs";
-import path15 from "node:path";
+import path14 from "node:path";
 
 // core/src/hosts/hook-run.ts
 var GATE_ERROR_EXIT = 2;
@@ -2517,9 +2520,11 @@ var WORD_DELIMITERS = " 	\n;&|()<>";
 var UNREAD_PAYLOAD = { kind: "unreadPayload" };
 var COPROCESS_WORD = "coproc";
 var COPROCESS_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+var LOOKUP_BUILTIN = "command";
+var LOOKUP_FLAGS_RUNNING_NOTHING = /* @__PURE__ */ new Set(["-v", "-V"]);
 var PREFIX_WORDS = /* @__PURE__ */ new Set([
   "env",
-  "command",
+  LOOKUP_BUILTIN,
   "builtin",
   "exec",
   "nice",
@@ -2636,6 +2641,9 @@ function completesItsWordsFromStdin(word) {
 }
 function isSourcingBuiltin(word) {
   return SOURCING_BUILTINS.has(word);
+}
+function looksUpAWordInsteadOfRunningIt(word, option) {
+  return basenameOf(word) === LOOKUP_BUILTIN && option !== void 0 && LOOKUP_FLAGS_RUNNING_NOTHING.has(option);
 }
 function withSpacesForNewlines(text) {
   return text.replaceAll("\n", " ");
@@ -2897,6 +2905,7 @@ var CommandLineLexer = class _CommandLineLexer {
     while (at < this.commandTokens.length) {
       const leading = this.commandTokens[at];
       if (this.unreadExpandedExecutables && this.commandExpansions[at]) this.markUnread();
+      if (looksUpAWordInsteadOfRunningIt(leading, this.commandTokens[at + 1])) break;
       if (!isCommandPrefixWord(leading)) {
         if (prefixWord.startsWith("-")) this.markUnread();
         if (stdinCompletesTheWords) this.unreadStdin += UNREAD_PAYLOAD_MARKER;
@@ -3457,6 +3466,13 @@ function pluginRootAbove(moduleDirectory) {
     candidate = parent;
   }
 }
+var STATE_BIN_VARIABLE = "OSO_STATE_BIN";
+function installedStateBinPath() {
+  return path6.join(pluginRootDirectory(), "bin", "oso-state");
+}
+function stateBinPath(caller) {
+  return caller.stateBin !== "" ? caller.stateBin : installedStateBinPath();
+}
 function isVerifiedOsoCodeRoot(root) {
   return HOOKS_MANIFEST_LOCATIONS.some((segments) => hooksManifestFingerprinted(path6.join(root, ...segments)));
 }
@@ -3773,10 +3789,13 @@ function gitVerb(command) {
   }
   return "";
 }
-function isResidueCall(command, subjects) {
+function expandsItsCommandWord(command) {
   const commandWord = command.tokens[0];
-  if (commandWord === void 0) return false;
-  if (commandWord.includes("$")) return true;
+  return commandWord !== void 0 && commandWord.includes("$");
+}
+function isResidueCall(command, subjects) {
+  if (command.tokens[0] === void 0) return false;
+  if (expandsItsCommandWord(command)) return true;
   if (isGitCall(command)) {
     const verb = gitVerb(command);
     return verb === GIT_VERB_UNRESOLVED || verb.includes("$");
@@ -4501,7 +4520,7 @@ function judgeProductionBoundary({ envelope }) {
   const stateFile = stateFileFor(envelope.cwd);
   const runMarker = runMarkerOf(stateFile, session);
   if (runMarker === "unmarked") return ALLOWED;
-  const boundary = { runMarker, stateFile, session };
+  const boundary = { runMarker, stateFile, session, caller: envelope.caller };
   if (envelope.toolName.includes("deploy")) {
     return denyProductionBoundary(boundary, mcpDeployStaysWithTheOperator(session), envelope.toolName);
   }
@@ -4520,8 +4539,8 @@ function judgeAgainstDenyPatterns(boundary, command) {
   }
 }
 function judgeCommandLine(boundary, command) {
-  const { runMarker, session } = boundary;
-  switch (lineVerdict(command, judgeProductionLine)) {
+  const { runMarker, session, caller } = boundary;
+  switch (lineVerdict(command, (lexed, held2) => judgeProductionLine(lexed, held2, caller))) {
     case "production":
       return denyProductionBoundary(boundary, deployStaysWithTheOperator(session), command);
     case "unread":
@@ -4578,11 +4597,17 @@ function deniedUnderTheBoundary(boundary, denial) {
   }
   return denied({ gate: "proddeploy", session: boundary.session, ...denial });
 }
-function judgeProductionLine(command, verdict) {
+function judgeProductionLine(command, verdict, caller) {
   if (runsAProductionDeploy(command)) return "production";
-  if (verdict !== "production" && verdict !== "unread" && pushesOffTheRunBranch(command)) return "push";
+  if (verdict === "production") return verdict;
+  if (verdict !== "unread" && pushesOffTheRunBranch(command)) return "push";
+  if (expandsItsCommandWord(command) && !callsTheHarnessStateBinary(command, caller)) return "unread";
   if (verdict === "clear" && isResidueCall(command, PRODUCTION_BOUNDARY_SUBJECTS)) return "residue";
   return verdict;
+}
+function callsTheHarnessStateBinary(command, caller) {
+  const installedName = basenameOf(stateBinPath(caller));
+  return command.tokens[0] === `\${${STATE_BIN_VARIABLE}:-${installedName}}`;
 }
 function runsAProductionDeploy(command) {
   const deployCli = deployCommandName(command);
@@ -4752,10 +4777,6 @@ var SKILL_PREFIXES = { claude: "/oso-code:", codex: "$oso-code:", opencode: "/os
 function skillPrefixFor(host) {
   return SKILL_PREFIXES[host];
 }
-function stateBinPath(caller) {
-  if (caller.stateBin !== "") return caller.stateBin;
-  return path9.join(pluginRootDirectory(), "bin", "oso-state");
-}
 function contentOf(stateFile) {
   const read = readStateFile(stateFile);
   return read.kind === "ok" ? read.content : "";
@@ -4766,7 +4787,6 @@ function quoted(value) {
 
 // core/src/gates/statebin.ts
 import { appendFileSync as appendFileSync2 } from "node:fs";
-import path10 from "node:path";
 var STATEBIN_GATE = {
   gate: "statebin",
   errorSubject: "the state-bin gate",
@@ -4775,8 +4795,7 @@ var STATEBIN_GATE = {
 function judgeStatebin(_request) {
   const envFile = process.env["CLAUDE_ENV_FILE"];
   if (envFile === void 0 || envFile === "") return NO_VERDICT;
-  const stateBin = path10.join(pluginRootDirectory(), "bin", "oso-state");
-  appendFileSync2(envFile, `export OSO_STATE_BIN=${stateBin}
+  appendFileSync2(envFile, `export ${STATE_BIN_VARIABLE}=${installedStateBinPath()}
 `);
   return NO_VERDICT;
 }
@@ -4784,7 +4803,7 @@ function judgeStatebin(_request) {
 // core/src/gates/teardown.ts
 import { execFileSync as execFileSync3 } from "node:child_process";
 import { existsSync as existsSync5, readdirSync as readdirSync2, renameSync as renameSync3, rmSync as rmSync5, rmdirSync, statSync as statSync5 } from "node:fs";
-import path11 from "node:path";
+import path10 from "node:path";
 var ABANDONED_STATE_DAYS = 7;
 var JOURNAL_KEYED_WAIT_MARK_SUFFIX = ".waiting";
 var EVENTS_LOG_RETENTION_DAYS = 30;
@@ -4839,7 +4858,7 @@ function stateArmedBy(sessionId) {
 }
 function removeWorktreesOf(sessionId, stateFile) {
   if (sessionId === "") return;
-  const sessionWorktrees = path11.join(stateRootDirectory(), "worktrees", sessionId);
+  const sessionWorktrees = path10.join(stateRootDirectory(), "worktrees", sessionId);
   if (!isDirectory(sessionWorktrees)) return;
   if (stateFile === void 0) return;
   const repoPath = stateValueOf(stateFile, "repo_path");
@@ -4887,7 +4906,7 @@ function clearRoadmapInFlightOf(sessionId) {
   }
 }
 function rotateAgedEventsLog() {
-  const eventsLog = path11.join(stateRootDirectory(), "events.jsonl");
+  const eventsLog = path10.join(stateRootDirectory(), "events.jsonl");
   if (!olderThanDays(eventsLog, EVENTS_LOG_RETENTION_DAYS)) return;
   renameSync3(eventsLog, `${eventsLog}.1`);
 }
@@ -4911,10 +4930,10 @@ function stateValueOf(stateFile, key) {
   return read.kind === "ok" ? stateValue(read.content, key) : "";
 }
 function stateFilesSorted() {
-  return directoryEntries2(stateRootDirectory()).filter((name) => name.endsWith(".state")).sort().map((name) => path11.join(stateRootDirectory(), name)).filter((target) => isFile(target));
+  return directoryEntries2(stateRootDirectory()).filter((name) => name.endsWith(".state")).sort().map((name) => path10.join(stateRootDirectory(), name)).filter((target) => isFile(target));
 }
 function subdirectoriesSorted(directory) {
-  return directoryEntries2(directory).sort().map((name) => path11.join(directory, name)).filter((target) => isDirectory(target));
+  return directoryEntries2(directory).sort().map((name) => path10.join(directory, name)).filter((target) => isDirectory(target));
 }
 function directoryEntries2(directory) {
   try {
@@ -4947,6 +4966,7 @@ function gitWorktreePrune(repoPath) {
 // core/src/gates/unknown.ts
 var TOOL_NAME = /^[A-Za-z0-9_:.-]+$/;
 var PENDING_APPROVAL_MESSAGE = 'oso-code: plan approval is pending. Use Codex native "Implement the plan." approval, or send exactly CANCEL OSO PLAN to abandon it, before using local tools.';
+var LINEAGE_OF_ANYONE_BUT_THE_ROOT = "child, missing, or contradictory native lineage";
 var UNKNOWN_TOOL_GATE = {
   gate: "unknown",
   errorSubject: "the unknown-tool gate",
@@ -4998,13 +5018,27 @@ function codexMemoryDenial(envelope) {
   const known = !memoryTool || TOOL_ROWS.some((row) => row.names.codex === tool);
   const cause = known ? unattestedCodexRoot(envelope) : "unknown Engram method";
   if (cause === void 0) return void 0;
-  return denied({
-    gate: "unknown",
-    session: envelope.sessionId,
-    event: !memoryTool && cliVerdict === "unread" ? "shell-effects-unestablished" : "memory-write-denied",
-    detail: tool,
-    message: !memoryTool && cliVerdict === "unread" ? `oso-code: shell effects could not be established; native ROOT attestation is required: ${cause}.` : `oso-code: semantic memory mutations require native ROOT attestation: ${cause}.`
-  });
+  const shellEffectsAreUnread = !memoryTool && cliVerdict === "unread";
+  const refusal2 = memoryRefusal(cause, shellEffectsAreUnread);
+  return denied({ gate: "unknown", session: envelope.sessionId, detail: tool, ...refusal2 });
+}
+function memoryRefusal(cause, shellEffectsAreUnread) {
+  if (shellEffectsAreUnread) {
+    return {
+      event: "shell-effects-unestablished",
+      message: `oso-code: shell effects could not be established; native ROOT attestation is required: ${cause}.`
+    };
+  }
+  if (cause === LINEAGE_OF_ANYONE_BUT_THE_ROOT) {
+    return {
+      event: "memory-write-belongs-to-root",
+      message: `oso-code: semantic memory belongs to the root session, and this call carries ${cause}, so it is not yours to persist. Continue your slice and hand the observation to the parent in your report; the parent persists it. This refusal ends the write, never your work.`
+    };
+  }
+  return {
+    event: "memory-write-denied",
+    message: `oso-code: semantic memory mutations require native ROOT attestation: ${cause}.`
+  };
 }
 function unattestedCodexRoot(envelope) {
   try {
@@ -5012,7 +5046,7 @@ function unattestedCodexRoot(envelope) {
     const deadline = performance.now() + CODEX_METADATA_READINESS_MS;
     const native = readCodexSessionMetadata(envelope.transcriptPath, deadline);
     const rootEntrypoint = native.source === "cli" || native.source === "exec";
-    if (native.id !== envelope.sessionId || !rootEntrypoint || native.parentThreadId !== void 0 || native.agentPath !== void 0 || native.agentRole !== void 0 || native.threadSpawn !== void 0) return "child, missing, or contradictory native lineage";
+    if (native.id !== envelope.sessionId || !rootEntrypoint || native.parentThreadId !== void 0 || native.agentPath !== void 0 || native.agentRole !== void 0 || native.threadSpawn !== void 0) return LINEAGE_OF_ANYONE_BUT_THE_ROOT;
     if (nativeRepositoryIdentity(native.cwd, deadline).commonDirectory !== nativeRepositoryIdentity(envelope.cwd, deadline).commonDirectory) return "native repository mismatch";
     return void 0;
   } catch (error) {
@@ -5051,7 +5085,7 @@ function allowlistHost(host) {
 // core/src/gates/version.ts
 import { execFileSync as execFileSync4 } from "node:child_process";
 import { readFileSync as readFileSync7 } from "node:fs";
-import path12 from "node:path";
+import path11 from "node:path";
 var RELEASE_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/;
 var GITHUB_URL_PREFIX = "https://github.com/";
 var FETCH_CONNECT_SECONDS = 2;
@@ -5079,10 +5113,10 @@ function judgeVersion({ envelope }) {
   return { verdict: { kind: "context", additionalContext: context }, events: [] };
 }
 function pluginManifestFile() {
-  return path12.join(pluginRootDirectory(), ".claude-plugin", "plugin.json");
+  return path11.join(pluginRootDirectory(), ".claude-plugin", "plugin.json");
 }
 function publishedReleaseCacheFile() {
-  return path12.join(stateRootDirectory(), "published-release");
+  return path11.join(stateRootDirectory(), "published-release");
 }
 function repositorySlugOf(repositoryUrl) {
   if (!repositoryUrl.startsWith(GITHUB_URL_PREFIX) || repositoryUrl.length === GITHUB_URL_PREFIX.length) {
@@ -5093,7 +5127,7 @@ function repositorySlugOf(repositoryUrl) {
 }
 function marketplaceServesRepository(repositorySlug) {
   const home = homeDirectoryFrom(process.platform, process.env);
-  const marketplacesFile = path12.join(home, ".claude", "plugins", "known_marketplaces.json");
+  const marketplacesFile = path11.join(home, ".claude", "plugins", "known_marketplaces.json");
   const registrations = readFileOrEmpty(marketplacesFile).replace(/\s/g, "");
   return registrations.includes(`"repo":"${repositorySlug}"`);
 }
@@ -5112,7 +5146,7 @@ function cachedPublishedRelease(cacheFile) {
 function refreshPublishedReleaseCache(cacheFile, repositorySlug) {
   try {
     writeFileAtomically(
-      path12.dirname(cacheFile),
+      path11.dirname(cacheFile),
       cacheFile,
       fetchedHighestReleaseVersion(repositorySlug),
       ".published-release."
@@ -5232,7 +5266,7 @@ function explainedCause(cause) {
 
 // core/src/state/scratch/materialization.ts
 import { copyFileSync, lstatSync as lstatSync5, mkdirSync as mkdirSync6, readdirSync as readdirSync3, readFileSync as readFileSync8, realpathSync as realpathSync3, statfsSync } from "node:fs";
-import path13 from "node:path";
+import path12 from "node:path";
 function readRecipe(sourceRoot, recipePath) {
   const file = safeRelativePath(sourceRoot, recipePath);
   assertCanonicalPath(file);
@@ -5293,8 +5327,8 @@ function copyInventory(sourceRoot, destination, inventory) {
     const source = safeRelativePath(sourceRoot, entry.name);
     const target = safeRelativePath(destination, entry.name);
     assertCanonicalPath(source);
-    mkdirSync6(path13.dirname(target), { recursive: true, mode: 448 });
-    assertCanonicalPath(path13.dirname(target));
+    mkdirSync6(path12.dirname(target), { recursive: true, mode: 448 });
+    assertCanonicalPath(path12.dirname(target));
     if (entry.kind === "directory") mkdirSync6(target, { mode: 448 });
     else {
       copyFileSync(source, target);
@@ -5303,11 +5337,11 @@ function copyInventory(sourceRoot, destination, inventory) {
   }
 }
 function assertCanonicalPath(target) {
-  const absolute = path13.resolve(target);
+  const absolute = path12.resolve(target);
   if (sensitivePath(absolute)) throw new Error(`scratch sensitive path refused: ${absolute}`);
-  let cursor = path13.parse(absolute).root;
-  for (const component of absolute.slice(cursor.length).split(path13.sep)) {
-    cursor = path13.join(cursor, component);
+  let cursor = path12.parse(absolute).root;
+  for (const component of absolute.slice(cursor.length).split(path12.sep)) {
+    cursor = path12.join(cursor, component);
     if (lstatSync5(cursor).isSymbolicLink() || realpathSync3(cursor) !== cursor) {
       throw new Error(`scratch link/reparse/junction/case alias refused: ${cursor}`);
     }
@@ -5317,8 +5351,8 @@ function safeRelativePath(root, name) {
   if (name === "" || name.includes("\\") || /[\0\r\n]/.test(name) || name.split("/").some((part) => part === "." || part === ".." || part === "")) {
     throw new Error(`scratch unsafe relative path: ${name}`);
   }
-  const target = path13.resolve(root, name);
-  if (!target.startsWith(`${root}${path13.sep}`)) throw new Error(`scratch path escapes root: ${name}`);
+  const target = path12.resolve(root, name);
+  if (!target.startsWith(`${root}${path12.sep}`)) throw new Error(`scratch path escapes root: ${name}`);
   return target;
 }
 function sensitivePath(name) {
@@ -5327,7 +5361,7 @@ function sensitivePath(name) {
 
 // core/src/state/scratch/recipe.ts
 import { existsSync as existsSync6, lstatSync as lstatSync6, readFileSync as readFileSync9, realpathSync as realpathSync4 } from "node:fs";
-import path14 from "node:path";
+import path13 from "node:path";
 function reviewCommand(sourceRoot, recipe, argv) {
   if (argv[0] === "npm") {
     reviewNpmCommand(sourceRoot, recipe, argv);
@@ -5337,7 +5371,7 @@ function reviewCommand(sourceRoot, recipe, argv) {
   if (argv[0] !== process.execPath || argv.length !== 2 || !/\.(?:mjs|cjs|js)$/.test(scriptName) || !inventoryFor(sourceRoot, recipe).some((entry) => entry.name === scriptName && !entry.dependency)) {
     throw new Error("scratch refuses opaque nesting; use an inventoried foreground Node script or reviewed npm route");
   }
-  const script = readFileSync9(path14.join(sourceRoot, scriptName), "utf8");
+  const script = readFileSync9(path13.join(sourceRoot, scriptName), "utf8");
   if (recipe.cacheRouting !== "node-only" || recipe.tools !== void 0 && JSON.stringify(recipe.tools) !== '["node"]') throw new Error("scratch Node checks require node-only cache/tool routing");
   if (/\b(?:detached|setsid|daemon|unref|npm|npx|require|eval|Function|Worker|createRequire|getBuiltinModule)\b|child_process|node:cluster|\bimport\s*\(/.test(script)) {
     throw new Error("scratch recipe contains unsupported detach/daemon/process nesting");
@@ -5358,7 +5392,7 @@ function reviewNpmCommand(sourceRoot, recipe, argv) {
   }
   const inventory = inventoryFor(sourceRoot, recipe);
   if (!inventory.some((entry) => entry.name === "package.json")) throw new Error("scratch npm requires inventoried package.json");
-  const manifest = JSON.parse(readFileSync9(path14.join(sourceRoot, "package.json"), "utf8"));
+  const manifest = JSON.parse(readFileSync9(path13.join(sourceRoot, "package.json"), "utf8"));
   const builders = ["build-oso-state", "build-gates", "build-prose", "build-oso"];
   const expected = route === "typecheck" ? "tsc -p tsconfig.json" : builders.map((builder) => `node core/scripts/${builder}.mjs${route === "check" ? " --check" : ""}`).join(" && ");
   if (manifest.scripts?.[route] !== expected || manifest.scripts?.[`pre${route}`] !== void 0 || manifest.scripts?.[`post${route}`] !== void 0 || manifest.config !== void 0) {
@@ -5375,7 +5409,7 @@ function reviewNpmCommand(sourceRoot, recipe, argv) {
   }
   if (route !== "typecheck") {
     for (const name of required) {
-      if (/\b(?:spawn|execFile|execSync|detached|setsid|daemon|unref|require|eval|Function|Worker|createRequire|getBuiltinModule)\b|child_process|node:cluster/.test(readFileSync9(path14.join(sourceRoot, name), "utf8"))) {
+      if (/\b(?:spawn|execFile|execSync|detached|setsid|daemon|unref|require|eval|Function|Worker|createRequire|getBuiltinModule)\b|child_process|node:cluster/.test(readFileSync9(path13.join(sourceRoot, name), "utf8"))) {
         throw new Error(`scratch builder command has unreviewed process nesting: ${name}`);
       }
     }
@@ -5385,14 +5419,14 @@ function reviewNpmCommand(sourceRoot, recipe, argv) {
 function runtimeInventory(recipe) {
   const node = runtimeFile(process.execPath);
   if (recipe.cacheRouting === "node-only") return { node };
-  const npm = runtimeFile(realpathSync4(path14.join(path14.dirname(process.execPath), "npm")));
-  if (path14.basename(npm.path) !== "npm-cli.js") throw new Error("scratch requires the Node installation's npm CLI, not a shim");
-  const npmRoot = path14.resolve(npm.path, "../..");
-  const builtin = path14.join(npmRoot, "npmrc");
+  const npm = runtimeFile(realpathSync4(path13.join(path13.dirname(process.execPath), "npm")));
+  if (path13.basename(npm.path) !== "npm-cli.js") throw new Error("scratch requires the Node installation's npm CLI, not a shim");
+  const npmRoot = path13.resolve(npm.path, "../..");
+  const builtin = path13.join(npmRoot, "npmrc");
   if (existsSync6(builtin) && readFileSync9(builtin, "utf8").split(/\r?\n/).some((line) => line.trim() !== "" && !/^\s*[#;]/.test(line) && !/^\s*(?:prefix|globalconfig)\s*=/.test(line))) {
     throw new Error("scratch npm builtin settings are unreviewed; use no-export");
   }
-  return { node, npm, shell: runtimeFile(realpathSync4("/bin/sh")), npmPackage: runtimeFile(path14.join(npmRoot, "package.json")) };
+  return { node, npm, shell: runtimeFile(realpathSync4("/bin/sh")), npmPackage: runtimeFile(path13.join(npmRoot, "package.json")) };
 }
 function runtimeFile(file) {
   assertCanonicalPath(file);
@@ -5410,17 +5444,17 @@ function assertInheritedEnvironment() {
 }
 function prepareEnvironment(payload, recipe, runtime) {
   const environment = {
-    HOME: path14.join(payload, "home"),
-    USERPROFILE: path14.join(payload, "home"),
-    CODEX_HOME: path14.join(payload, "codex"),
-    XDG_CONFIG_HOME: path14.join(payload, "config"),
-    XDG_CACHE_HOME: path14.join(payload, "cache"),
-    XDG_DATA_HOME: path14.join(payload, "data"),
-    XDG_STATE_HOME: path14.join(payload, "state"),
-    TMP: path14.join(payload, "tmp"),
-    TEMP: path14.join(payload, "tmp"),
-    TMPDIR: path14.join(payload, "tmp"),
-    PATH: `${path14.join(payload, "bin")}:${path14.dirname(runtime.node.path)}`,
+    HOME: path13.join(payload, "home"),
+    USERPROFILE: path13.join(payload, "home"),
+    CODEX_HOME: path13.join(payload, "codex"),
+    XDG_CONFIG_HOME: path13.join(payload, "config"),
+    XDG_CACHE_HOME: path13.join(payload, "cache"),
+    XDG_DATA_HOME: path13.join(payload, "data"),
+    XDG_STATE_HOME: path13.join(payload, "state"),
+    TMP: path13.join(payload, "tmp"),
+    TEMP: path13.join(payload, "tmp"),
+    TMPDIR: path13.join(payload, "tmp"),
+    PATH: `${path13.join(payload, "bin")}:${path13.dirname(runtime.node.path)}`,
     LANG: "C",
     LC_ALL: "C",
     NODE_DISABLE_COMPILE_CACHE: "1"
@@ -5428,15 +5462,15 @@ function prepareEnvironment(payload, recipe, runtime) {
   if (recipe.cacheRouting === "node-only") return environment;
   return {
     ...environment,
-    npm_config_cache: path14.join(payload, "cache/npm"),
-    npm_config_userconfig: path14.join(payload, "config/npm-user"),
-    npm_config_globalconfig: path14.join(payload, "config/npm-global"),
+    npm_config_cache: path13.join(payload, "cache/npm"),
+    npm_config_userconfig: path13.join(payload, "config/npm-user"),
+    npm_config_globalconfig: path13.join(payload, "config/npm-global"),
     npm_config_ignore_scripts: "true",
-    npm_config_script_shell: path14.join(payload, "bin/npm-shell"),
+    npm_config_script_shell: path13.join(payload, "bin/npm-shell"),
     npm_config_update_notifier: "false",
     npm_config_audit: "false",
     npm_config_fund: "false",
-    ESBUILD_BINARY_PATH: path14.join(payload, `work/node_modules/@esbuild/linux-${process.arch}/bin/esbuild`)
+    ESBUILD_BINARY_PATH: path13.join(payload, `work/node_modules/@esbuild/linux-${process.arch}/bin/esbuild`)
   };
 }
 
@@ -5574,13 +5608,13 @@ function ownerToken(flags) {
   return sha256Hex(flags["--owner"] ?? "");
 }
 function verificationDirectory(action) {
-  const stateRoot = path15.resolve(stateRootDirectory());
-  const directory = path15.join(stateRoot, "verification");
-  const cwd = path15.resolve(process.cwd());
-  const insideRegistry = cwd.startsWith(`${directory}${path15.sep}`);
-  if (directory === cwd || directory.startsWith(`${cwd}${path15.sep}`) || action === "create" && insideRegistry) throw new Error("scratch source-root separation required before registry creation");
+  const stateRoot = path14.resolve(stateRootDirectory());
+  const directory = path14.join(stateRoot, "verification");
+  const cwd = path14.resolve(process.cwd());
+  const insideRegistry = cwd.startsWith(`${directory}${path14.sep}`);
+  if (directory === cwd || directory.startsWith(`${cwd}${path14.sep}`) || action === "create" && insideRegistry) throw new Error("scratch source-root separation required before registry creation");
   let existing = stateRoot;
-  while (!existsSync7(existing)) existing = path15.dirname(existing);
+  while (!existsSync7(existing)) existing = path14.dirname(existing);
   assertCanonicalPath(existing);
   mkdirSync7(stateRoot, { recursive: true, mode: 448 });
   assertCanonicalPath(stateRoot);
@@ -5591,7 +5625,7 @@ function verificationDirectory(action) {
   return directory;
 }
 function withAdmission(directory, flags, operation) {
-  const lock = path15.join(directory, ".admission");
+  const lock = path14.join(directory, ".admission");
   try {
     mkdirSync7(lock, { mode: 448 });
   } catch (error) {
@@ -5599,7 +5633,7 @@ function withAdmission(directory, flags, operation) {
     throw error;
   }
   try {
-    writeFileSync4(path15.join(lock, "owner.json"), JSON.stringify({ owner: ownerToken(flags), process: processIdentity(process.pid) }), { flag: "wx", mode: 384 });
+    writeFileSync4(path14.join(lock, "owner.json"), JSON.stringify({ owner: ownerToken(flags), process: processIdentity(process.pid) }), { flag: "wx", mode: 384 });
     return operation();
   } finally {
     assertPrivateDirectory(lock);
@@ -5608,15 +5642,15 @@ function withAdmission(directory, flags, operation) {
 }
 function recoverAdmission(directory, flags) {
   ownedRecord(directory, flags);
-  const lock = path15.join(directory, ".admission");
+  const lock = path14.join(directory, ".admission");
   if (!existsSync7(lock)) return;
   assertPrivateDirectory(lock);
   const original = lstatSync7(lock);
-  const ownerFile = path15.join(lock, "owner.json");
+  const ownerFile = path14.join(lock, "owner.json");
   assertCanonicalPath(ownerFile);
   const admission = JSON.parse(readFileSync11(ownerFile, "utf8"));
   if (admission.owner !== ownerToken(flags) || identityIsLive(admission.process)) throw new Error("scratch admission owner is foreign or active");
-  const reconciliation = path15.join(lock, "recovery");
+  const reconciliation = path14.join(lock, "recovery");
   mkdirSync7(reconciliation, { mode: 448 });
   const current = lstatSync7(lock);
   if (current.dev !== original.dev || current.ino !== original.ino) {
@@ -5628,9 +5662,9 @@ function recoverAdmission(directory, flags) {
   rmdirSync2(lock);
 }
 function createScratch(directory, flags) {
-  const sourceRoot = path15.resolve(process.cwd());
+  const sourceRoot = path14.resolve(process.cwd());
   assertCanonicalPath(sourceRoot);
-  if (directory === sourceRoot || directory.startsWith(`${sourceRoot}${path15.sep}`) || sourceRoot.startsWith(`${directory}${path15.sep}`)) throw new Error("scratch source-root separation required");
+  if (directory === sourceRoot || directory.startsWith(`${sourceRoot}${path14.sep}`) || sourceRoot.startsWith(`${directory}${path14.sep}`)) throw new Error("scratch source-root separation required");
   const coordinates = createCoordinates(flags);
   const recipe = readRecipe(sourceRoot, flags["--recipe"] ?? "");
   const inventory = inventoryFor(sourceRoot, recipe);
@@ -5692,10 +5726,10 @@ function checkSourceCommand(sourceRoot, run, recipe, argv) {
 function capacityReservation(recipe, inventory) {
   const parents = /* @__PURE__ */ new Set();
   for (const entry of inventory) {
-    let parent = path15.dirname(entry.name);
+    let parent = path14.dirname(entry.name);
     while (parent !== ".") {
       parents.add(parent);
-      parent = path15.dirname(parent);
+      parent = path14.dirname(parent);
     }
   }
   return {
@@ -5711,7 +5745,7 @@ function admitReservation(directory, previous, reservation) {
 function prepareRecord(allocation) {
   const { sourceRoot, recipe, runtime, inventory } = allocation;
   const id = randomBytes2(16).toString("hex");
-  const root = path15.join(allocation.directory, id);
+  const root = path14.join(allocation.directory, id);
   mkdirSync7(root, { mode: 448 });
   const record = {
     version: 1,
@@ -5727,7 +5761,7 @@ function prepareRecord(allocation) {
     recipe,
     runtime,
     inventory,
-    environment: prepareEnvironment(path15.join(root, "payload"), recipe, runtime),
+    environment: prepareEnvironment(path14.join(root, "payload"), recipe, runtime),
     reservation: allocation.reservation,
     commands: [],
     logBytes: 0,
@@ -5745,22 +5779,22 @@ function prepareRecord(allocation) {
 }
 function materializePayload(record) {
   const { sourceRoot, recipe, runtime, inventory } = record;
-  const payload = path15.join(record.root, "payload");
+  const payload = path14.join(record.root, "payload");
   try {
-    mkdirSync7(path15.join(payload, "work"), { recursive: true, mode: 448 });
-    for (const payloadDirectory of ["home", "codex", "config", "cache", "data", "state", "tmp", "bin", "cache/npm"]) mkdirSync7(path15.join(payload, payloadDirectory), { recursive: true, mode: 448 });
+    mkdirSync7(path14.join(payload, "work"), { recursive: true, mode: 448 });
+    for (const payloadDirectory of ["home", "codex", "config", "cache", "data", "state", "tmp", "bin", "cache/npm"]) mkdirSync7(path14.join(payload, payloadDirectory), { recursive: true, mode: 448 });
     if (recipe.cacheRouting === "node-npm") {
       const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
-      writeFileSync4(path15.join(payload, "bin", "tsc"), `#!${runtime.shell.path}
-exec ${quote(runtime.node.path)} ${quote(path15.join(payload, "work/node_modules/typescript/bin/tsc"))} "$@"
+      writeFileSync4(path14.join(payload, "bin", "tsc"), `#!${runtime.shell.path}
+exec ${quote(runtime.node.path)} ${quote(path14.join(payload, "work/node_modules/typescript/bin/tsc"))} "$@"
 `, { mode: 448 });
-      writeFileSync4(path15.join(payload, "bin", "npm-shell"), `#!${runtime.shell.path}
+      writeFileSync4(path14.join(payload, "bin", "npm-shell"), `#!${runtime.shell.path}
 PATH=${quote(record.environment["PATH"])}
 export PATH
 exec ${quote(runtime.shell.path)} "$@"
 `, { mode: 448 });
     }
-    copyInventory(sourceRoot, path15.join(payload, "work"), inventory);
+    copyInventory(sourceRoot, path14.join(payload, "work"), inventory);
     if (sha256Hex(JSON.stringify({ recipe, inventory: inventoryFor(sourceRoot, recipe) })) !== record.sourceDigest) throw new Error("scratch source changed during materialization");
     record.state = "ready";
     saveRecord(record);
@@ -5781,7 +5815,7 @@ async function runScratch(directory, flags, argv) {
     if (sha256Hex(JSON.stringify({ recipe: record2.recipe, inventory: inventoryFor(record2.sourceRoot, record2.recipe) })) !== record2.sourceDigest || sourceRef(record2.sourceRoot) !== record2.sourceRef) throw new Error("scratch source fingerprint changed; close and obtain fresh verification");
     if (JSON.stringify(runtimeInventory(record2.recipe)) !== JSON.stringify(record2.runtime)) throw new Error("scratch runtime changed; fresh verification required");
     checkSourceCommand(record2.sourceRoot, record2.run, record2.recipe, argv);
-    assertDeletionTree(path15.join(record2.root, "payload"));
+    assertDeletionTree(path14.join(record2.root, "payload"));
     record2.state = "starting";
     record2.supervisor = processIdentity(process.pid);
     record2.commands.push({ purpose: flags["--purpose"], argv, started: (/* @__PURE__ */ new Date()).toISOString(), exit: null, outcome: "incomplete" });
@@ -5792,7 +5826,7 @@ async function runScratch(directory, flags, argv) {
 }
 async function supervise(record, argv, timeout) {
   const execution = commandRuntime(argv, record.runtime);
-  const child = spawn(execution[0], execution.slice(1), { cwd: path15.join(record.root, "payload", "work"), env: record.environment, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(execution[0], execution.slice(1), { cwd: path14.join(record.root, "payload", "work"), env: record.environment, detached: true, stdio: ["ignore", "pipe", "pipe"] });
   const evidence = record.commands.at(-1);
   let stopped = "";
   let failure;
@@ -5909,7 +5943,7 @@ function appendBoundedLog(record, chunk) {
   const remaining = maxLogBytes - record.logBytes;
   const kept = chunk.subarray(0, remaining);
   if (kept.length !== 0) {
-    appendFileSync3(path15.join(record.root, "raw.log"), kept, { mode: 384 });
+    appendFileSync3(path14.join(record.root, "raw.log"), kept, { mode: 384 });
     record.logBytes += kept.length;
     process.stdout.write(kept);
   }
@@ -5936,7 +5970,7 @@ function closeScratch(record, { recovery }) {
   }
   try {
     assertPrivateDirectory(record.root);
-    const payload = path15.join(record.root, "payload");
+    const payload = path14.join(record.root, "payload");
     if (existsSync7(payload)) {
       assertDeletionTree(payload);
       rmSync6(payload, { recursive: true });
@@ -5956,7 +5990,7 @@ function closeScratch(record, { recovery }) {
 function assertDeletionTree(root) {
   assertCanonicalPath(root);
   for (const name of readdirSync5(root)) {
-    const target = path15.join(root, name);
+    const target = path14.join(root, name);
     const stat = lstatSync7(target);
     if (stat.isSymbolicLink() || !stat.isFile() && !stat.isDirectory() || stat.isFile() && stat.nlink !== 1) throw new Error(`scratch cleanup link/special-file uncertainty: ${target}`);
     if (stat.isDirectory()) assertDeletionTree(target);
@@ -5979,29 +6013,29 @@ function recordsIn(directory) {
 }
 function readRecord(directory, id) {
   if (!/^[a-f0-9]{32}$/.test(id)) throw new Error(`scratch unrecognized registry entry: ${id}`);
-  const root = path15.join(directory, id);
+  const root = path14.join(directory, id);
   assertPrivateDirectory(root);
-  const file = path15.join(root, "record.json");
+  const file = path14.join(root, "record.json");
   assertCanonicalPath(file);
   const stat = lstatSync7(file);
   if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid() || (stat.mode & 511) !== 384) throw new Error("scratch metadata ownership is uncertain");
   const record = JSON.parse(readFileSync11(file, "utf8"));
   if (record.version !== 1 || record.id !== id || record.root !== root || record.uid !== process.getuid() || !["preparing", "ready", "starting", "running", "blocked", "closed"].includes(record.state)) throw new Error("scratch metadata identity/state mismatch");
   if (record.sourceRoot === directory || record.sourceRoot.startsWith(`${directory}/`) || directory.startsWith(`${record.sourceRoot}/`)) throw new Error("scratch recorded source separation invalid");
-  if (!/^[a-f0-9]{64}$/.test(record.owner) || !path15.isAbsolute(record.sourceRoot) || !Array.isArray(record.tracked) || typeof record.supervisionViolation !== "boolean" || ![record.attempt, record.ordinal].every((amount) => Number.isSafeInteger(amount) && amount > 0) || ![record.reservation?.bytes, record.reservation?.inodes, record.logBytes].every((amount) => Number.isSafeInteger(amount) && amount >= 0)) throw new Error("scratch malformed ownership/capacity/process metadata");
-  if (JSON.stringify(record.environment) !== JSON.stringify(prepareEnvironment(path15.join(root, "payload"), record.recipe, record.runtime))) throw new Error("scratch environment record differs from owned routing");
+  if (!/^[a-f0-9]{64}$/.test(record.owner) || !path14.isAbsolute(record.sourceRoot) || !Array.isArray(record.tracked) || typeof record.supervisionViolation !== "boolean" || ![record.attempt, record.ordinal].every((amount) => Number.isSafeInteger(amount) && amount > 0) || ![record.reservation?.bytes, record.reservation?.inodes, record.logBytes].every((amount) => Number.isSafeInteger(amount) && amount >= 0)) throw new Error("scratch malformed ownership/capacity/process metadata");
+  if (JSON.stringify(record.environment) !== JSON.stringify(prepareEnvironment(path14.join(root, "payload"), record.recipe, record.runtime))) throw new Error("scratch environment record differs from owned routing");
   return record;
 }
 function saveRecord(record) {
   assertPrivateDirectory(record.root);
-  writeFileAtomically(record.root, path15.join(record.root, "record.json"), `${JSON.stringify(record)}
+  writeFileAtomically(record.root, path14.join(record.root, "record.json"), `${JSON.stringify(record)}
 `, ".record.");
 }
 function expireClosedLogs(records, flags) {
   const retentionMs = 7 * 24 * 60 * 60 * 1e3;
   for (const record of records) {
     if (record.owner !== ownerToken(flags) || record.state !== "closed" || record.closedAt === null || !Number.isFinite(Date.parse(record.closedAt)) || Date.now() - Date.parse(record.closedAt) < retentionMs) continue;
-    const log = path15.join(record.root, "raw.log");
+    const log = path14.join(record.root, "raw.log");
     if (!existsSync7(log)) continue;
     assertCanonicalPath(log);
     const stat = lstatSync7(log);
@@ -6254,7 +6288,7 @@ function runDenyPattern(sessionId, remaining) {
     }
     const content = [...existing, pattern].map((line) => `${line}
 `).join("");
-    writeFileAtomically(path16.dirname(patternsFile), patternsFile, content, ".patterns.");
+    writeFileAtomically(path15.dirname(patternsFile), patternsFile, content, ".patterns.");
     logEvent({ event: "deny-pattern-add", session: sessionId, command: pattern });
     process.stdout.write(`oso-state: wrote ${patternsFile}
 `);

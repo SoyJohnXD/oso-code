@@ -35,10 +35,14 @@ export function gitVerb(command: LexedCommand): string {
   return "";
 }
 
-export function isResidueCall(command: LexedCommand, subjects: readonly string[]): boolean {
+export function expandsItsCommandWord(command: LexedCommand): boolean {
   const commandWord = command.tokens[0];
-  if (commandWord === undefined) return false;
-  if (commandWord.includes("$")) return true;
+  return commandWord !== undefined && commandWord.includes("$");
+}
+
+export function isResidueCall(command: LexedCommand, subjects: readonly string[]): boolean {
+  if (command.tokens[0] === undefined) return false;
+  if (expandsItsCommandWord(command)) return true;
   if (isGitCall(command)) {
     const verb = gitVerb(command);
     return verb === GIT_VERB_UNRESOLVED || verb.includes("$");

@@ -65,7 +65,7 @@ const LOCK_STALE_SECONDS = 30;
 const LOCK_MAX_TRIES = 200;
 const LOCK_RETRY_MS = 50;
 const EVENTS_SCHEMA_VERSION = 2;
-const COMMAND_HEAD_BYTES = 120;
+const BYTES_A_GATE_CAN_READ = 3072;
 
 export function sha256Hex(value: string | NodeJS.ArrayBufferView): string {
   return createHash("sha256").update(value).digest("hex");
@@ -444,14 +444,17 @@ function statOrUndefined(target: string): Stats | undefined {
 
 function serializeEvent(entry: LoggedEvent): string {
   const client = path.basename(process.env["CLAUDE_CODE_EXECPATH"] ?? "");
+  const command = entry.command ?? "";
+  const recorded = commandHead(command);
   const fields = [
     `"ts":"${jsonEscape(isoTimestamp())}"`,
     `"event":"${jsonEscape(entry.event)}"`,
-    `"command":"${jsonEscape(commandHead(entry.command ?? ""))}"`,
+    `"command":"${jsonEscape(recorded)}"`,
     `"session":"${jsonEscape(entry.session)}"`,
     `"client":"${jsonEscape(client)}"`,
     `"schema":${EVENTS_SCHEMA_VERSION}`,
   ];
+  if (recorded !== command) fields.push(`"command_bytes":${Buffer.byteLength(command, "utf8")}`);
   if (entry.gate !== undefined && entry.gate !== "") fields.push(`"gate":"${jsonEscape(entry.gate)}"`);
   if (entry.hookEvent !== undefined && entry.hookEvent !== "") fields.push(`"hook_event":"${jsonEscape(entry.hookEvent)}"`);
   return `{${fields.join(",")}}`;
@@ -490,9 +493,9 @@ function escapedJsonCharacter(character: string): string {
 
 function commandHead(command: string): string {
   const buffer = Buffer.from(command, "utf8");
-  if (buffer.length <= COMMAND_HEAD_BYTES) return command;
-  const boundaryByte = buffer[COMMAND_HEAD_BYTES];
-  let end = COMMAND_HEAD_BYTES;
+  if (buffer.length <= BYTES_A_GATE_CAN_READ) return command;
+  const boundaryByte = buffer[BYTES_A_GATE_CAN_READ];
+  let end = BYTES_A_GATE_CAN_READ;
   if (boundaryByte !== undefined && (boundaryByte & 0xc0) === 0x80) {
     while (end > 0 && ((buffer[end - 1] ?? 0) & 0xc0) === 0x80) end -= 1;
     if (end > 0) end -= 1;

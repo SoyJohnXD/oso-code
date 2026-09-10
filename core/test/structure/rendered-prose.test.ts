@@ -81,6 +81,14 @@ describe("prospective Codex command authoring delivers instructions, not native 
   }
 });
 
+describe("a refused semantic-memory write leaves a delegated child an instruction, never a stop", () => {
+  testCodexOwnerObligations("refused-memory-write", [
+    /A refusal is an instruction, not a failure/,
+    /continue the slice and hand the observation to the parent/,
+    /never retry it, reword it, or route it through another tool/,
+  ]);
+});
+
 provedSomething("core/src/prose/routes.ts names at least one agent role", AGENT_ROLES.length > 0, "AGENT_ROLES is empty, so this suite compared nothing");
 provedSomething("core/src/prose/routes.ts names at least one skill stub", SKILL_STUBS.length > 0, "SKILL_STUBS is empty, so this suite compared nothing");
 

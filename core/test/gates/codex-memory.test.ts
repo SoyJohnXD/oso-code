@@ -112,6 +112,34 @@ const LINEAGE_PAYLOADS = {
   root: { id, cwd: root, source: "cli" },
 };
 
+test("a refused semantic-memory write hands the child an instruction it can continue from", () => {
+  const caller = { host: "codex" as const, agentSession: "1", stateBin: "" };
+  const envelope = hostEnvelope(caller, { sessionId: id, cwd: root, transcriptPath: transcript, toolName: "mcp__engram__mem_save" });
+  for (const lineage of ["child", "missing", "contradictory"] as const) {
+    writeFileSync(transcript, `${JSON.stringify({ type: "session_meta", payload: LINEAGE_PAYLOADS[lineage] })}\n`);
+    const { verdict, events } = runGate(["unknown", "--allow", envelope.toolName], envelope);
+    assert.equal(verdict.kind, "deny", lineage);
+    if (verdict.kind === "deny") {
+      assert.match(verdict.message, /not yours to persist/, lineage);
+      assert.match(verdict.message, /Continue your slice and hand the observation to the parent/, lineage);
+      assert.match(verdict.message, /child, missing, or contradictory native lineage/, lineage);
+    }
+    assert.deepEqual(events.map((logged) => logged.event), ["memory-write-belongs-to-root"], lineage);
+  }
+});
+
+test("a refusal past lineage keeps its own diagnosis, and the attested root keeps its write", () => {
+  const caller = { host: "codex" as const, agentSession: "1", stateBin: "" };
+  writeFileSync(transcript, `${JSON.stringify({ type: "session_meta", payload: LINEAGE_PAYLOADS.root })}\n`);
+  const save = hostEnvelope(caller, { sessionId: id, cwd: root, transcriptPath: transcript, toolName: "mcp__engram__mem_save" });
+  assert.equal(runGate(["unknown", "--allow", save.toolName], save).verdict.kind, "allow");
+  const unknownMethod = hostEnvelope(caller, { sessionId: id, cwd: root, transcriptPath: transcript, toolName: "mcp__engram__mem_new_method" });
+  const { verdict, events } = runGate(["unknown", "--allow", unknownMethod.toolName], unknownMethod);
+  assert.equal(verdict.kind, "deny");
+  if (verdict.kind === "deny") assert.match(verdict.message, /require native ROOT attestation: unknown Engram method/);
+  assert.deepEqual(events.map((logged) => logged.event), ["memory-write-denied"]);
+});
+
 test("known verification commands keep data separate from executable shell", () => {
   for (const commandLine of [
     "env -u FORCE_COLOR pnpm e2e",

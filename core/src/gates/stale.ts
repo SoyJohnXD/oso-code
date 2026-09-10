@@ -11,7 +11,7 @@ import {
   waitExpired,
   waitMarkFileFor,
 } from "./delegation.ts";
-import { hookSessionId, pluginRootDirectory, stateValue, type GateDefinition, type GateRequest } from "./preflight.ts";
+import { hookSessionId, stateBinPath, stateValue, type GateDefinition, type GateRequest } from "./preflight.ts";
 
 const ROADMAP_DISARMED_SENTINEL = "none";
 const RUN_ARMED = "running";
@@ -99,11 +99,6 @@ const SKILL_PREFIXES: PerHost<string> = { claude: "/oso-code:", codex: "$oso-cod
 
 function skillPrefixFor(host: HostName): string {
   return SKILL_PREFIXES[host];
-}
-
-function stateBinPath(caller: HookCaller): string {
-  if (caller.stateBin !== "") return caller.stateBin;
-  return path.join(pluginRootDirectory(), "bin", "oso-state");
 }
 
 function contentOf(stateFile: string): string {

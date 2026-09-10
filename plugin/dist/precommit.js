@@ -1,8 +1,9 @@
 // core/src/shell/lexer.ts
 var COPROCESS_WORD = "coproc";
+var LOOKUP_BUILTIN = "command";
 var PREFIX_WORDS = /* @__PURE__ */ new Set([
   "env",
-  "command",
+  LOOKUP_BUILTIN,
   "builtin",
   "exec",
   "nice",
@@ -105,7 +106,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 var TOKEN_MAX_LENGTH = 128;
 var EVENTS_SCHEMA_VERSION = 2;
-var COMMAND_HEAD_BYTES = 120;
+var BYTES_A_GATE_CAN_READ = 3072;
 function sha256Hex(value) {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -192,14 +193,17 @@ function isoTimestamp() {
 }
 function serializeEvent(entry) {
   const client = path.basename(process.env["CLAUDE_CODE_EXECPATH"] ?? "");
+  const command = entry.command ?? "";
+  const recorded = commandHead(command);
   const fields = [
     `"ts":"${jsonEscape(isoTimestamp())}"`,
     `"event":"${jsonEscape(entry.event)}"`,
-    `"command":"${jsonEscape(commandHead(entry.command ?? ""))}"`,
+    `"command":"${jsonEscape(recorded)}"`,
     `"session":"${jsonEscape(entry.session)}"`,
     `"client":"${jsonEscape(client)}"`,
     `"schema":${EVENTS_SCHEMA_VERSION}`
   ];
+  if (recorded !== command) fields.push(`"command_bytes":${Buffer.byteLength(command, "utf8")}`);
   if (entry.gate !== void 0 && entry.gate !== "") fields.push(`"gate":"${jsonEscape(entry.gate)}"`);
   if (entry.hookEvent !== void 0 && entry.hookEvent !== "") fields.push(`"hook_event":"${jsonEscape(entry.hookEvent)}"`);
   return `{${fields.join(",")}}`;
@@ -235,9 +239,9 @@ function escapedJsonCharacter(character) {
 }
 function commandHead(command) {
   const buffer = Buffer.from(command, "utf8");
-  if (buffer.length <= COMMAND_HEAD_BYTES) return command;
-  const boundaryByte = buffer[COMMAND_HEAD_BYTES];
-  let end = COMMAND_HEAD_BYTES;
+  if (buffer.length <= BYTES_A_GATE_CAN_READ) return command;
+  const boundaryByte = buffer[BYTES_A_GATE_CAN_READ];
+  let end = BYTES_A_GATE_CAN_READ;
   if (boundaryByte !== void 0 && (boundaryByte & 192) === 128) {
     while (end > 0 && ((buffer[end - 1] ?? 0) & 192) === 128) end -= 1;
     if (end > 0) end -= 1;

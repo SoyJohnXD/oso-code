@@ -23,6 +23,9 @@ const TOOL_NAME = /^[A-Za-z0-9_:.-]+$/;
 const PENDING_APPROVAL_MESSAGE =
   'oso-code: plan approval is pending. Use Codex native "Implement the plan." approval, ' +
   "or send exactly CANCEL OSO PLAN to abandon it, before using local tools.";
+const LINEAGE_OF_ANYONE_BUT_THE_ROOT = "child, missing, or contradictory native lineage";
+
+type MemoryRefusal = Readonly<{ event: string; message: string }>;
 
 export const UNKNOWN_TOOL_GATE: GateDefinition = {
   gate: "unknown",
@@ -86,12 +89,31 @@ function codexMemoryDenial(envelope: HookEnvelope): GateOutcome | undefined {
   const known = !memoryTool || TOOL_ROWS.some((row) => row.names.codex === tool);
   const cause = known ? unattestedCodexRoot(envelope) : "unknown Engram method";
   if (cause === undefined) return undefined;
-  return denied({
-    gate: "unknown", session: envelope.sessionId, event: !memoryTool && cliVerdict === "unread" ? "shell-effects-unestablished" : "memory-write-denied", detail: tool,
-    message: !memoryTool && cliVerdict === "unread"
-      ? `oso-code: shell effects could not be established; native ROOT attestation is required: ${cause}.`
-      : `oso-code: semantic memory mutations require native ROOT attestation: ${cause}.`,
-  });
+  const shellEffectsAreUnread = !memoryTool && cliVerdict === "unread";
+  const refusal = memoryRefusal(cause, shellEffectsAreUnread);
+  return denied({ gate: "unknown", session: envelope.sessionId, detail: tool, ...refusal });
+}
+
+function memoryRefusal(cause: string, shellEffectsAreUnread: boolean): MemoryRefusal {
+  if (shellEffectsAreUnread) {
+    return {
+      event: "shell-effects-unestablished",
+      message: `oso-code: shell effects could not be established; native ROOT attestation is required: ${cause}.`,
+    };
+  }
+  if (cause === LINEAGE_OF_ANYONE_BUT_THE_ROOT) {
+    return {
+      event: "memory-write-belongs-to-root",
+      message:
+        `oso-code: semantic memory belongs to the root session, and this call carries ${cause}, ` +
+        "so it is not yours to persist. Continue your slice and hand the observation to the parent " +
+        "in your report; the parent persists it. This refusal ends the write, never your work.",
+    };
+  }
+  return {
+    event: "memory-write-denied",
+    message: `oso-code: semantic memory mutations require native ROOT attestation: ${cause}.`,
+  };
 }
 
 function unattestedCodexRoot(envelope: HookEnvelope): string | undefined {
@@ -100,7 +122,7 @@ function unattestedCodexRoot(envelope: HookEnvelope): string | undefined {
     const deadline = performance.now() + CODEX_METADATA_READINESS_MS;
     const native = readCodexSessionMetadata(envelope.transcriptPath, deadline);
     const rootEntrypoint = native.source === "cli" || native.source === "exec";
-    if (native.id !== envelope.sessionId || !rootEntrypoint || native.parentThreadId !== undefined || native.agentPath !== undefined || native.agentRole !== undefined || native.threadSpawn !== undefined) return "child, missing, or contradictory native lineage";
+    if (native.id !== envelope.sessionId || !rootEntrypoint || native.parentThreadId !== undefined || native.agentPath !== undefined || native.agentRole !== undefined || native.threadSpawn !== undefined) return LINEAGE_OF_ANYONE_BUT_THE_ROOT;
     if (nativeRepositoryIdentity(native.cwd, deadline).commonDirectory !== nativeRepositoryIdentity(envelope.cwd, deadline).commonDirectory) return "native repository mismatch";
     return undefined;
   } catch (error) {

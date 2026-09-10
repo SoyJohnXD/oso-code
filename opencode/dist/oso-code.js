@@ -12,9 +12,11 @@ var WORD_DELIMITERS = " 	\n;&|()<>";
 var UNREAD_PAYLOAD = { kind: "unreadPayload" };
 var COPROCESS_WORD = "coproc";
 var COPROCESS_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+var LOOKUP_BUILTIN = "command";
+var LOOKUP_FLAGS_RUNNING_NOTHING = /* @__PURE__ */ new Set(["-v", "-V"]);
 var PREFIX_WORDS = /* @__PURE__ */ new Set([
   "env",
-  "command",
+  LOOKUP_BUILTIN,
   "builtin",
   "exec",
   "nice",
@@ -131,6 +133,9 @@ function completesItsWordsFromStdin(word) {
 }
 function isSourcingBuiltin(word) {
   return SOURCING_BUILTINS.has(word);
+}
+function looksUpAWordInsteadOfRunningIt(word, option) {
+  return basenameOf(word) === LOOKUP_BUILTIN && option !== void 0 && LOOKUP_FLAGS_RUNNING_NOTHING.has(option);
 }
 function withSpacesForNewlines(text) {
   return text.replaceAll("\n", " ");
@@ -392,6 +397,7 @@ var CommandLineLexer = class _CommandLineLexer {
     while (at < this.commandTokens.length) {
       const leading = this.commandTokens[at];
       if (this.unreadExpandedExecutables && this.commandExpansions[at]) this.markUnread();
+      if (looksUpAWordInsteadOfRunningIt(leading, this.commandTokens[at + 1])) break;
       if (!isCommandPrefixWord(leading)) {
         if (prefixWord.startsWith("-")) this.markUnread();
         if (stdinCompletesTheWords) this.unreadStdin += UNREAD_PAYLOAD_MARKER;
@@ -1132,7 +1138,7 @@ var LOCK_STALE_SECONDS = 30;
 var LOCK_MAX_TRIES = 200;
 var LOCK_RETRY_MS = 50;
 var EVENTS_SCHEMA_VERSION = 2;
-var COMMAND_HEAD_BYTES = 120;
+var BYTES_A_GATE_CAN_READ = 3072;
 function sha256Hex(value) {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -1421,14 +1427,17 @@ function statOrUndefined(target) {
 }
 function serializeEvent(entry) {
   const client = path.basename(process.env["CLAUDE_CODE_EXECPATH"] ?? "");
+  const command = entry.command ?? "";
+  const recorded = commandHead(command);
   const fields = [
     `"ts":"${jsonEscape(isoTimestamp())}"`,
     `"event":"${jsonEscape(entry.event)}"`,
-    `"command":"${jsonEscape(commandHead(entry.command ?? ""))}"`,
+    `"command":"${jsonEscape(recorded)}"`,
     `"session":"${jsonEscape(entry.session)}"`,
     `"client":"${jsonEscape(client)}"`,
     `"schema":${EVENTS_SCHEMA_VERSION}`
   ];
+  if (recorded !== command) fields.push(`"command_bytes":${Buffer.byteLength(command, "utf8")}`);
   if (entry.gate !== void 0 && entry.gate !== "") fields.push(`"gate":"${jsonEscape(entry.gate)}"`);
   if (entry.hookEvent !== void 0 && entry.hookEvent !== "") fields.push(`"hook_event":"${jsonEscape(entry.hookEvent)}"`);
   return `{${fields.join(",")}}`;
@@ -1464,9 +1473,9 @@ function escapedJsonCharacter(character) {
 }
 function commandHead(command) {
   const buffer = Buffer.from(command, "utf8");
-  if (buffer.length <= COMMAND_HEAD_BYTES) return command;
-  const boundaryByte = buffer[COMMAND_HEAD_BYTES];
-  let end = COMMAND_HEAD_BYTES;
+  if (buffer.length <= BYTES_A_GATE_CAN_READ) return command;
+  const boundaryByte = buffer[BYTES_A_GATE_CAN_READ];
+  let end = BYTES_A_GATE_CAN_READ;
   if (boundaryByte !== void 0 && (boundaryByte & 192) === 128) {
     while (end > 0 && ((buffer[end - 1] ?? 0) & 192) === 128) end -= 1;
     if (end > 0) end -= 1;
@@ -1556,6 +1565,13 @@ function pluginRootAbove(moduleDirectory) {
     }
     candidate = parent;
   }
+}
+var STATE_BIN_VARIABLE = "OSO_STATE_BIN";
+function installedStateBinPath() {
+  return path2.join(pluginRootDirectory(), "bin", "oso-state");
+}
+function stateBinPath(caller) {
+  return caller.stateBin !== "" ? caller.stateBin : installedStateBinPath();
 }
 function isVerifiedOsoCodeRoot(root) {
   return HOOKS_MANIFEST_LOCATIONS.some((segments) => hooksManifestFingerprinted(path2.join(root, ...segments)));
@@ -1981,10 +1997,13 @@ function gitVerb(command) {
   }
   return "";
 }
-function isResidueCall(command, subjects) {
+function expandsItsCommandWord(command) {
   const commandWord = command.tokens[0];
-  if (commandWord === void 0) return false;
-  if (commandWord.includes("$")) return true;
+  return commandWord !== void 0 && commandWord.includes("$");
+}
+function isResidueCall(command, subjects) {
+  if (command.tokens[0] === void 0) return false;
+  if (expandsItsCommandWord(command)) return true;
   if (isGitCall(command)) {
     const verb = gitVerb(command);
     return verb === GIT_VERB_UNRESOLVED || verb.includes("$");
@@ -3679,7 +3698,7 @@ function judgeProductionBoundary({ envelope }) {
   const stateFile = stateFileFor(envelope.cwd);
   const runMarker = runMarkerOf(stateFile, session);
   if (runMarker === "unmarked") return ALLOWED;
-  const boundary = { runMarker, stateFile, session };
+  const boundary = { runMarker, stateFile, session, caller: envelope.caller };
   if (envelope.toolName.includes("deploy")) {
     return denyProductionBoundary(boundary, mcpDeployStaysWithTheOperator(session), envelope.toolName);
   }
@@ -3698,8 +3717,8 @@ function judgeAgainstDenyPatterns(boundary, command) {
   }
 }
 function judgeCommandLine(boundary, command) {
-  const { runMarker, session } = boundary;
-  switch (lineVerdict(command, judgeProductionLine)) {
+  const { runMarker, session, caller } = boundary;
+  switch (lineVerdict(command, (lexed, held2) => judgeProductionLine(lexed, held2, caller))) {
     case "production":
       return denyProductionBoundary(boundary, deployStaysWithTheOperator(session), command);
     case "unread":
@@ -3756,11 +3775,17 @@ function deniedUnderTheBoundary(boundary, denial) {
   }
   return denied({ gate: "proddeploy", session: boundary.session, ...denial });
 }
-function judgeProductionLine(command, verdict) {
+function judgeProductionLine(command, verdict, caller) {
   if (runsAProductionDeploy(command)) return "production";
-  if (verdict !== "production" && verdict !== "unread" && pushesOffTheRunBranch(command)) return "push";
+  if (verdict === "production") return verdict;
+  if (verdict !== "unread" && pushesOffTheRunBranch(command)) return "push";
+  if (expandsItsCommandWord(command) && !callsTheHarnessStateBinary(command, caller)) return "unread";
   if (verdict === "clear" && isResidueCall(command, PRODUCTION_BOUNDARY_SUBJECTS)) return "residue";
   return verdict;
+}
+function callsTheHarnessStateBinary(command, caller) {
+  const installedName = basenameOf(stateBinPath(caller));
+  return command.tokens[0] === `\${${STATE_BIN_VARIABLE}:-${installedName}}`;
 }
 function runsAProductionDeploy(command) {
   const deployCli = deployCommandName(command);
@@ -3930,10 +3955,6 @@ var SKILL_PREFIXES = { claude: "/oso-code:", codex: "$oso-code:", opencode: "/os
 function skillPrefixFor(host) {
   return SKILL_PREFIXES[host];
 }
-function stateBinPath(caller) {
-  if (caller.stateBin !== "") return caller.stateBin;
-  return path7.join(pluginRootDirectory(), "bin", "oso-state");
-}
 function contentOf(stateFile) {
   const read = readStateFile(stateFile);
   return read.kind === "ok" ? read.content : "";
@@ -3944,7 +3965,6 @@ function quoted(value) {
 
 // core/src/gates/statebin.ts
 import { appendFileSync as appendFileSync2 } from "node:fs";
-import path8 from "node:path";
 var STATEBIN_GATE = {
   gate: "statebin",
   errorSubject: "the state-bin gate",
@@ -3953,8 +3973,7 @@ var STATEBIN_GATE = {
 function judgeStatebin(_request) {
   const envFile = process.env["CLAUDE_ENV_FILE"];
   if (envFile === void 0 || envFile === "") return NO_VERDICT;
-  const stateBin = path8.join(pluginRootDirectory(), "bin", "oso-state");
-  appendFileSync2(envFile, `export OSO_STATE_BIN=${stateBin}
+  appendFileSync2(envFile, `export ${STATE_BIN_VARIABLE}=${installedStateBinPath()}
 `);
   return NO_VERDICT;
 }
@@ -3962,7 +3981,7 @@ function judgeStatebin(_request) {
 // core/src/gates/teardown.ts
 import { execFileSync as execFileSync3 } from "node:child_process";
 import { existsSync as existsSync5, readdirSync as readdirSync2, renameSync as renameSync3, rmSync as rmSync5, rmdirSync, statSync as statSync5 } from "node:fs";
-import path9 from "node:path";
+import path8 from "node:path";
 var ABANDONED_STATE_DAYS = 7;
 var JOURNAL_KEYED_WAIT_MARK_SUFFIX = ".waiting";
 var EVENTS_LOG_RETENTION_DAYS = 30;
@@ -4017,7 +4036,7 @@ function stateArmedBy(sessionId) {
 }
 function removeWorktreesOf(sessionId, stateFile) {
   if (sessionId === "") return;
-  const sessionWorktrees = path9.join(stateRootDirectory(), "worktrees", sessionId);
+  const sessionWorktrees = path8.join(stateRootDirectory(), "worktrees", sessionId);
   if (!isDirectory(sessionWorktrees)) return;
   if (stateFile === void 0) return;
   const repoPath = stateValueOf(stateFile, "repo_path");
@@ -4065,7 +4084,7 @@ function clearRoadmapInFlightOf(sessionId) {
   }
 }
 function rotateAgedEventsLog() {
-  const eventsLog = path9.join(stateRootDirectory(), "events.jsonl");
+  const eventsLog = path8.join(stateRootDirectory(), "events.jsonl");
   if (!olderThanDays(eventsLog, EVENTS_LOG_RETENTION_DAYS)) return;
   renameSync3(eventsLog, `${eventsLog}.1`);
 }
@@ -4089,10 +4108,10 @@ function stateValueOf(stateFile, key) {
   return read.kind === "ok" ? stateValue(read.content, key) : "";
 }
 function stateFilesSorted() {
-  return directoryEntries2(stateRootDirectory()).filter((name) => name.endsWith(".state")).sort().map((name) => path9.join(stateRootDirectory(), name)).filter((target) => isFile(target));
+  return directoryEntries2(stateRootDirectory()).filter((name) => name.endsWith(".state")).sort().map((name) => path8.join(stateRootDirectory(), name)).filter((target) => isFile(target));
 }
 function subdirectoriesSorted(directory) {
-  return directoryEntries2(directory).sort().map((name) => path9.join(directory, name)).filter((target) => isDirectory(target));
+  return directoryEntries2(directory).sort().map((name) => path8.join(directory, name)).filter((target) => isDirectory(target));
 }
 function directoryEntries2(directory) {
   try {
@@ -4125,6 +4144,7 @@ function gitWorktreePrune(repoPath) {
 // core/src/gates/unknown.ts
 var TOOL_NAME = /^[A-Za-z0-9_:.-]+$/;
 var PENDING_APPROVAL_MESSAGE = 'oso-code: plan approval is pending. Use Codex native "Implement the plan." approval, or send exactly CANCEL OSO PLAN to abandon it, before using local tools.';
+var LINEAGE_OF_ANYONE_BUT_THE_ROOT = "child, missing, or contradictory native lineage";
 var UNKNOWN_TOOL_GATE = {
   gate: "unknown",
   errorSubject: "the unknown-tool gate",
@@ -4176,13 +4196,27 @@ function codexMemoryDenial(envelope) {
   const known = !memoryTool || TOOL_ROWS.some((row) => row.names.codex === tool);
   const cause = known ? unattestedCodexRoot(envelope) : "unknown Engram method";
   if (cause === void 0) return void 0;
-  return denied({
-    gate: "unknown",
-    session: envelope.sessionId,
-    event: !memoryTool && cliVerdict === "unread" ? "shell-effects-unestablished" : "memory-write-denied",
-    detail: tool,
-    message: !memoryTool && cliVerdict === "unread" ? `oso-code: shell effects could not be established; native ROOT attestation is required: ${cause}.` : `oso-code: semantic memory mutations require native ROOT attestation: ${cause}.`
-  });
+  const shellEffectsAreUnread = !memoryTool && cliVerdict === "unread";
+  const refusal2 = memoryRefusal(cause, shellEffectsAreUnread);
+  return denied({ gate: "unknown", session: envelope.sessionId, detail: tool, ...refusal2 });
+}
+function memoryRefusal(cause, shellEffectsAreUnread) {
+  if (shellEffectsAreUnread) {
+    return {
+      event: "shell-effects-unestablished",
+      message: `oso-code: shell effects could not be established; native ROOT attestation is required: ${cause}.`
+    };
+  }
+  if (cause === LINEAGE_OF_ANYONE_BUT_THE_ROOT) {
+    return {
+      event: "memory-write-belongs-to-root",
+      message: `oso-code: semantic memory belongs to the root session, and this call carries ${cause}, so it is not yours to persist. Continue your slice and hand the observation to the parent in your report; the parent persists it. This refusal ends the write, never your work.`
+    };
+  }
+  return {
+    event: "memory-write-denied",
+    message: `oso-code: semantic memory mutations require native ROOT attestation: ${cause}.`
+  };
 }
 function unattestedCodexRoot(envelope) {
   try {
@@ -4190,7 +4224,7 @@ function unattestedCodexRoot(envelope) {
     const deadline = performance.now() + CODEX_METADATA_READINESS_MS;
     const native = readCodexSessionMetadata(envelope.transcriptPath, deadline);
     const rootEntrypoint = native.source === "cli" || native.source === "exec";
-    if (native.id !== envelope.sessionId || !rootEntrypoint || native.parentThreadId !== void 0 || native.agentPath !== void 0 || native.agentRole !== void 0 || native.threadSpawn !== void 0) return "child, missing, or contradictory native lineage";
+    if (native.id !== envelope.sessionId || !rootEntrypoint || native.parentThreadId !== void 0 || native.agentPath !== void 0 || native.agentRole !== void 0 || native.threadSpawn !== void 0) return LINEAGE_OF_ANYONE_BUT_THE_ROOT;
     if (nativeRepositoryIdentity(native.cwd, deadline).commonDirectory !== nativeRepositoryIdentity(envelope.cwd, deadline).commonDirectory) return "native repository mismatch";
     return void 0;
   } catch (error) {
@@ -4229,7 +4263,7 @@ function allowlistHost(host) {
 // core/src/gates/version.ts
 import { execFileSync as execFileSync4 } from "node:child_process";
 import { readFileSync as readFileSync6 } from "node:fs";
-import path10 from "node:path";
+import path9 from "node:path";
 var RELEASE_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/;
 var GITHUB_URL_PREFIX = "https://github.com/";
 var FETCH_CONNECT_SECONDS = 2;
@@ -4257,10 +4291,10 @@ function judgeVersion({ envelope }) {
   return { verdict: { kind: "context", additionalContext: context }, events: [] };
 }
 function pluginManifestFile() {
-  return path10.join(pluginRootDirectory(), ".claude-plugin", "plugin.json");
+  return path9.join(pluginRootDirectory(), ".claude-plugin", "plugin.json");
 }
 function publishedReleaseCacheFile() {
-  return path10.join(stateRootDirectory(), "published-release");
+  return path9.join(stateRootDirectory(), "published-release");
 }
 function repositorySlugOf(repositoryUrl) {
   if (!repositoryUrl.startsWith(GITHUB_URL_PREFIX) || repositoryUrl.length === GITHUB_URL_PREFIX.length) {
@@ -4271,7 +4305,7 @@ function repositorySlugOf(repositoryUrl) {
 }
 function marketplaceServesRepository(repositorySlug) {
   const home = homeDirectoryFrom(process.platform, process.env);
-  const marketplacesFile = path10.join(home, ".claude", "plugins", "known_marketplaces.json");
+  const marketplacesFile = path9.join(home, ".claude", "plugins", "known_marketplaces.json");
   const registrations = readFileOrEmpty(marketplacesFile).replace(/\s/g, "");
   return registrations.includes(`"repo":"${repositorySlug}"`);
 }
@@ -4290,7 +4324,7 @@ function cachedPublishedRelease(cacheFile) {
 function refreshPublishedReleaseCache(cacheFile, repositorySlug) {
   try {
     writeFileAtomically(
-      path10.dirname(cacheFile),
+      path9.dirname(cacheFile),
       cacheFile,
       fetchedHighestReleaseVersion(repositorySlug),
       ".published-release."
@@ -4523,8 +4557,8 @@ function worktreeGitDir(dotGit, baseDir) {
   if (raw === "") {
     return null;
   }
-  const path11 = isAbsolute(raw) ? raw : join(baseDir, raw);
-  return resolve(path11);
+  const path10 = isAbsolute(raw) ? raw : join(baseDir, raw);
+  return resolve(path10);
 }
 function stripWorktreesSuffix(gitDir) {
   const marker = `${sep}worktrees${sep}`;
@@ -5143,9 +5177,9 @@ var MARKER_SUFFIX = ".json";
 function markerPath(commonDir, sessionId) {
   return join2(commonDir, `${MARKER_PREFIX}${sessionId}${MARKER_SUFFIX}`);
 }
-function readMarkerFile(path11) {
+function readMarkerFile(path10) {
   try {
-    return normalizeMarker(JSON.parse(readFileSync8(path11, "utf8")));
+    return normalizeMarker(JSON.parse(readFileSync8(path10, "utf8")));
   } catch {
     return null;
   }
@@ -5207,8 +5241,8 @@ function listStale(commonDir) {
     if (isLive(marker)) {
       continue;
     }
-    for (const path11 of marker.worktrees) {
-      orphans.push({ path: path11, sessionId: marker.sessionId });
+    for (const path10 of marker.worktrees) {
+      orphans.push({ path: path10, sessionId: marker.sessionId });
     }
   }
   return orphans;
@@ -5272,11 +5306,11 @@ function sweepStale(commonDir, options = {}) {
       continue;
     }
     let tornDown = true;
-    for (const path11 of marker.worktrees) {
-      if (removeWorktree(commonDir, path11, git)) {
-        reaped.push(path11);
+    for (const path10 of marker.worktrees) {
+      if (removeWorktree(commonDir, path10, git)) {
+        reaped.push(path10);
       } else {
-        left.push(path11);
+        left.push(path10);
         tornDown = false;
       }
     }
@@ -5286,9 +5320,9 @@ function sweepStale(commonDir, options = {}) {
   }
   return { reaped, left };
 }
-function removeWorktree(commonDir, path11, git) {
+function removeWorktree(commonDir, path10, git) {
   const cwd = dirname3(commonDir);
-  if (!runGit(git, ["worktree", "remove", path11], cwd)) {
+  if (!runGit(git, ["worktree", "remove", path10], cwd)) {
     return false;
   }
   runGit(git, ["worktree", "prune"], cwd);

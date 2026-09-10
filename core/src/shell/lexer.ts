@@ -15,8 +15,10 @@ const UNREAD_PAYLOAD: LexRecord = { kind: "unreadPayload" };
 
 const COPROCESS_WORD = "coproc";
 const COPROCESS_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const LOOKUP_BUILTIN = "command";
+const LOOKUP_FLAGS_RUNNING_NOTHING = new Set(["-v", "-V"]);
 const PREFIX_WORDS = new Set([
-  "env", "command", "builtin", "exec", "nice", "nohup", "time", "timeout", "stdbuf",
+  "env", LOOKUP_BUILTIN, "builtin", "exec", "nice", "nohup", "time", "timeout", "stdbuf",
   "sudo", "doas", "setsid", "xargs", "flock", "ionice", "chrt", "taskset", "unbuffer",
   "then", "else", "elif", "do", "done", "fi", "in", "until", "while", "if", "for",
   "case", "esac", "select", "function", "!", COPROCESS_WORD,
@@ -99,6 +101,10 @@ function completesItsWordsFromStdin(word: string): boolean {
 
 function isSourcingBuiltin(word: string): boolean {
   return SOURCING_BUILTINS.has(word);
+}
+
+function looksUpAWordInsteadOfRunningIt(word: string, option: string | undefined): boolean {
+  return basenameOf(word) === LOOKUP_BUILTIN && option !== undefined && LOOKUP_FLAGS_RUNNING_NOTHING.has(option);
 }
 
 function withSpacesForNewlines(text: string): string {
@@ -376,6 +382,7 @@ class CommandLineLexer {
     while (at < this.commandTokens.length) {
       const leading = this.commandTokens[at] as string;
       if (this.unreadExpandedExecutables && this.commandExpansions[at]) this.markUnread();
+      if (looksUpAWordInsteadOfRunningIt(leading, this.commandTokens[at + 1])) break;
       if (!isCommandPrefixWord(leading)) {
         if (prefixWord.startsWith("-")) this.markUnread();
         if (stdinCompletesTheWords) this.unreadStdin += UNREAD_PAYLOAD_MARKER;

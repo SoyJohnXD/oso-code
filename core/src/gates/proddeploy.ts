@@ -1,8 +1,8 @@
-import type { GateOutcome } from "../hosts/envelope.ts";
+import type { GateOutcome, HookCaller } from "../hosts/envelope.ts";
 import { ALLOWED } from "../hosts/envelope.ts";
 import { ereReads } from "../shell/ere.ts";
 import { basenameOf, UNREAD_PAYLOAD_MARKER } from "../shell/lexer.ts";
-import { gitVerb, isGitCall, isResidueCall, type LexedCommand } from "../shell/lexed-command.ts";
+import { expandsItsCommandWord, gitVerb, isGitCall, isResidueCall, type LexedCommand } from "../shell/lexed-command.ts";
 import { lineVerdict, type LexerVerdict } from "../shell/line-verdict.ts";
 import { denyPatternsFileFor, readStateFile, stateFileFor } from "../state/store.ts";
 import {
@@ -13,6 +13,8 @@ import {
   osoStateRemedy,
   payloadUnparseable,
   readArmedState,
+  STATE_BIN_VARIABLE,
+  stateBinPath,
   stateValue,
   type GateDefinition,
   type GateRequest,
@@ -20,7 +22,7 @@ import {
 
 type ProductionJudgement = "production" | "push" | "residue";
 type RunMarker = "unmarked" | "uncertain" | "armed";
-type ProductionBoundary = Readonly<{ runMarker: RunMarker; stateFile: string; session: string }>;
+type ProductionBoundary = Readonly<{ runMarker: RunMarker; stateFile: string; session: string; caller: HookCaller }>;
 type BoundaryDenial = Readonly<{ message: string; event: string; detail: string }>;
 
 type DenyPatternReading =
@@ -49,7 +51,7 @@ function judgeProductionBoundary({ envelope }: GateRequest): GateOutcome {
   const stateFile = stateFileFor(envelope.cwd);
   const runMarker = runMarkerOf(stateFile, session);
   if (runMarker === "unmarked") return ALLOWED;
-  const boundary = { runMarker, stateFile, session };
+  const boundary = { runMarker, stateFile, session, caller: envelope.caller };
 
   if (envelope.toolName.includes("deploy")) {
     return denyProductionBoundary(boundary, mcpDeployStaysWithTheOperator(session), envelope.toolName);
@@ -71,8 +73,8 @@ function judgeAgainstDenyPatterns(boundary: ProductionBoundary, command: string)
 }
 
 function judgeCommandLine(boundary: ProductionBoundary, command: string): GateOutcome {
-  const { runMarker, session } = boundary;
-  switch (lineVerdict<ProductionJudgement>(command, judgeProductionLine)) {
+  const { runMarker, session, caller } = boundary;
+  switch (lineVerdict<ProductionJudgement>(command, (lexed, held) => judgeProductionLine(lexed, held, caller))) {
     case "production":
       return denyProductionBoundary(boundary, deployStaysWithTheOperator(session), command);
     case "unread":
@@ -166,11 +168,19 @@ function deniedUnderTheBoundary(boundary: ProductionBoundary, denial: BoundaryDe
 function judgeProductionLine(
   command: LexedCommand,
   verdict: ProductionJudgement | LexerVerdict,
+  caller: HookCaller,
 ): ProductionJudgement | LexerVerdict {
   if (runsAProductionDeploy(command)) return "production";
-  if (verdict !== "production" && verdict !== "unread" && pushesOffTheRunBranch(command)) return "push";
+  if (verdict === "production") return verdict;
+  if (verdict !== "unread" && pushesOffTheRunBranch(command)) return "push";
+  if (expandsItsCommandWord(command) && !callsTheHarnessStateBinary(command, caller)) return "unread";
   if (verdict === "clear" && isResidueCall(command, PRODUCTION_BOUNDARY_SUBJECTS)) return "residue";
   return verdict;
+}
+
+function callsTheHarnessStateBinary(command: LexedCommand, caller: HookCaller): boolean {
+  const installedName = basenameOf(stateBinPath(caller));
+  return command.tokens[0] === `\${${STATE_BIN_VARIABLE}:-${installedName}}`;
 }
 
 function runsAProductionDeploy(command: LexedCommand): boolean {

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { GateOutcome, GateVerdict, HookEnvelope, PreToolUseVerdict } from "../hosts/envelope.ts";
+import type { GateOutcome, GateVerdict, HookCaller, HookEnvelope, PreToolUseVerdict } from "../hosts/envelope.ts";
 import { GATE_BUNDLE, gateRow, type GateId } from "../routes/routes.ts";
 import { readStateFile } from "../state/store.ts";
 
@@ -115,6 +115,16 @@ export function pluginRootAbove(moduleDirectory: string): string {
     }
     candidate = parent;
   }
+}
+
+export const STATE_BIN_VARIABLE = "OSO_STATE_BIN";
+
+export function installedStateBinPath(): string {
+  return path.join(pluginRootDirectory(), "bin", "oso-state");
+}
+
+export function stateBinPath(caller: HookCaller): string {
+  return caller.stateBin !== "" ? caller.stateBin : installedStateBinPath();
 }
 
 function isVerifiedOsoCodeRoot(root: string): boolean {
