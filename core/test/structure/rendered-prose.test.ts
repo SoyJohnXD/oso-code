@@ -314,6 +314,26 @@ describe("freshness compares the inputs the bar never rewrites, so an index-byte
   }
 });
 
+const STAGED_WITNESS_OBLIGATIONS: readonly RegExp[] = [
+  /the staged inventory `ls-files --stage -z` reports as mode\/OID\/stage per path/,
+  /never write the index, including intent-to-add/,
+  /Require a quiescent tree and identical fingerprints; drift or inability to establish completeness blocks, never silently retries against a different tree/,
+  /The git index's raw bytes are never a cause on their own/,
+  /An incidental index change is neither automatically a code change nor automatically ignorable: establish its effect on the fingerprints above/,
+];
+
+describe("the security reviewer witnesses quiescence by staged content, so the inventories it must run never refute it", () => {
+  const securityPass = SKILL_STUBS.find((stub) => stub.id === "security-pass")!;
+
+  for (const artifact of [skillReferencePath(securityPass, "codex"), skillReferenceOutputPath(securityPass, "codex")]) {
+    test(`${artifact} fingerprints the staged inventory, still blocks a moved tree and rules the index bytes out as a cause`, () => {
+      const shipped = readRepoText(artifact);
+      for (const obligation of STAGED_WITNESS_OBLIGATIONS) assert.match(shipped, obligation);
+      assert.doesNotMatch(shipped, /index bytes/, `${artifact} still fingerprints the raw index image its own stat-cache refresh moves`);
+    });
+  }
+});
+
 describe("Codex rations no child-agent capacity of its own", () => {
   const RETIRED = [
     /Reserve an actually free verifier slot/,
