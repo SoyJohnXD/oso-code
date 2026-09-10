@@ -38,7 +38,7 @@ describe(
           const stateRoot = stateRootPath(sandbox);
           chmodSync(stateRoot, READ_EXECUTE_ONLY_DIRECTORY);
           const stdin = sandbox.expandJson('{"session_id":"test-session","cwd":"{cwd}"}');
-          const result = withHookEnvironment({ HOME: sandbox.home }, () => runGate(["teardown"], spawnedEnvelope(stdin, process.env)));
+          const result = withHookEnvironment(sandbox.hookEnvironment(), () => runGate(["teardown"], spawnedEnvelope(stdin, process.env)));
           chmodSync(stateRoot, OWNER_ONLY_DIRECTORY);
           return result;
         });

@@ -12,7 +12,7 @@ test(
     withStateSandbox("workspace", (sandbox) => {
       sandbox.seed({ [STATE_FILE]: "mode=plan\nsession=other-session\n" });
       const stdin = sandbox.expandJson('{"cwd":"{cwd}"}');
-      const run = withHookEnvironment({ HOME: sandbox.home }, () => runGate(["stale"], spawnedEnvelope(stdin, process.env)));
+      const run = withHookEnvironment(sandbox.hookEnvironment(), () => runGate(["stale"], spawnedEnvelope(stdin, process.env)));
       assert.equal(run.exit, 0);
       assert.match(run.stdout, /"additionalContext"/);
     });

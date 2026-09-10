@@ -6,9 +6,10 @@ import { TOOL_ROWS } from "../routes/routes.ts";
 import { isNativeResolutionFault, nativeRepositoryIdentity } from "../state/handoff.ts";
 import { basenameOf } from "../shell/lexer.ts";
 import { lineVerdict } from "../shell/line-verdict.ts";
-import { causeOf, stateFileFor } from "../state/store.ts";
+import { causeOf } from "../state/store.ts";
 import {
   denied,
+  deniedForMovedIdentity,
   deniedForUnusableState,
   payloadUnparseable,
   readArmedState,
@@ -44,10 +45,10 @@ function judgeUnknownTool({ envelope, argv }: GateRequest): GateOutcome {
   const session = sanitizeSession(envelope.sessionId);
   if (session === "") return payloadUnparseable();
 
-  const stateFile = stateFileFor(envelope.cwd);
-  const state = readArmedState(stateFile);
+  const state = readArmedState(envelope.cwd);
   if (state.kind === "absent") return ALLOWED;
-  if (state.kind === "unusable") return deniedForUnusableState("unknown", stateFile, session);
+  if (state.kind === "moved") return deniedForMovedIdentity("unknown", state, session);
+  if (state.kind === "unusable") return deniedForUnusableState("unknown", state.stateFile, session);
 
   if (thisSessionsPlanIsPending(state.content, session)) {
     return denied({
@@ -123,7 +124,7 @@ function unattestedCodexRoot(envelope: HookEnvelope): string | undefined {
     const native = readCodexSessionMetadata(envelope.transcriptPath, deadline);
     const rootEntrypoint = native.source === "cli" || native.source === "exec";
     if (native.id !== envelope.sessionId || !rootEntrypoint || native.parentThreadId !== undefined || native.agentPath !== undefined || native.agentRole !== undefined || native.threadSpawn !== undefined) return LINEAGE_OF_ANYONE_BUT_THE_ROOT;
-    if (nativeRepositoryIdentity(native.cwd, deadline).commonDirectory !== nativeRepositoryIdentity(envelope.cwd, deadline).commonDirectory) return "native repository mismatch";
+    if (nativeRepositoryIdentity(native.cwd, deadline) !== nativeRepositoryIdentity(envelope.cwd, deadline)) return "native repository mismatch";
     return undefined;
   } catch (error) {
     if (!isNativeResolutionFault(error)) throw error;

@@ -57,7 +57,7 @@ function judged(
 ): GateRun {
   return withStateSandbox("workspace", (sandbox) => {
     sandbox.seed(seed);
-    const run = withHookEnvironment({ HOME: sandbox.home, OSO_STATE_BIN: "oso-state" }, () =>
+    const run = withHookEnvironment(sandbox.hookEnvironment({ OSO_STATE_BIN: "oso-state" }), () =>
       runGate([gate], spawnedEnvelope(sandbox.expandJson(payload), process.env)),
     );
     observe(sandbox, run);
@@ -144,7 +144,7 @@ describe(
           [MARK_FILE]: mark("child-one", NINE_MINUTES),
         });
         before = markedAt(sandbox, MARK_FILE);
-        withHookEnvironment({ HOME: sandbox.home }, () => runGate(["autocontinue"], spawnedEnvelope(sandbox.expandJson(STOP_PAYLOAD), process.env)));
+        withHookEnvironment(sandbox.hookEnvironment(), () => runGate(["autocontinue"], spawnedEnvelope(sandbox.expandJson(STOP_PAYLOAD), process.env)));
         after = markedAt(sandbox, MARK_FILE);
         assert.equal(sandbox.read(MARK_FILE).kind === "file" ? (sandbox.read(MARK_FILE) as { content: string }).content : "", "run=child-two\nsession=test-session\njournal_bytes=0\nrenewals=0\n");
       });

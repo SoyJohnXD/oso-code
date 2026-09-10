@@ -7,6 +7,7 @@ import {
   lstatSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   type Stats,
@@ -57,6 +58,22 @@ export class StateRootUnwritableError extends Error {
   }
 }
 
+export const TASK_ROOT_VARIABLE = "OSO_TASK_ROOT";
+
+export class TaskIdentityUnknownError extends Error {
+  readonly cwd: string;
+  constructor(cwd: string, cause: string) {
+    super(
+      `cannot name the task ${cwd} belongs to: ${cause}. The harness keys its state, its run journal and its ` +
+        `receipts by one task identity, and it never infers one from the directory it happens to run in — a ` +
+        `guessed identity arms one repository's gates on another repository's flags. Run from inside a git ` +
+        `repository, or declare the root this task owns with ${TASK_ROOT_VARIABLE}=<absolute path>, then run again.`,
+    );
+    this.name = "TaskIdentityUnknownError";
+    this.cwd = cwd;
+  }
+}
+
 export const CHANGE_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const NAME_TOKEN_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
 const MODEL_TOKEN_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9/:._@-]*$/;
@@ -77,13 +94,96 @@ export function stateRootDirectory(): string {
   return path.join(homeDirectory(), ".local", "state", "oso-code");
 }
 
+export type NamedTaskIdentity = Readonly<{ kind: "declared" | "repository"; identity: string; stateFile: string }>;
+
+export type TaskIdentity =
+  | NamedTaskIdentity
+  | Readonly<{ kind: "unknown"; cwd: string; cause: string; inferredIdentity: string }>;
+
+export type InferredState = Readonly<{ identity: string; stateFile: string }>;
+
+export function taskIdentityFor(cwd: string): TaskIdentity {
+  const stateRoot = stateRootDirectory();
+  const directory = withoutTrailingReturn(cwd);
+  const declaration = process.env[TASK_ROOT_VARIABLE] ?? "";
+  if (declaration === "") return gitAnsweredIdentity(stateRoot, directory);
+  const declared = declaredRootOf(declaration);
+  if (declared.kind === "refused") {
+    return { kind: "unknown", cwd: directory, cause: declared.cause, inferredIdentity: inferredIdentityFor(directory) };
+  }
+  if (!declaredRootCovers(declared.root, realPathOrUndefined(directory) ?? directory)) {
+    return gitAnsweredIdentity(stateRoot, directory, declared.root);
+  }
+  return { kind: "declared", identity: declared.root, stateFile: stateFileOfIdentity(stateRoot, declared.root) };
+}
+
+function gitAnsweredIdentity(stateRoot: string, directory: string, rootThatDoesNotCover?: string): TaskIdentity {
+  const answered = gitCommonDirectory(directory);
+  if (answered.kind === "answered") {
+    const identity = answered.commonDirectory;
+    return { kind: "repository", identity, stateFile: stateFileOfIdentity(stateRoot, identity) };
+  }
+  const uncovered =
+    rootThatDoesNotCover === undefined
+      ? ""
+      : `, and ${TASK_ROOT_VARIABLE} declares ${rootThatDoesNotCover}, which does not contain it`;
+  return { kind: "unknown", cwd: directory, cause: `${answered.cause}${uncovered}`, inferredIdentity: directory };
+}
+
+export function requireTaskIdentity(cwd: string): NamedTaskIdentity {
+  const task = taskIdentityFor(cwd);
+  if (task.kind === "unknown") throw new TaskIdentityUnknownError(task.cwd, task.cause);
+  return task;
+}
+
+export function inferredIdentityFor(cwd: string): string {
+  const directory = withoutTrailingReturn(cwd);
+  const answered = gitCommonDirectory(directory);
+  return answered.kind === "answered" ? answered.commonDirectory : directory;
+}
+
+export function stateLeftAtTheInferredIdentity(cwd: string, task: TaskIdentity): InferredState | undefined {
+  if (task.kind === "repository") return undefined;
+  const identity = task.kind === "unknown" ? task.inferredIdentity : inferredIdentityFor(cwd);
+  if (task.kind === "declared" && identity === task.identity) return undefined;
+  const stateFile = stateFileOfIdentity(stateRootDirectory(), identity);
+  if (readStateFile(stateFile).kind === "absent") return undefined;
+  return { identity, stateFile };
+}
+
+function stateFileOfIdentity(stateRoot: string, identity: string): string {
+  return path.join(stateRoot, `${sha256Hex(identity)}.state`);
+}
+
+type DeclaredRoot = Readonly<{ kind: "root"; root: string }> | Readonly<{ kind: "refused"; cause: string }>;
+
+function declaredRootOf(declaration: string): DeclaredRoot {
+  if (!path.isAbsolute(declaration)) {
+    return { kind: "refused", cause: `${TASK_ROOT_VARIABLE} is not an absolute path: ${declaration}` };
+  }
+  const root = realPathOrUndefined(declaration);
+  if (root === undefined || !isDirectory(root)) {
+    return { kind: "refused", cause: `${TASK_ROOT_VARIABLE} names no readable directory: ${declaration}` };
+  }
+  return { kind: "root", root };
+}
+
+function declaredRootCovers(root: string, directory: string): boolean {
+  const stepsDown = path.relative(root, directory);
+  if (stepsDown === "") return true;
+  return !path.isAbsolute(stepsDown) && stepsDown !== ".." && !stepsDown.startsWith(`..${path.sep}`);
+}
+
+function withoutTrailingReturn(cwd: string): string {
+  return cwd.replace(/\r$/, "");
+}
+
 export function repositoryIdentityFor(cwd: string): string {
-  const directory = cwd.replace(/\r$/, "");
-  return gitCommonDirectory(directory) || directory;
+  return requireTaskIdentity(cwd).identity;
 }
 
 export function stateFileFor(cwd: string): string {
-  return path.join(stateRootDirectory(), `${sha256Hex(repositoryIdentityFor(cwd))}.state`);
+  return requireTaskIdentity(cwd).stateFile;
 }
 
 export function repositoryIdFor(stateFile: string): string {
@@ -138,7 +238,7 @@ export function readValue(stateFile: string, key: string): string | undefined {
   return stateValue(content, key);
 }
 
-type StateFileRead =
+export type StateFileRead =
   | { kind: "absent" }
   | { kind: "ok"; content: string }
   | { kind: "unreadable"; cause: string };
@@ -321,16 +421,34 @@ function homeDirectory(): string {
   return homeDirectoryFrom(process.platform, process.env);
 }
 
-function gitCommonDirectory(cwd: string): string {
+export type GitCommonDirectory =
+  | Readonly<{ kind: "answered"; commonDirectory: string }>
+  | Readonly<{ kind: "refused"; cause: string }>;
+
+const GIT_ANSWER_MAX_BYTES = 65536;
+
+export function gitCommonDirectory(cwd: string, timeoutMs?: number): GitCommonDirectory {
   try {
-    const output = execFileSync("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"], {
+    const answer = execFileSync("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"], {
       encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    return output.replace(/\n+$/, "");
-  } catch {
-    return "";
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: timeoutMs,
+      maxBuffer: GIT_ANSWER_MAX_BYTES,
+      env: { ...process.env, GIT_DIR: undefined, GIT_WORK_TREE: undefined, GIT_COMMON_DIR: undefined },
+    }).replace(/\n+$/, "");
+    if (!path.isAbsolute(answer)) {
+      return { kind: "refused", cause: `git named no absolute common directory for ${cwd}: ${answer}` };
+    }
+    return { kind: "answered", commonDirectory: answer };
+  } catch (error) {
+    return { kind: "refused", cause: gitRefusalCause(error) };
   }
+}
+
+function gitRefusalCause(error: unknown): string {
+  const spoken = error instanceof Error ? (error as Error & { stderr?: unknown }).stderr : undefined;
+  if (typeof spoken !== "string" || spoken.trim() === "") return causeOf(error);
+  return spoken.replace(/\n+$/, "");
 }
 
 function readFileIfPresent(file: string): string | undefined {
@@ -437,6 +555,14 @@ function lstatOrUndefined(target: string): Stats | undefined {
 function statOrUndefined(target: string): Stats | undefined {
   try {
     return statSync(target);
+  } catch {
+    return undefined;
+  }
+}
+
+function realPathOrUndefined(target: string): string | undefined {
+  try {
+    return realpathSync(target);
   } catch {
     return undefined;
   }

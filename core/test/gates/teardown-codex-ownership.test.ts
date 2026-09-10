@@ -17,7 +17,7 @@ type OwnedWorkspace = Readonly<{ home: string; cwd: string }>;
 
 function withOwnedWorkspace(use: (workspace: OwnedWorkspace) => void): void {
   withStateSandbox("workspace", (sandbox) => {
-    withHookEnvironment({ HOME: sandbox.home }, () => use({ home: sandbox.home, cwd: path.join(sandbox.home, "workspace") }));
+    withHookEnvironment(sandbox.hookEnvironment(), () => use({ home: sandbox.home, cwd: sandbox.cwd }));
   });
 }
 
@@ -95,8 +95,11 @@ test("ownership is revalidated after acquiring the lock", (context) => {
 test("Codex retains unsafe state and does not sweep foreign aged state or rotate shared events", () => {
   withOwnedWorkspace(({ home, cwd }) => {
     const foreignCwd = path.join(home, "foreign");
-    writeStateValues(foreignCwd, "1", [`plan_approval_session=${OWNER}`, "roadmap=running"]);
-    const foreignState = stateFileFor(foreignCwd);
+    mkdirSync(foreignCwd, { recursive: true });
+    const foreignState = withHookEnvironment({ OSO_TASK_ROOT: foreignCwd }, () => {
+      writeStateValues(foreignCwd, "1", [`plan_approval_session=${OWNER}`, "roadmap=running"]);
+      return stateFileFor(foreignCwd);
+    });
     const state = stateFileFor(cwd);
     symlinkSync(foreignState, state);
     const events = path.join(stateRootDirectory(), "events.jsonl");
@@ -165,25 +168,29 @@ for (const sameRepository of [false, true]) {
       const foreignCwd = sameRepository ? ownerCwd : path.join(home, "foreign");
       mkdirSync(ownerCwd, { recursive: true });
       mkdirSync(foreignCwd, { recursive: true });
-      writeStateValues(ownerCwd, "1", [`plan_approval_session=${OWNER}`, "mode=plan", "roadmap=running"]);
-      const state = stateFileFor(ownerCwd);
+      const state = withHookEnvironment({ OSO_TASK_ROOT: ownerCwd }, () => {
+        writeStateValues(ownerCwd, "1", [`plan_approval_session=${OWNER}`, "mode=plan", "roadmap=running"]);
+        return stateFileFor(ownerCwd);
+      });
       const before = readFileSync(state, "utf8");
       const lock = `${state}.lock`;
-      const waiting = journalFileFor(foreignCwd).replace(/\.log$/, ".waiting");
       const worktrees = path.join(stateRootDirectory(), "worktrees", "1");
-      mkdirSync(lock);
-      mkdirSync(path.dirname(waiting), { recursive: true });
-      mkdirSync(worktrees, { recursive: true });
-      writeFileSync(waiting, "waiting");
-      utimesSync(state, AGED_PAST_THE_TTL, AGED_PAST_THE_TTL);
-      const result = runGate(["teardown"], hostEnvelope(
-        { host: "codex", agentSession: "1", stateBin: "oso-state" },
-        { cwd: foreignCwd, sessionId: FOREIGN },
-      ));
-      assert.equal(result.exit, 0);
-      assert.equal(existsSync(state), true);
-      assert.equal(readFileSync(state, "utf8"), before);
-      for (const asset of [lock, waiting, worktrees]) assert.equal(existsSync(asset), true, asset);
+      withHookEnvironment({ OSO_TASK_ROOT: foreignCwd }, () => {
+        const waiting = journalFileFor(foreignCwd).replace(/\.log$/, ".waiting");
+        mkdirSync(lock);
+        mkdirSync(path.dirname(waiting), { recursive: true });
+        mkdirSync(worktrees, { recursive: true });
+        writeFileSync(waiting, "waiting");
+        utimesSync(state, AGED_PAST_THE_TTL, AGED_PAST_THE_TTL);
+        const result = runGate(["teardown"], hostEnvelope(
+          { host: "codex", agentSession: "1", stateBin: "oso-state" },
+          { cwd: foreignCwd, sessionId: FOREIGN },
+        ));
+        assert.equal(result.exit, 0);
+        assert.equal(existsSync(state), true);
+        assert.equal(readFileSync(state, "utf8"), before);
+        for (const asset of [lock, waiting, worktrees]) assert.equal(existsSync(asset), true, asset);
+      });
     });
   });
 }

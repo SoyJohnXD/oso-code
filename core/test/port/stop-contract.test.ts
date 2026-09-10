@@ -15,7 +15,7 @@ const REASON_A_SUFFIX_ANCHORED_READER_TAKES = /.*"reason":"(.*)"}$/;
 function stopRun(gate: string, state: Record<string, string>, payload: string) {
   return withStateSandbox("workspace", (sandbox) => {
     sandbox.seed(state);
-    return withHookEnvironment({ HOME: sandbox.home }, () => runGate([gate], spawnedEnvelope(sandbox.expandJson(payload), process.env)));
+    return withHookEnvironment(sandbox.hookEnvironment(), () => runGate([gate], spawnedEnvelope(sandbox.expandJson(payload), process.env)));
   });
 }
 

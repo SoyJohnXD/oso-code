@@ -19,6 +19,7 @@ export function spawnAsHookHost(sandbox: StateSandbox, hook: HookCommandLine, en
     env: {
       HOME: sandbox.home,
       USERPROFILE: sandbox.home,
+      OSO_TASK_ROOT: sandbox.cwd,
       PATH: process.env["PATH"] ?? "",
       SYSTEMROOT: process.env["SYSTEMROOT"] ?? "",
     },

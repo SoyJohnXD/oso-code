@@ -30,7 +30,7 @@ export function loadGateFixtures(): GateFixture[] {
 
 export function observeGate(sandbox: StateSandbox, fixture: GateFixture): ObservedRun {
   const eventsBefore = sandbox.eventLogLines().length;
-  const env = { HOME: sandbox.home, ...expandedEnv(sandbox, fixture.env) };
+  const env = { HOME: sandbox.home, OSO_TASK_ROOT: sandbox.cwd, ...expandedEnv(sandbox, fixture.env) };
   const run = withHookEnvironment(env, () => {
     const envelope = spawnedEnvelope(sandbox.expandJson(fixture.stdin), process.env);
     const gateRun = runGate([fixture.gate, ...fixture.argv], envelope);
@@ -57,6 +57,7 @@ function entriesTheExpectationNames(sandbox: StateSandbox, fixture: GateFixture)
 
 const AMBIENT_ENV_A_FIXTURE_OWNS = {
   OSO_AGENT: "",
+  OSO_TASK_ROOT: "",
   OSO_HOST: "",
   OSO_STATE_BIN: "",
   OSO_STATE_DIR: "",

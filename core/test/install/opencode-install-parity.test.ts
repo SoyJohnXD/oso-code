@@ -157,7 +157,9 @@ describe("the install applies the profile mirror of the repository it runs in, a
     mkdirSync(outsideAnyRepository, { recursive: true });
     const port = withHookEnvironment({ OSO_STATE_DIR: stateRootOf(home) }, () => {
       const mirror = mirrorFileIn(setProfile(repositoryRoot, "strong", []));
-      return { mirror, outcome: installOpenCode({ ...portInput(home, root), workingDirectory: outsideAnyRepository }) };
+      const outcome = withHookEnvironment({ OSO_STATE_DIR: stateRootOf(home), OSO_TASK_ROOT: outsideAnyRepository }, () =>
+        installOpenCode({ ...portInput(home, root), workingDirectory: outsideAnyRepository }));
+      return { mirror, outcome };
     });
 
     assert.equal(port.outcome.exitCode, 0);

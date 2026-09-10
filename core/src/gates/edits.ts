@@ -1,8 +1,8 @@
 import type { GateOutcome } from "../hosts/envelope.ts";
 import { ALLOWED } from "../hosts/envelope.ts";
-import { stateFileFor } from "../state/store.ts";
 import {
   denied,
+  deniedForMovedIdentity,
   deniedForUnusableState,
   hookSessionId,
   osoStateRemedy,
@@ -24,10 +24,10 @@ function judgeEdits({ envelope }: GateRequest): GateOutcome {
   const session = hookSessionId(envelope);
   if (session === "") return payloadUnparseable();
 
-  const stateFile = stateFileFor(envelope.cwd);
-  const state = readArmedState(stateFile);
+  const state = readArmedState(envelope.cwd);
   if (state.kind === "absent") return ALLOWED;
-  if (state.kind === "unusable") return deniedForUnusableState("edits", stateFile, session);
+  if (state.kind === "moved") return deniedForMovedIdentity("edits", state, session);
+  if (state.kind === "unusable") return deniedForUnusableState("edits", state.stateFile, session);
 
   if (!stateSays(state.content, "mode", "plan")) return ALLOWED;
   if (aSliceIsActive(state.content)) return ALLOWED;

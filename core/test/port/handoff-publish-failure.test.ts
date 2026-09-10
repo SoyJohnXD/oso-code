@@ -22,7 +22,7 @@ function payloadFor({ session = "test-session", cwd = "{cwd}", agentId = "agent-
 function published(payload: Payload, seed: Readonly<Record<string, SeededEntry>> = {}): GateRun {
   return withStateSandbox("workspace", (sandbox) => {
     sandbox.seed(seed);
-    return withHookEnvironment({ HOME: sandbox.home }, () => runGate(["handoff"], spawnedEnvelope(sandbox.expandJson(payloadFor(payload)), process.env)));
+    return withHookEnvironment(sandbox.hookEnvironment(), () => runGate(["handoff"], spawnedEnvelope(sandbox.expandJson(payloadFor(payload)), process.env)));
   });
 }
 

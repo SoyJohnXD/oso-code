@@ -383,8 +383,9 @@ export function clientEnvValue(settingsFile: string, key: string): string {
 export function runOsoStateProbe(stateBin: string, environment: NodeJS.ProcessEnv): string {
   const probeHome = mkdtempSync(path.join(tmpdir(), "oso-verify-probe-"));
   try {
-    const env = { ...environment, HOME: probeHome, USERPROFILE: probeHome, OSO_STATE_BIN: stateBin };
-    const runStateScript = (...args: string[]) => spawnSync(process.execPath, [stateBin, ...args], { env, encoding: "utf8" });
+    const env = { ...environment, HOME: probeHome, USERPROFILE: probeHome, OSO_STATE_BIN: stateBin, OSO_TASK_ROOT: probeHome };
+    const runStateScript = (...args: string[]) =>
+      spawnSync(process.execPath, [stateBin, ...args], { cwd: probeHome, env, encoding: "utf8" });
     const setResult = runStateScript("--session", "verify-probe", "set", "mode=probe");
     if (setResult.error !== undefined || setResult.status !== 0) return collapsedNewlines(errorOutputOf(setResult));
     const getResult = runStateScript("--session", "verify-probe", "get", "mode");

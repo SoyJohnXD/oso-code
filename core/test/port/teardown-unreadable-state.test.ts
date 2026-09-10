@@ -23,7 +23,7 @@ test(
       sandbox.seed({ [ABANDONED_STATE]: { kind: "file", content: "mode=plan\n", aged: true } });
       const target = makeUnreadable(sandbox, ABANDONED_STATE);
       const stdin = sandbox.expandJson('{"session_id":"test-session"}');
-      const run = withHookEnvironment({ HOME: sandbox.home }, () => runGate(["teardown"], spawnedEnvelope(stdin, process.env)));
+      const run = withHookEnvironment(sandbox.hookEnvironment(), () => runGate(["teardown"], spawnedEnvelope(stdin, process.env)));
       assert.equal(run.exit, 0);
       try {
         assert.equal(sandbox.read(ABANDONED_STATE).kind, "absent");

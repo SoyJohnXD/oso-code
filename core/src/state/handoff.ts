@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, opendirSync, readFileSync, readdirSync, realpathSync, rmSync, type Dirent, type Stats } from "node:fs";
 import path from "node:path";
 import { CODEX_METADATA_READINESS_MS, CODEX_UUID_PATTERN, CodexMetadataFailure, readBoundedRegularFile, readCodexSessionMetadata, requireMetadataTime } from "../hosts/codex-session-metadata.ts";
@@ -37,7 +36,7 @@ export function runHandoffResolveCodex(cwd: string, coordinates: Omit<HandoffCoo
   const deadline = performance.now() + CODEX_METADATA_READINESS_MS;
   try {
     const repository = nativeRepositoryIdentity(cwd, deadline);
-    const directory = path.join(store.stateRootDirectory(), ".handoffs", store.sha256Hex(repository.receiptIdentity));
+    const directory = receiptDirectoryFor(cwd);
     const candidates = codexReceiptCandidates(directory, coordinates, deadline);
     const codexHome = process.env["CODEX_HOME"] || path.join(store.homeDirectoryFrom(process.platform, process.env), ".codex");
     const matches = new Set<string>();
@@ -45,7 +44,7 @@ export function runHandoffResolveCodex(cwd: string, coordinates: Omit<HandoffCoo
       const metadata = readCodexSessionMetadata(rollout, deadline);
       if (!candidates.has(metadata.id)) continue;
       if (metadata.parentThreadId !== parentId || metadata.agentPath !== coordinates.agentPath || metadata.agentRole !== coordinates.agentType) continue;
-      if (metadata.id === parentId || nativeRepositoryIdentity(metadata.cwd, deadline).commonDirectory !== repository.commonDirectory) continue;
+      if (metadata.id === parentId || nativeRepositoryIdentity(metadata.cwd, deadline) !== repository) continue;
       if (matches.has(metadata.id)) throw new HandoffFailure(`ambiguous native rollouts for ${metadata.id}`);
       matches.add(metadata.id);
     }
@@ -202,10 +201,13 @@ type HandoffPaths = {
   lockDir: string;
 };
 
+function receiptDirectoryFor(cwd: string): string {
+  return path.join(store.stateRootDirectory(), ".handoffs", store.repositoryIdFor(store.stateFileFor(cwd)));
+}
+
 function handoffPaths(cwd: string, agentId: string): HandoffPaths {
-  const stateFile = store.stateFileFor(cwd);
   const agentKey = store.sha256Hex(agentId);
-  const directory = path.join(store.stateRootDirectory(), ".handoffs", store.repositoryIdFor(stateFile));
+  const directory = receiptDirectoryFor(cwd);
   return {
     directory,
     agentId,
@@ -402,15 +404,12 @@ function readPrivateFileContent(target: string): string | undefined {
   return readFileSync(target, "utf8");
 }
 
-export function nativeRepositoryIdentity(cwd: string, deadline: number): { receiptIdentity: string; commonDirectory: string } {
+export function nativeRepositoryIdentity(cwd: string, deadline: number): string {
   requireMetadataTime(deadline);
   if (!path.isAbsolute(cwd)) throw new HandoffFailure(`native workspace is not absolute: ${cwd}`);
-  const common = execFileSync("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"], {
-    encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: Math.max(1, Math.ceil(deadline - performance.now())), maxBuffer: 65536,
-    env: { ...process.env, GIT_DIR: undefined, GIT_WORK_TREE: undefined, GIT_COMMON_DIR: undefined },
-  }).trimEnd();
-  if (!path.isAbsolute(common)) throw new HandoffFailure(`unknown native repository identity for ${cwd}`);
-  return { receiptIdentity: common, commonDirectory: realpathSync(common) };
+  const answered = store.gitCommonDirectory(cwd, Math.max(1, Math.ceil(deadline - performance.now())));
+  if (answered.kind === "refused") throw new HandoffFailure(`cannot resolve Codex handoff: ${answered.cause}`);
+  return realpathSync(answered.commonDirectory);
 }
 
 export function isNativeResolutionFault(error: unknown): boolean {

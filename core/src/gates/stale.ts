@@ -1,8 +1,7 @@
-import { existsSync } from "node:fs";
 import path from "node:path";
 import { ALLOWED, type GateOutcome, type HookCaller, type SessionStartVerdict } from "../hosts/envelope.ts";
 import type { HostName, PerHost } from "../routes/routes.ts";
-import { CHANGE_SLUG_PATTERN, isDirectory, readStateFile, stateFileFor, stateRootDirectory } from "../state/store.ts";
+import { CHANGE_SLUG_PATTERN, isDirectory, stateRootDirectory } from "../state/store.ts";
 import {
   EXPIRED_DELEGATION_CLAUSE,
   isDelegationLabel,
@@ -11,7 +10,7 @@ import {
   waitExpired,
   waitMarkFileFor,
 } from "./delegation.ts";
-import { hookSessionId, stateBinPath, stateValue, type GateDefinition, type GateRequest } from "./preflight.ts";
+import { hookSessionId, readArmedState, stateBinPath, stateValue, type GateDefinition, type GateRequest } from "./preflight.ts";
 
 const ROADMAP_DISARMED_SENTINEL = "none";
 const RUN_ARMED = "running";
@@ -26,13 +25,13 @@ export const STALE_GATE: GateDefinition<SessionStartVerdict> = {
 function judgeStale({ envelope }: GateRequest): GateOutcome<SessionStartVerdict> {
   if (!isDirectory(stateRootDirectory())) return ALLOWED;
 
-  const stateFile = stateFileFor(envelope.cwd);
-  if (!existsSync(stateFile)) return ALLOWED;
+  const state = readArmedState(envelope.cwd);
+  if (state.kind === "absent" || state.kind === "moved") return ALLOWED;
 
-  const content = contentOf(stateFile);
+  const content = state.kind === "readable" ? state.content : "";
   const sessionId = hookSessionId(envelope);
   const advisories = [
-    ...staleStateAdvisory(envelope.caller, stateFile, content, sessionId),
+    ...staleStateAdvisory(envelope.caller, state.stateFile, content, sessionId),
     ...expiredDelegationAdvisory(envelope.caller, envelope.cwd, content),
   ];
   if (advisories.length === 0) return ALLOWED;
@@ -99,11 +98,6 @@ const SKILL_PREFIXES: PerHost<string> = { claude: "/oso-code:", codex: "$oso-cod
 
 function skillPrefixFor(host: HostName): string {
   return SKILL_PREFIXES[host];
-}
-
-function contentOf(stateFile: string): string {
-  const read = readStateFile(stateFile);
-  return read.kind === "ok" ? read.content : "";
 }
 
 function quoted(value: string): string {

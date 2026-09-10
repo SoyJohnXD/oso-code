@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   utimesSync,
@@ -162,17 +163,21 @@ export class StateSandbox {
   readonly repositoryKey: string;
 
   constructor(workspace: string) {
-    this.root = mkdtempSync(path.join(tmpdir(), "oso-state-"));
+    this.root = realpathSync(mkdtempSync(path.join(tmpdir(), "oso-state-")));
     try {
       this.home = path.join(this.root, "home");
       this.cwd = path.join(this.root, workspace);
       mkdirSync(this.home, { recursive: true });
       mkdirSync(this.cwd, { recursive: true });
-      this.repositoryKey = sha256Hex(this.gitCommonDirectory() || this.cwd);
+      this.repositoryKey = sha256Hex(this.cwd);
     } catch (error) {
       rmSync(this.root, { recursive: true, force: true });
       throw error;
     }
+  }
+
+  hookEnvironment(extra: Readonly<Record<string, string>> = {}): Record<string, string> {
+    return { HOME: this.home, USERPROFILE: this.home, OSO_TASK_ROOT: this.cwd, ...extra };
   }
 
   expand(text: string): string {
@@ -293,6 +298,7 @@ export class StateSandbox {
     return {
       HOME: this.home,
       USERPROFILE: this.home,
+      OSO_TASK_ROOT: this.cwd,
       PATH: process.env["PATH"] ?? "",
       XDG_CONFIG_HOME: path.join(this.home, ".config"),
       XDG_DATA_HOME: path.join(this.home, ".local", "share"),
@@ -311,14 +317,5 @@ export class StateSandbox {
     if (run.error !== undefined) throw run.error;
     if (run.status !== 0) throw new Error(`git ${argv.join(" ")} in ${repository} exited ${run.status}: ${run.stderr}`);
     return run.stdout;
-  }
-
-  private gitCommonDirectory(): string {
-    const named = spawnSync("git", ["-C", this.cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"], {
-      env: this.subjectEnvironment({}),
-      encoding: "utf8",
-    });
-    if (named.error !== undefined || named.status !== 0) return "";
-    return named.stdout.replace(/\n+$/, "");
   }
 }

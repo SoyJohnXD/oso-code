@@ -28,7 +28,7 @@ for (const host of ["codex", "claude", "opencode"] as const) {
         withStateSandbox("workspace", (sandbox) => {
           sandbox.seed(state);
           const envelope = readEnvelope(sandbox.expandJson(bashEnvelope(command)), { host, agentSession: "test-session", stateBin: "" });
-          const result = withHookEnvironment({ HOME: sandbox.home }, () => runGate([gate], envelope));
+          const result = withHookEnvironment(sandbox.hookEnvironment(), () => runGate([gate], envelope));
           assert.equal(result.verdict.kind, "deny", `${host}: ${command}`);
         });
       }
@@ -411,7 +411,7 @@ describe("core/src/gates/proddeploy.ts: an expansion in command-word position is
         sandbox.seed(ARMED_RUN_STATE);
         const caller = { host: "claude" as const, agentSession: "test-session", stateBin: "/opt/oso/bin/other-state" };
         const envelope = readEnvelope(sandbox.expandJson(bashEnvelope(command)), caller);
-        return withHookEnvironment({ HOME: sandbox.home }, () => runGate(["proddeploy"], envelope));
+        return withHookEnvironment(sandbox.hookEnvironment(), () => runGate(["proddeploy"], envelope));
       });
       assert.equal(run.verdict.kind, decision, command);
     }
@@ -491,6 +491,6 @@ function bashEnvelope(command: string): string {
 function judge(argv: readonly string[], seed: Readonly<Record<string, string>>, envelope: string) {
   return withStateSandbox("workspace", (sandbox) => {
     sandbox.seed(seed);
-    return withHookEnvironment({ HOME: sandbox.home }, () => runGate(argv, spawnedEnvelope(sandbox.expandJson(envelope), process.env)));
+    return withHookEnvironment(sandbox.hookEnvironment(), () => runGate(argv, spawnedEnvelope(sandbox.expandJson(envelope), process.env)));
   });
 }

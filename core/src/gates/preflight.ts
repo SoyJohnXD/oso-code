@@ -3,7 +3,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GateOutcome, GateVerdict, HookCaller, HookEnvelope, PreToolUseVerdict } from "../hosts/envelope.ts";
 import { GATE_BUNDLE, gateRow, type GateId } from "../routes/routes.ts";
-import { readStateFile } from "../state/store.ts";
+import {
+  readStateFile,
+  stateLeftAtTheInferredIdentity,
+  taskIdentityFor,
+  TASK_ROOT_VARIABLE,
+  type InferredState,
+  type TaskIdentity,
+} from "../state/store.ts";
 
 export { stateRecords, stateSays, stateValue } from "../state/store.ts";
 
@@ -16,9 +23,14 @@ export type GateDefinition<V extends GateVerdict = PreToolUseVerdict> = Readonly
 }>;
 
 export type ArmedState =
-  | { readonly kind: "absent" }
-  | { readonly kind: "unusable" }
-  | { readonly kind: "readable"; readonly content: string };
+  | Readonly<{ kind: "absent" }>
+  | Readonly<{ kind: "unusable"; stateFile: string }>
+  | Readonly<{ kind: "moved"; left: InferredState; task: TaskIdentity }>
+  | Readonly<{ kind: "readable"; stateFile: string; content: string }>;
+
+export type MovedIdentity = Extract<ArmedState, { kind: "moved" }>;
+
+export type StandingState = Extract<ArmedState, { stateFile: string }>;
 
 export type GateDenial = Readonly<{
   gate: GateId;
@@ -41,11 +53,20 @@ export function payloadUnparseable(): GateOutcome {
   return { verdict: { kind: "allow" }, events: [{ event: "payload-unparseable", session: "" }] };
 }
 
-export function readArmedState(stateFile: string): ArmedState {
-  const read = readStateFile(stateFile);
-  if (read.kind === "absent") return { kind: "absent" };
-  if (read.kind === "unreadable") return { kind: "unusable" };
-  return { kind: "readable", content: read.content };
+export function readArmedState(cwd: string): ArmedState {
+  const task = taskIdentityFor(cwd);
+  if (task.kind !== "unknown") {
+    const read = readStateFile(task.stateFile);
+    if (read.kind === "ok") return { kind: "readable", stateFile: task.stateFile, content: read.content };
+    if (read.kind === "unreadable") return { kind: "unusable", stateFile: task.stateFile };
+  }
+  const left = stateLeftAtTheInferredIdentity(cwd, task);
+  return left === undefined ? { kind: "absent" } : { kind: "moved", left, task };
+}
+
+export function stateFileIfNamed(cwd: string): string | undefined {
+  const task = taskIdentityFor(cwd);
+  return task.kind === "unknown" ? undefined : task.stateFile;
 }
 
 export function osoStateRemedy(session: string, verbAndArguments: string): string {
@@ -82,6 +103,29 @@ export function deniedForUnusableState(gate: GateId, stateFile: string, session:
     message: unusableStateMessage(stateFile, session),
     event: "state-unreadable",
     session,
+  });
+}
+
+export function identityMovedMessage(state: MovedIdentity, session: string): string {
+  const named =
+    state.task.kind === "unknown"
+      ? `this session can name none of its own (${state.task.cause}) until ${TASK_ROOT_VARIABLE} declares one`
+      : `${TASK_ROOT_VARIABLE} now names ${state.task.identity}`;
+  return (
+    `oso-code: the state that arms this session's gates still sits at ${state.left.stateFile}, keyed by the ` +
+    `identity earlier releases inferred (${state.left.identity}), while ${named}. Carry it over with ` +
+    `${osoStateRemedy(session, "show")} from this directory, or drop it with ${osoStateRemedy(session, "clear")}; ` +
+    `until one of those runs, this gate denies rather than allowing on state it no longer reads.`
+  );
+}
+
+export function deniedForMovedIdentity(gate: GateId, state: MovedIdentity, session: string): GateOutcome {
+  return denied({
+    gate,
+    message: identityMovedMessage(state, session),
+    event: "identity-moved-denied",
+    session,
+    detail: state.left.stateFile,
   });
 }
 

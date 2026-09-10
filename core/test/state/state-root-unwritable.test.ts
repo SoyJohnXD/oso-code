@@ -19,7 +19,7 @@ function withUnwritableStateRoot<T>(read: (sandbox: StateSandbox, stateRoot: str
     mkdirSync(stateRoot, { recursive: true });
     chmodSync(stateRoot, READ_EXECUTE_ONLY_DIRECTORY);
     try {
-      return withHookEnvironment({ HOME: sandbox.home }, () => read(sandbox, stateRoot));
+      return withHookEnvironment(sandbox.hookEnvironment(), () => read(sandbox, stateRoot));
     } finally {
       chmodSync(stateRoot, OWNER_ONLY_DIRECTORY);
     }
@@ -60,7 +60,7 @@ describe(
 
     test("a writable state directory arms without a word, so the diagnosis fires on the failure alone", () => {
       withStateSandbox("workspace", (sandbox) => {
-        withHookEnvironment({ HOME: sandbox.home }, () => {
+        withHookEnvironment(sandbox.hookEnvironment(), () => {
           assert.doesNotThrow(() => writeStateValues(sandbox.cwd, "arm-probe", ARMING_A_SLICE));
         });
       });

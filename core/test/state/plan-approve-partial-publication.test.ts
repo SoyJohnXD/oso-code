@@ -14,7 +14,7 @@ const DIGEST_OF_THE_PRESENTED_PLAN = sha256Hex(THE_PRESENTED_PLAN);
 type Settlement = { exit: number; approval: string | undefined };
 
 function approvedWithoutANativePresentation(sandbox: StateSandbox): Settlement {
-  return withHookEnvironment({ HOME: sandbox.home }, () => {
+  return withHookEnvironment(sandbox.hookEnvironment(), () => {
     runCapturePlan(sandbox.cwd, SESSION, DIGEST_OF_THE_PRESENTED_PLAN, THE_PRESENTED_PLAN);
     const stateFile = stateFileFor(sandbox.cwd);
     const presented = readValue(stateFile, "plan_snapshot_file") as string;

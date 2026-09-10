@@ -12,7 +12,7 @@ const DIGEST_OF_THE_PRESENTED_PLAN = sha256Hex(THE_PRESENTED_PLAN);
 const A_DIGEST_NO_DOCUMENT_PRODUCED = sha256Hex("a label this repository never derived from a plan");
 
 function captured(sandbox: StateSandbox, digest: string, document: string): number {
-  return withHookEnvironment({ HOME: sandbox.home }, () => runCapturePlan(sandbox.cwd, SESSION, digest, document));
+  return withHookEnvironment(sandbox.hookEnvironment(), () => runCapturePlan(sandbox.cwd, SESSION, digest, document));
 }
 
 function presentedSnapshotOf(sandbox: StateSandbox, digest: string): string {

@@ -65,7 +65,7 @@ test(
       const added = sandbox.run(CLI_SUBJECT, ["--session", "test-session", "deny-pattern", "add", "npm run build"]);
       assert.equal(added.exit, 0, added.stderr);
 
-      const run = withHookEnvironment({ HOME: sandbox.home }, () =>
+      const run = withHookEnvironment(sandbox.hookEnvironment(), () =>
         runGate(["proddeploy"], spawnedEnvelope(sandbox.expandJson(payloadRunning("npm run build")), process.env)),
       );
       assert.match(run.stdout, /"permissionDecision":"deny"/);

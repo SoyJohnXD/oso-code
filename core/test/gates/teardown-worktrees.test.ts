@@ -183,7 +183,7 @@ function waveState(sessionId: string, repository: string): string {
 
 function runTeardown(sandbox: StateSandbox, sessionId: string, env: Readonly<Record<string, string>> = {}): void {
   const stdin = sandbox.expandJson(`{"session_id":"${sessionId}","cwd":"{cwd}"}`);
-  const run = withHookEnvironment({ HOME: sandbox.home, ...env }, () => runGate(["teardown"], spawnedEnvelope(stdin, process.env)));
+  const run = withHookEnvironment(sandbox.hookEnvironment(env), () => runGate(["teardown"], spawnedEnvelope(stdin, process.env)));
   assert.equal(run.exit, 0, `the teardown gate failed: ${run.stderr}`);
 }
 

@@ -529,7 +529,7 @@ function commitHookRedVerdict(paths: CodexPaths, environment: NodeJS.ProcessEnv)
     if (baseline.status !== 0) return "setup-failed";
     const baseCommit = headOfProbeRepo(probeRepo);
 
-    const env = { ...environment, HOME: probeHome, USERPROFILE: probeHome };
+    const env = { ...environment, HOME: probeHome, USERPROFILE: probeHome, OSO_TASK_ROOT: probeRepo };
     const armed = spawnSync(
       process.execPath,
       [path.join(paths.runtimeRoot, "bin", "oso-state"), "--session", COMMIT_HOOK_PROBE_SESSION, "set", "mode=quick", "active_slice=none", "verify_green=false"],
@@ -577,7 +577,7 @@ function planArtifactRoundTripVerdict(stateBin: string, environment: NodeJS.Proc
     const init = spawnSync("git", ["-C", probeRepo, "init", "-q"], { encoding: "utf8" });
     if (init.error !== undefined || init.status !== 0) return "git-init-failed";
 
-    const env = { ...environment, HOME: probeHome, USERPROFILE: probeHome };
+    const env = { ...environment, HOME: probeHome, USERPROFILE: probeHome, OSO_TASK_ROOT: probeRepo };
     const runStateScript = (input: string | undefined, ...args: string[]) =>
       spawnSync(process.execPath, [stateBin, "--session", PLAN_ARTIFACT_PROBE_SESSION, ...args], { cwd: probeRepo, input, env, encoding: "utf8" });
 

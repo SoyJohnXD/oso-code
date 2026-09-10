@@ -12,12 +12,11 @@ import {
   readStateFile,
   secondsSinceModified,
   stateRootDirectory,
-  stateFileFor,
   stateRecords,
   StateFileUnreadableError,
   withLock,
 } from "../state/store.ts";
-import { hookSessionId, sanitizeSession, stateValue, type GateDefinition, type GateRequest } from "./preflight.ts";
+import { hookSessionId, sanitizeSession, stateFileIfNamed, stateValue, type GateDefinition, type GateRequest } from "./preflight.ts";
 
 const ABANDONED_STATE_DAYS = 7;
 const JOURNAL_KEYED_WAIT_MARK_SUFFIX = ".waiting";
@@ -45,8 +44,8 @@ function judgeTeardown({ envelope }: GateRequest): GateOutcome<NoVerdictVerdict>
 }
 
 function codexTeardown(envelope: HookEnvelope): GateOutcome<NoVerdictVerdict> {
-  const stateFile = stateFileFor(envelope.cwd);
-  if (!codexOwnsState(stateFile, envelope)) return NO_VERDICT;
+  const stateFile = stateFileIfNamed(envelope.cwd);
+  if (stateFile === undefined || !codexOwnsState(stateFile, envelope)) return NO_VERDICT;
   try {
     withLock(stateFile, envelope.sessionId, () => {
       if (codexOwnsState(stateFile, envelope)) rmSync(stateFile, { force: true });
@@ -100,6 +99,7 @@ function removeWorktreesOf(sessionId: string, stateFile: string | undefined): vo
 }
 
 function dropJournalKeyedWaitMark(cwd: string): void {
+  if (stateFileIfNamed(cwd) === undefined) return;
   const journalFile = journalFileFor(cwd);
   const stem = journalFile.endsWith(".log") ? journalFile.slice(0, -".log".length) : journalFile;
   rmSync(`${stem}${JOURNAL_KEYED_WAIT_MARK_SUFFIX}`, { force: true });

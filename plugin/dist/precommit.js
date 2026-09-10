@@ -97,6 +97,7 @@ import {
   lstatSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -104,6 +105,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+var TASK_ROOT_VARIABLE = "OSO_TASK_ROOT";
 var TOKEN_MAX_LENGTH = 128;
 var EVENTS_SCHEMA_VERSION = 2;
 var BYTES_A_GATE_CAN_READ = 3072;
@@ -115,12 +117,62 @@ function stateRootDirectory() {
   if (configured !== void 0 && configured !== "") return configured;
   return path.join(homeDirectory(), ".local", "state", "oso-code");
 }
-function repositoryIdentityFor(cwd) {
-  const directory = cwd.replace(/\r$/, "");
-  return gitCommonDirectory(directory) || directory;
+function taskIdentityFor(cwd) {
+  const stateRoot = stateRootDirectory();
+  const directory = withoutTrailingReturn(cwd);
+  const declaration = process.env[TASK_ROOT_VARIABLE] ?? "";
+  if (declaration === "") return gitAnsweredIdentity(stateRoot, directory);
+  const declared = declaredRootOf(declaration);
+  if (declared.kind === "refused") {
+    return { kind: "unknown", cwd: directory, cause: declared.cause, inferredIdentity: inferredIdentityFor(directory) };
+  }
+  if (!declaredRootCovers(declared.root, realPathOrUndefined(directory) ?? directory)) {
+    return gitAnsweredIdentity(stateRoot, directory, declared.root);
+  }
+  return { kind: "declared", identity: declared.root, stateFile: stateFileOfIdentity(stateRoot, declared.root) };
 }
-function stateFileFor(cwd) {
-  return path.join(stateRootDirectory(), `${sha256Hex(repositoryIdentityFor(cwd))}.state`);
+function gitAnsweredIdentity(stateRoot, directory, rootThatDoesNotCover) {
+  const answered = gitCommonDirectory(directory);
+  if (answered.kind === "answered") {
+    const identity = answered.commonDirectory;
+    return { kind: "repository", identity, stateFile: stateFileOfIdentity(stateRoot, identity) };
+  }
+  const uncovered = rootThatDoesNotCover === void 0 ? "" : `, and ${TASK_ROOT_VARIABLE} declares ${rootThatDoesNotCover}, which does not contain it`;
+  return { kind: "unknown", cwd: directory, cause: `${answered.cause}${uncovered}`, inferredIdentity: directory };
+}
+function inferredIdentityFor(cwd) {
+  const directory = withoutTrailingReturn(cwd);
+  const answered = gitCommonDirectory(directory);
+  return answered.kind === "answered" ? answered.commonDirectory : directory;
+}
+function stateLeftAtTheInferredIdentity(cwd, task) {
+  if (task.kind === "repository") return void 0;
+  const identity = task.kind === "unknown" ? task.inferredIdentity : inferredIdentityFor(cwd);
+  if (task.kind === "declared" && identity === task.identity) return void 0;
+  const stateFile = stateFileOfIdentity(stateRootDirectory(), identity);
+  if (readStateFile(stateFile).kind === "absent") return void 0;
+  return { identity, stateFile };
+}
+function stateFileOfIdentity(stateRoot, identity) {
+  return path.join(stateRoot, `${sha256Hex(identity)}.state`);
+}
+function declaredRootOf(declaration) {
+  if (!path.isAbsolute(declaration)) {
+    return { kind: "refused", cause: `${TASK_ROOT_VARIABLE} is not an absolute path: ${declaration}` };
+  }
+  const root = realPathOrUndefined(declaration);
+  if (root === void 0 || !isDirectory(root)) {
+    return { kind: "refused", cause: `${TASK_ROOT_VARIABLE} names no readable directory: ${declaration}` };
+  }
+  return { kind: "root", root };
+}
+function declaredRootCovers(root, directory) {
+  const stepsDown = path.relative(root, directory);
+  if (stepsDown === "") return true;
+  return !path.isAbsolute(stepsDown) && stepsDown !== ".." && !stepsDown.startsWith(`..${path.sep}`);
+}
+function withoutTrailingReturn(cwd) {
+  return cwd.replace(/\r$/, "");
 }
 var MODEL_TOKEN_SHAPE = `1 to ${TOKEN_MAX_LENGTH} characters of letters, digits and / : . - _ @`;
 function stateRecords(content, key) {
@@ -138,6 +190,10 @@ function readStateFile(stateFile) {
     if (isErrnoException(error) && error.code === "ENOENT") return { kind: "absent" };
     return { kind: "unreadable", cause: causeOf(error) };
   }
+}
+function isDirectory(target) {
+  const stats = statOrUndefined(target);
+  return stats !== void 0 && stats.isDirectory();
 }
 function logEvent(entry) {
   const line = serializeEvent(entry);
@@ -166,16 +222,28 @@ function homeDirectoryFrom(platform, environment) {
 function homeDirectory() {
   return homeDirectoryFrom(process.platform, process.env);
 }
-function gitCommonDirectory(cwd) {
+var GIT_ANSWER_MAX_BYTES = 65536;
+function gitCommonDirectory(cwd, timeoutMs) {
   try {
-    const output = execFileSync("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"], {
+    const answer = execFileSync("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"], {
       encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"]
-    });
-    return output.replace(/\n+$/, "");
-  } catch {
-    return "";
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: timeoutMs,
+      maxBuffer: GIT_ANSWER_MAX_BYTES,
+      env: { ...process.env, GIT_DIR: void 0, GIT_WORK_TREE: void 0, GIT_COMMON_DIR: void 0 }
+    }).replace(/\n+$/, "");
+    if (!path.isAbsolute(answer)) {
+      return { kind: "refused", cause: `git named no absolute common directory for ${cwd}: ${answer}` };
+    }
+    return { kind: "answered", commonDirectory: answer };
+  } catch (error) {
+    return { kind: "refused", cause: gitRefusalCause(error) };
   }
+}
+function gitRefusalCause(error) {
+  const spoken = error instanceof Error ? error.stderr : void 0;
+  if (typeof spoken !== "string" || spoken.trim() === "") return causeOf(error);
+  return spoken.replace(/\n+$/, "");
 }
 function causeOf(error) {
   return error instanceof Error ? error.message : String(error);
@@ -190,6 +258,20 @@ function withOwnerOnlyUmask(run2) {
 }
 function isoTimestamp() {
   return (/* @__PURE__ */ new Date()).toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+function statOrUndefined(target) {
+  try {
+    return statSync(target);
+  } catch {
+    return void 0;
+  }
+}
+function realPathOrUndefined(target) {
+  try {
+    return realpathSync(target);
+  } catch {
+    return void 0;
+  }
 }
 function serializeEvent(entry) {
   const client = path.basename(process.env["CLAUDE_CODE_EXECPATH"] ?? "");
@@ -256,17 +338,25 @@ function isErrnoException(error) {
 function sanitizeSession(raw) {
   return raw.replace(/[^a-zA-Z0-9-]/g, "");
 }
-function readArmedState(stateFile) {
-  const read = readStateFile(stateFile);
-  if (read.kind === "absent") return { kind: "absent" };
-  if (read.kind === "unreadable") return { kind: "unusable" };
-  return { kind: "readable", content: read.content };
+function readArmedState(cwd) {
+  const task = taskIdentityFor(cwd);
+  if (task.kind !== "unknown") {
+    const read = readStateFile(task.stateFile);
+    if (read.kind === "ok") return { kind: "readable", stateFile: task.stateFile, content: read.content };
+    if (read.kind === "unreadable") return { kind: "unusable", stateFile: task.stateFile };
+  }
+  const left = stateLeftAtTheInferredIdentity(cwd, task);
+  return left === void 0 ? { kind: "absent" } : { kind: "moved", left, task };
 }
 function osoStateRemedy(session, verbAndArguments) {
   return `oso-state --session ${session} ${verbAndArguments}`;
 }
 function unusableStateMessage(stateFile, session) {
   return `oso-code: this session is armed but its state file (${stateFile}) cannot be read, so the gate cannot tell whether this call is safe. Remove or repair it (${osoStateRemedy(session, "clear")}), then retry.`;
+}
+function identityMovedMessage(state, session) {
+  const named = state.task.kind === "unknown" ? `this session can name none of its own (${state.task.cause}) until ${TASK_ROOT_VARIABLE} declares one` : `${TASK_ROOT_VARIABLE} now names ${state.task.identity}`;
+  return `oso-code: the state that arms this session's gates still sits at ${state.left.stateFile}, keyed by the identity earlier releases inferred (${state.left.identity}), while ${named}. Carry it over with ${osoStateRemedy(session, "show")} from this directory, or drop it with ${osoStateRemedy(session, "clear")}; until one of those runs, this gate denies rather than allowing on state it no longer reads.`;
 }
 var HOOKS_MANIFEST_FINGERPRINT = `/${GATE_BUNDLE}`;
 
@@ -298,11 +388,11 @@ var HOOK_ERROR_EXIT = 2;
 function preCommitRun(cwd, marker) {
   const session = sanitizeSession(marker);
   if (session === "") return COMMIT_PROCEEDS;
-  const stateFile = stateFileFor(cwd);
-  const state = readArmedState(stateFile);
+  const state = readArmedState(cwd);
   if (state.kind === "absent") return COMMIT_PROCEEDS;
+  if (state.kind === "moved") return aborted(identityMovedMessage(state, session), "identity-moved-denied", session);
   if (state.kind === "unusable") {
-    return aborted(unusableStateMessage(stateFile, session), "state-unreadable", session);
+    return aborted(unusableStateMessage(state.stateFile, session), "state-unreadable", session);
   }
   if (verifyIsGreen(state.content)) return COMMIT_PROCEEDS;
   return aborted(untilGreenMessage(state.content), "commit-denied", session);

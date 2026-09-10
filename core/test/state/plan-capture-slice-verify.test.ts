@@ -93,7 +93,7 @@ provedSomething(
 );
 
 function captured(sandbox: StateSandbox, document: string): number {
-  return withHookEnvironment({ HOME: sandbox.home }, () =>
+  return withHookEnvironment(sandbox.hookEnvironment(), () =>
     runCapturePlan(sandbox.cwd, SESSION, sha256Hex(document), document),
   );
 }
@@ -143,7 +143,7 @@ describe(
 
     test("the Codex Stop gate turns that refusal into a clean block and records the slice it named", () => {
       withStateSandbox("workspace", (sandbox) => {
-        const run = withHookEnvironment({ HOME: sandbox.home }, () =>
+        const run = withHookEnvironment(sandbox.hookEnvironment(), () =>
           runGate(["planstop"], spawnedEnvelope(codexStopPayload(sandbox, SLICE_TWO_NAMES_NO_CHECK), process.env)),
         );
         assert.equal(run.exit, 0);

@@ -27,7 +27,7 @@ function payloadRunning(command: string): string {
 function judgedAgainst(patterns: string, command: string): GateRun {
   return withStateSandbox("workspace", (sandbox) => {
     sandbox.seed({ [STATE_FILE]: ARMED_STATE, [DENY_PATTERNS_FILE]: patterns });
-    return withHookEnvironment({ HOME: sandbox.home }, () =>
+    return withHookEnvironment(sandbox.hookEnvironment(), () =>
       runGate(["proddeploy"], spawnedEnvelope(sandbox.expandJson(payloadRunning(command)), process.env)),
     );
   });
@@ -84,7 +84,7 @@ describe(
     test("an untranslatable pattern in an unarmed repository leaves the turn alone", () => {
       const run = withStateSandbox("workspace", (sandbox) => {
         sandbox.seed({ [DENY_PATTERNS_FILE]: `${A_RANGE_PAST_ASCII}\n` });
-        return withHookEnvironment({ HOME: sandbox.home }, () =>
+        return withHookEnvironment(sandbox.hookEnvironment(), () =>
           runGate(["proddeploy"], spawnedEnvelope(sandbox.expandJson(payloadRunning("npm run build")), process.env)),
         );
       });

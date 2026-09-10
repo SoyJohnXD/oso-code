@@ -44,7 +44,7 @@ function pushedRunDirectoryModes(autoWait: string): { runs: number; repository: 
       [STATE_ROOT_THESE_TESTS_SPELL]: { kind: "directory" },
       [STATE_FILE]: stateText({ ...RUN_STATE, auto_wait: autoWait }),
     });
-    withHookEnvironment({ HOME: sandbox.home }, () => runGate(["autocontinue"], spawnedEnvelope(sandbox.expandJson(STOP_PAYLOAD), process.env)));
+    withHookEnvironment(sandbox.hookEnvironment(), () => runGate(["autocontinue"], spawnedEnvelope(sandbox.expandJson(STOP_PAYLOAD), process.env)));
     return { runs: modeOf(sandbox, RUNS_DIR), repository: modeOf(sandbox, REPOSITORY_RUNS_DIR) };
   });
 }

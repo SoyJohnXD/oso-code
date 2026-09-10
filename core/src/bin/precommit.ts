@@ -1,7 +1,7 @@
 import { untilGreenMessage, verifyIsGreen } from "../gates/commit.ts";
-import { readArmedState, sanitizeSession, unusableStateMessage } from "../gates/preflight.ts";
+import { identityMovedMessage, readArmedState, sanitizeSession, unusableStateMessage } from "../gates/preflight.ts";
 import { gateErrorText } from "../hosts/hook-run.ts";
-import { logEvent, stateFileFor, type LoggedEvent } from "../state/store.ts";
+import { logEvent, type LoggedEvent } from "../state/store.ts";
 
 type PreCommitRun = Readonly<{ exit: number; stderr: string; events: readonly LoggedEvent[] }>;
 
@@ -13,11 +13,11 @@ function preCommitRun(cwd: string, marker: string): PreCommitRun {
   const session = sanitizeSession(marker);
   if (session === "") return COMMIT_PROCEEDS;
 
-  const stateFile = stateFileFor(cwd);
-  const state = readArmedState(stateFile);
+  const state = readArmedState(cwd);
   if (state.kind === "absent") return COMMIT_PROCEEDS;
+  if (state.kind === "moved") return aborted(identityMovedMessage(state, session), "identity-moved-denied", session);
   if (state.kind === "unusable") {
-    return aborted(unusableStateMessage(stateFile, session), "state-unreadable", session);
+    return aborted(unusableStateMessage(state.stateFile, session), "state-unreadable", session);
   }
   if (verifyIsGreen(state.content)) return COMMIT_PROCEEDS;
   return aborted(untilGreenMessage(state.content), "commit-denied", session);

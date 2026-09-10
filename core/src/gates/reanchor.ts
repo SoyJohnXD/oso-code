@@ -1,6 +1,6 @@
 import { ALLOWED, type GateOutcome, type SessionStartVerdict } from "../hosts/envelope.ts";
-import { isDirectory, journalFileFor, readStateFile, stateFileFor } from "../state/store.ts";
-import { hookSessionId, stateValue, type GateDefinition, type GateRequest } from "./preflight.ts";
+import { isDirectory, journalFileFor } from "../state/store.ts";
+import { hookSessionId, readArmedState, stateValue, type GateDefinition, type GateRequest } from "./preflight.ts";
 
 export const REANCHOR_GATE: GateDefinition<SessionStartVerdict> = {
   gate: "reanchor",
@@ -15,14 +15,15 @@ function judgeReanchor({ envelope }: GateRequest): GateOutcome<SessionStartVerdi
   if (sessionId === "") return ALLOWED;
   if (!isDirectory(envelope.cwd)) return ALLOWED;
 
-  const stateFile = stateFileFor(envelope.cwd);
-  const runMarker = unattendedRunMarker(stateFile, sessionId);
+  const state = readArmedState(envelope.cwd);
+  if (state.kind !== "readable") return ALLOWED;
+  const runMarker = unattendedRunMarker(state.content, sessionId);
   if (runMarker === undefined) return ALLOWED;
 
   let unattendedRun = false;
   if (runMarker === "running") {
     unattendedRun = true;
-  } else if (!sliceIsArmed(stateFile)) {
+  } else if (!sliceIsArmed(state.content)) {
     return ALLOWED;
   }
 
@@ -30,18 +31,14 @@ function judgeReanchor({ envelope }: GateRequest): GateOutcome<SessionStartVerdi
   return { verdict: { kind: "context", additionalContext: context }, events: [] };
 }
 
-function unattendedRunMarker(stateFile: string, sessionId: string): string | undefined {
-  const read = readStateFile(stateFile);
-  if (read.kind !== "ok") return undefined;
-  if (stateValue(read.content, "session") !== sessionId) return undefined;
-  return stateValue(read.content, "auto");
+function unattendedRunMarker(content: string, sessionId: string): string | undefined {
+  if (stateValue(content, "session") !== sessionId) return undefined;
+  return stateValue(content, "auto");
 }
 
-function sliceIsArmed(stateFile: string): boolean {
-  const read = readStateFile(stateFile);
-  if (read.kind !== "ok") return false;
-  if (stateValue(read.content, "mode") !== "plan") return false;
-  const activeSlice = stateValue(read.content, "active_slice");
+function sliceIsArmed(content: string): boolean {
+  if (stateValue(content, "mode") !== "plan") return false;
+  const activeSlice = stateValue(content, "active_slice");
   return activeSlice !== "" && activeSlice !== "none";
 }
 

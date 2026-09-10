@@ -64,7 +64,7 @@ describe(
         const run = withStateSandbox("workspace", (sandbox) => {
           sandbox.seed({ [STATE_FILE]: "mode=plan\nsession=other-session\n" });
           const stdin = sandbox.expandJson('{"session_id":"test-session","cwd":"{cwd}"}');
-          return withHookEnvironment({ HOME: sandbox.home }, () => anchorlessRunGate(["stale"], stdin));
+          return withHookEnvironment(sandbox.hookEnvironment(), () => anchorlessRunGate(["stale"], stdin));
         });
         assertLoud(run, /carries a verified oso-code bin\/oso-state/);
       },
@@ -90,7 +90,7 @@ describe(
       () => {
         const run = withStateSandbox("workspace", (sandbox) => {
           const stdin = sandbox.expandJson('{"session_id":"test-session","cwd":"{cwd}","source":"startup"}');
-          return withHookEnvironment({ HOME: sandbox.home }, () => anchorlessRunGate(["version"], stdin));
+          return withHookEnvironment(sandbox.hookEnvironment(), () => anchorlessRunGate(["version"], stdin));
         });
         assertLoud(run, /carries a verified oso-code bin\/oso-state/);
       },

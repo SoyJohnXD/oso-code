@@ -28,8 +28,10 @@ function runStop(
 ) {
   return withStateSandbox("workspace", (sandbox) => {
     sandbox.seed(state);
-    const environment: Record<string, string> =
-      host === "opencode" ? { HOME: sandbox.home, OSO_HOST: host } : { HOME: sandbox.home, OSO_AGENT: host === "codex" ? "test-session" : "" };
+    const environment =
+      host === "opencode"
+        ? sandbox.hookEnvironment({ OSO_HOST: host })
+        : sandbox.hookEnvironment({ OSO_AGENT: host === "codex" ? "test-session" : "" });
     return withHookEnvironment(environment, () => runGate([gate], spawnedEnvelope(sandbox.expandJson(payload), process.env)));
   });
 }

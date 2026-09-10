@@ -43,7 +43,18 @@ function makeFixture(): Fixture {
 }
 
 function inHome<T>(fixture: Fixture, run: () => T): T {
-  return underFixtureHome(fixture.home, run);
+  return underDeclaredTask(fixture.repo, () => underFixtureHome(fixture.home, run));
+}
+
+function underDeclaredTask<T>(taskRoot: string, run: () => T): T {
+  const previous = process.env["OSO_TASK_ROOT"];
+  process.env["OSO_TASK_ROOT"] = taskRoot;
+  try {
+    return run();
+  } finally {
+    if (previous === undefined) delete process.env["OSO_TASK_ROOT"];
+    else process.env["OSO_TASK_ROOT"] = previous;
+  }
 }
 
 function arm(fixture: Fixture, pairs: readonly string[]): void {
@@ -51,7 +62,7 @@ function arm(fixture: Fixture, pairs: readonly string[]): void {
 }
 
 function armAs(fixture: Fixture, owner: string, pairs: readonly string[]): void {
-  armStateUnder(fixture.home, fixture.repo, owner, pairs);
+  underDeclaredTask(fixture.repo, () => armStateUnder(fixture.home, fixture.repo, owner, pairs));
 }
 
 function toolCall(tool: string, args: Record<string, unknown>): [ToolExecuteInput, ToolExecuteOutput] {

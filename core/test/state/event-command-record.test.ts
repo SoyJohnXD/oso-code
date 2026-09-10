@@ -16,7 +16,7 @@ type RecordedEvent = Readonly<Record<string, unknown>>;
 
 function recordOf(command: string): RecordedEvent {
   return withStateSandbox("workspace", (sandbox) =>
-    withHookEnvironment({ HOME: sandbox.home }, () => {
+    withHookEnvironment(sandbox.hookEnvironment(), () => {
       logEvent({ event: "residue-allowed", session: "test-session", command });
       const [line] = sandbox.eventLogLines();
       return JSON.parse(line as string) as RecordedEvent;

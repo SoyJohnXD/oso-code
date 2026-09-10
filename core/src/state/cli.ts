@@ -5,6 +5,7 @@ import { ScanFailure } from "../scan/changed-lines.ts";
 import { commentScanReport } from "../scan/comment-scan.ts";
 import { ereReads } from "../shell/ere.ts";
 import * as handoff from "./handoff.ts";
+import { migrateInferredTaskState } from "./migration.ts";
 import * as plan from "./plan.ts";
 import * as store from "./store.ts";
 import { scratchMain } from "./scratch/lifecycle.ts";
@@ -129,13 +130,13 @@ function report(error: unknown, verb: string): number {
 
 function dispatch(argv: readonly string[]): number {
   const first = argv[0];
+  if (first === "scan") return dispatchScan(argv.slice(1));
+
+  const sessionId = first === "--session" ? sanitizeSession(argv[1] ?? "") : "";
+  migrateInferredTaskState(process.cwd(), sessionId);
   if (first === "journal") return runJournal(argv.slice(1));
   if (first === "handoff") return dispatchHandoff(argv.slice(1));
-  if (first === "scan") return dispatchScan(argv.slice(1));
-  if (first !== "--session") throw new UsageError();
-
-  const sessionId = sanitizeSession(argv[1] ?? "");
-  if (sessionId === "") throw new UsageError();
+  if (first !== "--session" || sessionId === "") throw new UsageError();
   const action = argv[2] ?? "";
   const remaining = argv.slice(3);
 

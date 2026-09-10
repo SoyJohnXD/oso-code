@@ -24,7 +24,7 @@ async function fixture(use: (root: string, source: string, invoke: (args: string
     commands: [{ purpose: "check", argv: [process.execPath, "check.mjs"] }],
   }));
   const invoke = (args: string[]) => spawnSync(process.execPath, [cli, "scratch", ...args], {
-    cwd: source, env: { PATH: process.env["PATH"], HOME: root, USERPROFILE: root, OSO_STATE_DIR: path.join(root, "state") }, encoding: "utf8", timeout: SCRATCH_CLI_DEADLINE_MS,
+    cwd: source, env: { PATH: process.env["PATH"], HOME: root, USERPROFILE: root, OSO_STATE_DIR: path.join(root, "state"), OSO_TASK_ROOT: source }, encoding: "utf8", timeout: SCRATCH_CLI_DEADLINE_MS,
   });
   try {
     if (skipUnlessKernelRunsScriptFixtures() !== false) {
@@ -75,7 +75,7 @@ test("scratch lifecycle creates a private independent export, supervises a liter
 
 function injected(root: string, source: string, args: string[], injection: string): ReturnType<typeof spawnSync> {
   return spawnSync(process.execPath, ["--input-type=module", "-e", `import fs from 'node:fs'; import {syncBuiltinESMExports} from 'node:module'; ${injection}; syncBuiltinESMExports(); process.argv=[process.execPath, ${JSON.stringify(cli)}, 'scratch', ...${JSON.stringify(args)}]; await import(${JSON.stringify(pathToFileURL(cli).href)});`], {
-    cwd: source, env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: path.join(root, "state") }, encoding: "utf8", timeout: SCRATCH_CLI_DEADLINE_MS,
+    cwd: source, env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: path.join(root, "state"), OSO_TASK_ROOT: source }, encoding: "utf8", timeout: SCRATCH_CLI_DEADLINE_MS,
   });
 }
 
@@ -170,8 +170,9 @@ test("scratch stale admission recovery requires exact inactive identity and owne
 
 test("scratch observed source pending/edit/redcommit/prod state is applied even from the payload cwd", () => fixture((root, source, invoke) => {
   const id = created(invoke);
-  const previous = process.env["OSO_STATE_DIR"];
+  const previous = { stateDirectory: process.env["OSO_STATE_DIR"], taskRoot: process.env["OSO_TASK_ROOT"] };
   process.env["OSO_STATE_DIR"] = path.join(root, "state");
+  process.env["OSO_TASK_ROOT"] = source;
   try {
     const file = stateFileFor(source);
     writeStatePairs(file, ["session=source-session"], "source-session");
@@ -179,7 +180,7 @@ test("scratch observed source pending/edit/redcommit/prod state is applied even 
     writeStatePairs(file, ["plan_approval=pending", "plan_approval_session=source-session"], "source-session");
     const entry = record(root, id);
     const run = spawnSync(process.execPath, [cli, "scratch", "run", "--id", id, ...owner, "--purpose", "check", "--timeout", "1", "--", process.execPath, "check.mjs"], {
-      cwd: path.join(entry.root, "payload/work"), env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: path.join(root, "state") }, encoding: "utf8",
+      cwd: path.join(entry.root, "payload/work"), env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: path.join(root, "state"), OSO_TASK_ROOT: source }, encoding: "utf8",
     });
     assert.equal(run.status, 1);
     assert.match(run.stderr, /pending/);
@@ -199,9 +200,15 @@ test("scratch observed source pending/edit/redcommit/prod state is applied even 
     }
     assert.equal(invoke(["close", "--id", id, ...owner]).status, 0);
   } finally {
-    if (previous === undefined) delete process.env["OSO_STATE_DIR"]; else process.env["OSO_STATE_DIR"] = previous;
+    restore("OSO_STATE_DIR", previous.stateDirectory);
+    restore("OSO_TASK_ROOT", previous.taskRoot);
   }
 }));
+
+function restore(name: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}
 
 test("scratch actual isolated homes/cache/temp exclude inherited secrets and keep source unchanged", () => fixture((root, source, invoke) => {
   writeFileSync(path.join(source, "check.mjs"), `import {writeFileSync} from 'node:fs'; import path from 'node:path'; const names=['HOME','CODEX_HOME','XDG_CONFIG_HOME','XDG_CACHE_HOME','XDG_DATA_HOME','XDG_STATE_HOME','TMP','TEMP','TMPDIR']; for(const name of names) writeFileSync(path.join(process.env[name], name), 'owned'); process.stdout.write(JSON.stringify({env:process.env, cwd:process.cwd()}));`);
@@ -224,7 +231,7 @@ test("scratch crash recovery refuses a live child and succeeds only after its ac
   writeFileSync(path.join(source, "check.mjs"), "setTimeout(() => process.exit(2), 90000);");
   const id = created(invoke);
   const supervisor = spawn(process.execPath, [cli, "scratch", "run", "--id", id, ...owner, "--purpose", "check", "--timeout", "60", "--", process.execPath, "check.mjs"], {
-    cwd: source, env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: path.join(root, "state") }, stdio: "ignore",
+    cwd: source, env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: path.join(root, "state"), OSO_TASK_ROOT: source }, stdio: "ignore",
   });
   const joined = new Promise<void>((resolve, reject) => { supervisor.on("close", () => resolve()); supervisor.on("error", reject); });
   let commandPid: number | undefined;
@@ -298,7 +305,7 @@ function trackedSessionEscape(termination: "graceful" | "delayed/escalated"): Pr
       syncBuiltinESMExports(); process.argv=[process.execPath,${JSON.stringify(cli)},'scratch',...${JSON.stringify(["run", "--id", id, ...owner, "--purpose", "check", "--timeout", "8", "--", process.execPath, "check.mjs"])}];
       await import(${JSON.stringify(pathToFileURL(cli).href)});`;
     const supervisor = spawn(process.execPath, ["--input-type=module", "-e", injection], {
-      cwd: source, env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: path.join(root, "state") }, stdio: ["ignore", "pipe", "pipe"],
+      cwd: source, env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: path.join(root, "state"), OSO_TASK_ROOT: source }, stdio: ["ignore", "pipe", "pipe"],
     });
     let stderr = "";
     supervisor.stderr.on("data", (chunk) => { stderr += chunk; });
@@ -407,7 +414,7 @@ test("scratch combined stdout and stderr cap applies cumulatively across the att
   writeFileSync(path.join(source, "check.mjs"), "process.stdout.write('o'.repeat(9 * 1024 * 1024)); process.stderr.write('e'.repeat(9 * 1024 * 1024));");
   const id = created(invoke);
   const result = spawnSync(process.execPath, [cli, "scratch", "run", "--id", id, ...owner, "--purpose", "check", "--timeout", "150", "--", process.execPath, "check.mjs"], {
-    cwd: source, env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: path.join(root, "state") }, encoding: "utf8", maxBuffer: 20 * 1024 * 1024, timeout: SCRATCH_CLI_DEADLINE_MS,
+    cwd: source, env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: path.join(root, "state"), OSO_TASK_ROOT: source }, encoding: "utf8", maxBuffer: 20 * 1024 * 1024, timeout: SCRATCH_CLI_DEADLINE_MS,
   });
   assert.equal(result.status, 1, result.stderr);
   assert.equal(record(root, id).logBytes, 16 * 1024 * 1024);
@@ -447,7 +454,7 @@ test("scratch handled cancellation joins its child before reporting cleanup", ()
   writeFileSync(path.join(source, "check.mjs"), "setInterval(() => {}, 1000);");
   const id = created(invoke);
   const supervisor = spawn(process.execPath, [cli, "scratch", "run", "--id", id, ...owner, "--purpose", "check", "--timeout", "5", "--", process.execPath, "check.mjs"], {
-    cwd: source, env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: path.join(root, "state") }, stdio: "ignore",
+    cwd: source, env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: path.join(root, "state"), OSO_TASK_ROOT: source }, stdio: "ignore",
   });
   const joined = new Promise<void>((resolve, reject) => { supervisor.on("close", () => resolve()); supervisor.on("error", reject); });
   try {
@@ -466,7 +473,7 @@ test("scratch handled cancellation joins its child before reporting cleanup", ()
 
 test("scratch refuses inherited runtime injection before allocating", () => fixture((root, source) => {
   const result = spawnSync(process.execPath, [cli, "scratch", ...create], {
-    cwd: source, env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: path.join(root, "state"), npm_config_script_shell: "/unreviewed/shell" }, encoding: "utf8",
+    cwd: source, env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: path.join(root, "state"), OSO_TASK_ROOT: source, npm_config_script_shell: "/unreviewed/shell" }, encoding: "utf8",
   });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /inherited/);
@@ -548,7 +555,7 @@ test("scratch npm check and typecheck use reviewed scripts while lifecycle/test/
 
 test("scratch admission races produce exactly one owned materialization", () => fixture(async (root, source, invoke) => {
   const children = [0, 1].map(() => {
-    const child = spawn(process.execPath, [cli, "scratch", ...create], { cwd: source, env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: path.join(root, "state") }, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(process.execPath, [cli, "scratch", ...create], { cwd: source, env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: path.join(root, "state"), OSO_TASK_ROOT: source }, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk) => { stdout += chunk; });
@@ -617,7 +624,7 @@ test("scratch expiry never purges foreign or active logs", () => fixture((root, 
 
 test("scratch source-root separation refuses before creating registry directories", () => fixture((root, source) => {
   const before = readdirSync(source);
-  const result = spawnSync(process.execPath, [cli, "scratch", ...create], { cwd: source, env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: source }, encoding: "utf8" });
+  const result = spawnSync(process.execPath, [cli, "scratch", ...create], { cwd: source, env: { HOME: root, USERPROFILE: root, PATH: process.env["PATH"], OSO_STATE_DIR: source, OSO_TASK_ROOT: source }, encoding: "utf8" });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /separation/);
   assert.deepEqual(readdirSync(source), before);

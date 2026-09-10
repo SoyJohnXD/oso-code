@@ -21,7 +21,7 @@ test(
       sandbox.seed({ [STATE_FILE]: "mode=plan\nsession=other-session\n" });
       const target = makeUnreadable(sandbox, STATE_FILE);
       const stdin = sandbox.expandJson('{"session_id":"test-session","cwd":"{cwd}"}');
-      const run = withHookEnvironment({ HOME: sandbox.home }, () => runGate(["stale"], spawnedEnvelope(stdin, process.env)));
+      const run = withHookEnvironment(sandbox.hookEnvironment(), () => runGate(["stale"], spawnedEnvelope(stdin, process.env)));
       chmodSync(target, OWNER_ONLY_FILE);
       assert.equal(run.exit, 0);
       assert.match(run.stdout, /"additionalContext"/);

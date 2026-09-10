@@ -40,7 +40,7 @@ function stateText(fields: Readonly<Record<string, string>>): string {
 function judged(state: Readonly<Record<string, string>>, seed: Readonly<Record<string, SeededEntry>> = {}): GateRun {
   return withStateSandbox("workspace", (sandbox) => {
     sandbox.seed({ [STATE_FILE]: stateText(state), ...seed });
-    return withHookEnvironment({ HOME: sandbox.home }, () =>
+    return withHookEnvironment(sandbox.hookEnvironment(), () =>
       runGate(["autocontinue"], spawnedEnvelope(sandbox.expandJson(STOP_PAYLOAD), process.env)),
     );
   });

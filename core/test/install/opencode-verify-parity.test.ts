@@ -490,10 +490,15 @@ describe("the agent model row reads the installed keys against the mirror of the
   test("the subject is the repository the verb runs in: the mirror naming this repository leaves a directory outside it on the information line", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const outsideAnyRepository = path.join(sandbox, "a-directory-under-no-repository");
     mkdirSync(outsideAnyRepository, { recursive: true });
-    underStateRoot(rootWhereAProfileNamesThisRepository(), () => {
-      assert.notEqual(profiledAgentModelLine(fixture().configFile, outsideAnyRepository), profiledAgentModelLine(fixture().configFile, repositoryRoot));
-      assert.equal(profiledAgentModelLine(fixture().configFile, outsideAnyRepository).startsWith(NO_PROFILE_MIRROR_FOR_THIS_REPOSITORY), true);
-      assert.deepEqual(profileRolesOf(readProfile(outsideAnyRepository)), {});
+    const stateRoot = rootWhereAProfileNamesThisRepository();
+    underStateRoot(stateRoot, () => {
+      const outside = withHookEnvironment({ OSO_STATE_DIR: stateRoot, OSO_TASK_ROOT: outsideAnyRepository }, () => ({
+        line: profiledAgentModelLine(fixture().configFile, outsideAnyRepository),
+        roles: profileRolesOf(readProfile(outsideAnyRepository)),
+      }));
+      assert.notEqual(outside.line, profiledAgentModelLine(fixture().configFile, repositoryRoot));
+      assert.equal(outside.line.startsWith(NO_PROFILE_MIRROR_FOR_THIS_REPOSITORY), true);
+      assert.deepEqual(outside.roles, {});
     });
   });
 });

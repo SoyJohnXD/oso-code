@@ -11,9 +11,9 @@ import {
 } from "../hosts/envelope.ts";
 import { gateRow } from "../routes/routes.ts";
 import { PlanVerifyFailure, runCapturePlan, runRejectPlanPresentation } from "../state/plan.ts";
-import { isDirectory, readValue, sha256Hex, stateFileFor, type LoggedEvent } from "../state/store.ts";
+import { isDirectory, readValue, sha256Hex, type LoggedEvent } from "../state/store.ts";
 import { isPlanRailFailure, nativePlanFailureCode } from "./planrail.ts";
-import { sanitizeSession, type GateDefinition, type GateRequest } from "./preflight.ts";
+import { sanitizeSession, stateFileIfNamed, type GateDefinition, type GateRequest } from "./preflight.ts";
 
 const ESCAPED_NEWLINE = "\\n";
 
@@ -88,8 +88,8 @@ function judgePlanstop({ envelope }: GateRequest): GateOutcome<StopVerdict> {
 
 function captureNativePresentation(envelope: HookEnvelope): GateOutcome<StopVerdict> {
   if (!envelope.lastAssistantMessage.includes(MARKER_PREFIX)) {
-    const state = stateFileFor(envelope.cwd);
-    if (readValue(state, "mode") !== "plan" || readValue(state, "plan_approval_session") !== envelope.sessionId || resolveCodexTurn(envelope).mode === "default") return SILENT;
+    const state = stateFileIfNamed(envelope.cwd);
+    if (state === undefined || readValue(state, "mode") !== "plan" || readValue(state, "plan_approval_session") !== envelope.sessionId || resolveCodexTurn(envelope).mode === "default") return SILENT;
   }
   const session = sanitizeSession(envelope.sessionId);
   if (session === "" || session !== envelope.sessionId || !isDirectory(envelope.cwd)) return blocked(NO_SESSION, session);

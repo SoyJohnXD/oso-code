@@ -1090,6 +1090,7 @@ import {
   lstatSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -1131,6 +1132,17 @@ var StateRootUnwritableError = class extends Error {
     this.directory = directory;
   }
 };
+var TASK_ROOT_VARIABLE = "OSO_TASK_ROOT";
+var TaskIdentityUnknownError = class extends Error {
+  cwd;
+  constructor(cwd, cause) {
+    super(
+      `cannot name the task ${cwd} belongs to: ${cause}. The harness keys its state, its run journal and its receipts by one task identity, and it never infers one from the directory it happens to run in \u2014 a guessed identity arms one repository's gates on another repository's flags. Run from inside a git repository, or declare the root this task owns with ${TASK_ROOT_VARIABLE}=<absolute path>, then run again.`
+    );
+    this.name = "TaskIdentityUnknownError";
+    this.cwd = cwd;
+  }
+};
 var CHANGE_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 var NAME_TOKEN_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
 var TOKEN_MAX_LENGTH = 128;
@@ -1147,12 +1159,70 @@ function stateRootDirectory() {
   if (configured !== void 0 && configured !== "") return configured;
   return path.join(homeDirectory(), ".local", "state", "oso-code");
 }
-function repositoryIdentityFor(cwd) {
-  const directory = cwd.replace(/\r$/, "");
-  return gitCommonDirectory(directory) || directory;
+function taskIdentityFor(cwd) {
+  const stateRoot = stateRootDirectory();
+  const directory = withoutTrailingReturn(cwd);
+  const declaration = process.env[TASK_ROOT_VARIABLE] ?? "";
+  if (declaration === "") return gitAnsweredIdentity(stateRoot, directory);
+  const declared = declaredRootOf(declaration);
+  if (declared.kind === "refused") {
+    return { kind: "unknown", cwd: directory, cause: declared.cause, inferredIdentity: inferredIdentityFor(directory) };
+  }
+  if (!declaredRootCovers(declared.root, realPathOrUndefined(directory) ?? directory)) {
+    return gitAnsweredIdentity(stateRoot, directory, declared.root);
+  }
+  return { kind: "declared", identity: declared.root, stateFile: stateFileOfIdentity(stateRoot, declared.root) };
+}
+function gitAnsweredIdentity(stateRoot, directory, rootThatDoesNotCover) {
+  const answered = gitCommonDirectory(directory);
+  if (answered.kind === "answered") {
+    const identity = answered.commonDirectory;
+    return { kind: "repository", identity, stateFile: stateFileOfIdentity(stateRoot, identity) };
+  }
+  const uncovered = rootThatDoesNotCover === void 0 ? "" : `, and ${TASK_ROOT_VARIABLE} declares ${rootThatDoesNotCover}, which does not contain it`;
+  return { kind: "unknown", cwd: directory, cause: `${answered.cause}${uncovered}`, inferredIdentity: directory };
+}
+function requireTaskIdentity(cwd) {
+  const task = taskIdentityFor(cwd);
+  if (task.kind === "unknown") throw new TaskIdentityUnknownError(task.cwd, task.cause);
+  return task;
+}
+function inferredIdentityFor(cwd) {
+  const directory = withoutTrailingReturn(cwd);
+  const answered = gitCommonDirectory(directory);
+  return answered.kind === "answered" ? answered.commonDirectory : directory;
+}
+function stateLeftAtTheInferredIdentity(cwd, task) {
+  if (task.kind === "repository") return void 0;
+  const identity = task.kind === "unknown" ? task.inferredIdentity : inferredIdentityFor(cwd);
+  if (task.kind === "declared" && identity === task.identity) return void 0;
+  const stateFile = stateFileOfIdentity(stateRootDirectory(), identity);
+  if (readStateFile(stateFile).kind === "absent") return void 0;
+  return { identity, stateFile };
+}
+function stateFileOfIdentity(stateRoot, identity) {
+  return path.join(stateRoot, `${sha256Hex(identity)}.state`);
+}
+function declaredRootOf(declaration) {
+  if (!path.isAbsolute(declaration)) {
+    return { kind: "refused", cause: `${TASK_ROOT_VARIABLE} is not an absolute path: ${declaration}` };
+  }
+  const root = realPathOrUndefined(declaration);
+  if (root === void 0 || !isDirectory(root)) {
+    return { kind: "refused", cause: `${TASK_ROOT_VARIABLE} names no readable directory: ${declaration}` };
+  }
+  return { kind: "root", root };
+}
+function declaredRootCovers(root, directory) {
+  const stepsDown = path.relative(root, directory);
+  if (stepsDown === "") return true;
+  return !path.isAbsolute(stepsDown) && stepsDown !== ".." && !stepsDown.startsWith(`..${path.sep}`);
+}
+function withoutTrailingReturn(cwd) {
+  return cwd.replace(/\r$/, "");
 }
 function stateFileFor(cwd) {
-  return path.join(stateRootDirectory(), `${sha256Hex(repositoryIdentityFor(cwd))}.state`);
+  return requireTaskIdentity(cwd).stateFile;
 }
 function repositoryIdFor(stateFile) {
   return path.basename(stateFile, ".state");
@@ -1322,16 +1392,28 @@ function homeDirectoryFrom(platform, environment) {
 function homeDirectory() {
   return homeDirectoryFrom(process.platform, process.env);
 }
-function gitCommonDirectory(cwd) {
+var GIT_ANSWER_MAX_BYTES = 65536;
+function gitCommonDirectory(cwd, timeoutMs) {
   try {
-    const output = execFileSync("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"], {
+    const answer = execFileSync("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"], {
       encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"]
-    });
-    return output.replace(/\n+$/, "");
-  } catch {
-    return "";
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: timeoutMs,
+      maxBuffer: GIT_ANSWER_MAX_BYTES,
+      env: { ...process.env, GIT_DIR: void 0, GIT_WORK_TREE: void 0, GIT_COMMON_DIR: void 0 }
+    }).replace(/\n+$/, "");
+    if (!path.isAbsolute(answer)) {
+      return { kind: "refused", cause: `git named no absolute common directory for ${cwd}: ${answer}` };
+    }
+    return { kind: "answered", commonDirectory: answer };
+  } catch (error) {
+    return { kind: "refused", cause: gitRefusalCause(error) };
   }
+}
+function gitRefusalCause(error) {
+  const spoken2 = error instanceof Error ? error.stderr : void 0;
+  if (typeof spoken2 !== "string" || spoken2.trim() === "") return causeOf(error);
+  return spoken2.replace(/\n+$/, "");
 }
 function readFileIfPresent(file) {
   const read = readStateFile(file);
@@ -1425,6 +1507,13 @@ function statOrUndefined(target) {
     return void 0;
   }
 }
+function realPathOrUndefined(target) {
+  try {
+    return realpathSync(target);
+  } catch {
+    return void 0;
+  }
+}
 function serializeEvent(entry) {
   const client = path.basename(process.env["CLAUDE_CODE_EXECPATH"] ?? "");
   const command = entry.command ?? "";
@@ -1504,11 +1593,19 @@ function hookSessionId(envelope) {
 function payloadUnparseable() {
   return { verdict: { kind: "allow" }, events: [{ event: "payload-unparseable", session: "" }] };
 }
-function readArmedState(stateFile) {
-  const read = readStateFile(stateFile);
-  if (read.kind === "absent") return { kind: "absent" };
-  if (read.kind === "unreadable") return { kind: "unusable" };
-  return { kind: "readable", content: read.content };
+function readArmedState(cwd) {
+  const task = taskIdentityFor(cwd);
+  if (task.kind !== "unknown") {
+    const read = readStateFile(task.stateFile);
+    if (read.kind === "ok") return { kind: "readable", stateFile: task.stateFile, content: read.content };
+    if (read.kind === "unreadable") return { kind: "unusable", stateFile: task.stateFile };
+  }
+  const left = stateLeftAtTheInferredIdentity(cwd, task);
+  return left === void 0 ? { kind: "absent" } : { kind: "moved", left, task };
+}
+function stateFileIfNamed(cwd) {
+  const task = taskIdentityFor(cwd);
+  return task.kind === "unknown" ? void 0 : task.stateFile;
 }
 function osoStateRemedy(session, verbAndArguments) {
   return `oso-state --session ${session} ${verbAndArguments}`;
@@ -1537,6 +1634,19 @@ function deniedForUnusableState(gate, stateFile, session) {
     message: unusableStateMessage(stateFile, session),
     event: "state-unreadable",
     session
+  });
+}
+function identityMovedMessage(state, session) {
+  const named = state.task.kind === "unknown" ? `this session can name none of its own (${state.task.cause}) until ${TASK_ROOT_VARIABLE} declares one` : `${TASK_ROOT_VARIABLE} now names ${state.task.identity}`;
+  return `oso-code: the state that arms this session's gates still sits at ${state.left.stateFile}, keyed by the identity earlier releases inferred (${state.left.identity}), while ${named}. Carry it over with ${osoStateRemedy(session, "show")} from this directory, or drop it with ${osoStateRemedy(session, "clear")}; until one of those runs, this gate denies rather than allowing on state it no longer reads.`;
+}
+function deniedForMovedIdentity(gate, state, session) {
+  return denied({
+    gate,
+    message: identityMovedMessage(state, session),
+    event: "identity-moved-denied",
+    session,
+    detail: state.left.stateFile
   });
 }
 function allowedWithResidueCounted(session, command) {
@@ -1693,7 +1803,9 @@ function judgeAutocontinue({ envelope }) {
   if (sessionId === "") return ALLOWED;
   const projectDir = envelope.cwd;
   if (!isDirectory(projectDir)) return ALLOWED;
-  const content = ownRunState(stateFileFor(projectDir), sessionId);
+  const stateFile = stateFileIfNamed(projectDir);
+  if (stateFile === void 0) return ALLOWED;
+  const content = ownRunState(stateFile, sessionId);
   if (content === void 0) return ALLOWED;
   const markFile = host.sidecarPath(projectDir, sessionId);
   if (stateValue(content, "auto") !== RUN_ARMED) {
@@ -2079,10 +2191,10 @@ function verifyIsGreen(stateContent) {
 function judgeCommit({ envelope }) {
   const session = hookSessionId(envelope);
   if (session === "") return payloadUnparseable();
-  const stateFile = stateFileFor(envelope.cwd);
-  const state = readArmedState(stateFile);
+  const state = readArmedState(envelope.cwd);
   if (state.kind === "absent") return ALLOWED;
-  if (state.kind === "unusable") return deniedForUnusableState("commit", stateFile, session);
+  if (state.kind === "moved") return deniedForMovedIdentity("commit", state, session);
+  if (state.kind === "unusable") return deniedForUnusableState("commit", state.stateFile, session);
   const verdict = lineVerdict(envelope.commandLine, judgeCommitLine);
   if (verdict === "clear") return ALLOWED;
   if (verifyIsGreen(state.content)) return ALLOWED;
@@ -2127,10 +2239,10 @@ var EDITS_GATE = {
 function judgeEdits({ envelope }) {
   const session = hookSessionId(envelope);
   if (session === "") return payloadUnparseable();
-  const stateFile = stateFileFor(envelope.cwd);
-  const state = readArmedState(stateFile);
+  const state = readArmedState(envelope.cwd);
   if (state.kind === "absent") return ALLOWED;
-  if (state.kind === "unusable") return deniedForUnusableState("edits", stateFile, session);
+  if (state.kind === "moved") return deniedForMovedIdentity("edits", state, session);
+  if (state.kind === "unusable") return deniedForUnusableState("edits", state.stateFile, session);
   if (!stateSays(state.content, "mode", "plan")) return ALLOWED;
   if (aSliceIsActive(state.content)) return ALLOWED;
   const remedy = osoStateRemedy(session, "set active_slice=<n>");
@@ -2148,8 +2260,7 @@ function aSliceIsActive(stateContent) {
 }
 
 // core/src/state/handoff.ts
-import { execFileSync as execFileSync2 } from "node:child_process";
-import { chmodSync, existsSync as existsSync2, lstatSync as lstatSync3, mkdirSync as mkdirSync4, opendirSync, readFileSync as readFileSync3, readdirSync, realpathSync, rmSync as rmSync3 } from "node:fs";
+import { chmodSync, existsSync as existsSync2, lstatSync as lstatSync3, mkdirSync as mkdirSync4, opendirSync, readFileSync as readFileSync3, readdirSync, realpathSync as realpathSync2, rmSync as rmSync3 } from "node:fs";
 import path5 from "node:path";
 
 // core/src/hosts/codex-session-metadata.ts
@@ -2307,10 +2418,12 @@ function validateCoordinates(coordinates) {
 function isValidOpaqueId(value) {
   return value.length >= 1 && value.length <= OPAQUE_ID_MAX_LENGTH && OPAQUE_ID_PATTERN.test(value);
 }
+function receiptDirectoryFor(cwd) {
+  return path5.join(stateRootDirectory(), ".handoffs", repositoryIdFor(stateFileFor(cwd)));
+}
 function handoffPaths(cwd, agentId) {
-  const stateFile = stateFileFor(cwd);
   const agentKey = sha256Hex(agentId);
-  const directory = path5.join(stateRootDirectory(), ".handoffs", repositoryIdFor(stateFile));
+  const directory = receiptDirectoryFor(cwd);
   return {
     directory,
     agentId,
@@ -2481,15 +2594,9 @@ function readPrivateFileContent(target) {
 function nativeRepositoryIdentity(cwd, deadline) {
   requireMetadataTime(deadline);
   if (!path5.isAbsolute(cwd)) throw new HandoffFailure(`native workspace is not absolute: ${cwd}`);
-  const common = execFileSync2("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-    timeout: Math.max(1, Math.ceil(deadline - performance.now())),
-    maxBuffer: 65536,
-    env: { ...process.env, GIT_DIR: void 0, GIT_WORK_TREE: void 0, GIT_COMMON_DIR: void 0 }
-  }).trimEnd();
-  if (!path5.isAbsolute(common)) throw new HandoffFailure(`unknown native repository identity for ${cwd}`);
-  return { receiptIdentity: common, commonDirectory: realpathSync(common) };
+  const answered = gitCommonDirectory(cwd, Math.max(1, Math.ceil(deadline - performance.now())));
+  if (answered.kind === "refused") throw new HandoffFailure(`cannot resolve Codex handoff: ${answered.cause}`);
+  return realpathSync2(answered.commonDirectory);
 }
 function isNativeResolutionFault(error) {
   const gitExitedNonZero = error instanceof Error && "status" in error;
@@ -3155,7 +3262,7 @@ function judgePlanprompt({ envelope }) {
   } catch (cause) {
     if (!(cause instanceof CodexPresentationFailure)) throw cause;
     if (controlActionOf(rawPrompt) === void 0 && !invokesThePlanSkill(rawPrompt)) return SILENT;
-    if (!statePresent(stateFileFor(envelope.cwd)) && !invokesThePlanSkill(rawPrompt)) return SILENT;
+    if (!statePresent(stateFileIfNamed(envelope.cwd)) && !invokesThePlanSkill(rawPrompt)) return SILENT;
     return nativeFailure(cause, sessionId, "turn");
   }
   if (invokesThePlanSkill(rawPrompt) && turn.mode !== "plan") return control(OUTSIDE_PLAN_MODE);
@@ -3164,12 +3271,13 @@ function judgePlanprompt({ envelope }) {
     return action === void 0 ? SILENT : control(UNREADABLE_CONTROL_PAYLOAD);
   }
   if (action === void 0) return amendPendingPlan(envelope, sessionId, turn);
-  const stateFile = stateFileFor(envelope.cwd);
-  const reachable = controlPromptReaches(envelope, sessionId, action, stateFile);
+  const named = stateFileIfNamed(envelope.cwd);
+  const reachable = controlPromptReaches(envelope, sessionId, action, named);
   if (reachable !== void 0) return reachable;
   const modeRefusal = modeRefusalFor(action, turn);
   if (modeRefusal !== void 0) return control(modeRefusal);
-  if (!isReadableRegularFile(stateFile)) return control(NO_PENDING_PLAN);
+  if (named === void 0 || !isReadableRegularFile(named)) return control(NO_PENDING_PLAN);
+  const stateFile = named;
   if (readValue(stateFile, "plan_approval_session") !== sessionId) return control(FOREIGN_CONTROL_PROMPT);
   if (readValue(stateFile, "plan_approval") !== PENDING) return control(NOTHING_PENDING);
   if (action === "approve" && envelope.caller.host === "codex") {
@@ -3183,8 +3291,8 @@ function judgePlanprompt({ envelope }) {
 function amendPendingPlan(envelope, sessionId, turn) {
   if (turn.mode !== "plan") return SILENT;
   if (sessionId === "" || sessionId !== envelope.sessionId || !isDirectory(envelope.cwd)) return SILENT;
-  const stateFile = stateFileFor(envelope.cwd);
-  if (!isReadableRegularFile(stateFile)) return SILENT;
+  const stateFile = stateFileIfNamed(envelope.cwd);
+  if (stateFile === void 0 || !isReadableRegularFile(stateFile)) return SILENT;
   if (readValue(stateFile, "plan_approval_session") !== sessionId) return SILENT;
   if (readValue(stateFile, "plan_approval") !== PENDING) return SILENT;
   if (!PLAN_DIGEST.test(readValue(stateFile, "plan_approval_digest") ?? "")) return SILENT;
@@ -3274,7 +3382,7 @@ function controlActionOf(rawPrompt) {
   return void 0;
 }
 function statePresent(stateFile) {
-  return statSync4(stateFile, { throwIfNoEntry: false }) !== void 0;
+  return stateFile !== void 0 && statSync4(stateFile, { throwIfNoEntry: false }) !== void 0;
 }
 function control(reason) {
   return { verdict: { kind: "deny", message: reason }, events: [] };
@@ -3334,8 +3442,8 @@ function judgePlanstop({ envelope }) {
 }
 function captureNativePresentation(envelope) {
   if (!envelope.lastAssistantMessage.includes(PLAN_MARKER_PREFIX)) {
-    const state = stateFileFor(envelope.cwd);
-    if (readValue(state, "mode") !== "plan" || readValue(state, "plan_approval_session") !== envelope.sessionId || resolveCodexTurn(envelope).mode === "default") return SILENT2;
+    const state = stateFileIfNamed(envelope.cwd);
+    if (state === void 0 || readValue(state, "mode") !== "plan" || readValue(state, "plan_approval_session") !== envelope.sessionId || resolveCodexTurn(envelope).mode === "default") return SILENT2;
   }
   const session = sanitizeSession(envelope.sessionId);
   if (session === "" || session !== envelope.sessionId || !isDirectory(envelope.cwd)) return blocked(NO_SESSION, session);
@@ -3695,10 +3803,12 @@ var PROD_DEPLOY_GATE = {
 function judgeProductionBoundary({ envelope }) {
   const session = hookSessionId(envelope);
   if (session === "") return payloadUnparseable();
-  const stateFile = stateFileFor(envelope.cwd);
-  const runMarker = runMarkerOf(stateFile, session);
+  const state = readArmedState(envelope.cwd);
+  if (state.kind === "moved") return deniedForMovedIdentity("proddeploy", state, session);
+  if (state.kind === "absent") return ALLOWED;
+  const runMarker = runMarkerOf(state, session);
   if (runMarker === "unmarked") return ALLOWED;
-  const boundary = { runMarker, stateFile, session, caller: envelope.caller };
+  const boundary = { runMarker, stateFile: state.stateFile, session, caller: envelope.caller };
   if (envelope.toolName.includes("deploy")) {
     return denyProductionBoundary(boundary, mcpDeployStaysWithTheOperator(session), envelope.toolName);
   }
@@ -3821,9 +3931,7 @@ function pushesOffTheRunBranch(command) {
   if (gitVerb(command) !== "push") return false;
   return !command.tokens.slice(1).some((token) => RUN_BRANCH_REF.test(token) || RUN_BRANCH_REFSPEC.test(token));
 }
-function runMarkerOf(stateFile, session) {
-  const state = readArmedState(stateFile);
-  if (state.kind === "absent") return "unmarked";
+function runMarkerOf(state, session) {
   if (state.kind === "unusable") return "uncertain";
   if (!readsAsStateRecords(state.content)) return "uncertain";
   if (stateValue(state.content, "session") !== session) return "unmarked";
@@ -3853,29 +3961,26 @@ function judgeReanchor({ envelope }) {
   const sessionId = hookSessionId(envelope);
   if (sessionId === "") return ALLOWED;
   if (!isDirectory(envelope.cwd)) return ALLOWED;
-  const stateFile = stateFileFor(envelope.cwd);
-  const runMarker = unattendedRunMarker(stateFile, sessionId);
+  const state = readArmedState(envelope.cwd);
+  if (state.kind !== "readable") return ALLOWED;
+  const runMarker = unattendedRunMarker(state.content, sessionId);
   if (runMarker === void 0) return ALLOWED;
   let unattendedRun = false;
   if (runMarker === "running") {
     unattendedRun = true;
-  } else if (!sliceIsArmed(stateFile)) {
+  } else if (!sliceIsArmed(state.content)) {
     return ALLOWED;
   }
   const context = reanchorContext(journalFileFor(envelope.cwd), unattendedRun);
   return { verdict: { kind: "context", additionalContext: context }, events: [] };
 }
-function unattendedRunMarker(stateFile, sessionId) {
-  const read = readStateFile(stateFile);
-  if (read.kind !== "ok") return void 0;
-  if (stateValue(read.content, "session") !== sessionId) return void 0;
-  return stateValue(read.content, "auto");
+function unattendedRunMarker(content, sessionId) {
+  if (stateValue(content, "session") !== sessionId) return void 0;
+  return stateValue(content, "auto");
 }
-function sliceIsArmed(stateFile) {
-  const read = readStateFile(stateFile);
-  if (read.kind !== "ok") return false;
-  if (stateValue(read.content, "mode") !== "plan") return false;
-  const activeSlice = stateValue(read.content, "active_slice");
+function sliceIsArmed(content) {
+  if (stateValue(content, "mode") !== "plan") return false;
+  const activeSlice = stateValue(content, "active_slice");
   return activeSlice !== "" && activeSlice !== "none";
 }
 function reanchorContext(journalFile, unattendedRun) {
@@ -3897,7 +4002,6 @@ function reanchorContext(journalFile, unattendedRun) {
 }
 
 // core/src/gates/stale.ts
-import { existsSync as existsSync4 } from "node:fs";
 import path7 from "node:path";
 var ROADMAP_DISARMED_SENTINEL = "none";
 var RUN_ARMED2 = "running";
@@ -3909,12 +4013,12 @@ var STALE_GATE = {
 };
 function judgeStale({ envelope }) {
   if (!isDirectory(stateRootDirectory())) return ALLOWED;
-  const stateFile = stateFileFor(envelope.cwd);
-  if (!existsSync4(stateFile)) return ALLOWED;
-  const content = contentOf(stateFile);
+  const state = readArmedState(envelope.cwd);
+  if (state.kind === "absent" || state.kind === "moved") return ALLOWED;
+  const content = state.kind === "readable" ? state.content : "";
   const sessionId = hookSessionId(envelope);
   const advisories = [
-    ...staleStateAdvisory(envelope.caller, stateFile, content, sessionId),
+    ...staleStateAdvisory(envelope.caller, state.stateFile, content, sessionId),
     ...expiredDelegationAdvisory(envelope.caller, envelope.cwd, content)
   ];
   if (advisories.length === 0) return ALLOWED;
@@ -3955,10 +4059,6 @@ var SKILL_PREFIXES = { claude: "/oso-code:", codex: "$oso-code:", opencode: "/os
 function skillPrefixFor(host) {
   return SKILL_PREFIXES[host];
 }
-function contentOf(stateFile) {
-  const read = readStateFile(stateFile);
-  return read.kind === "ok" ? read.content : "";
-}
 function quoted(value) {
   return `"${value}"`;
 }
@@ -3979,8 +4079,8 @@ function judgeStatebin(_request) {
 }
 
 // core/src/gates/teardown.ts
-import { execFileSync as execFileSync3 } from "node:child_process";
-import { existsSync as existsSync5, readdirSync as readdirSync2, renameSync as renameSync3, rmSync as rmSync5, rmdirSync, statSync as statSync5 } from "node:fs";
+import { execFileSync as execFileSync2 } from "node:child_process";
+import { existsSync as existsSync4, readdirSync as readdirSync2, renameSync as renameSync3, rmSync as rmSync5, rmdirSync, statSync as statSync5 } from "node:fs";
 import path8 from "node:path";
 var ABANDONED_STATE_DAYS = 7;
 var JOURNAL_KEYED_WAIT_MARK_SUFFIX = ".waiting";
@@ -4005,8 +4105,8 @@ function judgeTeardown({ envelope }) {
   return NO_VERDICT;
 }
 function codexTeardown(envelope) {
-  const stateFile = stateFileFor(envelope.cwd);
-  if (!codexOwnsState(stateFile, envelope)) return NO_VERDICT;
+  const stateFile = stateFileIfNamed(envelope.cwd);
+  if (stateFile === void 0 || !codexOwnsState(stateFile, envelope)) return NO_VERDICT;
   try {
     withLock(stateFile, envelope.sessionId, () => {
       if (codexOwnsState(stateFile, envelope)) rmSync5(stateFile, { force: true });
@@ -4055,6 +4155,7 @@ function removeWorktreesOf(sessionId, stateFile) {
   }
 }
 function dropJournalKeyedWaitMark(cwd) {
+  if (stateFileIfNamed(cwd) === void 0) return;
   const journalFile = journalFileFor(cwd);
   const stem = journalFile.endsWith(".log") ? journalFile.slice(0, -".log".length) : journalFile;
   rmSync5(`${stem}${JOURNAL_KEYED_WAIT_MARK_SUFFIX}`, { force: true });
@@ -4092,7 +4193,7 @@ function pruneAbandonedState(sessionId, ownState) {
   if (sessionId === "") return;
   for (const stateFile of stateFilesSorted()) {
     if (stateFile === ownState) continue;
-    if (existsSync5(`${stateFile}.lock`)) continue;
+    if (existsSync4(`${stateFile}.lock`)) continue;
     if (!olderThanDays(stateFile, ABANDONED_STATE_DAYS)) continue;
     const abandonedId = sanitizeSession(stateValueOf(stateFile, "session"));
     removeWorktreesOf(abandonedId, stateFile);
@@ -4126,7 +4227,7 @@ function isFile(target) {
 }
 function gitWorktreeRemove(repoPath, worktreePath) {
   try {
-    execFileSync3("git", ["-C", repoPath, "worktree", "remove", worktreePath], { stdio: "ignore" });
+    execFileSync2("git", ["-C", repoPath, "worktree", "remove", worktreePath], { stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -4134,7 +4235,7 @@ function gitWorktreeRemove(repoPath, worktreePath) {
 }
 function gitWorktreePrune(repoPath) {
   try {
-    execFileSync3("git", ["-C", repoPath, "worktree", "prune"], { stdio: "ignore" });
+    execFileSync2("git", ["-C", repoPath, "worktree", "prune"], { stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -4158,10 +4259,10 @@ function judgeUnknownTool({ envelope, argv }) {
   if (memoryDenial !== void 0) return memoryDenial;
   const session = sanitizeSession(envelope.sessionId);
   if (session === "") return payloadUnparseable();
-  const stateFile = stateFileFor(envelope.cwd);
-  const state = readArmedState(stateFile);
+  const state = readArmedState(envelope.cwd);
   if (state.kind === "absent") return ALLOWED;
-  if (state.kind === "unusable") return deniedForUnusableState("unknown", stateFile, session);
+  if (state.kind === "moved") return deniedForMovedIdentity("unknown", state, session);
+  if (state.kind === "unusable") return deniedForUnusableState("unknown", state.stateFile, session);
   if (thisSessionsPlanIsPending(state.content, session)) {
     return denied({
       gate: "unknown",
@@ -4225,7 +4326,7 @@ function unattestedCodexRoot(envelope) {
     const native = readCodexSessionMetadata(envelope.transcriptPath, deadline);
     const rootEntrypoint = native.source === "cli" || native.source === "exec";
     if (native.id !== envelope.sessionId || !rootEntrypoint || native.parentThreadId !== void 0 || native.agentPath !== void 0 || native.agentRole !== void 0 || native.threadSpawn !== void 0) return LINEAGE_OF_ANYONE_BUT_THE_ROOT;
-    if (nativeRepositoryIdentity(native.cwd, deadline).commonDirectory !== nativeRepositoryIdentity(envelope.cwd, deadline).commonDirectory) return "native repository mismatch";
+    if (nativeRepositoryIdentity(native.cwd, deadline) !== nativeRepositoryIdentity(envelope.cwd, deadline)) return "native repository mismatch";
     return void 0;
   } catch (error) {
     if (!isNativeResolutionFault(error)) throw error;
@@ -4261,7 +4362,7 @@ function allowlistHost(host) {
 }
 
 // core/src/gates/version.ts
-import { execFileSync as execFileSync4 } from "node:child_process";
+import { execFileSync as execFileSync3 } from "node:child_process";
 import { readFileSync as readFileSync6 } from "node:fs";
 import path9 from "node:path";
 var RELEASE_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/;
@@ -4338,7 +4439,7 @@ function fetchedHighestReleaseVersion(repositorySlug) {
 }
 function gitUploadPackAdvertisement(repositorySlug) {
   try {
-    return execFileSync4(
+    return execFileSync3(
       "curl",
       [
         "-fsS",
@@ -4490,7 +4591,7 @@ function toolNamesFor(host, gate) {
 
 // opencode/plugin/oso/identity.ts
 import { createHash as createHash2 } from "node:crypto";
-import { existsSync as existsSync6, readFileSync as readFileSync7, statSync as statSync6 } from "node:fs";
+import { existsSync as existsSync5, readFileSync as readFileSync7, statSync as statSync6 } from "node:fs";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 function deriveRootId(cwd) {
   const meta = findGitMetadata(cwd);
@@ -4514,7 +4615,7 @@ function findGitMetadata(cwd) {
   let dir = resolve(cwd);
   for (; ; ) {
     const dotGit = join(dir, ".git");
-    if (existsSync6(dotGit)) {
+    if (existsSync5(dotGit)) {
       let isDir = false;
       try {
         isDir = statSync6(dotGit).isDirectory();
@@ -4540,7 +4641,7 @@ function findGitMetadata(cwd) {
   }
 }
 function isRealGitDir(dotGit) {
-  return existsSync6(join(dotGit, "HEAD")) && existsSync6(join(dotGit, "objects"));
+  return existsSync5(join(dotGit, "HEAD")) && existsSync5(join(dotGit, "objects"));
 }
 function worktreeGitDir(dotGit, baseDir) {
   let content;

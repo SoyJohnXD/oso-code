@@ -34,7 +34,7 @@ function presentation(id: string, document: string): object[] {
 type PresentationFixture = { records: object[]; sandbox: StateSandbox; transcript: string; gate: (name: string, input: object, rewrite?: (text: string) => string) => ReturnType<typeof runGate>; stop: (active?: boolean) => ReturnType<typeof runGate>; approve: () => ReturnType<typeof runGate>; approval: () => string | undefined };
 
 function scenario(run: (fixture: PresentationFixture) => void): void {
-  withStateSandbox("workspace", (sandbox) => withHookEnvironment({ HOME: sandbox.home }, () => {
+  withStateSandbox("workspace", (sandbox) => withHookEnvironment(sandbox.hookEnvironment(), () => {
     const transcript = path.join(sandbox.cwd, "rollout.jsonl");
     const records: object[] = [{ type: "session_meta", payload: { id: session, session_id: session, cwd: sandbox.cwd, source: "cli" } }, started(turn, "plan")];
     const gate = (name: string, input: object, rewrite = (text: string) => text) => {
@@ -372,7 +372,7 @@ test("concurrent installed approvals grant the exact pending document only once"
       process.stdout.write(JSON.stringify(results));`;
     const raced = spawnSync(process.execPath, ["--input-type=module", "-e", runner], {
       cwd: sandbox.cwd, encoding: "utf8",
-      env: { HOME: sandbox.home, USERPROFILE: sandbox.home, PATH: process.env["PATH"] ?? "", OSO_AGENT: "1" },
+      env: { HOME: sandbox.home, USERPROFILE: sandbox.home, OSO_TASK_ROOT: sandbox.cwd, PATH: process.env["PATH"] ?? "", OSO_AGENT: "1" },
     });
     if (raced.error !== undefined) throw raced.error;
     assert.equal(raced.status, 0, raced.stderr);
@@ -473,7 +473,7 @@ function installedGate(fixture: PresentationFixture, name: string, input: object
   const result = spawnSync(process.execPath, [path.join(installed, "gate.js"), name], {
     cwd: sandbox.cwd,
     input: JSON.stringify({ session_id: session, cwd: sandbox.cwd, transcript_path: transcript, ...input }),
-    env: { HOME: sandbox.home, USERPROFILE: sandbox.home, PATH: process.env["PATH"] ?? "", OSO_AGENT: "1" },
+    env: { HOME: sandbox.home, USERPROFILE: sandbox.home, OSO_TASK_ROOT: sandbox.cwd, PATH: process.env["PATH"] ?? "", OSO_AGENT: "1" },
     encoding: "utf8",
   });
   if (result.error !== undefined) throw result.error;

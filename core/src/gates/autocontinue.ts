@@ -8,7 +8,6 @@ import {
   isDirectory,
   journalFileFor,
   readStateFile,
-  stateFileFor,
   type LoggedEvent,
 } from "../state/store.ts";
 import {
@@ -26,7 +25,7 @@ import {
   writeWaitMark,
   type StandingWaitMark,
 } from "./delegation.ts";
-import { hookSessionId, stateValue, type GateDefinition, type GateRequest } from "./preflight.ts";
+import { hookSessionId, stateFileIfNamed, stateValue, type GateDefinition, type GateRequest } from "./preflight.ts";
 
 export const PUSHES_WITHOUT_PROGRESS_CAP = 3;
 const RUN_ARMED = "running";
@@ -103,7 +102,9 @@ function judgeAutocontinue({ envelope }: GateRequest): GateOutcome<StopVerdict> 
   const projectDir = envelope.cwd;
   if (!isDirectory(projectDir)) return ALLOWED;
 
-  const content = ownRunState(stateFileFor(projectDir), sessionId);
+  const stateFile = stateFileIfNamed(projectDir);
+  if (stateFile === undefined) return ALLOWED;
+  const content = ownRunState(stateFile, sessionId);
   if (content === undefined) return ALLOWED;
 
   const markFile = host.sidecarPath(projectDir, sessionId);

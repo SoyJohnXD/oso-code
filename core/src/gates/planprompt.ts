@@ -8,9 +8,9 @@ import {
   type UserPromptVerdict,
 } from "../hosts/envelope.ts";
 import { matchesPlanPresentation, readPlanForReplacement, runAmendPlan, runApprovePlan, runCancelPlan } from "../state/plan.ts";
-import { isDirectory, isReadableRegularFile, readValue, stateFileFor, type LoggedEvent } from "../state/store.ts";
+import { isDirectory, isReadableRegularFile, readValue, type LoggedEvent } from "../state/store.ts";
 import { isPlanRailFailure, nativePlanFailureCode } from "./planrail.ts";
-import { sanitizeSession, type GateDefinition, type GateRequest } from "./preflight.ts";
+import { sanitizeSession, stateFileIfNamed, type GateDefinition, type GateRequest } from "./preflight.ts";
 
 const APPROVAL_PROMPT = "Implement the plan.";
 const CANCEL_TOKEN = "CANCEL OSO PLAN";
@@ -79,7 +79,7 @@ function judgePlanprompt({ envelope }: GateRequest): GateOutcome<UserPromptVerdi
   } catch (cause) {
     if (!(cause instanceof CodexPresentationFailure)) throw cause;
     if (controlActionOf(rawPrompt) === undefined && !invokesThePlanSkill(rawPrompt)) return SILENT;
-    if (!statePresent(stateFileFor(envelope.cwd)) && !invokesThePlanSkill(rawPrompt)) return SILENT;
+    if (!statePresent(stateFileIfNamed(envelope.cwd)) && !invokesThePlanSkill(rawPrompt)) return SILENT;
     return nativeFailure(cause, sessionId, "turn");
   }
 
@@ -91,13 +91,14 @@ function judgePlanprompt({ envelope }: GateRequest): GateOutcome<UserPromptVerdi
   }
   if (action === undefined) return amendPendingPlan(envelope, sessionId, turn);
 
-  const stateFile = stateFileFor(envelope.cwd);
-  const reachable = controlPromptReaches(envelope, sessionId, action, stateFile);
+  const named = stateFileIfNamed(envelope.cwd);
+  const reachable = controlPromptReaches(envelope, sessionId, action, named);
   if (reachable !== undefined) return reachable;
 
   const modeRefusal = modeRefusalFor(action, turn);
   if (modeRefusal !== undefined) return control(modeRefusal);
-  if (!isReadableRegularFile(stateFile)) return control(NO_PENDING_PLAN);
+  if (named === undefined || !isReadableRegularFile(named)) return control(NO_PENDING_PLAN);
+  const stateFile = named;
 
   if (readValue(stateFile, "plan_approval_session") !== sessionId) return control(FOREIGN_CONTROL_PROMPT);
   if (readValue(stateFile, "plan_approval") !== PENDING) return control(NOTHING_PENDING);
@@ -119,8 +120,8 @@ function amendPendingPlan(
   if (turn.mode !== "plan") return SILENT;
   if (sessionId === "" || sessionId !== envelope.sessionId || !isDirectory(envelope.cwd)) return SILENT;
 
-  const stateFile = stateFileFor(envelope.cwd);
-  if (!isReadableRegularFile(stateFile)) return SILENT;
+  const stateFile = stateFileIfNamed(envelope.cwd);
+  if (stateFile === undefined || !isReadableRegularFile(stateFile)) return SILENT;
   if (readValue(stateFile, "plan_approval_session") !== sessionId) return SILENT;
   if (readValue(stateFile, "plan_approval") !== PENDING) return SILENT;
   if (!PLAN_DIGEST.test(readValue(stateFile, "plan_approval_digest") ?? "")) return SILENT;
@@ -177,7 +178,7 @@ function controlPromptReaches(
   envelope: HookEnvelope,
   sessionId: string,
   action: ControlAction,
-  stateFile: string,
+  stateFile: string | undefined,
 ): GateOutcome<UserPromptVerdict> | undefined {
   const ownIdentity = sessionId !== "" && sessionId === envelope.sessionId;
   if (action === "cancel") {
@@ -225,8 +226,8 @@ function controlActionOf(rawPrompt: string): ControlAction | undefined {
   return undefined;
 }
 
-function statePresent(stateFile: string): boolean {
-  return statSync(stateFile, { throwIfNoEntry: false }) !== undefined;
+function statePresent(stateFile: string | undefined): stateFile is string {
+  return stateFile !== undefined && statSync(stateFile, { throwIfNoEntry: false }) !== undefined;
 }
 
 function control(reason: string): GateOutcome<UserPromptVerdict> {

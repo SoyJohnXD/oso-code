@@ -5,6 +5,7 @@ import { lineVerdict, type LexerVerdict } from "../shell/line-verdict.ts";
 import {
   allowedWithResidueCounted,
   denied,
+  deniedForMovedIdentity,
   deniedForUnusableState,
   hookSessionId,
   payloadUnparseable,
@@ -13,7 +14,6 @@ import {
   type GateDefinition,
   type GateRequest,
 } from "./preflight.ts";
-import { stateFileFor } from "../state/store.ts";
 
 type CommitJudgement = "gated" | "residue";
 
@@ -50,10 +50,10 @@ function judgeCommit({ envelope }: GateRequest): GateOutcome {
   const session = hookSessionId(envelope);
   if (session === "") return payloadUnparseable();
 
-  const stateFile = stateFileFor(envelope.cwd);
-  const state = readArmedState(stateFile);
+  const state = readArmedState(envelope.cwd);
   if (state.kind === "absent") return ALLOWED;
-  if (state.kind === "unusable") return deniedForUnusableState("commit", stateFile, session);
+  if (state.kind === "moved") return deniedForMovedIdentity("commit", state, session);
+  if (state.kind === "unusable") return deniedForUnusableState("commit", state.stateFile, session);
 
   const verdict = lineVerdict<CommitJudgement>(envelope.commandLine, judgeCommitLine);
   if (verdict === "clear") return ALLOWED;

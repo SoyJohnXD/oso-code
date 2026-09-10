@@ -53,7 +53,7 @@ function judged(
   return withStateSandbox("workspace", (sandbox) => {
     sandbox.seed(seed);
     before(sandbox);
-    const run = withHookEnvironment({ HOME: sandbox.home }, () => runGate([gate], spawnedEnvelope(sandbox.expandJson(payload), process.env)));
+    const run = withHookEnvironment(sandbox.hookEnvironment(), () => runGate([gate], spawnedEnvelope(sandbox.expandJson(payload), process.env)));
     restoreModes(sandbox, Object.keys(seed));
     return run;
   });

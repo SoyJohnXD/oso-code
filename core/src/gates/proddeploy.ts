@@ -4,15 +4,17 @@ import { ereReads } from "../shell/ere.ts";
 import { basenameOf, UNREAD_PAYLOAD_MARKER } from "../shell/lexer.ts";
 import { expandsItsCommandWord, gitVerb, isGitCall, isResidueCall, type LexedCommand } from "../shell/lexed-command.ts";
 import { lineVerdict, type LexerVerdict } from "../shell/line-verdict.ts";
-import { denyPatternsFileFor, readStateFile, stateFileFor } from "../state/store.ts";
+import { denyPatternsFileFor, readStateFile } from "../state/store.ts";
 import {
   allowedWithResidueCounted,
   denied,
+  deniedForMovedIdentity,
   deniedForUnusableState,
   hookSessionId,
   osoStateRemedy,
   payloadUnparseable,
   readArmedState,
+  type StandingState,
   STATE_BIN_VARIABLE,
   stateBinPath,
   stateValue,
@@ -48,10 +50,12 @@ function judgeProductionBoundary({ envelope }: GateRequest): GateOutcome {
   const session = hookSessionId(envelope);
   if (session === "") return payloadUnparseable();
 
-  const stateFile = stateFileFor(envelope.cwd);
-  const runMarker = runMarkerOf(stateFile, session);
+  const state = readArmedState(envelope.cwd);
+  if (state.kind === "moved") return deniedForMovedIdentity("proddeploy", state, session);
+  if (state.kind === "absent") return ALLOWED;
+  const runMarker = runMarkerOf(state, session);
   if (runMarker === "unmarked") return ALLOWED;
-  const boundary = { runMarker, stateFile, session, caller: envelope.caller };
+  const boundary = { runMarker, stateFile: state.stateFile, session, caller: envelope.caller };
 
   if (envelope.toolName.includes("deploy")) {
     return denyProductionBoundary(boundary, mcpDeployStaysWithTheOperator(session), envelope.toolName);
@@ -226,9 +230,7 @@ function pushesOffTheRunBranch(command: LexedCommand): boolean {
   return !command.tokens.slice(1).some((token) => RUN_BRANCH_REF.test(token) || RUN_BRANCH_REFSPEC.test(token));
 }
 
-function runMarkerOf(stateFile: string, session: string): RunMarker {
-  const state = readArmedState(stateFile);
-  if (state.kind === "absent") return "unmarked";
+function runMarkerOf(state: StandingState, session: string): RunMarker {
   if (state.kind === "unusable") return "uncertain";
   if (!readsAsStateRecords(state.content)) return "uncertain";
   if (stateValue(state.content, "session") !== session) return "unmarked";

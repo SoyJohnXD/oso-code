@@ -106,8 +106,13 @@ function runProfileFrom(workingDirectory: string, home: string, ...profileArgume
       USERPROFILE: home,
       XDG_CONFIG_HOME: path.join(home, ".config"),
       OSO_STATE_DIR: stateDirectory,
+      OSO_TASK_ROOT: taskRootDeclaredFor(workingDirectory),
     },
   });
+}
+
+function taskRootDeclaredFor(workingDirectory: string): string {
+  return existsSync(path.join(workingDirectory, ".git")) ? "" : workingDirectory;
 }
 
 function runProfileIn(home: string, ...profileArguments: readonly string[]) {
@@ -322,7 +327,7 @@ describe("the tier floor is read off the mirror as well as written to it, so a h
     test(`${label} is refused when the mirror is read, naming the mirror and the record that would have passed`, () => {
       writeFileSync(mirror, content);
       assert.throws(
-        () => withHookEnvironment({ OSO_STATE_DIR: stateDirectory }, () => readProfile(project)),
+        () => withHookEnvironment({ OSO_STATE_DIR: stateDirectory, OSO_TASK_ROOT: project }, () => readProfile(project)),
         { message: `the profile mirror at ${mirror} is refused: ${reason}` },
       );
     });
@@ -330,7 +335,7 @@ describe("the tier floor is read off the mirror as well as written to it, so a h
 
   test("the mirror oso profile set writes is read back whole, so the refusals above are the floor and not an unreadable mirror", () => {
     writeFileSync(mirror, STRONG_MIRROR);
-    const roles = withHookEnvironment({ OSO_STATE_DIR: stateDirectory }, () => profileRolesOf(readProfile(project)));
+    const roles = withHookEnvironment({ OSO_STATE_DIR: stateDirectory, OSO_TASK_ROOT: project }, () => profileRolesOf(readProfile(project)));
     assert.deepEqual(Object.keys(roles).sort(), ["applier", "judges", "verifier"]);
   });
 });
@@ -340,7 +345,7 @@ describe("the mirror is read record by record, so a role record missing, duplica
     test(`${label} is refused when the mirror is read, naming the record that would have passed`, () => {
       writeFileSync(mirror, content);
       assert.throws(
-        () => withHookEnvironment({ OSO_STATE_DIR: stateDirectory }, () => readProfile(project)),
+        () => withHookEnvironment({ OSO_STATE_DIR: stateDirectory, OSO_TASK_ROOT: project }, () => readProfile(project)),
         { message: `the profile mirror at ${mirror} is refused: ${reason}` },
       );
     });
@@ -360,7 +365,7 @@ describe("a model override is a token of its own — wider than a name token, an
       readFileSync(mirror, "utf8"),
       `${CUSTOM_STRONG_JUDGES}judges.model=${OPERATOR_MODEL}\ncodex=launch policy: default gpt-5.6-luna/max; escalation gpt-5.6-terra/high\nunattended.doom_loop=ask\n`,
     );
-    const roles = withHookEnvironment({ OSO_STATE_DIR: stateDirectory }, () => profileRolesOf(readProfile(project)));
+    const roles = withHookEnvironment({ OSO_STATE_DIR: stateDirectory, OSO_TASK_ROOT: project }, () => profileRolesOf(readProfile(project)));
     assert.equal(roles.judges?.model, OPERATOR_MODEL);
   });
 
