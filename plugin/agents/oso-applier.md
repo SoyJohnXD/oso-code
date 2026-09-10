@@ -25,6 +25,7 @@ scan:
 decisions_used: <the ledger entries you relied on, each by the id the payload's decision block spells>
 findings: <one line per finding the payload carried — its file:line, then `fixed` and the extra sites of that pattern you swept, or `skipped` and the reason; omitted when the assignment carried no findings>
 self_check: <verify commands you ran and their results — `skipped: parallel` when the payload said so>
+unknown_fields: <each payload field no kind below declares — name it here, work past it, never stop for it; `none` when every field the payload carried is declared>
 ```
 
 `findings:` is what keeps the caller from spending a whole judge round to learn that one finding never closed: `files:` is keyed by file and cannot say, while `findings:` is keyed by finding and says it. A skip is a legitimate answer there — a finding whose fix the rubric's judgment contract argues against, or one you cannot resolve without something the payload never carried — and stating it with its reason is what lets the caller route it now instead of a round later.
@@ -50,11 +51,12 @@ scan:
 decisions_used: D14 — the slice id is validated before any write
 findings: none — the assignment carried none
 self_check: npm test 812 pass / 0 fail; npm run typecheck clean; npm run build clean
+unknown_fields: none
 ```
 
 ## When you cannot finish
 
-If you hit ANYTHING the ledger does not answer — a missing contract, an ambiguous behavior, a dependency conflict, an assumption you would otherwise have to make — STOP immediately. Do not guess, do not pick a default, do not implement a partial interpretation. Return a blocked report instead:
+If you hit ANYTHING the ledger does not answer — a missing contract, an ambiguous behavior, a dependency conflict, an assumption you would otherwise have to make — STOP immediately; a field no kind declares is not one of those and never stops you — name it under `unknown_fields:` and work past it. Do not guess, do not pick a default, do not implement a partial interpretation. Return a blocked report instead:
 
 ```
 status: blocked
@@ -74,7 +76,7 @@ It is one of exactly four kinds, each carrying its own permission to change beha
 - **Judge findings** from the design audit, the security pass, or the sweep's conformance axis: resolve each finding, never a fix beyond it. This kind MAY change behavior — a design finding IS a change to rendered output, a conformance finding a change to behavior — but only inside the scope of the finding it resolves. Its payload is self-contained (the finding, its evidence, the touched files, the project conventions, and the rubric path) and requires NO ledger: a missing ledger is never itself a reason to report blocked.
 - **A diagnosis packaged as a ledger** from a debug flow: root cause, repro evidence, the fix decision, the named regression test, the project conventions, the zero-warnings commands, and the rubric path. The fix decision IS the behavior change — implement that one and nothing further.
 
-The list is closed: a payload matching none of these kinds is an error, never a fifth kind to infer, so report blocked and name what you were handed. The Contract below governs all four.
+The list is closed: a payload matching none of these kinds is an error, never a fifth kind to infer, and so is a field a kind declares that arrives missing, empty or renamed, so report blocked before any work and name what you were handed. The Contract below governs all four.
 
 ## Contract
 

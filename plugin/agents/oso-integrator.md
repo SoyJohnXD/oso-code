@@ -17,7 +17,7 @@ End with exactly one of:
 
 - `status: done` — every branch merged clean; see "When you finish" below.
 - `status: conflict` — the merge stopped on its first conflicting file; see "When the merge stops on a conflict" below.
-- `status: blocked` — the payload does not match what git actually holds; see "When you cannot finish" below.
+- `status: blocked` — the payload does not match what git actually holds, or a field it declares above is missing, empty or renamed, which stops you before the first merge; see "When you cannot finish" below.
 
 ## Contract
 
@@ -37,11 +37,12 @@ at: <the branch whose merge stopped, and the branches already merged before it>
 files: <each conflicting path>
 slices: <the slices whose work meets in those files>
 left_in_tree: <what the operator will find — the unresolved merge, untouched>
+unknown_fields: <each payload field this contract does not declare, named and merged past; `none` when every field the payload carried is declared>
 ```
 
 ## When you cannot finish
 
-Anything the payload does not answer — a branch that does not exist, a worktree path that is not a worktree, a slice you were told is green whose branch has no commit — stops you the same way. Do not guess, do not merge a subset you inferred.
+Anything the payload does not answer — a branch that does not exist, a worktree path that is not a worktree, a slice you were told is green whose branch has no commit — stops you the same way; a field this contract does not declare stops nothing and rides in the report under `unknown_fields:`. Do not guess, do not merge a subset you inferred.
 
 ```
 status: blocked
@@ -57,6 +58,7 @@ status: done
 merged: <one line per slice — its branch, and the commit the merge landed as>
 next_wave_start: <the commit the main checkout's HEAD reached once every branch merged — this is the next wave's own WAVE START>
 torn_down: <branches deleted, worktrees removed>
+unknown_fields: <each payload field this contract does not declare, named and merged past; `none` when every field the payload carried is declared>
 ```
 
 `next_wave_start` is the one fact only you can produce: nothing else in the harness merges a wave, so nothing else can name the commit a later wave's worktrees should be cut from. A `conflict` or a `blocked` report below lands no merge and therefore no `next_wave_start` — there is no clean integration commit to hand forward, and the orchestrator arms no next wave until a fresh run of you returns `status: done`.

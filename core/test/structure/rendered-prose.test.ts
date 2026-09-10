@@ -294,3 +294,57 @@ describe("Codex rations no child-agent capacity of its own", () => {
     });
   }
 });
+
+const UNKNOWN_FIELD_REPORT_NAME = "unknown_fields:";
+
+type ClosedPayloadRule = Readonly<{ continues: RegExp; aborts: RegExp; declaresTheFieldInItsReportShape: boolean }>;
+
+const SKILL_EXECUTOR_RULE: ClosedPayloadRule = {
+  continues: /name a field beyond those two under `unknown_fields:` rather than stopping for it/,
+  aborts: /if either field is absent, empty or renamed, report blocked before any work/,
+  declaresTheFieldInItsReportShape: false,
+};
+
+const CLOSED_PAYLOAD_RULES: Readonly<Record<string, ClosedPayloadRule>> = {
+  "oso-applier": {
+    continues: /a field no kind declares is not one of those and never stops you — name it under `unknown_fields:` and work past it/,
+    aborts: /a field a kind declares that arrives missing, empty or renamed, so report blocked before any work/,
+    declaresTheFieldInItsReportShape: true,
+  },
+  "oso-verifier": {
+    continues: /A field this contract does not declare is named under `unknown_fields:` and verified past, never a refusal on its name alone/,
+    aborts: /a field it does declare that arrives missing, empty or renamed is `blocked` before any check runs/,
+    declaresTheFieldInItsReportShape: true,
+  },
+  "oso-integrator": {
+    continues: /a field this contract does not declare stops nothing and rides in the report under `unknown_fields:`/,
+    aborts: /`status: blocked` — the payload does not match what git actually holds, or a field it declares above is missing, empty or renamed, which stops you before the first merge/,
+    declaresTheFieldInItsReportShape: true,
+  },
+  "oso-triage": SKILL_EXECUTOR_RULE,
+  "oso-security-reviewer": SKILL_EXECUTOR_RULE,
+  "oso-doubt-pass": SKILL_EXECUTOR_RULE,
+  "oso-debt-sweep": SKILL_EXECUTOR_RULE,
+};
+
+describe("an undeclared payload field costs the parent one named line; a declared one gone missing still costs the child its session", () => {
+  test("every delegated role carries the rule, so a role added later is measured in rather than admitted unruled", () => {
+    assert.deepEqual(Object.keys(CLOSED_PAYLOAD_RULES).sort(), AGENT_ROLES.map((role) => role.id).sort());
+  });
+
+  for (const role of AGENT_ROLES) {
+    const rule = CLOSED_PAYLOAD_RULES[role.id];
+    for (const artifact of [agentSharedBodyPath(role), ...agentHosts(role).map((host) => agentOutputPath(role, host))]) {
+      test(`${artifact} names an undeclared field and works past it, and stops on a declared one missing, empty or renamed`, () => {
+        assert.ok(rule !== undefined, `${role.id} carries no recorded closed-payload rule`);
+        const shipped = readRepoText(artifact);
+        const continued = shipped.match(rule.continues)?.[0] ?? "";
+        const aborted = shipped.match(rule.aborts)?.[0] ?? "";
+        assert.ok(continued.includes(UNKNOWN_FIELD_REPORT_NAME), `${artifact} never names an undeclared field and works past it`);
+        assert.ok(aborted.includes("blocked"), `${artifact} never refuses a declared field that arrives missing, empty or renamed`);
+        assert.ok(!aborted.includes(UNKNOWN_FIELD_REPORT_NAME), `${artifact} spells both outcomes with one name a parent cannot tell apart`);
+        if (rule.declaresTheFieldInItsReportShape) assert.match(shipped, /^unknown_fields: </m);
+      });
+    }
+  }
+});
