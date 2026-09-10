@@ -4,6 +4,7 @@ import {
   accessSync,
   appendFileSync,
   constants,
+  existsSync,
   lstatSync,
   mkdirSync,
   readFileSync,
@@ -100,7 +101,7 @@ export type TaskIdentity =
   | NamedTaskIdentity
   | Readonly<{ kind: "unknown"; cwd: string; cause: string; inferredIdentity: string }>;
 
-export type InferredState = Readonly<{ identity: string; stateFile: string }>;
+export type StateAtAnotherIdentity = Readonly<{ identity: string; stateFile: string }>;
 
 export function taskIdentityFor(cwd: string): TaskIdentity {
   const stateRoot = stateRootDirectory();
@@ -108,26 +109,40 @@ export function taskIdentityFor(cwd: string): TaskIdentity {
   const declaration = process.env[TASK_ROOT_VARIABLE] ?? "";
   if (declaration === "") return gitAnsweredIdentity(stateRoot, directory);
   const declared = declaredRootOf(declaration);
-  if (declared.kind === "refused") {
-    return { kind: "unknown", cwd: directory, cause: declared.cause, inferredIdentity: inferredIdentityFor(directory) };
-  }
-  if (!declaredRootCovers(declared.root, realPathOrUndefined(directory) ?? directory)) {
-    return gitAnsweredIdentity(stateRoot, directory, declared.root);
-  }
-  return { kind: "declared", identity: declared.root, stateFile: stateFileOfIdentity(stateRoot, declared.root) };
+  if (declared.kind === "refused") return unnamedIdentity(directory, declared.cause, inferredIdentityFor(directory));
+  return identityUnderTheDeclaredRoot(stateRoot, directory, declared.root);
 }
 
-function gitAnsweredIdentity(stateRoot: string, directory: string, rootThatDoesNotCover?: string): TaskIdentity {
-  const answered = gitCommonDirectory(directory);
-  if (answered.kind === "answered") {
-    const identity = answered.commonDirectory;
-    return { kind: "repository", identity, stateFile: stateFileOfIdentity(stateRoot, identity) };
+function identityUnderTheDeclaredRoot(stateRoot: string, directory: string, root: string): TaskIdentity {
+  if (declaredRootCovers(root, realPathOrUndefined(directory) ?? directory)) {
+    return namedIdentity(stateRoot, "declared", root);
   }
-  const uncovered =
-    rootThatDoesNotCover === undefined
-      ? ""
-      : `, and ${TASK_ROOT_VARIABLE} declares ${rootThatDoesNotCover}, which does not contain it`;
-  return { kind: "unknown", cwd: directory, cause: `${answered.cause}${uncovered}`, inferredIdentity: directory };
+  const answered = gitCommonDirectory(directory);
+  if (answered.kind === "refused") {
+    const uncovered = `, and ${TASK_ROOT_VARIABLE} declares ${root}, which does not contain it`;
+    return unnamedIdentity(directory, `${answered.cause}${uncovered}`, directory);
+  }
+  if (declaredRootSharesTheRepository(root, answered.commonDirectory)) return namedIdentity(stateRoot, "declared", root);
+  return namedIdentity(stateRoot, "repository", answered.commonDirectory);
+}
+
+function declaredRootSharesTheRepository(root: string, commonDirectory: string): boolean {
+  const answered = gitCommonDirectory(root);
+  return answered.kind === "answered" && answered.commonDirectory === commonDirectory;
+}
+
+function gitAnsweredIdentity(stateRoot: string, directory: string): TaskIdentity {
+  const answered = gitCommonDirectory(directory);
+  if (answered.kind === "answered") return namedIdentity(stateRoot, "repository", answered.commonDirectory);
+  return unnamedIdentity(directory, answered.cause, directory);
+}
+
+function namedIdentity(stateRoot: string, kind: NamedTaskIdentity["kind"], identity: string): NamedTaskIdentity {
+  return { kind, identity, stateFile: stateFileOfIdentity(stateRoot, identity) };
+}
+
+function unnamedIdentity(cwd: string, cause: string, inferredIdentity: string): TaskIdentity {
+  return { kind: "unknown", cwd, cause, inferredIdentity };
 }
 
 function requireTaskIdentity(cwd: string): NamedTaskIdentity {
@@ -136,19 +151,44 @@ function requireTaskIdentity(cwd: string): NamedTaskIdentity {
   return task;
 }
 
-function inferredIdentityFor(cwd: string): string {
+export function inferredIdentityFor(cwd: string): string {
   const directory = withoutTrailingReturn(cwd);
   const answered = gitCommonDirectory(directory);
   return answered.kind === "answered" ? answered.commonDirectory : directory;
 }
 
-export function stateLeftAtTheInferredIdentity(cwd: string, task: TaskIdentity): InferredState | undefined {
+export function stateKeyedByAnotherTaskIdentity(cwd: string, task: TaskIdentity): StateAtAnotherIdentity | undefined {
+  return artifactsLeftAtTheInferredIdentity(cwd, task) ?? taskArmedAboveThisDirectory(cwd, task);
+}
+
+function artifactsLeftAtTheInferredIdentity(cwd: string, task: TaskIdentity): StateAtAnotherIdentity | undefined {
   if (task.kind === "repository") return undefined;
   const identity = task.kind === "unknown" ? task.inferredIdentity : inferredIdentityFor(cwd);
   if (task.kind === "declared" && identity === task.identity) return undefined;
-  const stateFile = stateFileOfIdentity(stateRootDirectory(), identity);
-  if (readStateFile(stateFile).kind === "absent") return undefined;
-  return { identity, stateFile };
+  const left = { identity, stateFile: stateFileOfIdentity(stateRootDirectory(), identity) };
+  return taskArtifactsStandAt(left) ? left : undefined;
+}
+
+export function taskArtifactsStandAt({ identity, stateFile }: StateAtAnotherIdentity): boolean {
+  if (readStateFile(stateFile).kind !== "absent") return true;
+  const repositoryId = sha256Hex(identity);
+  return [...KEYED_ARTIFACT_FILES, ...KEYED_ARTIFACT_TREES].some((keyedBy) => existsSync(keyedBy(repositoryId)));
+}
+
+function taskArmedAboveThisDirectory(cwd: string, task: TaskIdentity): StateAtAnotherIdentity | undefined {
+  if (task.kind === "declared") return undefined;
+  const stateRoot = stateRootDirectory();
+  const directory = withoutTrailingReturn(cwd);
+  const mainCheckout = task.kind === "repository" ? [path.dirname(task.identity)] : [];
+  return [...mainCheckout, ...ancestorsOf(realPathOrUndefined(directory) ?? directory)]
+    .map((identity) => ({ identity, stateFile: stateFileOfIdentity(stateRoot, identity) }))
+    .find((candidate) => readStateFile(candidate.stateFile).kind !== "absent");
+}
+
+function ancestorsOf(directory: string): string[] {
+  const walked: string[] = [];
+  for (let candidate = directory; !walked.includes(candidate); candidate = path.dirname(candidate)) walked.push(candidate);
+  return walked;
 }
 
 function stateFileOfIdentity(stateRoot: string, identity: string): string {
@@ -216,6 +256,28 @@ export function profileFileFor(stateFile: string): string {
 export function profileFileKeyedBy(repositoryId: string): string {
   return path.join(stateRootDirectory(), "profiles", `${repositoryId}.profile`);
 }
+
+export function planRootDirectory(): string {
+  return path.join(stateRootDirectory(), "plans");
+}
+
+export function planDirectoryKeyedBy(repositoryId: string): string {
+  return path.join(planRootDirectory(), repositoryId);
+}
+
+export function receiptDirectoryKeyedBy(repositoryId: string): string {
+  return path.join(stateRootDirectory(), ".handoffs", repositoryId);
+}
+
+export type ArtifactKeyedByRepository = (repositoryId: string) => string;
+
+export const KEYED_ARTIFACT_FILES: readonly ArtifactKeyedByRepository[] = [denyPatternsFileKeyedBy, profileFileKeyedBy];
+
+export const KEYED_ARTIFACT_TREES: readonly ArtifactKeyedByRepository[] = [
+  runsDirectoryKeyedBy,
+  planDirectoryKeyedBy,
+  receiptDirectoryKeyedBy,
+];
 
 export const MODEL_TOKEN_SHAPE = `1 to ${TOKEN_MAX_LENGTH} characters of letters, digits and / : . - _ @`;
 

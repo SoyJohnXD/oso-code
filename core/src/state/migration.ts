@@ -1,23 +1,23 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
-import { receiptDirectoryKeyedBy } from "./handoff.ts";
-import { planDirectoryKeyedBy } from "./plan.ts";
 import {
   causeOf,
-  denyPatternsFileKeyedBy,
   isDirectory,
+  KEYED_ARTIFACT_FILES,
+  KEYED_ARTIFACT_TREES,
   logEvent,
-  profileFileKeyedBy,
+  planDirectoryKeyedBy,
   readStateFile,
-  runsDirectoryKeyedBy,
   sha256Hex,
   StateFileUnreadableError,
-  stateLeftAtTheInferredIdentity,
+  stateKeyedByAnotherTaskIdentity,
+  taskArtifactsStandAt,
   taskIdentityFor,
   withLock,
   withOwnerOnlyUmask,
   writeFileAtomically,
-  type InferredState,
+  type ArtifactKeyedByRepository,
+  type StateAtAnotherIdentity,
   type NamedTaskIdentity,
   type StateFileRead,
 } from "./store.ts";
@@ -33,27 +33,19 @@ type ArtifactCollision = "refuse" | "concatenate";
 
 type CarriedArtifact = Readonly<{ from: string; to: string; onCollision: ArtifactCollision }>;
 
-type ArtifactKeyedByRepository = (repositoryId: string) => string;
-
 type CarriedIdentity = Readonly<{ identity: string; key: string; stateFile: string }>;
 
-const KEYED_FILES: readonly ArtifactKeyedByRepository[] = [denyPatternsFileKeyedBy, profileFileKeyedBy];
-const KEYED_TREES: readonly ArtifactKeyedByRepository[] = [
-  runsDirectoryKeyedBy,
-  planDirectoryKeyedBy,
-  receiptDirectoryKeyedBy,
-];
 const PLAN_PATH_KEYS = ["plan_snapshot_file", "plan_current_file"] as const;
 const JOURNAL_SUFFIX = ".log";
 
 export function migrateInferredTaskState(cwd: string, session: string): void {
   const task = taskIdentityFor(cwd);
   if (task.kind !== "declared") return;
-  const left = stateLeftAtTheInferredIdentity(cwd, task);
+  const left = stateKeyedByAnotherTaskIdentity(cwd, task);
   if (left === undefined) return;
   withLock(left.stateFile, session, () => {
-    if (readStateFile(left.stateFile).kind === "absent") return;
-    if (readStateFile(task.stateFile).kind !== "absent") {
+    if (!taskArtifactsStandAt(left)) return;
+    if (readStateFile(left.stateFile).kind !== "absent" && readStateFile(task.stateFile).kind !== "absent") {
       throw new TaskStateMigrationError(twoIdentitiesHoldState(cwd, left, task));
     }
     carryEverythingKeyedBy(keyedIdentity(left), keyedIdentity(task), session);
@@ -72,7 +64,7 @@ function carryEverythingKeyedBy(inferred: CarriedIdentity, declared: CarriedIden
   }
   try {
     for (const artifact of carried) carryOne(artifact, inferred.identity);
-    for (const treeKeyedBy of KEYED_TREES) rmSync(treeKeyedBy(inferred.key), { recursive: true, force: true });
+    for (const treeKeyedBy of KEYED_ARTIFACT_TREES) rmSync(treeKeyedBy(inferred.key), { recursive: true, force: true });
     carryStateFileLastSoAnInterruptionResumes(inferred, declared);
   } catch (error) {
     if (error instanceof TaskStateMigrationError) throw error;
@@ -84,12 +76,12 @@ function carryEverythingKeyedBy(inferred: CarriedIdentity, declared: CarriedIden
 }
 
 function plannedCarries(from: string, to: string): readonly CarriedArtifact[] {
-  const files = KEYED_FILES.map((fileKeyedBy) => ({
+  const files = KEYED_ARTIFACT_FILES.map((fileKeyedBy) => ({
     from: fileKeyedBy(from),
     to: fileKeyedBy(to),
     onCollision: "refuse" as const,
   }));
-  return [...files, ...KEYED_TREES.flatMap((treeKeyedBy) => treeCarries(treeKeyedBy, from, to))].filter((artifact) =>
+  return [...files, ...KEYED_ARTIFACT_TREES.flatMap((treeKeyedBy) => treeCarries(treeKeyedBy, from, to))].filter((artifact) =>
     existsSync(artifact.from),
   );
 }
@@ -115,21 +107,22 @@ function carryOne(artifact: CarriedArtifact, inferred: string): void {
 }
 
 function carryStateFileLastSoAnInterruptionResumes(inferred: CarriedIdentity, declared: CarriedIdentity): void {
-  retargetCarriedPlanPaths(inferred, declared);
+  const read = readStateFile(inferred.stateFile);
+  if (read.kind === "absent") return;
+  if (read.kind === "unreadable") throw new StateFileUnreadableError(inferred.stateFile, read.cause);
+  retargetCarriedPlanPaths(read.content, inferred, declared);
   renameSync(inferred.stateFile, declared.stateFile);
 }
 
-function retargetCarriedPlanPaths(inferred: CarriedIdentity, declared: CarriedIdentity): void {
+function retargetCarriedPlanPaths(content: string, inferred: CarriedIdentity, declared: CarriedIdentity): void {
   const { stateFile } = inferred;
-  const read = readStateFile(stateFile);
-  if (read.kind !== "ok") throw new StateFileUnreadableError(stateFile, readFailureCause(read));
   const planDirectory = planDirectoryKeyedBy(inferred.key);
   const carriedPlanDirectory = planDirectoryKeyedBy(declared.key);
-  const retargeted = read.content
+  const retargeted = content
     .split("\n")
     .map((line) => planLineRebasedOn(line, planDirectory, carriedPlanDirectory))
     .join("\n");
-  if (retargeted !== read.content) writeFileAtomically(path.dirname(stateFile), stateFile, retargeted, ".retarget.");
+  if (retargeted !== content) writeFileAtomically(path.dirname(stateFile), stateFile, retargeted, ".retarget.");
 }
 
 function planLineRebasedOn(line: string, planDirectory: string, carriedPlanDirectory: string): string {
@@ -148,7 +141,7 @@ function journalLinesCarriedFrom(journal: string, inferred: string): string {
     .join("");
 }
 
-function twoIdentitiesHoldState(cwd: string, left: InferredState, task: NamedTaskIdentity): string {
+function twoIdentitiesHoldState(cwd: string, left: StateAtAnotherIdentity, task: NamedTaskIdentity): string {
   return (
     `two task identities hold state for ${cwd}, and this harness never merges them: a merged state can open a ` +
     `red repository's commit gate on a neighbour's green. Keep the one this task should use, remove the other, ` +

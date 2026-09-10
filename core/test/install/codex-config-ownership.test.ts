@@ -206,6 +206,14 @@ describe("row four: Codex permissions belong to the operator — seeded once, mi
     assert.equal(rebuilt(edited), edited);
   });
 
+  test("a CRLF config declaring its own permissions is left alone, the way the notice over the same bytes already reports", () => {
+    const operator = 'default_permissions = "locked"\r\n\r\n[permissions.locked]\r\nextends = ":read-only"\r\n';
+    const once = rebuilt(operator);
+    assert.match(codexPermissionsNotice(operator, configFile), /^Codex permissions are the operator's own/);
+    assert.equal(once.includes('default_permissions = "oso"'), false, once);
+    assert.equal(once.includes("[permissions.oso]"), false, once);
+  });
+
   test("an operator who deleted the seeded profile keeps it deleted rather than having it re-imposed", () => {
     const kept = 'default_permissions = ":workspace"\n\n[history]\nx = 1\n';
     const once = rebuilt(kept);

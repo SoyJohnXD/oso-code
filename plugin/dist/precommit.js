@@ -95,6 +95,7 @@ import {
   accessSync,
   appendFileSync,
   constants,
+  existsSync,
   lstatSync,
   mkdirSync,
   readFileSync,
@@ -124,35 +125,67 @@ function taskIdentityFor(cwd) {
   const declaration = process.env[TASK_ROOT_VARIABLE] ?? "";
   if (declaration === "") return gitAnsweredIdentity(stateRoot, directory);
   const declared = declaredRootOf(declaration);
-  if (declared.kind === "refused") {
-    return { kind: "unknown", cwd: directory, cause: declared.cause, inferredIdentity: inferredIdentityFor(directory) };
-  }
-  if (!declaredRootCovers(declared.root, realPathOrUndefined(directory) ?? directory)) {
-    return gitAnsweredIdentity(stateRoot, directory, declared.root);
-  }
-  return { kind: "declared", identity: declared.root, stateFile: stateFileOfIdentity(stateRoot, declared.root) };
+  if (declared.kind === "refused") return unnamedIdentity(directory, declared.cause, inferredIdentityFor(directory));
+  return identityUnderTheDeclaredRoot(stateRoot, directory, declared.root);
 }
-function gitAnsweredIdentity(stateRoot, directory, rootThatDoesNotCover) {
-  const answered = gitCommonDirectory(directory);
-  if (answered.kind === "answered") {
-    const identity = answered.commonDirectory;
-    return { kind: "repository", identity, stateFile: stateFileOfIdentity(stateRoot, identity) };
+function identityUnderTheDeclaredRoot(stateRoot, directory, root) {
+  if (declaredRootCovers(root, realPathOrUndefined(directory) ?? directory)) {
+    return namedIdentity(stateRoot, "declared", root);
   }
-  const uncovered = rootThatDoesNotCover === void 0 ? "" : `, and ${TASK_ROOT_VARIABLE} declares ${rootThatDoesNotCover}, which does not contain it`;
-  return { kind: "unknown", cwd: directory, cause: `${answered.cause}${uncovered}`, inferredIdentity: directory };
+  const answered = gitCommonDirectory(directory);
+  if (answered.kind === "refused") {
+    const uncovered = `, and ${TASK_ROOT_VARIABLE} declares ${root}, which does not contain it`;
+    return unnamedIdentity(directory, `${answered.cause}${uncovered}`, directory);
+  }
+  if (declaredRootSharesTheRepository(root, answered.commonDirectory)) return namedIdentity(stateRoot, "declared", root);
+  return namedIdentity(stateRoot, "repository", answered.commonDirectory);
+}
+function declaredRootSharesTheRepository(root, commonDirectory) {
+  const answered = gitCommonDirectory(root);
+  return answered.kind === "answered" && answered.commonDirectory === commonDirectory;
+}
+function gitAnsweredIdentity(stateRoot, directory) {
+  const answered = gitCommonDirectory(directory);
+  if (answered.kind === "answered") return namedIdentity(stateRoot, "repository", answered.commonDirectory);
+  return unnamedIdentity(directory, answered.cause, directory);
+}
+function namedIdentity(stateRoot, kind, identity) {
+  return { kind, identity, stateFile: stateFileOfIdentity(stateRoot, identity) };
+}
+function unnamedIdentity(cwd, cause, inferredIdentity) {
+  return { kind: "unknown", cwd, cause, inferredIdentity };
 }
 function inferredIdentityFor(cwd) {
   const directory = withoutTrailingReturn(cwd);
   const answered = gitCommonDirectory(directory);
   return answered.kind === "answered" ? answered.commonDirectory : directory;
 }
-function stateLeftAtTheInferredIdentity(cwd, task) {
+function stateKeyedByAnotherTaskIdentity(cwd, task) {
+  return artifactsLeftAtTheInferredIdentity(cwd, task) ?? taskArmedAboveThisDirectory(cwd, task);
+}
+function artifactsLeftAtTheInferredIdentity(cwd, task) {
   if (task.kind === "repository") return void 0;
   const identity = task.kind === "unknown" ? task.inferredIdentity : inferredIdentityFor(cwd);
   if (task.kind === "declared" && identity === task.identity) return void 0;
-  const stateFile = stateFileOfIdentity(stateRootDirectory(), identity);
-  if (readStateFile(stateFile).kind === "absent") return void 0;
-  return { identity, stateFile };
+  const left = { identity, stateFile: stateFileOfIdentity(stateRootDirectory(), identity) };
+  return taskArtifactsStandAt(left) ? left : void 0;
+}
+function taskArtifactsStandAt({ identity, stateFile }) {
+  if (readStateFile(stateFile).kind !== "absent") return true;
+  const repositoryId = sha256Hex(identity);
+  return [...KEYED_ARTIFACT_FILES, ...KEYED_ARTIFACT_TREES].some((keyedBy) => existsSync(keyedBy(repositoryId)));
+}
+function taskArmedAboveThisDirectory(cwd, task) {
+  if (task.kind === "declared") return void 0;
+  const stateRoot = stateRootDirectory();
+  const directory = withoutTrailingReturn(cwd);
+  const mainCheckout = task.kind === "repository" ? [path.dirname(task.identity)] : [];
+  return [...mainCheckout, ...ancestorsOf(realPathOrUndefined(directory) ?? directory)].map((identity) => ({ identity, stateFile: stateFileOfIdentity(stateRoot, identity) })).find((candidate) => readStateFile(candidate.stateFile).kind !== "absent");
+}
+function ancestorsOf(directory) {
+  const walked = [];
+  for (let candidate = directory; !walked.includes(candidate); candidate = path.dirname(candidate)) walked.push(candidate);
+  return walked;
 }
 function stateFileOfIdentity(stateRoot, identity) {
   return path.join(stateRoot, `${sha256Hex(identity)}.state`);
@@ -175,6 +208,30 @@ function declaredRootCovers(root, directory) {
 function withoutTrailingReturn(cwd) {
   return cwd.replace(/\r$/, "");
 }
+function runsDirectoryKeyedBy(repositoryId) {
+  return path.join(stateRootDirectory(), "runs", repositoryId);
+}
+function denyPatternsFileKeyedBy(repositoryId) {
+  return path.join(stateRootDirectory(), "deploy-deny", `${repositoryId}.patterns`);
+}
+function profileFileKeyedBy(repositoryId) {
+  return path.join(stateRootDirectory(), "profiles", `${repositoryId}.profile`);
+}
+function planRootDirectory() {
+  return path.join(stateRootDirectory(), "plans");
+}
+function planDirectoryKeyedBy(repositoryId) {
+  return path.join(planRootDirectory(), repositoryId);
+}
+function receiptDirectoryKeyedBy(repositoryId) {
+  return path.join(stateRootDirectory(), ".handoffs", repositoryId);
+}
+var KEYED_ARTIFACT_FILES = [denyPatternsFileKeyedBy, profileFileKeyedBy];
+var KEYED_ARTIFACT_TREES = [
+  runsDirectoryKeyedBy,
+  planDirectoryKeyedBy,
+  receiptDirectoryKeyedBy
+];
 var MODEL_TOKEN_SHAPE = `1 to ${TOKEN_MAX_LENGTH} characters of letters, digits and / : . - _ @`;
 function stateRecords(content, key) {
   const prefix = `${key}=`;
@@ -346,7 +403,7 @@ function readArmedState(cwd) {
     if (read.kind === "ok") return { kind: "readable", stateFile: task.stateFile, content: read.content };
     if (read.kind === "unreadable") return { kind: "unusable", stateFile: task.stateFile };
   }
-  const left = stateLeftAtTheInferredIdentity(cwd, task);
+  const left = stateKeyedByAnotherTaskIdentity(cwd, task);
   return left === void 0 ? { kind: "absent" } : { kind: "moved", left, task };
 }
 function osoStateRemedy(session, verbAndArguments) {
@@ -356,8 +413,20 @@ function unusableStateMessage(stateFile, session) {
   return `oso-code: this session is armed but its state file (${stateFile}) cannot be read, so the gate cannot tell whether this call is safe. Remove or repair it (${osoStateRemedy(session, "clear")}), then retry.`;
 }
 function identityMovedMessage(state, session) {
-  const named = state.task.kind === "unknown" ? `this session can name none of its own (${state.task.cause}) until ${TASK_ROOT_VARIABLE} declares one` : `${TASK_ROOT_VARIABLE} now names ${state.task.identity}`;
-  return `oso-code: the state that arms this session's gates still sits at ${state.left.stateFile}, keyed by the identity earlier releases inferred (${state.left.identity}), while ${named}. Carry it over with ${osoStateRemedy(session, "show")} from this directory, or drop it with ${osoStateRemedy(session, "clear")}; until one of those runs, this gate denies rather than allowing on state it no longer reads.`;
+  return `oso-code: the state that arms this session's gates still sits at ${state.left.stateFile}, keyed by another task identity (${state.left.identity}), while ${whatThisDirectoryNamesInstead(state.task)}. ${carryItOverOrDropIt(state, session)}; until one of those runs, this gate denies rather than allowing on state it no longer reads.`;
+}
+function whatThisDirectoryNamesInstead(task) {
+  if (task.kind === "unknown") {
+    return `this session can name none of its own (${task.cause}) until ${TASK_ROOT_VARIABLE} declares one`;
+  }
+  if (task.kind === "declared") return `${TASK_ROOT_VARIABLE} now names ${task.identity}`;
+  return `no ${TASK_ROOT_VARIABLE} reaches this process, so it resolves to the repository ${task.identity} instead`;
+}
+function carryItOverOrDropIt(state, session) {
+  if (state.task.kind === "repository") {
+    return `Declare it with ${TASK_ROOT_VARIABLE}=${state.left.identity} and retry, or drop it with ${osoStateRemedy(session, "clear")} from that root`;
+  }
+  return `Carry it over with ${osoStateRemedy(session, "show")} from this directory, or drop it with ${osoStateRemedy(session, "clear")}`;
 }
 var HOOKS_MANIFEST_FINGERPRINT = `/${GATE_BUNDLE}`;
 

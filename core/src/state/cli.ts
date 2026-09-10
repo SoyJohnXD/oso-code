@@ -190,7 +190,22 @@ function writeScan(report: string): number {
 function runSet(sessionId: string, pairs: readonly string[]): number {
   if (pairs.length < 1) throw new UsageError();
   store.writeStateValues(process.cwd(), sessionId, pairs);
+  if (pairs.includes(UNATTENDED_ARMING)) recordWhatTheUnattendedRunArmsOver(sessionId);
   return 0;
+}
+
+const UNATTENDED_ARMING = "auto=running";
+
+function recordWhatTheUnattendedRunArmsOver(sessionId: string): void {
+  const task = store.taskIdentityFor(process.cwd());
+  if (task.kind === "unknown") return;
+  const patternsFile = store.denyPatternsFileFor(task.stateFile);
+  if (store.readStateFile(patternsFile).kind === "absent") {
+    store.logEvent({ event: "boundary-unpatterned", session: sessionId, command: patternsFile });
+  }
+  const inferred = store.inferredIdentityFor(process.cwd());
+  if (inferred === task.identity) return;
+  store.logEvent({ event: "identity-rekeyed", session: sessionId, command: `${inferred} -> ${task.identity}` });
 }
 
 function runGet(remaining: readonly string[]): number {

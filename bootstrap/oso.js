@@ -9,6 +9,7 @@ import {
   accessSync,
   appendFileSync,
   constants,
+  existsSync,
   lstatSync,
   mkdirSync,
   readFileSync,
@@ -55,22 +56,35 @@ function taskIdentityFor(cwd) {
   const declaration = process.env[TASK_ROOT_VARIABLE] ?? "";
   if (declaration === "") return gitAnsweredIdentity(stateRoot, directory);
   const declared = declaredRootOf(declaration);
-  if (declared.kind === "refused") {
-    return { kind: "unknown", cwd: directory, cause: declared.cause, inferredIdentity: inferredIdentityFor(directory) };
-  }
-  if (!declaredRootCovers(declared.root, realPathOrUndefined(directory) ?? directory)) {
-    return gitAnsweredIdentity(stateRoot, directory, declared.root);
-  }
-  return { kind: "declared", identity: declared.root, stateFile: stateFileOfIdentity(stateRoot, declared.root) };
+  if (declared.kind === "refused") return unnamedIdentity(directory, declared.cause, inferredIdentityFor(directory));
+  return identityUnderTheDeclaredRoot(stateRoot, directory, declared.root);
 }
-function gitAnsweredIdentity(stateRoot, directory, rootThatDoesNotCover) {
-  const answered = gitCommonDirectory(directory);
-  if (answered.kind === "answered") {
-    const identity = answered.commonDirectory;
-    return { kind: "repository", identity, stateFile: stateFileOfIdentity(stateRoot, identity) };
+function identityUnderTheDeclaredRoot(stateRoot, directory, root) {
+  if (declaredRootCovers(root, realPathOrUndefined(directory) ?? directory)) {
+    return namedIdentity(stateRoot, "declared", root);
   }
-  const uncovered = rootThatDoesNotCover === void 0 ? "" : `, and ${TASK_ROOT_VARIABLE} declares ${rootThatDoesNotCover}, which does not contain it`;
-  return { kind: "unknown", cwd: directory, cause: `${answered.cause}${uncovered}`, inferredIdentity: directory };
+  const answered = gitCommonDirectory(directory);
+  if (answered.kind === "refused") {
+    const uncovered = `, and ${TASK_ROOT_VARIABLE} declares ${root}, which does not contain it`;
+    return unnamedIdentity(directory, `${answered.cause}${uncovered}`, directory);
+  }
+  if (declaredRootSharesTheRepository(root, answered.commonDirectory)) return namedIdentity(stateRoot, "declared", root);
+  return namedIdentity(stateRoot, "repository", answered.commonDirectory);
+}
+function declaredRootSharesTheRepository(root, commonDirectory) {
+  const answered = gitCommonDirectory(root);
+  return answered.kind === "answered" && answered.commonDirectory === commonDirectory;
+}
+function gitAnsweredIdentity(stateRoot, directory) {
+  const answered = gitCommonDirectory(directory);
+  if (answered.kind === "answered") return namedIdentity(stateRoot, "repository", answered.commonDirectory);
+  return unnamedIdentity(directory, answered.cause, directory);
+}
+function namedIdentity(stateRoot, kind, identity) {
+  return { kind, identity, stateFile: stateFileOfIdentity(stateRoot, identity) };
+}
+function unnamedIdentity(cwd, cause, inferredIdentity) {
+  return { kind: "unknown", cwd, cause, inferredIdentity };
 }
 function requireTaskIdentity(cwd) {
   const task = taskIdentityFor(cwd);
@@ -3476,7 +3490,7 @@ function rebuildManagedConfig(rebuild) {
   const outside = operatorTextOutsideTheRegion(rebuild.existingText);
   const parts = runTomlRegion(outside, { action: "split" });
   const lifted = liftedOutOfTheRegion(rebuild, managed);
-  const seeded = seededWhereNothingDeclaresPermissions(rebuild.targetHome, [outside, lifted.root, lifted.sections]);
+  const seeded = seededWhereNothingDeclaresPermissions(rebuild, [outside, lifted.root, lifted.sections]);
   const root = blocksJoined([parts.root, lifted.root, seeded.rootKeys]);
   const sections = withMergedFeatureRegion(blocksJoined([parts.sections, lifted.sections, seeded.tables]));
   return [
@@ -3514,16 +3528,17 @@ function liftedOutOfTheRegion(rebuild, managed) {
   const parts = runTomlRegion(operatorText, { action: "split" });
   return { root: parts.root, sections: parts.sections };
 }
-function seededWhereNothingDeclaresPermissions(targetHome, texts) {
-  return texts.some(declaresPermissions) ? NOTHING_SEEDED : renderOsoPermissionProfile(targetHome);
+function seededWhereNothingDeclaresPermissions(rebuild, texts) {
+  const unclaimed = texts.every((text) => permissionsAreUnclaimedIn(text, rebuild.configFile));
+  return unclaimed ? renderOsoPermissionProfile(rebuild.targetHome) : NOTHING_SEEDED;
 }
-function declaresPermissions(text) {
-  return rootSymbolLinesOf(text).some(declaresAPermissionKey);
-}
-function declaresAPermissionKey(line) {
-  const symbol = decodedSymbol(line);
-  if (symbol === void 0) return false;
-  return Object.hasOwn(symbol, "default_permissions") || Object.hasOwn(symbol, "permissions");
+function permissionsAreUnclaimedIn(text, file) {
+  try {
+    return permissionSettingsOf(text, file).length === 0;
+  } catch (error) {
+    if (error instanceof TomlParseError) return false;
+    throw error;
+  }
 }
 function undecodableRootLines(text) {
   return rootSymbolLinesOf(text).filter((line) => decodedSymbol(line) === void 0);

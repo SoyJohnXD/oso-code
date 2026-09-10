@@ -5,10 +5,10 @@ import type { GateOutcome, GateVerdict, HookCaller, HookEnvelope, PreToolUseVerd
 import { GATE_BUNDLE, gateRow, type GateId } from "../routes/routes.ts";
 import {
   readStateFile,
-  stateLeftAtTheInferredIdentity,
+  stateKeyedByAnotherTaskIdentity,
   taskIdentityFor,
   TASK_ROOT_VARIABLE,
-  type InferredState,
+  type StateAtAnotherIdentity,
   type TaskIdentity,
 } from "../state/store.ts";
 
@@ -25,7 +25,7 @@ export type GateDefinition<V extends GateVerdict = PreToolUseVerdict> = Readonly
 export type ArmedState =
   | Readonly<{ kind: "absent" }>
   | Readonly<{ kind: "unusable"; stateFile: string }>
-  | Readonly<{ kind: "moved"; left: InferredState; task: TaskIdentity }>
+  | Readonly<{ kind: "moved"; left: StateAtAnotherIdentity; task: TaskIdentity }>
   | Readonly<{ kind: "readable"; stateFile: string; content: string }>;
 
 type MovedIdentity = Extract<ArmedState, { kind: "moved" }>;
@@ -60,7 +60,7 @@ export function readArmedState(cwd: string): ArmedState {
     if (read.kind === "ok") return { kind: "readable", stateFile: task.stateFile, content: read.content };
     if (read.kind === "unreadable") return { kind: "unusable", stateFile: task.stateFile };
   }
-  const left = stateLeftAtTheInferredIdentity(cwd, task);
+  const left = stateKeyedByAnotherTaskIdentity(cwd, task);
   return left === undefined ? { kind: "absent" } : { kind: "moved", left, task };
 }
 
@@ -107,15 +107,32 @@ export function deniedForUnusableState(gate: GateId, stateFile: string, session:
 }
 
 export function identityMovedMessage(state: MovedIdentity, session: string): string {
-  const named =
-    state.task.kind === "unknown"
-      ? `this session can name none of its own (${state.task.cause}) until ${TASK_ROOT_VARIABLE} declares one`
-      : `${TASK_ROOT_VARIABLE} now names ${state.task.identity}`;
   return (
-    `oso-code: the state that arms this session's gates still sits at ${state.left.stateFile}, keyed by the ` +
-    `identity earlier releases inferred (${state.left.identity}), while ${named}. Carry it over with ` +
-    `${osoStateRemedy(session, "show")} from this directory, or drop it with ${osoStateRemedy(session, "clear")}; ` +
-    `until one of those runs, this gate denies rather than allowing on state it no longer reads.`
+    `oso-code: the state that arms this session's gates still sits at ${state.left.stateFile}, keyed by another ` +
+    `task identity (${state.left.identity}), while ${whatThisDirectoryNamesInstead(state.task)}. ` +
+    `${carryItOverOrDropIt(state, session)}; until one of those runs, this gate denies rather than allowing on ` +
+    `state it no longer reads.`
+  );
+}
+
+function whatThisDirectoryNamesInstead(task: TaskIdentity): string {
+  if (task.kind === "unknown") {
+    return `this session can name none of its own (${task.cause}) until ${TASK_ROOT_VARIABLE} declares one`;
+  }
+  if (task.kind === "declared") return `${TASK_ROOT_VARIABLE} now names ${task.identity}`;
+  return `no ${TASK_ROOT_VARIABLE} reaches this process, so it resolves to the repository ${task.identity} instead`;
+}
+
+function carryItOverOrDropIt(state: MovedIdentity, session: string): string {
+  if (state.task.kind === "repository") {
+    return (
+      `Declare it with ${TASK_ROOT_VARIABLE}=${state.left.identity} and retry, or drop it with ` +
+      `${osoStateRemedy(session, "clear")} from that root`
+    );
+  }
+  return (
+    `Carry it over with ${osoStateRemedy(session, "show")} from this directory, or drop it with ` +
+    `${osoStateRemedy(session, "clear")}`
   );
 }
 

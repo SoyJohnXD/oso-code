@@ -373,3 +373,50 @@ test("a pending plan survives the carry, so approve-plan still exits 0 under the
     assert.ok(shown.stdout.includes(`plan_current_file=${path.join(declaredPlans, "current.md")}`), shown.stdout);
     assert.ok(shown.stdout.includes(`plan_snapshot_file=${path.join(declaredPlans, `approved-${PLAN_DIGEST}.md`)}`), shown.stdout);
   }));
+
+test("durable artifacts standing at the inferred identity with no state file to announce them still carry over", () =>
+  withTree((tree) => {
+    const legacy = armLegacyTaskHoldingEveryArtifact(tree);
+    rmSync(path.join(tree.stateRoot, `${digest(legacy)}.state`));
+    const at = { cwd: tree.nested, env: { OSO_TASK_ROOT: tree.declaredRoot } };
+    const carried = tree.run(["--session", SESSION, "show"], at);
+    assert.equal(carried.exit, 0, carried.stderr);
+    for (const family of CARRIED_FAMILIES) assert.deepEqual(keysUnder(tree, family), [digest(tree.declaredRoot)], family);
+    assert.equal(tree.run(["--session", SESSION, "set", "auto=running"], at).exit, 0);
+    const boundary = gateRun(tree, { gate: "proddeploy", cwd: tree.nested, command: "terraform apply", env: at.env });
+    assert.equal(boundary.verdict.kind, "deny", JSON.stringify(boundary.verdict));
+  }));
+
+test("a declaration narrower than the repository is one identity with it, so a sibling tree of that repository is gated", () =>
+  withTree((tree) => {
+    const [api, web] = ["api", "web"].map((name) => path.join(tree.nested, name));
+    for (const directory of [api, web]) mkdirSync(directory as string);
+    const declared = { OSO_TASK_ROOT: api as string };
+    const armed = tree.run(["--session", SESSION, "set", "auto=running", "verify_green=false"], { cwd: api, env: declared });
+    assert.equal(armed.exit, 0, armed.stderr);
+    const denial = gateRun(tree, { gate: "commit", cwd: web as string, command: "git commit -m x", env: declared });
+    assert.equal(denial.verdict.kind, "deny", JSON.stringify(denial.verdict));
+    assert.match(readFileSync(path.join(tree.stateRoot, "events.jsonl"), "utf8"), /identity-rekeyed/);
+  }));
+
+test("a run armed at a declared root above this directory gates a process that never saw the declaration", () =>
+  withTree((tree) => {
+    const armed = tree.run(["--session", SESSION, "set", "auto=running", "verify_green=false"], { env: { OSO_TASK_ROOT: tree.declaredRoot } });
+    assert.equal(armed.exit, 0, armed.stderr);
+    const undeclared = gateRun(tree, { gate: "proddeploy", cwd: tree.nested, command: "vercel deploy --prod" });
+    assert.equal(undeclared.verdict.kind, "deny", JSON.stringify(undeclared.verdict));
+    assert.ok(JSON.stringify(undeclared.verdict).includes(tree.declaredRoot), JSON.stringify(undeclared.verdict));
+    assert.match(readFileSync(path.join(tree.stateRoot, "events.jsonl"), "utf8"), /boundary-unpatterned/);
+  }));
+
+test("a wave worktree outside the declared root is gated by the run armed over the repository it belongs to", () =>
+  withTree((tree) => {
+    const committed = git(tree.nested, ["-c", "user.name=t", "-c", "user.email=t@t.invalid", "commit", "-q", "--allow-empty", "-m", "base"]);
+    assert.equal(committed.status, 0, committed.stderr);
+    const worktree = path.join(tree.stateRoot, "worktrees", SESSION, "1");
+    assert.equal(git(tree.nested, ["worktree", "add", "--quiet", "--detach", worktree]).status, 0);
+    const armed = tree.run(["--session", SESSION, "set", "auto=running", "verify_green=false"], { cwd: tree.nested, env: { OSO_TASK_ROOT: tree.nested } });
+    assert.equal(armed.exit, 0, armed.stderr);
+    const fromTheWave = gateRun(tree, { gate: "proddeploy", cwd: worktree, command: "vercel deploy --prod" });
+    assert.equal(fromTheWave.verdict.kind, "deny", JSON.stringify(fromTheWave.verdict));
+  }));

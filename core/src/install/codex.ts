@@ -250,7 +250,7 @@ export function rebuildManagedConfig(rebuild: ManagedConfigRebuild): string {
   const outside = operatorTextOutsideTheRegion(rebuild.existingText);
   const parts = runTomlRegion(outside, { action: "split" });
   const lifted = liftedOutOfTheRegion(rebuild, managed);
-  const seeded = seededWhereNothingDeclaresPermissions(rebuild.targetHome, [outside, lifted.root, lifted.sections]);
+  const seeded = seededWhereNothingDeclaresPermissions(rebuild, [outside, lifted.root, lifted.sections]);
   const root = blocksJoined([parts.root, lifted.root, seeded.rootKeys]);
   const sections = withMergedFeatureRegion(blocksJoined([parts.sections, lifted.sections, seeded.tables]));
   return [
@@ -292,18 +292,18 @@ function liftedOutOfTheRegion(rebuild: ManagedConfigRebuild, managed: string): O
   return { root: parts.root, sections: parts.sections };
 }
 
-function seededWhereNothingDeclaresPermissions(targetHome: string, texts: readonly string[]): OsoPermissionProfile {
-  return texts.some(declaresPermissions) ? NOTHING_SEEDED : renderOsoPermissionProfile(targetHome);
+function seededWhereNothingDeclaresPermissions(rebuild: ManagedConfigRebuild, texts: readonly string[]): OsoPermissionProfile {
+  const unclaimed = texts.every((text) => permissionsAreUnclaimedIn(text, rebuild.configFile));
+  return unclaimed ? renderOsoPermissionProfile(rebuild.targetHome) : NOTHING_SEEDED;
 }
 
-function declaresPermissions(text: string): boolean {
-  return rootSymbolLinesOf(text).some(declaresAPermissionKey);
-}
-
-function declaresAPermissionKey(line: string): boolean {
-  const symbol = decodedSymbol(line);
-  if (symbol === undefined) return false;
-  return Object.hasOwn(symbol, "default_permissions") || Object.hasOwn(symbol, "permissions");
+function permissionsAreUnclaimedIn(text: string, file: string): boolean {
+  try {
+    return permissionSettingsOf(text, file).length === 0;
+  } catch (error) {
+    if (error instanceof TomlParseError) return false;
+    throw error;
+  }
 }
 
 function undecodableRootLines(text: string): readonly string[] {

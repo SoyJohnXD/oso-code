@@ -1095,7 +1095,7 @@ function asJsLiteral(character) {
 }
 
 // core/src/state/handoff.ts
-import { chmodSync, existsSync, lstatSync as lstatSync4, mkdirSync as mkdirSync2, opendirSync, readFileSync as readFileSync3, readdirSync, realpathSync as realpathSync3, rmSync as rmSync2 } from "node:fs";
+import { chmodSync, existsSync as existsSync2, lstatSync as lstatSync4, mkdirSync as mkdirSync2, opendirSync, readFileSync as readFileSync3, readdirSync, realpathSync as realpathSync3, rmSync as rmSync2 } from "node:fs";
 import path4 from "node:path";
 
 // core/src/hosts/codex-session-metadata.ts
@@ -1207,6 +1207,7 @@ import {
   accessSync,
   appendFileSync,
   constants as constants2,
+  existsSync,
   lstatSync as lstatSync3,
   mkdirSync,
   readFileSync as readFileSync2,
@@ -1285,22 +1286,35 @@ function taskIdentityFor(cwd) {
   const declaration = process.env[TASK_ROOT_VARIABLE] ?? "";
   if (declaration === "") return gitAnsweredIdentity(stateRoot, directory);
   const declared = declaredRootOf(declaration);
-  if (declared.kind === "refused") {
-    return { kind: "unknown", cwd: directory, cause: declared.cause, inferredIdentity: inferredIdentityFor(directory) };
-  }
-  if (!declaredRootCovers(declared.root, realPathOrUndefined(directory) ?? directory)) {
-    return gitAnsweredIdentity(stateRoot, directory, declared.root);
-  }
-  return { kind: "declared", identity: declared.root, stateFile: stateFileOfIdentity(stateRoot, declared.root) };
+  if (declared.kind === "refused") return unnamedIdentity(directory, declared.cause, inferredIdentityFor(directory));
+  return identityUnderTheDeclaredRoot(stateRoot, directory, declared.root);
 }
-function gitAnsweredIdentity(stateRoot, directory, rootThatDoesNotCover) {
-  const answered = gitCommonDirectory(directory);
-  if (answered.kind === "answered") {
-    const identity = answered.commonDirectory;
-    return { kind: "repository", identity, stateFile: stateFileOfIdentity(stateRoot, identity) };
+function identityUnderTheDeclaredRoot(stateRoot, directory, root) {
+  if (declaredRootCovers(root, realPathOrUndefined(directory) ?? directory)) {
+    return namedIdentity(stateRoot, "declared", root);
   }
-  const uncovered = rootThatDoesNotCover === void 0 ? "" : `, and ${TASK_ROOT_VARIABLE} declares ${rootThatDoesNotCover}, which does not contain it`;
-  return { kind: "unknown", cwd: directory, cause: `${answered.cause}${uncovered}`, inferredIdentity: directory };
+  const answered = gitCommonDirectory(directory);
+  if (answered.kind === "refused") {
+    const uncovered = `, and ${TASK_ROOT_VARIABLE} declares ${root}, which does not contain it`;
+    return unnamedIdentity(directory, `${answered.cause}${uncovered}`, directory);
+  }
+  if (declaredRootSharesTheRepository(root, answered.commonDirectory)) return namedIdentity(stateRoot, "declared", root);
+  return namedIdentity(stateRoot, "repository", answered.commonDirectory);
+}
+function declaredRootSharesTheRepository(root, commonDirectory) {
+  const answered = gitCommonDirectory(root);
+  return answered.kind === "answered" && answered.commonDirectory === commonDirectory;
+}
+function gitAnsweredIdentity(stateRoot, directory) {
+  const answered = gitCommonDirectory(directory);
+  if (answered.kind === "answered") return namedIdentity(stateRoot, "repository", answered.commonDirectory);
+  return unnamedIdentity(directory, answered.cause, directory);
+}
+function namedIdentity(stateRoot, kind, identity) {
+  return { kind, identity, stateFile: stateFileOfIdentity(stateRoot, identity) };
+}
+function unnamedIdentity(cwd, cause, inferredIdentity) {
+  return { kind: "unknown", cwd, cause, inferredIdentity };
 }
 function requireTaskIdentity(cwd) {
   const task = taskIdentityFor(cwd);
@@ -1312,13 +1326,32 @@ function inferredIdentityFor(cwd) {
   const answered = gitCommonDirectory(directory);
   return answered.kind === "answered" ? answered.commonDirectory : directory;
 }
-function stateLeftAtTheInferredIdentity(cwd, task) {
+function stateKeyedByAnotherTaskIdentity(cwd, task) {
+  return artifactsLeftAtTheInferredIdentity(cwd, task) ?? taskArmedAboveThisDirectory(cwd, task);
+}
+function artifactsLeftAtTheInferredIdentity(cwd, task) {
   if (task.kind === "repository") return void 0;
   const identity = task.kind === "unknown" ? task.inferredIdentity : inferredIdentityFor(cwd);
   if (task.kind === "declared" && identity === task.identity) return void 0;
-  const stateFile = stateFileOfIdentity(stateRootDirectory(), identity);
-  if (readStateFile(stateFile).kind === "absent") return void 0;
-  return { identity, stateFile };
+  const left = { identity, stateFile: stateFileOfIdentity(stateRootDirectory(), identity) };
+  return taskArtifactsStandAt(left) ? left : void 0;
+}
+function taskArtifactsStandAt({ identity, stateFile }) {
+  if (readStateFile(stateFile).kind !== "absent") return true;
+  const repositoryId = sha256Hex(identity);
+  return [...KEYED_ARTIFACT_FILES, ...KEYED_ARTIFACT_TREES].some((keyedBy) => existsSync(keyedBy(repositoryId)));
+}
+function taskArmedAboveThisDirectory(cwd, task) {
+  if (task.kind === "declared") return void 0;
+  const stateRoot = stateRootDirectory();
+  const directory = withoutTrailingReturn(cwd);
+  const mainCheckout = task.kind === "repository" ? [path3.dirname(task.identity)] : [];
+  return [...mainCheckout, ...ancestorsOf(realPathOrUndefined(directory) ?? directory)].map((identity) => ({ identity, stateFile: stateFileOfIdentity(stateRoot, identity) })).find((candidate) => readStateFile(candidate.stateFile).kind !== "absent");
+}
+function ancestorsOf(directory) {
+  const walked = [];
+  for (let candidate = directory; !walked.includes(candidate); candidate = path3.dirname(candidate)) walked.push(candidate);
+  return walked;
 }
 function stateFileOfIdentity(stateRoot, identity) {
   return path3.join(stateRoot, `${sha256Hex(identity)}.state`);
@@ -1368,6 +1401,21 @@ function denyPatternsFileKeyedBy(repositoryId) {
 function profileFileKeyedBy(repositoryId) {
   return path3.join(stateRootDirectory(), "profiles", `${repositoryId}.profile`);
 }
+function planRootDirectory() {
+  return path3.join(stateRootDirectory(), "plans");
+}
+function planDirectoryKeyedBy(repositoryId) {
+  return path3.join(planRootDirectory(), repositoryId);
+}
+function receiptDirectoryKeyedBy(repositoryId) {
+  return path3.join(stateRootDirectory(), ".handoffs", repositoryId);
+}
+var KEYED_ARTIFACT_FILES = [denyPatternsFileKeyedBy, profileFileKeyedBy];
+var KEYED_ARTIFACT_TREES = [
+  runsDirectoryKeyedBy,
+  planDirectoryKeyedBy,
+  receiptDirectoryKeyedBy
+];
 var MODEL_TOKEN_SHAPE = `1 to ${TOKEN_MAX_LENGTH} characters of letters, digits and / : . - _ @`;
 function isNameToken(value) {
   return value.length >= 1 && value.length <= TOKEN_MAX_LENGTH && NAME_TOKEN_PATTERN.test(value);
@@ -1774,7 +1822,7 @@ function runHandoffPublish(cwd, coordinates, hookSession) {
       throw new HandoffFailure(`stale publish for slice ${coordinates.slice}: attempt ${attempt}, newest ${newest}`);
     }
     if (attempt === newest) {
-      if (existsSync(paths.receipt) && receiptMatches(paths.receipt, coordinates) && recordsInclude(paths.receipt, `hook_session=${hookSession}`)) {
+      if (existsSync2(paths.receipt) && receiptMatches(paths.receipt, coordinates) && recordsInclude(paths.receipt, `hook_session=${hookSession}`)) {
         return;
       }
       throw new HandoffFailure(`attempt ${attempt} for slice ${coordinates.slice} was already published or consumed`);
@@ -1843,7 +1891,7 @@ function runHandoffConsume(cwd, coordinates) {
   acquireHandoffLock(paths, nowEpochSeconds() + LOCK_TIMEOUT_SECONDS);
   try {
     pruneLocked(paths);
-    if (!existsSync(paths.receipt)) {
+    if (!existsSync2(paths.receipt)) {
       throw new HandoffFailure(`no unconsumed receipt for slice ${coordinates.slice} attempt ${coordinates.attempt}`);
     }
     requireMatchingReceipt(paths.receipt, coordinates, "receipt identity does not match the delegated result");
@@ -1856,11 +1904,11 @@ function runHandoffConsume(cwd, coordinates) {
   }
 }
 function matchingReceiptOrStop(paths, coordinates) {
-  if (existsSync(paths.receipt)) {
+  if (existsSync2(paths.receipt)) {
     requireMatchingReceipt(paths.receipt, coordinates, "receipt identity does not match the awaited delegation");
     return readFileSync3(paths.receipt, "utf8");
   }
-  if (existsSync(paths.watermark)) {
+  if (existsSync2(paths.watermark)) {
     if (!watermarkIsValid(paths.watermark)) throw new HandoffFailure(`malformed watermark at ${paths.watermark}`);
     if (attemptOf(paths.watermark) >= Number(coordinates.attempt)) {
       throw new HandoffFailure(
@@ -1913,9 +1961,6 @@ function isValidOpaqueId(value) {
 }
 function isValidTimeoutText(value) {
   return TIMEOUT_PATTERN.test(value) && Number(value) <= MAX_TIMEOUT_SECONDS;
-}
-function receiptDirectoryKeyedBy(repositoryId) {
-  return path4.join(stateRootDirectory(), ".handoffs", repositoryId);
 }
 function receiptDirectoryFor(cwd) {
   return receiptDirectoryKeyedBy(repositoryIdFor(stateFileFor(cwd)));
@@ -1992,7 +2037,7 @@ function tryAcquireBareLock(lockDir) {
 }
 function pruneLocked(paths) {
   for (const artifact of [paths.receipt, paths.watermark, paths.unpublished, ...matchingTempArtifacts(paths)]) {
-    if (!existsSync(artifact)) continue;
+    if (!existsSync2(artifact)) continue;
     if (!isRegularNonSymlinkFile(artifact)) {
       throw new HandoffFailure(`handoff artifact is not a regular file at ${artifact}`);
     }
@@ -2014,18 +2059,18 @@ function directoryEntries(directory) {
 }
 function newestRecordedAttempt(paths) {
   let newest = 0;
-  if (existsSync(paths.receipt)) {
+  if (existsSync2(paths.receipt)) {
     if (!receiptIsValid(paths.receipt)) throw new HandoffFailure(`malformed receipt at ${paths.receipt}`);
     newest = Math.max(newest, attemptOf(paths.receipt));
   }
-  if (existsSync(paths.watermark)) {
+  if (existsSync2(paths.watermark)) {
     if (!watermarkIsValid(paths.watermark)) throw new HandoffFailure(`malformed watermark at ${paths.watermark}`);
     newest = Math.max(newest, attemptOf(paths.watermark));
   }
   return newest;
 }
 function writeWatermark(paths, attempt) {
-  if (existsSync(paths.watermark)) {
+  if (existsSync2(paths.watermark)) {
     if (!watermarkIsValid(paths.watermark)) throw new HandoffFailure(`malformed watermark at ${paths.watermark}`);
     const recorded = attemptOf(paths.watermark);
     const attemptNumber = Number(attempt);
@@ -2187,12 +2232,130 @@ function readPinnedDirectory({ directory, before, deadline, remainingPaths }) {
 }
 
 // core/src/state/migration.ts
-import { appendFileSync as appendFileSync2, existsSync as existsSync3, mkdirSync as mkdirSync4, readFileSync as readFileSync5, readdirSync as readdirSync2, renameSync as renameSync3, rmSync as rmSync4 } from "node:fs";
-import path6 from "node:path";
+import { appendFileSync as appendFileSync2, existsSync as existsSync3, mkdirSync as mkdirSync3, readFileSync as readFileSync4, readdirSync as readdirSync2, renameSync as renameSync2, rmSync as rmSync3 } from "node:fs";
+import path5 from "node:path";
+var TaskStateMigrationError = class extends Error {
+  constructor(message, options) {
+    super(message, options);
+    this.name = "TaskStateMigrationError";
+  }
+};
+var PLAN_PATH_KEYS = ["plan_snapshot_file", "plan_current_file"];
+var JOURNAL_SUFFIX = ".log";
+function migrateInferredTaskState(cwd, session) {
+  const task = taskIdentityFor(cwd);
+  if (task.kind !== "declared") return;
+  const left = stateKeyedByAnotherTaskIdentity(cwd, task);
+  if (left === void 0) return;
+  withLock(left.stateFile, session, () => {
+    if (!taskArtifactsStandAt(left)) return;
+    if (readStateFile(left.stateFile).kind !== "absent" && readStateFile(task.stateFile).kind !== "absent") {
+      throw new TaskStateMigrationError(twoIdentitiesHoldState(cwd, left, task));
+    }
+    carryEverythingKeyedBy(keyedIdentity(left), keyedIdentity(task), session);
+  });
+}
+function keyedIdentity({ identity, stateFile }) {
+  return { identity, key: sha256Hex(identity), stateFile };
+}
+function carryEverythingKeyedBy(inferred, declared, session) {
+  const carried = plannedCarries(inferred.key, declared.key);
+  const colliding = carried.filter((artifact) => artifact.onCollision === "refuse" && existsSync3(artifact.to));
+  if (colliding.length > 0) {
+    throw new TaskStateMigrationError(artifactsCollide(inferred.identity, declared.identity, colliding));
+  }
+  try {
+    for (const artifact of carried) carryOne(artifact, inferred.identity);
+    for (const treeKeyedBy of KEYED_ARTIFACT_TREES) rmSync3(treeKeyedBy(inferred.key), { recursive: true, force: true });
+    carryStateFileLastSoAnInterruptionResumes(inferred, declared);
+  } catch (error) {
+    if (error instanceof TaskStateMigrationError) throw error;
+    throw new TaskStateMigrationError(carryStoppedPartway(inferred.identity, declared.identity, causeOf2(error)), {
+      cause: error
+    });
+  }
+  logEvent({ event: "identity-migrated", session, command: `${inferred.identity} -> ${declared.identity}` });
+}
+function plannedCarries(from, to) {
+  const files = KEYED_ARTIFACT_FILES.map((fileKeyedBy) => ({
+    from: fileKeyedBy(from),
+    to: fileKeyedBy(to),
+    onCollision: "refuse"
+  }));
+  return [...files, ...KEYED_ARTIFACT_TREES.flatMap((treeKeyedBy) => treeCarries(treeKeyedBy, from, to))].filter(
+    (artifact) => existsSync3(artifact.from)
+  );
+}
+function treeCarries(treeKeyedBy, from, to) {
+  const source = treeKeyedBy(from);
+  const destination = treeKeyedBy(to);
+  return entryNamesOf(source).map((name) => ({
+    from: path5.join(source, name),
+    to: path5.join(destination, name),
+    onCollision: name.endsWith(JOURNAL_SUFFIX) ? "concatenate" : "refuse"
+  }));
+}
+function carryOne(artifact, inferred) {
+  mkdirSync3(path5.dirname(artifact.to), { recursive: true, mode: 448 });
+  if (artifact.onCollision === "concatenate" && existsSync3(artifact.to)) {
+    withOwnerOnlyUmask(() => appendFileSync2(artifact.to, journalLinesCarriedFrom(artifact.from, inferred)));
+    rmSync3(artifact.from, { force: true });
+    return;
+  }
+  renameSync2(artifact.from, artifact.to);
+}
+function carryStateFileLastSoAnInterruptionResumes(inferred, declared) {
+  const read = readStateFile(inferred.stateFile);
+  if (read.kind === "absent") return;
+  if (read.kind === "unreadable") throw new StateFileUnreadableError(inferred.stateFile, read.cause);
+  retargetCarriedPlanPaths(read.content, inferred, declared);
+  renameSync2(inferred.stateFile, declared.stateFile);
+}
+function retargetCarriedPlanPaths(content, inferred, declared) {
+  const { stateFile } = inferred;
+  const planDirectory = planDirectoryKeyedBy(inferred.key);
+  const carriedPlanDirectory = planDirectoryKeyedBy(declared.key);
+  const retargeted = content.split("\n").map((line) => planLineRebasedOn(line, planDirectory, carriedPlanDirectory)).join("\n");
+  if (retargeted !== content) writeFileAtomically(path5.dirname(stateFile), stateFile, retargeted, ".retarget.");
+}
+function planLineRebasedOn(line, planDirectory, carriedPlanDirectory) {
+  const key = PLAN_PATH_KEYS.find((named) => line.startsWith(`${named}=`));
+  if (key === void 0) return line;
+  const recorded = line.slice(key.length + 1);
+  if (path5.dirname(recorded) !== planDirectory) return line;
+  return `${key}=${path5.join(carriedPlanDirectory, path5.basename(recorded))}`;
+}
+function journalLinesCarriedFrom(journal, inferred) {
+  return readFileSync4(journal, "utf8").split("\n").filter((line) => line !== "").map((line) => `${line} [carried from ${inferred}]
+`).join("");
+}
+function twoIdentitiesHoldState(cwd, left, task) {
+  return `two task identities hold state for ${cwd}, and this harness never merges them: a merged state can open a red repository's commit gate on a neighbour's green. Keep the one this task should use, remove the other, then run again.
+${whatItHolds(task.identity, task.stateFile)}${whatItHolds(left.identity, left.stateFile)}`;
+}
+function whatItHolds(identity, stateFile) {
+  const read = readStateFile(stateFile);
+  const held2 = read.kind === "ok" ? read.content.split("\n").filter((line) => line !== "") : [`this file cannot be read: ${readFailureCause(read)}`];
+  return [`  ${identity} (${stateFile})`, ...held2.map((line) => `    ${line}`), ""].join("\n");
+}
+function readFailureCause(read) {
+  return read.kind === "unreadable" ? read.cause : "it is absent";
+}
+function artifactsCollide(inferred, identity, colliding) {
+  return `the state of ${inferred} cannot be carried to ${identity}: ${colliding.length} artifact(s) already stand under the declared identity, and each of them is keyed to one agent or one plan, so choosing between the two would be a guess. Remove whichever is spent, then run again.
+` + colliding.map((artifact) => `  ${artifact.to}
+`).join("");
+}
+function carryStoppedPartway(inferred, identity, cause) {
+  return `the state of ${inferred} stopped partway on its way to ${identity}: ${cause}. Nothing was dropped and the state still answers at ${inferred}, so the gates keep denying rather than allowing on state they no longer read. Clear whatever blocked the carry and the next oso-state run finishes it.`;
+}
+function entryNamesOf(directory) {
+  return isDirectory(directory) ? readdirSync2(directory) : [];
+}
 
 // core/src/state/plan.ts
-import { chmodSync as chmodSync2, existsSync as existsSync2, mkdirSync as mkdirSync3, readFileSync as readFileSync4, renameSync as renameSync2, rmSync as rmSync3 } from "node:fs";
-import path5 from "node:path";
+import { chmodSync as chmodSync2, existsSync as existsSync4, mkdirSync as mkdirSync4, readFileSync as readFileSync5, renameSync as renameSync3, rmSync as rmSync4 } from "node:fs";
+import path6 from "node:path";
 
 // core/src/state/transitions.ts
 function closeSlice() {
@@ -2224,7 +2387,7 @@ var PlanVerifyFailure = class extends PlanFailure {
 };
 function runRejectPlanPresentation(cwd, sessionId, fingerprint) {
   const stateFile = stateFileFor(cwd);
-  mkdirSync3(stateRootDirectory(), { recursive: true });
+  mkdirSync4(stateRootDirectory(), { recursive: true });
   withLock(stateFile, sessionId, () => {
     writeStatePairs(stateFile, [
       "mode=plan",
@@ -2245,18 +2408,12 @@ function readPlanForReplacement(cwd, sessionId) {
     if (!isValidPlanDigest(digest)) throw new PlanFailure("replacement requires a valid pending digest", { code: "invalid-pending-digest" });
     const paths = planPaths(stateFile, digest);
     if (readValue(stateFile, "plan_current_file") !== paths.currentFile || !isPrivateRegularFile(paths.currentFile)) throw new PlanFailure("preserved plan is missing or unsafe", { code: "preserved-plan-unsafe" });
-    return readFileSync4(paths.currentFile, "utf8");
+    return readFileSync5(paths.currentFile, "utf8");
   });
 }
 var PLAN_DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 function isValidPlanDigest(value) {
   return PLAN_DIGEST_PATTERN.test(value);
-}
-function planRootDirectory() {
-  return path5.join(stateRootDirectory(), "plans");
-}
-function planDirectoryKeyedBy(repositoryId) {
-  return path5.join(planRootDirectory(), repositoryId);
 }
 function planPaths(stateFile, digest) {
   const root = planRootDirectory();
@@ -2264,9 +2421,9 @@ function planPaths(stateFile, digest) {
   return {
     root,
     dir,
-    presentedFile: path5.join(dir, `presented-${digest}.md`),
-    approvedFile: path5.join(dir, `approved-${digest}.md`),
-    currentFile: path5.join(dir, "current.md")
+    presentedFile: path6.join(dir, `presented-${digest}.md`),
+    approvedFile: path6.join(dir, `approved-${digest}.md`),
+    currentFile: path6.join(dir, "current.md")
   };
 }
 function ensurePlanDirectory(paths) {
@@ -2278,7 +2435,7 @@ function ensurePlanDirectory(paths) {
 }
 function requireNonSymlinkDirectory(target, symlinkLabel, directoryLabel = symlinkLabel) {
   if (isSymlink(target)) throw new PlanFailure(`${symlinkLabel} is a symlink: ${target}`, { code: "plan-directory-symlink" });
-  mkdirSync3(target, { recursive: true, mode: 448 });
+  mkdirSync4(target, { recursive: true, mode: 448 });
   if (!isDirectory(target)) throw new PlanFailure(`${directoryLabel} is not a directory: ${target}`, { code: "plan-directory-invalid" });
 }
 function runCapturePlan(cwd, sessionId, digest, document, binding) {
@@ -2295,17 +2452,17 @@ function runCapturePlan(cwd, sessionId, digest, document, binding) {
     if (binding !== void 0) {
       writeStatePairs(stateFile, ["mode=plan", "plan_approval=pending", "plan_presentation_status=failed", `plan_approval_session=${sessionId}`], sessionId);
     }
-    if (existsSync2(paths.presentedFile)) {
+    if (existsSync4(paths.presentedFile)) {
       if (!isPrivateRegularFile(paths.presentedFile)) {
         throw new PlanFailure("presented snapshot is not a private regular file", { code: "presented-snapshot-unsafe" });
       }
-      if (readFileSync4(paths.presentedFile, "utf8") !== document) {
+      if (readFileSync5(paths.presentedFile, "utf8") !== document) {
         throw new PlanFailure("presented snapshot content disagrees with its approval digest", { code: "presented-snapshot-digest-mismatch" });
       }
     } else {
       writeFileAtomically(paths.dir, paths.presentedFile, document, ".snapshot.");
     }
-    if (existsSync2(paths.currentFile) && !isPrivateRegularFile(paths.currentFile)) {
+    if (existsSync4(paths.currentFile) && !isPrivateRegularFile(paths.currentFile)) {
       throw new PlanFailure("current plan is not a private regular file", { code: "current-plan-unsafe" });
     }
     writeFileAtomically(paths.dir, paths.currentFile, document, ".current.");
@@ -2341,7 +2498,7 @@ function runApprovePlan(cwd, sessionId, digest, nativePresentation) {
     throw new PlanApprovalError("approve-plan requires one lowercase SHA-256 digest", { code: "invalid-approval-digest" });
   }
   const stateFile = stateFileFor(cwd);
-  mkdirSync3(stateRootDirectory(), { recursive: true });
+  mkdirSync4(stateRootDirectory(), { recursive: true });
   return withLock(stateFile, sessionId, () => {
     requireOwnApprovalState(stateFile, sessionId);
     if (readValue(stateFile, "mode") !== "plan") {
@@ -2368,21 +2525,21 @@ function runApprovePlan(cwd, sessionId, digest, nativePresentation) {
     if (!isPrivateRegularFile(paths.currentFile)) {
       throw new PlanFailure("current plan is missing or unsafe", { code: "current-plan-unsafe" });
     }
-    if (native !== void 0 && readFileSync4(paths.currentFile, "utf8") !== native.document) throw new PlanApprovalError("native presentation differs from the pending document", { code: "pending-document-mismatch" });
+    if (native !== void 0 && readFileSync5(paths.currentFile, "utf8") !== native.document) throw new PlanApprovalError("native presentation differs from the pending document", { code: "pending-document-mismatch" });
     if (isPrivateRegularFile(paths.presentedFile)) {
       if (!byteIdentical(paths.currentFile, paths.presentedFile)) {
         throw new PlanFailure("the pending plan changed since it was presented; capture it again before approving", { code: "presented-document-mismatch" });
       }
-      if (existsSync2(paths.approvedFile)) {
+      if (existsSync4(paths.approvedFile)) {
         if (!isPrivateRegularFile(paths.approvedFile)) {
           throw new PlanFailure("approved snapshot is not a private regular file", { code: "approved-snapshot-unsafe" });
         }
         if (!byteIdentical(paths.presentedFile, paths.approvedFile)) {
           throw new PlanFailure("approved snapshot content disagrees with the pending document", { code: "approved-document-mismatch" });
         }
-        rmSync3(paths.presentedFile, { force: true });
+        rmSync4(paths.presentedFile, { force: true });
       } else {
-        renameSync2(paths.presentedFile, paths.approvedFile);
+        renameSync3(paths.presentedFile, paths.approvedFile);
       }
     } else if (!isPrivateRegularFile(paths.approvedFile)) {
       throw new PlanFailure("presented plan snapshot is missing", { code: "presented-snapshot-missing" });
@@ -2399,7 +2556,7 @@ function runCancelPlan(cwd, sessionId, digest) {
     throw new PlanApprovalError("cancel-plan requires one lowercase SHA-256 digest", { code: "invalid-cancellation-digest" });
   }
   const stateFile = stateFileFor(cwd);
-  mkdirSync3(stateRootDirectory(), { recursive: true });
+  mkdirSync4(stateRootDirectory(), { recursive: true });
   return withLock(stateFile, sessionId, () => {
     requireOwnApprovalState(stateFile, sessionId);
     requirePendingApproval(stateFile);
@@ -2408,10 +2565,10 @@ function runCancelPlan(cwd, sessionId, digest) {
     }
     const paths = planPaths(stateFile, digest);
     if (readValue(stateFile, "plan_snapshot_file") === paths.presentedFile) {
-      rmSync3(paths.presentedFile, { force: true });
+      rmSync4(paths.presentedFile, { force: true });
     }
     if (readValue(stateFile, "plan_current_file") === paths.currentFile) {
-      rmSync3(paths.currentFile, { force: true });
+      rmSync4(paths.currentFile, { force: true });
     }
     clearStateFile(stateFile);
     logEvent({ event: "plan-approval-cancelled", session: sessionId });
@@ -2421,7 +2578,7 @@ function runCancelPlan(cwd, sessionId, digest) {
 function runAmendPlan(cwd, sessionId, sliceId, document) {
   if (!isNameToken(sliceId)) throw new PlanFailure("amend-plan requires a safe slice id", { code: "invalid-amendment-slice" });
   const stateFile = stateFileFor(cwd);
-  mkdirSync3(stateRootDirectory(), { recursive: true });
+  mkdirSync4(stateRootDirectory(), { recursive: true });
   if (document.length === 0) throw new PlanFailure("amend-plan requires a non-empty document on stdin", { code: "empty-amendment" });
   return withLock(stateFile, sessionId, () => {
     if (!isReadableRegularFile(stateFile)) {
@@ -2455,7 +2612,7 @@ function runAmendPlan(cwd, sessionId, sliceId, document) {
     const revisionText = readValue(stateFile, "plan_revision") ?? "";
     if (!/^[0-9]+$/.test(revisionText)) throw new PlanFailure("current plan has no valid revision", { code: "invalid-plan-revision" });
     const nextRevision = Number(revisionText) + 1;
-    const amended = `${readFileSync4(paths.currentFile, "utf8")}
+    const amended = `${readFileSync5(paths.currentFile, "utf8")}
 
 ## ${shape.heading} \u2014 ${sliceId}
 
@@ -2485,7 +2642,7 @@ function requirePendingApproval(stateFile) {
   }
 }
 function byteIdentical(leftFile, rightFile) {
-  return readFileSync4(leftFile).equals(readFileSync4(rightFile));
+  return readFileSync5(leftFile).equals(readFileSync5(rightFile));
 }
 function amendmentShapeFor(approval) {
   if (approval === "approved") return { heading: "Execution amendment", classification: "in-scope" };
@@ -2538,135 +2695,10 @@ function namesAVerifyCheck(blockText) {
   return VERIFY_CHECK_TOKENS.some((token) => lowered.includes(token.toLowerCase()));
 }
 
-// core/src/state/migration.ts
-var TaskStateMigrationError = class extends Error {
-  constructor(message, options) {
-    super(message, options);
-    this.name = "TaskStateMigrationError";
-  }
-};
-var KEYED_FILES = [denyPatternsFileKeyedBy, profileFileKeyedBy];
-var KEYED_TREES = [
-  runsDirectoryKeyedBy,
-  planDirectoryKeyedBy,
-  receiptDirectoryKeyedBy
-];
-var PLAN_PATH_KEYS = ["plan_snapshot_file", "plan_current_file"];
-var JOURNAL_SUFFIX = ".log";
-function migrateInferredTaskState(cwd, session) {
-  const task = taskIdentityFor(cwd);
-  if (task.kind !== "declared") return;
-  const left = stateLeftAtTheInferredIdentity(cwd, task);
-  if (left === void 0) return;
-  withLock(left.stateFile, session, () => {
-    if (readStateFile(left.stateFile).kind === "absent") return;
-    if (readStateFile(task.stateFile).kind !== "absent") {
-      throw new TaskStateMigrationError(twoIdentitiesHoldState(cwd, left, task));
-    }
-    carryEverythingKeyedBy(keyedIdentity(left), keyedIdentity(task), session);
-  });
-}
-function keyedIdentity({ identity, stateFile }) {
-  return { identity, key: sha256Hex(identity), stateFile };
-}
-function carryEverythingKeyedBy(inferred, declared, session) {
-  const carried = plannedCarries(inferred.key, declared.key);
-  const colliding = carried.filter((artifact) => artifact.onCollision === "refuse" && existsSync3(artifact.to));
-  if (colliding.length > 0) {
-    throw new TaskStateMigrationError(artifactsCollide(inferred.identity, declared.identity, colliding));
-  }
-  try {
-    for (const artifact of carried) carryOne(artifact, inferred.identity);
-    for (const treeKeyedBy of KEYED_TREES) rmSync4(treeKeyedBy(inferred.key), { recursive: true, force: true });
-    carryStateFileLastSoAnInterruptionResumes(inferred, declared);
-  } catch (error) {
-    if (error instanceof TaskStateMigrationError) throw error;
-    throw new TaskStateMigrationError(carryStoppedPartway(inferred.identity, declared.identity, causeOf2(error)), {
-      cause: error
-    });
-  }
-  logEvent({ event: "identity-migrated", session, command: `${inferred.identity} -> ${declared.identity}` });
-}
-function plannedCarries(from, to) {
-  const files = KEYED_FILES.map((fileKeyedBy) => ({
-    from: fileKeyedBy(from),
-    to: fileKeyedBy(to),
-    onCollision: "refuse"
-  }));
-  return [...files, ...KEYED_TREES.flatMap((treeKeyedBy) => treeCarries(treeKeyedBy, from, to))].filter(
-    (artifact) => existsSync3(artifact.from)
-  );
-}
-function treeCarries(treeKeyedBy, from, to) {
-  const source = treeKeyedBy(from);
-  const destination = treeKeyedBy(to);
-  return entryNamesOf(source).map((name) => ({
-    from: path6.join(source, name),
-    to: path6.join(destination, name),
-    onCollision: name.endsWith(JOURNAL_SUFFIX) ? "concatenate" : "refuse"
-  }));
-}
-function carryOne(artifact, inferred) {
-  mkdirSync4(path6.dirname(artifact.to), { recursive: true, mode: 448 });
-  if (artifact.onCollision === "concatenate" && existsSync3(artifact.to)) {
-    withOwnerOnlyUmask(() => appendFileSync2(artifact.to, journalLinesCarriedFrom(artifact.from, inferred)));
-    rmSync4(artifact.from, { force: true });
-    return;
-  }
-  renameSync3(artifact.from, artifact.to);
-}
-function carryStateFileLastSoAnInterruptionResumes(inferred, declared) {
-  retargetCarriedPlanPaths(inferred, declared);
-  renameSync3(inferred.stateFile, declared.stateFile);
-}
-function retargetCarriedPlanPaths(inferred, declared) {
-  const { stateFile } = inferred;
-  const read = readStateFile(stateFile);
-  if (read.kind !== "ok") throw new StateFileUnreadableError(stateFile, readFailureCause(read));
-  const planDirectory = planDirectoryKeyedBy(inferred.key);
-  const carriedPlanDirectory = planDirectoryKeyedBy(declared.key);
-  const retargeted = read.content.split("\n").map((line) => planLineRebasedOn(line, planDirectory, carriedPlanDirectory)).join("\n");
-  if (retargeted !== read.content) writeFileAtomically(path6.dirname(stateFile), stateFile, retargeted, ".retarget.");
-}
-function planLineRebasedOn(line, planDirectory, carriedPlanDirectory) {
-  const key = PLAN_PATH_KEYS.find((named) => line.startsWith(`${named}=`));
-  if (key === void 0) return line;
-  const recorded = line.slice(key.length + 1);
-  if (path6.dirname(recorded) !== planDirectory) return line;
-  return `${key}=${path6.join(carriedPlanDirectory, path6.basename(recorded))}`;
-}
-function journalLinesCarriedFrom(journal, inferred) {
-  return readFileSync5(journal, "utf8").split("\n").filter((line) => line !== "").map((line) => `${line} [carried from ${inferred}]
-`).join("");
-}
-function twoIdentitiesHoldState(cwd, left, task) {
-  return `two task identities hold state for ${cwd}, and this harness never merges them: a merged state can open a red repository's commit gate on a neighbour's green. Keep the one this task should use, remove the other, then run again.
-${whatItHolds(task.identity, task.stateFile)}${whatItHolds(left.identity, left.stateFile)}`;
-}
-function whatItHolds(identity, stateFile) {
-  const read = readStateFile(stateFile);
-  const held2 = read.kind === "ok" ? read.content.split("\n").filter((line) => line !== "") : [`this file cannot be read: ${readFailureCause(read)}`];
-  return [`  ${identity} (${stateFile})`, ...held2.map((line) => `    ${line}`), ""].join("\n");
-}
-function readFailureCause(read) {
-  return read.kind === "unreadable" ? read.cause : "it is absent";
-}
-function artifactsCollide(inferred, identity, colliding) {
-  return `the state of ${inferred} cannot be carried to ${identity}: ${colliding.length} artifact(s) already stand under the declared identity, and each of them is keyed to one agent or one plan, so choosing between the two would be a guess. Remove whichever is spent, then run again.
-` + colliding.map((artifact) => `  ${artifact.to}
-`).join("");
-}
-function carryStoppedPartway(inferred, identity, cause) {
-  return `the state of ${inferred} stopped partway on its way to ${identity}: ${cause}. Nothing was dropped and the state still answers at ${inferred}, so the gates keep denying rather than allowing on state they no longer read. Clear whatever blocked the carry and the next oso-state run finishes it.`;
-}
-function entryNamesOf(directory) {
-  return isDirectory(directory) ? readdirSync2(directory) : [];
-}
-
 // core/src/state/scratch/lifecycle.ts
 import { spawn, spawnSync as spawnSync2 } from "node:child_process";
 import { randomBytes as randomBytes2 } from "node:crypto";
-import { appendFileSync as appendFileSync4, existsSync as existsSync7, lstatSync as lstatSync7, mkdirSync as mkdirSync8, readdirSync as readdirSync6, readFileSync as readFileSync12, rmdirSync as rmdirSync2, rmSync as rmSync7, writeFileSync as writeFileSync4 } from "node:fs";
+import { appendFileSync as appendFileSync4, existsSync as existsSync8, lstatSync as lstatSync7, mkdirSync as mkdirSync8, readdirSync as readdirSync6, readFileSync as readFileSync12, rmdirSync as rmdirSync2, rmSync as rmSync7, writeFileSync as writeFileSync4 } from "node:fs";
 import path15 from "node:path";
 
 // core/src/hosts/hook-run.ts
@@ -3698,7 +3730,7 @@ import { mkdirSync as mkdirSync5, rmSync as rmSync5, statSync as statSync2, utim
 import path8 from "node:path";
 
 // core/src/gates/preflight.ts
-import { existsSync as existsSync4, readFileSync as readFileSync6 } from "node:fs";
+import { existsSync as existsSync5, readFileSync as readFileSync6 } from "node:fs";
 import path7 from "node:path";
 import { fileURLToPath } from "node:url";
 function sanitizeSession(raw) {
@@ -3718,7 +3750,7 @@ function readArmedState(cwd) {
     if (read.kind === "ok") return { kind: "readable", stateFile: task.stateFile, content: read.content };
     if (read.kind === "unreadable") return { kind: "unusable", stateFile: task.stateFile };
   }
-  const left = stateLeftAtTheInferredIdentity(cwd, task);
+  const left = stateKeyedByAnotherTaskIdentity(cwd, task);
   return left === void 0 ? { kind: "absent" } : { kind: "moved", left, task };
 }
 function stateFileIfNamed(cwd) {
@@ -3755,8 +3787,20 @@ function deniedForUnusableState(gate, stateFile, session) {
   });
 }
 function identityMovedMessage(state, session) {
-  const named = state.task.kind === "unknown" ? `this session can name none of its own (${state.task.cause}) until ${TASK_ROOT_VARIABLE} declares one` : `${TASK_ROOT_VARIABLE} now names ${state.task.identity}`;
-  return `oso-code: the state that arms this session's gates still sits at ${state.left.stateFile}, keyed by the identity earlier releases inferred (${state.left.identity}), while ${named}. Carry it over with ${osoStateRemedy(session, "show")} from this directory, or drop it with ${osoStateRemedy(session, "clear")}; until one of those runs, this gate denies rather than allowing on state it no longer reads.`;
+  return `oso-code: the state that arms this session's gates still sits at ${state.left.stateFile}, keyed by another task identity (${state.left.identity}), while ${whatThisDirectoryNamesInstead(state.task)}. ${carryItOverOrDropIt(state, session)}; until one of those runs, this gate denies rather than allowing on state it no longer reads.`;
+}
+function whatThisDirectoryNamesInstead(task) {
+  if (task.kind === "unknown") {
+    return `this session can name none of its own (${task.cause}) until ${TASK_ROOT_VARIABLE} declares one`;
+  }
+  if (task.kind === "declared") return `${TASK_ROOT_VARIABLE} now names ${task.identity}`;
+  return `no ${TASK_ROOT_VARIABLE} reaches this process, so it resolves to the repository ${task.identity} instead`;
+}
+function carryItOverOrDropIt(state, session) {
+  if (state.task.kind === "repository") {
+    return `Declare it with ${TASK_ROOT_VARIABLE}=${state.left.identity} and retry, or drop it with ${osoStateRemedy(session, "clear")} from that root`;
+  }
+  return `Carry it over with ${osoStateRemedy(session, "show")} from this directory, or drop it with ${osoStateRemedy(session, "clear")}`;
 }
 function deniedForMovedIdentity(gate, state, session) {
   return denied({
@@ -3783,7 +3827,7 @@ function pluginRootAbove(moduleDirectory) {
   while (true) {
     for (const wrapper of PLUGIN_ROOT_WRAPPERS) {
       const root = path7.join(candidate, ...wrapper);
-      if (existsSync4(path7.join(root, "bin", "oso-state")) && isVerifiedOsoCodeRoot(root)) return root;
+      if (existsSync5(path7.join(root, "bin", "oso-state")) && isVerifiedOsoCodeRoot(root)) return root;
     }
     const parent = path7.dirname(candidate);
     if (parent === candidate) {
@@ -5153,7 +5197,7 @@ function judgeStatebin(_request) {
 
 // core/src/gates/teardown.ts
 import { execFileSync as execFileSync2 } from "node:child_process";
-import { existsSync as existsSync5, readdirSync as readdirSync3, renameSync as renameSync4, rmSync as rmSync6, rmdirSync, statSync as statSync5 } from "node:fs";
+import { existsSync as existsSync6, readdirSync as readdirSync3, renameSync as renameSync4, rmSync as rmSync6, rmdirSync, statSync as statSync5 } from "node:fs";
 import path11 from "node:path";
 var ABANDONED_STATE_DAYS = 7;
 var JOURNAL_KEYED_WAIT_MARK_SUFFIX = ".waiting";
@@ -5272,7 +5316,7 @@ function pruneAbandonedState(sessionId, ownState) {
   if (sessionId === "") return;
   for (const stateFile of stateFilesSorted()) {
     if (stateFile === ownState) continue;
-    if (existsSync5(`${stateFile}.lock`)) continue;
+    if (existsSync6(`${stateFile}.lock`)) continue;
     if (!olderThanDays(stateFile, ABANDONED_STATE_DAYS)) continue;
     const abandonedId = sanitizeSession(stateValueOf(stateFile, "session"));
     removeWorktreesOf(abandonedId, stateFile);
@@ -5724,7 +5768,7 @@ function sensitivePath(name) {
 }
 
 // core/src/state/scratch/recipe.ts
-import { existsSync as existsSync6, lstatSync as lstatSync6, readFileSync as readFileSync10, realpathSync as realpathSync5 } from "node:fs";
+import { existsSync as existsSync7, lstatSync as lstatSync6, readFileSync as readFileSync10, realpathSync as realpathSync5 } from "node:fs";
 import path14 from "node:path";
 function reviewCommand(sourceRoot, recipe, argv) {
   if (argv[0] === "npm") {
@@ -5787,7 +5831,7 @@ function runtimeInventory(recipe) {
   if (path14.basename(npm.path) !== "npm-cli.js") throw new Error("scratch requires the Node installation's npm CLI, not a shim");
   const npmRoot = path14.resolve(npm.path, "../..");
   const builtin = path14.join(npmRoot, "npmrc");
-  if (existsSync6(builtin) && readFileSync10(builtin, "utf8").split(/\r?\n/).some((line) => line.trim() !== "" && !/^\s*[#;]/.test(line) && !/^\s*(?:prefix|globalconfig)\s*=/.test(line))) {
+  if (existsSync7(builtin) && readFileSync10(builtin, "utf8").split(/\r?\n/).some((line) => line.trim() !== "" && !/^\s*[#;]/.test(line) && !/^\s*(?:prefix|globalconfig)\s*=/.test(line))) {
     throw new Error("scratch npm builtin settings are unreviewed; use no-export");
   }
   return { node, npm, shell: runtimeFile(realpathSync5("/bin/sh")), npmPackage: runtimeFile(path14.join(npmRoot, "package.json")) };
@@ -5978,7 +6022,7 @@ function verificationDirectory(action) {
   const insideRegistry = cwd.startsWith(`${directory}${path15.sep}`);
   if (directory === cwd || directory.startsWith(`${cwd}${path15.sep}`) || action === "create" && insideRegistry) throw new Error("scratch source-root separation required before registry creation");
   let existing = stateRoot;
-  while (!existsSync7(existing)) existing = path15.dirname(existing);
+  while (!existsSync8(existing)) existing = path15.dirname(existing);
   assertCanonicalPath(existing);
   mkdirSync8(stateRoot, { recursive: true, mode: 448 });
   assertCanonicalPath(stateRoot);
@@ -6007,7 +6051,7 @@ function withAdmission(directory, flags, operation) {
 function recoverAdmission(directory, flags) {
   ownedRecord(directory, flags);
   const lock = path15.join(directory, ".admission");
-  if (!existsSync7(lock)) return;
+  if (!existsSync8(lock)) return;
   assertPrivateDirectory(lock);
   const original = lstatSync7(lock);
   const ownerFile = path15.join(lock, "owner.json");
@@ -6335,7 +6379,7 @@ function closeScratch(record, { recovery }) {
   try {
     assertPrivateDirectory(record.root);
     const payload = path15.join(record.root, "payload");
-    if (existsSync7(payload)) {
+    if (existsSync8(payload)) {
       assertDeletionTree(payload);
       rmSync7(payload, { recursive: true });
     }
@@ -6400,7 +6444,7 @@ function expireClosedLogs(records, flags) {
   for (const record of records) {
     if (record.owner !== ownerToken(flags) || record.state !== "closed" || record.closedAt === null || !Number.isFinite(Date.parse(record.closedAt)) || Date.now() - Date.parse(record.closedAt) < retentionMs) continue;
     const log = path15.join(record.root, "raw.log");
-    if (!existsSync7(log)) continue;
+    if (!existsSync8(log)) continue;
     assertCanonicalPath(log);
     const stat = lstatSync7(log);
     if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid() || (stat.mode & 511) !== 384) throw new Error("scratch closed raw log ownership uncertain");
@@ -6580,7 +6624,20 @@ function writeScan(report2) {
 function runSet(sessionId, pairs) {
   if (pairs.length < 1) throw new UsageError();
   writeStateValues(process.cwd(), sessionId, pairs);
+  if (pairs.includes(UNATTENDED_ARMING)) recordWhatTheUnattendedRunArmsOver(sessionId);
   return 0;
+}
+var UNATTENDED_ARMING = "auto=running";
+function recordWhatTheUnattendedRunArmsOver(sessionId) {
+  const task = taskIdentityFor(process.cwd());
+  if (task.kind === "unknown") return;
+  const patternsFile = denyPatternsFileFor(task.stateFile);
+  if (readStateFile(patternsFile).kind === "absent") {
+    logEvent({ event: "boundary-unpatterned", session: sessionId, command: patternsFile });
+  }
+  const inferred = inferredIdentityFor(process.cwd());
+  if (inferred === task.identity) return;
+  logEvent({ event: "identity-rekeyed", session: sessionId, command: `${inferred} -> ${task.identity}` });
 }
 function runGet(remaining) {
   if (remaining.length !== 1) throw new UsageError();

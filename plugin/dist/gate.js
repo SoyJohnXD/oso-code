@@ -1240,6 +1240,7 @@ import {
   accessSync,
   appendFileSync,
   constants,
+  existsSync,
   lstatSync,
   mkdirSync,
   readFileSync,
@@ -1308,22 +1309,35 @@ function taskIdentityFor(cwd) {
   const declaration = process.env[TASK_ROOT_VARIABLE] ?? "";
   if (declaration === "") return gitAnsweredIdentity(stateRoot, directory);
   const declared = declaredRootOf(declaration);
-  if (declared.kind === "refused") {
-    return { kind: "unknown", cwd: directory, cause: declared.cause, inferredIdentity: inferredIdentityFor(directory) };
-  }
-  if (!declaredRootCovers(declared.root, realPathOrUndefined(directory) ?? directory)) {
-    return gitAnsweredIdentity(stateRoot, directory, declared.root);
-  }
-  return { kind: "declared", identity: declared.root, stateFile: stateFileOfIdentity(stateRoot, declared.root) };
+  if (declared.kind === "refused") return unnamedIdentity(directory, declared.cause, inferredIdentityFor(directory));
+  return identityUnderTheDeclaredRoot(stateRoot, directory, declared.root);
 }
-function gitAnsweredIdentity(stateRoot, directory, rootThatDoesNotCover) {
-  const answered = gitCommonDirectory(directory);
-  if (answered.kind === "answered") {
-    const identity = answered.commonDirectory;
-    return { kind: "repository", identity, stateFile: stateFileOfIdentity(stateRoot, identity) };
+function identityUnderTheDeclaredRoot(stateRoot, directory, root) {
+  if (declaredRootCovers(root, realPathOrUndefined(directory) ?? directory)) {
+    return namedIdentity(stateRoot, "declared", root);
   }
-  const uncovered = rootThatDoesNotCover === void 0 ? "" : `, and ${TASK_ROOT_VARIABLE} declares ${rootThatDoesNotCover}, which does not contain it`;
-  return { kind: "unknown", cwd: directory, cause: `${answered.cause}${uncovered}`, inferredIdentity: directory };
+  const answered = gitCommonDirectory(directory);
+  if (answered.kind === "refused") {
+    const uncovered = `, and ${TASK_ROOT_VARIABLE} declares ${root}, which does not contain it`;
+    return unnamedIdentity(directory, `${answered.cause}${uncovered}`, directory);
+  }
+  if (declaredRootSharesTheRepository(root, answered.commonDirectory)) return namedIdentity(stateRoot, "declared", root);
+  return namedIdentity(stateRoot, "repository", answered.commonDirectory);
+}
+function declaredRootSharesTheRepository(root, commonDirectory) {
+  const answered = gitCommonDirectory(root);
+  return answered.kind === "answered" && answered.commonDirectory === commonDirectory;
+}
+function gitAnsweredIdentity(stateRoot, directory) {
+  const answered = gitCommonDirectory(directory);
+  if (answered.kind === "answered") return namedIdentity(stateRoot, "repository", answered.commonDirectory);
+  return unnamedIdentity(directory, answered.cause, directory);
+}
+function namedIdentity(stateRoot, kind, identity) {
+  return { kind, identity, stateFile: stateFileOfIdentity(stateRoot, identity) };
+}
+function unnamedIdentity(cwd, cause, inferredIdentity) {
+  return { kind: "unknown", cwd, cause, inferredIdentity };
 }
 function requireTaskIdentity(cwd) {
   const task = taskIdentityFor(cwd);
@@ -1335,13 +1349,32 @@ function inferredIdentityFor(cwd) {
   const answered = gitCommonDirectory(directory);
   return answered.kind === "answered" ? answered.commonDirectory : directory;
 }
-function stateLeftAtTheInferredIdentity(cwd, task) {
+function stateKeyedByAnotherTaskIdentity(cwd, task) {
+  return artifactsLeftAtTheInferredIdentity(cwd, task) ?? taskArmedAboveThisDirectory(cwd, task);
+}
+function artifactsLeftAtTheInferredIdentity(cwd, task) {
   if (task.kind === "repository") return void 0;
   const identity = task.kind === "unknown" ? task.inferredIdentity : inferredIdentityFor(cwd);
   if (task.kind === "declared" && identity === task.identity) return void 0;
-  const stateFile = stateFileOfIdentity(stateRootDirectory(), identity);
-  if (readStateFile(stateFile).kind === "absent") return void 0;
-  return { identity, stateFile };
+  const left = { identity, stateFile: stateFileOfIdentity(stateRootDirectory(), identity) };
+  return taskArtifactsStandAt(left) ? left : void 0;
+}
+function taskArtifactsStandAt({ identity, stateFile }) {
+  if (readStateFile(stateFile).kind !== "absent") return true;
+  const repositoryId = sha256Hex(identity);
+  return [...KEYED_ARTIFACT_FILES, ...KEYED_ARTIFACT_TREES].some((keyedBy) => existsSync(keyedBy(repositoryId)));
+}
+function taskArmedAboveThisDirectory(cwd, task) {
+  if (task.kind === "declared") return void 0;
+  const stateRoot = stateRootDirectory();
+  const directory = withoutTrailingReturn(cwd);
+  const mainCheckout = task.kind === "repository" ? [path.dirname(task.identity)] : [];
+  return [...mainCheckout, ...ancestorsOf(realPathOrUndefined(directory) ?? directory)].map((identity) => ({ identity, stateFile: stateFileOfIdentity(stateRoot, identity) })).find((candidate) => readStateFile(candidate.stateFile).kind !== "absent");
+}
+function ancestorsOf(directory) {
+  const walked = [];
+  for (let candidate = directory; !walked.includes(candidate); candidate = path.dirname(candidate)) walked.push(candidate);
+  return walked;
 }
 function stateFileOfIdentity(stateRoot, identity) {
   return path.join(stateRoot, `${sha256Hex(identity)}.state`);
@@ -1385,6 +1418,24 @@ function denyPatternsFileFor(stateFile) {
 function denyPatternsFileKeyedBy(repositoryId) {
   return path.join(stateRootDirectory(), "deploy-deny", `${repositoryId}.patterns`);
 }
+function profileFileKeyedBy(repositoryId) {
+  return path.join(stateRootDirectory(), "profiles", `${repositoryId}.profile`);
+}
+function planRootDirectory() {
+  return path.join(stateRootDirectory(), "plans");
+}
+function planDirectoryKeyedBy(repositoryId) {
+  return path.join(planRootDirectory(), repositoryId);
+}
+function receiptDirectoryKeyedBy(repositoryId) {
+  return path.join(stateRootDirectory(), ".handoffs", repositoryId);
+}
+var KEYED_ARTIFACT_FILES = [denyPatternsFileKeyedBy, profileFileKeyedBy];
+var KEYED_ARTIFACT_TREES = [
+  runsDirectoryKeyedBy,
+  planDirectoryKeyedBy,
+  receiptDirectoryKeyedBy
+];
 var MODEL_TOKEN_SHAPE = `1 to ${TOKEN_MAX_LENGTH} characters of letters, digits and / : . - _ @`;
 function isNameToken(value) {
   return value.length >= 1 && value.length <= TOKEN_MAX_LENGTH && NAME_TOKEN_PATTERN.test(value);
@@ -1711,7 +1762,7 @@ import { mkdirSync as mkdirSync2, rmSync as rmSync2, statSync as statSync2, utim
 import path3 from "node:path";
 
 // core/src/gates/preflight.ts
-import { existsSync, readFileSync as readFileSync2 } from "node:fs";
+import { existsSync as existsSync2, readFileSync as readFileSync2 } from "node:fs";
 import path2 from "node:path";
 import { fileURLToPath } from "node:url";
 function sanitizeSession(raw) {
@@ -1731,7 +1782,7 @@ function readArmedState(cwd) {
     if (read.kind === "ok") return { kind: "readable", stateFile: task.stateFile, content: read.content };
     if (read.kind === "unreadable") return { kind: "unusable", stateFile: task.stateFile };
   }
-  const left = stateLeftAtTheInferredIdentity(cwd, task);
+  const left = stateKeyedByAnotherTaskIdentity(cwd, task);
   return left === void 0 ? { kind: "absent" } : { kind: "moved", left, task };
 }
 function stateFileIfNamed(cwd) {
@@ -1768,8 +1819,20 @@ function deniedForUnusableState(gate, stateFile, session) {
   });
 }
 function identityMovedMessage(state, session) {
-  const named2 = state.task.kind === "unknown" ? `this session can name none of its own (${state.task.cause}) until ${TASK_ROOT_VARIABLE} declares one` : `${TASK_ROOT_VARIABLE} now names ${state.task.identity}`;
-  return `oso-code: the state that arms this session's gates still sits at ${state.left.stateFile}, keyed by the identity earlier releases inferred (${state.left.identity}), while ${named2}. Carry it over with ${osoStateRemedy(session, "show")} from this directory, or drop it with ${osoStateRemedy(session, "clear")}; until one of those runs, this gate denies rather than allowing on state it no longer reads.`;
+  return `oso-code: the state that arms this session's gates still sits at ${state.left.stateFile}, keyed by another task identity (${state.left.identity}), while ${whatThisDirectoryNamesInstead(state.task)}. ${carryItOverOrDropIt(state, session)}; until one of those runs, this gate denies rather than allowing on state it no longer reads.`;
+}
+function whatThisDirectoryNamesInstead(task) {
+  if (task.kind === "unknown") {
+    return `this session can name none of its own (${task.cause}) until ${TASK_ROOT_VARIABLE} declares one`;
+  }
+  if (task.kind === "declared") return `${TASK_ROOT_VARIABLE} now names ${task.identity}`;
+  return `no ${TASK_ROOT_VARIABLE} reaches this process, so it resolves to the repository ${task.identity} instead`;
+}
+function carryItOverOrDropIt(state, session) {
+  if (state.task.kind === "repository") {
+    return `Declare it with ${TASK_ROOT_VARIABLE}=${state.left.identity} and retry, or drop it with ${osoStateRemedy(session, "clear")} from that root`;
+  }
+  return `Carry it over with ${osoStateRemedy(session, "show")} from this directory, or drop it with ${osoStateRemedy(session, "clear")}`;
 }
 function deniedForMovedIdentity(gate, state, session) {
   return denied({
@@ -1796,7 +1859,7 @@ function pluginRootAbove(moduleDirectory) {
   while (true) {
     for (const wrapper of PLUGIN_ROOT_WRAPPERS) {
       const root = path2.join(candidate, ...wrapper);
-      if (existsSync(path2.join(root, "bin", "oso-state")) && isVerifiedOsoCodeRoot(root)) return root;
+      if (existsSync2(path2.join(root, "bin", "oso-state")) && isVerifiedOsoCodeRoot(root)) return root;
     }
     const parent = path2.dirname(candidate);
     if (parent === candidate) {
@@ -2284,7 +2347,7 @@ function aSliceIsActive(stateContent) {
 }
 
 // core/src/state/handoff.ts
-import { chmodSync, existsSync as existsSync2, lstatSync as lstatSync3, mkdirSync as mkdirSync4, opendirSync, readFileSync as readFileSync3, readdirSync, realpathSync as realpathSync2, rmSync as rmSync3 } from "node:fs";
+import { chmodSync, existsSync as existsSync3, lstatSync as lstatSync3, mkdirSync as mkdirSync4, opendirSync, readFileSync as readFileSync3, readdirSync, realpathSync as realpathSync2, rmSync as rmSync3 } from "node:fs";
 import path5 from "node:path";
 
 // core/src/hosts/codex-session-metadata.ts
@@ -2420,7 +2483,7 @@ function runHandoffPublish(cwd, coordinates, hookSession) {
       throw new HandoffFailure(`stale publish for slice ${coordinates.slice}: attempt ${attempt}, newest ${newest}`);
     }
     if (attempt === newest) {
-      if (existsSync2(paths.receipt) && receiptMatches(paths.receipt, coordinates) && recordsInclude(paths.receipt, `hook_session=${hookSession}`)) {
+      if (existsSync3(paths.receipt) && receiptMatches(paths.receipt, coordinates) && recordsInclude(paths.receipt, `hook_session=${hookSession}`)) {
         return;
       }
       throw new HandoffFailure(`attempt ${attempt} for slice ${coordinates.slice} was already published or consumed`);
@@ -2464,9 +2527,6 @@ function validateDelegation(delegation) {
 }
 function isValidOpaqueId(value) {
   return value.length >= 1 && value.length <= OPAQUE_ID_MAX_LENGTH && OPAQUE_ID_PATTERN.test(value);
-}
-function receiptDirectoryKeyedBy(repositoryId) {
-  return path5.join(stateRootDirectory(), ".handoffs", repositoryId);
 }
 function receiptDirectoryFor(cwd) {
   return receiptDirectoryKeyedBy(repositoryIdFor(stateFileFor(cwd)));
@@ -2543,7 +2603,7 @@ function tryAcquireBareLock(lockDir) {
 }
 function pruneLocked(paths) {
   for (const artifact of [paths.receipt, paths.watermark, paths.unpublished, ...matchingTempArtifacts(paths)]) {
-    if (!existsSync2(artifact)) continue;
+    if (!existsSync3(artifact)) continue;
     if (!isRegularNonSymlinkFile(artifact)) {
       throw new HandoffFailure(`handoff artifact is not a regular file at ${artifact}`);
     }
@@ -2565,18 +2625,18 @@ function directoryEntries(directory) {
 }
 function newestRecordedAttempt(paths) {
   let newest = 0;
-  if (existsSync2(paths.receipt)) {
+  if (existsSync3(paths.receipt)) {
     if (!receiptIsValid(paths.receipt)) throw new HandoffFailure(`malformed receipt at ${paths.receipt}`);
     newest = Math.max(newest, attemptOf(paths.receipt));
   }
-  if (existsSync2(paths.watermark)) {
+  if (existsSync3(paths.watermark)) {
     if (!watermarkIsValid(paths.watermark)) throw new HandoffFailure(`malformed watermark at ${paths.watermark}`);
     newest = Math.max(newest, attemptOf(paths.watermark));
   }
   return newest;
 }
 function writeWatermark(paths, attempt) {
-  if (existsSync2(paths.watermark)) {
+  if (existsSync3(paths.watermark)) {
     if (!watermarkIsValid(paths.watermark)) throw new HandoffFailure(`malformed watermark at ${paths.watermark}`);
     const recorded = attemptOf(paths.watermark);
     const attemptNumber = Number(attempt);
@@ -2719,7 +2779,7 @@ function published(session, detail) {
 import { statSync as statSync4 } from "node:fs";
 
 // core/src/state/plan.ts
-import { chmodSync as chmodSync2, existsSync as existsSync3, mkdirSync as mkdirSync5, readFileSync as readFileSync4, renameSync as renameSync2, rmSync as rmSync4 } from "node:fs";
+import { chmodSync as chmodSync2, existsSync as existsSync4, mkdirSync as mkdirSync5, readFileSync as readFileSync4, renameSync as renameSync2, rmSync as rmSync4 } from "node:fs";
 import path6 from "node:path";
 
 // core/src/state/transitions.ts
@@ -2777,12 +2837,6 @@ var PLAN_DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 function isValidPlanDigest(value) {
   return PLAN_DIGEST_PATTERN.test(value);
 }
-function planRootDirectory() {
-  return path6.join(stateRootDirectory(), "plans");
-}
-function planDirectoryKeyedBy(repositoryId) {
-  return path6.join(planRootDirectory(), repositoryId);
-}
 function planPaths(stateFile, digest) {
   const root = planRootDirectory();
   const dir = planDirectoryKeyedBy(repositoryIdFor(stateFile));
@@ -2820,7 +2874,7 @@ function runCapturePlan(cwd, sessionId, digest, document, binding) {
     if (binding !== void 0) {
       writeStatePairs(stateFile, ["mode=plan", "plan_approval=pending", "plan_presentation_status=failed", `plan_approval_session=${sessionId}`], sessionId);
     }
-    if (existsSync3(paths.presentedFile)) {
+    if (existsSync4(paths.presentedFile)) {
       if (!isPrivateRegularFile(paths.presentedFile)) {
         throw new PlanFailure("presented snapshot is not a private regular file", { code: "presented-snapshot-unsafe" });
       }
@@ -2830,7 +2884,7 @@ function runCapturePlan(cwd, sessionId, digest, document, binding) {
     } else {
       writeFileAtomically(paths.dir, paths.presentedFile, document, ".snapshot.");
     }
-    if (existsSync3(paths.currentFile) && !isPrivateRegularFile(paths.currentFile)) {
+    if (existsSync4(paths.currentFile) && !isPrivateRegularFile(paths.currentFile)) {
       throw new PlanFailure("current plan is not a private regular file", { code: "current-plan-unsafe" });
     }
     writeFileAtomically(paths.dir, paths.currentFile, document, ".current.");
@@ -2898,7 +2952,7 @@ function runApprovePlan(cwd, sessionId, digest, nativePresentation) {
       if (!byteIdentical(paths.currentFile, paths.presentedFile)) {
         throw new PlanFailure("the pending plan changed since it was presented; capture it again before approving", { code: "presented-document-mismatch" });
       }
-      if (existsSync3(paths.approvedFile)) {
+      if (existsSync4(paths.approvedFile)) {
         if (!isPrivateRegularFile(paths.approvedFile)) {
           throw new PlanFailure("approved snapshot is not a private regular file", { code: "approved-snapshot-unsafe" });
         }
@@ -4164,7 +4218,7 @@ function judgeStatebin(_request) {
 
 // core/src/gates/teardown.ts
 import { execFileSync as execFileSync2 } from "node:child_process";
-import { existsSync as existsSync4, readdirSync as readdirSync2, renameSync as renameSync3, rmSync as rmSync5, rmdirSync, statSync as statSync5 } from "node:fs";
+import { existsSync as existsSync5, readdirSync as readdirSync2, renameSync as renameSync3, rmSync as rmSync5, rmdirSync, statSync as statSync5 } from "node:fs";
 import path8 from "node:path";
 var ABANDONED_STATE_DAYS = 7;
 var JOURNAL_KEYED_WAIT_MARK_SUFFIX = ".waiting";
@@ -4283,7 +4337,7 @@ function pruneAbandonedState(sessionId, ownState) {
   if (sessionId === "") return;
   for (const stateFile of stateFilesSorted()) {
     if (stateFile === ownState) continue;
-    if (existsSync4(`${stateFile}.lock`)) continue;
+    if (existsSync5(`${stateFile}.lock`)) continue;
     if (!olderThanDays(stateFile, ABANDONED_STATE_DAYS)) continue;
     const abandonedId = sanitizeSession(stateValueOf(stateFile, "session"));
     removeWorktreesOf(abandonedId, stateFile);
