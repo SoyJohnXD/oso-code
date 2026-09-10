@@ -6632,12 +6632,18 @@ function recordWhatTheUnattendedRunArmsOver(sessionId) {
   const task = taskIdentityFor(process.cwd());
   if (task.kind === "unknown") return;
   const patternsFile = denyPatternsFileFor(task.stateFile);
-  if (readStateFile(patternsFile).kind === "absent") {
-    logEvent({ event: "boundary-unpatterned", session: sessionId, command: patternsFile });
+  const whyItWillNotBite = whyTheDenyPatternsFileWillNotBite(readStateFile(patternsFile));
+  if (whyItWillNotBite !== void 0) {
+    logEvent({ event: "boundary-unpatterned", session: sessionId, command: `${patternsFile}: ${whyItWillNotBite}` });
   }
   const inferred = inferredIdentityFor(process.cwd());
   if (inferred === task.identity) return;
   logEvent({ event: "identity-rekeyed", session: sessionId, command: `${inferred} -> ${task.identity}` });
+}
+function whyTheDenyPatternsFileWillNotBite(read) {
+  if (read.kind === "absent") return "absent";
+  if (read.kind === "unreadable") return `unreadable: ${read.cause}`;
+  return void 0;
 }
 function runGet(remaining) {
   if (remaining.length !== 1) throw new UsageError();

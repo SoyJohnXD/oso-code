@@ -389,12 +389,13 @@ test("durable artifacts standing at the inferred identity with no state file to 
 
 test("a declaration narrower than the repository is one identity with it, so a sibling tree of that repository is gated", () =>
   withTree((tree) => {
-    const [api, web] = ["api", "web"].map((name) => path.join(tree.nested, name));
-    for (const directory of [api, web]) mkdirSync(directory as string);
-    const declared = { OSO_TASK_ROOT: api as string };
+    const api = path.join(tree.nested, "api");
+    const web = path.join(tree.nested, "web");
+    for (const directory of [api, web]) mkdirSync(directory);
+    const declared = { OSO_TASK_ROOT: api };
     const armed = tree.run(["--session", SESSION, "set", "auto=running", "verify_green=false"], { cwd: api, env: declared });
     assert.equal(armed.exit, 0, armed.stderr);
-    const denial = gateRun(tree, { gate: "commit", cwd: web as string, command: "git commit -m x", env: declared });
+    const denial = gateRun(tree, { gate: "commit", cwd: web, command: "git commit -m x", env: declared });
     assert.equal(denial.verdict.kind, "deny", JSON.stringify(denial.verdict));
     assert.match(readFileSync(path.join(tree.stateRoot, "events.jsonl"), "utf8"), /identity-rekeyed/);
   }));
@@ -407,6 +408,24 @@ test("a run armed at a declared root above this directory gates a process that n
     assert.equal(undeclared.verdict.kind, "deny", JSON.stringify(undeclared.verdict));
     assert.ok(JSON.stringify(undeclared.verdict).includes(tree.declaredRoot), JSON.stringify(undeclared.verdict));
     assert.match(readFileSync(path.join(tree.stateRoot, "events.jsonl"), "utf8"), /boundary-unpatterned/);
+  }));
+
+test("a run arms over a patterns file that exists but cannot be read, and the boundary silently lets an undeclared command through while the arming event says which unreadable state left it that way", () =>
+  withTree((tree) => {
+    const declared = { OSO_TASK_ROOT: tree.nested };
+    const patternsFile = path.join(tree.stateRoot, "deploy-deny", `${digest(tree.nested)}.patterns`);
+    mkdirSync(patternsFile, { recursive: true });
+    const armed = tree.run(["--session", SESSION, "set", "auto=running", "verify_green=false"], { cwd: tree.nested, env: declared });
+    assert.equal(armed.exit, 0, armed.stderr);
+    const uncovered = gateRun(tree, { gate: "proddeploy", cwd: tree.nested, command: "terraform apply", env: declared });
+    assert.equal(uncovered.verdict.kind, "allow", JSON.stringify(uncovered.verdict));
+    const events = readFileSync(path.join(tree.stateRoot, "events.jsonl"), "utf8");
+    assert.match(events, /boundary-unpatterned/);
+    assert.match(events, /is not a regular file/);
+    assert.doesNotMatch(
+      events.split("\n").find((line) => line.includes("boundary-unpatterned")) ?? "",
+      /absent/,
+    );
   }));
 
 test("a wave worktree outside the declared root is gated by the run armed over the repository it belongs to", () =>

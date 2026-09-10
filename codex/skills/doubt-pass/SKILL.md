@@ -36,4 +36,6 @@ End with exactly one of:
 - `Doubt Pass: findings` — each finding names the decision it attacks, what is wrong or unconsidered, and the concrete consequence if it stands. A finding without its consequence is not a finding — drop it.
 - `Doubt Pass: blocked` — the assignment never reached you whole: the payload that launched you carried no skill wrapper path, no ARGUMENTS, or both. Name exactly which was absent; never locate or infer it yourself.
 
+Unless the verdict is `Doubt Pass: blocked`, close with a trailing `unknown_fields:` line naming any payload field beyond the skill wrapper path and ARGUMENTS, or `none` when every field the payload carried is declared.
+
 Save nothing to engram — the orchestrator owns persistence. Your final message is data for the orchestrator, not prose for a user.

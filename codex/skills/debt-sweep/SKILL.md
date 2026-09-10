@@ -85,4 +85,6 @@ Otherwise, two labeled sections, never merged — a conformance gap must never h
 - `Conformance: findings` — each gap tagged (unimplemented | contradicts-decision | scope-creep | partial), with the decision or scope item it violates and the file evidence.
 - `Conformance: skipped — no ledger provided` — direct-branch or non-plan invocation; the debt axis ran alone.
 
+Unless the report is `Debt Sweep: blocked`, close with a trailing `unknown_fields:` line naming any payload field beyond the skill wrapper path and ARGUMENTS, or `none` when every field the payload carried is declared.
+
 Always list separately any functional bugs found (reported, never fixed here — they are not sweep material). Save nothing to engram — the orchestrator owns persistence. Your final message is data for the orchestrator, not prose for a user.

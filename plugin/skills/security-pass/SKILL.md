@@ -61,4 +61,6 @@ Under a native header the body is the native reviewer's report verbatim — neve
 - `Security Pass: findings` — the body above carries at least one. On the native path, the report you relayed lists at least one.
 - `Security Pass: blocked` — no complete review: the payload that launched you carried no skill wrapper path, no ARGUMENTS, or both, or your host's native reviewer itself could not run, or a declared direct route could not obtain complete, valid, stable evidence (see the reference file). Name exactly what stopped you; never locate or infer a missing field, and never silently substitute the fallback for a native failure.
 
+Unless the verdict is `Security Pass: blocked`, close with a trailing `unknown_fields:` line naming any payload field beyond the skill wrapper path and ARGUMENTS, or `none` when every field the payload carried is declared.
+
 Save nothing to engram — the orchestrator owns persistence. Your final message is data for the orchestrator, not prose for a user.
