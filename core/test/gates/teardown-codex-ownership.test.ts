@@ -114,6 +114,25 @@ test("Codex retains unsafe state and does not sweep foreign aged state or rotate
   });
 });
 
+test("a proven Codex owner rotates the aged events log and sweeps the aged state nobody holds", () => {
+  withOwnedWorkspace(({ home, cwd }) => {
+    const abandonedCwd = path.join(home, "abandoned");
+    mkdirSync(abandonedCwd, { recursive: true });
+    const abandonedState = withHookEnvironment({ OSO_TASK_ROOT: abandonedCwd }, () => {
+      writeStateValues(abandonedCwd, "wt-abandoned", []);
+      return stateFileFor(abandonedCwd);
+    });
+    writeStateValues(cwd, "1", [`plan_approval_session=${OWNER}`]);
+    const events = path.join(stateRootDirectory(), "events.jsonl");
+    for (const aged of [abandonedState, events]) utimesSync(aged, AGED_PAST_THE_TTL, AGED_PAST_THE_TTL);
+
+    assert.equal(runGate(["teardown"], hostEnvelope({ host: "codex", agentSession: "1", stateBin: "oso-state" }, { cwd, sessionId: OWNER })).exit, 0);
+
+    assert.equal(existsSync(abandonedState), false);
+    assert.equal(existsSync(`${events}.1`), true);
+  });
+});
+
 for (const ownership of [
   "session=1\n",
   `session=1\nplan_approval_session=${FOREIGN}\n`,
@@ -135,7 +154,7 @@ for (const ownership of [
 }
 
 for (const session of ["1", OWNER]) {
-  test(`proven owner removes only its state: ${session}`, () => {
+  test(`proven owner removes its state, its lock and its journal-keyed wait mark: ${session}`, () => {
     withOwnedWorkspace(({ cwd }) => {
       writeStateValues(cwd, session, [`plan_approval_session=${OWNER}`]);
       const state = stateFileFor(cwd);
@@ -155,7 +174,7 @@ for (const session of ["1", OWNER]) {
       assert.equal(runGate(["teardown"], envelope).exit, 0);
       assert.equal(existsSync(state), false);
       assert.equal(existsSync(`${state}.lock`), false);
-      assert.equal(existsSync(waiting), true);
+      assert.equal(existsSync(waiting), false);
       assert.equal(existsSync(worktrees), true);
     });
   });

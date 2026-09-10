@@ -18,6 +18,8 @@ import {
 const MARK_FILE = `${REPOSITORY_RUNS_DIR}/test-session.waiting`;
 const CHANGE_KEYED_MARK = `${REPOSITORY_RUNS_DIR}/hanko.waiting`;
 const FOREIGN_SESSION_MARK = `${REPOSITORY_RUNS_DIR}/another-session.waiting`;
+const JOURNAL_FILE = `${REPOSITORY_RUNS_DIR}/hanko.log`;
+const JOURNAL_LINE = "2026-09-09T00:00:00Z slice 18 applier launched\n";
 
 const NINE_MINUTES = 9 * 60;
 const PAST_THE_CEILING = 46 * 60;
@@ -202,6 +204,39 @@ describe(
         SESSION_START_PAYLOAD,
       );
       assert.deepEqual({ exit: run.exit, stdout: run.stdout }, { exit: 0, stdout: "" });
+    });
+  },
+);
+
+describe(
+  "core/src/gates/autocontinue.ts: a held turn records the evidence of life the sidecar holds — the journal " +
+    "bytes standing at the hold and the renewals the belief has spent — so a wait on a live delegation and a " +
+    "run that simply stopped read apart in events.jsonl alone",
+  () => {
+    test("a hold that renewed on journal progress names that progress and the renewal it spent", () => {
+      const run = judged(
+        { [STATE_FILE]: stateText(HANKO_RUN), [JOURNAL_FILE]: JOURNAL_LINE, [MARK_FILE]: mark("hanko", PAST_THE_CEILING) },
+        "autocontinue",
+        STOP_PAYLOAD,
+      );
+      assert.equal(run.stdout, "{}\n");
+      assert.deepEqual(
+        run.events.map((event) => `${event.event} ${event.command ?? ""}`),
+        [`auto-continue-held 18 journal_bytes=${JOURNAL_LINE.length} renewals=1`],
+      );
+    });
+
+    test("a hold on a run whose journal has not moved names a flat journal and no renewal at all", () => {
+      const run = judged(
+        { [STATE_FILE]: stateText(HANKO_RUN), [MARK_FILE]: mark("hanko", NINE_MINUTES) },
+        "autocontinue",
+        STOP_PAYLOAD,
+      );
+      assert.equal(run.stdout, "{}\n");
+      assert.deepEqual(
+        run.events.map((event) => `${event.event} ${event.command ?? ""}`),
+        ["auto-continue-held 18 journal_bytes=0 renewals=0"],
+      );
     });
   },
 );

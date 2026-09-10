@@ -28,7 +28,7 @@
       {
         "event": "auto-continue-held",
         "session": "test-session",
-        "command": "wave-2",
+        "command": "wave-2 journal_bytes=0 renewals=0",
         "schema": 2,
         "gate": "auto-continue.sh",
         "hook_event": "Stop"

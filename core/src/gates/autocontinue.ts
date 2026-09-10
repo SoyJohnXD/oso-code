@@ -150,7 +150,7 @@ function holdUnlessExpired(position: RunPosition, label: string): GateOutcome<St
   const carried = carryMarkIntoThisRun(position, standing);
   if (carried !== undefined) return carried;
 
-  if (!waitExpired(nowEpochSeconds(), standing.markedAtEpochSeconds)) return held(position, label);
+  if (!waitExpired(nowEpochSeconds(), standing.markedAtEpochSeconds)) return held(position, label, standing.renewals);
   if (position.journalBytes <= standing.journalBytes) return undefined;
   if (standing.renewals >= DELEGATION_WAIT_RENEWALS_CAP) return undefined;
   return sightedThenHeld(position, label, standing.renewals + 1);
@@ -177,7 +177,7 @@ function sightedThenHeld(position: RunPosition, label: string, renewals: number)
   } catch (cause) {
     return degraded(position.sessionId, causeOf(cause));
   }
-  return held(position, label);
+  return held(position, label, renewals);
 }
 
 function pushUnlessCapped(
@@ -242,8 +242,9 @@ function rememberPush(position: RunPosition, pushes: number, journalBytes: numbe
   }
 }
 
-function held(position: RunPosition, label: string): GateOutcome<StopVerdict> {
-  return { verdict: { kind: "allow" }, events: [gateEvent("auto-continue-held", position.sessionId, label)] };
+function held(position: RunPosition, label: string, renewals: number): GateOutcome<StopVerdict> {
+  const liveness = `${label} journal_bytes=${position.journalBytes} renewals=${renewals}`;
+  return { verdict: { kind: "allow" }, events: [gateEvent("auto-continue-held", position.sessionId, liveness)] };
 }
 
 function degraded(sessionId: string, cause: string): GateOutcome<StopVerdict> {

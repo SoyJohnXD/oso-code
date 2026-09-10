@@ -65,9 +65,12 @@ export function renderCodexManagedConfig(runtimeRoot: string, fallowCommand: str
   ].join("\n");
 }
 
+export function workspaceRootsTheOsoProfileDeclares(targetHome: string): readonly string[] {
+  const stateRoot = path.posix.join(targetHome, ".local", "state", "oso-code");
+  return [stateRoot, path.posix.join(stateRoot, "worktrees")];
+}
+
 export function renderOsoPermissionProfile(targetHome: string): OsoPermissionProfile {
-  const stateRoot = tomlQuote(path.posix.join(targetHome, ".local", "state", "oso-code"));
-  const worktreeRoot = tomlQuote(path.posix.join(targetHome, ".local", "state", "oso-code", "worktrees"));
   return {
     rootKeys: 'default_permissions = "oso"\n',
     tables: [
@@ -77,8 +80,7 @@ export function renderOsoPermissionProfile(targetHome: string): OsoPermissionPro
       'description = "oso-code workspace profile"',
       "",
       "[permissions.oso.workspace_roots]",
-      `${stateRoot} = true`,
-      `${worktreeRoot} = true`,
+      ...workspaceRootsTheOsoProfileDeclares(targetHome).map((root) => `${tomlQuote(root)} = true`),
       "",
       "[permissions.oso.filesystem]",
       "glob_scan_max_depth = 6",

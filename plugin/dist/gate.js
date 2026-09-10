@@ -1935,7 +1935,7 @@ function holdUnlessExpired(position, label) {
   }
   const carried = carryMarkIntoThisRun(position, standing);
   if (carried !== void 0) return carried;
-  if (!waitExpired(nowEpochSeconds(), standing.markedAtEpochSeconds)) return held(position, label);
+  if (!waitExpired(nowEpochSeconds(), standing.markedAtEpochSeconds)) return held(position, label, standing.renewals);
   if (position.journalBytes <= standing.journalBytes) return void 0;
   if (standing.renewals >= DELEGATION_WAIT_RENEWALS_CAP) return void 0;
   return sightedThenHeld(position, label, standing.renewals + 1);
@@ -1960,7 +1960,7 @@ function sightedThenHeld(position, label, renewals) {
   } catch (cause) {
     return degraded(position.sessionId, causeOf(cause));
   }
-  return held(position, label);
+  return held(position, label, renewals);
 }
 function pushUnlessCapped(position, turnAlreadyContinued, order, capMilestone) {
   const counted = pushesWithoutProgress(position, turnAlreadyContinued);
@@ -2010,8 +2010,9 @@ journal_bytes=${journalBytes}
     return causeOf(cause);
   }
 }
-function held(position, label) {
-  return { verdict: { kind: "allow" }, events: [gateEvent("auto-continue-held", position.sessionId, label)] };
+function held(position, label, renewals) {
+  const liveness = `${label} journal_bytes=${position.journalBytes} renewals=${renewals}`;
+  return { verdict: { kind: "allow" }, events: [gateEvent("auto-continue-held", position.sessionId, liveness)] };
 }
 function degraded(sessionId, cause) {
   return { verdict: { kind: "allow" }, events: [degradedEvent(sessionId, cause)] };
@@ -4139,14 +4140,20 @@ function judgeTeardown({ envelope }) {
 function codexTeardown(envelope) {
   const stateFile = stateFileIfNamed(envelope.cwd);
   if (stateFile === void 0 || !codexOwnsState(stateFile, envelope)) return NO_VERDICT;
+  const sessionId = hookSessionId(envelope);
   try {
     withLock(stateFile, envelope.sessionId, () => {
-      if (codexOwnsState(stateFile, envelope)) rmSync5(stateFile, { force: true });
+      if (!codexOwnsState(stateFile, envelope)) return;
+      removeWorktreesOf(sessionId, stateFile);
+      dropJournalKeyedWaitMark(envelope.cwd);
+      rmSync5(stateFile, { force: true });
     }, "retain-existing");
   } catch (error) {
     if (!(error instanceof LockTimeoutError)) throw error;
     return { verdict: { kind: "noVerdict" }, events: [{ event: "teardown-lock-retained", session: envelope.sessionId }] };
   }
+  rotateAgedEventsLog();
+  pruneAbandonedState(sessionId, stateFile);
   return NO_VERDICT;
 }
 function codexOwnsState(stateFile, envelope) {

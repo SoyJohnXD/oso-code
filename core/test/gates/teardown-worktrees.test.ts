@@ -3,16 +3,20 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { runGate } from "../../src/gates/dispatch.ts";
+import { hostEnvelope } from "../../src/hosts/envelope.ts";
 import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
 import {
   skipUnlessGitSeedsRepositories,
+  STATE_FILE,
   STATE_ROOT_THESE_TESTS_SPELL,
   withStateSandbox,
   type StateSandbox,
 } from "../support/state-sandbox.ts";
 
 const SESSION = "test-session";
+const CODEX_SESSION = "11111111-1111-4111-8111-111111111111";
+const CODEX_AGENT = "1";
 const WORKTREE_REPO = "worktree-repo";
 const VANISHED_REPO = "vanished-repo";
 const BASE_FILE = "base.txt";
@@ -134,6 +138,36 @@ describe(
       });
     });
 
+    test("a session Codex proved it owns loses the worktrees whose removal never ran on that host", () => {
+      withStateSandbox("workspace", (sandbox) => {
+        const repository = sandbox.seedGitRepository(WORKTREE_REPO);
+        sandbox.seedWaveWorktree(repository, CODEX_AGENT);
+        sandbox.seed({ [STATE_FILE]: codexOwnedState(WORKTREE_REPO) });
+        assert.equal(sandbox.worktreesRegisteredFor(repository, CODEX_AGENT), 1);
+
+        runCodexTeardown(sandbox);
+
+        assert.equal(existsSync(sandbox.worktreeTreeOf(CODEX_AGENT)), false);
+        assert.equal(sandbox.worktreesRegisteredFor(repository, CODEX_AGENT), 0);
+        assert.ok(loggedEvent(sandbox, "worktree-removed"), "no worktree-removed line was written");
+      });
+    });
+
+    test("a Codex worktree that cannot be removed puts the failure class on a record that never carried it", () => {
+      withStateSandbox("workspace", (sandbox) => {
+        const repository = sandbox.seedGitRepository(VANISHED_REPO);
+        const worktree = sandbox.seedWaveWorktree(repository, CODEX_AGENT);
+        sandbox.seed({ [STATE_FILE]: codexOwnedState(VANISHED_REPO) });
+        rmSync(repository, { recursive: true, force: true });
+
+        runCodexTeardown(sandbox);
+
+        assert.equal(existsSync(worktree), true);
+        assert.ok(loggedEvent(sandbox, "worktree-teardown-failed"), "no worktree-teardown-failed line was written");
+        assert.equal(sandbox.read(STATE_FILE).kind, "absent");
+      });
+    });
+
     test("clearing an orphaned pending drops its owner's state file and removes that owner's worktree tree", () => {
       withStateSandbox("workspace", (sandbox) => {
         const repository = sandbox.seedGitRepository(WORKTREE_REPO);
@@ -179,6 +213,17 @@ function stateFileOf(sessionId: string): string {
 
 function waveState(sessionId: string, repository: string): string {
   return `mode=plan\nrepo_path={home}/${repository}\nsession=${sessionId}\n`;
+}
+
+function codexOwnedState(repository: string): string {
+  return `${waveState(CODEX_AGENT, repository)}plan_approval_session=${CODEX_SESSION}\n`;
+}
+
+function runCodexTeardown(sandbox: StateSandbox): void {
+  const caller = { host: "codex" as const, agentSession: CODEX_AGENT, stateBin: "oso-state" };
+  const envelope = hostEnvelope(caller, { cwd: sandbox.cwd, sessionId: CODEX_SESSION });
+  const run = withHookEnvironment(sandbox.hookEnvironment(), () => runGate(["teardown"], envelope));
+  assert.equal(run.exit, 0, `the Codex teardown gate failed: ${run.stderr}`);
 }
 
 function runTeardown(sandbox: StateSandbox, sessionId: string, env: Readonly<Record<string, string>> = {}): void {

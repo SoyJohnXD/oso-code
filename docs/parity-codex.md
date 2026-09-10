@@ -29,6 +29,10 @@ Eight rows measure five more facts than the bash's three named checks, none of t
 
 Row 1's pin-relation probe has been driven against a real, pinned binary check. The integrator rows remain not-run in this suite because CI leaves the smoke's full-access opt-in, `OSO_CERTIFY_ALLOW_CODEX_FULL_ACCESS_SMOKE`, default-closed by design: that lane spawns a Codex agent with `--sandbox danger-full-access` under the operator's own credentials. Every such authenticated row therefore reports not-run in the nightly build, which is correct rather than a gap this record owes a fix for.
 
+## Native cycle lane
+
+`docs/certify-codex-native-cycle.md` records one bounded real run of this tree's runtime on a disposable Codex home and a throwaway project, driven through arm, apply, verify and commit. It is a recorded demonstration rather than a suite row, and it names what the gates denied and what they let through.
+
 ## Stop continuation lane
 
 `core/test/certify/codex-stop-continuation.test.ts` adds one separately gated `codex exec` row for the measured Stop transport. It requires both `OSO_CERTIFY=1` and `OSO_CERTIFY_ALLOW_CODEX_STOP_PROBE=1`, copies only `auth.json` into a temporary Codex home, installs one temporary Stop hook, runs with `--sandbox read-only`, and removes the temporary tree in a `finally` block. The process is bounded to 180 seconds and the validator requires exactly two Stop observations; no Codex plugins, agents, or interactive TUI state are copied. The installed TUI remains an explicit not-run row.

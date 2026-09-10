@@ -24,6 +24,7 @@ import {
   renderCodexManagedFeatures,
   renderOsoPermissionProfile,
   resolveFallowMcpCommand,
+  workspaceRootsTheOsoProfileDeclares,
   type OsoPermissionProfile,
 } from "./codex-config.ts";
 import {
@@ -690,6 +691,7 @@ function writeManagedConfig(paths: CodexPaths, fallowCommand: string, host: Code
   mkdirSync(paths.codexHome, { recursive: true });
   if (!host.acceptsConfig(paths.codexHome, rebuilt)) throw new Error(HOST_REJECTED_CONFIG);
   writeFileSync(paths.configFile, rebuilt, { mode: 0o600 });
+  for (const root of workspaceRootsTheOsoProfileDeclares(paths.homeDirectory)) mkdirSync(root, { recursive: true });
   finalizeHostWrittenConfig(paths, host, undefined);
 }
 

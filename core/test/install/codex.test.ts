@@ -156,6 +156,21 @@ describe("oso install --host codex over a fixture HOME", () => {
     assert.equal(existsSync(path.join(paths.runtimeRoot, "git-hooks", "pre-commit")), true);
   });
 
+  test("a first install into a home with no prior oso-code state creates every workspace root it seeds", () => {
+    const home = fixtureHome();
+    const paths = codexPathsFor(home, inputFor(home).environment);
+    const outcome = installCodex(inputFor(home, { installImpeccable: false }));
+    assert.equal(outcome.exitCode, 0, outcome.report);
+    const declared = workspaceRootsOf(readFileSync(paths.configFile, "utf8"), paths.configFile);
+    assert.deepEqual(declared, workspaceRootsOf(renderOsoPermissionProfile(home).tables, paths.configFile));
+    for (const root of declared) {
+      assert.ok(
+        existsSync(root) && statSync(root).isDirectory(),
+        `${root} is a declared workspace root, and Codex panics when the sandbox has to invent its mount target`,
+      );
+    }
+  });
+
   test("it refuses a published skill wrapper whose required SKILL.md entrypoint is missing before staging", () => {
     const home = fixtureHome();
     const repository = path.join(sandbox, `incomplete-payload-${homeCounter}`);
@@ -807,6 +822,11 @@ describe("the global AGENTS.md region rebuild", () => {
     assert.throws(() => rebuildGlobalGuidance(`${GLOBAL_MARKER_START}\n${GLOBAL_MARKER_START}\n${GLOBAL_MARKER_END}\n`, "x\n"), /malformed/);
   });
 });
+
+function workspaceRootsOf(text: string, file: string): string[] {
+  const profiles = parseTomlDocument(text, file)["permissions"] as Record<string, Record<string, unknown>>;
+  return Object.keys((profiles["oso"] as Record<string, unknown>)["workspace_roots"] as object);
+}
 
 function existsInHome(home: string, relative: string): boolean {
   try {

@@ -46,14 +46,20 @@ function judgeTeardown({ envelope }: GateRequest): GateOutcome<NoVerdictVerdict>
 function codexTeardown(envelope: HookEnvelope): GateOutcome<NoVerdictVerdict> {
   const stateFile = stateFileIfNamed(envelope.cwd);
   if (stateFile === undefined || !codexOwnsState(stateFile, envelope)) return NO_VERDICT;
+  const sessionId = hookSessionId(envelope);
   try {
     withLock(stateFile, envelope.sessionId, () => {
-      if (codexOwnsState(stateFile, envelope)) rmSync(stateFile, { force: true });
+      if (!codexOwnsState(stateFile, envelope)) return;
+      removeWorktreesOf(sessionId, stateFile);
+      dropJournalKeyedWaitMark(envelope.cwd);
+      rmSync(stateFile, { force: true });
     }, "retain-existing");
   } catch (error) {
     if (!(error instanceof LockTimeoutError)) throw error;
     return { verdict: { kind: "noVerdict" }, events: [{ event: "teardown-lock-retained", session: envelope.sessionId }] };
   }
+  rotateAgedEventsLog();
+  pruneAbandonedState(sessionId, stateFile);
   return NO_VERDICT;
 }
 

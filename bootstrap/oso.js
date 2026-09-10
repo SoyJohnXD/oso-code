@@ -2037,9 +2037,11 @@ function renderCodexManagedConfig(runtimeRoot, fallowCommand) {
     ""
   ].join("\n");
 }
+function workspaceRootsTheOsoProfileDeclares(targetHome) {
+  const stateRoot = path8.posix.join(targetHome, ".local", "state", "oso-code");
+  return [stateRoot, path8.posix.join(stateRoot, "worktrees")];
+}
 function renderOsoPermissionProfile(targetHome) {
-  const stateRoot = tomlQuote(path8.posix.join(targetHome, ".local", "state", "oso-code"));
-  const worktreeRoot = tomlQuote(path8.posix.join(targetHome, ".local", "state", "oso-code", "worktrees"));
   return {
     rootKeys: 'default_permissions = "oso"\n',
     tables: [
@@ -2049,8 +2051,7 @@ function renderOsoPermissionProfile(targetHome) {
       'description = "oso-code workspace profile"',
       "",
       "[permissions.oso.workspace_roots]",
-      `${stateRoot} = true`,
-      `${worktreeRoot} = true`,
+      ...workspaceRootsTheOsoProfileDeclares(targetHome).map((root) => `${tomlQuote(root)} = true`),
       "",
       "[permissions.oso.filesystem]",
       "glob_scan_max_depth = 6",
@@ -3874,6 +3875,7 @@ function writeManagedConfig(paths, fallowCommand, host) {
   mkdirSync6(paths.codexHome, { recursive: true });
   if (!host.acceptsConfig(paths.codexHome, rebuilt)) throw new Error(HOST_REJECTED_CONFIG);
   writeFileSync7(paths.configFile, rebuilt, { mode: 384 });
+  for (const root of workspaceRootsTheOsoProfileDeclares(paths.homeDirectory)) mkdirSync6(root, { recursive: true });
   finalizeHostWrittenConfig(paths, host, void 0);
 }
 function writeGlobalGuidance(paths, repositoryRoot2) {
