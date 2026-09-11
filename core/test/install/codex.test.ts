@@ -32,6 +32,7 @@ import {
   pinnedHost,
   PREVIOUS_RELEASE_CONFIG,
 } from "../support/codex-install-fixture.ts";
+import { provedSomething } from "../support/proved.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
 
 const sandbox = mkdtempSync(path.join(tmpdir(), "oso-codex-install-"));
@@ -820,6 +821,70 @@ describe("the global AGENTS.md region rebuild", () => {
 
   test("a doubled start marker is refused rather than rebuilt", () => {
     assert.throws(() => rebuildGlobalGuidance(`${GLOBAL_MARKER_START}\n${GLOBAL_MARKER_START}\n${GLOBAL_MARKER_END}\n`, "x\n"), /malformed/);
+  });
+});
+
+const RETIRED_SECRET_DENIAL_GLOBS = [
+  "**/secrets/*",
+  "**/*.key",
+  "**/*.pem",
+  "**/.env.*.local",
+  "**/.env.local",
+  "**/.env",
+  "**/.env.production",
+  "**/.npmrc",
+  "**/*.p12",
+  "**/*.pfx",
+  "**/*.jks",
+  "**/*.keystore",
+  "**/id_rsa",
+  "**/id_dsa",
+  "**/id_ecdsa",
+  "**/id_ecdsa_sk",
+  "**/id_ed25519",
+  "**/id_ed25519_sk",
+  "**/.ssh/**",
+  "**/.aws/**",
+  "**/.config/gcloud/**",
+  "**/.azure/**",
+  "**/.kube/**",
+] as const;
+
+describe("renderOsoPermissionProfile keeps only what native :workspace does not already give", () => {
+  const home = "/home/operator";
+  const profile = renderOsoPermissionProfile(home);
+
+  provedSomething(
+    `${RETIRED_SECRET_DENIAL_GLOBS.length} secret-denial glob(s) once lived in this profile, or the case below proves nothing`,
+    RETIRED_SECRET_DENIAL_GLOBS.length === 23,
+    `${RETIRED_SECRET_DENIAL_GLOBS.length} glob(s) recorded here, not the 23 DENIED_WORKSPACE_GLOBS carried at HEAD`,
+  );
+
+  test("it extends native :workspace and declares both workspace roots", () => {
+    assert.ok(profile.tables.includes('extends = ":workspace"'), profile.tables);
+    assert.deepEqual(workspaceRootsOf(`${profile.rootKeys}\n${profile.tables}`, "config.toml"), [
+      path.posix.join(home, ".local", "state", "oso-code"),
+      path.posix.join(home, ".local", "state", "oso-code", "worktrees"),
+    ]);
+  });
+
+  test("it narrows .git/config to read and .git/** to write only under the workspace_roots filesystem table, the one table that gives either key force", () => {
+    const document = parseTomlDocument(profile.tables, "the rendered oso permission profile");
+    const osoProfile = (document["permissions"] as Record<string, Record<string, unknown>>)["oso"] as Record<string, unknown>;
+    const workspaceRootsFilesystem = (osoProfile["filesystem"] as Record<string, unknown>)[":workspace_roots"];
+    assert.deepEqual(workspaceRootsFilesystem, { ".git/**": "write", ".git/config": "read" });
+  });
+
+  test("it keeps only the two cloud-metadata network denials", () => {
+    assert.ok(profile.tables.includes('"169.254.169.254" = "deny"'), profile.tables);
+    assert.ok(profile.tables.includes('"metadata.google.internal" = "deny"'), profile.tables);
+    assert.equal(profile.tables.includes('"*" = "allow"'), false, profile.tables);
+  });
+
+  test("it carries none of the retired secret-denial globs", () => {
+    for (const glob of RETIRED_SECRET_DENIAL_GLOBS) {
+      assert.equal(profile.tables.includes(`"${glob}" = "deny"`), false, `${glob} still denied:\n${profile.tables}`);
+    }
   });
 });
 

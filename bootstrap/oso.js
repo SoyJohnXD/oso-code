@@ -2008,31 +2008,6 @@ var GLOBAL_MARKER_END = "<!-- oso-code:end -->";
 var MODEL_INSTRUCTIONS_KEY = "model_instructions_file";
 var COMPACT_PROMPT_KEY = "experimental_compact_prompt_file";
 var FALLOW_FALLBACK_COMMAND = "fallow-mcp";
-var DENIED_WORKSPACE_GLOBS = [
-  "**/secrets/*",
-  "**/*.key",
-  "**/*.pem",
-  "**/.env.*.local",
-  "**/.env.local",
-  "**/.env",
-  "**/.env.production",
-  "**/.npmrc",
-  "**/*.p12",
-  "**/*.pfx",
-  "**/*.jks",
-  "**/*.keystore",
-  "**/id_rsa",
-  "**/id_dsa",
-  "**/id_ecdsa",
-  "**/id_ecdsa_sk",
-  "**/id_ed25519",
-  "**/id_ed25519_sk",
-  "**/.ssh/**",
-  "**/.aws/**",
-  "**/.config/gcloud/**",
-  "**/.azure/**",
-  "**/.kube/**"
-];
 function tomlQuote(value) {
   return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 }
@@ -2070,11 +2045,7 @@ function renderOsoPermissionProfile(targetHome) {
       "[permissions.oso.workspace_roots]",
       ...workspaceRootsTheOsoProfileDeclares(targetHome).map((root) => `${tomlQuote(root)} = true`),
       "",
-      "[permissions.oso.filesystem]",
-      "glob_scan_max_depth = 6",
-      "",
       '[permissions.oso.filesystem.":workspace_roots"]',
-      ...DENIED_WORKSPACE_GLOBS.map((glob) => `"${glob}" = "deny"`),
       '".git/**" = "write"',
       '".git/config" = "read"',
       "",
@@ -2082,7 +2053,6 @@ function renderOsoPermissionProfile(targetHome) {
       "enabled = true",
       "",
       "[permissions.oso.network.domains]",
-      '"*" = "allow"',
       '"169.254.169.254" = "deny"',
       '"metadata.google.internal" = "deny"',
       ""

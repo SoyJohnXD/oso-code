@@ -248,7 +248,10 @@ describe("oso verify --host codex over a fixture HOME", () => {
     const home = fixtureHome();
     assert.equal(installCodex(inputFor(home)).exitCode, 0);
     const paths = codexPathsFor(home, inputFor(home).environment);
-    writeFileSync(paths.configFile, readFileSync(paths.configFile, "utf8").replace("glob_scan_max_depth = 6", "glob_scan_max_depth = 7"));
+    writeFileSync(
+      paths.configFile,
+      readFileSync(paths.configFile, "utf8").replace('description = "oso-code workspace profile"', 'description = "operator-edited"'),
+    );
     const report = new VerifyReport();
     checkManagedConfigRegion(report, paths, inputFor(home).environment);
     assert.match(report.render(), /^ok: {3}managed Codex config \(valid\)$/m);
