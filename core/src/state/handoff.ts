@@ -1,6 +1,6 @@
 import { chmodSync, existsSync, lstatSync, mkdirSync, opendirSync, readFileSync, readdirSync, realpathSync, rmSync, type Dirent, type Stats } from "node:fs";
 import path from "node:path";
-import { CODEX_METADATA_READINESS_MS, CODEX_UUID_PATTERN, CodexMetadataFailure, readBoundedRegularFile, readCodexSessionMetadata, requireMetadataTime } from "../hosts/codex-session-metadata.ts";
+import { CODEX_METADATA_READINESS_MS, CODEX_UUID_PATTERN, CodexMetadataFailure, readBoundedRegularFile, readCodexSessionMetadata, requireMetadataTime, type CodexSessionMetadata } from "../hosts/codex-session-metadata.ts";
 import * as store from "./store.ts";
 
 export class HandoffFailure extends Error {}
@@ -39,14 +39,23 @@ export function runHandoffResolveCodex(cwd: string, coordinates: Omit<HandoffCoo
     const candidates = codexReceiptCandidates(directory, coordinates, deadline);
     const codexHome = process.env["CODEX_HOME"] || path.join(store.homeDirectoryFrom(process.platform, process.env), ".codex");
     const matches = new Set<string>();
+    let unreadableRollout: CodexMetadataFailure | undefined;
     for (const rollout of rolloutPaths(path.join(codexHome, "sessions"), deadline)) {
-      const metadata = readCodexSessionMetadata(rollout, deadline);
+      let metadata: CodexSessionMetadata;
+      try {
+        metadata = readCodexSessionMetadata(rollout, deadline);
+      } catch (error) {
+        if (!(error instanceof CodexMetadataFailure)) throw error;
+        unreadableRollout ??= error;
+        continue;
+      }
       if (!candidates.has(metadata.id)) continue;
       if (metadata.parentThreadId !== parentId || metadata.agentPath !== coordinates.agentPath || metadata.agentRole !== coordinates.agentType) continue;
       if (metadata.id === parentId || nativeRepositoryIdentity(metadata.cwd, deadline) !== repository) continue;
       if (matches.has(metadata.id)) throw new HandoffFailure(`ambiguous native rollouts for ${metadata.id}`);
       matches.add(metadata.id);
     }
+    if (matches.size === 0 && unreadableRollout !== undefined) throw unreadableRollout;
     if (matches.size !== 1) throw new HandoffFailure(`expected exactly one current Codex receipt match, found ${matches.size}`);
     const id = [...matches][0] as string;
     const receipt = candidates.get(id) as string;

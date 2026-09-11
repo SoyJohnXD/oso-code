@@ -1183,10 +1183,11 @@ function isRecord(value) {
 function nativeThreadSpawn(source) {
   if (!isRecord(source) || !("subagent" in source)) return void 0;
   const subagent = source["subagent"];
-  if (!isRecord(subagent) || !isRecord(subagent["thread_spawn"])) {
-    throw new CodexMetadataFailure("unrecognized native subagent provenance");
-  }
-  return subagent["thread_spawn"];
+  if (!isRecord(subagent)) throw new CodexMetadataFailure("unrecognized native subagent provenance");
+  if (!("thread_spawn" in subagent)) return void 0;
+  const threadSpawn = subagent["thread_spawn"];
+  if (!isRecord(threadSpawn)) throw new CodexMetadataFailure("unrecognized native subagent provenance");
+  return threadSpawn;
 }
 function requiredString(record, key) {
   const value = record[key];
@@ -1784,14 +1785,23 @@ function runHandoffResolveCodex(cwd, coordinates) {
     const candidates = codexReceiptCandidates(directory, coordinates, deadline);
     const codexHome = process.env["CODEX_HOME"] || path4.join(homeDirectoryFrom(process.platform, process.env), ".codex");
     const matches = /* @__PURE__ */ new Set();
+    let unreadableRollout;
     for (const rollout of rolloutPaths(path4.join(codexHome, "sessions"), deadline)) {
-      const metadata = readCodexSessionMetadata(rollout, deadline);
+      let metadata;
+      try {
+        metadata = readCodexSessionMetadata(rollout, deadline);
+      } catch (error) {
+        if (!(error instanceof CodexMetadataFailure)) throw error;
+        unreadableRollout ??= error;
+        continue;
+      }
       if (!candidates.has(metadata.id)) continue;
       if (metadata.parentThreadId !== parentId || metadata.agentPath !== coordinates.agentPath || metadata.agentRole !== coordinates.agentType) continue;
       if (metadata.id === parentId || nativeRepositoryIdentity(metadata.cwd, deadline) !== repository) continue;
       if (matches.has(metadata.id)) throw new HandoffFailure(`ambiguous native rollouts for ${metadata.id}`);
       matches.add(metadata.id);
     }
+    if (matches.size === 0 && unreadableRollout !== void 0) throw unreadableRollout;
     if (matches.size !== 1) throw new HandoffFailure(`expected exactly one current Codex receipt match, found ${matches.size}`);
     const id = [...matches][0];
     const receipt = candidates.get(id);

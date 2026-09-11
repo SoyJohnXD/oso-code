@@ -303,3 +303,48 @@ test("resolver reads at most one MiB of first record and bounds readiness at ten
   const clock = `let ticks=0; Object.defineProperty(performance,'now',{value:()=>ticks++===0?0:10000});`;
   refused(invoke(resolve, { injection: clock }), /10 seconds/);
 }));
+
+test("resolver treats a guardian rollout's unrecognized subagent shape as no nested provenance and still matches the real child", () => fixture((root, invoke) => {
+  const sessions = path.dirname(rollout(root));
+  writeFileSync(path.join(sessions, "rollout-guardian.jsonl"), JSON.stringify({ type: "session_meta", payload: {
+    id: "66666666-6666-4666-8666-666666666666", cwd: path.join(root, "repo"), source: { subagent: { other: "guardian" } },
+  } }) + "\n");
+  const result = invoke(resolve);
+  assert.equal(result.status, 0, String(result.stderr));
+  assert.equal(result.stdout, child + "\n");
+}));
+
+test("readCodexSessionMetadata still throws when subagent is not a record at all", () => fixture((root, _invoke) => {
+  const file = rollout(root);
+  for (const malformed of ["not-a-record", null]) {
+    const record = JSON.parse(readFileSync(file, "utf8"));
+    record.payload.source.subagent = malformed;
+    writeFileSync(file, JSON.stringify(record) + "\n");
+    assert.throws(
+      () => readCodexSessionMetadata(file, performance.now() + 10000),
+      /unrecognized native subagent provenance/,
+    );
+  }
+}));
+
+test("readCodexSessionMetadata still throws when subagent.thread_spawn is present but malformed", () => fixture((root, _invoke) => {
+  const file = rollout(root);
+  const record = JSON.parse(readFileSync(file, "utf8"));
+  record.payload.source.subagent.thread_spawn = "not-an-object";
+  writeFileSync(file, JSON.stringify(record) + "\n");
+  assert.throws(
+    () => readCodexSessionMetadata(file, performance.now() + 10000),
+    /unrecognized native subagent provenance/,
+  );
+}));
+
+test("resolver skips an unreadable rollout beside a good one without preventing the match", () => fixture((root, invoke) => {
+  const sessions = path.dirname(rollout(root));
+  const broken = path.join(sessions, "rollout-broken.jsonl");
+  for (const text of ["{not valid json\n", '{"type":"session_meta","payload":{"id":"77777777-7777-4777-8777-777777777777"}}']) {
+    writeFileSync(broken, text);
+    const result = invoke(resolve);
+    assert.equal(result.status, 0, String(result.stderr));
+    assert.equal(result.stdout, child + "\n");
+  }
+}));

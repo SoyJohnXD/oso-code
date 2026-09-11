@@ -97,10 +97,11 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 function nativeThreadSpawn(source: unknown): Readonly<Record<string, unknown>> | undefined {
   if (!isRecord(source) || !("subagent" in source)) return undefined;
   const subagent = source["subagent"];
-  if (!isRecord(subagent) || !isRecord(subagent["thread_spawn"])) {
-    throw new CodexMetadataFailure("unrecognized native subagent provenance");
-  }
-  return subagent["thread_spawn"];
+  if (!isRecord(subagent)) throw new CodexMetadataFailure("unrecognized native subagent provenance");
+  if (!("thread_spawn" in subagent)) return undefined;
+  const threadSpawn = subagent["thread_spawn"];
+  if (!isRecord(threadSpawn)) throw new CodexMetadataFailure("unrecognized native subagent provenance");
+  return threadSpawn;
 }
 
 function requiredString(record: Readonly<Record<string, unknown>>, key: string): string {

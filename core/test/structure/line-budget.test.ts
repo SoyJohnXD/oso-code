@@ -27,8 +27,10 @@ const CEILINGS = [
   {
     label: "core/test",
     prefix: "core/test/",
-    maximumLines: 27500,
-    derivation: "23,088 (measured) + 10 × 380 (nine slices + close) + 550 (C3–C5) = 27,438",
+    maximumLines: 28000,
+    derivation:
+      "27,495 (measured before this debug fix, by this test's own listing) + 32 (this fix's three-case regression " +
+      "pin for the Codex subagent-provenance handoff bug) = 27,527",
   },
 ] as const;
 

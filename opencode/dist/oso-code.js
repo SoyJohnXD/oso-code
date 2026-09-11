@@ -2463,10 +2463,11 @@ function isRecord(value) {
 function nativeThreadSpawn(source) {
   if (!isRecord(source) || !("subagent" in source)) return void 0;
   const subagent = source["subagent"];
-  if (!isRecord(subagent) || !isRecord(subagent["thread_spawn"])) {
-    throw new CodexMetadataFailure("unrecognized native subagent provenance");
-  }
-  return subagent["thread_spawn"];
+  if (!isRecord(subagent)) throw new CodexMetadataFailure("unrecognized native subagent provenance");
+  if (!("thread_spawn" in subagent)) return void 0;
+  const threadSpawn = subagent["thread_spawn"];
+  if (!isRecord(threadSpawn)) throw new CodexMetadataFailure("unrecognized native subagent provenance");
+  return threadSpawn;
 }
 function requiredString(record, key) {
   const value = record[key];
