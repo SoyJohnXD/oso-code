@@ -2,6 +2,7 @@ import { homeDirectoryFrom } from "../state/store.ts";
 import { codexHostProbes } from "./codex-host.ts";
 import { installClaude, purgeClaude, repairClaude } from "./claude.ts";
 import { installCodex, purgeCodex, repairCodex } from "./codex.ts";
+import { migrateCodex } from "./codex-migrate.ts";
 import { opencodePathsFor, repairOpenCode } from "./opencode.ts";
 import { openCodeHostProbes } from "./opencode-host.ts";
 import { installOpenCode } from "./opencode-install.ts";
@@ -78,15 +79,18 @@ const EVERY_DECLARED_FLAG: ReadonlySet<string> = new Set(
 );
 
 const PROFILE_VERB = "profile";
+const MIGRATE_VERB = "migrate";
 
 const USAGE = `usage: oso <install|verify|repair|purge> --host <claude|codex|opencode> [flags]
        oso ${PROFILE_VERB} show | set <normal|strong|custom> [--applier|--verifier|--judges <default|strong>[:<model>]]
+       oso ${MIGRATE_VERB} --host codex --yes
 
 arguments, per host and verb:
 ${HOSTS.flatMap((host) => VERBS.map((verb) => `  ${host.padEnd(9)} ${verb.padEnd(8)} ${argumentSummary(FLAGS_PER_HOST_AND_VERB[host][verb])}`)).join("\n")}
 
 A flag offered to a host and verb that does not take it is refused, never ignored.
 The ${PROFILE_VERB} verb takes no --host: one profile spans every host, and only a custom names its roles.
+The ${MIGRATE_VERB} verb rewrites a Codex permission profile only when it can prove a past install wrote it; anything else it reports and leaves alone.
 `;
 
 class UsageError extends Error {}
@@ -131,10 +135,40 @@ export function main(argv: readonly string[], repositoryRoot: string): number {
 
 function dispatch(argv: readonly string[], repositoryRoot: string): number {
   const workingDirectory = process.cwd();
-  const outcome =
-    argv[0] === PROFILE_VERB ? runProfile(argv.slice(1), workingDirectory) : runHostVerb(argv, repositoryRoot, workingDirectory);
+  const outcome = outcomeFor(argv, repositoryRoot, workingDirectory);
   process.stdout.write(outcome.report);
   return outcome.exitCode;
+}
+
+function outcomeFor(argv: readonly string[], repositoryRoot: string, workingDirectory: string): CommandOutcome {
+  if (argv[0] === PROFILE_VERB) return runProfile(argv.slice(1), workingDirectory);
+  if (argv[0] === MIGRATE_VERB) return runMigrate(argv.slice(1));
+  return runHostVerb(argv, repositoryRoot, workingDirectory);
+}
+
+function runMigrate(argv: readonly string[]): CommandOutcome {
+  const flags = new Set<string>();
+  let host: string | undefined;
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index] as string;
+    if (token === "--host") {
+      host = argv[index + 1];
+      index += 1;
+      continue;
+    }
+    if (token === "--yes") {
+      flags.add(token);
+      continue;
+    }
+    throw new UsageError();
+  }
+  if (host !== "codex") throw new UsageError();
+  return migrateCodex({
+    homeDirectory: homeDirectoryFrom(process.platform, process.env),
+    environment: process.env,
+    host: codexHostProbes(process.env),
+    assumeYes: flags.has("--yes"),
+  });
 }
 
 function runProfile(argv: readonly string[], workingDirectory: string): CommandOutcome {

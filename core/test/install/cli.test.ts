@@ -15,6 +15,7 @@ const cliBundle = path.join(repoRoot, "bootstrap", "oso.js");
 
 const USAGE = `usage: oso <install|verify|repair|purge> --host <claude|codex|opencode> [flags]
        oso profile show | set <normal|strong|custom> [--applier|--verifier|--judges <default|strong>[:<model>]]
+       oso migrate --host codex --yes
 
 arguments, per host and verb:
   claude    install  --yes --replace-claude-md --no-impeccable --no-git-hook
@@ -32,6 +33,7 @@ arguments, per host and verb:
 
 A flag offered to a host and verb that does not take it is refused, never ignored.
 The profile verb takes no --host: one profile spans every host, and only a custom names its roles.
+The migrate verb rewrites a Codex permission profile only when it can prove a past install wrote it; anything else it reports and leaves alone.
 `;
 
 function runCli(argv: readonly string[]): { status: number | null; stdout: string; stderr: string } {
@@ -87,6 +89,23 @@ describe("oso <verb> --host <host> [flags] usage", () => {
     for (const line of ["  opencode  repair   --yes --list [<backup>]", "  claude    verify   (no arguments)"]) {
       assert.ok(USAGE.includes(line), line);
     }
+  });
+});
+
+describe("oso migrate --host codex, outside the per-host-and-verb matrix", () => {
+  for (const argv of [["migrate", "--yes"], ["migrate", "--host", "claude", "--yes"], ["migrate", "--host", "codex", "--dry-run"]]) {
+    test(`${argv.join(" ")} is a usage error`, () => {
+      const result = runCli(argv);
+      assert.equal(result.status, 1);
+      assert.equal(result.stderr, USAGE);
+    });
+  }
+
+  test("migrate --host codex without --yes reaches the real command rather than a slice pointer", () => {
+    const result = runCli(["migrate", "--host", "codex"]);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "oso migrate --host codex requires --yes in this slice — no interactive confirmation prompt is wired yet\n");
+    assert.equal(result.stderr, "");
   });
 });
 

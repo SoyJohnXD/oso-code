@@ -310,7 +310,7 @@ function undecodableRootLines(text: string): readonly string[] {
   return rootSymbolLinesOf(text).filter((line) => decodedSymbol(line) === undefined);
 }
 
-function tableHeadersOf(text: string): string[] {
+export function tableHeadersOf(text: string): string[] {
   return rootSymbolLinesOf(text).filter((line) => line.startsWith("["));
 }
 
@@ -334,7 +334,7 @@ function withMergedFeatureRegion(sections: string): string {
   return merged.stdout;
 }
 
-function blocksJoined(blocks: readonly string[]): string {
+export function blocksJoined(blocks: readonly string[]): string {
   return blocks.map(withoutTrailingBlankLines).filter((block) => block !== "").join("\n");
 }
 
@@ -974,7 +974,7 @@ const NOTHING_LEFT_TO_RESTORE: RestoreOutcome = { failedCount: 0, failedItems: [
 
 const GIT_CONFIG_UNSET_MATCHED_NOTHING = 5;
 
-function pinnedVersionOutcome(verb: string, host: CodexHostProbes): CommandOutcome | undefined {
+export function pinnedVersionOutcome(verb: string, host: CodexHostProbes): CommandOutcome | undefined {
   if (meetsVersionFloor(host.version, SUPPORTED_CODEX_VERSION)) return undefined;
   return fatalOutcome(verb, "codex", "the installed Codex CLI is not the pinned one", pinnedVersionRefusal(host));
 }

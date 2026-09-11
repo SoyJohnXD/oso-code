@@ -27,10 +27,11 @@ const CEILINGS = [
   {
     label: "core/test",
     prefix: "core/test/",
-    maximumLines: 28000,
+    maximumLines: 28500,
     derivation:
       "27,495 (measured before this debug fix, by this test's own listing) + 32 (this fix's three-case regression " +
-      "pin for the Codex subagent-provenance handoff bug) = 27,527",
+      "pin for the Codex subagent-provenance handoff bug) = 27,527, then 27,947 (measured at S5's arming) + 133 " +
+      "(S5's oso migrate --host codex command and its CLI usage-error tests) = 28,081",
   },
 ] as const;
 

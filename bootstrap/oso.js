@@ -4175,8 +4175,174 @@ function holdsKeyPath(document, keyPath) {
   return true;
 }
 
+// core/src/install/codex-migrate.ts
+import { readFileSync as readFileSync11, writeFileSync as writeFileSync8 } from "node:fs";
+var CODEX_MIGRATE_BACKUP_FORMAT = "oso-code-codex-migrate-v1";
+var LEGACY_DENIED_WORKSPACE_GLOBS = [
+  "**/secrets/*",
+  "**/*.key",
+  "**/*.pem",
+  "**/.env.*.local",
+  "**/.env.local",
+  "**/.env",
+  "**/.env.production",
+  "**/.npmrc",
+  "**/*.p12",
+  "**/*.pfx",
+  "**/*.jks",
+  "**/*.keystore",
+  "**/id_rsa",
+  "**/id_dsa",
+  "**/id_ecdsa",
+  "**/id_ecdsa_sk",
+  "**/id_ed25519",
+  "**/id_ed25519_sk",
+  "**/.ssh/**",
+  "**/.aws/**",
+  "**/.config/gcloud/**",
+  "**/.azure/**",
+  "**/.kube/**"
+];
+function migrateCodex(input) {
+  return withOwnerOnlyUmask(() => writeCodexMigration(input));
+}
+function writeCodexMigration(input) {
+  if (!input.assumeYes) return requiresYesOutcome("migrate", "codex");
+  const unpinned = pinnedVersionOutcome("migrate", input.host);
+  if (unpinned !== void 0) return unpinned;
+  const paths = codexPathsFor(input.homeDirectory, input.environment);
+  const existingText = isReadableRegularFile(paths.configFile) ? readFileSync11(paths.configFile, "utf8") : "";
+  const migration = codexPermissionMigration(existingText, paths.homeDirectory, paths.configFile);
+  switch (migration.kind) {
+    case "unparseable":
+      return fatalOutcome("migrate", "codex", "declined: the Codex config could not be parsed", migration.detail);
+    case "no-profile":
+      return fatalOutcome("migrate", "codex", "declined: no oso-code permission profile is present to migrate", paths.configFile);
+    case "operator-edited":
+      return fatalOutcome(
+        "migrate",
+        "codex",
+        "declined: the permission profile matches neither the shape oso-code used to write nor the one it writes today",
+        "treating it as the operator's own; touching nothing"
+      );
+    case "already-migrated":
+      return successOutcome([], "already the current oso-code shape; nothing to migrate");
+    case "migrated":
+      return applyMigration(paths, input.host, migration.rewrittenText);
+  }
+}
+function applyMigration(paths, host, rewrittenText) {
+  let tx;
+  try {
+    tx = beginTransaction(paths.backupsRoot, CODEX_MIGRATE_BACKUP_FORMAT);
+    backupTarget(tx, "config", paths.configFile);
+    commitManifest(tx);
+  } catch (error) {
+    return fatalOutcome("migrate", "codex", "could not create the pre-migration backup", messageOf(error));
+  }
+  try {
+    if (!host.acceptsConfig(paths.codexHome, rewrittenText)) throw new Error(HOST_REJECTED_CONFIG);
+    writeFileSync8(paths.configFile, rewrittenText, { mode: 384 });
+  } catch (error) {
+    return fatalOutcome("migrate", "codex", "could not write the migrated Codex permission profile", messageOf(error), restoreNoteOf(rollback(tx)));
+  }
+  return successOutcome([`backup: ${tx.backupRoot}`], "migrated to the current oso-code shape");
+}
+function successOutcome(infoLines, note) {
+  return { report: renderCommandReport("migrate", "codex", infoLines, [wiringOk("codex oso permission profile", note)]), exitCode: 0 };
+}
+function codexPermissionMigration(existingText, targetHome, file) {
+  let installed;
+  try {
+    installed = parseTomlDocument(existingText, file);
+  } catch (error) {
+    if (!(error instanceof TomlParseError)) throw error;
+    return { kind: "unparseable", detail: error.message };
+  }
+  const installedSlice = osoPermissionSliceOf(installed);
+  if (slicesMatch(installedSlice, osoPermissionSliceOf(parsedProfile(renderOsoPermissionProfile(targetHome), file)))) {
+    return { kind: "already-migrated" };
+  }
+  if (slicesMatch(installedSlice, osoPermissionSliceOf(parsedProfile(legacyOsoPermissionProfile(targetHome), file)))) {
+    return { kind: "migrated", rewrittenText: migratedConfigText(existingText, targetHome, file) };
+  }
+  if (installedSlice.defaultPermissions === void 0 && installedSlice.osoTable === void 0) return { kind: "no-profile" };
+  return { kind: "operator-edited" };
+}
+function osoPermissionSliceOf(document) {
+  const profiles = document["permissions"];
+  return { defaultPermissions: document["default_permissions"], osoTable: isRecord2(profiles) ? profiles["oso"] : void 0 };
+}
+function slicesMatch(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+function parsedProfile(profile, file) {
+  return parseTomlDocument(`${profile.rootKeys}${profile.tables}`, file);
+}
+function migratedConfigText(existingText, targetHome, file) {
+  const legacy = legacyOsoPermissionProfile(targetHome);
+  const current = renderOsoPermissionProfile(targetHome);
+  const crlfHeader = existingText.includes("\r\n") ? "\r" : "";
+  const withoutLegacyTables = tableHeadersOf(legacy.tables).reduce((text, header) => {
+    const removed = runTomlRegion(text, { action: "remove-table", targetHeader: `${header}${crlfHeader}` });
+    if (removed.exitCode !== 0) throw new Error(`${file} declares ${header} more than once; the migration cannot safely remove it`);
+    return removed.stdout;
+  }, existingText);
+  const parts = runTomlRegion(withoutLegacyTables, { action: "split" });
+  const root = blocksJoined([withoutDefaultPermissionsLine(parts.root, file), current.rootKeys]);
+  const sections = blocksJoined([parts.sections, current.tables]);
+  return `${root}${root === "" ? "" : "\n"}${sections}`;
+}
+function withoutDefaultPermissionsLine(rootText, file) {
+  const lines = recordsOf(rootText);
+  const index = lines.findIndex((line) => lineDeclaresDefaultPermissions(line, file));
+  if (index === -1) throw new Error(`${file} does not declare default_permissions at its root; the migration cannot safely remove it`);
+  lines.splice(index, 1);
+  return lines.length === 0 ? "" : `${lines.join("\n")}
+`;
+}
+function lineDeclaresDefaultPermissions(line, file) {
+  try {
+    return Object.hasOwn(parseTomlDocument(line.replace(/\r$/, ""), file), "default_permissions");
+  } catch (error) {
+    if (error instanceof TomlParseError) return false;
+    throw error;
+  }
+}
+function legacyOsoPermissionProfile(targetHome) {
+  return {
+    rootKeys: 'default_permissions = "oso"\n',
+    tables: [
+      "[permissions.oso]",
+      'extends = ":workspace"',
+      "",
+      'description = "oso-code workspace profile"',
+      "",
+      "[permissions.oso.workspace_roots]",
+      ...workspaceRootsTheOsoProfileDeclares(targetHome).map((root) => `${tomlQuote(root)} = true`),
+      "",
+      "[permissions.oso.filesystem]",
+      "glob_scan_max_depth = 6",
+      "",
+      '[permissions.oso.filesystem.":workspace_roots"]',
+      ...LEGACY_DENIED_WORKSPACE_GLOBS.map((glob) => `"${glob}" = "deny"`),
+      '".git/**" = "write"',
+      '".git/config" = "read"',
+      "",
+      "[permissions.oso.network]",
+      "enabled = true",
+      "",
+      "[permissions.oso.network.domains]",
+      '"*" = "allow"',
+      '"169.254.169.254" = "deny"',
+      '"metadata.google.internal" = "deny"',
+      ""
+    ].join("\n")
+  };
+}
+
 // core/src/install/opencode.ts
-import { readFileSync as readFileSync11 } from "node:fs";
+import { readFileSync as readFileSync12 } from "node:fs";
 import path11 from "node:path";
 
 // core/src/install/opencode-config.ts
@@ -4555,7 +4721,7 @@ function globalFileRefusal(globalFile) {
     return { kind: "fatal", message: `the global guidance file is not a regular file: ${globalFile}` };
   }
   if (!isReadableRegularFile(globalFile)) return void 0;
-  if (withoutOpenCodeMarkerRegion(readFileSync11(globalFile, "utf8")).kind === "clean") return void 0;
+  if (withoutOpenCodeMarkerRegion(readFileSync12(globalFile, "utf8")).kind === "clean") return void 0;
   return { kind: "fatal", message: malformedMarkersMessage(globalFile) };
 }
 function withoutOpenCodeMarkerRegion(content) {
@@ -4589,7 +4755,7 @@ ${blockBody}${GLOBAL_MARKER_END2}
 `;
 }
 function mergeGlobalAgents(globalFile, blockBody) {
-  const existing = isReadableRegularFile(globalFile) ? readFileSync11(globalFile, "utf8") : "";
+  const existing = isReadableRegularFile(globalFile) ? readFileSync12(globalFile, "utf8") : "";
   const stripped = withoutOpenCodeMarkerRegion(existing);
   if (stripped.kind === "malformed") throw new Error(malformedMarkersMessage(globalFile));
   writeFileAtomically(path11.dirname(globalFile), globalFile, renderGlobalAgents(stripped.text, blockBody), ".oso-agents-md-");
@@ -4799,12 +4965,12 @@ function probeEnvironment2(environment, probeHome) {
 }
 
 // core/src/install/opencode-install.ts
-import { chmodSync as chmodSync3, cpSync as cpSync3, lstatSync as lstatSync3, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync6, readdirSync as readdirSync6, readFileSync as readFileSync13, renameSync as renameSync4, rmSync as rmSync9, writeFileSync as writeFileSync8 } from "node:fs";
+import { chmodSync as chmodSync3, cpSync as cpSync3, lstatSync as lstatSync3, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync6, readdirSync as readdirSync6, readFileSync as readFileSync14, renameSync as renameSync4, rmSync as rmSync9, writeFileSync as writeFileSync9 } from "node:fs";
 import { spawnSync as spawnSync7 } from "node:child_process";
 import path15 from "node:path";
 
 // core/src/install/opencode-trust.ts
-import { readFileSync as readFileSync12 } from "node:fs";
+import { readFileSync as readFileSync13 } from "node:fs";
 import path13 from "node:path";
 var OPENCODE_TRUST_FILE_COUNT = 19;
 var CODEX_TRUST_PREFIX = "codex/";
@@ -4840,7 +5006,7 @@ function trustDivergenceLine(divergence) {
 }
 function openCodeTrustedFiles(manifestFile) {
   if (!isReadableRegularFile(manifestFile)) return [];
-  return parseTrustManifest(readFileSync12(manifestFile, "utf8")).map((row) => row.file).filter((file) => !isCodexTrustFile(file));
+  return parseTrustManifest(readFileSync13(manifestFile, "utf8")).map((row) => row.file).filter((file) => !isCodexTrustFile(file));
 }
 function isCodexTrustFile(published) {
   return published.startsWith(CODEX_TRUST_PREFIX);
@@ -5211,7 +5377,7 @@ function writeOpenCodeInstall(input) {
     installPayloadTrees(paths, targets, sources);
     wiring.push(wiringOk("installed payload", `${targets.skills}, ${targets.agents}, ${targets.commands}, ${targets.plugin}`));
     wiring.push(publishedGateBytesEntry(sources.publishedHashes, paths.configHome, targets.hooks));
-    mergeGlobalAgents(paths.globalFile, readFileSync13(sources.global, "utf8"));
+    mergeGlobalAgents(paths.globalFile, readFileSync14(sources.global, "utf8"));
     wiring.push(wiringOk("global AGENTS.md region", paths.globalFile));
     wiring.push(wireEngram(input.environment, targets.engramPlugin, tx));
     wiring.push(renderOpenCodeConfig(input, paths, tx));
@@ -5321,7 +5487,7 @@ function renderOpenCodeConfig(input, paths, tx) {
   if (violation !== void 0) throw new Error(`the rendered config violates the host contract: ${violation}`);
   writeJsonFile(paths.configFile, merged.document);
   chmodSync3(paths.configFile, PRIVATE_FILE_MODE);
-  writeFileSync8(preservedKeysFileOf(tx), merged.preservedKeys.map((key) => `${key}
+  writeFileSync9(preservedKeysFileOf(tx), merged.preservedKeys.map((key) => `${key}
 `).join(""));
   return wiringOk("opencode.json", `preserved ${merged.preservedKeys.length} operator key(s), ${agentModelNote(profile, merged.agentModels)}`);
 }
@@ -5358,7 +5524,7 @@ function restoreBackedUpEngramPlugin(tx, engramPlugin) {
 function impeccableEntries(input, targets) {
   if (input.installImpeccable) return [wiringOk("impeccable", `not mounted at ${targets.impeccableMount}; no installer in this tree performs the mount`)];
   mkdirSync7(path15.dirname(targets.impeccableOptOut), { recursive: true });
-  writeFileSync8(targets.impeccableOptOut, `skipped by --no-impeccable on ${isoTimestamp().slice(0, 10)}
+  writeFileSync9(targets.impeccableOptOut, `skipped by --no-impeccable on ${isoTimestamp().slice(0, 10)}
 `);
   return [wiringOk("impeccable", "skipped by --no-impeccable")];
 }
@@ -5395,7 +5561,7 @@ function writeOwnerRegistry(paths, targets, tx) {
     ownedBy(OWNER_INSTALLER, path15.join(targets.gitHooks, "pre-commit"))
   ];
   mkdirSync7(paths.stateRoot, { recursive: true });
-  writeFileSync8(targets.ownerRegistry, rows.map((row) => `${row}
+  writeFileSync9(targets.ownerRegistry, rows.map((row) => `${row}
 `).join(""), { mode: PRIVATE_FILE_MODE });
 }
 function ownedBy(owner, target) {
@@ -5404,7 +5570,7 @@ function ownedBy(owner, target) {
 function preservedKeysOf(tx) {
   const file = preservedKeysFileOf(tx);
   if (!isReadableRegularFile(file)) return [];
-  return readFileSync13(file, "utf8").split("\n").filter((key) => key !== "");
+  return readFileSync14(file, "utf8").split("\n").filter((key) => key !== "");
 }
 function preservedKeysFileOf(tx) {
   return path15.join(tx.backupRoot, PRESERVED_KEYS_FILE);
@@ -5433,18 +5599,18 @@ function migrateOpenCodeState(paths, targets, tx) {
   return migrated;
 }
 function migrateRenamedIdentity(stateFile, repository, backUpOnce) {
-  const session = stateValue(readFileSync13(stateFile, "utf8"), "session");
+  const session = stateValue(readFileSync14(stateFile, "utf8"), "session");
   if (!MIGRATED_SESSION_PATTERN.test(session)) return [];
   const agent = repository.slice(0, AGENT_IDENTITY_LENGTH);
   backUpOnce();
   rewriteStateKeys(stateFile, [`session=${agent}`]);
-  if (stateValue(readFileSync13(stateFile, "utf8"), "plan_approval_session") !== "") {
+  if (stateValue(readFileSync14(stateFile, "utf8"), "plan_approval_session") !== "") {
     rewriteStateKeys(stateFile, [`plan_approval_session=${agent}`]);
   }
   return [`migrated the renamed identity in ${path15.basename(stateFile)}: session ${session} is now ${agent}`];
 }
 function migrateRelocatedApproval(stateFile, repository, planArtifactRoot, backUpOnce) {
-  if (stateValue(readFileSync13(stateFile, "utf8"), "plan_approval") !== "") return [];
+  if (stateValue(readFileSync14(stateFile, "utf8"), "plan_approval") !== "") return [];
   const planDirectory = path15.join(planArtifactRoot, repository);
   const approved = directoryEntryNames(planDirectory).find((name) => name.startsWith("approved-") && name.endsWith(".md"));
   if (approved === void 0) return [];
@@ -5463,9 +5629,9 @@ function migrateRelocatedApproval(stateFile, repository, planArtifactRoot, backU
 function rewriteStateKeys(stateFile, pairs) {
   for (const pair of pairs) {
     const key = pair.slice(0, pair.indexOf("="));
-    const kept = readFileSync13(stateFile, "utf8").split("\n").filter((line) => line !== "" && !line.startsWith(`${key}=`));
+    const kept = readFileSync14(stateFile, "utf8").split("\n").filter((line) => line !== "" && !line.startsWith(`${key}=`));
     const staged = path15.join(path15.dirname(stateFile), `.state-migration-${path15.basename(stateFile)}`);
-    writeFileSync8(staged, [...kept, pair].map((line) => `${line}
+    writeFileSync9(staged, [...kept, pair].map((line) => `${line}
 `).join(""), { mode: PRIVATE_FILE_MODE });
     renameSync4(staged, stateFile);
   }
@@ -5513,7 +5679,7 @@ function directoryEntryNames(directory) {
 }
 
 // core/src/install/opencode-purge.ts
-import { mkdirSync as mkdirSync8, readFileSync as readFileSync14, realpathSync as realpathSync2, rmSync as rmSync10 } from "node:fs";
+import { mkdirSync as mkdirSync8, readFileSync as readFileSync15, realpathSync as realpathSync2, rmSync as rmSync10 } from "node:fs";
 import path16 from "node:path";
 var OPENCODE_PURGE_BACKUP_FORMAT = "oso-code-opencode-purge-v1";
 var PROJECT_CONFIGS_KEY = "OSO_OPENCODE_PROJECT_CONFIGS";
@@ -5674,13 +5840,13 @@ function readablePurgeBackup(backupDirectory, homeDirectory2) {
     return { kind: "unusable", message: `backup is not a directory: ${backupDirectory}` };
   }
   const marker = path16.join(backupDirectory, "format");
-  const format = isReadableRegularFile(marker) ? readFileSync14(marker, "utf8").trim() : "";
+  const format = isReadableRegularFile(marker) ? readFileSync15(marker, "utf8").trim() : "";
   if (format !== OPENCODE_PURGE_BACKUP_FORMAT) {
     return { kind: "unusable", message: `unsupported or missing backup format: ${backupDirectory} (expected ${OPENCODE_PURGE_BACKUP_FORMAT})` };
   }
   const manifest = path16.join(backupDirectory, "manifest");
   if (!isReadableRegularFile(manifest)) return { kind: "unusable", message: `backup contains no target records: ${backupDirectory}` };
-  const rows = parseManifestRows(readFileSync14(manifest, "utf8"));
+  const rows = parseManifestRows(readFileSync15(manifest, "utf8"));
   if (rows.length === 0) return { kind: "unusable", message: `backup contains no target records: ${backupDirectory}` };
   const unknown = rows.find((row) => expectedTargetFor(row.label, homeDirectory2) === void 0);
   if (unknown !== void 0) return { kind: "unusable", message: `unknown backup target label: ${unknown.label}` };
@@ -5711,7 +5877,7 @@ function physicalPathOf(target) {
 // core/src/install/verify-codex.ts
 import path17 from "node:path";
 import { spawnSync as spawnSync8 } from "node:child_process";
-import { mkdirSync as mkdirSync9, mkdtempSync as mkdtempSync7, readFileSync as readFileSync15, readdirSync as readdirSync7, rmSync as rmSync11, writeFileSync as writeFileSync9 } from "node:fs";
+import { mkdirSync as mkdirSync9, mkdtempSync as mkdtempSync7, readFileSync as readFileSync16, readdirSync as readdirSync7, rmSync as rmSync11, writeFileSync as writeFileSync10 } from "node:fs";
 import { tmpdir as tmpdir4 } from "node:os";
 
 // core/src/routes/routes.ts
@@ -5863,7 +6029,7 @@ function checkCodexConfigParses(report2, paths) {
     return true;
   }
   try {
-    parseTomlDocument(readFileSync15(paths.configFile, "utf8"), paths.configFile);
+    parseTomlDocument(readFileSync16(paths.configFile, "utf8"), paths.configFile);
   } catch (error) {
     if (!(error instanceof TomlParseError)) throw error;
     report2.check("Codex config parses", "parses", error.message);
@@ -5966,7 +6132,7 @@ function checkManagedConfigRegion(report2, paths, environment) {
     report2.check("managed Codex config", "valid", "missing");
     return;
   }
-  const text = readFileSync15(paths.configFile, "utf8");
+  const text = readFileSync16(paths.configFile, "utf8");
   const extracted = runTomlRegion(text, {
     action: "extract",
     startMarker: CONFIG_MARKER_START,
@@ -5992,7 +6158,7 @@ function checkGlobalGuidance(report2, paths, repositoryRoot2) {
     report2.check("global Codex guidance", "exact", "missing");
     return;
   }
-  const installed = regionBetween(readFileSync15(paths.globalFile, "utf8"), GLOBAL_MARKER_START, GLOBAL_MARKER_END);
+  const installed = regionBetween(readFileSync16(paths.globalFile, "utf8"), GLOBAL_MARKER_START, GLOBAL_MARKER_END);
   if (installed === void 0) {
     report2.check("global Codex guidance", "exact", "malformed");
     return;
@@ -6003,7 +6169,7 @@ function checkGlobalGuidance(report2, paths, repositoryRoot2) {
     report2.check("global Codex guidance", "exact", "source-unreadable");
     return;
   }
-  report2.check("global Codex guidance", "exact", installed === readFileSync15(source, "utf8") ? "exact" : "divergent");
+  report2.check("global Codex guidance", "exact", installed === readFileSync16(source, "utf8") ? "exact" : "divergent");
 }
 var RENDERED_HOOKS_DIR_TOKEN = "__OSO_HOOKS_DIR__";
 function unrenderedHooksManifest(text, runtimeRoot) {
@@ -6016,7 +6182,7 @@ function checkPublishedRuntimeBytes(report2, paths, repositoryRoot2) {
     path17.join(repositoryRoot2, "bootstrap", "hook-hashes.txt"),
     (relative) => relative.startsWith("opencode/"),
     (relative) => codexRuntimeTargetOf(relative, paths.runtimeRoot, paths.codexHome),
-    (relative, target) => relative === CODEX_HOOKS_MANIFEST ? Buffer.from(unrenderedHooksManifest(readFileSync15(target, "utf8"), paths.runtimeRoot), "utf8") : readFileSync15(target)
+    (relative, target) => relative === CODEX_HOOKS_MANIFEST ? Buffer.from(unrenderedHooksManifest(readFileSync16(target, "utf8"), paths.runtimeRoot), "utf8") : readFileSync16(target)
   );
   for (const divergence of divergences) report2.detail(`${divergence.file}: ${divergence.state.kind}`);
   report2.check("published runtime bytes", "verified", divergences.length === 0 ? "verified" : `bad:${divergences.length}`);
@@ -6045,19 +6211,19 @@ function checkAgentPayload(report2, paths, repositoryRoot2) {
   const divergent = published.filter((name) => {
     const installed = path17.join(installedDir, name);
     if (!isReadableRegularFile(installed)) return true;
-    return readFileSync15(installed, "utf8") !== readFileSync15(path17.join(sourceDir, name), "utf8");
+    return readFileSync16(installed, "utf8") !== readFileSync16(path17.join(sourceDir, name), "utf8");
   });
   for (const name of divergent) report2.detail(`divergent agent: ${name}`);
   report2.check(AGENT_PAYLOAD_CHECK, "exact", divergent.length === 0 ? "exact" : `divergent:${divergent.map((named) => ` ${named}`).join("")}`);
 }
 function checkOperatorAgentSettings(report2, paths, configParses) {
   if (!configParses || !isReadableRegularFile(paths.configFile)) return;
-  const notice = operatorAgentsNotice(readFileSync15(paths.configFile, "utf8"), paths.configFile);
+  const notice = operatorAgentsNotice(readFileSync16(paths.configFile, "utf8"), paths.configFile);
   if (notice !== void 0) report2.note(notice);
 }
 function checkOperatorPermissionSettings(report2, paths, configParses) {
   if (!configParses || !isReadableRegularFile(paths.configFile)) return;
-  const notice = operatorPermissionsNotice(readFileSync15(paths.configFile, "utf8"), paths.configFile);
+  const notice = operatorPermissionsNotice(readFileSync16(paths.configFile, "utf8"), paths.configFile);
   if (notice !== void 0) report2.note(notice);
 }
 function checkEngramWiring(report2, paths, configParses) {
@@ -6076,7 +6242,7 @@ function checkEngramWiring(report2, paths, configParses) {
   report2.check("managed essential-memory configuration", "configured", managed ? "configured" : "conflicting-or-incomplete");
 }
 function engramPointersAreNormalized(paths) {
-  const text = readFileSync15(paths.configFile, "utf8");
+  const text = readFileSync16(paths.configFile, "utf8");
   const normalized = normalizedEngramPointerConfig(paths, text);
   return normalized.exitCode === 0 && normalized.stdout === text;
 }
@@ -6092,7 +6258,7 @@ function checkImpeccableMount(report2, homeDirectory2) {
   if (!isReadableRegularFile(skill)) {
     missing.push(skill);
   } else {
-    const text = readFileSync15(skill, "utf8");
+    const text = readFileSync16(skill, "utf8");
     if (frontmatterField(text, "name") !== "impeccable" || frontmatterField(text, "version") !== SUPPORTED_IMPECCABLE_VERSION) {
       missing.push(`${skill} (name/version)`);
     }
@@ -6230,7 +6396,7 @@ function commitHookRedVerdict(paths, environment) {
     const probeRepo = path17.join(probeHome, "repo");
     mkdirSync9(probeRepo, { recursive: true });
     if (spawnSync8("git", ["-C", probeRepo, "init", "-q"], { encoding: "utf8" }).status !== 0) return "git-init-failed";
-    writeFileSync9(path17.join(probeRepo, "baseline.txt"), "baseline\n");
+    writeFileSync10(path17.join(probeRepo, "baseline.txt"), "baseline\n");
     if (spawnSync8("git", ["-C", probeRepo, "add", "baseline.txt"], { encoding: "utf8" }).status !== 0) return "setup-failed";
     const baseline = spawnSync8(
       "git",
@@ -6248,7 +6414,7 @@ function commitHookRedVerdict(paths, environment) {
     if (armed.error !== void 0 || armed.status !== 0) return "setup-failed";
     const wired = spawnSync8("git", ["-C", probeRepo, "config", "core.hooksPath", path17.join(paths.runtimeRoot, "git-hooks")], { encoding: "utf8" });
     if (wired.status !== 0) return "setup-failed";
-    writeFileSync9(path17.join(probeRepo, "pending.txt"), "pending\n");
+    writeFileSync10(path17.join(probeRepo, "pending.txt"), "pending\n");
     if (spawnSync8("git", ["-C", probeRepo, "add", "pending.txt"], { encoding: "utf8" }).status !== 0) return "setup-failed";
     const attempt = spawnSync8(
       "git",
@@ -6301,7 +6467,7 @@ function planArtifactRoundTripVerdict(stateBin, environment) {
 function planArtifactContractVerdict(stateOutput) {
   const snapshot = stateLineValue(stateOutput, "plan_snapshot_file");
   const current = stateLineValue(stateOutput, "plan_current_file");
-  const matches = stateLineValue(stateOutput, "plan_approval") === "approved" && stateLineValue(stateOutput, "plan_revision") === "1" && isRegularNonSymlinkFile(snapshot) && readFileSync15(snapshot, "utf8") === PLAN_ARTIFACT_PROBE_DOCUMENT && isRegularNonSymlinkFile(current) && readFileSync15(current, "utf8").includes(PLAN_ARTIFACT_AMENDMENT_LINE);
+  const matches = stateLineValue(stateOutput, "plan_approval") === "approved" && stateLineValue(stateOutput, "plan_revision") === "1" && isRegularNonSymlinkFile(snapshot) && readFileSync16(snapshot, "utf8") === PLAN_ARTIFACT_PROBE_DOCUMENT && isRegularNonSymlinkFile(current) && readFileSync16(current, "utf8").includes(PLAN_ARTIFACT_AMENDMENT_LINE);
   return matches ? "artifacts" : "artifact-contract-mismatch";
 }
 function stateLineValue(text, key) {
@@ -6310,7 +6476,7 @@ function stateLineValue(text, key) {
   return line === void 0 ? "" : line.slice(prefix.length);
 }
 function binaryCarriesBoth(binary, literals) {
-  const bytes = readFileSync15(binary, "latin1");
+  const bytes = readFileSync16(binary, "latin1");
   return literals.every((literal) => bytes.includes(literal));
 }
 function codexPluginManifestOf(repositoryRoot2) {
@@ -6376,7 +6542,7 @@ function hostOutput(run) {
 
 // core/src/install/verify-opencode.ts
 import { spawnSync as spawnSync9 } from "node:child_process";
-import { chmodSync as chmodSync4, mkdirSync as mkdirSync10, mkdtempSync as mkdtempSync8, readdirSync as readdirSync8, readFileSync as readFileSync16, rmSync as rmSync12, writeFileSync as writeFileSync10 } from "node:fs";
+import { chmodSync as chmodSync4, mkdirSync as mkdirSync10, mkdtempSync as mkdtempSync8, readdirSync as readdirSync8, readFileSync as readFileSync17, rmSync as rmSync12, writeFileSync as writeFileSync11 } from "node:fs";
 import { tmpdir as tmpdir5 } from "node:os";
 import path18 from "node:path";
 
@@ -6530,7 +6696,7 @@ function checkInstalledTree(report2, input, tree) {
   report2.check("mode commands installed and routed", "exact", openCodeCommandStatus(input.repositoryRoot, tree.configHome));
   report2.check("plugin entry, modules and routes installed", "exact", openCodePluginStatus(input.repositoryRoot, tree.configHome));
   report2.check("Engram plugin file installed", "present", openCodeEngramStatus(tree.configHome));
-  report2.check("global guidance installed", "exact", openCodeGlobalStatus(globalFile, readFileSync16(sources.global, "utf8")));
+  report2.check("global guidance installed", "exact", openCodeGlobalStatus(globalFile, readFileSync17(sources.global, "utf8")));
   report2.check("operator global prose survives an install", "preserved", openCodeOperatorGlobalStatus(globalFile, operatorGlobalSeed()));
   report2.check("installer-owned targets recorded", "installer-owned", openCodeRegistryStatus(tree.home, tree.configHome));
   report2.check("published gate bytes as installed", "verified", openCodeTrustBytesStatus(sources.publishedHashes, tree.configHome));
@@ -6589,9 +6755,9 @@ function stageOpenCodeFixture(input) {
   const home = path18.join(root, "home");
   const configHome = path18.join(home, ".config", "opencode");
   mkdirSync10(configHome, { recursive: true });
-  writeFileSync10(path18.join(configHome, "opencode.json"), `${JSON.stringify(operatorConfigSeed(), null, 2)}
+  writeFileSync11(path18.join(configHome, "opencode.json"), `${JSON.stringify(operatorConfigSeed(), null, 2)}
 `);
-  writeFileSync10(path18.join(configHome, "AGENTS.md"), operatorGlobalSeed());
+  writeFileSync11(path18.join(configHome, "AGENTS.md"), operatorGlobalSeed());
   writeFixtureEngramShim(fixtureShimsIn(root));
   const outcome = installOpenCode({
     homeDirectory: home,
@@ -6614,7 +6780,7 @@ function fixtureShimsIn(root) {
 function writeFixtureEngramShim(directory) {
   mkdirSync10(directory, { recursive: true });
   const shim = path18.join(directory, ENGRAM_BINARY_NAME);
-  writeFileSync10(shim, FIXTURE_ENGRAM_SHIM);
+  writeFileSync11(shim, FIXTURE_ENGRAM_SHIM);
   chmodSync4(shim, FIXTURE_SHIM_MODE);
   return shim;
 }
@@ -6738,14 +6904,14 @@ ${OPERATOR_GLOBAL_PROSE}
 }
 function openCodeGlobalStatus(globalFile, expectedBody) {
   if (!isReadableRegularFile(globalFile)) return "missing";
-  const installed = markerRegionBodyOf(readFileSync16(globalFile, "utf8"));
+  const installed = markerRegionBodyOf(readFileSync17(globalFile, "utf8"));
   if (installed === void 0) return "malformed";
   return withoutTrailingNewlines(installed) === withoutTrailingNewlines(expectedBody) ? "exact" : "divergent";
 }
 function openCodeOperatorGlobalStatus(globalFile, seedText) {
   if (!isReadableRegularFile(globalFile)) return "missing";
   const seedRecords = seedText.split("\n").length - 1;
-  const head = readFileSync16(globalFile, "utf8").split("\n").slice(0, seedRecords).join("\n");
+  const head = readFileSync17(globalFile, "utf8").split("\n").slice(0, seedRecords).join("\n");
   return `${head}
 ` === seedText ? "preserved" : "rewritten";
 }
@@ -6790,13 +6956,13 @@ function declaredMcpServerNames(configFile) {
 function agentPermissionDenialsIn(configHome) {
   const installedAgents = path18.join(configHome, "agent");
   return osoPrefixedMarkdownNames2(installedAgents).map(
-    (name) => deniedPermissionKeysOf(readFileSync16(path18.join(installedAgents, name), "utf8"))
+    (name) => deniedPermissionKeysOf(readFileSync17(path18.join(installedAgents, name), "utf8"))
   );
 }
 function reachableServersOf(agentContract, name) {
   const role = AGENT_ROLES.find((candidate) => `${candidate.id}.md` === name);
   if (role === void 0) return [`${name}:names-no-role`];
-  const denied = deniedPermissionKeysOf(readFileSync16(agentContract, "utf8"));
+  const denied = deniedPermissionKeysOf(readFileSync17(agentContract, "utf8"));
   return OWNED_MCP_NAMES.filter(
     (server) => !role.opencode.mcpServersTheClaudeTwinLists.includes(server) && !denied.has(mcpServerWildcard(server))
   ).map((server) => `${name}:${mcpServerWildcard(server)}`);
@@ -6848,7 +7014,7 @@ function openCodeRegistryStatus(home, configHome) {
   const targets = openCodeInstallTargets(paths);
   if (!isReadableRegularFile(targets.ownerRegistry)) return "missing";
   const owned = new Set(
-    readFileSync16(targets.ownerRegistry, "utf8").split("\n").filter((row) => row.startsWith(`${OWNER_INSTALLER}	`)).map((row) => row.slice(OWNER_INSTALLER.length + 1))
+    readFileSync17(targets.ownerRegistry, "utf8").split("\n").filter((row) => row.startsWith(`${OWNER_INSTALLER}	`)).map((row) => row.slice(OWNER_INSTALLER.length + 1))
   );
   const expected = [
     paths.configFile,
@@ -6873,7 +7039,7 @@ function openCodeConfigHomeGuardStatus(input, tree) {
   const decoy = path18.join(tree.root, "decoy-config");
   const decoyConfigHome = path18.join(decoy, "opencode");
   mkdirSync10(decoyConfigHome, { recursive: true });
-  writeFileSync10(path18.join(decoyConfigHome, "opencode.json"), `${DECOY_CONFIG_TEXT}
+  writeFileSync11(path18.join(decoyConfigHome, "opencode.json"), `${DECOY_CONFIG_TEXT}
 `);
   const outcome = installOpenCode({
     homeDirectory: tree.home,
@@ -6887,7 +7053,7 @@ function openCodeConfigHomeGuardStatus(input, tree) {
     installGitHook: false
   });
   if (outcome.exitCode !== 2) return `exit:${outcome.exitCode}`;
-  if (readFileSync16(path18.join(decoyConfigHome, "opencode.json"), "utf8").trim() !== DECOY_CONFIG_TEXT) return "overwrote-the-decoy-config";
+  if (readFileSync17(path18.join(decoyConfigHome, "opencode.json"), "utf8").trim() !== DECOY_CONFIG_TEXT) return "overwrote-the-decoy-config";
   const entries = directoryEntryNames2(decoyConfigHome).length;
   return entries === 1 ? "refused" : `wrote-into-the-decoy:${entries}`;
 }
@@ -6953,7 +7119,7 @@ function withoutTrailingNewlines(text) {
 }
 function agentRouteOf(commandFile) {
   if (!isReadableRegularFile(commandFile)) return "";
-  const routed = readFileSync16(commandFile, "utf8").split("\n").flatMap((line) => {
+  const routed = readFileSync17(commandFile, "utf8").split("\n").flatMap((line) => {
     const match = /^agent:[ \t]*(.*)$/.exec(line);
     return match === null ? [] : [match[1]];
   });
@@ -7058,14 +7224,17 @@ var EVERY_DECLARED_FLAG = new Set(
   HOSTS.flatMap((host) => VERBS.flatMap((verb) => FLAGS_PER_HOST_AND_VERB[host][verb].flags.map((flag) => flag.name)))
 );
 var PROFILE_VERB = "profile";
+var MIGRATE_VERB = "migrate";
 var USAGE = `usage: oso <install|verify|repair|purge> --host <claude|codex|opencode> [flags]
        oso ${PROFILE_VERB} show | set <normal|strong|custom> [--applier|--verifier|--judges <default|strong>[:<model>]]
+       oso ${MIGRATE_VERB} --host codex --yes
 
 arguments, per host and verb:
 ${HOSTS.flatMap((host) => VERBS.map((verb) => `  ${host.padEnd(9)} ${verb.padEnd(8)} ${argumentSummary(FLAGS_PER_HOST_AND_VERB[host][verb])}`)).join("\n")}
 
 A flag offered to a host and verb that does not take it is refused, never ignored.
 The ${PROFILE_VERB} verb takes no --host: one profile spans every host, and only a custom names its roles.
+The ${MIGRATE_VERB} verb rewrites a Codex permission profile only when it can prove a past install wrote it; anything else it reports and leaves alone.
 `;
 var UsageError = class extends Error {
 };
@@ -7098,9 +7267,38 @@ function main(argv, repositoryRoot2) {
 }
 function dispatch(argv, repositoryRoot2) {
   const workingDirectory = process.cwd();
-  const outcome = argv[0] === PROFILE_VERB ? runProfile(argv.slice(1), workingDirectory) : runHostVerb(argv, repositoryRoot2, workingDirectory);
+  const outcome = outcomeFor(argv, repositoryRoot2, workingDirectory);
   process.stdout.write(outcome.report);
   return outcome.exitCode;
+}
+function outcomeFor(argv, repositoryRoot2, workingDirectory) {
+  if (argv[0] === PROFILE_VERB) return runProfile(argv.slice(1), workingDirectory);
+  if (argv[0] === MIGRATE_VERB) return runMigrate(argv.slice(1));
+  return runHostVerb(argv, repositoryRoot2, workingDirectory);
+}
+function runMigrate(argv) {
+  const flags = /* @__PURE__ */ new Set();
+  let host;
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+    if (token === "--host") {
+      host = argv[index + 1];
+      index += 1;
+      continue;
+    }
+    if (token === "--yes") {
+      flags.add(token);
+      continue;
+    }
+    throw new UsageError();
+  }
+  if (host !== "codex") throw new UsageError();
+  return migrateCodex({
+    homeDirectory: homeDirectoryFrom(process.platform, process.env),
+    environment: process.env,
+    host: codexHostProbes(process.env),
+    assumeYes: flags.has("--yes")
+  });
 }
 function runProfile(argv, workingDirectory) {
   const [subverb, name, ...roleTokens] = argv;
