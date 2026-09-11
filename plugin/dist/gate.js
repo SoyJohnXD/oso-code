@@ -2456,6 +2456,8 @@ function agreeingField(direct, nested, key) {
 // core/src/state/handoff.ts
 var HandoffFailure = class extends Error {
 };
+var NativeRepositoryFault = class extends Error {
+};
 var TTL_SECONDS = 86400;
 var LOCK_TIMEOUT_SECONDS = 2;
 var POLL_INTERVAL_MS = 50;
@@ -2707,12 +2709,12 @@ function nativeRepositoryIdentity(cwd, deadline) {
   requireMetadataTime(deadline);
   if (!path5.isAbsolute(cwd)) throw new HandoffFailure(`native workspace is not absolute: ${cwd}`);
   const answered = gitCommonDirectory(cwd, Math.max(1, Math.ceil(deadline - performance.now())));
-  if (answered.kind === "refused") throw new HandoffFailure(`cannot resolve Codex handoff: ${answered.cause}`);
+  if (answered.kind === "refused") throw new NativeRepositoryFault(answered.cause);
   return realpathSync2(answered.commonDirectory);
 }
 function isNativeResolutionFault(error) {
   const gitExitedNonZero = error instanceof Error && "status" in error;
-  return error instanceof CodexMetadataFailure || error instanceof HandoffFailure || isErrnoException(error) || gitExitedNonZero;
+  return error instanceof CodexMetadataFailure || error instanceof HandoffFailure || error instanceof NativeRepositoryFault || isErrnoException(error) || gitExitedNonZero;
 }
 
 // core/src/gates/handoff.ts

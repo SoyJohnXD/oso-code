@@ -30,9 +30,17 @@ be between 0 and 600 seconds.
 
 const CLOSE_SLICE_LINE = "       oso-state --session <id> close-slice <n>\n";
 const DENY_PATTERN_LINE = "       oso-state --session <id> deny-pattern add <pattern>\n";
+const CONSUME_PROOF_LINE =
+  "       oso-state handoff consume --slice <id> --attempt <n> --agent-id <id> --agent-path <canonical> --agent-type <type>\n";
 const RESOLVE_CODEX_LINE = "       oso-state handoff resolve-codex --agent-path <canonical> --slice <id> --attempt <n> --agent-type <role>\n";
+const ADOPT_LINE =
+  "       oso-state handoff adopt --agent-id <id> --agent-path <canonical> --slice <id> --attempt <n> --agent-type <type>\n";
 const SCAN_LINES =
   "       oso-state scan comments <ref>\n" + "       oso-state scan abstractions <ref>\n";
+const NATIVE_CLAIM_PARAGRAPH =
+  " adopt proves an asserted agent id against its\n" +
+  "own native rollout without requiring the current session to be its parent;\n" +
+  "consume now demands that same proof before it destroys a receipt.\n";
 const SCAN_PARAGRAPH =
   "\nscan reads the working directory's own repository, reports every hit on stdout\n" +
   "and exits 0 whether or not it found any. comments flags the inline comments the\n" +
@@ -48,14 +56,18 @@ const TS_USAGE = BASH_USAGE.replace(
     `       oso-state --session <id> amend-plan <slice-id>\n${DENY_PATTERN_LINE}`,
   )
   .replace(
-    "--agent-type <type>\n\nThe SubagentStop hook",
-    `--agent-type <type>\n${RESOLVE_CODEX_LINE}${SCAN_LINES}\nThe SubagentStop hook`,
+    "       oso-state handoff consume --slice <id> --attempt <n> --agent-id <id> --agent-type <type>\n",
+    `${CONSUME_PROOF_LINE}${RESOLVE_CODEX_LINE}${ADOPT_LINE}${SCAN_LINES}`,
   )
-  .replace("be between 0 and 600 seconds.\n", `be between 0 and 600 seconds.\n${SCAN_PARAGRAPH}`);
+  .replace("be between 0 and 600 seconds.\n", `be between 0 and 600 seconds.${NATIVE_CLAIM_PARAGRAPH}`)
+  .replace(
+    "consume now demands that same proof before it destroys a receipt.\n",
+    `consume now demands that same proof before it destroys a receipt.\n${SCAN_PARAGRAPH}`,
+  );
 
 test(
   "the TypeScript CLI's usage text equals the bash's (read from 8c54fd8:plugin/bin/oso-state:7-29) " +
-    "plus close-slice, deny-pattern add, scan and native Codex handoff resolution",
+    "plus close-slice, deny-pattern add, scan, native Codex handoff resolution and its adopt/consume proof",
   () => {
     const result = spawnSync(
       process.execPath,

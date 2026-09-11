@@ -20,6 +20,7 @@ function handoffInvocationIn(command: LexedCommand, expected: HandoffExpectation
   if (optionTokens.length % 2 !== 0) return undefined;
   const allowed = new Set<string>(HANDOFF_BASE_OPTION_KEYS);
   if (verb === "wait") allowed.add("--timeout");
+  if (verb === "consume") allowed.add("--agent-path");
   const parsed = new Map<string, string>();
   for (let index = 0; index < optionTokens.length; index += 2) {
     const key = optionTokens[index] as string;
@@ -28,6 +29,7 @@ function handoffInvocationIn(command: LexedCommand, expected: HandoffExpectation
     parsed.set(key, value);
   }
   if (verb === "wait" && !parsed.has("--timeout")) return undefined;
+  if (verb === "consume" && (parsed.get("--agent-path") ?? "") === "") return undefined;
   const agentId = parsed.get("--agent-id");
   if (
     agentId === undefined ||

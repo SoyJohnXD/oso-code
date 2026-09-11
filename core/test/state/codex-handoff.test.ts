@@ -13,6 +13,9 @@ const parent = "11111111-1111-4111-8111-111111111111";
 const child = "22222222-2222-4222-8222-222222222222";
 const coordinates = ["--slice", "s4", "--attempt", "1", "--agent-type", "oso-applier"];
 const resolve = ["handoff", "resolve-codex", ...coordinates, "--agent-path", "/root/child"];
+const adopt = ["handoff", "adopt", ...coordinates, "--agent-id", child, "--agent-path", "/root/child"];
+const consume = ["handoff", "consume", ...coordinates, "--agent-id", child, "--agent-path", "/root/child"];
+const resumed = { environment: { CODEX_THREAD_ID: "33333333-3333-4333-8333-000000000000" } };
 
 type Invoke = (argv: string[], options?: { environment?: NodeJS.ProcessEnv; cwd?: string; injection?: string }) => ReturnType<typeof spawnSync>;
 
@@ -73,7 +76,8 @@ test("resolver refuses malformed CLI shape, canonical paths and missing or inval
   for (const agentPath of ["child", "/root", "/root/../child", "/root//child", "/root/child/", "/root/child path"]) refused(invoke([...resolve.slice(0, -1), agentPath]), /canonical/);
   for (const id of ["", "not-a-uuid", "/root"]) refused(invoke(resolve, { environment: { CODEX_THREAD_ID: id } }), /CODEX_THREAD_ID/);
   refused(invoke(resolve.slice(0, -2)), /usage:/);
-  refused(invoke(["handoff", "consume", ...coordinates, "--agent-id", child, "--agent-path", "/root/child"]), /usage:/);
+  refused(invoke(consume.slice(0, -2)), /usage:/);
+  refused(invoke([...adopt, "--timeout", "0"]), /usage:/);
 }));
 
 test("resolver ignores later transcript records and preserves root versus child first-record provenance", () => fixture((root, invoke) => {
@@ -176,9 +180,9 @@ test("resolver preserves TTL, superseding, consumed watermarks and once-only pub
   refused(invoke(resolve), /found 0/);
   writeFileSync(watermark, "version=1\nattempt=1\n");
   assert.equal(invoke(["handoff", "wait", ...coordinates, "--agent-id", child, "--timeout", "0"]).status, 0);
-  assert.equal(invoke(["handoff", "consume", ...coordinates, "--agent-id", child]).status, 0);
+  assert.equal(invoke(consume).status, 0);
   refused(invoke(resolve), /found 0/);
-  refused(invoke(["handoff", "consume", ...coordinates, "--agent-id", child]));
+  refused(invoke(consume));
   refused(invoke(["handoff", "publish", ...coordinates, "--agent-id", child, "--hook-session", child]));
 }));
 
@@ -347,4 +351,94 @@ test("resolver skips an unreadable rollout beside a good one without preventing 
     assert.equal(result.status, 0, String(result.stderr));
     assert.equal(result.stdout, child + "\n");
   }
+}));
+
+function events(root: string): string {
+  return readFileSync(path.join(root, "state", "events.jsonl"), "utf8");
+}
+
+test("adopt claims a finished child's receipt from a resumed session that is not its parent, and consume completes it there", () => fixture((root, invoke) => {
+  const claimed = invoke(adopt, resumed);
+  assert.equal(claimed.status, 0, String(claimed.stderr));
+  assert.equal(claimed.stdout, "");
+  assert.match(events(root), /"event":"handoff-adopted"/);
+  assert.equal(invoke(["handoff", "wait", ...coordinates, "--agent-id", child, "--timeout", "0"], resumed).status, 0);
+  assert.equal(invoke(consume, resumed).status, 0);
+}));
+
+test("adopt and consume each refuse a broken proof on its own, recording the ones that left no other diagnosis", () => fixture((root, invoke) => {
+  const file = rollout(root);
+  const original = readFileSync(file, "utf8");
+  const foreignRepo = path.join(root, "foreign");
+  mkdirSync(foreignRepo);
+  assert.equal(spawnSync("git", ["init", "--quiet", foreignRepo]).status, 0);
+  for (const [key, value] of [["cwd", foreignRepo], ["agent_path", "/root/other"], ["agent_role", "oso-verifier"]] as const) {
+    const record = JSON.parse(original);
+    record.payload[key] = value;
+    if (key in record.payload.source.subagent.thread_spawn) record.payload.source.subagent.thread_spawn[key] = value;
+    writeFileSync(file, JSON.stringify(record) + "\n");
+    refused(invoke(adopt, resumed));
+  }
+  writeFileSync(file, JSON.stringify({ type: "session_meta", payload: {
+    id: child, cwd: path.join(root, "repo"), agent_path: "/root/child", agent_role: "oso-applier", source: "cli",
+  } }) + "\n");
+  refused(invoke(adopt, resumed), /has no parent/);
+  writeFileSync(file, original);
+  const duplicate = path.join(path.dirname(file), "rollout-duplicate.jsonl");
+  writeFileSync(duplicate, original);
+  refused(invoke(adopt, resumed), /found 2/);
+  assert.match(events(root), /"event":"handoff-adopt-failed".*found 2/);
+  rmSync(duplicate);
+  const { receipt } = artifacts(root);
+  const receiptText = readFileSync(receipt, "utf8");
+  rmSync(receipt);
+  refused(invoke(adopt, resumed), /no live receipt/);
+  assert.match(events(root), /"event":"handoff-adopt-failed".*no live receipt/);
+  refused(invoke(consume, resumed), /no live receipt/);
+  assert.match(events(root), /"event":"handoff-consume-claim-failed".*no live receipt/);
+  writeFileSync(receipt, receiptText);
+  rmSync(file);
+  refused(invoke(adopt, resumed), /found 0/);
+  assert.match(events(root), /"event":"handoff-adopt-failed".*found 0/);
+}));
+
+test("consume refuses a foreign claim with no session bound to it at all, though it once destroyed that same receipt unseen", () => fixture((root, invoke) => {
+  const foreign = "77777777-7777-4777-8777-777777777777";
+  assert.equal(invoke(["handoff", "publish", ...coordinates, "--agent-id", foreign, "--hook-session", foreign]).status, 0);
+  const receiptPath = path.join(artifacts(root).directory, `${createHash("sha256").update(foreign).digest("hex")}.receipt`);
+  const before = readFileSync(receiptPath, "utf8");
+  refused(invoke(["handoff", "consume", ...coordinates, "--agent-id", foreign]));
+  assert.equal(readFileSync(receiptPath, "utf8"), before);
+  refused(invoke(["handoff", "consume", ...coordinates, "--agent-id", foreign, "--agent-path", "/root/child"]), /found 0/);
+  assert.equal(readFileSync(receiptPath, "utf8"), before);
+}));
+
+test("consume still fails closed on a malformed on-disk receipt once its native proof is live", () => fixture((root, invoke) => {
+  const { receipt } = artifacts(root);
+  const original = readFileSync(receipt, "utf8");
+  writeFileSync(receipt, original + "extra=value\n");
+  refused(invoke(consume), /malformed receipt/);
+  writeFileSync(receipt, original);
+  assert.equal(invoke(consume).status, 0);
+}));
+
+test("consume returns the exact stored receipt bytes to stdout, not just a success exit", () => fixture((root, invoke) => {
+  const { receipt } = artifacts(root);
+  const original = readFileSync(receipt, "utf8");
+  const result = invoke(consume);
+  assert.equal(result.status, 0, String(result.stderr));
+  assert.equal(result.stdout, original);
+}));
+
+test("adopt and consume name their own verb, not resolve's, when native git resolution itself fails", () => fixture((root, invoke) => {
+  refused(invoke(adopt, { ...resumed, cwd: root }), /cannot adopt Codex handoff/);
+  refused(invoke(consume, { ...resumed, cwd: root }), /cannot consume Codex handoff/);
+}));
+
+test("a malformed claim shape still logs its own verb's failure event before any native check runs", () => fixture((root, invoke) => {
+  const badSlice = ["--slice", "../escape", "--attempt", "1", "--agent-type", "oso-applier", "--agent-id", child, "--agent-path", "/root/child"];
+  refused(invoke(["handoff", "adopt", ...badSlice], resumed), /invalid slice id/);
+  assert.match(events(root), /"event":"handoff-adopt-failed".*invalid slice id/);
+  refused(invoke(["handoff", "consume", ...badSlice], resumed), /invalid slice id/);
+  assert.match(events(root), /"event":"handoff-consume-claim-failed".*invalid slice id/);
 }));

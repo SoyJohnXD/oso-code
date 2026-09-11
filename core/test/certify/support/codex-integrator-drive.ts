@@ -40,11 +40,12 @@ function integratorPrompt(fixture: IntegratorFixture, expected: HandoffExpectati
     `Main checkout: ${fixture.main}. BASE REF: ${fixture.baseCommit}. HANDOFF SLICE: ${expected.slice}. ` +
     `HANDOFF ATTEMPT: ${expected.attempt}. The complete wave has one slice, in this order: BRANCH ${SMOKE_BRANCH}, ` +
     `WORKTREE PATH ${fixture.worktree}. Require the integrator to begin its final message with exactly: ` +
-    `oso-handoff: v=1 slice=${expected.slice} attempt=${expected.attempt}. Retain the spawned agent id, wait for ` +
-    `the report, then run exactly oso-state handoff wait --slice ${expected.slice} --attempt ${expected.attempt} ` +
-    `--agent-id <agent-id> --agent-type ${expected.agentType} --timeout 10 and exactly once oso-state handoff ` +
-    `consume --slice ${expected.slice} --attempt ${expected.attempt} --agent-id <agent-id> --agent-type ` +
-    `${expected.agentType} from the main checkout. Do not quote or summarize the child report in your final response.`
+    `oso-handoff: v=1 slice=${expected.slice} attempt=${expected.attempt}. Retain the spawned agent id and its ` +
+    `canonical agent path, wait for the report, then run exactly oso-state handoff wait --slice ${expected.slice} ` +
+    `--attempt ${expected.attempt} --agent-id <agent-id> --agent-type ${expected.agentType} --timeout 10 and ` +
+    `exactly once oso-state handoff consume --slice ${expected.slice} --attempt ${expected.attempt} --agent-id ` +
+    `<agent-id> --agent-path <agent-path> --agent-type ${expected.agentType} from the main checkout. Do not quote ` +
+    `or summarize the child report in your final response.`
   );
 }
 

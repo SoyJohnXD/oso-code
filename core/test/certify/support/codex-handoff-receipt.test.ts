@@ -33,7 +33,7 @@ function waitCommand(agentId: string): string {
 }
 
 function consumeCommand(agentId: string): string {
-  return `oso-state handoff consume --slice ${EXPECTATION.slice} --attempt ${EXPECTATION.attempt} --agent-id ${agentId} --agent-type ${EXPECTATION.agentType}`;
+  return `oso-state handoff consume --slice ${EXPECTATION.slice} --attempt ${EXPECTATION.attempt} --agent-id ${agentId} --agent-path /root/agent --agent-type ${EXPECTATION.agentType}`;
 }
 
 function stream(...lines: readonly string[]): string {
@@ -62,6 +62,12 @@ test("reports not consumed when the wait and consume receipts name an agent id n
 
 test("reports not consumed when the consume receipt is malformed — missing the version field a real receipt always carries", () => {
   const s = stream(spawnEvent([AGENT_ID]), commandEvent(waitCommand(AGENT_ID), receiptStdout()), commandEvent(consumeCommand(AGENT_ID), receiptStdout({ version: "2" })));
+  assert.equal(integratorHandoffConsumed(s, EXPECTATION), false);
+});
+
+test("reports not consumed when the executed consume command carries no --agent-path, the field production now requires", () => {
+  const bareConsume = `oso-state handoff consume --slice ${EXPECTATION.slice} --attempt ${EXPECTATION.attempt} --agent-id ${AGENT_ID} --agent-type ${EXPECTATION.agentType}`;
+  const s = stream(spawnEvent([AGENT_ID]), commandEvent(waitCommand(AGENT_ID), receiptStdout()), commandEvent(bareConsume, receiptStdout()));
   assert.equal(integratorHandoffConsumed(s, EXPECTATION), false);
 });
 

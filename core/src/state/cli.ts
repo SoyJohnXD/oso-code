@@ -26,14 +26,17 @@ const USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state journal --path
        oso-state handoff publish --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --hook-session <id>
        oso-state handoff wait --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --timeout <seconds>
-       oso-state handoff consume --slice <id> --attempt <n> --agent-id <id> --agent-type <type>
+       oso-state handoff consume --slice <id> --attempt <n> --agent-id <id> --agent-path <canonical> --agent-type <type>
        oso-state handoff resolve-codex --agent-path <canonical> --slice <id> --attempt <n> --agent-type <role>
+       oso-state handoff adopt --agent-id <id> --agent-path <canonical> --slice <id> --attempt <n> --agent-type <type>
        oso-state scan comments <ref>
        oso-state scan abstractions <ref>
 
 The SubagentStop hook publishes a provenance receipt, never a verdict. wait is
 bounded and consume is one-shot. Handoff attempts start at 1 and timeout must
-be between 0 and 600 seconds.
+be between 0 and 600 seconds. adopt proves an asserted agent id against its
+own native rollout without requiring the current session to be its parent;
+consume now demands that same proof before it destroys a receipt.
 
 scan reads the working directory's own repository, reports every hit on stdout
 and exits 0 whether or not it found any. comments flags the inline comments the
@@ -52,7 +55,7 @@ class RefusedError extends Error {
   }
 }
 
-const HANDOFF_SUBACTIONS = ["publish", "wait", "consume", "resolve-codex"] as const;
+const HANDOFF_SUBACTIONS = ["publish", "wait", "consume", "resolve-codex", "adopt"] as const;
 type HandoffSubaction = (typeof HANDOFF_SUBACTIONS)[number];
 
 const HANDOFF_FLAGS = {
@@ -354,9 +357,13 @@ function dispatchHandoff(remaining: readonly string[]): number {
     agentType: flags.agentType ?? "",
   };
   const cwd = process.cwd();
+  const claim = { ...coordinates, agentPath: flags.agentPath ?? "" };
   switch (subaction) {
     case "resolve-codex":
-      process.stdout.write(handoff.runHandoffResolveCodex(cwd, { ...coordinates, agentPath: flags.agentPath ?? "" }) + "\n");
+      process.stdout.write(handoff.runHandoffResolveCodex(cwd, claim) + "\n");
+      return 0;
+    case "adopt":
+      handoff.runHandoffAdopt(cwd, claim);
       return 0;
     case "publish":
       readStdin();
@@ -366,7 +373,7 @@ function dispatchHandoff(remaining: readonly string[]): number {
       process.stdout.write(handoff.runHandoffWait(cwd, coordinates, flags.timeout ?? ""));
       return 0;
     case "consume":
-      process.stdout.write(handoff.runHandoffConsume(cwd, coordinates));
+      process.stdout.write(handoff.runHandoffConsume(cwd, claim));
       return 0;
   }
 }
@@ -376,16 +383,16 @@ function isHandoffSubaction(value: string | undefined): value is HandoffSubactio
 }
 
 function checkHandoffCoordinateShape(subaction: HandoffSubaction, coordinates: HandoffCoordinates): void {
-  if (subaction === "resolve-codex") {
-    if (coordinates.agentPath === undefined || coordinates.agentId !== undefined || coordinates.timeout !== undefined || coordinates.hookSession !== undefined) throw new UsageError();
-    return;
-  }
-  if (coordinates.agentPath !== undefined) throw new UsageError();
+  const hasAgentPath = coordinates.agentPath !== undefined;
   const hasTimeout = coordinates.timeout !== undefined;
   const hasHookSession = coordinates.hookSession !== undefined;
-  if (subaction === "publish" && hasTimeout) throw new UsageError();
-  if (subaction === "wait" && (!hasTimeout || hasHookSession)) throw new UsageError();
-  if (subaction === "consume" && (hasTimeout || hasHookSession)) throw new UsageError();
+  if (subaction === "resolve-codex" && (!hasAgentPath || coordinates.agentId !== undefined || hasTimeout || hasHookSession)) {
+    throw new UsageError();
+  }
+  if (subaction === "adopt" && (!hasAgentPath || hasTimeout || hasHookSession)) throw new UsageError();
+  if (subaction === "consume" && (!hasAgentPath || hasTimeout || hasHookSession)) throw new UsageError();
+  if (subaction === "publish" && (hasAgentPath || hasTimeout)) throw new UsageError();
+  if (subaction === "wait" && (hasAgentPath || !hasTimeout || hasHookSession)) throw new UsageError();
 }
 
 function parseHandoffCoordinates(args: readonly string[]): HandoffCoordinates {

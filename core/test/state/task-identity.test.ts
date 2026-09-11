@@ -189,7 +189,7 @@ test("one repository keeps one identity from its root, from a subdirectory and f
     assert.deepEqual(stateFileNames(tree), [`${digest(commonDirectoryOf(tree.plain))}.state`]);
   }));
 
-test("a declared root with no git of its own carries state, a journal and a receipt round trip", () =>
+test("a declared root with no git of its own carries state and a journal, though a receipt now needs native proof that root cannot supply", () =>
   withTree((tree) => {
     const notes = path.join(tree.root, "notes");
     mkdirSync(notes);
@@ -201,7 +201,7 @@ test("a declared root with no git of its own carries state, a journal and a rece
     assert.match(readFileSync(tree.run(["journal", "--path"], at).stdout.trimEnd(), "utf8"), /milestone one/);
     assert.equal(tree.run(["handoff", "publish", ...HANDOFF, "--hook-session", AGENT], at).exit, 0);
     assert.match(tree.run(["handoff", "wait", ...HANDOFF, "--timeout", "0"], at).stdout, new RegExp(`agent_id=${AGENT}`));
-    assert.match(tree.run(["handoff", "consume", ...HANDOFF], at).stdout, new RegExp(`agent_id=${AGENT}`));
+    assert.equal(tree.run(["handoff", "consume", ...HANDOFF, "--agent-path", "/root/child"], at).exit, 1);
     assert.deepEqual(stateFileNames(tree), [`${digest(notes)}.state`]);
   }));
 

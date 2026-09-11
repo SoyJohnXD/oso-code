@@ -1759,6 +1759,8 @@ function isErrnoException(error) {
 // core/src/state/handoff.ts
 var HandoffFailure = class extends Error {
 };
+var NativeRepositoryFault = class extends Error {
+};
 var MAX_TIMEOUT_SECONDS = 600;
 var TTL_SECONDS = 86400;
 var LOCK_TIMEOUT_SECONDS = 2;
@@ -1774,11 +1776,12 @@ var RECEIPT_KEYS = ["version", "hook_session", "slice", "attempt", "agent_id", "
 var WATERMARK_KEYS = ["version", "attempt"];
 var UNPUBLISHED_KEYS = ["version", "slice", "attempt", "reason"];
 var REFUSAL_PATTERN = /^[ -~]{1,200}$/;
+var CANONICAL_CODEX_AGENT_PATH_PATTERN = /^\/root(?:\/[a-zA-Z0-9_-]+)+$/;
 function runHandoffResolveCodex(cwd, coordinates) {
   const parentId = process.env["CODEX_THREAD_ID"] ?? "";
   if (!CODEX_UUID_PATTERN.test(parentId)) throw new HandoffFailure("resolve-codex requires a valid current CODEX_THREAD_ID");
   validateCoordinates({ ...coordinates, agentId: parentId });
-  if (!/^\/root(?:\/[a-zA-Z0-9_-]+)+$/.test(coordinates.agentPath)) throw new HandoffFailure("invalid canonical Codex agent path");
+  requireCanonicalAgentPath(coordinates.agentPath);
   const deadline = performance.now() + CODEX_METADATA_READINESS_MS;
   try {
     const repository = nativeRepositoryIdentity(cwd, deadline);
@@ -1812,10 +1815,23 @@ function runHandoffResolveCodex(cwd, coordinates) {
     requireMetadataTime(deadline);
     return id;
   } catch (error) {
-    if (error instanceof HandoffFailure) throw error;
-    if (!isNativeResolutionFault(error)) throw error;
-    throw new HandoffFailure(`cannot resolve Codex handoff: ${causeOf2(error)}`, { cause: error });
+    throw asNativeCodexFailure("resolve", error);
   }
+}
+function runHandoffAdopt(cwd, claim) {
+  const deadline = performance.now() + CODEX_METADATA_READINESS_MS;
+  const session = process.env["CODEX_THREAD_ID"] ?? "";
+  const detail = `${claim.agentType}:${claim.slice}:${claim.attempt}`;
+  try {
+    validateCoordinates(claim);
+    requireCanonicalAgentPath(claim.agentPath);
+    confirmCodexDelegation(cwd, claim, deadline);
+  } catch (error) {
+    const failure = asNativeCodexFailure("adopt", error);
+    logEvent({ event: "handoff-adopt-failed", session, command: `${detail}: ${failure.message}` });
+    throw failure;
+  }
+  logEvent({ event: "handoff-adopted", session, command: detail });
 }
 function runHandoffPublish(cwd, coordinates, hookSession) {
   validateCoordinates(coordinates);
@@ -1892,22 +1908,33 @@ function runHandoffWait(cwd, coordinates, timeoutText) {
     sleepSync(POLL_INTERVAL_MS);
   }
 }
-function runHandoffConsume(cwd, coordinates) {
-  validateCoordinates(coordinates);
-  const paths = handoffPaths(cwd, coordinates.agentId);
+function runHandoffConsume(cwd, claim) {
+  const deadline = performance.now() + CODEX_METADATA_READINESS_MS;
+  const session = process.env["CODEX_THREAD_ID"] ?? "";
+  const detail = `${claim.agentType}:${claim.slice}:${claim.attempt}`;
+  try {
+    validateCoordinates(claim);
+    requireCanonicalAgentPath(claim.agentPath);
+    confirmCodexDelegation(cwd, claim, deadline);
+  } catch (error) {
+    const failure = asNativeCodexFailure("consume", error);
+    logEvent({ event: "handoff-consume-claim-failed", session, command: `${detail}: ${failure.message}` });
+    throw failure;
+  }
+  const paths = handoffPaths(cwd, claim.agentId);
   if (!isDirectory(paths.directory)) {
-    throw new HandoffFailure(`no receipt for slice ${coordinates.slice} attempt ${coordinates.attempt}`);
+    throw new HandoffFailure(`no receipt for slice ${claim.slice} attempt ${claim.attempt}`);
   }
   globalSweep(paths.directory);
   acquireHandoffLock(paths, nowEpochSeconds() + LOCK_TIMEOUT_SECONDS);
   try {
     pruneLocked(paths);
     if (!existsSync2(paths.receipt)) {
-      throw new HandoffFailure(`no unconsumed receipt for slice ${coordinates.slice} attempt ${coordinates.attempt}`);
+      throw new HandoffFailure(`no unconsumed receipt for slice ${claim.slice} attempt ${claim.attempt}`);
     }
-    requireMatchingReceipt(paths.receipt, coordinates, "receipt identity does not match the delegated result");
+    requireMatchingReceipt(paths.receipt, claim, "receipt identity does not match the delegated result");
     const content = readFileSync3(paths.receipt, "utf8");
-    writeWatermark(paths, coordinates.attempt);
+    writeWatermark(paths, claim.attempt);
     rmSync2(paths.receipt, { force: true });
     return content;
   } finally {
@@ -1966,6 +1993,9 @@ function validateDelegation(delegation) {
     throw new HandoffFailure("attempt must be an integer from 1 to 999999999");
   }
   if (!isValidOpaqueId(delegation.agentId)) throw new HandoffFailure("invalid agent id");
+}
+function requireCanonicalAgentPath(agentPath) {
+  if (!CANONICAL_CODEX_AGENT_PATH_PATTERN.test(agentPath)) throw new HandoffFailure("invalid canonical Codex agent path");
 }
 function isValidOpaqueId(value) {
   return value.length >= 1 && value.length <= OPAQUE_ID_MAX_LENGTH && OPAQUE_ID_PATTERN.test(value);
@@ -2151,12 +2181,55 @@ function nativeRepositoryIdentity(cwd, deadline) {
   requireMetadataTime(deadline);
   if (!path4.isAbsolute(cwd)) throw new HandoffFailure(`native workspace is not absolute: ${cwd}`);
   const answered = gitCommonDirectory(cwd, Math.max(1, Math.ceil(deadline - performance.now())));
-  if (answered.kind === "refused") throw new HandoffFailure(`cannot resolve Codex handoff: ${answered.cause}`);
+  if (answered.kind === "refused") throw new NativeRepositoryFault(answered.cause);
   return realpathSync3(answered.commonDirectory);
 }
 function isNativeResolutionFault(error) {
   const gitExitedNonZero = error instanceof Error && "status" in error;
-  return error instanceof CodexMetadataFailure || error instanceof HandoffFailure || isErrnoException(error) || gitExitedNonZero;
+  return error instanceof CodexMetadataFailure || error instanceof HandoffFailure || error instanceof NativeRepositoryFault || isErrnoException(error) || gitExitedNonZero;
+}
+function asNativeCodexFailure(verb, error) {
+  if (error instanceof HandoffFailure) return error;
+  if (!isNativeResolutionFault(error)) throw error;
+  return new HandoffFailure(`cannot ${verb} Codex handoff: ${causeOf2(error)}`, { cause: error });
+}
+function confirmCodexDelegation(cwd, claim, deadline) {
+  const repository = nativeRepositoryIdentity(cwd, deadline);
+  const metadata = soleMatchingRollout(claim.agentId, deadline);
+  if (nativeRepositoryIdentity(metadata.cwd, deadline) !== repository) {
+    throw new HandoffFailure("the asserted agent's native rollout belongs to another repository");
+  }
+  if (metadata.parentThreadId === void 0) throw new HandoffFailure("the asserted agent's native rollout has no parent");
+  if (metadata.agentPath !== claim.agentPath) throw new HandoffFailure("the asserted agent path does not match its native rollout");
+  if (metadata.agentRole !== claim.agentType) throw new HandoffFailure("the asserted agent role does not match its native rollout");
+  requireLiveCodexReceipt(cwd, claim, deadline);
+}
+function soleMatchingRollout(agentId, deadline) {
+  const codexHome = process.env["CODEX_HOME"] || path4.join(homeDirectoryFrom(process.platform, process.env), ".codex");
+  const matches = [];
+  let unreadableRollout;
+  for (const rollout of rolloutPaths(path4.join(codexHome, "sessions"), deadline)) {
+    let metadata;
+    try {
+      metadata = readCodexSessionMetadata(rollout, deadline);
+    } catch (error) {
+      if (!(error instanceof CodexMetadataFailure)) throw error;
+      unreadableRollout ??= error;
+      continue;
+    }
+    if (metadata.id === agentId) matches.push(metadata);
+  }
+  if (matches.length === 0 && unreadableRollout !== void 0) throw unreadableRollout;
+  if (matches.length === 0) throw new HandoffFailure("no native rollout for the asserted agent, found 0");
+  if (matches.length > 1) throw new HandoffFailure(`ambiguous native rollouts for the asserted agent, found ${matches.length}`);
+  return matches[0];
+}
+function requireLiveCodexReceipt(cwd, claim, deadline) {
+  const directory = receiptDirectoryFor(cwd);
+  const name = `${sha256Hex(claim.agentId)}.receipt`;
+  if (!existsSync2(path4.join(directory, name)) || readCurrentCodexReceipt(directory, name, claim, deadline) === void 0) {
+    throw new HandoffFailure(`no live receipt for slice ${claim.slice} attempt ${claim.attempt}`);
+  }
 }
 function codexReceiptCandidates(directory, coordinates, deadline) {
   const candidates = /* @__PURE__ */ new Map();
@@ -6479,14 +6552,17 @@ var USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state journal --path
        oso-state handoff publish --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --hook-session <id>
        oso-state handoff wait --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --timeout <seconds>
-       oso-state handoff consume --slice <id> --attempt <n> --agent-id <id> --agent-type <type>
+       oso-state handoff consume --slice <id> --attempt <n> --agent-id <id> --agent-path <canonical> --agent-type <type>
        oso-state handoff resolve-codex --agent-path <canonical> --slice <id> --attempt <n> --agent-type <role>
+       oso-state handoff adopt --agent-id <id> --agent-path <canonical> --slice <id> --attempt <n> --agent-type <type>
        oso-state scan comments <ref>
        oso-state scan abstractions <ref>
 
 The SubagentStop hook publishes a provenance receipt, never a verdict. wait is
 bounded and consume is one-shot. Handoff attempts start at 1 and timeout must
-be between 0 and 600 seconds.
+be between 0 and 600 seconds. adopt proves an asserted agent id against its
+own native rollout without requiring the current session to be its parent;
+consume now demands that same proof before it destroys a receipt.
 
 scan reads the working directory's own repository, reports every hit on stdout
 and exits 0 whether or not it found any. comments flags the inline comments the
@@ -6502,7 +6578,7 @@ var RefusedError = class extends Error {
     this.verb = verb;
   }
 };
-var HANDOFF_SUBACTIONS = ["publish", "wait", "consume", "resolve-codex"];
+var HANDOFF_SUBACTIONS = ["publish", "wait", "consume", "resolve-codex", "adopt"];
 var HANDOFF_FLAGS = {
   "--slice": "slice",
   "--attempt": "attempt",
@@ -6789,9 +6865,13 @@ function dispatchHandoff(remaining) {
     agentType: flags.agentType ?? ""
   };
   const cwd = process.cwd();
+  const claim = { ...coordinates, agentPath: flags.agentPath ?? "" };
   switch (subaction) {
     case "resolve-codex":
-      process.stdout.write(runHandoffResolveCodex(cwd, { ...coordinates, agentPath: flags.agentPath ?? "" }) + "\n");
+      process.stdout.write(runHandoffResolveCodex(cwd, claim) + "\n");
+      return 0;
+    case "adopt":
+      runHandoffAdopt(cwd, claim);
       return 0;
     case "publish":
       readStdin();
@@ -6801,7 +6881,7 @@ function dispatchHandoff(remaining) {
       process.stdout.write(runHandoffWait(cwd, coordinates, flags.timeout ?? ""));
       return 0;
     case "consume":
-      process.stdout.write(runHandoffConsume(cwd, coordinates));
+      process.stdout.write(runHandoffConsume(cwd, claim));
       return 0;
   }
 }
@@ -6809,16 +6889,16 @@ function isHandoffSubaction(value) {
   return value !== void 0 && HANDOFF_SUBACTIONS.includes(value);
 }
 function checkHandoffCoordinateShape(subaction, coordinates) {
-  if (subaction === "resolve-codex") {
-    if (coordinates.agentPath === void 0 || coordinates.agentId !== void 0 || coordinates.timeout !== void 0 || coordinates.hookSession !== void 0) throw new UsageError();
-    return;
-  }
-  if (coordinates.agentPath !== void 0) throw new UsageError();
+  const hasAgentPath = coordinates.agentPath !== void 0;
   const hasTimeout = coordinates.timeout !== void 0;
   const hasHookSession = coordinates.hookSession !== void 0;
-  if (subaction === "publish" && hasTimeout) throw new UsageError();
-  if (subaction === "wait" && (!hasTimeout || hasHookSession)) throw new UsageError();
-  if (subaction === "consume" && (hasTimeout || hasHookSession)) throw new UsageError();
+  if (subaction === "resolve-codex" && (!hasAgentPath || coordinates.agentId !== void 0 || hasTimeout || hasHookSession)) {
+    throw new UsageError();
+  }
+  if (subaction === "adopt" && (!hasAgentPath || hasTimeout || hasHookSession)) throw new UsageError();
+  if (subaction === "consume" && (!hasAgentPath || hasTimeout || hasHookSession)) throw new UsageError();
+  if (subaction === "publish" && (hasAgentPath || hasTimeout)) throw new UsageError();
+  if (subaction === "wait" && (hasAgentPath || !hasTimeout || hasHookSession)) throw new UsageError();
 }
 function parseHandoffCoordinates(args) {
   const coordinates = {};
