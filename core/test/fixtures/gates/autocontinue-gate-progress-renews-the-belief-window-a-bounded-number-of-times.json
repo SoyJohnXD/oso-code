@@ -12,7 +12,7 @@
     ".local/state/oso-code/runs/{repo}/auto-continuity.log": "2026-08-27T00:00:00Z the run moved while wave 4 stayed marked in flight (4)\n",
     ".local/state/oso-code/runs/{repo}/test-session.waiting": {
       "kind": "file",
-      "content": "run=auto-continuity\nsession=test-session\njournal_bytes=0\nrenewals=3\n",
+      "content": "run=auto-continuity\nsession=test-session\nlabel=wave-4\njournal_bytes=0\nrenewals=3\n",
       "aged": true
     }
   },

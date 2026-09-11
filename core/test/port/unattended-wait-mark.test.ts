@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { statSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
+import { DELEGATION_WAIT_RENEWALS_CAP } from "../../src/gates/delegation.ts";
 import { runGate, type GateRun } from "../../src/gates/dispatch.ts";
 import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { closeSlice, type StatePatch } from "../../src/state/transitions.ts";
@@ -43,10 +44,10 @@ function stateText(fields: Readonly<Record<string, string>>, patch: StatePatch =
     .join("\n")}\n`;
 }
 
-function mark(run: string, agedSeconds: number, journalBytes = 0, renewals = 0): SeededEntry {
+function mark(run: string, agedSeconds: number, label: string, journalBytes = 0, renewals = 0): SeededEntry {
   return {
     kind: "file",
-    content: `run=${run}\nsession=test-session\njournal_bytes=${journalBytes}\nrenewals=${renewals}\n`,
+    content: `run=${run}\nsession=test-session\nlabel=${label}\njournal_bytes=${journalBytes}\nrenewals=${renewals}\n`,
     agedSeconds,
   };
 }
@@ -84,7 +85,7 @@ describe(
     "dead there)",
   () => {
     test("a wait mark nine minutes old under a slice label still armed holds the turn, which is the stall", () => {
-      const run = judged({ [STATE_FILE]: stateText(HANKO_RUN), [MARK_FILE]: mark("hanko", NINE_MINUTES) }, "autocontinue", STOP_PAYLOAD);
+      const run = judged({ [STATE_FILE]: stateText(HANKO_RUN), [MARK_FILE]: mark("hanko", NINE_MINUTES, "18") }, "autocontinue", STOP_PAYLOAD);
       assert.equal(run.stdout, "{}\n");
       assert.deepEqual(
         run.events.map((event) => event.event),
@@ -94,7 +95,7 @@ describe(
 
     test("the same state closed through transitions.closeSlice pushes the run on instead", () => {
       const run = judged(
-        { [STATE_FILE]: stateText(HANKO_RUN, closeSlice()), [MARK_FILE]: mark("hanko", NINE_MINUTES) },
+        { [STATE_FILE]: stateText(HANKO_RUN, closeSlice()), [MARK_FILE]: mark("hanko", NINE_MINUTES, "18") },
         "autocontinue",
         STOP_PAYLOAD,
       );
@@ -108,7 +109,7 @@ describe(
     test("that close also drops the mark, so the next delegation under the same label gets its own clock", () => {
       let survived: "standing" | "cleared" = "standing";
       judged(
-        { [STATE_FILE]: stateText(HANKO_RUN, closeSlice()), [MARK_FILE]: mark("hanko", NINE_MINUTES) },
+        { [STATE_FILE]: stateText(HANKO_RUN, closeSlice()), [MARK_FILE]: mark("hanko", NINE_MINUTES, "18") },
         "autocontinue",
         STOP_PAYLOAD,
         (sandbox) => {
@@ -125,39 +126,46 @@ describe(
     "(G7) — so a child boundary never re-dates it (defect 3: the mark was keyed on auto_change alone, through " +
     "the journal path it hung off, and every child boundary moved it to a fresh file whose age started over)",
   () => {
-    test("a mark armed under one child is still the mark this run reads after auto_change moves on", () => {
+    test("a mark armed under one child is still the mark this run reads after auto_change moves on, and the crossing itself is never read as expired", () => {
       const run = judged(
         {
           [STATE_FILE]: stateText({ ...HANKO_RUN, auto_change: "child-two", auto_wait: "wave-2" }),
-          [MARK_FILE]: mark("child-one", PAST_THE_CEILING),
+          [MARK_FILE]: mark("child-one", PAST_THE_CEILING, "wave-2"),
         },
         "autocontinue",
         STOP_PAYLOAD,
       );
-      assert.match(run.stdout, /older than 45 minutes/);
+      assert.equal(run.stdout, "{}\n");
+      assert.deepEqual(
+        run.events.map((event) => event.event),
+        ["auto-continue-held"],
+      );
     });
 
-    test("carrying that mark into the new child leaves its clock exactly where it stood", () => {
+    test("carrying that mark into a new run refreshes its clock rather than inheriting an expired one", () => {
       let before = 0;
       let after = 0;
       withStateSandbox("workspace", (sandbox) => {
         sandbox.seed({
           [STATE_FILE]: stateText({ ...HANKO_RUN, auto_change: "child-two", auto_wait: "wave-2" }),
-          [MARK_FILE]: mark("child-one", NINE_MINUTES),
+          [MARK_FILE]: mark("child-one", PAST_THE_CEILING, "wave-2"),
         });
         before = markedAt(sandbox, MARK_FILE);
         withHookEnvironment(sandbox.hookEnvironment(), () => runGate(["autocontinue"], spawnedEnvelope(sandbox.expandJson(STOP_PAYLOAD), process.env)));
         after = markedAt(sandbox, MARK_FILE);
-        assert.equal(sandbox.read(MARK_FILE).kind === "file" ? (sandbox.read(MARK_FILE) as { content: string }).content : "", "run=child-two\nsession=test-session\njournal_bytes=0\nrenewals=0\n");
+        assert.equal(
+          sandbox.read(MARK_FILE).kind === "file" ? (sandbox.read(MARK_FILE) as { content: string }).content : "",
+          "run=child-two\nsession=test-session\nlabel=wave-2\njournal_bytes=0\nrenewals=0\n",
+        );
       });
-      assert.equal(after, before);
+      assert.ok(after > before, `expected the adopted mark's clock to move forward, but ${after} <= ${before}`);
     });
 
     test("a mark left at the old change-keyed path is no mark at all, which is the crossing C2-D20 routes to C6", () => {
       const run = judged(
         {
           [STATE_FILE]: stateText({ ...HANKO_RUN, auto_wait: "wave-2" }),
-          [CHANGE_KEYED_MARK]: mark("hanko", PAST_THE_CEILING),
+          [CHANGE_KEYED_MARK]: mark("hanko", PAST_THE_CEILING, "wave-2"),
         },
         "autocontinue",
         STOP_PAYLOAD,
@@ -180,7 +188,7 @@ describe(
       const run = judged(
         {
           [STATE_FILE]: stateText({ ...HANKO_RUN, auto_wait: "wave-2" }),
-          [MARK_FILE]: mark("hanko", PAST_THE_CEILING),
+          [MARK_FILE]: mark("hanko", PAST_THE_CEILING, "wave-2"),
         },
         "stale",
         SESSION_START_PAYLOAD,
@@ -215,7 +223,7 @@ describe(
   () => {
     test("a hold that renewed on journal progress names that progress and the renewal it spent", () => {
       const run = judged(
-        { [STATE_FILE]: stateText(HANKO_RUN), [JOURNAL_FILE]: JOURNAL_LINE, [MARK_FILE]: mark("hanko", PAST_THE_CEILING) },
+        { [STATE_FILE]: stateText(HANKO_RUN), [JOURNAL_FILE]: JOURNAL_LINE, [MARK_FILE]: mark("hanko", PAST_THE_CEILING, "18") },
         "autocontinue",
         STOP_PAYLOAD,
       );
@@ -228,7 +236,7 @@ describe(
 
     test("a hold on a run whose journal has not moved names a flat journal and no renewal at all", () => {
       const run = judged(
-        { [STATE_FILE]: stateText(HANKO_RUN), [MARK_FILE]: mark("hanko", NINE_MINUTES) },
+        { [STATE_FILE]: stateText(HANKO_RUN), [MARK_FILE]: mark("hanko", NINE_MINUTES, "18") },
         "autocontinue",
         STOP_PAYLOAD,
       );
@@ -236,6 +244,52 @@ describe(
       assert.deepEqual(
         run.events.map((event) => `${event.event} ${event.command ?? ""}`),
         ["auto-continue-held 18 journal_bytes=0 renewals=0"],
+      );
+    });
+  },
+);
+
+describe(
+  "core/src/gates/delegation.ts and autocontinue.ts: the wait mark is keyed on the LABEL too, so a new " +
+    "delegation under a new label is a new mark with its own clock and zero renewals, rather than the spent " +
+    "renewal budget and near-expired clock of whichever label the mark last named",
+  () => {
+    test("a mark armed under label X, then a delegation armed under label Y, holds on the new label's own fresh clock", () => {
+      let before = 0;
+      let after = 0;
+      const run = withStateSandbox("workspace", (sandbox) => {
+        sandbox.seed({
+          [STATE_FILE]: stateText({ ...HANKO_RUN, auto_wait: "wave-9" }),
+          [MARK_FILE]: mark("hanko", NINE_MINUTES, "wave-2"),
+        });
+        before = markedAt(sandbox, MARK_FILE);
+        const observed = withHookEnvironment(sandbox.hookEnvironment(), () =>
+          runGate(["autocontinue"], spawnedEnvelope(sandbox.expandJson(STOP_PAYLOAD), process.env)),
+        );
+        after = markedAt(sandbox, MARK_FILE);
+        return observed;
+      });
+      assert.equal(run.stdout, "{}\n");
+      assert.deepEqual(
+        run.events.map((event) => `${event.event} ${event.command ?? ""}`),
+        ["auto-continue-held wave-9 journal_bytes=0 renewals=0"],
+      );
+      assert.ok(after > before, `expected the new label's mark to carry a fresh clock, but ${after} <= ${before}`);
+    });
+
+    test("a mark at the renewals cap under a new label holds instead of being declared lost", () => {
+      const run = judged(
+        {
+          [STATE_FILE]: stateText({ ...HANKO_RUN, auto_wait: "wave-9" }),
+          [MARK_FILE]: mark("hanko", PAST_THE_CEILING, "wave-2", 0, DELEGATION_WAIT_RENEWALS_CAP),
+        },
+        "autocontinue",
+        STOP_PAYLOAD,
+      );
+      assert.equal(run.stdout, "{}\n");
+      assert.deepEqual(
+        run.events.map((event) => `${event.event} ${event.command ?? ""}`),
+        ["auto-continue-held wave-9 journal_bytes=0 renewals=0"],
       );
     });
   },

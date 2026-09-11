@@ -91,6 +91,7 @@ type RunPosition = Readonly<{
   journalFile: string;
   tallyFile: string;
   journalBytes: number;
+  stateModifiedAtEpochMillis: number;
   run: string;
 }>;
 
@@ -121,6 +122,7 @@ function judgeAutocontinue({ envelope }: GateRequest): GateOutcome<StopVerdict> 
     journalFile,
     tallyFile: tallyFileFor(journalFile),
     journalBytes: journalBytesIn(journalFile),
+    stateModifiedAtEpochMillis: stateModifiedAtEpochMillisOf(stateFile),
     run: stateValue(content, "auto_change"),
   };
 
@@ -144,11 +146,10 @@ function judgeAutocontinue({ envelope }: GateRequest): GateOutcome<StopVerdict> 
 
 function holdUnlessExpired(position: RunPosition, label: string): GateOutcome<StopVerdict> | undefined {
   const standing = readWaitMark(position.markFile);
-  if (standing === undefined || standing.session !== position.sessionId) {
+  if (standing === undefined || standing.session !== position.sessionId || standing.label !== label) {
     return sightedThenHeld(position, label, 0);
   }
-  const carried = carryMarkIntoThisRun(position, standing);
-  if (carried !== undefined) return carried;
+  if (standing.run !== position.run) return adoptedIntoRun(position, label, standing);
 
   if (!waitExpired(nowEpochSeconds(), standing.markedAtEpochSeconds)) return held(position, label, standing.renewals);
   if (position.journalBytes <= standing.journalBytes) return undefined;
@@ -156,11 +157,10 @@ function holdUnlessExpired(position: RunPosition, label: string): GateOutcome<St
   return sightedThenHeld(position, label, standing.renewals + 1);
 }
 
-function carryMarkIntoThisRun(position: RunPosition, standing: StandingWaitMark): GateOutcome<StopVerdict> | undefined {
-  if (standing.run === position.run) return undefined;
+function adoptedIntoRun(position: RunPosition, label: string, standing: StandingWaitMark): GateOutcome<StopVerdict> {
   try {
     adoptMarkIntoRun(position.markFile, standing, position.run);
-    return undefined;
+    return held(position, label, standing.renewals);
   } catch (cause) {
     return degraded(position.sessionId, causeOf(cause));
   }
@@ -171,6 +171,7 @@ function sightedThenHeld(position: RunPosition, label: string, renewals: number)
     writeWaitMark(position.markFile, {
       run: position.run,
       session: position.sessionId,
+      label,
       journalBytes: position.journalBytes,
       renewals,
     });
@@ -191,12 +192,12 @@ function pushUnlessCapped(
 
   if (counted > PUSHES_WITHOUT_PROGRESS_CAP) {
     const announced = counted === PUSHES_WITHOUT_PROGRESS_CAP + 1 ? announceCap(position, capMilestone) : [];
-    const failure = rememberPush(position, counted, journalBytesIn(position.journalFile));
+    const failure = rememberPush(position, counted);
     const trailing = failure === undefined ? [] : [degradedEvent(position.sessionId, failure)];
     return { verdict: { kind: "allow" }, events: [...announced, ...trailing] };
   }
 
-  const failure = rememberPush(position, counted, position.journalBytes);
+  const failure = rememberPush(position, counted);
   if (failure !== undefined) return degraded(position.sessionId, failure);
   return { verdict: { kind: "push", reason: order }, events: [gateEvent("auto-continued", position.sessionId, "")] };
 }
@@ -216,11 +217,7 @@ function pushesWithoutProgress(
   if (!isCount(remembered)) {
     return degraded(position.sessionId, `the push tally holds no count of pushes: ${remembered}`);
   }
-  const bytesAtLastPush = stateValue(read.content, "journal_bytes");
-  if (!isCount(bytesAtLastPush)) {
-    return degraded(position.sessionId, `the push tally holds no count of journal bytes: ${bytesAtLastPush}`);
-  }
-  return (position.journalBytes > Number(bytesAtLastPush) ? 0 : Number(remembered)) + 1;
+  return (position.stateModifiedAtEpochMillis > stats.mtimeMs ? 0 : Number(remembered)) + 1;
 }
 
 function announceCap(position: RunPosition, milestone: string): LoggedEvent[] {
@@ -232,10 +229,10 @@ function announceCap(position: RunPosition, milestone: string): LoggedEvent[] {
   }
 }
 
-function rememberPush(position: RunPosition, pushes: number, journalBytes: number): string | undefined {
+function rememberPush(position: RunPosition, pushes: number): string | undefined {
   try {
     mkdirSync(path.dirname(position.tallyFile), { recursive: true, mode: OWNER_ONLY_DIRECTORY });
-    writeFileSync(position.tallyFile, `pushes=${pushes}\njournal_bytes=${journalBytes}\n`, { mode: OWNER_ONLY_FILE });
+    writeFileSync(position.tallyFile, `pushes=${pushes}\n`, { mode: OWNER_ONLY_FILE });
     return undefined;
   } catch (cause) {
     return causeOf(cause);
@@ -275,4 +272,9 @@ function tallyFileFor(journalFile: string): string {
 function journalBytesIn(journalFile: string): number {
   const stats = statSync(journalFile, { throwIfNoEntry: false });
   return stats !== undefined && stats.isFile() ? stats.size : 0;
+}
+
+function stateModifiedAtEpochMillisOf(stateFile: string): number {
+  const stats = statSync(stateFile, { throwIfNoEntry: false });
+  return stats !== undefined && stats.isFile() ? stats.mtimeMs : 0;
 }

@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   causeOf,
@@ -49,6 +49,7 @@ export function waitMarkFileFor(cwd: string, runSession: string): string {
 export type WaitMark = Readonly<{
   run: string;
   session: string;
+  label: string;
   journalBytes: number;
   renewals: number;
 }>;
@@ -63,6 +64,7 @@ export function readWaitMark(markFile: string): StandingWaitMark | undefined {
   return {
     run: stateValue(read.content, "run"),
     session: stateValue(read.content, "session"),
+    label: stateValue(read.content, "label"),
     journalBytes: countIn(read.content, "journal_bytes"),
     renewals: countIn(read.content, "renewals"),
     markedAtEpochSeconds: Math.floor(stats.mtimeMs / 1000),
@@ -75,9 +77,7 @@ export function writeWaitMark(markFile: string, mark: WaitMark): void {
 }
 
 export function adoptMarkIntoRun(markFile: string, mark: WaitMark, run: string): void {
-  const clock = statSync(markFile).mtime;
   writeWaitMark(markFile, { ...mark, run });
-  utimesSync(markFile, clock, clock);
 }
 
 export function removeWaitMark(markFile: string): string | undefined {
@@ -95,7 +95,8 @@ function noDirectoryHoldsTheMark(cause: unknown): boolean {
 
 function serializedMark(mark: WaitMark): string {
   return (
-    `run=${mark.run}\nsession=${mark.session}\n` + `journal_bytes=${mark.journalBytes}\nrenewals=${mark.renewals}\n`
+    `run=${mark.run}\nsession=${mark.session}\nlabel=${mark.label}\n` +
+    `journal_bytes=${mark.journalBytes}\nrenewals=${mark.renewals}\n`
   );
 }
 

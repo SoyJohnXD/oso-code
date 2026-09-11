@@ -1,14 +1,18 @@
 {
-  "name": "autocontinue gate: a turn ending while an unattended run is in flight is pushed back into motion",
+  "name": "autocontinue gate: real progress on the run resets the push count, so the net keeps its patience for a run that is moving",
   "source": [
-    { "assertion": "run_hook auto-continue.sh \"$(auto_stop_input)\"" },
-    { "assertion": "assert_after_hook \"a turn ending while an unattended run is in flight is pushed back into motion\" \\\n  hook_returned_block" }
+    { "assertion": "Regression pin for the reset branch of pushesWithoutProgress: the run's own state file is written only by a real oso-state set, never by journaling a milestone alone, so a state file newer than the push tally is the one signal of real progress the net trusts. That signal must reset the count rather than let it climb toward the cap, or the net starts letting go of runs that are genuinely still moving." }
   ],
   "gate": "autocontinue",
   "argv": [],
   "env": {},
   "state_before": {
-    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n",
+    ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": {
+      "kind": "file",
+      "content": "pushes=3\n",
+      "aged": true
+    }
   },
   "cwd": "workspace",
   "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",

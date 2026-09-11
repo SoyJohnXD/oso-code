@@ -9,8 +9,8 @@
   "env": {},
   "state_before": {
     ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\nauto_wait=wave-2\n",
-    ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=2\njournal_bytes=0\n",
-    ".local/state/oso-code/runs/{repo}/test-session.waiting": "run=auto-continuity\nsession=test-session\njournal_bytes=0\nrenewals=0\n"
+    ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=2\n",
+    ".local/state/oso-code/runs/{repo}/test-session.waiting": "run=auto-continuity\nsession=test-session\nlabel=wave-2\njournal_bytes=0\nrenewals=0\n"
   },
   "cwd": "workspace",
   "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
@@ -19,7 +19,7 @@
     "stdout": "{}",
     "stderr": "",
     "state_after": {
-      ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=2\njournal_bytes=0\n"
+      ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=2\n"
     },
     "events_appended": [
       {

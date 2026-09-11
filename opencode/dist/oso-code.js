@@ -1701,7 +1701,7 @@ function isErrnoException(error) {
 }
 
 // core/src/gates/delegation.ts
-import { mkdirSync as mkdirSync2, rmSync as rmSync2, statSync as statSync2, utimesSync, writeFileSync as writeFileSync2 } from "node:fs";
+import { mkdirSync as mkdirSync2, rmSync as rmSync2, statSync as statSync2, writeFileSync as writeFileSync2 } from "node:fs";
 import path3 from "node:path";
 
 // core/src/gates/preflight.ts
@@ -1866,6 +1866,7 @@ function readWaitMark(markFile) {
   return {
     run: stateValue(read.content, "run"),
     session: stateValue(read.content, "session"),
+    label: stateValue(read.content, "label"),
     journalBytes: countIn(read.content, "journal_bytes"),
     renewals: countIn(read.content, "renewals"),
     markedAtEpochSeconds: Math.floor(stats.mtimeMs / 1e3)
@@ -1876,9 +1877,7 @@ function writeWaitMark(markFile, mark) {
   writeFileSync2(markFile, serializedMark(mark), { mode: OWNER_ONLY_FILE });
 }
 function adoptMarkIntoRun(markFile, mark, run) {
-  const clock = statSync2(markFile).mtime;
   writeWaitMark(markFile, { ...mark, run });
-  utimesSync(markFile, clock, clock);
 }
 function removeWaitMark(markFile) {
   try {
@@ -1894,6 +1893,7 @@ function noDirectoryHoldsTheMark(cause) {
 function serializedMark(mark) {
   return `run=${mark.run}
 session=${mark.session}
+label=${mark.label}
 journal_bytes=${mark.journalBytes}
 renewals=${mark.renewals}
 `;
@@ -1957,6 +1957,7 @@ function judgeAutocontinue({ envelope }) {
     journalFile,
     tallyFile: tallyFileFor(journalFile),
     journalBytes: journalBytesIn(journalFile),
+    stateModifiedAtEpochMillis: stateModifiedAtEpochMillisOf(stateFile),
     run: stateValue(content, "auto_change")
   };
   const label = stateValue(content, "auto_wait");
@@ -1977,21 +1978,19 @@ function judgeAutocontinue({ envelope }) {
 }
 function holdUnlessExpired(position, label) {
   const standing = readWaitMark(position.markFile);
-  if (standing === void 0 || standing.session !== position.sessionId) {
+  if (standing === void 0 || standing.session !== position.sessionId || standing.label !== label) {
     return sightedThenHeld(position, label, 0);
   }
-  const carried = carryMarkIntoThisRun(position, standing);
-  if (carried !== void 0) return carried;
+  if (standing.run !== position.run) return adoptedIntoRun(position, label, standing);
   if (!waitExpired(nowEpochSeconds(), standing.markedAtEpochSeconds)) return held(position, label, standing.renewals);
   if (position.journalBytes <= standing.journalBytes) return void 0;
   if (standing.renewals >= DELEGATION_WAIT_RENEWALS_CAP) return void 0;
   return sightedThenHeld(position, label, standing.renewals + 1);
 }
-function carryMarkIntoThisRun(position, standing) {
-  if (standing.run === position.run) return void 0;
+function adoptedIntoRun(position, label, standing) {
   try {
     adoptMarkIntoRun(position.markFile, standing, position.run);
-    return void 0;
+    return held(position, label, standing.renewals);
   } catch (cause) {
     return degraded(position.sessionId, causeOf(cause));
   }
@@ -2001,6 +2000,7 @@ function sightedThenHeld(position, label, renewals) {
     writeWaitMark(position.markFile, {
       run: position.run,
       session: position.sessionId,
+      label,
       journalBytes: position.journalBytes,
       renewals
     });
@@ -2014,11 +2014,11 @@ function pushUnlessCapped(position, turnAlreadyContinued, order, capMilestone) {
   if (typeof counted !== "number") return counted;
   if (counted > PUSHES_WITHOUT_PROGRESS_CAP) {
     const announced = counted === PUSHES_WITHOUT_PROGRESS_CAP + 1 ? announceCap(position, capMilestone) : [];
-    const failure2 = rememberPush(position, counted, journalBytesIn(position.journalFile));
+    const failure2 = rememberPush(position, counted);
     const trailing = failure2 === void 0 ? [] : [degradedEvent(position.sessionId, failure2)];
     return { verdict: { kind: "allow" }, events: [...announced, ...trailing] };
   }
-  const failure = rememberPush(position, counted, position.journalBytes);
+  const failure = rememberPush(position, counted);
   if (failure !== void 0) return degraded(position.sessionId, failure);
   return { verdict: { kind: "push", reason: order }, events: [gateEvent("auto-continued", position.sessionId, "")] };
 }
@@ -2032,11 +2032,7 @@ function pushesWithoutProgress(position, turnAlreadyContinued) {
   if (!isCount(remembered)) {
     return degraded(position.sessionId, `the push tally holds no count of pushes: ${remembered}`);
   }
-  const bytesAtLastPush = stateValue(read.content, "journal_bytes");
-  if (!isCount(bytesAtLastPush)) {
-    return degraded(position.sessionId, `the push tally holds no count of journal bytes: ${bytesAtLastPush}`);
-  }
-  return (position.journalBytes > Number(bytesAtLastPush) ? 0 : Number(remembered)) + 1;
+  return (position.stateModifiedAtEpochMillis > stats.mtimeMs ? 0 : Number(remembered)) + 1;
 }
 function announceCap(position, milestone) {
   try {
@@ -2046,11 +2042,10 @@ function announceCap(position, milestone) {
     return [gateEvent("auto-continue-unjournaled", position.sessionId, causeOf(cause))];
   }
 }
-function rememberPush(position, pushes, journalBytes) {
+function rememberPush(position, pushes) {
   try {
     mkdirSync3(path4.dirname(position.tallyFile), { recursive: true, mode: OWNER_ONLY_DIRECTORY2 });
     writeFileSync3(position.tallyFile, `pushes=${pushes}
-journal_bytes=${journalBytes}
 `, { mode: OWNER_ONLY_FILE2 });
     return void 0;
   } catch (cause) {
@@ -2084,6 +2079,10 @@ function tallyFileFor(journalFile) {
 function journalBytesIn(journalFile) {
   const stats = statSync3(journalFile, { throwIfNoEntry: false });
   return stats !== void 0 && stats.isFile() ? stats.size : 0;
+}
+function stateModifiedAtEpochMillisOf(stateFile) {
+  const stats = statSync3(stateFile, { throwIfNoEntry: false });
+  return stats !== void 0 && stats.isFile() ? stats.mtimeMs : 0;
 }
 
 // core/src/hosts/hook-run.ts

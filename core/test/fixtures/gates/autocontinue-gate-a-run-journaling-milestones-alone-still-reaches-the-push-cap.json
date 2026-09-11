@@ -1,0 +1,39 @@
+{
+  "name": "autocontinue gate: a run journaling milestones alone still reaches the push cap",
+  "source": [
+    { "assertion": "Regression pin for the push-cap defect diagnosed against a live operator run: the unattended-run contract requires every milestone to be journaled with oso-state journal on the very push that orders it, so a run that is genuinely stuck still grows its own journal turn after turn. Progress toward the cap must be measured by the run's own state file, which only a real oso-state set changes, never by journal growth a milestone alone can manufacture." }
+  ],
+  "gate": "autocontinue",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": {
+      "kind": "file",
+      "content": "auto=running\nauto_change=auto-continuity\nsession=test-session\n",
+      "aged": true
+    },
+    ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=3\n",
+    ".local/state/oso-code/runs/{repo}/auto-continuity.log": "2026-08-27T00:00:00Z still investigating the failing check\n2026-08-27T00:05:00Z retried the same command again\n2026-08-27T00:10:00Z no new evidence yet\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":true}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/runs/{repo}/auto-continuity.log": {
+        "contains": [
+          "no new evidence yet",
+          "auto-continue: cap reached after 3 pushes without progress — allowing the stop"
+        ]
+      },
+      ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": {
+        "contains": [
+          "pushes=4"
+        ]
+      }
+    },
+    "events_appended": []
+  }
+}

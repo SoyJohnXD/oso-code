@@ -21,7 +21,7 @@
       ]
     },
     "state_after": {
-      ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=1\njournal_bytes=0\n"
+      ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=1\n"
     },
     "events_appended": [
       {
