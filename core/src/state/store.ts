@@ -47,16 +47,61 @@ export class StateFileUnreadableError extends Error {
 
 export class StateRootUnwritableError extends Error {
   readonly directory: string;
-  constructor(directory: string, cause: string) {
+  constructor(directory: string, cause: unknown) {
     super(
-      `cannot write the oso-code state directory ${directory}: ${cause}. The gates read what it holds and treat an ` +
-        `unwritten state as no armed session, so arming here would leave them unable to see their own state. Grant ` +
-        `the directory to the active permission mode — add it to that profile's workspace roots, launch with ` +
-        `--add-dir ${directory}, or pick a mode that can write — then arm again.`,
+      `cannot write the oso-code state directory ${directory}: ${causeOf(cause)}. The gates read what it holds and ` +
+        `treat an unwritten state as no armed session, so arming here would leave them unable to see their own ` +
+        `state. ${remedyForUnwritableStateRoot(cause, directory)}`,
     );
     this.name = "StateRootUnwritableError";
     this.directory = directory;
   }
+}
+
+function remedyForUnwritableStateRoot(cause: unknown, directory: string): string {
+  const code = isErrnoException(cause) ? cause.code : undefined;
+  if (code === "EROFS") {
+    return (
+      "The active permission mode is read-only, so no writable-root declaration can change that — pick a mode " +
+      "that can write, then arm again."
+    );
+  }
+  if (code === "EACCES" || code === "EPERM") {
+    return (
+      `Grant the directory to the active permission mode — add it to that profile's workspace roots, launch with ` +
+      `--add-dir ${directory}, or pick a mode that can write — then arm again.`
+    );
+  }
+  if (code === "EEXIST" || code === "ENOTDIR") {
+    const occupiedPath = code === "EEXIST" ? directory : `a parent directory of ${directory}`;
+    return (
+      `A file already occupies ${occupiedPath}, so no directory can stand there — move or remove what is in the ` +
+      `way, or point OSO_STATE_DIR elsewhere, then arm again.`
+    );
+  }
+  if (code === "ELOOP") {
+    return (
+      `A symlink loop sits on the way to ${directory}, so it can neither be created nor reached — undo the loop, ` +
+      `or point OSO_STATE_DIR at a path that is not caught in one, then arm again.`
+    );
+  }
+  if (code === "ENAMETOOLONG") {
+    return (
+      `${directory} is too long a path for the filesystem to create, and no permission or declaration change ` +
+      `shortens it — point OSO_STATE_DIR at a shorter path, then arm again.`
+    );
+  }
+  if (code === "ENOSPC" || code === "EDQUOT") {
+    return (
+      `The filesystem behind ${directory} has no room left for it, and no permission or declaration change frees ` +
+      `any — clear space or quota there, or point OSO_STATE_DIR at a volume with room, then arm again.`
+    );
+  }
+  return (
+    `${code ?? "the cause"} is not one this rail can name from an errno alone — check whether ${directory} sits ` +
+    `behind a read-only mode, an undeclared workspace root, or something else entirely, then arm again once ` +
+    `whatever stands in the way is cleared.`
+  );
 }
 
 export const TASK_ROOT_VARIABLE = "OSO_TASK_ROOT";
@@ -350,13 +395,13 @@ export function writeStateValues(cwd: string, sessionId: string, pairs: readonly
   });
 }
 
-function requireWritableStateRoot(): void {
+export function requireWritableStateRoot(): void {
   const directory = stateRootDirectory();
   try {
     mkdirSync(directory, { recursive: true });
     accessSync(directory, constants.W_OK | constants.X_OK);
   } catch (error) {
-    throw new StateRootUnwritableError(directory, causeOf(error));
+    throw new StateRootUnwritableError(directory, error);
   }
 }
 

@@ -1173,12 +1173,35 @@ var StateRootUnwritableError = class extends Error {
   directory;
   constructor(directory, cause) {
     super(
-      `cannot write the oso-code state directory ${directory}: ${cause}. The gates read what it holds and treat an unwritten state as no armed session, so arming here would leave them unable to see their own state. Grant the directory to the active permission mode \u2014 add it to that profile's workspace roots, launch with --add-dir ${directory}, or pick a mode that can write \u2014 then arm again.`
+      `cannot write the oso-code state directory ${directory}: ${causeOf(cause)}. The gates read what it holds and treat an unwritten state as no armed session, so arming here would leave them unable to see their own state. ${remedyForUnwritableStateRoot(cause, directory)}`
     );
     this.name = "StateRootUnwritableError";
     this.directory = directory;
   }
 };
+function remedyForUnwritableStateRoot(cause, directory) {
+  const code = isErrnoException(cause) ? cause.code : void 0;
+  if (code === "EROFS") {
+    return "The active permission mode is read-only, so no writable-root declaration can change that \u2014 pick a mode that can write, then arm again.";
+  }
+  if (code === "EACCES" || code === "EPERM") {
+    return `Grant the directory to the active permission mode \u2014 add it to that profile's workspace roots, launch with --add-dir ${directory}, or pick a mode that can write \u2014 then arm again.`;
+  }
+  if (code === "EEXIST" || code === "ENOTDIR") {
+    const occupiedPath = code === "EEXIST" ? directory : `a parent directory of ${directory}`;
+    return `A file already occupies ${occupiedPath}, so no directory can stand there \u2014 move or remove what is in the way, or point OSO_STATE_DIR elsewhere, then arm again.`;
+  }
+  if (code === "ELOOP") {
+    return `A symlink loop sits on the way to ${directory}, so it can neither be created nor reached \u2014 undo the loop, or point OSO_STATE_DIR at a path that is not caught in one, then arm again.`;
+  }
+  if (code === "ENAMETOOLONG") {
+    return `${directory} is too long a path for the filesystem to create, and no permission or declaration change shortens it \u2014 point OSO_STATE_DIR at a shorter path, then arm again.`;
+  }
+  if (code === "ENOSPC" || code === "EDQUOT") {
+    return `The filesystem behind ${directory} has no room left for it, and no permission or declaration change frees any \u2014 clear space or quota there, or point OSO_STATE_DIR at a volume with room, then arm again.`;
+  }
+  return `${code ?? "the cause"} is not one this rail can name from an errno alone \u2014 check whether ${directory} sits behind a read-only mode, an undeclared workspace root, or something else entirely, then arm again once whatever stands in the way is cleared.`;
+}
 var TASK_ROOT_VARIABLE = "OSO_TASK_ROOT";
 var TaskIdentityUnknownError = class extends Error {
   cwd;
@@ -1395,7 +1418,7 @@ function requireWritableStateRoot() {
     mkdirSync(directory, { recursive: true });
     accessSync(directory, constants.W_OK | constants.X_OK);
   } catch (error) {
-    throw new StateRootUnwritableError(directory, causeOf(error));
+    throw new StateRootUnwritableError(directory, error);
   }
 }
 function clearStateFile(stateFile) {
@@ -2840,7 +2863,7 @@ var PlanVerifyFailure = class extends PlanFailure {
 };
 function runRejectPlanPresentation(cwd, sessionId, fingerprint) {
   const stateFile = stateFileFor(cwd);
-  mkdirSync5(stateRootDirectory(), { recursive: true });
+  requireWritableStateRoot();
   withLock(stateFile, sessionId, () => {
     writeStatePairs(stateFile, [
       "mode=plan",
@@ -2880,11 +2903,16 @@ function planPaths(stateFile, digest) {
   };
 }
 function ensurePlanDirectory(paths) {
-  requireNonSymlinkDirectory(stateRootDirectory(), "state root");
+  requireWritableNonSymlinkStateRoot();
   requireNonSymlinkDirectory(paths.root, "plan root");
   requireNonSymlinkDirectory(paths.dir, "repository plan directory", "repository plan path");
   chmodSync2(paths.root, 448);
   chmodSync2(paths.dir, 448);
+}
+function requireWritableNonSymlinkStateRoot() {
+  const stateRoot = stateRootDirectory();
+  if (isSymlink(stateRoot)) throw new PlanFailure(`state root is a symlink: ${stateRoot}`, { code: "plan-directory-symlink" });
+  requireWritableStateRoot();
 }
 function requireNonSymlinkDirectory(target, symlinkLabel, directoryLabel = symlinkLabel) {
   if (isSymlink(target)) throw new PlanFailure(`${symlinkLabel} is a symlink: ${target}`, { code: "plan-directory-symlink" });
@@ -2951,7 +2979,7 @@ function runApprovePlan(cwd, sessionId, digest, nativePresentation) {
     throw new PlanApprovalError("approve-plan requires one lowercase SHA-256 digest", { code: "invalid-approval-digest" });
   }
   const stateFile = stateFileFor(cwd);
-  mkdirSync5(stateRootDirectory(), { recursive: true });
+  requireWritableStateRoot();
   return withLock(stateFile, sessionId, () => {
     requireOwnApprovalState(stateFile, sessionId);
     if (readValue(stateFile, "mode") !== "plan") {
@@ -3009,7 +3037,7 @@ function runCancelPlan(cwd, sessionId, digest) {
     throw new PlanApprovalError("cancel-plan requires one lowercase SHA-256 digest", { code: "invalid-cancellation-digest" });
   }
   const stateFile = stateFileFor(cwd);
-  mkdirSync5(stateRootDirectory(), { recursive: true });
+  requireWritableStateRoot();
   return withLock(stateFile, sessionId, () => {
     requireOwnApprovalState(stateFile, sessionId);
     requirePendingApproval(stateFile);
@@ -3031,7 +3059,7 @@ function runCancelPlan(cwd, sessionId, digest) {
 function runAmendPlan(cwd, sessionId, sliceId, document) {
   if (!isNameToken(sliceId)) throw new PlanFailure("amend-plan requires a safe slice id", { code: "invalid-amendment-slice" });
   const stateFile = stateFileFor(cwd);
-  mkdirSync5(stateRootDirectory(), { recursive: true });
+  requireWritableStateRoot();
   if (document.length === 0) throw new PlanFailure("amend-plan requires a non-empty document on stdin", { code: "empty-amendment" });
   return withLock(stateFile, sessionId, () => {
     if (!isReadableRegularFile(stateFile)) {
@@ -3374,12 +3402,13 @@ function laneOutOfThePlanRail(cwd, sessionId) {
   return owned && readValue(stateFile, "plan_approval") === "approved" ? EXECUTION_AMENDMENT_LANE : FRESH_CAPTURE_LANE;
 }
 function isPlanRailFailure(cause) {
-  return cause instanceof PlanFailure || cause instanceof PlanApprovalError || cause instanceof StateFileUnreadableError || cause instanceof LockTimeoutError;
+  return cause instanceof PlanFailure || cause instanceof PlanApprovalError || cause instanceof StateFileUnreadableError || cause instanceof StateRootUnwritableError || cause instanceof LockTimeoutError;
 }
 function nativePlanFailureCode(cause) {
   if (cause instanceof PlanFailure && cause.code !== void 0) return cause.code;
   if (cause instanceof LockTimeoutError) return "state-lock-timeout";
   if (cause instanceof StateFileUnreadableError) return "state-file-unreadable";
+  if (cause instanceof StateRootUnwritableError) return "state-root-unwritable";
   if (isErrnoException(cause) && ["EACCES", "EPERM", "ENOENT", "EEXIST", "ENOTDIR", "EISDIR", "ENOSPC", "EROFS", "EIO", "EMFILE", "ENFILE", "ELOOP"].includes(cause.code ?? "")) return `storage-${cause.code?.toLowerCase()}`;
   throw cause;
 }

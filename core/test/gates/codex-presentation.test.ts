@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { runGate } from "../../src/gates/dispatch.ts";
@@ -11,7 +11,8 @@ import { CodexPresentationFailure, resolveCodexPresentation } from "../../src/ho
 import { runApprovePlan, runCapturePlan } from "../../src/state/plan.ts";
 import { readValue, sha256Hex, stateFileFor, writeStatePairs } from "../../src/state/store.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
-import { repositoryRoot, withStateSandbox, type StateSandbox } from "../support/state-sandbox.ts";
+import { repositoryRoot, STATE_ROOT_THESE_TESTS_SPELL, withStateSandbox, type StateSandbox } from "../support/state-sandbox.ts";
+import { skipUnlessChmodDeniesDirectoryWrites } from "../support/win32-skip-guards.ts";
 
 const session = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 const marker = "<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->";
@@ -463,6 +464,27 @@ test("typed storage parity reason is not misreported as compare-and-set", () => 
     assert.doesNotMatch(result.stdout, /compare-and-set/);
   });
 });
+
+test(
+  "a state root the active permission mode cannot write degrades the native capture instead of escaping the Stop hook",
+  { skip: skipUnlessChmodDeniesDirectoryWrites() },
+  () => {
+    scenario(({ records, sandbox, stop }) => {
+      records.push(...presentation("first", valid));
+      const stateRoot = path.join(sandbox.home, ...STATE_ROOT_THESE_TESTS_SPELL.split("/"));
+      mkdirSync(stateRoot, { recursive: true });
+      chmodSync(stateRoot, 0o555);
+      try {
+        const result = stop();
+        assert.equal(result.exit, 0);
+        assert.equal(result.verdict.kind, "deny");
+        assert.match(result.stdout, /state-root-unwritable/);
+      } finally {
+        chmodSync(stateRoot, 0o700);
+      }
+    });
+  },
+);
 
 function installedGate(fixture: PresentationFixture, name: string, input: object) {
   const { sandbox, records, transcript } = fixture;

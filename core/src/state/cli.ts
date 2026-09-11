@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { abstractionScanReport } from "../scan/abstraction-scan.ts";
 import { ScanFailure } from "../scan/changed-lines.ts";
@@ -107,6 +107,10 @@ function report(error: unknown, verb: string): number {
     return 1;
   }
   if (error instanceof store.StateFileUnreadableError) {
+    process.stderr.write(`oso-state: ${verb}: ${error.message}\n`);
+    return 1;
+  }
+  if (error instanceof store.StateRootUnwritableError) {
     process.stderr.write(`oso-state: ${verb}: ${error.message}\n`);
     return 1;
   }
@@ -242,7 +246,7 @@ function runShow(): number {
 
 function runClear(sessionId: string): number {
   const stateFile = store.stateFileFor(process.cwd());
-  mkdirSync(store.stateRootDirectory(), { recursive: true });
+  store.requireWritableStateRoot();
   return store.withLock(stateFile, sessionId, () => {
     store.clearStateFile(stateFile);
     store.logEvent({ event: "clear", session: sessionId });
@@ -254,7 +258,7 @@ function runCloseSlice(sessionId: string, remaining: readonly string[]): number 
   if (remaining.length !== 1) throw new UsageError();
   const sliceId = remaining[0] as string;
   const stateFile = store.stateFileFor(process.cwd());
-  mkdirSync(store.stateRootDirectory(), { recursive: true });
+  store.requireWritableStateRoot();
   return store.withLock(stateFile, sessionId, () => {
     const activeSlice = store.readValue(stateFile, "active_slice") ?? "none";
     if (activeSlice !== sliceId) {
@@ -279,7 +283,7 @@ function runDenyPattern(sessionId: string, remaining: readonly string[]): number
   }
   const stateFile = store.stateFileFor(process.cwd());
   const patternsFile = store.denyPatternsFileFor(stateFile);
-  mkdirSync(store.stateRootDirectory(), { recursive: true });
+  store.requireWritableStateRoot();
   return store.withLock(stateFile, sessionId, () => {
     const read = store.readStateFile(patternsFile);
     if (read.kind === "unreadable") throw new store.StateFileUnreadableError(patternsFile, read.cause);

@@ -1,5 +1,5 @@
 import { PlanApprovalError, PlanFailure } from "../state/plan.ts";
-import { LockTimeoutError, StateFileUnreadableError, isErrnoException, readValue } from "../state/store.ts";
+import { LockTimeoutError, StateFileUnreadableError, StateRootUnwritableError, isErrnoException, readValue } from "../state/store.ts";
 import { stateFileIfNamed } from "./preflight.ts";
 
 const EXECUTION_AMENDMENT_LANE =
@@ -26,6 +26,7 @@ export function isPlanRailFailure(cause: unknown): cause is Error {
     cause instanceof PlanFailure ||
     cause instanceof PlanApprovalError ||
     cause instanceof StateFileUnreadableError ||
+    cause instanceof StateRootUnwritableError ||
     cause instanceof LockTimeoutError
   );
 }
@@ -34,6 +35,7 @@ export function nativePlanFailureCode(cause: unknown): string {
   if (cause instanceof PlanFailure && cause.code !== undefined) return cause.code;
   if (cause instanceof LockTimeoutError) return "state-lock-timeout";
   if (cause instanceof StateFileUnreadableError) return "state-file-unreadable";
+  if (cause instanceof StateRootUnwritableError) return "state-root-unwritable";
   if (isErrnoException(cause) && ["EACCES", "EPERM", "ENOENT", "EEXIST", "ENOTDIR", "EISDIR", "ENOSPC", "EROFS", "EIO", "EMFILE", "ENFILE", "ELOOP"].includes(cause.code ?? "")) return `storage-${cause.code?.toLowerCase()}`;
   throw cause;
 }

@@ -33,7 +33,7 @@ export class PlanVerifyFailure extends PlanFailure {
 
 export function runRejectPlanPresentation(cwd: string, sessionId: string, fingerprint: string): void {
   const stateFile = store.stateFileFor(cwd);
-  mkdirSync(store.stateRootDirectory(), { recursive: true });
+  store.requireWritableStateRoot();
   store.withLock(stateFile, sessionId, () => {
     store.writeStatePairs(stateFile, [
       "mode=plan", "active_slice=", "verify_green=false", "plan_approval=pending",
@@ -82,11 +82,17 @@ function planPaths(stateFile: string, digest: string): PlanPaths {
 }
 
 function ensurePlanDirectory(paths: PlanPaths): void {
-  requireNonSymlinkDirectory(store.stateRootDirectory(), "state root");
+  requireWritableNonSymlinkStateRoot();
   requireNonSymlinkDirectory(paths.root, "plan root");
   requireNonSymlinkDirectory(paths.dir, "repository plan directory", "repository plan path");
   chmodSync(paths.root, 0o700);
   chmodSync(paths.dir, 0o700);
+}
+
+function requireWritableNonSymlinkStateRoot(): void {
+  const stateRoot = store.stateRootDirectory();
+  if (store.isSymlink(stateRoot)) throw new PlanFailure(`state root is a symlink: ${stateRoot}`, { code: "plan-directory-symlink" });
+  store.requireWritableStateRoot();
 }
 
 function requireNonSymlinkDirectory(target: string, symlinkLabel: string, directoryLabel: string = symlinkLabel): void {
@@ -156,7 +162,7 @@ export function runApprovePlan(cwd: string, sessionId: string, digest: string, n
     throw new PlanApprovalError("approve-plan requires one lowercase SHA-256 digest", { code: "invalid-approval-digest" });
   }
   const stateFile = store.stateFileFor(cwd);
-  mkdirSync(store.stateRootDirectory(), { recursive: true });
+  store.requireWritableStateRoot();
   return store.withLock(stateFile, sessionId, () => {
     requireOwnApprovalState(stateFile, sessionId);
     if (store.readValue(stateFile, "mode") !== "plan") {
@@ -215,7 +221,7 @@ export function runCancelPlan(cwd: string, sessionId: string, digest: string): n
     throw new PlanApprovalError("cancel-plan requires one lowercase SHA-256 digest", { code: "invalid-cancellation-digest" });
   }
   const stateFile = store.stateFileFor(cwd);
-  mkdirSync(store.stateRootDirectory(), { recursive: true });
+  store.requireWritableStateRoot();
   return store.withLock(stateFile, sessionId, () => {
     requireOwnApprovalState(stateFile, sessionId);
     requirePendingApproval(stateFile);
@@ -238,7 +244,7 @@ export function runCancelPlan(cwd: string, sessionId: string, digest: string): n
 export function runAmendPlan(cwd: string, sessionId: string, sliceId: string, document: string): number {
   if (!store.isNameToken(sliceId)) throw new PlanFailure("amend-plan requires a safe slice id", { code: "invalid-amendment-slice" });
   const stateFile = store.stateFileFor(cwd);
-  mkdirSync(store.stateRootDirectory(), { recursive: true });
+  store.requireWritableStateRoot();
   if (document.length === 0) throw new PlanFailure("amend-plan requires a non-empty document on stdin", { code: "empty-amendment" });
   return store.withLock(stateFile, sessionId, () => {
     if (!store.isReadableRegularFile(stateFile)) {
