@@ -14,6 +14,8 @@ A recorded demonstration, not a check. One bounded real Codex run drove `arm →
 
 Eight wirings succeeded and one failed: `fallow-mcp` is not installed on this host, which the installer reports and the debt sweep falls back from. The install printed `Codex permissions are seeded once outside the managed region, and no later install rewrites that choice`, and the resulting `config.toml` carries `default_permissions = "oso"` with the harness state root and its worktree root as workspace roots — the seeded-once permission profile, exercised rather than routed around.
 
+**Historical note.** This run's own timestamps (below) fall on 2026-09-10, hours before ADR-0158 emptied the profile this paragraph names. The `[permissions.oso]` table this run actually installed still carried the extended secret denylist, `glob_scan_max_depth = 6` and the inert `"*"` network-allow line ADR-0158 later drops entirely — none of which this paragraph describes, so nothing above is corrected: what it names (the seeded-once behavior, `default_permissions = "oso"`, the two workspace roots) is exactly the part of the profile ADR-0158 left untouched, and it reads the same today as it did on the machine this transcript recorded.
+
 Two flags are declined rather than defaults:
 
 - `--no-impeccable` keeps the install off GitHub, which the ten-minute bound cannot absorb.

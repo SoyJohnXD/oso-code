@@ -166,6 +166,10 @@ The harness exported a clean-code bar it did not run, and taught a notation it f
 - A stale-state warning at session start now names only this repository's own runtime file, never an unrelated checkout two directories over; and a wave's worktrees now cut from the commit its own previous wave actually landed rather than from the change's frozen base ref, so a wave-2+ slice depending on an earlier wave's contract runs against a tree that actually contains it.
 - The record catches up: 22 new decisions (ADR-0105 through ADR-0126) take the log from 104 files to 126, `tests/plugin-lint.sh` grows from 13 rules to 22, and CI now pins `bootstrap/verify.sh` and `bootstrap/verify-codex.sh` to their exact fixture `failed:` counts (8 and 14) instead of only checking that a summary line was reached at all.
 
+**Superseded since this release.** The `codex-desacople` change went further on the profile bullet above, and its "secret denylist" clause no longer describes the tree.
+
+- **The secret denylist is gone, not merely gained.** ADR-0158 removes every named env-file, private-key and credential-directory glob this entry counted here, plus the `glob_scan_max_depth = 6` widening that existed only to reach them, because what an operator may read on their own files is their own call and never this harness's to make. `.git/config` read-only, the two cloud-metadata denies, and the machine-default `default_permissions = "oso"` this entry also names are unaffected and stand exactly as written above.
+
 ## 0.18.4
 
 **Reinstall required** — Codex bootstrap composition and the installed shared delegation protocol changed. Pull the release and re-run `bash bootstrap/install-codex.sh --yes`; the transaction preserves Engram memories, personal Codex configuration and Oso plan artifacts.

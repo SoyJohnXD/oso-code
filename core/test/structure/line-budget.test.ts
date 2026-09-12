@@ -30,8 +30,11 @@ const CEILINGS = [
     maximumLines: 28500,
     derivation:
       "27,495 (measured before this debug fix, by this test's own listing) + 32 (this fix's three-case regression " +
-      "pin for the Codex subagent-provenance handoff bug) = 27,527, then 27,947 (measured at S5's arming) + 133 " +
-      "(S5's oso migrate --host codex command and its CLI usage-error tests) = 28,081",
+      "pin for the Codex subagent-provenance handoff bug) = 27,527, then 27,947 (measured at S5's arming) + 153 " +
+      "(S5's oso migrate --host codex command, its CLI usage-error tests and this row's own one-line net edit) = " +
+      "28,100, then 227 more at S6's landing (54 from the continuation-net's relabeled wait mark, 173 from the " +
+      "session-start blindness gate) = 28,327, then 29 more at S7's own landing (26 from the new README-" +
+      "permission-profile pin, 3 from this row's own net rewrite) = 28,356",
   },
 ] as const;
 
