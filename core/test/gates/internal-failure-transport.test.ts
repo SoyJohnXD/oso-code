@@ -71,10 +71,11 @@ describe(
     );
 
     test(
-      "stale: HOME unset — reached through isDirectory(stateRootDirectory())'s own homeDirectory() throw, " +
-        "the port of plugin/hooks/warn-stale-state.sh:9's [ -d \"$OSO_STATE_DIR\" ] (which, like every check " +
-        "in a script that sources lib.sh, cannot even run once HOME is unset — measured: env -u HOME " +
-        "warn-stale-state.sh dies at lib.sh:260, exit 1, before line 9) — is loud",
+      "stale: HOME unset — reached through readArmedState's own taskIdentityFor() -> stateRootDirectory() -> " +
+        "homeDirectory() throw, the same failure that ported plugin/hooks/warn-stale-state.sh:9's " +
+        "[ -d \"$OSO_STATE_DIR\" ] (which, like every check in a script that sources lib.sh, cannot even run " +
+        "once HOME is unset — measured: env -u HOME warn-stale-state.sh dies at lib.sh:260, exit 1, before " +
+        "line 9) — is loud",
       () => {
         const run = withStateSandbox("workspace", (sandbox) => {
           const stdin = sandbox.expandJson('{"session_id":"test-session","cwd":"{cwd}"}');

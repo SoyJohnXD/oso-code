@@ -14,7 +14,9 @@ function preCommitRun(cwd: string, marker: string): PreCommitRun {
   if (session === "") return COMMIT_PROCEEDS;
 
   const state = readArmedState(cwd);
+  if (state.kind === "unidentified") return COMMIT_PROCEEDS;
   if (state.kind === "absent") return COMMIT_PROCEEDS;
+  if (state.kind === "unwritable") return COMMIT_PROCEEDS;
   if (state.kind === "moved") return aborted(identityMovedMessage(state, session), "identity-moved-denied", session);
   if (state.kind === "unusable") {
     return aborted(unusableStateMessage(state.stateFile, session), "state-unreadable", session);

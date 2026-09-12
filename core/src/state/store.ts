@@ -405,6 +405,17 @@ export function requireWritableStateRoot(): void {
   }
 }
 
+export function stateRootWritabilityFault(): string | undefined {
+  const directory = stateRootDirectory();
+  if (!isDirectory(directory)) return undefined;
+  try {
+    accessSync(directory, constants.W_OK | constants.X_OK);
+    return undefined;
+  } catch (error) {
+    return causeOf(new StateRootUnwritableError(directory, error));
+  }
+}
+
 export function clearStateFile(stateFile: string): void {
   rmSync(stateFile, { force: true });
 }

@@ -6,6 +6,7 @@ import {
   repositoryRoot,
   skipUnlessSpawnable,
   STATE_FILE,
+  STATE_ROOT_THESE_TESTS_SPELL,
   withStateSandbox,
   type StateSubject,
 } from "../support/state-sandbox.ts";
@@ -34,6 +35,14 @@ describe("the git pre-commit hook's own boundary", { skip: skipUnlessSpawnable(P
       sandbox.run(PRE_COMMIT_HOOK, [], { env: HOST_SESSION }),
     );
     assert.deepEqual(run, { exit: 0, stdout: "", stderr: "" });
+  });
+
+  test("a repository with no state file leaves a never-created state root absent — reading readArmedState never mkdirs it", () => {
+    const rootAfter = withStateSandbox("workspace", (sandbox) => {
+      sandbox.run(PRE_COMMIT_HOOK, [], { env: HOST_SESSION });
+      return sandbox.read(STATE_ROOT_THESE_TESTS_SPELL);
+    });
+    assert.equal(rootAfter.kind, "absent");
   });
 
   test("a terminal naming no session commits untouched (ported from the hook regression suite)", () => {

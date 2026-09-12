@@ -6,6 +6,7 @@ import { GATE_BUNDLE, gateRow, type GateId } from "../routes/routes.ts";
 import {
   readStateFile,
   stateKeyedByAnotherTaskIdentity,
+  stateRootWritabilityFault,
   taskIdentityFor,
   TASK_ROOT_VARIABLE,
   type StateAtAnotherIdentity,
@@ -22,8 +23,12 @@ export type GateDefinition<V extends GateVerdict = PreToolUseVerdict> = Readonly
   judge: (request: GateRequest) => GateOutcome<V>;
 }>;
 
+type UnidentifiedTask = Extract<TaskIdentity, { kind: "unknown" }>;
+
 export type ArmedState =
+  | Readonly<{ kind: "unidentified"; task: UnidentifiedTask }>
   | Readonly<{ kind: "absent" }>
+  | Readonly<{ kind: "unwritable"; message: string }>
   | Readonly<{ kind: "unusable"; stateFile: string }>
   | Readonly<{ kind: "moved"; left: StateAtAnotherIdentity; task: TaskIdentity }>
   | Readonly<{ kind: "readable"; stateFile: string; content: string }>;
@@ -61,7 +66,10 @@ export function readArmedState(cwd: string): ArmedState {
     if (read.kind === "unreadable") return { kind: "unusable", stateFile: task.stateFile };
   }
   const left = stateKeyedByAnotherTaskIdentity(cwd, task);
-  return left === undefined ? { kind: "absent" } : { kind: "moved", left, task };
+  if (left !== undefined) return { kind: "moved", left, task };
+  if (task.kind === "unknown") return { kind: "unidentified", task };
+  const fault = stateRootWritabilityFault();
+  return fault === undefined ? { kind: "absent" } : { kind: "unwritable", message: fault };
 }
 
 export function stateFileIfNamed(cwd: string): string | undefined {
@@ -104,6 +112,18 @@ export function deniedForUnusableState(gate: GateId, stateFile: string, session:
     event: "state-unreadable",
     session,
   });
+}
+
+export function unidentifiedStateMessage(task: UnidentifiedTask): string {
+  return (
+    `oso-code: ${whatThisDirectoryNamesInstead(task)}, so this session's gates read every call here as no ` +
+    `session armed and allow without saying so. Run inside a git repository, or declare ${TASK_ROOT_VARIABLE}, ` +
+    "then start a fresh session to arm them."
+  );
+}
+
+export function unwritableStateMessage(fault: string): string {
+  return `oso-code: ${fault}`;
 }
 
 export function identityMovedMessage(state: MovedIdentity, session: string): string {

@@ -1421,6 +1421,16 @@ function requireWritableStateRoot() {
     throw new StateRootUnwritableError(directory, error);
   }
 }
+function stateRootWritabilityFault() {
+  const directory = stateRootDirectory();
+  if (!isDirectory(directory)) return void 0;
+  try {
+    accessSync(directory, constants.W_OK | constants.X_OK);
+    return void 0;
+  } catch (error) {
+    return causeOf(new StateRootUnwritableError(directory, error));
+  }
+}
 function clearStateFile(stateFile) {
   rmSync(stateFile, { force: true });
 }
@@ -1726,7 +1736,10 @@ function readArmedState(cwd) {
     if (read.kind === "unreadable") return { kind: "unusable", stateFile: task.stateFile };
   }
   const left = stateKeyedByAnotherTaskIdentity(cwd, task);
-  return left === void 0 ? { kind: "absent" } : { kind: "moved", left, task };
+  if (left !== void 0) return { kind: "moved", left, task };
+  if (task.kind === "unknown") return { kind: "unidentified", task };
+  const fault = stateRootWritabilityFault();
+  return fault === void 0 ? { kind: "absent" } : { kind: "unwritable", message: fault };
 }
 function stateFileIfNamed(cwd) {
   const task = taskIdentityFor(cwd);
@@ -1760,6 +1773,12 @@ function deniedForUnusableState(gate, stateFile, session) {
     event: "state-unreadable",
     session
   });
+}
+function unidentifiedStateMessage(task) {
+  return `oso-code: ${whatThisDirectoryNamesInstead(task)}, so this session's gates read every call here as no session armed and allow without saying so. Run inside a git repository, or declare ${TASK_ROOT_VARIABLE}, then start a fresh session to arm them.`;
+}
+function unwritableStateMessage(fault) {
+  return `oso-code: ${fault}`;
 }
 function identityMovedMessage(state, session) {
   return `oso-code: the state that arms this session's gates still sits at ${state.left.stateFile}, keyed by another task identity (${state.left.identity}), while ${whatThisDirectoryNamesInstead(state.task)}. ${carryItOverOrDropIt(state, session)}; until one of those runs, this gate denies rather than allowing on state it no longer reads.`;
@@ -2329,7 +2348,9 @@ function judgeCommit({ envelope }) {
   const session = hookSessionId(envelope);
   if (session === "") return payloadUnparseable();
   const state = readArmedState(envelope.cwd);
+  if (state.kind === "unidentified") return ALLOWED;
   if (state.kind === "absent") return ALLOWED;
+  if (state.kind === "unwritable") return ALLOWED;
   if (state.kind === "moved") return deniedForMovedIdentity("commit", state, session);
   if (state.kind === "unusable") return deniedForUnusableState("commit", state.stateFile, session);
   const verdict = lineVerdict(envelope.commandLine, judgeCommitLine);
@@ -2377,7 +2398,9 @@ function judgeEdits({ envelope }) {
   const session = hookSessionId(envelope);
   if (session === "") return payloadUnparseable();
   const state = readArmedState(envelope.cwd);
+  if (state.kind === "unidentified") return ALLOWED;
   if (state.kind === "absent") return ALLOWED;
+  if (state.kind === "unwritable") return ALLOWED;
   if (state.kind === "moved") return deniedForMovedIdentity("edits", state, session);
   if (state.kind === "unusable") return deniedForUnusableState("edits", state.stateFile, session);
   if (!stateSays(state.content, "mode", "plan")) return ALLOWED;
@@ -4002,7 +4025,9 @@ function judgeProductionBoundary({ envelope }) {
   if (session === "") return payloadUnparseable();
   const state = readArmedState(envelope.cwd);
   if (state.kind === "moved") return deniedForMovedIdentity("proddeploy", state, session);
+  if (state.kind === "unidentified") return ALLOWED;
   if (state.kind === "absent") return ALLOWED;
+  if (state.kind === "unwritable") return ALLOWED;
   const runMarker = runMarkerOf(state, session);
   if (runMarker === "unmarked") return ALLOWED;
   const boundary = { runMarker, stateFile: state.stateFile, session, caller: envelope.caller };
@@ -4159,7 +4184,11 @@ function judgeReanchor({ envelope }) {
   if (sessionId === "") return ALLOWED;
   if (!isDirectory(envelope.cwd)) return ALLOWED;
   const state = readArmedState(envelope.cwd);
-  if (state.kind !== "readable") return ALLOWED;
+  if (state.kind === "unidentified") return ALLOWED;
+  if (state.kind === "absent") return ALLOWED;
+  if (state.kind === "unwritable") return ALLOWED;
+  if (state.kind === "unusable") return ALLOWED;
+  if (state.kind === "moved") return ALLOWED;
   const runMarker = unattendedRunMarker(state.content, sessionId);
   if (runMarker === void 0) return ALLOWED;
   let unattendedRun = false;
@@ -4209,17 +4238,22 @@ var STALE_GATE = {
   judge: judgeStale
 };
 function judgeStale({ envelope }) {
-  if (!isDirectory(stateRootDirectory())) return ALLOWED;
-  const state = readArmedState(envelope.cwd);
-  if (state.kind === "absent" || state.kind === "moved") return ALLOWED;
-  const content = state.kind === "readable" ? state.content : "";
   const sessionId = hookSessionId(envelope);
+  const state = readArmedState(envelope.cwd);
+  if (state.kind === "unidentified") return contextOutcome(unidentifiedStateMessage(state.task));
+  if (state.kind === "unwritable") return contextOutcome(unwritableStateMessage(state.message));
+  if (state.kind === "unusable") return contextOutcome(unusableStateMessage(state.stateFile, sessionId));
+  if (state.kind === "absent") return ALLOWED;
+  if (state.kind === "moved") return ALLOWED;
   const advisories = [
-    ...staleStateAdvisory(envelope.caller, state.stateFile, content, sessionId),
-    ...expiredDelegationAdvisory(envelope.caller, envelope.cwd, content)
+    ...staleStateAdvisory(envelope.caller, state.stateFile, state.content, sessionId),
+    ...expiredDelegationAdvisory(envelope.caller, envelope.cwd, state.content)
   ];
   if (advisories.length === 0) return ALLOWED;
-  return { verdict: { kind: "context", additionalContext: advisories.join(" ") }, events: [] };
+  return contextOutcome(advisories.join(" "));
+}
+function contextOutcome(additionalContext) {
+  return { verdict: { kind: "context", additionalContext }, events: [] };
 }
 function staleStateAdvisory(caller, stateFile, content, sessionId) {
   if (stateValue(content, "session") === sessionId) return [];
@@ -4466,7 +4500,9 @@ function judgeUnknownTool({ envelope, argv }) {
   const session = sanitizeSession(envelope.sessionId);
   if (session === "") return payloadUnparseable();
   const state = readArmedState(envelope.cwd);
+  if (state.kind === "unidentified") return ALLOWED;
   if (state.kind === "absent") return ALLOWED;
+  if (state.kind === "unwritable") return ALLOWED;
   if (state.kind === "moved") return deniedForMovedIdentity("unknown", state, session);
   if (state.kind === "unusable") return deniedForUnusableState("unknown", state.stateFile, session);
   if (thisSessionsPlanIsPending(state.content, session)) {

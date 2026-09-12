@@ -51,7 +51,9 @@ function judgeUnknownTool({ envelope, argv }: GateRequest): GateOutcome {
   if (session === "") return payloadUnparseable();
 
   const state = readArmedState(envelope.cwd);
+  if (state.kind === "unidentified") return ALLOWED;
   if (state.kind === "absent") return ALLOWED;
+  if (state.kind === "unwritable") return ALLOWED;
   if (state.kind === "moved") return deniedForMovedIdentity("unknown", state, session);
   if (state.kind === "unusable") return deniedForUnusableState("unknown", state.stateFile, session);
 

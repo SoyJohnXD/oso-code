@@ -107,6 +107,39 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+var StateRootUnwritableError = class extends Error {
+  directory;
+  constructor(directory, cause) {
+    super(
+      `cannot write the oso-code state directory ${directory}: ${causeOf(cause)}. The gates read what it holds and treat an unwritten state as no armed session, so arming here would leave them unable to see their own state. ${remedyForUnwritableStateRoot(cause, directory)}`
+    );
+    this.name = "StateRootUnwritableError";
+    this.directory = directory;
+  }
+};
+function remedyForUnwritableStateRoot(cause, directory) {
+  const code = isErrnoException(cause) ? cause.code : void 0;
+  if (code === "EROFS") {
+    return "The active permission mode is read-only, so no writable-root declaration can change that \u2014 pick a mode that can write, then arm again.";
+  }
+  if (code === "EACCES" || code === "EPERM") {
+    return `Grant the directory to the active permission mode \u2014 add it to that profile's workspace roots, launch with --add-dir ${directory}, or pick a mode that can write \u2014 then arm again.`;
+  }
+  if (code === "EEXIST" || code === "ENOTDIR") {
+    const occupiedPath = code === "EEXIST" ? directory : `a parent directory of ${directory}`;
+    return `A file already occupies ${occupiedPath}, so no directory can stand there \u2014 move or remove what is in the way, or point OSO_STATE_DIR elsewhere, then arm again.`;
+  }
+  if (code === "ELOOP") {
+    return `A symlink loop sits on the way to ${directory}, so it can neither be created nor reached \u2014 undo the loop, or point OSO_STATE_DIR at a path that is not caught in one, then arm again.`;
+  }
+  if (code === "ENAMETOOLONG") {
+    return `${directory} is too long a path for the filesystem to create, and no permission or declaration change shortens it \u2014 point OSO_STATE_DIR at a shorter path, then arm again.`;
+  }
+  if (code === "ENOSPC" || code === "EDQUOT") {
+    return `The filesystem behind ${directory} has no room left for it, and no permission or declaration change frees any \u2014 clear space or quota there, or point OSO_STATE_DIR at a volume with room, then arm again.`;
+  }
+  return `${code ?? "the cause"} is not one this rail can name from an errno alone \u2014 check whether ${directory} sits behind a read-only mode, an undeclared workspace root, or something else entirely, then arm again once whatever stands in the way is cleared.`;
+}
 var TASK_ROOT_VARIABLE = "OSO_TASK_ROOT";
 var TOKEN_MAX_LENGTH = 128;
 var EVENTS_SCHEMA_VERSION = 2;
@@ -247,6 +280,16 @@ function readStateFile(stateFile) {
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") return { kind: "absent" };
     return { kind: "unreadable", cause: causeOf(error) };
+  }
+}
+function stateRootWritabilityFault() {
+  const directory = stateRootDirectory();
+  if (!isDirectory(directory)) return void 0;
+  try {
+    accessSync(directory, constants.W_OK | constants.X_OK);
+    return void 0;
+  } catch (error) {
+    return causeOf(new StateRootUnwritableError(directory, error));
   }
 }
 function isDirectory(target) {
@@ -404,7 +447,10 @@ function readArmedState(cwd) {
     if (read.kind === "unreadable") return { kind: "unusable", stateFile: task.stateFile };
   }
   const left = stateKeyedByAnotherTaskIdentity(cwd, task);
-  return left === void 0 ? { kind: "absent" } : { kind: "moved", left, task };
+  if (left !== void 0) return { kind: "moved", left, task };
+  if (task.kind === "unknown") return { kind: "unidentified", task };
+  const fault = stateRootWritabilityFault();
+  return fault === void 0 ? { kind: "absent" } : { kind: "unwritable", message: fault };
 }
 function osoStateRemedy(session, verbAndArguments) {
   return `oso-state --session ${session} ${verbAndArguments}`;
@@ -459,7 +505,9 @@ function preCommitRun(cwd, marker) {
   const session = sanitizeSession(marker);
   if (session === "") return COMMIT_PROCEEDS;
   const state = readArmedState(cwd);
+  if (state.kind === "unidentified") return COMMIT_PROCEEDS;
   if (state.kind === "absent") return COMMIT_PROCEEDS;
+  if (state.kind === "unwritable") return COMMIT_PROCEEDS;
   if (state.kind === "moved") return aborted(identityMovedMessage(state, session), "identity-moved-denied", session);
   if (state.kind === "unusable") {
     return aborted(unusableStateMessage(state.stateFile, session), "state-unreadable", session);

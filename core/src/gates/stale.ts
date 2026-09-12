@@ -1,7 +1,7 @@
 import path from "node:path";
 import { ALLOWED, type GateOutcome, type HookCaller, type SessionStartVerdict } from "../hosts/envelope.ts";
 import type { HostName, PerHost } from "../routes/routes.ts";
-import { CHANGE_SLUG_PATTERN, isDirectory, stateRootDirectory } from "../state/store.ts";
+import { CHANGE_SLUG_PATTERN } from "../state/store.ts";
 import {
   EXPIRED_DELEGATION_CLAUSE,
   isDelegationLabel,
@@ -10,7 +10,17 @@ import {
   waitExpired,
   waitMarkFileFor,
 } from "./delegation.ts";
-import { hookSessionId, readArmedState, stateBinPath, stateValue, type GateDefinition, type GateRequest } from "./preflight.ts";
+import {
+  hookSessionId,
+  readArmedState,
+  stateBinPath,
+  stateValue,
+  unidentifiedStateMessage,
+  unusableStateMessage,
+  unwritableStateMessage,
+  type GateDefinition,
+  type GateRequest,
+} from "./preflight.ts";
 
 const ROADMAP_DISARMED_SENTINEL = "none";
 const RUN_ARMED = "running";
@@ -23,20 +33,25 @@ export const STALE_GATE: GateDefinition<SessionStartVerdict> = {
 };
 
 function judgeStale({ envelope }: GateRequest): GateOutcome<SessionStartVerdict> {
-  if (!isDirectory(stateRootDirectory())) return ALLOWED;
-
-  const state = readArmedState(envelope.cwd);
-  if (state.kind === "absent" || state.kind === "moved") return ALLOWED;
-
-  const content = state.kind === "readable" ? state.content : "";
   const sessionId = hookSessionId(envelope);
+  const state = readArmedState(envelope.cwd);
+  if (state.kind === "unidentified") return contextOutcome(unidentifiedStateMessage(state.task));
+  if (state.kind === "unwritable") return contextOutcome(unwritableStateMessage(state.message));
+  if (state.kind === "unusable") return contextOutcome(unusableStateMessage(state.stateFile, sessionId));
+  if (state.kind === "absent") return ALLOWED;
+  if (state.kind === "moved") return ALLOWED;
+
   const advisories = [
-    ...staleStateAdvisory(envelope.caller, state.stateFile, content, sessionId),
-    ...expiredDelegationAdvisory(envelope.caller, envelope.cwd, content),
+    ...staleStateAdvisory(envelope.caller, state.stateFile, state.content, sessionId),
+    ...expiredDelegationAdvisory(envelope.caller, envelope.cwd, state.content),
   ];
   if (advisories.length === 0) return ALLOWED;
 
-  return { verdict: { kind: "context", additionalContext: advisories.join(" ") }, events: [] };
+  return contextOutcome(advisories.join(" "));
+}
+
+function contextOutcome(additionalContext: string): GateOutcome<SessionStartVerdict> {
+  return { verdict: { kind: "context", additionalContext }, events: [] };
 }
 
 function staleStateAdvisory(

@@ -51,7 +51,9 @@ function judgeCommit({ envelope }: GateRequest): GateOutcome {
   if (session === "") return payloadUnparseable();
 
   const state = readArmedState(envelope.cwd);
+  if (state.kind === "unidentified") return ALLOWED;
   if (state.kind === "absent") return ALLOWED;
+  if (state.kind === "unwritable") return ALLOWED;
   if (state.kind === "moved") return deniedForMovedIdentity("commit", state, session);
   if (state.kind === "unusable") return deniedForUnusableState("commit", state.stateFile, session);
 
