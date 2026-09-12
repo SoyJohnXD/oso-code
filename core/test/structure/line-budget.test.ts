@@ -5,38 +5,40 @@ import { readTrackedText, trackedRepositoryFiles } from "../support/tracked-file
 
 const REMAINING_BASH_SURFACE = "6,851 (Codex 3,432 + OpenCode 2,470 + bootstrap/lib 720 + Claude's engram block 229)";
 
-const CEILINGS = [
+const LINE_BUDGETS = [
   {
     label: "core/src/install",
     prefix: "core/src/install/",
     maximumLines: 9000,
-    derivation: `1,678 (measured at C3-S1) + ${REMAINING_BASH_SURFACE} = 8,529`,
+    derivedLines: 8529,
+    derivation: `1,678 (measured at C3-S1) + ${REMAINING_BASH_SURFACE}`,
   },
   {
     label: "core/test/install",
     prefix: "core/test/install/",
     maximumLines: 8500,
-    derivation: "7,994 (measured at S7's arming, by this test's own listing) + 380 (one commit, at C0's measured mean) = 8,374",
+    derivedLines: 8374,
+    derivation: "7,994 (measured at S7's arming, by this test's own listing) + 380 (one commit, at C0's measured mean)",
   },
   {
     label: "core/src",
     prefix: "core/src/",
     maximumLines: 17500,
-    derivation: "14,499 (measured) + 1,800 (C2) + 1,100 (AUTO) = 17,399",
+    derivedLines: 17399,
+    derivation: "14,499 (measured) + 1,800 (C2) + 1,100 (AUTO)",
   },
   {
     label: "core/test",
     prefix: "core/test/",
     maximumLines: 28500,
+    derivedLines: 28353,
     derivation:
-      "27,495 (measured before this debug fix, by this test's own listing) + 32 (this fix's three-case regression " +
-      "pin for the Codex subagent-provenance handoff bug) = 27,527, then 27,947 (measured at S5's arming) + 153 " +
-      "(S5's oso migrate --host codex command, its CLI usage-error tests and this row's own one-line net edit) = " +
-      "28,100, then 227 more at S6's landing (54 from the continuation-net's relabeled wait mark, 173 from the " +
-      "session-start blindness gate) = 28,327, then 29 more at S7's own landing (26 from the new README-" +
-      "permission-profile pin, 3 from this row's own net rewrite) = 28,356",
+      "27,542 (measured at this change's arming, by this test's own listing) + 811 (this change's own nine " +
+      "commits and the debt sweep that closed them, this row's rewrite included)",
   },
 ] as const;
+
+type LineBudget = (typeof LINE_BUDGETS)[number];
 
 const MINIMUM_FILES_PER_TREE = 5;
 
@@ -52,24 +54,41 @@ function totalLinesOf(files: readonly string[]): number {
   return files.map(readTrackedText).reduce((total, { text }) => total + wcDashL(text), 0);
 }
 
+function groupedLines(lines: number): string {
+  return lines.toLocaleString("en-US");
+}
+
+function standingAgainstBudget(total: number, { derivation, derivedLines, maximumLines }: LineBudget): string {
+  const derived = `its ${derivation} = ${groupedLines(derivedLines)} derivation`;
+  const againstDerivation =
+    total <= derivedLines
+      ? `${groupedLines(derivedLines - total)} under ${derived}`
+      : `${groupedLines(total - derivedLines)} past ${derived} and green on the round-up alone`;
+  return (
+    `${againstDerivation}, and ${groupedLines(maximumLines - total)} under the ` +
+    `${groupedLines(maximumLines)}-line ceiling that derivation rounds up to`
+  );
+}
+
 describe("G4's line budget is measured, not assumed", () => {
-  for (const { label, prefix, maximumLines, derivation } of CEILINGS) {
-    const files = trackedTypeScriptFilesUnder(prefix);
+  for (const budget of LINE_BUDGETS) {
+    const files = trackedTypeScriptFilesUnder(budget.prefix);
+    const total = totalLinesOf(files);
 
     provedSomething(
-      `${label} counted at least ${MINIMUM_FILES_PER_TREE} tracked *.ts file(s) before summing their lines`,
+      `${budget.label} counted at least ${MINIMUM_FILES_PER_TREE} tracked *.ts file(s) before summing their lines`,
       files.length >= MINIMUM_FILES_PER_TREE,
-      `only ${files.length} tracked *.ts file(s) were found under ${prefix} — a broken walk would also report zero total lines`,
+      `only ${files.length} tracked *.ts file(s) were found under ${budget.prefix} — a broken walk would also report zero total lines`,
     );
 
     test(
-      `${label} holds ${totalLinesOf(files)} wc -l line(s) across ${files.length} tracked *.ts file(s), at or under its ` +
-        `${derivation}, rounded up to the next 500 → ${maximumLines}-line ceiling`,
+      `${budget.label} holds ${groupedLines(total)} wc -l line(s) across ${files.length} tracked *.ts file(s), ` +
+        standingAgainstBudget(total, budget),
       () => {
-        const total = totalLinesOf(files);
         assert.ok(
-          total <= maximumLines,
-          `${label} holds ${total} lines across ${files.length} tracked *.ts file(s), over its ${maximumLines}-line ceiling`,
+          total <= budget.maximumLines,
+          `${budget.label} holds ${groupedLines(total)} lines across ${files.length} tracked *.ts file(s), ` +
+            `over its ${groupedLines(budget.maximumLines)}-line ceiling`,
         );
       },
     );

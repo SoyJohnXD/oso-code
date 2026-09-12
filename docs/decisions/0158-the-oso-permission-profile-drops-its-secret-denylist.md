@@ -26,4 +26,4 @@ A profile migrated from a CRLF `config.toml` gains two extra blank-line artifact
 
 - A first install on a fresh machine writes the narrower profile directly; nothing about the emptied shape reaches an already-seeded machine until `oso migrate --host codex --yes` runs there once.
 - `docs/certify-codex-native-cycle.md` records a run against the profile this decision retires — the run predates this decision's own change by hours — and is annotated there as historical rather than corrected, since nothing in its own prose names the removed content.
-- `docs/blueprint.md`'s decision index moves from 157 files to 160 with the two sibling ADRs this change also adds.
+- `docs/blueprint.md`'s decision index moves from 157 files to 161 with the three sibling ADRs this change also adds.

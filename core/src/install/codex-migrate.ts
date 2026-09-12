@@ -11,7 +11,7 @@ import { isReadableRegularFile, withOwnerOnlyUmask } from "../state/store.ts";
 
 const CODEX_MIGRATE_BACKUP_FORMAT = "oso-code-codex-migrate-v1";
 
-const LEGACY_DENIED_WORKSPACE_GLOBS = [
+export const LEGACY_DENIED_WORKSPACE_GLOBS = [
   "**/secrets/*",
   "**/*.key",
   "**/*.pem",

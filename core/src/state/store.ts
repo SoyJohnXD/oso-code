@@ -3,6 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import {
   accessSync,
   appendFileSync,
+  chmodSync,
   constants,
   existsSync,
   lstatSync,
@@ -48,14 +49,18 @@ export class StateFileUnreadableError extends Error {
 export class StateRootUnwritableError extends Error {
   readonly directory: string;
   constructor(directory: string, cause: unknown) {
-    super(
-      `cannot write the oso-code state directory ${directory}: ${causeOf(cause)}. The gates read what it holds and ` +
-        `treat an unwritten state as no armed session, so arming here would leave them unable to see their own ` +
-        `state. ${remedyForUnwritableStateRoot(cause, directory)}`,
-    );
+    super(unwritableStateRootMessage(directory, cause));
     this.name = "StateRootUnwritableError";
     this.directory = directory;
   }
+}
+
+function unwritableStateRootMessage(directory: string, cause: unknown): string {
+  return (
+    `cannot write the oso-code state directory ${directory}: ${causeOf(cause)}. The gates read what it holds and ` +
+    `treat an unwritten state as no armed session, so arming here would leave them unable to see their own ` +
+    `state. ${remedyForUnwritableStateRoot(cause, directory)}`
+  );
 }
 
 function remedyForUnwritableStateRoot(cause: unknown, directory: string): string {
@@ -395,14 +400,24 @@ export function writeStateValues(cwd: string, sessionId: string, pairs: readonly
   });
 }
 
+const OWNER_ONLY_DIRECTORY = 0o700;
+const GROUP_AND_OTHER_ACCESS = 0o077;
+
 export function requireWritableStateRoot(): void {
   const directory = stateRootDirectory();
   try {
-    mkdirSync(directory, { recursive: true });
+    mkdirSync(directory, { recursive: true, mode: OWNER_ONLY_DIRECTORY });
+    dropGroupAndOtherAccess(directory);
     accessSync(directory, constants.W_OK | constants.X_OK);
   } catch (error) {
     throw new StateRootUnwritableError(directory, error);
   }
+}
+
+function dropGroupAndOtherAccess(directory: string): void {
+  const stats = lstatSync(directory);
+  if (stats.isSymbolicLink() || (stats.mode & GROUP_AND_OTHER_ACCESS) === 0) return;
+  chmodSync(directory, stats.mode & OWNER_ONLY_DIRECTORY);
 }
 
 export function stateRootWritabilityFault(): string | undefined {
@@ -412,7 +427,7 @@ export function stateRootWritabilityFault(): string | undefined {
     accessSync(directory, constants.W_OK | constants.X_OK);
     return undefined;
   } catch (error) {
-    return causeOf(new StateRootUnwritableError(directory, error));
+    return unwritableStateRootMessage(directory, error);
   }
 }
 
@@ -526,7 +541,7 @@ export function logEvent(entry: LoggedEvent): boolean {
   const line = serializeEvent(entry);
   const eventsLog = path.join(stateRootDirectory(), "events.jsonl");
   try {
-    mkdirSync(path.dirname(eventsLog), { recursive: true });
+    requireWritableStateRoot();
     withOwnerOnlyUmask(() => appendFileSync(eventsLog, `${line}\n`));
     return true;
   } catch {

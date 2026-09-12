@@ -33,6 +33,27 @@ produces a new record rather than re-proving this one.
   touches Codex's own config or sandbox, only the state file, the wait mark and the native rollout
   mechanics those two built artifacts already carry.
 
+## Scope, 2026-09-12 — what this record drove, and what only stands
+
+Every probe below was driven against the tree at `09894a3`, this document's own commit. That is the
+measurement point and it does not move: whatever lands after it is unmeasured here, however small,
+and re-driving the probes produces a new record rather than extending this one. Read every section
+below as a reading taken at that commit.
+
+What has landed since, as of the date above: this change's own debt sweep, across `core/src` and
+`core/test` — chiefly `core/src/state/handoff.ts`, the code the ADR-0160 probes drive — and
+`plugin/bin/oso-state` and `plugin/dist/gate.js`, the two built artifacts the Round-2 probes ran
+against, rebuilt from that source. `git diff 09894a3 -- core/src core/test` names that delta exactly
+whenever it is read; a line count transcribed here would be wrong by the next commit, so this
+register carries the derivation instead of the number. Every round of that sweep is readability
+work: no gate verdict, no message text and no on-disk shape recorded below is altered by any of
+them, and the bar in the last section re-ran green at the same counts over the swept tree. So the
+outcomes below still describe a tree that produces them — but they remain the single unrepeated
+measurement `09894a3` took, never a fresh one, and only an operator re-running the certification can
+make them the latter.
+
+Every `path:line` citation below was re-resolved against the swept tree on the date above.
+
 ## The emptied profile (ADR-0158)
 
 Install printed `Codex permissions are seeded once outside the managed region, and no later install
@@ -107,8 +128,8 @@ roots, launch with --add-dir <HOME>/.local/state/oso-code, or pick a mode that c
 arm again.
 ```
 
-This is `remedyForUnwritableStateRoot`'s `EACCES`/`EPERM` branch (`core/src/state/store.ts:69`),
-reached through `requireWritableStateRoot` (`core/src/state/store.ts:398`). A healthy write against
+This is `remedyForUnwritableStateRoot`'s `EACCES`/`EPERM` branch (`core/src/state/store.ts:73`),
+reached through `requireWritableStateRoot` (`core/src/state/store.ts:402`). A healthy write against
 the same root, run first, had succeeded and read back cleanly — the failure above is the directory
 permission alone, not a broken install.
 
@@ -120,20 +141,24 @@ throwaway repository (or, for the third, a plain directory with no repository an
 actually see, and each exited 0 — the rail speaks without ever blocking the session:
 
 - **State root unreadable** (`d---------`, an existing state file inside it): `unusableStateMessage`
-  (`core/src/gates/preflight.ts:100`) —
+  (`core/src/gates/preflight.ts:106`) —
   `"oso-code: this session is armed but its state file (...) cannot be read, so the gate cannot
   tell whether this call is safe. Remove or repair it (oso-state --session 1 clear), then retry."`
-- **State root exists, write blocked, no state file** (`dr-x------`): `unwritableStateMessage`
-  (`core/src/gates/preflight.ts:125`) wrapping the same `StateRootUnwritableError` text the write
-  test above produced, this time surfaced as session-start context rather than a command's own exit.
+- **State root exists, write blocked, no state file** (`dr-x------`): the same
+  `StateRootUnwritableError` text the write test above produced, read off the state root by
+  `stateRootWritabilityFault` (`core/src/state/store.ts:412`), carried as the `unwritable` state's
+  own message by `readArmedState` (`core/src/gates/preflight.ts:67`) and prefixed `oso-code: ` by
+  `judgeStale` itself — surfaced as session-start context rather than a command's own exit. The
+  probe reached that prefix through `unwritableStateMessage`, a one-line wrapper the sweep after
+  this run folded into its single caller without altering a character of the text.
 - **No task identity resolves at all** (`cwd` outside any git repository, `OSO_TASK_ROOT` unset):
-  `unidentifiedStateMessage` (`core/src/gates/preflight.ts:117`), run live against `<HOME3>` for
+  `unidentifiedStateMessage` (`core/src/gates/preflight.ts:123`), run live against `<HOME3>` for
   this round — `"oso-code: this session can name none of its own (fatal: not a git repository ...)
   until OSO_TASK_ROOT declares one, so this session's gates read every call here as no session
   armed and allow without saying so. Run inside a git repository, or declare OSO_TASK_ROOT, then
   start a fresh session to arm them."`
 
-All three messages trace to `judgeStale` (`core/src/gates/stale.ts:35`), the one gate every host
+All three messages trace to `judgeStale` (`core/src/gates/stale.ts:34`), the one gate every host
 runs at session start per ADR-0159, which now tells `unusable`, `unwritable` and `unidentified`
 apart rather than sharing one silent `allow`. The write test and the first two of these exercise
 the same underlying fault through two different doors; all three name it rather than staying
@@ -222,8 +247,8 @@ behavior Plan Mode itself touches.
   against a fresh throwaway path, never the operator's real one. Run directly, outside that sandbox,
   against this machine's own `HOME`, it reds on two carriers, not two pre-existing ones.
   `docs/decisions/0094-codex-baseline-and-minimum-version.md:60` is pre-existing and unrelated:
-  `git log --follow` on that file returns only commits that predate `60347f2`, this change's own
-  first commit. `docs/measure-codex-hook-sandbox.md:15` is not pre-existing at all — `git log
+  `git log --follow` on that file returns only commits that predate `60347f2`, the baseline this
+  change's own range opens at. `docs/measure-codex-hook-sandbox.md:15` is not pre-existing at all — `git log
   --follow` on that file returns exactly one commit, `d226dc9`, itself inside `60347f2..aa27787` —
   so this change added the second carrier it was just certified not to have added. Confirming this
   certification's own file adds no third still stands; settling either carrier is outside this
@@ -252,7 +277,9 @@ behavior Plan Mode itself touches.
 ## The bar
 
 Run against this working tree, not the disposable trees above, per this slice's verify-exception —
-its own product is this record, not code the suite executes:
+its own product is this record, not code the suite executes. Unlike the probes above, this table is
+not pinned to `09894a3`: every row was re-run on 2026-09-12 over the swept tree and came back at the
+counts already recorded here, which is the evidence the scoping note above rests on.
 
 | Command | Result |
 |---|---|

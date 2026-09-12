@@ -359,13 +359,15 @@ conclusion.
 | uncaught throw, no exit call | silent; turn completes normally | MEASURED, one non-reproducing attempt noted |
 
 None of the three conditions surface a warning to the operator. This is the
-fact D9 motivates: today, `core/src/state/plan.ts:94`'s bare `mkdirSync`
-inside `requireNonSymlinkDirectory` throws a plain Node error on an
-unwritable state root, and `core/src/gates/planstop.ts:89-100`'s
-`captureNativePresentation` already catches every exception `runCapturePlan`
-can raise and turns it into a `blocked` verdict rather than letting it
-reach the process boundary. If a future change to `runCapturePlan` ever let
-an exception escape that catch, `core/src/gates/dispatch.ts:64`'s routing of
+fact D9 motivates. At measurement time `core/src/state/plan.ts`'s bare
+`mkdirSync` inside `requireNonSymlinkDirectory` threw a plain Node error on
+an unwritable state root; ADR-0159 has since routed the state root through
+`store.requireWritableStateRoot` (`core/src/state/plan.ts:95`) instead,
+which names that fault and its remedy rather than raising a bare errno.
+`core/src/gates/planstop.ts:89-100`'s `captureNativePresentation` already
+catches every exception `runCapturePlan` can raise and turns it into a
+`blocked` verdict rather than letting it reach the process boundary. If a
+future change to `runCapturePlan` ever let an exception escape that catch, `core/src/gates/dispatch.ts:64`'s routing of
 `STOP_GATES` to `loudRun` (`dispatch.ts:103,105`) would still convert it to
 a clean `exit: 1`, `stdout: ""` — and per this measurement, Codex would let
 that pass without a trace. The invariant D2 names — the rail never fails

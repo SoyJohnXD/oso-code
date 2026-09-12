@@ -106,11 +106,7 @@ function report(error: unknown, verb: string): number {
     process.stderr.write(`oso-state: journal: ${error.message}\n`);
     return 1;
   }
-  if (error instanceof store.StateFileUnreadableError) {
-    process.stderr.write(`oso-state: ${verb}: ${error.message}\n`);
-    return 1;
-  }
-  if (error instanceof store.StateRootUnwritableError) {
+  if (error instanceof store.StateFileUnreadableError || error instanceof store.StateRootUnwritableError) {
     process.stderr.write(`oso-state: ${verb}: ${error.message}\n`);
     return 1;
   }

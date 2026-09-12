@@ -76,10 +76,6 @@ export function writeWaitMark(markFile: string, mark: WaitMark): void {
   writeFileSync(markFile, serializedMark(mark), { mode: OWNER_ONLY_FILE });
 }
 
-export function adoptMarkIntoRun(markFile: string, mark: WaitMark, run: string): void {
-  writeWaitMark(markFile, { ...mark, run });
-}
-
 export function removeWaitMark(markFile: string): string | undefined {
   try {
     rmSync(markFile, { force: true });

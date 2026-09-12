@@ -33,7 +33,7 @@ const CANONICAL_CODEX_AGENT_PATH_PATTERN = /^\/root(?:\/[a-zA-Z0-9_-]+)+$/;
 export type CodexDelegationClaim = HandoffCoordinates & Readonly<{ agentPath: string }>;
 
 export function runHandoffResolveCodex(cwd: string, coordinates: Omit<HandoffCoordinates, "agentId"> & { agentPath: string }): string {
-  const parentId = process.env["CODEX_THREAD_ID"] ?? "";
+  const parentId = codexThreadId();
   if (!CODEX_UUID_PATTERN.test(parentId)) throw new HandoffFailure("resolve-codex requires a valid current CODEX_THREAD_ID");
   validateCoordinates({ ...coordinates, agentId: parentId });
   requireCanonicalAgentPath(coordinates.agentPath);
@@ -42,27 +42,20 @@ export function runHandoffResolveCodex(cwd: string, coordinates: Omit<HandoffCoo
     const repository = nativeRepositoryIdentity(cwd, deadline);
     const directory = receiptDirectoryFor(cwd);
     const candidates = codexReceiptCandidates(directory, coordinates, deadline);
-    const codexHome = process.env["CODEX_HOME"] || path.join(store.homeDirectoryFrom(process.platform, process.env), ".codex");
-    const matches = new Set<string>();
-    let unreadableRollout: CodexMetadataFailure | undefined;
-    for (const rollout of rolloutPaths(path.join(codexHome, "sessions"), deadline)) {
-      let metadata: CodexSessionMetadata;
-      try {
-        metadata = readCodexSessionMetadata(rollout, deadline);
-      } catch (error) {
-        if (!(error instanceof CodexMetadataFailure)) throw error;
-        unreadableRollout ??= error;
-        continue;
-      }
-      if (!candidates.has(metadata.id)) continue;
-      if (metadata.parentThreadId !== parentId || metadata.agentPath !== coordinates.agentPath || metadata.agentRole !== coordinates.agentType) continue;
-      if (metadata.id === parentId || nativeRepositoryIdentity(metadata.cwd, deadline) !== repository) continue;
-      if (matches.has(metadata.id)) throw new HandoffFailure(`ambiguous native rollouts for ${metadata.id}`);
-      matches.add(metadata.id);
+    const matches = matchingNativeRollouts(deadline, (metadata) =>
+      candidates.has(metadata.id) &&
+      metadata.parentThreadId === parentId &&
+      metadata.agentPath === coordinates.agentPath &&
+      metadata.agentRole === coordinates.agentType &&
+      metadata.id !== parentId &&
+      nativeRepositoryIdentity(metadata.cwd, deadline) === repository);
+    const ids = new Set<string>();
+    for (const metadata of matches) {
+      if (ids.has(metadata.id)) throw new HandoffFailure(`ambiguous native rollouts for ${metadata.id}`);
+      ids.add(metadata.id);
     }
-    if (matches.size === 0 && unreadableRollout !== undefined) throw unreadableRollout;
-    if (matches.size !== 1) throw new HandoffFailure(`expected exactly one current Codex receipt match, found ${matches.size}`);
-    const id = [...matches][0] as string;
+    if (ids.size !== 1) throw new HandoffFailure(`expected exactly one current Codex receipt match, found ${ids.size}`);
+    const id = [...ids][0] as string;
     const receipt = candidates.get(id) as string;
     if (readCurrentCodexReceipt(directory, `${store.sha256Hex(id)}.receipt`, coordinates, deadline) !== receipt) {
       throw new HandoffFailure("Codex receipt changed during resolution");
@@ -75,19 +68,8 @@ export function runHandoffResolveCodex(cwd: string, coordinates: Omit<HandoffCoo
 }
 
 export function runHandoffAdopt(cwd: string, claim: CodexDelegationClaim): void {
-  const deadline = performance.now() + CODEX_METADATA_READINESS_MS;
-  const session = process.env["CODEX_THREAD_ID"] ?? "";
-  const detail = `${claim.agentType}:${claim.slice}:${claim.attempt}`;
-  try {
-    validateCoordinates(claim);
-    requireCanonicalAgentPath(claim.agentPath);
-    confirmCodexDelegation(cwd, claim, deadline);
-  } catch (error) {
-    const failure = asNativeCodexFailure("adopt", error);
-    store.logEvent({ event: "handoff-adopt-failed", session, command: `${detail}: ${failure.message}` });
-    throw failure;
-  }
-  store.logEvent({ event: "handoff-adopted", session, command: detail });
+  proveClaim(cwd, claim, "adopt", "handoff-adopt-failed");
+  store.logEvent({ event: "handoff-adopted", session: codexThreadId(), command: claimDetail(claim) });
 }
 
 export function runHandoffPublish(cwd: string, coordinates: HandoffCoordinates, hookSession: string): void {
@@ -169,18 +151,7 @@ export function runHandoffWait(cwd: string, coordinates: HandoffCoordinates, tim
 }
 
 export function runHandoffConsume(cwd: string, claim: CodexDelegationClaim): string {
-  const deadline = performance.now() + CODEX_METADATA_READINESS_MS;
-  const session = process.env["CODEX_THREAD_ID"] ?? "";
-  const detail = `${claim.agentType}:${claim.slice}:${claim.attempt}`;
-  try {
-    validateCoordinates(claim);
-    requireCanonicalAgentPath(claim.agentPath);
-    confirmCodexDelegation(cwd, claim, deadline);
-  } catch (error) {
-    const failure = asNativeCodexFailure("consume", error);
-    store.logEvent({ event: "handoff-consume-claim-failed", session, command: `${detail}: ${failure.message}` });
-    throw failure;
-  }
+  proveClaim(cwd, claim, "consume", "handoff-consume-claim-failed");
   const paths = handoffPaths(cwd, claim.agentId);
   if (!store.isDirectory(paths.directory)) {
     throw new HandoffFailure(`no receipt for slice ${claim.slice} attempt ${claim.attempt}`);
@@ -513,6 +484,28 @@ function asNativeCodexFailure(verb: string, error: unknown): HandoffFailure {
   return new HandoffFailure(`cannot ${verb} Codex handoff: ${store.causeOf(error)}`, { cause: error });
 }
 
+function proveClaim(cwd: string, claim: CodexDelegationClaim, verb: string, failedEvent: string): void {
+  const deadline = performance.now() + CODEX_METADATA_READINESS_MS;
+  try {
+    validateCoordinates(claim);
+    requireCanonicalAgentPath(claim.agentPath);
+    confirmCodexDelegation(cwd, claim, deadline);
+  } catch (error) {
+    const failure = asNativeCodexFailure(verb, error);
+    const command = `${claimDetail(claim)}: ${failure.message}`;
+    store.logEvent({ event: failedEvent, session: codexThreadId(), command });
+    throw failure;
+  }
+}
+
+function claimDetail(claim: CodexDelegationClaim): string {
+  return `${claim.agentType}:${claim.slice}:${claim.attempt}`;
+}
+
+function codexThreadId(): string {
+  return process.env["CODEX_THREAD_ID"] ?? "";
+}
+
 function confirmCodexDelegation(cwd: string, claim: CodexDelegationClaim, deadline: number): void {
   const repository = nativeRepositoryIdentity(cwd, deadline);
   const metadata = soleMatchingRollout(claim.agentId, deadline);
@@ -526,8 +519,15 @@ function confirmCodexDelegation(cwd: string, claim: CodexDelegationClaim, deadli
 }
 
 function soleMatchingRollout(agentId: string, deadline: number): CodexSessionMetadata {
+  const matches = matchingNativeRollouts(deadline, (metadata) => metadata.id === agentId);
+  if (matches.length === 0) throw new HandoffFailure("no native rollout for the asserted agent, found 0");
+  if (matches.length > 1) throw new HandoffFailure(`ambiguous native rollouts for the asserted agent, found ${matches.length}`);
+  return matches[0] as CodexSessionMetadata;
+}
+
+function matchingNativeRollouts(deadline: number, isMatch: (metadata: CodexSessionMetadata) => boolean): CodexSessionMetadata[] {
   const codexHome = process.env["CODEX_HOME"] || path.join(store.homeDirectoryFrom(process.platform, process.env), ".codex");
-  const matches: CodexSessionMetadata[] = [];
+  const matched: CodexSessionMetadata[] = [];
   let unreadableRollout: CodexMetadataFailure | undefined;
   for (const rollout of rolloutPaths(path.join(codexHome, "sessions"), deadline)) {
     let metadata: CodexSessionMetadata;
@@ -538,12 +538,10 @@ function soleMatchingRollout(agentId: string, deadline: number): CodexSessionMet
       unreadableRollout ??= error;
       continue;
     }
-    if (metadata.id === agentId) matches.push(metadata);
+    if (isMatch(metadata)) matched.push(metadata);
   }
-  if (matches.length === 0 && unreadableRollout !== undefined) throw unreadableRollout;
-  if (matches.length === 0) throw new HandoffFailure("no native rollout for the asserted agent, found 0");
-  if (matches.length > 1) throw new HandoffFailure(`ambiguous native rollouts for the asserted agent, found ${matches.length}`);
-  return matches[0] as CodexSessionMetadata;
+  if (matched.length === 0 && unreadableRollout !== undefined) throw unreadableRollout;
+  return matched;
 }
 
 function requireLiveCodexReceipt(cwd: string, claim: CodexDelegationClaim, deadline: number): void {

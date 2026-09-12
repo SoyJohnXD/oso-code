@@ -8,6 +8,7 @@ import { createHash, randomBytes } from "node:crypto";
 import {
   accessSync,
   appendFileSync,
+  chmodSync,
   constants,
   existsSync,
   lstatSync,
@@ -292,7 +293,7 @@ import { tmpdir } from "node:os";
 import path4 from "node:path";
 
 // core/src/install/backup.ts
-import { chmodSync, cpSync, lstatSync as lstatSync2, mkdirSync as mkdirSync2, readdirSync, readFileSync as readFileSync2, rmSync as rmSync2, statSync as statSync2, writeFileSync as writeFileSync2 } from "node:fs";
+import { chmodSync as chmodSync2, cpSync, lstatSync as lstatSync2, mkdirSync as mkdirSync2, readdirSync, readFileSync as readFileSync2, rmSync as rmSync2, statSync as statSync2, writeFileSync as writeFileSync2 } from "node:fs";
 import path2 from "node:path";
 var BACKUP_NAME_PATTERN = /^install-backup-\d{8}-\d{6}-.+$/;
 var DEFAULT_BUDGET_KIB = 307200;
@@ -350,7 +351,7 @@ function beginTransaction(backupsRoot, format) {
   const backupRoot = path2.join(backupsRoot, `install-backup-${compactTimestamp()}-${process.pid}`);
   const itemsDirectory = path2.join(backupRoot, "items");
   mkdirSync2(itemsDirectory, { recursive: true });
-  chmodSync(backupRoot, 448);
+  chmodSync2(backupRoot, 448);
   writeFileSync2(path2.join(backupRoot, "format"), `${format}
 `);
   return { backupRoot, itemsDirectory, manifest: [] };
@@ -1994,7 +1995,7 @@ function isPlainRecord(value) {
 
 // core/src/install/codex.ts
 import { spawnSync as spawnSync5 } from "node:child_process";
-import { chmodSync as chmodSync2, cpSync as cpSync2, mkdirSync as mkdirSync6, mkdtempSync as mkdtempSync4, readFileSync as readFileSync10, readdirSync as readdirSync5, renameSync as renameSync3, rmSync as rmSync7, writeFileSync as writeFileSync7 } from "node:fs";
+import { chmodSync as chmodSync3, cpSync as cpSync2, mkdirSync as mkdirSync6, mkdtempSync as mkdtempSync4, readFileSync as readFileSync10, readdirSync as readdirSync5, renameSync as renameSync3, rmSync as rmSync7, writeFileSync as writeFileSync7 } from "node:fs";
 import path10 from "node:path";
 
 // core/src/install/codex-config.ts
@@ -3817,7 +3818,7 @@ function stageRuntime(paths, sources, repositoryRoot2) {
       mkdirSync6(path10.dirname(target), { recursive: true });
       cpSync2(path10.join(repositoryRoot2, ...row.file.split("/")), target);
       if (row.file.startsWith("plugin/hooks/") || row.file === "plugin/bin/oso-state" || row.file === "plugin/git-hooks/pre-commit") {
-        chmodSync2(target, 448);
+        chmodSync3(target, 448);
       }
     }
     mkdirSync6(paths.codexHome, { recursive: true });
@@ -3842,7 +3843,7 @@ function stageAgents(paths, sources) {
       const target = path10.join(stage, name);
       rmSync7(target, { force: true, recursive: true });
       cpSync2(source, target);
-      chmodSync2(target, 384);
+      chmodSync3(target, 384);
     }
   });
 }
@@ -4965,7 +4966,7 @@ function probeEnvironment2(environment, probeHome) {
 }
 
 // core/src/install/opencode-install.ts
-import { chmodSync as chmodSync3, cpSync as cpSync3, lstatSync as lstatSync3, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync6, readdirSync as readdirSync6, readFileSync as readFileSync14, renameSync as renameSync4, rmSync as rmSync9, writeFileSync as writeFileSync9 } from "node:fs";
+import { chmodSync as chmodSync4, cpSync as cpSync3, lstatSync as lstatSync3, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync6, readdirSync as readdirSync6, readFileSync as readFileSync14, renameSync as renameSync4, rmSync as rmSync9, writeFileSync as writeFileSync9 } from "node:fs";
 import { spawnSync as spawnSync7 } from "node:child_process";
 import path15 from "node:path";
 
@@ -5452,20 +5453,20 @@ function installPayloadTrees(paths, targets, sources) {
   replaceTree2(paths.configHome, targets.hooks, (stage) => {
     for (const script of publishedGateScriptNames(sources.publishedHashes)) {
       cpSync3(path15.join(sources.gates, script), path15.join(stage, script));
-      chmodSync3(path15.join(stage, script), EXECUTABLE_FILE_MODE);
+      chmodSync4(path15.join(stage, script), EXECUTABLE_FILE_MODE);
     }
   });
   replaceTree2(paths.configHome, targets.stateBin, (stage) => {
     cpSync3(sources.stateBin, path15.join(stage, "oso-state"));
     cpSync3(sources.stateBinPackage, path15.join(stage, "package.json"));
-    chmodSync3(path15.join(stage, "oso-state"), EXECUTABLE_FILE_MODE);
+    chmodSync4(path15.join(stage, "oso-state"), EXECUTABLE_FILE_MODE);
   });
   replaceTree2(paths.configHome, targets.dist, (stage) => {
     for (const bundle of publishedDistFileNames(sources.publishedHashes)) cpSync3(path15.join(sources.dist, bundle), path15.join(stage, bundle));
   });
   replaceTree2(paths.configHome, targets.gitHooks, (stage) => {
     cpSync3(sources.gitHook, path15.join(stage, "pre-commit"));
-    chmodSync3(path15.join(stage, "pre-commit"), EXECUTABLE_FILE_MODE);
+    chmodSync4(path15.join(stage, "pre-commit"), EXECUTABLE_FILE_MODE);
   });
 }
 function publishedGateBytesEntry(publishedHashes, configHome, hooksTarget) {
@@ -5486,7 +5487,7 @@ function renderOpenCodeConfig(input, paths, tx) {
   const violation = hostContractViolationOf(merged.document);
   if (violation !== void 0) throw new Error(`the rendered config violates the host contract: ${violation}`);
   writeJsonFile(paths.configFile, merged.document);
-  chmodSync3(paths.configFile, PRIVATE_FILE_MODE);
+  chmodSync4(paths.configFile, PRIVATE_FILE_MODE);
   writeFileSync9(preservedKeysFileOf(tx), merged.preservedKeys.map((key) => `${key}
 `).join(""));
   return wiringOk("opencode.json", `preserved ${merged.preservedKeys.length} operator key(s), ${agentModelNote(profile, merged.agentModels)}`);
@@ -5651,7 +5652,7 @@ function replaceTree2(stageParent, target, fill) {
 function narrowToOwnerOnly(target) {
   const stats = lstatSync3(target);
   if (stats.isSymbolicLink()) return;
-  chmodSync3(target, stats.mode & OWNER_ONLY_MASK);
+  chmodSync4(target, stats.mode & OWNER_ONLY_MASK);
   if (!stats.isDirectory()) return;
   for (const name of readdirSync6(target)) narrowToOwnerOnly(path15.join(target, name));
 }
@@ -6542,7 +6543,7 @@ function hostOutput(run) {
 
 // core/src/install/verify-opencode.ts
 import { spawnSync as spawnSync9 } from "node:child_process";
-import { chmodSync as chmodSync4, mkdirSync as mkdirSync10, mkdtempSync as mkdtempSync8, readdirSync as readdirSync8, readFileSync as readFileSync17, rmSync as rmSync12, writeFileSync as writeFileSync11 } from "node:fs";
+import { chmodSync as chmodSync5, mkdirSync as mkdirSync10, mkdtempSync as mkdtempSync8, readdirSync as readdirSync8, readFileSync as readFileSync17, rmSync as rmSync12, writeFileSync as writeFileSync11 } from "node:fs";
 import { tmpdir as tmpdir5 } from "node:os";
 import path18 from "node:path";
 
@@ -6781,7 +6782,7 @@ function writeFixtureEngramShim(directory) {
   mkdirSync10(directory, { recursive: true });
   const shim = path18.join(directory, ENGRAM_BINARY_NAME);
   writeFileSync11(shim, FIXTURE_ENGRAM_SHIM);
-  chmodSync4(shim, FIXTURE_SHIM_MODE);
+  chmodSync5(shim, FIXTURE_SHIM_MODE);
   return shim;
 }
 function fixtureEnvironmentFor(environment, home, root) {

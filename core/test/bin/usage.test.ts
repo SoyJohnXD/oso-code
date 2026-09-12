@@ -59,10 +59,9 @@ const TS_USAGE = BASH_USAGE.replace(
     "       oso-state handoff consume --slice <id> --attempt <n> --agent-id <id> --agent-type <type>\n",
     `${CONSUME_PROOF_LINE}${RESOLVE_CODEX_LINE}${ADOPT_LINE}${SCAN_LINES}`,
   )
-  .replace("be between 0 and 600 seconds.\n", `be between 0 and 600 seconds.${NATIVE_CLAIM_PARAGRAPH}`)
   .replace(
-    "consume now demands that same proof before it destroys a receipt.\n",
-    `consume now demands that same proof before it destroys a receipt.\n${SCAN_PARAGRAPH}`,
+    "be between 0 and 600 seconds.\n",
+    `be between 0 and 600 seconds.${NATIVE_CLAIM_PARAGRAPH}${SCAN_PARAGRAPH}`,
   );
 
 test(

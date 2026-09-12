@@ -16,11 +16,7 @@ function judgeReanchor({ envelope }: GateRequest): GateOutcome<SessionStartVerdi
   if (!isDirectory(envelope.cwd)) return ALLOWED;
 
   const state = readArmedState(envelope.cwd);
-  if (state.kind === "unidentified") return ALLOWED;
-  if (state.kind === "absent") return ALLOWED;
-  if (state.kind === "unwritable") return ALLOWED;
-  if (state.kind === "unusable") return ALLOWED;
-  if (state.kind === "moved") return ALLOWED;
+  if (state.kind !== "readable") return ALLOWED;
   const runMarker = unattendedRunMarker(state.content, sessionId);
   if (runMarker === undefined) return ALLOWED;
 

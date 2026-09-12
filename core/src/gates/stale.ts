@@ -17,7 +17,6 @@ import {
   stateValue,
   unidentifiedStateMessage,
   unusableStateMessage,
-  unwritableStateMessage,
   type GateDefinition,
   type GateRequest,
 } from "./preflight.ts";
@@ -36,7 +35,7 @@ function judgeStale({ envelope }: GateRequest): GateOutcome<SessionStartVerdict>
   const sessionId = hookSessionId(envelope);
   const state = readArmedState(envelope.cwd);
   if (state.kind === "unidentified") return contextOutcome(unidentifiedStateMessage(state.task));
-  if (state.kind === "unwritable") return contextOutcome(unwritableStateMessage(state.message));
+  if (state.kind === "unwritable") return contextOutcome(`oso-code: ${state.message}`);
   if (state.kind === "unusable") return contextOutcome(unusableStateMessage(state.stateFile, sessionId));
   if (state.kind === "absent") return ALLOWED;
   if (state.kind === "moved") return ALLOWED;

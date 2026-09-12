@@ -11,6 +11,7 @@ import {
   deniedForMovedIdentity,
   deniedForUnusableState,
   hookSessionId,
+  noSessionArmedHere,
   osoStateRemedy,
   payloadUnparseable,
   readArmedState,
@@ -52,9 +53,7 @@ function judgeProductionBoundary({ envelope }: GateRequest): GateOutcome {
 
   const state = readArmedState(envelope.cwd);
   if (state.kind === "moved") return deniedForMovedIdentity("proddeploy", state, session);
-  if (state.kind === "unidentified") return ALLOWED;
-  if (state.kind === "absent") return ALLOWED;
-  if (state.kind === "unwritable") return ALLOWED;
+  if (noSessionArmedHere(state)) return ALLOWED;
   const runMarker = runMarkerOf(state, session);
   if (runMarker === "unmarked") return ALLOWED;
   const boundary = { runMarker, stateFile: state.stateFile, session, caller: envelope.caller };

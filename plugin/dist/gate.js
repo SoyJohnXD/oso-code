@@ -1239,6 +1239,7 @@ import { createHash, randomBytes } from "node:crypto";
 import {
   accessSync,
   appendFileSync,
+  chmodSync,
   constants,
   existsSync,
   lstatSync,
@@ -1279,13 +1280,14 @@ var StateFileUnreadableError = class extends Error {
 var StateRootUnwritableError = class extends Error {
   directory;
   constructor(directory, cause) {
-    super(
-      `cannot write the oso-code state directory ${directory}: ${causeOf(cause)}. The gates read what it holds and treat an unwritten state as no armed session, so arming here would leave them unable to see their own state. ${remedyForUnwritableStateRoot(cause, directory)}`
-    );
+    super(unwritableStateRootMessage(directory, cause));
     this.name = "StateRootUnwritableError";
     this.directory = directory;
   }
 };
+function unwritableStateRootMessage(directory, cause) {
+  return `cannot write the oso-code state directory ${directory}: ${causeOf(cause)}. The gates read what it holds and treat an unwritten state as no armed session, so arming here would leave them unable to see their own state. ${remedyForUnwritableStateRoot(cause, directory)}`;
+}
 function remedyForUnwritableStateRoot(cause, directory) {
   const code = isErrnoException(cause) ? cause.code : void 0;
   if (code === "EROFS") {
@@ -1511,14 +1513,22 @@ function writeStatePairs(stateFile, pairs, sessionId) {
   const tempFile = createTempFile(directory, serializeStateLines(lines));
   renameSync(tempFile, stateFile);
 }
+var OWNER_ONLY_DIRECTORY = 448;
+var GROUP_AND_OTHER_ACCESS = 63;
 function requireWritableStateRoot() {
   const directory = stateRootDirectory();
   try {
-    mkdirSync(directory, { recursive: true });
+    mkdirSync(directory, { recursive: true, mode: OWNER_ONLY_DIRECTORY });
+    dropGroupAndOtherAccess(directory);
     accessSync(directory, constants.W_OK | constants.X_OK);
   } catch (error) {
     throw new StateRootUnwritableError(directory, error);
   }
+}
+function dropGroupAndOtherAccess(directory) {
+  const stats = lstatSync(directory);
+  if (stats.isSymbolicLink() || (stats.mode & GROUP_AND_OTHER_ACCESS) === 0) return;
+  chmodSync(directory, stats.mode & OWNER_ONLY_DIRECTORY);
 }
 function stateRootWritabilityFault() {
   const directory = stateRootDirectory();
@@ -1527,7 +1537,7 @@ function stateRootWritabilityFault() {
     accessSync(directory, constants.W_OK | constants.X_OK);
     return void 0;
   } catch (error) {
-    return causeOf(new StateRootUnwritableError(directory, error));
+    return unwritableStateRootMessage(directory, error);
   }
 }
 function clearStateFile(stateFile) {
@@ -1603,7 +1613,7 @@ function logEvent(entry) {
   const line = serializeEvent(entry);
   const eventsLog = path.join(stateRootDirectory(), "events.jsonl");
   try {
-    mkdirSync(path.dirname(eventsLog), { recursive: true });
+    requireWritableStateRoot();
     withOwnerOnlyUmask(() => appendFileSync(eventsLog, `${line}
 `));
     return true;
@@ -1817,6 +1827,9 @@ import path3 from "node:path";
 import { existsSync as existsSync2, readFileSync as readFileSync2 } from "node:fs";
 import path2 from "node:path";
 import { fileURLToPath } from "node:url";
+function noSessionArmedHere(state) {
+  return state.kind === "unidentified" || state.kind === "absent" || state.kind === "unwritable";
+}
 function sanitizeSession(raw) {
   return raw.replace(/[^a-zA-Z0-9-]/g, "");
 }
@@ -1875,9 +1888,6 @@ function deniedForUnusableState(gate, stateFile, session) {
 }
 function unidentifiedStateMessage(task) {
   return `oso-code: ${whatThisDirectoryNamesInstead(task)}, so this session's gates read every call here as no session armed and allow without saying so. Run inside a git repository, or declare ${TASK_ROOT_VARIABLE}, then start a fresh session to arm them.`;
-}
-function unwritableStateMessage(fault) {
-  return `oso-code: ${fault}`;
 }
 function identityMovedMessage(state, session) {
   return `oso-code: the state that arms this session's gates still sits at ${state.left.stateFile}, keyed by another task identity (${state.left.identity}), while ${whatThisDirectoryNamesInstead(state.task)}. ${carryItOverOrDropIt(state, session)}; until one of those runs, this gate denies rather than allowing on state it no longer reads.`;
@@ -1958,7 +1968,7 @@ var DISARMED_LABEL = "none";
 var COUNT_PATTERN = /^[0-9]+$/;
 var MARK_SUFFIX = ".waiting";
 var OWNER_ONLY_FILE = 384;
-var OWNER_ONLY_DIRECTORY = 448;
+var OWNER_ONLY_DIRECTORY2 = 448;
 var EXPIRED_DELEGATION_CLAUSE = `A delegation is marked in flight and that mark is older than ${DELEGATION_WAIT_CEILING_MINUTES} minutes, so treat it as lost unless its completion notification still arrives.`;
 function waitExpired(now, markedAtEpochSeconds) {
   return now - markedAtEpochSeconds >= DELEGATION_WAIT_CEILING_SECONDS;
@@ -1991,11 +2001,8 @@ function readWaitMark(markFile) {
   };
 }
 function writeWaitMark(markFile, mark) {
-  mkdirSync2(path3.dirname(markFile), { recursive: true, mode: OWNER_ONLY_DIRECTORY });
+  mkdirSync2(path3.dirname(markFile), { recursive: true, mode: OWNER_ONLY_DIRECTORY2 });
   writeFileSync2(markFile, serializedMark(mark), { mode: OWNER_ONLY_FILE });
-}
-function adoptMarkIntoRun(markFile, mark, run2) {
-  writeWaitMark(markFile, { ...mark, run: run2 });
 }
 function removeWaitMark(markFile) {
   try {
@@ -2025,7 +2032,7 @@ function countIn(content, key) {
 var PUSHES_WITHOUT_PROGRESS_CAP = 3;
 var RUN_ARMED = "running";
 var OWNER_ONLY_FILE2 = 384;
-var OWNER_ONLY_DIRECTORY2 = 448;
+var OWNER_ONLY_DIRECTORY3 = 448;
 var RE_ANCHOR_THE_RUN = "oso-code: this run is unattended and still in flight, and this turn ended without parking or closing it. Continue it: re-read the position from the change's oso/index NEXT: line and from active_slice in oso-state, append every milestone to the run journal with oso-state journal, and park the run per the flow's own rules if a decision needs the operator.";
 var NOTIFICATION_RESUMED_HOST = {
   order: `${RE_ANCHOR_THE_RUN} If a delegation is still in flight, do NOT relaunch it \u2014 its completion notification is what resumes the run, so wait for that instead.`,
@@ -2072,7 +2079,6 @@ function judgeAutocontinue({ envelope }) {
     projectDir,
     sessionId,
     markFile,
-    journalFile,
     tallyFile: tallyFileFor(journalFile),
     journalBytes: journalBytesIn(journalFile),
     stateModifiedAtEpochMillis: stateModifiedAtEpochMillisOf(stateFile),
@@ -2107,7 +2113,7 @@ function holdUnlessExpired(position, label) {
 }
 function adoptedIntoRun(position, label, standing) {
   try {
-    adoptMarkIntoRun(position.markFile, standing, position.run);
+    writeWaitMark(position.markFile, { ...standing, run: position.run });
     return held(position, label, standing.renewals);
   } catch (cause) {
     return degraded(position.sessionId, causeOf(cause));
@@ -2162,7 +2168,7 @@ function announceCap(position, milestone) {
 }
 function rememberPush(position, pushes) {
   try {
-    mkdirSync3(path4.dirname(position.tallyFile), { recursive: true, mode: OWNER_ONLY_DIRECTORY2 });
+    mkdirSync3(path4.dirname(position.tallyFile), { recursive: true, mode: OWNER_ONLY_DIRECTORY3 });
     writeFileSync3(position.tallyFile, `pushes=${pushes}
 `, { mode: OWNER_ONLY_FILE2 });
     return void 0;
@@ -2339,9 +2345,7 @@ function judgeCommit({ envelope }) {
   const session = hookSessionId(envelope);
   if (session === "") return payloadUnparseable();
   const state = readArmedState(envelope.cwd);
-  if (state.kind === "unidentified") return ALLOWED;
-  if (state.kind === "absent") return ALLOWED;
-  if (state.kind === "unwritable") return ALLOWED;
+  if (noSessionArmedHere(state)) return ALLOWED;
   if (state.kind === "moved") return deniedForMovedIdentity("commit", state, session);
   if (state.kind === "unusable") return deniedForUnusableState("commit", state.stateFile, session);
   const verdict = lineVerdict(envelope.commandLine, judgeCommitLine);
@@ -2389,9 +2393,7 @@ function judgeEdits({ envelope }) {
   const session = hookSessionId(envelope);
   if (session === "") return payloadUnparseable();
   const state = readArmedState(envelope.cwd);
-  if (state.kind === "unidentified") return ALLOWED;
-  if (state.kind === "absent") return ALLOWED;
-  if (state.kind === "unwritable") return ALLOWED;
+  if (noSessionArmedHere(state)) return ALLOWED;
   if (state.kind === "moved") return deniedForMovedIdentity("edits", state, session);
   if (state.kind === "unusable") return deniedForUnusableState("edits", state.stateFile, session);
   if (!stateSays(state.content, "mode", "plan")) return ALLOWED;
@@ -2411,7 +2413,7 @@ function aSliceIsActive(stateContent) {
 }
 
 // core/src/state/handoff.ts
-import { chmodSync, existsSync as existsSync3, lstatSync as lstatSync3, mkdirSync as mkdirSync4, opendirSync, readFileSync as readFileSync3, readdirSync, realpathSync as realpathSync2, rmSync as rmSync3 } from "node:fs";
+import { chmodSync as chmodSync2, existsSync as existsSync3, lstatSync as lstatSync3, mkdirSync as mkdirSync4, opendirSync, readFileSync as readFileSync3, readdirSync, realpathSync as realpathSync2, rmSync as rmSync3 } from "node:fs";
 import path5 from "node:path";
 
 // core/src/hosts/codex-session-metadata.ts
@@ -2613,7 +2615,7 @@ function handoffPaths(cwd, agentId) {
 }
 function protectDirectory(directory) {
   try {
-    chmodSync(directory, 448);
+    chmodSync2(directory, 448);
   } catch (error) {
     throw new HandoffFailure("cannot protect receipt directory", { cause: error });
   }
@@ -2846,7 +2848,7 @@ function published(session, detail) {
 import { statSync as statSync4 } from "node:fs";
 
 // core/src/state/plan.ts
-import { chmodSync as chmodSync2, existsSync as existsSync4, mkdirSync as mkdirSync5, readFileSync as readFileSync4, renameSync as renameSync2, rmSync as rmSync4 } from "node:fs";
+import { chmodSync as chmodSync3, existsSync as existsSync4, mkdirSync as mkdirSync5, readFileSync as readFileSync4, renameSync as renameSync2, rmSync as rmSync4 } from "node:fs";
 import path6 from "node:path";
 
 // core/src/state/transitions.ts
@@ -2919,8 +2921,8 @@ function ensurePlanDirectory(paths) {
   requireWritableNonSymlinkStateRoot();
   requireNonSymlinkDirectory(paths.root, "plan root");
   requireNonSymlinkDirectory(paths.dir, "repository plan directory", "repository plan path");
-  chmodSync2(paths.root, 448);
-  chmodSync2(paths.dir, 448);
+  chmodSync3(paths.root, 448);
+  chmodSync3(paths.dir, 448);
 }
 function requireWritableNonSymlinkStateRoot() {
   const stateRoot = stateRootDirectory();
@@ -4016,9 +4018,7 @@ function judgeProductionBoundary({ envelope }) {
   if (session === "") return payloadUnparseable();
   const state = readArmedState(envelope.cwd);
   if (state.kind === "moved") return deniedForMovedIdentity("proddeploy", state, session);
-  if (state.kind === "unidentified") return ALLOWED;
-  if (state.kind === "absent") return ALLOWED;
-  if (state.kind === "unwritable") return ALLOWED;
+  if (noSessionArmedHere(state)) return ALLOWED;
   const runMarker = runMarkerOf(state, session);
   if (runMarker === "unmarked") return ALLOWED;
   const boundary = { runMarker, stateFile: state.stateFile, session, caller: envelope.caller };
@@ -4175,11 +4175,7 @@ function judgeReanchor({ envelope }) {
   if (sessionId === "") return ALLOWED;
   if (!isDirectory(envelope.cwd)) return ALLOWED;
   const state = readArmedState(envelope.cwd);
-  if (state.kind === "unidentified") return ALLOWED;
-  if (state.kind === "absent") return ALLOWED;
-  if (state.kind === "unwritable") return ALLOWED;
-  if (state.kind === "unusable") return ALLOWED;
-  if (state.kind === "moved") return ALLOWED;
+  if (state.kind !== "readable") return ALLOWED;
   const runMarker = unattendedRunMarker(state.content, sessionId);
   if (runMarker === void 0) return ALLOWED;
   let unattendedRun = false;
@@ -4232,7 +4228,7 @@ function judgeStale({ envelope }) {
   const sessionId = hookSessionId(envelope);
   const state = readArmedState(envelope.cwd);
   if (state.kind === "unidentified") return contextOutcome(unidentifiedStateMessage(state.task));
-  if (state.kind === "unwritable") return contextOutcome(unwritableStateMessage(state.message));
+  if (state.kind === "unwritable") return contextOutcome(`oso-code: ${state.message}`);
   if (state.kind === "unusable") return contextOutcome(unusableStateMessage(state.stateFile, sessionId));
   if (state.kind === "absent") return ALLOWED;
   if (state.kind === "moved") return ALLOWED;
@@ -4491,9 +4487,7 @@ function judgeUnknownTool({ envelope, argv }) {
   const session = sanitizeSession(envelope.sessionId);
   if (session === "") return payloadUnparseable();
   const state = readArmedState(envelope.cwd);
-  if (state.kind === "unidentified") return ALLOWED;
-  if (state.kind === "absent") return ALLOWED;
-  if (state.kind === "unwritable") return ALLOWED;
+  if (noSessionArmedHere(state)) return ALLOWED;
   if (state.kind === "moved") return deniedForMovedIdentity("unknown", state, session);
   if (state.kind === "unusable") return deniedForUnusableState("unknown", state.stateFile, session);
   if (thisSessionsPlanIsPending(state.content, session)) {

@@ -12,6 +12,7 @@ import {
   REPOSITORY_RUNS_DIR,
   STATE_FILE,
   withStateSandbox,
+  type ObservedEntry,
   type SeededEntry,
   type StateSandbox,
 } from "../support/state-sandbox.ts";
@@ -44,7 +45,9 @@ function stateText(fields: Readonly<Record<string, string>>, patch: StatePatch =
     .join("\n")}\n`;
 }
 
-function mark(run: string, agedSeconds: number, label: string, journalBytes = 0, renewals = 0): SeededEntry {
+type MarkEvidence = Readonly<{ journalBytes?: number; renewals?: number }>;
+
+function mark(run: string, agedSeconds: number, label: string, { journalBytes = 0, renewals = 0 }: MarkEvidence = {}): SeededEntry {
   return {
     kind: "file",
     content: `run=${run}\nsession=test-session\nlabel=${label}\njournal_bytes=${journalBytes}\nrenewals=${renewals}\n`,
@@ -60,12 +63,27 @@ function judged(
 ): GateRun {
   return withStateSandbox("workspace", (sandbox) => {
     sandbox.seed(seed);
-    const run = withHookEnvironment(sandbox.hookEnvironment({ OSO_STATE_BIN: "oso-state" }), () =>
-      runGate([gate], spawnedEnvelope(sandbox.expandJson(payload), process.env)),
-    );
+    const run = judgedIn(sandbox, gate, payload);
     observe(sandbox, run);
     return run;
   });
+}
+
+type JudgedMark = Readonly<{ run: GateRun; before: number; after: number; mark: ObservedEntry }>;
+
+function autocontinueWatchingMark(seed: Readonly<Record<string, SeededEntry>>, markPath: string): JudgedMark {
+  return withStateSandbox("workspace", (sandbox) => {
+    sandbox.seed(seed);
+    const before = markedAt(sandbox, markPath);
+    const run = judgedIn(sandbox, "autocontinue", STOP_PAYLOAD);
+    return { run, before, after: markedAt(sandbox, markPath), mark: sandbox.read(markPath) };
+  });
+}
+
+function judgedIn(sandbox: StateSandbox, gate: string, payload: string): GateRun {
+  return withHookEnvironment(sandbox.hookEnvironment({ OSO_STATE_BIN: "oso-state" }), () =>
+    runGate([gate], spawnedEnvelope(sandbox.expandJson(payload), process.env)),
+  );
 }
 
 function markedAt(sandbox: StateSandbox, relativePath: string): number {
@@ -143,20 +161,16 @@ describe(
     });
 
     test("carrying that mark into a new run refreshes its clock rather than inheriting an expired one", () => {
-      let before = 0;
-      let after = 0;
-      withStateSandbox("workspace", (sandbox) => {
-        sandbox.seed({
+      const { before, after, mark: adopted } = autocontinueWatchingMark(
+        {
           [STATE_FILE]: stateText({ ...HANKO_RUN, auto_change: "child-two", auto_wait: "wave-2" }),
           [MARK_FILE]: mark("child-one", PAST_THE_CEILING, "wave-2"),
-        });
-        before = markedAt(sandbox, MARK_FILE);
-        withHookEnvironment(sandbox.hookEnvironment(), () => runGate(["autocontinue"], spawnedEnvelope(sandbox.expandJson(STOP_PAYLOAD), process.env)));
-        after = markedAt(sandbox, MARK_FILE);
-        assert.equal(
-          sandbox.read(MARK_FILE).kind === "file" ? (sandbox.read(MARK_FILE) as { content: string }).content : "",
-          "run=child-two\nsession=test-session\nlabel=wave-2\njournal_bytes=0\nrenewals=0\n",
-        );
+        },
+        MARK_FILE,
+      );
+      assert.deepEqual(adopted, {
+        kind: "file",
+        content: "run=child-two\nsession=test-session\nlabel=wave-2\njournal_bytes=0\nrenewals=0\n",
       });
       assert.ok(after > before, `expected the adopted mark's clock to move forward, but ${after} <= ${before}`);
     });
@@ -255,20 +269,13 @@ describe(
     "renewal budget and near-expired clock of whichever label the mark last named",
   () => {
     test("a mark armed under label X, then a delegation armed under label Y, holds on the new label's own fresh clock", () => {
-      let before = 0;
-      let after = 0;
-      const run = withStateSandbox("workspace", (sandbox) => {
-        sandbox.seed({
+      const { run, before, after } = autocontinueWatchingMark(
+        {
           [STATE_FILE]: stateText({ ...HANKO_RUN, auto_wait: "wave-9" }),
           [MARK_FILE]: mark("hanko", NINE_MINUTES, "wave-2"),
-        });
-        before = markedAt(sandbox, MARK_FILE);
-        const observed = withHookEnvironment(sandbox.hookEnvironment(), () =>
-          runGate(["autocontinue"], spawnedEnvelope(sandbox.expandJson(STOP_PAYLOAD), process.env)),
-        );
-        after = markedAt(sandbox, MARK_FILE);
-        return observed;
-      });
+        },
+        MARK_FILE,
+      );
       assert.equal(run.stdout, "{}\n");
       assert.deepEqual(
         run.events.map((event) => `${event.event} ${event.command ?? ""}`),
@@ -281,7 +288,7 @@ describe(
       const run = judged(
         {
           [STATE_FILE]: stateText({ ...HANKO_RUN, auto_wait: "wave-9" }),
-          [MARK_FILE]: mark("hanko", PAST_THE_CEILING, "wave-2", 0, DELEGATION_WAIT_RENEWALS_CAP),
+          [MARK_FILE]: mark("hanko", PAST_THE_CEILING, "wave-2", { renewals: DELEGATION_WAIT_RENEWALS_CAP }),
         },
         "autocontinue",
         STOP_PAYLOAD,

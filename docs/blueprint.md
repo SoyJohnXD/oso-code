@@ -17,7 +17,7 @@ Every decision this design has taken since the freeze is one file under [docs/de
 
 ### Index
 
-The index — one decision per line, dated and grouped by the commit it landed in — lives in the directory itself rather than a copy kept here, since a second index is one more place this map could go stale: [docs/decisions/](decisions/) holds 160 files today, [0001](decisions/0001-delegated-slice-execution.md) through [0160](decisions/0160-a-resumed-session-adopts-its-receipt-and-consume-proves-the-same-claim.md).
+The index — one decision per line, dated and grouped by the commit it landed in — lives in the directory itself rather than a copy kept here, since a second index is one more place this map could go stale: [docs/decisions/](decisions/) holds 161 files today, [0001](decisions/0001-delegated-slice-execution.md) through [0161](decisions/0161-a-wait-mark-belongs-to-its-delegation-and-progress-is-the-runs-own-state.md).
 
 ## Foundational decisions
 

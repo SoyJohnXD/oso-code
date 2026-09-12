@@ -15,6 +15,7 @@ import {
   renderOsoPermissionProfile,
   tomlQuote,
 } from "../../src/install/codex-config.ts";
+import { LEGACY_DENIED_WORKSPACE_GLOBS } from "../../src/install/codex-migrate.ts";
 import {
   codexPathsFor,
   installCodex,
@@ -824,40 +825,14 @@ describe("the global AGENTS.md region rebuild", () => {
   });
 });
 
-const RETIRED_SECRET_DENIAL_GLOBS = [
-  "**/secrets/*",
-  "**/*.key",
-  "**/*.pem",
-  "**/.env.*.local",
-  "**/.env.local",
-  "**/.env",
-  "**/.env.production",
-  "**/.npmrc",
-  "**/*.p12",
-  "**/*.pfx",
-  "**/*.jks",
-  "**/*.keystore",
-  "**/id_rsa",
-  "**/id_dsa",
-  "**/id_ecdsa",
-  "**/id_ecdsa_sk",
-  "**/id_ed25519",
-  "**/id_ed25519_sk",
-  "**/.ssh/**",
-  "**/.aws/**",
-  "**/.config/gcloud/**",
-  "**/.azure/**",
-  "**/.kube/**",
-] as const;
-
 describe("renderOsoPermissionProfile keeps only what native :workspace does not already give", () => {
   const home = "/home/operator";
   const profile = renderOsoPermissionProfile(home);
 
   provedSomething(
-    `${RETIRED_SECRET_DENIAL_GLOBS.length} secret-denial glob(s) once lived in this profile, or the case below proves nothing`,
-    RETIRED_SECRET_DENIAL_GLOBS.length === 23,
-    `${RETIRED_SECRET_DENIAL_GLOBS.length} glob(s) recorded here, not the 23 DENIED_WORKSPACE_GLOBS carried at HEAD`,
+    `${LEGACY_DENIED_WORKSPACE_GLOBS.length} secret-denial glob(s) once lived in this profile`,
+    LEGACY_DENIED_WORKSPACE_GLOBS.length === 23,
+    `LEGACY_DENIED_WORKSPACE_GLOBS carries ${LEGACY_DENIED_WORKSPACE_GLOBS.length} glob(s), not the 23 the retired ADR-0121 profile denied`,
   );
 
   test("it extends native :workspace and declares both workspace roots", () => {
@@ -882,7 +857,7 @@ describe("renderOsoPermissionProfile keeps only what native :workspace does not 
   });
 
   test("it carries none of the retired secret-denial globs", () => {
-    for (const glob of RETIRED_SECRET_DENIAL_GLOBS) {
+    for (const glob of LEGACY_DENIED_WORKSPACE_GLOBS) {
       assert.equal(profile.tables.includes(`"${glob}" = "deny"`), false, `${glob} still denied:\n${profile.tables}`);
     }
   });

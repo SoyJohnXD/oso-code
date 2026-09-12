@@ -14,7 +14,6 @@ import {
   DELEGATION_WAIT_CEILING_MINUTES,
   DELEGATION_WAIT_RENEWALS_CAP,
   EXPIRED_DELEGATION_CLAUSE,
-  adoptMarkIntoRun,
   isCount,
   isDelegationLabel,
   nowEpochSeconds,
@@ -88,7 +87,6 @@ type RunPosition = Readonly<{
   projectDir: string;
   sessionId: string;
   markFile: string;
-  journalFile: string;
   tallyFile: string;
   journalBytes: number;
   stateModifiedAtEpochMillis: number;
@@ -119,7 +117,6 @@ function judgeAutocontinue({ envelope }: GateRequest): GateOutcome<StopVerdict> 
     projectDir,
     sessionId,
     markFile,
-    journalFile,
     tallyFile: tallyFileFor(journalFile),
     journalBytes: journalBytesIn(journalFile),
     stateModifiedAtEpochMillis: stateModifiedAtEpochMillisOf(stateFile),
@@ -159,7 +156,7 @@ function holdUnlessExpired(position: RunPosition, label: string): GateOutcome<St
 
 function adoptedIntoRun(position: RunPosition, label: string, standing: StandingWaitMark): GateOutcome<StopVerdict> {
   try {
-    adoptMarkIntoRun(position.markFile, standing, position.run);
+    writeWaitMark(position.markFile, { ...standing, run: position.run });
     return held(position, label, standing.renewals);
   } catch (cause) {
     return degraded(position.sessionId, causeOf(cause));

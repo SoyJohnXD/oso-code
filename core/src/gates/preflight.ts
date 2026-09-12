@@ -35,6 +35,12 @@ export type ArmedState =
 
 type MovedIdentity = Extract<ArmedState, { kind: "moved" }>;
 
+type NoArmedSession = Extract<ArmedState, { kind: "unidentified" | "absent" | "unwritable" }>;
+
+export function noSessionArmedHere(state: ArmedState): state is NoArmedSession {
+  return state.kind === "unidentified" || state.kind === "absent" || state.kind === "unwritable";
+}
+
 export type StandingState = Extract<ArmedState, { stateFile: string }>;
 
 export type GateDenial = Readonly<{
@@ -120,10 +126,6 @@ export function unidentifiedStateMessage(task: UnidentifiedTask): string {
     `session armed and allow without saying so. Run inside a git repository, or declare ${TASK_ROOT_VARIABLE}, ` +
     "then start a fresh session to arm them."
   );
-}
-
-export function unwritableStateMessage(fault: string): string {
-  return `oso-code: ${fault}`;
 }
 
 export function identityMovedMessage(state: MovedIdentity, session: string): string {

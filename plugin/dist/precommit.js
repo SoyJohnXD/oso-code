@@ -94,6 +94,7 @@ import { createHash, randomBytes } from "node:crypto";
 import {
   accessSync,
   appendFileSync,
+  chmodSync,
   constants,
   existsSync,
   lstatSync,
@@ -110,13 +111,14 @@ import path from "node:path";
 var StateRootUnwritableError = class extends Error {
   directory;
   constructor(directory, cause) {
-    super(
-      `cannot write the oso-code state directory ${directory}: ${causeOf(cause)}. The gates read what it holds and treat an unwritten state as no armed session, so arming here would leave them unable to see their own state. ${remedyForUnwritableStateRoot(cause, directory)}`
-    );
+    super(unwritableStateRootMessage(directory, cause));
     this.name = "StateRootUnwritableError";
     this.directory = directory;
   }
 };
+function unwritableStateRootMessage(directory, cause) {
+  return `cannot write the oso-code state directory ${directory}: ${causeOf(cause)}. The gates read what it holds and treat an unwritten state as no armed session, so arming here would leave them unable to see their own state. ${remedyForUnwritableStateRoot(cause, directory)}`;
+}
 function remedyForUnwritableStateRoot(cause, directory) {
   const code = isErrnoException(cause) ? cause.code : void 0;
   if (code === "EROFS") {
@@ -282,6 +284,23 @@ function readStateFile(stateFile) {
     return { kind: "unreadable", cause: causeOf(error) };
   }
 }
+var OWNER_ONLY_DIRECTORY = 448;
+var GROUP_AND_OTHER_ACCESS = 63;
+function requireWritableStateRoot() {
+  const directory = stateRootDirectory();
+  try {
+    mkdirSync(directory, { recursive: true, mode: OWNER_ONLY_DIRECTORY });
+    dropGroupAndOtherAccess(directory);
+    accessSync(directory, constants.W_OK | constants.X_OK);
+  } catch (error) {
+    throw new StateRootUnwritableError(directory, error);
+  }
+}
+function dropGroupAndOtherAccess(directory) {
+  const stats = lstatSync(directory);
+  if (stats.isSymbolicLink() || (stats.mode & GROUP_AND_OTHER_ACCESS) === 0) return;
+  chmodSync(directory, stats.mode & OWNER_ONLY_DIRECTORY);
+}
 function stateRootWritabilityFault() {
   const directory = stateRootDirectory();
   if (!isDirectory(directory)) return void 0;
@@ -289,7 +308,7 @@ function stateRootWritabilityFault() {
     accessSync(directory, constants.W_OK | constants.X_OK);
     return void 0;
   } catch (error) {
-    return causeOf(new StateRootUnwritableError(directory, error));
+    return unwritableStateRootMessage(directory, error);
   }
 }
 function isDirectory(target) {
@@ -300,7 +319,7 @@ function logEvent(entry) {
   const line = serializeEvent(entry);
   const eventsLog = path.join(stateRootDirectory(), "events.jsonl");
   try {
-    mkdirSync(path.dirname(eventsLog), { recursive: true });
+    requireWritableStateRoot();
     withOwnerOnlyUmask(() => appendFileSync(eventsLog, `${line}
 `));
     return true;
@@ -436,6 +455,9 @@ function isErrnoException(error) {
 }
 
 // core/src/gates/preflight.ts
+function noSessionArmedHere(state) {
+  return state.kind === "unidentified" || state.kind === "absent" || state.kind === "unwritable";
+}
 function sanitizeSession(raw) {
   return raw.replace(/[^a-zA-Z0-9-]/g, "");
 }
@@ -505,9 +527,7 @@ function preCommitRun(cwd, marker) {
   const session = sanitizeSession(marker);
   if (session === "") return COMMIT_PROCEEDS;
   const state = readArmedState(cwd);
-  if (state.kind === "unidentified") return COMMIT_PROCEEDS;
-  if (state.kind === "absent") return COMMIT_PROCEEDS;
-  if (state.kind === "unwritable") return COMMIT_PROCEEDS;
+  if (noSessionArmedHere(state)) return COMMIT_PROCEEDS;
   if (state.kind === "moved") return aborted(identityMovedMessage(state, session), "identity-moved-denied", session);
   if (state.kind === "unusable") {
     return aborted(unusableStateMessage(state.stateFile, session), "state-unreadable", session);
