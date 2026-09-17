@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { after, describe, test } from "node:test";
 import { ArgumentsExcludedError, FLAGS_PER_HOST_AND_VERB, FlagNotOfferedError, parseArgv } from "../../src/install/cli.ts";
 import { hermeticVerifyEnvironment } from "../support/hermetic-verify-environment.ts";
+import { fixturePathWith, SHIM_CALL_LOG_KEY, writeOpenCodeShims } from "../support/opencode-fixture.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..", "..", "..");
@@ -35,10 +36,14 @@ function runCli(argv: readonly string[]): { status: number | null; stdout: strin
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
-function runCliInAFixtureHome(argv: readonly string[], fixtureHome: string): { status: number | null; stdout: string; stderr: string } {
+function runCliInAFixtureHome(
+  argv: readonly string[],
+  fixtureHome: string,
+  environmentOverrides: NodeJS.ProcessEnv = {},
+): { status: number | null; stdout: string; stderr: string } {
   const result = spawnSync(process.execPath, ["--experimental-strip-types", cliSource, ...argv], {
     encoding: "utf8",
-    env: hermeticVerifyEnvironment(fixtureHome),
+    env: { ...hermeticVerifyEnvironment(fixtureHome), XDG_CONFIG_HOME: path.join(fixtureHome, ".config"), ...environmentOverrides },
   });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
@@ -223,6 +228,11 @@ describe("every verb of every host reaches its own command, so no host answers a
 });
 
 describe("install|repair|purge without --yes, on each host and verb this slice implements", () => {
+  const confirmationSandbox = mkdtempSync(path.join(tmpdir(), "oso-cli-confirmation-"));
+  const opencodeCallLog = path.join(confirmationSandbox, "shim-calls.log");
+  const opencodeShims = writeOpenCodeShims(path.join(confirmationSandbox, "shims"), opencodeCallLog);
+  after(() => rmSync(confirmationSandbox, { recursive: true, force: true }));
+
   const hostVerbs = [
     ["claude", ["install", "repair", "purge"]],
     ["opencode", ["install"]],
@@ -230,8 +240,10 @@ describe("install|repair|purge without --yes, on each host and verb this slice i
   for (const [host, verbs] of hostVerbs) {
     for (const verb of verbs) {
       test(`${verb} --host ${host} reaches the real command rather than a slice pointer, and reports it needs --yes rather than prompting`, () => {
-        const result = runCli([verb, "--host", host]);
-        assert.equal(result.status, 1);
+        const fixtureHome = mkdtempSync(path.join(confirmationSandbox, "home-"));
+        const environment = host === "opencode" ? { PATH: fixturePathWith(opencodeShims), [SHIM_CALL_LOG_KEY]: opencodeCallLog } : {};
+        const result = runCliInAFixtureHome([verb, "--host", host], fixtureHome, environment);
+        assert.equal(result.status, 1, `unexpected CLI outcome: ${JSON.stringify(result)}`);
         assert.equal(result.stdout, `oso ${verb} --host ${host} requires --yes in this slice — no interactive confirmation prompt is wired yet\n`);
         assert.equal(result.stderr, "");
       });
