@@ -2,6 +2,8 @@
 
 Frozen design for the oso-code harness. [docs/decisions/](decisions/) is itself frozen as history now: nothing is deleted from it, nothing new is added to it, and no check reads it any more. The live record it used to be is the roadmap's own design document at [docs/rewrite/ts-core-roadmap.md](rewrite/ts-core-roadmap.md) and the engram ledgers — a change to this design takes a decision there, never a silent edit here and never a new file under `docs/decisions/`.
 
+The Codex-specific rows below are retained as the design history that produced the applier-proof boundary. Release `v0.27.0` extracted that host into the separate `oso-code-codex` fork; [README.md](../README.md) is the authority for the two runtime hosts this repository now ships.
+
 ## Decisions
 
 Every decision this design has taken since the freeze is one file under [docs/decisions/](decisions/) — one per decision, numbered in the order it was written; the ids are cited from the skills, so they never move. Each file carries its date, its status, what supersedes it and what it supersedes, the source the decision came out of, and a `Reconciled:` line saying where the decision landed:

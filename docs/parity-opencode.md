@@ -20,7 +20,7 @@ Two lexer bypasses at the production-deploy gate are ported record for record ra
 
 ## What was and was not driven
 
-The contract bar, the behavior bar and the wave-runner smoke have each been driven against a real, pinned OpenCode binary — the wave-runner smoke for the first time in a CI run, never having been wired into the nightly build before this record. The fourth certify suite under `core/test/certify/`, the Codex authenticated smoke, drives a different host; `docs/parity-codex.md` is where its own never-driven-here fact is recorded.
+The contract bar, the behavior bar and the wave-runner smoke have each been driven against a real, pinned OpenCode binary — the wave-runner smoke for the first time in a CI run, never having been wired into the nightly build before this record.
 
 ## What the host offered the prompt-free posture, measured at C0-S3
 
