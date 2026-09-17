@@ -5,8 +5,7 @@ import { readTextAtCommit } from "../support/prose-inventory.ts";
 import { provedSomething } from "../support/proved.ts";
 import { readTrackedText } from "../support/tracked-files.ts";
 
-const RED_COMMIT = "188cfce";
-const HOST_NAME_PATTERN = /\bClaude(?: Code)?\b|\bCodex\b|\bOpenCode\b/g;
+const HOST_NAME_PATTERN = /\bClaude(?: Code)?\b|\bOpenCode\b/g;
 const SHARED_FLOW_FILES = ["plugin/skills/_shared/unattended.md", "plugin/skills/_shared/parallel.md"];
 const FLOW_FILES_FLOOR = 11;
 const FLOW_FILES_FLOOR_DERIVATION =
@@ -42,11 +41,6 @@ provedSomething(
 );
 
 describe("a flow body names no host — the reference file is where a host name belongs, never the flow itself", () => {
-  test(`RED at ${RED_COMMIT}: the sites C5-D2 found still carry a host name in their own blobs`, () => {
-    const hits = flowFiles.flatMap((file) => hostNameHits(file, readTextAtCommit(RED_COMMIT, file)));
-    assert.equal(hits.length, 4, hits.join("\n"));
-  });
-
   test("GREEN on the tracked tree: no flow body carries a host name", () => {
     const hits = flowFiles.flatMap((file) => hostNameHits(file, readTrackedText(file).text));
     assert.deepEqual(hits, [], hits.join("\n"));

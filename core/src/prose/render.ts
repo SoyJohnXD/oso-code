@@ -25,12 +25,11 @@ export function skillBodyPath(stub: SkillStub, host: SkillHost): string {
 
 export function agentOutputPath(role: AgentRole, host: HostName): string {
   if (host === "claude") return `plugin/agents/${role.id}.md`;
-  if (host === "codex") return `codex/agents/${role.id}.toml`;
   return `opencode/agents/${role.id}.md`;
 }
 
-export function skillOutputPath(stub: SkillStub, host: SkillHost): string {
-  return host === "codex" ? `codex/skills/${stub.id}/SKILL.md` : `opencode/skills/oso-${stub.id}/SKILL.md`;
+export function skillOutputPath(stub: SkillStub, _host: SkillHost): string {
+  return `opencode/skills/oso-${stub.id}/SKILL.md`;
 }
 
 export function skillFlowPath(stub: SkillStub): string {
@@ -41,8 +40,8 @@ export function skillReferencePath(stub: SkillStub, host: SkillHost): string {
   return `core/src/prose/skills/${stub.id}/references/${host}.md`;
 }
 
-export function skillReferenceOutputPath(stub: SkillStub, host: SkillHost): string {
-  return host === "codex" ? `codex/skills/${stub.id}/references/codex.md` : `opencode/skills/oso-${stub.id}/references/opencode.md`;
+export function skillReferenceOutputPath(stub: SkillStub, _host: SkillHost): string {
+  return `opencode/skills/oso-${stub.id}/references/opencode.md`;
 }
 
 export function sharedReferencePath(host: SkillHost): string {
@@ -60,14 +59,13 @@ export function renderReference(body: string): string {
 export function renderAgent(role: AgentRole, host: HostName, sharedBody: string, delta: string | null): string {
   const body = delta === null ? sharedBody : `${sharedBody}\n${delta}`;
   if (host === "claude") return renderClaudeAgent(role, body);
-  if (host === "codex") return renderCodexAgent(role, body);
   return renderOpenCodeAgent(role, body);
 }
 
-export function renderSkill(stub: SkillStub, host: SkillHost, body: string, flow: string): string {
-  const name = host === "codex" ? stub.id : `oso-${stub.id}`;
-  const lines = [`name: ${name}`, `description: "${stub.description[host]}"`];
-  if (stub.argumentHint !== null) lines.push(`argument-hint: "${stub.argumentHint[host]}"`);
+export function renderSkill(stub: SkillStub, _host: SkillHost, body: string, flow: string): string {
+  const name = `oso-${stub.id}`;
+  const lines = [`name: ${name}`, `description: "${stub.description.opencode}"`];
+  if (stub.argumentHint !== null) lines.push(`argument-hint: "${stub.argumentHint.opencode}"`);
   if (stub.disableModelInvocation) lines.push("disable-model-invocation: true");
   return `${frontMatterBlock(lines)}\n\n${body}\n\n${flowBody(flow)}`;
 }
@@ -86,19 +84,6 @@ function renderClaudeAgent(role: AgentRole, body: string): string {
   if (spec === null) throw new Error(`${role.id} names no claude spec`);
   const lines = [`name: ${role.id}`, `description: ${spec.description}`, `model: ${spec.model}`, `tools: ${spec.tools.join(", ")}`];
   return `${frontMatterBlock(lines)}\n\n${body}`;
-}
-
-function renderCodexAgent(role: AgentRole, body: string): string {
-  const spec = role.codex;
-  const lines = [
-    `name = "${role.id}"`,
-    `description = "${spec.description}"`,
-    ...(spec.model === undefined ? [] : [`model = "${spec.model}"`]),
-    ...(spec.reasoningEffort === undefined ? [] : [`model_reasoning_effort = "${spec.reasoningEffort}"`]),
-    `sandbox_mode = "${spec.sandboxMode}"`,
-    `developer_instructions = """`,
-  ].join("\n");
-  return `${lines}\n${body}"""\n`;
 }
 
 function renderOpenCodeAgent(role: AgentRole, body: string): string {

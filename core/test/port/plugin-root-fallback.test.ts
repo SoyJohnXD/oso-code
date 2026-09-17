@@ -44,28 +44,11 @@ test(
 );
 
 test(
-  "pluginRootAbove finds the real plugin root from the Codex bundle location " +
-    "(codex/hooks/gate.js, a copy of plugin/dist per docs/rewrite/ts-core-roadmap.md:66)",
-  () => {
-    const moduleDirectory = path.join(repositoryRoot, "codex", "hooks");
-    assert.equal(pluginRootAbove(moduleDirectory), EXPECTED_PLUGIN_ROOT);
-  },
-);
-
-test(
   "the depth-three-then-literal-plugin formula this replaces lands outside the repository " +
-    "for both bundle locations, never inside plugin/ (evidence for the finding this test regresses)",
+    "from the bundle location, never inside plugin/ (evidence for the finding this test regresses)",
   () => {
     const brokenFromDist = path.resolve(path.join(repositoryRoot, "plugin", "dist"), "..", "..", "..", "plugin");
-    const brokenFromCodexHooks = path.resolve(
-      path.join(repositoryRoot, "codex", "hooks"),
-      "..",
-      "..",
-      "..",
-      "plugin",
-    );
     assert.notEqual(brokenFromDist, EXPECTED_PLUGIN_ROOT);
-    assert.notEqual(brokenFromCodexHooks, EXPECTED_PLUGIN_ROOT);
     assert.equal(brokenFromDist, path.resolve(repositoryRoot, "..", "plugin"));
   },
 );
@@ -116,20 +99,6 @@ test(
     try {
       assert.equal(pluginRootAbove(path.join(root, "hooks")), root);
       assert.equal(pluginRootAbove(path.join(root, "agents")), root);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  },
-);
-
-test(
-  "pluginRootAbove resolves the real Codex staged runtime layout — hooks/, bin/ and git-hooks/ are flat " +
-    "siblings under the runtime root with no plugin/ wrapper, and its own hooks.json (copied from " +
-    "codex/hooks/hooks.json) is what verifies it — read from `bootstrap/install-codex.sh` lines 518-536 at `2bc77ad`, finding A",
-  () => {
-    const root = flatInstallFixture("oso-codex-runtime-", ["hooks", "git-hooks"], ["hooks.json"]);
-    try {
-      assert.equal(pluginRootAbove(path.join(root, "hooks")), root);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

@@ -7,9 +7,6 @@ import { provedSomething } from "../support/proved.ts";
 import { STATE_FILE, withStateSandbox } from "../support/state-sandbox.ts";
 
 const ARMED_RUN = "auto=running\nauto_change=auto-continuity\nsession=test-session\n";
-const PLAN_MARKER = "<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->";
-const DENIED_OUTSIDE_PLAN_MODE = "oso-code: the approval document must be presented while Codex is still in Plan Mode.";
-
 const REASON_A_SUFFIX_ANCHORED_READER_TAKES = /.*"reason":"(.*)"}$/;
 
 function stopRun(gate: string, state: Record<string, string>, payload: string) {
@@ -68,29 +65,5 @@ describe(
       assert.deepEqual({ exit: run.exit, stdout: run.stdout, stderr: run.stderr }, { exit: 0, stdout: "{}\n", stderr: "" });
     });
 
-    test("a Stop denial is the block envelope while the rail is not already active (capture-plan-approval.sh:20)", () => {
-      const run = stopRun(
-        "planstop",
-        {},
-        '{"session_id":"test-session","cwd":"{cwd}","permission_mode":"default","hook_event_name":"Stop",' +
-          `"stop_hook_active":false,"last_assistant_message":"Repaso\\n${PLAN_MARKER}"}`,
-      );
-      assert.equal(run.stdout, `{"decision":"block","reason":"${DENIED_OUTSIDE_PLAN_MODE}"}\n`);
-    });
-
-    test("the same denial ends the turn once the rail is already active (capture-plan-approval.sh:16-19)", () => {
-      const run = stopRun(
-        "planstop",
-        {},
-        '{"session_id":"test-session","cwd":"{cwd}","permission_mode":"default","hook_event_name":"Stop",' +
-          `"stop_hook_active":true,"last_assistant_message":"Repaso\\n${PLAN_MARKER}"}`,
-      );
-      const ended = JSON.parse(run.stdout) as Record<string, unknown>;
-      assert.deepEqual(ended, {
-        continue: false,
-        stopReason: DENIED_OUTSIDE_PLAN_MODE,
-        systemMessage: DENIED_OUTSIDE_PLAN_MODE,
-      });
-    });
   },
 );

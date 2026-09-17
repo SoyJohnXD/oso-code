@@ -11,33 +11,26 @@ const FENCE_LINE = /^\s*```/;
 
 const RULE_SENTENCE_CEILINGS: Readonly<Record<string, number>> = {
   "oso-applier/body.md": 40,
-  "oso-applier/codex.md": 5,
   "oso-applier/opencode.md": 6,
   "oso-debt-sweep/body.md": 10,
-  "oso-debt-sweep/codex.md": 6,
   "oso-debt-sweep/opencode.md": 4,
   "oso-doubt-pass/body.md": 8,
-  "oso-doubt-pass/codex.md": 5,
   "oso-doubt-pass/opencode.md": 3,
   "oso-integrator/body.md": 32,
   "oso-integrator/claude.md": 1,
-  "oso-integrator/codex.md": 5,
   "oso-integrator/opencode.md": 6,
   "oso-security-reviewer/body.md": 7,
-  "oso-security-reviewer/codex.md": 8,
   "oso-security-reviewer/opencode.md": 6,
   "oso-triage/body.md": 10,
-  "oso-triage/codex.md": 7,
   "oso-triage/opencode.md": 5,
   "oso-verifier/body.md": 45,
-  "oso-verifier/codex.md": 7,
   "oso-verifier/opencode.md": 5,
 };
 
 const CEILINGS_DERIVATION =
   `each file's own sentence count on the tracked tree at 9a3cab7, read by this file's walk — the fenced blocks stripped ` +
-  "first, then the paragraphs, bullets and table rows left over segmented into sentences; 231 across the 22 files, of " +
-  "which the applier's 40 and the verifier's 45 are the two the proof schema rewrote and the other 20 are untouched";
+  "first, then the paragraphs, bullets and table rows left over segmented into sentences; the applier and verifier " +
+  "ceilings are the two the proof schema rewrote and the remaining Claude/OpenCode files are unchanged";
 
 type AgentSentence = SentenceWordCount & Readonly<{ contractPath: string }>;
 
@@ -66,7 +59,7 @@ const agentSentences = agentProseFiles.flatMap((file) => ruleSentencesIn(file, r
 const countsByContractPath = new Map<string, number>();
 for (const { contractPath } of agentSentences) countsByContractPath.set(contractPath, (countsByContractPath.get(contractPath) ?? 0) + 1);
 
-const FILES_FLOOR = 22;
+const FILES_FLOOR = 15;
 const FILES_FLOOR_DERIVATION =
   "the seven agent roles' shared bodies and the host deltas beside them — every tracked markdown file under " +
   `${AGENT_PROSE_ROOT}, which is the same set ${Object.keys(RULE_SENTENCE_CEILINGS).length} ceilings are recorded for`;
@@ -79,9 +72,9 @@ provedSomething(
   `only ${agentProseFiles.length} file(s) were found, under the ${FILES_FLOOR}-file floor (${FILES_FLOOR_DERIVATION})`,
 );
 
-const SENTENCES_FLOOR = 160;
+const SENTENCES_FLOOR = 120;
 const SENTENCES_FLOOR_DERIVATION =
-  "well under the 231 sentences this walk segments across those files at this writing, so a later, legitimate prose " +
+  "well under the sentences this walk segments across those files at this writing, so a later, legitimate prose " +
   "edit never has to chase this number — only a walk that segments nothing, which passes every ceiling below " +
   "vacuously, should fail it";
 

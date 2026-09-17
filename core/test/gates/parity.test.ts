@@ -20,10 +20,10 @@ provedSomething(
 );
 
 const PORTED_GATES =
-  "autocontinue,commit,edits,handoff,planprompt,planstop,proddeploy,reanchor,stale,statebin,teardown,unknown,version";
+  "autocontinue,commit,edits,proddeploy,reanchor,stale,statebin,teardown,unknown,version";
 
 provedSomething(
-  `all thirteen ported gates carry fixtures, not ${gatesCovered.join(", ")}`,
+  `all ten ported gates carry fixtures, not ${gatesCovered.join(", ")}`,
   gatesCovered.join(",") === PORTED_GATES,
   `the gate fixtures cover ${gatesCovered.join(", ")} rather than every ported gate`,
 );

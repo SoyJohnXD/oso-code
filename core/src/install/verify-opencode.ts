@@ -117,7 +117,7 @@ const FIXTURE_SHIM_MODE = 0o700;
 const FIXTURE_ENGRAM_SHIM = [
   "#!/bin/sh",
   'case "$*" in',
-  "  \"setup --help\") printf 'usage: engram setup [<agent>] (claude-code, opencode, codex, ...)\\n'; exit 0 ;;",
+  "  \"setup --help\") printf 'usage: engram setup [<agent>] (claude-code, opencode, ...)\\n'; exit 0 ;;",
   '  "setup opencode")',
   '    mkdir -p "$HOME/.config/opencode/plugins"',
   "    printf 'fixture engram plugin\\n' > \"$HOME/.config/opencode/plugins/engram.ts\"",

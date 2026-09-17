@@ -1,7 +1,5 @@
 import { homeDirectoryFrom } from "../state/store.ts";
-import { codexHostProbes } from "./codex-host.ts";
 import { installClaude, purgeClaude, repairClaude } from "./claude.ts";
-import { installCodex, purgeCodex, repairCodex } from "./codex.ts";
 import { opencodePathsFor, repairOpenCode } from "./opencode.ts";
 import { openCodeHostProbes } from "./opencode-host.ts";
 import { installOpenCode } from "./opencode-install.ts";
@@ -9,13 +7,12 @@ import { purgeOpenCode } from "./opencode-purge.ts";
 import { setProfile, showProfile } from "./profile.ts";
 import type { CommandOutcome } from "./report.ts";
 import { verifyClaude } from "./verify-claude.ts";
-import { verifyCodex } from "./verify-codex.ts";
 import { verifyOpenCode } from "./verify-opencode.ts";
 
 const VERBS = ["install", "verify", "repair", "purge"] as const;
 type Verb = (typeof VERBS)[number];
 
-const HOSTS = ["claude", "codex", "opencode"] as const;
+const HOSTS = ["claude", "opencode"] as const;
 type Host = (typeof HOSTS)[number];
 
 export type FlagSpec = Readonly<{ name: string; valueMissingMessage?: string }>;
@@ -59,12 +56,6 @@ export const FLAGS_PER_HOST_AND_VERB: Readonly<Record<Host, Readonly<Record<Verb
     repair: YES_ONLY,
     purge: YES_ONLY,
   },
-  codex: {
-    install: { flags: [YES, NO_IMPECCABLE, NO_GIT_HOOK] },
-    verify: NO_ARGUMENTS,
-    repair: YES_ONLY,
-    purge: YES_ONLY,
-  },
   opencode: {
     install: { flags: [YES, NO_IMPECCABLE, NO_GIT_HOOK] },
     verify: NO_ARGUMENTS,
@@ -79,7 +70,7 @@ const EVERY_DECLARED_FLAG: ReadonlySet<string> = new Set(
 
 const PROFILE_VERB = "profile";
 
-const USAGE = `usage: oso <install|verify|repair|purge> --host <claude|codex|opencode> [flags]
+const USAGE = `usage: oso <install|verify|repair|purge> --host <claude|opencode> [flags]
        oso ${PROFILE_VERB} show | set <normal|strong|custom> [--applier|--verifier|--judges <default|strong>[:<model>]]
 
 arguments, per host and verb:
@@ -179,8 +170,6 @@ function runHost(parsed: ParsedArgv, context: CommandContext): { report: string;
   switch (parsed.host) {
     case "claude":
       return runClaude(parsed.verb, { ...context, architecture: process.arch, replaceClaudeMd: parsed.flags.has("--replace-claude-md") });
-    case "codex":
-      return runCodex(parsed.verb, { ...context, host: codexHostProbes(process.env) });
     case "opencode":
       return runOpenCode(parsed, context);
   }
@@ -196,19 +185,6 @@ function runClaude(verb: Verb, context: Parameters<typeof installClaude>[0]): { 
       return repairClaude(context);
     case "purge":
       return purgeClaude(context);
-  }
-}
-
-function runCodex(verb: Verb, context: Parameters<typeof installCodex>[0]): { report: string; exitCode: number } {
-  switch (verb) {
-    case "verify":
-      return verifyCodex(context);
-    case "install":
-      return installCodex(context);
-    case "repair":
-      return repairCodex(context);
-    case "purge":
-      return purgeCodex(context);
   }
 }
 

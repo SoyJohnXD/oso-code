@@ -57,18 +57,6 @@ jobs:
         run: |
           cd core
           node --experimental-strip-types --test test/install/engram-nightly.test.ts
-      - name: Codex verify report reaches its summary — no codex CLI installed, only the hardcoded mandated tool list agreeing with the routes table in both directions passes, so failed=14
-        env:
-          OSO_VERIFY_SKIP_SMOKE: 1
-        run: |
-          report="$(mktemp)"
-          fixture_home="$(mktemp -d)"
-          HOME="$fixture_home" CODEX_HOME="$fixture_home/.codex" \
-            node bootstrap/oso.js verify --host codex > "$report" 2>&1 || true
-          cat "$report"
-          grep -q '^passed:' "$report"
-          failed="$(sed -n 's/^passed: [0-9]*, failed: \([0-9]*\)$/\1/p' "$report")"
-          [ "$failed" = "14" ]
       - name: OpenCode verify report reaches its summary — the self-contained fixture passes every check with deps installed, so passed=16, failed=0
         env:
           OSO_VERIFY_SKIP_SMOKE: 1
@@ -94,7 +82,7 @@ jobs:
           npm pack "opencode-linux-x64@$pin"
           tar -xf "opencode-linux-x64-$pin.tgz"
           echo "OSO_PINNED_OPENCODE_BIN=$RUNNER_TEMP/opencode-pin/package/bin/opencode" >> "$GITHUB_ENV"
-      - name: Certify suites against the pinned OpenCode binary, and Codex only if this runner carries credentials
+      - name: Certify suites against the pinned OpenCode binary
         if: always() && steps.checkout.outcome == 'success' && steps.node-toolchain.outcome == 'success' && steps.dependency-install.outcome == 'success' && steps.pinned-opencode-binary.outcome == 'success'
         env:
           OSO_CERTIFY: 1
@@ -105,7 +93,7 @@ jobs:
           cd core
           mkdir -p "$RUNNER_TEMP/certify-tap"
           overall=0
-          for suite in opencode-contract-bar opencode-behavior-bar opencode-wave-runner-smoke codex-authenticated-smoke; do
+          for suite in opencode-contract-bar opencode-behavior-bar opencode-wave-runner-smoke; do
             node --experimental-strip-types --test --test-reporter=tap "test/certify/${suite}.test.ts" \
               > "$RUNNER_TEMP/certify-tap/${suite}.tap" 2>&1 || overall=1
             cat "$RUNNER_TEMP/certify-tap/${suite}.tap"

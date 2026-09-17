@@ -13,7 +13,7 @@ commands/sdd-onboard.md
 commands/sdd-status.md
 commands/sdd-verify.md
 
-# Skills (gentle suite, including symlinks into ~/.codex/skills)
+# Skills (gentle suite, including legacy external symlinks)
 skills/_shared
 skills/branch-pr
 skills/chained-pr

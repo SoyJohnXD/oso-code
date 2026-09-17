@@ -57,9 +57,9 @@ test("parseCertifySuiteTap leaves a row that actually ran out of the not-run lis
 
 test("hostDroveZeroRows is true only once every registered row across a host's suites is not-run", () => {
   const zeroRowsHost = certifyHostTotals([
-    { suite: "all-not-run", host: "codex", ...parseCertifySuiteTap(ALL_NOT_RUN_TAP) },
+    { suite: "all-not-run", host: "claude", ...parseCertifySuiteTap(ALL_NOT_RUN_TAP) },
   ]);
-  assert.equal(hostDroveZeroRows(hostTotalOrThrow(zeroRowsHost, "codex")), true);
+  assert.equal(hostDroveZeroRows(hostTotalOrThrow(zeroRowsHost, "claude")), true);
 
   const partiallyDrivenHost = certifyHostTotals([
     { suite: "all-not-run", host: "opencode", ...parseCertifySuiteTap(ALL_NOT_RUN_TAP) },
@@ -70,12 +70,12 @@ test("hostDroveZeroRows is true only once every registered row across a host's s
 
 test("renderCertifySummary lists every not-run line per host and warns only for the host that drove zero rows", () => {
   const rendered = renderCertifySummary([
-    { suite: "all-not-run", host: "codex", ...parseCertifySuiteTap(ALL_NOT_RUN_TAP) },
+    { suite: "all-not-run", host: "claude", ...parseCertifySuiteTap(ALL_NOT_RUN_TAP) },
     { suite: "partially-run", host: "opencode", ...parseCertifySuiteTap(PARTIALLY_RUN_TAP) },
   ]);
-  assert.match(rendered, /all-not-run \(codex\): 2 not-run of 2 certify row\(s\)\n {4}row one -- not-run: reason one\n {4}row two -- not-run: reason two/);
+  assert.match(rendered, /all-not-run \(claude\): 2 not-run of 2 certify row\(s\)\n {4}row one -- not-run: reason one\n {4}row two -- not-run: reason two/);
   assert.match(rendered, /partially-run \(opencode\): 1 not-run of 2 certify row\(s\)\n {4}row two -- not-run: reason two/);
-  assert.match(rendered, /::warning::codex drove zero certify rows this run/);
+  assert.match(rendered, /::warning::claude drove zero certify rows this run/);
   assert.doesNotMatch(rendered, /::warning::opencode drove zero certify rows this run/);
 });
 

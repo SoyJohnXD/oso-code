@@ -3,7 +3,6 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, test } from "node:test";
-import { resolveFallowMcpCommand } from "../../src/install/codex-config.ts";
 import {
   HARNESS_EXTERNAL_DIRECTORIES,
   HARNESS_EXTERNAL_DIRECTORY_VERDICT,
@@ -210,9 +209,7 @@ describe("the win32 cell of every owned value, measured rather than reasoned", (
     assert.equal(hostContractViolationOf(mergeOpenCodeConfig(seedCopy(), WIN32_FALLOW_COMMAND).document), undefined);
   });
 
-  test("the fallow command the resolver returns is the one the merged document declares, so the row inherits the Codex measurement rather than a fresh one", () => {
-    const resolution = resolveFallowMcpCommand(path.join(sandbox, "home"), {}, () => undefined, () => fallowCommand);
-    assert.equal(resolution.command, fallowCommand);
+  test("the fallow command supplied by the installer is the one the merged document declares", () => {
     const servers = plainObject(portSeeded()["mcp"]);
     assert.deepEqual(plainObject(servers["fallow"])["command"], [fallowCommand]);
   });

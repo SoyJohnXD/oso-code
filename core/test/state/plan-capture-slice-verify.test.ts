@@ -2,9 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
-import { runGate } from "../../src/gates/dispatch.ts";
 import { isPlanRailFailure } from "../../src/gates/planrail.ts";
-import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { PlanFailure, runCapturePlan } from "../../src/state/plan.ts";
 import { sha256Hex } from "../../src/state/store.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
@@ -19,9 +17,6 @@ import {
 
 const SESSION = "test-session";
 const PLAN_DOCUMENT_DIRECTORY = path.join(repositoryRoot, "core", "test", "fixtures", "plan-documents");
-const PLAN_MARKER = "<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->";
-const CAPTURE_REFUSED =
-  "oso-code: the approval document or its plan artifacts could not be recorded; execution remains blocked.";
 const THE_REFUSAL_SLICE_TWO_EARNS =
   "capture-plan requires slice S2 to name failing-check: or Verify-exception: on its Verify line";
 const SLICE_OPENERS_BOTH_DOCUMENTS_CARRY = ["- **S1 —", "- **S2 —", "- **S3 —"];
@@ -103,19 +98,6 @@ function currentPlanOf(sandbox: StateSandbox): string {
   return current.kind === "file" ? current.content : `<${current.kind}>`;
 }
 
-function codexStopPayload(sandbox: StateSandbox, document: string): string {
-  return JSON.stringify({
-    session_id: SESSION,
-    transcript_path: null,
-    cwd: sandbox.cwd,
-    permission_mode: "plan",
-    hook_event_name: "Stop",
-    turn_id: "turn-plan-stop",
-    stop_hook_active: false,
-    last_assistant_message: `${document}\n${PLAN_MARKER}`,
-  });
-}
-
 describe(
   "core/src/state/plan.ts: capture-plan reads the Verify line of every slice block the document writes and refuses " +
     "the first that names neither of the two tokens plan.md §4 requires, while a document that writes no slice " +
@@ -138,20 +120,6 @@ describe(
         assert.equal(sandbox.read(presented).kind, "absent");
         assert.equal(sandbox.read(`${REPOSITORY_PLANS_DIR}/current.md`).kind, "absent");
         assert.equal(sandbox.read(STATE_FILE).kind, "absent");
-      });
-    });
-
-    test("the Codex Stop gate turns that refusal into a clean block and records the slice it named", () => {
-      withStateSandbox("workspace", (sandbox) => {
-        const run = withHookEnvironment({ HOME: sandbox.home }, () =>
-          runGate(["planstop"], spawnedEnvelope(codexStopPayload(sandbox, SLICE_TWO_NAMES_NO_CHECK), process.env)),
-        );
-        assert.equal(run.exit, 0);
-        assert.equal(run.stdout, `${JSON.stringify({ decision: "block", reason: CAPTURE_REFUSED })}\n`);
-        assert.deepEqual(
-          run.events.map((event) => event.command),
-          [THE_REFUSAL_SLICE_TWO_EARNS],
-        );
       });
     });
 

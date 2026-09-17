@@ -64,7 +64,6 @@ export const DELEGATIONS_RETURN_IN_TURN_HOST: ContinuationHost = {
 
 const CONTINUATION_HOSTS: Readonly<Record<HostName, ContinuationHost>> = {
   claude: NOTIFICATION_RESUMED_HOST,
-  codex: NOTIFICATION_RESUMED_HOST,
   opencode: DELEGATIONS_RETURN_IN_TURN_HOST,
 };
 

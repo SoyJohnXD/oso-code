@@ -177,11 +177,6 @@ export function isDirectory(target: string): boolean {
   return stats !== undefined && stats.isDirectory();
 }
 
-export function isDirectoryNotSymlink(target: string): boolean {
-  const stats = lstatOrUndefined(target);
-  return stats !== undefined && stats.isDirectory();
-}
-
 export function isRegularNonSymlinkFile(target: string): boolean {
   const stats = lstatOrUndefined(target);
   return stats !== undefined && stats.isFile();
@@ -383,7 +378,7 @@ function lockIsStale(lockDir: string): boolean {
   return heldForSeconds >= LOCK_STALE_SECONDS;
 }
 
-export function sleepSync(milliseconds: number): void {
+function sleepSync(milliseconds: number): void {
   const signal = new Int32Array(new SharedArrayBuffer(4));
   Atomics.wait(signal, 0, 0, milliseconds);
 }

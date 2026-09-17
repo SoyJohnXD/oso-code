@@ -28,13 +28,9 @@ provedSomething(
   `only ${skillNames.length} skill(s) were found, under the ${SKILL_NAMES_FLOOR}-skill floor (${SKILL_NAMES_DERIVATION})`,
 );
 
-describe("every plugin skill is wrapped by a codex/skills/<name>/SKILL.md and an opencode/skills/oso-<name>/SKILL.md", () => {
+describe("every plugin skill is wrapped by an opencode/skills/oso-<name>/SKILL.md", () => {
   for (const name of skillNames) {
-    test(`plugin/skills/${name}/SKILL.md is wrapped on codex and opencode`, () => {
-      assert.ok(
-        trackedFileSet.has(`codex/skills/${name}/SKILL.md`),
-        `codex/skills/${name}/SKILL.md is missing, so every rule that reads plugin/skills/${name}/SKILL.md's codex sources reads nothing at all`,
-      );
+    test(`plugin/skills/${name}/SKILL.md is wrapped on opencode`, () => {
       assert.ok(
         trackedFileSet.has(`opencode/skills/oso-${name}/SKILL.md`),
         `opencode/skills/oso-${name}/SKILL.md is missing, so every rule that reads plugin/skills/${name}/SKILL.md's opencode sources reads nothing at all`,

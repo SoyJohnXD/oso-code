@@ -3,9 +3,7 @@ import path from "node:path";
 import { parseTrustManifest, trustDivergences, type TrustDivergence } from "./trust.ts";
 import { isReadableRegularFile } from "../state/store.ts";
 
-export const OPENCODE_TRUST_FILE_COUNT = 19;
-
-const CODEX_TRUST_PREFIX = "codex/";
+export const OPENCODE_TRUST_FILE_COUNT = 15;
 
 const INSTALLED_TREE_MAP: readonly Readonly<{ published: string; installed: string }>[] = [
   { published: "opencode/dist/oso-code.js", installed: "plugin/oso-code.js" },
@@ -30,7 +28,7 @@ export function openCodeTrustTargetUnder(rootKind: TrustRootKind, root: string, 
 export function openCodeTrustReading(manifestFile: string, rootKind: TrustRootKind, root: string): OpenCodeTrustReading {
   return {
     filesRead: openCodeTrustedFiles(manifestFile).length,
-    divergences: trustDivergences(manifestFile, isCodexTrustFile, (published) => openCodeTrustTargetUnder(rootKind, root, published)),
+    divergences: trustDivergences(manifestFile, () => false, (published) => openCodeTrustTargetUnder(rootKind, root, published)),
   };
 }
 
@@ -54,10 +52,5 @@ export function trustDivergenceLine(divergence: TrustDivergence): string {
 function openCodeTrustedFiles(manifestFile: string): string[] {
   if (!isReadableRegularFile(manifestFile)) return [];
   return parseTrustManifest(readFileSync(manifestFile, "utf8"))
-    .map((row) => row.file)
-    .filter((file) => !isCodexTrustFile(file));
-}
-
-function isCodexTrustFile(published: string): boolean {
-  return published.startsWith(CODEX_TRUST_PREFIX);
+    .map((row) => row.file);
 }

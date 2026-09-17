@@ -286,7 +286,7 @@ describe("the rows that drive an installer of their own", () => {
 
   test("the shell-syntax row globs the six directories and the one named file, reaching every tracked shell source", () => {
     const sources = shellSourcesUnder(repositoryRoot).map((source) => posixSpelled(source.slice(repositoryRoot.length + 1)));
-    assert.ok(sources.length > 15, `${sources.length} shell source(s) were listed`);
+    assert.ok(sources.length >= 15, `${sources.length} shell source(s) were listed`);
     assert.ok(sources.includes("bootstrap/install.sh"));
     assert.ok(sources.includes("tools/verify-check-names.sh"));
     assert.ok(sources.includes("plugin/git-hooks/pre-commit"));
@@ -457,5 +457,4 @@ function rowNamesIn(report: string): string[] {
 function shimmedPath(): string {
   return fixturePathWith(fixture().shims);
 }
-
 

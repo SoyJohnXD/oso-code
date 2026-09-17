@@ -19,13 +19,6 @@ const BASH_USAGE = `usage: oso-state --session <id> set key=value [key=value ...
        oso-state --session <id> amend-plan <slice-id>
        oso-state journal <text>
        oso-state journal --path
-       oso-state handoff publish --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --hook-session <id>
-       oso-state handoff wait --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --timeout <seconds>
-       oso-state handoff consume --slice <id> --attempt <n> --agent-id <id> --agent-type <type>
-
-The SubagentStop hook publishes a provenance receipt, never a verdict. wait is
-bounded and consume is one-shot. Handoff attempts start at 1 and timeout must
-be between 0 and 600 seconds.
 `;
 
 const CLOSE_SLICE_LINE = "       oso-state --session <id> close-slice <n>\n";
@@ -46,11 +39,7 @@ const TS_USAGE = BASH_USAGE.replace(
     "       oso-state --session <id> amend-plan <slice-id>\n",
     `       oso-state --session <id> amend-plan <slice-id>\n${DENY_PATTERN_LINE}`,
   )
-  .replace(
-    "--agent-type <type>\n\nThe SubagentStop hook",
-    `--agent-type <type>\n${SCAN_LINES}\nThe SubagentStop hook`,
-  )
-  .replace("be between 0 and 600 seconds.\n", `be between 0 and 600 seconds.\n${SCAN_PARAGRAPH}`);
+  .replace("       oso-state journal --path\n", `       oso-state journal --path\n${SCAN_LINES}${SCAN_PARAGRAPH}`);
 
 test(
   "the TypeScript CLI's usage text equals the bash's (read from 8c54fd8:plugin/bin/oso-state:7-29) " +

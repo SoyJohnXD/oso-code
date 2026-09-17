@@ -42,8 +42,7 @@ function assertLoud(run: GateRun, causeKeyword: RegExp): void {
 }
 
 describe(
-  "core/src/gates/dispatch.ts: every lifecycle gate's internal failure is LOUD — SessionStart, SessionEnd, " +
-    "Stop, UserPromptSubmit and SubagentStop alike " +
+  "core/src/gates/dispatch.ts: every lifecycle gate's internal failure is LOUD — SessionStart, SessionEnd and Stop alike " +
     "(exit 1, cause on stderr, no stdout, no event) per DECISION 7 of the S2 fix round 3 ledger " +
     "(docs/rewrite/ts-core-roadmap.md:121-135, G5's carve-out table amended to read INTERNAL FAILURE " +
     "BEHAVIOUR). MEASURED directly against the real bash (env -u HOME plugin/hooks/<hook>.sh): every " +
@@ -54,7 +53,7 @@ describe(
     "below by stripping both tools from PATH while HOME stays valid), a bash-specific external-tool-absence " +
     "condition core/src/state/store.ts's sha256Hex (node:crypto, always present) cannot reproduce — so " +
     "stateFileFor()'s one throw source in this port, homeDirectory()'s HOME-unset, is not that guarded " +
-    "failure and is correctly loud for every one of the nine lifecycle gates, never silently swallowed and " +
+    "failure and is correctly loud for every one of the six lifecycle gates, never silently swallowed and " +
     "never the four PreToolUse deniers' exit-2 fail-closed transport",
   () => {
     test(
@@ -153,52 +152,6 @@ describe(
             '{"session_id":"test-session","cwd":"{cwd}","hook_event_name":"Stop","stop_hook_active":false}',
           );
           return withHookEnvironment({ HOME: "" }, () => anchorlessRunGate(["autocontinue"], stdin));
-        });
-        assertLoud(run, new RegExp(unresolvedHomeCause()));
-      },
-    );
-
-    test(
-      "planstop: HOME unset — reached through runCapturePlan's own stateFileFor, which is NOT one of the plan " +
-        "rail's declared failures and so is never folded into capture-plan-approval.sh:131-135's denial — is loud",
-      () => {
-        const run = withStateSandbox("workspace", (sandbox) => {
-          const stdin = sandbox.expandJson(
-            '{"session_id":"test-session","transcript_path":null,"cwd":"{cwd}","permission_mode":"plan",' +
-              '"hook_event_name":"Stop","turn_id":"t","stop_hook_active":false,' +
-              '"last_assistant_message":"Repaso\\n<!-- oso-plan-approval: v=2 action=IMPLEMENT_THE_PLAN -->"}',
-          );
-          return withHookEnvironment({ HOME: "" }, () => anchorlessRunGate(["planstop"], stdin));
-        });
-        assertLoud(run, new RegExp(unresolvedHomeCause()));
-      },
-    );
-
-    test(
-      "planprompt: HOME unset — reached through the control prompt's own stateFileFor, the port of " +
-        "plugin/hooks/approve-plan-token.sh:83 — is loud",
-      () => {
-        const run = withStateSandbox("workspace", (sandbox) => {
-          const stdin = sandbox.expandJson(
-            '{"session_id":"test-session","transcript_path":null,"cwd":"{cwd}","permission_mode":"default",' +
-              '"hook_event_name":"UserPromptSubmit","turn_id":"t","prompt":"CANCEL OSO PLAN"}',
-          );
-          return withHookEnvironment({ HOME: "" }, () => anchorlessRunGate(["planprompt"], stdin));
-        });
-        assertLoud(run, new RegExp(unresolvedHomeCause()));
-      },
-    );
-
-    test(
-      "handoff: HOME unset — reached through runHandoffPublish's own stateFileFor, which is not a HandoffFailure " +
-        "and so is never folded into publish-subagent-handoff.sh:45-51's failed publish — is loud",
-      () => {
-        const run = withStateSandbox("workspace", (sandbox) => {
-          const stdin = sandbox.expandJson(
-            '{"session_id":"test-session","cwd":"{cwd}","hook_event_name":"SubagentStop","agent_id":"a",' +
-              '"agent_type":"oso-verifier","last_assistant_message":"oso-handoff: v=1 slice=s attempt=1"}',
-          );
-          return withHookEnvironment({ HOME: "" }, () => anchorlessRunGate(["handoff"], stdin));
         });
         assertLoud(run, new RegExp(unresolvedHomeCause()));
       },

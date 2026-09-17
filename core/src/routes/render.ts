@@ -18,17 +18,15 @@ export {
   PRECOMMIT_BUNDLE,
 } from "./routes.ts";
 
-export type ManifestHost = Extract<HostName, "claude" | "codex">;
+export type ManifestHost = Extract<HostName, "claude">;
 
-export const MANIFEST_HOSTS: readonly ManifestHost[] = ["claude", "codex"];
+export const MANIFEST_HOSTS: readonly ManifestHost[] = ["claude"];
 
 const CLAUDE_PLUGIN_ROOT = "${CLAUDE_PLUGIN_ROOT}";
-const CODEX_STATE_MARKER = "OSO_AGENT=1";
 const NODE = "node";
 const UNKNOWN_TOOL_MATCHER = ".*";
 const DEPLOY_SHAPED_TOOL_NAMES: PerHost<string> = {
   claude: "mcp__.*deploy.*",
-  codex: "mcp__.*deploy.*",
   opencode: ".*deploy.*",
 };
 
@@ -104,7 +102,7 @@ function groupLines(host: ManifestHost, row: GateRow): string[] {
     "      {",
     ...(matcher === "" ? [] : [`        ${json("matcher")}: ${json(matcher)},`]),
     `        ${json("hooks")}: [`,
-    ...handlerLines(handlerFor(host, row)),
+    ...handlerLines(handlerFor(row)),
     "        ]",
     "      }",
   ];
@@ -121,23 +119,15 @@ function handlerLines(handler: Handler): string[] {
   ];
 }
 
-function handlerFor(host: ManifestHost, row: GateRow): Handler {
-  if (host === "claude") return { command: NODE, args: [claudeGateBundle(), row.gate] };
-  const root = HOST_ROWS.find((candidate) => candidate.host === "codex")?.commandRoot ?? "";
-  const allow = row.gate === "unknown" ? ` --allow ${json(allowlistFor(host))}` : "";
-  return { command: `${CODEX_STATE_MARKER} ${NODE} ${root}/${GATE_BUNDLE} ${row.gate}${allow}` };
+function handlerFor(row: GateRow): Handler {
+  return { command: NODE, args: [claudeGateBundle(), row.gate] };
 }
 
 function matcherFor(host: HostName, row: GateRow): string {
   const named = toolNamesFor(host, row.gate).join("|");
   if (row.gate === "unknown") return UNKNOWN_TOOL_MATCHER;
-  if (row.gate === "handoff") return `^(${named})$`;
   if (row.gate === "proddeploy") return `${named}|${DEPLOY_SHAPED_TOOL_NAMES[host]}`;
   return named;
-}
-
-function allowlistFor(host: ManifestHost): string {
-  return toolNamesFor(host, "unknown").join("|");
 }
 
 function toolNamesFor(host: HostName, gate: string): string[] {
