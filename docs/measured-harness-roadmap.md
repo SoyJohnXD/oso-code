@@ -1,5 +1,7 @@
 # oso-code roadmap — `measured-harness` (revision 3): the host is set first, the applier proves, the run is measured, the gates are mechanical
 
+**Status after `v0.27.0`: paused at the applier-proof boundary.** Codex-specific entries below are retained as the frozen record of the plan that reached that boundary. Before telemetry work resumes here, the remaining changes must be re-planned for Claude Code and OpenCode; continuation for Codex belongs in the `oso-code-codex` fork.
+
 Runs AFTER `ts-core-rewrite` (docs/rewrite/ts-core-roadmap.md) C5 `rewrite-prose` is merged to `main`; C6 `rewrite-release` is deferred to after this roadmap, so ONE release carries both (revision 3, 2026-09-04, the operator), and the run's rails are the merged tree installed on this machine by hand (§7 precondition 1). Revision 1 was drafted 2026-08-28 from the diagnosis in engram `oso/applier-fail-diagnosis`, `oso/run-journal-verdict-data`, `oso/cheap-models-direction` and `oso/harness-practice-evidence`. Revision 2 (2026-09-01) folds in the pre-arming review in engram `oso/measured-harness/review-2026-09-01`: four factual corrections, the cheap-model evidence of three OpenCode runs, the permission-prompt finding, and the operator's principles. Revision 3 (2026-09-04) is the operator's one-day arming: C6 deferred, every role on opus (G6), the run discipline of G13, and the §1 fact on the tree C5 left. Lands in the tree as `docs/measured-harness-roadmap.md` once C5 is merged (§7). §9 records what moved between revisions and why.
 
 ## 0. Purpose, principles, non-goals, end state

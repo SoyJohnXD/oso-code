@@ -2,9 +2,9 @@
 
 The one-step path is real — clone the repo and double-click `bootstrap\install.bat` — but it is one step over a machine that has to end up carrying several tools, and over a shell that stays part of the runtime long after the install is over. This file is what that step actually needs, what it provisions for you, how to prove the result, and what each way it can go wrong looks like when it does.
 
-Everything here is Claude Code. The Codex host has its own prerequisites and its own installer, documented in [the README](../README.md#codex); nothing below applies to it.
+Everything here is Claude Code. OpenCode uses the cross-platform Node CLI documented in [the README](../README.md#opencode); nothing below applies to it.
 
-**OpenCode on Windows is UNVERIFIED.** Its installer, verifier, restore, repair and purge scripts are bash and Git Bash is the only runtime here that could host them, but no run of any of them has been observed on Windows: there is no `install.bat` counterpart for that host and CI runs its job on ubuntu alone. That is an absent claim, not a declaration that the host does not apply — [the OpenCode install and restore guide](opencode-purge-and-restore.md#platform-coverage) records it and says what would close it.
+**OpenCode has fixture-level Windows coverage, not authenticated certification in the PR gate.** Its installer, verifier, repair and purge routes run through the cross-platform Node CLI and the Windows CI job exercises their isolated fixtures. Checks against a real pinned OpenCode binary remain opt-in — [the OpenCode purge, restore and repair guide](opencode-purge-and-restore.md#verification-scope) records that boundary.
 
 ## What a clean Windows 10 or 11 machine needs
 
@@ -75,7 +75,7 @@ claude mcp add --scope user fallow -- fallow-mcp
 Three things about that pair are worth stating, because each has cost a real install:
 
 - **The package is `fallow`.** `fallow-mcp` is the name of a bin it ships; as a package name it is a 404.
-- **The version is pinned.** `3.14.0` is the release this repo has verified, the way it pins the Codex CLI, Impeccable and engram. Never `@latest`.
+- **The version is pinned.** `3.14.0` is the release this repo has verified, the way it pins Impeccable and engram. Never `@latest`.
 - **On Windows the second command must not use the bare name.** `npm install --global fallow` drops three shims into npm's global prefix: `fallow-mcp.cmd`, a `.ps1`, and an extensionless shell script for Git Bash. That last one is what `command -v` finds first, and the Claude Code client is a native Windows process that cannot spawn it. Point the entry at the `.cmd` instead:
 
   ```bash
