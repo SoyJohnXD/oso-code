@@ -5,18 +5,14 @@ import { describe, test } from "node:test";
 import {
   BUNDLE_DIRECTORY,
   GATE_BUNDLE,
-  GATE_ROWS,
-  HOST_ROWS,
   OPENCODE_PLUGIN_BUNDLE,
   PRECOMMIT_BUNDLE,
-  type HostName,
 } from "../../src/routes/routes.ts";
 import { sha256Hex } from "../../src/state/store.ts";
 import { provedSomething } from "../support/proved.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
 
 const HASH_FILE = "bootstrap/hook-hashes.txt";
-const STATE_BINARY_GATES = ["handoff", "planstop", "planprompt"];
 const DIGEST_LENGTH = 64;
 const SEPARATOR = "  ";
 
@@ -61,38 +57,23 @@ describe(`${HASH_FILE} publishes exactly the artifacts core/src/routes/routes.ts
 });
 
 function requiredPaths(): string[] {
-  const stateBinary = ["plugin/bin/oso-state", "plugin/bin/package.json"];
-  return dedupe([
-    manifestOf("codex"),
+  return [
     `plugin/${BUNDLE_DIRECTORY}/${GATE_BUNDLE}`,
     `plugin/${BUNDLE_DIRECTORY}/${PRECOMMIT_BUNDLE}`,
     `plugin/${BUNDLE_DIRECTORY}/package.json`,
     "plugin/git-hooks/pre-commit",
-    ...gateScriptsWiredFor("codex"),
-    ...(stateBinaryIsWiredFor("codex") ? stateBinary : []),
+    "plugin/hooks/block-commit-until-green.sh",
+    "plugin/hooks/block-edits-without-slice.sh",
+    "plugin/hooks/warn-stale-state.sh",
+    "plugin/hooks/cleanup-state.sh",
+    "plugin/hooks/block-prod-deploy.sh",
+    "plugin/bin/oso-state",
+    "plugin/bin/package.json",
     "plugin/hooks/lib.sh",
     "plugin/hooks/lexer.sh",
-    ...gateScriptsWiredFor("opencode"),
+    "plugin/hooks/reanchor-after-compact.sh",
     OPENCODE_PLUGIN_BUNDLE,
-  ]);
-}
-
-function manifestOf(host: HostName): string {
-  const row = HOST_ROWS.find((candidate) => candidate.host === host);
-  if (row === undefined) throw new Error(`no host row names ${host}`);
-  return row.manifest;
-}
-
-function gateScriptsWiredFor(host: HostName): string[] {
-  return GATE_ROWS.filter((row) => row.wiring[host] === "wired").map((row) => `plugin/hooks/${row.script}`);
-}
-
-function stateBinaryIsWiredFor(host: HostName): boolean {
-  return GATE_ROWS.some((row) => STATE_BINARY_GATES.includes(row.gate) && row.wiring[host] === "wired");
-}
-
-function dedupe(paths: readonly string[]): string[] {
-  return [...new Set(paths)];
+  ];
 }
 
 function significantLines(): string[] {

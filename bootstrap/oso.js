@@ -175,16 +175,10 @@ function isErrnoException(error) {
   return error instanceof Error && "code" in error;
 }
 
-// core/src/install/codex-host.ts
-import { spawnSync as spawnSync2 } from "node:child_process";
-import { mkdtempSync as mkdtempSync2, rmSync as rmSync4, writeFileSync as writeFileSync4 } from "node:fs";
-import path5 from "node:path";
-
-// core/src/install/verify-claude.ts
-import { spawnSync } from "node:child_process";
-import { closeSync, mkdirSync as mkdirSync3, mkdtempSync, openSync, readFileSync as readFileSync4, readSync, readdirSync as readdirSync2, rmSync as rmSync3, statSync as statSync3, writeFileSync as writeFileSync3 } from "node:fs";
-import { tmpdir } from "node:os";
-import path4 from "node:path";
+// core/src/install/claude.ts
+import { spawnSync as spawnSync3 } from "node:child_process";
+import { mkdirSync as mkdirSync5, readFileSync as readFileSync7, readdirSync as readdirSync3, rmSync as rmSync5, statSync as statSync4, writeFileSync as writeFileSync5 } from "node:fs";
+import path6 from "node:path";
 
 // core/src/install/backup.ts
 import { chmodSync, cpSync, lstatSync as lstatSync2, mkdirSync as mkdirSync2, readdirSync, readFileSync as readFileSync2, rmSync as rmSync2, statSync as statSync2, writeFileSync as writeFileSync2 } from "node:fs";
@@ -350,6 +344,19 @@ function recursiveDiskBlocks(target) {
   const childBlocks = readdirSync(target).reduce((total, child) => total + recursiveDiskBlocks(path2.join(target, child)), 0);
   return stats.blocks + childBlocks;
 }
+
+// core/src/install/engram.ts
+import { spawnSync as spawnSync2 } from "node:child_process";
+import { mkdirSync as mkdirSync4, mkdtempSync as mkdtempSync2, readFileSync as readFileSync6, renameSync as renameSync2, rmSync as rmSync4, writeFileSync as writeFileSync4 } from "node:fs";
+import { tmpdir as tmpdir2 } from "node:os";
+import path5 from "node:path";
+import { gunzipSync, inflateRawSync } from "node:zlib";
+
+// core/src/install/verify-claude.ts
+import { spawnSync } from "node:child_process";
+import { closeSync, mkdirSync as mkdirSync3, mkdtempSync, openSync, readFileSync as readFileSync4, readSync, readdirSync as readdirSync2, rmSync as rmSync3, statSync as statSync3, writeFileSync as writeFileSync3 } from "node:fs";
+import { tmpdir } from "node:os";
+import path4 from "node:path";
 
 // core/src/install/json.ts
 import { readFileSync as readFileSync3 } from "node:fs";
@@ -902,13 +909,12 @@ function existsFollowingSymlinks(target) {
 }
 function errorMessageOf(cause) {
   const message = cause instanceof Error ? cause.message : String(cause);
-  const collapsed2 = collapsedNewlines(message);
-  return collapsed2 === "" ? "empty" : collapsed2;
+  const collapsed = collapsedNewlines(message);
+  return collapsed === "" ? "empty" : collapsed;
 }
 
 // core/src/install/pins.ts
 var SUPPORTED_ENGRAM_VERSION = "1.20.0";
-var SUPPORTED_CODEX_VERSION = "0.146.0";
 var SUPPORTED_OPENCODE_VERSION = "1.18.22";
 var DOTTED_NUMERIC_VERSION = /^\d+(\.\d+)*$/;
 function meetsVersionFloor(found, floor) {
@@ -919,96 +925,6 @@ function isAboveTestedVersion(found, tested) {
   if (found === void 0 || !DOTTED_NUMERIC_VERSION.test(found)) return false;
   return compareVersionsAscending(found, tested) > 0;
 }
-
-// core/src/install/version-line.ts
-function versionLineReadingOf(rawOutput, versionLine) {
-  const lines = rawOutput.split("\n").filter((line) => line.trim() !== "");
-  const matchingLines = lines.filter((line) => versionLine.test(line));
-  if (matchingLines.length === 0) return { kind: "unmatched", raw: rawOutput };
-  if (matchingLines.length > 1) return { kind: "ambiguous", matches: matchingLines };
-  const matchedLine = matchingLines[0] ?? "";
-  const captured = versionLine.exec(matchedLine)?.[1];
-  return { kind: "matched", version: captured ?? matchedLine, discarded: lines.filter((line) => line !== matchedLine) };
-}
-function versionOutcomeOf(reading, versionLineShape) {
-  if (reading.kind === "matched") {
-    return { version: reading.version, note: reading.discarded.length === 0 ? void 0 : extraLinesNote(reading.discarded) };
-  }
-  if (reading.kind === "unmatched") return { version: void 0, note: unmatchedNote(versionLineShape, reading.raw) };
-  return { version: void 0, note: ambiguousNote(versionLineShape, reading.matches) };
-}
-function extraLinesNote(discarded) {
-  const first = discarded[0] ?? "";
-  const plural = discarded.length === 1 ? "line" : "lines";
-  return `the probe printed ${discarded.length} extra ${plural} beyond the version; first: ${collapsedNewlines(first)}`;
-}
-function unmatchedNote(versionLineShape, raw) {
-  return `the probe printed no line shaped like ${versionLineShape}; raw output: ${collapsedNewlines(raw)}`;
-}
-function ambiguousNote(versionLineShape, matches) {
-  return `the probe printed ${matches.length} lines shaped like ${versionLineShape} (ambiguous): ${collapsedNewlines(matches.join("\n"))}`;
-}
-
-// core/src/install/codex-host.ts
-var CODEX_BINARY = "codex";
-var OSO_PERMISSION_PROFILE = "oso";
-var VALIDATION_HOME_PREFIX = ".validate.";
-var CODEX_VERSION_LINE = /^codex-cli\s+(\d+(?:\.\d+)*)\s*$/;
-var CODEX_VERSION_LINE_SHAPE = "codex-cli <version>";
-function pinnedVersionRefusal(host) {
-  const current = host.version ?? host.versionNote ?? "not installed";
-  return `Codex CLI must already be ${SUPPORTED_CODEX_VERSION} or newer (found ${current}); run: npm install --global @openai/codex@${SUPPORTED_CODEX_VERSION}`;
-}
-function versionFieldsOf(versionOutput) {
-  return versionLineReadingOf(versionOutput, CODEX_VERSION_LINE);
-}
-function codexHostProbes(environment) {
-  const binaryPath = firstExecutableOnPath(environment, CODEX_BINARY);
-  const outcome = binaryPath === void 0 ? void 0 : probedVersion(environment);
-  return {
-    version: outcome?.version,
-    versionNote: outcome?.note,
-    binaryPath,
-    acceptsConfig: (codexHome, configText) => sandboxAcceptsConfig(environment, codexHome, configText),
-    sandbox: (argv) => hostRun(environment, ["sandbox", "-P", OSO_PERMISSION_PROFILE, "--", ...argv]),
-    pluginListing: () => hostRun(environment, ["plugin", "list", "--json"])
-  };
-}
-function probedVersion(environment) {
-  const run = spawnSync2(CODEX_BINARY, ["--version"], { env: environment, encoding: "utf8" });
-  if (run.error !== void 0 || run.status !== 0) return void 0;
-  return versionOutcomeOf(versionFieldsOf(run.stdout), CODEX_VERSION_LINE_SHAPE);
-}
-function hostRun(environment, argv) {
-  const run = spawnSync2(CODEX_BINARY, [...argv], { env: environment, encoding: "utf8" });
-  if (run.error !== void 0) return { ok: false, output: run.error.message };
-  return { ok: run.status === 0, output: `${run.stdout ?? ""}${run.stderr ?? ""}`.trim() };
-}
-function sandboxAcceptsConfig(environment, codexHome, configText) {
-  const validationHome = mkdtempSync2(path5.join(codexHome, VALIDATION_HOME_PREFIX));
-  try {
-    writeFileSync4(path5.join(validationHome, "config.toml"), configText, { mode: 384 });
-    const run = spawnSync2(CODEX_BINARY, ["sandbox", "-P", OSO_PERMISSION_PROFILE, "--", "/bin/true"], {
-      env: { ...environment, CODEX_HOME: validationHome },
-      encoding: "utf8"
-    });
-    return run.error === void 0 && run.status === 0;
-  } finally {
-    rmSync4(validationHome, { recursive: true, force: true });
-  }
-}
-
-// core/src/install/claude.ts
-import { spawnSync as spawnSync4 } from "node:child_process";
-import { mkdirSync as mkdirSync5, readFileSync as readFileSync7, readdirSync as readdirSync3, rmSync as rmSync6, statSync as statSync4, writeFileSync as writeFileSync6 } from "node:fs";
-import path7 from "node:path";
-
-// core/src/install/engram.ts
-import { spawnSync as spawnSync3 } from "node:child_process";
-import { mkdirSync as mkdirSync4, mkdtempSync as mkdtempSync3, readFileSync as readFileSync6, renameSync as renameSync2, rmSync as rmSync5, writeFileSync as writeFileSync5 } from "node:fs";
-import { tmpdir as tmpdir2 } from "node:os";
-import path6 from "node:path";
-import { gunzipSync, inflateRawSync } from "node:zlib";
 
 // core/src/install/trust.ts
 import { readFileSync as readFileSync5 } from "node:fs";
@@ -1048,7 +964,7 @@ var EngramProvisionError = class extends Error {
   }
 };
 function provisionEngramBinary(input) {
-  const installDirectory = path6.join(input.homeDirectory, ".local", "bin");
+  const installDirectory = path5.join(input.homeDirectory, ".local", "bin");
   const binaryName = engramBinaryName(input.platform);
   const transport = input.transport ?? curlOrWgetTransport(input.environment);
   let placedBinary;
@@ -1107,9 +1023,9 @@ function placeEngramBinary({ content, installDirectory, binaryName, environment,
     );
   }
   mkdirSync4(installDirectory, { recursive: true });
-  const target = path6.join(installDirectory, binaryName);
-  const pending = path6.join(installDirectory, `.oso-pending-${process.pid}-${binaryName}`);
-  writeFileSync5(pending, content, { mode: 493 });
+  const target = path5.join(installDirectory, binaryName);
+  const pending = path5.join(installDirectory, `.oso-pending-${process.pid}-${binaryName}`);
+  writeFileSync4(pending, content, { mode: 493 });
   try {
     if (!engramBinaryRuns(platform, pending, environment)) {
       throw new EngramProvisionError(
@@ -1118,26 +1034,26 @@ function placeEngramBinary({ content, installDirectory, binaryName, environment,
     }
     renameSync2(pending, target);
   } catch (error) {
-    rmSync5(pending, { force: true });
+    rmSync4(pending, { force: true });
     throw error;
   }
   return target;
 }
 function curlOrWgetTransport(environment) {
   return (url) => {
-    const scratch = mkdtempSync3(path6.join(tmpdir2(), "oso-engram-download-"));
+    const scratch = mkdtempSync2(path5.join(tmpdir2(), "oso-engram-download-"));
     try {
-      const destination = path6.join(scratch, "download");
+      const destination = path5.join(scratch, "download");
       downloadToFile(url, destination, environment);
       return readFileSync6(destination);
     } finally {
-      rmSync5(scratch, { recursive: true, force: true });
+      rmSync4(scratch, { recursive: true, force: true });
     }
   };
 }
 function downloadToFile(url, destination, environment) {
   const bound = String(DOWNLOAD_BOUND_SECONDS);
-  const curl = spawnSync3(
+  const curl = spawnSync2(
     "curl",
     ["-fsSL", "--retry", "3", "--retry-delay", "2", "--connect-timeout", bound, "--max-time", bound, "-o", destination, url],
     { env: environment, encoding: "utf8" }
@@ -1146,7 +1062,7 @@ function downloadToFile(url, destination, environment) {
     if (curl.status !== 0) throw new Error(fetcherRefusal("curl", curl));
     return;
   }
-  const wget = spawnSync3("wget", ["-nv", "--tries=3", `--timeout=${bound}`, "-O", destination, url], {
+  const wget = spawnSync2("wget", ["-nv", "--tries=3", `--timeout=${bound}`, "-O", destination, url], {
     env: environment,
     encoding: "utf8"
   });
@@ -1170,7 +1086,7 @@ function engramReleaseArch(architecture) {
 }
 function engramBinaryFromArchive(archive, asset, binaryName) {
   const entries = asset.endsWith(".zip") ? zipEntries(archive) : tarGzEntries(archive);
-  const named = entries.filter((entry) => path6.posix.basename(entry.name) === binaryName);
+  const named = entries.filter((entry) => path5.posix.basename(entry.name) === binaryName);
   const [only] = named;
   if (only === void 0) throw new EngramProvisionError(`${asset} carries no ${binaryName}`);
   if (named.length > 1) {
@@ -1325,9 +1241,9 @@ var ClaudePluginInstallError = class extends Error {
 };
 function installClaude(input) {
   if (!input.assumeYes) return requiresYes("install");
-  const claudeDir = path7.join(input.homeDirectory, ".claude");
-  const settingsFile = path7.join(claudeDir, "settings.json");
-  const claudeMdFile = path7.join(claudeDir, "CLAUDE.md");
+  const claudeDir = path6.join(input.homeDirectory, ".claude");
+  const settingsFile = path6.join(claudeDir, "settings.json");
+  const claudeMdFile = path6.join(claudeDir, "CLAUDE.md");
   const legacyTargets = legacyArtifactTargets(input.repositoryRoot, claudeDir);
   let tx;
   try {
@@ -1389,9 +1305,9 @@ function installClaude(input) {
 }
 function repairClaude(input) {
   if (!input.assumeYes) return requiresYes("repair");
-  const claudeDir = path7.join(input.homeDirectory, ".claude");
-  const settingsFile = path7.join(claudeDir, "settings.json");
-  const claudeMdFile = path7.join(claudeDir, "CLAUDE.md");
+  const claudeDir = path6.join(input.homeDirectory, ".claude");
+  const settingsFile = path6.join(claudeDir, "settings.json");
+  const claudeMdFile = path6.join(claudeDir, "CLAUDE.md");
   let tx;
   try {
     tx = beginTransaction(backupsRootOf(input.homeDirectory), CLAUDE_REPAIR_BACKUP_FORMAT);
@@ -1420,9 +1336,9 @@ function repairClaude(input) {
 }
 function purgeClaude(input) {
   if (!input.assumeYes) return requiresYes("purge");
-  const claudeDir = path7.join(input.homeDirectory, ".claude");
-  const settingsFile = path7.join(claudeDir, "settings.json");
-  const claudeMdFile = path7.join(claudeDir, "CLAUDE.md");
+  const claudeDir = path6.join(input.homeDirectory, ".claude");
+  const settingsFile = path6.join(claudeDir, "settings.json");
+  const claudeMdFile = path6.join(claudeDir, "CLAUDE.md");
   let tx;
   try {
     tx = beginTransaction(backupsRootOf(input.homeDirectory), CLAUDE_PURGE_BACKUP_FORMAT);
@@ -1445,34 +1361,34 @@ function purgeClaude(input) {
     const restore = rollback(tx);
     return claudeFatal("purge", "could not rewrite CLAUDE.md", error, restore);
   }
-  const mcpRemove = spawnSync4("claude", ["mcp", "remove", "--scope", "user", "fallow"], { env: input.environment, encoding: "utf8" });
+  const mcpRemove = spawnSync3("claude", ["mcp", "remove", "--scope", "user", "fallow"], { env: input.environment, encoding: "utf8" });
   wiring.push(
     mcpRemove.error === void 0 && mcpRemove.status === 0 ? wiringOk("fallow (mcp)", "removed") : wiringFail("fallow (mcp)", `nothing removed, or already absent: ${collapsedOutput(mcpRemove)}`)
   );
   return { report: claudeReport("purge", infoLines, wiring), exitCode: 0 };
 }
 function backupsRootOf(homeDirectory2) {
-  return path7.join(homeDirectory2, ".local", "state", "oso-code", "claude-backups");
+  return path6.join(homeDirectory2, ".local", "state", "oso-code", "claude-backups");
 }
 function backupClientConfigTargets(homeDirectory2, claudeDir) {
-  const targets = [{ label: "claude-json", target: path7.join(homeDirectory2, ".claude.json") }];
-  const pluginsDir = path7.join(claudeDir, "plugins");
+  const targets = [{ label: "claude-json", target: path6.join(homeDirectory2, ".claude.json") }];
+  const pluginsDir = path6.join(claudeDir, "plugins");
   if (!isDirectory(pluginsDir)) return targets;
   for (const name of readdirSync3(pluginsDir).filter((entry) => entry.endsWith(".json"))) {
-    targets.push({ label: `plugins-json-${name}`, target: path7.join(pluginsDir, name) });
+    targets.push({ label: `plugins-json-${name}`, target: path6.join(pluginsDir, name) });
   }
   return targets;
 }
 function legacyArtifactTargets(repositoryRoot2, claudeDir) {
-  const manifestFile = path7.join(repositoryRoot2, "bootstrap", "gentle-manifest.txt");
+  const manifestFile = path6.join(repositoryRoot2, "bootstrap", "gentle-manifest.txt");
   const content = readFileSync7(manifestFile, "utf8");
-  return manifestEntries(content).map((relative) => ({ label: relative, target: path7.join(claudeDir, relative) }));
+  return manifestEntries(content).map((relative) => ({ label: relative, target: path6.join(claudeDir, relative) }));
 }
 function removeLegacyArtifacts(targets) {
   let removed = 0;
   for (const { target } of targets) {
     if (!existsAtAll(target)) continue;
-    rmSync6(target, { recursive: true, force: true });
+    rmSync5(target, { recursive: true, force: true });
     removed += 1;
   }
   return { removed };
@@ -1564,14 +1480,14 @@ function mergeGlobalClaudeMd(claudeMdFile, blockBody, options) {
   const content = `${prefix}${CLAUDE_MD_MARKER_START}
 ${blockBody}${CLAUDE_MD_MARKER_END}
 `;
-  writeFileAtomically(path7.dirname(claudeMdFile), claudeMdFile, content, ".oso-claude-md-");
+  writeFileAtomically(path6.dirname(claudeMdFile), claudeMdFile, content, ".oso-claude-md-");
 }
 function stripClaudeMdRegion(claudeMdFile) {
   if (!isReadableRegularFile(claudeMdFile)) return false;
   const content = readFileSync7(claudeMdFile, "utf8");
   if (!content.includes(CLAUDE_MD_MARKER_START)) return false;
   const withoutBlock = withoutMarkerRegion(content);
-  writeFileAtomically(path7.dirname(claudeMdFile), claudeMdFile, withoutBlock === "" ? "" : `${withoutBlock}
+  writeFileAtomically(path6.dirname(claudeMdFile), claudeMdFile, withoutBlock === "" ? "" : `${withoutBlock}
 `, ".oso-claude-md-");
   return true;
 }
@@ -1594,15 +1510,15 @@ function withoutMarkerRegion(content) {
   return kept.join("\n");
 }
 function claudeGlobalBody(repositoryRoot2) {
-  return readFileSync7(path7.join(repositoryRoot2, "bootstrap", "claude-global.md"), "utf8");
+  return readFileSync7(path6.join(repositoryRoot2, "bootstrap", "claude-global.md"), "utf8");
 }
 function claudeMdSizeNote(claudeMdFile) {
   const size = statSync4(claudeMdFile, { throwIfNoEntry: false })?.size ?? 0;
   return size > CLAUDE_MD_BUDGET_BYTES ? `CLAUDE.md is still ${size} bytes \u2014 review the non-oso content; every session pays for it` : `CLAUDE.md merged (${size} bytes)`;
 }
 function wireEngramPlugin(environment) {
-  spawnSync4("claude", ["plugin", "marketplace", "add", ENGRAM_SOURCE_REPO], { env: environment, encoding: "utf8" });
-  const install = spawnSync4("claude", ["plugin", "install", "engram@engram"], { env: environment, encoding: "utf8" });
+  spawnSync3("claude", ["plugin", "marketplace", "add", ENGRAM_SOURCE_REPO], { env: environment, encoding: "utf8" });
+  const install = spawnSync3("claude", ["plugin", "install", "engram@engram"], { env: environment, encoding: "utf8" });
   if (install.error === void 0 && install.status === 0) return wiringOk("engram (plugin)", "installed");
   return wiringFail("engram (plugin)", `plugin install failed: ${collapsedOutput(install)} \u2014 fix: claude plugin install engram@engram`);
 }
@@ -1642,11 +1558,11 @@ function engramManualInstallCommand(platform) {
 function wireFallow(environment, homeDirectory2, platform) {
   const fallowCommand = resolveFallowMcpCommand(environment, homeDirectory2, platform) ?? "fallow-mcp";
   const fix = `npm install --global fallow@${SUPPORTED_FALLOW_VERSION}, then claude mcp add --scope user fallow -- ${fallowCommand}`;
-  const npmProbe = spawnSync4("npm", ["--version"], { env: environment, encoding: "utf8" });
+  const npmProbe = spawnSync3("npm", ["--version"], { env: environment, encoding: "utf8" });
   if (npmProbe.error !== void 0) {
     return wiringFail("fallow", `no npm to install the fallow package with \u2014 fix: install Node.js 22 or newer, then ${fix}`);
   }
-  const install = spawnSync4("npm", ["install", "--global", `fallow@${SUPPORTED_FALLOW_VERSION}`], { env: environment, encoding: "utf8" });
+  const install = spawnSync3("npm", ["install", "--global", `fallow@${SUPPORTED_FALLOW_VERSION}`], { env: environment, encoding: "utf8" });
   if (install.error !== void 0 || install.status !== 0) {
     return wiringFail(
       "fallow",
@@ -1656,7 +1572,7 @@ function wireFallow(environment, homeDirectory2, platform) {
   return addOrConfirmFallowMcp(environment, fallowCommand);
 }
 function addOrConfirmFallowMcp(environment, fallowCommand) {
-  const add = spawnSync4("claude", ["mcp", "add", "--scope", "user", "fallow", "--", fallowCommand], { env: environment, encoding: "utf8" });
+  const add = spawnSync3("claude", ["mcp", "add", "--scope", "user", "fallow", "--", fallowCommand], { env: environment, encoding: "utf8" });
   if (add.error === void 0 && add.status === 0) return wiringOk("fallow", `wired (user scope): ${fallowCommand}`);
   const wired = fallowWiredCommand(environment);
   if (wired === fallowCommand) return wiringOk("fallow", `already wired: ${fallowCommand}`);
@@ -1669,7 +1585,7 @@ function addOrConfirmFallowMcp(environment, fallowCommand) {
   return wiringFail("fallow", `mcp add failed: ${collapsedOutput(add)} \u2014 fix: claude mcp add --scope user fallow -- ${fallowCommand}`);
 }
 function fallowWiredCommand(environment) {
-  const result = spawnSync4("claude", ["mcp", "get", "fallow"], { env: environment, encoding: "utf8" });
+  const result = spawnSync3("claude", ["mcp", "get", "fallow"], { env: environment, encoding: "utf8" });
   const text = result.error === void 0 ? result.stdout : "";
   const match = /^[ \t]*Command:[ \t]*(.*?)[ \t]*$/m.exec(text);
   return match?.[1] ?? "";
@@ -1678,44 +1594,44 @@ function resolveFallowMcpCommand(environment, homeDirectory2, platform) {
   if (platform === "win32") {
     const appdata = environment["APPDATA"];
     if (appdata !== void 0 && appdata !== "") {
-      const prefix = npmGlobalPrefix(environment) ?? path7.join(appdata, "npm");
-      const candidate = path7.join(prefix, "fallow-mcp.cmd");
+      const prefix = npmGlobalPrefix(environment) ?? path6.join(appdata, "npm");
+      const candidate = path6.join(prefix, "fallow-mcp.cmd");
       if (isExecutableRegularFile(candidate)) return candidate;
     }
   }
   const onPath2 = firstExecutableOnPath(environment, "fallow-mcp");
   if (onPath2 !== void 0) return onPath2;
-  const cargoCandidates = [path7.join(homeDirectory2, ".cargo", "bin", "fallow-mcp"), path7.join(homeDirectory2, ".cargo", "bin", "fallow-mcp.exe")];
+  const cargoCandidates = [path6.join(homeDirectory2, ".cargo", "bin", "fallow-mcp"), path6.join(homeDirectory2, ".cargo", "bin", "fallow-mcp.exe")];
   return cargoCandidates.find((candidate) => isExecutableRegularFile(candidate));
 }
 function npmGlobalPrefix(environment) {
-  const result = spawnSync4("npm", ["prefix", "-g"], { env: environment, encoding: "utf8" });
+  const result = spawnSync3("npm", ["prefix", "-g"], { env: environment, encoding: "utf8" });
   if (result.error !== void 0 || result.status !== 0) return void 0;
   const trimmed = result.stdout.trim();
   return trimmed === "" ? void 0 : trimmed.replaceAll("\\", "/");
 }
 function installOsoPluginCore(environment, repositoryRoot2) {
   registerOsoMarketplace(environment, repositoryRoot2);
-  const install = spawnSync4("claude", ["plugin", "install", "oso-code@oso-code"], { env: environment, encoding: "utf8" });
+  const install = spawnSync3("claude", ["plugin", "install", "oso-code@oso-code"], { env: environment, encoding: "utf8" });
   if (install.error !== void 0 || install.status !== 0) throw new ClaudePluginInstallError(collapsedOutput(install));
   return wiringOk("oso-code plugin", "installed");
 }
 function softPluginMaintenance(environment) {
-  spawnSync4("claude", ["plugin", "marketplace", "update", "oso-code"], { env: environment, encoding: "utf8" });
-  spawnSync4("claude", ["plugin", "update", "oso-code@oso-code"], { env: environment, encoding: "utf8" });
+  spawnSync3("claude", ["plugin", "marketplace", "update", "oso-code"], { env: environment, encoding: "utf8" });
+  spawnSync3("claude", ["plugin", "update", "oso-code@oso-code"], { env: environment, encoding: "utf8" });
 }
 function registerOsoMarketplace(environment, repositoryRoot2) {
-  const registry = spawnSync4("claude", ["plugin", "marketplace", "list", "--json"], { env: environment, encoding: "utf8" });
+  const registry = spawnSync3("claude", ["plugin", "marketplace", "list", "--json"], { env: environment, encoding: "utf8" });
   const localPath = registry.error === void 0 ? localMarketplacePath(registry.stdout) : "";
   if (localPath !== "" && !githubMarketplaceIsReachable(environment)) return;
-  const added = spawnSync4("claude", ["plugin", "marketplace", "add", MARKETPLACE_SOURCE], { env: environment, encoding: "utf8" });
+  const added = spawnSync3("claude", ["plugin", "marketplace", "add", MARKETPLACE_SOURCE], { env: environment, encoding: "utf8" });
   if (added.error === void 0 && added.status === 0) return;
   const failure = classifyMarketplaceAddFailure(added.stdout ?? "");
   if (failure === "unreachable") {
-    spawnSync4("claude", ["plugin", "marketplace", "add", repositoryRoot2], { env: environment, encoding: "utf8" });
+    spawnSync3("claude", ["plugin", "marketplace", "add", repositoryRoot2], { env: environment, encoding: "utf8" });
     return;
   }
-  spawnSync4("claude", ["plugin", "marketplace", "update", "oso-code"], { env: environment, encoding: "utf8" });
+  spawnSync3("claude", ["plugin", "marketplace", "update", "oso-code"], { env: environment, encoding: "utf8" });
 }
 function classifyMarketplaceAddFailure(output) {
   if (output.includes("is seed-managed")) return "seed-managed";
@@ -1736,14 +1652,14 @@ function localMarketplacePath(registryJson) {
   }
 }
 function githubMarketplaceIsReachable(environment) {
-  const result = spawnSync4("git", ["ls-remote", "--exit-code", `https://github.com/${MARKETPLACE_SOURCE}.git`, "HEAD"], {
+  const result = spawnSync3("git", ["ls-remote", "--exit-code", `https://github.com/${MARKETPLACE_SOURCE}.git`, "HEAD"], {
     env: { ...environment, GIT_TERMINAL_PROMPT: "0" },
     encoding: "utf8"
   });
   return result.error === void 0 && result.status === 0;
 }
 function migrateContext7(environment) {
-  const listing = spawnSync4("claude", ["mcp", "list"], { env: environment, encoding: "utf8" });
+  const listing = spawnSync3("claude", ["mcp", "list"], { env: environment, encoding: "utf8" });
   const entry = pluginContext7Entry(listing.error === void 0 ? listing.stdout : "");
   if (entry === "") {
     return [
@@ -1761,14 +1677,14 @@ function migrateContext7(environment) {
       )
     ];
   }
-  spawnSync4("claude", ["mcp", "remove", "--scope", "user", "context7"], { env: environment, encoding: "utf8" });
+  spawnSync3("claude", ["mcp", "remove", "--scope", "user", "context7"], { env: environment, encoding: "utf8" });
   return [wiringOk("context7", "ships with the oso-code plugin, registered and connected")];
 }
 function pluginContext7Entry(listing) {
   return listing.split("\n").find((line) => line.includes("context7") && line.includes("plugin:")) ?? "";
 }
 function publishStateBinPath(claudeDir, settingsFile) {
-  const installedPluginsFile = path7.join(claudeDir, "plugins", "installed_plugins.json");
+  const installedPluginsFile = path6.join(claudeDir, "plugins", "installed_plugins.json");
   const installRoot = installRootFromManifest(installedPluginsFile);
   const fix = "fix: claude plugin install oso-code@oso-code, restart Claude Code, then re-run this installer";
   if (installRoot === void 0) {
@@ -1777,7 +1693,7 @@ function publishStateBinPath(claudeDir, settingsFile) {
       `the client records no installed oso-code plugin carrying a runnable bin/oso-state, so there is no absolute path to publish \u2014 ${fix}`
     );
   }
-  const stateBin = path7.join(installRoot, "bin", "oso-state");
+  const stateBin = path6.join(installRoot, "bin", "oso-state");
   if (!isExecutableRegularFile(stateBin)) {
     return wiringFail("oso-state path", `the resolved install path carries no runnable bin/oso-state at ${stateBin} \u2014 ${fix}`);
   }
@@ -1819,45 +1735,45 @@ function gitHooksOwner(repositoryRoot2, environment, gitHooksDir) {
   if (configured !== "" && normalizedPath(configured) !== normalizedPath(gitHooksDir)) return `core.hooksPath=${configured}`;
   const gitDir = gitAbsoluteGitDir(repositoryRoot2, environment);
   if (gitDir === "") return "";
-  const hooksDir = path7.join(gitDir, "hooks");
+  const hooksDir = path6.join(gitDir, "hooks");
   if (!isDirectory(hooksDir)) return "";
-  const hookFile = readdirSync3(hooksDir).find((name) => !name.endsWith(".sample") && isRegularNonSymlinkFile(path7.join(hooksDir, name)));
-  return hookFile === void 0 ? "" : path7.join(hooksDir, hookFile);
+  const hookFile = readdirSync3(hooksDir).find((name) => !name.endsWith(".sample") && isRegularNonSymlinkFile(path6.join(hooksDir, name)));
+  return hookFile === void 0 ? "" : path6.join(hooksDir, hookFile);
 }
 function gitAbsoluteGitDir(repositoryRoot2, environment) {
-  const result = spawnSync4("git", ["-C", repositoryRoot2, "rev-parse", "--absolute-git-dir"], { env: environment, encoding: "utf8" });
+  const result = spawnSync3("git", ["-C", repositoryRoot2, "rev-parse", "--absolute-git-dir"], { env: environment, encoding: "utf8" });
   return result.error === void 0 && result.status === 0 ? result.stdout.replace(/\n+$/, "") : "";
 }
 function wireGitCommitHook(repositoryRoot2, environment) {
-  const gitHooksDir = path7.join(repositoryRoot2, "plugin", "git-hooks");
+  const gitHooksDir = path6.join(repositoryRoot2, "plugin", "git-hooks");
   const owner = gitHooksOwner(repositoryRoot2, environment, gitHooksDir);
   if (owner !== "") {
     return wiringFail(
       "git commit hook",
-      `not wired in ${repositoryRoot2} \u2014 ${owner} already owns this repo's hooks and core.hooksPath would take it out of git's reach; the PreToolUse commit gate still applies here \u2014 fix: to run both, call ${path7.join(gitHooksDir, "pre-commit")} from your own pre-commit`
+      `not wired in ${repositoryRoot2} \u2014 ${owner} already owns this repo's hooks and core.hooksPath would take it out of git's reach; the PreToolUse commit gate still applies here \u2014 fix: to run both, call ${path6.join(gitHooksDir, "pre-commit")} from your own pre-commit`
     );
   }
-  const result = spawnSync4("git", ["-C", repositoryRoot2, "config", "core.hooksPath", gitHooksDir], { env: environment, encoding: "utf8" });
+  const result = spawnSync3("git", ["-C", repositoryRoot2, "config", "core.hooksPath", gitHooksDir], { env: environment, encoding: "utf8" });
   if (result.error === void 0 && result.status === 0) {
     return wiringOk("git commit hook", `core.hooksPath wired in ${repositoryRoot2} \u2014 for another repo: git -C <repo> config core.hooksPath ${gitHooksDir}`);
   }
   return wiringFail("git commit hook", `git config failed: ${collapsedOutput(result)} \u2014 fix: git -C ${repositoryRoot2} config core.hooksPath ${gitHooksDir}`);
 }
 function wireImpeccable(environment, homeDirectory2) {
-  rmSync6(impeccableOptOutMarker(homeDirectory2), { force: true });
-  spawnSync4("claude", ["plugin", "marketplace", "add", "pbakaus/impeccable"], { env: environment, encoding: "utf8" });
-  const install = spawnSync4("claude", ["plugin", "install", "impeccable@impeccable"], { env: environment, encoding: "utf8" });
+  rmSync5(impeccableOptOutMarker(homeDirectory2), { force: true });
+  spawnSync3("claude", ["plugin", "marketplace", "add", "pbakaus/impeccable"], { env: environment, encoding: "utf8" });
+  const install = spawnSync3("claude", ["plugin", "install", "impeccable@impeccable"], { env: environment, encoding: "utf8" });
   if (install.error !== void 0 || install.status !== 0) {
     return wiringFail("impeccable (plugin)", `install failed: ${collapsedOutput(install)} \u2014 fix: claude plugin install impeccable@impeccable`);
   }
-  const listing = spawnSync4("claude", ["plugin", "list"], { env: environment, encoding: "utf8" });
+  const listing = spawnSync3("claude", ["plugin", "list"], { env: environment, encoding: "utf8" });
   const installed = listing.error === void 0 && listing.stdout.includes("impeccable");
   return installed ? wiringOk("impeccable (plugin)", "installed") : wiringFail("impeccable (plugin)", "the install reported success but the client lists no impeccable plugin \u2014 fix: claude plugin install impeccable@impeccable, then restart Claude Code");
 }
 function skipImpeccable(homeDirectory2) {
   const marker = impeccableOptOutMarker(homeDirectory2);
-  mkdirSync5(path7.dirname(marker), { recursive: true });
-  writeFileSync6(marker, `skipped by --no-impeccable on ${isoTimestamp().slice(0, 10)}
+  mkdirSync5(path6.dirname(marker), { recursive: true });
+  writeFileSync5(marker, `skipped by --no-impeccable on ${isoTimestamp().slice(0, 10)}
 `);
 }
 function toWiringEntry(component, outcome) {
@@ -1879,1553 +1795,9 @@ function isPlainRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-// core/src/install/codex.ts
-import { spawnSync as spawnSync5 } from "node:child_process";
-import { mkdirSync as mkdirSync6, readFileSync as readFileSync9, rmSync as rmSync7, writeFileSync as writeFileSync7 } from "node:fs";
-import path9 from "node:path";
-
-// core/src/install/codex-config.ts
-import path8 from "node:path";
-var CONFIG_MARKER_START = "# oso-code:start";
-var CONFIG_MARKER_END = "# oso-code:end";
-var FEATURE_MARKER_START = "# oso-code:features:start";
-var FEATURE_MARKER_END = "# oso-code:features:end";
-var GLOBAL_MARKER_START = "<!-- oso-code:start -->";
-var GLOBAL_MARKER_END = "<!-- oso-code:end -->";
-var MODEL_INSTRUCTIONS_KEY = "model_instructions_file";
-var COMPACT_PROMPT_KEY = "experimental_compact_prompt_file";
-var FALLOW_FALLBACK_COMMAND = "fallow-mcp";
-var DENIED_WORKSPACE_GLOBS = [
-  "**/secrets/*",
-  "**/*.key",
-  "**/*.pem",
-  "**/.env.*.local",
-  "**/.env.local",
-  "**/.env",
-  "**/.env.production",
-  "**/.npmrc",
-  "**/*.p12",
-  "**/*.pfx",
-  "**/*.jks",
-  "**/*.keystore",
-  "**/id_rsa",
-  "**/id_dsa",
-  "**/id_ecdsa",
-  "**/id_ecdsa_sk",
-  "**/id_ed25519",
-  "**/id_ed25519_sk",
-  "**/.ssh/**",
-  "**/.aws/**",
-  "**/.config/gcloud/**",
-  "**/.azure/**",
-  "**/.kube/**"
-];
-function tomlQuote(value) {
-  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
-}
-function renderCodexManagedFeatures() {
-  return "hooks = true\nmulti_agent = true\n";
-}
-function renderCodexManagedConfig(targetHome, runtimeRoot, fallowCommand) {
-  const stateBin = tomlQuote(path8.posix.join(runtimeRoot, "bin", "oso-state"));
-  const stateRoot = tomlQuote(path8.posix.join(targetHome, ".local", "state", "oso-code"));
-  const worktreeRoot = tomlQuote(path8.posix.join(targetHome, ".local", "state", "oso-code", "worktrees"));
-  return [
-    'default_permissions = "oso"',
-    "",
-    "[agents]",
-    "max_threads = 4",
-    "max_depth = 2",
-    "job_max_runtime_seconds = 1800",
-    "",
-    "[shell_environment_policy.set]",
-    'OSO_AGENT = "1"',
-    `OSO_STATE_BIN = ${stateBin}`,
-    "",
-    "[permissions.oso]",
-    'extends = ":workspace"',
-    "",
-    'description = "oso-code workspace profile"',
-    "",
-    "[permissions.oso.workspace_roots]",
-    `${stateRoot} = true`,
-    `${worktreeRoot} = true`,
-    "",
-    "[permissions.oso.filesystem]",
-    "glob_scan_max_depth = 6",
-    "",
-    '[permissions.oso.filesystem.":workspace_roots"]',
-    ...DENIED_WORKSPACE_GLOBS.map((glob) => `"${glob}" = "deny"`),
-    '".git/**" = "write"',
-    '".git/config" = "read"',
-    "",
-    "[permissions.oso.network]",
-    "enabled = true",
-    "",
-    "[permissions.oso.network.domains]",
-    '"*" = "allow"',
-    '"169.254.169.254" = "deny"',
-    '"metadata.google.internal" = "deny"',
-    "",
-    "[mcp_servers.context7]",
-    'url = "https://mcp.context7.com/mcp"',
-    "",
-    "[mcp_servers.fallow]",
-    `command = ${tomlQuote(fallowCommand)}`,
-    ""
-  ].join("\n");
-}
-function resolveFallowMcpCommand2(targetHome, environment, npmPrefixOf, firstOnPath) {
-  const appData = environment["APPDATA"] ?? "";
-  if (appData !== "") {
-    const prefix = (npmPrefixOf() ?? path8.posix.join(appData, "npm")).replaceAll("\\", "/");
-    const shim = path8.posix.join(prefix, "fallow-mcp.cmd");
-    if (isExecutableRegularFile(shim)) return { command: shim, resolved: true };
-  }
-  const onPath2 = firstOnPath(FALLOW_FALLBACK_COMMAND);
-  if (onPath2 !== void 0 && onPath2 !== "") return { command: onPath2, resolved: true };
-  for (const name of ["fallow-mcp", "fallow-mcp.exe"]) {
-    const cargo = path8.posix.join(targetHome, ".cargo", "bin", name);
-    if (isExecutableRegularFile(cargo)) return { command: cargo, resolved: true };
-  }
-  return { command: FALLOW_FALLBACK_COMMAND, resolved: false };
-}
-
-// core/src/install/toml.ts
-import { readFileSync as readFileSync8 } from "node:fs";
-
-// node_modules/smol-toml/dist/date.js
-var DATE_TIME_RE = /^(\d{4}-\d{2}-\d{2})?[T ]?(?:(\d{2}):\d{2}(?::\d{2}(?:\.\d+)?)?)?(Z|[-+]\d{2}:\d{2})?$/i;
-var TomlDate = class _TomlDate extends Date {
-  #hasDate = false;
-  #hasTime = false;
-  #offset = null;
-  constructor(date) {
-    let hasDate = true;
-    let hasTime = true;
-    let offset = "Z";
-    if (typeof date === "string") {
-      let match = date.match(DATE_TIME_RE);
-      if (match) {
-        if (!match[1]) {
-          hasDate = false;
-          date = `0000-01-01T${date}`;
-        }
-        hasTime = !!match[2];
-        hasTime && date[10] === " " && (date = date.replace(" ", "T"));
-        if (match[2] && +match[2] > 23) {
-          date = "";
-        } else {
-          offset = match[3] || null;
-          date = date.toUpperCase();
-          if (!offset && hasTime)
-            date += "Z";
-        }
-      } else {
-        date = "";
-      }
-    }
-    super(date);
-    if (!isNaN(this.getTime())) {
-      this.#hasDate = hasDate;
-      this.#hasTime = hasTime;
-      this.#offset = offset;
-    }
-  }
-  isDateTime() {
-    return this.#hasDate && this.#hasTime;
-  }
-  isLocal() {
-    return !this.#hasDate || !this.#hasTime || !this.#offset;
-  }
-  isDate() {
-    return this.#hasDate && !this.#hasTime;
-  }
-  isTime() {
-    return this.#hasTime && !this.#hasDate;
-  }
-  isValid() {
-    return this.#hasDate || this.#hasTime;
-  }
-  toISOString() {
-    let iso = super.toISOString();
-    if (this.isDate())
-      return iso.slice(0, 10);
-    if (this.isTime())
-      return iso.slice(11, 23);
-    if (this.#offset === null)
-      return iso.slice(0, -1);
-    if (this.#offset === "Z")
-      return iso;
-    let offset = +this.#offset.slice(1, 3) * 60 + +this.#offset.slice(4, 6);
-    offset = this.#offset[0] === "-" ? offset : -offset;
-    let offsetDate = new Date(this.getTime() - offset * 6e4);
-    return offsetDate.toISOString().slice(0, -1) + this.#offset;
-  }
-  static wrapAsOffsetDateTime(jsDate, offset = "Z") {
-    let date = new _TomlDate(jsDate);
-    date.#offset = offset;
-    return date;
-  }
-  static wrapAsLocalDateTime(jsDate) {
-    let date = new _TomlDate(jsDate);
-    date.#offset = null;
-    return date;
-  }
-  static wrapAsLocalDate(jsDate) {
-    let date = new _TomlDate(jsDate);
-    date.#hasTime = false;
-    date.#offset = null;
-    return date;
-  }
-  static wrapAsLocalTime(jsDate) {
-    let date = new _TomlDate(jsDate);
-    date.#hasDate = false;
-    date.#offset = null;
-    return date;
-  }
-};
-
-// node_modules/smol-toml/dist/error.js
-function getLineColFromPtr(string, ptr) {
-  let lines = string.slice(0, ptr).split(/\r\n|\n|\r/g);
-  return [lines.length, lines.pop().length + 1];
-}
-function makeCodeBlock(string, line, column) {
-  let lines = string.split(/\r\n|\n|\r/g);
-  let codeblock = "";
-  let numberLen = (Math.log10(line + 1) | 0) + 1;
-  for (let i = line - 1; i <= line + 1; i++) {
-    let l = lines[i - 1];
-    if (!l)
-      continue;
-    codeblock += i.toString().padEnd(numberLen, " ");
-    codeblock += ":  ";
-    codeblock += l;
-    codeblock += "\n";
-    if (i === line) {
-      codeblock += " ".repeat(numberLen + column + 2);
-      codeblock += "^\n";
-    }
-  }
-  return codeblock;
-}
-var TomlError = class extends Error {
-  line;
-  column;
-  codeblock;
-  constructor(message, options) {
-    const [line, column] = getLineColFromPtr(options.toml, options.ptr);
-    const codeblock = makeCodeBlock(options.toml, line, column);
-    super(`Invalid TOML document: ${message}
-
-${codeblock}`, options);
-    this.line = line;
-    this.column = column;
-    this.codeblock = codeblock;
-  }
-};
-
-// node_modules/smol-toml/dist/util.js
-function indexOfNewline(str, start = 0) {
-  let idx = str.indexOf("\n", start);
-  if (str.charCodeAt(idx - 1) === 13)
-    idx--;
-  return idx;
-}
-function skipComment(ctx) {
-  for (; ctx.p < ctx.s.length; ctx.p++) {
-    let c = ctx.s.charCodeAt(ctx.p);
-    if (c === 10)
-      break;
-    if (c === 13 && ctx.s.charCodeAt(ctx.p + 1) === 10) {
-      ctx.p++;
-      break;
-    }
-    if (c < 32 && c !== 9 || c === 127) {
-      throw new TomlError("control characters are not allowed in comments", {
-        toml: ctx.s,
-        ptr: ctx.p
-      });
-    }
-  }
-}
-function skipVoid(ctx, banNewLines, banComments) {
-  let c;
-  while (1) {
-    while ((c = ctx.s.charCodeAt(ctx.p)) === 32 || c === 9 || !banNewLines && (c === 10 || c === 13 && ctx.s.charCodeAt(ctx.p + 1) === 10))
-      ctx.p++;
-    if (banComments || c !== 35)
-      break;
-    skipComment(ctx);
-  }
-}
-function skipUntil(ctx, sep, end) {
-  let ptr = ctx.p;
-  if (!end) {
-    ptr = indexOfNewline(ctx.s, ptr);
-    ctx.p = ptr < 0 ? ctx.s.length : ptr;
-    return;
-  }
-  for (; ctx.p < ctx.s.length; ctx.p++) {
-    let c = ctx.s.charCodeAt(ctx.p);
-    if (c === 35) {
-      skipComment(ctx);
-    } else if (c === end || c === sep) {
-      return;
-    }
-  }
-  throw new TomlError("cannot find end of structure", {
-    toml: ctx.s,
-    ptr
-  });
-}
-
-// node_modules/smol-toml/dist/primitive.js
-var INT_REGEX = /^((0x[0-9a-fA-F](_?[0-9a-fA-F])*)|(([+-]|0[ob])?\d(_?\d)*))$/;
-var FLOAT_REGEX = /^[+-]?\d(_?\d)*(\.\d(_?\d)*)?([eE][+-]?\d(_?\d)*)?$/;
-var LEADING_ZERO = /^[+-]?0[0-9_]/;
-function parseString(ctx) {
-  let start = ctx.p;
-  let c = ctx.s.charCodeAt(ctx.p++);
-  let first = c;
-  let isLiteral = c === 39;
-  let isMultiline = c === ctx.s.charCodeAt(ctx.p) && c === ctx.s.charCodeAt(ctx.p + 1);
-  if (isMultiline) {
-    if ((c = ctx.s.charCodeAt(ctx.p += 2)) === 10)
-      ctx.p++;
-    else if (c === 13 && ctx.s.charCodeAt(ctx.p + 1) === 10)
-      ctx.p += 2;
-  }
-  let parsed = "";
-  let sliceStart = ctx.p;
-  let state = 0;
-  for (; ctx.p < ctx.s.length; ctx.p++) {
-    c = ctx.s.charCodeAt(ctx.p);
-    if (isMultiline && (c === 10 || c === 13 && ctx.s.charCodeAt(ctx.p + 1) === 10)) {
-      state = state && 3;
-    } else if (c < 32 && c !== 9 || c === 127) {
-      throw new TomlError("control characters are not allowed in strings", {
-        toml: ctx.s,
-        ptr: ctx.p
-      });
-    } else if ((!state || state === 3) && c === first && (!isMultiline || ctx.s.charCodeAt(ctx.p + 1) === first && ctx.s.charCodeAt(ctx.p + 2) === first)) {
-      if (isMultiline) {
-        if (ctx.s.charCodeAt(ctx.p + 3) === first)
-          ctx.p++;
-        if (ctx.s.charCodeAt(ctx.p + 3) === first)
-          ctx.p++;
-      }
-      if (!state)
-        parsed += ctx.s.slice(sliceStart, ctx.p);
-      ctx.p += isMultiline ? 3 : 1;
-      return parsed;
-    } else if (!state) {
-      if (!isLiteral && c === 92) {
-        parsed += ctx.s.slice(sliceStart, sliceStart = ctx.p);
-        state = 1;
-      }
-    } else if (state === 1) {
-      if (c === 120 || c === 117 || c === 85) {
-        let value = 0;
-        let len = c === 120 ? 2 : c === 117 ? 4 : 8;
-        for (let j = 0; j < len; j++, ctx.p++) {
-          let hex = ctx.s.charCodeAt(ctx.p + 1);
-          let digit = (
-            /* 0-9 */
-            hex >= 48 && hex <= 57 ? hex - 48 : (
-              /* A-F */
-              hex >= 65 && hex <= 70 ? hex - 65 + 10 : (
-                /* a-f */
-                hex >= 97 && hex <= 102 ? hex - 97 + 10 : -1
-              )
-            )
-          );
-          if (digit < 0)
-            throw new TomlError("invalid non-hex character in unicode escape", { toml: ctx.s, ptr: ctx.p + 1 });
-          value = value << 4 | digit;
-        }
-        if (value < 0 || value > 1114111 || value >= 55296 && value <= 57343) {
-          throw new TomlError("invalid unicode escape", { toml: ctx.s, ptr: ctx.p });
-        }
-        parsed += String.fromCodePoint(value);
-        sliceStart = ctx.p + 1;
-        state = 0;
-      } else if (c === 32 || c === 9) {
-        state = 2;
-      } else {
-        if (c === 98)
-          parsed += "\b";
-        else if (c === 116)
-          parsed += "	";
-        else if (c === 110)
-          parsed += "\n";
-        else if (c === 102)
-          parsed += "\f";
-        else if (c === 114)
-          parsed += "\r";
-        else if (c === 101)
-          parsed += "\x1B";
-        else if (c === 34)
-          parsed += '"';
-        else if (c === 92)
-          parsed += "\\";
-        else
-          throw new TomlError("unrecognized escape sequence", { toml: ctx.s, ptr: ctx.p });
-        sliceStart = ctx.p + 1;
-        state = 0;
-      }
-    } else if (c !== 32 && c !== 9) {
-      if (state === 2) {
-        throw new TomlError("invalid escape: only line-ending whitespace may be escaped", {
-          toml: ctx.s,
-          ptr: sliceStart
-        });
-      }
-      state = !isLiteral && c === 92 ? 1 : 0;
-      sliceStart = ctx.p;
-    }
-  }
-  throw new TomlError("unfinished string", { toml: ctx.s, ptr: start });
-}
-function sliceAndTrimEndOf(ctx, start, end) {
-  let value = ctx.s.slice(start, end);
-  let commentIdx = value.indexOf("#");
-  if (commentIdx > 0) {
-    skipComment({ s: value, p: commentIdx, d: 0 });
-    value = value.slice(0, commentIdx);
-  }
-  return value.trimEnd();
-}
-function parseValue(ctx, integersAsBigInt, end) {
-  let ptr = ctx.p;
-  let err = { toml: ctx.s, ptr };
-  skipUntil(ctx, 44, end);
-  let value = sliceAndTrimEndOf(ctx, ptr, ctx.p);
-  if (!value)
-    throw new TomlError("incomplete declaration: value expected", err);
-  if (value === "-inf")
-    return -Infinity;
-  if (value === "inf" || value === "+inf")
-    return Infinity;
-  if (value === "nan" || value === "+nan" || value === "-nan")
-    return NaN;
-  if (value === "-0")
-    return integersAsBigInt ? 0n : 0;
-  let isInt = INT_REGEX.test(value);
-  if (isInt || FLOAT_REGEX.test(value)) {
-    if (LEADING_ZERO.test(value)) {
-      throw new TomlError("leading zeroes are not allowed", err);
-    }
-    value = value.replace(/_/g, "");
-    let numeric = +value;
-    if (isNaN(numeric)) {
-      throw new TomlError("invalid number", err);
-    }
-    if (isInt) {
-      if ((isInt = !Number.isSafeInteger(numeric)) && !integersAsBigInt) {
-        throw new TomlError("integer value cannot be represented losslessly", err);
-      }
-      if (isInt || integersAsBigInt === true)
-        numeric = BigInt(value);
-    }
-    return numeric;
-  }
-  const date = new TomlDate(value);
-  if (!date.isValid())
-    throw new TomlError("invalid value", err);
-  return date;
-}
-
-// node_modules/smol-toml/dist/extract.js
-function extractValue(ctx, end, integersAsBigInt) {
-  let ptr = ctx.p;
-  let c = ctx.s.charCodeAt(ptr);
-  if (c === 91 || c === 123) {
-    if (!ctx.d--) {
-      throw new TomlError("document contains excessively nested structures. aborting.", {
-        toml: ctx.s,
-        ptr
-      });
-    }
-    let value = c === 91 ? parseArray(ctx, integersAsBigInt) : parseInlineTable(ctx, integersAsBigInt);
-    ctx.d++;
-    return value;
-  }
-  if (c === 34 || c === 39) {
-    return parseString(ctx);
-  }
-  if (c === 116) {
-    if (ctx.s.charCodeAt(++ctx.p) !== 114 || ctx.s.charCodeAt(++ctx.p) !== 117 || ctx.s.charCodeAt(++ctx.p) !== 101)
-      throw new TomlError("invalid value", { toml: ctx.s, ptr });
-    ctx.p++;
-    return true;
-  }
-  if (c === 102) {
-    if (ctx.s.charCodeAt(++ctx.p) !== 97 || ctx.s.charCodeAt(++ctx.p) !== 108 || ctx.s.charCodeAt(++ctx.p) !== 115 || ctx.s.charCodeAt(++ctx.p) !== 101)
-      throw new TomlError("invalid value", { toml: ctx.s, ptr });
-    ctx.p++;
-    return false;
-  }
-  return parseValue(ctx, integersAsBigInt, end);
-}
-
-// node_modules/smol-toml/dist/struct.js
-var KEY_PART_RE = /^[a-zA-Z0-9-_]+[ \t]*$/;
-function parseKey(ctx, end = "=") {
-  let start = ctx.p;
-  let dot = start - 1;
-  let parsed = [];
-  let endPtr = ctx.s.indexOf(end, start);
-  if (endPtr < 0) {
-    throw new TomlError("incomplete key-value: cannot find end of key", {
-      toml: ctx.s,
-      ptr: start
-    });
-  }
-  do {
-    let c = ctx.s.charCodeAt(ctx.p = ++dot);
-    if (c !== 32 && c !== 9) {
-      if (c === 34 || c === 39) {
-        if (c === ctx.s.charCodeAt(ctx.p + 1) && c === ctx.s.charCodeAt(ctx.p + 2)) {
-          throw new TomlError("multiline strings are not allowed in keys", {
-            toml: ctx.s,
-            ptr: ctx.p
-          });
-        }
-        let part = parseString(ctx);
-        dot = ctx.s.indexOf(".", ctx.p);
-        let strEnd = ctx.s.slice(ctx.p, dot < 0 || dot > endPtr ? endPtr : dot);
-        let newLine = indexOfNewline(strEnd);
-        if (newLine > -1) {
-          throw new TomlError("newlines are not allowed in keys", {
-            toml: ctx.s,
-            ptr: newLine
-          });
-        }
-        if (strEnd.trimStart()) {
-          throw new TomlError("found extra tokens after the string part", {
-            toml: ctx.s,
-            ptr: ctx.p
-          });
-        }
-        if (endPtr < ctx.p) {
-          endPtr = ctx.s.indexOf(end, ctx.p);
-          if (endPtr < 0) {
-            throw new TomlError("incomplete key-value: cannot find end of key", {
-              toml: ctx.s,
-              ptr: start
-            });
-          }
-        }
-        parsed.push(part);
-      } else {
-        dot = ctx.s.indexOf(".", ctx.p);
-        let part = ctx.s.slice(ctx.p, dot < 0 || dot > endPtr ? endPtr : dot);
-        if (!KEY_PART_RE.test(part)) {
-          throw new TomlError("only letter, numbers, dashes and underscores are allowed in keys", {
-            toml: ctx.s,
-            ptr: ctx.p
-          });
-        }
-        parsed.push(part.trimEnd());
-      }
-    }
-  } while (dot + 1 && dot < endPtr);
-  ctx.p = endPtr + 1;
-  skipVoid(ctx, true, true);
-  return parsed;
-}
-function parseInlineTable(ctx, integersAsBigInt) {
-  let res = {};
-  let seen = /* @__PURE__ */ new Set();
-  let c;
-  ctx.p++;
-  while (ctx.p < ctx.s.length) {
-    skipVoid(ctx);
-    if ((c = ctx.s.charCodeAt(ctx.p)) === 125) {
-      ctx.p++;
-      return res;
-    }
-    let k;
-    let t = res;
-    let hasOwn = false;
-    let p = ctx.p;
-    let key = parseKey(ctx);
-    for (let i = 0; i < key.length; i++) {
-      if (i)
-        t = hasOwn ? t[k] : t[k] = {};
-      k = key[i];
-      if ((hasOwn = Object.hasOwn(t, k)) && (typeof t[k] !== "object" || seen.has(t[k]))) {
-        throw new TomlError("trying to redefine an already defined value", {
-          toml: ctx.s,
-          ptr: p
-        });
-      }
-      if (!hasOwn && k === "__proto__") {
-        Object.defineProperty(t, k, { enumerable: true, configurable: true, writable: true });
-      }
-    }
-    if (hasOwn) {
-      throw new TomlError("trying to redefine an already defined value", {
-        toml: ctx.s,
-        ptr: ctx.p
-      });
-    }
-    let value = extractValue(ctx, 125, integersAsBigInt);
-    seen.add(t[k] = value);
-    skipVoid(ctx);
-    if ((c = ctx.s.charCodeAt(ctx.p++)) === 125) {
-      return res;
-    }
-    if (c !== 44) {
-      throw new TomlError("expected comma or end of structure", { toml: ctx.s, ptr: ctx.p - 1 });
-    }
-  }
-  throw new TomlError("unfinished table encountered", {
-    toml: ctx.s,
-    ptr: ctx.p
-  });
-}
-function parseArray(ctx, integersAsBigInt) {
-  let res = [];
-  let c;
-  ctx.p++;
-  while (ctx.p < ctx.s.length) {
-    skipVoid(ctx);
-    if ((c = ctx.s.charCodeAt(ctx.p)) === 93) {
-      ctx.p++;
-      return res;
-    }
-    res.push(extractValue(ctx, 93, integersAsBigInt));
-    skipVoid(ctx);
-    if ((c = ctx.s.charCodeAt(ctx.p++)) === 93) {
-      return res;
-    }
-    if (c !== 44) {
-      throw new TomlError("expected comma or end of structure", { toml: ctx.s, ptr: ctx.p - 1 });
-    }
-  }
-  throw new TomlError("unfinished array encountered", {
-    toml: ctx.s,
-    ptr: ctx.p
-  });
-}
-
-// node_modules/smol-toml/dist/parse.js
-function peekTable(key, table, meta, type) {
-  let t = table;
-  let m = meta;
-  let k;
-  let hasOwn = false;
-  let state;
-  for (let i = 0; i < key.length; i++) {
-    if (i) {
-      t = hasOwn ? t[k] : t[k] = {};
-      m = (state = m[k]).c;
-      if (type === 0 && (state.t === 1 || state.t === 2)) {
-        return null;
-      }
-      if (state.t === 2) {
-        let l = t.length - 1;
-        t = t[l];
-        m = m[l].c;
-      }
-    }
-    k = key[i];
-    if ((hasOwn = Object.hasOwn(t, k)) && m[k]?.t === 0 && m[k]?.d) {
-      return null;
-    }
-    if (!hasOwn) {
-      if (k === "__proto__") {
-        Object.defineProperty(t, k, { enumerable: true, configurable: true, writable: true });
-        Object.defineProperty(m, k, { enumerable: true, configurable: true, writable: true });
-      }
-      m[k] = {
-        t: i < key.length - 1 && type === 2 ? 3 : type,
-        d: false,
-        i: 0,
-        c: {}
-      };
-    }
-  }
-  state = m[k];
-  if (state.t !== type && !(type === 1 && state.t === 3)) {
-    return null;
-  }
-  if (type === 2) {
-    if (!state.d) {
-      state.d = true;
-      t[k] = [];
-    }
-    t[k].push(t = {});
-    state.c[state.i++] = state = { t: 1, d: false, i: 0, c: {} };
-  }
-  if (state.d) {
-    return null;
-  }
-  state.d = true;
-  if (type === 1) {
-    t = hasOwn ? t[k] : t[k] = {};
-  } else if (type === 0 && hasOwn) {
-    return null;
-  }
-  return [k, t, state.c];
-}
-function parse(toml, { maxDepth = 1e3, integersAsBigInt } = {}) {
-  let ctx = { s: toml, p: 0, d: maxDepth };
-  let res = {};
-  let meta = {};
-  let tmp;
-  let tbl = res;
-  let m = meta;
-  skipVoid(ctx);
-  while (ctx.p < toml.length) {
-    if (toml.charCodeAt(ctx.p) === 91) {
-      let isTableArray = toml.charCodeAt(++ctx.p) === 91;
-      tmp = ctx.p += +isTableArray;
-      let k = parseKey(ctx, "]");
-      if (isTableArray) {
-        if (toml.charCodeAt(ctx.p - 1) !== 93) {
-          throw new TomlError("expected end of table declaration", {
-            toml,
-            ptr: ctx.p - 1
-          });
-        }
-        ctx.p++;
-      }
-      let p = peekTable(
-        k,
-        res,
-        meta,
-        isTableArray ? 2 : 1
-        /* Type.EXPLICIT */
-      );
-      if (!p) {
-        throw new TomlError("trying to redefine an already defined table or value", {
-          toml,
-          ptr: tmp
-        });
-      }
-      m = p[2];
-      tbl = p[1];
-    } else {
-      tmp = ctx.p;
-      let k = parseKey(ctx);
-      let p = peekTable(
-        k,
-        tbl,
-        m,
-        0
-        /* Type.DOTTED */
-      );
-      if (!p) {
-        throw new TomlError("trying to redefine an already defined table or value", {
-          toml,
-          ptr: tmp
-        });
-      }
-      p[1][p[0]] = extractValue(ctx, void 0, integersAsBigInt);
-    }
-    skipVoid(ctx, true);
-    if (ctx.p < toml.length && (tmp = toml.charCodeAt(ctx.p)) !== 10 && tmp !== 13) {
-      throw new TomlError("each key-value declaration must be followed by an end-of-line", {
-        toml,
-        ptr: ctx.p
-      });
-    }
-    skipVoid(ctx);
-  }
-  return res;
-}
-
-// core/src/install/toml.ts
-var TomlParseError = class extends Error {
-  file;
-  constructor(file, cause) {
-    super(`cannot parse TOML at ${file}`, { cause });
-    this.name = "TomlParseError";
-    this.file = file;
-  }
-};
-function parseTomlDocument(text, file) {
-  try {
-    return parse(text);
-  } catch (cause) {
-    if (cause instanceof TomlError) throw new TomlParseError(file, cause);
-    throw cause;
-  }
-}
-function readTomlFile(file) {
-  if (!isReadableRegularFile(file)) return void 0;
-  return parseTomlDocument(readFileSync8(file, "utf8"), file);
-}
-
-// core/src/install/toml-regions.ts
-var POSIX_SPACE = " \\t\\n\\v\\f\\r";
-var TABLE_HEADER = new RegExp(`^[${POSIX_SPACE}]*\\[`);
-var FEATURE_MARKER_COMMENT = new RegExp(`^[${POSIX_SPACE}]*#[${POSIX_SPACE}]*oso-code:features:(start|end)`);
-var TRAILING_COMMENT = new RegExp(`[${POSIX_SPACE}]*#.*`);
-var EVERY_SPACE = new RegExp(`[${POSIX_SPACE}]`, "g");
-var OWNED_FEATURE_KEYS = "hooks|multi_agent";
-var UNKNOWN_ACTION_EXIT = 64;
-var REGION_EXIT = 5;
-var FEATURES_EXIT = 6;
-var POINTER_REGION_EXIT = 10;
-var POINTER_ROW_EXIT = 11;
-var DUPLICATE_TABLE_EXIT = 12;
-var TOML_REGION_ACTIONS = [
-  "strip",
-  "extract",
-  "split",
-  "root-symbols",
-  "features-strip",
-  "features-merge",
-  "engram-pointers",
-  "remove-table"
-];
-function runTomlRegion(text, request) {
-  if (!isTomlRegionAction(request.action)) return outputOf(UNKNOWN_ACTION_EXIT, [], [], []);
-  const records = recordsOf(text);
-  switch (request.action) {
-    case "strip":
-    case "extract":
-      return splitAtMarkers(records, request, request.action);
-    case "split":
-      return splitRootFromSections(records);
-    case "root-symbols":
-      return rootSymbols(records);
-    case "features-strip":
-      return stripFeatureRegion(records, request);
-    case "features-merge":
-      return mergeFeatureRegion(records, request);
-    case "engram-pointers":
-      return moveEngramPointers(records, request);
-    case "remove-table":
-      return removeTable(records, request);
-  }
-}
-function isTomlRegionAction(value) {
-  return TOML_REGION_ACTIONS.includes(value);
-}
-function recordsOf(text) {
-  const records = text.split("\n");
-  if (records[records.length - 1] === "") records.pop();
-  return records;
-}
-function newScanner() {
-  return { stringMode: "", arrayDepth: 0, braceDepth: 0 };
-}
-function atRoot(scanner) {
-  return scanner.stringMode === "" && scanner.arrayDepth === 0 && scanner.braceDepth === 0;
-}
-function scanRoot(scanner, text) {
-  const length = text.length;
-  let cursor = 0;
-  while (cursor < length) {
-    const triple = text.slice(cursor, cursor + 3);
-    if (scanner.stringMode === "multiline-basic") {
-      if (triple === '"""' && !escapedBefore(text, cursor)) {
-        scanner.stringMode = "";
-        cursor += 3;
-      } else cursor += 1;
-      continue;
-    }
-    if (scanner.stringMode === "multiline-literal") {
-      if (triple === "'''") {
-        scanner.stringMode = "";
-        cursor += 3;
-      } else cursor += 1;
-      continue;
-    }
-    const character = text[cursor];
-    if (character === "#") return;
-    if (triple === '"""') {
-      scanner.stringMode = "multiline-basic";
-      cursor += 3;
-      continue;
-    }
-    if (triple === "'''") {
-      scanner.stringMode = "multiline-literal";
-      cursor += 3;
-      continue;
-    }
-    if (character === '"') {
-      cursor = afterBasicString(text, cursor);
-      continue;
-    }
-    if (character === "'") {
-      cursor = afterLiteralString(text, cursor);
-      continue;
-    }
-    if (character === "[") scanner.arrayDepth += 1;
-    else if (character === "]" && scanner.arrayDepth > 0) scanner.arrayDepth -= 1;
-    else if (character === "{") scanner.braceDepth += 1;
-    else if (character === "}" && scanner.braceDepth > 0) scanner.braceDepth -= 1;
-    cursor += 1;
-  }
-}
-function escapedBefore(text, position) {
-  let count = 0;
-  for (let cursor = position - 1; cursor >= 0 && text[cursor] === "\\"; cursor -= 1) count += 1;
-  return count % 2 === 1;
-}
-function afterBasicString(text, openingQuote) {
-  let cursor = openingQuote + 1;
-  while (cursor < text.length) {
-    const character = text[cursor];
-    if (character === "\\") {
-      cursor += 2;
-      continue;
-    }
-    if (character === '"') return cursor + 1;
-    cursor += 1;
-  }
-  return cursor;
-}
-function afterLiteralString(text, openingQuote) {
-  let cursor = openingQuote + 1;
-  while (cursor < text.length && text[cursor] !== "'") cursor += 1;
-  return cursor + 1;
-}
-function compactHeader(text) {
-  return text.replace(TRAILING_COMMENT, "").replace(EVERY_SPACE, "");
-}
-function isFeaturesHeader(text) {
-  return compactHeader(text) === "[features]";
-}
-function isFeaturesShape(text) {
-  const compact = compactHeader(text);
-  return /^\[\[?features(\]|[.]|$)/.test(compact) || /^\[\[?"features"(\]|[.]|$)/.test(compact) || /^\[\[?'features'(\]|[.]|$)/.test(compact);
-}
-function namesKeyAtRoot(text, keys) {
-  const withoutComment = text.replace(TRAILING_COMMENT, "");
-  const bare = new RegExp(`^[${POSIX_SPACE}]*(${keys})[${POSIX_SPACE}]*([.=])`);
-  const quoted = new RegExp(`^[${POSIX_SPACE}]*"(${keys})"[${POSIX_SPACE}]*([.=])`);
-  const literal = new RegExp(`^[${POSIX_SPACE}]*'(${keys})'[${POSIX_SPACE}]*([.=])`);
-  return bare.test(withoutComment) || quoted.test(withoutComment) || literal.test(withoutComment);
-}
-function isPointer(text, key) {
-  return new RegExp(`^${key}[${POSIX_SPACE}]*=`).test(text);
-}
-function isStringPointer(text, key) {
-  return new RegExp(`^${key}[${POSIX_SPACE}]*=[${POSIX_SPACE}]*"[^"]*"[${POSIX_SPACE}]*$`).test(text);
-}
-function decodedPointerValue(record, key) {
-  try {
-    const value = parseTomlDocument(record, key)[key];
-    return typeof value === "string" ? value : void 0;
-  } catch (error) {
-    if (error instanceof TomlParseError) return void 0;
-    throw error;
-  }
-}
-function outputOf(exitCode, stdout, root, sections) {
-  return { exitCode, stdout: printed(stdout), root: printed(root), sections: printed(sections) };
-}
-function printed(lines) {
-  return lines.map((line) => `${line}
-`).join("");
-}
-function splitAtMarkers(records, request, action) {
-  const scanner = newScanner();
-  const emitted = [];
-  let inside = false;
-  let malformed = false;
-  let seenStart = 0;
-  let seenEnd = 0;
-  for (const record of records) {
-    const rootLine = atRoot(scanner);
-    if (rootLine && record === request.startMarker) {
-      if (inside) malformed = true;
-      inside = true;
-      seenStart += 1;
-      continue;
-    }
-    if (rootLine && record === request.endMarker) {
-      if (!inside) malformed = true;
-      inside = false;
-      seenEnd += 1;
-      continue;
-    }
-    if (action === "strip" ? !inside : inside) emitted.push(record);
-    scanRoot(scanner, record);
-  }
-  const broken = malformed || inside || seenStart !== seenEnd || seenStart > 1 || (request.requireRegion ?? false) && seenStart !== 1;
-  return outputOf(broken ? REGION_EXIT : 0, emitted, [], []);
-}
-function splitRootFromSections(records) {
-  const scanner = newScanner();
-  const root = [];
-  const sections = [];
-  let reachedSections = false;
-  for (const record of records) {
-    if (!reachedSections && atRoot(scanner) && TABLE_HEADER.test(record)) reachedSections = true;
-    if (reachedSections) {
-      sections.push(record);
-      continue;
-    }
-    root.push(record);
-    scanRoot(scanner, record);
-  }
-  return outputOf(0, [], root, sections);
-}
-function rootSymbols(records) {
-  const scanner = newScanner();
-  const emitted = [];
-  let inTableContext = false;
-  for (const record of records) {
-    const rootLine = atRoot(scanner);
-    if (rootLine && TABLE_HEADER.test(record)) {
-      emitted.push(record);
-      inTableContext = true;
-      continue;
-    }
-    if (rootLine && !inTableContext) emitted.push(record);
-    scanRoot(scanner, record);
-  }
-  return outputOf(0, emitted, [], []);
-}
-function scanFeatureRegion(records, request, action) {
-  const scanner = newScanner();
-  const emitted = [];
-  const featureLines = request.featureText === void 0 ? [] : recordsOf(request.featureText);
-  let section = "";
-  let inside = false;
-  let malformed = false;
-  let seenStart = 0;
-  let seenEnd = 0;
-  let tables = 0;
-  let inserted = false;
-  for (const record of records) {
-    const rootLine = atRoot(scanner);
-    if (action === "features-strip" && rootLine && record === request.featureStartMarker) {
-      if (section !== "features" || inside) malformed = true;
-      inside = true;
-      seenStart += 1;
-      continue;
-    }
-    if (action === "features-strip" && rootLine && record === request.featureEndMarker) {
-      if (section !== "features" || !inside) malformed = true;
-      inside = false;
-      seenEnd += 1;
-      continue;
-    }
-    if (action === "features-strip" && rootLine && FEATURE_MARKER_COMMENT.test(record)) {
-      malformed = true;
-      continue;
-    }
-    if (rootLine && TABLE_HEADER.test(record)) {
-      if (isFeaturesHeader(record)) {
-        tables += 1;
-        section = "features";
-        if (action === "features-merge") {
-          emitted.push(record, ...featureLines);
-          inserted = true;
-          continue;
-        }
-      } else {
-        if (isFeaturesShape(record)) malformed = true;
-        section = "other";
-      }
-    } else if (rootLine && section === "" && namesKeyAtRoot(record, "features")) {
-      malformed = true;
-    } else if (rootLine && section === "features" && !inside && namesKeyAtRoot(record, OWNED_FEATURE_KEYS)) {
-      malformed = true;
-    }
-    if (!inside) emitted.push(record);
-    scanRoot(scanner, record);
-  }
-  return { emitted, malformed, inside, seenStart, seenEnd, tables, inserted };
-}
-function stripFeatureRegion(records, request) {
-  const scan = scanFeatureRegion(records, request, "features-strip");
-  const broken = scan.malformed || scan.inside || scan.seenStart !== scan.seenEnd || scan.seenStart > 1 || scan.tables > 1 || scan.seenStart > 0 && scan.tables !== 1;
-  return outputOf(broken ? FEATURES_EXIT : 0, scan.emitted, [], []);
-}
-function mergeFeatureRegion(records, request) {
-  const scan = scanFeatureRegion(records, request, "features-merge");
-  if (scan.malformed || scan.tables > 1) return outputOf(FEATURES_EXIT, scan.emitted, [], []);
-  if (scan.inserted) return outputOf(0, scan.emitted, [], []);
-  const featureLines = request.featureText === void 0 ? [] : recordsOf(request.featureText);
-  const appended = records.length > 0 ? [""] : [];
-  return outputOf(0, [...scan.emitted, ...appended, "[features]", ...featureLines], [], []);
-}
-function removeTable(records, request) {
-  const scanner = newScanner();
-  const emitted = [];
-  let insideTarget = false;
-  let seen = 0;
-  for (const record of records) {
-    const rootLine = atRoot(scanner);
-    if (insideTarget && rootLine && TABLE_HEADER.test(record)) insideTarget = false;
-    if (!insideTarget && rootLine && record === request.targetHeader) {
-      seen += 1;
-      insideTarget = true;
-      scanRoot(scanner, record);
-      continue;
-    }
-    if (!insideTarget) emitted.push(record);
-    scanRoot(scanner, record);
-  }
-  return outputOf(seen > 1 ? DUPLICATE_TABLE_EXIT : 0, emitted, [], []);
-}
-function moveEngramPointers(records, request) {
-  const scanner = newScanner();
-  const modelKey = request.modelKey ?? "";
-  const compactKey = request.compactKey ?? "";
-  const pointerRows = /* @__PURE__ */ new Set();
-  let starts = 0;
-  let ends = 0;
-  let startLine = 0;
-  let endLine = 0;
-  let modelRows = 0;
-  let compactRows = 0;
-  let modelLine = 0;
-  let compactLine = 0;
-  let invalidModel = false;
-  let invalidCompact = false;
-  records.forEach((record, index) => {
-    const number = index + 1;
-    const rootLine = atRoot(scanner);
-    if (rootLine && record === request.startMarker) {
-      starts += 1;
-      startLine = number;
-    }
-    if (rootLine && record === request.endMarker) {
-      ends += 1;
-      endLine = number;
-    }
-    if (rootLine && isPointer(record, modelKey)) {
-      modelRows += 1;
-      modelLine = number;
-      pointerRows.add(number);
-      if (!isStringPointer(record, modelKey) || decodedPointerValue(record, modelKey) !== request.modelValue) invalidModel = true;
-    }
-    if (rootLine && isPointer(record, compactKey)) {
-      compactRows += 1;
-      compactLine = number;
-      pointerRows.add(number);
-      if (!isStringPointer(record, compactKey) || decodedPointerValue(record, compactKey) !== request.compactValue) invalidCompact = true;
-    }
-    scanRoot(scanner, record);
-  });
-  if (modelRows !== 1 || compactRows !== 1 || invalidModel || invalidCompact) return outputOf(POINTER_ROW_EXIT, [], [], []);
-  if (starts === 0 && ends === 0 && !(request.requireRegion ?? false)) return outputOf(0, records, [], []);
-  if (starts !== 1 || ends !== 1 || startLine >= endLine) return outputOf(POINTER_REGION_EXIT, [], [], []);
-  if (modelLine < startLine && compactLine < startLine) return outputOf(0, records, [], []);
-  const separatorLine = startLine - 1;
-  const skippedSeparator = separatorLine > 0 && records[separatorLine - 1] === "" ? separatorLine : 0;
-  const emitted = [];
-  records.forEach((record, index) => {
-    const number = index + 1;
-    if (pointerRows.has(number) || number === skippedSeparator) return;
-    if (number === startLine) {
-      emitted.push(`${modelKey} = ${tomlQuote(request.modelValue ?? "")}`, `${compactKey} = ${tomlQuote(request.compactValue ?? "")}`);
-    }
-    emitted.push(record);
-  });
-  return outputOf(0, emitted, [], []);
-}
-
-// core/src/install/codex.ts
-var CODEX_INSTALL_BACKUP_FORMAT = "oso-code-codex-install-v1";
-var CODEX_REPAIR_BACKUP_FORMAT = "oso-code-codex-repair-v1";
-var CODEX_PURGE_BACKUP_FORMAT = "oso-code-codex-purge-v1";
-var OSO_OWNED_CONFIG_PATHS = [
-  ["default_permissions"],
-  ["agents"],
-  ["shell_environment_policy", "set"],
-  ["mcp_servers", "context7"],
-  ["mcp_servers", "fallow"],
-  ["permissions", "oso"]
-];
-function codexPathsFor(homeDirectory2, environment) {
-  const codexHome = environment["CODEX_HOME"] ?? path9.join(homeDirectory2, ".codex");
-  return {
-    homeDirectory: homeDirectory2,
-    codexHome,
-    configFile: path9.join(codexHome, "config.toml"),
-    globalFile: path9.join(codexHome, "AGENTS.md"),
-    runtimeRoot: path9.join(homeDirectory2, ".local", "share", "oso-code", "runtime"),
-    agentsHome: path9.join(homeDirectory2, ".agents"),
-    marketplaceRoot: path9.join(homeDirectory2, ".local", "share", "oso-code", "codex-marketplace"),
-    backupsRoot: path9.join(homeDirectory2, ".local", "state", "oso-code", "codex-backups")
-  };
-}
-function managedFeaturesStatus(text) {
-  const stripped = runTomlRegion(text, {
-    action: "features-strip",
-    featureStartMarker: FEATURE_MARKER_START,
-    featureEndMarker: FEATURE_MARKER_END
-  });
-  if (stripped.exitCode !== 0) return "malformed";
-  const extracted = runTomlRegion(text, {
-    action: "extract",
-    startMarker: FEATURE_MARKER_START,
-    endMarker: FEATURE_MARKER_END,
-    requireRegion: true
-  });
-  if (extracted.exitCode !== 0) return "missing";
-  return extracted.stdout === renderCodexManagedFeatures() ? "valid" : "divergent";
-}
-function ownedKeyPathsOutsideTheRegion(unmanagedText, file) {
-  const document = parseTomlDocument(unmanagedText, file);
-  return OSO_OWNED_CONFIG_PATHS.filter((keyPath) => holdsKeyPath(document, keyPath)).map((keyPath) => keyPath.join("."));
-}
-function inspectCodexConfig(text, file) {
-  const clean = runTomlRegion(text, { action: "strip", startMarker: CONFIG_MARKER_START, endMarker: CONFIG_MARKER_END });
-  if (clean.exitCode !== 0) return { kind: "malformed-markers" };
-  const features = managedFeaturesStatus(clean.stdout);
-  if (features === "malformed") return { kind: "malformed-features" };
-  if (features === "divergent") return { kind: "divergent-features" };
-  const withoutFeatures = runTomlRegion(clean.stdout, {
-    action: "features-strip",
-    featureStartMarker: FEATURE_MARKER_START,
-    featureEndMarker: FEATURE_MARKER_END
-  });
-  if (withoutFeatures.exitCode !== 0) return { kind: "malformed-features" };
-  try {
-    parseTomlDocument(text, file);
-    const owned = ownedKeyPathsOutsideTheRegion(withoutFeatures.stdout, file);
-    const first = owned[0];
-    if (first !== void 0) return { kind: "owned-key-outside-the-region", keyPath: first };
-  } catch (error) {
-    if (error instanceof TomlParseError) return { kind: "unparseable", detail: error.message };
-    throw error;
-  }
-  return void 0;
-}
-function refusalMessage(refusal) {
-  switch (refusal.kind) {
-    case "malformed-markers":
-      return "Codex config has malformed oso-code markers";
-    case "malformed-features":
-      return "Codex config has conflicting features ownership or malformed oso-code feature markers";
-    case "divergent-features":
-      return "Codex config has a divergent oso-code features region; it must contain only the published hooks and multi_agent values";
-    case "unparseable":
-      return refusal.detail;
-    case "owned-key-outside-the-region":
-      return `Codex config already defines the oso-code-owned key ${refusal.keyPath} outside the managed region`;
-  }
-}
-function rebuildManagedConfig(existingText, targetHome, runtimeRoot, fallowCommand) {
-  const clean = runTomlRegion(existingText, { action: "strip", startMarker: CONFIG_MARKER_START, endMarker: CONFIG_MARKER_END });
-  if (clean.exitCode !== 0) throw new Error(refusalMessage({ kind: "malformed-markers" }));
-  const withoutFeatures = runTomlRegion(clean.stdout, {
-    action: "features-strip",
-    featureStartMarker: FEATURE_MARKER_START,
-    featureEndMarker: FEATURE_MARKER_END
-  });
-  if (withoutFeatures.exitCode !== 0) throw new Error(refusalMessage({ kind: "malformed-features" }));
-  const parts = runTomlRegion(withoutFeatures.stdout, { action: "split" });
-  const featureBlock = `${FEATURE_MARKER_START}
-${renderCodexManagedFeatures()}${FEATURE_MARKER_END}
-`;
-  const merged = runTomlRegion(parts.sections, { action: "features-merge", featureText: featureBlock });
-  if (merged.exitCode !== 0) throw new Error(refusalMessage({ kind: "malformed-features" }));
-  return [
-    withoutTrailingBlankLines(parts.root),
-    parts.root === "" ? "" : "\n",
-    `${CONFIG_MARKER_START}
-`,
-    renderCodexManagedConfig(targetHome, runtimeRoot, fallowCommand),
-    `${CONFIG_MARKER_END}
-`,
-    merged.stdout === "" ? "" : "\n",
-    merged.stdout
-  ].join("");
-}
-function rebuildGlobalGuidance(existingText, body) {
-  const clean = stripLineRegion(existingText, GLOBAL_MARKER_START, GLOBAL_MARKER_END);
-  if (clean === void 0) throw new Error("global AGENTS.md has malformed oso-code markers");
-  return [
-    withoutTrailingBlankLines(clean),
-    clean === "" ? "" : "\n",
-    `${GLOBAL_MARKER_START}
-`,
-    body.endsWith("\n") || body === "" ? body : `${body}
-`,
-    `${GLOBAL_MARKER_END}
-`
-  ].join("");
-}
-function installCodex(input) {
-  return withOwnerOnlyUmask(() => writeCodexInstall(input));
-}
-function writeCodexInstall(input) {
-  if (!input.assumeYes) return requiresYesOutcome("install", "codex");
-  const unpinned = pinnedVersionOutcome("install", input.host);
-  if (unpinned !== void 0) return unpinned;
-  const paths = codexPathsFor(input.homeDirectory, input.environment);
-  const refusal = configRefusalOf(paths.configFile);
-  if (refusal !== void 0) return fatalOutcome("install", "codex", "the Codex config refuses this install", refusalMessage(refusal));
-  if (existsAtAll(paths.globalFile) && !isRegularNonSymlinkFile(paths.globalFile)) {
-    return fatalOutcome("install", "codex", "global AGENTS.md is not a regular file", paths.globalFile);
-  }
-  let tx;
-  let capturedHooksPath = { captured: false, present: false, value: "" };
-  try {
-    tx = beginTransaction(paths.backupsRoot, CODEX_INSTALL_BACKUP_FORMAT);
-    for (const { label, target } of backupCandidatesOf(paths)) backupTarget(tx, label, target);
-    commitManifest(tx);
-    capturedHooksPath = capturedGitHooksPath(input.repositoryRoot, input.environment);
-  } catch (error) {
-    return fatalOutcome("install", "codex", "could not create the pre-install backup", messageOf(error));
-  }
-  const infoLines = [`backup: ${tx.backupRoot}`];
-  if (input.host.versionNote !== void 0) infoLines.push(input.host.versionNote);
-  const wiring = [];
-  const fallow = resolveFallowCommandFor(input, paths);
-  wiring.push(
-    fallow.resolved ? wiringOk("fallow (mcp)", fallow.command) : wiringFail("fallow (mcp)", "fallow-mcp is not installed; debt-sweep will use its rubric-only fallback")
-  );
-  try {
-    writeManagedConfig(paths, fallow.command, input.host);
-    wiring.push(wiringOk("managed config region", paths.configFile));
-  } catch (error) {
-    return rolledBack("install", "could not rewrite the managed Codex config region", error, tx, capturedHooksPath, input);
-  }
-  try {
-    writeGlobalGuidance(paths, input.repositoryRoot);
-    wiring.push(wiringOk("global AGENTS.md region", paths.globalFile));
-  } catch (error) {
-    return rolledBack("install", "could not rewrite global AGENTS.md", error, tx, capturedHooksPath, input);
-  }
-  if (input.installGitHook ?? true) {
-    const wired = wireGitCommitHook2(input.repositoryRoot, paths.runtimeRoot, input.environment);
-    if (!wired.ok) return rolledBack("install", "could not wire the git commit gate", new Error(wired.note), tx, capturedHooksPath, input);
-    wiring.push(wired);
-  } else infoLines.push("skipping the git commit hook (--no-git-hook)");
-  if ((input.installImpeccable ?? true) === false) infoLines.push("skipping impeccable (--no-impeccable)");
-  for (const backup of pruneInstallBackups(paths.backupsRoot, input.environment)) {
-    infoLines.push(`backup retention: removed ${backup}`);
-  }
-  return { report: renderCommandReport("install", "codex", infoLines, wiring), exitCode: 0 };
-}
-function repairCodex(input) {
-  if (!input.assumeYes) return requiresYesOutcome("repair", "codex");
-  const unpinned = pinnedVersionOutcome("repair", input.host);
-  if (unpinned !== void 0) return unpinned;
-  const paths = codexPathsFor(input.homeDirectory, input.environment);
-  let tx;
-  try {
-    tx = beginTransaction(paths.backupsRoot, CODEX_REPAIR_BACKUP_FORMAT);
-    backupTarget(tx, "config", paths.configFile);
-    backupTarget(tx, "global", paths.globalFile);
-    commitManifest(tx);
-  } catch (error) {
-    return fatalOutcome("repair", "codex", "could not create the pre-repair backup", messageOf(error));
-  }
-  const infoLines = [`backup: ${tx.backupRoot}`];
-  if (input.host.versionNote !== void 0) infoLines.push(input.host.versionNote);
-  const wiring = [];
-  wiring.push(normalizeEngramPointers(paths));
-  const fallow = resolveFallowCommandFor(input, paths);
-  try {
-    writeManagedConfig(paths, fallow.command, input.host);
-    wiring.push(wiringOk("managed config region", paths.configFile));
-  } catch (error) {
-    return rolledBack("repair", "could not rewrite the managed Codex config region", error, tx, NO_HOOKS_CAPTURE, input);
-  }
-  try {
-    writeGlobalGuidance(paths, input.repositoryRoot);
-    wiring.push(wiringOk("global AGENTS.md region", paths.globalFile));
-  } catch (error) {
-    return rolledBack("repair", "could not rewrite global AGENTS.md", error, tx, NO_HOOKS_CAPTURE, input);
-  }
-  return { report: renderCommandReport("repair", "codex", infoLines, wiring), exitCode: 0 };
-}
-function purgeCodex(input) {
-  return withOwnerOnlyUmask(() => writeCodexPurge(input));
-}
-function writeCodexPurge(input) {
-  if (!input.assumeYes) return requiresYesOutcome("purge", "codex");
-  const paths = codexPathsFor(input.homeDirectory, input.environment);
-  if (paths.codexHome === path9.parse(paths.codexHome).root || input.homeDirectory === path9.parse(input.homeDirectory).root) {
-    return fatalOutcome("purge", "codex", "refusing to purge a filesystem root", paths.codexHome);
-  }
-  let tx;
-  try {
-    tx = beginTransaction(paths.backupsRoot, CODEX_PURGE_BACKUP_FORMAT);
-    backupTarget(tx, "codex-home", paths.codexHome);
-    backupTarget(tx, "agents-home", paths.agentsHome);
-    commitManifest(tx);
-  } catch (error) {
-    return fatalOutcome("purge", "codex", "could not create the pre-purge backup", messageOf(error));
-  }
-  const infoLines = [`backup: ${tx.backupRoot}`, "no login or installation command was run"];
-  const wiring = [];
-  for (const [component, target] of [
-    ["Codex home", paths.codexHome],
-    ["agents home", paths.agentsHome]
-  ]) {
-    if (!existsAtAll(target)) {
-      wiring.push(wiringOk(component, "already absent"));
-      continue;
-    }
-    try {
-      rmSync7(target, { recursive: true, force: true });
-      wiring.push(existsAtAll(target) ? wiringFail(component, `still present: ${target}`) : wiringOk(component, `removed ${target}`));
-    } catch (error) {
-      wiring.push(wiringFail(component, messageOf(error)));
-    }
-  }
-  infoLines.push(`restore with: oso install --host codex --yes, or by hand from ${tx.backupRoot}`);
-  return { report: renderCommandReport("purge", "codex", infoLines, wiring), exitCode: 0 };
-}
-function configRefusalOf(configFile) {
-  if (existsAtAll(configFile) && !isRegularNonSymlinkFile(configFile)) return { kind: "unparseable", detail: `not a regular file: ${configFile}` };
-  if (!isReadableRegularFile(configFile)) return void 0;
-  return inspectCodexConfig(readFileSync9(configFile, "utf8"), configFile);
-}
-function writeManagedConfig(paths, fallowCommand, host) {
-  const existing = isReadableRegularFile(paths.configFile) ? readFileSync9(paths.configFile, "utf8") : "";
-  const rebuilt = rebuildManagedConfig(existing, paths.homeDirectory, paths.runtimeRoot, fallowCommand);
-  mkdirSync6(paths.codexHome, { recursive: true });
-  if (!host.acceptsConfig(paths.codexHome, rebuilt)) throw new Error(HOST_REJECTED_CONFIG);
-  writeFileSync7(paths.configFile, rebuilt, { mode: 384 });
-}
-function writeGlobalGuidance(paths, repositoryRoot2) {
-  const existing = isReadableRegularFile(paths.globalFile) ? readFileSync9(paths.globalFile, "utf8") : "";
-  const body = readFileSync9(path9.join(repositoryRoot2, "bootstrap", "codex-global.md"), "utf8");
-  mkdirSync6(paths.codexHome, { recursive: true });
-  writeFileSync7(paths.globalFile, rebuildGlobalGuidance(existing, body), { mode: 384 });
-}
-function normalizedEngramPointerConfig(paths, text) {
-  return runTomlRegion(text, {
-    action: "engram-pointers",
-    startMarker: CONFIG_MARKER_START,
-    endMarker: CONFIG_MARKER_END,
-    modelKey: MODEL_INSTRUCTIONS_KEY,
-    compactKey: COMPACT_PROMPT_KEY,
-    modelValue: path9.join(paths.codexHome, "engram-instructions.md"),
-    compactValue: path9.join(paths.codexHome, "engram-compact-prompt.md"),
-    requireRegion: true
-  });
-}
-function normalizeEngramPointers(paths) {
-  if (!isReadableRegularFile(paths.configFile)) return wiringFail("engram pointers", `no config at ${paths.configFile}`);
-  const text = readFileSync9(paths.configFile, "utf8");
-  const moved = normalizedEngramPointerConfig(paths, text);
-  if (moved.exitCode === 10) return wiringFail("engram pointers", "the Codex config markers are missing or malformed");
-  if (moved.exitCode !== 0) return wiringFail("engram pointers", "Engram's instruction pointers are missing, duplicated, or unexpected");
-  if (moved.stdout === text) return wiringOk("engram pointers", "already normalized");
-  writeFileSync7(paths.configFile, moved.stdout, { mode: 384 });
-  return wiringOk("engram pointers", "moved above the managed region");
-}
-function wireGitCommitHook2(repositoryRoot2, runtimeRoot, environment) {
-  const hooksPath = path9.join(runtimeRoot, "git-hooks");
-  const run = spawnSync5("git", ["-C", repositoryRoot2, "config", "--local", "core.hooksPath", hooksPath], { env: environment, encoding: "utf8" });
-  if (run.error !== void 0 || run.status !== 0) return wiringFail("git commit hook", `${run.stdout ?? ""}${run.stderr ?? ""}`.trim());
-  return wiringOk("git commit hook", `core.hooksPath=${hooksPath}`);
-}
-function resolveFallowCommandFor(input, paths) {
-  return resolveFallowMcpCommand2(
-    paths.homeDirectory,
-    input.environment,
-    () => npmGlobalPrefix2(input.environment),
-    (name) => firstExecutableOnPath(input.environment, name)
-  );
-}
-function npmGlobalPrefix2(environment) {
-  const run = spawnSync5("npm", ["prefix", "-g"], { env: environment, encoding: "utf8" });
-  if (run.error !== void 0 || run.status !== 0) return void 0;
-  const value = run.stdout.trim();
-  return value === "" ? void 0 : value;
-}
-function backupCandidatesOf(paths) {
-  return [
-    { label: "config", target: paths.configFile },
-    { label: "global", target: paths.globalFile },
-    { label: "hooks-manifest", target: path9.join(paths.codexHome, "hooks.json") },
-    { label: "agents", target: path9.join(paths.codexHome, "agents") },
-    { label: "runtime", target: paths.runtimeRoot }
-  ];
-}
-function rolledBack(verb, summary, error, tx, hooksPath, input) {
-  const restore = rollback(tx);
-  const hooks = restoreGitHooksPath(hooksPath, input.repositoryRoot, input.environment);
-  return fatalOutcome(verb, "codex", summary, messageOf(error), restoreNoteOf(bothRestored(restore, hooks)));
-}
-var HOST_REJECTED_CONFIG = "Codex rejected the merged config; the original config is unchanged";
-var NO_HOOKS_CAPTURE = { captured: false, present: false, value: "" };
-var NOTHING_LEFT_TO_RESTORE = { failedCount: 0, failedItems: [] };
-var GIT_CONFIG_UNSET_MATCHED_NOTHING = 5;
-function pinnedVersionOutcome(verb, host) {
-  if (meetsVersionFloor(host.version, SUPPORTED_CODEX_VERSION)) return void 0;
-  return fatalOutcome(verb, "codex", "the installed Codex CLI is not the pinned one", pinnedVersionRefusal(host));
-}
-function capturedGitHooksPath(repositoryRoot2, environment) {
-  const inRepository = gitRun(repositoryRoot2, environment, ["rev-parse", "--git-dir"]);
-  if (inRepository.status !== 0) return NO_HOOKS_CAPTURE;
-  const configured = gitRun(repositoryRoot2, environment, ["config", "--local", "--get", "core.hooksPath"]);
-  return configured.status === 0 ? { captured: true, present: true, value: configured.stdout.trim() } : { captured: true, present: false, value: "" };
-}
-function restoreGitHooksPath(capture, repositoryRoot2, environment) {
-  if (!capture.captured) return NOTHING_LEFT_TO_RESTORE;
-  const argv = capture.present ? ["config", "--local", "core.hooksPath", capture.value] : ["config", "--local", "--unset-all", "core.hooksPath"];
-  const { status } = gitRun(repositoryRoot2, environment, argv);
-  const restored = status === 0 || !capture.present && status === GIT_CONFIG_UNSET_MATCHED_NOTHING;
-  return restored ? NOTHING_LEFT_TO_RESTORE : { failedCount: 1, failedItems: [`core.hooksPath in ${repositoryRoot2}`] };
-}
-function bothRestored(transaction, hooks) {
-  return {
-    failedCount: transaction.failedCount + hooks.failedCount,
-    failedItems: [...transaction.failedItems, ...hooks.failedItems]
-  };
-}
-function gitRun(repositoryRoot2, environment, argv) {
-  const run = spawnSync5("git", ["-C", repositoryRoot2, ...argv], { env: environment, encoding: "utf8" });
-  return { status: run.error === void 0 ? run.status ?? 1 : 1, stdout: run.stdout ?? "" };
-}
-function stripLineRegion(text, start, end) {
-  const kept = [];
-  let inside = false;
-  let seenStart = 0;
-  let seenEnd = 0;
-  for (const line of text === "" ? [] : text.replace(/\n$/, "").split("\n")) {
-    if (line === start) {
-      if (inside) return void 0;
-      inside = true;
-      seenStart += 1;
-      continue;
-    }
-    if (line === end) {
-      if (!inside) return void 0;
-      inside = false;
-      seenEnd += 1;
-      continue;
-    }
-    if (!inside) kept.push(line);
-  }
-  if (inside || seenStart !== seenEnd || seenStart > 1) return void 0;
-  return kept.length === 0 ? "" : `${kept.join("\n")}
-`;
-}
-var FIELDLESS_LINE = /^[ \t]*$/;
-function withoutTrailingBlankLines(text) {
-  if (text === "") return "";
-  const lines = text.replace(/\n$/, "").split("\n");
-  let last = lines.length;
-  while (last > 0 && FIELDLESS_LINE.test(lines[last - 1] ?? "")) last -= 1;
-  return last === 0 ? "" : `${lines.slice(0, last).join("\n")}
-`;
-}
-function holdsKeyPath(document, keyPath) {
-  let cursor = document;
-  for (const key of keyPath) {
-    if (typeof cursor !== "object" || cursor === null || Array.isArray(cursor)) return false;
-    if (!Object.hasOwn(cursor, key)) return false;
-    cursor = cursor[key];
-  }
-  return true;
-}
-
 // core/src/install/opencode.ts
-import { readFileSync as readFileSync10 } from "node:fs";
-import path10 from "node:path";
+import { readFileSync as readFileSync8 } from "node:fs";
+import path7 from "node:path";
 
 // core/src/install/opencode-config.ts
 var OPENCODE_CONFIG_SCHEMA_URL = "https://opencode.ai/config.json";
@@ -3509,7 +1881,7 @@ var EVERY_AGENT_ON_THE_HOST_SESSION_MODEL = "every agent runs on the host sessio
 var OpenCodeConfigRefusal = class extends Error {
   reason;
   constructor(reason) {
-    super(refusalMessage2(reason));
+    super(refusalMessage(reason));
     this.name = "OpenCodeConfigRefusal";
     this.reason = reason;
   }
@@ -3715,7 +2087,7 @@ function hostContractViolationOf(document) {
   }
   return void 0;
 }
-function refusalMessage2(reason) {
+function refusalMessage(reason) {
   switch (reason.kind) {
     case "config-not-an-object":
       return "the existing opencode.json is not a JSON object";
@@ -3766,28 +2138,28 @@ function isPlainObject(value) {
 var OPENCODE_INSTALL_BACKUP_FORMAT = "oso-code-opencode-install-v1";
 var OPENCODE_INSTALL_BACKUP_LABEL = "commands";
 var CONFIG_BACKUP_LABEL = "config";
-var GLOBAL_MARKER_START2 = "<!-- oso-code:start -->";
-var GLOBAL_MARKER_END2 = "<!-- oso-code:end -->";
+var GLOBAL_MARKER_START = "<!-- oso-code:start -->";
+var GLOBAL_MARKER_END = "<!-- oso-code:end -->";
 var AWK_BLANK_LINE = /^[ \t]*$/;
 var REPAIRABLE_NESTED_PATHS = [["permission"], ["permission", "skill"], ["permission", "task"], ["mcp"]];
 function opencodePathsFor(homeDirectory2, environment) {
-  const configHome = path10.join(environment["XDG_CONFIG_HOME"] ?? path10.join(homeDirectory2, ".config"), "opencode");
-  const stateRoot = path10.join(homeDirectory2, ".local", "state", "oso-code");
+  const configHome = path7.join(environment["XDG_CONFIG_HOME"] ?? path7.join(homeDirectory2, ".config"), "opencode");
+  const stateRoot = path7.join(homeDirectory2, ".local", "state", "oso-code");
   return {
     homeDirectory: homeDirectory2,
     configHome,
-    configFile: path10.join(configHome, "opencode.json"),
-    globalFile: path10.join(configHome, "AGENTS.md"),
+    configFile: path7.join(configHome, "opencode.json"),
+    globalFile: path7.join(configHome, "AGENTS.md"),
     stateRoot,
     backupsRoot: stateRoot
   };
 }
 function configHomeRefusal(homeDirectory2, environment, verb) {
   const configuredHome = environment["XDG_CONFIG_HOME"];
-  if (configuredHome === void 0 || configuredHome === "" || configuredHome === path10.join(homeDirectory2, ".config")) return void 0;
+  if (configuredHome === void 0 || configuredHome === "" || configuredHome === path7.join(homeDirectory2, ".config")) return void 0;
   return {
     kind: "usage",
-    message: `XDG_CONFIG_HOME (${configuredHome}) is not the default for HOME (${path10.join(homeDirectory2, ".config")}), so this ${verb} would write outside the home it was pointed at; unset it or point both at the same account`
+    message: `XDG_CONFIG_HOME (${configuredHome}) is not the default for HOME (${path7.join(homeDirectory2, ".config")}), so this ${verb} would write outside the home it was pointed at; unset it or point both at the same account`
   };
 }
 function configFileRefusal(configFile) {
@@ -3803,7 +2175,7 @@ function globalFileRefusal(globalFile) {
     return { kind: "fatal", message: `the global guidance file is not a regular file: ${globalFile}` };
   }
   if (!isReadableRegularFile(globalFile)) return void 0;
-  if (withoutOpenCodeMarkerRegion(readFileSync10(globalFile, "utf8")).kind === "clean") return void 0;
+  if (withoutOpenCodeMarkerRegion(readFileSync8(globalFile, "utf8")).kind === "clean") return void 0;
   return { kind: "fatal", message: malformedMarkersMessage(globalFile) };
 }
 function withoutOpenCodeMarkerRegion(content) {
@@ -3813,13 +2185,13 @@ function withoutOpenCodeMarkerRegion(content) {
   let inside = false;
   let regions = 0;
   for (const record of records) {
-    if (record === GLOBAL_MARKER_START2) {
+    if (record === GLOBAL_MARKER_START) {
       if (inside) return { kind: "malformed" };
       inside = true;
       regions += 1;
       continue;
     }
-    if (record === GLOBAL_MARKER_END2) {
+    if (record === GLOBAL_MARKER_END) {
       if (!inside) return { kind: "malformed" };
       inside = false;
       continue;
@@ -3832,15 +2204,15 @@ function withoutOpenCodeMarkerRegion(content) {
 }
 function renderGlobalAgents(strippedContent, blockBody) {
   const separator = strippedContent === "" ? "" : "\n";
-  return `${withoutTrailingBlankLines2(strippedContent)}${separator}${GLOBAL_MARKER_START2}
-${blockBody}${GLOBAL_MARKER_END2}
+  return `${withoutTrailingBlankLines(strippedContent)}${separator}${GLOBAL_MARKER_START}
+${blockBody}${GLOBAL_MARKER_END}
 `;
 }
 function mergeGlobalAgents(globalFile, blockBody) {
-  const existing = isReadableRegularFile(globalFile) ? readFileSync10(globalFile, "utf8") : "";
+  const existing = isReadableRegularFile(globalFile) ? readFileSync8(globalFile, "utf8") : "";
   const stripped = withoutOpenCodeMarkerRegion(existing);
   if (stripped.kind === "malformed") throw new Error(malformedMarkersMessage(globalFile));
-  writeFileAtomically(path10.dirname(globalFile), globalFile, renderGlobalAgents(stripped.text, blockBody), ".oso-agents-md-");
+  writeFileAtomically(path7.dirname(globalFile), globalFile, renderGlobalAgents(stripped.text, blockBody), ".oso-agents-md-");
 }
 function snapshotsHoldingAConfig(backupsRoot) {
   return installBackupsDeclaring(backupsRoot, OPENCODE_INSTALL_BACKUP_FORMAT, OPENCODE_INSTALL_BACKUP_LABEL).filter(
@@ -3899,7 +2271,7 @@ function repairOpenCode(input) {
   if (live.kind === "unreadable") return fatalOutcome("repair", "opencode", "cannot read the OpenCode config", live.message);
   const snapshot = resolveSnapshot(paths.backupsRoot, input.backupName);
   if (snapshot.kind === "unusable") return fatalOutcome("repair", "opencode", "cannot read a recorded config", snapshot.message);
-  const snapshotName = path10.basename(snapshot.directory);
+  const snapshotName = path7.basename(snapshot.directory);
   const restorable = keysRecordedButMissing(snapshot.recorded, live.document);
   if (restorable.length === 0) {
     const settled = `nothing to repair: ${paths.configFile} already holds every key ${snapshotName} recorded`;
@@ -3925,7 +2297,7 @@ function snapshotOutcome(snapshotName, infoLines, note) {
 }
 function backupListingOutcome(backupsRoot) {
   const snapshots = snapshotsHoldingAConfig(backupsRoot);
-  const listing = snapshots.map((backup) => `${path10.basename(backup)}	${backupSizeKib(backup)} KiB`);
+  const listing = snapshots.map((backup) => `${path7.basename(backup)}	${backupSizeKib(backup)} KiB`);
   const note = snapshots.length === 0 ? `no OpenCode install backup under ${backupsRoot} holds a config to repair from` : `${snapshots.length} snapshot(s) under ${backupsRoot}`;
   return { report: renderCommandReport("repair", "opencode", listing, [wiringOk("install backups holding a config", note)]), exitCode: 0 };
 }
@@ -3960,7 +2332,7 @@ function namedSnapshot(backupsRoot, backupName) {
   if (backupName.includes("/") || backupName === "." || backupName === "..") {
     return { kind: "unusable", message: `backup name must be a bare directory name: ${backupName}` };
   }
-  const directory = path10.join(backupsRoot, backupName);
+  const directory = path7.join(backupsRoot, backupName);
   if (!installBackupDeclares(directory, OPENCODE_INSTALL_BACKUP_FORMAT, OPENCODE_INSTALL_BACKUP_LABEL)) {
     return { kind: "unusable", message: `not an OpenCode install backup: ${directory}` };
   }
@@ -3970,7 +2342,7 @@ function namedSnapshot(backupsRoot, backupName) {
   return { kind: "located", directory };
 }
 function recordedConfigOf(backup) {
-  return path10.join(backup, "items", CONFIG_BACKUP_LABEL);
+  return path7.join(backup, "items", CONFIG_BACKUP_LABEL);
 }
 function readableJsonDocument(file) {
   try {
@@ -3992,7 +2364,7 @@ function objectAt(document, keyPath) {
 function namesANestedContainer(keyPath) {
   return REPAIRABLE_NESTED_PATHS.some((nested) => nested.length === keyPath.length && nested.every((name, index) => name === keyPath[index]));
 }
-function withoutTrailingBlankLines2(content) {
+function withoutTrailingBlankLines(content) {
   const records = content.split("\n");
   if (records.at(-1) === "") records.pop();
   while (records.length > 0 && AWK_BLANK_LINE.test(records.at(-1))) records.pop();
@@ -4004,10 +2376,41 @@ function malformedMarkersMessage(globalFile) {
 }
 
 // core/src/install/opencode-host.ts
-import { spawnSync as spawnSync6 } from "node:child_process";
-import { mkdtempSync as mkdtempSync4, rmSync as rmSync8 } from "node:fs";
+import { spawnSync as spawnSync4 } from "node:child_process";
+import { mkdtempSync as mkdtempSync3, rmSync as rmSync6 } from "node:fs";
 import { tmpdir as tmpdir3 } from "node:os";
-import path11 from "node:path";
+import path8 from "node:path";
+
+// core/src/install/version-line.ts
+function versionLineReadingOf(rawOutput, versionLine) {
+  const lines = rawOutput.split("\n").filter((line) => line.trim() !== "");
+  const matchingLines = lines.filter((line) => versionLine.test(line));
+  if (matchingLines.length === 0) return { kind: "unmatched", raw: rawOutput };
+  if (matchingLines.length > 1) return { kind: "ambiguous", matches: matchingLines };
+  const matchedLine = matchingLines[0] ?? "";
+  const captured = versionLine.exec(matchedLine)?.[1];
+  return { kind: "matched", version: captured ?? matchedLine, discarded: lines.filter((line) => line !== matchedLine) };
+}
+function versionOutcomeOf(reading, versionLineShape) {
+  if (reading.kind === "matched") {
+    return { version: reading.version, note: reading.discarded.length === 0 ? void 0 : extraLinesNote(reading.discarded) };
+  }
+  if (reading.kind === "unmatched") return { version: void 0, note: unmatchedNote(versionLineShape, reading.raw) };
+  return { version: void 0, note: ambiguousNote(versionLineShape, reading.matches) };
+}
+function extraLinesNote(discarded) {
+  const first = discarded[0] ?? "";
+  const plural = discarded.length === 1 ? "line" : "lines";
+  return `the probe printed ${discarded.length} extra ${plural} beyond the version; first: ${collapsedNewlines(first)}`;
+}
+function unmatchedNote(versionLineShape, raw) {
+  return `the probe printed no line shaped like ${versionLineShape}; raw output: ${collapsedNewlines(raw)}`;
+}
+function ambiguousNote(versionLineShape, matches) {
+  return `the probe printed ${matches.length} lines shaped like ${versionLineShape} (ambiguous): ${collapsedNewlines(matches.join("\n"))}`;
+}
+
+// core/src/install/opencode-host.ts
 var OPENCODE_BINARY_NAME = "opencode";
 var OPENCODE_VERSION_LINE_SHAPE = "a bare dotted version";
 var PROBE_HOME_PREFIX = "oso-opencode-probe.";
@@ -4017,20 +2420,20 @@ var OPENCODE_VERSION_LINE = /^(\d+(?:\.\d+)*)$/;
 function openCodeHostProbes(environment) {
   const binaryPath = firstExecutableOnPath(environment, OPENCODE_BINARY_NAME);
   if (binaryPath === void 0) return { version: void 0 };
-  const outcome = versionOutcomeOf(probedVersion2(environment, binaryPath), OPENCODE_VERSION_LINE_SHAPE);
+  const outcome = versionOutcomeOf(probedVersion(environment, binaryPath), OPENCODE_VERSION_LINE_SHAPE);
   return outcome.note === void 0 ? { version: outcome.version } : { version: outcome.version, versionNote: outcome.note };
 }
 function versionFieldOf(probeOutput) {
   const strippedPerLine = probeOutput.replace(ANSI_SELECT_GRAPHIC_RENDITION, "").split("\n").map((line) => line.replace(POSIX_SPACE_CLASS, "")).join("\n");
   return versionLineReadingOf(strippedPerLine, OPENCODE_VERSION_LINE);
 }
-function probedVersion2(environment, binaryPath) {
-  const probeHome = mkdtempSync4(path11.join(environment["TMPDIR"] ?? tmpdir3(), PROBE_HOME_PREFIX));
+function probedVersion(environment, binaryPath) {
+  const probeHome = mkdtempSync3(path8.join(environment["TMPDIR"] ?? tmpdir3(), PROBE_HOME_PREFIX));
   try {
-    const run = spawnSync6(binaryPath, ["--version"], { env: probeEnvironment2(environment, probeHome), encoding: "utf8" });
+    const run = spawnSync4(binaryPath, ["--version"], { env: probeEnvironment2(environment, probeHome), encoding: "utf8" });
     return versionFieldOf(`${run.stdout ?? ""}${run.stderr ?? ""}`);
   } finally {
-    rmSync8(probeHome, { recursive: true, force: true });
+    rmSync6(probeHome, { recursive: true, force: true });
   }
 }
 function probeEnvironment2(environment, probeHome) {
@@ -4039,23 +2442,22 @@ function probeEnvironment2(environment, probeHome) {
     HOME: probeHome,
     USERPROFILE: probeHome,
     TMPDIR: probeHome,
-    XDG_CONFIG_HOME: path11.join(probeHome, ".config"),
-    XDG_STATE_HOME: path11.join(probeHome, ".local", "state"),
-    XDG_CACHE_HOME: path11.join(probeHome, ".cache"),
-    XDG_DATA_HOME: path11.join(probeHome, ".local", "share")
+    XDG_CONFIG_HOME: path8.join(probeHome, ".config"),
+    XDG_STATE_HOME: path8.join(probeHome, ".local", "state"),
+    XDG_CACHE_HOME: path8.join(probeHome, ".cache"),
+    XDG_DATA_HOME: path8.join(probeHome, ".local", "share")
   };
 }
 
 // core/src/install/opencode-install.ts
-import { chmodSync as chmodSync2, cpSync as cpSync2, lstatSync as lstatSync3, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync5, readdirSync as readdirSync4, readFileSync as readFileSync12, renameSync as renameSync3, rmSync as rmSync9, writeFileSync as writeFileSync8 } from "node:fs";
-import { spawnSync as spawnSync7 } from "node:child_process";
-import path14 from "node:path";
+import { chmodSync as chmodSync2, cpSync as cpSync2, lstatSync as lstatSync3, mkdirSync as mkdirSync6, mkdtempSync as mkdtempSync4, readdirSync as readdirSync4, readFileSync as readFileSync10, renameSync as renameSync3, rmSync as rmSync7, writeFileSync as writeFileSync6 } from "node:fs";
+import { spawnSync as spawnSync5 } from "node:child_process";
+import path11 from "node:path";
 
 // core/src/install/opencode-trust.ts
-import { readFileSync as readFileSync11 } from "node:fs";
-import path12 from "node:path";
-var OPENCODE_TRUST_FILE_COUNT = 19;
-var CODEX_TRUST_PREFIX = "codex/";
+import { readFileSync as readFileSync9 } from "node:fs";
+import path9 from "node:path";
+var OPENCODE_TRUST_FILE_COUNT = 15;
 var INSTALLED_TREE_MAP = [
   { published: "opencode/dist/oso-code.js", installed: "plugin/oso-code.js" },
   { published: "plugin/dist/", installed: "dist/" },
@@ -4064,16 +2466,16 @@ var INSTALLED_TREE_MAP = [
   { published: "plugin/bin/", installed: "bin/" }
 ];
 function openCodeTrustTargetUnder(rootKind, root, published) {
-  if (rootKind === "source") return path12.join(root, ...published.split("/"));
+  if (rootKind === "source") return path9.join(root, ...published.split("/"));
   const mapped = INSTALLED_TREE_MAP.find((row) => row.published === published || row.published.endsWith("/") && published.startsWith(row.published));
   if (mapped === void 0) return void 0;
   const relative = mapped.published.endsWith("/") ? `${mapped.installed}${published.slice(mapped.published.length)}` : mapped.installed;
-  return path12.join(root, ...relative.split("/"));
+  return path9.join(root, ...relative.split("/"));
 }
 function openCodeTrustReading(manifestFile, rootKind, root) {
   return {
     filesRead: openCodeTrustedFiles(manifestFile).length,
-    divergences: trustDivergences(manifestFile, isCodexTrustFile, (published) => openCodeTrustTargetUnder(rootKind, root, published))
+    divergences: trustDivergences(manifestFile, () => false, (published) => openCodeTrustTargetUnder(rootKind, root, published))
   };
 }
 function publishedGateScriptNames(manifestFile) {
@@ -4088,14 +2490,11 @@ function trustDivergenceLine(divergence) {
 }
 function openCodeTrustedFiles(manifestFile) {
   if (!isReadableRegularFile(manifestFile)) return [];
-  return parseTrustManifest(readFileSync11(manifestFile, "utf8")).map((row) => row.file).filter((file) => !isCodexTrustFile(file));
-}
-function isCodexTrustFile(published) {
-  return published.startsWith(CODEX_TRUST_PREFIX);
+  return parseTrustManifest(readFileSync9(manifestFile, "utf8")).map((row) => row.file);
 }
 
 // core/src/install/profile.ts
-import path13 from "node:path";
+import path10 from "node:path";
 var ROLES = ["applier", "verifier", "judges"];
 var TIERS = ["default", "strong"];
 var PROFILE_NAMES = ["normal", "strong", "custom"];
@@ -4137,7 +2536,7 @@ function setProfile(workingDirectory, name, roleTokens) {
   const profile = profileFrom(name, roleTokens);
   const mirror = mirrorFor(workingDirectory);
   const content = mirrorContentOf(profile);
-  writeFileAtomically(path13.dirname(mirror.file), mirror.file, content, ".profile.");
+  writeFileAtomically(path10.dirname(mirror.file), mirror.file, content, ".profile.");
   return { report: `oso profile set ${profile.name}
 ${mirror.file}
 ${content}${keyedToLine(mirror)}`, exitCode: 0 };
@@ -4329,7 +2728,6 @@ function mirrorContentOf(profile) {
   const lines = [
     `model_profile=${profile.name}`,
     ...ROLES.flatMap((role) => roleLines(role, profile.roles[role])),
-    "codex=pinned by host contract",
     "unattended.doom_loop=ask"
   ];
   return lines.map((line) => `${line}
@@ -4363,39 +2761,39 @@ var OWNER_ONLY_MASK = 4032;
 var MIGRATED_SESSION_PATTERN = /^ses[A-Za-z0-9]+$/;
 var AGENT_IDENTITY_LENGTH = 16;
 var ENGRAM_BINARY_NAME = "engram";
-var FALLOW_FALLBACK_COMMAND2 = "fallow-mcp";
+var FALLOW_FALLBACK_COMMAND = "fallow-mcp";
 function openCodeInstallTargets(paths) {
   return {
-    skills: path14.join(paths.configHome, "skill"),
-    agents: path14.join(paths.configHome, "agent"),
-    commands: path14.join(paths.configHome, "command"),
-    plugin: path14.join(paths.configHome, "plugin"),
-    hooks: path14.join(paths.configHome, "hooks"),
-    gitHooks: path14.join(paths.configHome, "git-hooks"),
-    stateBin: path14.join(paths.configHome, "bin"),
-    dist: path14.join(paths.configHome, "dist"),
-    engramPlugin: path14.join(paths.configHome, "plugins", "engram.ts"),
-    impeccableMount: path14.join(paths.homeDirectory, ".agents", "skills", "impeccable"),
-    impeccableOptOut: path14.join(paths.stateRoot, "impeccable-opt-out"),
-    ownerRegistry: path14.join(paths.stateRoot, "opencode-install-registry"),
-    restoreExercisedMarker: path14.join(paths.stateRoot, ".install-restore-verified-opencode"),
-    planArtifactRoot: path14.join(paths.stateRoot, "plans")
+    skills: path11.join(paths.configHome, "skill"),
+    agents: path11.join(paths.configHome, "agent"),
+    commands: path11.join(paths.configHome, "command"),
+    plugin: path11.join(paths.configHome, "plugin"),
+    hooks: path11.join(paths.configHome, "hooks"),
+    gitHooks: path11.join(paths.configHome, "git-hooks"),
+    stateBin: path11.join(paths.configHome, "bin"),
+    dist: path11.join(paths.configHome, "dist"),
+    engramPlugin: path11.join(paths.configHome, "plugins", "engram.ts"),
+    impeccableMount: path11.join(paths.homeDirectory, ".agents", "skills", "impeccable"),
+    impeccableOptOut: path11.join(paths.stateRoot, "impeccable-opt-out"),
+    ownerRegistry: path11.join(paths.stateRoot, "opencode-install-registry"),
+    restoreExercisedMarker: path11.join(paths.stateRoot, ".install-restore-verified-opencode"),
+    planArtifactRoot: path11.join(paths.stateRoot, "plans")
   };
 }
 function openCodePayloadSources(repositoryRoot2) {
   return {
-    skills: path14.join(repositoryRoot2, "opencode", "skills"),
-    sharedSkills: path14.join(repositoryRoot2, "plugin", "skills", "_shared"),
-    agents: path14.join(repositoryRoot2, "opencode", "agents"),
-    commands: path14.join(repositoryRoot2, "opencode", "commands"),
-    pluginBundle: path14.join(repositoryRoot2, "opencode", "dist", "oso-code.js"),
-    gates: path14.join(repositoryRoot2, "plugin", "hooks"),
-    gitHook: path14.join(repositoryRoot2, "plugin", "git-hooks", "pre-commit"),
-    stateBin: path14.join(repositoryRoot2, "plugin", "bin", "oso-state"),
-    stateBinPackage: path14.join(repositoryRoot2, "plugin", "bin", "package.json"),
-    dist: path14.join(repositoryRoot2, "plugin", "dist"),
-    global: path14.join(repositoryRoot2, "bootstrap", "opencode-global.md"),
-    publishedHashes: path14.join(repositoryRoot2, "bootstrap", "hook-hashes.txt")
+    skills: path11.join(repositoryRoot2, "opencode", "skills"),
+    sharedSkills: path11.join(repositoryRoot2, "plugin", "skills", "_shared"),
+    agents: path11.join(repositoryRoot2, "opencode", "agents"),
+    commands: path11.join(repositoryRoot2, "opencode", "commands"),
+    pluginBundle: path11.join(repositoryRoot2, "opencode", "dist", "oso-code.js"),
+    gates: path11.join(repositoryRoot2, "plugin", "hooks"),
+    gitHook: path11.join(repositoryRoot2, "plugin", "git-hooks", "pre-commit"),
+    stateBin: path11.join(repositoryRoot2, "plugin", "bin", "oso-state"),
+    stateBinPackage: path11.join(repositoryRoot2, "plugin", "bin", "package.json"),
+    dist: path11.join(repositoryRoot2, "plugin", "dist"),
+    global: path11.join(repositoryRoot2, "bootstrap", "opencode-global.md"),
+    publishedHashes: path11.join(repositoryRoot2, "bootstrap", "hook-hashes.txt")
   };
 }
 function payloadRefusal(sources) {
@@ -4407,8 +2805,8 @@ function payloadRefusal(sources) {
     { present: isDirectory(sources.commands), message: `the OpenCode command templates are missing: ${sources.commands}` },
     { present: isReadableRegularFile(sources.pluginBundle), message: `the OpenCode plugin bundle is missing: ${sources.pluginBundle}` },
     { present: isDirectory(sources.gates), message: `the shared gate script tree is missing: ${sources.gates}` },
-    { present: isReadableRegularFile(path14.join(sources.gates, "lib.sh")), message: `the shared gate library is missing: ${path14.join(sources.gates, "lib.sh")}` },
-    { present: isReadableRegularFile(path14.join(sources.gates, "lexer.sh")), message: `the shared gate lexer is missing: ${path14.join(sources.gates, "lexer.sh")}` },
+    { present: isReadableRegularFile(path11.join(sources.gates, "lib.sh")), message: `the shared gate library is missing: ${path11.join(sources.gates, "lib.sh")}` },
+    { present: isReadableRegularFile(path11.join(sources.gates, "lexer.sh")), message: `the shared gate lexer is missing: ${path11.join(sources.gates, "lexer.sh")}` },
     { present: isReadableRegularFile(sources.gitHook), message: `the shared commit hook is missing: ${sources.gitHook}` },
     { present: isReadableRegularFile(sources.stateBin), message: `the oso-state binary is missing: ${sources.stateBin}` },
     { present: isReadableRegularFile(sources.stateBinPackage), message: `the oso-state module manifest is missing: ${sources.stateBinPackage}` }
@@ -4433,7 +2831,7 @@ function trustBytesRefusal(publishedHashes, rootKind, root) {
 }
 function unpublishedInstalledGates(publishedHashes, hooksTarget) {
   const published = new Set(publishedGateScriptNames(publishedHashes));
-  return directoryEntryNames(hooksTarget).filter((name) => name.endsWith(".sh") && isReadableRegularFile(path14.join(hooksTarget, name))).filter((name) => !published.has(name));
+  return directoryEntryNames(hooksTarget).filter((name) => name.endsWith(".sh") && isReadableRegularFile(path11.join(hooksTarget, name))).filter((name) => !published.has(name));
 }
 function installOpenCode(input) {
   return withOwnerOnlyUmask(() => writeOpenCodeInstall(input));
@@ -4447,7 +2845,7 @@ function writeOpenCodeInstall(input) {
   let tx;
   try {
     tx = beginTransaction(paths.backupsRoot, OPENCODE_INSTALL_BACKUP_FORMAT);
-    for (const { label, target } of backupCandidatesOf2(paths, targets)) backupTarget(tx, label, target);
+    for (const { label, target } of backupCandidatesOf(paths, targets)) backupTarget(tx, label, target);
     commitManifest(tx);
   } catch (error) {
     return fatalOutcome("install", "opencode", "could not create the pre-install backup", messageOf(error));
@@ -4459,7 +2857,7 @@ function writeOpenCodeInstall(input) {
     installPayloadTrees(paths, targets, sources);
     wiring.push(wiringOk("installed payload", `${targets.skills}, ${targets.agents}, ${targets.commands}, ${targets.plugin}`));
     wiring.push(publishedGateBytesEntry(sources.publishedHashes, paths.configHome, targets.hooks));
-    mergeGlobalAgents(paths.globalFile, readFileSync12(sources.global, "utf8"));
+    mergeGlobalAgents(paths.globalFile, readFileSync10(sources.global, "utf8"));
     wiring.push(wiringOk("global AGENTS.md region", paths.globalFile));
     wiring.push(wireEngram(input.environment, targets.engramPlugin, tx));
     wiring.push(renderOpenCodeConfig(input, paths, tx));
@@ -4501,7 +2899,7 @@ function installRefusal(input, paths, sources) {
   }
   return input.assumeYes ? void 0 : requiresYesOutcome("install", "opencode");
 }
-function backupCandidatesOf2(paths, targets) {
+function backupCandidatesOf(paths, targets) {
   return [
     { label: "config", target: paths.configFile },
     { label: "global", target: paths.globalFile },
@@ -4521,33 +2919,33 @@ function backupCandidatesOf2(paths, targets) {
 }
 function installPayloadTrees(paths, targets, sources) {
   replaceTree(paths.configHome, targets.skills, (stage) => {
-    for (const wrapper of osoPrefixedEntryNames(sources.skills)) cpSync2(path14.join(sources.skills, wrapper), path14.join(stage, wrapper), { recursive: true });
-    cpSync2(sources.sharedSkills, path14.join(stage, "_shared"), { recursive: true });
+    for (const wrapper of osoPrefixedEntryNames(sources.skills)) cpSync2(path11.join(sources.skills, wrapper), path11.join(stage, wrapper), { recursive: true });
+    cpSync2(sources.sharedSkills, path11.join(stage, "_shared"), { recursive: true });
   });
   replaceTree(paths.configHome, targets.agents, (stage) => {
-    for (const agent of agentContractNames(sources.agents)) cpSync2(path14.join(sources.agents, agent), path14.join(stage, agent));
+    for (const agent of agentContractNames(sources.agents)) cpSync2(path11.join(sources.agents, agent), path11.join(stage, agent));
   });
   replaceTree(paths.configHome, targets.commands, (stage) => {
-    for (const command of modeCommandNames(sources.commands)) cpSync2(path14.join(sources.commands, command), path14.join(stage, command));
+    for (const command of modeCommandNames(sources.commands)) cpSync2(path11.join(sources.commands, command), path11.join(stage, command));
   });
-  replaceTree(paths.configHome, targets.plugin, (stage) => cpSync2(sources.pluginBundle, path14.join(stage, "oso-code.js")));
+  replaceTree(paths.configHome, targets.plugin, (stage) => cpSync2(sources.pluginBundle, path11.join(stage, "oso-code.js")));
   replaceTree(paths.configHome, targets.hooks, (stage) => {
     for (const script of publishedGateScriptNames(sources.publishedHashes)) {
-      cpSync2(path14.join(sources.gates, script), path14.join(stage, script));
-      chmodSync2(path14.join(stage, script), EXECUTABLE_FILE_MODE);
+      cpSync2(path11.join(sources.gates, script), path11.join(stage, script));
+      chmodSync2(path11.join(stage, script), EXECUTABLE_FILE_MODE);
     }
   });
   replaceTree(paths.configHome, targets.stateBin, (stage) => {
-    cpSync2(sources.stateBin, path14.join(stage, "oso-state"));
-    cpSync2(sources.stateBinPackage, path14.join(stage, "package.json"));
-    chmodSync2(path14.join(stage, "oso-state"), EXECUTABLE_FILE_MODE);
+    cpSync2(sources.stateBin, path11.join(stage, "oso-state"));
+    cpSync2(sources.stateBinPackage, path11.join(stage, "package.json"));
+    chmodSync2(path11.join(stage, "oso-state"), EXECUTABLE_FILE_MODE);
   });
   replaceTree(paths.configHome, targets.dist, (stage) => {
-    for (const bundle of publishedDistFileNames(sources.publishedHashes)) cpSync2(path14.join(sources.dist, bundle), path14.join(stage, bundle));
+    for (const bundle of publishedDistFileNames(sources.publishedHashes)) cpSync2(path11.join(sources.dist, bundle), path11.join(stage, bundle));
   });
   replaceTree(paths.configHome, targets.gitHooks, (stage) => {
-    cpSync2(sources.gitHook, path14.join(stage, "pre-commit"));
-    chmodSync2(path14.join(stage, "pre-commit"), EXECUTABLE_FILE_MODE);
+    cpSync2(sources.gitHook, path11.join(stage, "pre-commit"));
+    chmodSync2(path11.join(stage, "pre-commit"), EXECUTABLE_FILE_MODE);
   });
 }
 function publishedGateBytesEntry(publishedHashes, configHome, hooksTarget) {
@@ -4562,14 +2960,14 @@ function publishedGateBytesEntry(publishedHashes, configHome, hooksTarget) {
   return wiringOk("published gate bytes", `verified against ${publishedHashes}`);
 }
 function renderOpenCodeConfig(input, paths, tx) {
-  const fallow = resolveFallowMcpCommand(input.environment, input.homeDirectory, input.platform) ?? FALLOW_FALLBACK_COMMAND2;
+  const fallow = resolveFallowMcpCommand(input.environment, input.homeDirectory, input.platform) ?? FALLOW_FALLBACK_COMMAND;
   const profile = readProfile(input.workingDirectory);
   const merged = mergeOpenCodeConfig(recordedConfigDocument(tx), fallow, profileRolesOf(profile));
   const violation = hostContractViolationOf(merged.document);
   if (violation !== void 0) throw new Error(`the rendered config violates the host contract: ${violation}`);
   writeJsonFile(paths.configFile, merged.document);
   chmodSync2(paths.configFile, PRIVATE_FILE_MODE);
-  writeFileSync8(preservedKeysFileOf(tx), merged.preservedKeys.map((key) => `${key}
+  writeFileSync6(preservedKeysFileOf(tx), merged.preservedKeys.map((key) => `${key}
 `).join(""));
   return wiringOk("opencode.json", `preserved ${merged.preservedKeys.length} operator key(s), ${agentModelNote(profile, merged.agentModels)}`);
 }
@@ -4582,36 +2980,36 @@ function agentModelNote(profile, agentModels) {
   return `wrote ${named} agent model key(s) from ${profile.mirror.file}`;
 }
 function recordedConfigDocument(tx) {
-  return readJsonFile(path14.join(tx.itemsDirectory, "config"));
+  return readJsonFile(path11.join(tx.itemsDirectory, "config"));
 }
 function wireEngram(environment, engramPlugin, tx) {
   if (firstExecutableOnPath(environment, ENGRAM_BINARY_NAME) === void 0) {
     return wiringOk("engram", "engram is not on PATH; the operator's prior Engram wiring stays as backed up");
   }
-  const help = spawnSync7(ENGRAM_BINARY_NAME, ["setup", "--help"], { env: environment, encoding: "utf8" });
+  const help = spawnSync5(ENGRAM_BINARY_NAME, ["setup", "--help"], { env: environment, encoding: "utf8" });
   if (!`${help.stdout ?? ""}${help.stderr ?? ""}`.includes("opencode")) {
     return wiringOk("engram", "engram setup does not advertise OpenCode support; the operator's prior wiring is preserved");
   }
-  const setup = spawnSync7(ENGRAM_BINARY_NAME, ["setup", "opencode"], { env: environment, encoding: "utf8" });
+  const setup = spawnSync5(ENGRAM_BINARY_NAME, ["setup", "opencode"], { env: environment, encoding: "utf8" });
   if (setup.error === void 0 && setup.status === 0) return wiringOk("engram", "wired through engram setup opencode");
   restoreBackedUpEngramPlugin(tx, engramPlugin);
   return wiringFail("engram", "engram setup opencode failed; the operator's prior Engram plugin was restored from the backup snapshot");
 }
 function restoreBackedUpEngramPlugin(tx, engramPlugin) {
-  const recorded = path14.join(tx.itemsDirectory, "engram-plugin");
+  const recorded = path11.join(tx.itemsDirectory, "engram-plugin");
   if (!isReadableRegularFile(recorded)) return;
-  mkdirSync7(path14.dirname(engramPlugin), { recursive: true });
+  mkdirSync6(path11.dirname(engramPlugin), { recursive: true });
   cpSync2(recorded, engramPlugin);
 }
 function impeccableEntries(input, targets) {
   if (input.installImpeccable) return [wiringOk("impeccable", `not mounted at ${targets.impeccableMount}; no installer in this tree performs the mount`)];
-  mkdirSync7(path14.dirname(targets.impeccableOptOut), { recursive: true });
-  writeFileSync8(targets.impeccableOptOut, `skipped by --no-impeccable on ${isoTimestamp().slice(0, 10)}
+  mkdirSync6(path11.dirname(targets.impeccableOptOut), { recursive: true });
+  writeFileSync6(targets.impeccableOptOut, `skipped by --no-impeccable on ${isoTimestamp().slice(0, 10)}
 `);
   return [wiringOk("impeccable", "skipped by --no-impeccable")];
 }
 function gitHookEntries(input, targets) {
-  const preCommit = path14.join(targets.gitHooks, "pre-commit");
+  const preCommit = path11.join(targets.gitHooks, "pre-commit");
   if (!input.installGitHook) return [wiringOk("git commit hook", `skipped by --no-git-hook; the hook is installed at ${preCommit}`)];
   const owner = gitHooksOwner(input.repositoryRoot, input.environment, targets.gitHooks);
   if (owner !== "") {
@@ -4622,7 +3020,7 @@ function gitHookEntries(input, targets) {
       )
     ];
   }
-  const wired = spawnSync7("git", ["-C", input.repositoryRoot, "config", "--local", "core.hooksPath", targets.gitHooks], {
+  const wired = spawnSync5("git", ["-C", input.repositoryRoot, "config", "--local", "core.hooksPath", targets.gitHooks], {
     env: input.environment,
     encoding: "utf8"
   });
@@ -4638,12 +3036,12 @@ function writeOwnerRegistry(paths, targets, tx) {
     ownedBy(OWNER_INSTALLER, targets.agents),
     ownedBy(OWNER_INSTALLER, targets.commands),
     ownedBy(OWNER_INSTALLER, targets.plugin),
-    ...directoryEntryNames(targets.hooks).filter((name) => name.endsWith(".sh")).map((name) => ownedBy(OWNER_INSTALLER, path14.join(targets.hooks, name))),
-    ownedBy(OWNER_INSTALLER, path14.join(targets.stateBin, "oso-state")),
-    ownedBy(OWNER_INSTALLER, path14.join(targets.gitHooks, "pre-commit"))
+    ...directoryEntryNames(targets.hooks).filter((name) => name.endsWith(".sh")).map((name) => ownedBy(OWNER_INSTALLER, path11.join(targets.hooks, name))),
+    ownedBy(OWNER_INSTALLER, path11.join(targets.stateBin, "oso-state")),
+    ownedBy(OWNER_INSTALLER, path11.join(targets.gitHooks, "pre-commit"))
   ];
-  mkdirSync7(paths.stateRoot, { recursive: true });
-  writeFileSync8(targets.ownerRegistry, rows.map((row) => `${row}
+  mkdirSync6(paths.stateRoot, { recursive: true });
+  writeFileSync6(targets.ownerRegistry, rows.map((row) => `${row}
 `).join(""), { mode: PRIVATE_FILE_MODE });
 }
 function ownedBy(owner, target) {
@@ -4652,22 +3050,22 @@ function ownedBy(owner, target) {
 function preservedKeysOf(tx) {
   const file = preservedKeysFileOf(tx);
   if (!isReadableRegularFile(file)) return [];
-  return readFileSync12(file, "utf8").split("\n").filter((key) => key !== "");
+  return readFileSync10(file, "utf8").split("\n").filter((key) => key !== "");
 }
 function preservedKeysFileOf(tx) {
-  return path14.join(tx.backupRoot, PRESERVED_KEYS_FILE);
+  return path11.join(tx.backupRoot, PRESERVED_KEYS_FILE);
 }
 function pruneOpenCodeInstallBackups(paths, targets, environment) {
   if (!isReadableRegularFile(targets.restoreExercisedMarker)) return [];
   const ownSnapshots = installBackupsDeclaring(paths.backupsRoot, OPENCODE_INSTALL_BACKUP_FORMAT, OPENCODE_INSTALL_BACKUP_LABEL);
   const over = installBackupsOverBudget(ownSnapshots, installBackupBudgetKib(environment));
-  for (const backup of over) rmSync9(backup, { recursive: true, force: true });
+  for (const backup of over) rmSync7(backup, { recursive: true, force: true });
   return over;
 }
 function migrateOpenCodeState(paths, targets, tx) {
   const migrated = [];
   for (const stateFile of stateFilesUnder(paths.stateRoot)) {
-    const repository = path14.basename(stateFile, ".state");
+    const repository = path11.basename(stateFile, ".state");
     let backedUp = false;
     const backUpOnce = () => {
       if (backedUp) return;
@@ -4681,19 +3079,19 @@ function migrateOpenCodeState(paths, targets, tx) {
   return migrated;
 }
 function migrateRenamedIdentity(stateFile, repository, backUpOnce) {
-  const session = stateValue(readFileSync12(stateFile, "utf8"), "session");
+  const session = stateValue(readFileSync10(stateFile, "utf8"), "session");
   if (!MIGRATED_SESSION_PATTERN.test(session)) return [];
   const agent = repository.slice(0, AGENT_IDENTITY_LENGTH);
   backUpOnce();
   rewriteStateKeys(stateFile, [`session=${agent}`]);
-  if (stateValue(readFileSync12(stateFile, "utf8"), "plan_approval_session") !== "") {
+  if (stateValue(readFileSync10(stateFile, "utf8"), "plan_approval_session") !== "") {
     rewriteStateKeys(stateFile, [`plan_approval_session=${agent}`]);
   }
-  return [`migrated the renamed identity in ${path14.basename(stateFile)}: session ${session} is now ${agent}`];
+  return [`migrated the renamed identity in ${path11.basename(stateFile)}: session ${session} is now ${agent}`];
 }
 function migrateRelocatedApproval(stateFile, repository, planArtifactRoot, backUpOnce) {
-  if (stateValue(readFileSync12(stateFile, "utf8"), "plan_approval") !== "") return [];
-  const planDirectory = path14.join(planArtifactRoot, repository);
+  if (stateValue(readFileSync10(stateFile, "utf8"), "plan_approval") !== "") return [];
+  const planDirectory = path11.join(planArtifactRoot, repository);
   const approved = directoryEntryNames(planDirectory).find((name) => name.startsWith("approved-") && name.endsWith(".md"));
   if (approved === void 0) return [];
   const planDigest = approved.slice("approved-".length, -".md".length);
@@ -4702,32 +3100,32 @@ function migrateRelocatedApproval(stateFile, repository, planArtifactRoot, backU
     "plan_approval=approved",
     `plan_approval_digest=${planDigest}`,
     `plan_approval_session=${repository.slice(0, AGENT_IDENTITY_LENGTH)}`,
-    `plan_snapshot_file=${path14.join(planDirectory, approved)}`,
-    `plan_current_file=${path14.join(planDirectory, "current.md")}`,
+    `plan_snapshot_file=${path11.join(planDirectory, approved)}`,
+    `plan_current_file=${path11.join(planDirectory, "current.md")}`,
     "plan_revision=0"
   ]);
-  return [`migrated the relocated plan approval into ${path14.basename(stateFile)}: ${planDigest}`];
+  return [`migrated the relocated plan approval into ${path11.basename(stateFile)}: ${planDigest}`];
 }
 function rewriteStateKeys(stateFile, pairs) {
   for (const pair of pairs) {
     const key = pair.slice(0, pair.indexOf("="));
-    const kept = readFileSync12(stateFile, "utf8").split("\n").filter((line) => line !== "" && !line.startsWith(`${key}=`));
-    const staged = path14.join(path14.dirname(stateFile), `.state-migration-${path14.basename(stateFile)}`);
-    writeFileSync8(staged, [...kept, pair].map((line) => `${line}
+    const kept = readFileSync10(stateFile, "utf8").split("\n").filter((line) => line !== "" && !line.startsWith(`${key}=`));
+    const staged = path11.join(path11.dirname(stateFile), `.state-migration-${path11.basename(stateFile)}`);
+    writeFileSync6(staged, [...kept, pair].map((line) => `${line}
 `).join(""), { mode: PRIVATE_FILE_MODE });
     renameSync3(staged, stateFile);
   }
 }
 function stateFilesUnder(stateRoot) {
-  return directoryEntryNames(stateRoot).filter((name) => name.endsWith(".state")).map((name) => path14.join(stateRoot, name)).filter(isReadableRegularFile);
+  return directoryEntryNames(stateRoot).filter((name) => name.endsWith(".state")).map((name) => path11.join(stateRoot, name)).filter(isReadableRegularFile);
 }
 function replaceTree(stageParent, target, fill) {
-  mkdirSync7(stageParent, { recursive: true });
-  const stage = mkdtempSync5(path14.join(stageParent, ".oso-install-stage-"));
+  mkdirSync6(stageParent, { recursive: true });
+  const stage = mkdtempSync4(path11.join(stageParent, ".oso-install-stage-"));
   fill(stage);
   narrowToOwnerOnly(stage);
-  mkdirSync7(path14.dirname(target), { recursive: true });
-  rmSync9(target, { recursive: true, force: true });
+  mkdirSync6(path11.dirname(target), { recursive: true });
+  rmSync7(target, { recursive: true, force: true });
   renameSync3(stage, target);
 }
 function narrowToOwnerOnly(target) {
@@ -4735,10 +3133,10 @@ function narrowToOwnerOnly(target) {
   if (stats.isSymbolicLink()) return;
   chmodSync2(target, stats.mode & OWNER_ONLY_MASK);
   if (!stats.isDirectory()) return;
-  for (const name of readdirSync4(target)) narrowToOwnerOnly(path14.join(target, name));
+  for (const name of readdirSync4(target)) narrowToOwnerOnly(path11.join(target, name));
 }
 function skillWrapperNames(skillsSource) {
-  return osoPrefixedEntryNames(skillsSource).filter((name) => isReadableRegularFile(path14.join(skillsSource, name, "SKILL.md")));
+  return osoPrefixedEntryNames(skillsSource).filter((name) => isReadableRegularFile(path11.join(skillsSource, name, "SKILL.md")));
 }
 function agentContractNames(agentsSource) {
   return osoPrefixedMarkdownNames(agentsSource);
@@ -4747,7 +3145,7 @@ function modeCommandNames(commandsSource) {
   return osoPrefixedMarkdownNames(commandsSource);
 }
 function osoPrefixedMarkdownNames(directory) {
-  return osoPrefixedEntryNames(directory).filter((name) => name.endsWith(".md") && isReadableRegularFile(path14.join(directory, name)));
+  return osoPrefixedEntryNames(directory).filter((name) => name.endsWith(".md") && isReadableRegularFile(path11.join(directory, name)));
 }
 function osoPrefixedEntryNames(directory) {
   return directoryEntryNames(directory).filter((name) => name.startsWith("oso-"));
@@ -4761,8 +3159,8 @@ function directoryEntryNames(directory) {
 }
 
 // core/src/install/opencode-purge.ts
-import { mkdirSync as mkdirSync8, readFileSync as readFileSync13, realpathSync, rmSync as rmSync10 } from "node:fs";
-import path15 from "node:path";
+import { mkdirSync as mkdirSync7, readFileSync as readFileSync11, realpathSync, rmSync as rmSync8 } from "node:fs";
+import path12 from "node:path";
 var OPENCODE_PURGE_BACKUP_FORMAT = "oso-code-opencode-purge-v1";
 var PROJECT_CONFIGS_KEY = "OSO_OPENCODE_PROJECT_CONFIGS";
 var REQUIRED_PROJECT_CONFIG_COUNT = 3;
@@ -4771,23 +3169,23 @@ var UNSAFE_PATH_SEGMENTS = ["/../", "/./"];
 var UNSAFE_PATH_CHARACTERS = /[\n\r\t]/;
 function openCodePurgeTargets(homeDirectory2, keepGentleAi) {
   const all = [
-    { label: "config-home", target: path15.join(homeDirectory2, ".config", "opencode") },
-    { label: "state-home", target: path15.join(homeDirectory2, ".local", "share", "opencode") },
-    { label: "cache-home", target: path15.join(homeDirectory2, ".cache", "opencode") },
-    { label: "bin", target: path15.join(homeDirectory2, ".opencode", "bin", "opencode") },
-    { label: "gentle-ai-home", target: path15.join(homeDirectory2, ".gentle-ai") },
-    { label: "gentle-ai-bin", target: path15.join(homeDirectory2, ".local", "bin", "gentle-ai") }
+    { label: "config-home", target: path12.join(homeDirectory2, ".config", "opencode") },
+    { label: "state-home", target: path12.join(homeDirectory2, ".local", "share", "opencode") },
+    { label: "cache-home", target: path12.join(homeDirectory2, ".cache", "opencode") },
+    { label: "bin", target: path12.join(homeDirectory2, ".opencode", "bin", "opencode") },
+    { label: "gentle-ai-home", target: path12.join(homeDirectory2, ".gentle-ai") },
+    { label: "gentle-ai-bin", target: path12.join(homeDirectory2, ".local", "bin", "gentle-ai") }
   ];
   return keepGentleAi ? all.filter((row) => !GENTLE_AI_LABELS.includes(row.label)) : all;
 }
 function purgeBackupParentOf(homeDirectory2) {
-  return path15.join(homeDirectory2, ".local", "state", "oso-code", "purge-backups");
+  return path12.join(homeDirectory2, ".local", "state", "oso-code", "purge-backups");
 }
 function customizedHomeRefusal(homeDirectory2, environment) {
   const rows = [
-    { key: "XDG_CONFIG_HOME", expected: path15.join(homeDirectory2, ".config"), named: "config home" },
-    { key: "XDG_STATE_HOME", expected: path15.join(homeDirectory2, ".local", "state"), named: "state home" },
-    { key: "XDG_CACHE_HOME", expected: path15.join(homeDirectory2, ".cache"), named: "cache home" }
+    { key: "XDG_CONFIG_HOME", expected: path12.join(homeDirectory2, ".config"), named: "config home" },
+    { key: "XDG_STATE_HOME", expected: path12.join(homeDirectory2, ".local", "state"), named: "state home" },
+    { key: "XDG_CACHE_HOME", expected: path12.join(homeDirectory2, ".cache"), named: "cache home" }
   ];
   const customized = rows.find((row) => (environment[row.key] ?? "") !== "" && environment[row.key] !== row.expected);
   if (customized === void 0) return void 0;
@@ -4796,13 +3194,13 @@ function customizedHomeRefusal(homeDirectory2, environment) {
 function unsafeTargetRefusal(homeDirectory2, targets) {
   const homePhysical = physicalPathOf(homeDirectory2);
   if (homePhysical === void 0) return `HOME does not resolve to a physical path: ${homeDirectory2}`;
-  if (homePhysical === path15.parse(homePhysical).root) return `refusing to operate with HOME=${homeDirectory2}`;
+  if (homePhysical === path12.parse(homePhysical).root) return `refusing to operate with HOME=${homeDirectory2}`;
   for (const { label, target } of targets) {
-    if (!path15.isAbsolute(target)) return `${label} must be an absolute path: ${target}`;
+    if (!path12.isAbsolute(target)) return `${label} must be an absolute path: ${target}`;
     if (!pathIsClean(target)) return `unsafe ${label} path: ${target}`;
     if (!isBelow(target, homeDirectory2)) return `${label} must remain below HOME: ${target}`;
     if (!existsAtAll(target) || isSymlink(target)) continue;
-    const parentPhysical = physicalPathOf(path15.dirname(target));
+    const parentPhysical = physicalPathOf(path12.dirname(target));
     if (parentPhysical === void 0) return `${label} does not resolve to a physical path: ${target}`;
     if (parentPhysical !== homePhysical && !isBelow(parentPhysical, homePhysical)) return `${label} resolves outside HOME: ${target}`;
   }
@@ -4825,7 +3223,7 @@ function projectConfigsRefusal(environment, targets) {
   }
   if (new Set(declared).size !== declared.length) return "the three project-level opencode.json paths must be distinct";
   for (const declaredPath of declared) {
-    if (!path15.isAbsolute(declaredPath)) return `project-level opencode.json must be an absolute path: ${declaredPath}`;
+    if (!path12.isAbsolute(declaredPath)) return `project-level opencode.json must be an absolute path: ${declaredPath}`;
     if (!pathIsClean(declaredPath)) return `unsafe project-level opencode.json path: ${declaredPath}`;
     if (!existsAtAll(declaredPath)) return `project-level opencode.json does not exist: ${declaredPath}`;
     const inside = targets.find(({ target }) => declaredPath === target || isBelow(declaredPath, target));
@@ -4857,7 +3255,7 @@ function dryRunOutcome(input, targets, backupParent) {
     ...targets.map(({ label, target }) => `  ${label}: ${target}`),
     "project-level opencode.json files to report:",
     ...projectConfigsIn(input.environment).map((declared) => `  ${declared}`),
-    `backup would be created at: ${path15.join(backupParent, "purge-<timestamp>")}`
+    `backup would be created at: ${path12.join(backupParent, "purge-<timestamp>")}`
   ];
   return { report: renderCommandReport("purge", "opencode", infoLines, [wiringOk("dry run", "no target was read for removal")]), exitCode: 0 };
 }
@@ -4892,7 +3290,7 @@ function purgeAfterBackup(input, targets, backupParent) {
 function removalEntry(label, target) {
   if (!existsAtAll(target)) return wiringOk(label, "already absent");
   try {
-    rmSync10(target, { recursive: true, force: true });
+    rmSync8(target, { recursive: true, force: true });
   } catch (error) {
     return wiringFail(label, messageOf(error));
   }
@@ -4905,8 +3303,8 @@ function restoreOpenCodePurge(backupDirectory, homeDirectory2) {
   if (occupied !== void 0) {
     return fatalOutcome("purge", "opencode", "refusing to overwrite an existing target", `${occupied.label}: ${occupied.target}`);
   }
-  for (const row of readable.rows) mkdirSync8(path15.dirname(row.target), { recursive: true });
-  const restored = restoreBackupManifest(readable.rows.map(serializeManifestRow).join("\n"), path15.join(backupDirectory, "items"));
+  for (const row of readable.rows) mkdirSync7(path12.dirname(row.target), { recursive: true });
+  const restored = restoreBackupManifest(readable.rows.map(serializeManifestRow).join("\n"), path12.join(backupDirectory, "items"));
   const wiring = readable.rows.map(
     (row) => restored.failedItems.includes(row.target) ? wiringFail(row.label, `could not restore ${row.target}`) : wiringOk(row.label, row.target)
   );
@@ -4917,18 +3315,18 @@ function restoreOpenCodePurge(backupDirectory, homeDirectory2) {
   return { report: renderCommandReport("purge", "opencode", infoLines, wiring), exitCode: restored.failedCount === 0 ? 0 : 1 };
 }
 function readablePurgeBackup(backupDirectory, homeDirectory2) {
-  if (!path15.isAbsolute(backupDirectory)) return { kind: "unusable", message: "backup path must be absolute" };
+  if (!path12.isAbsolute(backupDirectory)) return { kind: "unusable", message: "backup path must be absolute" };
   if (!existsAtAll(backupDirectory) || isSymlink(backupDirectory)) {
     return { kind: "unusable", message: `backup is not a directory: ${backupDirectory}` };
   }
-  const marker = path15.join(backupDirectory, "format");
-  const format = isReadableRegularFile(marker) ? readFileSync13(marker, "utf8").trim() : "";
+  const marker = path12.join(backupDirectory, "format");
+  const format = isReadableRegularFile(marker) ? readFileSync11(marker, "utf8").trim() : "";
   if (format !== OPENCODE_PURGE_BACKUP_FORMAT) {
     return { kind: "unusable", message: `unsupported or missing backup format: ${backupDirectory} (expected ${OPENCODE_PURGE_BACKUP_FORMAT})` };
   }
-  const manifest = path15.join(backupDirectory, "manifest");
+  const manifest = path12.join(backupDirectory, "manifest");
   if (!isReadableRegularFile(manifest)) return { kind: "unusable", message: `backup contains no target records: ${backupDirectory}` };
-  const rows = parseManifestRows(readFileSync13(manifest, "utf8"));
+  const rows = parseManifestRows(readFileSync11(manifest, "utf8"));
   if (rows.length === 0) return { kind: "unusable", message: `backup contains no target records: ${backupDirectory}` };
   const unknown = rows.find((row) => expectedTargetFor(row.label, homeDirectory2) === void 0);
   if (unknown !== void 0) return { kind: "unusable", message: `unknown backup target label: ${unknown.label}` };
@@ -4940,13 +3338,13 @@ function expectedTargetFor(label, homeDirectory2) {
   return openCodePurgeTargets(homeDirectory2, false).find((row) => row.label === label)?.target;
 }
 function pathIsClean(target) {
-  if (target === path15.parse(target).root) return false;
+  if (target === path12.parse(target).root) return false;
   if (UNSAFE_PATH_CHARACTERS.test(target)) return false;
   if (target.endsWith("/..") || target.endsWith("/.")) return false;
   return !UNSAFE_PATH_SEGMENTS.some((segment) => target.includes(segment));
 }
 function isBelow(candidate, ancestor) {
-  return candidate.startsWith(ancestor.endsWith(path15.sep) ? ancestor : `${ancestor}${path15.sep}`);
+  return candidate.startsWith(ancestor.endsWith(path12.sep) ? ancestor : `${ancestor}${path12.sep}`);
 }
 function physicalPathOf(target) {
   try {
@@ -4956,699 +3354,47 @@ function physicalPathOf(target) {
   }
 }
 
-// core/src/install/verify-codex.ts
-import path16 from "node:path";
-import { spawnSync as spawnSync8 } from "node:child_process";
-import { mkdirSync as mkdirSync9, mkdtempSync as mkdtempSync6, readFileSync as readFileSync14, readdirSync as readdirSync5, rmSync as rmSync11, writeFileSync as writeFileSync9 } from "node:fs";
-import { tmpdir as tmpdir4 } from "node:os";
-
-// core/src/routes/routes.ts
-var BUNDLE_DIRECTORY = "dist";
-var GATE_BUNDLE = "gate.js";
-var PRECOMMIT_BUNDLE = "precommit.js";
-var OPENCODE_PLUGIN_BUNDLE = "opencode/dist/oso-code.js";
-var PLUGIN_BUNDLE_DIRECTORY = `plugin/${BUNDLE_DIRECTORY}`;
-var PLUGIN_BINARY_DIRECTORY = "plugin/bin";
-var BOOTSTRAP_DIRECTORY = "bootstrap";
-var PLUGIN_STATE_BUNDLE = `${PLUGIN_BUNDLE_DIRECTORY}/oso-state.js`;
-var PLUGIN_STATE_EXECUTABLE = `${PLUGIN_BINARY_DIRECTORY}/oso-state`;
-var BOOTSTRAP_BUNDLE = `${BOOTSTRAP_DIRECTORY}/oso.js`;
-var GENERATED_BUNDLES = [
-  PLUGIN_STATE_BUNDLE,
-  `${PLUGIN_BUNDLE_DIRECTORY}/${GATE_BUNDLE}`,
-  `${PLUGIN_BUNDLE_DIRECTORY}/${PRECOMMIT_BUNDLE}`,
-  PLUGIN_STATE_EXECUTABLE,
-  BOOTSTRAP_BUNDLE,
-  OPENCODE_PLUGIN_BUNDLE
-];
-var TOOL_ROWS = [
-  { gate: "commit", names: { claude: "Bash", codex: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
-  { gate: "edits", names: { claude: "Edit", codex: "apply_patch", opencode: "edit" }, capability: "write", mandated: "no" },
-  { gate: "edits", names: { claude: "MultiEdit", codex: "none", opencode: "none" }, capability: "write", mandated: "no" },
-  { gate: "edits", names: { claude: "Write", codex: "apply_patch", opencode: "write" }, capability: "write", mandated: "no" },
-  { gate: "edits", names: { claude: "NotebookEdit", codex: "none", opencode: "none" }, capability: "write", mandated: "no" },
-  { gate: "edits", names: { claude: "mcp__fallow__fix_apply", codex: "mcp__fallow__fix_apply", opencode: "fallow_fix_apply" }, capability: "write", mandated: "no" },
-  { gate: "edits", names: { claude: "none", codex: "none", opencode: "apply_patch" }, capability: "write", mandated: "no" },
-  { gate: "proddeploy", names: { claude: "Bash", codex: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
-  { gate: "handoff", names: { claude: "none", codex: "explorer", opencode: "none" }, capability: "role", mandated: "yes" },
-  { gate: "handoff", names: { claude: "none", codex: "oso-applier", opencode: "none" }, capability: "role", mandated: "yes" },
-  { gate: "handoff", names: { claude: "none", codex: "oso-verifier", opencode: "none" }, capability: "role", mandated: "yes" },
-  { gate: "handoff", names: { claude: "none", codex: "oso-integrator", opencode: "none" }, capability: "role", mandated: "yes" },
-  { gate: "handoff", names: { claude: "none", codex: "oso-doubt-pass", opencode: "none" }, capability: "role", mandated: "yes" },
-  { gate: "handoff", names: { claude: "none", codex: "oso-debt-sweep", opencode: "none" }, capability: "role", mandated: "yes" },
-  { gate: "handoff", names: { claude: "none", codex: "oso-triage", opencode: "none" }, capability: "role", mandated: "yes" },
-  { gate: "handoff", names: { claude: "none", codex: "oso-security-reviewer", opencode: "none" }, capability: "role", mandated: "yes" },
-  { gate: "unknown", names: { claude: "none", codex: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "apply_patch", opencode: "apply_patch" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "update_plan", opencode: "none" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "request_user_input", opencode: "none" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "Agent", opencode: "task" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "collaborationspawn_agent", opencode: "none" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "collaborationsend_message", opencode: "none" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "collaborationfollowup_task", opencode: "none" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "collaborationwait_agent", opencode: "none" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "collaborationinterrupt_agent", opencode: "none" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "collaborationlist_agents", opencode: "none" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "spawn_agent", opencode: "none" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "send_input", opencode: "none" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "resume_agent", opencode: "none" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "close_agent", opencode: "none" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "send_message", opencode: "none" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "followup_task", opencode: "none" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "wait_agent", opencode: "none" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "interrupt_agent", opencode: "none" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "list_agents", opencode: "none" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "wait", opencode: "none" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "create_goal", opencode: "none" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "get_goal", opencode: "none" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "update_goal", opencode: "none" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "view_image", opencode: "none" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "list_mcp_resources", opencode: "list_mcp_resources" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "list_mcp_resource_templates", opencode: "list_mcp_resource_templates" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "read_mcp_resource", opencode: "read_mcp_resource" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "image_gen__imagegen", opencode: "none" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "image_genimagegen", opencode: "none" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "web__run", opencode: "none" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_search", opencode: "engram_mem_search" }, capability: "read", mandated: "yes" },
-  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_get_observation", opencode: "engram_mem_get_observation" }, capability: "read", mandated: "yes" },
-  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_save", opencode: "engram_mem_save" }, capability: "write", mandated: "yes" },
-  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_update", opencode: "engram_mem_update" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_context", opencode: "engram_mem_context" }, capability: "read", mandated: "yes" },
-  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_session_summary", opencode: "engram_mem_session_summary" }, capability: "write", mandated: "yes" },
-  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_current_project", opencode: "engram_mem_current_project" }, capability: "read", mandated: "yes" },
-  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_save_prompt", opencode: "engram_mem_save_prompt" }, capability: "write", mandated: "yes" },
-  { gate: "unknown", names: { claude: "none", codex: "mcp__engram__mem_judge", opencode: "engram_mem_judge" }, capability: "write", mandated: "yes" },
-  { gate: "unknown", names: { claude: "none", codex: "mcp__context7__resolve-library-id", opencode: "context7_resolve-library-id" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "mcp__context7__query-docs", opencode: "context7_query-docs" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "mcp__context7__resolve_library_id", opencode: "none" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "mcp__fallow__find_dupes", opencode: "fallow_find_dupes" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "mcp__fallow__get_cleanup_candidates", opencode: "fallow_get_cleanup_candidates" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "mcp__fallow__audit", opencode: "fallow_audit" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "mcp__fallow__fix_apply", opencode: "fallow_fix_apply" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "edit" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "write" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "read" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "grep" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "glob" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "skill" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "todowrite" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "webfetch" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "websearch" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "question" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "lsp" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "plan_exit" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "oso_plan_approve" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "oso_plan_cancel" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", codex: "none", opencode: "oso_wave" }, capability: "write", mandated: "no" }
-];
-
-// core/src/install/verify-codex.ts
-var KNOWN_MCP_SERVERS = ["engram", "context7", "fallow"];
-var PROTOCOL_MANDATED_TOOLS = {
-  engram: [
-    "mem_save",
-    "mem_search",
-    "mem_context",
-    "mem_session_summary",
-    "mem_get_observation",
-    "mem_save_prompt",
-    "mem_current_project",
-    "mem_judge"
-  ]
-};
-var LOCAL_CHECKS_SECTION = "local checks:";
-var MCP_DRIFT_SECTION = "MCP tool table drift:";
-function verifyCodex(input) {
-  const paths = codexPathsFor(input.homeDirectory, input.environment);
-  const report2 = new VerifyReport();
-  report2.section(LOCAL_CHECKS_SECTION);
-  const configParses = checkCodexConfigParses(report2, paths);
-  checkPinnedCodexVersion(report2, input.host);
-  checkHostBinaryContracts(report2, input.host);
-  checkPluginInstalled2(report2, paths, input.repositoryRoot, input.host);
-  checkPublishedRuntimeBytes(report2, paths, input.repositoryRoot);
-  checkRuntimeEntrypointsExecutable(report2, paths);
-  checkAgentPayload(report2, paths, input.repositoryRoot);
-  checkMarketplacePayload(report2, paths, input.repositoryRoot);
-  checkManagedConfigRegion(report2, paths, input.environment);
-  checkHostAcceptsOsoProfile(report2, paths, input.host);
-  checkGlobalGuidance(report2, paths, input.repositoryRoot);
-  checkEngramWiring(report2, paths, configParses);
-  checkStateRoundTrip(report2, paths, input.environment);
-  checkPlanArtifactRoundTrip(report2, paths, input.environment);
-  checkCommitHookDeniesRed(report2, paths, input.environment);
-  checkImpeccableMount(report2, input.homeDirectory);
-  checkGitCommitGate(report2, paths, input.repositoryRoot, input.environment);
-  checkMcpToolTableDrift(report2, paths, configParses);
-  return { report: report2.render(), exitCode: report2.exitCode };
-}
-function checkCodexConfigParses(report2, paths) {
-  if (!isReadableRegularFile(paths.configFile)) {
-    report2.skip(`Codex config parses \u2014 ${paths.configFile} is not present`);
-    return true;
-  }
-  try {
-    parseTomlDocument(readFileSync14(paths.configFile, "utf8"), paths.configFile);
-  } catch (error) {
-    if (!(error instanceof TomlParseError)) throw error;
-    report2.check("Codex config parses", "parses", error.message);
-    return false;
-  }
-  report2.check("Codex config parses", "parses", "parses");
-  return true;
-}
-function checkPinnedCodexVersion(report2, host) {
-  const found = host.version ?? host.versionNote ?? "not installed";
-  if (!meetsVersionFloor(host.version, SUPPORTED_CODEX_VERSION)) {
-    report2.check("Codex CLI version", `${SUPPORTED_CODEX_VERSION} or newer`, found, `npm install --global @openai/codex@${SUPPORTED_CODEX_VERSION}`);
-    return;
-  }
-  report2.check("Codex CLI version", found, found);
-  if (host.versionNote !== void 0) report2.note(host.versionNote);
-  if (isAboveTestedVersion(host.version, SUPPORTED_CODEX_VERSION)) {
-    report2.note(`Codex ${found} is newer than the ${SUPPORTED_CODEX_VERSION} this release was verified against, so the host binary contracts below report unverified rather than pass or fail`);
-  }
-}
-function checkHostBinaryContracts(report2, host) {
-  for (const contract of HOST_BINARY_CONTRACTS) {
-    if (host.binaryPath === void 0) {
-      report2.skip(`${contract.shortLabel} \u2014 codex is not on PATH, so the host contract could not be asserted`);
-      continue;
-    }
-    if (host.version !== SUPPORTED_CODEX_VERSION) {
-      report2.unverified(
-        `${contract.shortLabel} \u2014 claims were verified against Codex ${SUPPORTED_CODEX_VERSION} only; installed ${host.version ?? "not installed"} falls outside that window, so pass/fail is not asserted here`
-      );
-      continue;
-    }
-    report2.check(contract.name, "conformant", binaryCarriesBoth(host.binaryPath, contract.literals) ? "conformant" : "nonconformant");
-  }
-}
-function checkPluginInstalled2(report2, paths, repositoryRoot2, host) {
-  const listing = host.pluginListing();
-  if (!listing.ok) {
-    report2.check("oso-code plugin installed", "installed", collapsed(listing.output));
-    return;
-  }
-  const manifest = codexPluginManifestOf(repositoryRoot2);
-  if (manifest === void 0) {
-    report2.check("oso-code plugin installed", "installed", "plugin-manifest-unreadable");
-    return;
-  }
-  const sourcePaths = localPluginSourcePaths(listing.output, manifest);
-  report2.check("oso-code plugin installed", "installed", sourcePaths.includes(path16.join(paths.marketplaceRoot, "codex")) ? "installed" : "absent-or-invalid");
-}
-function checkMarketplacePayload(report2, paths, repositoryRoot2) {
-  const divergent = MARKETPLACE_PAYLOAD_ROWS.flatMap(
-    (row) => filesHoldTheSameBytes(path16.join(repositoryRoot2, ...row.published.split("/")), path16.join(paths.marketplaceRoot, ...row.installed.split("/"))) ? [] : [row.named]
-  );
-  for (const skill of publishedSkillNames(repositoryRoot2)) {
-    const installed = path16.join(paths.marketplaceRoot, "codex", "skills", skill);
-    if (!directoryTreesHoldTheSameBytes(path16.join(repositoryRoot2, "codex", "skills", skill), installed)) divergent.push(skill);
-  }
-  if (!directoryTreesHoldTheSameBytes(path16.join(repositoryRoot2, "plugin", "skills", "_shared"), path16.join(paths.marketplaceRoot, "codex", "skills", "_shared"))) {
-    divergent.push("shared");
-  }
-  report2.check("staged marketplace payload", "exact", divergent.length === 0 ? "exact" : `divergent:${divergent.map((named) => ` ${named}`).join("")}`);
-}
-function checkHostAcceptsOsoProfile(report2, paths, host) {
-  const expected = `1
-${path16.join(paths.runtimeRoot, "bin", "oso-state")}`;
-  const run = host.sandbox(["/bin/sh", "-c", 'printf "%s\n%s\n" "${OSO_AGENT:-}" "${OSO_STATE_BIN:-}"']);
-  const observed = run.ok ? run.output.trim() : collapsed(run.output);
-  report2.check("Codex accepts the oso permissions profile", "accepted", observed === expected ? "accepted" : observed === "" ? "rejected-without-output" : observed);
-}
-function checkStateRoundTrip(report2, paths, environment) {
-  const probe = runOsoStateProbe(path16.join(paths.runtimeRoot, "bin", "oso-state"), environment);
-  report2.check("installed oso-state round-trip", "probe", probe === "" ? "round-trip-failed:empty" : probe);
-}
-function checkPlanArtifactRoundTrip(report2, paths, environment) {
-  const stateBin = path16.join(paths.runtimeRoot, "bin", "oso-state");
-  report2.check("installed Codex plan artifact round-trip", "artifacts", planArtifactRoundTripVerdict(stateBin, environment));
-}
-function checkCommitHookDeniesRed(report2, paths, environment) {
-  report2.check("installed git hook denies a red agent commit", "denied", commitHookRedVerdict(paths, environment));
-}
-function checkGitCommitGate(report2, paths, repositoryRoot2, environment) {
-  const wired = path16.join(paths.runtimeRoot, "git-hooks");
-  const configured = gitConfigured(repositoryRoot2, environment);
-  if (configured === wired && isExecutableRegularFile(path16.join(wired, "pre-commit"))) {
-    report2.check("git commit gate", "wired", "wired");
-    return;
-  }
-  report2.note("git commit gate is not wired for this checkout; the installer may have run with --no-git-hook");
-}
-function checkManagedConfigRegion(report2, paths, environment) {
-  if (!isReadableRegularFile(paths.configFile)) {
-    report2.check("managed Codex config", "valid", "missing");
-    return;
-  }
-  const text = readFileSync14(paths.configFile, "utf8");
-  const extracted = runTomlRegion(text, {
-    action: "extract",
-    startMarker: CONFIG_MARKER_START,
-    endMarker: CONFIG_MARKER_END,
-    requireRegion: true
-  });
-  if (extracted.exitCode !== 0) {
-    report2.check("managed Codex config", "valid", "malformed");
-    return;
-  }
-  const fallowCommand = fallowCommandInside(extracted.stdout);
-  const expected = renderCodexManagedConfig(paths.homeDirectory, paths.runtimeRoot, fallowCommand);
-  if (extracted.stdout !== expected) {
-    report2.check("managed Codex config", "valid", "divergent");
-    return;
-  }
-  report2.check("managed Codex config", "valid", featuresVerdictOf(managedFeaturesStatus(text)));
-  report2.detail(`fallow MCP command in the managed region: ${fallowCommand}`);
-  report2.detail(`CODEX_HOME read as ${environment["CODEX_HOME"] ?? paths.codexHome}`);
-}
-function checkGlobalGuidance(report2, paths, repositoryRoot2) {
-  if (!isReadableRegularFile(paths.globalFile)) {
-    report2.check("global Codex guidance", "exact", "missing");
-    return;
-  }
-  const installed = regionBetween(readFileSync14(paths.globalFile, "utf8"), GLOBAL_MARKER_START, GLOBAL_MARKER_END);
-  if (installed === void 0) {
-    report2.check("global Codex guidance", "exact", "malformed");
-    return;
-  }
-  const source = path16.join(repositoryRoot2, "bootstrap", "codex-global.md");
-  if (!isReadableRegularFile(source)) {
-    report2.detail(`published guidance unreadable: ${source}`);
-    report2.check("global Codex guidance", "exact", "source-unreadable");
-    return;
-  }
-  report2.check("global Codex guidance", "exact", installed === readFileSync14(source, "utf8") ? "exact" : "divergent");
-}
-var CODEX_HOOKS_MANIFEST = "codex/hooks/hooks.json";
-var RENDERED_HOOKS_DIR_TOKEN = "__OSO_HOOKS_DIR__";
-function unrenderedHooksManifest(text, runtimeRoot) {
-  return text.replaceAll(path16.posix.join(runtimeRoot, "dist"), RENDERED_HOOKS_DIR_TOKEN);
-}
-function checkPublishedRuntimeBytes(report2, paths, repositoryRoot2) {
-  const divergences = trustDivergences(
-    path16.join(repositoryRoot2, "bootstrap", "hook-hashes.txt"),
-    (relative) => relative.startsWith("opencode/"),
-    (relative) => installedRuntimePathOf(relative, paths),
-    (relative, target) => relative === CODEX_HOOKS_MANIFEST ? Buffer.from(unrenderedHooksManifest(readFileSync14(target, "utf8"), paths.runtimeRoot), "utf8") : readFileSync14(target)
-  );
-  for (const divergence of divergences) report2.detail(`${divergence.file}: ${divergence.state.kind}`);
-  report2.check("published runtime bytes", "verified", divergences.length === 0 ? "verified" : `bad:${divergences.length}`);
-}
-function checkRuntimeEntrypointsExecutable(report2, paths) {
-  const entrypoints = [path16.join(paths.runtimeRoot, "bin", "oso-state"), path16.join(paths.runtimeRoot, "git-hooks", "pre-commit")];
-  const missing = entrypoints.filter((entrypoint) => !isExecutableRegularFile(entrypoint));
-  for (const entrypoint of missing) report2.detail(`not executable: ${entrypoint}`);
-  report2.check("runtime entrypoints executable", "executable", missing.length === 0 ? "executable" : `not-executable:${missing.length}`);
-}
-function checkAgentPayload(report2, paths, repositoryRoot2) {
-  const sourceDir = path16.join(repositoryRoot2, "codex", "agents");
-  let published;
-  try {
-    published = readdirSync5(sourceDir).filter((name) => name.endsWith(".toml")).sort();
-  } catch (cause) {
-    if (!isErrnoException(cause) || cause.code !== "ENOENT" && cause.code !== "ENOTDIR") throw cause;
-    report2.detail(`published agents unreadable: ${sourceDir} (${cause.code})`);
-    report2.check(AGENT_PAYLOAD_CHECK, "exact", "source-unreadable");
-    return;
-  }
-  if (published.length === 0) {
-    report2.detail(`published agents empty: ${sourceDir}`);
-    report2.check(AGENT_PAYLOAD_CHECK, "exact", "source-empty");
-    return;
-  }
-  const installedDir = path16.join(paths.codexHome, "agents");
-  const divergent = published.filter((name) => {
-    const installed = path16.join(installedDir, name);
-    if (!isReadableRegularFile(installed)) return true;
-    return readFileSync14(installed, "utf8") !== readFileSync14(path16.join(sourceDir, name), "utf8");
-  });
-  for (const name of divergent) report2.detail(`divergent agent: ${name}`);
-  report2.check(AGENT_PAYLOAD_CHECK, "exact", divergent.length === 0 ? "exact" : `divergent:${divergent.map((named) => ` ${named}`).join("")}`);
-}
-function checkEngramWiring(report2, paths, configParses) {
-  if (!configParses) {
-    report2.skip(`Engram Codex integration \u2014 ${paths.configFile} is unparseable, so the MCP server table could not be read`);
-    return;
-  }
-  const instructions = path16.join(paths.codexHome, "engram-instructions.md");
-  const compact = path16.join(paths.codexHome, "engram-compact-prompt.md");
-  const wired = isReadableRegularFile(instructions) && isReadableRegularFile(compact) && isReadableRegularFile(paths.configFile) && mcpServersOf(paths.configFile).some((server) => server.name === "engram") && engramPointersAreNormalized(paths);
-  report2.check("Engram Codex integration", "wired", wired ? "wired" : "incomplete");
-}
-function engramPointersAreNormalized(paths) {
-  const text = readFileSync14(paths.configFile, "utf8");
-  const normalized = normalizedEngramPointerConfig(paths, text);
-  return normalized.exitCode === 0 && normalized.stdout === text;
-}
-function checkImpeccableMount(report2, homeDirectory2) {
-  const optOut = path16.join(homeDirectory2, ".local", "state", "oso-code", "impeccable-opt-out");
-  if (isReadableRegularFile(optOut)) {
-    report2.skip("Impeccable mount \u2014 an install recorded --no-impeccable");
-    return;
-  }
-  const mount = path16.join(homeDirectory2, ".agents", "skills", "impeccable");
-  report2.check("Impeccable Codex mount", "mounted", isReadableRegularFile(path16.join(mount, "SKILL.md")) ? "mounted" : "missing");
-}
-function checkMcpToolTableDrift(report2, paths, configParses) {
-  report2.section(MCP_DRIFT_SECTION);
-  report2.check("the hardcoded mandated tool list agrees with the routes table in both directions", "agree", mandatedAgreementStatus());
-  if (!configParses) {
-    report2.skip(`MCP server inventory \u2014 ${paths.configFile} is unparseable, so per-server tool drift could not be checked`);
-    return;
-  }
-  for (const server of mcpServersOf(paths.configFile)) {
-    if (server.command === void 0 || server.command === "") {
-      report2.skip(`${server.name} MCP tool drift \u2014 no local command in ${paths.configFile} (a remote/URL-based server has no process this check spawns)`);
-      continue;
-    }
-    report2.skip(
-      `${server.name} MCP tool drift \u2014 the live tool list is nightly's; no PR-gate check spawns ${server.command} (G4)`
-    );
-  }
-}
-function mandatedAgreementStatus() {
-  const mismatches = [...hardcodedRowsWithNoMandatedRoute(), ...mandatedRoutesNoServerHardcodes()];
-  return mismatches.length === 0 ? "agree" : mismatches.join(",");
-}
-function hardcodedRowsWithNoMandatedRoute(hardcoded = PROTOCOL_MANDATED_TOOLS) {
-  const mismatches = [];
-  for (const server of KNOWN_MCP_SERVERS) {
-    for (const bare of hardcoded[server] ?? []) {
-      const spelled = `mcp__${server}__${bare}`;
-      if (!TOOL_ROWS.some((row) => row.names.codex === spelled && row.mandated === "yes")) {
-        mismatches.push(`${spelled}(hardcoded-not-a-yes-row)`);
-      }
-    }
-  }
-  return mismatches;
-}
-function mandatedRoutesNoServerHardcodes(hardcoded = PROTOCOL_MANDATED_TOOLS) {
-  const mismatches = [];
-  for (const row of TOOL_ROWS) {
-    if (row.mandated !== "yes" || !row.names.codex.startsWith("mcp__")) continue;
-    const server = KNOWN_MCP_SERVERS.find((name) => row.names.codex.startsWith(`mcp__${name}__`));
-    if (server === void 0) continue;
-    const bare = row.names.codex.slice(`mcp__${server}__`.length);
-    if (!(hardcoded[server] ?? []).includes(bare)) mismatches.push(`${row.names.codex}(yes-row-not-hardcoded)`);
-  }
-  return mismatches;
-}
-function mcpServersOf(configFile) {
-  const document = readTomlFile(configFile);
-  const servers = document?.["mcp_servers"];
-  if (typeof servers !== "object" || servers === null || Array.isArray(servers)) return [];
-  return Object.entries(servers).map(([name, value]) => {
-    const entry = typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
-    const command = entry["command"];
-    const args = entry["args"];
-    return {
-      name,
-      command: typeof command === "string" ? command : void 0,
-      args: Array.isArray(args) ? args.filter((item) => typeof item === "string") : []
-    };
-  });
-}
-function regionBetween(text, start, end) {
-  const kept = [];
-  let inside = false;
-  let starts = 0;
-  let ends = 0;
-  for (const line of text === "" ? [] : text.replace(/\n$/, "").split("\n")) {
-    if (line === start) {
-      starts += 1;
-      inside = true;
-      continue;
-    }
-    if (line === end) {
-      ends += 1;
-      inside = false;
-      continue;
-    }
-    if (inside) kept.push(line);
-  }
-  if (starts !== 1 || ends !== 1 || inside) return void 0;
-  return kept.length === 0 ? "" : `${kept.join("\n")}
-`;
-}
-function featuresVerdictOf(status) {
-  switch (status) {
-    case "valid":
-      return "valid";
-    case "missing":
-      return "missing-features";
-    case "malformed":
-      return "malformed-features";
-    case "divergent":
-      return "divergent-features";
-  }
-}
-function fallowCommandInside(regionText) {
-  const row = regionText.split("\n").find((line) => line.startsWith("command = "));
-  if (row === void 0) return "";
-  const quoted = row.slice("command = ".length).trim();
-  return quoted.startsWith('"') && quoted.endsWith('"') ? quoted.slice(1, -1).replaceAll('\\"', '"').replaceAll("\\\\", "\\") : quoted;
-}
-function installedRuntimePathOf(relative, paths) {
-  if (relative === CODEX_HOOKS_MANIFEST) return path16.join(paths.codexHome, "hooks.json");
-  for (const [prefix, directory] of [
-    ["plugin/dist/", "dist"],
-    ["plugin/hooks/", "hooks"],
-    ["plugin/git-hooks/", "git-hooks"],
-    ["plugin/bin/", "bin"]
-  ]) {
-    if (relative.startsWith(prefix)) return path16.join(paths.runtimeRoot, directory, relative.slice(prefix.length));
-  }
-  return void 0;
-}
-var AGENT_PAYLOAD_CHECK = "seven Codex agents copied exactly";
-var HOST_BINARY_CONTRACTS = [
-  {
-    shortLabel: "Codex host contract",
-    name: "Codex binary matches the fork_turns host contract",
-    literals: [
-      "fork_context is not supported in MultiAgentV2; use fork_turns instead",
-      "fork_turns must be `none`, `all`, or a positive integer string"
-    ]
-  },
-  {
-    shortLabel: "Codex permission-override contract",
-    name: "Codex binary matches the default_permissions override contract",
-    literals: [
-      "default_permissions refers to undefined profile `",
-      "`permission_profile` and `default_permissions` overrides cannot both be set"
-    ]
-  }
-];
-var MARKETPLACE_PAYLOAD_ROWS = [
-  { named: "marketplace.json", published: ".agents/plugins/marketplace.json", installed: ".agents/plugins/marketplace.json" },
-  { named: "plugin.json", published: "codex/.codex-plugin/plugin.json", installed: "codex/.codex-plugin/plugin.json" }
-];
-var COMMIT_HOOK_PROBE_SESSION = "1";
-var COMMIT_HOOK_DENIAL_PHRASE = "oso-code: the session verify is not green.";
-function commitHookRedVerdict(paths, environment) {
-  const probeHome = mkdtempSync6(path16.join(tmpdir4(), "oso-commit-hook-probe-"));
-  try {
-    const probeRepo = path16.join(probeHome, "repo");
-    mkdirSync9(probeRepo, { recursive: true });
-    if (spawnSync8("git", ["-C", probeRepo, "init", "-q"], { encoding: "utf8" }).status !== 0) return "git-init-failed";
-    writeFileSync9(path16.join(probeRepo, "baseline.txt"), "baseline\n");
-    if (spawnSync8("git", ["-C", probeRepo, "add", "baseline.txt"], { encoding: "utf8" }).status !== 0) return "setup-failed";
-    const baseline = spawnSync8(
-      "git",
-      ["-C", probeRepo, "-c", "core.hooksPath=/dev/null", "-c", "user.name=oso-code", "-c", "user.email=probe@oso-code.invalid", "commit", "-qm", "test: baseline"],
-      { encoding: "utf8" }
-    );
-    if (baseline.status !== 0) return "setup-failed";
-    const baseCommit = headOfProbeRepo(probeRepo);
-    const env = { ...environment, HOME: probeHome, USERPROFILE: probeHome };
-    const armed = spawnSync8(
-      process.execPath,
-      [path16.join(paths.runtimeRoot, "bin", "oso-state"), "--session", COMMIT_HOOK_PROBE_SESSION, "set", "mode=quick", "active_slice=none", "verify_green=false"],
-      { cwd: probeRepo, env, encoding: "utf8" }
-    );
-    if (armed.error !== void 0 || armed.status !== 0) return "setup-failed";
-    const wired = spawnSync8("git", ["-C", probeRepo, "config", "core.hooksPath", path16.join(paths.runtimeRoot, "git-hooks")], { encoding: "utf8" });
-    if (wired.status !== 0) return "setup-failed";
-    writeFileSync9(path16.join(probeRepo, "pending.txt"), "pending\n");
-    if (spawnSync8("git", ["-C", probeRepo, "add", "pending.txt"], { encoding: "utf8" }).status !== 0) return "setup-failed";
-    const attempt = spawnSync8(
-      "git",
-      ["-C", probeRepo, "-c", "user.name=oso-code", "-c", "user.email=probe@oso-code.invalid", "commit", "-m", "test: must be denied"],
-      { env: { ...env, OSO_AGENT: "1" }, encoding: "utf8" }
-    );
-    if (attempt.error === void 0 && attempt.status === 0) return "commit-was-allowed";
-    const refusal = `${attempt.stdout ?? ""}${attempt.stderr ?? ""}`;
-    if (headOfProbeRepo(probeRepo) === baseCommit && refusal.includes(COMMIT_HOOK_DENIAL_PHRASE)) return "denied";
-    return refusal === "" ? "empty" : collapsed(refusal);
-  } finally {
-    rmSync11(probeHome, { recursive: true, force: true });
-  }
-}
-function headOfProbeRepo(probeRepo) {
-  const result = spawnSync8("git", ["-C", probeRepo, "rev-parse", "HEAD"], { encoding: "utf8" });
-  return result.status === 0 ? result.stdout.trim() : "";
-}
-var PLAN_ARTIFACT_PROBE_SESSION = "verify-probe";
-var PLAN_ARTIFACT_PROBE_DIGEST = `${"0".repeat(63)}1`;
-var PLAN_ARTIFACT_PROBE_SLICE = "probe-slice";
-var PLAN_ARTIFACT_PROBE_DOCUMENT = "# Verified plan";
-var PLAN_ARTIFACT_AMENDMENT_DOCUMENT = "### Slice probe";
-var PLAN_ARTIFACT_AMENDMENT_LINE = `## Execution amendment \u2014 ${PLAN_ARTIFACT_PROBE_SLICE}`;
-function planArtifactRoundTripVerdict(stateBin, environment) {
-  const probeHome = mkdtempSync6(path16.join(tmpdir4(), "oso-plan-probe-"));
-  try {
-    const probeRepo = path16.join(probeHome, "repo");
-    mkdirSync9(probeRepo, { recursive: true });
-    const init = spawnSync8("git", ["-C", probeRepo, "init", "-q"], { encoding: "utf8" });
-    if (init.error !== void 0 || init.status !== 0) return "git-init-failed";
-    const env = { ...environment, HOME: probeHome, USERPROFILE: probeHome };
-    const runStateScript = (input, ...args) => spawnSync8(process.execPath, [stateBin, "--session", PLAN_ARTIFACT_PROBE_SESSION, ...args], { cwd: probeRepo, input, env, encoding: "utf8" });
-    const capture = runStateScript(PLAN_ARTIFACT_PROBE_DOCUMENT, "capture-plan", PLAN_ARTIFACT_PROBE_DIGEST);
-    if (capture.error !== void 0 || capture.status !== 0) return "artifact-round-trip-failed:empty";
-    const approve = runStateScript(void 0, "approve-plan", PLAN_ARTIFACT_PROBE_DIGEST);
-    if (approve.error !== void 0 || approve.status !== 0) return "artifact-round-trip-failed:empty";
-    const amend = runStateScript(PLAN_ARTIFACT_AMENDMENT_DOCUMENT, "amend-plan", PLAN_ARTIFACT_PROBE_SLICE);
-    if (amend.error !== void 0 || amend.status !== 0) return "artifact-round-trip-failed:empty";
-    const show = runStateScript(void 0, "show");
-    if (show.error !== void 0 || show.status !== 0) {
-      const failure = collapsed(`${show.stdout ?? ""}${show.stderr ?? ""}`);
-      return `artifact-round-trip-failed:${failure === "" ? "empty" : failure}`;
-    }
-    return planArtifactContractVerdict(show.stdout);
-  } finally {
-    rmSync11(probeHome, { recursive: true, force: true });
-  }
-}
-function planArtifactContractVerdict(stateOutput) {
-  const snapshot = stateLineValue(stateOutput, "plan_snapshot_file");
-  const current = stateLineValue(stateOutput, "plan_current_file");
-  const matches = stateLineValue(stateOutput, "plan_approval") === "approved" && stateLineValue(stateOutput, "plan_revision") === "1" && isRegularNonSymlinkFile(snapshot) && readFileSync14(snapshot, "utf8") === PLAN_ARTIFACT_PROBE_DOCUMENT && isRegularNonSymlinkFile(current) && readFileSync14(current, "utf8").includes(PLAN_ARTIFACT_AMENDMENT_LINE);
-  return matches ? "artifacts" : "artifact-contract-mismatch";
-}
-function stateLineValue(text, key) {
-  const prefix = `${key}=`;
-  const line = text.split("\n").find((candidate) => candidate.startsWith(prefix));
-  return line === void 0 ? "" : line.slice(prefix.length);
-}
-function binaryCarriesBoth(binary, literals) {
-  const bytes = readFileSync14(binary, "latin1");
-  return literals.every((literal) => bytes.includes(literal));
-}
-function codexPluginManifestOf(repositoryRoot2) {
-  let document;
-  try {
-    document = readJsonObject(path16.join(repositoryRoot2, "codex", ".codex-plugin", "plugin.json"));
-  } catch {
-    return void 0;
-  }
-  const name = document["name"];
-  const version = document["version"];
-  return typeof name === "string" && typeof version === "string" ? { name, version } : void 0;
-}
-function localPluginSourcePaths(listingJson, manifest) {
-  let listing;
-  try {
-    listing = JSON.parse(listingJson);
-  } catch {
-    return [];
-  }
-  const installed = isRecord2(listing) ? listing["installed"] : void 0;
-  if (!Array.isArray(installed)) return [];
-  const expectedPluginId = `${manifest.name}@${manifest.name}`;
-  return installed.flatMap((plugin) => {
-    if (!isRecord2(plugin)) return [];
-    if (plugin["pluginId"] !== expectedPluginId) return [];
-    if (plugin["marketplaceName"] !== manifest.name) return [];
-    if (plugin["version"] !== manifest.version) return [];
-    if (plugin["installed"] !== true || plugin["enabled"] !== true) return [];
-    const source = plugin["source"];
-    if (!isRecord2(source) || source["source"] !== "local" || typeof source["path"] !== "string") return [];
-    return [source["path"]];
-  });
-}
-function publishedSkillNames(repositoryRoot2) {
-  try {
-    return readdirSync5(path16.join(repositoryRoot2, "codex", "skills"), { withFileTypes: true }).filter((entry) => entry.isDirectory() && entry.name !== "_shared").map((entry) => entry.name).sort();
-  } catch {
-    return [];
-  }
-}
-function directoryTreesHoldTheSameBytes(source, installed) {
-  if (!isDirectory(installed)) return false;
-  const sourceFiles = relativeFilesUnder(source);
-  if (sourceFiles.length === 0) return false;
-  const installedFiles = relativeFilesUnder(installed);
-  if (sourceFiles.length !== installedFiles.length) return false;
-  return sourceFiles.every(
-    (relative) => installedFiles.includes(relative) && filesHoldTheSameBytes(path16.join(source, relative), path16.join(installed, relative))
-  );
-}
-function relativeFilesUnder(directory) {
-  if (!isDirectory(directory)) return [];
-  return readdirSync5(directory, { recursive: true }).map((entry) => entry.toString()).filter((relative) => isRegularNonSymlinkFile(path16.join(directory, relative))).sort();
-}
-function gitConfigured(repositoryRoot2, environment) {
-  const run = spawnSync8("git", ["-C", repositoryRoot2, "config", "--get", "core.hooksPath"], { env: environment, encoding: "utf8" });
-  return run.error === void 0 && run.status === 0 ? (run.stdout ?? "").trim() : "";
-}
-function collapsed(text) {
-  return text.replaceAll("\n", " ").replace(/\s+/g, " ").trim();
-}
-function isRecord2(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 // core/src/install/verify-opencode.ts
-import { spawnSync as spawnSync9 } from "node:child_process";
-import { chmodSync as chmodSync3, mkdirSync as mkdirSync10, mkdtempSync as mkdtempSync7, readdirSync as readdirSync6, readFileSync as readFileSync15, rmSync as rmSync12, writeFileSync as writeFileSync10 } from "node:fs";
-import { tmpdir as tmpdir5 } from "node:os";
-import path17 from "node:path";
+import { spawnSync as spawnSync6 } from "node:child_process";
+import { chmodSync as chmodSync3, mkdirSync as mkdirSync8, mkdtempSync as mkdtempSync5, readdirSync as readdirSync5, readFileSync as readFileSync12, rmSync as rmSync9, writeFileSync as writeFileSync7 } from "node:fs";
+import { tmpdir as tmpdir4 } from "node:os";
+import path13 from "node:path";
 
 // core/src/prose/routes.ts
 var AGENT_ROLES = [
   {
     id: "oso-applier",
     claude: { description: "Implements exactly one oso-code assignment \u2014 a plan slice, a debt cleanup, judge findings, or a diagnosis packaged as a ledger. Launched by the /plan, /quick and /debug orchestrators \u2014 not for direct use.", model: "sonnet", tools: ["Read", "Edit", "Write", "NotebookEdit", "Glob", "Grep", "Bash", "mcp__plugin_oso-code_context7__resolve-library-id", "mcp__plugin_oso-code_context7__query-docs"] },
-    codex: { description: "Implements exactly one oso-code assignment: a plan slice, debt cleanup, accepted judge findings, or a diagnosis packaged as a ledger. Launched by the plan, quick, and debug orchestrators; not for direct use.", model: "gpt-5.5", reasoningEffort: "xhigh", sandboxMode: "workspace-write" },
     opencode: { description: "Implements exactly one oso-code assignment: a plan slice, debt cleanup, accepted judge findings, or a diagnosis packaged as a ledger. Launched by the plan, quick, and debug orchestrators; not for direct use.", denies: ["task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: ["context7"] }
   },
   {
     id: "oso-verifier",
     claude: { description: "Independently verifies one implemented slice \u2014 or one merged wave at its integration gate \u2014 against its criteria and the project's zero-warnings bar. Judges only \u2014 never edits files. Launched by the /plan and /debug orchestrators after each apply.", model: "sonnet", tools: ["Read", "Glob", "Grep", "Bash"] },
-    codex: { description: "Independently verifies one implemented slice or one merged wave against its criteria and the project's zero-warning bar. Judges only and never edits source files.", model: "gpt-5.5", reasoningEffort: "xhigh", sandboxMode: "workspace-write" },
     opencode: { description: "Independently verifies one implemented slice or one merged wave against its criteria and the project's zero-warning bar. Judges only and never edits source files.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
   },
   {
     id: "oso-integrator",
     claude: { description: "Merges one wave of green, committed slice branches into the main checkout, then tears down their worktrees and deletes those branches. Never resolves a conflict, never judges. Launched by the /plan orchestrator \u2014 not for direct use.", model: "sonnet", tools: ["Read", "Bash"] },
-    codex: { description: "Merges one wave of green committed slice branches into the main checkout, then removes their worktrees and deletes their branches. Never resolves conflicts and never judges.", model: "gpt-5.5", reasoningEffort: "xhigh", sandboxMode: "danger-full-access" },
     opencode: { description: "Merges one wave of green committed slice branches into the main checkout, then removes their worktrees and deletes their branches. Never resolves conflicts and never judges.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
   },
   {
     id: "oso-debt-sweep",
     claude: null,
-    codex: { description: "Fresh-context Codex role for the debt-sweep skill: judges code debt and frozen-ledger conformance separately and never edits.", model: "gpt-5.5", reasoningEffort: "xhigh", sandboxMode: "workspace-write" },
     opencode: { description: "Fresh-context judge for the debt-sweep skill: judges code debt and frozen-ledger conformance separately and never edits.", denies: ["edit", "fallow_fix_apply", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: ["fallow"] }
   },
   {
     id: "oso-doubt-pass",
     claude: null,
-    codex: { description: "Fresh-context Codex role for doubt-pass: attacks a candidate ledger using only intent, surface map, and bare decisions, and never edits.", model: "gpt-5.5", reasoningEffort: "xhigh", sandboxMode: "read-only" },
     opencode: { description: "Fresh-context judge for the doubt-pass skill: attacks a candidate ledger using only intent, surface map, and bare decisions, and never edits.", denies: ["glob", "grep", "edit", "bash", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
   },
   {
     id: "oso-security-reviewer",
     claude: null,
-    codex: { description: "Fresh-context Codex role for security-pass: reviews the supplied change surface as a judge and never edits, commits, or asks back.", model: "gpt-5.5", reasoningEffort: "xhigh", sandboxMode: "danger-full-access" },
     opencode: { description: "Fresh-context judge for the security-pass skill: reviews the supplied change surface as a judge and never edits, commits, or asks back.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
   },
   {
     id: "oso-triage",
     claude: null,
-    codex: { description: "Fresh-context Codex role for triage: establishes read-only attribution for one red plan-wave check and never diagnoses or fixes beyond it.", model: "gpt-5.5", reasoningEffort: "xhigh", sandboxMode: "workspace-write" },
     opencode: { description: "Fresh-context judge for the triage skill: establishes read-only attribution for one red plan-wave check and never diagnoses or fixes beyond it.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
   }
 ];
@@ -5656,7 +3402,7 @@ var AGENT_ROLES = [
 // core/src/install/verify-opencode.ts
 var OPENCODE_NOT_ON_PATH = "opencode-not-on-path";
 var VERSION_ROW_SKIP = "OpenCode CLI version \u2014 opencode is not on PATH, so the installed pin could not be probed";
-var LOCAL_CHECKS_SECTION2 = "local checks:";
+var LOCAL_CHECKS_SECTION = "local checks:";
 var FIXTURE_ROWS_SKIP = "the fixture-based artifact checks \u2014 the isolated install could not complete";
 var REACHABLE_BEYOND_THE_TWINS_LIST = "reachable beyond the twin's list:";
 var OPERATOR_CONFIG_PROBE = {
@@ -5689,7 +3435,7 @@ var FIXTURE_SHIM_MODE = 448;
 var FIXTURE_ENGRAM_SHIM = [
   "#!/bin/sh",
   'case "$*" in',
-  `  "setup --help") printf 'usage: engram setup [<agent>] (claude-code, opencode, codex, ...)\\n'; exit 0 ;;`,
+  `  "setup --help") printf 'usage: engram setup [<agent>] (claude-code, opencode, ...)\\n'; exit 0 ;;`,
   '  "setup opencode")',
   '    mkdir -p "$HOME/.config/opencode/plugins"',
   `    printf 'fixture engram plugin\\n' > "$HOME/.config/opencode/plugins/engram.ts"`,
@@ -5710,7 +3456,7 @@ var TEMPORARY_PARENT_UNAVAILABLE = "temporary-parent-unavailable";
 var DECOY_CONFIG_TEXT = '{"theme":"decoy"}';
 function verifyOpenCode(input) {
   const report2 = new VerifyReport();
-  report2.section(LOCAL_CHECKS_SECTION2);
+  report2.section(LOCAL_CHECKS_SECTION);
   checkPinnedOpenCodeVersion(report2, input.host);
   report2.check(
     HARNESS_EXTERNAL_DIRECTORY_REACH_ROW,
@@ -5726,7 +3472,7 @@ function verifyOpenCode(input) {
     try {
       checkInstalledTree(report2, input, staged.tree);
     } finally {
-      rmSync12(staged.tree.root, { recursive: true, force: true });
+      rmSync9(staged.tree.root, { recursive: true, force: true });
     }
   }
   checkPluginWorkspaceBar(report2, input);
@@ -5735,8 +3481,8 @@ function verifyOpenCode(input) {
 }
 function checkInstalledTree(report2, input, tree) {
   const sources = openCodePayloadSources(input.repositoryRoot);
-  const configFile = path17.join(tree.configHome, "opencode.json");
-  const globalFile = path17.join(tree.configHome, "AGENTS.md");
+  const configFile = path13.join(tree.configHome, "opencode.json");
+  const globalFile = path13.join(tree.configHome, "AGENTS.md");
   report2.check("OpenCode config contract", "valid", openCodeConfigStatus(configFile));
   report2.check(
     INSTALLED_EXTERNAL_DIRECTORY_REACH_ROW,
@@ -5757,7 +3503,7 @@ function checkInstalledTree(report2, input, tree) {
   report2.check("mode commands installed and routed", "exact", openCodeCommandStatus(input.repositoryRoot, tree.configHome));
   report2.check("plugin entry, modules and routes installed", "exact", openCodePluginStatus(input.repositoryRoot, tree.configHome));
   report2.check("Engram plugin file installed", "present", openCodeEngramStatus(tree.configHome));
-  report2.check("global guidance installed", "exact", openCodeGlobalStatus(globalFile, readFileSync15(sources.global, "utf8")));
+  report2.check("global guidance installed", "exact", openCodeGlobalStatus(globalFile, readFileSync12(sources.global, "utf8")));
   report2.check("operator global prose survives an install", "preserved", openCodeOperatorGlobalStatus(globalFile, operatorGlobalSeed()));
   report2.check("installer-owned targets recorded", "installer-owned", openCodeRegistryStatus(tree.home, tree.configHome));
   report2.check("published gate bytes as installed", "verified", openCodeTrustBytesStatus(sources.publishedHashes, tree.configHome));
@@ -5810,15 +3556,15 @@ function checkPinnedOpenCodeVersion(report2, host) {
   }
 }
 function stageOpenCodeFixture(input) {
-  const parent = input.environment["TMPDIR"] ?? tmpdir5();
+  const parent = input.environment["TMPDIR"] ?? tmpdir4();
   if (!isDirectory(parent)) return { kind: "failed", result: TEMPORARY_PARENT_UNAVAILABLE };
-  const root = mkdtempSync7(path17.join(parent, FIXTURE_PREFIX));
-  const home = path17.join(root, "home");
-  const configHome = path17.join(home, ".config", "opencode");
-  mkdirSync10(configHome, { recursive: true });
-  writeFileSync10(path17.join(configHome, "opencode.json"), `${JSON.stringify(operatorConfigSeed(), null, 2)}
+  const root = mkdtempSync5(path13.join(parent, FIXTURE_PREFIX));
+  const home = path13.join(root, "home");
+  const configHome = path13.join(home, ".config", "opencode");
+  mkdirSync8(configHome, { recursive: true });
+  writeFileSync7(path13.join(configHome, "opencode.json"), `${JSON.stringify(operatorConfigSeed(), null, 2)}
 `);
-  writeFileSync10(path17.join(configHome, "AGENTS.md"), operatorGlobalSeed());
+  writeFileSync7(path13.join(configHome, "AGENTS.md"), operatorGlobalSeed());
   writeFixtureEngramShim(fixtureShimsIn(root));
   const outcome = installOpenCode({
     homeDirectory: home,
@@ -5832,16 +3578,16 @@ function stageOpenCodeFixture(input) {
     installGitHook: false
   });
   if (outcome.exitCode === 0) return { kind: "ready", tree: { root, home, configHome } };
-  rmSync12(root, { recursive: true, force: true });
+  rmSync9(root, { recursive: true, force: true });
   return { kind: "failed", result: `install-failed:${lastReportLine(outcome.report)}` };
 }
 function fixtureShimsIn(root) {
-  return path17.join(root, FIXTURE_SHIMS_DIRECTORY);
+  return path13.join(root, FIXTURE_SHIMS_DIRECTORY);
 }
 function writeFixtureEngramShim(directory) {
-  mkdirSync10(directory, { recursive: true });
-  const shim = path17.join(directory, ENGRAM_BINARY_NAME);
-  writeFileSync10(shim, FIXTURE_ENGRAM_SHIM);
+  mkdirSync8(directory, { recursive: true });
+  const shim = path13.join(directory, ENGRAM_BINARY_NAME);
+  writeFileSync7(shim, FIXTURE_ENGRAM_SHIM);
   chmodSync3(shim, FIXTURE_SHIM_MODE);
   return shim;
 }
@@ -5850,14 +3596,14 @@ function fixtureEnvironmentFor(environment, home, root) {
   const shims = fixtureShimsIn(root);
   return {
     ...environment,
-    PATH: inherited === "" ? shims : `${shims}${path17.delimiter}${inherited}`,
+    PATH: inherited === "" ? shims : `${shims}${path13.delimiter}${inherited}`,
     HOME: home,
     USERPROFILE: home,
-    TMPDIR: path17.join(root, "tmp"),
-    XDG_CONFIG_HOME: path17.join(home, ".config"),
-    XDG_STATE_HOME: path17.join(home, ".local", "state"),
-    XDG_CACHE_HOME: path17.join(home, ".cache"),
-    XDG_DATA_HOME: path17.join(home, ".local", "share")
+    TMPDIR: path13.join(root, "tmp"),
+    XDG_CONFIG_HOME: path13.join(home, ".config"),
+    XDG_STATE_HOME: path13.join(home, ".local", "state"),
+    XDG_CACHE_HOME: path13.join(home, ".cache"),
+    XDG_DATA_HOME: path13.join(home, ".local", "share")
   };
 }
 function openCodeVersionStatus(host) {
@@ -5965,26 +3711,26 @@ ${OPERATOR_GLOBAL_PROSE}
 }
 function openCodeGlobalStatus(globalFile, expectedBody) {
   if (!isReadableRegularFile(globalFile)) return "missing";
-  const installed = markerRegionBodyOf(readFileSync15(globalFile, "utf8"));
+  const installed = markerRegionBodyOf(readFileSync12(globalFile, "utf8"));
   if (installed === void 0) return "malformed";
   return withoutTrailingNewlines(installed) === withoutTrailingNewlines(expectedBody) ? "exact" : "divergent";
 }
 function openCodeOperatorGlobalStatus(globalFile, seedText) {
   if (!isReadableRegularFile(globalFile)) return "missing";
   const seedRecords = seedText.split("\n").length - 1;
-  const head = readFileSync15(globalFile, "utf8").split("\n").slice(0, seedRecords).join("\n");
+  const head = readFileSync12(globalFile, "utf8").split("\n").slice(0, seedRecords).join("\n");
   return `${head}
 ` === seedText ? "preserved" : "rewritten";
 }
 function openCodeSkillStatus(repositoryRoot2, configHome) {
   const sources = openCodePayloadSources(repositoryRoot2);
-  const wrappers = osoPrefixedNames(sources.skills).filter((name) => isReadableRegularFile(path17.join(sources.skills, name, "SKILL.md")));
-  const divergent = wrappers.filter((name) => !treesHoldTheSameBytes(path17.join(sources.skills, name), path17.join(configHome, "skill", name)));
+  const wrappers = osoPrefixedNames(sources.skills).filter((name) => isReadableRegularFile(path13.join(sources.skills, name, "SKILL.md")));
+  const divergent = wrappers.filter((name) => !treesHoldTheSameBytes(path13.join(sources.skills, name), path13.join(configHome, "skill", name)));
   if (wrappers.length !== EXPECTED_SKILL_WRAPPER_COUNT) return `wrapper-count:${wrappers.length}`;
   if (divergent.length > 0) return namedList("divergent", divergent);
-  const unpublished = installedSkillsBeyond(path17.join(configHome, "skill"), wrappers);
+  const unpublished = installedSkillsBeyond(path13.join(configHome, "skill"), wrappers);
   if (unpublished.length > 0) return namedList("unknown", unpublished);
-  return treesHoldTheSameBytes(sources.sharedSkills, path17.join(configHome, "skill", SHARED_SKILL_DIRECTORY)) ? "exact" : "shared-differs";
+  return treesHoldTheSameBytes(sources.sharedSkills, path13.join(configHome, "skill", SHARED_SKILL_DIRECTORY)) ? "exact" : "shared-differs";
 }
 function installedSkillsBeyond(installedSkills, published) {
   return directoryEntryNames2(installedSkills).filter((name) => name !== SHARED_SKILL_DIRECTORY && !published.includes(name));
@@ -5992,16 +3738,16 @@ function installedSkillsBeyond(installedSkills, published) {
 function openCodeAgentStatus(repositoryRoot2, configHome) {
   const sources = openCodePayloadSources(repositoryRoot2);
   const published = osoPrefixedMarkdownNames2(sources.agents);
-  const installed = osoPrefixedMarkdownNames2(path17.join(configHome, "agent"));
-  const divergent = published.filter((name) => !filesHoldTheSameBytes(path17.join(sources.agents, name), path17.join(configHome, "agent", name)));
+  const installed = osoPrefixedMarkdownNames2(path13.join(configHome, "agent"));
+  const divergent = published.filter((name) => !filesHoldTheSameBytes(path13.join(sources.agents, name), path13.join(configHome, "agent", name)));
   if (published.length !== installed.length) return `count:${published.length}!=${installed.length}`;
   return divergent.length === 0 ? "exact" : namedList("divergent", divergent);
 }
 function openCodeAgentMcpSurfaceStatus(configHome) {
-  const installedAgents = path17.join(configHome, "agent");
+  const installedAgents = path13.join(configHome, "agent");
   const contracts = osoPrefixedMarkdownNames2(installedAgents);
   if (contracts.length !== AGENT_ROLES.length) return `count:${contracts.length}!=${AGENT_ROLES.length}`;
-  const reachable = contracts.flatMap((name) => reachableServersOf(path17.join(installedAgents, name), name));
+  const reachable = contracts.flatMap((name) => reachableServersOf(path13.join(installedAgents, name), name));
   return reachable.length === 0 ? "closed" : namedList("open", reachable);
 }
 function openCodeServersReachableBeyondTheOwnedSet(configFile, configHome) {
@@ -6015,15 +3761,15 @@ function declaredMcpServerNames(configFile) {
   return isPlainObject(servers) ? Object.keys(servers) : [];
 }
 function agentPermissionDenialsIn(configHome) {
-  const installedAgents = path17.join(configHome, "agent");
+  const installedAgents = path13.join(configHome, "agent");
   return osoPrefixedMarkdownNames2(installedAgents).map(
-    (name) => deniedPermissionKeysOf(readFileSync15(path17.join(installedAgents, name), "utf8"))
+    (name) => deniedPermissionKeysOf(readFileSync12(path13.join(installedAgents, name), "utf8"))
   );
 }
 function reachableServersOf(agentContract, name) {
   const role = AGENT_ROLES.find((candidate) => `${candidate.id}.md` === name);
   if (role === void 0) return [`${name}:names-no-role`];
-  const denied = deniedPermissionKeysOf(readFileSync15(agentContract, "utf8"));
+  const denied = deniedPermissionKeysOf(readFileSync12(agentContract, "utf8"));
   return OWNED_MCP_NAMES.filter(
     (server) => !role.opencode.mcpServersTheClaudeTwinLists.includes(server) && !denied.has(mcpServerWildcard(server))
   ).map((server) => `${name}:${mcpServerWildcard(server)}`);
@@ -6052,30 +3798,30 @@ function frontMatterLinesOf(agentContract) {
 function openCodeCommandStatus(repositoryRoot2, configHome) {
   const sources = openCodePayloadSources(repositoryRoot2);
   const published = osoPrefixedMarkdownNames2(sources.commands);
-  const divergent = published.filter((name) => !filesHoldTheSameBytes(path17.join(sources.commands, name), path17.join(configHome, "command", name)));
+  const divergent = published.filter((name) => !filesHoldTheSameBytes(path13.join(sources.commands, name), path13.join(configHome, "command", name)));
   if (published.length !== EXPECTED_MODE_COMMAND_COUNT) return `count:${published.length}`;
   if (divergent.length > 0) return namedList("divergent", divergent);
   for (const mode of OWNED_SKILL_MODES) {
-    const route = agentRouteOf(path17.join(configHome, "command", `${mode}.md`));
+    const route = agentRouteOf(path13.join(configHome, "command", `${mode}.md`));
     if (route !== MODE_COMMAND_AGENT_ROUTE) return `route:${mode}=${route === "" ? "empty" : route}`;
   }
   return "exact";
 }
 function openCodePluginStatus(repositoryRoot2, configHome) {
   const sources = openCodePayloadSources(repositoryRoot2);
-  if (!filesHoldTheSameBytes(sources.pluginBundle, path17.join(configHome, "plugin", "oso-code.js"))) return "entry-divergent";
-  const unbundled = directoryEntryNames2(path17.join(configHome, "plugin")).filter((name) => name.endsWith(".ts") || name === "oso");
+  if (!filesHoldTheSameBytes(sources.pluginBundle, path13.join(configHome, "plugin", "oso-code.js"))) return "entry-divergent";
+  const unbundled = directoryEntryNames2(path13.join(configHome, "plugin")).filter((name) => name.endsWith(".ts") || name === "oso");
   return unbundled.length === 0 ? "exact" : `unbundled-sources:${unbundled.length}`;
 }
 function openCodeEngramStatus(configHome) {
-  return isReadableRegularFile(path17.join(configHome, "plugins", "engram.ts")) ? "present" : "missing";
+  return isReadableRegularFile(path13.join(configHome, "plugins", "engram.ts")) ? "present" : "missing";
 }
 function openCodeRegistryStatus(home, configHome) {
-  const paths = opencodePathsFor(home, { XDG_CONFIG_HOME: path17.dirname(configHome) });
+  const paths = opencodePathsFor(home, { XDG_CONFIG_HOME: path13.dirname(configHome) });
   const targets = openCodeInstallTargets(paths);
   if (!isReadableRegularFile(targets.ownerRegistry)) return "missing";
   const owned = new Set(
-    readFileSync15(targets.ownerRegistry, "utf8").split("\n").filter((row) => row.startsWith(`${OWNER_INSTALLER}	`)).map((row) => row.slice(OWNER_INSTALLER.length + 1))
+    readFileSync12(targets.ownerRegistry, "utf8").split("\n").filter((row) => row.startsWith(`${OWNER_INSTALLER}	`)).map((row) => row.slice(OWNER_INSTALLER.length + 1))
   );
   const expected = [
     paths.configFile,
@@ -6084,9 +3830,9 @@ function openCodeRegistryStatus(home, configHome) {
     targets.agents,
     targets.commands,
     targets.plugin,
-    path17.join(targets.stateBin, "oso-state"),
-    path17.join(targets.gitHooks, "pre-commit"),
-    ...directoryEntryNames2(targets.hooks).filter((name) => name.endsWith(".sh")).map((name) => path17.join(targets.hooks, name))
+    path13.join(targets.stateBin, "oso-state"),
+    path13.join(targets.gitHooks, "pre-commit"),
+    ...directoryEntryNames2(targets.hooks).filter((name) => name.endsWith(".sh")).map((name) => path13.join(targets.hooks, name))
   ];
   const missing = expected.filter((target) => installedTargetExists(target) && !owned.has(target)).map((target) => relativeToHome(target, home));
   return missing.length === 0 ? "installer-owned" : namedList("missing", missing);
@@ -6097,10 +3843,10 @@ function openCodeTrustBytesStatus(publishedHashes, configHome) {
   return reading.filesRead === OPENCODE_TRUST_FILE_COUNT ? "verified" : `covers:${reading.filesRead}`;
 }
 function openCodeConfigHomeGuardStatus(input, tree) {
-  const decoy = path17.join(tree.root, "decoy-config");
-  const decoyConfigHome = path17.join(decoy, "opencode");
-  mkdirSync10(decoyConfigHome, { recursive: true });
-  writeFileSync10(path17.join(decoyConfigHome, "opencode.json"), `${DECOY_CONFIG_TEXT}
+  const decoy = path13.join(tree.root, "decoy-config");
+  const decoyConfigHome = path13.join(decoy, "opencode");
+  mkdirSync8(decoyConfigHome, { recursive: true });
+  writeFileSync7(path13.join(decoyConfigHome, "opencode.json"), `${DECOY_CONFIG_TEXT}
 `);
   const outcome = installOpenCode({
     homeDirectory: tree.home,
@@ -6114,13 +3860,13 @@ function openCodeConfigHomeGuardStatus(input, tree) {
     installGitHook: false
   });
   if (outcome.exitCode !== 2) return `exit:${outcome.exitCode}`;
-  if (readFileSync15(path17.join(decoyConfigHome, "opencode.json"), "utf8").trim() !== DECOY_CONFIG_TEXT) return "overwrote-the-decoy-config";
+  if (readFileSync12(path13.join(decoyConfigHome, "opencode.json"), "utf8").trim() !== DECOY_CONFIG_TEXT) return "overwrote-the-decoy-config";
   const entries = directoryEntryNames2(decoyConfigHome).length;
   return entries === 1 ? "refused" : `wrote-into-the-decoy:${entries}`;
 }
 function checkPluginWorkspaceBar(report2, input) {
-  const workspace = path17.join(input.repositoryRoot, "opencode");
-  if (!isReadableRegularFile(path17.join(workspace, "package.json")) || !onPath(input.environment, "npx")) {
+  const workspace = path13.join(input.repositoryRoot, "opencode");
+  if (!isReadableRegularFile(path13.join(workspace, "package.json")) || !onPath(input.environment, "npx")) {
     report2.skip("OpenCode plugin typecheck \u2014 npx or opencode/package.json is not available");
   } else {
     report2.check("OpenCode plugin typecheck", "clean", ranCleanly("npx", ["tsc", "--noEmit"], workspace, input.environment) ? "clean" : "fail");
@@ -6132,15 +3878,15 @@ function checkPluginWorkspaceBar(report2, input) {
   report2.check("OpenCode plugin test suite", "pass", ranCleanly("node", ["--test"], workspace, input.environment) ? "pass" : "fail");
 }
 function checkRepositoryShellSyntax(report2, input) {
-  const unparseable = shellSourcesUnder(input.repositoryRoot).filter((source) => !ranCleanly("bash", ["-n", source], input.repositoryRoot, input.environment)).map((source) => path17.basename(source));
+  const unparseable = shellSourcesUnder(input.repositoryRoot).filter((source) => !ranCleanly("bash", ["-n", source], input.repositoryRoot, input.environment)).map((source) => path13.basename(source));
   report2.check("repository shell syntax", "clean", unparseable.length === 0 ? "clean" : namedList("bad", unparseable));
 }
 function shellSourcesUnder(repositoryRoot2) {
   const globbed = SHELL_SYNTAX_SOURCES.flatMap((source) => {
-    const directory = path17.join(repositoryRoot2, ...source.directory);
-    return directoryEntryNames2(directory).filter((name) => name.endsWith(source.suffix)).map((name) => path17.join(directory, name));
+    const directory = path13.join(repositoryRoot2, ...source.directory);
+    return directoryEntryNames2(directory).filter((name) => name.endsWith(source.suffix)).map((name) => path13.join(directory, name));
   });
-  const named = SHELL_SYNTAX_EXTRA_SOURCES.map((segments) => path17.join(repositoryRoot2, ...segments));
+  const named = SHELL_SYNTAX_EXTRA_SOURCES.map((segments) => path13.join(repositoryRoot2, ...segments));
   return [...globbed, ...named].filter(isReadableRegularFile);
 }
 function readConfigDocument(configFile) {
@@ -6160,12 +3906,12 @@ function markerRegionBodyOf(content) {
   let ends = 0;
   let inside = false;
   for (const record of records) {
-    if (record === GLOBAL_MARKER_START2) {
+    if (record === GLOBAL_MARKER_START) {
       starts += 1;
       inside = true;
       continue;
     }
-    if (record === GLOBAL_MARKER_END2) {
+    if (record === GLOBAL_MARKER_END) {
       ends += 1;
       inside = false;
       continue;
@@ -6180,7 +3926,7 @@ function withoutTrailingNewlines(text) {
 }
 function agentRouteOf(commandFile) {
   if (!isReadableRegularFile(commandFile)) return "";
-  const routed = readFileSync15(commandFile, "utf8").split("\n").flatMap((line) => {
+  const routed = readFileSync12(commandFile, "utf8").split("\n").flatMap((line) => {
     const match = /^agent:[ \t]*(.*)$/.exec(line);
     return match === null ? [] : [match[1]];
   });
@@ -6188,27 +3934,27 @@ function agentRouteOf(commandFile) {
 }
 function treesHoldTheSameBytes(published, installed) {
   if (!isDirectory(installed)) return false;
-  const publishedFiles = relativeFilesUnder2(published);
+  const publishedFiles = relativeFilesUnder(published);
   if (publishedFiles.length === 0) return false;
-  const installedFiles = relativeFilesUnder2(installed);
+  const installedFiles = relativeFilesUnder(installed);
   if (publishedFiles.length !== installedFiles.length) return false;
   return publishedFiles.every(
-    (relative, index) => relative === installedFiles[index] && filesHoldTheSameBytes(path17.join(published, relative), path17.join(installed, relative))
+    (relative, index) => relative === installedFiles[index] && filesHoldTheSameBytes(path13.join(published, relative), path13.join(installed, relative))
   );
 }
-function relativeFilesUnder2(directory) {
+function relativeFilesUnder(directory) {
   if (!isDirectory(directory)) return [];
-  return readdirSync6(directory, { recursive: true }).map((entry) => entry.toString()).filter((relative) => isReadableRegularFile(path17.join(directory, relative))).sort();
+  return readdirSync5(directory, { recursive: true }).map((entry) => entry.toString()).filter((relative) => isReadableRegularFile(path13.join(directory, relative))).sort();
 }
 function installedTargetExists(target) {
   return isReadableRegularFile(target) || isDirectory(target);
 }
 function relativeToHome(target, home) {
-  return target.startsWith(`${home}${path17.sep}`) ? target.slice(home.length + 1) : target;
+  return target.startsWith(`${home}${path13.sep}`) ? target.slice(home.length + 1) : target;
 }
 function directoryEntryNames2(directory) {
   try {
-    return readdirSync6(directory).sort();
+    return readdirSync5(directory).sort();
   } catch {
     return [];
   }
@@ -6217,7 +3963,7 @@ function osoPrefixedNames(directory) {
   return directoryEntryNames2(directory).filter((name) => name.startsWith("oso-"));
 }
 function osoPrefixedMarkdownNames2(directory) {
-  return osoPrefixedNames(directory).filter((name) => name.endsWith(".md") && isReadableRegularFile(path17.join(directory, name)));
+  return osoPrefixedNames(directory).filter((name) => name.endsWith(".md") && isReadableRegularFile(path13.join(directory, name)));
 }
 function namedList(verdict, names) {
   return `${verdict}:${names.map((name) => ` ${name}`).join("")}`;
@@ -6226,10 +3972,10 @@ function foldedLines(lines) {
   return lines.join(" ").replace(/\s+/g, " ").replace(/\s+$/, "");
 }
 function onPath(environment, binaryName) {
-  return spawnSync9(binaryName, ["--version"], { env: environment, encoding: "utf8" }).error === void 0;
+  return spawnSync6(binaryName, ["--version"], { env: environment, encoding: "utf8" }).error === void 0;
 }
 function ranCleanly(command, argv, workingDirectory, environment) {
-  const run = spawnSync9(command, [...argv], { cwd: workingDirectory, env: environment, encoding: "utf8" });
+  const run = spawnSync6(command, [...argv], { cwd: workingDirectory, env: environment, encoding: "utf8" });
   return run.error === void 0 && run.status === 0;
 }
 function lastReportLine(report2) {
@@ -6239,7 +3985,7 @@ function lastReportLine(report2) {
 
 // core/src/install/cli.ts
 var VERBS = ["install", "verify", "repair", "purge"];
-var HOSTS = ["claude", "codex", "opencode"];
+var HOSTS = ["claude", "opencode"];
 var YES = { name: "--yes" };
 var LIST = { name: "--list" };
 var NO_IMPECCABLE = { name: "--no-impeccable" };
@@ -6268,12 +4014,6 @@ var FLAGS_PER_HOST_AND_VERB = {
     repair: YES_ONLY,
     purge: YES_ONLY
   },
-  codex: {
-    install: { flags: [YES, NO_IMPECCABLE, NO_GIT_HOOK] },
-    verify: NO_ARGUMENTS,
-    repair: YES_ONLY,
-    purge: YES_ONLY
-  },
   opencode: {
     install: { flags: [YES, NO_IMPECCABLE, NO_GIT_HOOK] },
     verify: NO_ARGUMENTS,
@@ -6285,7 +4025,7 @@ var EVERY_DECLARED_FLAG = new Set(
   HOSTS.flatMap((host) => VERBS.flatMap((verb) => FLAGS_PER_HOST_AND_VERB[host][verb].flags.map((flag) => flag.name)))
 );
 var PROFILE_VERB = "profile";
-var USAGE = `usage: oso <install|verify|repair|purge> --host <claude|codex|opencode> [flags]
+var USAGE = `usage: oso <install|verify|repair|purge> --host <claude|opencode> [flags]
        oso ${PROFILE_VERB} show | set <normal|strong|custom> [--applier|--verifier|--judges <default|strong>[:<model>]]
 
 arguments, per host and verb:
@@ -6357,8 +4097,6 @@ function runHost(parsed, context) {
   switch (parsed.host) {
     case "claude":
       return runClaude(parsed.verb, { ...context, architecture: process.arch, replaceClaudeMd: parsed.flags.has("--replace-claude-md") });
-    case "codex":
-      return runCodex(parsed.verb, { ...context, host: codexHostProbes(process.env) });
     case "opencode":
       return runOpenCode(parsed, context);
   }
@@ -6373,18 +4111,6 @@ function runClaude(verb, context) {
       return repairClaude(context);
     case "purge":
       return purgeClaude(context);
-  }
-}
-function runCodex(verb, context) {
-  switch (verb) {
-    case "verify":
-      return verifyCodex(context);
-    case "install":
-      return installCodex(context);
-    case "repair":
-      return repairCodex(context);
-    case "purge":
-      return purgeCodex(context);
   }
 }
 function runOpenCode(parsed, context) {
@@ -6513,42 +4239,3 @@ process.exit(main(process.argv.slice(2), repositoryRoot));
 export {
   repositoryRootFrom
 };
-/*! Bundled license information:
-
-smol-toml/dist/date.js:
-smol-toml/dist/error.js:
-smol-toml/dist/util.js:
-smol-toml/dist/primitive.js:
-smol-toml/dist/extract.js:
-smol-toml/dist/struct.js:
-smol-toml/dist/parse.js:
-smol-toml/dist/stringify.js:
-smol-toml/dist/index.js:
-  (*!
-   * Copyright (c) Squirrel Chat et al., All rights reserved.
-   * SPDX-License-Identifier: BSD-3-Clause
-   *
-   * Redistribution and use in source and binary forms, with or without
-   * modification, are permitted provided that the following conditions are met:
-   *
-   * 1. Redistributions of source code must retain the above copyright notice, this
-   *    list of conditions and the following disclaimer.
-   * 2. Redistributions in binary form must reproduce the above copyright notice,
-   *    this list of conditions and the following disclaimer in the
-   *    documentation and/or other materials provided with the distribution.
-   * 3. Neither the name of the copyright holder nor the names of its contributors
-   *    may be used to endorse or promote products derived from this software without
-   *    specific prior written permission.
-   *
-   * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-   * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-   * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-   * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-   * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-   * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-   * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-   * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-   * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-   * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-   *)
-*/

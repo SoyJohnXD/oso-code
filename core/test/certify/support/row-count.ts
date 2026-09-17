@@ -27,19 +27,6 @@ export function behaviorBarRow(name: string, run: (t: TestContext) => void | Pro
   test(name, CERTIFY_GUARD, run);
 }
 
-export const CODEX_SMOKE_ROWS_PORTED = 8;
-
-let codexSmokeRegistered = 0;
-
-export function codexSmokeRowsRegistered(): number {
-  return codexSmokeRegistered;
-}
-
-export function codexSmokeRow(name: string, run: (t: TestContext) => void | Promise<void>): void {
-  codexSmokeRegistered += 1;
-  test(name, CERTIFY_GUARD, run);
-}
-
 export const WAVE_SMOKE_ROWS_PORTED = 10;
 
 let waveSmokeRegistered = 0;

@@ -8,8 +8,8 @@ import { readTrackedText, trackedRepositoryFiles } from "../support/tracked-file
 
 const SOURCE_EXTENSIONS = new Set(["sh", "ts", "tsx", "js", "mjs", "cjs", "md", "toml", "txt", "ps1", "yml", "yaml"]);
 const TARGET_EXTENSIONS = new Set([...SOURCE_EXTENSIONS, "json"]);
-const SCANNED_PREFIXES = ["core/", "docs/rewrite/", "tests/", "bootstrap/"];
-const SCANNED_EXACT_FILES = new Set(["CHANGELOG.md"]);
+const SCANNED_PREFIXES = ["core/", "tests/", "bootstrap/"];
+const SCANNED_EXACT_FILES = new Set<string>();
 const SHORTHAND_ROOTS = ["", "plugin/skills/_shared/"];
 const CITATION_PATTERN = /(?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.-]+\.[A-Za-z0-9]+:\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*/g;
 const BARE_BASENAME_PATTERN = /(?<![\w./-])[A-Za-z0-9_.-]+\.[A-Za-z0-9]+:\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*/g;
@@ -135,7 +135,7 @@ describe("every oso-code:<name> self-reference under plugin/ names a skill or an
 });
 
 describe(
-  "every full `path:line` citation under core/, docs/rewrite/, tests/, bootstrap/ and CHANGELOG.md that this " +
+  "every full `path:line` citation under the live core/, tests/ and bootstrap/ surfaces that this " +
     "check recognises — the `dir/.../file.ext:line` form only, not bare basenames or bare `:line` " +
     "continuations — resolves and is in bounds",
   () => {

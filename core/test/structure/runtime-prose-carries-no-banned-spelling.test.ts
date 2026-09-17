@@ -4,14 +4,14 @@ import { describe, test } from "node:test";
 import { provedSomething } from "../support/proved.ts";
 import { readTrackedText, trackedRepositoryFiles } from "../support/tracked-files.ts";
 
-const SCANNED_PREFIXES = ["plugin/", "codex/", "opencode/", "core/src/prose/"];
+const SCANNED_PREFIXES = ["plugin/", "opencode/", "core/src/prose/"];
 const SCANNED_EXTENSIONS = new Set([".md", ".toml"]);
 
 const BANNED_SPELLINGS: readonly RegExp[] = [/platform file/g, /ADR-\d{4}/g];
 
-const FILES_SCANNED_FLOOR = 140;
+const FILES_SCANNED_FLOOR = 90;
 const FILES_SCANNED_FLOOR_DERIVATION =
-  "git ls-files under plugin/, codex/, opencode/, core/src/prose/ filtered to *.md/*.toml at C5-S4 (the five judge bodies under plugin/skills/_shared/bodies/ deleted, folded into their wrappers): 30 + 24 + 28 + 58 = 140";
+  "git ls-files under plugin/, opencode/, core/src/prose/ filtered to *.md/*.toml after the host split: 90";
 
 const scannedFiles = trackedRepositoryFiles().filter(
   (file) => SCANNED_PREFIXES.some((prefix) => file.startsWith(prefix)) && SCANNED_EXTENSIONS.has(path.extname(file)),

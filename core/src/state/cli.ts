@@ -4,7 +4,6 @@ import { abstractionScanReport } from "../scan/abstraction-scan.ts";
 import { ScanFailure } from "../scan/changed-lines.ts";
 import { commentScanReport } from "../scan/comment-scan.ts";
 import { ereReads } from "../shell/ere.ts";
-import * as handoff from "./handoff.ts";
 import * as plan from "./plan.ts";
 import * as store from "./store.ts";
 import * as transitions from "./transitions.ts";
@@ -22,15 +21,8 @@ const USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> deny-pattern add <pattern>
        oso-state journal <text>
        oso-state journal --path
-       oso-state handoff publish --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --hook-session <id>
-       oso-state handoff wait --slice <id> --attempt <n> --agent-id <id> --agent-type <type> --timeout <seconds>
-       oso-state handoff consume --slice <id> --attempt <n> --agent-id <id> --agent-type <type>
        oso-state scan comments <ref>
        oso-state scan abstractions <ref>
-
-The SubagentStop hook publishes a provenance receipt, never a verdict. wait is
-bounded and consume is one-shot. Handoff attempts start at 1 and timeout must
-be between 0 and 600 seconds.
 
 scan reads the working directory's own repository, reports every hit on stdout
 and exits 0 whether or not it found any. comments flags the inline comments the
@@ -49,20 +41,6 @@ class RefusedError extends Error {
   }
 }
 
-const HANDOFF_SUBACTIONS = ["publish", "wait", "consume"] as const;
-type HandoffSubaction = (typeof HANDOFF_SUBACTIONS)[number];
-
-const HANDOFF_FLAGS = {
-  "--slice": "slice",
-  "--attempt": "attempt",
-  "--agent-id": "agentId",
-  "--agent-type": "agentType",
-  "--hook-session": "hookSession",
-  "--timeout": "timeout",
-} as const;
-type HandoffField = (typeof HANDOFF_FLAGS)[keyof typeof HANDOFF_FLAGS];
-type HandoffCoordinates = Partial<Record<HandoffField, string>>;
-
 export function main(argv: readonly string[]): number {
   try {
     return dispatch(argv);
@@ -73,7 +51,7 @@ export function main(argv: readonly string[]): number {
 
 function verbOf(argv: readonly string[]): string {
   const first = argv[0];
-  if (first === "journal" || first === "handoff" || first === "scan") return first;
+  if (first === "journal" || first === "scan") return first;
   return argv[2] ?? "";
 }
 
@@ -106,10 +84,6 @@ function report(error: unknown, verb: string): number {
     process.stderr.write(`oso-state: plan: ${error.message}\n`);
     return 1;
   }
-  if (error instanceof handoff.HandoffFailure) {
-    process.stderr.write(`oso-state: handoff: ${error.message}\n`);
-    return 1;
-  }
   if (error instanceof ScanFailure) {
     process.stderr.write(`oso-state: scan: ${error.message}\n`);
     return 1;
@@ -122,7 +96,6 @@ function report(error: unknown, verb: string): number {
 function dispatch(argv: readonly string[]): number {
   const first = argv[0];
   if (first === "journal") return runJournal(argv.slice(1));
-  if (first === "handoff") return dispatchHandoff(argv.slice(1));
   if (first === "scan") return dispatchScan(argv.slice(1));
   if (first !== "--session") throw new UsageError();
 
@@ -156,8 +129,6 @@ function dispatch(argv: readonly string[]): number {
       return runAmendPlan(sessionId, remaining);
     case "deny-pattern":
       return runDenyPattern(sessionId, remaining);
-    case "handoff":
-      return dispatchHandoff(remaining);
     case "scan":
       return dispatchScan(remaining);
     default:
@@ -308,59 +279,6 @@ function runAmendPlan(sessionId: string, remaining: readonly string[]): number {
 
 function readStdin(): string {
   return readFileSync(0, "utf8");
-}
-
-function dispatchHandoff(remaining: readonly string[]): number {
-  const [subaction, ...rest] = remaining;
-  if (!isHandoffSubaction(subaction)) throw new UsageError();
-  const flags = parseHandoffCoordinates(rest);
-  checkHandoffCoordinateShape(subaction, flags);
-  const coordinates: handoff.HandoffCoordinates = {
-    slice: flags.slice ?? "",
-    attempt: flags.attempt ?? "",
-    agentId: flags.agentId ?? "",
-    agentType: flags.agentType ?? "",
-  };
-  const cwd = process.cwd();
-  switch (subaction) {
-    case "publish":
-      readStdin();
-      handoff.runHandoffPublish(cwd, coordinates, flags.hookSession ?? "");
-      return 0;
-    case "wait":
-      process.stdout.write(handoff.runHandoffWait(cwd, coordinates, flags.timeout ?? ""));
-      return 0;
-    case "consume":
-      process.stdout.write(handoff.runHandoffConsume(cwd, coordinates));
-      return 0;
-  }
-}
-
-function isHandoffSubaction(value: string | undefined): value is HandoffSubaction {
-  return value !== undefined && (HANDOFF_SUBACTIONS as readonly string[]).includes(value);
-}
-
-function checkHandoffCoordinateShape(subaction: HandoffSubaction, coordinates: HandoffCoordinates): void {
-  const hasTimeout = coordinates.timeout !== undefined;
-  const hasHookSession = coordinates.hookSession !== undefined;
-  if (subaction === "publish" && hasTimeout) throw new UsageError();
-  if (subaction === "wait" && (!hasTimeout || hasHookSession)) throw new UsageError();
-  if (subaction === "consume" && (hasTimeout || hasHookSession)) throw new UsageError();
-}
-
-function parseHandoffCoordinates(args: readonly string[]): HandoffCoordinates {
-  const coordinates: HandoffCoordinates = {};
-  let index = 0;
-  while (index < args.length) {
-    if (index + 1 >= args.length) throw new UsageError();
-    const flag = args[index] as string;
-    const field = (HANDOFF_FLAGS as Record<string, HandoffField | undefined>)[flag];
-    if (field === undefined) throw new UsageError();
-    if (coordinates[field] !== undefined) throw new UsageError();
-    coordinates[field] = args[index + 1] as string;
-    index += 2;
-  }
-  return coordinates;
 }
 
 function sanitizeSession(raw: string): string {

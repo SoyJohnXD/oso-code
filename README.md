@@ -1,138 +1,86 @@
-# oso-code
+# OsoCode
 
-Team harness for Claude Code, Codex and OpenCode. A guided orchestrator that keeps the human in charge of decisions, delegates implementation and independent verification, and closes every change against explicit quality gates.
+Team engineering harness for Claude Code and OpenCode. OsoCode keeps the operator in charge of decisions, delegates implementation and independent verification, and closes every change against explicit quality gates.
 
-## What it is
+Codex support now lives in the separate `oso-code-codex` fork. This repository no longer installs, configures, verifies, or ships Codex runtime surfaces.
 
-- **Plan** — `/oso-code:plan` on Claude Code or native `/plan` followed by `$oso-code:plan` on Codex: intent → surface mapping → decision rounds → slices, then an apply/verify loop per slice with a zero-warnings bar. How that loop runs is a choice you make at slicing time, on the widest wave's width: sequentially in the main checkout, or wave by wave in parallel, one worktree per slice, each wave merged by a dedicated integrator and re-verified as a whole before the next one starts. When that choice is structurally unavailable, the approval document says why instead of silently omitting it, and accounts for every conditional planning phase. Beside it you settle one more thing in the same round: whether execution runs NORMALLY, with you at every point that puts a decision to you, or under AUTO, the disposition that lets you walk away from a single change the way a roadmap lets you walk away from a queue — the roadmap's own autonomy policy answering in your place at this change's scale, dated in the ledger, flippable either way by a plain instruction at any point, and a run that PARKS behind a blocked report on the one question that policy will not answer. Normal is the default; the planning phases always run with you, and the run owes you one report at whichever end it reaches. Codex uses its native `Implement the plan.` approval interaction; Oso binds that prompt to the exact pending document rather than asking for a second harness token — one approval per change on that host as on this one, which is why an AUTO plan run is unattended on both.
-- **Quick** — `/oso-code:quick` on Claude Code or `$oso-code:quick` on Codex: micro-intent, rapid inline iteration, then a quality pass.
-- **Debug** — `/oso-code:debug` on Claude Code or `$oso-code:debug` on Codex: reproduce-first triage (reproduce → localize → reduce), then a delegated fix plus a regression test through the same apply/verify loop.
-- **Roadmap** — `/oso-code:roadmap` on Claude Code or native `/plan` followed by `$oso-code:roadmap` on Codex: a QUEUE of substantial changes decided in one sitting. You settle the children and their order, the decisions that hold across all of them and each child's own, plus the policy that answers what surfaces later — then one approval covers planning and executing every one of them, and the chain plans, executes and closes each child as a `/plan` change and arms the next. Every child is a plan-mode change; a decision the policy may not take is queued rather than guessed, and the child waiting on it is set aside where it stands while the chain runs on. One consolidated stop at the end says what was decided in your absence and on what rationale, what was deferred and why, and what waits for your hand. Claude Code and OpenCode run the whole chain unattended; on Codex it runs ASSISTED — each child still stops at that host's native plan approval, which only you can give — and that degradation is recorded in [the parity ledger](docs/parity-codex.md) rather than implied away.
-- **Debt-sweep** — closing phase of `/plan`, and offered on a `/debug` fix that sprawled across many files: judges code debt, powered by fallow (dead code, duplication, over-documentation — where every inline comment is debt and only the language's standard public-API doc form stands outside it — and rubric violations) and, on `/plan` changes, ledger conformance against the frozen decisions, then applies readability-only fixes. Never functional changes.
-- **Design bar** — any change that touches front surface (UI files, component directories, or a visibly rendered outcome) runs against the project's `DESIGN.md`/`PRODUCT.md` with the [Impeccable](https://github.com/pbakaus/impeccable) plugin: a pinned `impeccable detect` in the verify bar — the pin resolved from the npm CLI, whose release line is independent of the plugin's — and an audit → fix → re-audit loop at close on `/plan` and `/quick`.
-- **Security pass** — offered before any commit on a change touching auth, payments, or data models: on acceptance the host-native reviewer (`security-review` on Claude Code, `codex review` on Codex) examines the pending diff, and the findings you accept loop through fix → re-review until clean or you accept the residual.
+## Workflows
+
+- **Plan** — `/oso-code:plan` on Claude Code or `/oso-plan` on OpenCode: intent, surface mapping, decision rounds, slicing, then an apply/verify loop with a zero-warning bar.
+- **Quick** — `/oso-code:quick` or `/oso-quick`: small, bounded iteration followed by a quality pass.
+- **Debug** — `/oso-code:debug` or `/oso-debug`: reproduce, localize and reduce before a delegated fix and regression evidence.
+- **Roadmap** — `/oso-code:roadmap` or `/oso-roadmap`: approve a queue and its autonomy policy once, then execute its plan changes in order.
+- **Debt sweep** — judges code debt and conformance to the frozen decision ledger after functionality is complete.
+- **Security pass** — reviews changes involving authentication, authorization, payments, or sensitive data before they ship.
+
+Plan execution can be sequential in the main checkout or parallel by wave in isolated worktrees. Every applier returns a structured proof block; the independent verifier runs the criteria itself before reconciling those claims.
 
 ## Repository layout
 
 | Path | Purpose |
 |---|---|
-| `plugin/` | The Claude Code plugin the team installs: skills (slash commands), hooks, and the `oso-state` helper. Each skill's flow is authored directly in `plugin/skills/<skill>/SKILL.md` — the neutral body every host renders from — plus an authored host file, per skill at `plugin/skills/<skill>/references/claude.md`, shared at `plugin/skills/_shared/references/claude.md` — so a rule that governs both hosts is written once. |
-| `codex/` | The Codex plugin: skill wrappers rendered from the same Claude-authored flows. Codex host bindings are rendered, not authored — per skill at `codex/skills/<name>/references/codex.md`, shared at `plugin/skills/_shared/references/codex.md`; hooks and agent roles are installed as user-level artifacts because the plugin schema cannot bundle them. What the hosts do not share is listed in [docs/parity-codex.md](docs/parity-codex.md). |
-| `opencode/` | The OpenCode plugin: a single TypeScript entry `plugin/oso-code.ts` importing sibling `plugin/oso/*.ts` modules (gates, identity, lifecycle, the plan approval rail, the workspace adapter, the wave fan-out), plus the 9 skill wrappers, 7 agents and 4 commands, each wrapper rendered from the same Claude-authored flows. OpenCode host bindings are rendered, not authored — per skill at `opencode/skills/oso-<name>/references/opencode.md`, shared at `plugin/skills/_shared/references/opencode.md`; the host's differences are listed in [docs/parity-opencode.md](docs/parity-opencode.md). |
-| `core/` | The TypeScript source everything above builds from: `core/src/gates/` and `core/src/hosts/` are the runtime gates, bundled into `gate.js` for the Claude and Codex hooks below; `core/src/install/` backs `bootstrap/oso.js`; `core/src/routes/` is the single per-host gate and tool table every hook manifest renders from; `core/src/prose/` holds the agent roles and each skill's Codex/OpenCode host binding, rendered by `npm run build` into `plugin/agents/`, `codex/`, `opencode/` and the two generated `plugin/skills/_shared/references/` files. `core/test/` is the TypeScript test suite; `core/scripts/` holds the builders `npm run build` and `npm run check` invoke. |
-| `bootstrap/` | One CLI, built to `bootstrap/oso.js`: `node bootstrap/oso.js <install\|verify\|repair\|purge> --host <claude\|codex\|opencode> [flags]` runs every host's install, verify, repair and purge. `install.sh`, `install.bat` and `install.ps1` are thin OS wrappers that provision Node.js and exec it; `verify.bat` execs the same for the Windows verifier. Also holds the release-published hook hashes (`hook-hashes.txt`), each host's global-guidance snippet, and the legacy-artifact manifest the cleanup step reads. |
-| `docs/` | Design documents. Start with [docs/blueprint.md](docs/blueprint.md) for the current design, then [docs/decisions/](docs/decisions/) for the numbered decisions behind it — one file per decision, frozen as history. |
-| `tests/` | Shell fixtures (`tests/fixtures/`) that the `core/test/structure/` shell-corpus checks scan alongside `bootstrap/`, `tools/` and `plugin/hooks/` — the plugin's shipped conventions across skills, hooks and docs are enforced there, part of the TypeScript suite above. `claude plugin validate` has no opinion on those conventions, so run it too — `claude plugin validate --strict plugin` and `claude plugin validate --strict .` — before any release. |
+| `plugin/` | Claude Code plugin: skills, agents, hooks, git gate, state helper, MCP declaration and output style. |
+| `opencode/` | OpenCode plugin, commands, agents and generated skill wrappers. |
+| `core/` | TypeScript source for gates, installers, state, scans, generated prose and tests. |
+| `bootstrap/` | Cross-platform installers plus the generated `oso` CLI and published artifact hashes. |
+| `docs/` | Architecture, decisions, parity records and operating guides. |
+| `tools/` | Repository checks and support scripts. |
+
+Generated runtime files are committed. Edit their source under `core/src/`, then run `npm run build`.
 
 ## Install
 
-Clone once, then run the path for your host:
-
-```bash
-git clone https://github.com/SoyJohnXD/oso-code
-cd oso-code
-```
+Requirements: Git and Node.js 22 or newer.
 
 ### Claude Code
 
-Prerequisites per OS — the bootstrap checks and guides you, but know what you need:
-
-| OS | Required | Notes |
-|---|---|---|
-| Linux | git, [Claude Code](https://code.claude.com), Node.js | jq auto-installs via your package manager |
-| macOS | git, Claude Code, Node.js | jq auto-installs via Homebrew |
-| Windows | winget (App Installer), which provisions the rest — and **Git Bash, which stays a permanent runtime dependency** | double-click `bootstrap\install.bat`: it provisions Git for Windows, Node.js 22 or newer, and jq via winget — Claude Code through its own official installer — then runs the installer under Git Bash, which the git `pre-commit` hook this plugin wires — a `#!/bin/sh` script git itself runs through a shell — keeps needing at runtime long after the install. With no winget those three are not installed for you — Claude Code still is, through its own installer — and the preflight fails closed, naming every gap and the command that closes it. Full guide: [docs/windows.md](docs/windows.md) |
-
-No OS needs a Rust toolchain: the installer provisions the fallow analyzer itself on Linux, macOS and Windows from its npm package, pinned to `3.14.0`, which ships prebuilt binaries for all three. The only prerequisite that costs is Node.js, already in the table above — and the verifier counts fallow as a check like the other MCPs rather than reporting it.
-
 ```bash
-bash bootstrap/install.sh --yes              # prerequisites, MCPs, plugins, legacy cleanup (--yes is required; no interactive prompt is wired yet)
-node bootstrap/oso.js verify --host claude   # measurable post-install E2E — every check ok:, ending on failed: 0
+bash bootstrap/install.sh --yes
+node bootstrap/oso.js verify --host claude
 ```
 
-The verifier prints one line per check, `ok:` or `FAIL:`, and closes with `passed: N, failed: M` — the run is green when `failed: 0`, which is also its exit status. A `note:` line is not a check and moves neither number: notes are where the optional pieces and your own choices get reported (an `--no-impeccable` opt-out; no jq to read the install record; a repo whose `core.hooksPath` belongs to another tool; and, off Windows, both the home dir the Windows client reads — there is no `%USERPROFILE%` there to disagree with `$HOME` — and the PATH it resolves the engram binary against, which off Windows is the same PATH the engram MCP check already exercises). So a green run is every `ok:` plus whatever notes describe your machine.
+The installer provisions the plugin, MCP integrations, optional Impeccable support, the state runtime and the repository git gate. On Windows, use `bootstrap\install.bat` or:
 
-Installing fallow by hand, if you ever need to — `bash bootstrap/install.sh --yes` runs both steps for you:
-
-```bash
-npm install --global fallow@3.14.0
-claude mcp add --scope user fallow -- fallow-mcp
+```powershell
+powershell -ExecutionPolicy Bypass -File bootstrap\install.ps1
 ```
 
-On Windows that second command needs the `.cmd` shim npm writes rather than the bare name — [docs/windows.md](docs/windows.md) has the command and the reason. Building the server yourself with `cargo install fallow-mcp` still works as an alternative; nothing here requires it.
-
-The installer also installs the Impeccable plugin (the design bar) by default — pass `--no-impeccable` (`-NoImpeccable` on `install.ps1`) to skip it. That choice is recorded as a marker file the installer writes and clears, and the verifier reads it: the plugin check becomes a `note:` naming the opt-out instead of running, so the verification still ends at `failed: 0`. Its second impeccable check stays green either way: `npx` fetches the CLI from the public registry rather than from the plugin install. That check runs the unpinned name, so it answers whether `npx` can fetch and run impeccable at all — not whether the version the `detect` gate pins resolves.
-
-**Windows**: no terminal needed — clone the repo, then double-click `bootstrap\install.bat`, and double-click `bootstrap\verify.bat` afterwards for the same report the verifier prints everywhere else. `install.bat` provisions Git for Windows, Node.js 22 or newer, and jq via winget, installs Claude Code through its own official installer, then delegates to the same `install.sh` under Git Bash. Nothing elevates silently: every package is asked for at user scope first, and the machine-wide retry runs only on the one winget exit code that means the package ships no per-user installer, only after you say yes to a prompt that names the UAC, and never at all under `-Yes`. Prefer a terminal? Run `powershell -ExecutionPolicy Bypass -File bootstrap\install.ps1`. Running `bash bootstrap/install.sh --yes` directly inside Git Bash still works, but it is the same script without the three things `install.ps1` does around it — the preflight that names every missing prerequisite at once, the `HOME` pin onto `%USERPROFILE%` that the client's own home dir depends on, and the Git Bash path it discovers and publishes for the hooks — so `export HOME="$USERPROFILE"` first and read the verifier's home-dir and Git-Bash-path checks afterwards. The whole platform — prerequisites, flags, fallow, Claude Desktop, and troubleshooting by symptom — is in [docs/windows.md](docs/windows.md).
-
-Then restart Claude Code.
-
-### Codex
-
-The Codex path requires git, Node.js/npm, and the Codex CLI already installed at the exact verified floor — `0.146.0`, never `@latest`. The installer no longer installs or upgrades that CLI itself: it refuses to run against any other installed version, naming `npm install --global @openai/codex@0.146.0` as the command to run first, because an in-place CLI upgrade run ahead of its own transaction is a mutation nothing in that transaction could later roll back (ADR-0125). Once the pin holds, it transactionally installs the plugin, rendered user hooks, seven agent roles, bounded `config.toml` ownership blocks, MCP wiring, git gate, and the Impeccable skill mounted at a pinned Git tag. It preserves personal `[projects.*]` configuration and unrelated keys in shared tables such as `[features]`, and backs up every artifact it replaces. Reinstall also composes Engram's root instruction pointers with Oso's region and repairs only an exact clean official Engram marketplace cache that Codex left unregistered; modified, symlinked or unknown cache state is preserved and refused (ADR-0102).
-
-Every run's own `install-backup-*` snapshot under `~/.local/state/oso-code` — separate from the one-time purge/restore below — records what it replaced in a manifest; `core.hooksPath` is the one thing no snapshot ever captures, since that value only ever lived in the installing run's own memory. Retention prunes these snapshots by total size on every run, always keeping the newest one (ADR-0124).
-
-```bash
-npm install --global @openai/codex@0.146.0   # only if not already at this exact version
-node bootstrap/oso.js install --host codex --yes
-codex login                       # first install only; skip when already authenticated
-# Start a new Codex thread, open /hooks, and review/trust the installed hooks.
-node bootstrap/oso.js verify --host codex
-```
-
-Until the `/hooks` review is complete the files are installed but their runtime rail is not enforcing. The verifier checks the complete local install and finishes with `passed: N, failed: M`. Its authenticated `codex exec` integrator/delegation smoke is intentionally local: CI uses fixtures and never logs in or executes a real Codex session. The smoke launches Codex against its own disposable `CODEX_HOME`, never the operator's real one — Codex writes an unconditional project-trust table for the disposable repository that no CLI flag can suppress, so isolating the home is what keeps that write off the operator's real `config.toml` instead of cleaning it up afterward. The smoke grants that isolated parent the integrator's `danger-full-access` because Codex propagates live parent sandbox overrides to children, launches the explicit role with fresh context, and requires the delegated merge and teardown as observable Git effects plus a spawn/wait/consume correlation on one Codex-assigned agent id inside a temporary repository (ADR-0123).
-
-If you are migrating a pre-release Gentle/Oso Codex setup, the optional one-time full reset is deliberately separate from installation. Read [the purge and restore procedure](docs/codex-purge-and-restore.md) before running it; it backs up complete `~/.codex` and `~/.agents` trees with verified hashes and can restore them without overwriting existing roots. A machine already reset, reinstalled, and logged in should skip both purge and login: run the oso installer, trust its hooks, then run the verifier.
+Restart Claude Code after installation. Daily commands are `/oso-code:plan`, `/oso-code:quick`, `/oso-code:debug` and `/oso-code:roadmap`.
 
 ### OpenCode
 
-The OpenCode path requires git, Node.js, and the OpenCode CLI already at the exact verified pin — `1.18.22`, never `@latest`. `node bootstrap/oso.js install --host opencode --yes` transactionally installs the harness as OpenCode reads it: a strict-JSON `opencode.json` into which the installer writes only the keys it needs, leaving every other key that file already held — `theme`, `provider`, `model`, your own `permission` entries and your own `mcp` servers — exactly as it found them, the 9 skill wrappers and the shared skill directory beside them, 7 agent contracts, 4 commands (all four routing to the `build` primary that runs them, since every mode writes state, cuts worktrees and commits), the TypeScript plugin (gates, identity, lifecycle, the plan approval rail, the workspace adapter, the wave fan-out) as a single entry, MCP wiring under the `environment` key, the global `AGENTS.md` merged into one marked oso-code region that leaves whatever else that file holds untouched, Engram wired through its own installer, and the Impeccable skill mounted at a pinned Git tag. It backs up every replaced artifact and rolls back within the failed run.
+The supported OpenCode version is declared in `core/src/install/pins.ts`.
 
 ```bash
 node bootstrap/oso.js install --host opencode --yes
 node bootstrap/oso.js verify --host opencode
 ```
 
-Mode spellings on OpenCode: `/oso-plan`, `/oso-quick`, `/oso-debug`, `/oso-roadmap`. The operator-only modes are hidden from the model by installed `permission.skill` deny rules while their slash commands stay. The verifier checks the complete local install against a disposable fixture and finishes with `passed: N, failed: M`; its real wave-runner smoke picks a free model out of the host's own catalog at runtime, and when it cannot run at all it says so on a `not run:` line and exits 3 rather than reading clean (`OSO_VERIFY_SKIP_SMOKE=1` takes that same lane). The optional one-time full reset is deliberately separate from installation: read [the purge and restore procedure](docs/opencode-purge-and-restore.md) before running it.
+The installer preserves unrelated `opencode.json` keys while installing OsoCode's plugin, commands, agents, skill wrappers, MCP wiring, global guidance and git gate. Daily commands are `/oso-plan`, `/oso-quick`, `/oso-debug` and `/oso-roadmap`.
 
-Daily use:
+## Runtime discipline
 
-- Claude Code: `/oso-code:plan`, `/oso-code:quick`, `/oso-code:debug`, `/oso-code:roadmap`; optionally `/output-style Oso`.
-- Codex: enter `/plan` (or Shift+Tab) before `$oso-code:plan` and before `$oso-code:roadmap`; `$oso-code:quick` and `$oso-code:debug` start from the normal mode. Only plan's spelling is refused by a hook outside Plan Mode — roadmap's precondition is its own instruction, since the gate that reads an invocation spelling reads plan's alone.
-- OpenCode: `/oso-plan`, `/oso-quick`, `/oso-debug`, `/oso-roadmap` — all four start from the normal mode; the roadmap's one approval is the operator's answer to the `oso_plan_approve` authorization prompt.
+OsoCode's hooks are a discipline rail, not a security boundary:
 
-The installed `oso` permission profile — the wider `.git` write, workspace roots and network reach the harness needs for its own commits, worktrees and delegated roles — is the machine default for every Codex session (ADR-0121, ADR-0122): the installed binary offers no per-project profile selection, so scoping it any narrower would mean typing a flag on every launch with no escape. `.git/config` stays read-only, the extended secret denylist and the cloud-metadata network denies still apply regardless of scope (ADR-0121) — this is a discipline rail, not a lock, the same framing the runtime gates below carry.
+- commits are denied while an armed change is not green;
+- plan-mode edits are denied when no slice is active;
+- production-shaped commands are denied while an unattended run is in flight;
+- stale repository state is reported with an executable recovery route;
+- state is keyed by the repository's absolute git common directory, so linked worktrees share one run;
+- a terminal command from the operator remains outside the agent-marked git gate.
 
-Updating later follows the route for the host and artifact tier that changed:
+The state helper lives at `plugin/bin/oso-state`. It records mode, active slice, verification state, roadmap position, run journal, approval artifacts and scan results under `~/.local/state/oso-code`. No operational plan document is written into the product repository.
 
-- `claude plugin marketplace update oso-code && claude plugin update oso-code@oso-code` updates the plugin: the refresh comes first because the client installs from its own clone of the marketplace, and an update on its own reinstalls whatever that clone already holds. The marketplace entry's source is `./plugin`, so that subtree is the whole payload — skills, agents, hooks, git-hooks, `oso-state`, the output style, and the `.mcp.json` that carries context7 — and it works from a marketplace install, with no working copy of this repo at all.
-- Codex releases are re-applied with `node bootstrap/oso.js install --host codex --yes`: its plugin carries skills only, while the installer owns the user hooks, agents, bounded config blocks, MCPs, runtime and git gate around it.
-- When a release's entry in [CHANGELOG.md](CHANGELOG.md) is marked **Reinstall required**, `bootstrap/` changed and a plugin-only update cannot carry the complete release: pull the repo and re-run the installer for your host.
+## Development
 
-**Surfaces**: oso-code is installed and verified against the local Claude Code, Codex and OpenCode runtimes. Codex's native approval UI submits `Implement the plan.`; Oso's guarantee composes that interaction with its local `Stop` → `UserPromptSubmit` → `PreToolUse` digest path. Codex 0.146 misreports Plan turns as `permission_mode=default`, so Oso attests native mode against the exact hook turn before that path can capture, revise or approve a document. OpenCode 1.18.22 is the third verified runtime: its approval rail is `oso_plan_approve`, a plugin-registered tool the plan mode calls with the presented document, which raises the host's OWN authorization prompt from inside its `execute` — the operator's answer to that prompt is the approval, and a decline arrives as a thrown rejection that promotes nothing. `plan_exit` is not that rail and is depended on nowhere: the digest rail 0.26.0 shipped on it is gone, and the two artifacts that still carry the name — the installed config's `permission` block, and its `tool` row in `core/src/routes/routes.ts`, the single table the OpenCode plugin computes its unknown-tool allowlist from at runtime — are there because it is one of the host's own tools and never because a rail reads it, with the verifier asserting the first of the two rather than adding a third. Its blocking `POST /session/:id/message` returns the delegation verdict in-band. The common prompt is intercepted only for a same-session pending Oso document. Hosted or specialized execution surfaces, and `write_stdin` calls against an already-running process, do not cross that complete rail.
+```bash
+npm ci
+npm run typecheck
+npm test
+npm run build
+npm run check
+```
 
-## Runtime gates
+`npm run build` regenerates the committed state helper, gate bundles, host prose, hook manifest and OpenCode bundle. `npm run check` proves those artifacts match their sources exactly.
 
-Once the host has loaded and, on Codex, trusted them, the hooks DENY tool calls — that is the enforcement, not a warning:
-
-- A `git commit` is denied while the repository's active harness state is not green. Two layers read the same flag: the git `pre-commit` hook the installer wires through `core.hooksPath` is the primary one — it sits at the commit's own boundary, so aliases, wrappers, and an absolute `/usr/bin/git` all reach it — and the `PreToolUse` Bash matcher covers what a git hook never sees. `core.hooksPath` is a per-repo setting, and each host's installer wires the repo you install from and refuses to take hooks somebody else already holds. That refusal is where the shared rule ends: all three read the same two signals — a `core.hooksPath` that is not their own target, and any non-`.sample` file standing in `.git/hooks` — and each compares and answers its own way. `bootstrap/install.sh` folds BOTH paths through `normalized_path` before comparing and records a foreign owner as a wiring failure the install continues past; the Codex install (`node bootstrap/oso.js install --host codex`) folds only the configured side, carries the one migration there is — an exact earlier oso-code checkout path holding oso-code's own `pre-commit` and no sibling — and ABORTS the install on any other owner; the OpenCode install (`node bootstrap/oso.js install --host opencode`) byte-compares and warns, which is the comparison `install.sh` records as finding a foreign owner in its own wiring on Windows, a host [docs/windows.md](docs/windows.md) marks unverified for OpenCode anyway. Two of the three print the one-line `git config` for any other repo, Codex's being the one that fails instead; the matcher applies everywhere regardless. `git commit --no-verify` skips the git layer by git's own design; the matcher is what catches that shape.
-- A plan slice commits as it goes green, in both modes: a commit is part of the flow, and a push and a PR are the two things the harness still asks you for — unless the run is unattended, where its close pushes the change branch it cut and opens the PR that finishes it, and the merge, a release and any production deploy stay yours. Sequentially it rides the green the slice's own verify just wrote; a parallel wave has to open a GREEN WINDOW around it: `verify_green=true`, the slice's `git add -A` and `git commit` in its own worktree, `verify_green=false` — three commands with nothing between them, one slice at a time. Both layers read one repository-keyed flag and neither can attribute it to one worktree or agent session, so while that window is open the rail is open REPOSITORY-WIDE: any marked agent commit from any tree or concurrent session can clear both layers. The window is a deliberate accidental-bypass window, and the only thing that pays for it is keeping it that short.
-- The gated verbs are `commit`, `commit-tree`, `update-ref`, `filter-branch`, `replace`, and `fast-import`. Every other history-writing verb passes on purpose: `revert`, `merge`, `rebase`, `cherry-pick`, and `am` spell their `--abort`/`--continue` recovery with the same token as the verb itself, and denying the recovery would deadlock a session that cannot run verify mid-conflict.
-- The matcher reads at most 3072 bytes of a Bash call's `command` field. Past that nothing is decoded and nothing is lexed: the line becomes residue, which the gate allows — and an armed repository that is not yet green records it as `residue-allowed` in `~/.local/state/oso-code/events.jsonl`, so what slips past the rail is measured instead of invisible. The coverage cost is stated plainly: the commit rail stops applying to a command line longer than that.
-- An `Edit`, `Write`, `MultiEdit`, or `NotebookEdit` — and `mcp__fallow__fix_apply`, gated the same way — is denied in plan mode while no slice is active. `/quick` and `/debug` edits are never gated this way.
-- Nothing is gated until a mode arms the repo: with no repository state file the hooks allow silently and log nothing. Once the state is armed the polarity flips — a state file that exists but cannot be read (a directory, wrong permissions, a read error) denies the call and logs `state-unreadable`, and the denial names the repair: `oso-state --session <id> clear`.
-- A missing jq degrades the hooks instead of denying anything: they read their JSON payload with jq where it exists and with a pure-bash reader where it does not, because a marketplace install never runs `install.sh` and a GUI-launched macOS client has no Homebrew on its PATH. A gate that judges a call on the fallback reader records a `jq-absent` event, which is what makes the degradation measurable; an unarmed repository still records nothing.
-
-State is per-repository, in `~/.local/state/oso-code/<digest>.state`, where the digest is the SHA-256 of `git rev-parse --path-format=absolute --git-common-dir` (ADR-0095): the main checkout, every linked worktree and any subdirectory of either resolve to one file, which is what lets the gate firing in a wave's worktree read the state the orchestrator armed. Codex plan artifacts use that same identity below `~/.local/state/oso-code/plans/<digest>/`: a pending `presented-<approval-digest>.md` becomes immutable `approved-<approval-digest>.md` on native approval, while `current.md` tracks execution and explicit in-scope hot slices. Those bounded amendments also update Engram; material scope or ledger changes become roadmap work or require fresh Plan Mode approval. No plan file enters the project repository, and Claude's native `ExitPlanMode` flow is unchanged. A digest rather than that path sanitized, because no file name built out of a path keeps two repositories apart — dash every byte outside `a-zA-Z0-9-` and `my_app`, `my-app`, `my app` and `my.app` become one name, and a repository nested past `NAME_MAX` gets no name at all — and two repositories on one state file is a red one's commit gate opening on its neighbour's green. SessionEnd deletes the file the ending session armed — the file records which session that was — so a session that is killed leaves it standing, and the next session in that repo inherits flags that deny rather than allow (it is reported at the next start and ages out on its own). A `repo_path` key names the main checkout — the one input SessionEnd has for removing the worktrees a wave left standing (`git worktree remove`, then `git worktree prune`, in that repo) before the state file goes; those worktrees and the event log stay keyed by session. Resume by invoking plan again with your host's spelling, which re-arms it. A file whose `roadmap` key names a queue still in flight is reported with the roadmap's resume route in place of that one — the chain then re-reads its own record and arms the child the record leaves un-run — and `oso-state --session <id> set roadmap=none` drops that claim alone when the roadmap is over or abandoned; the same SessionEnd that removes a wave's worktrees drops such a file too. That key arms no gate and never will. `oso-state --session <id> clear` disarms a flow you walk away from mid-change, so a stale green does not ride over later unrelated work.
-
-These are a discipline rail, not a lock: they consult a flag the agent itself writes through an ungated command, so they stop the accidental slip (the forgotten verify, the edit between slices) and never a deliberate bypass. The git layer fires only for a process carrying an agent's marker — `CLAUDE_CODE_SESSION_ID`, which the client puts in everything its Bash tool starts, or `OSO_AGENT` on a host that publishes no session id — so a commit you make in your own terminal never meets it: no verdict, no trace, whatever the repo's state says. Opt out with `bash bootstrap/install.sh --yes --no-git-hook` (`-NoGitHook` on `install.ps1`) on Claude Code or `node bootstrap/oso.js install --host codex --yes --no-git-hook` on Codex; either installer also declines to wire over another tool's existing hook ownership and says so in its summary.
-
-**Model expectation**: plan, debug and above all roadmap are multi-turn flows — a roadmap carries a whole queue of plan changes in one session, so it is the longest of the four — and you choose the session's strongest reasoning model before starting one. Claude's forked judges pin Opus; Codex installs dedicated judge roles pinned to its verified model/reasoning contract. The exact host differences and deliberate degradations are release contract, not implied equivalence; see [the parity ledger](docs/parity-codex.md).
-
-## Design principles
-
-1. The orchestrator guides; the human decides. Options with tradeoffs, never silent assumptions. Two cases answer in their place, and each is declared before it is used: inside a running roadmap the human approved a policy over the whole queue before leaving, and inside a plan run they flipped to AUTO they took that same policy at one change's scale, dated in that change's ledger. On either route the decision is answered by that policy and recorded with the tier that decided it — and anything the policy refuses is queued for them rather than guessed.
-2. Hooks enforce mechanical state and the bounded approval transport; they never make a semantic judgment about plan content. Planning runs in native Plan Mode — except a roadmap's children on Claude Code, where the queue's one approval is the transition out of that mode and no second one is asked for, so their planning phases run outside it and stay read-only by the flow's own rule (ADR-0135).
-3. Context is a budget: global instructions stay under 2k tokens; behavior loads on demand via skills.
-4. Engram stores decisions and summaries — not phase noise.
+The release version is declared in `plugin/.claude-plugin/plugin.json` and documented in `CHANGELOG.md`. Tags use `v<version>`.

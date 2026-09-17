@@ -8,7 +8,7 @@ function named(environment: NodeJS.ProcessEnv, variable: string): string {
 
 function spawningHost(environment: NodeJS.ProcessEnv): HostName {
   if (named(environment, "OSO_HOST") === "opencode") return "opencode";
-  return named(environment, "OSO_AGENT") === "" ? "claude" : "codex";
+  return "claude";
 }
 
 function spawnedCaller(environment: NodeJS.ProcessEnv): HookCaller {

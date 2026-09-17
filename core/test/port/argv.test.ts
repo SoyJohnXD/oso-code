@@ -9,11 +9,6 @@ import {
 
 type RefusedArgv = { readonly refuses: string; readonly readFrom: string; readonly argv: readonly string[] };
 
-const HANDOFF_COORDINATES = [
-  "--slice", "slice-port", "--attempt", "1",
-  "--agent-id", "agent-port", "--agent-type", "oso-applier",
-];
-
 const REFUSED_ARGV: readonly RefusedArgv[] = [
   { refuses: "no argument at all", readFrom: "8c54fd8:plugin/bin/oso-state:39", argv: [] },
   { refuses: "a first word that is not --session", readFrom: "8c54fd8:plugin/bin/oso-state:39", argv: ["--sesion", "s", "show"] },
@@ -29,13 +24,6 @@ const REFUSED_ARGV: readonly RefusedArgv[] = [
   { refuses: "approve-plan with a second word", readFrom: "8c54fd8:plugin/bin/oso-state:542", argv: ["--session", "s", "approve-plan", "a", "b"] },
   { refuses: "cancel-plan with no digest", readFrom: "8c54fd8:plugin/bin/oso-state:598", argv: ["--session", "s", "cancel-plan"] },
   { refuses: "amend-plan with no slice id", readFrom: "8c54fd8:plugin/bin/oso-state:633", argv: ["--session", "s", "amend-plan"] },
-  { refuses: "an unknown handoff subaction", readFrom: "8c54fd8:plugin/bin/oso-state:715-720", argv: ["handoff", "inspect"] },
-  { refuses: "a handoff coordinate with no value", readFrom: "8c54fd8:plugin/bin/oso-state:248", argv: ["handoff", "publish", "--slice"] },
-  { refuses: "a repeated handoff coordinate", readFrom: "8c54fd8:plugin/bin/oso-state:250", argv: ["handoff", "publish", "--slice", "a", "--slice", "b"] },
-  { refuses: "an unknown handoff coordinate", readFrom: "8c54fd8:plugin/bin/oso-state:256", argv: ["handoff", "publish", "--sliced", "a"] },
-  { refuses: "handoff wait without a timeout", readFrom: "8c54fd8:plugin/bin/oso-state:389", argv: ["handoff", "wait", ...HANDOFF_COORDINATES] },
-  { refuses: "handoff publish carrying a timeout", readFrom: "8c54fd8:plugin/bin/oso-state:339", argv: ["handoff", "publish", ...HANDOFF_COORDINATES, "--hook-session", "h", "--timeout", "5"] },
-  { refuses: "handoff consume carrying a hook session", readFrom: "8c54fd8:plugin/bin/oso-state:429", argv: ["handoff", "consume", ...HANDOFF_COORDINATES, "--hook-session", "h"] },
 ];
 
 provedSomeSubjectIsMeasurable();

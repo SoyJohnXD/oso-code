@@ -5,7 +5,6 @@ export const CERTIFY_SUITE_HOSTS = {
   "opencode-contract-bar": "opencode",
   "opencode-behavior-bar": "opencode",
   "opencode-wave-runner-smoke": "opencode",
-  "codex-authenticated-smoke": "codex",
 };
 
 const REGISTERED_ROW_COUNT_PATTERN = /^ok \d+ - at least (\d+) row\(s\)/m;

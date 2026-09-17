@@ -34,8 +34,8 @@ widest width 1, execution mode SEQUENTIAL; phase 5 approval document ready.
 ### Wave 2
 
 - **S2 MIGRATE (opus) — the three consumers move to the new signature.**
-  Goal: the CLI, the Codex gate and the OpenCode plugin all call the new form.
-  Files: `core/src/state/cli.ts`, `core/src/gates/planstop.ts`, `opencode/plugin/oso/approval.ts`.
+  Goal: the CLI and the OpenCode plugin both call the new form.
+  Files: `core/src/state/cli.ts`, `opencode/plugin/oso/approval.ts`.
   Verify: `npm test`; `cd opencode && npm test`; both green on the three moved call sites.
   Depends-on: S1.
 

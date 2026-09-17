@@ -47,7 +47,7 @@ describe("the git pre-commit hook's own boundary", { skip: skipUnlessSpawnable(P
   test("the marker a host with no session id sets arms the same gate (ported from the hook regression suite)", () => {
     const run = withStateSandbox("workspace", (sandbox) => {
       sandbox.seed({ [STATE_FILE]: `mode=plan\nverify_green=false\nsession=${SESSION}\n` });
-      return sandbox.run(PRE_COMMIT_HOOK, [], { env: { OSO_AGENT: "codex-probe" } });
+      return sandbox.run(PRE_COMMIT_HOOK, [], { env: { OSO_AGENT: "opencode-probe" } });
     });
     assert.equal(run.exit, 1);
     assert.equal(run.stdout, "");

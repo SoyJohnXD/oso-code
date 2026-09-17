@@ -113,26 +113,26 @@ function seedBackup(root: string, name: string, options: { format?: string; mani
 describe("installBackupDeclares and installBackupsDeclaring", () => {
   test("a backup declares by its format marker's first line", () => {
     const root = path.join(sandbox, "declares-format");
-    const backup = seedBackup(root, "install-backup-20260101-000000-1", { format: "oso-code-codex-install-v1" });
-    assert.equal(installBackupDeclares(backup, "oso-code-codex-install-v1", "marketplace"), true);
+    const backup = seedBackup(root, "install-backup-20260101-000000-1", { format: "oso-code-install-v1" });
+    assert.equal(installBackupDeclares(backup, "oso-code-install-v1", "marketplace"), true);
     assert.equal(installBackupDeclares(backup, "oso-code-opencode-install-v1", "commands"), false);
   });
 
   test("a pre-marker backup declares by a manifest row's label column", () => {
     const root = path.join(sandbox, "declares-manifest");
     const backup = seedBackup(root, "install-backup-20260101-000000-2", {
-      manifest: "present\tmarketplace\t/home/op/.codex/config.toml\n",
+      manifest: "present\tmarketplace\t/home/op/.config/oso-code/config.toml\n",
     });
-    assert.equal(installBackupDeclares(backup, "oso-code-codex-install-v1", "marketplace"), true);
-    assert.equal(installBackupDeclares(backup, "oso-code-codex-install-v1", "some-other-label"), false);
+    assert.equal(installBackupDeclares(backup, "oso-code-install-v1", "marketplace"), true);
+    assert.equal(installBackupDeclares(backup, "oso-code-install-v1", "some-other-label"), false);
   });
 
   test("installBackupsDeclaring filters a mixed root down to one host's snapshots", () => {
     const root = path.join(sandbox, "declares-mixed");
-    seedBackup(root, "install-backup-20260101-000000-1", { format: "oso-code-codex-install-v1" });
+    seedBackup(root, "install-backup-20260101-000000-1", { format: "oso-code-install-v1" });
     seedBackup(root, "install-backup-20260102-000000-2", { format: "oso-code-opencode-install-v1" });
     assert.deepEqual(
-      installBackupsDeclaring(root, "oso-code-codex-install-v1", "marketplace").map((entry) => path.basename(entry)),
+      installBackupsDeclaring(root, "oso-code-install-v1", "marketplace").map((entry) => path.basename(entry)),
       ["install-backup-20260101-000000-1"],
     );
   });

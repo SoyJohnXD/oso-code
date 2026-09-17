@@ -6,7 +6,7 @@ import { describe, test } from "node:test";
 import { provedSomething } from "../support/proved.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
 
-const REPO_OWNED_DOT_DIRECTORIES = new Set([".git", ".github", ".claude-plugin", ".codex-plugin", ".agents"]);
+const REPO_OWNED_DOT_DIRECTORIES = new Set([".git", ".github", ".claude-plugin", ".agents"]);
 const MINIMUM_DOT_DIRECTORIES = 3;
 const MINIMUM_DOT_DIRECTORIES_DERIVATION =
   "the dot-directories this REPOSITORY guarantees, not the ones a machine happens to hold: .agents, .claude-plugin " +

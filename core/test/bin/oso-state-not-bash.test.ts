@@ -85,7 +85,7 @@ test("bashTreatmentLineNumbers does not flag oso-state invoked directly through 
 
 test("bashTreatmentLineNumbers does not flag prose mentioning both bash and the retired path", () => {
   assert.deepEqual(
-    bashTreatmentLineNumbers("On Codex run bash bootstrap/install.sh; plugin/bin/oso-state moved bytes too.\n"),
+    bashTreatmentLineNumbers("On a workstation run bash bootstrap/install.sh; plugin/bin/oso-state moved bytes too.\n"),
     [],
   );
 });

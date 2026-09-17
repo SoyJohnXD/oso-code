@@ -13,7 +13,7 @@ const ARMED_RUN_STATE = {
   [STATE_FILE]: "auto=running\nauto_change=auto-continuity\nsession=test-session\n",
 };
 
-const CODEX_TOOL_ENVELOPE =
+const TOOL_ENVELOPE =
   '{"session_id":"test-session","cwd":"{cwd}","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{}}';
 
 const MISCONFIGURED_ALLOWLISTS: readonly (readonly [string, readonly string[], string])[] = [
@@ -126,7 +126,7 @@ provedSomething(
 );
 
 describe("core/src/gates/dispatch.ts: port tests read from the gate scripts, never parity evidence", () => {
-  test("an unknown gate name blocks the call instead of opening the gate (read from plugin/hooks/lib.sh:383-386)", () => {
+  test("an unknown gate name blocks the call instead of opening the gate", () => {
     const run = judge(["frobnicate"], ARMED_RED_STATE, bashEnvelope("git commit -m x"));
     assert.equal(run.exit, 2);
     assert.equal(run.stdout, "");
@@ -135,8 +135,8 @@ describe("core/src/gates/dispatch.ts: port tests read from the gate scripts, nev
   });
 
   for (const [reads, argv, cause] of MISCONFIGURED_ALLOWLISTS) {
-    test(`${reads} blocks the unknown-tool gate on one line (read from plugin/hooks/block-unknown-tool.sh:7-18)`, () => {
-      const run = judge(["unknown", ...argv], ARMED_RED_STATE, CODEX_TOOL_ENVELOPE);
+    test(`${reads} blocks the unknown-tool gate on one line`, () => {
+      const run = judge(["unknown", ...argv], ARMED_RED_STATE, TOOL_ENVELOPE);
       assert.equal(run.exit, 2);
       assert.equal(run.stdout, "");
       assert.equal(run.stderr, gateErrorLineTheBashPrints(`the unknown-tool gate configuration (${cause})`));
@@ -144,7 +144,7 @@ describe("core/src/gates/dispatch.ts: port tests read from the gate scripts, nev
     });
   }
 
-  test("a gate that throws blocks on two lines, the fixed one and the cause (read from plugin/hooks/lib.sh:383-386)", () => {
+  test("a gate that throws blocks on two lines, the fixed one and the cause", () => {
     const run = withStateSandbox("workspace", (sandbox) => {
       sandbox.seed(ARMED_RED_STATE);
       const envelope = sandbox.expandJson(bashEnvelope("git commit -m x"));

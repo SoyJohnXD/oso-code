@@ -12,19 +12,17 @@ const SHARED_FLOW_FILES = ["plugin/skills/_shared/unattended.md", "plugin/skills
 const boundFiles = [
   ...SKILL_STUBS.map((stub) => skillFlowPath(stub)),
   ...SHARED_FLOW_FILES,
-  ...SKILL_STUBS.map((stub) => skillOutputPath(stub, "codex")),
   ...SKILL_STUBS.map((stub) => skillOutputPath(stub, "opencode")),
 ];
 
-const FILES_FLOOR = 29;
+const FILES_FLOOR = 20;
 const FILES_FLOOR_DERIVATION =
   "the 9 plugin/skills/<skill>/SKILL.md flows, the 2 shared bodies (_shared/unattended.md, _shared/parallel.md), " +
-  "and the 18 codex/opencode rendered wrappers that inherit each flow verbatim — Decision 62's file set";
+  "and the 9 OpenCode rendered wrappers that inherit each flow verbatim — Decision 62's file set";
 
-const SENTENCES_FLOOR = 2000;
+const SENTENCES_FLOOR = 1000;
 const SENTENCES_FLOOR_DERIVATION =
-  "well under the 2,895 sentences this walk counts across the 29 bound files at this writing (2,718 from " +
-  "paragraphs and bullets plus the 177 the 117 table lines contribute as runs of their own), so a later, " +
+  "well under the sentences this walk counts across the 20 bound files at this writing, so a later, " +
   "legitimate prose edit never has to chase this number — only a walk that segments nothing should fail it";
 
 const boundSentenceCounts = boundFiles.flatMap((file) => sentenceWordCountsIn(file, flowBody(readTrackedText(file).text)));

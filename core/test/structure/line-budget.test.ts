@@ -3,7 +3,7 @@ import { describe, test } from "node:test";
 import { provedSomething } from "../support/proved.ts";
 import { readTrackedText, trackedRepositoryFiles } from "../support/tracked-files.ts";
 
-const REMAINING_BASH_SURFACE = "6,851 (Codex 3,432 + OpenCode 2,470 + bootstrap/lib 720 + Claude's engram block 229)";
+const REMAINING_BASH_SURFACE = "3,419 (OpenCode 2,470 + bootstrap/lib 720 + Claude's engram block 229)";
 
 const CEILINGS = [
   {

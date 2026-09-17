@@ -102,10 +102,10 @@ const boundCallSites = boundContracts.flatMap((contract) =>
   contract.callSites.map((file) => ({ file, tokens: contract.callSiteTokens })),
 );
 
-const CALL_SITES_FLOOR = 8;
+const CALL_SITES_FLOOR = 6;
 const CALL_SITES_FLOOR_DERIVATION =
-  "the shared body of each of the two contracts the proof schema binds, plus the claude, codex and opencode render each " +
-  "of them is written out to — the routing table's own count, which grows on its own the day a fourth host is added";
+  "the shared body of each of the two contracts the proof schema binds, plus the Claude and OpenCode render each " +
+  "is written out to — the routing table's own count, which grows on its own when another host is added";
 
 const DECLARED_BLOCKS_FLOOR = 4;
 const DECLARED_BLOCKS_FLOOR_DERIVATION =

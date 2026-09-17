@@ -95,7 +95,7 @@ function staleStateContext(caller: HookCaller, stateFile: string, content: strin
   );
 }
 
-const SKILL_PREFIXES: PerHost<string> = { claude: "/oso-code:", codex: "$oso-code:", opencode: "/oso-" };
+const SKILL_PREFIXES: PerHost<string> = { claude: "/oso-code:", opencode: "/oso-" };
 
 function skillPrefixFor(host: HostName): string {
   return SKILL_PREFIXES[host];

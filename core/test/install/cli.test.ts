@@ -13,7 +13,7 @@ const repoRoot = path.resolve(here, "..", "..", "..");
 const cliSource = path.join(repoRoot, "core", "src", "bin", "oso.ts");
 const cliBundle = path.join(repoRoot, "bootstrap", "oso.js");
 
-const USAGE = `usage: oso <install|verify|repair|purge> --host <claude|codex|opencode> [flags]
+const USAGE = `usage: oso <install|verify|repair|purge> --host <claude|opencode> [flags]
        oso profile show | set <normal|strong|custom> [--applier|--verifier|--judges <default|strong>[:<model>]]
 
 arguments, per host and verb:
@@ -21,10 +21,6 @@ arguments, per host and verb:
   claude    verify   (no arguments)
   claude    repair   --yes
   claude    purge    --yes
-  codex     install  --yes --no-impeccable --no-git-hook
-  codex     verify   (no arguments)
-  codex     repair   --yes
-  codex     purge    --yes
   opencode  install  --yes --no-impeccable --no-git-hook
   opencode  verify   (no arguments)
   opencode  repair   --yes --list [<backup>]
@@ -47,7 +43,7 @@ function runCliInAFixtureHome(argv: readonly string[], fixtureHome: string): { s
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
-function flagsFor(host: "claude" | "codex" | "opencode", verb: "install" | "verify" | "repair" | "purge"): string[] {
+function flagsFor(host: "claude" | "opencode", verb: "install" | "verify" | "repair" | "purge"): string[] {
   return FLAGS_PER_HOST_AND_VERB[host][verb].flags.map((spec) => spec.name);
 }
 
@@ -91,14 +87,13 @@ describe("oso <verb> --host <host> [flags] usage", () => {
 });
 
 describe("the flag table is per host AND verb, populated from each bash script's own case block", () => {
-  test("install carries the four flags bootstrap/install.sh takes, and the three its per-host siblings take", () => {
+  test("install carries the four flags bootstrap/install.sh takes, and the three OpenCode takes", () => {
     assert.deepEqual(flagsFor("claude", "install"), ["--yes", "--replace-claude-md", "--no-impeccable", "--no-git-hook"]);
-    assert.deepEqual(flagsFor("codex", "install"), ["--yes", "--no-impeccable", "--no-git-hook"]);
     assert.deepEqual(flagsFor("opencode", "install"), ["--yes", "--no-impeccable", "--no-git-hook"]);
   });
 
   test("verify takes no arguments on any host", () => {
-    for (const host of ["claude", "codex", "opencode"] as const) assert.deepEqual(flagsFor(host, "verify"), []);
+    for (const host of ["claude", "opencode"] as const) assert.deepEqual(flagsFor(host, "verify"), []);
   });
 
   test("repair --host opencode carries --list and the one positional backup name the repair verb takes", () => {
@@ -114,22 +109,22 @@ describe("the flag table is per host AND verb, populated from each bash script's
 
   test("a flag a verb does not take is refused by name, naming the verb as well as the host", () => {
     assert.throws(
-      () => parseArgv(["repair", "--host", "codex", "--no-impeccable"]),
+      () => parseArgv(["repair", "--host", "claude", "--no-impeccable"]),
       (error: unknown) => error instanceof FlagNotOfferedError && error.flag === "--no-impeccable" && error.verb === "repair",
     );
   });
 
   test("--replace-claude-md still parses for the one host and verb that takes it", () => {
     assert.ok(parseArgv(["install", "--host", "claude", "--replace-claude-md"]).flags.has("--replace-claude-md"));
-    assert.throws(() => parseArgv(["install", "--host", "codex", "--replace-claude-md"]), FlagNotOfferedError);
+    assert.throws(() => parseArgv(["install", "--host", "opencode", "--replace-claude-md"]), FlagNotOfferedError);
   });
 
   test("a refused flag names the host, the verb and the flags that cell does take, on stderr, at exit 1", () => {
-    const result = runCli(["install", "--host", "codex", "--replace-claude-md"]);
+    const result = runCli(["install", "--host", "opencode", "--replace-claude-md"]);
     assert.equal(result.status, 1);
     assert.equal(
       result.stderr,
-      "oso: --replace-claude-md is not a flag the codex host takes for install — it takes --yes, --no-impeccable, --no-git-hook\n",
+      "oso: --replace-claude-md is not a flag the opencode host takes for install — it takes --yes, --no-impeccable, --no-git-hook\n",
     );
     assert.equal(result.stdout, "");
   });
@@ -228,8 +223,12 @@ describe("every verb of every host reaches its own command, so no host answers a
 });
 
 describe("install|repair|purge without --yes, on each host and verb this slice implements", () => {
-  for (const host of ["claude", "codex"] as const) {
-    for (const verb of ["install", "repair", "purge"] as const) {
+  const hostVerbs = [
+    ["claude", ["install", "repair", "purge"]],
+    ["opencode", ["install"]],
+  ] as const;
+  for (const [host, verbs] of hostVerbs) {
+    for (const verb of verbs) {
       test(`${verb} --host ${host} reaches the real command rather than a slice pointer, and reports it needs --yes rather than prompting`, () => {
         const result = runCli([verb, "--host", host]);
         assert.equal(result.status, 1);

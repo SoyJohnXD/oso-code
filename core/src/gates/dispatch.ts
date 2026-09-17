@@ -4,15 +4,10 @@ import { preToolUseRun } from "../hosts/pretooluse.ts";
 import { sessionEndRun } from "../hosts/sessionend.ts";
 import { sessionStartRun } from "../hosts/sessionstart.ts";
 import { stopRun } from "../hosts/stop.ts";
-import { subagentStopRun } from "../hosts/subagentstop.ts";
-import { userPromptRun } from "../hosts/userprompt.ts";
 import type { LoggedEvent } from "../state/store.ts";
 import { AUTOCONTINUE_GATE } from "./autocontinue.ts";
 import { COMMIT_GATE } from "./commit.ts";
 import { EDITS_GATE } from "./edits.ts";
-import { HANDOFF_GATE } from "./handoff.ts";
-import { PLANPROMPT_GATE } from "./planprompt.ts";
-import { PLANSTOP_GATE } from "./planstop.ts";
 import type { GateDefinition, GateRequest } from "./preflight.ts";
 import { PROD_DEPLOY_GATE } from "./proddeploy.ts";
 import { REANCHOR_GATE } from "./reanchor.ts";
@@ -43,14 +38,7 @@ const NO_VERDICT_GATES: readonly GateDefinition<Extract<GateVerdict, { kind: "no
 
 const STOP_GATES: readonly GateDefinition<Extract<GateVerdict, { kind: "allow" | "deny" | "push" }>>[] = [
   AUTOCONTINUE_GATE,
-  PLANSTOP_GATE,
 ];
-
-const USER_PROMPT_GATES: readonly GateDefinition<Extract<GateVerdict, { kind: "allow" | "deny" | "context" }>>[] = [
-  PLANPROMPT_GATE,
-];
-
-const SUBAGENT_STOP_GATES: readonly GateDefinition<Extract<GateVerdict, { kind: "noVerdict" }>>[] = [HANDOFF_GATE];
 
 export function runGate(argv: readonly string[], envelope: HookEnvelope): GateRun {
   const [name, ...gateArguments] = argv;
@@ -61,9 +49,7 @@ export function runGate(argv: readonly string[], envelope: HookEnvelope): GateRu
     routed(PRE_TOOL_USE_GATES, name, request, preToolUseRun, gateErrorRun) ??
     routed(SESSION_START_GATES, name, request, sessionStartRun, loudRun) ??
     routed(NO_VERDICT_GATES, name, request, sessionEndRun, loudRun) ??
-    routed(STOP_GATES, name, request, (verdict) => stopRun(verdict, escalated), loudRun) ??
-    routed(USER_PROMPT_GATES, name, request, userPromptRun, loudRun) ??
-    routed(SUBAGENT_STOP_GATES, name, request, subagentStopRun, loudRun);
+    routed(STOP_GATES, name, request, (verdict) => stopRun(verdict, escalated), loudRun);
 
   return run ?? gateErrorRun(`${THE_GATE_ENTRY_POINT} (unknown gate '${name ?? ""}')`);
 }
