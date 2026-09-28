@@ -1,4 +1,4 @@
-import { rmSync } from "node:fs";
+import { closeSync, constants, openSync, rmSync, writeSync } from "node:fs";
 import path from "node:path";
 import { NO_VERDICT, type GateOutcome, type HookEnvelope, type NoVerdictVerdict } from "../hosts/envelope.ts";
 import { gateRow, type GateId } from "../routes/routes.ts";
@@ -6,6 +6,7 @@ import {
   entriesOfDirectory,
   inFlightRegistryOf,
   isDirectory,
+  isErrnoException,
   isNameToken,
   isoTimestamp,
   readStateFile,
@@ -22,12 +23,17 @@ import {
   type GateRequest,
 } from "./preflight.ts";
 
-export type RegisteredAgent = Readonly<{
+type StartedAgent = Readonly<{
   agentId: string;
   agentType: string;
   transcriptPath: string;
   startedAt: string;
 }>;
+
+export type RegisteredAgent = StartedAgent & Readonly<{ reported: boolean; endedWithoutNotice: boolean }>;
+
+const MARK_SET = "true";
+const APPEND_WITHOUT_CREATING = constants.O_WRONLY | constants.O_APPEND;
 
 export const SUBAGENT_START_GATE: GateDefinition<NoVerdictVerdict> = {
   gate: "subagentstart",
@@ -103,14 +109,31 @@ function registeredAgent(registry: string, agentId: string): RegisteredAgent {
     agentType: stateValue(content, "agent_type"),
     transcriptPath: stateValue(content, "transcript"),
     startedAt: stateValue(content, "started_at"),
+    reported: stateValue(content, "reported") === MARK_SET,
+    endedWithoutNotice: stateValue(content, "ended_without_notice") === MARK_SET,
   };
 }
 
-function writeRegisteredAgent(registry: string, agent: RegisteredAgent): void {
+function writeRegisteredAgent(registry: string, agent: StartedAgent): void {
   const record =
     `agent_id=${agent.agentId}\nagent_type=${oneLine(agent.agentType)}\n` +
     `transcript=${oneLine(agent.transcriptPath)}\nstarted_at=${agent.startedAt}\n`;
   withOwnerOnlyUmask(() => writeFileAtomically(registry, path.join(registry, agent.agentId), record, ".registering-"));
+}
+
+export function markReported(registry: string, agentId: string): void {
+  let entry: number;
+  try {
+    entry = openSync(path.join(registry, agentId), APPEND_WITHOUT_CREATING);
+  } catch (error) {
+    if (isErrnoException(error) && error.code === "ENOENT") return;
+    throw error;
+  }
+  try {
+    writeSync(entry, `reported=${MARK_SET}\n`);
+  } finally {
+    closeSync(entry);
+  }
 }
 
 export function forgetAgent(registry: string, agentId: string): void {

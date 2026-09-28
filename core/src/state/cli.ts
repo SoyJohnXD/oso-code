@@ -3,6 +3,7 @@ import path from "node:path";
 import { abstractionScanReport } from "../scan/abstraction-scan.ts";
 import { ScanFailure } from "../scan/changed-lines.ts";
 import { commentScanReport } from "../scan/comment-scan.ts";
+import { watchInFlight } from "../gates/watch.ts";
 import { ereReads } from "../shell/ere.ts";
 import * as knownKeys from "./known-keys.ts";
 import * as plan from "./plan.ts";
@@ -21,6 +22,7 @@ const USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> cancel-plan <sha256>
        oso-state --session <id> amend-plan <slice-id>
        oso-state --session <id> deny-pattern add <pattern>
+       oso-state --session <id> watch
        oso-state journal <text>
        oso-state journal --path
        oso-state scan comments <ref>
@@ -30,6 +32,10 @@ scan reads the working directory's own repository, reports every hit on stdout
 and exits 0 whether or not it found any. comments flags the inline comments the
 diff since <ref> adds; abstractions flags the exports it adds that fewer than
 two use sites reach.
+
+watch polls this session's in-flight delegations and exits 0 once none is left,
+or 3 naming each one silent for 60 minutes, in flight for 3 hours or ended
+without notice; each is named once across watches.
 `;
 
 class UsageError extends Error {}
@@ -137,6 +143,8 @@ function dispatch(argv: readonly string[]): number {
       return runAmendPlan(sessionId, remaining);
     case "deny-pattern":
       return runDenyPattern(sessionId, remaining);
+    case "watch":
+      return runWatch(sessionId, remaining);
     case "scan":
       return dispatchScan(remaining);
     default:
@@ -159,6 +167,11 @@ function writeScan(report: string): number {
 
 function runSet(sessionId: string, pairs: readonly string[]): number {
   if (pairs.length < 1) throw new UsageError();
+  process.stdout.write(writeCheckedPairs(sessionId, pairs));
+  return 0;
+}
+
+function writeCheckedPairs(sessionId: string, pairs: readonly string[]): string {
   const rejection = knownKeys.setPairRejection(pairs);
   if (rejection !== undefined) throw new RefusedError("set", rejection);
   const stateFile = store.stateFileFor(process.cwd());
@@ -168,9 +181,16 @@ function runSet(sessionId: string, pairs: readonly string[]): number {
     if (owner !== undefined && knownKeys.pairsTouchAGateKey(pairs)) throw new store.GatesOwnedElsewhereError(owner);
     const content = store.writeStatePairs(stateFile, pairs, owner ?? sessionId);
     store.logSet(sessionId, pairs);
-    process.stdout.write(content);
-    return 0;
+    return content;
   });
+}
+
+function runWatch(sessionId: string, remaining: readonly string[]): number {
+  if (remaining.length > 0) throw new UsageError();
+  writeCheckedPairs(sessionId, [`watch=${process.pid}:${store.isoTimestamp()}`]);
+  const end = watchInFlight(store.stateFileFor(process.cwd()), sessionId);
+  process.stdout.write(end.lines.map((line) => `${line}\n`).join(""));
+  return end.exitCode;
 }
 
 function runGet(remaining: readonly string[]): number {

@@ -102,8 +102,16 @@ export function runsDirectoryOf(stateFile: string): string {
   return path.join(runsRootDirectory(), repositoryIdFor(stateFile));
 }
 
+function sessionRunDirectoryOf(stateFile: string, sessionId: string): string {
+  return path.join(runsDirectoryOf(stateFile), sessionId);
+}
+
 export function inFlightRegistryOf(stateFile: string, sessionId: string): string {
-  return path.join(runsDirectoryOf(stateFile), sessionId, "in-flight");
+  return path.join(sessionRunDirectoryOf(stateFile, sessionId), "in-flight");
+}
+
+export function watchPidFileOf(stateFile: string, sessionId: string): string {
+  return path.join(sessionRunDirectoryOf(stateFile, sessionId), "watch.pid");
 }
 
 export function denyPatternsFileFor(stateFile: string): string {
@@ -444,7 +452,7 @@ function lockIsStale(lockDir: string): boolean {
   return heldForSeconds >= LOCK_STALE_SECONDS;
 }
 
-function sleepSync(milliseconds: number): void {
+export function sleepSync(milliseconds: number): void {
   const signal = new Int32Array(new SharedArrayBuffer(4));
   Atomics.wait(signal, 0, 0, milliseconds);
 }

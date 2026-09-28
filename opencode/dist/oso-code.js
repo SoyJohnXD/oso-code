@@ -1067,8 +1067,11 @@ function runsRootDirectory() {
 function runsDirectoryOf(stateFile) {
   return path.join(runsRootDirectory(), repositoryIdFor(stateFile));
 }
+function sessionRunDirectoryOf(stateFile, sessionId) {
+  return path.join(runsDirectoryOf(stateFile), sessionId);
+}
 function inFlightRegistryOf(stateFile, sessionId) {
-  return path.join(runsDirectoryOf(stateFile), sessionId, "in-flight");
+  return path.join(sessionRunDirectoryOf(stateFile, sessionId), "in-flight");
 }
 function denyPatternsFileFor(stateFile) {
   return path.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
@@ -2044,8 +2047,9 @@ function aSliceIsActive(stateContent) {
 }
 
 // core/src/gates/in-flight-registry.ts
-import { rmSync as rmSync3 } from "node:fs";
+import { closeSync, constants as constants2, openSync, rmSync as rmSync3, writeSync } from "node:fs";
 import path5 from "node:path";
+var APPEND_WITHOUT_CREATING = constants2.O_WRONLY | constants2.O_APPEND;
 var SUBAGENT_START_GATE = {
   gate: "subagentstart",
   errorSubject: "the in-flight registry's subagent-start gate",
