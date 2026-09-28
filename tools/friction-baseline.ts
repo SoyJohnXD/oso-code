@@ -25,9 +25,19 @@ const STOP_NET_GATE: GateName = "autocontinue";
 const BURST_MIN_BLOCKS = 3;
 const BURST_MAX_GAP_MS = 60_000;
 const DEFAULT_WINDOW_DAYS = 60;
-const MS_PER_DAY = 86_400_000;
+const MS_PER_MINUTE = 60_000;
+const MS_PER_DAY = 24 * 60 * MS_PER_MINUTE;
 
 export type Denial = Readonly<{ gate: GateName; timestamp: string }>;
+
+const COMPLETION_STATUSES = ["completed", "failed", "stopped", "killed", "other"] as const;
+export type CompletionStatus = (typeof COMPLETION_STATUSES)[number];
+
+export type Completion = Readonly<{ atMs: number; status: CompletionStatus }>;
+
+export type Delegation = Readonly<{ launchedAtMs: number; agentId: string | null; completion: Completion | null }>;
+
+export type SubagentWrites = Readonly<{ agentId: string; writeTimesMs: number[] }>;
 
 export type SessionRecord = {
   sessionId: string;
@@ -39,6 +49,8 @@ export type SessionRecord = {
   osoStateCalls: number;
   denials: Denial[];
   stopNetTimestamps: string[];
+  delegations: Delegation[];
+  subagentWrites: SubagentWrites[];
 };
 
 export type TreeClassification = {
@@ -49,11 +61,26 @@ export type TreeClassification = {
 
 type TranscriptScope = "main" | "subagent";
 
-type TranscriptFacts = Omit<SessionRecord, "sessionId" | "mtimeMs" | "hasMainTranscript"> & { skippedLines: number };
+type TranscriptFacts = Omit<SessionRecord, "sessionId" | "mtimeMs" | "hasMainTranscript" | "subagentWrites"> & {
+  skippedLines: number;
+  writeTimesMs: number[];
+};
 
-type TranscriptTally = Readonly<{ facts: TranscriptFacts; turnIds: Set<string>; toolUseIds: Set<string> }>;
+type LaunchRecord = { launchedAtMs: number; agentId: string | null; resultCompletion: Completion | null };
 
-type TranscriptFile = Readonly<{ file: string; sessionId: string; scope: TranscriptScope }>;
+type Notice = Readonly<{ toolUseId: string | null; taskId: string | null; completion: Completion }>;
+
+type TranscriptTally = Readonly<{
+  facts: TranscriptFacts;
+  turnIds: Set<string>;
+  toolUseIds: Set<string>;
+  launches: Map<string, LaunchRecord>;
+  notices: Notice[];
+}>;
+
+type TranscriptFile = Readonly<
+  { file: string; sessionId: string } & ({ scope: "main" } | { scope: "subagent"; agentId: string })
+>;
 
 type EventRecord = Readonly<Record<string, unknown>>;
 
@@ -67,7 +94,8 @@ export function classifyTree(root: string): TreeClassification {
   const tree: TreeClassification = { sessions: [], skippedLines: 0, unreadableFiles: 0 };
   const sessionsById = new Map<string, SessionRecord>();
 
-  for (const { file, sessionId, scope } of listTranscripts(root, tree)) {
+  for (const transcript of listTranscripts(root, tree)) {
+    const { file, sessionId } = transcript;
     let text: string;
     let mtimeMs: number;
     try {
@@ -77,7 +105,7 @@ export function classifyTree(root: string): TreeClassification {
       tree.unreadableFiles += 1;
       continue;
     }
-    const facts = classifyTranscript(text, scope);
+    const facts = classifyTranscript(text, transcript.scope);
     tree.skippedLines += facts.skippedLines;
     let record = sessionsById.get(sessionId);
     if (record === undefined) {
@@ -85,7 +113,10 @@ export function classifyTree(root: string): TreeClassification {
       sessionsById.set(sessionId, record);
       tree.sessions.push(record);
     }
-    record.hasMainTranscript ||= scope === "main";
+    record.hasMainTranscript ||= transcript.scope === "main";
+    if (transcript.scope === "subagent") {
+      record.subagentWrites.push({ agentId: transcript.agentId, writeTimesMs: facts.writeTimesMs });
+    }
     mergeFacts(record, facts, mtimeMs);
   }
   return tree;
@@ -114,6 +145,7 @@ function listTranscripts(root: string, tree: TreeClassification): TranscriptFile
               file: path.join(subagentsDir, file.name),
               sessionId: sessionDir.name,
               scope: "subagent",
+              agentId: path.basename(file.name, ".jsonl").replace(/^agent-/, ""),
             }));
         });
       return [...mainTranscripts, ...subagentTranscripts];
@@ -143,10 +175,14 @@ export function classifyTranscript(text: string, scope: TranscriptScope): Transc
       osoStateCalls: 0,
       denials: [],
       stopNetTimestamps: [],
+      delegations: [],
       skippedLines: 0,
+      writeTimesMs: [],
     },
     turnIds: new Set(),
     toolUseIds: new Set(),
+    launches: new Map(),
+    notices: [],
   };
   const { facts } = tally;
 
@@ -158,13 +194,22 @@ export function classifyTranscript(text: string, scope: TranscriptScope): Transc
       continue;
     }
     const timestamp = typeof event["timestamp"] === "string" ? event["timestamp"] : "";
+    const timeMs = Date.parse(timestamp);
     facts.denials.push(...denialsOf(event, timestamp));
-    if (scope === "subagent") continue;
+    if (scope === "subagent") {
+      if (!Number.isNaN(timeMs)) facts.writeTimesMs.push(timeMs);
+      continue;
+    }
     if (isStopNetBlock(event)) facts.stopNetTimestamps.push(timestamp);
     facts.mode ??= modeOf(event);
-    countAssistantWork(event, tally);
+    countAssistantWork(event, tally, timeMs);
+    if (Number.isNaN(timeMs)) continue;
+    recordLaunchResults(event, tally.launches, timeMs);
+    const notice = noticeOf(event, timeMs);
+    if (notice !== null) tally.notices.push(notice);
   }
   facts.turns = tally.turnIds.size;
+  facts.delegations = resolveDelegations(tally);
   return facts;
 }
 
@@ -179,6 +224,8 @@ function emptySession(sessionId: string): SessionRecord {
     osoStateCalls: 0,
     denials: [],
     stopNetTimestamps: [],
+    delegations: [],
+    subagentWrites: [],
   };
 }
 
@@ -190,6 +237,7 @@ function mergeFacts(record: SessionRecord, facts: TranscriptFacts, mtimeMs: numb
   record.osoStateCalls += facts.osoStateCalls;
   record.denials.push(...facts.denials);
   record.stopNetTimestamps.push(...facts.stopNetTimestamps);
+  record.delegations.push(...facts.delegations);
 }
 
 function parseEvent(line: string): EventRecord | undefined {
@@ -253,15 +301,23 @@ function modeOf(event: EventRecord): Mode | null {
   return (MODE_COMMAND.exec(text)?.[1] as Mode | undefined) ?? null;
 }
 
-function countAssistantWork(event: EventRecord, { facts, turnIds, toolUseIds }: TranscriptTally): void {
+function countAssistantWork(
+  event: EventRecord,
+  { facts, turnIds, toolUseIds, launches }: TranscriptTally,
+  timeMs: number,
+): void {
   if (event["type"] !== "assistant") return;
   const message = event["message"];
   if (isRecord(message) && typeof message["id"] === "string") turnIds.add(message["id"]);
   for (const block of contentBlocks(event)) {
-    if (block["type"] !== "tool_use" || typeof block["id"] !== "string" || toolUseIds.has(block["id"])) continue;
-    toolUseIds.add(block["id"]);
+    const id = block["id"];
+    if (block["type"] !== "tool_use" || typeof id !== "string" || toolUseIds.has(id)) continue;
+    toolUseIds.add(id);
     const name = block["name"];
-    if (typeof name === "string" && AGENT_TOOLS.has(name)) facts.agentLaunches += 1;
+    if (typeof name === "string" && AGENT_TOOLS.has(name)) {
+      facts.agentLaunches += 1;
+      if (!Number.isNaN(timeMs)) launches.set(id, { launchedAtMs: timeMs, agentId: null, resultCompletion: null });
+    }
     if (name === "Bash" && OSO_STATE_INVOCATION.test(commandOf(block))) facts.osoStateCalls += 1;
   }
 }
@@ -269,6 +325,79 @@ function countAssistantWork(event: EventRecord, { facts, turnIds, toolUseIds }: 
 function commandOf(toolUse: EventRecord): string {
   const input = toolUse["input"];
   return isRecord(input) && typeof input["command"] === "string" ? input["command"] : "";
+}
+
+function recordLaunchResults(event: EventRecord, launches: Map<string, LaunchRecord>, timeMs: number): void {
+  if (event["type"] !== "user") return;
+  const result = event["toolUseResult"];
+  const resultFields = isRecord(result) ? result : {};
+  const isAsyncLaunch = resultFields["isAsync"] === true || resultFields["status"] === "async_launched";
+  for (const block of contentBlocks(event)) {
+    const toolUseId = block["tool_use_id"];
+    const launch = block["type"] === "tool_result" && typeof toolUseId === "string" ? launches.get(toolUseId) : undefined;
+    if (launch === undefined) continue;
+    if (typeof resultFields["agentId"] === "string") launch.agentId = resultFields["agentId"];
+    if (isAsyncLaunch) continue;
+    launch.resultCompletion = { atMs: timeMs, status: block["is_error"] === true ? "failed" : "completed" };
+  }
+}
+
+const TASK_NOTIFICATION = "task-notification";
+const TASK_NOTIFICATION_OPEN = `<${TASK_NOTIFICATION}>`;
+
+function noticeOf(event: EventRecord, timeMs: number): Notice | null {
+  const text = notificationText(event);
+  if (text === null) return null;
+  const status = tagValue(text, "status");
+  return {
+    toolUseId: tagValue(text, "tool-use-id"),
+    taskId: tagValue(text, "task-id"),
+    completion: { atMs: timeMs, status: COMPLETION_STATUSES.find((known) => known === status) ?? "other" },
+  };
+}
+
+function notificationText(event: EventRecord): string | null {
+  const origin = event["origin"];
+  if (event["type"] === "user" && isRecord(origin) && origin["kind"] === TASK_NOTIFICATION) {
+    return textOf(messageContent(event));
+  }
+  const content = event["content"];
+  if (event["type"] === "queue-operation" && event["operation"] === "enqueue" && typeof content === "string") {
+    return content.trimStart().startsWith(TASK_NOTIFICATION_OPEN) ? content : null;
+  }
+  const attachment = event["attachment"];
+  if (!isRecord(attachment) || attachment["type"] !== "queued_command") return null;
+  const prompt = attachment["prompt"];
+  return attachment["commandMode"] === TASK_NOTIFICATION && typeof prompt === "string" ? prompt : null;
+}
+
+function tagValue(text: string, tag: string): string | null {
+  return new RegExp(`<${tag}>([^<]*)</${tag}>`).exec(text)?.[1] ?? null;
+}
+
+function resolveDelegations({ launches, notices }: TranscriptTally): Delegation[] {
+  const byToolUseId = earliestCompletionBy(notices, (notice) => notice.toolUseId);
+  const byTaskId = earliestCompletionBy(
+    notices.filter((notice) => notice.toolUseId === null),
+    (notice) => notice.taskId,
+  );
+  return [...launches].map(([toolUseId, { launchedAtMs, agentId, resultCompletion }]) => ({
+    launchedAtMs,
+    agentId,
+    completion:
+      resultCompletion ?? byToolUseId.get(toolUseId) ?? (agentId === null ? undefined : byTaskId.get(agentId)) ?? null,
+  }));
+}
+
+function earliestCompletionBy(notices: Notice[], keyOf: (notice: Notice) => string | null): Map<string, Completion> {
+  const earliest = new Map<string, Completion>();
+  for (const notice of notices) {
+    const key = keyOf(notice);
+    if (key === null) continue;
+    const known = earliest.get(key);
+    if (known === undefined || notice.completion.atMs < known.atMs) earliest.set(key, notice.completion);
+  }
+  return earliest;
 }
 
 export type GateCount = { events: number; sessions: number };
@@ -290,6 +419,29 @@ export type FrictionReport = {
   oso_state_calls: { total: number; per_session_median: number | null; max: number };
   modes: Record<Mode, ModeSummary>;
   unclassified_session_ids: string[];
+  delegation_liveness: DelegationLiveness;
+};
+
+export type DurationDistribution = {
+  count: number;
+  p50_ms: number | null;
+  p90_ms: number | null;
+  p99_ms: number | null;
+  max_ms: number | null;
+};
+
+const IDLE_GAP_THRESHOLDS_MIN = [15, 30, 45, 60] as const;
+type IdleGapThreshold = `${(typeof IDLE_GAP_THRESHOLDS_MIN)[number]}m`;
+
+export type DelegationLiveness = {
+  launches: number;
+  orphans: number;
+  orphan_session_ids: string[];
+  statuses: Record<CompletionStatus, number>;
+  stop_net_blocks: { delegation_in_flight: number; none_in_flight: number };
+  launch_to_completion: DurationDistribution & { at_least_45_min: number };
+  idle_gaps: DurationDistribution & { share_at_least: Record<IdleGapThreshold, number | null> };
+  lingering: DurationDistribution;
 };
 
 export function aggregate(tree: TreeClassification, windowDays: number, nowMs: number): FrictionReport {
@@ -315,6 +467,7 @@ export function aggregate(tree: TreeClassification, windowDays: number, nowMs: n
     unclassified_session_ids: windowed
       .filter((session) => session.denials.some((denial) => denial.gate === "unclassified"))
       .map((session) => session.sessionId),
+    delegation_liveness: delegationLiveness(sessions),
   };
 }
 
@@ -366,6 +519,103 @@ function median(values: number[]): number | null {
   return sorted.length % 2 === 1 ? upper : ((sorted[middle - 1] ?? 0) + upper) / 2;
 }
 
+const LONG_DELEGATION_MIN = 45;
+
+type FinishedSubagentIdle = Readonly<{ maxGapMs: number; lingeringMs: number }>;
+
+function delegationLiveness(sessions: SessionRecord[]): DelegationLiveness {
+  const delegations = sessions.flatMap((session) => session.delegations);
+  const durations = delegations.flatMap(({ launchedAtMs, completion }) =>
+    completion === null ? [] : [completion.atMs - launchedAtMs],
+  );
+  const finished = sessions.flatMap(finishedSubagentIdle);
+  const maxGaps = finished.map((subagent) => subagent.maxGapMs);
+  const isOrphan = (delegation: Delegation) => delegation.completion === null;
+  return {
+    launches: delegations.length,
+    orphans: delegations.filter(isOrphan).length,
+    orphan_session_ids: sessions
+      .filter((session) => session.delegations.some(isOrphan))
+      .map((session) => session.sessionId),
+    statuses: statusCounts(delegations),
+    stop_net_blocks: stopNetBlocksByFlight(sessions),
+    launch_to_completion: {
+      ...distribution(durations),
+      at_least_45_min: durations.filter((ms) => ms >= LONG_DELEGATION_MIN * MS_PER_MINUTE).length,
+    },
+    idle_gaps: { ...distribution(maxGaps), share_at_least: shareAtLeast(maxGaps) },
+    lingering: distribution(finished.map((subagent) => subagent.lingeringMs)),
+  };
+}
+
+function finishedSubagentIdle(session: SessionRecord): FinishedSubagentIdle[] {
+  const writesByAgent = new Map(session.subagentWrites.map(({ agentId, writeTimesMs }) => [agentId, writeTimesMs]));
+  return session.delegations.flatMap(({ agentId, completion }) => {
+    if (agentId === null || completion === null) return [];
+    const writesUntilCompletion = (writesByAgent.get(agentId) ?? [])
+      .filter((time) => time <= completion.atMs)
+      .sort((a, b) => a - b);
+    const lastWriteMs = writesUntilCompletion.at(-1);
+    if (lastWriteMs === undefined) return [];
+    return [{ maxGapMs: largestGap(writesUntilCompletion), lingeringMs: completion.atMs - lastWriteMs }];
+  });
+}
+
+function largestGap(sortedTimesMs: number[]): number {
+  return sortedTimesMs.reduce(
+    (largest, time, index) => Math.max(largest, time - (sortedTimesMs[index - 1] ?? time)),
+    0,
+  );
+}
+
+function statusCounts(delegations: Delegation[]): Record<CompletionStatus, number> {
+  const counts = Object.fromEntries(COMPLETION_STATUSES.map((status) => [status, 0])) as Record<
+    CompletionStatus,
+    number
+  >;
+  for (const { completion } of delegations) if (completion !== null) counts[completion.status] += 1;
+  return counts;
+}
+
+function stopNetBlocksByFlight(sessions: SessionRecord[]): DelegationLiveness["stop_net_blocks"] {
+  const inFlightPerBlock = sessions.flatMap((session) =>
+    session.stopNetTimestamps
+      .map((timestamp) => Date.parse(timestamp))
+      .filter((time) => !Number.isNaN(time))
+      .map((time) => session.delegations.some((delegation) => isInFlightAt(delegation, time))),
+  );
+  const inFlight = inFlightPerBlock.filter(Boolean).length;
+  return { delegation_in_flight: inFlight, none_in_flight: inFlightPerBlock.length - inFlight };
+}
+
+function isInFlightAt({ launchedAtMs, completion }: Delegation, timeMs: number): boolean {
+  return launchedAtMs < timeMs && (completion === null || completion.atMs > timeMs);
+}
+
+function distribution(valuesMs: number[]): DurationDistribution {
+  const sorted = [...valuesMs].sort((a, b) => a - b);
+  return {
+    count: sorted.length,
+    p50_ms: nearestRank(sorted, 0.5),
+    p90_ms: nearestRank(sorted, 0.9),
+    p99_ms: nearestRank(sorted, 0.99),
+    max_ms: sorted.at(-1) ?? null,
+  };
+}
+
+function nearestRank(sorted: number[], fraction: number): number | null {
+  return sorted[Math.ceil(fraction * sorted.length) - 1] ?? null;
+}
+
+function shareAtLeast(maxGapsMs: number[]): Record<IdleGapThreshold, number | null> {
+  return Object.fromEntries(
+    IDLE_GAP_THRESHOLDS_MIN.map((minutes) => {
+      const reached = maxGapsMs.filter((gap) => gap >= minutes * MS_PER_MINUTE).length;
+      return [`${minutes}m`, maxGapsMs.length === 0 ? null : Number((reached / maxGapsMs.length).toFixed(3))];
+    }),
+  ) as Record<IdleGapThreshold, number | null>;
+}
+
 export function renderJson(report: FrictionReport): string {
   return JSON.stringify(report, null, 2);
 }
@@ -403,8 +653,41 @@ export function renderTable(report: FrictionReport): string {
     `  ${"mode".padEnd(MODE_COLUMNS.mode)}${modeHeader.join("")}`,
     ...modeRows,
     "",
+    ...livenessRows(report.delegation_liveness),
+    "",
     `sessions with unclassified denials: ${report.unclassified_session_ids.join(", ") || "none"}`,
   ].join("\n");
+}
+
+const DISTRIBUTION_COLUMNS = { label: 22, cell: 8 } as const;
+
+function livenessRows(liveness: DelegationLiveness): string[] {
+  const { stop_net_blocks: stopBlocks, launch_to_completion: durations, idle_gaps: idleGaps } = liveness;
+  const statuses = COMPLETION_STATUSES.map((status) => `${status} ${liveness.statuses[status]}`).join(", ");
+  const shares = IDLE_GAP_THRESHOLDS_MIN.map(
+    (minutes) => `>=${minutes}m ${idleGaps.share_at_least[`${minutes}m`] ?? "n/a"}`,
+  ).join(", ");
+  const header = ["count", "p50", "p90", "p99", "max"].map((label) => label.padStart(DISTRIBUTION_COLUMNS.cell));
+  return [
+    `delegation liveness: ${liveness.launches} launches, ${liveness.orphans} orphans`,
+    `  stop-net blocks: ${stopBlocks.delegation_in_flight} with a delegation in flight, ${stopBlocks.none_in_flight} with none in flight`,
+    `  completion statuses: ${statuses}`,
+    `  ${"minutes".padEnd(DISTRIBUTION_COLUMNS.label)}${header.join("")}`,
+    distributionRow("launch->completion", durations),
+    distributionRow("max idle gap", idleGaps),
+    distributionRow("lingering", liveness.lingering),
+    `  launches >=${LONG_DELEGATION_MIN} min: ${durations.at_least_45_min}`,
+    `  finished subagents by max idle gap: ${shares}`,
+    `  sessions with orphan launches: ${liveness.orphan_session_ids.join(", ") || "none"}`,
+  ];
+}
+
+function distributionRow(label: string, { count, p50_ms, p90_ms, p99_ms, max_ms }: DurationDistribution): string {
+  const minutes = [p50_ms, p90_ms, p99_ms, max_ms].map((ms) =>
+    ms === null ? "n/a" : (ms / MS_PER_MINUTE).toFixed(1),
+  );
+  const cells = [String(count), ...minutes].map((cell) => cell.padStart(DISTRIBUTION_COLUMNS.cell));
+  return `  ${label.padEnd(DISTRIBUTION_COLUMNS.label)}${cells.join("")}`;
 }
 
 function main(): void {

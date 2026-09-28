@@ -11,6 +11,7 @@ import {
   classifyTree,
   renderJson,
   renderTable,
+  type Delegation,
   type SessionRecord,
   type TreeClassification,
 } from "../../../tools/friction-baseline.ts";
@@ -68,7 +69,7 @@ test("malformed lines increment skipped_lines", () => {
   const tree = classifyTree(FIXTURE_ROOT);
   assert.equal(tree.skippedLines, 1);
   assert.equal(tree.unreadableFiles, 0);
-  assert.equal(tree.sessions.length, 2);
+  assert.equal(tree.sessions.length, 3);
 });
 
 test("an unreadable transcript is counted in unreadable_files", () => {
@@ -152,6 +153,7 @@ test("a session directory with only subagent transcripts keeps its denials but i
 
 const NOW_MS = Date.parse("2026-09-28T00:00:00.000Z");
 const DAY_MS = 86_400_000;
+const MINUTE_MS = 60_000;
 
 function sessionWith(overrides: Partial<SessionRecord>): SessionRecord {
   return {
@@ -164,6 +166,8 @@ function sessionWith(overrides: Partial<SessionRecord>): SessionRecord {
     osoStateCalls: 0,
     denials: [],
     stopNetTimestamps: [],
+    delegations: [],
+    subagentWrites: [],
     ...overrides,
   };
 }
@@ -289,6 +293,13 @@ test("rendered table and JSON hold no fixture message text, only counts, gate na
     "Activate it first",
     "some other plugin",
     "without parking",
+    "Describe the liveness task",
+    "liveness prompt prose",
+    "Liveness summary prose",
+    "liveness result prose",
+    "subagent working prose",
+    "agent3",
+    "tu-30",
   ];
   for (const output of outputs) {
     for (const text of fixtureText) assert.equal(output.includes(text), false, `leaked: ${text}`);
@@ -296,7 +307,12 @@ test("rendered table and JSON hold no fixture message text, only counts, gate na
   }
   assert.equal(report.skipped_lines, 1);
   assert.equal(report.unreadable_files, 0);
-  assert.equal(report.gates.autocontinue.events, 1);
+  assert.equal(report.gates.autocontinue.events, 3);
+  assert.deepEqual(report.delegation_liveness.stop_net_blocks, { delegation_in_flight: 2, none_in_flight: 1 });
+  assert.equal(report.delegation_liveness.launch_to_completion.max_ms, 50 * MINUTE_MS);
+  assert.equal(report.delegation_liveness.lingering.max_ms, 10 * MINUTE_MS);
+  assert.equal(report.delegation_liveness.idle_gaps.max_ms, 35 * MINUTE_MS);
+  assert.match(outputs[0] ?? "", /delegation liveness/);
   assert.equal(report.modes.plan.sessions, 1);
   assert.deepEqual(JSON.parse(outputs[1] ?? ""), report);
 });
@@ -313,5 +329,251 @@ test("the CLI prints parseable JSON for a fixture root", () => {
     encoding: "utf8",
   });
   assert.equal(result.status, 0);
-  assert.equal(JSON.parse(result.stdout).sessions_scanned, 2);
+  assert.equal(JSON.parse(result.stdout).sessions_scanned, 3);
+});
+
+const LAUNCH_MS = Date.parse("2026-09-20T00:00:00.000Z");
+
+function minutesAfterLaunch(minutes: number): number {
+  return LAUNCH_MS + minutes * MINUTE_MS;
+}
+
+function isoAt(minutes: number): string {
+  return new Date(minutesAfterLaunch(minutes)).toISOString();
+}
+
+function delegation(overrides: Partial<Delegation>): Delegation {
+  return { launchedAtMs: LAUNCH_MS, agentId: null, completion: null, ...overrides };
+}
+
+test("a Stop block while a launch is in flight counts as in flight, one after its completion as none in flight", () => {
+  const report = aggregate(
+    treeOf(
+      sessionWith({
+        delegations: [delegation({ completion: { atMs: minutesAfterLaunch(20), status: "completed" } })],
+        stopNetTimestamps: [isoAt(10), isoAt(30)],
+      }),
+    ),
+    60,
+    NOW_MS,
+  );
+  assert.deepEqual(report.delegation_liveness.stop_net_blocks, { delegation_in_flight: 1, none_in_flight: 1 });
+});
+
+test("a Stop block before any launch is none in flight, one while an orphan is still open is in flight", () => {
+  const report = aggregate(
+    treeOf(sessionWith({ delegations: [delegation({})], stopNetTimestamps: [isoAt(-5), isoAt(500)] })),
+    60,
+    NOW_MS,
+  );
+  assert.deepEqual(report.delegation_liveness.stop_net_blocks, { delegation_in_flight: 1, none_in_flight: 1 });
+});
+
+test("launch to completion durations give nearest-rank percentiles, the max and the count of at least 45 minutes", () => {
+  const report = aggregate(
+    treeOf(
+      sessionWith({
+        delegations: [5, 10, 20, 45, 90].map((minutes) =>
+          delegation({ completion: { atMs: minutesAfterLaunch(minutes), status: "completed" } }),
+        ),
+      }),
+    ),
+    60,
+    NOW_MS,
+  );
+  assert.deepEqual(report.delegation_liveness.launch_to_completion, {
+    count: 5,
+    p50_ms: 20 * MINUTE_MS,
+    p90_ms: 90 * MINUTE_MS,
+    p99_ms: 90 * MINUTE_MS,
+    max_ms: 90 * MINUTE_MS,
+    at_least_45_min: 2,
+  });
+});
+
+test("idle gaps take each finished subagent's largest gap between writes and bucket the share by threshold", () => {
+  const finished = (agentId: string) =>
+    delegation({ agentId, completion: { atMs: minutesAfterLaunch(200), status: "completed" } });
+  const report = aggregate(
+    treeOf(
+      sessionWith({
+        delegations: [finished("quick"), finished("slow"), finished("stalled"), delegation({ agentId: "open" })],
+        subagentWrites: [
+          { agentId: "quick", writeTimesMs: [1, 2, 3].map(minutesAfterLaunch) },
+          { agentId: "slow", writeTimesMs: [0, 20, 36].map(minutesAfterLaunch) },
+          { agentId: "stalled", writeTimesMs: [0, 61, 70].map(minutesAfterLaunch) },
+          { agentId: "open", writeTimesMs: [0, 150].map(minutesAfterLaunch) },
+        ],
+      }),
+    ),
+    60,
+    NOW_MS,
+  );
+  const { idle_gaps } = report.delegation_liveness;
+  assert.equal(idle_gaps.count, 3);
+  assert.equal(idle_gaps.max_ms, 61 * MINUTE_MS);
+  assert.equal(idle_gaps.p50_ms, 20 * MINUTE_MS);
+  assert.deepEqual(idle_gaps.share_at_least, { "15m": 0.667, "30m": 0.333, "45m": 0.333, "60m": 0.333 });
+});
+
+test("writes after the completion signal are outside the finished subagent's idle gaps and lingering", () => {
+  const report = aggregate(
+    treeOf(
+      sessionWith({
+        delegations: [delegation({ agentId: "resumed", completion: { atMs: minutesAfterLaunch(30), status: "completed" } })],
+        subagentWrites: [{ agentId: "resumed", writeTimesMs: [0, 25, 400].map(minutesAfterLaunch) }],
+      }),
+    ),
+    60,
+    NOW_MS,
+  );
+  assert.equal(report.delegation_liveness.idle_gaps.max_ms, 25 * MINUTE_MS);
+  assert.equal(report.delegation_liveness.lingering.max_ms, 5 * MINUTE_MS);
+});
+
+test("lingering runs from the subagent's last write to its completion signal", () => {
+  const report = aggregate(
+    treeOf(
+      sessionWith({
+        delegations: [
+          delegation({ agentId: "a", completion: { atMs: minutesAfterLaunch(12), status: "completed" } }),
+          delegation({ agentId: "b", completion: { atMs: minutesAfterLaunch(40), status: "completed" } }),
+          delegation({ completion: { atMs: minutesAfterLaunch(3), status: "completed" } }),
+        ],
+        subagentWrites: [
+          { agentId: "a", writeTimesMs: [0, 10].map(minutesAfterLaunch) },
+          { agentId: "b", writeTimesMs: [0, 39].map(minutesAfterLaunch) },
+        ],
+      }),
+    ),
+    60,
+    NOW_MS,
+  );
+  assert.deepEqual(report.delegation_liveness.lingering, {
+    count: 2,
+    p50_ms: 1 * MINUTE_MS,
+    p90_ms: 2 * MINUTE_MS,
+    p99_ms: 2 * MINUTE_MS,
+    max_ms: 2 * MINUTE_MS,
+  });
+});
+
+test("an orphan launch and a killed completion are counted with the orphan's session id", () => {
+  const report = aggregate(
+    treeOf(
+      sessionWith({
+        sessionId: "with-orphan",
+        delegations: [delegation({}), delegation({ completion: { atMs: minutesAfterLaunch(4), status: "killed" } })],
+      }),
+      sessionWith({
+        sessionId: "clean",
+        delegations: [delegation({ completion: { atMs: minutesAfterLaunch(4), status: "completed" } })],
+      }),
+    ),
+    60,
+    NOW_MS,
+  );
+  const liveness = report.delegation_liveness;
+  assert.equal(liveness.launches, 3);
+  assert.equal(liveness.orphans, 1);
+  assert.deepEqual(liveness.orphan_session_ids, ["with-orphan"]);
+  assert.deepEqual(liveness.statuses, { completed: 1, failed: 0, stopped: 0, killed: 1, other: 0 });
+});
+
+function transcriptOf(...events: object[]): string {
+  return events.map((event) => JSON.stringify(event)).join("\n");
+}
+
+function agentLaunch(id: string, minutes: number): object {
+  return {
+    type: "assistant",
+    timestamp: isoAt(minutes),
+    message: { id: `msg-${id}`, content: [{ type: "tool_use", id, name: "Agent", input: { prompt: "p" } }] },
+  };
+}
+
+function launchResult(toolUseId: string, minutes: number, toolUseResult: object, isError = false): object {
+  return {
+    type: "user",
+    timestamp: isoAt(minutes),
+    message: { content: [{ type: "tool_result", tool_use_id: toolUseId, is_error: isError, content: "r" }] },
+    toolUseResult,
+  };
+}
+
+function notification(tags: Record<string, string>): string {
+  const body = Object.entries(tags)
+    .map(([tag, value]) => `<${tag}>${value}</${tag}>`)
+    .join("\n");
+  return `<task-notification>\n${body}\n<summary>s</summary>\n</task-notification>`;
+}
+
+test("the classifier pairs launches with the earliest structural notification and ignores quoted notifications", () => {
+  const text = transcriptOf(
+    agentLaunch("tu-a", 0),
+    launchResult("tu-a", 0.1, { isAsync: true, status: "async_launched", agentId: "ag-a" }),
+    { type: "user", timestamp: isoAt(1), message: { content: notification({ "tool-use-id": "tu-a", status: "failed" }) } },
+    {
+      type: "queue-operation",
+      operation: "enqueue",
+      timestamp: isoAt(5),
+      content: notification({ "task-id": "ag-a", "tool-use-id": "tu-a", status: "completed" }),
+    },
+    {
+      type: "user",
+      timestamp: isoAt(6),
+      origin: { kind: "task-notification" },
+      message: { content: notification({ "task-id": "ag-a", "tool-use-id": "tu-a", status: "completed" }) },
+    },
+    agentLaunch("tu-b", 10),
+    launchResult("tu-b", 10.1, { isAsync: true, status: "async_launched", agentId: "ag-b" }),
+    {
+      type: "attachment",
+      timestamp: isoAt(20),
+      attachment: {
+        type: "queued_command",
+        commandMode: "task-notification",
+        prompt: notification({ "task-id": "ag-b", status: "killed" }),
+      },
+    },
+    agentLaunch("tu-c", 30),
+    launchResult("tu-c", 32, { status: "completed", agentId: "ag-c" }),
+    agentLaunch("tu-d", 40),
+    launchResult("tu-d", 40.5, {}, true),
+    agentLaunch("tu-e", 50),
+    launchResult("tu-e", 50.1, { isAsync: true, status: "async_launched", agentId: "ag-e" }),
+  );
+  assert.deepEqual(classifyTranscript(text, "main").delegations, [
+    { launchedAtMs: minutesAfterLaunch(0), agentId: "ag-a", completion: { atMs: minutesAfterLaunch(5), status: "completed" } },
+    { launchedAtMs: minutesAfterLaunch(10), agentId: "ag-b", completion: { atMs: minutesAfterLaunch(20), status: "killed" } },
+    { launchedAtMs: minutesAfterLaunch(30), agentId: "ag-c", completion: { atMs: minutesAfterLaunch(32), status: "completed" } },
+    { launchedAtMs: minutesAfterLaunch(40), agentId: null, completion: { atMs: minutesAfterLaunch(40.5), status: "failed" } },
+    { launchedAtMs: minutesAfterLaunch(50), agentId: "ag-e", completion: null },
+  ]);
+});
+
+test("an unknown notification status is bucketed as other, never echoed", () => {
+  const text = transcriptOf(agentLaunch("tu-x", 0), {
+    type: "user",
+    timestamp: isoAt(3),
+    origin: { kind: "task-notification" },
+    message: { content: notification({ "tool-use-id": "tu-x", status: "some free text" }) },
+  });
+  assert.deepEqual(classifyTranscript(text, "main").delegations, [
+    { launchedAtMs: minutesAfterLaunch(0), agentId: null, completion: { atMs: minutesAfterLaunch(3), status: "other" } },
+  ]);
+});
+
+test("the tree walk records each subagent's write times under the agent id its file names", () => {
+  const record = sessionNamed(classifyTree(FIXTURE_ROOT), "sess-3");
+  const writes = ["2026-09-03T08:00:01.000Z", "2026-09-03T08:05:00.000Z", "2026-09-03T08:40:00.000Z"];
+  assert.deepEqual(record.subagentWrites, [{ agentId: "agent3", writeTimesMs: writes.map((iso) => Date.parse(iso)) }]);
+  assert.equal(record.delegations.length, 1);
+});
+
+test("the table renders the liveness section with n/a for empty distributions", () => {
+  const table = renderTable(aggregate(treeOf(), 60, NOW_MS));
+  assert.match(table, /delegation liveness: 0 launches, 0 orphans/);
+  assert.match(table, /stop-net blocks: 0 with a delegation in flight, 0 with none in flight/);
+  assert.match(table, /launch->completion\s+0\s+n\/a\s+n\/a\s+n\/a\s+n\/a/);
 });
