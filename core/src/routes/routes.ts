@@ -54,6 +54,8 @@ export const HOST_ROWS: readonly HostRow[] = [
   { host: "opencode", manifest: "opencode/hooks/routes.ts", commandRoot: "<module-relative>" },
 ];
 
+export const PRE_TOOL_USE_ROUTE = "pretooluse";
+
 export const GATE_ROWS = [
   {
     gate: "commit",

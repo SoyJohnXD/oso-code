@@ -804,6 +804,7 @@ var GENERATED_BUNDLES = [
   BOOTSTRAP_BUNDLE,
   OPENCODE_PLUGIN_BUNDLE
 ];
+var PRE_TOOL_USE_ROUTE = "pretooluse";
 var GATE_ROWS = [
   {
     gate: "commit",
@@ -1739,6 +1740,58 @@ function blockEnvelope(reason) {
 }
 function endedEnvelope(reason) {
   return JSON.stringify({ continue: false, stopReason: reason, systemMessage: reason });
+}
+
+// core/src/routes/render.ts
+var UNKNOWN_TOOL_MATCHER = ".*";
+var PRE_TOOL_USE_EVENT = "PreToolUse";
+var CLAUDE_EXACT_TOOL_LIST = /^[A-Za-z0-9_|]+$/;
+var DEPLOY_SHAPED_TOOL_NAMES = {
+  claude: "mcp__.*deploy.*",
+  opencode: ".*deploy.*"
+};
+var OPENCODE_HOOKS = [
+  "tool.execute.before",
+  "experimental.chat.system.transform",
+  "event",
+  "dispose"
+];
+function openCodeRoutes() {
+  return GATE_ROWS.filter((row) => row.wiring.opencode === "wired").map((row) => ({
+    hook: openCodeHookNamed(row.mechanism.opencode, row.gate),
+    gate: row.gate,
+    matcher: matcherFor("opencode", row),
+    allow: row.gate === "unknown" ? toolNamesFor("opencode", "unknown") : []
+  }));
+}
+function openCodeHookNamed(mechanism, gate) {
+  const hook = OPENCODE_HOOKS.find((candidate) => candidate === mechanism);
+  if (hook === void 0) throw new Error(`gate ${gate} names no OpenCode hook the adapter routes: ${mechanism}`);
+  return hook;
+}
+function gatesWiredFor(host, event) {
+  return GATE_ROWS.filter((row) => row.event === event && row.wiring[host] === "wired");
+}
+function claudePreToolUseGatesFor(toolName) {
+  return gatesWiredFor("claude", PRE_TOOL_USE_EVENT).filter((row) => new RegExp(claudeMatcherPattern(matcherFor("claude", row))).test(toolName)).map((row) => row.gate);
+}
+function claudeMatcherPattern(matcher) {
+  return CLAUDE_EXACT_TOOL_LIST.test(matcher) ? `^(?:${matcher})$` : matcher;
+}
+function matcherFor(host, row) {
+  const named = toolNamesFor(host, row.gate).join("|");
+  if (row.gate === "unknown") return UNKNOWN_TOOL_MATCHER;
+  if (row.gate === "proddeploy") return `${named}|${DEPLOY_SHAPED_TOOL_NAMES[host]}`;
+  return named;
+}
+function toolNamesFor(host, gate) {
+  const named = [];
+  for (const row of TOOL_ROWS) {
+    const name = row.names[host];
+    if (row.gate !== gate || name === "none" || named.includes(name)) continue;
+    named.push(name);
+  }
+  return named;
 }
 
 // core/src/shell/lexed-command.ts
@@ -2853,8 +2906,23 @@ function runGate(argv, envelope) {
   const [name, ...gateArguments] = argv;
   const request = { envelope, argv: gateArguments };
   const escalated = envelope.stopHookActive;
+  if (name === PRE_TOOL_USE_ROUTE) return runPreToolUseGates(claudeGatesMatching(envelope.toolName), request);
   const run = routed(PRE_TOOL_USE_GATES, name, request, preToolUseRun, gateErrorRun) ?? routed(SESSION_START_GATES, name, request, sessionStartRun, loudRun) ?? routed(NO_VERDICT_GATES, name, request, sessionEndRun, loudRun) ?? routed(STOP_GATES, name, request, (verdict) => stopRun(verdict, escalated), loudRun);
   return run ?? gateErrorRun(`${THE_GATE_ENTRY_POINT} (unknown gate '${name ?? ""}')`);
+}
+function runPreToolUseGates(gates, request) {
+  const runs = gates.map((gate) => runWith(gate, request, preToolUseRun, gateErrorRun));
+  const decisive = runs.find((run) => run.verdict.kind === "deny") ?? runs.find((run) => run.verdict.kind === "gateError") ?? NOTHING_DENIED;
+  return {
+    ...decisive,
+    stderr: runs.map((run) => run.stderr).join(""),
+    events: runs.flatMap((run) => run.events)
+  };
+}
+var NOTHING_DENIED = { ...UNSPOKEN, verdict: { kind: "allow" }, events: [] };
+function claudeGatesMatching(toolName) {
+  const matching = claudePreToolUseGatesFor(toolName);
+  return PRE_TOOL_USE_GATES.filter((gate) => matching.includes(gate.gate));
 }
 function routed(gates, name, request, transport, onFailure) {
   const gate = gates.find((definition) => definition.gate === name);
@@ -2892,47 +2960,6 @@ function explainedCause(cause) {
 
 // core/src/prose/applier-proof.ts
 var APPLIER_PROOF_HEADER = "=== applier_proof ===";
-
-// core/src/routes/render.ts
-var UNKNOWN_TOOL_MATCHER = ".*";
-var DEPLOY_SHAPED_TOOL_NAMES = {
-  claude: "mcp__.*deploy.*",
-  opencode: ".*deploy.*"
-};
-var OPENCODE_HOOKS = [
-  "tool.execute.before",
-  "experimental.chat.system.transform",
-  "event",
-  "dispose"
-];
-function openCodeRoutes() {
-  return GATE_ROWS.filter((row) => row.wiring.opencode === "wired").map((row) => ({
-    hook: openCodeHookNamed(row.mechanism.opencode, row.gate),
-    gate: row.gate,
-    matcher: matcherFor("opencode", row),
-    allow: row.gate === "unknown" ? toolNamesFor("opencode", "unknown") : []
-  }));
-}
-function openCodeHookNamed(mechanism, gate) {
-  const hook = OPENCODE_HOOKS.find((candidate) => candidate === mechanism);
-  if (hook === void 0) throw new Error(`gate ${gate} names no OpenCode hook the adapter routes: ${mechanism}`);
-  return hook;
-}
-function matcherFor(host, row) {
-  const named = toolNamesFor(host, row.gate).join("|");
-  if (row.gate === "unknown") return UNKNOWN_TOOL_MATCHER;
-  if (row.gate === "proddeploy") return `${named}|${DEPLOY_SHAPED_TOOL_NAMES[host]}`;
-  return named;
-}
-function toolNamesFor(host, gate) {
-  const named = [];
-  for (const row of TOOL_ROWS) {
-    const name = row.names[host];
-    if (row.gate !== gate || name === "none" || named.includes(name)) continue;
-    named.push(name);
-  }
-  return named;
-}
 
 // core/src/state/plan.ts
 import { chmodSync, existsSync as existsSync4, mkdirSync as mkdirSync4, readFileSync as readFileSync4, renameSync as renameSync3, rmSync as rmSync4 } from "node:fs";

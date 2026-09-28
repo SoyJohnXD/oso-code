@@ -85,6 +85,183 @@ function endedEnvelope(reason) {
   return JSON.stringify({ continue: false, stopReason: reason, systemMessage: reason });
 }
 
+// core/src/routes/routes.ts
+var BUNDLE_DIRECTORY = "dist";
+var GATE_BUNDLE = "gate.js";
+var PRECOMMIT_BUNDLE = "precommit.js";
+var OPENCODE_PLUGIN_BUNDLE = "opencode/dist/oso-code.js";
+var PLUGIN_BUNDLE_DIRECTORY = `plugin/${BUNDLE_DIRECTORY}`;
+var PLUGIN_BINARY_DIRECTORY = "plugin/bin";
+var BOOTSTRAP_DIRECTORY = "bootstrap";
+var PLUGIN_STATE_BUNDLE = `${PLUGIN_BUNDLE_DIRECTORY}/oso-state.js`;
+var PLUGIN_STATE_EXECUTABLE = `${PLUGIN_BINARY_DIRECTORY}/oso-state`;
+var BOOTSTRAP_BUNDLE = `${BOOTSTRAP_DIRECTORY}/oso.js`;
+var GENERATED_BUNDLES = [
+  PLUGIN_STATE_BUNDLE,
+  `${PLUGIN_BUNDLE_DIRECTORY}/${GATE_BUNDLE}`,
+  `${PLUGIN_BUNDLE_DIRECTORY}/${PRECOMMIT_BUNDLE}`,
+  PLUGIN_STATE_EXECUTABLE,
+  BOOTSTRAP_BUNDLE,
+  OPENCODE_PLUGIN_BUNDLE
+];
+var PRE_TOOL_USE_ROUTE = "pretooluse";
+var GATE_ROWS = [
+  {
+    gate: "commit",
+    event: "PreToolUse",
+    script: "block-commit-until-green.sh",
+    wiring: { claude: "wired", opencode: "wired" },
+    mechanism: { claude: "subprocess", opencode: "tool.execute.before" }
+  },
+  {
+    gate: "edits",
+    event: "PreToolUse",
+    script: "block-edits-without-slice.sh",
+    wiring: { claude: "wired", opencode: "wired" },
+    mechanism: { claude: "subprocess", opencode: "tool.execute.before" }
+  },
+  {
+    gate: "unknown",
+    event: "PreToolUse",
+    script: "block-unknown-tool.sh",
+    wiring: { claude: "none", opencode: "wired" },
+    mechanism: { claude: "none", opencode: "tool.execute.before" }
+  },
+  {
+    gate: "autocontinue",
+    event: "Stop",
+    script: "auto-continue.sh",
+    wiring: { claude: "wired", opencode: "none" },
+    mechanism: { claude: "subprocess", opencode: "native" }
+  },
+  {
+    gate: "statebin",
+    event: "SessionStart",
+    script: "persist-state-bin.sh",
+    wiring: { claude: "wired", opencode: "none" },
+    mechanism: { claude: "subprocess", opencode: "native" }
+  },
+  {
+    gate: "stale",
+    event: "SessionStart",
+    script: "warn-stale-state.sh",
+    wiring: { claude: "wired", opencode: "wired" },
+    mechanism: { claude: "subprocess", opencode: "experimental.chat.system.transform" }
+  },
+  {
+    gate: "version",
+    event: "SessionStart",
+    script: "warn-stale-version.sh",
+    wiring: { claude: "wired", opencode: "none" },
+    mechanism: { claude: "subprocess", opencode: "none" }
+  },
+  {
+    gate: "teardown",
+    event: "SessionEnd",
+    script: "cleanup-state.sh",
+    wiring: { claude: "wired", opencode: "wired" },
+    mechanism: { claude: "subprocess", opencode: "dispose" }
+  },
+  {
+    gate: "proddeploy",
+    event: "PreToolUse",
+    script: "block-prod-deploy.sh",
+    wiring: { claude: "wired", opencode: "wired" },
+    mechanism: { claude: "subprocess", opencode: "tool.execute.before" }
+  },
+  {
+    gate: "reanchor",
+    event: "SessionStart",
+    script: "reanchor-after-compact.sh",
+    wiring: { claude: "wired", opencode: "wired" },
+    mechanism: { claude: "subprocess", opencode: "event" }
+  }
+];
+var TOOL_ROWS = [
+  { gate: "commit", names: { claude: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "Edit", opencode: "edit" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "MultiEdit", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "Write", opencode: "write" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "NotebookEdit", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "mcp__fallow__fix_apply", opencode: "fallow_fix_apply" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "none", opencode: "apply_patch" }, capability: "write", mandated: "no" },
+  { gate: "proddeploy", names: { claude: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "bash" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "apply_patch" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "task" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "list_mcp_resources" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "list_mcp_resource_templates" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "read_mcp_resource" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "engram_mem_search" }, capability: "read", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", opencode: "engram_mem_get_observation" }, capability: "read", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", opencode: "engram_mem_save" }, capability: "write", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", opencode: "engram_mem_update" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "engram_mem_context" }, capability: "read", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", opencode: "engram_mem_session_summary" }, capability: "write", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", opencode: "engram_mem_current_project" }, capability: "read", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", opencode: "engram_mem_save_prompt" }, capability: "write", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", opencode: "engram_mem_judge" }, capability: "write", mandated: "yes" },
+  { gate: "unknown", names: { claude: "none", opencode: "context7_resolve-library-id" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "context7_query-docs" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "fallow_find_dupes" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "fallow_get_cleanup_candidates" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "fallow_audit" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "fallow_fix_apply" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "edit" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "write" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "read" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "grep" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "glob" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "skill" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "todowrite" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "webfetch" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "websearch" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "question" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "lsp" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "plan_exit" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "oso_plan_approve" }, capability: "read", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "oso_plan_cancel" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "oso_wave" }, capability: "write", mandated: "no" }
+];
+function gateRow(gate) {
+  const found = GATE_ROWS.find((row) => row.gate === gate);
+  if (found === void 0) throw new Error(`no route row names the gate ${gate}`);
+  return found;
+}
+
+// core/src/routes/render.ts
+var UNKNOWN_TOOL_MATCHER = ".*";
+var PRE_TOOL_USE_EVENT = "PreToolUse";
+var CLAUDE_EXACT_TOOL_LIST = /^[A-Za-z0-9_|]+$/;
+var DEPLOY_SHAPED_TOOL_NAMES = {
+  claude: "mcp__.*deploy.*",
+  opencode: ".*deploy.*"
+};
+function gatesWiredFor(host, event) {
+  return GATE_ROWS.filter((row) => row.event === event && row.wiring[host] === "wired");
+}
+function claudePreToolUseGatesFor(toolName) {
+  return gatesWiredFor("claude", PRE_TOOL_USE_EVENT).filter((row) => new RegExp(claudeMatcherPattern(matcherFor("claude", row))).test(toolName)).map((row) => row.gate);
+}
+function claudeMatcherPattern(matcher) {
+  return CLAUDE_EXACT_TOOL_LIST.test(matcher) ? `^(?:${matcher})$` : matcher;
+}
+function matcherFor(host, row) {
+  const named2 = toolNamesFor(host, row.gate).join("|");
+  if (row.gate === "unknown") return UNKNOWN_TOOL_MATCHER;
+  if (row.gate === "proddeploy") return `${named2}|${DEPLOY_SHAPED_TOOL_NAMES[host]}`;
+  return named2;
+}
+function toolNamesFor(host, gate) {
+  const named2 = [];
+  for (const row of TOOL_ROWS) {
+    const name = row.names[host];
+    if (row.gate !== gate || name === "none" || named2.includes(name)) continue;
+    named2.push(name);
+  }
+  return named2;
+}
+
 // core/src/gates/autocontinue.ts
 import { mkdirSync as mkdirSync3, statSync as statSync3, writeFileSync as writeFileSync3 } from "node:fs";
 import path4 from "node:path";
@@ -871,103 +1048,6 @@ function withoutCarriageReturns(value) {
     if (collapsed === settled) return settled.replace(/\r$/, "");
     settled = collapsed;
   }
-}
-
-// core/src/routes/routes.ts
-var BUNDLE_DIRECTORY = "dist";
-var GATE_BUNDLE = "gate.js";
-var PRECOMMIT_BUNDLE = "precommit.js";
-var OPENCODE_PLUGIN_BUNDLE = "opencode/dist/oso-code.js";
-var PLUGIN_BUNDLE_DIRECTORY = `plugin/${BUNDLE_DIRECTORY}`;
-var PLUGIN_BINARY_DIRECTORY = "plugin/bin";
-var BOOTSTRAP_DIRECTORY = "bootstrap";
-var PLUGIN_STATE_BUNDLE = `${PLUGIN_BUNDLE_DIRECTORY}/oso-state.js`;
-var PLUGIN_STATE_EXECUTABLE = `${PLUGIN_BINARY_DIRECTORY}/oso-state`;
-var BOOTSTRAP_BUNDLE = `${BOOTSTRAP_DIRECTORY}/oso.js`;
-var GENERATED_BUNDLES = [
-  PLUGIN_STATE_BUNDLE,
-  `${PLUGIN_BUNDLE_DIRECTORY}/${GATE_BUNDLE}`,
-  `${PLUGIN_BUNDLE_DIRECTORY}/${PRECOMMIT_BUNDLE}`,
-  PLUGIN_STATE_EXECUTABLE,
-  BOOTSTRAP_BUNDLE,
-  OPENCODE_PLUGIN_BUNDLE
-];
-var GATE_ROWS = [
-  {
-    gate: "commit",
-    event: "PreToolUse",
-    script: "block-commit-until-green.sh",
-    wiring: { claude: "wired", opencode: "wired" },
-    mechanism: { claude: "subprocess", opencode: "tool.execute.before" }
-  },
-  {
-    gate: "edits",
-    event: "PreToolUse",
-    script: "block-edits-without-slice.sh",
-    wiring: { claude: "wired", opencode: "wired" },
-    mechanism: { claude: "subprocess", opencode: "tool.execute.before" }
-  },
-  {
-    gate: "unknown",
-    event: "PreToolUse",
-    script: "block-unknown-tool.sh",
-    wiring: { claude: "none", opencode: "wired" },
-    mechanism: { claude: "none", opencode: "tool.execute.before" }
-  },
-  {
-    gate: "autocontinue",
-    event: "Stop",
-    script: "auto-continue.sh",
-    wiring: { claude: "wired", opencode: "none" },
-    mechanism: { claude: "subprocess", opencode: "native" }
-  },
-  {
-    gate: "statebin",
-    event: "SessionStart",
-    script: "persist-state-bin.sh",
-    wiring: { claude: "wired", opencode: "none" },
-    mechanism: { claude: "subprocess", opencode: "native" }
-  },
-  {
-    gate: "stale",
-    event: "SessionStart",
-    script: "warn-stale-state.sh",
-    wiring: { claude: "wired", opencode: "wired" },
-    mechanism: { claude: "subprocess", opencode: "experimental.chat.system.transform" }
-  },
-  {
-    gate: "version",
-    event: "SessionStart",
-    script: "warn-stale-version.sh",
-    wiring: { claude: "wired", opencode: "none" },
-    mechanism: { claude: "subprocess", opencode: "none" }
-  },
-  {
-    gate: "teardown",
-    event: "SessionEnd",
-    script: "cleanup-state.sh",
-    wiring: { claude: "wired", opencode: "wired" },
-    mechanism: { claude: "subprocess", opencode: "dispose" }
-  },
-  {
-    gate: "proddeploy",
-    event: "PreToolUse",
-    script: "block-prod-deploy.sh",
-    wiring: { claude: "wired", opencode: "wired" },
-    mechanism: { claude: "subprocess", opencode: "tool.execute.before" }
-  },
-  {
-    gate: "reanchor",
-    event: "SessionStart",
-    script: "reanchor-after-compact.sh",
-    wiring: { claude: "wired", opencode: "wired" },
-    mechanism: { claude: "subprocess", opencode: "event" }
-  }
-];
-function gateRow(gate) {
-  const found = GATE_ROWS.find((row) => row.gate === gate);
-  if (found === void 0) throw new Error(`no route row names the gate ${gate}`);
-  return found;
 }
 
 // core/src/state/store.ts
@@ -2670,8 +2750,23 @@ function runGate(argv, envelope) {
   const [name, ...gateArguments] = argv;
   const request = { envelope, argv: gateArguments };
   const escalated = envelope.stopHookActive;
+  if (name === PRE_TOOL_USE_ROUTE) return runPreToolUseGates(claudeGatesMatching(envelope.toolName), request);
   const run2 = routed(PRE_TOOL_USE_GATES, name, request, preToolUseRun, gateErrorRun) ?? routed(SESSION_START_GATES, name, request, sessionStartRun, loudRun) ?? routed(NO_VERDICT_GATES, name, request, sessionEndRun, loudRun) ?? routed(STOP_GATES, name, request, (verdict) => stopRun(verdict, escalated), loudRun);
   return run2 ?? gateErrorRun(`${THE_GATE_ENTRY_POINT} (unknown gate '${name ?? ""}')`);
+}
+function runPreToolUseGates(gates, request) {
+  const runs = gates.map((gate) => runWith(gate, request, preToolUseRun, gateErrorRun));
+  const decisive = runs.find((run2) => run2.verdict.kind === "deny") ?? runs.find((run2) => run2.verdict.kind === "gateError") ?? NOTHING_DENIED;
+  return {
+    ...decisive,
+    stderr: runs.map((run2) => run2.stderr).join(""),
+    events: runs.flatMap((run2) => run2.events)
+  };
+}
+var NOTHING_DENIED = { ...UNSPOKEN, verdict: { kind: "allow" }, events: [] };
+function claudeGatesMatching(toolName) {
+  const matching = claudePreToolUseGatesFor(toolName);
+  return PRE_TOOL_USE_GATES.filter((gate) => matching.includes(gate.gate));
 }
 function routed(gates, name, request, transport, onFailure) {
   const gate = gates.find((definition) => definition.gate === name);

@@ -3,6 +3,7 @@ import {
   GATE_BUNDLE,
   GATE_ROWS,
   HOST_ROWS,
+  PRE_TOOL_USE_ROUTE,
   TOOL_ROWS,
   type GateId,
   type GateRow,
@@ -25,6 +26,8 @@ export const MANIFEST_HOSTS: readonly ManifestHost[] = ["claude"];
 const CLAUDE_PLUGIN_ROOT = "${CLAUDE_PLUGIN_ROOT}";
 const NODE = "node";
 const UNKNOWN_TOOL_MATCHER = ".*";
+const PRE_TOOL_USE_EVENT = "PreToolUse";
+const CLAUDE_EXACT_TOOL_LIST = /^[A-Za-z0-9_|]+$/;
 const DEPLOY_SHAPED_TOOL_NAMES: PerHost<string> = {
   claude: "mcp__.*deploy.*",
   opencode: ".*deploy.*",
@@ -92,17 +95,34 @@ function gatesWiredFor(host: ManifestHost, event: string): GateRow[] {
 }
 
 function eventLines(host: ManifestHost, event: string): string[] {
-  const groups = gatesWiredFor(host, event).map((row) => groupLines(host, row));
+  const rows = gatesWiredFor(host, event);
+  const groups =
+    event === PRE_TOOL_USE_EVENT
+      ? [groupLines(preToolUseMatcherUnion(host, rows), handlerFor(PRE_TOOL_USE_ROUTE))]
+      : rows.map((row) => groupLines(matcherFor(host, row), handlerFor(row.gate)));
   return [`    ${json(event)}: [`, ...commaJoined(groups), "    ]"];
 }
 
-function groupLines(host: ManifestHost, row: GateRow): string[] {
-  const matcher = matcherFor(host, row);
+export function claudePreToolUseGatesFor(toolName: string): readonly string[] {
+  return gatesWiredFor("claude", PRE_TOOL_USE_EVENT)
+    .filter((row) => new RegExp(claudeMatcherPattern(matcherFor("claude", row))).test(toolName))
+    .map((row) => row.gate);
+}
+
+function preToolUseMatcherUnion(host: ManifestHost, rows: readonly GateRow[]): string {
+  return rows.map((row) => claudeMatcherPattern(matcherFor(host, row))).join("|");
+}
+
+function claudeMatcherPattern(matcher: string): string {
+  return CLAUDE_EXACT_TOOL_LIST.test(matcher) ? `^(?:${matcher})$` : matcher;
+}
+
+function groupLines(matcher: string, handler: Handler): string[] {
   return [
     "      {",
     ...(matcher === "" ? [] : [`        ${json("matcher")}: ${json(matcher)},`]),
     `        ${json("hooks")}: [`,
-    ...handlerLines(handlerFor(row)),
+    ...handlerLines(handler),
     "        ]",
     "      }",
   ];
@@ -119,8 +139,8 @@ function handlerLines(handler: Handler): string[] {
   ];
 }
 
-function handlerFor(row: GateRow): Handler {
-  return { command: NODE, args: [claudeGateBundle(), row.gate] };
+function handlerFor(route: string): Handler {
+  return { command: NODE, args: [claudeGateBundle(), route] };
 }
 
 function matcherFor(host: HostName, row: GateRow): string {
