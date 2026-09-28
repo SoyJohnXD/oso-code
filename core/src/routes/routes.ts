@@ -188,3 +188,46 @@ export function gateRow(gate: GateId): GateRow {
   if (found === undefined) throw new Error(`no route row names the gate ${gate}`);
   return found;
 }
+
+export const PRE_TOOL_USE_EVENT = "PreToolUse";
+const UNKNOWN_TOOL_MATCHER = ".*";
+const CLAUDE_EXACT_TOOL_LIST = /^[A-Za-z0-9_|]+$/;
+const DEPLOY_SHAPED_TOOL_NAMES: PerHost<string> = {
+  claude: "mcp__.*deploy.*",
+  opencode: ".*deploy.*",
+};
+
+export function gatesWiredFor(host: HostName, event: string): GateRow[] {
+  return GATE_ROWS.filter((row) => row.event === event && row.wiring[host] === "wired");
+}
+
+export function claudePreToolUseGatesFor(toolName: string): readonly string[] {
+  return gatesWiredFor("claude", PRE_TOOL_USE_EVENT)
+    .filter((row) => new RegExp(claudeMatcherPattern(matcherFor("claude", row))).test(toolName))
+    .map((row) => row.gate);
+}
+
+export function claudeMatcherUnion(rows: readonly GateRow[]): string {
+  return rows.map((row) => claudeMatcherPattern(matcherFor("claude", row))).join("|");
+}
+
+function claudeMatcherPattern(matcher: string): string {
+  return CLAUDE_EXACT_TOOL_LIST.test(matcher) ? `^(?:${matcher})$` : matcher;
+}
+
+export function matcherFor(host: HostName, row: GateRow): string {
+  const named = toolNamesFor(host, row.gate).join("|");
+  if (row.gate === "unknown") return UNKNOWN_TOOL_MATCHER;
+  if (row.gate === "proddeploy") return `${named}|${DEPLOY_SHAPED_TOOL_NAMES[host]}`;
+  return named;
+}
+
+export function toolNamesFor(host: HostName, gate: string): string[] {
+  const named: string[] = [];
+  for (const row of TOOL_ROWS) {
+    const name = row.names[host];
+    if (row.gate !== gate || name === "none" || named.includes(name)) continue;
+    named.push(name);
+  }
+  return named;
+}

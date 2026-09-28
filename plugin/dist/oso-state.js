@@ -989,6 +989,14 @@ var StateFileUnreadableError = class extends Error {
     this.stateFile = stateFile;
   }
 };
+var GatesOwnedElsewhereError = class extends Error {
+  constructor(owner) {
+    super(
+      `the gates are owned by session ${owner} \u2014 that session releases them with \`oso-state --session ${owner} close\`, or \`oso-state --session <id> clear\` resets them if it is gone`
+    );
+    this.name = "GatesOwnedElsewhereError";
+  }
+};
 var CHANGE_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 var NAME_TOKEN_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
 var TOKEN_MAX_LENGTH = 128;
@@ -1042,6 +1050,16 @@ function holdsMode(content) {
 function foreignOwner(content, sessionId) {
   const owner = stateValue(content, "session");
   return owner === "" || owner === sessionId ? void 0 : owner;
+}
+function foreignGateOwner(stateFile, sessionId) {
+  const read = readStateFile(stateFile);
+  if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
+  if (read.kind === "absent" || !holdsMode(read.content)) return void 0;
+  return foreignOwner(read.content, sessionId);
+}
+function refuseGateWritesByAForeignSession(stateFile, sessionId) {
+  const owner = foreignGateOwner(stateFile, sessionId);
+  if (owner !== void 0) throw new GatesOwnedElsewhereError(owner);
 }
 function readValue(stateFile, key) {
   const content = readFileIfPresent(stateFile);
@@ -1387,6 +1405,7 @@ function runCapturePlan(cwd, sessionId, digest, document) {
     );
   }
   return withLock(stateFile, sessionId, () => {
+    refuseGateWritesByAForeignSession(stateFile, sessionId);
     if (existsSync(paths.presentedFile)) {
       if (!isPrivateRegularFile(paths.presentedFile)) {
         throw new PlanFailure("presented snapshot is not a private regular file");
@@ -1545,6 +1564,7 @@ function runAmendPlan(cwd, sessionId, sliceId, document) {
     const revisionText = readValue(stateFile, "plan_revision") ?? "";
     if (!/^[0-9]+$/.test(revisionText)) throw new PlanFailure("current plan has no valid revision");
     const nextRevision = Number(revisionText) + 1;
+    refuseGateWritesByAForeignSession(stateFile, sessionId);
     const amended = `${readFileSync3(paths.currentFile, "utf8")}
 
 ## ${shape.heading} \u2014 ${sliceId}
@@ -1669,6 +1689,11 @@ function report(error, verb) {
 `);
     return 1;
   }
+  if (error instanceof GatesOwnedElsewhereError) {
+    process.stderr.write(`oso-state: ${verb} refused: ${error.message}
+`);
+    return 1;
+  }
   if (error instanceof LockTimeoutError) {
     process.stderr.write(`oso-state: ${error.message}
 `);
@@ -1765,23 +1790,12 @@ function runSet(sessionId, pairs) {
   mkdirSync3(stateRootDirectory(), { recursive: true });
   return withLock(stateFile, sessionId, () => {
     const owner = foreignGateOwner(stateFile, sessionId);
-    if (owner !== void 0 && pairsTouchAGateKey(pairs)) {
-      throw new RefusedError(
-        "set",
-        `the gates are owned by session ${owner} \u2014 that session releases them with \`oso-state --session ${owner} close\`, or \`oso-state --session <id> clear\` resets them if it is gone`
-      );
-    }
+    if (owner !== void 0 && pairsTouchAGateKey(pairs)) throw new GatesOwnedElsewhereError(owner);
     const content = writeStatePairs(stateFile, pairs, owner ?? sessionId);
     logSet(sessionId, pairs);
     process.stdout.write(content);
     return 0;
   });
-}
-function foreignGateOwner(stateFile, sessionId) {
-  const read = readStateFile(stateFile);
-  if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
-  if (read.kind === "absent" || !holdsMode(read.content)) return void 0;
-  return foreignOwner(read.content, sessionId);
 }
 function runGet(remaining) {
   if (remaining.length !== 1) throw new UsageError();
@@ -1837,6 +1851,7 @@ function runCloseSlice(sessionId, remaining) {
     if (activeSlice !== sliceId) {
       throw new RefusedError(`close-slice ${sliceId}`, `active_slice is ${activeSlice}, not ${sliceId}`);
     }
+    refuseGateWritesByAForeignSession(stateFile, sessionId);
     const patch = closeSlice();
     writeStatePairs(
       stateFile,

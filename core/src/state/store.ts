@@ -43,6 +43,16 @@ export class StateFileUnreadableError extends Error {
   }
 }
 
+export class GatesOwnedElsewhereError extends Error {
+  constructor(owner: string) {
+    super(
+      `the gates are owned by session ${owner} — that session releases them with \`oso-state --session ${owner} close\`, ` +
+        "or `oso-state --session <id> clear` resets them if it is gone",
+    );
+    this.name = "GatesOwnedElsewhereError";
+  }
+}
+
 export const CHANGE_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const NAME_TOKEN_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
 const MODEL_TOKEN_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9/:._@-]*$/;
@@ -125,6 +135,18 @@ export function holdsMode(content: string): boolean {
 export function foreignOwner(content: string, sessionId: string): string | undefined {
   const owner = stateValue(content, "session");
   return owner === "" || owner === sessionId ? undefined : owner;
+}
+
+export function foreignGateOwner(stateFile: string, sessionId: string): string | undefined {
+  const read = readStateFile(stateFile);
+  if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
+  if (read.kind === "absent" || !holdsMode(read.content)) return undefined;
+  return foreignOwner(read.content, sessionId);
+}
+
+export function refuseGateWritesByAForeignSession(stateFile: string, sessionId: string): void {
+  const owner = foreignGateOwner(stateFile, sessionId);
+  if (owner !== undefined) throw new GatesOwnedElsewhereError(owner);
 }
 
 export function readValue(stateFile: string, key: string): string | undefined {

@@ -228,10 +228,8 @@ function gateRow(gate) {
   if (found === void 0) throw new Error(`no route row names the gate ${gate}`);
   return found;
 }
-
-// core/src/routes/render.ts
-var UNKNOWN_TOOL_MATCHER = ".*";
 var PRE_TOOL_USE_EVENT = "PreToolUse";
+var UNKNOWN_TOOL_MATCHER = ".*";
 var CLAUDE_EXACT_TOOL_LIST = /^[A-Za-z0-9_|]+$/;
 var DEPLOY_SHAPED_TOOL_NAMES = {
   claude: "mcp__.*deploy.*",

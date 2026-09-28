@@ -60,6 +60,7 @@ export function runCapturePlan(cwd: string, sessionId: string, digest: string, d
     );
   }
   return store.withLock(stateFile, sessionId, () => {
+    store.refuseGateWritesByAForeignSession(stateFile, sessionId);
     if (existsSync(paths.presentedFile)) {
       if (!store.isPrivateRegularFile(paths.presentedFile)) {
         throw new PlanFailure("presented snapshot is not a private regular file");
@@ -221,6 +222,7 @@ export function runAmendPlan(cwd: string, sessionId: string, sliceId: string, do
     const revisionText = store.readValue(stateFile, "plan_revision") ?? "";
     if (!/^[0-9]+$/.test(revisionText)) throw new PlanFailure("current plan has no valid revision");
     const nextRevision = Number(revisionText) + 1;
+    store.refuseGateWritesByAForeignSession(stateFile, sessionId);
     const amended =
       `${readFileSync(paths.currentFile, "utf8")}\n\n## ${shape.heading} — ${sliceId}\n\n` +
       `- Added-at: ${store.isoTimestamp()}\n- Requested-by: operator\n- Classification: ${shape.classification}\n\n` +

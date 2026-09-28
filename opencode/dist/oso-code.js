@@ -928,6 +928,37 @@ function gateRow(gate) {
   if (found === void 0) throw new Error(`no route row names the gate ${gate}`);
   return found;
 }
+var PRE_TOOL_USE_EVENT = "PreToolUse";
+var UNKNOWN_TOOL_MATCHER = ".*";
+var CLAUDE_EXACT_TOOL_LIST = /^[A-Za-z0-9_|]+$/;
+var DEPLOY_SHAPED_TOOL_NAMES = {
+  claude: "mcp__.*deploy.*",
+  opencode: ".*deploy.*"
+};
+function gatesWiredFor(host, event) {
+  return GATE_ROWS.filter((row) => row.event === event && row.wiring[host] === "wired");
+}
+function claudePreToolUseGatesFor(toolName) {
+  return gatesWiredFor("claude", PRE_TOOL_USE_EVENT).filter((row) => new RegExp(claudeMatcherPattern(matcherFor("claude", row))).test(toolName)).map((row) => row.gate);
+}
+function claudeMatcherPattern(matcher) {
+  return CLAUDE_EXACT_TOOL_LIST.test(matcher) ? `^(?:${matcher})$` : matcher;
+}
+function matcherFor(host, row) {
+  const named = toolNamesFor(host, row.gate).join("|");
+  if (row.gate === "unknown") return UNKNOWN_TOOL_MATCHER;
+  if (row.gate === "proddeploy") return `${named}|${DEPLOY_SHAPED_TOOL_NAMES[host]}`;
+  return named;
+}
+function toolNamesFor(host, gate) {
+  const named = [];
+  for (const row of TOOL_ROWS) {
+    const name = row.names[host];
+    if (row.gate !== gate || name === "none" || named.includes(name)) continue;
+    named.push(name);
+  }
+  return named;
+}
 
 // core/src/state/store.ts
 import { execFileSync } from "node:child_process";
@@ -968,6 +999,14 @@ var StateFileUnreadableError = class extends Error {
     super(`cannot read state at ${stateFile}: ${cause}`);
     this.name = "StateFileUnreadableError";
     this.stateFile = stateFile;
+  }
+};
+var GatesOwnedElsewhereError = class extends Error {
+  constructor(owner) {
+    super(
+      `the gates are owned by session ${owner} \u2014 that session releases them with \`oso-state --session ${owner} close\`, or \`oso-state --session <id> clear\` resets them if it is gone`
+    );
+    this.name = "GatesOwnedElsewhereError";
   }
 };
 var CHANGE_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -1022,6 +1061,16 @@ function holdsMode(content) {
 function foreignOwner(content, sessionId) {
   const owner = stateValue(content, "session");
   return owner === "" || owner === sessionId ? void 0 : owner;
+}
+function foreignGateOwner(stateFile, sessionId) {
+  const read = readStateFile(stateFile);
+  if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
+  if (read.kind === "absent" || !holdsMode(read.content)) return void 0;
+  return foreignOwner(read.content, sessionId);
+}
+function refuseGateWritesByAForeignSession(stateFile, sessionId) {
+  const owner = foreignGateOwner(stateFile, sessionId);
+  if (owner !== void 0) throw new GatesOwnedElsewhereError(owner);
 }
 function readValue(stateFile, key) {
   const content = readFileIfPresent(stateFile);
@@ -1740,58 +1789,6 @@ function blockEnvelope(reason) {
 }
 function endedEnvelope(reason) {
   return JSON.stringify({ continue: false, stopReason: reason, systemMessage: reason });
-}
-
-// core/src/routes/render.ts
-var UNKNOWN_TOOL_MATCHER = ".*";
-var PRE_TOOL_USE_EVENT = "PreToolUse";
-var CLAUDE_EXACT_TOOL_LIST = /^[A-Za-z0-9_|]+$/;
-var DEPLOY_SHAPED_TOOL_NAMES = {
-  claude: "mcp__.*deploy.*",
-  opencode: ".*deploy.*"
-};
-var OPENCODE_HOOKS = [
-  "tool.execute.before",
-  "experimental.chat.system.transform",
-  "event",
-  "dispose"
-];
-function openCodeRoutes() {
-  return GATE_ROWS.filter((row) => row.wiring.opencode === "wired").map((row) => ({
-    hook: openCodeHookNamed(row.mechanism.opencode, row.gate),
-    gate: row.gate,
-    matcher: matcherFor("opencode", row),
-    allow: row.gate === "unknown" ? toolNamesFor("opencode", "unknown") : []
-  }));
-}
-function openCodeHookNamed(mechanism, gate) {
-  const hook = OPENCODE_HOOKS.find((candidate) => candidate === mechanism);
-  if (hook === void 0) throw new Error(`gate ${gate} names no OpenCode hook the adapter routes: ${mechanism}`);
-  return hook;
-}
-function gatesWiredFor(host, event) {
-  return GATE_ROWS.filter((row) => row.event === event && row.wiring[host] === "wired");
-}
-function claudePreToolUseGatesFor(toolName) {
-  return gatesWiredFor("claude", PRE_TOOL_USE_EVENT).filter((row) => new RegExp(claudeMatcherPattern(matcherFor("claude", row))).test(toolName)).map((row) => row.gate);
-}
-function claudeMatcherPattern(matcher) {
-  return CLAUDE_EXACT_TOOL_LIST.test(matcher) ? `^(?:${matcher})$` : matcher;
-}
-function matcherFor(host, row) {
-  const named = toolNamesFor(host, row.gate).join("|");
-  if (row.gate === "unknown") return UNKNOWN_TOOL_MATCHER;
-  if (row.gate === "proddeploy") return `${named}|${DEPLOY_SHAPED_TOOL_NAMES[host]}`;
-  return named;
-}
-function toolNamesFor(host, gate) {
-  const named = [];
-  for (const row of TOOL_ROWS) {
-    const name = row.names[host];
-    if (row.gate !== gate || name === "none" || named.includes(name)) continue;
-    named.push(name);
-  }
-  return named;
 }
 
 // core/src/shell/lexed-command.ts
@@ -2961,6 +2958,27 @@ function explainedCause(cause) {
 // core/src/prose/applier-proof.ts
 var APPLIER_PROOF_HEADER = "=== applier_proof ===";
 
+// core/src/routes/render.ts
+var OPENCODE_HOOKS = [
+  "tool.execute.before",
+  "experimental.chat.system.transform",
+  "event",
+  "dispose"
+];
+function openCodeRoutes() {
+  return GATE_ROWS.filter((row) => row.wiring.opencode === "wired").map((row) => ({
+    hook: openCodeHookNamed(row.mechanism.opencode, row.gate),
+    gate: row.gate,
+    matcher: matcherFor("opencode", row),
+    allow: row.gate === "unknown" ? toolNamesFor("opencode", "unknown") : []
+  }));
+}
+function openCodeHookNamed(mechanism, gate) {
+  const hook = OPENCODE_HOOKS.find((candidate) => candidate === mechanism);
+  if (hook === void 0) throw new Error(`gate ${gate} names no OpenCode hook the adapter routes: ${mechanism}`);
+  return hook;
+}
+
 // core/src/state/plan.ts
 import { chmodSync, existsSync as existsSync4, mkdirSync as mkdirSync4, readFileSync as readFileSync4, renameSync as renameSync3, rmSync as rmSync4 } from "node:fs";
 import path9 from "node:path";
@@ -3015,6 +3033,7 @@ function runCapturePlan(cwd, sessionId, digest, document) {
     );
   }
   return withLock(stateFile, sessionId, () => {
+    refuseGateWritesByAForeignSession(stateFile, sessionId);
     if (existsSync4(paths.presentedFile)) {
       if (!isPrivateRegularFile(paths.presentedFile)) {
         throw new PlanFailure("presented snapshot is not a private regular file");

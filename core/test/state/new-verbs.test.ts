@@ -36,6 +36,7 @@ provedSomething(
 describe(
   `${fixtures.length} port fixtures for the verbs the bash oso-state never had (close-slice, deny-pattern add, close) ` +
     "and the checks set never made there (key allowlist, enum values, cross-session gate keys, the printed result), " +
+    "plus the cross-session gate-key refusal close-slice, capture-plan and amend-plan share with set, " +
     "run directly against the TypeScript CLI — they carry no bash source citation, so they are port tests, never parity",
   () => {
     for (const fixture of fixtures) {

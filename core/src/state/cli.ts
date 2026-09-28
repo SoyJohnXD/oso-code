@@ -66,6 +66,10 @@ function report(error: unknown, verb: string): number {
     process.stderr.write(`oso-state: ${error.verb} refused: ${error.message}\n`);
     return 1;
   }
+  if (error instanceof store.GatesOwnedElsewhereError) {
+    process.stderr.write(`oso-state: ${verb} refused: ${error.message}\n`);
+    return 1;
+  }
   if (error instanceof store.LockTimeoutError) {
     process.stderr.write(`oso-state: ${error.message}\n`);
     return 1;
@@ -160,26 +164,13 @@ function runSet(sessionId: string, pairs: readonly string[]): number {
   const stateFile = store.stateFileFor(process.cwd());
   mkdirSync(store.stateRootDirectory(), { recursive: true });
   return store.withLock(stateFile, sessionId, () => {
-    const owner = foreignGateOwner(stateFile, sessionId);
-    if (owner !== undefined && knownKeys.pairsTouchAGateKey(pairs)) {
-      throw new RefusedError(
-        "set",
-        `the gates are owned by session ${owner} — that session releases them with \`oso-state --session ${owner} close\`, ` +
-          "or `oso-state --session <id> clear` resets them if it is gone",
-      );
-    }
+    const owner = store.foreignGateOwner(stateFile, sessionId);
+    if (owner !== undefined && knownKeys.pairsTouchAGateKey(pairs)) throw new store.GatesOwnedElsewhereError(owner);
     const content = store.writeStatePairs(stateFile, pairs, owner ?? sessionId);
     store.logSet(sessionId, pairs);
     process.stdout.write(content);
     return 0;
   });
-}
-
-function foreignGateOwner(stateFile: string, sessionId: string): string | undefined {
-  const read = store.readStateFile(stateFile);
-  if (read.kind === "unreadable") throw new store.StateFileUnreadableError(stateFile, read.cause);
-  if (read.kind === "absent" || !store.holdsMode(read.content)) return undefined;
-  return store.foreignOwner(read.content, sessionId);
 }
 
 function runGet(remaining: readonly string[]): number {
@@ -238,6 +229,7 @@ function runCloseSlice(sessionId: string, remaining: readonly string[]): number 
     if (activeSlice !== sliceId) {
       throw new RefusedError(`close-slice ${sliceId}`, `active_slice is ${activeSlice}, not ${sliceId}`);
     }
+    store.refuseGateWritesByAForeignSession(stateFile, sessionId);
     const patch = transitions.closeSlice();
     store.writeStatePairs(
       stateFile,

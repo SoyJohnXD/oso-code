@@ -1,14 +1,16 @@
 import {
   BUNDLE_DIRECTORY,
+  claudeMatcherUnion,
   GATE_BUNDLE,
   GATE_ROWS,
+  gatesWiredFor,
   HOST_ROWS,
+  matcherFor,
+  PRE_TOOL_USE_EVENT,
   PRE_TOOL_USE_ROUTE,
-  TOOL_ROWS,
+  toolNamesFor,
   type GateId,
-  type GateRow,
   type HostName,
-  type PerHost,
 } from "./routes.ts";
 
 export {
@@ -25,13 +27,6 @@ export const MANIFEST_HOSTS: readonly ManifestHost[] = ["claude"];
 
 const CLAUDE_PLUGIN_ROOT = "${CLAUDE_PLUGIN_ROOT}";
 const NODE = "node";
-const UNKNOWN_TOOL_MATCHER = ".*";
-const PRE_TOOL_USE_EVENT = "PreToolUse";
-const CLAUDE_EXACT_TOOL_LIST = /^[A-Za-z0-9_|]+$/;
-const DEPLOY_SHAPED_TOOL_NAMES: PerHost<string> = {
-  claude: "mcp__.*deploy.*",
-  opencode: ".*deploy.*",
-};
 
 export type OpenCodeHook = "tool.execute.before" | "experimental.chat.system.transform" | "event" | "dispose";
 
@@ -90,31 +85,13 @@ function eventsWiredFor(host: ManifestHost): string[] {
   return events;
 }
 
-function gatesWiredFor(host: ManifestHost, event: string): GateRow[] {
-  return GATE_ROWS.filter((row) => row.event === event && row.wiring[host] === "wired");
-}
-
 function eventLines(host: ManifestHost, event: string): string[] {
   const rows = gatesWiredFor(host, event);
   const groups =
     event === PRE_TOOL_USE_EVENT
-      ? [groupLines(preToolUseMatcherUnion(host, rows), handlerFor(PRE_TOOL_USE_ROUTE))]
+      ? [groupLines(claudeMatcherUnion(rows), handlerFor(PRE_TOOL_USE_ROUTE))]
       : rows.map((row) => groupLines(matcherFor(host, row), handlerFor(row.gate)));
   return [`    ${json(event)}: [`, ...commaJoined(groups), "    ]"];
-}
-
-export function claudePreToolUseGatesFor(toolName: string): readonly string[] {
-  return gatesWiredFor("claude", PRE_TOOL_USE_EVENT)
-    .filter((row) => new RegExp(claudeMatcherPattern(matcherFor("claude", row))).test(toolName))
-    .map((row) => row.gate);
-}
-
-function preToolUseMatcherUnion(host: ManifestHost, rows: readonly GateRow[]): string {
-  return rows.map((row) => claudeMatcherPattern(matcherFor(host, row))).join("|");
-}
-
-function claudeMatcherPattern(matcher: string): string {
-  return CLAUDE_EXACT_TOOL_LIST.test(matcher) ? `^(?:${matcher})$` : matcher;
 }
 
 function groupLines(matcher: string, handler: Handler): string[] {
@@ -141,23 +118,6 @@ function handlerLines(handler: Handler): string[] {
 
 function handlerFor(route: string): Handler {
   return { command: NODE, args: [claudeGateBundle(), route] };
-}
-
-function matcherFor(host: HostName, row: GateRow): string {
-  const named = toolNamesFor(host, row.gate).join("|");
-  if (row.gate === "unknown") return UNKNOWN_TOOL_MATCHER;
-  if (row.gate === "proddeploy") return `${named}|${DEPLOY_SHAPED_TOOL_NAMES[host]}`;
-  return named;
-}
-
-function toolNamesFor(host: HostName, gate: string): string[] {
-  const named: string[] = [];
-  for (const row of TOOL_ROWS) {
-    const name = row.names[host];
-    if (row.gate !== gate || name === "none" || named.includes(name)) continue;
-    named.push(name);
-  }
-  return named;
 }
 
 function commaJoined(blocks: readonly (readonly string[])[]): string[] {

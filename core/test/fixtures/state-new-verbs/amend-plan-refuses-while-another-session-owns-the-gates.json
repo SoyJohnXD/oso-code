@@ -1,0 +1,22 @@
+{
+  "name": "amend-plan refuses while another session owns the gates, and leaves the state and the operational plan byte-identical",
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=true\nplan_approval=approved\nplan_approval_digest=d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb\nplan_approval_session=test-session\nplan_snapshot_file={home}/.local/state/oso-code/plans/{repo}/approved-d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb.md\nplan_current_file={home}/.local/state/oso-code/plans/{repo}/current.md\nplan_revision=0\nsession=other-session\n",
+    ".local/state/oso-code/plans/{repo}/approved-d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb.md": "Identity split fixture plan",
+    ".local/state/oso-code/plans/{repo}/current.md": "Identity split fixture plan"
+  },
+  "cwd": "workspace",
+  "argv": ["--session", "test-session", "amend-plan", "slice-3"],
+  "stdin": "### Slice 3 — approval regression\n\n- Goal: cover native approval.\n- Verify: bash tests/hooks-test.sh\n- Depends-on: Slice 2",
+  "expect": {
+    "exit": 1,
+    "stdout": "",
+    "stderr": "oso-state: amend-plan refused: the gates are owned by session other-session — that session releases them with `oso-state --session other-session close`, or `oso-state --session <id> clear` resets them if it is gone\n",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=true\nplan_approval=approved\nplan_approval_digest=d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb\nplan_approval_session=test-session\nplan_snapshot_file={home}/.local/state/oso-code/plans/{repo}/approved-d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb.md\nplan_current_file={home}/.local/state/oso-code/plans/{repo}/current.md\nplan_revision=0\nsession=other-session\n",
+      ".local/state/oso-code/plans/{repo}/current.md": "Identity split fixture plan"
+    },
+    "events_appended": []
+  }
+}
