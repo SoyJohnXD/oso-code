@@ -11,7 +11,7 @@ import {
   waitExpired,
   waitMarkFileFor,
 } from "./delegation.ts";
-import { hookSessionId, pluginRootDirectory, stateValue, type GateDefinition, type GateRequest } from "./preflight.ts";
+import { holdsMode, hookSessionId, pluginRootDirectory, stateValue, type GateDefinition, type GateRequest } from "./preflight.ts";
 
 const ROADMAP_DISARMED_SENTINEL = "none";
 const RUN_ARMED = "running";
@@ -29,11 +29,11 @@ function judgeStale({ envelope }: GateRequest): GateOutcome<SessionStartVerdict>
   const stateFile = stateFileFor(envelope.cwd);
   if (!existsSync(stateFile)) return ALLOWED;
 
-  const content = contentOf(stateFile);
+  const content = readableContentOf(stateFile);
   const sessionId = hookSessionId(envelope);
   const advisories = [
     ...staleStateAdvisory(envelope.caller, stateFile, content, sessionId),
-    ...expiredDelegationAdvisory(envelope.caller, envelope.cwd, content),
+    ...expiredDelegationAdvisory(envelope.caller, envelope.cwd, content ?? ""),
   ];
   if (advisories.length === 0) return ALLOWED;
 
@@ -43,10 +43,12 @@ function judgeStale({ envelope }: GateRequest): GateOutcome<SessionStartVerdict>
 function staleStateAdvisory(
   caller: HookCaller,
   stateFile: string,
-  content: string,
+  content: string | undefined,
   sessionId: string,
 ): string[] {
+  if (content === undefined) return [staleStateContext(caller, stateFile, "", sessionId)];
   if (stateValue(content, "session") === sessionId) return [];
+  if (!holdsMode(content) && stateValue(content, "auto") !== RUN_ARMED) return [];
   return [staleStateContext(caller, stateFile, content, sessionId)];
 }
 
@@ -106,9 +108,9 @@ function stateBinPath(caller: HookCaller): string {
   return path.join(pluginRootDirectory(), "bin", "oso-state");
 }
 
-function contentOf(stateFile: string): string {
+function readableContentOf(stateFile: string): string | undefined {
   const read = readStateFile(stateFile);
-  return read.kind === "ok" ? read.content : "";
+  return read.kind === "ok" ? read.content : undefined;
 }
 
 function quoted(value: string): string {

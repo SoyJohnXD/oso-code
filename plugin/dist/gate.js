@@ -1038,6 +1038,13 @@ function stateValue(content, key) {
 function stateSays(content, key, value) {
   return stateRecords(content, key).includes(value);
 }
+function holdsMode(content) {
+  return stateRecords(content, "mode").length > 0;
+}
+function foreignOwner(content, sessionId) {
+  const owner = stateValue(content, "session");
+  return owner === "" || owner === sessionId ? void 0 : owner;
+}
 function readValue(stateFile, key) {
   const content = readFileIfPresent(stateFile);
   if (content === void 0 || stateRecords(content, key).length === 0) return void 0;
@@ -1680,6 +1687,9 @@ function untilGreenMessage(stateContent) {
 function verifyIsGreen(stateContent) {
   return stateValue(stateContent, "verify_green") === "true";
 }
+function commitGateArmedFor(stateContent, session) {
+  return holdsMode(stateContent) && foreignOwner(stateContent, session) === void 0;
+}
 function judgeCommit({ envelope }) {
   const session = hookSessionId(envelope);
   if (session === "") return payloadUnparseable();
@@ -1687,6 +1697,7 @@ function judgeCommit({ envelope }) {
   const state = readArmedState(stateFile);
   if (state.kind === "absent") return ALLOWED;
   if (state.kind === "unusable") return deniedForUnusableState("commit", stateFile, session);
+  if (!commitGateArmedFor(state.content, session)) return ALLOWED;
   const verdict = lineVerdict(envelope.commandLine, judgeCommitLine);
   if (verdict === "clear") return ALLOWED;
   if (verifyIsGreen(state.content)) return ALLOWED;
@@ -1735,6 +1746,7 @@ function judgeEdits({ envelope }) {
   const state = readArmedState(stateFile);
   if (state.kind === "absent") return ALLOWED;
   if (state.kind === "unusable") return deniedForUnusableState("edits", stateFile, session);
+  if (foreignOwner(state.content, session) !== void 0) return ALLOWED;
   if (!stateSays(state.content, "mode", "plan")) return ALLOWED;
   if (aSliceIsActive(state.content)) return ALLOWED;
   const remedy = osoStateRemedy(session, "set active_slice=<n>");
@@ -2259,17 +2271,19 @@ function judgeStale({ envelope }) {
   if (!isDirectory(stateRootDirectory())) return ALLOWED;
   const stateFile = stateFileFor(envelope.cwd);
   if (!existsSync2(stateFile)) return ALLOWED;
-  const content = contentOf(stateFile);
+  const content = readableContentOf(stateFile);
   const sessionId = hookSessionId(envelope);
   const advisories = [
     ...staleStateAdvisory(envelope.caller, stateFile, content, sessionId),
-    ...expiredDelegationAdvisory(envelope.caller, envelope.cwd, content)
+    ...expiredDelegationAdvisory(envelope.caller, envelope.cwd, content ?? "")
   ];
   if (advisories.length === 0) return ALLOWED;
   return { verdict: { kind: "context", additionalContext: advisories.join(" ") }, events: [] };
 }
 function staleStateAdvisory(caller, stateFile, content, sessionId) {
+  if (content === void 0) return [staleStateContext(caller, stateFile, "", sessionId)];
   if (stateValue(content, "session") === sessionId) return [];
+  if (!holdsMode(content) && stateValue(content, "auto") !== RUN_ARMED2) return [];
   return [staleStateContext(caller, stateFile, content, sessionId)];
 }
 function expiredDelegationAdvisory(caller, cwd, content) {
@@ -2307,9 +2321,9 @@ function stateBinPath(caller) {
   if (caller.stateBin !== "") return caller.stateBin;
   return path5.join(pluginRootDirectory(), "bin", "oso-state");
 }
-function contentOf(stateFile) {
+function readableContentOf(stateFile) {
   const read = readStateFile(stateFile);
-  return read.kind === "ok" ? read.content : "";
+  return read.kind === "ok" ? read.content : void 0;
 }
 function quoted(value) {
   return `"${value}"`;

@@ -1036,6 +1036,13 @@ function stateRecords(content, key) {
 function stateValue(content, key) {
   return stateRecords(content, key).join("\n");
 }
+function holdsMode(content) {
+  return stateRecords(content, "mode").length > 0;
+}
+function foreignOwner(content, sessionId) {
+  const owner = stateValue(content, "session");
+  return owner === "" || owner === sessionId ? void 0 : owner;
+}
 function readValue(stateFile, key) {
   const content = readFileIfPresent(stateFile);
   if (content === void 0 || stateRecords(content, key).length === 0) return void 0;
@@ -1773,12 +1780,8 @@ function runSet(sessionId, pairs) {
 function foreignGateOwner(stateFile, sessionId) {
   const read = readStateFile(stateFile);
   if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
-  if (read.kind === "absent" || stateRecords(read.content, "mode").length === 0) return void 0;
+  if (read.kind === "absent" || !holdsMode(read.content)) return void 0;
   return foreignOwner(read.content, sessionId);
-}
-function foreignOwner(content, sessionId) {
-  const owner = stateValue(content, "session");
-  return owner === "" || owner === sessionId ? void 0 : owner;
 }
 function runGet(remaining) {
   if (remaining.length !== 1) throw new UsageError();

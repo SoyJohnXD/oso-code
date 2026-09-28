@@ -1,0 +1,21 @@
+{
+  "name": "commit gate: a state file carrying no mode arms no flow, so the commit goes through",
+  "source": [
+    { "assertion": "printf 'roadmap=harness-friction\\nauto=running\\nauto_change=state-gate-scope\\nverify_green=false\\nsession=test-session\\n' > \"$REPO_STATE\"" },
+    { "assertion": "assert_allows \"the commit gate lets a commit through when the state arms no mode\" block-commit-until-green.sh \"$(bash_input 'git commit -m x')\"" }
+  ],
+  "gate": "commit",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "roadmap=harness-friction\nauto=running\nauto_change=state-gate-scope\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": "",
+    "events_appended": []
+  }
+}

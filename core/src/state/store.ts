@@ -118,6 +118,15 @@ export function stateSays(content: string, key: string, value: string): boolean 
   return stateRecords(content, key).includes(value);
 }
 
+export function holdsMode(content: string): boolean {
+  return stateRecords(content, "mode").length > 0;
+}
+
+export function foreignOwner(content: string, sessionId: string): string | undefined {
+  const owner = stateValue(content, "session");
+  return owner === "" || owner === sessionId ? undefined : owner;
+}
+
 export function readValue(stateFile: string, key: string): string | undefined {
   const content = readFileIfPresent(stateFile);
   if (content === undefined || stateRecords(content, key).length === 0) return undefined;

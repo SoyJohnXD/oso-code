@@ -1,0 +1,21 @@
+{
+  "name": "slice gate: a session that does not own the armed plan edits untouched",
+  "source": [
+    { "assertion": "printf 'mode=plan\\nactive_slice=none\\nverify_green=false\\nsession=owner-session\\n' > \"$REPO_STATE\"" },
+    { "assertion": "assert_allows \"the edit gate stays off a session the state does not name as its owner\" block-edits-without-slice.sh \"$edit_input\"" }
+  ],
+  "gate": "edits",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nsession=owner-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"/tmp/x.ts\",\"old_string\":\"const slice = 1;\",\"new_string\":\"const slice = 2;\",\"replace_all\":false}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": "",
+    "events_appended": []
+  }
+}

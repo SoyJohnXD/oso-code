@@ -5,7 +5,7 @@ import type { GateOutcome, GateVerdict, HookEnvelope, PreToolUseVerdict } from "
 import { GATE_BUNDLE, gateRow, type GateId } from "../routes/routes.ts";
 import { readStateFile } from "../state/store.ts";
 
-export { stateRecords, stateSays, stateValue } from "../state/store.ts";
+export { foreignOwner, holdsMode, stateRecords, stateSays, stateValue } from "../state/store.ts";
 
 export type GateRequest = Readonly<{ envelope: HookEnvelope; argv: readonly string[] }>;
 

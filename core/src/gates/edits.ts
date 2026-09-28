@@ -4,6 +4,7 @@ import { stateFileFor } from "../state/store.ts";
 import {
   denied,
   deniedForUnusableState,
+  foreignOwner,
   hookSessionId,
   osoStateRemedy,
   payloadUnparseable,
@@ -29,6 +30,7 @@ function judgeEdits({ envelope }: GateRequest): GateOutcome {
   if (state.kind === "absent") return ALLOWED;
   if (state.kind === "unusable") return deniedForUnusableState("edits", stateFile, session);
 
+  if (foreignOwner(state.content, session) !== undefined) return ALLOWED;
   if (!stateSays(state.content, "mode", "plan")) return ALLOWED;
   if (aSliceIsActive(state.content)) return ALLOWED;
 

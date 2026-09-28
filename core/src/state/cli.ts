@@ -178,13 +178,8 @@ function runSet(sessionId: string, pairs: readonly string[]): number {
 function foreignGateOwner(stateFile: string, sessionId: string): string | undefined {
   const read = store.readStateFile(stateFile);
   if (read.kind === "unreadable") throw new store.StateFileUnreadableError(stateFile, read.cause);
-  if (read.kind === "absent" || store.stateRecords(read.content, "mode").length === 0) return undefined;
-  return foreignOwner(read.content, sessionId);
-}
-
-function foreignOwner(content: string, sessionId: string): string | undefined {
-  const owner = store.stateValue(content, "session");
-  return owner === "" || owner === sessionId ? undefined : owner;
+  if (read.kind === "absent" || !store.holdsMode(read.content)) return undefined;
+  return store.foreignOwner(read.content, sessionId);
 }
 
 function runGet(remaining: readonly string[]): number {
@@ -225,7 +220,7 @@ function runClose(sessionId: string): number {
     const read = store.readStateFile(stateFile);
     if (read.kind === "absent") return 0;
     if (read.kind === "unreadable") throw new store.StateFileUnreadableError(stateFile, read.cause);
-    const owner = foreignOwner(read.content, sessionId);
+    const owner = store.foreignOwner(read.content, sessionId);
     if (owner !== undefined) throw new RefusedError("close", `the state is owned by session ${owner}, not ${sessionId}`);
     store.removeStateKeys(stateFile, read.content, knownKeys.KEYS_CLOSE_REMOVES);
     store.logEvent({ event: "close", session: sessionId });

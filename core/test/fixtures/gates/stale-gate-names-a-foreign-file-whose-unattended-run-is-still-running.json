@@ -1,0 +1,26 @@
+{
+  "name": "stale gate: SessionStart still names another session's file whose unattended run is running, though it holds no mode",
+  "source": [
+    { "assertion": "printf 'roadmap=auth-hardening\\nauto=running\\nsession=other-session\\n' > \"$REPO_STATE\"" },
+    { "assertion": "run_hook warn-stale-state.sh \"$(stale_session_input)\"" }
+  ],
+  "gate": "stale",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "roadmap=auth-hardening\nauto=running\nsession=other-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"hookEventName\":\"SessionStart\"",
+        "{repo}.state) was left by another session",
+        "/oso-code:roadmap auth-hardening"
+      ]
+    },
+    "stderr": ""
+  }
+}

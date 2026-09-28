@@ -6,6 +6,8 @@ import {
   allowedWithResidueCounted,
   denied,
   deniedForUnusableState,
+  foreignOwner,
+  holdsMode,
   hookSessionId,
   payloadUnparseable,
   readArmedState,
@@ -46,6 +48,10 @@ export function verifyIsGreen(stateContent: string): boolean {
   return stateValue(stateContent, "verify_green") === "true";
 }
 
+export function commitGateArmedFor(stateContent: string, session: string): boolean {
+  return holdsMode(stateContent) && foreignOwner(stateContent, session) === undefined;
+}
+
 function judgeCommit({ envelope }: GateRequest): GateOutcome {
   const session = hookSessionId(envelope);
   if (session === "") return payloadUnparseable();
@@ -54,6 +60,7 @@ function judgeCommit({ envelope }: GateRequest): GateOutcome {
   const state = readArmedState(stateFile);
   if (state.kind === "absent") return ALLOWED;
   if (state.kind === "unusable") return deniedForUnusableState("commit", stateFile, session);
+  if (!commitGateArmedFor(state.content, session)) return ALLOWED;
 
   const verdict = lineVerdict<CommitJudgement>(envelope.commandLine, judgeCommitLine);
   if (verdict === "clear") return ALLOWED;
