@@ -32,7 +32,7 @@ provedSomething(
 
 describe(
   "core/src/hosts/stop.ts: the Stop push emits BOTH fields per C2-D7. The orchestrator measured the pinned " +
-    "client at 2.1.250, where plugin/hooks/auto-continue.sh:36 emits the older decision/reason form alone and " +
+    "client at 2.1.250, where the retired bash autocontinue hook emitted the older decision/reason form alone and " +
     "a push written by that hook is recorded in this run's own tally; whether shouldContinue: true ALSO works " +
     "on 2.1.250 was not measured, since establishing it would perturb the Stop rail carrying the run",
   () => {
@@ -56,7 +56,7 @@ describe(
       },
     );
 
-    test("a Stop that allows the stop says {} and nothing else (measured: auto-continue.sh:18)", () => {
+    test("a Stop that allows the stop says {} and nothing else (measured on the retired bash autocontinue hook)", () => {
       const run = stopRun(
         "autocontinue",
         { [STATE_FILE]: "auto=parked\nauto_change=auto-continuity\nsession=test-session\n" },

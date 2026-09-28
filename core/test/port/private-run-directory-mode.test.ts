@@ -51,7 +51,7 @@ function pushedRunDirectoryModes(autoWait: string): { runs: number; repository: 
 
 describe(
   "core/src/gates/autocontinue.ts and delegation.ts: the run's private state directory is created owner-only, " +
-    "not left at mkdir's default 755, matching plugin/hooks/auto-continue.sh:101-107's 'umask 077; mkdir -p' " +
+    "not left at mkdir's default 755, matching the retired bash autocontinue hook's 'umask 077; mkdir -p' " +
     "and the same primitive appendJournal already gets from core/src/state/store.ts:190-196,320",
   { skip: skipUnlessMkdirHonoursOwnerOnlyMode() },
   () => {

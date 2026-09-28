@@ -47,7 +47,7 @@ describe(
     "(docs/rewrite/ts-core-roadmap.md:121-135, G5's carve-out table amended to read INTERNAL FAILURE " +
     "BEHAVIOUR). MEASURED directly against the real bash (env -u HOME plugin/hooks/<hook>.sh): every " +
     "lifecycle hook that sources lib.sh dies at lib.sh:260 with 'HOME: unbound variable', a LOUD, exit-1, " +
-    "uniform failure for warn-stale-state.sh, warn-stale-version.sh, reanchor-after-compact.sh and " +
+    "uniform failure for warn-stale-state.sh, the stale-version notice, reanchor-after-compact.sh and " +
     "cleanup-state.sh alike — reanchor-after-compact.sh:43's own 2>/dev/null || exit 0 guard is measurably " +
     "narrower: it protects ONLY state_file_for's own 'no sha256sum, no shasum' digest failure (reproduced " +
     "below by stripping both tools from PATH while HOME stays valid), a bash-specific external-tool-absence " +
@@ -113,7 +113,7 @@ describe(
     test(
       "statebin: an internal failure (pluginRootAbove throwing, via the anchorless core copy) with " +
         "CLAUDE_ENV_FILE set (so pluginRootDirectory() is reached) is loud, matching " +
-        "persist-state-bin.sh:13's set -euo pipefail loud exit on an unwritable $CLAUDE_ENV_FILE (measured: " +
+        "the retired state-bin hook's set -euo pipefail loud exit on an unwritable $CLAUDE_ENV_FILE (measured: " +
         "CLAUDE_ENV_FILE pointed at a directory exits 1, 'Is a directory' on stderr), not the exit-0 silent " +
         "this slice's round 2 shipped",
       () => {
@@ -144,7 +144,7 @@ describe(
 
     test(
       "autocontinue: HOME unset — reached through stateFileFor's own homeDirectory() throw while naming the " +
-        "run's state, the port of plugin/hooks/auto-continue.sh:137 (which, like every check in a script that " +
+        "run's state, the port of the retired bash autocontinue hook (which, like every check in a script that " +
         "sources lib.sh, cannot even run once HOME is unset) — is loud",
       () => {
         const run = withStateSandbox("workspace", (sandbox) => {

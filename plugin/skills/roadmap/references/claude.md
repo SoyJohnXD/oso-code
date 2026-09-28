@@ -28,7 +28,7 @@ Wherever the flow names a file as `_shared/<file>.md`, it is spelled `${CLAUDE_S
 
 §4 reaches for three host spellings, and all three are already written in `${CLAUDE_SKILL_DIR}/../plan/references/claude.md`, where the child itself reads them. This file ROUTES to them and restates none, so one spelling per host cannot drift into two:
 
-- **The state command** — every `oso-state <verb> …` §4 instructs, its `set roadmap={roadmap}`, its `set roadmap=none` and the `show` that reads either back included, runs under the prefix that file's own **The state command** section spells. Spelled bare, without that prefix, the command exits on its usage message and writes nothing at all.
+- **The state command** — every `oso-state <verb> …` §4 instructs, its `set roadmap={roadmap}`, and its `set roadmap=none` included, runs under the prefix that file's own **The state command** section spells. Spelled bare, without that prefix, the command exits on its usage message and writes nothing at all.
 - **The worktree root** — `<worktree root>`, the SECOND place §4's bar reads before every arming, is the session-sanitized path that file's own **The worktree root** section spells.
 - **The unattended rails** — the three hooks §4's `auto=running` arms on this host, named one by one in that file's own **What the unattended marker arms on this host** section: the `Stop` net that pushes the chain on, the `SessionStart` re-anchor after a compaction, and the production-boundary rail that stands while the marker does.
 

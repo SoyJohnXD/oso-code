@@ -46,10 +46,10 @@ Save ONCE: `mem_save(title: "oso/{bug}/diagnosis — {human description}", topic
 
 Every arm below, every launch of the applier or verifier, every verdict read, and every judge invoked at the close reports under the milestone contract at `_shared/reporting.md` — the single source for what each moment states and how long it may run, delivered under the reference file's delivery contract like the triage report and diagnosis presentation already are.
 
-Arm the state — the whole triple goes in every write because `oso-state` can set a key but never delete one: a stale green or a slice left armed by an abandoned flow is overwritten here, never inherited.
+Arm the state — the whole triple goes in every write: a stale green or a slice left armed by an abandoned flow is overwritten here, never inherited.
 `oso-state set mode=debug active_slice=fix verify_green=false`
-Read it back with `oso-state show` and confirm the three keys came back as written — a write that silently failed leaves the commit gate open with no other signal, so stop and tell the operator instead of delegating.
-State belongs to the repository and outlives this session: if the operator walks away from this bug mid-flow, run `oso-state clear`, or the stale green rides over whatever unrelated work follows in that repository.
+Read the echo `set` prints: a non-zero exit, or an echo that does not carry the three keys as written, means a write that failed and left the commit gate open with no other signal — STOP and tell the operator instead of delegating.
+State belongs to the repository and outlives this session: if the operator walks away from this bug mid-flow, run `oso-state close`, or the stale green rides over whatever unrelated work follows in that repository.
 
 Then run the apply/verify loop (mechanics mirror the PLAN mode §6's sequential path). Both launches below are delegations you READ before you move: no step advances on a report nobody has read. A launch whose result you have not read is a step you have not run — it sends step 2 to verify a fix nobody wrote yet, and lets the close's green (§5 step 4) land over a verdict nobody read. HOW your host delivers that report — inside the same turn, or as a later notification that re-enters the conversation — is the reference file's to state, and a host that delivers one no way at all is a host this loop does not run on.
 
@@ -73,6 +73,7 @@ Then run the apply/verify loop (mechanics mirror the PLAN mode §6's sequential 
 3. Save a session summary to engram with a rich title (English).
 4. **Green, last** — once the quality pass has returned `Quality Pass: passed`, the run AFTER any debt cleanup at step 1 and never the one that predates it. The debt sweep, if it ran, must also have met step 1's exit bar: `Debt Sweep: clean`, or a `Debt Sweep: findings` whose every open finding is `nit`-tier and named in the session summary. With any accepted security fixes landed and the zero-warnings commands re-run, write `oso-state set mode=debug active_slice=none verify_green=true`. Nothing may edit code after this write: a path that has to — an accepted security fix in step 2, a late correction — re-reds the flag (`oso-state set mode=debug active_slice=fix verify_green=false`), re-runs those commands, and only then repeats this step. Green is never left standing over an edit the bar has not seen — and a named residual is not one: nothing was written for it, it is work step 1's bar left UNDONE and the session summary records, so this green stands over the tree that bar last read.
 5. This flow lands no commit of its own — a commit per slice is the PLAN mode's, and debug has no slices, which is what keeps §4's `HEAD` the tree as it stood before the fix. Never push or open a PR unless the user asks.
+6. Once the close is done and any commit the operator asked for has landed, run `oso-state close` as this flow's LAST state write: it releases the gates this session holds and refuses, changing nothing, when another session owns them.
 
 ## Traps
 

@@ -14,10 +14,10 @@ const DIRECT_CHILD_GLOBS: readonly { dir: string; ext: string }[] = [
   { dir: "tools", ext: ".sh" },
 ];
 const EXACT_FILES = new Set(["plugin/git-hooks/pre-commit"]);
-const MINIMUM_SCANNED_FILES = 15;
+const MINIMUM_SCANNED_FILES = 9;
 const MINIMUM_SCANNED_FILES_DERIVATION =
   "bootstrap/*.sh, bootstrap/lib/*.sh, plugin/hooks/*.sh, plugin/git-hooks/pre-commit, tests/*.sh, " +
-  "tests/fixtures/*.sh and tools/*.sh, measured at C5-S5b: 20";
+  "tests/fixtures/*.sh and tools/*.sh, measured after three bash hooks retired: 12";
 const COMMENT_LINE = /^[ \t]*#/;
 const SHEBANG_LINE = /^#!/;
 

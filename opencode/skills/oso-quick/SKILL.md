@@ -62,10 +62,10 @@ These fire before the user decides — they are your rationalizations, not their
 
 ## 3. Iterate
 
-Before the first edit, initialize the runtime state — the commit gate stays locked until the quality pass. The whole triple goes in every write because `oso-state` can set a key but never delete one: a stale green or a slice left armed by an abandoned flow is overwritten here, never inherited.
+Before the first edit, initialize the runtime state — the commit gate stays locked until the quality pass. The whole triple goes in every write: a stale green or a slice left armed by an abandoned flow is overwritten here, never inherited.
 `oso-state set mode=quick active_slice=none verify_green=false`
-Read it back with `oso-state show` and confirm the three keys came back as written — a write that silently failed leaves the commit gate open with no other signal, so stop and tell the operator instead of iterating.
-State belongs to the repository and outlives this session: if the operator walks away from this change mid-flow, run `oso-state clear`, or the stale green rides over whatever unrelated work follows in that repository.
+Read the echo `set` prints: a non-zero exit, or an echo that does not carry the three keys as written, means a write that failed and left the commit gate open with no other signal — STOP and tell the operator instead of iterating.
+State belongs to the repository and outlives this session: if the operator walks away from this change mid-flow, run `oso-state close`, or the stale green rides over whatever unrelated work follows in that repository.
 
 - Work in small increments that each produce a visible result (run the app, run the affected test, show output).
 - **No inline comments** — quick has no applier to coach, so the shared rubric's Debt markers bar (`_shared/rubric.md`) binds YOU at write time rather than arriving with the quality pass at the close. Names and structure carry the meaning, the language's standard public-API doc form is the only exception, and a decision the operator made goes in your reply to them and in the close's session summary, never into a source file.
@@ -99,3 +99,5 @@ Every judge invoked below (quality-pass, and security-pass when offered) and eve
 Before any commit — if the change touched data models, auth, or payments (the §2 trigger vocabulary), offer AND recommend a security review. On acceptance invoke the security-pass judge — it runs the review in its own fresh, isolated context — with NO base ref in its ARGUMENTS, since quick tracks no branch model, and relay the returned markdown report to the operator verbatim. Fixes the operator accepts go through the `oso-applier` agent as judge findings, never inline, then RE-RUN the security-pass judge until it returns `Security Pass: clean`. That fix runs on the model the profile names for its role, named in the Launching milestone. On `Security Pass: findings`, the operator decides between fixing through that same loop and explicitly accepting the residual. On `Security Pass: blocked` the review never ran at all — resolve what it names missing with the operator and invoke the security-pass judge again fresh; never treat the missing review as clean. The operator decides, declining proceeds. The review reads the PENDING working-tree diff — after commit there is nothing left to review.
 
 This flow lands no commit of its own — a commit per slice is the PLAN mode's, and quick has no slices. Never push or open a PR unless the user asks.
+
+Once the close is done and any commit the operator asked for has landed, run `oso-state close` as this flow's LAST state write: it releases the gates this session holds and refuses, changing nothing, when another session owns them.

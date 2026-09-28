@@ -40,7 +40,7 @@ The commit and edits gates named in the ground rules are this plugin's own hooks
 
 Three of this plugin's hooks read the `auto` marker the AUTO disposition writes:
 
-- `auto-continue.sh` — the `Stop` net: reads `auto=running` and pushes the run on when a turn ends without parking or closing it, capped at a fixed number of pushes that moved the journal nowhere.
+- the autocontinue gate in `dist/gate.js` — the `Stop` net: reads `auto=running` and pushes the run on when a turn ends without parking or closing it, capped at a fixed number of pushes that moved the journal nowhere.
 - `reanchor-after-compact.sh` — `SessionStart` with `source=compact`: hands the fresh context the three places the position lives — the `oso/index` row's `NEXT:` line, `oso-state show`, and the run journal.
 - `block-prod-deploy.sh` — a `PreToolUse` rail armed only while the marker is running: a production deploy, and a push off the run's own branch, are denied. Taking the run back (`auto=done`) disarms it.
 
