@@ -7,6 +7,8 @@ import { readStateFile } from "../state/store.ts";
 
 export { foreignOwner, holdsMode, stateRecords, stateSays, stateValue } from "../state/store.ts";
 
+export const RUN_ARMED = "running";
+
 export type GateRequest = Readonly<{ envelope: HookEnvelope; argv: readonly string[] }>;
 
 export type GateDefinition<V extends GateVerdict = PreToolUseVerdict> = Readonly<{

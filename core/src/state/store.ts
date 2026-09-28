@@ -6,6 +6,7 @@ import {
   constants,
   lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -88,10 +89,21 @@ export function repositoryIdFor(stateFile: string): string {
 
 export function journalFileFor(cwd: string): string {
   const stateFile = stateFileFor(cwd);
-  const repositoryId = repositoryIdFor(stateFile);
   const autoChange = readValue(stateFile, "auto_change") ?? "";
   const change = CHANGE_SLUG_PATTERN.test(autoChange) ? autoChange : "run";
-  return path.join(stateRootDirectory(), "runs", repositoryId, `${change}.log`);
+  return path.join(runsDirectoryOf(stateFile), `${change}.log`);
+}
+
+export function runsRootDirectory(): string {
+  return path.join(stateRootDirectory(), "runs");
+}
+
+export function runsDirectoryOf(stateFile: string): string {
+  return path.join(runsRootDirectory(), repositoryIdFor(stateFile));
+}
+
+export function inFlightRegistryOf(stateFile: string, sessionId: string): string {
+  return path.join(runsDirectoryOf(stateFile), sessionId, "in-flight");
 }
 
 export function denyPatternsFileFor(stateFile: string): string {
@@ -220,6 +232,15 @@ export function isSymlink(target: string): boolean {
 export function isDirectory(target: string): boolean {
   const stats = statOrUndefined(target);
   return stats !== undefined && stats.isDirectory();
+}
+
+export function entriesOfDirectory(directory: string): string[] {
+  try {
+    return readdirSync(directory).sort();
+  } catch (error) {
+    if (isErrnoException(error) && (error.code === "ENOENT" || error.code === "ENOTDIR")) return [];
+    throw error;
+  }
 }
 
 export function isRegularNonSymlinkFile(target: string): boolean {

@@ -26,10 +26,9 @@ import {
   writeWaitMark,
   type StandingWaitMark,
 } from "./delegation.ts";
-import { hookSessionId, stateValue, type GateDefinition, type GateRequest } from "./preflight.ts";
+import { hookSessionId, RUN_ARMED, stateValue, type GateDefinition, type GateRequest } from "./preflight.ts";
 
 export const PUSHES_WITHOUT_PROGRESS_CAP = 3;
-const RUN_ARMED = "running";
 const OWNER_ONLY_FILE = 0o600;
 const OWNER_ONLY_DIRECTORY = 0o700;
 

@@ -175,6 +175,20 @@ var GATE_ROWS = [
     script: "reanchor-after-compact.sh",
     wiring: { claude: "wired", opencode: "wired" },
     mechanism: { claude: "subprocess", opencode: "event" }
+  },
+  {
+    gate: "subagentstart",
+    event: "SubagentStart",
+    script: "in-flight-start",
+    wiring: { claude: "wired", opencode: "none" },
+    mechanism: { claude: "subprocess", opencode: "none" }
+  },
+  {
+    gate: "subagentstop",
+    event: "SubagentStop",
+    script: "in-flight-stop",
+    wiring: { claude: "wired", opencode: "none" },
+    mechanism: { claude: "subprocess", opencode: "none" }
   }
 ];
 var TOOL_ROWS = [
@@ -943,6 +957,47 @@ ${delimiter}
   }
 };
 
+// core/src/hosts/background-tasks.ts
+var NO_BACKGROUND_TASKS = { kind: "absent" };
+var UNRECOGNIZED = { kind: "unrecognized" };
+function backgroundTasksIn(document) {
+  if (!isRecord(document) || !("background_tasks" in document)) return NO_BACKGROUND_TASKS;
+  const named2 = document["background_tasks"];
+  if (Array.isArray(named2)) return taskArray(named2);
+  if (isRecord(named2)) return activeAndCompleted(named2);
+  return UNRECOGNIZED;
+}
+function taskArray(entries) {
+  const tasks = entries.flatMap((entry) => backgroundTask(entry) ?? []);
+  if (tasks.length !== entries.length) return UNRECOGNIZED;
+  return { kind: "array", tasks };
+}
+function backgroundTask(entry) {
+  if (!isRecord(entry) || typeof entry["id"] !== "string") return void 0;
+  return {
+    id: entry["id"],
+    type: textOf(entry["type"]),
+    status: textOf(entry["status"]),
+    description: textOf(entry["description"]),
+    agentType: textOf(entry["agent_type"])
+  };
+}
+function activeAndCompleted(named2) {
+  const active = named2["active"];
+  const completed = named2["completed"] ?? [];
+  if (!isIdList(active) || !isIdList(completed)) return UNRECOGNIZED;
+  return { kind: "object", active, completed };
+}
+function isIdList(value) {
+  return Array.isArray(value) && value.every((id) => typeof id === "string");
+}
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function textOf(value) {
+  return typeof value === "string" ? value : "";
+}
+
 // core/src/hosts/envelope.ts
 var ALLOWED = {
   verdict: { kind: "allow" },
@@ -956,10 +1011,12 @@ var JSON_SPACE = "[\\t\\n\\v\\f\\r ]";
 var STOP_HOOK_ACTIVE = new RegExp(`"stop_hook_active"${JSON_SPACE}*:${JSON_SPACE}*true`);
 function readEnvelope(hookText, caller) {
   const payload = asCommandSubstitutionCaptures(hookText);
+  const parsed = parsedPayload(payload);
   return {
     caller,
-    payloadRead: parsedPayload(payload).kind,
+    payloadRead: parsed.kind,
     sessionId: jsonField(payload, "session_id"),
+    hookEventName: jsonField(payload, "hook_event_name"),
     cwd: jsonField(payload, "cwd"),
     toolName: jsonField(payload, "tool_name"),
     filePath: jsonField(payload, "file_path"),
@@ -974,7 +1031,8 @@ function readEnvelope(hookText, caller) {
     escapedLastAssistantMessage: escapedField(payload, "last_assistant_message"),
     prompt: jsonField(payload, "prompt"),
     escapedPrompt: escapedField(payload, "prompt"),
-    stopHookActive: STOP_HOOK_ACTIVE.test(payload)
+    stopHookActive: STOP_HOOK_ACTIVE.test(payload),
+    backgroundTasks: parsed.kind === "json" ? backgroundTasksIn(parsed.document) : NO_BACKGROUND_TASKS
   };
 }
 function jsonCommandLine(payload) {
@@ -1057,6 +1115,7 @@ import {
   constants,
   lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -1074,6 +1133,7 @@ var JournalAppendError = class extends Error {
   }
 };
 var CHANGE_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
+var NAME_TOKEN_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
 var TOKEN_MAX_LENGTH = 128;
 var EVENTS_SCHEMA_VERSION = 2;
 var COMMAND_HEAD_BYTES = 120;
@@ -1097,15 +1157,26 @@ function repositoryIdFor(stateFile) {
 }
 function journalFileFor(cwd) {
   const stateFile = stateFileFor(cwd);
-  const repositoryId = repositoryIdFor(stateFile);
   const autoChange = readValue(stateFile, "auto_change") ?? "";
   const change = CHANGE_SLUG_PATTERN.test(autoChange) ? autoChange : "run";
-  return path.join(stateRootDirectory(), "runs", repositoryId, `${change}.log`);
+  return path.join(runsDirectoryOf(stateFile), `${change}.log`);
+}
+function runsRootDirectory() {
+  return path.join(stateRootDirectory(), "runs");
+}
+function runsDirectoryOf(stateFile) {
+  return path.join(runsRootDirectory(), repositoryIdFor(stateFile));
+}
+function inFlightRegistryOf(stateFile, sessionId) {
+  return path.join(runsDirectoryOf(stateFile), sessionId, "in-flight");
 }
 function denyPatternsFileFor(stateFile) {
   return path.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
 }
 var MODEL_TOKEN_SHAPE = `1 to ${TOKEN_MAX_LENGTH} characters of letters, digits and / : . - _ @`;
+function isNameToken(value) {
+  return value.length >= 1 && value.length <= TOKEN_MAX_LENGTH && NAME_TOKEN_PATTERN.test(value);
+}
 function stateRecords(content, key) {
   const prefix = `${key}=`;
   return content.split("\n").filter((line) => line.startsWith(prefix)).map((line) => line.slice(prefix.length));
@@ -1140,6 +1211,18 @@ function readStateFile(stateFile) {
 function isDirectory(target) {
   const stats = statOrUndefined(target);
   return stats !== void 0 && stats.isDirectory();
+}
+function entriesOfDirectory(directory) {
+  try {
+    return readdirSync(directory).sort();
+  } catch (error) {
+    if (isErrnoException(error) && (error.code === "ENOENT" || error.code === "ENOTDIR")) return [];
+    throw error;
+  }
+}
+function isRegularNonSymlinkFile(target) {
+  const stats = lstatOrUndefined(target);
+  return stats !== void 0 && stats.isFile();
 }
 function secondsSinceModified(target) {
   const stats = statOrUndefined(target);
@@ -1229,6 +1312,13 @@ function withOwnerOnlyUmask(run2) {
 function isoTimestamp() {
   return (/* @__PURE__ */ new Date()).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
+function lstatOrUndefined(target) {
+  try {
+    return lstatSync(target);
+  } catch {
+    return void 0;
+  }
+}
 function statOrUndefined(target) {
   try {
     return statSync(target);
@@ -1302,6 +1392,7 @@ import path3 from "node:path";
 import { existsSync, readFileSync as readFileSync2 } from "node:fs";
 import path2 from "node:path";
 import { fileURLToPath } from "node:url";
+var RUN_ARMED = "running";
 function sanitizeSession(raw) {
   return raw.replace(/[^a-zA-Z0-9-]/g, "");
 }
@@ -1442,6 +1533,13 @@ function removeWaitMark(markFile) {
     return noDirectoryHoldsTheMark(cause) ? void 0 : causeOf(cause);
   }
 }
+function removeLegacyWaitMarks(stateFile) {
+  const runs = runsDirectoryOf(stateFile);
+  for (const mark of entriesOfDirectory(runs).filter((name) => name.endsWith(MARK_SUFFIX))) {
+    const markFile = path3.join(runs, mark);
+    if (isRegularNonSymlinkFile(markFile)) rmSync2(markFile, { force: true });
+  }
+}
 function noDirectoryHoldsTheMark(cause) {
   return isErrnoException(cause) && cause.code === "ENOTDIR";
 }
@@ -1459,7 +1557,6 @@ function countIn(content, key) {
 
 // core/src/gates/autocontinue.ts
 var PUSHES_WITHOUT_PROGRESS_CAP = 3;
-var RUN_ARMED = "running";
 var OWNER_ONLY_FILE2 = 384;
 var OWNER_ONLY_DIRECTORY2 = 448;
 var RE_ANCHOR_THE_RUN = "oso-code: this run is unattended and still in flight, and this turn ended without parking or closing it. Continue it: re-read the position from the change's oso/index NEXT: line and from active_slice in oso-state, append every milestone to the run journal with oso-state journal, and park the run per the flow's own rules if a decision needs the operator.";
@@ -1839,6 +1936,87 @@ function judgeEdits({ envelope }) {
 function aSliceIsActive(stateContent) {
   const slices = stateRecords(stateContent, "active_slice");
   return slices.some((slice) => slice !== "") && !slices.includes("none");
+}
+
+// core/src/gates/in-flight-registry.ts
+import { rmSync as rmSync3 } from "node:fs";
+import path5 from "node:path";
+var SUBAGENT_START_GATE = {
+  gate: "subagentstart",
+  errorSubject: "the in-flight registry's subagent-start gate",
+  judge: registerStartedAgent
+};
+var SUBAGENT_STOP_GATE = {
+  gate: "subagentstop",
+  errorSubject: "the in-flight registry's subagent-stop gate",
+  judge: forgetStoppedAgent
+};
+function registerStartedAgent({ envelope }) {
+  const registry = armedRegistryOf(envelope);
+  if (registry === void 0) return NO_VERDICT;
+  if (!isNameToken(envelope.agentId)) return unregistered(envelope, "subagentstart");
+  writeRegisteredAgent(registry, {
+    agentId: envelope.agentId,
+    agentType: envelope.agentType,
+    transcriptPath: derivedTranscriptPath(envelope, envelope.agentId),
+    startedAt: isoTimestamp()
+  });
+  return NO_VERDICT;
+}
+function forgetStoppedAgent({ envelope }) {
+  const registry = armedRegistryOf(envelope);
+  if (registry === void 0) return NO_VERDICT;
+  if (!isNameToken(envelope.agentId)) return unregistered(envelope, "subagentstop");
+  forgetAgent(registry, envelope.agentId);
+  return NO_VERDICT;
+}
+function armedRegistryOf(envelope) {
+  const run2 = sessionRunOf(envelope);
+  if (run2 === void 0) return void 0;
+  const read = readStateFile(run2.stateFile);
+  if (read.kind !== "ok") return void 0;
+  if (stateValue(read.content, "session") !== run2.sessionId) return void 0;
+  if (stateValue(read.content, "auto") !== RUN_ARMED) return void 0;
+  return inFlightRegistryOf(run2.stateFile, run2.sessionId);
+}
+function sessionRunOf(envelope) {
+  const sessionId = hookSessionId(envelope);
+  if (sessionId === "" || !isDirectory(envelope.cwd)) return void 0;
+  return { sessionId, stateFile: stateFileFor(envelope.cwd) };
+}
+function derivedTranscriptPath(envelope, agentId) {
+  const sessionId = sanitizeSession(envelope.sessionId);
+  if (envelope.transcriptPath === "" || sessionId === "" || !isNameToken(agentId)) return "";
+  return path5.join(path5.dirname(envelope.transcriptPath), sessionId, "subagents", `agent-${agentId}.jsonl`);
+}
+function writeRegisteredAgent(registry, agent) {
+  const record = `agent_id=${agent.agentId}
+agent_type=${oneLine(agent.agentType)}
+transcript=${oneLine(agent.transcriptPath)}
+started_at=${agent.startedAt}
+`;
+  withOwnerOnlyUmask(() => writeFileAtomically(registry, path5.join(registry, agent.agentId), record, ".registering-"));
+}
+function forgetAgent(registry, agentId) {
+  rmSync3(path5.join(registry, agentId), { force: true });
+}
+function unregistered(envelope, gate) {
+  const route = gateRow(gate);
+  return {
+    verdict: { kind: "noVerdict" },
+    events: [
+      {
+        event: "in-flight-unregistered",
+        session: hookSessionId(envelope),
+        command: envelope.agentId,
+        gate: route.script,
+        hookEvent: route.event
+      }
+    ]
+  };
+}
+function oneLine(value) {
+  return value.replace(/[\r\n]+/g, " ");
 }
 
 // core/src/shell/ere.ts
@@ -2336,9 +2514,8 @@ function reanchorContext(journalFile, unattendedRun) {
 
 // core/src/gates/stale.ts
 import { existsSync as existsSync2 } from "node:fs";
-import path5 from "node:path";
+import path6 from "node:path";
 var ROADMAP_DISARMED_SENTINEL = "none";
-var RUN_ARMED2 = "running";
 var ROADMAP_PLACEHOLDER = "{roadmap}";
 var STALE_GATE = {
   gate: "stale",
@@ -2348,24 +2525,27 @@ var STALE_GATE = {
 function judgeStale({ envelope }) {
   if (!isDirectory(stateRootDirectory())) return ALLOWED;
   const stateFile = stateFileFor(envelope.cwd);
-  if (!existsSync2(stateFile)) return ALLOWED;
-  const content = readableContentOf(stateFile);
-  const sessionId = hookSessionId(envelope);
-  const advisories = [
-    ...staleStateAdvisory(envelope.caller, stateFile, content, sessionId),
-    ...expiredDelegationAdvisory(envelope.caller, envelope.cwd, content ?? "")
-  ];
+  const advisories = advisoriesFor(envelope, stateFile);
+  removeLegacyWaitMarks(stateFile);
   if (advisories.length === 0) return ALLOWED;
   return { verdict: { kind: "context", additionalContext: advisories.join(" ") }, events: [] };
+}
+function advisoriesFor(envelope, stateFile) {
+  if (!existsSync2(stateFile)) return [];
+  const content = readableContentOf(stateFile);
+  return [
+    ...staleStateAdvisory(envelope.caller, stateFile, content, hookSessionId(envelope)),
+    ...expiredDelegationAdvisory(envelope.caller, envelope.cwd, content ?? "")
+  ];
 }
 function staleStateAdvisory(caller, stateFile, content, sessionId) {
   if (content === void 0) return [staleStateContext(caller, stateFile, "", sessionId)];
   if (stateValue(content, "session") === sessionId) return [];
-  if (!holdsMode(content) && stateValue(content, "auto") !== RUN_ARMED2) return [];
+  if (!holdsMode(content) && stateValue(content, "auto") !== RUN_ARMED) return [];
   return [staleStateContext(caller, stateFile, content, sessionId)];
 }
 function expiredDelegationAdvisory(caller, cwd, content) {
-  if (stateValue(content, "auto") !== RUN_ARMED2) return [];
+  if (stateValue(content, "auto") !== RUN_ARMED) return [];
   const label = stateValue(content, "auto_wait");
   if (!isDelegationLabel(label)) return [];
   const runSession = stateValue(content, "session");
@@ -2381,7 +2561,7 @@ function staleStateContext(caller, stateFile, content, sessionId) {
   const skillPrefix = skillPrefixFor(caller.host);
   const stateBin = quoted(stateBinPath(caller));
   const clearCommand = `${stateBin} --session ${quoted(sessionId)} clear`;
-  const leftByAnother = `oso-code: this repository's own runtime state (${path5.basename(stateFile)}) was left by another session, and its flags arm this session's gates too`;
+  const leftByAnother = `oso-code: this repository's own runtime state (${path6.basename(stateFile)}) was left by another session, and its flags arm this session's gates too`;
   const roadmapValue = stateValue(content, "roadmap");
   const roadmapInFlight = roadmapValue === ROADMAP_DISARMED_SENTINEL ? "" : roadmapValue;
   if (roadmapInFlight === "") {
@@ -2397,7 +2577,7 @@ function skillPrefixFor(host) {
 }
 function stateBinPath(caller) {
   if (caller.stateBin !== "") return caller.stateBin;
-  return path5.join(pluginRootDirectory(), "bin", "oso-state");
+  return path6.join(pluginRootDirectory(), "bin", "oso-state");
 }
 function readableContentOf(stateFile) {
   const read = readStateFile(stateFile);
@@ -2409,7 +2589,7 @@ function quoted(value) {
 
 // core/src/gates/statebin.ts
 import { appendFileSync as appendFileSync2 } from "node:fs";
-import path6 from "node:path";
+import path7 from "node:path";
 var STATEBIN_GATE = {
   gate: "statebin",
   errorSubject: "the state-bin gate",
@@ -2418,7 +2598,7 @@ var STATEBIN_GATE = {
 function judgeStatebin(_request) {
   const envFile = process.env["CLAUDE_ENV_FILE"];
   if (envFile === void 0 || envFile === "") return NO_VERDICT;
-  const stateBin = path6.join(pluginRootDirectory(), "bin", "oso-state");
+  const stateBin = path7.join(pluginRootDirectory(), "bin", "oso-state");
   appendFileSync2(envFile, `export OSO_STATE_BIN=${stateBin}
 `);
   return NO_VERDICT;
@@ -2426,10 +2606,9 @@ function judgeStatebin(_request) {
 
 // core/src/gates/teardown.ts
 import { execFileSync as execFileSync2 } from "node:child_process";
-import { existsSync as existsSync3, readdirSync, renameSync as renameSync2, rmSync as rmSync3, rmdirSync, statSync as statSync4 } from "node:fs";
-import path7 from "node:path";
+import { existsSync as existsSync3, readdirSync as readdirSync2, renameSync as renameSync2, rmSync as rmSync4, rmdirSync, statSync as statSync4 } from "node:fs";
+import path8 from "node:path";
 var ABANDONED_STATE_DAYS = 7;
-var JOURNAL_KEYED_WAIT_MARK_SUFFIX = ".waiting";
 var EVENTS_LOG_RETENTION_DAYS = 30;
 var SECONDS_PER_DAY = 86400;
 var TEARDOWN_GATE = {
@@ -2441,7 +2620,8 @@ function judgeTeardown({ envelope }) {
   const sessionId = hookSessionId(envelope);
   const ownState = stateArmedBy(sessionId);
   removeWorktreesOf(sessionId, ownState);
-  dropJournalKeyedWaitMark(envelope.cwd);
+  removeLegacyWaitMarks(stateFileFor(envelope.cwd));
+  dropInFlightRegistriesOf(sessionId);
   dropStateFile(ownState);
   clearOrphanedPendingOf(sanitizeSession(envelope.sessionId));
   clearRoadmapInFlightOf(sessionId);
@@ -2455,7 +2635,7 @@ function stateArmedBy(sessionId) {
 }
 function removeWorktreesOf(sessionId, stateFile) {
   if (sessionId === "") return;
-  const sessionWorktrees = path7.join(stateRootDirectory(), "worktrees", sessionId);
+  const sessionWorktrees = path8.join(stateRootDirectory(), "worktrees", sessionId);
   if (!isDirectory(sessionWorktrees)) return;
   if (stateFile === void 0) return;
   const repoPath = stateValueOf(stateFile, "repo_path");
@@ -2473,15 +2653,16 @@ function removeWorktreesOf(sessionId, stateFile) {
     return;
   }
 }
-function dropJournalKeyedWaitMark(cwd) {
-  const journalFile = journalFileFor(cwd);
-  const stem = journalFile.endsWith(".log") ? journalFile.slice(0, -".log".length) : journalFile;
-  rmSync3(`${stem}${JOURNAL_KEYED_WAIT_MARK_SUFFIX}`, { force: true });
+function dropInFlightRegistriesOf(sessionId) {
+  if (sessionId === "") return;
+  for (const repository of entriesOfDirectory(runsRootDirectory())) {
+    rmSync4(path8.join(runsRootDirectory(), repository, sessionId), { recursive: true, force: true });
+  }
 }
 function dropStateFile(stateFile) {
   if (stateFile === void 0) return;
-  rmSync3(stateFile, { force: true });
-  rmSync3(`${stateFile}.lock`, { recursive: true, force: true });
+  rmSync4(stateFile, { force: true });
+  rmSync4(`${stateFile}.lock`, { recursive: true, force: true });
 }
 function clearOrphanedPendingOf(realSessionId) {
   if (realSessionId === "") return;
@@ -2503,7 +2684,7 @@ function clearRoadmapInFlightOf(sessionId) {
   }
 }
 function rotateAgedEventsLog() {
-  const eventsLog = path7.join(stateRootDirectory(), "events.jsonl");
+  const eventsLog = path8.join(stateRootDirectory(), "events.jsonl");
   if (!olderThanDays(eventsLog, EVENTS_LOG_RETENTION_DAYS)) return;
   renameSync2(eventsLog, `${eventsLog}.1`);
 }
@@ -2515,7 +2696,7 @@ function pruneAbandonedState(sessionId, ownState) {
     if (!olderThanDays(stateFile, ABANDONED_STATE_DAYS)) continue;
     const abandonedId = sanitizeSession(stateValueOf(stateFile, "session"));
     removeWorktreesOf(abandonedId, stateFile);
-    rmSync3(stateFile, { force: true });
+    rmSync4(stateFile, { force: true });
   }
 }
 function olderThanDays(target, days) {
@@ -2527,14 +2708,14 @@ function stateValueOf(stateFile, key) {
   return read.kind === "ok" ? stateValue(read.content, key) : "";
 }
 function stateFilesSorted() {
-  return directoryEntries(stateRootDirectory()).filter((name) => name.endsWith(".state")).sort().map((name) => path7.join(stateRootDirectory(), name)).filter((target) => isFile(target));
+  return directoryEntries(stateRootDirectory()).filter((name) => name.endsWith(".state")).sort().map((name) => path8.join(stateRootDirectory(), name)).filter((target) => isFile(target));
 }
 function subdirectoriesSorted(directory) {
-  return directoryEntries(directory).sort().map((name) => path7.join(directory, name)).filter((target) => isDirectory(target));
+  return directoryEntries(directory).sort().map((name) => path8.join(directory, name)).filter((target) => isDirectory(target));
 }
 function directoryEntries(directory) {
   try {
-    return readdirSync(directory);
+    return readdirSync2(directory);
   } catch {
     return [];
   }
@@ -2611,7 +2792,7 @@ function allowlistCarries(allowlist, toolName) {
 // core/src/gates/version.ts
 import { execFileSync as execFileSync3 } from "node:child_process";
 import { readFileSync as readFileSync3 } from "node:fs";
-import path8 from "node:path";
+import path9 from "node:path";
 var RELEASE_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/;
 var GITHUB_URL_PREFIX = "https://github.com/";
 var FETCH_CONNECT_SECONDS = 2;
@@ -2639,10 +2820,10 @@ function judgeVersion({ envelope }) {
   return { verdict: { kind: "context", additionalContext: context }, events: [] };
 }
 function pluginManifestFile() {
-  return path8.join(pluginRootDirectory(), ".claude-plugin", "plugin.json");
+  return path9.join(pluginRootDirectory(), ".claude-plugin", "plugin.json");
 }
 function publishedReleaseCacheFile() {
-  return path8.join(stateRootDirectory(), "published-release");
+  return path9.join(stateRootDirectory(), "published-release");
 }
 function repositorySlugOf(repositoryUrl) {
   if (!repositoryUrl.startsWith(GITHUB_URL_PREFIX) || repositoryUrl.length === GITHUB_URL_PREFIX.length) {
@@ -2653,7 +2834,7 @@ function repositorySlugOf(repositoryUrl) {
 }
 function marketplaceServesRepository(repositorySlug) {
   const home = homeDirectoryFrom(process.platform, process.env);
-  const marketplacesFile = path8.join(home, ".claude", "plugins", "known_marketplaces.json");
+  const marketplacesFile = path9.join(home, ".claude", "plugins", "known_marketplaces.json");
   const registrations = readFileOrEmpty(marketplacesFile).replace(/\s/g, "");
   return registrations.includes(`"repo":"${repositorySlug}"`);
 }
@@ -2672,7 +2853,7 @@ function cachedPublishedRelease(cacheFile) {
 function refreshPublishedReleaseCache(cacheFile, repositorySlug) {
   try {
     writeFileAtomically(
-      path8.dirname(cacheFile),
+      path9.dirname(cacheFile),
       cacheFile,
       fetchedHighestReleaseVersion(repositorySlug),
       ".published-release."
@@ -2739,7 +2920,9 @@ var PRE_TOOL_USE_GATES = [
 var SESSION_START_GATES = [STALE_GATE, VERSION_GATE, REANCHOR_GATE];
 var NO_VERDICT_GATES = [
   STATEBIN_GATE,
-  TEARDOWN_GATE
+  TEARDOWN_GATE,
+  SUBAGENT_START_GATE,
+  SUBAGENT_STOP_GATE
 ];
 var STOP_GATES = [
   AUTOCONTINUE_GATE

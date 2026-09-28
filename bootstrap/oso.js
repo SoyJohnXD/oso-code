@@ -11,6 +11,7 @@ import {
   constants,
   lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -177,11 +178,11 @@ function isErrnoException(error) {
 
 // core/src/install/claude.ts
 import { spawnSync as spawnSync3 } from "node:child_process";
-import { mkdirSync as mkdirSync5, readFileSync as readFileSync7, readdirSync as readdirSync3, rmSync as rmSync5, statSync as statSync4, writeFileSync as writeFileSync5 } from "node:fs";
+import { mkdirSync as mkdirSync5, readFileSync as readFileSync7, readdirSync as readdirSync4, rmSync as rmSync5, statSync as statSync4, writeFileSync as writeFileSync5 } from "node:fs";
 import path6 from "node:path";
 
 // core/src/install/backup.ts
-import { chmodSync, cpSync, lstatSync as lstatSync2, mkdirSync as mkdirSync2, readdirSync, readFileSync as readFileSync2, rmSync as rmSync2, statSync as statSync2, writeFileSync as writeFileSync2 } from "node:fs";
+import { chmodSync, cpSync, lstatSync as lstatSync2, mkdirSync as mkdirSync2, readdirSync as readdirSync2, readFileSync as readFileSync2, rmSync as rmSync2, statSync as statSync2, writeFileSync as writeFileSync2 } from "node:fs";
 import path2 from "node:path";
 var BACKUP_NAME_PATTERN = /^install-backup-\d{8}-\d{6}-.+$/;
 var DEFAULT_BUDGET_KIB = 307200;
@@ -325,7 +326,7 @@ function readableLinesOf(file) {
 }
 function childDirectoryNames(root) {
   try {
-    return readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    return readdirSync2(root, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
   } catch {
     return [];
   }
@@ -341,7 +342,7 @@ function recursiveDiskBlocks(target) {
   const stats = lstatSync2(target, { throwIfNoEntry: false });
   if (stats === void 0) return 0;
   if (!stats.isDirectory()) return stats.blocks;
-  const childBlocks = readdirSync(target).reduce((total, child) => total + recursiveDiskBlocks(path2.join(target, child)), 0);
+  const childBlocks = readdirSync2(target).reduce((total, child) => total + recursiveDiskBlocks(path2.join(target, child)), 0);
   return stats.blocks + childBlocks;
 }
 
@@ -354,7 +355,7 @@ import { gunzipSync, inflateRawSync } from "node:zlib";
 
 // core/src/install/verify-claude.ts
 import { spawnSync } from "node:child_process";
-import { closeSync, mkdirSync as mkdirSync3, mkdtempSync, openSync, readFileSync as readFileSync4, readSync, readdirSync as readdirSync2, rmSync as rmSync3, statSync as statSync3, writeFileSync as writeFileSync3 } from "node:fs";
+import { closeSync, mkdirSync as mkdirSync3, mkdtempSync, openSync, readFileSync as readFileSync4, readSync, readdirSync as readdirSync3, rmSync as rmSync3, statSync as statSync3, writeFileSync as writeFileSync3 } from "node:fs";
 import { tmpdir } from "node:os";
 import path4 from "node:path";
 
@@ -752,7 +753,7 @@ function findGateBundle(installRoot) {
 }
 function allFilesUnder(directory) {
   if (!isDirectory(directory)) return [];
-  return readdirSync2(directory, { recursive: true }).map((entry) => path4.join(directory, entry.toString())).filter((absolute) => isRegularNonSymlinkFile(absolute));
+  return readdirSync3(directory, { recursive: true }).map((entry) => path4.join(directory, entry.toString())).filter((absolute) => isRegularNonSymlinkFile(absolute));
 }
 function runInstalledHookProbe(gate, environment) {
   const hookHome = mkdtempSync(path4.join(tmpdir(), "oso-verify-hook-"));
@@ -846,7 +847,7 @@ function filesUnderRelative(repositoryRoot2, ...segments) {
 function directChildrenWithExtension(repositoryRoot2, dir, extension) {
   const absolute = path4.join(repositoryRoot2, dir);
   if (!isDirectory(absolute)) return [];
-  return readdirSync2(absolute).filter((name) => name.endsWith(extension) && isRegularNonSymlinkFile(path4.join(absolute, name))).map((name) => toPosix(path4.join(dir, name)));
+  return readdirSync3(absolute).filter((name) => name.endsWith(extension) && isRegularNonSymlinkFile(path4.join(absolute, name))).map((name) => toPosix(path4.join(dir, name)));
 }
 function containsCarriageReturn(file) {
   return readFileSync4(file).includes(13);
@@ -1374,7 +1375,7 @@ function backupClientConfigTargets(homeDirectory2, claudeDir) {
   const targets = [{ label: "claude-json", target: path6.join(homeDirectory2, ".claude.json") }];
   const pluginsDir = path6.join(claudeDir, "plugins");
   if (!isDirectory(pluginsDir)) return targets;
-  for (const name of readdirSync3(pluginsDir).filter((entry) => entry.endsWith(".json"))) {
+  for (const name of readdirSync4(pluginsDir).filter((entry) => entry.endsWith(".json"))) {
     targets.push({ label: `plugins-json-${name}`, target: path6.join(pluginsDir, name) });
   }
   return targets;
@@ -1737,7 +1738,7 @@ function gitHooksOwner(repositoryRoot2, environment, gitHooksDir) {
   if (gitDir === "") return "";
   const hooksDir = path6.join(gitDir, "hooks");
   if (!isDirectory(hooksDir)) return "";
-  const hookFile = readdirSync3(hooksDir).find((name) => !name.endsWith(".sample") && isRegularNonSymlinkFile(path6.join(hooksDir, name)));
+  const hookFile = readdirSync4(hooksDir).find((name) => !name.endsWith(".sample") && isRegularNonSymlinkFile(path6.join(hooksDir, name)));
   return hookFile === void 0 ? "" : path6.join(hooksDir, hookFile);
 }
 function gitAbsoluteGitDir(repositoryRoot2, environment) {
@@ -2450,7 +2451,7 @@ function probeEnvironment2(environment, probeHome) {
 }
 
 // core/src/install/opencode-install.ts
-import { chmodSync as chmodSync2, cpSync as cpSync2, lstatSync as lstatSync3, mkdirSync as mkdirSync6, mkdtempSync as mkdtempSync4, readdirSync as readdirSync4, readFileSync as readFileSync10, renameSync as renameSync3, rmSync as rmSync7, writeFileSync as writeFileSync6 } from "node:fs";
+import { chmodSync as chmodSync2, cpSync as cpSync2, lstatSync as lstatSync3, mkdirSync as mkdirSync6, mkdtempSync as mkdtempSync4, readdirSync as readdirSync5, readFileSync as readFileSync10, renameSync as renameSync3, rmSync as rmSync7, writeFileSync as writeFileSync6 } from "node:fs";
 import { spawnSync as spawnSync5 } from "node:child_process";
 import path11 from "node:path";
 
@@ -3133,7 +3134,7 @@ function narrowToOwnerOnly(target) {
   if (stats.isSymbolicLink()) return;
   chmodSync2(target, stats.mode & OWNER_ONLY_MASK);
   if (!stats.isDirectory()) return;
-  for (const name of readdirSync4(target)) narrowToOwnerOnly(path11.join(target, name));
+  for (const name of readdirSync5(target)) narrowToOwnerOnly(path11.join(target, name));
 }
 function skillWrapperNames(skillsSource) {
   return osoPrefixedEntryNames(skillsSource).filter((name) => isReadableRegularFile(path11.join(skillsSource, name, "SKILL.md")));
@@ -3152,7 +3153,7 @@ function osoPrefixedEntryNames(directory) {
 }
 function directoryEntryNames(directory) {
   try {
-    return readdirSync4(directory).sort();
+    return readdirSync5(directory).sort();
   } catch {
     return [];
   }
@@ -3356,7 +3357,7 @@ function physicalPathOf(target) {
 
 // core/src/install/verify-opencode.ts
 import { spawnSync as spawnSync6 } from "node:child_process";
-import { chmodSync as chmodSync3, mkdirSync as mkdirSync8, mkdtempSync as mkdtempSync5, readdirSync as readdirSync5, readFileSync as readFileSync12, rmSync as rmSync9, writeFileSync as writeFileSync7 } from "node:fs";
+import { chmodSync as chmodSync3, mkdirSync as mkdirSync8, mkdtempSync as mkdtempSync5, readdirSync as readdirSync6, readFileSync as readFileSync12, rmSync as rmSync9, writeFileSync as writeFileSync7 } from "node:fs";
 import { tmpdir as tmpdir4 } from "node:os";
 import path13 from "node:path";
 
@@ -3944,7 +3945,7 @@ function treesHoldTheSameBytes(published, installed) {
 }
 function relativeFilesUnder(directory) {
   if (!isDirectory(directory)) return [];
-  return readdirSync5(directory, { recursive: true }).map((entry) => entry.toString()).filter((relative) => isReadableRegularFile(path13.join(directory, relative))).sort();
+  return readdirSync6(directory, { recursive: true }).map((entry) => entry.toString()).filter((relative) => isReadableRegularFile(path13.join(directory, relative))).sort();
 }
 function installedTargetExists(target) {
   return isReadableRegularFile(target) || isDirectory(target);
@@ -3954,7 +3955,7 @@ function relativeToHome(target, home) {
 }
 function directoryEntryNames2(directory) {
   try {
-    return readdirSync5(directory).sort();
+    return readdirSync6(directory).sort();
   } catch {
     return [];
   }

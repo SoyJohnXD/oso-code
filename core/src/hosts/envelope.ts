@@ -1,6 +1,7 @@
 import type { HostName } from "../routes/routes.ts";
 import type { LoggedEvent } from "../state/store.ts";
 import { MAX_LEXED_INPUT_BYTES } from "../shell/lexer.ts";
+import { backgroundTasksIn, NO_BACKGROUND_TASKS, type BackgroundTasks } from "./background-tasks.ts";
 
 export type HookCaller = Readonly<{ host: HostName; agentSession: string; stateBin: string }>;
 
@@ -10,6 +11,7 @@ export type HookEnvelope = Readonly<{
   caller: HookCaller;
   payloadRead: PayloadRead;
   sessionId: string;
+  hookEventName: string;
   cwd: string;
   toolName: string;
   filePath: string;
@@ -25,6 +27,7 @@ export type HookEnvelope = Readonly<{
   prompt: string;
   escapedPrompt: string;
   stopHookActive: boolean;
+  backgroundTasks: BackgroundTasks;
 }>;
 
 export type GateVerdict =
@@ -65,6 +68,7 @@ const STOP_HOOK_ACTIVE = new RegExp(`"stop_hook_active"${JSON_SPACE}*:${JSON_SPA
 const NO_HOOK_FIELD_NAMED: Omit<HookEnvelope, "caller"> = {
   payloadRead: "json",
   sessionId: "",
+  hookEventName: "",
   cwd: "",
   toolName: "",
   filePath: "",
@@ -80,13 +84,14 @@ const NO_HOOK_FIELD_NAMED: Omit<HookEnvelope, "caller"> = {
   prompt: "",
   escapedPrompt: "",
   stopHookActive: false,
+  backgroundTasks: NO_BACKGROUND_TASKS,
 };
 
-type HookTextFields = Omit<HookEnvelope, "caller" | "payloadRead" | "stopHookActive">;
+type HookTextFields = Omit<HookEnvelope, "caller" | "payloadRead" | "stopHookActive" | "backgroundTasks">;
 
 export function hostEnvelope(caller: HookCaller, named: Partial<Omit<HookEnvelope, "caller">>): HookEnvelope {
-  const { payloadRead, stopHookActive, ...text } = { ...NO_HOOK_FIELD_NAMED, ...named };
-  return { ...asHookFieldValues(text), payloadRead, stopHookActive, caller };
+  const { payloadRead, stopHookActive, backgroundTasks, ...text } = { ...NO_HOOK_FIELD_NAMED, ...named };
+  return { ...asHookFieldValues(text), payloadRead, stopHookActive, backgroundTasks, caller };
 }
 
 function asHookFieldValues(text: HookTextFields): HookTextFields {
@@ -96,10 +101,12 @@ function asHookFieldValues(text: HookTextFields): HookTextFields {
 
 export function readEnvelope(hookText: string, caller: HookCaller): HookEnvelope {
   const payload = asCommandSubstitutionCaptures(hookText);
+  const parsed = parsedPayload(payload);
   return {
     caller,
-    payloadRead: parsedPayload(payload).kind,
+    payloadRead: parsed.kind,
     sessionId: jsonField(payload, "session_id"),
+    hookEventName: jsonField(payload, "hook_event_name"),
     cwd: jsonField(payload, "cwd"),
     toolName: jsonField(payload, "tool_name"),
     filePath: jsonField(payload, "file_path"),
@@ -115,6 +122,7 @@ export function readEnvelope(hookText: string, caller: HookCaller): HookEnvelope
     prompt: jsonField(payload, "prompt"),
     escapedPrompt: escapedField(payload, "prompt"),
     stopHookActive: STOP_HOOK_ACTIVE.test(payload),
+    backgroundTasks: parsed.kind === "json" ? backgroundTasksIn(parsed.document) : NO_BACKGROUND_TASKS,
   };
 }
 

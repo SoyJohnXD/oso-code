@@ -127,6 +127,20 @@ export const GATE_ROWS = [
     wiring: { claude: "wired", opencode: "wired" },
     mechanism: { claude: "subprocess", opencode: "event" },
   },
+  {
+    gate: "subagentstart",
+    event: "SubagentStart",
+    script: "in-flight-start",
+    wiring: { claude: "wired", opencode: "none" },
+    mechanism: { claude: "subprocess", opencode: "none" },
+  },
+  {
+    gate: "subagentstop",
+    event: "SubagentStop",
+    script: "in-flight-stop",
+    wiring: { claude: "wired", opencode: "none" },
+    mechanism: { claude: "subprocess", opencode: "none" },
+  },
 ] as const satisfies readonly GateRow[];
 
 export const RECOVERY_ROWS: readonly RecoveryRow[] = [

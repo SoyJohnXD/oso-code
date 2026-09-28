@@ -2,9 +2,12 @@ import { mkdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs"
 import path from "node:path";
 import {
   causeOf,
+  entriesOfDirectory,
   isErrnoException,
+  isRegularNonSymlinkFile,
   readStateFile,
   repositoryIdFor,
+  runsDirectoryOf,
   stateFileFor,
   stateRootDirectory,
 } from "../state/store.ts";
@@ -86,6 +89,14 @@ export function removeWaitMark(markFile: string): string | undefined {
     return undefined;
   } catch (cause) {
     return noDirectoryHoldsTheMark(cause) ? undefined : causeOf(cause);
+  }
+}
+
+export function removeLegacyWaitMarks(stateFile: string): void {
+  const runs = runsDirectoryOf(stateFile);
+  for (const mark of entriesOfDirectory(runs).filter((name) => name.endsWith(MARK_SUFFIX))) {
+    const markFile = path.join(runs, mark);
+    if (isRegularNonSymlinkFile(markFile)) rmSync(markFile, { force: true });
   }
 }
 

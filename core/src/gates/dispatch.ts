@@ -9,6 +9,7 @@ import type { LoggedEvent } from "../state/store.ts";
 import { AUTOCONTINUE_GATE } from "./autocontinue.ts";
 import { COMMIT_GATE } from "./commit.ts";
 import { EDITS_GATE } from "./edits.ts";
+import { SUBAGENT_START_GATE, SUBAGENT_STOP_GATE } from "./in-flight-registry.ts";
 import type { GateDefinition, GateRequest } from "./preflight.ts";
 import { PROD_DEPLOY_GATE } from "./proddeploy.ts";
 import { REANCHOR_GATE } from "./reanchor.ts";
@@ -35,6 +36,8 @@ const SESSION_START_GATES: readonly GateDefinition<Extract<GateVerdict, { kind: 
 const NO_VERDICT_GATES: readonly GateDefinition<Extract<GateVerdict, { kind: "noVerdict" | "gateError" }>>[] = [
   STATEBIN_GATE,
   TEARDOWN_GATE,
+  SUBAGENT_START_GATE,
+  SUBAGENT_STOP_GATE,
 ];
 
 const STOP_GATES: readonly GateDefinition<Extract<GateVerdict, { kind: "allow" | "deny" | "push" }>>[] = [

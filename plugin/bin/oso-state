@@ -958,6 +958,7 @@ import {
   constants,
   lstatSync as lstatSync2,
   mkdirSync,
+  readdirSync,
   readFileSync as readFileSync2,
   renameSync,
   rmSync,
@@ -1026,10 +1027,15 @@ function repositoryIdFor(stateFile) {
 }
 function journalFileFor(cwd) {
   const stateFile = stateFileFor(cwd);
-  const repositoryId = repositoryIdFor(stateFile);
   const autoChange = readValue(stateFile, "auto_change") ?? "";
   const change = CHANGE_SLUG_PATTERN.test(autoChange) ? autoChange : "run";
-  return path3.join(stateRootDirectory(), "runs", repositoryId, `${change}.log`);
+  return path3.join(runsDirectoryOf(stateFile), `${change}.log`);
+}
+function runsRootDirectory() {
+  return path3.join(stateRootDirectory(), "runs");
+}
+function runsDirectoryOf(stateFile) {
+  return path3.join(runsRootDirectory(), repositoryIdFor(stateFile));
 }
 function denyPatternsFileFor(stateFile) {
   return path3.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);

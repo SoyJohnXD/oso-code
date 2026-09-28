@@ -1,6 +1,12 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { ALLOWED, type GateOutcome, type HookCaller, type SessionStartVerdict } from "../hosts/envelope.ts";
+import {
+  ALLOWED,
+  type GateOutcome,
+  type HookCaller,
+  type HookEnvelope,
+  type SessionStartVerdict,
+} from "../hosts/envelope.ts";
 import type { HostName, PerHost } from "../routes/routes.ts";
 import { CHANGE_SLUG_PATTERN, isDirectory, readStateFile, stateFileFor, stateRootDirectory } from "../state/store.ts";
 import {
@@ -8,13 +14,21 @@ import {
   isDelegationLabel,
   nowEpochSeconds,
   readWaitMark,
+  removeLegacyWaitMarks,
   waitExpired,
   waitMarkFileFor,
 } from "./delegation.ts";
-import { holdsMode, hookSessionId, pluginRootDirectory, stateValue, type GateDefinition, type GateRequest } from "./preflight.ts";
+import {
+  holdsMode,
+  hookSessionId,
+  pluginRootDirectory,
+  RUN_ARMED,
+  stateValue,
+  type GateDefinition,
+  type GateRequest,
+} from "./preflight.ts";
 
 const ROADMAP_DISARMED_SENTINEL = "none";
-const RUN_ARMED = "running";
 const ROADMAP_PLACEHOLDER = "{roadmap}";
 
 export const STALE_GATE: GateDefinition<SessionStartVerdict> = {
@@ -27,17 +41,20 @@ function judgeStale({ envelope }: GateRequest): GateOutcome<SessionStartVerdict>
   if (!isDirectory(stateRootDirectory())) return ALLOWED;
 
   const stateFile = stateFileFor(envelope.cwd);
-  if (!existsSync(stateFile)) return ALLOWED;
-
-  const content = readableContentOf(stateFile);
-  const sessionId = hookSessionId(envelope);
-  const advisories = [
-    ...staleStateAdvisory(envelope.caller, stateFile, content, sessionId),
-    ...expiredDelegationAdvisory(envelope.caller, envelope.cwd, content ?? ""),
-  ];
+  const advisories = advisoriesFor(envelope, stateFile);
+  removeLegacyWaitMarks(stateFile);
   if (advisories.length === 0) return ALLOWED;
 
   return { verdict: { kind: "context", additionalContext: advisories.join(" ") }, events: [] };
+}
+
+function advisoriesFor(envelope: HookEnvelope, stateFile: string): string[] {
+  if (!existsSync(stateFile)) return [];
+  const content = readableContentOf(stateFile);
+  return [
+    ...staleStateAdvisory(envelope.caller, stateFile, content, hookSessionId(envelope)),
+    ...expiredDelegationAdvisory(envelope.caller, envelope.cwd, content ?? ""),
+  ];
 }
 
 function staleStateAdvisory(
