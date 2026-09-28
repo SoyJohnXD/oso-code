@@ -12,14 +12,14 @@
     "--session",
     "test-session",
     "set",
-    "weird=a\"b\\c"
+    "roadmap=a\"b\\c"
   ],
   "stdin": "",
   "expect": {
     "exit": 0,
     "events_appended": [
       {
-        "event": "set:weird=a\"b\\c"
+        "event": "set:roadmap=a\"b\\c"
       }
     ]
   }

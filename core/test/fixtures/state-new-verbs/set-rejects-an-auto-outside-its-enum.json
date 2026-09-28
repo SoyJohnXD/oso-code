@@ -1,0 +1,24 @@
+{
+  "name": "set rejects an auto that is not running, parked or done",
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=3\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "set",
+    "auto=paused"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 1,
+    "stdout": "",
+    "stderr": "oso-state: set refused: auto=paused is not one of running, parked, done\n",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=3\nverify_green=false\nsession=test-session\n"
+    },
+    "events_appended": []
+  }
+}

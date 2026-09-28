@@ -1,0 +1,23 @@
+{
+  "name": "close by a session that does not own the state exits 1 naming the owner and leaves the file byte-identical",
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=3\nverify_green=false\nroadmap=harness-friction\nsession=other-session\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "close"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 1,
+    "stdout": "",
+    "stderr": "oso-state: close refused: the state is owned by session other-session, not test-session\n",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=3\nverify_green=false\nroadmap=harness-friction\nsession=other-session\n"
+    },
+    "events_appended": []
+  }
+}

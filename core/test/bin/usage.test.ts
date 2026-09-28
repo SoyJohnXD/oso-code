@@ -21,6 +21,7 @@ const BASH_USAGE = `usage: oso-state --session <id> set key=value [key=value ...
        oso-state journal --path
 `;
 
+const CLOSE_LINE = "       oso-state --session <id> close\n";
 const CLOSE_SLICE_LINE = "       oso-state --session <id> close-slice <n>\n";
 const DENY_PATTERN_LINE = "       oso-state --session <id> deny-pattern add <pattern>\n";
 const SCAN_LINES =
@@ -33,7 +34,7 @@ const SCAN_PARAGRAPH =
 
 const TS_USAGE = BASH_USAGE.replace(
   "       oso-state --session <id> clear\n",
-  `       oso-state --session <id> clear\n${CLOSE_SLICE_LINE}`,
+  `       oso-state --session <id> clear\n${CLOSE_LINE}${CLOSE_SLICE_LINE}`,
 )
   .replace(
     "       oso-state --session <id> amend-plan <slice-id>\n",
@@ -43,7 +44,7 @@ const TS_USAGE = BASH_USAGE.replace(
 
 test(
   "the TypeScript CLI's usage text equals the bash's (read from 8c54fd8:plugin/bin/oso-state:7-29) " +
-    "plus exactly the two verbs G6 adds, close-slice and deny-pattern add, and the scan verb C1-D3 adds",
+    "plus exactly the two verbs G6 adds, close-slice and deny-pattern add, the scan verb C1-D3 adds and the close verb",
   () => {
     const result = spawnSync(
       process.execPath,

@@ -1029,27 +1029,31 @@ function readStateFile(stateFile) {
     return { kind: "unreadable", cause: causeOf(error) };
   }
 }
-function writeStatePairs(stateFile, pairs, sessionId) {
+function writeStatePairs(stateFile, pairs, ownerSession) {
   const directory = path.dirname(stateFile);
   const read = readStateFile(stateFile);
   if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
   const existing = read.kind === "ok" ? read.content : "";
   let lines = parseStateLines(existing);
-  for (const pair of [...pairs, `session=${sessionId}`]) {
+  for (const pair of [...pairs, `session=${ownerSession}`]) {
     const [key, value] = splitPair(pair);
     lines = lines.filter((line) => line.key !== key);
     lines.push({ key, value });
   }
-  const tempFile = createTempFile(directory, serializeStateLines(lines));
-  renameSync(tempFile, stateFile);
+  const content = serializeStateLines(lines);
+  renameSync(createTempFile(directory, content), stateFile);
+  return content;
 }
 function writeStateValues(cwd, sessionId, pairs) {
   const stateFile = stateFileFor(cwd);
   mkdirSync(stateRootDirectory(), { recursive: true });
   withLock(stateFile, sessionId, () => {
     writeStatePairs(stateFile, pairs, sessionId);
-    logEvent({ event: `set:${pairs.join(" ")}`, session: sessionId });
+    logSet(sessionId, pairs);
   });
+}
+function logSet(sessionId, pairs) {
+  logEvent({ event: `set:${pairs.join(" ")}`, session: sessionId });
 }
 function isSymlink(target) {
   const stats = lstatOrUndefined(target);

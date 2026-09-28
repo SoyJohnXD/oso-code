@@ -916,6 +916,35 @@ function asJsLiteral(character) {
   return `\\u{${(character.codePointAt(0) ?? 0).toString(16)}}`;
 }
 
+// core/src/state/known-keys.ts
+var GATE_STATE_KEYS = ["mode", "active_slice", "verify_green"];
+var SETTABLE_STATE_KEYS = [...GATE_STATE_KEYS, "repo_path", "auto", "auto_change", "auto_wait", "roadmap"];
+var KEYS_CLOSE_REMOVES = [...GATE_STATE_KEYS, "auto_wait"];
+var ENUM_VALUES = {
+  mode: ["plan", "quick", "debug"],
+  verify_green: ["true", "false"],
+  auto: ["running", "parked", "done"]
+};
+var settableKeys = new Set(SETTABLE_STATE_KEYS);
+var gateKeys = new Set(GATE_STATE_KEYS);
+function setPairRejection(pairs) {
+  return pairs.map(pairRejection).find((reason) => reason !== void 0);
+}
+function pairsTouchAGateKey(pairs) {
+  return pairs.some((pair) => gateKeys.has(pair.slice(0, pair.indexOf("="))));
+}
+function pairRejection(pair) {
+  const eq = pair.indexOf("=");
+  if (eq === -1) return `${pair} is no key=value pair`;
+  const key = pair.slice(0, eq);
+  const value = pair.slice(eq + 1);
+  if (!settableKeys.has(key)) return `${key} is not a known key (${SETTABLE_STATE_KEYS.join(", ")})`;
+  if (value.includes("\n")) return `the value of ${key} carries a newline`;
+  const allowed = ENUM_VALUES[key];
+  if (allowed !== void 0 && !allowed.includes(value)) return `${key}=${value} is not one of ${allowed.join(", ")}`;
+  return void 0;
+}
+
 // core/src/state/plan.ts
 import { chmodSync, existsSync, mkdirSync as mkdirSync2, readFileSync as readFileSync3, renameSync as renameSync2, rmSync as rmSync2 } from "node:fs";
 import path4 from "node:path";
@@ -1022,30 +1051,34 @@ function readStateFile(stateFile) {
     return { kind: "unreadable", cause: causeOf2(error) };
   }
 }
-function writeStatePairs(stateFile, pairs, sessionId) {
+function writeStatePairs(stateFile, pairs, ownerSession) {
   const directory = path3.dirname(stateFile);
   const read = readStateFile(stateFile);
   if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
   const existing = read.kind === "ok" ? read.content : "";
   let lines = parseStateLines(existing);
-  for (const pair of [...pairs, `session=${sessionId}`]) {
+  for (const pair of [...pairs, `session=${ownerSession}`]) {
     const [key, value] = splitPair(pair);
     lines = lines.filter((line) => line.key !== key);
     lines.push({ key, value });
   }
-  const tempFile = createTempFile(directory, serializeStateLines(lines));
-  renameSync(tempFile, stateFile);
+  const content = serializeStateLines(lines);
+  renameSync(createTempFile(directory, content), stateFile);
+  return content;
 }
-function writeStateValues(cwd, sessionId, pairs) {
-  const stateFile = stateFileFor(cwd);
-  mkdirSync(stateRootDirectory(), { recursive: true });
-  withLock(stateFile, sessionId, () => {
-    writeStatePairs(stateFile, pairs, sessionId);
-    logEvent({ event: `set:${pairs.join(" ")}`, session: sessionId });
-  });
+function logSet(sessionId, pairs) {
+  logEvent({ event: `set:${pairs.join(" ")}`, session: sessionId });
 }
 function clearStateFile(stateFile) {
   rmSync(stateFile, { force: true });
+}
+function removeStateKeys(stateFile, content, keys) {
+  const kept = parseStateLines(content).filter((line) => !keys.includes(line.key));
+  if (kept.every((line) => line.key === "session")) {
+    clearStateFile(stateFile);
+    return;
+  }
+  renameSync(createTempFile(path3.dirname(stateFile), serializeStateLines(kept)), stateFile);
 }
 function isSymlink(target) {
   const stats = lstatOrUndefined(target);
@@ -1581,6 +1614,7 @@ var USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> get key
        oso-state --session <id> show
        oso-state --session <id> clear
+       oso-state --session <id> close
        oso-state --session <id> close-slice <n>
        oso-state --session <id> event <type> [detail]
        oso-state --session <id> capture-plan <sha256>
@@ -1682,6 +1716,8 @@ function dispatch(argv) {
       return runShow();
     case "clear":
       return runClear(sessionId);
+    case "close":
+      return runClose(sessionId);
     case "close-slice":
       return runCloseSlice(sessionId, remaining);
     case "event":
@@ -1717,8 +1753,33 @@ function writeScan(report2) {
 }
 function runSet(sessionId, pairs) {
   if (pairs.length < 1) throw new UsageError();
-  writeStateValues(process.cwd(), sessionId, pairs);
-  return 0;
+  const rejection = setPairRejection(pairs);
+  if (rejection !== void 0) throw new RefusedError("set", rejection);
+  const stateFile = stateFileFor(process.cwd());
+  mkdirSync3(stateRootDirectory(), { recursive: true });
+  return withLock(stateFile, sessionId, () => {
+    const owner = foreignGateOwner(stateFile, sessionId);
+    if (owner !== void 0 && pairsTouchAGateKey(pairs)) {
+      throw new RefusedError(
+        "set",
+        `the gates are owned by session ${owner} \u2014 that session releases them with \`oso-state --session ${owner} close\`, or \`oso-state --session <id> clear\` resets them if it is gone`
+      );
+    }
+    const content = writeStatePairs(stateFile, pairs, owner ?? sessionId);
+    logSet(sessionId, pairs);
+    process.stdout.write(content);
+    return 0;
+  });
+}
+function foreignGateOwner(stateFile, sessionId) {
+  const read = readStateFile(stateFile);
+  if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
+  if (read.kind === "absent" || stateRecords(read.content, "mode").length === 0) return void 0;
+  return foreignOwner(read.content, sessionId);
+}
+function foreignOwner(content, sessionId) {
+  const owner = stateValue(content, "session");
+  return owner === "" || owner === sessionId ? void 0 : owner;
 }
 function runGet(remaining) {
   if (remaining.length !== 1) throw new UsageError();
@@ -1747,6 +1808,20 @@ function runClear(sessionId) {
   return withLock(stateFile, sessionId, () => {
     clearStateFile(stateFile);
     logEvent({ event: "clear", session: sessionId });
+    return 0;
+  });
+}
+function runClose(sessionId) {
+  const stateFile = stateFileFor(process.cwd());
+  mkdirSync3(stateRootDirectory(), { recursive: true });
+  return withLock(stateFile, sessionId, () => {
+    const read = readStateFile(stateFile);
+    if (read.kind === "absent") return 0;
+    if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
+    const owner = foreignOwner(read.content, sessionId);
+    if (owner !== void 0) throw new RefusedError("close", `the state is owned by session ${owner}, not ${sessionId}`);
+    removeStateKeys(stateFile, read.content, KEYS_CLOSE_REMOVES);
+    logEvent({ event: "close", session: sessionId });
     return 0;
   });
 }

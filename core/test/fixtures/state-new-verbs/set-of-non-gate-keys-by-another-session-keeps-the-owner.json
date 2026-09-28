@@ -1,0 +1,24 @@
+{
+  "name": "a set of only non-gate keys by another session writes the values and keeps the owner's session line",
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=3\nverify_green=false\nroadmap=harness-friction\nsession=other-session\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "set",
+    "roadmap=none",
+    "auto_wait=wave-2"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "stdout": "mode=plan\nactive_slice=3\nverify_green=false\nroadmap=none\nauto_wait=wave-2\nsession=other-session\n",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=3\nverify_green=false\nroadmap=none\nauto_wait=wave-2\nsession=other-session\n"
+    }
+  }
+}

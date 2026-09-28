@@ -29,7 +29,7 @@ for (const subject of STATE_SUBJECTS) {
           withStateSandbox("workspace", (sandbox) => {
             sandbox.seed({ [STATE_FILE]: PREEXISTING_STATE });
             const target = makeUnreadable(sandbox, STATE_FILE);
-            const run = sandbox.run(subject, ["--session", SESSION, "set", "newkey=2"]);
+            const run = sandbox.run(subject, ["--session", SESSION, "set", "roadmap=2"]);
             chmodSync(target, OWNER_ONLY_FILE);
             assert.equal(run.exit, 1, `stderr was ${JSON.stringify(run.stderr)}`);
             assert.ok(run.stderr.includes(target), `stderr did not name the unreadable path: ${JSON.stringify(run.stderr)}`);
@@ -40,11 +40,11 @@ for (const subject of STATE_SUBJECTS) {
 
       test("set on an absent state file still succeeds and creates it (read from 8c54fd8:plugin/bin/oso-state:80)", () => {
         withStateSandbox("workspace", (sandbox) => {
-          const run = sandbox.run(subject, ["--session", SESSION, "set", "fresh=1"]);
+          const run = sandbox.run(subject, ["--session", SESSION, "set", "roadmap=1"]);
           assert.equal(run.exit, 0, `stderr was ${JSON.stringify(run.stderr)}`);
           const state = sandbox.read(STATE_FILE);
           if (state.kind !== "file") throw new Error(`expected ${STATE_FILE} to be a file, found ${state.kind}`);
-          assert.match(state.content, /^fresh=1$/m);
+          assert.match(state.content, /^roadmap=1$/m);
         });
       });
     },

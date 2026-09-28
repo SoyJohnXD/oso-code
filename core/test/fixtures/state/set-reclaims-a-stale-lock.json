@@ -17,7 +17,7 @@
     "--session",
     "test-session",
     "set",
-    "stale_ok=yes"
+    "roadmap=yes"
   ],
   "stdin": "",
   "expect": {
@@ -25,7 +25,7 @@
     "state_after": {
       ".local/state/oso-code/{repo}.state": {
         "contains": [
-          "stale_ok=yes"
+          "roadmap=yes"
         ]
       }
     }

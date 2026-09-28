@@ -385,9 +385,9 @@ export function runOsoStateProbe(stateBin: string, environment: NodeJS.ProcessEn
   try {
     const env = { ...environment, HOME: probeHome, USERPROFILE: probeHome, OSO_STATE_BIN: stateBin };
     const runStateScript = (...args: string[]) => spawnSync(process.execPath, [stateBin, ...args], { env, encoding: "utf8" });
-    const setResult = runStateScript("--session", "verify-probe", "set", "mode=probe");
+    const setResult = runStateScript("--session", "verify-probe", "set", "roadmap=probe");
     if (setResult.error !== undefined || setResult.status !== 0) return collapsedNewlines(errorOutputOf(setResult));
-    const getResult = runStateScript("--session", "verify-probe", "get", "mode");
+    const getResult = runStateScript("--session", "verify-probe", "get", "roadmap");
     if (getResult.error !== undefined || getResult.status !== 0) return collapsedNewlines(errorOutputOf(getResult));
     runStateScript("--session", "verify-probe", "clear");
     return collapsedNewlines(getResult.stdout);

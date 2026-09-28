@@ -139,19 +139,20 @@ export function readStateFile(stateFile: string): StateFileRead {
   }
 }
 
-export function writeStatePairs(stateFile: string, pairs: readonly string[], sessionId: string): void {
+export function writeStatePairs(stateFile: string, pairs: readonly string[], ownerSession: string): string {
   const directory = path.dirname(stateFile);
   const read = readStateFile(stateFile);
   if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
   const existing = read.kind === "ok" ? read.content : "";
   let lines = parseStateLines(existing);
-  for (const pair of [...pairs, `session=${sessionId}`]) {
+  for (const pair of [...pairs, `session=${ownerSession}`]) {
     const [key, value] = splitPair(pair);
     lines = lines.filter((line) => line.key !== key);
     lines.push({ key, value });
   }
-  const tempFile = createTempFile(directory, serializeStateLines(lines));
-  renameSync(tempFile, stateFile);
+  const content = serializeStateLines(lines);
+  renameSync(createTempFile(directory, content), stateFile);
+  return content;
 }
 
 export function writeStateValues(cwd: string, sessionId: string, pairs: readonly string[]): void {
@@ -159,12 +160,25 @@ export function writeStateValues(cwd: string, sessionId: string, pairs: readonly
   mkdirSync(stateRootDirectory(), { recursive: true });
   withLock(stateFile, sessionId, () => {
     writeStatePairs(stateFile, pairs, sessionId);
-    logEvent({ event: `set:${pairs.join(" ")}`, session: sessionId });
+    logSet(sessionId, pairs);
   });
+}
+
+export function logSet(sessionId: string, pairs: readonly string[]): void {
+  logEvent({ event: `set:${pairs.join(" ")}`, session: sessionId });
 }
 
 export function clearStateFile(stateFile: string): void {
   rmSync(stateFile, { force: true });
+}
+
+export function removeStateKeys(stateFile: string, content: string, keys: readonly string[]): void {
+  const kept = parseStateLines(content).filter((line) => !keys.includes(line.key));
+  if (kept.every((line) => line.key === "session")) {
+    clearStateFile(stateFile);
+    return;
+  }
+  renameSync(createTempFile(path.dirname(stateFile), serializeStateLines(kept)), stateFile);
 }
 
 export function isSymlink(target: string): boolean {

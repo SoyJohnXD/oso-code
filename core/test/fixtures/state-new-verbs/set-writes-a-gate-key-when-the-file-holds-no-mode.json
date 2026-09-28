@@ -1,0 +1,23 @@
+{
+  "name": "set writes a gate key over another session's file when that file holds no mode",
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "roadmap=harness-friction\nsession=other-session\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "set",
+    "mode=plan",
+    "active_slice=none",
+    "verify_green=false"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": "roadmap=harness-friction\nmode=plan\nactive_slice=none\nverify_green=false\nsession=test-session\n"
+    }
+  }
+}

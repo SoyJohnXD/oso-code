@@ -1,0 +1,25 @@
+{
+  "name": "set rejects the whole write when one pair names a key outside the allowlist, even beside a valid pair",
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=3\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "set",
+    "active_slice=4",
+    "bogus=1"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 1,
+    "stdout": "",
+    "stderr": "oso-state: set refused: bogus is not a known key (mode, active_slice, verify_green, repo_path, auto, auto_change, auto_wait, roadmap)\n",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=3\nverify_green=false\nsession=test-session\n"
+    },
+    "events_appended": []
+  }
+}

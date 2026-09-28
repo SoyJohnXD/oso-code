@@ -1,0 +1,25 @@
+{
+  "name": "a successful set prints the whole resulting state, exactly the bytes show would print",
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "roadmap=harness-friction\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "set",
+    "mode=quick",
+    "active_slice=none",
+    "verify_green=false"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "stdout": "roadmap=harness-friction\nmode=quick\nactive_slice=none\nverify_green=false\nsession=test-session\n",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": "roadmap=harness-friction\nmode=quick\nactive_slice=none\nverify_green=false\nsession=test-session\n"
+    }
+  }
+}

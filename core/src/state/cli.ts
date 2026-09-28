@@ -4,6 +4,7 @@ import { abstractionScanReport } from "../scan/abstraction-scan.ts";
 import { ScanFailure } from "../scan/changed-lines.ts";
 import { commentScanReport } from "../scan/comment-scan.ts";
 import { ereReads } from "../shell/ere.ts";
+import * as knownKeys from "./known-keys.ts";
 import * as plan from "./plan.ts";
 import * as store from "./store.ts";
 import * as transitions from "./transitions.ts";
@@ -12,6 +13,7 @@ const USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> get key
        oso-state --session <id> show
        oso-state --session <id> clear
+       oso-state --session <id> close
        oso-state --session <id> close-slice <n>
        oso-state --session <id> event <type> [detail]
        oso-state --session <id> capture-plan <sha256>
@@ -113,6 +115,8 @@ function dispatch(argv: readonly string[]): number {
       return runShow();
     case "clear":
       return runClear(sessionId);
+    case "close":
+      return runClose(sessionId);
     case "close-slice":
       return runCloseSlice(sessionId, remaining);
     case "event":
@@ -151,8 +155,36 @@ function writeScan(report: string): number {
 
 function runSet(sessionId: string, pairs: readonly string[]): number {
   if (pairs.length < 1) throw new UsageError();
-  store.writeStateValues(process.cwd(), sessionId, pairs);
-  return 0;
+  const rejection = knownKeys.setPairRejection(pairs);
+  if (rejection !== undefined) throw new RefusedError("set", rejection);
+  const stateFile = store.stateFileFor(process.cwd());
+  mkdirSync(store.stateRootDirectory(), { recursive: true });
+  return store.withLock(stateFile, sessionId, () => {
+    const owner = foreignGateOwner(stateFile, sessionId);
+    if (owner !== undefined && knownKeys.pairsTouchAGateKey(pairs)) {
+      throw new RefusedError(
+        "set",
+        `the gates are owned by session ${owner} — that session releases them with \`oso-state --session ${owner} close\`, ` +
+          "or `oso-state --session <id> clear` resets them if it is gone",
+      );
+    }
+    const content = store.writeStatePairs(stateFile, pairs, owner ?? sessionId);
+    store.logSet(sessionId, pairs);
+    process.stdout.write(content);
+    return 0;
+  });
+}
+
+function foreignGateOwner(stateFile: string, sessionId: string): string | undefined {
+  const read = store.readStateFile(stateFile);
+  if (read.kind === "unreadable") throw new store.StateFileUnreadableError(stateFile, read.cause);
+  if (read.kind === "absent" || store.stateRecords(read.content, "mode").length === 0) return undefined;
+  return foreignOwner(read.content, sessionId);
+}
+
+function foreignOwner(content: string, sessionId: string): string | undefined {
+  const owner = store.stateValue(content, "session");
+  return owner === "" || owner === sessionId ? undefined : owner;
 }
 
 function runGet(remaining: readonly string[]): number {
@@ -182,6 +214,21 @@ function runClear(sessionId: string): number {
   return store.withLock(stateFile, sessionId, () => {
     store.clearStateFile(stateFile);
     store.logEvent({ event: "clear", session: sessionId });
+    return 0;
+  });
+}
+
+function runClose(sessionId: string): number {
+  const stateFile = store.stateFileFor(process.cwd());
+  mkdirSync(store.stateRootDirectory(), { recursive: true });
+  return store.withLock(stateFile, sessionId, () => {
+    const read = store.readStateFile(stateFile);
+    if (read.kind === "absent") return 0;
+    if (read.kind === "unreadable") throw new store.StateFileUnreadableError(stateFile, read.cause);
+    const owner = foreignOwner(read.content, sessionId);
+    if (owner !== undefined) throw new RefusedError("close", `the state is owned by session ${owner}, not ${sessionId}`);
+    store.removeStateKeys(stateFile, read.content, knownKeys.KEYS_CLOSE_REMOVES);
+    store.logEvent({ event: "close", session: sessionId });
     return 0;
   });
 }

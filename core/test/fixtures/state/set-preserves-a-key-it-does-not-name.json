@@ -7,14 +7,14 @@
   ],
   "env": {},
   "state_before": {
-    ".local/state/oso-code/{repo}.state": "a=25\nsession=test-session\n"
+    ".local/state/oso-code/{repo}.state": "roadmap=25\nsession=test-session\n"
   },
   "cwd": "workspace",
   "argv": [
     "--session",
     "test-session",
     "set",
-    "b=25"
+    "repo_path=25"
   ],
   "stdin": "",
   "expect": {
@@ -22,8 +22,8 @@
     "state_after": {
       ".local/state/oso-code/{repo}.state": {
         "contains": [
-          "a=25",
-          "b=25"
+          "roadmap=25",
+          "repo_path=25"
         ]
       }
     }
