@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
-export const MODES = ["plan", "quick", "debug", "roadmap"] as const;
+const MODES = ["plan", "quick", "debug", "roadmap"] as const;
 export type Mode = (typeof MODES)[number];
 
 const GATE_PHRASES = [
@@ -32,6 +32,7 @@ export type Denial = Readonly<{ gate: GateName; timestamp: string }>;
 export type SessionRecord = {
   sessionId: string;
   mtimeMs: number;
+  hasMainTranscript: boolean;
   mode: Mode | null;
   turns: number;
   agentLaunches: number;
@@ -42,75 +43,112 @@ export type SessionRecord = {
 
 export type TreeClassification = {
   sessions: SessionRecord[];
-  skipped_lines: number;
-  unreadable_files: number;
+  skippedLines: number;
+  unreadableFiles: number;
 };
 
-export type TranscriptScope = "main" | "subagent";
+type TranscriptScope = "main" | "subagent";
 
-export type TranscriptFacts = Omit<SessionRecord, "sessionId" | "mtimeMs"> & { skippedLines: number };
+type TranscriptFacts = Omit<SessionRecord, "sessionId" | "mtimeMs" | "hasMainTranscript"> & { skippedLines: number };
+
+type TranscriptTally = Readonly<{ facts: TranscriptFacts; turnIds: Set<string>; toolUseIds: Set<string> }>;
+
+type TranscriptFile = Readonly<{ file: string; sessionId: string; scope: TranscriptScope }>;
 
 type EventRecord = Readonly<Record<string, unknown>>;
 
 const DENIAL_TEXT = /^(?:PreToolUse:\S+ hook error: )?oso-code:/;
-const MODE_COMMAND = /<command-name>\/oso-code:(plan|quick|debug|roadmap)<\/command-name>/;
+const MODE_COMMAND = new RegExp(`<command-name>/oso-code:(${MODES.join("|")})</command-name>`);
+const OSO_STATE_INVOCATION =
+  /(?:^|[;&|(){`\n]|\$\()\s*(?:\w+=\S*\s+)*"?(?:\$\{OSO_STATE_BIN:-)?(?:[^\s"'|;&]*\/)?oso-state\}?"?(?=\s|$|[;&|)}])/;
 const AGENT_TOOLS = new Set(["Agent", "Task"]);
 
 export function classifyTree(root: string): TreeClassification {
-  const tree: TreeClassification = { sessions: [], skipped_lines: 0, unreadable_files: 0 };
+  const tree: TreeClassification = { sessions: [], skippedLines: 0, unreadableFiles: 0 };
   const sessionsById = new Map<string, SessionRecord>();
 
-  const absorb = (file: string, sessionId: string, scope: TranscriptScope): void => {
+  for (const { file, sessionId, scope } of listTranscripts(root, tree)) {
     let text: string;
     let mtimeMs: number;
     try {
       text = readFileSync(file, "utf8");
       mtimeMs = statSync(file).mtimeMs;
     } catch {
-      tree.unreadable_files += 1;
-      return;
+      tree.unreadableFiles += 1;
+      continue;
     }
     const facts = classifyTranscript(text, scope);
-    tree.skipped_lines += facts.skippedLines;
+    tree.skippedLines += facts.skippedLines;
     let record = sessionsById.get(sessionId);
     if (record === undefined) {
       record = emptySession(sessionId);
       sessionsById.set(sessionId, record);
       tree.sessions.push(record);
     }
+    record.hasMainTranscript ||= scope === "main";
     mergeFacts(record, facts, mtimeMs);
-  };
-
-  for (const project of listEntries(root, tree)) {
-    if (!project.isDirectory()) continue;
-    const projectDir = path.join(root, project.name);
-    const entries = listEntries(projectDir, tree);
-    for (const entry of entries) {
-      if (entry.isDirectory() || !entry.name.endsWith(".jsonl")) continue;
-      absorb(path.join(projectDir, entry.name), path.basename(entry.name, ".jsonl"), "main");
-    }
-    for (const sessionDir of entries.filter((entry) => entry.isDirectory())) {
-      const subagentsDir = path.join(projectDir, sessionDir.name, "subagents");
-      for (const file of listEntries(subagentsDir, tree)) {
-        if (file.name.endsWith(".jsonl")) absorb(path.join(subagentsDir, file.name), sessionDir.name, "subagent");
-      }
-    }
   }
   return tree;
 }
 
-function classifyTranscript(text: string, scope: TranscriptScope): TranscriptFacts {
-  const facts: TranscriptFacts = {
-    mode: null,
-    turns: 0,
-    agentLaunches: 0,
-    osoStateCalls: 0,
-    denials: [],
-    stopNetTimestamps: [],
-    skippedLines: 0,
+function listTranscripts(root: string, tree: TreeClassification): TranscriptFile[] {
+  return listEntries(root, tree)
+    .filter((project) => project.isDirectory())
+    .flatMap((project) => {
+      const projectDir = path.join(root, project.name);
+      const entries = listEntries(projectDir, tree);
+      const mainTranscripts = entries
+        .filter((entry) => !entry.isDirectory() && entry.name.endsWith(".jsonl"))
+        .map((entry): TranscriptFile => ({
+          file: path.join(projectDir, entry.name),
+          sessionId: path.basename(entry.name, ".jsonl"),
+          scope: "main",
+        }));
+      const subagentTranscripts = entries
+        .filter((entry) => entry.isDirectory())
+        .flatMap((sessionDir) => {
+          const subagentsDir = path.join(projectDir, sessionDir.name, "subagents");
+          return listEntries(subagentsDir, tree)
+            .filter((file) => file.name.endsWith(".jsonl"))
+            .map((file): TranscriptFile => ({
+              file: path.join(subagentsDir, file.name),
+              sessionId: sessionDir.name,
+              scope: "subagent",
+            }));
+        });
+      return [...mainTranscripts, ...subagentTranscripts];
+    });
+}
+
+function listEntries(dir: string, tree: TreeClassification): Dirent[] {
+  try {
+    return readdirSync(dir, { withFileTypes: true });
+  } catch (cause) {
+    if (isMissing(cause)) return [];
+    tree.unreadableFiles += 1;
+    return [];
+  }
+}
+
+function isMissing(cause: unknown): boolean {
+  return cause instanceof Error && "code" in cause && cause.code === "ENOENT";
+}
+
+export function classifyTranscript(text: string, scope: TranscriptScope): TranscriptFacts {
+  const tally: TranscriptTally = {
+    facts: {
+      mode: null,
+      turns: 0,
+      agentLaunches: 0,
+      osoStateCalls: 0,
+      denials: [],
+      stopNetTimestamps: [],
+      skippedLines: 0,
+    },
+    turnIds: new Set(),
+    toolUseIds: new Set(),
   };
-  const turnIds = new Set<string>();
-  const toolUseIds = new Set<string>();
+  const { facts } = tally;
 
   for (const line of text.split("\n")) {
     if (line.trim() === "") continue;
@@ -124,35 +162,17 @@ function classifyTranscript(text: string, scope: TranscriptScope): TranscriptFac
     if (scope === "subagent") continue;
     if (isStopNetBlock(event)) facts.stopNetTimestamps.push(timestamp);
     facts.mode ??= modeOf(event);
-    countAssistantWork(event, facts, turnIds, toolUseIds);
+    countAssistantWork(event, tally);
   }
-  facts.turns = turnIds.size;
+  facts.turns = tally.turnIds.size;
   return facts;
-}
-
-function gateOfDenial(text: string): GateName {
-  const match = GATE_PHRASES.find(([phrase]) => text.includes(phrase));
-  return match?.[1] ?? "unclassified";
-}
-
-function listEntries(dir: string, tree: TreeClassification): Dirent[] {
-  try {
-    return readdirSync(dir, { withFileTypes: true });
-  } catch (cause) {
-    if (isMissing(cause)) return [];
-    tree.unreadable_files += 1;
-    return [];
-  }
-}
-
-function isMissing(cause: unknown): boolean {
-  return cause instanceof Error && "code" in cause && cause.code === "ENOENT";
 }
 
 function emptySession(sessionId: string): SessionRecord {
   return {
     sessionId,
     mtimeMs: 0,
+    hasMainTranscript: false,
     mode: null,
     turns: 0,
     agentLaunches: 0,
@@ -212,6 +232,11 @@ function denialsOf(event: EventRecord, timestamp: string): Denial[] {
     .map((text) => ({ gate: gateOfDenial(text), timestamp }));
 }
 
+function gateOfDenial(text: string): GateName {
+  const match = GATE_PHRASES.find(([phrase]) => text.includes(phrase));
+  return match?.[1] ?? "unclassified";
+}
+
 function isStopNetBlock(event: EventRecord): boolean {
   const attachment = event["attachment"];
   if (!isRecord(attachment)) return false;
@@ -225,16 +250,10 @@ function modeOf(event: EventRecord): Mode | null {
   if (event["type"] !== "user") return null;
   const text = textOf(messageContent(event)).trimStart();
   if (!text.startsWith("<command-message>") && !text.startsWith("<command-name>")) return null;
-  const mode = MODE_COMMAND.exec(text)?.[1];
-  return MODES.find((candidate) => candidate === mode) ?? null;
+  return (MODE_COMMAND.exec(text)?.[1] as Mode | undefined) ?? null;
 }
 
-function countAssistantWork(
-  event: EventRecord,
-  facts: TranscriptFacts,
-  turnIds: Set<string>,
-  toolUseIds: Set<string>,
-): void {
+function countAssistantWork(event: EventRecord, { facts, turnIds, toolUseIds }: TranscriptTally): void {
   if (event["type"] !== "assistant") return;
   const message = event["message"];
   if (isRecord(message) && typeof message["id"] === "string") turnIds.add(message["id"]);
@@ -243,7 +262,7 @@ function countAssistantWork(
     toolUseIds.add(block["id"]);
     const name = block["name"];
     if (typeof name === "string" && AGENT_TOOLS.has(name)) facts.agentLaunches += 1;
-    if (name === "Bash" && commandOf(block).includes("oso-state")) facts.osoStateCalls += 1;
+    if (name === "Bash" && OSO_STATE_INVOCATION.test(commandOf(block))) facts.osoStateCalls += 1;
   }
 }
 
@@ -275,14 +294,15 @@ export type FrictionReport = {
 
 export function aggregate(tree: TreeClassification, windowDays: number, nowMs: number): FrictionReport {
   const cutoffMs = nowMs - windowDays * MS_PER_DAY;
-  const sessions = tree.sessions.filter((session) => session.mtimeMs >= cutoffMs);
+  const windowed = tree.sessions.filter((session) => session.mtimeMs >= cutoffMs);
+  const sessions = windowed.filter((session) => session.hasMainTranscript);
   const osoStateCalls = sessions.map((session) => session.osoStateCalls);
   return {
     window_days: windowDays,
     sessions_scanned: sessions.length,
-    skipped_lines: tree.skipped_lines,
-    unreadable_files: tree.unreadable_files,
-    gates: gateCounts(sessions),
+    skipped_lines: tree.skippedLines,
+    unreadable_files: tree.unreadableFiles,
+    gates: gateCounts(windowed),
     stop_net_bursts: sessions.reduce((total, session) => total + countBursts(session.stopNetTimestamps), 0),
     oso_state_calls: {
       total: osoStateCalls.reduce((total, calls) => total + calls, 0),
@@ -292,48 +312,10 @@ export function aggregate(tree: TreeClassification, windowDays: number, nowMs: n
     modes: Object.fromEntries(
       MODES.map((mode) => [mode, summarizeMode(sessions.filter((session) => session.mode === mode))]),
     ) as Record<Mode, ModeSummary>,
-    unclassified_session_ids: sessions
+    unclassified_session_ids: windowed
       .filter((session) => session.denials.some((denial) => denial.gate === "unclassified"))
       .map((session) => session.sessionId),
   };
-}
-
-export function renderJson(report: FrictionReport): string {
-  return JSON.stringify(report, null, 2);
-}
-
-export function renderTable(report: FrictionReport): string {
-  const gateRows = GATES.map((gate) => {
-    const { events, sessions } = report.gates[gate];
-    return `  ${gate.padEnd(14)}${String(events).padStart(7)}${String(sessions).padStart(10)}`;
-  });
-  const modeRows = MODES.map((mode) => {
-    const summary = report.modes[mode];
-    const cells = [
-      summary.sessions,
-      summary.median_turns,
-      summary.median_agent_launches,
-      summary.median_oso_state_calls,
-    ].map((cell) => String(cell ?? "n/a").padStart(11));
-    return `  ${mode.padEnd(10)}${cells.join("")}`;
-  });
-  const modeHeader = ["sessions", "med turns", "med agents", "med oso-st"].map((label) => label.padStart(11));
-  const { total, per_session_median, max } = report.oso_state_calls;
-  return [
-    `friction baseline: last ${report.window_days} days, ${report.sessions_scanned} sessions scanned`,
-    `skipped_lines ${report.skipped_lines}, unreadable_files ${report.unreadable_files}`,
-    "",
-    `  ${"gate".padEnd(14)}${"events".padStart(7)}${"sessions".padStart(10)}`,
-    ...gateRows,
-    "",
-    `stop-net bursts (>=${BURST_MIN_BLOCKS} blocks, gaps <=${BURST_MAX_GAP_MS / 1000}s): ${report.stop_net_bursts}`,
-    `oso-state calls: total ${total}, per-session median ${per_session_median ?? "n/a"}, max ${max}`,
-    "",
-    `  ${"mode".padEnd(10)}${modeHeader.join("")}`,
-    ...modeRows,
-    "",
-    `sessions with unclassified denials: ${report.unclassified_session_ids.join(", ") || "none"}`,
-  ].join("\n");
 }
 
 function gateCounts(sessions: SessionRecord[]): Record<GateName, GateCount> {
@@ -382,6 +364,47 @@ function median(values: number[]): number | null {
   const middle = Math.floor(sorted.length / 2);
   const upper = sorted[middle] ?? 0;
   return sorted.length % 2 === 1 ? upper : ((sorted[middle - 1] ?? 0) + upper) / 2;
+}
+
+export function renderJson(report: FrictionReport): string {
+  return JSON.stringify(report, null, 2);
+}
+
+const GATE_COLUMNS = { gate: 14, events: 7, sessions: 10 } as const;
+const MODE_COLUMNS = { mode: 10, cell: 11 } as const;
+
+export function renderTable(report: FrictionReport): string {
+  const gateRows = GATES.map((gate) => {
+    const { events, sessions } = report.gates[gate];
+    return `  ${gate.padEnd(GATE_COLUMNS.gate)}${String(events).padStart(GATE_COLUMNS.events)}${String(sessions).padStart(GATE_COLUMNS.sessions)}`;
+  });
+  const modeRows = MODES.map((mode) => {
+    const summary = report.modes[mode];
+    const cells = [
+      summary.sessions,
+      summary.median_turns,
+      summary.median_agent_launches,
+      summary.median_oso_state_calls,
+    ].map((cell) => String(cell ?? "n/a").padStart(MODE_COLUMNS.cell));
+    return `  ${mode.padEnd(MODE_COLUMNS.mode)}${cells.join("")}`;
+  });
+  const modeHeader = ["sessions", "med turns", "med agents", "med oso-st"].map((label) => label.padStart(MODE_COLUMNS.cell));
+  const { total, per_session_median, max } = report.oso_state_calls;
+  return [
+    `friction baseline: last ${report.window_days} days, ${report.sessions_scanned} sessions scanned`,
+    `skipped_lines ${report.skipped_lines}, unreadable_files ${report.unreadable_files}`,
+    "",
+    `  ${"gate".padEnd(GATE_COLUMNS.gate)}${"events".padStart(GATE_COLUMNS.events)}${"sessions".padStart(GATE_COLUMNS.sessions)}`,
+    ...gateRows,
+    "",
+    `stop-net bursts (>=${BURST_MIN_BLOCKS} blocks, gaps <=${BURST_MAX_GAP_MS / 1000}s): ${report.stop_net_bursts}`,
+    `oso-state calls: total ${total}, per-session median ${per_session_median ?? "n/a"}, max ${max}`,
+    "",
+    `  ${"mode".padEnd(MODE_COLUMNS.mode)}${modeHeader.join("")}`,
+    ...modeRows,
+    "",
+    `sessions with unclassified denials: ${report.unclassified_session_ids.join(", ") || "none"}`,
+  ].join("\n");
 }
 
 function main(): void {

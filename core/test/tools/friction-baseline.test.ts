@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   aggregate,
+  classifyTranscript,
   classifyTree,
   renderJson,
   renderTable,
@@ -65,8 +66,8 @@ test("main-session metrics come from the main file only", () => {
 
 test("malformed lines increment skipped_lines", () => {
   const tree = classifyTree(FIXTURE_ROOT);
-  assert.equal(tree.skipped_lines, 1);
-  assert.equal(tree.unreadable_files, 0);
+  assert.equal(tree.skippedLines, 1);
+  assert.equal(tree.unreadableFiles, 0);
   assert.equal(tree.sessions.length, 2);
 });
 
@@ -75,8 +76,78 @@ test("an unreadable transcript is counted in unreadable_files", () => {
   mkdirSync(path.join(root, "proj"));
   symlinkSync(path.join(root, "missing-target"), path.join(root, "proj", "dangling.jsonl"));
   const tree = classifyTree(root);
-  assert.equal(tree.unreadable_files, 1);
+  assert.equal(tree.unreadableFiles, 1);
   assert.equal(tree.sessions.length, 0);
+});
+
+function bashLine(id: string, command: string): string {
+  return JSON.stringify({
+    type: "assistant",
+    timestamp: "2026-09-01T10:00:00.000Z",
+    message: { id: `msg-${id}`, content: [{ type: "tool_use", id, name: "Bash", input: { command } }] },
+  });
+}
+
+function osoStateCallsIn(...commands: string[]): number {
+  const text = commands.map((command, index) => bashLine(`t${index}`, command)).join("\n");
+  return classifyTranscript(text, "main").osoStateCalls;
+}
+
+test("the pure classifier turns transcript text into facts without touching the filesystem", () => {
+  const text = [
+    JSON.stringify({ type: "user", message: { content: "<command-name>/oso-code:quick</command-name>" } }),
+    bashLine("t1", "oso-state status"),
+    "not json",
+  ].join("\n");
+  const facts = classifyTranscript(text, "main");
+  assert.deepEqual(
+    { mode: facts.mode, turns: facts.turns, osoStateCalls: facts.osoStateCalls, skippedLines: facts.skippedLines },
+    { mode: "quick", turns: 1, osoStateCalls: 1, skippedLines: 1 },
+  );
+});
+
+test("oso-state invocations count, including bin overrides, paths and shell function bodies", () => {
+  assert.equal(osoStateCallsIn("oso-state status"), 1);
+  assert.equal(osoStateCallsIn('"${OSO_STATE_BIN:-oso-state}" --session s1 verify'), 1);
+  assert.equal(osoStateCallsIn("./plugin/bin/oso-state scan comments abc"), 1);
+  assert.equal(osoStateCallsIn("cd plugin && oso-state status | head"), 1);
+  assert.equal(osoStateCallsIn('O(){ "${OSO_STATE_BIN:-oso-state}" "$@"; }\nO status\nO verify'), 1);
+  assert.equal(osoStateCallsIn("oso-state status", "oso-state verify"), 2);
+});
+
+test("oso-state named as an argument or a path being read is not a call", () => {
+  assert.equal(osoStateCallsIn("rg oso-state core/src"), 0);
+  assert.equal(osoStateCallsIn("ls plugin/bin/oso-state"), 0);
+  assert.equal(osoStateCallsIn("cat plugin/bin/oso-state"), 0);
+  assert.equal(osoStateCallsIn("grep -r oso-state . | wc -l"), 0);
+  assert.equal(osoStateCallsIn("git commit -m 'fix oso-state'"), 0);
+  assert.equal(osoStateCallsIn("oso-state-helper run"), 0);
+});
+
+test("a session directory with only subagent transcripts keeps its denials but is not a scanned session", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "friction-"));
+  const subagents = path.join(root, "proj", "orphan", "subagents");
+  mkdirSync(subagents, { recursive: true });
+  const denial = JSON.stringify({
+    type: "user",
+    timestamp: "2026-09-01T10:01:02.000Z",
+    message: {
+      content: [
+        {
+          type: "tool_result",
+          is_error: true,
+          content:
+            "PreToolUse:Bash hook error: oso-code: an unattended run is in flight, so a production deploy stays with the operator.",
+        },
+      ],
+    },
+  });
+  writeFileSync(path.join(subagents, "agent-x.jsonl"), `${denial}\n`);
+  const report = aggregate(classifyTree(root), 36500, Date.now());
+  assert.equal(report.sessions_scanned, 0);
+  assert.deepEqual(report.gates.proddeploy, { events: 1, sessions: 1 });
+  assert.deepEqual(report.oso_state_calls, { total: 0, per_session_median: null, max: 0 });
+  assert.equal(report.modes.plan.median_turns, null);
 });
 
 const NOW_MS = Date.parse("2026-09-28T00:00:00.000Z");
@@ -86,6 +157,7 @@ function sessionWith(overrides: Partial<SessionRecord>): SessionRecord {
   return {
     sessionId: "s",
     mtimeMs: NOW_MS,
+    hasMainTranscript: true,
     mode: null,
     turns: 0,
     agentLaunches: 0,
@@ -97,7 +169,7 @@ function sessionWith(overrides: Partial<SessionRecord>): SessionRecord {
 }
 
 function treeOf(...sessions: SessionRecord[]): TreeClassification {
-  return { sessions, skipped_lines: 0, unreadable_files: 0 };
+  return { sessions, skippedLines: 0, unreadableFiles: 0 };
 }
 
 function stopNetAt(...secondsFromStart: number[]): string[] {
