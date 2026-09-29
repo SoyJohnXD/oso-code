@@ -8,6 +8,9 @@ type Clause = Readonly<{ name: string; pattern: RegExp }>;
 
 const PLAN_SOURCE = "plugin/skills/plan/SKILL.md";
 const PLAN_FILES = [PLAN_SOURCE, "opencode/skills/oso-plan/SKILL.md"];
+const DEBUG_SOURCE = "plugin/skills/debug/SKILL.md";
+const DEBUG_FILES = [DEBUG_SOURCE, "opencode/skills/oso-debug/SKILL.md"];
+const REPORTING_FILE = "plugin/skills/_shared/reporting.md";
 const PARALLEL_FILE = "plugin/skills/_shared/parallel.md";
 const UNATTENDED_FILE = "plugin/skills/_shared/unattended.md";
 
@@ -23,6 +26,20 @@ const PLAN_CAP_CLAUSES: readonly Clause[] = [
   { name: "only an all-nit remainder is accepted", pattern: /only a remainder of `nit` findings[^.]*never a `blocker` or `structural`/ },
   { name: "the escalation is marked and journaled", pattern: /`\[!\]`[^.]*journal/ },
   { name: EMPTY_RESULT_CLAUSE, pattern: /empty, cut or malformed[^.]*never a verdict[^.]*counts against the cap/ },
+];
+
+const DEBUG_CAP_CLAUSES: readonly Clause[] = [
+  { name: "two fix rounds at most", pattern: /at most TWO fix rounds/ },
+  { name: "the round is read from the report's active slice row", pattern: /`oso-state report`'s `active slice` row/ },
+  { name: "the strong tier gets one relaunch of applier and verifier", pattern: /ONE relaunch of applier and verifier on the strong tier/ },
+  { name: "the three routes", pattern: /grant more rounds[^.]*its own apply\/verify pass[^.]*accept the residual/ },
+  { name: "only an all-nit remainder is accepted", pattern: /only a remainder of `nit` findings[^.]*never a `blocker` or `structural`/ },
+  { name: "the escalation is journaled and summarised", pattern: /escalated[^.]*journal[^.]*session summary/ },
+  { name: EMPTY_RESULT_CLAUSE, pattern: /empty, cut or malformed[^.]*never a verdict[^.]*counts against the cap/ },
+];
+
+const REPORTING_CAP_CLAUSES: readonly Clause[] = [
+  { name: "the Closing names an escalated slice or fix", pattern: /\*\*Closing\*\*[^\n]*escalated slice or fix/ },
 ];
 
 const PARALLEL_CAP_CLAUSES: readonly Clause[] = [
@@ -49,6 +66,17 @@ describe("every fix loop carries the cap, the ladder and the outcome route", () 
     });
   }
 
+  for (const file of DEBUG_FILES) {
+    test(`${file} states the cap clauses and never loops until it passes`, () => {
+      assert.deepEqual(missingClauses(readFromTree, file, DEBUG_CAP_CLAUSES), []);
+      assert.doesNotMatch(readFromTree(file), RETIRED_LOOP);
+    });
+  }
+
+  test(`${REPORTING_FILE} names an escalated slice at the close`, () => {
+    assert.deepEqual(missingClauses(readFromTree, REPORTING_FILE, REPORTING_CAP_CLAUSES), []);
+  });
+
   test(`${PARALLEL_FILE} holds the wave's red slice under the same cap`, () => {
     assert.deepEqual(missingClauses(readFromTree, PARALLEL_FILE, PARALLEL_CAP_CLAUSES), []);
     assert.doesNotMatch(readFromTree(PARALLEL_FILE), RETIRED_LOOP);
@@ -68,6 +96,16 @@ describe("the checker reports a planted regression", () => {
   test("a plan that drops the empty-result route is reported", () => {
     const mutated: ReadFile = (file) => readFromTree(file).replaceAll("counts against the cap", "is free");
     assert.ok(missingClauses(mutated, PLAN_SOURCE, PLAN_CAP_CLAUSES).includes(EMPTY_RESULT_CLAUSE));
+  });
+
+  test("a debug flow that drops the empty-result route is reported", () => {
+    const mutated: ReadFile = (file) => readFromTree(file).replaceAll("counts against the cap", "is free");
+    assert.ok(missingClauses(mutated, DEBUG_SOURCE, DEBUG_CAP_CLAUSES).includes(EMPTY_RESULT_CLAUSE));
+  });
+
+  test("a reporting file that drops the escalation is reported", () => {
+    const mutated: ReadFile = (file) => readFromTree(file).replaceAll("escalated", "closed");
+    assert.equal(missingClauses(mutated, REPORTING_FILE, REPORTING_CAP_CLAUSES).length, 1);
   });
 
   test("a parallel file that drops the cap reference is reported", () => {
