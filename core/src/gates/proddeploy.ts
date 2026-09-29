@@ -4,7 +4,7 @@ import { ereReads } from "../shell/ere.ts";
 import { basenameOf, UNREAD_PAYLOAD_MARKER } from "../shell/lexer.ts";
 import { gitVerb, isGitCall, isResidueCall, type LexedCommand } from "../shell/lexed-command.ts";
 import { lineVerdict, type LexerVerdict } from "../shell/line-verdict.ts";
-import { denyPatternsFileFor, readStateFile, stateFileFor } from "../state/store.ts";
+import { denyPatternsFileFor, readFileIfPresent, stateFileFor } from "../state/store.ts";
 import {
   allowedWithResidueCounted,
   denied,
@@ -230,9 +230,9 @@ function readsAsStateRecords(content: string): boolean {
 }
 
 function howThisRepositoryReadsTheCommand(stateFile: string, command: string): DenyPatternReading {
-  const read = readStateFile(denyPatternsFileFor(stateFile));
-  if (read.kind !== "ok") return { kind: "noPatternBites" };
-  const readings = read.content
+  const content = readFileIfPresent(denyPatternsFileFor(stateFile), "skip");
+  if (content === undefined) return { kind: "noPatternBites" };
+  const readings = content
     .split("\n")
     .filter((pattern) => pattern !== "")
     .map((pattern) => ({ pattern, reading: ereReads(pattern, command) }));

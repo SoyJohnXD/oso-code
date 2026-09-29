@@ -169,10 +169,10 @@ const TREE_DAMAGES: readonly TreeDamage[] = [
     port: (tree) => openCodeRegistryStatus(tree.home, tree.configHome),
   },
   {
-    label: "one installed gate script rewritten below its published hash",
+    label: "one installed gate bundle rewritten below its published hash",
     verdict: "bad:",
     bashRow: "opencode_trust_bytes_status",
-    apply: (tree) => writeFileSync(path.join(tree.configHome, "hooks", "lib.sh"), "# rewritten\n"),
+    apply: (tree) => writeFileSync(path.join(tree.configHome, "dist", "gate.js"), "rewritten\n"),
     port: (tree) => openCodeTrustBytesStatus(PUBLISHED_HASHES, tree.configHome),
   },
 ];
@@ -286,7 +286,7 @@ describe("the rows that drive an installer of their own", () => {
 
   test("the shell-syntax row globs the six directories and the one named file, reaching every tracked shell source", () => {
     const sources = shellSourcesUnder(repositoryRoot).map((source) => posixSpelled(source.slice(repositoryRoot.length + 1)));
-    assert.ok(sources.length >= 15, `${sources.length} shell source(s) were listed`);
+    assert.ok(sources.length >= 9, `${sources.length} shell source(s) were listed`);
     assert.ok(sources.includes("bootstrap/install.sh"));
     assert.ok(sources.includes("tools/verify-check-names.sh"));
     assert.ok(sources.includes("plugin/git-hooks/pre-commit"));

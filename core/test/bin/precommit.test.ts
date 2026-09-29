@@ -44,14 +44,30 @@ describe("the git pre-commit hook's own boundary", { skip: skipUnlessSpawnable(P
     assert.deepEqual(run, { exit: 0, stdout: "", stderr: "" });
   });
 
-  test("the marker a host with no session id sets arms the same gate (ported from the hook regression suite)", () => {
+  test("the marker a host with no session id sets arms the same gate when it names the owner (ported from the hook regression suite)", () => {
     const run = withStateSandbox("workspace", (sandbox) => {
-      sandbox.seed({ [STATE_FILE]: `mode=plan\nverify_green=false\nsession=${SESSION}\n` });
+      sandbox.seed({ [STATE_FILE]: "mode=plan\nverify_green=false\nsession=opencode-probe\n" });
       return sandbox.run(PRE_COMMIT_HOOK, [], { env: { OSO_AGENT: "opencode-probe" } });
     });
     assert.equal(run.exit, 1);
     assert.equal(run.stdout, "");
     assert.match(run.stderr, /^oso-code: the session verify is not green\./);
+  });
+
+  test("a marker naming a session other than the state's owner commits untouched", () => {
+    const run = withStateSandbox("workspace", (sandbox) => {
+      sandbox.seed({ [STATE_FILE]: "mode=plan\nverify_green=false\nsession=owner-session\n" });
+      return sandbox.run(PRE_COMMIT_HOOK, [], { env: HOST_SESSION });
+    });
+    assert.deepEqual(run, { exit: 0, stdout: "", stderr: "" });
+  });
+
+  test("a state file carrying no mode arms no flow, so the owner's commit goes through", () => {
+    const run = withStateSandbox("workspace", (sandbox) => {
+      sandbox.seed({ [STATE_FILE]: `roadmap=harness-friction\nauto=running\nverify_green=false\nsession=${SESSION}\n` });
+      return sandbox.run(PRE_COMMIT_HOOK, [], { env: HOST_SESSION });
+    });
+    assert.deepEqual(run, { exit: 0, stdout: "", stderr: "" });
   });
 
   test("the git layer denies a commit while verify is red (ported from the hook regression suite)", () => {

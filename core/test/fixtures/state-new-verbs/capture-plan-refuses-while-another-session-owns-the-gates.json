@@ -1,0 +1,26 @@
+{
+  "name": "capture-plan refuses while another session owns the gates, naming that owner and its remedy, and writes nothing",
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=quick\nactive_slice=none\nverify_green=false\nsession=other-session\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "capture-plan",
+    "d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb"
+  ],
+  "stdin": "Identity split fixture plan",
+  "expect": {
+    "exit": 1,
+    "stdout": "",
+    "stderr": "oso-state: capture-plan refused: the gates are owned by session other-session — that session releases them with `oso-state --session other-session close`, or `oso-state --session <id> clear` resets them if it is gone\n",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": "mode=quick\nactive_slice=none\nverify_green=false\nsession=other-session\n",
+      ".local/state/oso-code/plans/{repo}/current.md": null,
+      ".local/state/oso-code/plans/{repo}/presented-d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb.md": null
+    },
+    "events_appended": []
+  }
+}

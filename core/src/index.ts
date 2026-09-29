@@ -1,4 +1,4 @@
-export { DELEGATIONS_RETURN_IN_TURN_HOST, PUSHES_WITHOUT_PROGRESS_CAP } from "./gates/autocontinue.ts";
+export { DELEGATIONS_RETURN_IN_TURN_HOST, PUSHES_WITHOUT_PROGRESS_CAP, RUN_HELD_EVENT } from "./gates/autocontinue.ts";
 export { runGate } from "./gates/dispatch.ts";
 export {
   hostEnvelope,
@@ -8,9 +8,16 @@ export {
 } from "./hosts/envelope.ts";
 export { APPLIER_PROOF_HEADER } from "./prose/applier-proof.ts";
 export { openCodeRoutes, type OpenCodeRoute } from "./routes/render.ts";
-export { PlanApprovalError, PlanFailure, runApprovePlan, runCapturePlan } from "./state/plan.ts";
+export {
+  PlanApprovalError,
+  PlanFailure,
+  runApprovePlan,
+  runCancelApprovedPlan,
+  runCapturePlan,
+} from "./state/plan.ts";
 export {
   appendJournal,
+  GatesOwnedElsewhereError,
   journalFileFor,
   logEvent,
   readValue,
@@ -20,3 +27,4 @@ export {
   stateRootDirectory,
   writeStateValues,
 } from "./state/store.ts";
+export { delegationOverdueAtMs, overdueDelegation, type OverdueDelegation } from "./state/watch.ts";

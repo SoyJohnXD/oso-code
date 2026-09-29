@@ -1,4 +1,4 @@
-import { untilGreenMessage, verifyIsGreen } from "../gates/commit.ts";
+import { commitGateArmedFor, untilGreenMessage, verifyIsGreen } from "../gates/commit.ts";
 import { readArmedState, sanitizeSession, unusableStateMessage } from "../gates/preflight.ts";
 import { gateErrorText } from "../hosts/hook-run.ts";
 import { logEvent, stateFileFor, type LoggedEvent } from "../state/store.ts";
@@ -19,6 +19,7 @@ function preCommitRun(cwd: string, marker: string): PreCommitRun {
   if (state.kind === "unusable") {
     return aborted(unusableStateMessage(stateFile, session), "state-unreadable", session);
   }
+  if (!commitGateArmedFor(state.content, session)) return COMMIT_PROCEEDS;
   if (verifyIsGreen(state.content)) return COMMIT_PROCEEDS;
   return aborted(untilGreenMessage(state.content), "commit-denied", session);
 }

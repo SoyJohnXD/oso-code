@@ -3,6 +3,7 @@ import { cpSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { manifestPathOf } from "../../src/routes/render.ts";
+import { PRE_TOOL_USE_ROUTE } from "../../src/routes/routes.ts";
 import {
   commitEnvelopeFor,
   spawnAsHookHost,
@@ -17,12 +18,12 @@ const INSTALLED_PLUGIN = path.join(".claude", "plugins", "oso-code");
 const SESSION = "test-session";
 const COMMIT_ENVELOPE = commitEnvelopeFor(SESSION);
 
-const commitHandler = handlerForGate("commit");
+const preToolUseHandler = handlerForRoute(PRE_TOOL_USE_ROUTE);
 
 provedSomething(
-  `${manifestPathOf("claude")} carries a PreToolUse handler for the commit gate`,
-  commitHandler !== undefined,
-  `${manifestPathOf("claude")} named no commit handler, so this smoke ran nothing the host would run`,
+  `${manifestPathOf("claude")} carries the PreToolUse handler that judges the commit gate`,
+  preToolUseHandler !== undefined,
+  `${manifestPathOf("claude")} named no PreToolUse handler, so this smoke ran nothing the host would run`,
 );
 
 describe(
@@ -47,13 +48,13 @@ describe(
 );
 
 function runInstalledHandler(sandbox: StateSandbox): SpawnedRun {
-  if (commitHandler === undefined) throw new Error("the commit handler guard above should have failed first");
+  if (preToolUseHandler === undefined) throw new Error("the PreToolUse handler guard above should have failed first");
   const pluginRoot = installPluginUnder(sandbox);
   return spawnAsHookHost(
     sandbox,
     {
-      command: commitHandler.command,
-      args: commitHandler.args.map((argument) => argument.replaceAll(CLAUDE_PLUGIN_ROOT, pluginRoot)),
+      command: preToolUseHandler.command,
+      args: preToolUseHandler.args.map((argument) => argument.replaceAll(CLAUDE_PLUGIN_ROOT, pluginRoot)),
     },
     COMMIT_ENVELOPE,
   );
@@ -70,9 +71,9 @@ function installPluginUnder(sandbox: StateSandbox): string {
   return pluginRoot;
 }
 
-function handlerForGate(gate: string): HookCommandLine | undefined {
+function handlerForRoute(route: string): HookCommandLine | undefined {
   const document: unknown = JSON.parse(readFileSync(path.join(repositoryRoot, manifestPathOf("claude")), "utf8"));
   const groups = (document as { hooks?: Record<string, unknown[]> }).hooks?.["PreToolUse"] ?? [];
   const handlers = groups.flatMap((group) => (group as { hooks?: HookCommandLine[] }).hooks ?? []);
-  return handlers.find((handler) => handler.args?.includes(gate));
+  return handlers.find((handler) => handler.args?.includes(route));
 }

@@ -1,17 +1,8 @@
-import { readValue, stateFileFor, writeStateValues } from "@oso-code/core";
+import { readValue, stateFileFor } from "@oso-code/core";
 
 export type PlanApprovalState =
   | { kind: "approved"; digest: string }
   | { kind: "unapproved"; detail: string };
-
-export function cancelApprovedPlan(directory: string, owner: string): void {
-  writeStateValues(directory, owner, [
-    "mode=plan",
-    "active_slice=none",
-    "verify_green=false",
-    "plan_approval=cancelled",
-  ]);
-}
 
 export function approvedPlanFor(directory: string, owner: string): PlanApprovalState {
   const approval = stateKeyOf(directory, "plan_approval");

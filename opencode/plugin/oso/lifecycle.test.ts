@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import {
   buildStaleAdvice,
+  deliverCompactionContext,
   deliverSystemAdvice,
   listMarkers,
   dropSystemAdvice,
@@ -208,6 +209,23 @@ test("empty advice and unknown sessions never occupy the queue", () => {
   assert.equal(pending.size, 0);
   const output = { system: ["base"] };
   assert.deepEqual(deliverSystemAdvice(output, pending, "ses-a"), { kind: "empty" });
+});
+
+test("the re-anchor joins the compaction's own context array in place", () => {
+  const output = { context: ["host context"] };
+  assert.deepEqual(deliverCompactionContext(output, "re-anchor"), { kind: "delivered", entries: 1 });
+  assert.deepEqual(output.context, ["host context", "re-anchor"]);
+});
+
+test("an empty re-anchor leaves the compaction untouched", () => {
+  const output = { context: [] as string[] };
+  assert.deepEqual(deliverCompactionContext(output, ""), { kind: "empty" });
+  assert.deepEqual(output.context, []);
+});
+
+test("a compaction with no context array cannot carry the re-anchor", () => {
+  assert.deepEqual(deliverCompactionContext({}, "re-anchor"), { kind: "undeliverable" });
+  assert.deepEqual(deliverCompactionContext(undefined, "re-anchor"), { kind: "undeliverable" });
 });
 
 test("a corrupt marker file is ignored", () => {

@@ -8,6 +8,7 @@ import { versionLineReadingOf, versionOutcomeOf, type VersionLineReading } from 
 export const OPENCODE_BINARY_NAME = "opencode";
 export const OPENCODE_VERSION_LINE_SHAPE = "a bare dotted version";
 const PROBE_HOME_PREFIX = "oso-opencode-probe.";
+const PROBE_TIMEOUT_MILLISECONDS = 10_000;
 const ANSI_SELECT_GRAPHIC_RENDITION = /\u001b\[[0-9;]*m/g;
 const POSIX_SPACE_CLASS = /[ \t\n\v\f\r]/g;
 const OPENCODE_VERSION_LINE = /^(\d+(?:\.\d+)*)$/;
@@ -33,7 +34,11 @@ export function versionFieldOf(probeOutput: string): VersionLineReading {
 function probedVersion(environment: NodeJS.ProcessEnv, binaryPath: string): VersionLineReading {
   const probeHome = mkdtempSync(path.join(environment["TMPDIR"] ?? tmpdir(), PROBE_HOME_PREFIX));
   try {
-    const run = spawnSync(binaryPath, ["--version"], { env: probeEnvironment(environment, probeHome), encoding: "utf8" });
+    const run = spawnSync(binaryPath, ["--version"], {
+      env: probeEnvironment(environment, probeHome),
+      encoding: "utf8",
+      timeout: PROBE_TIMEOUT_MILLISECONDS,
+    });
     return versionFieldOf(`${run.stdout ?? ""}${run.stderr ?? ""}`);
   } finally {
     rmSync(probeHome, { recursive: true, force: true });

@@ -95,6 +95,7 @@ import {
   constants,
   lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -129,9 +130,16 @@ function stateRecords(content, key) {
 function stateValue(content, key) {
   return stateRecords(content, key).join("\n");
 }
+function holdsMode(content) {
+  return stateRecords(content, "mode").length > 0;
+}
+function foreignOwner(content, sessionId) {
+  const owner = stateValue(content, "session");
+  return owner === "" || owner === sessionId ? void 0 : owner;
+}
 function readStateFile(stateFile) {
   try {
-    if (!statSync(stateFile).isFile()) return { kind: "unreadable", cause: `${stateFile} is not a regular file` };
+    if (!statSync(stateFile).isFile()) return { kind: "unreadable", cause: `not a regular file: ${stateFile}` };
     return { kind: "ok", content: readFileSync(stateFile, "utf8") };
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") return { kind: "absent" };
@@ -280,6 +288,9 @@ function untilGreenMessage(stateContent) {
 function verifyIsGreen(stateContent) {
   return stateValue(stateContent, "verify_green") === "true";
 }
+function commitGateArmedFor(stateContent, session) {
+  return holdsMode(stateContent) && foreignOwner(stateContent, session) === void 0;
+}
 
 // core/src/hosts/hook-run.ts
 function gateErrorText(subject) {
@@ -300,6 +311,7 @@ function preCommitRun(cwd, marker) {
   if (state.kind === "unusable") {
     return aborted(unusableStateMessage(stateFile, session), "state-unreadable", session);
   }
+  if (!commitGateArmedFor(state.content, session)) return COMMIT_PROCEEDS;
   if (verifyIsGreen(state.content)) return COMMIT_PROCEEDS;
   return aborted(untilGreenMessage(state.content), "commit-denied", session);
 }

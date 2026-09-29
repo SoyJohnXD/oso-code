@@ -1,11 +1,13 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GateOutcome, GateVerdict, HookEnvelope, PreToolUseVerdict } from "../hosts/envelope.ts";
 import { GATE_BUNDLE, gateRow, type GateId } from "../routes/routes.ts";
-import { readStateFile } from "../state/store.ts";
+import { readFileIfPresent, readStateFile, stateValue } from "../state/store.ts";
 
-export { stateRecords, stateSays, stateValue } from "../state/store.ts";
+export { foreignOwner, holdsMode, stateRecords, stateSays, stateValue } from "../state/store.ts";
+
+export const RUN_ARMED = "running";
 
 export type GateRequest = Readonly<{ envelope: HookEnvelope; argv: readonly string[] }>;
 
@@ -39,6 +41,12 @@ export function hookSessionId(envelope: HookEnvelope): string {
 
 export function payloadUnparseable(): GateOutcome {
   return { verdict: { kind: "allow" }, events: [{ event: "payload-unparseable", session: "" }] };
+}
+
+export function ownRunState(stateFile: string, sessionId: string): string | undefined {
+  const read = readStateFile(stateFile);
+  if (read.kind !== "ok") return undefined;
+  return stateValue(read.content, "session") === sessionId ? read.content : undefined;
 }
 
 export function readArmedState(stateFile: string): ArmedState {
@@ -122,9 +130,5 @@ function isVerifiedOsoCodeRoot(root: string): boolean {
 }
 
 function hooksManifestFingerprinted(manifestFile: string): boolean {
-  try {
-    return readFileSync(manifestFile, "utf8").includes(HOOKS_MANIFEST_FINGERPRINT);
-  } catch {
-    return false;
-  }
+  return readFileIfPresent(manifestFile, "skip")?.includes(HOOKS_MANIFEST_FINGERPRINT) ?? false;
 }

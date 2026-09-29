@@ -1,6 +1,6 @@
 # Security pass — OpenCode
 
-## Which reviewer is native, and how to reach it
+## Which review is native, and how to reach it
 
 There is no native review CLI on this host: OpenCode ships no `review` command, and this port has not probed for one. So the neutral body's hybrid fallback IS the route, run HERE inside the dedicated `oso-security-reviewer` agent that read this file. Never ask the orchestrator to run it, never delegate it to another agent, and never substitute anything else for the fallback while the neutral body's Fallback criteria apply.
 

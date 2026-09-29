@@ -1,13 +1,15 @@
 import type { GateVerdict, HookEnvelope } from "../hosts/envelope.ts";
-import type { HookRun } from "../hosts/hook-run.ts";
+import { UNSPOKEN, type HookRun } from "../hosts/hook-run.ts";
 import { preToolUseRun } from "../hosts/pretooluse.ts";
 import { sessionEndRun } from "../hosts/sessionend.ts";
 import { sessionStartRun } from "../hosts/sessionstart.ts";
 import { stopRun } from "../hosts/stop.ts";
+import { claudePreToolUseGatesFor, PRE_TOOL_USE_ROUTE } from "../routes/routes.ts";
 import type { LoggedEvent } from "../state/store.ts";
 import { AUTOCONTINUE_GATE } from "./autocontinue.ts";
 import { COMMIT_GATE } from "./commit.ts";
 import { EDITS_GATE } from "./edits.ts";
+import { SUBAGENT_START_GATE, SUBAGENT_STOP_GATE } from "./in-flight.ts";
 import type { GateDefinition, GateRequest } from "./preflight.ts";
 import { PROD_DEPLOY_GATE } from "./proddeploy.ts";
 import { REANCHOR_GATE } from "./reanchor.ts";
@@ -34,6 +36,8 @@ const SESSION_START_GATES: readonly GateDefinition<Extract<GateVerdict, { kind: 
 const NO_VERDICT_GATES: readonly GateDefinition<Extract<GateVerdict, { kind: "noVerdict" | "gateError" }>>[] = [
   STATEBIN_GATE,
   TEARDOWN_GATE,
+  SUBAGENT_START_GATE,
+  SUBAGENT_STOP_GATE,
 ];
 
 const STOP_GATES: readonly GateDefinition<Extract<GateVerdict, { kind: "allow" | "deny" | "push" }>>[] = [
@@ -44,6 +48,7 @@ export function runGate(argv: readonly string[], envelope: HookEnvelope): GateRu
   const [name, ...gateArguments] = argv;
   const request: GateRequest = { envelope, argv: gateArguments };
   const escalated = envelope.stopHookActive;
+  if (name === PRE_TOOL_USE_ROUTE) return runPreToolUseGates(claudeGatesMatching(envelope.toolName), request);
 
   const run =
     routed(PRE_TOOL_USE_GATES, name, request, preToolUseRun, gateErrorRun) ??
@@ -52,6 +57,26 @@ export function runGate(argv: readonly string[], envelope: HookEnvelope): GateRu
     routed(STOP_GATES, name, request, (verdict) => stopRun(verdict, escalated), loudRun);
 
   return run ?? gateErrorRun(`${THE_GATE_ENTRY_POINT} (unknown gate '${name ?? ""}')`);
+}
+
+export function runPreToolUseGates(gates: readonly GateDefinition[], request: GateRequest): GateRun {
+  const runs = gates.map((gate) => runWith(gate, request, preToolUseRun, gateErrorRun));
+  const decisive =
+    runs.find((run) => run.verdict.kind === "deny") ??
+    runs.find((run) => run.verdict.kind === "gateError") ??
+    NOTHING_DENIED;
+  return {
+    ...decisive,
+    stderr: runs.map((run) => run.stderr).join(""),
+    events: runs.flatMap((run) => run.events),
+  };
+}
+
+const NOTHING_DENIED: GateRun = { ...UNSPOKEN, verdict: { kind: "allow" }, events: [] };
+
+function claudeGatesMatching(toolName: string): readonly GateDefinition[] {
+  const matching = claudePreToolUseGatesFor(toolName);
+  return PRE_TOOL_USE_GATES.filter((gate) => matching.includes(gate.gate));
 }
 
 function routed<V extends GateVerdict>(

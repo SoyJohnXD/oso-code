@@ -8,11 +8,12 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const renderModule = join(repoRoot, "core", "src", "routes", "render.ts");
 const routesModule = join(repoRoot, "core/src/routes/routes.ts");
 const hashFile = join(repoRoot, "bootstrap", "hook-hashes.txt");
+const installLayoutModule = join(repoRoot, "core", "src", "install", "opencode-install-layout.ts");
 const publishedRow = /^([0-9a-f]{64})( {2})(\S.*)$/;
 
 const OPENCODE_HOST_PACKAGE = "@opencode-ai/plugin";
 
-function bundlesOf(render, routes) {
+function bundlesOf(render, routes, harnessVersion) {
   const spawned = [
     { source: "gate.ts", bundle: render.GATE_BUNDLE },
     { source: "precommit.ts", bundle: render.PRECOMMIT_BUNDLE },
@@ -21,6 +22,7 @@ function bundlesOf(render, routes) {
     path: join(repoRoot, generatedBundlePath(routes, bundle)),
     name: generatedBundlePath(routes, bundle),
     external: [],
+    define: {},
   }));
   const opencodeBundle = generatedBundlePath(routes, render.OPENCODE_PLUGIN_BUNDLE);
   return [
@@ -30,6 +32,7 @@ function bundlesOf(render, routes) {
       path: join(repoRoot, opencodeBundle),
       name: opencodeBundle,
       external: [OPENCODE_HOST_PACKAGE],
+      define: { "process.env.OSO_HARNESS_BUILD_VERSION": JSON.stringify(harnessVersion) },
     },
   ];
 }
@@ -64,11 +67,13 @@ function redigestedHashFile(writtenSoFar) {
 async function freshArtifacts() {
   const render = await importBundled(renderModule);
   const routes = await importBundled(routesModule);
+  const layout = await importBundled(installLayoutModule);
+  const harnessVersion = layout.harnessVersionIn(layout.harnessManifestOf(repoRoot));
   const built = await Promise.all(
-    bundlesOf(render, routes).map(async ({ entryPoint, path, name, external }) => ({
+    bundlesOf(render, routes, harnessVersion).map(async ({ entryPoint, path, name, external, define }) => ({
       path,
       name,
-      text: await bundleText(entryPoint, external),
+      text: await bundleText(entryPoint, external, define),
     })),
   );
   const artifacts = [...built, ...manifestsOf(render)];

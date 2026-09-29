@@ -24,16 +24,14 @@ All of it. §3's approval is the only one this host asks the operator for — ev
 
 Wherever the flow names a file as `_shared/<file>.md`, it is spelled `${CLAUDE_SKILL_DIR}/../_shared/<file>.md` here, resolved to an absolute path — what a payload handed to another context needs.
 
-## The state command, the worktree root and the unattended rails — routed to `plan.md`, not restated here
+## The state command, the worktree root and the unattended rails — spelled in `${CLAUDE_SKILL_DIR}/../plan/references/claude.md`, restated nowhere else
 
-§4 reaches for three host spellings, and all three are already written in `${CLAUDE_SKILL_DIR}/../plan/references/claude.md`, where the child itself reads them. This file ROUTES to them and restates none, so one spelling per host cannot drift into two:
+§4 reaches for three host spellings, all written there where the child itself reads them, so one spelling per host cannot drift into two:
 
-- **The state command** — every `oso-state <verb> …` §4 instructs, its `set roadmap={roadmap}`, its `set roadmap=none` and the `show` that reads either back included, runs under the prefix that file's own **The state command** section spells. Spelled bare, without that prefix, the command exits on its usage message and writes nothing at all.
+- **The state command** — every `oso-state <verb> …` §4 instructs, its `set roadmap={roadmap}`, and its `set roadmap=none` included, runs under the prefix that file's own **The state command** section spells. Spelled bare, without that prefix, the command exits on its usage message and writes nothing at all.
 - **The worktree root** — `<worktree root>`, the SECOND place §4's bar reads before every arming, is the session-sanitized path that file's own **The worktree root** section spells.
 - **The unattended rails** — the three hooks §4's `auto=running` arms on this host, named one by one in that file's own **What the unattended marker arms on this host** section: the `Stop` net that pushes the chain on, the `SessionStart` re-anchor after a compaction, and the production-boundary rail that stands while the marker does.
 
-READ all three sections there before §4 arms its first child.
-
 ## Reporting binding
 
-READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md` NOW. Its **The native card is not the report** and **The unattended run** sections are the single Claude Code binding for what this host's own UI shows, and does not show, when the milestone contract at `${CLAUDE_SKILL_DIR}/../_shared/reporting.md` fires.
+`${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **The native card is not the report** and **The unattended run** sections are the single Claude Code binding for what this host's own UI shows, and does not show, when the milestone contract at `${CLAUDE_SKILL_DIR}/../_shared/reporting.md` fires.

@@ -1,0 +1,31 @@
+{
+  "name": "unknown-tool gate: a plan awaiting its slice refuses an unknown tool and names the call that arms the slice",
+  "source": [
+    {
+      "assertion": "assert_denies \"a plan awaiting its slice refuses an unknown tool\" block-unknown-tool.sh \"$(tool_input somemcp_do_thing)\""
+    }
+  ],
+  "gate": "unknown",
+  "argv": [
+    "--allow",
+    "bash|read|grep|engram_mem_search|edit|write|apply_patch"
+  ],
+  "env": {
+    "OSO_HOST": "opencode"
+  },
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"somemcp_do_thing\",\"tool_input\":{}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\"",
+        "oso-state --session test-session set active_slice="
+      ]
+    },
+    "stderr": ""
+  }
+}

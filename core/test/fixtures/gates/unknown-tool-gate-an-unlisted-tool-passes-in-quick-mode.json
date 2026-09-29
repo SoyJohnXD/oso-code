@@ -1,0 +1,26 @@
+{
+  "name": "unknown-tool gate: an unlisted tool passes in quick mode",
+  "source": [
+    {
+      "assertion": "assert_allows \"an unlisted tool passes in quick mode\" block-unknown-tool.sh \"$(tool_input engram_mem_timeline)\""
+    }
+  ],
+  "gate": "unknown",
+  "argv": [
+    "--allow",
+    "bash|read|grep|engram_mem_search|edit|write|apply_patch"
+  ],
+  "env": {
+    "OSO_HOST": "opencode"
+  },
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=quick\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"engram_mem_timeline\",\"tool_input\":{}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

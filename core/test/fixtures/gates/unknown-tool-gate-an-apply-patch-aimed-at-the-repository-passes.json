@@ -1,0 +1,27 @@
+{
+  "name": "unknown-tool gate: an apply_patch whose body names only repository files passes",
+  "source": [
+    {
+      "assertion": "assert_allows \"an apply_patch aimed at the repository passes\" block-unknown-tool.sh \"$(patch_input src/a.ts)\""
+    }
+  ],
+  "gate": "unknown",
+  "argv": [
+    "--allow",
+    "bash|read|grep|engram_mem_search|edit|write|apply_patch"
+  ],
+  "env": {
+    "OSO_HOST": "opencode",
+    "XDG_CONFIG_HOME": "{home}/.config"
+  },
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=quick\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"apply_patch\",\"tool_input\":{\"patchText\":\"*** Begin Patch\\n*** Update File: src/a.ts\\n*** Move to: src/b.ts\\n@@\\n-a\\n+b\\n*** End Patch\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

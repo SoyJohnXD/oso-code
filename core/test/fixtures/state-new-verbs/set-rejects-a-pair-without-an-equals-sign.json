@@ -1,0 +1,25 @@
+{
+  "name": "set rejects a pair that carries no =",
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=3\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "set",
+    "active_slice=4",
+    "verify_green"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 1,
+    "stdout": "",
+    "stderr": "oso-state: set refused: verify_green is no key=value pair\n",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=3\nverify_green=false\nsession=test-session\n"
+    },
+    "events_appended": []
+  }
+}

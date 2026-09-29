@@ -54,6 +54,8 @@ export const HOST_ROWS: readonly HostRow[] = [
   { host: "opencode", manifest: "opencode/hooks/routes.ts", commandRoot: "<module-relative>" },
 ];
 
+export const PRE_TOOL_USE_ROUTE = "pretooluse";
+
 export const GATE_ROWS = [
   {
     gate: "commit",
@@ -101,8 +103,8 @@ export const GATE_ROWS = [
     gate: "version",
     event: "SessionStart",
     script: "warn-stale-version.sh",
-    wiring: { claude: "wired", opencode: "none" },
-    mechanism: { claude: "subprocess", opencode: "none" },
+    wiring: { claude: "wired", opencode: "wired" },
+    mechanism: { claude: "subprocess", opencode: "experimental.chat.system.transform" },
   },
   {
     gate: "teardown",
@@ -125,23 +127,38 @@ export const GATE_ROWS = [
     wiring: { claude: "wired", opencode: "wired" },
     mechanism: { claude: "subprocess", opencode: "event" },
   },
+  {
+    gate: "subagentstart",
+    event: "SubagentStart",
+    script: "in-flight-start",
+    wiring: { claude: "wired", opencode: "none" },
+    mechanism: { claude: "subprocess", opencode: "none" },
+  },
+  {
+    gate: "subagentstop",
+    event: "SubagentStop",
+    script: "in-flight-stop",
+    wiring: { claude: "wired", opencode: "none" },
+    mechanism: { claude: "subprocess", opencode: "none" },
+  },
 ] as const satisfies readonly GateRow[];
 
 export const RECOVERY_ROWS: readonly RecoveryRow[] = [
   { gate: "commit", route: "the deny reads the session's own `mode` and names that mode's own path to green — plan's apply → verify loop, or quick/debug's close step — never a menu of every mode's step, and never the state write that would flip the flag itself." },
   { gate: "edits", route: "the deny names the exact `oso-state` invocation that arms the slice this gate is waiting for — the one thing only this gate knows." },
-  { gate: "unknown", route: "an unlisted tool is denied with the exact allowlist this release admits." },
+  { gate: "unknown", route: "any tool passes except three denies, each armed only while a state file exists: a deploy-, publish- or release-shaped tool name is denied in every mode — run it from your own terminal; an `edit`, `write` or `apply_patch` whose target lies inside the installed harness tree is denied — change the repository's copy and reinstall (only `filePath` and the `apply_patch` body are read for a target, so a tool with any other argument shape is never path-checked); and while a plan awaits its slice, the harness's known tools pass and an unknown tool is refused with the `oso-state` invocation that arms the slice." },
   { gate: "proddeploy", route: "take the run back (`oso-state --session <id> set auto=done`) and run the command from your own terminal — this gate arms only while THIS session's unattended run is still in flight." },
 ];
 
 export const TOOL_ROWS: readonly ToolRow[] = [
   { gate: "commit", names: { claude: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "Edit", opencode: "edit" }, capability: "write", mandated: "no" },
-  { gate: "edits", names: { claude: "MultiEdit", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "MultiEdit", opencode: "multiedit" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "Write", opencode: "write" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "NotebookEdit", opencode: "none" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "mcp__fallow__fix_apply", opencode: "fallow_fix_apply" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "none", opencode: "apply_patch" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "none", opencode: "patch" }, capability: "write", mandated: "no" },
   { gate: "proddeploy", names: { claude: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "bash" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "apply_patch" }, capability: "write", mandated: "no" },
@@ -185,4 +202,51 @@ export function gateRow(gate: GateId): GateRow {
   const found = GATE_ROWS.find((row) => row.gate === gate);
   if (found === undefined) throw new Error(`no route row names the gate ${gate}`);
   return found;
+}
+
+export const PRE_TOOL_USE_EVENT = "PreToolUse";
+const UNKNOWN_TOOL_MATCHER = ".*";
+const CLAUDE_EXACT_TOOL_LIST = /^[A-Za-z0-9_|]+$/;
+const SHAPED_TOOL_NAMES: Readonly<Record<string, PerHost<string>>> = {
+  proddeploy: { claude: "mcp__.*deploy.*", opencode: ".*deploy.*" },
+  edits: { claude: "none", opencode: ".*fix_apply" },
+};
+
+export function gatesWiredFor(host: HostName, event: string): GateRow[] {
+  return GATE_ROWS.filter((row) => row.event === event && row.wiring[host] === "wired");
+}
+
+export function claudePreToolUseGatesFor(toolName: string): readonly string[] {
+  return gatesWiredFor("claude", PRE_TOOL_USE_EVENT)
+    .filter((row) => new RegExp(claudeMatcherPattern(matcherFor("claude", row))).test(toolName))
+    .map((row) => row.gate);
+}
+
+export function claudeMatcherUnion(rows: readonly GateRow[]): string {
+  return rows.map((row) => claudeMatcherPattern(matcherFor("claude", row))).join("|");
+}
+
+function claudeMatcherPattern(matcher: string): string {
+  return CLAUDE_EXACT_TOOL_LIST.test(matcher) ? wholeToolName(matcher) : matcher;
+}
+
+export function wholeToolName(alternatives: string): string {
+  return `^(?:${alternatives})$`;
+}
+
+export function matcherFor(host: HostName, row: GateRow): string {
+  if (row.gate === "unknown") return UNKNOWN_TOOL_MATCHER;
+  const named = toolNamesFor(host, row.gate);
+  const shaped = SHAPED_TOOL_NAMES[row.gate]?.[host] ?? "none";
+  return (shaped === "none" ? named : [...named, shaped]).join("|");
+}
+
+export function toolNamesFor(host: HostName, gate: string): string[] {
+  const named: string[] = [];
+  for (const row of TOOL_ROWS) {
+    const name = row.names[host];
+    if (row.gate !== gate || name === "none" || named.includes(name)) continue;
+    named.push(name);
+  }
+  return named;
 }

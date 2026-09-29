@@ -4,6 +4,7 @@ import { stateFileFor } from "../state/store.ts";
 import {
   denied,
   deniedForUnusableState,
+  foreignOwner,
   hookSessionId,
   osoStateRemedy,
   payloadUnparseable,
@@ -29,17 +30,24 @@ function judgeEdits({ envelope }: GateRequest): GateOutcome {
   if (state.kind === "absent") return ALLOWED;
   if (state.kind === "unusable") return deniedForUnusableState("edits", stateFile, session);
 
-  if (!stateSays(state.content, "mode", "plan")) return ALLOWED;
-  if (aSliceIsActive(state.content)) return ALLOWED;
+  if (!planAwaitsItsSlice(state.content, session)) return ALLOWED;
 
-  const remedy = osoStateRemedy(session, "set active_slice=<n>");
   return denied({
     gate: "edits",
-    message: `oso-code: plan mode is active but no slice is active. Activate it first (${remedy}), then retry the edit.`,
+    message: `oso-code: plan mode is active but no slice is active. Activate it first (${sliceArmingRemedy(session)}), then retry the edit.`,
     event: "edit-denied",
     session,
     detail: envelope.filePath,
   });
+}
+
+export function planAwaitsItsSlice(stateContent: string, session: string): boolean {
+  if (foreignOwner(stateContent, session) !== undefined) return false;
+  return stateSays(stateContent, "mode", "plan") && !aSliceIsActive(stateContent);
+}
+
+export function sliceArmingRemedy(session: string): string {
+  return osoStateRemedy(session, "set active_slice=<n>");
 }
 
 function aSliceIsActive(stateContent: string): boolean {

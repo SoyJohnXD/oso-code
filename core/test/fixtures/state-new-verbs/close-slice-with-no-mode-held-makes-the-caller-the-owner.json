@@ -1,0 +1,21 @@
+{
+  "name": "close-slice on a file that holds no mode writes the slice close and makes the caller the owner",
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "active_slice=5\nverify_green=false\nsession=other-session\n"
+  },
+  "cwd": "workspace",
+  "argv": ["--session", "test-session", "close-slice", "5"],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": {
+        "contains": ["active_slice=none", "verify_green=true", "session=test-session"]
+      }
+    },
+    "events_appended": [
+      { "event": "close-slice", "command": "5", "session": "{present}" }
+    ]
+  }
+}

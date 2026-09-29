@@ -2,32 +2,12 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "^(?:Bash)$|^(?:Edit|MultiEdit|Write|NotebookEdit|mcp__fallow__fix_apply)$|Bash|mcp__.*deploy.*",
         "hooks": [
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/dist/gate.js", "commit"]
-          }
-        ]
-      },
-      {
-        "matcher": "Edit|MultiEdit|Write|NotebookEdit|mcp__fallow__fix_apply",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/dist/gate.js", "edits"]
-          }
-        ]
-      },
-      {
-        "matcher": "Bash|mcp__.*deploy.*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/dist/gate.js", "proddeploy"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/dist/gate.js", "pretooluse"]
           }
         ]
       }
@@ -88,6 +68,28 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/dist/gate.js", "teardown"]
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/dist/gate.js", "subagentstart"]
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/dist/gate.js", "subagentstop"]
           }
         ]
       }

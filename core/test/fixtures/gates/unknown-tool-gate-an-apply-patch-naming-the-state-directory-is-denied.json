@@ -1,0 +1,32 @@
+{
+  "name": "unknown-tool gate: an apply_patch whose body names a file in the oso-code state directory is denied",
+  "source": [
+    {
+      "assertion": "assert_denies \"an apply_patch naming the state directory is denied\" block-unknown-tool.sh \"$(patch_input \"$HOME/.local/state/oso-code/x.state\")\""
+    }
+  ],
+  "gate": "unknown",
+  "argv": [
+    "--allow",
+    "bash|read|grep|engram_mem_search|edit|write|apply_patch"
+  ],
+  "env": {
+    "OSO_HOST": "opencode",
+    "XDG_CONFIG_HOME": "{home}/.config"
+  },
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=quick\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"apply_patch\",\"tool_input\":{\"patchText\":\"*** Begin Patch\\n*** Update File: src/a.ts\\n@@\\n-a\\n+b\\n*** Add File: {home}/.local/state/oso-code/x.state\\n+mode=done\\n*** End Patch\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\"",
+        "installed oso-code harness tree"
+      ]
+    },
+    "stderr": ""
+  }
+}

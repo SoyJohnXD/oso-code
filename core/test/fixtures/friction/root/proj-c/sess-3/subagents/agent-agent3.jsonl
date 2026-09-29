@@ -1,0 +1,3 @@
+{"type":"user","isSidechain":true,"agentId":"agent3","timestamp":"2026-09-03T08:00:01.000Z","message":{"role":"user","content":"liveness prompt prose"}}
+{"type":"assistant","isSidechain":true,"agentId":"agent3","timestamp":"2026-09-03T08:05:00.000Z","message":{"id":"sub-30","role":"assistant","content":[{"type":"text","text":"subagent working prose"}]}}
+{"type":"assistant","isSidechain":true,"agentId":"agent3","timestamp":"2026-09-03T08:40:00.000Z","message":{"id":"sub-31","role":"assistant","content":[{"type":"text","text":"subagent final prose"}]}}

@@ -68,3 +68,31 @@ Taken against the installed binary this machine carries, above the pin named abo
 ## What the rendered agent blocks close of the MCP surface, measured at C0
 
 - **oso agents' MCP surface: closed to the harness's three servers; operator-declared servers reachable until a render-time closure lands.** `oso verify --host opencode`'s `owned MCP servers closed on every installed agent` row asserts `context7_*`, `engram_*` and `fallow_*` against every rendered block, and prints every other declared server beside the agent count it stays reachable on rather than failing the operator's own configuration. The gap is mechanical: a deny-list cannot name a server it does not know, and install-time edits collide with the byte-assertion.
+
+## What roadmap harness-friction changed, and where OpenCode stands
+
+Each Claude-side change of children 2 to 5, with the commits that delivered it and its OpenCode status: PARITY where the same behavior holds on this host, GAP where it does not and the residual is recorded here.
+
+| Child | Change | Delivered in | OpenCode status |
+|---|---|---|---|
+| 2 state-gate-scope | `oso-state close` drops a flow's own state; every flow calls it at its end | ffd0976, 608d4cd | PARITY: the flow prose is shared and the verb is the same binary |
+| 2 state-gate-scope | gates act only on the state file their own session owns; cross-session gate writes are refused | c7097b1, 559d62d | GAP: the OpenCode identity is the repository hash, so a second OpenCode session in the same repository is indistinguishable from the owner. Combined with the unknown-tool pass-through, that session's tools pass and its denials bind exactly as the owner's do. Per-session identity is not built |
+| 2 state-gate-scope | `set` validates and echoes; `cancelApprovedPlan` runs through the validated `runCancelApprovedPlan` transition | ffd0976, c0e2d44 | PARITY: a Claude-owned plan is refused from OpenCode with a message naming the owning host |
+| 2 state-gate-scope | one guarded process evaluates every `PreToolUse` gate per tool call | c1a8fea | PARITY: OpenCode already runs every gate in-process in one `tool.execute.before` pass, so the one-process collapse has nothing left to collapse there |
+| 2 state-gate-scope | `close` when the session ends | Claude `SessionEnd` | GAP: the plugin's dispose path does not call `close`, so a state file outlives an OpenCode session until a later session reports it |
+| 3 stop-net-liveness | the net holds while a delegation runs, counts commits, flow transitions and completions as progress, and reports and releases a silent or overlong child | cc967ec, 4166e0b, 266fdef, 3699fe8, f9dca1c (Claude); e055f24 (OpenCode) | PARITY: the rail holds while a child session runs, the journal no longer counts as progress, a child silent 60 minutes or in flight 3 hours is reported by session id and released, and the cap of 3 stands |
+| 4 proportional-orchestration | one size threshold defined once; slices, fixes and findings routed by size | daa5251, 38b6522, ff8a906 | PARITY: the prose is shared and rendered to OpenCode |
+| 5 prose-best-practices | flows name their reads one level deep, use one term per concept, and carry cut and guarded conditional prose | ad81c0e, 9304b78, b33d019, 2da2704, 3e2e5de | PARITY for the shared bodies, rendered to OpenCode. GAP for the OpenCode host references, which no structure test holds to the one-level rule |
+
+The changes of this child, harness-friction child 6.
+
+| Change | Delivered in | Status |
+|---|---|---|
+| OpenCode tool matchers anchored to whole names, so lookalikes stop tripping the edits gate | 05baf58 | delivered |
+| the `apply_patch` edits-gate hole was NOT CONFIRMED: `apply_patch` was already on the edits matcher at base, so the red test passed; it stays as a regression test in `opencode/plugin/oso/gates.test.ts` | 05baf58 | not confirmed; regression test kept |
+| unknown OpenCode tools pass through; release-shaped tools and harness-tree writes are denied, and before a slice is armed the harness's known tools pass and an unknown tool is refused | 77cf693 | delivered; see the identity GAP above |
+| compaction re-anchors through the `experimental.session.compacting` hook, with system advice as the fallback only when it did not fire | 1d8da73 | verified on host 1.18.32; UNVERIFIED on the pinned 1.18.22 |
+| one warning per session when the installed harness, its trusted files or the CLI drift | 480dee4 | delivered |
+| the friction baseline reads OpenCode sessions from its local database, read-only | 907c69b | delivered; `node:sqlite` prints an ExperimentalWarning on node 22 |
+| the shell gates no OpenCode host runs are no longer installed or trusted, and earlier installs' copies are removed | 330ced0 | delivered; `bootstrap/hook-hashes.txt` keeps those rows because the files ship with the Claude plugin |
+| OpenCode prose stops describing the retired `unattended-run.ts`, the 45-minute bound and the wait marker | 7506f85 | delivered, held by `opencode-prose-names-no-retired-mechanism.test.ts` |

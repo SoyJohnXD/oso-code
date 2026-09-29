@@ -1,0 +1,32 @@
+{
+  "name": "unknown-tool gate: a write into the installed harness tree is denied",
+  "source": [
+    {
+      "assertion": "assert_denies \"a write into the installed harness tree is denied\" block-unknown-tool.sh \"$(write_input \"$XDG_CONFIG_HOME/opencode/skill/x.md\")\""
+    }
+  ],
+  "gate": "unknown",
+  "argv": [
+    "--allow",
+    "bash|read|grep|engram_mem_search|edit|write|apply_patch"
+  ],
+  "env": {
+    "OSO_HOST": "opencode",
+    "XDG_CONFIG_HOME": "{home}/.config"
+  },
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=1\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"write\",\"tool_input\":{\"file_path\":\"{home}/.config/opencode/skill/x.md\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\"",
+        "installed oso-code harness tree"
+      ]
+    },
+    "stderr": ""
+  }
+}

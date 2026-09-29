@@ -1,0 +1,24 @@
+{
+  "name": "unknown-tool gate: with no state file a release-shaped tool passes, since the gate arms only while a state file exists",
+  "source": [
+    {
+      "assertion": "assert_allows \"with no state file a release-shaped tool passes\" block-unknown-tool.sh \"$(tool_input npm_publish)\""
+    }
+  ],
+  "gate": "unknown",
+  "argv": [
+    "--allow",
+    "bash|read|grep|engram_mem_search|edit|write|apply_patch"
+  ],
+  "env": {
+    "OSO_HOST": "opencode"
+  },
+  "state_before": {},
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"npm_publish\",\"tool_input\":{}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

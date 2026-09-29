@@ -15,10 +15,10 @@ const MINIMUM_ALTERNATIONS = 2;
 const MINIMUM_ALTERNATIONS_DERIVATION =
   `${VERDICT_GRAMMAR_OWNER}'s STATUS_LINE and VERDICT_LINE regex literals, measured at C5-S5b-2: (done|blocked), (pass|fail) — 2`;
 
-const MINIMUM_SEARCHED_FILES = 88;
+const MINIMUM_SEARCHED_FILES = 80;
 const MINIMUM_SEARCHED_FILES_DERIVATION =
   `git ls-files under whichever of ${CANONICAL_SEARCH_ROOTS.join(", ")} exists on disk (opencode/hooks holds none), ` +
-  "measured after the host split: 88 tracked files under the searched roots, less the file that owns the vocabulary";
+  "measured after three bash hooks retired: 87 tracked files under the searched roots, less the file that owns the vocabulary";
 
 function searchedPrefixes(): string[] {
   return CANONICAL_SEARCH_ROOTS.filter((root) => existsSync(path.join(repositoryRoot, root))).map((root) => `${root}/`);

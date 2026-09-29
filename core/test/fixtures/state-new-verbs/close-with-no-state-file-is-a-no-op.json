@@ -1,0 +1,20 @@
+{
+  "name": "close with no state file exits 0 and creates nothing",
+  "env": {},
+  "state_before": {},
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "close"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": null
+    }
+  }
+}

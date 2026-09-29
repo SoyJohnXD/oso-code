@@ -1,0 +1,22 @@
+{
+  "name": "set writes a gate key when the caller is the session that owns the mode",
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=3\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "set",
+    "active_slice=none",
+    "verify_green=true"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=true\nsession=test-session\n"
+    }
+  }
+}

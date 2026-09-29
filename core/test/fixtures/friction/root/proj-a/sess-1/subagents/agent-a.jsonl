@@ -1,0 +1,3 @@
+{"type":"user","isSidechain":true,"timestamp":"2026-09-01T10:01:00.000Z","message":{"role":"user","content":"remember that oso-code: the session verify is not green is a commit denial"}}
+{"type":"assistant","isSidechain":true,"timestamp":"2026-09-01T10:01:01.000Z","message":{"id":"sub-msg-1","role":"assistant","content":[{"type":"tool_use","id":"sub-tu-1","name":"Agent","input":{"prompt":"z"}}]}}
+{"type":"user","isSidechain":true,"timestamp":"2026-09-01T10:01:02.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"sub-tu-2","is_error":true,"content":"PreToolUse:Bash hook error: oso-code: an unattended run is in flight, so a production deploy stays with the operator."}]}}

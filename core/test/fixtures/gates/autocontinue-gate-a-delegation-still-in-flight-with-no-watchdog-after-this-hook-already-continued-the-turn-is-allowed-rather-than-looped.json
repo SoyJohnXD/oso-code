@@ -1,0 +1,30 @@
+{
+  "name": "autocontinue gate: a delegation still in flight with no watchdog after this hook already continued the turn is allowed rather than looped",
+  "source": [
+    { "assertion": "arm_unattended_run\nunstarted_verdict=\"$(auto_stop_verdict \"$(auto_stop_input_with_background_tasks \"$SESSION\" true a1f00d)\")\"" },
+    { "assertion": "assert_equals \"the watch is asked for once per stop chain: a continued stop still missing it stands and says so\" \\\n  \"stop|auto-continue-watch-unstarted\" \"$unstarted_verdict|$(auto_last_event)\"" }
+  ],
+  "gate": "autocontinue",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":true,\"background_tasks\":[{\"id\":\"a1f00d\",\"type\":\"subagent\",\"status\":\"running\",\"description\":\"applier\",\"agent_type\":\"oso-code:applier\"}]}",
+  "expect": {
+    "exit": 0,
+    "stdout": "{}",
+    "stderr": "",
+    "events_appended": [
+      {
+        "event": "auto-continue-watch-unstarted",
+        "session": "test-session",
+        "command": "background_tasks=array in_flight=1",
+        "schema": 2,
+        "gate": "auto-continue.sh",
+        "hook_event": "Stop"
+      }
+    ]
+  }
+}

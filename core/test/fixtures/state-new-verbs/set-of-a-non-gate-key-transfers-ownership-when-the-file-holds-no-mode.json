@@ -1,0 +1,21 @@
+{
+  "name": "with no mode in the file, another session's non-gate set still makes that session the owner",
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "roadmap=harness-friction\nsession=other-session\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "set",
+    "roadmap=none"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": "roadmap=none\nsession=test-session\n"
+    }
+  }
+}

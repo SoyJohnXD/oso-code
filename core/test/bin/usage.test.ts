@@ -21,8 +21,14 @@ const BASH_USAGE = `usage: oso-state --session <id> set key=value [key=value ...
        oso-state journal --path
 `;
 
+const CLOSE_LINE = "       oso-state --session <id> close\n";
 const CLOSE_SLICE_LINE = "       oso-state --session <id> close-slice <n>\n";
 const DENY_PATTERN_LINE = "       oso-state --session <id> deny-pattern add <pattern>\n";
+const WATCH_LINE = "       oso-state --session <id> watch\n";
+const WATCH_PARAGRAPH =
+  "\nwatch polls this session's in-flight delegations and exits 0 once none is left,\n" +
+  "or 3 naming each one silent for 60 minutes, in flight for 3 hours or ended\n" +
+  "without notice; each is named once across watches.\n";
 const SCAN_LINES =
   "       oso-state scan comments <ref>\n" + "       oso-state scan abstractions <ref>\n";
 const SCAN_PARAGRAPH =
@@ -33,17 +39,21 @@ const SCAN_PARAGRAPH =
 
 const TS_USAGE = BASH_USAGE.replace(
   "       oso-state --session <id> clear\n",
-  `       oso-state --session <id> clear\n${CLOSE_SLICE_LINE}`,
+  `       oso-state --session <id> clear\n${CLOSE_LINE}${CLOSE_SLICE_LINE}`,
 )
   .replace(
     "       oso-state --session <id> amend-plan <slice-id>\n",
-    `       oso-state --session <id> amend-plan <slice-id>\n${DENY_PATTERN_LINE}`,
+    `       oso-state --session <id> amend-plan <slice-id>\n${DENY_PATTERN_LINE}${WATCH_LINE}`,
   )
-  .replace("       oso-state journal --path\n", `       oso-state journal --path\n${SCAN_LINES}${SCAN_PARAGRAPH}`);
+  .replace(
+    "       oso-state journal --path\n",
+    `       oso-state journal --path\n${SCAN_LINES}${SCAN_PARAGRAPH}${WATCH_PARAGRAPH}`,
+  );
 
 test(
   "the TypeScript CLI's usage text equals the bash's (read from 8c54fd8:plugin/bin/oso-state:7-29) " +
-    "plus exactly the two verbs G6 adds, close-slice and deny-pattern add, and the scan verb C1-D3 adds",
+    "plus exactly the two verbs G6 adds, close-slice and deny-pattern add, the scan verb C1-D3 adds, the close verb " +
+    "and the watch verb",
   () => {
     const result = spawnSync(
       process.execPath,

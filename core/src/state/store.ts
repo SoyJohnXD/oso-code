@@ -6,6 +6,7 @@ import {
   constants,
   lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -40,6 +41,16 @@ export class StateFileUnreadableError extends Error {
     super(`cannot read state at ${stateFile}: ${cause}`);
     this.name = "StateFileUnreadableError";
     this.stateFile = stateFile;
+  }
+}
+
+export class GatesOwnedElsewhereError extends Error {
+  constructor(owner: string) {
+    super(
+      `the gates are owned by session ${owner} — that session releases them with \`oso-state --session ${owner} close\`, ` +
+        "or `oso-state --session <id> clear` resets them if it is gone",
+    );
+    this.name = "GatesOwnedElsewhereError";
   }
 }
 
@@ -78,10 +89,37 @@ export function repositoryIdFor(stateFile: string): string {
 
 export function journalFileFor(cwd: string): string {
   const stateFile = stateFileFor(cwd);
-  const repositoryId = repositoryIdFor(stateFile);
   const autoChange = readValue(stateFile, "auto_change") ?? "";
   const change = CHANGE_SLUG_PATTERN.test(autoChange) ? autoChange : "run";
-  return path.join(stateRootDirectory(), "runs", repositoryId, `${change}.log`);
+  return path.join(runsDirectoryOf(stateFile), `${change}.log`);
+}
+
+export function runsRootDirectory(): string {
+  return path.join(stateRootDirectory(), "runs");
+}
+
+export function runsDirectoryOf(stateFile: string): string {
+  return path.join(runsRootDirectory(), repositoryIdFor(stateFile));
+}
+
+export function sessionRunDirectoryOf(repository: string, sessionId: string): string {
+  return path.join(runsRootDirectory(), repository, sessionId);
+}
+
+export function inFlightRegistryOf(stateFile: string, sessionId: string): string {
+  return sessionRunEntryOf(stateFile, sessionId, "in-flight");
+}
+
+export function completedAgentsLogOf(stateFile: string, sessionId: string): string {
+  return sessionRunEntryOf(stateFile, sessionId, "completed-agents.log");
+}
+
+export function watchPidFileOf(stateFile: string, sessionId: string): string {
+  return sessionRunEntryOf(stateFile, sessionId, "watch.pid");
+}
+
+function sessionRunEntryOf(stateFile: string, sessionId: string, entry: string): string {
+  return path.join(sessionRunDirectoryOf(repositoryIdFor(stateFile), sessionId), entry);
 }
 
 export function denyPatternsFileFor(stateFile: string): string {
@@ -118,8 +156,29 @@ export function stateSays(content: string, key: string, value: string): boolean 
   return stateRecords(content, key).includes(value);
 }
 
+export function holdsMode(content: string): boolean {
+  return stateRecords(content, "mode").length > 0;
+}
+
+export function foreignOwner(content: string, sessionId: string): string | undefined {
+  const owner = stateValue(content, "session");
+  return owner === "" || owner === sessionId ? undefined : owner;
+}
+
+export function foreignGateOwner(stateFile: string, sessionId: string): string | undefined {
+  const read = readStateFile(stateFile);
+  if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
+  if (read.kind === "absent" || !holdsMode(read.content)) return undefined;
+  return foreignOwner(read.content, sessionId);
+}
+
+export function refuseGateWritesByAForeignSession(stateFile: string, sessionId: string): void {
+  const owner = foreignGateOwner(stateFile, sessionId);
+  if (owner !== undefined) throw new GatesOwnedElsewhereError(owner);
+}
+
 export function readValue(stateFile: string, key: string): string | undefined {
-  const content = readFileIfPresent(stateFile);
+  const content = readFileIfPresent(stateFile, "skip");
   if (content === undefined || stateRecords(content, key).length === 0) return undefined;
   return stateValue(content, key);
 }
@@ -131,7 +190,7 @@ type StateFileRead =
 
 export function readStateFile(stateFile: string): StateFileRead {
   try {
-    if (!statSync(stateFile).isFile()) return { kind: "unreadable", cause: `${stateFile} is not a regular file` };
+    if (!statSync(stateFile).isFile()) return { kind: "unreadable", cause: `not a regular file: ${stateFile}` };
     return { kind: "ok", content: readFileSync(stateFile, "utf8") };
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") return { kind: "absent" };
@@ -139,19 +198,26 @@ export function readStateFile(stateFile: string): StateFileRead {
   }
 }
 
-export function writeStatePairs(stateFile: string, pairs: readonly string[], sessionId: string): void {
+export function readFileIfPresent(file: string, whenUnreadable: "throw" | "skip" = "throw"): string | undefined {
+  const read = readStateFile(file);
+  if (read.kind === "unreadable" && whenUnreadable === "throw") throw new StateFileUnreadableError(file, read.cause);
+  return read.kind === "ok" ? read.content : undefined;
+}
+
+export function writeStatePairs(stateFile: string, pairs: readonly string[], ownerSession: string): string {
   const directory = path.dirname(stateFile);
   const read = readStateFile(stateFile);
   if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
   const existing = read.kind === "ok" ? read.content : "";
   let lines = parseStateLines(existing);
-  for (const pair of [...pairs, `session=${sessionId}`]) {
+  for (const pair of [...pairs, `session=${ownerSession}`]) {
     const [key, value] = splitPair(pair);
     lines = lines.filter((line) => line.key !== key);
     lines.push({ key, value });
   }
-  const tempFile = createTempFile(directory, serializeStateLines(lines));
-  renameSync(tempFile, stateFile);
+  const content = serializeStateLines(lines);
+  renameSync(createTempFile(directory, content), stateFile);
+  return content;
 }
 
 export function writeStateValues(cwd: string, sessionId: string, pairs: readonly string[]): void {
@@ -159,12 +225,25 @@ export function writeStateValues(cwd: string, sessionId: string, pairs: readonly
   mkdirSync(stateRootDirectory(), { recursive: true });
   withLock(stateFile, sessionId, () => {
     writeStatePairs(stateFile, pairs, sessionId);
-    logEvent({ event: `set:${pairs.join(" ")}`, session: sessionId });
+    logSet(sessionId, pairs);
   });
+}
+
+export function logSet(sessionId: string, pairs: readonly string[]): void {
+  logEvent({ event: `set:${pairs.join(" ")}`, session: sessionId });
 }
 
 export function clearStateFile(stateFile: string): void {
   rmSync(stateFile, { force: true });
+}
+
+export function removeStateKeys(stateFile: string, content: string, keys: readonly string[]): void {
+  const kept = parseStateLines(content).filter((line) => !keys.includes(line.key));
+  if (kept.every((line) => line.key === "session")) {
+    clearStateFile(stateFile);
+    return;
+  }
+  renameSync(createTempFile(path.dirname(stateFile), serializeStateLines(kept)), stateFile);
 }
 
 export function isSymlink(target: string): boolean {
@@ -175,6 +254,15 @@ export function isSymlink(target: string): boolean {
 export function isDirectory(target: string): boolean {
   const stats = statOrUndefined(target);
   return stats !== undefined && stats.isDirectory();
+}
+
+export function entriesOfDirectory(directory: string): string[] {
+  try {
+    return readdirSync(directory).sort();
+  } catch (error) {
+    if (isErrnoException(error) && (error.code === "ENOENT" || error.code === "ENOTDIR")) return [];
+    throw error;
+  }
 }
 
 export function isRegularNonSymlinkFile(target: string): boolean {
@@ -304,11 +392,6 @@ function gitCommonDirectory(cwd: string): string {
   }
 }
 
-function readFileIfPresent(file: string): string | undefined {
-  const read = readStateFile(file);
-  return read.kind === "ok" ? read.content : undefined;
-}
-
 export function causeOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -378,7 +461,7 @@ function lockIsStale(lockDir: string): boolean {
   return heldForSeconds >= LOCK_STALE_SECONDS;
 }
 
-function sleepSync(milliseconds: number): void {
+export function sleepSync(milliseconds: number): void {
   const signal = new Int32Array(new SharedArrayBuffer(4));
   Atomics.wait(signal, 0, 0, milliseconds);
 }

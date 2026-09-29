@@ -28,14 +28,16 @@ function loadFixtures(): RunnableFixture[] {
 const fixtures = loadFixtures();
 
 provedSomething(
-  `at least one close-slice/deny-pattern fixture loaded from ${FIXTURE_DIRECTORY}`,
+  `at least one fixture for a verb or a set check the bash never had loaded from ${FIXTURE_DIRECTORY}`,
   fixtures.length > 0,
   `zero fixtures loaded from ${FIXTURE_DIRECTORY}`,
 );
 
 describe(
-  `${fixtures.length} port fixtures for G6's two new verbs, run directly against the TypeScript CLI (they carry ` +
-    "no bash source citation because the verbs never existed in the bash oso-state, so they are port tests, never parity)",
+  `${fixtures.length} port fixtures for the verbs the bash oso-state never had (close-slice, deny-pattern add, close) ` +
+    "and the checks set never made there (key allowlist, enum values, cross-session gate keys, the printed result), " +
+    "plus the cross-session gate-key refusal close-slice, capture-plan and amend-plan share with set, " +
+    "run directly against the TypeScript CLI — they carry no bash source citation, so they are port tests, never parity",
   () => {
     for (const fixture of fixtures) {
       test(fixture.name, () => {
@@ -73,6 +75,25 @@ test(
         run.events.map((event) => event.event),
         ["prod-deploy-denied"],
       );
+    });
+  },
+);
+
+test(
+  "a second session cannot take the gates in two steps: its non-gate set leaves the owner in place, so its " +
+    "gate-key set right after is still refused and the owner's verify_green stays false",
+  () => {
+    withStateSandbox("workspace", (sandbox) => {
+      sandbox.seed({ [STATE_FILE]: "mode=plan\nactive_slice=3\nverify_green=false\nsession=owner-session\n" });
+      const nonGate = sandbox.run(CLI_SUBJECT, ["--session", "second-session", "set", "auto_wait=wave-2"]);
+      assert.equal(nonGate.exit, 0, nonGate.stderr);
+      const gate = sandbox.run(CLI_SUBJECT, ["--session", "second-session", "set", "verify_green=true"]);
+      assert.equal(gate.exit, 1, gate.stdout);
+      assert.match(gate.stderr, /owned by session owner-session/);
+      assert.deepEqual(sandbox.read(STATE_FILE), {
+        kind: "file",
+        content: "mode=plan\nactive_slice=3\nverify_green=false\nauto_wait=wave-2\nsession=owner-session\n",
+      });
     });
   },
 );

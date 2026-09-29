@@ -32,6 +32,23 @@ describe("the committed hook manifests are what core/src/routes/routes.ts render
   }
 });
 
+describe("the Claude manifest routes the subagent lifecycle to the in-flight registry gates", () => {
+  const events = (JSON.parse(renderHooksManifest("claude")) as { hooks?: Record<string, unknown[]> }).hooks ?? {};
+
+  for (const [event, gate] of [
+    ["SubagentStart", "subagentstart"],
+    ["SubagentStop", "subagentstop"],
+  ] as const) {
+    test(`${event} runs the ${gate} gate for every agent type`, () => {
+      const groups = (events[event] ?? []) as { matcher?: string; hooks?: { args?: string[] }[] }[];
+      assert.deepEqual(
+        groups.map((group) => [group.matcher, group.hooks?.map((handler) => handler.args?.at(-1))]),
+        [[undefined, [gate]]],
+      );
+    });
+  }
+});
+
 function handlersOf(document: unknown): Record<string, unknown>[] {
   const events = (document as { hooks?: Record<string, unknown[]> }).hooks ?? {};
   return Object.values(events)

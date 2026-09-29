@@ -10,7 +10,7 @@ Every `oso-state <verb> …` the neutral body instructs runs as:
 
 `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" <verb> …`
 
-so `oso-state set mode=quick active_slice=none verify_green=false` is run as `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" set mode=quick active_slice=none verify_green=false`, and `oso-state show` and `oso-state clear` take the same prefix. The gates that read what those writes leave behind are this plugin's own hooks, and they key their read on the REPOSITORY the write was made in — the session id is what the audit trail records each line under, and a write spelled without it does not run at all.
+so `oso-state set mode=quick active_slice=none verify_green=false` is run as `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" set mode=quick active_slice=none verify_green=false`, and `oso-state show`, `oso-state close` and `oso-state clear` take the same prefix. The gates that read what those writes leave behind are this plugin's own hooks, and they key their read on the REPOSITORY the write was made in — the session id is what the audit trail records each line under, and a write spelled without it does not run at all.
 
 ## Naming and invoking the harness's own skills
 
@@ -27,7 +27,7 @@ The delegate the close names — `oso-applier` — is an agent, not a skill: rea
 
 ## Delegation-wait binding
 
-READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Making a launch wait** section NOW. It is the single Claude Code binding for how a delegation's report arrives on this host and for the marker every delegation arms. Here that rule reaches the one launch this mode makes: the close's applier. Its **The model a launch carries** section binds the `model` parameter that launch passes, and is read in the same breath.
+`${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Making a launch wait** section is the single Claude Code binding for how a delegation's report arrives on this host and for the watchdog an unattended run starts while one is in flight. Here that rule reaches the one launch this mode makes: the close's applier. Its **The model a launch carries** section binds the `model` parameter that launch passes.
 
 ## Front-surface binding
 
@@ -35,4 +35,4 @@ When `${CLAUDE_SKILL_DIR}/../_shared/front-surface.md`'s trigger fires, READ `${
 
 ## Reporting binding
 
-READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md` NOW. Its **The native card is not the report** and **The unattended run** sections are the single Claude Code binding for what this host's own UI shows, and does not show, when the milestone contract at `${CLAUDE_SKILL_DIR}/../_shared/reporting.md` fires.
+`${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **The native card is not the report** and **The unattended run** sections are the single Claude Code binding for what this host's own UI shows, and does not show, when the milestone contract at `${CLAUDE_SKILL_DIR}/../_shared/reporting.md` fires.

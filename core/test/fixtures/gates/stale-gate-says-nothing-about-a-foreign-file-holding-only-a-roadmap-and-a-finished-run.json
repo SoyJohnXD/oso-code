@@ -1,0 +1,20 @@
+{
+  "name": "stale gate: SessionStart says nothing about another session's file that holds only a roadmap and a finished run",
+  "source": [
+    { "assertion": "printf 'roadmap=auth-hardening\\nauto=done\\nauto_change=token-rotation\\nsession=other-session\\n' > \"$REPO_STATE\"" },
+    { "assertion": "assert_allows \"SessionStart says nothing about a foreign file that arms no gate and runs nothing\" \\\n  warn-stale-state.sh \"$(stale_session_input)\"" }
+  ],
+  "gate": "stale",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "roadmap=auth-hardening\nauto=done\nauto_change=token-rotation\nsession=other-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\"}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

@@ -12,14 +12,14 @@
     "--session",
     "test-session",
     "set",
-    "weird=a\tb\rc\u001bd"
+    "roadmap=a\tb\rc\u001bd"
   ],
   "stdin": "",
   "expect": {
     "exit": 0,
     "events_appended": [
       {
-        "event": "set:weird=a\tb\rc\u001bd"
+        "event": "set:roadmap=a\tb\rc\u001bd"
       }
     ]
   }

@@ -38,11 +38,11 @@ function modeOf(sandbox: StateSandbox, relativePath: string): number {
   return statSync(path.join(sandbox.home, sandbox.expand(relativePath))).mode & 0o777;
 }
 
-function pushedRunDirectoryModes(autoWait: string): { runs: number; repository: number } {
+function pushedRunDirectoryModes(): { runs: number; repository: number } {
   return withStateSandbox("workspace", (sandbox) => {
     sandbox.seed({
       [STATE_ROOT_THESE_TESTS_SPELL]: { kind: "directory" },
-      [STATE_FILE]: stateText({ ...RUN_STATE, auto_wait: autoWait }),
+      [STATE_FILE]: stateText(RUN_STATE),
     });
     withHookEnvironment({ HOME: sandbox.home }, () => runGate(["autocontinue"], spawnedEnvelope(sandbox.expandJson(STOP_PAYLOAD), process.env)));
     return { runs: modeOf(sandbox, RUNS_DIR), repository: modeOf(sandbox, REPOSITORY_RUNS_DIR) };
@@ -50,18 +50,13 @@ function pushedRunDirectoryModes(autoWait: string): { runs: number; repository: 
 }
 
 describe(
-  "core/src/gates/autocontinue.ts and delegation.ts: the run's private state directory is created owner-only, " +
-    "not left at mkdir's default 755, matching plugin/hooks/auto-continue.sh:101-107's 'umask 077; mkdir -p' " +
+  "core/src/gates/autocontinue.ts: the run's private state directory is created owner-only, " +
+    "not left at mkdir's default 755, matching the retired bash autocontinue hook's 'umask 077; mkdir -p' " +
     "and the same primitive appendJournal already gets from core/src/state/store.ts:190-196,320",
   { skip: skipUnlessMkdirHonoursOwnerOnlyMode() },
   () => {
-    test("a push tally that creates runs/<repo>/ (autocontinue.ts:196, rememberPush) leaves both new levels owner-only", () => {
-      const modes = pushedRunDirectoryModes("none");
-      assert.deepEqual(modes, { runs: OWNER_ONLY_DIRECTORY, repository: OWNER_ONLY_DIRECTORY });
-    });
-
-    test("a wait mark that creates runs/<repo>/ (delegation.ts:65, writeWaitMark) leaves both new levels owner-only", () => {
-      const modes = pushedRunDirectoryModes("18");
+    test("a push tally that creates runs/<repo>/ (autocontinue.ts rememberTally) leaves both new levels owner-only", () => {
+      const modes = pushedRunDirectoryModes();
       assert.deepEqual(modes, { runs: OWNER_ONLY_DIRECTORY, repository: OWNER_ONLY_DIRECTORY });
     });
   },

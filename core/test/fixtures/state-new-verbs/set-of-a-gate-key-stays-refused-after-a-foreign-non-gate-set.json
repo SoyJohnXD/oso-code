@@ -1,0 +1,24 @@
+{
+  "name": "after another session's non-gate set, that session's gate-key set is still refused because ownership never moved",
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=3\nverify_green=false\nroadmap=none\nauto_wait=wave-2\nsession=other-session\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "set",
+    "verify_green=true"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 1,
+    "stdout": "",
+    "stderr": "oso-state: set refused: the gates are owned by session other-session — that session releases them with `oso-state --session other-session close`, or `oso-state --session <id> clear` resets them if it is gone\n",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=3\nverify_green=false\nroadmap=none\nauto_wait=wave-2\nsession=other-session\n"
+    },
+    "events_appended": []
+  }
+}

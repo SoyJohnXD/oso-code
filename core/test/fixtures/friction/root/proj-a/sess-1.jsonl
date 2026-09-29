@@ -1,0 +1,18 @@
+{"type":"user","timestamp":"2026-09-01T10:00:00.000Z","message":{"role":"user","content":"<command-message>plan</command-message>\n<command-name>/oso-code:plan</command-name>"}}
+{"type":"user","timestamp":"2026-09-01T10:00:01.000Z","message":{"role":"user","content":"why did I see oso-code: the session verify is not green earlier?"}}
+{"type":"user","isMeta":true,"timestamp":"2026-09-01T10:00:02.000Z","message":{"role":"user","content":[{"type":"text","text":"Skill body: a denial reads \"oso-code: plan mode is active but no slice is active\" and stays quoted."}]}}
+{"type":"assistant","timestamp":"2026-09-01T10:00:03.000Z","message":{"id":"msg-1","role":"assistant","content":[{"type":"text","text":"starting"}]}}
+{"type":"assistant","timestamp":"2026-09-01T10:00:03.100Z","message":{"id":"msg-1","role":"assistant","content":[{"type":"tool_use","id":"tu-1","name":"Agent","input":{"prompt":"x"}}]}}
+{"type":"assistant","timestamp":"2026-09-01T10:00:04.000Z","message":{"id":"msg-2","role":"assistant","content":[{"type":"tool_use","id":"tu-2","name":"Bash","input":{"command":"oso-state --set mode=plan"}}]}}
+{"type":"assistant","timestamp":"2026-09-01T10:00:04.100Z","message":{"id":"msg-2","role":"assistant","content":[{"type":"tool_use","id":"tu-3","name":"Bash","input":{"command":"ls"}}]}}
+{"type":"assistant","timestamp":"2026-09-01T10:00:05.000Z","message":{"id":"msg-3","role":"assistant","content":[{"type":"tool_use","id":"tu-4","name":"Task","input":{"prompt":"y"}}]}}
+{"type":"user","timestamp":"2026-09-01T10:00:06.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-1","is_error":false,"content":"subagent said: oso-code: the session verify is not green. Finish the checks."}]}}
+{"type":"user","timestamp":"2026-09-01T10:00:07.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-3","is_error":true,"content":"Error while quoting oso-code: the session verify is not green"}]}}
+{"type":"user","timestamp":"2026-09-01T10:00:08.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-5","is_error":true,"content":"oso-code: the session verify is not green. Finish the active mode's checks to zero warnings, then retry the commit."}]}}
+{"type":"user","timestamp":"2026-09-01T10:00:09.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-6","is_error":true,"content":[{"type":"text","text":"PreToolUse:Edit hook error: oso-code: plan mode is active but no slice is active. Activate it first, then retry the edit."}]}]}}
+{"type":"user","timestamp":"2026-09-01T10:00:10.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-7","is_error":true,"content":"oso-code: some brand new refusal nobody mapped yet"}]}}
+{"type":"attachment","timestamp":"2026-09-01T10:00:11.000Z","attachment":{"type":"hook_blocking_error","hookEvent":"Stop","hookName":"Stop","blockingError":{"blockingError":"oso-code: this run is unattended and still in flight, and this turn ended without parking.","command":"gate"}}}
+{"type":"system","subtype":"stop_hook_summary","timestamp":"2026-09-01T10:00:11.100Z","hookErrors":["oso-code: this run is unattended and still in flight, and this turn ended without parking."]}
+{"type":"attachment","timestamp":"2026-09-01T10:00:12.000Z","attachment":{"type":"hook_blocking_error","hookEvent":"Stop","hookName":"Stop","blockingError":{"blockingError":"some other plugin blocked the stop","command":"other"}}}
+{"type":"attachment","timestamp":"2026-09-01T10:00:13.000Z","attachment":{"type":"hook_blocking_error","hookEvent":"PreToolUse","hookName":"PreToolUse","blockingError":{"blockingError":"oso-code: the session verify is not green.","command":"gate"}}}
+{"type":"user", broken line

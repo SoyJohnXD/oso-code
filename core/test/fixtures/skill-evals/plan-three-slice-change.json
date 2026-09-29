@@ -1,0 +1,78 @@
+{
+  "skills": ["plan"],
+  "query": "Plan a change that adds a CSV export: a serializer, an HTTP endpoint that uses it, and a download button that calls the endpoint.",
+  "expected_behavior": [
+    {
+      "behavior": "Iterates the intent until the operator approves it before advancing",
+      "anchors": [
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "## 1\\. Intent" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "In-scope / Out-of-scope" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "Iterate until the operator approves the intent" }
+      ]
+    },
+    {
+      "behavior": "Maps the surface with parallel exploration subagents and derives the question battery from the map",
+      "anchors": [
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "## 2\\. Surface mapping" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "Launch up to 3 exploration subagents in parallel" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "INVARIANT CORE" },
+        { "file": "plugin/skills/plan/references/claude.md", "pattern": "built-in `Explore` agent" }
+      ]
+    },
+    {
+      "behavior": "Runs decision rounds with options and tradeoffs and freezes the ledger through a reconciliation gate",
+      "anchors": [
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "## 3\\. Decision rounds" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "Enumerable choices get options with tradeoffs" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "Freeze is a reconciliation gate" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "On freeze, save the ledger once" },
+        { "file": "plugin/skills/plan/references/claude.md", "pattern": "AskUserQuestion" }
+      ]
+    },
+    {
+      "behavior": "Cuts vertical slices with Goal, Files, Verify and Depends-on, then asks the execution mode and disposition in one round",
+      "anchors": [
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "## 4\\. Slicing" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "\\*\\*Goal\\*\\*" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "\\*\\*Files\\*\\*" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "\\*\\*Verify\\*\\*" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "\\*\\*Depends-on\\*\\*" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "\\*\\*The execution mode\\.\\*\\*" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "\\*\\*The execution disposition\\*\\*" }
+      ]
+    },
+    {
+      "behavior": "Heads the approval document with the Repaso and hands it to the single approval gate",
+      "anchors": [
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "## 5\\. Repaso de cambios" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "Qué se va a realizar" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "exactly ONE approval gate" },
+        { "file": "plugin/skills/plan/references/claude.md", "pattern": "`ExitPlanMode` is the single approval gate" }
+      ]
+    },
+    {
+      "behavior": "Executes each slice by activating it, applying under the threshold, verifying with a fresh verifier and committing only on pass",
+      "anchors": [
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "## 6\\. Execution" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "oso-state set mode=plan active_slice=<n> verify_green=false" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "\\*\\*Apply\\*\\*" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "DECISION BLOCK" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "Every slice goes to a FRESH verifier" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "Only on the verifier's `pass`" },
+        { "file": "plugin/skills/_shared/reporting.md", "pattern": "one non-trivial file[^.]*INLINE" }
+      ]
+    },
+    {
+      "behavior": "Closes with the debt sweep judged in a fresh context, the exit bar, a summary, green last, the commit, and oso-state close",
+      "anchors": [
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "## 7\\. Close" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "Activate the sweep as a slice" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "Never sweep your own change in this conversation" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "Debt Sweep: clean" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "\\*\\*Green, last\\*\\*" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "A COMMIT is part of the flow" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "oso-state close" }
+      ]
+    }
+  ]
+}

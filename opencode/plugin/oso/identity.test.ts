@@ -10,7 +10,6 @@ import { armStateUnder } from "../../test-support/state-fixture.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const SHARED_GIT_HOOKS_DIR = join(REPO_ROOT, "plugin", "git-hooks");
-const RAIL_SESSION = "opencode-identity-rail";
 
 const COMMIT_ENV = {
   GIT_AUTHOR_NAME: "Identity Test",
@@ -46,10 +45,6 @@ function makeRepo(): RepoFixture {
   runGit(root, ["commit", "-m", "seed"]);
   runGit(root, ["worktree", "add", child, "-b", "feature/x"]);
   return { base, root, child, rootId: deriveRootId(root) };
-}
-
-function armSession(cwd: string, home: string, assignments: readonly string[]): void {
-  armStateUnder(home, cwd, RAIL_SESSION, assignments);
 }
 
 function commitInto(tree: string, home: string, marker: string, file: string) {
@@ -153,7 +148,7 @@ test("the identity published for a worktree is the marker the shared pre-commit 
     const marker = publishIdentity(fixture.child).OSO_AGENT;
     assert.equal(marker, fixture.rootId);
 
-    armSession(fixture.root, home, ["mode=plan", "verify_green=false"]);
+    armStateUnder(home, fixture.root, marker, ["mode=plan", "verify_green=false"]);
     const denied = commitInto(fixture.child, home, marker, "red-agent.txt");
     assert.equal(denied.status, 1, denied.stdout ?? "");
     assert.match(denied.stderr ?? "", /the session verify is not green/);
@@ -161,7 +156,7 @@ test("the identity published for a worktree is the marker the shared pre-commit 
     const unmarked = commitInto(fixture.child, home, "", "red-unmarked.txt");
     assert.equal(unmarked.status, 0, unmarked.stderr ?? "");
 
-    armSession(fixture.root, home, ["verify_green=true"]);
+    armStateUnder(home, fixture.root, marker, ["verify_green=true"]);
     const allowed = commitInto(fixture.child, home, marker, "green-agent.txt");
     assert.equal(allowed.status, 0, allowed.stderr ?? "");
   } finally {

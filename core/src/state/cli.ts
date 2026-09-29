@@ -4,14 +4,17 @@ import { abstractionScanReport } from "../scan/abstraction-scan.ts";
 import { ScanFailure } from "../scan/changed-lines.ts";
 import { commentScanReport } from "../scan/comment-scan.ts";
 import { ereReads } from "../shell/ere.ts";
+import * as knownKeys from "./known-keys.ts";
 import * as plan from "./plan.ts";
 import * as store from "./store.ts";
 import * as transitions from "./transitions.ts";
+import { watchInFlight } from "./watch.ts";
 
 const USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> get key
        oso-state --session <id> show
        oso-state --session <id> clear
+       oso-state --session <id> close
        oso-state --session <id> close-slice <n>
        oso-state --session <id> event <type> [detail]
        oso-state --session <id> capture-plan <sha256>
@@ -19,6 +22,7 @@ const USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> cancel-plan <sha256>
        oso-state --session <id> amend-plan <slice-id>
        oso-state --session <id> deny-pattern add <pattern>
+       oso-state --session <id> watch
        oso-state journal <text>
        oso-state journal --path
        oso-state scan comments <ref>
@@ -28,6 +32,10 @@ scan reads the working directory's own repository, reports every hit on stdout
 and exits 0 whether or not it found any. comments flags the inline comments the
 diff since <ref> adds; abstractions flags the exports it adds that fewer than
 two use sites reach.
+
+watch polls this session's in-flight delegations and exits 0 once none is left,
+or 3 naming each one silent for 60 minutes, in flight for 3 hours or ended
+without notice; each is named once across watches.
 `;
 
 class UsageError extends Error {}
@@ -62,6 +70,10 @@ function report(error: unknown, verb: string): number {
   }
   if (error instanceof RefusedError) {
     process.stderr.write(`oso-state: ${error.verb} refused: ${error.message}\n`);
+    return 1;
+  }
+  if (error instanceof store.GatesOwnedElsewhereError) {
+    process.stderr.write(`oso-state: ${verb} refused: ${error.message}\n`);
     return 1;
   }
   if (error instanceof store.LockTimeoutError) {
@@ -113,6 +125,8 @@ function dispatch(argv: readonly string[]): number {
       return runShow();
     case "clear":
       return runClear(sessionId);
+    case "close":
+      return runClose(sessionId);
     case "close-slice":
       return runCloseSlice(sessionId, remaining);
     case "event":
@@ -129,6 +143,8 @@ function dispatch(argv: readonly string[]): number {
       return runAmendPlan(sessionId, remaining);
     case "deny-pattern":
       return runDenyPattern(sessionId, remaining);
+    case "watch":
+      return runWatch(sessionId, remaining);
     case "scan":
       return dispatchScan(remaining);
     default:
@@ -151,8 +167,25 @@ function writeScan(report: string): number {
 
 function runSet(sessionId: string, pairs: readonly string[]): number {
   if (pairs.length < 1) throw new UsageError();
-  store.writeStateValues(process.cwd(), sessionId, pairs);
-  return 0;
+  const rejection = knownKeys.setPairRejection(pairs);
+  if (rejection !== undefined) throw new RefusedError("set", rejection);
+  const stateFile = store.stateFileFor(process.cwd());
+  mkdirSync(store.stateRootDirectory(), { recursive: true });
+  return store.withLock(stateFile, sessionId, () => {
+    const owner = store.foreignGateOwner(stateFile, sessionId);
+    if (owner !== undefined && knownKeys.pairsTouchAGateKey(pairs)) throw new store.GatesOwnedElsewhereError(owner);
+    const content = store.writeStatePairs(stateFile, pairs, owner ?? sessionId);
+    store.logSet(sessionId, pairs);
+    process.stdout.write(content);
+    return 0;
+  });
+}
+
+function runWatch(sessionId: string, remaining: readonly string[]): number {
+  if (remaining.length > 0) throw new UsageError();
+  const end = watchInFlight(store.stateFileFor(process.cwd()), sessionId);
+  process.stdout.write(end.lines.map((line) => `${line}\n`).join(""));
+  return end.exitCode;
 }
 
 function runGet(remaining: readonly string[]): number {
@@ -186,6 +219,21 @@ function runClear(sessionId: string): number {
   });
 }
 
+function runClose(sessionId: string): number {
+  const stateFile = store.stateFileFor(process.cwd());
+  mkdirSync(store.stateRootDirectory(), { recursive: true });
+  return store.withLock(stateFile, sessionId, () => {
+    const read = store.readStateFile(stateFile);
+    if (read.kind === "absent") return 0;
+    if (read.kind === "unreadable") throw new store.StateFileUnreadableError(stateFile, read.cause);
+    const owner = store.foreignOwner(read.content, sessionId);
+    if (owner !== undefined) throw new RefusedError("close", `the state is owned by session ${owner}, not ${sessionId}`);
+    store.removeStateKeys(stateFile, read.content, knownKeys.KEYS_CLOSE_REMOVES);
+    store.logEvent({ event: "close", session: sessionId });
+    return 0;
+  });
+}
+
 function runCloseSlice(sessionId: string, remaining: readonly string[]): number {
   if (remaining.length !== 1) throw new UsageError();
   const sliceId = remaining[0] as string;
@@ -196,6 +244,7 @@ function runCloseSlice(sessionId: string, remaining: readonly string[]): number 
     if (activeSlice !== sliceId) {
       throw new RefusedError(`close-slice ${sliceId}`, `active_slice is ${activeSlice}, not ${sliceId}`);
     }
+    store.refuseGateWritesByAForeignSession(stateFile, sessionId);
     const patch = transitions.closeSlice();
     store.writeStatePairs(
       stateFile,

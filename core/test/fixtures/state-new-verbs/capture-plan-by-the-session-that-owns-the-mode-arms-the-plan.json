@@ -1,0 +1,23 @@
+{
+  "name": "capture-plan by the session that owns the mode arms the plan and keeps that session as the owner",
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=quick\nactive_slice=none\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "capture-plan",
+    "d3f0dbd7d1c0f9e0e2ed69b9b3b30a3c1f5e6fbef5db1cf4c7fdc23c4a8e0dcb"
+  ],
+  "stdin": "Identity split fixture plan",
+  "expect": {
+    "exit": 0,
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": {
+        "contains": ["mode=plan", "plan_approval=pending", "plan_approval_session=test-session", "session=test-session"]
+      }
+    }
+  }
+}

@@ -60,6 +60,7 @@ export function runCapturePlan(cwd: string, sessionId: string, digest: string, d
     );
   }
   return store.withLock(stateFile, sessionId, () => {
+    store.refuseGateWritesByAForeignSession(stateFile, sessionId);
     if (existsSync(paths.presentedFile)) {
       if (!store.isPrivateRegularFile(paths.presentedFile)) {
         throw new PlanFailure("presented snapshot is not a private regular file");
@@ -184,6 +185,39 @@ export function runCancelPlan(cwd: string, sessionId: string, digest: string): n
   });
 }
 
+export function runCancelApprovedPlan(cwd: string, sessionId: string, digest: string): number {
+  const stateFile = store.stateFileFor(cwd);
+  mkdirSync(store.stateRootDirectory(), { recursive: true });
+  return store.withLock(stateFile, sessionId, () => {
+    if (!store.isReadableRegularFile(stateFile)) {
+      throw new PlanApprovalError(`no readable approved plan for session ${sessionId}`);
+    }
+    if (store.readValue(stateFile, "plan_approval") !== "approved") {
+      throw new PlanApprovalError("plan approval is not approved");
+    }
+    if (store.readValue(stateFile, "plan_approval_session") !== sessionId) {
+      throw new PlanApprovalError("the approved plan belongs to another session");
+    }
+    if (store.readValue(stateFile, "plan_approval_digest") !== digest) {
+      throw new PlanApprovalError("approved plan digest changed before abandonment");
+    }
+    store.refuseGateWritesByAForeignSession(stateFile, sessionId);
+    const disarming = transitions.armPlan();
+    store.writeStatePairs(
+      stateFile,
+      [
+        `mode=${disarming.mode}`,
+        `active_slice=${disarming.active_slice}`,
+        `verify_green=${disarming.verify_green}`,
+        "plan_approval=cancelled",
+      ],
+      sessionId,
+    );
+    store.logEvent({ event: "plan-approval-abandoned", session: sessionId, command: digest });
+    return 0;
+  });
+}
+
 export function runAmendPlan(cwd: string, sessionId: string, sliceId: string, document: string): number {
   if (!store.isNameToken(sliceId)) throw new PlanFailure("amend-plan requires a safe slice id");
   const stateFile = store.stateFileFor(cwd);
@@ -221,6 +255,7 @@ export function runAmendPlan(cwd: string, sessionId: string, sliceId: string, do
     const revisionText = store.readValue(stateFile, "plan_revision") ?? "";
     if (!/^[0-9]+$/.test(revisionText)) throw new PlanFailure("current plan has no valid revision");
     const nextRevision = Number(revisionText) + 1;
+    store.refuseGateWritesByAForeignSession(stateFile, sessionId);
     const amended =
       `${readFileSync(paths.currentFile, "utf8")}\n\n## ${shape.heading} — ${sliceId}\n\n` +
       `- Added-at: ${store.isoTimestamp()}\n- Requested-by: operator\n- Classification: ${shape.classification}\n\n` +

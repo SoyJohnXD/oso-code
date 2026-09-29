@@ -1,0 +1,19 @@
+{
+  "name": "close-slice refuses while another session owns the gates, even on a matching active_slice, and changes nothing",
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=5\nverify_green=false\nsession=other-session\n"
+  },
+  "cwd": "workspace",
+  "argv": ["--session", "test-session", "close-slice", "5"],
+  "stdin": "",
+  "expect": {
+    "exit": 1,
+    "stdout": "",
+    "stderr": "oso-state: close-slice refused: the gates are owned by session other-session — that session releases them with `oso-state --session other-session close`, or `oso-state --session <id> clear` resets them if it is gone\n",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=5\nverify_green=false\nsession=other-session\n"
+    },
+    "events_appended": []
+  }
+}

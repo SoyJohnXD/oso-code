@@ -1,0 +1,24 @@
+{
+  "name": "set rejects a mode that is not plan, quick or debug",
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=3\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "set",
+    "mode=planning"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 1,
+    "stdout": "",
+    "stderr": "oso-state: set refused: mode=planning is not one of plan, quick, debug\n",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=3\nverify_green=false\nsession=test-session\n"
+    },
+    "events_appended": []
+  }
+}

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // core/src/state/cli.ts
-import { mkdirSync as mkdirSync3, readFileSync as readFileSync4 } from "node:fs";
-import path5 from "node:path";
+import { mkdirSync as mkdirSync4, readFileSync as readFileSync4 } from "node:fs";
+import path7 from "node:path";
 
 // core/src/scan/changed-lines.ts
 import { spawnSync } from "node:child_process";
@@ -916,6 +916,35 @@ function asJsLiteral(character) {
   return `\\u{${(character.codePointAt(0) ?? 0).toString(16)}}`;
 }
 
+// core/src/state/known-keys.ts
+var GATE_STATE_KEYS = ["mode", "active_slice", "verify_green"];
+var SETTABLE_STATE_KEYS = [...GATE_STATE_KEYS, "repo_path", "auto", "auto_change", "auto_wait", "roadmap"];
+var KEYS_CLOSE_REMOVES = [...GATE_STATE_KEYS, "auto_wait"];
+var ENUM_VALUES = {
+  mode: ["plan", "quick", "debug"],
+  verify_green: ["true", "false"],
+  auto: ["running", "parked", "done"]
+};
+var settableKeys = new Set(SETTABLE_STATE_KEYS);
+var gateKeys = new Set(GATE_STATE_KEYS);
+function setPairRejection(pairs) {
+  return pairs.map(pairRejection).find((reason) => reason !== void 0);
+}
+function pairsTouchAGateKey(pairs) {
+  return pairs.some((pair) => gateKeys.has(pair.slice(0, pair.indexOf("="))));
+}
+function pairRejection(pair) {
+  const eq = pair.indexOf("=");
+  if (eq === -1) return `${pair} is no key=value pair`;
+  const key = pair.slice(0, eq);
+  const value = pair.slice(eq + 1);
+  if (!settableKeys.has(key)) return `${key} is not a known key (${SETTABLE_STATE_KEYS.join(", ")})`;
+  if (value.includes("\n")) return `the value of ${key} carries a newline`;
+  const allowed = ENUM_VALUES[key];
+  if (allowed !== void 0 && !allowed.includes(value)) return `${key}=${value} is not one of ${allowed.join(", ")}`;
+  return void 0;
+}
+
 // core/src/state/plan.ts
 import { chmodSync, existsSync, mkdirSync as mkdirSync2, readFileSync as readFileSync3, renameSync as renameSync2, rmSync as rmSync2 } from "node:fs";
 import path4 from "node:path";
@@ -929,6 +958,7 @@ import {
   constants,
   lstatSync as lstatSync2,
   mkdirSync,
+  readdirSync,
   readFileSync as readFileSync2,
   renameSync,
   rmSync,
@@ -961,6 +991,14 @@ var StateFileUnreadableError = class extends Error {
     this.stateFile = stateFile;
   }
 };
+var GatesOwnedElsewhereError = class extends Error {
+  constructor(owner) {
+    super(
+      `the gates are owned by session ${owner} \u2014 that session releases them with \`oso-state --session ${owner} close\`, or \`oso-state --session <id> clear\` resets them if it is gone`
+    );
+    this.name = "GatesOwnedElsewhereError";
+  }
+};
 var CHANGE_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 var NAME_TOKEN_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
 var TOKEN_MAX_LENGTH = 128;
@@ -989,10 +1027,27 @@ function repositoryIdFor(stateFile) {
 }
 function journalFileFor(cwd) {
   const stateFile = stateFileFor(cwd);
-  const repositoryId = repositoryIdFor(stateFile);
   const autoChange = readValue(stateFile, "auto_change") ?? "";
   const change = CHANGE_SLUG_PATTERN.test(autoChange) ? autoChange : "run";
-  return path3.join(stateRootDirectory(), "runs", repositoryId, `${change}.log`);
+  return path3.join(runsDirectoryOf(stateFile), `${change}.log`);
+}
+function runsRootDirectory() {
+  return path3.join(stateRootDirectory(), "runs");
+}
+function runsDirectoryOf(stateFile) {
+  return path3.join(runsRootDirectory(), repositoryIdFor(stateFile));
+}
+function sessionRunDirectoryOf(repository, sessionId) {
+  return path3.join(runsRootDirectory(), repository, sessionId);
+}
+function inFlightRegistryOf(stateFile, sessionId) {
+  return sessionRunEntryOf(stateFile, sessionId, "in-flight");
+}
+function watchPidFileOf(stateFile, sessionId) {
+  return sessionRunEntryOf(stateFile, sessionId, "watch.pid");
+}
+function sessionRunEntryOf(stateFile, sessionId, entry) {
+  return path3.join(sessionRunDirectoryOf(repositoryIdFor(stateFile), sessionId), entry);
 }
 function denyPatternsFileFor(stateFile) {
   return path3.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
@@ -1008,44 +1063,70 @@ function stateRecords(content, key) {
 function stateValue(content, key) {
   return stateRecords(content, key).join("\n");
 }
+function holdsMode(content) {
+  return stateRecords(content, "mode").length > 0;
+}
+function foreignOwner(content, sessionId) {
+  const owner = stateValue(content, "session");
+  return owner === "" || owner === sessionId ? void 0 : owner;
+}
+function foreignGateOwner(stateFile, sessionId) {
+  const read = readStateFile(stateFile);
+  if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
+  if (read.kind === "absent" || !holdsMode(read.content)) return void 0;
+  return foreignOwner(read.content, sessionId);
+}
+function refuseGateWritesByAForeignSession(stateFile, sessionId) {
+  const owner = foreignGateOwner(stateFile, sessionId);
+  if (owner !== void 0) throw new GatesOwnedElsewhereError(owner);
+}
 function readValue(stateFile, key) {
-  const content = readFileIfPresent(stateFile);
+  const content = readFileIfPresent(stateFile, "skip");
   if (content === void 0 || stateRecords(content, key).length === 0) return void 0;
   return stateValue(content, key);
 }
 function readStateFile(stateFile) {
   try {
-    if (!statSync(stateFile).isFile()) return { kind: "unreadable", cause: `${stateFile} is not a regular file` };
+    if (!statSync(stateFile).isFile()) return { kind: "unreadable", cause: `not a regular file: ${stateFile}` };
     return { kind: "ok", content: readFileSync2(stateFile, "utf8") };
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") return { kind: "absent" };
     return { kind: "unreadable", cause: causeOf2(error) };
   }
 }
-function writeStatePairs(stateFile, pairs, sessionId) {
+function readFileIfPresent(file, whenUnreadable = "throw") {
+  const read = readStateFile(file);
+  if (read.kind === "unreadable" && whenUnreadable === "throw") throw new StateFileUnreadableError(file, read.cause);
+  return read.kind === "ok" ? read.content : void 0;
+}
+function writeStatePairs(stateFile, pairs, ownerSession) {
   const directory = path3.dirname(stateFile);
   const read = readStateFile(stateFile);
   if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
   const existing = read.kind === "ok" ? read.content : "";
   let lines = parseStateLines(existing);
-  for (const pair of [...pairs, `session=${sessionId}`]) {
+  for (const pair of [...pairs, `session=${ownerSession}`]) {
     const [key, value] = splitPair(pair);
     lines = lines.filter((line) => line.key !== key);
     lines.push({ key, value });
   }
-  const tempFile = createTempFile(directory, serializeStateLines(lines));
-  renameSync(tempFile, stateFile);
+  const content = serializeStateLines(lines);
+  renameSync(createTempFile(directory, content), stateFile);
+  return content;
 }
-function writeStateValues(cwd, sessionId, pairs) {
-  const stateFile = stateFileFor(cwd);
-  mkdirSync(stateRootDirectory(), { recursive: true });
-  withLock(stateFile, sessionId, () => {
-    writeStatePairs(stateFile, pairs, sessionId);
-    logEvent({ event: `set:${pairs.join(" ")}`, session: sessionId });
-  });
+function logSet(sessionId, pairs) {
+  logEvent({ event: `set:${pairs.join(" ")}`, session: sessionId });
 }
 function clearStateFile(stateFile) {
   rmSync(stateFile, { force: true });
+}
+function removeStateKeys(stateFile, content, keys) {
+  const kept = parseStateLines(content).filter((line) => !keys.includes(line.key));
+  if (kept.every((line) => line.key === "session")) {
+    clearStateFile(stateFile);
+    return;
+  }
+  renameSync(createTempFile(path3.dirname(stateFile), serializeStateLines(kept)), stateFile);
 }
 function isSymlink(target) {
   const stats = lstatOrUndefined(target);
@@ -1054,6 +1135,14 @@ function isSymlink(target) {
 function isDirectory(target) {
   const stats = statOrUndefined(target);
   return stats !== void 0 && stats.isDirectory();
+}
+function entriesOfDirectory(directory) {
+  try {
+    return readdirSync(directory).sort();
+  } catch (error) {
+    if (isErrnoException(error) && (error.code === "ENOENT" || error.code === "ENOTDIR")) return [];
+    throw error;
+  }
 }
 function isRegularNonSymlinkFile(target) {
   const stats = lstatOrUndefined(target);
@@ -1145,10 +1234,6 @@ function gitCommonDirectory(cwd) {
   } catch {
     return "";
   }
-}
-function readFileIfPresent(file) {
-  const read = readStateFile(file);
-  return read.kind === "ok" ? read.content : void 0;
 }
 function causeOf2(error) {
   return error instanceof Error ? error.message : String(error);
@@ -1348,6 +1433,7 @@ function runCapturePlan(cwd, sessionId, digest, document) {
     );
   }
   return withLock(stateFile, sessionId, () => {
+    refuseGateWritesByAForeignSession(stateFile, sessionId);
     if (existsSync(paths.presentedFile)) {
       if (!isPrivateRegularFile(paths.presentedFile)) {
         throw new PlanFailure("presented snapshot is not a private regular file");
@@ -1506,6 +1592,7 @@ function runAmendPlan(cwd, sessionId, sliceId, document) {
     const revisionText = readValue(stateFile, "plan_revision") ?? "";
     if (!/^[0-9]+$/.test(revisionText)) throw new PlanFailure("current plan has no valid revision");
     const nextRevision = Number(revisionText) + 1;
+    refuseGateWritesByAForeignSession(stateFile, sessionId);
     const amended = `${readFileSync3(paths.currentFile, "utf8")}
 
 ## ${shape.heading} \u2014 ${sliceId}
@@ -1576,11 +1663,164 @@ function namesAVerifyCheck(blockText) {
   return VERIFY_CHECK_TOKENS.some((token) => lowered.includes(token.toLowerCase()));
 }
 
+// core/src/state/watch.ts
+import { rmSync as rmSync4, statSync as statSync2 } from "node:fs";
+import path6 from "node:path";
+
+// core/src/state/in-flight-registry.ts
+import { appendFileSync as appendFileSync2, closeSync, constants as constants2, mkdirSync as mkdirSync3, openSync, rmSync as rmSync3, writeSync } from "node:fs";
+import path5 from "node:path";
+var MARK_SET = "true";
+var APPEND_WITHOUT_CREATING = constants2.O_WRONLY | constants2.O_APPEND;
+function readRegistry(registry) {
+  const readings = entriesOfDirectory(registry).filter(isNameToken).map((agentId) => entryReading(registry, agentId));
+  return {
+    agents: readings.flatMap((reading) => reading.kind === "registered" ? [reading.agent] : []),
+    unreadable: readings.flatMap((reading) => reading.kind === "unreadable" ? [reading.entry] : [])
+  };
+}
+function entryReading(registry, agentId) {
+  const entryFile = path5.join(registry, agentId);
+  const read = readStateFile(entryFile);
+  if (read.kind === "absent") return { kind: "gone" };
+  if (read.kind === "unreadable") return { kind: "unreadable", entry: { agentId, cause: read.cause } };
+  const startedAt = stateValue(read.content, "started_at");
+  if (Number.isNaN(Date.parse(startedAt))) {
+    return { kind: "unreadable", entry: { agentId, cause: `no started_at timestamp in ${entryFile}` } };
+  }
+  const agent = {
+    agentId,
+    agentType: stateValue(read.content, "agent_type"),
+    transcriptPath: stateValue(read.content, "transcript"),
+    startedAt,
+    reported: stateValue(read.content, "reported") === MARK_SET,
+    endedWithoutNotice: stateValue(read.content, "ended_without_notice") === MARK_SET
+  };
+  return { kind: "registered", agent };
+}
+function markReported(registry, agentId) {
+  appendMark(registry, agentId, "reported");
+}
+function appendMark(registry, agentId, mark) {
+  let entry;
+  try {
+    entry = openSync(path5.join(registry, agentId), APPEND_WITHOUT_CREATING);
+  } catch (error) {
+    if (isErrnoException(error) && error.code === "ENOENT") return;
+    throw error;
+  }
+  try {
+    writeSync(entry, `${mark}=${MARK_SET}
+`);
+  } finally {
+    closeSync(entry);
+  }
+}
+function forgetAgent(registry, agentId) {
+  rmSync3(path5.join(registry, agentId), { recursive: true, force: true });
+}
+
+// core/src/state/watch.ts
+var MINUTE_MS = 6e4;
+var DEFAULT_POLL_MS = 3e4;
+var SILENCE_LIMIT_MS = 60 * MINUTE_MS;
+var LONG_RUNNING_LIMIT_MS = 180 * MINUTE_MS;
+var WATCHDOG_LIMITS = { silenceMs: SILENCE_LIMIT_MS, longRunningMs: LONG_RUNNING_LIMIT_MS };
+var DELEGATION_NEEDS_ATTENTION_EXIT = 3;
+var POSITIVE_INTEGER = /^[1-9]\d*$/;
+var START_TIME_FIELD_AFTER_COMMAND = 19;
+var ALL_ENDED = { exitCode: 0, lines: ["all delegations ended"] };
+function watchInFlight(stateFile, sessionId) {
+  const registry = inFlightRegistryOf(stateFile, sessionId);
+  const pidFile = watchPidFileOf(stateFile, sessionId);
+  const limits = watchLimitsFrom(process.env);
+  try {
+    for (; ; ) {
+      heartbeat(pidFile);
+      const end = pollOnce(registry, limits);
+      if (end !== void 0) return end;
+      sleepSync(limits.pollMs);
+    }
+  } finally {
+    rmSync4(pidFile, { force: true });
+  }
+}
+function watchdogRecordOf(pid) {
+  return `watch=${pid}:${processStartOf(pid) ?? ""}
+`;
+}
+function heartbeat(pidFile) {
+  const record = watchdogRecordOf(process.pid);
+  withOwnerOnlyUmask(() => writeFileAtomically(path6.dirname(pidFile), pidFile, record, ".watch-"));
+}
+function pollOnce(registry, limits) {
+  const { agents, unreadable } = readRegistry(registry);
+  if (agents.length === 0 && unreadable.length === 0) return ALL_ENDED;
+  const nowMs = Date.now();
+  const unreported = agents.filter((agent) => !agent.reported);
+  const reports = [
+    ...unreadable.map(unreadableReport),
+    ...unreported.flatMap((agent) => reportOf(watched(agent), nowMs, limits) ?? [])
+  ];
+  if (reports.length === 0) return void 0;
+  for (const report2 of reports) settle(registry, report2);
+  return { exitCode: DELEGATION_NEEDS_ATTENTION_EXIT, lines: reports.map((report2) => report2.line) };
+}
+function watched(agent) {
+  const startedMs = Date.parse(agent.startedAt);
+  const transcript = agent.transcriptPath === "" ? void 0 : statSync2(agent.transcriptPath, { throwIfNoEntry: false });
+  return { agent, startedMs, lastWriteMs: transcript?.mtimeMs ?? startedMs };
+}
+function reportOf(watchedAgent, nowMs, limits) {
+  const { agent, lastWriteMs, startedMs } = watchedAgent;
+  if (agent.endedWithoutNotice) return reported(agent, "ended-without-notice", "");
+  const overdue = overdueDelegation({ startedMs, lastActivityMs: lastWriteMs }, nowMs, limits);
+  return overdue === void 0 ? void 0 : reported(agent, overdue.kind, overdue.measure);
+}
+function overdueDelegation({ startedMs, lastActivityMs }, nowMs, limits = WATCHDOG_LIMITS) {
+  const silentMs = nowMs - lastActivityMs;
+  if (silentMs >= limits.silenceMs) return { kind: "stuck", measure: ` silent ${minutes(silentMs)} min` };
+  const inFlightMs = nowMs - startedMs;
+  if (inFlightMs < limits.longRunningMs) return void 0;
+  return { kind: "long-running", measure: ` in flight ${minutes(inFlightMs)} min` };
+}
+function reported(agent, kind, measure) {
+  return { agentId: agent.agentId, kind, line: `${kind}: ${agent.agentId} (${agent.agentType})${measure}` };
+}
+function unreadableReport({ agentId }) {
+  return { agentId, kind: "unreadable", line: `unreadable: ${agentId}` };
+}
+function settle(registry, report2) {
+  if (report2.kind === "stuck" || report2.kind === "long-running") markReported(registry, report2.agentId);
+  else forgetAgent(registry, report2.agentId);
+}
+function minutes(milliseconds) {
+  return Math.floor(milliseconds / MINUTE_MS);
+}
+function watchLimitsFrom(environment) {
+  return {
+    pollMs: testOverride(environment["OSO_WATCH_POLL_MS"]) ?? DEFAULT_POLL_MS,
+    silenceMs: testOverride(environment["OSO_WATCH_SILENCE_MS"]) ?? WATCHDOG_LIMITS.silenceMs,
+    longRunningMs: testOverride(environment["OSO_WATCH_LONG_MS"]) ?? WATCHDOG_LIMITS.longRunningMs
+  };
+}
+function testOverride(value) {
+  if (value === void 0 || !POSITIVE_INTEGER.test(value)) return void 0;
+  return Number(value);
+}
+function processStartOf(pid) {
+  const stat = readFileIfPresent(`/proc/${pid}/stat`);
+  if (stat === void 0) return void 0;
+  const fieldsAfterCommand = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+  return fieldsAfterCommand[START_TIME_FIELD_AFTER_COMMAND];
+}
+
 // core/src/state/cli.ts
 var USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> get key
        oso-state --session <id> show
        oso-state --session <id> clear
+       oso-state --session <id> close
        oso-state --session <id> close-slice <n>
        oso-state --session <id> event <type> [detail]
        oso-state --session <id> capture-plan <sha256>
@@ -1588,6 +1828,7 @@ var USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> cancel-plan <sha256>
        oso-state --session <id> amend-plan <slice-id>
        oso-state --session <id> deny-pattern add <pattern>
+       oso-state --session <id> watch
        oso-state journal <text>
        oso-state journal --path
        oso-state scan comments <ref>
@@ -1597,6 +1838,10 @@ scan reads the working directory's own repository, reports every hit on stdout
 and exits 0 whether or not it found any. comments flags the inline comments the
 diff since <ref> adds; abstractions flags the exports it adds that fewer than
 two use sites reach.
+
+watch polls this session's in-flight delegations and exits 0 once none is left,
+or 3 naming each one silent for 60 minutes, in flight for 3 hours or ended
+without notice; each is named once across watches.
 `;
 var UsageError = class extends Error {
 };
@@ -1626,6 +1871,11 @@ function report(error, verb) {
   }
   if (error instanceof RefusedError) {
     process.stderr.write(`oso-state: ${error.verb} refused: ${error.message}
+`);
+    return 1;
+  }
+  if (error instanceof GatesOwnedElsewhereError) {
+    process.stderr.write(`oso-state: ${verb} refused: ${error.message}
 `);
     return 1;
   }
@@ -1682,6 +1932,8 @@ function dispatch(argv) {
       return runShow();
     case "clear":
       return runClear(sessionId);
+    case "close":
+      return runClose(sessionId);
     case "close-slice":
       return runCloseSlice(sessionId, remaining);
     case "event":
@@ -1698,6 +1950,8 @@ function dispatch(argv) {
       return runAmendPlan2(sessionId, remaining);
     case "deny-pattern":
       return runDenyPattern(sessionId, remaining);
+    case "watch":
+      return runWatch(sessionId, remaining);
     case "scan":
       return dispatchScan(remaining);
     default:
@@ -1717,8 +1971,25 @@ function writeScan(report2) {
 }
 function runSet(sessionId, pairs) {
   if (pairs.length < 1) throw new UsageError();
-  writeStateValues(process.cwd(), sessionId, pairs);
-  return 0;
+  const rejection = setPairRejection(pairs);
+  if (rejection !== void 0) throw new RefusedError("set", rejection);
+  const stateFile = stateFileFor(process.cwd());
+  mkdirSync4(stateRootDirectory(), { recursive: true });
+  return withLock(stateFile, sessionId, () => {
+    const owner = foreignGateOwner(stateFile, sessionId);
+    if (owner !== void 0 && pairsTouchAGateKey(pairs)) throw new GatesOwnedElsewhereError(owner);
+    const content = writeStatePairs(stateFile, pairs, owner ?? sessionId);
+    logSet(sessionId, pairs);
+    process.stdout.write(content);
+    return 0;
+  });
+}
+function runWatch(sessionId, remaining) {
+  if (remaining.length > 0) throw new UsageError();
+  const end = watchInFlight(stateFileFor(process.cwd()), sessionId);
+  process.stdout.write(end.lines.map((line) => `${line}
+`).join(""));
+  return end.exitCode;
 }
 function runGet(remaining) {
   if (remaining.length !== 1) throw new UsageError();
@@ -1743,10 +2014,24 @@ function runShow() {
 }
 function runClear(sessionId) {
   const stateFile = stateFileFor(process.cwd());
-  mkdirSync3(stateRootDirectory(), { recursive: true });
+  mkdirSync4(stateRootDirectory(), { recursive: true });
   return withLock(stateFile, sessionId, () => {
     clearStateFile(stateFile);
     logEvent({ event: "clear", session: sessionId });
+    return 0;
+  });
+}
+function runClose(sessionId) {
+  const stateFile = stateFileFor(process.cwd());
+  mkdirSync4(stateRootDirectory(), { recursive: true });
+  return withLock(stateFile, sessionId, () => {
+    const read = readStateFile(stateFile);
+    if (read.kind === "absent") return 0;
+    if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
+    const owner = foreignOwner(read.content, sessionId);
+    if (owner !== void 0) throw new RefusedError("close", `the state is owned by session ${owner}, not ${sessionId}`);
+    removeStateKeys(stateFile, read.content, KEYS_CLOSE_REMOVES);
+    logEvent({ event: "close", session: sessionId });
     return 0;
   });
 }
@@ -1754,12 +2039,13 @@ function runCloseSlice(sessionId, remaining) {
   if (remaining.length !== 1) throw new UsageError();
   const sliceId = remaining[0];
   const stateFile = stateFileFor(process.cwd());
-  mkdirSync3(stateRootDirectory(), { recursive: true });
+  mkdirSync4(stateRootDirectory(), { recursive: true });
   return withLock(stateFile, sessionId, () => {
     const activeSlice = readValue(stateFile, "active_slice") ?? "none";
     if (activeSlice !== sliceId) {
       throw new RefusedError(`close-slice ${sliceId}`, `active_slice is ${activeSlice}, not ${sliceId}`);
     }
+    refuseGateWritesByAForeignSession(stateFile, sessionId);
     const patch = closeSlice();
     writeStatePairs(
       stateFile,
@@ -1778,7 +2064,7 @@ function runDenyPattern(sessionId, remaining) {
   }
   const stateFile = stateFileFor(process.cwd());
   const patternsFile = denyPatternsFileFor(stateFile);
-  mkdirSync3(stateRootDirectory(), { recursive: true });
+  mkdirSync4(stateRootDirectory(), { recursive: true });
   return withLock(stateFile, sessionId, () => {
     const read = readStateFile(patternsFile);
     if (read.kind === "unreadable") throw new StateFileUnreadableError(patternsFile, read.cause);
@@ -1790,7 +2076,7 @@ function runDenyPattern(sessionId, remaining) {
     }
     const content = [...existing, pattern].map((line) => `${line}
 `).join("");
-    writeFileAtomically(path5.dirname(patternsFile), patternsFile, content, ".patterns.");
+    writeFileAtomically(path7.dirname(patternsFile), patternsFile, content, ".patterns.");
     logEvent({ event: "deny-pattern-add", session: sessionId, command: pattern });
     process.stdout.write(`oso-state: wrote ${patternsFile}
 `);

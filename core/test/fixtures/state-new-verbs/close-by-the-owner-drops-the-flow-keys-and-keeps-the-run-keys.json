@@ -1,0 +1,28 @@
+{
+  "name": "close by the owner drops mode, active_slice, verify_green and auto_wait and keeps roadmap, auto, auto_change and the plan approval",
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "roadmap=harness-friction\nauto=running\nauto_change=state-gate-scope\nmode=plan\nactive_slice=none\nverify_green=true\nauto_wait=none\nplan_approval=approved\nplan_approval_session=test-session\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "argv": [
+    "--session",
+    "test-session",
+    "close"
+  ],
+  "stdin": "",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/{repo}.state": "roadmap=harness-friction\nauto=running\nauto_change=state-gate-scope\nplan_approval=approved\nplan_approval_session=test-session\nsession=test-session\n"
+    },
+    "events_appended": [
+      {
+        "event": "close",
+        "session": "test-session"
+      }
+    ]
+  }
+}

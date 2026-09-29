@@ -29,11 +29,11 @@ import type { OpenCodeHostProbes } from "./opencode-host.ts";
 import {
   ENGRAM_BINARY_NAME,
   EXPECTED_SKILL_WRAPPER_COUNT,
+  installerOwnedTargets,
   installOpenCode,
-  openCodeInstallTargets,
   openCodePayloadSources,
-  OWNER_INSTALLER,
 } from "./opencode-install.ts";
+import { openCodeInstallTargets } from "./opencode-install-layout.ts";
 import { openCodeTrustReading, OPENCODE_TRUST_FILE_COUNT, trustDivergenceLine } from "./opencode-trust.ts";
 import { isAboveTestedVersion, meetsVersionFloor, SUPPORTED_OPENCODE_VERSION } from "./pins.ts";
 import { modelOverridesTheTierCannotRank, ProfileMirrorRefusedError, profileRolesOf, readProfile, type ProfileReading } from "./profile.ts";
@@ -565,12 +565,7 @@ export function openCodeRegistryStatus(home: string, configHome: string): string
   const paths = opencodePathsFor(home, { XDG_CONFIG_HOME: path.dirname(configHome) });
   const targets = openCodeInstallTargets(paths);
   if (!isReadableRegularFile(targets.ownerRegistry)) return "missing";
-  const owned = new Set(
-    readFileSync(targets.ownerRegistry, "utf8")
-      .split("\n")
-      .filter((row) => row.startsWith(`${OWNER_INSTALLER}\t`))
-      .map((row) => row.slice(OWNER_INSTALLER.length + 1)),
-  );
+  const owned = new Set(installerOwnedTargets(targets.ownerRegistry));
   const expected = [
     paths.configFile,
     paths.globalFile,
@@ -580,9 +575,6 @@ export function openCodeRegistryStatus(home: string, configHome: string): string
     targets.plugin,
     path.join(targets.stateBin, "oso-state"),
     path.join(targets.gitHooks, "pre-commit"),
-    ...directoryEntryNames(targets.hooks)
-      .filter((name) => name.endsWith(".sh"))
-      .map((name) => path.join(targets.hooks, name)),
   ];
   const missing = expected.filter((target) => installedTargetExists(target) && !owned.has(target)).map((target) => relativeToHome(target, home));
   return missing.length === 0 ? "installer-owned" : namedList("missing", missing);

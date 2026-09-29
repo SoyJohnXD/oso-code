@@ -1,20 +1,25 @@
-import { existsSync } from "node:fs";
 import path from "node:path";
-import { ALLOWED, type GateOutcome, type HookCaller, type SessionStartVerdict } from "../hosts/envelope.ts";
+import {
+  ALLOWED,
+  type GateOutcome,
+  type HookCaller,
+  type HookEnvelope,
+  type SessionStartVerdict,
+} from "../hosts/envelope.ts";
 import type { HostName, PerHost } from "../routes/routes.ts";
 import { CHANGE_SLUG_PATTERN, isDirectory, readStateFile, stateFileFor, stateRootDirectory } from "../state/store.ts";
+import { removeLegacyWaitMarks } from "./delegation.ts";
 import {
-  EXPIRED_DELEGATION_CLAUSE,
-  isDelegationLabel,
-  nowEpochSeconds,
-  readWaitMark,
-  waitExpired,
-  waitMarkFileFor,
-} from "./delegation.ts";
-import { hookSessionId, pluginRootDirectory, stateValue, type GateDefinition, type GateRequest } from "./preflight.ts";
+  holdsMode,
+  hookSessionId,
+  pluginRootDirectory,
+  RUN_ARMED,
+  stateValue,
+  type GateDefinition,
+  type GateRequest,
+} from "./preflight.ts";
 
 const ROADMAP_DISARMED_SENTINEL = "none";
-const RUN_ARMED = "running";
 const ROADMAP_PLACEHOLDER = "{roadmap}";
 
 export const STALE_GATE: GateDefinition<SessionStartVerdict> = {
@@ -27,44 +32,30 @@ function judgeStale({ envelope }: GateRequest): GateOutcome<SessionStartVerdict>
   if (!isDirectory(stateRootDirectory())) return ALLOWED;
 
   const stateFile = stateFileFor(envelope.cwd);
-  if (!existsSync(stateFile)) return ALLOWED;
-
-  const content = contentOf(stateFile);
-  const sessionId = hookSessionId(envelope);
-  const advisories = [
-    ...staleStateAdvisory(envelope.caller, stateFile, content, sessionId),
-    ...expiredDelegationAdvisory(envelope.caller, envelope.cwd, content),
-  ];
+  const advisories = advisoriesFor(envelope, stateFile);
+  removeLegacyWaitMarks(stateFile);
   if (advisories.length === 0) return ALLOWED;
 
   return { verdict: { kind: "context", additionalContext: advisories.join(" ") }, events: [] };
 }
 
+function advisoriesFor(envelope: HookEnvelope, stateFile: string): string[] {
+  const read = readStateFile(stateFile);
+  if (read.kind === "absent") return [];
+  const content = read.kind === "ok" ? read.content : undefined;
+  return staleStateAdvisory(envelope.caller, stateFile, content, hookSessionId(envelope));
+}
+
 function staleStateAdvisory(
   caller: HookCaller,
   stateFile: string,
-  content: string,
+  content: string | undefined,
   sessionId: string,
 ): string[] {
+  if (content === undefined) return [staleStateContext(caller, stateFile, "", sessionId)];
   if (stateValue(content, "session") === sessionId) return [];
+  if (!holdsMode(content) && stateValue(content, "auto") !== RUN_ARMED) return [];
   return [staleStateContext(caller, stateFile, content, sessionId)];
-}
-
-function expiredDelegationAdvisory(caller: HookCaller, cwd: string, content: string): string[] {
-  if (stateValue(content, "auto") !== RUN_ARMED) return [];
-  const label = stateValue(content, "auto_wait");
-  if (!isDelegationLabel(label)) return [];
-  const runSession = stateValue(content, "session");
-  if (runSession === "") return [];
-
-  const mark = readWaitMark(waitMarkFileFor(cwd, runSession));
-  if (mark === undefined || !waitExpired(nowEpochSeconds(), mark.markedAtEpochSeconds)) return [];
-
-  const disarmCommand = `${quoted(stateBinPath(caller))} --session ${quoted(runSession)} set auto_wait=none`;
-  return [
-    `oso-code: this repository's unattended run is still marked as waiting on the delegation ${quoted(label)}. ` +
-      `${EXPIRED_DELEGATION_CLAUSE} Drop the mark with ${disarmCommand} and carry the run on.`,
-  ];
 }
 
 function staleStateContext(caller: HookCaller, stateFile: string, content: string, sessionId: string): string {
@@ -104,11 +95,6 @@ function skillPrefixFor(host: HostName): string {
 function stateBinPath(caller: HookCaller): string {
   if (caller.stateBin !== "") return caller.stateBin;
   return path.join(pluginRootDirectory(), "bin", "oso-state");
-}
-
-function contentOf(stateFile: string): string {
-  const read = readStateFile(stateFile);
-  return read.kind === "ok" ? read.content : "";
 }
 
 function quoted(value: string): string {

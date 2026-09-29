@@ -111,6 +111,90 @@ test("a compaction on the bus puts the re-anchor gate's text on the next system 
   }
 });
 
+async function compactionContextAfter(
+  fixture: RailFixture,
+  hooks: LooseHooks,
+  sessionID: string,
+): Promise<string[]> {
+  const output = { context: [] as string[] };
+  await underRailFixtureHome(fixture, async () => {
+    await hooks["experimental.session.compacting"]!({ sessionID }, output);
+  });
+  return output.context;
+}
+
+async function compactedOnTheBus(fixture: RailFixture, hooks: LooseHooks, sessionID: string): Promise<void> {
+  await underRailFixtureHome(fixture, async () => {
+    await hooks.event!({ event: { type: "session.compacted", properties: { sessionID } } });
+  });
+}
+
+test("the compacting hook hands the re-anchor gate's text to the compaction itself", async () => {
+  const fixture = makeFixture();
+  try {
+    armState(fixture, fixture.owner, ["mode=plan", "active_slice=s1"]);
+    const hooks = await railFor(fixture);
+    const context = await compactionContextAfter(fixture, hooks, "ses-compacting");
+    assert.equal(context.length, 1);
+    assert.match(context[0]!, /compacted while a run was in flight/);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
+});
+
+test("the compacting hook re-anchors an unattended run in flight", async () => {
+  const fixture = makeFixture();
+  try {
+    armState(fixture, fixture.owner, ["mode=plan", "auto=running"]);
+    const hooks = await railFor(fixture);
+    const context = await compactionContextAfter(fixture, hooks, "ses-compacting-auto");
+    assert.equal(context.length, 1);
+    assert.match(context[0]!, /This run is unattended and still in flight/);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
+});
+
+test("a compaction the compacting hook already re-anchored queues no second system advice", async () => {
+  const fixture = makeFixture();
+  try {
+    armState(fixture, fixture.owner, ["mode=plan", "active_slice=s1"]);
+    const hooks = await railFor(fixture);
+    await compactionContextAfter(fixture, hooks, "ses-anchored");
+    await compactedOnTheBus(fixture, hooks, "ses-anchored");
+    assert.deepEqual(await systemPromptAfter(fixture, hooks, "ses-anchored"), ["you are a harness"]);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
+});
+
+test("the compacting hook's flag covers one compaction, so the next one without it falls back again", async () => {
+  const fixture = makeFixture();
+  try {
+    armState(fixture, fixture.owner, ["mode=plan", "active_slice=s1"]);
+    const hooks = await railFor(fixture);
+    await compactionContextAfter(fixture, hooks, "ses-anchored-once");
+    await compactedOnTheBus(fixture, hooks, "ses-anchored-once");
+    await compactedOnTheBus(fixture, hooks, "ses-anchored-once");
+    const system = await systemPromptAfter(fixture, hooks, "ses-anchored-once");
+    assert.equal(system.length, 2);
+    assert.match(system[1]!, /compacted while a run was in flight/);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
+});
+
+test("with no run in flight the compacting hook adds nothing to the compaction", async () => {
+  const fixture = makeFixture();
+  try {
+    armState(fixture, fixture.owner, ["mode=plan"]);
+    const hooks = await railFor(fixture);
+    assert.deepEqual(await compactionContextAfter(fixture, hooks, "ses-idle-compacting"), []);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
+});
+
 test("dispose runs the teardown gate and drops the state the scope's sessions armed", async () => {
   const fixture = makeFixture();
   try {

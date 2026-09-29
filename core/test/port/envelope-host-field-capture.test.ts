@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { hostEnvelope, type HookCaller, type HookEnvelope } from "../../src/hosts/envelope.ts";
 
-type HookTextField = keyof Omit<HookEnvelope, "caller" | "payloadRead" | "stopHookActive">;
+type HookTextField = keyof Omit<HookEnvelope, "caller" | "payloadRead" | "stopHookActive" | "backgroundTasks">;
 
 const A_HOST_COMPOSING_A_GATE_CALL: HookCaller = {
   host: "opencode",
@@ -15,9 +15,11 @@ const PRODUCTION_DEPLOY = "vercel deploy --prod";
 function everyTextFieldCarrying(value: string): Readonly<Record<HookTextField, string>> {
   return {
     sessionId: value,
+    hookEventName: value,
     cwd: value,
     toolName: value,
     filePath: value,
+    patchText: value,
     commandLine: value,
     source: value,
     agentId: value,
@@ -39,6 +41,7 @@ const THE_ENVELOPE_THE_GATES_READ: HookEnvelope = {
   caller: A_HOST_COMPOSING_A_GATE_CALL,
   payloadRead: "json",
   stopHookActive: false,
+  backgroundTasks: { kind: "absent" },
 };
 
 type SmuggledShape = Readonly<{ shape: string; smuggled: string }>;

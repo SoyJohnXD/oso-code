@@ -21,13 +21,21 @@
       ]
     },
     "state_after": {
-      ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=2\njournal_bytes=0\n"
+      ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=2\nheads=\nauto=running\ncompleted_agents=0\n"
     },
     "events_appended": [
       {
+        "event": "auto-continue-heads-unreadable",
+        "session": "test-session",
+        "command": "{present}",
+        "schema": 2,
+        "gate": "auto-continue.sh",
+        "hook_event": "Stop"
+      },
+      {
         "event": "auto-continued",
         "session": "test-session",
-        "command": "",
+        "command": "background_tasks=absent in_flight=0",
         "schema": 2,
         "gate": "auto-continue.sh",
         "hook_event": "Stop"

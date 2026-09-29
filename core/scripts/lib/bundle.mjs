@@ -2,13 +2,14 @@ import { build } from "esbuild";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
-export async function bundleText(entryPoint, external = []) {
+export async function bundleText(entryPoint, external = [], define = {}) {
   const result = await build({
     entryPoints: [entryPoint],
     bundle: true,
     platform: "node",
     format: "esm",
     external,
+    define,
     write: false,
   });
   return result.outputFiles[0].text;

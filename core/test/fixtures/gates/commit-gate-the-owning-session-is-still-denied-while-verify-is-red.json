@@ -1,0 +1,24 @@
+{
+  "name": "commit gate: the session the state names as its owner is still denied a commit while verify is red",
+  "source": [
+    { "assertion": "printf 'mode=plan\\nactive_slice=1\\nverify_green=false\\nroadmap=harness-friction\\nsession=test-session\\n' > \"$REPO_STATE\"" },
+    { "assertion": "assert_denies \"the commit gate still gates the session the state names as its owner\" block-commit-until-green.sh \"$(bash_input 'git commit -m x')\"" }
+  ],
+  "gate": "commit",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=1\nverify_green=false\nroadmap=harness-friction\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\""
+      ]
+    },
+    "stderr": ""
+  }
+}

@@ -16,6 +16,13 @@ import { readJsonFile, writeJsonFile } from "./json.ts";
 import { EVERY_AGENT_ON_THE_HOST_SESSION_MODEL, hostContractViolationOf, mergeOpenCodeConfig, type AgentModels } from "./opencode-config.ts";
 import type { OpenCodeHostProbes } from "./opencode-host.ts";
 import {
+  harnessManifestOf,
+  harnessVersionIn,
+  openCodeInstallTargets,
+  type OpenCodeInstallRecord,
+  type OpenCodeInstallTargets,
+} from "./opencode-install-layout.ts";
+import {
   configFileRefusal,
   configHomeRefusal,
   globalFileRefusal,
@@ -27,9 +34,9 @@ import {
 } from "./opencode.ts";
 import {
   openCodeTrustReading,
+  openCodeTrustRows,
   OPENCODE_TRUST_FILE_COUNT,
   publishedDistFileNames,
-  publishedGateScriptNames,
   trustDivergenceLine,
   type TrustRootKind,
 } from "./opencode-trust.ts";
@@ -75,56 +82,20 @@ export type OpenCodeInstallInput = Readonly<{
   installGitHook: boolean;
 }>;
 
-export type OpenCodeInstallTargets = Readonly<{
-  skills: string;
-  agents: string;
-  commands: string;
-  plugin: string;
-  hooks: string;
-  gitHooks: string;
-  stateBin: string;
-  dist: string;
-  engramPlugin: string;
-  impeccableMount: string;
-  impeccableOptOut: string;
-  ownerRegistry: string;
-  restoreExercisedMarker: string;
-  planArtifactRoot: string;
-}>;
-
 export type OpenCodePayloadSources = Readonly<{
   skills: string;
   sharedSkills: string;
   agents: string;
   commands: string;
   pluginBundle: string;
-  gates: string;
   gitHook: string;
   stateBin: string;
   stateBinPackage: string;
   dist: string;
   global: string;
   publishedHashes: string;
+  harnessManifest: string;
 }>;
-
-export function openCodeInstallTargets(paths: OpenCodePaths): OpenCodeInstallTargets {
-  return {
-    skills: path.join(paths.configHome, "skill"),
-    agents: path.join(paths.configHome, "agent"),
-    commands: path.join(paths.configHome, "command"),
-    plugin: path.join(paths.configHome, "plugin"),
-    hooks: path.join(paths.configHome, "hooks"),
-    gitHooks: path.join(paths.configHome, "git-hooks"),
-    stateBin: path.join(paths.configHome, "bin"),
-    dist: path.join(paths.configHome, "dist"),
-    engramPlugin: path.join(paths.configHome, "plugins", "engram.ts"),
-    impeccableMount: path.join(paths.homeDirectory, ".agents", "skills", "impeccable"),
-    impeccableOptOut: path.join(paths.stateRoot, "impeccable-opt-out"),
-    ownerRegistry: path.join(paths.stateRoot, "opencode-install-registry"),
-    restoreExercisedMarker: path.join(paths.stateRoot, ".install-restore-verified-opencode"),
-    planArtifactRoot: path.join(paths.stateRoot, "plans"),
-  };
-}
 
 export function openCodePayloadSources(repositoryRoot: string): OpenCodePayloadSources {
   return {
@@ -133,13 +104,13 @@ export function openCodePayloadSources(repositoryRoot: string): OpenCodePayloadS
     agents: path.join(repositoryRoot, "opencode", "agents"),
     commands: path.join(repositoryRoot, "opencode", "commands"),
     pluginBundle: path.join(repositoryRoot, "opencode", "dist", "oso-code.js"),
-    gates: path.join(repositoryRoot, "plugin", "hooks"),
     gitHook: path.join(repositoryRoot, "plugin", "git-hooks", "pre-commit"),
     stateBin: path.join(repositoryRoot, "plugin", "bin", "oso-state"),
     stateBinPackage: path.join(repositoryRoot, "plugin", "bin", "package.json"),
     dist: path.join(repositoryRoot, "plugin", "dist"),
     global: path.join(repositoryRoot, "bootstrap", "opencode-global.md"),
     publishedHashes: path.join(repositoryRoot, "bootstrap", "hook-hashes.txt"),
+    harnessManifest: harnessManifestOf(repositoryRoot),
   };
 }
 
@@ -151,12 +122,10 @@ export function payloadRefusal(sources: OpenCodePayloadSources): string | undefi
     { present: isDirectory(sources.agents), message: `the OpenCode agent contracts are missing: ${sources.agents}` },
     { present: isDirectory(sources.commands), message: `the OpenCode command templates are missing: ${sources.commands}` },
     { present: isReadableRegularFile(sources.pluginBundle), message: `the OpenCode plugin bundle is missing: ${sources.pluginBundle}` },
-    { present: isDirectory(sources.gates), message: `the shared gate script tree is missing: ${sources.gates}` },
-    { present: isReadableRegularFile(path.join(sources.gates, "lib.sh")), message: `the shared gate library is missing: ${path.join(sources.gates, "lib.sh")}` },
-    { present: isReadableRegularFile(path.join(sources.gates, "lexer.sh")), message: `the shared gate lexer is missing: ${path.join(sources.gates, "lexer.sh")}` },
     { present: isReadableRegularFile(sources.gitHook), message: `the shared commit hook is missing: ${sources.gitHook}` },
     { present: isReadableRegularFile(sources.stateBin), message: `the oso-state binary is missing: ${sources.stateBin}` },
     { present: isReadableRegularFile(sources.stateBinPackage), message: `the oso-state module manifest is missing: ${sources.stateBinPackage}` },
+    { present: isReadableRegularFile(sources.harnessManifest), message: `the harness manifest is missing: ${sources.harnessManifest}` },
   ].find((row) => !row.present);
   if (missing !== undefined) return missing.message;
 
@@ -179,11 +148,12 @@ export function trustBytesRefusal(publishedHashes: string, rootKind: TrustRootKi
   return undefined;
 }
 
-export function unpublishedInstalledGates(publishedHashes: string, hooksTarget: string): string[] {
-  const published = new Set(publishedGateScriptNames(publishedHashes));
-  return directoryEntryNames(hooksTarget)
-    .filter((name) => name.endsWith(".sh") && isReadableRegularFile(path.join(hooksTarget, name)))
-    .filter((name) => !published.has(name));
+export function installerOwnedTargets(ownerRegistry: string): string[] {
+  if (!isReadableRegularFile(ownerRegistry)) return [];
+  return readFileSync(ownerRegistry, "utf8")
+    .split("\n")
+    .filter((row) => row.startsWith(`${OWNER_INSTALLER}\t`))
+    .map((row) => row.slice(OWNER_INSTALLER.length + 1));
 }
 
 export function installOpenCode(input: OpenCodeInstallInput): CommandOutcome {
@@ -213,7 +183,10 @@ function writeOpenCodeInstall(input: OpenCodeInstallInput): CommandOutcome {
     infoLines.push(...migrateOpenCodeState(paths, targets, tx));
     installPayloadTrees(paths, targets, sources);
     wiring.push(wiringOk("installed payload", `${targets.skills}, ${targets.agents}, ${targets.commands}, ${targets.plugin}`));
-    wiring.push(publishedGateBytesEntry(sources.publishedHashes, paths.configHome, targets.hooks));
+    wiring.push(...retiredShellGateEntries(targets));
+    wiring.push(publishedGateBytesEntry(sources.publishedHashes, paths.configHome));
+    writeInstallRecord(sources, targets.installRecord);
+    wiring.push(wiringOk("install record", targets.installRecord));
     mergeGlobalAgents(paths.globalFile, readFileSync(sources.global, "utf8"));
     wiring.push(wiringOk("global AGENTS.md region", paths.globalFile));
     wiring.push(wireEngram(input.environment, targets.engramPlugin, tx));
@@ -283,6 +256,7 @@ function backupCandidatesOf(paths: OpenCodePaths, targets: OpenCodeInstallTarget
     { label: "impeccable", target: targets.impeccableMount },
     { label: "impeccable-opt-out", target: targets.impeccableOptOut },
     { label: "registry", target: targets.ownerRegistry },
+    { label: "install-record", target: targets.installRecord },
   ];
 }
 
@@ -298,12 +272,6 @@ function installPayloadTrees(paths: OpenCodePaths, targets: OpenCodeInstallTarge
     for (const command of modeCommandNames(sources.commands)) cpSync(path.join(sources.commands, command), path.join(stage, command));
   });
   replaceTree(paths.configHome, targets.plugin, (stage) => cpSync(sources.pluginBundle, path.join(stage, "oso-code.js")));
-  replaceTree(paths.configHome, targets.hooks, (stage) => {
-    for (const script of publishedGateScriptNames(sources.publishedHashes)) {
-      cpSync(path.join(sources.gates, script), path.join(stage, script));
-      chmodSync(path.join(stage, script), EXECUTABLE_FILE_MODE);
-    }
-  });
   replaceTree(paths.configHome, targets.stateBin, (stage) => {
     cpSync(sources.stateBin, path.join(stage, "oso-state"));
     cpSync(sources.stateBinPackage, path.join(stage, "package.json"));
@@ -318,17 +286,21 @@ function installPayloadTrees(paths: OpenCodePaths, targets: OpenCodeInstallTarge
   });
 }
 
-function publishedGateBytesEntry(publishedHashes: string, configHome: string, hooksTarget: string): WiringEntry {
+function retiredShellGateEntries(targets: OpenCodeInstallTargets): WiringEntry[] {
+  const retired = installerOwnedTargets(targets.ownerRegistry).filter((target) => path.dirname(target) === targets.hooks && target.endsWith(".sh"));
+  for (const gate of retired) rmSync(gate, { force: true });
+  return retired.length === 0 ? [] : [wiringOk("retired shell gates", `removed ${retired.length} installer-owned script(s) from ${targets.hooks}`)];
+}
+
+function publishedGateBytesEntry(publishedHashes: string, configHome: string): WiringEntry {
   const divergent = trustBytesRefusal(publishedHashes, "installed", configHome);
   if (divergent !== undefined) throw new Error(divergent);
-  const unpublished = unpublishedInstalledGates(publishedHashes, hooksTarget);
-  if (unpublished.length > 0) {
-    throw new Error(
-      `the installed gate tree holds executables no published hash covers: ${unpublished.join(" ")} — ` +
-        "install exactly what bootstrap/hook-hashes.txt publishes",
-    );
-  }
   return wiringOk("published gate bytes", `verified against ${publishedHashes}`);
+}
+
+function writeInstallRecord(sources: OpenCodePayloadSources, installRecord: string): void {
+  const record: OpenCodeInstallRecord = { version: harnessVersionIn(sources.harnessManifest), manifest: openCodeTrustRows(sources.publishedHashes) };
+  writeJsonFile(installRecord, record);
 }
 
 function renderOpenCodeConfig(input: OpenCodeInstallInput, paths: OpenCodePaths, tx: BackupTransaction): WiringEntry {
@@ -414,11 +386,9 @@ function writeOwnerRegistry(paths: OpenCodePaths, targets: OpenCodeInstallTarget
     ownedBy(OWNER_INSTALLER, targets.agents),
     ownedBy(OWNER_INSTALLER, targets.commands),
     ownedBy(OWNER_INSTALLER, targets.plugin),
-    ...directoryEntryNames(targets.hooks)
-      .filter((name) => name.endsWith(".sh"))
-      .map((name) => ownedBy(OWNER_INSTALLER, path.join(targets.hooks, name))),
     ownedBy(OWNER_INSTALLER, path.join(targets.stateBin, "oso-state")),
     ownedBy(OWNER_INSTALLER, path.join(targets.gitHooks, "pre-commit")),
+    ownedBy(OWNER_INSTALLER, targets.installRecord),
   ];
   mkdirSync(paths.stateRoot, { recursive: true });
   writeFileSync(targets.ownerRegistry, rows.map((row) => `${row}\n`).join(""), { mode: PRIVATE_FILE_MODE });
