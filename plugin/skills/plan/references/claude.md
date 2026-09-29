@@ -40,7 +40,7 @@ The commit and edits gates named in the ground rules are this plugin's own hooks
 
 Three of this plugin's hooks read the `auto` marker the AUTO disposition writes:
 
-- the autocontinue gate in `dist/gate.js` — the `Stop` net: reads `auto=running` and pushes the run on when a turn ends without parking or closing it, capped at a fixed number of pushes that moved the journal nowhere.
+- the autocontinue gate in `dist/gate.js` — the `Stop` net: reads `auto=running`, holds while subagents are in flight and asks once for the background watchdog, and pushes the run on when a turn ends with nothing in flight without parking or closing it, capped at 3 pushes without progress — a commit on any local branch, a flow state transition, or a subagent completion.
 - `reanchor-after-compact.sh` — `SessionStart` with `source=compact`: hands the fresh context the three places the position lives — the `oso/index` row's `NEXT:` line, `oso-state show`, and the run journal.
 - `block-prod-deploy.sh` — a `PreToolUse` rail armed only while the marker is running: a production deploy, and a push off the run's own branch, are denied. Taking the run back (`auto=done`) disarms it.
 
@@ -65,7 +65,7 @@ The three delegates the flow names — `oso-applier`, `oso-verifier`, `oso-integ
 
 ## Delegation-wait binding
 
-READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Making a launch wait** section NOW, read ALWAYS by this flow. It is the single Claude Code binding for how a delegation's report arrives on this host and for the marker every delegation arms — reaching §6's applier, verifier and integrator, §2's exploration subagents, the integration gate's verifier, a red slice's relaunched applier, and §7's debt-cleanup applier. Its **The model a launch carries** section binds what that `model` parameter is set to, and is read in the same breath.
+READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Making a launch wait** section NOW, read ALWAYS by this flow. It is the single Claude Code binding for how a delegation's report arrives on this host and for the watchdog an unattended run starts while one is in flight — reaching §6's applier, verifier and integrator, §2's exploration subagents, the integration gate's verifier, a red slice's relaunched applier, and §7's debt-cleanup applier. Its **The model a launch carries** section binds what that `model` parameter is set to, and is read in the same breath.
 
 ## Front-surface binding
 

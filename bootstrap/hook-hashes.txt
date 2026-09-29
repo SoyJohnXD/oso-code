@@ -5,7 +5,7 @@
 # OpenCode installer copies plus the committed OpenCode plugin bundle. The
 # installer compares these published digests with installed bytes; it never
 # replaces them with hashes calculated after installation.
-10c0d7c1289f75a60f827e60e7b552ed9b3f5fff9886bfefa78ca8dc2cb2b53a  plugin/dist/gate.js
+715976a1f743b408ce63e75c1703b0008197db995a63cbf2eacc4ab73dc4e286  plugin/dist/gate.js
 8eedbd56ac482cecc8d806157caa09c85996f5b49e223e4c77c4e2ea6b92dd20  plugin/dist/precommit.js
 609158e6c5fbc237939fa3ddf7faab80ab690bdc0c8d584414a885130103c4e8  plugin/dist/package.json
 3aaa67c6df371430b5ec708eb9f7314104998fde2507d25a02a3c419435e30dc  plugin/git-hooks/pre-commit
@@ -19,4 +19,4 @@ db4216aae259e4a50c17e6753c9b8f9651d43ed33fd70310f393768701a9bf0a  plugin/hooks/b
 3a03a275ce8b36170b53bc4126ce8a1dfe2dbe0f2bc90a57674a83cd9b28e273  plugin/hooks/lib.sh
 3b9821683e46e56ca2f3aff703d2f3ecbfa042f57be0ac8a3aa5d36a1166a5ff  plugin/hooks/lexer.sh
 4fae3fb38808ea6ea401f6a2a28c5cac914e8db88554d03d477e1424ac9b80a8  plugin/hooks/reanchor-after-compact.sh
-679682eed66ba83aed092ec5a85819acc001f43bc33309927a164c805b82c2e9  opencode/dist/oso-code.js
+b4c70bdde854c27f56c428c453c1c4c4404cd339f8b87eb6bd11444924676efd  opencode/dist/oso-code.js

@@ -9,15 +9,7 @@ import {
 } from "../hosts/envelope.ts";
 import type { HostName, PerHost } from "../routes/routes.ts";
 import { CHANGE_SLUG_PATTERN, isDirectory, readStateFile, stateFileFor, stateRootDirectory } from "../state/store.ts";
-import {
-  EXPIRED_DELEGATION_CLAUSE,
-  isDelegationLabel,
-  nowEpochSeconds,
-  readWaitMark,
-  removeLegacyWaitMarks,
-  waitExpired,
-  waitMarkFileFor,
-} from "./delegation.ts";
+import { removeLegacyWaitMarks } from "./delegation.ts";
 import {
   holdsMode,
   hookSessionId,
@@ -50,11 +42,7 @@ function judgeStale({ envelope }: GateRequest): GateOutcome<SessionStartVerdict>
 
 function advisoriesFor(envelope: HookEnvelope, stateFile: string): string[] {
   if (!existsSync(stateFile)) return [];
-  const content = readableContentOf(stateFile);
-  return [
-    ...staleStateAdvisory(envelope.caller, stateFile, content, hookSessionId(envelope)),
-    ...expiredDelegationAdvisory(envelope.caller, envelope.cwd, content ?? ""),
-  ];
+  return staleStateAdvisory(envelope.caller, stateFile, readableContentOf(stateFile), hookSessionId(envelope));
 }
 
 function staleStateAdvisory(
@@ -67,23 +55,6 @@ function staleStateAdvisory(
   if (stateValue(content, "session") === sessionId) return [];
   if (!holdsMode(content) && stateValue(content, "auto") !== RUN_ARMED) return [];
   return [staleStateContext(caller, stateFile, content, sessionId)];
-}
-
-function expiredDelegationAdvisory(caller: HookCaller, cwd: string, content: string): string[] {
-  if (stateValue(content, "auto") !== RUN_ARMED) return [];
-  const label = stateValue(content, "auto_wait");
-  if (!isDelegationLabel(label)) return [];
-  const runSession = stateValue(content, "session");
-  if (runSession === "") return [];
-
-  const mark = readWaitMark(waitMarkFileFor(cwd, runSession));
-  if (mark === undefined || !waitExpired(nowEpochSeconds(), mark.markedAtEpochSeconds)) return [];
-
-  const disarmCommand = `${quoted(stateBinPath(caller))} --session ${quoted(runSession)} set auto_wait=none`;
-  return [
-    `oso-code: this repository's unattended run is still marked as waiting on the delegation ${quoted(label)}. ` +
-      `${EXPIRED_DELEGATION_CLAUSE} Drop the mark with ${disarmCommand} and carry the run on.`,
-  ];
 }
 
 function staleStateContext(caller: HookCaller, stateFile: string, content: string, sessionId: string): string {

@@ -276,7 +276,7 @@ function toolNamesFor(host, gate) {
 
 // core/src/gates/autocontinue.ts
 import { spawnSync } from "node:child_process";
-import { mkdirSync as mkdirSync3, statSync as statSync6, writeFileSync as writeFileSync2 } from "node:fs";
+import { mkdirSync as mkdirSync3, statSync as statSync5, writeFileSync as writeFileSync2 } from "node:fs";
 import path5 from "node:path";
 
 // core/src/shell/lexer.ts
@@ -1395,7 +1395,7 @@ function isErrnoException(error) {
 }
 
 // core/src/gates/delegation.ts
-import { rmSync as rmSync2, statSync as statSync2 } from "node:fs";
+import { rmSync as rmSync2 } from "node:fs";
 import path3 from "node:path";
 
 // core/src/gates/preflight.ts
@@ -1487,35 +1487,14 @@ function hooksManifestFingerprinted(manifestFile) {
 }
 
 // core/src/gates/delegation.ts
-var DELEGATION_WAIT_CEILING_MINUTES = 45;
-var DELEGATION_WAIT_CEILING_SECONDS = DELEGATION_WAIT_CEILING_MINUTES * 60;
-var DELEGATION_LABEL_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
-var DISARMED_LABEL = "none";
 var COUNT_PATTERN = /^[0-9]+$/;
 var MARK_SUFFIX = ".waiting";
-var EXPIRED_DELEGATION_CLAUSE = `A delegation is marked in flight and that mark is older than ${DELEGATION_WAIT_CEILING_MINUTES} minutes, so treat it as lost unless its completion notification still arrives.`;
-function waitExpired(now, markedAtEpochSeconds) {
-  return now - markedAtEpochSeconds >= DELEGATION_WAIT_CEILING_SECONDS;
-}
-function nowEpochSeconds() {
-  return Math.floor(Date.now() / 1e3);
-}
-function isDelegationLabel(label) {
-  return label !== DISARMED_LABEL && DELEGATION_LABEL_PATTERN.test(label);
-}
 function isCount(value) {
   return COUNT_PATTERN.test(value);
 }
 function waitMarkFileFor(cwd, runSession) {
   const repository = repositoryIdFor(stateFileFor(cwd));
   return path3.join(stateRootDirectory(), "runs", repository, `${sanitizeSession(runSession)}${MARK_SUFFIX}`);
-}
-function readWaitMark(markFile) {
-  const stats = statSync2(markFile, { throwIfNoEntry: false });
-  if (stats === void 0 || !stats.isFile()) return void 0;
-  const read = readStateFile(markFile);
-  if (read.kind !== "ok") return void 0;
-  return { markedAtEpochSeconds: Math.floor(stats.mtimeMs / 1e3) };
 }
 function removeWaitMark(markFile) {
   try {
@@ -1537,7 +1516,7 @@ function noDirectoryHoldsTheMark(cause) {
 }
 
 // core/src/gates/in-flight.ts
-import { statSync as statSync4 } from "node:fs";
+import { statSync as statSync3 } from "node:fs";
 
 // core/src/gates/in-flight-registry.ts
 import {
@@ -1548,7 +1527,7 @@ import {
   openSync,
   readFileSync as readFileSync3,
   rmSync as rmSync3,
-  statSync as statSync3,
+  statSync as statSync2,
   writeSync
 } from "node:fs";
 import path4 from "node:path";
@@ -1660,7 +1639,7 @@ function recordCompletion(completedAgentsLog, agentId) {
 }
 function completedAgentCount(stateFile, sessionId) {
   const completedAgentsLog = completedAgentsLogOf(stateFile, sessionId);
-  if (statSync3(completedAgentsLog, { throwIfNoEntry: false }) === void 0) return 0;
+  if (statSync2(completedAgentsLog, { throwIfNoEntry: false }) === void 0) return 0;
   return readFileSync3(completedAgentsLog, "utf8").split("\n").filter((line) => line !== "").length;
 }
 function unregistered(envelope, gate) {
@@ -1743,11 +1722,11 @@ function withRegistered(reported, registered) {
 }
 function transcriptOf(transcriptPath) {
   if (transcriptPath === "") return { path: "", modifiedAtMs: void 0 };
-  return { path: transcriptPath, modifiedAtMs: statSync4(transcriptPath, { throwIfNoEntry: false })?.mtimeMs };
+  return { path: transcriptPath, modifiedAtMs: statSync3(transcriptPath, { throwIfNoEntry: false })?.mtimeMs };
 }
 
 // core/src/gates/watch.ts
-import { readFileSync as readFileSync4, rmSync as rmSync4, statSync as statSync5 } from "node:fs";
+import { readFileSync as readFileSync4, rmSync as rmSync4, statSync as statSync4 } from "node:fs";
 var MINUTE_MS = 6e4;
 var SILENCE_LIMIT_MS = 60 * MINUTE_MS;
 var LONG_RUNNING_LIMIT_MS = 180 * MINUTE_MS;
@@ -1961,7 +1940,7 @@ function pushUnlessCapped(request) {
 }
 function pushesWithoutProgress(position, progress, turnAlreadyContinued) {
   const started = turnAlreadyContinued ? 1 : 0;
-  const stats = statSync6(position.tallyFile, { throwIfNoEntry: false });
+  const stats = statSync5(position.tallyFile, { throwIfNoEntry: false });
   if (stats === void 0) return started + 1;
   const read = stats.isFile() ? readStateFile(position.tallyFile) : { kind: "unreadable", cause: "" };
   if (read.kind !== "ok") return degraded(position.sessionId, "the push tally is not a readable file");
@@ -2014,7 +1993,7 @@ function gateEvent(event, session, detail) {
   return { event, session, command: detail, gate: route.script, hookEvent: route.event };
 }
 function ownRunState(stateFile, sessionId) {
-  const stats = statSync6(stateFile, { throwIfNoEntry: false });
+  const stats = statSync5(stateFile, { throwIfNoEntry: false });
   if (stats === void 0 || !stats.isFile()) return void 0;
   const read = readStateFile(stateFile);
   if (read.kind !== "ok") return void 0;
@@ -2024,7 +2003,7 @@ function tallyFileFor(journalFile) {
   return path5.join(path5.dirname(journalFile), `${path5.basename(journalFile, ".log")}.pushes`);
 }
 function journalBytesIn(journalFile) {
-  const stats = statSync6(journalFile, { throwIfNoEntry: false });
+  const stats = statSync5(journalFile, { throwIfNoEntry: false });
   return stats !== void 0 && stats.isFile() ? stats.size : 0;
 }
 
@@ -2746,30 +2725,13 @@ function judgeStale({ envelope }) {
 }
 function advisoriesFor(envelope, stateFile) {
   if (!existsSync2(stateFile)) return [];
-  const content = readableContentOf(stateFile);
-  return [
-    ...staleStateAdvisory(envelope.caller, stateFile, content, hookSessionId(envelope)),
-    ...expiredDelegationAdvisory(envelope.caller, envelope.cwd, content ?? "")
-  ];
+  return staleStateAdvisory(envelope.caller, stateFile, readableContentOf(stateFile), hookSessionId(envelope));
 }
 function staleStateAdvisory(caller, stateFile, content, sessionId) {
   if (content === void 0) return [staleStateContext(caller, stateFile, "", sessionId)];
   if (stateValue(content, "session") === sessionId) return [];
   if (!holdsMode(content) && stateValue(content, "auto") !== RUN_ARMED) return [];
   return [staleStateContext(caller, stateFile, content, sessionId)];
-}
-function expiredDelegationAdvisory(caller, cwd, content) {
-  if (stateValue(content, "auto") !== RUN_ARMED) return [];
-  const label = stateValue(content, "auto_wait");
-  if (!isDelegationLabel(label)) return [];
-  const runSession = stateValue(content, "session");
-  if (runSession === "") return [];
-  const mark = readWaitMark(waitMarkFileFor(cwd, runSession));
-  if (mark === void 0 || !waitExpired(nowEpochSeconds(), mark.markedAtEpochSeconds)) return [];
-  const disarmCommand = `${quoted(stateBinPath(caller))} --session ${quoted(runSession)} set auto_wait=none`;
-  return [
-    `oso-code: this repository's unattended run is still marked as waiting on the delegation ${quoted(label)}. ${EXPIRED_DELEGATION_CLAUSE} Drop the mark with ${disarmCommand} and carry the run on.`
-  ];
 }
 function staleStateContext(caller, stateFile, content, sessionId) {
   const skillPrefix = skillPrefixFor(caller.host);
@@ -2820,7 +2782,7 @@ function judgeStatebin(_request) {
 
 // core/src/gates/teardown.ts
 import { execFileSync as execFileSync2 } from "node:child_process";
-import { existsSync as existsSync3, readdirSync as readdirSync2, renameSync as renameSync2, rmSync as rmSync5, rmdirSync, statSync as statSync7 } from "node:fs";
+import { existsSync as existsSync3, readdirSync as readdirSync2, renameSync as renameSync2, rmSync as rmSync5, rmdirSync, statSync as statSync6 } from "node:fs";
 import path8 from "node:path";
 var ABANDONED_STATE_DAYS = 7;
 var EVENTS_LOG_RETENTION_DAYS = 30;
@@ -2935,7 +2897,7 @@ function directoryEntries(directory) {
   }
 }
 function isFile(target) {
-  const stats = statSync7(target, { throwIfNoEntry: false });
+  const stats = statSync6(target, { throwIfNoEntry: false });
   return stats !== void 0 && stats.isFile();
 }
 function gitWorktreeRemove(repoPath, worktreePath) {
