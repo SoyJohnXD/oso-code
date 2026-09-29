@@ -64,13 +64,14 @@ export function callerFor(directory: string): HookCaller {
 export function composeEnvelope(input: ToolExecuteInput, output: ToolExecuteOutput): HookEnvelope {
   const cwd = input.cwd ?? process.cwd();
   const args = output.args ?? {};
-  const filePath = args.filePath;
+  const { filePath, patchText } = args;
   return hostEnvelope(callerFor(cwd), {
     sessionId: input.sessionID ?? "",
     cwd,
     toolName: input.tool,
     commandLine: commandLineFor(args),
     filePath: typeof filePath === "string" ? filePath : "",
+    patchText: typeof patchText === "string" ? patchText : "",
   });
 }
 

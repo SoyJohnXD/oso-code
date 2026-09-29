@@ -1,0 +1,26 @@
+{
+  "name": "unknown-tool gate: a plan awaiting its slice lets a tool from the read-only set through",
+  "source": [
+    {
+      "assertion": "assert_allows \"a plan awaiting its slice lets a read-only tool through\" block-unknown-tool.sh \"$(tool_input engram_mem_search)\""
+    }
+  ],
+  "gate": "unknown",
+  "argv": [
+    "--allow",
+    "bash|read|grep|engram_mem_search|edit|write|apply_patch"
+  ],
+  "env": {
+    "OSO_HOST": "opencode"
+  },
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"engram_mem_search\",\"tool_input\":{}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

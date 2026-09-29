@@ -19,6 +19,7 @@ function everyTextFieldCarrying(value: string): Readonly<Record<HookTextField, s
     cwd: value,
     toolName: value,
     filePath: value,
+    patchText: value,
     commandLine: value,
     source: value,
     agentId: value,

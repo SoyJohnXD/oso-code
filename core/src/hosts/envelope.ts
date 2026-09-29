@@ -15,6 +15,7 @@ export type HookEnvelope = Readonly<{
   cwd: string;
   toolName: string;
   filePath: string;
+  patchText: string;
   commandLine: string;
   source: string;
   agentId: string;
@@ -72,6 +73,7 @@ const NO_HOOK_FIELD_NAMED: Omit<HookEnvelope, "caller"> = {
   cwd: "",
   toolName: "",
   filePath: "",
+  patchText: "",
   commandLine: "",
   source: "",
   agentId: "",
@@ -110,6 +112,7 @@ export function readEnvelope(hookText: string, caller: HookCaller): HookEnvelope
     cwd: jsonField(payload, "cwd"),
     toolName: jsonField(payload, "tool_name"),
     filePath: jsonField(payload, "file_path"),
+    patchText: jsonField(payload, "patchText"),
     commandLine: jsonCommandLine(payload),
     source: jsonField(payload, "source"),
     agentId: jsonField(payload, "agent_id"),

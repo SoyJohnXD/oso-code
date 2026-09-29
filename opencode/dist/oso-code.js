@@ -703,6 +703,7 @@ var NO_HOOK_FIELD_NAMED = {
   cwd: "",
   toolName: "",
   filePath: "",
+  patchText: "",
   commandLine: "",
   source: "",
   agentId: "",
@@ -2328,17 +2329,21 @@ function judgeEdits({ envelope }) {
   const state = readArmedState(stateFile);
   if (state.kind === "absent") return ALLOWED;
   if (state.kind === "unusable") return deniedForUnusableState("edits", stateFile, session);
-  if (foreignOwner(state.content, session) !== void 0) return ALLOWED;
-  if (!stateSays(state.content, "mode", "plan")) return ALLOWED;
-  if (aSliceIsActive(state.content)) return ALLOWED;
-  const remedy = osoStateRemedy(session, "set active_slice=<n>");
+  if (!planAwaitsItsSlice(state.content, session)) return ALLOWED;
   return denied({
     gate: "edits",
-    message: `oso-code: plan mode is active but no slice is active. Activate it first (${remedy}), then retry the edit.`,
+    message: `oso-code: plan mode is active but no slice is active. Activate it first (${sliceArmingRemedy(session)}), then retry the edit.`,
     event: "edit-denied",
     session,
     detail: envelope.filePath
   });
+}
+function planAwaitsItsSlice(stateContent, session) {
+  if (foreignOwner(stateContent, session) !== void 0) return false;
+  return stateSays(stateContent, "mode", "plan") && !aSliceIsActive(stateContent);
+}
+function sliceArmingRemedy(session) {
+  return osoStateRemedy(session, "set active_slice=<n>");
 }
 function aSliceIsActive(stateContent) {
   const slices = stateRecords(stateContent, "active_slice");
@@ -3048,6 +3053,104 @@ function gitWorktreePrune(repoPath) {
 }
 
 // core/src/gates/unknown.ts
+import path12 from "node:path";
+
+// core/src/install/opencode.ts
+import path10 from "node:path";
+
+// core/src/install/backup.ts
+var DISK_BLOCK_SIZE_BYTES = 512;
+var BYTES_PER_KIB = 1024;
+var DISK_BLOCKS_PER_KIB = BYTES_PER_KIB / DISK_BLOCK_SIZE_BYTES;
+
+// core/src/install/opencode-config.ts
+var EDIT_RULES_THE_HOST_RESOLVES_BY_LAST_MATCH = [
+  { pattern: "*", verdict: "allow" },
+  { pattern: ".config/opencode/**", verdict: "deny" },
+  { pattern: "**/.config/opencode/**", verdict: "deny" },
+  { pattern: ".opencode/**", verdict: "deny" },
+  { pattern: "**/.opencode/**", verdict: "deny" },
+  { pattern: ".git/**", verdict: "deny" },
+  { pattern: "**/.git/**", verdict: "deny" },
+  { pattern: ".local/state/oso-code/**", verdict: "deny" },
+  { pattern: "**/.local/state/oso-code/**", verdict: "deny" }
+];
+var EDIT_CONTROL_BOUNDING_A_REACH = `edit denied on ${EDIT_RULES_THE_HOST_RESOLVES_BY_LAST_MATCH.filter(
+  (rule) => rule.verdict === "deny"
+).map((rule) => rule.pattern).join(" ")}`;
+var PATH_SEPARATOR = "/";
+var SURFACE_AT_ANY_DEPTH_PREFIX = "**/";
+var OPENCODE_AGENTS_PER_PROFILE_ROLE = {
+  applier: ["oso-applier"],
+  verifier: ["oso-verifier"],
+  judges: ["oso-debt-sweep", "oso-doubt-pass", "oso-security-reviewer", "oso-triage"]
+};
+var OPENCODE_AGENTS_THE_PROFILE_DRIVES = Object.values(OPENCODE_AGENTS_PER_PROFILE_ROLE).flat();
+var SURFACES_THE_EDIT_CONTROL_DENIES = [
+  ...new Set(
+    EDIT_RULES_THE_HOST_RESOLVES_BY_LAST_MATCH.filter((rule) => rule.verdict === "deny").map(
+      (rule) => literalHeadOf(withoutAnyDepthPrefix(rule.pattern))
+    )
+  )
+];
+function withoutAnyDepthPrefix(named) {
+  return named.startsWith(SURFACE_AT_ANY_DEPTH_PREFIX) ? named.slice(SURFACE_AT_ANY_DEPTH_PREFIX.length) : named;
+}
+function literalHeadOf(pattern) {
+  const wildcard = pattern.indexOf("*");
+  const head = wildcard === -1 ? pattern : pattern.slice(0, wildcard);
+  return head.endsWith(PATH_SEPARATOR) ? head.slice(0, -PATH_SEPARATOR.length) : head;
+}
+
+// core/src/install/opencode.ts
+function opencodePathsFor(homeDirectory2, environment) {
+  const configHome = path10.join(environment["XDG_CONFIG_HOME"] ?? path10.join(homeDirectory2, ".config"), "opencode");
+  const stateRoot = path10.join(homeDirectory2, ".local", "state", "oso-code");
+  return {
+    homeDirectory: homeDirectory2,
+    configHome,
+    configFile: path10.join(configHome, "opencode.json"),
+    globalFile: path10.join(configHome, "AGENTS.md"),
+    stateRoot,
+    backupsRoot: stateRoot
+  };
+}
+
+// core/src/install/opencode-install.ts
+import path11 from "node:path";
+
+// core/src/install/verify-claude.ts
+var POSIX_KERNEL_EXECUTABLE_MAGICS = ["\x7FELF", "#!", "\xCF\xFA\xED\xFE", "\xCE\xFA\xED\xFE", "\xCA\xFE\xBA\xBE"];
+var WIN32_KERNEL_EXECUTABLE_MAGICS = ["MZ"];
+var WIDEST_EXECUTABLE_MAGIC_BYTES = Math.max(
+  ...[...POSIX_KERNEL_EXECUTABLE_MAGICS, ...WIN32_KERNEL_EXECUTABLE_MAGICS].map((magic) => magic.length)
+);
+
+// core/src/install/engram.ts
+var MEBIBYTE = 1024 * 1024;
+var ARCHIVE_EXPANSION_CEILING_BYTES = 128 * MEBIBYTE;
+
+// core/src/install/opencode-install.ts
+function openCodeInstallTargets(paths) {
+  return {
+    skills: path11.join(paths.configHome, "skill"),
+    agents: path11.join(paths.configHome, "agent"),
+    commands: path11.join(paths.configHome, "command"),
+    plugin: path11.join(paths.configHome, "plugin"),
+    hooks: path11.join(paths.configHome, "hooks"),
+    gitHooks: path11.join(paths.configHome, "git-hooks"),
+    stateBin: path11.join(paths.configHome, "bin"),
+    dist: path11.join(paths.configHome, "dist"),
+    engramPlugin: path11.join(paths.configHome, "plugins", "engram.ts"),
+    impeccableMount: path11.join(paths.homeDirectory, ".agents", "skills", "impeccable"),
+    impeccableOptOut: path11.join(paths.stateRoot, "impeccable-opt-out"),
+    ownerRegistry: path11.join(paths.stateRoot, "opencode-install-registry"),
+    restoreExercisedMarker: path11.join(paths.stateRoot, ".install-restore-verified-opencode"),
+    planArtifactRoot: path11.join(paths.stateRoot, "plans")
+  };
+}
+
+// core/src/gates/unknown.ts
 var TOOL_NAME = /^[A-Za-z0-9_:.-]+$/;
 var UNKNOWN_TOOL_GATE = {
   gate: "unknown",
@@ -3057,22 +3160,69 @@ var UNKNOWN_TOOL_GATE = {
 function judgeUnknownTool({ envelope, argv }) {
   const configured = readAllowlist(argv);
   if (configured.kind === "misconfigured") return configurationError(configured.cause);
-  const allowlist = configured.allowlist;
-  const session = sanitizeSession(envelope.sessionId);
+  const session = hookSessionId(envelope);
   if (session === "") return payloadUnparseable();
   const stateFile = stateFileFor(envelope.cwd);
   const state = readArmedState(stateFile);
   if (state.kind === "absent") return ALLOWED;
   if (state.kind === "unusable") return deniedForUnusableState("unknown", stateFile, session);
   const toolName = envelope.toolName;
-  if (TOOL_NAME.test(toolName) && allowlistCarries(allowlist, toolName)) return ALLOWED;
+  if (RELEASE_SHAPED_TOOL.test(toolName)) return deniedAsRelease(toolName, session);
+  const harnessTarget = harnessTreeTargetOf(envelope);
+  if (harnessTarget !== void 0) return deniedAsHarnessWrite(toolName, harnessTarget, session);
+  if (!planAwaitsItsSlice(state.content, session)) return ALLOWED;
+  if (TOOL_NAME.test(toolName) && allowlistCarries(configured.allowlist, toolName)) return ALLOWED;
+  return deniedUntilASliceIsArmed(toolName, session);
+}
+var RELEASE_SHAPED_TOOL = /(deploy|publish|release)/i;
+function deniedAsRelease(toolName, session) {
   return denied({
     gate: "unknown",
-    message: `oso-code: tool '${toolName === "" ? "<missing>" : toolName}' is not in this release's OpenCode hook allowlist. Use one of the allowed local tools instead: ${allowlist.replaceAll("|", ", ")}.`,
+    message: `oso-code: tool '${toolName}' is shaped like a deploy, publish or release, and this repository carries oso-code run state, so no agent may run it. Run it from your own terminal instead.`,
+    event: "release-tool-denied",
+    session,
+    detail: toolName
+  });
+}
+function deniedAsHarnessWrite(toolName, target, session) {
+  return denied({
+    gate: "unknown",
+    message: `oso-code: '${toolName}' would write ${target}, inside the installed oso-code harness tree, which no agent may change. Change the repository's own copy and reinstall instead.`,
+    event: "harness-write-denied",
+    session,
+    detail: target
+  });
+}
+function deniedUntilASliceIsArmed(toolName, session) {
+  return denied({
+    gate: "unknown",
+    message: `oso-code: plan mode is active but no slice is active, and tool '${toolName === "" ? "<missing>" : toolName}' is not known to be read-only, so it waits for the slice as an edit would. Activate it first (${sliceArmingRemedy(session)}), then retry the call.`,
     event: "unknown-tool-denied",
     session,
     detail: toolName
   });
+}
+function harnessTreeTargetOf(envelope) {
+  const targets = writeTargetsOf(envelope).map((target) => path12.resolve(envelope.cwd, target));
+  if (targets.length === 0) return void 0;
+  const harnessTree = installedHarnessTree();
+  return targets.find((target) => harnessTree.some((directory) => liesWithin(directory, target)));
+}
+var PATCH_TARGET_MARKER = /^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$/gm;
+function writeTargetsOf({ toolName, filePath, patchText }) {
+  if (toolName === "edit" || toolName === "write") return filePath === "" ? [] : [filePath];
+  if (toolName === "apply_patch") return [...patchText.matchAll(PATCH_TARGET_MARKER)].map((marker) => (marker[1] ?? "").trim());
+  return [];
+}
+function installedHarnessTree() {
+  const paths = opencodePathsFor(homeDirectoryFrom(process.platform, process.env), process.env);
+  const targets = openCodeInstallTargets(paths);
+  return [targets.skills, targets.agents, targets.commands, targets.plugin, targets.hooks, paths.stateRoot];
+}
+function liesWithin(directory, target) {
+  const relative = path12.relative(directory, target);
+  const escapes = relative === ".." || relative.startsWith(`..${path12.sep}`) || path12.isAbsolute(relative);
+  return !escapes;
 }
 function readAllowlist(argv) {
   if (argv[0] !== "--allow" || argv.length !== 2) {
@@ -3097,7 +3247,7 @@ function allowlistCarries(allowlist, toolName) {
 
 // core/src/gates/version.ts
 import { execFileSync as execFileSync3 } from "node:child_process";
-import path10 from "node:path";
+import path13 from "node:path";
 var RELEASE_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/;
 var GITHUB_URL_PREFIX = "https://github.com/";
 var FETCH_CONNECT_SECONDS = 2;
@@ -3125,10 +3275,10 @@ function judgeVersion({ envelope }) {
   return { verdict: { kind: "context", additionalContext: context }, events: [] };
 }
 function pluginManifestFile() {
-  return path10.join(pluginRootDirectory(), ".claude-plugin", "plugin.json");
+  return path13.join(pluginRootDirectory(), ".claude-plugin", "plugin.json");
 }
 function publishedReleaseCacheFile() {
-  return path10.join(stateRootDirectory(), "published-release");
+  return path13.join(stateRootDirectory(), "published-release");
 }
 function repositorySlugOf(repositoryUrl) {
   if (!repositoryUrl.startsWith(GITHUB_URL_PREFIX) || repositoryUrl.length === GITHUB_URL_PREFIX.length) {
@@ -3139,7 +3289,7 @@ function repositorySlugOf(repositoryUrl) {
 }
 function marketplaceServesRepository(repositorySlug) {
   const home = homeDirectoryFrom(process.platform, process.env);
-  const marketplacesFile = path10.join(home, ".claude", "plugins", "known_marketplaces.json");
+  const marketplacesFile = path13.join(home, ".claude", "plugins", "known_marketplaces.json");
   const registrations = readFileOrEmpty(marketplacesFile).replace(/\s/g, "");
   return registrations.includes(`"repo":"${repositorySlug}"`);
 }
@@ -3158,7 +3308,7 @@ function cachedPublishedRelease(cacheFile) {
 function refreshPublishedReleaseCache(cacheFile, repositorySlug) {
   try {
     writeFileAtomically(
-      path10.dirname(cacheFile),
+      path13.dirname(cacheFile),
       cacheFile,
       fetchedHighestReleaseVersion(repositorySlug),
       ".published-release."
@@ -3313,7 +3463,7 @@ function openCodeHookNamed(mechanism, gate) {
 
 // core/src/state/plan.ts
 import { chmodSync, existsSync as existsSync3, mkdirSync as mkdirSync4, readFileSync as readFileSync2, renameSync as renameSync3, rmSync as rmSync5 } from "node:fs";
-import path11 from "node:path";
+import path14 from "node:path";
 
 // core/src/state/transitions.ts
 function armPlan() {
@@ -3330,14 +3480,14 @@ function isValidPlanDigest(value) {
   return PLAN_DIGEST_PATTERN.test(value);
 }
 function planPaths(stateFile, digest) {
-  const root = path11.join(stateRootDirectory(), "plans");
-  const dir = path11.join(root, repositoryIdFor(stateFile));
+  const root = path14.join(stateRootDirectory(), "plans");
+  const dir = path14.join(root, repositoryIdFor(stateFile));
   return {
     root,
     dir,
-    presentedFile: path11.join(dir, `presented-${digest}.md`),
-    approvedFile: path11.join(dir, `approved-${digest}.md`),
-    currentFile: path11.join(dir, "current.md")
+    presentedFile: path14.join(dir, `presented-${digest}.md`),
+    approvedFile: path14.join(dir, `approved-${digest}.md`),
+    currentFile: path14.join(dir, "current.md")
   };
 }
 function ensurePlanDirectory(paths) {
@@ -3574,8 +3724,8 @@ function worktreeGitDir(dotGit, baseDir) {
   if (raw === "") {
     return null;
   }
-  const path12 = isAbsolute(raw) ? raw : join(baseDir, raw);
-  return resolve(path12);
+  const path15 = isAbsolute(raw) ? raw : join(baseDir, raw);
+  return resolve(path15);
 }
 function stripWorktreesSuffix(gitDir) {
   const marker = `${sep}worktrees${sep}`;
@@ -3784,7 +3934,7 @@ async function pinChildSession(launch, projectCommonDir, request) {
     }
     return { state: "pinned", launch, sessionID: session.id };
   } catch (error) {
-    return { state: "unpinnable", launch, reason: `the child session could not be created: ${messageOf(error)}` };
+    return { state: "unpinnable", launch, reason: `the child session could not be created: ${messageOf2(error)}` };
   }
 }
 function proofRejection({ agent, applierProof }) {
@@ -3836,7 +3986,7 @@ async function collectChildReport(child, request) {
     };
   } catch (error) {
     const unstopped = await stopChild(child.sessionID, child.launch.worktree, request.transport);
-    const failure = `the child turn did not complete: ${messageOf(error)}`;
+    const failure = `the child turn did not complete: ${messageOf2(error)}`;
     return {
       outcome: "blocked",
       worktree: child.launch.worktree,
@@ -3858,7 +4008,7 @@ async function stopChild(sessionID, directory, transport) {
     await withinBound(() => transport.abort({ sessionID, directory }), ABORT_BOUND_MS);
     return void 0;
   } catch (error) {
-    return `the child session was left running: ${messageOf(error)}`;
+    return `the child session was left running: ${messageOf2(error)}`;
   }
 }
 function pinnedSessionTransport(session) {
@@ -3880,7 +4030,7 @@ function pinnedSessionTransport(session) {
 async function unwrap(call) {
   const result = await call;
   if (result.data === void 0) {
-    throw new Error(messageOf(result.error));
+    throw new Error(messageOf2(result.error));
   }
   return result.data;
 }
@@ -3894,7 +4044,7 @@ function isTextPart(part) {
   const record = part;
   return typeof record === "object" && record !== null && record.type === "text" && typeof record.text === "string";
 }
-function messageOf(error) {
+function messageOf2(error) {
   if (error instanceof Error) {
     return error.message;
   }
@@ -3940,13 +4090,14 @@ function callerFor(directory) {
 function composeEnvelope(input, output) {
   const cwd = input.cwd ?? process.cwd();
   const args = output.args ?? {};
-  const filePath = args.filePath;
+  const { filePath, patchText } = args;
   return hostEnvelope(callerFor(cwd), {
     sessionId: input.sessionID ?? "",
     cwd,
     toolName: input.tool,
     commandLine: commandLineFor(args),
-    filePath: typeof filePath === "string" ? filePath : ""
+    filePath: typeof filePath === "string" ? filePath : "",
+    patchText: typeof patchText === "string" ? patchText : ""
   });
 }
 function composeLifecycleEnvelope(input) {
@@ -3980,7 +4131,7 @@ function routeMatcher(matcher) {
     return new RegExp(matcher);
   } catch (err) {
     throw new Error(
-      `the installed gate route table carries a matcher no regular expression compiles from: ${JSON.stringify(matcher)} (${messageOf(err)})`
+      `the installed gate route table carries a matcher no regular expression compiles from: ${JSON.stringify(matcher)} (${messageOf2(err)})`
     );
   }
 }
@@ -3998,7 +4149,7 @@ function judge(route, envelope) {
     }
     return { kind: "judged", verdict: run.verdict, stderr: run.stderr };
   } catch (err) {
-    return { kind: "unusable", detail: `the ${route.gate} gate could not run: ${messageOf(err)}` };
+    return { kind: "unusable", detail: `the ${route.gate} gate could not run: ${messageOf2(err)}` };
   }
 }
 function failureDetail(gate, stderr) {
@@ -4129,7 +4280,7 @@ function continueUnattendedRun(request) {
     return Promise.resolve({ kind: "already-driving" });
   }
   driving.add(request.sessionID);
-  return postUntilTheRunStops(request).catch((error) => standDownTraced(request, `the continuation rail failed: ${messageOf(error)}`, 0)).finally(() => {
+  return postUntilTheRunStops(request).catch((error) => standDownTraced(request, `the continuation rail failed: ${messageOf2(error)}`, 0)).finally(() => {
     driving.delete(request.sessionID);
   });
 }
@@ -4140,7 +4291,7 @@ async function postUntilTheRunStops(request) {
     try {
       order = nextContinuationOrder(request);
     } catch (error) {
-      return standDownTraced(request, `the unattended run could not be read: ${messageOf(error)}`, turns);
+      return standDownTraced(request, `the unattended run could not be read: ${messageOf2(error)}`, turns);
     }
     if (order === void 0) {
       return { kind: "stood-down", turns };
@@ -4148,7 +4299,7 @@ async function postUntilTheRunStops(request) {
     try {
       await postContinuationTurn(request, order);
     } catch (error) {
-      return standDownTraced(request, `the continuation turn did not land: ${messageOf(error)}`, turns);
+      return standDownTraced(request, `the continuation turn did not land: ${messageOf2(error)}`, turns);
     }
     turns += 1;
   }
@@ -4194,9 +4345,9 @@ var MARKER_SUFFIX = ".json";
 function markerPath(commonDir, sessionId) {
   return join2(commonDir, `${MARKER_PREFIX}${sessionId}${MARKER_SUFFIX}`);
 }
-function readMarkerFile(path12) {
+function readMarkerFile(path15) {
   try {
-    return normalizeMarker(JSON.parse(readFileSync4(path12, "utf8")));
+    return normalizeMarker(JSON.parse(readFileSync4(path15, "utf8")));
   } catch {
     return null;
   }
@@ -4258,8 +4409,8 @@ function listStale(commonDir) {
     if (isLive(marker)) {
       continue;
     }
-    for (const path12 of marker.worktrees) {
-      orphans.push({ path: path12, sessionId: marker.sessionId });
+    for (const path15 of marker.worktrees) {
+      orphans.push({ path: path15, sessionId: marker.sessionId });
     }
   }
   return orphans;
@@ -4323,11 +4474,11 @@ function sweepStale(commonDir, options = {}) {
       continue;
     }
     let tornDown = true;
-    for (const path12 of marker.worktrees) {
-      if (removeWorktree(commonDir, path12, git)) {
-        reaped.push(path12);
+    for (const path15 of marker.worktrees) {
+      if (removeWorktree(commonDir, path15, git)) {
+        reaped.push(path15);
       } else {
-        left.push(path12);
+        left.push(path15);
         tornDown = false;
       }
     }
@@ -4337,9 +4488,9 @@ function sweepStale(commonDir, options = {}) {
   }
   return { reaped, left };
 }
-function removeWorktree(commonDir, path12, git) {
+function removeWorktree(commonDir, path15, git) {
   const cwd = dirname3(commonDir);
-  if (!runGit(git, ["worktree", "remove", path12], cwd)) {
+  if (!runGit(git, ["worktree", "remove", path15], cwd)) {
     return false;
   }
   runGit(git, ["worktree", "prune"], cwd);
@@ -4480,7 +4631,7 @@ function registerWorkspaceAdapter(input) {
   } catch (err) {
     recordTrace({
       origin: "workspace.register",
-      detail: messageOf(err),
+      detail: messageOf2(err),
       severity: "advisory",
       client: input.client
     });
@@ -4514,7 +4665,7 @@ function orphanWorktreeAdviceOnce(directory, client) {
       orphanAdviceValue = buildStaleAdvice(listStale(commonDirOf(directory)));
     } catch (err) {
       orphanAdviceValue = "";
-      recordTrace({ origin: "lifecycle.orphan-advice", detail: messageOf(err), severity: "advisory", client });
+      recordTrace({ origin: "lifecycle.orphan-advice", detail: messageOf2(err), severity: "advisory", client });
     }
   }
   return orphanAdviceValue;
@@ -4563,7 +4714,7 @@ function markSessionLive(sessionID, directory, client) {
       worktrees: []
     });
   } catch (err) {
-    recordTrace({ origin: "session.idle", detail: messageOf(err), severity: "advisory", sessionID, client });
+    recordTrace({ origin: "session.idle", detail: messageOf2(err), severity: "advisory", sessionID, client });
   }
 }
 var osoCode = async (pluginInput) => {
@@ -4572,13 +4723,13 @@ var osoCode = async (pluginInput) => {
   try {
     sweepStale(commonDirOf(directory));
   } catch (err) {
-    recordTrace({ origin: "lifecycle.sweep", detail: messageOf(err), severity: "advisory", client });
+    recordTrace({ origin: "lifecycle.sweep", detail: messageOf2(err), severity: "advisory", client });
   }
   registerWorkspaceAdapter({ experimentalWorkspace: pluginInput?.experimental_workspace, client });
   try {
     assertGateRoutesCompile(routes);
   } catch (err) {
-    recordTrace({ origin: "gate-routes", detail: messageOf(err), severity: "enforcement", client });
+    recordTrace({ origin: "gate-routes", detail: messageOf2(err), severity: "enforcement", client });
   }
   return {
     "tool.execute.before": async (input, output) => {
@@ -4607,7 +4758,7 @@ var osoCode = async (pluginInput) => {
         };
         return target;
       } catch (err) {
-        recordTrace({ origin: "shell.env", detail: messageOf(err), severity: "advisory", sessionID, client });
+        recordTrace({ origin: "shell.env", detail: messageOf2(err), severity: "advisory", sessionID, client });
         return output ?? {};
       }
     },
@@ -4653,7 +4804,7 @@ var osoCode = async (pluginInput) => {
           });
         }
       } catch (err) {
-        recordTrace({ origin: "system.transform", detail: messageOf(err), severity: "advisory", sessionID, client });
+        recordTrace({ origin: "system.transform", detail: messageOf2(err), severity: "advisory", sessionID, client });
       }
     },
     "experimental.session.compacting": async () => {

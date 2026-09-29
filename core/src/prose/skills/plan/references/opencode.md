@@ -48,7 +48,7 @@ This host publishes the ROOT session id through `shell.env` for tool subprocesse
 
 ## The runtime gates, and the two layers of the commit rail
 
-The installed plugin's `tool.execute.before` hook is the gate rail: a throw inside it blocks the tool and surfaces the reason to the model (F7). The TS shim spawns the existing bash gate scripts unchanged and translates all three exits (D1): deny JSON → throw; empty stdout → allow; exit 2 + stderr → block. The commit gate and the edits-without-slice gate ride `tool.execute.before`; the unknown-tool catch-all deny closes every tool outside the allowlist while a slice is armed (D26). Until the installer (S13) has materialized the plugin and the operator has confirmed the config, report the gates as installed but not enforcing and never describe them as active.
+The installed plugin's `tool.execute.before` hook is the gate rail: a throw inside it blocks the tool and surfaces the reason to the model (F7). The TS shim spawns the existing bash gate scripts unchanged and translates all three exits (D1): deny JSON → throw; empty stdout → allow; exit 2 + stderr → block. The commit gate and the edits-without-slice gate ride `tool.execute.before`; the unknown-tool gate passes any tool but a release-shaped name, a write into the installed harness tree, and, while a plan awaits its slice, an unlisted tool (D26). Until the installer (S13) has materialized the plugin and the operator has confirmed the config, report the gates as installed but not enforcing and never describe them as active.
 
 ## What the unattended marker arms on this host
 

@@ -146,7 +146,7 @@ export const GATE_ROWS = [
 export const RECOVERY_ROWS: readonly RecoveryRow[] = [
   { gate: "commit", route: "the deny reads the session's own `mode` and names that mode's own path to green — plan's apply → verify loop, or quick/debug's close step — never a menu of every mode's step, and never the state write that would flip the flag itself." },
   { gate: "edits", route: "the deny names the exact `oso-state` invocation that arms the slice this gate is waiting for — the one thing only this gate knows." },
-  { gate: "unknown", route: "an unlisted tool is denied with the exact allowlist this release admits." },
+  { gate: "unknown", route: "any tool passes except three denies, each armed only while a state file exists: a deploy-, publish- or release-shaped tool name is denied in every mode — run it from your own terminal; an `edit`, `write` or `apply_patch` whose target lies inside the installed harness tree is denied — change the repository's copy and reinstall (only `filePath` and the `apply_patch` body are read for a target, so a tool with any other argument shape is never path-checked); and while a plan awaits its slice, a tool outside the listed set is denied with the `oso-state` invocation that arms the slice." },
   { gate: "proddeploy", route: "take the run back (`oso-state --session <id> set auto=done`) and run the command from your own terminal — this gate arms only while THIS session's unattended run is still in flight." },
 ];
 

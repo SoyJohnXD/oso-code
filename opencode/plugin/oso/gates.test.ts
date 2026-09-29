@@ -128,17 +128,97 @@ test("an edit with no slice armed is denied and names the state write that arms 
   }
 });
 
-test("the unknown-tool gate is handed its route's own allowlist, so a listed tool passes and a stranger does not", () => {
+const UNLISTED_TOOLS = ["engram_mem_timeline", "somemcp_do_thing"];
+const RELEASE_SHAPED_TOOLS = ["vercel_create_deployment", "npm_publish", "gh_release_create"];
+const READ_ONLY_TOOLS = ["read", "grep", "engram_mem_search"];
+const PLAN_AWAITING_A_SLICE = ["mode=plan", "active_slice=none", "verify_green=false"];
+const MODES_WITH_WORK_UNDER_WAY: readonly (readonly string[])[] = [
+  ["mode=plan", "active_slice=4", "verify_green=false"],
+  ["mode=quick"],
+  ["mode=debug"],
+];
+
+function underState(pairs: readonly string[], check: (fixture: Fixture) => void): void {
   const fixture = makeFixture();
   try {
-    arm(fixture, ["mode=plan", "active_slice=4", "verify_green=false"]);
-    assert.equal(judgeTool(fixture, "unknown", "bash", {}).kind, "allow");
-    const stranger = judgeTool(fixture, "unknown", "frobnicate", {});
-    assert.equal(stranger.kind, "deny");
-    assert.match(stranger.message, /OpenCode hook allowlist/);
+    if (pairs.length > 0) arm(fixture, pairs);
+    check(fixture);
   } finally {
     rmSync(fixture.base, { recursive: true, force: true });
   }
+}
+
+function unknownGateKinds(fixture: Fixture, tools: readonly string[]): Record<string, string> {
+  return Object.fromEntries(tools.map((tool) => [tool, judgeTool(fixture, "unknown", tool, {}).kind]));
+}
+
+function everyToolJudged(tools: readonly string[], kind: string): Record<string, string> {
+  return Object.fromEntries(tools.map((tool) => [tool, kind]));
+}
+
+function installedHarnessFiles(fixture: Fixture): string[] {
+  const configHome = join(process.env.XDG_CONFIG_HOME ?? join(fixture.home, ".config"), "opencode");
+  return [
+    ...["skill", "agent", "command", "plugin", "hooks"].map((directory) => join(configHome, directory, "x.md")),
+    join(fixture.home, ".local", "state", "oso-code", "x.state"),
+  ];
+}
+
+function harnessWriteKinds(fixture: Fixture, target: string): Record<string, string> {
+  const patchText = `*** Begin Patch\n*** Update File: ${target}\n@@\n-a\n+b\n*** End Patch`;
+  return {
+    edit: judgeTool(fixture, "unknown", "edit", { filePath: target }).kind,
+    write: judgeTool(fixture, "unknown", "write", { filePath: target }).kind,
+    apply_patch: judgeTool(fixture, "unknown", "apply_patch", { patchText }).kind,
+  };
+}
+
+test("an unlisted tool passes the armed unknown-tool gate while a slice is active or the mode is quick or debug", () => {
+  for (const pairs of MODES_WITH_WORK_UNDER_WAY) {
+    underState(pairs, (fixture) => {
+      assert.deepEqual(unknownGateKinds(fixture, UNLISTED_TOOLS), everyToolJudged(UNLISTED_TOOLS, "allow"), pairs.join(" "));
+    });
+  }
+});
+
+test("a deploy-, publish- or release-shaped tool is denied in every mode while a state file exists", () => {
+  for (const pairs of [...MODES_WITH_WORK_UNDER_WAY, PLAN_AWAITING_A_SLICE]) {
+    underState(pairs, (fixture) => {
+      assert.deepEqual(unknownGateKinds(fixture, RELEASE_SHAPED_TOOLS), everyToolJudged(RELEASE_SHAPED_TOOLS, "deny"), pairs.join(" "));
+      assert.match(judgeTool(fixture, "unknown", "npm_publish", {}).message, /deploy, publish or release/);
+    });
+  }
+});
+
+test("a plan awaiting its slice denies a tool not known to be read-only and names the slice arming, while a read-only tool passes", () => {
+  underState(PLAN_AWAITING_A_SLICE, (fixture) => {
+    const stranger = judgeTool(fixture, "unknown", "somemcp_do_thing", {});
+    assert.equal(stranger.kind, "deny");
+    assert.match(stranger.message, /set active_slice=<n>/);
+    assert.deepEqual(unknownGateKinds(fixture, READ_ONLY_TOOLS), everyToolJudged(READ_ONLY_TOOLS, "allow"));
+  });
+});
+
+test("edit, write and apply_patch aimed inside the installed harness tree are denied, and aimed at the repository are not", () => {
+  underState(MODES_WITH_WORK_UNDER_WAY[0] ?? [], (fixture) => {
+    for (const target of installedHarnessFiles(fixture)) {
+      assert.deepEqual(harnessWriteKinds(fixture, target), { edit: "deny", write: "deny", apply_patch: "deny" }, target);
+    }
+    assert.match(judgeTool(fixture, "unknown", "edit", { filePath: installedHarnessFiles(fixture)[0] }).message, /harness tree/);
+    const repositoryFile = join(fixture.repo, "src", "a.ts");
+    assert.deepEqual(harnessWriteKinds(fixture, repositoryFile), { edit: "allow", write: "allow", apply_patch: "allow" });
+    assert.deepEqual(harnessWriteKinds(fixture, "src/a.ts"), { edit: "allow", write: "allow", apply_patch: "allow" });
+  });
+});
+
+test("with no state file the unknown-tool gate lets every tool through, harness writes and release-shaped names alike", () => {
+  underState([], (fixture) => {
+    const tools = [...UNLISTED_TOOLS, ...RELEASE_SHAPED_TOOLS];
+    assert.deepEqual(unknownGateKinds(fixture, tools), everyToolJudged(tools, "allow"));
+    for (const target of installedHarnessFiles(fixture)) {
+      assert.deepEqual(harnessWriteKinds(fixture, target), { edit: "allow", write: "allow", apply_patch: "allow" }, target);
+    }
+  });
 });
 
 test("a gate core cannot run blocks the call fail-closed, carrying the gate error core reports", () => {
@@ -206,6 +286,12 @@ test("envelope: a command-bearing tool without a script keeps its command", () =
 test("envelope: filePath is the file the edits gate judges, and its absence is the empty name", () => {
   assert.equal(composeEnvelope(...toolCall("edit", { filePath: "/repo/src/a.ts" })).filePath, "/repo/src/a.ts");
   assert.equal(composeEnvelope(...toolCall("edit", {})).filePath, "");
+});
+
+test("envelope: apply_patch's patchText is the body the unknown-tool gate reads target paths from, and its absence is empty", () => {
+  const patchText = "*** Begin Patch\n*** Add File: a.ts\n+x\n*** End Patch";
+  assert.equal(composeEnvelope(...toolCall("apply_patch", { patchText })).patchText, patchText);
+  assert.equal(composeEnvelope(...toolCall("apply_patch", {})).patchText, "");
 });
 
 test("envelope: cwd falls back to the process working directory", () => {

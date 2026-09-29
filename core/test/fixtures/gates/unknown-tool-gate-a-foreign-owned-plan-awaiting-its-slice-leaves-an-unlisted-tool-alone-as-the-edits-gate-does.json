@@ -1,8 +1,8 @@
 {
-  "name": "unknown-tool gate: a foreign pending still leaves the ordinary allowlist in force",
+  "name": "unknown-tool gate: a foreign-owned plan awaiting its slice leaves an unlisted tool alone, as the edits gate does",
   "source": [
     {
-      "assertion": "assert_after_hook \"a foreign pending still leaves the ordinary allowlist in force\" \\\n  hook_returned_deny"
+      "assertion": "assert_allows \"a plan another session owns leaves this session's unlisted tool to it, as the edits gate leaves its edit\" block-unknown-tool.sh \"$(tool_input FutureWriter)\""
     }
   ],
   "gate": "unknown",
@@ -18,11 +18,7 @@
   "stdin": "{\"session_id\":\"pending-foreign-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"FutureWriter\",\"tool_input\":{}}",
   "expect": {
     "exit": 0,
-    "stdout": {
-      "contains": [
-        "\"permissionDecision\":\"deny\""
-      ]
-    },
+    "stdout": "",
     "stderr": ""
   }
 }
