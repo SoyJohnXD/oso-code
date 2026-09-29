@@ -10,9 +10,8 @@ The `Agent` tool always launches in the BACKGROUND and returns at once with the 
 
 **The watchdog.** Under an unattended run, the `Stop` net asks once for a watchdog while delegations are in flight and none is live for this session. When it asks, start `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" watch` as a BACKGROUND Bash task (`run_in_background`) and end the turn. Its exit re-invokes the run by itself, so nothing is armed before a launch.
 
-**Reading the watch's exit.** Exit 0 means every delegation ended: continue normally, because the completion notifications carry the reports. Exit 3 prints one line per delegation it names — `stuck: <id> (<type>) silent <N> min`, `long-running: <id> (<type>) in flight <N> min`, or `ended-without-notice: <id> (<type>)`. Journal each line with `oso-state journal` and say it in the stream, naming the id, the silence or duration, and the agent_type. Then follow the flow's own route: keep waiting on a delegation still in the in-flight set, or treat one gone from it as a blocked delegation and relaunch it fresh. Never call a delegation lost.
+**Reading the watch's exit.** Exit 0 means every delegation ended: continue normally, because the completion notifications carry the reports. Exit 3 prints one line per delegation it names — `stuck: <id> (<type>) silent <N> min`, `long-running: <id> (<type>) in flight <N> min`, or `ended-without-notice: <id> (<type>)`. Journal each line with `oso-state journal` and say it in the stream, naming id, duration and agent_type. Then follow the flow's own route: keep waiting on a delegation still in the in-flight set, or treat one gone from it as a blocked delegation and relaunch it fresh. Never call a delegation lost.
 
-This governs every launch made through the Agent tool.
 
 ## The model a launch carries
 
@@ -31,7 +30,7 @@ A record carrying no profile, or a profile leaving the launched role unnamed, pa
 
 ## The native card is not the report
 
-Launching a delegation, or forking a judge, draws this client's native subagent card, which shows no role name, assignment, tree, or verdict. The milestone text `../reporting.md` requires is never skipped for it nor folded into its caption: it is delivered like every other operator-facing content on this host, except under the carve-out below.
+Launching a delegation, or forking a judge, draws this client's native subagent card, which shows no role name, assignment, tree, or verdict. The milestone text `../reporting.md` requires is never skipped for it nor folded into its caption: it is delivered like other operator-facing content, except under the carve-out below.
 
 ## The unattended run — the carve-out, and the record that pays for it
 

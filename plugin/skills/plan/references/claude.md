@@ -30,7 +30,7 @@ Every `oso-state <verb> …` the flow instructs runs as:
 
 `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" <verb> …`
 
-The state is the repository's; the session id is audit metadata only, yet a write spelled without it does not run at all.
+The state is the repository's; the session id is audit metadata, yet a write without it does not run.
 
 ## The runtime gates, and the two layers of the commit rail
 

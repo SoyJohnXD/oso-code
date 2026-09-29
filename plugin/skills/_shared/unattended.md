@@ -11,6 +11,7 @@ What that policy will not answer costs this change, never the chain: `oso-state 
 - **§6 step 2, an applier's `blocked`** — the policy answers each question in the operator's place, recorded the same way; a question it will not answer sets the change aside.
 - **§6 step 3, a finding grounded in one of §2 step 6's four rules** — ESCALATE is the question this routine queues, and the change is set aside on it.
 - **A merge conflict** under PARALLEL — no tier picks a side; `_shared/parallel.md`'s failure routing sets the change aside on it.
+- **§6 step 3, the fix-round cap** — the policy picks the strong-tier relaunch and the re-slice, recorded; granting rounds or accepting a residual sets the change aside.
 - **§7's entry** — the MACHINE ENTRY CONDITION stands in for the operator's word: the change's LAST slice goes green and is committed and marked `[x]`, or under PARALLEL the last wave's integration gate passes.
 - **§7 step 3, conformance triage** — amendment is never the policy's to pick: it sets the change aside. A code-diverged fix the policy can justify on the evidence proceeds.
 - **§7 step 3, the exit cap** — the policy picks among the three options, recorded, an accepted residual taking the `accepted-residual` disposition. Where none is justified on the evidence, the change is set aside at the cap.
@@ -59,7 +60,7 @@ At §5's initialize — `oso-state set mode=plan active_slice=none verify_green=
 
 ## §6's own AUTO commit
 
-Under AUTO the slice's commit lands on the `oso-run/<change>` branch §5 cut, the branch that close pushes whole.
+Under AUTO the slice's commit lands on the `oso-run/<change>` branch §5 cut.
 
 ## §7's own AUTO close
 
