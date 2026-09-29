@@ -101,7 +101,7 @@ describe("resolveInFlight names the agents still in flight at a Stop or a Subage
     assert.deepEqual(endedIn(resolutions[0]), []);
   });
 
-  test("a registry entry background_tasks no longer lists is pruned and reported ended-without-notice exactly once", () => {
+  test("a registry entry background_tasks no longer lists is flagged, kept for the watch, and reported ended-without-notice exactly once", () => {
     const { resolutions, entries } = resolvedAfter(
       { [`${REGISTRY}/a1`]: registered("a1", "applier"), [`${REGISTRY}/a2`]: registered("a2", "verifier") },
       [stopPayload(asTasks([{ id: "a1" }])), stopPayload(asTasks([{ id: "a1" }]))],
@@ -109,10 +109,10 @@ describe("resolveInFlight names the agents still in flight at a Stop or a Subage
     );
     assert.deepEqual(resolutions.map(endedIn), [["a2"], []]);
     assert.deepEqual(resolutions[0]?.endedWithoutNotice.map((agent) => agent.agentType), ["verifier"]);
-    assert.deepEqual(
-      entries.map((entry) => entry.kind),
-      ["file", "absent"],
-    );
+    const [kept, flagged] = entries.map((entry) => (entry.kind === "file" ? entry.content : entry.kind));
+    assert.doesNotMatch(kept ?? "", /ended_without_notice/);
+    assert.match(flagged ?? "", /^agent_id=a2\n[\s\S]*\nended_without_notice=true\n$/);
+    assert.equal(flagged?.match(/ended_without_notice=/g)?.length, 1);
   });
 
   test("the tolerated object shape reads its active ids as the set and prunes a completed one still registered", () => {

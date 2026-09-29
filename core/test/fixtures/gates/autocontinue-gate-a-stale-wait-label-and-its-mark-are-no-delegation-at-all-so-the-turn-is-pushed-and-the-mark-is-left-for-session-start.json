@@ -1,0 +1,49 @@
+{
+  "name": "autocontinue gate: a stale wait label and its mark are no delegation at all, so the turn is pushed and the mark is left for session start",
+  "source": [
+    { "assertion": "arm_unattended_run\noso-state --session \"$SESSION\" set auto_wait=wave-2 >/dev/null\nprintf 'run=auto-continuity\\nsession=%s\\njournal_bytes=0\\nrenewals=0\\n' \"$SESSION\" > \"$AUTO_WAIT_MARK\"\nlabel_verdict=\"$(auto_stop_verdict \"$(auto_stop_input)\")\"" },
+    { "assertion": "assert_equals \"auto_wait is ignored by the Stop net: the turn is pushed and the mark it never reads is untouched\" \\\n  \"push|present\" \"$label_verdict|$(test -f \"$AUTO_WAIT_MARK\" && echo present)\"" }
+  ],
+  "gate": "autocontinue",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\nauto_wait=wave-2\n",
+    ".local/state/oso-code/runs/{repo}/test-session.waiting": "run=auto-continuity\nsession=test-session\njournal_bytes=0\nrenewals=0\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"shouldContinue\":true",
+        "\"decision\":\"block\"",
+        "do NOT relaunch it"
+      ]
+    },
+    "stderr": "",
+    "state_after": {
+      ".local/state/oso-code/runs/{repo}/test-session.waiting": "run=auto-continuity\nsession=test-session\njournal_bytes=0\nrenewals=0\n",
+      ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=1\nheads=\nauto=running\ncompleted_agents=0\n"
+    },
+    "events_appended": [
+      {
+        "event": "auto-continue-heads-unreadable",
+        "session": "test-session",
+        "command": "{present}",
+        "schema": 2,
+        "gate": "auto-continue.sh",
+        "hook_event": "Stop"
+      },
+      {
+        "event": "auto-continued",
+        "session": "test-session",
+        "command": "background_tasks=absent in_flight=0",
+        "schema": 2,
+        "gate": "auto-continue.sh",
+        "hook_event": "Stop"
+      }
+    ]
+  }
+}

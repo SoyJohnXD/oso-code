@@ -1,8 +1,19 @@
-import { closeSync, constants, openSync, rmSync, writeSync } from "node:fs";
+import {
+  appendFileSync,
+  closeSync,
+  constants,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeSync,
+} from "node:fs";
 import path from "node:path";
 import { NO_VERDICT, type GateOutcome, type HookEnvelope, type NoVerdictVerdict } from "../hosts/envelope.ts";
 import { gateRow, type GateId } from "../routes/routes.ts";
 import {
+  completedAgentsLogOf,
   entriesOfDirectory,
   inFlightRegistryOf,
   isDirectory,
@@ -48,10 +59,10 @@ export const SUBAGENT_STOP_GATE: GateDefinition<NoVerdictVerdict> = {
 };
 
 function registerStartedAgent({ envelope }: GateRequest): GateOutcome<NoVerdictVerdict> {
-  const registry = armedRegistryOf(envelope);
-  if (registry === undefined) return NO_VERDICT;
+  const run = armedRunOf(envelope);
+  if (run === undefined) return NO_VERDICT;
   if (!isNameToken(envelope.agentId)) return unregistered(envelope, "subagentstart");
-  writeRegisteredAgent(registry, {
+  writeRegisteredAgent(inFlightRegistryOf(run.stateFile, run.sessionId), {
     agentId: envelope.agentId,
     agentType: envelope.agentType,
     transcriptPath: derivedTranscriptPath(envelope, envelope.agentId),
@@ -61,29 +72,32 @@ function registerStartedAgent({ envelope }: GateRequest): GateOutcome<NoVerdictV
 }
 
 function forgetStoppedAgent({ envelope }: GateRequest): GateOutcome<NoVerdictVerdict> {
-  const registry = armedRegistryOf(envelope);
-  if (registry === undefined) return NO_VERDICT;
+  const run = armedRunOf(envelope);
+  if (run === undefined) return NO_VERDICT;
   if (!isNameToken(envelope.agentId)) return unregistered(envelope, "subagentstop");
-  forgetAgent(registry, envelope.agentId);
+  forgetAgent(inFlightRegistryOf(run.stateFile, run.sessionId), envelope.agentId);
+  recordCompletion(completedAgentsLogOf(run.stateFile, run.sessionId), envelope.agentId);
   return NO_VERDICT;
 }
+
+type SessionRun = Readonly<{ sessionId: string; stateFile: string }>;
 
 export function registryOf(envelope: HookEnvelope): string | undefined {
   const run = sessionRunOf(envelope);
   return run === undefined ? undefined : inFlightRegistryOf(run.stateFile, run.sessionId);
 }
 
-function armedRegistryOf(envelope: HookEnvelope): string | undefined {
+function armedRunOf(envelope: HookEnvelope): SessionRun | undefined {
   const run = sessionRunOf(envelope);
   if (run === undefined) return undefined;
   const read = readStateFile(run.stateFile);
   if (read.kind !== "ok") return undefined;
   if (stateValue(read.content, "session") !== run.sessionId) return undefined;
   if (stateValue(read.content, "auto") !== RUN_ARMED) return undefined;
-  return inFlightRegistryOf(run.stateFile, run.sessionId);
+  return run;
 }
 
-function sessionRunOf(envelope: HookEnvelope): Readonly<{ sessionId: string; stateFile: string }> | undefined {
+function sessionRunOf(envelope: HookEnvelope): SessionRun | undefined {
   const sessionId = hookSessionId(envelope);
   if (sessionId === "" || !isDirectory(envelope.cwd)) return undefined;
   return { sessionId, stateFile: stateFileFor(envelope.cwd) };
@@ -122,6 +136,14 @@ function writeRegisteredAgent(registry: string, agent: StartedAgent): void {
 }
 
 export function markReported(registry: string, agentId: string): void {
+  appendMark(registry, agentId, "reported");
+}
+
+export function markEndedWithoutNotice(registry: string, agentId: string): void {
+  appendMark(registry, agentId, "ended_without_notice");
+}
+
+function appendMark(registry: string, agentId: string, mark: string): void {
   let entry: number;
   try {
     entry = openSync(path.join(registry, agentId), APPEND_WITHOUT_CREATING);
@@ -130,7 +152,7 @@ export function markReported(registry: string, agentId: string): void {
     throw error;
   }
   try {
-    writeSync(entry, `reported=${MARK_SET}\n`);
+    writeSync(entry, `${mark}=${MARK_SET}\n`);
   } finally {
     closeSync(entry);
   }
@@ -138,6 +160,21 @@ export function markReported(registry: string, agentId: string): void {
 
 export function forgetAgent(registry: string, agentId: string): void {
   rmSync(path.join(registry, agentId), { force: true });
+}
+
+function recordCompletion(completedAgentsLog: string, agentId: string): void {
+  withOwnerOnlyUmask(() => {
+    mkdirSync(path.dirname(completedAgentsLog), { recursive: true });
+    appendFileSync(completedAgentsLog, `${isoTimestamp()} ${agentId}\n`);
+  });
+}
+
+export function completedAgentCount(stateFile: string, sessionId: string): number {
+  const completedAgentsLog = completedAgentsLogOf(stateFile, sessionId);
+  if (statSync(completedAgentsLog, { throwIfNoEntry: false }) === undefined) return 0;
+  return readFileSync(completedAgentsLog, "utf8")
+    .split("\n")
+    .filter((line) => line !== "").length;
 }
 
 function unregistered(envelope: HookEnvelope, gate: GateId): GateOutcome<NoVerdictVerdict> {

@@ -9,7 +9,7 @@
   "env": {},
   "state_before": {
     ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n",
-    ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=4\njournal_bytes=102\n",
+    ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=4\nheads=\nauto=running\n",
     ".local/state/oso-code/runs/{repo}/auto-continuity.log": "2026-08-27T00:00:00Z auto-continue: cap reached after 3 pushes without progress — allowing the stop\n"
   },
   "cwd": "workspace",
@@ -23,6 +23,15 @@
         "journal_texts_in": "auto-continue: cap reached after 3 pushes without progress — allowing the stop"
       }
     },
-    "events_appended": []
+    "events_appended": [
+      {
+        "event": "auto-continue-heads-unreadable",
+        "session": "test-session",
+        "command": "{present}",
+        "schema": 2,
+        "gate": "auto-continue.sh",
+        "hook_event": "Stop"
+      }
+    ]
   }
 }

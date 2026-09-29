@@ -1,5 +1,5 @@
 // core/src/state/cli.ts
-import { mkdirSync as mkdirSync3, readFileSync as readFileSync5 } from "node:fs";
+import { mkdirSync as mkdirSync4, readFileSync as readFileSync6 } from "node:fs";
 import path7 from "node:path";
 
 // core/src/scan/changed-lines.ts
@@ -634,7 +634,7 @@ function inlineCommentsAddedIn({ file, text, addedLines, language }) {
 }
 
 // core/src/gates/watch.ts
-import { readFileSync as readFileSync3, rmSync as rmSync3, statSync as statSync2 } from "node:fs";
+import { readFileSync as readFileSync4, rmSync as rmSync3, statSync as statSync3 } from "node:fs";
 import path5 from "node:path";
 
 // core/src/state/store.ts
@@ -1065,7 +1065,17 @@ function isErrnoException(error) {
 }
 
 // core/src/gates/in-flight-registry.ts
-import { closeSync, constants as constants2, openSync, rmSync as rmSync2, writeSync } from "node:fs";
+import {
+  appendFileSync as appendFileSync2,
+  closeSync,
+  constants as constants2,
+  mkdirSync as mkdirSync2,
+  openSync,
+  readFileSync as readFileSync3,
+  rmSync as rmSync2,
+  statSync as statSync2,
+  writeSync
+} from "node:fs";
 import path4 from "node:path";
 
 // core/src/shell/lexer.ts
@@ -1158,6 +1168,9 @@ function registeredAgent(registry, agentId) {
   };
 }
 function markReported(registry, agentId) {
+  appendMark(registry, agentId, "reported");
+}
+function appendMark(registry, agentId, mark) {
   let entry;
   try {
     entry = openSync(path4.join(registry, agentId), APPEND_WITHOUT_CREATING);
@@ -1166,7 +1179,7 @@ function markReported(registry, agentId) {
     throw error;
   }
   try {
-    writeSync(entry, `reported=${MARK_SET}
+    writeSync(entry, `${mark}=${MARK_SET}
 `);
   } finally {
     closeSync(entry);
@@ -1211,7 +1224,7 @@ function pollOnce(registry, limits) {
 }
 function watched(agent) {
   const startedMs = Date.parse(agent.startedAt);
-  const transcript = agent.transcriptPath === "" ? void 0 : statSync2(agent.transcriptPath, { throwIfNoEntry: false });
+  const transcript = agent.transcriptPath === "" ? void 0 : statSync3(agent.transcriptPath, { throwIfNoEntry: false });
   return { agent, startedMs, lastWriteMs: transcript?.mtimeMs ?? startedMs };
 }
 function reportOf(watchedAgent, nowMs, limits) {
@@ -1557,7 +1570,7 @@ function pairRejection(pair) {
 }
 
 // core/src/state/plan.ts
-import { chmodSync, existsSync, mkdirSync as mkdirSync2, readFileSync as readFileSync4, renameSync as renameSync2, rmSync as rmSync4 } from "node:fs";
+import { chmodSync, existsSync, mkdirSync as mkdirSync3, readFileSync as readFileSync5, renameSync as renameSync2, rmSync as rmSync4 } from "node:fs";
 import path6 from "node:path";
 
 // core/src/state/transitions.ts
@@ -1597,7 +1610,7 @@ function ensurePlanDirectory(paths) {
 }
 function requireNonSymlinkDirectory(target, symlinkLabel, directoryLabel = symlinkLabel) {
   if (isSymlink(target)) throw new PlanFailure(`${symlinkLabel} is a symlink: ${target}`);
-  mkdirSync2(target, { recursive: true, mode: 448 });
+  mkdirSync3(target, { recursive: true, mode: 448 });
   if (!isDirectory(target)) throw new PlanFailure(`${directoryLabel} is not a directory: ${target}`);
 }
 function runCapturePlan(cwd, sessionId, digest, document) {
@@ -1618,7 +1631,7 @@ function runCapturePlan(cwd, sessionId, digest, document) {
       if (!isPrivateRegularFile(paths.presentedFile)) {
         throw new PlanFailure("presented snapshot is not a private regular file");
       }
-      if (readFileSync4(paths.presentedFile, "utf8") !== document) {
+      if (readFileSync5(paths.presentedFile, "utf8") !== document) {
         throw new PlanFailure("presented snapshot content disagrees with its approval digest");
       }
     } else {
@@ -1653,7 +1666,7 @@ function runApprovePlan(cwd, sessionId, digest) {
     throw new PlanApprovalError("approve-plan requires one lowercase SHA-256 digest");
   }
   const stateFile = stateFileFor(cwd);
-  mkdirSync2(stateRootDirectory(), { recursive: true });
+  mkdirSync3(stateRootDirectory(), { recursive: true });
   return withLock(stateFile, sessionId, () => {
     if (!isReadableRegularFile(stateFile)) {
       throw new PlanApprovalError(`no readable pending plan approval for session ${sessionId}`);
@@ -1709,7 +1722,7 @@ function runCancelPlan(cwd, sessionId, digest) {
     throw new PlanApprovalError("cancel-plan requires one lowercase SHA-256 digest");
   }
   const stateFile = stateFileFor(cwd);
-  mkdirSync2(stateRootDirectory(), { recursive: true });
+  mkdirSync3(stateRootDirectory(), { recursive: true });
   return withLock(stateFile, sessionId, () => {
     if (!isReadableRegularFile(stateFile)) {
       throw new PlanApprovalError(`no readable pending plan approval for session ${sessionId}`);
@@ -1738,7 +1751,7 @@ function runCancelPlan(cwd, sessionId, digest) {
 function runAmendPlan(cwd, sessionId, sliceId, document) {
   if (!isNameToken(sliceId)) throw new PlanFailure("amend-plan requires a safe slice id");
   const stateFile = stateFileFor(cwd);
-  mkdirSync2(stateRootDirectory(), { recursive: true });
+  mkdirSync3(stateRootDirectory(), { recursive: true });
   if (document.length === 0) throw new PlanFailure("amend-plan requires a non-empty document on stdin");
   return withLock(stateFile, sessionId, () => {
     if (!isReadableRegularFile(stateFile)) {
@@ -1773,7 +1786,7 @@ function runAmendPlan(cwd, sessionId, sliceId, document) {
     if (!/^[0-9]+$/.test(revisionText)) throw new PlanFailure("current plan has no valid revision");
     const nextRevision = Number(revisionText) + 1;
     refuseGateWritesByAForeignSession(stateFile, sessionId);
-    const amended = `${readFileSync4(paths.currentFile, "utf8")}
+    const amended = `${readFileSync5(paths.currentFile, "utf8")}
 
 ## ${shape.heading} \u2014 ${sliceId}
 
@@ -1790,7 +1803,7 @@ ${document}
   });
 }
 function byteIdentical(leftFile, rightFile) {
-  return readFileSync4(leftFile).equals(readFileSync4(rightFile));
+  return readFileSync5(leftFile).equals(readFileSync5(rightFile));
 }
 function amendmentShapeFor(approval) {
   if (approval === "approved") return { heading: "Execution amendment", classification: "in-scope" };
@@ -2006,7 +2019,7 @@ function writeCheckedPairs(sessionId, pairs) {
   const rejection = setPairRejection(pairs);
   if (rejection !== void 0) throw new RefusedError("set", rejection);
   const stateFile = stateFileFor(process.cwd());
-  mkdirSync3(stateRootDirectory(), { recursive: true });
+  mkdirSync4(stateRootDirectory(), { recursive: true });
   return withLock(stateFile, sessionId, () => {
     const owner = foreignGateOwner(stateFile, sessionId);
     if (owner !== void 0 && pairsTouchAGateKey(pairs)) throw new GatesOwnedElsewhereError(owner);
@@ -2046,7 +2059,7 @@ function runShow() {
 }
 function runClear(sessionId) {
   const stateFile = stateFileFor(process.cwd());
-  mkdirSync3(stateRootDirectory(), { recursive: true });
+  mkdirSync4(stateRootDirectory(), { recursive: true });
   return withLock(stateFile, sessionId, () => {
     clearStateFile(stateFile);
     logEvent({ event: "clear", session: sessionId });
@@ -2055,7 +2068,7 @@ function runClear(sessionId) {
 }
 function runClose(sessionId) {
   const stateFile = stateFileFor(process.cwd());
-  mkdirSync3(stateRootDirectory(), { recursive: true });
+  mkdirSync4(stateRootDirectory(), { recursive: true });
   return withLock(stateFile, sessionId, () => {
     const read = readStateFile(stateFile);
     if (read.kind === "absent") return 0;
@@ -2071,7 +2084,7 @@ function runCloseSlice(sessionId, remaining) {
   if (remaining.length !== 1) throw new UsageError();
   const sliceId = remaining[0];
   const stateFile = stateFileFor(process.cwd());
-  mkdirSync3(stateRootDirectory(), { recursive: true });
+  mkdirSync4(stateRootDirectory(), { recursive: true });
   return withLock(stateFile, sessionId, () => {
     const activeSlice = readValue(stateFile, "active_slice") ?? "none";
     if (activeSlice !== sliceId) {
@@ -2096,7 +2109,7 @@ function runDenyPattern(sessionId, remaining) {
   }
   const stateFile = stateFileFor(process.cwd());
   const patternsFile = denyPatternsFileFor(stateFile);
-  mkdirSync3(stateRootDirectory(), { recursive: true });
+  mkdirSync4(stateRootDirectory(), { recursive: true });
   return withLock(stateFile, sessionId, () => {
     const read = readStateFile(patternsFile);
     if (read.kind === "unreadable") throw new StateFileUnreadableError(patternsFile, read.cause);
@@ -2156,7 +2169,7 @@ function runAmendPlan2(sessionId, remaining) {
   return runAmendPlan(process.cwd(), sessionId, sliceId, readStdin());
 }
 function readStdin() {
-  return readFileSync5(0, "utf8");
+  return readFileSync6(0, "utf8");
 }
 function sanitizeSession2(raw) {
   return raw.replace(/[^a-zA-Z0-9-]/g, "");

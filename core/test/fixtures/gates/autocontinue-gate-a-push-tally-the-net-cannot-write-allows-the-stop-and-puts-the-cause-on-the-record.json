@@ -19,6 +19,14 @@
     "stderr": "",
     "events_appended": [
       {
+        "event": "auto-continue-heads-unreadable",
+        "session": "test-session",
+        "command": "{present}",
+        "schema": 2,
+        "gate": "auto-continue.sh",
+        "hook_event": "Stop"
+      },
+      {
         "event": "auto-continue-degraded",
         "session": "test-session",
         "command": "{present}",

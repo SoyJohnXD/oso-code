@@ -40,7 +40,7 @@ function stateText(fields: Readonly<Record<string, string>>): string {
 function judged(state: Readonly<Record<string, string>>, seed: Readonly<Record<string, SeededEntry>> = {}): GateRun {
   return withStateSandbox("workspace", (sandbox) => {
     sandbox.seed({ [STATE_FILE]: stateText(state), ...seed });
-    return withHookEnvironment({ HOME: sandbox.home }, () =>
+    return withHookEnvironment({ HOME: sandbox.home, OSO_HOST: "opencode" }, () =>
       runGate(["autocontinue"], spawnedEnvelope(sandbox.expandJson(STOP_PAYLOAD), process.env)),
     );
   });
@@ -86,7 +86,8 @@ describe("removeWaitMark separates a mark that cannot be there from one it canno
 });
 
 describe(
-  "core/src/gates/delegation.ts removeWaitMark: rmSync's force already passes over a mark that is not there, " +
+  "core/src/gates/delegation.ts removeWaitMark on the OpenCode route, the one Stop route that still clears the " +
+    "mark: rmSync's force already passes over a mark that is not there, " +
     "so a removal that still fails is a real one — a directory standing where the mark belongs, a mode or an " +
     "owner the run cannot unlink — and the frozen 'rm -f … || true' keeps that off the verdict without keeping " +
     "it off the record",

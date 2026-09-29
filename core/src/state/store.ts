@@ -110,6 +110,10 @@ export function inFlightRegistryOf(stateFile: string, sessionId: string): string
   return path.join(sessionRunDirectoryOf(stateFile, sessionId), "in-flight");
 }
 
+export function completedAgentsLogOf(stateFile: string, sessionId: string): string {
+  return path.join(sessionRunDirectoryOf(stateFile, sessionId), "completed-agents.log");
+}
+
 export function watchPidFileOf(stateFile: string, sessionId: string): string {
   return path.join(sessionRunDirectoryOf(stateFile, sessionId), "watch.pid");
 }

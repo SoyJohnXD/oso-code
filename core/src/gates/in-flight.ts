@@ -3,7 +3,7 @@ import type { BackgroundTasks } from "../hosts/background-tasks.ts";
 import type { HookEnvelope } from "../hosts/envelope.ts";
 import {
   derivedTranscriptPath,
-  forgetAgent,
+  markEndedWithoutNotice,
   registeredAgentsIn,
   registryOf,
   type RegisteredAgent,
@@ -40,7 +40,7 @@ export function resolveInFlight(envelope: HookEnvelope): InFlightResolution {
     stoppingAgentOf(envelope),
   );
   if (registry !== undefined) {
-    for (const ended of listing.endedWithoutNotice) forgetAgent(registry, ended.agentId);
+    for (const ended of listing.endedWithoutNotice) markEndedWithoutNotice(registry, ended.agentId);
   }
   return {
     ...listing,
@@ -71,7 +71,9 @@ function inFlightFrom(
   return {
     source: "background_tasks",
     agents: reported.filter(stillRunning).map((agent) => withRegistered(agent, registeredById.get(agent.agentId))),
-    endedWithoutNotice: registered.filter((agent) => !reportedIds.has(agent.agentId) && stillRunning(agent)),
+    endedWithoutNotice: registered.filter(
+      (agent) => !agent.endedWithoutNotice && !reportedIds.has(agent.agentId) && stillRunning(agent),
+    ),
   };
 }
 
