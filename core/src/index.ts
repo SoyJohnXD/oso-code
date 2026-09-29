@@ -1,4 +1,4 @@
-export { DELEGATIONS_RETURN_IN_TURN_HOST, PUSHES_WITHOUT_PROGRESS_CAP } from "./gates/autocontinue.ts";
+export { DELEGATIONS_RETURN_IN_TURN_HOST, PUSHES_WITHOUT_PROGRESS_CAP, RUN_HELD_EVENT } from "./gates/autocontinue.ts";
 export { runGate } from "./gates/dispatch.ts";
 export {
   hostEnvelope,
@@ -27,3 +27,4 @@ export {
   stateRootDirectory,
   writeStateValues,
 } from "./state/store.ts";
+export { delegationOverdueAtMs, overdueDelegation, type OverdueDelegation } from "./state/watch.ts";

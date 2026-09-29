@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { BackgroundTasks } from "../hosts/background-tasks.ts";
 import { ALLOWED, type GateOutcome, type HookEnvelope, type StopVerdict } from "../hosts/envelope.ts";
@@ -18,7 +18,7 @@ import {
   type LoggedEvent,
 } from "../state/store.ts";
 import { watchdogAlive } from "../state/watch.ts";
-import { isCount, removeWaitMark, waitMarkFileFor } from "./delegation.ts";
+import { isCount } from "./delegation.ts";
 import { adoptUnregistered, flagEndedWithoutNotice, resolveInFlight, type InFlightResolution } from "./in-flight.ts";
 import {
   hookSessionId,
@@ -31,6 +31,7 @@ import {
 } from "./preflight.ts";
 
 export const PUSHES_WITHOUT_PROGRESS_CAP = 3;
+export const RUN_HELD_EVENT = "auto-continue-held";
 const OWNER_ONLY_FILE = 0o600;
 const OWNER_ONLY_DIRECTORY = 0o700;
 
@@ -125,21 +126,14 @@ function judgeAutocontinue({ envelope }: GateRequest): GateOutcome<StopVerdict> 
 }
 
 function continueInTurnRun(stop: OwnedStop, order: string): GateOutcome<StopVerdict> {
-  const failure = removeWaitMark(waitMarkFileFor(stop.projectDir, stop.sessionId));
-  if (stateValue(stop.content, "auto") !== RUN_ARMED) {
-    return failure === undefined ? ALLOWED : degraded(stop.sessionId, failure);
+  if (stateValue(stop.content, "auto") !== RUN_ARMED) return ALLOWED;
+
+  const childrenInFlight = activeIn(stop.envelope.backgroundTasks);
+  if (childrenInFlight.length > 0) {
+    const observed = `children_in_flight=${childrenInFlight.join(",")}`;
+    return allowedWith(gateEvent(RUN_HELD_EVENT, stop.sessionId, observed));
   }
-  const position = positionOf(stop);
-  const pushed = pushUnlessCapped({
-    position,
-    progress: journalProgress(position.journalFile),
-    turnAlreadyContinued: stop.envelope.stopHookActive,
-    order,
-    pushedEvent: "auto-continued",
-    observed: "",
-  });
-  if (failure === undefined) return pushed;
-  return { ...pushed, events: [...pushed.events, degradedEvent(stop.sessionId, failure)] };
+  return pushedWithRunProgress(stop, { order, pushedEvent: "auto-continued", observed: "" });
 }
 
 function continueNotifiedRun(stop: OwnedStop, order: string): GateOutcome<StopVerdict> {
@@ -168,7 +162,7 @@ function continuedPastDelegations(
   if (!needsWatchdog(resolution)) {
     return pushedWithRunProgress(stop, { order, pushedEvent: "auto-continued", observed });
   }
-  if (watchdogLive) return allowedWith(gateEvent("auto-continue-held", stop.sessionId, observed));
+  if (watchdogLive) return allowedWith(gateEvent(RUN_HELD_EVENT, stop.sessionId, observed));
   if (stop.envelope.stopHookActive) {
     return allowedWith(gateEvent("auto-continue-watch-unstarted", stop.sessionId, observed));
   }
@@ -303,6 +297,10 @@ function completedIn(backgroundTasks: BackgroundTasks): readonly string[] {
   return backgroundTasks.kind === "object" ? backgroundTasks.completed : [];
 }
 
+function activeIn(backgroundTasks: BackgroundTasks): readonly string[] {
+  return backgroundTasks.kind === "object" ? backgroundTasks.active : [];
+}
+
 function branchHeadsOf(projectDir: string): HeadsReading {
   const listed = spawnSync("git", ["-C", projectDir, "for-each-ref", "refs/heads"], {
     encoding: "utf8",
@@ -316,19 +314,6 @@ function branchHeadsOf(projectDir: string): HeadsReading {
     return { kind: "unreadable", cause: `git for-each-ref refs/heads exited ${exit}: ${listed.stderr.trim()}` };
   }
   return { kind: "read", digest: sha256Hex(listed.stdout) };
-}
-
-function journalProgress(journalFile: string): ProgressMeasure {
-  return {
-    since: (tally) => {
-      const bytesAtLastPush = stateValue(tally, "journal_bytes");
-      if (!isCount(bytesAtLastPush)) {
-        return { kind: "unreadable", cause: `the push tally holds no count of journal bytes: ${bytesAtLastPush}` };
-      }
-      return journalBytesIn(journalFile) > Number(bytesAtLastPush) ? PROGRESSED : UNCHANGED;
-    },
-    recorded: () => `journal_bytes=${journalBytesIn(journalFile)}\n`,
-  };
 }
 
 function pushUnlessCapped(request: PushRequest): GateOutcome<StopVerdict> {
@@ -418,9 +403,4 @@ function gateEvent(event: string, session: string, detail: string): LoggedEvent 
 
 function tallyFileFor(journalFile: string): string {
   return path.join(path.dirname(journalFile), `${path.basename(journalFile, ".log")}.pushes`);
-}
-
-function journalBytesIn(journalFile: string): number {
-  const stats = statSync(journalFile, { throwIfNoEntry: false });
-  return stats !== undefined && stats.isFile() ? stats.size : 0;
 }

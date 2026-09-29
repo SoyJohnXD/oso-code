@@ -1724,6 +1724,7 @@ var MINUTE_MS = 6e4;
 var DEFAULT_POLL_MS = 3e4;
 var SILENCE_LIMIT_MS = 60 * MINUTE_MS;
 var LONG_RUNNING_LIMIT_MS = 180 * MINUTE_MS;
+var WATCHDOG_LIMITS = { silenceMs: SILENCE_LIMIT_MS, longRunningMs: LONG_RUNNING_LIMIT_MS };
 var DELEGATION_NEEDS_ATTENTION_EXIT = 3;
 var POSITIVE_INTEGER = /^[1-9]\d*$/;
 var START_TIME_FIELD_AFTER_COMMAND = 19;
@@ -1766,11 +1767,15 @@ function watched(agent) {
 function reportOf(watchedAgent, nowMs, limits) {
   const { agent, lastWriteMs, startedMs } = watchedAgent;
   if (agent.endedWithoutNotice) return reported(agent, "ended-without-notice", "");
-  const silentMs = nowMs - lastWriteMs;
-  if (silentMs >= limits.silenceMs) return reported(agent, "stuck", ` silent ${minutes(silentMs)} min`);
+  const overdue = overdueDelegation({ startedMs, lastActivityMs: lastWriteMs }, nowMs, limits);
+  return overdue === void 0 ? void 0 : reported(agent, overdue.kind, overdue.measure);
+}
+function overdueDelegation({ startedMs, lastActivityMs }, nowMs, limits = WATCHDOG_LIMITS) {
+  const silentMs = nowMs - lastActivityMs;
+  if (silentMs >= limits.silenceMs) return { kind: "stuck", measure: ` silent ${minutes(silentMs)} min` };
   const inFlightMs = nowMs - startedMs;
   if (inFlightMs < limits.longRunningMs) return void 0;
-  return reported(agent, "long-running", ` in flight ${minutes(inFlightMs)} min`);
+  return { kind: "long-running", measure: ` in flight ${minutes(inFlightMs)} min` };
 }
 function reported(agent, kind, measure) {
   return { agentId: agent.agentId, kind, line: `${kind}: ${agent.agentId} (${agent.agentType})${measure}` };
@@ -1788,8 +1793,8 @@ function minutes(milliseconds) {
 function watchLimitsFrom(environment) {
   return {
     pollMs: testOverride(environment["OSO_WATCH_POLL_MS"]) ?? DEFAULT_POLL_MS,
-    silenceMs: testOverride(environment["OSO_WATCH_SILENCE_MS"]) ?? SILENCE_LIMIT_MS,
-    longRunningMs: testOverride(environment["OSO_WATCH_LONG_MS"]) ?? LONG_RUNNING_LIMIT_MS
+    silenceMs: testOverride(environment["OSO_WATCH_SILENCE_MS"]) ?? WATCHDOG_LIMITS.silenceMs,
+    longRunningMs: testOverride(environment["OSO_WATCH_LONG_MS"]) ?? WATCHDOG_LIMITS.longRunningMs
   };
 }
 function testOverride(value) {

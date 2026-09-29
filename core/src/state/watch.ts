@@ -19,11 +19,17 @@ import {
 
 export type WatchEnd = Readonly<{ exitCode: number; lines: readonly string[] }>;
 
-type WatchLimits = Readonly<{ pollMs: number; silenceMs: number; longRunningMs: number }>;
+type OverdueLimits = Readonly<{ silenceMs: number; longRunningMs: number }>;
+
+type WatchLimits = OverdueLimits & Readonly<{ pollMs: number }>;
 
 type WatchedAgent = Readonly<{ agent: RegisteredAgent; lastWriteMs: number; startedMs: number }>;
 
-type ReportKind = "stuck" | "long-running" | "ended-without-notice" | "unreadable";
+type DelegationClock = Readonly<{ startedMs: number; lastActivityMs: number }>;
+
+export type OverdueDelegation = Readonly<{ kind: "stuck" | "long-running"; measure: string }>;
+
+type ReportKind = OverdueDelegation["kind"] | "ended-without-notice" | "unreadable";
 
 type AgentReport = Readonly<{ agentId: string; kind: ReportKind; line: string }>;
 
@@ -33,6 +39,7 @@ const MINUTE_MS = 60_000;
 const DEFAULT_POLL_MS = 30_000;
 const SILENCE_LIMIT_MS = 60 * MINUTE_MS;
 const LONG_RUNNING_LIMIT_MS = 180 * MINUTE_MS;
+const WATCHDOG_LIMITS: OverdueLimits = { silenceMs: SILENCE_LIMIT_MS, longRunningMs: LONG_RUNNING_LIMIT_MS };
 const DELEGATION_NEEDS_ATTENTION_EXIT = 3;
 const POSITIVE_INTEGER = /^[1-9]\d*$/;
 const WATCHDOG_RECORD = /^([1-9]\d*):(\d+)$/;
@@ -84,11 +91,24 @@ function watched(agent: RegisteredAgent): WatchedAgent {
 function reportOf(watchedAgent: WatchedAgent, nowMs: number, limits: WatchLimits): AgentReport | undefined {
   const { agent, lastWriteMs, startedMs } = watchedAgent;
   if (agent.endedWithoutNotice) return reported(agent, "ended-without-notice", "");
-  const silentMs = nowMs - lastWriteMs;
-  if (silentMs >= limits.silenceMs) return reported(agent, "stuck", ` silent ${minutes(silentMs)} min`);
+  const overdue = overdueDelegation({ startedMs, lastActivityMs: lastWriteMs }, nowMs, limits);
+  return overdue === undefined ? undefined : reported(agent, overdue.kind, overdue.measure);
+}
+
+export function overdueDelegation(
+  { startedMs, lastActivityMs }: DelegationClock,
+  nowMs: number,
+  limits: OverdueLimits = WATCHDOG_LIMITS,
+): OverdueDelegation | undefined {
+  const silentMs = nowMs - lastActivityMs;
+  if (silentMs >= limits.silenceMs) return { kind: "stuck", measure: ` silent ${minutes(silentMs)} min` };
   const inFlightMs = nowMs - startedMs;
   if (inFlightMs < limits.longRunningMs) return undefined;
-  return reported(agent, "long-running", ` in flight ${minutes(inFlightMs)} min`);
+  return { kind: "long-running", measure: ` in flight ${minutes(inFlightMs)} min` };
+}
+
+export function delegationOverdueAtMs({ startedMs, lastActivityMs }: DelegationClock): number {
+  return Math.min(lastActivityMs + WATCHDOG_LIMITS.silenceMs, startedMs + WATCHDOG_LIMITS.longRunningMs);
 }
 
 function reported(agent: RegisteredAgent, kind: ReportKind, measure: string): AgentReport {
@@ -111,8 +131,8 @@ function minutes(milliseconds: number): number {
 function watchLimitsFrom(environment: NodeJS.ProcessEnv): WatchLimits {
   return {
     pollMs: testOverride(environment["OSO_WATCH_POLL_MS"]) ?? DEFAULT_POLL_MS,
-    silenceMs: testOverride(environment["OSO_WATCH_SILENCE_MS"]) ?? SILENCE_LIMIT_MS,
-    longRunningMs: testOverride(environment["OSO_WATCH_LONG_MS"]) ?? LONG_RUNNING_LIMIT_MS,
+    silenceMs: testOverride(environment["OSO_WATCH_SILENCE_MS"]) ?? WATCHDOG_LIMITS.silenceMs,
+    longRunningMs: testOverride(environment["OSO_WATCH_LONG_MS"]) ?? WATCHDOG_LIMITS.longRunningMs,
   };
 }
 

@@ -1,6 +1,6 @@
 // core/src/gates/autocontinue.ts
 import { spawnSync } from "node:child_process";
-import { mkdirSync as mkdirSync3, statSync as statSync2, writeFileSync as writeFileSync2 } from "node:fs";
+import { mkdirSync as mkdirSync3, writeFileSync as writeFileSync2 } from "node:fs";
 import path6 from "node:path";
 
 // core/src/shell/lexer.ts
@@ -1506,11 +1506,25 @@ function oneLine(value) {
 var MINUTE_MS = 6e4;
 var SILENCE_LIMIT_MS = 60 * MINUTE_MS;
 var LONG_RUNNING_LIMIT_MS = 180 * MINUTE_MS;
+var WATCHDOG_LIMITS = { silenceMs: SILENCE_LIMIT_MS, longRunningMs: LONG_RUNNING_LIMIT_MS };
 var WATCHDOG_RECORD = /^([1-9]\d*):(\d+)$/;
 var START_TIME_FIELD_AFTER_COMMAND = 19;
 function watchdogAlive(stateFile, sessionId) {
   const watchdog = recordedWatchdog(watchPidFileOf(stateFile, sessionId));
   return watchdog !== void 0 && processStartOf(watchdog.pid) === watchdog.start;
+}
+function overdueDelegation({ startedMs, lastActivityMs }, nowMs, limits = WATCHDOG_LIMITS) {
+  const silentMs = nowMs - lastActivityMs;
+  if (silentMs >= limits.silenceMs) return { kind: "stuck", measure: ` silent ${minutes(silentMs)} min` };
+  const inFlightMs = nowMs - startedMs;
+  if (inFlightMs < limits.longRunningMs) return void 0;
+  return { kind: "long-running", measure: ` in flight ${minutes(inFlightMs)} min` };
+}
+function delegationOverdueAtMs({ startedMs, lastActivityMs }) {
+  return Math.min(lastActivityMs + WATCHDOG_LIMITS.silenceMs, startedMs + WATCHDOG_LIMITS.longRunningMs);
+}
+function minutes(milliseconds) {
+  return Math.floor(milliseconds / MINUTE_MS);
 }
 function recordedWatchdog(pidFile) {
   const recorded = WATCHDOG_RECORD.exec(stateValue(readFileIfPresent(pidFile) ?? "", "watch"));
@@ -1526,11 +1540,26 @@ function processStartOf(pid) {
 
 // core/src/gates/delegation.ts
 import { rmSync as rmSync3 } from "node:fs";
-import path4 from "node:path";
+import path3 from "node:path";
+var COUNT_PATTERN = /^[0-9]+$/;
+var MARK_SUFFIX = ".waiting";
+function isCount(value) {
+  return COUNT_PATTERN.test(value);
+}
+function removeLegacyWaitMarks(stateFile) {
+  const runs = runsDirectoryOf(stateFile);
+  for (const mark of entriesOfDirectory(runs).filter((name) => name.endsWith(MARK_SUFFIX))) {
+    const markFile = path3.join(runs, mark);
+    if (isRegularNonSymlinkFile(markFile)) rmSync3(markFile, { force: true });
+  }
+}
+
+// core/src/gates/in-flight.ts
+import path5 from "node:path";
 
 // core/src/gates/preflight.ts
 import { existsSync } from "node:fs";
-import path3 from "node:path";
+import path4 from "node:path";
 import { fileURLToPath } from "node:url";
 var RUN_ARMED = "running";
 function sanitizeSession(raw) {
@@ -1589,7 +1618,7 @@ function allowedWithResidueCounted(session, command) {
 function pluginRootDirectory() {
   const configured = process.env["CLAUDE_PLUGIN_ROOT"];
   if (configured !== void 0 && configured !== "") return configured;
-  return pluginRootAbove(path3.dirname(fileURLToPath(import.meta.url)));
+  return pluginRootAbove(path4.dirname(fileURLToPath(import.meta.url)));
 }
 var PLUGIN_ROOT_WRAPPERS = [[], ["plugin"]];
 var HOOKS_MANIFEST_LOCATIONS = [["hooks.json"], ["hooks", "hooks.json"]];
@@ -1598,10 +1627,10 @@ function pluginRootAbove(moduleDirectory) {
   let candidate = moduleDirectory;
   while (true) {
     for (const wrapper of PLUGIN_ROOT_WRAPPERS) {
-      const root = path3.join(candidate, ...wrapper);
-      if (existsSync(path3.join(root, "bin", "oso-state")) && isVerifiedOsoCodeRoot(root)) return root;
+      const root = path4.join(candidate, ...wrapper);
+      if (existsSync(path4.join(root, "bin", "oso-state")) && isVerifiedOsoCodeRoot(root)) return root;
     }
-    const parent = path3.dirname(candidate);
+    const parent = path4.dirname(candidate);
     if (parent === candidate) {
       throw new Error(
         `no ancestor of ${moduleDirectory} carries a verified oso-code bin/oso-state, directly or one level under plugin/, to anchor the plugin root on`
@@ -1611,42 +1640,13 @@ function pluginRootAbove(moduleDirectory) {
   }
 }
 function isVerifiedOsoCodeRoot(root) {
-  return HOOKS_MANIFEST_LOCATIONS.some((segments) => hooksManifestFingerprinted(path3.join(root, ...segments)));
+  return HOOKS_MANIFEST_LOCATIONS.some((segments) => hooksManifestFingerprinted(path4.join(root, ...segments)));
 }
 function hooksManifestFingerprinted(manifestFile) {
   return readFileIfPresent(manifestFile, "skip")?.includes(HOOKS_MANIFEST_FINGERPRINT) ?? false;
 }
 
-// core/src/gates/delegation.ts
-var COUNT_PATTERN = /^[0-9]+$/;
-var MARK_SUFFIX = ".waiting";
-function isCount(value) {
-  return COUNT_PATTERN.test(value);
-}
-function waitMarkFileFor(cwd, runSession) {
-  return path4.join(runsDirectoryOf(stateFileFor(cwd)), `${sanitizeSession(runSession)}${MARK_SUFFIX}`);
-}
-function removeWaitMark(markFile) {
-  try {
-    rmSync3(markFile, { force: true });
-    return void 0;
-  } catch (cause) {
-    return noDirectoryHoldsTheMark(cause) ? void 0 : causeOf(cause);
-  }
-}
-function removeLegacyWaitMarks(stateFile) {
-  const runs = runsDirectoryOf(stateFile);
-  for (const mark of entriesOfDirectory(runs).filter((name) => name.endsWith(MARK_SUFFIX))) {
-    const markFile = path4.join(runs, mark);
-    if (isRegularNonSymlinkFile(markFile)) rmSync3(markFile, { force: true });
-  }
-}
-function noDirectoryHoldsTheMark(cause) {
-  return isErrnoException(cause) && cause.code === "ENOTDIR";
-}
-
 // core/src/gates/in-flight.ts
-import path5 from "node:path";
 var SUBAGENT_TASK = "subagent";
 var SUBAGENT_STOP_EVENT = "SubagentStop";
 var NOTHING_REGISTERED = { agents: [], unreadable: [] };
@@ -1784,6 +1784,7 @@ function unregistered(envelope, gate) {
 
 // core/src/gates/autocontinue.ts
 var PUSHES_WITHOUT_PROGRESS_CAP = 3;
+var RUN_HELD_EVENT = "auto-continue-held";
 var OWNER_ONLY_FILE = 384;
 var OWNER_ONLY_DIRECTORY = 448;
 var RE_ANCHOR_THE_RUN = "oso-code: this run is unattended and still in flight, and this turn ended without parking or closing it. Continue it: re-read the position from the change's oso/index NEXT: line and from active_slice in oso-state, append every milestone to the run journal with oso-state journal, and park the run per the flow's own rules if a decision needs the operator.";
@@ -1822,21 +1823,13 @@ function judgeAutocontinue({ envelope }) {
   return host.delegationsReturnInTurn ? continueInTurnRun(stop, host.order) : continueNotifiedRun(stop, host.order);
 }
 function continueInTurnRun(stop, order) {
-  const failure = removeWaitMark(waitMarkFileFor(stop.projectDir, stop.sessionId));
-  if (stateValue(stop.content, "auto") !== RUN_ARMED) {
-    return failure === void 0 ? ALLOWED : degraded(stop.sessionId, failure);
+  if (stateValue(stop.content, "auto") !== RUN_ARMED) return ALLOWED;
+  const childrenInFlight = activeIn(stop.envelope.backgroundTasks);
+  if (childrenInFlight.length > 0) {
+    const observed = `children_in_flight=${childrenInFlight.join(",")}`;
+    return allowedWith(gateEvent(RUN_HELD_EVENT, stop.sessionId, observed));
   }
-  const position = positionOf(stop);
-  const pushed = pushUnlessCapped({
-    position,
-    progress: journalProgress(position.journalFile),
-    turnAlreadyContinued: stop.envelope.stopHookActive,
-    order,
-    pushedEvent: "auto-continued",
-    observed: ""
-  });
-  if (failure === void 0) return pushed;
-  return { ...pushed, events: [...pushed.events, degradedEvent(stop.sessionId, failure)] };
+  return pushedWithRunProgress(stop, { order, pushedEvent: "auto-continued", observed: "" });
 }
 function continueNotifiedRun(stop, order) {
   if (stateValue(stop.content, "auto") !== RUN_ARMED) return ALLOWED;
@@ -1853,7 +1846,7 @@ function continuedPastDelegations(stop, order, { resolution, watchdogLive }) {
   if (!needsWatchdog(resolution)) {
     return pushedWithRunProgress(stop, { order, pushedEvent: "auto-continued", observed });
   }
-  if (watchdogLive) return allowedWith(gateEvent("auto-continue-held", stop.sessionId, observed));
+  if (watchdogLive) return allowedWith(gateEvent(RUN_HELD_EVENT, stop.sessionId, observed));
   if (stop.envelope.stopHookActive) {
     return allowedWith(gateEvent("auto-continue-watch-unstarted", stop.sessionId, observed));
   }
@@ -1950,6 +1943,9 @@ function flowRecordsIn(content) {
 function completedIn(backgroundTasks) {
   return backgroundTasks.kind === "object" ? backgroundTasks.completed : [];
 }
+function activeIn(backgroundTasks) {
+  return backgroundTasks.kind === "object" ? backgroundTasks.active : [];
+}
 function branchHeadsOf(projectDir) {
   const listed = spawnSync("git", ["-C", projectDir, "for-each-ref", "refs/heads"], {
     encoding: "utf8",
@@ -1963,19 +1959,6 @@ function branchHeadsOf(projectDir) {
     return { kind: "unreadable", cause: `git for-each-ref refs/heads exited ${exit}: ${listed.stderr.trim()}` };
   }
   return { kind: "read", digest: sha256Hex(listed.stdout) };
-}
-function journalProgress(journalFile) {
-  return {
-    since: (tally) => {
-      const bytesAtLastPush = stateValue(tally, "journal_bytes");
-      if (!isCount(bytesAtLastPush)) {
-        return { kind: "unreadable", cause: `the push tally holds no count of journal bytes: ${bytesAtLastPush}` };
-      }
-      return journalBytesIn(journalFile) > Number(bytesAtLastPush) ? PROGRESSED : UNCHANGED;
-    },
-    recorded: () => `journal_bytes=${journalBytesIn(journalFile)}
-`
-  };
 }
 function pushUnlessCapped(request) {
   const { position, progress } = request;
@@ -2049,10 +2032,6 @@ function gateEvent(event, session, detail) {
 }
 function tallyFileFor(journalFile) {
   return path6.join(path6.dirname(journalFile), `${path6.basename(journalFile, ".log")}.pushes`);
-}
-function journalBytesIn(journalFile) {
-  const stats = statSync2(journalFile, { throwIfNoEntry: false });
-  return stats !== void 0 && stats.isFile() ? stats.size : 0;
 }
 
 // core/src/hosts/hook-run.ts
@@ -2915,7 +2894,7 @@ function judgeStatebin(_request) {
 
 // core/src/gates/teardown.ts
 import { execFileSync as execFileSync2 } from "node:child_process";
-import { existsSync as existsSync2, readdirSync as readdirSync2, renameSync as renameSync2, rmSync as rmSync4, rmdirSync, statSync as statSync3 } from "node:fs";
+import { existsSync as existsSync2, readdirSync as readdirSync2, renameSync as renameSync2, rmSync as rmSync4, rmdirSync, statSync as statSync2 } from "node:fs";
 import path9 from "node:path";
 var ABANDONED_STATE_DAYS = 7;
 var EVENTS_LOG_RETENTION_DAYS = 30;
@@ -3030,7 +3009,7 @@ function directoryEntries(directory) {
   }
 }
 function isFile(target) {
-  const stats = statSync3(target, { throwIfNoEntry: false });
+  const stats = statSync2(target, { throwIfNoEntry: false });
   return stats !== void 0 && stats.isFile();
 }
 function gitWorktreeRemove(repoPath, worktreePath) {
@@ -3922,7 +3901,7 @@ function namesAVerifyCheck(blockText) {
 
 // opencode/plugin/oso/identity.ts
 import { createHash as createHash2 } from "node:crypto";
-import { existsSync as existsSync4, readFileSync as readFileSync5, statSync as statSync4 } from "node:fs";
+import { existsSync as existsSync4, readFileSync as readFileSync5, statSync as statSync3 } from "node:fs";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 function deriveRootId(cwd) {
   const meta = findGitMetadata(cwd);
@@ -3949,7 +3928,7 @@ function findGitMetadata(cwd) {
     if (existsSync4(dotGit)) {
       let isDir = false;
       try {
-        isDir = statSync4(dotGit).isDirectory();
+        isDir = statSync3(dotGit).isDirectory();
       } catch {
         isDir = false;
       }
@@ -4530,15 +4509,45 @@ function toastFnOf(client) {
 }
 
 // opencode/plugin/oso/continuation-rail.ts
-var childSessions = /* @__PURE__ */ new Set();
+var childSessions = /* @__PURE__ */ new Map();
 var driving = /* @__PURE__ */ new Set();
-function recordSessionLineage(properties) {
+var heldRuns = /* @__PURE__ */ new Map();
+function trackSessionEvent(event, nowMs = Date.now()) {
+  if (event.type === "session.created") {
+    recordLaunchedChild(event.properties, nowMs);
+    return;
+  }
+  const child = childSessions.get(sessionNamedBy(event));
+  if (child === void 0 || child.phase === "completed") {
+    return;
+  }
+  if (endsTheSession(event)) {
+    child.phase = "completed";
+    redriveHeldRun(child.parentID);
+    return;
+  }
+  child.lastActivityMs = nowMs;
+}
+function recordLaunchedChild(properties, nowMs) {
   const info = properties?.info;
   const id = info?.id;
   const parentID = info?.parentID;
   if (typeof id === "string" && id !== "" && typeof parentID === "string" && parentID !== "") {
-    childSessions.add(id);
+    childSessions.set(id, { parentID, startedMs: nowMs, lastActivityMs: nowMs, phase: "running" });
   }
+}
+function sessionNamedBy(event) {
+  const named = event.properties;
+  const infoIsTheSession = event.type.startsWith("session.");
+  const id = named?.sessionID ?? named?.part?.sessionID ?? named?.info?.sessionID ?? (infoIsTheSession ? named?.info?.id : void 0);
+  return typeof id === "string" ? id : "";
+}
+function endsTheSession(event) {
+  if (event.type === "session.idle" || event.type === "session.deleted") {
+    return true;
+  }
+  const status = event.properties?.status;
+  return event.type === "session.status" && status?.type === "idle";
 }
 function continueUnattendedRun(request) {
   if (request.sessionID === "" || childSessions.has(request.sessionID)) {
@@ -4552,36 +4561,130 @@ function continueUnattendedRun(request) {
     driving.delete(request.sessionID);
   });
 }
+function releaseHeldRuns() {
+  for (const held of heldRuns.values()) {
+    clearTimeout(held.wake);
+  }
+  heldRuns.clear();
+}
 async function postUntilTheRunStops(request) {
   let turns = 0;
   for (; ; ) {
-    let order;
+    let step;
     try {
-      order = nextContinuationOrder(request);
+      step = nextContinuationStep(request);
     } catch (error) {
+      endHold(request.sessionID);
       return standDownTraced(request, `the unattended run could not be read: ${messageOf2(error)}`, turns);
     }
-    if (order === void 0) {
+    if (step.kind === "held") {
+      holdUntilAChildSettles(request, step.children);
+      return { kind: "stood-down", turns };
+    }
+    endHold(request.sessionID);
+    if (step.kind === "stop") {
       return { kind: "stood-down", turns };
     }
     try {
-      await postContinuationTurn(request, order);
+      await postContinuationTurn(request, step.order);
     } catch (error) {
       return standDownTraced(request, `the continuation turn did not land: ${messageOf2(error)}`, turns);
     }
     turns += 1;
   }
 }
-function nextContinuationOrder(request) {
+function nextContinuationStep(request) {
+  releaseOverdueChildren(request);
+  const children = childSessionsOf(request.sessionID);
   const envelope = hostEnvelope(callerFor(request.directory), {
     sessionId: request.sessionID,
-    cwd: request.directory
+    cwd: request.directory,
+    backgroundTasks: { kind: "object", ...children }
   });
   const run = runGate(["autocontinue"], envelope);
   for (const event of run.events) {
     logEvent(event);
   }
-  return run.verdict.kind === "push" ? run.verdict.reason : void 0;
+  if (run.verdict.kind === "push") {
+    return { kind: "push", order: run.verdict.reason };
+  }
+  const held = children.active.length > 0 && run.events.some((event) => event.event === RUN_HELD_EVENT);
+  return held ? { kind: "held", children: children.active } : { kind: "stop" };
+}
+function holdUntilAChildSettles(request, children) {
+  const previous = heldRuns.get(request.sessionID);
+  if (previous === void 0) {
+    recordTrace({
+      origin: "auto-continue",
+      detail: `the run is held while child sessions run: ${children.join(", ")}`,
+      severity: "advisory",
+      sessionID: request.sessionID,
+      client: request.client
+    });
+  } else {
+    clearTimeout(previous.wake);
+  }
+  const untilOverdueMs = Math.max(0, earliestOverdueMs(children) - (request.now ?? Date.now)());
+  const wake = setTimeout(() => redriveHeldRun(request.sessionID), untilOverdueMs).unref();
+  heldRuns.set(request.sessionID, { request, wake });
+}
+function earliestOverdueMs(children) {
+  const clocks = children.flatMap((childID) => childSessions.get(childID) ?? []);
+  return Math.min(...clocks.map(delegationOverdueAtMs));
+}
+function redriveHeldRun(parentID) {
+  const held = heldRuns.get(parentID);
+  if (held !== void 0) {
+    void continueUnattendedRun(held.request);
+  }
+}
+function endHold(parentID) {
+  const held = heldRuns.get(parentID);
+  if (held !== void 0) {
+    clearTimeout(held.wake);
+    heldRuns.delete(parentID);
+  }
+}
+function releaseOverdueChildren(request) {
+  const nowMs = (request.now ?? Date.now)();
+  for (const [childID, child] of childSessions) {
+    if (child.parentID !== request.sessionID || child.phase !== "running") {
+      continue;
+    }
+    const overdue = overdueDelegation(child, nowMs);
+    if (overdue !== void 0) {
+      child.phase = "reported";
+      reportOverdueChild(request, childID, overdue);
+    }
+  }
+}
+function reportOverdueChild(request, childID, overdue) {
+  const report = `child session ${childID} ${overdue.kind}:${overdue.measure} \u2014 released from the hold`;
+  recordTrace({
+    origin: "auto-continue",
+    detail: report,
+    severity: "advisory",
+    sessionID: request.sessionID,
+    client: request.client
+  });
+  try {
+    appendJournal(journalFileFor(request.directory), `auto-continue: ${report}`);
+  } catch (error) {
+    recordTrace({
+      origin: "auto-continue",
+      detail: `the report on child session ${childID} could not be journaled: ${messageOf2(error)}`,
+      severity: "advisory",
+      sessionID: request.sessionID,
+      client: request.client
+    });
+  }
+}
+function childSessionsOf(parentID) {
+  const children = [...childSessions].filter(([, child]) => child.parentID === parentID);
+  return {
+    active: children.filter(([, child]) => child.phase === "running").map(([childID]) => childID),
+    completed: children.filter(([, child]) => child.phase === "completed").map(([childID]) => childID)
+  };
 }
 async function postContinuationTurn(request, order) {
   const session = request.session;
@@ -5056,8 +5159,8 @@ var osoCode = async (pluginInput) => {
       if (sessionID !== "") {
         busSessions.add(sessionID);
       }
+      trackSessionEvent(event);
       if (event.type === "session.created") {
-        recordSessionLineage(event.properties);
         return;
       }
       if (event.type === "session.idle") {
@@ -5125,6 +5228,7 @@ var osoCode = async (pluginInput) => {
         runLifecycleGate("teardown", { sessionID, directory, moment: "end" }, client);
       }
       busSessions.clear();
+      releaseHeldRuns();
     }
   };
 };

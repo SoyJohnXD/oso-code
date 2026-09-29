@@ -1,5 +1,5 @@
 import { planApprovalTool, planCancelTool, PLAN_APPROVAL_TOOL_ID, PLAN_CANCEL_TOOL_ID } from "./oso/approval.ts";
-import { continueUnattendedRun, recordSessionLineage } from "./oso/continuation-rail.ts";
+import { continueUnattendedRun, releaseHeldRuns, trackSessionEvent } from "./oso/continuation-rail.ts";
 import {
   assertGateRoutesCompile,
   matchesTool,
@@ -197,8 +197,8 @@ export const osoCode = async (
       if (sessionID !== "") {
         busSessions.add(sessionID);
       }
+      trackSessionEvent(event);
       if (event.type === "session.created") {
-        recordSessionLineage(event.properties);
         return;
       }
       if (event.type === "session.idle") {
@@ -266,6 +266,7 @@ export const osoCode = async (
         runLifecycleGate("teardown", { sessionID, directory, moment: "end" }, client);
       }
       busSessions.clear();
+      releaseHeldRuns();
     },
   };
 };
