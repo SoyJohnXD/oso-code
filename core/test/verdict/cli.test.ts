@@ -170,7 +170,7 @@ describe("oso-state report", () => {
     });
   });
 
-  test("the state file's active slice is read with its verdicts since its newest arming and its next attempt", () => {
+  test("the state file's active slice is read with its verdicts and rounds since its newest arming", () => {
     withStateSandbox("workspace", (sandbox) => {
       sandbox.seed({ [VERDICTS_LOG]: REPORT_FIXTURE, [EVENTS_LOG]: "", [STATE_FILE]: "mode=plan\nactive_slice=3\n" });
       const table = sandbox.run(CLI_SUBJECT, ["report"]);

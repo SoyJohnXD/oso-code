@@ -57,19 +57,22 @@ export function verdictsFileFor(stateFile: string): string {
 }
 
 export function appendVerdict(verdictsFile: string, capture: VerdictCapture): boolean {
-  return appendEntry(verdictsFile, capture.session, () => ({
-    time: isoTimestamp(),
-    host: capture.host,
-    session: capture.session,
-    change: capture.change,
-    slice: capture.slice,
-    attempt: verifierRecordsSinceArm(readVerdicts(verdictsFile).entries, capture.slice).length + 1,
-    role: capture.role,
-    model: capture.model,
-    verdict: capture.verdict,
-    verdict_shape: capture.verdict_shape,
-    escalated: false,
-  }));
+  return appendEntry(verdictsFile, capture.session, () => {
+    const arming = newestArmingOf(readVerdicts(verdictsFile).entries, capture.slice);
+    return {
+      time: isoTimestamp(),
+      host: capture.host,
+      session: capture.session,
+      change: capture.change,
+      slice: capture.slice,
+      attempt: arming.filter(isVerifierRecord).length + 1,
+      role: capture.role,
+      model: capture.model,
+      verdict: capture.verdict,
+      verdict_shape: capture.verdict_shape,
+      escalated: arming.some((entry) => isMarkerOf("escalated", entry)),
+    };
+  });
 }
 
 export function appendMarker(verdictsFile: string, marker: MarkerCapture): boolean {

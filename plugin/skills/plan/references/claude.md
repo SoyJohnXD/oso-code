@@ -4,7 +4,7 @@
 
 The Claude Code TUI drops assistant text that precedes a tool call in the same turn. Operator-facing content must END the turn as plain text, with the tool call (`AskUserQuestion`, `ExitPlanMode`) in a LATER turn. Context a question round needs travels INSIDE the `AskUserQuestion` fields, never as prose before the call.
 
-One exception stands, stated whole in `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **The unattended run** section: the park and the final report still end the turn regardless.
+One exception stands, stated whole in `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **The unattended run** section: the park and the final report still end the turn.
 
 ## Question rounds
 
@@ -18,7 +18,7 @@ Where this change runs as a child of the ROADMAP mode's chain, this gate is not 
 
 ## The explorer
 
-§2 step 1's exploration subagents are the built-in `Explore` agent.
+§2 step 1's exploration subagents and §6 step 3's diagnosis agent, on the strong-tier `model`, are the built-in `Explore` agent.
 
 ## Shared-file paths
 

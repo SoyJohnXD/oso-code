@@ -86,13 +86,24 @@ describe("the verdict record writer", () => {
     assert.ok(isPrivateRegularFile(verdictsFile));
   });
 
-  test("a fourth verifier record after three fails reads attempt 4 and the capture never marks it escalated", () => {
+  test("a record is escalated only when its slice's newest arming already carries an escalated marker", () => {
     appendMarker(verdictsFile, { kind: "arm", slice: "2", session: "ses-record", change: "alpha" });
-    for (const verdict of ["fail", "fail", "fail", "pass"] as const) appendVerdict(verdictsFile, { ...CAPTURE, verdict });
+    appendVerdict(verdictsFile, CAPTURE);
+    appendMarker(verdictsFile, { kind: "escalated", slice: "5", session: "ses-record", change: "alpha" });
+    appendVerdict(verdictsFile, CAPTURE);
+    appendMarker(verdictsFile, { kind: "escalated", slice: "2", session: "ses-record", change: "alpha" });
+    appendVerdict(verdictsFile, CAPTURE);
+    appendMarker(verdictsFile, { kind: "arm", slice: "2", session: "ses-record", change: "beta" });
+    appendVerdict(verdictsFile, CAPTURE);
     const records = readVerdicts(verdictsFile).entries.flatMap((entry) => ("attempt" in entry ? [entry] : []));
     assert.deepEqual(
       records.map(({ attempt, escalated }) => ({ attempt, escalated })),
-      [1, 2, 3, 4].map((attempt) => ({ attempt, escalated: false })),
+      [
+        { attempt: 1, escalated: false },
+        { attempt: 2, escalated: false },
+        { attempt: 3, escalated: true },
+        { attempt: 1, escalated: false },
+      ],
     );
   });
 

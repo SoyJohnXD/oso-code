@@ -1642,19 +1642,22 @@ function verdictsFileFor(stateFile) {
   return path4.join(runsDirectoryOf(stateFile), "verdicts.jsonl");
 }
 function appendVerdict(verdictsFile, capture) {
-  return appendEntry(verdictsFile, capture.session, () => ({
-    time: isoTimestamp(),
-    host: capture.host,
-    session: capture.session,
-    change: capture.change,
-    slice: capture.slice,
-    attempt: verifierRecordsSinceArm(readVerdicts(verdictsFile).entries, capture.slice).length + 1,
-    role: capture.role,
-    model: capture.model,
-    verdict: capture.verdict,
-    verdict_shape: capture.verdict_shape,
-    escalated: false
-  }));
+  return appendEntry(verdictsFile, capture.session, () => {
+    const arming = newestArmingOf(readVerdicts(verdictsFile).entries, capture.slice);
+    return {
+      time: isoTimestamp(),
+      host: capture.host,
+      session: capture.session,
+      change: capture.change,
+      slice: capture.slice,
+      attempt: arming.filter(isVerifierRecord).length + 1,
+      role: capture.role,
+      model: capture.model,
+      verdict: capture.verdict,
+      verdict_shape: capture.verdict_shape,
+      escalated: arming.some((entry) => isMarkerOf("escalated", entry))
+    };
+  });
 }
 function readVerdicts(verdictsFile) {
   const lines = (readFileIfPresent(verdictsFile) ?? "").split("\n").filter((line) => line !== "");
@@ -1663,9 +1666,6 @@ function readVerdicts(verdictsFile) {
     return entry === void 0 ? [] : [entry];
   });
   return { entries, skippedLines: lines.length - entries.length };
-}
-function verifierRecordsSinceArm(entries, slice) {
-  return newestArmingOf(entries, slice).filter(isVerifierRecord);
 }
 function newestArmingOf(entries, slice) {
   if (slice === null) return [];
