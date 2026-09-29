@@ -110,7 +110,7 @@ export const SKILL_STUBS: readonly SkillStub[] = [
   },
   {
     id: "debug",
-    description: { opencode: "Debugging and error-recovery mode for something that broke. Triages reproduce-first — reproduce, localize, reduce — then delegates the fix and a regression test through the apply/verify loop with a zero-warnings bar. Use when a bug, crash, or failing behavior needs diagnosis; also the landing point when a plan or quick ask turns out to be a bug." },
+    description: { opencode: "Debugging and error-recovery mode for something that broke. Triages reproduce-first — reproduce, localize, reduce — then fixes it with a regression test through the apply/verify loop with a zero-warnings bar. Use when a bug, crash, or failing behavior needs diagnosis; also the landing point when a plan or quick ask turns out to be a bug." },
     argumentHint: { opencode: "[what is broken]" },
     disableModelInvocation: true,
     referenceHosts: ["opencode"],

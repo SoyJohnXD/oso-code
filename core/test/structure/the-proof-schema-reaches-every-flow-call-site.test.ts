@@ -269,17 +269,15 @@ describe(
   },
 );
 
-describe("the plan and debug flows' inline path hands the verifier the same proof package an applier does", () => {
-  for (const skill of ["plan", "debug"]) {
-    const flowText = flowBodyLines(readTrackedText(`${FLOW_PROSE_ROOT}${skill}/SKILL.md`).text).join("\n");
-    const inlineSentence = flowText.split(/(?<=[.!?])\s+/).find((sentence) => sentence.includes("you write inline"));
+describe("the threshold's inline path hands the verifier the same proof package an applier does", () => {
+  const definitionText = flowBodyLines(readTrackedText(`${FLOW_PROSE_ROOT}_shared/reporting.md`).text).join("\n");
+  const inlineSentence = definitionText.split(/(?<=[.!?])\s+/).find((sentence) => sentence.includes("you write inline"));
 
-    test(`the ${skill} flow tells the orchestrator to produce the proof, scan and decisions_used blocks when it writes inline`, () => {
-      assert.notEqual(inlineSentence, undefined, "no sentence tells the orchestrator which blocks an inline slice produces");
-      const absent = [PROOF_BLOCK, SCAN_BLOCK, DECISIONS_USED_BLOCK, APPLIER_PROOF].filter((token) => !(inlineSentence ?? "").includes(token));
-      assert.deepEqual(absent, [], `the inline-proof sentence never spells ${absent.join(", ")}`);
-    });
-  }
+  test("the shared threshold tells the orchestrator to produce the proof, scan and decisions_used blocks when it writes inline", () => {
+    assert.notEqual(inlineSentence, undefined, "no sentence tells the orchestrator which blocks an inline slice produces");
+    const absent = [PROOF_BLOCK, SCAN_BLOCK, DECISIONS_USED_BLOCK, APPLIER_PROOF].filter((token) => !(inlineSentence ?? "").includes(token));
+    assert.deepEqual(absent, [], `the inline-proof sentence never spells ${absent.join(", ")}`);
+  });
 });
 
 describe("the block reader, over planted flow prose this repository does not ship", () => {
