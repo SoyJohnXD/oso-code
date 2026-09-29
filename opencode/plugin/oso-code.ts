@@ -15,6 +15,7 @@ import { commonDirOf, publishIdentity } from "./oso/identity.ts";
 import { stateBinPath } from "./oso/installed-tree.ts";
 import {
   buildStaleAdvice,
+  deliverCompactionContext,
   deliverSystemAdvice,
   dropSystemAdvice,
   listStale,
@@ -52,7 +53,7 @@ interface OsoHooks {
   "shell.env": (input?: unknown, output?: unknown) => Promise<unknown>;
   event: (input?: { event?: HookEvent }) => Promise<void>;
   "experimental.chat.system.transform": (input?: unknown, output?: unknown) => Promise<void>;
-  "experimental.session.compacting": () => Promise<void>;
+  "experimental.session.compacting": (input?: unknown, output?: unknown) => Promise<void>;
   tool: Record<string, PluginTool>;
   dispose: () => Promise<void>;
 }
@@ -62,6 +63,8 @@ const advisedSessions = new Set<string>();
 const busSessions = new Set<string>();
 
 const pendingAdvice: PendingSystemAdvice = new Map();
+
+const reanchoredByCompaction = new Set<string>();
 
 let orphanAdviceValue: string | undefined;
 
@@ -200,6 +203,9 @@ export const osoCode = async (
         return;
       }
       if (event.type === "session.compacted") {
+        if (reanchoredByCompaction.delete(sessionID)) {
+          return;
+        }
         queueSystemAdvice(
           pendingAdvice,
           sessionID,
@@ -225,7 +231,26 @@ export const osoCode = async (
         recordTrace({ origin: "system.transform", detail: messageOf(err), severity: "advisory", sessionID, client });
       }
     },
-    "experimental.session.compacting": async () => {},
+    "experimental.session.compacting": async (input?: unknown, output?: unknown) => {
+      const sessionID = sessionIdOf(input);
+      if (sessionID === "") {
+        return;
+      }
+      const anchor = runLifecycleGate("reanchor", { sessionID, directory, moment: "compact" }, client);
+      const delivery = deliverCompactionContext(output, anchor);
+      if (delivery.kind === "delivered") {
+        reanchoredByCompaction.add(sessionID);
+      }
+      if (delivery.kind === "undeliverable") {
+        recordTrace({
+          origin: "session.compacting",
+          detail: "the host handed no compaction context array to append the re-anchor to",
+          severity: "advisory",
+          sessionID,
+          client,
+        });
+      }
+    },
     tool: {
       oso_wave: waveTool(client?.session),
       [PLAN_APPROVAL_TOOL_ID]: planApprovalTool(),

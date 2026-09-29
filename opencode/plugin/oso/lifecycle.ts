@@ -169,6 +169,18 @@ export function deliverSystemAdvice(
   return { kind: "delivered", entries: queued.length };
 }
 
+export function deliverCompactionContext(output: unknown, anchor: string): AdviceDelivery {
+  if (anchor === "") {
+    return { kind: "empty" };
+  }
+  const record = output as { context?: unknown } | null;
+  if (typeof record !== "object" || record === null || !Array.isArray(record.context)) {
+    return { kind: "undeliverable" };
+  }
+  record.context.push(anchor);
+  return { kind: "delivered", entries: 1 };
+}
+
 export function dropSystemAdvice(pending: PendingSystemAdvice, sessionId: string): void {
   pending.delete(sessionId);
 }
