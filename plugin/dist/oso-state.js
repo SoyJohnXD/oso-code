@@ -1363,6 +1363,7 @@ var VERDICT_SHAPES = ["valid", "malformed"];
 
 // core/src/verdict/record.ts
 var VERIFIER_ROLE = "verifier";
+var TELEMETRY_WRITE_FAILED = "telemetry-write-failed";
 function verdictsFileFor(stateFile) {
   return path4.join(runsDirectoryOf(stateFile), "verdicts.jsonl");
 }
@@ -1374,6 +1375,10 @@ function appendArmMarker(verdictsFile, marker) {
     change: marker.change,
     time: isoTimestamp()
   }));
+}
+function recordedStateValue(stateContent, key) {
+  const value = stateValue(stateContent, key);
+  return value === "" ? null : value;
 }
 function armedSliceOf(pairs) {
   const written = new Map(pairs.map(splitPair));
@@ -1395,7 +1400,7 @@ function recordsSinceArm(entries) {
       armedSlices.set(entry.slice, []);
       continue;
     }
-    armedSlices.get(entry.slice)?.push(entry);
+    if (entry.slice !== null) armedSlices.get(entry.slice)?.push(entry);
   }
   return [...armedSlices.values()].flat();
 }
@@ -1412,7 +1417,7 @@ function appendEntry(verdictsFile, session, entryOf) {
     });
     return true;
   } catch (error) {
-    logEvent({ event: "telemetry-write-failed", session, command: `${verdictsFile}: ${causeOf2(error)}` });
+    logEvent({ event: TELEMETRY_WRITE_FAILED, session, command: `${verdictsFile}: ${causeOf2(error)}` });
     return false;
   }
 }
@@ -1437,7 +1442,7 @@ function armMarkerOf(fields) {
 }
 function verdictRecordOf(fields) {
   const { time, host, session, change, slice, attempt, role, model, verdict, verdict_shape, escalated } = fields;
-  if (!isText(time) || !isText(session) || !isTextOrNull(change) || !isText(slice) || !isText(role)) return void 0;
+  if (!isText(time) || !isText(session) || !isTextOrNull(change) || !isTextOrNull(slice) || !isText(role)) return void 0;
   if (!isHostName(host) || typeof attempt !== "number") return void 0;
   if (!isTextOrNull(model) || typeof escalated !== "boolean") return void 0;
   const recorded = RECORDED_VERDICTS.find((value) => value === verdict);
@@ -2216,8 +2221,7 @@ function runSet(sessionId, pairs) {
 function markArming(stateFile, sessionId, pairs, content) {
   const slice = armedSliceOf(pairs);
   if (slice === void 0) return;
-  const change = stateValue(content, "auto_change");
-  appendArmMarker(verdictsFileFor(stateFile), { slice, session: sessionId, change: change === "" ? null : change });
+  appendArmMarker(verdictsFileFor(stateFile), { slice, session: sessionId, change: recordedStateValue(content, "auto_change") });
 }
 function runReport(remaining) {
   const [flag, ...rest] = remaining;

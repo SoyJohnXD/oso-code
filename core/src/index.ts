@@ -28,4 +28,5 @@ export {
   writeStateValues,
 } from "./state/store.ts";
 export { delegationOverdueAtMs, overdueDelegation, type OverdueDelegation } from "./state/watch.ts";
+export { captureVerifierReport, isVerifierAgent } from "./verdict/capture.ts";
 export { parseAgentVerdict, type ParsedAgentVerdict } from "./verdict/grammar.ts";

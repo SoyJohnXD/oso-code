@@ -96,3 +96,13 @@ The changes of this child, harness-friction child 6.
 | the friction baseline reads OpenCode sessions from its local database, read-only | 907c69b | delivered; `node:sqlite` prints an ExperimentalWarning on node 22 |
 | the shell gates no OpenCode host runs are no longer installed or trusted, and earlier installs' copies are removed | 330ced0 | delivered; `bootstrap/hook-hashes.txt` keeps those rows because the files ship with the Claude plugin |
 | OpenCode prose stops describing the retired `unattended-run.ts`, the 45-minute bound and the wait marker | 7506f85 | delivered, held by `opencode-prose-names-no-retired-mechanism.test.ts` |
+
+## What roadmap measured-harness changed, and where OpenCode stands
+
+Child 1 verdict-receipt records every verifier report in `runs/<repo digest>/verdicts.jsonl` through the one core writer, `core/src/verdict/capture.ts`. The task path was measured on the installed host 1.18.32 by reading its own bundle with `rg -ob --text`: every registered tool, `task` among them, fires `tool.execute.after` with `{tool, sessionID, callID, args}` and the tool's `{title, output, metadata}` (byte 96772432); the `task` args carry `subagent_type` (byte 96880856); a foreground task's `output` wraps the child's final text in `<task_result>` and its `metadata.model` names the `providerID` and `modelID` it launched on (byte 96881571). That is the in-band return `opencode/skills/oso-plan/references/opencode.md:82` describes, so the task path is captured rather than recorded as a GAP.
+
+| Change | Claude | OpenCode status |
+|---|---|---|
+| a verifier report is recorded with slice, attempt and verdict whether or not a run is armed | the `SubagentStop` gate, before its armed-run check | PARITY: `oso_wave` records each verifier child it collects, and `tool.execute.after` records each foreground `task` launch of `oso-verifier` |
+| the model a verifier ran on | the launch alias in the sibling `agent-<id>.meta.json`, else `null` | PARITY on the `task` path as `providerID/modelID`. GAP on `oso_wave`: its children run on the agent's configured model and the prompt reply names none, so the record carries `null` |
+| a background verifier's report | not applicable: a `SubagentStop` fires when the child ends | GAP: with `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true` the host returns `state="running"` at launch and delivers the report later as a synthetic message in the parent session, outside `tool.execute.after` (byte 96881571), so that report is not recorded. The reference at line 82 calls `task` synchronous; this experimental mode is the host contract differing from it, recorded and not worked around |

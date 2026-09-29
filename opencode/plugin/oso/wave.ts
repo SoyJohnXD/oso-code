@@ -1,6 +1,6 @@
 import { isAbsolute } from "node:path";
-import { APPLIER_PROOF_HEADER, parseAgentVerdict, type ParsedAgentVerdict } from "@oso-code/core";
-import { commonDirOf, roleOf } from "./identity.ts";
+import { APPLIER_PROOF_HEADER, captureVerifierReport, parseAgentVerdict, type ParsedAgentVerdict } from "@oso-code/core";
+import { commonDirOf, deriveRootId, roleOf } from "./identity.ts";
 
 export type WaveAgent = "applier" | "verifier";
 
@@ -140,6 +140,15 @@ async function collectChildReport(child: PinnedChild, request: WaveRequest): Pro
       }),
       request.timeoutMs,
     );
+    if (child.launch.agent === "verifier") {
+      captureVerifierReport({
+        host: "opencode",
+        cwd: request.projectDirectory,
+        session: deriveRootId(request.projectDirectory),
+        model: null,
+        report: raw,
+      });
+    }
     return {
       outcome: "reported",
       worktree: child.launch.worktree,

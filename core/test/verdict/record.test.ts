@@ -9,6 +9,7 @@ import {
   appendVerdict,
   armedSliceOf,
   readVerdicts,
+  recordsSinceArm,
   type VerdictCapture,
 } from "../../src/verdict/record.ts";
 
@@ -49,6 +50,18 @@ describe("the verdict record writer", () => {
     appendVerdict(verdictsFile, CAPTURE);
     const attempts = readVerdicts(verdictsFile).entries.flatMap((entry) => ("attempt" in entry ? [entry.attempt] : []));
     assert.deepEqual(attempts, [1, 2, 1, 2, 1]);
+  });
+
+  test("a record with a null slice reads back whole and joins no armed slice", () => {
+    appendArmMarker(verdictsFile, { slice: "2", session: "ses-record", change: "alpha" });
+    appendVerdict(verdictsFile, { ...CAPTURE, slice: null });
+    const log = readVerdicts(verdictsFile);
+    assert.deepEqual(
+      log.entries.flatMap((entry) => ("attempt" in entry ? [{ slice: entry.slice, attempt: entry.attempt }] : [])),
+      [{ slice: null, attempt: 1 }],
+    );
+    assert.equal(log.skippedLines, 0);
+    assert.deepEqual(recordsSinceArm(log.entries), []);
   });
 
   test("each record is one JSON line in the ledger's field order, in an owner-only file", () => {

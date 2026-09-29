@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
+import { GENERATED_BUNDLES } from "../../src/routes/routes.ts";
 import { firstLineContaining } from "../support/line-locate.ts";
 import { provedSomething } from "../support/proved.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
@@ -50,7 +51,10 @@ const alternations = trackedFileSet.has(VERDICT_GRAMMAR_OWNER)
 const SEARCHED_PREFIXES = searchedPrefixes();
 
 const searchedFiles = trackedFiles.filter(
-  (file) => SEARCHED_PREFIXES.some((prefix) => file.startsWith(prefix)) && file !== VERDICT_GRAMMAR_OWNER,
+  (file) =>
+    SEARCHED_PREFIXES.some((prefix) => file.startsWith(prefix)) &&
+    file !== VERDICT_GRAMMAR_OWNER &&
+    !GENERATED_BUNDLES.includes(file),
 );
 
 provedSomething(
@@ -61,7 +65,8 @@ provedSomething(
 );
 
 provedSomething(
-  `${searchedFiles.length} tracked file(s) under ${SEARCHED_PREFIXES.join(", ")} were searched for a duplicate verdict-vocabulary alternation`,
+  `${searchedFiles.length} tracked file(s) under ${SEARCHED_PREFIXES.join(", ")}, builder outputs aside, ` +
+    "were searched for a duplicate verdict-vocabulary alternation",
   searchedFiles.length >= MINIMUM_SEARCHED_FILES,
   `only ${searchedFiles.length} file(s) were found, under the ${MINIMUM_SEARCHED_FILES}-file floor ` +
     `(${MINIMUM_SEARCHED_FILES_DERIVATION})`,

@@ -4,7 +4,7 @@ import { abstractionScanReport } from "../scan/abstraction-scan.ts";
 import { ScanFailure } from "../scan/changed-lines.ts";
 import { commentScanReport } from "../scan/comment-scan.ts";
 import { ereReads } from "../shell/ere.ts";
-import { appendArmMarker, armedSliceOf, readVerdicts, verdictsFileFor } from "../verdict/record.ts";
+import { appendArmMarker, armedSliceOf, readVerdicts, recordedStateValue, verdictsFileFor } from "../verdict/record.ts";
 import { greensIn, type GreensRead, renderReportTable, verdictMetrics } from "../verdict/report.ts";
 import * as knownKeys from "./known-keys.ts";
 import * as plan from "./plan.ts";
@@ -195,8 +195,7 @@ function runSet(sessionId: string, pairs: readonly string[]): number {
 function markArming(stateFile: string, sessionId: string, pairs: readonly string[], content: string): void {
   const slice = armedSliceOf(pairs);
   if (slice === undefined) return;
-  const change = store.stateValue(content, "auto_change");
-  appendArmMarker(verdictsFileFor(stateFile), { slice, session: sessionId, change: change === "" ? null : change });
+  appendArmMarker(verdictsFileFor(stateFile), { slice, session: sessionId, change: recordedStateValue(content, "auto_change") });
 }
 
 function runReport(remaining: readonly string[]): number {

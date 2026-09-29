@@ -76,8 +76,8 @@ export function renderReportTable(metrics: VerdictMetrics): string {
     .join("");
 }
 
-function recordsBySlice(records: readonly VerdictRecord[]): Map<string, VerdictRecord[]> {
-  const bySlice = new Map<string, VerdictRecord[]>();
+function recordsBySlice(records: readonly VerdictRecord[]): Map<string | null, VerdictRecord[]> {
+  const bySlice = new Map<string | null, VerdictRecord[]>();
   for (const record of records) {
     bySlice.set(record.slice, [...(bySlice.get(record.slice) ?? []), record]);
   }

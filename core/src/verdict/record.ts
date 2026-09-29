@@ -8,18 +8,21 @@ import {
   readFileIfPresent,
   runsDirectoryOf,
   splitPair,
+  stateValue,
   withOwnerOnlyUmask,
 } from "../state/store.ts";
 import { RECORDED_VERDICTS, type RecordedVerdict, VERDICT_SHAPES, type VerdictShape } from "./grammar.ts";
 
 export const VERIFIER_ROLE = "verifier";
 
+export const TELEMETRY_WRITE_FAILED = "telemetry-write-failed";
+
 export type VerdictRecord = Readonly<{
   time: string;
   host: HostName;
   session: string;
   change: string | null;
-  slice: string;
+  slice: string | null;
   attempt: number;
   role: string;
   model: string | null;
@@ -72,6 +75,11 @@ export function appendArmMarker(verdictsFile: string, marker: ArmCapture): boole
   }));
 }
 
+export function recordedStateValue(stateContent: string, key: string): string | null {
+  const value = stateValue(stateContent, key);
+  return value === "" ? null : value;
+}
+
 export function armedSliceOf(pairs: readonly string[]): string | undefined {
   const written = new Map(pairs.map(splitPair));
   const slice = written.get("active_slice");
@@ -94,7 +102,7 @@ export function recordsSinceArm(entries: readonly VerdictLogEntry[]): VerdictRec
       armedSlices.set(entry.slice, []);
       continue;
     }
-    armedSlices.get(entry.slice)?.push(entry);
+    if (entry.slice !== null) armedSlices.get(entry.slice)?.push(entry);
   }
   return [...armedSlices.values()].flat();
 }
@@ -112,7 +120,7 @@ function appendEntry(verdictsFile: string, session: string, entryOf: () => Verdi
     });
     return true;
   } catch (error) {
-    logEvent({ event: "telemetry-write-failed", session, command: `${verdictsFile}: ${causeOf(error)}` });
+    logEvent({ event: TELEMETRY_WRITE_FAILED, session, command: `${verdictsFile}: ${causeOf(error)}` });
     return false;
   }
 }
@@ -143,7 +151,7 @@ function armMarkerOf(fields: Record<string, unknown>): ArmMarker | undefined {
 
 function verdictRecordOf(fields: Record<string, unknown>): VerdictRecord | undefined {
   const { time, host, session, change, slice, attempt, role, model, verdict, verdict_shape, escalated } = fields;
-  if (!isText(time) || !isText(session) || !isTextOrNull(change) || !isText(slice) || !isText(role)) return undefined;
+  if (!isText(time) || !isText(session) || !isTextOrNull(change) || !isTextOrNull(slice) || !isText(role)) return undefined;
   if (!isHostName(host) || typeof attempt !== "number") return undefined;
   if (!isTextOrNull(model) || typeof escalated !== "boolean") return undefined;
   const recorded = RECORDED_VERDICTS.find((value) => value === verdict);
