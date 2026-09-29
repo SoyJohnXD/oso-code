@@ -1509,18 +1509,52 @@ function oneLine(value) {
 
 // core/src/state/watch.ts
 var MINUTE_MS = 6e4;
+var DEFAULT_POLL_MS = 3e4;
 var SILENCE_LIMIT_MS = 60 * MINUTE_MS;
 var LONG_RUNNING_LIMIT_MS = 180 * MINUTE_MS;
-var WATCHDOG_RECORD = /^([1-9]\d*):(\d+)$/;
+var WATCHDOG_LIMITS = { silenceMs: SILENCE_LIMIT_MS, longRunningMs: LONG_RUNNING_LIMIT_MS };
+var POSITIVE_INTEGER = /^[1-9]\d*$/;
+var WATCHDOG_RECORD = /^([1-9]\d*):(\d*)$/;
+var HEARTBEAT_MISSED_POLLS = 3;
 var START_TIME_FIELD_AFTER_COMMAND = 19;
-function watchdogAlive(stateFile, sessionId) {
-  const watchdog = recordedWatchdog(watchPidFileOf(stateFile, sessionId));
-  return watchdog !== void 0 && processStartOf(watchdog.pid) === watchdog.start;
+function watchdogAlive(stateFile, sessionId, startOf = processStartOf) {
+  const pidFile = watchPidFileOf(stateFile, sessionId);
+  const watchdog = recordedWatchdog(pidFile);
+  if (watchdog === void 0) return false;
+  const start = startOf(watchdog.pid);
+  if (start !== void 0) return start === watchdog.start;
+  return processLives(watchdog.pid) && heartbeatFresh(pidFile);
+}
+function watchLimitsFrom(environment) {
+  return {
+    pollMs: testOverride(environment["OSO_WATCH_POLL_MS"]) ?? DEFAULT_POLL_MS,
+    silenceMs: testOverride(environment["OSO_WATCH_SILENCE_MS"]) ?? WATCHDOG_LIMITS.silenceMs,
+    longRunningMs: testOverride(environment["OSO_WATCH_LONG_MS"]) ?? WATCHDOG_LIMITS.longRunningMs
+  };
+}
+function testOverride(value) {
+  if (value === void 0 || !POSITIVE_INTEGER.test(value)) return void 0;
+  return Number(value);
 }
 function recordedWatchdog(pidFile) {
   const recorded = WATCHDOG_RECORD.exec(stateValue(readFileIfPresent(pidFile) ?? "", "watch"));
   if (recorded === null) return void 0;
   return { pid: Number(recorded[1]), start: recorded[2] };
+}
+function processLives(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (isErrnoException(error) && error.code === "EPERM") return true;
+    if (isErrnoException(error) && error.code === "ESRCH") return false;
+    throw error;
+  }
+}
+function heartbeatFresh(pidFile) {
+  const silentSeconds = secondsSinceModified(pidFile);
+  const toleratedSeconds = watchLimitsFrom(process.env).pollMs * HEARTBEAT_MISSED_POLLS / 1e3;
+  return silentSeconds !== void 0 && silentSeconds < toleratedSeconds;
 }
 function processStartOf(pid) {
   const stat = readFileIfPresent(`/proc/${pid}/stat`);

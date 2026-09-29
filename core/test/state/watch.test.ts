@@ -4,6 +4,7 @@ import { existsSync, rmSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
+import { watchdogRecordOf } from "../../src/state/watch.ts";
 import {
   REPOSITORY_RUNS_DIR,
   repositoryRoot,
@@ -160,7 +161,7 @@ describe("oso-state watch ends when every delegation of this session has ended",
     await withRunningSandbox(async (sandbox) => {
       sandbox.seed(seededAgent({ agentId: "a1" }, 0));
       const watch = startWatch(sandbox);
-      assert.match(await pidFileOnceWritten(sandbox), new RegExp(`^watch=${watch.pid}:\\d+\\n$`));
+      assert.equal(await pidFileOnceWritten(sandbox), watchdogRecordOf(watch.pid));
       await delay(POLLS_TO_OBSERVE_MS);
       assert.equal(sandbox.read(PID_FILE).kind, "file");
       removeRegistryEntry(sandbox, "a1");

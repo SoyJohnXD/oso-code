@@ -9,7 +9,9 @@ import {
 } from "./in-flight-registry.ts";
 import {
   inFlightRegistryOf,
+  isErrnoException,
   readFileIfPresent,
+  secondsSinceModified,
   sleepSync,
   stateValue,
   watchPidFileOf,
@@ -42,7 +44,8 @@ const LONG_RUNNING_LIMIT_MS = 180 * MINUTE_MS;
 const WATCHDOG_LIMITS: OverdueLimits = { silenceMs: SILENCE_LIMIT_MS, longRunningMs: LONG_RUNNING_LIMIT_MS };
 const DELEGATION_NEEDS_ATTENTION_EXIT = 3;
 const POSITIVE_INTEGER = /^[1-9]\d*$/;
-const WATCHDOG_RECORD = /^([1-9]\d*):(\d+)$/;
+const WATCHDOG_RECORD = /^([1-9]\d*):(\d*)$/;
+const HEARTBEAT_MISSED_POLLS = 3;
 const START_TIME_FIELD_AFTER_COMMAND = 19;
 const ALL_ENDED: WatchEnd = { exitCode: 0, lines: ["all delegations ended"] };
 
@@ -50,10 +53,9 @@ export function watchInFlight(stateFile: string, sessionId: string): WatchEnd {
   const registry = inFlightRegistryOf(stateFile, sessionId);
   const pidFile = watchPidFileOf(stateFile, sessionId);
   const limits = watchLimitsFrom(process.env);
-  const record = `watch=${process.pid}:${processStartOf(process.pid) ?? ""}\n`;
-  withOwnerOnlyUmask(() => writeFileAtomically(path.dirname(pidFile), pidFile, record, ".watch-"));
   try {
     for (;;) {
+      heartbeat(pidFile);
       const end = pollOnce(registry, limits);
       if (end !== undefined) return end;
       sleepSync(limits.pollMs);
@@ -63,9 +65,26 @@ export function watchInFlight(stateFile: string, sessionId: string): WatchEnd {
   }
 }
 
-export function watchdogAlive(stateFile: string, sessionId: string): boolean {
-  const watchdog = recordedWatchdog(watchPidFileOf(stateFile, sessionId));
-  return watchdog !== undefined && processStartOf(watchdog.pid) === watchdog.start;
+export function watchdogAlive(
+  stateFile: string,
+  sessionId: string,
+  startOf: (pid: number) => string | undefined = processStartOf,
+): boolean {
+  const pidFile = watchPidFileOf(stateFile, sessionId);
+  const watchdog = recordedWatchdog(pidFile);
+  if (watchdog === undefined) return false;
+  const start = startOf(watchdog.pid);
+  if (start !== undefined) return start === watchdog.start;
+  return processLives(watchdog.pid) && heartbeatFresh(pidFile);
+}
+
+export function watchdogRecordOf(pid: number): string {
+  return `watch=${pid}:${processStartOf(pid) ?? ""}\n`;
+}
+
+function heartbeat(pidFile: string): void {
+  const record = watchdogRecordOf(process.pid);
+  withOwnerOnlyUmask(() => writeFileAtomically(path.dirname(pidFile), pidFile, record, ".watch-"));
 }
 
 function pollOnce(registry: string, limits: WatchLimits): WatchEnd | undefined {
@@ -147,7 +166,24 @@ function recordedWatchdog(pidFile: string): WatchdogRecord | undefined {
   return { pid: Number(recorded[1]), start: recorded[2] as string };
 }
 
-export function processStartOf(pid: number): string | undefined {
+function processLives(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (isErrnoException(error) && error.code === "EPERM") return true;
+    if (isErrnoException(error) && error.code === "ESRCH") return false;
+    throw error;
+  }
+}
+
+function heartbeatFresh(pidFile: string): boolean {
+  const silentSeconds = secondsSinceModified(pidFile);
+  const toleratedSeconds = (watchLimitsFrom(process.env).pollMs * HEARTBEAT_MISSED_POLLS) / 1000;
+  return silentSeconds !== undefined && silentSeconds < toleratedSeconds;
+}
+
+function processStartOf(pid: number): string | undefined {
   const stat = readFileIfPresent(`/proc/${pid}/stat`);
   if (stat === undefined) return undefined;
   const fieldsAfterCommand = stat.slice(stat.lastIndexOf(")") + 2).split(" ");

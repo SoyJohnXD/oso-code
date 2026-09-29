@@ -1733,11 +1733,9 @@ function watchInFlight(stateFile, sessionId) {
   const registry = inFlightRegistryOf(stateFile, sessionId);
   const pidFile = watchPidFileOf(stateFile, sessionId);
   const limits = watchLimitsFrom(process.env);
-  const record = `watch=${process.pid}:${processStartOf(process.pid) ?? ""}
-`;
-  withOwnerOnlyUmask(() => writeFileAtomically(path6.dirname(pidFile), pidFile, record, ".watch-"));
   try {
     for (; ; ) {
+      heartbeat(pidFile);
       const end = pollOnce(registry, limits);
       if (end !== void 0) return end;
       sleepSync(limits.pollMs);
@@ -1745,6 +1743,14 @@ function watchInFlight(stateFile, sessionId) {
   } finally {
     rmSync4(pidFile, { force: true });
   }
+}
+function watchdogRecordOf(pid) {
+  return `watch=${pid}:${processStartOf(pid) ?? ""}
+`;
+}
+function heartbeat(pidFile) {
+  const record = watchdogRecordOf(process.pid);
+  withOwnerOnlyUmask(() => writeFileAtomically(path6.dirname(pidFile), pidFile, record, ".watch-"));
 }
 function pollOnce(registry, limits) {
   const { agents, unreadable } = readRegistry(registry);

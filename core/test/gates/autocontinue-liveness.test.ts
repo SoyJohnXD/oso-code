@@ -6,9 +6,8 @@ import { describe, test } from "node:test";
 import { runGate, type GateRun } from "../../src/gates/dispatch.ts";
 import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { inFlightRegistryOf, isErrnoException, runsDirectoryOf, stateFileFor, watchPidFileOf } from "../../src/state/store.ts";
-import { watchInFlight, type WatchEnd } from "../../src/state/watch.ts";
+import { watchdogRecordOf, watchInFlight, type WatchEnd } from "../../src/state/watch.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
-import { ownWatchdogRecord } from "../support/process-start.ts";
 import { withStateSandbox, type StateSandbox } from "../support/state-sandbox.ts";
 
 const SESSION = "sess-net";
@@ -86,7 +85,7 @@ function staleWaitMark(project: Project): string {
 }
 
 function liveWatchdog(project: Project): void {
-  written(watchPidFileOf(project.stateFile, SESSION), ownWatchdogRecord());
+  written(watchPidFileOf(project.stateFile, SESSION), watchdogRecordOf(process.pid));
 }
 
 function registryEntry(project: Project, agentId: string): string {
