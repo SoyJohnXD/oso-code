@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync, type Dirent } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import type { DatabaseSync } from "node:sqlite";
 import { parseArgs } from "node:util";
 
 const MODES = ["plan", "quick", "debug", "roadmap"] as const;
@@ -400,6 +401,118 @@ function earliestCompletionBy(notices: Notice[], keyOf: (notice: Notice) => stri
   return earliest;
 }
 
+const OPENCODE_BUSY_TIMEOUT_MS = 5_000;
+const OPENCODE_REQUIRED_COLUMNS = {
+  session: ["id", "parent_id", "time_created", "time_updated"],
+  message: ["id", "session_id", "data"],
+  part: ["id", "message_id", "session_id", "time_created", "data"],
+} as const;
+const CONTINUATION_PUSH_PREFIX = "oso-code:";
+const SKILL_MODE = new RegExp(`skill/oso-(${MODES.join("|")})/SKILL\\.md`);
+
+type SqlRow = Readonly<Record<string, unknown>>;
+
+export function classifyOpenCodeDb(dbFile: string): TreeClassification {
+  const { DatabaseSync } = process.getBuiltinModule("node:sqlite");
+  const db = new DatabaseSync(dbFile, { readOnly: true });
+  try {
+    db.exec(`PRAGMA busy_timeout = ${OPENCODE_BUSY_TIMEOUT_MS}`);
+    assertOpenCodeSchema(db);
+    return classifyOpenCodeRows(
+      db.prepare("SELECT id, parent_id, time_updated FROM session").all(),
+      db.prepare("SELECT id, session_id, data FROM message").all(),
+      db.prepare("SELECT session_id, message_id, time_created, data FROM part ORDER BY time_created, id").all(),
+    );
+  } finally {
+    db.close();
+  }
+}
+
+function assertOpenCodeSchema(db: DatabaseSync): void {
+  const problems = Object.entries(OPENCODE_REQUIRED_COLUMNS).flatMap(([table, columns]) => {
+    const present = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((column) => column["name"]));
+    if (present.size === 0) return [`missing table ${table}`];
+    return columns.filter((column) => !present.has(column)).map((column) => `missing column ${table}.${column}`);
+  });
+  if (problems.length > 0) throw new Error(`OpenCode schema unrecognized: ${problems.join("; ")}`);
+}
+
+function classifyOpenCodeRows(sessionRows: SqlRow[], messageRows: SqlRow[], partRows: SqlRow[]): TreeClassification {
+  const tree: TreeClassification = { sessions: [], skippedLines: 0, unreadableFiles: 0 };
+  const parents = new Map(sessionRows.map((row) => [String(row["id"]), row["parent_id"] == null ? null : String(row["parent_id"])]));
+  const records = new Map<string, SessionRecord>();
+  for (const row of sessionRows) {
+    const root = rootSessionOf(String(row["id"]), parents);
+    let record = records.get(root);
+    if (record === undefined) {
+      record = { ...emptySession(root), hasMainTranscript: true };
+      records.set(root, record);
+      tree.sessions.push(record);
+    }
+    record.mtimeMs = Math.max(record.mtimeMs, Number(row["time_updated"]));
+  }
+
+  const roles = new Map<string, string>();
+  for (const row of messageRows) {
+    const role = parseRow(row["data"])?.["role"];
+    if (typeof role !== "string") continue;
+    roles.set(String(row["id"]), role);
+    const sessionId = String(row["session_id"]);
+    const record = records.get(sessionId);
+    if (role === "assistant" && record !== undefined) record.turns += 1;
+  }
+
+  for (const row of partRows) {
+    const sessionId = String(row["session_id"]);
+    const record = records.get(rootSessionOf(sessionId, parents));
+    const part = parseRow(row["data"]);
+    if (part === undefined) {
+      tree.skippedLines += 1;
+      continue;
+    }
+    if (record === undefined) continue;
+    const timeMs = Number(row["time_created"]);
+    const timestamp = Number.isFinite(timeMs) ? new Date(timeMs).toISOString() : "";
+    const state = isRecord(part["state"]) ? part["state"] : {};
+    if (part["type"] === "tool" && state["status"] === "error" && typeof state["error"] === "string") {
+      if (DENIAL_TEXT.test(state["error"])) record.denials.push({ gate: gateOfDenial(state["error"]), timestamp });
+    }
+    if (record.sessionId !== sessionId) continue;
+    countOpenCodeMainPart(record, part, state, roles.get(String(row["message_id"])) === "user", timestamp);
+  }
+  return tree;
+}
+
+function countOpenCodeMainPart(
+  record: SessionRecord,
+  part: EventRecord,
+  state: EventRecord,
+  fromUser: boolean,
+  timestamp: string,
+): void {
+  if (part["type"] === "text" && fromUser && typeof part["text"] === "string") {
+    if (part["text"].trimStart().startsWith(CONTINUATION_PUSH_PREFIX)) record.stopNetTimestamps.push(timestamp);
+    record.mode ??= (SKILL_MODE.exec(part["text"])?.[1] as Mode | undefined) ?? null;
+  }
+  if (part["type"] !== "tool") return;
+  if (part["tool"] === "task") record.agentLaunches += 1;
+  if (part["tool"] === "bash" && OSO_STATE_INVOCATION.test(commandOf(state))) record.osoStateCalls += 1;
+}
+
+function rootSessionOf(sessionId: string, parents: Map<string, string | null>): string {
+  const seen = new Set([sessionId]);
+  let current = sessionId;
+  for (let parent = parents.get(current); parent != null && parents.has(parent) && !seen.has(parent); parent = parents.get(current)) {
+    seen.add(parent);
+    current = parent;
+  }
+  return current;
+}
+
+function parseRow(data: unknown): EventRecord | undefined {
+  return typeof data === "string" ? parseEvent(data) : undefined;
+}
+
 export type GateCount = { events: number; sessions: number };
 
 export type ModeSummary = {
@@ -690,6 +803,21 @@ function distributionRow(label: string, { count, p50_ms, p90_ms, p99_ms, max_ms 
   return `  ${label.padEnd(DISTRIBUTION_COLUMNS.label)}${cells.join("")}`;
 }
 
+function openCodeDefaultDb(): string {
+  const dataHome = process.env["XDG_DATA_HOME"] || path.join(homedir(), ".local", "share");
+  return path.join(dataHome, "opencode", "opencode.db");
+}
+
+function openCodeDbFile(dbFile: string): string {
+  if (!statSync(dbFile).isFile()) throw new Error(`opencode database is not a file: ${dbFile}`);
+  return dbFile;
+}
+
+function classifyClaudeRoot(root: string): TreeClassification {
+  if (!statSync(root).isDirectory()) throw new Error(`root is not a directory: ${root}`);
+  return classifyTree(root);
+}
+
 function main(): void {
   try {
     const { values } = parseArgs({
@@ -697,12 +825,17 @@ function main(): void {
         days: { type: "string", default: String(DEFAULT_WINDOW_DAYS) },
         root: { type: "string", default: path.join(homedir(), ".claude", "projects") },
         json: { type: "boolean", default: false },
+        host: { type: "string", default: "claude" },
+        "opencode-db": { type: "string", default: openCodeDefaultDb() },
       },
     });
     const days = Number(values.days);
     if (!Number.isFinite(days) || days <= 0) throw new Error(`--days must be a positive number, got ${values.days}`);
-    if (!statSync(values.root).isDirectory()) throw new Error(`root is not a directory: ${values.root}`);
-    const report = aggregate(classifyTree(values.root), days, Date.now());
+    if (values.host !== "claude" && values.host !== "opencode") {
+      throw new Error(`--host must be claude or opencode, got ${values.host}`);
+    }
+    const tree = values.host === "opencode" ? classifyOpenCodeDb(openCodeDbFile(values["opencode-db"])) : classifyClaudeRoot(values.root);
+    const report = aggregate(tree, days, Date.now());
     console.log(values.json ? renderJson(report) : renderTable(report));
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause);
