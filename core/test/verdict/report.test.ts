@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { readVerdictShape } from "../../src/verdict/grammar.ts";
-import { readVerdicts } from "../../src/verdict/record.ts";
+import { type ArmMarker, readVerdicts, type VerdictLogEntry, type VerdictRecord } from "../../src/verdict/record.ts";
 import { renderReportTable, unreceiptedGreensIn, verdictMetrics } from "../../src/verdict/report.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
 
@@ -20,23 +20,23 @@ const EVENTS = [
   "not an event",
 ].join("\n");
 
-describe("the verdict report reads the records after each slice's newest arm marker", () => {
+describe("the verdict report reads the records after each arm marker of their slice", () => {
   const log = readVerdicts(FIXTURE);
   const metrics = verdictMetrics(log, { kind: "read", greens: unreceiptedGreensIn(EVENTS) });
 
-  test("one of three armed slices opened on a fail, so the first-fail rate is 33.3 %", () => {
-    assert.equal(metrics.slices, 3);
-    assert.equal(metrics.first_fail_rate_percent, 33.3);
-    assert.match(renderReportTable(metrics), /first-fail rate\s+33\.3 % \(1 of 3 slices\)/);
+  test("two of four armings opened on a fail, so the first-fail rate is 50.0 %", () => {
+    assert.equal(metrics.slices, 4);
+    assert.equal(metrics.first_fail_rate_percent, 50);
+    assert.match(renderReportTable(metrics), /first-fail rate\s+50\.0 % \(2 of 4 slices\)/);
   });
 
-  test("the slice that took three verifier rounds sets the maximum, and the median is 2", () => {
-    assert.deepEqual(metrics.rounds_per_slice, { max: 3, median: 2 });
+  test("the slice that took three verifier rounds sets the maximum, and the median is 1.5", () => {
+    assert.deepEqual(metrics.rounds_per_slice, { max: 3, median: 1.5 });
   });
 
-  test("a fail recorded before a newer arm marker of its slice never counts, nor a slice never armed", () => {
+  test("a fail recorded before a newer arm marker of its slice still counts for its own arming, a slice never armed does not", () => {
     assert.deepEqual(metrics.verdicts_by_model, [
-      { model: "opus", pass: 1, fail: 2, blocked: 0, none: 0 },
+      { model: "opus", pass: 1, fail: 3, blocked: 0, none: 0 },
       { model: "sonnet", pass: 1, fail: 0, blocked: 0, none: 0 },
       { model: null, pass: 1, fail: 0, blocked: 0, none: 1 },
     ]);
@@ -55,6 +55,48 @@ describe("the verdict report reads the records after each slice's newest arm mar
     const omitted = verdictMetrics(log, { kind: "omitted", reason: "events.jsonl is absent" });
     assert.deepEqual(omitted.unreceipted_greens, { omitted: "events.jsonl is absent" });
     assert.match(renderReportTable(omitted), /unreceipted greens\s+omitted: events\.jsonl is absent/);
+  });
+});
+
+function armedBy(change: string, time: string): ArmMarker {
+  return { kind: "arm", slice: "1", session: `ses-${change}`, change, time };
+}
+
+function verifiedBy(change: string, time: string, verdict: VerdictRecord["verdict"]): VerdictRecord {
+  return {
+    time,
+    host: "claude",
+    session: `ses-${change}`,
+    change,
+    slice: "1",
+    attempt: 1,
+    role: "verifier",
+    model: "opus",
+    verdict,
+    verdict_shape: "valid",
+    escalated: false,
+  };
+}
+
+describe("the verdict report counts each arming of a reused slice id as its own slice", () => {
+  const entries: VerdictLogEntry[] = [
+    armedBy("alpha", "2026-09-01T10:00:00Z"),
+    verifiedBy("alpha", "2026-09-01T10:05:00Z", "fail"),
+    verifiedBy("alpha", "2026-09-01T10:10:00Z", "pass"),
+    armedBy("beta", "2026-09-02T09:00:00Z"),
+    verifiedBy("beta", "2026-09-02T09:05:00Z", "pass"),
+  ];
+  const metrics = verdictMetrics({ entries, skippedLines: 0 }, { kind: "omitted", reason: "not read" });
+
+  test("slice 1 armed by alpha and re-armed by beta reads as two slices, one of them opened on a fail", () => {
+    assert.equal(metrics.slices, 2);
+    assert.equal(metrics.first_fail_rate_percent, 50);
+    assert.match(renderReportTable(metrics), /first-fail rate\s+50\.0 % \(1 of 2 slices\)/);
+  });
+
+  test("alpha's two rounds still set the maximum after beta re-armed the slice", () => {
+    assert.deepEqual(metrics.rounds_per_slice, { max: 2, median: 1.5 });
+    assert.deepEqual(metrics.verdicts_by_model, [{ model: "opus", pass: 2, fail: 1, blocked: 0, none: 0 }]);
   });
 });
 

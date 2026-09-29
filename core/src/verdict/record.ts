@@ -90,15 +90,7 @@ export function readVerdicts(verdictsFile: string): VerdictLog {
 }
 
 export function recordsSinceArm(entries: readonly VerdictLogEntry[]): VerdictRecord[] {
-  const armedSlices = new Map<string, VerdictRecord[]>();
-  for (const entry of entries) {
-    if (isArmMarker(entry)) {
-      armedSlices.set(entry.slice, []);
-      continue;
-    }
-    if (entry.slice !== null) armedSlices.get(entry.slice)?.push(entry);
-  }
-  return [...armedSlices.values()].flat();
+  return [...armingsOf(entries).newestArmingOfSlice.values()].flat();
 }
 
 export function verifierRecordsSinceArm(entries: readonly VerdictLogEntry[], slice: string | null): VerdictRecord[] {
@@ -107,6 +99,26 @@ export function verifierRecordsSinceArm(entries: readonly VerdictLogEntry[], sli
 
 export function isArmMarker(entry: VerdictLogEntry): entry is ArmMarker {
   return "kind" in entry;
+}
+
+type Armings = Readonly<{
+  everyArming: VerdictRecord[][];
+  newestArmingOfSlice: ReadonlyMap<string, VerdictRecord[]>;
+}>;
+
+export function armingsOf(entries: readonly VerdictLogEntry[]): Armings {
+  const everyArming: VerdictRecord[][] = [];
+  const newestArmingOfSlice = new Map<string, VerdictRecord[]>();
+  for (const entry of entries) {
+    if (isArmMarker(entry)) {
+      const arming: VerdictRecord[] = [];
+      everyArming.push(arming);
+      newestArmingOfSlice.set(entry.slice, arming);
+      continue;
+    }
+    if (entry.slice !== null) newestArmingOfSlice.get(entry.slice)?.push(entry);
+  }
+  return { everyArming, newestArmingOfSlice };
 }
 
 function appendEntry(verdictsFile: string, session: string, entryOf: () => VerdictLogEntry): boolean {

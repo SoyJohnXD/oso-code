@@ -1,8 +1,8 @@
 import { RECORDED_VERDICTS, type RecordedVerdict } from "./grammar.ts";
 import { jsonObjectOf } from "../state/store.ts";
 import {
+  armingsOf,
   isArmMarker,
-  recordsSinceArm,
   type VerdictLog,
   type VerdictLogEntry,
   type VerdictRecord,
@@ -30,8 +30,10 @@ export type VerdictMetrics = Readonly<{
 }>;
 
 export function verdictMetrics(log: VerdictLog, greensRead: GreensRead): VerdictMetrics {
-  const verifierRecords = recordsSinceArm(log.entries).filter((record) => record.role === VERIFIER_ROLE);
-  const roundsOfEachSlice = [...recordsBySlice(verifierRecords).values()];
+  const roundsOfEachSlice = armingsOf(log.entries)
+    .everyArming.map((arming) => arming.filter((record) => record.role === VERIFIER_ROLE))
+    .filter((rounds) => rounds.length > 0);
+  const verifierRecords = roundsOfEachSlice.flat();
   const firstFailSlices = roundsOfEachSlice.filter((rounds) => rounds[0]?.verdict === "fail").length;
   return {
     slices: roundsOfEachSlice.length,
@@ -71,14 +73,6 @@ export function renderReportTable(metrics: VerdictMetrics): string {
     .flatMap(([label, values]) => values.map((value, index) => `${(index === 0 ? label : "").padEnd(labelWidth)}${value}`))
     .map((line) => `${line}\n`)
     .join("");
-}
-
-function recordsBySlice(records: readonly VerdictRecord[]): Map<string | null, VerdictRecord[]> {
-  const bySlice = new Map<string | null, VerdictRecord[]>();
-  for (const record of records) {
-    bySlice.set(record.slice, [...(bySlice.get(record.slice) ?? []), record]);
-  }
-  return bySlice;
 }
 
 function oneDecimal(value: number): number {

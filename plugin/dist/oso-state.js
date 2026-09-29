@@ -1398,21 +1398,27 @@ function readVerdicts(verdictsFile) {
   return { entries, skippedLines: lines.length - entries.length };
 }
 function recordsSinceArm(entries) {
-  const armedSlices = /* @__PURE__ */ new Map();
-  for (const entry of entries) {
-    if (isArmMarker(entry)) {
-      armedSlices.set(entry.slice, []);
-      continue;
-    }
-    if (entry.slice !== null) armedSlices.get(entry.slice)?.push(entry);
-  }
-  return [...armedSlices.values()].flat();
+  return [...armingsOf(entries).newestArmingOfSlice.values()].flat();
 }
 function verifierRecordsSinceArm(entries, slice) {
   return recordsSinceArm(entries).filter((record) => record.slice === slice && record.role === VERIFIER_ROLE);
 }
 function isArmMarker(entry) {
   return "kind" in entry;
+}
+function armingsOf(entries) {
+  const everyArming = [];
+  const newestArmingOfSlice = /* @__PURE__ */ new Map();
+  for (const entry of entries) {
+    if (isArmMarker(entry)) {
+      const arming = [];
+      everyArming.push(arming);
+      newestArmingOfSlice.set(entry.slice, arming);
+      continue;
+    }
+    if (entry.slice !== null) newestArmingOfSlice.get(entry.slice)?.push(entry);
+  }
+  return { everyArming, newestArmingOfSlice };
 }
 function appendEntry(verdictsFile, session, entryOf) {
   try {
@@ -1492,8 +1498,8 @@ function refusalReason(slice, record) {
 
 // core/src/verdict/report.ts
 function verdictMetrics(log, greensRead) {
-  const verifierRecords = recordsSinceArm(log.entries).filter((record) => record.role === VERIFIER_ROLE);
-  const roundsOfEachSlice = [...recordsBySlice(verifierRecords).values()];
+  const roundsOfEachSlice = armingsOf(log.entries).everyArming.map((arming) => arming.filter((record) => record.role === VERIFIER_ROLE)).filter((rounds) => rounds.length > 0);
+  const verifierRecords = roundsOfEachSlice.flat();
   const firstFailSlices = roundsOfEachSlice.filter((rounds) => rounds[0]?.verdict === "fail").length;
   return {
     slices: roundsOfEachSlice.length,
@@ -1525,13 +1531,6 @@ function renderReportTable(metrics) {
   const labelWidth = Math.max(...rows.map(([label]) => label.length)) + 2;
   return rows.flatMap(([label, values]) => values.map((value, index) => `${(index === 0 ? label : "").padEnd(labelWidth)}${value}`)).map((line) => `${line}
 `).join("");
-}
-function recordsBySlice(records) {
-  const bySlice = /* @__PURE__ */ new Map();
-  for (const record of records) {
-    bySlice.set(record.slice, [...bySlice.get(record.slice) ?? [], record]);
-  }
-  return bySlice;
 }
 function oneDecimal(value) {
   return Math.round(value * 10) / 10;

@@ -1658,21 +1658,27 @@ function readVerdicts(verdictsFile) {
   return { entries, skippedLines: lines.length - entries.length };
 }
 function recordsSinceArm(entries) {
-  const armedSlices = /* @__PURE__ */ new Map();
-  for (const entry of entries) {
-    if (isArmMarker(entry)) {
-      armedSlices.set(entry.slice, []);
-      continue;
-    }
-    if (entry.slice !== null) armedSlices.get(entry.slice)?.push(entry);
-  }
-  return [...armedSlices.values()].flat();
+  return [...armingsOf(entries).newestArmingOfSlice.values()].flat();
 }
 function verifierRecordsSinceArm(entries, slice) {
   return recordsSinceArm(entries).filter((record) => record.slice === slice && record.role === VERIFIER_ROLE);
 }
 function isArmMarker(entry) {
   return "kind" in entry;
+}
+function armingsOf(entries) {
+  const everyArming = [];
+  const newestArmingOfSlice = /* @__PURE__ */ new Map();
+  for (const entry of entries) {
+    if (isArmMarker(entry)) {
+      const arming = [];
+      everyArming.push(arming);
+      newestArmingOfSlice.set(entry.slice, arming);
+      continue;
+    }
+    if (entry.slice !== null) newestArmingOfSlice.get(entry.slice)?.push(entry);
+  }
+  return { everyArming, newestArmingOfSlice };
 }
 function appendEntry(verdictsFile, session, entryOf) {
   try {

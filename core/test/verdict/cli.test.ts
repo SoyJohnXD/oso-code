@@ -74,14 +74,14 @@ describe("oso-state report", () => {
       sandbox.seed({ [VERDICTS_LOG]: REPORT_FIXTURE, [EVENTS_LOG]: "" });
       const table = sandbox.run(CLI_SUBJECT, ["report"]);
       assert.equal(table.exit, 0, table.stderr);
-      assert.match(table.stdout, /^first-fail rate\s+33\.3 % \(1 of 3 slices\)$/m);
-      assert.match(table.stdout, /^rounds per slice\s+max 3, median 2$/m);
+      assert.match(table.stdout, /^first-fail rate\s+50\.0 % \(2 of 4 slices\)$/m);
+      assert.match(table.stdout, /^rounds per slice\s+max 3, median 1\.5$/m);
       assert.match(table.stdout, /^unreceipted greens\s+0$/m);
       const json = sandbox.run(CLI_SUBJECT, ["report", "--json"]);
       assert.equal(json.exit, 0, json.stderr);
       const metrics = JSON.parse(json.stdout) as Record<string, unknown>;
-      assert.equal(metrics["first_fail_rate_percent"], 33.3);
-      assert.deepEqual(metrics["rounds_per_slice"], { max: 3, median: 2 });
+      assert.equal(metrics["first_fail_rate_percent"], 50);
+      assert.deepEqual(metrics["rounds_per_slice"], { max: 3, median: 1.5 });
     });
   });
 
