@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { describe, test } from "node:test";
-import { watchdogAlive } from "../../src/gates/watch.ts";
+import { watchdogAlive } from "../../src/state/watch.ts";
 import { stateFileFor } from "../../src/state/store.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
+import { ownProcessStartTime, ownWatchdogRecord } from "../support/process-start.ts";
 import { REPOSITORY_RUNS_DIR, withStateSandbox, type SeededEntry } from "../support/state-sandbox.ts";
 
 const SESSION = "sess-watch";
@@ -22,24 +23,32 @@ function exitedPid(): number {
   return exited.pid;
 }
 
-describe("watchdogAlive reads this session's watch pid file and asks whether that process lives", () => {
-  test("a pid file naming a live process is a live watchdog", () => {
-    assert.equal(aliveWith({ [PID_FILE]: `${process.pid}\n` }), true);
+describe("watchdogAlive reads this session's watch record and confirms its pid is still the process that wrote it", () => {
+  test("a record naming a live process and that process's start time is a live watchdog", () => {
+    assert.equal(aliveWith({ [PID_FILE]: ownWatchdogRecord() }), true);
   });
 
-  test("a pid file naming a process that has exited is no live watchdog", () => {
-    assert.equal(aliveWith({ [PID_FILE]: `${exitedPid()}\n` }), false);
+  test("a record whose pid lives but whose start time is another process's, a reused pid, is no live watchdog", () => {
+    assert.equal(aliveWith({ [PID_FILE]: `watch=${process.pid}:${ownProcessStartTime() + 1}\n` }), false);
   });
 
-  test("a missing pid file is no live watchdog", () => {
+  test("a record holding a pid and no start time to confirm it against is no live watchdog", () => {
+    assert.equal(aliveWith({ [PID_FILE]: `${process.pid}\n` }), false);
+  });
+
+  test("a record naming a process that has exited is no live watchdog", () => {
+    assert.equal(aliveWith({ [PID_FILE]: `watch=${exitedPid()}:${ownProcessStartTime()}\n` }), false);
+  });
+
+  test("a missing record is no live watchdog", () => {
     assert.equal(aliveWith({}), false);
   });
 
-  test("a pid file holding no pid is no live watchdog", () => {
-    assert.equal(aliveWith({ [PID_FILE]: "not-a-pid\n" }), false);
+  test("a record holding no pid is no live watchdog", () => {
+    assert.equal(aliveWith({ [PID_FILE]: "watch=not-a-pid\n" }), false);
   });
 
-  test("another session's live pid file is not this session's watchdog", () => {
-    assert.equal(aliveWith({ [`${REPOSITORY_RUNS_DIR}/other-session/watch.pid`]: `${process.pid}\n` }), false);
+  test("another session's live record is not this session's watchdog", () => {
+    assert.equal(aliveWith({ [`${REPOSITORY_RUNS_DIR}/other-session/watch.pid`]: ownWatchdogRecord() }), false);
   });
 });

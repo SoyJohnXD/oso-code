@@ -4,6 +4,7 @@ import path from "node:path";
 import type { BackgroundTasks } from "../hosts/background-tasks.ts";
 import { ALLOWED, type GateOutcome, type HookEnvelope, type StopVerdict } from "../hosts/envelope.ts";
 import { gateRow, type HostName } from "../routes/routes.ts";
+import { completedAgentCount } from "../state/in-flight-registry.ts";
 import {
   appendJournal,
   causeOf,
@@ -12,21 +13,22 @@ import {
   journalFileFor,
   readStateFile,
   sha256Hex,
+  StateFileUnreadableError,
   stateFileFor,
   type LoggedEvent,
 } from "../state/store.ts";
+import { watchdogAlive } from "../state/watch.ts";
 import { isCount, removeWaitMark, waitMarkFileFor } from "./delegation.ts";
-import { resolveInFlight, type InFlightResolution } from "./in-flight.ts";
-import { completedAgentCount } from "./in-flight-registry.ts";
+import { adoptUnregistered, flagEndedWithoutNotice, resolveInFlight, type InFlightResolution } from "./in-flight.ts";
 import {
   hookSessionId,
+  ownRunState,
   RUN_ARMED,
   stateRecords,
   stateValue,
   type GateDefinition,
   type GateRequest,
 } from "./preflight.ts";
-import { watchdogAlive } from "./watch.ts";
 
 export const PUSHES_WITHOUT_PROGRESS_CAP = 3;
 const OWNER_ONLY_FILE = 0o600;
@@ -100,6 +102,7 @@ type PushRequest = Readonly<{
   progress: ProgressMeasure;
   turnAlreadyContinued: boolean;
   order: string;
+  pushedEvent: string;
   observed: string;
 }>;
 
@@ -132,6 +135,7 @@ function continueInTurnRun(stop: OwnedStop, order: string): GateOutcome<StopVerd
     progress: journalProgress(position.journalFile),
     turnAlreadyContinued: stop.envelope.stopHookActive,
     order,
+    pushedEvent: "auto-continued",
     observed: "",
   });
   if (failure === undefined) return pushed;
@@ -144,57 +148,92 @@ function continueNotifiedRun(stop: OwnedStop, order: string): GateOutcome<StopVe
   const reading = readDelegations(stop);
   if (reading.kind === "unreadable") return degraded(stop.sessionId, reading.cause);
 
-  const { resolution, watchdogLive } = reading;
-  const observed =
-    `background_tasks=${stop.envelope.backgroundTasks.kind} in_flight=${resolution.agents.length}`;
-  if (resolution.agents.length > 0) return awaitingDelegations(stop, watchdogLive, observed);
-
-  const heads = branchHeadsOf(stop.projectDir);
-  const pushed = pushUnlessCapped({
-    position: positionOf(stop),
-    progress: runProgress(snapshotOf(stop, heads)),
-    turnAlreadyContinued: stop.envelope.stopHookActive,
-    order,
-    observed,
-  });
-  if (heads.kind === "read") return pushed;
-  const unreadHeads = gateEvent("auto-continue-heads-unreadable", stop.sessionId, heads.cause);
-  return { ...pushed, events: [unreadHeads, ...pushed.events] };
+  const continued = continuedPastDelegations(stop, order, reading);
+  const unreadableEntries = reading.resolution.unreadable.map((entry) =>
+    gateEvent("auto-continue-registry-unreadable", stop.sessionId, `${entry.agentId}: ${entry.cause}`),
+  );
+  return { ...continued, events: [...unreadableEntries, ...continued.events] };
 }
 
 type DelegationReading =
   | Readonly<{ kind: "read"; resolution: InFlightResolution; watchdogLive: boolean }>
   | Readonly<{ kind: "unreadable"; cause: string }>;
 
+function continuedPastDelegations(
+  stop: OwnedStop,
+  order: string,
+  { resolution, watchdogLive }: Extract<DelegationReading, { kind: "read" }>,
+): GateOutcome<StopVerdict> {
+  const observed = observedDelegations(stop.envelope.backgroundTasks, resolution);
+  if (!needsWatchdog(resolution)) {
+    return pushedWithRunProgress(stop, { order, pushedEvent: "auto-continued", observed });
+  }
+  if (watchdogLive) return allowedWith(gateEvent("auto-continue-held", stop.sessionId, observed));
+  if (stop.envelope.stopHookActive) {
+    return allowedWith(gateEvent("auto-continue-watch-unstarted", stop.sessionId, observed));
+  }
+  return pushedWithRunProgress(stop, {
+    order: START_THE_WATCH_ORDER,
+    pushedEvent: "auto-continue-watch-requested",
+    observed,
+  });
+}
+
+type RunPush = Pick<PushRequest, "order" | "pushedEvent" | "observed">;
+
+function pushedWithRunProgress(stop: OwnedStop, push: RunPush): GateOutcome<StopVerdict> {
+  const heads = branchHeadsOf(stop.projectDir);
+  const pushed = pushedOrDegraded(stop, heads, push);
+  if (heads.kind === "read") return pushed;
+  const unreadHeads = gateEvent("auto-continue-heads-unreadable", stop.sessionId, heads.cause);
+  return { ...pushed, events: [unreadHeads, ...pushed.events] };
+}
+
+function pushedOrDegraded(stop: OwnedStop, heads: HeadsReading, push: RunPush): GateOutcome<StopVerdict> {
+  try {
+    return pushUnlessCapped({
+      position: positionOf(stop),
+      progress: runProgress(snapshotOf(stop, heads)),
+      turnAlreadyContinued: stop.envelope.stopHookActive,
+      ...push,
+    });
+  } catch (cause) {
+    if (cause instanceof StateFileUnreadableError) return degraded(stop.sessionId, causeOf(cause));
+    throw cause;
+  }
+}
+
 function readDelegations(stop: OwnedStop): DelegationReading {
   try {
+    adoptUnregistered(stop.envelope);
+    flagEndedWithoutNotice(stop.envelope);
     const resolution = resolveInFlight(stop.envelope);
-    const watchdogLive =
-      resolution.agents.length > 0 && watchdogAlive(stateFileFor(stop.projectDir), stop.sessionId);
+    const watchdogLive = needsWatchdog(resolution) && watchdogAlive(stateFileFor(stop.projectDir), stop.sessionId);
     return { kind: "read", resolution, watchdogLive };
   } catch (cause) {
     return { kind: "unreadable", cause: causeOf(cause) };
   }
 }
 
-function awaitingDelegations(stop: OwnedStop, watchdogLive: boolean, observed: string): GateOutcome<StopVerdict> {
-  if (watchdogLive) return allowedWith(gateEvent("auto-continue-held", stop.sessionId, observed));
-  if (stop.envelope.stopHookActive) {
-    return allowedWith(gateEvent("auto-continue-watch-unstarted", stop.sessionId, observed));
-  }
-  return {
-    verdict: { kind: "push", reason: START_THE_WATCH_ORDER },
-    events: [gateEvent("auto-continue-watch-requested", stop.sessionId, observed)],
-  };
+function needsWatchdog(resolution: InFlightResolution): boolean {
+  const { agentIds, endedWithoutNotice, unreadable } = resolution;
+  return agentIds.length > 0 || endedWithoutNotice.length > 0 || unreadable.length > 0;
+}
+
+function observedDelegations(backgroundTasks: BackgroundTasks, resolution: InFlightResolution): string {
+  const unfiltered = backgroundTasks.kind === "object" ? " subagent_filter=none" : "";
+  const inFlight = `background_tasks=${backgroundTasks.kind}${unfiltered} in_flight=${resolution.agentIds.length}`;
+  const ended = resolution.endedWithoutNotice.length;
+  return ended === 0 ? inFlight : `${inFlight} ended_without_notice=${ended}`;
 }
 
 const START_THE_WATCH = '"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" watch';
 
 const START_THE_WATCH_ORDER =
-  "oso-code: this unattended run ended its turn with delegations still in flight and no watchdog running for " +
-  `this session. Start one as a BACKGROUND Bash task (run_in_background: true): ${START_THE_WATCH} — then end ` +
+  "oso-code: this unattended run ended its turn with delegations still in flight or ended without notice, and " +
+  `no watchdog running for this session. Start one as a BACKGROUND Bash task (run_in_background: true): ${START_THE_WATCH} — then end ` +
   "the turn. The watch's exit wakes the run: it exits when every delegation has ended, or when one is stuck, " +
-  "long-running or ended without notice, naming it. Do NOT relaunch a delegation still in flight.";
+  "long-running, unreadable or ended without notice, naming it. Do NOT relaunch a delegation still in flight.";
 
 type RunSnapshot = Readonly<{
   heads: string;
@@ -308,7 +347,7 @@ function pushUnlessCapped(request: PushRequest): GateOutcome<StopVerdict> {
   if (failure !== undefined) return degraded(position.sessionId, failure);
   return {
     verdict: { kind: "push", reason: request.order },
-    events: [gateEvent("auto-continued", position.sessionId, request.observed)],
+    events: [gateEvent(request.pushedEvent, position.sessionId, request.observed)],
   };
 }
 
@@ -318,10 +357,8 @@ function pushesWithoutProgress(
   turnAlreadyContinued: boolean,
 ): number | GateOutcome<StopVerdict> {
   const started = turnAlreadyContinued ? 1 : 0;
-  const stats = statSync(position.tallyFile, { throwIfNoEntry: false });
-  if (stats === undefined) return started + 1;
-
-  const read = stats.isFile() ? readStateFile(position.tallyFile) : { kind: "unreadable" as const, cause: "" };
+  const read = readStateFile(position.tallyFile);
+  if (read.kind === "absent") return started + 1;
   if (read.kind !== "ok") return degraded(position.sessionId, "the push tally is not a readable file");
 
   const remembered = stateValue(read.content, "pushes");
@@ -377,14 +414,6 @@ function degradedEvent(sessionId: string, cause: string): LoggedEvent {
 function gateEvent(event: string, session: string, detail: string): LoggedEvent {
   const route = gateRow("autocontinue");
   return { event, session, command: detail, gate: route.script, hookEvent: route.event };
-}
-
-function ownRunState(stateFile: string, sessionId: string): string | undefined {
-  const stats = statSync(stateFile, { throwIfNoEntry: false });
-  if (stats === undefined || !stats.isFile()) return undefined;
-  const read = readStateFile(stateFile);
-  if (read.kind !== "ok") return undefined;
-  return stateValue(read.content, "session") === sessionId ? read.content : undefined;
 }
 
 function tallyFileFor(journalFile: string): string {

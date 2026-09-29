@@ -1,8 +1,6 @@
 export type BackgroundTask = Readonly<{
   id: string;
   type: string;
-  status: string;
-  description: string;
   agentType: string;
 }>;
 
@@ -35,8 +33,6 @@ function backgroundTask(entry: unknown): BackgroundTask | undefined {
   return {
     id: entry["id"],
     type: textOf(entry["type"]),
-    status: textOf(entry["status"]),
-    description: textOf(entry["description"]),
     agentType: textOf(entry["agent_type"]),
   };
 }

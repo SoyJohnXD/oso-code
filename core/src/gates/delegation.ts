@@ -5,10 +5,8 @@ import {
   entriesOfDirectory,
   isErrnoException,
   isRegularNonSymlinkFile,
-  repositoryIdFor,
   runsDirectoryOf,
   stateFileFor,
-  stateRootDirectory,
 } from "../state/store.ts";
 import { sanitizeSession } from "./preflight.ts";
 
@@ -20,8 +18,7 @@ export function isCount(value: string): boolean {
 }
 
 export function waitMarkFileFor(cwd: string, runSession: string): string {
-  const repository = repositoryIdFor(stateFileFor(cwd));
-  return path.join(stateRootDirectory(), "runs", repository, `${sanitizeSession(runSession)}${MARK_SUFFIX}`);
+  return path.join(runsDirectoryOf(stateFileFor(cwd)), `${sanitizeSession(runSession)}${MARK_SUFFIX}`);
 }
 
 export function removeWaitMark(markFile: string): string | undefined {

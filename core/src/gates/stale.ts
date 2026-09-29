@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   ALLOWED,
@@ -41,8 +40,10 @@ function judgeStale({ envelope }: GateRequest): GateOutcome<SessionStartVerdict>
 }
 
 function advisoriesFor(envelope: HookEnvelope, stateFile: string): string[] {
-  if (!existsSync(stateFile)) return [];
-  return staleStateAdvisory(envelope.caller, stateFile, readableContentOf(stateFile), hookSessionId(envelope));
+  const read = readStateFile(stateFile);
+  if (read.kind === "absent") return [];
+  const content = read.kind === "ok" ? read.content : undefined;
+  return staleStateAdvisory(envelope.caller, stateFile, content, hookSessionId(envelope));
 }
 
 function staleStateAdvisory(
@@ -94,11 +95,6 @@ function skillPrefixFor(host: HostName): string {
 function stateBinPath(caller: HookCaller): string {
   if (caller.stateBin !== "") return caller.stateBin;
   return path.join(pluginRootDirectory(), "bin", "oso-state");
-}
-
-function readableContentOf(stateFile: string): string | undefined {
-  const read = readStateFile(stateFile);
-  return read.kind === "ok" ? read.content : undefined;
 }
 
 function quoted(value: string): string {

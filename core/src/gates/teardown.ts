@@ -9,6 +9,7 @@ import {
   readStateFile,
   runsRootDirectory,
   secondsSinceModified,
+  sessionRunDirectoryOf,
   stateFileFor,
   stateRootDirectory,
 } from "../state/store.ts";
@@ -69,7 +70,7 @@ function removeWorktreesOf(sessionId: string, stateFile: string | undefined): vo
 function dropInFlightRegistriesOf(sessionId: string): void {
   if (sessionId === "") return;
   for (const repository of entriesOfDirectory(runsRootDirectory())) {
-    rmSync(path.join(runsRootDirectory(), repository, sessionId), { recursive: true, force: true });
+    rmSync(sessionRunDirectoryOf(repository, sessionId), { recursive: true, force: true });
   }
 }
 

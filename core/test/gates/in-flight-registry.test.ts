@@ -16,6 +16,7 @@ import {
 const SESSION = "sess-live";
 const REGISTRY = `${REPOSITORY_RUNS_DIR}/${SESSION}/in-flight`;
 const ARMED_RUN = `mode=plan\nauto=running\nauto_change=hanko\nsession=${SESSION}\n`;
+const STARTED = "started_at=2026-09-28T00:00:00Z\n";
 
 function subagentStart(agentId: string, agentType = "oso-code:applier"): string {
   return JSON.stringify({
@@ -113,6 +114,25 @@ describe("the SubagentStart and SubagentStop gates keep one registry file per in
     assert.deepEqual(
       entries.map((entry) => entry.kind),
       ["absent", "file"],
+    );
+  });
+
+  test("a SubagentStop whose background_tasks lists only the stopping agent flags a vanished agent ended-without-notice", () => {
+    const { runs, entries } = afterRuns(
+      {
+        [STATE_FILE]: ARMED_RUN,
+        [`${REGISTRY}/a1`]: `agent_id=a1\nagent_type=oso-code:applier\n${STARTED}`,
+        [`${REGISTRY}/a9`]: `agent_id=a9\nagent_type=oso-code:verifier\n${STARTED}`,
+      },
+      [{ gate: "subagentstop", payload: subagentStop("a1") }],
+      [`${REGISTRY}/a1`, `${REGISTRY}/a9`],
+    );
+    assert.deepEqual(unspoken(runs[0] as GateRun), SILENT);
+    const [stopping, vanished] = entries;
+    assert.equal(stopping?.kind, "absent");
+    assert.equal(
+      vanished?.kind === "file" ? vanished.content : vanished?.kind,
+      `agent_id=a9\nagent_type=oso-code:verifier\n${STARTED}ended_without_notice=true\n`,
     );
   });
 

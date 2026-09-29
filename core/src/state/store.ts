@@ -102,20 +102,24 @@ export function runsDirectoryOf(stateFile: string): string {
   return path.join(runsRootDirectory(), repositoryIdFor(stateFile));
 }
 
-function sessionRunDirectoryOf(stateFile: string, sessionId: string): string {
-  return path.join(runsDirectoryOf(stateFile), sessionId);
+export function sessionRunDirectoryOf(repository: string, sessionId: string): string {
+  return path.join(runsRootDirectory(), repository, sessionId);
 }
 
 export function inFlightRegistryOf(stateFile: string, sessionId: string): string {
-  return path.join(sessionRunDirectoryOf(stateFile, sessionId), "in-flight");
+  return sessionRunEntryOf(stateFile, sessionId, "in-flight");
 }
 
 export function completedAgentsLogOf(stateFile: string, sessionId: string): string {
-  return path.join(sessionRunDirectoryOf(stateFile, sessionId), "completed-agents.log");
+  return sessionRunEntryOf(stateFile, sessionId, "completed-agents.log");
 }
 
 export function watchPidFileOf(stateFile: string, sessionId: string): string {
-  return path.join(sessionRunDirectoryOf(stateFile, sessionId), "watch.pid");
+  return sessionRunEntryOf(stateFile, sessionId, "watch.pid");
+}
+
+function sessionRunEntryOf(stateFile: string, sessionId: string, entry: string): string {
+  return path.join(sessionRunDirectoryOf(repositoryIdFor(stateFile), sessionId), entry);
 }
 
 export function denyPatternsFileFor(stateFile: string): string {
@@ -174,7 +178,7 @@ export function refuseGateWritesByAForeignSession(stateFile: string, sessionId: 
 }
 
 export function readValue(stateFile: string, key: string): string | undefined {
-  const content = readFileIfPresent(stateFile);
+  const content = readFileIfPresent(stateFile, "skip");
   if (content === undefined || stateRecords(content, key).length === 0) return undefined;
   return stateValue(content, key);
 }
@@ -186,12 +190,18 @@ type StateFileRead =
 
 export function readStateFile(stateFile: string): StateFileRead {
   try {
-    if (!statSync(stateFile).isFile()) return { kind: "unreadable", cause: `${stateFile} is not a regular file` };
+    if (!statSync(stateFile).isFile()) return { kind: "unreadable", cause: `not a regular file: ${stateFile}` };
     return { kind: "ok", content: readFileSync(stateFile, "utf8") };
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") return { kind: "absent" };
     return { kind: "unreadable", cause: causeOf(error) };
   }
+}
+
+export function readFileIfPresent(file: string, whenUnreadable: "throw" | "skip" = "throw"): string | undefined {
+  const read = readStateFile(file);
+  if (read.kind === "unreadable" && whenUnreadable === "throw") throw new StateFileUnreadableError(file, read.cause);
+  return read.kind === "ok" ? read.content : undefined;
 }
 
 export function writeStatePairs(stateFile: string, pairs: readonly string[], ownerSession: string): string {
@@ -380,11 +390,6 @@ function gitCommonDirectory(cwd: string): string {
   } catch {
     return "";
   }
-}
-
-function readFileIfPresent(file: string): string | undefined {
-  const read = readStateFile(file);
-  return read.kind === "ok" ? read.content : undefined;
 }
 
 export function causeOf(error: unknown): string {

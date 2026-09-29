@@ -32,9 +32,17 @@
     "stderr": "",
     "state_after": {
       ".local/state/oso-code/runs/{repo}/test-session.waiting": "run=auto-continuity\nsession=test-session\njournal_bytes=0\nrenewals=0\n",
-      ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": null
+      ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "{present}"
     },
     "events_appended": [
+      {
+        "event": "auto-continue-heads-unreadable",
+        "session": "test-session",
+        "command": "{present}",
+        "schema": 2,
+        "gate": "auto-continue.sh",
+        "hook_event": "Stop"
+      },
       {
         "event": "auto-continue-watch-requested",
         "session": "test-session",

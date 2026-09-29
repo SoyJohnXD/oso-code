@@ -1,5 +1,5 @@
 import { ALLOWED, type GateOutcome, type SessionStartVerdict } from "../hosts/envelope.ts";
-import { isDirectory, journalFileFor, readStateFile, stateFileFor } from "../state/store.ts";
+import { isDirectory, journalFileFor, readFileIfPresent, stateFileFor } from "../state/store.ts";
 import { hookSessionId, stateValue, type GateDefinition, type GateRequest } from "./preflight.ts";
 
 export const REANCHOR_GATE: GateDefinition<SessionStartVerdict> = {
@@ -31,17 +31,17 @@ function judgeReanchor({ envelope }: GateRequest): GateOutcome<SessionStartVerdi
 }
 
 function unattendedRunMarker(stateFile: string, sessionId: string): string | undefined {
-  const read = readStateFile(stateFile);
-  if (read.kind !== "ok") return undefined;
-  if (stateValue(read.content, "session") !== sessionId) return undefined;
-  return stateValue(read.content, "auto");
+  const content = readFileIfPresent(stateFile, "skip");
+  if (content === undefined) return undefined;
+  if (stateValue(content, "session") !== sessionId) return undefined;
+  return stateValue(content, "auto");
 }
 
 function sliceIsArmed(stateFile: string): boolean {
-  const read = readStateFile(stateFile);
-  if (read.kind !== "ok") return false;
-  if (stateValue(read.content, "mode") !== "plan") return false;
-  const activeSlice = stateValue(read.content, "active_slice");
+  const content = readFileIfPresent(stateFile, "skip");
+  if (content === undefined) return false;
+  if (stateValue(content, "mode") !== "plan") return false;
+  const activeSlice = stateValue(content, "active_slice");
   return activeSlice !== "" && activeSlice !== "none";
 }
 

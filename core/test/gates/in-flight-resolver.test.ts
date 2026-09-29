@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
-import path from "node:path";
 import { describe, test } from "node:test";
-import { resolveInFlight, type InFlightResolution } from "../../src/gates/in-flight.ts";
+import { flagEndedWithoutNotice, resolveInFlight, type InFlightResolution } from "../../src/gates/in-flight.ts";
 import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
 import { REPOSITORY_RUNS_DIR, withStateSandbox, type ObservedEntry, type SeededEntry } from "../support/state-sandbox.ts";
@@ -10,12 +9,11 @@ const SESSION = "sess-live";
 const REGISTRY = `${REPOSITORY_RUNS_DIR}/${SESSION}/in-flight`;
 const PROJECT = "projects/proj";
 const MAIN_TRANSCRIPT = `{home}/${PROJECT}/${SESSION}.jsonl`;
-const TRANSCRIPT_AGE_SECONDS = 600;
 
 type Task = Readonly<{ id: string; type?: string; agent_type?: string }>;
 
-function registered(agentId: string, agentType: string, transcript = `{home}/registered/agent-${agentId}.jsonl`): string {
-  return `agent_id=${agentId}\nagent_type=${agentType}\ntranscript=${transcript}\nstarted_at=2026-09-28T00:00:00Z\n`;
+function registered(agentId: string, agentType: string): string {
+  return `agent_id=${agentId}\nagent_type=${agentType}\ntranscript={home}/registered/agent-${agentId}.jsonl\nstarted_at=2026-09-28T00:00:00Z\n`;
 }
 
 function asTasks(tasks: readonly Task[]): unknown[] {
@@ -53,7 +51,7 @@ function subagentStopPayload(stopping: string, backgroundTasks?: unknown): strin
 
 type Resolved = Readonly<{
   resolutions: InFlightResolution[];
-  home: string;
+  before: ObservedEntry[];
   entries: ObservedEntry[];
 }>;
 
@@ -64,21 +62,22 @@ function resolvedAfter(
 ): Resolved {
   return withStateSandbox("workspace", (sandbox) => {
     sandbox.seed(seed);
+    const before = observed.map((entry) => sandbox.read(entry));
     const resolutions = payloads.map((payload) =>
       withHookEnvironment({ HOME: sandbox.home }, () =>
         resolveInFlight(spawnedEnvelope(sandbox.expandJson(payload), process.env)),
       ),
     );
-    return { resolutions, home: sandbox.home, entries: observed.map((entry) => sandbox.read(entry)) };
+    return { resolutions, before, entries: observed.map((entry) => sandbox.read(entry)) };
   });
 }
 
 function idsIn(resolution: InFlightResolution | undefined): readonly string[] {
-  return (resolution?.agents ?? []).map((agent) => agent.agentId);
+  return resolution?.agentIds ?? [];
 }
 
 function endedIn(resolution: InFlightResolution | undefined): readonly string[] {
-  return (resolution?.endedWithoutNotice ?? []).map((agent) => agent.agentId);
+  return resolution?.endedWithoutNotice ?? [];
 }
 
 describe("resolveInFlight names the agents still in flight at a Stop or a SubagentStop", () => {
@@ -87,9 +86,7 @@ describe("resolveInFlight names the agents still in flight at a Stop or a Subage
       { [`${REGISTRY}/a1`]: registered("a1", "applier") },
       [stopPayload(asTasks([{ id: "a1" }, { id: "a3" }, { id: "sh1", type: "shell" }]))],
     );
-    const [resolution] = resolutions;
-    assert.equal(resolution?.source, "background_tasks");
-    assert.deepEqual(idsIn(resolution), ["a1", "a3"]);
+    assert.deepEqual(idsIn(resolutions[0]), ["a1", "a3"]);
   });
 
   test("the stopping agent is excluded from a SubagentStop's background_tasks, which still lists it running", () => {
@@ -101,18 +98,30 @@ describe("resolveInFlight names the agents still in flight at a Stop or a Subage
     assert.deepEqual(endedIn(resolutions[0]), []);
   });
 
-  test("a registry entry background_tasks no longer lists is flagged, kept for the watch, and reported ended-without-notice exactly once", () => {
-    const { resolutions, entries } = resolvedAfter(
+  test("a registry entry background_tasks no longer lists is named ended-without-notice, and the read leaves the registry byte-identical", () => {
+    const { resolutions, before, entries } = resolvedAfter(
       { [`${REGISTRY}/a1`]: registered("a1", "applier"), [`${REGISTRY}/a2`]: registered("a2", "verifier") },
       [stopPayload(asTasks([{ id: "a1" }])), stopPayload(asTasks([{ id: "a1" }]))],
       [`${REGISTRY}/a1`, `${REGISTRY}/a2`],
     );
-    assert.deepEqual(resolutions.map(endedIn), [["a2"], []]);
-    assert.deepEqual(resolutions[0]?.endedWithoutNotice.map((agent) => agent.agentType), ["verifier"]);
-    const [kept, flagged] = entries.map((entry) => (entry.kind === "file" ? entry.content : entry.kind));
-    assert.doesNotMatch(kept ?? "", /ended_without_notice/);
-    assert.match(flagged ?? "", /^agent_id=a2\n[\s\S]*\nended_without_notice=true\n$/);
-    assert.equal(flagged?.match(/ended_without_notice=/g)?.length, 1);
+    assert.deepEqual(resolutions.map(endedIn), [["a2"], ["a2"]]);
+    assert.deepEqual(entries, before);
+  });
+
+  test("flagEndedWithoutNotice marks a vanished entry once however many times it runs, and leaves a listed one alone", () => {
+    const [kept, flagged] = withStateSandbox("workspace", (sandbox) => {
+      sandbox.seed({ [`${REGISTRY}/a1`]: registered("a1", "applier"), [`${REGISTRY}/a2`]: registered("a2", "verifier") });
+      withHookEnvironment({ HOME: sandbox.home }, () => {
+        const envelope = spawnedEnvelope(sandbox.expandJson(stopPayload(asTasks([{ id: "a1" }]))), process.env);
+        flagEndedWithoutNotice(envelope);
+        flagEndedWithoutNotice(envelope);
+      });
+      return [`${REGISTRY}/a1`, `${REGISTRY}/a2`].map((entry) => sandbox.read(entry));
+    });
+    assert.doesNotMatch(kept?.kind === "file" ? kept.content : "", /ended_without_notice/);
+    const flaggedContent = flagged?.kind === "file" ? flagged.content : "";
+    assert.match(flaggedContent, /^agent_id=a2\n[\s\S]*\nended_without_notice=true\n$/);
+    assert.equal(flaggedContent.match(/ended_without_notice=/g)?.length, 1);
   });
 
   test("the tolerated object shape reads its active ids as the set and prunes a completed one still registered", () => {
@@ -120,9 +129,7 @@ describe("resolveInFlight names the agents still in flight at a Stop or a Subage
       { [`${REGISTRY}/a1`]: registered("a1", "applier"), [`${REGISTRY}/a2`]: registered("a2", "verifier") },
       [stopPayload({ active: ["a1"], completed: ["a2"] })],
     );
-    assert.equal(resolutions[0]?.source, "background_tasks");
     assert.deepEqual(idsIn(resolutions[0]), ["a1"]);
-    assert.deepEqual(resolutions[0]?.agents.map((agent) => agent.agentType), ["applier"]);
     assert.deepEqual(endedIn(resolutions[0]), ["a2"]);
   });
 
@@ -136,7 +143,6 @@ describe("resolveInFlight names the agents still in flight at a Stop or a Subage
         [stopPayload(backgroundTasks)],
         [`${REGISTRY}/a1`, `${REGISTRY}/a2`],
       );
-      assert.equal(resolutions[0]?.source, "registry");
       assert.deepEqual(idsIn(resolutions[0]), ["a1", "a2"]);
       assert.deepEqual(endedIn(resolutions[0]), []);
       assert.deepEqual(
@@ -152,25 +158,5 @@ describe("resolveInFlight names the agents still in flight at a Stop or a Subage
       [subagentStopPayload("a1")],
     );
     assert.deepEqual(idsIn(resolutions[0]), ["a2"]);
-  });
-
-  test("each agent carries the registry's transcript path, else the one derived from the session transcript", () => {
-    const { resolutions, home } = resolvedAfter(
-      {
-        [`${REGISTRY}/a1`]: registered("a1", "applier"),
-        "registered/agent-a1.jsonl": { kind: "file", content: "{}\n", agedSeconds: TRANSCRIPT_AGE_SECONDS },
-      },
-      [stopPayload(asTasks([{ id: "a1" }, { id: "a3", agent_type: "oso-code:verifier" }]))],
-    );
-    const [first, derived] = resolutions[0]?.agents ?? [];
-    assert.equal(first?.transcript.path, path.join(home, "registered", "agent-a1.jsonl"));
-    const age = Date.now() - (first?.transcript.modifiedAtMs ?? 0);
-    assert.ok(
-      Math.abs(age - TRANSCRIPT_AGE_SECONDS * 1000) < 60_000,
-      `the transcript read ${age} ms old, not about ${TRANSCRIPT_AGE_SECONDS} s`,
-    );
-    assert.equal(derived?.agentType, "oso-code:verifier");
-    assert.equal(derived?.transcript.path, path.join(home, PROJECT, SESSION, "subagents", "agent-a3.jsonl"));
-    assert.equal(derived?.transcript.modifiedAtMs, undefined);
   });
 });

@@ -9,7 +9,7 @@ import type { LoggedEvent } from "../state/store.ts";
 import { AUTOCONTINUE_GATE } from "./autocontinue.ts";
 import { COMMIT_GATE } from "./commit.ts";
 import { EDITS_GATE } from "./edits.ts";
-import { SUBAGENT_START_GATE, SUBAGENT_STOP_GATE } from "./in-flight-registry.ts";
+import { SUBAGENT_START_GATE, SUBAGENT_STOP_GATE } from "./in-flight.ts";
 import type { GateDefinition, GateRequest } from "./preflight.ts";
 import { PROD_DEPLOY_GATE } from "./proddeploy.ts";
 import { REANCHOR_GATE } from "./reanchor.ts";

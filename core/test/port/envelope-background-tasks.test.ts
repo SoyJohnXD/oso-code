@@ -24,10 +24,10 @@ function backgroundTasksOf(payload: string): unknown {
 }
 
 describe("core/src/hosts/envelope.ts reads background_tasks off a Stop or SubagentStop payload", () => {
-  test("the measured array shape is read whole, each entry's agent_type carried as agentType", () => {
+  test("the measured array shape is read for each entry's id, type and agent_type, carried as agentType", () => {
     assert.deepEqual(backgroundTasksOf(MEASURED_STOP_WITH_ONE_AGENT_RUNNING), {
       kind: "array",
-      tasks: [{ id: "a1", type: "subagent", status: "running", description: "apply S2", agentType: "oso-code:applier" }],
+      tasks: [{ id: "a1", type: "subagent", agentType: "oso-code:applier" }],
     });
   });
 

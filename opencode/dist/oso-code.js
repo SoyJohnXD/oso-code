@@ -1,7 +1,7 @@
 // core/src/gates/autocontinue.ts
 import { spawnSync } from "node:child_process";
-import { mkdirSync as mkdirSync3, statSync as statSync5, writeFileSync as writeFileSync2 } from "node:fs";
-import path5 from "node:path";
+import { mkdirSync as mkdirSync3, statSync as statSync2, writeFileSync as writeFileSync2 } from "node:fs";
+import path6 from "node:path";
 
 // core/src/shell/lexer.ts
 var MAX_LEXED_INPUT_BYTES = 3072;
@@ -980,6 +980,10 @@ function toolNamesFor(host, gate) {
   return named;
 }
 
+// core/src/state/in-flight-registry.ts
+import { appendFileSync as appendFileSync2, closeSync, constants as constants2, mkdirSync as mkdirSync2, openSync, rmSync as rmSync2, writeSync } from "node:fs";
+import path2 from "node:path";
+
 // core/src/state/store.ts
 import { execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -1068,17 +1072,20 @@ function runsRootDirectory() {
 function runsDirectoryOf(stateFile) {
   return path.join(runsRootDirectory(), repositoryIdFor(stateFile));
 }
-function sessionRunDirectoryOf(stateFile, sessionId) {
-  return path.join(runsDirectoryOf(stateFile), sessionId);
+function sessionRunDirectoryOf(repository, sessionId) {
+  return path.join(runsRootDirectory(), repository, sessionId);
 }
 function inFlightRegistryOf(stateFile, sessionId) {
-  return path.join(sessionRunDirectoryOf(stateFile, sessionId), "in-flight");
+  return sessionRunEntryOf(stateFile, sessionId, "in-flight");
 }
 function completedAgentsLogOf(stateFile, sessionId) {
-  return path.join(sessionRunDirectoryOf(stateFile, sessionId), "completed-agents.log");
+  return sessionRunEntryOf(stateFile, sessionId, "completed-agents.log");
 }
 function watchPidFileOf(stateFile, sessionId) {
-  return path.join(sessionRunDirectoryOf(stateFile, sessionId), "watch.pid");
+  return sessionRunEntryOf(stateFile, sessionId, "watch.pid");
+}
+function sessionRunEntryOf(stateFile, sessionId, entry) {
+  return path.join(sessionRunDirectoryOf(repositoryIdFor(stateFile), sessionId), entry);
 }
 function denyPatternsFileFor(stateFile) {
   return path.join(stateRootDirectory(), "deploy-deny", `${repositoryIdFor(stateFile)}.patterns`);
@@ -1115,18 +1122,23 @@ function refuseGateWritesByAForeignSession(stateFile, sessionId) {
   if (owner !== void 0) throw new GatesOwnedElsewhereError(owner);
 }
 function readValue(stateFile, key) {
-  const content = readFileIfPresent(stateFile);
+  const content = readFileIfPresent(stateFile, "skip");
   if (content === void 0 || stateRecords(content, key).length === 0) return void 0;
   return stateValue(content, key);
 }
 function readStateFile(stateFile) {
   try {
-    if (!statSync(stateFile).isFile()) return { kind: "unreadable", cause: `${stateFile} is not a regular file` };
+    if (!statSync(stateFile).isFile()) return { kind: "unreadable", cause: `not a regular file: ${stateFile}` };
     return { kind: "ok", content: readFileSync(stateFile, "utf8") };
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") return { kind: "absent" };
     return { kind: "unreadable", cause: causeOf(error) };
   }
+}
+function readFileIfPresent(file, whenUnreadable = "throw") {
+  const read = readStateFile(file);
+  if (read.kind === "unreadable" && whenUnreadable === "throw") throw new StateFileUnreadableError(file, read.cause);
+  return read.kind === "ok" ? read.content : void 0;
 }
 function writeStatePairs(stateFile, pairs, ownerSession) {
   const directory = path.dirname(stateFile);
@@ -1265,10 +1277,6 @@ function gitCommonDirectory(cwd) {
   } catch {
     return "";
   }
-}
-function readFileIfPresent(file) {
-  const read = readStateFile(file);
-  return read.kind === "ok" ? read.content : void 0;
 }
 function causeOf(error) {
   return error instanceof Error ? error.message : String(error);
@@ -1415,13 +1423,111 @@ function isErrnoException(error) {
   return error instanceof Error && "code" in error;
 }
 
+// core/src/state/in-flight-registry.ts
+var MARK_SET = "true";
+var APPEND_WITHOUT_CREATING = constants2.O_WRONLY | constants2.O_APPEND;
+function readRegistry(registry) {
+  const readings = entriesOfDirectory(registry).filter(isNameToken).map((agentId) => entryReading(registry, agentId));
+  return {
+    agents: readings.flatMap((reading) => reading.kind === "registered" ? [reading.agent] : []),
+    unreadable: readings.flatMap((reading) => reading.kind === "unreadable" ? [reading.entry] : [])
+  };
+}
+function entryReading(registry, agentId) {
+  const entryFile = path2.join(registry, agentId);
+  const read = readStateFile(entryFile);
+  if (read.kind === "absent") return { kind: "gone" };
+  if (read.kind === "unreadable") return { kind: "unreadable", entry: { agentId, cause: read.cause } };
+  const startedAt = stateValue(read.content, "started_at");
+  if (Number.isNaN(Date.parse(startedAt))) {
+    return { kind: "unreadable", entry: { agentId, cause: `no started_at timestamp in ${entryFile}` } };
+  }
+  const agent = {
+    agentId,
+    agentType: stateValue(read.content, "agent_type"),
+    transcriptPath: stateValue(read.content, "transcript"),
+    startedAt,
+    reported: stateValue(read.content, "reported") === MARK_SET,
+    endedWithoutNotice: stateValue(read.content, "ended_without_notice") === MARK_SET
+  };
+  return { kind: "registered", agent };
+}
+function registeredIdsIn(reading) {
+  return [...reading.agents, ...reading.unreadable].map((entry) => entry.agentId);
+}
+function writeRegisteredAgent(registry, agent) {
+  const record = `agent_id=${agent.agentId}
+agent_type=${oneLine(agent.agentType)}
+transcript=${oneLine(agent.transcriptPath)}
+started_at=${agent.startedAt}
+`;
+  withOwnerOnlyUmask(() => writeFileAtomically(registry, path2.join(registry, agent.agentId), record, ".registering-"));
+}
+function markEndedWithoutNotice(registry, agentId) {
+  appendMark(registry, agentId, "ended_without_notice");
+}
+function appendMark(registry, agentId, mark) {
+  let entry;
+  try {
+    entry = openSync(path2.join(registry, agentId), APPEND_WITHOUT_CREATING);
+  } catch (error) {
+    if (isErrnoException(error) && error.code === "ENOENT") return;
+    throw error;
+  }
+  try {
+    writeSync(entry, `${mark}=${MARK_SET}
+`);
+  } finally {
+    closeSync(entry);
+  }
+}
+function forgetAgent(registry, agentId) {
+  rmSync2(path2.join(registry, agentId), { recursive: true, force: true });
+}
+function recordCompletion(completedAgentsLog, agentId) {
+  withOwnerOnlyUmask(() => {
+    mkdirSync2(path2.dirname(completedAgentsLog), { recursive: true });
+    appendFileSync2(completedAgentsLog, `${isoTimestamp()} ${agentId}
+`);
+  });
+}
+function completedAgentCount(stateFile, sessionId) {
+  const completedAgentsLog = completedAgentsLogOf(stateFile, sessionId);
+  return (readFileIfPresent(completedAgentsLog) ?? "").split("\n").filter((line) => line !== "").length;
+}
+function oneLine(value) {
+  return value.replace(/[\r\n]+/g, " ");
+}
+
+// core/src/state/watch.ts
+var MINUTE_MS = 6e4;
+var SILENCE_LIMIT_MS = 60 * MINUTE_MS;
+var LONG_RUNNING_LIMIT_MS = 180 * MINUTE_MS;
+var WATCHDOG_RECORD = /^([1-9]\d*):(\d+)$/;
+var START_TIME_FIELD_AFTER_COMMAND = 19;
+function watchdogAlive(stateFile, sessionId) {
+  const watchdog = recordedWatchdog(watchPidFileOf(stateFile, sessionId));
+  return watchdog !== void 0 && processStartOf(watchdog.pid) === watchdog.start;
+}
+function recordedWatchdog(pidFile) {
+  const recorded = WATCHDOG_RECORD.exec(stateValue(readFileIfPresent(pidFile) ?? "", "watch"));
+  if (recorded === null) return void 0;
+  return { pid: Number(recorded[1]), start: recorded[2] };
+}
+function processStartOf(pid) {
+  const stat = readFileIfPresent(`/proc/${pid}/stat`);
+  if (stat === void 0) return void 0;
+  const fieldsAfterCommand = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+  return fieldsAfterCommand[START_TIME_FIELD_AFTER_COMMAND];
+}
+
 // core/src/gates/delegation.ts
-import { rmSync as rmSync2 } from "node:fs";
-import path3 from "node:path";
+import { rmSync as rmSync3 } from "node:fs";
+import path4 from "node:path";
 
 // core/src/gates/preflight.ts
-import { existsSync, readFileSync as readFileSync2 } from "node:fs";
-import path2 from "node:path";
+import { existsSync } from "node:fs";
+import path3 from "node:path";
 import { fileURLToPath } from "node:url";
 var RUN_ARMED = "running";
 function sanitizeSession(raw) {
@@ -1433,6 +1539,11 @@ function hookSessionId(envelope) {
 }
 function payloadUnparseable() {
   return { verdict: { kind: "allow" }, events: [{ event: "payload-unparseable", session: "" }] };
+}
+function ownRunState(stateFile, sessionId) {
+  const read = readStateFile(stateFile);
+  if (read.kind !== "ok") return void 0;
+  return stateValue(read.content, "session") === sessionId ? read.content : void 0;
 }
 function readArmedState(stateFile) {
   const read = readStateFile(stateFile);
@@ -1475,7 +1586,7 @@ function allowedWithResidueCounted(session, command) {
 function pluginRootDirectory() {
   const configured = process.env["CLAUDE_PLUGIN_ROOT"];
   if (configured !== void 0 && configured !== "") return configured;
-  return pluginRootAbove(path2.dirname(fileURLToPath(import.meta.url)));
+  return pluginRootAbove(path3.dirname(fileURLToPath(import.meta.url)));
 }
 var PLUGIN_ROOT_WRAPPERS = [[], ["plugin"]];
 var HOOKS_MANIFEST_LOCATIONS = [["hooks.json"], ["hooks", "hooks.json"]];
@@ -1484,10 +1595,10 @@ function pluginRootAbove(moduleDirectory) {
   let candidate = moduleDirectory;
   while (true) {
     for (const wrapper of PLUGIN_ROOT_WRAPPERS) {
-      const root = path2.join(candidate, ...wrapper);
-      if (existsSync(path2.join(root, "bin", "oso-state")) && isVerifiedOsoCodeRoot(root)) return root;
+      const root = path3.join(candidate, ...wrapper);
+      if (existsSync(path3.join(root, "bin", "oso-state")) && isVerifiedOsoCodeRoot(root)) return root;
     }
-    const parent = path2.dirname(candidate);
+    const parent = path3.dirname(candidate);
     if (parent === candidate) {
       throw new Error(
         `no ancestor of ${moduleDirectory} carries a verified oso-code bin/oso-state, directly or one level under plugin/, to anchor the plugin root on`
@@ -1497,14 +1608,10 @@ function pluginRootAbove(moduleDirectory) {
   }
 }
 function isVerifiedOsoCodeRoot(root) {
-  return HOOKS_MANIFEST_LOCATIONS.some((segments) => hooksManifestFingerprinted(path2.join(root, ...segments)));
+  return HOOKS_MANIFEST_LOCATIONS.some((segments) => hooksManifestFingerprinted(path3.join(root, ...segments)));
 }
 function hooksManifestFingerprinted(manifestFile) {
-  try {
-    return readFileSync2(manifestFile, "utf8").includes(HOOKS_MANIFEST_FINGERPRINT);
-  } catch {
-    return false;
-  }
+  return readFileIfPresent(manifestFile, "skip")?.includes(HOOKS_MANIFEST_FINGERPRINT) ?? false;
 }
 
 // core/src/gates/delegation.ts
@@ -1514,12 +1621,11 @@ function isCount(value) {
   return COUNT_PATTERN.test(value);
 }
 function waitMarkFileFor(cwd, runSession) {
-  const repository = repositoryIdFor(stateFileFor(cwd));
-  return path3.join(stateRootDirectory(), "runs", repository, `${sanitizeSession(runSession)}${MARK_SUFFIX}`);
+  return path4.join(runsDirectoryOf(stateFileFor(cwd)), `${sanitizeSession(runSession)}${MARK_SUFFIX}`);
 }
 function removeWaitMark(markFile) {
   try {
-    rmSync2(markFile, { force: true });
+    rmSync3(markFile, { force: true });
     return void 0;
   } catch (cause) {
     return noDirectoryHoldsTheMark(cause) ? void 0 : causeOf(cause);
@@ -1528,8 +1634,8 @@ function removeWaitMark(markFile) {
 function removeLegacyWaitMarks(stateFile) {
   const runs = runsDirectoryOf(stateFile);
   for (const mark of entriesOfDirectory(runs).filter((name) => name.endsWith(MARK_SUFFIX))) {
-    const markFile = path3.join(runs, mark);
-    if (isRegularNonSymlinkFile(markFile)) rmSync2(markFile, { force: true });
+    const markFile = path4.join(runs, mark);
+    if (isRegularNonSymlinkFile(markFile)) rmSync3(markFile, { force: true });
   }
 }
 function noDirectoryHoldsTheMark(cause) {
@@ -1537,23 +1643,10 @@ function noDirectoryHoldsTheMark(cause) {
 }
 
 // core/src/gates/in-flight.ts
-import { statSync as statSync3 } from "node:fs";
-
-// core/src/gates/in-flight-registry.ts
-import {
-  appendFileSync as appendFileSync2,
-  closeSync,
-  constants as constants2,
-  mkdirSync as mkdirSync2,
-  openSync,
-  readFileSync as readFileSync3,
-  rmSync as rmSync3,
-  statSync as statSync2,
-  writeSync
-} from "node:fs";
-import path4 from "node:path";
-var MARK_SET = "true";
-var APPEND_WITHOUT_CREATING = constants2.O_WRONLY | constants2.O_APPEND;
+import path5 from "node:path";
+var SUBAGENT_TASK = "subagent";
+var SUBAGENT_STOP_EVENT = "SubagentStop";
+var NOTHING_REGISTERED = { agents: [], unreadable: [] };
 var SUBAGENT_START_GATE = {
   gate: "subagentstart",
   errorSubject: "the in-flight registry's subagent-start gate",
@@ -1582,7 +1675,73 @@ function forgetStoppedAgent({ envelope }) {
   if (!isNameToken(envelope.agentId)) return unregistered(envelope, "subagentstop");
   forgetAgent(inFlightRegistryOf(run.stateFile, run.sessionId), envelope.agentId);
   recordCompletion(completedAgentsLogOf(run.stateFile, run.sessionId), envelope.agentId);
+  flagEndedWithoutNotice(envelope);
   return NO_VERDICT;
+}
+function resolveInFlight(envelope) {
+  const sighting = sightingOf(envelope);
+  const { agents, unreadable } = sighting.registered;
+  if (sighting.reported === void 0) {
+    const agentIds = registeredIdsIn(sighting.registered).filter((agentId) => agentId !== sighting.stoppingAgentId);
+    return { agentIds, endedWithoutNotice: [], unreadable };
+  }
+  return {
+    agentIds: sighting.reported.map((agent) => agent.agentId),
+    endedWithoutNotice: [...flaggedIn(agents), ...newlyEndedIn(sighting)],
+    unreadable
+  };
+}
+function flagEndedWithoutNotice(envelope) {
+  const sighting = sightingOf(envelope);
+  const { registry } = sighting;
+  if (registry === void 0) return;
+  for (const agentId of newlyEndedIn(sighting)) markEndedWithoutNotice(registry, agentId);
+}
+function adoptUnregistered(envelope) {
+  const sighting = sightingOf(envelope);
+  const { registry, reported } = sighting;
+  if (registry === void 0 || reported === void 0) return;
+  const known = registeredIdsIn(sighting.registered);
+  const unregisteredAgents = reported.filter(({ agentId }) => isNameToken(agentId) && !known.includes(agentId));
+  for (const agent of unregisteredAgents) {
+    writeRegisteredAgent(registry, {
+      ...agent,
+      transcriptPath: derivedTranscriptPath(envelope, agent.agentId),
+      startedAt: isoTimestamp()
+    });
+  }
+}
+function sightingOf(envelope) {
+  const registry = registryOf(envelope);
+  const stoppingAgentId = stoppingAgentOf(envelope);
+  return {
+    registry,
+    registered: registry === void 0 ? NOTHING_REGISTERED : readRegistry(registry),
+    reported: reportedInFlight(envelope.backgroundTasks)?.filter((agent) => agent.agentId !== stoppingAgentId),
+    stoppingAgentId
+  };
+}
+function newlyEndedIn({ registered, reported, stoppingAgentId }) {
+  if (reported === void 0) return [];
+  const stillReported = (agentId) => reported.some((agent) => agent.agentId === agentId);
+  return registered.agents.filter((agent) => !agent.endedWithoutNotice && agent.agentId !== stoppingAgentId && !stillReported(agent.agentId)).map((agent) => agent.agentId);
+}
+function stoppingAgentOf(envelope) {
+  return envelope.hookEventName === SUBAGENT_STOP_EVENT ? envelope.agentId : void 0;
+}
+function reportedInFlight(backgroundTasks) {
+  switch (backgroundTasks.kind) {
+    case "array":
+      return backgroundTasks.tasks.filter((task) => task.type === SUBAGENT_TASK).map((task) => ({ agentId: task.id, agentType: task.agentType }));
+    case "object":
+      return backgroundTasks.active.map((agentId) => ({ agentId, agentType: "" }));
+    case "absent":
+    case "unrecognized":
+      return void 0;
+  }
+}
+function flaggedIn(registered) {
+  return registered.filter((agent) => agent.endedWithoutNotice).map((agent) => agent.agentId);
 }
 function registryOf(envelope) {
   const run = sessionRunOf(envelope);
@@ -1591,11 +1750,8 @@ function registryOf(envelope) {
 function armedRunOf(envelope) {
   const run = sessionRunOf(envelope);
   if (run === void 0) return void 0;
-  const read = readStateFile(run.stateFile);
-  if (read.kind !== "ok") return void 0;
-  if (stateValue(read.content, "session") !== run.sessionId) return void 0;
-  if (stateValue(read.content, "auto") !== RUN_ARMED) return void 0;
-  return run;
+  const content = ownRunState(run.stateFile, run.sessionId);
+  return content !== void 0 && stateValue(content, "auto") === RUN_ARMED ? run : void 0;
 }
 function sessionRunOf(envelope) {
   const sessionId = hookSessionId(envelope);
@@ -1604,64 +1760,8 @@ function sessionRunOf(envelope) {
 }
 function derivedTranscriptPath(envelope, agentId) {
   const sessionId = sanitizeSession(envelope.sessionId);
-  if (envelope.transcriptPath === "" || sessionId === "" || !isNameToken(agentId)) return "";
-  return path4.join(path4.dirname(envelope.transcriptPath), sessionId, "subagents", `agent-${agentId}.jsonl`);
-}
-function registeredAgentsIn(registry) {
-  return entriesOfDirectory(registry).filter(isNameToken).map((agentId) => registeredAgent(registry, agentId));
-}
-function registeredAgent(registry, agentId) {
-  const read = readStateFile(path4.join(registry, agentId));
-  const content = read.kind === "ok" ? read.content : "";
-  return {
-    agentId,
-    agentType: stateValue(content, "agent_type"),
-    transcriptPath: stateValue(content, "transcript"),
-    startedAt: stateValue(content, "started_at"),
-    reported: stateValue(content, "reported") === MARK_SET,
-    endedWithoutNotice: stateValue(content, "ended_without_notice") === MARK_SET
-  };
-}
-function writeRegisteredAgent(registry, agent) {
-  const record = `agent_id=${agent.agentId}
-agent_type=${oneLine(agent.agentType)}
-transcript=${oneLine(agent.transcriptPath)}
-started_at=${agent.startedAt}
-`;
-  withOwnerOnlyUmask(() => writeFileAtomically(registry, path4.join(registry, agent.agentId), record, ".registering-"));
-}
-function markEndedWithoutNotice(registry, agentId) {
-  appendMark(registry, agentId, "ended_without_notice");
-}
-function appendMark(registry, agentId, mark) {
-  let entry;
-  try {
-    entry = openSync(path4.join(registry, agentId), APPEND_WITHOUT_CREATING);
-  } catch (error) {
-    if (isErrnoException(error) && error.code === "ENOENT") return;
-    throw error;
-  }
-  try {
-    writeSync(entry, `${mark}=${MARK_SET}
-`);
-  } finally {
-    closeSync(entry);
-  }
-}
-function forgetAgent(registry, agentId) {
-  rmSync3(path4.join(registry, agentId), { force: true });
-}
-function recordCompletion(completedAgentsLog, agentId) {
-  withOwnerOnlyUmask(() => {
-    mkdirSync2(path4.dirname(completedAgentsLog), { recursive: true });
-    appendFileSync2(completedAgentsLog, `${isoTimestamp()} ${agentId}
-`);
-  });
-}
-function completedAgentCount(stateFile, sessionId) {
-  const completedAgentsLog = completedAgentsLogOf(stateFile, sessionId);
-  if (statSync2(completedAgentsLog, { throwIfNoEntry: false }) === void 0) return 0;
-  return readFileSync3(completedAgentsLog, "utf8").split("\n").filter((line) => line !== "").length;
+  if (envelope.transcriptPath === "" || sessionId === "") return "";
+  return path5.join(path5.dirname(envelope.transcriptPath), sessionId, "subagents", `agent-${agentId}.jsonl`);
 }
 function unregistered(envelope, gate) {
   const route = gateRow(gate);
@@ -1677,103 +1777,6 @@ function unregistered(envelope, gate) {
       }
     ]
   };
-}
-function oneLine(value) {
-  return value.replace(/[\r\n]+/g, " ");
-}
-
-// core/src/gates/in-flight.ts
-var SUBAGENT_TASK = "subagent";
-var SUBAGENT_STOP_EVENT = "SubagentStop";
-function resolveInFlight(envelope) {
-  const registry = registryOf(envelope);
-  const listing = inFlightFrom(
-    envelope.backgroundTasks,
-    registry === void 0 ? [] : registeredAgentsIn(registry),
-    stoppingAgentOf(envelope)
-  );
-  if (registry !== void 0) {
-    for (const ended of listing.endedWithoutNotice) markEndedWithoutNotice(registry, ended.agentId);
-  }
-  return {
-    ...listing,
-    agents: listing.agents.map(({ agentId, agentType, transcriptPath }) => ({
-      agentId,
-      agentType,
-      transcript: transcriptOf(transcriptPath || derivedTranscriptPath(envelope, agentId))
-    }))
-  };
-}
-function stoppingAgentOf(envelope) {
-  return envelope.hookEventName === SUBAGENT_STOP_EVENT ? envelope.agentId : void 0;
-}
-function inFlightFrom(backgroundTasks, registered, stoppingAgentId) {
-  const stillRunning = (agent) => agent.agentId !== stoppingAgentId;
-  const reported = reportedInFlight(backgroundTasks);
-  if (reported === void 0) {
-    return { source: "registry", agents: registered.filter(stillRunning), endedWithoutNotice: [] };
-  }
-  const reportedIds = new Set(reported.map((agent) => agent.agentId));
-  const registeredById = new Map(registered.map((agent) => [agent.agentId, agent]));
-  return {
-    source: "background_tasks",
-    agents: reported.filter(stillRunning).map((agent) => withRegistered(agent, registeredById.get(agent.agentId))),
-    endedWithoutNotice: registered.filter(
-      (agent) => !agent.endedWithoutNotice && !reportedIds.has(agent.agentId) && stillRunning(agent)
-    )
-  };
-}
-function reportedInFlight(backgroundTasks) {
-  switch (backgroundTasks.kind) {
-    case "array":
-      return backgroundTasks.tasks.filter((task) => task.type === SUBAGENT_TASK).map((task) => ({ agentId: task.id, agentType: task.agentType, transcriptPath: "" }));
-    case "object":
-      return backgroundTasks.active.map((agentId) => ({ agentId, agentType: "", transcriptPath: "" }));
-    case "absent":
-    case "unrecognized":
-      return void 0;
-  }
-}
-function withRegistered(reported, registered) {
-  return {
-    agentId: reported.agentId,
-    agentType: reported.agentType || (registered?.agentType ?? ""),
-    transcriptPath: registered?.transcriptPath ?? ""
-  };
-}
-function transcriptOf(transcriptPath) {
-  if (transcriptPath === "") return { path: "", modifiedAtMs: void 0 };
-  return { path: transcriptPath, modifiedAtMs: statSync3(transcriptPath, { throwIfNoEntry: false })?.mtimeMs };
-}
-
-// core/src/gates/watch.ts
-import { readFileSync as readFileSync4, rmSync as rmSync4, statSync as statSync4 } from "node:fs";
-var MINUTE_MS = 6e4;
-var SILENCE_LIMIT_MS = 60 * MINUTE_MS;
-var LONG_RUNNING_LIMIT_MS = 180 * MINUTE_MS;
-var POSITIVE_INTEGER = /^[1-9]\d*$/;
-function watchdogAlive(stateFile, sessionId) {
-  const pid = recordedPid(watchPidFileOf(stateFile, sessionId));
-  return pid !== void 0 && processLives(pid);
-}
-function recordedPid(pidFile) {
-  try {
-    const recorded = readFileSync4(pidFile, "utf8").trim();
-    return POSITIVE_INTEGER.test(recorded) ? Number(recorded) : void 0;
-  } catch (error) {
-    if (isErrnoException(error) && error.code === "ENOENT") return void 0;
-    throw error;
-  }
-}
-function processLives(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    if (isErrnoException(error) && error.code === "EPERM") return true;
-    if (isErrnoException(error) && error.code === "ESRCH") return false;
-    throw error;
-  }
 }
 
 // core/src/gates/autocontinue.ts
@@ -1826,6 +1829,7 @@ function continueInTurnRun(stop, order) {
     progress: journalProgress(position.journalFile),
     turnAlreadyContinued: stop.envelope.stopHookActive,
     order,
+    pushedEvent: "auto-continued",
     observed: ""
   });
   if (failure === void 0) return pushed;
@@ -1835,42 +1839,70 @@ function continueNotifiedRun(stop, order) {
   if (stateValue(stop.content, "auto") !== RUN_ARMED) return ALLOWED;
   const reading = readDelegations(stop);
   if (reading.kind === "unreadable") return degraded(stop.sessionId, reading.cause);
-  const { resolution, watchdogLive } = reading;
-  const observed = `background_tasks=${stop.envelope.backgroundTasks.kind} in_flight=${resolution.agents.length}`;
-  if (resolution.agents.length > 0) return awaitingDelegations(stop, watchdogLive, observed);
-  const heads = branchHeadsOf(stop.projectDir);
-  const pushed = pushUnlessCapped({
-    position: positionOf(stop),
-    progress: runProgress(snapshotOf(stop, heads)),
-    turnAlreadyContinued: stop.envelope.stopHookActive,
-    order,
+  const continued = continuedPastDelegations(stop, order, reading);
+  const unreadableEntries = reading.resolution.unreadable.map(
+    (entry) => gateEvent("auto-continue-registry-unreadable", stop.sessionId, `${entry.agentId}: ${entry.cause}`)
+  );
+  return { ...continued, events: [...unreadableEntries, ...continued.events] };
+}
+function continuedPastDelegations(stop, order, { resolution, watchdogLive }) {
+  const observed = observedDelegations(stop.envelope.backgroundTasks, resolution);
+  if (!needsWatchdog(resolution)) {
+    return pushedWithRunProgress(stop, { order, pushedEvent: "auto-continued", observed });
+  }
+  if (watchdogLive) return allowedWith(gateEvent("auto-continue-held", stop.sessionId, observed));
+  if (stop.envelope.stopHookActive) {
+    return allowedWith(gateEvent("auto-continue-watch-unstarted", stop.sessionId, observed));
+  }
+  return pushedWithRunProgress(stop, {
+    order: START_THE_WATCH_ORDER,
+    pushedEvent: "auto-continue-watch-requested",
     observed
   });
+}
+function pushedWithRunProgress(stop, push) {
+  const heads = branchHeadsOf(stop.projectDir);
+  const pushed = pushedOrDegraded(stop, heads, push);
   if (heads.kind === "read") return pushed;
   const unreadHeads = gateEvent("auto-continue-heads-unreadable", stop.sessionId, heads.cause);
   return { ...pushed, events: [unreadHeads, ...pushed.events] };
 }
+function pushedOrDegraded(stop, heads, push) {
+  try {
+    return pushUnlessCapped({
+      position: positionOf(stop),
+      progress: runProgress(snapshotOf(stop, heads)),
+      turnAlreadyContinued: stop.envelope.stopHookActive,
+      ...push
+    });
+  } catch (cause) {
+    if (cause instanceof StateFileUnreadableError) return degraded(stop.sessionId, causeOf(cause));
+    throw cause;
+  }
+}
 function readDelegations(stop) {
   try {
+    adoptUnregistered(stop.envelope);
+    flagEndedWithoutNotice(stop.envelope);
     const resolution = resolveInFlight(stop.envelope);
-    const watchdogLive = resolution.agents.length > 0 && watchdogAlive(stateFileFor(stop.projectDir), stop.sessionId);
+    const watchdogLive = needsWatchdog(resolution) && watchdogAlive(stateFileFor(stop.projectDir), stop.sessionId);
     return { kind: "read", resolution, watchdogLive };
   } catch (cause) {
     return { kind: "unreadable", cause: causeOf(cause) };
   }
 }
-function awaitingDelegations(stop, watchdogLive, observed) {
-  if (watchdogLive) return allowedWith(gateEvent("auto-continue-held", stop.sessionId, observed));
-  if (stop.envelope.stopHookActive) {
-    return allowedWith(gateEvent("auto-continue-watch-unstarted", stop.sessionId, observed));
-  }
-  return {
-    verdict: { kind: "push", reason: START_THE_WATCH_ORDER },
-    events: [gateEvent("auto-continue-watch-requested", stop.sessionId, observed)]
-  };
+function needsWatchdog(resolution) {
+  const { agentIds, endedWithoutNotice, unreadable } = resolution;
+  return agentIds.length > 0 || endedWithoutNotice.length > 0 || unreadable.length > 0;
+}
+function observedDelegations(backgroundTasks, resolution) {
+  const unfiltered = backgroundTasks.kind === "object" ? " subagent_filter=none" : "";
+  const inFlight = `background_tasks=${backgroundTasks.kind}${unfiltered} in_flight=${resolution.agentIds.length}`;
+  const ended = resolution.endedWithoutNotice.length;
+  return ended === 0 ? inFlight : `${inFlight} ended_without_notice=${ended}`;
 }
 var START_THE_WATCH = '"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" watch';
-var START_THE_WATCH_ORDER = `oso-code: this unattended run ended its turn with delegations still in flight and no watchdog running for this session. Start one as a BACKGROUND Bash task (run_in_background: true): ${START_THE_WATCH} \u2014 then end the turn. The watch's exit wakes the run: it exits when every delegation has ended, or when one is stuck, long-running or ended without notice, naming it. Do NOT relaunch a delegation still in flight.`;
+var START_THE_WATCH_ORDER = `oso-code: this unattended run ended its turn with delegations still in flight or ended without notice, and no watchdog running for this session. Start one as a BACKGROUND Bash task (run_in_background: true): ${START_THE_WATCH} \u2014 then end the turn. The watch's exit wakes the run: it exits when every delegation has ended, or when one is stuck, long-running, unreadable or ended without notice, naming it. Do NOT relaunch a delegation still in flight.`;
 var FLOW_KEYS = ["active_slice", "verify_green", "auto"];
 function snapshotOf(stop, heads) {
   return {
@@ -1956,14 +1988,13 @@ function pushUnlessCapped(request) {
   if (failure !== void 0) return degraded(position.sessionId, failure);
   return {
     verdict: { kind: "push", reason: request.order },
-    events: [gateEvent("auto-continued", position.sessionId, request.observed)]
+    events: [gateEvent(request.pushedEvent, position.sessionId, request.observed)]
   };
 }
 function pushesWithoutProgress(position, progress, turnAlreadyContinued) {
   const started = turnAlreadyContinued ? 1 : 0;
-  const stats = statSync5(position.tallyFile, { throwIfNoEntry: false });
-  if (stats === void 0) return started + 1;
-  const read = stats.isFile() ? readStateFile(position.tallyFile) : { kind: "unreadable", cause: "" };
+  const read = readStateFile(position.tallyFile);
+  if (read.kind === "absent") return started + 1;
   if (read.kind !== "ok") return degraded(position.sessionId, "the push tally is not a readable file");
   const remembered = stateValue(read.content, "pushes");
   if (!isCount(remembered)) {
@@ -1983,7 +2014,7 @@ function announceCap(position) {
 }
 function rememberTally(position, pushes, progress) {
   try {
-    mkdirSync3(path5.dirname(position.tallyFile), { recursive: true, mode: OWNER_ONLY_DIRECTORY });
+    mkdirSync3(path6.dirname(position.tallyFile), { recursive: true, mode: OWNER_ONLY_DIRECTORY });
     writeFileSync2(position.tallyFile, `pushes=${pushes}
 ${progress.recorded()}`, { mode: OWNER_ONLY_FILE });
     return void 0;
@@ -2013,18 +2044,11 @@ function gateEvent(event, session, detail) {
   const route = gateRow("autocontinue");
   return { event, session, command: detail, gate: route.script, hookEvent: route.event };
 }
-function ownRunState(stateFile, sessionId) {
-  const stats = statSync5(stateFile, { throwIfNoEntry: false });
-  if (stats === void 0 || !stats.isFile()) return void 0;
-  const read = readStateFile(stateFile);
-  if (read.kind !== "ok") return void 0;
-  return stateValue(read.content, "session") === sessionId ? read.content : void 0;
-}
 function tallyFileFor(journalFile) {
-  return path5.join(path5.dirname(journalFile), `${path5.basename(journalFile, ".log")}.pushes`);
+  return path6.join(path6.dirname(journalFile), `${path6.basename(journalFile, ".log")}.pushes`);
 }
 function journalBytesIn(journalFile) {
-  const stats = statSync5(journalFile, { throwIfNoEntry: false });
+  const stats = statSync2(journalFile, { throwIfNoEntry: false });
   return stats !== void 0 && stats.isFile() ? stats.size : 0;
 }
 
@@ -2747,9 +2771,9 @@ function readsAsStateRecords(content) {
   return content.split("\n").every((line) => STATE_RECORD_LINE.test(line));
 }
 function howThisRepositoryReadsTheCommand(stateFile, command) {
-  const read = readStateFile(denyPatternsFileFor(stateFile));
-  if (read.kind !== "ok") return { kind: "noPatternBites" };
-  const readings = read.content.split("\n").filter((pattern) => pattern !== "").map((pattern) => ({ pattern, reading: ereReads(pattern, command) }));
+  const content = readFileIfPresent(denyPatternsFileFor(stateFile), "skip");
+  if (content === void 0) return { kind: "noPatternBites" };
+  const readings = content.split("\n").filter((pattern) => pattern !== "").map((pattern) => ({ pattern, reading: ereReads(pattern, command) }));
   if (readings.some((one) => one.reading === "matched")) return { kind: "aPatternBites" };
   const unreadable = readings.find((one) => one.reading === "untranslatable");
   if (unreadable === void 0) return { kind: "noPatternBites" };
@@ -2780,16 +2804,16 @@ function judgeReanchor({ envelope }) {
   return { verdict: { kind: "context", additionalContext: context }, events: [] };
 }
 function unattendedRunMarker(stateFile, sessionId) {
-  const read = readStateFile(stateFile);
-  if (read.kind !== "ok") return void 0;
-  if (stateValue(read.content, "session") !== sessionId) return void 0;
-  return stateValue(read.content, "auto");
+  const content = readFileIfPresent(stateFile, "skip");
+  if (content === void 0) return void 0;
+  if (stateValue(content, "session") !== sessionId) return void 0;
+  return stateValue(content, "auto");
 }
 function sliceIsArmed(stateFile) {
-  const read = readStateFile(stateFile);
-  if (read.kind !== "ok") return false;
-  if (stateValue(read.content, "mode") !== "plan") return false;
-  const activeSlice = stateValue(read.content, "active_slice");
+  const content = readFileIfPresent(stateFile, "skip");
+  if (content === void 0) return false;
+  if (stateValue(content, "mode") !== "plan") return false;
+  const activeSlice = stateValue(content, "active_slice");
   return activeSlice !== "" && activeSlice !== "none";
 }
 function reanchorContext(journalFile, unattendedRun) {
@@ -2811,8 +2835,7 @@ function reanchorContext(journalFile, unattendedRun) {
 }
 
 // core/src/gates/stale.ts
-import { existsSync as existsSync2 } from "node:fs";
-import path6 from "node:path";
+import path7 from "node:path";
 var ROADMAP_DISARMED_SENTINEL = "none";
 var ROADMAP_PLACEHOLDER = "{roadmap}";
 var STALE_GATE = {
@@ -2829,8 +2852,10 @@ function judgeStale({ envelope }) {
   return { verdict: { kind: "context", additionalContext: advisories.join(" ") }, events: [] };
 }
 function advisoriesFor(envelope, stateFile) {
-  if (!existsSync2(stateFile)) return [];
-  return staleStateAdvisory(envelope.caller, stateFile, readableContentOf(stateFile), hookSessionId(envelope));
+  const read = readStateFile(stateFile);
+  if (read.kind === "absent") return [];
+  const content = read.kind === "ok" ? read.content : void 0;
+  return staleStateAdvisory(envelope.caller, stateFile, content, hookSessionId(envelope));
 }
 function staleStateAdvisory(caller, stateFile, content, sessionId) {
   if (content === void 0) return [staleStateContext(caller, stateFile, "", sessionId)];
@@ -2842,7 +2867,7 @@ function staleStateContext(caller, stateFile, content, sessionId) {
   const skillPrefix = skillPrefixFor(caller.host);
   const stateBin = quoted(stateBinPath(caller));
   const clearCommand = `${stateBin} --session ${quoted(sessionId)} clear`;
-  const leftByAnother = `oso-code: this repository's own runtime state (${path6.basename(stateFile)}) was left by another session, and its flags arm this session's gates too`;
+  const leftByAnother = `oso-code: this repository's own runtime state (${path7.basename(stateFile)}) was left by another session, and its flags arm this session's gates too`;
   const roadmapValue = stateValue(content, "roadmap");
   const roadmapInFlight = roadmapValue === ROADMAP_DISARMED_SENTINEL ? "" : roadmapValue;
   if (roadmapInFlight === "") {
@@ -2858,11 +2883,7 @@ function skillPrefixFor(host) {
 }
 function stateBinPath(caller) {
   if (caller.stateBin !== "") return caller.stateBin;
-  return path6.join(pluginRootDirectory(), "bin", "oso-state");
-}
-function readableContentOf(stateFile) {
-  const read = readStateFile(stateFile);
-  return read.kind === "ok" ? read.content : void 0;
+  return path7.join(pluginRootDirectory(), "bin", "oso-state");
 }
 function quoted(value) {
   return `"${value}"`;
@@ -2870,7 +2891,7 @@ function quoted(value) {
 
 // core/src/gates/statebin.ts
 import { appendFileSync as appendFileSync3 } from "node:fs";
-import path7 from "node:path";
+import path8 from "node:path";
 var STATEBIN_GATE = {
   gate: "statebin",
   errorSubject: "the state-bin gate",
@@ -2879,7 +2900,7 @@ var STATEBIN_GATE = {
 function judgeStatebin(_request) {
   const envFile = process.env["CLAUDE_ENV_FILE"];
   if (envFile === void 0 || envFile === "") return NO_VERDICT;
-  const stateBin = path7.join(pluginRootDirectory(), "bin", "oso-state");
+  const stateBin = path8.join(pluginRootDirectory(), "bin", "oso-state");
   appendFileSync3(envFile, `export OSO_STATE_BIN=${stateBin}
 `);
   return NO_VERDICT;
@@ -2887,8 +2908,8 @@ function judgeStatebin(_request) {
 
 // core/src/gates/teardown.ts
 import { execFileSync as execFileSync2 } from "node:child_process";
-import { existsSync as existsSync3, readdirSync as readdirSync2, renameSync as renameSync2, rmSync as rmSync5, rmdirSync, statSync as statSync6 } from "node:fs";
-import path8 from "node:path";
+import { existsSync as existsSync2, readdirSync as readdirSync2, renameSync as renameSync2, rmSync as rmSync4, rmdirSync, statSync as statSync3 } from "node:fs";
+import path9 from "node:path";
 var ABANDONED_STATE_DAYS = 7;
 var EVENTS_LOG_RETENTION_DAYS = 30;
 var SECONDS_PER_DAY = 86400;
@@ -2916,7 +2937,7 @@ function stateArmedBy(sessionId) {
 }
 function removeWorktreesOf(sessionId, stateFile) {
   if (sessionId === "") return;
-  const sessionWorktrees = path8.join(stateRootDirectory(), "worktrees", sessionId);
+  const sessionWorktrees = path9.join(stateRootDirectory(), "worktrees", sessionId);
   if (!isDirectory(sessionWorktrees)) return;
   if (stateFile === void 0) return;
   const repoPath = stateValueOf(stateFile, "repo_path");
@@ -2937,13 +2958,13 @@ function removeWorktreesOf(sessionId, stateFile) {
 function dropInFlightRegistriesOf(sessionId) {
   if (sessionId === "") return;
   for (const repository of entriesOfDirectory(runsRootDirectory())) {
-    rmSync5(path8.join(runsRootDirectory(), repository, sessionId), { recursive: true, force: true });
+    rmSync4(sessionRunDirectoryOf(repository, sessionId), { recursive: true, force: true });
   }
 }
 function dropStateFile(stateFile) {
   if (stateFile === void 0) return;
-  rmSync5(stateFile, { force: true });
-  rmSync5(`${stateFile}.lock`, { recursive: true, force: true });
+  rmSync4(stateFile, { force: true });
+  rmSync4(`${stateFile}.lock`, { recursive: true, force: true });
 }
 function clearOrphanedPendingOf(realSessionId) {
   if (realSessionId === "") return;
@@ -2965,7 +2986,7 @@ function clearRoadmapInFlightOf(sessionId) {
   }
 }
 function rotateAgedEventsLog() {
-  const eventsLog = path8.join(stateRootDirectory(), "events.jsonl");
+  const eventsLog = path9.join(stateRootDirectory(), "events.jsonl");
   if (!olderThanDays(eventsLog, EVENTS_LOG_RETENTION_DAYS)) return;
   renameSync2(eventsLog, `${eventsLog}.1`);
 }
@@ -2973,11 +2994,11 @@ function pruneAbandonedState(sessionId, ownState) {
   if (sessionId === "") return;
   for (const stateFile of stateFilesSorted()) {
     if (stateFile === ownState) continue;
-    if (existsSync3(`${stateFile}.lock`)) continue;
+    if (existsSync2(`${stateFile}.lock`)) continue;
     if (!olderThanDays(stateFile, ABANDONED_STATE_DAYS)) continue;
     const abandonedId = sanitizeSession(stateValueOf(stateFile, "session"));
     removeWorktreesOf(abandonedId, stateFile);
-    rmSync5(stateFile, { force: true });
+    rmSync4(stateFile, { force: true });
   }
 }
 function olderThanDays(target, days) {
@@ -2989,10 +3010,10 @@ function stateValueOf(stateFile, key) {
   return read.kind === "ok" ? stateValue(read.content, key) : "";
 }
 function stateFilesSorted() {
-  return directoryEntries(stateRootDirectory()).filter((name) => name.endsWith(".state")).sort().map((name) => path8.join(stateRootDirectory(), name)).filter((target) => isFile(target));
+  return directoryEntries(stateRootDirectory()).filter((name) => name.endsWith(".state")).sort().map((name) => path9.join(stateRootDirectory(), name)).filter((target) => isFile(target));
 }
 function subdirectoriesSorted(directory) {
-  return directoryEntries(directory).sort().map((name) => path8.join(directory, name)).filter((target) => isDirectory(target));
+  return directoryEntries(directory).sort().map((name) => path9.join(directory, name)).filter((target) => isDirectory(target));
 }
 function directoryEntries(directory) {
   try {
@@ -3002,7 +3023,7 @@ function directoryEntries(directory) {
   }
 }
 function isFile(target) {
-  const stats = statSync6(target, { throwIfNoEntry: false });
+  const stats = statSync3(target, { throwIfNoEntry: false });
   return stats !== void 0 && stats.isFile();
 }
 function gitWorktreeRemove(repoPath, worktreePath) {
@@ -3072,8 +3093,7 @@ function allowlistCarries(allowlist, toolName) {
 
 // core/src/gates/version.ts
 import { execFileSync as execFileSync3 } from "node:child_process";
-import { readFileSync as readFileSync5 } from "node:fs";
-import path9 from "node:path";
+import path10 from "node:path";
 var RELEASE_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/;
 var GITHUB_URL_PREFIX = "https://github.com/";
 var FETCH_CONNECT_SECONDS = 2;
@@ -3101,10 +3121,10 @@ function judgeVersion({ envelope }) {
   return { verdict: { kind: "context", additionalContext: context }, events: [] };
 }
 function pluginManifestFile() {
-  return path9.join(pluginRootDirectory(), ".claude-plugin", "plugin.json");
+  return path10.join(pluginRootDirectory(), ".claude-plugin", "plugin.json");
 }
 function publishedReleaseCacheFile() {
-  return path9.join(stateRootDirectory(), "published-release");
+  return path10.join(stateRootDirectory(), "published-release");
 }
 function repositorySlugOf(repositoryUrl) {
   if (!repositoryUrl.startsWith(GITHUB_URL_PREFIX) || repositoryUrl.length === GITHUB_URL_PREFIX.length) {
@@ -3115,7 +3135,7 @@ function repositorySlugOf(repositoryUrl) {
 }
 function marketplaceServesRepository(repositorySlug) {
   const home = homeDirectoryFrom(process.platform, process.env);
-  const marketplacesFile = path9.join(home, ".claude", "plugins", "known_marketplaces.json");
+  const marketplacesFile = path10.join(home, ".claude", "plugins", "known_marketplaces.json");
   const registrations = readFileOrEmpty(marketplacesFile).replace(/\s/g, "");
   return registrations.includes(`"repo":"${repositorySlug}"`);
 }
@@ -3134,7 +3154,7 @@ function cachedPublishedRelease(cacheFile) {
 function refreshPublishedReleaseCache(cacheFile, repositorySlug) {
   try {
     writeFileAtomically(
-      path9.dirname(cacheFile),
+      path10.dirname(cacheFile),
       cacheFile,
       fetchedHighestReleaseVersion(repositorySlug),
       ".published-release."
@@ -3183,11 +3203,7 @@ function releaseSortKey(version) {
   return version.split(".").map((component) => component.padStart(5, "0")).join("");
 }
 function readFileOrEmpty(target) {
-  try {
-    return readFileSync5(target, "utf8");
-  } catch {
-    return "";
-  }
+  return readFileIfPresent(target, "skip") ?? "";
 }
 
 // core/src/gates/dispatch.ts
@@ -3289,8 +3305,8 @@ function openCodeHookNamed(mechanism, gate) {
 }
 
 // core/src/state/plan.ts
-import { chmodSync, existsSync as existsSync4, mkdirSync as mkdirSync4, readFileSync as readFileSync6, renameSync as renameSync3, rmSync as rmSync6 } from "node:fs";
-import path10 from "node:path";
+import { chmodSync, existsSync as existsSync3, mkdirSync as mkdirSync4, readFileSync as readFileSync2, renameSync as renameSync3, rmSync as rmSync5 } from "node:fs";
+import path11 from "node:path";
 
 // core/src/state/transitions.ts
 function armPlan() {
@@ -3307,14 +3323,14 @@ function isValidPlanDigest(value) {
   return PLAN_DIGEST_PATTERN.test(value);
 }
 function planPaths(stateFile, digest) {
-  const root = path10.join(stateRootDirectory(), "plans");
-  const dir = path10.join(root, repositoryIdFor(stateFile));
+  const root = path11.join(stateRootDirectory(), "plans");
+  const dir = path11.join(root, repositoryIdFor(stateFile));
   return {
     root,
     dir,
-    presentedFile: path10.join(dir, `presented-${digest}.md`),
-    approvedFile: path10.join(dir, `approved-${digest}.md`),
-    currentFile: path10.join(dir, "current.md")
+    presentedFile: path11.join(dir, `presented-${digest}.md`),
+    approvedFile: path11.join(dir, `approved-${digest}.md`),
+    currentFile: path11.join(dir, "current.md")
   };
 }
 function ensurePlanDirectory(paths) {
@@ -3343,17 +3359,17 @@ function runCapturePlan(cwd, sessionId, digest, document) {
   }
   return withLock(stateFile, sessionId, () => {
     refuseGateWritesByAForeignSession(stateFile, sessionId);
-    if (existsSync4(paths.presentedFile)) {
+    if (existsSync3(paths.presentedFile)) {
       if (!isPrivateRegularFile(paths.presentedFile)) {
         throw new PlanFailure("presented snapshot is not a private regular file");
       }
-      if (readFileSync6(paths.presentedFile, "utf8") !== document) {
+      if (readFileSync2(paths.presentedFile, "utf8") !== document) {
         throw new PlanFailure("presented snapshot content disagrees with its approval digest");
       }
     } else {
       writeFileAtomically(paths.dir, paths.presentedFile, document, ".snapshot.");
     }
-    if (existsSync4(paths.currentFile) && !isPrivateRegularFile(paths.currentFile)) {
+    if (existsSync3(paths.currentFile) && !isPrivateRegularFile(paths.currentFile)) {
       throw new PlanFailure("current plan is not a private regular file");
     }
     writeFileAtomically(paths.dir, paths.currentFile, document, ".current.");
@@ -3414,14 +3430,14 @@ function runApprovePlan(cwd, sessionId, digest) {
       if (!byteIdentical(paths.currentFile, paths.presentedFile)) {
         throw new PlanFailure("the pending plan changed since it was presented; capture it again before approving");
       }
-      if (existsSync4(paths.approvedFile)) {
+      if (existsSync3(paths.approvedFile)) {
         if (!isPrivateRegularFile(paths.approvedFile)) {
           throw new PlanFailure("approved snapshot is not a private regular file");
         }
         if (!byteIdentical(paths.presentedFile, paths.approvedFile)) {
           throw new PlanFailure("approved snapshot content disagrees with the pending document");
         }
-        rmSync6(paths.presentedFile, { force: true });
+        rmSync5(paths.presentedFile, { force: true });
       } else {
         renameSync3(paths.presentedFile, paths.approvedFile);
       }
@@ -3434,7 +3450,7 @@ function runApprovePlan(cwd, sessionId, digest) {
   });
 }
 function byteIdentical(leftFile, rightFile) {
-  return readFileSync6(leftFile).equals(readFileSync6(rightFile));
+  return readFileSync2(leftFile).equals(readFileSync2(rightFile));
 }
 var VERIFY_CHECK_TOKENS = ["failing-check:", "Verify-exception:"];
 var THE_FIELD_ONLY_A_SLICE_BLOCK_CARRIES = "Depends-on";
@@ -3484,7 +3500,7 @@ function namesAVerifyCheck(blockText) {
 
 // opencode/plugin/oso/identity.ts
 import { createHash as createHash2 } from "node:crypto";
-import { existsSync as existsSync5, readFileSync as readFileSync7, statSync as statSync7 } from "node:fs";
+import { existsSync as existsSync4, readFileSync as readFileSync3, statSync as statSync4 } from "node:fs";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 function deriveRootId(cwd) {
   const meta = findGitMetadata(cwd);
@@ -3508,10 +3524,10 @@ function findGitMetadata(cwd) {
   let dir = resolve(cwd);
   for (; ; ) {
     const dotGit = join(dir, ".git");
-    if (existsSync5(dotGit)) {
+    if (existsSync4(dotGit)) {
       let isDir = false;
       try {
-        isDir = statSync7(dotGit).isDirectory();
+        isDir = statSync4(dotGit).isDirectory();
       } catch {
         isDir = false;
       }
@@ -3534,12 +3550,12 @@ function findGitMetadata(cwd) {
   }
 }
 function isRealGitDir(dotGit) {
-  return existsSync5(join(dotGit, "HEAD")) && existsSync5(join(dotGit, "objects"));
+  return existsSync4(join(dotGit, "HEAD")) && existsSync4(join(dotGit, "objects"));
 }
 function worktreeGitDir(dotGit, baseDir) {
   let content;
   try {
-    content = readFileSync7(dotGit, "utf8");
+    content = readFileSync3(dotGit, "utf8");
   } catch {
     return null;
   }
@@ -3551,8 +3567,8 @@ function worktreeGitDir(dotGit, baseDir) {
   if (raw === "") {
     return null;
   }
-  const path11 = isAbsolute(raw) ? raw : join(baseDir, raw);
-  return resolve(path11);
+  const path12 = isAbsolute(raw) ? raw : join(baseDir, raw);
+  return resolve(path12);
 }
 function stripWorktreesSuffix(gitDir) {
   const marker = `${sep}worktrees${sep}`;
@@ -4164,16 +4180,16 @@ function standDownTraced(request, reason, turns) {
 
 // opencode/plugin/oso/lifecycle.ts
 import { spawnSync as spawnSync2 } from "node:child_process";
-import { readdirSync as readdirSync3, readFileSync as readFileSync8, rmSync as rmSync7, writeFileSync as writeFileSync3 } from "node:fs";
+import { readdirSync as readdirSync3, readFileSync as readFileSync4, rmSync as rmSync6, writeFileSync as writeFileSync3 } from "node:fs";
 import { dirname as dirname3, join as join2 } from "node:path";
 var MARKER_PREFIX = "oso-live-";
 var MARKER_SUFFIX = ".json";
 function markerPath(commonDir, sessionId) {
   return join2(commonDir, `${MARKER_PREFIX}${sessionId}${MARKER_SUFFIX}`);
 }
-function readMarkerFile(path11) {
+function readMarkerFile(path12) {
   try {
-    return normalizeMarker(JSON.parse(readFileSync8(path11, "utf8")));
+    return normalizeMarker(JSON.parse(readFileSync4(path12, "utf8")));
   } catch {
     return null;
   }
@@ -4235,8 +4251,8 @@ function listStale(commonDir) {
     if (isLive(marker)) {
       continue;
     }
-    for (const path11 of marker.worktrees) {
-      orphans.push({ path: path11, sessionId: marker.sessionId });
+    for (const path12 of marker.worktrees) {
+      orphans.push({ path: path12, sessionId: marker.sessionId });
     }
   }
   return orphans;
@@ -4300,11 +4316,11 @@ function sweepStale(commonDir, options = {}) {
       continue;
     }
     let tornDown = true;
-    for (const path11 of marker.worktrees) {
-      if (removeWorktree(commonDir, path11, git)) {
-        reaped.push(path11);
+    for (const path12 of marker.worktrees) {
+      if (removeWorktree(commonDir, path12, git)) {
+        reaped.push(path12);
       } else {
-        left.push(path11);
+        left.push(path12);
         tornDown = false;
       }
     }
@@ -4314,9 +4330,9 @@ function sweepStale(commonDir, options = {}) {
   }
   return { reaped, left };
 }
-function removeWorktree(commonDir, path11, git) {
+function removeWorktree(commonDir, path12, git) {
   const cwd = dirname3(commonDir);
-  if (!runGit(git, ["worktree", "remove", path11], cwd)) {
+  if (!runGit(git, ["worktree", "remove", path12], cwd)) {
     return false;
   }
   runGit(git, ["worktree", "prune"], cwd);
@@ -4332,7 +4348,7 @@ function runGit(git, args, cwd) {
 }
 function dropMarkerQuietly(commonDir, sessionId) {
   try {
-    rmSync7(markerPath(commonDir, sessionId), { force: true });
+    rmSync6(markerPath(commonDir, sessionId), { force: true });
   } catch {
   }
 }

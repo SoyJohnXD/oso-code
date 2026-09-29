@@ -5,8 +5,8 @@
 # OpenCode installer copies plus the committed OpenCode plugin bundle. The
 # installer compares these published digests with installed bytes; it never
 # replaces them with hashes calculated after installation.
-715976a1f743b408ce63e75c1703b0008197db995a63cbf2eacc4ab73dc4e286  plugin/dist/gate.js
-8eedbd56ac482cecc8d806157caa09c85996f5b49e223e4c77c4e2ea6b92dd20  plugin/dist/precommit.js
+9851864e2fbc85468843a1ae00e4e1cb839a7b0e886fdd8f8306d4ba6032656d  plugin/dist/gate.js
+01197c4c3feabbf71ef8e38d46e1613512a9e3f0026be4cb5fa5dfc7c183f9d3  plugin/dist/precommit.js
 609158e6c5fbc237939fa3ddf7faab80ab690bdc0c8d584414a885130103c4e8  plugin/dist/package.json
 3aaa67c6df371430b5ec708eb9f7314104998fde2507d25a02a3c419435e30dc  plugin/git-hooks/pre-commit
 ec9474d1a88bdaeb41ce171da62ae9a00280693097462dce9f3f2d3af343da6a  plugin/hooks/block-commit-until-green.sh
@@ -14,9 +14,9 @@ ec9474d1a88bdaeb41ce171da62ae9a00280693097462dce9f3f2d3af343da6a  plugin/hooks/b
 2011057b43b6e438c5007a97805e0599eab92ab6f5a5bc7b88fa75b74cd77c93  plugin/hooks/warn-stale-state.sh
 2fa2b0b8d9431dcf49cc39efaf216515e4ac8f15fcc2e460384977ccc1a73f1f  plugin/hooks/cleanup-state.sh
 db4216aae259e4a50c17e6753c9b8f9651d43ed33fd70310f393768701a9bf0a  plugin/hooks/block-prod-deploy.sh
-90103ca79d51088add3a3408087a9f07d9f790e5316eaa44bfda7c2034721dd5  plugin/bin/oso-state
+9d834207e1e8b46504e96d7308f7bc3352db12a7a40050ef5ccd6f9d6153cca6  plugin/bin/oso-state
 609158e6c5fbc237939fa3ddf7faab80ab690bdc0c8d584414a885130103c4e8  plugin/bin/package.json
 3a03a275ce8b36170b53bc4126ce8a1dfe2dbe0f2bc90a57674a83cd9b28e273  plugin/hooks/lib.sh
 3b9821683e46e56ca2f3aff703d2f3ecbfa042f57be0ac8a3aa5d36a1166a5ff  plugin/hooks/lexer.sh
 4fae3fb38808ea6ea401f6a2a28c5cac914e8db88554d03d477e1424ac9b80a8  plugin/hooks/reanchor-after-compact.sh
-b4c70bdde854c27f56c428c453c1c4c4404cd339f8b87eb6bd11444924676efd  opencode/dist/oso-code.js
+00baf4a8fd9465a1067182537e26b92c4546c149fead0ef43e1fc222d83bd58d  opencode/dist/oso-code.js

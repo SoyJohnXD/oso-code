@@ -139,7 +139,7 @@ function foreignOwner(content, sessionId) {
 }
 function readStateFile(stateFile) {
   try {
-    if (!statSync(stateFile).isFile()) return { kind: "unreadable", cause: `${stateFile} is not a regular file` };
+    if (!statSync(stateFile).isFile()) return { kind: "unreadable", cause: `not a regular file: ${stateFile}` };
     return { kind: "ok", content: readFileSync(stateFile, "utf8") };
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") return { kind: "absent" };

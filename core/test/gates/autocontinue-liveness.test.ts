@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { appendFileSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { runGate, type GateRun } from "../../src/gates/dispatch.ts";
 import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
-import { inFlightRegistryOf, runsDirectoryOf, stateFileFor, watchPidFileOf } from "../../src/state/store.ts";
+import { inFlightRegistryOf, isErrnoException, runsDirectoryOf, stateFileFor, watchPidFileOf } from "../../src/state/store.ts";
+import { watchInFlight, type WatchEnd } from "../../src/state/watch.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
+import { ownWatchdogRecord } from "../support/process-start.ts";
 import { withStateSandbox, type StateSandbox } from "../support/state-sandbox.ts";
 
 const SESSION = "sess-net";
@@ -84,7 +86,7 @@ function staleWaitMark(project: Project): string {
 }
 
 function liveWatchdog(project: Project): void {
-  written(watchPidFileOf(project.stateFile, SESSION), `${process.pid}\n`);
+  written(watchPidFileOf(project.stateFile, SESSION), ownWatchdogRecord());
 }
 
 function registryEntry(project: Project, agentId: string): string {
@@ -96,6 +98,33 @@ function registered(project: Project, agentId: string): void {
     registryEntry(project, agentId),
     `agent_id=${agentId}\nagent_type=oso-code:applier\ntranscript=\nstarted_at=${new Date().toISOString()}\n`,
   );
+}
+
+function entryContent(project: Project, agentId: string): string {
+  try {
+    return readFileSync(registryEntry(project, agentId), "utf8");
+  } catch (error) {
+    if (isErrnoException(error) && error.code === "ENOENT") return "";
+    throw error;
+  }
+}
+
+function watchedFast(project: Project): WatchEnd {
+  return withHookEnvironment(
+    { HOME: project.sandbox.home, OSO_WATCH_POLL_MS: "50", OSO_WATCH_SILENCE_MS: "1" },
+    () => watchInFlight(project.stateFile, SESSION),
+  );
+}
+
+function capLinesIn(project: Project): number {
+  return readFileSync(journalFile(project), "utf8")
+    .split("\n")
+    .filter((line) => line.endsWith(CAP_LINE)).length;
+}
+
+function derivedTranscriptPattern(): RegExp {
+  const separator = "[/\\\\]";
+  return new RegExp(`^transcript=.*${separator}${SESSION}${separator}subagents${separator}agent-${AGENT}\\.jsonl$`, "m");
 }
 
 function journalFile(project: Project): string {
@@ -179,12 +208,12 @@ describe("the Claude Stop net reads delegations in flight from background_tasks 
     assert.deepEqual(eventsOf(run), ["auto-continue-watch-unstarted|background_tasks=array in_flight=1"]);
   });
 
-  test("the tolerated object shape is read and recorded as such", () => {
+  test("the tolerated object shape is read, recorded as such, and recorded as one no subagent filter applies to", () => {
     const run = inProject(runState(), (project) => {
       liveWatchdog(project);
       return stopped(project, { backgroundTasks: { active: [AGENT], completed: [] } });
     });
-    assert.deepEqual(eventsOf(run), ["auto-continue-held|background_tasks=object in_flight=1"]);
+    assert.deepEqual(eventsOf(run), ["auto-continue-held|background_tasks=object subagent_filter=none in_flight=1"]);
   });
 
   test("an unrecognized shape falls back to the registry and the push records the shape it could not read", () => {
@@ -202,6 +231,36 @@ describe("the Claude Stop net reads delegations in flight from background_tasks 
     assert.deepEqual(eventsOf(run), ["auto-continue-held|background_tasks=absent in_flight=1"]);
   });
 
+  test("the last delegation vanishing from background_tasks without notice blocks once for the watch, then stops looping", () => {
+    const runs = inProject(runState(), (project) => {
+      registered(project, AGENT);
+      return [
+        stopped(project, { backgroundTasks: [] }),
+        stopped(project, { stopHookActive: true, backgroundTasks: [] }),
+        stopped(project, { backgroundTasks: [] }),
+      ];
+    });
+    const [first, looped, later] = runs;
+    const unannounced = "background_tasks=array in_flight=0 ended_without_notice=1";
+    assert.equal(first?.verdict.kind, "push");
+    assert.ok(reasonOf(first as GateRun).includes(START_THE_WATCH), `the order never names the watch: ${reasonOf(first as GateRun)}`);
+    assert.deepEqual(eventsOf(first as GateRun), [`auto-continue-watch-requested|${unannounced}`]);
+    assert.deepEqual(looped?.verdict, { kind: "allow" });
+    assert.deepEqual(eventsOf(looped as GateRun), [`auto-continue-watch-unstarted|${unannounced}`]);
+    assert.deepEqual(eventsOf(later as GateRun), [`auto-continue-watch-requested|${unannounced}`]);
+  });
+
+  test("once the watch has announced the delegation that ended without notice, the stop is back on the normal push", () => {
+    const run = inProject(runState(), (project) => {
+      registered(project, AGENT);
+      stopped(project, { backgroundTasks: [] });
+      rmSync(registryEntry(project, AGENT));
+      return stopped(project, { backgroundTasks: [] });
+    });
+    assert.equal(run.verdict.kind, "push");
+    assert.deepEqual(eventsOf(run), ["auto-continued|background_tasks=array in_flight=0"]);
+  });
+
   test("a stale auto_wait label and its old mark are no delegation at all: the turn is pushed, the mark untouched, nothing called lost", () => {
     const { run, markAfter } = inProject(runState({ auto_wait: "wave-2" }), (project) => {
       const mark = staleWaitMark(project);
@@ -213,6 +272,40 @@ describe("the Claude Stop net reads delegations in flight from background_tasks 
     assert.doesNotMatch(run.stdout, /lost|45 minutes|auto_wait/);
     assert.match(reasonOf(run), /oso\/index NEXT:/);
     assert.equal(markAfter, "untouched");
+  });
+});
+
+describe("the Stop net and the watch agree on the delegations in flight, and a disagreement never loops unbounded", () => {
+  test("a Stop whose background_tasks lists a subagent the registry never saw adopts it, and the watch then watches it", () => {
+    const { entry, watch } = inProject(runState(), (project) => {
+      stopped(project, { backgroundTasks: oneRunningSubagent() });
+      return { entry: entryContent(project, AGENT), watch: watchedFast(project) };
+    });
+    assert.match(entry, new RegExp(`^agent_id=${AGENT}$`, "m"));
+    assert.match(entry, /^agent_type=oso-code:applier$/m);
+    assert.match(entry, derivedTranscriptPattern());
+    assert.match(entry, /^started_at=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/m);
+    assert.deepEqual(watch, { exitCode: 3, lines: [`stuck: ${AGENT} (oso-code:applier) silent 0 min`] });
+  });
+
+  test("watch-requested stops with no progress between them spend the push cap: the fourth is allowed and the cap journaled once", () => {
+    const { verdicts, capLines } = inProject(runState(), (project) => {
+      const runs = [1, 2, 3, 4].map(() => stopped(project, { backgroundTasks: oneRunningSubagent() }));
+      return { verdicts: verdictsOf(runs), capLines: capLinesIn(project) };
+    });
+    assert.deepEqual(verdicts, ["push", "push", "push", "allow"]);
+    assert.equal(capLines, 1);
+  });
+
+  test("an unreadable registry entry is named with its cause in an event and still counts in flight, never as a phantom agent", () => {
+    const run = inProject(runState(), (project) => {
+      mkdirSync(registryEntry(project, AGENT), { recursive: true });
+      return stopped(project);
+    });
+    assert.equal(run.verdict.kind, "push");
+    const [unreadable, requested] = eventsOf(run);
+    assert.match(unreadable ?? "", new RegExp(`^auto-continue-registry-unreadable\\|${AGENT}: not a regular file: .*${AGENT}$`));
+    assert.equal(requested, "auto-continue-watch-requested|background_tasks=absent in_flight=1");
   });
 });
 

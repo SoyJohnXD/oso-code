@@ -31,6 +31,7 @@ const FLAGGED_EXIT = 3;
 const MINUTE_MS = 60_000;
 const PID_FILE_DEADLINE_MS = 10_000;
 const POLLS_TO_OBSERVE_MS = 400;
+const UNREADABLE_DEADLINE_MS = 5_000;
 
 type Entry = Readonly<{
   agentId: string;
@@ -113,6 +114,14 @@ async function withRunningSandbox(use: (sandbox: StateSandbox) => Promise<void>)
   }
 }
 
+async function endedWithin(watch: RunningWatch, deadlineMs: number): Promise<SubjectRun> {
+  const outcome = await Promise.race([watch.ended, delay(deadlineMs, undefined, { ref: false })]);
+  if (outcome !== undefined) return outcome;
+  process.kill(watch.pid);
+  await watch.ended;
+  throw new Error(`the watch still polled ${deadlineMs} ms after it started`);
+}
+
 function contentOf(sandbox: StateSandbox, relativePath: string): string {
   const entry = sandbox.read(relativePath);
   return entry.kind === "file" ? entry.content : "";
@@ -129,15 +138,21 @@ describe("oso-state watch ends when every delegation of this session has ended",
     });
   });
 
-  test("the watch records watch=<pid>:<start ISO> through set's write path, keeping a foreign gate owner", () => {
+  test("a watch in a repository with no state creates none", () => {
     withStateSandbox("workspace", (sandbox) => {
-      sandbox.seed({ [STATE_FILE]: "mode=plan\nsession=other-session\n" });
       const run = watchOnce(sandbox);
       assert.equal(run.exit, 0, run.stderr);
-      const state = contentOf(sandbox, STATE_FILE);
-      assert.match(state, /^watch=\d+:\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/m);
-      assert.match(state, /^mode=plan$/m);
-      assert.match(state, /^session=other-session$/m);
+      assert.equal(sandbox.read(STATE_FILE).kind, "absent");
+    });
+  });
+
+  test("a watch leaves an existing state exactly as it found it", () => {
+    withStateSandbox("workspace", (sandbox) => {
+      const state = "mode=plan\nsession=other-session\n";
+      sandbox.seed({ [STATE_FILE]: state });
+      const run = watchOnce(sandbox);
+      assert.equal(run.exit, 0, run.stderr);
+      assert.equal(contentOf(sandbox, STATE_FILE), state);
     });
   });
 
@@ -145,7 +160,7 @@ describe("oso-state watch ends when every delegation of this session has ended",
     await withRunningSandbox(async (sandbox) => {
       sandbox.seed(seededAgent({ agentId: "a1" }, 0));
       const watch = startWatch(sandbox);
-      assert.equal(await pidFileOnceWritten(sandbox), `${watch.pid}\n`);
+      assert.match(await pidFileOnceWritten(sandbox), new RegExp(`^watch=${watch.pid}:\\d+\\n$`));
       await delay(POLLS_TO_OBSERVE_MS);
       assert.equal(sandbox.read(PID_FILE).kind, "file");
       removeRegistryEntry(sandbox, "a1");
@@ -252,6 +267,26 @@ describe("oso-state watch exits 3 naming a delegation that needs attention, once
     });
   });
 
+  const UNREADABLE_ENTRIES: readonly Readonly<{ why: string; entry: SeededEntry }>[] = [
+    { why: "an entry that is no regular file", entry: { kind: "directory" } },
+    { why: "an entry holding no started_at timestamp", entry: "agent_id=a5\nagent_type=oso-code:applier\n" },
+  ];
+
+  for (const { why, entry } of UNREADABLE_ENTRIES) {
+    test(`${why} exits 3 naming it unreadable once and leaves the registry, rather than holding the watch open`, async () => {
+      await withRunningSandbox(async (sandbox) => {
+        sandbox.seed({ [`${REGISTRY}/a5`]: entry });
+        const run = await endedWithin(startWatch(sandbox), UNREADABLE_DEADLINE_MS);
+        assert.equal(run.exit, FLAGGED_EXIT, run.stderr);
+        assert.equal(run.stdout, "unreadable: a5\n");
+        assert.equal(sandbox.read(`${REGISTRY}/a5`).kind, "absent");
+        const next = watchOnce(sandbox);
+        assert.equal(next.exit, 0, next.stderr);
+        assert.equal(next.stdout, "all delegations ended\n");
+      });
+    });
+  }
+
   test("an already-reported entry that turns long-running is not reported again", () => {
     withStateSandbox("workspace", (sandbox) => {
       sandbox.seed({
@@ -261,16 +296,6 @@ describe("oso-state watch exits 3 naming a delegation that needs attention, once
       const run = watchOnce(sandbox);
       assert.equal(run.exit, FLAGGED_EXIT, run.stderr);
       assert.equal(run.stdout, "stuck: a2 (oso-code:applier) silent 61 min\n");
-    });
-  });
-});
-
-describe("set accepts the watch key", () => {
-  test("set watch=<pid>:<ISO> passes the allowlist and lands in the state", () => {
-    withStateSandbox("workspace", (sandbox) => {
-      const run = sandbox.run(CLI_SUBJECT, ["--session", SESSION, "set", "watch=4242:2026-09-28T00:00:00Z"]);
-      assert.equal(run.exit, 0, run.stderr);
-      assert.match(contentOf(sandbox, STATE_FILE), /^watch=4242:2026-09-28T00:00:00Z$/m);
     });
   });
 });

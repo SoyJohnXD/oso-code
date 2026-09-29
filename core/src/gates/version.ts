@@ -1,8 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import path from "node:path";
 import { ALLOWED, jsonField, type GateOutcome, type SessionStartVerdict } from "../hosts/envelope.ts";
-import { homeDirectoryFrom, secondsSinceModified, stateRootDirectory, writeFileAtomically } from "../state/store.ts";
+import { homeDirectoryFrom, readFileIfPresent, secondsSinceModified, stateRootDirectory, writeFileAtomically } from "../state/store.ts";
 import { pluginRootDirectory, type GateDefinition, type GateRequest } from "./preflight.ts";
 
 const RELEASE_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/;
@@ -141,9 +140,5 @@ function releaseSortKey(version: string): string {
 }
 
 function readFileOrEmpty(target: string): string {
-  try {
-    return readFileSync(target, "utf8");
-  } catch {
-    return "";
-  }
+  return readFileIfPresent(target, "skip") ?? "";
 }

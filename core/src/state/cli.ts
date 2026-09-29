@@ -3,12 +3,12 @@ import path from "node:path";
 import { abstractionScanReport } from "../scan/abstraction-scan.ts";
 import { ScanFailure } from "../scan/changed-lines.ts";
 import { commentScanReport } from "../scan/comment-scan.ts";
-import { watchInFlight } from "../gates/watch.ts";
 import { ereReads } from "../shell/ere.ts";
 import * as knownKeys from "./known-keys.ts";
 import * as plan from "./plan.ts";
 import * as store from "./store.ts";
 import * as transitions from "./transitions.ts";
+import { watchInFlight } from "./watch.ts";
 
 const USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> get key
@@ -167,11 +167,6 @@ function writeScan(report: string): number {
 
 function runSet(sessionId: string, pairs: readonly string[]): number {
   if (pairs.length < 1) throw new UsageError();
-  process.stdout.write(writeCheckedPairs(sessionId, pairs));
-  return 0;
-}
-
-function writeCheckedPairs(sessionId: string, pairs: readonly string[]): string {
   const rejection = knownKeys.setPairRejection(pairs);
   if (rejection !== undefined) throw new RefusedError("set", rejection);
   const stateFile = store.stateFileFor(process.cwd());
@@ -181,13 +176,13 @@ function writeCheckedPairs(sessionId: string, pairs: readonly string[]): string 
     if (owner !== undefined && knownKeys.pairsTouchAGateKey(pairs)) throw new store.GatesOwnedElsewhereError(owner);
     const content = store.writeStatePairs(stateFile, pairs, owner ?? sessionId);
     store.logSet(sessionId, pairs);
-    return content;
+    process.stdout.write(content);
+    return 0;
   });
 }
 
 function runWatch(sessionId: string, remaining: readonly string[]): number {
   if (remaining.length > 0) throw new UsageError();
-  writeCheckedPairs(sessionId, [`watch=${process.pid}:${store.isoTimestamp()}`]);
   const end = watchInFlight(store.stateFileFor(process.cwd()), sessionId);
   process.stdout.write(end.lines.map((line) => `${line}\n`).join(""));
   return end.exitCode;
