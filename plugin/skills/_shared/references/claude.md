@@ -10,7 +10,7 @@ The `Agent` tool always launches in the BACKGROUND and returns at once with the 
 
 **The watchdog.** Under an unattended run, the `Stop` net asks once for a watchdog while delegations are in flight and none is live for this session. When it asks, start `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" watch` as a BACKGROUND Bash task (`run_in_background`) and end the turn. Its exit re-invokes the run by itself, so nothing is armed before a launch.
 
-**Reading the watch's exit.** Exit 0 means every delegation ended: continue normally, because the completion notifications carry the reports. Exit 3 prints one line per delegation it names — `stuck: <id> (<type>) silent <N> min`, `long-running: <id> (<type>) in flight <N> min`, or `ended-without-notice: <id> (<type>)`. Journal each line with `oso-state journal` and say it in the stream, naming id, duration and agent_type. Then follow the flow's own route: keep waiting on a delegation still in the in-flight set, or treat one gone from it as a blocked delegation and relaunch it fresh. Never call a delegation lost.
+**Reading the watch's exit.** Exit 0 means every delegation ended: continue normally, because the completion notifications carry the reports. Exit 3 prints one line per delegation it names — `stuck: <id> (<type>) silent <N> min`, `long-running: <id> (<type>) in flight <N> min`, or `ended-without-notice: <id> (<type>)`. Journal each line with `oso-state journal` and say it in the stream, naming the id, the silence or duration, and the agent_type. Then follow the flow's own route: keep waiting on a delegation still in the in-flight set, or treat one gone from it as a blocked delegation and relaunch it fresh. Never call a delegation lost.
 
 
 ## The model a launch carries

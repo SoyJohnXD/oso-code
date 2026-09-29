@@ -58,4 +58,4 @@ The three delegates the flow names — `oso-applier`, `oso-verifier`, `oso-integ
 
 ## The shared host file
 
-`${CLAUDE_SKILL_DIR}/../_shared/references/claude.md` is read ALWAYS by this flow: the single Claude Code binding for **Making a launch wait**, **The model a launch carries**, the native card, the unattended run, and the front-surface wiring.
+`${CLAUDE_SKILL_DIR}/../_shared/references/claude.md` is read ALWAYS by this flow, **The model a launch carries** among its bindings.

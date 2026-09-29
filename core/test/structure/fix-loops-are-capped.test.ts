@@ -14,28 +14,37 @@ const REPORTING_FILE = "plugin/skills/_shared/reporting.md";
 const PARALLEL_FILE = "plugin/skills/_shared/parallel.md";
 const UNATTENDED_FILE = "plugin/skills/_shared/unattended.md";
 
-const RETIRED_LOOP = /until it passes/i;
-const EMPTY_RESULT_CLAUSE = "an empty or malformed result counts against the cap";
+const RETIRED_LOOP = /until it passes|strong-tier relaunch|relaunch of applier and verifier on the strong tier/i;
+const EMPTY_RESULT_CLAUSE = "an empty or malformed result is marked and counts one round";
 const PARALLEL_CLAUSE = "the red slice loop runs under step 3's cap";
+const WAVE_ROUNDS_CLAUSE = "a wave's red slice counts its own rounds";
+
+const DIAGNOSIS_CLAUSES: readonly Clause[] = [
+  { name: "the diagnosis is automatic and never asks the operator", pattern: /never asking the operator[^.]*read-only diagnosis agent/ },
+  { name: "the diagnosis names cause, evidence and a changed strategy", pattern: /diagnosis agent[^.]*`file:line`[^.]*changed strategy/ },
+  { name: "the diagnosis is marked", pattern: /`oso-state mark diagnosed`/ },
+  { name: "two more rounds follow the diagnosis", pattern: /TWO more fix rounds[^.]*since diagnosis/ },
+  { name: "the escalation is marked in the verdict record", pattern: /`oso-state mark escalated`/ },
+];
 
 const PLAN_CAP_CLAUSES: readonly Clause[] = [
   { name: "two fix rounds at most", pattern: /at most TWO fix rounds/ },
   { name: "the round is read from the report's active slice row", pattern: /`oso-state report`'s `active slice` row/ },
-  { name: "the strong tier gets one relaunch of applier and verifier", pattern: /ONE relaunch of applier and verifier on the strong tier/ },
+  ...DIAGNOSIS_CLAUSES,
   { name: "the three routes", pattern: /grant more rounds[^.]*its own slice[^.]*accept the residual/ },
   { name: "only an all-nit remainder is accepted", pattern: /only a remainder of `nit` findings[^.]*never a `blocker` or `structural`/ },
   { name: "the escalation is marked and journaled", pattern: /`\[!\]`[^.]*journal/ },
-  { name: EMPTY_RESULT_CLAUSE, pattern: /empty, cut or malformed[^.]*never a verdict[^.]*counts against the cap/ },
+  { name: EMPTY_RESULT_CLAUSE, pattern: /empty, cut or malformed[^.]*never a verdict[^.]*`oso-state mark empty-result`[^.]*counts one round/ },
 ];
 
 const DEBUG_CAP_CLAUSES: readonly Clause[] = [
   { name: "two fix rounds at most", pattern: /at most TWO fix rounds/ },
   { name: "the round is read from the report's active slice row", pattern: /`oso-state report`'s `active slice` row/ },
-  { name: "the strong tier gets one relaunch of applier and verifier", pattern: /ONE relaunch of applier and verifier on the strong tier/ },
+  ...DIAGNOSIS_CLAUSES,
   { name: "the three routes", pattern: /grant more rounds[^.]*its own apply\/verify pass[^.]*accept the residual/ },
   { name: "only an all-nit remainder is accepted", pattern: /only a remainder of `nit` findings[^.]*never a `blocker` or `structural`/ },
   { name: "the escalation is journaled and summarised", pattern: /escalated[^.]*journal[^.]*session summary/ },
-  { name: EMPTY_RESULT_CLAUSE, pattern: /empty, cut or malformed[^.]*never a verdict[^.]*counts against the cap/ },
+  { name: EMPTY_RESULT_CLAUSE, pattern: /empty, cut or malformed[^.]*never a verdict[^.]*`oso-state mark empty-result`[^.]*counts one round/ },
 ];
 
 const REPORTING_CAP_CLAUSES: readonly Clause[] = [
@@ -43,15 +52,18 @@ const REPORTING_CAP_CLAUSES: readonly Clause[] = [
 ];
 
 const PARALLEL_CAP_CLAUSES: readonly Clause[] = [
-  { name: PARALLEL_CLAUSE, pattern: /loop apply → verify under step 3's two-round cap, ladder and empty-result route/ },
+  { name: PARALLEL_CLAUSE, pattern: /loop apply → verify under step 3's two-round cap, diagnosis, routes and empty-result rule/ },
+  { name: WAVE_ROUNDS_CLAUSE, pattern: /`active slice` row counts the whole wave, so each red slice counts its own rounds/ },
 ];
 
 const UNATTENDED_CAP_CLAUSES: readonly Clause[] = [
   { name: "the ROADMAP list maps the fix-round cap", pattern: /\*\*§6 step 3, the fix-round cap\*\*/ },
-  { name: "the policy picks the strong tier and the re-slice", pattern: /the fix-round cap\*\*[^\n]*policy picks[^\n]*re-slice/ },
+  { name: "the policy takes the re-slice and the diagnosis is automatic", pattern: /the fix-round cap\*\*[^\n]*automatic[^\n]*policy takes the re-slice/ },
 ];
 
 const readFromTree: ReadFile = (file) => flowBody(readTrackedText(file).text);
+
+const retiredLoopIn = (read: ReadFile, file: string) => RETIRED_LOOP.test(read(file));
 
 function missingClauses(read: ReadFile, file: string, clauses: readonly Clause[]): string[] {
   const body = read(file);
@@ -60,16 +72,16 @@ function missingClauses(read: ReadFile, file: string, clauses: readonly Clause[]
 
 describe("every fix loop carries the cap, the ladder and the outcome route", () => {
   for (const file of PLAN_FILES) {
-    test(`${file} states the cap clauses and never loops until it passes`, () => {
+    test(`${file} states the cap clauses and never loops until it passes or relaunches on the strong tier`, () => {
       assert.deepEqual(missingClauses(readFromTree, file, PLAN_CAP_CLAUSES), []);
-      assert.doesNotMatch(readFromTree(file), RETIRED_LOOP);
+      assert.equal(retiredLoopIn(readFromTree, file), false);
     });
   }
 
   for (const file of DEBUG_FILES) {
-    test(`${file} states the cap clauses and never loops until it passes`, () => {
+    test(`${file} states the cap clauses and never loops until it passes or relaunches on the strong tier`, () => {
       assert.deepEqual(missingClauses(readFromTree, file, DEBUG_CAP_CLAUSES), []);
-      assert.doesNotMatch(readFromTree(file), RETIRED_LOOP);
+      assert.equal(retiredLoopIn(readFromTree, file), false);
     });
   }
 
@@ -79,7 +91,7 @@ describe("every fix loop carries the cap, the ladder and the outcome route", () 
 
   test(`${PARALLEL_FILE} holds the wave's red slice under the same cap`, () => {
     assert.deepEqual(missingClauses(readFromTree, PARALLEL_FILE, PARALLEL_CAP_CLAUSES), []);
-    assert.doesNotMatch(readFromTree(PARALLEL_FILE), RETIRED_LOOP);
+    assert.equal(retiredLoopIn(readFromTree, PARALLEL_FILE), false);
   });
 
   test(`${UNATTENDED_FILE} maps the ladder under AUTO and a ROADMAP`, () => {
@@ -89,17 +101,42 @@ describe("every fix loop carries the cap, the ladder and the outcome route", () 
 
 describe("the checker reports a planted regression", () => {
   test("a plan that loops until it passes is reported", () => {
-    const planted = `${readFromTree(PLAN_SOURCE)}\nLoop apply → verify until it passes.\n`;
-    assert.match(planted, RETIRED_LOOP);
+    const planted: ReadFile = (file) => `${readFromTree(file)}\nLoop apply → verify until it passes.\n`;
+    assert.equal(retiredLoopIn(planted, PLAN_SOURCE), true);
+  });
+
+  test("a plan that keeps the strong-tier relaunch rung is reported", () => {
+    const planted: ReadFile = (file) => `${readFromTree(file)}\nAt the cap: ONE relaunch of applier and verifier on the strong tier.\n`;
+    assert.equal(retiredLoopIn(planted, PLAN_SOURCE), true);
+  });
+
+  test("an unattended file that keeps the strong-tier relaunch is reported", () => {
+    const planted: ReadFile = (file) => `${readFromTree(file)}\nthe policy picks the strong-tier relaunch.\n`;
+    assert.equal(retiredLoopIn(planted, UNATTENDED_FILE), true);
+  });
+
+  test("a plan that drops the diagnosis mark is reported", () => {
+    const mutated: ReadFile = (file) => readFromTree(file).replaceAll("`oso-state mark diagnosed`", "a note");
+    assert.ok(missingClauses(mutated, PLAN_SOURCE, PLAN_CAP_CLAUSES).includes("the diagnosis is marked"));
+  });
+
+  test("a debug flow that drops the escalation mark is reported", () => {
+    const mutated: ReadFile = (file) => readFromTree(file).replaceAll("`oso-state mark escalated`", "a note");
+    assert.ok(missingClauses(mutated, DEBUG_SOURCE, DEBUG_CAP_CLAUSES).includes("the escalation is marked in the verdict record"));
+  });
+
+  test("a parallel file that drops the wave round sentence is reported", () => {
+    const mutated: ReadFile = (file) => readFromTree(file).replaceAll("counts the whole wave", "counts one slice");
+    assert.deepEqual(missingClauses(mutated, PARALLEL_FILE, PARALLEL_CAP_CLAUSES), [WAVE_ROUNDS_CLAUSE]);
   });
 
   test("a plan that drops the empty-result route is reported", () => {
-    const mutated: ReadFile = (file) => readFromTree(file).replaceAll("counts against the cap", "is free");
+    const mutated: ReadFile = (file) => readFromTree(file).replaceAll("counts one round", "is free");
     assert.ok(missingClauses(mutated, PLAN_SOURCE, PLAN_CAP_CLAUSES).includes(EMPTY_RESULT_CLAUSE));
   });
 
   test("a debug flow that drops the empty-result route is reported", () => {
-    const mutated: ReadFile = (file) => readFromTree(file).replaceAll("counts against the cap", "is free");
+    const mutated: ReadFile = (file) => readFromTree(file).replaceAll("counts one round", "is free");
     assert.ok(missingClauses(mutated, DEBUG_SOURCE, DEBUG_CAP_CLAUSES).includes(EMPTY_RESULT_CLAUSE));
   });
 
@@ -110,6 +147,6 @@ describe("the checker reports a planted regression", () => {
 
   test("a parallel file that drops the cap reference is reported", () => {
     const mutated: ReadFile = (file) => readFromTree(file).replaceAll("two-round cap", "loop");
-    assert.deepEqual(missingClauses(mutated, PARALLEL_FILE, PARALLEL_CAP_CLAUSES), [PARALLEL_CLAUSE]);
+    assert.ok(missingClauses(mutated, PARALLEL_FILE, PARALLEL_CAP_CLAUSES).includes(PARALLEL_CLAUSE));
   });
 });
