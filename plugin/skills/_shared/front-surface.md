@@ -1,6 +1,6 @@
 # Front surface
 
-Shared definition of what counts as a **front surface** and the design-integration contract that fires when a change touches one. Four things live here and nowhere else: the **Trigger** below, and the **pin recipe**, the **audit exit bar** and the **absence policy** under the contract. The WIRING is not among them — each mode wires the contract its own way, and the matrix below indexes those modes by pointer, never by restatement.
+Shared definition of what counts as a **front surface** and the design-integration contract that fires when a change touches one. Four things live here and nowhere else: the **Trigger** below, and the **pin recipe**, the **audit exit bar** and the **absence policy** under the contract. The WIRING is not among them — each mode wires the contract its own way, and the matrix below indexes those modes by pointer, never by restatement. PLAN's wiring detail is the one kept here, in the last section, so its always-read file carries only the pointers.
 
 ## Trigger
 
@@ -12,7 +12,7 @@ A change touches front surface when the evidence shows any of:
 
 ## Integration contract
 
-When the trigger fires, the design bar — powered by the Impeccable plugin — engages. Five points make it up, and the three modes wire them differently. Every cell below is a POINTER — the mode's own section plus what happens there — so the detail is read in the mode file, and a row read across shows where the modes diverge:
+When the trigger fires, the design bar — powered by the Impeccable plugin — engages. Five points make it up, and the three modes wire them differently. Every cell below is a POINTER — the mode's own section plus what happens there — so the detail is read in the mode file, or for PLAN in its wiring section below, and a row read across shows where the modes diverge:
 
 | Point | PLAN | QUICK | DEBUG |
 |---|---|---|---|
@@ -65,4 +65,13 @@ Invoke the installed Impeccable skill through the front-surface platform adapter
 
 ### Absence policy
 
-When Impeccable is not installed: name the gap to the operator, give the front-surface platform adapter's install or remount remedy, and continue WITHOUT the design bar, recording the gap visibly where the invoking mode records it (PLAN → the ledger, QUICK → the close's session summary, DEBUG → the diagnosis notes). Never skip the design bar silently. This lane covers every point downstream of Impeccable's presence, PLAN's design-foundation-slice read included: `plan/SKILL.md` §4 reads the installed `SKILL.md` and records its version before cutting that slice, and when Impeccable is absent that read cannot happen — no version to record, no slice to cut — so planning CONTINUES under this same policy rather than stopping, never a second absence check invented for the one read. This is the single source for the policy; the modes point here.
+When Impeccable is not installed: name the gap to the operator, give the front-surface platform adapter's install or remount remedy, and continue WITHOUT the design bar, recording the gap visibly where the invoking mode records it (PLAN → the ledger, QUICK → the close's session summary, DEBUG → the diagnosis notes). Never skip the design bar silently. This lane covers every point downstream of Impeccable's presence, PLAN's design-foundation-slice read included: PLAN's §4 reads the installed `SKILL.md` and records its version before cutting that slice (its wiring below), and when Impeccable is absent that read cannot happen — no version to record, no slice to cut — so planning CONTINUES under this same policy rather than stopping, never a second absence check invented for the one read. This is the single source for the policy; the modes point here.
+
+## PLAN's wiring
+
+What `plan/SKILL.md` does at each point of the table, read when the change touches a front surface:
+
+- **§3 Verification row** — the pinned design detector joins the zero-warnings commands under the pin recipe above. Record the recipe and the commitment; §6 resolves the numerals at the first front-touching slice, from the npm channel, never the installed plugin's version.
+- **§4 design-foundation slice** — when the project has no `PRODUCT.md`/`DESIGN.md`, the FIRST slice is design-foundation, cut only after you READ the installed Impeccable skill's `SKILL.md` and RECORD its version in the ledger. `init` writes `PRODUCT.md` only (a new project — brand/audience questions run interactively); `document` writes `DESIGN.md` from existing code and leaves `PRODUCT.md` alone. The ORCHESTRATOR runs it directly, scoped exclusively to Impeccable's design-doc generation. It is wave 0: alone, width 1, in the main checkout, writing `PRODUCT.md` always and `DESIGN.md` only when `document` ran. Impeccable absent means no read, no version, and no design-foundation slice.
+- **§6 step 2 — the slice payload** — a front-surface slice additionally carries the project's `DESIGN.md`/`PRODUCT.md` as conventions, the paths to Impeccable's `SKILL.md` and its `reference/` playbook (read as reference, never invoked), and a verify bar that includes the pinned detector. At the first such slice, resolve the pin per the recipe above and write both numerals into the ledger's Verification row. A detector or pin that cannot resolve takes a `Verify-exception` instead, never a silent skip.
+- **§7 step 4 — the design audit** — after the sweep meets its exit bar on both axes and before `verify_green`, INVOKE Impeccable's `audit <touched surfaces>` under the audit exit bar, fix route and residual rules above. You run the project bar each round proves against, and record in the ledger what this file requires (an accepted residual, an open P2/P3).

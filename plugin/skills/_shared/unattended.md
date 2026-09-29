@@ -1,6 +1,19 @@
 # Unattended execution — AUTO, its park, and its ceiling
 
-Read from the start of every PLAN-mode run, never conditionally the way `_shared/parallel.md` is: AUTO can arm at any point, mid-execution, on a single operator instruction, so the flow has to know these rules before that instruction ever arrives. Gathered here rather than cut from one place: the ground rules' own AUTO bullets, the Ceiling field §0 asks apart from Behavior, what §4's execution-disposition question and §5's own record and initialize add, and what §6 and §7 do with a commit and a close under AUTO.
+Read only once AUTO arms — at §4's execution-disposition answer, on an operator instruction at any point, mid-execution included, or when the change runs as a child of the ROADMAP. Gathered here: the set-aside routine a ROADMAP child follows, the ground rules' own AUTO bullets, the Ceiling field §0 asks apart from Behavior, what §4's execution-disposition question and §5's own record and initialize add, and what §6 and §7 do with a commit and a close under AUTO.
+
+## Under a ROADMAP — the policy and the set-aside routine
+
+A ROADMAP child never waits for the operator: that mode's autonomy policy answers in their place, recorded in the ledger as delegated (§3). An OFFER nobody is there to take takes its declined route.
+
+What that policy will not answer costs this change, never the chain: `oso-state set mode=plan active_slice=none verify_green=false` sets it ASIDE. Never `oso-state clear` here, since the chain still owns this repository and arms the next child. Each point `plan/SKILL.md` marks "under a ROADMAP" reads as follows:
+
+- **§6 step 2, an applier's `blocked`** — the policy answers each question in the operator's place, recorded the same way; a question it will not answer sets the change aside.
+- **§6 step 3, a finding grounded in one of §2 step 6's four rules** — ESCALATE is the question this routine queues, and the change is set aside on it.
+- **A merge conflict** under PARALLEL — no tier picks a side; `_shared/parallel.md`'s failure routing sets the change aside on it.
+- **§7's entry** — nobody is there to say they are happy, so the MACHINE ENTRY CONDITION stands in: the change's LAST slice goes green and is committed and marked `[x]`, or under PARALLEL the last wave's integration gate passes.
+- **§7 step 3, conformance triage** — amendment is never the policy's to pick: it sets the change aside. A code-diverged fix the policy can justify on the evidence proceeds.
+- **§7 step 3, the exit cap** — the policy picks among the three options, recorded, an accepted residual taking the `accepted-residual` disposition. Where none is justified on the evidence, the change is set aside at the cap.
 
 ## The ground rules' own AUTO bullets
 
@@ -13,7 +26,7 @@ Read from the start of every PLAN-mode run, never conditionally the way `_shared
 - An operator MESSAGE while AUTO is on disarms nothing: an answer to a question this flow queued is consumed as operator input and the run continues under AUTO, a comment is attended and the run continues, and only an explicit resume instruction — "retomo yo" and its kin — hands the flow back.
 - Wherever `plan/SKILL.md` reads "under a ROADMAP", a change executing under its own AUTO disposition reads the same way, with exactly TWO substitutions the bullet below carries.
 
-The TWO substitutions with which a run under its own AUTO reads the set-aside routine `plan/SKILL.md`'s ground rules describe, and there is no third: what a child queues for that mode's §5, this run queues for its OWN final report — the three parts §7 delivers at the run's end. And where the ROADMAP mode's chain arms the next child behind a set-aside one, this run PARKS.
+The TWO substitutions with which a run under its own AUTO reads the set-aside routine the section above describes, and there is no third: what a child queues for that mode's §5, this run queues for its OWN final report — the three parts §7 delivers at the run's end. And where the ROADMAP mode's chain arms the next child behind a set-aside one, this run PARKS.
 
 - Parking is that same set-aside routine, with its own last step replaced: it reports BLOCKED carrying the queued question or questions, and delivers that same final report. It then writes the set-aside state over whatever the stopped slice or wave left armed, with the disposition's own marker flipped beside it in that one write (`oso-state set mode=plan active_slice=none verify_green=false auto=parked`), and ends the turn there.
 - That marker is what tells a park from a stall ON DISK rather than by inference: a run parked at a question reads `auto=parked` and a run that simply stopped mid-milestone still reads `auto=running`, so a host's unattended rails carry the second on and let the first rest.
