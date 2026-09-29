@@ -15,7 +15,7 @@ Six moments, each reported AS IT HAPPENS — never batched, never deferred to a 
 
 ## Length bound
 
-At most 3 lines per milestone, plain text, no header of its own, no restatement of the tool call that produced it and no paraphrase of a judge's full report. State the fact the operator needs, not a narrative around it: "Slice 3/7 armed — wire the retry queue" is the whole report; a paragraph explaining why it matters is not.
+At most 3 lines per milestone, plain text, no header of its own, no restatement of the tool call that produced it and no paraphrase of a judge's full report. State the fact the operator needs, not a narrative around it.
 
 ## Two exceptions to the bound above, and the list is closed
 
@@ -25,7 +25,7 @@ At most 3 lines per milestone, plain text, no header of its own, no restatement 
 
 ## Delivery
 
-A milestone report is operator-facing content: it follows the same delivery contract the reference file states for every other one — it ends the turn as plain text, never precedes a tool call in the same turn. What a host's own UI does or does not surface alongside a launch is a fact about that host, never about this contract, and it is bound once per host under `_shared/references/claude.md` and `_shared/references/opencode.md`.
+A milestone report is operator-facing content: it follows the same delivery contract the reference file states for every other one — it ends the turn as plain text, never precedes a tool call in the same turn. What a host's UI surfaces alongside a launch is that host's fact, bound once per host under `_shared/references/claude.md` and `_shared/references/opencode.md`.
 
 A host's reference file MAY carve an UNATTENDED RUN out of that delivery rule — a run whose milestones ride the stream instead of ending the turn. Where a host does, its own file states the carve-out whole: what marks a run unattended, what the stream then costs, and which deliveries still end the turn — the park and the final report, at minimum, since each hands the run back rather than reporting it. What replaces the interrupted stream is the same thing on every host that takes the carve-out: each milestone is ALSO appended full-text to the run's own journal (`oso-state journal`), the durable record an operator reads on their return and the only one a compaction cannot take. Where a host carves out nothing, every milestone above ends the turn exactly as this section opens.
 
