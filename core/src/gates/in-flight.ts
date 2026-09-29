@@ -19,11 +19,11 @@ import {
   isDirectory,
   isNameToken,
   isoTimestamp,
+  jsonObjectOf,
   readFileIfPresent,
   stateFileFor,
 } from "../state/store.ts";
 import { captureVerifierReport, isVerifierAgent } from "../verdict/capture.ts";
-import { jsonLineObject } from "../verdict/record.ts";
 import {
   hookSessionId,
   ownRunState,
@@ -107,7 +107,7 @@ function launchedModelOf(envelope: HookEnvelope): string | null {
   const transcript = derivedTranscriptPath(envelope, envelope.agentId);
   if (transcript === "") return null;
   const meta = readFileIfPresent(transcript.replace(/\.jsonl$/, ".meta.json"), "skip");
-  const model = meta === undefined ? undefined : jsonLineObject(meta)?.["model"];
+  const model = meta === undefined ? undefined : jsonObjectOf(meta)?.["model"];
   return typeof model === "string" ? model : null;
 }
 

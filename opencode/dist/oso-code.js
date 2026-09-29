@@ -1106,6 +1106,10 @@ function stateRecords(content, key) {
 function stateValue(content, key) {
   return stateRecords(content, key).join("\n");
 }
+function recordedStateValue(content, key) {
+  const value = stateValue(content, key);
+  return value === "" ? null : value;
+}
 function stateSays(content, key, value) {
   return stateRecords(content, key).includes(value);
 }
@@ -1144,6 +1148,14 @@ function readFileIfPresent(file, whenUnreadable = "throw") {
   const read = readStateFile(file);
   if (read.kind === "unreadable" && whenUnreadable === "throw") throw new StateFileUnreadableError(file, read.cause);
   return read.kind === "ok" ? read.content : void 0;
+}
+function jsonObjectOf(text) {
+  try {
+    const parsed = JSON.parse(text);
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed : void 0;
+  } catch {
+    return void 0;
+  }
 }
 function writeStatePairs(stateFile, pairs, ownerSession) {
   const directory = path.dirname(stateFile);
@@ -1593,25 +1605,24 @@ function removeLegacyWaitMarks(stateFile) {
 // core/src/gates/in-flight.ts
 import path6 from "node:path";
 
+// core/src/prose/routes.ts
+var VERIFIER_AGENT = "oso-verifier";
+
 // core/src/verdict/grammar.ts
 var RECORDED_VERDICTS = ["pass", "fail", "blocked", "none"];
 var VERDICT_SHAPES = ["valid", "malformed"];
 var STATUS_LINE = /^\s*status\s*:\s*(done|blocked)\s*$/i;
 var VERDICT_LINE = /^\s*verdict\s*:\s*(pass|fail|blocked)\s*$/i;
 function parseAgentVerdict(text) {
-  const parsed = { matched: false };
+  const parsed = {};
   for (const line of text.split(/\r?\n/)) {
     const statusMatch = line.match(STATUS_LINE);
     if (statusMatch !== null) {
       parsed.status = statusMatch[1].toLowerCase();
-      parsed.matched = true;
       continue;
     }
     const verdictMatch = line.match(VERDICT_LINE);
-    if (verdictMatch !== null) {
-      parsed.verdict = verdictMatch[1].toLowerCase();
-      parsed.matched = true;
-    }
+    if (verdictMatch !== null) parsed.verdict = verdictMatch[1].toLowerCase();
   }
   return parsed;
 }
@@ -1645,10 +1656,6 @@ function appendVerdict(verdictsFile, capture) {
       escalated: capture.escalated
     };
   });
-}
-function recordedStateValue(stateContent, key) {
-  const value = stateValue(stateContent, key);
-  return value === "" ? null : value;
 }
 function readVerdicts(verdictsFile) {
   const lines = (readFileIfPresent(verdictsFile) ?? "").split("\n").filter((line) => line !== "");
@@ -1685,23 +1692,15 @@ function appendEntry(verdictsFile, session, entryOf) {
     });
     return true;
   } catch (error) {
-    logEvent({ event: TELEMETRY_WRITE_FAILED, session, command: `${verdictsFile}: ${causeOf(error)}` });
+    logEvent({ event: TELEMETRY_WRITE_FAILED, session, command: causeOf(error) });
     return false;
   }
 }
 function logEntryOf(line) {
-  const parsed = jsonLineObject(line);
+  const parsed = jsonObjectOf(line);
   if (parsed === void 0) return void 0;
   if (parsed["kind"] === "arm") return armMarkerOf(parsed);
   return verdictRecordOf(parsed);
-}
-function jsonLineObject(line) {
-  try {
-    const parsed = JSON.parse(line);
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed : void 0;
-  } catch {
-    return void 0;
-  }
 }
 function armMarkerOf(fields) {
   const { slice, session, change, time } = fields;
@@ -1742,7 +1741,6 @@ function isTextOrNull(value) {
 }
 
 // core/src/verdict/capture.ts
-var VERIFIER_AGENT = "oso-verifier";
 function isVerifierAgent(agentType) {
   return agentType === VERIFIER_AGENT || agentType.endsWith(`:${VERIFIER_AGENT}`);
 }
@@ -1910,7 +1908,7 @@ function launchedModelOf(envelope) {
   const transcript = derivedTranscriptPath(envelope, envelope.agentId);
   if (transcript === "") return null;
   const meta = readFileIfPresent(transcript.replace(/\.jsonl$/, ".meta.json"), "skip");
-  const model = meta === void 0 ? void 0 : jsonLineObject(meta)?.["model"];
+  const model = meta === void 0 ? void 0 : jsonObjectOf(meta)?.["model"];
   return typeof model === "string" ? model : null;
 }
 function resolveInFlight(envelope) {
@@ -3310,7 +3308,7 @@ var PATH_SEPARATOR = "/";
 var SURFACE_AT_ANY_DEPTH_PREFIX = "**/";
 var OPENCODE_AGENTS_PER_PROFILE_ROLE = {
   applier: ["oso-applier"],
-  verifier: ["oso-verifier"],
+  verifier: [VERIFIER_AGENT],
   judges: ["oso-debt-sweep", "oso-doubt-pass", "oso-security-reviewer", "oso-triage"]
 };
 var OPENCODE_AGENTS_THE_PROFILE_DRIVES = Object.values(OPENCODE_AGENTS_PER_PROFILE_ROLE).flat();
@@ -4347,6 +4345,32 @@ function stateBinPath2() {
 
 // opencode/plugin/oso/wave.ts
 import { isAbsolute as isAbsolute2 } from "node:path";
+
+// opencode/plugin/oso/verdict-capture.ts
+var TASK_TOOL = "task";
+function captureTaskVerdict(input, output, directory) {
+  const call = input ?? {};
+  const result = output ?? {};
+  const subagentType = call.args?.subagent_type;
+  if (call.tool !== TASK_TOOL || typeof subagentType !== "string" || !isVerifierAgent(subagentType)) {
+    return;
+  }
+  if (result.metadata?.background === true || typeof result.output !== "string") {
+    return;
+  }
+  captureOpenCodeVerifierReport({ directory, model: launchedModelOf2(result), report: result.output });
+}
+function captureOpenCodeVerifierReport({ directory, model, report }) {
+  captureVerifierReport({ host: "opencode", cwd: directory, session: deriveRootId(directory), model, report });
+}
+function launchedModelOf2(result) {
+  const model = result.metadata?.model;
+  const providerID = model?.providerID;
+  const modelID = model?.modelID;
+  return typeof providerID === "string" && typeof modelID === "string" ? `${providerID}/${modelID}` : null;
+}
+
+// opencode/plugin/oso/wave.ts
 async function runWave(request) {
   const pinned = await pinEveryChildSession(request);
   return Promise.all(pinned.map((child) => collectChildReport(child, request)));
@@ -4357,7 +4381,7 @@ function pinEveryChildSession(request) {
 }
 var HOST_AGENT = {
   applier: "oso-applier",
-  verifier: "oso-verifier"
+  verifier: VERIFIER_AGENT
 };
 async function pinChildSession(launch, projectCommonDir, request) {
   const rejection = proofRejection(launch) ?? worktreeRejection(launch.worktree, projectCommonDir);
@@ -4425,13 +4449,7 @@ async function collectChildReport(child, request) {
       request.timeoutMs
     );
     if (child.launch.agent === "verifier") {
-      captureVerifierReport({
-        host: "opencode",
-        cwd: request.projectDirectory,
-        session: deriveRootId(request.projectDirectory),
-        model: null,
-        report: raw
-      });
+      captureOpenCodeVerifierReport({ directory: request.projectDirectory, model: null, report: raw });
     }
     return {
       outcome: "reported",
@@ -5083,33 +5101,6 @@ function dropMarkerQuietly(commonDir, sessionId) {
     rmSync7(markerPath(commonDir, sessionId), { force: true });
   } catch {
   }
-}
-
-// opencode/plugin/oso/verdict-capture.ts
-var TASK_TOOL = "task";
-function captureTaskVerdict(input, output, directory) {
-  const call = input ?? {};
-  const result = output ?? {};
-  const subagentType = call.args?.subagent_type;
-  if (call.tool !== TASK_TOOL || typeof subagentType !== "string" || !isVerifierAgent(subagentType)) {
-    return;
-  }
-  if (result.metadata?.background === true || typeof result.output !== "string") {
-    return;
-  }
-  captureVerifierReport({
-    host: "opencode",
-    cwd: directory,
-    session: deriveRootId(directory),
-    model: launchedModelOf2(result),
-    report: result.output
-  });
-}
-function launchedModelOf2(result) {
-  const model = result.metadata?.model;
-  const providerID = model?.providerID;
-  const modelID = model?.modelID;
-  return typeof providerID === "string" && typeof modelID === "string" ? `${providerID}/${modelID}` : null;
 }
 
 // opencode/plugin/oso/wave-tool.ts

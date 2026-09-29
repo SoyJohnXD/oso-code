@@ -1033,6 +1033,10 @@ function stateRecords(content, key) {
 function stateValue(content, key) {
   return stateRecords(content, key).join("\n");
 }
+function recordedStateValue(content, key) {
+  const value = stateValue(content, key);
+  return value === "" ? null : value;
+}
 function holdsMode(content) {
   return stateRecords(content, "mode").length > 0;
 }
@@ -1068,6 +1072,14 @@ function readFileIfPresent(file, whenUnreadable = "throw") {
   const read = readStateFile(file);
   if (read.kind === "unreadable" && whenUnreadable === "throw") throw new StateFileUnreadableError(file, read.cause);
   return read.kind === "ok" ? read.content : void 0;
+}
+function jsonObjectOf(text) {
+  try {
+    const parsed = JSON.parse(text);
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed : void 0;
+  } catch {
+    return void 0;
+  }
 }
 function writeStatePairs(stateFile, pairs, ownerSession) {
   const directory = path3.dirname(stateFile);
@@ -1373,12 +1385,7 @@ function appendArmMarker(verdictsFile, marker) {
     time: isoTimestamp()
   }));
 }
-function recordedStateValue(stateContent, key) {
-  const value = stateValue(stateContent, key);
-  return value === "" ? null : value;
-}
-function armedSliceOf(pairs) {
-  const written = new Map(pairs.map(splitPair));
+function armedSliceOf(written) {
   const slice = written.get("active_slice");
   return slice !== void 0 && slice !== "none" && written.get("verify_green") === "false" ? slice : void 0;
 }
@@ -1417,23 +1424,15 @@ function appendEntry(verdictsFile, session, entryOf) {
     });
     return true;
   } catch (error) {
-    logEvent({ event: TELEMETRY_WRITE_FAILED, session, command: `${verdictsFile}: ${causeOf2(error)}` });
+    logEvent({ event: TELEMETRY_WRITE_FAILED, session, command: causeOf2(error) });
     return false;
   }
 }
 function logEntryOf(line) {
-  const parsed = jsonLineObject(line);
+  const parsed = jsonObjectOf(line);
   if (parsed === void 0) return void 0;
   if (parsed["kind"] === "arm") return armMarkerOf(parsed);
   return verdictRecordOf(parsed);
-}
-function jsonLineObject(line) {
-  try {
-    const parsed = JSON.parse(line);
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed : void 0;
-  } catch {
-    return void 0;
-  }
 }
 function armMarkerOf(fields) {
   const { slice, session, change, time } = fields;
@@ -1474,12 +1473,17 @@ function isTextOrNull(value) {
 }
 
 // core/src/verdict/receipt.ts
-function greenReceiptOf(verdictsFile, preWriteSlice) {
-  if (preWriteSlice === "none") return { kind: "unguarded" };
+var WAVE_SLICE_PREFIX = "wave-";
+function greenReceiptOf(verdictsFile, preWriteSlice, written) {
+  if (written.get("verify_green") !== "true" || preWriteSlice === "none") return { kind: "unguarded" };
+  if (keepsTheWaveArmed(preWriteSlice, written)) return { kind: "unreceipted", slice: preWriteSlice };
   const newest = verifierRecordsSinceArm(readVerdicts(verdictsFile).entries, preWriteSlice).at(-1);
   if (newest === void 0) return { kind: "unreceipted", slice: preWriteSlice };
   if (newest.verdict === "pass" && newest.verdict_shape === "valid") return { kind: "receipted" };
   return { kind: "refused", reason: refusalReason(preWriteSlice, newest) };
+}
+function keepsTheWaveArmed(preWriteSlice, written) {
+  return preWriteSlice.startsWith(WAVE_SLICE_PREFIX) && written.get("active_slice") === preWriteSlice;
 }
 function refusalReason(slice, record) {
   const verdict = record.verdict_shape === "malformed" ? "malformed" : record.verdict;
@@ -1504,7 +1508,7 @@ function verdictMetrics(log, greensRead) {
 }
 function unreceiptedGreensIn(eventsText) {
   return eventsText.split("\n").flatMap((line) => {
-    const { session, event } = jsonLineObject(line) ?? {};
+    const { session, event } = jsonObjectOf(line) ?? {};
     return event === VERIFY_GREEN_UNRECEIPTED && typeof session === "string" ? [{ session }] : [];
   });
 }
@@ -2042,7 +2046,6 @@ function processStartOf(pid) {
 }
 
 // core/src/state/cli.ts
-var WAVE_SLICE_PREFIX = "wave-";
 var USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> get key
        oso-state --session <id> show
@@ -2213,25 +2216,18 @@ function runSet(sessionId, pairs) {
   return withLock(stateFile, sessionId, () => {
     const owner = foreignGateOwner(stateFile, sessionId);
     if (owner !== void 0 && pairsTouchAGateKey(pairs)) throw new GatesOwnedElsewhereError(owner);
-    const receipt = writesVerifyGreen(pairs) ? receiptOfSetGreen(stateFile, pairs, readValue(stateFile, "active_slice") ?? "none") : { kind: "unguarded" };
+    const written = new Map(pairs.map(splitPair));
+    const receipt = receiptOfGreen(stateFile, "set", readValue(stateFile, "active_slice") ?? "none", written);
     const content = writeStatePairs(stateFile, pairs, owner ?? sessionId);
     logSet(sessionId, pairs);
     logUnreceiptedGreen(sessionId, receipt);
-    markArming(stateFile, sessionId, pairs, content);
+    markArming(stateFile, sessionId, written, content);
     process.stdout.write(content);
     return 0;
   });
 }
-function writesVerifyGreen(pairs) {
-  return new Map(pairs.map(splitPair)).get("verify_green") === "true";
-}
-function receiptOfSetGreen(stateFile, pairs, preWriteSlice) {
-  const keepsTheWaveArmed = preWriteSlice.startsWith(WAVE_SLICE_PREFIX) && new Map(pairs.map(splitPair)).get("active_slice") === preWriteSlice;
-  if (keepsTheWaveArmed) return { kind: "unreceipted", slice: preWriteSlice };
-  return receiptOfGreen(stateFile, "set", preWriteSlice);
-}
-function receiptOfGreen(stateFile, verb, preWriteSlice) {
-  const receipt = greenReceiptOf(verdictsFileFor(stateFile), preWriteSlice);
+function receiptOfGreen(stateFile, verb, preWriteSlice, written) {
+  const receipt = greenReceiptOf(verdictsFileFor(stateFile), preWriteSlice, written);
   if (receipt.kind === "refused") throw new RefusedError(verb, receipt.reason);
   return receipt;
 }
@@ -2239,10 +2235,11 @@ function logUnreceiptedGreen(sessionId, receipt) {
   if (receipt.kind !== "unreceipted") return;
   logEvent({ event: VERIFY_GREEN_UNRECEIPTED, session: sessionId, command: receipt.slice });
 }
-function markArming(stateFile, sessionId, pairs, content) {
-  const slice = armedSliceOf(pairs);
+function markArming(stateFile, sessionId, written, content) {
+  const slice = armedSliceOf(written);
   if (slice === void 0) return;
-  appendArmMarker(verdictsFileFor(stateFile), { slice, session: sessionId, change: recordedStateValue(content, "auto_change") });
+  const change = recordedStateValue(content, "auto_change");
+  appendArmMarker(verdictsFileFor(stateFile), { slice, session: sessionId, change });
 }
 function runReport(remaining) {
   const [flag, ...rest] = remaining;
@@ -2322,8 +2319,8 @@ function runCloseSlice(sessionId, remaining) {
       throw new RefusedError(`close-slice ${sliceId}`, `active_slice is ${activeSlice}, not ${sliceId}`);
     }
     refuseGateWritesByAForeignSession(stateFile, sessionId);
-    const receipt = receiptOfGreen(stateFile, `close-slice ${sliceId}`, sliceId);
     const patch = closeSlice();
+    const receipt = receiptOfGreen(stateFile, `close-slice ${sliceId}`, sliceId, new Map(Object.entries(patch)));
     writeStatePairs(
       stateFile,
       Object.entries(patch).map(([key, value]) => `${key}=${value}`),

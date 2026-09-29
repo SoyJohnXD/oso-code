@@ -5,22 +5,13 @@ import { ScanFailure } from "../scan/changed-lines.ts";
 import { commentScanReport } from "../scan/comment-scan.ts";
 import { ereReads } from "../shell/ere.ts";
 import { greenReceiptOf, type GreenReceipt } from "../verdict/receipt.ts";
-import {
-  appendArmMarker,
-  armedSliceOf,
-  readVerdicts,
-  recordedStateValue,
-  verdictsFileFor,
-  VERIFY_GREEN_UNRECEIPTED,
-} from "../verdict/record.ts";
+import { appendArmMarker, armedSliceOf, readVerdicts, verdictsFileFor, VERIFY_GREEN_UNRECEIPTED } from "../verdict/record.ts";
 import { type GreensRead, renderReportTable, unreceiptedGreensIn, verdictMetrics } from "../verdict/report.ts";
 import * as knownKeys from "./known-keys.ts";
 import * as plan from "./plan.ts";
 import * as store from "./store.ts";
 import * as transitions from "./transitions.ts";
 import { watchInFlight } from "./watch.ts";
-
-const WAVE_SLICE_PREFIX = "wave-";
 
 const USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> get key
@@ -194,31 +185,24 @@ function runSet(sessionId: string, pairs: readonly string[]): number {
   return store.withLock(stateFile, sessionId, () => {
     const owner = store.foreignGateOwner(stateFile, sessionId);
     if (owner !== undefined && knownKeys.pairsTouchAGateKey(pairs)) throw new store.GatesOwnedElsewhereError(owner);
-    const receipt = writesVerifyGreen(pairs)
-      ? receiptOfSetGreen(stateFile, pairs, store.readValue(stateFile, "active_slice") ?? "none")
-      : { kind: "unguarded" as const };
+    const written = new Map(pairs.map(store.splitPair));
+    const receipt = receiptOfGreen(stateFile, "set", store.readValue(stateFile, "active_slice") ?? "none", written);
     const content = store.writeStatePairs(stateFile, pairs, owner ?? sessionId);
     store.logSet(sessionId, pairs);
     logUnreceiptedGreen(sessionId, receipt);
-    markArming(stateFile, sessionId, pairs, content);
+    markArming(stateFile, sessionId, written, content);
     process.stdout.write(content);
     return 0;
   });
 }
 
-function writesVerifyGreen(pairs: readonly string[]): boolean {
-  return new Map(pairs.map(store.splitPair)).get("verify_green") === "true";
-}
-
-function receiptOfSetGreen(stateFile: string, pairs: readonly string[], preWriteSlice: string): GreenReceipt {
-  const keepsTheWaveArmed =
-    preWriteSlice.startsWith(WAVE_SLICE_PREFIX) && new Map(pairs.map(store.splitPair)).get("active_slice") === preWriteSlice;
-  if (keepsTheWaveArmed) return { kind: "unreceipted", slice: preWriteSlice };
-  return receiptOfGreen(stateFile, "set", preWriteSlice);
-}
-
-function receiptOfGreen(stateFile: string, verb: string, preWriteSlice: string): GreenReceipt {
-  const receipt = greenReceiptOf(verdictsFileFor(stateFile), preWriteSlice);
+function receiptOfGreen(
+  stateFile: string,
+  verb: string,
+  preWriteSlice: string,
+  written: ReadonlyMap<string, string>,
+): GreenReceipt {
+  const receipt = greenReceiptOf(verdictsFileFor(stateFile), preWriteSlice, written);
   if (receipt.kind === "refused") throw new RefusedError(verb, receipt.reason);
   return receipt;
 }
@@ -228,10 +212,11 @@ function logUnreceiptedGreen(sessionId: string, receipt: GreenReceipt): void {
   store.logEvent({ event: VERIFY_GREEN_UNRECEIPTED, session: sessionId, command: receipt.slice });
 }
 
-function markArming(stateFile: string, sessionId: string, pairs: readonly string[], content: string): void {
-  const slice = armedSliceOf(pairs);
+function markArming(stateFile: string, sessionId: string, written: ReadonlyMap<string, string>, content: string): void {
+  const slice = armedSliceOf(written);
   if (slice === undefined) return;
-  appendArmMarker(verdictsFileFor(stateFile), { slice, session: sessionId, change: recordedStateValue(content, "auto_change") });
+  const change = store.recordedStateValue(content, "auto_change");
+  appendArmMarker(verdictsFileFor(stateFile), { slice, session: sessionId, change });
 }
 
 function runReport(remaining: readonly string[]): number {
@@ -315,8 +300,8 @@ function runCloseSlice(sessionId: string, remaining: readonly string[]): number 
       throw new RefusedError(`close-slice ${sliceId}`, `active_slice is ${activeSlice}, not ${sliceId}`);
     }
     store.refuseGateWritesByAForeignSession(stateFile, sessionId);
-    const receipt = receiptOfGreen(stateFile, `close-slice ${sliceId}`, sliceId);
     const patch = transitions.closeSlice();
+    const receipt = receiptOfGreen(stateFile, `close-slice ${sliceId}`, sliceId, new Map(Object.entries(patch)));
     store.writeStatePairs(
       stateFile,
       Object.entries(patch).map(([key, value]) => `${key}=${value}`),

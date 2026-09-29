@@ -4,11 +4,10 @@ import type { HostName } from "../routes/routes.ts";
 import {
   causeOf,
   isoTimestamp,
+  jsonObjectOf,
   logEvent,
   readFileIfPresent,
   runsDirectoryOf,
-  splitPair,
-  stateValue,
   withOwnerOnlyUmask,
 } from "../state/store.ts";
 import { RECORDED_VERDICTS, type RecordedVerdict, VERDICT_SHAPES, type VerdictShape } from "./grammar.ts";
@@ -76,13 +75,7 @@ export function appendArmMarker(verdictsFile: string, marker: ArmCapture): boole
   }));
 }
 
-export function recordedStateValue(stateContent: string, key: string): string | null {
-  const value = stateValue(stateContent, key);
-  return value === "" ? null : value;
-}
-
-export function armedSliceOf(pairs: readonly string[]): string | undefined {
-  const written = new Map(pairs.map(splitPair));
+export function armedSliceOf(written: ReadonlyMap<string, string>): string | undefined {
   const slice = written.get("active_slice");
   return slice !== undefined && slice !== "none" && written.get("verify_green") === "false" ? slice : undefined;
 }
@@ -125,27 +118,16 @@ function appendEntry(verdictsFile: string, session: string, entryOf: () => Verdi
     });
     return true;
   } catch (error) {
-    logEvent({ event: TELEMETRY_WRITE_FAILED, session, command: `${verdictsFile}: ${causeOf(error)}` });
+    logEvent({ event: TELEMETRY_WRITE_FAILED, session, command: causeOf(error) });
     return false;
   }
 }
 
 function logEntryOf(line: string): VerdictLogEntry | undefined {
-  const parsed = jsonLineObject(line);
+  const parsed = jsonObjectOf(line);
   if (parsed === undefined) return undefined;
   if (parsed["kind"] === "arm") return armMarkerOf(parsed);
   return verdictRecordOf(parsed);
-}
-
-export function jsonLineObject(line: string): Record<string, unknown> | undefined {
-  try {
-    const parsed: unknown = JSON.parse(line);
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 function armMarkerOf(fields: Record<string, unknown>): ArmMarker | undefined {

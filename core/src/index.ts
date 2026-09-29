@@ -7,6 +7,7 @@ export {
   type HookEnvelope,
 } from "./hosts/envelope.ts";
 export { APPLIER_PROOF_HEADER } from "./prose/applier-proof.ts";
+export { VERIFIER_AGENT } from "./prose/routes.ts";
 export { openCodeRoutes, type OpenCodeRoute } from "./routes/render.ts";
 export {
   PlanApprovalError,

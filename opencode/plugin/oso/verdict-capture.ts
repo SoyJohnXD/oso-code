@@ -26,13 +26,13 @@ export function captureTaskVerdict(input: unknown, output: unknown, directory: s
   if (result.metadata?.background === true || typeof result.output !== "string") {
     return;
   }
-  captureVerifierReport({
-    host: "opencode",
-    cwd: directory,
-    session: deriveRootId(directory),
-    model: launchedModelOf(result),
-    report: result.output,
-  });
+  captureOpenCodeVerifierReport({ directory, model: launchedModelOf(result), report: result.output });
+}
+
+export function captureOpenCodeVerifierReport(
+  { directory, model, report }: { directory: string; model: string | null; report: string },
+): void {
+  captureVerifierReport({ host: "opencode", cwd: directory, session: deriveRootId(directory), model, report });
 }
 
 function launchedModelOf(result: TaskResult): string | null {

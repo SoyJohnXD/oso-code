@@ -1,7 +1,7 @@
 import { RECORDED_VERDICTS, type RecordedVerdict } from "./grammar.ts";
+import { jsonObjectOf } from "../state/store.ts";
 import {
   isArmMarker,
-  jsonLineObject,
   recordsSinceArm,
   type VerdictLog,
   type VerdictLogEntry,
@@ -51,7 +51,7 @@ export function verdictMetrics(log: VerdictLog, greensRead: GreensRead): Verdict
 
 export function unreceiptedGreensIn(eventsText: string): UnreceiptedGreen[] {
   return eventsText.split("\n").flatMap((line) => {
-    const { session, event } = jsonLineObject(line) ?? {};
+    const { session, event } = jsonObjectOf(line) ?? {};
     return event === VERIFY_GREEN_UNRECEIPTED && typeof session === "string" ? [{ session }] : [];
   });
 }

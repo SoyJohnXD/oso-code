@@ -152,6 +152,11 @@ export function stateValue(content: string, key: string): string {
   return stateRecords(content, key).join("\n");
 }
 
+export function recordedStateValue(content: string, key: string): string | null {
+  const value = stateValue(content, key);
+  return value === "" ? null : value;
+}
+
 export function stateSays(content: string, key: string, value: string): boolean {
   return stateRecords(content, key).includes(value);
 }
@@ -202,6 +207,17 @@ export function readFileIfPresent(file: string, whenUnreadable: "throw" | "skip"
   const read = readStateFile(file);
   if (read.kind === "unreadable" && whenUnreadable === "throw") throw new StateFileUnreadableError(file, read.cause);
   return read.kind === "ok" ? read.content : undefined;
+}
+
+export function jsonObjectOf(text: string): Record<string, unknown> | undefined {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function writeStatePairs(stateFile: string, pairs: readonly string[], ownerSession: string): string {

@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
-import { isPrivateRegularFile } from "../../src/state/store.ts";
+import { isPrivateRegularFile, splitPair } from "../../src/state/store.ts";
 import {
   appendArmMarker,
   appendVerdict,
@@ -94,14 +94,18 @@ describe("the verdict record writer", () => {
   });
 });
 
+function writtenOf(pairs: readonly string[]): ReadonlyMap<string, string> {
+  return new Map(pairs.map(splitPair));
+}
+
 describe("the pairs that arm a slice", () => {
   test("active_slice=<X> together with verify_green=false arms X", () => {
-    assert.equal(armedSliceOf(["mode=plan", "active_slice=3", "verify_green=false"]), "3");
+    assert.equal(armedSliceOf(writtenOf(["mode=plan", "active_slice=3", "verify_green=false"])), "3");
   });
 
   test("active_slice=none, a slice without verify_green=false, or a green slice arms nothing", () => {
-    assert.equal(armedSliceOf(["active_slice=none", "verify_green=false"]), undefined);
-    assert.equal(armedSliceOf(["active_slice=3"]), undefined);
-    assert.equal(armedSliceOf(["active_slice=3", "verify_green=true"]), undefined);
+    assert.equal(armedSliceOf(writtenOf(["active_slice=none", "verify_green=false"])), undefined);
+    assert.equal(armedSliceOf(writtenOf(["active_slice=3"])), undefined);
+    assert.equal(armedSliceOf(writtenOf(["active_slice=3", "verify_green=true"])), undefined);
   });
 });
