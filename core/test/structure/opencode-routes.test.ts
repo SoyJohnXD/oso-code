@@ -52,6 +52,7 @@ const PINNED_OPENCODE_ROUTES: readonly OpenCodeRoute[] = [
   },
   { hook: "tool.execute.before", gate: "unknown", matcher: "^(?:.*)$", allow: UNKNOWN_TOOL_ALLOWLIST },
   { hook: "experimental.chat.system.transform", gate: "stale", matcher: "", allow: [] },
+  { hook: "experimental.chat.system.transform", gate: "version", matcher: "", allow: [] },
   { hook: "dispose", gate: "teardown", matcher: "", allow: [] },
   { hook: "tool.execute.before", gate: "proddeploy", matcher: "^(?:bash|.*deploy.*)$", allow: [] },
   { hook: "event", gate: "reanchor", matcher: "", allow: [] },

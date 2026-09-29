@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { ALLOWED, jsonField, type GateOutcome, type SessionStartVerdict } from "../hosts/envelope.ts";
 import { homeDirectoryFrom, readFileIfPresent, secondsSinceModified, stateRootDirectory, writeFileAtomically } from "../state/store.ts";
+import { judgeOpenCodeDrift } from "./opencode-drift.ts";
 import { pluginRootDirectory, type GateDefinition, type GateRequest } from "./preflight.ts";
 
 const RELEASE_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/;
@@ -20,6 +21,7 @@ export const VERSION_GATE: GateDefinition<SessionStartVerdict> = {
 
 function judgeVersion({ envelope }: GateRequest): GateOutcome<SessionStartVerdict> {
   if (envelope.source === "compact") return ALLOWED;
+  if (envelope.caller.host === "opencode") return judgeOpenCodeDrift(envelope);
 
   const manifest = readFileOrEmpty(pluginManifestFile());
   const installedVersion = jsonField(manifest, "version");

@@ -10,6 +10,8 @@ const routesModule = join(repoRoot, "core/src/routes/routes.ts");
 const hashFile = join(repoRoot, "bootstrap", "hook-hashes.txt");
 const publishedRow = /^([0-9a-f]{64})( {2})(\S.*)$/;
 
+const harnessManifest = join(repoRoot, "plugin", ".claude-plugin", "plugin.json");
+
 const OPENCODE_HOST_PACKAGE = "@opencode-ai/plugin";
 
 function bundlesOf(render, routes) {
@@ -21,6 +23,7 @@ function bundlesOf(render, routes) {
     path: join(repoRoot, generatedBundlePath(routes, bundle)),
     name: generatedBundlePath(routes, bundle),
     external: [],
+    define: {},
   }));
   const opencodeBundle = generatedBundlePath(routes, render.OPENCODE_PLUGIN_BUNDLE);
   return [
@@ -30,8 +33,15 @@ function bundlesOf(render, routes) {
       path: join(repoRoot, opencodeBundle),
       name: opencodeBundle,
       external: [OPENCODE_HOST_PACKAGE],
+      define: { "process.env.OSO_HARNESS_BUILD_VERSION": JSON.stringify(harnessVersion()) },
     },
   ];
+}
+
+function harnessVersion() {
+  const { version } = JSON.parse(readFileSync(harnessManifest, "utf8"));
+  if (typeof version !== "string" || version === "") throw new Error(`${harnessManifest} names no version`);
+  return version;
 }
 
 function generatedBundlePath(routes, bundle) {
@@ -65,10 +75,10 @@ async function freshArtifacts() {
   const render = await importBundled(renderModule);
   const routes = await importBundled(routesModule);
   const built = await Promise.all(
-    bundlesOf(render, routes).map(async ({ entryPoint, path, name, external }) => ({
+    bundlesOf(render, routes).map(async ({ entryPoint, path, name, external, define }) => ({
       path,
       name,
-      text: await bundleText(entryPoint, external),
+      text: await bundleText(entryPoint, external, define),
     })),
   );
   const artifacts = [...built, ...manifestsOf(render)];

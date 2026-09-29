@@ -103,8 +103,8 @@ export const GATE_ROWS = [
     gate: "version",
     event: "SessionStart",
     script: "warn-stale-version.sh",
-    wiring: { claude: "wired", opencode: "none" },
-    mechanism: { claude: "subprocess", opencode: "none" },
+    wiring: { claude: "wired", opencode: "wired" },
+    mechanism: { claude: "subprocess", opencode: "experimental.chat.system.transform" },
   },
   {
     gate: "teardown",

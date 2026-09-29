@@ -119,6 +119,11 @@ function armSessionAdvice(sessionID: string, directory: string, client: PluginCl
     sessionID,
     runLifecycleGate("stale", { sessionID, directory, moment: "startup" }, client),
   );
+  queueSystemAdvice(
+    pendingAdvice,
+    sessionID,
+    runLifecycleGate("version", { sessionID, directory, moment: "startup" }, client),
+  );
 }
 
 function markSessionLive(sessionID: string, directory: string, client: PluginClient | undefined): void {

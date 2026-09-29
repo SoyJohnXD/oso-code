@@ -941,7 +941,10 @@ var RAW_INSTALLED_BYTES = (_relative, target) => readFileSync5(target);
 function trustDivergences(manifestFile, isExcluded, resolveTarget, bytesOf = RAW_INSTALLED_BYTES) {
   if (!isReadableRegularFile(manifestFile)) return [{ file: manifestFile, state: { kind: "missing-manifest" } }];
   const trusted = parseTrustManifest(readFileSync5(manifestFile, "utf8")).filter((row) => !isExcluded(row.file));
-  return trusted.flatMap((row) => divergenceOf(row, resolveTarget, bytesOf));
+  return trustRowDivergences(trusted, resolveTarget, bytesOf);
+}
+function trustRowDivergences(rows, resolveTarget, bytesOf = RAW_INSTALLED_BYTES) {
+  return rows.flatMap((row) => divergenceOf(row, resolveTarget, bytesOf));
 }
 function divergenceOf(row, resolveTarget, bytesOf) {
   if (!SHA256_HEX_PATTERN.test(row.digest)) return [{ file: row.file, state: { kind: "malformed-published-hash" } }];
@@ -2415,6 +2418,7 @@ function ambiguousNote(versionLineShape, matches) {
 var OPENCODE_BINARY_NAME = "opencode";
 var OPENCODE_VERSION_LINE_SHAPE = "a bare dotted version";
 var PROBE_HOME_PREFIX = "oso-opencode-probe.";
+var PROBE_TIMEOUT_MILLISECONDS = 1e4;
 var ANSI_SELECT_GRAPHIC_RENDITION = /\u001b\[[0-9;]*m/g;
 var POSIX_SPACE_CLASS = /[ \t\n\v\f\r]/g;
 var OPENCODE_VERSION_LINE = /^(\d+(?:\.\d+)*)$/;
@@ -2431,7 +2435,11 @@ function versionFieldOf(probeOutput) {
 function probedVersion(environment, binaryPath) {
   const probeHome = mkdtempSync3(path8.join(environment["TMPDIR"] ?? tmpdir3(), PROBE_HOME_PREFIX));
   try {
-    const run = spawnSync4(binaryPath, ["--version"], { env: probeEnvironment2(environment, probeHome), encoding: "utf8" });
+    const run = spawnSync4(binaryPath, ["--version"], {
+      env: probeEnvironment2(environment, probeHome),
+      encoding: "utf8",
+      timeout: PROBE_TIMEOUT_MILLISECONDS
+    });
     return versionFieldOf(`${run.stdout ?? ""}${run.stderr ?? ""}`);
   } finally {
     rmSync6(probeHome, { recursive: true, force: true });
@@ -2778,7 +2786,8 @@ function openCodeInstallTargets(paths) {
     impeccableOptOut: path11.join(paths.stateRoot, "impeccable-opt-out"),
     ownerRegistry: path11.join(paths.stateRoot, "opencode-install-registry"),
     restoreExercisedMarker: path11.join(paths.stateRoot, ".install-restore-verified-opencode"),
-    planArtifactRoot: path11.join(paths.stateRoot, "plans")
+    planArtifactRoot: path11.join(paths.stateRoot, "plans"),
+    installRecord: path11.join(paths.configHome, "oso-code-install.json")
   };
 }
 function openCodePayloadSources(repositoryRoot2) {
@@ -2794,7 +2803,8 @@ function openCodePayloadSources(repositoryRoot2) {
     stateBinPackage: path11.join(repositoryRoot2, "plugin", "bin", "package.json"),
     dist: path11.join(repositoryRoot2, "plugin", "dist"),
     global: path11.join(repositoryRoot2, "bootstrap", "opencode-global.md"),
-    publishedHashes: path11.join(repositoryRoot2, "bootstrap", "hook-hashes.txt")
+    publishedHashes: path11.join(repositoryRoot2, "bootstrap", "hook-hashes.txt"),
+    harnessManifest: path11.join(repositoryRoot2, "plugin", ".claude-plugin", "plugin.json")
   };
 }
 function payloadRefusal(sources) {
@@ -2810,7 +2820,8 @@ function payloadRefusal(sources) {
     { present: isReadableRegularFile(path11.join(sources.gates, "lexer.sh")), message: `the shared gate lexer is missing: ${path11.join(sources.gates, "lexer.sh")}` },
     { present: isReadableRegularFile(sources.gitHook), message: `the shared commit hook is missing: ${sources.gitHook}` },
     { present: isReadableRegularFile(sources.stateBin), message: `the oso-state binary is missing: ${sources.stateBin}` },
-    { present: isReadableRegularFile(sources.stateBinPackage), message: `the oso-state module manifest is missing: ${sources.stateBinPackage}` }
+    { present: isReadableRegularFile(sources.stateBinPackage), message: `the oso-state module manifest is missing: ${sources.stateBinPackage}` },
+    { present: isReadableRegularFile(sources.harnessManifest), message: `the harness manifest is missing: ${sources.harnessManifest}` }
   ].find((row) => !row.present);
   if (missing !== void 0) return missing.message;
   const wrappers = skillWrapperNames(sources.skills).length;
@@ -2858,6 +2869,8 @@ function writeOpenCodeInstall(input) {
     installPayloadTrees(paths, targets, sources);
     wiring.push(wiringOk("installed payload", `${targets.skills}, ${targets.agents}, ${targets.commands}, ${targets.plugin}`));
     wiring.push(publishedGateBytesEntry(sources.publishedHashes, paths.configHome, targets.hooks));
+    writeInstallRecord(sources, targets.installRecord);
+    wiring.push(wiringOk("install record", targets.installRecord));
     mergeGlobalAgents(paths.globalFile, readFileSync10(sources.global, "utf8"));
     wiring.push(wiringOk("global AGENTS.md region", paths.globalFile));
     wiring.push(wireEngram(input.environment, targets.engramPlugin, tx));
@@ -2915,7 +2928,8 @@ function backupCandidatesOf(paths, targets) {
     { label: "engram-plugin", target: targets.engramPlugin },
     { label: "impeccable", target: targets.impeccableMount },
     { label: "impeccable-opt-out", target: targets.impeccableOptOut },
-    { label: "registry", target: targets.ownerRegistry }
+    { label: "registry", target: targets.ownerRegistry },
+    { label: "install-record", target: targets.installRecord }
   ];
 }
 function installPayloadTrees(paths, targets, sources) {
@@ -2959,6 +2973,12 @@ function publishedGateBytesEntry(publishedHashes, configHome, hooksTarget) {
     );
   }
   return wiringOk("published gate bytes", `verified against ${publishedHashes}`);
+}
+function writeInstallRecord(sources, installRecord) {
+  const version = readJsonFile(sources.harnessManifest)?.version;
+  if (typeof version !== "string" || version === "") throw new Error(`the harness manifest names no version: ${sources.harnessManifest}`);
+  const record = { version, manifest: parseTrustManifest(readFileSync10(sources.publishedHashes, "utf8")) };
+  writeJsonFile(installRecord, record);
 }
 function renderOpenCodeConfig(input, paths, tx) {
   const fallow = resolveFallowMcpCommand(input.environment, input.homeDirectory, input.platform) ?? FALLOW_FALLBACK_COMMAND;
@@ -3039,7 +3059,8 @@ function writeOwnerRegistry(paths, targets, tx) {
     ownedBy(OWNER_INSTALLER, targets.plugin),
     ...directoryEntryNames(targets.hooks).filter((name) => name.endsWith(".sh")).map((name) => ownedBy(OWNER_INSTALLER, path11.join(targets.hooks, name))),
     ownedBy(OWNER_INSTALLER, path11.join(targets.stateBin, "oso-state")),
-    ownedBy(OWNER_INSTALLER, path11.join(targets.gitHooks, "pre-commit"))
+    ownedBy(OWNER_INSTALLER, path11.join(targets.gitHooks, "pre-commit")),
+    ownedBy(OWNER_INSTALLER, targets.installRecord)
   ];
   mkdirSync6(paths.stateRoot, { recursive: true });
   writeFileSync6(targets.ownerRegistry, rows.map((row) => `${row}

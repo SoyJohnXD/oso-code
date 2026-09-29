@@ -37,7 +37,15 @@ export function trustDivergences(
 ): TrustDivergence[] {
   if (!isReadableRegularFile(manifestFile)) return [{ file: manifestFile, state: { kind: "missing-manifest" } }];
   const trusted = parseTrustManifest(readFileSync(manifestFile, "utf8")).filter((row) => !isExcluded(row.file));
-  return trusted.flatMap((row) => divergenceOf(row, resolveTarget, bytesOf));
+  return trustRowDivergences(trusted, resolveTarget, bytesOf);
+}
+
+export function trustRowDivergences(
+  rows: readonly TrustRow[],
+  resolveTarget: (relative: string) => string | undefined,
+  bytesOf: InstalledBytes = RAW_INSTALLED_BYTES,
+): TrustDivergence[] {
+  return rows.flatMap((row) => divergenceOf(row, resolveTarget, bytesOf));
 }
 
 function divergenceOf(row: TrustRow, resolveTarget: (relative: string) => string | undefined, bytesOf: InstalledBytes): TrustDivergence[] {

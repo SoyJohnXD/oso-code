@@ -8,10 +8,12 @@ import { OPENCODE_INSTALL_BACKUP_FORMAT, OPENCODE_INSTALL_BACKUP_LABEL } from ".
 import { OPENCODE_AGENTS_THE_PROFILE_DRIVES } from "../../src/install/opencode-config.ts";
 import { installOpenCode, openCodePayloadSources, PRESERVED_KEYS_FILE } from "../../src/install/opencode-install.ts";
 import { opencodePathsFor } from "../../src/install/opencode.ts";
+import { openCodePurgeTargets } from "../../src/install/opencode-purge.ts";
 import { openCodeTrustReading, publishedGateScriptNames } from "../../src/install/opencode-trust.ts";
 import { SUPPORTED_OPENCODE_VERSION } from "../../src/install/pins.ts";
 import { setProfile } from "../../src/install/profile.ts";
 import type { CommandOutcome } from "../../src/install/report.ts";
+import { parseTrustManifest } from "../../src/install/trust.ts";
 import { operatorConfigSeed, operatorGlobalSeed, OPERATOR_CONFIG_PROBE } from "../../src/install/verify-opencode.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
 import {
@@ -74,6 +76,20 @@ describe("install --host opencode leaves the tree its seed and the published has
       configHomeOf(installedByThePort().home),
     );
     assert.deepEqual(reading.divergences, []);
+  });
+
+  test("the install writes one record of the harness version and the manifest rows it installed, and the owner registry lists it for purge", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
+    const installed = installedByThePort();
+    const record = path.join(configHomeOf(installed.home), "oso-code-install.json");
+    const harnessVersion = (JSON.parse(readFileSync(path.join(repositoryRoot, "plugin", ".claude-plugin", "plugin.json"), "utf8")) as { version: string }).version;
+    assert.deepEqual(JSON.parse(readFileSync(record, "utf8")), {
+      version: harnessVersion,
+      manifest: parseTrustManifest(readFileSync(openCodePayloadSources(repositoryRoot).publishedHashes, "utf8")),
+    });
+    const registry = readFileSync(path.join(opencodePathsFor(installed.home, {}).stateRoot, "opencode-install-registry"), "utf8");
+    assert.ok(registry.split("\n").includes(`installer\t${record}`), registry);
+    const configHomeTarget = openCodePurgeTargets(installed.home, true).find((target) => target.label === "config-home");
+    assert.equal(path.dirname(record), configHomeTarget?.target, "purge removes the tree the record lies in");
   });
 
   test("the install answers the host-version question without spawning anything, which the shim's own log is what proves", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {

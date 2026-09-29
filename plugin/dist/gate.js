@@ -1,5 +1,5 @@
 // core/src/bin/gate.ts
-import { readFileSync as readFileSync2 } from "node:fs";
+import { readFileSync as readFileSync4 } from "node:fs";
 
 // core/src/hosts/hook-run.ts
 var GATE_ERROR_EXIT = 2;
@@ -152,8 +152,8 @@ var GATE_ROWS = [
     gate: "version",
     event: "SessionStart",
     script: "warn-stale-version.sh",
-    wiring: { claude: "wired", opencode: "none" },
-    mechanism: { claude: "subprocess", opencode: "none" }
+    wiring: { claude: "wired", opencode: "wired" },
+    mechanism: { claude: "subprocess", opencode: "experimental.chat.system.transform" }
   },
   {
     gate: "teardown",
@@ -1256,6 +1256,24 @@ function entriesOfDirectory(directory) {
 function isRegularNonSymlinkFile(target) {
   const stats = lstatOrUndefined(target);
   return stats !== void 0 && stats.isFile();
+}
+function isReadableRegularFile(target) {
+  if (!isRegularNonSymlinkFile(target)) return false;
+  try {
+    accessSync(target, constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function isExecutableRegularFile(target) {
+  if (!isRegularNonSymlinkFile(target)) return false;
+  try {
+    accessSync(target, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 function secondsSinceModified(target) {
   const stats = statOrUndefined(target);
@@ -2954,7 +2972,7 @@ function gitWorktreePrune(repoPath) {
 }
 
 // core/src/gates/unknown.ts
-import path12 from "node:path";
+import path14 from "node:path";
 
 // core/src/install/opencode.ts
 import path10 from "node:path";
@@ -2963,6 +2981,25 @@ import path10 from "node:path";
 var DISK_BLOCK_SIZE_BYTES = 512;
 var BYTES_PER_KIB = 1024;
 var DISK_BLOCKS_PER_KIB = BYTES_PER_KIB / DISK_BLOCK_SIZE_BYTES;
+
+// core/src/install/json.ts
+import { readFileSync as readFileSync2 } from "node:fs";
+var JsonParseError = class extends Error {
+  file;
+  constructor(file, cause) {
+    super(`cannot parse JSON at ${file}`, { cause });
+    this.name = "JsonParseError";
+    this.file = file;
+  }
+};
+function readJsonFile(file) {
+  if (!isReadableRegularFile(file)) return void 0;
+  try {
+    return JSON.parse(readFileSync2(file, "utf8"));
+  } catch (cause) {
+    throw new JsonParseError(file, cause);
+  }
+}
 
 // core/src/install/opencode-config.ts
 var EDIT_RULES_THE_HOST_RESOLVES_BY_LAST_MATCH = [
@@ -3003,6 +3040,11 @@ function literalHeadOf(pattern) {
   return head.endsWith(PATH_SEPARATOR) ? head.slice(0, -PATH_SEPARATOR.length) : head;
 }
 
+// core/src/install/report.ts
+function messageOf(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
 // core/src/install/opencode.ts
 function opencodePathsFor(homeDirectory2, environment) {
   const configHome = path10.join(environment["XDG_CONFIG_HOME"] ?? path10.join(homeDirectory2, ".config"), "opencode");
@@ -3018,36 +3060,104 @@ function opencodePathsFor(homeDirectory2, environment) {
 }
 
 // core/src/install/opencode-install.ts
-import path11 from "node:path";
+import path13 from "node:path";
 
 // core/src/install/verify-claude.ts
+import path11 from "node:path";
+function compareVersionsAscending(a, b) {
+  const segmentsOf = (value) => value.split(/(\d+)/).filter((segment) => segment !== "");
+  const left = segmentsOf(a);
+  const right = segmentsOf(b);
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    const leftSegment = left[index] ?? "";
+    const rightSegment = right[index] ?? "";
+    const bothNumeric = /^\d+$/.test(leftSegment) && /^\d+$/.test(rightSegment);
+    const compared = bothNumeric ? Number(leftSegment) - Number(rightSegment) : leftSegment.localeCompare(rightSegment);
+    if (compared !== 0) return compared;
+  }
+  return 0;
+}
+function collapsedNewlines(text) {
+  return text.replace(/\n+$/, "").replace(/\n/g, " ");
+}
+function firstExecutableOnPath(environment, binaryName) {
+  const entries = (environment["PATH"] ?? "").split(path11.delimiter).filter((entry) => entry !== "");
+  for (const entry of entries) {
+    const candidate = path11.join(entry, binaryName);
+    if (isExecutableRegularFile(candidate)) return candidate;
+  }
+  return void 0;
+}
 var POSIX_KERNEL_EXECUTABLE_MAGICS = ["\x7FELF", "#!", "\xCF\xFA\xED\xFE", "\xCE\xFA\xED\xFE", "\xCA\xFE\xBA\xBE"];
 var WIN32_KERNEL_EXECUTABLE_MAGICS = ["MZ"];
 var WIDEST_EXECUTABLE_MAGIC_BYTES = Math.max(
   ...[...POSIX_KERNEL_EXECUTABLE_MAGICS, ...WIN32_KERNEL_EXECUTABLE_MAGICS].map((magic) => magic.length)
 );
 
+// core/src/install/pins.ts
+var SUPPORTED_OPENCODE_VERSION = "1.18.22";
+var DOTTED_NUMERIC_VERSION = /^\d+(\.\d+)*$/;
+function meetsVersionFloor(found, floor) {
+  if (found === void 0 || !DOTTED_NUMERIC_VERSION.test(found)) return false;
+  return compareVersionsAscending(found, floor) >= 0;
+}
+
+// core/src/install/trust.ts
+import { readFileSync as readFileSync3 } from "node:fs";
+var SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/;
+var RAW_INSTALLED_BYTES = (_relative, target) => readFileSync3(target);
+function trustRowDivergences(rows, resolveTarget, bytesOf = RAW_INSTALLED_BYTES) {
+  return rows.flatMap((row) => divergenceOf(row, resolveTarget, bytesOf));
+}
+function divergenceOf(row, resolveTarget, bytesOf) {
+  if (!SHA256_HEX_PATTERN.test(row.digest)) return [{ file: row.file, state: { kind: "malformed-published-hash" } }];
+  const target = resolveTarget(row.file);
+  if (target === void 0) return [{ file: row.file, state: { kind: "outside-the-trust-set" } }];
+  if (!isReadableRegularFile(target)) return [{ file: row.file, state: { kind: "missing" } }];
+  const actual = sha256Hex(bytesOf(row.file, target));
+  return actual === row.digest ? [] : [{ file: row.file, state: { kind: "mismatch", actual } }];
+}
+
 // core/src/install/engram.ts
 var MEBIBYTE = 1024 * 1024;
 var ARCHIVE_EXPANSION_CEILING_BYTES = 128 * MEBIBYTE;
 
+// core/src/install/opencode-trust.ts
+import path12 from "node:path";
+var INSTALLED_TREE_MAP = [
+  { published: "opencode/dist/oso-code.js", installed: "plugin/oso-code.js" },
+  { published: "plugin/dist/", installed: "dist/" },
+  { published: "plugin/hooks/", installed: "hooks/" },
+  { published: "plugin/git-hooks/", installed: "git-hooks/" },
+  { published: "plugin/bin/", installed: "bin/" }
+];
+function openCodeTrustTargetUnder(rootKind, root, published) {
+  if (rootKind === "source") return path12.join(root, ...published.split("/"));
+  const mapped = INSTALLED_TREE_MAP.find((row) => row.published === published || row.published.endsWith("/") && published.startsWith(row.published));
+  if (mapped === void 0) return void 0;
+  const relative = mapped.published.endsWith("/") ? `${mapped.installed}${published.slice(mapped.published.length)}` : mapped.installed;
+  return path12.join(root, ...relative.split("/"));
+}
+
 // core/src/install/opencode-install.ts
 function openCodeInstallTargets(paths) {
   return {
-    skills: path11.join(paths.configHome, "skill"),
-    agents: path11.join(paths.configHome, "agent"),
-    commands: path11.join(paths.configHome, "command"),
-    plugin: path11.join(paths.configHome, "plugin"),
-    hooks: path11.join(paths.configHome, "hooks"),
-    gitHooks: path11.join(paths.configHome, "git-hooks"),
-    stateBin: path11.join(paths.configHome, "bin"),
-    dist: path11.join(paths.configHome, "dist"),
-    engramPlugin: path11.join(paths.configHome, "plugins", "engram.ts"),
-    impeccableMount: path11.join(paths.homeDirectory, ".agents", "skills", "impeccable"),
-    impeccableOptOut: path11.join(paths.stateRoot, "impeccable-opt-out"),
-    ownerRegistry: path11.join(paths.stateRoot, "opencode-install-registry"),
-    restoreExercisedMarker: path11.join(paths.stateRoot, ".install-restore-verified-opencode"),
-    planArtifactRoot: path11.join(paths.stateRoot, "plans")
+    skills: path13.join(paths.configHome, "skill"),
+    agents: path13.join(paths.configHome, "agent"),
+    commands: path13.join(paths.configHome, "command"),
+    plugin: path13.join(paths.configHome, "plugin"),
+    hooks: path13.join(paths.configHome, "hooks"),
+    gitHooks: path13.join(paths.configHome, "git-hooks"),
+    stateBin: path13.join(paths.configHome, "bin"),
+    dist: path13.join(paths.configHome, "dist"),
+    engramPlugin: path13.join(paths.configHome, "plugins", "engram.ts"),
+    impeccableMount: path13.join(paths.homeDirectory, ".agents", "skills", "impeccable"),
+    impeccableOptOut: path13.join(paths.stateRoot, "impeccable-opt-out"),
+    ownerRegistry: path13.join(paths.stateRoot, "opencode-install-registry"),
+    restoreExercisedMarker: path13.join(paths.stateRoot, ".install-restore-verified-opencode"),
+    planArtifactRoot: path13.join(paths.stateRoot, "plans"),
+    installRecord: path13.join(paths.configHome, "oso-code-install.json")
   };
 }
 
@@ -3104,7 +3214,7 @@ function deniedUntilASliceIsArmed(toolName, session) {
   });
 }
 function harnessTreeTargetOf(envelope) {
-  const targets = writeTargetsOf(envelope).map((target) => path12.resolve(envelope.cwd, target));
+  const targets = writeTargetsOf(envelope).map((target) => path14.resolve(envelope.cwd, target));
   if (targets.length === 0) return void 0;
   const harnessTree = installedHarnessTree();
   return targets.find((target) => harnessTree.some((directory) => liesWithin(directory, target)));
@@ -3121,8 +3231,8 @@ function installedHarnessTree() {
   return [targets.skills, targets.agents, targets.commands, targets.plugin, targets.hooks, paths.stateRoot];
 }
 function liesWithin(directory, target) {
-  const relative = path12.relative(directory, target);
-  const escapes = relative === ".." || relative.startsWith(`..${path12.sep}`) || path12.isAbsolute(relative);
+  const relative = path14.relative(directory, target);
+  const escapes = relative === ".." || relative.startsWith(`..${path14.sep}`) || path14.isAbsolute(relative);
   return !escapes;
 }
 function readAllowlist(argv) {
@@ -3148,7 +3258,149 @@ function allowlistCarries(allowlist, toolName) {
 
 // core/src/gates/version.ts
 import { execFileSync as execFileSync3 } from "node:child_process";
-import path13 from "node:path";
+import path16 from "node:path";
+
+// core/src/install/opencode-host.ts
+import { spawnSync as spawnSync2 } from "node:child_process";
+import { mkdtempSync, rmSync as rmSync5 } from "node:fs";
+import { tmpdir } from "node:os";
+import path15 from "node:path";
+
+// core/src/install/version-line.ts
+function versionLineReadingOf(rawOutput, versionLine) {
+  const lines = rawOutput.split("\n").filter((line) => line.trim() !== "");
+  const matchingLines = lines.filter((line) => versionLine.test(line));
+  if (matchingLines.length === 0) return { kind: "unmatched", raw: rawOutput };
+  if (matchingLines.length > 1) return { kind: "ambiguous", matches: matchingLines };
+  const matchedLine = matchingLines[0] ?? "";
+  const captured = versionLine.exec(matchedLine)?.[1];
+  return { kind: "matched", version: captured ?? matchedLine, discarded: lines.filter((line) => line !== matchedLine) };
+}
+function versionOutcomeOf(reading, versionLineShape) {
+  if (reading.kind === "matched") {
+    return { version: reading.version, note: reading.discarded.length === 0 ? void 0 : extraLinesNote(reading.discarded) };
+  }
+  if (reading.kind === "unmatched") return { version: void 0, note: unmatchedNote(versionLineShape, reading.raw) };
+  return { version: void 0, note: ambiguousNote(versionLineShape, reading.matches) };
+}
+function extraLinesNote(discarded) {
+  const first = discarded[0] ?? "";
+  const plural = discarded.length === 1 ? "line" : "lines";
+  return `the probe printed ${discarded.length} extra ${plural} beyond the version; first: ${collapsedNewlines(first)}`;
+}
+function unmatchedNote(versionLineShape, raw) {
+  return `the probe printed no line shaped like ${versionLineShape}; raw output: ${collapsedNewlines(raw)}`;
+}
+function ambiguousNote(versionLineShape, matches) {
+  return `the probe printed ${matches.length} lines shaped like ${versionLineShape} (ambiguous): ${collapsedNewlines(matches.join("\n"))}`;
+}
+
+// core/src/install/opencode-host.ts
+var OPENCODE_BINARY_NAME = "opencode";
+var OPENCODE_VERSION_LINE_SHAPE = "a bare dotted version";
+var PROBE_HOME_PREFIX = "oso-opencode-probe.";
+var PROBE_TIMEOUT_MILLISECONDS = 1e4;
+var ANSI_SELECT_GRAPHIC_RENDITION = /\u001b\[[0-9;]*m/g;
+var POSIX_SPACE_CLASS = /[ \t\n\v\f\r]/g;
+var OPENCODE_VERSION_LINE = /^(\d+(?:\.\d+)*)$/;
+function openCodeHostProbes(environment) {
+  const binaryPath = firstExecutableOnPath(environment, OPENCODE_BINARY_NAME);
+  if (binaryPath === void 0) return { version: void 0 };
+  const outcome = versionOutcomeOf(probedVersion(environment, binaryPath), OPENCODE_VERSION_LINE_SHAPE);
+  return outcome.note === void 0 ? { version: outcome.version } : { version: outcome.version, versionNote: outcome.note };
+}
+function versionFieldOf(probeOutput) {
+  const strippedPerLine = probeOutput.replace(ANSI_SELECT_GRAPHIC_RENDITION, "").split("\n").map((line) => line.replace(POSIX_SPACE_CLASS, "")).join("\n");
+  return versionLineReadingOf(strippedPerLine, OPENCODE_VERSION_LINE);
+}
+function probedVersion(environment, binaryPath) {
+  const probeHome = mkdtempSync(path15.join(environment["TMPDIR"] ?? tmpdir(), PROBE_HOME_PREFIX));
+  try {
+    const run2 = spawnSync2(binaryPath, ["--version"], {
+      env: probeEnvironment(environment, probeHome),
+      encoding: "utf8",
+      timeout: PROBE_TIMEOUT_MILLISECONDS
+    });
+    return versionFieldOf(`${run2.stdout ?? ""}${run2.stderr ?? ""}`);
+  } finally {
+    rmSync5(probeHome, { recursive: true, force: true });
+  }
+}
+function probeEnvironment(environment, probeHome) {
+  return {
+    ...environment,
+    HOME: probeHome,
+    USERPROFILE: probeHome,
+    TMPDIR: probeHome,
+    XDG_CONFIG_HOME: path15.join(probeHome, ".config"),
+    XDG_STATE_HOME: path15.join(probeHome, ".local", "state"),
+    XDG_CACHE_HOME: path15.join(probeHome, ".cache"),
+    XDG_DATA_HOME: path15.join(probeHome, ".local", "share")
+  };
+}
+
+// core/src/gates/opencode-drift.ts
+var REINSTALL = "reinstall with `oso install --host opencode --yes` from the oso-code checkout";
+var INTACT = { kind: "intact" };
+function judgeOpenCodeDrift(envelope) {
+  const paths = opencodePathsFor(homeDirectoryFrom(process.platform, process.env), process.env);
+  const reading = installRecordReading(openCodeInstallTargets(paths).installRecord);
+  const checks = reading.kind === "unread" ? [unchecked("opencode-install-record-unread", reading.cause)] : [versionDrift(reading.record), trustedFileDrift(reading.record, paths.configHome), cliDrift()];
+  return outcomeOf(checks, envelope.sessionId);
+}
+function installRecordReading(installRecord) {
+  let parsed;
+  try {
+    parsed = readJsonFile(installRecord);
+  } catch (error) {
+    return { kind: "unread", cause: messageOf(error) };
+  }
+  if (parsed === void 0) return { kind: "unread", cause: `no install record at ${installRecord}` };
+  if (!isInstallRecord(parsed)) return { kind: "unread", cause: `the install record at ${installRecord} holds no version and manifest rows` };
+  return { kind: "read", record: parsed };
+}
+function isInstallRecord(parsed) {
+  const candidate = parsed;
+  if (typeof candidate?.version !== "string" || !Array.isArray(candidate.manifest)) return false;
+  return candidate.manifest.every((row) => typeof row?.digest === "string" && typeof row.file === "string");
+}
+function versionDrift(record) {
+  const running = process.env.OSO_HARNESS_BUILD_VERSION;
+  if (running === void 0 || running === "") return unchecked("opencode-build-version-unknown", "this plugin build embeds no harness version");
+  if (running === record.version) return INTACT;
+  return drifted(
+    `oso-code: the installed OpenCode harness is version ${record.version} but the running plugin build is ${running} \u2014 tell the user once: ${REINSTALL}.`
+  );
+}
+function trustedFileDrift(record, configHome) {
+  const divergent = trustRowDivergences(record.manifest, (published) => openCodeTrustTargetUnder("installed", configHome, published));
+  if (divergent.length === 0) return INTACT;
+  return drifted(
+    `oso-code: installed trusted file(s) no longer match the manifest they were installed from: ${divergent.map((divergence) => divergence.file).join(", ")} \u2014 tell the user once: run \`oso verify --host opencode\`, then ${REINSTALL}.`
+  );
+}
+function cliDrift() {
+  const probed = openCodeHostProbes(process.env);
+  if (probed.version === void 0) return unchecked("opencode-cli-unprobed", probed.versionNote ?? "no opencode on PATH");
+  if (meetsVersionFloor(probed.version, SUPPORTED_OPENCODE_VERSION)) return INTACT;
+  return drifted(
+    `oso-code: this session runs OpenCode ${probed.version}, older than the supported ${SUPPORTED_OPENCODE_VERSION} \u2014 tell the user once: upgrade opencode to ${SUPPORTED_OPENCODE_VERSION} or newer.`
+  );
+}
+function outcomeOf(checks, session) {
+  const advice = checks.flatMap((check) => check.kind === "drifted" ? [check.advice] : []);
+  const events = checks.flatMap((check) => check.kind === "unchecked" ? [{ event: check.event, session, command: check.cause }] : []);
+  if (advice.length === 0) return { verdict: { kind: "allow" }, events };
+  return { verdict: { kind: "context", additionalContext: advice.join(" ") }, events };
+}
+function drifted(advice) {
+  return { kind: "drifted", advice };
+}
+function unchecked(event, cause) {
+  return { kind: "unchecked", event, cause };
+}
+
+// core/src/gates/version.ts
 var RELEASE_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/;
 var GITHUB_URL_PREFIX = "https://github.com/";
 var FETCH_CONNECT_SECONDS = 2;
@@ -3163,6 +3415,7 @@ var VERSION_GATE = {
 };
 function judgeVersion({ envelope }) {
   if (envelope.source === "compact") return ALLOWED;
+  if (envelope.caller.host === "opencode") return judgeOpenCodeDrift(envelope);
   const manifest = readFileOrEmpty(pluginManifestFile());
   const installedVersion = jsonField(manifest, "version");
   if (!RELEASE_VERSION_PATTERN.test(installedVersion)) return ALLOWED;
@@ -3176,10 +3429,10 @@ function judgeVersion({ envelope }) {
   return { verdict: { kind: "context", additionalContext: context }, events: [] };
 }
 function pluginManifestFile() {
-  return path13.join(pluginRootDirectory(), ".claude-plugin", "plugin.json");
+  return path16.join(pluginRootDirectory(), ".claude-plugin", "plugin.json");
 }
 function publishedReleaseCacheFile() {
-  return path13.join(stateRootDirectory(), "published-release");
+  return path16.join(stateRootDirectory(), "published-release");
 }
 function repositorySlugOf(repositoryUrl) {
   if (!repositoryUrl.startsWith(GITHUB_URL_PREFIX) || repositoryUrl.length === GITHUB_URL_PREFIX.length) {
@@ -3190,7 +3443,7 @@ function repositorySlugOf(repositoryUrl) {
 }
 function marketplaceServesRepository(repositorySlug) {
   const home = homeDirectoryFrom(process.platform, process.env);
-  const marketplacesFile = path13.join(home, ".claude", "plugins", "known_marketplaces.json");
+  const marketplacesFile = path16.join(home, ".claude", "plugins", "known_marketplaces.json");
   const registrations = readFileOrEmpty(marketplacesFile).replace(/\s/g, "");
   return registrations.includes(`"repo":"${repositorySlug}"`);
 }
@@ -3209,7 +3462,7 @@ function cachedPublishedRelease(cacheFile) {
 function refreshPublishedReleaseCache(cacheFile, repositorySlug) {
   try {
     writeFileAtomically(
-      path13.dirname(cacheFile),
+      path16.dirname(cacheFile),
       cacheFile,
       fetchedHighestReleaseVersion(repositorySlug),
       ".published-release."
@@ -3358,7 +3611,7 @@ function spawnedEnvelope(payload, environment) {
 // core/src/bin/gate.ts
 function attemptGate(argv) {
   try {
-    return runGate(argv, spawnedEnvelope(readFileSync2(0, "utf8"), process.env));
+    return runGate(argv, spawnedEnvelope(readFileSync4(0, "utf8"), process.env));
   } catch (cause) {
     return gateErrorRun(THE_GATE_ENTRY_POINT, cause);
   }
