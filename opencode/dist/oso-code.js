@@ -1636,30 +1636,25 @@ import { appendFileSync as appendFileSync3, mkdirSync as mkdirSync3 } from "node
 import path4 from "node:path";
 var VERIFIER_ROLE = "verifier";
 var TELEMETRY_WRITE_FAILED = "telemetry-write-failed";
-var FIX_ROUND_CAP = 2;
+var SLICE_MARKS = ["diagnosed", "escalated", "empty-result"];
+var MARKER_KINDS = ["arm", ...SLICE_MARKS];
 function verdictsFileFor(stateFile) {
   return path4.join(runsDirectoryOf(stateFile), "verdicts.jsonl");
 }
 function appendVerdict(verdictsFile, capture) {
-  return appendEntry(verdictsFile, capture.session, () => {
-    const attempt = nextAttemptOf(readVerdicts(verdictsFile).entries, capture.slice);
-    return {
-      time: isoTimestamp(),
-      host: capture.host,
-      session: capture.session,
-      change: capture.change,
-      slice: capture.slice,
-      attempt,
-      role: capture.role,
-      model: capture.model,
-      verdict: capture.verdict,
-      verdict_shape: capture.verdict_shape,
-      escalated: capture.role === VERIFIER_ROLE && attempt > 1 + FIX_ROUND_CAP
-    };
-  });
-}
-function nextAttemptOf(entries, slice) {
-  return verifierRecordsSinceArm(entries, slice).length + 1;
+  return appendEntry(verdictsFile, capture.session, () => ({
+    time: isoTimestamp(),
+    host: capture.host,
+    session: capture.session,
+    change: capture.change,
+    slice: capture.slice,
+    attempt: verifierRecordsSinceArm(readVerdicts(verdictsFile).entries, capture.slice).length + 1,
+    role: capture.role,
+    model: capture.model,
+    verdict: capture.verdict,
+    verdict_shape: capture.verdict_shape,
+    escalated: false
+  }));
 }
 function readVerdicts(verdictsFile) {
   const lines = (readFileIfPresent(verdictsFile) ?? "").split("\n").filter((line) => line !== "");
@@ -1670,18 +1665,23 @@ function readVerdicts(verdictsFile) {
   return { entries, skippedLines: lines.length - entries.length };
 }
 function verifierRecordsSinceArm(entries, slice) {
-  if (slice === null) return [];
-  const newestArming = armingsOf(entries).newestArmingOfSlice.get(slice) ?? [];
-  return newestArming.filter((record) => record.role === VERIFIER_ROLE);
+  return newestArmingOf(entries, slice).filter(isVerifierRecord);
 }
-function isArmMarker(entry) {
-  return "kind" in entry;
+function newestArmingOf(entries, slice) {
+  if (slice === null) return [];
+  return armingsOf(entries).newestArmingOfSlice.get(slice) ?? [];
+}
+function isMarkerOf(kind, entry) {
+  return "kind" in entry && entry.kind === kind;
+}
+function isVerifierRecord(entry) {
+  return !("kind" in entry) && entry.role === VERIFIER_ROLE;
 }
 function armingsOf(entries) {
   const everyArming = [];
   const newestArmingOfSlice = /* @__PURE__ */ new Map();
   for (const entry of entries) {
-    if (isArmMarker(entry)) {
+    if (isMarkerOf("arm", entry)) {
       const arming = [];
       everyArming.push(arming);
       newestArmingOfSlice.set(entry.slice, arming);
@@ -1708,13 +1708,14 @@ function appendEntry(verdictsFile, session, entryOf) {
 function logEntryOf(line) {
   const parsed = jsonObjectOf(line);
   if (parsed === void 0) return void 0;
-  if (parsed["kind"] === "arm") return armMarkerOf(parsed);
+  if ("kind" in parsed) return markerOf(parsed);
   return verdictRecordOf(parsed);
 }
-function armMarkerOf(fields) {
+function markerOf(fields) {
   const { slice, session, change, time } = fields;
-  if (!isText(slice) || !isText(session) || !isTextOrNull(change) || !isText(time)) return void 0;
-  return { kind: "arm", slice, session, change, time };
+  const kind = MARKER_KINDS.find((value) => value === fields["kind"]);
+  if (kind === void 0 || !isText(slice) || !isText(session) || !isTextOrNull(change) || !isText(time)) return void 0;
+  return { kind, slice, session, change, time };
 }
 function verdictRecordOf(fields) {
   const { time, host, session, change, slice, attempt, role, model, verdict, verdict_shape, escalated } = fields;

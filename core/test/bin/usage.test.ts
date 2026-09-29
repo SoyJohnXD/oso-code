@@ -32,11 +32,15 @@ const WATCH_PARAGRAPH =
 const SCAN_LINES =
   "       oso-state scan comments <ref>\n" + "       oso-state scan abstractions <ref>\n";
 const REPORT_LINE = "       oso-state report [--json]\n";
+const MARK_LINE = "       oso-state --session <id> mark <diagnosed|escalated|empty-result>\n";
 const REPORT_PARAGRAPH =
   "\nreport reads this repository's verdict records and prints the armed slice with\n" +
-  "its next verifier attempt, the first-fail rate, rounds per slice, escalated\n" +
-  "slices, verdicts by model, malformed reports and unreceipted greens; --json\n" +
-  "prints the same fields as one JSON object.\n";
+  "its rounds since its arming and since its newest diagnosis, the first-fail\n" +
+  "rate, rounds per slice, escalated slices, verdicts by model, malformed reports\n" +
+  "and unreceipted greens; --json prints the same fields as one JSON object.\n";
+const MARK_PARAGRAPH =
+  "\nmark records a diagnosis, an escalation or an empty applier result against the\n" +
+  "armed slice, and is refused when no slice is armed.\n";
 const SCAN_PARAGRAPH =
   "\nscan reads the working directory's own repository, reports every hit on stdout\n" +
   "and exits 0 whether or not it found any. comments flags the inline comments the\n" +
@@ -49,17 +53,17 @@ const TS_USAGE = BASH_USAGE.replace(
 )
   .replace(
     "       oso-state --session <id> amend-plan <slice-id>\n",
-    `       oso-state --session <id> amend-plan <slice-id>\n${DENY_PATTERN_LINE}${WATCH_LINE}`,
+    `       oso-state --session <id> amend-plan <slice-id>\n${DENY_PATTERN_LINE}${WATCH_LINE}${MARK_LINE}`,
   )
   .replace(
     "       oso-state journal --path\n",
-    `       oso-state journal --path\n${SCAN_LINES}${REPORT_LINE}${SCAN_PARAGRAPH}${REPORT_PARAGRAPH}${WATCH_PARAGRAPH}`,
+    `       oso-state journal --path\n${SCAN_LINES}${REPORT_LINE}${SCAN_PARAGRAPH}${REPORT_PARAGRAPH}${MARK_PARAGRAPH}${WATCH_PARAGRAPH}`,
   );
 
 test(
   "the TypeScript CLI's usage text equals the bash's (read from 8c54fd8:plugin/bin/oso-state:7-29) " +
     "plus exactly the two verbs G6 adds, close-slice and deny-pattern add, the scan verb C1-D3 adds, the close verb, " +
-    "the watch verb and the report verb",
+    "the watch verb, the report verb and the mark verb",
   () => {
     const result = spawnSync(
       process.execPath,

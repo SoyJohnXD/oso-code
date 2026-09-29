@@ -1,17 +1,20 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { readVerdictShape } from "../../src/verdict/grammar.ts";
 import {
-  type ArmMarker,
-  appendVerdict,
+  type Marker,
   readVerdicts,
   type VerdictLogEntry,
   type VerdictRecord,
 } from "../../src/verdict/record.ts";
-import { type GreensRead, renderReportTable, unreceiptedGreensIn, verdictMetrics } from "../../src/verdict/report.ts";
+import {
+  type GreensRead,
+  renderReportTable,
+  unreceiptedGreensIn,
+  type VerdictMetrics,
+  verdictMetrics,
+} from "../../src/verdict/report.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
 
 const FIXTURE = path.join(repositoryRoot, "core", "test", "fixtures", "verdicts", "report.jsonl");
@@ -66,8 +69,12 @@ describe("the verdict report reads the records after each arm marker of their sl
   });
 });
 
-function armedBy(change: string, time: string): ArmMarker {
+function armedBy(change: string, time: string): Marker {
   return { kind: "arm", slice: "1", session: `ses-${change}`, change, time };
+}
+
+function markedBy(kind: Marker["kind"], time: string): Marker {
+  return { kind, slice: "1", session: "ses-alpha", change: "alpha", time };
 }
 
 function verifiedBy(change: string, time: string, verdict: VerdictRecord["verdict"]): VerdictRecord {
@@ -108,57 +115,71 @@ describe("the verdict report counts each arming of a reused slice id as its own 
   });
 });
 
-describe("the report names the armed slice's next round and the slices the fix-round cap escalated", () => {
-  const armedWithThreeFails: VerdictLogEntry[] = [
+describe("the report counts the armed slice's rounds since its arming and since its newest diagnosis", () => {
+  const armedWithTwoFails: VerdictLogEntry[] = [
     armedBy("alpha", "2026-09-01T10:00:00Z"),
-    ...[1, 2, 3].map((attempt) => ({ ...verifiedBy("alpha", `2026-09-01T10:0${attempt}:00Z`, "fail"), attempt })),
+    verifiedBy("alpha", "2026-09-01T10:01:00Z", "fail"),
+    verifiedBy("alpha", "2026-09-01T10:02:00Z", "fail"),
   ];
   const notRead: GreensRead = { kind: "omitted", reason: "not read" };
 
-  test("slice 1 armed with fail, fail, fail reads attempt 4 next, and a fourth record captured there is escalated", () => {
-    const stateDirectory = mkdtempSync(path.join(tmpdir(), "oso-report-"));
-    process.env["OSO_STATE_DIR"] = stateDirectory;
-    try {
-      const verdictsFile = path.join(stateDirectory, "runs", "repo", "verdicts.jsonl");
-      mkdirSync(path.dirname(verdictsFile), { recursive: true });
-      writeFileSync(verdictsFile, armedWithThreeFails.map((entry) => `${JSON.stringify(entry)}\n`).join(""));
-      const beforeTheFourth = verdictMetrics(readVerdicts(verdictsFile), notRead, "1");
-      assert.deepEqual(beforeTheFourth.active_slice, { slice: "1", verdicts: ["fail", "fail", "fail"], next_attempt: 4 });
-      assert.equal(beforeTheFourth.escalated_slices, 0);
-      assert.match(renderReportTable(beforeTheFourth), /^active slice\s+1: attempt 4 next/m);
+  function metricsOf(entries: readonly VerdictLogEntry[], armedSlice: string | null): VerdictMetrics {
+    return verdictMetrics({ entries, skippedLines: 0 }, notRead, armedSlice);
+  }
 
-      const { time, attempt, escalated, ...capture } = verifiedBy("alpha", "", "fail");
-      appendVerdict(verdictsFile, capture);
-      const fourth = readVerdicts(verdictsFile).entries.at(-1);
-      assert.ok(fourth !== undefined && !("kind" in fourth));
-      assert.equal(fourth.attempt, 4);
-      assert.equal(fourth.escalated, true);
-
-      const afterTheFourth = verdictMetrics(readVerdicts(verdictsFile), notRead, "1");
-      assert.equal(afterTheFourth.escalated_slices, 1);
-      assert.match(renderReportTable(afterTheFourth), /^escalated slices\s+1$/m);
-    } finally {
-      delete process.env["OSO_STATE_DIR"];
-      rmSync(stateDirectory, { recursive: true, force: true });
-    }
+  test("an empty-result marker counts one round beside the verifier verdicts", () => {
+    const metrics = metricsOf([...armedWithTwoFails, markedBy("empty-result", "2026-09-01T10:03:00Z")], "1");
+    assert.deepEqual(metrics.active_slice, {
+      slice: "1",
+      verdicts: ["fail", "fail"],
+      rounds: 3,
+      rounds_since_diagnosis: null,
+    });
+    assert.match(renderReportTable(metrics), /^active slice\s+1: 3 rounds, no diagnosis yet; verdicts fail, fail$/m);
   });
 
-  test("the third round is still inside the cap, so no slice reads as escalated", () => {
-    const metrics = verdictMetrics({ entries: armedWithThreeFails, skippedLines: 0 }, notRead, "1");
-    assert.equal(metrics.escalated_slices, 0);
-    assert.match(renderReportTable(metrics), /^escalated slices\s+0$/m);
+  test("a diagnosed marker restarts the rounds since diagnosis at 0 while the rounds keep counting", () => {
+    const diagnosed = [...armedWithTwoFails, markedBy("diagnosed", "2026-09-01T10:03:00Z")];
+    assert.deepEqual(metricsOf(diagnosed, "1").active_slice, {
+      slice: "1",
+      verdicts: ["fail", "fail"],
+      rounds: 2,
+      rounds_since_diagnosis: 0,
+    });
+    const refailed = metricsOf([...diagnosed, verifiedBy("alpha", "2026-09-01T10:04:00Z", "fail")], "1");
+    assert.equal(refailed.active_slice?.rounds, 3);
+    assert.equal(refailed.active_slice?.rounds_since_diagnosis, 1);
+    assert.match(renderReportTable(refailed), /^active slice\s+1: 3 rounds, 1 since diagnosis; verdicts fail, fail, fail$/m);
+  });
+
+  test("four verifier rounds read no slice as escalated, and an escalated marker counts its arming once", () => {
+    const fourRounds = [
+      ...armedWithTwoFails,
+      verifiedBy("alpha", "2026-09-01T10:03:00Z", "fail"),
+      verifiedBy("alpha", "2026-09-01T10:04:00Z", "pass"),
+    ];
+    assert.equal(metricsOf(fourRounds, "1").escalated_slices, 0);
+    const escalated = metricsOf(
+      [...fourRounds, markedBy("escalated", "2026-09-01T10:05:00Z"), markedBy("escalated", "2026-09-01T10:06:00Z")],
+      "1",
+    );
+    assert.equal(escalated.escalated_slices, 1);
+    assert.match(renderReportTable(escalated), /^escalated slices\s+1$/m);
   });
 
   test("with no armed slice the row says so and its JSON value is null", () => {
-    const metrics = verdictMetrics({ entries: armedWithThreeFails, skippedLines: 0 }, notRead, null);
+    const metrics = metricsOf(armedWithTwoFails, null);
     assert.equal(metrics.active_slice, null);
     assert.match(renderReportTable(metrics), /^active slice\s+none — no slice is armed$/m);
   });
 
-  test("an armed slice with no verifier record since its arming reads attempt 1 next", () => {
-    const metrics = verdictMetrics({ entries: armedWithThreeFails, skippedLines: 0 }, notRead, "2");
-    assert.deepEqual(metrics.active_slice, { slice: "2", verdicts: [], next_attempt: 1 });
-    assert.match(renderReportTable(metrics), /^active slice\s+2: attempt 1 next, no verifier verdict since its arming$/m);
+  test("an armed slice with no round since its arming reads 0 rounds", () => {
+    const metrics = metricsOf(armedWithTwoFails, "2");
+    assert.deepEqual(metrics.active_slice, { slice: "2", verdicts: [], rounds: 0, rounds_since_diagnosis: null });
+    assert.match(
+      renderReportTable(metrics),
+      /^active slice\s+2: 0 rounds, no diagnosis yet; no verifier verdict since its arming$/m,
+    );
   });
 });
 

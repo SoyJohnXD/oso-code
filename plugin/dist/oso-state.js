@@ -1373,24 +1373,24 @@ var VERDICT_SHAPES = ["valid", "malformed"];
 var VERIFIER_ROLE = "verifier";
 var TELEMETRY_WRITE_FAILED = "telemetry-write-failed";
 var VERIFY_GREEN_UNRECEIPTED = "verify-green-unreceipted";
+var SLICE_MARKS = ["diagnosed", "escalated", "empty-result"];
+var MARKER_KINDS = ["arm", ...SLICE_MARKS];
 function verdictsFileFor(stateFile) {
   return path4.join(runsDirectoryOf(stateFile), "verdicts.jsonl");
 }
-function nextAttemptOf(entries, slice) {
-  return verifierRecordsSinceArm(entries, slice).length + 1;
-}
-function appendArmMarker(verdictsFile, marker) {
+function appendMarker(verdictsFile, marker) {
   return appendEntry(verdictsFile, marker.session, () => ({
-    kind: "arm",
+    kind: marker.kind,
     slice: marker.slice,
     session: marker.session,
     change: marker.change,
     time: isoTimestamp()
   }));
 }
-function armedSliceOf(written) {
+function newlyArmedSliceOf(preWriteSlice, written) {
   const slice = written.get("active_slice");
-  return slice !== void 0 && slice !== "none" && written.get("verify_green") === "false" ? slice : void 0;
+  if (slice === void 0 || slice === "none" || slice === preWriteSlice) return void 0;
+  return written.get("verify_green") === "false" ? slice : void 0;
 }
 function readVerdicts(verdictsFile) {
   const lines = (readFileIfPresent(verdictsFile) ?? "").split("\n").filter((line) => line !== "");
@@ -1401,18 +1401,23 @@ function readVerdicts(verdictsFile) {
   return { entries, skippedLines: lines.length - entries.length };
 }
 function verifierRecordsSinceArm(entries, slice) {
-  if (slice === null) return [];
-  const newestArming = armingsOf(entries).newestArmingOfSlice.get(slice) ?? [];
-  return newestArming.filter((record) => record.role === VERIFIER_ROLE);
+  return newestArmingOf(entries, slice).filter(isVerifierRecord);
 }
-function isArmMarker(entry) {
-  return "kind" in entry;
+function newestArmingOf(entries, slice) {
+  if (slice === null) return [];
+  return armingsOf(entries).newestArmingOfSlice.get(slice) ?? [];
+}
+function isMarkerOf(kind, entry) {
+  return "kind" in entry && entry.kind === kind;
+}
+function isVerifierRecord(entry) {
+  return !("kind" in entry) && entry.role === VERIFIER_ROLE;
 }
 function armingsOf(entries) {
   const everyArming = [];
   const newestArmingOfSlice = /* @__PURE__ */ new Map();
   for (const entry of entries) {
-    if (isArmMarker(entry)) {
+    if (isMarkerOf("arm", entry)) {
       const arming = [];
       everyArming.push(arming);
       newestArmingOfSlice.set(entry.slice, arming);
@@ -1439,13 +1444,14 @@ function appendEntry(verdictsFile, session, entryOf) {
 function logEntryOf(line) {
   const parsed = jsonObjectOf(line);
   if (parsed === void 0) return void 0;
-  if (parsed["kind"] === "arm") return armMarkerOf(parsed);
+  if ("kind" in parsed) return markerOf(parsed);
   return verdictRecordOf(parsed);
 }
-function armMarkerOf(fields) {
+function markerOf(fields) {
   const { slice, session, change, time } = fields;
-  if (!isText(slice) || !isText(session) || !isTextOrNull(change) || !isText(time)) return void 0;
-  return { kind: "arm", slice, session, change, time };
+  const kind = MARKER_KINDS.find((value) => value === fields["kind"]);
+  if (kind === void 0 || !isText(slice) || !isText(session) || !isTextOrNull(change) || !isText(time)) return void 0;
+  return { kind, slice, session, change, time };
 }
 function verdictRecordOf(fields) {
   const { time, host, session, change, slice, attempt, role, model, verdict, verdict_shape, escalated } = fields;
@@ -1500,7 +1506,8 @@ function refusalReason(slice, record) {
 
 // core/src/verdict/report.ts
 function verdictMetrics(log, greensRead, armedSlice) {
-  const roundsOfEachSlice = armingsOf(log.entries).everyArming.map((arming) => arming.filter((record) => record.role === VERIFIER_ROLE)).filter((rounds) => rounds.length > 0);
+  const { everyArming } = armingsOf(log.entries);
+  const roundsOfEachSlice = everyArming.map((arming) => arming.filter(isVerifierRecord)).filter((rounds) => rounds.length > 0);
   const verifierRecords = roundsOfEachSlice.flat();
   const firstFailSlices = roundsOfEachSlice.filter((rounds) => rounds[0]?.verdict === "fail").length;
   return {
@@ -1509,7 +1516,7 @@ function verdictMetrics(log, greensRead, armedSlice) {
     first_fail_slices: firstFailSlices,
     first_fail_rate_percent: roundsOfEachSlice.length === 0 ? null : oneDecimal(firstFailSlices * 100 / roundsOfEachSlice.length),
     rounds_per_slice: roundsSummary(roundsOfEachSlice.map((rounds) => rounds.length)),
-    escalated_slices: roundsOfEachSlice.filter((rounds) => rounds.some((record) => record.escalated)).length,
+    escalated_slices: everyArming.filter((arming) => arming.some((entry) => isMarkerOf("escalated", entry))).length,
     verdicts_by_model: verdictsByModel(verifierRecords),
     malformed: verifierRecords.filter((record) => record.verdict_shape === "malformed").length,
     skipped_lines: log.skippedLines,
@@ -1540,11 +1547,17 @@ function renderReportTable(metrics) {
 }
 function activeSliceOf(entries, armedSlice) {
   if (armedSlice === null) return null;
+  const arming = newestArmingOf(entries, armedSlice);
+  const newestDiagnosis = arming.map((entry) => isMarkerOf("diagnosed", entry)).lastIndexOf(true);
   return {
     slice: armedSlice,
-    verdicts: verifierRecordsSinceArm(entries, armedSlice).map((record) => record.verdict),
-    next_attempt: nextAttemptOf(entries, armedSlice)
+    verdicts: arming.filter(isVerifierRecord).map((record) => record.verdict),
+    rounds: roundsIn(arming),
+    rounds_since_diagnosis: newestDiagnosis === -1 ? null : roundsIn(arming.slice(newestDiagnosis + 1))
   };
+}
+function roundsIn(entries) {
+  return entries.filter((entry) => isVerifierRecord(entry) || isMarkerOf("empty-result", entry)).length;
 }
 function oneDecimal(value) {
   return Math.round(value * 10) / 10;
@@ -1569,14 +1582,17 @@ function zeroCounts() {
   return Object.fromEntries(RECORDED_VERDICTS.map((verdict) => [verdict, 0]));
 }
 function unreceiptedGreenCount(entries, greens) {
-  const armingSessions = new Set(entries.filter(isArmMarker).map((marker) => marker.session));
+  const armingSessions = new Set(
+    entries.filter((entry) => isMarkerOf("arm", entry)).map((marker) => marker.session)
+  );
   return greens.filter((green) => armingSessions.has(green.session)).length;
 }
 function activeSliceText({ active_slice: active }) {
   if (active === null) return "none \u2014 no slice is armed";
-  const next = `${active.slice}: attempt ${active.next_attempt} next`;
-  if (active.verdicts.length === 0) return `${next}, no verifier verdict since its arming`;
-  return `${next} after ${active.verdicts.join(", ")}`;
+  const rounds = `${active.slice}: ${active.rounds} ${active.rounds === 1 ? "round" : "rounds"}`;
+  const diagnosis = active.rounds_since_diagnosis === null ? "no diagnosis yet" : `${active.rounds_since_diagnosis} since diagnosis`;
+  const verdicts = active.verdicts.length === 0 ? "no verifier verdict since its arming" : `verdicts ${active.verdicts.join(", ")}`;
+  return `${rounds}, ${diagnosis}; ${verdicts}`;
 }
 function firstFailRateText(metrics) {
   if (metrics.first_fail_rate_percent === null) return "none \u2014 no armed slice holds a verifier record";
@@ -2078,6 +2094,7 @@ var USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> amend-plan <slice-id>
        oso-state --session <id> deny-pattern add <pattern>
        oso-state --session <id> watch
+       oso-state --session <id> mark <diagnosed|escalated|empty-result>
        oso-state journal <text>
        oso-state journal --path
        oso-state scan comments <ref>
@@ -2090,9 +2107,12 @@ diff since <ref> adds; abstractions flags the exports it adds that fewer than
 two use sites reach.
 
 report reads this repository's verdict records and prints the armed slice with
-its next verifier attempt, the first-fail rate, rounds per slice, escalated
-slices, verdicts by model, malformed reports and unreceipted greens; --json
-prints the same fields as one JSON object.
+its rounds since its arming and since its newest diagnosis, the first-fail
+rate, rounds per slice, escalated slices, verdicts by model, malformed reports
+and unreceipted greens; --json prints the same fields as one JSON object.
+
+mark records a diagnosis, an escalation or an empty applier result against the
+armed slice, and is refused when no slice is armed.
 
 watch polls this session's in-flight delegations and exits 0 once none is left,
 or 3 naming each one silent for 60 minutes, in flight for 3 hours or ended
@@ -2208,6 +2228,8 @@ function dispatch(argv) {
       return runDenyPattern(sessionId, remaining);
     case "watch":
       return runWatch(sessionId, remaining);
+    case "mark":
+      return runMark(sessionId, remaining);
     case "scan":
       return dispatchScan(remaining);
     case "report":
@@ -2237,11 +2259,12 @@ function runSet(sessionId, pairs) {
     const owner = foreignGateOwner(stateFile, sessionId);
     if (owner !== void 0 && pairsTouchAGateKey(pairs)) throw new GatesOwnedElsewhereError(owner);
     const written = new Map(pairs.map(splitPair));
-    const receipt = receiptOfGreen(stateFile, "set", readValue(stateFile, "active_slice") ?? "none", written);
+    const preWriteSlice = readValue(stateFile, "active_slice") ?? "none";
+    const receipt = receiptOfGreen(stateFile, "set", preWriteSlice, written);
     const content = writeStatePairs(stateFile, pairs, owner ?? sessionId);
     logSet(sessionId, pairs);
     logUnreceiptedGreen(sessionId, receipt);
-    markArming(stateFile, sessionId, written, content);
+    markArming(stateFile, sessionId, newlyArmedSliceOf(preWriteSlice, written), content);
     process.stdout.write(content);
     return 0;
   });
@@ -2255,11 +2278,22 @@ function logUnreceiptedGreen(sessionId, receipt) {
   if (receipt.kind !== "unreceipted") return;
   logEvent({ event: VERIFY_GREEN_UNRECEIPTED, session: sessionId, command: receipt.slice });
 }
-function markArming(stateFile, sessionId, written, content) {
-  const slice = armedSliceOf(written);
+function markArming(stateFile, sessionId, slice, content) {
   if (slice === void 0) return;
   const change = recordedStateValue(content, "auto_change");
-  appendArmMarker(verdictsFileFor(stateFile), { slice, session: sessionId, change });
+  appendMarker(verdictsFileFor(stateFile), { kind: "arm", slice, session: sessionId, change });
+}
+function runMark(sessionId, remaining) {
+  if (remaining.length !== 1) throw new UsageError();
+  const word = remaining[0];
+  const mark = SLICE_MARKS.find((value) => value === word);
+  if (mark === void 0) throw new RefusedError("mark", `${word} is not one of ${SLICE_MARKS.join(", ")}`);
+  const stateFile = stateFileFor(process.cwd());
+  const slice = activeSliceIn(stateFile);
+  if (slice === null) throw new RefusedError(`mark ${mark}`, "no slice is armed");
+  const change = recordedStateValue(readFileIfPresent(stateFile, "skip") ?? "", "auto_change");
+  appendMarker(verdictsFileFor(stateFile), { kind: mark, slice, session: sessionId, change });
+  return 0;
 }
 function runReport(remaining) {
   const [flag, ...rest] = remaining;

@@ -5,7 +5,14 @@ import { ScanFailure } from "../scan/changed-lines.ts";
 import { commentScanReport } from "../scan/comment-scan.ts";
 import { ereReads } from "../shell/ere.ts";
 import { greenReceiptOf, type GreenReceipt } from "../verdict/receipt.ts";
-import { appendArmMarker, armedSliceOf, readVerdicts, verdictsFileFor, VERIFY_GREEN_UNRECEIPTED } from "../verdict/record.ts";
+import {
+  appendMarker,
+  newlyArmedSliceOf,
+  readVerdicts,
+  SLICE_MARKS,
+  verdictsFileFor,
+  VERIFY_GREEN_UNRECEIPTED,
+} from "../verdict/record.ts";
 import { type GreensRead, renderReportTable, unreceiptedGreensIn, verdictMetrics } from "../verdict/report.ts";
 import * as knownKeys from "./known-keys.ts";
 import * as plan from "./plan.ts";
@@ -26,6 +33,7 @@ const USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> amend-plan <slice-id>
        oso-state --session <id> deny-pattern add <pattern>
        oso-state --session <id> watch
+       oso-state --session <id> mark <diagnosed|escalated|empty-result>
        oso-state journal <text>
        oso-state journal --path
        oso-state scan comments <ref>
@@ -38,9 +46,12 @@ diff since <ref> adds; abstractions flags the exports it adds that fewer than
 two use sites reach.
 
 report reads this repository's verdict records and prints the armed slice with
-its next verifier attempt, the first-fail rate, rounds per slice, escalated
-slices, verdicts by model, malformed reports and unreceipted greens; --json
-prints the same fields as one JSON object.
+its rounds since its arming and since its newest diagnosis, the first-fail
+rate, rounds per slice, escalated slices, verdicts by model, malformed reports
+and unreceipted greens; --json prints the same fields as one JSON object.
+
+mark records a diagnosis, an escalation or an empty applier result against the
+armed slice, and is refused when no slice is armed.
 
 watch polls this session's in-flight delegations and exits 0 once none is left,
 or 3 naming each one silent for 60 minutes, in flight for 3 hours or ended
@@ -155,6 +166,8 @@ function dispatch(argv: readonly string[]): number {
       return runDenyPattern(sessionId, remaining);
     case "watch":
       return runWatch(sessionId, remaining);
+    case "mark":
+      return runMark(sessionId, remaining);
     case "scan":
       return dispatchScan(remaining);
     case "report":
@@ -187,11 +200,12 @@ function runSet(sessionId: string, pairs: readonly string[]): number {
     const owner = store.foreignGateOwner(stateFile, sessionId);
     if (owner !== undefined && knownKeys.pairsTouchAGateKey(pairs)) throw new store.GatesOwnedElsewhereError(owner);
     const written = new Map(pairs.map(store.splitPair));
-    const receipt = receiptOfGreen(stateFile, "set", store.readValue(stateFile, "active_slice") ?? "none", written);
+    const preWriteSlice = store.readValue(stateFile, "active_slice") ?? "none";
+    const receipt = receiptOfGreen(stateFile, "set", preWriteSlice, written);
     const content = store.writeStatePairs(stateFile, pairs, owner ?? sessionId);
     store.logSet(sessionId, pairs);
     logUnreceiptedGreen(sessionId, receipt);
-    markArming(stateFile, sessionId, written, content);
+    markArming(stateFile, sessionId, newlyArmedSliceOf(preWriteSlice, written), content);
     process.stdout.write(content);
     return 0;
   });
@@ -213,11 +227,23 @@ function logUnreceiptedGreen(sessionId: string, receipt: GreenReceipt): void {
   store.logEvent({ event: VERIFY_GREEN_UNRECEIPTED, session: sessionId, command: receipt.slice });
 }
 
-function markArming(stateFile: string, sessionId: string, written: ReadonlyMap<string, string>, content: string): void {
-  const slice = armedSliceOf(written);
+function markArming(stateFile: string, sessionId: string, slice: string | undefined, content: string): void {
   if (slice === undefined) return;
   const change = store.recordedStateValue(content, "auto_change");
-  appendArmMarker(verdictsFileFor(stateFile), { slice, session: sessionId, change });
+  appendMarker(verdictsFileFor(stateFile), { kind: "arm", slice, session: sessionId, change });
+}
+
+function runMark(sessionId: string, remaining: readonly string[]): number {
+  if (remaining.length !== 1) throw new UsageError();
+  const word = remaining[0] as string;
+  const mark = SLICE_MARKS.find((value) => value === word);
+  if (mark === undefined) throw new RefusedError("mark", `${word} is not one of ${SLICE_MARKS.join(", ")}`);
+  const stateFile = store.stateFileFor(process.cwd());
+  const slice = activeSliceIn(stateFile);
+  if (slice === null) throw new RefusedError(`mark ${mark}`, "no slice is armed");
+  const change = store.recordedStateValue(store.readFileIfPresent(stateFile, "skip") ?? "", "auto_change");
+  appendMarker(verdictsFileFor(stateFile), { kind: mark, slice, session: sessionId, change });
+  return 0;
 }
 
 function runReport(remaining: readonly string[]): number {

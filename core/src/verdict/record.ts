@@ -32,48 +32,49 @@ export type VerdictRecord = Readonly<{
   escalated: boolean;
 }>;
 
-export type ArmMarker = Readonly<{ kind: "arm"; slice: string; session: string; change: string | null; time: string }>;
+export const SLICE_MARKS = ["diagnosed", "escalated", "empty-result"] as const;
 
-export type VerdictLogEntry = VerdictRecord | ArmMarker;
+const MARKER_KINDS = ["arm", ...SLICE_MARKS] as const;
+
+export type Marker = Readonly<{
+  kind: (typeof MARKER_KINDS)[number];
+  slice: string;
+  session: string;
+  change: string | null;
+  time: string;
+}>;
+
+export type VerdictLogEntry = VerdictRecord | Marker;
 
 export type VerdictLog = Readonly<{ entries: readonly VerdictLogEntry[]; skippedLines: number }>;
 
 export type VerdictCapture = Omit<VerdictRecord, "time" | "attempt" | "escalated">;
 
-export type ArmCapture = Omit<ArmMarker, "kind" | "time">;
-
-const FIX_ROUND_CAP = 2;
+export type MarkerCapture = Omit<Marker, "time">;
 
 export function verdictsFileFor(stateFile: string): string {
   return path.join(runsDirectoryOf(stateFile), "verdicts.jsonl");
 }
 
 export function appendVerdict(verdictsFile: string, capture: VerdictCapture): boolean {
-  return appendEntry(verdictsFile, capture.session, () => {
-    const attempt = nextAttemptOf(readVerdicts(verdictsFile).entries, capture.slice);
-    return {
-      time: isoTimestamp(),
-      host: capture.host,
-      session: capture.session,
-      change: capture.change,
-      slice: capture.slice,
-      attempt,
-      role: capture.role,
-      model: capture.model,
-      verdict: capture.verdict,
-      verdict_shape: capture.verdict_shape,
-      escalated: capture.role === VERIFIER_ROLE && attempt > 1 + FIX_ROUND_CAP,
-    };
-  });
+  return appendEntry(verdictsFile, capture.session, () => ({
+    time: isoTimestamp(),
+    host: capture.host,
+    session: capture.session,
+    change: capture.change,
+    slice: capture.slice,
+    attempt: verifierRecordsSinceArm(readVerdicts(verdictsFile).entries, capture.slice).length + 1,
+    role: capture.role,
+    model: capture.model,
+    verdict: capture.verdict,
+    verdict_shape: capture.verdict_shape,
+    escalated: false,
+  }));
 }
 
-export function nextAttemptOf(entries: readonly VerdictLogEntry[], slice: string | null): number {
-  return verifierRecordsSinceArm(entries, slice).length + 1;
-}
-
-export function appendArmMarker(verdictsFile: string, marker: ArmCapture): boolean {
+export function appendMarker(verdictsFile: string, marker: MarkerCapture): boolean {
   return appendEntry(verdictsFile, marker.session, () => ({
-    kind: "arm",
+    kind: marker.kind,
     slice: marker.slice,
     session: marker.session,
     change: marker.change,
@@ -81,9 +82,10 @@ export function appendArmMarker(verdictsFile: string, marker: ArmCapture): boole
   }));
 }
 
-export function armedSliceOf(written: ReadonlyMap<string, string>): string | undefined {
+export function newlyArmedSliceOf(preWriteSlice: string, written: ReadonlyMap<string, string>): string | undefined {
   const slice = written.get("active_slice");
-  return slice !== undefined && slice !== "none" && written.get("verify_green") === "false" ? slice : undefined;
+  if (slice === undefined || slice === "none" || slice === preWriteSlice) return undefined;
+  return written.get("verify_green") === "false" ? slice : undefined;
 }
 
 export function readVerdicts(verdictsFile: string): VerdictLog {
@@ -96,26 +98,33 @@ export function readVerdicts(verdictsFile: string): VerdictLog {
 }
 
 export function verifierRecordsSinceArm(entries: readonly VerdictLogEntry[], slice: string | null): VerdictRecord[] {
-  if (slice === null) return [];
-  const newestArming = armingsOf(entries).newestArmingOfSlice.get(slice) ?? [];
-  return newestArming.filter((record) => record.role === VERIFIER_ROLE);
+  return newestArmingOf(entries, slice).filter(isVerifierRecord);
 }
 
-export function isArmMarker(entry: VerdictLogEntry): entry is ArmMarker {
-  return "kind" in entry;
+export function newestArmingOf(entries: readonly VerdictLogEntry[], slice: string | null): VerdictLogEntry[] {
+  if (slice === null) return [];
+  return armingsOf(entries).newestArmingOfSlice.get(slice) ?? [];
+}
+
+export function isMarkerOf(kind: Marker["kind"], entry: VerdictLogEntry): entry is Marker {
+  return "kind" in entry && entry.kind === kind;
+}
+
+export function isVerifierRecord(entry: VerdictLogEntry): entry is VerdictRecord {
+  return !("kind" in entry) && entry.role === VERIFIER_ROLE;
 }
 
 type Armings = Readonly<{
-  everyArming: VerdictRecord[][];
-  newestArmingOfSlice: ReadonlyMap<string, VerdictRecord[]>;
+  everyArming: VerdictLogEntry[][];
+  newestArmingOfSlice: ReadonlyMap<string, VerdictLogEntry[]>;
 }>;
 
 export function armingsOf(entries: readonly VerdictLogEntry[]): Armings {
-  const everyArming: VerdictRecord[][] = [];
-  const newestArmingOfSlice = new Map<string, VerdictRecord[]>();
+  const everyArming: VerdictLogEntry[][] = [];
+  const newestArmingOfSlice = new Map<string, VerdictLogEntry[]>();
   for (const entry of entries) {
-    if (isArmMarker(entry)) {
-      const arming: VerdictRecord[] = [];
+    if (isMarkerOf("arm", entry)) {
+      const arming: VerdictLogEntry[] = [];
       everyArming.push(arming);
       newestArmingOfSlice.set(entry.slice, arming);
       continue;
@@ -142,14 +151,15 @@ function appendEntry(verdictsFile: string, session: string, entryOf: () => Verdi
 function logEntryOf(line: string): VerdictLogEntry | undefined {
   const parsed = jsonObjectOf(line);
   if (parsed === undefined) return undefined;
-  if (parsed["kind"] === "arm") return armMarkerOf(parsed);
+  if ("kind" in parsed) return markerOf(parsed);
   return verdictRecordOf(parsed);
 }
 
-function armMarkerOf(fields: Record<string, unknown>): ArmMarker | undefined {
+function markerOf(fields: Record<string, unknown>): Marker | undefined {
   const { slice, session, change, time } = fields;
-  if (!isText(slice) || !isText(session) || !isTextOrNull(change) || !isText(time)) return undefined;
-  return { kind: "arm", slice, session, change, time };
+  const kind = MARKER_KINDS.find((value) => value === fields["kind"]);
+  if (kind === undefined || !isText(slice) || !isText(session) || !isTextOrNull(change) || !isText(time)) return undefined;
+  return { kind, slice, session, change, time };
 }
 
 function verdictRecordOf(fields: Record<string, unknown>): VerdictRecord | undefined {
