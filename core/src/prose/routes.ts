@@ -103,7 +103,7 @@ export const SHARED_REFERENCE_HOSTS: readonly SkillHost[] = ["opencode"];
 export const SKILL_STUBS: readonly SkillStub[] = [
   {
     id: "debt-sweep",
-    description: { opencode: "Whole-change judge after functionality is confirmed, on two axes — code debt (dead code, duplication, over-documentation, rubric violations) and ledger conformance (the assembled change against the frozen decisions that shaped it). Reports both with evidence in separate sections — it never edits anything; fixes are applied by a separate applier. Use when a plan-mode change is complete, or when the user asks to sweep a branch or recent work for debt." },
+    description: { opencode: "Whole-change judge after functionality is confirmed, on two axes — code debt (dead code, duplication, over-documentation, rubric violations) and ledger conformance (the assembled change against the frozen decisions that shaped it). Reports both with evidence in separate sections — it never edits anything; fixes are applied by a separate applier. Use when a plan-mode change is complete, or when the operator asks to sweep a branch or recent work for debt." },
     argumentHint: { opencode: "[base ref, e.g. main] [+ frozen ledger: bare decisions + scope] [+ on re-invocation: every prior finding with its bare disposition]" },
     disableModelInvocation: false,
     referenceHosts: ["opencode"],
@@ -117,7 +117,7 @@ export const SKILL_STUBS: readonly SkillStub[] = [
   },
   {
     id: "doubt-pass",
-    description: { opencode: "Fresh-context adversarial reviewer of a decision-ledger candidate. Launched by the plan orchestrator pre-freeze on irreversible-blast-radius triggers (migrations, security, or rollback surfaces); also invocable when the operator asks to stress a decision set. Reads only the intent, surface map, and bare decisions — never the author's rationale — and reports what is wrong, missing, or unconsidered. It judges only — never edits, never saves, never asks back." },
+    description: { opencode: "Fresh-context adversarial judge of a decision-ledger candidate. Launched by the plan orchestrator pre-freeze on irreversible-blast-radius triggers (migrations, security, or rollback surfaces); also invocable when the operator asks to stress a decision set. Reads only the intent, surface map, and bare decisions — never the author's rationale — and reports what is wrong, missing, or unconsidered. It judges only — never edits, never saves, never asks back." },
     argumentHint: { opencode: "[intent + surface map + bare decisions]" },
     disableModelInvocation: false,
     referenceHosts: [],
@@ -131,7 +131,7 @@ export const SKILL_STUBS: readonly SkillStub[] = [
   },
   {
     id: "quality-pass",
-    description: { opencode: "Readability-only cleanup of touched code after functionality is confirmed. Verifies against the clean-code checklist, fixes what fails, and re-verifies — never changes behavior. Use when a change is functionally done, when the user asks for cleanup or a quality pass, or as the closing step of quick and debug modes." },
+    description: { opencode: "Readability-only cleanup of touched code after functionality is confirmed. Verifies against the clean-code checklist, fixes what fails, and re-verifies — never changes behavior. Use when a change is functionally done, when the operator asks for cleanup or a quality pass, or as the closing step of quick and debug modes." },
     argumentHint: null,
     disableModelInvocation: false,
     referenceHosts: ["opencode"],
@@ -152,7 +152,7 @@ export const SKILL_STUBS: readonly SkillStub[] = [
   },
   {
     id: "security-pass",
-    description: { opencode: "Fresh-context security reviewer of a change that has not shipped yet. Launched by the plan, quick, and debug orchestrators on operator acceptance before a commit, a push, or a PR, when the change touched auth, payments, or data-model surfaces. Runs the host's review path inside its dedicated agent over the invocation's selected scope. It judges only — never edits, never commits, never asks back." },
+    description: { opencode: "Fresh-context security judge of a change that has not shipped yet. Launched by the plan, quick, and debug orchestrators on operator acceptance before a commit, a push, or a PR, when the change touched auth, payments, or data-model surfaces. Runs the host's review path inside its dedicated agent over the invocation's selected scope. It judges only — never edits, never commits, never asks back." },
     argumentHint: { opencode: "[optional base ref for a branch range, e.g. main]" },
     disableModelInvocation: false,
     referenceHosts: ["opencode"],

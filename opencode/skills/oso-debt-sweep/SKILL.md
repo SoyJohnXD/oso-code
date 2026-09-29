@@ -1,6 +1,6 @@
 ---
 name: oso-debt-sweep
-description: "Whole-change judge after functionality is confirmed, on two axes — code debt (dead code, duplication, over-documentation, rubric violations) and ledger conformance (the assembled change against the frozen decisions that shaped it). Reports both with evidence in separate sections — it never edits anything; fixes are applied by a separate applier. Use when a plan-mode change is complete, or when the user asks to sweep a branch or recent work for debt."
+description: "Whole-change judge after functionality is confirmed, on two axes — code debt (dead code, duplication, over-documentation, rubric violations) and ledger conformance (the assembled change against the frozen decisions that shaped it). Reports both with evidence in separate sections — it never edits anything; fixes are applied by a separate applier. Use when a plan-mode change is complete, or when the operator asks to sweep a branch or recent work for debt."
 argument-hint: "[base ref, e.g. main] [+ frozen ledger: bare decisions + scope] [+ on re-invocation: every prior finding with its bare disposition]"
 ---
 
@@ -8,12 +8,17 @@ argument-hint: "[base ref, e.g. main] [+ frozen ledger: bare decisions + scope] 
 
 The flow that follows this preface is the same on every host this harness runs on. It opens by pointing you at `references/opencode.md` — what it leaves to this host: the paths it resolves, and the route to the fallow tools.
 
-This judge runs with FRESH EYES as the `oso-debt-sweep` agent, in a context that never wrote the code it grades. The caller passes this wrapper's absolute path as `SKILL PATH` and the base ref plus frozen ledger as `ARGUMENTS`, adding on a re-invocation every prior finding with its bare disposition; the reviewer reads this file and its reference-file binding for itself.
+This judge runs with FRESH EYES as the `oso-debt-sweep` agent, in a context that never wrote the code it grades. The caller passes this wrapper's absolute path as `SKILL PATH` and the base ref plus frozen ledger as `ARGUMENTS`, adding on a re-invocation every prior finding with its bare disposition; the judge reads this file and its reference-file binding for itself.
 
 
 # Debt sweep
 
-Final quality judge over a whole change. Functionality is already confirmed — you judge with fresh eyes on two independent axes: **code debt** (dead code, duplication, over-documentation, rubric violations) and **ledger conformance** (the assembled change against the frozen decisions that shaped it). The two are reported in separate sections so neither masks the other. Read your platform's own reference file beside this one (`references/<host>.md`) now — it is what this flow leaves to the host: the paths it interpolates, and the route to the fallow tools. Wherever this flow says "your host", that file is the answer. You JUDGE ONLY: you never edit a file, never fix a finding, never format anything. A separate applier fixes what you report, and you (in a fresh run) confirm the fixes.
+Final quality judge over a whole change. Functionality is already confirmed — you judge with fresh eyes on two independent axes: **code debt** (dead code, duplication, over-documentation, rubric violations) and **ledger conformance** (the assembled change against the frozen decisions that shaped it). The two are reported in separate sections so neither masks the other. You JUDGE ONLY: you never edit a file, never fix a finding, never format anything. A separate applier fixes what you report, and you (in a fresh run) confirm the fixes.
+
+## Files this flow reads
+
+- `references/<host>.md` beside this file — read ALWAYS by this flow, now: the paths it interpolates and your host's route to deferred tools. "Your host" below means this file.
+- `_shared/rubric.md` — read ALWAYS by this flow: §1 step 1 applies all of it.
 
 ## Scope
 
@@ -28,17 +33,17 @@ Only these files are in scope. Never touch anything else.
 
 Scope narrows which files you may read; this narrows what you may RAISE. A confirming re-invocation — the caller's loop running you again over the same change — carries one more input beside whatever else that caller sends, the base ref and the ledger included where its flow has them: every finding the earlier rounds raised, each tagged with the disposition it took, one of `fixed`, `operator-dismissed` or `accepted-residual`.
 
-A tagged finding is SETTLED, and you never raise it again. Name it as settled instead — in the section it belonged to, with its tag — and spend the round on the rest of the change. Settled findings are named, never counted: §3's verdict reads the findings THIS round raises. Raising one again is not thoroughness: a dismissal you overturn is a decision the operator already made, taken back from them without their knowing, and a settled finding returning under a new number is the loop's exit receding by one more round.
+A tagged finding is SETTLED, and you never raise it again. Name it as settled instead — in the section it belonged to, with its tag — and spend the round on the rest of the change. Settled findings are named, never counted: §3's verdict reads the findings THIS round raises. Raising one again overturns a decision the operator already made.
 
 What a tag does not buy is immunity for the code around it. `fixed` says the edit landed, never that it landed well — the applier's own edit is change surface like any other, so a defect IN it is yours to report, as a NEW finding at its own file:line with its own readability win, never as the old one reopened.
 
-The tags arrive BARE, which is the anti-anchoring discipline §2 states for the ledger, applied to the same loop: you are told what each finding became and never why — not the applier's reasoning, not the operator's, not the argument that dismissed it. A judge who reads the case for a dismissal stops judging the code and starts reviewing the case.
+The tags arrive BARE, which is the anti-anchoring discipline §2 states for the ledger, applied to the same loop: you are told what each finding became and never why — not the applier's reasoning, not the operator's, not the argument that dismissed it.
 
 Nothing handed to you means nothing is settled. A first invocation carries no such list, and that absence is never a gap to fill: never reconstruct one from the diff, from commit messages, or from what a fix looks like it was answering.
 
 ## 1. Verify
 
-1. Read the full rubric at `_shared/rubric.md` — all five sections apply here: the **Judgment contract** governs every finding, **Hard blockers** and **File level** per changed file, **System level** and **Debt markers** across the whole change.
+1. Read the full rubric — all five sections apply here: the **Judgment contract** governs every finding, **Hard blockers** and **File level** per changed file, **System level** and **Debt markers** across the whole change.
 2. If the project is TypeScript/JavaScript, reach the fallow tools (`find_dupes`, `get_cleanup_candidates`, `audit`) by your host's route to deferred tools and run them on the changed files. If fallow is unavailable or the stack does not apply, state that the sweep is rubric-only and continue.
    A skip is only a skip with evidence behind it:
 

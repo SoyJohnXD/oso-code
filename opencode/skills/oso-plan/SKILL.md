@@ -19,7 +19,7 @@ The flow that follows this preface is the same on every host this harness runs o
 
 # Plan mode
 
-The human decides; you guide, present options with tradeoffs, and never assume.
+The operator decides; you guide, present options with tradeoffs, and never assume.
 
 ## Files this flow reads
 
@@ -37,7 +37,7 @@ The human decides; you guide, present options with tradeoffs, and never assume.
 - Phases 1–5 run inside the host's read-only planning mode where it has one, entered before phase 1 and kept through §5's delivered approval document — nothing before §6 writes code. Whether a ROADMAP child enters it is the reference file's call.
 - Question rounds: 2–4 options with tradeoffs, your recommendation first with why, and whether it is current standard practice — verify a library, framework, or well-trodden pattern against context7 before recommending. Round size and the asking tool are the reference file's.
 - Operator-facing content — the intent, the surface map, any narrative the operator must read — follows the reference file's delivery contract.
-- If phase 1 shows the change is small, offer QUICK; if a bug, offer DEBUG — the user decides.
+- If phase 1 shows the change is small, offer QUICK; if a bug, offer DEBUG — the operator decides.
 - `mem_search` returns 300-char previews — always call `mem_get_observation(id)` for full content. Engram content and titles are written in English; Oso narrates them in Spanish on request.
 - The commit gate refuses `git commit` while `verify_green` is false; the edits gate refuses a file edit while `mode=plan` and no slice is active. Keep the triple (`mode`, `active_slice`, `verify_green`) honest with `oso-state` — a slice CLOSES by writing `active_slice=none`. Every `set` echoes the state it left: a non-zero exit, or an echo missing the values you wrote, means STOP and report.
 - Abandoning this flow mid-run: run `oso-state close` (§7 step 9); `clear` stays the operator's hard reset.
@@ -59,7 +59,7 @@ Save once: `mem_save(title: "oso/preferences — this project's operator record"
 
 ## 1. Intent
 
-Understand WHAT the user wants, one level above code — no stack talk, no file names, no how. Produce and show, at the operator's explanation-depth preference (`_shared/didactic.md` for the didactic register):
+Understand WHAT the operator wants, one level above code — no stack talk, no file names, no how. Produce and show, at the operator's explanation-depth preference (`_shared/didactic.md` for the didactic register):
 
 - **Intent** — two or three sentences.
 - **In-scope / Out-of-scope** — explicit lists.
@@ -67,7 +67,7 @@ Understand WHAT the user wants, one level above code — no stack talk, no file 
 
 **Teaching moment**, before iterating: fires when the ask contradicts standard practice, the operator can't say what their ask involves, or can't answer a decision question. When it fires, explain in 2–6 sentences the terrain, the standard-path recommendation and the why; the guard is per-topic, not per-operator. By preference: **always** adds a teaching note every round, saying nothing rather than filler; **auto-detect** fires on the triggers above; **off** stays silent.
 
-Iterate until the user approves the intent. Do not advance without approval.
+Iterate until the operator approves the intent. Do not advance without approval.
 
 ## 2. Surface mapping
 
@@ -94,7 +94,7 @@ Run rounds until every core lens and derived category is decided or marked N/A w
 |---|---|
 | Contracts | APIs, signatures, events, exchange schemas |
 | Architecture | Where logic lives, dependency direction, patterns to follow or establish |
-| Errors | Expected failures, empty/invalid states, what the user sees when things break |
+| Errors | Expected failures, empty/invalid states, what the operator sees when things break |
 | Verification | What proves each part works, and this project's zero-warnings bar |
 | Reuse | Existing code and primitives the change must use instead of recreating |
 
@@ -110,9 +110,9 @@ Derived categories (§2 step 3) — Data, UX behavior, Security among others —
 Rules:
 
 - Enumerable choices get options with tradeoffs, never open-ended questions.
-- Record every decision, its rationale, and the alternatives rejected, in the ledger; a decision the user delegates ("you pick") is recorded as delegated.
-- Before freeze, every ledger entry cites the in-scope item or Visible-outcome element it serves; an entry serving only a future need is a YAGNI candidate for the user to cut or keep.
-- Freeze is a reconciliation gate. Before accepting "frozen", render the battery as a checklist — every question mapped to a decision, a delegated mark, or a reasoned N/A. State any still-open item as an explicit assumption ("If you freeze now, I will assume X → I'd pick Y because Z"); the user answers it or freezes over it, recorded as delegated.
+- Record every decision, its rationale, and the alternatives rejected, in the ledger; a decision the operator delegates ("you pick") is recorded as delegated.
+- Before freeze, every ledger entry cites the in-scope item or Visible-outcome element it serves; an entry serving only a future need is a YAGNI candidate for the operator to cut or keep.
+- Freeze is a reconciliation gate. Before accepting "frozen", render the battery as a checklist — every question mapped to a decision, a delegated mark, or a reasoned N/A. State any still-open item as an explicit assumption ("If you freeze now, I will assume X → I'd pick Y because Z"); the operator answers it or freezes over it, recorded as delegated.
 - **Doubt pass** — offered and recommended when a derived category came from a migrations, security, or rollback surface; on decline, record `Doubt pass: N/A — no migration, security, or rollback surface` in §5. On acceptance, invoke the doubt-pass judge with ONLY the intent, surface map, and bare decisions — never the rationale. `Doubt Pass: clean` lets freeze proceed; `Doubt Pass: findings` go to the operator like §6 blocked questions, less those the recorded rationale already answers; `Doubt Pass: blocked` — resolve what it names missing and invoke it again fresh. Re-run only after major ledger changes, hard cap 3 cycles; 2+ cycles with zero findings is doubt theater — name it and stop.
 
 On freeze, save the ledger once: `mem_save(title: "oso/{change}/ledger — {human description}", topic_key: "oso/{change}/ledger", type: "architecture", capture_prompt: false, content: intent + surface map + scope + every ledger entry)`.
@@ -182,16 +182,16 @@ For the active slice:
 1. **Activate** — `oso-state set mode=plan active_slice=<n> verify_green=false`, and read the echo for `active_slice=<n>` before the slice's work starts.
 2. **Apply** — over the threshold, launch the `oso-applier` agent with the slice (goal, files, verify criteria), the DECISION BLOCK, the project conventions, the rubric path (`_shared/rubric.md`), and the two coordinates that place the work — the WORKTREE PATH (the main checkout under SEQUENTIAL) and SLICE START. The applier runs on the model the profile names for its role, named in the Launching milestone. The DECISION BLOCK is every ledger decision relevant to this slice, copied from the ledger record BY ID — verbatim and whole, never paraphrased and never quoted in part. The slice's Verify line travels as §4 wrote it: its failing check is what `red:` and `green:` exercise, and a `Verify-exception` there is what `red: exception — <its reason>` carries instead.
    - A front-surface slice adds the payload and pin resolution `_shared/front-surface.md`'s PLAN wiring names, read when the change touches a front surface.
-   - On `blocked`: resolve each question with the user as a question round, record the answers in the ledger, derive any new surface or category the answers reveal and append it with its own questions, then the threshold completes the slice — inline under it, else a FRESH applier — on the updated ledger, never answering for the user. Under a ROADMAP the policy answers in their place.
+   - On `blocked`: resolve each question with the operator as a question round, record the answers in the ledger, derive any new surface or category the answers reveal and append it with its own questions, then the threshold completes the slice — inline under it, else a FRESH applier — on the updated ledger, never answering for the operator. Under a ROADMAP the policy answers in their place.
 3. **Verify (subagent)** — launch the `oso-verifier` agent with the slice criteria, the zero-warnings commands from the ledger, the rubric path, step 2's DECISION BLOCK unchanged, `applier_proof`, and the same two coordinates, diffing `HEAD` since step 2 — this slice's own pending work alone. The verifier runs on the model the profile names for its role, named in the Launching milestone. Every slice goes to a FRESH verifier, whoever wrote it. `applier_proof` carries exactly the author's `proof:`, `scan:`, and `decisions_used:` blocks, verbatim — never its narrative or other report fields.
    - On `fail`: apply the findings by the threshold above — inline under it, else relaunch the `oso-applier` agent on the same slice assignment. Carry the verifier's findings VERBATIM, every one with its `file:line` and evidence. A refuted claim among the verdict's `claims:` lines is one of those findings and rides the same fix. Loop apply → verify until it passes; every re-verification is a FRESH verifier. A finding grounded in one of §2 step 6's four rules is never yours to overrule: FIX it, or ESCALATE it to the operator with options and tradeoffs. No payload you build may instruct a judge away from one of those rules; §3's doubt-pass reconciliation and §7 step 3's bare dispositions stand outside this. Under a ROADMAP, ESCALATE sets the change aside.
-   - On `blocked` (broken environment, missing commands): resolve the blocker with the user, then relaunch the verifier — never the applier for a verifier-side blocker.
+   - On `blocked` (broken environment, missing commands): resolve the blocker with the operator, then relaunch the verifier — never the applier for a verifier-side blocker.
 4. Only on the verifier's `pass`: `oso-state set mode=plan active_slice=none verify_green=true`, then COMMIT the slice (`git -C <main checkout> add -A` and `commit`, conventional-commit message, no AI attribution or `Co-Authored-By` trailer) — never a push — mark it `[x]` (`mem_update`), report the result, and move to the next slice.
    - Only the ledger's Verification row turning per-slice commits off, or a base ref of `none`, skips this commit.
 
 Never run two slices at once. Never start slice N+1 while slice N is red.
 
-## 7. Close — when the user says they are happy
+## 7. Close — when the operator says they are happy
 
 Under a ROADMAP nobody is there to say it, so its machine entry condition stands in. Under AUTO the close owes the operator one final report, sequenced with its disarm per `_shared/unattended.md`, read only once AUTO arms.
 

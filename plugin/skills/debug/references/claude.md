@@ -33,7 +33,7 @@ The two delegates the body names — `oso-applier`, `oso-verifier` — are agent
 
 ## Delegation-wait binding
 
-READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Making a launch wait** section NOW. It is the single Claude Code binding for how a delegation's report arrives on this host and for the watchdog an unattended run starts while one is in flight. Here that rule reaches §4's applier and verifier, and §5's debt-cleanup applier. Its **The model a launch carries** section binds the `model` parameter each of those launches passes, and is read in the same breath.
+`${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Making a launch wait** section is the single Claude Code binding for how a delegation's report arrives on this host and for the watchdog an unattended run starts while one is in flight. Here that rule reaches §4's applier and verifier, and §5's debt-cleanup applier. Its **The model a launch carries** section binds the `model` parameter each of those launches passes.
 
 ## Front-surface binding
 
@@ -41,4 +41,4 @@ When `${CLAUDE_SKILL_DIR}/../_shared/front-surface.md`'s trigger fires, READ `${
 
 ## Reporting binding
 
-READ `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md` NOW. Its **The native card is not the report** and **The unattended run** sections are the single Claude Code binding for what this host's own UI shows, and does not show, when the milestone contract at `${CLAUDE_SKILL_DIR}/../_shared/reporting.md` fires.
+`${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **The native card is not the report** and **The unattended run** sections are the single Claude Code binding for what this host's own UI shows, and does not show, when the milestone contract at `${CLAUDE_SKILL_DIR}/../_shared/reporting.md` fires.

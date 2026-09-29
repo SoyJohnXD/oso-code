@@ -7,15 +7,23 @@ disable-model-invocation: true
 
 # Roadmap mode
 
-Guided flow for a QUEUE of changes, decided once and run to the end without a second sitting. The operator decides the queue and the decisions that shape it up front; the flow then carries each child as far as those decisions carry it — to its close, or to the SET ASIDE §3 describes when one they never answered surfaces. Read your platform's own reference file beside this one (`references/<host>.md`) now — it is what this flow leaves to the host: how far the chain runs unattended, the approval gate, the paths it interpolates, the state command. Wherever this flow says "your host", that file is the answer.
+Guided flow for a QUEUE of changes, decided once and run to the end without a second sitting. The operator decides the queue and the decisions that shape it up front; the flow then carries each child as far as those decisions carry it — to its close, or to the SET ASIDE §3 describes when one they never answered surfaces.
+
+## Files this flow reads
+
+- `references/<host>.md` beside this file — read ALWAYS by this flow, now: what it leaves to the host (how far the chain runs unattended, the approval gate, the paths it interpolates). "Your host" below means this file.
+- `_shared/references/<host>.md` — read ALWAYS by this flow: **Making a launch wait**, **The model a launch carries**, **The native card is not the report** and **The unattended run**.
+- `_shared/reporting.md` — read ALWAYS by this flow: the milestone contract every arm, launch, verdict and child close reports under.
+- `_shared/unattended.md` — read ALWAYS by this flow: every child runs unattended under its rules.
+- `plan/references/<host>.md` — read ALWAYS by this flow, before §4 arms its first child: its **The state command**, **The worktree root** and **What the unattended marker arms on this host** sections.
 
 ## Ground rules for the whole flow
 
-- Every child is a PLAN-mode change — a sequence of substantial changes decided together, never a list of small fixes with a queue drawn around them. An ask that belongs in QUICK or DEBUG belongs there whether or not it arrived beside four others.
+- Every child is a PLAN-mode change — a sequence of substantial changes decided together, never a list of small fixes. An ask that belongs in QUICK or DEBUG belongs there whether or not it arrived beside four others.
 - The exchange with the operator is §1 through §3; everything after runs on what that exchange recorded, without coming back to ask again — the whole trade this mode offers.
 - ONE approval covers the whole roadmap — the planning behind it and the execution of every child in it. Where a host's own rail needs more than that one, the reference file states where the chain stops and what releases it.
 - Operator-facing content — the queue as it is planned, the approval document, the presence phase — is delivered under the reference file's delivery contract.
-- Report every arm, every delegation launched, every verdict, every child closed under the milestone contract at `_shared/reporting.md`, read ALWAYS by this flow. An unattended run is the case that contract was written for: nobody is in the exchange, so what the flow says as it goes is the whole of what the operator gets. Which moments may INTERRUPT them, rather than merely reaching the stream they read on return, is §5's to fix, and it names three; a child closing is deliberately not one of them.
+- Report every arm, every delegation launched, every verdict, every child closed under the milestone contract at `_shared/reporting.md`. Nobody is in the exchange, so what the flow says as it goes is the whole of what the operator gets. Which moments may INTERRUPT them, rather than merely reaching the stream they read on return, is §5's to fix, and it names three; a child closing is deliberately not one of them.
 
 ## 1. The queue — planned with the operator
 
@@ -41,7 +49,7 @@ What a global entry then does to a child's own planning has three parts and no f
 
 - `oso/{roadmap}/ledger` — the queue in order with each child's three fields, the global ledger entry by entry with each entry's scope, and each child's own decisions. Saved once at this phase's exit — `mem_save(title: "oso/{roadmap}/ledger — {human description}", topic_key: "oso/{roadmap}/ledger", type: "architecture", capture_prompt: false, content: the queue + the global entries + each child's decisions)`, content and title in English — and every later touch is a `mem_update` that merges, never overwrites. §2's policy joins it at that same key.
 - `oso/index` — one row for the roadmap, status `roadmap`, written at §3 when the approval makes the roadmap real. It lists every child in run order by the LITERAL topic key that child's own flow writes (`oso/{child}/plan`), never a wiki-link. A child the chain has not reached carries no such observation yet, and the ledger topic above is that child's record until its own flow writes one. The `NEXT:` line is where the roadmap's position lives.
-- Each child keeps its normal per-change topics — `oso/{child}/ledger`, `oso/{child}/plan`, `oso/{child}/summary` — plus its own index row, all written by its own flow. The parent adds a row and replaces none of theirs: `roadmap` marks a row as a parent rather than reporting progress, so how far the roadmap has got reads off the children's rows and that `NEXT:` line.
+- Each child keeps its normal per-change topics — `oso/{child}/ledger`, `oso/{child}/plan`, `oso/{child}/summary` — plus its own index row, all written by its own flow. The parent adds a row and replaces none of theirs.
 
 Exit: every child carries its three fields, every global entry carries its scope, every child carries its own decisions or an explicit none, and the ledger observation is saved. Nothing is approved yet — §2 declares the policy over this queue, and §3 is the one gate.
 
@@ -49,13 +57,13 @@ Exit: every child carries its three fields, every global entry carries its scope
 
 A decision will surface after the operator has gone; an unattended chain guarantees it rather than risking it. The policy answers such a decision, and it is DECLARED here, before the approval, so the answer is one the operator agreed to rather than one the flow improvised on their behalf.
 
-It has two outcomes and no third. A decision the policy resolves is taken and RECORDED AS DELEGATED, naming the policy that decided it. A decision that structurally needs the human is QUEUED for §5 and the chain moves on — queuing never blocks it, and nothing queued is answered by guessing.
+It has two outcomes and no third. A decision the policy resolves is taken and RECORDED AS DELEGATED, naming the policy that decided it. A decision that structurally needs the operator is QUEUED for §5 and the chain moves on — queuing never blocks it, and nothing queued is answered by guessing.
 
 **The policy answers the residue, never the record.** §1's decisions answer first — a per-child decision, then a global entry a child records as INHERITED — and the ladder below is reached only where neither does. A RECONCILIATION (§1's third part) is never a tier's to take: an inherited entry a child's own evidence contradicts is two answers, not a missing one, and it is queued like everything else this policy will not decide.
 
 **Three tiers, and a tier is reached only when the one above it has nothing to say.**
 
-- **The flow's own recommendation, first.** Put the way any decision round already must — options with their tradeoffs, the recommendation FIRST with why it wins and whether it is current standard practice, current docs checked before anything that turns on an external library or API is recommended. This tier invents nothing; running unattended changed only who was there to read what those rounds produce anyway. A recommendation you could not justify in those same terms, on the evidence in front of you, is not one — the tier is silent rather than dressing a coin toss as a recommendation.
+- **The flow's own recommendation, first.** Put the way any decision round already must — options with their tradeoffs, the recommendation FIRST with why it wins and whether it is current standard practice, current docs checked before anything that turns on an external library or API is recommended. A recommendation you could not justify in those terms, on the evidence in front of you, is not one — the tier is silent.
 - **Current standard practice, next.** Where the tradeoffs do not separate the options, what current practice standardly does in that case decides — checked against a current source (the harness's own docs route for a library, framework or API, official documentation otherwise) and CITED in the delegated record below. Where no source is reachable at all, the argument is written out instead, marked UNSOURCED.
 - **Simplest for the operator, last.** Where practice standardizes nothing here, or standardizes two things equally, the option that costs the operator least to live with wins: fewest moving parts, least to learn, least to keep working. Simplest to IMPLEMENT is a different question this tier never answers.
 
@@ -83,14 +91,14 @@ Exit: the three tiers, the bar and the never-solo list are declared, and the pol
 
 **What that one approval authorizes:**
 
-- **Planning every child that arrived with an intent alone** — unattended, through the PLAN mode's own phases, on the intent §1 settled and against the global ledger §1 froze. That mode's freeze needs no exception carved for this one: its reconciliation checklist asks every question to map to a ledger decision, a delegated mark or a reasoned N/A. Both answers this mode supplies are already one of those — an inherited entry is a ledger decision recorded as inherited, and a decision §2's policy took is the delegated mark that phase already writes. §2's other outcome supplies no answer to map, so that checklist refuses the freeze over it exactly as it would with the operator in the room; the last bullet below is where that refusal lands.
+- **Planning every child that arrived with an intent alone** — unattended, through the PLAN mode's own phases, on the intent §1 settled and against the global ledger §1 froze. That mode's freeze needs no exception: its reconciliation checklist maps every question to a ledger decision, a delegated mark or a reasoned N/A, and both answers this mode supplies are already one of those — an inherited entry is a ledger decision recorded as inherited, and a decision §2's policy took is the delegated mark. §2's other outcome supplies no answer to map, so that checklist refuses the freeze over it exactly as it would with the operator in the room; the last bullet below is where that refusal lands.
 - **Executing every child** — the ones planned under this approval and the ones that arrived carrying a plan of their own already approved, in the order §1 recorded.
 - **Deciding exactly what §2's policy resolves**, recorded as delegated and naming the policy that decided it.
 
 **What it does not:**
 
 - **A child, or an intent, this document does not carry.** A queue that changes materially after presentation — a child added, an intent redrawn, a global entry reopened — invalidates the approval: re-present the whole document and pass the gate again, the rule the PLAN mode's §5 states about its own plan.
-- **A child's own plan document.** Every child planned here still builds and delivers the Repaso-headed plan document the PLAN mode's §5 produces — it is what the operator reads to see what this approval actually bought. Where a host's rail stops at each child, that document is what the rail waits behind; the reference file states where it stops and what releases it. This approval covers that document's approval where the host asks for none; it never replaces the document. A child the last bullet below sets aside while it was still being planned is the one exception, and it is no gap: nothing was frozen there, so there is nothing to present and nothing to execute.
+- **A child's own plan document.** Every child planned here still builds and delivers the Repaso-headed plan document the PLAN mode's §5 produces — it is what the operator reads to see what this approval bought. Where a host's rail stops at each child, that document is what the rail waits behind; the reference file states where it stops and what releases it. This approval covers that document's approval where the host asks for none; it never replaces the document. A child set aside while still being planned is the one exception: nothing was frozen there, so there is nothing to present.
 - **A decision §2's policy cannot resolve.** That one is queued for §5 and the chain moves on. An approval already given is no licence to answer it, so what a queued decision costs is paid by the CHILD it surfaced in, never by the chain, which arms the next one either way:
   - **Queued while a child is still being PLANNED**, it stops that child where it stood: the checklist above refuses the freeze, this approval authorizes no way around that refusal, and the child is SET ASIDE — carried no further, never executed — while the chain arms the one behind it.
   - **Queued while a child is EXECUTING, over something its progress does not wait on**, it costs that child nothing. The PLAN mode's own execution-time decisions of that shape are OFFERS — stopping the line for breakage the slice did not cause, the exit back to sequential, the security review at the close — and an offer nobody is there to take is an offer not taken, which that mode's own route for a declined offer already covers. The child runs on to its close, no frozen decision of its ledger is reopened, and the item travels to §5.

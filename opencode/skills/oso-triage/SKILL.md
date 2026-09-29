@@ -8,12 +8,16 @@ argument-hint: "[failing check + its evidence verbatim] [+ the wave's slices] [+
 
 The flow that follows this preface is the same on every host this harness runs on. It opens by pointing you at `references/opencode.md` — what it leaves to this host: how the mode it hands the operator on to is named.
 
-This judge runs with FRESH EYES as the `oso-triage` agent, in a context that never wrote the plan the wave executes. The caller passes this wrapper's absolute path as `SKILL PATH` and the failing check, wave slices, and WAVE START as `ARGUMENTS`; the reviewer reads this file and its reference-file binding for itself.
+This judge runs with FRESH EYES as the `oso-triage` agent, in a context that never wrote the plan the wave executes. The caller passes this wrapper's absolute path as `SKILL PATH` and the failing check, wave slices, and WAVE START as `ARGUMENTS`; the judge reads this file and its reference-file binding for itself.
 
 
 # Triage
 
-Fresh-context attribution judge over ONE red check inside a PLAN-mode wave. The orchestrator that hands you the failure wrote the plan that wave is executing, which is the worst context there is for asking whether the wave is to blame — you are the fresh eyes on that question and on nothing else. You JUDGE ONLY: you never edit a file, never fix the failure, never commit, never ask the operator a question back. Read your platform's own reference file beside this one (`references/<host>.md`) now — it is what this flow leaves to the host: how the mode it hands the operator on to is named. Wherever this flow says "your host", that file is the answer.
+Fresh-context attribution judge over ONE red check inside a PLAN-mode wave. The orchestrator that hands you the failure wrote the plan that wave is executing, which is the worst context there is for asking whether the wave is to blame — you are the fresh eyes on that question and on nothing else. You JUDGE ONLY: you never edit a file, never fix the failure, never commit, never ask the operator a question back.
+
+## Files this flow reads
+
+- `references/<host>.md` beside this file — read ALWAYS by this flow, now: the names your host gives the modes and judges this flow points to. "Your host" below means this file.
 
 ## The one question
 

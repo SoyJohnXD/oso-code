@@ -7,7 +7,7 @@
       "anchors": [
         { "file": "plugin/skills/plan/SKILL.md", "pattern": "## 1\\. Intent" },
         { "file": "plugin/skills/plan/SKILL.md", "pattern": "In-scope / Out-of-scope" },
-        { "file": "plugin/skills/plan/SKILL.md", "pattern": "Iterate until the user approves the intent" }
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "Iterate until the operator approves the intent" }
       ]
     },
     {

@@ -1,11 +1,16 @@
 ---
 name: quality-pass
-description: Readability-only cleanup of touched code after functionality is confirmed. Verifies against the clean-code checklist, fixes what fails, and re-verifies — never changes behavior. Use when a change is functionally done, when the user asks for cleanup or a quality pass, or as the closing step of quick and debug modes.
+description: Readability-only cleanup of touched code after functionality is confirmed. Verifies against the clean-code checklist, fixes what fails, and re-verifies — never changes behavior. Use when a change is functionally done, when the operator asks for cleanup or a quality pass, or as the closing step of quick and debug modes.
 ---
 
 # Quality pass
 
-Align finished, working code with the team's quality bar. Scope: code touched in this session only — never untouched files. Read your platform's own reference file beside this one (`references/<host>.md`) now — it is what this flow leaves to the host: the paths it interpolates. Wherever this flow says "your host", that file is the answer.
+Align finished, working code with the team's quality bar. Scope: code touched in this session only — never untouched files.
+
+## Files this flow reads
+
+- `references/<host>.md` beside this file — read ALWAYS by this flow, now: the paths it interpolates. "Your host" below means this file.
+- `_shared/rubric.md` — read ALWAYS by this flow: §1 checks every touched file against it.
 
 ## Contract
 
@@ -14,7 +19,7 @@ Align finished, working code with the team's quality bar. Scope: code touched in
 
 ## 1. Verify
 
-Read the shared rubric at `_shared/rubric.md` and check every touched file against its **Hard blockers**, **File level**, **System level**, and **Debt markers** sections. System level applies whenever the session touched more than one file or the change interacts with existing helpers or patterns. The **Judgment contract** governs how all of them are applied.
+Check every touched file against the rubric's **Hard blockers**, **File level**, **System level**, and **Debt markers** sections. System level applies whenever the session touched more than one file or the change interacts with existing helpers or patterns. The **Judgment contract** governs how all of them are applied.
 
 Then run the project's own bar: the checks the diagnosis froze when in debug mode — its zero-warnings commands, plus the two resolved Impeccable numerals it recorded on a front-surface fix — or discovered from the project otherwise — lint, types, affected tests, build, or whatever the project defines. Zero warnings.
 
