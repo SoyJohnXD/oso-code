@@ -89,12 +89,10 @@ export function readVerdicts(verdictsFile: string): VerdictLog {
   return { entries, skippedLines: lines.length - entries.length };
 }
 
-export function recordsSinceArm(entries: readonly VerdictLogEntry[]): VerdictRecord[] {
-  return [...armingsOf(entries).newestArmingOfSlice.values()].flat();
-}
-
 export function verifierRecordsSinceArm(entries: readonly VerdictLogEntry[], slice: string | null): VerdictRecord[] {
-  return recordsSinceArm(entries).filter((record) => record.slice === slice && record.role === VERIFIER_ROLE);
+  if (slice === null) return [];
+  const newestArming = armingsOf(entries).newestArmingOfSlice.get(slice) ?? [];
+  return newestArming.filter((record) => record.role === VERIFIER_ROLE);
 }
 
 export function isArmMarker(entry: VerdictLogEntry): entry is ArmMarker {

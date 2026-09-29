@@ -9,8 +9,8 @@ import {
   appendVerdict,
   armedSliceOf,
   readVerdicts,
-  recordsSinceArm,
   type VerdictCapture,
+  verifierRecordsSinceArm,
 } from "../../src/verdict/record.ts";
 
 const CAPTURE: VerdictCapture = {
@@ -61,7 +61,8 @@ describe("the verdict record writer", () => {
       [{ slice: null, attempt: 1 }],
     );
     assert.equal(log.skippedLines, 0);
-    assert.deepEqual(recordsSinceArm(log.entries), []);
+    assert.deepEqual(verifierRecordsSinceArm(log.entries, null), []);
+    assert.deepEqual(verifierRecordsSinceArm(log.entries, "2"), []);
   });
 
   test("each record is one JSON line in the ledger's field order, in an owner-only file", () => {

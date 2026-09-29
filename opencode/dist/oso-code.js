@@ -1665,11 +1665,10 @@ function readVerdicts(verdictsFile) {
   });
   return { entries, skippedLines: lines.length - entries.length };
 }
-function recordsSinceArm(entries) {
-  return [...armingsOf(entries).newestArmingOfSlice.values()].flat();
-}
 function verifierRecordsSinceArm(entries, slice) {
-  return recordsSinceArm(entries).filter((record) => record.slice === slice && record.role === VERIFIER_ROLE);
+  if (slice === null) return [];
+  const newestArming = armingsOf(entries).newestArmingOfSlice.get(slice) ?? [];
+  return newestArming.filter((record) => record.role === VERIFIER_ROLE);
 }
 function isArmMarker(entry) {
   return "kind" in entry;
