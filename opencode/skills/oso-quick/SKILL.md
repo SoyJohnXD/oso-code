@@ -28,7 +28,7 @@ Fast, guided iteration for small changes. The operator steers; you keep the bar 
 - `_shared/reporting.md` — read ALWAYS by this flow: the milestone contract every judge and delegation reports under.
 - `_shared/rubric.md` — read at the first edit: §3's Debt markers bar binds you at write time.
 - `_shared/front-surface.md` — read when the change touches front surface.
-- `_shared/didactic.md` — the didactic register.
+- `_shared/didactic.md` — read when the explanation depth is didactic: the didactic register.
 
 ## 1. Micro-intent (one exchange, not a plan)
 

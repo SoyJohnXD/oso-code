@@ -1,52 +1,34 @@
 import assert from "node:assert/strict";
-import path from "node:path";
 import { describe, test } from "node:test";
+import { SKILLS_DIRECTORY, hostFileOf, markedAlwaysIn, namedPaths, wrapperOf } from "../support/flow-reads.ts";
 import { wordCountOf } from "../support/prose-sentences.ts";
 import { provedSomething } from "../support/proved.ts";
 import { readTrackedText } from "../support/tracked-files.ts";
 
 type ReadFile = (file: string) => string;
 
-const PLAN_DIRECTORY = "plugin/skills/plan";
-const WRAPPER = `${PLAN_DIRECTORY}/SKILL.md`;
-const HOST_FILE = `${PLAN_DIRECTORY}/references/claude.md`;
-const SHARED_HOST_FILE = "plugin/skills/_shared/references/claude.md";
+const WRAPPER = wrapperOf("plan");
+const HOST_FILE = hostFileOf("plan");
+const SHARED_HOST_FILE = `${SKILLS_DIRECTORY}/_shared/references/claude.md`;
 const REQUIRED_READS = [
   HOST_FILE,
   SHARED_HOST_FILE,
-  "plugin/skills/_shared/reporting.md",
-  "plugin/skills/_shared/rubric.md",
+  `${SKILLS_DIRECTORY}/_shared/reporting.md`,
+  `${SKILLS_DIRECTORY}/_shared/rubric.md`,
 ];
 const WORD_BUDGET = 8000;
 
 const ALWAYS_MARKER = /read ALWAYS by this flow/;
-const BACKTICKED_MARKDOWN_PATH = /`([^`]*\/[^`]*\.md)`/g;
 
-function resolveFromPlan(raw: string): string {
-  const spelled = raw.replaceAll("<host>", "claude").replaceAll("${CLAUDE_SKILL_DIR}", PLAN_DIRECTORY);
-  if (spelled.startsWith("_shared/")) return `plugin/skills/${spelled}`;
-  if (spelled.startsWith("plugin/")) return path.posix.normalize(spelled);
-  return path.posix.join(PLAN_DIRECTORY, spelled);
-}
-
-function namedPaths(text: string): string[] {
-  return [...text.matchAll(BACKTICKED_MARKDOWN_PATH)].map(([, raw]) => resolveFromPlan(raw ?? ""));
-}
-
-function markedAlwaysIn(text: string): string[] {
-  return text
-    .split("\n")
-    .filter((line) => ALWAYS_MARKER.test(line))
-    .flatMap(namedPaths);
-}
+const markedAlways = (text: string) => markedAlwaysIn("plan", text, (line) => ALWAYS_MARKER.test(line));
 
 function alwaysReadFiles(read: ReadFile): string[] {
-  const marked = [...markedAlwaysIn(read(WRAPPER)), ...markedAlwaysIn(read(HOST_FILE))];
+  const marked = [...markedAlways(read(WRAPPER)), ...markedAlways(read(HOST_FILE))];
   return [...new Set([...REQUIRED_READS, ...marked])].filter((file) => file !== WRAPPER).sort();
 }
 
 function filesTheWrapperNeverNames(read: ReadFile): string[] {
-  const named = new Set(namedPaths(read(WRAPPER)));
+  const named = new Set(namedPaths("plan", read(WRAPPER)));
   return alwaysReadFiles(read).filter((file) => !named.has(file));
 }
 

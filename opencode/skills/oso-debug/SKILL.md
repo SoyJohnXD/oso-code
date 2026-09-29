@@ -27,6 +27,7 @@ Guided flow for "something broke" — stop-the-line: while the bug is open, no f
 - `_shared/references/<host>.md` — read ALWAYS by this flow: **Making a launch wait**, **The model a launch carries**, **The native card is not the report** and **The unattended run**.
 - `_shared/reporting.md` — read ALWAYS by this flow: the milestone contract every launch, verdict and judge reports under; it also defines §4's threshold.
 - `_shared/front-surface.md` — read when the fix touches front surface.
+- `_shared/didactic.md` — read when the explanation depth is didactic: the didactic register.
 - `_shared/rubric.md` — the rubric path handed to the applier, the verifier and a debt-cleanup payload.
 
 Operator-facing content — triage reports, the diagnosis presentation — is delivered under your host's delivery contract, as in the PLAN mode.

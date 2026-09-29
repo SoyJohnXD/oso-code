@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
+import { wrapperOf } from "../support/flow-reads.ts";
 import { provedSomething } from "../support/proved.ts";
 import { readTrackedText } from "../support/tracked-files.ts";
 
@@ -18,13 +19,13 @@ const PLAN_STEPS: readonly (readonly [number, readonly Entry[]])[] = [
   [7, [[1, "activate the sweep"], [2, "judge"], [3, "fix"], [4, "design audit"], [5, "index"], [6, "summary"], [7, "green, last"], [8, "commit"], [9, "close the state"]]],
 ];
 
-const readSkill: SkillText = (flow) => readTrackedText(`plugin/skills/${flow}/SKILL.md`).text;
+const readSkill: SkillText = (flow) => readTrackedText(wrapperOf(flow)).text;
 
-function missingInOrder(expected: readonly Entry[], found: readonly Entry[], texts: readonly string[]): string[] {
+function missingInOrder(expected: readonly Entry[], found: readonly Entry[]): string[] {
   const missing: string[] = [];
   let cursor = 0;
   for (const [number, key] of expected) {
-    const at = found.findIndex(([n], index) => index >= cursor && n === number && (texts[index] ?? "").toLowerCase().includes(key));
+    const at = found.findIndex(([n, title], index) => index >= cursor && n === number && title.toLowerCase().includes(key));
     if (at < 0) missing.push(`${number}. ${key}`);
     else cursor = at + 1;
   }
@@ -33,8 +34,7 @@ function missingInOrder(expected: readonly Entry[], found: readonly Entry[], tex
 
 function missingPhases(flow: string, expected: readonly Entry[], read: SkillText): string[] {
   const headings = [...read(flow).matchAll(/^## (\d+)\. (.*)$/gm)];
-  const found = headings.map(([, n]): Entry => [Number(n), ""]);
-  return missingInOrder(expected, found, headings.map(([, , title]) => title ?? ""));
+  return missingInOrder(expected, headings.map(([, n, title]): Entry => [Number(n), title ?? ""]));
 }
 
 function missingSteps(section: number, expected: readonly Entry[], read: SkillText): string[] {
@@ -42,7 +42,7 @@ function missingSteps(section: number, expected: readonly Entry[], read: SkillTe
   const rest = body.slice(body.search(new RegExp(`^## ${section}\\. `, "m")) + 1);
   const end = rest.search(/^## /m);
   const steps = [...rest.slice(0, end < 0 ? undefined : end).matchAll(/^(\d+)\. (.*)$/gm)];
-  return missingInOrder(expected, steps.map(([, n]): Entry => [Number(n), ""]), steps.map(([, , text]) => text ?? ""));
+  return missingInOrder(expected, steps.map(([, n, text]): Entry => [Number(n), text ?? ""]));
 }
 
 describe("every flow keeps its phases in order", () => {

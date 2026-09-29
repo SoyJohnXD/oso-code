@@ -27,10 +27,10 @@ The operator decides; you guide, present options with tradeoffs, and never assum
 - `_shared/references/<host>.md` — read ALWAYS by this flow.
 - `_shared/reporting.md` — read ALWAYS by this flow: report every arm, launch, verdict and close under its milestone contract; it also defines the inline-or-applier threshold.
 - `_shared/rubric.md` — read ALWAYS by this flow: §2 step 6 audits the map against it.
-- `_shared/unattended.md` — read only once AUTO arms: §4's disposition answer, an operator instruction at any point, or when the change runs as a child of the ROADMAP.
+- `_shared/unattended.md` — read only once AUTO arms: §4's disposition answer, an operator instruction at any point, or a change running as a child of the ROADMAP.
 - `_shared/parallel.md` — read only once §4's execution-mode question picks PARALLEL.
 - `_shared/front-surface.md` — read when the change touches a front surface.
-- `_shared/didactic.md` — the didactic register.
+- `_shared/didactic.md` — read when the explanation depth is didactic: the didactic register.
 
 ## Ground rules for the whole flow
 
@@ -47,7 +47,7 @@ The operator decides; you guide, present options with tradeoffs, and never assum
 
 Search engram: `mem_search(query: "oso/index")`, then `mem_get_observation(id)` for the full table (fallback when it doesn't exist yet: `mem_search(query: "oso/{change}/plan")`). Self-heal every `executing` row against its `oso/{change}/plan` or `/summary` observation before trusting it — `mem_update` merge, never overwrite, never scan the whole index otherwise. Locate `{change}`'s row, fetch its ledger and plan, report the recorded position, and continue from there — never re-ask what the ledger already answers.
 
-Resuming into execution re-arms runtime state first: `oso-state set mode=plan active_slice=<current> verify_green=false`, reading its echo. A change whose ledger picked PARALLEL also reports its standing worktrees per `_shared/parallel.md`, read only once PARALLEL is picked.
+Resuming into execution re-arms runtime state first: `oso-state set mode=plan active_slice=<current> verify_green=false`, reading its echo. A change whose ledger picked PARALLEL reports its standing worktrees per `_shared/parallel.md`, read only once PARALLEL is picked.
 
 Read `oso/preferences` (one record per project; `mem_search` filters by cwd). Self-heal a retired field or a legacy `scope: personal` copy via `mem_update`, then apply silently:
 

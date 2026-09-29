@@ -28,7 +28,7 @@ Each mode supplies only its own column of that table. The pin recipe, the audit 
 
 Impeccable ships on TWO independent release lines that share no numbering — the installed skill package and the npm CLI — so the pin is NEVER read off the installed skill's version; it is resolved from the npm channel by this recipe:
 
-- **Resolve the pin, under a 20-second bound** — run `npx impeccable --version`; the numeral it returns IS the pin, and the detector then runs as `npx impeccable@<that numeral> detect`. The bound runs in-shell, since macOS ships no `timeout(1)`, matching `bootstrap/verify.sh`'s own npx probe:
+- **Resolve the pin, under a 20-second bound** — run `npx impeccable --version`; the numeral it returns IS the pin, and the detector then runs as `npx impeccable@<that numeral> detect`. The bound runs in-shell, since macOS ships no `timeout(1)`:
 
   ```bash
   ( set -m

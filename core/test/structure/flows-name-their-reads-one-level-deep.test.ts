@@ -1,17 +1,15 @@
 import assert from "node:assert/strict";
-import path from "node:path";
 import { describe, test } from "node:test";
+import { SKILLS_DIRECTORY, hostFileOf, markedAlwaysIn, namedPaths, wrapperOf } from "../support/flow-reads.ts";
 import { provedSomething } from "../support/proved.ts";
 import { readTrackedText } from "../support/tracked-files.ts";
 
 type ReadFile = (file: string) => string;
 
-const SKILLS_DIRECTORY = "plugin/skills";
 const FLOWS = ["quick", "debug", "roadmap"] as const;
 const SECTION_HEADING = "## Files this flow reads";
 const ALWAYS_MARKER = /read ALWAYS|\bREAD\b.*\bNOW\b/;
 const CONDITIONAL_MARKER = /trigger fires/;
-const BACKTICKED_MARKDOWN_PATH = /`([^`]*\/[^`]*\.md)`/g;
 
 const SHARED_READS = [`${SKILLS_DIRECTORY}/_shared/references/claude.md`, `${SKILLS_DIRECTORY}/_shared/reporting.md`];
 const EXTRA_READS: Readonly<Record<string, readonly string[]>> = {
@@ -20,27 +18,8 @@ const EXTRA_READS: Readonly<Record<string, readonly string[]>> = {
   roadmap: [`${SKILLS_DIRECTORY}/_shared/unattended.md`, `${SKILLS_DIRECTORY}/plan/references/claude.md`],
 };
 
-const flowDirectory = (flow: string) => `${SKILLS_DIRECTORY}/${flow}`;
-const wrapperOf = (flow: string) => `${flowDirectory(flow)}/SKILL.md`;
-const hostFileOf = (flow: string) => `${flowDirectory(flow)}/references/claude.md`;
-
-function resolveFrom(flow: string, raw: string): string {
-  const spelled = raw.replaceAll("<host>", "claude").replaceAll("${CLAUDE_SKILL_DIR}", flowDirectory(flow));
-  if (spelled.startsWith("plugin/")) return path.posix.normalize(spelled);
-  if (spelled.startsWith("references/")) return path.posix.join(flowDirectory(flow), spelled);
-  return path.posix.join(SKILLS_DIRECTORY, spelled);
-}
-
-function namedPaths(flow: string, text: string): string[] {
-  return [...text.matchAll(BACKTICKED_MARKDOWN_PATH)].map(([, raw]) => resolveFrom(flow, raw ?? ""));
-}
-
-function markedAlwaysIn(flow: string, text: string): string[] {
-  return text
-    .split("\n")
-    .filter((line) => ALWAYS_MARKER.test(line) && !CONDITIONAL_MARKER.test(line))
-    .flatMap((line) => namedPaths(flow, line));
-}
+const markedAlways = (flow: string, text: string) =>
+  markedAlwaysIn(flow, text, (line) => ALWAYS_MARKER.test(line) && !CONDITIONAL_MARKER.test(line));
 
 function readsSection(text: string): string {
   const start = text.indexOf(SECTION_HEADING);
@@ -51,7 +30,7 @@ function readsSection(text: string): string {
 }
 
 function requiredReads(flow: string, read: ReadFile): string[] {
-  const marked = [...markedAlwaysIn(flow, read(wrapperOf(flow))), ...markedAlwaysIn(flow, read(hostFileOf(flow)))];
+  const marked = [...markedAlways(flow, read(wrapperOf(flow))), ...markedAlways(flow, read(hostFileOf(flow)))];
   return [...new Set([hostFileOf(flow), ...SHARED_READS, ...(EXTRA_READS[flow] ?? []), ...marked])]
     .filter((file) => file !== wrapperOf(flow))
     .sort();
@@ -78,6 +57,49 @@ describe("quick, debug and roadmap name every file they always read directly fro
       assert.deepEqual(filesTheWrapperNeverNames(flow, readFromTree), []);
     });
   }
+});
+
+const DIDACTIC_FILE = `${SKILLS_DIRECTORY}/_shared/didactic.md`;
+const INVOKER_LINE = /invoke it\s+—\s+(.*?),\s+at\b/;
+
+function didacticInvokers(read: ReadFile): string[] {
+  const line = read(DIDACTIC_FILE).split("\n").find((candidate) => candidate.includes("invoke it")) ?? "";
+  const list = line.match(INVOKER_LINE)?.[1] ?? "";
+  return [...list.matchAll(/\b[A-Z]{3,}\b/g)].map(([name]) => (name ?? "").toLowerCase());
+}
+
+const didacticEntryOf = (flow: string, read: ReadFile) =>
+  readsSection(read(wrapperOf(flow)))
+    .split("\n")
+    .find((line) => line.includes("`_shared/didactic.md`"));
+
+const didacticCondition = (entry: string) => entry.replace(/^.*?`_shared\/didactic\.md`\s*—\s*/, "");
+
+const didacticFlows = didacticInvokers(readFromTree);
+
+provedSomething(
+  "the didactic register names its invokers",
+  didacticFlows.length >= 2,
+  `measured only: ${didacticFlows.join(", ")}`,
+);
+
+describe("every flow that can answer at didactic depth declares the didactic register among its reads", () => {
+  for (const flow of didacticFlows) {
+    test(`${flow} names _shared/didactic.md in its "Files this flow reads" section`, () => {
+      assert.ok(didacticEntryOf(flow, readFromTree), `${flow} never names _shared/didactic.md`);
+    });
+  }
+
+  test("every such entry states one and the same condition", () => {
+    const conditions = didacticFlows.map((flow) => didacticCondition(didacticEntryOf(flow, readFromTree) ?? ""));
+    assert.deepEqual([...new Set(conditions)].length, 1, conditions.join(" | "));
+  });
+
+  test("a flow whose entry is dropped is reported", () => {
+    const mutated: ReadFile = (file) =>
+      file === wrapperOf("quick") ? readFromTree(file).replaceAll("`_shared/didactic.md`", "the didactic register") : readFromTree(file);
+    assert.equal(didacticEntryOf("quick", mutated), undefined);
+  });
 });
 
 describe("the checker reports a planted regression", () => {

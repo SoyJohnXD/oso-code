@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
+import { hostFileOf, namedPaths, wrapperOf } from "../support/flow-reads.ts";
 import { provedSomething } from "../support/proved.ts";
 import { readTrackedText, trackedRepositoryFiles } from "../support/tracked-files.ts";
 
@@ -12,21 +13,16 @@ const FIXTURE_DIRECTORY = "core/test/fixtures/skill-evals/";
 const MINIMUM_SCENARIOS = 4;
 const MINIMUM_ANCHORS = 60;
 
-function filesLoadedBy(flow: string): RegExp[] {
-  return [
-    new RegExp(`^plugin/skills/${flow}/SKILL\\.md$`),
-    new RegExp(`^plugin/skills/${flow}/references/claude\\.md$`),
-    /^plugin\/skills\/_shared\/[^/]+\.md$/,
-    /^plugin\/skills\/_shared\/references\/claude\.md$/,
-  ];
+function filesLoadedBy(flow: string, readFile: ReadFile): Set<string> {
+  return new Set([wrapperOf(flow), hostFileOf(flow), ...namedPaths(flow, readFile(wrapperOf(flow)))]);
 }
 
 function unresolvedAnchors(scenario: ScenarioEval, readFile: ReadFile): string[] {
-  const flow = scenario.skills.join("");
-  const loaded = filesLoadedBy(flow);
+  const flow = scenario.skills[0] ?? "";
+  const loaded = filesLoadedBy(flow, readFile);
   return scenario.expected_behavior.flatMap(({ behavior, anchors }) =>
     anchors.flatMap(({ file, pattern }) => {
-      if (!loaded.some((allowed) => allowed.test(file))) return [`${behavior}: ${file} is not loaded by ${flow}`];
+      if (!loaded.has(file)) return [`${behavior}: ${file} is not loaded by ${flow}`];
       return new RegExp(pattern).test(readFile(file)) ? [] : [`${behavior}: /${pattern}/ absent from ${file}`];
     }),
   );
@@ -64,6 +60,15 @@ describe("the checker reports a planted regression", () => {
     assert.deepEqual(unresolvedAnchors(plan, readFromTree), []);
     const mutated: ReadFile = (file) => readFromTree(file).replace(/## 1\. Intent/g, "");
     assert.deepEqual(unresolvedAnchors(plan, mutated), ["iterates the intent: /## 1\\. Intent/ absent from plugin/skills/plan/SKILL.md"]);
+  });
+
+  test("an anchor on a shared file the flow's SKILL.md never names is reported", () => {
+    const quick: ScenarioEval = {
+      skills: ["quick"],
+      query: "make a small change",
+      expected_behavior: [{ behavior: "waves a batch", anchors: [{ file: "plugin/skills/_shared/parallel.md", pattern: "PARALLEL" }] }],
+    };
+    assert.deepEqual(unresolvedAnchors(quick, readFromTree), ["waves a batch: plugin/skills/_shared/parallel.md is not loaded by quick"]);
   });
 
   test("an anchor pointing at a file the flow never loads is reported", () => {

@@ -7,11 +7,12 @@ import { readTrackedText, trackedRepositoryFiles } from "../support/tracked-file
 type ReadFile = (file: string) => string;
 
 const OPERATOR_TERM = /\bthe (user|human)\b/i;
-const JUDGE_TERM = /\breviewer\b/i;
+const JUDGE_TERM = /(?<![\w-])reviewer\b/i;
 const FLOW_MARKDOWN = /^plugin\/skills\/.+\.md$/;
 const RUBRIC = "plugin/skills/_shared/rubric.md";
 const RENDERED_SKILL = /^opencode\/skills\/[^/]+\/SKILL\.md$/;
-const FORK_CONTEXT_FILES = /^plugin\/skills\/(doubt-pass|security-pass)\/.+\.md$/;
+const FORK_FRONTMATTER = /^context: fork$/m;
+const FLOW_SKILL = /^plugin\/skills\/([^/]+)\/SKILL\.md$/;
 
 function offendingLines(pattern: RegExp, text: string): string[] {
   return text.split("\n").flatMap((line, index) => (pattern.test(line) ? [`line ${index + 1}: ${line.trim().slice(0, 80)}`] : []));
@@ -24,13 +25,19 @@ function violations(pattern: RegExp, files: readonly string[], read: ReadFile): 
 const tracked = trackedRepositoryFiles();
 const proseFiles = tracked.filter((file) => FLOW_MARKDOWN.test(file) && file !== RUBRIC);
 const renderedSkills = tracked.filter((file) => RENDERED_SKILL.test(file));
-const forkContextFiles = tracked.filter((file) => FORK_CONTEXT_FILES.test(file));
+const forkContextSkills = tracked.flatMap((file) => {
+  const skill = FLOW_SKILL.exec(file)?.[1];
+  return skill && FORK_FRONTMATTER.test(readTrackedText(file).text) ? [skill] : [];
+});
+const forkContextFiles = tracked.filter((file) =>
+  forkContextSkills.some((skill) => file.startsWith(`plugin/skills/${skill}/`) || file.startsWith(`core/src/prose/skills/${skill}/`)),
+).filter((file) => file.endsWith(".md"));
 const stubDescriptions = SKILL_STUBS.flatMap(({ id, description }) => Object.values(description).map((text) => `${id}: ${text}`));
 const readFromTree: ReadFile = (file) => readTrackedText(file).text;
 
 provedSomething(
   "the terminology guard reads flow prose, rendered skills, stub descriptions and the fork-context skills",
-  proseFiles.length > 20 && renderedSkills.length > 0 && stubDescriptions.length > 0 && forkContextFiles.length > 2,
+  proseFiles.length > 20 && renderedSkills.length > 0 && stubDescriptions.length > 0 && forkContextSkills.length === 4 && forkContextFiles.length > 8,
   `measured only: ${proseFiles.length} prose files, ${renderedSkills.length} rendered skills, ${stubDescriptions.length} stub descriptions, ${forkContextFiles.length} fork-context files`,
 );
 
@@ -49,7 +56,7 @@ describe("the person is the operator everywhere skill prose names them", () => {
 });
 
 describe("the fork-context skills call themselves the judge", () => {
-  test("doubt-pass and security-pass never say reviewer", () => {
+  test("no fork-context skill says reviewer", () => {
     assert.deepEqual(violations(JUDGE_TERM, forkContextFiles, readFromTree), []);
   });
 });
@@ -67,5 +74,9 @@ describe("the checker reports a planted regression", () => {
   test("a line saying reviewer is reported and review passes", () => {
     const mutated: ReadFile = () => "A security review.\nThe native reviewer runs.";
     assert.equal(violations(JUDGE_TERM, ["planted.md"], mutated).length, 1);
+  });
+
+  test("an agent identifier holding reviewer passes", () => {
+    assert.deepEqual(violations(JUDGE_TERM, ["planted.md"], () => "Run as the `oso-security-reviewer` agent."), []);
   });
 });
