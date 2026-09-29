@@ -15,7 +15,8 @@
       }
     },
     "events_appended": [
-      { "event": "close-slice", "command": "5", "session": "{present}" }
+      { "event": "close-slice", "command": "5", "session": "{present}" },
+      { "event": "verify-green-unreceipted", "command": "5", "session": "{present}" }
     ]
   }
 }

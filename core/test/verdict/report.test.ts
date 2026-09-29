@@ -3,27 +3,26 @@ import path from "node:path";
 import { describe, test } from "node:test";
 import { readVerdictShape } from "../../src/verdict/grammar.ts";
 import { readVerdicts } from "../../src/verdict/record.ts";
-import { greensIn, renderReportTable, verdictMetrics } from "../../src/verdict/report.ts";
+import { renderReportTable, unreceiptedGreensIn, verdictMetrics } from "../../src/verdict/report.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
 
 const FIXTURE = path.join(repositoryRoot, "core", "test", "fixtures", "verdicts", "report.jsonl");
 
-function greenEvent(session: string, ts: string, pairs: string): string {
-  return JSON.stringify({ ts, event: `set:${pairs}`, command: "", session, client: "", schema: 2 });
+function loggedEvent(session: string, event: string, command: string): string {
+  return JSON.stringify({ ts: "2026-09-01T10:20:00Z", event, command, session, client: "", schema: 2 });
 }
 
 const EVENTS = [
-  greenEvent("ses-a", "2026-09-01T10:20:00Z", "active_slice=none verify_green=true"),
-  greenEvent("ses-a", "2026-09-01T11:03:00Z", "verify_green=true"),
-  greenEvent("ses-a", "2026-09-01T11:30:00Z", "auto_wait=none"),
-  greenEvent("ses-b", "2026-09-02T09:10:00Z", "verify_green=true"),
-  greenEvent("ses-elsewhere", "2026-09-02T09:20:00Z", "verify_green=true"),
+  loggedEvent("ses-a", "set:active_slice=none verify_green=true", ""),
+  loggedEvent("ses-a", "verify-green-unreceipted", "2"),
+  loggedEvent("ses-b", "verify-green-unreceipted", "3"),
+  loggedEvent("ses-elsewhere", "verify-green-unreceipted", "1"),
   "not an event",
 ].join("\n");
 
 describe("the verdict report reads the records after each slice's newest arm marker", () => {
   const log = readVerdicts(FIXTURE);
-  const metrics = verdictMetrics(log, { kind: "read", greens: greensIn(EVENTS) });
+  const metrics = verdictMetrics(log, { kind: "read", greens: unreceiptedGreensIn(EVENTS) });
 
   test("one of three armed slices opened on a fail, so the first-fail rate is 33.3 %", () => {
     assert.equal(metrics.slices, 3);
@@ -48,8 +47,8 @@ describe("the verdict report reads the records after each slice's newest arm mar
     assert.equal(metrics.skipped_lines, 1);
   });
 
-  test("a green set before its armed slice holds a pass is unreceipted; a foreign session's green is not ours", () => {
-    assert.deepEqual(metrics.unreceipted_greens, { count: 1 });
+  test("each verify-green-unreceipted event of a session armed here counts; a set green and a foreign session's do not", () => {
+    assert.deepEqual(metrics.unreceipted_greens, { count: 2 });
   });
 
   test("an events log that could not be read is omitted and the reason said", () => {

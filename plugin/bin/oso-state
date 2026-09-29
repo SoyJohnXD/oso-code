@@ -1085,12 +1085,8 @@ function writeStatePairs(stateFile, pairs, ownerSession) {
   renameSync(createTempFile(directory, content), stateFile);
   return content;
 }
-var SET_EVENT_PREFIX = "set:";
 function logSet(sessionId, pairs) {
-  logEvent({ event: `${SET_EVENT_PREFIX}${pairs.join(" ")}`, session: sessionId });
-}
-function pairsOfSetEvent(event) {
-  return event.startsWith(SET_EVENT_PREFIX) ? event.slice(SET_EVENT_PREFIX.length).split(" ") : [];
+  logEvent({ event: `set:${pairs.join(" ")}`, session: sessionId });
 }
 function clearStateFile(stateFile) {
   rmSync(stateFile, { force: true });
@@ -1365,6 +1361,7 @@ var VERDICT_SHAPES = ["valid", "malformed"];
 // core/src/verdict/record.ts
 var VERIFIER_ROLE = "verifier";
 var TELEMETRY_WRITE_FAILED = "telemetry-write-failed";
+var VERIFY_GREEN_UNRECEIPTED = "verify-green-unreceipted";
 function verdictsFileFor(stateFile) {
   return path4.join(runsDirectoryOf(stateFile), "verdicts.jsonl");
 }
@@ -1404,6 +1401,9 @@ function recordsSinceArm(entries) {
     if (entry.slice !== null) armedSlices.get(entry.slice)?.push(entry);
   }
   return [...armedSlices.values()].flat();
+}
+function verifierRecordsSinceArm(entries, slice) {
+  return recordsSinceArm(entries).filter((record) => record.slice === slice && record.role === VERIFIER_ROLE);
 }
 function isArmMarker(entry) {
   return "kind" in entry;
@@ -1474,6 +1474,19 @@ function isTextOrNull(value) {
   return value === null || typeof value === "string";
 }
 
+// core/src/verdict/receipt.ts
+function greenReceiptOf(verdictsFile, preWriteSlice) {
+  if (preWriteSlice === "none") return { kind: "unguarded" };
+  const newest = verifierRecordsSinceArm(readVerdicts(verdictsFile).entries, preWriteSlice).at(-1);
+  if (newest === void 0) return { kind: "unreceipted", slice: preWriteSlice };
+  if (newest.verdict === "pass" && newest.verdict_shape === "valid") return { kind: "receipted" };
+  return { kind: "refused", reason: refusalReason(preWriteSlice, newest) };
+}
+function refusalReason(slice, record) {
+  const verdict = record.verdict_shape === "malformed" ? "malformed" : record.verdict;
+  return `the newest verifier record of slice ${slice} is ${verdict}: ${JSON.stringify(record)}`;
+}
+
 // core/src/verdict/report.ts
 function verdictMetrics(log, greensRead) {
   const verifierRecords = recordsSinceArm(log.entries).filter((record) => record.role === VERIFIER_ROLE);
@@ -1490,12 +1503,10 @@ function verdictMetrics(log, greensRead) {
     unreceipted_greens: greensRead.kind === "omitted" ? { omitted: greensRead.reason } : { count: unreceiptedGreenCount(log.entries, greensRead.greens) }
   };
 }
-function greensIn(eventsText) {
+function unreceiptedGreensIn(eventsText) {
   return eventsText.split("\n").flatMap((line) => {
-    const event = jsonLineObject(line);
-    const { session, ts, event: name } = event ?? {};
-    if (typeof session !== "string" || typeof ts !== "string" || typeof name !== "string") return [];
-    return pairsOfSetEvent(name).includes("verify_green=true") ? [{ session, time: ts }] : [];
+    const { session, event } = jsonLineObject(line) ?? {};
+    return event === VERIFY_GREEN_UNRECEIPTED && typeof session === "string" ? [{ session }] : [];
   });
 }
 function renderReportTable(metrics) {
@@ -1542,18 +1553,8 @@ function zeroCounts() {
   return Object.fromEntries(RECORDED_VERDICTS.map((verdict) => [verdict, 0]));
 }
 function unreceiptedGreenCount(entries, greens) {
-  return greens.filter((green) => {
-    const arming = newestArmingOf(entries, green);
-    return arming !== void 0 && !passRecordedWithin(entries, arming, green);
-  }).length;
-}
-function newestArmingOf(entries, green) {
-  return entries.filter(isArmMarker).filter((marker) => marker.session === green.session && marker.time <= green.time).at(-1);
-}
-function passRecordedWithin(entries, arming, green) {
-  return entries.some(
-    (entry) => !isArmMarker(entry) && entry.role === VERIFIER_ROLE && entry.verdict === "pass" && entry.slice === arming.slice && entry.time >= arming.time && entry.time <= green.time
-  );
+  const armingSessions = new Set(entries.filter(isArmMarker).map((marker) => marker.session));
+  return greens.filter((green) => armingSessions.has(green.session)).length;
 }
 function firstFailRateText(metrics) {
   if (metrics.first_fail_rate_percent === null) return "none \u2014 no armed slice holds a verifier record";
@@ -2042,6 +2043,7 @@ function processStartOf(pid) {
 }
 
 // core/src/state/cli.ts
+var WAVE_SLICE_PREFIX = "wave-";
 var USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> get key
        oso-state --session <id> show
@@ -2212,12 +2214,31 @@ function runSet(sessionId, pairs) {
   return withLock(stateFile, sessionId, () => {
     const owner = foreignGateOwner(stateFile, sessionId);
     if (owner !== void 0 && pairsTouchAGateKey(pairs)) throw new GatesOwnedElsewhereError(owner);
+    const receipt = writesVerifyGreen(pairs) ? receiptOfSetGreen(stateFile, pairs, readValue(stateFile, "active_slice") ?? "none") : { kind: "unguarded" };
     const content = writeStatePairs(stateFile, pairs, owner ?? sessionId);
     logSet(sessionId, pairs);
+    logUnreceiptedGreen(sessionId, receipt);
     markArming(stateFile, sessionId, pairs, content);
     process.stdout.write(content);
     return 0;
   });
+}
+function writesVerifyGreen(pairs) {
+  return new Map(pairs.map(splitPair)).get("verify_green") === "true";
+}
+function receiptOfSetGreen(stateFile, pairs, preWriteSlice) {
+  const keepsTheWaveArmed = preWriteSlice.startsWith(WAVE_SLICE_PREFIX) && new Map(pairs.map(splitPair)).get("active_slice") === preWriteSlice;
+  if (keepsTheWaveArmed) return { kind: "unreceipted", slice: preWriteSlice };
+  return receiptOfGreen(stateFile, "set", preWriteSlice);
+}
+function receiptOfGreen(stateFile, verb, preWriteSlice) {
+  const receipt = greenReceiptOf(verdictsFileFor(stateFile), preWriteSlice);
+  if (receipt.kind === "refused") throw new RefusedError(verb, receipt.reason);
+  return receipt;
+}
+function logUnreceiptedGreen(sessionId, receipt) {
+  if (receipt.kind !== "unreceipted") return;
+  logEvent({ event: VERIFY_GREEN_UNRECEIPTED, session: sessionId, command: receipt.slice });
 }
 function markArming(stateFile, sessionId, pairs, content) {
   const slice = armedSliceOf(pairs);
@@ -2238,7 +2259,7 @@ function readGreens() {
   const read = readStateFile(eventsLog);
   if (read.kind === "absent") return { kind: "omitted", reason: `no events log at ${eventsLog}` };
   if (read.kind === "unreadable") return { kind: "omitted", reason: `cannot read ${eventsLog}: ${read.cause}` };
-  return { kind: "read", greens: greensIn(read.content) };
+  return { kind: "read", greens: unreceiptedGreensIn(read.content) };
 }
 function runWatch(sessionId, remaining) {
   if (remaining.length > 0) throw new UsageError();
@@ -2302,6 +2323,7 @@ function runCloseSlice(sessionId, remaining) {
       throw new RefusedError(`close-slice ${sliceId}`, `active_slice is ${activeSlice}, not ${sliceId}`);
     }
     refuseGateWritesByAForeignSession(stateFile, sessionId);
+    const receipt = receiptOfGreen(stateFile, `close-slice ${sliceId}`, sliceId);
     const patch = closeSlice();
     writeStatePairs(
       stateFile,
@@ -2309,6 +2331,7 @@ function runCloseSlice(sessionId, remaining) {
       sessionId
     );
     logEvent({ event: "close-slice", session: sessionId, command: sliceId });
+    logUnreceiptedGreen(sessionId, receipt);
     return 0;
   });
 }

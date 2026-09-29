@@ -1,7 +1,5 @@
-import { pairsOfSetEvent } from "../state/store.ts";
 import { RECORDED_VERDICTS, type RecordedVerdict } from "./grammar.ts";
 import {
-  type ArmMarker,
   isArmMarker,
   jsonLineObject,
   recordsSinceArm,
@@ -9,12 +7,13 @@ import {
   type VerdictLogEntry,
   type VerdictRecord,
   VERIFIER_ROLE,
+  VERIFY_GREEN_UNRECEIPTED,
 } from "./record.ts";
 
-export type Green = Readonly<{ session: string; time: string }>;
+export type UnreceiptedGreen = Readonly<{ session: string }>;
 
 export type GreensRead =
-  | Readonly<{ kind: "read"; greens: readonly Green[] }>
+  | Readonly<{ kind: "read"; greens: readonly UnreceiptedGreen[] }>
   | Readonly<{ kind: "omitted"; reason: string }>;
 
 export type ModelVerdicts = Readonly<{ model: string | null } & Record<RecordedVerdict, number>>;
@@ -50,12 +49,10 @@ export function verdictMetrics(log: VerdictLog, greensRead: GreensRead): Verdict
   };
 }
 
-export function greensIn(eventsText: string): Green[] {
+export function unreceiptedGreensIn(eventsText: string): UnreceiptedGreen[] {
   return eventsText.split("\n").flatMap((line) => {
-    const event = jsonLineObject(line);
-    const { session, ts, event: name } = event ?? {};
-    if (typeof session !== "string" || typeof ts !== "string" || typeof name !== "string") return [];
-    return pairsOfSetEvent(name).includes("verify_green=true") ? [{ session, time: ts }] : [];
+    const { session, event } = jsonLineObject(line) ?? {};
+    return event === VERIFY_GREEN_UNRECEIPTED && typeof session === "string" ? [{ session }] : [];
   });
 }
 
@@ -110,30 +107,9 @@ function zeroCounts(): Record<RecordedVerdict, number> {
   return Object.fromEntries(RECORDED_VERDICTS.map((verdict) => [verdict, 0])) as Record<RecordedVerdict, number>;
 }
 
-function unreceiptedGreenCount(entries: readonly VerdictLogEntry[], greens: readonly Green[]): number {
-  return greens.filter((green) => {
-    const arming = newestArmingOf(entries, green);
-    return arming !== undefined && !passRecordedWithin(entries, arming, green);
-  }).length;
-}
-
-function newestArmingOf(entries: readonly VerdictLogEntry[], green: Green): ArmMarker | undefined {
-  return entries
-    .filter(isArmMarker)
-    .filter((marker) => marker.session === green.session && marker.time <= green.time)
-    .at(-1);
-}
-
-function passRecordedWithin(entries: readonly VerdictLogEntry[], arming: ArmMarker, green: Green): boolean {
-  return entries.some(
-    (entry) =>
-      !isArmMarker(entry) &&
-      entry.role === VERIFIER_ROLE &&
-      entry.verdict === "pass" &&
-      entry.slice === arming.slice &&
-      entry.time >= arming.time &&
-      entry.time <= green.time,
-  );
+function unreceiptedGreenCount(entries: readonly VerdictLogEntry[], greens: readonly UnreceiptedGreen[]): number {
+  const armingSessions = new Set(entries.filter(isArmMarker).map((marker) => marker.session));
+  return greens.filter((green) => armingSessions.has(green.session)).length;
 }
 
 function firstFailRateText(metrics: VerdictMetrics): string {

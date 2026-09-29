@@ -229,14 +229,8 @@ export function writeStateValues(cwd: string, sessionId: string, pairs: readonly
   });
 }
 
-const SET_EVENT_PREFIX = "set:";
-
 export function logSet(sessionId: string, pairs: readonly string[]): void {
-  logEvent({ event: `${SET_EVENT_PREFIX}${pairs.join(" ")}`, session: sessionId });
-}
-
-export function pairsOfSetEvent(event: string): string[] {
-  return event.startsWith(SET_EVENT_PREFIX) ? event.slice(SET_EVENT_PREFIX.length).split(" ") : [];
+  logEvent({ event: `set:${pairs.join(" ")}`, session: sessionId });
 }
 
 export function clearStateFile(stateFile: string): void {

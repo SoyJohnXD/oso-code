@@ -17,6 +17,8 @@ export const VERIFIER_ROLE = "verifier";
 
 export const TELEMETRY_WRITE_FAILED = "telemetry-write-failed";
 
+export const VERIFY_GREEN_UNRECEIPTED = "verify-green-unreceipted";
+
 export type VerdictRecord = Readonly<{
   time: string;
   host: HostName;
@@ -47,8 +49,7 @@ export function verdictsFileFor(stateFile: string): string {
 
 export function appendVerdict(verdictsFile: string, capture: VerdictCapture): boolean {
   return appendEntry(verdictsFile, capture.session, () => {
-    const armed = recordsSinceArm(readVerdicts(verdictsFile).entries);
-    const attempt = armed.filter((record) => record.slice === capture.slice && record.role === VERIFIER_ROLE).length + 1;
+    const attempt = verifierRecordsSinceArm(readVerdicts(verdictsFile).entries, capture.slice).length + 1;
     return {
       time: isoTimestamp(),
       host: capture.host,
@@ -105,6 +106,10 @@ export function recordsSinceArm(entries: readonly VerdictLogEntry[]): VerdictRec
     if (entry.slice !== null) armedSlices.get(entry.slice)?.push(entry);
   }
   return [...armedSlices.values()].flat();
+}
+
+export function verifierRecordsSinceArm(entries: readonly VerdictLogEntry[], slice: string | null): VerdictRecord[] {
+  return recordsSinceArm(entries).filter((record) => record.slice === slice && record.role === VERIFIER_ROLE);
 }
 
 export function isArmMarker(entry: VerdictLogEntry): entry is ArmMarker {

@@ -1630,8 +1630,7 @@ function verdictsFileFor(stateFile) {
 }
 function appendVerdict(verdictsFile, capture) {
   return appendEntry(verdictsFile, capture.session, () => {
-    const armed = recordsSinceArm(readVerdicts(verdictsFile).entries);
-    const attempt = armed.filter((record) => record.slice === capture.slice && record.role === VERIFIER_ROLE).length + 1;
+    const attempt = verifierRecordsSinceArm(readVerdicts(verdictsFile).entries, capture.slice).length + 1;
     return {
       time: isoTimestamp(),
       host: capture.host,
@@ -1669,6 +1668,9 @@ function recordsSinceArm(entries) {
     if (entry.slice !== null) armedSlices.get(entry.slice)?.push(entry);
   }
   return [...armedSlices.values()].flat();
+}
+function verifierRecordsSinceArm(entries, slice) {
+  return recordsSinceArm(entries).filter((record) => record.slice === slice && record.role === VERIFIER_ROLE);
 }
 function isArmMarker(entry) {
   return "kind" in entry;
