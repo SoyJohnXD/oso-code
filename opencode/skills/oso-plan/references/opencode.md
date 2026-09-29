@@ -85,7 +85,9 @@ No wait marker is armed here, because this host has no later turn to bridge. A c
 
 ## The explorer
 
-Use this host's `explore` subagent type for §2 step 1 and for §6 step 3's diagnosis agent, launched through the `task` tool — it inherits the parent's permission set, so it can map the surface without becoming an eighth oso-code role (D10). Launch up to three with disjoint evidence targets from the intent, exactly as the neutral body requires.
+Use this host's `explore` subagent type for §2 step 1, launched through the `task` tool — it inherits the parent's permission set, so it can map the surface without becoming an eighth oso-code role (D10). Launch up to three with disjoint evidence targets from the intent, exactly as the neutral body requires.
+
+§6 step 3's diagnosis agent is the same `explore` subagent type, one launch, through the `task` tool.
 
 ## Front-surface binding
 

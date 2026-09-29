@@ -18,6 +18,7 @@ const RETIRED_LOOP = /until it passes|strong-tier relaunch|relaunch of applier a
 const EMPTY_RESULT_CLAUSE = "an empty or malformed result is marked and counts one round";
 const PARALLEL_CLAUSE = "the red slice loop runs under step 3's cap";
 const WAVE_ROUNDS_CLAUSE = "a wave's red slice counts its own rounds";
+const REMAINDER_ORDER_CLAUSE = "the escalation is marked on the capped slice before a remainder is armed";
 
 const DIAGNOSIS_CLAUSES: readonly Clause[] = [
   { name: "the diagnosis is automatic and never asks the operator", pattern: /never asking the operator[^.]*read-only diagnosis agent/ },
@@ -44,6 +45,7 @@ const DEBUG_CAP_CLAUSES: readonly Clause[] = [
   { name: "the three routes", pattern: /grant more rounds[^.]*its own apply\/verify pass[^.]*accept the residual/ },
   { name: "only an all-nit remainder is accepted", pattern: /only a remainder of `nit` findings[^.]*never a `blocker` or `structural`/ },
   { name: "the escalation is journaled and summarised", pattern: /escalated[^.]*journal[^.]*session summary/ },
+  { name: REMAINDER_ORDER_CLAUSE, pattern: /`oso-state mark escalated` while the capped slice is still armed[^\n]*Only then does a remainder pass arm a new slice/ },
   { name: EMPTY_RESULT_CLAUSE, pattern: /empty, cut or malformed[^.]*never a verdict[^.]*`oso-state mark empty-result`[^.]*counts one round/ },
 ];
 
@@ -123,6 +125,11 @@ describe("the checker reports a planted regression", () => {
   test("a debug flow that drops the escalation mark is reported", () => {
     const mutated: ReadFile = (file) => readFromTree(file).replaceAll("`oso-state mark escalated`", "a note");
     assert.ok(missingClauses(mutated, DEBUG_SOURCE, DEBUG_CAP_CLAUSES).includes("the escalation is marked in the verdict record"));
+  });
+
+  test("a debug flow that arms the remainder before marking the escalation is reported", () => {
+    const mutated: ReadFile = (file) => readFromTree(file).replace(" while the capped slice is still armed", "");
+    assert.ok(missingClauses(mutated, DEBUG_SOURCE, DEBUG_CAP_CLAUSES).includes(REMAINDER_ORDER_CLAUSE));
   });
 
   test("a parallel file that drops the wave round sentence is reported", () => {
