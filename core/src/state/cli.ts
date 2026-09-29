@@ -4,6 +4,8 @@ import { abstractionScanReport } from "../scan/abstraction-scan.ts";
 import { ScanFailure } from "../scan/changed-lines.ts";
 import { commentScanReport } from "../scan/comment-scan.ts";
 import { ereReads } from "../shell/ere.ts";
+import { appendArmMarker, armedSliceOf, readVerdicts, verdictsFileFor } from "../verdict/record.ts";
+import { greensIn, type GreensRead, renderReportTable, verdictMetrics } from "../verdict/report.ts";
 import * as knownKeys from "./known-keys.ts";
 import * as plan from "./plan.ts";
 import * as store from "./store.ts";
@@ -27,11 +29,16 @@ const USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state journal --path
        oso-state scan comments <ref>
        oso-state scan abstractions <ref>
+       oso-state report [--json]
 
 scan reads the working directory's own repository, reports every hit on stdout
 and exits 0 whether or not it found any. comments flags the inline comments the
 diff since <ref> adds; abstractions flags the exports it adds that fewer than
 two use sites reach.
+
+report reads this repository's verdict records and prints the first-fail rate,
+rounds per slice, verdicts by model, malformed reports and unreceipted greens;
+--json prints the same fields as one JSON object.
 
 watch polls this session's in-flight delegations and exits 0 once none is left,
 or 3 naming each one silent for 60 minutes, in flight for 3 hours or ended
@@ -59,7 +66,7 @@ export function main(argv: readonly string[]): number {
 
 function verbOf(argv: readonly string[]): string {
   const first = argv[0];
-  if (first === "journal" || first === "scan") return first;
+  if (first === "journal" || first === "scan" || first === "report") return first;
   return argv[2] ?? "";
 }
 
@@ -109,6 +116,7 @@ function dispatch(argv: readonly string[]): number {
   const first = argv[0];
   if (first === "journal") return runJournal(argv.slice(1));
   if (first === "scan") return dispatchScan(argv.slice(1));
+  if (first === "report") return runReport(argv.slice(1));
   if (first !== "--session") throw new UsageError();
 
   const sessionId = sanitizeSession(argv[1] ?? "");
@@ -147,6 +155,8 @@ function dispatch(argv: readonly string[]): number {
       return runWatch(sessionId, remaining);
     case "scan":
       return dispatchScan(remaining);
+    case "report":
+      return runReport(remaining);
     default:
       throw new UsageError();
   }
@@ -176,9 +186,34 @@ function runSet(sessionId: string, pairs: readonly string[]): number {
     if (owner !== undefined && knownKeys.pairsTouchAGateKey(pairs)) throw new store.GatesOwnedElsewhereError(owner);
     const content = store.writeStatePairs(stateFile, pairs, owner ?? sessionId);
     store.logSet(sessionId, pairs);
+    markArming(stateFile, sessionId, pairs, content);
     process.stdout.write(content);
     return 0;
   });
+}
+
+function markArming(stateFile: string, sessionId: string, pairs: readonly string[], content: string): void {
+  const slice = armedSliceOf(pairs);
+  if (slice === undefined) return;
+  const change = store.stateValue(content, "auto_change");
+  appendArmMarker(verdictsFileFor(stateFile), { slice, session: sessionId, change: change === "" ? null : change });
+}
+
+function runReport(remaining: readonly string[]): number {
+  const [flag, ...rest] = remaining;
+  if (rest.length > 0 || (flag !== undefined && flag !== "--json")) throw new UsageError();
+  const stateFile = store.stateFileFor(process.cwd());
+  const metrics = verdictMetrics(readVerdicts(verdictsFileFor(stateFile)), readGreens());
+  process.stdout.write(flag === "--json" ? `${JSON.stringify(metrics)}\n` : renderReportTable(metrics));
+  return 0;
+}
+
+function readGreens(): GreensRead {
+  const eventsLog = store.eventsLogFile();
+  const read = store.readStateFile(eventsLog);
+  if (read.kind === "absent") return { kind: "omitted", reason: `no events log at ${eventsLog}` };
+  if (read.kind === "unreadable") return { kind: "omitted", reason: `cannot read ${eventsLog}: ${read.cause}` };
+  return { kind: "read", greens: greensIn(read.content) };
 }
 
 function runWatch(sessionId: string, remaining: readonly string[]): number {

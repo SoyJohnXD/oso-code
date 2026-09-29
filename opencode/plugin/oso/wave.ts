@@ -1,7 +1,6 @@
 import { isAbsolute } from "node:path";
-import { APPLIER_PROOF_HEADER } from "@oso-code/core";
+import { APPLIER_PROOF_HEADER, parseAgentVerdict, type ParsedAgentVerdict } from "@oso-code/core";
 import { commonDirOf, roleOf } from "./identity.ts";
-import { parseAgentVerdict, type ParsedAgentVerdict } from "./verdict.ts";
 
 export type WaveAgent = "applier" | "verifier";
 

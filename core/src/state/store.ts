@@ -229,8 +229,14 @@ export function writeStateValues(cwd: string, sessionId: string, pairs: readonly
   });
 }
 
+const SET_EVENT_PREFIX = "set:";
+
 export function logSet(sessionId: string, pairs: readonly string[]): void {
-  logEvent({ event: `set:${pairs.join(" ")}`, session: sessionId });
+  logEvent({ event: `${SET_EVENT_PREFIX}${pairs.join(" ")}`, session: sessionId });
+}
+
+export function pairsOfSetEvent(event: string): string[] {
+  return event.startsWith(SET_EVENT_PREFIX) ? event.slice(SET_EVENT_PREFIX.length).split(" ") : [];
 }
 
 export function clearStateFile(stateFile: string): void {
@@ -352,9 +358,13 @@ export type LoggedEvent = Readonly<{
   hookEvent?: string;
 }>;
 
+export function eventsLogFile(): string {
+  return path.join(stateRootDirectory(), "events.jsonl");
+}
+
 export function logEvent(entry: LoggedEvent): boolean {
   const line = serializeEvent(entry);
-  const eventsLog = path.join(stateRootDirectory(), "events.jsonl");
+  const eventsLog = eventsLogFile();
   try {
     mkdirSync(path.dirname(eventsLog), { recursive: true });
     withOwnerOnlyUmask(() => appendFileSync(eventsLog, `${line}\n`));
@@ -413,7 +423,7 @@ function serializeStateLines(lines: readonly StateLine[]): string {
   return `${lines.map((line) => `${line.key}=${line.value}`).join("\n")}\n`;
 }
 
-function splitPair(pair: string): readonly [string, string] {
+export function splitPair(pair: string): readonly [string, string] {
   const eq = pair.indexOf("=");
   return eq === -1 ? [pair, ""] : [pair.slice(0, eq), pair.slice(eq + 1)];
 }

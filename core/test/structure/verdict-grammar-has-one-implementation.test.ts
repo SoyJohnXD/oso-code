@@ -7,13 +7,14 @@ import { provedSomething } from "../support/proved.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
 import { readTrackedText, trackedRepositoryFiles } from "../support/tracked-files.ts";
 
-const VERDICT_GRAMMAR_OWNER = "opencode/plugin/oso/verdict.ts";
-const CANONICAL_SEARCH_ROOTS = ["plugin", "bootstrap", "tests", "tools", "opencode/plugin", "opencode/hooks"];
-const ALTERNATION_PATTERN = /\([a-z]+\|[a-z]+\)/g;
+const VERDICT_GRAMMAR_OWNER = "core/src/verdict/grammar.ts";
+const CANONICAL_SEARCH_ROOTS = ["core/src", "plugin", "bootstrap", "tests", "tools", "opencode/plugin", "opencode/hooks"];
+const ALTERNATION_PATTERN = /\([a-z]+(?:\|[a-z]+)+\)/g;
 
 const MINIMUM_ALTERNATIONS = 2;
 const MINIMUM_ALTERNATIONS_DERIVATION =
-  `${VERDICT_GRAMMAR_OWNER}'s STATUS_LINE and VERDICT_LINE regex literals, measured at C5-S5b-2: (done|blocked), (pass|fail) — 2`;
+  `${VERDICT_GRAMMAR_OWNER}'s STATUS_LINE and VERDICT_LINE regex literals, measured when the grammar moved into the core: ` +
+  "(done|blocked), (pass|fail|blocked) — 2";
 
 const MINIMUM_SEARCHED_FILES = 80;
 const MINIMUM_SEARCHED_FILES_DERIVATION =
@@ -75,7 +76,7 @@ const duplicates = alternations.flatMap((alternation) =>
 
 describe(
   `${VERDICT_GRAMMAR_OWNER} is the sole implementation of the verdict vocabulary a delegated report is read with — ` +
-    `no file under ${SEARCHED_PREFIXES.join(", ")} spells the same (word|word) alternation`,
+    `no file under ${SEARCHED_PREFIXES.join(", ")} spells the same alternation of two or more words`,
   () => {
     test("no searched file duplicates a verdict-vocabulary alternation the owner spells", () => {
       assert.deepEqual(duplicates, [], duplicates.join("\n"));

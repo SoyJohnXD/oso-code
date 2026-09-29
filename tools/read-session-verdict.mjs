@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
-import { parseAgentVerdict } from "../opencode/plugin/oso/verdict.ts";
+import { parseAgentVerdict } from "../core/src/verdict/grammar.ts";
 
 function assistantTextOf(line) {
   if (!line.startsWith("{")) {

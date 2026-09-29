@@ -1243,9 +1243,12 @@ function appendJournal(journalFile, text) {
     throw new JournalAppendError(journalFile, { cause: error });
   }
 }
+function eventsLogFile() {
+  return path.join(stateRootDirectory(), "events.jsonl");
+}
 function logEvent(entry) {
   const line = serializeEvent(entry);
-  const eventsLog = path.join(stateRootDirectory(), "events.jsonl");
+  const eventsLog = eventsLogFile();
   try {
     mkdirSync(path.dirname(eventsLog), { recursive: true });
     withOwnerOnlyUmask(() => appendFileSync(eventsLog, `${line}
@@ -3927,6 +3930,27 @@ function namesAVerifyCheck(blockText) {
   return VERIFY_CHECK_TOKENS.some((token) => lowered.includes(token.toLowerCase()));
 }
 
+// core/src/verdict/grammar.ts
+var STATUS_LINE = /^\s*status\s*:\s*(done|blocked)\s*$/i;
+var VERDICT_LINE = /^\s*verdict\s*:\s*(pass|fail|blocked)\s*$/i;
+function parseAgentVerdict(text) {
+  const parsed = { matched: false };
+  for (const line of text.split(/\r?\n/)) {
+    const statusMatch = line.match(STATUS_LINE);
+    if (statusMatch !== null) {
+      parsed.status = statusMatch[1].toLowerCase();
+      parsed.matched = true;
+      continue;
+    }
+    const verdictMatch = line.match(VERDICT_LINE);
+    if (verdictMatch !== null) {
+      parsed.verdict = verdictMatch[1].toLowerCase();
+      parsed.matched = true;
+    }
+  }
+  return parsed;
+}
+
 // opencode/plugin/oso/identity.ts
 import { createHash as createHash2 } from "node:crypto";
 import { existsSync as existsSync4, readFileSync as readFileSync5, statSync as statSync3 } from "node:fs";
@@ -4148,29 +4172,6 @@ function stateBinPath2() {
 
 // opencode/plugin/oso/wave.ts
 import { isAbsolute as isAbsolute2 } from "node:path";
-
-// opencode/plugin/oso/verdict.ts
-var STATUS_LINE = /^\s*status\s*:\s*(done|blocked)\s*$/i;
-var VERDICT_LINE = /^\s*verdict\s*:\s*(pass|fail)\s*$/i;
-function parseAgentVerdict(text) {
-  const parsed = { matched: false };
-  for (const line of text.split(/\r?\n/)) {
-    const statusMatch = line.match(STATUS_LINE);
-    if (statusMatch !== null) {
-      parsed.status = statusMatch[1].toLowerCase();
-      parsed.matched = true;
-      continue;
-    }
-    const verdictMatch = line.match(VERDICT_LINE);
-    if (verdictMatch !== null) {
-      parsed.verdict = verdictMatch[1].toLowerCase();
-      parsed.matched = true;
-    }
-  }
-  return parsed;
-}
-
-// opencode/plugin/oso/wave.ts
 async function runWave(request) {
   const pinned = await pinEveryChildSession(request);
   return Promise.all(pinned.map((child) => collectChildReport(child, request)));

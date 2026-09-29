@@ -1,0 +1,14 @@
+{"kind":"arm","slice":"1","session":"ses-a","change":"alpha","time":"2026-09-01T10:00:00Z"}
+{"time":"2026-09-01T10:05:00Z","host":"claude","session":"ses-a","change":"alpha","slice":"1","attempt":1,"role":"verifier","model":"opus","verdict":"fail","verdict_shape":"valid","escalated":false}
+{"time":"2026-09-01T10:10:00Z","host":"claude","session":"ses-a","change":"alpha","slice":"1","attempt":2,"role":"verifier","model":"opus","verdict":"fail","verdict_shape":"valid","escalated":false}
+{"time":"2026-09-01T10:15:00Z","host":"claude","session":"ses-a","change":"alpha","slice":"1","attempt":3,"role":"verifier","model":"opus","verdict":"pass","verdict_shape":"valid","escalated":false}
+{"kind":"arm","slice":"2","session":"ses-a","change":"alpha","time":"2026-09-01T11:00:00Z"}
+{"time":"2026-09-01T11:04:00Z","host":"claude","session":"ses-a","change":"alpha","slice":"2","attempt":1,"role":"applier","model":"opus","verdict":"none","verdict_shape":"malformed","escalated":false}
+{"time":"2026-09-01T11:05:00Z","host":"claude","session":"ses-a","change":"alpha","slice":"2","attempt":1,"role":"verifier","model":"sonnet","verdict":"pass","verdict_shape":"valid","escalated":false}
+this line is not a record
+{"kind":"arm","slice":"3","session":"ses-a","change":"alpha","time":"2026-09-01T12:00:00Z"}
+{"time":"2026-09-01T12:05:00Z","host":"claude","session":"ses-a","change":"alpha","slice":"3","attempt":1,"role":"verifier","model":"opus","verdict":"fail","verdict_shape":"valid","escalated":false}
+{"time":"2026-09-01T12:30:00Z","host":"opencode","session":"ses-b","change":null,"slice":"9","attempt":1,"role":"verifier","model":null,"verdict":"fail","verdict_shape":"valid","escalated":false}
+{"kind":"arm","slice":"3","session":"ses-b","change":"beta","time":"2026-09-02T09:00:00Z"}
+{"time":"2026-09-02T09:05:00Z","host":"opencode","session":"ses-b","change":"beta","slice":"3","attempt":1,"role":"verifier","model":null,"verdict":"none","verdict_shape":"malformed","escalated":false}
+{"time":"2026-09-02T09:10:00Z","host":"opencode","session":"ses-b","change":"beta","slice":"3","attempt":2,"role":"verifier","model":null,"verdict":"pass","verdict_shape":"valid","escalated":false}

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseAgentVerdict } from "./verdict.ts";
+import { parseAgentVerdict } from "../../src/verdict/grammar.ts";
 
 test("parses an applier done status", () => {
   const parsed = parseAgentVerdict("finished the work\nstatus: done\n");
@@ -23,6 +23,12 @@ test("parses a verifier pass verdict", () => {
 test("parses a verifier fail verdict", () => {
   const parsed = parseAgentVerdict("verdict: fail\n");
   assert.equal(parsed.verdict, "fail");
+  assert.equal(parsed.matched, true);
+});
+
+test("parses a verifier blocked verdict", () => {
+  const parsed = parseAgentVerdict("the bar could not run\nverdict: blocked\n");
+  assert.equal(parsed.verdict, "blocked");
   assert.equal(parsed.matched, true);
 });
 
