@@ -2,7 +2,7 @@ import type { GateOutcome, HookEnvelope, SessionStartVerdict } from "../hosts/en
 import { readJsonFile } from "../install/json.ts";
 import { opencodePathsFor } from "../install/opencode.ts";
 import { openCodeHostProbes } from "../install/opencode-host.ts";
-import { openCodeInstallTargets, type OpenCodeInstallRecord } from "../install/opencode-install.ts";
+import { isOpenCodeInstallRecord, openCodeInstallTargets, type OpenCodeInstallRecord } from "../install/opencode-install-layout.ts";
 import { openCodeTrustTargetUnder } from "../install/opencode-trust.ts";
 import { meetsVersionFloor, SUPPORTED_OPENCODE_VERSION } from "../install/pins.ts";
 import { messageOf } from "../install/report.ts";
@@ -40,14 +40,8 @@ function installRecordReading(installRecord: string): InstallRecordReading {
     return { kind: "unread", cause: messageOf(error) };
   }
   if (parsed === undefined) return { kind: "unread", cause: `no install record at ${installRecord}` };
-  if (!isInstallRecord(parsed)) return { kind: "unread", cause: `the install record at ${installRecord} holds no version and manifest rows` };
+  if (!isOpenCodeInstallRecord(parsed)) return { kind: "unread", cause: `the install record at ${installRecord} holds no version and manifest rows` };
   return { kind: "read", record: parsed };
-}
-
-function isInstallRecord(parsed: unknown): parsed is OpenCodeInstallRecord {
-  const candidate = parsed as { version?: unknown; manifest?: unknown } | null;
-  if (typeof candidate?.version !== "string" || !Array.isArray(candidate.manifest)) return false;
-  return candidate.manifest.every((row: { digest?: unknown; file?: unknown } | null) => typeof row?.digest === "string" && typeof row.file === "string");
 }
 
 function versionDrift(record: OpenCodeInstallRecord): DriftCheck {

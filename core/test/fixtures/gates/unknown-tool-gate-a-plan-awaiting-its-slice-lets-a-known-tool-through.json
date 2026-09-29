@@ -1,8 +1,8 @@
 {
-  "name": "unknown-tool gate: a plan awaiting its slice lets a tool from the read-only set through",
+  "name": "unknown-tool gate: a plan awaiting its slice lets a tool the harness knows through",
   "source": [
     {
-      "assertion": "assert_allows \"a plan awaiting its slice lets a read-only tool through\" block-unknown-tool.sh \"$(tool_input engram_mem_search)\""
+      "assertion": "assert_allows \"a plan awaiting its slice lets a known tool through\" block-unknown-tool.sh \"$(tool_input engram_mem_search)\""
     }
   ],
   "gate": "unknown",

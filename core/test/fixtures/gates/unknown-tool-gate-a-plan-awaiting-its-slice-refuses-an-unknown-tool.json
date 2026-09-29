@@ -1,8 +1,8 @@
 {
-  "name": "unknown-tool gate: a plan awaiting its slice denies a tool not known to be read-only and names the call that arms the slice",
+  "name": "unknown-tool gate: a plan awaiting its slice refuses an unknown tool and names the call that arms the slice",
   "source": [
     {
-      "assertion": "assert_denies \"a plan awaiting its slice denies a tool not known to be read-only\" block-unknown-tool.sh \"$(tool_input somemcp_do_thing)\""
+      "assertion": "assert_denies \"a plan awaiting its slice refuses an unknown tool\" block-unknown-tool.sh \"$(tool_input somemcp_do_thing)\""
     }
   ],
   "gate": "unknown",

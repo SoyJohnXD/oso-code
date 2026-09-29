@@ -130,7 +130,7 @@ test("an edit with no slice armed is denied and names the state write that arms 
 
 const UNLISTED_TOOLS = ["engram_mem_timeline", "somemcp_do_thing"];
 const RELEASE_SHAPED_TOOLS = ["vercel_create_deployment", "npm_publish", "gh_release_create"];
-const READ_ONLY_TOOLS = ["read", "grep", "engram_mem_search"];
+const KNOWN_HARNESS_TOOLS = ["read", "grep", "engram_mem_search", "engram_mem_save", "task"];
 const PLAN_AWAITING_A_SLICE = ["mode=plan", "active_slice=none", "verify_green=false"];
 const MODES_WITH_WORK_UNDER_WAY: readonly (readonly string[])[] = [
   ["mode=plan", "active_slice=4", "verify_green=false"],
@@ -190,12 +190,12 @@ test("a deploy-, publish- or release-shaped tool is denied in every mode while a
   }
 });
 
-test("a plan awaiting its slice denies a tool not known to be read-only and names the slice arming, while a read-only tool passes", () => {
+test("a plan awaiting its slice refuses an unknown tool and names the slice arming, while the harness's known tools pass, write-capable ones included", () => {
   underState(PLAN_AWAITING_A_SLICE, (fixture) => {
     const stranger = judgeTool(fixture, "unknown", "somemcp_do_thing", {});
     assert.equal(stranger.kind, "deny");
     assert.match(stranger.message, /set active_slice=<n>/);
-    assert.deepEqual(unknownGateKinds(fixture, READ_ONLY_TOOLS), everyToolJudged(READ_ONLY_TOOLS, "allow"));
+    assert.deepEqual(unknownGateKinds(fixture, KNOWN_HARNESS_TOOLS), everyToolJudged(KNOWN_HARNESS_TOOLS, "allow"));
   });
 });
 

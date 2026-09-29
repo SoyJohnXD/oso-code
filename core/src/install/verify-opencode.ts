@@ -31,9 +31,9 @@ import {
   EXPECTED_SKILL_WRAPPER_COUNT,
   installerOwnedTargets,
   installOpenCode,
-  openCodeInstallTargets,
   openCodePayloadSources,
 } from "./opencode-install.ts";
+import { openCodeInstallTargets } from "./opencode-install-layout.ts";
 import { openCodeTrustReading, OPENCODE_TRUST_FILE_COUNT, trustDivergenceLine } from "./opencode-trust.ts";
 import { isAboveTestedVersion, meetsVersionFloor, SUPPORTED_OPENCODE_VERSION } from "./pins.ts";
 import { modelOverridesTheTierCannotRank, ProfileMirrorRefusedError, profileRolesOf, readProfile, type ProfileReading } from "./profile.ts";

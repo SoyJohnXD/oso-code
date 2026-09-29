@@ -3030,7 +3030,7 @@ function gitWorktreePrune(repoPath) {
 }
 
 // core/src/gates/unknown.ts
-import path14 from "node:path";
+import path12 from "node:path";
 
 // core/src/install/opencode.ts
 import path10 from "node:path";
@@ -3117,105 +3117,31 @@ function opencodePathsFor(homeDirectory2, environment) {
   };
 }
 
-// core/src/install/opencode-install.ts
-import path13 from "node:path";
-
-// core/src/install/verify-claude.ts
+// core/src/install/opencode-install-layout.ts
 import path11 from "node:path";
-function compareVersionsAscending(a, b) {
-  const segmentsOf = (value) => value.split(/(\d+)/).filter((segment) => segment !== "");
-  const left = segmentsOf(a);
-  const right = segmentsOf(b);
-  const length = Math.max(left.length, right.length);
-  for (let index = 0; index < length; index += 1) {
-    const leftSegment = left[index] ?? "";
-    const rightSegment = right[index] ?? "";
-    const bothNumeric = /^\d+$/.test(leftSegment) && /^\d+$/.test(rightSegment);
-    const compared = bothNumeric ? Number(leftSegment) - Number(rightSegment) : leftSegment.localeCompare(rightSegment);
-    if (compared !== 0) return compared;
-  }
-  return 0;
-}
-function collapsedNewlines(text) {
-  return text.replace(/\n+$/, "").replace(/\n/g, " ");
-}
-function firstExecutableOnPath(environment, binaryName) {
-  const entries = (environment["PATH"] ?? "").split(path11.delimiter).filter((entry) => entry !== "");
-  for (const entry of entries) {
-    const candidate = path11.join(entry, binaryName);
-    if (isExecutableRegularFile(candidate)) return candidate;
-  }
-  return void 0;
-}
-var POSIX_KERNEL_EXECUTABLE_MAGICS = ["\x7FELF", "#!", "\xCF\xFA\xED\xFE", "\xCE\xFA\xED\xFE", "\xCA\xFE\xBA\xBE"];
-var WIN32_KERNEL_EXECUTABLE_MAGICS = ["MZ"];
-var WIDEST_EXECUTABLE_MAGIC_BYTES = Math.max(
-  ...[...POSIX_KERNEL_EXECUTABLE_MAGICS, ...WIN32_KERNEL_EXECUTABLE_MAGICS].map((magic) => magic.length)
-);
-
-// core/src/install/pins.ts
-var SUPPORTED_OPENCODE_VERSION = "1.18.22";
-var DOTTED_NUMERIC_VERSION = /^\d+(\.\d+)*$/;
-function meetsVersionFloor(found, floor) {
-  if (found === void 0 || !DOTTED_NUMERIC_VERSION.test(found)) return false;
-  return compareVersionsAscending(found, floor) >= 0;
-}
-
-// core/src/install/trust.ts
-import { readFileSync as readFileSync3 } from "node:fs";
-var SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/;
-var RAW_INSTALLED_BYTES = (_relative, target) => readFileSync3(target);
-function trustRowDivergences(rows, resolveTarget, bytesOf = RAW_INSTALLED_BYTES) {
-  return rows.flatMap((row) => divergenceOf(row, resolveTarget, bytesOf));
-}
-function divergenceOf(row, resolveTarget, bytesOf) {
-  if (!SHA256_HEX_PATTERN.test(row.digest)) return [{ file: row.file, state: { kind: "malformed-published-hash" } }];
-  const target = resolveTarget(row.file);
-  if (target === void 0) return [{ file: row.file, state: { kind: "outside-the-trust-set" } }];
-  if (!isReadableRegularFile(target)) return [{ file: row.file, state: { kind: "missing" } }];
-  const actual = sha256Hex(bytesOf(row.file, target));
-  return actual === row.digest ? [] : [{ file: row.file, state: { kind: "mismatch", actual } }];
-}
-
-// core/src/install/engram.ts
-var MEBIBYTE = 1024 * 1024;
-var ARCHIVE_EXPANSION_CEILING_BYTES = 128 * MEBIBYTE;
-
-// core/src/install/opencode-trust.ts
-import path12 from "node:path";
-var INSTALLED_TREE_MAP = [
-  { published: "opencode/dist/oso-code.js", installed: "plugin/oso-code.js" },
-  { published: "plugin/dist/", installed: "dist/" },
-  { published: "plugin/git-hooks/", installed: "git-hooks/" },
-  { published: "plugin/bin/", installed: "bin/" }
-];
-function openCodeTrustTargetUnder(rootKind, root, published) {
-  if (rootKind === "source") return path12.join(root, ...published.split("/"));
-  const mapped = INSTALLED_TREE_MAP.find((row) => row.published === published || row.published.endsWith("/") && published.startsWith(row.published));
-  if (mapped === void 0) return void 0;
-  const relative = mapped.published.endsWith("/") ? `${mapped.installed}${published.slice(mapped.published.length)}` : mapped.installed;
-  return path12.join(root, ...relative.split("/"));
-}
-
-// core/src/install/opencode-install.ts
 function openCodeInstallTargets(paths) {
   return {
-    skills: path13.join(paths.configHome, "skill"),
-    agents: path13.join(paths.configHome, "agent"),
-    commands: path13.join(paths.configHome, "command"),
-    plugin: path13.join(paths.configHome, "plugin"),
-    hooks: path13.join(paths.configHome, "hooks"),
-    gitHooks: path13.join(paths.configHome, "git-hooks"),
-    stateBin: path13.join(paths.configHome, "bin"),
-    dist: path13.join(paths.configHome, "dist"),
-    engramPlugin: path13.join(paths.configHome, "plugins", "engram.ts"),
-    impeccableMount: path13.join(paths.homeDirectory, ".agents", "skills", "impeccable"),
-    impeccableOptOut: path13.join(paths.stateRoot, "impeccable-opt-out"),
-    ownerRegistry: path13.join(paths.stateRoot, "opencode-install-registry"),
-    restoreExercisedMarker: path13.join(paths.stateRoot, ".install-restore-verified-opencode"),
-    planArtifactRoot: path13.join(paths.stateRoot, "plans"),
-    installRecord: path13.join(paths.configHome, "oso-code-install.json")
+    skills: path11.join(paths.configHome, "skill"),
+    agents: path11.join(paths.configHome, "agent"),
+    commands: path11.join(paths.configHome, "command"),
+    plugin: path11.join(paths.configHome, "plugin"),
+    hooks: path11.join(paths.configHome, "hooks"),
+    gitHooks: path11.join(paths.configHome, "git-hooks"),
+    stateBin: path11.join(paths.configHome, "bin"),
+    dist: path11.join(paths.configHome, "dist"),
+    engramPlugin: path11.join(paths.configHome, "plugins", "engram.ts"),
+    impeccableMount: path11.join(paths.homeDirectory, ".agents", "skills", "impeccable"),
+    impeccableOptOut: path11.join(paths.stateRoot, "impeccable-opt-out"),
+    ownerRegistry: path11.join(paths.stateRoot, "opencode-install-registry"),
+    restoreExercisedMarker: path11.join(paths.stateRoot, ".install-restore-verified-opencode"),
+    planArtifactRoot: path11.join(paths.stateRoot, "plans"),
+    installRecord: path11.join(paths.configHome, "oso-code-install.json")
   };
+}
+function isOpenCodeInstallRecord(parsed) {
+  const candidate = parsed;
+  if (typeof candidate?.version !== "string" || !Array.isArray(candidate.manifest)) return false;
+  return candidate.manifest.every((row) => typeof row?.digest === "string" && typeof row.file === "string");
 }
 
 // core/src/gates/unknown.ts
@@ -3264,14 +3190,14 @@ function deniedAsHarnessWrite(toolName, target, session) {
 function deniedUntilASliceIsArmed(toolName, session) {
   return denied({
     gate: "unknown",
-    message: `oso-code: plan mode is active but no slice is active, and tool '${toolName === "" ? "<missing>" : toolName}' is not known to be read-only, so it waits for the slice as an edit would. Activate it first (${sliceArmingRemedy(session)}), then retry the call.`,
+    message: `oso-code: plan mode is active but no slice is active, and tool '${toolName === "" ? "<missing>" : toolName}' is not one of the harness's known tools. Before a slice is armed the known tools pass and an unknown tool is refused, as an edit would be. Activate it first (${sliceArmingRemedy(session)}), then retry the call.`,
     event: "unknown-tool-denied",
     session,
     detail: toolName
   });
 }
 function harnessTreeTargetOf(envelope) {
-  const targets = writeTargetsOf(envelope).map((target) => path14.resolve(envelope.cwd, target));
+  const targets = writeTargetsOf(envelope).map((target) => path12.resolve(envelope.cwd, target));
   if (targets.length === 0) return void 0;
   const harnessTree = installedHarnessTree();
   return targets.find((target) => harnessTree.some((directory) => liesWithin(directory, target)));
@@ -3288,8 +3214,8 @@ function installedHarnessTree() {
   return [targets.skills, targets.agents, targets.commands, targets.plugin, targets.hooks, paths.stateRoot];
 }
 function liesWithin(directory, target) {
-  const relative = path14.relative(directory, target);
-  const escapes = relative === ".." || relative.startsWith(`..${path14.sep}`) || path14.isAbsolute(relative);
+  const relative = path12.relative(directory, target);
+  const escapes = relative === ".." || relative.startsWith(`..${path12.sep}`) || path12.isAbsolute(relative);
   return !escapes;
 }
 function readAllowlist(argv) {
@@ -3321,7 +3247,40 @@ import path16 from "node:path";
 import { spawnSync as spawnSync2 } from "node:child_process";
 import { mkdtempSync, rmSync as rmSync5 } from "node:fs";
 import { tmpdir } from "node:os";
-import path15 from "node:path";
+import path14 from "node:path";
+
+// core/src/install/verify-claude.ts
+import path13 from "node:path";
+function compareVersionsAscending(a, b) {
+  const segmentsOf = (value) => value.split(/(\d+)/).filter((segment) => segment !== "");
+  const left = segmentsOf(a);
+  const right = segmentsOf(b);
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    const leftSegment = left[index] ?? "";
+    const rightSegment = right[index] ?? "";
+    const bothNumeric = /^\d+$/.test(leftSegment) && /^\d+$/.test(rightSegment);
+    const compared = bothNumeric ? Number(leftSegment) - Number(rightSegment) : leftSegment.localeCompare(rightSegment);
+    if (compared !== 0) return compared;
+  }
+  return 0;
+}
+function collapsedNewlines(text) {
+  return text.replace(/\n+$/, "").replace(/\n/g, " ");
+}
+function firstExecutableOnPath(environment, binaryName) {
+  const entries = (environment["PATH"] ?? "").split(path13.delimiter).filter((entry) => entry !== "");
+  for (const entry of entries) {
+    const candidate = path13.join(entry, binaryName);
+    if (isExecutableRegularFile(candidate)) return candidate;
+  }
+  return void 0;
+}
+var POSIX_KERNEL_EXECUTABLE_MAGICS = ["\x7FELF", "#!", "\xCF\xFA\xED\xFE", "\xCE\xFA\xED\xFE", "\xCA\xFE\xBA\xBE"];
+var WIN32_KERNEL_EXECUTABLE_MAGICS = ["MZ"];
+var WIDEST_EXECUTABLE_MAGIC_BYTES = Math.max(
+  ...[...POSIX_KERNEL_EXECUTABLE_MAGICS, ...WIN32_KERNEL_EXECUTABLE_MAGICS].map((magic) => magic.length)
+);
 
 // core/src/install/version-line.ts
 function versionLineReadingOf(rawOutput, versionLine) {
@@ -3371,7 +3330,7 @@ function versionFieldOf(probeOutput) {
   return versionLineReadingOf(strippedPerLine, OPENCODE_VERSION_LINE);
 }
 function probedVersion(environment, binaryPath) {
-  const probeHome = mkdtempSync(path15.join(environment["TMPDIR"] ?? tmpdir(), PROBE_HOME_PREFIX));
+  const probeHome = mkdtempSync(path14.join(environment["TMPDIR"] ?? tmpdir(), PROBE_HOME_PREFIX));
   try {
     const run = spawnSync2(binaryPath, ["--version"], {
       env: probeEnvironment(environment, probeHome),
@@ -3389,11 +3348,53 @@ function probeEnvironment(environment, probeHome) {
     HOME: probeHome,
     USERPROFILE: probeHome,
     TMPDIR: probeHome,
-    XDG_CONFIG_HOME: path15.join(probeHome, ".config"),
-    XDG_STATE_HOME: path15.join(probeHome, ".local", "state"),
-    XDG_CACHE_HOME: path15.join(probeHome, ".cache"),
-    XDG_DATA_HOME: path15.join(probeHome, ".local", "share")
+    XDG_CONFIG_HOME: path14.join(probeHome, ".config"),
+    XDG_STATE_HOME: path14.join(probeHome, ".local", "state"),
+    XDG_CACHE_HOME: path14.join(probeHome, ".cache"),
+    XDG_DATA_HOME: path14.join(probeHome, ".local", "share")
   };
+}
+
+// core/src/install/opencode-trust.ts
+import path15 from "node:path";
+
+// core/src/install/trust.ts
+import { readFileSync as readFileSync3 } from "node:fs";
+var SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/;
+var RAW_INSTALLED_BYTES = (_relative, target) => readFileSync3(target);
+function trustRowDivergences(rows, resolveTarget, bytesOf = RAW_INSTALLED_BYTES) {
+  return rows.flatMap((row) => divergenceOf(row, resolveTarget, bytesOf));
+}
+function divergenceOf(row, resolveTarget, bytesOf) {
+  if (!SHA256_HEX_PATTERN.test(row.digest)) return [{ file: row.file, state: { kind: "malformed-published-hash" } }];
+  const target = resolveTarget(row.file);
+  if (target === void 0) return [{ file: row.file, state: { kind: "outside-the-trust-set" } }];
+  if (!isReadableRegularFile(target)) return [{ file: row.file, state: { kind: "missing" } }];
+  const actual = sha256Hex(bytesOf(row.file, target));
+  return actual === row.digest ? [] : [{ file: row.file, state: { kind: "mismatch", actual } }];
+}
+
+// core/src/install/opencode-trust.ts
+var INSTALLED_TREE_MAP = [
+  { published: "opencode/dist/oso-code.js", installed: "plugin/oso-code.js" },
+  { published: "plugin/dist/", installed: "dist/" },
+  { published: "plugin/git-hooks/", installed: "git-hooks/" },
+  { published: "plugin/bin/", installed: "bin/" }
+];
+function openCodeTrustTargetUnder(rootKind, root, published) {
+  if (rootKind === "source") return path15.join(root, ...published.split("/"));
+  const mapped = INSTALLED_TREE_MAP.find((row) => row.published === published || row.published.endsWith("/") && published.startsWith(row.published));
+  if (mapped === void 0) return void 0;
+  const relative = mapped.published.endsWith("/") ? `${mapped.installed}${published.slice(mapped.published.length)}` : mapped.installed;
+  return path15.join(root, ...relative.split("/"));
+}
+
+// core/src/install/pins.ts
+var SUPPORTED_OPENCODE_VERSION = "1.18.22";
+var DOTTED_NUMERIC_VERSION = /^\d+(\.\d+)*$/;
+function meetsVersionFloor(found, floor) {
+  if (found === void 0 || !DOTTED_NUMERIC_VERSION.test(found)) return false;
+  return compareVersionsAscending(found, floor) >= 0;
 }
 
 // core/src/gates/opencode-drift.ts
@@ -3413,13 +3414,8 @@ function installRecordReading(installRecord) {
     return { kind: "unread", cause: messageOf(error) };
   }
   if (parsed === void 0) return { kind: "unread", cause: `no install record at ${installRecord}` };
-  if (!isInstallRecord(parsed)) return { kind: "unread", cause: `the install record at ${installRecord} holds no version and manifest rows` };
+  if (!isOpenCodeInstallRecord(parsed)) return { kind: "unread", cause: `the install record at ${installRecord} holds no version and manifest rows` };
   return { kind: "read", record: parsed };
-}
-function isInstallRecord(parsed) {
-  const candidate = parsed;
-  if (typeof candidate?.version !== "string" || !Array.isArray(candidate.manifest)) return false;
-  return candidate.manifest.every((row) => typeof row?.digest === "string" && typeof row.file === "string");
 }
 function versionDrift(record) {
   const running = "0.27.0";
@@ -3983,9 +3979,6 @@ function hashId(input) {
 }
 
 // opencode/plugin/oso/plan-state.ts
-function cancelApprovedPlan(directory, owner, digest) {
-  runCancelApprovedPlan(directory, owner, digest);
-}
 function approvedPlanFor(directory, owner) {
   const approval = stateKeyOf(directory, "plan_approval");
   if (approval !== "approved") {
@@ -4075,7 +4068,7 @@ function promoteThePresentedPlan(directory, owner, digest) {
 }
 function abandonTheApprovedPlan(directory, owner, digest) {
   try {
-    cancelApprovedPlan(directory, owner, digest);
+    runCancelApprovedPlan(directory, owner, digest);
   } catch (err) {
     if (!(err instanceof PlanApprovalError) && !(err instanceof GatesOwnedElsewhereError)) throw err;
     throw new Error(`${PLAN_CANCEL_TOOL_ID} did not abandon the plan: ${err.message}`);
@@ -4613,17 +4606,11 @@ function nextContinuationStep(request) {
 function holdUntilAChildSettles(request, children) {
   const previous = heldRuns.get(request.sessionID);
   if (previous === void 0) {
-    recordTrace({
-      origin: "auto-continue",
-      detail: `the run is held while child sessions run: ${children.join(", ")}`,
-      severity: "advisory",
-      sessionID: request.sessionID,
-      client: request.client
-    });
+    traceRun(request, `the run is held while child sessions run: ${children.join(", ")}`);
   } else {
     clearTimeout(previous.wake);
   }
-  const untilOverdueMs = Math.max(0, earliestOverdueMs(children) - (request.now ?? Date.now)());
+  const untilOverdueMs = Math.max(0, earliestOverdueMs(children) - nowOf(request));
   const wake = setTimeout(() => redriveHeldRun(request.sessionID), untilOverdueMs).unref();
   heldRuns.set(request.sessionID, { request, wake });
 }
@@ -4645,7 +4632,7 @@ function endHold(parentID) {
   }
 }
 function releaseOverdueChildren(request) {
-  const nowMs = (request.now ?? Date.now)();
+  const nowMs = nowOf(request);
   for (const [childID, child] of childSessions) {
     if (child.parentID !== request.sessionID || child.phase !== "running") {
       continue;
@@ -4659,23 +4646,11 @@ function releaseOverdueChildren(request) {
 }
 function reportOverdueChild(request, childID, overdue) {
   const report = `child session ${childID} ${overdue.kind}:${overdue.measure} \u2014 released from the hold`;
-  recordTrace({
-    origin: "auto-continue",
-    detail: report,
-    severity: "advisory",
-    sessionID: request.sessionID,
-    client: request.client
-  });
+  traceRun(request, report);
   try {
     appendJournal(journalFileFor(request.directory), `auto-continue: ${report}`);
   } catch (error) {
-    recordTrace({
-      origin: "auto-continue",
-      detail: `the report on child session ${childID} could not be journaled: ${messageOf2(error)}`,
-      severity: "advisory",
-      sessionID: request.sessionID,
-      client: request.client
-    });
+    traceRun(request, `the report on child session ${childID} could not be journaled: ${messageOf2(error)}`);
   }
 }
 function childSessionsOf(parentID) {
@@ -4696,14 +4671,14 @@ async function postContinuationTurn(request, order) {
   }));
 }
 function standDownTraced(request, reason, turns) {
-  recordTrace({
-    origin: "auto-continue",
-    detail: reason,
-    severity: "advisory",
-    sessionID: request.sessionID,
-    client: request.client
-  });
+  traceRun(request, reason);
   return { kind: "failed", reason, turns };
+}
+function traceRun(request, detail) {
+  recordTrace({ origin: "auto-continue", detail, severity: "advisory", sessionID: request.sessionID, client: request.client });
+}
+function nowOf(request) {
+  return (request.now ?? Date.now)();
 }
 
 // opencode/plugin/oso/lifecycle.ts

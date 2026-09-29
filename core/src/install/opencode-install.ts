@@ -16,6 +16,13 @@ import { readJsonFile, writeJsonFile } from "./json.ts";
 import { EVERY_AGENT_ON_THE_HOST_SESSION_MODEL, hostContractViolationOf, mergeOpenCodeConfig, type AgentModels } from "./opencode-config.ts";
 import type { OpenCodeHostProbes } from "./opencode-host.ts";
 import {
+  harnessManifestOf,
+  harnessVersionIn,
+  openCodeInstallTargets,
+  type OpenCodeInstallRecord,
+  type OpenCodeInstallTargets,
+} from "./opencode-install-layout.ts";
+import {
   configFileRefusal,
   configHomeRefusal,
   globalFileRefusal,
@@ -47,7 +54,6 @@ import {
   type CommandOutcome,
   type WiringEntry,
 } from "./report.ts";
-import type { TrustRow } from "./trust.ts";
 import { firstExecutableOnPath } from "./verify-claude.ts";
 import { isDirectory, isoTimestamp, isReadableRegularFile, stateValue, withOwnerOnlyUmask } from "../state/store.ts";
 
@@ -76,24 +82,6 @@ export type OpenCodeInstallInput = Readonly<{
   installGitHook: boolean;
 }>;
 
-export type OpenCodeInstallTargets = Readonly<{
-  skills: string;
-  agents: string;
-  commands: string;
-  plugin: string;
-  hooks: string;
-  gitHooks: string;
-  stateBin: string;
-  dist: string;
-  engramPlugin: string;
-  impeccableMount: string;
-  impeccableOptOut: string;
-  ownerRegistry: string;
-  restoreExercisedMarker: string;
-  planArtifactRoot: string;
-  installRecord: string;
-}>;
-
 export type OpenCodePayloadSources = Readonly<{
   skills: string;
   sharedSkills: string;
@@ -109,28 +97,6 @@ export type OpenCodePayloadSources = Readonly<{
   harnessManifest: string;
 }>;
 
-export type OpenCodeInstallRecord = Readonly<{ version: string; manifest: readonly TrustRow[] }>;
-
-export function openCodeInstallTargets(paths: OpenCodePaths): OpenCodeInstallTargets {
-  return {
-    skills: path.join(paths.configHome, "skill"),
-    agents: path.join(paths.configHome, "agent"),
-    commands: path.join(paths.configHome, "command"),
-    plugin: path.join(paths.configHome, "plugin"),
-    hooks: path.join(paths.configHome, "hooks"),
-    gitHooks: path.join(paths.configHome, "git-hooks"),
-    stateBin: path.join(paths.configHome, "bin"),
-    dist: path.join(paths.configHome, "dist"),
-    engramPlugin: path.join(paths.configHome, "plugins", "engram.ts"),
-    impeccableMount: path.join(paths.homeDirectory, ".agents", "skills", "impeccable"),
-    impeccableOptOut: path.join(paths.stateRoot, "impeccable-opt-out"),
-    ownerRegistry: path.join(paths.stateRoot, "opencode-install-registry"),
-    restoreExercisedMarker: path.join(paths.stateRoot, ".install-restore-verified-opencode"),
-    planArtifactRoot: path.join(paths.stateRoot, "plans"),
-    installRecord: path.join(paths.configHome, "oso-code-install.json"),
-  };
-}
-
 export function openCodePayloadSources(repositoryRoot: string): OpenCodePayloadSources {
   return {
     skills: path.join(repositoryRoot, "opencode", "skills"),
@@ -144,7 +110,7 @@ export function openCodePayloadSources(repositoryRoot: string): OpenCodePayloadS
     dist: path.join(repositoryRoot, "plugin", "dist"),
     global: path.join(repositoryRoot, "bootstrap", "opencode-global.md"),
     publishedHashes: path.join(repositoryRoot, "bootstrap", "hook-hashes.txt"),
-    harnessManifest: path.join(repositoryRoot, "plugin", ".claude-plugin", "plugin.json"),
+    harnessManifest: harnessManifestOf(repositoryRoot),
   };
 }
 
@@ -333,9 +299,7 @@ function publishedGateBytesEntry(publishedHashes: string, configHome: string): W
 }
 
 function writeInstallRecord(sources: OpenCodePayloadSources, installRecord: string): void {
-  const version = (readJsonFile(sources.harnessManifest) as { version?: unknown } | undefined)?.version;
-  if (typeof version !== "string" || version === "") throw new Error(`the harness manifest names no version: ${sources.harnessManifest}`);
-  const record: OpenCodeInstallRecord = { version, manifest: openCodeTrustRows(sources.publishedHashes) };
+  const record: OpenCodeInstallRecord = { version: harnessVersionIn(sources.harnessManifest), manifest: openCodeTrustRows(sources.publishedHashes) };
   writeJsonFile(installRecord, record);
 }
 

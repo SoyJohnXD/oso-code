@@ -437,9 +437,21 @@ function assertOpenCodeSchema(db: DatabaseSync): void {
   if (problems.length > 0) throw new Error(`OpenCode schema unrecognized: ${problems.join("; ")}`);
 }
 
+type OpenCodeSessionIndex = Readonly<{
+  parents: Map<string, string | null>;
+  records: Map<string, SessionRecord>;
+  roles: Map<string, string>;
+}>;
+
 function classifyOpenCodeRows(sessionRows: SqlRow[], messageRows: SqlRow[], partRows: SqlRow[]): TreeClassification {
-  const tree: TreeClassification = { sessions: [], skippedLines: 0, unreadableFiles: 0 };
   const parents = new Map(sessionRows.map((row) => [String(row["id"]), row["parent_id"] == null ? null : String(row["parent_id"])]));
+  const records = sessionRecordsByRoot(sessionRows, parents);
+  const roles = messageRolesCountingTurns(messageRows, records);
+  const skippedLines = classifyOpenCodeParts(partRows, { parents, records, roles });
+  return { sessions: [...records.values()], skippedLines, unreadableFiles: 0 };
+}
+
+function sessionRecordsByRoot(sessionRows: SqlRow[], parents: Map<string, string | null>): Map<string, SessionRecord> {
   const records = new Map<string, SessionRecord>();
   for (const row of sessionRows) {
     const root = rootSessionOf(String(row["id"]), parents);
@@ -447,27 +459,32 @@ function classifyOpenCodeRows(sessionRows: SqlRow[], messageRows: SqlRow[], part
     if (record === undefined) {
       record = { ...emptySession(root), hasMainTranscript: true };
       records.set(root, record);
-      tree.sessions.push(record);
     }
     record.mtimeMs = Math.max(record.mtimeMs, Number(row["time_updated"]));
   }
+  return records;
+}
 
+function messageRolesCountingTurns(messageRows: SqlRow[], records: Map<string, SessionRecord>): Map<string, string> {
   const roles = new Map<string, string>();
   for (const row of messageRows) {
     const role = parseRow(row["data"])?.["role"];
     if (typeof role !== "string") continue;
     roles.set(String(row["id"]), role);
-    const sessionId = String(row["session_id"]);
-    const record = records.get(sessionId);
+    const record = records.get(String(row["session_id"]));
     if (role === "assistant" && record !== undefined) record.turns += 1;
   }
+  return roles;
+}
 
+function classifyOpenCodeParts(partRows: SqlRow[], { parents, records, roles }: OpenCodeSessionIndex): number {
+  let skippedLines = 0;
   for (const row of partRows) {
     const sessionId = String(row["session_id"]);
     const record = records.get(rootSessionOf(sessionId, parents));
     const part = parseRow(row["data"]);
     if (part === undefined) {
-      tree.skippedLines += 1;
+      skippedLines += 1;
       continue;
     }
     if (record === undefined) continue;
@@ -480,7 +497,7 @@ function classifyOpenCodeRows(sessionRows: SqlRow[], messageRows: SqlRow[], part
     if (record.sessionId !== sessionId) continue;
     countOpenCodeMainPart(record, part, state, roles.get(String(row["message_id"])) === "user", timestamp);
   }
-  return tree;
+  return skippedLines;
 }
 
 function countOpenCodeMainPart(

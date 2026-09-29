@@ -8,13 +8,12 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const renderModule = join(repoRoot, "core", "src", "routes", "render.ts");
 const routesModule = join(repoRoot, "core/src/routes/routes.ts");
 const hashFile = join(repoRoot, "bootstrap", "hook-hashes.txt");
+const installLayoutModule = join(repoRoot, "core", "src", "install", "opencode-install-layout.ts");
 const publishedRow = /^([0-9a-f]{64})( {2})(\S.*)$/;
-
-const harnessManifest = join(repoRoot, "plugin", ".claude-plugin", "plugin.json");
 
 const OPENCODE_HOST_PACKAGE = "@opencode-ai/plugin";
 
-function bundlesOf(render, routes) {
+function bundlesOf(render, routes, harnessVersion) {
   const spawned = [
     { source: "gate.ts", bundle: render.GATE_BUNDLE },
     { source: "precommit.ts", bundle: render.PRECOMMIT_BUNDLE },
@@ -33,15 +32,9 @@ function bundlesOf(render, routes) {
       path: join(repoRoot, opencodeBundle),
       name: opencodeBundle,
       external: [OPENCODE_HOST_PACKAGE],
-      define: { "process.env.OSO_HARNESS_BUILD_VERSION": JSON.stringify(harnessVersion()) },
+      define: { "process.env.OSO_HARNESS_BUILD_VERSION": JSON.stringify(harnessVersion) },
     },
   ];
-}
-
-function harnessVersion() {
-  const { version } = JSON.parse(readFileSync(harnessManifest, "utf8"));
-  if (typeof version !== "string" || version === "") throw new Error(`${harnessManifest} names no version`);
-  return version;
 }
 
 function generatedBundlePath(routes, bundle) {
@@ -74,8 +67,10 @@ function redigestedHashFile(writtenSoFar) {
 async function freshArtifacts() {
   const render = await importBundled(renderModule);
   const routes = await importBundled(routesModule);
+  const layout = await importBundled(installLayoutModule);
+  const harnessVersion = layout.harnessVersionIn(layout.harnessManifestOf(repoRoot));
   const built = await Promise.all(
-    bundlesOf(render, routes).map(async ({ entryPoint, path, name, external, define }) => ({
+    bundlesOf(render, routes, harnessVersion).map(async ({ entryPoint, path, name, external, define }) => ({
       path,
       name,
       text: await bundleText(entryPoint, external, define),

@@ -178,17 +178,11 @@ function nextContinuationStep(request: ContinuationRequest): ContinuationStep {
 function holdUntilAChildSettles(request: ContinuationRequest, children: readonly string[]): void {
   const previous = heldRuns.get(request.sessionID);
   if (previous === undefined) {
-    recordTrace({
-      origin: "auto-continue",
-      detail: `the run is held while child sessions run: ${children.join(", ")}`,
-      severity: "advisory",
-      sessionID: request.sessionID,
-      client: request.client,
-    });
+    traceRun(request, `the run is held while child sessions run: ${children.join(", ")}`);
   } else {
     clearTimeout(previous.wake);
   }
-  const untilOverdueMs = Math.max(0, earliestOverdueMs(children) - (request.now ?? Date.now)());
+  const untilOverdueMs = Math.max(0, earliestOverdueMs(children) - nowOf(request));
   const wake = setTimeout(() => redriveHeldRun(request.sessionID), untilOverdueMs).unref();
   heldRuns.set(request.sessionID, { request, wake });
 }
@@ -214,7 +208,7 @@ function endHold(parentID: string): void {
 }
 
 function releaseOverdueChildren(request: ContinuationRequest): void {
-  const nowMs = (request.now ?? Date.now)();
+  const nowMs = nowOf(request);
   for (const [childID, child] of childSessions) {
     if (child.parentID !== request.sessionID || child.phase !== "running") {
       continue;
@@ -229,23 +223,11 @@ function releaseOverdueChildren(request: ContinuationRequest): void {
 
 function reportOverdueChild(request: ContinuationRequest, childID: string, overdue: OverdueDelegation): void {
   const report = `child session ${childID} ${overdue.kind}:${overdue.measure} — released from the hold`;
-  recordTrace({
-    origin: "auto-continue",
-    detail: report,
-    severity: "advisory",
-    sessionID: request.sessionID,
-    client: request.client,
-  });
+  traceRun(request, report);
   try {
     appendJournal(journalFileFor(request.directory), `auto-continue: ${report}`);
   } catch (error) {
-    recordTrace({
-      origin: "auto-continue",
-      detail: `the report on child session ${childID} could not be journaled: ${messageOf(error)}`,
-      severity: "advisory",
-      sessionID: request.sessionID,
-      client: request.client,
-    });
+    traceRun(request, `the report on child session ${childID} could not be journaled: ${messageOf(error)}`);
   }
 }
 
@@ -269,12 +251,14 @@ async function postContinuationTurn(request: ContinuationRequest, order: string)
 }
 
 function standDownTraced(request: ContinuationRequest, reason: string, turns: number): ContinuationOutcome {
-  recordTrace({
-    origin: "auto-continue",
-    detail: reason,
-    severity: "advisory",
-    sessionID: request.sessionID,
-    client: request.client,
-  });
+  traceRun(request, reason);
   return { kind: "failed", reason, turns };
+}
+
+function traceRun(request: ContinuationRequest, detail: string): void {
+  recordTrace({ origin: "auto-continue", detail, severity: "advisory", sessionID: request.sessionID, client: request.client });
+}
+
+function nowOf(request: ContinuationRequest): number {
+  return (request.now ?? Date.now)();
 }

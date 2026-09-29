@@ -2,7 +2,7 @@ import path from "node:path";
 import type { GateOutcome, HookEnvelope } from "../hosts/envelope.ts";
 import { ALLOWED } from "../hosts/envelope.ts";
 import { opencodePathsFor } from "../install/opencode.ts";
-import { openCodeInstallTargets } from "../install/opencode-install.ts";
+import { openCodeInstallTargets } from "../install/opencode-install-layout.ts";
 import { homeDirectoryFrom, stateFileFor } from "../state/store.ts";
 import { planAwaitsItsSlice, sliceArmingRemedy } from "./edits.ts";
 import {
@@ -76,7 +76,8 @@ function deniedUntilASliceIsArmed(toolName: string, session: string): GateOutcom
     gate: "unknown",
     message:
       `oso-code: plan mode is active but no slice is active, and tool '${toolName === "" ? "<missing>" : toolName}' ` +
-      `is not known to be read-only, so it waits for the slice as an edit would. ` +
+      `is not one of the harness's known tools. Before a slice is armed the known tools pass and an unknown tool ` +
+      `is refused, as an edit would be. ` +
       `Activate it first (${sliceArmingRemedy(session)}), then retry the call.`,
     event: "unknown-tool-denied",
     session,

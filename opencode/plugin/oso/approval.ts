@@ -3,11 +3,12 @@ import {
   PlanApprovalError,
   PlanFailure,
   runApprovePlan,
+  runCancelApprovedPlan,
   runCapturePlan,
   sha256Hex,
 } from "@oso-code/core";
 import { commonDirOf, deriveRootId } from "./identity.ts";
-import { approvedPlanFor, cancelApprovedPlan } from "./plan-state.ts";
+import { approvedPlanFor } from "./plan-state.ts";
 import type { HostPermissionRequest, PluginTool, PluginToolCall, PluginToolResult } from "./tool.ts";
 
 export const PLAN_APPROVAL_TOOL_ID = "oso_plan_approve";
@@ -106,7 +107,7 @@ function promoteThePresentedPlan(directory: string, owner: string, digest: strin
 
 function abandonTheApprovedPlan(directory: string, owner: string, digest: string): void {
   try {
-    cancelApprovedPlan(directory, owner, digest);
+    runCancelApprovedPlan(directory, owner, digest);
   } catch (err) {
     if (!(err instanceof PlanApprovalError) && !(err instanceof GatesOwnedElsewhereError)) throw err;
     throw new Error(`${PLAN_CANCEL_TOOL_ID} did not abandon the plan: ${err.message}`);
