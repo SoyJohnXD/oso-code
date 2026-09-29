@@ -56,8 +56,8 @@ const NOTIFICATION_RESUMED_HOST: ContinuationHost = {
 export const DELEGATIONS_RETURN_IN_TURN_HOST: ContinuationHost = {
   order:
     `${RE_ANCHOR_THE_RUN} A delegation on this host returns inside the turn that launched it, so a turn that ` +
-    "has ended left none in flight: read the report the launch itself returned rather than waiting for a " +
-    "notification this host never sends.",
+    "has ended left none in flight, or the rail released it by session id: read the report the launch " +
+    "itself returned rather than waiting for a notification this host never sends.",
   delegationsReturnInTurn: true,
 };
 

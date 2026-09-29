@@ -6,7 +6,7 @@ No swallow is known on this host, and this port has not probed for one. So the d
 
 ## Making a launch wait
 
-No launch on this host outlives the turn that made it: the `task` tool is SYNCHRONOUS — the call blocks until the child turn completes and the child's own final message comes back in-band (D5) — and there is no wait operation and no handoff receipt rail beside it, so that returned message is the whole of the handoff. Read it before any step that depends on it; the delegated fix this flow launches is exactly such a step. A launch that errors, times out or returns an empty verdict BLOCKS this flow and never falls through, and `auto_wait` is never armed here because nothing this flow launches reports in a later turn — `../../oso-plan/references/opencode.md` states the same rule for the run that reads that marker.
+No launch on this host outlives the turn that made it: the `task` tool is SYNCHRONOUS — the call blocks until the child turn completes and the child's own final message comes back in-band (D5) — and there is no wait operation and no handoff receipt rail beside it, so that returned message is the whole of the handoff. Read it before any step that depends on it; the delegated fix this flow launches is exactly such a step. A launch that errors, times out or returns an empty verdict BLOCKS this flow and never falls through, and no wait marker is armed here because nothing this flow launches reports in a later turn.
 
 ## Shared-file paths
 
