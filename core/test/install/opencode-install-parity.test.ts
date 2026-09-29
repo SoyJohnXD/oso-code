@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, test } from "node:test";
@@ -9,11 +9,11 @@ import { OPENCODE_AGENTS_THE_PROFILE_DRIVES } from "../../src/install/opencode-c
 import { installOpenCode, openCodePayloadSources, PRESERVED_KEYS_FILE } from "../../src/install/opencode-install.ts";
 import { opencodePathsFor } from "../../src/install/opencode.ts";
 import { openCodePurgeTargets } from "../../src/install/opencode-purge.ts";
-import { openCodeTrustReading, publishedGateScriptNames } from "../../src/install/opencode-trust.ts";
+import { openCodeTrustReading, openCodeTrustTargetUnder, OPENCODE_TRUST_FILE_COUNT } from "../../src/install/opencode-trust.ts";
 import { SUPPORTED_OPENCODE_VERSION } from "../../src/install/pins.ts";
 import { setProfile } from "../../src/install/profile.ts";
 import type { CommandOutcome } from "../../src/install/report.ts";
-import { parseTrustManifest } from "../../src/install/trust.ts";
+import { parseTrustManifest, trustRowDivergences, type TrustRow } from "../../src/install/trust.ts";
 import { operatorConfigSeed, operatorGlobalSeed, OPERATOR_CONFIG_PROBE } from "../../src/install/verify-opencode.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
 import {
@@ -49,8 +49,8 @@ const FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH = skipUnlessPathResolvesExt
 
 provedSomething(
   `the install corpus is ${THE_INSTALL_CORPUS}`,
-  publishedGateScriptNames(openCodePayloadSources(repositoryRoot).publishedHashes).length > 0,
-  "bootstrap/hook-hashes.txt published no gate script, so an install that copied nothing would read the same as one that copied everything",
+  publishedRowsBesideTheShellGates().length > 0,
+  "bootstrap/hook-hashes.txt published no OpenCode trust row, so an install that copied nothing would read the same as one that copied everything",
 );
 
 describe("install --host opencode leaves the tree its seed and the published hashes describe", () => {
@@ -82,10 +82,7 @@ describe("install --host opencode leaves the tree its seed and the published has
     const installed = installedByThePort();
     const record = path.join(configHomeOf(installed.home), "oso-code-install.json");
     const harnessVersion = (JSON.parse(readFileSync(path.join(repositoryRoot, "plugin", ".claude-plugin", "plugin.json"), "utf8")) as { version: string }).version;
-    assert.deepEqual(JSON.parse(readFileSync(record, "utf8")), {
-      version: harnessVersion,
-      manifest: parseTrustManifest(readFileSync(openCodePayloadSources(repositoryRoot).publishedHashes, "utf8")),
-    });
+    assert.deepEqual(JSON.parse(readFileSync(record, "utf8")), { version: harnessVersion, manifest: publishedRowsBesideTheShellGates() });
     const registry = readFileSync(path.join(opencodePathsFor(installed.home, {}).stateRoot, "opencode-install-registry"), "utf8");
     assert.ok(registry.split("\n").includes(`installer\t${record}`), registry);
     const configHomeTarget = openCodePurgeTargets(installed.home, true).find((target) => target.label === "config-home");
@@ -96,6 +93,46 @@ describe("install --host opencode leaves the tree its seed and the published has
     const installed = installedByThePort();
     assert.deepEqual(shimAnsweredArgv(path.join(installed.root, "shim-calls.log")), []);
     assert.equal(installed.exitCode, 0);
+  });
+});
+
+describe("the OpenCode install ships none of the shell gates no host runs", () => {
+  test("a fresh install publishes no hooks/*.sh, and its trust reading covers only the rows beside the shell gates", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
+    const configHome = configHomeOf(installedByThePort().home);
+    assert.deepEqual(shellGatesUnder(path.join(configHome, "hooks")), []);
+    const reading = openCodeTrustReading(openCodePayloadSources(repositoryRoot).publishedHashes, "installed", configHome);
+    assert.equal(reading.filesRead, publishedRowsBesideTheShellGates().length);
+    assert.equal(reading.filesRead, OPENCODE_TRUST_FILE_COUNT);
+  });
+
+  test("an upgrade removes the hooks/*.sh an earlier install owned and leaves a file it never owned", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
+    const root = path.join(sandbox, "upgrade-over-shell-gates");
+    const home = seedFixtureHome(root);
+    const hooks = path.join(configHomeOf(home), "hooks");
+    const owned = ["lib.sh", "warn-stale-state.sh"].map((name) => path.join(hooks, name));
+    const operatorOwn = path.join(hooks, "operator-own.sh");
+    mkdirSync(hooks, { recursive: true });
+    for (const file of [...owned, operatorOwn]) writeFileSync(file, "#!/bin/sh\n");
+    const registry = path.join(opencodePathsFor(home, {}).stateRoot, "opencode-install-registry");
+    mkdirSync(path.dirname(registry), { recursive: true });
+    writeFileSync(registry, owned.map((file) => `installer\t${file}\n`).join(""));
+
+    assert.equal(installedUnderItsOwnStateRoot(portInput(home, root)).exitCode, 0);
+    assert.deepEqual(shellGatesUnder(hooks), ["operator-own.sh"]);
+    assert.equal(readFileSync(registry, "utf8").includes(hooks), false);
+  });
+
+  test("the recorded rows read no drift on a fresh install and name a trusted file rewritten after it", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
+    const root = path.join(sandbox, "drift-over-the-recorded-rows");
+    const home = seedFixtureHome(root);
+    assert.equal(installedUnderItsOwnStateRoot(portInput(home, root)).exitCode, 0);
+    const configHome = configHomeOf(home);
+    const recorded = (JSON.parse(readFileSync(path.join(configHome, "oso-code-install.json"), "utf8")) as { manifest: TrustRow[] }).manifest;
+    const drifted = (): string[] => trustRowDivergences(recorded, (published) => openCodeTrustTargetUnder("installed", configHome, published)).map((divergence) => divergence.file);
+
+    assert.deepEqual(drifted(), []);
+    writeFileSync(path.join(configHome, "dist", "gate.js"), "rewritten\n");
+    assert.deepEqual(drifted(), ["plugin/dist/gate.js"]);
   });
 });
 
@@ -273,6 +310,16 @@ function seedFixtureHome(root: string): string {
   writeFileSync(path.join(configHome, "AGENTS.md"), operatorGlobalSeed());
   writeFileSync(path.join(root, "shim-calls.log"), "");
   return home;
+}
+
+function publishedRowsBesideTheShellGates(): TrustRow[] {
+  return parseTrustManifest(readFileSync(openCodePayloadSources(repositoryRoot).publishedHashes, "utf8")).filter(
+    (row) => !(row.file.startsWith("plugin/hooks/") && row.file.endsWith(".sh")),
+  );
+}
+
+function shellGatesUnder(directory: string): string[] {
+  return existsSync(directory) ? readdirSync(directory).filter((name) => name.endsWith(".sh")).sort() : [];
 }
 
 function configHomeOf(home: string): string {

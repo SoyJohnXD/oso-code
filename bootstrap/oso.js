@@ -2466,11 +2466,10 @@ import path11 from "node:path";
 // core/src/install/opencode-trust.ts
 import { readFileSync as readFileSync9 } from "node:fs";
 import path9 from "node:path";
-var OPENCODE_TRUST_FILE_COUNT = 15;
+var OPENCODE_TRUST_FILE_COUNT = 7;
 var INSTALLED_TREE_MAP = [
   { published: "opencode/dist/oso-code.js", installed: "plugin/oso-code.js" },
   { published: "plugin/dist/", installed: "dist/" },
-  { published: "plugin/hooks/", installed: "hooks/" },
   { published: "plugin/git-hooks/", installed: "git-hooks/" },
   { published: "plugin/bin/", installed: "bin/" }
 ];
@@ -2483,23 +2482,23 @@ function openCodeTrustTargetUnder(rootKind, root, published) {
 }
 function openCodeTrustReading(manifestFile, rootKind, root) {
   return {
-    filesRead: openCodeTrustedFiles(manifestFile).length,
-    divergences: trustDivergences(manifestFile, () => false, (published) => openCodeTrustTargetUnder(rootKind, root, published))
+    filesRead: openCodeTrustRows(manifestFile).length,
+    divergences: trustDivergences(manifestFile, isClaudeOnlyShellGate, (published) => openCodeTrustTargetUnder(rootKind, root, published))
   };
 }
-function publishedGateScriptNames(manifestFile) {
-  return openCodeTrustedFiles(manifestFile).filter((published) => published.startsWith("plugin/hooks/") && published.endsWith(".sh")).map((published) => published.slice("plugin/hooks/".length));
+function openCodeTrustRows(manifestFile) {
+  if (!isReadableRegularFile(manifestFile)) return [];
+  return parseTrustManifest(readFileSync9(manifestFile, "utf8")).filter((row) => !isClaudeOnlyShellGate(row.file));
 }
 function publishedDistFileNames(manifestFile) {
-  return openCodeTrustedFiles(manifestFile).filter((published) => published.startsWith("plugin/dist/")).map((published) => published.slice("plugin/dist/".length));
+  return openCodeTrustRows(manifestFile).map((row) => row.file).filter((published) => published.startsWith("plugin/dist/")).map((published) => published.slice("plugin/dist/".length));
 }
 function trustDivergenceLine(divergence) {
   const state = divergence.state;
   return `${divergence.file} ${state.kind === "mismatch" ? state.actual : state.kind}`;
 }
-function openCodeTrustedFiles(manifestFile) {
-  if (!isReadableRegularFile(manifestFile)) return [];
-  return parseTrustManifest(readFileSync9(manifestFile, "utf8")).map((row) => row.file);
+function isClaudeOnlyShellGate(published) {
+  return published.startsWith("plugin/hooks/") && published.endsWith(".sh");
 }
 
 // core/src/install/profile.ts
@@ -2797,7 +2796,6 @@ function openCodePayloadSources(repositoryRoot2) {
     agents: path11.join(repositoryRoot2, "opencode", "agents"),
     commands: path11.join(repositoryRoot2, "opencode", "commands"),
     pluginBundle: path11.join(repositoryRoot2, "opencode", "dist", "oso-code.js"),
-    gates: path11.join(repositoryRoot2, "plugin", "hooks"),
     gitHook: path11.join(repositoryRoot2, "plugin", "git-hooks", "pre-commit"),
     stateBin: path11.join(repositoryRoot2, "plugin", "bin", "oso-state"),
     stateBinPackage: path11.join(repositoryRoot2, "plugin", "bin", "package.json"),
@@ -2815,9 +2813,6 @@ function payloadRefusal(sources) {
     { present: isDirectory(sources.agents), message: `the OpenCode agent contracts are missing: ${sources.agents}` },
     { present: isDirectory(sources.commands), message: `the OpenCode command templates are missing: ${sources.commands}` },
     { present: isReadableRegularFile(sources.pluginBundle), message: `the OpenCode plugin bundle is missing: ${sources.pluginBundle}` },
-    { present: isDirectory(sources.gates), message: `the shared gate script tree is missing: ${sources.gates}` },
-    { present: isReadableRegularFile(path11.join(sources.gates, "lib.sh")), message: `the shared gate library is missing: ${path11.join(sources.gates, "lib.sh")}` },
-    { present: isReadableRegularFile(path11.join(sources.gates, "lexer.sh")), message: `the shared gate lexer is missing: ${path11.join(sources.gates, "lexer.sh")}` },
     { present: isReadableRegularFile(sources.gitHook), message: `the shared commit hook is missing: ${sources.gitHook}` },
     { present: isReadableRegularFile(sources.stateBin), message: `the oso-state binary is missing: ${sources.stateBin}` },
     { present: isReadableRegularFile(sources.stateBinPackage), message: `the oso-state module manifest is missing: ${sources.stateBinPackage}` },
@@ -2841,9 +2836,9 @@ function trustBytesRefusal(publishedHashes, rootKind, root) {
   }
   return void 0;
 }
-function unpublishedInstalledGates(publishedHashes, hooksTarget) {
-  const published = new Set(publishedGateScriptNames(publishedHashes));
-  return directoryEntryNames(hooksTarget).filter((name) => name.endsWith(".sh") && isReadableRegularFile(path11.join(hooksTarget, name))).filter((name) => !published.has(name));
+function installerOwnedTargets(ownerRegistry) {
+  if (!isReadableRegularFile(ownerRegistry)) return [];
+  return readFileSync10(ownerRegistry, "utf8").split("\n").filter((row) => row.startsWith(`${OWNER_INSTALLER}	`)).map((row) => row.slice(OWNER_INSTALLER.length + 1));
 }
 function installOpenCode(input) {
   return withOwnerOnlyUmask(() => writeOpenCodeInstall(input));
@@ -2868,7 +2863,8 @@ function writeOpenCodeInstall(input) {
     infoLines.push(...migrateOpenCodeState(paths, targets, tx));
     installPayloadTrees(paths, targets, sources);
     wiring.push(wiringOk("installed payload", `${targets.skills}, ${targets.agents}, ${targets.commands}, ${targets.plugin}`));
-    wiring.push(publishedGateBytesEntry(sources.publishedHashes, paths.configHome, targets.hooks));
+    wiring.push(...retiredShellGateEntries(targets));
+    wiring.push(publishedGateBytesEntry(sources.publishedHashes, paths.configHome));
     writeInstallRecord(sources, targets.installRecord);
     wiring.push(wiringOk("install record", targets.installRecord));
     mergeGlobalAgents(paths.globalFile, readFileSync10(sources.global, "utf8"));
@@ -2944,12 +2940,6 @@ function installPayloadTrees(paths, targets, sources) {
     for (const command of modeCommandNames(sources.commands)) cpSync2(path11.join(sources.commands, command), path11.join(stage, command));
   });
   replaceTree(paths.configHome, targets.plugin, (stage) => cpSync2(sources.pluginBundle, path11.join(stage, "oso-code.js")));
-  replaceTree(paths.configHome, targets.hooks, (stage) => {
-    for (const script of publishedGateScriptNames(sources.publishedHashes)) {
-      cpSync2(path11.join(sources.gates, script), path11.join(stage, script));
-      chmodSync2(path11.join(stage, script), EXECUTABLE_FILE_MODE);
-    }
-  });
   replaceTree(paths.configHome, targets.stateBin, (stage) => {
     cpSync2(sources.stateBin, path11.join(stage, "oso-state"));
     cpSync2(sources.stateBinPackage, path11.join(stage, "package.json"));
@@ -2963,21 +2953,20 @@ function installPayloadTrees(paths, targets, sources) {
     chmodSync2(path11.join(stage, "pre-commit"), EXECUTABLE_FILE_MODE);
   });
 }
-function publishedGateBytesEntry(publishedHashes, configHome, hooksTarget) {
+function retiredShellGateEntries(targets) {
+  const retired = installerOwnedTargets(targets.ownerRegistry).filter((target) => path11.dirname(target) === targets.hooks && target.endsWith(".sh"));
+  for (const gate of retired) rmSync7(gate, { force: true });
+  return retired.length === 0 ? [] : [wiringOk("retired shell gates", `removed ${retired.length} installer-owned script(s) from ${targets.hooks}`)];
+}
+function publishedGateBytesEntry(publishedHashes, configHome) {
   const divergent = trustBytesRefusal(publishedHashes, "installed", configHome);
   if (divergent !== void 0) throw new Error(divergent);
-  const unpublished = unpublishedInstalledGates(publishedHashes, hooksTarget);
-  if (unpublished.length > 0) {
-    throw new Error(
-      `the installed gate tree holds executables no published hash covers: ${unpublished.join(" ")} \u2014 install exactly what bootstrap/hook-hashes.txt publishes`
-    );
-  }
   return wiringOk("published gate bytes", `verified against ${publishedHashes}`);
 }
 function writeInstallRecord(sources, installRecord) {
   const version = readJsonFile(sources.harnessManifest)?.version;
   if (typeof version !== "string" || version === "") throw new Error(`the harness manifest names no version: ${sources.harnessManifest}`);
-  const record = { version, manifest: parseTrustManifest(readFileSync10(sources.publishedHashes, "utf8")) };
+  const record = { version, manifest: openCodeTrustRows(sources.publishedHashes) };
   writeJsonFile(installRecord, record);
 }
 function renderOpenCodeConfig(input, paths, tx) {
@@ -3057,7 +3046,6 @@ function writeOwnerRegistry(paths, targets, tx) {
     ownedBy(OWNER_INSTALLER, targets.agents),
     ownedBy(OWNER_INSTALLER, targets.commands),
     ownedBy(OWNER_INSTALLER, targets.plugin),
-    ...directoryEntryNames(targets.hooks).filter((name) => name.endsWith(".sh")).map((name) => ownedBy(OWNER_INSTALLER, path11.join(targets.hooks, name))),
     ownedBy(OWNER_INSTALLER, path11.join(targets.stateBin, "oso-state")),
     ownedBy(OWNER_INSTALLER, path11.join(targets.gitHooks, "pre-commit")),
     ownedBy(OWNER_INSTALLER, targets.installRecord)
@@ -3842,9 +3830,7 @@ function openCodeRegistryStatus(home, configHome) {
   const paths = opencodePathsFor(home, { XDG_CONFIG_HOME: path13.dirname(configHome) });
   const targets = openCodeInstallTargets(paths);
   if (!isReadableRegularFile(targets.ownerRegistry)) return "missing";
-  const owned = new Set(
-    readFileSync12(targets.ownerRegistry, "utf8").split("\n").filter((row) => row.startsWith(`${OWNER_INSTALLER}	`)).map((row) => row.slice(OWNER_INSTALLER.length + 1))
-  );
+  const owned = new Set(installerOwnedTargets(targets.ownerRegistry));
   const expected = [
     paths.configFile,
     paths.globalFile,
@@ -3853,8 +3839,7 @@ function openCodeRegistryStatus(home, configHome) {
     targets.commands,
     targets.plugin,
     path13.join(targets.stateBin, "oso-state"),
-    path13.join(targets.gitHooks, "pre-commit"),
-    ...directoryEntryNames2(targets.hooks).filter((name) => name.endsWith(".sh")).map((name) => path13.join(targets.hooks, name))
+    path13.join(targets.gitHooks, "pre-commit")
   ];
   const missing = expected.filter((target) => installedTargetExists(target) && !owned.has(target)).map((target) => relativeToHome(target, home));
   return missing.length === 0 ? "installer-owned" : namedList("missing", missing);

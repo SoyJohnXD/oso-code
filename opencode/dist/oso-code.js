@@ -3186,7 +3186,6 @@ import path12 from "node:path";
 var INSTALLED_TREE_MAP = [
   { published: "opencode/dist/oso-code.js", installed: "plugin/oso-code.js" },
   { published: "plugin/dist/", installed: "dist/" },
-  { published: "plugin/hooks/", installed: "hooks/" },
   { published: "plugin/git-hooks/", installed: "git-hooks/" },
   { published: "plugin/bin/", installed: "bin/" }
 ];

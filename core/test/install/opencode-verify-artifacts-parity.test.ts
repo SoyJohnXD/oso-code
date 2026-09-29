@@ -169,10 +169,10 @@ const TREE_DAMAGES: readonly TreeDamage[] = [
     port: (tree) => openCodeRegistryStatus(tree.home, tree.configHome),
   },
   {
-    label: "one installed gate script rewritten below its published hash",
+    label: "one installed gate bundle rewritten below its published hash",
     verdict: "bad:",
     bashRow: "opencode_trust_bytes_status",
-    apply: (tree) => writeFileSync(path.join(tree.configHome, "hooks", "lib.sh"), "# rewritten\n"),
+    apply: (tree) => writeFileSync(path.join(tree.configHome, "dist", "gate.js"), "rewritten\n"),
     port: (tree) => openCodeTrustBytesStatus(PUBLISHED_HASHES, tree.configHome),
   },
 ];
