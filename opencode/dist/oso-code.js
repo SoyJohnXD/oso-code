@@ -1160,17 +1160,6 @@ function writeStatePairs(stateFile, pairs, ownerSession) {
   renameSync(createTempFile(directory, content), stateFile);
   return content;
 }
-function writeStateValues(cwd, sessionId, pairs) {
-  const stateFile = stateFileFor(cwd);
-  mkdirSync(stateRootDirectory(), { recursive: true });
-  withLock(stateFile, sessionId, () => {
-    writeStatePairs(stateFile, pairs, sessionId);
-    logSet(sessionId, pairs);
-  });
-}
-function logSet(sessionId, pairs) {
-  logEvent({ event: `set:${pairs.join(" ")}`, session: sessionId });
-}
 function isSymlink(target) {
   const stats = lstatOrUndefined(target);
   return stats !== void 0 && stats.isSymbolicLink();
@@ -3606,6 +3595,38 @@ function runApprovePlan(cwd, sessionId, digest) {
     return 0;
   });
 }
+function runCancelApprovedPlan(cwd, sessionId, digest) {
+  const stateFile = stateFileFor(cwd);
+  mkdirSync4(stateRootDirectory(), { recursive: true });
+  return withLock(stateFile, sessionId, () => {
+    if (!isReadableRegularFile(stateFile)) {
+      throw new PlanApprovalError(`no readable approved plan for session ${sessionId}`);
+    }
+    if (readValue(stateFile, "plan_approval") !== "approved") {
+      throw new PlanApprovalError("plan approval is not approved");
+    }
+    if (readValue(stateFile, "plan_approval_session") !== sessionId) {
+      throw new PlanApprovalError("the approved plan belongs to another session");
+    }
+    if (readValue(stateFile, "plan_approval_digest") !== digest) {
+      throw new PlanApprovalError("approved plan digest changed before abandonment");
+    }
+    refuseGateWritesByAForeignSession(stateFile, sessionId);
+    const disarming = armPlan();
+    writeStatePairs(
+      stateFile,
+      [
+        `mode=${disarming.mode}`,
+        `active_slice=${disarming.active_slice}`,
+        `verify_green=${disarming.verify_green}`,
+        "plan_approval=cancelled"
+      ],
+      sessionId
+    );
+    logEvent({ event: "plan-approval-abandoned", session: sessionId, command: digest });
+    return 0;
+  });
+}
 function byteIdentical(leftFile, rightFile) {
   return readFileSync2(leftFile).equals(readFileSync2(rightFile));
 }
@@ -3740,13 +3761,8 @@ function hashId(input) {
 }
 
 // opencode/plugin/oso/plan-state.ts
-function cancelApprovedPlan(directory, owner) {
-  writeStateValues(directory, owner, [
-    "mode=plan",
-    "active_slice=none",
-    "verify_green=false",
-    "plan_approval=cancelled"
-  ]);
+function cancelApprovedPlan(directory, owner, digest) {
+  runCancelApprovedPlan(directory, owner, digest);
 }
 function approvedPlanFor(directory, owner) {
   const approval = stateKeyOf(directory, "plan_approval");
@@ -3820,7 +3836,7 @@ async function cancelOnOperatorGrant(call) {
     always: [],
     metadata: { digest: approved.digest }
   });
-  cancelApprovedPlan(directory, owner);
+  abandonTheApprovedPlan(directory, owner, approved.digest);
   return {
     title: "plan abandoned",
     output: `The operator granted ${PLAN_CANCEL_TOOL_ID} for the approved plan whose digest is ${approved.digest}. Its state now reads plan_approval=cancelled beside the disarmed triple, so no slice is armed, no commit passes the green gate and no amendment lands; the approved document itself is untouched.`,
@@ -3833,6 +3849,14 @@ function promoteThePresentedPlan(directory, owner, digest) {
   } catch (err) {
     if (!(err instanceof PlanApprovalError) && !(err instanceof PlanFailure)) throw err;
     throw new Error(`${PLAN_APPROVAL_TOOL_ID} did not record the operator's approval: ${err.message}`);
+  }
+}
+function abandonTheApprovedPlan(directory, owner, digest) {
+  try {
+    cancelApprovedPlan(directory, owner, digest);
+  } catch (err) {
+    if (!(err instanceof PlanApprovalError) && !(err instanceof GatesOwnedElsewhereError)) throw err;
+    throw new Error(`${PLAN_CANCEL_TOOL_ID} did not abandon the plan: ${err.message}`);
   }
 }
 function grantBoundCall(toolId, call) {

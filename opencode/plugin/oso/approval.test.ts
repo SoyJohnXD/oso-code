@@ -5,7 +5,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { readValue, repositoryIdFor, sha256Hex, stateFileFor, stateRootDirectory } from "@oso-code/core";
+import {
+  readValue,
+  repositoryIdFor,
+  sha256Hex,
+  stateFileFor,
+  stateRootDirectory,
+  writeStateValues,
+} from "@oso-code/core";
 import { planApprovalTool, planCancelTool, PLAN_APPROVAL_TOOL_ID, PLAN_CANCEL_TOOL_ID } from "./approval.ts";
 import { deriveRootId } from "./identity.ts";
 import { underFixtureHome, underFixtureHomeAsync } from "../../test-support/state-fixture.ts";
@@ -285,6 +292,33 @@ test("a refused abandonment leaves the approved plan standing", async () => {
     await planApprovalTool().execute({ plan: PLAN_DOCUMENT }, call);
     await assert.rejects(() => planCancelTool().execute({}, call), /rejected permission/);
     assert.equal(stateKeyOf(fixture, "plan_approval"), "approved");
+  });
+});
+
+const A_CLAUDE_SESSION = "0f7c2a1e-claude-session";
+
+test("an approved plan whose gates another session now holds is refused and its state left byte-unchanged", async () => {
+  await withApprovalFixture(granted, async (fixture, call) => {
+    await planApprovalTool().execute({ plan: PLAN_DOCUMENT }, call);
+    writeStateValues(fixture.repoDir, A_CLAUDE_SESSION, ["active_slice=2"]);
+    const stateFile = stateFileFor(fixture.repoDir);
+    const before = readFileSync(stateFile, "utf8");
+    await assert.rejects(
+      () => planCancelTool().execute({}, call),
+      new RegExp(`${PLAN_CANCEL_TOOL_ID} did not abandon the plan: the gates are owned by session ${A_CLAUDE_SESSION}`),
+    );
+    assert.equal(readFileSync(stateFile, "utf8"), before);
+    assert.equal(stateKeyOf(fixture, "session"), A_CLAUDE_SESSION);
+  });
+});
+
+test("a granted abandonment keeps the owner stamped on the state and logs its event", async () => {
+  await withApprovalFixture(granted, async (fixture, call) => {
+    await planApprovalTool().execute({ plan: PLAN_DOCUMENT }, call);
+    await planCancelTool().execute({}, call);
+    assert.equal(stateKeyOf(fixture, "session"), fixture.owner);
+    const events = readFileSync(join(stateRootDirectory(), "events.jsonl"), "utf8");
+    assert.match(events, new RegExp(`"event":"plan-approval-abandoned".*"session":"${fixture.owner}"`));
   });
 });
 

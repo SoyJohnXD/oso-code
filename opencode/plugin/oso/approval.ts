@@ -1,4 +1,11 @@
-import { PlanApprovalError, PlanFailure, runApprovePlan, runCapturePlan, sha256Hex } from "@oso-code/core";
+import {
+  GatesOwnedElsewhereError,
+  PlanApprovalError,
+  PlanFailure,
+  runApprovePlan,
+  runCapturePlan,
+  sha256Hex,
+} from "@oso-code/core";
 import { commonDirOf, deriveRootId } from "./identity.ts";
 import { approvedPlanFor, cancelApprovedPlan } from "./plan-state.ts";
 import type { HostPermissionRequest, PluginTool, PluginToolCall, PluginToolResult } from "./tool.ts";
@@ -78,7 +85,7 @@ async function cancelOnOperatorGrant(call: PluginToolCall): Promise<PluginToolRe
     always: [],
     metadata: { digest: approved.digest },
   });
-  cancelApprovedPlan(directory, owner);
+  abandonTheApprovedPlan(directory, owner, approved.digest);
   return {
     title: "plan abandoned",
     output: `The operator granted ${PLAN_CANCEL_TOOL_ID} for the approved plan whose digest is ${approved.digest}.`
@@ -94,6 +101,15 @@ function promoteThePresentedPlan(directory: string, owner: string, digest: strin
   } catch (err) {
     if (!(err instanceof PlanApprovalError) && !(err instanceof PlanFailure)) throw err;
     throw new Error(`${PLAN_APPROVAL_TOOL_ID} did not record the operator's approval: ${err.message}`);
+  }
+}
+
+function abandonTheApprovedPlan(directory: string, owner: string, digest: string): void {
+  try {
+    cancelApprovedPlan(directory, owner, digest);
+  } catch (err) {
+    if (!(err instanceof PlanApprovalError) && !(err instanceof GatesOwnedElsewhereError)) throw err;
+    throw new Error(`${PLAN_CANCEL_TOOL_ID} did not abandon the plan: ${err.message}`);
   }
 }
 
