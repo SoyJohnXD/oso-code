@@ -153,11 +153,12 @@ export const RECOVERY_ROWS: readonly RecoveryRow[] = [
 export const TOOL_ROWS: readonly ToolRow[] = [
   { gate: "commit", names: { claude: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "Edit", opencode: "edit" }, capability: "write", mandated: "no" },
-  { gate: "edits", names: { claude: "MultiEdit", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "MultiEdit", opencode: "multiedit" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "Write", opencode: "write" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "NotebookEdit", opencode: "none" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "mcp__fallow__fix_apply", opencode: "fallow_fix_apply" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "none", opencode: "apply_patch" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "none", opencode: "patch" }, capability: "write", mandated: "no" },
   { gate: "proddeploy", names: { claude: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "bash" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "apply_patch" }, capability: "write", mandated: "no" },
@@ -206,9 +207,9 @@ export function gateRow(gate: GateId): GateRow {
 export const PRE_TOOL_USE_EVENT = "PreToolUse";
 const UNKNOWN_TOOL_MATCHER = ".*";
 const CLAUDE_EXACT_TOOL_LIST = /^[A-Za-z0-9_|]+$/;
-const DEPLOY_SHAPED_TOOL_NAMES: PerHost<string> = {
-  claude: "mcp__.*deploy.*",
-  opencode: ".*deploy.*",
+const SHAPED_TOOL_NAMES: Readonly<Record<string, PerHost<string>>> = {
+  proddeploy: { claude: "mcp__.*deploy.*", opencode: ".*deploy.*" },
+  edits: { claude: "none", opencode: ".*fix_apply" },
 };
 
 export function gatesWiredFor(host: HostName, event: string): GateRow[] {
@@ -226,14 +227,18 @@ export function claudeMatcherUnion(rows: readonly GateRow[]): string {
 }
 
 function claudeMatcherPattern(matcher: string): string {
-  return CLAUDE_EXACT_TOOL_LIST.test(matcher) ? `^(?:${matcher})$` : matcher;
+  return CLAUDE_EXACT_TOOL_LIST.test(matcher) ? wholeToolName(matcher) : matcher;
+}
+
+export function wholeToolName(alternatives: string): string {
+  return `^(?:${alternatives})$`;
 }
 
 export function matcherFor(host: HostName, row: GateRow): string {
-  const named = toolNamesFor(host, row.gate).join("|");
   if (row.gate === "unknown") return UNKNOWN_TOOL_MATCHER;
-  if (row.gate === "proddeploy") return `${named}|${DEPLOY_SHAPED_TOOL_NAMES[host]}`;
-  return named;
+  const named = toolNamesFor(host, row.gate);
+  const shaped = SHAPED_TOOL_NAMES[row.gate]?.[host] ?? "none";
+  return (shaped === "none" ? named : [...named, shaped]).join("|");
 }
 
 export function toolNamesFor(host: HostName, gate: string): string[] {

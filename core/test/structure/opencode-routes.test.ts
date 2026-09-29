@@ -42,30 +42,35 @@ const UNKNOWN_TOOL_ALLOWLIST: readonly string[] = [
   "oso_wave",
 ];
 
-const ROUTES_THE_BASH_RENDERER_LAST_EMITTED: readonly OpenCodeRoute[] = [
-  { hook: "tool.execute.before", gate: "commit", matcher: "bash", allow: [] },
-  { hook: "tool.execute.before", gate: "edits", matcher: "edit|write|fallow_fix_apply|apply_patch", allow: [] },
-  { hook: "tool.execute.before", gate: "unknown", matcher: ".*", allow: UNKNOWN_TOOL_ALLOWLIST },
+const PINNED_OPENCODE_ROUTES: readonly OpenCodeRoute[] = [
+  { hook: "tool.execute.before", gate: "commit", matcher: "^(?:bash)$", allow: [] },
+  {
+    hook: "tool.execute.before",
+    gate: "edits",
+    matcher: "^(?:edit|multiedit|write|fallow_fix_apply|apply_patch|patch|.*fix_apply)$",
+    allow: [],
+  },
+  { hook: "tool.execute.before", gate: "unknown", matcher: "^(?:.*)$", allow: UNKNOWN_TOOL_ALLOWLIST },
   { hook: "experimental.chat.system.transform", gate: "stale", matcher: "", allow: [] },
   { hook: "dispose", gate: "teardown", matcher: "", allow: [] },
-  { hook: "tool.execute.before", gate: "proddeploy", matcher: "bash|.*deploy.*", allow: [] },
+  { hook: "tool.execute.before", gate: "proddeploy", matcher: "^(?:bash|.*deploy.*)$", allow: [] },
   { hook: "event", gate: "reanchor", matcher: "", allow: [] },
 ];
 
 provedSomething(
-  `${ROUTES_THE_BASH_RENDERER_LAST_EMITTED.length} pinned OpenCode routes are compared here`,
-  ROUTES_THE_BASH_RENDERER_LAST_EMITTED.length > 0,
+  `${PINNED_OPENCODE_ROUTES.length} pinned OpenCode routes are compared here`,
+  PINNED_OPENCODE_ROUTES.length > 0,
   "the pinned table is empty, so this check compared nothing",
 );
 
 describe(
   "core/src/routes/render.ts: openCodeRoutes() is what the OpenCode adapter runs, pinned against the table " +
-    "tools/render-hooks-json.sh emitted into the deleted opencode/hooks/routes.ts at a11804a",
+    "of exact tool-name matchers every tool-call route is anchored to",
   () => {
     test("the derived rows equal that table, hook, gate, matcher and allowlist alike", () => {
       assert.deepEqual(
         openCodeRoutes().map((route) => ({ ...route, allow: [...route.allow] })),
-        ROUTES_THE_BASH_RENDERER_LAST_EMITTED.map((route) => ({ ...route, allow: [...route.allow] })),
+        PINNED_OPENCODE_ROUTES.map((route) => ({ ...route, allow: [...route.allow] })),
       );
     });
 

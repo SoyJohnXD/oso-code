@@ -194,11 +194,12 @@ var GATE_ROWS = [
 var TOOL_ROWS = [
   { gate: "commit", names: { claude: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "Edit", opencode: "edit" }, capability: "write", mandated: "no" },
-  { gate: "edits", names: { claude: "MultiEdit", opencode: "none" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "MultiEdit", opencode: "multiedit" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "Write", opencode: "write" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "NotebookEdit", opencode: "none" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "mcp__fallow__fix_apply", opencode: "fallow_fix_apply" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "none", opencode: "apply_patch" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "none", opencode: "patch" }, capability: "write", mandated: "no" },
   { gate: "proddeploy", names: { claude: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "bash" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "apply_patch" }, capability: "write", mandated: "no" },
@@ -245,9 +246,9 @@ function gateRow(gate) {
 var PRE_TOOL_USE_EVENT = "PreToolUse";
 var UNKNOWN_TOOL_MATCHER = ".*";
 var CLAUDE_EXACT_TOOL_LIST = /^[A-Za-z0-9_|]+$/;
-var DEPLOY_SHAPED_TOOL_NAMES = {
-  claude: "mcp__.*deploy.*",
-  opencode: ".*deploy.*"
+var SHAPED_TOOL_NAMES = {
+  proddeploy: { claude: "mcp__.*deploy.*", opencode: ".*deploy.*" },
+  edits: { claude: "none", opencode: ".*fix_apply" }
 };
 function gatesWiredFor(host, event) {
   return GATE_ROWS.filter((row) => row.event === event && row.wiring[host] === "wired");
@@ -256,13 +257,16 @@ function claudePreToolUseGatesFor(toolName) {
   return gatesWiredFor("claude", PRE_TOOL_USE_EVENT).filter((row) => new RegExp(claudeMatcherPattern(matcherFor("claude", row))).test(toolName)).map((row) => row.gate);
 }
 function claudeMatcherPattern(matcher) {
-  return CLAUDE_EXACT_TOOL_LIST.test(matcher) ? `^(?:${matcher})$` : matcher;
+  return CLAUDE_EXACT_TOOL_LIST.test(matcher) ? wholeToolName(matcher) : matcher;
+}
+function wholeToolName(alternatives) {
+  return `^(?:${alternatives})$`;
 }
 function matcherFor(host, row) {
-  const named2 = toolNamesFor(host, row.gate).join("|");
   if (row.gate === "unknown") return UNKNOWN_TOOL_MATCHER;
-  if (row.gate === "proddeploy") return `${named2}|${DEPLOY_SHAPED_TOOL_NAMES[host]}`;
-  return named2;
+  const named2 = toolNamesFor(host, row.gate);
+  const shaped = SHAPED_TOOL_NAMES[row.gate]?.[host] ?? "none";
+  return (shaped === "none" ? named2 : [...named2, shaped]).join("|");
 }
 function toolNamesFor(host, gate) {
   const named2 = [];

@@ -245,6 +245,48 @@ test("matcher: an edits matcher applies to the native writers and nothing else",
   assert.equal(matchesTool(matcher, "read"), false);
 });
 
+function gatesDenying(fixture: Fixture, tool: string): string[] {
+  const [input, output] = toolCall(tool, { filePath: join(fixture.repo, "a.ts") });
+  return routes
+    .filter((route) => route.hook === "tool.execute.before" && matchesTool(route.matcher, tool))
+    .filter((route) => inHome(fixture, () => runToolGate(route, { ...input, cwd: fixture.repo }, output)).kind === "deny")
+    .map((route) => route.gate);
+}
+
+function underPlanWithNoSlice(check: (fixture: Fixture) => void): void {
+  const fixture = makeFixture();
+  try {
+    arm(fixture, ["mode=plan", "active_slice=none", "verify_green=false"]);
+    check(fixture);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
+}
+
+test("a plan with no slice has the edits gate deny every real edit tool routed through the route table", () => {
+  underPlanWithNoSlice((fixture) => {
+    const editTools = ["edit", "write", "apply_patch", "patch", "multiedit", "fallow_fix_apply", "myserver_fix_apply"];
+    const slippedPast = editTools.filter((tool) => !gatesDenying(fixture, tool).includes("edits"));
+    assert.deepEqual(slippedPast, []);
+  });
+});
+
+test("a plan with no slice leaves a tool that merely contains an edit tool's name to the gates that name it", () => {
+  underPlanWithNoSlice((fixture) => {
+    const lookalikes = ["todowrite", "notebook_editor", "rewrite_fix_apply_report"];
+    const overBlocked = lookalikes.filter((tool) => gatesDenying(fixture, tool).includes("edits"));
+    assert.deepEqual(overBlocked, []);
+  });
+});
+
+test("matcher: every tool-call matcher names its tools exactly, so a longer name that contains one is no match", () => {
+  assert.equal(matchesTool(gateOf("commit").matcher, "bash"), true);
+  assert.equal(matchesTool(gateOf("commit").matcher, "bash_output"), false);
+  assert.equal(matchesTool(gateOf("proddeploy").matcher, "bash"), true);
+  assert.equal(matchesTool(gateOf("proddeploy").matcher, "vercel_deploy_to_production"), true);
+  assert.equal(matchesTool(gateOf("proddeploy").matcher, "bash_output"), false);
+});
+
 test("matcher: a catch-all matcher applies to any tool", () => {
   assert.equal(matchesTool(gateOf("unknown").matcher, "anything_else"), true);
 });

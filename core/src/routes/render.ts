@@ -9,6 +9,7 @@ import {
   PRE_TOOL_USE_EVENT,
   PRE_TOOL_USE_ROUTE,
   toolNamesFor,
+  wholeToolName,
   type GateId,
   type HostName,
 } from "./routes.ts";
@@ -45,12 +46,15 @@ const OPENCODE_HOOKS: readonly OpenCodeHook[] = [
 ];
 
 export function openCodeRoutes(): readonly OpenCodeRoute[] {
-  return GATE_ROWS.filter((row) => row.wiring.opencode === "wired").map((row) => ({
-    hook: openCodeHookNamed(row.mechanism.opencode, row.gate),
-    gate: row.gate,
-    matcher: matcherFor("opencode", row),
-    allow: row.gate === "unknown" ? toolNamesFor("opencode", "unknown") : [],
-  }));
+  return GATE_ROWS.filter((row) => row.wiring.opencode === "wired").map((row) => {
+    const matcher = matcherFor("opencode", row);
+    return {
+      hook: openCodeHookNamed(row.mechanism.opencode, row.gate),
+      gate: row.gate,
+      matcher: matcher === "" ? matcher : wholeToolName(matcher),
+      allow: row.gate === "unknown" ? toolNamesFor("opencode", "unknown") : [],
+    };
+  });
 }
 
 function openCodeHookNamed(mechanism: string, gate: string): OpenCodeHook {
