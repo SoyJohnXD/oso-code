@@ -50,10 +50,15 @@ const NAMES_A_DELEGATE_BUT_HANDS_NO_SLICE_PAYLOAD: readonly StatedNonPayload[] =
   },
   {
     file: `${FLOW_PROSE_ROOT}debug/SKILL.md`,
-    fragment: "the list goes to the `oso-applier` agent as a debt cleanup assignment",
+    fragment: "going to the `oso-applier` agent as a debt cleanup assignment when over it",
     reason:
       "a debt cleanup is behaviour-preserving and carries findings rather than criteria, so it has no failing check to red and " +
       "no ledger decision to cite",
+  },
+  {
+    file: `${FLOW_PROSE_ROOT}debug/SKILL.md`,
+    fragment: "relaunch the `oso-applier` agent on the same diagnosis packaged as a ledger",
+    reason: "a fail relaunch re-sends step 1's payload, so the enumeration and the proof schema are that step's",
   },
   {
     file: `${FLOW_PROSE_ROOT}debug/SKILL.md`,
@@ -62,7 +67,7 @@ const NAMES_A_DELEGATE_BUT_HANDS_NO_SLICE_PAYLOAD: readonly StatedNonPayload[] =
   },
   {
     file: `${FLOW_PROSE_ROOT}debug/SKILL.md`,
-    fragment: "Fixes the operator accepts go through the `oso-applier` agent as judge findings",
+    fragment: "Fixes the operator accepts follow §4's threshold (the `oso-applier` agent as judge findings when over it)",
     reason: "the security pass's fix route hands the judge-findings kind, self-contained and ledger-free like the design audit's",
   },
   {
@@ -264,15 +269,17 @@ describe(
   },
 );
 
-describe("the plan flow's inline path hands the verifier the same proof package an applier does", () => {
-  const planFlowBody = flowBodyLines(readTrackedText(`${FLOW_PROSE_ROOT}plan/SKILL.md`).text).join("\n");
-  const inlineSentence = planFlowBody.split(/(?<=[.!?])\s+/).find((sentence) => sentence.includes("you write inline"));
+describe("the plan and debug flows' inline path hands the verifier the same proof package an applier does", () => {
+  for (const skill of ["plan", "debug"]) {
+    const flowText = flowBodyLines(readTrackedText(`${FLOW_PROSE_ROOT}${skill}/SKILL.md`).text).join("\n");
+    const inlineSentence = flowText.split(/(?<=[.!?])\s+/).find((sentence) => sentence.includes("you write inline"));
 
-  test("the flow tells the orchestrator to produce the proof, scan and decisions_used blocks when it writes inline", () => {
-    assert.notEqual(inlineSentence, undefined, "no sentence tells the orchestrator which blocks an inline slice produces");
-    const absent = [PROOF_BLOCK, SCAN_BLOCK, DECISIONS_USED_BLOCK, APPLIER_PROOF].filter((token) => !(inlineSentence ?? "").includes(token));
-    assert.deepEqual(absent, [], `the inline-proof sentence never spells ${absent.join(", ")}`);
-  });
+    test(`the ${skill} flow tells the orchestrator to produce the proof, scan and decisions_used blocks when it writes inline`, () => {
+      assert.notEqual(inlineSentence, undefined, "no sentence tells the orchestrator which blocks an inline slice produces");
+      const absent = [PROOF_BLOCK, SCAN_BLOCK, DECISIONS_USED_BLOCK, APPLIER_PROOF].filter((token) => !(inlineSentence ?? "").includes(token));
+      assert.deepEqual(absent, [], `the inline-proof sentence never spells ${absent.join(", ")}`);
+    });
+  }
 });
 
 describe("the block reader, over planted flow prose this repository does not ship", () => {

@@ -40,6 +40,10 @@ const NAMES_A_DELEGATE_BUT_LAUNCHES_NONE: readonly StatedNonLaunch[] = [
     reason: "a fail relaunch reaches plan §6 step 2's launch again, so the enumeration and the model are that step's",
   },
   {
+    fragment: "relaunch the `oso-applier` agent on the same diagnosis packaged as a ledger",
+    reason: "a fail relaunch reaches debug §4 step 1's launch again, so the enumeration and the model are that step's",
+  },
+  {
     fragment: "lands the edit by §6's threshold (the `oso-applier` agent when over it)",
     reason: "a late edit re-arms as its own slice, so the launch it reaches is plan §6 step 2's and the enumeration is that step's",
   },

@@ -55,3 +55,44 @@ describe("the plan flow routes a slice by its size and verifies every slice inde
     });
   }
 });
+
+const DEBUG_FLOW = "plugin/skills/debug/SKILL.md";
+const DEBUG_FLOW_ON_OPENCODE = "opencode/skills/oso-debug/SKILL.md";
+const FRONT_SURFACE = "plugin/skills/_shared/front-surface.md";
+
+const DEBUG_RETIRED_RULES: readonly RegExp[] = [/never write it inline/i, /never inline/i, /relaunch the applier/i];
+
+const DEBUG_THRESHOLD_CLAUSES: readonly Readonly<{ name: string; pattern: RegExp }>[] = [
+  ...THRESHOLD_CLAUSES.filter(({ name }) => !name.startsWith("PARALLEL")),
+  { name: "the close's fixes follow §4's threshold", pattern: /Every fix this close writes follows §4's threshold/ },
+];
+
+const debugFlows = [
+  { file: DEBUG_FLOW, body: flowBody(readTrackedText(DEBUG_FLOW).text) },
+  { file: DEBUG_FLOW_ON_OPENCODE, body: flowBody(readTrackedText(DEBUG_FLOW_ON_OPENCODE).text) },
+];
+
+describe("the debug flow and the design-audit fix route follow the same threshold", () => {
+  for (const { file, body } of debugFlows) {
+    test(`${file} no longer hardwires the applier or forbids an inline fix`, () => {
+      const still = DEBUG_RETIRED_RULES.filter((rule) => rule.test(body)).map(String);
+      assert.deepEqual(still, [], `${file} still carries ${still.join(", ")}`);
+    });
+
+    test(`${file} names the threshold in every clause`, () => {
+      const missing = DEBUG_THRESHOLD_CLAUSES.filter(({ pattern }) => !pattern.test(body)).map(({ name }) => name);
+      assert.deepEqual(missing, [], `${file} never states: ${missing.join("; ")}`);
+    });
+
+    test(`${file} sends every fix to a fresh verifier whoever wrote it, and every re-verification to another fresh one`, () => {
+      assert.match(body, /[Ee]very fix goes to a FRESH verifier[^.]*whoever wrote it/);
+      assert.match(body, REVERIFIED_BY_A_FRESH_VERIFIER);
+    });
+  }
+
+  test(`${FRONT_SURFACE} routes the design-audit fix by the threshold and never fixes it inline by rule`, () => {
+    const body = flowBody(readTrackedText(FRONT_SURFACE).text);
+    assert.doesNotMatch(body, /never fixed inline/);
+    assert.match(body, /Fix route[^\n]*follow the threshold/);
+  });
+});
