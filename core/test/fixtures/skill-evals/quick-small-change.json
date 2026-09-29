@@ -1,0 +1,48 @@
+{
+  "skills": ["quick"],
+  "query": "Rename the exported helper formatPrice to formatMoney across two files and show me it still works.",
+  "expected_behavior": [
+    {
+      "behavior": "Restates the ask as a goal and a visible success in one exchange, asking at most one question",
+      "anchors": [
+        { "file": "plugin/skills/quick/SKILL.md", "pattern": "## 1\\. Micro-intent" },
+        { "file": "plugin/skills/quick/SKILL.md", "pattern": "\\*\\*Visible success\\*\\*" },
+        { "file": "plugin/skills/quick/SKILL.md", "pattern": "ask exactly one question" }
+      ]
+    },
+    {
+      "behavior": "Checks the change is small enough and recommends the plan flow otherwise, leaving the decision to the operator",
+      "anchors": [
+        { "file": "plugin/skills/quick/SKILL.md", "pattern": "## 2\\. Substantiality check" },
+        { "file": "plugin/skills/quick/SKILL.md", "pattern": "recommend the PLAN mode" }
+      ]
+    },
+    {
+      "behavior": "Arms the runtime state red and iterates in small increments that each produce a visible result",
+      "anchors": [
+        { "file": "plugin/skills/quick/SKILL.md", "pattern": "## 3\\. Iterate" },
+        { "file": "plugin/skills/quick/SKILL.md", "pattern": "oso-state set mode=quick active_slice=none verify_green=false" },
+        { "file": "plugin/skills/quick/SKILL.md", "pattern": "small increments that each produce a visible result" },
+        { "file": "plugin/skills/quick/SKILL.md", "pattern": "Stop-the-line" }
+      ]
+    },
+    {
+      "behavior": "Closes with the quality pass and a zero-warnings bar before unlocking the commit gate",
+      "anchors": [
+        { "file": "plugin/skills/quick/SKILL.md", "pattern": "## 4\\. Close" },
+        { "file": "plugin/skills/quick/SKILL.md", "pattern": "Invoke the quality-pass judge" },
+        { "file": "plugin/skills/quick/SKILL.md", "pattern": "Quality Pass: passed" },
+        { "file": "plugin/skills/quick/SKILL.md", "pattern": "Zero warnings" },
+        { "file": "plugin/skills/quick/SKILL.md", "pattern": "oso-state set mode=quick active_slice=none verify_green=true" }
+      ]
+    },
+    {
+      "behavior": "Lands no commit of its own and releases the gates with oso-state close as the last state write",
+      "anchors": [
+        { "file": "plugin/skills/quick/SKILL.md", "pattern": "lands no commit of its own" },
+        { "file": "plugin/skills/quick/SKILL.md", "pattern": "oso-state close" },
+        { "file": "plugin/skills/quick/references/claude.md", "pattern": "## The state command" }
+      ]
+    }
+  ]
+}

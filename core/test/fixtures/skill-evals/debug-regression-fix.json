@@ -1,0 +1,52 @@
+{
+  "skills": ["debug"],
+  "query": "The invoice total is off by one cent when a discount is applied. Fix it.",
+  "expected_behavior": [
+    {
+      "behavior": "Obtains a verbatim reproduction before any code reading and stops without one",
+      "anchors": [
+        { "file": "plugin/skills/debug/SKILL.md", "pattern": "## 1\\. Reproduce" },
+        { "file": "plugin/skills/debug/SKILL.md", "pattern": "concrete reproduction" },
+        { "file": "plugin/skills/debug/SKILL.md", "pattern": "No repro → no fix" }
+      ]
+    },
+    {
+      "behavior": "Localizes with evidence and reduces the repro to the smallest failing case",
+      "anchors": [
+        { "file": "plugin/skills/debug/SKILL.md", "pattern": "## 2\\. Localize \\+ reduce" },
+        { "file": "plugin/skills/debug/SKILL.md", "pattern": "never a guess" },
+        { "file": "plugin/skills/debug/SKILL.md", "pattern": "Reduce the repro to the smallest case that still fails" }
+      ]
+    },
+    {
+      "behavior": "Freezes a diagnosis naming the root cause, the fix decision and a regression test that fails without the fix",
+      "anchors": [
+        { "file": "plugin/skills/debug/SKILL.md", "pattern": "## 3\\. Diagnosis freeze" },
+        { "file": "plugin/skills/debug/SKILL.md", "pattern": "\\*\\*Root cause\\*\\*" },
+        { "file": "plugin/skills/debug/SKILL.md", "pattern": "\\*\\*Fix decision\\*\\*" },
+        { "file": "plugin/skills/debug/SKILL.md", "pattern": "\\*\\*Named regression test\\*\\*" },
+        { "file": "plugin/skills/debug/SKILL.md", "pattern": "\\*\\*Zero-warnings commands\\*\\*" }
+      ]
+    },
+    {
+      "behavior": "Fixes through the apply and verify loop with the state armed red and a fresh verifier",
+      "anchors": [
+        { "file": "plugin/skills/debug/SKILL.md", "pattern": "## 4\\. Fix" },
+        { "file": "plugin/skills/debug/SKILL.md", "pattern": "oso-state set mode=debug active_slice=fix verify_green=false" },
+        { "file": "plugin/skills/debug/SKILL.md", "pattern": "\\*\\*Apply\\*\\*" },
+        { "file": "plugin/skills/debug/SKILL.md", "pattern": "\\*\\*Verify \\(subagent\\)\\*\\*" },
+        { "file": "plugin/skills/debug/SKILL.md", "pattern": "Every fix goes to a FRESH verifier" }
+      ]
+    },
+    {
+      "behavior": "Closes through the quality pass, writes green last, and releases the gates with oso-state close",
+      "anchors": [
+        { "file": "plugin/skills/debug/SKILL.md", "pattern": "## 5\\. Close" },
+        { "file": "plugin/skills/debug/SKILL.md", "pattern": "Quality Pass: passed" },
+        { "file": "plugin/skills/debug/SKILL.md", "pattern": "\\*\\*Green, last\\*\\*" },
+        { "file": "plugin/skills/debug/SKILL.md", "pattern": "oso-state close" },
+        { "file": "plugin/skills/debug/references/claude.md", "pattern": "## The state command" }
+      ]
+    }
+  ]
+}

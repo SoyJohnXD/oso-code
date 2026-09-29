@@ -1,0 +1,57 @@
+{
+  "skills": ["roadmap"],
+  "query": "Queue three changes to run back to back while I am away and tell me what needs me when I return.",
+  "expected_behavior": [
+    {
+      "behavior": "Plans a queue where every child carries an intent, a mode and whether it already has an approved plan",
+      "anchors": [
+        { "file": "plugin/skills/roadmap/SKILL.md", "pattern": "## 1\\. The queue" },
+        { "file": "plugin/skills/roadmap/SKILL.md", "pattern": "Each child carries three fields" },
+        { "file": "plugin/skills/roadmap/SKILL.md", "pattern": "\\*\\*Intent\\*\\*" },
+        { "file": "plugin/skills/roadmap/SKILL.md", "pattern": "\\*\\*Mode\\*\\*" },
+        { "file": "plugin/skills/roadmap/SKILL.md", "pattern": "Whether it already carries an approved plan" }
+      ]
+    },
+    {
+      "behavior": "Takes the decisions that hold across children once, in a global ledger",
+      "anchors": [
+        { "file": "plugin/skills/roadmap/SKILL.md", "pattern": "\\*\\*The global ledger\\*\\*" },
+        { "file": "plugin/skills/roadmap/SKILL.md", "pattern": "INHERITED" }
+      ]
+    },
+    {
+      "behavior": "Declares the autonomy policy: three tiers, the irreversibility bar and the never-solo list, before approval",
+      "anchors": [
+        { "file": "plugin/skills/roadmap/SKILL.md", "pattern": "## 2\\. The autonomy policy" },
+        { "file": "plugin/skills/roadmap/SKILL.md", "pattern": "Three tiers" },
+        { "file": "plugin/skills/roadmap/SKILL.md", "pattern": "\\*\\*The irreversibility bar\\.\\*\\*" },
+        { "file": "plugin/skills/roadmap/SKILL.md", "pattern": "\\*\\*The never-solo list" }
+      ]
+    },
+    {
+      "behavior": "Asks for one approval covering the whole roadmap through the host's approval gate",
+      "anchors": [
+        { "file": "plugin/skills/roadmap/SKILL.md", "pattern": "## 3\\. Approval" },
+        { "file": "plugin/skills/roadmap/SKILL.md", "pattern": "ONE approval covers the whole roadmap" },
+        { "file": "plugin/skills/roadmap/references/claude.md", "pattern": "`ExitPlanMode` is the gate" }
+      ]
+    },
+    {
+      "behavior": "Runs the chain child by child, reading the tree handoff bar before every arming and arming nothing further when it refuses",
+      "anchors": [
+        { "file": "plugin/skills/roadmap/SKILL.md", "pattern": "## 4\\. The chain" },
+        { "file": "plugin/skills/roadmap/SKILL.md", "pattern": "\\*\\*The tree handoff" },
+        { "file": "plugin/skills/roadmap/SKILL.md", "pattern": "arms NOTHING FURTHER" },
+        { "file": "plugin/skills/roadmap/SKILL.md", "pattern": "oso-state set roadmap=" }
+      ]
+    },
+    {
+      "behavior": "Consolidates everything the chain deferred into one ordered presence phase headed by the final report",
+      "anchors": [
+        { "file": "plugin/skills/roadmap/SKILL.md", "pattern": "## 5\\. The presence phase" },
+        { "file": "plugin/skills/roadmap/SKILL.md", "pattern": "The final report HEADS the queue" },
+        { "file": "plugin/skills/_shared/unattended.md", "pattern": "AUTO" }
+      ]
+    }
+  ]
+}
