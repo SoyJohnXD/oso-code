@@ -22,7 +22,6 @@ const CAPTURE: VerdictCapture = {
   model: "opus",
   verdict: "fail",
   verdict_shape: "valid",
-  escalated: false,
 };
 
 let stateDirectory = "";

@@ -6,6 +6,7 @@ import {
   EVENTS_LOG,
   REPOSITORY_RUNS_DIR,
   repositoryRoot,
+  STATE_FILE,
   type StateSubject,
   withStateSandbox,
 } from "../support/state-sandbox.ts";
@@ -82,6 +83,22 @@ describe("oso-state report", () => {
       const metrics = JSON.parse(json.stdout) as Record<string, unknown>;
       assert.equal(metrics["first_fail_rate_percent"], 50);
       assert.deepEqual(metrics["rounds_per_slice"], { max: 3, median: 1.5 });
+      assert.equal(metrics["active_slice"], null);
+      assert.equal(metrics["escalated_slices"], 0);
+      assert.match(table.stdout, /^active slice\s+none — no slice is armed$/m);
+      assert.match(table.stdout, /^escalated slices\s+0$/m);
+    });
+  });
+
+  test("the state file's active slice is read with its verdicts since its newest arming and its next attempt", () => {
+    withStateSandbox("workspace", (sandbox) => {
+      sandbox.seed({ [VERDICTS_LOG]: REPORT_FIXTURE, [EVENTS_LOG]: "", [STATE_FILE]: "mode=plan\nactive_slice=3\n" });
+      const table = sandbox.run(CLI_SUBJECT, ["report"]);
+      assert.equal(table.exit, 0, table.stderr);
+      assert.match(table.stdout, /^active slice\s+3: attempt 3 next after none, pass$/m);
+      const json = sandbox.run(CLI_SUBJECT, ["report", "--json"]);
+      const metrics = JSON.parse(json.stdout) as Record<string, unknown>;
+      assert.deepEqual(metrics["active_slice"], { slice: "3", verdicts: ["none", "pass"], next_attempt: 3 });
     });
   });
 

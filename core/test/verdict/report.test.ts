@@ -1,9 +1,17 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { readVerdictShape } from "../../src/verdict/grammar.ts";
-import { type ArmMarker, readVerdicts, type VerdictLogEntry, type VerdictRecord } from "../../src/verdict/record.ts";
-import { renderReportTable, unreceiptedGreensIn, verdictMetrics } from "../../src/verdict/report.ts";
+import {
+  type ArmMarker,
+  appendVerdict,
+  readVerdicts,
+  type VerdictLogEntry,
+  type VerdictRecord,
+} from "../../src/verdict/record.ts";
+import { type GreensRead, renderReportTable, unreceiptedGreensIn, verdictMetrics } from "../../src/verdict/report.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
 
 const FIXTURE = path.join(repositoryRoot, "core", "test", "fixtures", "verdicts", "report.jsonl");
@@ -22,7 +30,7 @@ const EVENTS = [
 
 describe("the verdict report reads the records after each arm marker of their slice", () => {
   const log = readVerdicts(FIXTURE);
-  const metrics = verdictMetrics(log, { kind: "read", greens: unreceiptedGreensIn(EVENTS) });
+  const metrics = verdictMetrics(log, { kind: "read", greens: unreceiptedGreensIn(EVENTS) }, null);
 
   test("two of four armings opened on a fail, so the first-fail rate is 50.0 %", () => {
     assert.equal(metrics.slices, 4);
@@ -52,7 +60,7 @@ describe("the verdict report reads the records after each arm marker of their sl
   });
 
   test("an events log that could not be read is omitted and the reason said", () => {
-    const omitted = verdictMetrics(log, { kind: "omitted", reason: "events.jsonl is absent" });
+    const omitted = verdictMetrics(log, { kind: "omitted", reason: "events.jsonl is absent" }, null);
     assert.deepEqual(omitted.unreceipted_greens, { omitted: "events.jsonl is absent" });
     assert.match(renderReportTable(omitted), /unreceipted greens\s+omitted: events\.jsonl is absent/);
   });
@@ -86,7 +94,7 @@ describe("the verdict report counts each arming of a reused slice id as its own 
     armedBy("beta", "2026-09-02T09:00:00Z"),
     verifiedBy("beta", "2026-09-02T09:05:00Z", "pass"),
   ];
-  const metrics = verdictMetrics({ entries, skippedLines: 0 }, { kind: "omitted", reason: "not read" });
+  const metrics = verdictMetrics({ entries, skippedLines: 0 }, { kind: "omitted", reason: "not read" }, null);
 
   test("slice 1 armed by alpha and re-armed by beta reads as two slices, one of them opened on a fail", () => {
     assert.equal(metrics.slices, 2);
@@ -97,6 +105,60 @@ describe("the verdict report counts each arming of a reused slice id as its own 
   test("alpha's two rounds still set the maximum after beta re-armed the slice", () => {
     assert.deepEqual(metrics.rounds_per_slice, { max: 2, median: 1.5 });
     assert.deepEqual(metrics.verdicts_by_model, [{ model: "opus", pass: 2, fail: 1, blocked: 0, none: 0 }]);
+  });
+});
+
+describe("the report names the armed slice's next round and the slices the fix-round cap escalated", () => {
+  const armedWithThreeFails: VerdictLogEntry[] = [
+    armedBy("alpha", "2026-09-01T10:00:00Z"),
+    ...[1, 2, 3].map((attempt) => ({ ...verifiedBy("alpha", `2026-09-01T10:0${attempt}:00Z`, "fail"), attempt })),
+  ];
+  const notRead: GreensRead = { kind: "omitted", reason: "not read" };
+
+  test("slice 1 armed with fail, fail, fail reads attempt 4 next, and a fourth record captured there is escalated", () => {
+    const stateDirectory = mkdtempSync(path.join(tmpdir(), "oso-report-"));
+    process.env["OSO_STATE_DIR"] = stateDirectory;
+    try {
+      const verdictsFile = path.join(stateDirectory, "runs", "repo", "verdicts.jsonl");
+      mkdirSync(path.dirname(verdictsFile), { recursive: true });
+      writeFileSync(verdictsFile, armedWithThreeFails.map((entry) => `${JSON.stringify(entry)}\n`).join(""));
+      const beforeTheFourth = verdictMetrics(readVerdicts(verdictsFile), notRead, "1");
+      assert.deepEqual(beforeTheFourth.active_slice, { slice: "1", verdicts: ["fail", "fail", "fail"], next_attempt: 4 });
+      assert.equal(beforeTheFourth.escalated_slices, 0);
+      assert.match(renderReportTable(beforeTheFourth), /^active slice\s+1: attempt 4 next/m);
+
+      const { time, attempt, escalated, ...capture } = verifiedBy("alpha", "", "fail");
+      appendVerdict(verdictsFile, capture);
+      const fourth = readVerdicts(verdictsFile).entries.at(-1);
+      assert.ok(fourth !== undefined && !("kind" in fourth));
+      assert.equal(fourth.attempt, 4);
+      assert.equal(fourth.escalated, true);
+
+      const afterTheFourth = verdictMetrics(readVerdicts(verdictsFile), notRead, "1");
+      assert.equal(afterTheFourth.escalated_slices, 1);
+      assert.match(renderReportTable(afterTheFourth), /^escalated slices\s+1$/m);
+    } finally {
+      delete process.env["OSO_STATE_DIR"];
+      rmSync(stateDirectory, { recursive: true, force: true });
+    }
+  });
+
+  test("the third round is still inside the cap, so no slice reads as escalated", () => {
+    const metrics = verdictMetrics({ entries: armedWithThreeFails, skippedLines: 0 }, notRead, "1");
+    assert.equal(metrics.escalated_slices, 0);
+    assert.match(renderReportTable(metrics), /^escalated slices\s+0$/m);
+  });
+
+  test("with no armed slice the row says so and its JSON value is null", () => {
+    const metrics = verdictMetrics({ entries: armedWithThreeFails, skippedLines: 0 }, notRead, null);
+    assert.equal(metrics.active_slice, null);
+    assert.match(renderReportTable(metrics), /^active slice\s+none — no slice is armed$/m);
+  });
+
+  test("an armed slice with no verifier record since its arming reads attempt 1 next", () => {
+    const metrics = verdictMetrics({ entries: armedWithThreeFails, skippedLines: 0 }, notRead, "2");
+    assert.deepEqual(metrics.active_slice, { slice: "2", verdicts: [], next_attempt: 1 });
+    assert.match(renderReportTable(metrics), /^active slice\s+2: attempt 1 next, no verifier verdict since its arming$/m);
   });
 });
 

@@ -26,7 +26,6 @@ test(`a verdict append costs at most ${MEAN_APPEND_BUDGET_MS} ms on average over
         model: null,
         verdict: "fail",
         verdict_shape: "valid",
-        escalated: false,
       });
       assert.equal(written, true);
     }

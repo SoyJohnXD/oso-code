@@ -38,9 +38,11 @@ export type VerdictLogEntry = VerdictRecord | ArmMarker;
 
 export type VerdictLog = Readonly<{ entries: readonly VerdictLogEntry[]; skippedLines: number }>;
 
-export type VerdictCapture = Omit<VerdictRecord, "time" | "attempt">;
+export type VerdictCapture = Omit<VerdictRecord, "time" | "attempt" | "escalated">;
 
 export type ArmCapture = Omit<ArmMarker, "kind" | "time">;
+
+const FIX_ROUND_CAP = 2;
 
 export function verdictsFileFor(stateFile: string): string {
   return path.join(runsDirectoryOf(stateFile), "verdicts.jsonl");
@@ -48,7 +50,7 @@ export function verdictsFileFor(stateFile: string): string {
 
 export function appendVerdict(verdictsFile: string, capture: VerdictCapture): boolean {
   return appendEntry(verdictsFile, capture.session, () => {
-    const attempt = verifierRecordsSinceArm(readVerdicts(verdictsFile).entries, capture.slice).length + 1;
+    const attempt = nextAttemptOf(readVerdicts(verdictsFile).entries, capture.slice);
     return {
       time: isoTimestamp(),
       host: capture.host,
@@ -60,9 +62,13 @@ export function appendVerdict(verdictsFile: string, capture: VerdictCapture): bo
       model: capture.model,
       verdict: capture.verdict,
       verdict_shape: capture.verdict_shape,
-      escalated: capture.escalated,
+      escalated: capture.role === VERIFIER_ROLE && attempt > 1 + FIX_ROUND_CAP,
     };
   });
+}
+
+export function nextAttemptOf(entries: readonly VerdictLogEntry[], slice: string | null): number {
+  return verifierRecordsSinceArm(entries, slice).length + 1;
 }
 
 export function appendArmMarker(verdictsFile: string, marker: ArmCapture): boolean {

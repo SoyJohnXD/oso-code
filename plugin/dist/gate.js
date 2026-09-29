@@ -1628,12 +1628,13 @@ import { appendFileSync as appendFileSync3, mkdirSync as mkdirSync3 } from "node
 import path4 from "node:path";
 var VERIFIER_ROLE = "verifier";
 var TELEMETRY_WRITE_FAILED = "telemetry-write-failed";
+var FIX_ROUND_CAP = 2;
 function verdictsFileFor(stateFile) {
   return path4.join(runsDirectoryOf(stateFile), "verdicts.jsonl");
 }
 function appendVerdict(verdictsFile, capture) {
   return appendEntry(verdictsFile, capture.session, () => {
-    const attempt = verifierRecordsSinceArm(readVerdicts(verdictsFile).entries, capture.slice).length + 1;
+    const attempt = nextAttemptOf(readVerdicts(verdictsFile).entries, capture.slice);
     return {
       time: isoTimestamp(),
       host: capture.host,
@@ -1645,9 +1646,12 @@ function appendVerdict(verdictsFile, capture) {
       model: capture.model,
       verdict: capture.verdict,
       verdict_shape: capture.verdict_shape,
-      escalated: capture.escalated
+      escalated: capture.role === VERIFIER_ROLE && attempt > 1 + FIX_ROUND_CAP
     };
   });
+}
+function nextAttemptOf(entries, slice) {
+  return verifierRecordsSinceArm(entries, slice).length + 1;
 }
 function readVerdicts(verdictsFile) {
   const lines = (readFileIfPresent(verdictsFile) ?? "").split("\n").filter((line) => line !== "");
@@ -1760,8 +1764,7 @@ function appendReportToItsRepository({ host, cwd, session, model, report }) {
     slice: recordedStateValue(state, "active_slice"),
     role: VERIFIER_ROLE,
     model,
-    ...readVerdictShape(report),
-    escalated: false
+    ...readVerdictShape(report)
   });
 }
 

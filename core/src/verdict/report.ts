@@ -3,10 +3,12 @@ import { jsonObjectOf } from "../state/store.ts";
 import {
   armingsOf,
   isArmMarker,
+  nextAttemptOf,
   type VerdictLog,
   type VerdictLogEntry,
   type VerdictRecord,
   VERIFIER_ROLE,
+  verifierRecordsSinceArm,
   VERIFY_GREEN_UNRECEIPTED,
 } from "./record.ts";
 
@@ -18,29 +20,35 @@ export type GreensRead =
 
 export type ModelVerdicts = Readonly<{ model: string | null } & Record<RecordedVerdict, number>>;
 
+export type ActiveSlice = Readonly<{ slice: string; verdicts: readonly RecordedVerdict[]; next_attempt: number }>;
+
 export type VerdictMetrics = Readonly<{
+  active_slice: ActiveSlice | null;
   slices: number;
   first_fail_slices: number;
   first_fail_rate_percent: number | null;
   rounds_per_slice: Readonly<{ max: number; median: number }> | null;
+  escalated_slices: number;
   verdicts_by_model: readonly ModelVerdicts[];
   malformed: number;
   skipped_lines: number;
   unreceipted_greens: Readonly<{ count: number }> | Readonly<{ omitted: string }>;
 }>;
 
-export function verdictMetrics(log: VerdictLog, greensRead: GreensRead): VerdictMetrics {
+export function verdictMetrics(log: VerdictLog, greensRead: GreensRead, armedSlice: string | null): VerdictMetrics {
   const roundsOfEachSlice = armingsOf(log.entries)
     .everyArming.map((arming) => arming.filter((record) => record.role === VERIFIER_ROLE))
     .filter((rounds) => rounds.length > 0);
   const verifierRecords = roundsOfEachSlice.flat();
   const firstFailSlices = roundsOfEachSlice.filter((rounds) => rounds[0]?.verdict === "fail").length;
   return {
+    active_slice: activeSliceOf(log.entries, armedSlice),
     slices: roundsOfEachSlice.length,
     first_fail_slices: firstFailSlices,
     first_fail_rate_percent:
       roundsOfEachSlice.length === 0 ? null : oneDecimal((firstFailSlices * 100) / roundsOfEachSlice.length),
     rounds_per_slice: roundsSummary(roundsOfEachSlice.map((rounds) => rounds.length)),
+    escalated_slices: roundsOfEachSlice.filter((rounds) => rounds.some((record) => record.escalated)).length,
     verdicts_by_model: verdictsByModel(verifierRecords),
     malformed: verifierRecords.filter((record) => record.verdict_shape === "malformed").length,
     skipped_lines: log.skippedLines,
@@ -60,9 +68,11 @@ export function unreceiptedGreensIn(eventsText: string): UnreceiptedGreen[] {
 
 export function renderReportTable(metrics: VerdictMetrics): string {
   const rows: ReadonlyArray<readonly [string, readonly string[]]> = [
+    ["active slice", [activeSliceText(metrics)]],
     ["armed slices", [`${metrics.slices} with a verifier record`]],
     ["first-fail rate", [firstFailRateText(metrics)]],
     ["rounds per slice", [roundsText(metrics)]],
+    ["escalated slices", [String(metrics.escalated_slices)]],
     ["verdicts by model", modelRowsText(metrics.verdicts_by_model)],
     ["malformed reports", [String(metrics.malformed)]],
     ["skipped lines", [String(metrics.skipped_lines)]],
@@ -73,6 +83,15 @@ export function renderReportTable(metrics: VerdictMetrics): string {
     .flatMap(([label, values]) => values.map((value, index) => `${(index === 0 ? label : "").padEnd(labelWidth)}${value}`))
     .map((line) => `${line}\n`)
     .join("");
+}
+
+function activeSliceOf(entries: readonly VerdictLogEntry[], armedSlice: string | null): ActiveSlice | null {
+  if (armedSlice === null) return null;
+  return {
+    slice: armedSlice,
+    verdicts: verifierRecordsSinceArm(entries, armedSlice).map((record) => record.verdict),
+    next_attempt: nextAttemptOf(entries, armedSlice),
+  };
 }
 
 function oneDecimal(value: number): number {
@@ -104,6 +123,13 @@ function zeroCounts(): Record<RecordedVerdict, number> {
 function unreceiptedGreenCount(entries: readonly VerdictLogEntry[], greens: readonly UnreceiptedGreen[]): number {
   const armingSessions = new Set(entries.filter(isArmMarker).map((marker) => marker.session));
   return greens.filter((green) => armingSessions.has(green.session)).length;
+}
+
+function activeSliceText({ active_slice: active }: VerdictMetrics): string {
+  if (active === null) return "none — no slice is armed";
+  const next = `${active.slice}: attempt ${active.next_attempt} next`;
+  if (active.verdicts.length === 0) return `${next}, no verifier verdict since its arming`;
+  return `${next} after ${active.verdicts.join(", ")}`;
 }
 
 function firstFailRateText(metrics: VerdictMetrics): string {

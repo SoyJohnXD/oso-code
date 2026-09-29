@@ -1377,6 +1377,9 @@ var VERIFY_GREEN_UNRECEIPTED = "verify-green-unreceipted";
 function verdictsFileFor(stateFile) {
   return path4.join(runsDirectoryOf(stateFile), "verdicts.jsonl");
 }
+function nextAttemptOf(entries, slice) {
+  return verifierRecordsSinceArm(entries, slice).length + 1;
+}
 function appendArmMarker(verdictsFile, marker) {
   return appendEntry(verdictsFile, marker.session, () => ({
     kind: "arm",
@@ -1497,15 +1500,17 @@ function refusalReason(slice, record) {
 }
 
 // core/src/verdict/report.ts
-function verdictMetrics(log, greensRead) {
+function verdictMetrics(log, greensRead, armedSlice) {
   const roundsOfEachSlice = armingsOf(log.entries).everyArming.map((arming) => arming.filter((record) => record.role === VERIFIER_ROLE)).filter((rounds) => rounds.length > 0);
   const verifierRecords = roundsOfEachSlice.flat();
   const firstFailSlices = roundsOfEachSlice.filter((rounds) => rounds[0]?.verdict === "fail").length;
   return {
+    active_slice: activeSliceOf(log.entries, armedSlice),
     slices: roundsOfEachSlice.length,
     first_fail_slices: firstFailSlices,
     first_fail_rate_percent: roundsOfEachSlice.length === 0 ? null : oneDecimal(firstFailSlices * 100 / roundsOfEachSlice.length),
     rounds_per_slice: roundsSummary(roundsOfEachSlice.map((rounds) => rounds.length)),
+    escalated_slices: roundsOfEachSlice.filter((rounds) => rounds.some((record) => record.escalated)).length,
     verdicts_by_model: verdictsByModel(verifierRecords),
     malformed: verifierRecords.filter((record) => record.verdict_shape === "malformed").length,
     skipped_lines: log.skippedLines,
@@ -1520,9 +1525,11 @@ function unreceiptedGreensIn(eventsText) {
 }
 function renderReportTable(metrics) {
   const rows = [
+    ["active slice", [activeSliceText(metrics)]],
     ["armed slices", [`${metrics.slices} with a verifier record`]],
     ["first-fail rate", [firstFailRateText(metrics)]],
     ["rounds per slice", [roundsText(metrics)]],
+    ["escalated slices", [String(metrics.escalated_slices)]],
     ["verdicts by model", modelRowsText(metrics.verdicts_by_model)],
     ["malformed reports", [String(metrics.malformed)]],
     ["skipped lines", [String(metrics.skipped_lines)]],
@@ -1531,6 +1538,14 @@ function renderReportTable(metrics) {
   const labelWidth = Math.max(...rows.map(([label]) => label.length)) + 2;
   return rows.flatMap(([label, values]) => values.map((value, index) => `${(index === 0 ? label : "").padEnd(labelWidth)}${value}`)).map((line) => `${line}
 `).join("");
+}
+function activeSliceOf(entries, armedSlice) {
+  if (armedSlice === null) return null;
+  return {
+    slice: armedSlice,
+    verdicts: verifierRecordsSinceArm(entries, armedSlice).map((record) => record.verdict),
+    next_attempt: nextAttemptOf(entries, armedSlice)
+  };
 }
 function oneDecimal(value) {
   return Math.round(value * 10) / 10;
@@ -1557,6 +1572,12 @@ function zeroCounts() {
 function unreceiptedGreenCount(entries, greens) {
   const armingSessions = new Set(entries.filter(isArmMarker).map((marker) => marker.session));
   return greens.filter((green) => armingSessions.has(green.session)).length;
+}
+function activeSliceText({ active_slice: active }) {
+  if (active === null) return "none \u2014 no slice is armed";
+  const next = `${active.slice}: attempt ${active.next_attempt} next`;
+  if (active.verdicts.length === 0) return `${next}, no verifier verdict since its arming`;
+  return `${next} after ${active.verdicts.join(", ")}`;
 }
 function firstFailRateText(metrics) {
   if (metrics.first_fail_rate_percent === null) return "none \u2014 no armed slice holds a verifier record";
@@ -2069,9 +2090,10 @@ and exits 0 whether or not it found any. comments flags the inline comments the
 diff since <ref> adds; abstractions flags the exports it adds that fewer than
 two use sites reach.
 
-report reads this repository's verdict records and prints the first-fail rate,
-rounds per slice, verdicts by model, malformed reports and unreceipted greens;
---json prints the same fields as one JSON object.
+report reads this repository's verdict records and prints the armed slice with
+its next verifier attempt, the first-fail rate, rounds per slice, escalated
+slices, verdicts by model, malformed reports and unreceipted greens; --json
+prints the same fields as one JSON object.
 
 watch polls this session's in-flight delegations and exits 0 once none is left,
 or 3 naming each one silent for 60 minutes, in flight for 3 hours or ended
@@ -2244,10 +2266,14 @@ function runReport(remaining) {
   const [flag, ...rest] = remaining;
   if (rest.length > 0 || flag !== void 0 && flag !== "--json") throw new UsageError();
   const stateFile = stateFileFor(process.cwd());
-  const metrics = verdictMetrics(readVerdicts(verdictsFileFor(stateFile)), readGreens());
+  const metrics = verdictMetrics(readVerdicts(verdictsFileFor(stateFile)), readGreens(), activeSliceIn(stateFile));
   process.stdout.write(flag === "--json" ? `${JSON.stringify(metrics)}
 ` : renderReportTable(metrics));
   return 0;
+}
+function activeSliceIn(stateFile) {
+  const slice = readValue(stateFile, "active_slice");
+  return slice === void 0 || slice === "" || slice === "none" ? null : slice;
 }
 function readGreens() {
   const eventsLog = eventsLogFile();

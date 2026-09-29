@@ -33,9 +33,10 @@ const SCAN_LINES =
   "       oso-state scan comments <ref>\n" + "       oso-state scan abstractions <ref>\n";
 const REPORT_LINE = "       oso-state report [--json]\n";
 const REPORT_PARAGRAPH =
-  "\nreport reads this repository's verdict records and prints the first-fail rate,\n" +
-  "rounds per slice, verdicts by model, malformed reports and unreceipted greens;\n" +
-  "--json prints the same fields as one JSON object.\n";
+  "\nreport reads this repository's verdict records and prints the armed slice with\n" +
+  "its next verifier attempt, the first-fail rate, rounds per slice, escalated\n" +
+  "slices, verdicts by model, malformed reports and unreceipted greens; --json\n" +
+  "prints the same fields as one JSON object.\n";
 const SCAN_PARAGRAPH =
   "\nscan reads the working directory's own repository, reports every hit on stdout\n" +
   "and exits 0 whether or not it found any. comments flags the inline comments the\n" +

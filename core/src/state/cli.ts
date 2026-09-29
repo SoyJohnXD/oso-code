@@ -37,9 +37,10 @@ and exits 0 whether or not it found any. comments flags the inline comments the
 diff since <ref> adds; abstractions flags the exports it adds that fewer than
 two use sites reach.
 
-report reads this repository's verdict records and prints the first-fail rate,
-rounds per slice, verdicts by model, malformed reports and unreceipted greens;
---json prints the same fields as one JSON object.
+report reads this repository's verdict records and prints the armed slice with
+its next verifier attempt, the first-fail rate, rounds per slice, escalated
+slices, verdicts by model, malformed reports and unreceipted greens; --json
+prints the same fields as one JSON object.
 
 watch polls this session's in-flight delegations and exits 0 once none is left,
 or 3 naming each one silent for 60 minutes, in flight for 3 hours or ended
@@ -223,9 +224,14 @@ function runReport(remaining: readonly string[]): number {
   const [flag, ...rest] = remaining;
   if (rest.length > 0 || (flag !== undefined && flag !== "--json")) throw new UsageError();
   const stateFile = store.stateFileFor(process.cwd());
-  const metrics = verdictMetrics(readVerdicts(verdictsFileFor(stateFile)), readGreens());
+  const metrics = verdictMetrics(readVerdicts(verdictsFileFor(stateFile)), readGreens(), activeSliceIn(stateFile));
   process.stdout.write(flag === "--json" ? `${JSON.stringify(metrics)}\n` : renderReportTable(metrics));
   return 0;
+}
+
+function activeSliceIn(stateFile: string): string | null {
+  const slice = store.readValue(stateFile, "active_slice");
+  return slice === undefined || slice === "" || slice === "none" ? null : slice;
 }
 
 function readGreens(): GreensRead {
