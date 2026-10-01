@@ -1,12 +1,14 @@
 import type { GateOutcome } from "../hosts/envelope.ts";
 import { ALLOWED } from "../hosts/envelope.ts";
 import { ereReads } from "../shell/ere.ts";
-import { basenameOf, UNREAD_PAYLOAD_MARKER } from "../shell/lexer.ts";
+import { basenameOf } from "../shell/lexer.ts";
 import {
   gitVerb,
+  isFedByXargs,
   isGitCall,
   isResidueCall,
   PACKAGE_RUNNERS,
+  runsCodeFedByXargs,
   type LexedCommand,
 } from "../shell/lexed-command.ts";
 import { lineVerdict, type LexerVerdict } from "../shell/line-verdict.ts";
@@ -39,6 +41,11 @@ const DEPLOY_CLIS = new Set(["vercel", "netlify", "firebase"]);
 const STATE_RECORD_LINE = /^([A-Za-z0-9_]+=|[\t\v\f\r ]*$)/;
 const RUN_BRANCH_REF = /^oso-run\/[a-z0-9-]+$/;
 const RUN_BRANCH_REFSPEC = /^[^:]+:(refs\/heads\/)?oso-run\/[a-z0-9-]+$/;
+const PUSH_OPTIONS_TAKING_A_VALUE = new Set(["-o", "--push-option", "--repo", "--receive-pack", "--exec"]);
+const PUSH_OPTIONS_SENDING_MORE_THAN_ITS_REFSPECS = new Set([
+  "--tags", "--follow-tags", "--all", "--branches", "--mirror",
+]);
+const FOLLOW_TAGS_CONFIG = /push\.followtags/i;
 const TAKE_THE_RUN_BACK = "set auto=done";
 
 export const PROD_DEPLOY_GATE: GateDefinition = {
@@ -173,6 +180,7 @@ function judgeProductionLine(
   verdict: ProductionJudgement | LexerVerdict,
 ): ProductionJudgement | LexerVerdict {
   if (runsAProductionDeploy(command)) return "production";
+  if (verdict !== "production" && runsCodeFedByXargs(command)) return "unread";
   if (verdict !== "production" && verdict !== "unread" && pushesOffTheRunBranch(command)) return "push";
   if (verdict === "clear" && isResidueCall(command, PRODUCTION_BOUNDARY_SUBJECTS)) return "residue";
   return verdict;
@@ -181,7 +189,7 @@ function judgeProductionLine(
 function runsAProductionDeploy(command: LexedCommand): boolean {
   const deployCli = deployCommandName(command);
   if (deployCli === undefined) return false;
-  if (command.stdin.includes(UNREAD_PAYLOAD_MARKER)) return true;
+  if (isFedByXargs(command)) return true;
   if (deployCli === "vercel") return vercelTargetsProduction(command);
   if (deployCli === "netlify") return commandCarries(command, "deploy") && commandCarries(command, "--prod");
   return commandCarries(command, "deploy");
@@ -217,8 +225,30 @@ function commandCarries(command: LexedCommand, word: string): boolean {
 
 function pushesOffTheRunBranch(command: LexedCommand): boolean {
   if (!isGitCall(command)) return false;
-  if (gitVerb(command) !== "push") return false;
-  return !command.tokens.slice(1).some((token) => RUN_BRANCH_REF.test(token) || RUN_BRANCH_REFSPEC.test(token));
+  const verb = gitVerb(command);
+  if (isFedByXargs(command)) return verb === "push" || verb === "";
+  if (verb !== "push") return false;
+  const pushAt = command.tokens.indexOf(verb);
+  if (command.tokens.slice(1, pushAt).some((option) => FOLLOW_TAGS_CONFIG.test(option))) return true;
+  return !pushesOnlyRunBranchRefspecs(command.tokens.slice(pushAt + 1));
+}
+
+function pushesOnlyRunBranchRefspecs(pushArguments: readonly string[]): boolean {
+  const positionals: string[] = [];
+  let optionsEnded = false;
+  for (let at = 0; at < pushArguments.length; at += 1) {
+    const argument = pushArguments[at] as string;
+    if (optionsEnded || !argument.startsWith("-")) positionals.push(argument);
+    else if (argument === "--") optionsEnded = true;
+    else if (PUSH_OPTIONS_SENDING_MORE_THAN_ITS_REFSPECS.has(argument)) return false;
+    else if (PUSH_OPTIONS_TAKING_A_VALUE.has(argument)) at += 1;
+  }
+  const refspecs = positionals.slice(1);
+  return refspecs.length > 0 && refspecs.every(isRunBranchRefspec);
+}
+
+function isRunBranchRefspec(refspec: string): boolean {
+  return RUN_BRANCH_REF.test(refspec) || RUN_BRANCH_REFSPEC.test(refspec);
 }
 
 function runMarkerOf(stateFile: string, session: string): RunMarker {

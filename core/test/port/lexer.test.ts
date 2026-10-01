@@ -55,6 +55,18 @@ const LEXER_CASES: readonly LexerCase[] = [
     records: [">git", ".commit"],
   },
   {
+    reads: "a redirection's file-descriptor number as no word of the command",
+    readFrom: "POSIX XCU 2.10.1: IO_NUMBER",
+    line: "git push origin oso-run/x 2>&1 0</dev/null",
+    records: [">git", ".push", ".origin", ".oso-run/x"],
+  },
+  {
+    reads: "digits a blank or a quote parts from the redirection as an argument",
+    readFrom: "POSIX XCU 2.10.1: IO_NUMBER",
+    line: "echo 2 >f '3'>g",
+    records: [">echo", ".2", ".3"],
+  },
+  {
     reads: "a herestring as more commands",
     readFrom: "plugin/hooks/lexer.sh:280-284,66-69",
     line: 'newgrp <<< "git commit"',
@@ -441,6 +453,24 @@ const PREFIX_ARITY_CASES: readonly LexerCase[] = [
     readFrom: "env(1): -u, --unset=NAME",
     line: "env -u X bash <<EOF\ngit commit\nEOF",
     records: [">bash", ">git", ".commit"],
+  },
+  {
+    reads: "an xargs flag bundle defining a replace-string as today's command word, and the line as unread",
+    readFrom: "xargs(1): -i[replace-str]",
+    line: "xargs -ri0 0 deploy",
+    records: [">deploy", `<${UNREAD_PAYLOAD_MARKER}`, UNREAD_PAYLOAD_MARKER],
+  },
+  {
+    reads: "a numeric xargs replace-string as the command word, and the line as unread",
+    readFrom: "xargs(1): -I replace-str",
+    line: "xargs -I0 0 deploy",
+    records: [">0", ".deploy", `<${UNREAD_PAYLOAD_MARKER}`, UNREAD_PAYLOAD_MARKER],
+  },
+  {
+    reads: "npx's -c value as the nested command it runs",
+    readFrom: "npm-exec(1): -c, --call",
+    line: "npx -c 'git commit'",
+    records: [">npx", ".-c", ".git commit", ">git", ".commit"],
   },
 ];
 

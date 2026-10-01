@@ -13,6 +13,7 @@ const MAX_PAYLOAD_DEPTH = 3;
 const SPECIAL_CHARACTERS = "'\"\\$`#;&|(){}<> \t\n";
 const QUOTED_SPECIAL_CHARACTERS = "\"\\$`";
 const WORD_DELIMITERS = " \t\n;&|()<>";
+const DESCRIPTOR_NUMBER = /^[0-9]+$/;
 const UNREAD_PAYLOAD: LexRecord = { kind: "unreadPayload" };
 
 const COPROCESS_WORD = "coproc";
@@ -44,6 +45,12 @@ const ALIAS_WORD = "alias";
 const HISTORY_REPLAYING_WORD = "fc";
 const ALIAS_DEFINITION = /^[^-=][^=]*=/;
 const ASSIGNMENT_NAMING_A_FILE_THE_SHELL_SOURCES = /^BASH_ENV=/;
+const RUNNER_CALLING_A_COMMAND = "npx";
+const NPM_WORD = "npm";
+const NPM_SUBCOMMANDS_CALLING_A_COMMAND = new Set(["exec", "x"]);
+const RUNNER_CALL_OPTIONS = new Set(["-c", "--call"]);
+const RUNNER_CALL_ASSIGNMENT = "--call=";
+const RUNNER_PACKAGE_OPTIONS = new Set(["-p", "--package"]);
 
 export const SHELL_WORDS_THIS_LEXER_READS: ReadonlySet<string> = new Set([
   ...PREFIX_WORDS, ...COMMAND_FLAG_READERS, ...CALLBACK_FLAG_READERS, ...SOURCING_BUILTINS,
@@ -212,6 +219,24 @@ function leadingRunOf(text: string, digit: RegExp, width: number): string {
 
 type OperandSplit = Readonly<{ operand: string; rest: readonly string[]; behindAnOption: boolean }>;
 
+function runnerOptionsOf(words: readonly string[]): readonly string[] {
+  const runner = basenameOf(words[0] ?? "");
+  if (runner === RUNNER_CALLING_A_COMMAND) return words.slice(1);
+  if (runner === NPM_WORD && NPM_SUBCOMMANDS_CALLING_A_COMMAND.has(words[1] ?? "")) return words.slice(2);
+  return [];
+}
+
+function runnerCallPayload(options: readonly string[]): string {
+  for (let at = 0; at < options.length; at += 1) {
+    const option = options[at] as string;
+    if (option.startsWith(RUNNER_CALL_ASSIGNMENT)) return option.slice(RUNNER_CALL_ASSIGNMENT.length);
+    if (RUNNER_CALL_OPTIONS.has(option)) return options[at + 1] ?? "";
+    if (option === END_OF_OPTIONS || !option.startsWith("-")) return "";
+    if (RUNNER_PACKAGE_OPTIONS.has(option)) at += 1;
+  }
+  return "";
+}
+
 function splitAtTheFirstOperand(words: readonly string[]): OperandSplit | undefined {
   const at = words.findIndex((word) => !word.startsWith("-"));
   if (at === -1) return undefined;
@@ -241,6 +266,7 @@ const XARGS_OPTIONS: OptionTable = {
 const XARGS_REPLACE_OPTION = "-I";
 const XARGS_DEFAULTED_REPLACE_OPTION = "-i";
 const XARGS_DEFAULT_REPLACE_STRING = "{}";
+const XARGS_FLAG_DEFINING_A_REPLACE_STRING = /^-[^-]*[iI]/;
 const ENV_OPTIONS: OptionTable = {
   takingAValue: ["-u"],
   takingAnAttachedValueOnly: [],
@@ -270,10 +296,12 @@ type KeyedPrefixReading =
   | Readonly<{ kind: "read"; next: number; replaceString: string | undefined }>
   | Readonly<{ kind: "standsAsTheCommand"; payload: string }>
   | Readonly<{ kind: "operandOutsideItsGrammar" }>
+  | Readonly<{ kind: "replaceStringItDoesNotKnow" }>
   | Readonly<{ kind: "shapeItDoesNotKnow" }>;
 
 const A_SHAPE_IT_DOES_NOT_KNOW: KeyedPrefixReading = { kind: "shapeItDoesNotKnow" };
 const AN_OPERAND_OUTSIDE_ITS_GRAMMAR: KeyedPrefixReading = { kind: "operandOutsideItsGrammar" };
+const A_REPLACE_STRING_IT_DOES_NOT_KNOW: KeyedPrefixReading = { kind: "replaceStringItDoesNotKnow" };
 const A_LOOKUP_RUNNING_NOTHING: KeyedPrefixReading = { kind: "standsAsTheCommand", payload: "" };
 
 const KEYED_PREFIX_READERS: ReadonlyMap<string, (words: readonly string[], from: number) => KeyedPrefixReading> =
@@ -296,11 +324,12 @@ type PrefixCut = Readonly<{
 function prefixCutOf(words: readonly string[]): PrefixCut {
   let at = 0;
   let endsOnAnUnresolvedOption = false;
-  let operandOutsideItsGrammar = false;
+  let aPrefixLeftItUnread = false;
   let replaceString: string | undefined;
   let payload = "";
   while (at < words.length) {
     const word = words[at] as string;
+    if (replaceString !== undefined && word.includes(replaceString)) break;
     const reading = keyedPrefixReading(word, words, at + 1);
     if (reading.kind === "standsAsTheCommand") {
       payload = reading.payload;
@@ -312,13 +341,17 @@ function prefixCutOf(words: readonly string[]): PrefixCut {
       endsOnAnUnresolvedOption = false;
       continue;
     }
-    if (reading.kind === "operandOutsideItsGrammar") operandOutsideItsGrammar = true;
+    if (readingLeavesItUnread(reading)) aPrefixLeftItUnread = true;
     if (!isCommandPrefixWord(word)) break;
     endsOnAnUnresolvedOption = word.startsWith("-");
     at += 1;
   }
-  const leavesTheCommandUnread = endsOnAnUnresolvedOption || operandOutsideItsGrammar;
+  const leavesTheCommandUnread = endsOnAnUnresolvedOption || aPrefixLeftItUnread;
   return { length: at, leavesTheCommandUnread, replaceString, payload };
+}
+
+function readingLeavesItUnread(reading: KeyedPrefixReading): boolean {
+  return reading.kind === "operandOutsideItsGrammar" || reading.kind === "replaceStringItDoesNotKnow";
 }
 
 function keyedPrefixReading(word: string, words: readonly string[], from: number): KeyedPrefixReading {
@@ -336,8 +369,15 @@ function readCommandOptions(words: readonly string[], from: number): KeyedPrefix
 
 function readXargsOptions(words: readonly string[], from: number): KeyedPrefixReading {
   const read = optionsRead(XARGS_OPTIONS, words, from);
-  if (read === undefined) return A_SHAPE_IT_DOES_NOT_KNOW;
-  return { kind: "read", next: read.next, replaceString: replaceStringOf(read.options) };
+  if (read !== undefined) return { kind: "read", next: read.next, replaceString: replaceStringOf(read.options) };
+  return definesAReplaceString(words, from) ? A_REPLACE_STRING_IT_DOES_NOT_KNOW : A_SHAPE_IT_DOES_NOT_KNOW;
+}
+
+function definesAReplaceString(words: readonly string[], from: number): boolean {
+  const followingWords = words.slice(from);
+  const firstOperand = followingWords.findIndex((word) => !word.startsWith("-"));
+  const optionWords = firstOperand === -1 ? followingWords : followingWords.slice(0, firstOperand);
+  return optionWords.some((word) => XARGS_FLAG_DEFINING_A_REPLACE_STRING.test(word));
 }
 
 function replaceStringOf(options: readonly OptionRead[]): string | undefined {
@@ -425,6 +465,7 @@ class CommandLineLexer {
   private readonly depth: number;
   private token = "";
   private tokenOpen = false;
+  private tokenHoldsAQuote = false;
   private redirectTargetPending = false;
   private herestringPending = false;
   private pendingHeredocs: PendingHeredoc[] = [];
@@ -466,13 +507,16 @@ class CommandLineLexer {
     switch (character) {
       case "'":
         this.tokenOpen = true;
+        this.tokenHoldsAQuote = true;
         this.takeSingleQuoted();
         return;
       case '"':
         this.tokenOpen = true;
+        this.tokenHoldsAQuote = true;
         this.takeDoubleQuoted();
         return;
       case "\\":
+        this.tokenHoldsAQuote = true;
         this.takeEscape();
         return;
       case "$":
@@ -496,6 +540,7 @@ class CommandLineLexer {
         this.endToken();
         return;
       case ">":
+        this.dropADescriptorNumber();
         this.endToken();
         this.takeRedirect();
         return;
@@ -545,6 +590,13 @@ class CommandLineLexer {
         this.deferNestedCommands(this.token);
       }
     }
+    this.token = "";
+    this.tokenOpen = false;
+    this.tokenHoldsAQuote = false;
+  }
+
+  private dropADescriptorNumber(): void {
+    if (this.redirectTargetPending || this.tokenHoldsAQuote || !DESCRIPTOR_NUMBER.test(this.token)) return;
     this.token = "";
     this.tokenOpen = false;
   }
@@ -631,7 +683,11 @@ class CommandLineLexer {
       this.deferOptionValueAsACommand(CALLBACK_FLAG);
       return;
     }
-    if (readsACommandFlag(leading)) this.deferInterpreterPayload();
+    if (readsACommandFlag(leading)) {
+      this.deferInterpreterPayload();
+      return;
+    }
+    this.deferNestedCommands(runnerCallPayload(runnerOptionsOf(this.commandTokens)));
   }
 
   private deferTrapAction(): void {
@@ -846,6 +902,7 @@ class CommandLineLexer {
   }
 
   private takeInputRedirect(): void {
+    this.dropADescriptorNumber();
     if (this.rest.startsWith("<<")) {
       this.rest = this.rest.slice(2);
       this.endToken();

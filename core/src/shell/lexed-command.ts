@@ -1,4 +1,4 @@
-import { basenameOf } from "./lexer.ts";
+import { basenameOf, UNREAD_PAYLOAD_MARKER } from "./lexer.ts";
 
 export const GIT_VERB_UNRESOLVED = "?";
 export const PACKAGE_RUNNERS: ReadonlySet<string> = new Set([
@@ -39,6 +39,17 @@ export function gitVerb(command: LexedCommand): string {
   return "";
 }
 
+export function isFedByXargs(command: LexedCommand): boolean {
+  return command.stdin.includes(UNREAD_PAYLOAD_MARKER);
+}
+
+export function runsCodeFedByXargs(command: LexedCommand): boolean {
+  const [commandWord, ...commandArguments] = command.tokens;
+  if (commandWord === undefined || !isFedByXargs(command)) return false;
+  if (PACKAGE_RUNNERS.has(basenameOf(commandWord))) return true;
+  return isSubjectReadingInterpreter(commandWord) && !namesAFixedScript(commandArguments);
+}
+
 export function isResidueCall(command: LexedCommand, subjects: readonly string[]): boolean {
   const commandWord = command.tokens[0];
   if (commandWord === undefined) return false;
@@ -73,6 +84,12 @@ function isInterpreterHandedASubject(command: LexedCommand, subjects: readonly s
 
 function isSubjectReadingInterpreter(commandWord: string): boolean {
   return SUBJECT_READING_INTERPRETERS.has(basenameOf(commandWord).replace(/[0-9][\s\S]*$/, ""));
+}
+
+function namesAFixedScript(interpreterArguments: readonly string[]): boolean {
+  return interpreterArguments.some(
+    (argument, index) => !argument.startsWith("-") && !(interpreterArguments[index - 1]?.startsWith("-") ?? false),
+  );
 }
 
 function holdsInterpreterCode(argument: string, previousArgument: string | undefined): boolean {

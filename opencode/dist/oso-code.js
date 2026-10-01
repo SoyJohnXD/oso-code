@@ -1685,6 +1685,7 @@ var MAX_PAYLOAD_DEPTH = 3;
 var SPECIAL_CHARACTERS = "'\"\\$`#;&|(){}<> 	\n";
 var QUOTED_SPECIAL_CHARACTERS = '"\\$`';
 var WORD_DELIMITERS = " 	\n;&|()<>";
+var DESCRIPTOR_NUMBER = /^[0-9]+$/;
 var UNREAD_PAYLOAD = { kind: "unreadPayload" };
 var COPROCESS_WORD = "coproc";
 var COPROCESS_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -1756,6 +1757,12 @@ var ALIAS_WORD = "alias";
 var HISTORY_REPLAYING_WORD = "fc";
 var ALIAS_DEFINITION = /^[^-=][^=]*=/;
 var ASSIGNMENT_NAMING_A_FILE_THE_SHELL_SOURCES = /^BASH_ENV=/;
+var RUNNER_CALLING_A_COMMAND = "npx";
+var NPM_WORD = "npm";
+var NPM_SUBCOMMANDS_CALLING_A_COMMAND = /* @__PURE__ */ new Set(["exec", "x"]);
+var RUNNER_CALL_OPTIONS = /* @__PURE__ */ new Set(["-c", "--call"]);
+var RUNNER_CALL_ASSIGNMENT = "--call=";
+var RUNNER_PACKAGE_OPTIONS = /* @__PURE__ */ new Set(["-p", "--package"]);
 var SHELL_WORDS_THIS_LEXER_READS = /* @__PURE__ */ new Set([
   ...PREFIX_WORDS,
   ...COMMAND_FLAG_READERS,
@@ -1913,6 +1920,22 @@ function leadingRunOf(text, digit, width) {
   while (length < width && length < text.length && digit.test(text[length])) length += 1;
   return text.slice(0, length);
 }
+function runnerOptionsOf(words) {
+  const runner = basenameOf(words[0] ?? "");
+  if (runner === RUNNER_CALLING_A_COMMAND) return words.slice(1);
+  if (runner === NPM_WORD && NPM_SUBCOMMANDS_CALLING_A_COMMAND.has(words[1] ?? "")) return words.slice(2);
+  return [];
+}
+function runnerCallPayload(options) {
+  for (let at = 0; at < options.length; at += 1) {
+    const option = options[at];
+    if (option.startsWith(RUNNER_CALL_ASSIGNMENT)) return option.slice(RUNNER_CALL_ASSIGNMENT.length);
+    if (RUNNER_CALL_OPTIONS.has(option)) return options[at + 1] ?? "";
+    if (option === END_OF_OPTIONS || !option.startsWith("-")) return "";
+    if (RUNNER_PACKAGE_OPTIONS.has(option)) at += 1;
+  }
+  return "";
+}
 function splitAtTheFirstOperand(words) {
   const at = words.findIndex((word) => !word.startsWith("-"));
   if (at === -1) return void 0;
@@ -1946,6 +1969,7 @@ var XARGS_OPTIONS = {
 var XARGS_REPLACE_OPTION = "-I";
 var XARGS_DEFAULTED_REPLACE_OPTION = "-i";
 var XARGS_DEFAULT_REPLACE_STRING = "{}";
+var XARGS_FLAG_DEFINING_A_REPLACE_STRING = /^-[^-]*[iI]/;
 var ENV_OPTIONS = {
   takingAValue: ["-u"],
   takingAnAttachedValueOnly: [],
@@ -1972,6 +1996,7 @@ var TASKSET_OPTIONS = {
 var TASKSET_MASK_OR_CPU_LIST = /^((0[xX])?[0-9A-Fa-f]+|[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*)$/;
 var A_SHAPE_IT_DOES_NOT_KNOW = { kind: "shapeItDoesNotKnow" };
 var AN_OPERAND_OUTSIDE_ITS_GRAMMAR = { kind: "operandOutsideItsGrammar" };
+var A_REPLACE_STRING_IT_DOES_NOT_KNOW = { kind: "replaceStringItDoesNotKnow" };
 var A_LOOKUP_RUNNING_NOTHING = { kind: "standsAsTheCommand", payload: "" };
 var KEYED_PREFIX_READERS = /* @__PURE__ */ new Map([
   ["command", readCommandOptions],
@@ -1984,11 +2009,12 @@ var KEYED_PREFIX_READERS = /* @__PURE__ */ new Map([
 function prefixCutOf(words) {
   let at = 0;
   let endsOnAnUnresolvedOption = false;
-  let operandOutsideItsGrammar = false;
+  let aPrefixLeftItUnread = false;
   let replaceString;
   let payload = "";
   while (at < words.length) {
     const word = words[at];
+    if (replaceString !== void 0 && word.includes(replaceString)) break;
     const reading = keyedPrefixReading(word, words, at + 1);
     if (reading.kind === "standsAsTheCommand") {
       payload = reading.payload;
@@ -2000,13 +2026,16 @@ function prefixCutOf(words) {
       endsOnAnUnresolvedOption = false;
       continue;
     }
-    if (reading.kind === "operandOutsideItsGrammar") operandOutsideItsGrammar = true;
+    if (readingLeavesItUnread(reading)) aPrefixLeftItUnread = true;
     if (!isCommandPrefixWord(word)) break;
     endsOnAnUnresolvedOption = word.startsWith("-");
     at += 1;
   }
-  const leavesTheCommandUnread = endsOnAnUnresolvedOption || operandOutsideItsGrammar;
+  const leavesTheCommandUnread = endsOnAnUnresolvedOption || aPrefixLeftItUnread;
   return { length: at, leavesTheCommandUnread, replaceString, payload };
+}
+function readingLeavesItUnread(reading) {
+  return reading.kind === "operandOutsideItsGrammar" || reading.kind === "replaceStringItDoesNotKnow";
 }
 function keyedPrefixReading(word, words, from) {
   if (isAssignment(word)) return A_SHAPE_IT_DOES_NOT_KNOW;
@@ -2021,8 +2050,14 @@ function readCommandOptions(words, from) {
 }
 function readXargsOptions(words, from) {
   const read = optionsRead(XARGS_OPTIONS, words, from);
-  if (read === void 0) return A_SHAPE_IT_DOES_NOT_KNOW;
-  return { kind: "read", next: read.next, replaceString: replaceStringOf(read.options) };
+  if (read !== void 0) return { kind: "read", next: read.next, replaceString: replaceStringOf(read.options) };
+  return definesAReplaceString(words, from) ? A_REPLACE_STRING_IT_DOES_NOT_KNOW : A_SHAPE_IT_DOES_NOT_KNOW;
+}
+function definesAReplaceString(words, from) {
+  const followingWords = words.slice(from);
+  const firstOperand = followingWords.findIndex((word) => !word.startsWith("-"));
+  const optionWords = firstOperand === -1 ? followingWords : followingWords.slice(0, firstOperand);
+  return optionWords.some((word) => XARGS_FLAG_DEFINING_A_REPLACE_STRING.test(word));
 }
 function replaceStringOf(options) {
   const replacing = options.filter(({ option }) => option === XARGS_REPLACE_OPTION || option === XARGS_DEFAULTED_REPLACE_OPTION).at(-1);
@@ -2085,6 +2120,7 @@ var CommandLineLexer = class _CommandLineLexer {
   depth;
   token = "";
   tokenOpen = false;
+  tokenHoldsAQuote = false;
   redirectTargetPending = false;
   herestringPending = false;
   pendingHeredocs = [];
@@ -2123,13 +2159,16 @@ var CommandLineLexer = class _CommandLineLexer {
     switch (character) {
       case "'":
         this.tokenOpen = true;
+        this.tokenHoldsAQuote = true;
         this.takeSingleQuoted();
         return;
       case '"':
         this.tokenOpen = true;
+        this.tokenHoldsAQuote = true;
         this.takeDoubleQuoted();
         return;
       case "\\":
+        this.tokenHoldsAQuote = true;
         this.takeEscape();
         return;
       case "$":
@@ -2153,6 +2192,7 @@ var CommandLineLexer = class _CommandLineLexer {
         this.endToken();
         return;
       case ">":
+        this.dropADescriptorNumber();
         this.endToken();
         this.takeRedirect();
         return;
@@ -2199,6 +2239,12 @@ var CommandLineLexer = class _CommandLineLexer {
         this.deferNestedCommands(this.token);
       }
     }
+    this.token = "";
+    this.tokenOpen = false;
+    this.tokenHoldsAQuote = false;
+  }
+  dropADescriptorNumber() {
+    if (this.redirectTargetPending || this.tokenHoldsAQuote || !DESCRIPTOR_NUMBER.test(this.token)) return;
     this.token = "";
     this.tokenOpen = false;
   }
@@ -2280,7 +2326,11 @@ var CommandLineLexer = class _CommandLineLexer {
       this.deferOptionValueAsACommand(CALLBACK_FLAG);
       return;
     }
-    if (readsACommandFlag(leading)) this.deferInterpreterPayload();
+    if (readsACommandFlag(leading)) {
+      this.deferInterpreterPayload();
+      return;
+    }
+    this.deferNestedCommands(runnerCallPayload(runnerOptionsOf(this.commandTokens)));
   }
   deferTrapAction() {
     let optionsEnded = false;
@@ -2472,6 +2522,7 @@ var CommandLineLexer = class _CommandLineLexer {
     }
   }
   takeInputRedirect() {
+    this.dropADescriptorNumber();
     if (this.rest.startsWith("<<")) {
       this.rest = this.rest.slice(2);
       this.endToken();
@@ -2613,6 +2664,15 @@ function gitVerb(command) {
   }
   return "";
 }
+function isFedByXargs(command) {
+  return command.stdin.includes(UNREAD_PAYLOAD_MARKER);
+}
+function runsCodeFedByXargs(command) {
+  const [commandWord, ...commandArguments] = command.tokens;
+  if (commandWord === void 0 || !isFedByXargs(command)) return false;
+  if (PACKAGE_RUNNERS.has(basenameOf(commandWord))) return true;
+  return isSubjectReadingInterpreter(commandWord) && !namesAFixedScript(commandArguments);
+}
 function isResidueCall(command, subjects) {
   const commandWord = command.tokens[0];
   if (commandWord === void 0) return false;
@@ -2643,6 +2703,11 @@ function isInterpreterHandedASubject(command, subjects) {
 }
 function isSubjectReadingInterpreter(commandWord) {
   return SUBJECT_READING_INTERPRETERS.has(basenameOf(commandWord).replace(/[0-9][\s\S]*$/, ""));
+}
+function namesAFixedScript(interpreterArguments) {
+  return interpreterArguments.some(
+    (argument, index) => !argument.startsWith("-") && !(interpreterArguments[index - 1]?.startsWith("-") ?? false)
+  );
 }
 function holdsInterpreterCode(argument, previousArgument) {
   return INTERPRETER_CODE_FLAG.test(argument) || INTERPRETER_CODE_FLAG.test(previousArgument ?? "");
@@ -2739,7 +2804,8 @@ function judgeCommitLine(command, verdict) {
 function isGatedGitCall(command) {
   if (!isGitCall(command)) return false;
   const verb = gitVerb(command);
-  if (verb === "" || !GATED_GIT_VERBS.has(verb)) return false;
+  if (verb === "") return isFedByXargs(command);
+  if (!GATED_GIT_VERBS.has(verb)) return false;
   return !gitCallOnlyReports(command, verb);
 }
 function gitCallOnlyReports(command, verb) {
@@ -3074,6 +3140,15 @@ var DEPLOY_CLIS = /* @__PURE__ */ new Set(["vercel", "netlify", "firebase"]);
 var STATE_RECORD_LINE = /^([A-Za-z0-9_]+=|[\t\v\f\r ]*$)/;
 var RUN_BRANCH_REF = /^oso-run\/[a-z0-9-]+$/;
 var RUN_BRANCH_REFSPEC = /^[^:]+:(refs\/heads\/)?oso-run\/[a-z0-9-]+$/;
+var PUSH_OPTIONS_TAKING_A_VALUE = /* @__PURE__ */ new Set(["-o", "--push-option", "--repo", "--receive-pack", "--exec"]);
+var PUSH_OPTIONS_SENDING_MORE_THAN_ITS_REFSPECS = /* @__PURE__ */ new Set([
+  "--tags",
+  "--follow-tags",
+  "--all",
+  "--branches",
+  "--mirror"
+]);
+var FOLLOW_TAGS_CONFIG = /push\.followtags/i;
 var TAKE_THE_RUN_BACK = "set auto=done";
 var PROD_DEPLOY_GATE = {
   gate: "proddeploy",
@@ -3165,6 +3240,7 @@ function deniedUnderTheBoundary(boundary, denial) {
 }
 function judgeProductionLine(command, verdict) {
   if (runsAProductionDeploy(command)) return "production";
+  if (verdict !== "production" && runsCodeFedByXargs(command)) return "unread";
   if (verdict !== "production" && verdict !== "unread" && pushesOffTheRunBranch(command)) return "push";
   if (verdict === "clear" && isResidueCall(command, PRODUCTION_BOUNDARY_SUBJECTS)) return "residue";
   return verdict;
@@ -3172,7 +3248,7 @@ function judgeProductionLine(command, verdict) {
 function runsAProductionDeploy(command) {
   const deployCli = deployCommandName(command);
   if (deployCli === void 0) return false;
-  if (command.stdin.includes(UNREAD_PAYLOAD_MARKER)) return true;
+  if (isFedByXargs(command)) return true;
   if (deployCli === "vercel") return vercelTargetsProduction(command);
   if (deployCli === "netlify") return commandCarries(command, "deploy") && commandCarries(command, "--prod");
   return commandCarries(command, "deploy");
@@ -3200,8 +3276,28 @@ function commandCarries(command, word) {
 }
 function pushesOffTheRunBranch(command) {
   if (!isGitCall(command)) return false;
-  if (gitVerb(command) !== "push") return false;
-  return !command.tokens.slice(1).some((token) => RUN_BRANCH_REF.test(token) || RUN_BRANCH_REFSPEC.test(token));
+  const verb = gitVerb(command);
+  if (isFedByXargs(command)) return verb === "push" || verb === "";
+  if (verb !== "push") return false;
+  const pushAt = command.tokens.indexOf(verb);
+  if (command.tokens.slice(1, pushAt).some((option) => FOLLOW_TAGS_CONFIG.test(option))) return true;
+  return !pushesOnlyRunBranchRefspecs(command.tokens.slice(pushAt + 1));
+}
+function pushesOnlyRunBranchRefspecs(pushArguments) {
+  const positionals = [];
+  let optionsEnded = false;
+  for (let at = 0; at < pushArguments.length; at += 1) {
+    const argument = pushArguments[at];
+    if (optionsEnded || !argument.startsWith("-")) positionals.push(argument);
+    else if (argument === "--") optionsEnded = true;
+    else if (PUSH_OPTIONS_SENDING_MORE_THAN_ITS_REFSPECS.has(argument)) return false;
+    else if (PUSH_OPTIONS_TAKING_A_VALUE.has(argument)) at += 1;
+  }
+  const refspecs = positionals.slice(1);
+  return refspecs.length > 0 && refspecs.every(isRunBranchRefspec);
+}
+function isRunBranchRefspec(refspec) {
+  return RUN_BRANCH_REF.test(refspec) || RUN_BRANCH_REFSPEC.test(refspec);
 }
 function runMarkerOf(stateFile, session) {
   const state = readArmedState(stateFile);
