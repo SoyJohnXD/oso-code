@@ -1,0 +1,22 @@
+{
+  "name": "production boundary: a timeout option its table does not know falls back to today and is allowed",
+  "source": [
+    {
+      "assertion": "assert_equals \"a timeout option its table does not know falls back to today and is allowed\" \\\n  \"allow\" \"$(verdict_for 'timeout --kill-after=5 10 npm test')\""
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"timeout --kill-after=5 10 npm test\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": "",
+    "events_appended": []
+  }
+}

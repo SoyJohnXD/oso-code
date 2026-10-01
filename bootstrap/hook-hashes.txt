@@ -5,7 +5,7 @@
 # Claude plugin ships plus the committed OpenCode plugin bundle. The
 # installer compares these published digests with installed bytes; it never
 # replaces them with hashes calculated after installation.
-b9ccb86af5c489770caac112d1dab2607ce7d51e82765f44e2fe0cefdb07bc77  plugin/dist/gate.js
+0cd80535b577bc68b98ef8ce0a5f4bcb1b3bd18a3d70ec9b0357548ae3839659  plugin/dist/gate.js
 c10203e954850d14a7baafab5bc784b98a2eecda5fd43858fee2f22bebb706f8  plugin/dist/precommit.js
 609158e6c5fbc237939fa3ddf7faab80ab690bdc0c8d584414a885130103c4e8  plugin/dist/package.json
 3aaa67c6df371430b5ec708eb9f7314104998fde2507d25a02a3c419435e30dc  plugin/git-hooks/pre-commit
@@ -19,4 +19,4 @@ a6831441701f65273a836a9c3bf60a1366346d52dd1bdee04d57804cd03785ea  plugin/bin/oso
 3a03a275ce8b36170b53bc4126ce8a1dfe2dbe0f2bc90a57674a83cd9b28e273  plugin/hooks/lib.sh
 3b9821683e46e56ca2f3aff703d2f3ecbfa042f57be0ac8a3aa5d36a1166a5ff  plugin/hooks/lexer.sh
 4fae3fb38808ea6ea401f6a2a28c5cac914e8db88554d03d477e1424ac9b80a8  plugin/hooks/reanchor-after-compact.sh
-cef63e113db7e39694109178cf70c698521fce893b626519cb46c2d558f650cb  opencode/dist/oso-code.js
+e42d92e5f958134df45209da7d833a847be444e77bf83b877ade7f6b97849989  opencode/dist/oso-code.js

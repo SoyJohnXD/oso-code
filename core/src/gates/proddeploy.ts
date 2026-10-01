@@ -2,7 +2,13 @@ import type { GateOutcome } from "../hosts/envelope.ts";
 import { ALLOWED } from "../hosts/envelope.ts";
 import { ereReads } from "../shell/ere.ts";
 import { basenameOf, UNREAD_PAYLOAD_MARKER } from "../shell/lexer.ts";
-import { gitVerb, isGitCall, isResidueCall, type LexedCommand } from "../shell/lexed-command.ts";
+import {
+  gitVerb,
+  isGitCall,
+  isResidueCall,
+  PACKAGE_RUNNERS,
+  type LexedCommand,
+} from "../shell/lexed-command.ts";
 import { lineVerdict, type LexerVerdict } from "../shell/line-verdict.ts";
 import { denyPatternsFileFor, readFileIfPresent, stateFileFor } from "../state/store.ts";
 import {
@@ -30,7 +36,6 @@ type DenyPatternReading =
 
 const PRODUCTION_BOUNDARY_SUBJECTS = ["git", "deploy", "vercel", "netlify", "firebase"];
 const DEPLOY_CLIS = new Set(["vercel", "netlify", "firebase"]);
-const PACKAGE_RUNNERS = new Set(["npx", "npm", "pnpm", "pnpx", "yarn", "bun", "bunx", "deno"]);
 const STATE_RECORD_LINE = /^([A-Za-z0-9_]+=|[\t\v\f\r ]*$)/;
 const RUN_BRANCH_REF = /^oso-run\/[a-z0-9-]+$/;
 const RUN_BRANCH_REFSPEC = /^[^:]+:(refs\/heads\/)?oso-run\/[a-z0-9-]+$/;

@@ -1,0 +1,31 @@
+{
+  "name": "commit gate: a commit behind env -u outside the green window is denied",
+  "source": [
+    {
+      "assertion": "assert_equals \"a commit behind env -u outside the green window is denied\" \\\n  \"deny\" \"$(verdict_for 'env -u X git commit -m y')\""
+    }
+  ],
+  "gate": "commit",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"env -u X git commit -m y\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\""
+      ]
+    },
+    "stderr": "",
+    "events_appended": [
+      {
+        "event": "commit-denied",
+        "command": "env -u X git commit -m y"
+      }
+    ]
+  }
+}

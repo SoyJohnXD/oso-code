@@ -221,7 +221,7 @@ const CLOSED_DIVERGENCE_CASES: readonly LexerCase[] = [
     reads: "an xargs replace-string as one word, so the line no longer splits at the brace",
     readFrom: "plugin/hooks/lexer.sh:32,52",
     line: "echo --prod | xargs -I{} vercel {}",
-    records: [">echo", ".--prod", ">vercel", ".{}", `<${UNREAD_PAYLOAD_MARKER}`, UNREAD_PAYLOAD_MARKER],
+    records: [">echo", ".--prod", ">vercel", ".{}", `<${UNREAD_PAYLOAD_MARKER}`],
   },
   {
     reads: "an ANSI-C quoted option as the option the shell hands the deploy CLI",
@@ -405,7 +405,46 @@ const KEPT_SHAPES: readonly LexerCase[] = [
   },
 ];
 
-const ALL_CASES = [...LEXER_CASES, ...CLOSED_DIVERGENCE_CASES, ...KEPT_SHAPES];
+const PREFIX_ARITY_CASES: readonly LexerCase[] = [
+  {
+    reads: "env's -u value as the name it unsets, never the command word",
+    readFrom: "env(1): -u, --unset=NAME",
+    line: "env -u X git commit",
+    records: [">git", ".commit"],
+  },
+  {
+    reads: "command -v as a lookup that runs nothing, left unstripped",
+    readFrom: "bash(1) SHELL BUILTIN COMMANDS: command",
+    line: "command -v git",
+    records: [">command", ".-v", ".git"],
+  },
+  {
+    reads: "a duration outside timeout's grammar as today's command word, and the line as unread",
+    readFrom: "timeout(1): DURATION",
+    line: "timeout inf git commit",
+    records: [">inf", ".git", ".commit", UNREAD_PAYLOAD_MARKER],
+  },
+  {
+    reads: "an xargs replace-string as the git verb as a payload it cannot read",
+    readFrom: "xargs(1): -I replace-str",
+    line: "echo x | xargs -I{} git {}",
+    records: [">echo", ".x", ">git", ".{}", `<${UNREAD_PAYLOAD_MARKER}`, UNREAD_PAYLOAD_MARKER],
+  },
+  {
+    reads: "flock's -c payload once, though a heredoc strips the prefixes before the line ends",
+    readFrom: "flock(1): -c, --command",
+    line: "flock /tmp/l -c 'git commit' <<EOF\nx\nEOF",
+    records: [">flock", "./tmp/l", ".-c", ".git commit", "<x", ">git", ".commit"],
+  },
+  {
+    reads: "env's option value once, though a heredoc strips the prefixes before the line ends",
+    readFrom: "env(1): -u, --unset=NAME",
+    line: "env -u X bash <<EOF\ngit commit\nEOF",
+    records: [">bash", ">git", ".commit"],
+  },
+];
+
+const ALL_CASES = [...LEXER_CASES, ...CLOSED_DIVERGENCE_CASES, ...KEPT_SHAPES, ...PREFIX_ARITY_CASES];
 
 provedSomething(
   `at least one of ${ALL_CASES.length} lexer port cases is exercised`,
@@ -432,6 +471,14 @@ describe("core/src/shell/lexer.ts: the five divergences and the locale sibling o
 describe("core/src/shell/lexer.ts: the shapes those closures must leave where they were", () => {
   for (const { reads, readFrom, line, records } of KEPT_SHAPES) {
     test(`it still reads ${reads} (read from ${readFrom})`, () => {
+      assert.deepEqual(rendered(lexShellCommands(line)), records);
+    });
+  }
+});
+
+describe("core/src/shell/lexer.ts: the option arity of the prefix words whose options it knows", () => {
+  for (const { reads, readFrom, line, records } of PREFIX_ARITY_CASES) {
+    test(`it reads ${reads} (read from ${readFrom})`, () => {
       assert.deepEqual(rendered(lexShellCommands(line)), records);
     });
   }
