@@ -59,15 +59,19 @@ const TIMEOUT_SHAPE: OperandPrefixShape = {
   },
   operandGrammar: /^[0-9]+(\.[0-9]+)?[smhd]?$/,
 };
+const FLOCK_COMMAND_OPTIONS: OptionTable = {
+  takingAValue: ["-c", "--command"],
+  takingAnAttachedValueOnly: [],
+  standingAlone: [],
+};
 const FLOCK_SHAPE: OperandPrefixShape = {
   options: {
-    takingAValue: ["-E", "-w"],
+    takingAValue: ["-E", "-w", ...FLOCK_COMMAND_OPTIONS.takingAValue],
     takingAnAttachedValueOnly: [],
     standingAlone: ["-s", "-x", "-u", "-n", "-o"],
   },
   operandGrammar: /^[\s\S]+$/,
 };
-const FLOCK_COMMAND_OPTIONS = new Set(["-c", "--command"]);
 const TASKSET_SHAPE: OperandPrefixShape = {
   options: {
     takingAValue: [],
@@ -175,9 +179,16 @@ function replaceStringOf(options: readonly OptionRead[]): string | undefined {
 }
 
 function readFlockOptions(words: readonly string[], from: number): KeyedPrefixReading {
+  const leadingCommand = optionsRead(FLOCK_SHAPE.options, words, from)?.options.find(isAFlockCommandOption);
+  if (leadingCommand !== undefined) return { kind: "standsAsTheCommand", payload: leadingCommand.value };
   const reading = readThroughOperand(FLOCK_SHAPE, words, from);
-  if (reading.kind !== "read" || !FLOCK_COMMAND_OPTIONS.has(words[reading.next] ?? "")) return reading;
-  return { kind: "standsAsTheCommand", payload: words[reading.next + 1] ?? "" };
+  if (reading.kind !== "read" || !(words[reading.next] ?? "").startsWith("-")) return reading;
+  const trailingCommand = optionAt(FLOCK_COMMAND_OPTIONS, words, reading.next);
+  return trailingCommand === undefined ? reading : { kind: "standsAsTheCommand", payload: trailingCommand.read.value };
+}
+
+function isAFlockCommandOption({ option }: OptionRead): boolean {
+  return FLOCK_COMMAND_OPTIONS.takingAValue.includes(option);
 }
 
 function readThroughOptions(table: OptionTable, words: readonly string[], from: number): KeyedPrefixReading {
@@ -197,7 +208,7 @@ function readThroughOperand(shape: OperandPrefixShape, words: readonly string[],
 
 type OptionRead = Readonly<{ option: string; value: string }>;
 type OptionsRead = Readonly<{ next: number; options: readonly OptionRead[] }>;
-type SpelledOption = Readonly<{ name: string; attached: string | undefined }>;
+export type SpelledOption = Readonly<{ name: string; attached: string | undefined }>;
 
 function optionsRead(table: OptionTable, words: readonly string[], from: number): OptionsRead | undefined {
   const options: OptionRead[] = [];
@@ -229,7 +240,7 @@ function optionAt(
   return separate === undefined ? undefined : { read: { option: name, value: separate }, next: at + 2 };
 }
 
-function spelledOption(word: string): SpelledOption {
+export function spelledOption(word: string): SpelledOption {
   if (!word.startsWith("--")) {
     return { name: word.slice(0, 2), attached: word.length > 2 ? word.slice(2) : undefined };
   }

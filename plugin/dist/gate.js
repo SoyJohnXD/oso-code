@@ -1798,15 +1798,19 @@ var TIMEOUT_SHAPE = {
   },
   operandGrammar: /^[0-9]+(\.[0-9]+)?[smhd]?$/
 };
+var FLOCK_COMMAND_OPTIONS = {
+  takingAValue: ["-c", "--command"],
+  takingAnAttachedValueOnly: [],
+  standingAlone: []
+};
 var FLOCK_SHAPE = {
   options: {
-    takingAValue: ["-E", "-w"],
+    takingAValue: ["-E", "-w", ...FLOCK_COMMAND_OPTIONS.takingAValue],
     takingAnAttachedValueOnly: [],
     standingAlone: ["-s", "-x", "-u", "-n", "-o"]
   },
   operandGrammar: /^[\s\S]+$/
 };
-var FLOCK_COMMAND_OPTIONS = /* @__PURE__ */ new Set(["-c", "--command"]);
 var TASKSET_SHAPE = {
   options: {
     takingAValue: [],
@@ -1887,9 +1891,15 @@ function replaceStringOf(options) {
   return defaulted ? XARGS_DEFAULT_REPLACE_STRING : replacing.value;
 }
 function readFlockOptions(words, from) {
+  const leadingCommand = optionsRead(FLOCK_SHAPE.options, words, from)?.options.find(isAFlockCommandOption);
+  if (leadingCommand !== void 0) return { kind: "standsAsTheCommand", payload: leadingCommand.value };
   const reading = readThroughOperand(FLOCK_SHAPE, words, from);
-  if (reading.kind !== "read" || !FLOCK_COMMAND_OPTIONS.has(words[reading.next] ?? "")) return reading;
-  return { kind: "standsAsTheCommand", payload: words[reading.next + 1] ?? "" };
+  if (reading.kind !== "read" || !(words[reading.next] ?? "").startsWith("-")) return reading;
+  const trailingCommand = optionAt(FLOCK_COMMAND_OPTIONS, words, reading.next);
+  return trailingCommand === void 0 ? reading : { kind: "standsAsTheCommand", payload: trailingCommand.read.value };
+}
+function isAFlockCommandOption({ option }) {
+  return FLOCK_COMMAND_OPTIONS.takingAValue.includes(option);
 }
 function readThroughOptions(table, words, from) {
   const read = optionsRead(table, words, from);
@@ -1979,8 +1989,8 @@ var ASSIGNMENT_NAMING_A_FILE_THE_SHELL_SOURCES = /^BASH_ENV=/;
 var RUNNER_CALLING_A_COMMAND = "npx";
 var NPM_WORD = "npm";
 var NPM_SUBCOMMANDS_CALLING_A_COMMAND = /* @__PURE__ */ new Set(["exec", "x"]);
-var RUNNER_CALL_OPTIONS = /* @__PURE__ */ new Set(["-c", "--call"]);
-var RUNNER_CALL_ASSIGNMENT = "--call=";
+var RUNNER_CALL_OPTIONS = /* @__PURE__ */ new Set(["-c", "--c", "--call"]);
+var RUNNER_CALL_IN_A_FLAG_BUNDLE = /^-[^-c=][^=]*c/;
 var RUNNER_PACKAGE_OPTIONS = /* @__PURE__ */ new Set(["-p", "--package"]);
 var SHELL_WORDS_THIS_LEXER_READS = /* @__PURE__ */ new Set([
   ...PREFIX_WORDS,
@@ -2132,15 +2142,22 @@ function runnerOptionsOf(words) {
   if (runner === NPM_WORD && NPM_SUBCOMMANDS_CALLING_A_COMMAND.has(words[1] ?? "")) return words.slice(2);
   return [];
 }
-function runnerCallPayload(options) {
+var NO_RUNNER_CALL = { kind: "payload", payload: "" };
+function runnerCallOf(options) {
   for (let at = 0; at < options.length; at += 1) {
     const option = options[at];
-    if (option.startsWith(RUNNER_CALL_ASSIGNMENT)) return option.slice(RUNNER_CALL_ASSIGNMENT.length);
-    if (RUNNER_CALL_OPTIONS.has(option)) return options[at + 1] ?? "";
-    if (option === END_OF_OPTIONS || !option.startsWith("-")) return "";
-    if (RUNNER_PACKAGE_OPTIONS.has(option)) at += 1;
+    if (option === END_OF_OPTIONS || !option.startsWith("-")) return NO_RUNNER_CALL;
+    if (RUNNER_CALL_IN_A_FLAG_BUNDLE.test(option)) return { kind: "bundledPastReading" };
+    const { name, attached } = runnerSpelledOption(option);
+    if (RUNNER_CALL_OPTIONS.has(name)) return { kind: "payload", payload: attached ?? options[at + 1] ?? "" };
+    if (RUNNER_PACKAGE_OPTIONS.has(name) && attached === void 0) at += 1;
   }
-  return "";
+  return NO_RUNNER_CALL;
+}
+function runnerSpelledOption(option) {
+  const spelled = spelledOption(option);
+  if (option.startsWith("--") || !spelled.attached?.startsWith("=")) return spelled;
+  return { name: spelled.name, attached: spelled.attached.slice(1) };
 }
 function splitAtTheFirstOperand(words) {
   const at = words.findIndex((word) => !word.startsWith("-"));
@@ -2365,7 +2382,7 @@ var CommandLineLexer = class _CommandLineLexer {
       this.deferInterpreterPayload();
       return;
     }
-    this.deferNestedCommands(runnerCallPayload(runnerOptionsOf(this.commandTokens)));
+    this.deferRunnerCall();
   }
   deferTrapAction() {
     let optionsEnded = false;
@@ -2426,6 +2443,11 @@ var CommandLineLexer = class _CommandLineLexer {
         return;
       }
     }
+  }
+  deferRunnerCall() {
+    const call = runnerCallOf(runnerOptionsOf(this.commandTokens));
+    if (call.kind === "bundledPastReading") this.markUnread();
+    else this.deferNestedCommands(call.payload);
   }
   deferNestedCommands(payload) {
     if (payload === "") return;

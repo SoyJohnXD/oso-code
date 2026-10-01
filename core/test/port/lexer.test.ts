@@ -468,6 +468,24 @@ const PREFIX_ARITY_CASES: readonly LexerCase[] = [
     line: "npx -c 'git commit'",
     records: [">npx", ".-c", ".git commit", ">git", ".commit"],
   },
+  {
+    reads: "flock's attached --command= value ahead of its lock file as the nested command it runs",
+    readFrom: "flock(1): -c, --command",
+    line: "flock --command='git commit' /tmp/l",
+    records: [">flock", ".--command=git commit", "./tmp/l", ">git", ".commit"],
+  },
+  {
+    reads: "npx's -c= value as the nested command it runs",
+    readFrom: "npm-exec(1): -c, --call",
+    line: "npx -c='git commit'",
+    records: [">npx", ".-c=git commit", ">git", ".commit"],
+  },
+  {
+    reads: "a flag bundle carrying npx's -c as a payload it cannot read",
+    readFrom: "npm-exec(1): -c, --call",
+    line: "npx -yc 'git commit'",
+    records: [">npx", ".-yc", ".git commit", UNREAD_PAYLOAD_MARKER],
+  },
 ];
 
 const ALL_CASES = [...LEXER_CASES, ...CLOSED_DIVERGENCE_CASES, ...KEPT_SHAPES, ...PREFIX_ARITY_CASES];

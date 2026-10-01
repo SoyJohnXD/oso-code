@@ -1,6 +1,14 @@
 import { runsAReplaceStringAsCode } from "./lexed-command.ts";
 import { basenameOf, UNREAD_PAYLOAD_MARKER } from "./lexed-word.ts";
-import { COPROCESS_WORD, isAssignment, isCommandPrefixWord, PREFIX_WORDS, prefixCutOf } from "./prefix-words.ts";
+import {
+  COPROCESS_WORD,
+  isAssignment,
+  isCommandPrefixWord,
+  PREFIX_WORDS,
+  prefixCutOf,
+  spelledOption,
+  type SpelledOption,
+} from "./prefix-words.ts";
 
 export type LexRecord =
   | { readonly kind: "commandWord"; readonly word: string; readonly assignments: readonly string[] }
@@ -41,8 +49,8 @@ const ASSIGNMENT_NAMING_A_FILE_THE_SHELL_SOURCES = /^BASH_ENV=/;
 const RUNNER_CALLING_A_COMMAND = "npx";
 const NPM_WORD = "npm";
 const NPM_SUBCOMMANDS_CALLING_A_COMMAND = new Set(["exec", "x"]);
-const RUNNER_CALL_OPTIONS = new Set(["-c", "--call"]);
-const RUNNER_CALL_ASSIGNMENT = "--call=";
+const RUNNER_CALL_OPTIONS = new Set(["-c", "--c", "--call"]);
+const RUNNER_CALL_IN_A_FLAG_BUNDLE = /^-[^-c=][^=]*c/;
 const RUNNER_PACKAGE_OPTIONS = new Set(["-p", "--package"]);
 
 export const SHELL_WORDS_THIS_LEXER_READS: ReadonlySet<string> = new Set([
@@ -201,15 +209,26 @@ function runnerOptionsOf(words: readonly string[]): readonly string[] {
   return [];
 }
 
-function runnerCallPayload(options: readonly string[]): string {
+type RunnerCall = Readonly<{ kind: "payload"; payload: string }> | Readonly<{ kind: "bundledPastReading" }>;
+
+const NO_RUNNER_CALL: RunnerCall = { kind: "payload", payload: "" };
+
+function runnerCallOf(options: readonly string[]): RunnerCall {
   for (let at = 0; at < options.length; at += 1) {
     const option = options[at] as string;
-    if (option.startsWith(RUNNER_CALL_ASSIGNMENT)) return option.slice(RUNNER_CALL_ASSIGNMENT.length);
-    if (RUNNER_CALL_OPTIONS.has(option)) return options[at + 1] ?? "";
-    if (option === END_OF_OPTIONS || !option.startsWith("-")) return "";
-    if (RUNNER_PACKAGE_OPTIONS.has(option)) at += 1;
+    if (option === END_OF_OPTIONS || !option.startsWith("-")) return NO_RUNNER_CALL;
+    if (RUNNER_CALL_IN_A_FLAG_BUNDLE.test(option)) return { kind: "bundledPastReading" };
+    const { name, attached } = runnerSpelledOption(option);
+    if (RUNNER_CALL_OPTIONS.has(name)) return { kind: "payload", payload: attached ?? options[at + 1] ?? "" };
+    if (RUNNER_PACKAGE_OPTIONS.has(name) && attached === undefined) at += 1;
   }
-  return "";
+  return NO_RUNNER_CALL;
+}
+
+function runnerSpelledOption(option: string): SpelledOption {
+  const spelled = spelledOption(option);
+  if (option.startsWith("--") || !spelled.attached?.startsWith("=")) return spelled;
+  return { name: spelled.name, attached: spelled.attached.slice(1) };
 }
 
 type OperandSplit = Readonly<{ operand: string; rest: readonly string[]; behindAnOption: boolean }>;
@@ -452,7 +471,7 @@ class CommandLineLexer {
       this.deferInterpreterPayload();
       return;
     }
-    this.deferNestedCommands(runnerCallPayload(runnerOptionsOf(this.commandTokens)));
+    this.deferRunnerCall();
   }
 
   private deferTrapAction(): void {
@@ -519,6 +538,12 @@ class CommandLineLexer {
         return;
       }
     }
+  }
+
+  private deferRunnerCall(): void {
+    const call = runnerCallOf(runnerOptionsOf(this.commandTokens));
+    if (call.kind === "bundledPastReading") this.markUnread();
+    else this.deferNestedCommands(call.payload);
   }
 
   private deferNestedCommands(payload: string): void {

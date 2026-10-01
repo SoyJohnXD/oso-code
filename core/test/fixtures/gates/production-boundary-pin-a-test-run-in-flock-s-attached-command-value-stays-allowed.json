@@ -1,0 +1,21 @@
+{
+  "name": "production boundary: pin: a test run in flock's attached --command= value stays allowed",
+  "source": [
+    {
+      "assertion": "assert_equals \"pin: a test run in flock's attached --command= value stays allowed\" \\\n  \"allow\" \"$(verdict_for \"flock /tmp/l --command='npm test'\")\""
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"flock /tmp/l --command='npm test'\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

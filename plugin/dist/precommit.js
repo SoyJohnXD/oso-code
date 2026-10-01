@@ -41,6 +41,19 @@ var PREFIX_WORDS = /* @__PURE__ */ new Set([
   "!",
   COPROCESS_WORD
 ]);
+var FLOCK_COMMAND_OPTIONS = {
+  takingAValue: ["-c", "--command"],
+  takingAnAttachedValueOnly: [],
+  standingAlone: []
+};
+var FLOCK_SHAPE = {
+  options: {
+    takingAValue: ["-E", "-w", ...FLOCK_COMMAND_OPTIONS.takingAValue],
+    takingAnAttachedValueOnly: [],
+    standingAlone: ["-s", "-x", "-u", "-n", "-o"]
+  },
+  operandGrammar: /^[\s\S]+$/
+};
 
 // core/src/shell/lexer.ts
 var SHELL_INTERPRETERS = /* @__PURE__ */ new Set(["bash", "sh", "dash", "zsh", "ksh"]);
