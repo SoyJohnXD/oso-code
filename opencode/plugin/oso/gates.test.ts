@@ -22,11 +22,11 @@ import { stateBinPath } from "./installed-tree.ts";
 import { armStateUnder, underFixtureHome } from "../../test-support/state-fixture.ts";
 
 const PRODUCTION_DEPLOY = "vercel --prod";
-const PAST_THREE_KIB = 200;
+const PADDING_REPEATS = 200;
 const LONG_PR_BODY_THEN_OWN_BRANCH_PUSH =
-  `cat > /tmp/pr-body.md <<'EOF'\n${"- one line of the pull request body\n".repeat(PAST_THREE_KIB)}EOF\n` +
+  `cat > /tmp/pr-body.md <<'EOF'\n${"- one line of the pull request body\n".repeat(PADDING_REPEATS)}EOF\n` +
   "git push -u origin oso-run/gate-probe";
-const LONG_PRODUCTION_DEPLOY = `${PRODUCTION_DEPLOY}${" and echo padding".repeat(PAST_THREE_KIB)}`;
+const LONG_PRODUCTION_DEPLOY = `${PRODUCTION_DEPLOY}${" and echo padding".repeat(PADDING_REPEATS)}`;
 const A_GATE_CORE_DOES_NOT_KNOW = "frobnicate" as OpenCodeRoute["gate"];
 const ARMED_SLICE_SESSION = "ses-armed";
 

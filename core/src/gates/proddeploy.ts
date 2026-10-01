@@ -1,9 +1,9 @@
 import type { GateOutcome } from "../hosts/envelope.ts";
 import { ALLOWED } from "../hosts/envelope.ts";
 import { ereReads } from "../shell/ere.ts";
-import { basenameOf } from "../shell/lexer.ts";
+import { basenameOf } from "../shell/lexed-word.ts";
 import {
-  gitVerb,
+  gitVerbAt,
   isFedByXargs,
   isGitCall,
   isResidueCall,
@@ -11,6 +11,7 @@ import {
   runsCodeFedByXargs,
   type LexedCommand,
 } from "../shell/lexed-command.ts";
+import { lexShellCommands, type LexRecord } from "../shell/lexer.ts";
 import { lineVerdict, type LexerVerdict } from "../shell/line-verdict.ts";
 import { denyPatternsFileFor, readFileIfPresent, stateFileFor } from "../state/store.ts";
 import {
@@ -46,6 +47,7 @@ const PUSH_OPTIONS_SENDING_MORE_THAN_ITS_REFSPECS = new Set([
   "--tags", "--follow-tags", "--all", "--branches", "--mirror",
 ]);
 const FOLLOW_TAGS_CONFIG = /push\.followtags/i;
+const GIT_CONFIG_VARIABLE = /^GIT_CONFIG_[A-Za-z0-9_]*(=|$)/;
 const TAKE_THE_RUN_BACK = "set auto=done";
 
 export const PROD_DEPLOY_GATE: GateDefinition = {
@@ -84,7 +86,10 @@ function judgeAgainstDenyPatterns(boundary: ProductionBoundary, command: string)
 
 function judgeCommandLine(boundary: ProductionBoundary, command: string): GateOutcome {
   const { runMarker, session } = boundary;
-  switch (lineVerdict<ProductionJudgement>(command, judgeProductionLine)) {
+  const gitConfigIsSet = lineNamesAGitConfigVariable(command);
+  const judgeLine = (lexed: LexedCommand, verdict: ProductionJudgement | LexerVerdict) =>
+    judgeProductionLine(lexed, verdict, gitConfigIsSet);
+  switch (lineVerdict<ProductionJudgement>(command, judgeLine)) {
     case "production":
       return denyProductionBoundary(boundary, deployStaysWithTheOperator(session), command);
     case "unread":
@@ -175,13 +180,24 @@ function deniedUnderTheBoundary(boundary: ProductionBoundary, denial: BoundaryDe
   return denied({ gate: "proddeploy", session: boundary.session, ...denial });
 }
 
+function lineNamesAGitConfigVariable(commandLine: string): boolean {
+  return lexShellCommands(commandLine).some(namesAGitConfigVariable);
+}
+
+function namesAGitConfigVariable(record: LexRecord): boolean {
+  if (record.kind === "commandWord") return record.assignments.some((word) => GIT_CONFIG_VARIABLE.test(word));
+  return record.kind === "argument" && GIT_CONFIG_VARIABLE.test(record.word);
+}
+
 function judgeProductionLine(
   command: LexedCommand,
   verdict: ProductionJudgement | LexerVerdict,
+  gitConfigIsSet: boolean,
 ): ProductionJudgement | LexerVerdict {
   if (runsAProductionDeploy(command)) return "production";
   if (verdict !== "production" && runsCodeFedByXargs(command)) return "unread";
-  if (verdict !== "production" && verdict !== "unread" && pushesOffTheRunBranch(command)) return "push";
+  const verdictTakesAPush = verdict !== "production" && verdict !== "unread";
+  if (verdictTakesAPush && pushesOffTheRunBranch(command, gitConfigIsSet)) return "push";
   if (verdict === "clear" && isResidueCall(command, PRODUCTION_BOUNDARY_SUBJECTS)) return "residue";
   return verdict;
 }
@@ -223,12 +239,12 @@ function commandCarries(command: LexedCommand, word: string): boolean {
   return command.tokens.includes(word);
 }
 
-function pushesOffTheRunBranch(command: LexedCommand): boolean {
+function pushesOffTheRunBranch(command: LexedCommand, gitConfigIsSet: boolean): boolean {
   if (!isGitCall(command)) return false;
-  const verb = gitVerb(command);
+  const { verb, at: pushAt } = gitVerbAt(command);
   if (isFedByXargs(command)) return verb === "push" || verb === "";
   if (verb !== "push") return false;
-  const pushAt = command.tokens.indexOf(verb);
+  if (gitConfigIsSet) return true;
   if (command.tokens.slice(1, pushAt).some((option) => FOLLOW_TAGS_CONFIG.test(option))) return true;
   return !pushesOnlyRunBranchRefspecs(command.tokens.slice(pushAt + 1));
 }

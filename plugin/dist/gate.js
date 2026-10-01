@@ -1581,17 +1581,134 @@ function tallyFileFor(journalFile) {
   return path7.join(path7.dirname(journalFile), `${path7.basename(journalFile, ".log")}.pushes`);
 }
 
-// core/src/shell/lexer.ts
-var MAX_LEXED_INPUT_BYTES = 32768;
+// core/src/shell/lexed-word.ts
 var UNREAD_PAYLOAD_MARKER = "!unread-payload";
-var MAX_PAYLOAD_DEPTH = 3;
-var SPECIAL_CHARACTERS = "'\"\\$`#;&|(){}<> 	\n";
-var QUOTED_SPECIAL_CHARACTERS = '"\\$`';
-var WORD_DELIMITERS = " 	\n;&|()<>";
-var DESCRIPTOR_NUMBER = /^[0-9]+$/;
-var UNREAD_PAYLOAD = { kind: "unreadPayload" };
+function basenameOf(word) {
+  const lastSlash = word.lastIndexOf("/");
+  return lastSlash === -1 ? word : word.slice(lastSlash + 1);
+}
+
+// core/src/shell/lexed-command.ts
+var GIT_VERB_UNRESOLVED = "?";
+var PACKAGE_RUNNERS = /* @__PURE__ */ new Set([
+  "npx",
+  "npm",
+  "pnpm",
+  "pnpx",
+  "yarn",
+  "bun",
+  "bunx",
+  "deno"
+]);
+var GIT_COMMAND_WORDS = /* @__PURE__ */ new Set(["git", "git.exe"]);
+var SUBJECT_READING_INTERPRETERS = /* @__PURE__ */ new Set(["python", "node", "perl", "ruby", "php"]);
+var INTERPRETER_CODE_FLAG = /^-[A-Za-z]*[ce]/;
+var GIT_OPTIONS_TAKING_A_VALUE = /* @__PURE__ */ new Set([
+  "-C",
+  "-c",
+  "--git-dir",
+  "--work-tree",
+  "--namespace",
+  "--config-env",
+  "--attr-source"
+]);
+var GIT_OPTIONS_PRINTING_AND_EXITING = /* @__PURE__ */ new Set([
+  "-h",
+  "--help",
+  "-v",
+  "--version",
+  "--exec-path",
+  "--html-path",
+  "--man-path",
+  "--info-path"
+]);
+var GIT_OPTIONS_STANDING_ALONE = /* @__PURE__ */ new Set([
+  "-p",
+  "-P",
+  "--paginate",
+  "--no-pager",
+  "--bare",
+  "--no-replace-objects",
+  "--no-lazy-fetch",
+  "--no-optional-locks",
+  "--no-advice",
+  "--literal-pathspecs",
+  "--glob-pathspecs",
+  "--noglob-pathspecs",
+  "--icase-pathspecs"
+]);
+function isGitCall(command) {
+  const commandWord = command.tokens[0];
+  return commandWord !== void 0 && GIT_COMMAND_WORDS.has(basenameOf(commandWord));
+}
+function gitVerb(command) {
+  return gitVerbAt(command).verb;
+}
+function gitVerbAt(command) {
+  for (let at = 1; at < command.tokens.length; at += 1) {
+    const argument = command.tokens[at];
+    if (argument.startsWith("--") && argument.includes("=")) continue;
+    if (!argument.startsWith("-")) return { verb: argument, at };
+    if (GIT_OPTIONS_PRINTING_AND_EXITING.has(argument)) return { verb: "", at };
+    if (GIT_OPTIONS_TAKING_A_VALUE.has(argument)) at += 1;
+    else if (!GIT_OPTIONS_STANDING_ALONE.has(argument)) return { verb: GIT_VERB_UNRESOLVED, at };
+  }
+  return { verb: "", at: command.tokens.length };
+}
+function isFedByXargs(command) {
+  return command.stdin.includes(UNREAD_PAYLOAD_MARKER);
+}
+function runsCodeFedByXargs(command) {
+  const [commandWord, ...commandArguments] = command.tokens;
+  if (commandWord === void 0 || !isFedByXargs(command)) return false;
+  if (PACKAGE_RUNNERS.has(basenameOf(commandWord))) return true;
+  return isSubjectReadingInterpreter(commandWord) && !namesAFixedScript(commandArguments);
+}
+function isResidueCall(command, subjects) {
+  const commandWord = command.tokens[0];
+  if (commandWord === void 0) return false;
+  if (commandWord.includes("$")) return true;
+  if (isGitCall(command)) {
+    const verb = gitVerb(command);
+    return verb === GIT_VERB_UNRESOLVED || verb.includes("$");
+  }
+  return isInterpreterHandedASubject(command, subjects);
+}
+function runsAReplaceStringAsCode(command, replaceString) {
+  const [commandWord, ...commandArguments] = command.tokens;
+  if (commandWord === void 0) return false;
+  if (commandWord.includes(replaceString)) return true;
+  if (isGitCall(command)) return gitVerb(command).includes(replaceString);
+  if (PACKAGE_RUNNERS.has(basenameOf(commandWord))) {
+    return commandArguments.some((argument) => argument.includes(replaceString));
+  }
+  if (!isSubjectReadingInterpreter(commandWord)) return false;
+  return commandArguments.some(
+    (argument, index) => argument.includes(replaceString) && holdsInterpreterCode(argument, commandArguments[index - 1])
+  );
+}
+function isInterpreterHandedASubject(command, subjects) {
+  if (!isSubjectReadingInterpreter(command.tokens[0])) return false;
+  if (command.tokens.slice(1).some((argument) => mentionsASubject(argument, subjects))) return true;
+  return mentionsASubject(command.stdin, subjects);
+}
+function isSubjectReadingInterpreter(commandWord) {
+  return SUBJECT_READING_INTERPRETERS.has(basenameOf(commandWord).replace(/[0-9][\s\S]*$/, ""));
+}
+function namesAFixedScript(interpreterArguments) {
+  return interpreterArguments.some(
+    (argument, index) => !argument.startsWith("-") && !(interpreterArguments[index - 1]?.startsWith("-") ?? false)
+  );
+}
+function holdsInterpreterCode(argument, previousArgument) {
+  return INTERPRETER_CODE_FLAG.test(argument) || INTERPRETER_CODE_FLAG.test(previousArgument ?? "");
+}
+function mentionsASubject(text, subjects) {
+  return subjects.some((subject) => text.includes(subject));
+}
+
+// core/src/shell/prefix-words.ts
 var COPROCESS_WORD = "coproc";
-var COPROCESS_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 var PREFIX_WORDS = /* @__PURE__ */ new Set([
   "env",
   "command",
@@ -1630,6 +1747,205 @@ var PREFIX_WORDS = /* @__PURE__ */ new Set([
   COPROCESS_WORD
 ]);
 var ASSIGNMENT = /^[A-Za-z_][\s\S]*=/;
+function isCommandPrefixWord(word) {
+  if (isAssignment(word)) return true;
+  if (word.startsWith("-")) return true;
+  if (!/[^0-9]/.test(word)) return word !== "";
+  return PREFIX_WORDS.has(basenameOf(word));
+}
+function isAssignment(word) {
+  return ASSIGNMENT.test(word);
+}
+var COMMAND_OPTIONS = {
+  takingAValue: [],
+  takingAnAttachedValueOnly: [],
+  standingAlone: ["-p", "-v", "-V"]
+};
+var COMMAND_LOOKUP_OPTIONS = /* @__PURE__ */ new Set(["-v", "-V"]);
+var XARGS_OPTIONS = {
+  takingAValue: [
+    "-a",
+    "-d",
+    "-E",
+    "-I",
+    "-L",
+    "-n",
+    "-P",
+    "-s",
+    "--arg-file",
+    "--delimiter",
+    "--max-args",
+    "--max-procs",
+    "--max-chars"
+  ],
+  takingAnAttachedValueOnly: ["-i", "-e", "-l"],
+  standingAlone: ["-0", "-o", "-p", "-r", "-t", "-x"]
+};
+var XARGS_REPLACE_OPTION = "-I";
+var XARGS_DEFAULTED_REPLACE_OPTION = "-i";
+var XARGS_DEFAULT_REPLACE_STRING = "{}";
+var XARGS_FLAG_DEFINING_A_REPLACE_STRING = /^-[^-]*[iI]/;
+var ENV_OPTIONS = {
+  takingAValue: ["-u"],
+  takingAnAttachedValueOnly: [],
+  standingAlone: ["-i", "-0", "-v", "-"]
+};
+var TIMEOUT_SHAPE = {
+  options: {
+    takingAValue: ["-s", "-k"],
+    takingAnAttachedValueOnly: [],
+    standingAlone: ["--preserve-status", "--foreground", "-v"]
+  },
+  operandGrammar: /^[0-9]+(\.[0-9]+)?[smhd]?$/
+};
+var FLOCK_SHAPE = {
+  options: {
+    takingAValue: ["-E", "-w"],
+    takingAnAttachedValueOnly: [],
+    standingAlone: ["-s", "-x", "-u", "-n", "-o"]
+  },
+  operandGrammar: /^[\s\S]+$/
+};
+var FLOCK_COMMAND_OPTIONS = /* @__PURE__ */ new Set(["-c", "--command"]);
+var TASKSET_SHAPE = {
+  options: {
+    takingAValue: [],
+    takingAnAttachedValueOnly: [],
+    standingAlone: ["-a", "-c"]
+  },
+  operandGrammar: /^((0[xX])?[0-9A-Fa-f]+|[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*)$/
+};
+var A_SHAPE_IT_DOES_NOT_KNOW = { kind: "shapeItDoesNotKnow" };
+var AN_OPERAND_OUTSIDE_ITS_GRAMMAR = { kind: "operandOutsideItsGrammar" };
+var A_REPLACE_STRING_IT_DOES_NOT_KNOW = { kind: "replaceStringItDoesNotKnow" };
+var A_LOOKUP_RUNNING_NOTHING = { kind: "standsAsTheCommand", payload: "" };
+var KEYED_PREFIX_READERS = /* @__PURE__ */ new Map([
+  ["command", readCommandOptions],
+  ["xargs", readXargsOptions],
+  ["env", (words, from) => readThroughOptions(ENV_OPTIONS, words, from)],
+  ["timeout", (words, from) => readThroughOperand(TIMEOUT_SHAPE, words, from)],
+  ["flock", readFlockOptions],
+  ["taskset", (words, from) => readThroughOperand(TASKSET_SHAPE, words, from)]
+]);
+function prefixCutOf(words) {
+  let at = 0;
+  let endsOnAnUnresolvedOption = false;
+  let aPrefixLeftItUnread = false;
+  let replaceString;
+  let payload = "";
+  while (at < words.length) {
+    const word = words[at];
+    if (replaceString !== void 0 && word.includes(replaceString)) break;
+    const reading = keyedPrefixReading(word, words, at + 1);
+    if (reading.kind === "standsAsTheCommand") {
+      payload = reading.payload;
+      break;
+    }
+    if (reading.kind === "read") {
+      at = reading.next;
+      replaceString = reading.replaceString ?? replaceString;
+      endsOnAnUnresolvedOption = false;
+      continue;
+    }
+    if (readingLeavesItUnread(reading)) aPrefixLeftItUnread = true;
+    if (!isCommandPrefixWord(word)) break;
+    endsOnAnUnresolvedOption = word.startsWith("-");
+    at += 1;
+  }
+  const leavesTheCommandUnread = endsOnAnUnresolvedOption || aPrefixLeftItUnread;
+  return { length: at, leavesTheCommandUnread, replaceString, payload };
+}
+function readingLeavesItUnread(reading) {
+  return reading.kind === "operandOutsideItsGrammar" || reading.kind === "replaceStringItDoesNotKnow";
+}
+function keyedPrefixReading(word, words, from) {
+  if (isAssignment(word)) return A_SHAPE_IT_DOES_NOT_KNOW;
+  const reader = KEYED_PREFIX_READERS.get(basenameOf(word));
+  return reader === void 0 ? A_SHAPE_IT_DOES_NOT_KNOW : reader(words, from);
+}
+function readCommandOptions(words, from) {
+  const read = optionsRead(COMMAND_OPTIONS, words, from);
+  if (read === void 0) return A_SHAPE_IT_DOES_NOT_KNOW;
+  if (read.options.some(({ option }) => COMMAND_LOOKUP_OPTIONS.has(option))) return A_LOOKUP_RUNNING_NOTHING;
+  return { kind: "read", next: read.next, replaceString: void 0 };
+}
+function readXargsOptions(words, from) {
+  const read = optionsRead(XARGS_OPTIONS, words, from);
+  if (read !== void 0) return { kind: "read", next: read.next, replaceString: replaceStringOf(read.options) };
+  return definesAReplaceString(words, from) ? A_REPLACE_STRING_IT_DOES_NOT_KNOW : A_SHAPE_IT_DOES_NOT_KNOW;
+}
+function definesAReplaceString(words, from) {
+  const followingWords = words.slice(from);
+  const firstOperand = followingWords.findIndex((word) => !word.startsWith("-"));
+  const optionWords = firstOperand === -1 ? followingWords : followingWords.slice(0, firstOperand);
+  return optionWords.some((word) => XARGS_FLAG_DEFINING_A_REPLACE_STRING.test(word));
+}
+function replaceStringOf(options) {
+  const replacing = options.filter(({ option }) => option === XARGS_REPLACE_OPTION || option === XARGS_DEFAULTED_REPLACE_OPTION).at(-1);
+  if (replacing === void 0) return void 0;
+  const defaulted = replacing.option === XARGS_DEFAULTED_REPLACE_OPTION && replacing.value === "";
+  return defaulted ? XARGS_DEFAULT_REPLACE_STRING : replacing.value;
+}
+function readFlockOptions(words, from) {
+  const reading = readThroughOperand(FLOCK_SHAPE, words, from);
+  if (reading.kind !== "read" || !FLOCK_COMMAND_OPTIONS.has(words[reading.next] ?? "")) return reading;
+  return { kind: "standsAsTheCommand", payload: words[reading.next + 1] ?? "" };
+}
+function readThroughOptions(table, words, from) {
+  const read = optionsRead(table, words, from);
+  if (read === void 0) return A_SHAPE_IT_DOES_NOT_KNOW;
+  return { kind: "read", next: read.next, replaceString: void 0 };
+}
+function readThroughOperand(shape, words, from) {
+  const read = optionsRead(shape.options, words, from);
+  if (read === void 0) return A_SHAPE_IT_DOES_NOT_KNOW;
+  const operand = words[read.next];
+  if (operand === void 0) return { kind: "read", next: read.next, replaceString: void 0 };
+  if (!shape.operandGrammar.test(operand)) return AN_OPERAND_OUTSIDE_ITS_GRAMMAR;
+  return { kind: "read", next: read.next + 1, replaceString: void 0 };
+}
+function optionsRead(table, words, from) {
+  const options = [];
+  let at = from;
+  while ((words[at] ?? "").startsWith("-")) {
+    const option = optionAt(table, words, at);
+    if (option === void 0) return void 0;
+    options.push(option.read);
+    at = option.next;
+  }
+  return { next: at, options };
+}
+function optionAt(table, words, at) {
+  const { name, attached } = spelledOption(words[at]);
+  if (table.standingAlone.includes(name)) {
+    return attached === void 0 ? { read: { option: name, value: "" }, next: at + 1 } : void 0;
+  }
+  if (table.takingAnAttachedValueOnly.includes(name)) {
+    return { read: { option: name, value: attached ?? "" }, next: at + 1 };
+  }
+  if (!table.takingAValue.includes(name)) return void 0;
+  if (attached !== void 0) return { read: { option: name, value: attached }, next: at + 1 };
+  const separate = words[at + 1];
+  return separate === void 0 ? void 0 : { read: { option: name, value: separate }, next: at + 2 };
+}
+function spelledOption(word) {
+  if (!word.startsWith("--")) {
+    return { name: word.slice(0, 2), attached: word.length > 2 ? word.slice(2) : void 0 };
+  }
+  const equals = word.indexOf("=");
+  if (equals === -1) return { name: word, attached: void 0 };
+  return { name: word.slice(0, equals), attached: word.slice(equals + 1) };
+}
+
+// core/src/shell/lexer.ts
+var MAX_LEXED_INPUT_BYTES = 32768;
+var MAX_PAYLOAD_DEPTH = 3;
+var SPECIAL_CHARACTERS = "'\"\\$`#;&|(){}<> 	\n";
+var QUOTED_SPECIAL_CHARACTERS = '"\\$`';
+var WORD_DELIMITERS = " 	\n;&|()<>";
+var DESCRIPTOR_NUMBER = /^[0-9]+$/;
+var UNREAD_PAYLOAD = { kind: "unreadPayload" };
+var COPROCESS_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 var SHELL_INTERPRETERS = /* @__PURE__ */ new Set(["bash", "sh", "dash", "zsh", "ksh"]);
 var COMMAND_FLAG_READERS = /* @__PURE__ */ new Set([...SHELL_INTERPRETERS, "script"]);
 var SHELL_COMMAND_FLAG = "c";
@@ -1683,10 +1999,6 @@ var SHELL_WORDS_THIS_LEXER_READS = /* @__PURE__ */ new Set([
 function lexShellCommands(commandLine) {
   return new CommandLineLexer(commandLine, 0).lex();
 }
-function basenameOf(word) {
-  const lastSlash = word.lastIndexOf("/");
-  return lastSlash === -1 ? word : word.slice(lastSlash + 1);
-}
 function isShellInterpreter(word) {
   return SHELL_INTERPRETERS.has(basenameOf(word));
 }
@@ -1706,15 +2018,6 @@ function lengthWithoutACoprocessName(words) {
   const trailing = words.at(-1);
   if (trailing === void 0 || words.at(-2) !== COPROCESS_WORD) return words.length;
   return COPROCESS_NAME.test(trailing) ? words.length - 1 : words.length;
-}
-function isAssignment(word) {
-  return ASSIGNMENT.test(word);
-}
-function isCommandPrefixWord(word) {
-  if (isAssignment(word)) return true;
-  if (word.startsWith("-")) return true;
-  if (!/[^0-9]/.test(word)) return word !== "";
-  return PREFIX_WORDS.has(basenameOf(word));
 }
 function completesItsWordsFromStdin(word) {
   return basenameOf(word) === "xargs";
@@ -1844,180 +2147,6 @@ function splitAtTheFirstOperand(words) {
   if (at === -1) return void 0;
   return { operand: words[at], rest: words.slice(at + 1), behindAnOption: at > 0 };
 }
-var COMMAND_OPTIONS = {
-  takingAValue: [],
-  takingAnAttachedValueOnly: [],
-  standingAlone: ["-p", "-v", "-V"]
-};
-var COMMAND_LOOKUP_OPTIONS = /* @__PURE__ */ new Set(["-v", "-V"]);
-var XARGS_OPTIONS = {
-  takingAValue: [
-    "-a",
-    "-d",
-    "-E",
-    "-I",
-    "-L",
-    "-n",
-    "-P",
-    "-s",
-    "--arg-file",
-    "--delimiter",
-    "--max-args",
-    "--max-procs",
-    "--max-chars"
-  ],
-  takingAnAttachedValueOnly: ["-i", "-e", "-l"],
-  standingAlone: ["-0", "-o", "-p", "-r", "-t", "-x"]
-};
-var XARGS_REPLACE_OPTION = "-I";
-var XARGS_DEFAULTED_REPLACE_OPTION = "-i";
-var XARGS_DEFAULT_REPLACE_STRING = "{}";
-var XARGS_FLAG_DEFINING_A_REPLACE_STRING = /^-[^-]*[iI]/;
-var ENV_OPTIONS = {
-  takingAValue: ["-u"],
-  takingAnAttachedValueOnly: [],
-  standingAlone: ["-i", "-0", "-v", "-"]
-};
-var TIMEOUT_OPTIONS = {
-  takingAValue: ["-s", "-k"],
-  takingAnAttachedValueOnly: [],
-  standingAlone: ["--preserve-status", "--foreground", "-v"]
-};
-var TIMEOUT_DURATION = /^[0-9]+(\.[0-9]+)?[smhd]?$/;
-var FLOCK_OPTIONS = {
-  takingAValue: ["-E", "-w"],
-  takingAnAttachedValueOnly: [],
-  standingAlone: ["-s", "-x", "-u", "-n", "-o"]
-};
-var FLOCK_LOCK_FILE_OR_DESCRIPTOR = /^[\s\S]+$/;
-var FLOCK_COMMAND_OPTIONS = /* @__PURE__ */ new Set(["-c", "--command"]);
-var TASKSET_OPTIONS = {
-  takingAValue: [],
-  takingAnAttachedValueOnly: [],
-  standingAlone: ["-a", "-c"]
-};
-var TASKSET_MASK_OR_CPU_LIST = /^((0[xX])?[0-9A-Fa-f]+|[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*)$/;
-var A_SHAPE_IT_DOES_NOT_KNOW = { kind: "shapeItDoesNotKnow" };
-var AN_OPERAND_OUTSIDE_ITS_GRAMMAR = { kind: "operandOutsideItsGrammar" };
-var A_REPLACE_STRING_IT_DOES_NOT_KNOW = { kind: "replaceStringItDoesNotKnow" };
-var A_LOOKUP_RUNNING_NOTHING = { kind: "standsAsTheCommand", payload: "" };
-var KEYED_PREFIX_READERS = /* @__PURE__ */ new Map([
-  ["command", readCommandOptions],
-  ["xargs", readXargsOptions],
-  ["env", (words, from) => readThroughOptions(ENV_OPTIONS, words, from)],
-  ["timeout", (words, from) => readThroughOperand(TIMEOUT_OPTIONS, TIMEOUT_DURATION, words, from)],
-  ["flock", readFlockOptions],
-  ["taskset", (words, from) => readThroughOperand(TASKSET_OPTIONS, TASKSET_MASK_OR_CPU_LIST, words, from)]
-]);
-function prefixCutOf(words) {
-  let at = 0;
-  let endsOnAnUnresolvedOption = false;
-  let aPrefixLeftItUnread = false;
-  let replaceString;
-  let payload = "";
-  while (at < words.length) {
-    const word = words[at];
-    if (replaceString !== void 0 && word.includes(replaceString)) break;
-    const reading = keyedPrefixReading(word, words, at + 1);
-    if (reading.kind === "standsAsTheCommand") {
-      payload = reading.payload;
-      break;
-    }
-    if (reading.kind === "read") {
-      at = reading.next;
-      replaceString = reading.replaceString ?? replaceString;
-      endsOnAnUnresolvedOption = false;
-      continue;
-    }
-    if (readingLeavesItUnread(reading)) aPrefixLeftItUnread = true;
-    if (!isCommandPrefixWord(word)) break;
-    endsOnAnUnresolvedOption = word.startsWith("-");
-    at += 1;
-  }
-  const leavesTheCommandUnread = endsOnAnUnresolvedOption || aPrefixLeftItUnread;
-  return { length: at, leavesTheCommandUnread, replaceString, payload };
-}
-function readingLeavesItUnread(reading) {
-  return reading.kind === "operandOutsideItsGrammar" || reading.kind === "replaceStringItDoesNotKnow";
-}
-function keyedPrefixReading(word, words, from) {
-  if (isAssignment(word)) return A_SHAPE_IT_DOES_NOT_KNOW;
-  const reader = KEYED_PREFIX_READERS.get(basenameOf(word));
-  return reader === void 0 ? A_SHAPE_IT_DOES_NOT_KNOW : reader(words, from);
-}
-function readCommandOptions(words, from) {
-  const read = optionsRead(COMMAND_OPTIONS, words, from);
-  if (read === void 0) return A_SHAPE_IT_DOES_NOT_KNOW;
-  if (read.options.some(({ option }) => COMMAND_LOOKUP_OPTIONS.has(option))) return A_LOOKUP_RUNNING_NOTHING;
-  return { kind: "read", next: read.next, replaceString: void 0 };
-}
-function readXargsOptions(words, from) {
-  const read = optionsRead(XARGS_OPTIONS, words, from);
-  if (read !== void 0) return { kind: "read", next: read.next, replaceString: replaceStringOf(read.options) };
-  return definesAReplaceString(words, from) ? A_REPLACE_STRING_IT_DOES_NOT_KNOW : A_SHAPE_IT_DOES_NOT_KNOW;
-}
-function definesAReplaceString(words, from) {
-  const followingWords = words.slice(from);
-  const firstOperand = followingWords.findIndex((word) => !word.startsWith("-"));
-  const optionWords = firstOperand === -1 ? followingWords : followingWords.slice(0, firstOperand);
-  return optionWords.some((word) => XARGS_FLAG_DEFINING_A_REPLACE_STRING.test(word));
-}
-function replaceStringOf(options) {
-  const replacing = options.filter(({ option }) => option === XARGS_REPLACE_OPTION || option === XARGS_DEFAULTED_REPLACE_OPTION).at(-1);
-  if (replacing === void 0) return void 0;
-  const defaulted = replacing.option === XARGS_DEFAULTED_REPLACE_OPTION && replacing.value === "";
-  return defaulted ? XARGS_DEFAULT_REPLACE_STRING : replacing.value;
-}
-function readFlockOptions(words, from) {
-  const reading = readThroughOperand(FLOCK_OPTIONS, FLOCK_LOCK_FILE_OR_DESCRIPTOR, words, from);
-  if (reading.kind !== "read" || !FLOCK_COMMAND_OPTIONS.has(words[reading.next] ?? "")) return reading;
-  return { kind: "standsAsTheCommand", payload: words[reading.next + 1] ?? "" };
-}
-function readThroughOptions(table, words, from) {
-  const read = optionsRead(table, words, from);
-  if (read === void 0) return A_SHAPE_IT_DOES_NOT_KNOW;
-  return { kind: "read", next: read.next, replaceString: void 0 };
-}
-function readThroughOperand(table, operandGrammar, words, from) {
-  const read = optionsRead(table, words, from);
-  if (read === void 0) return A_SHAPE_IT_DOES_NOT_KNOW;
-  const operand = words[read.next];
-  if (operand === void 0) return { kind: "read", next: read.next, replaceString: void 0 };
-  if (!operandGrammar.test(operand)) return AN_OPERAND_OUTSIDE_ITS_GRAMMAR;
-  return { kind: "read", next: read.next + 1, replaceString: void 0 };
-}
-function optionsRead(table, words, from) {
-  const options = [];
-  let at = from;
-  while ((words[at] ?? "").startsWith("-")) {
-    const option = optionAt(table, words, at);
-    if (option === void 0) return void 0;
-    options.push(option.read);
-    at = option.next;
-  }
-  return { next: at, options };
-}
-function optionAt(table, words, at) {
-  const { name, attached } = spelledOption(words[at]);
-  if (table.standingAlone.includes(name)) {
-    return attached === void 0 ? { read: { option: name, value: "" }, next: at + 1 } : void 0;
-  }
-  if (table.takingAnAttachedValueOnly.includes(name)) {
-    return { read: { option: name, value: attached ?? "" }, next: at + 1 };
-  }
-  if (!table.takingAValue.includes(name)) return void 0;
-  if (attached !== void 0) return { read: { option: name, value: attached }, next: at + 1 };
-  const separate = words[at + 1];
-  return separate === void 0 ? void 0 : { read: { option: name, value: separate }, next: at + 2 };
-}
-function spelledOption(word) {
-  if (!word.startsWith("--")) {
-    return { name: word.slice(0, 2), attached: word.length > 2 ? word.slice(2) : void 0 };
-  }
-  const equals = word.indexOf("=");
-  if (equals === -1) return { name: word, attached: void 0 };
-  return { name: word.slice(0, equals), attached: word.slice(equals + 1) };
-}
 var CommandLineLexer = class _CommandLineLexer {
   rest;
   depth;
@@ -2030,6 +2159,7 @@ var CommandLineLexer = class _CommandLineLexer {
   nested = [];
   unreadStdin = "";
   commandTokens = [];
+  assignments = [];
   leadingPrefixWords = 0;
   replaceString;
   records = [];
@@ -2164,6 +2294,7 @@ var CommandLineLexer = class _CommandLineLexer {
     this.markAReplaceStringRunAsCode();
     this.emitCommand();
     this.commandTokens = [];
+    this.assignments = [];
     this.leadingPrefixWords = 0;
     this.replaceString = void 0;
     this.nested = [];
@@ -2177,6 +2308,7 @@ var CommandLineLexer = class _CommandLineLexer {
     const prefixWords = this.commandTokens.slice(0, cut.length);
     this.commandTokens = this.commandTokens.slice(cut.length);
     this.replaceString = cut.replaceString;
+    this.assignments.push(...prefixWords.filter(isAssignment));
     for (const prefixWord of prefixWords) if (namesAFileTheShellSources(prefixWord)) this.markUnread();
     if (this.commandTokens.length === 0) {
       if (handsStdinAProgramToRun(prefixWords)) this.markUnread();
@@ -2309,7 +2441,7 @@ var CommandLineLexer = class _CommandLineLexer {
   emitCommand() {
     this.commandTokens.forEach((word, index) => {
       this.records.push(
-        index === 0 ? { kind: "commandWord", word: withSpacesForNewlines(word) } : { kind: "argument", word: withSpacesForNewlines(word) }
+        index === 0 ? { kind: "commandWord", word: withSpacesForNewlines(word), assignments: this.assignments } : { kind: "argument", word: withSpacesForNewlines(word) }
       );
     });
     if (this.unreadStdin !== "") {
@@ -2502,122 +2634,6 @@ ${delimiter}
     return at === -1 ? this.rest : this.rest.slice(0, at);
   }
 };
-
-// core/src/shell/lexed-command.ts
-var GIT_VERB_UNRESOLVED = "?";
-var PACKAGE_RUNNERS = /* @__PURE__ */ new Set([
-  "npx",
-  "npm",
-  "pnpm",
-  "pnpx",
-  "yarn",
-  "bun",
-  "bunx",
-  "deno"
-]);
-var GIT_COMMAND_WORDS = /* @__PURE__ */ new Set(["git", "git.exe"]);
-var SUBJECT_READING_INTERPRETERS = /* @__PURE__ */ new Set(["python", "node", "perl", "ruby", "php"]);
-var INTERPRETER_CODE_FLAG = /^-[A-Za-z]*[ce]/;
-var GIT_OPTIONS_TAKING_A_VALUE = /* @__PURE__ */ new Set([
-  "-C",
-  "-c",
-  "--git-dir",
-  "--work-tree",
-  "--namespace",
-  "--config-env",
-  "--attr-source"
-]);
-var GIT_OPTIONS_PRINTING_AND_EXITING = /* @__PURE__ */ new Set([
-  "-h",
-  "--help",
-  "-v",
-  "--version",
-  "--exec-path",
-  "--html-path",
-  "--man-path",
-  "--info-path"
-]);
-var GIT_OPTIONS_STANDING_ALONE = /* @__PURE__ */ new Set([
-  "-p",
-  "-P",
-  "--paginate",
-  "--no-pager",
-  "--bare",
-  "--no-replace-objects",
-  "--no-lazy-fetch",
-  "--no-optional-locks",
-  "--no-advice",
-  "--literal-pathspecs",
-  "--glob-pathspecs",
-  "--noglob-pathspecs",
-  "--icase-pathspecs"
-]);
-function isGitCall(command) {
-  const commandWord = command.tokens[0];
-  return commandWord !== void 0 && GIT_COMMAND_WORDS.has(basenameOf(commandWord));
-}
-function gitVerb(command) {
-  for (let index = 1; index < command.tokens.length; index += 1) {
-    const argument = command.tokens[index];
-    if (argument.startsWith("--") && argument.includes("=")) continue;
-    if (!argument.startsWith("-")) return argument;
-    if (GIT_OPTIONS_PRINTING_AND_EXITING.has(argument)) return "";
-    if (GIT_OPTIONS_TAKING_A_VALUE.has(argument)) index += 1;
-    else if (!GIT_OPTIONS_STANDING_ALONE.has(argument)) return GIT_VERB_UNRESOLVED;
-  }
-  return "";
-}
-function isFedByXargs(command) {
-  return command.stdin.includes(UNREAD_PAYLOAD_MARKER);
-}
-function runsCodeFedByXargs(command) {
-  const [commandWord, ...commandArguments] = command.tokens;
-  if (commandWord === void 0 || !isFedByXargs(command)) return false;
-  if (PACKAGE_RUNNERS.has(basenameOf(commandWord))) return true;
-  return isSubjectReadingInterpreter(commandWord) && !namesAFixedScript(commandArguments);
-}
-function isResidueCall(command, subjects) {
-  const commandWord = command.tokens[0];
-  if (commandWord === void 0) return false;
-  if (commandWord.includes("$")) return true;
-  if (isGitCall(command)) {
-    const verb = gitVerb(command);
-    return verb === GIT_VERB_UNRESOLVED || verb.includes("$");
-  }
-  return isInterpreterHandedASubject(command, subjects);
-}
-function runsAReplaceStringAsCode(command, replaceString) {
-  const [commandWord, ...commandArguments] = command.tokens;
-  if (commandWord === void 0) return false;
-  if (commandWord.includes(replaceString)) return true;
-  if (isGitCall(command)) return gitVerb(command).includes(replaceString);
-  if (PACKAGE_RUNNERS.has(basenameOf(commandWord))) {
-    return commandArguments.some((argument) => argument.includes(replaceString));
-  }
-  if (!isSubjectReadingInterpreter(commandWord)) return false;
-  return commandArguments.some(
-    (argument, index) => argument.includes(replaceString) && holdsInterpreterCode(argument, commandArguments[index - 1])
-  );
-}
-function isInterpreterHandedASubject(command, subjects) {
-  if (!isSubjectReadingInterpreter(command.tokens[0])) return false;
-  if (command.tokens.slice(1).some((argument) => mentionsASubject(argument, subjects))) return true;
-  return mentionsASubject(command.stdin, subjects);
-}
-function isSubjectReadingInterpreter(commandWord) {
-  return SUBJECT_READING_INTERPRETERS.has(basenameOf(commandWord).replace(/[0-9][\s\S]*$/, ""));
-}
-function namesAFixedScript(interpreterArguments) {
-  return interpreterArguments.some(
-    (argument, index) => !argument.startsWith("-") && !(interpreterArguments[index - 1]?.startsWith("-") ?? false)
-  );
-}
-function holdsInterpreterCode(argument, previousArgument) {
-  return INTERPRETER_CODE_FLAG.test(argument) || INTERPRETER_CODE_FLAG.test(previousArgument ?? "");
-}
-function mentionsASubject(text, subjects) {
-  return subjects.some((subject) => text.includes(subject));
-}
 
 // core/src/shell/line-verdict.ts
 function lineVerdict(commandLine, judge) {
@@ -3052,6 +3068,7 @@ var PUSH_OPTIONS_SENDING_MORE_THAN_ITS_REFSPECS = /* @__PURE__ */ new Set([
   "--mirror"
 ]);
 var FOLLOW_TAGS_CONFIG = /push\.followtags/i;
+var GIT_CONFIG_VARIABLE = /^GIT_CONFIG_[A-Za-z0-9_]*(=|$)/;
 var TAKE_THE_RUN_BACK = "set auto=done";
 var PROD_DEPLOY_GATE = {
   gate: "proddeploy",
@@ -3084,7 +3101,9 @@ function judgeAgainstDenyPatterns(boundary, command) {
 }
 function judgeCommandLine(boundary, command) {
   const { runMarker, session } = boundary;
-  switch (lineVerdict(command, judgeProductionLine)) {
+  const gitConfigIsSet = lineNamesAGitConfigVariable(command);
+  const judgeLine = (lexed, verdict) => judgeProductionLine(lexed, verdict, gitConfigIsSet);
+  switch (lineVerdict(command, judgeLine)) {
     case "production":
       return denyProductionBoundary(boundary, deployStaysWithTheOperator(session), command);
     case "unread":
@@ -3141,10 +3160,18 @@ function deniedUnderTheBoundary(boundary, denial) {
   }
   return denied({ gate: "proddeploy", session: boundary.session, ...denial });
 }
-function judgeProductionLine(command, verdict) {
+function lineNamesAGitConfigVariable(commandLine) {
+  return lexShellCommands(commandLine).some(namesAGitConfigVariable);
+}
+function namesAGitConfigVariable(record) {
+  if (record.kind === "commandWord") return record.assignments.some((word) => GIT_CONFIG_VARIABLE.test(word));
+  return record.kind === "argument" && GIT_CONFIG_VARIABLE.test(record.word);
+}
+function judgeProductionLine(command, verdict, gitConfigIsSet) {
   if (runsAProductionDeploy(command)) return "production";
   if (verdict !== "production" && runsCodeFedByXargs(command)) return "unread";
-  if (verdict !== "production" && verdict !== "unread" && pushesOffTheRunBranch(command)) return "push";
+  const verdictTakesAPush = verdict !== "production" && verdict !== "unread";
+  if (verdictTakesAPush && pushesOffTheRunBranch(command, gitConfigIsSet)) return "push";
   if (verdict === "clear" && isResidueCall(command, PRODUCTION_BOUNDARY_SUBJECTS)) return "residue";
   return verdict;
 }
@@ -3177,12 +3204,12 @@ function vercelTargetsProduction(command) {
 function commandCarries(command, word) {
   return command.tokens.includes(word);
 }
-function pushesOffTheRunBranch(command) {
+function pushesOffTheRunBranch(command, gitConfigIsSet) {
   if (!isGitCall(command)) return false;
-  const verb = gitVerb(command);
+  const { verb, at: pushAt } = gitVerbAt(command);
   if (isFedByXargs(command)) return verb === "push" || verb === "";
   if (verb !== "push") return false;
-  const pushAt = command.tokens.indexOf(verb);
+  if (gitConfigIsSet) return true;
   if (command.tokens.slice(1, pushAt).some((option) => FOLLOW_TAGS_CONFIG.test(option))) return true;
   return !pushesOnlyRunBranchRefspecs(command.tokens.slice(pushAt + 1));
 }

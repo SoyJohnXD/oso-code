@@ -1,4 +1,4 @@
-import { basenameOf, UNREAD_PAYLOAD_MARKER } from "./lexer.ts";
+import { basenameOf, UNREAD_PAYLOAD_MARKER } from "./lexed-word.ts";
 
 export const GIT_VERB_UNRESOLVED = "?";
 export const PACKAGE_RUNNERS: ReadonlySet<string> = new Set([
@@ -6,6 +6,7 @@ export const PACKAGE_RUNNERS: ReadonlySet<string> = new Set([
 ]);
 
 export type LexedCommand = Readonly<{ tokens: readonly string[]; stdin: string }>;
+type GitVerbAt = Readonly<{ verb: string; at: number }>;
 
 const GIT_COMMAND_WORDS = new Set(["git", "git.exe"]);
 const SUBJECT_READING_INTERPRETERS = new Set(["python", "node", "perl", "ruby", "php"]);
@@ -28,15 +29,19 @@ export function isGitCall(command: LexedCommand): boolean {
 }
 
 export function gitVerb(command: LexedCommand): string {
-  for (let index = 1; index < command.tokens.length; index += 1) {
-    const argument = command.tokens[index] as string;
+  return gitVerbAt(command).verb;
+}
+
+export function gitVerbAt(command: LexedCommand): GitVerbAt {
+  for (let at = 1; at < command.tokens.length; at += 1) {
+    const argument = command.tokens[at] as string;
     if (argument.startsWith("--") && argument.includes("=")) continue;
-    if (!argument.startsWith("-")) return argument;
-    if (GIT_OPTIONS_PRINTING_AND_EXITING.has(argument)) return "";
-    if (GIT_OPTIONS_TAKING_A_VALUE.has(argument)) index += 1;
-    else if (!GIT_OPTIONS_STANDING_ALONE.has(argument)) return GIT_VERB_UNRESOLVED;
+    if (!argument.startsWith("-")) return { verb: argument, at };
+    if (GIT_OPTIONS_PRINTING_AND_EXITING.has(argument)) return { verb: "", at };
+    if (GIT_OPTIONS_TAKING_A_VALUE.has(argument)) at += 1;
+    else if (!GIT_OPTIONS_STANDING_ALONE.has(argument)) return { verb: GIT_VERB_UNRESOLVED, at };
   }
-  return "";
+  return { verb: "", at: command.tokens.length };
 }
 
 export function isFedByXargs(command: LexedCommand): boolean {

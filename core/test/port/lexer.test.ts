@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import {
-  lexShellCommands,
-  MAX_LEXED_INPUT_BYTES,
-  UNREAD_PAYLOAD_MARKER,
-  type LexRecord,
-} from "../../src/shell/lexer.ts";
+import { UNREAD_PAYLOAD_MARKER } from "../../src/shell/lexed-word.ts";
+import { lexShellCommands, MAX_LEXED_INPUT_BYTES, type LexRecord } from "../../src/shell/lexer.ts";
 import { provedSomething } from "../support/proved.ts";
 
 type LexerCase = {

@@ -2,7 +2,7 @@
 var JSON_SPACE = "[\\t\\n\\v\\f\\r ]";
 var STOP_HOOK_ACTIVE = new RegExp(`"stop_hook_active"${JSON_SPACE}*:${JSON_SPACE}*true`);
 
-// core/src/shell/lexer.ts
+// core/src/shell/prefix-words.ts
 var COPROCESS_WORD = "coproc";
 var PREFIX_WORDS = /* @__PURE__ */ new Set([
   "env",
@@ -41,6 +41,8 @@ var PREFIX_WORDS = /* @__PURE__ */ new Set([
   "!",
   COPROCESS_WORD
 ]);
+
+// core/src/shell/lexer.ts
 var SHELL_INTERPRETERS = /* @__PURE__ */ new Set(["bash", "sh", "dash", "zsh", "ksh"]);
 var COMMAND_FLAG_READERS = /* @__PURE__ */ new Set([...SHELL_INTERPRETERS, "script"]);
 var CALLBACK_FLAG_READERS = /* @__PURE__ */ new Set(["mapfile", "readarray", "compgen", "complete"]);
