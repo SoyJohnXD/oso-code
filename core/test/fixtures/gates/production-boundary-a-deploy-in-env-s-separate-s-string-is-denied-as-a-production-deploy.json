@@ -1,8 +1,8 @@
 {
-  "name": "production boundary: env -S splitting a deploy stays a payload the boundary cannot read and is denied",
+  "name": "production boundary: a deploy in env's separate -S string is denied as a production deploy",
   "source": [
     {
-      "assertion": "assert_equals \"env -S splitting a deploy stays a payload the boundary cannot read and is denied\" \\\n  \"deny\" \"$(verdict_for 'env -S 'vercel --prod'')\""
+      "assertion": "assert_equals \"a deploy in env's separate -S string is denied as a production deploy\" \\\n  \"deny\" \"$(verdict_for 'env -S 'vercel --prod'')\""
     }
   ],
   "gate": "proddeploy",
@@ -17,7 +17,7 @@
     "exit": 0,
     "stdout": {
       "contains": [
-        "past what the production boundary can read"
+        "so a production deploy stays with the operator"
       ]
     },
     "stderr": "",

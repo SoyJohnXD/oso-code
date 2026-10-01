@@ -1,8 +1,8 @@
 {
-  "name": "production boundary: an option flock's table does not know falls back to today's unread deploy",
+  "name": "production boundary: a deploy behind flock --verbose is denied as a production deploy",
   "source": [
     {
-      "assertion": "assert_equals \"an option flock's table does not know falls back to today's unread deploy\" \\\n  \"deny\" \"$(verdict_for 'flock --verbose /tmp/l vercel --prod')\""
+      "assertion": "assert_equals \"a deploy behind flock --verbose is denied as a production deploy\" \\\n  \"deny\" \"$(verdict_for 'flock --verbose /tmp/l vercel --prod')\""
     }
   ],
   "gate": "proddeploy",
@@ -17,7 +17,7 @@
     "exit": 0,
     "stdout": {
       "contains": [
-        "past what the production boundary can read"
+        "so a production deploy stays with the operator"
       ]
     },
     "stderr": "",

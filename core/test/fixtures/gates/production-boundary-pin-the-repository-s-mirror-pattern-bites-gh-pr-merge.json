@@ -1,5 +1,5 @@
 {
-  "name": "production boundary: the repository's mirror pattern bites gh pr merge",
+  "name": "production boundary: pin: the repository's mirror pattern bites gh pr merge",
   "source": [
     {
       "assertion": "assert_equals \"the repository's mirror pattern bites gh pr merge\" \\\n  \"deny\" \"$(verdict_for \"gh pr merge 12\")\""

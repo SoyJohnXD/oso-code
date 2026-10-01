@@ -1,5 +1,5 @@
 {
-  "name": "production boundary: the repository's mirror pattern spares the run branch push",
+  "name": "production boundary: pin: the repository's mirror pattern spares the run branch push",
   "source": [
     {
       "assertion": "assert_equals \"the repository's mirror pattern spares the run branch push\" \\\n  \"allow\" \"$(verdict_for \"git push origin oso-run/x\")\""

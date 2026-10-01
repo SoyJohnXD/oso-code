@@ -20,7 +20,10 @@ const WORST_SHAPES: readonly WorstShape[] = [
   { named: "option-shaped words, then brace words", line: bracesBehind("-", " -") },
   { named: "assignments, then brace words", line: bracesBehind("X=1", " X=1") },
   { named: "a timeout prefix run", line: filledTo(READABLE_COMMAND_BYTES, "timeout", " 1") },
-  { named: "a sudo option run", line: filledTo(READABLE_COMMAND_BYTES, "sudo", " -n") },
+  {
+    named: "a sudo option run before its command",
+    line: `${filledTo(READABLE_COMMAND_BYTES - " true".length, "sudo", " -n")} true`,
+  },
 ];
 
 describe(`the lexer reads its worst shapes at the ${MAX_LEXED_INPUT_BYTES}-byte bound in linear time`, () => {

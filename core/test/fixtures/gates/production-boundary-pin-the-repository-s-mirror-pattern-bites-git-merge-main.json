@@ -1,5 +1,5 @@
 {
-  "name": "production boundary: the repository's mirror pattern bites git merge main",
+  "name": "production boundary: pin: the repository's mirror pattern bites git merge main",
   "source": [
     {
       "assertion": "assert_equals \"the repository's mirror pattern bites git merge main\" \\\n  \"deny\" \"$(verdict_for \"git merge main\")\""

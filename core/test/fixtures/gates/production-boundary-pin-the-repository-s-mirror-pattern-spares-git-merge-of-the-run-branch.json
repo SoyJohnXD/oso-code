@@ -1,5 +1,5 @@
 {
-  "name": "production boundary: the repository's mirror pattern spares git merge of the run branch",
+  "name": "production boundary: pin: the repository's mirror pattern spares git merge of the run branch",
   "source": [
     {
       "assertion": "assert_equals \"the repository's mirror pattern spares git merge of the run branch\" \\\n  \"allow\" \"$(verdict_for \"git merge oso-run/x\")\""

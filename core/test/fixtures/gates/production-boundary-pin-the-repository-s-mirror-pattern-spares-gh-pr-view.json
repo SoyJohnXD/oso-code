@@ -1,5 +1,5 @@
 {
-  "name": "production boundary: the repository's mirror pattern spares gh pr view",
+  "name": "production boundary: pin: the repository's mirror pattern spares gh pr view",
   "source": [
     {
       "assertion": "assert_equals \"the repository's mirror pattern spares gh pr view\" \\\n  \"allow\" \"$(verdict_for \"gh pr view 12\")\""

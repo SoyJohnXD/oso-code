@@ -1844,10 +1844,11 @@ var PREFIX_WORDS = /* @__PURE__ */ new Set([
   COPROCESS_WORD
 ]);
 var ASSIGNMENT = /^[A-Za-z_][\s\S]*=/;
+var NUMBER = /^[0-9]+$/;
 function isCommandPrefixWord(word) {
   if (isAssignment(word)) return true;
   if (word.startsWith("-")) return true;
-  if (!/[^0-9]/.test(word)) return word !== "";
+  if (NUMBER.test(word)) return true;
   return PREFIX_WORDS.has(basenameOf(word));
 }
 function isAssignment(word) {
@@ -1856,7 +1857,8 @@ function isAssignment(word) {
 var COMMAND_OPTIONS = {
   takingAValue: [],
   takingAnAttachedValueOnly: [],
-  standingAlone: ["-p", "-v", "-V"]
+  standingAlone: ["-p", "-v", "-V"],
+  splitsFlagBundles: false
 };
 var COMMAND_LOOKUP_OPTIONS = /* @__PURE__ */ new Set(["-v", "-V"]);
 var XARGS_OPTIONS = {
@@ -1876,35 +1878,60 @@ var XARGS_OPTIONS = {
     "--max-chars"
   ],
   takingAnAttachedValueOnly: ["-i", "-e", "-l"],
-  standingAlone: ["-0", "-o", "-p", "-r", "-t", "-x"]
+  standingAlone: ["-0", "-o", "-p", "-r", "-t", "-x"],
+  splitsFlagBundles: false
 };
 var XARGS_REPLACE_OPTION = "-I";
 var XARGS_DEFAULTED_REPLACE_OPTION = "-i";
 var XARGS_DEFAULT_REPLACE_STRING = "{}";
 var XARGS_FLAG_DEFINING_A_REPLACE_STRING = /^-[^-]*[iI]/;
+var ENV_SPLIT_STRING_OPTIONS = ["-S", "--split-string"];
 var ENV_OPTIONS = {
-  takingAValue: ["-u"],
+  takingAValue: ["-u", ...ENV_SPLIT_STRING_OPTIONS],
   takingAnAttachedValueOnly: [],
-  standingAlone: ["-i", "-0", "-v", "-"]
+  standingAlone: ["-i", "-0", "-v", "-"],
+  splitsFlagBundles: true
 };
 var TIMEOUT_SHAPE = {
   options: {
-    takingAValue: ["-s", "-k"],
+    takingAValue: ["-s", "-k", "--signal", "--kill-after"],
     takingAnAttachedValueOnly: [],
-    standingAlone: ["--preserve-status", "--foreground", "-v"]
+    standingAlone: ["--preserve-status", "--foreground", "-v", "--verbose"],
+    splitsFlagBundles: false
   },
   operandGrammar: /^[0-9]+(\.[0-9]+)?[smhd]?$/
 };
 var FLOCK_COMMAND_OPTIONS = {
   takingAValue: ["-c", "--command"],
   takingAnAttachedValueOnly: [],
-  standingAlone: []
+  standingAlone: [],
+  splitsFlagBundles: false
 };
 var FLOCK_SHAPE = {
   options: {
-    takingAValue: ["-E", "-w", ...FLOCK_COMMAND_OPTIONS.takingAValue],
+    takingAValue: [
+      "-E",
+      "-w",
+      "--wait",
+      "--timeout",
+      "--conflict-exit-code",
+      ...FLOCK_COMMAND_OPTIONS.takingAValue
+    ],
     takingAnAttachedValueOnly: [],
-    standingAlone: ["-s", "-x", "-u", "-n", "-o"]
+    standingAlone: [
+      "-s",
+      "-x",
+      "-u",
+      "-n",
+      "-o",
+      "--shared",
+      "--exclusive",
+      "--unlock",
+      "--nonblock",
+      "--close",
+      "--verbose"
+    ],
+    splitsFlagBundles: true
   },
   operandGrammar: /^[\s\S]+$/
 };
@@ -1912,7 +1939,8 @@ var TASKSET_SHAPE = {
   options: {
     takingAValue: [],
     takingAnAttachedValueOnly: [],
-    standingAlone: ["-a", "-c"]
+    standingAlone: ["-a", "-c"],
+    splitsFlagBundles: false
   },
   operandGrammar: /^((0[xX])?[0-9A-Fa-f]+|[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*)$/
 };
@@ -1923,7 +1951,7 @@ var A_LOOKUP_RUNNING_NOTHING = { kind: "standsAsTheCommand", payload: "" };
 var KEYED_PREFIX_READERS = /* @__PURE__ */ new Map([
   ["command", readCommandOptions],
   ["xargs", readXargsOptions],
-  ["env", (words, from) => readThroughOptions(ENV_OPTIONS, words, from)],
+  ["env", readEnvOptions],
   ["timeout", (words, from) => readThroughOperand(TIMEOUT_SHAPE, words, from)],
   ["flock", readFlockOptions],
   ["taskset", (words, from) => readThroughOperand(TASKSET_SHAPE, words, from)]
@@ -1931,6 +1959,7 @@ var KEYED_PREFIX_READERS = /* @__PURE__ */ new Map([
 function prefixCutOf(words) {
   let at = 0;
   let endsOnAnUnresolvedOption = false;
+  let aKeyedPrefixFellBack = false;
   let aPrefixLeftItUnread = false;
   let replaceString;
   let payload = "";
@@ -1946,11 +1975,14 @@ function prefixCutOf(words) {
       at = reading.next;
       replaceString = reading.replaceString ?? replaceString;
       endsOnAnUnresolvedOption = false;
+      aKeyedPrefixFellBack = false;
       continue;
     }
     if (readingLeavesItUnread(reading)) aPrefixLeftItUnread = true;
     if (!isCommandPrefixWord(word)) break;
-    endsOnAnUnresolvedOption = word.startsWith("-");
+    const anOptionMayHoldTheNumber = endsOnAnUnresolvedOption && aKeyedPrefixFellBack && NUMBER.test(word);
+    endsOnAnUnresolvedOption = word.startsWith("-") || anOptionMayHoldTheNumber;
+    if (PREFIX_WORDS.has(basenameOf(word))) aKeyedPrefixFellBack = KEYED_PREFIX_READERS.has(basenameOf(word));
     at += 1;
   }
   const leavesTheCommandUnread = endsOnAnUnresolvedOption || aPrefixLeftItUnread;
@@ -1987,21 +2019,27 @@ function replaceStringOf(options) {
   const defaulted = replacing.option === XARGS_DEFAULTED_REPLACE_OPTION && replacing.value === "";
   return defaulted ? XARGS_DEFAULT_REPLACE_STRING : replacing.value;
 }
+function readEnvOptions(words, from) {
+  const read = optionsRead(ENV_OPTIONS, words, from);
+  if (read === void 0) return A_SHAPE_IT_DOES_NOT_KNOW;
+  const splitString = read.options.find(({ option }) => ENV_SPLIT_STRING_OPTIONS.includes(option));
+  if (splitString === void 0) return { kind: "read", next: read.next, replaceString: void 0 };
+  const payload = [splitString.value, ...words.slice(read.next).map(asOneShellWord)].join(" ");
+  return { kind: "standsAsTheCommand", payload };
+}
+function asOneShellWord(word) {
+  return `'${word.replaceAll("'", "'\\''")}'`;
+}
 function readFlockOptions(words, from) {
   const leadingCommand = optionsRead(FLOCK_SHAPE.options, words, from)?.options.find(isAFlockCommandOption);
   if (leadingCommand !== void 0) return { kind: "standsAsTheCommand", payload: leadingCommand.value };
   const reading = readThroughOperand(FLOCK_SHAPE, words, from);
   if (reading.kind !== "read" || !(words[reading.next] ?? "").startsWith("-")) return reading;
-  const trailingCommand = optionAt(FLOCK_COMMAND_OPTIONS, words, reading.next);
-  return trailingCommand === void 0 ? reading : { kind: "standsAsTheCommand", payload: trailingCommand.read.value };
+  const trailingCommand = optionAt(FLOCK_COMMAND_OPTIONS, words, reading.next)?.options.find(isAFlockCommandOption);
+  return trailingCommand === void 0 ? reading : { kind: "standsAsTheCommand", payload: trailingCommand.value };
 }
 function isAFlockCommandOption({ option }) {
   return FLOCK_COMMAND_OPTIONS.takingAValue.includes(option);
-}
-function readThroughOptions(table, words, from) {
-  const read = optionsRead(table, words, from);
-  if (read === void 0) return A_SHAPE_IT_DOES_NOT_KNOW;
-  return { kind: "read", next: read.next, replaceString: void 0 };
 }
 function readThroughOperand(shape, words, from) {
   const read = optionsRead(shape.options, words, from);
@@ -2017,23 +2055,31 @@ function optionsRead(table, words, from) {
   while ((words[at] ?? "").startsWith("-")) {
     const option = optionAt(table, words, at);
     if (option === void 0) return void 0;
-    options.push(option.read);
+    options.push(...option.options);
     at = option.next;
   }
   return { next: at, options };
 }
 function optionAt(table, words, at) {
-  const { name, attached } = spelledOption(words[at]);
-  if (table.standingAlone.includes(name)) {
-    return attached === void 0 ? { read: { option: name, value: "" }, next: at + 1 } : void 0;
-  }
+  return optionsSpelledAt(table, words, at, words[at]);
+}
+function optionsSpelledAt(table, words, at, spelling) {
+  const { name, attached } = spelledOption(spelling);
+  if (table.standingAlone.includes(name)) return flagsSpelledAt(table, words, at, { name, attached });
   if (table.takingAnAttachedValueOnly.includes(name)) {
-    return { read: { option: name, value: attached ?? "" }, next: at + 1 };
+    return { next: at + 1, options: [{ option: name, value: attached ?? "" }] };
   }
   if (!table.takingAValue.includes(name)) return void 0;
-  if (attached !== void 0) return { read: { option: name, value: attached }, next: at + 1 };
+  if (attached !== void 0) return { next: at + 1, options: [{ option: name, value: attached }] };
   const separate = words[at + 1];
-  return separate === void 0 ? void 0 : { read: { option: name, value: separate }, next: at + 2 };
+  return separate === void 0 ? void 0 : { next: at + 2, options: [{ option: name, value: separate }] };
+}
+function flagsSpelledAt(table, words, at, { name, attached }) {
+  const flag = { option: name, value: "" };
+  if (attached === void 0) return { next: at + 1, options: [flag] };
+  if (!table.splitsFlagBundles || name.startsWith("--")) return void 0;
+  const bundled = optionsSpelledAt(table, words, at, `-${attached}`);
+  return bundled === void 0 ? void 0 : { next: bundled.next, options: [flag, ...bundled.options] };
 }
 function spelledOption(word) {
   if (!word.startsWith("--")) {
@@ -2051,6 +2097,7 @@ var SPECIAL_CHARACTERS = "'\"\\$`#;&|(){}<> 	\n";
 var QUOTED_SPECIAL_CHARACTERS = '"\\$`';
 var WORD_DELIMITERS = " 	\n;&|()<>";
 var DESCRIPTOR_NUMBER = /^[0-9]+$/;
+var DESCRIPTOR_VARIABLE = /^\{[A-Za-z_][A-Za-z0-9_]*\}$/;
 var UNREAD_PAYLOAD = { kind: "unreadPayload" };
 var COPROCESS_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 var SHELL_INTERPRETERS = /* @__PURE__ */ new Set(["bash", "sh", "dash", "zsh", "ksh"]);
@@ -2084,9 +2131,8 @@ var HISTORY_REPLAYING_WORD = "fc";
 var ALIAS_DEFINITION = /^[^-=][^=]*=/;
 var ASSIGNMENT_NAMING_A_FILE_THE_SHELL_SOURCES = /^BASH_ENV=/;
 var RUNNER_CALLING_A_COMMAND = "npx";
-var NPM_WORD = "npm";
-var NPM_SUBCOMMANDS_CALLING_A_COMMAND = /* @__PURE__ */ new Set(["exec", "x"]);
 var RUNNER_CALL_OPTIONS = /* @__PURE__ */ new Set(["-c", "--c", "--call"]);
+var RUNNER_SHELL_MODE_OPTIONS = /* @__PURE__ */ new Set(["-c", "--shell-mode"]);
 var RUNNER_CALL_IN_A_FLAG_BUNDLE = /^-[^-c=][^=]*c/;
 var RUNNER_PACKAGE_OPTIONS = /* @__PURE__ */ new Set(["-p", "--package"]);
 var SHELL_WORDS_THIS_LEXER_READS = /* @__PURE__ */ new Set([
@@ -2136,6 +2182,9 @@ function handsStdinAProgramToRun(prefixWords) {
 function recordCarries(record, text) {
   if (record.kind === "commandWord" || record.kind === "argument") return record.word.includes(text);
   return record.kind === "stdinText" && record.text.includes(text);
+}
+function namesADescriptor(word) {
+  return DESCRIPTOR_NUMBER.test(word) || DESCRIPTOR_VARIABLE.test(word);
 }
 function isSourcingBuiltin(word) {
   return SOURCING_BUILTINS.has(word);
@@ -2233,21 +2282,66 @@ function leadingRunOf(text, digit, width) {
   while (length < width && length < text.length && digit.test(text[length])) length += 1;
   return text.slice(0, length);
 }
-function runnerOptionsOf(words) {
-  const runner = basenameOf(words[0] ?? "");
-  if (runner === RUNNER_CALLING_A_COMMAND) return words.slice(1);
-  if (runner === NPM_WORD && NPM_SUBCOMMANDS_CALLING_A_COMMAND.has(words[1] ?? "")) return words.slice(2);
-  return [];
-}
 var NO_RUNNER_CALL = { kind: "payload", payload: "" };
-function runnerCallOf(options) {
+var A_RUNNER_CALL_PAST_READING = { kind: "pastReading" };
+var RUNNER_SUBCOMMANDS_CALLING_A_COMMAND = /* @__PURE__ */ new Map([
+  ["npm", { names: /* @__PURE__ */ new Set(["exec", "x"]), callOf: callOptionValueOf }],
+  ["pnpm", { names: /* @__PURE__ */ new Set(["exec"]), callOf: shellModeStringOf }],
+  ["yarn", { names: /* @__PURE__ */ new Set(["exec"]), callOf: shellStringOf }]
+]);
+function runnerCallOf(words) {
+  const runner = basenameOf(words[0] ?? "");
+  if (runner === RUNNER_CALLING_A_COMMAND) return callOptionValueOf(words.slice(1));
+  const subcommand = RUNNER_SUBCOMMANDS_CALLING_A_COMMAND.get(runner);
+  if (subcommand === void 0) return NO_RUNNER_CALL;
+  const placed = placedSubcommand(words.slice(1), subcommand.names);
+  return placed.kind === "subcommand" ? subcommand.callOf(placed.execArguments) : placed;
+}
+function placedSubcommand(runnerArguments, names) {
+  const first = operandIndexFrom(runnerArguments, 0);
+  if (first === -1) return NO_RUNNER_CALL;
+  const second = operandIndexFrom(runnerArguments, first + 1);
+  const firstMayBeAnOptionValue = first > 0 && second !== -1 && names.has(runnerArguments[second]);
+  if (firstMayBeAnOptionValue) return A_RUNNER_CALL_PAST_READING;
+  if (!names.has(runnerArguments[first])) return NO_RUNNER_CALL;
+  return { kind: "subcommand", execArguments: runnerArguments.slice(first + 1) };
+}
+function operandIndexFrom(words, from) {
+  return words.findIndex((word, at) => at >= from && !word.startsWith("-"));
+}
+function callOptionValueOf(options) {
+  const call = leadingCallOption(options, RUNNER_CALL_OPTIONS);
+  if (call.kind !== "callOption") return call;
+  return { kind: "payload", payload: call.attached ?? options[call.at + 1] ?? "" };
+}
+function shellModeStringOf(options) {
+  const call = leadingCallOption(options, RUNNER_SHELL_MODE_OPTIONS);
+  if (call.kind !== "callOption") return call;
+  return shellStringOf(options.slice(call.at + 1));
+}
+function shellStringOf(execArguments) {
+  return { kind: "payload", payload: execArguments.join(" ") };
+}
+function leadingCallOption(options, callOptions) {
+  let anOptionMayHoldTheNextWord = false;
+  let aWordWasReadAsAnOptionValue = false;
   for (let at = 0; at < options.length; at += 1) {
     const option = options[at];
-    if (option === END_OF_OPTIONS || !option.startsWith("-")) return NO_RUNNER_CALL;
-    if (RUNNER_CALL_IN_A_FLAG_BUNDLE.test(option)) return { kind: "bundledPastReading" };
+    if (option === END_OF_OPTIONS) return NO_RUNNER_CALL;
+    if (!option.startsWith("-")) {
+      if (!anOptionMayHoldTheNextWord) return NO_RUNNER_CALL;
+      anOptionMayHoldTheNextWord = false;
+      aWordWasReadAsAnOptionValue = true;
+      continue;
+    }
+    if (RUNNER_CALL_IN_A_FLAG_BUNDLE.test(option)) return A_RUNNER_CALL_PAST_READING;
     const { name, attached } = runnerSpelledOption(option);
-    if (RUNNER_CALL_OPTIONS.has(name)) return { kind: "payload", payload: attached ?? options[at + 1] ?? "" };
-    if (RUNNER_PACKAGE_OPTIONS.has(name) && attached === void 0) at += 1;
+    if (callOptions.has(name)) {
+      return aWordWasReadAsAnOptionValue ? A_RUNNER_CALL_PAST_READING : { kind: "callOption", at, attached };
+    }
+    const takesThePackage = RUNNER_PACKAGE_OPTIONS.has(name) && attached === void 0;
+    if (takesThePackage) at += 1;
+    anOptionMayHoldTheNextWord = !takesThePackage && attached === void 0;
   }
   return NO_RUNNER_CALL;
 }
@@ -2339,7 +2433,7 @@ var CommandLineLexer = class _CommandLineLexer {
         this.endToken();
         return;
       case ">":
-        this.dropADescriptorNumber();
+        this.dropTheRedirectedDescriptor();
         this.endToken();
         this.takeRedirect();
         return;
@@ -2390,8 +2484,8 @@ var CommandLineLexer = class _CommandLineLexer {
     this.tokenOpen = false;
     this.tokenHoldsAQuote = false;
   }
-  dropADescriptorNumber() {
-    if (this.redirectTargetPending || this.tokenHoldsAQuote || !DESCRIPTOR_NUMBER.test(this.token)) return;
+  dropTheRedirectedDescriptor() {
+    if (this.redirectTargetPending || this.tokenHoldsAQuote || !namesADescriptor(this.token)) return;
     this.token = "";
     this.tokenOpen = false;
   }
@@ -2425,7 +2519,7 @@ var CommandLineLexer = class _CommandLineLexer {
     this.assignments.push(...prefixWords.filter(isAssignment));
     for (const prefixWord of prefixWords) if (namesAFileTheShellSources(prefixWord)) this.markUnread();
     if (this.commandTokens.length === 0) {
-      if (handsStdinAProgramToRun(prefixWords)) this.markUnread();
+      if (cut.leavesTheCommandUnread || handsStdinAProgramToRun(prefixWords)) this.markUnread();
       return;
     }
     if (cut.leavesTheCommandUnread) this.markUnread();
@@ -2542,8 +2636,8 @@ var CommandLineLexer = class _CommandLineLexer {
     }
   }
   deferRunnerCall() {
-    const call = runnerCallOf(runnerOptionsOf(this.commandTokens));
-    if (call.kind === "bundledPastReading") this.markUnread();
+    const call = runnerCallOf(this.commandTokens);
+    if (call.kind === "pastReading") this.markUnread();
     else this.deferNestedCommands(call.payload);
   }
   deferNestedCommands(payload) {
@@ -2676,7 +2770,7 @@ var CommandLineLexer = class _CommandLineLexer {
     }
   }
   takeInputRedirect() {
-    this.dropADescriptorNumber();
+    this.dropTheRedirectedDescriptor();
     if (this.rest.startsWith("<<")) {
       this.rest = this.rest.slice(2);
       this.endToken();

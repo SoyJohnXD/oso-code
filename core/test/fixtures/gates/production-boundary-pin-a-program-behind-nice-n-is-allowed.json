@@ -1,5 +1,5 @@
 {
-  "name": "production boundary: a program behind nice -n is allowed",
+  "name": "production boundary: pin: a program behind nice -n is allowed",
   "source": [
     {
       "assertion": "assert_equals \"a program behind nice -n is allowed\" \\\n  \"allow\" \"$(verdict_for 'nice -n 10 npm test')\""

@@ -41,16 +41,44 @@ var PREFIX_WORDS = /* @__PURE__ */ new Set([
   "!",
   COPROCESS_WORD
 ]);
+var ENV_SPLIT_STRING_OPTIONS = ["-S", "--split-string"];
+var ENV_OPTIONS = {
+  takingAValue: ["-u", ...ENV_SPLIT_STRING_OPTIONS],
+  takingAnAttachedValueOnly: [],
+  standingAlone: ["-i", "-0", "-v", "-"],
+  splitsFlagBundles: true
+};
 var FLOCK_COMMAND_OPTIONS = {
   takingAValue: ["-c", "--command"],
   takingAnAttachedValueOnly: [],
-  standingAlone: []
+  standingAlone: [],
+  splitsFlagBundles: false
 };
 var FLOCK_SHAPE = {
   options: {
-    takingAValue: ["-E", "-w", ...FLOCK_COMMAND_OPTIONS.takingAValue],
+    takingAValue: [
+      "-E",
+      "-w",
+      "--wait",
+      "--timeout",
+      "--conflict-exit-code",
+      ...FLOCK_COMMAND_OPTIONS.takingAValue
+    ],
     takingAnAttachedValueOnly: [],
-    standingAlone: ["-s", "-x", "-u", "-n", "-o"]
+    standingAlone: [
+      "-s",
+      "-x",
+      "-u",
+      "-n",
+      "-o",
+      "--shared",
+      "--exclusive",
+      "--unlock",
+      "--nonblock",
+      "--close",
+      "--verbose"
+    ],
+    splitsFlagBundles: true
   },
   operandGrammar: /^[\s\S]+$/
 };

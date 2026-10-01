@@ -8,11 +8,12 @@ export const PREFIX_WORDS: ReadonlySet<string> = new Set([
   "case", "esac", "select", "function", "!", COPROCESS_WORD,
 ]);
 const ASSIGNMENT = /^[A-Za-z_][\s\S]*=/;
+const NUMBER = /^[0-9]+$/;
 
 export function isCommandPrefixWord(word: string): boolean {
   if (isAssignment(word)) return true;
   if (word.startsWith("-")) return true;
-  if (!/[^0-9]/.test(word)) return word !== "";
+  if (NUMBER.test(word)) return true;
   return PREFIX_WORDS.has(basenameOf(word));
 }
 
@@ -24,12 +25,14 @@ type OptionTable = Readonly<{
   takingAValue: readonly string[];
   takingAnAttachedValueOnly: readonly string[];
   standingAlone: readonly string[];
+  splitsFlagBundles: boolean;
 }>;
 
 const COMMAND_OPTIONS: OptionTable = {
   takingAValue: [],
   takingAnAttachedValueOnly: [],
   standingAlone: ["-p", "-v", "-V"],
+  splitsFlagBundles: false,
 };
 const COMMAND_LOOKUP_OPTIONS = new Set(["-v", "-V"]);
 const XARGS_OPTIONS: OptionTable = {
@@ -39,23 +42,27 @@ const XARGS_OPTIONS: OptionTable = {
   ],
   takingAnAttachedValueOnly: ["-i", "-e", "-l"],
   standingAlone: ["-0", "-o", "-p", "-r", "-t", "-x"],
+  splitsFlagBundles: false,
 };
 const XARGS_REPLACE_OPTION = "-I";
 const XARGS_DEFAULTED_REPLACE_OPTION = "-i";
 const XARGS_DEFAULT_REPLACE_STRING = "{}";
 const XARGS_FLAG_DEFINING_A_REPLACE_STRING = /^-[^-]*[iI]/;
+const ENV_SPLIT_STRING_OPTIONS = ["-S", "--split-string"];
 const ENV_OPTIONS: OptionTable = {
-  takingAValue: ["-u"],
+  takingAValue: ["-u", ...ENV_SPLIT_STRING_OPTIONS],
   takingAnAttachedValueOnly: [],
   standingAlone: ["-i", "-0", "-v", "-"],
+  splitsFlagBundles: true,
 };
 type OperandPrefixShape = Readonly<{ options: OptionTable; operandGrammar: RegExp }>;
 
 const TIMEOUT_SHAPE: OperandPrefixShape = {
   options: {
-    takingAValue: ["-s", "-k"],
+    takingAValue: ["-s", "-k", "--signal", "--kill-after"],
     takingAnAttachedValueOnly: [],
-    standingAlone: ["--preserve-status", "--foreground", "-v"],
+    standingAlone: ["--preserve-status", "--foreground", "-v", "--verbose"],
+    splitsFlagBundles: false,
   },
   operandGrammar: /^[0-9]+(\.[0-9]+)?[smhd]?$/,
 };
@@ -63,12 +70,18 @@ const FLOCK_COMMAND_OPTIONS: OptionTable = {
   takingAValue: ["-c", "--command"],
   takingAnAttachedValueOnly: [],
   standingAlone: [],
+  splitsFlagBundles: false,
 };
 const FLOCK_SHAPE: OperandPrefixShape = {
   options: {
-    takingAValue: ["-E", "-w", ...FLOCK_COMMAND_OPTIONS.takingAValue],
+    takingAValue: [
+      "-E", "-w", "--wait", "--timeout", "--conflict-exit-code", ...FLOCK_COMMAND_OPTIONS.takingAValue,
+    ],
     takingAnAttachedValueOnly: [],
-    standingAlone: ["-s", "-x", "-u", "-n", "-o"],
+    standingAlone: [
+      "-s", "-x", "-u", "-n", "-o", "--shared", "--exclusive", "--unlock", "--nonblock", "--close", "--verbose",
+    ],
+    splitsFlagBundles: true,
   },
   operandGrammar: /^[\s\S]+$/,
 };
@@ -77,6 +90,7 @@ const TASKSET_SHAPE: OperandPrefixShape = {
     takingAValue: [],
     takingAnAttachedValueOnly: [],
     standingAlone: ["-a", "-c"],
+    splitsFlagBundles: false,
   },
   operandGrammar: /^((0[xX])?[0-9A-Fa-f]+|[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*)$/,
 };
@@ -97,7 +111,7 @@ const KEYED_PREFIX_READERS: ReadonlyMap<string, (words: readonly string[], from:
   new Map([
     ["command", readCommandOptions],
     ["xargs", readXargsOptions],
-    ["env", (words, from) => readThroughOptions(ENV_OPTIONS, words, from)],
+    ["env", readEnvOptions],
     ["timeout", (words, from) => readThroughOperand(TIMEOUT_SHAPE, words, from)],
     ["flock", readFlockOptions],
     ["taskset", (words, from) => readThroughOperand(TASKSET_SHAPE, words, from)],
@@ -113,6 +127,7 @@ type PrefixCut = Readonly<{
 export function prefixCutOf(words: readonly string[]): PrefixCut {
   let at = 0;
   let endsOnAnUnresolvedOption = false;
+  let aKeyedPrefixFellBack = false;
   let aPrefixLeftItUnread = false;
   let replaceString: string | undefined;
   let payload = "";
@@ -128,11 +143,14 @@ export function prefixCutOf(words: readonly string[]): PrefixCut {
       at = reading.next;
       replaceString = reading.replaceString ?? replaceString;
       endsOnAnUnresolvedOption = false;
+      aKeyedPrefixFellBack = false;
       continue;
     }
     if (readingLeavesItUnread(reading)) aPrefixLeftItUnread = true;
     if (!isCommandPrefixWord(word)) break;
-    endsOnAnUnresolvedOption = word.startsWith("-");
+    const anOptionMayHoldTheNumber: boolean = endsOnAnUnresolvedOption && aKeyedPrefixFellBack && NUMBER.test(word);
+    endsOnAnUnresolvedOption = word.startsWith("-") || anOptionMayHoldTheNumber;
+    if (PREFIX_WORDS.has(basenameOf(word))) aKeyedPrefixFellBack = KEYED_PREFIX_READERS.has(basenameOf(word));
     at += 1;
   }
   const leavesTheCommandUnread = endsOnAnUnresolvedOption || aPrefixLeftItUnread;
@@ -178,23 +196,30 @@ function replaceStringOf(options: readonly OptionRead[]): string | undefined {
   return defaulted ? XARGS_DEFAULT_REPLACE_STRING : replacing.value;
 }
 
+function readEnvOptions(words: readonly string[], from: number): KeyedPrefixReading {
+  const read = optionsRead(ENV_OPTIONS, words, from);
+  if (read === undefined) return A_SHAPE_IT_DOES_NOT_KNOW;
+  const splitString = read.options.find(({ option }) => ENV_SPLIT_STRING_OPTIONS.includes(option));
+  if (splitString === undefined) return { kind: "read", next: read.next, replaceString: undefined };
+  const payload = [splitString.value, ...words.slice(read.next).map(asOneShellWord)].join(" ");
+  return { kind: "standsAsTheCommand", payload };
+}
+
+function asOneShellWord(word: string): string {
+  return `'${word.replaceAll("'", "'\\''")}'`;
+}
+
 function readFlockOptions(words: readonly string[], from: number): KeyedPrefixReading {
   const leadingCommand = optionsRead(FLOCK_SHAPE.options, words, from)?.options.find(isAFlockCommandOption);
   if (leadingCommand !== undefined) return { kind: "standsAsTheCommand", payload: leadingCommand.value };
   const reading = readThroughOperand(FLOCK_SHAPE, words, from);
   if (reading.kind !== "read" || !(words[reading.next] ?? "").startsWith("-")) return reading;
-  const trailingCommand = optionAt(FLOCK_COMMAND_OPTIONS, words, reading.next);
-  return trailingCommand === undefined ? reading : { kind: "standsAsTheCommand", payload: trailingCommand.read.value };
+  const trailingCommand = optionAt(FLOCK_COMMAND_OPTIONS, words, reading.next)?.options.find(isAFlockCommandOption);
+  return trailingCommand === undefined ? reading : { kind: "standsAsTheCommand", payload: trailingCommand.value };
 }
 
 function isAFlockCommandOption({ option }: OptionRead): boolean {
   return FLOCK_COMMAND_OPTIONS.takingAValue.includes(option);
-}
-
-function readThroughOptions(table: OptionTable, words: readonly string[], from: number): KeyedPrefixReading {
-  const read = optionsRead(table, words, from);
-  if (read === undefined) return A_SHAPE_IT_DOES_NOT_KNOW;
-  return { kind: "read", next: read.next, replaceString: undefined };
 }
 
 function readThroughOperand(shape: OperandPrefixShape, words: readonly string[], from: number): KeyedPrefixReading {
@@ -216,28 +241,44 @@ function optionsRead(table: OptionTable, words: readonly string[], from: number)
   while ((words[at] ?? "").startsWith("-")) {
     const option = optionAt(table, words, at);
     if (option === undefined) return undefined;
-    options.push(option.read);
+    options.push(...option.options);
     at = option.next;
   }
   return { next: at, options };
 }
 
-function optionAt(
+function optionAt(table: OptionTable, words: readonly string[], at: number): OptionsRead | undefined {
+  return optionsSpelledAt(table, words, at, words[at] as string);
+}
+
+function optionsSpelledAt(
   table: OptionTable,
   words: readonly string[],
   at: number,
-): Readonly<{ read: OptionRead; next: number }> | undefined {
-  const { name, attached } = spelledOption(words[at] as string);
-  if (table.standingAlone.includes(name)) {
-    return attached === undefined ? { read: { option: name, value: "" }, next: at + 1 } : undefined;
-  }
+  spelling: string,
+): OptionsRead | undefined {
+  const { name, attached } = spelledOption(spelling);
+  if (table.standingAlone.includes(name)) return flagsSpelledAt(table, words, at, { name, attached });
   if (table.takingAnAttachedValueOnly.includes(name)) {
-    return { read: { option: name, value: attached ?? "" }, next: at + 1 };
+    return { next: at + 1, options: [{ option: name, value: attached ?? "" }] };
   }
   if (!table.takingAValue.includes(name)) return undefined;
-  if (attached !== undefined) return { read: { option: name, value: attached }, next: at + 1 };
+  if (attached !== undefined) return { next: at + 1, options: [{ option: name, value: attached }] };
   const separate = words[at + 1];
-  return separate === undefined ? undefined : { read: { option: name, value: separate }, next: at + 2 };
+  return separate === undefined ? undefined : { next: at + 2, options: [{ option: name, value: separate }] };
+}
+
+function flagsSpelledAt(
+  table: OptionTable,
+  words: readonly string[],
+  at: number,
+  { name, attached }: SpelledOption,
+): OptionsRead | undefined {
+  const flag = { option: name, value: "" };
+  if (attached === undefined) return { next: at + 1, options: [flag] };
+  if (!table.splitsFlagBundles || name.startsWith("--")) return undefined;
+  const bundled = optionsSpelledAt(table, words, at, `-${attached}`);
+  return bundled === undefined ? undefined : { next: bundled.next, options: [flag, ...bundled.options] };
 }
 
 export function spelledOption(word: string): SpelledOption {

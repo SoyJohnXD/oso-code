@@ -1,8 +1,8 @@
 {
-  "name": "production boundary: a flag bundle without an xargs replace-string still falls back to today's reading and is allowed",
+  "name": "production boundary: a number after a flag bundle xargs's table does not know keeps the line unread and denied",
   "source": [
     {
-      "assertion": "assert_equals \"a flag bundle without an xargs replace-string still falls back to today's reading and is allowed\" \\\n  \"allow\" \"$(verdict_for \"printf x | xargs -r0 0 deploy --prod\")\""
+      "assertion": "assert_equals \"a number after a flag bundle xargs's table does not know keeps the line unread and denied\" \\\n  \"deny\" \"$(verdict_for \"printf x | xargs -r0 0 deploy --prod\")\""
     }
   ],
   "gate": "proddeploy",
@@ -15,8 +15,17 @@
   "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"printf x | xargs -r0 0 deploy --prod\",\"description\":\"regression case\"}}",
   "expect": {
     "exit": 0,
-    "stdout": "",
+    "stdout": {
+      "contains": [
+        "past what the production boundary can read"
+      ]
+    },
     "stderr": "",
-    "events_appended": []
+    "events_appended": [
+      {
+        "event": "prod-deploy-denied",
+        "command": "printf x | xargs -r0 0 deploy --prod"
+      }
+    ]
   }
 }

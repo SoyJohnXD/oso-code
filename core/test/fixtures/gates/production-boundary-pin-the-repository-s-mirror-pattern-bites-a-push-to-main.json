@@ -1,5 +1,5 @@
 {
-  "name": "production boundary: the repository's mirror pattern bites a push to main",
+  "name": "production boundary: pin: the repository's mirror pattern bites a push to main",
   "source": [
     {
       "assertion": "assert_equals \"the repository's mirror pattern bites a push to main\" \\\n  \"deny\" \"$(verdict_for \"git push -f origin main\")\""
