@@ -22,6 +22,11 @@ import { stateBinPath } from "./installed-tree.ts";
 import { armStateUnder, underFixtureHome } from "../../test-support/state-fixture.ts";
 
 const PRODUCTION_DEPLOY = "vercel --prod";
+const PAST_THREE_KIB = 200;
+const LONG_PR_BODY_THEN_OWN_BRANCH_PUSH =
+  `cat > /tmp/pr-body.md <<'EOF'\n${"- one line of the pull request body\n".repeat(PAST_THREE_KIB)}EOF\n` +
+  "git push -u origin oso-run/gate-probe";
+const LONG_PRODUCTION_DEPLOY = `${PRODUCTION_DEPLOY}${" and echo padding".repeat(PAST_THREE_KIB)}`;
 const A_GATE_CORE_DOES_NOT_KNOW = "frobnicate" as OpenCodeRoute["gate"];
 const ARMED_SLICE_SESSION = "ses-armed";
 
@@ -109,6 +114,29 @@ test("an armed unattended run denies a production deploy in-process", () => {
   try {
     arm(fixture, ["auto=running", "auto_change=gate-probe"]);
     const verdict = judgeTool(fixture, "proddeploy", "bash", { command: PRODUCTION_DEPLOY });
+    assert.equal(verdict.kind, "deny");
+    assert.match(verdict.message, /a production deploy stays with the operator/);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
+});
+
+test("an armed unattended run lets a long pull request body heredoc and its own branch push through", () => {
+  const fixture = makeFixture();
+  try {
+    arm(fixture, ["auto=running", "auto_change=gate-probe"]);
+    const verdict = judgeTool(fixture, "proddeploy", "bash", { command: LONG_PR_BODY_THEN_OWN_BRANCH_PUSH });
+    assert.equal(verdict.kind, "allow");
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
+});
+
+test("an armed unattended run reads a production deploy padded past 3 KiB and denies it as one", () => {
+  const fixture = makeFixture();
+  try {
+    arm(fixture, ["auto=running", "auto_change=gate-probe"]);
+    const verdict = judgeTool(fixture, "proddeploy", "bash", { command: LONG_PRODUCTION_DEPLOY });
     assert.equal(verdict.kind, "deny");
     assert.match(verdict.message, /a production deploy stays with the operator/);
   } finally {

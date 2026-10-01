@@ -1,8 +1,8 @@
 {
-  "name": "commit gate: and --no-verify skips the layer that backstops an alias, so this shape meets neither",
+  "name": "commit gate: a --no-verify commit padded past 3072 bytes is read, so it is denied",
   "source": [
     {
-      "assertion": "  assert_commit_lands \"and --no-verify skips the layer that backstops an alias, so this shape meets neither\" \\\n    \"$aliased_no_verify\""
+      "assertion": "  assert_denies \"a --no-verify commit padded past 3072 bytes is read, so it is denied\" \\\n    \"$aliased_no_verify\""
     }
   ],
   "gate": "commit",
@@ -15,7 +15,11 @@
   "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit --no-verify -m x # padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding\",\"description\":\"regression case\"}}",
   "expect": {
     "exit": 0,
-    "stdout": "",
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\""
+      ]
+    },
     "stderr": ""
   }
 }

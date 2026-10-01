@@ -19,7 +19,7 @@ Every decision this design has taken since the freeze is one file under [docs/de
 
 ### Index
 
-The index — one decision per line, dated and grouped by the commit it landed in — lives in the directory itself rather than a copy kept here, since a second index is one more place this map could go stale: [docs/decisions/](decisions/) holds 157 files today, [0001](decisions/0001-delegated-slice-execution.md) through [0157](decisions/0157-a-machines-own-paths-and-a-tools-own-cache-never-reach-the-published-tree.md).
+The index — one decision per line, dated and grouped by the commit it landed in — lives in the directory itself rather than a copy kept here, since a second index is one more place this map could go stale: [docs/decisions/](decisions/) holds 158 files today, [0001](decisions/0001-delegated-slice-execution.md) through [0158](decisions/0158-the-lexer-reads-32-kib-and-the-command-field-is-always-decoded.md).
 
 ## Foundational decisions
 

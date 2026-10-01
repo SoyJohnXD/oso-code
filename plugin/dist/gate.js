@@ -283,685 +283,6 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync as mkdirSync4, writeFileSync as writeFileSync2 } from "node:fs";
 import path7 from "node:path";
 
-// core/src/shell/lexer.ts
-var MAX_LEXED_INPUT_BYTES = 3072;
-var UNREAD_PAYLOAD_MARKER = "!unread-payload";
-var MAX_PAYLOAD_DEPTH = 3;
-var SPECIAL_CHARACTERS = "'\"\\$`#;&|(){}<> 	\n";
-var QUOTED_SPECIAL_CHARACTERS = '"\\$`';
-var WORD_DELIMITERS = " 	\n;&|()<>";
-var UNREAD_PAYLOAD = { kind: "unreadPayload" };
-var COPROCESS_WORD = "coproc";
-var COPROCESS_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
-var PREFIX_WORDS = /* @__PURE__ */ new Set([
-  "env",
-  "command",
-  "builtin",
-  "exec",
-  "nice",
-  "nohup",
-  "time",
-  "timeout",
-  "stdbuf",
-  "sudo",
-  "doas",
-  "setsid",
-  "xargs",
-  "flock",
-  "ionice",
-  "chrt",
-  "taskset",
-  "unbuffer",
-  "then",
-  "else",
-  "elif",
-  "do",
-  "done",
-  "fi",
-  "in",
-  "until",
-  "while",
-  "if",
-  "for",
-  "case",
-  "esac",
-  "select",
-  "function",
-  "!",
-  COPROCESS_WORD
-]);
-var SHELL_INTERPRETERS = /* @__PURE__ */ new Set(["bash", "sh", "dash", "zsh", "ksh"]);
-var COMMAND_FLAG_READERS = /* @__PURE__ */ new Set([...SHELL_INTERPRETERS, "script"]);
-var SHELL_COMMAND_FLAG = "c";
-var CALLBACK_FLAG = "C";
-var CALLBACK_FLAG_READERS = /* @__PURE__ */ new Set(["mapfile", "readarray", "compgen", "complete"]);
-var TMUX_SUBCOMMANDS_RUNNING_A_COMMAND = /* @__PURE__ */ new Set([
-  "new-session",
-  "new",
-  "new-window",
-  "neww",
-  "split-window",
-  "splitw",
-  "respawn-pane",
-  "respawnp",
-  "respawn-window",
-  "respawnw",
-  "run-shell",
-  "run"
-]);
-var SOURCING_BUILTINS = /* @__PURE__ */ new Set(["source", "."]);
-var EVAL_WORD = "eval";
-var REMOTE_SHELL_WORD = "ssh";
-var TERMINAL_MULTIPLEXER_WORD = "tmux";
-var TRAP_WORD = "trap";
-var TRAP_ARGUMENTS_LEAVING_NO_ACTION = /* @__PURE__ */ new Set(["-l", "-p", "-"]);
-var END_OF_OPTIONS = "--";
-var ALIAS_WORD = "alias";
-var HISTORY_REPLAYING_WORD = "fc";
-var ALIAS_DEFINITION = /^[^-=][^=]*=/;
-var ASSIGNMENT_NAMING_A_FILE_THE_SHELL_SOURCES = /^BASH_ENV=/;
-var SHELL_WORDS_THIS_LEXER_READS = /* @__PURE__ */ new Set([
-  ...PREFIX_WORDS,
-  ...COMMAND_FLAG_READERS,
-  ...CALLBACK_FLAG_READERS,
-  ...SOURCING_BUILTINS,
-  EVAL_WORD,
-  REMOTE_SHELL_WORD,
-  TERMINAL_MULTIPLEXER_WORD,
-  TRAP_WORD,
-  ALIAS_WORD,
-  HISTORY_REPLAYING_WORD,
-  "{",
-  "}"
-]);
-function lexShellCommands(commandLine) {
-  return new CommandLineLexer(commandLine, 0).lex();
-}
-function basenameOf(word) {
-  const lastSlash = word.lastIndexOf("/");
-  return lastSlash === -1 ? word : word.slice(lastSlash + 1);
-}
-function isShellInterpreter(word) {
-  return SHELL_INTERPRETERS.has(basenameOf(word));
-}
-function readsACommandFlag(word) {
-  return COMMAND_FLAG_READERS.has(basenameOf(word));
-}
-function readsACallbackFlag(word) {
-  return CALLBACK_FLAG_READERS.has(basenameOf(word));
-}
-function definesAnAlias(word) {
-  return ALIAS_DEFINITION.test(word);
-}
-function namesAFileTheShellSources(assignment) {
-  return ASSIGNMENT_NAMING_A_FILE_THE_SHELL_SOURCES.test(assignment);
-}
-function withoutACoprocessName(words) {
-  const trailing = words.at(-1);
-  if (trailing === void 0 || words.at(-2) !== COPROCESS_WORD) return words;
-  return COPROCESS_NAME.test(trailing) ? words.slice(0, -1) : words;
-}
-function isCommandPrefixWord(word) {
-  if (/^[A-Za-z_][\s\S]*=/.test(word)) return true;
-  if (word.startsWith("-")) return true;
-  if (!/[^0-9]/.test(word)) return word !== "";
-  return PREFIX_WORDS.has(basenameOf(word));
-}
-function completesItsWordsFromStdin(word) {
-  return basenameOf(word) === "xargs";
-}
-function isSourcingBuiltin(word) {
-  return SOURCING_BUILTINS.has(word);
-}
-function withSpacesForNewlines(text) {
-  return text.replaceAll("\n", " ");
-}
-function leadingRunWithout(text, stoppers) {
-  let length = 0;
-  while (length < text.length && !stoppers.includes(text[length])) length += 1;
-  return text.slice(0, length);
-}
-var ANSI_C_NAMED_ESCAPES = {
-  a: "\x07",
-  b: "\b",
-  e: "\x1B",
-  E: "\x1B",
-  f: "\f",
-  n: "\n",
-  r: "\r",
-  t: "	",
-  v: "\v",
-  "\\": "\\",
-  "'": "'",
-  '"': '"',
-  "?": "?"
-};
-var ANSI_C_HEX_ESCAPE_WIDTHS = { x: 2, u: 4, U: 8 };
-var OCTAL_ESCAPE_WIDTH = 3;
-var OCTAL_DIGIT = /^[0-7]$/;
-var HEX_DIGIT = /^[0-9A-Fa-f]$/;
-var OCTAL_ESCAPE_MASK = 255;
-var CONTROL_ESCAPE_MASK = 31;
-var DELETE_CODE_POINT = 127;
-var HIGHEST_CODE_POINT = 1114111;
-var STRING_TERMINATOR = "\0";
-function ansiCQuoted(body) {
-  const decoded = ansiCDecoded(body);
-  const terminator = decoded.text.indexOf(STRING_TERMINATOR);
-  return terminator === -1 ? decoded : { text: decoded.text.slice(0, terminator), length: decoded.length };
-}
-function ansiCDecoded(body) {
-  let text = "";
-  let at = 0;
-  while (at < body.length) {
-    const character = body[at];
-    if (character === "'") return { text, length: at + 1 };
-    if (character !== "\\") {
-      text += character;
-      at += 1;
-      continue;
-    }
-    const escape = ansiCEscapeAt(body, at + 1);
-    text += escape.text;
-    at += 1 + escape.length;
-  }
-  return { text, length: at };
-}
-function ansiCEscapeAt(body, at) {
-  const marker = body[at];
-  if (marker === void 0) return { text: "\\", length: 0 };
-  const named2 = ANSI_C_NAMED_ESCAPES[marker];
-  if (named2 !== void 0) return { text: named2, length: 1 };
-  if (OCTAL_DIGIT.test(marker)) return octalEscape(body.slice(at));
-  const decoded = markedEscape(marker, body.slice(at + 1));
-  if (decoded === void 0) return { text: `\\${marker}`, length: 1 };
-  return { text: decoded.text, length: 1 + decoded.length };
-}
-function markedEscape(marker, rest) {
-  if (marker === "c") return controlEscape(rest);
-  const hexWidth = ANSI_C_HEX_ESCAPE_WIDTHS[marker];
-  return hexWidth === void 0 ? void 0 : hexEscape(rest, hexWidth);
-}
-function octalEscape(digitsAndRest) {
-  const digits = leadingRunOf(digitsAndRest, OCTAL_DIGIT, OCTAL_ESCAPE_WIDTH);
-  return { text: String.fromCharCode(parseInt(digits, 8) & OCTAL_ESCAPE_MASK), length: digits.length };
-}
-function hexEscape(rest, width) {
-  const digits = leadingRunOf(rest, HEX_DIGIT, width);
-  if (digits === "") return void 0;
-  const code = parseInt(digits, 16);
-  if (code > HIGHEST_CODE_POINT) return void 0;
-  return { text: String.fromCodePoint(code), length: digits.length };
-}
-function controlEscape(rest) {
-  if (rest === "") return void 0;
-  const spelledAsAnEscape = rest.startsWith("\\\\");
-  const controlled = spelledAsAnEscape ? "\\" : rest[0];
-  const length = spelledAsAnEscape ? 2 : 1;
-  if (controlled === "?") return { text: String.fromCharCode(DELETE_CODE_POINT), length };
-  return { text: String.fromCharCode(controlled.toUpperCase().charCodeAt(0) & CONTROL_ESCAPE_MASK), length };
-}
-function leadingRunOf(text, digit, width) {
-  let length = 0;
-  while (length < width && length < text.length && digit.test(text[length])) length += 1;
-  return text.slice(0, length);
-}
-function splitAtTheFirstOperand(words) {
-  const at = words.findIndex((word) => !word.startsWith("-"));
-  if (at === -1) return void 0;
-  return { operand: words[at], rest: words.slice(at + 1), behindAnOption: at > 0 };
-}
-var CommandLineLexer = class _CommandLineLexer {
-  rest;
-  depth;
-  token = "";
-  tokenOpen = false;
-  redirectTargetPending = false;
-  herestringPending = false;
-  pendingHeredocs = [];
-  nested = [];
-  unreadStdin = "";
-  commandTokens = [];
-  records = [];
-  constructor(commandLine, depth) {
-    this.rest = `${commandLine}
-`;
-    this.depth = depth;
-  }
-  lex() {
-    if (Buffer.byteLength(this.rest, "utf8") > MAX_LEXED_INPUT_BYTES) return [UNREAD_PAYLOAD];
-    while (this.rest !== "") this.takeNext();
-    this.endToken();
-    this.takeHeredocBodies();
-    this.endCommand();
-    return this.records;
-  }
-  takeNext() {
-    const ordinary = leadingRunWithout(this.rest, SPECIAL_CHARACTERS);
-    if (ordinary !== "") {
-      this.token += ordinary;
-      this.tokenOpen = true;
-      this.rest = this.rest.slice(ordinary.length);
-      return;
-    }
-    const character = this.rest.slice(0, 1);
-    this.rest = this.rest.slice(1);
-    this.takeSpecial(character);
-  }
-  takeSpecial(character) {
-    switch (character) {
-      case "'":
-        this.tokenOpen = true;
-        this.takeSingleQuoted();
-        return;
-      case '"':
-        this.tokenOpen = true;
-        this.takeDoubleQuoted();
-        return;
-      case "\\":
-        this.takeEscape();
-        return;
-      case "$":
-        this.tokenOpen = true;
-        this.takeDollar();
-        return;
-      case "{":
-      case "}":
-        this.takeBrace(character);
-        return;
-      case "`":
-        this.tokenOpen = true;
-        this.takeBacktick();
-        return;
-      case "#":
-        if (this.tokenOpen) this.token += "#";
-        else this.dropComment();
-        return;
-      case " ":
-      case "	":
-        this.endToken();
-        return;
-      case ">":
-        this.endToken();
-        this.takeRedirect();
-        return;
-      case "<":
-        this.takeInputRedirect();
-        return;
-      case "&":
-        if (this.rest.startsWith(">")) {
-          this.endToken();
-          this.takeRedirect();
-        } else {
-          this.endCommand();
-        }
-        return;
-      case "\n":
-        this.endToken();
-        this.takeHeredocBodies();
-        this.endCommand();
-        return;
-      default:
-        this.endCommand();
-    }
-  }
-  takeBrace(brace) {
-    if (this.braceStandsAsAReservedWord()) {
-      this.endCommand();
-      return;
-    }
-    this.token += brace;
-    this.tokenOpen = true;
-  }
-  braceStandsAsAReservedWord() {
-    if (this.tokenOpen || this.rest === "") return false;
-    if (!withoutACoprocessName(this.commandTokens).every(isCommandPrefixWord)) return false;
-    return WORD_DELIMITERS.includes(this.rest.slice(0, 1));
-  }
-  endToken() {
-    if (this.tokenOpen && this.redirectTargetPending) {
-      this.redirectTargetPending = false;
-    } else if (this.tokenOpen) {
-      this.commandTokens.push(this.token);
-      if (this.herestringPending) {
-        this.herestringPending = false;
-        this.deferNestedCommands(this.token);
-      }
-    }
-    this.token = "";
-    this.tokenOpen = false;
-  }
-  endCommand() {
-    this.endToken();
-    this.stripCommandPrefixes();
-    this.deferPayloadCommands();
-    this.emitCommand();
-    this.commandTokens = [];
-    this.nested = [];
-    this.unreadStdin = "";
-    this.redirectTargetPending = false;
-  }
-  stripCommandPrefixes() {
-    let prefixWord = "";
-    let stdinCompletesTheWords = false;
-    while (this.commandTokens.length > 0) {
-      const leading = this.commandTokens[0];
-      if (!isCommandPrefixWord(leading)) {
-        if (prefixWord.startsWith("-")) this.markUnread();
-        if (stdinCompletesTheWords) this.unreadStdin += UNREAD_PAYLOAD_MARKER;
-        return;
-      }
-      prefixWord = leading;
-      if (completesItsWordsFromStdin(prefixWord)) stdinCompletesTheWords = true;
-      if (namesAFileTheShellSources(prefixWord)) this.markUnread();
-      this.commandTokens = this.commandTokens.slice(1);
-    }
-  }
-  deferPayloadCommands() {
-    const leading = this.commandTokens[0];
-    if (leading === void 0) return;
-    if (isSourcingBuiltin(leading)) {
-      this.markUnread();
-      return;
-    }
-    const wrapper = basenameOf(leading);
-    if (wrapper === EVAL_WORD) {
-      this.deferNestedCommands(this.commandTokens.slice(1).join(" "));
-      return;
-    }
-    if (wrapper === REMOTE_SHELL_WORD) {
-      this.deferRemoteShellPayload();
-      return;
-    }
-    if (wrapper === TERMINAL_MULTIPLEXER_WORD) {
-      this.deferTmuxPayload();
-      return;
-    }
-    if (wrapper === TRAP_WORD) {
-      this.deferTrapAction();
-      return;
-    }
-    if (wrapper === ALIAS_WORD) {
-      if (this.commandTokens.slice(1).some(definesAnAlias)) this.markUnread();
-      return;
-    }
-    if (wrapper === HISTORY_REPLAYING_WORD) {
-      this.markUnread();
-      return;
-    }
-    if (readsACallbackFlag(leading)) {
-      this.deferOptionValueAsACommand(CALLBACK_FLAG);
-      return;
-    }
-    if (readsACommandFlag(leading)) this.deferInterpreterPayload();
-  }
-  deferTrapAction() {
-    let optionsEnded = false;
-    for (const argument of this.commandTokens.slice(1)) {
-      if (optionsEnded || !argument.startsWith("-")) {
-        this.deferNestedCommands(argument);
-        return;
-      }
-      if (TRAP_ARGUMENTS_LEAVING_NO_ACTION.has(argument)) return;
-      if (argument !== END_OF_OPTIONS) {
-        this.markUnread();
-        return;
-      }
-      optionsEnded = true;
-    }
-  }
-  deferRemoteShellPayload() {
-    const host = splitAtTheFirstOperand(this.commandTokens.slice(1));
-    if (host === void 0) return;
-    this.deferOperandPayload(host.rest, host.behindAnOption);
-  }
-  deferTmuxPayload() {
-    const subcommand = splitAtTheFirstOperand(this.commandTokens.slice(1));
-    if (subcommand === void 0) return;
-    if (!TMUX_SUBCOMMANDS_RUNNING_A_COMMAND.has(subcommand.operand)) {
-      if (subcommand.behindAnOption) this.markUnread();
-      return;
-    }
-    this.deferOperandPayload(subcommand.rest, false);
-  }
-  deferOperandPayload(words, selectorUnresolved) {
-    const payload = splitAtTheFirstOperand(words);
-    if (payload === void 0) return;
-    if (selectorUnresolved || payload.behindAnOption) this.markUnread();
-    this.deferNestedCommands([payload.operand, ...payload.rest].join(" "));
-  }
-  deferInterpreterPayload() {
-    this.deferOptionValueAsACommand(SHELL_COMMAND_FLAG);
-    if (this.nested.length === 0) this.markUnread();
-  }
-  deferOptionValueAsACommand(commandFlag) {
-    let commandFlagSeen = false;
-    let valuePosition = false;
-    for (const argument of this.commandTokens.slice(1)) {
-      if (argument.startsWith("--")) {
-        valuePosition = true;
-      } else if (argument === `-${commandFlag}`) {
-        commandFlagSeen = true;
-        valuePosition = false;
-      } else if (argument.startsWith("-") && argument.slice(1).includes(commandFlag)) {
-        commandFlagSeen = true;
-        valuePosition = true;
-      } else if (argument.startsWith("-")) {
-        valuePosition = true;
-      } else if (commandFlagSeen) {
-        if (valuePosition) this.markUnread();
-        this.deferNestedCommands(argument);
-        return;
-      }
-    }
-  }
-  deferNestedCommands(payload) {
-    if (payload === "") return;
-    if (this.depth >= MAX_PAYLOAD_DEPTH) {
-      this.markUnread();
-      return;
-    }
-    this.nested.push(...new _CommandLineLexer(payload, this.depth + 1).lex());
-  }
-  markUnread() {
-    this.nested.push(UNREAD_PAYLOAD);
-  }
-  emitCommand() {
-    this.commandTokens.forEach((word, index) => {
-      this.records.push(
-        index === 0 ? { kind: "commandWord", word: withSpacesForNewlines(word) } : { kind: "argument", word: withSpacesForNewlines(word) }
-      );
-    });
-    if (this.unreadStdin !== "") {
-      this.records.push({ kind: "stdinText", text: withSpacesForNewlines(this.unreadStdin) });
-    }
-    this.records.push(...this.nested);
-  }
-  takeEscape() {
-    if (this.rest.startsWith("\n")) {
-      this.rest = this.rest.slice(1);
-      return;
-    }
-    this.token += this.rest.slice(0, 1);
-    this.tokenOpen = true;
-    this.rest = this.rest.slice(1);
-  }
-  takeSingleQuoted() {
-    const span = this.spanBefore("'");
-    this.token += span;
-    this.rest = this.rest.slice(span.length + 1);
-  }
-  takeDoubleQuoted() {
-    while (this.rest !== "") {
-      const ordinary = leadingRunWithout(this.rest, QUOTED_SPECIAL_CHARACTERS);
-      if (ordinary !== "") {
-        this.token += ordinary;
-        this.rest = this.rest.slice(ordinary.length);
-        continue;
-      }
-      const character = this.rest.slice(0, 1);
-      this.rest = this.rest.slice(1);
-      if (character === '"') return;
-      if (character === "\\") {
-        this.token += this.rest.slice(0, 1);
-        this.rest = this.rest.slice(1);
-      } else if (character === "$") {
-        this.takeExpansion();
-      } else if (character === "`") {
-        this.takeBacktick();
-      }
-    }
-  }
-  takeDollar() {
-    if (this.rest.startsWith("'")) {
-      this.rest = this.rest.slice(1);
-      this.takeAnsiCQuoted();
-      return;
-    }
-    if (this.rest.startsWith('"')) {
-      this.rest = this.rest.slice(1);
-      this.takeLocaleTranslated();
-      return;
-    }
-    this.takeExpansion();
-  }
-  takeLocaleTranslated() {
-    this.markUnread();
-    this.takeDoubleQuoted();
-  }
-  takeAnsiCQuoted() {
-    const quoted2 = ansiCQuoted(this.rest);
-    this.token += quoted2.text;
-    this.rest = this.rest.slice(quoted2.length);
-  }
-  takeExpansion() {
-    if (this.rest.startsWith("(")) {
-      this.token += "$";
-      this.rest = this.rest.slice(1);
-      this.deferNestedCommands(this.takeSubstitutionBody());
-      return;
-    }
-    if (this.rest.startsWith("{")) {
-      const span = this.spanBefore("}");
-      this.token += `$${span}}`;
-      this.rest = this.rest.slice(span.length + 1);
-      return;
-    }
-    this.token += "$";
-  }
-  takeSubstitutionBody() {
-    let nesting = 1;
-    let body = "";
-    while (this.rest !== "") {
-      const ordinary = leadingRunWithout(this.rest, "()");
-      body += ordinary;
-      this.rest = this.rest.slice(ordinary.length);
-      const character = this.rest.slice(0, 1);
-      this.rest = this.rest.slice(1);
-      if (character === "(") {
-        nesting += 1;
-        body += "(";
-      } else if (character === ")") {
-        nesting -= 1;
-        if (nesting === 0) return body;
-        body += ")";
-      }
-    }
-    return body;
-  }
-  takeBacktick() {
-    const span = this.spanBefore("`");
-    this.token += "$";
-    this.rest = this.rest.slice(span.length + 1);
-    this.deferNestedCommands(span);
-  }
-  dropComment() {
-    this.rest = this.rest.slice(this.spanBefore("\n").length);
-  }
-  takeRedirect() {
-    this.redirectTargetPending = true;
-    while (this.rest !== "" && ">&|".includes(this.rest.slice(0, 1))) {
-      this.rest = this.rest.slice(1);
-    }
-  }
-  takeInputRedirect() {
-    if (this.rest.startsWith("<<")) {
-      this.rest = this.rest.slice(2);
-      this.endToken();
-      this.herestringPending = true;
-      return;
-    }
-    if (this.rest.startsWith("<")) {
-      this.rest = this.rest.slice(1);
-      const stripsTabs = this.rest.startsWith("-");
-      if (stripsTabs) this.rest = this.rest.slice(1);
-      this.pendingHeredocs.push({ delimiter: this.takeHeredocDelimiter(), stripsTabs });
-      return;
-    }
-    this.endToken();
-    this.takeRedirect();
-  }
-  takeHeredocDelimiter() {
-    let delimiter = "";
-    while (this.rest !== "") {
-      const leading = this.rest.slice(0, 1);
-      if (leading === " " || leading === "	") {
-        if (delimiter !== "") return delimiter;
-        this.rest = this.rest.slice(1);
-        continue;
-      }
-      const ordinary = leadingRunWithout(this.rest, SPECIAL_CHARACTERS);
-      if (ordinary !== "") {
-        delimiter += ordinary;
-        this.rest = this.rest.slice(ordinary.length);
-        continue;
-      }
-      if (leading !== "'" && leading !== '"' && leading !== "\\") return delimiter;
-      this.rest = this.rest.slice(1);
-    }
-    return delimiter;
-  }
-  takeHeredocBodies() {
-    if (this.pendingHeredocs.length === 0) return;
-    this.stripCommandPrefixes();
-    while (this.pendingHeredocs.length > 0) {
-      const heredoc = this.pendingHeredocs.shift();
-      const body = this.takeHeredocBody(heredoc);
-      if (isShellInterpreter(this.commandTokens[0] ?? "")) this.deferNestedCommands(body);
-      else this.unreadStdin += body;
-    }
-  }
-  takeHeredocBody(heredoc) {
-    if (heredoc.stripsTabs) return this.takeBodyByLines(heredoc);
-    return this.takeBodyToTerminator(heredoc.delimiter) ?? this.takeBodyByLines(heredoc);
-  }
-  takeBodyToTerminator(delimiter) {
-    const at = this.rest.indexOf(`
-${delimiter}
-`);
-    if (at === -1) return void 0;
-    const body = this.rest.slice(0, at);
-    this.rest = this.rest.slice(body.length + delimiter.length + 2);
-    return body;
-  }
-  takeBodyByLines(heredoc) {
-    let body = "";
-    while (this.rest !== "") {
-      const line = this.spanBefore("\n");
-      this.rest = this.rest.slice(line.length + 1);
-      const probe = heredoc.stripsTabs ? line.replace(/^\t+/, "") : line;
-      if (probe === heredoc.delimiter) return body;
-      body += `${line}
-`;
-    }
-    return body;
-  }
-  spanBefore(stopper) {
-    const at = this.rest.indexOf(stopper);
-    return at === -1 ? this.rest : this.rest.slice(0, at);
-  }
-};
-
 // core/src/hosts/background-tasks.ts
 var NO_BACKGROUND_TASKS = { kind: "absent" };
 var UNRECOGNIZED = { kind: "unrecognized" };
@@ -1024,7 +345,7 @@ function readEnvelope(hookText, caller) {
     toolName: jsonField(payload, "tool_name"),
     filePath: jsonField(payload, "file_path"),
     patchText: jsonField(payload, "patchText"),
-    commandLine: jsonCommandLine(payload),
+    commandLine: jsonField(payload, "command"),
     source: jsonField(payload, "source"),
     agentId: jsonField(payload, "agent_id"),
     agentType: jsonField(payload, "agent_type"),
@@ -1038,11 +359,6 @@ function readEnvelope(hookText, caller) {
     stopHookActive: STOP_HOOK_ACTIVE.test(payload),
     backgroundTasks: parsed.kind === "json" ? backgroundTasksIn(parsed.document) : NO_BACKGROUND_TASKS
   };
-}
-function jsonCommandLine(payload) {
-  const escaped = escapedField(payload, "command");
-  if ([...escaped].length > MAX_LEXED_INPUT_BYTES) return asCommandSubstitutionCaptures(escaped);
-  return jsonField(payload, "command");
 }
 function jsonField(hookText, field) {
   const payload = asCommandSubstitutionCaptures(hookText);
@@ -2264,6 +1580,686 @@ function gateEvent(event, session, detail) {
 function tallyFileFor(journalFile) {
   return path7.join(path7.dirname(journalFile), `${path7.basename(journalFile, ".log")}.pushes`);
 }
+
+// core/src/shell/lexer.ts
+var MAX_LEXED_INPUT_BYTES = 32768;
+var UNREAD_PAYLOAD_MARKER = "!unread-payload";
+var MAX_PAYLOAD_DEPTH = 3;
+var SPECIAL_CHARACTERS = "'\"\\$`#;&|(){}<> 	\n";
+var QUOTED_SPECIAL_CHARACTERS = '"\\$`';
+var WORD_DELIMITERS = " 	\n;&|()<>";
+var UNREAD_PAYLOAD = { kind: "unreadPayload" };
+var COPROCESS_WORD = "coproc";
+var COPROCESS_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+var PREFIX_WORDS = /* @__PURE__ */ new Set([
+  "env",
+  "command",
+  "builtin",
+  "exec",
+  "nice",
+  "nohup",
+  "time",
+  "timeout",
+  "stdbuf",
+  "sudo",
+  "doas",
+  "setsid",
+  "xargs",
+  "flock",
+  "ionice",
+  "chrt",
+  "taskset",
+  "unbuffer",
+  "then",
+  "else",
+  "elif",
+  "do",
+  "done",
+  "fi",
+  "in",
+  "until",
+  "while",
+  "if",
+  "for",
+  "case",
+  "esac",
+  "select",
+  "function",
+  "!",
+  COPROCESS_WORD
+]);
+var SHELL_INTERPRETERS = /* @__PURE__ */ new Set(["bash", "sh", "dash", "zsh", "ksh"]);
+var COMMAND_FLAG_READERS = /* @__PURE__ */ new Set([...SHELL_INTERPRETERS, "script"]);
+var SHELL_COMMAND_FLAG = "c";
+var CALLBACK_FLAG = "C";
+var CALLBACK_FLAG_READERS = /* @__PURE__ */ new Set(["mapfile", "readarray", "compgen", "complete"]);
+var TMUX_SUBCOMMANDS_RUNNING_A_COMMAND = /* @__PURE__ */ new Set([
+  "new-session",
+  "new",
+  "new-window",
+  "neww",
+  "split-window",
+  "splitw",
+  "respawn-pane",
+  "respawnp",
+  "respawn-window",
+  "respawnw",
+  "run-shell",
+  "run"
+]);
+var SOURCING_BUILTINS = /* @__PURE__ */ new Set(["source", "."]);
+var EVAL_WORD = "eval";
+var REMOTE_SHELL_WORD = "ssh";
+var TERMINAL_MULTIPLEXER_WORD = "tmux";
+var TRAP_WORD = "trap";
+var TRAP_ARGUMENTS_LEAVING_NO_ACTION = /* @__PURE__ */ new Set(["-l", "-p", "-"]);
+var END_OF_OPTIONS = "--";
+var ALIAS_WORD = "alias";
+var HISTORY_REPLAYING_WORD = "fc";
+var ALIAS_DEFINITION = /^[^-=][^=]*=/;
+var ASSIGNMENT_NAMING_A_FILE_THE_SHELL_SOURCES = /^BASH_ENV=/;
+var SHELL_WORDS_THIS_LEXER_READS = /* @__PURE__ */ new Set([
+  ...PREFIX_WORDS,
+  ...COMMAND_FLAG_READERS,
+  ...CALLBACK_FLAG_READERS,
+  ...SOURCING_BUILTINS,
+  EVAL_WORD,
+  REMOTE_SHELL_WORD,
+  TERMINAL_MULTIPLEXER_WORD,
+  TRAP_WORD,
+  ALIAS_WORD,
+  HISTORY_REPLAYING_WORD,
+  "{",
+  "}"
+]);
+function lexShellCommands(commandLine) {
+  return new CommandLineLexer(commandLine, 0).lex();
+}
+function basenameOf(word) {
+  const lastSlash = word.lastIndexOf("/");
+  return lastSlash === -1 ? word : word.slice(lastSlash + 1);
+}
+function isShellInterpreter(word) {
+  return SHELL_INTERPRETERS.has(basenameOf(word));
+}
+function readsACommandFlag(word) {
+  return COMMAND_FLAG_READERS.has(basenameOf(word));
+}
+function readsACallbackFlag(word) {
+  return CALLBACK_FLAG_READERS.has(basenameOf(word));
+}
+function definesAnAlias(word) {
+  return ALIAS_DEFINITION.test(word);
+}
+function namesAFileTheShellSources(assignment) {
+  return ASSIGNMENT_NAMING_A_FILE_THE_SHELL_SOURCES.test(assignment);
+}
+function lengthWithoutACoprocessName(words) {
+  const trailing = words.at(-1);
+  if (trailing === void 0 || words.at(-2) !== COPROCESS_WORD) return words.length;
+  return COPROCESS_NAME.test(trailing) ? words.length - 1 : words.length;
+}
+function isCommandPrefixWord(word) {
+  if (/^[A-Za-z_][\s\S]*=/.test(word)) return true;
+  if (word.startsWith("-")) return true;
+  if (!/[^0-9]/.test(word)) return word !== "";
+  return PREFIX_WORDS.has(basenameOf(word));
+}
+function completesItsWordsFromStdin(word) {
+  return basenameOf(word) === "xargs";
+}
+function isSourcingBuiltin(word) {
+  return SOURCING_BUILTINS.has(word);
+}
+function withSpacesForNewlines(text) {
+  return text.replaceAll("\n", " ");
+}
+function leadingRunWithout(text, stoppers) {
+  let length = 0;
+  while (length < text.length && !stoppers.includes(text[length])) length += 1;
+  return text.slice(0, length);
+}
+var ANSI_C_NAMED_ESCAPES = {
+  a: "\x07",
+  b: "\b",
+  e: "\x1B",
+  E: "\x1B",
+  f: "\f",
+  n: "\n",
+  r: "\r",
+  t: "	",
+  v: "\v",
+  "\\": "\\",
+  "'": "'",
+  '"': '"',
+  "?": "?"
+};
+var ANSI_C_HEX_ESCAPE_WIDTHS = { x: 2, u: 4, U: 8 };
+var OCTAL_ESCAPE_WIDTH = 3;
+var OCTAL_DIGIT = /^[0-7]$/;
+var HEX_DIGIT = /^[0-9A-Fa-f]$/;
+var OCTAL_ESCAPE_MASK = 255;
+var CONTROL_ESCAPE_MASK = 31;
+var DELETE_CODE_POINT = 127;
+var HIGHEST_CODE_POINT = 1114111;
+var STRING_TERMINATOR = "\0";
+function ansiCQuoted(body) {
+  const decoded = ansiCDecoded(body);
+  const terminator = decoded.text.indexOf(STRING_TERMINATOR);
+  return terminator === -1 ? decoded : { text: decoded.text.slice(0, terminator), length: decoded.length };
+}
+function ansiCDecoded(body) {
+  let text = "";
+  let at = 0;
+  while (at < body.length) {
+    const character = body[at];
+    if (character === "'") return { text, length: at + 1 };
+    if (character !== "\\") {
+      text += character;
+      at += 1;
+      continue;
+    }
+    const escape = ansiCEscapeAt(body, at + 1);
+    text += escape.text;
+    at += 1 + escape.length;
+  }
+  return { text, length: at };
+}
+function ansiCEscapeAt(body, at) {
+  const marker = body[at];
+  if (marker === void 0) return { text: "\\", length: 0 };
+  const named2 = ANSI_C_NAMED_ESCAPES[marker];
+  if (named2 !== void 0) return { text: named2, length: 1 };
+  if (OCTAL_DIGIT.test(marker)) return octalEscape(body.slice(at));
+  const decoded = markedEscape(marker, body.slice(at + 1));
+  if (decoded === void 0) return { text: `\\${marker}`, length: 1 };
+  return { text: decoded.text, length: 1 + decoded.length };
+}
+function markedEscape(marker, rest) {
+  if (marker === "c") return controlEscape(rest);
+  const hexWidth = ANSI_C_HEX_ESCAPE_WIDTHS[marker];
+  return hexWidth === void 0 ? void 0 : hexEscape(rest, hexWidth);
+}
+function octalEscape(digitsAndRest) {
+  const digits = leadingRunOf(digitsAndRest, OCTAL_DIGIT, OCTAL_ESCAPE_WIDTH);
+  return { text: String.fromCharCode(parseInt(digits, 8) & OCTAL_ESCAPE_MASK), length: digits.length };
+}
+function hexEscape(rest, width) {
+  const digits = leadingRunOf(rest, HEX_DIGIT, width);
+  if (digits === "") return void 0;
+  const code = parseInt(digits, 16);
+  if (code > HIGHEST_CODE_POINT) return void 0;
+  return { text: String.fromCodePoint(code), length: digits.length };
+}
+function controlEscape(rest) {
+  if (rest === "") return void 0;
+  const spelledAsAnEscape = rest.startsWith("\\\\");
+  const controlled = spelledAsAnEscape ? "\\" : rest[0];
+  const length = spelledAsAnEscape ? 2 : 1;
+  if (controlled === "?") return { text: String.fromCharCode(DELETE_CODE_POINT), length };
+  return { text: String.fromCharCode(controlled.toUpperCase().charCodeAt(0) & CONTROL_ESCAPE_MASK), length };
+}
+function leadingRunOf(text, digit, width) {
+  let length = 0;
+  while (length < width && length < text.length && digit.test(text[length])) length += 1;
+  return text.slice(0, length);
+}
+function splitAtTheFirstOperand(words) {
+  const at = words.findIndex((word) => !word.startsWith("-"));
+  if (at === -1) return void 0;
+  return { operand: words[at], rest: words.slice(at + 1), behindAnOption: at > 0 };
+}
+var CommandLineLexer = class _CommandLineLexer {
+  rest;
+  depth;
+  token = "";
+  tokenOpen = false;
+  redirectTargetPending = false;
+  herestringPending = false;
+  pendingHeredocs = [];
+  nested = [];
+  unreadStdin = "";
+  commandTokens = [];
+  leadingPrefixWords = 0;
+  records = [];
+  constructor(commandLine, depth) {
+    this.rest = `${commandLine}
+`;
+    this.depth = depth;
+  }
+  lex() {
+    if (Buffer.byteLength(this.rest, "utf8") > MAX_LEXED_INPUT_BYTES) return [UNREAD_PAYLOAD];
+    while (this.rest !== "") this.takeNext();
+    this.endToken();
+    this.takeHeredocBodies();
+    this.endCommand();
+    return this.records;
+  }
+  takeNext() {
+    const ordinary = leadingRunWithout(this.rest, SPECIAL_CHARACTERS);
+    if (ordinary !== "") {
+      this.token += ordinary;
+      this.tokenOpen = true;
+      this.rest = this.rest.slice(ordinary.length);
+      return;
+    }
+    const character = this.rest.slice(0, 1);
+    this.rest = this.rest.slice(1);
+    this.takeSpecial(character);
+  }
+  takeSpecial(character) {
+    switch (character) {
+      case "'":
+        this.tokenOpen = true;
+        this.takeSingleQuoted();
+        return;
+      case '"':
+        this.tokenOpen = true;
+        this.takeDoubleQuoted();
+        return;
+      case "\\":
+        this.takeEscape();
+        return;
+      case "$":
+        this.tokenOpen = true;
+        this.takeDollar();
+        return;
+      case "{":
+      case "}":
+        this.takeBrace(character);
+        return;
+      case "`":
+        this.tokenOpen = true;
+        this.takeBacktick();
+        return;
+      case "#":
+        if (this.tokenOpen) this.token += "#";
+        else this.dropComment();
+        return;
+      case " ":
+      case "	":
+        this.endToken();
+        return;
+      case ">":
+        this.endToken();
+        this.takeRedirect();
+        return;
+      case "<":
+        this.takeInputRedirect();
+        return;
+      case "&":
+        if (this.rest.startsWith(">")) {
+          this.endToken();
+          this.takeRedirect();
+        } else {
+          this.endCommand();
+        }
+        return;
+      case "\n":
+        this.endToken();
+        this.takeHeredocBodies();
+        this.endCommand();
+        return;
+      default:
+        this.endCommand();
+    }
+  }
+  takeBrace(brace) {
+    if (this.braceStandsAsAReservedWord()) {
+      this.endCommand();
+      return;
+    }
+    this.token += brace;
+    this.tokenOpen = true;
+  }
+  braceStandsAsAReservedWord() {
+    if (this.tokenOpen || this.rest === "") return false;
+    if (this.leadingPrefixWords < lengthWithoutACoprocessName(this.commandTokens)) return false;
+    return WORD_DELIMITERS.includes(this.rest.slice(0, 1));
+  }
+  endToken() {
+    if (this.tokenOpen && this.redirectTargetPending) {
+      this.redirectTargetPending = false;
+    } else if (this.tokenOpen) {
+      this.pushCommandToken(this.token);
+      if (this.herestringPending) {
+        this.herestringPending = false;
+        this.deferNestedCommands(this.token);
+      }
+    }
+    this.token = "";
+    this.tokenOpen = false;
+  }
+  pushCommandToken(word) {
+    if (this.leadingPrefixWords === this.commandTokens.length && isCommandPrefixWord(word)) {
+      this.leadingPrefixWords += 1;
+    }
+    this.commandTokens.push(word);
+  }
+  endCommand() {
+    this.endToken();
+    this.stripCommandPrefixes();
+    this.deferPayloadCommands();
+    this.emitCommand();
+    this.commandTokens = [];
+    this.leadingPrefixWords = 0;
+    this.nested = [];
+    this.unreadStdin = "";
+    this.redirectTargetPending = false;
+  }
+  stripCommandPrefixes() {
+    const prefixWords = this.commandTokens.slice(0, this.leadingPrefixWords);
+    this.commandTokens = this.commandTokens.slice(this.leadingPrefixWords);
+    this.leadingPrefixWords = 0;
+    for (const prefixWord of prefixWords) if (namesAFileTheShellSources(prefixWord)) this.markUnread();
+    if (this.commandTokens.length === 0) return;
+    if (prefixWords.at(-1)?.startsWith("-")) this.markUnread();
+    if (prefixWords.some(completesItsWordsFromStdin)) this.unreadStdin += UNREAD_PAYLOAD_MARKER;
+  }
+  deferPayloadCommands() {
+    const leading = this.commandTokens[0];
+    if (leading === void 0) return;
+    if (isSourcingBuiltin(leading)) {
+      this.markUnread();
+      return;
+    }
+    const wrapper = basenameOf(leading);
+    if (wrapper === EVAL_WORD) {
+      this.deferNestedCommands(this.commandTokens.slice(1).join(" "));
+      return;
+    }
+    if (wrapper === REMOTE_SHELL_WORD) {
+      this.deferRemoteShellPayload();
+      return;
+    }
+    if (wrapper === TERMINAL_MULTIPLEXER_WORD) {
+      this.deferTmuxPayload();
+      return;
+    }
+    if (wrapper === TRAP_WORD) {
+      this.deferTrapAction();
+      return;
+    }
+    if (wrapper === ALIAS_WORD) {
+      if (this.commandTokens.slice(1).some(definesAnAlias)) this.markUnread();
+      return;
+    }
+    if (wrapper === HISTORY_REPLAYING_WORD) {
+      this.markUnread();
+      return;
+    }
+    if (readsACallbackFlag(leading)) {
+      this.deferOptionValueAsACommand(CALLBACK_FLAG);
+      return;
+    }
+    if (readsACommandFlag(leading)) this.deferInterpreterPayload();
+  }
+  deferTrapAction() {
+    let optionsEnded = false;
+    for (const argument of this.commandTokens.slice(1)) {
+      if (optionsEnded || !argument.startsWith("-")) {
+        this.deferNestedCommands(argument);
+        return;
+      }
+      if (TRAP_ARGUMENTS_LEAVING_NO_ACTION.has(argument)) return;
+      if (argument !== END_OF_OPTIONS) {
+        this.markUnread();
+        return;
+      }
+      optionsEnded = true;
+    }
+  }
+  deferRemoteShellPayload() {
+    const host = splitAtTheFirstOperand(this.commandTokens.slice(1));
+    if (host === void 0) return;
+    this.deferOperandPayload(host.rest, host.behindAnOption);
+  }
+  deferTmuxPayload() {
+    const subcommand = splitAtTheFirstOperand(this.commandTokens.slice(1));
+    if (subcommand === void 0) return;
+    if (!TMUX_SUBCOMMANDS_RUNNING_A_COMMAND.has(subcommand.operand)) {
+      if (subcommand.behindAnOption) this.markUnread();
+      return;
+    }
+    this.deferOperandPayload(subcommand.rest, false);
+  }
+  deferOperandPayload(words, selectorUnresolved) {
+    const payload = splitAtTheFirstOperand(words);
+    if (payload === void 0) return;
+    if (selectorUnresolved || payload.behindAnOption) this.markUnread();
+    this.deferNestedCommands([payload.operand, ...payload.rest].join(" "));
+  }
+  deferInterpreterPayload() {
+    this.deferOptionValueAsACommand(SHELL_COMMAND_FLAG);
+    if (this.nested.length === 0) this.markUnread();
+  }
+  deferOptionValueAsACommand(commandFlag) {
+    let commandFlagSeen = false;
+    let valuePosition = false;
+    for (const argument of this.commandTokens.slice(1)) {
+      if (argument.startsWith("--")) {
+        valuePosition = true;
+      } else if (argument === `-${commandFlag}`) {
+        commandFlagSeen = true;
+        valuePosition = false;
+      } else if (argument.startsWith("-") && argument.slice(1).includes(commandFlag)) {
+        commandFlagSeen = true;
+        valuePosition = true;
+      } else if (argument.startsWith("-")) {
+        valuePosition = true;
+      } else if (commandFlagSeen) {
+        if (valuePosition) this.markUnread();
+        this.deferNestedCommands(argument);
+        return;
+      }
+    }
+  }
+  deferNestedCommands(payload) {
+    if (payload === "") return;
+    if (this.depth >= MAX_PAYLOAD_DEPTH) {
+      this.markUnread();
+      return;
+    }
+    this.nested.push(...new _CommandLineLexer(payload, this.depth + 1).lex());
+  }
+  markUnread() {
+    this.nested.push(UNREAD_PAYLOAD);
+  }
+  emitCommand() {
+    this.commandTokens.forEach((word, index) => {
+      this.records.push(
+        index === 0 ? { kind: "commandWord", word: withSpacesForNewlines(word) } : { kind: "argument", word: withSpacesForNewlines(word) }
+      );
+    });
+    if (this.unreadStdin !== "") {
+      this.records.push({ kind: "stdinText", text: withSpacesForNewlines(this.unreadStdin) });
+    }
+    this.records.push(...this.nested);
+  }
+  takeEscape() {
+    if (this.rest.startsWith("\n")) {
+      this.rest = this.rest.slice(1);
+      return;
+    }
+    this.token += this.rest.slice(0, 1);
+    this.tokenOpen = true;
+    this.rest = this.rest.slice(1);
+  }
+  takeSingleQuoted() {
+    const span = this.spanBefore("'");
+    this.token += span;
+    this.rest = this.rest.slice(span.length + 1);
+  }
+  takeDoubleQuoted() {
+    while (this.rest !== "") {
+      const ordinary = leadingRunWithout(this.rest, QUOTED_SPECIAL_CHARACTERS);
+      if (ordinary !== "") {
+        this.token += ordinary;
+        this.rest = this.rest.slice(ordinary.length);
+        continue;
+      }
+      const character = this.rest.slice(0, 1);
+      this.rest = this.rest.slice(1);
+      if (character === '"') return;
+      if (character === "\\") {
+        this.token += this.rest.slice(0, 1);
+        this.rest = this.rest.slice(1);
+      } else if (character === "$") {
+        this.takeExpansion();
+      } else if (character === "`") {
+        this.takeBacktick();
+      }
+    }
+  }
+  takeDollar() {
+    if (this.rest.startsWith("'")) {
+      this.rest = this.rest.slice(1);
+      this.takeAnsiCQuoted();
+      return;
+    }
+    if (this.rest.startsWith('"')) {
+      this.rest = this.rest.slice(1);
+      this.takeLocaleTranslated();
+      return;
+    }
+    this.takeExpansion();
+  }
+  takeLocaleTranslated() {
+    this.markUnread();
+    this.takeDoubleQuoted();
+  }
+  takeAnsiCQuoted() {
+    const quoted2 = ansiCQuoted(this.rest);
+    this.token += quoted2.text;
+    this.rest = this.rest.slice(quoted2.length);
+  }
+  takeExpansion() {
+    if (this.rest.startsWith("(")) {
+      this.token += "$";
+      this.rest = this.rest.slice(1);
+      this.deferNestedCommands(this.takeSubstitutionBody());
+      return;
+    }
+    if (this.rest.startsWith("{")) {
+      const span = this.spanBefore("}");
+      this.token += `$${span}}`;
+      this.rest = this.rest.slice(span.length + 1);
+      return;
+    }
+    this.token += "$";
+  }
+  takeSubstitutionBody() {
+    let nesting = 1;
+    let body = "";
+    while (this.rest !== "") {
+      const ordinary = leadingRunWithout(this.rest, "()");
+      body += ordinary;
+      this.rest = this.rest.slice(ordinary.length);
+      const character = this.rest.slice(0, 1);
+      this.rest = this.rest.slice(1);
+      if (character === "(") {
+        nesting += 1;
+        body += "(";
+      } else if (character === ")") {
+        nesting -= 1;
+        if (nesting === 0) return body;
+        body += ")";
+      }
+    }
+    return body;
+  }
+  takeBacktick() {
+    const span = this.spanBefore("`");
+    this.token += "$";
+    this.rest = this.rest.slice(span.length + 1);
+    this.deferNestedCommands(span);
+  }
+  dropComment() {
+    this.rest = this.rest.slice(this.spanBefore("\n").length);
+  }
+  takeRedirect() {
+    this.redirectTargetPending = true;
+    while (this.rest !== "" && ">&|".includes(this.rest.slice(0, 1))) {
+      this.rest = this.rest.slice(1);
+    }
+  }
+  takeInputRedirect() {
+    if (this.rest.startsWith("<<")) {
+      this.rest = this.rest.slice(2);
+      this.endToken();
+      this.herestringPending = true;
+      return;
+    }
+    if (this.rest.startsWith("<")) {
+      this.rest = this.rest.slice(1);
+      const stripsTabs = this.rest.startsWith("-");
+      if (stripsTabs) this.rest = this.rest.slice(1);
+      this.pendingHeredocs.push({ delimiter: this.takeHeredocDelimiter(), stripsTabs });
+      return;
+    }
+    this.endToken();
+    this.takeRedirect();
+  }
+  takeHeredocDelimiter() {
+    let delimiter = "";
+    while (this.rest !== "") {
+      const leading = this.rest.slice(0, 1);
+      if (leading === " " || leading === "	") {
+        if (delimiter !== "") return delimiter;
+        this.rest = this.rest.slice(1);
+        continue;
+      }
+      const ordinary = leadingRunWithout(this.rest, SPECIAL_CHARACTERS);
+      if (ordinary !== "") {
+        delimiter += ordinary;
+        this.rest = this.rest.slice(ordinary.length);
+        continue;
+      }
+      if (leading !== "'" && leading !== '"' && leading !== "\\") return delimiter;
+      this.rest = this.rest.slice(1);
+    }
+    return delimiter;
+  }
+  takeHeredocBodies() {
+    if (this.pendingHeredocs.length === 0) return;
+    this.stripCommandPrefixes();
+    while (this.pendingHeredocs.length > 0) {
+      const heredoc = this.pendingHeredocs.shift();
+      const body = this.takeHeredocBody(heredoc);
+      if (isShellInterpreter(this.commandTokens[0] ?? "")) this.deferNestedCommands(body);
+      else this.unreadStdin += body;
+    }
+  }
+  takeHeredocBody(heredoc) {
+    if (heredoc.stripsTabs) return this.takeBodyByLines(heredoc);
+    return this.takeBodyToTerminator(heredoc.delimiter) ?? this.takeBodyByLines(heredoc);
+  }
+  takeBodyToTerminator(delimiter) {
+    const at = this.rest.indexOf(`
+${delimiter}
+`);
+    if (at === -1) return void 0;
+    const body = this.rest.slice(0, at);
+    this.rest = this.rest.slice(body.length + delimiter.length + 2);
+    return body;
+  }
+  takeBodyByLines(heredoc) {
+    let body = "";
+    while (this.rest !== "") {
+      const line = this.spanBefore("\n");
+      this.rest = this.rest.slice(line.length + 1);
+      const probe = heredoc.stripsTabs ? line.replace(/^\t+/, "") : line;
+      if (probe === heredoc.delimiter) return body;
+      body += `${line}
+`;
+    }
+    return body;
+  }
+  spanBefore(stopper) {
+    const at = this.rest.indexOf(stopper);
+    return at === -1 ? this.rest : this.rest.slice(0, at);
+  }
+};
 
 // core/src/shell/lexed-command.ts
 var GIT_VERB_UNRESOLVED = "?";

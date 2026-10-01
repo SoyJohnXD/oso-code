@@ -1,6 +1,5 @@
 import type { HostName } from "../routes/routes.ts";
 import type { LoggedEvent } from "../state/store.ts";
-import { MAX_LEXED_INPUT_BYTES } from "../shell/lexer.ts";
 import { backgroundTasksIn, NO_BACKGROUND_TASKS, type BackgroundTasks } from "./background-tasks.ts";
 
 export type HookCaller = Readonly<{ host: HostName; agentSession: string; stateBin: string }>;
@@ -113,7 +112,7 @@ export function readEnvelope(hookText: string, caller: HookCaller): HookEnvelope
     toolName: jsonField(payload, "tool_name"),
     filePath: jsonField(payload, "file_path"),
     patchText: jsonField(payload, "patchText"),
-    commandLine: jsonCommandLine(payload),
+    commandLine: jsonField(payload, "command"),
     source: jsonField(payload, "source"),
     agentId: jsonField(payload, "agent_id"),
     agentType: jsonField(payload, "agent_type"),
@@ -127,12 +126,6 @@ export function readEnvelope(hookText: string, caller: HookCaller): HookEnvelope
     stopHookActive: STOP_HOOK_ACTIVE.test(payload),
     backgroundTasks: parsed.kind === "json" ? backgroundTasksIn(parsed.document) : NO_BACKGROUND_TASKS,
   };
-}
-
-function jsonCommandLine(payload: string): string {
-  const escaped = escapedField(payload, "command");
-  if ([...escaped].length > MAX_LEXED_INPUT_BYTES) return asCommandSubstitutionCaptures(escaped);
-  return jsonField(payload, "command");
 }
 
 export function jsonField(hookText: string, field: string): string {

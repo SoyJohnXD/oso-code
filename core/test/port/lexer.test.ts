@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { lexShellCommands, UNREAD_PAYLOAD_MARKER, type LexRecord } from "../../src/shell/lexer.ts";
+import {
+  lexShellCommands,
+  MAX_LEXED_INPUT_BYTES,
+  UNREAD_PAYLOAD_MARKER,
+  type LexRecord,
+} from "../../src/shell/lexer.ts";
 import { provedSomething } from "../support/proved.ts";
 
 type LexerCase = {
@@ -10,7 +15,13 @@ type LexerCase = {
   readonly records: readonly string[];
 };
 
-const OVER_THE_INPUT_BOUND = `echo ${"a".repeat(3072)}`;
+const READABLE_COMMAND_BYTES = MAX_LEXED_INPUT_BYTES - "\n".length;
+const AT_THE_INPUT_BOUND = `echo ${"a".repeat(READABLE_COMMAND_BYTES - "echo ".length)}`;
+const TWO_BYTE_CHARACTER = "é";
+const MULTIBYTE_AT_THE_INPUT_BOUND = `echo ${TWO_BYTE_CHARACTER.repeat(
+  (READABLE_COMMAND_BYTES - "echo ".length) / Buffer.byteLength(TWO_BYTE_CHARACTER),
+)}`;
+const BOUND_CITATION = "plugin/hooks/lexer.sh:27-30, at ADR 0158's bound";
 
 const LEXER_CASES: readonly LexerCase[] = [
   {
@@ -154,16 +165,28 @@ const LEXER_CASES: readonly LexerCase[] = [
     ],
   },
   {
-    reads: "a line past the input-bytes bound as one payload it never opened",
-    readFrom: "plugin/hooks/lexer.sh:19,27-30",
-    line: OVER_THE_INPUT_BOUND,
+    reads: "a line one byte past the input-bytes bound as one payload it never opened",
+    readFrom: BOUND_CITATION,
+    line: `${AT_THE_INPUT_BOUND}a`,
     records: [UNREAD_PAYLOAD_MARKER],
   },
   {
-    reads: "the same line one byte under that bound as the command it spells",
-    readFrom: "plugin/hooks/lexer.sh:19,27-30",
-    line: OVER_THE_INPUT_BOUND.slice(0, 3071),
-    records: [">echo", `.${"a".repeat(3066)}`],
+    reads: "a line whose bytes and sentinel newline fill the input-bytes bound as the command it spells",
+    readFrom: BOUND_CITATION,
+    line: AT_THE_INPUT_BOUND,
+    records: [">echo", `.${AT_THE_INPUT_BOUND.slice("echo ".length)}`],
+  },
+  {
+    reads: "a multibyte line one byte past the bound as unread, though its characters number half of it",
+    readFrom: BOUND_CITATION,
+    line: `${MULTIBYTE_AT_THE_INPUT_BOUND}a`,
+    records: [UNREAD_PAYLOAD_MARKER],
+  },
+  {
+    reads: "a multibyte line filling the bound to its last byte as the command it spells",
+    readFrom: BOUND_CITATION,
+    line: MULTIBYTE_AT_THE_INPUT_BOUND,
+    records: [">echo", `.${MULTIBYTE_AT_THE_INPUT_BOUND.slice("echo ".length)}`],
   },
 ];
 

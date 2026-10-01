@@ -4,7 +4,7 @@ export type LexRecord =
   | { readonly kind: "stdinText"; readonly text: string }
   | { readonly kind: "unreadPayload" };
 
-export const MAX_LEXED_INPUT_BYTES = 3072;
+export const MAX_LEXED_INPUT_BYTES = 32768;
 export const UNREAD_PAYLOAD_MARKER = "!unread-payload";
 
 const MAX_PAYLOAD_DEPTH = 3;
@@ -77,10 +77,10 @@ function namesAFileTheShellSources(assignment: string): boolean {
   return ASSIGNMENT_NAMING_A_FILE_THE_SHELL_SOURCES.test(assignment);
 }
 
-function withoutACoprocessName(words: readonly string[]): readonly string[] {
+function lengthWithoutACoprocessName(words: readonly string[]): number {
   const trailing = words.at(-1);
-  if (trailing === undefined || words.at(-2) !== COPROCESS_WORD) return words;
-  return COPROCESS_NAME.test(trailing) ? words.slice(0, -1) : words;
+  if (trailing === undefined || words.at(-2) !== COPROCESS_WORD) return words.length;
+  return COPROCESS_NAME.test(trailing) ? words.length - 1 : words.length;
 }
 
 function isCommandPrefixWord(word: string): boolean {
@@ -214,6 +214,7 @@ class CommandLineLexer {
   private nested: LexRecord[] = [];
   private unreadStdin = "";
   private commandTokens: string[] = [];
+  private leadingPrefixWords = 0;
   private readonly records: LexRecord[] = [];
 
   constructor(commandLine: string, depth: number) {
@@ -312,7 +313,7 @@ class CommandLineLexer {
 
   private braceStandsAsAReservedWord(): boolean {
     if (this.tokenOpen || this.rest === "") return false;
-    if (!withoutACoprocessName(this.commandTokens).every(isCommandPrefixWord)) return false;
+    if (this.leadingPrefixWords < lengthWithoutACoprocessName(this.commandTokens)) return false;
     return WORD_DELIMITERS.includes(this.rest.slice(0, 1));
   }
 
@@ -320,7 +321,7 @@ class CommandLineLexer {
     if (this.tokenOpen && this.redirectTargetPending) {
       this.redirectTargetPending = false;
     } else if (this.tokenOpen) {
-      this.commandTokens.push(this.token);
+      this.pushCommandToken(this.token);
       if (this.herestringPending) {
         this.herestringPending = false;
         this.deferNestedCommands(this.token);
@@ -330,32 +331,33 @@ class CommandLineLexer {
     this.tokenOpen = false;
   }
 
+  private pushCommandToken(word: string): void {
+    if (this.leadingPrefixWords === this.commandTokens.length && isCommandPrefixWord(word)) {
+      this.leadingPrefixWords += 1;
+    }
+    this.commandTokens.push(word);
+  }
+
   private endCommand(): void {
     this.endToken();
     this.stripCommandPrefixes();
     this.deferPayloadCommands();
     this.emitCommand();
     this.commandTokens = [];
+    this.leadingPrefixWords = 0;
     this.nested = [];
     this.unreadStdin = "";
     this.redirectTargetPending = false;
   }
 
   private stripCommandPrefixes(): void {
-    let prefixWord = "";
-    let stdinCompletesTheWords = false;
-    while (this.commandTokens.length > 0) {
-      const leading = this.commandTokens[0] as string;
-      if (!isCommandPrefixWord(leading)) {
-        if (prefixWord.startsWith("-")) this.markUnread();
-        if (stdinCompletesTheWords) this.unreadStdin += UNREAD_PAYLOAD_MARKER;
-        return;
-      }
-      prefixWord = leading;
-      if (completesItsWordsFromStdin(prefixWord)) stdinCompletesTheWords = true;
-      if (namesAFileTheShellSources(prefixWord)) this.markUnread();
-      this.commandTokens = this.commandTokens.slice(1);
-    }
+    const prefixWords = this.commandTokens.slice(0, this.leadingPrefixWords);
+    this.commandTokens = this.commandTokens.slice(this.leadingPrefixWords);
+    this.leadingPrefixWords = 0;
+    for (const prefixWord of prefixWords) if (namesAFileTheShellSources(prefixWord)) this.markUnread();
+    if (this.commandTokens.length === 0) return;
+    if (prefixWords.at(-1)?.startsWith("-")) this.markUnread();
+    if (prefixWords.some(completesItsWordsFromStdin)) this.unreadStdin += UNREAD_PAYLOAD_MARKER;
   }
 
   private deferPayloadCommands(): void {

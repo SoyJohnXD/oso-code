@@ -1,3 +1,7 @@
+// core/src/hosts/envelope.ts
+var JSON_SPACE = "[\\t\\n\\v\\f\\r ]";
+var STOP_HOOK_ACTIVE = new RegExp(`"stop_hook_active"${JSON_SPACE}*:${JSON_SPACE}*true`);
+
 // core/src/shell/lexer.ts
 var COPROCESS_WORD = "coproc";
 var PREFIX_WORDS = /* @__PURE__ */ new Set([
@@ -61,10 +65,6 @@ var SHELL_WORDS_THIS_LEXER_READS = /* @__PURE__ */ new Set([
   "{",
   "}"
 ]);
-
-// core/src/hosts/envelope.ts
-var JSON_SPACE = "[\\t\\n\\v\\f\\r ]";
-var STOP_HOOK_ACTIVE = new RegExp(`"stop_hook_active"${JSON_SPACE}*:${JSON_SPACE}*true`);
 
 // core/src/routes/routes.ts
 var BUNDLE_DIRECTORY = "dist";
