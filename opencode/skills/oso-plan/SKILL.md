@@ -113,7 +113,7 @@ Rules:
 - Record every decision, its rationale, and the alternatives rejected, in the ledger; a decision the operator delegates ("you pick") is recorded as delegated.
 - Before freeze, every ledger entry cites the in-scope item or Visible-outcome element it serves; an entry serving only a future need is a YAGNI candidate for the operator to cut or keep.
 - Freeze is a reconciliation gate. Before accepting "frozen", render the battery as a checklist — every question mapped to a decision, a delegated mark, or a reasoned N/A. State any still-open item as an explicit assumption ("If you freeze now, I will assume X → I'd pick Y because Z"); the operator answers it or freezes over it, recorded as delegated.
-- **Doubt pass** — offered and recommended when a derived category came from a migrations, security, or rollback surface; on decline, record `Doubt pass: N/A — no migration, security, or rollback surface` in §5. On acceptance, invoke the doubt-pass judge with ONLY the intent, surface map, and bare decisions — never the rationale. `Doubt Pass: clean` lets freeze proceed; `Doubt Pass: findings` go to the operator like §6 blocked questions, less those the recorded rationale already answers; `Doubt Pass: blocked` — resolve what it names missing and invoke it again fresh. Re-run only after major ledger changes, hard cap 3 cycles; 2+ cycles with zero findings is doubt theater — name it and stop.
+- **Doubt pass** — offered and recommended when a derived category came from a migrations, security, or rollback surface; on decline, record `Doubt pass: N/A — no migration, security, or rollback surface` in §5. On acceptance, invoke the doubt-pass judge with ONLY the intent, surface map, and bare decisions — never the rationale. `Doubt Pass: clean` lets freeze proceed; `Doubt Pass: findings` reach the operator as text, less those the recorded rationale already answers; only a decision they leave goes to a question round; `Doubt Pass: blocked` — resolve what it names missing and invoke it again fresh. Re-run only after major ledger changes, hard cap 3 cycles; 2+ cycles with zero findings is doubt theater — name it and stop.
 
 On freeze, save the ledger once: `mem_save(title: "oso/{change}/ledger — {human description}", topic_key: "oso/{change}/ledger", type: "architecture", capture_prompt: false, content: intent + surface map + scope + every ledger entry)`.
 
@@ -173,7 +173,7 @@ Each slice is written by the threshold defined at `_shared/reporting.md`; PARALL
 
 The ledger's execution mode (§4) picks the path: SEQUENTIAL runs steps 1–4 per slice in the main checkout; PARALLEL runs them per slice in its own worktree, under the wave loop at `_shared/parallel.md`.
 
-**Coordinates, each launch below naming one by name.** CHANGE BASE is §3's base ref — fixed for the whole change, what §7's two judges diff against. SLICE START is what the ACTIVE slice's novelty is judged against: `HEAD` under SEQUENTIAL, the wave's WAVE START under PARALLEL.
+**Coordinates, each launch below naming one by name.** CHANGE BASE is §3's base ref, fixed for the whole change. SLICE START is what the ACTIVE slice's novelty is judged against: `HEAD` under SEQUENTIAL, the wave's WAVE START under PARALLEL.
 
 Every launch below is a delegation you READ before you move — never verify unreported work, never write `verify_green=true` over an unread verdict.
 

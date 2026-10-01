@@ -2,13 +2,13 @@
 
 ## The delivery contract — anti-swallow
 
-The Claude Code TUI drops assistant text that precedes a tool call in the same turn. Operator-facing content — the queue as it is planned, the approval document, the presence phase — must END the turn as plain text, with the tool call in a LATER turn. Context a question round needs travels INSIDE the `AskUserQuestion` fields, never as prose before the call.
+The Claude Code TUI drops assistant text that precedes a tool call in the same turn. Operator-facing content — the queue as it is planned, the approval document, the presence phase, and the context behind a decision: intent, surface map, findings, reconciliations, recommendations — ENDS the turn as plain chat text, where the operator replies; the tool call comes in a LATER turn.
 
 One exception stands, and `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **The unattended run** section states it whole: §5's three stopping moments still end the turn regardless.
 
 ## Question rounds
 
-The tool is `AskUserQuestion`, and one round holds 4 questions maximum — its platform cap. §1 plans the queue with the operator at that same number.
+The tool is `AskUserQuestion`, and one round holds 4 questions maximum — its platform cap. §1 plans the queue with the operator at that same number. A question carries only a genuine enumerable decision, each option one or two lines, never its context.
 
 ## The approval gate
 
