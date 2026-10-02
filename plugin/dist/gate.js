@@ -1583,9 +1583,13 @@ function tallyFileFor(journalFile) {
 
 // core/src/shell/lexed-word.ts
 var UNREAD_PAYLOAD_MARKER = "!unread-payload";
+var BACKSLASH_OR_DOLLAR = /[\\$]/;
 function basenameOf(word) {
   const lastSlash = word.lastIndexOf("/");
   return lastSlash === -1 ? word : word.slice(lastSlash + 1);
+}
+function holdsABackslashOrADollar(text) {
+  return BACKSLASH_OR_DOLLAR.test(text);
 }
 
 // core/src/shell/lexed-command.ts
@@ -1863,7 +1867,7 @@ var KEYED_PREFIX_READERS = /* @__PURE__ */ new Map([
   ["flock", readFlockOptions],
   ["taskset", (words, from) => readThroughOperand(TASKSET_SHAPE, words, from)]
 ]);
-function prefixCutOf(words) {
+function prefixCutOf(words, spelledWithABackslashOrADollar) {
   let at = 0;
   let endsOnAnUnresolvedOption = false;
   let prefixReadByFallback;
@@ -1874,9 +1878,10 @@ function prefixCutOf(words) {
   while (at < words.length) {
     const word = words[at];
     if (replaceString !== void 0 && word.includes(replaceString)) break;
-    const reading = keyedPrefixReading(word, words, at + 1);
-    if (reading.kind === "standsAsTheCommand") {
+    const reading = keyedPrefixReading(word, words, at + 1, spelledWithABackslashOrADollar);
+    if (reading.kind === "standsAsTheCommand" || reading.kind === "splitStringInEnvsOwnGrammar") {
       payload = reading.payload;
+      if (reading.kind === "splitStringInEnvsOwnGrammar") aPrefixLeftItUnread = true;
       break;
     }
     if (reading.kind === "read") {
@@ -1906,10 +1911,10 @@ function mayBeEnvsSplitString(word) {
 function readingLeavesItUnread(reading) {
   return reading.kind === "operandOutsideItsGrammar" || reading.kind === "replaceStringItDoesNotKnow";
 }
-function keyedPrefixReading(word, words, from) {
+function keyedPrefixReading(word, words, from, spelledWithABackslashOrADollar) {
   if (isAssignment(word)) return A_SHAPE_IT_DOES_NOT_KNOW;
   const reader = KEYED_PREFIX_READERS.get(basenameOf(word));
-  return reader === void 0 ? A_SHAPE_IT_DOES_NOT_KNOW : reader(words, from);
+  return reader === void 0 ? A_SHAPE_IT_DOES_NOT_KNOW : reader(words, from, spelledWithABackslashOrADollar);
 }
 function readCommandOptions(words, from) {
   const read = optionsRead(COMMAND_OPTIONS, words, from);
@@ -1934,12 +1939,17 @@ function replaceStringOf(options) {
   const defaulted = replacing.option === XARGS_DEFAULTED_REPLACE_OPTION && replacing.value === "";
   return defaulted ? XARGS_DEFAULT_REPLACE_STRING : replacing.value;
 }
-function readEnvOptions(words, from) {
+function readEnvOptions(words, from, spelledWithABackslashOrADollar) {
   const read = optionsRead(ENV_OPTIONS, words, from);
   if (read === void 0) return A_SHAPE_IT_DOES_NOT_KNOW;
-  const splitString = read.options.find(({ option }) => ENV_SPLIT_STRING_OPTIONS.includes(option));
+  const splitStrings = read.options.filter(({ option }) => ENV_SPLIT_STRING_OPTIONS.includes(option));
+  const splitString = splitStrings[0];
   if (splitString === void 0) return { kind: "read", next: read.next, replaceString: void 0 };
+  const inEnvsOwnGrammar = splitStrings.some(
+    ({ value, valueAt }) => holdsABackslashOrADollar(value) || (spelledWithABackslashOrADollar[valueAt] ?? false)
+  );
   const payload = [splitString.value, ...words.slice(read.next).map(asOneShellWord)].join(" ");
+  if (inEnvsOwnGrammar) return { kind: "splitStringInEnvsOwnGrammar", payload };
   return { kind: "standsAsTheCommand", payload };
 }
 function asOneShellWord(word) {
@@ -1982,15 +1992,16 @@ function optionsSpelledAt(table, words, at, spelling) {
   const { name, attached } = spelledOption(spelling);
   if (table.standingAlone.includes(name)) return flagsSpelledAt(table, words, at, { name, attached });
   if (table.takingAnAttachedValueOnly.includes(name)) {
-    return { next: at + 1, options: [{ option: name, value: attached ?? "" }] };
+    return { next: at + 1, options: [{ option: name, value: attached ?? "", valueAt: at }] };
   }
   if (!table.takingAValue.includes(name)) return void 0;
-  if (attached !== void 0) return { next: at + 1, options: [{ option: name, value: attached }] };
+  if (attached !== void 0) return { next: at + 1, options: [{ option: name, value: attached, valueAt: at }] };
   const separate = words[at + 1];
-  return separate === void 0 ? void 0 : { next: at + 2, options: [{ option: name, value: separate }] };
+  if (separate === void 0) return void 0;
+  return { next: at + 2, options: [{ option: name, value: separate, valueAt: at + 1 }] };
 }
 function flagsSpelledAt(table, words, at, { name, attached }) {
-  const flag = { option: name, value: "" };
+  const flag = { option: name, value: "", valueAt: at };
   if (attached === void 0) return { next: at + 1, options: [flag] };
   if (!table.splitsFlagBundles || name.startsWith("--")) return void 0;
   const bundled = optionsSpelledAt(table, words, at, `-${attached}`);
@@ -2064,7 +2075,7 @@ var SHELL_WORDS_THIS_LEXER_READS = /* @__PURE__ */ new Set([
   "}"
 ]);
 function lexShellCommands(commandLine) {
-  return new CommandLineLexer(commandLine, 0).lex();
+  return new CommandLineLexer(commandLine, 0, false).lex();
 }
 function isShellInterpreter(word) {
   return SHELL_INTERPRETERS.has(basenameOf(word));
@@ -2313,23 +2324,27 @@ function splitAtTheFirstOperand(words) {
 var CommandLineLexer = class _CommandLineLexer {
   rest;
   depth;
+  wordsInheritABackslashOrADollar;
   token = "";
   tokenOpen = false;
   tokenHoldsAQuote = false;
+  tokenSpelledWithABackslashOrADollar = false;
   redirectTargetPending = false;
   herestringPending = false;
   pendingHeredocs = [];
   nested = [];
   unreadStdin = "";
   commandTokens = [];
+  commandTokensSpelledWithABackslashOrADollar = [];
   assignments = [];
   leadingPrefixWords = 0;
   replaceString;
   records = [];
-  constructor(commandLine, depth) {
+  constructor(commandLine, depth, wordsInheritABackslashOrADollar) {
     this.rest = `${commandLine}
 `;
     this.depth = depth;
+    this.wordsInheritABackslashOrADollar = wordsInheritABackslashOrADollar;
   }
   lex() {
     if (Buffer.byteLength(this.rest, "utf8") > MAX_LEXED_INPUT_BYTES) return [UNREAD_PAYLOAD];
@@ -2352,6 +2367,7 @@ var CommandLineLexer = class _CommandLineLexer {
     this.takeSpecial(character);
   }
   takeSpecial(character) {
+    this.noteTheSpelling(character);
     switch (character) {
       case "'":
         this.tokenOpen = true;
@@ -2412,6 +2428,9 @@ var CommandLineLexer = class _CommandLineLexer {
         this.endCommand();
     }
   }
+  noteTheSpelling(source) {
+    if (holdsABackslashOrADollar(source)) this.tokenSpelledWithABackslashOrADollar = true;
+  }
   takeBrace(brace) {
     if (this.braceStandsAsAReservedWord()) {
       this.endCommand();
@@ -2429,26 +2448,30 @@ var CommandLineLexer = class _CommandLineLexer {
     if (this.tokenOpen && this.redirectTargetPending) {
       this.redirectTargetPending = false;
     } else if (this.tokenOpen) {
-      this.pushCommandToken(this.token);
+      this.pushCommandToken(this.token, this.tokenSpelledWithABackslashOrADollar);
       if (this.herestringPending) {
         this.herestringPending = false;
-        this.deferNestedCommands(this.token);
+        this.deferCommandPayload(this.token);
       }
     }
     this.token = "";
     this.tokenOpen = false;
     this.tokenHoldsAQuote = false;
+    this.tokenSpelledWithABackslashOrADollar = false;
   }
   dropTheRedirectedDescriptor() {
     if (this.redirectTargetPending || this.tokenHoldsAQuote || !namesADescriptor(this.token)) return;
     this.token = "";
     this.tokenOpen = false;
   }
-  pushCommandToken(word) {
+  pushCommandToken(word, spelledWithABackslashOrADollar) {
     if (this.leadingPrefixWords === this.commandTokens.length && isCommandPrefixWord(word)) {
       this.leadingPrefixWords += 1;
     }
     this.commandTokens.push(word);
+    this.commandTokensSpelledWithABackslashOrADollar.push(
+      spelledWithABackslashOrADollar || this.wordsInheritABackslashOrADollar
+    );
   }
   endCommand() {
     this.endToken();
@@ -2457,6 +2480,7 @@ var CommandLineLexer = class _CommandLineLexer {
     this.markAReplaceStringRunAsCode();
     this.emitCommand();
     this.commandTokens = [];
+    this.commandTokensSpelledWithABackslashOrADollar = [];
     this.assignments = [];
     this.leadingPrefixWords = 0;
     this.replaceString = void 0;
@@ -2467,9 +2491,10 @@ var CommandLineLexer = class _CommandLineLexer {
   stripCommandPrefixes() {
     if (this.leadingPrefixWords === 0) return;
     this.leadingPrefixWords = 0;
-    const cut = prefixCutOf(this.commandTokens);
+    const cut = prefixCutOf(this.commandTokens, this.commandTokensSpelledWithABackslashOrADollar);
     const prefixWords = this.commandTokens.slice(0, cut.length);
     this.commandTokens = this.commandTokens.slice(cut.length);
+    this.commandTokensSpelledWithABackslashOrADollar = this.commandTokensSpelledWithABackslashOrADollar.slice(cut.length);
     this.replaceString = cut.replaceString;
     this.assignments.push(...prefixWords.filter(isAssignment));
     for (const prefixWord of prefixWords) if (namesAFileTheShellSources(prefixWord)) this.markUnread();
@@ -2478,7 +2503,7 @@ var CommandLineLexer = class _CommandLineLexer {
       return;
     }
     if (cut.leavesTheCommandUnread) this.markUnread();
-    this.deferNestedCommands(cut.payload);
+    this.deferCommandPayload(cut.payload);
     if (prefixWords.some(completesItsWordsFromStdin)) this.unreadStdin += UNREAD_PAYLOAD_MARKER;
   }
   markAReplaceStringRunAsCode() {
@@ -2497,7 +2522,7 @@ var CommandLineLexer = class _CommandLineLexer {
     }
     const wrapper = basenameOf(leading);
     if (wrapper === EVAL_WORD) {
-      this.deferNestedCommands(this.commandTokens.slice(1).join(" "));
+      this.deferCommandPayload(this.commandTokens.slice(1).join(" "));
       return;
     }
     if (wrapper === REMOTE_SHELL_WORD) {
@@ -2534,7 +2559,7 @@ var CommandLineLexer = class _CommandLineLexer {
     let optionsEnded = false;
     for (const argument of this.commandTokens.slice(1)) {
       if (optionsEnded || !argument.startsWith("-")) {
-        this.deferNestedCommands(argument);
+        this.deferCommandPayload(argument);
         return;
       }
       if (TRAP_ARGUMENTS_LEAVING_NO_ACTION.has(argument)) return;
@@ -2563,7 +2588,7 @@ var CommandLineLexer = class _CommandLineLexer {
     const payload = splitAtTheFirstOperand(words);
     if (payload === void 0) return;
     if (selectorUnresolved || payload.behindAnOption) this.markUnread();
-    this.deferNestedCommands([payload.operand, ...payload.rest].join(" "));
+    this.deferCommandPayload([payload.operand, ...payload.rest].join(" "));
   }
   deferInterpreterPayload() {
     this.deferOptionValueAsACommand(SHELL_COMMAND_FLAG);
@@ -2585,7 +2610,7 @@ var CommandLineLexer = class _CommandLineLexer {
         valuePosition = true;
       } else if (commandFlagSeen) {
         if (valuePosition) this.markUnread();
-        this.deferNestedCommands(argument);
+        this.deferCommandPayload(argument);
         return;
       }
     }
@@ -2593,15 +2618,21 @@ var CommandLineLexer = class _CommandLineLexer {
   deferRunnerCall() {
     const call = runnerCallOf(this.commandTokens);
     if (call.kind === "pastReading") this.markUnread();
-    else this.deferNestedCommands(call.payload);
+    else this.deferCommandPayload(call.payload);
   }
-  deferNestedCommands(payload) {
+  deferCommandPayload(payload) {
+    this.lexNestedCommands(payload, this.commandTokensSpelledWithABackslashOrADollar.includes(true));
+  }
+  deferNestedCommands(sourceText) {
+    this.lexNestedCommands(sourceText, this.wordsInheritABackslashOrADollar);
+  }
+  lexNestedCommands(payload, wordsInheritABackslashOrADollar) {
     if (payload === "") return;
     if (this.depth >= MAX_PAYLOAD_DEPTH) {
       this.markUnread();
       return;
     }
-    this.nested.push(...new _CommandLineLexer(payload, this.depth + 1).lex());
+    this.nested.push(...new _CommandLineLexer(payload, this.depth + 1, wordsInheritABackslashOrADollar).lex());
   }
   markUnread() {
     this.nested.push(UNREAD_PAYLOAD);
@@ -2628,6 +2659,7 @@ var CommandLineLexer = class _CommandLineLexer {
   }
   takeSingleQuoted() {
     const span = this.spanBefore("'");
+    this.noteTheSpelling(span);
     this.token += span;
     this.rest = this.rest.slice(span.length + 1);
   }
@@ -2641,6 +2673,7 @@ var CommandLineLexer = class _CommandLineLexer {
       }
       const character = this.rest.slice(0, 1);
       this.rest = this.rest.slice(1);
+      this.noteTheSpelling(character);
       if (character === '"') return;
       if (character === "\\") {
         this.token += this.rest.slice(0, 1);
@@ -2719,6 +2752,7 @@ var CommandLineLexer = class _CommandLineLexer {
   }
   takeBacktick() {
     const span = this.spanBefore("`");
+    this.noteTheSpelling(span);
     this.token += "$";
     this.rest = this.rest.slice(span.length + 1);
     this.deferNestedCommands(span);

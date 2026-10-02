@@ -1,5 +1,5 @@
 import { runsAReplaceStringAsCode } from "./lexed-command.ts";
-import { basenameOf, UNREAD_PAYLOAD_MARKER } from "./lexed-word.ts";
+import { basenameOf, holdsABackslashOrADollar, UNREAD_PAYLOAD_MARKER } from "./lexed-word.ts";
 import {
   COPROCESS_WORD,
   isAssignment,
@@ -59,7 +59,7 @@ export const SHELL_WORDS_THIS_LEXER_READS: ReadonlySet<string> = new Set([
 ]);
 
 export function lexShellCommands(commandLine: string): readonly LexRecord[] {
-  return new CommandLineLexer(commandLine, 0).lex();
+  return new CommandLineLexer(commandLine, 0, false).lex();
 }
 
 function isShellInterpreter(word: string): boolean {
@@ -351,23 +351,27 @@ type PendingHeredoc = { readonly delimiter: string; readonly stripsTabs: boolean
 class CommandLineLexer {
   private rest: string;
   private readonly depth: number;
+  private readonly wordsInheritABackslashOrADollar: boolean;
   private token = "";
   private tokenOpen = false;
   private tokenHoldsAQuote = false;
+  private tokenSpelledWithABackslashOrADollar = false;
   private redirectTargetPending = false;
   private herestringPending = false;
   private pendingHeredocs: PendingHeredoc[] = [];
   private nested: LexRecord[] = [];
   private unreadStdin = "";
   private commandTokens: string[] = [];
+  private commandTokensSpelledWithABackslashOrADollar: boolean[] = [];
   private assignments: string[] = [];
   private leadingPrefixWords = 0;
   private replaceString: string | undefined;
   private readonly records: LexRecord[] = [];
 
-  constructor(commandLine: string, depth: number) {
+  constructor(commandLine: string, depth: number, wordsInheritABackslashOrADollar: boolean) {
     this.rest = `${commandLine}\n`;
     this.depth = depth;
+    this.wordsInheritABackslashOrADollar = wordsInheritABackslashOrADollar;
   }
 
   lex(): readonly LexRecord[] {
@@ -393,6 +397,7 @@ class CommandLineLexer {
   }
 
   private takeSpecial(character: string): void {
+    this.noteTheSpelling(character);
     switch (character) {
       case "'":
         this.tokenOpen = true;
@@ -454,6 +459,10 @@ class CommandLineLexer {
     }
   }
 
+  private noteTheSpelling(source: string): void {
+    if (holdsABackslashOrADollar(source)) this.tokenSpelledWithABackslashOrADollar = true;
+  }
+
   private takeBrace(brace: string): void {
     if (this.braceStandsAsAReservedWord()) {
       this.endCommand();
@@ -473,15 +482,16 @@ class CommandLineLexer {
     if (this.tokenOpen && this.redirectTargetPending) {
       this.redirectTargetPending = false;
     } else if (this.tokenOpen) {
-      this.pushCommandToken(this.token);
+      this.pushCommandToken(this.token, this.tokenSpelledWithABackslashOrADollar);
       if (this.herestringPending) {
         this.herestringPending = false;
-        this.deferNestedCommands(this.token);
+        this.deferCommandPayload(this.token);
       }
     }
     this.token = "";
     this.tokenOpen = false;
     this.tokenHoldsAQuote = false;
+    this.tokenSpelledWithABackslashOrADollar = false;
   }
 
   private dropTheRedirectedDescriptor(): void {
@@ -490,11 +500,14 @@ class CommandLineLexer {
     this.tokenOpen = false;
   }
 
-  private pushCommandToken(word: string): void {
+  private pushCommandToken(word: string, spelledWithABackslashOrADollar: boolean): void {
     if (this.leadingPrefixWords === this.commandTokens.length && isCommandPrefixWord(word)) {
       this.leadingPrefixWords += 1;
     }
     this.commandTokens.push(word);
+    this.commandTokensSpelledWithABackslashOrADollar.push(
+      spelledWithABackslashOrADollar || this.wordsInheritABackslashOrADollar,
+    );
   }
 
   private endCommand(): void {
@@ -504,6 +517,7 @@ class CommandLineLexer {
     this.markAReplaceStringRunAsCode();
     this.emitCommand();
     this.commandTokens = [];
+    this.commandTokensSpelledWithABackslashOrADollar = [];
     this.assignments = [];
     this.leadingPrefixWords = 0;
     this.replaceString = undefined;
@@ -515,9 +529,11 @@ class CommandLineLexer {
   private stripCommandPrefixes(): void {
     if (this.leadingPrefixWords === 0) return;
     this.leadingPrefixWords = 0;
-    const cut = prefixCutOf(this.commandTokens);
+    const cut = prefixCutOf(this.commandTokens, this.commandTokensSpelledWithABackslashOrADollar);
     const prefixWords = this.commandTokens.slice(0, cut.length);
     this.commandTokens = this.commandTokens.slice(cut.length);
+    this.commandTokensSpelledWithABackslashOrADollar =
+      this.commandTokensSpelledWithABackslashOrADollar.slice(cut.length);
     this.replaceString = cut.replaceString;
     this.assignments.push(...prefixWords.filter(isAssignment));
     for (const prefixWord of prefixWords) if (namesAFileTheShellSources(prefixWord)) this.markUnread();
@@ -526,7 +542,7 @@ class CommandLineLexer {
       return;
     }
     if (cut.leavesTheCommandUnread) this.markUnread();
-    this.deferNestedCommands(cut.payload);
+    this.deferCommandPayload(cut.payload);
     if (prefixWords.some(completesItsWordsFromStdin)) this.unreadStdin += UNREAD_PAYLOAD_MARKER;
   }
 
@@ -547,7 +563,7 @@ class CommandLineLexer {
     }
     const wrapper = basenameOf(leading);
     if (wrapper === EVAL_WORD) {
-      this.deferNestedCommands(this.commandTokens.slice(1).join(" "));
+      this.deferCommandPayload(this.commandTokens.slice(1).join(" "));
       return;
     }
     if (wrapper === REMOTE_SHELL_WORD) {
@@ -585,7 +601,7 @@ class CommandLineLexer {
     let optionsEnded = false;
     for (const argument of this.commandTokens.slice(1)) {
       if (optionsEnded || !argument.startsWith("-")) {
-        this.deferNestedCommands(argument);
+        this.deferCommandPayload(argument);
         return;
       }
       if (TRAP_ARGUMENTS_LEAVING_NO_ACTION.has(argument)) return;
@@ -617,7 +633,7 @@ class CommandLineLexer {
     const payload = splitAtTheFirstOperand(words);
     if (payload === undefined) return;
     if (selectorUnresolved || payload.behindAnOption) this.markUnread();
-    this.deferNestedCommands([payload.operand, ...payload.rest].join(" "));
+    this.deferCommandPayload([payload.operand, ...payload.rest].join(" "));
   }
 
   private deferInterpreterPayload(): void {
@@ -641,7 +657,7 @@ class CommandLineLexer {
         valuePosition = true;
       } else if (commandFlagSeen) {
         if (valuePosition) this.markUnread();
-        this.deferNestedCommands(argument);
+        this.deferCommandPayload(argument);
         return;
       }
     }
@@ -650,16 +666,24 @@ class CommandLineLexer {
   private deferRunnerCall(): void {
     const call = runnerCallOf(this.commandTokens);
     if (call.kind === "pastReading") this.markUnread();
-    else this.deferNestedCommands(call.payload);
+    else this.deferCommandPayload(call.payload);
   }
 
-  private deferNestedCommands(payload: string): void {
+  private deferCommandPayload(payload: string): void {
+    this.lexNestedCommands(payload, this.commandTokensSpelledWithABackslashOrADollar.includes(true));
+  }
+
+  private deferNestedCommands(sourceText: string): void {
+    this.lexNestedCommands(sourceText, this.wordsInheritABackslashOrADollar);
+  }
+
+  private lexNestedCommands(payload: string, wordsInheritABackslashOrADollar: boolean): void {
     if (payload === "") return;
     if (this.depth >= MAX_PAYLOAD_DEPTH) {
       this.markUnread();
       return;
     }
-    this.nested.push(...new CommandLineLexer(payload, this.depth + 1).lex());
+    this.nested.push(...new CommandLineLexer(payload, this.depth + 1, wordsInheritABackslashOrADollar).lex());
   }
 
   private markUnread(): void {
@@ -692,6 +716,7 @@ class CommandLineLexer {
 
   private takeSingleQuoted(): void {
     const span = this.spanBefore("'");
+    this.noteTheSpelling(span);
     this.token += span;
     this.rest = this.rest.slice(span.length + 1);
   }
@@ -706,6 +731,7 @@ class CommandLineLexer {
       }
       const character = this.rest.slice(0, 1);
       this.rest = this.rest.slice(1);
+      this.noteTheSpelling(character);
       if (character === '"') return;
       if (character === "\\") {
         this.token += this.rest.slice(0, 1);
@@ -791,6 +817,7 @@ class CommandLineLexer {
 
   private takeBacktick(): void {
     const span = this.spanBefore("`");
+    this.noteTheSpelling(span);
     this.token += "$";
     this.rest = this.rest.slice(span.length + 1);
     this.deferNestedCommands(span);

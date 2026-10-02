@@ -1,4 +1,4 @@
-import { basenameOf } from "./lexed-word.ts";
+import { basenameOf, holdsABackslashOrADollar } from "./lexed-word.ts";
 
 export const COPROCESS_WORD = "coproc";
 const ENV_WORD = "env";
@@ -104,6 +104,7 @@ type KeyedPrefixReading =
   | Readonly<{ kind: "standsAsTheCommand"; payload: string }>
   | Readonly<{ kind: "operandOutsideItsGrammar" }>
   | Readonly<{ kind: "replaceStringItDoesNotKnow" }>
+  | Readonly<{ kind: "splitStringInEnvsOwnGrammar"; payload: string }>
   | Readonly<{ kind: "shapeItDoesNotKnow" }>;
 
 const A_SHAPE_IT_DOES_NOT_KNOW: KeyedPrefixReading = { kind: "shapeItDoesNotKnow" };
@@ -111,15 +112,20 @@ const AN_OPERAND_OUTSIDE_ITS_GRAMMAR: KeyedPrefixReading = { kind: "operandOutsi
 const A_REPLACE_STRING_IT_DOES_NOT_KNOW: KeyedPrefixReading = { kind: "replaceStringItDoesNotKnow" };
 const A_LOOKUP_RUNNING_NOTHING: KeyedPrefixReading = { kind: "standsAsTheCommand", payload: "" };
 
-const KEYED_PREFIX_READERS: ReadonlyMap<string, (words: readonly string[], from: number) => KeyedPrefixReading> =
-  new Map([
-    ["command", readCommandOptions],
-    ["xargs", readXargsOptions],
-    [ENV_WORD, readEnvOptions],
-    ["timeout", (words, from) => readThroughOperand(TIMEOUT_SHAPE, words, from)],
-    ["flock", readFlockOptions],
-    ["taskset", (words, from) => readThroughOperand(TASKSET_SHAPE, words, from)],
-  ]);
+type KeyedPrefixReader = (
+  words: readonly string[],
+  from: number,
+  spelledWithABackslashOrADollar: readonly boolean[],
+) => KeyedPrefixReading;
+
+const KEYED_PREFIX_READERS: ReadonlyMap<string, KeyedPrefixReader> = new Map([
+  ["command", readCommandOptions],
+  ["xargs", readXargsOptions],
+  [ENV_WORD, readEnvOptions],
+  ["timeout", (words, from) => readThroughOperand(TIMEOUT_SHAPE, words, from)],
+  ["flock", readFlockOptions],
+  ["taskset", (words, from) => readThroughOperand(TASKSET_SHAPE, words, from)],
+]);
 
 type PrefixCut = Readonly<{
   length: number;
@@ -128,7 +134,7 @@ type PrefixCut = Readonly<{
   payload: string;
 }>;
 
-export function prefixCutOf(words: readonly string[]): PrefixCut {
+export function prefixCutOf(words: readonly string[], spelledWithABackslashOrADollar: readonly boolean[]): PrefixCut {
   let at = 0;
   let endsOnAnUnresolvedOption = false;
   let prefixReadByFallback: string | undefined;
@@ -139,9 +145,10 @@ export function prefixCutOf(words: readonly string[]): PrefixCut {
   while (at < words.length) {
     const word = words[at] as string;
     if (replaceString !== undefined && word.includes(replaceString)) break;
-    const reading = keyedPrefixReading(word, words, at + 1);
-    if (reading.kind === "standsAsTheCommand") {
+    const reading = keyedPrefixReading(word, words, at + 1, spelledWithABackslashOrADollar);
+    if (reading.kind === "standsAsTheCommand" || reading.kind === "splitStringInEnvsOwnGrammar") {
       payload = reading.payload;
+      if (reading.kind === "splitStringInEnvsOwnGrammar") aPrefixLeftItUnread = true;
       break;
     }
     if (reading.kind === "read") {
@@ -174,10 +181,15 @@ function readingLeavesItUnread(reading: KeyedPrefixReading): boolean {
   return reading.kind === "operandOutsideItsGrammar" || reading.kind === "replaceStringItDoesNotKnow";
 }
 
-function keyedPrefixReading(word: string, words: readonly string[], from: number): KeyedPrefixReading {
+function keyedPrefixReading(
+  word: string,
+  words: readonly string[],
+  from: number,
+  spelledWithABackslashOrADollar: readonly boolean[],
+): KeyedPrefixReading {
   if (isAssignment(word)) return A_SHAPE_IT_DOES_NOT_KNOW;
   const reader = KEYED_PREFIX_READERS.get(basenameOf(word));
-  return reader === undefined ? A_SHAPE_IT_DOES_NOT_KNOW : reader(words, from);
+  return reader === undefined ? A_SHAPE_IT_DOES_NOT_KNOW : reader(words, from, spelledWithABackslashOrADollar);
 }
 
 function readCommandOptions(words: readonly string[], from: number): KeyedPrefixReading {
@@ -209,12 +221,21 @@ function replaceStringOf(options: readonly OptionRead[]): string | undefined {
   return defaulted ? XARGS_DEFAULT_REPLACE_STRING : replacing.value;
 }
 
-function readEnvOptions(words: readonly string[], from: number): KeyedPrefixReading {
+function readEnvOptions(
+  words: readonly string[],
+  from: number,
+  spelledWithABackslashOrADollar: readonly boolean[],
+): KeyedPrefixReading {
   const read = optionsRead(ENV_OPTIONS, words, from);
   if (read === undefined) return A_SHAPE_IT_DOES_NOT_KNOW;
-  const splitString = read.options.find(({ option }) => ENV_SPLIT_STRING_OPTIONS.includes(option));
+  const splitStrings = read.options.filter(({ option }) => ENV_SPLIT_STRING_OPTIONS.includes(option));
+  const splitString = splitStrings[0];
   if (splitString === undefined) return { kind: "read", next: read.next, replaceString: undefined };
+  const inEnvsOwnGrammar = splitStrings.some(
+    ({ value, valueAt }) => holdsABackslashOrADollar(value) || (spelledWithABackslashOrADollar[valueAt] ?? false),
+  );
   const payload = [splitString.value, ...words.slice(read.next).map(asOneShellWord)].join(" ");
+  if (inEnvsOwnGrammar) return { kind: "splitStringInEnvsOwnGrammar", payload };
   return { kind: "standsAsTheCommand", payload };
 }
 
@@ -244,7 +265,7 @@ function readThroughOperand(shape: OperandPrefixShape, words: readonly string[],
   return { kind: "read", next: read.next + 1, replaceString: undefined };
 }
 
-type OptionRead = Readonly<{ option: string; value: string }>;
+type OptionRead = Readonly<{ option: string; value: string; valueAt: number }>;
 type OptionsRead = Readonly<{ next: number; options: readonly OptionRead[] }>;
 export type SpelledOption = Readonly<{ name: string; attached: string | undefined }>;
 
@@ -273,12 +294,13 @@ function optionsSpelledAt(
   const { name, attached } = spelledOption(spelling);
   if (table.standingAlone.includes(name)) return flagsSpelledAt(table, words, at, { name, attached });
   if (table.takingAnAttachedValueOnly.includes(name)) {
-    return { next: at + 1, options: [{ option: name, value: attached ?? "" }] };
+    return { next: at + 1, options: [{ option: name, value: attached ?? "", valueAt: at }] };
   }
   if (!table.takingAValue.includes(name)) return undefined;
-  if (attached !== undefined) return { next: at + 1, options: [{ option: name, value: attached }] };
+  if (attached !== undefined) return { next: at + 1, options: [{ option: name, value: attached, valueAt: at }] };
   const separate = words[at + 1];
-  return separate === undefined ? undefined : { next: at + 2, options: [{ option: name, value: separate }] };
+  if (separate === undefined) return undefined;
+  return { next: at + 2, options: [{ option: name, value: separate, valueAt: at + 1 }] };
 }
 
 function flagsSpelledAt(
@@ -287,7 +309,7 @@ function flagsSpelledAt(
   at: number,
   { name, attached }: SpelledOption,
 ): OptionsRead | undefined {
-  const flag = { option: name, value: "" };
+  const flag = { option: name, value: "", valueAt: at };
   if (attached === undefined) return { next: at + 1, options: [flag] };
   if (!table.splitsFlagBundles || name.startsWith("--")) return undefined;
   const bundled = optionsSpelledAt(table, words, at, `-${attached}`);
