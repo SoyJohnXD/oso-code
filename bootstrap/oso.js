@@ -1803,6 +1803,46 @@ function isPlainRecord(value) {
 import { readFileSync as readFileSync8 } from "node:fs";
 import path7 from "node:path";
 
+// core/src/prose/routes.ts
+var VERIFIER_AGENT = "oso-verifier";
+var AGENT_ROLES = [
+  {
+    id: "oso-applier",
+    claude: { description: "Implements exactly one oso-code assignment \u2014 a plan slice, a debt cleanup, judge findings, or a diagnosis packaged as a ledger. Launched by the /plan, /quick and /debug orchestrators \u2014 not for direct use.", model: "sonnet", tools: ["Read", "Edit", "Write", "NotebookEdit", "Glob", "Grep", "Bash", "mcp__plugin_oso-code_context7__resolve-library-id", "mcp__plugin_oso-code_context7__query-docs"] },
+    opencode: { description: "Implements exactly one oso-code assignment: a plan slice, debt cleanup, accepted judge findings, or a diagnosis packaged as a ledger. Launched by the plan, quick, and debug orchestrators; not for direct use.", denies: ["task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: ["context7"] }
+  },
+  {
+    id: VERIFIER_AGENT,
+    claude: { description: "Independently verifies one implemented slice \u2014 or one merged wave at its integration gate \u2014 against its criteria and the project's zero-warnings bar. Judges only \u2014 never edits files. Launched by the /plan and /debug orchestrators after each apply.", model: "sonnet", tools: ["Read", "Glob", "Grep", "Bash"] },
+    opencode: { description: "Independently verifies one implemented slice or one merged wave against its criteria and the project's zero-warning bar. Judges only and never edits source files.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
+  },
+  {
+    id: "oso-integrator",
+    claude: { description: "Merges one wave of green, committed slice branches into the main checkout, then tears down their worktrees and deletes those branches. Never resolves a conflict, never judges. Launched by the /plan orchestrator \u2014 not for direct use.", model: "sonnet", tools: ["Read", "Bash"] },
+    opencode: { description: "Merges one wave of green committed slice branches into the main checkout, then removes their worktrees and deletes their branches. Never resolves conflicts and never judges.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
+  },
+  {
+    id: "oso-debt-sweep",
+    claude: null,
+    opencode: { description: "Fresh-context judge for the debt-sweep skill: judges code debt and frozen-ledger conformance separately and never edits.", denies: ["edit", "fallow_fix_apply", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: ["fallow"] }
+  },
+  {
+    id: "oso-doubt-pass",
+    claude: null,
+    opencode: { description: "Fresh-context judge for the doubt-pass skill: attacks a candidate ledger using only intent, surface map, and bare decisions, and never edits.", denies: ["glob", "grep", "edit", "bash", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
+  },
+  {
+    id: "oso-security-reviewer",
+    claude: null,
+    opencode: { description: "Fresh-context judge for the security-pass skill: reviews the supplied change surface as a judge and never edits, commits, or asks back.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
+  },
+  {
+    id: "oso-triage",
+    claude: null,
+    opencode: { description: "Fresh-context judge for the triage skill: establishes read-only attribution for one red plan-wave check and never diagnoses or fixes beyond it.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
+  }
+];
+
 // core/src/install/opencode-config.ts
 var OPENCODE_CONFIG_SCHEMA_URL = "https://opencode.ai/config.json";
 var CONTEXT7_MCP_URL = "https://mcp.context7.com/mcp";
@@ -1877,7 +1917,7 @@ var NEVER_PRESERVED_KEYS = [PERMISSION_KEY, MCP_KEY, PLUGIN_KEY];
 var OPENCODE_SESSION_MODEL_FIELDS = { default: "small_model", strong: "model" };
 var OPENCODE_AGENTS_PER_PROFILE_ROLE = {
   applier: ["oso-applier"],
-  verifier: ["oso-verifier"],
+  verifier: [VERIFIER_AGENT],
   judges: ["oso-debt-sweep", "oso-doubt-pass", "oso-security-reviewer", "oso-triage"]
 };
 var OPENCODE_AGENTS_THE_PROFILE_DRIVES = Object.values(OPENCODE_AGENTS_PER_PROFILE_ROLE).flat();
@@ -3378,47 +3418,6 @@ import { spawnSync as spawnSync6 } from "node:child_process";
 import { chmodSync as chmodSync3, mkdirSync as mkdirSync8, mkdtempSync as mkdtempSync5, readdirSync as readdirSync6, readFileSync as readFileSync12, rmSync as rmSync9, writeFileSync as writeFileSync7 } from "node:fs";
 import { tmpdir as tmpdir4 } from "node:os";
 import path14 from "node:path";
-
-// core/src/prose/routes.ts
-var AGENT_ROLES = [
-  {
-    id: "oso-applier",
-    claude: { description: "Implements exactly one oso-code assignment \u2014 a plan slice, a debt cleanup, judge findings, or a diagnosis packaged as a ledger. Launched by the /plan, /quick and /debug orchestrators \u2014 not for direct use.", model: "sonnet", tools: ["Read", "Edit", "Write", "NotebookEdit", "Glob", "Grep", "Bash", "mcp__plugin_oso-code_context7__resolve-library-id", "mcp__plugin_oso-code_context7__query-docs"] },
-    opencode: { description: "Implements exactly one oso-code assignment: a plan slice, debt cleanup, accepted judge findings, or a diagnosis packaged as a ledger. Launched by the plan, quick, and debug orchestrators; not for direct use.", denies: ["task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: ["context7"] }
-  },
-  {
-    id: "oso-verifier",
-    claude: { description: "Independently verifies one implemented slice \u2014 or one merged wave at its integration gate \u2014 against its criteria and the project's zero-warnings bar. Judges only \u2014 never edits files. Launched by the /plan and /debug orchestrators after each apply.", model: "sonnet", tools: ["Read", "Glob", "Grep", "Bash"] },
-    opencode: { description: "Independently verifies one implemented slice or one merged wave against its criteria and the project's zero-warning bar. Judges only and never edits source files.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
-  },
-  {
-    id: "oso-integrator",
-    claude: { description: "Merges one wave of green, committed slice branches into the main checkout, then tears down their worktrees and deletes those branches. Never resolves a conflict, never judges. Launched by the /plan orchestrator \u2014 not for direct use.", model: "sonnet", tools: ["Read", "Bash"] },
-    opencode: { description: "Merges one wave of green committed slice branches into the main checkout, then removes their worktrees and deletes their branches. Never resolves conflicts and never judges.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
-  },
-  {
-    id: "oso-debt-sweep",
-    claude: null,
-    opencode: { description: "Fresh-context judge for the debt-sweep skill: judges code debt and frozen-ledger conformance separately and never edits.", denies: ["edit", "fallow_fix_apply", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: ["fallow"] }
-  },
-  {
-    id: "oso-doubt-pass",
-    claude: null,
-    opencode: { description: "Fresh-context judge for the doubt-pass skill: attacks a candidate ledger using only intent, surface map, and bare decisions, and never edits.", denies: ["glob", "grep", "edit", "bash", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
-  },
-  {
-    id: "oso-security-reviewer",
-    claude: null,
-    opencode: { description: "Fresh-context judge for the security-pass skill: reviews the supplied change surface as a judge and never edits, commits, or asks back.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
-  },
-  {
-    id: "oso-triage",
-    claude: null,
-    opencode: { description: "Fresh-context judge for the triage skill: establishes read-only attribution for one red plan-wave check and never diagnoses or fixes beyond it.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
-  }
-];
-
-// core/src/install/verify-opencode.ts
 var OPENCODE_NOT_ON_PATH = "opencode-not-on-path";
 var VERSION_ROW_SKIP = "OpenCode CLI version \u2014 opencode is not on PATH, so the installed pin could not be probed";
 var LOCAL_CHECKS_SECTION = "local checks:";

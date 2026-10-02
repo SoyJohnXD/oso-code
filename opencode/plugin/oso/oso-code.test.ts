@@ -3,9 +3,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { parseAgentVerdict } from "@oso-code/core";
 import { osoCode } from "../oso-code.ts";
 import { stateBinPath } from "./installed-tree.ts";
-import { parseAgentVerdict } from "./verdict.ts";
 
 type LooseHooks = Record<string, (input?: unknown, output?: unknown) => unknown>;
 
@@ -81,7 +81,7 @@ test("the registered gate hook ignores a tool with no matching route", async () 
   await hookCall(hooks, { tool: "read", sessionID: "ses-entry", callID: "c" }, { args: {} });
 });
 
-test("verdict parsing lives at its canonical module, not re-exported from the plugin entry", () => {
+test("verdict parsing lives at its canonical module in the core, not re-exported from the plugin entry", () => {
   const parsed = parseAgentVerdict("status: done\n");
   assert.equal(parsed.status, "done");
 });

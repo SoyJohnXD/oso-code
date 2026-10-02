@@ -1,7 +1,7 @@
 import { isAbsolute } from "node:path";
-import { APPLIER_PROOF_HEADER } from "@oso-code/core";
+import { APPLIER_PROOF_HEADER, parseAgentVerdict, type ParsedAgentVerdict, VERIFIER_AGENT } from "@oso-code/core";
 import { commonDirOf, roleOf } from "./identity.ts";
-import { parseAgentVerdict, type ParsedAgentVerdict } from "./verdict.ts";
+import { captureOpenCodeVerifierReport } from "./verdict-capture.ts";
 
 export type WaveAgent = "applier" | "verifier";
 
@@ -66,7 +66,7 @@ function pinEveryChildSession(request: WaveRequest): Promise<PinnedChild[]> {
 
 const HOST_AGENT: Record<WaveAgent, string> = {
   applier: "oso-applier",
-  verifier: "oso-verifier",
+  verifier: VERIFIER_AGENT,
 };
 
 async function pinChildSession(
@@ -141,6 +141,9 @@ async function collectChildReport(child: PinnedChild, request: WaveRequest): Pro
       }),
       request.timeoutMs,
     );
+    if (child.launch.agent === "verifier") {
+      captureOpenCodeVerifierReport({ directory: request.projectDirectory, model: null, report: raw });
+    }
     return {
       outcome: "reported",
       worktree: child.launch.worktree,

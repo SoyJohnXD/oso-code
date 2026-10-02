@@ -1,6 +1,6 @@
 import { commonDirOf } from "./identity.ts";
 import type { PluginTool } from "./tool.ts";
-import type { ParsedAgentVerdict } from "./verdict.ts";
+import type { ParsedAgentVerdict } from "@oso-code/core";
 import {
   pinnedSessionTransport,
   runWave,

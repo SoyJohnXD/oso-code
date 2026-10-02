@@ -19,8 +19,11 @@ import {
   isDirectory,
   isNameToken,
   isoTimestamp,
+  jsonObjectOf,
+  readFileIfPresent,
   stateFileFor,
 } from "../state/store.ts";
+import { captureVerifierReport, isVerifierAgent } from "../verdict/capture.ts";
 import {
   hookSessionId,
   ownRunState,
@@ -78,6 +81,7 @@ function registerStartedAgent({ envelope }: GateRequest): GateOutcome<NoVerdictV
 }
 
 function forgetStoppedAgent({ envelope }: GateRequest): GateOutcome<NoVerdictVerdict> {
+  captureVerifierStop(envelope);
   const run = armedRunOf(envelope);
   if (run === undefined) return NO_VERDICT;
   if (!isNameToken(envelope.agentId)) return unregistered(envelope, "subagentstop");
@@ -85,6 +89,26 @@ function forgetStoppedAgent({ envelope }: GateRequest): GateOutcome<NoVerdictVer
   recordCompletion(completedAgentsLogOf(run.stateFile, run.sessionId), envelope.agentId);
   flagEndedWithoutNotice(envelope);
   return NO_VERDICT;
+}
+
+function captureVerifierStop(envelope: HookEnvelope): void {
+  if (!isVerifierAgent(envelope.agentType)) return;
+  captureVerifierReport({
+    host: envelope.caller.host,
+    cwd: envelope.cwd,
+    session: hookSessionId(envelope),
+    model: launchedModelOf(envelope),
+    report: envelope.lastAssistantMessage,
+  });
+}
+
+function launchedModelOf(envelope: HookEnvelope): string | null {
+  if (!isNameToken(envelope.agentId)) return null;
+  const transcript = derivedTranscriptPath(envelope, envelope.agentId);
+  if (transcript === "") return null;
+  const meta = readFileIfPresent(transcript.replace(/\.jsonl$/, ".meta.json"), "skip");
+  const model = meta === undefined ? undefined : jsonObjectOf(meta)?.["model"];
+  return typeof model === "string" ? model : null;
 }
 
 export function resolveInFlight(envelope: HookEnvelope): InFlightResolution {

@@ -52,6 +52,8 @@ export function agentHosts(role: AgentRole): readonly HostName[] {
   return role.claude === null ? ["opencode"] : ["claude", "opencode"];
 }
 
+export const VERIFIER_AGENT = "oso-verifier";
+
 export const AGENT_ROLES: readonly AgentRole[] = [
   {
     id: "oso-applier",
@@ -59,7 +61,7 @@ export const AGENT_ROLES: readonly AgentRole[] = [
     opencode: { description: "Implements exactly one oso-code assignment: a plan slice, debt cleanup, accepted judge findings, or a diagnosis packaged as a ledger. Launched by the plan, quick, and debug orchestrators; not for direct use.", denies: ["task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: ["context7"] },
   },
   {
-    id: "oso-verifier",
+    id: VERIFIER_AGENT,
     claude: { description: "Independently verifies one implemented slice — or one merged wave at its integration gate — against its criteria and the project's zero-warnings bar. Judges only — never edits files. Launched by the /plan and /debug orchestrators after each apply.", model: "sonnet", tools: ["Read", "Glob", "Grep", "Bash"] },
     opencode: { description: "Independently verifies one implemented slice or one merged wave against its criteria and the project's zero-warning bar. Judges only and never edits source files.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] },
   },

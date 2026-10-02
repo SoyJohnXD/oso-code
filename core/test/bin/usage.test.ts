@@ -31,6 +31,11 @@ const WATCH_PARAGRAPH =
   "without notice; each is named once across watches.\n";
 const SCAN_LINES =
   "       oso-state scan comments <ref>\n" + "       oso-state scan abstractions <ref>\n";
+const REPORT_LINE = "       oso-state report [--json]\n";
+const REPORT_PARAGRAPH =
+  "\nreport reads this repository's verdict records and prints the first-fail rate,\n" +
+  "rounds per slice, verdicts by model, malformed reports and unreceipted greens;\n" +
+  "--json prints the same fields as one JSON object.\n";
 const SCAN_PARAGRAPH =
   "\nscan reads the working directory's own repository, reports every hit on stdout\n" +
   "and exits 0 whether or not it found any. comments flags the inline comments the\n" +
@@ -47,13 +52,13 @@ const TS_USAGE = BASH_USAGE.replace(
   )
   .replace(
     "       oso-state journal --path\n",
-    `       oso-state journal --path\n${SCAN_LINES}${SCAN_PARAGRAPH}${WATCH_PARAGRAPH}`,
+    `       oso-state journal --path\n${SCAN_LINES}${REPORT_LINE}${SCAN_PARAGRAPH}${REPORT_PARAGRAPH}${WATCH_PARAGRAPH}`,
   );
 
 test(
   "the TypeScript CLI's usage text equals the bash's (read from 8c54fd8:plugin/bin/oso-state:7-29) " +
-    "plus exactly the two verbs G6 adds, close-slice and deny-pattern add, the scan verb C1-D3 adds, the close verb " +
-    "and the watch verb",
+    "plus exactly the two verbs G6 adds, close-slice and deny-pattern add, the scan verb C1-D3 adds, the close verb, " +
+    "the watch verb and the report verb",
   () => {
     const result = spawnSync(
       process.execPath,

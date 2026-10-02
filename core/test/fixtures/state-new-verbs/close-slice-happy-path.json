@@ -1,5 +1,5 @@
 {
-  "name": "close-slice on the happy path writes exactly the three keys closeSlice() names and logs one event",
+  "name": "close-slice on the happy path writes exactly the three keys closeSlice() names and logs the close, unreceipted since no verifier record exists",
   "env": {},
   "state_before": {
     ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=5\nverify_green=false\nsession=test-session\n"
@@ -15,7 +15,8 @@
       }
     },
     "events_appended": [
-      { "event": "close-slice", "command": "5", "session": "{present}" }
+      { "event": "close-slice", "command": "5", "session": "{present}" },
+      { "event": "verify-green-unreceipted", "command": "5", "session": "{present}" }
     ]
   }
 }

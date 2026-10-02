@@ -26,6 +26,7 @@ import {
 } from "./oso/lifecycle.ts";
 import type { PluginTool } from "./oso/tool.ts";
 import { recordTrace } from "./oso/trace.ts";
+import { captureTaskVerdict } from "./oso/verdict-capture.ts";
 import { waveTool } from "./oso/wave-tool.ts";
 import { messageOf, type HostSessionApi } from "./oso/wave.ts";
 import { registerWorkspaceAdapter } from "./oso/workspace.ts";
@@ -50,6 +51,7 @@ interface HookEvent {
 
 interface OsoHooks {
   "tool.execute.before": (input?: unknown, output?: unknown) => Promise<void>;
+  "tool.execute.after": (input?: unknown, output?: unknown) => Promise<void>;
   "shell.env": (input?: unknown, output?: unknown) => Promise<unknown>;
   event: (input?: { event?: HookEvent }) => Promise<void>;
   "experimental.chat.system.transform": (input?: unknown, output?: unknown) => Promise<void>;
@@ -170,6 +172,9 @@ export const osoCode = async (
           throw new Error(verdict.message);
         }
       }
+    },
+    "tool.execute.after": async (input?: unknown, output?: unknown) => {
+      captureTaskVerdict(input, output, directory);
     },
     "shell.env": async (input?: unknown, output?: unknown) => {
       const sessionID = (input as { sessionID?: string } | undefined)?.sessionID;

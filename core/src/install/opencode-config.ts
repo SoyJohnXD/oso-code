@@ -1,3 +1,4 @@
+import { VERIFIER_AGENT } from "../prose/routes.ts";
 import type { Role, RoleChoices, Tier } from "./profile.ts";
 
 export const OPENCODE_CONFIG_SCHEMA_URL = "https://opencode.ai/config.json";
@@ -94,7 +95,7 @@ const OPENCODE_SESSION_MODEL_FIELDS: Readonly<Record<Tier, string>> = { default:
 
 const OPENCODE_AGENTS_PER_PROFILE_ROLE: Readonly<Record<Role, readonly string[]>> = {
   applier: ["oso-applier"],
-  verifier: ["oso-verifier"],
+  verifier: [VERIFIER_AGENT],
   judges: ["oso-debt-sweep", "oso-doubt-pass", "oso-security-reviewer", "oso-triage"],
 };
 

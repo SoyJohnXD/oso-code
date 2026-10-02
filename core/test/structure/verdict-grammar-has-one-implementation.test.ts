@@ -2,18 +2,20 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
+import { GENERATED_BUNDLES } from "../../src/routes/routes.ts";
 import { firstLineContaining } from "../support/line-locate.ts";
 import { provedSomething } from "../support/proved.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
 import { readTrackedText, trackedRepositoryFiles } from "../support/tracked-files.ts";
 
-const VERDICT_GRAMMAR_OWNER = "opencode/plugin/oso/verdict.ts";
-const CANONICAL_SEARCH_ROOTS = ["plugin", "bootstrap", "tests", "tools", "opencode/plugin", "opencode/hooks"];
-const ALTERNATION_PATTERN = /\([a-z]+\|[a-z]+\)/g;
+const VERDICT_GRAMMAR_OWNER = "core/src/verdict/grammar.ts";
+const CANONICAL_SEARCH_ROOTS = ["core/src", "plugin", "bootstrap", "tests", "tools", "opencode/plugin", "opencode/hooks"];
+const ALTERNATION_PATTERN = /\([a-z]+(?:\|[a-z]+)+\)/g;
 
 const MINIMUM_ALTERNATIONS = 2;
 const MINIMUM_ALTERNATIONS_DERIVATION =
-  `${VERDICT_GRAMMAR_OWNER}'s STATUS_LINE and VERDICT_LINE regex literals, measured at C5-S5b-2: (done|blocked), (pass|fail) — 2`;
+  `${VERDICT_GRAMMAR_OWNER}'s STATUS_LINE and VERDICT_LINE regex literals, measured when the grammar moved into the core: ` +
+  "(done|blocked), (pass|fail|blocked) — 2";
 
 const MINIMUM_SEARCHED_FILES = 80;
 const MINIMUM_SEARCHED_FILES_DERIVATION =
@@ -49,7 +51,10 @@ const alternations = trackedFileSet.has(VERDICT_GRAMMAR_OWNER)
 const SEARCHED_PREFIXES = searchedPrefixes();
 
 const searchedFiles = trackedFiles.filter(
-  (file) => SEARCHED_PREFIXES.some((prefix) => file.startsWith(prefix)) && file !== VERDICT_GRAMMAR_OWNER,
+  (file) =>
+    SEARCHED_PREFIXES.some((prefix) => file.startsWith(prefix)) &&
+    file !== VERDICT_GRAMMAR_OWNER &&
+    !GENERATED_BUNDLES.includes(file),
 );
 
 provedSomething(
@@ -60,7 +65,8 @@ provedSomething(
 );
 
 provedSomething(
-  `${searchedFiles.length} tracked file(s) under ${SEARCHED_PREFIXES.join(", ")} were searched for a duplicate verdict-vocabulary alternation`,
+  `${searchedFiles.length} tracked file(s) under ${SEARCHED_PREFIXES.join(", ")}, builder outputs aside, ` +
+    "were searched for a duplicate verdict-vocabulary alternation",
   searchedFiles.length >= MINIMUM_SEARCHED_FILES,
   `only ${searchedFiles.length} file(s) were found, under the ${MINIMUM_SEARCHED_FILES}-file floor ` +
     `(${MINIMUM_SEARCHED_FILES_DERIVATION})`,
@@ -75,7 +81,7 @@ const duplicates = alternations.flatMap((alternation) =>
 
 describe(
   `${VERDICT_GRAMMAR_OWNER} is the sole implementation of the verdict vocabulary a delegated report is read with — ` +
-    `no file under ${SEARCHED_PREFIXES.join(", ")} spells the same (word|word) alternation`,
+    `no file under ${SEARCHED_PREFIXES.join(", ")} spells the same alternation of two or more words`,
   () => {
     test("no searched file duplicates a verdict-vocabulary alternation the owner spells", () => {
       assert.deepEqual(duplicates, [], duplicates.join("\n"));

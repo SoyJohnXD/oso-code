@@ -280,8 +280,8 @@ function toolNamesFor(host, gate) {
 
 // core/src/gates/autocontinue.ts
 import { spawnSync } from "node:child_process";
-import { mkdirSync as mkdirSync3, writeFileSync as writeFileSync2 } from "node:fs";
-import path6 from "node:path";
+import { mkdirSync as mkdirSync4, writeFileSync as writeFileSync2 } from "node:fs";
+import path7 from "node:path";
 
 // core/src/shell/lexer.ts
 var MAX_LEXED_INPUT_BYTES = 3072;
@@ -1212,6 +1212,10 @@ function stateRecords(content, key) {
 function stateValue(content, key) {
   return stateRecords(content, key).join("\n");
 }
+function recordedStateValue(content, key) {
+  const value = stateValue(content, key);
+  return value === "" ? null : value;
+}
 function stateSays(content, key, value) {
   return stateRecords(content, key).includes(value);
 }
@@ -1240,6 +1244,14 @@ function readFileIfPresent(file, whenUnreadable = "throw") {
   const read = readStateFile(file);
   if (read.kind === "unreadable" && whenUnreadable === "throw") throw new StateFileUnreadableError(file, read.cause);
   return read.kind === "ok" ? read.content : void 0;
+}
+function jsonObjectOf(text) {
+  try {
+    const parsed = JSON.parse(text);
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed : void 0;
+  } catch {
+    return void 0;
+  }
 }
 function isDirectory(target) {
   const stats = statOrUndefined(target);
@@ -1307,9 +1319,12 @@ function appendJournal(journalFile, text) {
     throw new JournalAppendError(journalFile, { cause: error });
   }
 }
+function eventsLogFile() {
+  return path.join(stateRootDirectory(), "events.jsonl");
+}
 function logEvent(entry) {
   const line = serializeEvent(entry);
-  const eventsLog = path.join(stateRootDirectory(), "events.jsonl");
+  const eventsLog = eventsLogFile();
   try {
     mkdirSync(path.dirname(eventsLog), { recursive: true });
     withOwnerOnlyUmask(() => appendFileSync(eventsLog, `${line}
@@ -1580,11 +1595,179 @@ function removeLegacyWaitMarks(stateFile) {
 }
 
 // core/src/gates/in-flight.ts
-import path5 from "node:path";
+import path6 from "node:path";
+
+// core/src/prose/routes.ts
+var VERIFIER_AGENT = "oso-verifier";
+
+// core/src/verdict/grammar.ts
+var RECORDED_VERDICTS = ["pass", "fail", "blocked", "none"];
+var VERDICT_SHAPES = ["valid", "malformed"];
+var STATUS_LINE = /^\s*status\s*:\s*(done|blocked)\s*$/i;
+var VERDICT_LINE = /^\s*verdict\s*:\s*(pass|fail|blocked)\s*$/i;
+function parseAgentVerdict(text) {
+  const parsed = {};
+  for (const line of text.split(/\r?\n/)) {
+    const statusMatch = line.match(STATUS_LINE);
+    if (statusMatch !== null) {
+      parsed.status = statusMatch[1].toLowerCase();
+      continue;
+    }
+    const verdictMatch = line.match(VERDICT_LINE);
+    if (verdictMatch !== null) parsed.verdict = verdictMatch[1].toLowerCase();
+  }
+  return parsed;
+}
+function readVerdictShape(text) {
+  const { verdict } = parseAgentVerdict(text);
+  return verdict === void 0 ? { verdict: "none", verdict_shape: "malformed" } : { verdict, verdict_shape: "valid" };
+}
+
+// core/src/verdict/record.ts
+import { appendFileSync as appendFileSync3, mkdirSync as mkdirSync3 } from "node:fs";
+import path4 from "node:path";
+var VERIFIER_ROLE = "verifier";
+var TELEMETRY_WRITE_FAILED = "telemetry-write-failed";
+function verdictsFileFor(stateFile) {
+  return path4.join(runsDirectoryOf(stateFile), "verdicts.jsonl");
+}
+function appendVerdict(verdictsFile, capture) {
+  return appendEntry(verdictsFile, capture.session, () => {
+    const attempt = verifierRecordsSinceArm(readVerdicts(verdictsFile).entries, capture.slice).length + 1;
+    return {
+      time: isoTimestamp(),
+      host: capture.host,
+      session: capture.session,
+      change: capture.change,
+      slice: capture.slice,
+      attempt,
+      role: capture.role,
+      model: capture.model,
+      verdict: capture.verdict,
+      verdict_shape: capture.verdict_shape,
+      escalated: capture.escalated
+    };
+  });
+}
+function readVerdicts(verdictsFile) {
+  const lines = (readFileIfPresent(verdictsFile) ?? "").split("\n").filter((line) => line !== "");
+  const entries = lines.flatMap((line) => {
+    const entry = logEntryOf(line);
+    return entry === void 0 ? [] : [entry];
+  });
+  return { entries, skippedLines: lines.length - entries.length };
+}
+function verifierRecordsSinceArm(entries, slice) {
+  if (slice === null) return [];
+  const newestArming = armingsOf(entries).newestArmingOfSlice.get(slice) ?? [];
+  return newestArming.filter((record) => record.role === VERIFIER_ROLE);
+}
+function isArmMarker(entry) {
+  return "kind" in entry;
+}
+function armingsOf(entries) {
+  const everyArming = [];
+  const newestArmingOfSlice = /* @__PURE__ */ new Map();
+  for (const entry of entries) {
+    if (isArmMarker(entry)) {
+      const arming = [];
+      everyArming.push(arming);
+      newestArmingOfSlice.set(entry.slice, arming);
+      continue;
+    }
+    if (entry.slice !== null) newestArmingOfSlice.get(entry.slice)?.push(entry);
+  }
+  return { everyArming, newestArmingOfSlice };
+}
+function appendEntry(verdictsFile, session, entryOf) {
+  try {
+    const line = `${JSON.stringify(entryOf())}
+`;
+    withOwnerOnlyUmask(() => {
+      mkdirSync3(path4.dirname(verdictsFile), { recursive: true });
+      appendFileSync3(verdictsFile, line);
+    });
+    return true;
+  } catch (error) {
+    logEvent({ event: TELEMETRY_WRITE_FAILED, session, command: causeOf(error) });
+    return false;
+  }
+}
+function logEntryOf(line) {
+  const parsed = jsonObjectOf(line);
+  if (parsed === void 0) return void 0;
+  if (parsed["kind"] === "arm") return armMarkerOf(parsed);
+  return verdictRecordOf(parsed);
+}
+function armMarkerOf(fields) {
+  const { slice, session, change, time } = fields;
+  if (!isText(slice) || !isText(session) || !isTextOrNull(change) || !isText(time)) return void 0;
+  return { kind: "arm", slice, session, change, time };
+}
+function verdictRecordOf(fields) {
+  const { time, host, session, change, slice, attempt, role, model, verdict, verdict_shape, escalated } = fields;
+  if (!isText(time) || !isText(session) || !isTextOrNull(change) || !isTextOrNull(slice) || !isText(role)) return void 0;
+  if (!isHostName(host) || typeof attempt !== "number") return void 0;
+  if (!isTextOrNull(model) || typeof escalated !== "boolean") return void 0;
+  const recorded = RECORDED_VERDICTS.find((value) => value === verdict);
+  const shape = VERDICT_SHAPES.find((value) => value === verdict_shape);
+  if (recorded === void 0 || shape === void 0) return void 0;
+  return {
+    time,
+    host,
+    session,
+    change,
+    slice,
+    attempt,
+    role,
+    model,
+    verdict: recorded,
+    verdict_shape: shape,
+    escalated
+  };
+}
+var HOST_NAMES = { claude: true, opencode: true };
+function isHostName(value) {
+  return isText(value) && Object.hasOwn(HOST_NAMES, value);
+}
+function isText(value) {
+  return typeof value === "string";
+}
+function isTextOrNull(value) {
+  return value === null || typeof value === "string";
+}
+
+// core/src/verdict/capture.ts
+function isVerifierAgent(agentType) {
+  return agentType === VERIFIER_AGENT || agentType.endsWith(`:${VERIFIER_AGENT}`);
+}
+function captureVerifierReport(report) {
+  try {
+    appendReportToItsRepository(report);
+  } catch (error) {
+    logEvent({ event: TELEMETRY_WRITE_FAILED, session: report.session, command: causeOf(error) });
+  }
+}
+function appendReportToItsRepository({ host, cwd, session, model, report }) {
+  if (!isDirectory(cwd)) return;
+  const stateFile = stateFileFor(cwd);
+  const state = readFileIfPresent(stateFile);
+  if (state === void 0) return;
+  appendVerdict(verdictsFileFor(stateFile), {
+    host,
+    session,
+    change: recordedStateValue(state, "auto_change"),
+    slice: recordedStateValue(state, "active_slice"),
+    role: VERIFIER_ROLE,
+    model,
+    ...readVerdictShape(report),
+    escalated: false
+  });
+}
 
 // core/src/gates/preflight.ts
 import { existsSync } from "node:fs";
-import path4 from "node:path";
+import path5 from "node:path";
 import { fileURLToPath } from "node:url";
 var RUN_ARMED = "running";
 function sanitizeSession(raw) {
@@ -1643,7 +1826,7 @@ function allowedWithResidueCounted(session, command) {
 function pluginRootDirectory() {
   const configured = process.env["CLAUDE_PLUGIN_ROOT"];
   if (configured !== void 0 && configured !== "") return configured;
-  return pluginRootAbove(path4.dirname(fileURLToPath(import.meta.url)));
+  return pluginRootAbove(path5.dirname(fileURLToPath(import.meta.url)));
 }
 var PLUGIN_ROOT_WRAPPERS = [[], ["plugin"]];
 var HOOKS_MANIFEST_LOCATIONS = [["hooks.json"], ["hooks", "hooks.json"]];
@@ -1652,10 +1835,10 @@ function pluginRootAbove(moduleDirectory) {
   let candidate = moduleDirectory;
   while (true) {
     for (const wrapper of PLUGIN_ROOT_WRAPPERS) {
-      const root = path4.join(candidate, ...wrapper);
-      if (existsSync(path4.join(root, "bin", "oso-state")) && isVerifiedOsoCodeRoot(root)) return root;
+      const root = path5.join(candidate, ...wrapper);
+      if (existsSync(path5.join(root, "bin", "oso-state")) && isVerifiedOsoCodeRoot(root)) return root;
     }
-    const parent = path4.dirname(candidate);
+    const parent = path5.dirname(candidate);
     if (parent === candidate) {
       throw new Error(
         `no ancestor of ${moduleDirectory} carries a verified oso-code bin/oso-state, directly or one level under plugin/, to anchor the plugin root on`
@@ -1665,7 +1848,7 @@ function pluginRootAbove(moduleDirectory) {
   }
 }
 function isVerifiedOsoCodeRoot(root) {
-  return HOOKS_MANIFEST_LOCATIONS.some((segments) => hooksManifestFingerprinted(path4.join(root, ...segments)));
+  return HOOKS_MANIFEST_LOCATIONS.some((segments) => hooksManifestFingerprinted(path5.join(root, ...segments)));
 }
 function hooksManifestFingerprinted(manifestFile) {
   return readFileIfPresent(manifestFile, "skip")?.includes(HOOKS_MANIFEST_FINGERPRINT) ?? false;
@@ -1698,6 +1881,7 @@ function registerStartedAgent({ envelope }) {
   return NO_VERDICT;
 }
 function forgetStoppedAgent({ envelope }) {
+  captureVerifierStop(envelope);
   const run2 = armedRunOf(envelope);
   if (run2 === void 0) return NO_VERDICT;
   if (!isNameToken(envelope.agentId)) return unregistered(envelope, "subagentstop");
@@ -1705,6 +1889,24 @@ function forgetStoppedAgent({ envelope }) {
   recordCompletion(completedAgentsLogOf(run2.stateFile, run2.sessionId), envelope.agentId);
   flagEndedWithoutNotice(envelope);
   return NO_VERDICT;
+}
+function captureVerifierStop(envelope) {
+  if (!isVerifierAgent(envelope.agentType)) return;
+  captureVerifierReport({
+    host: envelope.caller.host,
+    cwd: envelope.cwd,
+    session: hookSessionId(envelope),
+    model: launchedModelOf(envelope),
+    report: envelope.lastAssistantMessage
+  });
+}
+function launchedModelOf(envelope) {
+  if (!isNameToken(envelope.agentId)) return null;
+  const transcript = derivedTranscriptPath(envelope, envelope.agentId);
+  if (transcript === "") return null;
+  const meta = readFileIfPresent(transcript.replace(/\.jsonl$/, ".meta.json"), "skip");
+  const model = meta === void 0 ? void 0 : jsonObjectOf(meta)?.["model"];
+  return typeof model === "string" ? model : null;
 }
 function resolveInFlight(envelope) {
   const sighting = sightingOf(envelope);
@@ -1789,7 +1991,7 @@ function sessionRunOf(envelope) {
 function derivedTranscriptPath(envelope, agentId) {
   const sessionId = sanitizeSession(envelope.sessionId);
   if (envelope.transcriptPath === "" || sessionId === "") return "";
-  return path5.join(path5.dirname(envelope.transcriptPath), sessionId, "subagents", `agent-${agentId}.jsonl`);
+  return path6.join(path6.dirname(envelope.transcriptPath), sessionId, "subagents", `agent-${agentId}.jsonl`);
 }
 function unregistered(envelope, gate) {
   const route = gateRow(gate);
@@ -2025,7 +2227,7 @@ function announceCap(position) {
 }
 function rememberTally(position, pushes, progress) {
   try {
-    mkdirSync3(path6.dirname(position.tallyFile), { recursive: true, mode: OWNER_ONLY_DIRECTORY });
+    mkdirSync4(path7.dirname(position.tallyFile), { recursive: true, mode: OWNER_ONLY_DIRECTORY });
     writeFileSync2(position.tallyFile, `pushes=${pushes}
 ${progress.recorded()}`, { mode: OWNER_ONLY_FILE });
     return void 0;
@@ -2056,7 +2258,7 @@ function gateEvent(event, session, detail) {
   return { event, session, command: detail, gate: route.script, hookEvent: route.event };
 }
 function tallyFileFor(journalFile) {
-  return path6.join(path6.dirname(journalFile), `${path6.basename(journalFile, ".log")}.pushes`);
+  return path7.join(path7.dirname(journalFile), `${path7.basename(journalFile, ".log")}.pushes`);
 }
 
 // core/src/shell/lexed-command.ts
@@ -2762,7 +2964,7 @@ function reanchorContext(journalFile, unattendedRun) {
 }
 
 // core/src/gates/stale.ts
-import path7 from "node:path";
+import path8 from "node:path";
 var ROADMAP_DISARMED_SENTINEL = "none";
 var ROADMAP_PLACEHOLDER = "{roadmap}";
 var STALE_GATE = {
@@ -2794,7 +2996,7 @@ function staleStateContext(caller, stateFile, content, sessionId) {
   const skillPrefix = skillPrefixFor(caller.host);
   const stateBin = quoted(stateBinPath(caller));
   const clearCommand = `${stateBin} --session ${quoted(sessionId)} clear`;
-  const leftByAnother = `oso-code: this repository's own runtime state (${path7.basename(stateFile)}) was left by another session, and its flags arm this session's gates too`;
+  const leftByAnother = `oso-code: this repository's own runtime state (${path8.basename(stateFile)}) was left by another session, and its flags arm this session's gates too`;
   const roadmapValue = stateValue(content, "roadmap");
   const roadmapInFlight = roadmapValue === ROADMAP_DISARMED_SENTINEL ? "" : roadmapValue;
   if (roadmapInFlight === "") {
@@ -2810,15 +3012,15 @@ function skillPrefixFor(host) {
 }
 function stateBinPath(caller) {
   if (caller.stateBin !== "") return caller.stateBin;
-  return path7.join(pluginRootDirectory(), "bin", "oso-state");
+  return path8.join(pluginRootDirectory(), "bin", "oso-state");
 }
 function quoted(value) {
   return `"${value}"`;
 }
 
 // core/src/gates/statebin.ts
-import { appendFileSync as appendFileSync3 } from "node:fs";
-import path8 from "node:path";
+import { appendFileSync as appendFileSync4 } from "node:fs";
+import path9 from "node:path";
 var STATEBIN_GATE = {
   gate: "statebin",
   errorSubject: "the state-bin gate",
@@ -2827,8 +3029,8 @@ var STATEBIN_GATE = {
 function judgeStatebin(_request) {
   const envFile = process.env["CLAUDE_ENV_FILE"];
   if (envFile === void 0 || envFile === "") return NO_VERDICT;
-  const stateBin = path8.join(pluginRootDirectory(), "bin", "oso-state");
-  appendFileSync3(envFile, `export OSO_STATE_BIN=${stateBin}
+  const stateBin = path9.join(pluginRootDirectory(), "bin", "oso-state");
+  appendFileSync4(envFile, `export OSO_STATE_BIN=${stateBin}
 `);
   return NO_VERDICT;
 }
@@ -2836,7 +3038,7 @@ function judgeStatebin(_request) {
 // core/src/gates/teardown.ts
 import { execFileSync as execFileSync2 } from "node:child_process";
 import { existsSync as existsSync2, readdirSync as readdirSync2, renameSync as renameSync2, rmSync as rmSync4, rmdirSync, statSync as statSync2 } from "node:fs";
-import path9 from "node:path";
+import path10 from "node:path";
 var ABANDONED_STATE_DAYS = 7;
 var EVENTS_LOG_RETENTION_DAYS = 30;
 var SECONDS_PER_DAY = 86400;
@@ -2864,7 +3066,7 @@ function stateArmedBy(sessionId) {
 }
 function removeWorktreesOf(sessionId, stateFile) {
   if (sessionId === "") return;
-  const sessionWorktrees = path9.join(stateRootDirectory(), "worktrees", sessionId);
+  const sessionWorktrees = path10.join(stateRootDirectory(), "worktrees", sessionId);
   if (!isDirectory(sessionWorktrees)) return;
   if (stateFile === void 0) return;
   const repoPath = stateValueOf(stateFile, "repo_path");
@@ -2913,7 +3115,7 @@ function clearRoadmapInFlightOf(sessionId) {
   }
 }
 function rotateAgedEventsLog() {
-  const eventsLog = path9.join(stateRootDirectory(), "events.jsonl");
+  const eventsLog = path10.join(stateRootDirectory(), "events.jsonl");
   if (!olderThanDays(eventsLog, EVENTS_LOG_RETENTION_DAYS)) return;
   renameSync2(eventsLog, `${eventsLog}.1`);
 }
@@ -2937,10 +3139,10 @@ function stateValueOf(stateFile, key) {
   return read.kind === "ok" ? stateValue(read.content, key) : "";
 }
 function stateFilesSorted() {
-  return directoryEntries(stateRootDirectory()).filter((name) => name.endsWith(".state")).sort().map((name) => path9.join(stateRootDirectory(), name)).filter((target) => isFile(target));
+  return directoryEntries(stateRootDirectory()).filter((name) => name.endsWith(".state")).sort().map((name) => path10.join(stateRootDirectory(), name)).filter((target) => isFile(target));
 }
 function subdirectoriesSorted(directory) {
-  return directoryEntries(directory).sort().map((name) => path9.join(directory, name)).filter((target) => isDirectory(target));
+  return directoryEntries(directory).sort().map((name) => path10.join(directory, name)).filter((target) => isDirectory(target));
 }
 function directoryEntries(directory) {
   try {
@@ -2971,10 +3173,10 @@ function gitWorktreePrune(repoPath) {
 }
 
 // core/src/gates/unknown.ts
-import path12 from "node:path";
+import path13 from "node:path";
 
 // core/src/install/opencode.ts
-import path10 from "node:path";
+import path11 from "node:path";
 
 // core/src/install/backup.ts
 var DISK_BLOCK_SIZE_BYTES = 512;
@@ -3019,7 +3221,7 @@ var PATH_SEPARATOR = "/";
 var SURFACE_AT_ANY_DEPTH_PREFIX = "**/";
 var OPENCODE_AGENTS_PER_PROFILE_ROLE = {
   applier: ["oso-applier"],
-  verifier: ["oso-verifier"],
+  verifier: [VERIFIER_AGENT],
   judges: ["oso-debt-sweep", "oso-doubt-pass", "oso-security-reviewer", "oso-triage"]
 };
 var OPENCODE_AGENTS_THE_PROFILE_DRIVES = Object.values(OPENCODE_AGENTS_PER_PROFILE_ROLE).flat();
@@ -3046,37 +3248,37 @@ function messageOf(error) {
 
 // core/src/install/opencode.ts
 function opencodePathsFor(homeDirectory2, environment) {
-  const configHome = path10.join(environment["XDG_CONFIG_HOME"] ?? path10.join(homeDirectory2, ".config"), "opencode");
-  const stateRoot = path10.join(homeDirectory2, ".local", "state", "oso-code");
+  const configHome = path11.join(environment["XDG_CONFIG_HOME"] ?? path11.join(homeDirectory2, ".config"), "opencode");
+  const stateRoot = path11.join(homeDirectory2, ".local", "state", "oso-code");
   return {
     homeDirectory: homeDirectory2,
     configHome,
-    configFile: path10.join(configHome, "opencode.json"),
-    globalFile: path10.join(configHome, "AGENTS.md"),
+    configFile: path11.join(configHome, "opencode.json"),
+    globalFile: path11.join(configHome, "AGENTS.md"),
     stateRoot,
     backupsRoot: stateRoot
   };
 }
 
 // core/src/install/opencode-install-layout.ts
-import path11 from "node:path";
+import path12 from "node:path";
 function openCodeInstallTargets(paths) {
   return {
-    skills: path11.join(paths.configHome, "skill"),
-    agents: path11.join(paths.configHome, "agent"),
-    commands: path11.join(paths.configHome, "command"),
-    plugin: path11.join(paths.configHome, "plugin"),
-    hooks: path11.join(paths.configHome, "hooks"),
-    gitHooks: path11.join(paths.configHome, "git-hooks"),
-    stateBin: path11.join(paths.configHome, "bin"),
-    dist: path11.join(paths.configHome, "dist"),
-    engramPlugin: path11.join(paths.configHome, "plugins", "engram.ts"),
-    impeccableMount: path11.join(paths.homeDirectory, ".agents", "skills", "impeccable"),
-    impeccableOptOut: path11.join(paths.stateRoot, "impeccable-opt-out"),
-    ownerRegistry: path11.join(paths.stateRoot, "opencode-install-registry"),
-    restoreExercisedMarker: path11.join(paths.stateRoot, ".install-restore-verified-opencode"),
-    planArtifactRoot: path11.join(paths.stateRoot, "plans"),
-    installRecord: path11.join(paths.configHome, "oso-code-install.json")
+    skills: path12.join(paths.configHome, "skill"),
+    agents: path12.join(paths.configHome, "agent"),
+    commands: path12.join(paths.configHome, "command"),
+    plugin: path12.join(paths.configHome, "plugin"),
+    hooks: path12.join(paths.configHome, "hooks"),
+    gitHooks: path12.join(paths.configHome, "git-hooks"),
+    stateBin: path12.join(paths.configHome, "bin"),
+    dist: path12.join(paths.configHome, "dist"),
+    engramPlugin: path12.join(paths.configHome, "plugins", "engram.ts"),
+    impeccableMount: path12.join(paths.homeDirectory, ".agents", "skills", "impeccable"),
+    impeccableOptOut: path12.join(paths.stateRoot, "impeccable-opt-out"),
+    ownerRegistry: path12.join(paths.stateRoot, "opencode-install-registry"),
+    restoreExercisedMarker: path12.join(paths.stateRoot, ".install-restore-verified-opencode"),
+    planArtifactRoot: path12.join(paths.stateRoot, "plans"),
+    installRecord: path12.join(paths.configHome, "oso-code-install.json")
   };
 }
 function isOpenCodeInstallRecord(parsed) {
@@ -3138,7 +3340,7 @@ function deniedUntilASliceIsArmed(toolName, session) {
   });
 }
 function harnessTreeTargetOf(envelope) {
-  const targets = writeTargetsOf(envelope).map((target) => path12.resolve(envelope.cwd, target));
+  const targets = writeTargetsOf(envelope).map((target) => path13.resolve(envelope.cwd, target));
   if (targets.length === 0) return void 0;
   const harnessTree = installedHarnessTree();
   return targets.find((target) => harnessTree.some((directory) => liesWithin(directory, target)));
@@ -3155,8 +3357,8 @@ function installedHarnessTree() {
   return [targets.skills, targets.agents, targets.commands, targets.plugin, targets.hooks, paths.stateRoot];
 }
 function liesWithin(directory, target) {
-  const relative = path12.relative(directory, target);
-  const escapes = relative === ".." || relative.startsWith(`..${path12.sep}`) || path12.isAbsolute(relative);
+  const relative = path13.relative(directory, target);
+  const escapes = relative === ".." || relative.startsWith(`..${path13.sep}`) || path13.isAbsolute(relative);
   return !escapes;
 }
 function readAllowlist(argv) {
@@ -3182,16 +3384,16 @@ function allowlistCarries(allowlist, toolName) {
 
 // core/src/gates/version.ts
 import { execFileSync as execFileSync3 } from "node:child_process";
-import path16 from "node:path";
+import path17 from "node:path";
 
 // core/src/install/opencode-host.ts
 import { spawnSync as spawnSync2 } from "node:child_process";
 import { mkdtempSync, rmSync as rmSync5 } from "node:fs";
 import { tmpdir } from "node:os";
-import path14 from "node:path";
+import path15 from "node:path";
 
 // core/src/install/verify-claude.ts
-import path13 from "node:path";
+import path14 from "node:path";
 function compareVersionsAscending(a, b) {
   const segmentsOf = (value) => value.split(/(\d+)/).filter((segment) => segment !== "");
   const left = segmentsOf(a);
@@ -3210,9 +3412,9 @@ function collapsedNewlines(text) {
   return text.replace(/\n+$/, "").replace(/\n/g, " ");
 }
 function firstExecutableOnPath(environment, binaryName) {
-  const entries = (environment["PATH"] ?? "").split(path13.delimiter).filter((entry) => entry !== "");
+  const entries = (environment["PATH"] ?? "").split(path14.delimiter).filter((entry) => entry !== "");
   for (const entry of entries) {
-    const candidate = path13.join(entry, binaryName);
+    const candidate = path14.join(entry, binaryName);
     if (isExecutableRegularFile(candidate)) return candidate;
   }
   return void 0;
@@ -3271,7 +3473,7 @@ function versionFieldOf(probeOutput) {
   return versionLineReadingOf(strippedPerLine, OPENCODE_VERSION_LINE);
 }
 function probedVersion(environment, binaryPath) {
-  const probeHome = mkdtempSync(path14.join(environment["TMPDIR"] ?? tmpdir(), PROBE_HOME_PREFIX));
+  const probeHome = mkdtempSync(path15.join(environment["TMPDIR"] ?? tmpdir(), PROBE_HOME_PREFIX));
   try {
     const run2 = spawnSync2(binaryPath, ["--version"], {
       env: probeEnvironment(environment, probeHome),
@@ -3289,15 +3491,15 @@ function probeEnvironment(environment, probeHome) {
     HOME: probeHome,
     USERPROFILE: probeHome,
     TMPDIR: probeHome,
-    XDG_CONFIG_HOME: path14.join(probeHome, ".config"),
-    XDG_STATE_HOME: path14.join(probeHome, ".local", "state"),
-    XDG_CACHE_HOME: path14.join(probeHome, ".cache"),
-    XDG_DATA_HOME: path14.join(probeHome, ".local", "share")
+    XDG_CONFIG_HOME: path15.join(probeHome, ".config"),
+    XDG_STATE_HOME: path15.join(probeHome, ".local", "state"),
+    XDG_CACHE_HOME: path15.join(probeHome, ".cache"),
+    XDG_DATA_HOME: path15.join(probeHome, ".local", "share")
   };
 }
 
 // core/src/install/opencode-trust.ts
-import path15 from "node:path";
+import path16 from "node:path";
 
 // core/src/install/trust.ts
 import { readFileSync as readFileSync3 } from "node:fs";
@@ -3323,11 +3525,11 @@ var INSTALLED_TREE_MAP = [
   { published: "plugin/bin/", installed: "bin/" }
 ];
 function openCodeTrustTargetUnder(rootKind, root, published) {
-  if (rootKind === "source") return path15.join(root, ...published.split("/"));
+  if (rootKind === "source") return path16.join(root, ...published.split("/"));
   const mapped = INSTALLED_TREE_MAP.find((row) => row.published === published || row.published.endsWith("/") && published.startsWith(row.published));
   if (mapped === void 0) return void 0;
   const relative = mapped.published.endsWith("/") ? `${mapped.installed}${published.slice(mapped.published.length)}` : mapped.installed;
-  return path15.join(root, ...relative.split("/"));
+  return path16.join(root, ...relative.split("/"));
 }
 
 // core/src/install/pins.ts
@@ -3423,10 +3625,10 @@ function judgeVersion({ envelope }) {
   return { verdict: { kind: "context", additionalContext: context }, events: [] };
 }
 function pluginManifestFile() {
-  return path16.join(pluginRootDirectory(), ".claude-plugin", "plugin.json");
+  return path17.join(pluginRootDirectory(), ".claude-plugin", "plugin.json");
 }
 function publishedReleaseCacheFile() {
-  return path16.join(stateRootDirectory(), "published-release");
+  return path17.join(stateRootDirectory(), "published-release");
 }
 function repositorySlugOf(repositoryUrl) {
   if (!repositoryUrl.startsWith(GITHUB_URL_PREFIX) || repositoryUrl.length === GITHUB_URL_PREFIX.length) {
@@ -3437,7 +3639,7 @@ function repositorySlugOf(repositoryUrl) {
 }
 function marketplaceServesRepository(repositorySlug) {
   const home = homeDirectoryFrom(process.platform, process.env);
-  const marketplacesFile = path16.join(home, ".claude", "plugins", "known_marketplaces.json");
+  const marketplacesFile = path17.join(home, ".claude", "plugins", "known_marketplaces.json");
   const registrations = readFileOrEmpty(marketplacesFile).replace(/\s/g, "");
   return registrations.includes(`"repo":"${repositorySlug}"`);
 }
@@ -3456,7 +3658,7 @@ function cachedPublishedRelease(cacheFile) {
 function refreshPublishedReleaseCache(cacheFile, repositorySlug) {
   try {
     writeFileAtomically(
-      path16.dirname(cacheFile),
+      path17.dirname(cacheFile),
       cacheFile,
       fetchedHighestReleaseVersion(repositorySlug),
       ".published-release."

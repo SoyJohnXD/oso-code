@@ -144,7 +144,6 @@ test("an applier and a verifier each run in a session pinned to their own worktr
     const applier = resultFor(results, pair.applierWorktree);
     assert.equal(applier.outcome, "reported");
     assert.equal(applier.outcome === "reported" && applier.verdict.status, "done");
-    assert.equal(applier.outcome === "reported" && applier.verdict.matched, true);
     const verifier = resultFor(results, pair.verifierWorktree);
     assert.equal(verifier.outcome === "reported" && verifier.verdict.verdict, "pass");
     assert.equal(verifier.outcome === "reported" && verifier.raw, "verdict: pass\n");
@@ -382,7 +381,6 @@ test("a child that reports without a verdict line is never read as a verdict", a
     });
     const only = results[0]!;
     assert.equal(only.outcome, "reported");
-    assert.equal(only.outcome === "reported" && only.verdict.matched, false);
     assert.equal(only.outcome === "reported" && only.verdict.status, undefined);
     assert.equal(only.outcome === "reported" && only.verdict.verdict, undefined);
   });

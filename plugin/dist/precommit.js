@@ -146,9 +146,12 @@ function readStateFile(stateFile) {
     return { kind: "unreadable", cause: causeOf(error) };
   }
 }
+function eventsLogFile() {
+  return path.join(stateRootDirectory(), "events.jsonl");
+}
 function logEvent(entry) {
   const line = serializeEvent(entry);
-  const eventsLog = path.join(stateRootDirectory(), "events.jsonl");
+  const eventsLog = eventsLogFile();
   try {
     mkdirSync(path.dirname(eventsLog), { recursive: true });
     withOwnerOnlyUmask(() => appendFileSync(eventsLog, `${line}

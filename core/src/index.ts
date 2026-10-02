@@ -7,6 +7,7 @@ export {
   type HookEnvelope,
 } from "./hosts/envelope.ts";
 export { APPLIER_PROOF_HEADER } from "./prose/applier-proof.ts";
+export { VERIFIER_AGENT } from "./prose/routes.ts";
 export { openCodeRoutes, type OpenCodeRoute } from "./routes/render.ts";
 export {
   PlanApprovalError,
@@ -28,3 +29,5 @@ export {
   writeStateValues,
 } from "./state/store.ts";
 export { delegationOverdueAtMs, overdueDelegation, type OverdueDelegation } from "./state/watch.ts";
+export { captureVerifierReport, isVerifierAgent } from "./verdict/capture.ts";
+export { parseAgentVerdict, type ParsedAgentVerdict } from "./verdict/grammar.ts";
