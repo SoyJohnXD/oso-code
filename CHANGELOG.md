@@ -2,6 +2,16 @@
 
 Every entry below is dated to the release it names: its counts, its paths and its present-tense sentences are facts about the commit that release shipped from, never about the tree you are reading now. An entry is not rewritten when a later change falsifies one of its claims — what a release actually shipped is the only thing a log is good for, and a corrected entry no longer holds it. What happens instead is a **Superseded since this release** block under the entry, naming the claim and what replaced it, so both stand and a reader can tell which is which.
 
+## 0.29.0
+
+**Release cut: measured-harness rev 4 and proddeploy-false-positives.** This release ships the two measured-harness children (verdict-receipt, loop-cap) and the production-boundary false-positive change. It is based on `5536946` (PRs #64, #65, #69). Reinstall Claude Code with `bash bootstrap/install.sh --yes` and OpenCode with `node bootstrap/oso.js install --host opencode --yes`, then restart each host.
+
+- **Verdict record and receipt.** Every verifier verdict (pass, fail, blocked) is captured on both hosts into `verdicts.jsonl`; a closing `verify_green=true` needs a receipt; `oso-state report` counts slices, rounds and first-fail rates.
+- **Capped fix loops.** `/plan` and `/debug` stop at two fix rounds read from `oso-state report`, run an automatic read-only diagnosis at the cap, allow two more rounds, then escalate with a marker; an empty or malformed result counts as a round, never as a verdict.
+- **A production boundary that judges what it can read.** The lexer reads up to 32 KiB (ADR 0158), the options of `command`, `xargs`, `env`, `timeout`, `flock` and `taskset`, and numeric `$(( ))` arithmetic, so long PR-body heredocs, `command -v`, `env -u` and `xargs -0` stop being denied. Replayed over the 30-day window ending 2026-09-30, recorded denials fall from 210 to 59.
+- **Routes closed on the way.** Deploys behind `timeout 10s`, `flock`, `taskset`, `env -S` (including its own `\_` / `${X}` grammar), `npx -c`/`npm exec -c`/`pnpm dlx -c`/`yarn exec`, `{fd}>` redirections and xargs-fed git, runners and interpreters; pushes with extra refspecs, `--tags`, `GIT_CONFIG_*` or a verb fed by stdin. Lines the lexer still cannot read stay denied.
+- **Question rounds for decisions only.** Plan and roadmap deliver intent, maps and findings as chat text; `AskUserQuestion` carries only short decisions.
+
 ## 0.28.0
 
 **Release cut: harness-friction.** This release ships the six-child roadmap that cut the friction the harness imposes on both hosts while keeping every quality gate, plus the Windows fix for its liveness watchdog. It is based on `91088ab` (PRs #55–#59, #61, #62). Reinstall Claude Code with `bash bootstrap/install.sh --yes` and OpenCode with `node bootstrap/oso.js install --host opencode --yes`, then restart each host.

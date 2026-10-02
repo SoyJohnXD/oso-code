@@ -4209,7 +4209,7 @@ function installRecordReading(installRecord) {
   return { kind: "read", record: parsed };
 }
 function versionDrift(record) {
-  const running = "0.28.0";
+  const running = "0.29.0";
   if (running === void 0 || running === "") return unchecked("opencode-build-version-unknown", "this plugin build embeds no harness version");
   if (running === record.version) return INTACT;
   return drifted(
