@@ -1,0 +1,31 @@
+{
+  "name": "production boundary: pin: a deploy behind npx --no holding true as its value is denied unread",
+  "source": [
+    {
+      "assertion": "npx --no takes a value (npx-cli.js does not list it as a switch), so the -c that follows runs; the line stays unread"
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"npx --no true -c 'vercel --prod'\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "past what the production boundary can read"
+      ]
+    },
+    "stderr": "",
+    "events_appended": [
+      {
+        "event": "prod-deploy-denied",
+        "command": "npx --no true -c 'vercel --prod'"
+      }
+    ]
+  }
+}

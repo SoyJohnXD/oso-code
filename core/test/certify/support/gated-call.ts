@@ -1,6 +1,6 @@
 import type { LexedCommand } from "../../../src/shell/lexed-command.ts";
 import { isResidueCall } from "../../../src/shell/lexed-command.ts";
-import { basenameOf } from "../../../src/shell/lexer.ts";
+import { basenameOf } from "../../../src/shell/lexed-word.ts";
 import { lineVerdict } from "../../../src/shell/line-verdict.ts";
 import { isRecord } from "./config-fields.ts";
 import { sessionParts } from "./session-transcript.ts";

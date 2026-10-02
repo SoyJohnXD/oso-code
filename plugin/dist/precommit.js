@@ -1,7 +1,12 @@
-// core/src/shell/lexer.ts
+// core/src/hosts/envelope.ts
+var JSON_SPACE = "[\\t\\n\\v\\f\\r ]";
+var STOP_HOOK_ACTIVE = new RegExp(`"stop_hook_active"${JSON_SPACE}*:${JSON_SPACE}*true`);
+
+// core/src/shell/prefix-words.ts
 var COPROCESS_WORD = "coproc";
+var ENV_WORD = "env";
 var PREFIX_WORDS = /* @__PURE__ */ new Set([
-  "env",
+  ENV_WORD,
   "command",
   "builtin",
   "exec",
@@ -37,6 +42,50 @@ var PREFIX_WORDS = /* @__PURE__ */ new Set([
   "!",
   COPROCESS_WORD
 ]);
+var ENV_SPLIT_STRING_LONG_OPTION = "--split-string";
+var ENV_SPLIT_STRING_OPTIONS = ["-S", ENV_SPLIT_STRING_LONG_OPTION];
+var ENV_OPTIONS = {
+  takingAValue: ["-u", ...ENV_SPLIT_STRING_OPTIONS],
+  takingAnAttachedValueOnly: [],
+  standingAlone: ["-i", "-0", "-v", "-"],
+  splitsFlagBundles: true
+};
+var FLOCK_COMMAND_OPTIONS = {
+  takingAValue: ["-c", "--command"],
+  takingAnAttachedValueOnly: [],
+  standingAlone: [],
+  splitsFlagBundles: false
+};
+var FLOCK_SHAPE = {
+  options: {
+    takingAValue: [
+      "-E",
+      "-w",
+      "--wait",
+      "--timeout",
+      "--conflict-exit-code",
+      ...FLOCK_COMMAND_OPTIONS.takingAValue
+    ],
+    takingAnAttachedValueOnly: [],
+    standingAlone: [
+      "-s",
+      "-x",
+      "-u",
+      "-n",
+      "-o",
+      "--shared",
+      "--exclusive",
+      "--unlock",
+      "--nonblock",
+      "--close",
+      "--verbose"
+    ],
+    splitsFlagBundles: true
+  },
+  operandGrammar: /^[\s\S]+$/
+};
+
+// core/src/shell/lexer.ts
 var SHELL_INTERPRETERS = /* @__PURE__ */ new Set(["bash", "sh", "dash", "zsh", "ksh"]);
 var COMMAND_FLAG_READERS = /* @__PURE__ */ new Set([...SHELL_INTERPRETERS, "script"]);
 var CALLBACK_FLAG_READERS = /* @__PURE__ */ new Set(["mapfile", "readarray", "compgen", "complete"]);
@@ -61,10 +110,6 @@ var SHELL_WORDS_THIS_LEXER_READS = /* @__PURE__ */ new Set([
   "{",
   "}"
 ]);
-
-// core/src/hosts/envelope.ts
-var JSON_SPACE = "[\\t\\n\\v\\f\\r ]";
-var STOP_HOOK_ACTIVE = new RegExp(`"stop_hook_active"${JSON_SPACE}*:${JSON_SPACE}*true`);
 
 // core/src/routes/routes.ts
 var BUNDLE_DIRECTORY = "dist";

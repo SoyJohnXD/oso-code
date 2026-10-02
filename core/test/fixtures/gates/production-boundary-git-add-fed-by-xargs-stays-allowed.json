@@ -1,0 +1,22 @@
+{
+  "name": "production boundary: git add fed by xargs stays allowed",
+  "source": [
+    {
+      "assertion": "assert_equals \"git add fed by xargs stays allowed\" \\\n  \"allow\" \"$(verdict_for \"ls | xargs git add\")\""
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls | xargs git add\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": "",
+    "events_appended": []
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "commit gate: a commit behind GIT_CONFIG_COUNT outside the green window is denied",
+  "source": [
+    {
+      "assertion": "assert_equals \"a commit behind GIT_CONFIG_COUNT outside the green window is denied\" \\\n  \"deny\" \"$(verdict_for \"GIT_CONFIG_COUNT=1 git commit -m x\")\""
+    }
+  ],
+  "gate": "commit",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "mode=plan\nverify_green=false\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"GIT_CONFIG_COUNT=1 git commit -m x\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "\"permissionDecision\":\"deny\""
+      ]
+    },
+    "stderr": ""
+  }
+}

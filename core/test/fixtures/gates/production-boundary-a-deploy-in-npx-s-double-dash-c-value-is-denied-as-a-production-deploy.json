@@ -1,0 +1,31 @@
+{
+  "name": "production boundary: a deploy in npx's double-dash --c= value is denied as a production deploy",
+  "source": [
+    {
+      "assertion": "assert_equals \"a deploy in npx's double-dash --c= value is denied as a production deploy\" \\\n  \"deny\" \"$(verdict_for \"npx --c='vercel --prod'\")\""
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"npx --c='vercel --prod'\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "so a production deploy stays with the operator"
+      ]
+    },
+    "stderr": "",
+    "events_appended": [
+      {
+        "event": "prod-deploy-denied",
+        "command": "npx --c='vercel --prod'"
+      }
+    ]
+  }
+}

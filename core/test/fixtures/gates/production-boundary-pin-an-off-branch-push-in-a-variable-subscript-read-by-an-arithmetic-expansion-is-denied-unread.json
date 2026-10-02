@@ -1,0 +1,31 @@
+{
+  "name": "production boundary: pin: an off-branch push in a variable subscript read by an arithmetic expansion is denied unread",
+  "source": [
+    {
+      "assertion": "bash evaluates a variable named inside $(( )) recursively and runs a command substitution in its array subscript; an arithmetic body holding an identifier falls back to the substitution read, which leaves this line unread as at 4b498e3"
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\": \"test-session\", \"transcript_path\": \"{home}/.claude/projects/oso-code/test-session.jsonl\", \"cwd\": \"{cwd}\", \"permission_mode\": \"default\", \"hook_event_name\": \"PreToolUse\", \"tool_name\": \"Bash\", \"tool_input\": {\"command\": \"x='a[$(git push origin main)]'; echo $((-x))\", \"description\": \"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "past what the production boundary can read"
+      ]
+    },
+    "stderr": "",
+    "events_appended": [
+      {
+        "event": "prod-deploy-denied",
+        "command": "x='a[$(git push origin main)]'; echo $((-x))"
+      }
+    ]
+  }
+}

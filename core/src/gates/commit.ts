@@ -1,6 +1,6 @@
 import type { GateOutcome } from "../hosts/envelope.ts";
 import { ALLOWED } from "../hosts/envelope.ts";
-import { gitVerb, isGitCall, isResidueCall, type LexedCommand } from "../shell/lexed-command.ts";
+import { gitVerb, isFedByXargs, isGitCall, isResidueCall, type LexedCommand } from "../shell/lexed-command.ts";
 import { lineVerdict, type LexerVerdict } from "../shell/line-verdict.ts";
 import {
   allowedWithResidueCounted,
@@ -89,7 +89,8 @@ function judgeCommitLine(
 function isGatedGitCall(command: LexedCommand): boolean {
   if (!isGitCall(command)) return false;
   const verb = gitVerb(command);
-  if (verb === "" || !GATED_GIT_VERBS.has(verb)) return false;
+  if (verb === "") return isFedByXargs(command);
+  if (!GATED_GIT_VERBS.has(verb)) return false;
   return !gitCallOnlyReports(command, verb);
 }
 

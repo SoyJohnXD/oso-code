@@ -2,13 +2,13 @@
 
 ## The delivery contract — anti-swallow
 
-The Claude Code TUI drops assistant text that precedes a tool call in the same turn. Operator-facing content must END the turn as plain text, with the tool call (`AskUserQuestion`, `ExitPlanMode`) in a LATER turn. Context a question round needs travels INSIDE the `AskUserQuestion` fields, never as prose before the call.
+The Claude Code TUI drops assistant text that precedes a tool call in the same turn. Operator-facing content — intent, surface map, findings, reconciliations, recommendations — ENDS the turn as plain chat text, where the operator replies; the tool call comes in a LATER turn.
 
 One exception stands, stated whole in `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **The unattended run** section: the park and the final report still end the turn.
 
 ## Question rounds
 
-The tool is `AskUserQuestion`, and one round holds 4 questions maximum.
+The tool is `AskUserQuestion`, and one round holds 4 questions maximum. A question carries only a genuine enumerable decision, each option one or two lines, never its context.
 
 ## The approval gate
 
@@ -34,7 +34,7 @@ The state is the repository's; the session id is audit metadata, yet a write wit
 
 ## The runtime gates, and the two layers of the commit rail
 
-The commit and edits gates are this plugin's own hooks, armed on `CLAUDE_CODE_SESSION_ID`, which no operator terminal carries. The commit rail has two layers, the git `pre-commit` hook and the `PreToolUse` matcher, since neither alone sees which worktree a commit comes from. The `SessionEnd` teardown reads `repo_path`, armed by the wave loop, to run `git worktree remove`/`prune` in the named repo.
+The commit and edits gates are this plugin's own hooks, armed on `CLAUDE_CODE_SESSION_ID`, which no operator terminal carries. The commit rail has two layers, the git `pre-commit` hook and the `PreToolUse` matcher. The `SessionEnd` teardown reads `repo_path`, armed by the wave loop, to run `git worktree remove`/`prune` in the named repo.
 
 ## What the unattended marker arms on this host
 

@@ -2,6 +2,7 @@
 
 Date: 2026-07-25
 Status: accepted
+Superseded-by: ADR-0158 — retires only the 3072-byte bound
 Reconciled: elsewhere — landed in plugin/hooks/lexer.sh; the lexer, its bounds and its telemetry are code detail the frozen body has never carried.
 Source: docs/blueprint.md amendment of 2026-07-25 (gates-hardening), joint marker (D2/D3/D4/D18/D19/D20), deciding commit 7d52356
 

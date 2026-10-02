@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { basenameOf, lexShellCommands, type LexRecord } from "../../src/shell/lexer.ts";
+import { basenameOf } from "../../src/shell/lexed-word.ts";
+import { lexShellCommands, type LexRecord } from "../../src/shell/lexer.ts";
 import { provedSomething } from "../support/proved.ts";
 import { isDirectChild } from "../support/repository-paths.ts";
 import { linesFoldingHeredocBodiesIntoTheirOpener } from "../support/shell-heredoc-lines.ts";

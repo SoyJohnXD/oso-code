@@ -1,26 +1,34 @@
+import { runsAReplaceStringAsCode } from "./lexed-command.ts";
+import { basenameOf, holdsABackslashOrADollar, UNREAD_PAYLOAD_MARKER } from "./lexed-word.ts";
+import {
+  COPROCESS_WORD,
+  isAssignment,
+  isCommandPrefixWord,
+  PREFIX_WORDS,
+  prefixCutOf,
+  spelledOption,
+  type SpelledOption,
+} from "./prefix-words.ts";
+
 export type LexRecord =
-  | { readonly kind: "commandWord"; readonly word: string }
+  | { readonly kind: "commandWord"; readonly word: string; readonly assignments: readonly string[] }
   | { readonly kind: "argument"; readonly word: string }
   | { readonly kind: "stdinText"; readonly text: string }
   | { readonly kind: "unreadPayload" };
 
-export const MAX_LEXED_INPUT_BYTES = 3072;
-export const UNREAD_PAYLOAD_MARKER = "!unread-payload";
+export const MAX_LEXED_INPUT_BYTES = 32768;
 
 const MAX_PAYLOAD_DEPTH = 3;
 const SPECIAL_CHARACTERS = "'\"\\$`#;&|(){}<> \t\n";
 const QUOTED_SPECIAL_CHARACTERS = "\"\\$`";
 const WORD_DELIMITERS = " \t\n;&|()<>";
+const ARITHMETIC_OPENING = "((";
+const ARITHMETIC_EXPRESSION_CHARACTER = /^[0-9 \t+\-*/%<>=!&|^~?:,.]$/;
+const DESCRIPTOR_NUMBER = /^[0-9]+$/;
+const DESCRIPTOR_VARIABLE = /^\{[A-Za-z_][A-Za-z0-9_]*\}$/;
 const UNREAD_PAYLOAD: LexRecord = { kind: "unreadPayload" };
 
-const COPROCESS_WORD = "coproc";
 const COPROCESS_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const PREFIX_WORDS = new Set([
-  "env", "command", "builtin", "exec", "nice", "nohup", "time", "timeout", "stdbuf",
-  "sudo", "doas", "setsid", "xargs", "flock", "ionice", "chrt", "taskset", "unbuffer",
-  "then", "else", "elif", "do", "done", "fi", "in", "until", "while", "if", "for",
-  "case", "esac", "select", "function", "!", COPROCESS_WORD,
-]);
 const SHELL_INTERPRETERS = new Set(["bash", "sh", "dash", "zsh", "ksh"]);
 const COMMAND_FLAG_READERS = new Set([...SHELL_INTERPRETERS, "script"]);
 const SHELL_COMMAND_FLAG = "c";
@@ -41,6 +49,8 @@ const ALIAS_WORD = "alias";
 const HISTORY_REPLAYING_WORD = "fc";
 const ALIAS_DEFINITION = /^[^-=][^=]*=/;
 const ASSIGNMENT_NAMING_A_FILE_THE_SHELL_SOURCES = /^BASH_ENV=/;
+const RUNNER_CALL_IN_A_FLAG_BUNDLE = /^-[^-c=][^=]*c/;
+const RUNNER_PACKAGE_OPTIONS = new Set(["-p", "--package"]);
 
 export const SHELL_WORDS_THIS_LEXER_READS: ReadonlySet<string> = new Set([
   ...PREFIX_WORDS, ...COMMAND_FLAG_READERS, ...CALLBACK_FLAG_READERS, ...SOURCING_BUILTINS,
@@ -49,12 +59,7 @@ export const SHELL_WORDS_THIS_LEXER_READS: ReadonlySet<string> = new Set([
 ]);
 
 export function lexShellCommands(commandLine: string): readonly LexRecord[] {
-  return new CommandLineLexer(commandLine, 0).lex();
-}
-
-export function basenameOf(word: string): string {
-  const lastSlash = word.lastIndexOf("/");
-  return lastSlash === -1 ? word : word.slice(lastSlash + 1);
+  return new CommandLineLexer(commandLine, 0, false).lex();
 }
 
 function isShellInterpreter(word: string): boolean {
@@ -77,21 +82,28 @@ function namesAFileTheShellSources(assignment: string): boolean {
   return ASSIGNMENT_NAMING_A_FILE_THE_SHELL_SOURCES.test(assignment);
 }
 
-function withoutACoprocessName(words: readonly string[]): readonly string[] {
+function lengthWithoutACoprocessName(words: readonly string[]): number {
   const trailing = words.at(-1);
-  if (trailing === undefined || words.at(-2) !== COPROCESS_WORD) return words;
-  return COPROCESS_NAME.test(trailing) ? words.slice(0, -1) : words;
-}
-
-function isCommandPrefixWord(word: string): boolean {
-  if (/^[A-Za-z_][\s\S]*=/.test(word)) return true;
-  if (word.startsWith("-")) return true;
-  if (!/[^0-9]/.test(word)) return word !== "";
-  return PREFIX_WORDS.has(basenameOf(word));
+  if (trailing === undefined || words.at(-2) !== COPROCESS_WORD) return words.length;
+  return COPROCESS_NAME.test(trailing) ? words.length - 1 : words.length;
 }
 
 function completesItsWordsFromStdin(word: string): boolean {
   return basenameOf(word) === "xargs";
+}
+
+function handsStdinAProgramToRun(prefixWords: readonly string[]): boolean {
+  const xargsAt = prefixWords.findIndex(completesItsWordsFromStdin);
+  return xargsAt !== -1 && prefixWords.slice(xargsAt + 1).some((word) => PREFIX_WORDS.has(basenameOf(word)));
+}
+
+function recordCarries(record: LexRecord, text: string): boolean {
+  if (record.kind === "commandWord" || record.kind === "argument") return record.word.includes(text);
+  return record.kind === "stdinText" && record.text.includes(text);
+}
+
+function namesADescriptor(word: string): boolean {
+  return DESCRIPTOR_NUMBER.test(word) || DESCRIPTOR_VARIABLE.test(word);
 }
 
 function isSourcingBuiltin(word: string): boolean {
@@ -106,6 +118,24 @@ function leadingRunWithout(text: string, stoppers: string): string {
   let length = 0;
   while (length < text.length && !stoppers.includes(text[length] as string)) length += 1;
   return text.slice(0, length);
+}
+
+function arithmeticExpansionLength(text: string): number | undefined {
+  if (!text.startsWith(ARITHMETIC_OPENING)) return undefined;
+  let nesting = 0;
+  for (let at = ARITHMETIC_OPENING.length; at < text.length; at += 1) {
+    const character = text[at] as string;
+    if (character === "(") {
+      nesting += 1;
+    } else if (character === ")" && nesting > 0) {
+      nesting -= 1;
+    } else if (character === ")") {
+      return text[at + 1] === ")" ? at + 2 : undefined;
+    } else if (!ARITHMETIC_EXPRESSION_CHARACTER.test(character)) {
+      return undefined;
+    }
+  }
+  return undefined;
 }
 
 type DecodedSpan = Readonly<{ text: string; length: number }>;
@@ -193,6 +223,121 @@ function leadingRunOf(text: string, digit: RegExp, width: number): string {
   return text.slice(0, length);
 }
 
+type RunnerCall = Readonly<{ kind: "payload"; payload: string }> | Readonly<{ kind: "pastReading" }>;
+type LeadingCallOption = RunnerCall | Readonly<{ kind: "callOption"; at: number; attached: string | undefined }>;
+type PlacedSubcommand =
+  | RunnerCall
+  | Readonly<{ kind: "subcommand"; leadingOptions: readonly string[]; execArguments: readonly string[] }>;
+type RunnerSubcommand = Readonly<{
+  names: ReadonlySet<string>;
+  callOptions: ReadonlySet<string>;
+  callOf: (callArguments: readonly string[]) => RunnerCall;
+}>;
+
+const NO_RUNNER_CALL: RunnerCall = { kind: "payload", payload: "" };
+const A_RUNNER_CALL_PAST_READING: RunnerCall = { kind: "pastReading" };
+
+const NPM_CALL_OPTIONS: ReadonlySet<string> = new Set(["-c", "--c", "--call"]);
+const PNPM_SHELL_MODE_OPTIONS: ReadonlySet<string> = new Set(["-c", "--shell-mode"]);
+const YARN_EXEC_OPTIONS: ReadonlySet<string> = new Set();
+
+const RUNNERS_CALLING_A_COMMAND: ReadonlyMap<string, (runnerArguments: readonly string[]) => RunnerCall> = new Map([
+  ["npx", callOptionValueOf],
+  ["pnpx", shellModeStringOf],
+]);
+const RUNNER_SUBCOMMANDS_CALLING_A_COMMAND: ReadonlyMap<string, RunnerSubcommand> = new Map([
+  ["npm", { names: new Set(["exec", "x"]), callOptions: NPM_CALL_OPTIONS, callOf: callOptionValueOf }],
+  ["pnpm", { names: new Set(["exec", "dlx"]), callOptions: PNPM_SHELL_MODE_OPTIONS, callOf: shellModeStringOf }],
+  ["yarn", { names: new Set(["exec"]), callOptions: YARN_EXEC_OPTIONS, callOf: shellStringOf }],
+]);
+
+function runnerCallOf(words: readonly string[]): RunnerCall {
+  const runner = basenameOf(words[0] ?? "");
+  const runnerArguments = words.slice(1);
+  const directCall = RUNNERS_CALLING_A_COMMAND.get(runner);
+  if (directCall !== undefined) return directCall(runnerArguments);
+  const subcommand = RUNNER_SUBCOMMANDS_CALLING_A_COMMAND.get(runner);
+  if (subcommand === undefined) return NO_RUNNER_CALL;
+  const placed = placedSubcommand(runnerArguments, subcommand.names);
+  if (placed.kind !== "subcommand") return placed;
+  const leadingCalls = placed.leadingOptions.filter((option) => spellsACallOption(option, subcommand.callOptions));
+  return subcommand.callOf([...leadingCalls, ...placed.execArguments]);
+}
+
+function placedSubcommand(runnerArguments: readonly string[], names: ReadonlySet<string>): PlacedSubcommand {
+  const first = operandIndexFrom(runnerArguments, 0);
+  if (first === -1) return NO_RUNNER_CALL;
+  const second = operandIndexFrom(runnerArguments, first + 1);
+  const firstMayBeAnOptionValue = first > 0 && second !== -1 && names.has(runnerArguments[second] as string);
+  if (firstMayBeAnOptionValue) return A_RUNNER_CALL_PAST_READING;
+  if (!names.has(runnerArguments[first] as string)) return NO_RUNNER_CALL;
+  return {
+    kind: "subcommand",
+    leadingOptions: runnerArguments.slice(0, first),
+    execArguments: runnerArguments.slice(first + 1),
+  };
+}
+
+function spellsACallOption(option: string, callOptions: ReadonlySet<string>): boolean {
+  if (RUNNER_CALL_IN_A_FLAG_BUNDLE.test(option)) return true;
+  return callOptions.has(runnerSpelledOption(option).name);
+}
+
+function operandIndexFrom(words: readonly string[], from: number): number {
+  return words.findIndex((word, at) => at >= from && !word.startsWith("-"));
+}
+
+function callOptionValueOf(options: readonly string[]): RunnerCall {
+  const call = leadingCallOption(options, NPM_CALL_OPTIONS);
+  if (call.kind !== "callOption") return call;
+  const valueAt = call.attached === undefined ? call.at + 1 : call.at;
+  const value = call.attached ?? options[valueAt] ?? "";
+  const anotherCallFollows = options.slice(valueAt + 1).some((option) => spellsACallOption(option, NPM_CALL_OPTIONS));
+  if (value.startsWith("-") || anotherCallFollows) return A_RUNNER_CALL_PAST_READING;
+  return { kind: "payload", payload: value };
+}
+
+function shellModeStringOf(options: readonly string[]): RunnerCall {
+  const call = leadingCallOption(options, PNPM_SHELL_MODE_OPTIONS);
+  if (call.kind !== "callOption") return call;
+  return shellStringOf(options.slice(call.at + 1));
+}
+
+function shellStringOf(shellWords: readonly string[]): RunnerCall {
+  if (shellWords[0]?.startsWith("-")) return A_RUNNER_CALL_PAST_READING;
+  return { kind: "payload", payload: shellWords.join(" ") };
+}
+
+function leadingCallOption(options: readonly string[], callOptions: ReadonlySet<string>): LeadingCallOption {
+  let anOptionMayHoldTheNextWord = false;
+  let aWordWasReadAsAnOptionValue = false;
+  for (let at = 0; at < options.length; at += 1) {
+    const option = options[at] as string;
+    if (option === END_OF_OPTIONS) return NO_RUNNER_CALL;
+    if (!option.startsWith("-")) {
+      if (!anOptionMayHoldTheNextWord) return NO_RUNNER_CALL;
+      anOptionMayHoldTheNextWord = false;
+      aWordWasReadAsAnOptionValue = true;
+      continue;
+    }
+    if (RUNNER_CALL_IN_A_FLAG_BUNDLE.test(option)) return A_RUNNER_CALL_PAST_READING;
+    const { name, attached } = runnerSpelledOption(option);
+    if (callOptions.has(name)) {
+      return aWordWasReadAsAnOptionValue ? A_RUNNER_CALL_PAST_READING : { kind: "callOption", at, attached };
+    }
+    const takesThePackage = RUNNER_PACKAGE_OPTIONS.has(name) && attached === undefined;
+    if (takesThePackage) at += 1;
+    anOptionMayHoldTheNextWord = !takesThePackage && attached === undefined;
+  }
+  return NO_RUNNER_CALL;
+}
+
+function runnerSpelledOption(option: string): SpelledOption {
+  const spelled = spelledOption(option);
+  if (option.startsWith("--") || !spelled.attached?.startsWith("=")) return spelled;
+  return { name: spelled.name, attached: spelled.attached.slice(1) };
+}
+
 type OperandSplit = Readonly<{ operand: string; rest: readonly string[]; behindAnOption: boolean }>;
 
 function splitAtTheFirstOperand(words: readonly string[]): OperandSplit | undefined {
@@ -206,19 +351,27 @@ type PendingHeredoc = { readonly delimiter: string; readonly stripsTabs: boolean
 class CommandLineLexer {
   private rest: string;
   private readonly depth: number;
+  private readonly wordsInheritABackslashOrADollar: boolean;
   private token = "";
   private tokenOpen = false;
+  private tokenHoldsAQuote = false;
+  private tokenSpelledWithABackslashOrADollar = false;
   private redirectTargetPending = false;
   private herestringPending = false;
   private pendingHeredocs: PendingHeredoc[] = [];
   private nested: LexRecord[] = [];
   private unreadStdin = "";
   private commandTokens: string[] = [];
+  private commandTokensSpelledWithABackslashOrADollar: boolean[] = [];
+  private assignments: string[] = [];
+  private leadingPrefixWords = 0;
+  private replaceString: string | undefined;
   private readonly records: LexRecord[] = [];
 
-  constructor(commandLine: string, depth: number) {
+  constructor(commandLine: string, depth: number, wordsInheritABackslashOrADollar: boolean) {
     this.rest = `${commandLine}\n`;
     this.depth = depth;
+    this.wordsInheritABackslashOrADollar = wordsInheritABackslashOrADollar;
   }
 
   lex(): readonly LexRecord[] {
@@ -244,16 +397,20 @@ class CommandLineLexer {
   }
 
   private takeSpecial(character: string): void {
+    this.noteTheSpelling(character);
     switch (character) {
       case "'":
         this.tokenOpen = true;
+        this.tokenHoldsAQuote = true;
         this.takeSingleQuoted();
         return;
       case '"':
         this.tokenOpen = true;
+        this.tokenHoldsAQuote = true;
         this.takeDoubleQuoted();
         return;
       case "\\":
+        this.tokenHoldsAQuote = true;
         this.takeEscape();
         return;
       case "$":
@@ -277,6 +434,7 @@ class CommandLineLexer {
         this.endToken();
         return;
       case ">":
+        this.dropTheRedirectedDescriptor();
         this.endToken();
         this.takeRedirect();
         return;
@@ -301,6 +459,10 @@ class CommandLineLexer {
     }
   }
 
+  private noteTheSpelling(source: string): void {
+    if (holdsABackslashOrADollar(source)) this.tokenSpelledWithABackslashOrADollar = true;
+  }
+
   private takeBrace(brace: string): void {
     if (this.braceStandsAsAReservedWord()) {
       this.endCommand();
@@ -312,7 +474,7 @@ class CommandLineLexer {
 
   private braceStandsAsAReservedWord(): boolean {
     if (this.tokenOpen || this.rest === "") return false;
-    if (!withoutACoprocessName(this.commandTokens).every(isCommandPrefixWord)) return false;
+    if (this.leadingPrefixWords < lengthWithoutACoprocessName(this.commandTokens)) return false;
     return WORD_DELIMITERS.includes(this.rest.slice(0, 1));
   }
 
@@ -320,42 +482,76 @@ class CommandLineLexer {
     if (this.tokenOpen && this.redirectTargetPending) {
       this.redirectTargetPending = false;
     } else if (this.tokenOpen) {
-      this.commandTokens.push(this.token);
+      this.pushCommandToken(this.token, this.tokenSpelledWithABackslashOrADollar);
       if (this.herestringPending) {
         this.herestringPending = false;
-        this.deferNestedCommands(this.token);
+        this.deferCommandPayload(this.token);
       }
     }
     this.token = "";
     this.tokenOpen = false;
+    this.tokenHoldsAQuote = false;
+    this.tokenSpelledWithABackslashOrADollar = false;
+  }
+
+  private dropTheRedirectedDescriptor(): void {
+    if (this.redirectTargetPending || this.tokenHoldsAQuote || !namesADescriptor(this.token)) return;
+    this.token = "";
+    this.tokenOpen = false;
+  }
+
+  private pushCommandToken(word: string, spelledWithABackslashOrADollar: boolean): void {
+    if (this.leadingPrefixWords === this.commandTokens.length && isCommandPrefixWord(word)) {
+      this.leadingPrefixWords += 1;
+    }
+    this.commandTokens.push(word);
+    this.commandTokensSpelledWithABackslashOrADollar.push(
+      spelledWithABackslashOrADollar || this.wordsInheritABackslashOrADollar,
+    );
   }
 
   private endCommand(): void {
     this.endToken();
     this.stripCommandPrefixes();
     this.deferPayloadCommands();
+    this.markAReplaceStringRunAsCode();
     this.emitCommand();
     this.commandTokens = [];
+    this.commandTokensSpelledWithABackslashOrADollar = [];
+    this.assignments = [];
+    this.leadingPrefixWords = 0;
+    this.replaceString = undefined;
     this.nested = [];
     this.unreadStdin = "";
     this.redirectTargetPending = false;
   }
 
   private stripCommandPrefixes(): void {
-    let prefixWord = "";
-    let stdinCompletesTheWords = false;
-    while (this.commandTokens.length > 0) {
-      const leading = this.commandTokens[0] as string;
-      if (!isCommandPrefixWord(leading)) {
-        if (prefixWord.startsWith("-")) this.markUnread();
-        if (stdinCompletesTheWords) this.unreadStdin += UNREAD_PAYLOAD_MARKER;
-        return;
-      }
-      prefixWord = leading;
-      if (completesItsWordsFromStdin(prefixWord)) stdinCompletesTheWords = true;
-      if (namesAFileTheShellSources(prefixWord)) this.markUnread();
-      this.commandTokens = this.commandTokens.slice(1);
+    if (this.leadingPrefixWords === 0) return;
+    this.leadingPrefixWords = 0;
+    const cut = prefixCutOf(this.commandTokens, this.commandTokensSpelledWithABackslashOrADollar);
+    const prefixWords = this.commandTokens.slice(0, cut.length);
+    this.commandTokens = this.commandTokens.slice(cut.length);
+    this.commandTokensSpelledWithABackslashOrADollar =
+      this.commandTokensSpelledWithABackslashOrADollar.slice(cut.length);
+    this.replaceString = cut.replaceString;
+    this.assignments.push(...prefixWords.filter(isAssignment));
+    for (const prefixWord of prefixWords) if (namesAFileTheShellSources(prefixWord)) this.markUnread();
+    if (this.commandTokens.length === 0) {
+      if (cut.leavesTheCommandUnread || handsStdinAProgramToRun(prefixWords)) this.markUnread();
+      return;
     }
+    if (cut.leavesTheCommandUnread) this.markUnread();
+    this.deferCommandPayload(cut.payload);
+    if (prefixWords.some(completesItsWordsFromStdin)) this.unreadStdin += UNREAD_PAYLOAD_MARKER;
+  }
+
+  private markAReplaceStringRunAsCode(): void {
+    const replaceString = this.replaceString;
+    if (replaceString === undefined) return;
+    const command = { tokens: this.commandTokens, stdin: this.unreadStdin };
+    const inNestedPayload = this.nested.some((record) => recordCarries(record, replaceString));
+    if (inNestedPayload || runsAReplaceStringAsCode(command, replaceString)) this.markUnread();
   }
 
   private deferPayloadCommands(): void {
@@ -367,7 +563,7 @@ class CommandLineLexer {
     }
     const wrapper = basenameOf(leading);
     if (wrapper === EVAL_WORD) {
-      this.deferNestedCommands(this.commandTokens.slice(1).join(" "));
+      this.deferCommandPayload(this.commandTokens.slice(1).join(" "));
       return;
     }
     if (wrapper === REMOTE_SHELL_WORD) {
@@ -394,14 +590,18 @@ class CommandLineLexer {
       this.deferOptionValueAsACommand(CALLBACK_FLAG);
       return;
     }
-    if (readsACommandFlag(leading)) this.deferInterpreterPayload();
+    if (readsACommandFlag(leading)) {
+      this.deferInterpreterPayload();
+      return;
+    }
+    this.deferRunnerCall();
   }
 
   private deferTrapAction(): void {
     let optionsEnded = false;
     for (const argument of this.commandTokens.slice(1)) {
       if (optionsEnded || !argument.startsWith("-")) {
-        this.deferNestedCommands(argument);
+        this.deferCommandPayload(argument);
         return;
       }
       if (TRAP_ARGUMENTS_LEAVING_NO_ACTION.has(argument)) return;
@@ -433,7 +633,7 @@ class CommandLineLexer {
     const payload = splitAtTheFirstOperand(words);
     if (payload === undefined) return;
     if (selectorUnresolved || payload.behindAnOption) this.markUnread();
-    this.deferNestedCommands([payload.operand, ...payload.rest].join(" "));
+    this.deferCommandPayload([payload.operand, ...payload.rest].join(" "));
   }
 
   private deferInterpreterPayload(): void {
@@ -457,19 +657,33 @@ class CommandLineLexer {
         valuePosition = true;
       } else if (commandFlagSeen) {
         if (valuePosition) this.markUnread();
-        this.deferNestedCommands(argument);
+        this.deferCommandPayload(argument);
         return;
       }
     }
   }
 
-  private deferNestedCommands(payload: string): void {
+  private deferRunnerCall(): void {
+    const call = runnerCallOf(this.commandTokens);
+    if (call.kind === "pastReading") this.markUnread();
+    else this.deferCommandPayload(call.payload);
+  }
+
+  private deferCommandPayload(payload: string): void {
+    this.lexNestedCommands(payload, this.commandTokensSpelledWithABackslashOrADollar.includes(true));
+  }
+
+  private deferNestedCommands(sourceText: string): void {
+    this.lexNestedCommands(sourceText, this.wordsInheritABackslashOrADollar);
+  }
+
+  private lexNestedCommands(payload: string, wordsInheritABackslashOrADollar: boolean): void {
     if (payload === "") return;
     if (this.depth >= MAX_PAYLOAD_DEPTH) {
       this.markUnread();
       return;
     }
-    this.nested.push(...new CommandLineLexer(payload, this.depth + 1).lex());
+    this.nested.push(...new CommandLineLexer(payload, this.depth + 1, wordsInheritABackslashOrADollar).lex());
   }
 
   private markUnread(): void {
@@ -480,7 +694,7 @@ class CommandLineLexer {
     this.commandTokens.forEach((word, index) => {
       this.records.push(
         index === 0
-          ? { kind: "commandWord", word: withSpacesForNewlines(word) }
+          ? { kind: "commandWord", word: withSpacesForNewlines(word), assignments: this.assignments }
           : { kind: "argument", word: withSpacesForNewlines(word) },
       );
     });
@@ -502,6 +716,7 @@ class CommandLineLexer {
 
   private takeSingleQuoted(): void {
     const span = this.spanBefore("'");
+    this.noteTheSpelling(span);
     this.token += span;
     this.rest = this.rest.slice(span.length + 1);
   }
@@ -516,6 +731,7 @@ class CommandLineLexer {
       }
       const character = this.rest.slice(0, 1);
       this.rest = this.rest.slice(1);
+      this.noteTheSpelling(character);
       if (character === '"') return;
       if (character === "\\") {
         this.token += this.rest.slice(0, 1);
@@ -556,8 +772,7 @@ class CommandLineLexer {
   private takeExpansion(): void {
     if (this.rest.startsWith("(")) {
       this.token += "$";
-      this.rest = this.rest.slice(1);
-      this.deferNestedCommands(this.takeSubstitutionBody());
+      this.takeParenthesizedExpansion();
       return;
     }
     if (this.rest.startsWith("{")) {
@@ -567,6 +782,16 @@ class CommandLineLexer {
       return;
     }
     this.token += "$";
+  }
+
+  private takeParenthesizedExpansion(): void {
+    const arithmeticLength = arithmeticExpansionLength(this.rest);
+    if (arithmeticLength !== undefined) {
+      this.rest = this.rest.slice(arithmeticLength);
+      return;
+    }
+    this.rest = this.rest.slice(1);
+    this.deferNestedCommands(this.takeSubstitutionBody());
   }
 
   private takeSubstitutionBody(): string {
@@ -592,6 +817,7 @@ class CommandLineLexer {
 
   private takeBacktick(): void {
     const span = this.spanBefore("`");
+    this.noteTheSpelling(span);
     this.token += "$";
     this.rest = this.rest.slice(span.length + 1);
     this.deferNestedCommands(span);
@@ -609,6 +835,7 @@ class CommandLineLexer {
   }
 
   private takeInputRedirect(): void {
+    this.dropTheRedirectedDescriptor();
     if (this.rest.startsWith("<<")) {
       this.rest = this.rest.slice(2);
       this.endToken();

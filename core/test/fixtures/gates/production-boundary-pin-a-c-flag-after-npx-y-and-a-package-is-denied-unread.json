@@ -1,0 +1,31 @@
+{
+  "name": "production boundary: pin: a -c flag after npx -y and a package is denied unread",
+  "source": [
+    {
+      "assertion": "npx -y prettier -c . is denied unread as at 4b498e3: no npx option stands alone as a switch, so -y may hold the package word and the -c that follows cannot be placed"
+    }
+  ],
+  "gate": "proddeploy",
+  "argv": [],
+  "env": {},
+  "state_before": {
+    ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+  },
+  "cwd": "workspace",
+  "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"npx -y prettier -c .\",\"description\":\"regression case\"}}",
+  "expect": {
+    "exit": 0,
+    "stdout": {
+      "contains": [
+        "past what the production boundary can read"
+      ]
+    },
+    "stderr": "",
+    "events_appended": [
+      {
+        "event": "prod-deploy-denied",
+        "command": "npx -y prettier -c ."
+      }
+    ]
+  }
+}

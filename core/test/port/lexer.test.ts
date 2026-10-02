@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { lexShellCommands, UNREAD_PAYLOAD_MARKER, type LexRecord } from "../../src/shell/lexer.ts";
+import { UNREAD_PAYLOAD_MARKER } from "../../src/shell/lexed-word.ts";
+import { lexShellCommands, MAX_LEXED_INPUT_BYTES, type LexRecord } from "../../src/shell/lexer.ts";
 import { provedSomething } from "../support/proved.ts";
 
 type LexerCase = {
@@ -10,7 +11,13 @@ type LexerCase = {
   readonly records: readonly string[];
 };
 
-const OVER_THE_INPUT_BOUND = `echo ${"a".repeat(3072)}`;
+const READABLE_COMMAND_BYTES = MAX_LEXED_INPUT_BYTES - "\n".length;
+const AT_THE_INPUT_BOUND = `echo ${"a".repeat(READABLE_COMMAND_BYTES - "echo ".length)}`;
+const TWO_BYTE_CHARACTER = "é";
+const MULTIBYTE_AT_THE_INPUT_BOUND = `echo ${TWO_BYTE_CHARACTER.repeat(
+  (READABLE_COMMAND_BYTES - "echo ".length) / Buffer.byteLength(TWO_BYTE_CHARACTER),
+)}`;
+const BOUND_CITATION = "plugin/hooks/lexer.sh:27-30, at ADR 0158's bound";
 
 const LEXER_CASES: readonly LexerCase[] = [
   {
@@ -42,6 +49,18 @@ const LEXER_CASES: readonly LexerCase[] = [
     readFrom: "plugin/hooks/lexer.sh:277-293",
     line: "<in.txt git commit",
     records: [">git", ".commit"],
+  },
+  {
+    reads: "a redirection's file-descriptor number as no word of the command",
+    readFrom: "POSIX XCU 2.10.1: IO_NUMBER",
+    line: "git push origin oso-run/x 2>&1 0</dev/null",
+    records: [">git", ".push", ".origin", ".oso-run/x"],
+  },
+  {
+    reads: "digits a blank or a quote parts from the redirection as an argument",
+    readFrom: "POSIX XCU 2.10.1: IO_NUMBER",
+    line: "echo 2 >f '3'>g",
+    records: [">echo", ".2", ".3"],
   },
   {
     reads: "a herestring as more commands",
@@ -154,16 +173,28 @@ const LEXER_CASES: readonly LexerCase[] = [
     ],
   },
   {
-    reads: "a line past the input-bytes bound as one payload it never opened",
-    readFrom: "plugin/hooks/lexer.sh:19,27-30",
-    line: OVER_THE_INPUT_BOUND,
+    reads: "a line one byte past the input-bytes bound as one payload it never opened",
+    readFrom: BOUND_CITATION,
+    line: `${AT_THE_INPUT_BOUND}a`,
     records: [UNREAD_PAYLOAD_MARKER],
   },
   {
-    reads: "the same line one byte under that bound as the command it spells",
-    readFrom: "plugin/hooks/lexer.sh:19,27-30",
-    line: OVER_THE_INPUT_BOUND.slice(0, 3071),
-    records: [">echo", `.${"a".repeat(3066)}`],
+    reads: "a line whose bytes and sentinel newline fill the input-bytes bound as the command it spells",
+    readFrom: BOUND_CITATION,
+    line: AT_THE_INPUT_BOUND,
+    records: [">echo", `.${AT_THE_INPUT_BOUND.slice("echo ".length)}`],
+  },
+  {
+    reads: "a multibyte line one byte past the bound as unread, though its characters number half of it",
+    readFrom: BOUND_CITATION,
+    line: `${MULTIBYTE_AT_THE_INPUT_BOUND}a`,
+    records: [UNREAD_PAYLOAD_MARKER],
+  },
+  {
+    reads: "a multibyte line filling the bound to its last byte as the command it spells",
+    readFrom: BOUND_CITATION,
+    line: MULTIBYTE_AT_THE_INPUT_BOUND,
+    records: [">echo", `.${MULTIBYTE_AT_THE_INPUT_BOUND.slice("echo ".length)}`],
   },
 ];
 
@@ -198,7 +229,7 @@ const CLOSED_DIVERGENCE_CASES: readonly LexerCase[] = [
     reads: "an xargs replace-string as one word, so the line no longer splits at the brace",
     readFrom: "plugin/hooks/lexer.sh:32,52",
     line: "echo --prod | xargs -I{} vercel {}",
-    records: [">echo", ".--prod", ">vercel", ".{}", `<${UNREAD_PAYLOAD_MARKER}`, UNREAD_PAYLOAD_MARKER],
+    records: [">echo", ".--prod", ">vercel", ".{}", `<${UNREAD_PAYLOAD_MARKER}`],
   },
   {
     reads: "an ANSI-C quoted option as the option the shell hands the deploy CLI",
@@ -382,7 +413,82 @@ const KEPT_SHAPES: readonly LexerCase[] = [
   },
 ];
 
-const ALL_CASES = [...LEXER_CASES, ...CLOSED_DIVERGENCE_CASES, ...KEPT_SHAPES];
+const PREFIX_ARITY_CASES: readonly LexerCase[] = [
+  {
+    reads: "env's -u value as the name it unsets, never the command word",
+    readFrom: "env(1): -u, --unset=NAME",
+    line: "env -u X git commit",
+    records: [">git", ".commit"],
+  },
+  {
+    reads: "command -v as a lookup that runs nothing, left unstripped",
+    readFrom: "bash(1) SHELL BUILTIN COMMANDS: command",
+    line: "command -v git",
+    records: [">command", ".-v", ".git"],
+  },
+  {
+    reads: "a duration outside timeout's grammar as today's command word, and the line as unread",
+    readFrom: "timeout(1): DURATION",
+    line: "timeout inf git commit",
+    records: [">inf", ".git", ".commit", UNREAD_PAYLOAD_MARKER],
+  },
+  {
+    reads: "an xargs replace-string as the git verb as a payload it cannot read",
+    readFrom: "xargs(1): -I replace-str",
+    line: "echo x | xargs -I{} git {}",
+    records: [">echo", ".x", ">git", ".{}", `<${UNREAD_PAYLOAD_MARKER}`, UNREAD_PAYLOAD_MARKER],
+  },
+  {
+    reads: "flock's -c payload once, though a heredoc strips the prefixes before the line ends",
+    readFrom: "flock(1): -c, --command",
+    line: "flock /tmp/l -c 'git commit' <<EOF\nx\nEOF",
+    records: [">flock", "./tmp/l", ".-c", ".git commit", "<x", ">git", ".commit"],
+  },
+  {
+    reads: "env's option value once, though a heredoc strips the prefixes before the line ends",
+    readFrom: "env(1): -u, --unset=NAME",
+    line: "env -u X bash <<EOF\ngit commit\nEOF",
+    records: [">bash", ">git", ".commit"],
+  },
+  {
+    reads: "an xargs flag bundle defining a replace-string as today's command word, and the line as unread",
+    readFrom: "xargs(1): -i[replace-str]",
+    line: "xargs -ri0 0 deploy",
+    records: [">deploy", `<${UNREAD_PAYLOAD_MARKER}`, UNREAD_PAYLOAD_MARKER],
+  },
+  {
+    reads: "a numeric xargs replace-string as the command word, and the line as unread",
+    readFrom: "xargs(1): -I replace-str",
+    line: "xargs -I0 0 deploy",
+    records: [">0", ".deploy", `<${UNREAD_PAYLOAD_MARKER}`, UNREAD_PAYLOAD_MARKER],
+  },
+  {
+    reads: "npx's -c value as the nested command it runs",
+    readFrom: "npm-exec(1): -c, --call",
+    line: "npx -c 'git commit'",
+    records: [">npx", ".-c", ".git commit", ">git", ".commit"],
+  },
+  {
+    reads: "flock's attached --command= value ahead of its lock file as the nested command it runs",
+    readFrom: "flock(1): -c, --command",
+    line: "flock --command='git commit' /tmp/l",
+    records: [">flock", ".--command=git commit", "./tmp/l", ">git", ".commit"],
+  },
+  {
+    reads: "npx's -c= value as the nested command it runs",
+    readFrom: "npm-exec(1): -c, --call",
+    line: "npx -c='git commit'",
+    records: [">npx", ".-c=git commit", ">git", ".commit"],
+  },
+  {
+    reads: "a flag bundle carrying npx's -c as a payload it cannot read",
+    readFrom: "npm-exec(1): -c, --call",
+    line: "npx -yc 'git commit'",
+    records: [">npx", ".-yc", ".git commit", UNREAD_PAYLOAD_MARKER],
+  },
+];
+
+const ALL_CASES = [...LEXER_CASES, ...CLOSED_DIVERGENCE_CASES, ...KEPT_SHAPES, ...PREFIX_ARITY_CASES];
 
 provedSomething(
   `at least one of ${ALL_CASES.length} lexer port cases is exercised`,
@@ -409,6 +515,14 @@ describe("core/src/shell/lexer.ts: the five divergences and the locale sibling o
 describe("core/src/shell/lexer.ts: the shapes those closures must leave where they were", () => {
   for (const { reads, readFrom, line, records } of KEPT_SHAPES) {
     test(`it still reads ${reads} (read from ${readFrom})`, () => {
+      assert.deepEqual(rendered(lexShellCommands(line)), records);
+    });
+  }
+});
+
+describe("core/src/shell/lexer.ts: the option arity of the prefix words whose options it knows", () => {
+  for (const { reads, readFrom, line, records } of PREFIX_ARITY_CASES) {
+    test(`it reads ${reads} (read from ${readFrom})`, () => {
       assert.deepEqual(rendered(lexShellCommands(line)), records);
     });
   }
