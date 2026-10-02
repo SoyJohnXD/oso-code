@@ -87,6 +87,8 @@ No wait marker is armed here, because this host has no later turn to bridge. A c
 
 Use this host's `explore` subagent type for §2 step 1, launched through the `task` tool — it inherits the parent's permission set, so it can map the surface without becoming an eighth oso-code role (D10). Launch up to three with disjoint evidence targets from the intent, exactly as the neutral body requires.
 
+§6 step 3's diagnosis agent is the same `explore` subagent type, one launch, through the `task` tool.
+
 ## Front-surface binding
 
 When `../_shared/front-surface.md`'s trigger fires, READ `../_shared/references/opencode.md`'s **Front-surface binding** section NOW. It is the single OpenCode binding for Impeccable's mounted path, all three argument routes, package-version record, agent route and absence remedy; this mode supplies only the PLAN wiring.

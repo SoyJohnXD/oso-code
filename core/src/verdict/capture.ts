@@ -44,6 +44,5 @@ function appendReportToItsRepository({ host, cwd, session, model, report }: Veri
     role: VERIFIER_ROLE,
     model,
     ...readVerdictShape(report),
-    escalated: false,
   });
 }

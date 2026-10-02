@@ -10,7 +10,7 @@ Six moments, each reported AS IT HAPPENS — never batched, never deferred to a 
 - **Launching** — before a delegation's result comes back: name the role handed the work (`oso-applier`, `oso-verifier`, the wave integrator, or the judge invoked), the assignment given to it in one clause, and the tree it runs in — the worktree path, or the main checkout.
 - **Reading a verdict** — once applier, verifier or integrator returns: name the verdict — pass, fail, or blocked — plus the ONE fact that decided it: the failing check, the blocking question, the conflicting file. Never a summary of the whole report.
 - **A judge's outcome** — once debt-sweep, the conformance axis, doubt-pass, security-pass, triage or quality-pass returns: name the verdict token(s) it ended on and, when findings exist, their count per axis — never the findings themselves, which travel their own route to the operator. The named residual below is reported at the close, never here.
-- **Closing** — once a slice or wave lands: name what shipped, the commit it landed as (or "no commit" and why, per the ledger's Verification row), what runs next, and any named residual a judge's loop left behind.
+- **Closing** — once a slice or wave lands: name what shipped, the commit it landed as (or "no commit" and why, per the ledger's Verification row), what runs next, any named residual a judge's loop left behind, and an escalated slice or fix as such.
 - **A child's disposition** — the ROADMAP mode's alone: once one of its children ends, name the child, the word it ended on — CLOSED or SET ASIDE — the reason where it is SET ASIDE, and what the chain arms next or that it arms nothing. It reaches the session stream only, never interrupting an absent operator (`roadmap/SKILL.md` §5).
 
 ## Length bound

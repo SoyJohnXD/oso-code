@@ -29,6 +29,10 @@ Installed plugin skills carry NO namespace on this host: every skill auto-regist
 
 Forked judges and operational agents are the exception to inline reading: launch them by their `opencode/agents/` contracts, passing SKILL PATH and ARGUMENTS in the payload (D10), under the wait rule above.
 
+## The explorer
+
+§4's diagnosis agent is this host's `explore` subagent type, launched through the `task` tool.
+
 ## Front-surface binding
 
 When `../_shared/front-surface.md`'s trigger fires, READ `../_shared/references/opencode.md`'s **Front-surface binding** section NOW. It is the single OpenCode binding for Impeccable's mounted path, all three argument routes, package-version record, agent route and absence remedy.

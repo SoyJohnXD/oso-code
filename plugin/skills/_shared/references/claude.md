@@ -1,10 +1,10 @@
 # Shared layer — Claude Code
 
-Host binding for what no single wrapper binds: how a delegation's report arrives, `../front-surface.md`'s wiring, and `../reporting.md`'s delivery.
+Host binding for what no single wrapper binds.
 
 ## Making a launch wait
 
-The `Agent` tool always launches in the BACKGROUND and returns at once with the agent id — this host offers no foreground flag. The delegation's report arrives in a LATER turn as a completion notification; that notification IS the resume, and the turn that launched it ends there. N delegations in one message each return their own notification; read every report before anything moves.
+The `Agent` tool always launches in the BACKGROUND and returns at once with the agent id. The delegation's report arrives in a LATER turn as a completion notification; that notification IS the resume, and the turn that launched it ends there. N delegations in one message each return their own notification; read every report before anything moves.
 
 **Nothing may act on a report it has not read.** Never predict, assume or report a delegation's result before its notification, and never relaunch a delegation still in flight — a second launch over the same tree is two writers in one slice.
 
@@ -12,11 +12,9 @@ The `Agent` tool always launches in the BACKGROUND and returns at once with the 
 
 **Reading the watch's exit.** Exit 0 means every delegation ended: continue normally, because the completion notifications carry the reports. Exit 3 prints one line per delegation it names — `stuck: <id> (<type>) silent <N> min`, `long-running: <id> (<type>) in flight <N> min`, or `ended-without-notice: <id> (<type>)`. Journal each line with `oso-state journal` and say it in the stream, naming the id, the silence or duration, and the agent_type. Then follow the flow's own route: keep waiting on a delegation still in the in-flight set, or treat one gone from it as a blocked delegation and relaunch it fresh. Never call a delegation lost.
 
-This governs every launch made through the Agent tool.
-
 ## The model a launch carries
 
-The `Agent` tool takes a `model` parameter per launch, overriding the launched agent's frontmatter for that launch. Pass what the operator record's profile holds for the role being launched, in this host's aliases: a `default` tier is `sonnet` and a `strong` tier is `opus`, while a role the profile names a model of its own for passes that name as written.
+The `Agent` tool takes a `model` parameter per launch, overriding the launched agent's frontmatter. Pass what the operator record's profile holds for the role being launched, in this host's aliases: a `default` tier is `sonnet` and a `strong` tier is `opus`, while a role the profile names a model of its own for passes that name as written.
 
 A record carrying no profile, or a profile leaving the launched role unnamed, passes no `model` and leaves the agent's frontmatter standing. The Launching milestone that `../reporting.md` requires names whichever of the two the launch ran on, and never a model nobody chose.
 
@@ -31,7 +29,7 @@ A record carrying no profile, or a profile leaving the launched role unnamed, pa
 
 ## The native card is not the report
 
-Launching a delegation, or forking a judge, draws this client's native subagent card, which shows no role name, assignment, tree, or verdict. The milestone text `../reporting.md` requires is never skipped for it nor folded into its caption: it is delivered like every other operator-facing content on this host, except under the carve-out below.
+Launching a delegation, or forking a judge, draws this client's native subagent card, which shows no role name, assignment, tree, or verdict. The milestone text `../reporting.md` requires is never skipped for it nor folded into its caption: it is delivered like other operator-facing content, except under the carve-out below.
 
 ## The unattended run — the carve-out, and the record that pays for it
 

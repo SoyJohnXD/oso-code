@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { test } from "node:test";
-import { appendArmMarker, appendVerdict, readVerdicts } from "../../src/verdict/record.ts";
+import { appendMarker, appendVerdict, readVerdicts } from "../../src/verdict/record.ts";
 
 const APPENDS = 100;
 const MEAN_APPEND_BUDGET_MS = 5;
@@ -14,7 +14,7 @@ test(`a verdict append costs at most ${MEAN_APPEND_BUDGET_MS} ms on average over
   process.env["OSO_STATE_DIR"] = stateDirectory;
   try {
     const verdictsFile = path.join(stateDirectory, "runs", "repo", "verdicts.jsonl");
-    appendArmMarker(verdictsFile, { slice: "1", session: "ses-perf", change: null });
+    appendMarker(verdictsFile, { kind: "arm", slice: "1", session: "ses-perf", change: null });
     const started = performance.now();
     for (let run = 0; run < APPENDS; run += 1) {
       const written = appendVerdict(verdictsFile, {
@@ -26,7 +26,6 @@ test(`a verdict append costs at most ${MEAN_APPEND_BUDGET_MS} ms on average over
         model: null,
         verdict: "fail",
         verdict_shape: "valid",
-        escalated: false,
       });
       assert.equal(written, true);
     }

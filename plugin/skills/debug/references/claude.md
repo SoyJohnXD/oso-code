@@ -31,6 +31,10 @@ The neutral body names each one by role; here they carry the plugin prefix, and 
 
 The two delegates the body names — `oso-applier`, `oso-verifier` — are agents, not skills: reach them with the Agent tool, under the wait rule below.
 
+## The explorer
+
+§4's diagnosis agent is the built-in `Explore` agent, launched with the strong-tier `model`.
+
 ## Delegation-wait binding
 
 `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **Making a launch wait** section is the single Claude Code binding for how a delegation's report arrives on this host and for the watchdog an unattended run starts while one is in flight. Here that rule reaches §4's applier and verifier, and §5's debt-cleanup applier. Its **The model a launch carries** section binds the `model` parameter each of those launches passes.

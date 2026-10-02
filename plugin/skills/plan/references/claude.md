@@ -4,7 +4,7 @@
 
 The Claude Code TUI drops assistant text that precedes a tool call in the same turn. Operator-facing content must END the turn as plain text, with the tool call (`AskUserQuestion`, `ExitPlanMode`) in a LATER turn. Context a question round needs travels INSIDE the `AskUserQuestion` fields, never as prose before the call.
 
-One exception stands, stated whole in `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **The unattended run** section: the park and the final report still end the turn regardless.
+One exception stands, stated whole in `${CLAUDE_SKILL_DIR}/../_shared/references/claude.md`'s **The unattended run** section: the park and the final report still end the turn.
 
 ## Question rounds
 
@@ -18,7 +18,7 @@ Where this change runs as a child of the ROADMAP mode's chain, this gate is not 
 
 ## The explorer
 
-§2 step 1's exploration subagents are the built-in `Explore` agent.
+§2 step 1's exploration subagents and §6 step 3's diagnosis agent, on the strong-tier `model`, are the built-in `Explore` agent.
 
 ## Shared-file paths
 
@@ -30,7 +30,7 @@ Every `oso-state <verb> …` the flow instructs runs as:
 
 `"${OSO_STATE_BIN:-oso-state}" --session "${CLAUDE_CODE_SESSION_ID}" <verb> …`
 
-The state is the repository's; the session id is audit metadata only, yet a write spelled without it does not run at all.
+The state is the repository's; the session id is audit metadata, yet a write without it does not run.
 
 ## The runtime gates, and the two layers of the commit rail
 
@@ -58,4 +58,4 @@ The three delegates the flow names — `oso-applier`, `oso-verifier`, `oso-integ
 
 ## The shared host file
 
-`${CLAUDE_SKILL_DIR}/../_shared/references/claude.md` is read ALWAYS by this flow: the single Claude Code binding for **Making a launch wait**, **The model a launch carries**, the native card, the unattended run, and the front-surface wiring.
+`${CLAUDE_SKILL_DIR}/../_shared/references/claude.md` is read ALWAYS by this flow, **The model a launch carries** among its bindings.
