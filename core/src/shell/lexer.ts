@@ -22,6 +22,8 @@ const MAX_PAYLOAD_DEPTH = 3;
 const SPECIAL_CHARACTERS = "'\"\\$`#;&|(){}<> \t\n";
 const QUOTED_SPECIAL_CHARACTERS = "\"\\$`";
 const WORD_DELIMITERS = " \t\n;&|()<>";
+const ARITHMETIC_OPENING = "((";
+const ARITHMETIC_EXPRESSION_CHARACTER = /^[0-9 \t+\-*/%<>=!&|^~?:,.]$/;
 const DESCRIPTOR_NUMBER = /^[0-9]+$/;
 const DESCRIPTOR_VARIABLE = /^\{[A-Za-z_][A-Za-z0-9_]*\}$/;
 const UNREAD_PAYLOAD: LexRecord = { kind: "unreadPayload" };
@@ -47,9 +49,6 @@ const ALIAS_WORD = "alias";
 const HISTORY_REPLAYING_WORD = "fc";
 const ALIAS_DEFINITION = /^[^-=][^=]*=/;
 const ASSIGNMENT_NAMING_A_FILE_THE_SHELL_SOURCES = /^BASH_ENV=/;
-const RUNNER_CALLING_A_COMMAND = "npx";
-const RUNNER_CALL_OPTIONS = new Set(["-c", "--c", "--call"]);
-const RUNNER_SHELL_MODE_OPTIONS = new Set(["-c", "--shell-mode"]);
 const RUNNER_CALL_IN_A_FLAG_BUNDLE = /^-[^-c=][^=]*c/;
 const RUNNER_PACKAGE_OPTIONS = new Set(["-p", "--package"]);
 
@@ -119,6 +118,24 @@ function leadingRunWithout(text: string, stoppers: string): string {
   let length = 0;
   while (length < text.length && !stoppers.includes(text[length] as string)) length += 1;
   return text.slice(0, length);
+}
+
+function arithmeticExpansionLength(text: string): number | undefined {
+  if (!text.startsWith(ARITHMETIC_OPENING)) return undefined;
+  let nesting = 0;
+  for (let at = ARITHMETIC_OPENING.length; at < text.length; at += 1) {
+    const character = text[at] as string;
+    if (character === "(") {
+      nesting += 1;
+    } else if (character === ")" && nesting > 0) {
+      nesting -= 1;
+    } else if (character === ")") {
+      return text[at + 1] === ")" ? at + 2 : undefined;
+    } else if (!ARITHMETIC_EXPRESSION_CHARACTER.test(character)) {
+      return undefined;
+    }
+  }
+  return undefined;
 }
 
 type DecodedSpan = Readonly<{ text: string; length: number }>;
@@ -208,28 +225,43 @@ function leadingRunOf(text: string, digit: RegExp, width: number): string {
 
 type RunnerCall = Readonly<{ kind: "payload"; payload: string }> | Readonly<{ kind: "pastReading" }>;
 type LeadingCallOption = RunnerCall | Readonly<{ kind: "callOption"; at: number; attached: string | undefined }>;
-type PlacedSubcommand = RunnerCall | Readonly<{ kind: "subcommand"; execArguments: readonly string[] }>;
+type PlacedSubcommand =
+  | RunnerCall
+  | Readonly<{ kind: "subcommand"; leadingOptions: readonly string[]; execArguments: readonly string[] }>;
 type RunnerSubcommand = Readonly<{
   names: ReadonlySet<string>;
-  callOf: (execArguments: readonly string[]) => RunnerCall;
+  callOptions: ReadonlySet<string>;
+  callOf: (callArguments: readonly string[]) => RunnerCall;
 }>;
 
 const NO_RUNNER_CALL: RunnerCall = { kind: "payload", payload: "" };
 const A_RUNNER_CALL_PAST_READING: RunnerCall = { kind: "pastReading" };
 
+const NPM_CALL_OPTIONS: ReadonlySet<string> = new Set(["-c", "--c", "--call"]);
+const PNPM_SHELL_MODE_OPTIONS: ReadonlySet<string> = new Set(["-c", "--shell-mode"]);
+const YARN_EXEC_OPTIONS: ReadonlySet<string> = new Set();
+
+const RUNNERS_CALLING_A_COMMAND: ReadonlyMap<string, (runnerArguments: readonly string[]) => RunnerCall> = new Map([
+  ["npx", callOptionValueOf],
+  ["pnpx", shellModeStringOf],
+]);
 const RUNNER_SUBCOMMANDS_CALLING_A_COMMAND: ReadonlyMap<string, RunnerSubcommand> = new Map([
-  ["npm", { names: new Set(["exec", "x"]), callOf: callOptionValueOf }],
-  ["pnpm", { names: new Set(["exec"]), callOf: shellModeStringOf }],
-  ["yarn", { names: new Set(["exec"]), callOf: shellStringOf }],
+  ["npm", { names: new Set(["exec", "x"]), callOptions: NPM_CALL_OPTIONS, callOf: callOptionValueOf }],
+  ["pnpm", { names: new Set(["exec", "dlx"]), callOptions: PNPM_SHELL_MODE_OPTIONS, callOf: shellModeStringOf }],
+  ["yarn", { names: new Set(["exec"]), callOptions: YARN_EXEC_OPTIONS, callOf: shellStringOf }],
 ]);
 
 function runnerCallOf(words: readonly string[]): RunnerCall {
   const runner = basenameOf(words[0] ?? "");
-  if (runner === RUNNER_CALLING_A_COMMAND) return callOptionValueOf(words.slice(1));
+  const runnerArguments = words.slice(1);
+  const directCall = RUNNERS_CALLING_A_COMMAND.get(runner);
+  if (directCall !== undefined) return directCall(runnerArguments);
   const subcommand = RUNNER_SUBCOMMANDS_CALLING_A_COMMAND.get(runner);
   if (subcommand === undefined) return NO_RUNNER_CALL;
-  const placed = placedSubcommand(words.slice(1), subcommand.names);
-  return placed.kind === "subcommand" ? subcommand.callOf(placed.execArguments) : placed;
+  const placed = placedSubcommand(runnerArguments, subcommand.names);
+  if (placed.kind !== "subcommand") return placed;
+  const leadingCalls = placed.leadingOptions.filter((option) => spellsACallOption(option, subcommand.callOptions));
+  return subcommand.callOf([...leadingCalls, ...placed.execArguments]);
 }
 
 function placedSubcommand(runnerArguments: readonly string[], names: ReadonlySet<string>): PlacedSubcommand {
@@ -239,7 +271,16 @@ function placedSubcommand(runnerArguments: readonly string[], names: ReadonlySet
   const firstMayBeAnOptionValue = first > 0 && second !== -1 && names.has(runnerArguments[second] as string);
   if (firstMayBeAnOptionValue) return A_RUNNER_CALL_PAST_READING;
   if (!names.has(runnerArguments[first] as string)) return NO_RUNNER_CALL;
-  return { kind: "subcommand", execArguments: runnerArguments.slice(first + 1) };
+  return {
+    kind: "subcommand",
+    leadingOptions: runnerArguments.slice(0, first),
+    execArguments: runnerArguments.slice(first + 1),
+  };
+}
+
+function spellsACallOption(option: string, callOptions: ReadonlySet<string>): boolean {
+  if (RUNNER_CALL_IN_A_FLAG_BUNDLE.test(option)) return true;
+  return callOptions.has(runnerSpelledOption(option).name);
 }
 
 function operandIndexFrom(words: readonly string[], from: number): number {
@@ -247,19 +288,24 @@ function operandIndexFrom(words: readonly string[], from: number): number {
 }
 
 function callOptionValueOf(options: readonly string[]): RunnerCall {
-  const call = leadingCallOption(options, RUNNER_CALL_OPTIONS);
+  const call = leadingCallOption(options, NPM_CALL_OPTIONS);
   if (call.kind !== "callOption") return call;
-  return { kind: "payload", payload: call.attached ?? options[call.at + 1] ?? "" };
+  const valueAt = call.attached === undefined ? call.at + 1 : call.at;
+  const value = call.attached ?? options[valueAt] ?? "";
+  const anotherCallFollows = options.slice(valueAt + 1).some((option) => spellsACallOption(option, NPM_CALL_OPTIONS));
+  if (value.startsWith("-") || anotherCallFollows) return A_RUNNER_CALL_PAST_READING;
+  return { kind: "payload", payload: value };
 }
 
 function shellModeStringOf(options: readonly string[]): RunnerCall {
-  const call = leadingCallOption(options, RUNNER_SHELL_MODE_OPTIONS);
+  const call = leadingCallOption(options, PNPM_SHELL_MODE_OPTIONS);
   if (call.kind !== "callOption") return call;
   return shellStringOf(options.slice(call.at + 1));
 }
 
-function shellStringOf(execArguments: readonly string[]): RunnerCall {
-  return { kind: "payload", payload: execArguments.join(" ") };
+function shellStringOf(shellWords: readonly string[]): RunnerCall {
+  if (shellWords[0]?.startsWith("-")) return A_RUNNER_CALL_PAST_READING;
+  return { kind: "payload", payload: shellWords.join(" ") };
 }
 
 function leadingCallOption(options: readonly string[], callOptions: ReadonlySet<string>): LeadingCallOption {
@@ -700,8 +746,7 @@ class CommandLineLexer {
   private takeExpansion(): void {
     if (this.rest.startsWith("(")) {
       this.token += "$";
-      this.rest = this.rest.slice(1);
-      this.deferNestedCommands(this.takeSubstitutionBody());
+      this.takeParenthesizedExpansion();
       return;
     }
     if (this.rest.startsWith("{")) {
@@ -711,6 +756,16 @@ class CommandLineLexer {
       return;
     }
     this.token += "$";
+  }
+
+  private takeParenthesizedExpansion(): void {
+    const arithmeticLength = arithmeticExpansionLength(this.rest);
+    if (arithmeticLength !== undefined) {
+      this.rest = this.rest.slice(arithmeticLength);
+      return;
+    }
+    this.rest = this.rest.slice(1);
+    this.deferNestedCommands(this.takeSubstitutionBody());
   }
 
   private takeSubstitutionBody(): string {

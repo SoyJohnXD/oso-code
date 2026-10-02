@@ -1806,8 +1806,9 @@ function mentionsASubject(text, subjects) {
 
 // core/src/shell/prefix-words.ts
 var COPROCESS_WORD = "coproc";
+var ENV_WORD = "env";
 var PREFIX_WORDS = /* @__PURE__ */ new Set([
-  "env",
+  ENV_WORD,
   "command",
   "builtin",
   "exec",
@@ -1885,13 +1886,16 @@ var XARGS_REPLACE_OPTION = "-I";
 var XARGS_DEFAULTED_REPLACE_OPTION = "-i";
 var XARGS_DEFAULT_REPLACE_STRING = "{}";
 var XARGS_FLAG_DEFINING_A_REPLACE_STRING = /^-[^-]*[iI]/;
-var ENV_SPLIT_STRING_OPTIONS = ["-S", "--split-string"];
+var ENV_SPLIT_STRING_LONG_OPTION = "--split-string";
+var ENV_SPLIT_STRING_OPTIONS = ["-S", ENV_SPLIT_STRING_LONG_OPTION];
 var ENV_OPTIONS = {
   takingAValue: ["-u", ...ENV_SPLIT_STRING_OPTIONS],
   takingAnAttachedValueOnly: [],
   standingAlone: ["-i", "-0", "-v", "-"],
   splitsFlagBundles: true
 };
+var ENV_SPLIT_STRING_IN_A_FLAG_BUNDLE = /^-[^-]*S/;
+var LONG_OPTION = /^--[^=]/;
 var TIMEOUT_SHAPE = {
   options: {
     takingAValue: ["-s", "-k", "--signal", "--kill-after"],
@@ -1951,7 +1955,7 @@ var A_LOOKUP_RUNNING_NOTHING = { kind: "standsAsTheCommand", payload: "" };
 var KEYED_PREFIX_READERS = /* @__PURE__ */ new Map([
   ["command", readCommandOptions],
   ["xargs", readXargsOptions],
-  ["env", readEnvOptions],
+  [ENV_WORD, readEnvOptions],
   ["timeout", (words, from) => readThroughOperand(TIMEOUT_SHAPE, words, from)],
   ["flock", readFlockOptions],
   ["taskset", (words, from) => readThroughOperand(TASKSET_SHAPE, words, from)]
@@ -1959,7 +1963,8 @@ var KEYED_PREFIX_READERS = /* @__PURE__ */ new Map([
 function prefixCutOf(words) {
   let at = 0;
   let endsOnAnUnresolvedOption = false;
-  let aKeyedPrefixFellBack = false;
+  let prefixReadByFallback;
+  let mayRunEnvsSplitString = false;
   let aPrefixLeftItUnread = false;
   let replaceString;
   let payload = "";
@@ -1975,18 +1980,25 @@ function prefixCutOf(words) {
       at = reading.next;
       replaceString = reading.replaceString ?? replaceString;
       endsOnAnUnresolvedOption = false;
-      aKeyedPrefixFellBack = false;
+      prefixReadByFallback = void 0;
       continue;
     }
     if (readingLeavesItUnread(reading)) aPrefixLeftItUnread = true;
     if (!isCommandPrefixWord(word)) break;
+    const aKeyedPrefixFellBack = KEYED_PREFIX_READERS.has(prefixReadByFallback ?? "");
     const anOptionMayHoldTheNumber = endsOnAnUnresolvedOption && aKeyedPrefixFellBack && NUMBER.test(word);
     endsOnAnUnresolvedOption = word.startsWith("-") || anOptionMayHoldTheNumber;
-    if (PREFIX_WORDS.has(basenameOf(word))) aKeyedPrefixFellBack = KEYED_PREFIX_READERS.has(basenameOf(word));
+    if (prefixReadByFallback === ENV_WORD && mayBeEnvsSplitString(word)) mayRunEnvsSplitString = true;
+    if (PREFIX_WORDS.has(basenameOf(word))) prefixReadByFallback = basenameOf(word);
     at += 1;
   }
-  const leavesTheCommandUnread = endsOnAnUnresolvedOption || aPrefixLeftItUnread;
+  const leavesTheCommandUnread = endsOnAnUnresolvedOption || aPrefixLeftItUnread || mayRunEnvsSplitString;
   return { length: at, leavesTheCommandUnread, replaceString, payload };
+}
+function mayBeEnvsSplitString(word) {
+  if (ENV_SPLIT_STRING_IN_A_FLAG_BUNDLE.test(word)) return true;
+  const { name } = spelledOption(word);
+  return LONG_OPTION.test(name) && ENV_SPLIT_STRING_LONG_OPTION.startsWith(name);
 }
 function readingLeavesItUnread(reading) {
   return reading.kind === "operandOutsideItsGrammar" || reading.kind === "replaceStringItDoesNotKnow";
@@ -2096,6 +2108,8 @@ var MAX_PAYLOAD_DEPTH = 3;
 var SPECIAL_CHARACTERS = "'\"\\$`#;&|(){}<> 	\n";
 var QUOTED_SPECIAL_CHARACTERS = '"\\$`';
 var WORD_DELIMITERS = " 	\n;&|()<>";
+var ARITHMETIC_OPENING = "((";
+var ARITHMETIC_EXPRESSION_CHARACTER = /^[0-9 \t+\-*/%<>=!&|^~?:,.]$/;
 var DESCRIPTOR_NUMBER = /^[0-9]+$/;
 var DESCRIPTOR_VARIABLE = /^\{[A-Za-z_][A-Za-z0-9_]*\}$/;
 var UNREAD_PAYLOAD = { kind: "unreadPayload" };
@@ -2130,9 +2144,6 @@ var ALIAS_WORD = "alias";
 var HISTORY_REPLAYING_WORD = "fc";
 var ALIAS_DEFINITION = /^[^-=][^=]*=/;
 var ASSIGNMENT_NAMING_A_FILE_THE_SHELL_SOURCES = /^BASH_ENV=/;
-var RUNNER_CALLING_A_COMMAND = "npx";
-var RUNNER_CALL_OPTIONS = /* @__PURE__ */ new Set(["-c", "--c", "--call"]);
-var RUNNER_SHELL_MODE_OPTIONS = /* @__PURE__ */ new Set(["-c", "--shell-mode"]);
 var RUNNER_CALL_IN_A_FLAG_BUNDLE = /^-[^-c=][^=]*c/;
 var RUNNER_PACKAGE_OPTIONS = /* @__PURE__ */ new Set(["-p", "--package"]);
 var SHELL_WORDS_THIS_LEXER_READS = /* @__PURE__ */ new Set([
@@ -2196,6 +2207,23 @@ function leadingRunWithout(text, stoppers) {
   let length = 0;
   while (length < text.length && !stoppers.includes(text[length])) length += 1;
   return text.slice(0, length);
+}
+function arithmeticExpansionLength(text) {
+  if (!text.startsWith(ARITHMETIC_OPENING)) return void 0;
+  let nesting = 0;
+  for (let at = ARITHMETIC_OPENING.length; at < text.length; at += 1) {
+    const character = text[at];
+    if (character === "(") {
+      nesting += 1;
+    } else if (character === ")" && nesting > 0) {
+      nesting -= 1;
+    } else if (character === ")") {
+      return text[at + 1] === ")" ? at + 2 : void 0;
+    } else if (!ARITHMETIC_EXPRESSION_CHARACTER.test(character)) {
+      return void 0;
+    }
+  }
+  return void 0;
 }
 var ANSI_C_NAMED_ESCAPES = {
   a: "\x07",
@@ -2284,18 +2312,29 @@ function leadingRunOf(text, digit, width) {
 }
 var NO_RUNNER_CALL = { kind: "payload", payload: "" };
 var A_RUNNER_CALL_PAST_READING = { kind: "pastReading" };
+var NPM_CALL_OPTIONS = /* @__PURE__ */ new Set(["-c", "--c", "--call"]);
+var PNPM_SHELL_MODE_OPTIONS = /* @__PURE__ */ new Set(["-c", "--shell-mode"]);
+var YARN_EXEC_OPTIONS = /* @__PURE__ */ new Set();
+var RUNNERS_CALLING_A_COMMAND = /* @__PURE__ */ new Map([
+  ["npx", callOptionValueOf],
+  ["pnpx", shellModeStringOf]
+]);
 var RUNNER_SUBCOMMANDS_CALLING_A_COMMAND = /* @__PURE__ */ new Map([
-  ["npm", { names: /* @__PURE__ */ new Set(["exec", "x"]), callOf: callOptionValueOf }],
-  ["pnpm", { names: /* @__PURE__ */ new Set(["exec"]), callOf: shellModeStringOf }],
-  ["yarn", { names: /* @__PURE__ */ new Set(["exec"]), callOf: shellStringOf }]
+  ["npm", { names: /* @__PURE__ */ new Set(["exec", "x"]), callOptions: NPM_CALL_OPTIONS, callOf: callOptionValueOf }],
+  ["pnpm", { names: /* @__PURE__ */ new Set(["exec", "dlx"]), callOptions: PNPM_SHELL_MODE_OPTIONS, callOf: shellModeStringOf }],
+  ["yarn", { names: /* @__PURE__ */ new Set(["exec"]), callOptions: YARN_EXEC_OPTIONS, callOf: shellStringOf }]
 ]);
 function runnerCallOf(words) {
   const runner = basenameOf(words[0] ?? "");
-  if (runner === RUNNER_CALLING_A_COMMAND) return callOptionValueOf(words.slice(1));
+  const runnerArguments = words.slice(1);
+  const directCall = RUNNERS_CALLING_A_COMMAND.get(runner);
+  if (directCall !== void 0) return directCall(runnerArguments);
   const subcommand = RUNNER_SUBCOMMANDS_CALLING_A_COMMAND.get(runner);
   if (subcommand === void 0) return NO_RUNNER_CALL;
-  const placed = placedSubcommand(words.slice(1), subcommand.names);
-  return placed.kind === "subcommand" ? subcommand.callOf(placed.execArguments) : placed;
+  const placed = placedSubcommand(runnerArguments, subcommand.names);
+  if (placed.kind !== "subcommand") return placed;
+  const leadingCalls = placed.leadingOptions.filter((option) => spellsACallOption(option, subcommand.callOptions));
+  return subcommand.callOf([...leadingCalls, ...placed.execArguments]);
 }
 function placedSubcommand(runnerArguments, names) {
   const first = operandIndexFrom(runnerArguments, 0);
@@ -2304,23 +2343,36 @@ function placedSubcommand(runnerArguments, names) {
   const firstMayBeAnOptionValue = first > 0 && second !== -1 && names.has(runnerArguments[second]);
   if (firstMayBeAnOptionValue) return A_RUNNER_CALL_PAST_READING;
   if (!names.has(runnerArguments[first])) return NO_RUNNER_CALL;
-  return { kind: "subcommand", execArguments: runnerArguments.slice(first + 1) };
+  return {
+    kind: "subcommand",
+    leadingOptions: runnerArguments.slice(0, first),
+    execArguments: runnerArguments.slice(first + 1)
+  };
+}
+function spellsACallOption(option, callOptions) {
+  if (RUNNER_CALL_IN_A_FLAG_BUNDLE.test(option)) return true;
+  return callOptions.has(runnerSpelledOption(option).name);
 }
 function operandIndexFrom(words, from) {
   return words.findIndex((word, at) => at >= from && !word.startsWith("-"));
 }
 function callOptionValueOf(options) {
-  const call = leadingCallOption(options, RUNNER_CALL_OPTIONS);
+  const call = leadingCallOption(options, NPM_CALL_OPTIONS);
   if (call.kind !== "callOption") return call;
-  return { kind: "payload", payload: call.attached ?? options[call.at + 1] ?? "" };
+  const valueAt = call.attached === void 0 ? call.at + 1 : call.at;
+  const value = call.attached ?? options[valueAt] ?? "";
+  const anotherCallFollows = options.slice(valueAt + 1).some((option) => spellsACallOption(option, NPM_CALL_OPTIONS));
+  if (value.startsWith("-") || anotherCallFollows) return A_RUNNER_CALL_PAST_READING;
+  return { kind: "payload", payload: value };
 }
 function shellModeStringOf(options) {
-  const call = leadingCallOption(options, RUNNER_SHELL_MODE_OPTIONS);
+  const call = leadingCallOption(options, PNPM_SHELL_MODE_OPTIONS);
   if (call.kind !== "callOption") return call;
   return shellStringOf(options.slice(call.at + 1));
 }
-function shellStringOf(execArguments) {
-  return { kind: "payload", payload: execArguments.join(" ") };
+function shellStringOf(shellWords) {
+  if (shellWords[0]?.startsWith("-")) return A_RUNNER_CALL_PAST_READING;
+  return { kind: "payload", payload: shellWords.join(" ") };
 }
 function leadingCallOption(options, callOptions) {
   let anOptionMayHoldTheNextWord = false;
@@ -2722,8 +2774,7 @@ var CommandLineLexer = class _CommandLineLexer {
   takeExpansion() {
     if (this.rest.startsWith("(")) {
       this.token += "$";
-      this.rest = this.rest.slice(1);
-      this.deferNestedCommands(this.takeSubstitutionBody());
+      this.takeParenthesizedExpansion();
       return;
     }
     if (this.rest.startsWith("{")) {
@@ -2733,6 +2784,15 @@ var CommandLineLexer = class _CommandLineLexer {
       return;
     }
     this.token += "$";
+  }
+  takeParenthesizedExpansion() {
+    const arithmeticLength = arithmeticExpansionLength(this.rest);
+    if (arithmeticLength !== void 0) {
+      this.rest = this.rest.slice(arithmeticLength);
+      return;
+    }
+    this.rest = this.rest.slice(1);
+    this.deferNestedCommands(this.takeSubstitutionBody());
   }
   takeSubstitutionBody() {
     let nesting = 1;

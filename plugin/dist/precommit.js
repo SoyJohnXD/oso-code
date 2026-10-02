@@ -4,8 +4,9 @@ var STOP_HOOK_ACTIVE = new RegExp(`"stop_hook_active"${JSON_SPACE}*:${JSON_SPACE
 
 // core/src/shell/prefix-words.ts
 var COPROCESS_WORD = "coproc";
+var ENV_WORD = "env";
 var PREFIX_WORDS = /* @__PURE__ */ new Set([
-  "env",
+  ENV_WORD,
   "command",
   "builtin",
   "exec",
@@ -41,7 +42,8 @@ var PREFIX_WORDS = /* @__PURE__ */ new Set([
   "!",
   COPROCESS_WORD
 ]);
-var ENV_SPLIT_STRING_OPTIONS = ["-S", "--split-string"];
+var ENV_SPLIT_STRING_LONG_OPTION = "--split-string";
+var ENV_SPLIT_STRING_OPTIONS = ["-S", ENV_SPLIT_STRING_LONG_OPTION];
 var ENV_OPTIONS = {
   takingAValue: ["-u", ...ENV_SPLIT_STRING_OPTIONS],
   takingAnAttachedValueOnly: [],

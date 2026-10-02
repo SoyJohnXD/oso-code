@@ -1,8 +1,9 @@
 import { basenameOf } from "./lexed-word.ts";
 
 export const COPROCESS_WORD = "coproc";
+const ENV_WORD = "env";
 export const PREFIX_WORDS: ReadonlySet<string> = new Set([
-  "env", "command", "builtin", "exec", "nice", "nohup", "time", "timeout", "stdbuf",
+  ENV_WORD, "command", "builtin", "exec", "nice", "nohup", "time", "timeout", "stdbuf",
   "sudo", "doas", "setsid", "xargs", "flock", "ionice", "chrt", "taskset", "unbuffer",
   "then", "else", "elif", "do", "done", "fi", "in", "until", "while", "if", "for",
   "case", "esac", "select", "function", "!", COPROCESS_WORD,
@@ -48,13 +49,16 @@ const XARGS_REPLACE_OPTION = "-I";
 const XARGS_DEFAULTED_REPLACE_OPTION = "-i";
 const XARGS_DEFAULT_REPLACE_STRING = "{}";
 const XARGS_FLAG_DEFINING_A_REPLACE_STRING = /^-[^-]*[iI]/;
-const ENV_SPLIT_STRING_OPTIONS = ["-S", "--split-string"];
+const ENV_SPLIT_STRING_LONG_OPTION = "--split-string";
+const ENV_SPLIT_STRING_OPTIONS = ["-S", ENV_SPLIT_STRING_LONG_OPTION];
 const ENV_OPTIONS: OptionTable = {
   takingAValue: ["-u", ...ENV_SPLIT_STRING_OPTIONS],
   takingAnAttachedValueOnly: [],
   standingAlone: ["-i", "-0", "-v", "-"],
   splitsFlagBundles: true,
 };
+const ENV_SPLIT_STRING_IN_A_FLAG_BUNDLE = /^-[^-]*S/;
+const LONG_OPTION = /^--[^=]/;
 type OperandPrefixShape = Readonly<{ options: OptionTable; operandGrammar: RegExp }>;
 
 const TIMEOUT_SHAPE: OperandPrefixShape = {
@@ -111,7 +115,7 @@ const KEYED_PREFIX_READERS: ReadonlyMap<string, (words: readonly string[], from:
   new Map([
     ["command", readCommandOptions],
     ["xargs", readXargsOptions],
-    ["env", readEnvOptions],
+    [ENV_WORD, readEnvOptions],
     ["timeout", (words, from) => readThroughOperand(TIMEOUT_SHAPE, words, from)],
     ["flock", readFlockOptions],
     ["taskset", (words, from) => readThroughOperand(TASKSET_SHAPE, words, from)],
@@ -127,7 +131,8 @@ type PrefixCut = Readonly<{
 export function prefixCutOf(words: readonly string[]): PrefixCut {
   let at = 0;
   let endsOnAnUnresolvedOption = false;
-  let aKeyedPrefixFellBack = false;
+  let prefixReadByFallback: string | undefined;
+  let mayRunEnvsSplitString = false;
   let aPrefixLeftItUnread = false;
   let replaceString: string | undefined;
   let payload = "";
@@ -143,18 +148,26 @@ export function prefixCutOf(words: readonly string[]): PrefixCut {
       at = reading.next;
       replaceString = reading.replaceString ?? replaceString;
       endsOnAnUnresolvedOption = false;
-      aKeyedPrefixFellBack = false;
+      prefixReadByFallback = undefined;
       continue;
     }
     if (readingLeavesItUnread(reading)) aPrefixLeftItUnread = true;
     if (!isCommandPrefixWord(word)) break;
+    const aKeyedPrefixFellBack = KEYED_PREFIX_READERS.has(prefixReadByFallback ?? "");
     const anOptionMayHoldTheNumber: boolean = endsOnAnUnresolvedOption && aKeyedPrefixFellBack && NUMBER.test(word);
     endsOnAnUnresolvedOption = word.startsWith("-") || anOptionMayHoldTheNumber;
-    if (PREFIX_WORDS.has(basenameOf(word))) aKeyedPrefixFellBack = KEYED_PREFIX_READERS.has(basenameOf(word));
+    if (prefixReadByFallback === ENV_WORD && mayBeEnvsSplitString(word)) mayRunEnvsSplitString = true;
+    if (PREFIX_WORDS.has(basenameOf(word))) prefixReadByFallback = basenameOf(word);
     at += 1;
   }
-  const leavesTheCommandUnread = endsOnAnUnresolvedOption || aPrefixLeftItUnread;
+  const leavesTheCommandUnread = endsOnAnUnresolvedOption || aPrefixLeftItUnread || mayRunEnvsSplitString;
   return { length: at, leavesTheCommandUnread, replaceString, payload };
+}
+
+function mayBeEnvsSplitString(word: string): boolean {
+  if (ENV_SPLIT_STRING_IN_A_FLAG_BUNDLE.test(word)) return true;
+  const { name } = spelledOption(word);
+  return LONG_OPTION.test(name) && ENV_SPLIT_STRING_LONG_OPTION.startsWith(name);
 }
 
 function readingLeavesItUnread(reading: KeyedPrefixReading): boolean {
