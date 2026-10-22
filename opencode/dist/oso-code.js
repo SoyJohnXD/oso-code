@@ -4691,7 +4691,7 @@ import { existsSync as existsSync4, readFileSync as readFileSync5, statSync as s
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 function deriveRootId(cwd) {
   const meta = findGitMetadata(cwd);
-  return meta === null ? "" : hashId(meta.commonDir);
+  return hashId(meta === null ? resolve(cwd) : meta.commonDir);
 }
 function commonDirOf(cwd) {
   const meta = findGitMetadata(cwd);
@@ -4877,11 +4877,8 @@ function grantBoundCall(toolId, call) {
     throw new Error(`${toolId} cannot run: the host named no session to raise the operator's prompt in`);
   }
   const directory = call.directory ?? "";
-  const commonDir = commonDirOf(directory);
-  if (commonDir === "") {
-    throw new Error(
-      `${toolId} must run inside a git repository, and ${directory || "the directory the host named"} is not one`
-    );
+  if (directory === "") {
+    throw new Error(`${toolId} cannot run: the host named no directory to keep the plan's state in`);
   }
   return { askOperator, directory, owner: deriveRootId(directory), sessionID };
 }

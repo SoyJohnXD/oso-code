@@ -16,7 +16,7 @@ const REQUIRED_READS = [
   `${SKILLS_DIRECTORY}/_shared/reporting.md`,
   `${SKILLS_DIRECTORY}/_shared/rubric.md`,
 ];
-const WORD_BUDGET = 8000;
+const WORD_BUDGET = 8100;
 
 const ALWAYS_MARKER = /read ALWAYS by this flow/;
 

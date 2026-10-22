@@ -7,7 +7,7 @@ import {
   runCapturePlan,
   sha256Hex,
 } from "@oso-code/core";
-import { commonDirOf, deriveRootId } from "./identity.ts";
+import { deriveRootId } from "./identity.ts";
 import { approvedPlanFor } from "./plan-state.ts";
 import type { HostPermissionRequest, PluginTool, PluginToolCall, PluginToolResult } from "./tool.ts";
 
@@ -126,11 +126,8 @@ function grantBoundCall(toolId: string, call: PluginToolCall): GrantBoundCall {
     throw new Error(`${toolId} cannot run: the host named no session to raise the operator's prompt in`);
   }
   const directory = call.directory ?? "";
-  const commonDir = commonDirOf(directory);
-  if (commonDir === "") {
-    throw new Error(
-      `${toolId} must run inside a git repository, and ${directory || "the directory the host named"} is not one`,
-    );
+  if (directory === "") {
+    throw new Error(`${toolId} cannot run: the host named no directory to keep the plan's state in`);
   }
   return { askOperator, directory, owner: deriveRootId(directory), sessionID };
 }

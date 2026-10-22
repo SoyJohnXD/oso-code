@@ -2,9 +2,9 @@
 
 ## The delivery contract
 
-The adapter makes no claim about whether OpenCode preserves operator-facing text before a same-turn tool call, and the harness depends on no such behavior. It applies the conservative host-independent policy `../../oso-plan/references/opencode.md` states: operator-facing content — the queue as it is planned, the approval document, the presence phase, and every milestone report the chain and its children make while the operator is away — ENDS the turn as plain text, with any tool call in a LATER turn.
+Operator-facing content the operator must answer or approve — the queue as it is planned, the approval document, the presence phase, the park and the chain's final report — ENDS the turn as plain text, with any tool call in a LATER turn. Milestone reports are the exception: `../_shared/references/opencode.md`'s **Milestones ride the stream, and the record that carries them** lets each continue in the same turn with the next tool call.
 
-This host carves NO unattended run out of that rule, so the second of the two branches the neutral body's §5 writes is the one that governs here. That costs the chain a turn per child and stops it at none of them, because what carries it across each of those turn ends is the continuation rail `../../oso-plan/references/opencode.md` names — the same rail the AUTO disposition arms, which POSTS a turn back into the session rather than refusing one. Every milestone is also appended full-text with `oso-state journal`, and the commits and child completions the chain makes are what keep the rail's turn bound from reading it as a run that went nowhere.
+This host carves milestones out of that rule in every run, so the first of the two branches the neutral body's §5 writes is the one that governs here: a child's close report and the next child's arming share a turn. What carries the chain across the turn ends that remain is the continuation rail `../../oso-plan/references/opencode.md` names — the same rail the AUTO disposition arms, which POSTS a turn back into the session rather than refusing one. Every milestone is also appended full-text with `oso-state journal`, and the commits and child completions the chain makes are what keep the rail's turn bound from reading it as a run that went nowhere.
 
 ## Question rounds
 
@@ -51,4 +51,4 @@ READ all three sections there before §4 arms its first child.
 
 ## Reporting binding
 
-READ `../_shared/references/opencode.md`'s **Native agent files, no card** and **The unattended run — no carve-out here, and the record that carries it instead** sections NOW. It is the single OpenCode binding for what this host's own UI shows, and does not show, when the milestone contract at `../_shared/reporting.md` fires.
+READ `../_shared/references/opencode.md`'s **Native agent files, no card** and **Milestones ride the stream, and the record that carries them** sections NOW. It is the single OpenCode binding for what this host's own UI shows, and does not show, when the milestone contract at `../_shared/reporting.md` fires.

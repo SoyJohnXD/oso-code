@@ -2,7 +2,7 @@
 
 ## The delivery contract
 
-The adapter makes no claim about whether OpenCode preserves operator-facing text before a same-turn tool call, and the harness depends on no such behavior. It applies the conservative host-independent policy: operator-facing content ENDS the turn as plain text, with any tool call in a LATER turn. An extra turn is the cheap side of that boundary; content the operator never sees is the expensive one.
+Operator-facing content the operator must answer or approve — a question, the plan document, a blocker, the park, the final report — ENDS the turn as plain text, with any tool call in a LATER turn. Milestone reports are the exception: `../_shared/references/opencode.md`'s **Milestones ride the stream, and the record that carries them** lets each continue in the same turn with the next tool call.
 
 ## Question rounds
 
@@ -44,7 +44,7 @@ Wherever the neutral body names a file as `_shared/<file>.md`, it is spelled `..
 
 `OSO_STATE_BIN` reaches every tool subprocess on this host through the installed plugin's `shell.env` hook — which fires per shell invocation and whose `output.env` values ARE present in the tool process environment. So `oso-state` is spelled `"${OSO_STATE_BIN:-oso-state}"` here.
 
-This host publishes the ROOT session id through `shell.env` for tool subprocesses (D13); that value is what `OSO_AGENT` carries, and it is never exported into the server process itself. Spell every state call as `"${OSO_STATE_BIN:-oso-state}" --session "${OSO_AGENT}" <verb> …`. The lineage map root→child is the installed plugin's, and the git hook and the session-scoped permission rules read the same marker.
+This host publishes the ROOT session id through `shell.env` for tool subprocesses (D13); that value is what `OSO_AGENT` carries, and it is never exported into the server process itself. Spell every state call as `"${OSO_STATE_BIN:-oso-state}" --session "${OSO_AGENT}" <verb> …`. The lineage map root→child is the installed plugin's, and the git hook and the session-scoped permission rules read the same marker. In a folder holding several repositories, run every `oso-state` call from the session's own directory, never with a workdir inside one of the repositories: state and `OSO_AGENT` key on the directory the call runs in.
 
 ## The runtime gates, and the two layers of the commit rail
 
@@ -60,7 +60,7 @@ Three rails read the `auto` marker the AUTO disposition writes, and they are wha
 
 The marker is the flow's to write, never a rail's: `"${OSO_STATE_BIN:-oso-state}" --session "${OSO_AGENT}" set auto=running auto_change=<change-slug>`, then `auto=parked` and `auto=done`, exactly where `../_shared/unattended.md` puts each flip. No rail writes any of the three, and nothing here arms a run past an approval — under plain AUTO phases 1–5 run with the operator and the grant above is crossed before the marker exists (D26).
 
-**The terminal steps are the neutral body's own** (§7 step 8) and this host changes only what carries them: the FINISH is `git -C <main checkout> push -u origin oso-run/<change>` followed by the PR through `gh pr create` in a bash call, and the run branch is the only one the production boundary lets that push name. The PARK and the FINAL REPORT are deliveries under the delivery contract at the top of this file, with the disarm (`auto=done`) sequenced as the tool call BEFORE the report's text. This host gets no carve-out from that contract, and the continuation rail is what carries the run across each of those turn ends. Every milestone is also appended with `oso-state journal`, so the operator's trail is whole though the journal never counts as progress.
+**The terminal steps are the neutral body's own** (§7 step 8) and this host changes only what carries them: the FINISH is `git -C <main checkout> push -u origin oso-run/<change>` followed by the PR through `gh pr create` in a bash call, and the run branch is the only one the production boundary lets that push name. The PARK and the FINAL REPORT are deliveries under the delivery contract at the top of this file, with the disarm (`auto=done`) sequenced as the tool call BEFORE the report's text. Milestones ride the stream here and never end the turn; the continuation rail carries the run across the turn ends that remain. Every milestone of an unattended run is also appended with `oso-state journal`, so the operator's trail is whole though the journal never counts as progress.
 
 ## The worktree root
 
@@ -95,4 +95,4 @@ When `../_shared/front-surface.md`'s trigger fires, READ `../_shared/references/
 
 ## Reporting binding
 
-READ `../_shared/references/opencode.md`'s **Native agent files, no card** and **The unattended run — no carve-out here, and the record that carries it instead** sections NOW. It is the single OpenCode binding for what this host's own UI shows, and does not show, when the milestone contract at `../_shared/reporting.md` fires.
+READ `../_shared/references/opencode.md`'s **Native agent files, no card** and **Milestones ride the stream, and the record that carries them** sections NOW. It is the single OpenCode binding for what this host's own UI shows, and does not show, when the milestone contract at `../_shared/reporting.md` fires.

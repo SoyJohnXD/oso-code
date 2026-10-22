@@ -102,7 +102,7 @@ test("shell.env publishes OSO_AGENT and OSO_STATE_BIN into the tool subprocess e
   const cwd = mkdtempSync(join(tmpdir(), "oso-shell-env-"));
   const hooks = await loadHooks();
   const output = (await hooks["shell.env"]!({ cwd }, { env: {} })) as { env: Record<string, string> };
-  assert.equal(output.env.OSO_AGENT, "");
+  assert.notEqual(output.env.OSO_AGENT, "");
   assert.equal(output.env.OSO_STATE_BIN, stateBinPath());
   rmSync(cwd, { recursive: true, force: true });
 });

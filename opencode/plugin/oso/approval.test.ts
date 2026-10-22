@@ -155,7 +155,7 @@ test("a host that hands the plugin no permission API cannot approve anything", a
   });
 });
 
-test("a call with no session, no repository, or no document never reaches the operator", async () => {
+test("a call with no session, no directory, or no document never reaches the operator", async () => {
   await withApprovalFixture(granted, async (fixture, call) => {
     const tool = planApprovalTool();
     await assert.rejects(
@@ -163,8 +163,8 @@ test("a call with no session, no repository, or no document never reaches the op
       /named no session/,
     );
     await assert.rejects(
-      () => tool.execute({ plan: PLAN_DOCUMENT }, { ...call, directory: tmpdir() }),
-      /must run inside a git repository/,
+      () => tool.execute({ plan: PLAN_DOCUMENT }, { ...call, directory: "" }),
+      /named no directory/,
     );
     await assert.rejects(() => tool.execute({ plan: "  " }, call), /needs the plan document/);
     await assert.rejects(() => tool.execute({}, call), /needs the plan document/);
@@ -173,6 +173,36 @@ test("a call with no session, no repository, or no document never reaches the op
 });
 
 const HOT_SLICE = "### Slice 3 — the amendment lane\n\n- Goal: cover the hot-slice route.\n";
+
+test("a folder holding several repositories and no git of its own approves a plan and drives the state command", async () => {
+  const base = mkdtempSync(join(tmpdir(), "oso-approval-multi-"));
+  const parent = join(base, "workspace");
+  mkdirSync(parent);
+  for (const name of ["alpha", "beta"]) {
+    mkdirSync(join(parent, name));
+    git(join(parent, name), "init", "-b", "main");
+  }
+  try {
+    await underFixtureHomeAsync(base, async () => {
+      await planApprovalTool().execute({ plan: PLAN_DOCUMENT }, { sessionID: SESSION, directory: parent, ask: granted });
+      const owner = deriveRootId(parent);
+      assert.notEqual(owner, "");
+      const digest = sha256Hex(PLAN_DOCUMENT);
+      const artifacts = join(stateRootDirectory(), "plans", repositoryIdFor(stateFileFor(parent)));
+      assert.ok(existsSync(join(artifacts, `approved-${digest}.md`)));
+      assert.equal(readValue(stateFileFor(parent), "plan_approval"), "approved");
+      assert.equal(readValue(stateFileFor(parent), "plan_approval_session"), owner);
+      const run = spawnSync(
+        process.execPath,
+        [stateBinPathOfThisTree(), "--session", owner, "amend-plan", "slice-3"],
+        { cwd: parent, input: HOT_SLICE, encoding: "utf8", env: { ...process.env } },
+      );
+      assert.equal(run.status, 0, run.stderr);
+    });
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
 
 test("the approved plan is one the state command can amend in place", async () => {
   await withApprovalFixture(granted, async (fixture, call) => {

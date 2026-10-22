@@ -31,7 +31,7 @@ Work touching one non-trivial file, or a mechanical edit of any breadth, is writ
 
 A milestone report is operator-facing content: it follows the delivery contract the reference file states — it ends the turn as plain text, never precedes a tool call in the same turn. What a host's UI surfaces alongside a launch is bound once per host under `_shared/references/claude.md` and `_shared/references/opencode.md`.
 
-A host's reference file MAY carve an UNATTENDED RUN out of that rule, its milestones riding the stream instead of ending the turn. A host that does states the carve-out whole: what marks a run unattended, what the stream then costs, and which deliveries still end the turn — at minimum the park and the final report, each handing the run back. Each milestone of such a run is ALSO appended full-text to the run's own journal (`oso-state journal`), the record an operator reads on return and a compaction cannot take. Where a host carves out nothing, every milestone ends the turn.
+A host's reference file MAY carve an UNATTENDED RUN, or every run where text before a same-turn tool call stays on screen, out of that rule, its milestones riding the stream instead of ending the turn. A host that does states the carve-out whole: what marks a run unattended, what the stream then costs, and which deliveries still end the turn — at minimum the park and the final report, each handing the run back. Each milestone of such a run is ALSO appended full-text to the run's own journal (`oso-state journal`), the record an operator reads on return and a compaction cannot take. Where a host carves out nothing, every milestone ends the turn.
 
 ## The model profile behind those launches
 

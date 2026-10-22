@@ -15,7 +15,7 @@ interface GitMetadata {
 
 export function deriveRootId(cwd: string): string {
   const meta = findGitMetadata(cwd);
-  return meta === null ? "" : hashId(meta.commonDir);
+  return hashId(meta === null ? resolve(cwd) : meta.commonDir);
 }
 
 export function commonDirOf(cwd: string): string {
