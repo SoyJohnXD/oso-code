@@ -70,6 +70,18 @@ function vetoOrMutate(call) {
   if (call.input?.text === MUTATED_TEXT) call.input = { text: "mutated" };
 }
 
+function recordAfter(call) {
+  note("execute.after", {
+    tool: call.tool,
+    sessionID: call.sessionID,
+    status: call.status,
+    keys: Object.keys(call),
+    input: call.input,
+    result: call.result,
+    error: call.error,
+  });
+}
+
 function denyMarked(evaluation) {
   note("permission.evaluate", {
     sessionID: evaluation.sessionID,
@@ -101,6 +113,7 @@ export default {
       editor.add(interruptTool(ctx));
     });
     await ctx.tool.hook("execute.before", vetoOrMutate);
+    await ctx.tool.hook("execute.after", recordAfter);
     await ctx.permission.hook("evaluate", denyMarked);
     await ctx.session.hook("experimental.idle", (idle) => note("idle", { sessionID: idle.sessionID, background: idle.background }));
     await ctx.shell.hook("create.before", addEnvironment);

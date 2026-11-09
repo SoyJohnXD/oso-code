@@ -96,7 +96,7 @@ const PATCH_TARGET_MARKER = /^\*\*\* (?:Add File|Update File|Delete File|Move to
 
 function writeTargetsOf({ toolName, filePath, patchText }: HookEnvelope): string[] {
   if (toolName === "edit" || toolName === "write") return filePath === "" ? [] : [filePath];
-  if (toolName === "apply_patch") return [...patchText.matchAll(PATCH_TARGET_MARKER)].map((marker) => (marker[1] ?? "").trim());
+  if (toolName === "patch") return [...patchText.matchAll(PATCH_TARGET_MARKER)].map((marker) => (marker[1] ?? "").trim());
   return [];
 }
 

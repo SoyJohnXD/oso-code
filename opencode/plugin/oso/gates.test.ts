@@ -90,7 +90,7 @@ test("the route table the adapter runs is the one core derives, and every matche
 test("an unarmed repository lets a commit through", () => {
   const fixture = makeFixture();
   try {
-    const verdict = judgeTool(fixture, "commit", "bash", { command: "git commit -m x" });
+    const verdict = judgeTool(fixture, "commit", "shell", { command: "git commit -m x" });
     assert.equal(verdict.kind, "allow");
   } finally {
     rmSync(fixture.base, { recursive: true, force: true });
@@ -101,7 +101,7 @@ test("a red slice denies the commit in-process, carrying the gate's own remedy",
   const fixture = makeFixture();
   try {
     arm(fixture, ["mode=plan", "active_slice=4", "verify_green=false"]);
-    const verdict = judgeTool(fixture, "commit", "bash", { command: "git commit -m x" });
+    const verdict = judgeTool(fixture, "commit", "shell", { command: "git commit -m x" });
     assert.equal(verdict.kind, "deny");
     assert.match(verdict.message, /oso-code/);
   } finally {
@@ -113,7 +113,7 @@ test("an armed unattended run denies a production deploy in-process", () => {
   const fixture = makeFixture();
   try {
     arm(fixture, ["auto=running", "auto_change=gate-probe"]);
-    const verdict = judgeTool(fixture, "proddeploy", "bash", { command: PRODUCTION_DEPLOY });
+    const verdict = judgeTool(fixture, "proddeploy", "shell", { command: PRODUCTION_DEPLOY });
     assert.equal(verdict.kind, "deny");
     assert.match(verdict.message, /a production deploy stays with the operator/);
   } finally {
@@ -125,7 +125,7 @@ test("an armed unattended run lets a long pull request body heredoc and its own 
   const fixture = makeFixture();
   try {
     arm(fixture, ["auto=running", "auto_change=gate-probe"]);
-    const verdict = judgeTool(fixture, "proddeploy", "bash", { command: LONG_PR_BODY_THEN_OWN_BRANCH_PUSH });
+    const verdict = judgeTool(fixture, "proddeploy", "shell", { command: LONG_PR_BODY_THEN_OWN_BRANCH_PUSH });
     assert.equal(verdict.kind, "allow");
   } finally {
     rmSync(fixture.base, { recursive: true, force: true });
@@ -136,7 +136,7 @@ test("an armed unattended run reads a production deploy padded past 3 KiB and de
   const fixture = makeFixture();
   try {
     arm(fixture, ["auto=running", "auto_change=gate-probe"]);
-    const verdict = judgeTool(fixture, "proddeploy", "bash", { command: LONG_PRODUCTION_DEPLOY });
+    const verdict = judgeTool(fixture, "proddeploy", "shell", { command: LONG_PRODUCTION_DEPLOY });
     assert.equal(verdict.kind, "deny");
     assert.match(verdict.message, /a production deploy stays with the operator/);
   } finally {
@@ -148,7 +148,7 @@ test("an edit with no slice armed is denied and names the state write that arms 
   const fixture = makeFixture();
   try {
     arm(fixture, ["mode=plan", "active_slice=none", "verify_green=false"]);
-    const verdict = judgeTool(fixture, "edits", "edit", { filePath: join(fixture.repo, "a.ts") });
+    const verdict = judgeTool(fixture, "edits", "edit", { path: join(fixture.repo, "a.ts") });
     assert.equal(verdict.kind, "deny");
     assert.match(verdict.message, /oso-state/);
   } finally {
@@ -158,7 +158,7 @@ test("an edit with no slice armed is denied and names the state write that arms 
 
 const UNLISTED_TOOLS = ["engram_mem_timeline", "somemcp_do_thing"];
 const RELEASE_SHAPED_TOOLS = ["vercel_create_deployment", "npm_publish", "gh_release_create"];
-const KNOWN_HARNESS_TOOLS = ["read", "grep", "engram_mem_search", "engram_mem_save", "task"];
+const KNOWN_HARNESS_TOOLS = ["read", "grep", "engram_mem_search", "engram_mem_save", "subagent"];
 const PLAN_AWAITING_A_SLICE = ["mode=plan", "active_slice=none", "verify_green=false"];
 const MODES_WITH_WORK_UNDER_WAY: readonly (readonly string[])[] = [
   ["mode=plan", "active_slice=4", "verify_green=false"],
@@ -195,9 +195,9 @@ function installedHarnessFiles(fixture: Fixture): string[] {
 function harnessWriteKinds(fixture: Fixture, target: string): Record<string, string> {
   const patchText = `*** Begin Patch\n*** Update File: ${target}\n@@\n-a\n+b\n*** End Patch`;
   return {
-    edit: judgeTool(fixture, "unknown", "edit", { filePath: target }).kind,
-    write: judgeTool(fixture, "unknown", "write", { filePath: target }).kind,
-    apply_patch: judgeTool(fixture, "unknown", "apply_patch", { patchText }).kind,
+    edit: judgeTool(fixture, "unknown", "edit", { path: target }).kind,
+    write: judgeTool(fixture, "unknown", "write", { path: target }).kind,
+    patch: judgeTool(fixture, "unknown", "patch", { patchText }).kind,
   };
 }
 
@@ -227,15 +227,15 @@ test("a plan awaiting its slice refuses an unknown tool and names the slice armi
   });
 });
 
-test("edit, write and apply_patch aimed inside the installed harness tree are denied, and aimed at the repository are not", () => {
+test("edit, write and patch aimed inside the installed harness tree are denied, and aimed at the repository are not", () => {
   underState(MODES_WITH_WORK_UNDER_WAY[0] ?? [], (fixture) => {
     for (const target of installedHarnessFiles(fixture)) {
-      assert.deepEqual(harnessWriteKinds(fixture, target), { edit: "deny", write: "deny", apply_patch: "deny" }, target);
+      assert.deepEqual(harnessWriteKinds(fixture, target), { edit: "deny", write: "deny", patch: "deny" }, target);
     }
-    assert.match(judgeTool(fixture, "unknown", "edit", { filePath: installedHarnessFiles(fixture)[0] }).message, /harness tree/);
+    assert.match(judgeTool(fixture, "unknown", "edit", { path: installedHarnessFiles(fixture)[0] }).message, /harness tree/);
     const repositoryFile = join(fixture.repo, "src", "a.ts");
-    assert.deepEqual(harnessWriteKinds(fixture, repositoryFile), { edit: "allow", write: "allow", apply_patch: "allow" });
-    assert.deepEqual(harnessWriteKinds(fixture, "src/a.ts"), { edit: "allow", write: "allow", apply_patch: "allow" });
+    assert.deepEqual(harnessWriteKinds(fixture, repositoryFile), { edit: "allow", write: "allow", patch: "allow" });
+    assert.deepEqual(harnessWriteKinds(fixture, "src/a.ts"), { edit: "allow", write: "allow", patch: "allow" });
   });
 });
 
@@ -244,7 +244,7 @@ test("with no state file the unknown-tool gate lets every tool through, harness 
     const tools = [...UNLISTED_TOOLS, ...RELEASE_SHAPED_TOOLS];
     assert.deepEqual(unknownGateKinds(fixture, tools), everyToolJudged(tools, "allow"));
     for (const target of installedHarnessFiles(fixture)) {
-      assert.deepEqual(harnessWriteKinds(fixture, target), { edit: "allow", write: "allow", apply_patch: "allow" }, target);
+      assert.deepEqual(harnessWriteKinds(fixture, target), { edit: "allow", write: "allow", patch: "allow" }, target);
     }
   });
 });
@@ -252,7 +252,7 @@ test("with no state file the unknown-tool gate lets every tool through, harness 
 test("a gate core cannot run blocks the call fail-closed, carrying the gate error core reports", () => {
   const fixture = makeFixture();
   try {
-    const [input, output] = toolCall("bash", { command: "git commit -m x" });
+    const [input, output] = toolCall("shell", { command: "git commit -m x" });
     const verdict = inHome(fixture, () =>
       runToolGate({ ...gateOf("commit"), gate: A_GATE_CORE_DOES_NOT_KNOW }, { ...input, cwd: fixture.repo }, output));
     assert.equal(verdict.kind, "block");
@@ -298,39 +298,39 @@ test("teardown produces no advisory of its own", () => {
   }
 });
 
-test("envelope: the bash command line becomes the command the lexer reads", () => {
-  const [input, output] = toolCall("bash", { script: "git commit -m x" });
+test("envelope: the shell command line becomes the command the lexer reads", () => {
+  const [input, output] = toolCall("shell", { script: "git commit -m x" });
   const envelope = composeEnvelope(input, output);
   assert.equal(envelope.commandLine, "git commit -m x");
   assert.equal(envelope.sessionId, "ses-tool");
-  assert.equal(envelope.toolName, "bash");
+  assert.equal(envelope.toolName, "shell");
 });
 
 test("envelope: a command-bearing tool without a script keeps its command", () => {
-  const envelope = composeEnvelope(...toolCall("apply_patch", { command: "apply_patch x" }));
-  assert.equal(envelope.commandLine, "apply_patch x");
+  const envelope = composeEnvelope(...toolCall("patch", { command: "patch x" }));
+  assert.equal(envelope.commandLine, "patch x");
 });
 
-test("envelope: filePath is the file the edits gate judges, and its absence is the empty name", () => {
-  assert.equal(composeEnvelope(...toolCall("edit", { filePath: "/repo/src/a.ts" })).filePath, "/repo/src/a.ts");
+test("envelope: the path argument is the file the edits gate judges, and its absence is the empty name", () => {
+  assert.equal(composeEnvelope(...toolCall("edit", { path: "/repo/src/a.ts" })).filePath, "/repo/src/a.ts");
   assert.equal(composeEnvelope(...toolCall("edit", {})).filePath, "");
 });
 
-test("envelope: apply_patch's patchText is the body the unknown-tool gate reads target paths from, and its absence is empty", () => {
+test("envelope: patch's patchText is the body the unknown-tool gate reads target paths from, and its absence is empty", () => {
   const patchText = "*** Begin Patch\n*** Add File: a.ts\n+x\n*** End Patch";
-  assert.equal(composeEnvelope(...toolCall("apply_patch", { patchText })).patchText, patchText);
-  assert.equal(composeEnvelope(...toolCall("apply_patch", {})).patchText, "");
+  assert.equal(composeEnvelope(...toolCall("patch", { patchText })).patchText, patchText);
+  assert.equal(composeEnvelope(...toolCall("patch", {})).patchText, "");
 });
 
 test("envelope: cwd falls back to the process working directory", () => {
-  const envelope = composeEnvelope({ tool: "bash" }, { args: {} });
+  const envelope = composeEnvelope({ tool: "shell" }, { args: {} });
   assert.equal(envelope.cwd, process.cwd());
 });
 
 test("envelope: the caller it carries names this host, its own root identity and the installed state binary", () => {
   const fixture = makeFixture();
   try {
-    const [input, output] = toolCall("bash", {});
+    const [input, output] = toolCall("shell", {});
     const envelope = composeEnvelope({ ...input, cwd: fixture.repo }, output);
     assert.deepEqual(envelope.caller, {
       host: "opencode",
@@ -354,13 +354,13 @@ test("matcher: an edits matcher applies to the native writers and nothing else",
   const matcher = gateOf("edits").matcher;
   assert.equal(matchesTool(matcher, "edit"), true);
   assert.equal(matchesTool(matcher, "write"), true);
-  assert.equal(matchesTool(matcher, "apply_patch"), true);
-  assert.equal(matchesTool(matcher, "bash"), false);
+  assert.equal(matchesTool(matcher, "patch"), true);
+  assert.equal(matchesTool(matcher, "shell"), false);
   assert.equal(matchesTool(matcher, "read"), false);
 });
 
 function gatesDenying(fixture: Fixture, tool: string): string[] {
-  const [input, output] = toolCall(tool, { filePath: join(fixture.repo, "a.ts") });
+  const [input, output] = toolCall(tool, { path: join(fixture.repo, "a.ts") });
   return routes
     .filter((route) => route.hook === "tool.execute.before" && matchesTool(route.matcher, tool))
     .filter((route) => inHome(fixture, () => runToolGate(route, { ...input, cwd: fixture.repo }, output)).kind === "deny")
@@ -379,7 +379,7 @@ function underPlanWithNoSlice(check: (fixture: Fixture) => void): void {
 
 test("a plan with no slice has the edits gate deny every real edit tool routed through the route table", () => {
   underPlanWithNoSlice((fixture) => {
-    const editTools = ["edit", "write", "apply_patch", "patch", "multiedit", "fallow_fix_apply", "myserver_fix_apply"];
+    const editTools = ["edit", "write", "patch", "fallow_fix_apply", "myserver_fix_apply"];
     const slippedPast = editTools.filter((tool) => !gatesDenying(fixture, tool).includes("edits"));
     assert.deepEqual(slippedPast, []);
   });
@@ -394,11 +394,11 @@ test("a plan with no slice leaves a tool that merely contains an edit tool's nam
 });
 
 test("matcher: every tool-call matcher names its tools exactly, so a longer name that contains one is no match", () => {
-  assert.equal(matchesTool(gateOf("commit").matcher, "bash"), true);
-  assert.equal(matchesTool(gateOf("commit").matcher, "bash_output"), false);
-  assert.equal(matchesTool(gateOf("proddeploy").matcher, "bash"), true);
+  assert.equal(matchesTool(gateOf("commit").matcher, "shell"), true);
+  assert.equal(matchesTool(gateOf("commit").matcher, "shell_output"), false);
+  assert.equal(matchesTool(gateOf("proddeploy").matcher, "shell"), true);
   assert.equal(matchesTool(gateOf("proddeploy").matcher, "vercel_deploy_to_production"), true);
-  assert.equal(matchesTool(gateOf("proddeploy").matcher, "bash_output"), false);
+  assert.equal(matchesTool(gateOf("proddeploy").matcher, "shell_output"), false);
 });
 
 test("matcher: a catch-all matcher applies to any tool", () => {
@@ -406,7 +406,7 @@ test("matcher: a catch-all matcher applies to any tool", () => {
 });
 
 test("matcher: a matcher no regular expression compiles from is a broken route table, never an empty match set", () => {
-  assert.throws(() => matchesTool("(unclosed", "bash"), /gate route table/);
+  assert.throws(() => matchesTool("(unclosed", "shell"), /gate route table/);
 });
 
 test("the state binary the caller names is the operator's own when they publish one, and the plugin's sibling otherwise", () => {

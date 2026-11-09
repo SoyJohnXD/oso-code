@@ -64,13 +64,13 @@ export function callerFor(directory: string): HookCaller {
 export function composeEnvelope(input: ToolExecuteInput, output: ToolExecuteOutput): HookEnvelope {
   const cwd = input.cwd ?? process.cwd();
   const args = output.args ?? {};
-  const { filePath, patchText } = args;
+  const { path: targetPath, patchText } = args;
   return hostEnvelope(callerFor(cwd), {
     sessionId: input.sessionID ?? "",
     cwd,
     toolName: input.tool,
     commandLine: commandLineFor(args),
-    filePath: typeof filePath === "string" ? filePath : "",
+    filePath: typeof targetPath === "string" ? targetPath : "",
     patchText: typeof patchText === "string" ? patchText : "",
   });
 }
@@ -164,6 +164,19 @@ export function runToolGate(
     return blockVerdict(failureDetail(route.gate, judged.stderr));
   }
   return allowVerdict;
+}
+
+export function firstToolGateRefusal(input: ToolExecuteInput, output: ToolExecuteOutput): string | undefined {
+  for (const route of routes) {
+    if (route.hook !== "tool.execute.before" || !matchesTool(route.matcher, input.tool)) {
+      continue;
+    }
+    const verdict = runToolGate(route, input, output);
+    if (verdict.kind !== "allow") {
+      return verdict.message;
+    }
+  }
+  return undefined;
 }
 
 export function runAdvisoryGate(route: OpenCodeRoute, input: LifecycleGateInput): AdvisoryOutcome {

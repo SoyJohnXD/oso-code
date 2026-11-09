@@ -140,3 +140,79 @@ describe("the SubagentStop gate records every oso-verifier report, armed run or 
     assert.equal(events.filter((line) => line.includes('"telemetry-write-failed"')).length, 1, events.join("\n"));
   });
 });
+
+const AGENT_TRANSCRIPT = `projects/proj/${SESSION}/subagents/agent-v1.jsonl`;
+
+function handbackLine(message: string): string {
+  return JSON.stringify({
+    isSidechain: true,
+    agentId: "v1",
+    type: "assistant",
+    message: {
+      role: "assistant",
+      content: [{ type: "tool_use", id: "toolu_1", name: "SubagentHandback", input: { message } }],
+    },
+  });
+}
+
+const HANDBACK_RESULT_LINE = JSON.stringify({
+  type: "user",
+  message: {
+    role: "user",
+    content: [{ type: "tool_result", tool_use_id: "toolu_1", content: '{"success":true}' }],
+  },
+});
+
+const TEXT_ONLY_LINE = JSON.stringify({
+  type: "assistant",
+  message: { role: "assistant", content: [{ type: "text", text: "verdict: pass" }] },
+});
+
+function transcriptOf(...lines: string[]): string {
+  return `${lines.join("\n")}\n`;
+}
+
+function verdictsAfter(transcript: string | undefined, lastMessage: string): unknown[] {
+  const seed: Record<string, SeededEntry> = { [STATE_FILE]: ATTENDED_SLICE_TWO };
+  if (transcript !== undefined) seed[AGENT_TRANSCRIPT] = transcript;
+  const { runs, records } = capturedAfter(seed, [subagentStop("oso-code:oso-verifier", lastMessage)]);
+  assert.deepEqual(exitsOf(runs), [0]);
+  return records.map(({ verdict, verdict_shape }) => ({ verdict, verdict_shape }));
+}
+
+const PASS_VALID = [{ verdict: "pass", verdict_shape: "valid" }];
+const NONE_MALFORMED = [{ verdict: "none", verdict_shape: "malformed" }];
+
+describe("a verifier that delivers its report through SubagentHandback is captured from its own transcript", () => {
+  test("an empty final message reads the last handback's message and records pass as valid", () => {
+    const transcript = transcriptOf(
+      handbackLine("verdict: fail\nfindings: stale"),
+      handbackLine("verdict: pass\nevidence: one"),
+      HANDBACK_RESULT_LINE,
+    );
+    assert.deepEqual(verdictsAfter(transcript, ""), PASS_VALID);
+  });
+
+  test("a transcript with no handback and an empty final message still records none and malformed", () => {
+    assert.deepEqual(verdictsAfter(transcriptOf(TEXT_ONLY_LINE, HANDBACK_RESULT_LINE), ""), NONE_MALFORMED);
+  });
+
+  test("a non-empty final message wins over a different handback", () => {
+    const transcript = transcriptOf(handbackLine("verdict: pass"));
+    assert.deepEqual(verdictsAfter(transcript, "verdict: fail\nfindings: one"), [
+      { verdict: "fail", verdict_shape: "valid" },
+    ]);
+  });
+
+  test("a handback whose message has no verdict line records none and malformed", () => {
+    assert.deepEqual(verdictsAfter(transcriptOf(handbackLine("all good, shipped")), ""), NONE_MALFORMED);
+  });
+
+  test("a missing transcript file records none and malformed without throwing", () => {
+    assert.deepEqual(verdictsAfter(undefined, ""), NONE_MALFORMED);
+  });
+
+  test("a malformed transcript line is skipped and the handback before it still counts", () => {
+    assert.deepEqual(verdictsAfter(transcriptOf(handbackLine("verdict: pass"), "{not json"), ""), PASS_VALID);
+  });
+});

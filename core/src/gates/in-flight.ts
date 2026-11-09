@@ -53,6 +53,7 @@ type Sighting = Readonly<{
 
 const SUBAGENT_TASK = "subagent";
 const SUBAGENT_STOP_EVENT = "SubagentStop";
+const SUBAGENT_HANDBACK_TOOL = "SubagentHandback";
 const NOTHING_REGISTERED: RegistryReading = { agents: [], unreadable: [] };
 
 export const SUBAGENT_START_GATE: GateDefinition<NoVerdictVerdict> = {
@@ -98,8 +99,27 @@ function captureVerifierStop(envelope: HookEnvelope): void {
     cwd: envelope.cwd,
     session: hookSessionId(envelope),
     model: launchedModelOf(envelope),
-    report: envelope.lastAssistantMessage,
+    report: envelope.lastAssistantMessage === "" ? handbackReportOf(envelope) : envelope.lastAssistantMessage,
   });
+}
+
+function handbackReportOf(envelope: HookEnvelope): string {
+  if (!isNameToken(envelope.agentId)) return "";
+  const transcript = derivedTranscriptPath(envelope, envelope.agentId);
+  if (transcript === "") return "";
+  const lines = (readFileIfPresent(transcript, "skip") ?? "").split("\n");
+  const messages = lines.flatMap(handbackMessagesIn);
+  return messages.at(-1) ?? "";
+}
+
+function handbackMessagesIn(line: string): string[] {
+  const content = (jsonObjectOf(line)?.["message"] as { content?: unknown } | undefined)?.content;
+  if (!Array.isArray(content)) return [];
+  const blocks: Array<{ type?: unknown; name?: unknown; input?: { message?: unknown } } | null> = content;
+  return blocks
+    .filter((block) => block?.type === "tool_use" && block.name === SUBAGENT_HANDBACK_TOOL)
+    .map((block) => block?.input?.message)
+    .filter((message): message is string => typeof message === "string");
 }
 
 function launchedModelOf(envelope: HookEnvelope): string | null {

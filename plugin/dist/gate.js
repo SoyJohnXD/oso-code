@@ -192,20 +192,18 @@ var GATE_ROWS = [
   }
 ];
 var TOOL_ROWS = [
-  { gate: "commit", names: { claude: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
+  { gate: "commit", names: { claude: "Bash", opencode: "shell" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "Edit", opencode: "edit" }, capability: "write", mandated: "no" },
-  { gate: "edits", names: { claude: "MultiEdit", opencode: "multiedit" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "MultiEdit", opencode: "none" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "Write", opencode: "write" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "NotebookEdit", opencode: "none" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "mcp__fallow__fix_apply", opencode: "fallow_fix_apply" }, capability: "write", mandated: "no" },
-  { gate: "edits", names: { claude: "none", opencode: "apply_patch" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "none", opencode: "patch" }, capability: "write", mandated: "no" },
-  { gate: "proddeploy", names: { claude: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", opencode: "bash" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", opencode: "apply_patch" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", opencode: "task" }, capability: "write", mandated: "no" },
+  { gate: "proddeploy", names: { claude: "Bash", opencode: "shell" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "shell" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "patch" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "subagent" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "list_mcp_resources" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", opencode: "list_mcp_resource_templates" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "read_mcp_resource" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "engram_mem_search" }, capability: "read", mandated: "yes" },
   { gate: "unknown", names: { claude: "none", opencode: "engram_mem_get_observation" }, capability: "read", mandated: "yes" },
@@ -233,7 +231,6 @@ var TOOL_ROWS = [
   { gate: "unknown", names: { claude: "none", opencode: "websearch" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "question" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "lsp" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", opencode: "plan_exit" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "oso_plan_approve" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "oso_plan_cancel" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "oso_wave" }, capability: "write", mandated: "no" }
@@ -1177,6 +1174,7 @@ function hooksManifestFingerprinted(manifestFile) {
 // core/src/gates/in-flight.ts
 var SUBAGENT_TASK = "subagent";
 var SUBAGENT_STOP_EVENT = "SubagentStop";
+var SUBAGENT_HANDBACK_TOOL = "SubagentHandback";
 var NOTHING_REGISTERED = { agents: [], unreadable: [] };
 var SUBAGENT_START_GATE = {
   gate: "subagentstart",
@@ -1217,8 +1215,22 @@ function captureVerifierStop(envelope) {
     cwd: envelope.cwd,
     session: hookSessionId(envelope),
     model: launchedModelOf(envelope),
-    report: envelope.lastAssistantMessage
+    report: envelope.lastAssistantMessage === "" ? handbackReportOf(envelope) : envelope.lastAssistantMessage
   });
+}
+function handbackReportOf(envelope) {
+  if (!isNameToken(envelope.agentId)) return "";
+  const transcript = derivedTranscriptPath(envelope, envelope.agentId);
+  if (transcript === "") return "";
+  const lines = (readFileIfPresent(transcript, "skip") ?? "").split("\n");
+  const messages = lines.flatMap(handbackMessagesIn);
+  return messages.at(-1) ?? "";
+}
+function handbackMessagesIn(line) {
+  const content = jsonObjectOf(line)?.["message"]?.content;
+  if (!Array.isArray(content)) return [];
+  const blocks = content;
+  return blocks.filter((block) => block?.type === "tool_use" && block.name === SUBAGENT_HANDBACK_TOOL).map((block) => block?.input?.message).filter((message) => typeof message === "string");
 }
 function launchedModelOf(envelope) {
   if (!isNameToken(envelope.agentId)) return null;
@@ -3280,6 +3292,7 @@ var PUSH_OPTIONS_SENDING_MORE_THAN_ITS_REFSPECS = /* @__PURE__ */ new Set([
 var FOLLOW_TAGS_CONFIG = /push\.followtags/i;
 var GIT_CONFIG_VARIABLE = /^GIT_CONFIG_[A-Za-z0-9_]*(=|$)/;
 var TAKE_THE_RUN_BACK = "set auto=done";
+var SHELL_TOOL_NAMES = [...toolNamesFor("claude", "proddeploy"), ...toolNamesFor("opencode", "proddeploy")];
 var PROD_DEPLOY_GATE = {
   gate: "proddeploy",
   errorSubject: "the production boundary gate",
@@ -3295,7 +3308,7 @@ function judgeProductionBoundary({ envelope }) {
   if (envelope.toolName.includes("deploy")) {
     return denyProductionBoundary(boundary, mcpDeployStaysWithTheOperator(session), envelope.toolName);
   }
-  if (envelope.toolName !== "Bash" && envelope.toolName !== "bash") return ALLOWED;
+  if (!SHELL_TOOL_NAMES.includes(envelope.toolName)) return ALLOWED;
   return judgeAgainstDenyPatterns(boundary, envelope.commandLine);
 }
 function judgeAgainstDenyPatterns(boundary, command) {
@@ -3899,7 +3912,7 @@ function harnessTreeTargetOf(envelope) {
 var PATCH_TARGET_MARKER = /^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$/gm;
 function writeTargetsOf({ toolName, filePath, patchText }) {
   if (toolName === "edit" || toolName === "write") return filePath === "" ? [] : [filePath];
-  if (toolName === "apply_patch") return [...patchText.matchAll(PATCH_TARGET_MARKER)].map((marker) => (marker[1] ?? "").trim());
+  if (toolName === "patch") return [...patchText.matchAll(PATCH_TARGET_MARKER)].map((marker) => (marker[1] ?? "").trim());
   return [];
 }
 function installedHarnessTree() {

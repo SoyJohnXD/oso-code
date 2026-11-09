@@ -248,4 +248,17 @@ describe("an OpenCode 2 host driven through a spike plugin in a fully isolated f
     assert.equal(created["cwd"], fixtureOrThrow().project);
     assert.deepEqual(allowed.toolResults, ["ENV=from-hook\n"]);
   });
+
+  test("the subagent tool's execute.after payload carries its agent in input.agent and the report in result.output.output, with no model and no background flag", CERTIFY_GUARD, (t) => {
+    if (lane(t)) return;
+    const [launched] = notesOfKind(outcomeOf("child"), "execute.after").filter((note) => note["tool"] === "subagent");
+    assert.ok(launched !== undefined);
+    assert.equal(launched["status"], "completed");
+    assert.equal((launched["input"] as Record<string, unknown>)["agent"], "general");
+    const result = launched["result"] as { output: Record<string, unknown>; metadata: Record<string, unknown> };
+    assert.deepEqual(Object.keys(result.output).sort(), ["output", "sessionID", "status"]);
+    assert.equal(result.output["status"], "completed");
+    assert.equal(result.output["output"], "finished");
+    assert.deepEqual(Object.keys(result.metadata).sort(), ["sessionID", "status"]);
+  });
 });

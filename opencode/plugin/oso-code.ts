@@ -1,12 +1,12 @@
+import type { Plugin } from "@opencode/plugin";
 import { planApprovalTool, planCancelTool, PLAN_APPROVAL_TOOL_ID, PLAN_CANCEL_TOOL_ID } from "./oso/approval.ts";
 import { continueUnattendedRun, releaseHeldRuns, trackSessionEvent } from "./oso/continuation-rail.ts";
 import {
   assertGateRoutesCompile,
-  matchesTool,
+  firstToolGateRefusal,
   routeForGate,
   routes,
   runAdvisoryGate,
-  runToolGate,
   type LifecycleGateInput,
   type ToolExecuteInput,
   type ToolExecuteOutput,
@@ -26,21 +26,16 @@ import {
 } from "./oso/lifecycle.ts";
 import type { PluginTool } from "./oso/tool.ts";
 import { recordTrace } from "./oso/trace.ts";
-import { captureTaskVerdict } from "./oso/verdict-capture.ts";
+import { captureSubagentVerdict, captureTaskVerdict } from "./oso/verdict-capture.ts";
 import { waveTool } from "./oso/wave-tool.ts";
 import { messageOf, type HostSessionApi } from "./oso/wave.ts";
-import { registerWorkspaceAdapter } from "./oso/workspace.ts";
 
 interface PluginClient {
-  tui?: {
-    showToast?: (message: string, options?: unknown) => unknown;
-  };
   session?: HostSessionApi;
 }
 
 interface PluginInput {
   client?: PluginClient;
-  experimental_workspace?: unknown;
   directory?: string;
 }
 
@@ -70,13 +65,13 @@ const reanchoredByCompaction = new Set<string>();
 
 let orphanAdviceValue: string | undefined;
 
-function orphanWorktreeAdviceOnce(directory: string, client: PluginClient | undefined): string {
+function orphanWorktreeAdviceOnce(directory: string): string {
   if (orphanAdviceValue === undefined) {
     try {
       orphanAdviceValue = buildStaleAdvice(listStale(commonDirOf(directory)));
     } catch (err) {
       orphanAdviceValue = "";
-      recordTrace({ origin: "lifecycle.orphan-advice", detail: messageOf(err), severity: "advisory", client });
+      recordTrace({ origin: "lifecycle.orphan-advice", detail: messageOf(err), severity: "advisory" });
     }
   }
   return orphanAdviceValue;
@@ -90,7 +85,6 @@ function sessionIdOf(value: unknown): string {
 function runLifecycleGate(
   gate: string,
   input: LifecycleGateInput,
-  client: PluginClient | undefined,
 ): string {
   const route = routeForGate(routes, gate);
   if (route === undefined) {
@@ -103,32 +97,31 @@ function runLifecycleGate(
       detail: outcome.detail,
       severity: "advisory",
       sessionID: input.sessionID,
-      client,
     });
     return "";
   }
   return outcome.kind === "context" ? outcome.text : "";
 }
 
-function armSessionAdvice(sessionID: string, directory: string, client: PluginClient | undefined): void {
+function armSessionAdvice(sessionID: string, directory: string): void {
   if (sessionID === "" || advisedSessions.has(sessionID)) {
     return;
   }
   advisedSessions.add(sessionID);
-  queueSystemAdvice(pendingAdvice, sessionID, orphanWorktreeAdviceOnce(directory, client));
+  queueSystemAdvice(pendingAdvice, sessionID, orphanWorktreeAdviceOnce(directory));
   queueSystemAdvice(
     pendingAdvice,
     sessionID,
-    runLifecycleGate("stale", { sessionID, directory, moment: "startup" }, client),
+    runLifecycleGate("stale", { sessionID, directory, moment: "startup" }),
   );
   queueSystemAdvice(
     pendingAdvice,
     sessionID,
-    runLifecycleGate("version", { sessionID, directory, moment: "startup" }, client),
+    runLifecycleGate("version", { sessionID, directory, moment: "startup" }),
   );
 }
 
-function markSessionLive(sessionID: string, directory: string, client: PluginClient | undefined): void {
+function markSessionLive(sessionID: string, directory: string): void {
   if (sessionID === "") {
     return;
   }
@@ -138,9 +131,69 @@ function markSessionLive(sessionID: string, directory: string, client: PluginCli
       worktrees: [],
     });
   } catch (err) {
-    recordTrace({ origin: "session.idle", detail: messageOf(err), severity: "advisory", sessionID, client });
+    recordTrace({ origin: "session.idle", detail: messageOf(err), severity: "advisory", sessionID });
   }
 }
+
+function checkGateRoutes(): void {
+  try {
+    assertGateRoutesCompile(routes);
+  } catch (err) {
+    recordTrace({ origin: "gate-routes", detail: messageOf(err), severity: "enforcement" });
+  }
+}
+
+function identityEnvFor(cwd: string): Record<string, string> {
+  return { ...publishIdentity(cwd), OSO_STATE_BIN: stateBinPath() };
+}
+
+type HostSessionID = Parameters<Plugin.Context["session"]["get"]>[0]["sessionID"];
+
+async function sessionDirectoryOf(
+  ctx: Plugin.Context,
+  directories: Map<string, string>,
+  sessionID: HostSessionID,
+): Promise<string> {
+  const known = directories.get(sessionID);
+  if (known !== undefined) {
+    return known;
+  }
+  try {
+    const { location } = await ctx.session.get({ sessionID });
+    directories.set(sessionID, location.directory);
+    return location.directory;
+  } catch (err) {
+    recordTrace({ origin: "session.directory", detail: messageOf(err), severity: "advisory", sessionID });
+    return ctx.location.directory;
+  }
+}
+
+async function setup(ctx: Plugin.Context): Promise<void> {
+  checkGateRoutes();
+  const directories = new Map<string, string>();
+  await ctx.tool.hook("execute.before", async (call) => {
+    const cwd = await sessionDirectoryOf(ctx, directories, call.sessionID);
+    const refusal = firstToolGateRefusal(
+      { tool: call.tool, sessionID: call.sessionID, callID: call.id, cwd },
+      { args: (call.input ?? {}) as Record<string, unknown> },
+    );
+    if (refusal !== undefined) {
+      throw new Error(refusal);
+    }
+  });
+  await ctx.tool.hook("execute.after", async (call) => {
+    captureSubagentVerdict(call, await sessionDirectoryOf(ctx, directories, call.sessionID));
+  });
+  await ctx.shell.hook("create.before", (creation) => {
+    try {
+      Object.assign(creation.env, identityEnvFor(creation.cwd));
+    } catch (err) {
+      recordTrace({ origin: "shell.env", detail: messageOf(err), severity: "advisory" });
+    }
+  });
+}
+
+export default { id: "oso-code", setup } satisfies Plugin.Plugin;
 
 export const osoCode = async (
   pluginInput?: PluginInput,
@@ -150,27 +203,15 @@ export const osoCode = async (
   try {
     sweepStale(commonDirOf(directory));
   } catch (err) {
-    recordTrace({ origin: "lifecycle.sweep", detail: messageOf(err), severity: "advisory", client });
+    recordTrace({ origin: "lifecycle.sweep", detail: messageOf(err), severity: "advisory" });
   }
-  registerWorkspaceAdapter({ experimentalWorkspace: pluginInput?.experimental_workspace, client });
-  try {
-    assertGateRoutesCompile(routes);
-  } catch (err) {
-    recordTrace({ origin: "gate-routes", detail: messageOf(err), severity: "enforcement", client });
-  }
+  checkGateRoutes();
 
   return {
     "tool.execute.before": async (input?: unknown, output?: unknown) => {
-      const call = input as ToolExecuteInput;
-      const result = (output ?? {}) as ToolExecuteOutput;
-      for (const route of routes) {
-        if (route.hook !== "tool.execute.before" || !matchesTool(route.matcher, call.tool)) {
-          continue;
-        }
-        const verdict = runToolGate(route, call, result);
-        if (verdict.kind !== "allow") {
-          throw new Error(verdict.message);
-        }
+      const refusal = firstToolGateRefusal(input as ToolExecuteInput, (output ?? {}) as ToolExecuteOutput);
+      if (refusal !== undefined) {
+        throw new Error(refusal);
       }
     },
     "tool.execute.after": async (input?: unknown, output?: unknown) => {
@@ -180,16 +221,11 @@ export const osoCode = async (
       const sessionID = (input as { sessionID?: string } | undefined)?.sessionID;
       try {
         const cwd = (input as { cwd?: string } | undefined)?.cwd;
-        const identity = publishIdentity(cwd ?? process.cwd());
         const target = (output ?? {}) as { env?: Record<string, string> };
-        target.env = {
-          ...(target.env ?? {}),
-          ...identity,
-          OSO_STATE_BIN: stateBinPath(),
-        };
+        target.env = { ...(target.env ?? {}), ...identityEnvFor(cwd ?? process.cwd()) };
         return target;
       } catch (err) {
-        recordTrace({ origin: "shell.env", detail: messageOf(err), severity: "advisory", sessionID, client });
+        recordTrace({ origin: "shell.env", detail: messageOf(err), severity: "advisory", sessionID });
         return output ?? {};
       }
     },
@@ -207,9 +243,9 @@ export const osoCode = async (
         return;
       }
       if (event.type === "session.idle") {
-        markSessionLive(sessionID, directory, client);
+        markSessionLive(sessionID, directory);
         dropSystemAdvice(pendingAdvice, sessionID);
-        continueUnattendedRun({ sessionID, directory, session: client?.session, client });
+        continueUnattendedRun({ sessionID, directory, session: client?.session });
         return;
       }
       if (event.type === "session.compacted") {
@@ -219,14 +255,14 @@ export const osoCode = async (
         queueSystemAdvice(
           pendingAdvice,
           sessionID,
-          runLifecycleGate("reanchor", { sessionID, directory, moment: "compact" }, client),
+          runLifecycleGate("reanchor", { sessionID, directory, moment: "compact" }),
         );
       }
     },
     "experimental.chat.system.transform": async (input?: unknown, output?: unknown) => {
       const sessionID = sessionIdOf(input);
       try {
-        armSessionAdvice(sessionID, directory, client);
+        armSessionAdvice(sessionID, directory);
         const delivery = deliverSystemAdvice(output, pendingAdvice, sessionID);
         if (delivery.kind === "undeliverable") {
           recordTrace({
@@ -234,11 +270,10 @@ export const osoCode = async (
             detail: "the host handed no system prompt array to append the advisory to",
             severity: "advisory",
             sessionID,
-            client,
           });
         }
       } catch (err) {
-        recordTrace({ origin: "system.transform", detail: messageOf(err), severity: "advisory", sessionID, client });
+        recordTrace({ origin: "system.transform", detail: messageOf(err), severity: "advisory", sessionID });
       }
     },
     "experimental.session.compacting": async (input?: unknown, output?: unknown) => {
@@ -246,7 +281,7 @@ export const osoCode = async (
       if (sessionID === "") {
         return;
       }
-      const anchor = runLifecycleGate("reanchor", { sessionID, directory, moment: "compact" }, client);
+      const anchor = runLifecycleGate("reanchor", { sessionID, directory, moment: "compact" });
       const delivery = deliverCompactionContext(output, anchor);
       if (delivery.kind === "delivered") {
         reanchoredByCompaction.add(sessionID);
@@ -257,7 +292,6 @@ export const osoCode = async (
           detail: "the host handed no compaction context array to append the re-anchor to",
           severity: "advisory",
           sessionID,
-          client,
         });
       }
     },
@@ -268,7 +302,7 @@ export const osoCode = async (
     },
     dispose: async () => {
       for (const sessionID of busSessions) {
-        runLifecycleGate("teardown", { sessionID, directory, moment: "end" }, client);
+        runLifecycleGate("teardown", { sessionID, directory, moment: "end" });
       }
       busSessions.clear();
       releaseHeldRuns();

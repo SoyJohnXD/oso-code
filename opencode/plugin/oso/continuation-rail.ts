@@ -17,7 +17,6 @@ export interface ContinuationRequest {
   sessionID: string;
   directory: string;
   session?: HostSessionApi;
-  client?: unknown;
   now?: () => number;
 }
 
@@ -256,7 +255,7 @@ function standDownTraced(request: ContinuationRequest, reason: string, turns: nu
 }
 
 function traceRun(request: ContinuationRequest, detail: string): void {
-  recordTrace({ origin: "auto-continue", detail, severity: "advisory", sessionID: request.sessionID, client: request.client });
+  recordTrace({ origin: "auto-continue", detail, severity: "advisory", sessionID: request.sessionID });
 }
 
 function nowOf(request: ContinuationRequest): number {

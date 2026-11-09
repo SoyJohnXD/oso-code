@@ -220,20 +220,18 @@ const MINUTE_MS = 60_000;
 const CHILD_LAUNCHED_AT_MS = Date.parse("2026-09-29T08:00:00Z");
 
 interface StreamedAdvisories {
-  client: { tui: { showToast: (toast: unknown) => void } };
   messages: string[];
 }
 
+const loggedLines: string[] = [];
+
+console.error = (...args: unknown[]) => {
+  loggedLines.push(args.map(String).join(" "));
+};
+
 function streamedAdvisories(): StreamedAdvisories {
-  const messages: string[] = [];
-  const client = {
-    tui: {
-      showToast: (toast: unknown) => {
-        messages.push((toast as { body: { message: string } }).body.message);
-      },
-    },
-  };
-  return { client, messages };
+  loggedLines.length = 0;
+  return { messages: loggedLines };
 }
 
 function idleAt(
@@ -241,13 +239,11 @@ function idleAt(
   host: PostedTurns,
   sessionID: string,
   minutesAfterLaunch: number,
-  advisories: StreamedAdvisories,
 ): Promise<ContinuationOutcome> {
   return underRailFixtureHome(fixture, () => continueUnattendedRun({
     sessionID,
     directory: fixture.repo,
     session: host.session,
-    client: advisories.client,
     now: () => CHILD_LAUNCHED_AT_MS + minutesAfterLaunch * MINUTE_MS,
   }));
 }
@@ -264,18 +260,18 @@ test("a child silent past the silence threshold is reported by its session id an
     const advisories = streamedAdvisories();
     launchedChild("ses-silent-child", "ses-silent-root");
 
-    const held = await idleAt(fixture, host, "ses-silent-root", 59, advisories);
+    const held = await idleAt(fixture, host, "ses-silent-root", 59);
     assert.deepEqual(held, { kind: "stood-down", turns: 0 });
     assert.equal(advisories.messages.length, 1);
     assert.match(advisories.messages[0] ?? "", /held while child sessions run: ses-silent-child/);
 
-    const released = await idleAt(fixture, host, "ses-silent-root", 61, advisories);
+    const released = await idleAt(fixture, host, "ses-silent-root", 61);
     assert.deepEqual(released, { kind: "stood-down", turns: PUSHES_WITHOUT_PROGRESS_CAP });
     assert.equal(advisories.messages.length, 2);
     assert.match(advisories.messages[1] ?? "", /ses-silent-child stuck: silent 61 min/);
     assert.match(journalOf(fixture), /ses-silent-child stuck: silent 61 min/);
 
-    await idleAt(fixture, host, "ses-silent-root", 62, advisories);
+    await idleAt(fixture, host, "ses-silent-root", 62);
     assert.equal(advisories.messages.length, 2, "a child is reported once");
   } finally {
     rmSync(fixture.base, { recursive: true, force: true });
@@ -294,10 +290,10 @@ test("a child still active but in flight past the ceiling is reported as long-ru
       CHILD_LAUNCHED_AT_MS + 170 * MINUTE_MS,
     );
 
-    const held = await idleAt(fixture, host, "ses-long-root", 179, advisories);
+    const held = await idleAt(fixture, host, "ses-long-root", 179);
     assert.deepEqual(held, { kind: "stood-down", turns: 0 });
 
-    const released = await idleAt(fixture, host, "ses-long-root", 181, advisories);
+    const released = await idleAt(fixture, host, "ses-long-root", 181);
     assert.deepEqual(released, { kind: "stood-down", turns: PUSHES_WITHOUT_PROGRESS_CAP });
     assert.match(advisories.messages[1] ?? "", /ses-long-child long-running: in flight 181 min/);
     assert.match(journalOf(fixture), /ses-long-child long-running: in flight 181 min/);
@@ -312,7 +308,7 @@ test("a held run is re-driven by its child completing through the plugin's own e
     armRun(fixture, ["auto=running"]);
     const host = postedTurns();
     const advisories = streamedAdvisories();
-    const hooks = await pluginOver(fixture, host, advisories);
+    const hooks = await pluginOver(fixture, host);
     await announced(fixture, hooks, "session.created", { info: { id: "ses-woken-child", parentID: "ses-woken-root" } });
     await settledAfter(fixture, () => hooks.event!({ event: { type: "session.idle", properties: { sessionID: "ses-woken-root" } } }));
     assert.deepEqual(host.orders, []);
@@ -333,7 +329,7 @@ test("a stuck child is reported and the hold released by the hold's own timer, w
     armRun(fixture, ["auto=running"]);
     const host = postedTurns();
     const advisories = streamedAdvisories();
-    const hooks = await pluginOver(fixture, host, advisories);
+    const hooks = await pluginOver(fixture, host);
     await announced(fixture, hooks, "session.created", { info: { id: "ses-stuck-child", parentID: "ses-stuck-root" } });
     await settledAfter(fixture, () => hooks.event!({ event: { type: "session.idle", properties: { sessionID: "ses-stuck-root" } } }));
     await settledAfter(fixture, () => mock.timers.tick(59 * MINUTE_MS));
@@ -375,7 +371,7 @@ test("a child streaming message parts past the silence threshold stays held, and
     armRun(fixture, ["auto=running"]);
     const host = postedTurns();
     const advisories = streamedAdvisories();
-    const hooks = await pluginOver(fixture, host, advisories);
+    const hooks = await pluginOver(fixture, host);
     await heldOver(fixture, hooks, "ses-streaming-child", "ses-streaming-root");
     await chatteredUntil(fixture, hooks, 100, {
       type: "message.part.updated",
@@ -402,7 +398,7 @@ test("a child updating its messages stays held until it crosses the in-flight ce
     armRun(fixture, ["auto=running"]);
     const host = postedTurns();
     const advisories = streamedAdvisories();
-    const hooks = await pluginOver(fixture, host, advisories);
+    const hooks = await pluginOver(fixture, host);
     await heldOver(fixture, hooks, "ses-working-child", "ses-working-root");
     await chatteredUntil(fixture, hooks, 175, {
       type: "message.updated",
@@ -427,7 +423,7 @@ test("the parent's own message events are no activity of its child, even one who
     armRun(fixture, ["auto=running"]);
     const host = postedTurns();
     const advisories = streamedAdvisories();
-    const hooks = await pluginOver(fixture, host, advisories);
+    const hooks = await pluginOver(fixture, host);
     await heldOver(fixture, hooks, "ses-quiet-child", "ses-chatty-root");
     await chatteredUntil(fixture, hooks, 55, {
       type: "message.updated",
@@ -511,7 +507,7 @@ test("the plugin's own idle event drives the rail, and a denied production deplo
     const denial = await underRailFixtureHome(fixture, async () => {
       try {
         await hooks["tool.execute.before"]!(
-          { tool: "bash", sessionID: "ses-root", cwd: fixture.repo },
+          { tool: "shell", sessionID: "ses-root", cwd: fixture.repo },
           { args: { command: PRODUCTION_DEPLOY } },
         );
         return "allowed";
@@ -535,10 +531,8 @@ test("the plugin's own idle event drives the rail, and a denied production deplo
 async function pluginOver(
   fixture: RailFixture,
   host: PostedTurns,
-  advisories: StreamedAdvisories = streamedAdvisories(),
 ): Promise<LooseHooks> {
-  const client = { session: host.session, tui: advisories.client.tui };
-  return (await osoCode({ directory: fixture.repo, client })) as unknown as LooseHooks;
+  return (await osoCode({ directory: fixture.repo, client: { session: host.session } })) as unknown as LooseHooks;
 }
 
 async function settledAfter(fixture: RailFixture, act: () => unknown): Promise<void> {

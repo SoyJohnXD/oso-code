@@ -21,9 +21,9 @@ async function hookCall(
   await hooks["tool.execute.before"]!(input, output);
 }
 
-test("the module exposes exactly one named export, and osoCode resolves flat with no hooks wrapper", async () => {
+test("the module exposes the v2 default definition and the v1 factory, and osoCode resolves flat with no hooks wrapper", async () => {
   const moduleNamespace: Record<string, unknown> = await import("../oso-code.ts");
-  assert.equal(Object.keys(moduleNamespace).length, 1);
+  assert.deepEqual(Object.keys(moduleNamespace).sort(), ["default", "osoCode"]);
   assert.equal(typeof moduleNamespace.osoCode, "function");
   const resolved = (await (moduleNamespace.osoCode as typeof osoCode)()) as unknown as LooseHooks;
   assert.equal("hooks" in resolved, false);
@@ -65,14 +65,14 @@ test("the entry registers oso_wave as a plugin tool carrying the host's session 
 test("the registered gate hook passes an unarmed edit call", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "oso-entry-"));
   const hooks = await loadHooks();
-  await hookCall(hooks, { tool: "edit", sessionID: "ses-entry", callID: "c" }, { args: { filePath: join(cwd, "a.ts") } });
+  await hookCall(hooks, { tool: "edit", sessionID: "ses-entry", callID: "c" }, { args: { path: join(cwd, "a.ts") } });
   rmSync(cwd, { recursive: true, force: true });
 });
 
-test("the registered gate hook passes an unarmed bash call", async () => {
+test("the registered gate hook passes an unarmed shell call", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "oso-entry-"));
   const hooks = await loadHooks();
-  await hookCall(hooks, { tool: "bash", sessionID: "ses-entry", callID: "c" }, { args: { script: "echo hi" } });
+  await hookCall(hooks, { tool: "shell", sessionID: "ses-entry", callID: "c" }, { args: { script: "echo hi" } });
   rmSync(cwd, { recursive: true, force: true });
 });
 

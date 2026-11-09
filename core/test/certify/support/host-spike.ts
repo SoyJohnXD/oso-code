@@ -10,6 +10,9 @@ import { scriptedPrompt, startScriptedProvider, type ScriptedProvider, type Scri
 
 const SPIKE_PLUGIN_SOURCE = path.join(path.dirname(fileURLToPath(import.meta.url)), "host-spike-plugin.mjs");
 const SPIKE_PLUGIN_FILE = "oso-spike.js";
+const MCP_STUB_SOURCE = path.join(path.dirname(fileURLToPath(import.meta.url)), "mcp-stub.mjs");
+export const MCP_SERVER_NAME = "stub";
+export const MCP_CODEMODE_SERVER_NAME = "scripted";
 const SCRIPTED_MODEL = "scripted/m";
 const FIRST_HOST_WITH_V2_PLUGINS = 2;
 const VERSION_PROBE_HOME_PREFIX = "oso-v2-host-version.";
@@ -56,6 +59,12 @@ export function v2LaneCause(probe: OpenCodeBinaryProbe | undefined): string | un
 
 function providerConfig(provider: ScriptedProvider): string {
   const config = {
+    mcp: {
+      servers: {
+        [MCP_SERVER_NAME]: { type: "local", command: [process.execPath, MCP_STUB_SOURCE], codemode: false },
+        [MCP_CODEMODE_SERVER_NAME]: { type: "local", command: [process.execPath, MCP_STUB_SOURCE] },
+      },
+    },
     provider: {
       scripted: {
         npm: "@ai-sdk/openai-compatible",

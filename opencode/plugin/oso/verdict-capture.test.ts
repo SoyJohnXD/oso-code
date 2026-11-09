@@ -4,7 +4,8 @@ import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { repositoryIdFor, stateFileFor } from "@oso-code/core";
-import { osoCode } from "../oso-code.ts";
+import entry, { osoCode } from "../oso-code.ts";
+import { fakeHostContext } from "../../test-support/host-context.ts";
 import { seedRailFixture, underRailFixtureHome, type RailFixture } from "../../test-support/rail-fixture.ts";
 import { armStateUnder, underFixtureHome } from "../../test-support/state-fixture.ts";
 import type { PluginTool } from "./tool.ts";
@@ -128,6 +129,78 @@ test("a foreground task verifier's result, read through the plugin's own tool.ex
       model: "anthropic/claude-sonnet-5",
       verdict: "fail",
       verdict_shape: "valid",
+      escalated: false,
+    }]);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
+});
+
+function subagentCompletion(agent: string, outcome: Record<string, unknown>): Record<string, unknown> {
+  return {
+    tool: "subagent",
+    sessionID: "ses-root",
+    agent: "build",
+    messageID: "msg-1",
+    id: "call-1",
+    input: { agent, description: "d", prompt: "p" },
+    status: "completed",
+    result: { output: { sessionID: "ses-child", ...outcome }, metadata: { sessionID: "ses-child", status: outcome["status"] } },
+  };
+}
+
+async function executeAfterOver(fixture: RailFixture): Promise<(payload: unknown) => Promise<void>> {
+  const host = fakeHostContext({ directory: fixture.repo, sessionDirectories: { "ses-root": fixture.repo } });
+  await entry.setup(host.context);
+  return host.hook("tool", "execute.after");
+}
+
+test("a completed verifier subagent's report, read through the v2 execute.after hook, lands one record and the others none", async () => {
+  const fixture = armedSliceThree("oso-v2-subagent-verdict");
+  try {
+    const executeAfter = await executeAfterOver(fixture);
+    await underRailFixtureHome(fixture, async () => {
+      await executeAfter(subagentCompletion("oso-verifier", { status: "completed", output: VERIFIER_REPORT }));
+      await executeAfter(subagentCompletion("oso-applier", { status: "completed", output: VERIFIER_REPORT }));
+      await executeAfter(subagentCompletion("oso-verifier", { status: "running", output: "working in the background" }));
+    });
+    assert.deepEqual(recordsOf(fixture).map(capturedFields), [{
+      host: "opencode",
+      session: fixture.owner,
+      change: "hanko",
+      slice: "3",
+      attempt: 1,
+      role: "verifier",
+      model: null,
+      verdict: "fail",
+      verdict_shape: "valid",
+      escalated: false,
+    }]);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
+});
+
+test("a verifier subagent whose execute.after status is error is recorded as a malformed none, never a valid verdict", async () => {
+  const fixture = armedSliceThree("oso-v2-subagent-error");
+  try {
+    const executeAfter = await executeAfterOver(fixture);
+    await underRailFixtureHome(fixture, () => executeAfter({
+      ...subagentCompletion("oso-verifier", { status: "completed", output: VERIFIER_REPORT }),
+      status: "error",
+      result: undefined,
+      error: { _tag: "Tool.Error", message: "the subagent failed" },
+    }));
+    assert.deepEqual(recordsOf(fixture).map(capturedFields), [{
+      host: "opencode",
+      session: fixture.owner,
+      change: "hanko",
+      slice: "3",
+      attempt: 1,
+      role: "verifier",
+      model: null,
+      verdict: "none",
+      verdict_shape: "malformed",
       escalated: false,
     }]);
   } finally {
