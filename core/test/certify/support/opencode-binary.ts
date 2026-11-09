@@ -31,7 +31,7 @@ function candidateBinary(overrideBinary: string | undefined, environment: NodeJS
   return isExecutableRegularFile(fallback) ? fallback : undefined;
 }
 
-function probeEnvironment(environment: NodeJS.ProcessEnv, probeHome: string): NodeJS.ProcessEnv {
+export function isolatedHostEnvironment(environment: NodeJS.ProcessEnv, probeHome: string): NodeJS.ProcessEnv {
   return {
     ...environment,
     HOME: probeHome,
@@ -47,7 +47,7 @@ function probeEnvironment(environment: NodeJS.ProcessEnv, probeHome: string): No
 function measuredVersion(binary: string, environment: NodeJS.ProcessEnv): string {
   const probeHome = mkdtempSync(path.join(environment["TMPDIR"] ?? tmpdir(), PROBE_HOME_PREFIX));
   try {
-    const run = spawnSync(binary, ["--version"], { env: probeEnvironment(environment, probeHome), encoding: "utf8" });
+    const run = spawnSync(binary, ["--version"], { env: isolatedHostEnvironment(environment, probeHome), encoding: "utf8" });
     if (run.error !== undefined || run.status !== 0) {
       return `${binary} --version did not complete: ${run.error?.message ?? run.signal ?? `exit ${run.status}`}`;
     }

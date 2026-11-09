@@ -27,10 +27,10 @@ const CEILINGS = [
   {
     label: "core/test",
     prefix: "core/test/",
-    maximumLines: 23500,
+    maximumLines: 26000,
     derivation:
-      "20,832 (measured at C1's arming, by this test's own listing) + 6 × 380 (C1's five slices and its close, at C0's " +
-      "measured mean of 380 lines per commit: 64 / 236 / 488 / 196 / 916) = 23,112",
+      "23,992 (measured after S1 of the opencode-v2-plugin-contract change, by this test's own listing) + 5 × 380 (that " +
+      "change's S2 to S5 and its close, at C0's measured mean of 380 lines per commit: 64 / 236 / 488 / 196 / 916) = 25,892",
   },
 ] as const;
 
