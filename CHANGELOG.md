@@ -2,6 +2,12 @@
 
 Every entry below is dated to the release it names: its counts, its paths and its present-tense sentences are facts about the commit that release shipped from, never about the tree you are reading now. An entry is not rewritten when a later change falsifies one of its claims — what a release actually shipped is the only thing a log is good for, and a corrected entry no longer holds it. What happens instead is a **Superseded since this release** block under the entry, naming the claim and what replaced it, so both stand and a reader can tell which is which.
 
+## Unreleased
+
+- **OpenCode 2 only.** The OpenCode adapter now loads as a default-exported `{ id, setup }` plugin on the OpenCode 2 plugin contract (ADR 0159): tools register directly under their bare names, plan approval goes through `permission.assert`, the gates run from the `execute.before` tool hook, and idle continuation, system advice and the compaction anchor ride the session hooks. The toast sink and the workspace adapter are gone. The pin moves from 1.18.22 to 2.2.6, `oso install --host opencode` refuses a host below it, and the version probe reads the `opencode v2.2.6` line. Reinstall OpenCode with `node bootstrap/oso.js install --host opencode --yes` and restart it.
+- **A load proof in verify.** `oso verify --host opencode` adds the row `installed plugin loads on the host`, which loads the installed bundle on the host under an isolated home and reads the host's own log: a loading line for `oso-code.js` and no `failed to load plugin` line. It skips by name where no `opencode` is on `PATH`.
+- **The nightly certifies OpenCode 2.** It drives the five `opencode-v2-*` suites against the pinned 2.2.6 release asset, checksum-verified, and the summary counts their rows.
+
 ## 0.29.0
 
 **Release cut: measured-harness rev 4 and proddeploy-false-positives.** This release ships the two measured-harness children (verdict-receipt, loop-cap) and the production-boundary false-positive change. It is based on `5536946` (PRs #64, #65, #69). Reinstall Claude Code with `bash bootstrap/install.sh --yes` and OpenCode with `node bootstrap/oso.js install --host opencode --yes`, then restart each host.

@@ -1,7 +1,7 @@
 import { compareVersionsAscending } from "./verify-claude.ts";
 
 export const SUPPORTED_ENGRAM_VERSION = "1.20.0";
-export const SUPPORTED_OPENCODE_VERSION = "1.18.22";
+export const SUPPORTED_OPENCODE_VERSION = "2.2.6";
 
 const DOTTED_NUMERIC_VERSION = /^\d+(\.\d+)*$/;
 

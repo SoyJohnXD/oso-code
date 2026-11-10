@@ -25,7 +25,8 @@ import {
   type ReachedSurface,
 } from "./opencode-config.ts";
 import { GLOBAL_MARKER_END, GLOBAL_MARKER_START, opencodePathsFor } from "./opencode.ts";
-import type { OpenCodeHostProbes } from "./opencode-host.ts";
+import { OPENCODE_BINARY_NAME, type OpenCodeHostProbes } from "./opencode-host.ts";
+import { HOST_LOAD_PROBE_ARGS, pluginLoadProofOf } from "./opencode-load-proof.ts";
 import {
   ENGRAM_BINARY_NAME,
   EXPECTED_SKILL_WRAPPER_COUNT,
@@ -38,6 +39,7 @@ import { openCodeTrustReading, OPENCODE_TRUST_FILE_COUNT, trustDivergenceLine } 
 import { isAboveTestedVersion, meetsVersionFloor, SUPPORTED_OPENCODE_VERSION } from "./pins.ts";
 import { modelOverridesTheTierCannotRank, ProfileMirrorRefusedError, profileRolesOf, readProfile, type ProfileReading } from "./profile.ts";
 import { VerifyReport, type CommandOutcome } from "./report.ts";
+import { firstExecutableOnPath } from "./verify-claude.ts";
 import { AGENT_ROLES } from "../prose/routes.ts";
 import { filesHoldTheSameBytes, isDirectory, isReadableRegularFile } from "../state/store.ts";
 
@@ -46,6 +48,8 @@ export const OPENCODE_NOT_ON_PATH = "opencode-not-on-path";
 export const VERSION_ROW_SKIP = "OpenCode CLI version — opencode is not on PATH, so the installed pin could not be probed";
 
 export const LOCAL_CHECKS_SECTION = "local checks:";
+
+const PLUGIN_LOAD_ROW_SKIP = "OpenCode plugin loads on the host — opencode is not on PATH, so the installed plugin could not be loaded";
 
 export const FIXTURE_ROWS_SKIP = "the fixture-based artifact checks — the isolated install could not complete";
 
@@ -90,6 +94,7 @@ export const OPENCODE_LOCAL_CHECK_ROWS: readonly LocalCheckRow[] = [
   { name: "owned MCP servers closed on every installed agent", kind: "artifact" },
   { name: "mode commands installed and routed", kind: "artifact" },
   { name: "plugin entry, modules and routes installed", kind: "artifact" },
+  { name: "installed plugin loads on the host", kind: "artifact" },
   { name: "Engram plugin file installed", kind: "artifact" },
   { name: "global guidance installed", kind: "config" },
   { name: "operator global prose survives an install", kind: "config" },
@@ -120,7 +125,7 @@ const FIXTURE_ENGRAM_SHIM = [
   "  \"setup --help\") printf 'usage: engram setup [<agent>] (claude-code, opencode, ...)\\n'; exit 0 ;;",
   '  "setup opencode")',
   '    mkdir -p "$HOME/.config/opencode/plugins"',
-  "    printf 'fixture engram plugin\\n' > \"$HOME/.config/opencode/plugins/engram.ts\"",
+  "    printf 'export default { id: \"fixture-engram\", setup: async () => () => {} }\\n' > \"$HOME/.config/opencode/plugins/engram.ts\"",
   "    exit 0 ;;",
   "  *) exit 64 ;;",
   "esac",
@@ -135,6 +140,9 @@ const FRONT_MATTER_DELIMITER = "---";
 const PERMISSION_BLOCK_HEADING = "permission:";
 const SHARED_SKILL_DIRECTORY = "_shared";
 const PERMISSION_VERDICT_LINE = /^ {2}(\S+): (\S+)$/;
+
+const PLUGIN_BUNDLE_FILE = "oso-code.js";
+const PLUGIN_LOAD_PROBE_TIMEOUT_MILLISECONDS = 30_000;
 
 const FIXTURE_PREFIX = "oso-opencode-verify.";
 const TEMPORARY_PARENT_UNAVAILABLE = "temporary-parent-unavailable";
@@ -204,6 +212,7 @@ function checkInstalledTree(report: VerifyReport, input: VerifyOpenCodeInput, tr
   noteServersBeyondTheOwnedSet(report, configFile, tree.configHome);
   report.check("mode commands installed and routed", "exact", openCodeCommandStatus(input.repositoryRoot, tree.configHome));
   report.check("plugin entry, modules and routes installed", "exact", openCodePluginStatus(input.repositoryRoot, tree.configHome));
+  checkInstalledPluginLoads(report, input, tree);
   report.check("Engram plugin file installed", "present", openCodeEngramStatus(tree.configHome));
   report.check("global guidance installed", "exact", openCodeGlobalStatus(globalFile, readFileSync(sources.global, "utf8")));
   report.check("operator global prose survives an install", "preserved", openCodeOperatorGlobalStatus(globalFile, operatorGlobalSeed()));
@@ -552,9 +561,31 @@ export function openCodeCommandStatus(repositoryRoot: string, configHome: string
 
 export function openCodePluginStatus(repositoryRoot: string, configHome: string): string {
   const sources = openCodePayloadSources(repositoryRoot);
-  if (!filesHoldTheSameBytes(sources.pluginBundle, path.join(configHome, "plugin", "oso-code.js"))) return "entry-divergent";
+  if (!filesHoldTheSameBytes(sources.pluginBundle, path.join(configHome, "plugin", PLUGIN_BUNDLE_FILE))) return "entry-divergent";
   const unbundled = directoryEntryNames(path.join(configHome, "plugin")).filter((name) => name.endsWith(".ts") || name === "oso");
   return unbundled.length === 0 ? "exact" : `unbundled-sources:${unbundled.length}`;
+}
+
+function checkInstalledPluginLoads(report: VerifyReport, input: VerifyOpenCodeInput, tree: InstalledOpenCodeTree): void {
+  const binary = firstExecutableOnPath(input.environment, OPENCODE_BINARY_NAME);
+  if (binary === undefined) {
+    report.skip(PLUGIN_LOAD_ROW_SKIP);
+    return;
+  }
+  report.check("installed plugin loads on the host", "loaded", openCodePluginLoadStatus(binary, fixtureEnvironmentFor(input.environment, tree.home, tree.root), tree.root));
+}
+
+export function openCodePluginLoadStatus(binary: string, environment: NodeJS.ProcessEnv, projectDirectory: string): string {
+  const run = spawnSync(binary, [...HOST_LOAD_PROBE_ARGS], {
+    cwd: projectDirectory,
+    env: { ...environment, PWD: projectDirectory },
+    encoding: "utf8",
+    timeout: PLUGIN_LOAD_PROBE_TIMEOUT_MILLISECONDS,
+  });
+  if (run.error !== undefined || run.status !== 0) return `probe-failed: ${run.error?.message ?? run.signal ?? `exit ${run.status}`}`;
+  const proof = pluginLoadProofOf(`${run.stdout}${run.stderr}`, PLUGIN_BUNDLE_FILE);
+  if (proof.failedLines.length > 0) return namedList("failed", proof.failedLines);
+  return proof.loadedLines.length === 1 ? "loaded" : `loading-lines:${proof.loadedLines.length}`;
 }
 
 export function openCodeEngramStatus(configHome: string): string {

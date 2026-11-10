@@ -4117,12 +4117,12 @@ function ambiguousNote(versionLineShape, matches) {
 
 // core/src/install/opencode-host.ts
 var OPENCODE_BINARY_NAME = "opencode";
-var OPENCODE_VERSION_LINE_SHAPE = "a bare dotted version";
+var OPENCODE_VERSION_LINE_SHAPE = "a bare dotted version or `opencode v` and a dotted version";
 var PROBE_HOME_PREFIX = "oso-opencode-probe.";
 var PROBE_TIMEOUT_MILLISECONDS = 1e4;
 var ANSI_SELECT_GRAPHIC_RENDITION = /\u001b\[[0-9;]*m/g;
 var POSIX_SPACE_CLASS = /[ \t\n\v\f\r]/g;
-var OPENCODE_VERSION_LINE = /^(\d+(?:\.\d+)*)$/;
+var OPENCODE_VERSION_LINE = /^(?:opencodev)?(\d+(?:\.\d+)*)$/;
 function openCodeHostProbes(environment) {
   const binaryPath = firstExecutableOnPath(environment, OPENCODE_BINARY_NAME);
   if (binaryPath === void 0) return { version: void 0 };
@@ -4194,7 +4194,7 @@ function openCodeTrustTargetUnder(rootKind, root, published) {
 }
 
 // core/src/install/pins.ts
-var SUPPORTED_OPENCODE_VERSION = "1.18.22";
+var SUPPORTED_OPENCODE_VERSION = "2.2.6";
 var DOTTED_NUMERIC_VERSION = /^\d+(\.\d+)*$/;
 function meetsVersionFloor(found, floor) {
   if (found === void 0 || !DOTTED_NUMERIC_VERSION.test(found)) return false;

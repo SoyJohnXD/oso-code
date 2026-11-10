@@ -181,12 +181,16 @@ describe("restoreBlockedBy: the one place this port refuses where the bash would
   });
 });
 
-describe("versionFieldOf: strip ANSI, split into lines, strip every POSIX space per line, then match a bare dotted version", () => {
+describe("versionFieldOf: strip ANSI, split into lines, strip every POSIX space per line, then match a bare dotted version or the OpenCode 2 `opencode v` line", () => {
   test("strips ANSI colour and per-line POSIX space, leaving a clean bare-dotted-version line matched with nothing to discard", () => {
     assert.deepEqual(versionFieldOf("[32m 1.18.22 [0m\n"), { kind: "matched", version: "1.18.22", discarded: [] });
   });
 
-  test("a label squashed against the version by the per-line space strip stays non-matching and is reported rather than folded into a version", () => {
+  test("reads the OpenCode 2 line `opencode v2.2.6` as the version it carries", () => {
+    assert.deepEqual(versionFieldOf("opencode v2.2.6\n"), { kind: "matched", version: "2.2.6", discarded: [] });
+  });
+
+  test("a label with no v squashed against the version by the per-line space strip stays non-matching and is reported rather than folded into a version", () => {
     assert.deepEqual(versionFieldOf("opencode\t1.18.22\r\n"), { kind: "unmatched", raw: "opencode1.18.22\n" });
   });
 

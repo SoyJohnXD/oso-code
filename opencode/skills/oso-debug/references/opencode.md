@@ -6,7 +6,7 @@ Operator-facing content the operator must answer or approve — the triage repor
 
 ## Making a launch wait
 
-No launch on this host outlives the turn that made it: the `task` tool is SYNCHRONOUS — the call blocks until the child turn completes and the child's own final message comes back in-band (D5) — and there is no wait operation and no handoff receipt rail beside it, so that returned message is the whole of the handoff. Read it before any step that depends on it; the delegated fix this flow launches is exactly such a step. A launch that errors, times out or returns an empty verdict BLOCKS this flow and never falls through, and no wait marker is armed here because nothing this flow launches reports in a later turn.
+The child's own final message is the `subagent` tool's result, and that returned message is the whole of the handoff. Read it before any step that depends on it; the delegated fix this flow launches is exactly such a step. A launch that errors, times out or returns an empty verdict BLOCKS this flow and never falls through.
 
 ## Shared-file paths
 
@@ -14,9 +14,9 @@ Wherever the neutral body names a file as `_shared/<file>.md`, it is spelled `..
 
 ## The state command
 
-`OSO_STATE_BIN` reaches every tool subprocess on this host through the installed plugin's `shell.env` hook — which fires per shell invocation and whose `output.env` values ARE present in the tool process environment. So `oso-state` is spelled `"${OSO_STATE_BIN:-oso-state}"` here.
+`OSO_STATE_BIN` and `OSO_AGENT` reach every shell command on this host through the installed plugin's `shell.create.before` hook, whose env mutation reaches the spawned command. So `oso-state` is spelled `"${OSO_STATE_BIN:-oso-state}"` here.
 
-This host publishes the ROOT session id through `shell.env` for tool subprocesses (D13); that value is what `OSO_AGENT` carries, and it is never exported into the server process itself. Spell every state call as `"${OSO_STATE_BIN:-oso-state}" --session "${OSO_AGENT}" <verb> …`. In a folder holding several repositories, run every `oso-state` call from the session's own directory, never with a workdir inside one of the repositories: state and `OSO_AGENT` key on the directory the call runs in.
+The installed plugin publishes `OSO_AGENT`, a repository-derived identity computed from the shell's cwd, not a host session id. Spell every state call as `"${OSO_STATE_BIN:-oso-state}" --session "${OSO_AGENT}" <verb> …`. In a folder holding several repositories, run every `oso-state` call from the session's own directory, never with a workdir inside one of the repositories: state and `OSO_AGENT` key on the directory the call runs in.
 
 ## Naming and invoking the harness's own skills
 
@@ -31,7 +31,7 @@ Forked judges and operational agents are the exception to inline reading: launch
 
 ## The explorer
 
-§4's diagnosis agent is this host's `explore` subagent type, launched through the `task` tool.
+§4's diagnosis agent is launched through the `subagent` tool with a read-only agent.
 
 ## Front-surface binding
 

@@ -19,7 +19,8 @@ import {
   type OpenCodeBinaryProbe,
   type ResolvedProbe,
 } from "./support/opencode-binary.ts";
-import { pluginLoadProofOf, runLoadProbe } from "./support/plugin-load-proof.ts";
+import { pluginLoadProofOf } from "../../src/install/opencode-load-proof.ts";
+import { runLoadProbe } from "./support/plugin-load-proof.ts";
 
 const OVERRIDE_ENV_VAR = "OSO_V2_HOST_SPIKE_OPENCODE_BIN";
 const SPIKE_PLUGIN_FILE = "oso-spike.js";

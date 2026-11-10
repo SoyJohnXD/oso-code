@@ -2,7 +2,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { sessionOutcomeDescription, type SessionRun } from "./behavior-drive.ts";
 import { configHomeOf, type ContractFixture } from "./contract-fixture.ts";
-import { failedLoadLinesOf, HOST_LOAD_PROBE_ARGS, runLoadProbe } from "./plugin-load-proof.ts";
+import { failedLoadLinesOf, HOST_LOAD_PROBE_ARGS } from "../../../src/install/opencode-load-proof.ts";
+import { runLoadProbe } from "./plugin-load-proof.ts";
 
 export const PLUGIN_ENTRY_WITHOUT_A_FUNCTION_EXPORT = `export const osoCodeHooks = {
   "tool.execute.before": async () => {},

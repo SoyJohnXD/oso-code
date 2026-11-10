@@ -6,12 +6,12 @@ import { firstExecutableOnPath } from "./verify-claude.ts";
 import { versionLineReadingOf, versionOutcomeOf, type VersionLineReading } from "./version-line.ts";
 
 export const OPENCODE_BINARY_NAME = "opencode";
-export const OPENCODE_VERSION_LINE_SHAPE = "a bare dotted version";
+export const OPENCODE_VERSION_LINE_SHAPE = "a bare dotted version or `opencode v` and a dotted version";
 const PROBE_HOME_PREFIX = "oso-opencode-probe.";
 const PROBE_TIMEOUT_MILLISECONDS = 10_000;
 const ANSI_SELECT_GRAPHIC_RENDITION = /\u001b\[[0-9;]*m/g;
 const POSIX_SPACE_CLASS = /[ \t\n\v\f\r]/g;
-const OPENCODE_VERSION_LINE = /^(\d+(?:\.\d+)*)$/;
+const OPENCODE_VERSION_LINE = /^(?:opencodev)?(\d+(?:\.\d+)*)$/;
 
 export type OpenCodeHostProbes = Readonly<{ version: string | undefined; versionNote?: string }>;
 

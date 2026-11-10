@@ -14,9 +14,9 @@ Wherever the neutral body names a file as `_shared/<file>.md`, it is spelled `..
 
 ## The state command
 
-`OSO_STATE_BIN` reaches every tool subprocess on this host through the installed plugin's `shell.env` hook — which fires per shell invocation and whose `output.env` values ARE present in the tool process environment. So `oso-state` is spelled `"${OSO_STATE_BIN:-oso-state}"` here.
+`OSO_STATE_BIN` and `OSO_AGENT` reach every shell command on this host through the installed plugin's `shell.create.before` hook, whose env mutation reaches the spawned command. So `oso-state` is spelled `"${OSO_STATE_BIN:-oso-state}"` here.
 
-This host publishes the ROOT session id through `shell.env` for tool subprocesses (D13); that value is what `OSO_AGENT` carries, and it is never exported into the server process itself. Spell every state call as `"${OSO_STATE_BIN:-oso-state}" --session "${OSO_AGENT}" <verb> …`. In a folder holding several repositories, run every `oso-state` call from the session's own directory, never with a workdir inside one of the repositories: state and `OSO_AGENT` key on the directory the call runs in.
+The installed plugin publishes `OSO_AGENT`, a repository-derived identity computed from the shell's cwd, not a host session id. Spell every state call as `"${OSO_STATE_BIN:-oso-state}" --session "${OSO_AGENT}" <verb> …`. In a folder holding several repositories, run every `oso-state` call from the session's own directory, never with a workdir inside one of the repositories: state and `OSO_AGENT` key on the directory the call runs in.
 
 ## Naming and invoking the harness's own skills
 
@@ -28,7 +28,7 @@ Installed plugin skills carry NO namespace on this host: every skill auto-regist
 | the DEBUG mode | `/oso-debug` | the operator invokes `/oso-debug` — a mode is never model-invoked |
 | the quality-pass judge | `/oso-quality-pass` | read its installed `SKILL.md` and run it inline, the way it runs on every host |
 
-Forked judges and operational agents are the exception to inline reading. This host's `task` tool is SYNCHRONOUS — its call blocks until the child turn completes and the verdict is in-band (D5). There is no wait operation and no handoff receipt rail on this host (D5); a launch that errors, times out, or returns an empty verdict blocks the flow and never falls through. Launch the judge adapters by their `opencode/agents/` contracts, passing SKILL PATH and ARGUMENTS in the payload (D10).
+Forked judges and operational agents are the exception to inline reading. The child's final message is the `subagent` tool's result, and a launch that errors, times out, or returns an empty verdict blocks the flow and never falls through. Launch the judge adapters by their `opencode/agents/` contracts, passing SKILL PATH and ARGUMENTS in the payload (D10).
 
 ## Front-surface binding
 

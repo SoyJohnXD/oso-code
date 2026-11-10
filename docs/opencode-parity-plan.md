@@ -21,6 +21,7 @@ the only thing a closed plan is good for. Three of its entries were falsified by
 the `opencode-runtime-parity` change that followed, so a reader acting on them
 would be acting on a tree that has moved.
 
+- **The whole OpenCode 1 plugin surface.** The OpenCode 2 port (ADR-0159) replaced the v1 `Plugin` factory, its hook map, the toast sink and the workspace adapter with a default-exported `{ id, setup }` plugin on the OpenCode 2 contract, and raised the pin to 2.2.6. Every hook name, `client.*` call and host version this record names below is the OpenCode 1 host's.
 - **D23 and S11 — the workspace adapter's `create`.** The frozen decision made
   `create` the adapter's own awaited `git worktree add -b <branch> <path> <WAVE
   START>`, and S11 delivered `worktreeRoot`, `createWorkspace`, `UNSAFE_REF` and

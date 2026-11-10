@@ -10,22 +10,22 @@ Host binding for the shared concerns that bind no single wrapper: `../front-surf
 - For a harness-owned invocation, read the mounted `SKILL.md` completely, pass the exact ARGUMENT `init`, `document` or `audit <touched surfaces>`, then load and follow the skill's mounted reference. Do not approximate an argument from memory or treat reading only `reference/` as loading the skill.
 - The filesystem payload to an applier uses that absolute `SKILL.md` plus its `reference/` directory, also expanded below `$HOME/.agents/skills/impeccable/`. The applier reads those files; it does not invoke the skill and is never handed the source cache path.
 - Record the independent installed-skill numeral from the `version:` field in the mounted `SKILL.md`. Never inspect the source cache merely to obtain the mounted version.
-- Route design findings to the `oso-applier` agent in fresh context through the synchronous `task` tool: the call blocks until the child turn completes and the verdict is in-band, so the findings are consumed on the way back, not awaited later.
+- Route design findings to the `oso-applier` agent in fresh context through the `subagent` tool, and read the message it returns before acting on it.
 - When Impeccable is absent, ask the operator to rerun `node bootstrap/oso.js install --host opencode`. That install does not mount Impeccable itself; never use a discovered cache path as a temporary mount.
 
 ## Native agent files, no card
 
-Spawning a role runs one of this host's own native agent files — the seven subagent contracts under `opencode/agents/`, each `mode: subagent` and `hidden: true` — through the synchronous `task` tool, and that launch renders no card: the operator sees only a spinner and its description while the child runs, and when it returns, the milestone text itself is the only record of what happened — no report panel, no handoff receipt, no verdict surface is ever drawn. The contract at `../reporting.md` is therefore this host's WHOLE visibility layer, not a complement to a native affordance, and it is delivered exactly as every other operator-facing content on this host.
+Spawning a role runs one of this host's own native agent files — the seven subagent contracts under `opencode/agents/`, each `mode: subagent` and `hidden: true` — through the `subagent` tool, and the verdict is carried by the milestone text and the returned message. The contract at `../reporting.md` is therefore this host's WHOLE visibility layer, not a complement to a native affordance, and it is delivered exactly as every other operator-facing content on this host.
 
 The model a launch runs on is written into those same agent files at install: `oso install --host opencode`, run from the same project directory `oso profile set` was run in, renders the profile's tier for each role into the `agent.<role>.model` key the installer owns, so the model clause the neutral body carries is already resolved when a role is spawned, the spawn passes no model of its own, and the Launching milestone names the model that installed key holds.
 
 ## Milestones ride the stream, and the record that carries them
 
-On this host a milestone never ends the turn, in any run, attended or unattended: the text is written and the next tool call follows in the same turn. OpenCode keeps text written before a same-turn tool call on screen, and the `task` tool is synchronous, so a Launching milestone that ended the turn would stall the launch behind an operator "go" nobody owes it.
+On this host a milestone never ends the turn, in any run, attended or unattended: the text is written and the next tool call follows in the same turn. A Launching milestone that ended the turn would stall the launch behind an operator "go" nobody owes it.
 
 What still ends the turn, as plain text with no tool call after it: a question or decision for the operator, a blocker that needs them, the plan document before `oso_plan_approve`, the PARK and the FINAL REPORT.
 
-An UNATTENDED RUN is this repository's runtime state carrying `auto=running` for this session: the marker the AUTO disposition arms (`plan/SKILL.md`'s ground rules) and the ROADMAP chain arms per child (`roadmap/SKILL.md` §4). Under it the continuation rail posts the next turn itself: the installed plugin answers `session.idle` with a real user turn back into the same session.
+An UNATTENDED RUN is this repository's runtime state carrying `auto=running` for this session: the marker the AUTO disposition arms (`plan/SKILL.md`'s ground rules) and the ROADMAP chain arms per child (`roadmap/SKILL.md` §4). Under it the continuation rail posts the next turn itself: the installed plugin answers the `experimental.idle` session hook with a real user turn back into the same session.
 
 The record is not optional under that marker. Every milestone `../reporting.md` fires is ALSO appended full-text with `oso-state journal "<the milestone exactly as it was written>"` — one journal per change, named by the `auto_change` value the marker was armed with — and that file is what the operator reads on their return and what a compaction cannot take. The rail measures progress elsewhere: a posted turn counts against the turn bound unless a commit, a flow transition or a child completion followed it, so the journal is the trail and never the clock.
 

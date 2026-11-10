@@ -1,5 +1,7 @@
 # oso-code rewrite — the shared core in TypeScript on Node
 
+> OpenCode note: wherever this document names the OpenCode host, it describes the OpenCode 1 host and is superseded by ADR-0159 (OpenCode 2 only).
+
 Roadmap slug: `ts-core-rewrite`. Written 2026-08-25 from a measured audit (engram: `oso/harness-complexity-audit/diagnosis`, `/alternatives`, `/runtime-benchmark`; decision: `oso/harness-rewrite/decision`). This document is the input to `/oso-code:roadmap`: §1–§3 of that mode are answered here, once, so the chain runs without coming back to ask. Where it says DECIDED, the decision is frozen; an applier or verifier that finds it wrong reports `blocked` with evidence and never reinterprets it.
 
 ## 0. Purpose, non-goals, end state

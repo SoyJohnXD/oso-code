@@ -916,7 +916,7 @@ function errorMessageOf(cause) {
 
 // core/src/install/pins.ts
 var SUPPORTED_ENGRAM_VERSION = "1.20.0";
-var SUPPORTED_OPENCODE_VERSION = "1.18.22";
+var SUPPORTED_OPENCODE_VERSION = "2.2.6";
 var DOTTED_NUMERIC_VERSION = /^\d+(\.\d+)*$/;
 function meetsVersionFloor(found, floor) {
   if (found === void 0 || !DOTTED_NUMERIC_VERSION.test(found)) return false;
@@ -2456,12 +2456,12 @@ function ambiguousNote(versionLineShape, matches) {
 
 // core/src/install/opencode-host.ts
 var OPENCODE_BINARY_NAME = "opencode";
-var OPENCODE_VERSION_LINE_SHAPE = "a bare dotted version";
+var OPENCODE_VERSION_LINE_SHAPE = "a bare dotted version or `opencode v` and a dotted version";
 var PROBE_HOME_PREFIX = "oso-opencode-probe.";
 var PROBE_TIMEOUT_MILLISECONDS = 1e4;
 var ANSI_SELECT_GRAPHIC_RENDITION = /\u001b\[[0-9;]*m/g;
 var POSIX_SPACE_CLASS = /[ \t\n\v\f\r]/g;
-var OPENCODE_VERSION_LINE = /^(\d+(?:\.\d+)*)$/;
+var OPENCODE_VERSION_LINE = /^(?:opencodev)?(\d+(?:\.\d+)*)$/;
 function openCodeHostProbes(environment) {
   const binaryPath = firstExecutableOnPath(environment, OPENCODE_BINARY_NAME);
   if (binaryPath === void 0) return { version: void 0 };
@@ -3418,9 +3418,26 @@ import { spawnSync as spawnSync6 } from "node:child_process";
 import { chmodSync as chmodSync3, mkdirSync as mkdirSync8, mkdtempSync as mkdtempSync5, readdirSync as readdirSync6, readFileSync as readFileSync12, rmSync as rmSync9, writeFileSync as writeFileSync7 } from "node:fs";
 import { tmpdir as tmpdir4 } from "node:os";
 import path14 from "node:path";
+
+// core/src/install/opencode-load-proof.ts
+var HOST_PLUGIN_LOAD_ERROR = "failed to load plugin";
+var HOST_PLUGIN_LOADING_MESSAGE = 'msg="loading plugin"';
+var HOST_LOAD_PROBE_ARGS = ["debug", "agents", "--standalone", "--print-logs"];
+function failedLoadLinesOf(hostLog) {
+  return hostLog.split("\n").filter((line) => line.includes(HOST_PLUGIN_LOAD_ERROR));
+}
+function pluginLoadProofOf(hostLog, pluginFileName) {
+  return {
+    loadedLines: hostLog.split("\n").filter((line) => line.includes(HOST_PLUGIN_LOADING_MESSAGE) && line.includes(pluginFileName)),
+    failedLines: failedLoadLinesOf(hostLog)
+  };
+}
+
+// core/src/install/verify-opencode.ts
 var OPENCODE_NOT_ON_PATH = "opencode-not-on-path";
 var VERSION_ROW_SKIP = "OpenCode CLI version \u2014 opencode is not on PATH, so the installed pin could not be probed";
 var LOCAL_CHECKS_SECTION = "local checks:";
+var PLUGIN_LOAD_ROW_SKIP = "OpenCode plugin loads on the host \u2014 opencode is not on PATH, so the installed plugin could not be loaded";
 var FIXTURE_ROWS_SKIP = "the fixture-based artifact checks \u2014 the isolated install could not complete";
 var REACHABLE_BEYOND_THE_TWINS_LIST = "reachable beyond the twin's list:";
 var OPERATOR_CONFIG_PROBE = {
@@ -3456,7 +3473,7 @@ var FIXTURE_ENGRAM_SHIM = [
   `  "setup --help") printf 'usage: engram setup [<agent>] (claude-code, opencode, ...)\\n'; exit 0 ;;`,
   '  "setup opencode")',
   '    mkdir -p "$HOME/.config/opencode/plugins"',
-  `    printf 'fixture engram plugin\\n' > "$HOME/.config/opencode/plugins/engram.ts"`,
+  `    printf 'export default { id: "fixture-engram", setup: async () => () => {} }\\n' > "$HOME/.config/opencode/plugins/engram.ts"`,
   "    exit 0 ;;",
   "  *) exit 64 ;;",
   "esac",
@@ -3469,6 +3486,8 @@ var FRONT_MATTER_DELIMITER = "---";
 var PERMISSION_BLOCK_HEADING = "permission:";
 var SHARED_SKILL_DIRECTORY = "_shared";
 var PERMISSION_VERDICT_LINE = /^ {2}(\S+): (\S+)$/;
+var PLUGIN_BUNDLE_FILE = "oso-code.js";
+var PLUGIN_LOAD_PROBE_TIMEOUT_MILLISECONDS = 3e4;
 var FIXTURE_PREFIX = "oso-opencode-verify.";
 var TEMPORARY_PARENT_UNAVAILABLE = "temporary-parent-unavailable";
 var DECOY_CONFIG_TEXT = '{"theme":"decoy"}';
@@ -3520,6 +3539,7 @@ function checkInstalledTree(report2, input, tree) {
   noteServersBeyondTheOwnedSet(report2, configFile, tree.configHome);
   report2.check("mode commands installed and routed", "exact", openCodeCommandStatus(input.repositoryRoot, tree.configHome));
   report2.check("plugin entry, modules and routes installed", "exact", openCodePluginStatus(input.repositoryRoot, tree.configHome));
+  checkInstalledPluginLoads(report2, input, tree);
   report2.check("Engram plugin file installed", "present", openCodeEngramStatus(tree.configHome));
   report2.check("global guidance installed", "exact", openCodeGlobalStatus(globalFile, readFileSync12(sources.global, "utf8")));
   report2.check("operator global prose survives an install", "preserved", openCodeOperatorGlobalStatus(globalFile, operatorGlobalSeed()));
@@ -3827,9 +3847,29 @@ function openCodeCommandStatus(repositoryRoot2, configHome) {
 }
 function openCodePluginStatus(repositoryRoot2, configHome) {
   const sources = openCodePayloadSources(repositoryRoot2);
-  if (!filesHoldTheSameBytes(sources.pluginBundle, path14.join(configHome, "plugin", "oso-code.js"))) return "entry-divergent";
+  if (!filesHoldTheSameBytes(sources.pluginBundle, path14.join(configHome, "plugin", PLUGIN_BUNDLE_FILE))) return "entry-divergent";
   const unbundled = directoryEntryNames2(path14.join(configHome, "plugin")).filter((name) => name.endsWith(".ts") || name === "oso");
   return unbundled.length === 0 ? "exact" : `unbundled-sources:${unbundled.length}`;
+}
+function checkInstalledPluginLoads(report2, input, tree) {
+  const binary = firstExecutableOnPath(input.environment, OPENCODE_BINARY_NAME);
+  if (binary === void 0) {
+    report2.skip(PLUGIN_LOAD_ROW_SKIP);
+    return;
+  }
+  report2.check("installed plugin loads on the host", "loaded", openCodePluginLoadStatus(binary, fixtureEnvironmentFor(input.environment, tree.home, tree.root), tree.root));
+}
+function openCodePluginLoadStatus(binary, environment, projectDirectory) {
+  const run = spawnSync6(binary, [...HOST_LOAD_PROBE_ARGS], {
+    cwd: projectDirectory,
+    env: { ...environment, PWD: projectDirectory },
+    encoding: "utf8",
+    timeout: PLUGIN_LOAD_PROBE_TIMEOUT_MILLISECONDS
+  });
+  if (run.error !== void 0 || run.status !== 0) return `probe-failed: ${run.error?.message ?? run.signal ?? `exit ${run.status}`}`;
+  const proof = pluginLoadProofOf(`${run.stdout}${run.stderr}`, PLUGIN_BUNDLE_FILE);
+  if (proof.failedLines.length > 0) return namedList("failed", proof.failedLines);
+  return proof.loadedLines.length === 1 ? "loaded" : `loading-lines:${proof.loadedLines.length}`;
 }
 function openCodeEngramStatus(configHome) {
   return isReadableRegularFile(path14.join(configHome, "plugins", "engram.ts")) ? "present" : "missing";
