@@ -1,4 +1,5 @@
 import { isAbsolute } from "node:path";
+import type { Plugin } from "@opencode/plugin";
 import { APPLIER_PROOF_HEADER, parseAgentVerdict, type ParsedAgentVerdict, VERIFIER_AGENT } from "@oso-code/core";
 import { commonDirOf, roleOf } from "./identity.ts";
 import { captureOpenCodeVerifierReport } from "./verdict-capture.ts";
@@ -37,9 +38,9 @@ export interface PinnedSession {
 }
 
 export interface SessionTransport {
-  create(request: { directory: string; title: string; parentSessionID: string }): Promise<PinnedSession>;
-  prompt(request: { sessionID: string; directory: string; hostAgent: string; prompt: string }): Promise<string>;
-  abort(request: { sessionID: string; directory: string }): Promise<void>;
+  create(request: { directory: string; title: string; parentSessionID: string; hostAgent: string }): Promise<PinnedSession>;
+  prompt(request: { sessionID: string; prompt: string }): Promise<string>;
+  interrupt(request: { sessionID: string }): Promise<void>;
 }
 
 export interface WaveRequest {
@@ -84,6 +85,7 @@ async function pinChildSession(
         directory: launch.worktree,
         title: `${HOST_AGENT[launch.agent]} in ${launch.worktree}`,
         parentSessionID: request.parentSessionID,
+        hostAgent: HOST_AGENT[launch.agent],
       }),
       request.timeoutMs,
     );
@@ -135,8 +137,6 @@ async function collectChildReport(child: PinnedChild, request: WaveRequest): Pro
     const raw = await withinBound(
       () => request.transport.prompt({
         sessionID: child.sessionID,
-        directory: child.launch.worktree,
-        hostAgent: HOST_AGENT[child.launch.agent],
         prompt: promptOf(child.launch),
       }),
       request.timeoutMs,
@@ -153,7 +153,7 @@ async function collectChildReport(child: PinnedChild, request: WaveRequest): Pro
       raw,
     };
   } catch (error) {
-    const unstopped = await stopChild(child.sessionID, child.launch.worktree, request.transport);
+    const unstopped = await interruptChild(child.sessionID, request.transport);
     const failure = `the child turn did not complete: ${messageOf(error)}`;
     return {
       outcome: "blocked",
@@ -169,80 +169,70 @@ function promptOf({ prompt, applierProof }: WaveChildLaunch): string {
   return applierProof === undefined ? prompt : `${prompt}\n\n${APPLIER_PROOF_HEADER}\n${applierProof}`;
 }
 
-const ABORT_BOUND_MS = 10_000;
+const INTERRUPT_BOUND_MS = 10_000;
 
-async function stopChild(
-  sessionID: string,
-  directory: string,
-  transport: SessionTransport,
-): Promise<string | undefined> {
+async function interruptChild(sessionID: string, transport: SessionTransport): Promise<string | undefined> {
   try {
-    await withinBound(() => transport.abort({ sessionID, directory }), ABORT_BOUND_MS);
+    await withinBound(() => transport.interrupt({ sessionID }), INTERRUPT_BOUND_MS);
     return undefined;
   } catch (error) {
     return `the child session was left running: ${messageOf(error)}`;
   }
 }
 
-interface HostCallResult<T> {
-  data?: T;
-  error?: unknown;
+type HostSessions = Plugin.Context["session"];
+
+type SessionMessages = Awaited<ReturnType<HostSessions["context"]>>;
+
+type SessionMessage = SessionMessages[number];
+
+function lastMessageOfType<Type extends SessionMessage["type"]>(
+  messages: SessionMessages,
+  type: Type,
+): Extract<SessionMessage, { type: Type }> | undefined {
+  return [...messages].reverse().find((message): message is Extract<SessionMessage, { type: Type }> => message.type === type);
 }
 
-export interface HostSessionApi {
-  create(options: {
-    query: { directory: string };
-    body: { title: string; parentID?: string };
-  }): Promise<HostCallResult<PinnedSession>>;
-  prompt(options: {
-    path: { id: string };
-    query?: { directory: string };
-    body: { agent?: string; parts: Array<{ type: "text"; text: string }> };
-  }): Promise<HostCallResult<{ parts: unknown }>>;
-  abort(options: {
-    path: { id: string };
-    query: { directory: string };
-  }): Promise<HostCallResult<unknown>>;
-}
-
-export function pinnedSessionTransport(session: HostSessionApi): SessionTransport {
+export function pinnedSessionTransport(session: HostSessions): SessionTransport {
   return {
-    create: ({ directory, title, parentSessionID }) => unwrap(session.create({
-      query: { directory },
-      body: parentSessionID === "" ? { title } : { title, parentID: parentSessionID },
-    })),
-    prompt: async ({ sessionID, directory, hostAgent, prompt }) => finalMessageText(await unwrap(session.prompt({
-      path: { id: sessionID },
-      query: { directory },
-      body: { agent: hostAgent, parts: [{ type: "text", text: prompt }] },
-    }))),
-    abort: async ({ sessionID, directory }) => {
-      await unwrap(session.abort({ path: { id: sessionID }, query: { directory } }));
+    create: async ({ directory, title, parentSessionID, hostAgent }) => {
+      const { id } = await session.create({
+        location: { directory },
+        title,
+        agent: hostAgent,
+        parentID: parentSessionID === "" ? undefined : parentSessionID,
+      });
+      await session.move({ sessionID: id, directory });
+      await session.wait({ sessionID: id });
+      const pinned = await session.get({ sessionID: id });
+      return { id, directory: pinned.location.directory };
+    },
+    prompt: async ({ sessionID, prompt }) => {
+      await session.prompt({ sessionID, text: prompt });
+      await session.wait({ sessionID });
+      return finalReplyText(await session.context({ sessionID }));
+    },
+    interrupt: async ({ sessionID }) => {
+      await session.interrupt({ sessionID });
     },
   };
 }
 
-export async function unwrap<T>(call: Promise<HostCallResult<T>>): Promise<T> {
-  const result = await call;
-  if (result.data === undefined) {
-    throw new Error(messageOf(result.error));
+function finalReplyText(messages: SessionMessages): string {
+  const lastUser = [...messages].reverse().findIndex((message) => message.type === "user");
+  const turn = lastUser === -1 ? messages : messages.slice(messages.length - lastUser);
+  const end = lastMessageOfType(turn, "idle");
+  if (end === undefined) {
+    throw new Error("the host reported no end of turn for the child session");
   }
-  return result.data;
-}
-
-function finalMessageText(reply: { parts: unknown }): string {
-  if (!Array.isArray(reply.parts)) {
-    throw new Error("the host returned a reply with no message parts");
+  if (end.outcome !== "succeeded") {
+    throw new Error(`the child turn ended ${end.outcome}${end.error === undefined ? "" : `: ${messageOf(end.error)}`}`);
   }
-  return reply.parts.filter(isTextPart).map((part) => part.text).join("\n");
-}
-
-function isTextPart(part: unknown): part is { type: "text"; text: string } {
-  const record = part as { type?: unknown; text?: unknown } | null;
-  return typeof record === "object"
-    && record !== null
-    && record.type === "text"
-    && typeof record.text === "string";
+  const reply = lastMessageOfType(turn, "assistant");
+  if (reply === undefined) {
+    throw new Error("the host returned no assistant reply for the child session");
+  }
+  return reply.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
 }
 
 export function messageOf(error: unknown): string {

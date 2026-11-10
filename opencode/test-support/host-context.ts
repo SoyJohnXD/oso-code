@@ -1,4 +1,6 @@
 import type { Plugin } from "@opencode/plugin";
+import type { FakeChildSessions } from "./child-sessions.ts";
+import type { OsoTool, OsoToolContext } from "../plugin/oso/tool.ts";
 
 type Callback = (payload: never) => unknown;
 
@@ -12,19 +14,34 @@ export interface FakeHostContext {
   emit: (event: unknown) => void;
   failEvents: (error: Error) => void;
   eventSubscription: () => AbortSignal | undefined;
+  tool: (name: string) => OsoTool;
+  callTool: (name: string, sessionID: string, input: unknown) => ReturnType<OsoTool["execute"]>;
+  assertions: () => readonly unknown[];
 }
 
 export interface FakeHostOptions {
   directory: string;
   sessionDirectories?: Readonly<Record<string, string>>;
   parentSessions?: Readonly<Record<string, string>>;
+  defaultSessionDirectory?: string;
+  refuseAssertions?: Error;
+  children?: FakeChildSessions;
 }
 
-export function fakeHostContext({ directory, sessionDirectories = {}, parentSessions = {} }: FakeHostOptions): FakeHostContext {
+export function fakeHostContext({
+  directory,
+  sessionDirectories = {},
+  parentSessions = {},
+  defaultSessionDirectory,
+  refuseAssertions,
+  children,
+}: FakeHostOptions): FakeHostContext {
   const hooks = new Map<string, Callback>();
   const lookups: string[] = [];
   const prompted: { sessionID: string; text: string }[] = [];
   const steps: EventStep[] = [];
+  const tools = new Map<string, OsoTool>();
+  const asserted: unknown[] = [];
   let subscription: AbortSignal | undefined;
   let wake: () => void = () => {};
   const push = (step: EventStep): void => {
@@ -52,7 +69,21 @@ export function fakeHostContext({ directory, sessionDirectories = {}, parentSess
   };
   const context = {
     location: { directory },
-    tool: { hook: registerUnder("tool") },
+    tool: {
+      hook: registerUnder("tool"),
+      transform: async (callback: (editor: { add: (tool: OsoTool) => void }) => void) => {
+        callback({ add: (tool) => tools.set(tool.name, tool) });
+        return { dispose: async () => {} };
+      },
+    },
+    permission: {
+      assert: async (input: unknown) => {
+        asserted.push(input);
+        if (refuseAssertions !== undefined) {
+          throw refuseAssertions;
+        }
+      },
+    },
     shell: { hook: registerUnder("shell") },
     event: {
       subscribe: (options?: { signal?: AbortSignal }) => {
@@ -62,13 +93,20 @@ export function fakeHostContext({ directory, sessionDirectories = {}, parentSess
       },
     },
     session: {
+      ...children?.api,
       hook: registerUnder("session"),
       prompt: async (input: { sessionID: string; text: string }) => {
+        if (children?.owns(input.sessionID) === true) {
+          return children.api.prompt(input);
+        }
         prompted.push(input);
       },
       get: async ({ sessionID }: { sessionID: string }) => {
+        if (children?.owns(sessionID) === true) {
+          return children.api.get({ sessionID });
+        }
         lookups.push(sessionID);
-        const known = sessionDirectories[sessionID];
+        const known = sessionDirectories[sessionID] ?? defaultSessionDirectory;
         if (known === undefined) {
           throw new Error(`no session record for ${sessionID}`);
         }
@@ -92,5 +130,28 @@ export function fakeHostContext({ directory, sessionDirectories = {}, parentSess
     emit: (event) => push({ event }),
     failEvents: (error) => push({ error }),
     eventSubscription: () => subscription,
+    tool: (name) => {
+      const tool = tools.get(name);
+      if (tool === undefined) {
+        throw new Error(`the plugin registered no tool named ${name}`);
+      }
+      return tool;
+    },
+    callTool: (name, sessionID, input) => {
+      const tool = tools.get(name);
+      if (tool === undefined) {
+        throw new Error(`the plugin registered no tool named ${name}`);
+      }
+      const call = {
+        sessionID,
+        agent: "build",
+        messageID: "msg-1",
+        id: "call-1",
+        signal: new AbortController().signal,
+        progress: async () => {},
+      } as unknown as OsoToolContext;
+      return tool.execute(input, call);
+    },
+    assertions: () => asserted,
   };
 }

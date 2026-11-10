@@ -7,7 +7,7 @@ import { provedSomething } from "../support/proved.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
 
 const OPENCODE_INSTALLER = "core/src/install/opencode-install.ts";
-const BUNDLE_ENTRY_MARKER = "osoCode";
+const BUNDLE_ENTRY_MARKER = 'id: "oso-code"';
 const STALE_SOURCE_PATTERN = /PLUGIN_SOURCE|opencode\/plugin\/oso\//;
 
 const MINIMUM_INSTALLER_LINES = 300;

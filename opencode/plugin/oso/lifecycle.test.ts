@@ -6,12 +6,11 @@ import { join } from "node:path";
 import { test } from "node:test";
 import {
   buildStaleAdvice,
-  deliverCompactionContext,
-  deliverSystemAdvice,
   listMarkers,
   dropSystemAdvice,
   markerPath,
   queueSystemAdvice,
+  queuedSystemAdvice,
   readMarker,
   sweepStale,
   touchMarker,
@@ -154,52 +153,26 @@ test("stale advice lists orphaned worktrees or stays empty", () => {
   assert.match(advice, /ses-y/);
 });
 
-test("queued advice is appended to the system prompt array in place", () => {
-  const advice = "stale: /tmp/orphan/wt1";
+test("queued advice is read back in the order it was queued", () => {
   const pending: PendingSystemAdvice = new Map();
-  queueSystemAdvice(pending, "ses-a", advice);
-  const output = { system: ["you are a harness"] };
-  const delivery = deliverSystemAdvice(output, pending, "ses-a");
-  assert.deepEqual(delivery, { kind: "delivered", entries: 1 });
-  assert.deepEqual(output.system, ["you are a harness", advice]);
+  queueSystemAdvice(pending, "ses-a", "first");
+  queueSystemAdvice(pending, "ses-a", "second");
+  assert.deepEqual(queuedSystemAdvice(pending, "ses-a"), ["first", "second"]);
 });
 
-test("advice rides every prompt of the turn, because the host sends only the last", () => {
+test("advice rides every read of the turn until its session is dropped", () => {
   const pending: PendingSystemAdvice = new Map();
   queueSystemAdvice(pending, "ses-a", "the advisory");
-  const discarded = { system: ["you are a harness"] };
-  const sent = { system: ["you are a harness"] };
-  assert.deepEqual(deliverSystemAdvice(discarded, pending, "ses-a"), { kind: "delivered", entries: 1 });
-  assert.deepEqual(deliverSystemAdvice(sent, pending, "ses-a"), { kind: "delivered", entries: 1 });
-  assert.deepEqual(sent.system, ["you are a harness", "the advisory"]);
-});
-
-test("advice stops riding prompts once its session is dropped", () => {
-  const pending: PendingSystemAdvice = new Map();
-  queueSystemAdvice(pending, "ses-a", "the advisory");
+  assert.deepEqual(queuedSystemAdvice(pending, "ses-a"), ["the advisory"]);
+  assert.deepEqual(queuedSystemAdvice(pending, "ses-a"), ["the advisory"]);
   dropSystemAdvice(pending, "ses-a");
-  const output = { system: ["you are a harness"] };
-  assert.deepEqual(deliverSystemAdvice(output, pending, "ses-a"), { kind: "empty" });
-  assert.deepEqual(output.system, ["you are a harness"]);
+  assert.deepEqual(queuedSystemAdvice(pending, "ses-a"), []);
 });
 
 test("advice queued for one session never reaches another", () => {
   const pending: PendingSystemAdvice = new Map();
   queueSystemAdvice(pending, "ses-a", "for a");
-  const output = { system: ["base"] };
-  assert.deepEqual(deliverSystemAdvice(output, pending, "ses-b"), { kind: "empty" });
-  assert.deepEqual(output.system, ["base"]);
-});
-
-test("advice accumulates until a system prompt it can reach arrives", () => {
-  const pending: PendingSystemAdvice = new Map();
-  queueSystemAdvice(pending, "ses-a", "first");
-  const promptless = { prompt: "the shape the host does not use" };
-  assert.deepEqual(deliverSystemAdvice(promptless, pending, "ses-a"), { kind: "undeliverable" });
-  queueSystemAdvice(pending, "ses-a", "second");
-  const output = { system: ["base"] };
-  assert.deepEqual(deliverSystemAdvice(output, pending, "ses-a"), { kind: "delivered", entries: 2 });
-  assert.deepEqual(output.system, ["base", "first", "second"]);
+  assert.deepEqual(queuedSystemAdvice(pending, "ses-b"), []);
 });
 
 test("empty advice and unknown sessions never occupy the queue", () => {
@@ -207,25 +180,6 @@ test("empty advice and unknown sessions never occupy the queue", () => {
   queueSystemAdvice(pending, "ses-a", "");
   queueSystemAdvice(pending, "", "orphaned advice");
   assert.equal(pending.size, 0);
-  const output = { system: ["base"] };
-  assert.deepEqual(deliverSystemAdvice(output, pending, "ses-a"), { kind: "empty" });
-});
-
-test("the re-anchor joins the compaction's own context array in place", () => {
-  const output = { context: ["host context"] };
-  assert.deepEqual(deliverCompactionContext(output, "re-anchor"), { kind: "delivered", entries: 1 });
-  assert.deepEqual(output.context, ["host context", "re-anchor"]);
-});
-
-test("an empty re-anchor leaves the compaction untouched", () => {
-  const output = { context: [] as string[] };
-  assert.deepEqual(deliverCompactionContext(output, ""), { kind: "empty" });
-  assert.deepEqual(output.context, []);
-});
-
-test("a compaction with no context array cannot carry the re-anchor", () => {
-  assert.deepEqual(deliverCompactionContext({}, "re-anchor"), { kind: "undeliverable" });
-  assert.deepEqual(deliverCompactionContext(undefined, "re-anchor"), { kind: "undeliverable" });
 });
 
 test("a corrupt marker file is ignored", () => {

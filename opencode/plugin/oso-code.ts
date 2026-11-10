@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode/plugin";
-import { planApprovalTool, planCancelTool, PLAN_APPROVAL_TOOL_ID, PLAN_CANCEL_TOOL_ID } from "./oso/approval.ts";
+import { planApprovalTool, planCancelTool } from "./oso/approval.ts";
 import {
   continueUnattendedRun,
   releaseHeldRuns,
@@ -13,15 +13,11 @@ import {
   routes,
   runAdvisoryGate,
   type LifecycleGateInput,
-  type ToolExecuteInput,
-  type ToolExecuteOutput,
 } from "./oso/gates.ts";
 import { commonDirOf, publishIdentity } from "./oso/identity.ts";
 import { stateBinPath } from "./oso/installed-tree.ts";
 import {
   buildStaleAdvice,
-  deliverCompactionContext,
-  deliverSystemAdvice,
   dropSystemAdvice,
   listStale,
   queuedSystemAdvice,
@@ -30,44 +26,17 @@ import {
   touchMarker,
   type PendingSystemAdvice,
 } from "./oso/lifecycle.ts";
-import type { PluginTool } from "./oso/tool.ts";
+import type { ToolHost } from "./oso/tool.ts";
 import { recordTrace } from "./oso/trace.ts";
-import { captureSubagentVerdict, captureTaskVerdict } from "./oso/verdict-capture.ts";
+import { captureSubagentVerdict } from "./oso/verdict-capture.ts";
 import { waveTool } from "./oso/wave-tool.ts";
-import { messageOf, type HostSessionApi } from "./oso/wave.ts";
-
-interface PluginClient {
-  session?: HostSessionApi;
-}
-
-interface PluginInput {
-  client?: PluginClient;
-  directory?: string;
-}
-
-interface HookEvent {
-  type: string;
-  properties?: Record<string, unknown>;
-}
-
-interface OsoHooks {
-  "tool.execute.before": (input?: unknown, output?: unknown) => Promise<void>;
-  "tool.execute.after": (input?: unknown, output?: unknown) => Promise<void>;
-  "shell.env": (input?: unknown, output?: unknown) => Promise<unknown>;
-  event: (input?: { event?: HookEvent }) => Promise<void>;
-  "experimental.chat.system.transform": (input?: unknown, output?: unknown) => Promise<void>;
-  "experimental.session.compacting": (input?: unknown, output?: unknown) => Promise<void>;
-  tool: Record<string, PluginTool>;
-  dispose: () => Promise<void>;
-}
+import { messageOf } from "./oso/wave.ts";
 
 const advisedSessions = new Set<string>();
 
 const busSessions = new Set<string>();
 
 const pendingAdvice: PendingSystemAdvice = new Map();
-
-const reanchoredByCompaction = new Set<string>();
 
 let orphanAdviceValue: string | undefined;
 
@@ -81,11 +50,6 @@ function orphanWorktreeAdviceOnce(directory: string): string {
     }
   }
   return orphanAdviceValue;
-}
-
-function sessionIdOf(value: unknown): string {
-  const sessionID = (value as { sessionID?: unknown } | null | undefined)?.sessionID;
-  return typeof sessionID === "string" ? sessionID : "";
 }
 
 function runLifecycleGate(
@@ -184,12 +148,21 @@ function systemPartOf(text: string): { type: "text"; text: string } {
   return { type: "text", text };
 }
 
+function sweepStaleWorktrees(directory: string): void {
+  try {
+    sweepStale(commonDirOf(directory));
+  } catch (err) {
+    recordTrace({ origin: "lifecycle.sweep", detail: messageOf(err), severity: "advisory" });
+  }
+}
+
 function endSessions(directory: string): void {
   for (const sessionID of busSessions) {
     runLifecycleGate("teardown", { sessionID, directory, moment: "end" });
   }
   busSessions.clear();
   releaseHeldRuns();
+  sweepStaleWorktrees(directory);
 }
 
 interface HostEvent {
@@ -247,8 +220,19 @@ async function continueOnIdle(
 }
 
 async function setup(ctx: Plugin.Context): Promise<() => void> {
+  sweepStaleWorktrees(ctx.location.directory);
   checkGateRoutes();
   const sessions = new Map<string, KnownSession>();
+  const host: ToolHost = {
+    session: ctx.session,
+    permission: ctx.permission,
+    directoryOf: async (sessionID) => (await sessionOf(ctx, sessions, sessionID)).directory,
+  };
+  await ctx.tool.transform((editor) => {
+    editor.add(waveTool(host));
+    editor.add(planApprovalTool(host));
+    editor.add(planCancelTool(host));
+  });
   await ctx.tool.hook("execute.before", async (call) => {
     const { directory } = await sessionOf(ctx, sessions, call.sessionID);
     const refusal = firstToolGateRefusal(
@@ -303,114 +287,3 @@ async function setup(ctx: Plugin.Context): Promise<() => void> {
 }
 
 export default { id: "oso-code", setup } satisfies Plugin.Plugin;
-
-export const osoCode = async (
-  pluginInput?: PluginInput,
-): Promise<OsoHooks> => {
-  const client = pluginInput?.client;
-  const directory = pluginInput?.directory ?? process.cwd();
-  try {
-    sweepStale(commonDirOf(directory));
-  } catch (err) {
-    recordTrace({ origin: "lifecycle.sweep", detail: messageOf(err), severity: "advisory" });
-  }
-  checkGateRoutes();
-
-  return {
-    "tool.execute.before": async (input?: unknown, output?: unknown) => {
-      const refusal = firstToolGateRefusal(input as ToolExecuteInput, (output ?? {}) as ToolExecuteOutput);
-      if (refusal !== undefined) {
-        throw new Error(refusal);
-      }
-    },
-    "tool.execute.after": async (input?: unknown, output?: unknown) => {
-      captureTaskVerdict(input, output, directory);
-    },
-    "shell.env": async (input?: unknown, output?: unknown) => {
-      const sessionID = (input as { sessionID?: string } | undefined)?.sessionID;
-      try {
-        const cwd = (input as { cwd?: string } | undefined)?.cwd;
-        const target = (output ?? {}) as { env?: Record<string, string> };
-        target.env = { ...(target.env ?? {}), ...identityEnvFor(cwd ?? process.cwd()) };
-        return target;
-      } catch (err) {
-        recordTrace({ origin: "shell.env", detail: messageOf(err), severity: "advisory", sessionID });
-        return output ?? {};
-      }
-    },
-    event: async (input?: { event?: HookEvent }) => {
-      const event = input?.event;
-      if (event === undefined || typeof event.type !== "string") {
-        return;
-      }
-      const sessionID = sessionIdOf(event.properties);
-      if (sessionID !== "") {
-        busSessions.add(sessionID);
-      }
-      trackSessionEvent(event);
-      if (event.type === "session.created") {
-        return;
-      }
-      if (event.type === "session.idle") {
-        markSessionLive(sessionID, directory);
-        dropSystemAdvice(pendingAdvice, sessionID);
-        continueUnattendedRun({ sessionID, directory, session: client?.session });
-        return;
-      }
-      if (event.type === "session.compacted") {
-        if (reanchoredByCompaction.delete(sessionID)) {
-          return;
-        }
-        queueSystemAdvice(
-          pendingAdvice,
-          sessionID,
-          runLifecycleGate("reanchor", { sessionID, directory, moment: "compact" }),
-        );
-      }
-    },
-    "experimental.chat.system.transform": async (input?: unknown, output?: unknown) => {
-      const sessionID = sessionIdOf(input);
-      try {
-        armSessionAdvice(sessionID, directory);
-        const delivery = deliverSystemAdvice(output, pendingAdvice, sessionID);
-        if (delivery.kind === "undeliverable") {
-          recordTrace({
-            origin: "system.transform",
-            detail: "the host handed no system prompt array to append the advisory to",
-            severity: "advisory",
-            sessionID,
-          });
-        }
-      } catch (err) {
-        recordTrace({ origin: "system.transform", detail: messageOf(err), severity: "advisory", sessionID });
-      }
-    },
-    "experimental.session.compacting": async (input?: unknown, output?: unknown) => {
-      const sessionID = sessionIdOf(input);
-      if (sessionID === "") {
-        return;
-      }
-      const anchor = runLifecycleGate("reanchor", { sessionID, directory, moment: "compact" });
-      const delivery = deliverCompactionContext(output, anchor);
-      if (delivery.kind === "delivered") {
-        reanchoredByCompaction.add(sessionID);
-      }
-      if (delivery.kind === "undeliverable") {
-        recordTrace({
-          origin: "session.compacting",
-          detail: "the host handed no compaction context array to append the re-anchor to",
-          severity: "advisory",
-          sessionID,
-        });
-      }
-    },
-    tool: {
-      oso_wave: waveTool(client?.session),
-      [PLAN_APPROVAL_TOOL_ID]: planApprovalTool(),
-      [PLAN_CANCEL_TOOL_ID]: planCancelTool(),
-    },
-    dispose: async () => {
-      endSessions(directory);
-    },
-  };
-};

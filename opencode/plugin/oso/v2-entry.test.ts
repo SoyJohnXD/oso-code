@@ -1,15 +1,17 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mock, test } from "node:test";
 import entry from "../oso-code.ts";
 import { fakeHostContext } from "../../test-support/host-context.ts";
 import { seedRailFixture, underRailFixtureHome, type RailFixture } from "../../test-support/rail-fixture.ts";
-import { armStateUnder } from "../../test-support/state-fixture.ts";
-import { DELEGATIONS_RETURN_IN_TURN_HOST } from "@oso-code/core";
+import { armStateUnder, underFixtureHome } from "../../test-support/state-fixture.ts";
+import { spawnSync } from "node:child_process";
+import { DELEGATIONS_RETURN_IN_TURN_HOST, readValue, sha256Hex, stateFileFor } from "@oso-code/core";
 import { trackSessionEvent } from "./continuation-rail.ts";
-import { publishIdentity } from "./identity.ts";
+import { commonDirOf, publishIdentity } from "./identity.ts";
+import { markerPath, readMarker, touchMarker } from "./lifecycle.ts";
 import { stateBinPath } from "./installed-tree.ts";
 
 const COMMIT_CALL = { command: "git commit -m x" };
@@ -251,6 +253,112 @@ test("a child session's completion re-drives the run held on it while the plugin
       await settled();
     });
     assert.deepEqual(host.prompts(), [{ sessionID: "ses-live-root", text: CONTINUATION_ORDER }]);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
+});
+
+const PLAN_DOCUMENT = "# Repaso de cambios\n\nThe whole phase-5 document.\n";
+const OSO_TOOLS = ["oso_wave", "oso_plan_approve", "oso_plan_cancel"];
+
+test("setup registers every oso tool for a direct call by the model", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "oso-v2-tools-"));
+  try {
+    const host = fakeHostContext({ directory: cwd });
+    await entry.setup(host.context);
+    for (const name of OSO_TOOLS) {
+      assert.deepEqual(host.tool(name).options, { codemode: false }, name);
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("a plan approval acts on the calling session's directory and asks the host's permission API for that session", async () => {
+  const setupRepository = seedRailFixture("oso-v2-tool-setup");
+  const sessionRepository = seedRailFixture("oso-v2-tool-session");
+  try {
+    const host = fakeHostContext({
+      directory: setupRepository.repo,
+      sessionDirectories: { "ses-elsewhere": sessionRepository.repo },
+    });
+    await entry.setup(host.context);
+    await underRailFixtureHome(sessionRepository, () => host.callTool("oso_plan_approve", "ses-elsewhere", { plan: PLAN_DOCUMENT }));
+    underFixtureHome(sessionRepository.home, () => {
+      assert.equal(readValue(stateFileFor(sessionRepository.repo), "plan_approval"), "approved");
+      assert.equal(existsSync(stateFileFor(setupRepository.repo)), false);
+    });
+    const [asked] = host.assertions() as Array<{ sessionID: string; action: string; resources: string[] }>;
+    assert.equal(asked?.sessionID, "ses-elsewhere");
+    assert.equal(asked?.action, "oso_plan_approve");
+    assert.deepEqual(asked?.resources, [sha256Hex(PLAN_DOCUMENT)]);
+  } finally {
+    rmSync(setupRepository.base, { recursive: true, force: true });
+    rmSync(sessionRepository.base, { recursive: true, force: true });
+  }
+});
+
+test("a refused permission assertion leaves the plan unapproved and the refusal reaches the model", async () => {
+  const fixture = seedRailFixture("oso-v2-tool-refused");
+  try {
+    const host = fakeHostContext({
+      directory: fixture.repo,
+      sessionDirectories: { "ses-refused": fixture.repo },
+      refuseAssertions: new Error("The operator rejected this call"),
+    });
+    await entry.setup(host.context);
+    await underRailFixtureHome(fixture, () =>
+      assert.rejects(host.callTool("oso_plan_approve", "ses-refused", { plan: PLAN_DOCUMENT }), /operator rejected/));
+    underFixtureHome(fixture.home, () => {
+      assert.notEqual(readValue(stateFileFor(fixture.repo), "plan_approval"), "approved");
+    });
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
+});
+
+function deadPid(): number {
+  const gone = spawnSync("true");
+  assert.notEqual(gone.pid, undefined);
+  return gone.pid!;
+}
+
+test("setup sweeps the markers of dead owners and leaves a live owner's marker standing", async () => {
+  const fixture = seedRailFixture("oso-v2-sweep-setup");
+  try {
+    const commonDir = commonDirOf(fixture.repo);
+    touchMarker(commonDir, "ses-dead", { pid: deadPid(), worktrees: [] });
+    touchMarker(commonDir, "ses-live", { pid: process.pid, worktrees: [] });
+    const host = fakeHostContext({ directory: fixture.repo });
+    await entry.setup(host.context);
+    assert.equal(existsSync(markerPath(commonDir, "ses-dead")), false);
+    assert.equal(existsSync(markerPath(commonDir, "ses-live")), true);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
+});
+
+test("the Cleanup sweeps the markers of owners that died while the plugin was live", async () => {
+  const fixture = seedRailFixture("oso-v2-sweep-cleanup");
+  try {
+    const commonDir = commonDirOf(fixture.repo);
+    const host = fakeHostContext({ directory: fixture.repo });
+    const cleanup = await entry.setup(host.context);
+    touchMarker(commonDir, "ses-died-later", { pid: deadPid(), worktrees: [] });
+    cleanup();
+    assert.equal(existsSync(markerPath(commonDir, "ses-died-later")), false);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
+});
+
+test("an idle session touches its live marker with this process, so a live session is never swept", async () => {
+  const fixture = seedRailFixture("oso-v2-live-marker");
+  try {
+    const host = fakeHostContext({ directory: fixture.repo, sessionDirectories: { "ses-working": fixture.repo } });
+    await entry.setup(host.context);
+    await host.hook("session", "experimental.idle")({ sessionID: "ses-working", background: [] });
+    assert.equal(readMarker(commonDirOf(fixture.repo), "ses-working")?.pid, process.pid);
   } finally {
     rmSync(fixture.base, { recursive: true, force: true });
   }

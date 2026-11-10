@@ -131,11 +131,6 @@ export function buildStaleAdvice(orphans: StaleOrphan[]): string {
 
 export type PendingSystemAdvice = Map<string, string[]>;
 
-export type AdviceDelivery =
-  | { kind: "delivered"; entries: number }
-  | { kind: "empty" }
-  | { kind: "undeliverable" };
-
 export function queueSystemAdvice(
   pending: PendingSystemAdvice,
   sessionId: string,
@@ -154,35 +149,6 @@ export function queueSystemAdvice(
 
 export function queuedSystemAdvice(pending: PendingSystemAdvice, sessionId: string): readonly string[] {
   return pending.get(sessionId) ?? [];
-}
-
-export function deliverSystemAdvice(
-  output: unknown,
-  pending: PendingSystemAdvice,
-  sessionId: string,
-): AdviceDelivery {
-  const queued = queuedSystemAdvice(pending, sessionId);
-  if (queued.length === 0) {
-    return { kind: "empty" };
-  }
-  const record = output as { system?: unknown } | null;
-  if (typeof record !== "object" || record === null || !Array.isArray(record.system)) {
-    return { kind: "undeliverable" };
-  }
-  record.system.push(...queued);
-  return { kind: "delivered", entries: queued.length };
-}
-
-export function deliverCompactionContext(output: unknown, anchor: string): AdviceDelivery {
-  if (anchor === "") {
-    return { kind: "empty" };
-  }
-  const record = output as { context?: unknown } | null;
-  if (typeof record !== "object" || record === null || !Array.isArray(record.context)) {
-    return { kind: "undeliverable" };
-  }
-  record.context.push(anchor);
-  return { kind: "delivered", entries: 1 };
 }
 
 export function dropSystemAdvice(pending: PendingSystemAdvice, sessionId: string): void {

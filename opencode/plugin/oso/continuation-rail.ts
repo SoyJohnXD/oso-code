@@ -11,20 +11,19 @@ import {
 } from "@oso-code/core";
 import { callerFor } from "./gates.ts";
 import { recordTrace } from "./trace.ts";
-import { messageOf, unwrap, type HostSessionApi } from "./wave.ts";
+import { messageOf } from "./wave.ts";
 
 export interface ContinuationRequest {
   sessionID: string;
   directory: string;
-  session?: HostSessionApi;
-  admitTurn?: (order: string) => Promise<void>;
+  admitTurn: (order: string) => Promise<void>;
   now?: () => number;
 }
 
 export type ContinuationOutcome =
-  | { kind: "stood-down"; turns: number }
+  | { kind: "stood-down" }
   | { kind: "admitted"; order: string }
-  | { kind: "failed"; reason: string; turns: number }
+  | { kind: "failed"; reason: string }
   | { kind: "not-this-runs-session" }
   | { kind: "already-driving" };
 
@@ -91,28 +90,13 @@ function recordLaunchedChild(properties: SessionEvent["properties"], nowMs: numb
   }
 }
 
-interface SessionNamingProperties {
-  sessionID?: unknown;
-  part?: { sessionID?: unknown };
-  info?: { id?: unknown; sessionID?: unknown };
-}
-
 function sessionNamedBy(event: SessionEvent): string {
-  const named = event.properties as SessionNamingProperties | undefined;
-  const infoIsTheSession = event.type.startsWith("session.");
-  const id = named?.sessionID
-    ?? named?.part?.sessionID
-    ?? named?.info?.sessionID
-    ?? (infoIsTheSession ? named?.info?.id : undefined);
+  const id = (event.properties as { sessionID?: unknown } | undefined)?.sessionID;
   return typeof id === "string" ? id : "";
 }
 
 function endsTheSession(event: SessionEvent): boolean {
-  if (ENDING_EVENTS.has(event.type)) {
-    return true;
-  }
-  const status = (event.properties as { status?: { type?: unknown } } | undefined)?.status;
-  return event.type === "session.status" && status?.type === "idle";
+  return ENDING_EVENTS.has(event.type);
 }
 
 export function continueUnattendedRun(request: ContinuationRequest): Promise<ContinuationOutcome> {
@@ -124,7 +108,7 @@ export function continueUnattendedRun(request: ContinuationRequest): Promise<Con
   }
   driving.add(request.sessionID);
   return postUntilTheRunStops(request)
-    .catch((error: unknown) => standDownTraced(request, `the continuation rail failed: ${messageOf(error)}`, 0))
+    .catch((error: unknown) => standDownTraced(request, `the continuation rail failed: ${messageOf(error)}`))
     .finally(() => {
       driving.delete(request.sessionID);
     });
@@ -138,33 +122,27 @@ export function releaseHeldRuns(): void {
 }
 
 async function postUntilTheRunStops(request: ContinuationRequest): Promise<ContinuationOutcome> {
-  let turns = 0;
-  for (;;) {
-    let step: ContinuationStep;
-    try {
-      step = nextContinuationStep(request);
-    } catch (error) {
-      endHold(request.sessionID);
-      return standDownTraced(request, `the unattended run could not be read: ${messageOf(error)}`, turns);
-    }
-    if (step.kind === "held") {
-      holdUntilAChildSettles(request, step.children);
-      return { kind: "stood-down", turns };
-    }
+  let step: ContinuationStep;
+  try {
+    step = nextContinuationStep(request);
+  } catch (error) {
     endHold(request.sessionID);
-    if (step.kind === "stop") {
-      return { kind: "stood-down", turns };
-    }
-    try {
-      await postContinuationTurn(request, step.order);
-    } catch (error) {
-      return standDownTraced(request, `the continuation turn did not land: ${messageOf(error)}`, turns);
-    }
-    if (request.admitTurn !== undefined) {
-      return { kind: "admitted", order: step.order };
-    }
-    turns += 1;
+    return standDownTraced(request, `the unattended run could not be read: ${messageOf(error)}`);
   }
+  if (step.kind === "held") {
+    holdUntilAChildSettles(request, step.children);
+    return { kind: "stood-down" };
+  }
+  endHold(request.sessionID);
+  if (step.kind === "stop") {
+    return { kind: "stood-down" };
+  }
+  try {
+    await request.admitTurn(step.order);
+  } catch (error) {
+    return standDownTraced(request, `the continuation turn did not land: ${messageOf(error)}`);
+  }
+  return { kind: "admitted", order: step.order };
 }
 
 function nextContinuationStep(request: ContinuationRequest): ContinuationStep {
@@ -250,24 +228,9 @@ function childSessionsOf(parentID: string): ChildSessionsOfRun {
   };
 }
 
-async function postContinuationTurn(request: ContinuationRequest, order: string): Promise<void> {
-  if (request.admitTurn !== undefined) {
-    await request.admitTurn(order);
-    return;
-  }
-  const session = request.session;
-  if (session === undefined) {
-    throw new Error("this host handed the plugin no session api to post a continuation turn through");
-  }
-  await unwrap(session.prompt({
-    path: { id: request.sessionID },
-    body: { parts: [{ type: "text", text: order }] },
-  }));
-}
-
-function standDownTraced(request: ContinuationRequest, reason: string, turns: number): ContinuationOutcome {
+function standDownTraced(request: ContinuationRequest, reason: string): ContinuationOutcome {
   traceRun(request, reason);
-  return { kind: "failed", reason, turns };
+  return { kind: "failed", reason };
 }
 
 function traceRun(request: ContinuationRequest, detail: string): void {

@@ -1,10 +1,13 @@
-import { appendFileSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
 
 const NOTES_PATH = process.env.OSO_SPIKE_NOTES;
+const STATE_DIRECTORY = process.env.OSO_SPIKE_STATE_DIRECTORY;
 const VETOED_TEXT = "veto";
 const MUTATED_TEXT = "mutate";
 const ASSERTED_TEXT = "assert";
 const DENIED_MARKER = "DENYME";
+const FOREIGN_INPUT = { type: "object", properties: { directory: { type: "string" }, text: { type: "string" } }, required: ["directory", "text"] };
 const TEXT_INPUT = { type: "object", properties: { text: { type: "string" } }, required: ["text"] };
 const NO_INPUT = { type: "object", properties: {}, required: [] };
 const INTERRUPT_LINGER_MILLISECONDS = 500;
@@ -78,10 +81,31 @@ function compactTool(ctx) {
   };
 }
 
+function foreignSessionTool(ctx) {
+  return {
+    name: "spike_foreign_session",
+    description: "Opens a session in another directory and runs one turn there",
+    input: FOREIGN_INPUT,
+    options: { codemode: false },
+    async execute(input) {
+      const created = await ctx.session.create({ location: { directory: input.directory } });
+      await ctx.session.prompt({ sessionID: created.id, text: input.text });
+      await ctx.session.wait({ sessionID: created.id });
+      return { content: `foreign:${created.location.directory}` };
+    },
+  };
+}
+
 function vetoOrMutate(call) {
   note("execute.before", { tool: call.tool, keys: Object.keys(call), input: call.input });
   if (call.input?.text === VETOED_TEXT) throw new Error("VETO-REASON");
   if (call.input?.text === MUTATED_TEXT) call.input = { text: "mutated" };
+}
+
+function stateSnapshot() {
+  if (STATE_DIRECTORY === undefined || !existsSync(STATE_DIRECTORY)) return {};
+  const files = readdirSync(STATE_DIRECTORY).filter((name) => name.endsWith(".state"));
+  return Object.fromEntries(files.map((name) => [name, readFileSync(path.join(STATE_DIRECTORY, name), "utf8")]));
 }
 
 function recordAfter(call) {
@@ -93,6 +117,7 @@ function recordAfter(call) {
     input: call.input,
     result: call.result,
     error: call.error,
+    state: stateSnapshot(),
   });
 }
 
@@ -126,6 +151,7 @@ export default {
       editor.add(hiddenTool());
       editor.add(interruptTool(ctx));
       editor.add(compactTool(ctx));
+      editor.add(foreignSessionTool(ctx));
     });
     await ctx.tool.hook("execute.before", vetoOrMutate);
     await ctx.tool.hook("execute.after", recordAfter);

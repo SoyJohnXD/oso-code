@@ -16,7 +16,7 @@ import {
 import { planApprovalTool, planCancelTool, PLAN_APPROVAL_TOOL_ID, PLAN_CANCEL_TOOL_ID } from "./approval.ts";
 import { deriveRootId } from "./identity.ts";
 import { underFixtureHome, underFixtureHomeAsync } from "../../test-support/state-fixture.ts";
-import type { HostPermissionRequest, PluginToolCall } from "./tool.ts";
+import type { OsoToolContext, ToolHost } from "./tool.ts";
 
 const PLAN_DOCUMENT = "# Repaso de cambios\n\nThe whole phase-5 document.\n";
 const SESSION = "ses-approval";
@@ -38,7 +38,8 @@ interface ApprovalFixture {
   repoDir: string;
   commonDir: string;
   owner: string;
-  asked: HostPermissionRequest[];
+  asked: Array<{ action: string; resources: readonly string[]; metadata?: Record<string, unknown> }>;
+  host: ToolHost;
 }
 
 interface StateRun {
@@ -69,9 +70,25 @@ function planArtifactsOf(fixture: ApprovalFixture): string {
     join(stateRootDirectory(), "plans", repositoryIdFor(stateFileFor(fixture.repoDir))));
 }
 
+type Assertion = ApprovalFixture["asked"][number];
+
+function toolHostFor(directory: string, grant: (assertion: Assertion) => Promise<unknown>, asked: Assertion[] = []): ToolHost {
+  return {
+    permission: {
+      assert: async (assertion: Assertion) => {
+        asked.push(assertion);
+        await grant(assertion);
+      },
+    },
+    directoryOf: async () => directory,
+  } as unknown as ToolHost;
+}
+
+const CALL = { sessionID: SESSION, agent: "build", messageID: "msg-1", id: "call-1" } as unknown as OsoToolContext;
+
 async function withApprovalFixture(
-  grant: (request: HostPermissionRequest) => Promise<unknown>,
-  run: (fixture: ApprovalFixture, call: PluginToolCall) => Promise<void>,
+  grant: (assertion: Assertion) => Promise<unknown>,
+  run: (fixture: ApprovalFixture, call: OsoToolContext) => Promise<void>,
 ): Promise<void> {
   const base = mkdtempSync(join(tmpdir(), "oso-approval-"));
   const repoDir = join(base, "repo");
@@ -82,18 +99,11 @@ async function withApprovalFixture(
   writeFileSync(join(repoDir, "marker.txt"), "fixture\n");
   git(repoDir, "add", "marker.txt");
   git(repoDir, "-c", "core.hooksPath=/dev/null", "commit", "-m", "fixture");
-  const asked: HostPermissionRequest[] = [];
+  const asked: Assertion[] = [];
   try {
     await underFixtureHomeAsync(base, () => run(
-      { base, repoDir, commonDir: join(repoDir, ".git"), owner: deriveRootId(repoDir), asked },
-      {
-        sessionID: SESSION,
-        directory: repoDir,
-        ask: (request) => {
-          asked.push(request);
-          return grant(request);
-        },
-      },
+      { base, repoDir, commonDir: join(repoDir, ".git"), owner: deriveRootId(repoDir), asked, host: toolHostFor(repoDir, grant, asked) },
+      CALL,
     ));
   } finally {
     rmSync(base, { recursive: true, force: true });
@@ -108,36 +118,31 @@ const refused = async (): Promise<never> => {
 
 test("the approval lands only after the host grants the permission it asks for", async () => {
   await withApprovalFixture(granted, async (fixture, call) => {
-    const result = await planApprovalTool().execute({ plan: PLAN_DOCUMENT }, call);
+    const result = await planApprovalTool(fixture.host).execute({ plan: PLAN_DOCUMENT }, call);
     const digest = sha256Hex(PLAN_DOCUMENT);
-    assert.equal(result.metadata.digest, digest);
+    assert.equal(result.metadata?.digest, digest);
     assert.ok(existsSync(join(planArtifactsOf(fixture), `approved-${digest}.md`)));
   });
 });
 
-test("the permission it asks for is the tool's own id, patterned on the exact document digest", async () => {
+test("the permission it asks for is the tool's own id, patterned on the exact document digest and linked to the call", async () => {
   await withApprovalFixture(granted, async (fixture, call) => {
-    await planApprovalTool().execute({ plan: PLAN_DOCUMENT }, call);
+    await planApprovalTool(fixture.host).execute({ plan: PLAN_DOCUMENT }, call);
     assert.deepEqual(fixture.asked, [{
-      permission: PLAN_APPROVAL_TOOL_ID,
-      patterns: [sha256Hex(PLAN_DOCUMENT)],
-      always: [],
+      sessionID: SESSION,
+      agent: "build",
+      action: PLAN_APPROVAL_TOOL_ID,
+      resources: [sha256Hex(PLAN_DOCUMENT)],
       metadata: { digest: sha256Hex(PLAN_DOCUMENT), characters: PLAN_DOCUMENT.length },
+      source: { type: "tool", messageID: "msg-1", id: "call-1" },
     }]);
-  });
-});
-
-test("an empty always list is what makes every approval prompt, never a grant carried over", async () => {
-  await withApprovalFixture(granted, async (fixture, call) => {
-    await planApprovalTool().execute({ plan: PLAN_DOCUMENT }, call);
-    assert.deepEqual(fixture.asked[0]?.always, []);
   });
 });
 
 test("a refused permission leaves no approved plan behind", async () => {
   await withApprovalFixture(refused, async (fixture, call) => {
     await assert.rejects(
-      () => planApprovalTool().execute({ plan: PLAN_DOCUMENT }, call),
+      () => planApprovalTool(fixture.host).execute({ plan: PLAN_DOCUMENT }, call),
       /rejected permission/,
     );
     assert.equal(fixture.asked.length, 1);
@@ -145,27 +150,9 @@ test("a refused permission leaves no approved plan behind", async () => {
   });
 });
 
-test("a host that hands the plugin no permission API cannot approve anything", async () => {
+test("a call with no document never reaches the operator", async () => {
   await withApprovalFixture(granted, async (fixture, call) => {
-    await assert.rejects(
-      () => planApprovalTool().execute({ plan: PLAN_DOCUMENT }, { ...call, ask: undefined }),
-      /handed the plugin no permission API/,
-    );
-    assert.ok(!existsSync(join(planArtifactsOf(fixture), `approved-${sha256Hex(PLAN_DOCUMENT)}.md`)));
-  });
-});
-
-test("a call with no session, no directory, or no document never reaches the operator", async () => {
-  await withApprovalFixture(granted, async (fixture, call) => {
-    const tool = planApprovalTool();
-    await assert.rejects(
-      () => tool.execute({ plan: PLAN_DOCUMENT }, { ...call, sessionID: "" }),
-      /named no session/,
-    );
-    await assert.rejects(
-      () => tool.execute({ plan: PLAN_DOCUMENT }, { ...call, directory: "" }),
-      /named no directory/,
-    );
+    const tool = planApprovalTool(fixture.host);
     await assert.rejects(() => tool.execute({ plan: "  " }, call), /needs the plan document/);
     await assert.rejects(() => tool.execute({}, call), /needs the plan document/);
     assert.deepEqual(fixture.asked, []);
@@ -184,7 +171,7 @@ test("a folder holding several repositories and no git of its own approves a pla
   }
   try {
     await underFixtureHomeAsync(base, async () => {
-      await planApprovalTool().execute({ plan: PLAN_DOCUMENT }, { sessionID: SESSION, directory: parent, ask: granted });
+      await planApprovalTool(toolHostFor(parent, granted)).execute({ plan: PLAN_DOCUMENT }, CALL);
       const owner = deriveRootId(parent);
       assert.notEqual(owner, "");
       const digest = sha256Hex(PLAN_DOCUMENT);
@@ -206,7 +193,7 @@ test("a folder holding several repositories and no git of its own approves a pla
 
 test("the approved plan is one the state command can amend in place", async () => {
   await withApprovalFixture(granted, async (fixture, call) => {
-    await planApprovalTool().execute({ plan: PLAN_DOCUMENT }, call);
+    await planApprovalTool(fixture.host).execute({ plan: PLAN_DOCUMENT }, call);
     const approvedSnapshot = join(planArtifactsOf(fixture), `approved-${sha256Hex(PLAN_DOCUMENT)}.md`);
     const beforeAmendment = readFileSync(approvedSnapshot, "utf8");
     const amendment = runStateVerb(fixture, ["amend-plan", "slice-3"], HOT_SLICE);
@@ -223,7 +210,7 @@ test("the approved plan is one the state command can amend in place", async () =
 
 test("the grant publishes the plan keys the state command amends against, owned by OSO_AGENT", async () => {
   await withApprovalFixture(granted, async (fixture, call) => {
-    await planApprovalTool().execute({ plan: PLAN_DOCUMENT }, call);
+    await planApprovalTool(fixture.host).execute({ plan: PLAN_DOCUMENT }, call);
     const digest = sha256Hex(PLAN_DOCUMENT);
     const artifacts = planArtifactsOf(fixture);
     assert.deepEqual(
@@ -252,7 +239,7 @@ test("the grant publishes the plan keys the state command amends against, owned 
 
 test("the approved artifact is the operator's own bytes, the same document every host's plan rail stores", async () => {
   await withApprovalFixture(granted, async (fixture, call) => {
-    await planApprovalTool().execute({ plan: PLAN_DOCUMENT }, call);
+    await planApprovalTool(fixture.host).execute({ plan: PLAN_DOCUMENT }, call);
     const approved = readFileSync(
       join(planArtifactsOf(fixture), `approved-${sha256Hex(PLAN_DOCUMENT)}.md`),
       "utf8",
@@ -264,18 +251,18 @@ test("the approved artifact is the operator's own bytes, the same document every
 
 test("the pending approval state is never armed, so the catch-all deny stays inert", async () => {
   await withApprovalFixture(granted, async (fixture, call) => {
-    await planApprovalTool().execute({ plan: PLAN_DOCUMENT }, call);
+    await planApprovalTool(fixture.host).execute({ plan: PLAN_DOCUMENT }, call);
     assert.notEqual(stateKeyOf(fixture, "plan_approval"), "pending");
   });
 });
 
 test("abandoning the plan needs the operator's grant and disarms without clearing the run", async () => {
   await withApprovalFixture(granted, async (fixture, call) => {
-    await planApprovalTool().execute({ plan: PLAN_DOCUMENT }, call);
+    await planApprovalTool(fixture.host).execute({ plan: PLAN_DOCUMENT }, call);
     runStateVerb(fixture, ["set", "auto=running", "auto_change=opencode-runtime-parity", "active_slice=4"]);
-    const result = await planCancelTool().execute({}, call);
-    assert.equal(result.metadata.digest, sha256Hex(PLAN_DOCUMENT));
-    assert.equal(fixture.asked[1]?.permission, PLAN_CANCEL_TOOL_ID);
+    const result = await planCancelTool(fixture.host).execute({}, call);
+    assert.equal(result.metadata?.digest, sha256Hex(PLAN_DOCUMENT));
+    assert.equal(fixture.asked[1]?.action, PLAN_CANCEL_TOOL_ID);
     assert.deepEqual(
       {
         mode: stateKeyOf(fixture, "mode"),
@@ -300,8 +287,8 @@ test("abandoning the plan needs the operator's grant and disarms without clearin
 
 test("an abandoned plan can neither be amended nor promoted back to approved", async () => {
   await withApprovalFixture(granted, async (fixture, call) => {
-    await planApprovalTool().execute({ plan: PLAN_DOCUMENT }, call);
-    await planCancelTool().execute({}, call);
+    await planApprovalTool(fixture.host).execute({ plan: PLAN_DOCUMENT }, call);
+    await planCancelTool(fixture.host).execute({}, call);
     const amendment = runStateVerb(fixture, ["amend-plan", "slice-3"], HOT_SLICE);
     assert.notEqual(amendment.status, 0);
     assert.match(amendment.stderr, /pending or approved plan/);
@@ -314,13 +301,13 @@ test("an abandoned plan can neither be amended nor promoted back to approved", a
 
 test("a refused abandonment leaves the approved plan standing", async () => {
   await withApprovalFixture(async (request) => {
-    if (request.permission === PLAN_CANCEL_TOOL_ID) {
+    if (request.action === PLAN_CANCEL_TOOL_ID) {
       throw new Error("The user rejected permission to use this specific tool call.");
     }
     return undefined;
   }, async (fixture, call) => {
-    await planApprovalTool().execute({ plan: PLAN_DOCUMENT }, call);
-    await assert.rejects(() => planCancelTool().execute({}, call), /rejected permission/);
+    await planApprovalTool(fixture.host).execute({ plan: PLAN_DOCUMENT }, call);
+    await assert.rejects(() => planCancelTool(fixture.host).execute({}, call), /rejected permission/);
     assert.equal(stateKeyOf(fixture, "plan_approval"), "approved");
   });
 });
@@ -329,12 +316,12 @@ const A_CLAUDE_SESSION = "0f7c2a1e-claude-session";
 
 test("an approved plan whose gates another session now holds is refused and its state left byte-unchanged", async () => {
   await withApprovalFixture(granted, async (fixture, call) => {
-    await planApprovalTool().execute({ plan: PLAN_DOCUMENT }, call);
+    await planApprovalTool(fixture.host).execute({ plan: PLAN_DOCUMENT }, call);
     writeStateValues(fixture.repoDir, A_CLAUDE_SESSION, ["active_slice=2"]);
     const stateFile = stateFileFor(fixture.repoDir);
     const before = readFileSync(stateFile, "utf8");
     await assert.rejects(
-      () => planCancelTool().execute({}, call),
+      () => planCancelTool(fixture.host).execute({}, call),
       new RegExp(`${PLAN_CANCEL_TOOL_ID} did not abandon the plan: the gates are owned by session ${A_CLAUDE_SESSION}`),
     );
     assert.equal(readFileSync(stateFile, "utf8"), before);
@@ -344,8 +331,8 @@ test("an approved plan whose gates another session now holds is refused and its 
 
 test("a granted abandonment keeps the owner stamped on the state and logs its event", async () => {
   await withApprovalFixture(granted, async (fixture, call) => {
-    await planApprovalTool().execute({ plan: PLAN_DOCUMENT }, call);
-    await planCancelTool().execute({}, call);
+    await planApprovalTool(fixture.host).execute({ plan: PLAN_DOCUMENT }, call);
+    await planCancelTool(fixture.host).execute({}, call);
     assert.equal(stateKeyOf(fixture, "session"), fixture.owner);
     const events = readFileSync(join(stateRootDirectory(), "events.jsonl"), "utf8");
     assert.match(events, new RegExp(`"event":"plan-approval-abandoned".*"session":"${fixture.owner}"`));
@@ -355,7 +342,7 @@ test("a granted abandonment keeps the owner stamped on the state and logs its ev
 test("with no approved plan of its own to abandon, the cancel tool never reaches the operator", async () => {
   await withApprovalFixture(granted, async (fixture, call) => {
     await assert.rejects(
-      () => planCancelTool().execute({}, call),
+      () => planCancelTool(fixture.host).execute({}, call),
       /has no approved plan to abandon/,
     );
     assert.deepEqual(fixture.asked, []);

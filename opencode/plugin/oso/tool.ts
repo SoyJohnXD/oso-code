@@ -1,24 +1,15 @@
-export interface HostPermissionRequest {
-  permission: string;
-  patterns: readonly string[];
-  always: readonly string[];
-  metadata: Record<string, unknown>;
+import type { Plugin } from "@opencode/plugin";
+
+type ToolEditor = Parameters<Parameters<Plugin.Context["tool"]["transform"]>[0]>[0];
+
+export type OsoTool = Parameters<ToolEditor["add"]>[0];
+
+export type OsoToolContext = Parameters<OsoTool["execute"]>[1];
+
+export interface ToolHost {
+  session: Plugin.Context["session"];
+  permission: Plugin.Context["permission"];
+  directoryOf: (sessionID: OsoToolContext["sessionID"]) => Promise<string>;
 }
 
-export interface PluginToolCall {
-  sessionID?: string;
-  directory?: string;
-  ask?: (request: HostPermissionRequest) => Promise<unknown>;
-}
-
-export interface PluginToolResult {
-  title: string;
-  output: string;
-  metadata: Record<string, unknown>;
-}
-
-export interface PluginTool {
-  description: string;
-  args: Record<string, unknown>;
-  execute(args: unknown, call: PluginToolCall): Promise<PluginToolResult>;
-}
+export const DIRECT_CALL = { codemode: false } as const;

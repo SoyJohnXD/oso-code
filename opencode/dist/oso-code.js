@@ -4804,63 +4804,74 @@ function stateKeyOf(directory, key) {
   return readValue(stateFileFor(directory), key) ?? "";
 }
 
+// opencode/plugin/oso/tool.ts
+var DIRECT_CALL = { codemode: false };
+
 // opencode/plugin/oso/approval.ts
 var PLAN_APPROVAL_TOOL_ID = "oso_plan_approve";
 var PLAN_CANCEL_TOOL_ID = "oso_plan_cancel";
-function planApprovalTool() {
+function planApprovalTool(host) {
   return {
+    name: PLAN_APPROVAL_TOOL_ID,
     description: "The approval gate for the oso-code plan mode's phases 1 through 5. Deliver the complete phase-5 document as turn-ending plain text first, then call this tool in a later turn carrying those exact bytes. The operator's answer to the authorization prompt this raises IS the approval: a grant records the approved plan and opens the amendment lane against it, and a refusal comes back as an error approving nothing \u2014 the presentation captured before the prompt stays on disk unpromoted, so this repository is left exactly as unapproved as it was. Nothing this session says or writes can stand in for that answer, and no earlier grant carries over to a later call. A material change to the document invalidates the approval it already carries: present the whole plan again and call this tool again, which binds a fresh digest.",
-    args: {
-      plan: {
-        type: "string",
-        description: "The complete phase-5 document, byte for byte as the operator just read it."
-      }
+    input: {
+      type: "object",
+      properties: {
+        plan: {
+          type: "string",
+          description: "The complete phase-5 document, byte for byte as the operator just read it."
+        }
+      },
+      required: ["plan"]
     },
-    execute: async (args, call) => approveOnOperatorGrant(planDocumentOf(args), call)
+    options: DIRECT_CALL,
+    execute: async (input, call) => approveOnOperatorGrant(host, planDocumentOf(input), call)
   };
 }
-function planCancelTool() {
+function planCancelTool(host) {
   return {
+    name: PLAN_CANCEL_TOOL_ID,
     description: "Abandons the approved plan this repository is executing, at the operator's explicit request and never on your own reading of one. The operator's answer to the authorization prompt this raises IS the abandonment. A grant writes mode=plan, active_slice=none, verify_green=false and plan_approval=cancelled, which closes the edit and commit gates and leaves nothing for the amendment lane to amend; the approved document, the run's own markers and every other state key are left exactly as they stand. Call it only when the operator asks to abandon the plan, never to unstick a denied tool call.",
-    args: {},
-    execute: async (_args, call) => cancelOnOperatorGrant(call)
+    input: { type: "object", properties: {}, required: [] },
+    options: DIRECT_CALL,
+    execute: async (_input, call) => cancelOnOperatorGrant(host, call)
   };
 }
-async function approveOnOperatorGrant(planDocument, call) {
-  const { askOperator, directory, owner, sessionID } = grantBoundCall(PLAN_APPROVAL_TOOL_ID, call);
+async function approveOnOperatorGrant(host, planDocument, call) {
+  const directory = await host.directoryOf(call.sessionID);
+  const owner = deriveRootId(directory);
   const digest = sha256Hex(planDocument);
   runCapturePlan(directory, owner, digest, planDocument);
-  await askOperator({
-    permission: PLAN_APPROVAL_TOOL_ID,
-    patterns: [digest],
-    always: [],
-    metadata: { digest, characters: planDocument.length }
-  });
+  await askOperator(host, call, PLAN_APPROVAL_TOOL_ID, digest, { digest, characters: planDocument.length });
   promoteThePresentedPlan(directory, owner, digest);
   return {
-    title: "plan approved",
-    output: `The operator granted ${PLAN_APPROVAL_TOOL_ID} for the plan document whose digest is ${digest}. Execution may begin against that exact document, and the operational plan is amendable under ${owner}.`,
-    metadata: { digest, owner, session: sessionID }
+    content: `The operator granted ${PLAN_APPROVAL_TOOL_ID} for the plan document whose digest is ${digest}. Execution may begin against that exact document, and the operational plan is amendable under ${owner}.`,
+    metadata: { digest, owner, session: call.sessionID }
   };
 }
-async function cancelOnOperatorGrant(call) {
-  const { askOperator, directory, owner, sessionID } = grantBoundCall(PLAN_CANCEL_TOOL_ID, call);
+async function cancelOnOperatorGrant(host, call) {
+  const directory = await host.directoryOf(call.sessionID);
+  const owner = deriveRootId(directory);
   const approved = approvedPlanFor(directory, owner);
   if (approved.kind !== "approved") {
     throw new Error(`${PLAN_CANCEL_TOOL_ID} has no approved plan to abandon: ${approved.detail}`);
   }
-  await askOperator({
-    permission: PLAN_CANCEL_TOOL_ID,
-    patterns: [approved.digest],
-    always: [],
-    metadata: { digest: approved.digest }
-  });
+  await askOperator(host, call, PLAN_CANCEL_TOOL_ID, approved.digest, { digest: approved.digest });
   abandonTheApprovedPlan(directory, owner, approved.digest);
   return {
-    title: "plan abandoned",
-    output: `The operator granted ${PLAN_CANCEL_TOOL_ID} for the approved plan whose digest is ${approved.digest}. Its state now reads plan_approval=cancelled beside the disarmed triple, so no slice is armed, no commit passes the green gate and no amendment lands; the approved document itself is untouched.`,
-    metadata: { digest: approved.digest, session: sessionID }
+    content: `The operator granted ${PLAN_CANCEL_TOOL_ID} for the approved plan whose digest is ${approved.digest}. Its state now reads plan_approval=cancelled beside the disarmed triple, so no slice is armed, no commit passes the green gate and no amendment lands; the approved document itself is untouched.`,
+    metadata: { digest: approved.digest, session: call.sessionID }
   };
+}
+function askOperator(host, call, action, digest, metadata) {
+  return host.permission.assert({
+    sessionID: call.sessionID,
+    agent: call.agent,
+    action,
+    resources: [digest],
+    metadata,
+    source: { type: "tool", messageID: call.messageID, id: call.id }
+  });
 }
 function promoteThePresentedPlan(directory, owner, digest) {
   try {
@@ -4877,23 +4888,6 @@ function abandonTheApprovedPlan(directory, owner, digest) {
     if (!(err instanceof PlanApprovalError) && !(err instanceof GatesOwnedElsewhereError)) throw err;
     throw new Error(`${PLAN_CANCEL_TOOL_ID} did not abandon the plan: ${err.message}`);
   }
-}
-function grantBoundCall(toolId, call) {
-  const askOperator = call.ask;
-  if (askOperator === void 0) {
-    throw new Error(
-      `${toolId} cannot run: this host handed the plugin no permission API to raise the operator's approval with`
-    );
-  }
-  const sessionID = call.sessionID ?? "";
-  if (sessionID === "") {
-    throw new Error(`${toolId} cannot run: the host named no session to raise the operator's prompt in`);
-  }
-  const directory = call.directory ?? "";
-  if (directory === "") {
-    throw new Error(`${toolId} cannot run: the host named no directory to keep the plan's state in`);
-  }
-  return { askOperator, directory, owner: deriveRootId(directory), sessionID };
 }
 function planDocumentOf(args) {
   const plan = args?.plan;
@@ -4918,21 +4912,8 @@ function stateBinPath2() {
 import { isAbsolute as isAbsolute2 } from "node:path";
 
 // opencode/plugin/oso/verdict-capture.ts
-var TASK_TOOL = "task";
 var SUBAGENT_TOOL = "subagent";
 var SUBAGENT_RUNNING = "running";
-function captureTaskVerdict(input, output, directory) {
-  const call = input ?? {};
-  const result = output ?? {};
-  const subagentType = call.args?.subagent_type;
-  if (call.tool !== TASK_TOOL || typeof subagentType !== "string" || !isVerifierAgent(subagentType)) {
-    return;
-  }
-  if (result.metadata?.background === true || typeof result.output !== "string") {
-    return;
-  }
-  captureOpenCodeVerifierReport({ directory, model: launchedModelOf2(result), report: result.output });
-}
 function captureSubagentVerdict(call, directory) {
   const agent = call.input?.agent;
   if (call.tool !== SUBAGENT_TOOL || typeof agent !== "string" || !isVerifierAgent(agent)) {
@@ -4945,12 +4926,6 @@ function captureSubagentVerdict(call, directory) {
 }
 function captureOpenCodeVerifierReport({ directory, model, report }) {
   captureVerifierReport({ host: "opencode", cwd: directory, session: deriveRootId(directory), model, report });
-}
-function launchedModelOf2(result) {
-  const model = result.metadata?.model;
-  const providerID = model?.providerID;
-  const modelID = model?.modelID;
-  return typeof providerID === "string" && typeof modelID === "string" ? `${providerID}/${modelID}` : null;
 }
 function subagentReportOf(call) {
   if (call.status === "error") {
@@ -4986,7 +4961,8 @@ async function pinChildSession(launch, projectCommonDir, request) {
       () => request.transport.create({
         directory: launch.worktree,
         title: `${HOST_AGENT[launch.agent]} in ${launch.worktree}`,
-        parentSessionID: request.parentSessionID
+        parentSessionID: request.parentSessionID,
+        hostAgent: HOST_AGENT[launch.agent]
       }),
       request.timeoutMs
     );
@@ -5035,8 +5011,6 @@ async function collectChildReport(child, request) {
     const raw = await withinBound(
       () => request.transport.prompt({
         sessionID: child.sessionID,
-        directory: child.launch.worktree,
-        hostAgent: HOST_AGENT[child.launch.agent],
         prompt: promptOf(child.launch)
       }),
       request.timeoutMs
@@ -5053,7 +5027,7 @@ async function collectChildReport(child, request) {
       raw
     };
   } catch (error) {
-    const unstopped = await stopChild(child.sessionID, child.launch.worktree, request.transport);
+    const unstopped = await interruptChild(child.sessionID, request.transport);
     const failure = `the child turn did not complete: ${messageOf2(error)}`;
     return {
       outcome: "blocked",
@@ -5070,47 +5044,57 @@ function promptOf({ prompt, applierProof }) {
 ${APPLIER_PROOF_HEADER}
 ${applierProof}`;
 }
-var ABORT_BOUND_MS = 1e4;
-async function stopChild(sessionID, directory, transport) {
+var INTERRUPT_BOUND_MS = 1e4;
+async function interruptChild(sessionID, transport) {
   try {
-    await withinBound(() => transport.abort({ sessionID, directory }), ABORT_BOUND_MS);
+    await withinBound(() => transport.interrupt({ sessionID }), INTERRUPT_BOUND_MS);
     return void 0;
   } catch (error) {
     return `the child session was left running: ${messageOf2(error)}`;
   }
 }
+function lastMessageOfType(messages, type) {
+  return [...messages].reverse().find((message) => message.type === type);
+}
 function pinnedSessionTransport(session) {
   return {
-    create: ({ directory, title, parentSessionID }) => unwrap(session.create({
-      query: { directory },
-      body: parentSessionID === "" ? { title } : { title, parentID: parentSessionID }
-    })),
-    prompt: async ({ sessionID, directory, hostAgent, prompt }) => finalMessageText(await unwrap(session.prompt({
-      path: { id: sessionID },
-      query: { directory },
-      body: { agent: hostAgent, parts: [{ type: "text", text: prompt }] }
-    }))),
-    abort: async ({ sessionID, directory }) => {
-      await unwrap(session.abort({ path: { id: sessionID }, query: { directory } }));
+    create: async ({ directory, title, parentSessionID, hostAgent }) => {
+      const { id } = await session.create({
+        location: { directory },
+        title,
+        agent: hostAgent,
+        parentID: parentSessionID === "" ? void 0 : parentSessionID
+      });
+      await session.move({ sessionID: id, directory });
+      await session.wait({ sessionID: id });
+      const pinned = await session.get({ sessionID: id });
+      return { id, directory: pinned.location.directory };
+    },
+    prompt: async ({ sessionID, prompt }) => {
+      await session.prompt({ sessionID, text: prompt });
+      await session.wait({ sessionID });
+      return finalReplyText(await session.context({ sessionID }));
+    },
+    interrupt: async ({ sessionID }) => {
+      await session.interrupt({ sessionID });
     }
   };
 }
-async function unwrap(call) {
-  const result = await call;
-  if (result.data === void 0) {
-    throw new Error(messageOf2(result.error));
+function finalReplyText(messages) {
+  const lastUser = [...messages].reverse().findIndex((message) => message.type === "user");
+  const turn = lastUser === -1 ? messages : messages.slice(messages.length - lastUser);
+  const end = lastMessageOfType(turn, "idle");
+  if (end === void 0) {
+    throw new Error("the host reported no end of turn for the child session");
   }
-  return result.data;
-}
-function finalMessageText(reply) {
-  if (!Array.isArray(reply.parts)) {
-    throw new Error("the host returned a reply with no message parts");
+  if (end.outcome !== "succeeded") {
+    throw new Error(`the child turn ended ${end.outcome}${end.error === void 0 ? "" : `: ${messageOf2(end.error)}`}`);
   }
-  return reply.parts.filter(isTextPart).map((part) => part.text).join("\n");
-}
-function isTextPart(part) {
-  const record = part;
-  return typeof record === "object" && record !== null && record.type === "text" && typeof record.text === "string";
+  const reply = lastMessageOfType(turn, "assistant");
+  if (reply === void 0) {
+    throw new Error("the host returned no assistant reply for the child session");
+  }
+  return reply.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n");
 }
 function messageOf2(error) {
   if (error instanceof Error) {
@@ -5332,17 +5316,11 @@ function recordLaunchedChild(properties, nowMs) {
   }
 }
 function sessionNamedBy(event) {
-  const named = event.properties;
-  const infoIsTheSession = event.type.startsWith("session.");
-  const id = named?.sessionID ?? named?.part?.sessionID ?? named?.info?.sessionID ?? (infoIsTheSession ? named?.info?.id : void 0);
+  const id = event.properties?.sessionID;
   return typeof id === "string" ? id : "";
 }
 function endsTheSession(event) {
-  if (ENDING_EVENTS.has(event.type)) {
-    return true;
-  }
-  const status = event.properties?.status;
-  return event.type === "session.status" && status?.type === "idle";
+  return ENDING_EVENTS.has(event.type);
 }
 function continueUnattendedRun(request) {
   if (request.sessionID === "" || childSessions.has(request.sessionID)) {
@@ -5352,7 +5330,7 @@ function continueUnattendedRun(request) {
     return Promise.resolve({ kind: "already-driving" });
   }
   driving.add(request.sessionID);
-  return postUntilTheRunStops(request).catch((error) => standDownTraced(request, `the continuation rail failed: ${messageOf2(error)}`, 0)).finally(() => {
+  return postUntilTheRunStops(request).catch((error) => standDownTraced(request, `the continuation rail failed: ${messageOf2(error)}`)).finally(() => {
     driving.delete(request.sessionID);
   });
 }
@@ -5363,33 +5341,27 @@ function releaseHeldRuns() {
   heldRuns.clear();
 }
 async function postUntilTheRunStops(request) {
-  let turns = 0;
-  for (; ; ) {
-    let step;
-    try {
-      step = nextContinuationStep(request);
-    } catch (error) {
-      endHold(request.sessionID);
-      return standDownTraced(request, `the unattended run could not be read: ${messageOf2(error)}`, turns);
-    }
-    if (step.kind === "held") {
-      holdUntilAChildSettles(request, step.children);
-      return { kind: "stood-down", turns };
-    }
+  let step;
+  try {
+    step = nextContinuationStep(request);
+  } catch (error) {
     endHold(request.sessionID);
-    if (step.kind === "stop") {
-      return { kind: "stood-down", turns };
-    }
-    try {
-      await postContinuationTurn(request, step.order);
-    } catch (error) {
-      return standDownTraced(request, `the continuation turn did not land: ${messageOf2(error)}`, turns);
-    }
-    if (request.admitTurn !== void 0) {
-      return { kind: "admitted", order: step.order };
-    }
-    turns += 1;
+    return standDownTraced(request, `the unattended run could not be read: ${messageOf2(error)}`);
   }
+  if (step.kind === "held") {
+    holdUntilAChildSettles(request, step.children);
+    return { kind: "stood-down" };
+  }
+  endHold(request.sessionID);
+  if (step.kind === "stop") {
+    return { kind: "stood-down" };
+  }
+  try {
+    await request.admitTurn(step.order);
+  } catch (error) {
+    return standDownTraced(request, `the continuation turn did not land: ${messageOf2(error)}`);
+  }
+  return { kind: "admitted", order: step.order };
 }
 function nextContinuationStep(request) {
   releaseOverdueChildren(request);
@@ -5466,23 +5438,9 @@ function childSessionsOf(parentID) {
     completed: children.filter(([, child]) => child.phase === "completed").map(([childID]) => childID)
   };
 }
-async function postContinuationTurn(request, order) {
-  if (request.admitTurn !== void 0) {
-    await request.admitTurn(order);
-    return;
-  }
-  const session = request.session;
-  if (session === void 0) {
-    throw new Error("this host handed the plugin no session api to post a continuation turn through");
-  }
-  await unwrap(session.prompt({
-    path: { id: request.sessionID },
-    body: { parts: [{ type: "text", text: order }] }
-  }));
-}
-function standDownTraced(request, reason, turns) {
+function standDownTraced(request, reason) {
   traceRun(request, reason);
-  return { kind: "failed", reason, turns };
+  return { kind: "failed", reason };
 }
 function traceRun(request, detail) {
   recordTrace({ origin: "auto-continue", detail, severity: "advisory", sessionID: request.sessionID });
@@ -5595,29 +5553,6 @@ function queueSystemAdvice(pending, sessionId, advice) {
 function queuedSystemAdvice(pending, sessionId) {
   return pending.get(sessionId) ?? [];
 }
-function deliverSystemAdvice(output, pending, sessionId) {
-  const queued = queuedSystemAdvice(pending, sessionId);
-  if (queued.length === 0) {
-    return { kind: "empty" };
-  }
-  const record = output;
-  if (typeof record !== "object" || record === null || !Array.isArray(record.system)) {
-    return { kind: "undeliverable" };
-  }
-  record.system.push(...queued);
-  return { kind: "delivered", entries: queued.length };
-}
-function deliverCompactionContext(output, anchor) {
-  if (anchor === "") {
-    return { kind: "empty" };
-  }
-  const record = output;
-  if (typeof record !== "object" || record === null || !Array.isArray(record.context)) {
-    return { kind: "undeliverable" };
-  }
-  record.context.push(anchor);
-  return { kind: "delivered", entries: 1 };
-}
 function dropSystemAdvice(pending, sessionId) {
   pending.delete(sessionId);
 }
@@ -5682,47 +5617,49 @@ function dropMarkerQuietly(commonDir, sessionId) {
 
 // opencode/plugin/oso/wave-tool.ts
 var CHILD_BOUND_MS = 30 * 60 * 1e3;
-function waveTool(session) {
+function waveTool(host) {
   return {
+    name: "oso_wave",
     description: "Runs one oso-code wave: every child is an oso-applier or oso-verifier session pinned to its own git worktree of this project, all children are opened before any of them is prompted, each child's turn blocks until it reports, and its status/verdict line is read back in band. A child that cannot be pinned, cannot run, or outlives its bound comes back blocked with the reason and never as a verdict.",
-    args: {
-      children: {
-        type: "array",
-        description: "One entry per wave child. Every worktree must already exist and belong to this project.",
-        items: {
-          type: "object",
-          properties: {
-            worktree: { type: "string", description: "Absolute path of the git worktree the child runs inside." },
-            agent: { type: "string", enum: ["applier", "verifier"], description: "Which oso-code agent the child runs as." },
-            prompt: { type: "string", description: "The full assignment the child receives as its first and only turn." },
-            applier_proof: {
-              type: "string",
-              description: "The applier's proof, scan, and decisions_used report blocks for the slice this child verifies, verbatim and alone \u2014 a verifier child's field, which an applier child offered it comes back blocked for."
-            }
-          },
-          required: ["worktree", "agent", "prompt"]
+    input: {
+      type: "object",
+      properties: {
+        children: {
+          type: "array",
+          description: "One entry per wave child. Every worktree must already exist and belong to this project.",
+          items: {
+            type: "object",
+            properties: {
+              worktree: { type: "string", description: "Absolute path of the git worktree the child runs inside." },
+              agent: { type: "string", enum: ["applier", "verifier"], description: "Which oso-code agent the child runs as." },
+              prompt: { type: "string", description: "The full assignment the child receives as its first and only turn." },
+              applier_proof: {
+                type: "string",
+                description: "The applier's proof, scan, and decisions_used report blocks for the slice this child verifies, verbatim and alone \u2014 a verifier child's field, which an applier child offered it comes back blocked for."
+              }
+            },
+            required: ["worktree", "agent", "prompt"]
+          }
         }
-      }
+      },
+      required: ["children"]
     },
-    execute: async (args, call) => {
-      if (session === void 0) {
-        throw new Error("oso_wave cannot run: this host handed the plugin no session API to open children with");
-      }
-      const projectDirectory = call.directory ?? "";
+    options: DIRECT_CALL,
+    execute: async (input, call) => {
+      const projectDirectory = await host.directoryOf(call.sessionID);
       if (commonDirOf(projectDirectory) === "") {
-        throw new Error(`oso_wave must run inside a git repository, and ${projectDirectory || "the directory the host named"} is not one`);
+        throw new Error(`oso_wave must run inside a git repository, and ${projectDirectory} is not one`);
       }
       const results = await runWave({
-        launches: parseLaunches(args),
-        transport: pinnedSessionTransport(session),
+        launches: parseLaunches(input),
+        transport: pinnedSessionTransport(host.session),
         projectDirectory,
-        parentSessionID: call.sessionID ?? "",
+        parentSessionID: call.sessionID,
         timeoutMs: CHILD_BOUND_MS
       });
       return {
-        title: waveTitle(results),
-        output: results.map(renderChild).join("\n\n"),
-        metadata: { children: results.length, blocked: blockedCount(results) }
+        content: results.map(renderChild).join("\n\n"),
+        metadata: { title: waveTitle(results), children: results.length, blocked: blockedCount(results) }
       };
     }
   };
@@ -5786,7 +5723,6 @@ function verdictSummary(parsed) {
 var advisedSessions = /* @__PURE__ */ new Set();
 var busSessions = /* @__PURE__ */ new Set();
 var pendingAdvice = /* @__PURE__ */ new Map();
-var reanchoredByCompaction = /* @__PURE__ */ new Set();
 var orphanAdviceValue;
 function orphanWorktreeAdviceOnce(directory) {
   if (orphanAdviceValue === void 0) {
@@ -5798,10 +5734,6 @@ function orphanWorktreeAdviceOnce(directory) {
     }
   }
   return orphanAdviceValue;
-}
-function sessionIdOf(value) {
-  const sessionID = value?.sessionID;
-  return typeof sessionID === "string" ? sessionID : "";
 }
 function runLifecycleGate(gate, input) {
   const route = routeForGate(routes, gate);
@@ -5878,12 +5810,20 @@ async function sessionOf(ctx, sessions, sessionID) {
 function systemPartOf(text) {
   return { type: "text", text };
 }
+function sweepStaleWorktrees(directory) {
+  try {
+    sweepStale(commonDirOf(directory));
+  } catch (err) {
+    recordTrace({ origin: "lifecycle.sweep", detail: messageOf2(err), severity: "advisory" });
+  }
+}
 function endSessions(directory) {
   for (const sessionID of busSessions) {
     runLifecycleGate("teardown", { sessionID, directory, moment: "end" });
   }
   busSessions.clear();
   releaseHeldRuns();
+  sweepStaleWorktrees(directory);
 }
 function sessionEventOf(event) {
   const { sessionID, parentID } = event.data ?? {};
@@ -5928,8 +5868,19 @@ async function continueOnIdle(ctx, sessions, sessionID) {
   }
 }
 async function setup(ctx) {
+  sweepStaleWorktrees(ctx.location.directory);
   checkGateRoutes();
   const sessions = /* @__PURE__ */ new Map();
+  const host = {
+    session: ctx.session,
+    permission: ctx.permission,
+    directoryOf: async (sessionID) => (await sessionOf(ctx, sessions, sessionID)).directory
+  };
+  await ctx.tool.transform((editor) => {
+    editor.add(waveTool(host));
+    editor.add(planApprovalTool(host));
+    editor.add(planCancelTool(host));
+  });
   await ctx.tool.hook("execute.before", async (call) => {
     const { directory } = await sessionOf(ctx, sessions, call.sessionID);
     const refusal = firstToolGateRefusal(
@@ -5983,114 +5934,6 @@ async function setup(ctx) {
   };
 }
 var oso_code_default = { id: "oso-code", setup };
-var osoCode = async (pluginInput) => {
-  const client = pluginInput?.client;
-  const directory = pluginInput?.directory ?? process.cwd();
-  try {
-    sweepStale(commonDirOf(directory));
-  } catch (err) {
-    recordTrace({ origin: "lifecycle.sweep", detail: messageOf2(err), severity: "advisory" });
-  }
-  checkGateRoutes();
-  return {
-    "tool.execute.before": async (input, output) => {
-      const refusal = firstToolGateRefusal(input, output ?? {});
-      if (refusal !== void 0) {
-        throw new Error(refusal);
-      }
-    },
-    "tool.execute.after": async (input, output) => {
-      captureTaskVerdict(input, output, directory);
-    },
-    "shell.env": async (input, output) => {
-      const sessionID = input?.sessionID;
-      try {
-        const cwd = input?.cwd;
-        const target = output ?? {};
-        target.env = { ...target.env ?? {}, ...identityEnvFor(cwd ?? process.cwd()) };
-        return target;
-      } catch (err) {
-        recordTrace({ origin: "shell.env", detail: messageOf2(err), severity: "advisory", sessionID });
-        return output ?? {};
-      }
-    },
-    event: async (input) => {
-      const event = input?.event;
-      if (event === void 0 || typeof event.type !== "string") {
-        return;
-      }
-      const sessionID = sessionIdOf(event.properties);
-      if (sessionID !== "") {
-        busSessions.add(sessionID);
-      }
-      trackSessionEvent(event);
-      if (event.type === "session.created") {
-        return;
-      }
-      if (event.type === "session.idle") {
-        markSessionLive(sessionID, directory);
-        dropSystemAdvice(pendingAdvice, sessionID);
-        continueUnattendedRun({ sessionID, directory, session: client?.session });
-        return;
-      }
-      if (event.type === "session.compacted") {
-        if (reanchoredByCompaction.delete(sessionID)) {
-          return;
-        }
-        queueSystemAdvice(
-          pendingAdvice,
-          sessionID,
-          runLifecycleGate("reanchor", { sessionID, directory, moment: "compact" })
-        );
-      }
-    },
-    "experimental.chat.system.transform": async (input, output) => {
-      const sessionID = sessionIdOf(input);
-      try {
-        armSessionAdvice(sessionID, directory);
-        const delivery = deliverSystemAdvice(output, pendingAdvice, sessionID);
-        if (delivery.kind === "undeliverable") {
-          recordTrace({
-            origin: "system.transform",
-            detail: "the host handed no system prompt array to append the advisory to",
-            severity: "advisory",
-            sessionID
-          });
-        }
-      } catch (err) {
-        recordTrace({ origin: "system.transform", detail: messageOf2(err), severity: "advisory", sessionID });
-      }
-    },
-    "experimental.session.compacting": async (input, output) => {
-      const sessionID = sessionIdOf(input);
-      if (sessionID === "") {
-        return;
-      }
-      const anchor = runLifecycleGate("reanchor", { sessionID, directory, moment: "compact" });
-      const delivery = deliverCompactionContext(output, anchor);
-      if (delivery.kind === "delivered") {
-        reanchoredByCompaction.add(sessionID);
-      }
-      if (delivery.kind === "undeliverable") {
-        recordTrace({
-          origin: "session.compacting",
-          detail: "the host handed no compaction context array to append the re-anchor to",
-          severity: "advisory",
-          sessionID
-        });
-      }
-    },
-    tool: {
-      oso_wave: waveTool(client?.session),
-      [PLAN_APPROVAL_TOOL_ID]: planApprovalTool(),
-      [PLAN_CANCEL_TOOL_ID]: planCancelTool()
-    },
-    dispose: async () => {
-      endSessions(directory);
-    }
-  };
-};
 export {
-  oso_code_default as default,
-  osoCode
+  oso_code_default as default
 };

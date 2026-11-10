@@ -1,10 +1,9 @@
 import { commonDirOf } from "./identity.ts";
-import type { PluginTool } from "./tool.ts";
+import { DIRECT_CALL, type OsoTool, type ToolHost } from "./tool.ts";
 import type { ParsedAgentVerdict } from "@oso-code/core";
 import {
   pinnedSessionTransport,
   runWave,
-  type HostSessionApi,
   type WaveAgent,
   type WaveChildLaunch,
   type WaveChildResult,
@@ -12,51 +11,53 @@ import {
 
 const CHILD_BOUND_MS = 30 * 60 * 1000;
 
-export function waveTool(session: HostSessionApi | undefined): PluginTool {
+export function waveTool(host: ToolHost): OsoTool {
   return {
+    name: "oso_wave",
     description: "Runs one oso-code wave: every child is an oso-applier or oso-verifier session pinned to its own"
       + " git worktree of this project, all children are opened before any of them is prompted, each child's turn"
       + " blocks until it reports, and its status/verdict line is read back in band. A child that cannot be pinned,"
       + " cannot run, or outlives its bound comes back blocked with the reason and never as a verdict.",
-    args: {
-      children: {
-        type: "array",
-        description: "One entry per wave child. Every worktree must already exist and belong to this project.",
-        items: {
-          type: "object",
-          properties: {
-            worktree: { type: "string", description: "Absolute path of the git worktree the child runs inside." },
-            agent: { type: "string", enum: ["applier", "verifier"], description: "Which oso-code agent the child runs as." },
-            prompt: { type: "string", description: "The full assignment the child receives as its first and only turn." },
-            applier_proof: {
-              type: "string",
-              description: "The applier's proof, scan, and decisions_used report blocks for the slice this child verifies,"
-                + " verbatim and alone — a verifier child's field, which an applier child offered it comes back blocked for.",
+    input: {
+      type: "object",
+      properties: {
+        children: {
+          type: "array",
+          description: "One entry per wave child. Every worktree must already exist and belong to this project.",
+          items: {
+            type: "object",
+            properties: {
+              worktree: { type: "string", description: "Absolute path of the git worktree the child runs inside." },
+              agent: { type: "string", enum: ["applier", "verifier"], description: "Which oso-code agent the child runs as." },
+              prompt: { type: "string", description: "The full assignment the child receives as its first and only turn." },
+              applier_proof: {
+                type: "string",
+                description: "The applier's proof, scan, and decisions_used report blocks for the slice this child verifies,"
+                  + " verbatim and alone — a verifier child's field, which an applier child offered it comes back blocked for.",
+              },
             },
+            required: ["worktree", "agent", "prompt"],
           },
-          required: ["worktree", "agent", "prompt"],
         },
       },
+      required: ["children"],
     },
-    execute: async (args, call) => {
-      if (session === undefined) {
-        throw new Error("oso_wave cannot run: this host handed the plugin no session API to open children with");
-      }
-      const projectDirectory = call.directory ?? "";
+    options: DIRECT_CALL,
+    execute: async (input, call) => {
+      const projectDirectory = await host.directoryOf(call.sessionID);
       if (commonDirOf(projectDirectory) === "") {
-        throw new Error(`oso_wave must run inside a git repository, and ${projectDirectory || "the directory the host named"} is not one`);
+        throw new Error(`oso_wave must run inside a git repository, and ${projectDirectory} is not one`);
       }
       const results = await runWave({
-        launches: parseLaunches(args),
-        transport: pinnedSessionTransport(session),
+        launches: parseLaunches(input),
+        transport: pinnedSessionTransport(host.session),
         projectDirectory,
-        parentSessionID: call.sessionID ?? "",
+        parentSessionID: call.sessionID,
         timeoutMs: CHILD_BOUND_MS,
       });
       return {
-        title: waveTitle(results),
-        output: results.map(renderChild).join("\n\n"),
-        metadata: { children: results.length, blocked: blockedCount(results) },
+        content: results.map(renderChild).join("\n\n"),
+        metadata: { title: waveTitle(results), children: results.length, blocked: blockedCount(results) },
       };
     },
   };

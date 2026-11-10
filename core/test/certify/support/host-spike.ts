@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { sha256Hex } from "../../../src/index.ts";
 import { StateSandbox } from "../../support/state-sandbox.ts";
 import { BEHAVIOR_BAR_SESSION_BOUND_SECONDS, probeRootSessionId, type SessionRun } from "./behavior-drive.ts";
 import { isolatedHostEnvironment, type OpenCodeBinaryProbe, type ResolvedProbe } from "./opencode-binary.ts";
@@ -14,6 +15,8 @@ const MCP_STUB_SOURCE = path.join(path.dirname(fileURLToPath(import.meta.url)), 
 export const MCP_SERVER_NAME = "stub";
 export const MCP_CODEMODE_SERVER_NAME = "scripted";
 const SCRIPTED_MODEL = "scripted/m";
+const WAVE_AGENT_FILE = "oso-applier.md";
+const WAVE_AGENT_CONTRACT = "---\ndescription: Stands in for the oso-applier wave child\nmode: subagent\n---\nRun the assignment you are given.\n";
 const FIRST_HOST_WITH_V2_PLUGINS = 2;
 const VERSION_PROBE_HOME_PREFIX = "oso-v2-host-version.";
 const V2_VERSION_LINE = /^opencode v(\d+)\./m;
@@ -61,6 +64,7 @@ export function v2LaneCause(probe: OpenCodeBinaryProbe | undefined): string | un
 
 function providerConfig(provider: ScriptedProvider): string {
   const config = {
+    model: SCRIPTED_MODEL,
     mcp: {
       servers: {
         [MCP_SERVER_NAME]: { type: "local", command: [process.execPath, MCP_STUB_SOURCE], codemode: false },
@@ -84,7 +88,10 @@ export async function createSpikeFixture(): Promise<SpikeFixture> {
   const provider = await startScriptedProvider();
   const configHome = path.join(sandbox.home, ".config", "opencode");
   const pluginDirectory = path.join(configHome, "plugin");
+  const agentDirectory = path.join(configHome, "agent");
   mkdirSync(pluginDirectory, { recursive: true });
+  mkdirSync(agentDirectory, { recursive: true });
+  writeFileSync(path.join(agentDirectory, WAVE_AGENT_FILE), WAVE_AGENT_CONTRACT);
   writeFileSync(path.join(configHome, "opencode.json"), providerConfig(provider));
   writeFileSync(path.join(pluginDirectory, SPIKE_PLUGIN_FILE), readFileSync(SPIKE_PLUGIN_SOURCE, "utf8"));
   return {
@@ -154,7 +161,7 @@ export async function driveScenario(
   fixture.provider.drainRequests();
   const run = await runStandaloneSession(
     probe.binary,
-    { ...fixture.environment, PWD: fixture.project, OSO_SPIKE_NOTES: notesPath },
+    { ...fixture.environment, PWD: fixture.project, OSO_SPIKE_NOTES: notesPath, OSO_SPIKE_STATE_DIRECTORY: path.join(fixture.sandbox.home, ".local", "state", "oso-code") },
     fixture.project,
     scriptedPrompt(toolName, input),
   );
@@ -185,4 +192,18 @@ export function armProject(
 
 export function notesOfKind(outcome: ScenarioOutcome, kind: string): readonly SpikeNote[] {
   return outcome.notes.filter((note) => note.kind === kind);
+}
+
+export function approvePlanBeforehand(fixture: SpikeFixture, project: string, document: string): void {
+  const session = probeRootSessionId(project);
+  const digest = sha256Hex(document);
+  for (const verb of [`capture-plan`, `approve-plan`]) {
+    const run = spawnSync(STATE_BINARY, ["--session", session, verb, digest], {
+      cwd: project,
+      env: fixture.environment,
+      input: document,
+      encoding: "utf8",
+    });
+    if (run.status !== 0) throw new Error(`oso-state ${verb} exited ${run.status}: ${run.error?.message ?? ""}${run.stderr}`);
+  }
 }
