@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, describe, test, type TestContext } from "node:test";
 import { SUPPORTED_OPENCODE_VERSION } from "../../src/install/pins.ts";
 import { CERTIFY, CERTIFY_GUARD } from "./support/certify-guard.ts";
-import { probeRepositoryCommitCount, probeRootSessionId } from "./support/behavior-drive.ts";
+import { probeRepositoryCommitCount } from "./support/behavior-drive.ts";
 import {
+  armProject,
   createSpikeFixture,
   disposeSpikeFixture,
   driveScenario,
@@ -30,7 +30,6 @@ const OVERRIDE_ENV_VAR = "OSO_V2_HOST_SPIKE_OPENCODE_BIN";
 const BUNDLE_FILE = "oso-code.js";
 const REPOSITORY_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const BUNDLE_SOURCE = path.join(REPOSITORY_ROOT, "opencode", "dist", BUNDLE_FILE);
-const STATE_BINARY = path.join(REPOSITORY_ROOT, "plugin", "bin", "oso-state");
 const COMMIT_COMMAND = "git commit --allow-empty -m probe";
 const DEPLOY_COMMAND = "vercel --prod";
 const SEEDED_FILE = "README.seed";
@@ -43,15 +42,6 @@ const probe: OpenCodeBinaryProbe | undefined = CERTIFY
   : undefined;
 
 const laneCause = v2LaneCause(probe);
-
-function arm(fixture: SpikeFixture, project: string, pairs: readonly string[]): void {
-  const run = spawnSync(STATE_BINARY, ["--session", probeRootSessionId(project), "set", ...pairs], {
-    cwd: project,
-    env: fixture.environment,
-    encoding: "utf8",
-  });
-  assert.equal(run.status, 0, `${run.error?.message ?? ""}${run.stderr}`);
-}
 
 function refusalOf(outcome: ScenarioOutcome): string {
   const [result] = outcome.toolResults;
@@ -79,7 +69,7 @@ describe("the built OpenCode adapter bundle's gates engage on an isolated OpenCo
     const drive = async (name: string, pairs: readonly string[], tool: string, input: Record<string, unknown>): Promise<void> => {
       const project = host.sandbox.seedGitRepository(name, { [SEEDED_FILE]: "seed\n" });
       projects.set(name, project);
-      arm(host, project, pairs);
+      armProject(host, project, pairs);
       const before = probeRepositoryCommitCount(project);
       outcomes.set(name, await driveScenario(resolved as ResolvedProbe, { ...host, project }, name, tool, input));
       commitCounts.set(name, [before, probeRepositoryCommitCount(project)]);

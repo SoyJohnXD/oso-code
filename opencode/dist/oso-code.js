@@ -5298,6 +5298,12 @@ function tryLogSink(origin, detail, severity, stateSinkBroken) {
 }
 
 // opencode/plugin/oso/continuation-rail.ts
+var ENDING_EVENTS = /* @__PURE__ */ new Set([
+  "session.idle",
+  "session.deleted",
+  "session.execution.failed",
+  "session.execution.interrupted"
+]);
 var childSessions = /* @__PURE__ */ new Map();
 var driving = /* @__PURE__ */ new Set();
 var heldRuns = /* @__PURE__ */ new Map();
@@ -5332,7 +5338,7 @@ function sessionNamedBy(event) {
   return typeof id === "string" ? id : "";
 }
 function endsTheSession(event) {
-  if (event.type === "session.idle" || event.type === "session.deleted") {
+  if (ENDING_EVENTS.has(event.type)) {
     return true;
   }
   const status = event.properties?.status;
@@ -5378,6 +5384,9 @@ async function postUntilTheRunStops(request) {
       await postContinuationTurn(request, step.order);
     } catch (error) {
       return standDownTraced(request, `the continuation turn did not land: ${messageOf2(error)}`, turns);
+    }
+    if (request.admitTurn !== void 0) {
+      return { kind: "admitted", order: step.order };
     }
     turns += 1;
   }
@@ -5458,6 +5467,10 @@ function childSessionsOf(parentID) {
   };
 }
 async function postContinuationTurn(request, order) {
+  if (request.admitTurn !== void 0) {
+    await request.admitTurn(order);
+    return;
+  }
   const session = request.session;
   if (session === void 0) {
     throw new Error("this host handed the plugin no session api to post a continuation turn through");
@@ -5579,9 +5592,12 @@ function queueSystemAdvice(pending, sessionId, advice) {
   }
   queued.push(advice);
 }
+function queuedSystemAdvice(pending, sessionId) {
+  return pending.get(sessionId) ?? [];
+}
 function deliverSystemAdvice(output, pending, sessionId) {
-  const queued = pending.get(sessionId);
-  if (queued === void 0 || queued.length === 0) {
+  const queued = queuedSystemAdvice(pending, sessionId);
+  if (queued.length === 0) {
     return { kind: "empty" };
   }
   const record = output;
@@ -5844,27 +5860,80 @@ function checkGateRoutes() {
 function identityEnvFor(cwd) {
   return { ...publishIdentity(cwd), OSO_STATE_BIN: stateBinPath2() };
 }
-async function sessionDirectoryOf(ctx, directories, sessionID) {
-  const known = directories.get(sessionID);
+async function sessionOf(ctx, sessions, sessionID) {
+  const known = sessions.get(sessionID);
   if (known !== void 0) {
     return known;
   }
   try {
-    const { location } = await ctx.session.get({ sessionID });
-    directories.set(sessionID, location.directory);
-    return location.directory;
+    const { location, parentID } = await ctx.session.get({ sessionID });
+    const session = { directory: location.directory, primary: parentID === void 0 };
+    sessions.set(sessionID, session);
+    return session;
   } catch (err) {
     recordTrace({ origin: "session.directory", detail: messageOf2(err), severity: "advisory", sessionID });
-    return ctx.location.directory;
+    return { directory: ctx.location.directory, primary: true };
+  }
+}
+function systemPartOf(text) {
+  return { type: "text", text };
+}
+function endSessions(directory) {
+  for (const sessionID of busSessions) {
+    runLifecycleGate("teardown", { sessionID, directory, moment: "end" });
+  }
+  busSessions.clear();
+  releaseHeldRuns();
+}
+function sessionEventOf(event) {
+  const { sessionID, parentID } = event.data ?? {};
+  if (event.type === "session.created") {
+    return { type: event.type, properties: { info: { id: sessionID, parentID } } };
+  }
+  return { type: event.type, properties: { sessionID } };
+}
+function followSessionEvents(ctx) {
+  const closing = new AbortController();
+  void (async () => {
+    try {
+      for await (const event of ctx.event.subscribe({ signal: closing.signal })) {
+        const hostEvent = event;
+        const sessionID = hostEvent.data?.sessionID ?? "";
+        if (sessionID !== "") {
+          busSessions.add(sessionID);
+        }
+        trackSessionEvent(sessionEventOf(hostEvent));
+      }
+    } catch (err) {
+      if (!closing.signal.aborted) {
+        recordTrace({ origin: "events.subscribe", detail: messageOf2(err), severity: "advisory" });
+      }
+    }
+  })();
+  return () => closing.abort();
+}
+async function continueOnIdle(ctx, sessions, sessionID) {
+  const { directory, primary } = await sessionOf(ctx, sessions, sessionID);
+  markSessionLive(sessionID, directory);
+  dropSystemAdvice(pendingAdvice, sessionID);
+  trackSessionEvent({ type: "session.idle", properties: { sessionID } });
+  if (primary) {
+    await continueUnattendedRun({
+      sessionID,
+      directory,
+      admitTurn: async (order) => {
+        await ctx.session.prompt({ sessionID, text: order });
+      }
+    });
   }
 }
 async function setup(ctx) {
   checkGateRoutes();
-  const directories = /* @__PURE__ */ new Map();
+  const sessions = /* @__PURE__ */ new Map();
   await ctx.tool.hook("execute.before", async (call) => {
-    const cwd = await sessionDirectoryOf(ctx, directories, call.sessionID);
+    const { directory } = await sessionOf(ctx, sessions, call.sessionID);
     const refusal = firstToolGateRefusal(
-      { tool: call.tool, sessionID: call.sessionID, callID: call.id, cwd },
+      { tool: call.tool, sessionID: call.sessionID, callID: call.id, cwd: directory },
       { args: call.input ?? {} }
     );
     if (refusal !== void 0) {
@@ -5872,7 +5941,7 @@ async function setup(ctx) {
     }
   });
   await ctx.tool.hook("execute.after", async (call) => {
-    captureSubagentVerdict(call, await sessionDirectoryOf(ctx, directories, call.sessionID));
+    captureSubagentVerdict(call, (await sessionOf(ctx, sessions, call.sessionID)).directory);
   });
   await ctx.shell.hook("create.before", (creation) => {
     try {
@@ -5881,6 +5950,37 @@ async function setup(ctx) {
       recordTrace({ origin: "shell.env", detail: messageOf2(err), severity: "advisory" });
     }
   });
+  await ctx.session.hook("experimental.idle", async ({ sessionID }) => {
+    try {
+      await continueOnIdle(ctx, sessions, sessionID);
+    } catch (err) {
+      recordTrace({ origin: "session.idle", detail: messageOf2(err), severity: "advisory", sessionID });
+    }
+  });
+  await ctx.session.hook("context", async ({ sessionID, system }) => {
+    try {
+      const { directory, primary } = await sessionOf(ctx, sessions, sessionID);
+      if (!primary) {
+        return;
+      }
+      armSessionAdvice(sessionID, directory);
+      system.push(...queuedSystemAdvice(pendingAdvice, sessionID).map(systemPartOf));
+    } catch (err) {
+      recordTrace({ origin: "system.transform", detail: messageOf2(err), severity: "advisory", sessionID });
+    }
+  });
+  await ctx.session.hook("compaction", async ({ sessionID, system }) => {
+    const { directory } = await sessionOf(ctx, sessions, sessionID);
+    const anchor = runLifecycleGate("reanchor", { sessionID, directory, moment: "compact" });
+    if (anchor !== "") {
+      system.push(systemPartOf(anchor));
+    }
+  });
+  const closeEvents = followSessionEvents(ctx);
+  return () => {
+    closeEvents();
+    endSessions(ctx.location.directory);
+  };
 }
 var oso_code_default = { id: "oso-code", setup };
 var osoCode = async (pluginInput) => {
@@ -5986,11 +6086,7 @@ var osoCode = async (pluginInput) => {
       [PLAN_CANCEL_TOOL_ID]: planCancelTool()
     },
     dispose: async () => {
-      for (const sessionID of busSessions) {
-        runLifecycleGate("teardown", { sessionID, directory, moment: "end" });
-      }
-      busSessions.clear();
-      releaseHeldRuns();
+      endSessions(directory);
     }
   };
 };

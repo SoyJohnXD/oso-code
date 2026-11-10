@@ -152,13 +152,17 @@ export function queueSystemAdvice(
   queued.push(advice);
 }
 
+export function queuedSystemAdvice(pending: PendingSystemAdvice, sessionId: string): readonly string[] {
+  return pending.get(sessionId) ?? [];
+}
+
 export function deliverSystemAdvice(
   output: unknown,
   pending: PendingSystemAdvice,
   sessionId: string,
 ): AdviceDelivery {
-  const queued = pending.get(sessionId);
-  if (queued === undefined || queued.length === 0) {
+  const queued = queuedSystemAdvice(pending, sessionId);
+  if (queued.length === 0) {
     return { kind: "empty" };
   }
   const record = output as { system?: unknown } | null;

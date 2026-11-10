@@ -1,6 +1,11 @@
 import type { Plugin } from "@opencode/plugin";
 import { planApprovalTool, planCancelTool, PLAN_APPROVAL_TOOL_ID, PLAN_CANCEL_TOOL_ID } from "./oso/approval.ts";
-import { continueUnattendedRun, releaseHeldRuns, trackSessionEvent } from "./oso/continuation-rail.ts";
+import {
+  continueUnattendedRun,
+  releaseHeldRuns,
+  trackSessionEvent,
+  type SessionEvent,
+} from "./oso/continuation-rail.ts";
 import {
   assertGateRoutesCompile,
   firstToolGateRefusal,
@@ -19,6 +24,7 @@ import {
   deliverSystemAdvice,
   dropSystemAdvice,
   listStale,
+  queuedSystemAdvice,
   queueSystemAdvice,
   sweepStale,
   touchMarker,
@@ -149,32 +155,104 @@ function identityEnvFor(cwd: string): Record<string, string> {
 
 type HostSessionID = Parameters<Plugin.Context["session"]["get"]>[0]["sessionID"];
 
-async function sessionDirectoryOf(
+interface KnownSession {
+  directory: string;
+  primary: boolean;
+}
+
+async function sessionOf(
   ctx: Plugin.Context,
-  directories: Map<string, string>,
+  sessions: Map<string, KnownSession>,
   sessionID: HostSessionID,
-): Promise<string> {
-  const known = directories.get(sessionID);
+): Promise<KnownSession> {
+  const known = sessions.get(sessionID);
   if (known !== undefined) {
     return known;
   }
   try {
-    const { location } = await ctx.session.get({ sessionID });
-    directories.set(sessionID, location.directory);
-    return location.directory;
+    const { location, parentID } = await ctx.session.get({ sessionID });
+    const session = { directory: location.directory, primary: parentID === undefined };
+    sessions.set(sessionID, session);
+    return session;
   } catch (err) {
     recordTrace({ origin: "session.directory", detail: messageOf(err), severity: "advisory", sessionID });
-    return ctx.location.directory;
+    return { directory: ctx.location.directory, primary: true };
   }
 }
 
-async function setup(ctx: Plugin.Context): Promise<void> {
+function systemPartOf(text: string): { type: "text"; text: string } {
+  return { type: "text", text };
+}
+
+function endSessions(directory: string): void {
+  for (const sessionID of busSessions) {
+    runLifecycleGate("teardown", { sessionID, directory, moment: "end" });
+  }
+  busSessions.clear();
+  releaseHeldRuns();
+}
+
+interface HostEvent {
+  type: string;
+  data?: { sessionID?: string; parentID?: string };
+}
+
+function sessionEventOf(event: HostEvent): SessionEvent {
+  const { sessionID, parentID } = event.data ?? {};
+  if (event.type === "session.created") {
+    return { type: event.type, properties: { info: { id: sessionID, parentID } } };
+  }
+  return { type: event.type, properties: { sessionID } };
+}
+
+function followSessionEvents(ctx: Plugin.Context): () => void {
+  const closing = new AbortController();
+  void (async () => {
+    try {
+      for await (const event of ctx.event.subscribe({ signal: closing.signal })) {
+        const hostEvent = event as HostEvent;
+        const sessionID = hostEvent.data?.sessionID ?? "";
+        if (sessionID !== "") {
+          busSessions.add(sessionID);
+        }
+        trackSessionEvent(sessionEventOf(hostEvent));
+      }
+    } catch (err) {
+      if (!closing.signal.aborted) {
+        recordTrace({ origin: "events.subscribe", detail: messageOf(err), severity: "advisory" });
+      }
+    }
+  })();
+  return () => closing.abort();
+}
+
+async function continueOnIdle(
+  ctx: Plugin.Context,
+  sessions: Map<string, KnownSession>,
+  sessionID: HostSessionID,
+): Promise<void> {
+  const { directory, primary } = await sessionOf(ctx, sessions, sessionID);
+  markSessionLive(sessionID, directory);
+  dropSystemAdvice(pendingAdvice, sessionID);
+  trackSessionEvent({ type: "session.idle", properties: { sessionID } });
+  if (primary) {
+    await continueUnattendedRun({
+      sessionID,
+      directory,
+      admitTurn: async (order) => {
+        await ctx.session.prompt({ sessionID, text: order });
+      },
+    });
+  }
+}
+
+async function setup(ctx: Plugin.Context): Promise<() => void> {
   checkGateRoutes();
-  const directories = new Map<string, string>();
+  const sessions = new Map<string, KnownSession>();
   await ctx.tool.hook("execute.before", async (call) => {
-    const cwd = await sessionDirectoryOf(ctx, directories, call.sessionID);
+    const { directory } = await sessionOf(ctx, sessions, call.sessionID);
     const refusal = firstToolGateRefusal(
-      { tool: call.tool, sessionID: call.sessionID, callID: call.id, cwd },
+      { tool: call.tool, sessionID: call.sessionID, callID: call.id, cwd: directory },
       { args: (call.input ?? {}) as Record<string, unknown> },
     );
     if (refusal !== undefined) {
@@ -182,7 +260,7 @@ async function setup(ctx: Plugin.Context): Promise<void> {
     }
   });
   await ctx.tool.hook("execute.after", async (call) => {
-    captureSubagentVerdict(call, await sessionDirectoryOf(ctx, directories, call.sessionID));
+    captureSubagentVerdict(call, (await sessionOf(ctx, sessions, call.sessionID)).directory);
   });
   await ctx.shell.hook("create.before", (creation) => {
     try {
@@ -191,6 +269,37 @@ async function setup(ctx: Plugin.Context): Promise<void> {
       recordTrace({ origin: "shell.env", detail: messageOf(err), severity: "advisory" });
     }
   });
+  await ctx.session.hook("experimental.idle", async ({ sessionID }) => {
+    try {
+      await continueOnIdle(ctx, sessions, sessionID);
+    } catch (err) {
+      recordTrace({ origin: "session.idle", detail: messageOf(err), severity: "advisory", sessionID });
+    }
+  });
+  await ctx.session.hook("context", async ({ sessionID, system }) => {
+    try {
+      const { directory, primary } = await sessionOf(ctx, sessions, sessionID);
+      if (!primary) {
+        return;
+      }
+      armSessionAdvice(sessionID, directory);
+      system.push(...queuedSystemAdvice(pendingAdvice, sessionID).map(systemPartOf));
+    } catch (err) {
+      recordTrace({ origin: "system.transform", detail: messageOf(err), severity: "advisory", sessionID });
+    }
+  });
+  await ctx.session.hook("compaction", async ({ sessionID, system }) => {
+    const { directory } = await sessionOf(ctx, sessions, sessionID);
+    const anchor = runLifecycleGate("reanchor", { sessionID, directory, moment: "compact" });
+    if (anchor !== "") {
+      system.push(systemPartOf(anchor));
+    }
+  });
+  const closeEvents = followSessionEvents(ctx);
+  return () => {
+    closeEvents();
+    endSessions(ctx.location.directory);
+  };
 }
 
 export default { id: "oso-code", setup } satisfies Plugin.Plugin;
@@ -301,11 +410,7 @@ export const osoCode = async (
       [PLAN_CANCEL_TOOL_ID]: planCancelTool(),
     },
     dispose: async () => {
-      for (const sessionID of busSessions) {
-        runLifecycleGate("teardown", { sessionID, directory, moment: "end" });
-      }
-      busSessions.clear();
-      releaseHeldRuns();
+      endSessions(directory);
     },
   };
 };

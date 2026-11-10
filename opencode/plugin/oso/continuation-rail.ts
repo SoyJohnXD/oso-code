@@ -17,11 +17,13 @@ export interface ContinuationRequest {
   sessionID: string;
   directory: string;
   session?: HostSessionApi;
+  admitTurn?: (order: string) => Promise<void>;
   now?: () => number;
 }
 
 export type ContinuationOutcome =
   | { kind: "stood-down"; turns: number }
+  | { kind: "admitted"; order: string }
   | { kind: "failed"; reason: string; turns: number }
   | { kind: "not-this-runs-session" }
   | { kind: "already-driving" };
@@ -51,6 +53,13 @@ interface HeldRun {
   request: ContinuationRequest;
   wake: ReturnType<typeof setTimeout>;
 }
+
+const ENDING_EVENTS: ReadonlySet<string> = new Set([
+  "session.idle",
+  "session.deleted",
+  "session.execution.failed",
+  "session.execution.interrupted",
+]);
 
 const childSessions = new Map<string, ChildSession>();
 const driving = new Set<string>();
@@ -99,7 +108,7 @@ function sessionNamedBy(event: SessionEvent): string {
 }
 
 function endsTheSession(event: SessionEvent): boolean {
-  if (event.type === "session.idle" || event.type === "session.deleted") {
+  if (ENDING_EVENTS.has(event.type)) {
     return true;
   }
   const status = (event.properties as { status?: { type?: unknown } } | undefined)?.status;
@@ -150,6 +159,9 @@ async function postUntilTheRunStops(request: ContinuationRequest): Promise<Conti
       await postContinuationTurn(request, step.order);
     } catch (error) {
       return standDownTraced(request, `the continuation turn did not land: ${messageOf(error)}`, turns);
+    }
+    if (request.admitTurn !== undefined) {
+      return { kind: "admitted", order: step.order };
     }
     turns += 1;
   }
@@ -239,6 +251,10 @@ function childSessionsOf(parentID: string): ChildSessionsOfRun {
 }
 
 async function postContinuationTurn(request: ContinuationRequest, order: string): Promise<void> {
+  if (request.admitTurn !== undefined) {
+    await request.admitTurn(order);
+    return;
+  }
   const session = request.session;
   if (session === undefined) {
     throw new Error("this host handed the plugin no session api to post a continuation turn through");

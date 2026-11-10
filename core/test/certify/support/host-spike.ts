@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { StateSandbox } from "../../support/state-sandbox.ts";
-import { BEHAVIOR_BAR_SESSION_BOUND_SECONDS, type SessionRun } from "./behavior-drive.ts";
+import { BEHAVIOR_BAR_SESSION_BOUND_SECONDS, probeRootSessionId, type SessionRun } from "./behavior-drive.ts";
 import { isolatedHostEnvironment, type OpenCodeBinaryProbe, type ResolvedProbe } from "./opencode-binary.ts";
 import { scriptedPrompt, startScriptedProvider, type ScriptedProvider, type ScriptedProviderRequest } from "./scripted-provider.ts";
 
@@ -17,6 +17,7 @@ const SCRIPTED_MODEL = "scripted/m";
 const FIRST_HOST_WITH_V2_PLUGINS = 2;
 const VERSION_PROBE_HOME_PREFIX = "oso-v2-host-version.";
 const V2_VERSION_LINE = /^opencode v(\d+)\./m;
+const STATE_BINARY = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", "plugin", "bin", "oso-state");
 
 export type SpikeNote = Readonly<Record<string, unknown> & { kind: string }>;
 
@@ -34,6 +35,7 @@ export type ScenarioOutcome = Readonly<{
   run: SessionRun;
   notes: readonly SpikeNote[];
   toolResults: readonly string[];
+  requests: readonly ScriptedProviderRequest[];
   offeredTools: readonly string[];
   sideEffectExists: (relativePath: string) => boolean;
 }>;
@@ -161,9 +163,24 @@ export async function driveScenario(
     run,
     notes: readNotes(notesPath),
     toolResults: toolResultsOf(requests),
+    requests,
     offeredTools: offeredToolsOf(requests),
     sideEffectExists: (relativePath) => existsSync(path.join(fixture.project, relativePath)),
   };
+}
+
+export function armProject(
+  fixture: SpikeFixture,
+  project: string,
+  pairs: readonly string[],
+  session: string = probeRootSessionId(project),
+): void {
+  const run = spawnSync(STATE_BINARY, ["--session", session, "set", ...pairs], {
+    cwd: project,
+    env: fixture.environment,
+    encoding: "utf8",
+  });
+  if (run.status !== 0) throw new Error(`oso-state set ${pairs.join(" ")} exited ${run.status}: ${run.error?.message ?? ""}${run.stderr}`);
 }
 
 export function notesOfKind(outcome: ScenarioOutcome, kind: string): readonly SpikeNote[] {

@@ -64,6 +64,20 @@ function interruptTool(ctx) {
   };
 }
 
+function compactTool(ctx) {
+  return {
+    name: "spike_compact",
+    description: "Requests a compaction of its own session",
+    input: NO_INPUT,
+    options: { codemode: false },
+    async execute(_input, toolContext) {
+      const queued = await ctx.session.compact({ sessionID: toolContext.sessionID });
+      note("compact.queued", { queued });
+      return { content: "compact-requested" };
+    },
+  };
+}
+
 function vetoOrMutate(call) {
   note("execute.before", { tool: call.tool, keys: Object.keys(call), input: call.input });
   if (call.input?.text === VETOED_TEXT) throw new Error("VETO-REASON");
@@ -100,7 +114,7 @@ function addEnvironment(creation) {
 }
 
 async function recordEvents(ctx) {
-  for await (const event of ctx.event.subscribe()) note("event", { type: event.type });
+  for await (const event of ctx.event.subscribe()) note("event", { type: event.type, data: event.data });
 }
 
 export default {
@@ -111,11 +125,14 @@ export default {
       editor.add(echoTool(ctx));
       editor.add(hiddenTool());
       editor.add(interruptTool(ctx));
+      editor.add(compactTool(ctx));
     });
     await ctx.tool.hook("execute.before", vetoOrMutate);
     await ctx.tool.hook("execute.after", recordAfter);
     await ctx.permission.hook("evaluate", denyMarked);
     await ctx.session.hook("experimental.idle", (idle) => note("idle", { sessionID: idle.sessionID, background: idle.background }));
+    await ctx.session.hook("context", (request) => note("context", { sessionID: request.sessionID, agent: request.agent, keys: Object.keys(request), system: request.system }));
+    await ctx.session.hook("compaction", (request) => note("compaction", { sessionID: request.sessionID, keys: Object.keys(request), system: request.system }));
     await ctx.shell.hook("create.before", addEnvironment);
     recordEvents(ctx).catch((error) => note("event.error", { message: String(error) }));
     return () => note("cleanup");

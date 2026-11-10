@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import entry from "../oso-code.ts";
 import { fakeHostContext } from "../../test-support/host-context.ts";
 import { seedRailFixture, underRailFixtureHome, type RailFixture } from "../../test-support/rail-fixture.ts";
 import { armStateUnder } from "../../test-support/state-fixture.ts";
+import { DELEGATIONS_RETURN_IN_TURN_HOST } from "@oso-code/core";
+import { trackSessionEvent } from "./continuation-rail.ts";
 import { publishIdentity } from "./identity.ts";
 import { stateBinPath } from "./installed-tree.ts";
 
@@ -103,5 +105,153 @@ test("shell create.before publishes the identity variables and OSO_STATE_BIN der
     assert.notEqual(env.OSO_AGENT, "");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+const CONTINUATION_ORDER = DELEGATIONS_RETURN_IN_TURN_HOST.order;
+const SYSTEM_ADVICE = /was left by another session/;
+const REANCHOR_ADVICE = /compacted while a run was in flight/;
+
+function settled(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+function unattendedFixture(label: string): RailFixture {
+  const fixture = seedRailFixture(label);
+  armStateUnder(fixture.home, fixture.repo, fixture.owner, ["auto_change=slice-twelve", "auto=running"]);
+  return fixture;
+}
+
+test("an idle primary session under an unattended run admits one continuation turn into that session", async () => {
+  const fixture = unattendedFixture("oso-v2-idle-run");
+  try {
+    const host = fakeHostContext({ directory: fixture.repo, sessionDirectories: { "ses-idle": fixture.repo } });
+    await entry.setup(host.context);
+    await underRailFixtureHome(fixture, () => host.hook("session", "experimental.idle")({ sessionID: "ses-idle", background: [] }));
+    assert.deepEqual(host.prompts(), [{ sessionID: "ses-idle", text: CONTINUATION_ORDER }]);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
+});
+
+test("an idle child session and an idle session no run claims admit nothing", async () => {
+  const fixture = unattendedFixture("oso-v2-idle-quiet");
+  const unarmed = seedRailFixture("oso-v2-idle-unarmed");
+  try {
+    const host = fakeHostContext({
+      directory: fixture.repo,
+      sessionDirectories: { "ses-child": fixture.repo, "ses-open": unarmed.repo },
+      parentSessions: { "ses-child": "ses-parent" },
+    });
+    await entry.setup(host.context);
+    await underRailFixtureHome(fixture, () => host.hook("session", "experimental.idle")({ sessionID: "ses-child", background: [] }));
+    await underRailFixtureHome(unarmed, () => host.hook("session", "experimental.idle")({ sessionID: "ses-open", background: [] }));
+    assert.deepEqual(host.prompts(), []);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+    rmSync(unarmed.base, { recursive: true, force: true });
+  }
+});
+
+test("the context hook appends system advice for a primary session and leaves a child session's request alone", async () => {
+  const fixture = seedRailFixture("oso-v2-context");
+  armStateUnder(fixture.home, fixture.repo, "left-by-another", ["auto_change=slice-twelve", "auto=running"]);
+  try {
+    const host = fakeHostContext({
+      directory: fixture.repo,
+      sessionDirectories: { "ses-primary": fixture.repo, "ses-child": fixture.repo },
+      parentSessions: { "ses-child": "ses-primary" },
+    });
+    await entry.setup(host.context);
+    const primary = { sessionID: "ses-primary", system: [] as unknown[] };
+    const child = { sessionID: "ses-child", system: [] as unknown[] };
+    await underRailFixtureHome(fixture, async () => {
+      await host.hook("session", "context")(primary);
+      await host.hook("session", "context")(child);
+    });
+    assert.equal(primary.system.length, 1);
+    assert.match((primary.system[0] as { type: string; text: string }).text, SYSTEM_ADVICE);
+    assert.equal((primary.system[0] as { type: string }).type, "text");
+    assert.deepEqual(child.system, []);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
+});
+
+test("the compaction hook writes the re-anchor into the compaction request, and the context hook never does", async () => {
+  const fixture = armedFixture("oso-v2-compaction", false);
+  try {
+    const host = fakeHostContext({ directory: fixture.repo, sessionDirectories: { "ses-compact": fixture.repo } });
+    await entry.setup(host.context);
+    const compaction = { sessionID: "ses-compact", system: [] as unknown[] };
+    const context = { sessionID: "ses-compact", system: [] as unknown[] };
+    await underRailFixtureHome(fixture, async () => {
+      await host.hook("session", "compaction")(compaction);
+      await host.hook("session", "context")(context);
+    });
+    assert.equal(compaction.system.length, 1);
+    assert.match((compaction.system[0] as { text: string }).text, REANCHOR_ADVICE);
+    assert.deepEqual(context.system, []);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
+});
+
+test("an error inside the event loop is traced as advisory and never thrown", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "oso-v2-events-"));
+  const traced = mock.method(console, "error", () => {});
+  try {
+    const host = fakeHostContext({ directory: cwd });
+    await entry.setup(host.context);
+    host.failEvents(new Error("the event stream broke"));
+    await settled();
+    assert.deepEqual(traced.mock.calls.map((call) => call.arguments), [["oso-code: [advisory] events.subscribe: the event stream broke (state sink also failed)"]]);
+  } finally {
+    traced.mock.restore();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("the Cleanup setup returns closes the event iterator without a trace, and releases the runs held on child sessions", async () => {
+  const fixture = unattendedFixture("oso-v2-cleanup");
+  const traced = mock.method(console, "error", () => {});
+  try {
+    const host = fakeHostContext({ directory: fixture.repo, sessionDirectories: { "ses-held-root": fixture.repo } });
+    const cleanup = await entry.setup(host.context);
+    host.emit({ type: "session.created", data: { sessionID: "ses-held-child", parentID: "ses-held-root" } });
+    await settled();
+    await underRailFixtureHome(fixture, () => host.hook("session", "experimental.idle")({ sessionID: "ses-held-root", background: [] }));
+    assert.deepEqual(host.prompts(), []);
+    cleanup();
+    await settled();
+    assert.equal(host.eventSubscription()?.aborted, true);
+    await underRailFixtureHome(fixture, async () => {
+      trackSessionEvent({ type: "session.idle", properties: { sessionID: "ses-held-child" } });
+      await settled();
+    });
+    assert.deepEqual(host.prompts(), []);
+    assert.deepEqual(traced.mock.calls.filter((call) => String(call.arguments[0]).includes("events.subscribe")), []);
+  } finally {
+    traced.mock.restore();
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
+});
+
+test("a child session's completion re-drives the run held on it while the plugin is live", async () => {
+  const fixture = unattendedFixture("oso-v2-held");
+  try {
+    const host = fakeHostContext({ directory: fixture.repo, sessionDirectories: { "ses-live-root": fixture.repo } });
+    await entry.setup(host.context);
+    host.emit({ type: "session.created", data: { sessionID: "ses-live-child", parentID: "ses-live-root" } });
+    await settled();
+    await underRailFixtureHome(fixture, async () => {
+      await host.hook("session", "experimental.idle")({ sessionID: "ses-live-root", background: [] });
+      assert.deepEqual(host.prompts(), []);
+      trackSessionEvent({ type: "session.idle", properties: { sessionID: "ses-live-child" } });
+      await settled();
+    });
+    assert.deepEqual(host.prompts(), [{ sessionID: "ses-live-root", text: CONTINUATION_ORDER }]);
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
   }
 });
