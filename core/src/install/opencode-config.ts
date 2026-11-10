@@ -6,7 +6,7 @@ export const CONTEXT7_MCP_URL = "https://mcp.context7.com/mcp";
 
 export const OWNED_SKILL_MODES = ["oso-plan", "oso-quick", "oso-debug", "oso-roadmap"] as const;
 export const OWNED_SKILL_VERDICT = "deny";
-export const OWNED_SUBAGENT_PATTERN = "*";
+const OWNED_SUBAGENT_PATTERN = "*";
 const OWNED_SUBAGENT_VERDICT = "allow";
 
 export const HARNESS_EXTERNAL_DIRECTORIES = ["~/.config/opencode/skill/**", "~/.local/share/opencode/worktree/**"] as const;

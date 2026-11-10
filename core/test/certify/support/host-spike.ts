@@ -1,27 +1,38 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import type { TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { sha256Hex } from "../../../src/index.ts";
+import { SUPPORTED_OPENCODE_VERSION } from "../../../src/install/pins.ts";
 import { StateSandbox } from "../../support/state-sandbox.ts";
 import { BEHAVIOR_BAR_SESSION_BOUND_SECONDS, probeRootSessionId, type SessionRun } from "./behavior-drive.ts";
-import { isolatedHostEnvironment, type OpenCodeBinaryProbe, type ResolvedProbe } from "./opencode-binary.ts";
+import { CERTIFY } from "./certify-guard.ts";
+import {
+  isolatedHostEnvironment,
+  laneCauseFor,
+  laneNotRun,
+  resolveOpenCodeBinaryProbe,
+  type OpenCodeBinaryProbe,
+  type ResolvedProbe,
+} from "./opencode-binary.ts";
 import { scriptedPrompt, startScriptedProvider, type ScriptedProvider, type ScriptedProviderRequest } from "./scripted-provider.ts";
 
-const SPIKE_PLUGIN_SOURCE = path.join(path.dirname(fileURLToPath(import.meta.url)), "host-spike-plugin.mjs");
+const SUPPORT_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
+const REPOSITORY_ROOT = path.join(SUPPORT_DIRECTORY, "..", "..", "..", "..");
+const OVERRIDE_ENV_VAR = "OSO_V2_HOST_SPIKE_OPENCODE_BIN";
+export const ADAPTER_BUNDLE_FILE = "oso-code.js";
+const ADAPTER_BUNDLE_SOURCE = path.join(REPOSITORY_ROOT, "opencode", "dist", ADAPTER_BUNDLE_FILE);
+const SPIKE_PLUGIN_SOURCE = path.join(SUPPORT_DIRECTORY, "host-spike-plugin.mjs");
 const SPIKE_PLUGIN_FILE = "oso-spike.js";
-const MCP_STUB_SOURCE = path.join(path.dirname(fileURLToPath(import.meta.url)), "mcp-stub.mjs");
+const MCP_STUB_SOURCE = path.join(SUPPORT_DIRECTORY, "mcp-stub.mjs");
 export const MCP_SERVER_NAME = "stub";
 export const MCP_CODEMODE_SERVER_NAME = "scripted";
 const SCRIPTED_MODEL = "scripted/m";
 export const PATCH_TOOL_MODEL = "scripted/gpt-5";
 const WAVE_AGENT_FILE = "oso-applier.md";
 const WAVE_AGENT_CONTRACT = "---\ndescription: Stands in for the oso-applier wave child\nmode: subagent\n---\nRun the assignment you are given.\n";
-const FIRST_HOST_WITH_V2_PLUGINS = 2;
-const VERSION_PROBE_HOME_PREFIX = "oso-v2-host-version.";
-const V2_VERSION_LINE = /^opencode v(\d+)\./m;
-const STATE_BINARY = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", "plugin", "bin", "oso-state");
+const STATE_BINARY = path.join(REPOSITORY_ROOT, "plugin", "bin", "oso-state");
 
 export type SpikeNote = Readonly<Record<string, unknown> & { kind: string }>;
 
@@ -46,23 +57,32 @@ export type ScenarioOutcome = Readonly<{
   sideEffectExists: (relativePath: string) => boolean;
 }>;
 
-function reportedMajorVersion(binary: string): number | undefined {
-  const probeHome = mkdtempSync(path.join(tmpdir(), VERSION_PROBE_HOME_PREFIX));
-  try {
-    const run = spawnSync(binary, ["--version"], { env: isolatedHostEnvironment(process.env, probeHome), encoding: "utf8" });
-    const major = V2_VERSION_LINE.exec(run.stdout ?? "")?.[1];
-    return major === undefined ? undefined : Number.parseInt(major, 10);
-  } finally {
-    rmSync(probeHome, { recursive: true, force: true });
-  }
+export type V2Lane = Readonly<{
+  probe: OpenCodeBinaryProbe | undefined;
+  laneCause: string | undefined;
+  laneNotRun: (t: TestContext) => boolean;
+}>;
+
+export function resolveV2Lane(): V2Lane {
+  const probe = CERTIFY
+    ? resolveOpenCodeBinaryProbe(process.env[OVERRIDE_ENV_VAR], SUPPORTED_OPENCODE_VERSION, process.env)
+    : undefined;
+  const laneCause = laneCauseFor(probe, SUPPORTED_OPENCODE_VERSION);
+  return { probe, laneCause, laneNotRun: (t) => laneNotRun(t, probe, laneCause) };
 }
 
-export function v2LaneCause(probe: OpenCodeBinaryProbe | undefined): string | undefined {
-  if (probe === undefined) return undefined;
-  if (probe.kind === "unresolved") return probe.reason;
-  const major = reportedMajorVersion(probe.binary);
-  if (major !== undefined && major >= FIRST_HOST_WITH_V2_PLUGINS) return undefined;
-  return `${probe.binary} does not report an opencode v${FIRST_HOST_WITH_V2_PLUGINS} or newer version line, so the v2 plugin contract cannot be driven`;
+export function installAdapterBundle(fixture: SpikeFixture): ExtraPlugin {
+  return fixture.writeExtraPlugin(ADAPTER_BUNDLE_FILE, readFileSync(ADAPTER_BUNDLE_SOURCE, "utf8"));
+}
+
+export function scenarioOutcomeOf(outcomes: ReadonlyMap<string, ScenarioOutcome>, name: string): ScenarioOutcome {
+  const outcome = outcomes.get(name);
+  if (outcome === undefined) throw new Error(`unreachable: scenario ${name} was expected to have run`);
+  return outcome;
+}
+
+export function messageTextOf(content: unknown): string {
+  return typeof content === "string" ? content : JSON.stringify(content);
 }
 
 function providerConfig(provider: ScriptedProvider): string {

@@ -1207,17 +1207,22 @@ function forgetStoppedAgent({ envelope }) {
 }
 function captureVerifierStop(envelope) {
   if (!isVerifierAgent(envelope.agentType)) return;
+  const transcript = agentTranscriptOf(envelope);
   captureVerifierReport({
     host: envelope.caller.host,
     cwd: envelope.cwd,
     session: hookSessionId(envelope),
-    model: launchedModelOf(envelope),
-    report: envelope.lastAssistantMessage === "" ? handbackReportOf(envelope) : envelope.lastAssistantMessage
+    model: launchedModelOf(transcript),
+    report: verifierReportOf(envelope.lastAssistantMessage, transcript)
   });
 }
-function handbackReportOf(envelope) {
-  if (!isNameToken(envelope.agentId)) return "";
-  const transcript = derivedTranscriptPath(envelope, envelope.agentId);
+function agentTranscriptOf(envelope) {
+  return isNameToken(envelope.agentId) ? derivedTranscriptPath(envelope, envelope.agentId) : "";
+}
+function verifierReportOf(finalMessage, transcript) {
+  return parseAgentVerdict(finalMessage).verdict === void 0 ? handbackReportOf(transcript) : finalMessage;
+}
+function handbackReportOf(transcript) {
   if (transcript === "") return "";
   const lines = (readFileIfPresent(transcript, "skip") ?? "").split("\n");
   const messages = lines.flatMap(handbackMessagesIn);
@@ -1229,9 +1234,7 @@ function handbackMessagesIn(line) {
   const blocks = content;
   return blocks.filter((block) => block?.type === "tool_use" && block.name === SUBAGENT_HANDBACK_TOOL).map((block) => block?.input?.message).filter((message) => typeof message === "string");
 }
-function launchedModelOf(envelope) {
-  if (!isNameToken(envelope.agentId)) return null;
-  const transcript = derivedTranscriptPath(envelope, envelope.agentId);
+function launchedModelOf(transcript) {
   if (transcript === "") return null;
   const meta = readFileIfPresent(transcript.replace(/\.jsonl$/, ".meta.json"), "skip");
   const model = meta === void 0 ? void 0 : jsonObjectOf(meta)?.["model"];

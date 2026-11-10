@@ -114,6 +114,13 @@ export function fakeHostContext({
       },
     },
   } as unknown as Plugin.Context;
+  const registeredTool = (name: string): OsoTool => {
+    const tool = tools.get(name);
+    if (tool === undefined) {
+      throw new Error(`the plugin registered no tool named ${name}`);
+    }
+    return tool;
+  };
   return {
     context,
     hook: (surface, name) => {
@@ -130,18 +137,8 @@ export function fakeHostContext({
     emit: (event) => push({ event }),
     failEvents: (error) => push({ error }),
     eventSubscription: () => subscription,
-    tool: (name) => {
-      const tool = tools.get(name);
-      if (tool === undefined) {
-        throw new Error(`the plugin registered no tool named ${name}`);
-      }
-      return tool;
-    },
+    tool: registeredTool,
     callTool: (name, sessionID, input) => {
-      const tool = tools.get(name);
-      if (tool === undefined) {
-        throw new Error(`the plugin registered no tool named ${name}`);
-      }
       const call = {
         sessionID,
         agent: "build",
@@ -150,7 +147,7 @@ export function fakeHostContext({
         signal: new AbortController().signal,
         progress: async () => {},
       } as unknown as OsoToolContext;
-      return tool.execute(input, call);
+      return registeredTool(name).execute(input, call);
     },
     assertions: () => asserted,
   };

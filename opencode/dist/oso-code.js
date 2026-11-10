@@ -1220,17 +1220,22 @@ function forgetStoppedAgent({ envelope }) {
 }
 function captureVerifierStop(envelope) {
   if (!isVerifierAgent(envelope.agentType)) return;
+  const transcript = agentTranscriptOf(envelope);
   captureVerifierReport({
     host: envelope.caller.host,
     cwd: envelope.cwd,
     session: hookSessionId(envelope),
-    model: launchedModelOf(envelope),
-    report: envelope.lastAssistantMessage === "" ? handbackReportOf(envelope) : envelope.lastAssistantMessage
+    model: launchedModelOf(transcript),
+    report: verifierReportOf(envelope.lastAssistantMessage, transcript)
   });
 }
-function handbackReportOf(envelope) {
-  if (!isNameToken(envelope.agentId)) return "";
-  const transcript = derivedTranscriptPath(envelope, envelope.agentId);
+function agentTranscriptOf(envelope) {
+  return isNameToken(envelope.agentId) ? derivedTranscriptPath(envelope, envelope.agentId) : "";
+}
+function verifierReportOf(finalMessage, transcript) {
+  return parseAgentVerdict(finalMessage).verdict === void 0 ? handbackReportOf(transcript) : finalMessage;
+}
+function handbackReportOf(transcript) {
   if (transcript === "") return "";
   const lines = (readFileIfPresent(transcript, "skip") ?? "").split("\n");
   const messages = lines.flatMap(handbackMessagesIn);
@@ -1242,9 +1247,7 @@ function handbackMessagesIn(line) {
   const blocks = content;
   return blocks.filter((block) => block?.type === "tool_use" && block.name === SUBAGENT_HANDBACK_TOOL).map((block) => block?.input?.message).filter((message) => typeof message === "string");
 }
-function launchedModelOf(envelope) {
-  if (!isNameToken(envelope.agentId)) return null;
-  const transcript = derivedTranscriptPath(envelope, envelope.agentId);
+function launchedModelOf(transcript) {
   if (transcript === "") return null;
   const meta = readFileIfPresent(transcript.replace(/\.jsonl$/, ".meta.json"), "skip");
   const model = meta === void 0 ? void 0 : jsonObjectOf(meta)?.["model"];
@@ -5289,11 +5292,12 @@ var childSessions = /* @__PURE__ */ new Map();
 var driving = /* @__PURE__ */ new Set();
 var heldRuns = /* @__PURE__ */ new Map();
 function trackSessionEvent(event, nowMs = Date.now()) {
+  const { sessionID = "", parentID = "" } = event.data ?? {};
   if (event.type === "session.created") {
-    recordLaunchedChild(event.properties, nowMs);
+    recordLaunchedChild(sessionID, parentID, nowMs);
     return;
   }
-  const child = childSessions.get(sessionNamedBy(event));
+  const child = childSessions.get(sessionID);
   if (child === void 0 || child.phase === "completed") {
     return;
   }
@@ -5304,17 +5308,10 @@ function trackSessionEvent(event, nowMs = Date.now()) {
   }
   child.lastActivityMs = nowMs;
 }
-function recordLaunchedChild(properties, nowMs) {
-  const info = properties?.info;
-  const id = info?.id;
-  const parentID = info?.parentID;
-  if (typeof id === "string" && id !== "" && typeof parentID === "string" && parentID !== "") {
-    childSessions.set(id, { parentID, startedMs: nowMs, lastActivityMs: nowMs, phase: "running" });
+function recordLaunchedChild(sessionID, parentID, nowMs) {
+  if (sessionID !== "" && parentID !== "") {
+    childSessions.set(sessionID, { parentID, startedMs: nowMs, lastActivityMs: nowMs, phase: "running" });
   }
-}
-function sessionNamedBy(event) {
-  const id = event.properties?.sessionID;
-  return typeof id === "string" ? id : "";
 }
 function endsTheSession(event) {
   return ENDING_EVENTS.has(event.type);
@@ -5822,24 +5819,17 @@ function endSessions(directory) {
   releaseHeldRuns();
   sweepStaleWorktrees(directory);
 }
-function sessionEventOf(event) {
-  const { sessionID, parentID } = event.data ?? {};
-  if (event.type === "session.created") {
-    return { type: event.type, properties: { info: { id: sessionID, parentID } } };
-  }
-  return { type: event.type, properties: { sessionID } };
-}
 function followSessionEvents(ctx) {
   const closing = new AbortController();
   void (async () => {
     try {
       for await (const event of ctx.event.subscribe({ signal: closing.signal })) {
-        const hostEvent = event;
-        const sessionID = hostEvent.data?.sessionID ?? "";
+        const sessionEvent = event;
+        const sessionID = sessionEvent.data?.sessionID ?? "";
         if (sessionID !== "") {
           busSessions.add(sessionID);
         }
-        trackSessionEvent(sessionEventOf(hostEvent));
+        trackSessionEvent(sessionEvent);
       }
     } catch (err) {
       if (!closing.signal.aborted) {
@@ -5853,7 +5843,7 @@ async function continueOnIdle(ctx, sessions, sessionID) {
   const { directory, primary } = await sessionOf(ctx, sessions, sessionID);
   markSessionLive(sessionID, directory);
   dropSystemAdvice(pendingAdvice, sessionID);
-  trackSessionEvent({ type: "session.idle", properties: { sessionID } });
+  trackSessionEvent({ type: "session.idle", data: { sessionID } });
   if (primary) {
     await continueUnattendedRun({
       sessionID,

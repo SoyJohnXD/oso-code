@@ -1,38 +1,27 @@
 import assert from "node:assert/strict";
-import { after, before, describe, test, type TestContext } from "node:test";
-import { SUPPORTED_OPENCODE_VERSION } from "../../src/install/pins.ts";
-import { CERTIFY, CERTIFY_GUARD } from "./support/certify-guard.ts";
+import { after, before, describe, test } from "node:test";
+import { CERTIFY_GUARD } from "./support/certify-guard.ts";
 import { CONTRACT_BAR_BOUND_SECONDS } from "./support/drive.ts";
 import {
   createSpikeFixture,
   disposeSpikeFixture,
   driveScenario,
   notesOfKind,
-  v2LaneCause,
+  resolveV2Lane,
+  scenarioOutcomeOf,
   type ScenarioOutcome,
   type SpikeFixture,
 } from "./support/host-spike.ts";
-import {
-  laneNotRun,
-  resolveOpenCodeBinaryProbe,
-  resolvedProbeOrThrow,
-  type OpenCodeBinaryProbe,
-  type ResolvedProbe,
-} from "./support/opencode-binary.ts";
+import { resolvedProbeOrThrow, type ResolvedProbe } from "./support/opencode-binary.ts";
 import { pluginLoadProofOf } from "../../src/install/opencode-load-proof.ts";
 import { runLoadProbe } from "./support/plugin-load-proof.ts";
 
-const OVERRIDE_ENV_VAR = "OSO_V2_HOST_SPIKE_OPENCODE_BIN";
 const SPIKE_PLUGIN_FILE = "oso-spike.js";
 const VETO_REASON = "VETO-REASON";
 const DENY_REASON = "DENY-REASON";
 const CONSECUTIVE_LOAD_PROBES = 3;
 
-const probe: OpenCodeBinaryProbe | undefined = CERTIFY
-  ? resolveOpenCodeBinaryProbe(process.env[OVERRIDE_ENV_VAR], SUPPORTED_OPENCODE_VERSION, process.env)
-  : undefined;
-
-const laneCause = v2LaneCause(probe);
+const { probe, laneCause, laneNotRun } = resolveV2Lane();
 
 describe("an OpenCode 2 host driven through a spike plugin in a fully isolated fixture", () => {
   let fixture: SpikeFixture | undefined;
@@ -64,15 +53,7 @@ describe("an OpenCode 2 host driven through a spike plugin in a fully isolated f
     if (fixture !== undefined) await disposeSpikeFixture(fixture);
   });
 
-  function lane(t: TestContext): boolean {
-    return laneNotRun(t, probe, laneCause);
-  }
-
-  function outcomeOf(name: string): ScenarioOutcome {
-    const outcome = outcomes.get(name);
-    if (outcome === undefined) throw new Error(`unreachable: scenario ${name} was expected to have run`);
-    return outcome;
-  }
+  const outcomeOf = (name: string): ScenarioOutcome => scenarioOutcomeOf(outcomes, name);
 
   function fixtureOrThrow(): SpikeFixture {
     if (fixture === undefined) throw new Error("unreachable: a spike fixture was expected");
@@ -80,7 +61,7 @@ describe("an OpenCode 2 host driven through a spike plugin in a fully isolated f
   }
 
   test("a plain default-exported { id, setup } object loads: positive loading evidence, zero failed-to-load lines", CERTIFY_GUARD, (t) => {
-    if (lane(t)) return;
+    if (laneNotRun(t)) return;
     const binary = resolvedProbeOrThrow(probe);
     const run = runLoadProbe(binary.binary, fixtureOrThrow().environment, fixtureOrThrow().project, CONTRACT_BAR_BOUND_SECONDS);
     assert.equal(run.status, 0, run.stderr);
@@ -90,7 +71,7 @@ describe("an OpenCode 2 host driven through a spike plugin in a fully isolated f
   });
 
   test("debug agents logs the plugin loading line on every one of three consecutive runs", CERTIFY_GUARD, (t) => {
-    if (lane(t)) return;
+    if (laneNotRun(t)) return;
     const binary = resolvedProbeOrThrow(probe);
     for (let attempt = 0; attempt < CONSECUTIVE_LOAD_PROBES; attempt += 1) {
       const run = runLoadProbe(binary.binary, fixtureOrThrow().environment, fixtureOrThrow().project, CONTRACT_BAR_BOUND_SECONDS);
@@ -99,7 +80,7 @@ describe("an OpenCode 2 host driven through a spike plugin in a fully isolated f
   });
 
   test("a v1-shaped plugin entry is rejected by the host with a failed-to-load line", CERTIFY_GUARD, (t) => {
-    if (lane(t)) return;
+    if (laneNotRun(t)) return;
     const binary = resolvedProbeOrThrow(probe);
     const rejected = fixtureOrThrow().writeExtraPlugin("v1-shaped.js", "export const osoCode = async () => ({ hooks: {} });\n");
     try {
@@ -114,7 +95,7 @@ describe("an OpenCode 2 host driven through a spike plugin in a fully isolated f
   });
 
   test("a throw inside tool.hook execute.before aborts the tool and the model receives the thrown message as the tool result", CERTIFY_GUARD, (t) => {
-    if (lane(t)) return;
+    if (laneNotRun(t)) return;
     const veto = outcomeOf("veto");
     assert.equal(notesOfKind(veto, "tool.execute").length, 0);
     assert.equal(notesOfKind(veto, "execute.before").length, 1);
@@ -124,7 +105,7 @@ describe("an OpenCode 2 host driven through a spike plugin in a fully isolated f
   });
 
   test("a mutation of input inside execute.before reaches the tool's execute", CERTIFY_GUARD, (t) => {
-    if (lane(t)) return;
+    if (laneNotRun(t)) return;
     const mutate = outcomeOf("mutate");
     const [executed] = notesOfKind(mutate, "tool.execute");
     assert.ok(executed !== undefined);
@@ -133,7 +114,7 @@ describe("an OpenCode 2 host driven through a spike plugin in a fully isolated f
   });
 
   test("permission.hook evaluate fires for a built-in tool whose rule resolves to allow, and effect deny with a message blocks it before any side effect", CERTIFY_GUARD, (t) => {
-    if (lane(t)) return;
+    if (laneNotRun(t)) return;
     const allowed = outcomeOf("shell-allowed");
     const [evaluated] = notesOfKind(allowed, "permission.evaluate");
     assert.ok(evaluated !== undefined);
@@ -150,7 +131,7 @@ describe("an OpenCode 2 host driven through a spike plugin in a fully isolated f
   });
 
   test("permission.hook evaluate does not fire for a plugin tool that never asks, and fires with the tool's own session when it calls permission.assert, without prompting", CERTIFY_GUARD, (t) => {
-    if (lane(t)) return;
+    if (laneNotRun(t)) return;
     assert.equal(notesOfKind(outcomeOf("echo"), "permission.evaluate").length, 0);
     const asserted = outcomeOf("assert");
     const [toolRun] = notesOfKind(asserted, "tool.execute");
@@ -163,7 +144,7 @@ describe("an OpenCode 2 host driven through a spike plugin in a fully isolated f
   });
 
   test("the setup cleanup runs once at process shutdown, after the session went idle, never per session", CERTIFY_GUARD, (t) => {
-    if (lane(t)) return;
+    if (laneNotRun(t)) return;
     const child = outcomeOf("child");
     assert.equal(notesOfKind(child, "cleanup").length, 1);
     const kinds = child.notes.map((note) => note.kind);
@@ -172,7 +153,7 @@ describe("an OpenCode 2 host driven through a spike plugin in a fully isolated f
   });
 
   test("experimental.idle fires once per finished turn, for the child session as well, and not at all after an interrupt", CERTIFY_GUARD, (t) => {
-    if (lane(t)) return;
+    if (laneNotRun(t)) return;
     const echo = outcomeOf("echo");
     assert.equal(notesOfKind(echo, "idle").length, 1);
 
@@ -189,7 +170,7 @@ describe("an OpenCode 2 host driven through a spike plugin in a fully isolated f
   });
 
   test("ctx.event.subscribe delivers session.created but no session.idle event exists", CERTIFY_GUARD, (t) => {
-    if (lane(t)) return;
+    if (laneNotRun(t)) return;
     const child = outcomeOf("child");
     const eventTypes = notesOfKind(child, "event").map((note) => note["type"]);
     assert.ok(eventTypes.includes("session.created"));
@@ -197,7 +178,7 @@ describe("an OpenCode 2 host driven through a spike plugin in a fully isolated f
   });
 
   test("a tool added through ctx.tool.transform is offered to the model under its bare id, and its ToolContext holds sessionID and agent but no directory", CERTIFY_GUARD, (t) => {
-    if (lane(t)) return;
+    if (laneNotRun(t)) return;
     const echo = outcomeOf("echo");
     assert.ok(echo.offeredTools.includes("spike_echo"));
     assert.ok(!echo.offeredTools.some((name) => name.includes("oso-spike") && name !== "spike_echo"));
@@ -208,7 +189,7 @@ describe("an OpenCode 2 host driven through a spike plugin in a fully isolated f
   });
 
   test("ctx.session.get({ sessionID }) yields the session directory that the ToolContext lacks", CERTIFY_GUARD, (t) => {
-    if (lane(t)) return;
+    if (laneNotRun(t)) return;
     const echo = outcomeOf("echo");
     const [toolRun] = notesOfKind(echo, "tool.execute");
     assert.ok(toolRun !== undefined);
@@ -217,14 +198,14 @@ describe("an OpenCode 2 host driven through a spike plugin in a fully isolated f
   });
 
   test("a tool registered without options.codemode false is hidden behind the codemode execute tool and not offered directly", CERTIFY_GUARD, (t) => {
-    if (lane(t)) return;
+    if (laneNotRun(t)) return;
     const echo = outcomeOf("echo");
     assert.ok(echo.offeredTools.includes("execute"));
     assert.ok(!echo.offeredTools.includes("spike_hidden"));
   });
 
   test("ctx.session exposes interrupt and no abort; interrupting from inside a tool aborts the tool signal and ends the run", CERTIFY_GUARD, (t) => {
-    if (lane(t)) return;
+    if (laneNotRun(t)) return;
     const interrupt = outcomeOf("interrupt");
     const [setup] = notesOfKind(interrupt, "setup");
     assert.ok(setup !== undefined);
@@ -240,7 +221,7 @@ describe("an OpenCode 2 host driven through a spike plugin in a fully isolated f
   });
 
   test("shell.hook create.before carries command, cwd, timeout, shell and env, and an env mutation reaches the spawned command", CERTIFY_GUARD, (t) => {
-    if (lane(t)) return;
+    if (laneNotRun(t)) return;
     const allowed = outcomeOf("shell-allowed");
     const [created] = notesOfKind(allowed, "shell.create.before");
     assert.ok(created !== undefined);
@@ -251,7 +232,7 @@ describe("an OpenCode 2 host driven through a spike plugin in a fully isolated f
   });
 
   test("the subagent tool's execute.after payload carries its agent in input.agent and the report in result.output.output, with no model and no background flag", CERTIFY_GUARD, (t) => {
-    if (lane(t)) return;
+    if (laneNotRun(t)) return;
     const [launched] = notesOfKind(outcomeOf("child"), "execute.after").filter((note) => note["tool"] === "subagent");
     assert.ok(launched !== undefined);
     assert.equal(launched["status"], "completed");

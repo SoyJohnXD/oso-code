@@ -29,7 +29,7 @@ export type ContinuationOutcome =
 
 export interface SessionEvent {
   type: string;
-  properties?: Record<string, unknown>;
+  data?: { sessionID?: string; parentID?: string };
 }
 
 type ChildPhase = "running" | "reported" | "completed";
@@ -65,11 +65,12 @@ const driving = new Set<string>();
 const heldRuns = new Map<string, HeldRun>();
 
 export function trackSessionEvent(event: SessionEvent, nowMs: number = Date.now()): void {
+  const { sessionID = "", parentID = "" } = event.data ?? {};
   if (event.type === "session.created") {
-    recordLaunchedChild(event.properties, nowMs);
+    recordLaunchedChild(sessionID, parentID, nowMs);
     return;
   }
-  const child = childSessions.get(sessionNamedBy(event));
+  const child = childSessions.get(sessionID);
   if (child === undefined || child.phase === "completed") {
     return;
   }
@@ -81,18 +82,10 @@ export function trackSessionEvent(event: SessionEvent, nowMs: number = Date.now(
   child.lastActivityMs = nowMs;
 }
 
-function recordLaunchedChild(properties: SessionEvent["properties"], nowMs: number): void {
-  const info = (properties as { info?: { id?: unknown; parentID?: unknown } } | undefined)?.info;
-  const id = info?.id;
-  const parentID = info?.parentID;
-  if (typeof id === "string" && id !== "" && typeof parentID === "string" && parentID !== "") {
-    childSessions.set(id, { parentID, startedMs: nowMs, lastActivityMs: nowMs, phase: "running" });
+function recordLaunchedChild(sessionID: string, parentID: string, nowMs: number): void {
+  if (sessionID !== "" && parentID !== "") {
+    childSessions.set(sessionID, { parentID, startedMs: nowMs, lastActivityMs: nowMs, phase: "running" });
   }
-}
-
-function sessionNamedBy(event: SessionEvent): string {
-  const id = (event.properties as { sessionID?: unknown } | undefined)?.sessionID;
-  return typeof id === "string" ? id : "";
 }
 
 function endsTheSession(event: SessionEvent): boolean {

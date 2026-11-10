@@ -197,11 +197,16 @@ describe("a verifier that delivers its report through SubagentHandback is captur
     assert.deepEqual(verdictsAfter(transcriptOf(TEXT_ONLY_LINE, HANDBACK_RESULT_LINE), ""), NONE_MALFORMED);
   });
 
-  test("a non-empty final message wins over a different handback", () => {
+  test("a final message carrying a verdict line wins over a different handback", () => {
     const transcript = transcriptOf(handbackLine("verdict: pass"));
     assert.deepEqual(verdictsAfter(transcript, "verdict: fail\nfindings: one"), [
       { verdict: "fail", verdict_shape: "valid" },
     ]);
+  });
+
+  test("a final prose message with no verdict line reads the handback and records pass as valid", () => {
+    const transcript = transcriptOf(handbackLine("verdict: pass\nevidence: one"), HANDBACK_RESULT_LINE);
+    assert.deepEqual(verdictsAfter(transcript, "Report handed back."), [{ verdict: "pass", verdict_shape: "valid" }]);
   });
 
   test("a handback whose message has no verdict line records none and malformed", () => {

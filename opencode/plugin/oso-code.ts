@@ -165,30 +165,17 @@ function endSessions(directory: string): void {
   sweepStaleWorktrees(directory);
 }
 
-interface HostEvent {
-  type: string;
-  data?: { sessionID?: string; parentID?: string };
-}
-
-function sessionEventOf(event: HostEvent): SessionEvent {
-  const { sessionID, parentID } = event.data ?? {};
-  if (event.type === "session.created") {
-    return { type: event.type, properties: { info: { id: sessionID, parentID } } };
-  }
-  return { type: event.type, properties: { sessionID } };
-}
-
 function followSessionEvents(ctx: Plugin.Context): () => void {
   const closing = new AbortController();
   void (async () => {
     try {
       for await (const event of ctx.event.subscribe({ signal: closing.signal })) {
-        const hostEvent = event as HostEvent;
-        const sessionID = hostEvent.data?.sessionID ?? "";
+        const sessionEvent = event as SessionEvent;
+        const sessionID = sessionEvent.data?.sessionID ?? "";
         if (sessionID !== "") {
           busSessions.add(sessionID);
         }
-        trackSessionEvent(sessionEventOf(hostEvent));
+        trackSessionEvent(sessionEvent);
       }
     } catch (err) {
       if (!closing.signal.aborted) {
@@ -207,7 +194,7 @@ async function continueOnIdle(
   const { directory, primary } = await sessionOf(ctx, sessions, sessionID);
   markSessionLive(sessionID, directory);
   dropSystemAdvice(pendingAdvice, sessionID);
-  trackSessionEvent({ type: "session.idle", properties: { sessionID } });
+  trackSessionEvent({ type: "session.idle", data: { sessionID } });
   if (primary) {
     await continueUnattendedRun({
       sessionID,

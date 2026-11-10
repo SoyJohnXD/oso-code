@@ -24,6 +24,7 @@ import {
   stateFileFor,
 } from "../state/store.ts";
 import { captureVerifierReport, isVerifierAgent } from "../verdict/capture.ts";
+import { parseAgentVerdict } from "../verdict/grammar.ts";
 import {
   hookSessionId,
   ownRunState,
@@ -94,18 +95,25 @@ function forgetStoppedAgent({ envelope }: GateRequest): GateOutcome<NoVerdictVer
 
 function captureVerifierStop(envelope: HookEnvelope): void {
   if (!isVerifierAgent(envelope.agentType)) return;
+  const transcript = agentTranscriptOf(envelope);
   captureVerifierReport({
     host: envelope.caller.host,
     cwd: envelope.cwd,
     session: hookSessionId(envelope),
-    model: launchedModelOf(envelope),
-    report: envelope.lastAssistantMessage === "" ? handbackReportOf(envelope) : envelope.lastAssistantMessage,
+    model: launchedModelOf(transcript),
+    report: verifierReportOf(envelope.lastAssistantMessage, transcript),
   });
 }
 
-function handbackReportOf(envelope: HookEnvelope): string {
-  if (!isNameToken(envelope.agentId)) return "";
-  const transcript = derivedTranscriptPath(envelope, envelope.agentId);
+function agentTranscriptOf(envelope: HookEnvelope): string {
+  return isNameToken(envelope.agentId) ? derivedTranscriptPath(envelope, envelope.agentId) : "";
+}
+
+function verifierReportOf(finalMessage: string, transcript: string): string {
+  return parseAgentVerdict(finalMessage).verdict === undefined ? handbackReportOf(transcript) : finalMessage;
+}
+
+function handbackReportOf(transcript: string): string {
   if (transcript === "") return "";
   const lines = (readFileIfPresent(transcript, "skip") ?? "").split("\n");
   const messages = lines.flatMap(handbackMessagesIn);
@@ -122,9 +130,7 @@ function handbackMessagesIn(line: string): string[] {
     .filter((message): message is string => typeof message === "string");
 }
 
-function launchedModelOf(envelope: HookEnvelope): string | null {
-  if (!isNameToken(envelope.agentId)) return null;
-  const transcript = derivedTranscriptPath(envelope, envelope.agentId);
+function launchedModelOf(transcript: string): string | null {
   if (transcript === "") return null;
   const meta = readFileIfPresent(transcript.replace(/\.jsonl$/, ".meta.json"), "skip");
   const model = meta === undefined ? undefined : jsonObjectOf(meta)?.["model"];

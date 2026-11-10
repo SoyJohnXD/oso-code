@@ -32,7 +32,7 @@ interface PostedTurns {
 }
 
 function launchedAmidstTheRun(childID: string, parentID: string): void {
-  trackSessionEvent({ type: "session.created", properties: { info: { id: childID, parentID } } });
+  trackSessionEvent({ type: "session.created", data: { sessionID: childID, parentID } });
 }
 
 function makeFixture(): RailFixture {
@@ -148,7 +148,7 @@ test("a wave child's idle is never mistaken for the run's own turn ending", asyn
   const fixture = makeFixture();
   try {
     armRun(fixture, ["auto=running"]);
-    trackSessionEvent({ type: "session.created", properties: { info: { id: "ses-child", parentID: "ses-wave-root" } } });
+    trackSessionEvent({ type: "session.created", data: { sessionID: "ses-child", parentID: "ses-wave-root" } });
     const host = postedTurns();
     const outcome = await idle(fixture, host, "ses-child");
     assert.deepEqual(outcome, { kind: "not-this-runs-session" });
@@ -195,7 +195,7 @@ test("a child completing re-drives the held run, and a later child completing re
     await idle(fixture, host, "ses-done-root");
     assert.deepEqual(host.orders, []);
     await underRailFixtureHome(fixture, async () => {
-      trackSessionEvent({ type: "session.idle", properties: { sessionID: "ses-done-child" } });
+      trackSessionEvent({ type: "session.idle", data: { sessionID: "ses-done-child" } });
       await yieldUntilRailReachesItsCap();
     });
     assert.deepEqual(host.orders, [CONTINUATION_ORDER], "the completed child re-drives the run held on it, once");
@@ -205,7 +205,7 @@ test("a child completing re-drives the held run, and a later child completing re
 
     launchedAmidstTheRun("ses-later-child", "ses-done-root");
     await underRailFixtureHome(fixture, async () => {
-      trackSessionEvent({ type: "session.deleted", properties: { sessionID: "ses-later-child" } });
+      trackSessionEvent({ type: "session.deleted", data: { sessionID: "ses-later-child" } });
     });
     await idle(fixture, host, "ses-done-root");
     assert.equal(host.orders.length, 2 * PUSHES_WITHOUT_PROGRESS_CAP, "the completed child is progress past the cap");
@@ -263,7 +263,7 @@ function idleAt(
 }
 
 function launchedChild(childID: string, parentID: string): void {
-  trackSessionEvent({ type: "session.created", properties: { info: { id: childID, parentID } } }, CHILD_LAUNCHED_AT_MS);
+  trackSessionEvent({ type: "session.created", data: { sessionID: childID, parentID } }, CHILD_LAUNCHED_AT_MS);
 }
 
 test("a child silent past the silence threshold is reported by its session id and released from the hold", async () => {
@@ -300,7 +300,7 @@ test("a child still active but in flight past the ceiling is reported as long-ru
     const advisories = streamedAdvisories();
     launchedChild("ses-long-child", "ses-long-root");
     trackSessionEvent(
-      { type: "session.status", properties: { sessionID: "ses-long-child", status: { type: "busy" } } },
+      { type: "session.status", data: { sessionID: "ses-long-child" } },
       CHILD_LAUNCHED_AT_MS + 170 * MINUTE_MS,
     );
 

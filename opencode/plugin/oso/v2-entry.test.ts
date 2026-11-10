@@ -242,7 +242,7 @@ test("the Cleanup setup returns closes the event iterator without a trace, and r
     await settled();
     assert.equal(host.eventSubscription()?.aborted, true);
     await underRailFixtureHome(fixture, async () => {
-      trackSessionEvent({ type: "session.idle", properties: { sessionID: "ses-held-child" } });
+      trackSessionEvent({ type: "session.idle", data: { sessionID: "ses-held-child" } });
       await settled();
     });
     assert.deepEqual(host.prompts(), []);
@@ -263,7 +263,7 @@ test("a child session's completion re-drives the run held on it while the plugin
     await underRailFixtureHome(fixture, async () => {
       await host.hook("session", "experimental.idle")({ sessionID: "ses-live-root", background: [] });
       assert.deepEqual(host.prompts(), []);
-      trackSessionEvent({ type: "session.idle", properties: { sessionID: "ses-live-child" } });
+      trackSessionEvent({ type: "session.idle", data: { sessionID: "ses-live-child" } });
       await settled();
     });
     assert.deepEqual(host.prompts(), [{ sessionID: "ses-live-root", text: CONTINUATION_ORDER }]);
