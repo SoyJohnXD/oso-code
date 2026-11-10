@@ -39,6 +39,6 @@ So the installed `ask` is the operator's gate and the tool needs no `options.per
 
 ## Consequences
 
-- The OpenCode 1 certify suites — `opencode-contract-bar`, `opencode-behavior-bar`, `opencode-wave-runner-smoke` and `opencode-prompt-free-posture` — are no longer run by the nightly. Measured on 2.2.6, the contract bar's fixture rows fail because the host dropped the `opencode debug agent` and `opencode debug skill` subcommands they drive, and the OpenCode 1 plugin shapes they read are gone. They are kept as the record of what the OpenCode 1 host measured until a decision ports or removes them.
-- The nightly drives the five `opencode-v2-*` suites against the pinned release asset, checksum-verified against the release's own `SHA256SUMS`, and keeps the rule that a missing binary is a not-run line named in the summary, never a pass.
+- The OpenCode 1 certify suites — `opencode-contract-bar`, `opencode-behavior-bar`, `opencode-wave-runner-smoke` and `opencode-prompt-free-posture` — are deleted, together with the support files only they used. Measured on 2.2.6, the contract bar's fixture rows fail because the host dropped the `opencode debug agent` and `opencode debug skill` subcommands they drive, and the OpenCode 1 plugin shapes they read are gone. What the OpenCode 1 host measured stays recorded in `docs/parity-opencode.md` and in this ADR's history, not in a suite that cannot run.
+- The nightly drives the six `opencode-v2-*` suites against the pinned release asset, checksum-verified against the release's own `SHA256SUMS`, and keeps the rule that a missing binary is a not-run line named in the summary, never a pass.
 - A host below 2.2.6 is refused at install and reported below the floor by verify, by the drift warning and by the certify lanes.

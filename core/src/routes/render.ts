@@ -29,7 +29,7 @@ export const MANIFEST_HOSTS: readonly ManifestHost[] = ["claude"];
 const CLAUDE_PLUGIN_ROOT = "${CLAUDE_PLUGIN_ROOT}";
 const NODE = "node";
 
-export type OpenCodeHook = "tool.execute.before" | "experimental.chat.system.transform" | "event" | "dispose";
+export type OpenCodeHook = "execute.before" | "context" | "compaction" | "cleanup";
 
 export type OpenCodeRoute = Readonly<{
   hook: OpenCodeHook;
@@ -39,10 +39,10 @@ export type OpenCodeRoute = Readonly<{
 }>;
 
 const OPENCODE_HOOKS: readonly OpenCodeHook[] = [
-  "tool.execute.before",
-  "experimental.chat.system.transform",
-  "event",
-  "dispose",
+  "execute.before",
+  "context",
+  "compaction",
+  "cleanup",
 ];
 
 export function openCodeRoutes(): readonly OpenCodeRoute[] {

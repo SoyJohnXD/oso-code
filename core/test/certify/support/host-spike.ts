@@ -15,6 +15,7 @@ const MCP_STUB_SOURCE = path.join(path.dirname(fileURLToPath(import.meta.url)), 
 export const MCP_SERVER_NAME = "stub";
 export const MCP_CODEMODE_SERVER_NAME = "scripted";
 const SCRIPTED_MODEL = "scripted/m";
+export const PATCH_TOOL_MODEL = "scripted/gpt-5";
 const WAVE_AGENT_FILE = "oso-applier.md";
 const WAVE_AGENT_CONTRACT = "---\ndescription: Stands in for the oso-applier wave child\nmode: subagent\n---\nRun the assignment you are given.\n";
 const FIRST_HOST_WITH_V2_PLUGINS = 2;
@@ -33,6 +34,8 @@ export type SpikeFixture = Readonly<{
   provider: ScriptedProvider;
   writeExtraPlugin: (fileName: string, source: string) => ExtraPlugin;
 }>;
+
+export type DriveOptions = Readonly<{ agent?: string; model?: string }>;
 
 export type ScenarioOutcome = Readonly<{
   run: SessionRun;
@@ -76,7 +79,10 @@ function providerConfig(provider: ScriptedProvider): string {
         npm: "@ai-sdk/openai-compatible",
         name: "Scripted",
         options: { baseURL: provider.baseURL, apiKey: "scripted" },
-        models: { m: { name: "Scripted", tool_call: true, limit: { context: 100000, output: 4000 } } },
+        models: {
+          m: { name: "Scripted", tool_call: true, limit: { context: 100000, output: 4000 } },
+          "gpt-5": { name: "Scripted patch model", tool_call: true, limit: { context: 100000, output: 4000 } },
+        },
       },
     },
   };
@@ -112,9 +118,16 @@ export async function disposeSpikeFixture(fixture: SpikeFixture): Promise<void> 
   fixture.sandbox.dispose();
 }
 
-function runStandaloneSession(binary: string, environment: NodeJS.ProcessEnv, project: string, prompt: string): Promise<SessionRun> {
+function runStandaloneSession(
+  binary: string,
+  environment: NodeJS.ProcessEnv,
+  project: string,
+  prompt: string,
+  { agent, model = SCRIPTED_MODEL }: DriveOptions,
+): Promise<SessionRun> {
+  const agentArguments = agent === undefined ? [] : ["--agent", agent];
   return new Promise((resolve) => {
-    const child = spawn(binary, ["run", "--standalone", "-m", SCRIPTED_MODEL, "--format", "json", prompt], {
+    const child = spawn(binary, ["run", "--standalone", "-m", model, "--format", "json", ...agentArguments, prompt], {
       cwd: project,
       env: environment,
       stdio: ["ignore", "pipe", "pipe"],
@@ -156,6 +169,7 @@ export async function driveScenario(
   name: string,
   toolName: string,
   input: Readonly<Record<string, unknown>>,
+  options: DriveOptions = {},
 ): Promise<ScenarioOutcome> {
   const notesPath = path.join(fixture.sandbox.root, `${name}.notes.jsonl`);
   fixture.provider.drainRequests();
@@ -164,6 +178,7 @@ export async function driveScenario(
     { ...fixture.environment, PWD: fixture.project, OSO_SPIKE_NOTES: notesPath, OSO_SPIKE_STATE_DIRECTORY: path.join(fixture.sandbox.home, ".local", "state", "oso-code") },
     fixture.project,
     scriptedPrompt(toolName, input),
+    options,
   );
   const requests = fixture.provider.drainRequests();
   return {

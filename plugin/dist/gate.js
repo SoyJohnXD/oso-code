@@ -111,84 +111,84 @@ var GATE_ROWS = [
     event: "PreToolUse",
     script: "block-commit-until-green.sh",
     wiring: { claude: "wired", opencode: "wired" },
-    mechanism: { claude: "subprocess", opencode: "tool.execute.before" }
+    mechanism: { claude: "subprocess", opencode: "execute.before" }
   },
   {
     gate: "edits",
     event: "PreToolUse",
     script: "block-edits-without-slice.sh",
     wiring: { claude: "wired", opencode: "wired" },
-    mechanism: { claude: "subprocess", opencode: "tool.execute.before" }
+    mechanism: { claude: "subprocess", opencode: "execute.before" }
   },
   {
     gate: "unknown",
     event: "PreToolUse",
     script: "block-unknown-tool.sh",
     wiring: { claude: "none", opencode: "wired" },
-    mechanism: { claude: "none", opencode: "tool.execute.before" }
+    mechanism: { claude: "none", opencode: "execute.before" }
   },
   {
     gate: "autocontinue",
     event: "Stop",
     script: "auto-continue.sh",
     wiring: { claude: "wired", opencode: "none" },
-    mechanism: { claude: "subprocess", opencode: "native" }
+    mechanism: { claude: "subprocess", opencode: "experimental.idle" }
   },
   {
     gate: "statebin",
     event: "SessionStart",
     script: "persist-state-bin.sh",
     wiring: { claude: "wired", opencode: "none" },
-    mechanism: { claude: "subprocess", opencode: "native" }
+    mechanism: { claude: "subprocess", opencode: "create.before" }
   },
   {
     gate: "stale",
     event: "SessionStart",
     script: "warn-stale-state.sh",
     wiring: { claude: "wired", opencode: "wired" },
-    mechanism: { claude: "subprocess", opencode: "experimental.chat.system.transform" }
+    mechanism: { claude: "subprocess", opencode: "context" }
   },
   {
     gate: "version",
     event: "SessionStart",
     script: "warn-stale-version.sh",
     wiring: { claude: "wired", opencode: "wired" },
-    mechanism: { claude: "subprocess", opencode: "experimental.chat.system.transform" }
+    mechanism: { claude: "subprocess", opencode: "context" }
   },
   {
     gate: "teardown",
     event: "SessionEnd",
     script: "cleanup-state.sh",
     wiring: { claude: "wired", opencode: "wired" },
-    mechanism: { claude: "subprocess", opencode: "dispose" }
+    mechanism: { claude: "subprocess", opencode: "cleanup" }
   },
   {
     gate: "proddeploy",
     event: "PreToolUse",
     script: "block-prod-deploy.sh",
     wiring: { claude: "wired", opencode: "wired" },
-    mechanism: { claude: "subprocess", opencode: "tool.execute.before" }
+    mechanism: { claude: "subprocess", opencode: "execute.before" }
   },
   {
     gate: "reanchor",
     event: "SessionStart",
     script: "reanchor-after-compact.sh",
     wiring: { claude: "wired", opencode: "wired" },
-    mechanism: { claude: "subprocess", opencode: "event" }
+    mechanism: { claude: "subprocess", opencode: "compaction" }
   },
   {
     gate: "subagentstart",
     event: "SubagentStart",
     script: "in-flight-start",
     wiring: { claude: "wired", opencode: "none" },
-    mechanism: { claude: "subprocess", opencode: "none" }
+    mechanism: { claude: "subprocess", opencode: "event" }
   },
   {
     gate: "subagentstop",
     event: "SubagentStop",
     script: "in-flight-stop",
     wiring: { claude: "wired", opencode: "none" },
-    mechanism: { claude: "subprocess", opencode: "none" }
+    mechanism: { claude: "subprocess", opencode: "event" }
   }
 ];
 var TOOL_ROWS = [
@@ -203,8 +203,6 @@ var TOOL_ROWS = [
   { gate: "unknown", names: { claude: "none", opencode: "shell" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "patch" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "subagent" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", opencode: "list_mcp_resources" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", opencode: "read_mcp_resource" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "engram_mem_search" }, capability: "read", mandated: "yes" },
   { gate: "unknown", names: { claude: "none", opencode: "engram_mem_get_observation" }, capability: "read", mandated: "yes" },
   { gate: "unknown", names: { claude: "none", opencode: "engram_mem_save" }, capability: "write", mandated: "yes" },
@@ -230,7 +228,6 @@ var TOOL_ROWS = [
   { gate: "unknown", names: { claude: "none", opencode: "webfetch" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "websearch" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "question" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", opencode: "lsp" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "oso_plan_approve" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "oso_plan_cancel" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "oso_wave" }, capability: "write", mandated: "no" }

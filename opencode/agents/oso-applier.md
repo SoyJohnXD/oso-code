@@ -3,7 +3,7 @@ description: "Implements exactly one oso-code assignment: a plan slice, debt cle
 mode: subagent
 hidden: true
 permission:
-  task: deny
+  subagent: deny
   question: deny
   todowrite: deny
   webfetch: deny

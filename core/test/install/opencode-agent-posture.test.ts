@@ -172,6 +172,26 @@ describe("the edit verdict every rendered block now carries, the applier's bound
   });
 });
 
+describe("the tool ids a block denies are the ones OpenCode 2 offers, never an id OpenCode 1 retired", () => {
+  const RETIRED_TOOL_IDS = ["bash", "task"];
+
+  test("no shipped block names a retired tool id", () => {
+    const named = AGENT_ROLES.flatMap((role) =>
+      permissionBlockOf(path.join(SHIPPED_AGENTS, `${role.id}.md`))
+        .map((line) => line.slice(0, -": deny".length))
+        .filter((key) => RETIRED_TOOL_IDS.includes(key))
+        .map((key) => `${role.id}:${key}`),
+    );
+    assert.deepEqual(named, []);
+  });
+
+  test("every agent denies subagent and todowrite, and only the doubt-pass also denies shell", () => {
+    assert.deepEqual(rolesDenying("subagent"), AGENT_ROLES.map((role) => role.id));
+    assert.deepEqual(rolesDenying("todowrite"), AGENT_ROLES.map((role) => role.id));
+    assert.deepEqual(rolesDenying("shell"), ["oso-doubt-pass"]);
+  });
+});
+
 describe("the owned-server row is red before it is believed green", () => {
   test("the shipped agent tree reads closed", () => {
     assert.equal(openCodeAgentMcpSurfaceStatus(agentTreeCopy("clean")), "closed");
@@ -237,6 +257,10 @@ describe("an install carrying a profile writes the agent model keys the mirror n
     assert.equal((agents["oso-triage"] as ConfigDocument)["model"], OPERATOR_CONFIG_PROBE.sessionModel);
   });
 });
+
+function rolesDenying(tool: string): string[] {
+  return AGENT_ROLES.filter((role) => permissionBlockOf(path.join(SHIPPED_AGENTS, `${role.id}.md`)).includes(`${tool}: deny`)).map((role) => role.id);
+}
 
 function rolesKeeping(server: string): string[] {
   return AGENT_ROLES.filter((role) => (role.opencode.mcpServersTheClaudeTwinLists as readonly string[]).includes(server)).map((role) => role.id);

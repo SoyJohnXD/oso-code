@@ -34,7 +34,7 @@ const OPERATOR_SEED = {
     read: "allow",
     question: "deny",
     skill: { "operator-skill": "allow", "oso-plan": "allow" },
-    task: { "operator-*": "deny", "*": "deny" },
+    subagent: { "operator-*": "deny", "*": "deny" },
     external_directory: { "~/operator-tree/**": "allow", "~/.config/opencode/**": "ask" },
   },
   mcp: {
@@ -49,7 +49,7 @@ const EXPECTED_PRESERVED_ORDER = [
   "notes",
   "permission.read",
   "permission.skill.operator-skill",
-  "permission.task.operator-*",
+  "permission.subagent.operator-*",
   "permission.external_directory.~/operator-tree/**",
   "permission.external_directory.~/.config/opencode/**",
   "mcp.operator-server",
@@ -77,8 +77,15 @@ describe("the eight ownership rows, each spelled here and then read back off the
     assert.deepEqual(skills, { "operator-skill": "allow", "oso-plan": "deny", "oso-quick": "deny", "oso-debug": "deny", "oso-roadmap": "deny" });
   });
 
-  test('row 3 — permission.task["*"] is overwritten: deny becomes allow, the operator pattern untouched', () => {
-    assert.deepEqual(plainObject(permissionOf(portSeeded())["task"]), { "operator-*": "deny", "*": "allow" });
+  test('row 3 — permission.subagent["*"] is overwritten: deny becomes allow, the operator pattern untouched', () => {
+    assert.deepEqual(plainObject(permissionOf(portSeeded())["subagent"]), { "operator-*": "deny", "*": "allow" });
+  });
+
+  test("row 3 — an operator's legacy permission.task container is no installer key: it passes through untouched beside the owned subagent container", () => {
+    const legacy = { "*": "deny" };
+    const merged = portOf({ permission: { task: legacy } });
+    assert.deepEqual(permissionOf(merged)["task"], legacy);
+    assert.deepEqual(plainObject(permissionOf(merged)["subagent"]), { "*": "allow" });
   });
 
   test("row 4 — mcp.* is insert-if-missing: an operator's own engram declaration survives, context7 and fallow are added", () => {

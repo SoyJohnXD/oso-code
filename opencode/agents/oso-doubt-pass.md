@@ -6,8 +6,8 @@ permission:
   glob: deny
   grep: deny
   edit: deny
-  bash: deny
-  task: deny
+  shell: deny
+  subagent: deny
   question: deny
   todowrite: deny
   webfetch: deny

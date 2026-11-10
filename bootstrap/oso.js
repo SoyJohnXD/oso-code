@@ -1809,37 +1809,37 @@ var AGENT_ROLES = [
   {
     id: "oso-applier",
     claude: { description: "Implements exactly one oso-code assignment \u2014 a plan slice, a debt cleanup, judge findings, or a diagnosis packaged as a ledger. Launched by the /plan, /quick and /debug orchestrators \u2014 not for direct use.", model: "sonnet", tools: ["Read", "Edit", "Write", "NotebookEdit", "Glob", "Grep", "Bash", "mcp__plugin_oso-code_context7__resolve-library-id", "mcp__plugin_oso-code_context7__query-docs"] },
-    opencode: { description: "Implements exactly one oso-code assignment: a plan slice, debt cleanup, accepted judge findings, or a diagnosis packaged as a ledger. Launched by the plan, quick, and debug orchestrators; not for direct use.", denies: ["task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: ["context7"] }
+    opencode: { description: "Implements exactly one oso-code assignment: a plan slice, debt cleanup, accepted judge findings, or a diagnosis packaged as a ledger. Launched by the plan, quick, and debug orchestrators; not for direct use.", denies: ["subagent", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: ["context7"] }
   },
   {
     id: VERIFIER_AGENT,
     claude: { description: "Independently verifies one implemented slice \u2014 or one merged wave at its integration gate \u2014 against its criteria and the project's zero-warnings bar. Judges only \u2014 never edits files. Launched by the /plan and /debug orchestrators after each apply.", model: "sonnet", tools: ["Read", "Glob", "Grep", "Bash"] },
-    opencode: { description: "Independently verifies one implemented slice or one merged wave against its criteria and the project's zero-warning bar. Judges only and never edits source files.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
+    opencode: { description: "Independently verifies one implemented slice or one merged wave against its criteria and the project's zero-warning bar. Judges only and never edits source files.", denies: ["edit", "subagent", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
   },
   {
     id: "oso-integrator",
     claude: { description: "Merges one wave of green, committed slice branches into the main checkout, then tears down their worktrees and deletes those branches. Never resolves a conflict, never judges. Launched by the /plan orchestrator \u2014 not for direct use.", model: "sonnet", tools: ["Read", "Bash"] },
-    opencode: { description: "Merges one wave of green committed slice branches into the main checkout, then removes their worktrees and deletes their branches. Never resolves conflicts and never judges.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
+    opencode: { description: "Merges one wave of green committed slice branches into the main checkout, then removes their worktrees and deletes their branches. Never resolves conflicts and never judges.", denies: ["edit", "subagent", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
   },
   {
     id: "oso-debt-sweep",
     claude: null,
-    opencode: { description: "Fresh-context judge for the debt-sweep skill: judges code debt and frozen-ledger conformance separately and never edits.", denies: ["edit", "fallow_fix_apply", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: ["fallow"] }
+    opencode: { description: "Fresh-context judge for the debt-sweep skill: judges code debt and frozen-ledger conformance separately and never edits.", denies: ["edit", "fallow_fix_apply", "subagent", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: ["fallow"] }
   },
   {
     id: "oso-doubt-pass",
     claude: null,
-    opencode: { description: "Fresh-context judge for the doubt-pass skill: attacks a candidate ledger using only intent, surface map, and bare decisions, and never edits.", denies: ["glob", "grep", "edit", "bash", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
+    opencode: { description: "Fresh-context judge for the doubt-pass skill: attacks a candidate ledger using only intent, surface map, and bare decisions, and never edits.", denies: ["glob", "grep", "edit", "shell", "subagent", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
   },
   {
     id: "oso-security-reviewer",
     claude: null,
-    opencode: { description: "Fresh-context judge for the security-pass skill: reviews the supplied change surface as a judge and never edits, commits, or asks back.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
+    opencode: { description: "Fresh-context judge for the security-pass skill: reviews the supplied change surface as a judge and never edits, commits, or asks back.", denies: ["edit", "subagent", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
   },
   {
     id: "oso-triage",
     claude: null,
-    opencode: { description: "Fresh-context judge for the triage skill: establishes read-only attribution for one red plan-wave check and never diagnoses or fixes beyond it.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
+    opencode: { description: "Fresh-context judge for the triage skill: establishes read-only attribution for one red plan-wave check and never diagnoses or fixes beyond it.", denies: ["edit", "subagent", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
   }
 ];
 
@@ -1848,8 +1848,8 @@ var OPENCODE_CONFIG_SCHEMA_URL = "https://opencode.ai/config.json";
 var CONTEXT7_MCP_URL = "https://mcp.context7.com/mcp";
 var OWNED_SKILL_MODES = ["oso-plan", "oso-quick", "oso-debug", "oso-roadmap"];
 var OWNED_SKILL_VERDICT = "deny";
-var OWNED_TASK_PATTERN = "*";
-var OWNED_TASK_VERDICT = "allow";
+var OWNED_SUBAGENT_PATTERN = "*";
+var OWNED_SUBAGENT_VERDICT = "allow";
 var HARNESS_EXTERNAL_DIRECTORIES = ["~/.config/opencode/skill/**", "~/.local/share/opencode/worktree/**"];
 var HARNESS_EXTERNAL_DIRECTORY_VERDICT = "allow";
 var HARNESS_OWNED_TREES_NO_AGENT_MAY_EDIT = ["**/.config/opencode/skill/**", "**/.local/state/oso-code/**"];
@@ -1901,7 +1901,7 @@ var PLUGIN_KEY = "plugin";
 var PERMISSION_KEY = "permission";
 var MCP_KEY = "mcp";
 var SKILL_KEY = "skill";
-var TASK_KEY = "task";
+var SUBAGENT_KEY = "subagent";
 var EXTERNAL_DIRECTORY_KEY = "external_directory";
 var EDIT_KEY = "edit";
 var DOOM_LOOP_KEY = "doom_loop";
@@ -1973,14 +1973,14 @@ function mergeOpenCodeConfig(existing, fallowCommand, profileRoles = {}) {
   insertIfMissing(document, SCHEMA_KEY, OPENCODE_CONFIG_SCHEMA_URL);
   createPluginArrayIfAbsent(document);
   const permission = ownedContainer(document, PERMISSION_KEY);
-  const ownedPermissionContainers = [SKILL_KEY, TASK_KEY, EXTERNAL_DIRECTORY_KEY, EDIT_KEY];
+  const ownedPermissionContainers = [SKILL_KEY, SUBAGENT_KEY, EXTERNAL_DIRECTORY_KEY, EDIT_KEY];
   preservedKeys.push(...foreignKeysOf(permission, [PERMISSION_KEY], (name) => name in OWNED_PERMISSION_VALUES || ownedPermissionContainers.includes(name)));
   const skills = ownedContainer(permission, SKILL_KEY);
   preservedKeys.push(...foreignKeysOf(skills, [PERMISSION_KEY, SKILL_KEY], (name) => OWNED_SKILL_MODES.includes(name)));
   for (const mode of OWNED_SKILL_MODES) skills[mode] = OWNED_SKILL_VERDICT;
-  const delegations = ownedContainer(permission, TASK_KEY);
-  preservedKeys.push(...foreignKeysOf(delegations, [PERMISSION_KEY, TASK_KEY], (pattern) => pattern === OWNED_TASK_PATTERN));
-  delegations[OWNED_TASK_PATTERN] = OWNED_TASK_VERDICT;
+  const delegations = ownedContainer(permission, SUBAGENT_KEY);
+  preservedKeys.push(...foreignKeysOf(delegations, [PERMISSION_KEY, SUBAGENT_KEY], (pattern) => pattern === OWNED_SUBAGENT_PATTERN));
+  delegations[OWNED_SUBAGENT_PATTERN] = OWNED_SUBAGENT_VERDICT;
   const externalDirectories = ownedContainer(permission, EXTERNAL_DIRECTORY_KEY);
   const harnessDirectories = HARNESS_EXTERNAL_DIRECTORIES;
   preservedKeys.push(...foreignKeysOf(externalDirectories, [PERMISSION_KEY, EXTERNAL_DIRECTORY_KEY], (pattern) => harnessDirectories.includes(pattern)));
@@ -2185,7 +2185,7 @@ var CONFIG_BACKUP_LABEL = "config";
 var GLOBAL_MARKER_START = "<!-- oso-code:start -->";
 var GLOBAL_MARKER_END = "<!-- oso-code:end -->";
 var AWK_BLANK_LINE = /^[ \t]*$/;
-var REPAIRABLE_NESTED_PATHS = [["permission"], ["permission", "skill"], ["permission", "task"], ["mcp"]];
+var REPAIRABLE_NESTED_PATHS = [["permission"], ["permission", "skill"], ["permission", "subagent"], ["mcp"]];
 function opencodePathsFor(homeDirectory2, environment) {
   const configHome = path7.join(environment["XDG_CONFIG_HOME"] ?? path7.join(homeDirectory2, ".config"), "opencode");
   const stateRoot = path7.join(homeDirectory2, ".local", "state", "oso-code");

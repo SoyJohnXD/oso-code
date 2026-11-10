@@ -101,7 +101,7 @@ function markSessionLive(sessionID: string, directory: string): void {
       worktrees: [],
     });
   } catch (err) {
-    recordTrace({ origin: "session.idle", detail: messageOf(err), severity: "advisory", sessionID });
+    recordTrace({ origin: "experimental.idle", detail: messageOf(err), severity: "advisory", sessionID });
   }
 }
 
@@ -250,14 +250,14 @@ async function setup(ctx: Plugin.Context): Promise<() => void> {
     try {
       Object.assign(creation.env, identityEnvFor(creation.cwd));
     } catch (err) {
-      recordTrace({ origin: "shell.env", detail: messageOf(err), severity: "advisory" });
+      recordTrace({ origin: "create.before", detail: messageOf(err), severity: "advisory" });
     }
   });
   await ctx.session.hook("experimental.idle", async ({ sessionID }) => {
     try {
       await continueOnIdle(ctx, sessions, sessionID);
     } catch (err) {
-      recordTrace({ origin: "session.idle", detail: messageOf(err), severity: "advisory", sessionID });
+      recordTrace({ origin: "experimental.idle", detail: messageOf(err), severity: "advisory", sessionID });
     }
   });
   await ctx.session.hook("context", async ({ sessionID, system }) => {
@@ -269,7 +269,7 @@ async function setup(ctx: Plugin.Context): Promise<() => void> {
       armSessionAdvice(sessionID, directory);
       system.push(...queuedSystemAdvice(pendingAdvice, sessionID).map(systemPartOf));
     } catch (err) {
-      recordTrace({ origin: "system.transform", detail: messageOf(err), severity: "advisory", sessionID });
+      recordTrace({ origin: "context", detail: messageOf(err), severity: "advisory", sessionID });
     }
   });
   await ctx.session.hook("compaction", async ({ sessionID, system }) => {

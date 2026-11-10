@@ -11,9 +11,11 @@ import {
   createSpikeFixture,
   disposeSpikeFixture,
   driveScenario,
+  type DriveOptions,
   MCP_CODEMODE_SERVER_NAME,
   MCP_SERVER_NAME,
   notesOfKind,
+  PATCH_TOOL_MODEL,
   v2LaneCause,
   type ScenarioOutcome,
   type SpikeFixture,
@@ -35,7 +37,12 @@ const DEPLOY_COMMAND = "vercel --prod";
 const SEEDED_FILE = "README.seed";
 const RED_SLICE = ["mode=plan", "active_slice=4", "verify_green=false"];
 const VETO_CODE = "try { return await tools.spike_hidden({ text: 'veto' }); } catch (error) { return 'caught:' + String(error && error.message); }";
-const HARNESS_TARGET = (host: SpikeFixture): string => path.join(host.sandbox.home, ".config", "opencode", "skill", "probe.md");
+const HARNESS_TARGET = (host: SpikeFixture, file = "probe.md"): string => path.join(host.sandbox.home, ".config", "opencode", "skill", file);
+const PATCHED_HARNESS_FILE = "patched.md";
+
+function addFilePatch(target: string): string {
+  return `*** Begin Patch\n*** Add File: ${target}\n+x\n*** End Patch`;
+}
 
 const probe: OpenCodeBinaryProbe | undefined = CERTIFY
   ? resolveOpenCodeBinaryProbe(process.env[OVERRIDE_ENV_VAR], SUPPORTED_OPENCODE_VERSION, process.env)
@@ -66,12 +73,12 @@ describe("the built OpenCode adapter bundle's gates engage on an isolated OpenCo
     const host = await createSpikeFixture();
     fixture = host;
     host.writeExtraPlugin(BUNDLE_FILE, readFileSync(BUNDLE_SOURCE, "utf8"));
-    const drive = async (name: string, pairs: readonly string[], tool: string, input: Record<string, unknown>): Promise<void> => {
+    const drive = async (name: string, pairs: readonly string[], tool: string, input: Record<string, unknown>, options: DriveOptions = {}): Promise<void> => {
       const project = host.sandbox.seedGitRepository(name, { [SEEDED_FILE]: "seed\n" });
       projects.set(name, project);
       armProject(host, project, pairs);
       const before = probeRepositoryCommitCount(project);
-      outcomes.set(name, await driveScenario(resolved as ResolvedProbe, { ...host, project }, name, tool, input));
+      outcomes.set(name, await driveScenario(resolved as ResolvedProbe, { ...host, project }, name, tool, input, options));
       commitCounts.set(name, [before, probeRepositoryCommitCount(project)]);
     };
     const awaitingSlice = ["mode=plan"];
@@ -86,6 +93,11 @@ describe("the built OpenCode adapter bundle's gates engage on an isolated OpenCo
     await drive("execute-write", RED_SLICE, "execute", { code: "return await tools.write({ path: 'viaexec.txt', content: 'x' });" });
     await drive("execute-mcp", RED_SLICE, "execute", { code: `return await tools.${MCP_CODEMODE_SERVER_NAME}.ping({});` });
     await drive("execute-veto", RED_SLICE, "execute", { code: VETO_CODE });
+    const patchModel = { model: PATCH_TOOL_MODEL };
+    await drive("patch-offered", awaitingSlice, "spike_echo", { text: "offered" }, patchModel);
+    await drive("patch-unarmed", awaitingSlice, "patch", { patchText: addFilePatch("created.txt") }, patchModel);
+    await drive("patch-harness", ["mode=quick"], "patch", { patchText: addFilePatch(HARNESS_TARGET(host, PATCHED_HARNESS_FILE)) }, patchModel);
+    await drive("patch-repository", ["mode=quick"], "patch", { patchText: addFilePatch("created.txt") }, patchModel);
     await drive("deploy", ["auto=running", "auto_change=gate-probe"], "shell", { command: DEPLOY_COMMAND, description: "probe" });
   });
 
@@ -140,6 +152,30 @@ describe("the built OpenCode adapter bundle's gates engage on an isolated OpenCo
     if (lane(t) || fixture === undefined) return;
     assert.match(refusalOf(outcomeOf("harness-write")), /installed oso-code harness tree/);
     assert.equal(existsSync(HARNESS_TARGET(fixture)), false);
+  });
+
+  test("a gpt-* model is offered patch instead of edit and write", CERTIFY_GUARD, (t) => {
+    if (lane(t)) return;
+    const offered = outcomeOf("patch-offered").offeredTools;
+    assert.ok(offered.includes("patch"), offered.join(", "));
+    assert.ok(!offered.includes("edit") && !offered.includes("write"), offered.join(", "));
+  });
+
+  test("while a plan awaits its slice, a patch call is refused and creates nothing", CERTIFY_GUARD, (t) => {
+    if (lane(t)) return;
+    assert.match(refusalOf(outcomeOf("patch-unarmed")), /oso-code/);
+    assert.equal(existsSync(path.join(projectOf("patch-unarmed"), "created.txt")), false);
+  });
+
+  test("a patch naming a file in the installed harness tree is refused naming the tree, and creates nothing", CERTIFY_GUARD, (t) => {
+    if (lane(t) || fixture === undefined) return;
+    assert.match(refusalOf(outcomeOf("patch-harness")), /installed oso-code harness tree/);
+    assert.equal(existsSync(HARNESS_TARGET(fixture, PATCHED_HARNESS_FILE)), false);
+  });
+
+  test("a patch naming a repository file passes when no gate is armed against it, and the file is created", CERTIFY_GUARD, (t) => {
+    if (lane(t)) return;
+    assert.equal(existsSync(path.join(projectOf("patch-repository"), "created.txt")), true, outcomeOf("patch-repository").toolResults.join("\n"));
   });
 
   test("a production-deploy-shaped shell call is refused while an unattended run is armed", CERTIFY_GUARD, (t) => {

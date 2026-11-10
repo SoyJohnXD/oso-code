@@ -307,8 +307,8 @@ test("envelope: the shell command line becomes the command the lexer reads", () 
 });
 
 test("envelope: a command-bearing tool without a script keeps its command", () => {
-  const envelope = composeEnvelope(...toolCall("patch", { command: "patch x" }));
-  assert.equal(envelope.commandLine, "patch x");
+  const envelope = composeEnvelope(...toolCall("shell", { command: "echo x" }));
+  assert.equal(envelope.commandLine, "echo x");
 });
 
 test("envelope: the path argument is the file the edits gate judges, and its absence is the empty name", () => {
@@ -362,7 +362,7 @@ test("matcher: an edits matcher applies to the native writers and nothing else",
 function gatesDenying(fixture: Fixture, tool: string): string[] {
   const [input, output] = toolCall(tool, { path: join(fixture.repo, "a.ts") });
   return routes
-    .filter((route) => route.hook === "tool.execute.before" && matchesTool(route.matcher, tool))
+    .filter((route) => route.hook === "execute.before" && matchesTool(route.matcher, tool))
     .filter((route) => inHome(fixture, () => runToolGate(route, { ...input, cwd: fixture.repo }, output)).kind === "deny")
     .map((route) => route.gate);
 }

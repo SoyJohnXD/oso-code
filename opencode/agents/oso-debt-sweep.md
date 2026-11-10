@@ -5,7 +5,7 @@ hidden: true
 permission:
   edit: deny
   fallow_fix_apply: deny
-  task: deny
+  subagent: deny
   question: deny
   todowrite: deny
   webfetch: deny

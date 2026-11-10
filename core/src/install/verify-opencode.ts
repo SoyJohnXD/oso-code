@@ -302,7 +302,7 @@ export function stageOpenCodeFixture(input: VerifyOpenCodeInput): FixtureStaging
   return { kind: "failed", result: `install-failed:${lastReportLine(outcome.report)}` };
 }
 
-export function fixtureShimsIn(root: string): string {
+function fixtureShimsIn(root: string): string {
   return path.join(root, FIXTURE_SHIMS_DIRECTORY);
 }
 
@@ -314,7 +314,7 @@ export function writeFixtureEngramShim(directory: string): string {
   return shim;
 }
 
-export function fixtureEnvironmentFor(environment: NodeJS.ProcessEnv, home: string, root: string): NodeJS.ProcessEnv {
+function fixtureEnvironmentFor(environment: NodeJS.ProcessEnv, home: string, root: string): NodeJS.ProcessEnv {
   const inherited = environment["PATH"] ?? "";
   const shims = fixtureShimsIn(root);
   return {

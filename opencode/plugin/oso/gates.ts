@@ -168,7 +168,7 @@ export function runToolGate(
 
 export function firstToolGateRefusal(input: ToolExecuteInput, output: ToolExecuteOutput): string | undefined {
   for (const route of routes) {
-    if (route.hook !== "tool.execute.before" || !matchesTool(route.matcher, input.tool)) {
+    if (route.hook !== "execute.before" || !matchesTool(route.matcher, input.tool)) {
       continue;
     }
     const verdict = runToolGate(route, input, output);

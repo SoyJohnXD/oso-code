@@ -98,7 +98,7 @@ jobs:
           cd core
           mkdir -p "$RUNNER_TEMP/certify-tap"
           overall=0
-          for suite in opencode-v2-host-spike opencode-v2-plugin-load opencode-v2-gates-engage opencode-v2-tools opencode-v2-lifecycle; do
+          for suite in opencode-v2-host-spike opencode-v2-plugin-load opencode-v2-gates-engage opencode-v2-tools opencode-v2-lifecycle opencode-v2-agent-permissions; do
             node --import ./test/support/sandbox-env.mjs --experimental-strip-types --test --test-reporter=tap "test/certify/${suite}.test.ts" \
               > "$RUNNER_TEMP/certify-tap/${suite}.tap" 2>&1 || overall=1
             cat "$RUNNER_TEMP/certify-tap/${suite}.tap"

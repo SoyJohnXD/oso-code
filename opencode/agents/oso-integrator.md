@@ -4,7 +4,7 @@ mode: subagent
 hidden: true
 permission:
   edit: deny
-  task: deny
+  subagent: deny
   question: deny
   todowrite: deny
   webfetch: deny

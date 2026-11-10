@@ -28,8 +28,6 @@ const RESIDUE_BY_FILE: ReadonlyMap<string, Residue> = new Map([
   ["core/test/gates/teardown-worktrees.test.ts", { residue: "citation", keptBy: "Decision 9: line-free provenance in a case title" }],
   ["core/test/port/git-call.test.ts", { residue: "citation", keptBy: "Decision 9: line-free provenance in a case title" }],
   ["core/test/port/lexer.test.ts", { residue: "citation", keptBy: "Decision 9: line-free provenance in a case title" }],
-  ["core/test/certify/opencode-contract-bar.test.ts", { residue: "citation", keptBy: "Decision 9: line-free provenance naming the bash bar this suite ported" }],
-  ["core/test/certify/opencode-behavior-bar.test.ts", { residue: "citation", keptBy: "Decision 9: line-free provenance naming the bash bar this suite ported" }],
   ["core/test/support/repository-paths.test.ts", { residue: "identifier", keptBy: "C4-S3: a retired path as pure string-transform fixture data, never loaded" }],
 ]);
 

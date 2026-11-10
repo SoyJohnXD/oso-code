@@ -142,18 +142,18 @@ describe("merge_global_agents: the trailing-blank trim, the blank separator, and
 describe("keysRecordedButMissing: the four nested paths repair reads, and the containers it never restores as keys", () => {
   const recorded: ConfigDocument = {
     theme: "operator",
-    permission: { read: "allow", skill: { mine: "allow" }, task: { "mine-*": "deny" } },
+    permission: { read: "allow", skill: { mine: "allow" }, subagent: { "mine-*": "deny" } },
     mcp: { mine: { command: ["x"] } },
   };
 
-  test("names a top-level key, a permission key, a skill mode, a task pattern and an mcp server, in that order", () => {
+  test("names a top-level key, a permission key, a skill mode, a subagent pattern and an mcp server, in that order", () => {
     const missing = keysRecordedButMissing(recorded, {});
-    assert.deepEqual(missing.map((key) => key.keyPath), ["theme", "permission.read", "permission.skill.mine", "permission.task.mine-*", "mcp.mine"]);
+    assert.deepEqual(missing.map((key) => key.keyPath), ["theme", "permission.read", "permission.skill.mine", "permission.subagent.mine-*", "mcp.mine"]);
   });
 
-  test("never names permission, mcp, permission.skill or permission.task themselves, since those are containers", () => {
+  test("never names permission, mcp, permission.skill or permission.subagent themselves, since those are containers", () => {
     const named = keysRecordedButMissing(recorded, {}).map((key) => key.keyPath);
-    for (const container of ["permission", "mcp", "permission.skill", "permission.task"]) assert.equal(named.includes(container), false);
+    for (const container of ["permission", "mcp", "permission.skill", "permission.subagent"]) assert.equal(named.includes(container), false);
   });
 
   test("names nothing when the live config already holds every recorded key", () => {
@@ -163,7 +163,7 @@ describe("keysRecordedButMissing: the four nested paths repair reads, and the co
   test("restoring appends each key to its own container, leaving what is already there in place", () => {
     const live: ConfigDocument = { permission: { write: "deny" } };
     const restored = withRestoredKeys(live, keysRecordedButMissing(recorded, live));
-    assert.deepEqual(restored["permission"], { write: "deny", read: "allow", skill: { mine: "allow" }, task: { "mine-*": "deny" } });
+    assert.deepEqual(restored["permission"], { write: "deny", read: "allow", skill: { mine: "allow" }, subagent: { "mine-*": "deny" } });
     assert.deepEqual(restored["mcp"], { mine: { command: ["x"] } });
   });
 });

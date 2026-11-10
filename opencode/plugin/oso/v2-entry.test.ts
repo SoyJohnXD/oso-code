@@ -110,6 +110,20 @@ test("shell create.before publishes the identity variables and OSO_STATE_BIN der
   }
 });
 
+test("a shell create.before that cannot publish the identity is traced under the hook's own name and never thrown", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "oso-v2-shell-trace-"));
+  const traced = mock.method(console, "error", () => {});
+  try {
+    const host = fakeHostContext({ directory: cwd });
+    await entry.setup(host.context);
+    await host.hook("shell", "create.before")({ command: "echo", cwd: undefined, timeout: 1, shell: "sh", env: {} });
+    assert.match(String(traced.mock.calls[0]?.arguments[0]), /^oso-code: \[advisory\] create\.before: /);
+  } finally {
+    traced.mock.restore();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 const CONTINUATION_ORDER = DELEGATIONS_RETURN_IN_TURN_HOST.order;
 const SYSTEM_ADVICE = /was left by another session/;
 const REANCHOR_ADVICE = /compacted while a run was in flight/;

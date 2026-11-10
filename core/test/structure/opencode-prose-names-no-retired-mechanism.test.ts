@@ -24,6 +24,9 @@ const RETIRED_MECHANISMS: readonly RegExp[] = [
   /\bsession\.(idle|compacted)\b/,
   /\bexperimental\.chat\b/,
   /\bsubagent_type\b/,
+  /\bexplore\b/,
+  /\bsynchronous\b/i,
+  /`bash`|\bbash(:| call| tool| permission)/i,
 ];
 
 const openCodeProseFiles = trackedRepositoryFiles().filter(
@@ -70,6 +73,12 @@ describe("OpenCode prose names no mechanism this host retired", () => {
       "the session.idle event",
       "the experimental.chat.system.transform hook",
       "the subagent_type argument",
+      "launch the explore agent",
+      "a synchronous launch",
+      "the `bash` tool",
+      "one bash call per command",
+      "bash: deny",
+      "the bash permission",
     ];
     for (const line of planted) {
       assert.equal(retiredMechanismHits("planted.md", line).length, 1, line);
