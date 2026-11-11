@@ -271,9 +271,12 @@ function byteIdentical(leftFile: string, rightFile: string): boolean {
   return readFileSync(leftFile).equals(readFileSync(rightFile));
 }
 
+export const EXECUTION_AMENDMENT_HEADING = "Execution amendment";
+export const PLAN_MODE_FEEDBACK_HEADING = "Plan Mode feedback";
+
 function amendmentShapeFor(approval: string | undefined): { heading: string; classification: string } {
-  if (approval === "approved") return { heading: "Execution amendment", classification: "in-scope" };
-  if (approval === "pending") return { heading: "Plan Mode feedback", classification: "feedback" };
+  if (approval === "approved") return { heading: EXECUTION_AMENDMENT_HEADING, classification: "in-scope" };
+  if (approval === "pending") return { heading: PLAN_MODE_FEEDBACK_HEADING, classification: "feedback" };
   throw new PlanFailure("amendments require a pending or approved plan");
 }
 
@@ -282,7 +285,7 @@ const THE_FIELD_ONLY_A_SLICE_BLOCK_CARRIES = "Depends-on";
 const MARKDOWN_LIST_OR_HEADING = /^[\s>]*(?:#{1,6}\s+)?(?:[-*+]\s+|\d+[.)]\s+)?(?:\[[ xX]\]\s+)?/;
 const MARKDOWN_EMPHASIS = /^[*_]{1,3}/;
 const SLICE_LABEL = /^(S\d+|Slice\s+\d+)(?:\s+[A-Z]{2,})*(?:\s*\([^)]*\))?\s*[—–:-]/;
-const MARKDOWN_HEADING = /^[\s>]*(#{1,6})\s+/;
+export const MARKDOWN_HEADING = /^[\s>]*(#{1,6})\s+/;
 
 type SliceBlock = Readonly<{ label: string; text: string }>;
 type OpenSlice = { label: string; boundaryLevel: number; lines: string[] };
@@ -323,7 +326,7 @@ function headingLevelOf(line: string): number | undefined {
   return heading === null ? undefined : heading[1]?.length;
 }
 
-function sliceLabelOpening(line: string): string | undefined {
+export function sliceLabelOpening(line: string): string | undefined {
   const undecorated = line.replace(MARKDOWN_LIST_OR_HEADING, "").replace(MARKDOWN_EMPHASIS, "");
   return SLICE_LABEL.exec(undecorated)?.[1];
 }

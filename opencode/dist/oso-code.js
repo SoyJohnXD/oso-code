@@ -4445,33 +4445,6 @@ function explainedCause(cause) {
 `;
 }
 
-// core/src/prose/applier-proof.ts
-var APPLIER_PROOF_HEADER = "=== applier_proof ===";
-
-// core/src/routes/render.ts
-var OPENCODE_HOOKS = [
-  "execute.before",
-  "context",
-  "compaction",
-  "cleanup"
-];
-function openCodeRoutes() {
-  return GATE_ROWS.filter((row) => row.wiring.opencode === "wired").map((row) => {
-    const matcher = matcherFor("opencode", row);
-    return {
-      hook: openCodeHookNamed(row.mechanism.opencode, row.gate),
-      gate: row.gate,
-      matcher: matcher === "" ? matcher : wholeToolName(matcher),
-      allow: row.gate === "unknown" ? toolNamesFor("opencode", "unknown") : []
-    };
-  });
-}
-function openCodeHookNamed(mechanism, gate) {
-  const hook = OPENCODE_HOOKS.find((candidate) => candidate === mechanism);
-  if (hook === void 0) throw new Error(`gate ${gate} names no OpenCode hook the adapter routes: ${mechanism}`);
-  return hook;
-}
-
 // core/src/state/plan.ts
 import { chmodSync, existsSync as existsSync3, mkdirSync as mkdirSync5, readFileSync as readFileSync4, renameSync as renameSync3, rmSync as rmSync6 } from "node:fs";
 import path18 from "node:path";
@@ -4652,6 +4625,8 @@ function runCancelApprovedPlan(cwd, sessionId, digest) {
 function byteIdentical(leftFile, rightFile) {
   return readFileSync4(leftFile).equals(readFileSync4(rightFile));
 }
+var EXECUTION_AMENDMENT_HEADING = "Execution amendment";
+var PLAN_MODE_FEEDBACK_HEADING = "Plan Mode feedback";
 var VERIFY_CHECK_TOKENS = ["failing-check:", "Verify-exception:"];
 var THE_FIELD_ONLY_A_SLICE_BLOCK_CARRIES = "Depends-on";
 var MARKDOWN_LIST_OR_HEADING = /^[\s>]*(?:#{1,6}\s+)?(?:[-*+]\s+|\d+[.)]\s+)?(?:\[[ xX]\]\s+)?/;
@@ -4696,6 +4671,36 @@ function sliceLabelOpening(line) {
 function namesAVerifyCheck(blockText) {
   const lowered = blockText.toLowerCase();
   return VERIFY_CHECK_TOKENS.some((token) => lowered.includes(token.toLowerCase()));
+}
+
+// core/src/plan/delta.ts
+var AMENDMENT_OPENING = new RegExp(`^## (${EXECUTION_AMENDMENT_HEADING}|${PLAN_MODE_FEEDBACK_HEADING}) \u2014 (\\S+)$`);
+
+// core/src/prose/applier-proof.ts
+var APPLIER_PROOF_HEADER = "=== applier_proof ===";
+
+// core/src/routes/render.ts
+var OPENCODE_HOOKS = [
+  "execute.before",
+  "context",
+  "compaction",
+  "cleanup"
+];
+function openCodeRoutes() {
+  return GATE_ROWS.filter((row) => row.wiring.opencode === "wired").map((row) => {
+    const matcher = matcherFor("opencode", row);
+    return {
+      hook: openCodeHookNamed(row.mechanism.opencode, row.gate),
+      gate: row.gate,
+      matcher: matcher === "" ? matcher : wholeToolName(matcher),
+      allow: row.gate === "unknown" ? toolNamesFor("opencode", "unknown") : []
+    };
+  });
+}
+function openCodeHookNamed(mechanism, gate) {
+  const hook = OPENCODE_HOOKS.find((candidate) => candidate === mechanism);
+  if (hook === void 0) throw new Error(`gate ${gate} names no OpenCode hook the adapter routes: ${mechanism}`);
+  return hook;
 }
 
 // opencode/plugin/oso/identity.ts

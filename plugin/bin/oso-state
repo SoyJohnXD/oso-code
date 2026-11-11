@@ -1878,9 +1878,11 @@ ${document}
 function byteIdentical(leftFile, rightFile) {
   return readFileSync3(leftFile).equals(readFileSync3(rightFile));
 }
+var EXECUTION_AMENDMENT_HEADING = "Execution amendment";
+var PLAN_MODE_FEEDBACK_HEADING = "Plan Mode feedback";
 function amendmentShapeFor(approval) {
-  if (approval === "approved") return { heading: "Execution amendment", classification: "in-scope" };
-  if (approval === "pending") return { heading: "Plan Mode feedback", classification: "feedback" };
+  if (approval === "approved") return { heading: EXECUTION_AMENDMENT_HEADING, classification: "in-scope" };
+  if (approval === "pending") return { heading: PLAN_MODE_FEEDBACK_HEADING, classification: "feedback" };
   throw new PlanFailure("amendments require a pending or approved plan");
 }
 var VERIFY_CHECK_TOKENS = ["failing-check:", "Verify-exception:"];
