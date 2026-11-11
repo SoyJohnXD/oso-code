@@ -3,9 +3,9 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, test } from "node:test";
-import { meetsVersionFloor, SUPPORTED_OPENCODE_VERSION } from "../../../src/install/pins.ts";
-import { skipUnlessKernelRunsScriptFixtures } from "../../support/win32-skip-guards.ts";
-import { laneCauseFor, resolveOpenCodeBinaryProbe } from "./opencode-binary.ts";
+import { meetsVersionFloor, SUPPORTED_OPENCODE_VERSION } from "../../src/install/pins.ts";
+import { skipUnlessKernelRunsScriptFixtures } from "../support/win32-skip-guards.ts";
+import { laneCauseFor, resolveOpenCodeBinaryProbe } from "../certify/support/opencode-binary.ts";
 
 const sandbox = mkdtempSync(path.join(tmpdir(), "oso-opencode-binary-"));
 after(() => rmSync(sandbox, { recursive: true, force: true }));
