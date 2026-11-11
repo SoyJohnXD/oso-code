@@ -372,8 +372,17 @@ function stateTextOf(fixture: ApprovalFixture): string {
   return underFixtureHome(fixture.base, () => readFileSync(stateFileFor(fixture.repoDir), "utf8"));
 }
 
-function stateAndArtifactsOf(fixture: ApprovalFixture): Readonly<{ state: string; artifacts: string[] }> {
-  return { state: stateTextOf(fixture), artifacts: readdirSync(planArtifactsOf(fixture)).sort() };
+function stateAndArtifactsOf(fixture: ApprovalFixture): Readonly<{ state: string; artifacts: string[][] }> {
+  const directory = planArtifactsOf(fixture);
+  const artifacts = readdirSync(directory).sort().map((name) => [name, readFileSync(join(directory, name), "utf8")]);
+  return { state: stateTextOf(fixture), artifacts };
+}
+
+function assertTheRevisionIsPresented(fixture: ApprovalFixture): void {
+  assert.deepEqual(
+    ["plan_presented_digest", "plan_presented_base", "plan_presented_turn"].map((key) => stateKeyOf(fixture, key)),
+    [sha256Hex(REVISED_DOCUMENT), sha256Hex(PLAN_DOCUMENT), "msg-1"],
+  );
 }
 
 function armSlice(fixture: ApprovalFixture, activeSlice: string): void {
@@ -411,10 +420,7 @@ test("a changed plan over an approved one returns the harness delta, raises no p
     assert.ok(String(result.content).endsWith(`\n${DELTA_OF_THE_REVISION}`));
     assert.match(String(result.content), /VERBATIM[\s\S]*LATER turn/);
     assert.deepEqual(heldPlanKeysOf(fixture), heldBefore);
-    assert.deepEqual(
-      ["plan_presented_digest", "plan_presented_base", "plan_presented_turn"].map((key) => stateKeyOf(fixture, key)),
-      [sha256Hex(REVISED_DOCUMENT), sha256Hex(PLAN_DOCUMENT), "msg-1"],
-    );
+    assertTheRevisionIsPresented(fixture);
   });
 });
 
@@ -457,14 +463,75 @@ test("the second call from a later turn raises one prompt bound to the new diges
   });
 });
 
-test("a refused delta prompt leaves the state exactly as the first step left it", async () => {
-  await withApprovalFixture(refusingTheDeltaPrompt, async (fixture, call) => {
+const UNREADABLE_HELD_SNAPSHOT = {
+  name: "an unreadable held snapshot",
+  spoil: (fixture: ApprovalFixture) => rmSync(join(planArtifactsOf(fixture), `approved-${sha256Hex(PLAN_DOCUMENT)}.md`)),
+  refusedBy: PLAN_APPROVAL_TOOL_ID,
+};
+
+const UNCOMPUTABLE_DELTA_CAUSE =
+  "current.md amendment \"Execution amendment — slice-9\" carries no metadata block before its text";
+
+const UNCOMPUTABLE_DELTA = {
+  name: "a delta the harness cannot compute",
+  spoil: (fixture: ApprovalFixture) =>
+    appendFileSync(join(planArtifactsOf(fixture), "current.md"), "\n## Execution amendment — slice-9\nno metadata\n"),
+  refusedBy: "present-plan",
+};
+
+const SECOND_STEP_ROUTES = [{ name: "a computed delta", spoil: () => undefined }, UNCOMPUTABLE_DELTA];
+
+for (const { name, spoil } of SECOND_STEP_ROUTES) {
+  test(`a refused prompt over ${name} leaves the state and the held plan exactly as the first step left them`, async () => {
+    await withApprovalFixture(refusingTheDeltaPrompt, async (fixture, call) => {
+      await present(fixture, PLAN_DOCUMENT, call);
+      spoil(fixture);
+      await present(fixture, REVISED_DOCUMENT, call);
+      const afterTheFirstStep = stateAndArtifactsOf(fixture);
+      await assert.rejects(() => present(fixture, REVISED_DOCUMENT, LATER_CALL), /rejected permission/);
+      assert.equal(fixture.asked.length, 2);
+      assert.deepEqual(stateAndArtifactsOf(fixture), afterTheFirstStep);
+    });
+  });
+}
+
+test("a delta the harness cannot compute takes the two steps with the cause in its place, then supersedes", async () => {
+  await withApprovalFixture(granted, async (fixture, call) => {
     await present(fixture, PLAN_DOCUMENT, call);
-    await present(fixture, REVISED_DOCUMENT, call);
-    const afterTheFirstStep = stateAndArtifactsOf(fixture);
-    await assert.rejects(() => present(fixture, REVISED_DOCUMENT, LATER_CALL), /rejected permission/);
-    assert.equal(fixture.asked.length, 2);
-    assert.deepEqual(stateAndArtifactsOf(fixture), afterTheFirstStep);
+    assert.equal(runStateVerb(fixture, ["amend-plan", "slice-3"], HOT_SLICE).status, 0);
+    UNCOMPUTABLE_DELTA.spoil(fixture);
+    const before = stateAndArtifactsOf(fixture);
+    const digest = sha256Hex(REVISED_DOCUMENT);
+    const base = sha256Hex(PLAN_DOCUMENT);
+    const notice = await present(fixture, REVISED_DOCUMENT, call);
+    assert.equal(fixture.asked.length, 1);
+    assert.deepEqual(notice.metadata, { step: "delta", digest, base, deltaUnavailable: UNCOMPUTABLE_DELTA_CAUSE });
+    assert.ok(String(notice.content).includes(`could not be computed: ${UNCOMPUTABLE_DELTA_CAUSE}.`));
+    assert.match(String(notice.content), /delta was unavailable[\s\S]*whole new document[\s\S]*LATER turn/);
+    const unpresented = (state: string) => state.split("\n").filter((line) => !line.startsWith("plan_presented_"));
+    assert.deepEqual(unpresented(stateTextOf(fixture)), unpresented(before.state));
+    const presentedSnapshot = [`presented-${digest}.md`, REVISED_DOCUMENT];
+    assert.deepEqual(stateAndArtifactsOf(fixture).artifacts, [...before.artifacts, presentedSnapshot].sort());
+    assertTheRevisionIsPresented(fixture);
+    const result = await present(fixture, REVISED_DOCUMENT, LATER_CALL);
+    assert.deepEqual(fixture.asked[1]?.metadata, {
+      digest,
+      characters: REVISED_DOCUMENT.length,
+      base,
+      deltaUnavailable: UNCOMPUTABLE_DELTA_CAUSE,
+    });
+    const held = underFixtureHome(fixture.base, () => heldPlanOf(fixture.repoDir));
+    assert.deepEqual(held.kind === "held" && [held.approval, held.digest, held.document], ["approved", digest, REVISED_DOCUMENT]);
+    assert.equal(stateKeyOf(fixture, "plan_revision"), "2");
+    assert.ok(existsSync(join(planArtifactsOf(fixture), `approved-${base}.md`)));
+    assert.ok(String(result.content).includes(`no delta digest, because the delta could not be computed: ${UNCOMPUTABLE_DELTA_CAUSE}.`));
+    assert.deepEqual(result.metadata, {
+      digest,
+      owner: fixture.owner,
+      session: SESSION,
+      base,
+      deltaUnavailable: UNCOMPUTABLE_DELTA_CAUSE,
+    });
   });
 });
 
@@ -483,41 +550,22 @@ test("a held plan whose first prompt was refused takes the same two steps and en
   });
 });
 
-async function assertTheWholePlanWentToTheOperator(fixture: ApprovalFixture, cause: RegExp): Promise<void> {
-  const result = await present(fixture, REVISED_DOCUMENT, CALL);
-  const digest = sha256Hex(REVISED_DOCUMENT);
-  assert.match(String(result.content), new RegExp(`^The plan delta was unavailable, .*?${cause.source}.*?\\. Tell the operator`));
-  assert.match(String(result.metadata?.deltaUnavailable), cause);
-  assert.deepEqual(fixture.asked[1]?.metadata, { digest, characters: REVISED_DOCUMENT.length });
-  assert.deepEqual(
-    [stateKeyOf(fixture, "plan_approval"), stateKeyOf(fixture, "plan_approval_digest")],
-    ["approved", digest],
-  );
-}
-
-const DELTA_FALLBACKS = [
-  {
-    name: "an unreadable held snapshot",
-    spoil: (fixture: ApprovalFixture) => rmSync(join(planArtifactsOf(fixture), `approved-${sha256Hex(PLAN_DOCUMENT)}.md`)),
-    cause: /the immutable snapshot is missing or unsafe/,
-  },
-  {
-    name: "a delta the harness cannot compute",
-    spoil: (fixture: ApprovalFixture) =>
-      appendFileSync(join(planArtifactsOf(fixture), "current.md"), "\n## Execution amendment — slice-9\nno metadata\n"),
-    cause: /carries no metadata block before its text/,
-  },
-];
-
-for (const { name, spoil, cause } of DELTA_FALLBACKS) {
-  test(`${name} falls back to the whole plan and names the cause`, async () => {
-    await withApprovalFixture(granted, async (fixture, call) => {
-      await present(fixture, PLAN_DOCUMENT, call);
-      spoil(fixture);
-      await assertTheWholePlanWentToTheOperator(fixture, cause);
-    });
+test("an unreadable held snapshot falls back to the whole plan and names the cause", async () => {
+  await withApprovalFixture(granted, async (fixture, call) => {
+    await present(fixture, PLAN_DOCUMENT, call);
+    UNREADABLE_HELD_SNAPSHOT.spoil(fixture);
+    const result = await present(fixture, REVISED_DOCUMENT, call);
+    const digest = sha256Hex(REVISED_DOCUMENT);
+    const cause = /the immutable snapshot is missing or unsafe/;
+    assert.match(String(result.content), new RegExp(`^The plan delta was unavailable, .*?${cause.source}.*?\\. Tell the operator`));
+    assert.match(String(result.metadata?.deltaUnavailable), cause);
+    assert.deepEqual(fixture.asked[1]?.metadata, { digest, characters: REVISED_DOCUMENT.length });
+    assert.deepEqual(
+      [stateKeyOf(fixture, "plan_approval"), stateKeyOf(fixture, "plan_approval_digest")],
+      ["approved", digest],
+    );
   });
-}
+});
 
 test("an active slice refuses the first step with the state's own message and writes nothing", async () => {
   await withApprovalFixture(granted, async (fixture, call) => {
@@ -531,7 +579,7 @@ test("an active slice refuses the first step with the state's own message and wr
 });
 
 for (const activeSlice of ["2", "wave-1", "debt-sweep"]) {
-  for (const { name, spoil } of DELTA_FALLBACKS) {
+  for (const { name, spoil, refusedBy } of [UNREADABLE_HELD_SNAPSHOT, UNCOMPUTABLE_DELTA]) {
     test(`${name} while ${activeSlice} is active is refused before any capture or prompt`, async () => {
       await withApprovalFixture(granted, async (fixture, call) => {
         await present(fixture, PLAN_DOCUMENT, call);
@@ -540,7 +588,7 @@ for (const activeSlice of ["2", "wave-1", "debt-sweep"]) {
         const before = stateAndArtifactsOf(fixture);
         await assert.rejects(
           () => present(fixture, REVISED_DOCUMENT, call),
-          new RegExp(`${PLAN_APPROVAL_TOOL_ID} is refused while ${activeSlice} is active; close or abandon the active slice first$`),
+          new RegExp(`${refusedBy} is refused while ${activeSlice} is active; close or abandon the active slice first$`),
         );
         assert.equal(fixture.asked.length, 1);
         assert.deepEqual(stateAndArtifactsOf(fixture), before);
@@ -560,21 +608,21 @@ test("a pending plan presented again while a slice is active is refused before t
   });
 });
 
-test("a slice armed between the two steps refuses the second call before its prompt", async () => {
-  await withApprovalFixture(granted, async (fixture, call) => {
-    await present(fixture, PLAN_DOCUMENT, call);
-    await present(fixture, REVISED_DOCUMENT, call);
-    armSlice(fixture, "2");
-    const before = stateAndArtifactsOf(fixture);
-    await assert.rejects(() => present(fixture, REVISED_DOCUMENT, LATER_CALL), /is refused while 2 is active/);
-    assert.equal(fixture.asked.length, 1);
-    assert.deepEqual(stateAndArtifactsOf(fixture), before);
-    assert.deepEqual(
-      ["plan_presented_digest", "plan_presented_base", "plan_presented_turn"].map((key) => stateKeyOf(fixture, key)),
-      [sha256Hex(REVISED_DOCUMENT), sha256Hex(PLAN_DOCUMENT), "msg-1"],
-    );
+for (const { name, spoil } of SECOND_STEP_ROUTES) {
+  test(`a slice armed between the two steps over ${name} refuses the second call before its prompt`, async () => {
+    await withApprovalFixture(granted, async (fixture, call) => {
+      await present(fixture, PLAN_DOCUMENT, call);
+      spoil(fixture);
+      await present(fixture, REVISED_DOCUMENT, call);
+      armSlice(fixture, "2");
+      const before = stateAndArtifactsOf(fixture);
+      await assert.rejects(() => present(fixture, REVISED_DOCUMENT, LATER_CALL), /is refused while 2 is active/);
+      assert.equal(fixture.asked.length, 1);
+      assert.deepEqual(stateAndArtifactsOf(fixture), before);
+      assertTheRevisionIsPresented(fixture);
+    });
   });
-});
+}
 
 test("with no plan held, an active slice still takes today's capture, prompt and approval", async () => {
   await withApprovalFixture(granted, async (fixture, call) => {

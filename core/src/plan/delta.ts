@@ -55,6 +55,10 @@ export function renderPlanDelta(delta: PlanDelta): string {
   return [...segmentReport(delta.segments), ...droppedAmendmentReport(delta.droppedAmendments), ""].join("\n");
 }
 
+export function planDeltaSummaryOf(delta: PlanDelta): string {
+  return `${segmentSummaryOf(delta.segments)} Dropped amendments: ${delta.droppedAmendments.length}.`;
+}
+
 export function planDeltaDigestOf(delta: PlanDelta): string {
   return sha256Hex(renderPlanDelta(delta));
 }
@@ -233,18 +237,27 @@ function amendmentsIn(current: string): DroppedAmendment[] {
 const SEGMENT_KINDS = ["changed", "added", "removed", "format-only", "unchanged"] as const;
 
 function segmentReport(segments: readonly PlanDeltaSegment[]): string[] {
-  const differing = segments.filter((segment) => segment.kind !== "unchanged" || segment.moved);
-  if (differing.length === 0) return [`No changes: the new plan matches the base in all ${segments.length} sections.`];
+  const differing = segments.filter(differs);
+  if (differing.length === 0) return [segmentSummaryOf(segments)];
   const unchanged = segments.filter((segment) => segment.kind === "unchanged" && !segment.moved);
-  const counts = SEGMENT_KINDS.map((kind) => `${segments.filter((segment) => segment.kind === kind).length} ${kind}`);
   return [
-    `Plan delta: ${counts.join(", ")}, ${segments.filter(isMoved).length} moved.`,
+    segmentSummaryOf(segments),
     ...(unchanged.length === 0 ? [] : [`Unchanged: ${unchanged.map(({ key }) => labelOf(key)).join(", ")}.`]),
     ...differing.flatMap((segment) => [
       `${segment.kind} ${labelOf(segment.key)}${isMoved(segment) ? ", moved" : ""}`,
       ...signedLinesOf(segment).map((line) => `  ${line}`),
     ]),
   ];
+}
+
+function segmentSummaryOf(segments: readonly PlanDeltaSegment[]): string {
+  if (!segments.some(differs)) return `No changes: the new plan matches the base in all ${segments.length} sections.`;
+  const counts = SEGMENT_KINDS.map((kind) => `${segments.filter((segment) => segment.kind === kind).length} ${kind}`);
+  return `Plan delta: ${counts.join(", ")}, ${segments.filter(isMoved).length} moved.`;
+}
+
+function differs(segment: PlanDeltaSegment): boolean {
+  return segment.kind !== "unchanged" || segment.moved;
 }
 
 function isMoved(segment: PlanDeltaSegment): boolean {

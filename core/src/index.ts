@@ -6,19 +6,7 @@ export {
   type HookCaller,
   type HookEnvelope,
 } from "./hosts/envelope.ts";
-export {
-  baseDocumentOf,
-  nextDocumentOf,
-  PlanDeltaError,
-  planDeltaDigestOf,
-  planDeltaOf,
-  renderPlanDelta,
-  type DroppedAmendment,
-  type LineChange,
-  type PlanDelta,
-  type PlanDeltaSegment,
-  type PlanSectionKey,
-} from "./plan/delta.ts";
+export { PlanDeltaError, planDeltaDigestOf, planDeltaOf, planDeltaSummaryOf, renderPlanDelta } from "./plan/delta.ts";
 export { APPLIER_PROOF_HEADER } from "./prose/applier-proof.ts";
 export { VERIFIER_AGENT } from "./prose/routes.ts";
 export { openCodeRoutes, type OpenCodeRoute } from "./routes/render.ts";
@@ -34,7 +22,6 @@ export {
   runPresentPlan,
   runSupersedePlan,
   type HeldPlan,
-  type PresentedPlan,
 } from "./state/plan.ts";
 export {
   appendJournal,
