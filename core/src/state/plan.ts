@@ -132,6 +132,9 @@ export function runPresentPlan(cwd: string, sessionId: string, digest: string, d
   const paths = planPaths(stateFile, digest);
   ensurePlanDirectory(paths);
   if (document.length === 0) throw new PlanFailure("present-plan requires a non-empty plan document");
+  if (store.sha256Hex(document) !== digest) {
+    throw new PlanFailure("present-plan requires the SHA-256 digest of the document it presents");
+  }
   refuseASliceNamingNoCheck("present-plan", document);
   return store.withLock(stateFile, sessionId, () => {
     store.refuseGateWritesByAForeignSession(stateFile, sessionId);
@@ -161,6 +164,9 @@ export function runSupersedePlan(cwd: string, sessionId: string, digest: string)
       throw new PlanFailure("supersede-plan requires the presented plan to carry this digest");
     }
     const document = privatePlanText(paths.presentedFile, "presented snapshot");
+    if (store.sha256Hex(document) !== digest) {
+      throw new PlanFailure("supersede-plan requires the presented snapshot to hash to its digest");
+    }
     if (heldPlanOf(cwd).kind === "none") throw new PlanFailure("supersede-plan requires a held plan");
     refuseReplacingAHeldPlanWhileASliceIsActive(cwd, "supersede-plan");
     const revisionText = store.readValue(stateFile, "plan_revision") ?? "0";

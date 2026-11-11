@@ -21,6 +21,7 @@ import {
 import { deriveRootId } from "./identity.ts";
 import { approvedPlanFor } from "./plan-state.ts";
 import { DIRECT_CALL, type OsoTool, type OsoToolContext, type ToolHost } from "./tool.ts";
+import { messageOf } from "./wave.ts";
 
 export const PLAN_APPROVAL_TOOL_ID = "oso_plan_approve";
 export const PLAN_CANCEL_TOOL_ID = "oso_plan_cancel";
@@ -36,8 +37,8 @@ export function planApprovalTool(host: ToolHost): OsoTool {
       + " left exactly as unapproved as it was. Nothing this session says or writes can stand in for that answer,"
       + " and no earlier grant carries over to a later call. When a plan is already held and you pass a changed"
       + " document, the first call returns the delta the harness computed and changes no plan state. Relay that"
-      + " delta as turn-ending text. Then call again in a later turn with the identical plan to raise the"
-      + " authorization prompt. The grant binds the digest of the full new document.",
+      + " delta as turn-ending text. Then, once the operator's next message opens a later turn, call again with"
+      + " the identical plan to raise the authorization prompt. The grant binds the digest of the full new document.",
     input: {
       type: "object",
       properties: {
@@ -90,11 +91,17 @@ async function approveOnOperatorGrant(host: ToolHost, plan: string, call: OsoToo
   if (held.digest === presentation.digest) {
     return held.approval === "approved" ? alreadyApproved(presentation) : approveTheWholePlan(presentation);
   }
+  const operatorTurn = await operatorTurnOf(host, call);
   const presented = presentedPlanOf(directory);
   if (presented?.digest !== presentation.digest || presented.base !== held.digest) {
-    return presentTheDelta(presentation, held);
+    return presentTheDelta(presentation, held, operatorTurn);
   }
-  return supersedeOnOperatorGrant(presentation, held, presented.turn);
+  if (presented.turn === operatorTurn) {
+    throw new Error(`${PLAN_APPROVAL_TOOL_ID} returned the delta for this document earlier in this same operator turn.`
+      + " Relay it to the operator as turn-ending plain text, wait for the operator's next message, and only then"
+      + " call again with the identical plan.");
+  }
+  return supersedeOnOperatorGrant(presentation, held);
 }
 
 function heldPlanReadingOf(directory: string): HeldPlan | Readonly<{ kind: "unreadable"; cause: string }> {
@@ -104,6 +111,19 @@ function heldPlanReadingOf(directory: string): HeldPlan | Readonly<{ kind: "unre
     if (!(err instanceof PlanFailure)) throw err;
     return { kind: "unreadable", cause: err.message };
   }
+}
+
+async function operatorTurnOf(host: ToolHost, call: OsoToolContext): Promise<string> {
+  const unresolved = (cause: string) =>
+    new Error(`${PLAN_APPROVAL_TOOL_ID} cannot tell which operator message started this turn: ${cause}`);
+  const messages = await host.session.context({ sessionID: call.sessionID }).catch((err: unknown) => {
+    throw unresolved(`the host session API failed: ${messageOf(err)}`);
+  });
+  const calling = messages.findIndex((message) => message.id === call.messageID);
+  if (calling === -1) throw unresolved(`the calling message ${call.messageID} is not in the session`);
+  const operatorMessage = messages.slice(0, calling).filter((message) => message.type === "user").at(-1);
+  if (operatorMessage === undefined) throw unresolved(`no operator message precedes the calling message ${call.messageID}`);
+  return operatorMessage.id;
 }
 
 async function approveTheWholePlan(presentation: PlanPresentation, unavailableDelta?: string): Promise<ToolResult> {
@@ -131,12 +151,17 @@ function alreadyApproved({ call, owner, digest }: PlanPresentation): ToolResult 
   };
 }
 
-async function presentTheDelta(presentation: PlanPresentation, held: HeldDocument): Promise<ToolResult> {
+async function presentTheDelta(
+  presentation: PlanPresentation,
+  held: HeldDocument,
+  operatorTurn: string,
+): Promise<ToolResult> {
   const delta = deltaAgainst(held, presentation.plan);
-  recordThePresentation(presentation);
+  recordThePresentation(presentation, operatorTurn);
   const metadata = { step: "delta", digest: presentation.digest, base: held.digest, ...deltaMetadataOf(delta) };
-  const callAgain = `Then call ${PLAN_APPROVAL_TOOL_ID} again in a LATER turn with the identical plan bytes. This`
-    + ` call changed no plan state, and the held plan whose digest is ${held.digest} stays in force.`;
+  const callAgain = `Then, once the operator's next message opens a LATER turn, call ${PLAN_APPROVAL_TOOL_ID} again`
+    + ` with the identical plan bytes. This call changed no plan state, and the held plan whose digest is`
+    + ` ${held.digest} stays in force.`;
   if (delta.kind === "unavailable") {
     return {
       content: `${PLAN_APPROVAL_TOOL_ID} raised no prompt: a plan is already held, but the delta could not be`
@@ -154,16 +179,8 @@ async function presentTheDelta(presentation: PlanPresentation, held: HeldDocumen
   };
 }
 
-async function supersedeOnOperatorGrant(
-  presentation: PlanPresentation,
-  held: HeldDocument,
-  presentedTurn: string,
-): Promise<ToolResult> {
+async function supersedeOnOperatorGrant(presentation: PlanPresentation, held: HeldDocument): Promise<ToolResult> {
   const { host, call, directory, owner, digest, plan } = presentation;
-  if (presentedTurn === call.messageID) {
-    throw new Error(`${PLAN_APPROVAL_TOOL_ID} returned the delta for this document earlier in this same turn. Relay`
-      + " it to the operator as turn-ending plain text, then call again in a LATER turn with the identical plan.");
-  }
   refuseReplacingAHeldPlanWhileASliceIsActive(directory, PLAN_APPROVAL_TOOL_ID);
   const delta = deltaAgainst(held, plan);
   const summary = delta.kind === "computed" ? { summary: delta.summary } : {};
@@ -253,9 +270,9 @@ function promoteThePresentedPlan(directory: string, owner: string, digest: strin
   }
 }
 
-function recordThePresentation({ call, directory, owner, digest, plan }: PlanPresentation): void {
+function recordThePresentation({ directory, owner, digest, plan }: PlanPresentation, operatorTurn: string): void {
   try {
-    runPresentPlan(directory, owner, digest, plan, call.messageID);
+    runPresentPlan(directory, owner, digest, plan, operatorTurn);
   } catch (err) {
     if (!(err instanceof PlanFailure) && !(err instanceof GatesOwnedElsewhereError)) throw err;
     throw new Error(`${PLAN_APPROVAL_TOOL_ID} did not present the changed plan: ${err.message}`);

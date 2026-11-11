@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 
-const SCRIPT_PATTERN = /SCRIPT (\S+) (\{.*\})/;
+const SCRIPT_PATTERN = /SCRIPT (\S+) (\{.*\})/g;
 const CHAT_COMPLETIONS_PATH = "/chat/completions";
 const FINAL_REPLY = "finished";
 
@@ -16,6 +16,8 @@ export type ScriptedProvider = Readonly<{
   stop: () => Promise<void>;
 }>;
 
+export type ScriptedCall = Readonly<{ toolName: string; input: Readonly<Record<string, unknown>> }>;
+
 export function scriptedPrompt(toolName: string, input: Readonly<Record<string, unknown>>): string {
   return `SCRIPT ${toolName} ${JSON.stringify(input)}`;
 }
@@ -25,24 +27,20 @@ function textOf(message: ChatMessage | undefined): string {
   return typeof message.content === "string" ? message.content : JSON.stringify(message.content);
 }
 
-function lastUserMessage(messages: readonly ChatMessage[]): ChatMessage | undefined {
-  return [...messages].reverse().find((message) => message.role === "user");
-}
-
 function streamChunk(delta: Readonly<Record<string, unknown>>, finishReason: string | null): string {
   const chunk = { id: "scripted", object: "chat.completion.chunk", created: 1, model: "m", choices: [{ index: 0, delta, finish_reason: finishReason }] };
   return `data: ${JSON.stringify(chunk)}\n\n`;
 }
 
-function scriptedToolCall(request: ChatRequestBody): Readonly<{ name: string; input: string }> | undefined {
-  const last = request.messages.at(-1);
-  if (last === undefined || last.role === "tool") return undefined;
-  const scripted = SCRIPT_PATTERN.exec(textOf(lastUserMessage(request.messages)));
+function scriptedToolCall(request: ChatRequestBody): Readonly<{ id: string; name: string; input: string }> | undefined {
+  const lastUser = request.messages.map((message) => message.role).lastIndexOf("user");
+  const answered = request.messages.slice(lastUser + 1).filter((message) => message.role === "tool").length;
+  const scripted = [...textOf(request.messages[lastUser]).matchAll(SCRIPT_PATTERN)][answered];
   const name = scripted?.[1];
   const input = scripted?.[2];
   if (name === undefined || input === undefined) return undefined;
   const offered = request.tools?.some((tool) => tool.function.name === name) ?? false;
-  return offered ? { name, input } : undefined;
+  return offered ? { id: `call_${answered + 1}`, name, input } : undefined;
 }
 
 function respond(response: ServerResponse, request: ChatRequestBody): void {
@@ -52,7 +50,7 @@ function respond(response: ServerResponse, request: ChatRequestBody): void {
     response.write(streamChunk({ role: "assistant", content: FINAL_REPLY }, null));
     response.write(streamChunk({}, "stop"));
   } else {
-    const toolCall = { index: 0, id: "call_1", type: "function", function: { name: call.name, arguments: call.input } };
+    const toolCall = { index: 0, id: call.id, type: "function", function: { name: call.name, arguments: call.input } };
     response.write(streamChunk({ role: "assistant", tool_calls: [toolCall] }, null));
     response.write(streamChunk({}, "tool_calls"));
   }

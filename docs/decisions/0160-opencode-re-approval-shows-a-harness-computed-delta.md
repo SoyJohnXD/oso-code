@@ -7,7 +7,7 @@ Source: the change ledger `oso/plan-approval-delta/ledger`; the adapter and stat
 
 ## Decision
 
-**On OpenCode, re-approving a held plan takes two calls of `oso_plan_approve`. The first returns the delta the harness computed and raises no prompt; the second, from a later turn with identical bytes, raises the one authorization prompt bound to the digest of the full new document. Claude Code is unchanged.**
+**On OpenCode, re-approving a held plan takes two calls of `oso_plan_approve`. The first returns the delta the harness computed and raises no prompt; the second, with identical bytes from a later turn opened by the operator's next message, raises the one authorization prompt bound to the digest of the full new document. Claude Code is unchanged.**
 
 ### Why the first call returns the delta
 
@@ -22,16 +22,18 @@ The operator re-read the whole plan on every material change, so a one-line revi
 ### The state
 
 - The first call writes the immutable `presented-<digest>.md` snapshot and three keys, `plan_presented_digest`, `plan_presented_base` and `plan_presented_turn`, through the core `present-plan` verb, and touches no other plan key. A document matching only an older presentation, or one over a different base, is a new first call.
-- The second call is refused when its turn id equals `plan_presented_turn`. On the grant the core `supersede-plan` verb writes a new immutable approved snapshot, keeps the previous one as history, replaces `current.md`, increments `plan_revision` and clears the presented keys. Neither verb has an `oso-state` CLI form.
+- The turn is the operator's: the id of the user message that started the calling assistant message's turn, read through the host session API as the nearest user message before the calling message in `session.context`. On OpenCode 2.2.6 one operator turn spans several assistant messages, one per step, so an assistant message id would let the next step of the same turn pass. When the host cannot resolve the operator's message, the call fails closed and writes nothing; it never falls back to the assistant message id.
+- The second call is refused when its operator turn equals `plan_presented_turn`. On the grant the core `supersede-plan` verb writes a new immutable approved snapshot, keeps the previous one as history, replaces `current.md`, increments `plan_revision` and clears the presented keys. Neither verb has an `oso-state` CLI form.
 - The prompt always appears; no classification of the delta skips it. A refused prompt changes nothing. Re-sending the document that is already the approved plan raises no prompt and changes nothing.
 - Supersede happens only between slices. With a slice or wave active the first call is refused with the state's message, so work in flight is never disarmed.
 - When the held plan is readable but the delta cannot be computed, the two steps stand with a notice naming the cause in place of the delta: the model tells the operator the delta was unavailable and that confirming approves the whole new document, the prompt metadata carries the cause instead of a delta digest, and a refusal changes nothing.
 - Only when the held plan itself cannot be read does the tool present the whole plan through the one-call path with that notice: it captures before the prompt, so a refusal there leaves the plan pending. This is the one accepted exception to a refusal changing nothing.
 - The digest binding is unchanged: the prompt's resource is the sha256 of the full new document. The delta is display-only, and the grant result repeats its digest.
+- Both verbs re-hash what they store. `present-plan` refuses a digest that is not the sha256 of the document it receives, and `supersede-plan` re-hashes the presented snapshot under the lock and refuses, writing nothing, when its bytes no longer match the granted digest.
 
 ### Named residuals
 
-- **The operator reads the model's relay.** The delta reaches the operator through the model's turn-ending text, not from the harness directly, and what OpenCode renders for tool results and prompt metadata is unmeasured. The turn boundary, the summary in the prompt metadata and the delta digest in the grant result narrow this; none closes it.
+- **The operator reads the model's relay.** The delta reaches the operator through the model's turn-ending text, not from the harness directly, and what OpenCode renders for tool results and prompt metadata is unmeasured. The operator-turn boundary, the summary in the prompt metadata and the delta digest in the grant result narrow this; none closes it.
 - **The certify suite carries state between two host processes.** The adapter's Cleanup removes the plan state file when the host process ends, so each headless run starts without the held plan. The suite restores the state file between the two runs from the host's own `execute.after` snapshot. In real use both turns happen in one host process; that carry-over is simulated, not measured.
 
 ## Consequences
@@ -39,4 +41,15 @@ The operator re-read the whole plan on every material change, so a one-line revi
 - The OpenCode plan and roadmap references describe the two steps, and `opencode-reapproval-relays-a-harness-delta.test.ts` holds that wording.
 - The nightly drives seven `opencode-v2-*` suites, `opencode-v2-plan-delta` among them; `docs/parity-opencode.md` records what it measured.
 - A first presentation with nothing held is unchanged: one call, one prompt.
+- The certify suite also makes both calls inside one prompt: the first returns the delta, and the second is refused as the same operator turn with no prompt raised.
 - The Claude-side bundles `plugin/bin/oso-state` and `plugin/dist/oso-state.js`, and `bootstrap/hook-hashes.txt`, are regenerated from the shared core and may change bytes with no change in Claude behavior. Claude never writes the `plan_presented_*` keys.
+
+## Security review
+
+A security pass over this change found two defects, both fixed above: supersede promoted the presented snapshot without re-hashing it, and the later-turn rule was keyed on the assistant message, which a next step of the same operator turn changes. Its accepted residuals:
+
+- The whole-plan path checks for an active slice outside the lock, as the first capture always has; moving it would change Claude's capture.
+- An unreadable held plan still captures before its prompt, the one exception to a refusal changing nothing.
+- The operator reads the model's relay of the delta, as named above.
+- The certify suite carries the state between two host processes, as named above.
+- Anything that can write the state root can rewrite the state and every snapshot; the re-hash turns a swapped presented snapshot into a refusal and protects nothing beyond it.

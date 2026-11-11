@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mock, test } from "node:test";
@@ -331,11 +331,15 @@ test("a refused permission assertion leaves the plan unapproved and the refusal 
   }
 });
 
-test("the registered approval tool returns the delta for a changed plan and supersedes it from a later turn", async () => {
+test("the registered approval tool returns the delta for a changed plan and supersedes it from the operator's next turn", async () => {
   const fixture = seedRailFixture("oso-v2-tool-delta");
   const revised = `${PLAN_DOCUMENT}## Riesgos\nNone.\n`;
   try {
-    const host = fakeHostContext({ directory: fixture.repo, sessionDirectories: { "ses-delta": fixture.repo } });
+    const host = fakeHostContext({
+      directory: fixture.repo,
+      sessionDirectories: { "ses-delta": fixture.repo },
+      operatorTurns: { "msg-1": "turn-1", "msg-1-step-2": "turn-1", "msg-2": "turn-2" },
+    });
     await entry.setup(host.context);
     const approve = (plan: string, messageID?: string) =>
       underRailFixtureHome(fixture, () => host.callTool("oso_plan_approve", "ses-delta", { plan }, messageID));
@@ -343,7 +347,9 @@ test("the registered approval tool returns the delta for a changed plan and supe
     const delta = await approve(revised);
     assert.equal(delta.metadata?.step, "delta");
     assert.equal(host.assertions().length, 1);
-    await assert.rejects(approve(revised), /same turn/);
+    await assert.rejects(approve(revised), /same operator turn/);
+    await assert.rejects(approve(revised, "msg-1-step-2"), /same operator turn/);
+    assert.equal(host.assertions().length, 1);
     await approve(revised, "msg-2");
     const asked = host.assertions() as Array<{ resources: string[]; metadata: Record<string, unknown> }>;
     assert.deepEqual(asked.slice(1).map(({ resources, metadata }) => [resources, metadata.base]), [
@@ -353,6 +359,23 @@ test("the registered approval tool returns the delta for a changed plan and supe
       assert.equal(readValue(stateFileFor(fixture.repo), "plan_approval_digest"), sha256Hex(revised));
       assert.equal(readValue(stateFileFor(fixture.repo), "plan_revision"), "1");
     });
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
+});
+
+test("the registered approval tool fails closed when the host cannot name the operator's turn", async () => {
+  const fixture = seedRailFixture("oso-v2-tool-unresolved-turn");
+  try {
+    const host = fakeHostContext({ directory: fixture.repo, sessionDirectories: { "ses-unresolved": fixture.repo } });
+    await entry.setup(host.context);
+    const approve = (plan: string) =>
+      underRailFixtureHome(fixture, () => host.callTool("oso_plan_approve", "ses-unresolved", { plan }));
+    await approve(PLAN_DOCUMENT);
+    const before = underFixtureHome(fixture.home, () => readFileSync(stateFileFor(fixture.repo), "utf8"));
+    await assert.rejects(approve(`${PLAN_DOCUMENT}## Riesgos\nNone.\n`), /cannot tell which operator message started this turn/);
+    assert.equal(host.assertions().length, 1);
+    underFixtureHome(fixture.home, () => assert.equal(readFileSync(stateFileFor(fixture.repo), "utf8"), before));
   } finally {
     rmSync(fixture.base, { recursive: true, force: true });
   }

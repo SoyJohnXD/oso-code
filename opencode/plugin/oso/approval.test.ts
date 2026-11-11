@@ -73,8 +73,24 @@ function planArtifactsOf(fixture: ApprovalFixture): string {
 
 type Assertion = ApprovalFixture["asked"][number];
 
-function toolHostFor(directory: string, grant: (assertion: Assertion) => Promise<unknown>, asked: Assertion[] = []): ToolHost {
+type TranscriptMessage = Readonly<{ id: string; type: "user" | "assistant" }>;
+
+const OPERATOR_TURNS: readonly TranscriptMessage[] = [
+  { id: "turn-1", type: "user" },
+  { id: "msg-1", type: "assistant" },
+  { id: "msg-1-step-2", type: "assistant" },
+  { id: "turn-2", type: "user" },
+  { id: "msg-2", type: "assistant" },
+];
+
+function toolHostFor(
+  directory: string,
+  grant: (assertion: Assertion) => Promise<unknown>,
+  asked: Assertion[] = [],
+  transcript: () => Promise<readonly TranscriptMessage[]> = async () => OPERATOR_TURNS,
+): ToolHost {
   return {
+    session: { context: transcript },
     permission: {
       assert: async (assertion: Assertion) => {
         asked.push(assertion);
@@ -363,9 +379,14 @@ const DELTA_OF_THE_REVISION = [
   "",
 ].join("\n");
 const LATER_CALL = { ...CALL, messageID: "msg-2", id: "call-2" } as OsoToolContext;
+const SAME_TURN_NEXT_STEP_CALL = { ...CALL, messageID: "msg-1-step-2", id: "call-1b" } as OsoToolContext;
 
-function present(fixture: ApprovalFixture, plan: string, call: OsoToolContext = CALL) {
-  return planApprovalTool(fixture.host).execute({ plan }, call);
+function present(fixture: ApprovalFixture, plan: string, call: OsoToolContext = CALL, host: ToolHost = fixture.host) {
+  return planApprovalTool(host).execute({ plan }, call);
+}
+
+function hostReading(fixture: ApprovalFixture, transcript: () => Promise<readonly TranscriptMessage[]>): ToolHost {
+  return toolHostFor(fixture.repoDir, granted, fixture.asked, transcript);
 }
 
 function stateTextOf(fixture: ApprovalFixture): string {
@@ -381,7 +402,7 @@ function stateAndArtifactsOf(fixture: ApprovalFixture): Readonly<{ state: string
 function assertTheRevisionIsPresented(fixture: ApprovalFixture): void {
   assert.deepEqual(
     ["plan_presented_digest", "plan_presented_base", "plan_presented_turn"].map((key) => stateKeyOf(fixture, key)),
-    [sha256Hex(REVISED_DOCUMENT), sha256Hex(PLAN_DOCUMENT), "msg-1"],
+    [sha256Hex(REVISED_DOCUMENT), sha256Hex(PLAN_DOCUMENT), "turn-1"],
   );
 }
 
@@ -424,14 +445,70 @@ test("a changed plan over an approved one returns the harness delta, raises no p
   });
 });
 
-test("the second call from the same turn is refused without a prompt", async () => {
-  await withApprovalFixture(granted, async (fixture, call) => {
-    await present(fixture, PLAN_DOCUMENT, call);
-    await present(fixture, REVISED_DOCUMENT, call);
-    await assert.rejects(() => present(fixture, REVISED_DOCUMENT, call), /same turn[\s\S]*LATER turn/);
-    assert.equal(fixture.asked.length, 1);
+for (const [name, secondCall] of [["message", CALL], ["operator turn's next step", SAME_TURN_NEXT_STEP_CALL]] as const) {
+  test(`the second call from the same ${name} is refused without a prompt and writes nothing`, async () => {
+    await withApprovalFixture(granted, async (fixture, call) => {
+      await present(fixture, PLAN_DOCUMENT, call);
+      await present(fixture, REVISED_DOCUMENT, call);
+      const afterTheFirstStep = stateAndArtifactsOf(fixture);
+      await assert.rejects(
+        () => present(fixture, REVISED_DOCUMENT, secondCall),
+        /same operator turn[\s\S]*turn-ending plain text[\s\S]*operator's next message/,
+      );
+      assert.equal(fixture.asked.length, 1);
+      assert.deepEqual(stateAndArtifactsOf(fixture), afterTheFirstStep);
+    });
   });
-});
+}
+
+const UNRESOLVABLE_TURNS = [
+  {
+    name: "the host session API fails",
+    transcript: async (): Promise<never> => {
+      throw new Error("session context is unavailable");
+    },
+    cause: /the host session API failed: session context is unavailable/,
+  },
+  {
+    name: "the calling message is not in the session",
+    transcript: async () => OPERATOR_TURNS.filter(({ id }) => !id.startsWith("msg-")),
+    cause: /the calling message msg-\d is not in the session/,
+  },
+  {
+    name: "no operator message precedes the calling message",
+    transcript: async () => OPERATOR_TURNS.filter(({ type }) => type === "assistant"),
+    cause: /no operator message precedes the calling message msg-\d/,
+  },
+];
+
+for (const { name, transcript, cause } of UNRESOLVABLE_TURNS) {
+  test(`when ${name}, the first step fails closed with no prompt and nothing written`, async () => {
+    await withApprovalFixture(granted, async (fixture, call) => {
+      await present(fixture, PLAN_DOCUMENT, call);
+      const before = stateAndArtifactsOf(fixture);
+      await assert.rejects(
+        () => present(fixture, REVISED_DOCUMENT, call, hostReading(fixture, transcript)),
+        new RegExp(`${PLAN_APPROVAL_TOOL_ID} cannot tell which operator message started this turn: ${cause.source}`),
+      );
+      assert.equal(fixture.asked.length, 1);
+      assert.deepEqual(stateAndArtifactsOf(fixture), before);
+    });
+  });
+
+  test(`when ${name}, the second step fails closed with no prompt and nothing written`, async () => {
+    await withApprovalFixture(granted, async (fixture, call) => {
+      await present(fixture, PLAN_DOCUMENT, call);
+      await present(fixture, REVISED_DOCUMENT, call);
+      const afterTheFirstStep = stateAndArtifactsOf(fixture);
+      await assert.rejects(
+        () => present(fixture, REVISED_DOCUMENT, LATER_CALL, hostReading(fixture, transcript)),
+        new RegExp(`${PLAN_APPROVAL_TOOL_ID} cannot tell which operator message started this turn: ${cause.source}`),
+      );
+      assert.equal(fixture.asked.length, 1);
+      assert.deepEqual(stateAndArtifactsOf(fixture), afterTheFirstStep);
+    });
+  });
+}
 
 test("the second call from a later turn raises one prompt bound to the new digest, then supersedes the held plan", async () => {
   await withApprovalFixture(granted, async (fixture, call) => {
@@ -658,7 +735,7 @@ test("a presentation recorded against another base restarts at the first step", 
     assert.equal(fixture.asked.length, 1);
     assert.deepEqual(
       [stateKeyOf(fixture, "plan_presented_base"), stateKeyOf(fixture, "plan_presented_turn")],
-      [sha256Hex(PLAN_DOCUMENT), "msg-2"],
+      [sha256Hex(PLAN_DOCUMENT), "turn-2"],
     );
   });
 });

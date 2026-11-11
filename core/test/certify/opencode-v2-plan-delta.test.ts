@@ -11,6 +11,7 @@ import {
   createSpikeFixture,
   disposeSpikeFixture,
   driveScenario,
+  driveSequence,
   installAdapterBundle,
   notesOfKind,
   resolveV2Lane,
@@ -52,10 +53,14 @@ function stateFilesOnDisk(stateRoot: string): Record<string, string> {
   return Object.fromEntries(names.map((name) => [name, readFileSync(path.join(stateRoot, name), "utf8")]));
 }
 
+function stateFilesAfterEachCall(outcome: ScenarioOutcome): readonly Record<string, string>[] {
+  const notes = notesOfKind(outcome, "execute.after").filter((candidate) => candidate["tool"] === PLAN_APPROVAL_TOOL);
+  if (notes.length === 0) throw new Error(`no execute.after note for ${PLAN_APPROVAL_TOOL}: ${outcome.run.stderr}`);
+  return notes.map((note) => note["state"] as Record<string, string>);
+}
+
 function stateFilesInRun(outcome: ScenarioOutcome): Record<string, string> {
-  const note = notesOfKind(outcome, "execute.after").find((candidate) => candidate["tool"] === PLAN_APPROVAL_TOOL);
-  if (note === undefined) throw new Error(`no execute.after note for ${PLAN_APPROVAL_TOOL}: ${outcome.run.stderr}`);
-  return note["state"] as Record<string, string>;
+  return stateFilesAfterEachCall(outcome).at(-1) ?? {};
 }
 
 function stateKeysOf(state: StateFile, keys: readonly string[]): readonly (string | undefined)[] {
@@ -102,6 +107,13 @@ describe("a re-presented plan on an isolated OpenCode 2 host takes two steps thr
     armProject(host, sliced, ["active_slice=2"]);
     await present("slice", sliced);
     await presentInTwoProcesses("refused-first", "refused-second", heldPlanProject("refused", ASKING_PROJECT_CONFIG));
+    const oneTurn = heldPlanProject("one-turn");
+    const beforeOneTurn = stateFileIn(stateFilesOnDisk(stateRoot), oneTurn);
+    const twice = { toolName: PLAN_APPROVAL_TOOL, input: { plan: REVISED_DOCUMENT } };
+    const oneTurnOutcome = await driveSequence(resolved, { ...host, project: oneTurn }, "one-turn", [twice, twice]);
+    const afterOneTurn = stateFileIn(stateFilesInRun(oneTurnOutcome), oneTurn);
+    const oneTurnPlans = readdirSync(path.join(stateRoot, "plans", path.basename(afterOneTurn.name, ".state"))).sort();
+    runs.set("one-turn", { outcome: oneTurnOutcome, before: beforeOneTurn, after: afterOneTurn, plans: oneTurnPlans });
   });
 
   after(async () => {
@@ -162,5 +174,23 @@ describe("a re-presented plan on an isolated OpenCode 2 host takes two steps thr
       stateKeysOf(second.after, ["plan_approval", "plan_approval_digest", "plan_presented_digest", "plan_presented_base"]),
       ["approved", sha256Hex(PLAN_DOCUMENT), sha256Hex(REVISED_DOCUMENT), sha256Hex(PLAN_DOCUMENT)],
     );
+  });
+
+  test("both calls inside one prompt get the delta and then a refusal as the same operator turn, with no prompt raised", CERTIFY_GUARD, (t) => {
+    if (laneNotRun(t)) return;
+    const { outcome, after, plans } = runOf("one-turn");
+    const [delta = "", refusal = ""] = outcome.toolResults;
+    assert.equal(outcome.toolResults.length, 2, outcome.toolResults.join("\n"));
+    assert.ok(delta.endsWith(`\n\n${DELTA_OF_THE_REVISION}`), delta);
+    assert.match(refusal, /same operator turn[\s\S]*operator's next message/);
+    assert.deepEqual(approvalPromptsOf(outcome), []);
+    const [afterTheFirstCall, afterTheSecondCall] = stateFilesAfterEachCall(outcome);
+    assert.deepEqual(afterTheSecondCall, afterTheFirstCall);
+    assert.deepEqual(
+      stateKeysOf(after, ["plan_approval", "plan_approval_digest", "plan_presented_digest", "plan_presented_base"]),
+      ["approved", sha256Hex(PLAN_DOCUMENT), sha256Hex(REVISED_DOCUMENT), sha256Hex(PLAN_DOCUMENT)],
+    );
+    assert.match(stateKeysOf(after, ["plan_presented_turn"])[0] ?? "", /^msg_/);
+    assert.ok(!plans.includes(`approved-${sha256Hex(REVISED_DOCUMENT)}.md`), plans.join(", "));
   });
 });

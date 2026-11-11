@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
 import {
@@ -87,6 +87,10 @@ function refusedWith(sandbox: StateSandbox, act: () => unknown, refusal: Refusal
 
 const SLICE_STILL_ACTIVE = /close or abandon the active slice first/;
 
+function replacePresentedSnapshot(sandbox: StateSandbox, digest: string, substitute: string): void {
+  writeFileSync(path.join(plansDirectoryOf(sandbox), `presented-${digest}.md`), substitute, { mode: 0o600 });
+}
+
 function heldAs(approval: "pending" | "approved", document: string): HeldPlan {
   return { kind: "held", approval, digest: sha256Hex(document), document, current: document };
 }
@@ -140,9 +144,17 @@ describe(
         refusal: /requires a held plan/,
       },
       {
-        name: "of other bytes under a presented digest",
-        prepare: (sandbox) => present(sandbox, NEXT_DIGEST, NEXT, "msg_1"),
-        attempt: (sandbox) => present(sandbox, NEXT_DIGEST, LATER, "msg_2"),
+        name: "under a digest that does not hash its document",
+        attempt: (sandbox) => present(sandbox, NEXT_DIGEST, LATER, "msg_1"),
+        refusal: /^present-plan requires the SHA-256 digest of the document it presents$/,
+      },
+      {
+        name: "over a presented snapshot whose bytes were replaced",
+        prepare: (sandbox) => {
+          present(sandbox, NEXT_DIGEST, NEXT, "msg_1");
+          replacePresentedSnapshot(sandbox, NEXT_DIGEST, LATER);
+        },
+        attempt: (sandbox) => present(sandbox, NEXT_DIGEST, NEXT, "msg_2"),
         refusal: /^presented snapshot content disagrees with its approval digest$/,
       },
       {
@@ -274,6 +286,11 @@ describe(
         name: "when the presented snapshot is missing",
         spoil: (sandbox) => rmSync(path.join(plansDirectoryOf(sandbox), `presented-${NEXT_DIGEST}.md`)),
         refusal: /presented snapshot is missing or unsafe/,
+      },
+      {
+        name: "when the presented snapshot's bytes were replaced and no longer hash to its digest",
+        spoil: (sandbox) => replacePresentedSnapshot(sandbox, NEXT_DIGEST, LATER),
+        refusal: /^supersede-plan requires the presented snapshot to hash to its digest$/,
       },
       {
         name: "when the presented snapshot is not private",

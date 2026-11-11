@@ -16,7 +16,13 @@ import {
   type OpenCodeBinaryProbe,
   type ResolvedProbe,
 } from "./opencode-binary.ts";
-import { scriptedPrompt, startScriptedProvider, type ScriptedProvider, type ScriptedProviderRequest } from "./scripted-provider.ts";
+import {
+  scriptedPrompt,
+  startScriptedProvider,
+  type ScriptedCall,
+  type ScriptedProvider,
+  type ScriptedProviderRequest,
+} from "./scripted-provider.ts";
 
 const SUPPORT_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = path.join(SUPPORT_DIRECTORY, "..", "..", "..", "..");
@@ -183,12 +189,22 @@ function offeredToolsOf(requests: readonly ScriptedProviderRequest[]): readonly 
   return requests.find((request) => request.offeredTools.length > 0)?.offeredTools ?? [];
 }
 
-export async function driveScenario(
+export function driveScenario(
   probe: ResolvedProbe,
   fixture: SpikeFixture,
   name: string,
   toolName: string,
   input: Readonly<Record<string, unknown>>,
+  options: DriveOptions = {},
+): Promise<ScenarioOutcome> {
+  return driveSequence(probe, fixture, name, [{ toolName, input }], options);
+}
+
+export async function driveSequence(
+  probe: ResolvedProbe,
+  fixture: SpikeFixture,
+  name: string,
+  calls: readonly ScriptedCall[],
   options: DriveOptions = {},
 ): Promise<ScenarioOutcome> {
   const notesPath = path.join(fixture.sandbox.root, `${name}.notes.jsonl`);
@@ -197,7 +213,7 @@ export async function driveScenario(
     probe.binary,
     { ...fixture.environment, PWD: fixture.project, OSO_SPIKE_NOTES: notesPath, OSO_SPIKE_STATE_DIRECTORY: path.join(fixture.sandbox.home, ".local", "state", "oso-code") },
     fixture.project,
-    scriptedPrompt(toolName, input),
+    calls.map(({ toolName, input }) => scriptedPrompt(toolName, input)).join("\n"),
     options,
   );
   const requests = fixture.provider.drainRequests();

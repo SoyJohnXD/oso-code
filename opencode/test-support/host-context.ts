@@ -26,6 +26,14 @@ export interface FakeHostOptions {
   defaultSessionDirectory?: string;
   refuseAssertions?: Error;
   children?: FakeChildSessions;
+  operatorTurns?: Readonly<Record<string, string>>;
+}
+
+function transcriptOf(operatorTurns: Readonly<Record<string, string>>): readonly { id: string; type: string }[] {
+  return Object.entries(operatorTurns).flatMap(([assistant, operator], index, turns) => [
+    ...(turns[index - 1]?.[1] === operator ? [] : [{ id: operator, type: "user" }]),
+    { id: assistant, type: "assistant" },
+  ]);
 }
 
 export function fakeHostContext({
@@ -35,6 +43,7 @@ export function fakeHostContext({
   defaultSessionDirectory,
   refuseAssertions,
   children,
+  operatorTurns = {},
 }: FakeHostOptions): FakeHostContext {
   const hooks = new Map<string, Callback>();
   const lookups: string[] = [];
@@ -111,6 +120,12 @@ export function fakeHostContext({
           throw new Error(`no session record for ${sessionID}`);
         }
         return { id: sessionID, parentID: parentSessions[sessionID], location: { directory: known } };
+      },
+      context: async ({ sessionID }: { sessionID: string }) => {
+        if (children?.owns(sessionID) === true) {
+          return children.api.context({ sessionID });
+        }
+        return transcriptOf(operatorTurns);
       },
     },
   } as unknown as Plugin.Context;
