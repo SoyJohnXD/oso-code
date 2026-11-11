@@ -1,6 +1,6 @@
 # OpenCode parity
 
-Certification record for the OpenCode host, filled in by the six `opencode-v2-*.test.ts` suites under `core/test/certify/` the nightly runs under `OSO_CERTIFY=1` against the pinned OpenCode 2 binary. The rows below that name `opencode-contract-bar`, `opencode-behavior-bar`, `opencode-wave-runner-smoke` and `opencode-prompt-free-posture` were measured on the OpenCode 1 host before the OpenCode 2 port (ADR-0159); those four suites were deleted from the tree when the port landed, and the rows stay here as the record of what that host measured, not as a description of any suite that still runs. It records what the suites measured, what they left unmeasured, and how their rows diverge from the bash bars and smoke they ported — never a description of intended behavior. Release-level host divergence between Claude Code and OpenCode remains ADR-0097's own obligation, extended by ADR-0151; this file no longer restates it.
+Certification record for the OpenCode host, filled in by the seven `opencode-v2-*.test.ts` suites under `core/test/certify/` the nightly runs under `OSO_CERTIFY=1` against the pinned OpenCode 2 binary. The rows below that name `opencode-contract-bar`, `opencode-behavior-bar`, `opencode-wave-runner-smoke` and `opencode-prompt-free-posture` were measured on the OpenCode 1 host before the OpenCode 2 port (ADR-0159); those four suites were deleted from the tree when the port landed, and the rows stay here as the record of what that host measured, not as a description of any suite that still runs. It records what the suites measured, what they left unmeasured, and how their rows diverge from the bash bars and smoke they ported — never a description of intended behavior. Release-level host divergence between Claude Code and OpenCode remains ADR-0097's own obligation, extended by ADR-0151; this file no longer restates it.
 
 ## The pin
 
@@ -22,7 +22,7 @@ Two lexer bypasses at the production-deploy gate are ported record for record ra
 
 ## What was and was not driven
 
-OpenCode 1 record: the contract bar, the behavior bar and the wave-runner smoke were each driven against a real, pinned OpenCode 1 binary before they were deleted; the six `opencode-v2-*` suites drive the pinned 2.2.6 binary.
+OpenCode 1 record: the contract bar, the behavior bar and the wave-runner smoke were each driven against a real, pinned OpenCode 1 binary before they were deleted; the seven `opencode-v2-*` suites drive the pinned 2.2.6 binary.
 
 ## What the host offered the prompt-free posture, measured at C0-S3
 
@@ -112,3 +112,16 @@ Child 1 verdict-receipt records every verifier report in `runs/<repo digest>/ver
 | a verifier report is recorded with slice, attempt and verdict whether or not a run is armed | the `SubagentStop` gate, before its armed-run check | PARITY: `oso_wave` records each verifier child it collects, and the `execute.after` tool hook records each `subagent` launch of `oso-verifier` |
 | the model a verifier ran on | the launch alias in the sibling `agent-<id>.meta.json`, else `null` | `subagent` path: the `execute.after` result carries no model field, so the record carries `null`; same for `oso_wave` |
 | a background verifier's report | not applicable: a `SubagentStop` fires when the child ends | not re-measured on 2.2.6; the plugin records nothing for a `subagent` result whose status is `running` |
+
+## What the plan re-approval delta measured on 2.2.6
+
+ADR-0160. OpenCode-only: Claude Code's native `ExitPlanMode` shows the whole plan, and nothing there changed. `core/test/certify/opencode-v2-plan-delta.test.ts` drives the built bundle headless against a held approved plan.
+
+| Behavior | Measured on 2.2.6 |
+|---|---|
+| the first call with a changed plan | returns the harness delta as the tool result, raises no `permission.evaluate` for `oso_plan_approve`, and leaves the approved plan in force |
+| the identical plan from a later turn | raises one prompt whose resource is the new document's digest, and on the grant supersedes: `plan_revision=1`, no `plan_presented_*` key left, both approved snapshots on disk |
+| an active slice | refuses the first call with the state's message, raises no prompt and changes no state byte |
+| a refused supersede prompt | a project-level `opencode.json` `ask` is read under `--standalone`, the headless host auto-rejects the ask, and the state stays exactly as the first call left it |
+| state across the two calls | the adapter's Cleanup removes the plan state file when the host process ends, so the suite restores it between the two runs from the host's own `execute.after` snapshot; in real use both turns run in one host process, and that carry-over is simulated, not measured |
+| what the operator sees | unmeasured: what the interactive TUI renders for a tool result and for the prompt metadata carrying the delta summary. The operator reads the model's relay of the delta |
